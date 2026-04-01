@@ -13,47 +13,36 @@ on:
         options: [staging, production]
 
 permissions:
-  id-token: write   # OIDC token for AWS auth
   contents: read
+  packages: write   # push to ghcr.io
 
 env:
-  AWS_REGION: us-east-1
-  ECR_REGISTRY: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.us-east-1.amazonaws.com
+  REGISTRY: ghcr.io
 
 jobs:
   build-and-push:
     name: Build & Push Images
     runs-on: ubuntu-latest
-    outputs:
-      backend-image: ${{ steps.meta-backend.outputs.tags }}
-      frontend-image: ${{ steps.meta-frontend.outputs.tags }}
-      image-tag: ${{ steps.tag.outputs.tag }}
     strategy:
       matrix:
         service: [backend, frontend]
     steps:
       - uses: actions/checkout@v4
 
-      - name: Compute image tag
-        id: tag
-        run: echo "tag=${{ github.sha }}" >> $GITHUB_OUTPUT
-
-      - name: Configure AWS credentials (OIDC)
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          role-to-assume: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/github-actions-deploy
-          aws-region: ${{ env.AWS_REGION }}
-
-      - name: Login to Amazon ECR
-        uses: aws-actions/amazon-ecr-login@v2
-
       - uses: docker/setup-buildx-action@v3
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Docker metadata (${{ matrix.service }})
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ${{ env.ECR_REGISTRY }}/autoflow-${{ matrix.service }}
+          images: ghcr.io/${{ github.repository }}-${{ matrix.service }}
           tags: |
             type=sha,format=long
             type=ref,event=branch
@@ -81,36 +70,21 @@ jobs:
       name: staging
       url: https://staging.autoflow.app
     steps:
-      - uses: actions/checkout@v4
+      - name: Trigger Coolify redeploy — backend (staging)
+        run: |
+          curl -fsSL -X POST \
+            -H "Authorization: Bearer ${{ secrets.COOLIFY_TOKEN }}" \
+            "${{ secrets.COOLIFY_URL }}/api/v1/deploy?uuid=${{ secrets.COOLIFY_STAGING_BACKEND_UUID }}&force=false"
 
-      - name: Configure AWS credentials (OIDC)
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          role-to-assume: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/github-actions-deploy
-          aws-region: ${{ env.AWS_REGION }}
-
-      - name: Update ECS backend service (staging)
-        uses: aws-actions/amazon-ecs-deploy-task-definition@v1
-        with:
-          task-definition: infra/ecs/task-definitions/backend-staging.json
-          service: autoflow-backend-staging
-          cluster: autoflow-staging
-          wait-for-service-stability: true
-          image: ${{ env.ECR_REGISTRY }}/autoflow-backend:sha-${{ github.sha }}
-          container-name: backend
-
-      - name: Update ECS frontend service (staging)
-        uses: aws-actions/amazon-ecs-deploy-task-definition@v1
-        with:
-          task-definition: infra/ecs/task-definitions/frontend-staging.json
-          service: autoflow-frontend-staging
-          cluster: autoflow-staging
-          wait-for-service-stability: true
-          image: ${{ env.ECR_REGISTRY }}/autoflow-frontend:sha-${{ github.sha }}
-          container-name: frontend
+      - name: Trigger Coolify redeploy — frontend (staging)
+        run: |
+          curl -fsSL -X POST \
+            -H "Authorization: Bearer ${{ secrets.COOLIFY_TOKEN }}" \
+            "${{ secrets.COOLIFY_URL }}/api/v1/deploy?uuid=${{ secrets.COOLIFY_STAGING_FRONTEND_UUID }}&force=false"
 
       - name: Smoke test staging
         run: |
+          sleep 30
           for i in {1..10}; do
             STATUS=$(curl -s -o /dev/null -w "%{http_code}" https://staging.autoflow.app/health)
             if [ "$STATUS" = "200" ]; then
@@ -132,36 +106,21 @@ jobs:
       url: https://autoflow.app
     # GitHub environment protection rules enforce the manual approval gate
     steps:
-      - uses: actions/checkout@v4
+      - name: Trigger Coolify redeploy — backend (production)
+        run: |
+          curl -fsSL -X POST \
+            -H "Authorization: Bearer ${{ secrets.COOLIFY_TOKEN }}" \
+            "${{ secrets.COOLIFY_URL }}/api/v1/deploy?uuid=${{ secrets.COOLIFY_PROD_BACKEND_UUID }}&force=false"
 
-      - name: Configure AWS credentials (OIDC)
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          role-to-assume: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/github-actions-deploy
-          aws-region: ${{ env.AWS_REGION }}
-
-      - name: Update ECS backend service (production)
-        uses: aws-actions/amazon-ecs-deploy-task-definition@v1
-        with:
-          task-definition: infra/ecs/task-definitions/backend-production.json
-          service: autoflow-backend-production
-          cluster: autoflow-production
-          wait-for-service-stability: true
-          image: ${{ env.ECR_REGISTRY }}/autoflow-backend:sha-${{ github.sha }}
-          container-name: backend
-
-      - name: Update ECS frontend service (production)
-        uses: aws-actions/amazon-ecs-deploy-task-definition@v1
-        with:
-          task-definition: infra/ecs/task-definitions/frontend-production.json
-          service: autoflow-frontend-production
-          cluster: autoflow-production
-          wait-for-service-stability: true
-          image: ${{ env.ECR_REGISTRY }}/autoflow-frontend:sha-${{ github.sha }}
-          container-name: frontend
+      - name: Trigger Coolify redeploy — frontend (production)
+        run: |
+          curl -fsSL -X POST \
+            -H "Authorization: Bearer ${{ secrets.COOLIFY_TOKEN }}" \
+            "${{ secrets.COOLIFY_URL }}/api/v1/deploy?uuid=${{ secrets.COOLIFY_PROD_FRONTEND_UUID }}&force=false"
 
       - name: Verify production health
         run: |
+          sleep 30
           for i in {1..10}; do
             STATUS=$(curl -s -o /dev/null -w "%{http_code}" https://autoflow.app/health)
             if [ "$STATUS" = "200" ]; then
@@ -171,9 +130,5 @@ jobs:
             echo "Attempt $i: got $STATUS, retrying in 15s..."
             sleep 15
           done
-          echo "Production health check failed — triggering rollback"
-          aws ecs update-service \
-            --cluster autoflow-production \
-            --service autoflow-backend-production \
-            --task-definition autoflow-backend-production:$(( $(aws ecs describe-services --cluster autoflow-production --services autoflow-backend-production --query 'services[0].taskDefinition' --output text | grep -o '[0-9]*$') - 1 ))
+          echo "Production health check failed after 10 attempts"
           exit 1

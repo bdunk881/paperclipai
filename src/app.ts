@@ -5,6 +5,7 @@
  */
 
 import express from "express";
+import multer from "multer";
 import { WORKFLOW_TEMPLATES, getTemplate, getTemplatesByCategory } from "./templates";
 import { WorkflowTemplate, WorkflowStep } from "./types/workflow";
 import { workflowEngine } from "./engine/WorkflowEngine";
@@ -13,9 +14,16 @@ import llmConfigRoutes from "./llmConfig/llmConfigRoutes";
 import mcpRoutes from "./mcp/mcpRoutes";
 import { llmConfigStore } from "./llmConfig/llmConfigStore";
 import { getProvider } from "./engine/llmProviders";
+import { parseFile } from "./engine/fileParser";
 
 const app = express();
 app.use(express.json());
+
+// Multer — in-memory storage for file uploads (max 50 MB)
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 50 * 1024 * 1024 },
+});
 
 // ---------------------------------------------------------------------------
 // LLM Config API — BYOLLM provider credentials
@@ -128,6 +136,74 @@ app.get("/api/runs/:id", (req, res) => {
     return;
   }
   res.json(run);
+});
+
+// ---------------------------------------------------------------------------
+// File-triggered runs — multipart upload → parse → start run
+// ---------------------------------------------------------------------------
+
+/**
+ * POST /api/runs/file
+ * Multipart body: { templateId: string, file: <binary> }
+ * Headers: X-User-Id (optional, forwarded to run engine)
+ *
+ * Parses the uploaded file (PDF/image/audio/text) into text content, then
+ * starts a workflow run with { content, mimeType, filename } injected as input.
+ * Returns the created run (status=pending).
+ */
+app.post("/api/runs/file", upload.single("file"), async (req, res) => {
+  const { templateId } = req.body as { templateId?: string };
+
+  if (!templateId) {
+    res.status(400).json({ error: "templateId is required" });
+    return;
+  }
+
+  if (!req.file) {
+    res.status(400).json({ error: "file is required (multipart field: file)" });
+    return;
+  }
+
+  let template: WorkflowTemplate;
+  try {
+    template = getTemplate(templateId);
+  } catch {
+    res.status(404).json({ error: `Template not found: ${templateId}` });
+    return;
+  }
+
+  // Resolve an OpenAI key from the user's default LLM config (for vision/Whisper)
+  const userId = typeof req.headers["x-user-id"] === "string" ? req.headers["x-user-id"] : undefined;
+  let openaiApiKey: string | undefined;
+  if (userId) {
+    const defaultConfig = llmConfigStore.getDecryptedDefault(userId);
+    if (defaultConfig?.config.provider === "openai") {
+      openaiApiKey = defaultConfig.apiKey;
+    }
+  }
+
+  let parsed;
+  try {
+    parsed = await parseFile(
+      req.file.buffer,
+      req.file.mimetype,
+      req.file.originalname,
+      { openaiApiKey }
+    );
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    res.status(422).json({ error: `File parsing failed: ${msg}` });
+    return;
+  }
+
+  const input: Record<string, unknown> = {
+    content: parsed.content,
+    mimeType: parsed.mimeType,
+    filename: parsed.filename,
+  };
+
+  const run = workflowEngine.startRun(template, input, undefined, userId);
+  res.status(202).json(run);
 });
 
 // ---------------------------------------------------------------------------

@@ -14,7 +14,7 @@ import {
   StepResult,
 } from "../types/workflow";
 import { runStore } from "./runStore";
-import { handleLlm, handleMcp } from "./stepHandlers";
+import { handleLlm, handleMcp, handleFileTrigger } from "./stepHandlers";
 
 // ---------------------------------------------------------------------------
 // LLM provider interface — injectable for tests; production uses llmConfigStore
@@ -305,6 +305,16 @@ export class WorkflowEngine {
             stepOutput = mcpResult.output;
             break;
           }
+          case "file_trigger": {
+            const ftResult = await handleFileTrigger(step, context);
+            stepOutput = ftResult.output;
+            break;
+          }
+          // agent and approval steps are async/human-in-the-loop; pass through context for now
+          case "agent":
+          case "approval":
+            stepOutput = {};
+            break;
           default:
             stepOutput = {};
         }

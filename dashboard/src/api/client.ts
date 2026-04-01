@@ -227,6 +227,48 @@ export async function generateWorkflow(
   return data.steps as WorkflowStep[];
 }
 
+/**
+ * POST /api/runs/file — start a file-triggered run via multipart upload.
+ * @param templateId  The workflow template to execute.
+ * @param file        The File object from a file input or drop event.
+ * @param userId      Optional user identifier forwarded as X-User-Id.
+ */
+export async function startRunWithFile(
+  templateId: string,
+  file: File,
+  userId?: string
+): Promise<WorkflowRun> {
+  if (USE_MOCK) {
+    await delay(800);
+    const tpl = MOCK_TEMPLATES.find((t) => t.id === templateId);
+    const newRun: WorkflowRun = {
+      id: generateRunId(),
+      templateId,
+      templateName: tpl?.name ?? templateId,
+      status: "running",
+      startedAt: new Date().toISOString(),
+      input: { filename: file.name, mimeType: file.type, content: "[mock parsed content]" },
+      stepResults: [],
+    };
+    MOCK_RUNS.unshift(newRun);
+    return newRun;
+  }
+
+  const form = new FormData();
+  form.append("templateId", templateId);
+  form.append("file", file);
+
+  const headers: Record<string, string> = {};
+  if (userId) headers["X-User-Id"] = userId;
+
+  const res = await fetch(`${BASE}/runs/file`, { method: "POST", headers, body: form });
+  if (!res.ok) {
+    const err = await res.json().catch(() => null);
+    throw new Error(err?.error ?? `Failed to start file run: ${res.status}`);
+  }
+  return res.json() as Promise<WorkflowRun>;
+}
+
 /** POST /api/debug/step — AI debugger for failed steps */
 export async function debugStep(
   stepId: string,

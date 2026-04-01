@@ -20,8 +20,11 @@ import {
   FileInput,
   Sparkles,
   Loader,
+  UploadCloud,
+  CheckCircle2,
+  AlertCircle,
 } from "lucide-react";
-import { getTemplate, listTemplates, startRun, listLLMConfigs, generateWorkflow, type TemplateSummary, type LLMConfig } from "../api/client";
+import { getTemplate, listTemplates, startRun, startRunWithFile, listLLMConfigs, generateWorkflow, type TemplateSummary, type LLMConfig } from "../api/client";
 import type { WorkflowStep, StepKind, WorkflowTemplate } from "../types/workflow";
 import clsx from "clsx";
 
@@ -117,6 +120,10 @@ export default function WorkflowBuilder() {
   const [llmConfigsLoading, setLlmConfigsLoading] = useState(false);
   const [llmConfigsError, setLlmConfigsError] = useState<string | null>(null);
   const [showNLModal, setShowNLModal] = useState(false);
+  const [showFileUploadModal, setShowFileUploadModal] = useState(false);
+
+  const hasFileTrigger = template.steps.some((s) => s.kind === "file_trigger");
+  const fileTriggerStep = template.steps.find((s) => s.kind === "file_trigger");
 
   useEffect(() => {
     listTemplates().then(setAllTemplates).catch(console.error);
@@ -186,6 +193,10 @@ export default function WorkflowBuilder() {
   }
 
   async function handleRun() {
+    if (hasFileTrigger) {
+      setShowFileUploadModal(true);
+      return;
+    }
     setRunError(null);
     try {
       await startRun(template.id, template.sampleInput);
@@ -578,6 +589,19 @@ export default function WorkflowBuilder() {
         </div>
       )}
 
+      {/* File Upload Modal */}
+      {showFileUploadModal && (
+        <FileUploadModal
+          templateId={template.id}
+          acceptedFileTypes={fileTriggerStep?.acceptedFileTypes ?? []}
+          onClose={() => setShowFileUploadModal(false)}
+          onStarted={() => {
+            setShowFileUploadModal(false);
+            navigate("/monitor");
+          }}
+        />
+      )}
+
       {/* NL Workflow Generation Modal */}
       {showNLModal && (
         <NLWorkflowModal
@@ -901,6 +925,149 @@ function Field({
     <div>
       <label className="block text-xs font-medium text-gray-600 mb-1.5">{label}</label>
       {children}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// FileUploadModal — triggered when the workflow has a file_trigger step
+// ---------------------------------------------------------------------------
+
+type UploadState = "idle" | "uploading" | "done" | "error";
+
+function FileUploadModal({
+  templateId,
+  acceptedFileTypes,
+  onClose,
+  onStarted,
+}: {
+  templateId: string;
+  acceptedFileTypes: string[];
+  onClose: () => void;
+  onStarted: () => void;
+}) {
+  const [dragOver, setDragOver] = useState(false);
+  const [file, setFile] = useState<File | null>(null);
+  const [state, setState] = useState<UploadState>("idle");
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
+  const acceptAttr = acceptedFileTypes.length > 0 ? acceptedFileTypes.join(",") : undefined;
+
+  function handleDrop(e: React.DragEvent<HTMLDivElement>) {
+    e.preventDefault();
+    setDragOver(false);
+    const dropped = e.dataTransfer.files[0];
+    if (dropped) setFile(dropped);
+  }
+
+  async function handleSubmit() {
+    if (!file) return;
+    setState("uploading");
+    setErrorMsg(null);
+    try {
+      await startRunWithFile(templateId, file);
+      setState("done");
+      setTimeout(onStarted, 800);
+    } catch (e) {
+      setState("error");
+      setErrorMsg(e instanceof Error ? e.message : "Upload failed");
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md mx-4 overflow-hidden">
+        {/* Header */}
+        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
+          <div className="flex items-center gap-2">
+            <UploadCloud size={18} className="text-rose-500" />
+            <h2 className="font-semibold text-gray-900">Upload File to Run Workflow</h2>
+          </div>
+          <button onClick={onClose} className="p-1 rounded hover:bg-gray-100" disabled={state === "uploading"}>
+            <X size={16} className="text-gray-500" />
+          </button>
+        </div>
+
+        <div className="p-6 space-y-4">
+          {/* Dropzone */}
+          <div
+            onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+            onDragLeave={() => setDragOver(false)}
+            onDrop={handleDrop}
+            className={clsx(
+              "relative flex flex-col items-center justify-center gap-3 rounded-xl border-2 border-dashed p-8 text-center cursor-pointer transition",
+              dragOver ? "border-rose-400 bg-rose-50" : "border-gray-300 hover:border-rose-300 hover:bg-gray-50"
+            )}
+            onClick={() => document.getElementById("file-upload-input")?.click()}
+          >
+            <input
+              id="file-upload-input"
+              type="file"
+              className="hidden"
+              accept={acceptAttr}
+              onChange={(e) => { const f = e.target.files?.[0]; if (f) setFile(f); }}
+            />
+            <UploadCloud size={32} className={dragOver ? "text-rose-400" : "text-gray-300"} />
+            <div>
+              <p className="text-sm font-medium text-gray-700">
+                {file ? file.name : "Drop a file here, or click to browse"}
+              </p>
+              {acceptedFileTypes.length > 0 && (
+                <p className="text-xs text-gray-400 mt-1">
+                  Accepted: {acceptedFileTypes.join(", ")}
+                </p>
+              )}
+              {file && (
+                <p className="text-xs text-gray-400 mt-1">
+                  {(file.size / 1024).toFixed(1)} KB · {file.type || "unknown type"}
+                </p>
+              )}
+            </div>
+          </div>
+
+          {/* Status */}
+          {state === "error" && errorMsg && (
+            <div className="flex items-start gap-2 px-3 py-2 rounded-lg bg-red-50 border border-red-200 text-sm text-red-700">
+              <AlertCircle size={15} className="mt-0.5 shrink-0" />
+              {errorMsg}
+            </div>
+          )}
+          {state === "done" && (
+            <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-green-50 border border-green-200 text-sm text-green-700">
+              <CheckCircle2 size={15} className="shrink-0" />
+              Run started — redirecting to monitor…
+            </div>
+          )}
+
+          {/* Actions */}
+          <div className="flex gap-2 pt-1">
+            <button
+              onClick={onClose}
+              disabled={state === "uploading" || state === "done"}
+              className="flex-1 py-2.5 rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50 text-sm font-medium transition disabled:opacity-50"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={handleSubmit}
+              disabled={!file || state === "uploading" || state === "done"}
+              className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-lg bg-rose-600 hover:bg-rose-700 text-white text-sm font-medium transition disabled:opacity-50"
+            >
+              {state === "uploading" ? (
+                <>
+                  <Loader size={14} className="animate-spin" />
+                  Uploading & parsing…
+                </>
+              ) : (
+                <>
+                  <UploadCloud size={14} />
+                  Run with File
+                </>
+              )}
+            </button>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }

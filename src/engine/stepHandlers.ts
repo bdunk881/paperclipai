@@ -245,6 +245,40 @@ export async function handleOutput(
 }
 
 // ---------------------------------------------------------------------------
+// File Trigger
+// ---------------------------------------------------------------------------
+
+/**
+ * Pass parsed file content through as step outputs.
+ * The run input must contain { content, mimeType, filename } (injected by the
+ * file-upload endpoint after calling parseFile).
+ */
+export async function handleFileTrigger(
+  step: WorkflowStep,
+  ctx: StepContext
+): Promise<StepHandlerResult> {
+  const content = ctx["content"] as string | undefined;
+  const mimeType = ctx["mimeType"] as string | undefined;
+  const filename = ctx["filename"] as string | undefined;
+
+  if (!content) {
+    throw new Error(
+      `file_trigger step "${step.id}" — no parsed file content in context. ` +
+        "Use the /api/runs/file endpoint to start a file-triggered run."
+    );
+  }
+
+  const output: Record<string, unknown> = { content, mimeType, filename };
+
+  // Also map declared outputKeys from context so downstream steps can reference them
+  for (const key of step.outputKeys) {
+    if (key in ctx && !(key in output)) output[key] = ctx[key];
+  }
+
+  return { output };
+}
+
+// ---------------------------------------------------------------------------
 // MCP
 // ---------------------------------------------------------------------------
 

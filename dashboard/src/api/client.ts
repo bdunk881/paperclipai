@@ -184,6 +184,33 @@ export async function startRun(
   return res.json() as Promise<WorkflowRun>;
 }
 
+/** POST /api/debug/step — AI debugger for failed steps */
+export async function debugStep(
+  stepId: string,
+  error: string,
+  output: Record<string, unknown>
+): Promise<{ explanation: string; suggestion: string }> {
+  if (USE_MOCK) {
+    await delay(1200);
+    return {
+      explanation:
+        "The step failed because the input data was missing the required field \"email\". The LLM provider returned a validation error after the template variable could not be resolved.",
+      suggestion:
+        "Check that the upstream trigger step is passing an \"email\" key in its output. Update the Input Keys for this step to include \"email\" and verify the trigger payload includes it.",
+    };
+  }
+  const res = await fetch(`${BASE}/debug/step`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ stepId, error, output }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => null);
+    throw new Error(err?.error ?? `Debug request failed: ${res.status}`);
+  }
+  return res.json() as Promise<{ explanation: string; suggestion: string }>;
+}
+
 // --- helpers ---
 
 function delay(ms: number): Promise<void> {

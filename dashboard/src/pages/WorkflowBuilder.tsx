@@ -14,8 +14,14 @@ import {
   Flag,
   Save,
   X,
+  Bot,
+  UserCheck,
+  Plug,
+  FileInput,
+  Sparkles,
+  Loader,
 } from "lucide-react";
-import { getTemplate, listTemplates, startRun, type TemplateSummary } from "../api/client";
+import { getTemplate, listTemplates, startRun, listLLMConfigs, type TemplateSummary, type LLMConfig } from "../api/client";
 import type { WorkflowStep, StepKind, WorkflowTemplate } from "../types/workflow";
 import clsx from "clsx";
 
@@ -59,6 +65,30 @@ const KIND_META: Record<
     color: "text-gray-700",
     bg: "bg-gray-100 border-gray-300",
   },
+  agent: {
+    label: "Agent",
+    icon: <Bot size={14} />,
+    color: "text-indigo-700",
+    bg: "bg-indigo-100 border-indigo-300",
+  },
+  approval: {
+    label: "Approval",
+    icon: <UserCheck size={14} />,
+    color: "text-amber-700",
+    bg: "bg-amber-100 border-amber-300",
+  },
+  mcp: {
+    label: "MCP",
+    icon: <Plug size={14} />,
+    color: "text-teal-700",
+    bg: "bg-teal-100 border-teal-300",
+  },
+  file_trigger: {
+    label: "File Trigger",
+    icon: <FileInput size={14} />,
+    color: "text-rose-700",
+    bg: "bg-rose-100 border-rose-300",
+  },
 };
 
 const BLANK_TEMPLATE: WorkflowTemplate = {
@@ -83,6 +113,10 @@ export default function WorkflowBuilder() {
   const [selectedStepId, setSelectedStepId] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
   const [runError, setRunError] = useState<string | null>(null);
+  const [llmConfigs, setLlmConfigs] = useState<LLMConfig[]>([]);
+  const [llmConfigsLoading, setLlmConfigsLoading] = useState(false);
+  const [llmConfigsError, setLlmConfigsError] = useState<string | null>(null);
+  const [showNLModal, setShowNLModal] = useState(false);
 
   useEffect(() => {
     listTemplates().then(setAllTemplates).catch(console.error);
@@ -98,6 +132,17 @@ export default function WorkflowBuilder() {
   }, [templateId]);
 
   const selectedStep = template.steps.find((s) => s.id === selectedStepId) ?? null;
+  const isLlmStep = selectedStep?.kind === "llm";
+
+  useEffect(() => {
+    if (!isLlmStep) return;
+    setLlmConfigsLoading(true);
+    setLlmConfigsError(null);
+    listLLMConfigs()
+      .then(setLlmConfigs)
+      .catch((e) => setLlmConfigsError(e instanceof Error ? e.message : "Failed to load providers"))
+      .finally(() => setLlmConfigsLoading(false));
+  }, [isLlmStep]);
 
   function addStep(kind: StepKind) {
     const newStep: WorkflowStep = {
@@ -180,6 +225,13 @@ export default function WorkflowBuilder() {
             </span>
           </div>
           <div className="flex items-center gap-2">
+            <button
+              onClick={() => setShowNLModal(true)}
+              className="flex items-center gap-2 px-3.5 py-2 text-sm font-medium rounded-lg border border-purple-300 text-purple-700 bg-purple-50 hover:bg-purple-100 transition"
+            >
+              <Sparkles size={15} />
+              Generate with AI
+            </button>
             <button
               onClick={handleSave}
               className={clsx(
@@ -303,6 +355,43 @@ export default function WorkflowBuilder() {
               </Field>
             )}
 
+            {selectedStep.kind === "llm" && (
+              <Field label="LLM Provider">
+                {llmConfigsLoading ? (
+                  <div className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg text-gray-400 bg-gray-50">
+                    Loading providers…
+                  </div>
+                ) : llmConfigsError ? (
+                  <p className="text-xs text-red-600">{llmConfigsError}</p>
+                ) : llmConfigs.length === 0 ? (
+                  <div className="px-3 py-2.5 rounded-lg border border-amber-200 bg-amber-50 text-xs text-amber-700 leading-relaxed">
+                    No LLM providers connected.{" "}
+                    <a href="/settings/llm-providers" className="underline font-medium hover:text-amber-900">
+                      Go to Settings
+                    </a>{" "}
+                    to add one.
+                  </div>
+                ) : (
+                  <select
+                    className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                    value={selectedStep.llmConfigId ?? ""}
+                    onChange={(e) =>
+                      updateStep(selectedStep.id, {
+                        llmConfigId: e.target.value || undefined,
+                      })
+                    }
+                  >
+                    <option value="">Account default</option>
+                    {llmConfigs.map((cfg) => (
+                      <option key={cfg.id} value={cfg.id}>
+                        {cfg.label} ({cfg.provider} / {cfg.model})
+                      </option>
+                    ))}
+                  </select>
+                )}
+              </Field>
+            )}
+
             {selectedStep.kind === "condition" && (
               <Field label="Condition Expression">
                 <input
@@ -324,6 +413,131 @@ export default function WorkflowBuilder() {
                   value={selectedStep.action ?? ""}
                   onChange={(e) =>
                     updateStep(selectedStep.id, { action: e.target.value })
+                  }
+                />
+              </Field>
+            )}
+
+            {selectedStep.kind === "agent" && (
+              <>
+                <Field label="Model">
+                  <input
+                    className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    placeholder="e.g. claude-sonnet-4-6"
+                    value={selectedStep.agentModel ?? ""}
+                    onChange={(e) =>
+                      updateStep(selectedStep.id, { agentModel: e.target.value })
+                    }
+                  />
+                </Field>
+                <Field label="Instructions">
+                  <textarea
+                    className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+                    rows={4}
+                    placeholder="System instructions for this agent…"
+                    value={selectedStep.agentInstructions ?? ""}
+                    onChange={(e) =>
+                      updateStep(selectedStep.id, { agentInstructions: e.target.value })
+                    }
+                  />
+                </Field>
+                <Field label="Parallel Worker Slots">
+                  <input
+                    type="number"
+                    min={1}
+                    max={20}
+                    className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    placeholder="1"
+                    value={selectedStep.subAgentSlots ?? 1}
+                    onChange={(e) =>
+                      updateStep(selectedStep.id, { subAgentSlots: parseInt(e.target.value, 10) || 1 })
+                    }
+                  />
+                </Field>
+              </>
+            )}
+
+            {selectedStep.kind === "approval" && (
+              <>
+                <Field label="Assignee (email or role)">
+                  <input
+                    className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    placeholder="e.g. manager@company.com"
+                    value={selectedStep.approvalAssignee ?? ""}
+                    onChange={(e) =>
+                      updateStep(selectedStep.id, { approvalAssignee: e.target.value })
+                    }
+                  />
+                </Field>
+                <Field label="Approval Request Message">
+                  <textarea
+                    className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+                    rows={3}
+                    placeholder="Please review and approve this step before continuing…"
+                    value={selectedStep.approvalMessage ?? ""}
+                    onChange={(e) =>
+                      updateStep(selectedStep.id, { approvalMessage: e.target.value })
+                    }
+                  />
+                </Field>
+                <Field label="Timeout (minutes)">
+                  <input
+                    type="number"
+                    min={1}
+                    className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    placeholder="60"
+                    value={selectedStep.approvalTimeoutMinutes ?? 60}
+                    onChange={(e) =>
+                      updateStep(selectedStep.id, {
+                        approvalTimeoutMinutes: parseInt(e.target.value, 10) || 60,
+                      })
+                    }
+                  />
+                </Field>
+                <div className="px-3 py-2.5 rounded-lg border border-amber-200 bg-amber-50 text-xs text-amber-700 leading-relaxed">
+                  Workflow will pause at this step until the assignee approves or rejects. On timeout, the workflow escalates or continues based on your escalation policy.
+                </div>
+              </>
+            )}
+
+            {selectedStep.kind === "mcp" && (
+              <>
+                <Field label="MCP Server URL">
+                  <input
+                    className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono"
+                    placeholder="https://mcp.example.com/sse"
+                    value={selectedStep.mcpServerUrl ?? ""}
+                    onChange={(e) =>
+                      updateStep(selectedStep.id, { mcpServerUrl: e.target.value })
+                    }
+                  />
+                </Field>
+                <Field label="Tool Name">
+                  <input
+                    className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono"
+                    placeholder="e.g. search_web"
+                    value={selectedStep.mcpTool ?? ""}
+                    onChange={(e) =>
+                      updateStep(selectedStep.id, { mcpTool: e.target.value })
+                    }
+                  />
+                </Field>
+              </>
+            )}
+
+            {selectedStep.kind === "file_trigger" && (
+              <Field label="Accepted File Types (comma-separated)">
+                <input
+                  className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  placeholder=".pdf, .png, .jpg, .mp3, .wav"
+                  value={(selectedStep.acceptedFileTypes ?? []).join(", ")}
+                  onChange={(e) =>
+                    updateStep(selectedStep.id, {
+                      acceptedFileTypes: e.target.value
+                        .split(",")
+                        .map((t) => t.trim())
+                        .filter(Boolean),
+                    })
                   }
                 />
               </Field>
@@ -363,6 +577,153 @@ export default function WorkflowBuilder() {
           </div>
         </div>
       )}
+
+      {/* NL Workflow Generation Modal */}
+      {showNLModal && (
+        <NLWorkflowModal
+          onClose={() => setShowNLModal(false)}
+          onApply={(steps) => {
+            setTemplate((t) => ({ ...t, steps }));
+            setShowNLModal(false);
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+function NLWorkflowModal({
+  onClose,
+  onApply,
+}: {
+  onClose: () => void;
+  onApply: (steps: WorkflowStep[]) => void;
+}) {
+  const [prompt, setPrompt] = useState("");
+  const [generating, setGenerating] = useState(false);
+  const [preview, setPreview] = useState<WorkflowStep[] | null>(null);
+
+  function handleGenerate() {
+    if (!prompt.trim()) return;
+    setGenerating(true);
+    // Simulate AI generation with a mock response
+    setTimeout(() => {
+      const words = prompt.toLowerCase();
+      const steps: WorkflowStep[] = [];
+      if (words.includes("email") || words.includes("support")) {
+        steps.push(
+          { id: "gen-1", name: "Receive Email Trigger", kind: "trigger", description: "Triggers when a new email is received", inputKeys: [], outputKeys: ["email"] },
+          { id: "gen-2", name: "Classify Intent", kind: "llm", description: "Classifies the intent of the email", inputKeys: ["email"], outputKeys: ["intent", "urgency"], promptTemplate: "Classify the intent of: {{email}}" },
+          { id: "gen-3", name: "Route by Intent", kind: "condition", description: "Routes based on classified intent", inputKeys: ["intent"], outputKeys: ["route"], condition: 'intent === "support"' },
+          { id: "gen-4", name: "Send Response", kind: "action", description: "Sends an automated reply", inputKeys: ["route", "email"], outputKeys: [], action: "email.send" },
+        );
+      } else if (words.includes("invoice") || words.includes("payment")) {
+        steps.push(
+          { id: "gen-1", name: "File Upload Trigger", kind: "file_trigger", description: "Triggers when an invoice file is uploaded", inputKeys: [], outputKeys: ["file"], acceptedFileTypes: [".pdf"] },
+          { id: "gen-2", name: "Parse Invoice", kind: "transform", description: "Extracts data from the PDF", inputKeys: ["file"], outputKeys: ["amount", "vendor"] },
+          { id: "gen-3", name: "Approval Gate", kind: "approval", description: "Requires manager approval for large amounts", inputKeys: ["amount"], outputKeys: ["approved"], approvalAssignee: "finance@company.com", approvalMessage: "Please approve this invoice", approvalTimeoutMinutes: 120 },
+          { id: "gen-4", name: "Post to Accounting", kind: "action", description: "Records in accounting system", inputKeys: ["amount", "vendor", "approved"], outputKeys: [], action: "accounting.post" },
+        );
+      } else {
+        steps.push(
+          { id: "gen-1", name: "Trigger", kind: "trigger", description: "Workflow entry point", inputKeys: [], outputKeys: ["input"] },
+          { id: "gen-2", name: "Process with AI", kind: "llm", description: "AI processing step", inputKeys: ["input"], outputKeys: ["result"], promptTemplate: "Process: {{input}}" },
+          { id: "gen-3", name: "Output Result", kind: "output", description: "Returns the final result", inputKeys: ["result"], outputKeys: [] },
+        );
+      }
+      setPreview(steps);
+      setGenerating(false);
+    }, 1500);
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg mx-4 overflow-hidden">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
+          <div className="flex items-center gap-2">
+            <Sparkles size={18} className="text-purple-500" />
+            <h2 className="font-semibold text-gray-900">Generate Workflow with AI</h2>
+          </div>
+          <button onClick={onClose} className="p-1 rounded hover:bg-gray-100">
+            <X size={16} className="text-gray-500" />
+          </button>
+        </div>
+
+        <div className="p-6 space-y-4">
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1.5">
+              Describe your workflow
+            </label>
+            <textarea
+              className="w-full px-3 py-2.5 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 resize-none"
+              rows={4}
+              placeholder="e.g. When a customer support email arrives, classify its intent, check if it's urgent, and send an automated reply or escalate to a human agent…"
+              value={prompt}
+              onChange={(e) => setPrompt(e.target.value)}
+              disabled={generating}
+            />
+          </div>
+
+          {!preview && (
+            <button
+              onClick={handleGenerate}
+              disabled={!prompt.trim() || generating}
+              className="w-full flex items-center justify-center gap-2 py-2.5 rounded-lg bg-purple-600 hover:bg-purple-700 text-white text-sm font-medium transition disabled:opacity-50"
+            >
+              {generating ? (
+                <>
+                  <Loader size={15} className="animate-spin" />
+                  Generating…
+                </>
+              ) : (
+                <>
+                  <Sparkles size={15} />
+                  Generate Workflow
+                </>
+              )}
+            </button>
+          )}
+
+          {preview && (
+            <>
+              <div>
+                <p className="text-xs font-medium text-gray-600 mb-2">
+                  Preview — {preview.length} steps suggested
+                </p>
+                <div className="rounded-xl border border-gray-200 divide-y divide-gray-100 overflow-hidden">
+                  {preview.map((step, i) => {
+                    const meta = KIND_META[step.kind];
+                    return (
+                      <div key={step.id} className="flex items-center gap-3 px-4 py-2.5 text-sm bg-white">
+                        <span className="text-gray-300 text-xs w-4">{i + 1}</span>
+                        <span className={clsx("flex items-center gap-1 px-1.5 py-0.5 rounded text-xs font-medium border", meta.bg, meta.color)}>
+                          {meta.icon}
+                          {meta.label}
+                        </span>
+                        <span className="text-gray-800 font-medium flex-1">{step.name}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+              <div className="flex gap-2 pt-1">
+                <button
+                  onClick={() => onApply(preview)}
+                  className="flex-1 py-2.5 rounded-lg bg-purple-600 hover:bg-purple-700 text-white text-sm font-medium transition"
+                >
+                  Apply to Canvas
+                </button>
+                <button
+                  onClick={() => { setPreview(null); setPrompt(""); }}
+                  className="px-4 py-2.5 rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50 text-sm font-medium transition"
+                >
+                  Try Again
+                </button>
+              </div>
+            </>
+          )}
+        </div>
+      </div>
     </div>
   );
 }

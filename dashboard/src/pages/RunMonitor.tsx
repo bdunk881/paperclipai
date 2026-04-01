@@ -10,8 +10,9 @@ import {
   SkipForward,
   Loader2,
   Workflow,
+  Sparkles,
 } from "lucide-react";
-import { listRuns } from "../api/client";
+import { listRuns, debugStep } from "../api/client";
 import { StatusBadge } from "../components/StatusBadge";
 import type { WorkflowRun, StepResult } from "../types/workflow";
 import clsx from "clsx";
@@ -230,6 +231,9 @@ function RunCard({
 
 function StepRow({ step, index }: { step: StepResult; index: number }) {
   const [showOutput, setShowOutput] = useState(false);
+  const [debugResult, setDebugResult] = useState<{ explanation: string; suggestion: string } | null>(null);
+  const [debugLoading, setDebugLoading] = useState(false);
+  const [debugError, setDebugError] = useState<string | null>(null);
   const hasOutput = Object.keys(step.output).length > 0;
 
   const icon = {
@@ -238,6 +242,20 @@ function StepRow({ step, index }: { step: StepResult; index: number }) {
     skipped: <SkipForward size={15} className="text-gray-400" />,
     running: <Loader2 size={15} className="text-yellow-500 animate-spin" />,
   }[step.status];
+
+  async function handleDebug() {
+    setDebugLoading(true);
+    setDebugError(null);
+    setDebugResult(null);
+    try {
+      const result = await debugStep(step.stepId, step.error ?? "", step.output);
+      setDebugResult(result);
+    } catch (e) {
+      setDebugError(e instanceof Error ? e.message : "Debug failed");
+    } finally {
+      setDebugLoading(false);
+    }
+  }
 
   return (
     <div className="flex items-start gap-3">
@@ -261,18 +279,61 @@ function StepRow({ step, index }: { step: StepResult; index: number }) {
           {step.durationMs > 0 && (
             <span className="text-xs text-gray-400">{step.durationMs}ms</span>
           )}
-          {hasOutput && step.status !== "running" && (
-            <button
-              onClick={() => setShowOutput((v) => !v)}
-              className="ml-auto text-xs text-blue-600 hover:underline"
-            >
-              {showOutput ? "hide output" : "show output"}
-            </button>
-          )}
+          <div className="ml-auto flex items-center gap-2">
+            {step.status === "failure" && !debugResult && (
+              <button
+                onClick={handleDebug}
+                disabled={debugLoading}
+                className="flex items-center gap-1 text-xs px-2 py-0.5 rounded-md bg-purple-50 text-purple-700 hover:bg-purple-100 border border-purple-200 transition disabled:opacity-50"
+              >
+                {debugLoading ? (
+                  <Loader2 size={11} className="animate-spin" />
+                ) : (
+                  <Sparkles size={11} />
+                )}
+                {debugLoading ? "Analyzing…" : "Debug with AI"}
+              </button>
+            )}
+            {hasOutput && step.status !== "running" && (
+              <button
+                onClick={() => setShowOutput((v) => !v)}
+                className="text-xs text-blue-600 hover:underline"
+              >
+                {showOutput ? "hide output" : "show output"}
+              </button>
+            )}
+          </div>
         </div>
 
         {step.error && (
           <p className="mt-1 text-xs text-red-600">{step.error}</p>
+        )}
+
+        {debugError && (
+          <p className="mt-1 text-xs text-red-500">{debugError}</p>
+        )}
+
+        {debugResult && (
+          <div className="mt-2 rounded-lg border border-purple-200 bg-purple-50 p-3 space-y-2">
+            <div className="flex items-center gap-1.5 text-xs font-semibold text-purple-700">
+              <Sparkles size={12} />
+              AI Debugger
+            </div>
+            <div>
+              <p className="text-xs font-medium text-gray-700 mb-0.5">What happened</p>
+              <p className="text-xs text-gray-600 leading-relaxed">{debugResult.explanation}</p>
+            </div>
+            <div>
+              <p className="text-xs font-medium text-gray-700 mb-0.5">Suggested fix</p>
+              <p className="text-xs text-gray-600 leading-relaxed">{debugResult.suggestion}</p>
+            </div>
+            <button
+              onClick={() => setDebugResult(null)}
+              className="text-xs text-purple-500 hover:underline"
+            >
+              Dismiss
+            </button>
+          </div>
         )}
 
         {showOutput && hasOutput && (

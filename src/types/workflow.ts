@@ -9,7 +9,11 @@ export type StepKind =
   | "transform"
   | "condition"
   | "action"
-  | "output";
+  | "output"
+  | "agent"
+  | "approval"
+  | "mcp"
+  | "file_trigger";
 
 export type FieldType =
   | "string"
@@ -68,6 +72,18 @@ export interface WorkflowStep {
   action?: string;
   /** Step-level configuration overrides */
   config?: Record<string, unknown>;
+  // mcp step
+  mcpServerUrl?: string;
+  mcpTool?: string;
+  // agent step
+  agentModel?: string;
+  agentInstructions?: string;
+  // approval step
+  approvalAssignee?: string;
+  approvalMessage?: string;
+  approvalTimeoutMinutes?: number;
+  // file_trigger step
+  acceptedFileTypes?: string[];
 }
 
 /** A complete workflow definition */

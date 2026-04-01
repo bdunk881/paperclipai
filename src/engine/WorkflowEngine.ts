@@ -14,7 +14,7 @@ import {
   StepResult,
 } from "../types/workflow";
 import { runStore } from "./runStore";
-import { handleLlm } from "./stepHandlers";
+import { handleLlm, handleMcp } from "./stepHandlers";
 
 // ---------------------------------------------------------------------------
 // LLM provider interface — injectable for tests; production uses llmConfigStore
@@ -300,6 +300,11 @@ export class WorkflowEngine {
           case "output":
             stepOutput = await executeOutput(step, context);
             break;
+          case "mcp": {
+            const mcpResult = await handleMcp(step, context);
+            stepOutput = mcpResult.output;
+            break;
+          }
           default:
             stepOutput = {};
         }

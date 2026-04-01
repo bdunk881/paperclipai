@@ -1,5 +1,5 @@
 import { Link } from "react-router-dom";
-import { Cpu, User, Bell, Shield, Key } from "lucide-react";
+import { Cpu, User, Bell, Shield, Key, PlugZap } from "lucide-react";
 
 const SETTINGS_SECTIONS = [
   {
@@ -7,6 +7,12 @@ const SETTINGS_SECTIONS = [
     icon: Cpu,
     title: "LLM Providers",
     description: "Connect your own API keys for OpenAI, Anthropic, Gemini, and Mistral to use in workflows.",
+  },
+  {
+    to: "/settings/mcp-servers",
+    icon: PlugZap,
+    title: "MCP Servers",
+    description: "Register Model Context Protocol servers to use as steps in your workflows.",
   },
   {
     to: "/settings/profile",

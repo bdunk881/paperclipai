@@ -243,3 +243,90 @@ export async function handleOutput(
   }
   return { output };
 }
+
+// ---------------------------------------------------------------------------
+// MCP
+// ---------------------------------------------------------------------------
+
+/**
+ * Execute an MCP (Model Context Protocol) step.
+ * Connects to the configured server URL and calls the named tool via JSON-RPC.
+ */
+export async function handleMcp(
+  step: WorkflowStep,
+  ctx: StepContext
+): Promise<StepHandlerResult> {
+  const serverUrl = step.mcpServerUrl;
+  const toolName = step.mcpTool;
+
+  if (!serverUrl) {
+    throw new Error(`MCP step "${step.id}" is missing mcpServerUrl`);
+  }
+  if (!toolName) {
+    throw new Error(`MCP step "${step.id}" is missing mcpTool`);
+  }
+
+  // Build tool arguments from input keys present in context
+  const toolArgs: Record<string, unknown> = {};
+  for (const key of step.inputKeys) {
+    if (key in ctx) toolArgs[key] = ctx[key];
+  }
+
+  // Interpolate server URL in case it references a context variable (e.g. {{mcpUrl}})
+  const resolvedUrl = interpolate(serverUrl, ctx);
+
+  const body = JSON.stringify({
+    jsonrpc: "2.0",
+    id: 1,
+    method: "tools/call",
+    params: { name: toolName, arguments: toolArgs },
+  });
+
+  const response = await fetch(resolvedUrl, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Accept: "application/json" },
+    body,
+  });
+
+  if (!response.ok) {
+    throw new Error(
+      `MCP step "${step.id}" — server returned HTTP ${response.status}: ${response.statusText}`
+    );
+  }
+
+  type McpRpcResponse = {
+    result?: { content?: Array<{ type: string; text?: string }>; [k: string]: unknown };
+    error?: { code: number; message: string };
+  };
+
+  const json = (await response.json()) as McpRpcResponse;
+
+  if (json.error) {
+    throw new Error(
+      `MCP step "${step.id}" — RPC error ${json.error.code}: ${json.error.message}`
+    );
+  }
+
+  // Normalise result: prefer structured content array, fall back to raw result
+  const result = json.result ?? {};
+  const content = result.content;
+  let toolOutput: Record<string, unknown>;
+
+  if (Array.isArray(content) && content.length > 0) {
+    // Concatenate text blocks for the first output key; put full content under "content"
+    const text = content
+      .filter((c) => c.type === "text" && c.text)
+      .map((c) => c.text as string)
+      .join("\n");
+    const firstKey = step.outputKeys[0] ?? "result";
+    toolOutput = { [firstKey]: text || result, content };
+  } else {
+    // Treat the whole result object as output, mapped to declared output keys
+    toolOutput = typeof result === "object" && result !== null ? (result as Record<string, unknown>) : {};
+    if (step.outputKeys[0] && !(step.outputKeys[0] in toolOutput)) {
+      toolOutput[step.outputKeys[0]] = result;
+    }
+  }
+
+  return { output: toolOutput };
+}

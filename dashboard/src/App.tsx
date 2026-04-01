@@ -18,6 +18,7 @@ import Pricing from "./pages/Pricing";
 import Approvals from "./pages/Approvals";
 import Memory from "./pages/Memory";
 import MCPIntegrations from "./pages/MCPIntegrations";
+import McpServers from "./pages/McpServers";
 import ExecutionLogs from "./pages/ExecutionLogs";
 
 function PrivateRoute({ children }: { children: React.ReactNode }) {
@@ -71,6 +72,7 @@ export default function App() {
             <Route path="settings/security" element={<SecuritySettings />} />
             <Route path="settings/notifications" element={<NotificationsSettings />} />
             <Route path="settings/api-keys" element={<ApiKeys />} />
+            <Route path="settings/mcp-servers" element={<McpServers />} />
             <Route path="pricing" element={<Pricing />} />
             <Route path="approvals" element={<Approvals />} />
             <Route path="memory" element={<Memory />} />

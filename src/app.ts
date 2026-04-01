@@ -10,6 +10,7 @@ import { WorkflowTemplate, WorkflowStep } from "./types/workflow";
 import { workflowEngine } from "./engine/WorkflowEngine";
 import { runStore } from "./engine/runStore";
 import llmConfigRoutes from "./llmConfig/llmConfigRoutes";
+import mcpRoutes from "./mcp/mcpRoutes";
 import { llmConfigStore } from "./llmConfig/llmConfigStore";
 import { getProvider } from "./engine/llmProviders";
 
@@ -20,6 +21,11 @@ app.use(express.json());
 // LLM Config API — BYOLLM provider credentials
 // ---------------------------------------------------------------------------
 app.use("/api/llm-configs", llmConfigRoutes);
+
+// ---------------------------------------------------------------------------
+// MCP Registry API — register and discover MCP server connections
+// ---------------------------------------------------------------------------
+app.use("/api/mcp/servers", mcpRoutes);
 
 // ---------------------------------------------------------------------------
 // Templates API — used by the dashboard UI

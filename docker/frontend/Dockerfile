@@ -3,7 +3,7 @@
 # ─── Stage 1: Dependencies ────────────────────────────────────────────────────
 FROM node:20-alpine AS deps
 WORKDIR /app
-COPY frontend/package.json frontend/package-lock.json ./
+COPY dashboard/package.json dashboard/package-lock.json* ./
 RUN --mount=type=cache,target=/root/.npm \
     npm ci --prefer-offline
 
@@ -11,33 +11,36 @@ RUN --mount=type=cache,target=/root/.npm \
 FROM node:20-alpine AS builder
 WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
-COPY frontend/ ./
+COPY dashboard/ ./
 
 ARG BUILD_SHA=unknown
 ARG BUILD_DATE=unknown
-ARG NEXT_PUBLIC_API_URL
-ENV NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL} \
-    NEXT_TELEMETRY_DISABLED=1
+ARG VITE_API_URL
+ENV VITE_API_URL=${VITE_API_URL} \
+    VITE_BUILD_SHA=${BUILD_SHA}
 
 RUN npm run build
 
-# ─── Stage 3: Runtime ─────────────────────────────────────────────────────────
-FROM node:20-alpine AS runtime
+# ─── Stage 3: Runtime (nginx) ─────────────────────────────────────────────────
+FROM nginx:1.27-alpine AS runtime
 LABEL org.opencontainers.image.source="https://github.com/bdunk881/paperclipai"
 
-RUN addgroup -g 1001 -S nodejs && adduser -S nextjs -u 1001
+# Non-root user for security
+RUN addgroup -g 1001 -S appgroup && adduser -S appuser -u 1001 -G appgroup
 
-WORKDIR /app
-COPY --from=builder /app/public ./public
-COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
-COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
+# Copy built assets and nginx config
+COPY --from=builder /app/dist /usr/share/nginx/html
+COPY docker/frontend/nginx.conf /etc/nginx/conf.d/default.conf
 
-HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
-    CMD wget -qO- http://localhost:3000/api/health || exit 1
+# Allow nginx to run as non-root
+RUN chown -R appuser:appgroup /var/cache/nginx /var/run /var/log/nginx /usr/share/nginx/html && \
+    chmod -R 755 /var/cache/nginx /var/run /var/log/nginx && \
+    sed -i 's/user  nginx;/# user directive removed for non-root/' /etc/nginx/nginx.conf && \
+    sed -i 's|pid        /var/run/nginx.pid;|pid        /tmp/nginx.pid;|' /etc/nginx/nginx.conf
 
-USER nextjs
-EXPOSE 3000
-ENV PORT=3000 \
-    NEXT_TELEMETRY_DISABLED=1
+HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=3 \
+    CMD wget -qO- http://localhost:80/health || exit 1
 
-CMD ["node", "server.js"]
+USER appuser
+EXPOSE 80
+CMD ["nginx", "-g", "daemon off;"]

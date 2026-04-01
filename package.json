@@ -35,6 +35,10 @@
     "testMatch": [
       "**/*.test.ts"
     ],
+    "testPathIgnorePatterns": [
+      "/node_modules/",
+      "/dashboard/"
+    ],
     "collectCoverageFrom": [
       "src/**/*.ts",
       "!src/index.ts",

@@ -87,6 +87,7 @@ export interface WorkflowTemplate {
 export interface WorkflowRun {
   id: string;
   templateId: string;
+  templateName: string;
   status: "pending" | "running" | "completed" | "failed" | "escalated";
   startedAt: string;
   completedAt?: string;
@@ -99,6 +100,7 @@ export interface WorkflowRun {
 /** Result of executing a single step */
 export interface StepResult {
   stepId: string;
+  stepName: string;
   status: "success" | "failure" | "skipped";
   output: Record<string, unknown>;
   durationMs: number;

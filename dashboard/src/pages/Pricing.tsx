@@ -1,8 +1,10 @@
-import { Check, Zap, Info } from "lucide-react";
+import { useState } from "react";
+import { Check, Zap } from "lucide-react";
 
 const TIERS = [
   {
     name: "Starter",
+    tierId: "starter",
     price: "$49",
     period: "/mo",
     description: "Perfect for individuals and small projects",
@@ -28,6 +30,7 @@ const TIERS = [
     price: "$149",
     period: "/mo",
     description: "For teams building production AI workflows",
+    tierId: "pro",
     highlight: true,
     cta: "Start Free Trial",
     badge: "Most Popular",
@@ -52,6 +55,7 @@ const TIERS = [
     price: "Custom",
     period: "",
     description: "For large teams with advanced security and compliance needs",
+    tierId: "enterprise",
     highlight: false,
     cta: "Contact Sales",
     features: [
@@ -70,7 +74,40 @@ const TIERS = [
   },
 ];
 
+async function startCheckout(tierId: string): Promise<void> {
+  if (tierId === "enterprise") {
+    window.location.href = "mailto:sales@autoflow.ai?subject=AutoFlow%20Enterprise%20Inquiry";
+    return;
+  }
+  const res = await fetch("/api/create-checkout-session", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ tier: tierId }),
+  });
+  const data = (await res.json()) as { url?: string; error?: string };
+  if (data.url) {
+    window.location.href = data.url;
+  } else {
+    throw new Error(data.error ?? "Failed to start checkout");
+  }
+}
+
 export default function Pricing() {
+  const [loading, setLoading] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  async function handleCta(tierId: string) {
+    setLoading(tierId);
+    setError(null);
+    try {
+      await startCheckout(tierId);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Something went wrong");
+    } finally {
+      setLoading(null);
+    }
+  }
+
   return (
     <div className="min-h-full bg-gray-50">
       {/* Header */}
@@ -84,10 +121,11 @@ export default function Pricing() {
           No per-execution charges. No usage limits. Pay a flat monthly fee and run
           as many workflows as you need.
         </p>
-        <div className="mt-4 inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-amber-50 border border-amber-200 text-amber-700 text-xs">
-          <Info size={13} />
-          Coming Soon — Pricing is not yet active. Join the waitlist to be notified at launch.
-        </div>
+        {error && (
+          <div className="mt-4 inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-red-50 border border-red-200 text-red-700 text-xs">
+            {error}
+          </div>
+        )}
       </div>
 
       {/* Pricing cards */}
@@ -125,13 +163,15 @@ export default function Pricing() {
               </div>
 
               <button
-                className={`w-full py-2.5 rounded-xl text-sm font-semibold transition mb-8 ${
+                disabled={loading === tier.tierId}
+                onClick={() => handleCta(tier.tierId)}
+                className={`w-full py-2.5 rounded-xl text-sm font-semibold transition mb-8 disabled:opacity-60 disabled:cursor-wait ${
                   tier.highlight
                     ? "bg-blue-600 hover:bg-blue-700 text-white"
                     : "border border-gray-300 text-gray-700 hover:bg-gray-50"
                 }`}
               >
-                {tier.cta}
+                {loading === tier.tierId ? "Redirecting…" : tier.cta}
               </button>
 
               <ul className="space-y-3 flex-1">

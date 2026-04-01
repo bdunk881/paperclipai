@@ -21,7 +21,7 @@ import {
   Sparkles,
   Loader,
 } from "lucide-react";
-import { getTemplate, listTemplates, startRun, listLLMConfigs, type TemplateSummary, type LLMConfig } from "../api/client";
+import { getTemplate, listTemplates, startRun, listLLMConfigs, generateWorkflow, type TemplateSummary, type LLMConfig } from "../api/client";
 import type { WorkflowStep, StepKind, WorkflowTemplate } from "../types/workflow";
 import clsx from "clsx";
 
@@ -602,38 +602,20 @@ function NLWorkflowModal({
   const [prompt, setPrompt] = useState("");
   const [generating, setGenerating] = useState(false);
   const [preview, setPreview] = useState<WorkflowStep[] | null>(null);
+  const [generateError, setGenerateError] = useState<string | null>(null);
 
-  function handleGenerate() {
+  async function handleGenerate() {
     if (!prompt.trim()) return;
     setGenerating(true);
-    // Simulate AI generation with a mock response
-    setTimeout(() => {
-      const words = prompt.toLowerCase();
-      const steps: WorkflowStep[] = [];
-      if (words.includes("email") || words.includes("support")) {
-        steps.push(
-          { id: "gen-1", name: "Receive Email Trigger", kind: "trigger", description: "Triggers when a new email is received", inputKeys: [], outputKeys: ["email"] },
-          { id: "gen-2", name: "Classify Intent", kind: "llm", description: "Classifies the intent of the email", inputKeys: ["email"], outputKeys: ["intent", "urgency"], promptTemplate: "Classify the intent of: {{email}}" },
-          { id: "gen-3", name: "Route by Intent", kind: "condition", description: "Routes based on classified intent", inputKeys: ["intent"], outputKeys: ["route"], condition: 'intent === "support"' },
-          { id: "gen-4", name: "Send Response", kind: "action", description: "Sends an automated reply", inputKeys: ["route", "email"], outputKeys: [], action: "email.send" },
-        );
-      } else if (words.includes("invoice") || words.includes("payment")) {
-        steps.push(
-          { id: "gen-1", name: "File Upload Trigger", kind: "file_trigger", description: "Triggers when an invoice file is uploaded", inputKeys: [], outputKeys: ["file"], acceptedFileTypes: [".pdf"] },
-          { id: "gen-2", name: "Parse Invoice", kind: "transform", description: "Extracts data from the PDF", inputKeys: ["file"], outputKeys: ["amount", "vendor"] },
-          { id: "gen-3", name: "Approval Gate", kind: "approval", description: "Requires manager approval for large amounts", inputKeys: ["amount"], outputKeys: ["approved"], approvalAssignee: "finance@company.com", approvalMessage: "Please approve this invoice", approvalTimeoutMinutes: 120 },
-          { id: "gen-4", name: "Post to Accounting", kind: "action", description: "Records in accounting system", inputKeys: ["amount", "vendor", "approved"], outputKeys: [], action: "accounting.post" },
-        );
-      } else {
-        steps.push(
-          { id: "gen-1", name: "Trigger", kind: "trigger", description: "Workflow entry point", inputKeys: [], outputKeys: ["input"] },
-          { id: "gen-2", name: "Process with AI", kind: "llm", description: "AI processing step", inputKeys: ["input"], outputKeys: ["result"], promptTemplate: "Process: {{input}}" },
-          { id: "gen-3", name: "Output Result", kind: "output", description: "Returns the final result", inputKeys: ["result"], outputKeys: [] },
-        );
-      }
+    setGenerateError(null);
+    try {
+      const steps = await generateWorkflow(prompt.trim());
       setPreview(steps);
+    } catch (e) {
+      setGenerateError(e instanceof Error ? e.message : "Generation failed");
+    } finally {
       setGenerating(false);
-    }, 1500);
+    }
   }
 
   return (
@@ -663,6 +645,10 @@ function NLWorkflowModal({
               disabled={generating}
             />
           </div>
+
+          {generateError && (
+            <p className="text-xs text-red-600">{generateError}</p>
+          )}
 
           {!preview && (
             <button

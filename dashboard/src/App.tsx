@@ -10,6 +10,10 @@ import RunHistory from "./pages/RunHistory";
 import LandingPage from "./pages/LandingPage";
 import LLMProviders from "./pages/LLMProviders";
 import Settings from "./pages/Settings";
+import ProfileSettings from "./pages/ProfileSettings";
+import SecuritySettings from "./pages/SecuritySettings";
+import NotificationsSettings from "./pages/NotificationsSettings";
+import ApiKeys from "./pages/ApiKeys";
 
 function PrivateRoute({ children }: { children: React.ReactNode }) {
   const { user } = useAuth();
@@ -58,6 +62,10 @@ export default function App() {
             <Route path="history" element={<RunHistory />} />
             <Route path="settings" element={<Settings />} />
             <Route path="settings/llm-providers" element={<LLMProviders />} />
+            <Route path="settings/profile" element={<ProfileSettings />} />
+            <Route path="settings/security" element={<SecuritySettings />} />
+            <Route path="settings/notifications" element={<NotificationsSettings />} />
+            <Route path="settings/api-keys" element={<ApiKeys />} />
           </Route>
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>

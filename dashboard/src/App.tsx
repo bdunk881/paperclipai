@@ -7,6 +7,7 @@ import Dashboard from "./pages/Dashboard";
 import WorkflowBuilder from "./pages/WorkflowBuilder";
 import RunMonitor from "./pages/RunMonitor";
 import RunHistory from "./pages/RunHistory";
+import LandingPage from "./pages/LandingPage";
 
 function PrivateRoute({ children }: { children: React.ReactNode }) {
   const { user } = useAuth();
@@ -23,6 +24,7 @@ export default function App() {
     <AuthProvider>
       <BrowserRouter>
         <Routes>
+          <Route path="/waitlist" element={<LandingPage />} />
           <Route
             path="/login"
             element={

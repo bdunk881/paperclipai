@@ -9,9 +9,15 @@ import { WORKFLOW_TEMPLATES, getTemplate, getTemplatesByCategory } from "./templ
 import { WorkflowTemplate } from "./types/workflow";
 import { workflowEngine } from "./engine/WorkflowEngine";
 import { runStore } from "./engine/runStore";
+import llmConfigRoutes from "./llmConfig/llmConfigRoutes";
 
 const app = express();
 app.use(express.json());
+
+// ---------------------------------------------------------------------------
+// LLM Config API — BYOLLM provider credentials
+// ---------------------------------------------------------------------------
+app.use("/api/llm-configs", llmConfigRoutes);
 
 // ---------------------------------------------------------------------------
 // Templates API — used by the dashboard UI

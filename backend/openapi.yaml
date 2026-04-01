@@ -35,6 +35,8 @@ tags:
     description: Workflow run execution and monitoring
   - name: Webhooks
     description: External trigger endpoints
+  - name: LLMConfigs
+    description: User LLM provider credentials (BYOLLM)
   - name: Templates
     description: Legacy read-only template endpoints (backward-compatible aliases)
   - name: Health
@@ -398,6 +400,166 @@ paths:
           $ref: "#/components/responses/NotFound"
 
   # ---------------------------------------------------------------------------
+  # LLM Config (BYOLLM)
+  # ---------------------------------------------------------------------------
+  /api/llm-configs:
+    post:
+      operationId: createLlmConfig
+      summary: Create an LLM provider config (store API key encrypted)
+      tags: [LLMConfigs]
+      parameters:
+        - name: X-User-Id
+          in: header
+          required: true
+          schema:
+            type: string
+          description: Authenticated user ID
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LLMConfigInput"
+            example:
+              provider: openai
+              label: "My GPT-4o key"
+              model: "gpt-4o"
+              apiKey: "sk-..."
+      responses:
+        "201":
+          description: Config created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LLMConfig"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+    get:
+      operationId: listLlmConfigs
+      summary: List user's LLM configs (keys masked)
+      tags: [LLMConfigs]
+      parameters:
+        - name: X-User-Id
+          in: header
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: List of configs
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  configs:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/LLMConfig"
+                  total:
+                    type: integer
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/llm-configs/{id}:
+    patch:
+      operationId: updateLlmConfig
+      summary: Update label or model
+      tags: [LLMConfigs]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: X-User-Id
+          in: header
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                label:
+                  type: string
+                model:
+                  type: string
+      responses:
+        "200":
+          description: Updated config
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LLMConfig"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+    delete:
+      operationId: deleteLlmConfig
+      summary: Remove a config
+      tags: [LLMConfigs]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: X-User-Id
+          in: header
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: Config deleted
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/llm-configs/{id}/default:
+    patch:
+      operationId: setLlmConfigDefault
+      summary: Set as default provider for user's LLM steps
+      tags: [LLMConfigs]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: X-User-Id
+          in: header
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Updated config (isDefault set to true)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LLMConfig"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  # ---------------------------------------------------------------------------
   # Legacy template aliases (backward-compatible)
   # ---------------------------------------------------------------------------
   /api/templates:
@@ -548,6 +710,15 @@ components:
             $ref: "#/components/schemas/ErrorResponse"
           example:
             error: "Workflow not found: lead-enrichment"
+
+    Unauthorized:
+      description: Missing or invalid authentication
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+          example:
+            error: "X-User-Id header is required"
 
   schemas:
     # -------------------------------------------------------------------------
@@ -828,6 +999,64 @@ components:
           type: string
           description: Error message (step_failed / run_failed events only)
         timestamp:
+          type: string
+          format: date-time
+
+    # -------------------------------------------------------------------------
+    # LLM Config schemas
+    # -------------------------------------------------------------------------
+    LLMProvider:
+      type: string
+      enum: [openai, anthropic, gemini, mistral]
+      description: Supported LLM provider
+
+    LLMConfigInput:
+      type: object
+      required: [provider, label, model, apiKey]
+      properties:
+        provider:
+          $ref: "#/components/schemas/LLMProvider"
+        label:
+          type: string
+          description: User-friendly name for this config
+          example: "My GPT-4o key"
+        model:
+          type: string
+          description: Model identifier for the provider
+          example: "gpt-4o"
+        apiKey:
+          type: string
+          description: Provider API key — stored encrypted, never returned
+          example: "sk-..."
+          minLength: 4
+
+    LLMConfig:
+      type: object
+      required: [id, userId, provider, label, model, apiKeyMasked, isDefault, createdAt]
+      description: LLM provider config (API key never returned — only masked last 4 chars)
+      properties:
+        id:
+          type: string
+          format: uuid
+        userId:
+          type: string
+          description: Owner user ID
+        provider:
+          $ref: "#/components/schemas/LLMProvider"
+        label:
+          type: string
+          example: "My GPT-4o key"
+        model:
+          type: string
+          example: "gpt-4o"
+        apiKeyMasked:
+          type: string
+          description: Last 4 characters of the original key, prefixed with ****
+          example: "****abcd"
+        isDefault:
+          type: boolean
+          description: Whether this is the user's default LLM config
+        createdAt:
           type: string
           format: date-time
 

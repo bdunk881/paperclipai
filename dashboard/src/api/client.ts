@@ -1,6 +1,81 @@
 import type { WorkflowTemplate, WorkflowRun } from "../types/workflow";
 import { MOCK_TEMPLATES, MOCK_RUNS, generateRunId } from "../data/mockData";
 
+// ---------------------------------------------------------------------------
+// LLM Config types — mirrors src/engine/llmProviders/types.ts
+// ---------------------------------------------------------------------------
+
+export type ProviderName = "openai" | "anthropic" | "gemini" | "mistral";
+
+/** Available models per provider — mirrors PROVIDER_MODELS from the backend */
+export const PROVIDER_MODELS: Record<ProviderName, string[]> = {
+  openai: ["gpt-4o", "gpt-4o-mini", "gpt-4-turbo", "gpt-3.5-turbo"],
+  anthropic: ["claude-opus-4-6", "claude-sonnet-4-6", "claude-haiku-4-5-20251001"],
+  gemini: ["gemini-2.0-flash", "gemini-1.5-pro", "gemini-1.5-flash"],
+  mistral: ["mistral-large-latest", "mistral-small-latest", "open-mistral-7b"],
+};
+
+/** A saved LLM provider config (API key stored server-side, never returned) */
+export interface LLMConfig {
+  id: string;
+  label: string;
+  provider: ProviderName;
+  model: string;
+  isDefault: boolean;
+  maskedApiKey: string; // e.g. "sk-...x7k3"
+  createdAt: string;
+}
+
+export interface CreateLLMConfigInput {
+  label: string;
+  provider: ProviderName;
+  model: string;
+  apiKey: string;
+}
+
+// ---------------------------------------------------------------------------
+// LLM Config API functions
+// ---------------------------------------------------------------------------
+
+/** GET /api/llm-configs */
+export async function listLLMConfigs(): Promise<LLMConfig[]> {
+  const res = await fetch(`${BASE}/llm-configs`);
+  if (!res.ok) throw new Error(`Failed to fetch LLM configs: ${res.status}`);
+  const data = await res.json();
+  return data.configs as LLMConfig[];
+}
+
+/** POST /api/llm-configs */
+export async function createLLMConfig(input: CreateLLMConfigInput): Promise<LLMConfig> {
+  const res = await fetch(`${BASE}/llm-configs`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => null);
+    throw new Error(err?.error ?? `Failed to create LLM config: ${res.status}`);
+  }
+  return res.json() as Promise<LLMConfig>;
+}
+
+/** PATCH /api/llm-configs/:id/default */
+export async function setDefaultLLMConfig(id: string): Promise<LLMConfig> {
+  const res = await fetch(`${BASE}/llm-configs/${encodeURIComponent(id)}/default`, {
+    method: "PATCH",
+  });
+  if (!res.ok) throw new Error(`Failed to set default: ${res.status}`);
+  return res.json() as Promise<LLMConfig>;
+}
+
+/** DELETE /api/llm-configs/:id */
+export async function deleteLLMConfig(id: string): Promise<void> {
+  const res = await fetch(`${BASE}/llm-configs/${encodeURIComponent(id)}`, {
+    method: "DELETE",
+  });
+  if (!res.ok) throw new Error(`Failed to delete LLM config: ${res.status}`);
+}
+
 const BASE = "/api";
 const USE_MOCK = import.meta.env.VITE_USE_MOCK === "true";
 

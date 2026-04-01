@@ -35,6 +35,16 @@ const FAQ_ITEMS = [
     answer:
       "AutoFlow integrates with Stripe (billing), Resend (email), GitHub (code), Notion, Slack, and more. Custom integrations are available on Enterprise.",
   },
+  {
+    question: "Can I use my own LLM API keys?",
+    answer:
+      "Yes — this is a core feature. AutoFlow supports OpenAI, Anthropic, Google Gemini, and Mistral out of the box. Connect your own API keys and traffic routes directly to the provider. AutoFlow never sees your prompts or completions, and you pay providers at their standard rates with no markup.",
+  },
+  {
+    question: "Which AI model should I use for my agents?",
+    answer:
+      "It depends on your use case. For complex reasoning tasks (legal, finance, strategy), we recommend Claude Opus or GPT-4o. For high-volume, cost-sensitive tasks (support, classification), Mistral or Claude Haiku are great choices. You can set a different model per agent and switch anytime without changing your workflows.",
+  },
 ];
 
 export function FAQ() {

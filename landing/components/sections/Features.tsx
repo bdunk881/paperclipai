@@ -40,6 +40,12 @@ const FEATURES = [
       "No vendor lock-in. Fork your stack, self-host, and customize every layer of your business.",
     icon: "🔓",
   },
+  {
+    title: "Bring Your LLM",
+    description:
+      "Use your own OpenAI, Anthropic, Gemini, or Mistral API keys. Full model flexibility with zero markup on token usage.",
+    icon: "🧠",
+  },
 ];
 
 export function Features() {

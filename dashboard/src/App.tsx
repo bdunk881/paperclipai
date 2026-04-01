@@ -8,6 +8,7 @@ import WorkflowBuilder from "./pages/WorkflowBuilder";
 import RunMonitor from "./pages/RunMonitor";
 import RunHistory from "./pages/RunHistory";
 import LandingPage from "./pages/LandingPage";
+import LLMProviders from "./pages/LLMProviders";
 
 function PrivateRoute({ children }: { children: React.ReactNode }) {
   const { user } = useAuth();
@@ -54,6 +55,7 @@ export default function App() {
             <Route path="builder/:templateId" element={<WorkflowBuilder />} />
             <Route path="monitor" element={<RunMonitor />} />
             <Route path="history" element={<RunHistory />} />
+            <Route path="settings/llm-providers" element={<LLMProviders />} />
           </Route>
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>

@@ -391,6 +391,55 @@ export async function getMemoryStats(): Promise<MemoryStats> {
   return res.json() as Promise<MemoryStats>;
 }
 
+// ---------------------------------------------------------------------------
+// Approvals API — HITL approval inbox
+// ---------------------------------------------------------------------------
+
+export interface ApprovalRequest {
+  id: string;
+  runId: string;
+  templateName: string;
+  stepId: string;
+  stepName: string;
+  assignee: string;
+  message: string;
+  timeoutMinutes: number;
+  requestedAt: string;
+  status: "pending" | "approved" | "rejected" | "timed_out";
+  resolvedAt?: string;
+  comment?: string;
+}
+
+/** GET /api/approvals */
+export async function listApprovals(
+  status?: "pending" | "approved" | "rejected" | "timed_out"
+): Promise<ApprovalRequest[]> {
+  const url = status
+    ? `${BASE}/approvals?status=${encodeURIComponent(status)}`
+    : `${BASE}/approvals`;
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`Failed to fetch approvals: ${res.status}`);
+  const data = await res.json();
+  return data.approvals as ApprovalRequest[];
+}
+
+/** POST /api/approvals/:id/resolve */
+export async function resolveApproval(
+  id: string,
+  decision: "approved" | "rejected",
+  comment?: string
+): Promise<void> {
+  const res = await fetch(`${BASE}/approvals/${encodeURIComponent(id)}/resolve`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ decision, comment }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => null);
+    throw new Error(err?.error ?? `Failed to resolve approval: ${res.status}`);
+  }
+}
+
 // --- helpers ---
 
 function delay(ms: number): Promise<void> {

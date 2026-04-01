@@ -1,6 +1,6 @@
 import clsx from "clsx";
 
-type RunStatus = "pending" | "running" | "completed" | "failed" | "escalated";
+type RunStatus = "pending" | "running" | "completed" | "failed" | "escalated" | "awaiting_approval";
 type StepStatus = "success" | "failure" | "skipped" | "running";
 
 const RUN_STATUS_STYLES: Record<RunStatus, string> = {
@@ -9,6 +9,7 @@ const RUN_STATUS_STYLES: Record<RunStatus, string> = {
   completed: "bg-green-100 text-green-700",
   failed: "bg-red-100 text-red-700",
   escalated: "bg-purple-100 text-purple-700",
+  awaiting_approval: "bg-orange-100 text-orange-700",
 };
 
 const STEP_STATUS_STYLES: Record<StepStatus, string> = {
@@ -18,11 +19,19 @@ const STEP_STATUS_STYLES: Record<StepStatus, string> = {
   running: "bg-yellow-100 text-yellow-700",
 };
 
+const RUN_LABELS: Partial<Record<RunStatus, string>> = {
+  awaiting_approval: "awaiting approval",
+};
+
 export function StatusBadge({ status }: { status: RunStatus | StepStatus }) {
-  const isRunStatus = ["pending", "running", "completed", "failed", "escalated"].includes(status);
+  const isRunStatus = ["pending", "running", "completed", "failed", "escalated", "awaiting_approval"].includes(status);
   const styles = isRunStatus
     ? RUN_STATUS_STYLES[status as RunStatus]
     : STEP_STATUS_STYLES[status as StepStatus];
+
+  const label = isRunStatus
+    ? (RUN_LABELS[status as RunStatus] ?? status)
+    : status;
 
   return (
     <span
@@ -34,7 +43,10 @@ export function StatusBadge({ status }: { status: RunStatus | StepStatus }) {
       {status === "running" && (
         <span className="w-1.5 h-1.5 rounded-full bg-yellow-500 animate-pulse" />
       )}
-      {status}
+      {status === "awaiting_approval" && (
+        <span className="w-1.5 h-1.5 rounded-full bg-orange-500 animate-pulse" />
+      )}
+      {label}
     </span>
   );
 }

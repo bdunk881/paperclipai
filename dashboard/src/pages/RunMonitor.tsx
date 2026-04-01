@@ -13,6 +13,7 @@ import {
   Sparkles,
   Bot,
   MessageSquare,
+  UserCheck,
 } from "lucide-react";
 import { listRuns, debugStep } from "../api/client";
 import { StatusBadge } from "../components/StatusBadge";
@@ -62,8 +63,12 @@ export default function RunMonitor() {
     fetchRuns();
   }
 
-  const activeRuns = runs.filter((r) => r.status === "running" || r.status === "pending");
-  const recentRuns = runs.filter((r) => r.status !== "running" && r.status !== "pending");
+  const activeRuns = runs.filter(
+    (r) => r.status === "running" || r.status === "pending" || r.status === "awaiting_approval"
+  );
+  const recentRuns = runs.filter(
+    (r) => r.status !== "running" && r.status !== "pending" && r.status !== "awaiting_approval"
+  );
 
   return (
     <div className="p-8">
@@ -209,6 +214,22 @@ function RunCard({
           {expanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
         </div>
       </button>
+
+      {/* Awaiting approval banner — always visible */}
+      {run.status === "awaiting_approval" && (
+        <div className="border-t border-yellow-200 bg-yellow-50 px-5 py-3 flex items-center gap-3">
+          <UserCheck size={16} className="text-yellow-600 shrink-0" />
+          <p className="text-sm text-yellow-800 font-medium flex-1">
+            Run paused — waiting for human approval
+          </p>
+          <Link
+            to="/approvals"
+            className="text-xs px-3 py-1.5 rounded-lg bg-yellow-600 hover:bg-yellow-700 text-white font-medium transition"
+          >
+            Review in Approvals →
+          </Link>
+        </div>
+      )}
 
       {/* Step breakdown */}
       {expanded && (

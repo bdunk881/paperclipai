@@ -1,77 +1,33 @@
-import { useState } from "react";
-import { CheckCircle, XCircle, Clock, User, MessageSquare, AlertCircle } from "lucide-react";
+import { useState, useEffect, useRef } from "react";
+import { Link } from "react-router-dom";
+import {
+  CheckCircle,
+  XCircle,
+  Clock,
+  User,
+  MessageSquare,
+  AlertCircle,
+  Loader2,
+  RefreshCw,
+} from "lucide-react";
+import { listApprovals, resolveApproval, type ApprovalRequest } from "../api/client";
 
-interface ApprovalItem {
-  id: string;
-  workflowName: string;
-  runId: string;
-  stepName: string;
-  requestedAt: string;
-  assignee: string;
-  message: string;
-  timeoutMinutes: number;
-  status: "pending" | "approved" | "rejected" | "timed_out";
-}
-
-const MOCK_APPROVALS: ApprovalItem[] = [
-  {
-    id: "appr-1",
-    workflowName: "Customer Onboarding Pipeline",
-    runId: "run-abc123",
-    stepName: "Legal Review Gate",
-    requestedAt: "2026-04-01T20:15:00Z",
-    assignee: "legal@company.com",
-    message:
-      "Please review the generated contract terms for customer ACME Corp before proceeding with the onboarding.",
-    timeoutMinutes: 60,
-    status: "pending",
-  },
-  {
-    id: "appr-2",
-    workflowName: "Invoice Processing",
-    runId: "run-def456",
-    stepName: "Finance Approval",
-    requestedAt: "2026-04-01T18:30:00Z",
-    assignee: "finance@company.com",
-    message:
-      "Invoice #INV-2890 for $12,500 requires manual approval. Vendor: Acme Supplies Ltd.",
-    timeoutMinutes: 120,
-    status: "pending",
-  },
-  {
-    id: "appr-3",
-    workflowName: "Content Publishing",
-    runId: "run-ghi789",
-    stepName: "Editor Review",
-    requestedAt: "2026-04-01T14:00:00Z",
-    assignee: "editor@company.com",
-    message: "Blog post draft is ready for editorial review before scheduled publish.",
-    timeoutMinutes: 30,
-    status: "approved",
-  },
-  {
-    id: "appr-4",
-    workflowName: "HR Workflow",
-    runId: "run-jkl012",
-    stepName: "Offer Letter Sign-off",
-    requestedAt: "2026-04-01T09:00:00Z",
-    assignee: "hr@company.com",
-    message: "Offer letter for candidate Jane Smith requires final sign-off.",
-    timeoutMinutes: 240,
-    status: "rejected",
-  },
-];
+const POLL_INTERVAL_MS = 10_000;
 
 function timeAgo(iso: string): string {
   const diff = Date.now() - new Date(iso).getTime();
   const mins = Math.floor(diff / 60000);
+  if (mins < 1) return "just now";
   if (mins < 60) return `${mins}m ago`;
   const hrs = Math.floor(mins / 60);
   if (hrs < 24) return `${hrs}h ago`;
   return `${Math.floor(hrs / 24)}d ago`;
 }
 
-const STATUS_CONFIG = {
+const STATUS_CONFIG: Record<
+  ApprovalRequest["status"],
+  { label: string; color: string; icon: React.ElementType }
+> = {
   pending: { label: "Pending", color: "bg-yellow-100 text-yellow-700", icon: Clock },
   approved: { label: "Approved", color: "bg-green-100 text-green-700", icon: CheckCircle },
   rejected: { label: "Rejected", color: "bg-red-100 text-red-700", icon: XCircle },
@@ -79,10 +35,35 @@ const STATUS_CONFIG = {
 };
 
 export default function Approvals() {
-  const [approvals, setApprovals] = useState<ApprovalItem[]>(MOCK_APPROVALS);
+  const [approvals, setApprovals] = useState<ApprovalRequest[]>([]);
   const [filter, setFilter] = useState<"all" | "pending" | "resolved">("all");
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [lastRefreshed, setLastRefreshed] = useState(new Date());
+  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  function resolve(id: string, decision: "approved" | "rejected") {
+  async function fetchApprovals() {
+    try {
+      const data = await listApprovals();
+      setApprovals(data);
+      setLastRefreshed(new Date());
+      setError(null);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to load approvals");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    fetchApprovals();
+    intervalRef.current = setInterval(fetchApprovals, POLL_INTERVAL_MS);
+    return () => {
+      if (intervalRef.current) clearInterval(intervalRef.current);
+    };
+  }, []);
+
+  function handleResolved(id: string, decision: "approved" | "rejected") {
     setApprovals((prev) =>
       prev.map((a) => (a.id === id ? { ...a, status: decision } : a))
     );
@@ -109,13 +90,22 @@ export default function Approvals() {
                   {pendingCount} pending
                 </span>
               )}
-              <span className="px-2 py-0.5 rounded-full bg-blue-50 text-blue-600 text-xs font-medium">
-                In Development
-              </span>
             </div>
             <p className="text-gray-500 text-sm mt-1">
               Review and resolve human-in-the-loop approval requests from your workflows.
             </p>
+          </div>
+          <div className="flex items-center gap-3">
+            <span className="text-xs text-gray-400">
+              Updated: {lastRefreshed.toLocaleTimeString()}
+            </span>
+            <button
+              onClick={fetchApprovals}
+              className="flex items-center gap-2 px-3.5 py-2 text-sm font-medium border border-gray-300 rounded-lg hover:bg-gray-50 transition text-gray-700"
+            >
+              <RefreshCw size={14} />
+              Refresh
+            </button>
           </div>
         </div>
 
@@ -137,82 +127,182 @@ export default function Approvals() {
         </div>
       </div>
 
-      {/* Approval list */}
+      {/* Content */}
       <div className="max-w-4xl mx-auto px-8 py-6 space-y-4">
-        {filtered.length === 0 && (
-          <div className="text-center py-16 text-gray-400">
-            <CheckCircle size={40} className="mx-auto mb-3 opacity-30" />
-            <p className="text-sm">No approvals to show</p>
+        {loading && (
+          <div className="flex items-center justify-center py-16 text-gray-400">
+            <Loader2 size={24} className="animate-spin mr-2" />
+            <span className="text-sm">Loading approvals…</span>
           </div>
         )}
 
-        {filtered.map((item) => {
-          const cfg = STATUS_CONFIG[item.status];
-          const StatusIcon = cfg.icon;
-
-          return (
-            <div
-              key={item.id}
-              className="bg-white rounded-xl border border-gray-200 p-6 shadow-sm"
+        {!loading && error && (
+          <div className="flex items-center gap-2 p-4 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">
+            <AlertCircle size={16} />
+            <span>{error}</span>
+            <button
+              onClick={fetchApprovals}
+              className="ml-auto text-xs underline hover:no-underline"
             >
-              <div className="flex items-start justify-between gap-4">
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span className="font-semibold text-gray-900 text-sm">
-                      {item.workflowName}
-                    </span>
-                    <span className="text-gray-300">›</span>
-                    <span className="text-gray-600 text-sm">{item.stepName}</span>
-                    <span
-                      className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${cfg.color}`}
-                    >
-                      <StatusIcon size={11} />
-                      {cfg.label}
-                    </span>
-                  </div>
+              Retry
+            </button>
+          </div>
+        )}
 
-                  <div className="flex items-center gap-4 mt-2 text-xs text-gray-400">
-                    <span className="flex items-center gap-1">
-                      <User size={11} />
-                      {item.assignee}
-                    </span>
-                    <span className="flex items-center gap-1">
-                      <Clock size={11} />
-                      {timeAgo(item.requestedAt)}
-                    </span>
-                    <span>Run: {item.runId}</span>
-                    <span>Timeout: {item.timeoutMinutes}min</span>
-                  </div>
+        {!loading && !error && filtered.length === 0 && (
+          <div className="text-center py-16 text-gray-400">
+            <CheckCircle size={40} className="mx-auto mb-3 opacity-30" />
+            <p className="text-sm font-medium text-gray-500">
+              {filter === "pending"
+                ? "No pending approvals"
+                : filter === "resolved"
+                ? "No resolved approvals yet"
+                : "No approvals yet"}
+            </p>
+            {filter === "pending" && (
+              <p className="text-xs text-gray-400 mt-1">
+                Start a workflow with an approval step from the{" "}
+                <Link to="/builder" className="text-blue-600 hover:underline">
+                  builder
+                </Link>
+                .
+              </p>
+            )}
+          </div>
+        )}
 
-                  <div className="mt-3 flex items-start gap-2 p-3 bg-gray-50 rounded-lg">
-                    <MessageSquare size={13} className="text-gray-400 mt-0.5 shrink-0" />
-                    <p className="text-sm text-gray-700 leading-relaxed">{item.message}</p>
-                  </div>
-                </div>
-              </div>
-
-              {item.status === "pending" && (
-                <div className="flex gap-2 mt-4 pt-4 border-t border-gray-100">
-                  <button
-                    onClick={() => resolve(item.id, "approved")}
-                    className="flex items-center gap-2 px-4 py-2 rounded-lg bg-green-600 hover:bg-green-700 text-white text-sm font-medium transition"
-                  >
-                    <CheckCircle size={15} />
-                    Approve
-                  </button>
-                  <button
-                    onClick={() => resolve(item.id, "rejected")}
-                    className="flex items-center gap-2 px-4 py-2 rounded-lg bg-red-50 hover:bg-red-100 text-red-600 border border-red-200 text-sm font-medium transition"
-                  >
-                    <XCircle size={15} />
-                    Reject
-                  </button>
-                </div>
-              )}
-            </div>
-          );
-        })}
+        {!loading &&
+          filtered.map((item) => (
+            <ApprovalCard
+              key={item.id}
+              item={item}
+              onResolved={handleResolved}
+            />
+          ))}
       </div>
+    </div>
+  );
+}
+
+function ApprovalCard({
+  item,
+  onResolved,
+}: {
+  item: ApprovalRequest;
+  onResolved: (id: string, decision: "approved" | "rejected") => void;
+}) {
+  const [comment, setComment] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
+
+  const cfg = STATUS_CONFIG[item.status];
+  const StatusIcon = cfg.icon;
+
+  async function handleResolve(decision: "approved" | "rejected") {
+    setSubmitting(true);
+    setSubmitError(null);
+    try {
+      await resolveApproval(item.id, decision, comment.trim() || undefined);
+      onResolved(item.id, decision);
+    } catch (e) {
+      setSubmitError(e instanceof Error ? e.message : "Failed to submit");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <div className="bg-white rounded-xl border border-gray-200 p-6 shadow-sm">
+      <div className="flex items-start justify-between gap-4">
+        <div className="flex-1 min-w-0">
+          {/* Workflow › Step header */}
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="font-semibold text-gray-900 text-sm">{item.templateName}</span>
+            <span className="text-gray-300">›</span>
+            <span className="text-gray-600 text-sm">{item.stepName}</span>
+            <span
+              className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${cfg.color}`}
+            >
+              <StatusIcon size={11} />
+              {cfg.label}
+            </span>
+          </div>
+
+          {/* Meta row */}
+          <div className="flex items-center gap-4 mt-2 text-xs text-gray-400">
+            <span className="flex items-center gap-1">
+              <User size={11} />
+              {item.assignee}
+            </span>
+            <span className="flex items-center gap-1">
+              <Clock size={11} />
+              {timeAgo(item.requestedAt)}
+            </span>
+            <span>Run: {item.runId}</span>
+            <span>Timeout: {item.timeoutMinutes}min</span>
+          </div>
+
+          {/* Message */}
+          <div className="mt-3 flex items-start gap-2 p-3 bg-gray-50 rounded-lg">
+            <MessageSquare size={13} className="text-gray-400 mt-0.5 shrink-0" />
+            <p className="text-sm text-gray-700 leading-relaxed">{item.message}</p>
+          </div>
+
+          {/* Resolved comment */}
+          {item.comment && item.status !== "pending" && (
+            <p className="mt-2 text-xs text-gray-500 italic">
+              Comment: {item.comment}
+            </p>
+          )}
+        </div>
+      </div>
+
+      {/* Action area — only for pending */}
+      {item.status === "pending" && (
+        <div className="mt-4 pt-4 border-t border-gray-100 space-y-3">
+          <textarea
+            value={comment}
+            onChange={(e) => setComment(e.target.value)}
+            placeholder="Optional comment (visible to requester)…"
+            rows={2}
+            className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 resize-none focus:outline-none focus:ring-2 focus:ring-blue-300 text-gray-700 placeholder-gray-400"
+          />
+
+          {submitError && (
+            <p className="text-xs text-red-600 flex items-center gap-1">
+              <AlertCircle size={12} />
+              {submitError}
+            </p>
+          )}
+
+          <div className="flex gap-2">
+            <button
+              onClick={() => handleResolve("approved")}
+              disabled={submitting}
+              className="flex items-center gap-2 px-4 py-2 rounded-lg bg-green-600 hover:bg-green-700 disabled:opacity-50 text-white text-sm font-medium transition"
+            >
+              {submitting ? (
+                <Loader2 size={14} className="animate-spin" />
+              ) : (
+                <CheckCircle size={15} />
+              )}
+              Approve
+            </button>
+            <button
+              onClick={() => handleResolve("rejected")}
+              disabled={submitting}
+              className="flex items-center gap-2 px-4 py-2 rounded-lg bg-red-50 hover:bg-red-100 disabled:opacity-50 text-red-600 border border-red-200 text-sm font-medium transition"
+            >
+              {submitting ? (
+                <Loader2 size={14} className="animate-spin" />
+              ) : (
+                <XCircle size={15} />
+              )}
+              Reject
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

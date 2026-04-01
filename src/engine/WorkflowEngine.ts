@@ -15,8 +15,10 @@ import {
   AgentSlotResult,
 } from "../types/workflow";
 import { runStore } from "./runStore";
+import { approvalStore } from "./approvalStore";
 import { handleLlm, handleMcp, handleFileTrigger, handleAgent } from "./stepHandlers";
 import { memoryStore } from "./memoryStore";
+import { LlmCostLog } from "./llmRouter";
 
 // ---------------------------------------------------------------------------
 // LLM provider interface — injectable for tests; production uses llmConfigStore
@@ -136,7 +138,7 @@ async function executeLlm(
   step: WorkflowStep,
   context: Record<string, unknown>,
   userId?: string
-): Promise<Record<string, unknown>> {
+): Promise<{ output: Record<string, unknown>; costLog?: LlmCostLog }> {
   if (_isCustomProvider) {
     // Test/legacy path: use the injected string-returning provider
     const rawPrompt = step.promptTemplate ?? "";
@@ -145,18 +147,18 @@ async function executeLlm(
 
     try {
       const parsed = JSON.parse(rawOutput) as unknown;
-      if (typeof parsed === "object" && parsed !== null) return parsed as Record<string, unknown>;
+      if (typeof parsed === "object" && parsed !== null) return { output: parsed as Record<string, unknown> };
     } catch {
       // Not JSON — treat as a text value mapped to the first output key
     }
 
     const firstKey = step.outputKeys[0] ?? "output";
-    return { [firstKey]: rawOutput };
+    return { output: { [firstKey]: rawOutput } };
   }
 
   // Production path: resolve config from llmConfigStore via handleLlm
   const result = await handleLlm(step, context, userId ?? "");
-  return result.output;
+  return { output: result.output, costLog: result.costLog };
 }
 
 async function executeTransform(
@@ -308,15 +310,19 @@ export class WorkflowEngine {
       let stepError: string | undefined;
       let stepStatus: StepResult["status"] = "success";
       let agentSlotResults: AgentSlotResult[] | undefined;
+      let stepCostLog: LlmCostLog | undefined;
 
       try {
         switch (step.kind) {
           case "trigger":
             stepOutput = await executeTrigger(step, context);
             break;
-          case "llm":
-            stepOutput = await executeLlm(step, context, userId);
+          case "llm": {
+            const llmResult = await executeLlm(step, context, userId);
+            stepOutput = llmResult.output;
+            stepCostLog = llmResult.costLog;
             break;
+          }
           case "transform":
             stepOutput = await executeTransform(step, context);
             break;
@@ -345,10 +351,36 @@ export class WorkflowEngine {
             agentSlotResults = agentResult.agentSlotResults;
             break;
           }
-          // approval steps are async/human-in-the-loop; pass through context for now
-          case "approval":
-            stepOutput = {};
+          // approval steps — pause the run and wait for human resolution
+          case "approval": {
+            const assignee = step.approvalAssignee ?? "unassigned";
+            const message = step.approvalMessage ?? "Approval required to continue.";
+            const timeoutMinutes = step.approvalTimeoutMinutes ?? 60;
+
+            runStore.update(runId, { status: "awaiting_approval" });
+
+            const { id: approvalId, promise: approvalPromise } = approvalStore.create({
+              runId,
+              templateName: template.name,
+              stepId: step.id,
+              stepName: step.name,
+              assignee,
+              message,
+              timeoutMinutes,
+            });
+
+            const { approved, comment } = await approvalPromise;
+
+            runStore.update(runId, { status: "running" });
+
+            if (!approved) {
+              stepStatus = "failure";
+              stepError = `Approval rejected${comment ? `: ${comment}` : " (timed out or declined)"}`;
+            }
+
+            stepOutput = { approved, approvalId, approverComment: comment ?? null };
             break;
+          }
           default:
             stepOutput = {};
         }
@@ -368,6 +400,7 @@ export class WorkflowEngine {
         durationMs: Date.now() - start,
         ...(stepError ? { error: stepError } : {}),
         ...(agentSlotResults ? { agentSlotResults } : {}),
+        ...(stepCostLog ? { costLog: stepCostLog } : {}),
       };
 
       stepResults.push(result);

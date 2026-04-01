@@ -76,7 +76,7 @@ export interface WorkflowRun {
   id: string;
   templateId: string;
   templateName: string;
-  status: "pending" | "running" | "completed" | "failed" | "escalated";
+  status: "pending" | "running" | "completed" | "failed" | "escalated" | "awaiting_approval";
   startedAt: string;
   completedAt?: string;
   input: Record<string, unknown>;

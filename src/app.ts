@@ -10,12 +10,14 @@ import { WORKFLOW_TEMPLATES, getTemplate, getTemplatesByCategory } from "./templ
 import { WorkflowTemplate, WorkflowStep } from "./types/workflow";
 import { workflowEngine } from "./engine/WorkflowEngine";
 import { runStore } from "./engine/runStore";
+import { approvalStore } from "./engine/approvalStore";
 import llmConfigRoutes from "./llmConfig/llmConfigRoutes";
 import mcpRoutes from "./mcp/mcpRoutes";
 import memoryRoutes from "./memory/memoryRoutes";
 import { llmConfigStore } from "./llmConfig/llmConfigStore";
 import { getProvider } from "./engine/llmProviders";
 import { parseFile } from "./engine/fileParser";
+import { resolveModelForTier } from "./engine/llmRouter";
 
 const app = express();
 app.use(express.json());
@@ -272,9 +274,11 @@ app.post("/api/workflows/generate", async (req, res) => {
     return;
   }
 
+  // NL→DAG generation needs multi-step reasoning — always use standard tier
+  const generationModel = resolveModelForTier(resolved.config.provider, "standard");
   const provider = getProvider({
     provider: resolved.config.provider,
-    model: resolved.config.model,
+    model: generationModel,
     apiKey: resolved.apiKey,
   });
 
@@ -337,6 +341,61 @@ app.post("/api/webhooks/:templateId", (req, res) => {
   const webhookUserId = req.headers["x-user-id"];
   const run = workflowEngine.startRun(template, input, undefined, typeof webhookUserId === "string" ? webhookUserId : undefined);
   res.status(202).json({ runId: run.id, status: run.status });
+});
+
+// ---------------------------------------------------------------------------
+// Approvals API — HITL pause-and-wait approval requests
+// ---------------------------------------------------------------------------
+
+/**
+ * GET /api/approvals
+ * Query params: status=pending|approved|rejected|timed_out
+ * Returns all approval requests, optionally filtered by status.
+ */
+app.get("/api/approvals", (req, res) => {
+  const { status } = req.query;
+  const validStatuses = ["pending", "approved", "rejected", "timed_out"];
+  const filter =
+    typeof status === "string" && validStatuses.includes(status)
+      ? (status as "pending" | "approved" | "rejected" | "timed_out")
+      : undefined;
+  const approvals = approvalStore.list(filter);
+  res.json({ approvals, total: approvals.length });
+});
+
+/**
+ * GET /api/approvals/:id
+ * Returns a single approval request by ID.
+ */
+app.get("/api/approvals/:id", (req, res) => {
+  const approval = approvalStore.get(req.params.id);
+  if (!approval) {
+    res.status(404).json({ error: `Approval not found: ${req.params.id}` });
+    return;
+  }
+  res.json(approval);
+});
+
+/**
+ * POST /api/approvals/:id/resolve
+ * Body: { decision: "approved" | "rejected", comment?: string }
+ * Resolves the approval request, resuming or terminating the paused run.
+ */
+app.post("/api/approvals/:id/resolve", (req, res) => {
+  const { decision, comment } = req.body as { decision?: string; comment?: string };
+
+  if (decision !== "approved" && decision !== "rejected") {
+    res.status(400).json({ error: "decision must be 'approved' or 'rejected'" });
+    return;
+  }
+
+  const ok = approvalStore.resolve(req.params.id, decision, comment);
+  if (!ok) {
+    res.status(404).json({ error: "Approval not found or already resolved" });
+    return;
+  }
+
+  res.json({ success: true });
 });
 
 // ---------------------------------------------------------------------------

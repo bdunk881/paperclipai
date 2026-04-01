@@ -61,6 +61,14 @@ export interface WorkflowStep {
    */
   llmConfigId?: string;
   /**
+   * For LLM / agent steps: explicit tier override.
+   * When set, bypasses the complexity classifier.
+   *   lite     — cheapest model (classification, extraction)
+   *   standard — balanced model (reasoning, generation)
+   *   power    — most capable model (orchestration, large context)
+   */
+  llmTier?: "lite" | "standard" | "power";
+  /**
    * For condition steps: a simple expression evaluated by the runtime.
    * e.g. "intent === 'refund'" or "leadScore >= 70"
    */
@@ -110,7 +118,7 @@ export interface WorkflowRun {
   id: string;
   templateId: string;
   templateName: string;
-  status: "pending" | "running" | "completed" | "failed" | "escalated";
+  status: "pending" | "running" | "completed" | "failed" | "escalated" | "awaiting_approval";
   startedAt: string;
   completedAt?: string;
   input: Record<string, unknown>;
@@ -148,4 +156,6 @@ export interface StepResult {
   error?: string;
   /** Populated for agent steps — one entry per parallel worker slot */
   agentSlotResults?: AgentSlotResult[];
+  /** Populated for llm / agent steps — model, tier, and cost data */
+  costLog?: import("../engine/llmRouter").LlmCostLog;
 }

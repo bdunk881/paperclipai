@@ -14,6 +14,11 @@ import ProfileSettings from "./pages/ProfileSettings";
 import SecuritySettings from "./pages/SecuritySettings";
 import NotificationsSettings from "./pages/NotificationsSettings";
 import ApiKeys from "./pages/ApiKeys";
+import Pricing from "./pages/Pricing";
+import Approvals from "./pages/Approvals";
+import Memory from "./pages/Memory";
+import MCPIntegrations from "./pages/MCPIntegrations";
+import ExecutionLogs from "./pages/ExecutionLogs";
 
 function PrivateRoute({ children }: { children: React.ReactNode }) {
   const { user } = useAuth();
@@ -66,6 +71,11 @@ export default function App() {
             <Route path="settings/security" element={<SecuritySettings />} />
             <Route path="settings/notifications" element={<NotificationsSettings />} />
             <Route path="settings/api-keys" element={<ApiKeys />} />
+            <Route path="pricing" element={<Pricing />} />
+            <Route path="approvals" element={<Approvals />} />
+            <Route path="memory" element={<Memory />} />
+            <Route path="integrations/mcp" element={<MCPIntegrations />} />
+            <Route path="logs" element={<ExecutionLogs />} />
           </Route>
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>

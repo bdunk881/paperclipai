@@ -8,6 +8,11 @@ import {
   Zap,
   Cpu,
   Settings,
+  DollarSign,
+  CheckSquare,
+  Database,
+  PlugZap,
+  ScrollText,
 } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import clsx from "clsx";
@@ -17,6 +22,11 @@ const NAV = [
   { to: "/builder", icon: Workflow, label: "Builder" },
   { to: "/monitor", icon: Activity, label: "Run Monitor" },
   { to: "/history", icon: History, label: "History" },
+  { to: "/approvals", icon: CheckSquare, label: "Approvals" },
+  { to: "/logs", icon: ScrollText, label: "Logs" },
+  { to: "/memory", icon: Database, label: "Memory" },
+  { to: "/integrations/mcp", icon: PlugZap, label: "MCP Integrations" },
+  { to: "/pricing", icon: DollarSign, label: "Pricing" },
 ];
 
 export default function Layout() {

@@ -1,0 +1,71 @@
+/**
+ * E2E: Dashboard critical path
+ *
+ * Covers: stats cards render, recent runs list, template cards,
+ * navigation links to builder and history.
+ *
+ * Runs in VITE_USE_MOCK=true mode — all API data comes from the
+ * in-memory mock store, so assertions use mock-data-aware values.
+ */
+
+import { test, expect } from "@playwright/test";
+import { loginAsMockUser } from "./helpers/auth";
+
+test.beforeEach(async ({ page }) => {
+  await loginAsMockUser(page);
+  await page.goto("/");
+});
+
+// ---------------------------------------------------------------------------
+// Page structure
+// ---------------------------------------------------------------------------
+
+test("dashboard heading is visible", async ({ page }) => {
+  await expect(page.getByRole("heading", { name: /dashboard/i })).toBeVisible();
+});
+
+test("renders four stat cards: Total Runs, Running, Completed, Failed", async ({ page }) => {
+  await expect(page.getByText(/total runs/i)).toBeVisible();
+  await expect(page.getByText(/^running$/i)).toBeVisible();
+  await expect(page.getByText(/^completed$/i)).toBeVisible();
+  await expect(page.getByText(/^failed$/i)).toBeVisible();
+});
+
+test("renders Recent Runs section", async ({ page }) => {
+  await expect(page.getByText(/recent runs/i)).toBeVisible();
+});
+
+test("renders Templates section with at least one template card", async ({ page }) => {
+  // Wait for mock data to load
+  await expect(page.getByText(/templates/i).first()).toBeVisible();
+  // There are 3 mock templates
+  const templateLinks = page.getByRole("link", { name: /customer support bot|lead enrichment|content generator/i });
+  await expect(templateLinks.first()).toBeVisible();
+});
+
+// ---------------------------------------------------------------------------
+// Navigation
+// ---------------------------------------------------------------------------
+
+test("'View all' runs link navigates to /history", async ({ page }) => {
+  await page.getByRole("link", { name: /view all/i }).click();
+  await expect(page).toHaveURL(/\/history/);
+});
+
+test("clicking a template card navigates to /builder/:templateId", async ({ page }) => {
+  // Wait for templates to render
+  const builderLink = page.getByRole("link", { name: /customer support bot/i }).first();
+  await expect(builderLink).toBeVisible({ timeout: 5000 });
+  await builderLink.click();
+  await expect(page).toHaveURL(/\/builder\//);
+});
+
+test("sidebar nav link 'Workflow Builder' navigates to /builder", async ({ page }) => {
+  await page.getByRole("link", { name: /workflow builder/i }).click();
+  await expect(page).toHaveURL(/\/builder/);
+});
+
+test("sidebar nav link 'Run History' navigates to /history", async ({ page }) => {
+  await page.getByRole("link", { name: /run history/i }).click();
+  await expect(page).toHaveURL(/\/history/);
+});

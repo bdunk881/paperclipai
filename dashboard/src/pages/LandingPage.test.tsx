@@ -6,20 +6,16 @@
  */
 
 import { render, screen, fireEvent, waitFor, act } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import LandingPage from "./LandingPage";
 
 // ---------------------------------------------------------------------------
 // Setup
 // ---------------------------------------------------------------------------
 
-beforeEach(() => {
-  vi.useFakeTimers();
-});
-
 afterEach(() => {
-  vi.useRealTimers();
+  vi.unstubAllGlobals();
+  vi.restoreAllMocks();
 });
 
 // ---------------------------------------------------------------------------
@@ -46,9 +42,9 @@ describe("LandingPage — static content", () => {
   it("renders the Features section", () => {
     render(<LandingPage />);
     // All feature titles should be present
-    expect(screen.getByText(/AI-Native Agents/i)).toBeInTheDocument();
-    expect(screen.getByText(/Deploy in Minutes/i)).toBeInTheDocument();
-    expect(screen.getByText(/Full Observability/i)).toBeInTheDocument();
+    expect(screen.getAllByText(/AI-Native Agents/i).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/Deploy in Minutes/i).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/Full Observability/i).length).toBeGreaterThan(0);
   });
 
   it("renders the How it Works section", () => {
@@ -59,7 +55,8 @@ describe("LandingPage — static content", () => {
 
   it("renders at least one email input", () => {
     render(<LandingPage />);
-    const inputs = screen.getAllByPlaceholderText(/email/i);
+    // eslint-disable-next-line testing-library/no-container
+    const inputs = document.querySelectorAll('input[type="email"]');
     expect(inputs.length).toBeGreaterThan(0);
   });
 });
@@ -75,22 +72,20 @@ describe("LandingPage — form validation", () => {
 
     await act(async () => {
       fireEvent.click(submitBtn);
-      vi.runAllTimers();
     });
 
-    // Success state should NOT appear
+    // Success state should NOT appear — early return before fetch
     expect(screen.queryByText(/you're on the list/i)).toBeNull();
   });
 
   it("does not submit when email is only whitespace", async () => {
     render(<LandingPage />);
-    const emailInput = screen.getAllByPlaceholderText(/email/i)[0];
+    const emailInput = screen.getAllByPlaceholderText(/you@company\.com/i)[0];
     const submitBtn = screen.getAllByRole("button", { name: /join the waitlist/i })[0];
 
     await act(async () => {
       fireEvent.change(emailInput, { target: { value: "   " } });
       fireEvent.click(submitBtn);
-      vi.runAllTimers();
     });
 
     expect(screen.queryByText(/you're on the list/i)).toBeNull();
@@ -102,64 +97,53 @@ describe("LandingPage — form validation", () => {
 // ---------------------------------------------------------------------------
 
 describe("LandingPage — submission flow", () => {
-  it("shows 'Joining...' while the simulated API call is pending", async () => {
-    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime.bind(vi) });
+  it("shows 'Joining...' while the API call is pending", async () => {
+    // Mock fetch to never resolve so we can observe the in-flight state
+    vi.stubGlobal("fetch", vi.fn(() => new Promise(() => {})));
     render(<LandingPage />);
 
-    const emailInput = screen.getAllByPlaceholderText(/email/i)[0];
-    await user.type(emailInput, "test@example.com");
+    const emailInput = screen.getAllByPlaceholderText(/you@company\.com/i)[0];
+    fireEvent.change(emailInput, { target: { value: "test@example.com" } });
 
-    // Start submit but don't advance timers yet
-    const submitBtn = screen.getAllByRole("button", { name: /join the waitlist/i })[0];
-    await user.click(submitBtn);
+    await act(async () => {
+      fireEvent.click(screen.getAllByRole("button", { name: /join the waitlist/i })[0]);
+    });
 
-    // Should show loading state immediately
     expect(screen.getAllByText(/Joining\.\.\./i).length).toBeGreaterThan(0);
   });
 
-  it("transitions to success state after simulated API call (800ms)", async () => {
-    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime.bind(vi) });
+  it("transitions to success state after API call completes", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({ ok: true } as Response)
+    );
     render(<LandingPage />);
 
-    const emailInput = screen.getAllByPlaceholderText(/email/i)[0];
-    await user.type(emailInput, "waitlist@example.com");
-
-    const submitBtn = screen.getAllByRole("button", { name: /join the waitlist/i })[0];
-    await user.click(submitBtn);
-
-    // Advance past the 800ms simulated API delay
-    await act(async () => {
-      vi.advanceTimersByTime(900);
-      await Promise.resolve();
-    });
+    const emailInput = screen.getAllByPlaceholderText(/you@company\.com/i)[0];
+    fireEvent.change(emailInput, { target: { value: "waitlist@example.com" } });
+    fireEvent.click(screen.getAllByRole("button", { name: /join the waitlist/i })[0]);
 
     await waitFor(() => {
-      expect(screen.getByText(/you're on the list/i)).toBeInTheDocument();
+      expect(screen.getAllByText(/you're on the list/i).length).toBeGreaterThan(0);
     });
   });
 
   it("success state is shown after submission — no longer shows the form submit button", async () => {
-    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime.bind(vi) });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({ ok: true } as Response)
+    );
     render(<LandingPage />);
 
-    const emailInput = screen.getAllByPlaceholderText(/email/i)[0];
-    await user.type(emailInput, "early@adopter.com");
-
-    const submitBtn = screen.getAllByRole("button", { name: /join the waitlist/i })[0];
-    await user.click(submitBtn);
-
-    await act(async () => {
-      vi.advanceTimersByTime(900);
-      await Promise.resolve();
-    });
+    const emailInput = screen.getAllByPlaceholderText(/you@company\.com/i)[0];
+    fireEvent.change(emailInput, { target: { value: "early@adopter.com" } });
+    fireEvent.click(screen.getAllByRole("button", { name: /join the waitlist/i })[0]);
 
     await waitFor(() => {
-      expect(screen.getByText(/you're on the list/i)).toBeInTheDocument();
+      expect(screen.getAllByText(/you're on the list/i).length).toBeGreaterThan(0);
     });
 
-    // Original submit button should no longer be visible
-    const remainingBtns = screen.queryAllByRole("button", { name: /join the waitlist/i });
-    expect(remainingBtns.length).toBe(0);
+    expect(screen.queryAllByRole("button", { name: /join the waitlist/i }).length).toBe(0);
   });
 });
 

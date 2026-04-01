@@ -103,8 +103,8 @@ export async function startRun(
     body: JSON.stringify({ templateId, input, config }),
   });
   if (!res.ok) {
-    const err = await res.json().catch(() => ({ error: res.statusText }));
-    throw new Error(err.error ?? `Failed to start run: ${res.status}`);
+    const err = await res.json().catch(() => null);
+    throw new Error(err?.error ?? `Failed to start run: ${res.status}`);
   }
   return res.json() as Promise<WorkflowRun>;
 }

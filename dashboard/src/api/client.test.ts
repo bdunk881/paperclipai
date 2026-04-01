@@ -103,7 +103,7 @@ describe("listTemplates", () => {
   it("URL-encodes the category param", async () => {
     mockFetch({ templates: [], total: 0 });
     await listTemplates("sales & marketing");
-    expect(lastFetchUrl()).toContain("sales+%26+marketing".toLowerCase().replace("+", "%20").replace("%26", "%26") );
+    expect(lastFetchUrl()).toContain("sales%20%26%20marketing");
   });
 
   it("throws on non-ok response", async () => {

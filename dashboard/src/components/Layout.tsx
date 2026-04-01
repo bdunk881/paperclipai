@@ -7,6 +7,7 @@ import {
   LogOut,
   Zap,
   Cpu,
+  Settings,
 } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import clsx from "clsx";
@@ -61,14 +62,26 @@ export default function Layout() {
           ))}
 
           <div className="pt-3 mt-2 border-t border-gray-700">
-            <p className="px-3 pb-1 text-xs font-semibold text-gray-500 uppercase tracking-wider">
+            <NavLink
+              to="/settings"
+              end
+              className={({ isActive }) =>
+                clsx(
+                  "flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors",
+                  isActive
+                    ? "bg-blue-600 text-white"
+                    : "text-gray-400 hover:bg-gray-800 hover:text-white"
+                )
+              }
+            >
+              <Settings size={18} />
               Settings
-            </p>
+            </NavLink>
             <NavLink
               to="/settings/llm-providers"
               className={({ isActive }) =>
                 clsx(
-                  "flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors",
+                  "flex items-center gap-3 px-3 py-2 pl-9 rounded-lg text-sm font-medium transition-colors",
                   isActive
                     ? "bg-blue-600 text-white"
                     : "text-gray-400 hover:bg-gray-800 hover:text-white"

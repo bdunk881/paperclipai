@@ -6,10 +6,12 @@
 
 import express from "express";
 import { WORKFLOW_TEMPLATES, getTemplate, getTemplatesByCategory } from "./templates";
-import { WorkflowTemplate } from "./types/workflow";
+import { WorkflowTemplate, WorkflowStep } from "./types/workflow";
 import { workflowEngine } from "./engine/WorkflowEngine";
 import { runStore } from "./engine/runStore";
 import llmConfigRoutes from "./llmConfig/llmConfigRoutes";
+import { llmConfigStore } from "./llmConfig/llmConfigStore";
+import { getProvider } from "./engine/llmProviders";
 
 const app = express();
 app.use(express.json());
@@ -120,6 +122,102 @@ app.get("/api/runs/:id", (req, res) => {
     return;
   }
   res.json(run);
+});
+
+// ---------------------------------------------------------------------------
+// Workflow generation — NL description → DAG steps via LLM
+// ---------------------------------------------------------------------------
+
+const GENERATE_SYSTEM_PROMPT = `You are AutoFlow's workflow designer. Given a plain-English description of a business process, return a JSON array of workflow steps.
+
+Each step MUST follow this schema (all fields required unless marked optional):
+{
+  "id": string,          // unique, e.g. "step-1", "step-2"
+  "name": string,        // short human-readable name
+  "kind": one of "trigger" | "llm" | "transform" | "condition" | "action" | "output",
+  "description": string, // one sentence
+  "inputKeys": string[], // keys consumed from prior steps
+  "outputKeys": string[], // keys this step produces
+  "promptTemplate"?: string,  // required for kind=llm, supports {{key}} interpolation
+  "condition"?: string,       // required for kind=condition, JS boolean expression
+  "action"?: string           // required for kind=action, e.g. "email.send", "crm.upsertLead"
+}
+
+Rules:
+- First step must be kind="trigger" with no inputKeys.
+- Last step should be kind="output" or kind="action".
+- Wire inputKeys/outputKeys so data flows logically.
+- Return ONLY the JSON array, no markdown fences, no commentary.`;
+
+/**
+ * POST /api/workflows/generate
+ * Body: { description: string, llmConfigId?: string }
+ * Headers: X-User-Id (required to resolve the user's LLM config)
+ * Returns: { steps: WorkflowStep[] }
+ */
+app.post("/api/workflows/generate", async (req, res) => {
+  const { description, llmConfigId } = req.body as {
+    description?: unknown;
+    llmConfigId?: unknown;
+  };
+
+  if (typeof description !== "string" || !description.trim()) {
+    res.status(400).json({ error: "description is required and must be a non-empty string" });
+    return;
+  }
+
+  const userId = req.headers["x-user-id"];
+  if (typeof userId !== "string" || !userId.trim()) {
+    res.status(401).json({ error: "X-User-Id header is required to resolve LLM configuration" });
+    return;
+  }
+
+  const resolved =
+    typeof llmConfigId === "string" && llmConfigId
+      ? llmConfigStore.getDecrypted(llmConfigId, userId)
+      : llmConfigStore.getDecryptedDefault(userId);
+
+  if (!resolved) {
+    res.status(422).json({
+      error: "No LLM provider configured. Go to Settings > LLM Providers to connect one.",
+    });
+    return;
+  }
+
+  const provider = getProvider({
+    provider: resolved.config.provider,
+    model: resolved.config.model,
+    apiKey: resolved.apiKey,
+  });
+
+  let rawText: string;
+  try {
+    const response = await provider(
+      `${GENERATE_SYSTEM_PROMPT}\n\nWorkflow description:\n${description.trim()}`
+    );
+    rawText = response.text;
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    res.status(502).json({ error: `LLM call failed: ${msg}` });
+    return;
+  }
+
+  let steps: WorkflowStep[];
+  try {
+    // Strip optional markdown code fences the LLM may include
+    const cleaned = rawText.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "").trim();
+    const parsed = JSON.parse(cleaned) as unknown;
+    if (!Array.isArray(parsed)) {
+      throw new Error("Expected a JSON array");
+    }
+    steps = parsed as WorkflowStep[];
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    res.status(422).json({ error: `LLM returned invalid JSON: ${msg}`, raw: rawText });
+    return;
+  }
+
+  res.json({ steps });
 });
 
 // ---------------------------------------------------------------------------

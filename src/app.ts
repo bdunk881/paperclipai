@@ -116,10 +116,50 @@ app.get("/api/runs/:id", (req, res) => {
 });
 
 // ---------------------------------------------------------------------------
+// Webhook trigger — activates a workflow from an external event
+// ---------------------------------------------------------------------------
+
+/**
+ * POST /api/webhooks/:templateId
+ * Trigger a workflow run from an inbound webhook.
+ * The entire request body is forwarded as the run input.
+ */
+app.post("/api/webhooks/:templateId", (req, res) => {
+  const { templateId } = req.params;
+
+  let template: WorkflowTemplate;
+  try {
+    template = getTemplate(templateId);
+  } catch {
+    res.status(404).json({ error: `Template not found: ${templateId}` });
+    return;
+  }
+
+  const input = req.body as Record<string, unknown>;
+  if (!input || typeof input !== "object" || Array.isArray(input)) {
+    res.status(400).json({ error: "Webhook body must be a JSON object" });
+    return;
+  }
+
+  const run = workflowEngine.startRun(template, input);
+  res.status(202).json({ runId: run.id, status: run.status });
+});
+
+// ---------------------------------------------------------------------------
 // Health check
 // ---------------------------------------------------------------------------
 app.get("/health", (_req, res) => {
-  res.json({ status: "ok", templates: WORKFLOW_TEMPLATES.length });
+  const runs = runStore.list();
+  res.json({
+    status: "ok",
+    templates: WORKFLOW_TEMPLATES.length,
+    runs: {
+      total: runs.length,
+      running: runs.filter((r) => r.status === "running").length,
+      completed: runs.filter((r) => r.status === "completed").length,
+      failed: runs.filter((r) => r.status === "failed").length,
+    },
+  });
 });
 
 export default app;

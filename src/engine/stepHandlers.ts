@@ -4,12 +4,11 @@
  * Each handler receives the step definition and the current execution context
  * (all outputs accumulated so far, plus config values), and returns the
  * output produced by this step.
- *
- * LLM calls are stubbed — replace with real provider calls once the
- * AI/ML Engineer integrates the LLM layer (see ALT-30 / ALT-29).
  */
 
 import { WorkflowStep } from "../types/workflow";
+import { llmConfigStore } from "../llmConfig/llmConfigStore";
+import { getProvider } from "./llmProviders";
 
 export type StepContext = Record<string, unknown>;
 
@@ -44,12 +43,13 @@ export async function handleTrigger(
 }
 
 // ---------------------------------------------------------------------------
-// LLM  (stub — replace with real provider call)
+// LLM
 // ---------------------------------------------------------------------------
 
 export async function handleLlm(
   step: WorkflowStep,
-  ctx: StepContext
+  ctx: StepContext,
+  userId: string
 ): Promise<StepHandlerResult> {
   if (!step.promptTemplate) {
     throw new Error(`LLM step "${step.id}" is missing a promptTemplate`);
@@ -57,14 +57,36 @@ export async function handleLlm(
 
   const renderedPrompt = interpolate(step.promptTemplate, ctx);
 
-  // Stub: return a synthetic object keyed by outputKeys.
-  // Real implementation: call Anthropic / OpenAI and parse the JSON response.
-  const output: Record<string, unknown> = {
-    _stub: true,
-    _prompt: renderedPrompt,
-  };
-  for (const key of step.outputKeys) {
-    output[key] = `[llm:${key}]`;
+  // Resolve config: step-level override or user's default
+  const resolved = step.llmConfigId
+    ? llmConfigStore.getDecrypted(step.llmConfigId, userId)
+    : llmConfigStore.getDecryptedDefault(userId);
+
+  if (!resolved) {
+    throw new Error(
+      "LLM step failed: no LLM provider configured. Go to Settings > LLM Providers to connect one."
+    );
+  }
+
+  const provider = getProvider({
+    provider: resolved.config.provider,
+    model: resolved.config.model,
+    apiKey: resolved.apiKey,
+  });
+
+  const response = await provider(renderedPrompt);
+
+  // Attempt to parse JSON; fall back to mapping text to the first output key
+  const output: Record<string, unknown> = {};
+  try {
+    const parsed = JSON.parse(response.text) as unknown;
+    if (typeof parsed === "object" && parsed !== null) {
+      Object.assign(output, parsed);
+    } else {
+      output[step.outputKeys[0] ?? "output"] = response.text;
+    }
+  } catch {
+    output[step.outputKeys[0] ?? "output"] = response.text;
   }
 
   return { output };

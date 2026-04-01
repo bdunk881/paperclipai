@@ -4,6 +4,11 @@
  * Verifies that raw API keys are never present in any response.
  */
 
+// Prevent transitive import of ESM-only @mistralai/mistralai package
+jest.mock("../engine/llmProviders", () => ({
+  getProvider: jest.fn(),
+}));
+
 import request from "supertest";
 import app from "../app";
 import { llmConfigStore } from "./llmConfigStore";

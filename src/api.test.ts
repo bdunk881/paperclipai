@@ -5,6 +5,11 @@
  * error handling) without requiring a live LLM or external service.
  */
 
+// Prevent transitive import of ESM-only @mistralai/mistralai package
+jest.mock("./engine/llmProviders", () => ({
+  getProvider: jest.fn(),
+}));
+
 import request from "supertest";
 import app from "./app";
 import { WORKFLOW_TEMPLATES } from "./templates";

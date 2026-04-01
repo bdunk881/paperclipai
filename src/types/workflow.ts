@@ -52,6 +52,11 @@ export interface WorkflowStep {
    */
   promptTemplate?: string;
   /**
+   * For LLM steps: the ID of the LLMConfig to use.
+   * If omitted, the account default is used.
+   */
+  llmConfigId?: string;
+  /**
    * For condition steps: a simple expression evaluated by the runtime.
    * e.g. "intent === 'refund'" or "leadScore >= 70"
    */

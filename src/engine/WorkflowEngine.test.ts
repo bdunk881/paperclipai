@@ -6,6 +6,11 @@
  * A mock LLM provider is used so no real API calls are made.
  */
 
+// Prevent transitive import of ESM-only @mistralai/mistralai package
+jest.mock("./llmProviders", () => ({
+  getProvider: jest.fn(),
+}));
+
 import { WorkflowEngine, setLlmProvider, registerAction } from "./WorkflowEngine";
 import { runStore } from "./runStore";
 import { customerSupportBot } from "../templates/customer-support-bot";

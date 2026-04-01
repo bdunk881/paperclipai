@@ -2,8 +2,12 @@
  * Unit tests for src/engine/stepHandlers.ts
  *
  * Each handler is tested in isolation with a minimal WorkflowStep fixture
- * and an explicit context. No LLM API calls are made.
+ * and an explicit context. No real LLM API calls are made.
  */
+
+jest.mock("./llmProviders", () => ({
+  getProvider: jest.fn(),
+}));
 
 import {
   handleTrigger,
@@ -15,6 +19,8 @@ import {
   StepContext,
 } from "./stepHandlers";
 import { WorkflowStep } from "../types/workflow";
+import { llmConfigStore } from "../llmConfig/llmConfigStore";
+import { getProvider } from "./llmProviders";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -66,8 +72,33 @@ describe("handleTrigger", () => {
 // handleLlm
 // ---------------------------------------------------------------------------
 
+const TEST_USER = "user-llm-test";
+
 describe("handleLlm", () => {
-  it("returns stub output keyed by outputKeys", async () => {
+  let mockProviderFn: jest.Mock;
+
+  beforeEach(() => {
+    llmConfigStore.clear();
+    mockProviderFn = jest.fn().mockResolvedValue({
+      text: JSON.stringify({ intent: "general", sentiment: "neutral" }),
+    });
+    (getProvider as jest.Mock).mockReturnValue(mockProviderFn);
+
+    const cfg = llmConfigStore.create({
+      userId: TEST_USER,
+      provider: "openai",
+      label: "Test",
+      model: "gpt-4o",
+      apiKey: "sk-test-1234-5678",
+    });
+    llmConfigStore.setDefault(cfg.id, TEST_USER);
+  });
+
+  afterEach(() => {
+    llmConfigStore.clear();
+  });
+
+  it("calls the provider and maps JSON response to output", async () => {
     const step = makeStep({
       kind: "llm",
       outputKeys: ["intent", "sentiment"],
@@ -75,13 +106,13 @@ describe("handleLlm", () => {
     });
     const ctx: StepContext = { body: "I need help" };
 
-    const result = await handleLlm(step, ctx);
+    const result = await handleLlm(step, ctx, TEST_USER);
 
-    expect(result.output["intent"]).toBeDefined();
-    expect(result.output["sentiment"]).toBeDefined();
+    expect(result.output["intent"]).toBe("general");
+    expect(result.output["sentiment"]).toBe("neutral");
   });
 
-  it("interpolates context values into the prompt (_prompt in output)", async () => {
+  it("interpolates context values into the prompt before calling provider", async () => {
     const step = makeStep({
       kind: "llm",
       outputKeys: ["summary"],
@@ -89,28 +120,85 @@ describe("handleLlm", () => {
     });
     const ctx: StepContext = { text: "Hello world" };
 
-    const result = await handleLlm(step, ctx);
-    const prompt = result.output["_prompt"] as string;
-    expect(prompt).toContain("Hello world");
-    expect(prompt).not.toContain("{{text}}");
+    await handleLlm(step, ctx, TEST_USER);
+
+    expect(mockProviderFn).toHaveBeenCalledWith(
+      expect.stringContaining("Hello world")
+    );
+    expect(mockProviderFn).toHaveBeenCalledWith(
+      expect.not.stringContaining("{{text}}")
+    );
   });
 
-  it("leaves unresolved placeholders unchanged", async () => {
+  it("leaves unresolved placeholders in the prompt passed to provider", async () => {
     const step = makeStep({
       kind: "llm",
       outputKeys: ["out"],
       promptTemplate: "Hello {{missing}}",
     });
 
-    const result = await handleLlm(step, {});
-    const prompt = result.output["_prompt"] as string;
-    expect(prompt).toContain("{{missing}}");
+    await handleLlm(step, {}, TEST_USER);
+
+    expect(mockProviderFn).toHaveBeenCalledWith(
+      expect.stringContaining("{{missing}}")
+    );
+  });
+
+  it("maps non-JSON text response to first output key", async () => {
+    mockProviderFn.mockResolvedValue({ text: "Plain text response" });
+    const step = makeStep({
+      kind: "llm",
+      outputKeys: ["reply"],
+      promptTemplate: "Draft: {{prompt}}",
+    });
+
+    const result = await handleLlm(step, { prompt: "hello" }, TEST_USER);
+
+    expect(result.output["reply"]).toBe("Plain text response");
+  });
+
+  it("uses step-level llmConfigId when provided", async () => {
+    const specific = llmConfigStore.create({
+      userId: TEST_USER,
+      provider: "anthropic",
+      label: "Specific",
+      model: "claude-sonnet-4-6",
+      apiKey: "sk-ant-specific",
+    });
+
+    const step = makeStep({
+      kind: "llm",
+      outputKeys: ["out"],
+      promptTemplate: "Hello",
+      llmConfigId: specific.id,
+    });
+
+    await handleLlm(step, {}, TEST_USER);
+
+    expect(getProvider).toHaveBeenCalledWith(
+      expect.objectContaining({ provider: "anthropic", model: "claude-sonnet-4-6" })
+    );
+  });
+
+  it("throws when no LLM provider is configured", async () => {
+    llmConfigStore.clear(); // remove all configs
+    const step = makeStep({
+      kind: "llm",
+      outputKeys: ["out"],
+      promptTemplate: "Hello",
+    });
+
+    await expect(handleLlm(step, {}, TEST_USER)).rejects.toThrow(
+      /no LLM provider configured/
+    );
   });
 
   it("throws when promptTemplate is missing", async () => {
-    const step = makeStep({ kind: "llm", outputKeys: ["out"] }); // no promptTemplate
+    const step = makeStep({ kind: "llm", outputKeys: ["out"] });
 
-    await expect(handleLlm(step, {})).rejects.toThrow(/promptTemplate/);
+    await expect(handleLlm(step, {}, TEST_USER)).rejects.toThrow(
+      /promptTemplate/
+    );
   });
 });
 

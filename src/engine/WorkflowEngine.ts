@@ -14,16 +14,16 @@ import {
   StepResult,
 } from "../types/workflow";
 import { runStore } from "./runStore";
+import { handleLlm } from "./stepHandlers";
 
 // ---------------------------------------------------------------------------
-// LLM provider interface — replace stub with real provider (AI/ML Engineer: ALT-29)
+// LLM provider interface — injectable for tests; production uses llmConfigStore
 // ---------------------------------------------------------------------------
 
 type LlmProvider = (prompt: string) => Promise<string>;
 
 let _llmProvider: LlmProvider = async (prompt: string) => {
-  // Stub: returns plausible mock JSON for demo purposes.
-  // TODO (AI/ML Engineer): replace with Anthropic/OpenAI SDK call.
+  // Default stub — only used if setLlmProvider has not been called.
   const lower = prompt.toLowerCase();
   if (lower.includes("classify") || lower.includes("intent")) {
     return JSON.stringify({ intent: "general", sentiment: "neutral", summary: "Customer needs help with their account." });
@@ -37,8 +37,13 @@ let _llmProvider: LlmProvider = async (prompt: string) => {
   return JSON.stringify({ result: "processed", ok: true });
 };
 
+// Tracks whether a custom provider has been injected (e.g. in tests).
+// When true, _llmProvider is used. When false, llmConfigStore is used.
+let _isCustomProvider = false;
+
 export function setLlmProvider(provider: LlmProvider): void {
   _llmProvider = provider;
+  _isCustomProvider = true;
 }
 
 // ---------------------------------------------------------------------------
@@ -127,22 +132,29 @@ async function executeTrigger(
 
 async function executeLlm(
   step: WorkflowStep,
-  context: Record<string, unknown>
+  context: Record<string, unknown>,
+  userId?: string
 ): Promise<Record<string, unknown>> {
-  const rawPrompt = step.promptTemplate ?? "";
-  const prompt = interpolate(rawPrompt, context);
-  const rawOutput = await _llmProvider(prompt);
+  if (_isCustomProvider) {
+    // Test/legacy path: use the injected string-returning provider
+    const rawPrompt = step.promptTemplate ?? "";
+    const prompt = interpolate(rawPrompt, context);
+    const rawOutput = await _llmProvider(prompt);
 
-  // Attempt to parse JSON; fall back to a single text output
-  try {
-    const parsed = JSON.parse(rawOutput);
-    if (typeof parsed === "object" && parsed !== null) return parsed as Record<string, unknown>;
-  } catch {
-    // Not JSON — treat as a text value mapped to the first output key
+    try {
+      const parsed = JSON.parse(rawOutput) as unknown;
+      if (typeof parsed === "object" && parsed !== null) return parsed as Record<string, unknown>;
+    } catch {
+      // Not JSON — treat as a text value mapped to the first output key
+    }
+
+    const firstKey = step.outputKeys[0] ?? "output";
+    return { [firstKey]: rawOutput };
   }
 
-  const firstKey = step.outputKeys[0] ?? "output";
-  return { [firstKey]: rawOutput };
+  // Production path: resolve config from llmConfigStore via handleLlm
+  const result = await handleLlm(step, context, userId ?? "");
+  return result.output;
 }
 
 async function executeTransform(
@@ -214,7 +226,8 @@ export class WorkflowEngine {
   startRun(
     template: WorkflowTemplate,
     input: Record<string, unknown>,
-    config?: Record<string, unknown>
+    config?: Record<string, unknown>,
+    userId?: string
   ): WorkflowRun {
     const runConfig = { ...this._buildDefaultConfig(template), ...(config ?? {}) };
 
@@ -229,7 +242,7 @@ export class WorkflowEngine {
     });
 
     // Execute asynchronously so the HTTP response returns immediately
-    this._executeRun(run.id, template, input, runConfig).catch((err) => {
+    this._executeRun(run.id, template, input, runConfig, userId).catch((err) => {
       runStore.update(run.id, {
         status: "failed",
         completedAt: new Date().toISOString(),
@@ -252,7 +265,8 @@ export class WorkflowEngine {
     runId: string,
     template: WorkflowTemplate,
     input: Record<string, unknown>,
-    config: Record<string, unknown>
+    config: Record<string, unknown>,
+    userId?: string
   ): Promise<void> {
     runStore.update(runId, { status: "running" });
 
@@ -272,7 +286,7 @@ export class WorkflowEngine {
             stepOutput = await executeTrigger(step, context);
             break;
           case "llm":
-            stepOutput = await executeLlm(step, context);
+            stepOutput = await executeLlm(step, context, userId);
             break;
           case "transform":
             stepOutput = await executeTransform(step, context);

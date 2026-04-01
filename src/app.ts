@@ -100,7 +100,8 @@ app.post("/api/runs", (req, res) => {
     return;
   }
 
-  const run = workflowEngine.startRun(template, input ?? {}, config);
+  const userId = req.headers["x-user-id"];
+  const run = workflowEngine.startRun(template, input ?? {}, config, typeof userId === "string" ? userId : undefined);
   res.status(202).json(run);
 });
 
@@ -147,7 +148,8 @@ app.post("/api/webhooks/:templateId", (req, res) => {
     return;
   }
 
-  const run = workflowEngine.startRun(template, input);
+  const webhookUserId = req.headers["x-user-id"];
+  const run = workflowEngine.startRun(template, input, undefined, typeof webhookUserId === "string" ? webhookUserId : undefined);
   res.status(202).json({ runId: run.id, status: run.status });
 });
 

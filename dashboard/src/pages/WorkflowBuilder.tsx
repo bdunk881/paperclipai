@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import {
   Plus,
@@ -15,7 +15,7 @@ import {
   Save,
   X,
 } from "lucide-react";
-import { getTemplate, startRun } from "../api/client";
+import { getTemplate, listTemplates, startRun, type TemplateSummary } from "../api/client";
 import type { WorkflowStep, StepKind, WorkflowTemplate } from "../types/workflow";
 import clsx from "clsx";
 
@@ -79,10 +79,14 @@ export default function WorkflowBuilder() {
 
   const [template, setTemplate] = useState<WorkflowTemplate>(BLANK_TEMPLATE);
   const [loading, setLoading] = useState(!!templateId);
+  const [allTemplates, setAllTemplates] = useState<TemplateSummary[]>([]);
   const [selectedStepId, setSelectedStepId] = useState<string | null>(null);
-  const [showRunModal, setShowRunModal] = useState(false);
   const [saved, setSaved] = useState(false);
   const [runError, setRunError] = useState<string | null>(null);
+
+  useEffect(() => {
+    listTemplates().then(setAllTemplates).catch(console.error);
+  }, []);
 
   useEffect(() => {
     if (!templateId) return;
@@ -202,7 +206,7 @@ export default function WorkflowBuilder() {
         {/* Canvas */}
         <div className="flex-1 overflow-y-auto p-8 bg-gray-50">
           {template.steps.length === 0 ? (
-            <EmptyCanvas onAdd={addStep} />
+            <EmptyCanvas onAdd={addStep} templates={allTemplates} />
           ) : (
             <div className="max-w-xl mx-auto">
               {template.steps.map((step, idx) => (
@@ -501,7 +505,13 @@ function AddStepMenu({ onAdd }: { onAdd: (k: StepKind) => void }) {
   );
 }
 
-function EmptyCanvas({ onAdd }: { onAdd: (k: StepKind) => void }) {
+function EmptyCanvas({
+  onAdd,
+  templates,
+}: {
+  onAdd: (k: StepKind) => void;
+  templates: TemplateSummary[];
+}) {
   return (
     <div className="flex flex-col items-center justify-center h-full min-h-[400px] text-center">
       <div className="w-16 h-16 rounded-2xl bg-blue-50 flex items-center justify-center mb-4">
@@ -513,20 +523,22 @@ function EmptyCanvas({ onAdd }: { onAdd: (k: StepKind) => void }) {
       </p>
       <AddStepMenu onAdd={onAdd} />
 
-      <div className="mt-8">
-        <p className="text-xs text-gray-400 mb-3">Or start from a template:</p>
-        <div className="flex gap-2">
-          {MOCK_TEMPLATES.map((t) => (
-            <a
-              key={t.id}
-              href={`/builder/${t.id}`}
-              className="px-3 py-1.5 bg-white border border-gray-200 rounded-lg text-xs text-gray-600 hover:border-blue-400 hover:text-blue-600 transition"
-            >
-              {t.name}
-            </a>
-          ))}
+      {templates.length > 0 && (
+        <div className="mt-8">
+          <p className="text-xs text-gray-400 mb-3">Or start from a template:</p>
+          <div className="flex gap-2">
+            {templates.map((t) => (
+              <a
+                key={t.id}
+                href={`/builder/${t.id}`}
+                className="px-3 py-1.5 bg-white border border-gray-200 rounded-lg text-xs text-gray-600 hover:border-blue-400 hover:text-blue-600 transition"
+              >
+                {t.name}
+              </a>
+            ))}
+          </div>
         </div>
-      </div>
+      )}
     </div>
   );
 }

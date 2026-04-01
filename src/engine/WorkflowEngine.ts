@@ -12,9 +12,10 @@ import {
   WorkflowRun,
   WorkflowStep,
   StepResult,
+  AgentSlotResult,
 } from "../types/workflow";
 import { runStore } from "./runStore";
-import { handleLlm, handleMcp, handleFileTrigger } from "./stepHandlers";
+import { handleLlm, handleMcp, handleFileTrigger, handleAgent } from "./stepHandlers";
 
 // ---------------------------------------------------------------------------
 // LLM provider interface — injectable for tests; production uses llmConfigStore
@@ -279,6 +280,7 @@ export class WorkflowEngine {
       let stepOutput: Record<string, unknown> = {};
       let stepError: string | undefined;
       let stepStatus: StepResult["status"] = "success";
+      let agentSlotResults: AgentSlotResult[] | undefined;
 
       try {
         switch (step.kind) {
@@ -310,8 +312,13 @@ export class WorkflowEngine {
             stepOutput = ftResult.output;
             break;
           }
-          // agent and approval steps are async/human-in-the-loop; pass through context for now
-          case "agent":
+          case "agent": {
+            const agentResult = await handleAgent(step, context, runId, userId ?? "");
+            stepOutput = agentResult.output;
+            agentSlotResults = agentResult.agentSlotResults;
+            break;
+          }
+          // approval steps are async/human-in-the-loop; pass through context for now
           case "approval":
             stepOutput = {};
             break;
@@ -333,6 +340,7 @@ export class WorkflowEngine {
         output: stepOutput,
         durationMs: Date.now() - start,
         ...(stepError ? { error: stepError } : {}),
+        ...(agentSlotResults ? { agentSlotResults } : {}),
       };
 
       stepResults.push(result);

@@ -85,6 +85,24 @@ export interface WorkflowRun {
   error?: string;
 }
 
+/** A message exchanged between the manager agent and a worker slot */
+export interface AgentMessage {
+  from: "manager" | "worker";
+  slotIndex: number;
+  content: string;
+  timestamp: string;
+}
+
+/** Result of one parallel worker slot in an agent step */
+export interface AgentSlotResult {
+  slotIndex: number;
+  status: "running" | "success" | "failure";
+  output: Record<string, unknown>;
+  durationMs: number;
+  error?: string;
+  messages: AgentMessage[];
+}
+
 export interface StepResult {
   stepId: string;
   stepName: string;
@@ -92,4 +110,6 @@ export interface StepResult {
   output: Record<string, unknown>;
   durationMs: number;
   error?: string;
+  /** Populated for agent steps — one entry per parallel worker slot */
+  agentSlotResults?: AgentSlotResult[];
 }

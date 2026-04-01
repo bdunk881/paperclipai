@@ -78,6 +78,7 @@ export interface WorkflowStep {
   // agent step
   agentModel?: string;
   agentInstructions?: string;
+  subAgentSlots?: number;
   // approval step
   approvalAssignee?: string;
   approvalMessage?: string;
@@ -118,6 +119,25 @@ export interface WorkflowRun {
   error?: string;
 }
 
+/** Result of one worker slot in a parallel agent step */
+export interface AgentSlotResult {
+  slotIndex: number;
+  status: "running" | "success" | "failure";
+  output: Record<string, unknown>;
+  durationMs: number;
+  error?: string;
+  /** Messages exchanged between this worker and the manager */
+  messages: AgentMessage[];
+}
+
+/** A message on the agent bus (manager↔worker communication) */
+export interface AgentMessage {
+  from: "manager" | "worker";
+  slotIndex: number;
+  content: string;
+  timestamp: string;
+}
+
 /** Result of executing a single step */
 export interface StepResult {
   stepId: string;
@@ -126,4 +146,6 @@ export interface StepResult {
   output: Record<string, unknown>;
   durationMs: number;
   error?: string;
+  /** Populated for agent steps — one entry per parallel worker slot */
+  agentSlotResults?: AgentSlotResult[];
 }

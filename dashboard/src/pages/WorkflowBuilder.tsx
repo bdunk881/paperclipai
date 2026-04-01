@@ -738,6 +738,62 @@ function NLWorkflowModal({
   );
 }
 
+// ---------------------------------------------------------------------------
+// AgentCanvas — visual manager→worker hierarchy for agent steps
+// ---------------------------------------------------------------------------
+
+function AgentCanvas({ model, slots }: { model: string; slots: number }) {
+  const workerSlots = Math.max(1, Math.min(slots, 20));
+  return (
+    <div
+      className="mt-3 p-3 rounded-lg border border-indigo-200 bg-indigo-50"
+      onClick={(e) => e.stopPropagation()}
+    >
+      <p className="text-xs font-semibold text-indigo-700 mb-2 flex items-center gap-1">
+        <Bot size={11} />
+        Agent Topology
+      </p>
+
+      {/* Manager node */}
+      <div className="flex justify-center mb-1">
+        <div className="flex items-center gap-1 px-3 py-1.5 bg-indigo-600 text-white rounded-lg text-xs font-medium shadow-sm">
+          <Bot size={11} />
+          Manager
+          {model !== "default" && (
+            <span className="ml-1 opacity-75 font-normal">{model}</span>
+          )}
+        </div>
+      </div>
+
+      {/* Connector lines */}
+      <div className="flex justify-center gap-0 mb-1">
+        {Array.from({ length: workerSlots }).map((_, i) => (
+          <div key={i} className="flex flex-col items-center" style={{ width: `${100 / workerSlots}%` }}>
+            <div className="w-px h-4 bg-indigo-300" />
+          </div>
+        ))}
+      </div>
+
+      {/* Worker nodes */}
+      <div className="flex justify-center gap-1 flex-wrap">
+        {Array.from({ length: workerSlots }).map((_, i) => (
+          <div
+            key={i}
+            className="flex items-center gap-1 px-2 py-1 bg-white border border-indigo-300 text-indigo-600 rounded-md text-xs"
+          >
+            <Bot size={10} />
+            W{i}
+          </div>
+        ))}
+      </div>
+
+      <p className="text-xs text-indigo-500 mt-2 text-center">
+        {workerSlots} parallel worker{workerSlots !== 1 ? "s" : ""} · results aggregated
+      </p>
+    </div>
+  );
+}
+
 function StepNode({
   step,
   selected,
@@ -813,6 +869,14 @@ function StepNode({
               </div>
             )}
           </div>
+        )}
+
+        {/* Agent canvas — inline hierarchy for agent steps */}
+        {step.kind === "agent" && (
+          <AgentCanvas
+            model={step.agentModel ?? "default"}
+            slots={step.subAgentSlots ?? 1}
+          />
         )}
       </div>
 

@@ -6,9 +6,10 @@
  * output produced by this step.
  */
 
-import { WorkflowStep } from "../types/workflow";
+import { WorkflowStep, AgentSlotResult, AgentMessage } from "../types/workflow";
 import { llmConfigStore } from "../llmConfig/llmConfigStore";
 import { getProvider } from "./llmProviders";
+import { getBus, releaseBus } from "./agentBus";
 
 export type StepContext = Record<string, unknown>;
 
@@ -16,6 +17,8 @@ export interface StepHandlerResult {
   output: Record<string, unknown>;
   /** Set to true by a condition step when the false-branch steps should be skipped */
   skip?: boolean;
+  /** Per-slot results for agent steps */
+  agentSlotResults?: AgentSlotResult[];
 }
 
 /** Interpolate {{key}} placeholders in a template string using context values */
@@ -363,4 +366,175 @@ export async function handleMcp(
   }
 
   return { output: toolOutput };
+}
+
+// ---------------------------------------------------------------------------
+// Agent (parallel execution)
+// ---------------------------------------------------------------------------
+
+/**
+ * Execute a multi-agent step.
+ *
+ * The manager agent:
+ *  1. Builds a task description from `agentInstructions` + context.
+ *  2. Publishes a dispatch message to each worker slot via the AgentBus.
+ *  3. Spawns `subAgentSlots` (default 1) worker LLM calls in parallel.
+ *  4. Each worker publishes its result back to the bus.
+ *  5. The manager aggregates all worker outputs into a merged result.
+ *
+ * The bus can be observed by the RunMonitor in real-time; after the step
+ * completes, `drain()` returns the full message log.
+ *
+ * Upgrade path: replace the in-process AgentBus with a Redis-backed
+ * implementation by swapping getBus() without changing this function.
+ */
+export async function handleAgent(
+  step: WorkflowStep,
+  ctx: StepContext,
+  runId: string,
+  userId: string
+): Promise<StepHandlerResult> {
+  const slots = Math.max(1, step.subAgentSlots ?? 1);
+  const instructions = step.agentInstructions ?? "Process the provided input and return a result.";
+  const model = step.agentModel ?? "default";
+
+  // Resolve the LLM provider once (shared across slots)
+  const resolved = llmConfigStore.getDecryptedDefault(userId);
+  if (!resolved) {
+    throw new Error(
+      `Agent step "${step.id}" failed: no LLM provider configured. ` +
+        "Go to Settings > LLM Providers to connect one."
+    );
+  }
+  const provider = getProvider({
+    provider: resolved.config.provider,
+    model: resolved.config.model,
+    apiKey: resolved.apiKey,
+  });
+
+  const bus = getBus(runId, step.id);
+
+  // Manager dispatch: announce tasks to all slots
+  for (let i = 0; i < slots; i++) {
+    bus.publish({
+      from: "manager",
+      slotIndex: i,
+      content: `Slot ${i}: ${instructions}`,
+      timestamp: new Date().toISOString(),
+    } satisfies AgentMessage);
+  }
+
+  // Build context summary for the prompt
+  const contextSummary = Object.entries(ctx)
+    .filter(([, v]) => v !== undefined && v !== null)
+    .map(([k, v]) => `${k}: ${typeof v === "object" ? JSON.stringify(v) : String(v)}`)
+    .join("\n");
+
+  // Spawn N worker slots in parallel
+  const slotResultPromises = Array.from({ length: slots }, async (_, i): Promise<AgentSlotResult> => {
+    const slotStart = Date.now();
+    const prompt = [
+      `You are worker agent slot ${i} of ${slots} in a parallel execution.`,
+      `Instructions: ${instructions}`,
+      `Model preference: ${model}`,
+      "",
+      "Context:",
+      contextSummary || "(no context)",
+      "",
+      `Your slot index is ${i}. Process your portion of the work and return a JSON object with your results.`,
+      "If the context contains a list, process the items assigned to your slot.",
+      "Return ONLY valid JSON.",
+    ].join("\n");
+
+    try {
+      const response = await provider(prompt);
+      let parsed: Record<string, unknown> = {};
+      try {
+        const raw = JSON.parse(response.text) as unknown;
+        if (typeof raw === "object" && raw !== null) {
+          parsed = raw as Record<string, unknown>;
+        } else {
+          parsed = { result: response.text };
+        }
+      } catch {
+        parsed = { result: response.text };
+      }
+
+      bus.publish({
+        from: "worker",
+        slotIndex: i,
+        content: `Slot ${i} completed: ${JSON.stringify(parsed).slice(0, 200)}`,
+        timestamp: new Date().toISOString(),
+      } satisfies AgentMessage);
+
+      return {
+        slotIndex: i,
+        status: "success",
+        output: parsed,
+        durationMs: Date.now() - slotStart,
+        messages: [],
+      };
+    } catch (err) {
+      const errMsg = err instanceof Error ? err.message : String(err);
+      bus.publish({
+        from: "worker",
+        slotIndex: i,
+        content: `Slot ${i} failed: ${errMsg}`,
+        timestamp: new Date().toISOString(),
+      } satisfies AgentMessage);
+
+      return {
+        slotIndex: i,
+        status: "failure",
+        output: {},
+        durationMs: Date.now() - slotStart,
+        error: errMsg,
+        messages: [],
+      };
+    }
+  });
+
+  const slotResults = await Promise.all(slotResultPromises);
+
+  // Attach the full message log to each slot result
+  const allMessages = bus.drain();
+  for (const sr of slotResults) {
+    sr.messages = allMessages.filter(
+      (m) => m.slotIndex === sr.slotIndex || m.from === "manager"
+    );
+  }
+
+  // Clean up bus
+  releaseBus(runId, step.id);
+
+  // Merge outputs: collect all slot outputs under `slots[i]` keys + a merged aggregate
+  const mergedOutput: Record<string, unknown> = {};
+  const successSlots = slotResults.filter((r) => r.status === "success");
+
+  // Place each worker result under its slot key
+  for (const sr of slotResults) {
+    mergedOutput[`slot_${sr.slotIndex}`] = sr.output;
+  }
+
+  // Merge all success outputs into top-level keys (last writer wins for conflicts)
+  for (const sr of successSlots) {
+    for (const [k, v] of Object.entries(sr.output)) {
+      if (!(`slot_${sr.slotIndex}` === k)) {
+        mergedOutput[k] = v;
+      }
+    }
+  }
+
+  mergedOutput["_agentSlots"] = slots;
+  mergedOutput["_agentSuccessCount"] = successSlots.length;
+
+  const anyFailure = slotResults.some((r) => r.status === "failure");
+
+  return {
+    output: mergedOutput,
+    agentSlotResults: slotResults,
+    ...(anyFailure && successSlots.length === 0
+      ? {}
+      : {}),
+  };
 }

@@ -11,10 +11,12 @@ import {
   Loader2,
   Workflow,
   Sparkles,
+  Bot,
+  MessageSquare,
 } from "lucide-react";
 import { listRuns, debugStep } from "../api/client";
 import { StatusBadge } from "../components/StatusBadge";
-import type { WorkflowRun, StepResult } from "../types/workflow";
+import type { WorkflowRun, StepResult, AgentSlotResult } from "../types/workflow";
 import clsx from "clsx";
 
 const POLL_INTERVAL_MS = 3000;
@@ -336,12 +338,111 @@ function StepRow({ step, index }: { step: StepResult; index: number }) {
           </div>
         )}
 
+        {step.agentSlotResults && step.agentSlotResults.length > 0 && (
+          <AgentSlotPanel slots={step.agentSlotResults} />
+        )}
+
         {showOutput && hasOutput && (
           <pre className="mt-2 text-xs bg-gray-50 border border-gray-200 rounded-lg p-3 overflow-x-auto text-gray-700">
             {JSON.stringify(step.output, null, 2)}
           </pre>
         )}
       </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// AgentSlotPanel — per-slot status grid + message log for agent steps
+// ---------------------------------------------------------------------------
+
+function AgentSlotPanel({ slots }: { slots: AgentSlotResult[] }) {
+  const [expandedSlot, setExpandedSlot] = useState<number | null>(null);
+
+  const slotStatusIcon = (s: AgentSlotResult["status"]) =>
+    ({
+      success: <CheckCircle2 size={12} className="text-green-500" />,
+      failure: <XCircle size={12} className="text-red-500" />,
+      running: <Loader2 size={12} className="text-yellow-500 animate-spin" />,
+    })[s];
+
+  return (
+    <div className="mt-2 rounded-lg border border-indigo-200 bg-indigo-50 p-3">
+      <div className="flex items-center gap-1.5 text-xs font-semibold text-indigo-700 mb-2">
+        <Bot size={12} />
+        Agent Workers ({slots.length} slot{slots.length !== 1 ? "s" : ""})
+      </div>
+
+      {/* Slot grid */}
+      <div className="grid gap-1.5" style={{ gridTemplateColumns: `repeat(${Math.min(slots.length, 4)}, 1fr)` }}>
+        {slots.map((slot) => (
+          <button
+            key={slot.slotIndex}
+            onClick={() => setExpandedSlot((prev) => (prev === slot.slotIndex ? null : slot.slotIndex))}
+            className={clsx(
+              "flex flex-col items-start gap-1 p-2 rounded-md border text-left transition",
+              slot.status === "success"
+                ? "bg-white border-green-200 hover:border-green-400"
+                : slot.status === "failure"
+                ? "bg-red-50 border-red-200 hover:border-red-400"
+                : "bg-white border-yellow-200 hover:border-yellow-400"
+            )}
+          >
+            <div className="flex items-center gap-1 text-xs font-medium text-gray-700">
+              {slotStatusIcon(slot.status)}
+              W{slot.slotIndex}
+            </div>
+            <span className="text-xs text-gray-400">{slot.durationMs}ms</span>
+            {slot.messages.length > 0 && (
+              <span className="flex items-center gap-0.5 text-xs text-indigo-500">
+                <MessageSquare size={10} />
+                {slot.messages.length}
+              </span>
+            )}
+          </button>
+        ))}
+      </div>
+
+      {/* Expanded slot detail */}
+      {expandedSlot !== null && (() => {
+        const slot = slots.find((s) => s.slotIndex === expandedSlot);
+        if (!slot) return null;
+        return (
+          <div className="mt-2 space-y-2">
+            {slot.error && (
+              <p className="text-xs text-red-600 bg-red-50 border border-red-200 rounded p-2">
+                {slot.error}
+              </p>
+            )}
+
+            {Object.keys(slot.output).length > 0 && (
+              <pre className="text-xs bg-white border border-indigo-200 rounded p-2 overflow-x-auto text-gray-700">
+                {JSON.stringify(slot.output, null, 2)}
+              </pre>
+            )}
+
+            {slot.messages.length > 0 && (
+              <div className="space-y-1">
+                <p className="text-xs font-medium text-indigo-600">Message Log</p>
+                {slot.messages.map((msg, i) => (
+                  <div
+                    key={i}
+                    className={clsx(
+                      "text-xs px-2 py-1 rounded",
+                      msg.from === "manager"
+                        ? "bg-indigo-100 text-indigo-700"
+                        : "bg-white border border-indigo-200 text-gray-700"
+                    )}
+                  >
+                    <span className="font-medium capitalize mr-1">{msg.from}→</span>
+                    {msg.content}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        );
+      })()}
     </div>
   );
 }

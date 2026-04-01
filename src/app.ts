@@ -12,6 +12,7 @@ import { workflowEngine } from "./engine/WorkflowEngine";
 import { runStore } from "./engine/runStore";
 import llmConfigRoutes from "./llmConfig/llmConfigRoutes";
 import mcpRoutes from "./mcp/mcpRoutes";
+import memoryRoutes from "./memory/memoryRoutes";
 import { llmConfigStore } from "./llmConfig/llmConfigStore";
 import { getProvider } from "./engine/llmProviders";
 import { parseFile } from "./engine/fileParser";
@@ -34,6 +35,11 @@ app.use("/api/llm-configs", llmConfigRoutes);
 // MCP Registry API — register and discover MCP server connections
 // ---------------------------------------------------------------------------
 app.use("/api/mcp/servers", mcpRoutes);
+
+// ---------------------------------------------------------------------------
+// Memory API — persistent context memory store for agents/workflows
+// ---------------------------------------------------------------------------
+app.use("/api/memory", memoryRoutes);
 
 // ---------------------------------------------------------------------------
 // Templates API — used by the dashboard UI

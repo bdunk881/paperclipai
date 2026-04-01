@@ -296,6 +296,101 @@ export async function debugStep(
   return res.json() as Promise<{ explanation: string; suggestion: string }>;
 }
 
+// ---------------------------------------------------------------------------
+// Memory API — persistent context memory store
+// ---------------------------------------------------------------------------
+
+export interface MemoryEntry {
+  id: string;
+  userId: string;
+  workflowId?: string;
+  workflowName?: string;
+  agentId?: string;
+  key: string;
+  text: string;
+  ttlSeconds?: number;
+  createdAt: string;
+  updatedAt: string;
+  expiresAt?: string;
+}
+
+export interface MemorySearchResult {
+  entry: MemoryEntry;
+  score: number;
+}
+
+export interface MemoryStats {
+  totalEntries: number;
+  totalBytes: number;
+  workflowCount: number;
+}
+
+export interface WriteMemoryInput {
+  key: string;
+  text: string;
+  workflowId?: string;
+  workflowName?: string;
+  agentId?: string;
+  ttlSeconds?: number;
+}
+
+function getMemoryHeaders(): Record<string, string> {
+  return { "Content-Type": "application/json", "X-User-Id": "demo-user" };
+}
+
+/** GET /api/memory — list all entries for the current user */
+export async function listMemoryEntries(workflowId?: string): Promise<MemoryEntry[]> {
+  const url = workflowId
+    ? `${BASE}/memory?workflowId=${encodeURIComponent(workflowId)}`
+    : `${BASE}/memory`;
+  const res = await fetch(url, { headers: getMemoryHeaders() });
+  if (!res.ok) throw new Error(`Failed to fetch memory entries: ${res.status}`);
+  const data = await res.json();
+  return data.entries as MemoryEntry[];
+}
+
+/** GET /api/memory/search — keyword/semantic search */
+export async function searchMemory(query: string, agentId?: string): Promise<MemorySearchResult[]> {
+  const params = new URLSearchParams({ q: query });
+  if (agentId) params.set("agentId", agentId);
+  const res = await fetch(`${BASE}/memory/search?${params.toString()}`, {
+    headers: getMemoryHeaders(),
+  });
+  if (!res.ok) throw new Error(`Memory search failed: ${res.status}`);
+  const data = await res.json();
+  return data.results as MemorySearchResult[];
+}
+
+/** POST /api/memory — write (create or upsert) a memory entry */
+export async function writeMemoryEntry(input: WriteMemoryInput): Promise<MemoryEntry> {
+  const res = await fetch(`${BASE}/memory`, {
+    method: "POST",
+    headers: getMemoryHeaders(),
+    body: JSON.stringify(input),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => null);
+    throw new Error(err?.error ?? `Failed to write memory: ${res.status}`);
+  }
+  return res.json() as Promise<MemoryEntry>;
+}
+
+/** DELETE /api/memory/:id — delete a single entry */
+export async function deleteMemoryEntry(id: string): Promise<void> {
+  const res = await fetch(`${BASE}/memory/${encodeURIComponent(id)}`, {
+    method: "DELETE",
+    headers: getMemoryHeaders(),
+  });
+  if (!res.ok && res.status !== 404) throw new Error(`Failed to delete memory entry: ${res.status}`);
+}
+
+/** GET /api/memory/stats — usage stats */
+export async function getMemoryStats(): Promise<MemoryStats> {
+  const res = await fetch(`${BASE}/memory/stats`, { headers: getMemoryHeaders() });
+  if (!res.ok) throw new Error(`Failed to fetch memory stats: ${res.status}`);
+  return res.json() as Promise<MemoryStats>;
+}
+
 // --- helpers ---
 
 function delay(ms: number): Promise<void> {

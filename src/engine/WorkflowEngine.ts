@@ -16,6 +16,7 @@ import {
 } from "../types/workflow";
 import { runStore } from "./runStore";
 import { handleLlm, handleMcp, handleFileTrigger, handleAgent } from "./stepHandlers";
+import { memoryStore } from "./memoryStore";
 
 // ---------------------------------------------------------------------------
 // LLM provider interface — injectable for tests; production uses llmConfigStore
@@ -271,8 +272,34 @@ export class WorkflowEngine {
   ): Promise<void> {
     runStore.update(runId, { status: "running" });
 
+    // Build memory helpers scoped to this run's userId + templateId
+    const memoryUserId = userId ?? "anonymous";
+    const memoryContext = {
+      /**
+       * Read the most relevant memory entries for a query.
+       * Returns an array of { key, text } objects (top 5 by relevance).
+       */
+      read: (query: string): Array<{ key: string; text: string }> => {
+        const results = memoryStore.search(query, memoryUserId, undefined, 5);
+        return results.map((r) => ({ key: r.entry.key, text: r.entry.text }));
+      },
+      /**
+       * Persist a value under a named key, scoped to this workflow run.
+       */
+      write: (key: string, value: unknown): void => {
+        memoryStore.write({
+          userId: memoryUserId,
+          workflowId: template.id,
+          workflowName: template.name,
+          key,
+          text: typeof value === "string" ? value : JSON.stringify(value),
+        });
+      },
+    };
+
     // The execution context accumulates outputs from all steps + initial input + config
-    const context: Record<string, unknown> = { ...config, ...input };
+    // memory helpers are injected so LLM prompt templates can reference them.
+    const context: Record<string, unknown> = { ...config, ...input, memory: memoryContext };
     const stepResults: StepResult[] = [];
 
     for (const step of template.steps) {

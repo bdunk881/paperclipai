@@ -10,6 +10,7 @@ import { WorkflowStep, AgentSlotResult, AgentMessage } from "../types/workflow";
 import { llmConfigStore } from "../llmConfig/llmConfigStore";
 import { getProvider } from "./llmProviders";
 import { getBus, releaseBus } from "./agentBus";
+import { classifyTier, resolveModelForTier, buildCostLog, LlmCostLog } from "./llmRouter";
 
 export type StepContext = Record<string, unknown>;
 
@@ -19,6 +20,8 @@ export interface StepHandlerResult {
   skip?: boolean;
   /** Per-slot results for agent steps */
   agentSlotResults?: AgentSlotResult[];
+  /** Cost and tier data for llm / agent steps */
+  costLog?: LlmCostLog;
 }
 
 /** Interpolate {{key}} placeholders in a template string using context values */
@@ -71,9 +74,13 @@ export async function handleLlm(
     );
   }
 
+  // Determine the appropriate model tier for this step's complexity
+  const tier = classifyTier(step, renderedPrompt.length);
+  const tieredModel = resolveModelForTier(resolved.config.provider, tier);
+
   const provider = getProvider({
     provider: resolved.config.provider,
-    model: resolved.config.model,
+    model: tieredModel,
     apiKey: resolved.apiKey,
   });
 
@@ -92,7 +99,14 @@ export async function handleLlm(
     output[step.outputKeys[0] ?? "output"] = response.text;
   }
 
-  return { output };
+  const costLog = buildCostLog(
+    tier,
+    tieredModel,
+    response.usage?.promptTokens ?? 0,
+    response.usage?.completionTokens ?? 0
+  );
+
+  return { output, costLog };
 }
 
 // ---------------------------------------------------------------------------

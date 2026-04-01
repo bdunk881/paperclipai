@@ -158,6 +158,61 @@ npm run test:coverage  # Coverage report (80% threshold)
 
 ---
 
+## LLM Tier Routing
+
+AutoFlow automatically routes each LLM step to the cheapest model that can handle its complexity, reducing inference costs by ≥40% compared to routing everything through a high-capability model.
+
+### Tiers
+
+| Tier | Anthropic | OpenAI | When used |
+|------|-----------|--------|-----------|
+| `lite` | claude-haiku | gpt-4o-mini | Short classification, entity extraction, yes/no decisions |
+| `standard` | claude-sonnet | gpt-4o | Multi-step reasoning, content generation, NL→workflow |
+| `power` | claude-opus | gpt-4o | Complex orchestration, large context (>2 000 chars), agent steps |
+
+The tier is chosen automatically by a rule-based complexity classifier. The classifier inspects:
+- Rendered prompt length (>2 000 chars → power)
+- Step kind (`agent` → power)
+- Keywords in the prompt template (`classify`, `extract`, `yes or no` → lite; `orchestrate`, `plan` → power)
+- Number of output keys (>3 keys → standard or power)
+
+### Per-step override
+
+Add `llmTier` to any LLM step definition to bypass the classifier:
+
+```ts
+{
+  id: "step_classify",
+  kind: "llm",
+  llmTier: "lite",           // force lite model regardless of prompt length
+  promptTemplate: "Classify: {{body}}",
+  outputKeys: ["intent"],
+}
+```
+
+Valid values: `"lite"`, `"standard"`, `"power"`.
+
+### Cost observability
+
+Every LLM step result includes a `costLog` field:
+
+```json
+{
+  "stepId": "step_classify",
+  "costLog": {
+    "modelTier": "lite",
+    "modelId": "claude-haiku-4-5-20251001",
+    "promptTokens": 210,
+    "completionTokens": 55,
+    "estimatedCostUsd": 0.0000921
+  }
+}
+```
+
+The `GET /api/runs/:id` response exposes `costLog` on every step result, so you can aggregate costs per run in your admin UI or analytics pipeline.
+
+---
+
 ## License
 
 MIT — see [LICENSE](LICENSE).

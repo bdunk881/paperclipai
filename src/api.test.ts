@@ -274,6 +274,106 @@ describe("GET /api/runs/:id", () => {
 });
 
 // ---------------------------------------------------------------------------
+// POST /api/webhooks/:templateId
+// ---------------------------------------------------------------------------
+
+describe("POST /api/webhooks/:templateId", () => {
+  it("returns 202 with runId and status for a valid templateId", async () => {
+    const res = await request(app)
+      .post("/api/webhooks/tpl-support-bot")
+      .send({ ticketId: "WH-001", subject: "Webhook test", body: "Hello", customerEmail: "wh@example.com", channel: "webhook" });
+    expect(res.status).toBe(202);
+    expect(typeof res.body.runId).toBe("string");
+    expect(["pending", "running", "completed"]).toContain(res.body.status);
+  });
+
+  it("returns 404 for an unknown templateId", async () => {
+    const res = await request(app)
+      .post("/api/webhooks/tpl-nonexistent")
+      .send({ data: "test" });
+    expect(res.status).toBe(404);
+    expect(res.body.error).toMatch(/not found/i);
+  });
+
+  it("returns 400 when body is not a JSON object", async () => {
+    const res = await request(app)
+      .post("/api/webhooks/tpl-support-bot")
+      .set("Content-Type", "application/json")
+      .send("not-an-object");
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/JSON object/i);
+  });
+
+  it("returns 400 when body is an array", async () => {
+    const res = await request(app)
+      .post("/api/webhooks/tpl-support-bot")
+      .send([{ ticketId: "T-1" }]);
+    expect(res.status).toBe(400);
+  });
+
+  it("webhook response only contains runId and status (not full run object)", async () => {
+    const res = await request(app)
+      .post("/api/webhooks/tpl-support-bot")
+      .send({ ticketId: "WH-002" });
+    expect(res.status).toBe(202);
+    expect(res.body.runId).toBeDefined();
+    expect(res.body.status).toBeDefined();
+    // Should NOT return the full run body
+    expect(res.body.templateId).toBeUndefined();
+    expect(res.body.stepResults).toBeUndefined();
+  });
+
+  it("run created by webhook is retrievable via GET /api/runs/:id", async () => {
+    const webhookRes = await request(app)
+      .post("/api/webhooks/tpl-support-bot")
+      .send({ ticketId: "WH-003", subject: "Test" });
+    expect(webhookRes.status).toBe(202);
+
+    const runId = webhookRes.body.runId;
+    const getRes = await request(app).get(`/api/runs/${runId}`);
+    expect(getRes.status).toBe(200);
+    expect(getRes.body.id).toBe(runId);
+  });
+
+  it("all 3 template webhooks accept valid input", async () => {
+    const cases = [
+      { id: "tpl-support-bot", body: { ticketId: "T1" } },
+      { id: "tpl-lead-enrich", body: { leadId: "L1", email: "lead@test.com" } },
+      { id: "tpl-content-gen", body: { topic: "AI", keywords: [], audience: "all", format: "blog", wordCount: 500 } },
+    ];
+    for (const { id, body } of cases) {
+      const res = await request(app).post(`/api/webhooks/${id}`).send(body);
+      expect(res.status).toBe(202);
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// GET /health — enhanced (now returns run stats)
+// ---------------------------------------------------------------------------
+
+describe("GET /health — run stats", () => {
+  it("returns runs object with total, running, completed, failed counts", async () => {
+    const res = await request(app).get("/health");
+    expect(res.status).toBe(200);
+    expect(res.body.runs).toBeDefined();
+    expect(typeof res.body.runs.total).toBe("number");
+    expect(typeof res.body.runs.running).toBe("number");
+    expect(typeof res.body.runs.completed).toBe("number");
+    expect(typeof res.body.runs.failed).toBe("number");
+  });
+
+  it("run counts are non-negative integers", async () => {
+    const res = await request(app).get("/health");
+    const { total, running, completed, failed } = res.body.runs;
+    expect(total).toBeGreaterThanOrEqual(0);
+    expect(running).toBeGreaterThanOrEqual(0);
+    expect(completed).toBeGreaterThanOrEqual(0);
+    expect(failed).toBeGreaterThanOrEqual(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Content-type and error handling
 // ---------------------------------------------------------------------------
 

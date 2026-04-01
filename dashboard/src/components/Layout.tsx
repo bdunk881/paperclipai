@@ -6,6 +6,7 @@ import {
   History,
   LogOut,
   Zap,
+  Cpu,
 } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import clsx from "clsx";
@@ -58,6 +59,26 @@ export default function Layout() {
               {label}
             </NavLink>
           ))}
+
+          <div className="pt-3 mt-2 border-t border-gray-700">
+            <p className="px-3 pb-1 text-xs font-semibold text-gray-500 uppercase tracking-wider">
+              Settings
+            </p>
+            <NavLink
+              to="/settings/llm-providers"
+              className={({ isActive }) =>
+                clsx(
+                  "flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors",
+                  isActive
+                    ? "bg-blue-600 text-white"
+                    : "text-gray-400 hover:bg-gray-800 hover:text-white"
+                )
+              }
+            >
+              <Cpu size={18} />
+              LLM Providers
+            </NavLink>
+          </div>
         </nav>
 
         {/* User + logout */}

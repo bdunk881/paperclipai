@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Inter } from "next/font/google";
+import Link from "next/link";
 import "./globals.css";
 
 const inter = Inter({ subsets: ["latin"] });
@@ -34,9 +35,9 @@ export default function RootLayout({
       <body className={`${inter.className} antialiased`}>
         <nav className="sticky top-0 z-50 bg-white/80 backdrop-blur-sm border-b border-gray-100">
           <div className="mx-auto max-w-7xl px-6 lg:px-8 flex h-16 items-center justify-between">
-            <a href="/" className="text-xl font-bold text-indigo-600">
+            <Link href="/" className="text-xl font-bold text-indigo-600">
               AutoFlow
-            </a>
+            </Link>
             <div className="hidden md:flex items-center gap-8">
               <a
                 href="#how-it-works"

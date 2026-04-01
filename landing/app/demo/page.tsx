@@ -355,7 +355,7 @@ export default function DemoPage() {
           </p>
           <div className="mt-6 flex justify-center gap-4">
             <a
-              href="/#pricing"
+              href="#pricing"
               className="rounded-lg bg-indigo-600 px-6 py-3 text-sm font-semibold text-white shadow-sm hover:bg-indigo-700 transition-colors"
             >
               Start free

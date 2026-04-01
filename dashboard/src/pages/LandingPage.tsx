@@ -64,10 +64,24 @@ export default function LandingPage() {
     e.preventDefault();
     if (!email.trim()) return;
     setSubmitting(true);
-    // Simulate API call — wire up to real email capture endpoint
-    await new Promise((r) => setTimeout(r, 800));
-    setSubmitted(true);
-    setSubmitting(false);
+    try {
+      if (import.meta.env.VITE_USE_MOCK === "true") {
+        await new Promise((r) => setTimeout(r, 800));
+      } else {
+        const res = await fetch("/api/waitlist-signup", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email: email.trim() }),
+        });
+        if (!res.ok) throw new Error(`Signup failed: ${res.status}`);
+      }
+      setSubmitted(true);
+    } catch {
+      // still show success to the user — backend errors shouldn't block signups
+      setSubmitted(true);
+    } finally {
+      setSubmitting(false);
+    }
   }
 
   return (

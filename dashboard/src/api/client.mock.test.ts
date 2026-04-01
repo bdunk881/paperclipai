@@ -49,7 +49,7 @@ describe("listTemplates (mock mode)", () => {
       expect(typeof t.id).toBe("string");
       expect(typeof t.name).toBe("string");
       expect(typeof t.stepCount).toBe("number");
-      expect((t as Record<string, unknown>).steps).toBeUndefined();
+      expect((t as unknown as Record<string, unknown>).steps).toBeUndefined();
     }
   });
 

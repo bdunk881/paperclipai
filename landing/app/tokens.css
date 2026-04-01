@@ -1,0 +1,54 @@
+/**
+ * AutoFlow Design Tokens
+ *
+ * This single file controls the visual identity of the landing page.
+ * To rebrand for a new autonomous company, swap only this file.
+ *
+ * Usage in components: var(--color-primary), var(--font-heading), etc.
+ */
+
+:root {
+  /* Brand colors */
+  --color-primary: #4f46e5;          /* indigo-600 */
+  --color-primary-hover: #4338ca;    /* indigo-700 */
+  --color-primary-light: #eef2ff;    /* indigo-50 */
+  --color-primary-text: #3730a3;     /* indigo-800 */
+  --color-accent: #7c3aed;           /* violet-600 */
+
+  /* Neutral palette */
+  --color-bg: #ffffff;
+  --color-bg-subtle: #f9fafb;        /* gray-50 */
+  --color-surface: #ffffff;
+  --color-border: #e5e7eb;           /* gray-200 */
+  --color-text-primary: #111827;     /* gray-900 */
+  --color-text-secondary: #6b7280;   /* gray-500 */
+  --color-text-muted: #9ca3af;       /* gray-400 */
+
+  /* Typography */
+  --font-heading: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-body: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: ui-monospace, "Cascadia Code", "Source Code Pro", monospace;
+
+  /* Spacing scale */
+  --section-padding-y: 6rem;         /* 96px */
+  --section-padding-x: 1.5rem;       /* 24px */
+  --container-max-width: 80rem;      /* 1280px */
+
+  /* Border radius */
+  --radius-sm: 0.375rem;             /* 6px */
+  --radius-md: 0.5rem;               /* 8px */
+  --radius-lg: 0.75rem;              /* 12px */
+  --radius-xl: 1rem;                 /* 16px */
+  --radius-2xl: 1.5rem;              /* 24px */
+
+  /* Shadows */
+  --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+  --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+  --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
+
+  /* CTA button */
+  --cta-bg: var(--color-primary);
+  --cta-bg-hover: var(--color-primary-hover);
+  --cta-text: #ffffff;
+  --cta-radius: var(--radius-lg);
+}

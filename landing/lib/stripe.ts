@@ -6,11 +6,11 @@ export function getStripe() {
   });
 }
 
-// TODO: Replace with real price IDs from ALT-73 (pricing approval)
+// Beta pricing tiers — confirmed pricing from ALT-85/ALT-73
 export const PRICING_TIERS = {
   starter: {
     name: "Starter",
-    price: 49,
+    price: 99,
     priceId: process.env.STRIPE_STARTER_PRICE_ID ?? "price_starter_placeholder",
     description: "For individuals and small teams",
     features: [
@@ -19,11 +19,12 @@ export const PRICING_TIERS = {
       "Email support",
       "Basic analytics",
     ],
+    popular: false,
   },
-  pro: {
-    name: "Pro",
-    price: 199,
-    priceId: process.env.STRIPE_PRO_PRICE_ID ?? "price_pro_placeholder",
+  growth: {
+    name: "Growth",
+    price: 299,
+    priceId: process.env.STRIPE_GROWTH_PRICE_ID ?? "price_growth_placeholder",
     description: "For growing teams",
     features: [
       "5 autonomous agents",
@@ -34,11 +35,10 @@ export const PRICING_TIERS = {
     ],
     popular: true,
   },
-  enterprise: {
-    name: "Enterprise",
-    price: 799,
-    priceId:
-      process.env.STRIPE_ENTERPRISE_PRICE_ID ?? "price_enterprise_placeholder",
+  scale: {
+    name: "Scale",
+    price: 749,
+    priceId: process.env.STRIPE_SCALE_PRICE_ID ?? "price_scale_placeholder",
     description: "For large organizations",
     features: [
       "Unlimited agents",
@@ -48,5 +48,6 @@ export const PRICING_TIERS = {
       "SSO & SAML",
       "Custom contracts",
     ],
+    popular: false,
   },
 } as const;

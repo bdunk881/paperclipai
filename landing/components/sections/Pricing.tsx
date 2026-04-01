@@ -4,7 +4,7 @@ import { motion } from "framer-motion";
 import { useState } from "react";
 import { PRICING_TIERS } from "@/lib/stripe";
 
-// TODO: Sync Stripe price IDs once pricing is approved via ALT-73
+// Beta pricing: Starter $99, Growth $299 (popular), Scale $749
 
 export function Pricing() {
   const [loading, setLoading] = useState<string | null>(null);

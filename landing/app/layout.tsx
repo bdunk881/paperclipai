@@ -32,6 +32,15 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
+      <head>
+        {process.env.NEXT_PUBLIC_PLAUSIBLE_DOMAIN && (
+          <script
+            defer
+            data-domain={process.env.NEXT_PUBLIC_PLAUSIBLE_DOMAIN}
+            src="https://plausible.io/js/script.js"
+          />
+        )}
+      </head>
       <body className={`${inter.className} antialiased`}>
         <nav className="sticky top-0 z-50 bg-white/80 backdrop-blur-sm border-b border-gray-100">
           <div className="mx-auto max-w-7xl px-6 lg:px-8 flex h-16 items-center justify-between">

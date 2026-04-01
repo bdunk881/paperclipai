@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getResend, AUDIENCE_ID } from "@/lib/resend";
 
 export async function POST(req: NextRequest) {
   const { email } = (await req.json()) as { email?: string };
@@ -8,19 +7,26 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Invalid email" }, { status: 400 });
   }
 
+  const webhookUrl = process.env.ZAPIER_WEBHOOK_URL;
+  if (!webhookUrl) {
+    // Silently succeed if webhook is not configured (dev mode)
+    return NextResponse.json({ ok: true });
+  }
+
   try {
-    const audienceId = AUDIENCE_ID();
-    if (audienceId) {
-      const resend = getResend();
-      await resend.contacts.create({
-        email,
-        audienceId,
-      });
+    const res = await fetch(webhookUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email, source: "landing-page" }),
+    });
+
+    if (!res.ok) {
+      throw new Error(`Zapier webhook returned ${res.status}`);
     }
 
     return NextResponse.json({ ok: true });
   } catch (err) {
-    console.error("Resend subscribe error:", err);
+    console.error("Zapier webhook error:", err);
     return NextResponse.json({ error: "Failed to subscribe" }, { status: 500 });
   }
 }

@@ -1,7 +1,4 @@
-import { Resend } from "resend";
-
-export function getResend() {
-  return new Resend(process.env.RESEND_API_KEY ?? "");
-}
-
-export const AUDIENCE_ID = () => process.env.RESEND_AUDIENCE_ID ?? "";
+// Email capture is handled via Zapier webhook → Attio CRM
+// See app/api/subscribe/route.ts
+// Env var: ZAPIER_WEBHOOK_URL
+export {};

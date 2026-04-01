@@ -12,7 +12,7 @@ export function FinalCTA() {
     e.preventDefault();
     setStatus("loading");
     try {
-      const res = await fetch("/api/subscribe", {
+      const res = await fetch("/api/subscribe", {  // POST → Zapier webhook → Attio
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email }),

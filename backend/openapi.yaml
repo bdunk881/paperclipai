@@ -1,0 +1,844 @@
+openapi: 3.0.3
+info:
+  title: AutoFlow Runtime API
+  description: |
+    REST API for the AutoFlow workflow automation platform.
+
+    ## Overview
+    AutoFlow exposes two primary resource families:
+    - **Workflows** — named, versioned workflow definitions (analogous to templates). Supports full CRUD.
+    - **Runs** — individual executions of a workflow. Runs are created by triggering a workflow and can be monitored for status, logs, and step-level traces.
+
+    ## WebSocket Events
+    Live run log streaming is available via WebSocket at `ws://<host>/api/runs/{runId}/events`.
+    The server emits newline-delimited JSON event objects (see the `RunEvent` schema).
+    Connect after creating a run; the stream closes automatically when the run reaches a terminal state (`completed`, `failed`).
+
+    ## Current Implementation Notes
+    - Run storage is currently in-memory. All runs are lost on server restart (see planned PostgreSQL migration).
+    - Workflow CRUD endpoints (`POST/PUT/DELETE /workflows`) persist in-memory only in v0.
+    - The `/api/templates/*` routes are legacy aliases maintained for backward compatibility.
+  version: "1.0.0"
+  contact:
+    name: AutoFlow Backend Team
+
+servers:
+  - url: http://localhost:3000
+    description: Local development
+  - url: https://api.autoflow.example.com
+    description: Production
+
+tags:
+  - name: Workflows
+    description: Workflow definition CRUD
+  - name: Runs
+    description: Workflow run execution and monitoring
+  - name: Webhooks
+    description: External trigger endpoints
+  - name: Templates
+    description: Legacy read-only template endpoints (backward-compatible aliases)
+  - name: Health
+    description: Service health
+
+paths:
+  # ---------------------------------------------------------------------------
+  # Workflow CRUD
+  # ---------------------------------------------------------------------------
+  /api/workflows:
+    post:
+      operationId: createWorkflow
+      summary: Create a workflow
+      tags: [Workflows]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WorkflowInput"
+            example:
+              name: "Lead Enrichment"
+              description: "Enriches inbound leads via LLM scoring"
+              category: "sales"
+              version: "1.0.0"
+              configFields: []
+              steps: []
+              sampleInput: {}
+              expectedOutput: {}
+      responses:
+        "201":
+          description: Workflow created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Workflow"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+
+    get:
+      operationId: listWorkflows
+      summary: List workflows
+      tags: [Workflows]
+      parameters:
+        - name: category
+          in: query
+          schema:
+            type: string
+            enum: [support, sales, content, custom]
+          description: Filter by category
+      responses:
+        "200":
+          description: List of workflows
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [workflows, total]
+                properties:
+                  workflows:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/WorkflowSummary"
+                  total:
+                    type: integer
+                    example: 3
+
+  /api/workflows/{id}:
+    parameters:
+      - $ref: "#/components/parameters/WorkflowId"
+
+    get:
+      operationId: getWorkflow
+      summary: Get a workflow
+      tags: [Workflows]
+      responses:
+        "200":
+          description: Workflow definition
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Workflow"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+    put:
+      operationId: updateWorkflow
+      summary: Update a workflow
+      tags: [Workflows]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WorkflowInput"
+      responses:
+        "200":
+          description: Updated workflow
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Workflow"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+    delete:
+      operationId: deleteWorkflow
+      summary: Delete a workflow
+      tags: [Workflows]
+      responses:
+        "204":
+          description: Workflow deleted
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  # ---------------------------------------------------------------------------
+  # Workflow Execution (nested under workflow)
+  # ---------------------------------------------------------------------------
+  /api/workflows/{id}/runs:
+    parameters:
+      - $ref: "#/components/parameters/WorkflowId"
+
+    post:
+      operationId: triggerWorkflowRun
+      summary: Trigger a workflow run
+      tags: [Runs]
+      description: |
+        Starts a new run for the given workflow. Returns immediately with status `pending`;
+        execution is asynchronous. Poll `GET /api/runs/{runId}` or connect to the
+        WebSocket stream for live updates.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                input:
+                  type: object
+                  additionalProperties: true
+                  description: Input payload forwarded to the first step
+                  example:
+                    customerEmail: "alice@example.com"
+                    message: "I need a refund"
+                config:
+                  type: object
+                  additionalProperties: true
+                  description: Runtime configuration overrides
+      responses:
+        "202":
+          description: Run accepted — execution is asynchronous
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkflowRun"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+    get:
+      operationId: listWorkflowRuns
+      summary: List runs for a workflow
+      tags: [Runs]
+      responses:
+        "200":
+          description: List of runs
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [runs, total]
+                properties:
+                  runs:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/WorkflowRun"
+                  total:
+                    type: integer
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  # ---------------------------------------------------------------------------
+  # Run monitoring (flat, by runId)
+  # ---------------------------------------------------------------------------
+  /api/runs:
+    get:
+      operationId: listRuns
+      summary: List all runs
+      tags: [Runs]
+      parameters:
+        - name: templateId
+          in: query
+          schema:
+            type: string
+          description: Filter by workflow / template ID
+      responses:
+        "200":
+          description: All runs
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [runs, total]
+                properties:
+                  runs:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/WorkflowRun"
+                  total:
+                    type: integer
+
+    post:
+      operationId: createRun
+      summary: Start a run (direct, by templateId)
+      tags: [Runs]
+      description: Alternative to `POST /api/workflows/{id}/runs`. Accepts a `templateId` in the body.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [templateId]
+              properties:
+                templateId:
+                  type: string
+                  example: "lead-enrichment"
+                input:
+                  type: object
+                  additionalProperties: true
+                config:
+                  type: object
+                  additionalProperties: true
+      responses:
+        "202":
+          description: Run accepted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkflowRun"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/runs/{runId}:
+    parameters:
+      - $ref: "#/components/parameters/RunId"
+
+    get:
+      operationId: getRun
+      summary: Get run status and logs
+      tags: [Runs]
+      responses:
+        "200":
+          description: Run detail with all step results
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkflowRun"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/runs/{runId}/steps:
+    parameters:
+      - $ref: "#/components/parameters/RunId"
+
+    get:
+      operationId: getRunSteps
+      summary: Get step-level execution trace
+      tags: [Runs]
+      description: Returns the ordered list of step results for a run, including status, output, duration, and any errors.
+      responses:
+        "200":
+          description: Step trace
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [steps, total]
+                properties:
+                  steps:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/StepResult"
+                  total:
+                    type: integer
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  # ---------------------------------------------------------------------------
+  # WebSocket — documented here for discoverability; not a REST endpoint
+  # ---------------------------------------------------------------------------
+  /api/runs/{runId}/events:
+    parameters:
+      - $ref: "#/components/parameters/RunId"
+    get:
+      operationId: streamRunEvents
+      summary: "WebSocket: stream live run events"
+      tags: [Runs]
+      description: |
+        **Protocol: WebSocket (upgrade required)**
+
+        Connect with `ws://<host>/api/runs/{runId}/events`. The server emits
+        newline-delimited JSON `RunEvent` objects. The stream closes when the run
+        reaches a terminal state (`completed` or `failed`).
+
+        Example event:
+        ```json
+        {"type":"step_started","runId":"abc123","stepId":"step_1","timestamp":"2026-04-01T12:00:00Z"}
+        {"type":"step_completed","runId":"abc123","stepId":"step_1","output":{},"durationMs":312,"timestamp":"2026-04-01T12:00:00Z"}
+        {"type":"run_completed","runId":"abc123","timestamp":"2026-04-01T12:00:01Z"}
+        ```
+      responses:
+        "101":
+          description: Switching Protocols — WebSocket connection established
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  # ---------------------------------------------------------------------------
+  # Webhook trigger
+  # ---------------------------------------------------------------------------
+  /api/webhooks/{templateId}:
+    post:
+      operationId: webhookTrigger
+      summary: Trigger a workflow run via webhook
+      tags: [Webhooks]
+      description: The entire request body is forwarded as the run input. Suitable for third-party integrations (e.g. Zapier, GitHub, Stripe).
+      parameters:
+        - name: templateId
+          in: path
+          required: true
+          schema:
+            type: string
+          description: The workflow/template ID to trigger
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+              description: Arbitrary JSON payload forwarded as run input
+      responses:
+        "202":
+          description: Webhook accepted
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [runId, status]
+                properties:
+                  runId:
+                    type: string
+                  status:
+                    $ref: "#/components/schemas/RunStatus"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  # ---------------------------------------------------------------------------
+  # Legacy template aliases (backward-compatible)
+  # ---------------------------------------------------------------------------
+  /api/templates:
+    get:
+      operationId: listTemplates
+      summary: List templates (legacy alias for GET /api/workflows)
+      tags: [Templates]
+      parameters:
+        - name: category
+          in: query
+          schema:
+            type: string
+            enum: [support, sales, content, custom]
+      responses:
+        "200":
+          description: Template list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  templates:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/WorkflowSummary"
+                  total:
+                    type: integer
+
+  /api/templates/{id}:
+    get:
+      operationId: getTemplate
+      summary: Get template by ID (legacy alias for GET /api/workflows/{id})
+      tags: [Templates]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Template definition
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Workflow"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/templates/{id}/sample:
+    get:
+      operationId: getTemplateSample
+      summary: Get sample input/output for a template
+      tags: [Templates]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Sample data
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  sampleInput:
+                    type: object
+                    additionalProperties: true
+                  expectedOutput:
+                    type: object
+                    additionalProperties: true
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  # ---------------------------------------------------------------------------
+  # Health
+  # ---------------------------------------------------------------------------
+  /health:
+    get:
+      operationId: getHealth
+      summary: Service health check
+      tags: [Health]
+      responses:
+        "200":
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status, templates, runs]
+                properties:
+                  status:
+                    type: string
+                    example: ok
+                  templates:
+                    type: integer
+                    description: Number of registered templates
+                  runs:
+                    type: object
+                    properties:
+                      total:
+                        type: integer
+                      running:
+                        type: integer
+                      completed:
+                        type: integer
+                      failed:
+                        type: integer
+
+# =============================================================================
+# Components
+# =============================================================================
+components:
+  parameters:
+    WorkflowId:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+      description: Workflow / template ID
+
+    RunId:
+      name: runId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+      description: Run ID (UUID)
+
+  responses:
+    BadRequest:
+      description: Invalid request body or parameters
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+          example:
+            error: "Workflow not found: lead-enrichment"
+
+  schemas:
+    # -------------------------------------------------------------------------
+    # Primitive enums
+    # -------------------------------------------------------------------------
+    StepKind:
+      type: string
+      enum: [trigger, llm, transform, condition, action, output]
+      description: Kind of step within a workflow
+
+    FieldType:
+      type: string
+      enum: [string, number, boolean, object, "string[]", "object[]"]
+      description: Data type of a config field
+
+    RunStatus:
+      type: string
+      enum: [pending, running, completed, failed, escalated]
+      description: Lifecycle status of a workflow run
+
+    StepStatus:
+      type: string
+      enum: [success, failure, skipped, running]
+      description: Result status of a single step
+
+    WorkflowCategory:
+      type: string
+      enum: [support, sales, content, custom]
+      description: Workflow category
+
+    # -------------------------------------------------------------------------
+    # Workflow definition schemas
+    # -------------------------------------------------------------------------
+    ConfigField:
+      type: object
+      required: [key, label, type, required]
+      properties:
+        key:
+          type: string
+          description: Machine-readable field key
+          example: model
+        label:
+          type: string
+          description: Human-readable label shown in the dashboard
+          example: "LLM Model"
+        type:
+          $ref: "#/components/schemas/FieldType"
+        required:
+          type: boolean
+        defaultValue:
+          description: Default value for the field (any type)
+        description:
+          type: string
+        options:
+          type: array
+          items:
+            type: string
+          description: "For string fields: restrict choices to this list"
+
+    WorkflowStep:
+      type: object
+      required: [id, name, kind, description, inputKeys, outputKeys]
+      properties:
+        id:
+          type: string
+          example: step_classify
+        name:
+          type: string
+          example: "Classify Intent"
+        kind:
+          $ref: "#/components/schemas/StepKind"
+        description:
+          type: string
+        inputKeys:
+          type: array
+          items:
+            type: string
+          description: Keys from prior steps (or trigger) expected as input
+        outputKeys:
+          type: array
+          items:
+            type: string
+          description: Keys produced by this step
+        promptTemplate:
+          type: string
+          description: "LLM step: Handlebars-style prompt ({{key}} interpolation)"
+        condition:
+          type: string
+          description: "Condition step: expression evaluated by the runtime"
+          example: "intent === 'refund'"
+        action:
+          type: string
+          description: "Action step: integration target identifier"
+          example: "crm.upsertLead"
+        config:
+          type: object
+          additionalProperties: true
+          description: Step-level configuration overrides
+
+    WorkflowSummary:
+      type: object
+      required: [id, name, description, category, version, stepCount, configFieldCount]
+      properties:
+        id:
+          type: string
+          example: lead-enrichment
+        name:
+          type: string
+          example: "Lead Enrichment"
+        description:
+          type: string
+        category:
+          $ref: "#/components/schemas/WorkflowCategory"
+        version:
+          type: string
+          example: "1.0.0"
+        stepCount:
+          type: integer
+          example: 4
+        configFieldCount:
+          type: integer
+          example: 2
+
+    Workflow:
+      type: object
+      required: [id, name, description, category, version, configFields, steps, sampleInput, expectedOutput]
+      properties:
+        id:
+          type: string
+          example: lead-enrichment
+        name:
+          type: string
+          example: "Lead Enrichment"
+        description:
+          type: string
+        category:
+          $ref: "#/components/schemas/WorkflowCategory"
+        version:
+          type: string
+          example: "1.0.0"
+        configFields:
+          type: array
+          items:
+            $ref: "#/components/schemas/ConfigField"
+        steps:
+          type: array
+          items:
+            $ref: "#/components/schemas/WorkflowStep"
+        sampleInput:
+          type: object
+          additionalProperties: true
+        expectedOutput:
+          type: object
+          additionalProperties: true
+
+    WorkflowInput:
+      type: object
+      required: [name, description, category, version, configFields, steps, sampleInput, expectedOutput]
+      description: Request body for creating or updating a workflow
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        category:
+          $ref: "#/components/schemas/WorkflowCategory"
+        version:
+          type: string
+          example: "1.0.0"
+        configFields:
+          type: array
+          items:
+            $ref: "#/components/schemas/ConfigField"
+        steps:
+          type: array
+          items:
+            $ref: "#/components/schemas/WorkflowStep"
+        sampleInput:
+          type: object
+          additionalProperties: true
+        expectedOutput:
+          type: object
+          additionalProperties: true
+
+    # -------------------------------------------------------------------------
+    # Run schemas
+    # -------------------------------------------------------------------------
+    StepResult:
+      type: object
+      required: [stepId, stepName, status, output, durationMs]
+      properties:
+        stepId:
+          type: string
+          example: step_classify
+        stepName:
+          type: string
+          example: "Classify Intent"
+        status:
+          $ref: "#/components/schemas/StepStatus"
+        output:
+          type: object
+          additionalProperties: true
+        durationMs:
+          type: integer
+          description: Wall-clock duration of the step in milliseconds
+          example: 312
+        error:
+          type: string
+          description: Error message if status is failure
+
+    WorkflowRun:
+      type: object
+      required: [id, templateId, templateName, status, startedAt, input, stepResults]
+      properties:
+        id:
+          type: string
+          format: uuid
+          example: "f47ac10b-58cc-4372-a567-0e02b2c3d479"
+        templateId:
+          type: string
+          example: lead-enrichment
+        templateName:
+          type: string
+          example: "Lead Enrichment"
+        status:
+          $ref: "#/components/schemas/RunStatus"
+        startedAt:
+          type: string
+          format: date-time
+        completedAt:
+          type: string
+          format: date-time
+          nullable: true
+        input:
+          type: object
+          additionalProperties: true
+        output:
+          type: object
+          additionalProperties: true
+          nullable: true
+          description: Final output produced by the last step (null until completed)
+        stepResults:
+          type: array
+          items:
+            $ref: "#/components/schemas/StepResult"
+          description: Step-by-step execution trace (grows as the run progresses)
+        error:
+          type: string
+          nullable: true
+          description: Top-level error message if status is failed
+
+    # -------------------------------------------------------------------------
+    # WebSocket event schema
+    # -------------------------------------------------------------------------
+    RunEvent:
+      type: object
+      required: [type, runId, timestamp]
+      discriminator:
+        propertyName: type
+      properties:
+        type:
+          type: string
+          enum: [run_started, step_started, step_completed, step_failed, run_completed, run_failed]
+        runId:
+          type: string
+          format: uuid
+        stepId:
+          type: string
+          description: Present for step-scoped events
+        output:
+          type: object
+          additionalProperties: true
+          description: Step output (step_completed events only)
+        durationMs:
+          type: integer
+          description: Step duration (step_completed / step_failed events only)
+        error:
+          type: string
+          description: Error message (step_failed / run_failed events only)
+        timestamp:
+          type: string
+          format: date-time
+
+    # -------------------------------------------------------------------------
+    # Error
+    # -------------------------------------------------------------------------
+    ErrorResponse:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: string
+          description: Human-readable error message
+          example: "Workflow not found: lead-enrichment"

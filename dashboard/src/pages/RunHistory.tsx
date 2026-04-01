@@ -1,6 +1,6 @@
-import { useState, useMemo, Fragment } from "react";
+import { useState, useEffect, useMemo, Fragment } from "react";
 import { ChevronLeft, ChevronRight, Search, Filter, X } from "lucide-react";
-import { MOCK_RUNS, MOCK_TEMPLATES } from "../data/mockData";
+import { listRuns, listTemplates, type TemplateSummary } from "../api/client";
 import { StatusBadge } from "../components/StatusBadge";
 import type { WorkflowRun } from "../types/workflow";
 import clsx from "clsx";
@@ -13,11 +13,18 @@ type SortDir = "asc" | "desc";
 const ALL_STATUSES = ["pending", "running", "completed", "failed", "escalated"] as const;
 
 export default function RunHistory() {
+  const [allRuns, setAllRuns] = useState<WorkflowRun[]>([]);
+  const [templates, setTemplates] = useState<TemplateSummary[]>([]);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("");
   const [templateFilter, setTemplateFilter] = useState<string>("");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
+
+  useEffect(() => {
+    listRuns().then(setAllRuns).catch(console.error);
+    listTemplates().then(setTemplates).catch(console.error);
+  }, []);
   const [sort, setSort] = useState<{ field: SortField; dir: SortDir }>({
     field: "startedAt",
     dir: "desc",
@@ -26,7 +33,7 @@ export default function RunHistory() {
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
   const filtered = useMemo(() => {
-    let runs: WorkflowRun[] = [...MOCK_RUNS];
+    let runs: WorkflowRun[] = [...allRuns];
 
     if (search) {
       const q = search.toLowerCase();
@@ -68,7 +75,7 @@ export default function RunHistory() {
     });
 
     return runs;
-  }, [search, statusFilter, templateFilter, dateFrom, dateTo, sort]);
+  }, [allRuns, search, statusFilter, templateFilter, dateFrom, dateTo, sort]);
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const currentPage = Math.min(page, totalPages);
@@ -100,7 +107,7 @@ export default function RunHistory() {
       <div className="mb-8">
         <h1 className="text-2xl font-bold text-gray-900">Run History</h1>
         <p className="text-gray-500 mt-1 text-sm">
-          All workflow runs — {MOCK_RUNS.length} total
+          All workflow runs — {allRuns.length} total
         </p>
       </div>
 
@@ -148,7 +155,7 @@ export default function RunHistory() {
               onChange={(e) => { setTemplateFilter(e.target.value); setPage(1); }}
             >
               <option value="">All workflows</option>
-              {MOCK_TEMPLATES.map((t) => (
+              {templates.map((t) => (
                 <option key={t.id} value={t.id}>{t.name}</option>
               ))}
             </select>

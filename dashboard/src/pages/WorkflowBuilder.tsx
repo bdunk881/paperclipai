@@ -1,4 +1,4 @@
-import { useState, useRef } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import {
   Plus,
@@ -15,7 +15,7 @@ import {
   Save,
   X,
 } from "lucide-react";
-import { MOCK_TEMPLATES, MOCK_RUNS, generateRunId } from "../data/mockData";
+import { getTemplate, startRun } from "../api/client";
 import type { WorkflowStep, StepKind, WorkflowTemplate } from "../types/workflow";
 import clsx from "clsx";
 
@@ -61,31 +61,37 @@ const KIND_META: Record<
   },
 };
 
+const BLANK_TEMPLATE: WorkflowTemplate = {
+  id: "tpl-custom-" + Date.now(),
+  name: "Untitled Workflow",
+  description: "",
+  category: "custom",
+  version: "1.0.0",
+  configFields: [],
+  steps: [],
+  sampleInput: {},
+  expectedOutput: {},
+};
+
 export default function WorkflowBuilder() {
   const { templateId } = useParams<{ templateId?: string }>();
   const navigate = useNavigate();
 
-  const baseTemplate = templateId
-    ? MOCK_TEMPLATES.find((t) => t.id === templateId) ?? null
-    : null;
-
-  const [template, setTemplate] = useState<WorkflowTemplate>(
-    baseTemplate ?? {
-      id: "tpl-custom-" + Date.now(),
-      name: "Untitled Workflow",
-      description: "",
-      category: "custom",
-      version: "1.0.0",
-      configFields: [],
-      steps: [],
-      sampleInput: {},
-      expectedOutput: {},
-    }
-  );
-
+  const [template, setTemplate] = useState<WorkflowTemplate>(BLANK_TEMPLATE);
+  const [loading, setLoading] = useState(!!templateId);
   const [selectedStepId, setSelectedStepId] = useState<string | null>(null);
   const [showRunModal, setShowRunModal] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [runError, setRunError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!templateId) return;
+    setLoading(true);
+    getTemplate(templateId)
+      .then(setTemplate)
+      .catch((e) => console.error("Failed to load template:", e))
+      .finally(() => setLoading(false));
+  }, [templateId]);
 
   const selectedStep = template.steps.find((s) => s.id === selectedStepId) ?? null;
 
@@ -130,31 +136,33 @@ export default function WorkflowBuilder() {
     setTimeout(() => setSaved(false), 2000);
   }
 
-  function handleRun() {
-    // Add a mock run and navigate to the monitor
-    const run = {
-      id: generateRunId(),
-      templateId: template.id,
-      templateName: template.name,
-      status: "running" as const,
-      startedAt: new Date().toISOString(),
-      input: template.sampleInput,
-      stepResults: template.steps.map((s, i) => ({
-        stepId: s.id,
-        stepName: s.name,
-        status: (i === 0 ? "running" : "skipped") as "running" | "skipped",
-        output: {},
-        durationMs: 0,
-      })),
-    };
-    MOCK_RUNS.unshift(run);
-    navigate("/monitor");
+  async function handleRun() {
+    setRunError(null);
+    try {
+      await startRun(template.id, template.sampleInput);
+      navigate("/monitor");
+    } catch (e) {
+      setRunError(e instanceof Error ? e.message : "Failed to start run");
+    }
+  }
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-full text-gray-400 text-sm">
+        Loading template…
+      </div>
+    );
   }
 
   return (
     <div className="flex h-full">
       {/* Left panel — canvas */}
       <div className="flex-1 flex flex-col overflow-hidden">
+        {runError && (
+          <div className="px-6 py-2 bg-red-50 border-b border-red-200 text-sm text-red-700">
+            {runError}
+          </div>
+        )}
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 bg-white border-b border-gray-200">
           <div className="flex items-center gap-3">

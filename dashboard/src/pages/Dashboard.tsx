@@ -1,19 +1,25 @@
+import { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
 import {
   Activity,
   CheckCircle2,
   XCircle,
-  Clock,
   Workflow,
   ArrowRight,
   TrendingUp,
 } from "lucide-react";
-import { MOCK_RUNS, MOCK_TEMPLATES } from "../data/mockData";
+import { listRuns, listTemplates, type TemplateSummary } from "../api/client";
 import { StatusBadge } from "../components/StatusBadge";
+import type { WorkflowRun } from "../types/workflow";
 
 export default function Dashboard() {
-  const runs = MOCK_RUNS;
-  const templates = MOCK_TEMPLATES;
+  const [runs, setRuns] = useState<WorkflowRun[]>([]);
+  const [templates, setTemplates] = useState<TemplateSummary[]>([]);
+
+  useEffect(() => {
+    listRuns().then(setRuns).catch(console.error);
+    listTemplates().then(setTemplates).catch(console.error);
+  }, []);
 
   const stats = {
     total: runs.length,
@@ -74,19 +80,23 @@ export default function Dashboard() {
             </Link>
           </div>
           <div className="divide-y divide-gray-50">
-            {recentRuns.map((run) => (
-              <div key={run.id} className="flex items-center gap-4 px-6 py-3">
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium text-gray-900 truncate">
-                    {run.templateName}
-                  </p>
-                  <p className="text-xs text-gray-400">
-                    {new Date(run.startedAt).toLocaleString()}
-                  </p>
+            {recentRuns.length === 0 ? (
+              <p className="px-6 py-8 text-sm text-gray-400 text-center">No runs yet.</p>
+            ) : (
+              recentRuns.map((run) => (
+                <div key={run.id} className="flex items-center gap-4 px-6 py-3">
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium text-gray-900 truncate">
+                      {run.templateName}
+                    </p>
+                    <p className="text-xs text-gray-400">
+                      {new Date(run.startedAt).toLocaleString()}
+                    </p>
+                  </div>
+                  <StatusBadge status={run.status} />
                 </div>
-                <StatusBadge status={run.status} />
-              </div>
-            ))}
+              ))
+            )}
           </div>
         </div>
 
@@ -102,6 +112,9 @@ export default function Dashboard() {
             </Link>
           </div>
           <div className="divide-y divide-gray-50">
+            {templates.length === 0 ? (
+              <p className="px-6 py-8 text-sm text-gray-400 text-center">No templates.</p>
+            ) : null}
             {templates.map((tpl) => (
               <Link
                 key={tpl.id}

@@ -40,7 +40,7 @@
       "!src/index.ts",
       "!src/test-factories/**"
     ],
-    "coverageThresholds": {
+    "coverageThreshold": {
       "global": {
         "lines": 80,
         "functions": 80,

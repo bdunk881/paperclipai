@@ -101,7 +101,7 @@ export interface WorkflowRun {
 export interface StepResult {
   stepId: string;
   stepName: string;
-  status: "success" | "failure" | "skipped";
+  status: "success" | "failure" | "skipped" | "running";
   output: Record<string, unknown>;
   durationMs: number;
   error?: string;

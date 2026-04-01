@@ -63,6 +63,7 @@ export const leadEnrichment: WorkflowTemplate = {
       label: "Hot Lead Owner (CRM user email)",
       type: "string",
       required: false,
+      defaultValue: "",
       description: "CRM user assigned to hot leads automatically.",
     },
   ],

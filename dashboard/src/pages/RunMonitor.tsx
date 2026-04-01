@@ -11,7 +11,7 @@ import {
   Loader2,
   Workflow,
 } from "lucide-react";
-import { MOCK_RUNS } from "../data/mockData";
+import { listRuns } from "../api/client";
 import { StatusBadge } from "../components/StatusBadge";
 import type { WorkflowRun, StepResult } from "../types/workflow";
 import clsx from "clsx";
@@ -19,26 +19,31 @@ import clsx from "clsx";
 const POLL_INTERVAL_MS = 3000;
 
 export default function RunMonitor() {
-  const [runs, setRuns] = useState<WorkflowRun[]>(() =>
-    [...MOCK_RUNS].sort(
-      (a, b) => new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime()
-    )
-  );
-  const [expandedIds, setExpandedIds] = useState<Set<string>>(
-    () => new Set(MOCK_RUNS.filter((r) => r.status === "running").map((r) => r.id))
-  );
+  const [runs, setRuns] = useState<WorkflowRun[]>([]);
+  const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
   const [lastRefreshed, setLastRefreshed] = useState(new Date());
 
-  // Poll for updates — re-reads the shared MOCK_RUNS array on each tick
-  useEffect(() => {
-    const id = setInterval(() => {
-      setRuns(
-        [...MOCK_RUNS].sort(
-          (a, b) => new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime()
-        )
+  async function fetchRuns() {
+    try {
+      const fetched = [...(await listRuns())].sort(
+        (a, b) => new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime()
       );
+      setRuns(fetched);
       setLastRefreshed(new Date());
-    }, POLL_INTERVAL_MS);
+      // Auto-expand any newly running runs
+      setExpandedIds((prev) => {
+        const next = new Set(prev);
+        fetched.filter((r) => r.status === "running" || r.status === "pending").forEach((r) => next.add(r.id));
+        return next;
+      });
+    } catch (e) {
+      console.error(e);
+    }
+  }
+
+  useEffect(() => {
+    fetchRuns();
+    const id = setInterval(fetchRuns, POLL_INTERVAL_MS);
     return () => clearInterval(id);
   }, []);
 
@@ -51,12 +56,7 @@ export default function RunMonitor() {
   }
 
   function handleRefresh() {
-    setRuns(
-      [...MOCK_RUNS].sort(
-        (a, b) => new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime()
-      )
-    );
-    setLastRefreshed(new Date());
+    fetchRuns();
   }
 
   const activeRuns = runs.filter((r) => r.status === "running" || r.status === "pending");

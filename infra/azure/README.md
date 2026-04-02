@@ -11,30 +11,29 @@ Terraform IaC for the Azure-native deployment of AutoFlow.
 
 ## Architecture
 
-```
-Internet
-    │
-    ▼
-Azure Load Balancer (Standard)
-    │
-    ▼
-AKS Cluster  ──────────────────────────────── VNet (10.0.0.0/16)
-  ├── autoflow-staging namespace              ├── aks-subnet     (10.0.1.0/24)
-  └── autoflow-production namespace           └── pe-subnet      (10.0.2.0/24)
-         ↑ pulls images from
-Azure Container Registry (Premium, private endpoint)
-         ↑ pushed by
-Azure DevOps Pipeline (.azure-pipelines/ci-cd.yml)
+Hub-and-spoke topology following Azure Cloud Adoption Framework (CAF).
+See [`ARCHITECTURE.md`](ARCHITECTURE.md) for full topology diagrams, network addressing table, module dependency graph, and security traffic flow.
 
-Observability:
-  Application Insights + Log Analytics Workspace + Azure Monitor Alerts
+```
+                        Internet
+                           │
+               ┌───────────▼───────────┐
+               │     Azure Firewall    │  ← Hub VNet 10.1.0.0/16
+               │     + Key Vault       │
+               └─────────┬─────────────┘
+             VNet peering │ (bidirectional)
+        ┌─────────────────┼────────────────┐
+        │                                  │
+ Prod Spoke (10.2.0.0/16)       Staging Spoke (10.3.0.0/16)
+   └── AKS cluster (prod)          └── AKS cluster (staging)
+   └── ACR private endpoint        └── ACR private endpoint
 ```
 
 ---
 
 ## Prerequisites
 
-1. **Azure CLI** ≥ 2.55: `az login` with an account that has `Contributor` + `User Access Administrator` on the target subscription.
+1. **Azure CLI** ≥ 2.55: `az login` with an account that has `Contributor` + `User Access Administrator` + `Management Group Contributor` on the target subscription/tenant root.
 2. **Terraform** ≥ 1.6: `brew install terraform` or via [tfenv](https://github.com/tfutils/tfenv).
 3. **Bootstrap remote state** (one-time, per subscription):
 
@@ -75,12 +74,19 @@ terraform apply \
 
 ## Module overview
 
-| Module | Resources |
-|---|---|
-| `networking` | VNet, AKS subnet, PE subnet, NSG, Private DNS zone for ACR |
-| `acr` | Azure Container Registry (Premium), private endpoint |
-| `aks` | AKS cluster, Log Analytics workspace, ACR pull role assignment |
-| `monitoring` | Application Insights, Log Analytics, metric alerts, availability test |
+| Module | Path | Key Resources |
+|---|---|---|
+| `hub` | `modules/hub` | Hub VNet, Azure Firewall, Azure Bastion, Key Vault, private DNS zones |
+| `spoke` | `modules/spoke` | Spoke VNet, subnets, route table (UDR → Firewall), VNet peering |
+| `acr` | `modules/acr` | Azure Container Registry (Premium), private endpoint |
+| `aks` | `modules/aks` | AKS cluster, node pools, Log Analytics workspace, kubelet identity |
+| `management` | `modules/management` | Management Group hierarchy, RBAC, Key Vault access policies |
+| `monitoring` | `modules/monitoring` | Application Insights, Log Analytics, metric alert rules |
+| `policy` | `modules/policy` | Azure Policy initiative, MG-scoped assignment, location guardrails |
+| `security` | `modules/security` | Defender for Containers/KeyVaults, security contact, auto-provisioning, diagnostic export |
+| `networking` (legacy) | `modules/networking` | Superseded by hub + spoke. Retained for reference. |
+
+See [`ARCHITECTURE.md`](ARCHITECTURE.md) for the full module dependency graph.
 
 ---
 

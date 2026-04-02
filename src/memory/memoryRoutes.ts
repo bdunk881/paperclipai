@@ -1,7 +1,8 @@
 /**
  * Memory API routes.
  *
- * All routes require the X-User-Id header for scoping.
+ * All routes require a valid Bearer JWT (Entra External ID).
+ * User identity is derived from the verified JWT sub claim.
  *
  *   POST   /api/memory               — write (create/upsert) a memory entry
  *   GET    /api/memory               — list all entries for the user
@@ -12,28 +13,19 @@
 
 import { Router } from "express";
 import { memoryStore } from "../engine/memoryStore";
+import { requireAuth, AuthenticatedRequest } from "../auth/authMiddleware";
 
 const router = Router();
 
-// ---------------------------------------------------------------------------
-// Auth helper
-// ---------------------------------------------------------------------------
-
-function resolveUserId(req: { headers: Record<string, string | string[] | undefined> }): string | null {
-  const h = req.headers["x-user-id"];
-  return typeof h === "string" && h.trim() ? h.trim() : null;
-}
+// All memory routes require JWT auth
+router.use(requireAuth);
 
 // ---------------------------------------------------------------------------
 // POST /api/memory — write entry
 // ---------------------------------------------------------------------------
 
-router.post("/", (req, res) => {
-  const userId = resolveUserId(req);
-  if (!userId) {
-    res.status(401).json({ error: "X-User-Id header is required" });
-    return;
-  }
+router.post("/", (req: AuthenticatedRequest, res) => {
+  const userId = req.auth!.sub;
 
   const { key, text, workflowId, workflowName, agentId, ttlSeconds } = req.body as {
     key?: unknown;
@@ -74,32 +66,21 @@ router.post("/", (req, res) => {
 // GET /api/memory/stats — usage stats (must precede /:id route)
 // ---------------------------------------------------------------------------
 
-router.get("/stats", (req, res) => {
-  const userId = resolveUserId(req);
-  if (!userId) {
-    res.status(401).json({ error: "X-User-Id header is required" });
-    return;
-  }
-  res.json(memoryStore.stats(userId));
+router.get("/stats", (req: AuthenticatedRequest, res) => {
+  res.json(memoryStore.stats(req.auth!.sub));
 });
 
 // ---------------------------------------------------------------------------
 // GET /api/memory/search — keyword/semantic search
 // ---------------------------------------------------------------------------
 
-router.get("/search", (req, res) => {
-  const userId = resolveUserId(req);
-  if (!userId) {
-    res.status(401).json({ error: "X-User-Id header is required" });
-    return;
-  }
-
+router.get("/search", (req: AuthenticatedRequest, res) => {
   const { q, agentId, limit } = req.query;
   const query = typeof q === "string" ? q : "";
   const agentFilter = typeof agentId === "string" ? agentId : undefined;
   const limitNum = typeof limit === "string" ? Math.min(parseInt(limit, 10) || 10, 100) : 10;
 
-  const results = memoryStore.search(query, userId, agentFilter, limitNum);
+  const results = memoryStore.search(query, req.auth!.sub, agentFilter, limitNum);
   res.json({ results, total: results.length });
 });
 
@@ -107,16 +88,10 @@ router.get("/search", (req, res) => {
 // GET /api/memory — list all entries
 // ---------------------------------------------------------------------------
 
-router.get("/", (req, res) => {
-  const userId = resolveUserId(req);
-  if (!userId) {
-    res.status(401).json({ error: "X-User-Id header is required" });
-    return;
-  }
-
+router.get("/", (req: AuthenticatedRequest, res) => {
   const { workflowId } = req.query;
   const entries = memoryStore.list(
-    userId,
+    req.auth!.sub,
     typeof workflowId === "string" ? workflowId : undefined
   );
   res.json({ entries, total: entries.length });
@@ -126,14 +101,8 @@ router.get("/", (req, res) => {
 // DELETE /api/memory/:id — delete entry
 // ---------------------------------------------------------------------------
 
-router.delete("/:id", (req, res) => {
-  const userId = resolveUserId(req);
-  if (!userId) {
-    res.status(401).json({ error: "X-User-Id header is required" });
-    return;
-  }
-
-  const removed = memoryStore.delete(req.params.id, userId);
+router.delete("/:id", (req: AuthenticatedRequest, res) => {
+  const removed = memoryStore.delete(req.params.id, req.auth!.sub);
   if (!removed) {
     res.status(404).json({ error: "Memory entry not found or not owned by you" });
     return;

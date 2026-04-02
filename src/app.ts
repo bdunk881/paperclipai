@@ -5,6 +5,8 @@
  */
 
 import express from "express";
+import cors from "cors";
+import rateLimit from "express-rate-limit";
 import multer from "multer";
 import { WORKFLOW_TEMPLATES, getTemplate, getTemplatesByCategory } from "./templates";
 import { WorkflowTemplate, WorkflowStep } from "./types/workflow";
@@ -19,8 +21,81 @@ import { getProvider } from "./engine/llmProviders";
 import { parseFile } from "./engine/fileParser";
 import { resolveModelForTier } from "./engine/llmRouter";
 import { requireAuth, AuthenticatedRequest } from "./auth/authMiddleware";
+import { analyticsStore } from "./engine/analyticsStore";
+import { errorTracker } from "./engine/errorTracker";
+
+// ---------------------------------------------------------------------------
+// Failure-rate alerting — checked after each run settles
+// ---------------------------------------------------------------------------
+const FAILURE_RATE_THRESHOLD = 5; // percent
+const FAILURE_RATE_WINDOW = 20;   // most recent settled runs
+
+function checkFailureRateAlert(): void {
+  const rate = analyticsStore.recentFailureRate(FAILURE_RATE_WINDOW);
+  if (rate > FAILURE_RATE_THRESHOLD) {
+    errorTracker.captureMessage(
+      `Run failure rate alert: ${rate.toFixed(1)}% over last ${FAILURE_RATE_WINDOW} settled runs (threshold: ${FAILURE_RATE_THRESHOLD}%)`,
+      "warning",
+      { failureRate: rate, window: FAILURE_RATE_WINDOW, threshold: FAILURE_RATE_THRESHOLD }
+    );
+  }
+}
 
 const app = express();
+
+// ---------------------------------------------------------------------------
+// CORS — restrict to known frontend origins
+// ---------------------------------------------------------------------------
+const allowedOrigins = (process.env.ALLOWED_ORIGINS ?? "")
+  .split(",")
+  .map((o) => o.trim())
+  .filter(Boolean);
+
+app.use(
+  cors({
+    origin: allowedOrigins.length > 0
+      ? (origin, callback) => {
+          // Allow requests with no Origin (server-to-server, curl, etc.)
+          if (!origin || allowedOrigins.includes(origin)) {
+            callback(null, true);
+          } else {
+            callback(new Error(`CORS: origin '${origin}' not allowed`));
+          }
+        }
+      : false,
+    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allowedHeaders: ["Authorization", "Content-Type", "X-User-Id"],
+    credentials: true,
+  })
+);
+
+// ---------------------------------------------------------------------------
+// Rate limiting
+// ---------------------------------------------------------------------------
+
+/** Per-IP limiter: 1 000 req/min (burst protection) */
+const ipLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 1000,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => req.ip ?? "unknown",
+  message: { error: "Too many requests from this IP, please try again later." },
+});
+
+/** Per-API-key limiter: 100 req/min (applied to authenticated routes) */
+const apiKeyLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 100,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req: AuthenticatedRequest) => req.auth?.sub ?? req.ip ?? "unknown",
+  message: { error: "Rate limit exceeded for your account. Please slow down." },
+  skip: (req: AuthenticatedRequest) => !req.auth, // only counts after requireAuth populates req.auth
+});
+
+app.use(ipLimiter);
+
 app.use(express.json());
 
 // Multer — in-memory storage for file uploads (max 50 MB)
@@ -114,7 +189,7 @@ app.get("/api/templates/:id/sample", (req, res) => {
  * Body: { templateId, input, config? }
  * Returns the new run (status=pending) immediately; execution is async.
  */
-app.post("/api/runs", requireAuth, (req: AuthenticatedRequest, res) => {
+app.post("/api/runs", requireAuth, apiKeyLimiter, (req: AuthenticatedRequest, res) => {
   const { templateId, input, config } = req.body as {
     templateId?: string;
     input?: Record<string, unknown>;
@@ -140,14 +215,14 @@ app.post("/api/runs", requireAuth, (req: AuthenticatedRequest, res) => {
 });
 
 /** List all runs, optionally filtered by templateId */
-app.get("/api/runs", (req, res) => {
+app.get("/api/runs", requireAuth, apiKeyLimiter, (req: AuthenticatedRequest, res) => {
   const { templateId } = req.query;
   const runs = runStore.list(typeof templateId === "string" ? templateId : undefined);
   res.json({ runs, total: runs.length });
 });
 
 /** Get a single run by ID */
-app.get("/api/runs/:id", (req, res) => {
+app.get("/api/runs/:id", requireAuth, apiKeyLimiter, (req: AuthenticatedRequest, res) => {
   const run = runStore.get(req.params.id);
   if (!run) {
     res.status(404).json({ error: `Run not found: ${req.params.id}` });
@@ -169,7 +244,7 @@ app.get("/api/runs/:id", (req, res) => {
  * starts a workflow run with { content, mimeType, filename } injected as input.
  * Returns the created run (status=pending).
  */
-app.post("/api/runs/file", upload.single("file"), async (req, res) => {
+app.post("/api/runs/file", requireAuth, apiKeyLimiter, upload.single("file"), async (req: AuthenticatedRequest, res) => {
   const { templateId } = req.body as { templateId?: string };
 
   if (!templateId) {
@@ -191,7 +266,7 @@ app.post("/api/runs/file", upload.single("file"), async (req, res) => {
   }
 
   // Resolve an OpenAI key from the user's default LLM config (for vision/Whisper)
-  const userId = typeof req.headers["x-user-id"] === "string" ? req.headers["x-user-id"] : undefined;
+  const userId = req.auth?.sub;
   let openaiApiKey: string | undefined;
   if (userId) {
     const defaultConfig = llmConfigStore.getDecryptedDefault(userId);
@@ -255,7 +330,7 @@ Rules:
  * Headers: X-User-Id (required to resolve the user's LLM config)
  * Returns: { steps: WorkflowStep[] }
  */
-app.post("/api/workflows/generate", requireAuth, async (req: AuthenticatedRequest, res) => {
+app.post("/api/workflows/generate", requireAuth, apiKeyLimiter, async (req: AuthenticatedRequest, res) => {
   const { description, llmConfigId } = req.body as {
     description?: unknown;
     llmConfigId?: unknown;
@@ -327,7 +402,7 @@ app.post("/api/workflows/generate", requireAuth, async (req: AuthenticatedReques
  * Trigger a workflow run from an inbound webhook.
  * The entire request body is forwarded as the run input.
  */
-app.post("/api/webhooks/:templateId", requireAuth, (req: AuthenticatedRequest, res) => {
+app.post("/api/webhooks/:templateId", requireAuth, apiKeyLimiter, (req: AuthenticatedRequest, res) => {
   const { templateId } = req.params;
 
   let template: WorkflowTemplate;
@@ -357,7 +432,7 @@ app.post("/api/webhooks/:templateId", requireAuth, (req: AuthenticatedRequest, r
  * Query params: status=pending|approved|rejected|timed_out
  * Returns all approval requests, optionally filtered by status.
  */
-app.get("/api/approvals", (req, res) => {
+app.get("/api/approvals", requireAuth, apiKeyLimiter, (req: AuthenticatedRequest, res) => {
   const { status } = req.query;
   const validStatuses = ["pending", "approved", "rejected", "timed_out"];
   const filter =
@@ -372,7 +447,7 @@ app.get("/api/approvals", (req, res) => {
  * GET /api/approvals/:id
  * Returns a single approval request by ID.
  */
-app.get("/api/approvals/:id", (req, res) => {
+app.get("/api/approvals/:id", requireAuth, apiKeyLimiter, (req: AuthenticatedRequest, res) => {
   const approval = approvalStore.get(req.params.id);
   if (!approval) {
     res.status(404).json({ error: `Approval not found: ${req.params.id}` });
@@ -386,7 +461,7 @@ app.get("/api/approvals/:id", (req, res) => {
  * Body: { decision: "approved" | "rejected", comment?: string }
  * Resolves the approval request, resuming or terminating the paused run.
  */
-app.post("/api/approvals/:id/resolve", requireAuth, (req: AuthenticatedRequest, res) => {
+app.post("/api/approvals/:id/resolve", requireAuth, apiKeyLimiter, (req: AuthenticatedRequest, res) => {
   const { decision, comment } = req.body as { decision?: string; comment?: string };
 
   if (decision !== "approved" && decision !== "rejected") {
@@ -401,6 +476,27 @@ app.post("/api/approvals/:id/resolve", requireAuth, (req: AuthenticatedRequest, 
   }
 
   res.json({ success: true });
+});
+
+// Register failure-rate alerting — fires after every settled run
+analyticsStore.onRunSettled(checkFailureRateAlert);
+
+// ---------------------------------------------------------------------------
+// Analytics API — run stats and event stream for the dashboard
+// ---------------------------------------------------------------------------
+
+/**
+ * GET /api/analytics/runs
+ * Returns aggregate run statistics derived from analytics events.
+ * Shape: { stats: RunStats, recentEvents: AnalyticsEvent[] }
+ */
+app.get("/api/analytics/runs", (_req, res) => {
+  const stats = analyticsStore.getRunStats();
+  const recentEvents = analyticsStore
+    .list()
+    .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
+    .slice(0, 50);
+  res.json({ stats, recentEvents });
 });
 
 // ---------------------------------------------------------------------------

@@ -1,7 +1,9 @@
 /**
  * MCP server registry API routes.
  *
- * Endpoints:
+ * All routes require a valid Bearer JWT (Entra External ID).
+ * User identity is derived from the verified JWT sub claim.
+ *
  *   GET    /api/mcp/servers              — list registered servers for the user
  *   POST   /api/mcp/servers              — register a new MCP server
  *   DELETE /api/mcp/servers/:id          — remove a registered server
@@ -11,17 +13,12 @@
 
 import { Router } from "express";
 import { mcpStore } from "./mcpStore";
+import { requireAuth, AuthenticatedRequest } from "../auth/authMiddleware";
 
 const router = Router();
 
-// ---------------------------------------------------------------------------
-// Auth helper — resolves user ID from X-User-Id header
-// ---------------------------------------------------------------------------
-
-function resolveUserId(req: { headers: Record<string, string | string[] | undefined> }): string | null {
-  const h = req.headers["x-user-id"];
-  return typeof h === "string" && h.trim() ? h.trim() : null;
-}
+// All MCP routes require JWT auth
+router.use(requireAuth);
 
 // ---------------------------------------------------------------------------
 // MCP JSON-RPC helper
@@ -82,23 +79,12 @@ async function callMcpRpc(
 // ---------------------------------------------------------------------------
 
 /** GET /api/mcp/servers */
-router.get("/", (req, res) => {
-  const userId = resolveUserId(req);
-  if (!userId) {
-    res.status(401).json({ error: "X-User-Id header is required" });
-    return;
-  }
-  res.json({ servers: mcpStore.list(userId) });
+router.get("/", (req: AuthenticatedRequest, res) => {
+  res.json({ servers: mcpStore.list(req.auth!.sub) });
 });
 
 /** POST /api/mcp/servers */
-router.post("/", (req, res) => {
-  const userId = resolveUserId(req);
-  if (!userId) {
-    res.status(401).json({ error: "X-User-Id header is required" });
-    return;
-  }
-
+router.post("/", (req: AuthenticatedRequest, res) => {
   const { name, url, authHeaderKey, authHeaderValue } = req.body as {
     name?: unknown;
     url?: unknown;
@@ -115,7 +101,7 @@ router.post("/", (req, res) => {
     return;
   }
 
-  const server = mcpStore.add(userId, {
+  const server = mcpStore.add(req.auth!.sub, {
     name,
     url,
     authHeaderKey: typeof authHeaderKey === "string" ? authHeaderKey : undefined,
@@ -126,14 +112,8 @@ router.post("/", (req, res) => {
 });
 
 /** DELETE /api/mcp/servers/:id */
-router.delete("/:id", (req, res) => {
-  const userId = resolveUserId(req);
-  if (!userId) {
-    res.status(401).json({ error: "X-User-Id header is required" });
-    return;
-  }
-
-  const removed = mcpStore.remove(req.params.id, userId);
+router.delete("/:id", (req: AuthenticatedRequest, res) => {
+  const removed = mcpStore.remove(req.params.id, req.auth!.sub);
   if (!removed) {
     res.status(404).json({ error: "Server not found or not owned by you" });
     return;
@@ -143,15 +123,9 @@ router.delete("/:id", (req, res) => {
 });
 
 /** GET /api/mcp/servers/:id/tools — discover available tools */
-router.get("/:id/tools", async (req, res) => {
-  const userId = resolveUserId(req);
-  if (!userId) {
-    res.status(401).json({ error: "X-User-Id header is required" });
-    return;
-  }
-
+router.get("/:id/tools", async (req: AuthenticatedRequest, res) => {
   const server = mcpStore.get(req.params.id);
-  if (!server || server.userId !== userId) {
+  if (!server || server.userId !== req.auth!.sub) {
     res.status(404).json({ error: "Server not found or not owned by you" });
     return;
   }
@@ -175,15 +149,9 @@ router.get("/:id/tools", async (req, res) => {
 });
 
 /** POST /api/mcp/servers/:id/test — connectivity check */
-router.post("/:id/test", async (req, res) => {
-  const userId = resolveUserId(req);
-  if (!userId) {
-    res.status(401).json({ error: "X-User-Id header is required" });
-    return;
-  }
-
+router.post("/:id/test", async (req: AuthenticatedRequest, res) => {
   const server = mcpStore.get(req.params.id);
-  if (!server || server.userId !== userId) {
+  if (!server || server.userId !== req.auth!.sub) {
     res.status(404).json({ error: "Server not found or not owned by you" });
     return;
   }

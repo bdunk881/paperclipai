@@ -3,12 +3,13 @@
  * Provides CRUD operations for user LLM provider credentials.
  * API keys are stored encrypted at rest; the raw key is never returned.
  *
- * Authentication: pass the caller's user ID in the X-User-Id header.
- * Replace with a real auth middleware (JWT, session, etc.) before production.
+ * Authentication: requires a valid Bearer JWT (Entra External ID).
+ * User identity is derived from the verified JWT sub claim.
  */
 
-import { Router, Request, Response } from "express";
+import { Router, Response } from "express";
 import { llmConfigStore, LLMProvider } from "./llmConfigStore";
+import { requireAuth, AuthenticatedRequest } from "../auth/authMiddleware";
 
 const VALID_PROVIDERS: LLMProvider[] = [
   "openai",
@@ -17,24 +18,15 @@ const VALID_PROVIDERS: LLMProvider[] = [
   "mistral",
 ];
 
-function getUserId(req: Request): string | null {
-  const userId = req.headers["x-user-id"];
-  if (typeof userId !== "string" || !userId.trim()) return null;
-  return userId.trim();
-}
-
 const router = Router();
+
+// All LLM config routes require JWT auth
+router.use(requireAuth);
 
 // ---------------------------------------------------------------------------
 // POST /api/llm-configs — create config, store API key encrypted
 // ---------------------------------------------------------------------------
-router.post("/", (req: Request, res: Response) => {
-  const userId = getUserId(req);
-  if (!userId) {
-    res.status(401).json({ error: "X-User-Id header is required" });
-    return;
-  }
-
+router.post("/", (req: AuthenticatedRequest, res: Response) => {
   const { provider, label, model, apiKey } = req.body as Record<
     string,
     unknown
@@ -65,7 +57,7 @@ router.post("/", (req: Request, res: Response) => {
   }
 
   const config = llmConfigStore.create({
-    userId,
+    userId: req.auth!.sub,
     provider: provider as LLMProvider,
     label: label.trim(),
     model: model.trim(),
@@ -78,14 +70,8 @@ router.post("/", (req: Request, res: Response) => {
 // ---------------------------------------------------------------------------
 // GET /api/llm-configs — list user's configs (keys masked)
 // ---------------------------------------------------------------------------
-router.get("/", (req: Request, res: Response) => {
-  const userId = getUserId(req);
-  if (!userId) {
-    res.status(401).json({ error: "X-User-Id header is required" });
-    return;
-  }
-
-  const configs = llmConfigStore.list(userId);
+router.get("/", (req: AuthenticatedRequest, res: Response) => {
+  const configs = llmConfigStore.list(req.auth!.sub);
   res.json({ configs, total: configs.length });
 });
 
@@ -93,14 +79,8 @@ router.get("/", (req: Request, res: Response) => {
 // PATCH /api/llm-configs/:id/default — set as default for user's LLM steps
 // Must be declared before /:id to avoid shadowing
 // ---------------------------------------------------------------------------
-router.patch("/:id/default", (req: Request, res: Response) => {
-  const userId = getUserId(req);
-  if (!userId) {
-    res.status(401).json({ error: "X-User-Id header is required" });
-    return;
-  }
-
-  const updated = llmConfigStore.setDefault(req.params.id, userId);
+router.patch("/:id/default", (req: AuthenticatedRequest, res: Response) => {
+  const updated = llmConfigStore.setDefault(req.params.id, req.auth!.sub);
   if (!updated) {
     res
       .status(404)
@@ -114,13 +94,7 @@ router.patch("/:id/default", (req: Request, res: Response) => {
 // ---------------------------------------------------------------------------
 // PATCH /api/llm-configs/:id — update label or model
 // ---------------------------------------------------------------------------
-router.patch("/:id", (req: Request, res: Response) => {
-  const userId = getUserId(req);
-  if (!userId) {
-    res.status(401).json({ error: "X-User-Id header is required" });
-    return;
-  }
-
+router.patch("/:id", (req: AuthenticatedRequest, res: Response) => {
   const { label, model } = req.body as Record<string, unknown>;
   const patch: Partial<{ label: string; model: string }> = {};
 
@@ -139,7 +113,7 @@ router.patch("/:id", (req: Request, res: Response) => {
     patch.model = model.trim();
   }
 
-  const updated = llmConfigStore.update(req.params.id, userId, patch);
+  const updated = llmConfigStore.update(req.params.id, req.auth!.sub, patch);
   if (!updated) {
     res
       .status(404)
@@ -153,14 +127,8 @@ router.patch("/:id", (req: Request, res: Response) => {
 // ---------------------------------------------------------------------------
 // DELETE /api/llm-configs/:id — remove config
 // ---------------------------------------------------------------------------
-router.delete("/:id", (req: Request, res: Response) => {
-  const userId = getUserId(req);
-  if (!userId) {
-    res.status(401).json({ error: "X-User-Id header is required" });
-    return;
-  }
-
-  const deleted = llmConfigStore.delete(req.params.id, userId);
+router.delete("/:id", (req: AuthenticatedRequest, res: Response) => {
+  const deleted = llmConfigStore.delete(req.params.id, req.auth!.sub);
   if (!deleted) {
     res
       .status(404)

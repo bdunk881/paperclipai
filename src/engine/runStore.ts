@@ -40,6 +40,7 @@ function mapRowToRun(row: Record<string, unknown>): WorkflowRun {
     output: parseJsonValue<Record<string, unknown> | undefined>(row["output_json"], undefined),
     runtimeState: parseJsonValue<WorkflowRun["runtimeState"] | undefined>(row["runtime_state_json"], undefined),
     error: typeof row["error"] === "string" ? row["error"] : undefined,
+    userId: typeof row["user_id"] === "string" ? row["user_id"] : undefined,
     stepResults: [],
   };
 }
@@ -115,9 +116,9 @@ export const runStore = {
       `
         INSERT INTO workflow_runs (
           id, template_id, template_name, status, started_at, completed_at,
-          input_json, output_json, runtime_state_json, error
+          input_json, output_json, runtime_state_json, error, user_id
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8::jsonb, $9::jsonb, $10)
+        VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8::jsonb, $9::jsonb, $10, $11)
       `,
       [
         cloned.id,
@@ -130,6 +131,7 @@ export const runStore = {
         serializeJson(cloned.output),
         serializeJson(cloned.runtimeState),
         cloned.error ?? null,
+        cloned.userId ?? null,
       ]
     );
     await writeStepResults(cloned.id, cloned.stepResults);
@@ -145,7 +147,7 @@ export const runStore = {
     const pool = getPostgresPool();
     const result = await pool.query(
       `
-        SELECT id, template_id, template_name, status, started_at, completed_at, input_json, output_json, runtime_state_json, error
+        SELECT id, template_id, template_name, status, started_at, completed_at, input_json, output_json, runtime_state_json, error, user_id
         FROM workflow_runs
         WHERE id = $1
       `,
@@ -202,6 +204,7 @@ export const runStore = {
             output_json = $8::jsonb,
             runtime_state_json = $9::jsonb,
             error = $10,
+            user_id = $11,
             updated_at = now()
         WHERE id = $1
       `,
@@ -216,28 +219,32 @@ export const runStore = {
         serializeJson(updated.output),
         serializeJson(updated.runtimeState),
         updated.error ?? null,
+        updated.userId ?? null,
       ]
     );
     await writeStepResults(id, updated.stepResults);
     return cloneRun(updated);
   },
 
-  async list(templateId?: string): Promise<WorkflowRun[]> {
+  async list(templateId?: string, userId?: string): Promise<WorkflowRun[]> {
     if (!isPostgresPersistenceEnabled()) {
       const runs = Array.from(memoryStore.values());
-      const filtered = templateId ? runs.filter((run) => run.templateId === templateId) : runs;
+      const filtered = runs
+        .filter((run) => (templateId ? run.templateId === templateId : true))
+        .filter((run) => (userId ? run.userId === userId : true));
       return filtered.map((run) => cloneRun(run));
     }
 
     const pool = getPostgresPool();
     const result = await pool.query(
       `
-        SELECT id, template_id, template_name, status, started_at, completed_at, input_json, output_json, runtime_state_json, error
+        SELECT id, template_id, template_name, status, started_at, completed_at, input_json, output_json, runtime_state_json, error, user_id
         FROM workflow_runs
         WHERE ($1::text IS NULL OR template_id = $1)
+          AND ($2::text IS NULL OR user_id = $2)
         ORDER BY started_at DESC
       `,
-      [templateId ?? null]
+      [templateId ?? null, userId ?? null]
     );
 
     const runs = await Promise.all(

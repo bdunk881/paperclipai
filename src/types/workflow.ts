@@ -155,6 +155,7 @@ export interface WorkflowRun {
     waitingApprovalId?: string;
   };
   error?: string;
+  userId?: string;
 }
 
 /** Result of one worker slot in a parallel agent step */

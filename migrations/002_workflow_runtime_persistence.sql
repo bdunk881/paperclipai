@@ -4,6 +4,7 @@ CREATE TABLE IF NOT EXISTS workflow_runs (
   id uuid PRIMARY KEY,
   template_id text NOT NULL,
   template_name text NOT NULL,
+  user_id text,
   status text NOT NULL CHECK (status IN ('pending', 'running', 'completed', 'failed', 'escalated', 'awaiting_approval')),
   started_at timestamptz NOT NULL,
   completed_at timestamptz,
@@ -67,6 +68,7 @@ CREATE INDEX IF NOT EXISTS idx_memory_entries_expires_at
 CREATE TABLE IF NOT EXISTS approval_requests (
   id uuid PRIMARY KEY,
   run_id uuid NOT NULL REFERENCES workflow_runs(id) ON DELETE CASCADE,
+  user_id text,
   template_name text NOT NULL,
   step_id text NOT NULL,
   step_name text NOT NULL,

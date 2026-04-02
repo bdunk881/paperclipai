@@ -274,6 +274,7 @@ export class WorkflowEngine {
         context: { ...runConfig, ...input },
         currentStepIndex: 0,
       },
+      ...(userId !== undefined ? { userId } : {}),
     });
 
     // Execute asynchronously so the HTTP response returns immediately
@@ -596,6 +597,7 @@ export class WorkflowEngine {
               assignee,
               message,
               timeoutMinutes,
+              userId,
             });
 
             await runStore.update(runId, {

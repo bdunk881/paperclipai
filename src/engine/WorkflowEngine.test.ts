@@ -14,10 +14,14 @@ jest.mock("./llmProviders", () => ({
 import { WorkflowEngine, setLlmProvider, registerAction } from "./WorkflowEngine";
 import { runStore } from "./runStore";
 import { approvalStore } from "./approvalStore";
+import { llmConfigStore } from "../llmConfig/llmConfigStore";
+import { getProvider } from "./llmProviders";
 import { customerSupportBot } from "../templates/customer-support-bot";
 import { leadEnrichment } from "../templates/lead-enrichment";
 import { contentGenerator } from "../templates/content-generator";
-import { WorkflowTemplate } from "../types/workflow";
+import { WorkflowTemplate, WorkflowStep } from "../types/workflow";
+
+const mockGetProvider = getProvider as jest.Mock;
 
 // ---------------------------------------------------------------------------
 // Helpers

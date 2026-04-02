@@ -1,12 +1,11 @@
-# AutoFlow — Azure Infrastructure (Alternative Track)
+# AutoFlow — Azure Infrastructure (Primary Deploy Track)
 
-Terraform IaC for an Azure-native deployment of AutoFlow.
+Terraform IaC for the Azure-native deployment of AutoFlow.
 
-> **Status:** Draft / alternative track — the primary deployment path is
-> Hetzner + Coolify (see `infra/README.md`). This directory is additive;
-> do not modify the Hetzner setup.
+> **Status:** Primary deployment path — AutoFlow runs on AKS (Azure Kubernetes Service) with ACR, Key Vault, Hub/Spoke VNets, and Azure Policy following the Cloud Adoption Framework.
+> CI/CD is handled by `.github/workflows/deploy-azure.yml`.
 >
-> See `COMPARISON.md` for a detailed cost/complexity trade-off analysis.
+> See `COMPARISON.md` for historical context on the Hetzner → Azure migration decision.
 
 ---
 
@@ -85,26 +84,36 @@ terraform apply \
 
 ---
 
-## Azure DevOps Pipeline
+## GitHub Actions CI/CD Pipeline
 
-The pipeline lives at `.azure-pipelines/ci-cd.yml`.
+The pipeline lives at `.github/workflows/deploy-azure.yml`.
 
 **Stages:**
 
 | Stage | Trigger | Gate |
 |---|---|---|
-| Build | Every push | CI pass (lint + tests) |
+| Build & Push | Every push to `main` | CI pass (lint + tests) |
 | Deploy Staging | `main` branch only | Automatic after Build |
-| Deploy Production | `main` branch only | Manual approval in Azure DevOps |
+| Deploy Production | `main` branch only | Manual approval via GitHub environment protection |
+
+**Required GitHub Secrets (board must add):**
+
+| Secret | Description |
+|---|---|
+| `AZURE_CREDENTIALS` | Service principal JSON from `az ad sp create-for-rbac --sdk-auth` |
+| `AZURE_SUBSCRIPTION_ID` | Azure subscription ID |
+| `AZURE_TENANT_ID` | Azure AD tenant ID |
+| `AZURE_ACR_LOGIN_SERVER` | ACR login server, e.g. `autoflowacr.azurecr.io` |
+| `AKS_CLUSTER_NAME` | AKS cluster name (Terraform output: `aks_cluster_name`) |
+| `AKS_RESOURCE_GROUP` | Resource group name (Terraform output: `resource_group_name`) |
 
 **Setup steps:**
 
-1. Create a Variable Group named `autoflow-pipeline-vars` in Azure DevOps → Pipelines → Library.
-2. Add a service connection named `autoflow-azure-sc` (Azure Resource Manager).
-3. Add a service connection named `autoflow-acr-sc` (Docker Registry → ACR).
-4. Create two Environments in Azure DevOps → Pipelines → Environments:
-   - `autoflow-staging` — no approvals
-   - `autoflow-production` — add an Approvals & Checks policy with required approvers
+1. Run `terraform apply` to create all Azure resources (see Usage above).
+2. Add the GitHub Secrets listed above to the repository.
+3. Create two GitHub Environments in Settings → Environments:
+   - `staging` — no approvals
+   - `production` — add required reviewers for manual approval gate
 
 ---
 
@@ -133,10 +142,12 @@ infra/azure/scripts/
 
 ## Secrets needed post-deploy
 
-After `terraform apply`, export these values and add them to Azure DevOps / app secrets:
+After `terraform apply`, export these values and add them to GitHub Secrets / app environment:
 
 ```bash
 terraform output app_insights_connection_string   # APPLICATIONINSIGHTS_CONNECTION_STRING
-terraform output acr_login_server                 # Docker registry for pipeline
-terraform output kube_config_command              # merge kubeconfig
+terraform output acr_login_server                 # AZURE_ACR_LOGIN_SERVER
+terraform output aks_cluster_name                 # AKS_CLUSTER_NAME
+terraform output resource_group_name              # AKS_RESOURCE_GROUP
+terraform output kube_config_command              # run to merge kubeconfig locally
 ```

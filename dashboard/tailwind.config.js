@@ -5,13 +5,19 @@ export default {
     extend: {
       colors: {
         brand: {
-          50: "#eff6ff",
-          100: "#dbeafe",
-          500: "#3b82f6",
-          600: "#2563eb",
-          700: "#1d4ed8",
-          900: "#1e3a8a",
+          teal: "#00D4B8",
+          indigo: "#4A3AFF",
+          coral: "#FF5F57",
+          yellow: "#FFD93D",
+          navy: "#0F1333",
+          slate: "#2D3748",
+          cloud: "#F7FAFC",
         },
+      },
+      fontFamily: {
+        display: ["Poppins", "ui-sans-serif", "system-ui"],
+        sans: ["Inter", "ui-sans-serif", "system-ui"],
+        mono: ["JetBrains Mono", "ui-monospace", "monospace"],
       },
     },
   },

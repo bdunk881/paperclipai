@@ -1,9 +1,18 @@
 import type { Metadata } from "next";
-import { Inter } from "next/font/google";
+import { Inter, Poppins, JetBrains_Mono } from "next/font/google";
 import Link from "next/link";
 import "./globals.css";
 
-const inter = Inter({ subsets: ["latin"] });
+const inter = Inter({ subsets: ["latin"], variable: "--font-inter" });
+const poppins = Poppins({
+  subsets: ["latin"],
+  weight: ["400", "600", "700", "800"],
+  variable: "--font-poppins",
+});
+const jetbrainsMono = JetBrains_Mono({
+  subsets: ["latin"],
+  variable: "--font-jetbrains-mono",
+});
 
 // TODO: Update with CMO-approved SEO copy from ALT-93
 export const metadata: Metadata = {
@@ -41,10 +50,10 @@ export default function RootLayout({
           />
         )}
       </head>
-      <body className={`${inter.className} antialiased`}>
+      <body className={`${inter.variable} ${poppins.variable} ${jetbrainsMono.variable} font-sans antialiased`}>
         <nav className="sticky top-0 z-50 bg-white/80 backdrop-blur-sm border-b border-gray-100">
           <div className="mx-auto max-w-7xl px-6 lg:px-8 flex h-16 items-center justify-between">
-            <Link href="/" className="text-xl font-bold text-indigo-600">
+            <Link href="/" className="text-xl font-display font-bold text-[#4A3AFF]">
               AutoFlow
             </Link>
             <div className="hidden md:flex items-center gap-8">
@@ -80,7 +89,7 @@ export default function RootLayout({
               </a>
               <a
                 href="#pricing"
-                className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700 transition-colors"
+                className="rounded-lg bg-[#FF5F57] px-4 py-2 text-sm font-semibold text-white hover:bg-[#e54e46] transition-colors"
               >
                 Start free
               </a>

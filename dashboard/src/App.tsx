@@ -3,6 +3,7 @@ import { PublicClientApplication, EventType, AuthenticationResult } from "@azure
 import { MsalProvider } from "@azure/msal-react";
 import { msalConfig } from "./auth/msalConfig";
 import { AuthProvider, useAuth } from "./context/AuthContext";
+import { OnboardingProvider, useOnboarding } from "./context/OnboardingContext";
 
 const msalInstance = new PublicClientApplication(msalConfig);
 
@@ -44,10 +45,25 @@ import MCPIntegrations from "./pages/MCPIntegrations";
 import McpServers from "./pages/McpServers";
 import ExecutionLogs from "./pages/ExecutionLogs";
 import CheckoutSuccess from "./pages/CheckoutSuccess";
+import OnboardingWelcome from "./pages/onboarding/Welcome";
+import OnboardingTemplatePicker from "./pages/onboarding/TemplatePicker";
+import OnboardingConfigurator from "./pages/onboarding/Configurator";
+import OnboardingSuccess from "./pages/onboarding/Success";
+import OnboardingInviteTeammate from "./pages/onboarding/InviteTeammate";
 
+/** Requires auth; redirects to /login if not authenticated. */
 function PrivateRoute({ children }: { children: React.ReactNode }) {
   const { user } = useAuth();
   return user ? <>{children}</> : <Navigate to="/login" replace />;
+}
+
+/** Requires auth + completed onboarding; redirects appropriately. */
+function AppRoute({ children }: { children: React.ReactNode }) {
+  const { user } = useAuth();
+  const { state: onboarding } = useOnboarding();
+  if (!user) return <Navigate to="/login" replace />;
+  if (!onboarding.completed) return <Navigate to="/onboarding" replace />;
+  return <>{children}</>;
 }
 
 function PublicRoute({ children }: { children: React.ReactNode }) {
@@ -59,6 +75,7 @@ export default function App() {
   return (
     <MsalProvider instance={msalInstance}>
     <AuthProvider>
+    <OnboardingProvider>
       <BrowserRouter>
         <Routes>
           <Route path="/waitlist" element={<LandingPage />} />
@@ -79,12 +96,56 @@ export default function App() {
               </PublicRoute>
             }
           />
+
+          {/* Onboarding flow — auth required, no sidebar */}
+          <Route
+            path="/onboarding"
+            element={
+              <PrivateRoute>
+                <OnboardingWelcome />
+              </PrivateRoute>
+            }
+          />
+          <Route
+            path="/onboarding/templates"
+            element={
+              <PrivateRoute>
+                <OnboardingTemplatePicker />
+              </PrivateRoute>
+            }
+          />
+          <Route
+            path="/onboarding/configure/:templateId"
+            element={
+              <PrivateRoute>
+                <OnboardingConfigurator />
+              </PrivateRoute>
+            }
+          />
+          <Route
+            path="/onboarding/success"
+            element={
+              <PrivateRoute>
+                <OnboardingSuccess />
+              </PrivateRoute>
+            }
+          />
+          <Route
+            path="/onboarding/invite"
+            element={
+              <PrivateRoute>
+                <OnboardingInviteTeammate />
+              </PrivateRoute>
+            }
+          />
+
+          {/* Main app — auth + onboarding required */}
           <Route
             path="/"
             element={
-              <PrivateRoute>
+              <AppRoute>
                 <Layout />
-              </PrivateRoute>
+              </AppRoute>
             }
           >
             <Route index element={<Dashboard />} />
@@ -108,6 +169,7 @@ export default function App() {
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </BrowserRouter>
+    </OnboardingProvider>
     </AuthProvider>
     </MsalProvider>
   );

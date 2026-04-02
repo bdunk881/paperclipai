@@ -1,8 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getStripe, PRICING_TIERS } from "@/lib/stripe";
 
+interface CheckoutBody {
+  tier?: string;
+  email?: string;
+  firstName?: string;
+  companyName?: string;
+  userId?: string;
+}
+
 export async function POST(req: NextRequest) {
-  const { tier } = (await req.json()) as { tier?: string };
+  const { tier, email, firstName, companyName, userId } =
+    (await req.json()) as CheckoutBody;
 
   if (!tier || !(tier in PRICING_TIERS)) {
     return NextResponse.json({ error: "Invalid tier" }, { status: 400 });
@@ -26,6 +35,16 @@ export async function POST(req: NextRequest) {
       success_url: `${process.env.NEXT_PUBLIC_BASE_URL ?? ""}/success?session_id={CHECKOUT_SESSION_ID}`,
       cancel_url: `${process.env.NEXT_PUBLIC_BASE_URL ?? ""}/#pricing`,
       allow_promotion_codes: true,
+      // Pre-fill email if provided by authenticated user
+      ...(email ? { customer_email: email } : {}),
+      // Store user context so the webhook can fire Loops.so events
+      metadata: {
+        tier,
+        ...(email ? { email } : {}),
+        ...(firstName ? { firstName } : {}),
+        ...(companyName ? { companyName } : {}),
+        ...(userId ? { userId } : {}),
+      },
     });
 
     return NextResponse.json({ url: session.url });

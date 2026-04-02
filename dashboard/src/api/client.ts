@@ -440,6 +440,49 @@ export async function resolveApproval(
   }
 }
 
+// ---------------------------------------------------------------------------
+// Analytics API — run stats for the dashboard
+// ---------------------------------------------------------------------------
+
+export interface RunStats {
+  total: number;
+  completed: number;
+  failed: number;
+  running: number;
+  successRate: number;
+  lastRunAt: string | null;
+  avgDurationMs: number | null;
+}
+
+export interface AnalyticsResponse {
+  stats: RunStats;
+}
+
+/** GET /api/analytics/runs — returns aggregate run statistics */
+export async function getAnalytics(): Promise<AnalyticsResponse> {
+  if (USE_MOCK) {
+    await delay(100);
+    const total = MOCK_RUNS.length;
+    const completed = MOCK_RUNS.filter((r) => r.status === "completed").length;
+    const failed = MOCK_RUNS.filter((r) => r.status === "failed").length;
+    const settled = completed + failed;
+    return {
+      stats: {
+        total,
+        completed,
+        failed,
+        running: MOCK_RUNS.filter((r) => r.status === "running").length,
+        successRate: settled > 0 ? Math.round((completed / settled) * 100) : 100,
+        lastRunAt: MOCK_RUNS[0]?.startedAt ?? null,
+        avgDurationMs: null,
+      },
+    };
+  }
+  const res = await fetch(`${BASE}/analytics/runs`);
+  if (!res.ok) throw new Error(`Failed to fetch analytics: ${res.status}`);
+  return res.json() as Promise<AnalyticsResponse>;
+}
+
 // --- helpers ---
 
 function delay(ms: number): Promise<void> {

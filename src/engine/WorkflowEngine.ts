@@ -19,6 +19,8 @@ import { approvalStore } from "./approvalStore";
 import { handleLlm, handleMcp, handleFileTrigger, handleAgent } from "./stepHandlers";
 import { memoryStore } from "./memoryStore";
 import { LlmCostLog } from "./llmRouter";
+import { analyticsStore } from "./analyticsStore";
+import { errorTracker } from "./errorTracker";
 
 // ---------------------------------------------------------------------------
 // LLM provider interface — injectable for tests; production uses llmConfigStore
@@ -245,13 +247,23 @@ export class WorkflowEngine {
       stepResults: [],
     });
 
+    analyticsStore.emit({
+      type: "workflow.triggered",
+      runId: run.id,
+      templateId: template.id,
+      templateName: template.name,
+      userId,
+    });
+
     // Execute asynchronously so the HTTP response returns immediately
     this._executeRun(run.id, template, input, runConfig, userId).catch((err) => {
+      const errorMsg = String(err);
       runStore.update(run.id, {
         status: "failed",
         completedAt: new Date().toISOString(),
-        error: String(err),
+        error: errorMsg,
       });
+      errorTracker.captureException(err, { runId: run.id, templateId: template.id });
     });
 
     return run;
@@ -272,7 +284,15 @@ export class WorkflowEngine {
     config: Record<string, unknown>,
     userId?: string
   ): Promise<void> {
+    const runStartMs = Date.now();
     runStore.update(runId, { status: "running" });
+    analyticsStore.emit({
+      type: "run.started",
+      runId,
+      templateId: template.id,
+      templateName: template.name,
+      userId,
+    });
 
     // Build memory helpers scoped to this run's userId + templateId
     const memoryUserId = userId ?? "anonymous";
@@ -416,6 +436,21 @@ export class WorkflowEngine {
           error: stepError,
           stepResults,
         });
+        const durationMs = Date.now() - runStartMs;
+        analyticsStore.emit({
+          type: "run.failed",
+          runId,
+          templateId: template.id,
+          templateName: template.name,
+          userId,
+          durationMs,
+          error: stepError,
+        });
+        errorTracker.captureMessage(
+          `Run failed at step "${step.name}": ${stepError ?? "unknown error"}`,
+          "error",
+          { runId, templateId: template.id, stepId: step.id }
+        );
         return;
       }
     }
@@ -429,11 +464,20 @@ export class WorkflowEngine {
       }
     }
 
+    const durationMs = Date.now() - runStartMs;
     runStore.update(runId, {
       status: "completed",
       completedAt: new Date().toISOString(),
       output,
       stepResults,
+    });
+    analyticsStore.emit({
+      type: "run.completed",
+      runId,
+      templateId: template.id,
+      templateName: template.name,
+      userId,
+      durationMs,
     });
   }
 }

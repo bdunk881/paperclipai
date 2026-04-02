@@ -238,7 +238,7 @@ app.get("/api/runs/:id", requireAuth, apiKeyLimiter, (req: AuthenticatedRequest,
 /**
  * POST /api/runs/file
  * Multipart body: { templateId: string, file: <binary> }
- * Headers: X-User-Id (optional, forwarded to run engine)
+ * Auth: Bearer JWT required; user ID taken from verified JWT sub claim.
  *
  * Parses the uploaded file (PDF/image/audio/text) into text content, then
  * starts a workflow run with { content, mimeType, filename } injected as input.
@@ -490,7 +490,7 @@ analyticsStore.onRunSettled(checkFailureRateAlert);
  * Returns aggregate run statistics derived from analytics events.
  * Shape: { stats: RunStats, recentEvents: AnalyticsEvent[] }
  */
-app.get("/api/analytics/runs", (_req, res) => {
+app.get("/api/analytics/runs", requireAuth, apiKeyLimiter, (_req: AuthenticatedRequest, res) => {
   const stats = analyticsStore.getRunStats();
   const recentEvents = analyticsStore
     .list()

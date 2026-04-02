@@ -7,25 +7,31 @@ import {
   Workflow,
   ArrowRight,
   TrendingUp,
+  Clock,
+  Percent,
 } from "lucide-react";
-import { listRuns, listTemplates, type TemplateSummary } from "../api/client";
+import { listRuns, listTemplates, getAnalytics, type TemplateSummary, type RunStats } from "../api/client";
 import { StatusBadge } from "../components/StatusBadge";
 import type { WorkflowRun } from "../types/workflow";
 
 export default function Dashboard() {
   const [runs, setRuns] = useState<WorkflowRun[]>([]);
   const [templates, setTemplates] = useState<TemplateSummary[]>([]);
+  const [analyticsStats, setAnalyticsStats] = useState<RunStats | null>(null);
 
   useEffect(() => {
     listRuns().then(setRuns).catch(console.error);
     listTemplates().then(setTemplates).catch(console.error);
+    getAnalytics().then((r) => setAnalyticsStats(r.stats)).catch(console.error);
   }, []);
 
   const stats = {
-    total: runs.length,
-    running: runs.filter((r) => r.status === "running").length,
-    completed: runs.filter((r) => r.status === "completed").length,
-    failed: runs.filter((r) => r.status === "failed").length,
+    total: analyticsStats?.total ?? runs.length,
+    running: analyticsStats?.running ?? runs.filter((r) => r.status === "running").length,
+    completed: analyticsStats?.completed ?? runs.filter((r) => r.status === "completed").length,
+    failed: analyticsStats?.failed ?? runs.filter((r) => r.status === "failed").length,
+    successRate: analyticsStats?.successRate ?? 100,
+    lastRunAt: analyticsStats?.lastRunAt ?? null,
   };
 
   const recentRuns = [...runs]
@@ -40,7 +46,7 @@ export default function Dashboard() {
       </div>
 
       {/* Stats */}
-      <div className="grid grid-cols-4 gap-5 mb-8">
+      <div className="grid grid-cols-3 gap-5 mb-5">
         <StatCard
           label="Total Runs"
           value={stats.total}
@@ -59,11 +65,25 @@ export default function Dashboard() {
           icon={<CheckCircle2 size={20} className="text-green-600" />}
           bg="bg-green-50"
         />
+      </div>
+      <div className="grid grid-cols-3 gap-5 mb-8">
         <StatCard
           label="Failed"
           value={stats.failed}
           icon={<XCircle size={20} className="text-red-500" />}
           bg="bg-red-50"
+        />
+        <StatCard
+          label="Success Rate"
+          value={`${stats.successRate}%`}
+          icon={<Percent size={20} className="text-purple-600" />}
+          bg="bg-purple-50"
+        />
+        <StatCardText
+          label="Last Run"
+          value={stats.lastRunAt ? new Date(stats.lastRunAt).toLocaleString() : "—"}
+          icon={<Clock size={20} className="text-gray-500" />}
+          bg="bg-gray-100"
         />
       </div>
 
@@ -146,7 +166,7 @@ function StatCard({
   bg,
 }: {
   label: string;
-  value: number;
+  value: number | string;
   icon: React.ReactNode;
   bg: string;
 }) {
@@ -157,6 +177,28 @@ function StatCard({
         <div className={`p-2 rounded-lg ${bg}`}>{icon}</div>
       </div>
       <p className="text-3xl font-bold text-gray-900">{value}</p>
+    </div>
+  );
+}
+
+function StatCardText({
+  label,
+  value,
+  icon,
+  bg,
+}: {
+  label: string;
+  value: string;
+  icon: React.ReactNode;
+  bg: string;
+}) {
+  return (
+    <div className="bg-white rounded-xl border border-gray-200 p-5">
+      <div className="flex items-center justify-between mb-3">
+        <span className="text-sm text-gray-500">{label}</span>
+        <div className={`p-2 rounded-lg ${bg}`}>{icon}</div>
+      </div>
+      <p className="text-base font-semibold text-gray-900 truncate">{value}</p>
     </div>
   );
 }

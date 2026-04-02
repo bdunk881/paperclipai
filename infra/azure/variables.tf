@@ -26,26 +26,6 @@ variable "tenant_id" {
   type        = string
 }
 
-# ── Networking ────────────────────────────────────────────────────────────────
-
-variable "vnet_address_space" {
-  description = "CIDR block for the virtual network"
-  type        = string
-  default     = "10.0.0.0/16"
-}
-
-variable "aks_subnet_cidr" {
-  description = "CIDR block for AKS node subnet"
-  type        = string
-  default     = "10.0.1.0/24"
-}
-
-variable "pe_subnet_cidr" {
-  description = "CIDR block for private endpoint subnet"
-  type        = string
-  default     = "10.0.2.0/24"
-}
-
 # ── AKS ───────────────────────────────────────────────────────────────────────
 
 variable "kubernetes_version" {

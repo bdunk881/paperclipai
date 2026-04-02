@@ -3,6 +3,16 @@ output "hub_vnet_id" {
   value       = module.hub.hub_vnet_id
 }
 
+output "spoke_prod_vnet_id" {
+  description = "Resource ID of the production spoke virtual network"
+  value       = module.spoke_prod.spoke_vnet_id
+}
+
+output "spoke_staging_vnet_id" {
+  description = "Resource ID of the staging spoke virtual network"
+  value       = module.spoke_staging.spoke_vnet_id
+}
+
 output "hub_firewall_private_ip" {
   description = "Private IP of the hub Azure Firewall (use in spoke UDRs)"
   value       = module.hub.firewall_private_ip

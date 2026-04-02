@@ -55,17 +55,52 @@ module "hub" {
   tags                = local.common_tags
 }
 
-module "networking" {
-  source = "./modules/networking"
+# ── Spoke VNets (prod + staging) ──────────────────────────────────────────────
+# Replaces the old modules/networking single-environment module.
+# Each spoke peers bidirectionally to the hub and routes DNS through the Firewall.
 
-  prefix              = var.prefix
-  environment         = var.environment
-  location            = var.location
-  resource_group_name = azurerm_resource_group.main.name
-  vnet_address_space  = var.vnet_address_space
-  aks_subnet_cidr     = var.aks_subnet_cidr
-  pe_subnet_cidr      = var.pe_subnet_cidr
-  tags                = local.common_tags
+module "spoke_prod" {
+  source = "./modules/spoke"
+
+  prefix                     = var.prefix
+  environment                = "prod"
+  location                   = var.location
+  resource_group_name        = azurerm_resource_group.main.name
+  spoke_vnet_cidr            = "10.2.0.0/16"
+  aks_subnet_cidr            = "10.2.1.0/24"
+  pe_subnet_cidr             = "10.2.2.0/24"
+  svc_subnet_cidr            = "10.2.3.0/24"
+  hub_vnet_id                = module.hub.hub_vnet_id
+  hub_vnet_name              = module.hub.hub_vnet_name
+  hub_resource_group_name    = azurerm_resource_group.main.name
+  hub_firewall_private_ip    = module.hub.firewall_private_ip
+  tags                       = local.common_tags
+}
+
+module "spoke_staging" {
+  source = "./modules/spoke"
+
+  prefix                     = var.prefix
+  environment                = "staging"
+  location                   = var.location
+  resource_group_name        = azurerm_resource_group.main.name
+  spoke_vnet_cidr            = "10.3.0.0/16"
+  aks_subnet_cidr            = "10.3.1.0/24"
+  pe_subnet_cidr             = "10.3.2.0/24"
+  svc_subnet_cidr            = "10.3.3.0/24"
+  hub_vnet_id                = module.hub.hub_vnet_id
+  hub_vnet_name              = module.hub.hub_vnet_name
+  hub_resource_group_name    = azurerm_resource_group.main.name
+  hub_firewall_private_ip    = module.hub.firewall_private_ip
+  tags                       = local.common_tags
+}
+
+# Select the correct spoke subnet IDs based on the deployment environment.
+# (Both spoke VNets are always deployed; active_* picks the right one for AKS/ACR.)
+locals {
+  active_aks_subnet_id = var.environment == "production" ? module.spoke_prod.aks_subnet_id : module.spoke_staging.aks_subnet_id
+  active_pe_subnet_id  = var.environment == "production" ? module.spoke_prod.pe_subnet_id  : module.spoke_staging.pe_subnet_id
+  active_vnet_id       = var.environment == "production" ? module.spoke_prod.spoke_vnet_id : module.spoke_staging.spoke_vnet_id
 }
 
 module "acr" {
@@ -75,8 +110,8 @@ module "acr" {
   environment         = var.environment
   location            = var.location
   resource_group_name = azurerm_resource_group.main.name
-  pe_subnet_id        = module.networking.pe_subnet_id
-  vnet_id             = module.networking.vnet_id
+  pe_subnet_id        = local.active_pe_subnet_id
+  vnet_id             = local.active_vnet_id
   tags                = local.common_tags
 }
 
@@ -87,7 +122,7 @@ module "aks" {
   environment               = var.environment
   location                  = var.location
   resource_group_name       = azurerm_resource_group.main.name
-  aks_subnet_id             = module.networking.aks_subnet_id
+  aks_subnet_id             = local.active_aks_subnet_id
   acr_id                    = module.acr.acr_id
   node_count                = var.node_count
   node_vm_size              = var.node_vm_size

@@ -21,6 +21,7 @@ export interface ApprovalRequest {
   status: "pending" | "approved" | "rejected" | "timed_out";
   resolvedAt?: string;
   comment?: string;
+  userId?: string;
 }
 
 interface PendingEntry {
@@ -44,6 +45,7 @@ export const approvalStore = {
     assignee: string;
     message: string;
     timeoutMinutes: number;
+    userId?: string;
   }): { id: string; promise: Promise<{ approved: boolean; comment?: string }> } {
     const id = randomUUID();
 
@@ -58,6 +60,7 @@ export const approvalStore = {
       timeoutMinutes: params.timeoutMinutes,
       requestedAt: new Date().toISOString(),
       status: "pending",
+      ...(params.userId !== undefined ? { userId: params.userId } : {}),
     };
 
     let resolveCallback!: (result: { approved: boolean; comment?: string }) => void;
@@ -83,9 +86,10 @@ export const approvalStore = {
     return store.get(id)?.request;
   },
 
-  list(status?: ApprovalRequest["status"]): ApprovalRequest[] {
-    const all = Array.from(store.values()).map((e) => e.request);
-    if (status) return all.filter((r) => r.status === status);
+  list(status?: ApprovalRequest["status"], userId?: string): ApprovalRequest[] {
+    let all = Array.from(store.values()).map((e) => e.request);
+    if (status) all = all.filter((r) => r.status === status);
+    if (userId) all = all.filter((r) => r.userId === userId);
     return all.sort((a, b) => new Date(b.requestedAt).getTime() - new Date(a.requestedAt).getTime());
   },
 

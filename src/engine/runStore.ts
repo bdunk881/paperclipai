@@ -26,9 +26,10 @@ export const runStore = {
     return updated;
   },
 
-  list(templateId?: string): WorkflowRun[] {
-    const runs = Array.from(store.values());
-    if (templateId) return runs.filter((r) => r.templateId === templateId);
+  list(templateId?: string, userId?: string): WorkflowRun[] {
+    let runs = Array.from(store.values());
+    if (templateId) runs = runs.filter((r) => r.templateId === templateId);
+    if (userId) runs = runs.filter((r) => r.userId === userId);
     return runs;
   },
 

@@ -22,6 +22,7 @@ import { getProvider } from "./engine/llmProviders";
 import { parseFile } from "./engine/fileParser";
 import { resolveModelForTier } from "./engine/llmRouter";
 import { requireAuth, AuthenticatedRequest } from "./auth/authMiddleware";
+import { logSecurityEvent } from "./auth/securityLogger";
 
 const app = express();
 
@@ -178,17 +179,19 @@ app.post("/api/runs", requireAuth, (req: AuthenticatedRequest, res) => {
   res.status(202).json(run);
 });
 
-/** List all runs, optionally filtered by templateId */
+/** List all runs, optionally filtered by templateId. Results are scoped to the authenticated user. */
 app.get("/api/runs", requireAuth, (req: AuthenticatedRequest, res) => {
   const { templateId } = req.query;
-  const runs = runStore.list(typeof templateId === "string" ? templateId : undefined);
+  const userId = req.auth?.sub;
+  const runs = runStore.list(typeof templateId === "string" ? templateId : undefined, userId);
   res.json({ runs, total: runs.length });
 });
 
-/** Get a single run by ID */
+/** Get a single run by ID. Returns 404 if not found or owned by a different user. */
 app.get("/api/runs/:id", requireAuth, (req: AuthenticatedRequest, res) => {
   const run = runStore.get(req.params.id);
-  if (!run) {
+  const userId = req.auth?.sub;
+  if (!run || (run.userId !== undefined && run.userId !== userId)) {
     res.status(404).json({ error: `Run not found: ${req.params.id}` });
     return;
   }
@@ -403,7 +406,8 @@ app.get("/api/approvals", requireAuth, (req: AuthenticatedRequest, res) => {
     typeof status === "string" && validStatuses.includes(status)
       ? (status as "pending" | "approved" | "rejected" | "timed_out")
       : undefined;
-  const approvals = approvalStore.list(filter);
+  const userId = req.auth?.sub;
+  const approvals = approvalStore.list(filter, userId);
   res.json({ approvals, total: approvals.length });
 });
 
@@ -413,7 +417,8 @@ app.get("/api/approvals", requireAuth, (req: AuthenticatedRequest, res) => {
  */
 app.get("/api/approvals/:id", requireAuth, (req: AuthenticatedRequest, res) => {
   const approval = approvalStore.get(req.params.id);
-  if (!approval) {
+  const userId = req.auth?.sub;
+  if (!approval || (approval.userId !== undefined && approval.userId !== userId)) {
     res.status(404).json({ error: `Approval not found: ${req.params.id}` });
     return;
   }
@@ -433,12 +438,20 @@ app.post("/api/approvals/:id/resolve", requireAuth, (req: AuthenticatedRequest, 
     return;
   }
 
+  const approval = approvalStore.get(req.params.id);
   const ok = approvalStore.resolve(req.params.id, decision, comment);
   if (!ok) {
     res.status(404).json({ error: "Approval not found or already resolved" });
     return;
   }
 
+  logSecurityEvent("approval_resolved", {
+    approval_id: req.params.id,
+    decision,
+    resolved_by: req.auth?.sub,
+    run_id: approval?.runId,
+    comment,
+  }, req);
   res.json({ success: true });
 });
 

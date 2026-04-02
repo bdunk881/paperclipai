@@ -243,6 +243,7 @@ export class WorkflowEngine {
       startedAt: new Date().toISOString(),
       input,
       stepResults: [],
+      ...(userId !== undefined ? { userId } : {}),
     });
 
     // Execute asynchronously so the HTTP response returns immediately
@@ -367,6 +368,7 @@ export class WorkflowEngine {
               assignee,
               message,
               timeoutMinutes,
+              userId,
             });
 
             const { approved, comment } = await approvalPromise;

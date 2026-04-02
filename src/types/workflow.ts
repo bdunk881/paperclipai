@@ -125,6 +125,7 @@ export interface WorkflowRun {
   output?: Record<string, unknown>;
   stepResults: StepResult[];
   error?: string;
+  userId?: string;
 }
 
 /** Result of one worker slot in a parallel agent step */

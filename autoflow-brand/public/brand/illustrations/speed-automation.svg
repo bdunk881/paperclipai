@@ -1,0 +1,43 @@
+<svg viewBox="0 0 200 140" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Speed lines - long streaks from left -->
+  <line x1="0" y1="40" x2="120" y2="40" stroke="#00D4B8" strokeWidth="3" strokeLinecap="round" opacity="0.8"/>
+  <line x1="0" y1="52" x2="100" y2="52" stroke="#4A3AFF" strokeWidth="2" strokeLinecap="round" opacity="0.6"/>
+  <line x1="0" y1="64" x2="130" y2="64" stroke="#00D4B8" strokeWidth="4" strokeLinecap="round" opacity="0.9"/>
+  <line x1="0" y1="76" x2="110" y2="76" stroke="#FFD93D" strokeWidth="2" strokeLinecap="round" opacity="0.7"/>
+  <line x1="0" y1="88" x2="90" y2="88" stroke="#4A3AFF" strokeWidth="3" strokeLinecap="round" opacity="0.6"/>
+  <line x1="0" y1="100" x2="125" y2="100" stroke="#00D4B8" strokeWidth="2" strokeLinecap="round" opacity="0.7"/>
+
+  <!-- Shorter trailing lines -->
+  <line x1="0" y1="34" x2="60" y2="34" stroke="#00D4B8" strokeWidth="1.5" strokeLinecap="round" opacity="0.4"/>
+  <line x1="0" y1="46" x2="50" y2="46" stroke="#4A3AFF" strokeWidth="1.5" strokeLinecap="round" opacity="0.4"/>
+  <line x1="0" y1="58" x2="70" y2="58" stroke="#FFD93D" strokeWidth="1.5" strokeLinecap="round" opacity="0.4"/>
+  <line x1="0" y1="70" x2="80" y2="70" stroke="#FF5F57" strokeWidth="1.5" strokeLinecap="round" opacity="0.4"/>
+  <line x1="0" y1="82" x2="65" y2="82" stroke="#00D4B8" strokeWidth="1.5" strokeLinecap="round" opacity="0.4"/>
+  <line x1="0" y1="94" x2="55" y2="94" stroke="#4A3AFF" strokeWidth="1.5" strokeLinecap="round" opacity="0.4"/>
+  <line x1="0" y1="106" x2="75" y2="106" stroke="#FFD93D" strokeWidth="1.5" strokeLinecap="round" opacity="0.4"/>
+
+  <!-- Moving automation block (right side) -->
+  <rect x="130" y="28" width="60" height="84" rx="14" fill="#0F1333" stroke="#00D4B8" strokeWidth="2.5"/>
+
+  <!-- Inner workflow representation -->
+  <!-- Step dots + connecting line inside block -->
+  <circle cx="148" cy="50" r="8" fill="#FFD93D"/>
+  <path d="M148 58 L148 72" stroke="#2D3748" strokeWidth="2" strokeDasharray="2 2" opacity="0.5"/>
+  <circle cx="148" cy="78" r="8" fill="#4A3AFF"/>
+  <path d="M148 86 L148 98" stroke="#2D3748" strokeWidth="2" strokeDasharray="2 2" opacity="0.5"/>
+  <circle cx="148" cy="100" r="8" fill="#00D4B8"/>
+
+  <!-- Status indicators on right of steps -->
+  <path d="M158 47 L161 51 L167 44" stroke="#FFD93D" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" fill="none"/>
+  <path d="M158 75 L161 79 L167 72" stroke="#4A3AFF" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" fill="none"/>
+  <!-- Running indicator -->
+  <circle cx="162" cy="100" r="4" fill="#00D4B8" opacity="0.3"/>
+  <circle cx="162" cy="100" r="2.5" fill="#00D4B8"/>
+
+  <!-- Lightning bolt overlay for speed -->
+  <path d="M173 30 L165 54 L173 54 L165 80 L183 48 L173 48 Z" fill="#FFD93D" opacity="0.7"/>
+
+  <!-- Stats/speed number callout -->
+  <rect x="145" y="108" width="38" height="16" rx="4" fill="#00D4B8"/>
+  <text x="164" y="119" textAnchor="middle" fontFamily="sans-serif" fontSize="8" fontWeight="700" fill="#0F1333">10x faster</text>
+</svg>

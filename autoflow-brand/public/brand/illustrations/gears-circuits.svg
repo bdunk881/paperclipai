@@ -1,0 +1,80 @@
+<svg viewBox="0 0 200 160" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Circuit board traces (background) -->
+  <line x1="0" y1="80" x2="50" y2="80" stroke="#00D4B8" strokeWidth="1.5" opacity="0.3"/>
+  <line x1="50" y1="80" x2="50" y2="40" stroke="#00D4B8" strokeWidth="1.5" opacity="0.3"/>
+  <line x1="50" y1="40" x2="90" y2="40" stroke="#00D4B8" strokeWidth="1.5" opacity="0.3"/>
+
+  <line x1="200" y1="80" x2="150" y2="80" stroke="#4A3AFF" strokeWidth="1.5" opacity="0.3"/>
+  <line x1="150" y1="80" x2="150" y2="120" stroke="#4A3AFF" strokeWidth="1.5" opacity="0.3"/>
+  <line x1="150" y1="120" x2="110" y2="120" stroke="#4A3AFF" strokeWidth="1.5" opacity="0.3"/>
+
+  <line x1="100" y1="160" x2="100" y2="135" stroke="#FFD93D" strokeWidth="1.5" opacity="0.3"/>
+  <line x1="100" y1="0" x2="100" y2="30" stroke="#FF5F57" strokeWidth="1.5" opacity="0.3"/>
+
+  <!-- Circuit solder joints -->
+  <circle cx="50" cy="80" r="3" fill="#00D4B8" opacity="0.5"/>
+  <circle cx="50" cy="40" r="3" fill="#00D4B8" opacity="0.5"/>
+  <circle cx="150" cy="80" r="3" fill="#4A3AFF" opacity="0.5"/>
+  <circle cx="150" cy="120" r="3" fill="#4A3AFF" opacity="0.5"/>
+
+  <!-- Large center gear -->
+  <circle cx="100" cy="80" r="38" fill="#0F1333"/>
+  <!-- Gear teeth for large gear -->
+  <rect x="98" y="37" width="4" height="8" rx="1.5" fill="#00D4B8"/>
+  <rect x="98" y="115" width="4" height="8" rx="1.5" fill="#00D4B8"/>
+  <rect x="57" y="78" width="8" height="4" rx="1.5" fill="#00D4B8"/>
+  <rect x="135" y="78" width="8" height="4" rx="1.5" fill="#00D4B8"/>
+  <!-- Diagonal teeth -->
+  <rect x="71" y="49" width="8" height="4" rx="1.5" fill="#00D4B8" transform="rotate(45 75 51)"/>
+  <rect x="121" y="49" width="8" height="4" rx="1.5" fill="#00D4B8" transform="rotate(-45 125 51)"/>
+  <rect x="71" y="107" width="8" height="4" rx="1.5" fill="#00D4B8" transform="rotate(-45 75 109)"/>
+  <rect x="121" y="107" width="8" height="4" rx="1.5" fill="#00D4B8" transform="rotate(45 125 109)"/>
+
+  <circle cx="100" cy="80" r="30" fill="#0F1333" stroke="#00D4B8" strokeWidth="2.5"/>
+  <circle cx="100" cy="80" r="18" fill="#0F1333" stroke="#00D4B8" strokeWidth="1.5" opacity="0.5"/>
+  <circle cx="100" cy="80" r="8" fill="#00D4B8"/>
+  <circle cx="100" cy="80" r="4" fill="#0F1333"/>
+
+  <!-- Small upper-right gear -->
+  <circle cx="150" cy="42" r="22" fill="#0F1333"/>
+  <!-- Teeth -->
+  <rect x="148" y="17" width="4" height="6" rx="1.5" fill="#4A3AFF"/>
+  <rect x="148" y="61" width="4" height="6" rx="1.5" fill="#4A3AFF"/>
+  <rect x="125" y="40" width="6" height="4" rx="1.5" fill="#4A3AFF"/>
+  <rect x="169" y="40" width="6" height="4" rx="1.5" fill="#4A3AFF"/>
+  <rect x="133" y="24" width="6" height="4" rx="1.5" fill="#4A3AFF" transform="rotate(45 136 26)"/>
+  <rect x="161" y="24" width="6" height="4" rx="1.5" fill="#4A3AFF" transform="rotate(-45 164 26)"/>
+  <rect x="133" y="56" width="6" height="4" rx="1.5" fill="#4A3AFF" transform="rotate(-45 136 58)"/>
+  <rect x="161" y="56" width="6" height="4" rx="1.5" fill="#4A3AFF" transform="rotate(45 164 58)"/>
+
+  <circle cx="150" cy="42" r="16" fill="#0F1333" stroke="#4A3AFF" strokeWidth="2"/>
+  <circle cx="150" cy="42" r="8" fill="#4A3AFF" opacity="0.3"/>
+  <circle cx="150" cy="42" r="4" fill="#4A3AFF"/>
+  <circle cx="150" cy="42" r="2" fill="#0F1333"/>
+
+  <!-- Small lower-left gear -->
+  <circle cx="52" cy="118" r="18" fill="#0F1333"/>
+  <!-- Teeth -->
+  <rect x="50" y="97" width="4" height="5" rx="1.5" fill="#FFD93D"/>
+  <rect x="50" y="136" width="4" height="5" rx="1.5" fill="#FFD93D"/>
+  <rect x="31" y="116" width="5" height="4" rx="1.5" fill="#FFD93D"/>
+  <rect x="68" y="116" width="5" height="4" rx="1.5" fill="#FFD93D"/>
+  <rect x="37" y="102" width="5" height="4" rx="1.5" fill="#FFD93D" transform="rotate(45 39 104)"/>
+  <rect x="62" y="102" width="5" height="4" rx="1.5" fill="#FFD93D" transform="rotate(-45 64 104)"/>
+  <rect x="37" y="128" width="5" height="4" rx="1.5" fill="#FFD93D" transform="rotate(-45 39 130)"/>
+  <rect x="62" y="128" width="5" height="4" rx="1.5" fill="#FFD93D" transform="rotate(45 64 130)"/>
+
+  <circle cx="52" cy="118" r="13" fill="#0F1333" stroke="#FFD93D" strokeWidth="2"/>
+  <circle cx="52" cy="118" r="5" fill="#FFD93D" opacity="0.4"/>
+  <circle cx="52" cy="118" r="3" fill="#FFD93D"/>
+  <circle cx="52" cy="118" r="1.5" fill="#0F1333"/>
+
+  <!-- Lightning bolt / power symbol overlaid -->
+  <path d="M105 62 L95 82 L102 82 L95 98 L115 75 L107 75 Z" fill="#FFD93D" opacity="0.7"/>
+
+  <!-- Circuit nodes / LED indicators -->
+  <circle cx="20" cy="80" r="4" fill="#00D4B8" opacity="0.7"/>
+  <circle cx="180" cy="80" r="4" fill="#4A3AFF" opacity="0.7"/>
+  <circle cx="100" cy="10" r="4" fill="#FF5F57" opacity="0.7"/>
+  <circle cx="100" cy="150" r="4" fill="#FFD93D" opacity="0.7"/>
+</svg>

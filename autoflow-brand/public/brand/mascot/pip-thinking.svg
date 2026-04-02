@@ -1,0 +1,67 @@
+<svg viewBox="0 0 120 130" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Thought bubble -->
+  <circle cx="92" cy="20" r="2.5" fill="#2D3748" opacity="0.6"/>
+  <circle cx="98" cy="13" r="4" fill="#2D3748" opacity="0.6"/>
+  <circle cx="88" cy="12" r="12" fill="#F7FAFC" stroke="#2D3748" strokeWidth="1.5"/>
+  <!-- Code snippet in thought bubble -->
+  <rect x="80" y="7" width="16" height="2.5" rx="1" fill="#00D4B8" opacity="0.8"/>
+  <rect x="82" y="11" width="10" height="2" rx="1" fill="#4A3AFF" opacity="0.7"/>
+  <rect x="80" y="15" width="14" height="2" rx="1" fill="#FFD93D" opacity="0.7"/>
+
+  <!-- Body -->
+  <rect x="30" y="55" width="60" height="55" rx="18" fill="#00D4B8"/>
+  <rect x="35" y="60" width="25" height="15" rx="8" fill="rgba(255,255,255,0.2)"/>
+
+  <!-- Head tilted slightly — thinking pose -->
+  <g transform="rotate(-8 60 38)">
+    <rect x="33" y="18" width="54" height="42" rx="16" fill="#4A3AFF"/>
+    <rect x="40" y="22" width="20" height="10" rx="5" fill="rgba(255,255,255,0.2)"/>
+
+    <!-- Eyes — one slightly squinted (thinking) -->
+    <circle cx="47" cy="36" r="8" fill="#FFD93D"/>
+    <circle cx="73" cy="36" r="8" fill="#FFD93D"/>
+    <!-- Looking up-right toward thought bubble -->
+    <circle cx="50" cy="33" r="3.5" fill="#0F1333"/>
+    <circle cx="76" cy="33" r="3.5" fill="#0F1333"/>
+    <circle cx="51.5" cy="31.5" r="1.5" fill="white"/>
+    <circle cx="77.5" cy="31.5" r="1.5" fill="white"/>
+
+    <!-- Thinking expression — pursed lips -->
+    <path d="M50 50 Q58 53 64 50" stroke="white" strokeWidth="2.5" strokeLinecap="round" fill="none"/>
+
+    <!-- Raised eyebrow lines -->
+    <path d="M40 26 Q47 24 54 26" stroke="rgba(255,255,255,0.4)" strokeWidth="1.5" strokeLinecap="round" fill="none"/>
+    <path d="M60 24 Q67 22 74 24" stroke="rgba(255,255,255,0.4)" strokeWidth="1.5" strokeLinecap="round" fill="none"/>
+  </g>
+
+  <!-- Antenna with loading/thinking indicator -->
+  <rect x="58" y="8" width="4" height="12" rx="2" fill="#4A3AFF"/>
+  <circle cx="60" cy="7" r="5" fill="#FFD93D"/>
+  <circle cx="60" cy="7" r="2.5" fill="#FF5F57"/>
+  <!-- Pulsing ring around antenna ball -->
+  <circle cx="60" cy="7" r="7" fill="none" stroke="#FFD93D" strokeWidth="1.5" opacity="0.5"/>
+
+  <!-- Gear badge with spinning indicator -->
+  <circle cx="60" cy="82" r="6" fill="#0F1333"/>
+  <circle cx="60" cy="82" r="3.5" fill="#FFD93D"/>
+  <rect x="59" y="75.5" width="2" height="3" rx="0.5" fill="#0F1333"/>
+  <rect x="59" y="85.5" width="2" height="3" rx="0.5" fill="#0F1333"/>
+  <rect x="53.5" y="81" width="3" height="2" rx="0.5" fill="#0F1333"/>
+  <rect x="63.5" y="81" width="3" height="2" rx="0.5" fill="#0F1333"/>
+  <!-- Processing arc on chest -->
+  <path d="M50 92 Q60 86 70 92" stroke="#4A3AFF" strokeWidth="2" strokeLinecap="round" fill="none" opacity="0.7"/>
+
+  <!-- Left arm raised with hand on chin -->
+  <path d="M32 72 Q24 70 20 62" stroke="#00D4B8" strokeWidth="8" strokeLinecap="round" fill="none"/>
+  <circle cx="19" cy="60" r="6" fill="#4A3AFF"/>
+
+  <!-- Right arm at side -->
+  <rect x="88" y="62" width="16" height="8" rx="4" fill="#00D4B8"/>
+  <circle cx="105" cy="66" r="5" fill="#4A3AFF"/>
+
+  <!-- Legs -->
+  <rect x="42" y="105" width="14" height="18" rx="5" fill="#4A3AFF"/>
+  <rect x="64" y="105" width="14" height="18" rx="5" fill="#4A3AFF"/>
+  <ellipse cx="49" cy="124" rx="9" ry="5" fill="#0F1333"/>
+  <ellipse cx="71" cy="124" rx="9" ry="5" fill="#0F1333"/>
+</svg>

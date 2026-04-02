@@ -1,0 +1,52 @@
+<svg viewBox="0 0 240 180" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Soft background box suggestion -->
+  <rect x="20" y="30" width="200" height="120" rx="16" fill="#F7FAFC" stroke="#2D3748" strokeWidth="1.5" strokeDasharray="6 4"/>
+
+  <!-- Pip mascot (small, friendly) -->
+  <!-- Body -->
+  <rect x="95" y="85" width="50" height="42" rx="12" fill="#00D4B8"/>
+  <rect x="99" y="89" width="20" height="12" rx="6" fill="rgba(255,255,255,0.2)"/>
+  <!-- Head -->
+  <rect x="97" y="58" width="46" height="34" rx="12" fill="#4A3AFF"/>
+  <!-- Eyes -->
+  <circle cx="112" cy="73" r="6" fill="#FFD93D"/>
+  <circle cx="128" cy="73" r="6" fill="#FFD93D"/>
+  <circle cx="113" cy="73" r="2.5" fill="#0F1333"/>
+  <circle cx="129" cy="73" r="2.5" fill="#0F1333"/>
+  <circle cx="113.8" cy="71.8" r="1" fill="white"/>
+  <circle cx="129.8" cy="71.8" r="1" fill="white"/>
+  <!-- Antenna -->
+  <rect x="118" y="50" width="3" height="10" rx="1.5" fill="#4A3AFF"/>
+  <circle cx="119.5" cy="49" r="4" fill="#FFD93D"/>
+  <circle cx="119.5" cy="49" r="2" fill="#FF5F57"/>
+  <!-- Mouth — gentle smile -->
+  <path d="M111 83 Q120 88 129 83" stroke="white" strokeWidth="2" strokeLinecap="round" fill="none"/>
+  <!-- Arms pointing at plus button -->
+  <rect x="78" y="96" width="19" height="6" rx="3" fill="#00D4B8"/>
+  <circle cx="77" cy="99" r="4" fill="#4A3AFF"/>
+  <rect x="143" y="96" width="19" height="6" rx="3" fill="#00D4B8"/>
+  <circle cx="163" cy="99" r="4" fill="#4A3AFF"/>
+  <!-- Legs -->
+  <rect x="105" y="123" width="10" height="14" rx="4" fill="#4A3AFF"/>
+  <rect x="125" y="123" width="10" height="14" rx="4" fill="#4A3AFF"/>
+
+  <!-- Floating plus/add button above -->
+  <circle cx="120" cy="42" r="14" fill="#4A3AFF"/>
+  <line x1="120" y1="35" x2="120" y2="49" stroke="white" strokeWidth="3" strokeLinecap="round"/>
+  <line x1="113" y1="42" x2="127" y2="42" stroke="white" strokeWidth="3" strokeLinecap="round"/>
+
+  <!-- Dotted workflow placeholder arrows -->
+  <line x1="30" y1="60" x2="65" y2="60" stroke="#2D3748" strokeWidth="1.5" strokeDasharray="4 3" opacity="0.4" strokeLinecap="round"/>
+  <polygon points="63,57 70,60 63,63" fill="#2D3748" opacity="0.4"/>
+
+  <line x1="170" y1="60" x2="205" y2="60" stroke="#2D3748" strokeWidth="1.5" strokeDasharray="4 3" opacity="0.4" strokeLinecap="round"/>
+  <polygon points="203,57 210,60 203,63" fill="#2D3748" opacity="0.4"/>
+
+  <!-- Empty node placeholders -->
+  <circle cx="35" cy="60" r="12" fill="none" stroke="#2D3748" strokeWidth="1.5" strokeDasharray="3 3" opacity="0.4"/>
+  <circle cx="205" cy="60" r="12" fill="none" stroke="#2D3748" strokeWidth="1.5" strokeDasharray="3 3" opacity="0.4"/>
+
+  <!-- Helper text -->
+  <text x="120" y="158" textAnchor="middle" fontFamily="sans-serif" fontSize="11" fontWeight="700" fill="#2D3748">No workflows yet</text>
+  <text x="120" y="172" textAnchor="middle" fontFamily="sans-serif" fontSize="9" fill="#2D3748" opacity="0.6">Create your first automation</text>
+</svg>

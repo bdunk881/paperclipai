@@ -1,0 +1,10 @@
+<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect x="2" y="2" width="20" height="20" rx="6" fill="#0F1333" stroke="#2D3748" strokeWidth="1.5"/>
+  <!-- Hourglass -->
+  <path d="M7 5 H17 L12 12 L17 19 H7 L12 12 Z" fill="#2D3748" opacity="0.6"/>
+  <path d="M7 5 H17 L12 12" fill="#FFD93D" opacity="0.8"/>
+  <path d="M12 12 L14 16 H10 Z" fill="#FFD93D" opacity="0.4"/>
+  <!-- Top and bottom bars -->
+  <line x1="6" y1="5" x2="18" y2="5" stroke="#FFD93D" strokeWidth="1.5" strokeLinecap="round"/>
+  <line x1="6" y1="19" x2="18" y2="19" stroke="#FFD93D" strokeWidth="1.5" strokeLinecap="round"/>
+</svg>

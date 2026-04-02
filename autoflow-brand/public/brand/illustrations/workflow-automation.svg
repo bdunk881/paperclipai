@@ -1,0 +1,54 @@
+<svg viewBox="0 0 280 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Flow line connecting all steps -->
+  <path d="M35 50 L75 50 L95 50 L135 50 L155 50 L195 50 L215 50 L255 50"
+    stroke="#2D3748" strokeWidth="2" strokeDasharray="none" opacity="0.3"/>
+
+  <!-- Connecting arrows between steps -->
+  <polygon points="78,46 86,50 78,54" fill="#2D3748" opacity="0.5"/>
+  <polygon points="138,46 146,50 138,54" fill="#2D3748" opacity="0.5"/>
+  <polygon points="198,46 206,50 198,54" fill="#2D3748" opacity="0.5"/>
+
+  <!-- Step 1: Trigger -->
+  <circle cx="35" cy="50" r="28" fill="#0F1333" stroke="#FFD93D" strokeWidth="2.5"/>
+  <circle cx="35" cy="50" r="18" fill="#FFD93D" opacity="0.1"/>
+  <!-- Lightning bolt trigger icon -->
+  <path d="M38 30 L28 52 L36 52 L32 70 L48 45 L38 45 Z" fill="#FFD93D"/>
+  <text x="35" y="86" textAnchor="middle" fontFamily="sans-serif" fontSize="8" fontWeight="700" fill="#2D3748">Trigger</text>
+
+  <!-- Step 2: Condition -->
+  <rect x="96" y="25" width="54" height="50" rx="8" fill="#0F1333" stroke="#4A3AFF" strokeWidth="2"/>
+  <rect x="100" y="29" width="46" height="42" rx="5" fill="#0F1333"/>
+  <!-- If/else branch icon -->
+  <circle cx="123" cy="45" r="7" fill="#4A3AFF" opacity="0.3"/>
+  <text x="123" y="48" textAnchor="middle" fontFamily="monospace" fontSize="10" fill="#4A3AFF" fontWeight="bold">?</text>
+  <!-- Branch lines -->
+  <path d="M110 55 Q110 62 100 65" stroke="#4A3AFF" strokeWidth="1.5" fill="none" strokeLinecap="round" opacity="0.7"/>
+  <path d="M136 55 Q136 62 144 65" stroke="#4A3AFF" strokeWidth="1.5" fill="none" strokeLinecap="round" opacity="0.7"/>
+  <text x="96" y="62" textAnchor="middle" fontFamily="sans-serif" fontSize="6" fill="#4A3AFF" opacity="0.8">Y</text>
+  <text x="150" y="62" textAnchor="middle" fontFamily="sans-serif" fontSize="6" fill="#4A3AFF" opacity="0.8">N</text>
+  <text x="123" y="86" textAnchor="middle" fontFamily="sans-serif" fontSize="8" fontWeight="700" fill="#2D3748">Condition</text>
+
+  <!-- Step 3: Action -->
+  <rect x="156" y="25" width="54" height="50" rx="8" fill="#0F1333" stroke="#00D4B8" strokeWidth="2"/>
+  <!-- Action/execute icon: play triangle in a circle -->
+  <circle cx="183" cy="48" r="14" fill="#00D4B8" opacity="0.15"/>
+  <circle cx="183" cy="48" r="10" fill="#00D4B8" opacity="0.2"/>
+  <path d="M177 40 L177 56 L193 48 Z" fill="#00D4B8"/>
+  <!-- Gear mini indicator -->
+  <circle cx="193" cy="38" r="5" fill="#0F1333" stroke="#00D4B8" strokeWidth="1"/>
+  <circle cx="193" cy="38" r="2.5" fill="#00D4B8" opacity="0.6"/>
+  <text x="183" y="86" textAnchor="middle" fontFamily="sans-serif" fontSize="8" fontWeight="700" fill="#2D3748">Action</text>
+
+  <!-- Step 4: Done -->
+  <circle cx="245" cy="50" r="28" fill="#0F1333" stroke="#00D4B8" strokeWidth="2.5"/>
+  <circle cx="245" cy="50" r="18" fill="#00D4B8" opacity="0.1"/>
+  <!-- Big checkmark -->
+  <path d="M232 50 L240 59 L259 38" stroke="#00D4B8" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" fill="none"/>
+  <text x="245" y="86" textAnchor="middle" fontFamily="sans-serif" fontSize="8" fontWeight="700" fill="#2D3748">Done</text>
+
+  <!-- Step numbers -->
+  <text x="35" y="18" textAnchor="middle" fontFamily="sans-serif" fontSize="9" fill="#FFD93D" fontWeight="700">1</text>
+  <text x="123" y="18" textAnchor="middle" fontFamily="sans-serif" fontSize="9" fill="#4A3AFF" fontWeight="700">2</text>
+  <text x="183" y="18" textAnchor="middle" fontFamily="sans-serif" fontSize="9" fill="#00D4B8" fontWeight="700">3</text>
+  <text x="245" y="18" textAnchor="middle" fontFamily="sans-serif" fontSize="9" fill="#00D4B8" fontWeight="700">4</text>
+</svg>

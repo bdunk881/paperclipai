@@ -1,0 +1,92 @@
+<svg viewBox="0 0 160 130" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Desk surface -->
+  <rect x="10" y="102" width="140" height="8" rx="4" fill="#2D3748"/>
+  <rect x="20" y="110" width="8" height="20" rx="3" fill="#2D3748"/>
+  <rect x="132" y="110" width="8" height="20" rx="3" fill="#2D3748"/>
+
+  <!-- Monitor -->
+  <rect x="50" y="55" width="72" height="48" rx="6" fill="#0F1333"/>
+  <rect x="54" y="59" width="64" height="38" rx="4" fill="#1a2540"/>
+  <!-- Monitor stand -->
+  <rect x="82" y="103" width="8" height="8" rx="2" fill="#2D3748"/>
+  <rect x="76" y="108" width="20" height="4" rx="2" fill="#2D3748"/>
+
+  <!-- Code on screen -->
+  <rect x="58" y="63" width="30" height="3" rx="1.5" fill="#00D4B8" opacity="0.8"/>
+  <rect x="58" y="69" width="20" height="3" rx="1.5" fill="#4A3AFF" opacity="0.7"/>
+  <rect x="62" y="75" width="25" height="3" rx="1.5" fill="#FFD93D" opacity="0.7"/>
+  <rect x="58" y="81" width="18" height="3" rx="1.5" fill="#FF5F57" opacity="0.7"/>
+  <rect x="62" y="87" width="22" height="3" rx="1.5" fill="#00D4B8" opacity="0.6"/>
+  <!-- Cursor blink -->
+  <rect x="90" y="87" width="2" height="8" rx="1" fill="white" opacity="0.9"/>
+
+  <!-- Keyboard -->
+  <rect x="48" y="108" width="64" height="12" rx="3" fill="#2D3748"/>
+  <rect x="52" y="111" width="4" height="3" rx="1" fill="#0F1333"/>
+  <rect x="58" y="111" width="4" height="3" rx="1" fill="#0F1333"/>
+  <rect x="64" y="111" width="4" height="3" rx="1" fill="#0F1333"/>
+  <rect x="70" y="111" width="4" height="3" rx="1" fill="#0F1333"/>
+  <rect x="76" y="111" width="4" height="3" rx="1" fill="#0F1333"/>
+  <rect x="82" y="111" width="4" height="3" rx="1" fill="#0F1333"/>
+  <rect x="88" y="111" width="4" height="3" rx="1" fill="#0F1333"/>
+  <rect x="94" y="111" width="4" height="3" rx="1" fill="#0F1333"/>
+  <rect x="100" y="111" width="4" height="3" rx="1" fill="#0F1333"/>
+  <rect x="57" y="116" width="46" height="3" rx="1" fill="#0F1333"/>
+
+  <!-- Pip body -->
+  <rect x="12" y="55" width="50" height="48" rx="15" fill="#00D4B8"/>
+  <rect x="16" y="60" width="22" height="14" rx="7" fill="rgba(255,255,255,0.2)"/>
+
+  <!-- Pip head -->
+  <rect x="15" y="18" width="44" height="40" rx="14" fill="#4A3AFF"/>
+  <rect x="21" y="22" width="18" height="10" rx="5" fill="rgba(255,255,255,0.2)"/>
+
+  <!-- Eyes — focused/concentrated look -->
+  <circle cx="27" cy="36" r="7" fill="#FFD93D"/>
+  <circle cx="47" cy="36" r="7" fill="#FFD93D"/>
+  <!-- Pupils looking at screen (right) -->
+  <circle cx="30" cy="36" r="3" fill="#0F1333"/>
+  <circle cx="50" cy="36" r="3" fill="#0F1333"/>
+  <circle cx="31" cy="34.5" r="1.2" fill="white"/>
+  <circle cx="51" cy="34.5" r="1.2" fill="white"/>
+
+  <!-- Focused expression — slight furrowed brow -->
+  <path d="M22 28 Q27 26 32 28" stroke="#4A3AFF" strokeWidth="2" strokeLinecap="round" fill="none" opacity="0.5"/>
+  <path d="M42 28 Q47 26 52 28" stroke="#4A3AFF" strokeWidth="2" strokeLinecap="round" fill="none" opacity="0.5"/>
+
+  <!-- Antenna -->
+  <rect x="35" y="8" width="4" height="12" rx="2" fill="#4A3AFF"/>
+  <circle cx="37" cy="7" r="4" fill="#FFD93D"/>
+  <circle cx="37" cy="7" r="2" fill="#FF5F57"/>
+
+  <!-- Mouth — concentrated thin line -->
+  <path d="M28 50 Q37 54 46 50" stroke="white" strokeWidth="2.5" strokeLinecap="round" fill="none"/>
+
+  <!-- Gear badge -->
+  <circle cx="37" cy="72" r="5.5" fill="#0F1333"/>
+  <circle cx="37" cy="72" r="3" fill="#FFD93D"/>
+  <rect x="36" y="66" width="2" height="2.5" rx="0.5" fill="#0F1333"/>
+  <rect x="36" y="75.5" width="2" height="2.5" rx="0.5" fill="#0F1333"/>
+  <rect x="30.5" y="71" width="2.5" height="2" rx="0.5" fill="#0F1333"/>
+  <rect x="41" y="71" width="2.5" height="2" rx="0.5" fill="#0F1333"/>
+
+  <!-- Left arm reaching toward keyboard -->
+  <path d="M58 72 Q72 78 82 90" stroke="#00D4B8" strokeWidth="8" strokeLinecap="round" fill="none"/>
+  <circle cx="84" cy="92" r="5" fill="#4A3AFF"/>
+
+  <!-- Right arm at side -->
+  <rect x="60" y="68" width="12" height="7" rx="3.5" fill="#00D4B8"/>
+  <circle cx="70" cy="71" r="5" fill="#4A3AFF"/>
+
+  <!-- Legs -->
+  <rect x="20" y="98" width="12" height="16" rx="4" fill="#4A3AFF"/>
+  <rect x="40" y="98" width="12" height="16" rx="4" fill="#4A3AFF"/>
+  <ellipse cx="26" cy="115" rx="7" ry="4" fill="#0F1333"/>
+  <ellipse cx="46" cy="115" rx="7" ry="4" fill="#0F1333"/>
+
+  <!-- Coffee/energy cup on desk -->
+  <rect x="22" y="92" width="14" height="16" rx="3" fill="#2D3748"/>
+  <rect x="23" y="93" width="12" height="5" rx="2" fill="#FF5F57" opacity="0.8"/>
+  <path d="M24 90 Q27 85 30 90" stroke="#00D4B8" strokeWidth="1.5" strokeLinecap="round" fill="none" opacity="0.7"/>
+  <path d="M28 89 Q31 84 34 89" stroke="#00D4B8" strokeWidth="1.5" strokeLinecap="round" fill="none" opacity="0.7"/>
+</svg>

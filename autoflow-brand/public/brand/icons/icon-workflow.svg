@@ -1,0 +1,12 @@
+<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect x="2" y="2" width="20" height="20" rx="6" fill="#0F1333" stroke="#4A3AFF" strokeWidth="1.5"/>
+  <!-- Three connected nodes -->
+  <circle cx="6" cy="12" r="2.5" fill="#FFD93D"/>
+  <line x1="8.5" y1="12" x2="11.5" y2="12" stroke="#4A3AFF" strokeWidth="1.5" strokeDasharray="2 1"/>
+  <circle cx="12" cy="12" r="2.5" fill="#4A3AFF"/>
+  <line x1="14.5" y1="12" x2="17.5" y2="12" stroke="#4A3AFF" strokeWidth="1.5" strokeDasharray="2 1"/>
+  <circle cx="18" cy="12" r="2.5" fill="#00D4B8"/>
+  <!-- Branch from center -->
+  <line x1="12" y1="9.5" x2="12" y2="6.5" stroke="#4A3AFF" strokeWidth="1.5" strokeDasharray="2 1"/>
+  <circle cx="12" cy="6" r="2" fill="#FF5F57"/>
+</svg>

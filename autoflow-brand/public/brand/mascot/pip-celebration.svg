@@ -1,0 +1,67 @@
+<svg viewBox="0 0 140 150" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Confetti -->
+  <rect x="20" y="10" width="8" height="5" rx="1" fill="#FF5F57" opacity="0.8" transform="rotate(20 24 12)"/>
+  <rect x="105" y="15" width="6" height="4" rx="1" fill="#4A3AFF" opacity="0.8" transform="rotate(-15 108 17)"/>
+  <rect x="30" y="30" width="5" height="5" rx="1" fill="#FFD93D" opacity="0.9" transform="rotate(40 32 32)"/>
+  <rect x="100" y="25" width="7" height="4" rx="1" fill="#00D4B8" opacity="0.8" transform="rotate(-30 103 27)"/>
+  <rect x="15" y="55" width="5" height="3" rx="1" fill="#00D4B8" opacity="0.7" transform="rotate(10 17 56)"/>
+  <rect x="115" y="50" width="6" height="3" rx="1" fill="#FF5F57" opacity="0.7" transform="rotate(-20 118 51)"/>
+  <circle cx="25" cy="40" r="3" fill="#FFD93D" opacity="0.8"/>
+  <circle cx="112" cy="38" r="2.5" fill="#4A3AFF" opacity="0.8"/>
+  <circle cx="18" cy="75" r="2" fill="#FF5F57" opacity="0.7"/>
+  <circle cx="120" cy="70" r="2" fill="#FFD93D" opacity="0.7"/>
+  <rect x="40" y="12" width="5" height="3" rx="1" fill="#4A3AFF" opacity="0.7" transform="rotate(50 42 13)"/>
+  <rect x="88" y="8" width="5" height="3" rx="1" fill="#FF5F57" opacity="0.7" transform="rotate(-40 90 9)"/>
+
+  <!-- Party hat on head -->
+  <polygon points="70,5 45,32 95,32" fill="#FF5F57"/>
+  <polygon points="70,5 45,32 95,32" fill="url(#hat-stripes)" opacity="0.5"/>
+  <line x1="55" y1="28" x2="65" y2="8" stroke="#FFD93D" strokeWidth="2"/>
+  <line x1="72" y1="6" x2="82" y2="28" stroke="#FFD93D" strokeWidth="2"/>
+  <ellipse cx="70" cy="32" rx="25" ry="5" fill="#4A3AFF"/>
+  <!-- Hat pom-pom -->
+  <circle cx="70" cy="5" r="5" fill="#FFD93D"/>
+
+  <!-- Head -->
+  <rect x="43" y="28" width="54" height="42" rx="16" fill="#4A3AFF"/>
+  <rect x="50" y="32" width="20" height="10" rx="5" fill="rgba(255,255,255,0.2)"/>
+
+  <!-- Eyes — wide with happiness -->
+  <circle cx="57" cy="48" r="9" fill="#FFD93D"/>
+  <circle cx="83" cy="48" r="9" fill="#FFD93D"/>
+  <circle cx="59" cy="48" r="3.5" fill="#0F1333"/>
+  <circle cx="85" cy="48" r="3.5" fill="#0F1333"/>
+  <circle cx="60.5" cy="46" r="1.5" fill="white"/>
+  <circle cx="86.5" cy="46" r="1.5" fill="white"/>
+
+  <!-- Big happy grin -->
+  <path d="M56 62 Q70 74 84 62" stroke="white" strokeWidth="3" strokeLinecap="round" fill="none"/>
+  <line x1="60" y1="66" x2="60" y2="70" stroke="white" strokeWidth="1.5" strokeLinecap="round"/>
+  <line x1="70" y1="68" x2="70" y2="72" stroke="white" strokeWidth="1.5" strokeLinecap="round"/>
+  <line x1="80" y1="66" x2="80" y2="70" stroke="white" strokeWidth="1.5" strokeLinecap="round"/>
+
+  <!-- Body -->
+  <rect x="40" y="65" width="60" height="55" rx="18" fill="#00D4B8"/>
+  <rect x="45" y="70" width="25" height="15" rx="8" fill="rgba(255,255,255,0.2)"/>
+
+  <!-- Gear badge -->
+  <circle cx="70" cy="92" r="6" fill="#0F1333"/>
+  <circle cx="70" cy="92" r="3.5" fill="#FFD93D"/>
+  <rect x="69" y="85.5" width="2" height="3" rx="0.5" fill="#0F1333"/>
+  <rect x="69" y="95.5" width="2" height="3" rx="0.5" fill="#0F1333"/>
+  <rect x="63.5" y="91" width="3" height="2" rx="0.5" fill="#0F1333"/>
+  <rect x="73.5" y="91" width="3" height="2" rx="0.5" fill="#0F1333"/>
+
+  <!-- Arms raised in celebration -->
+  <rect x="22" y="58" width="20" height="8" rx="4" fill="#00D4B8" transform="rotate(-40 32 62)"/>
+  <rect x="98" y="58" width="20" height="8" rx="4" fill="#00D4B8" transform="rotate(40 108 62)"/>
+  <circle cx="19" cy="50" r="6" fill="#4A3AFF"/>
+  <circle cx="121" cy="50" r="6" fill="#4A3AFF"/>
+
+  <!-- Legs -->
+  <rect x="52" y="115" width="14" height="18" rx="5" fill="#4A3AFF"/>
+  <rect x="74" y="115" width="14" height="18" rx="5" fill="#4A3AFF"/>
+  <!-- Feet -->
+  <ellipse cx="59" cy="134" rx="9" ry="5" fill="#0F1333"/>
+  <ellipse cx="81" cy="134" rx="9" ry="5" fill="#0F1333"/>
+</svg>

@@ -22,3 +22,18 @@ output "svc_subnet_id" {
   description = "Resource ID of the services subnet"
   value       = azurerm_subnet.svc.id
 }
+
+output "aks_route_table_id" {
+  description = "Resource ID of the route table associated with the AKS subnet"
+  value       = azurerm_route_table.aks.id
+}
+
+output "pe_route_table_id" {
+  description = "Resource ID of the route table associated with the private endpoints subnet"
+  value       = azurerm_route_table.pe.id
+}
+
+output "svc_route_table_id" {
+  description = "Resource ID of the route table associated with the services subnet"
+  value       = azurerm_route_table.svc.id
+}

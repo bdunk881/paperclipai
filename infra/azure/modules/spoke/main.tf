@@ -280,6 +280,75 @@ resource "azurerm_network_watcher_flow_log" "svc" {
   tags = var.tags
 }
 
+# ── Route Tables + UDRs (force-tunnel spoke egress via Hub Firewall) ──────────
+# All egress from spoke subnets is force-tunnelled through the Hub Azure Firewall.
+# BGP route propagation is disabled so our explicit routes always win.
+
+resource "azurerm_route_table" "aks" {
+  name                          = "${var.prefix}-${var.environment}-spoke-aks-rt"
+  location                      = var.location
+  resource_group_name           = var.resource_group_name
+  disable_bgp_route_propagation = true
+
+  route {
+    name                   = "default-via-firewall"
+    address_prefix         = "0.0.0.0/0"
+    next_hop_type          = "VirtualAppliance"
+    next_hop_in_ip_address = var.hub_firewall_private_ip
+  }
+
+  tags = var.tags
+}
+
+resource "azurerm_route_table" "pe" {
+  name                          = "${var.prefix}-${var.environment}-spoke-pe-rt"
+  location                      = var.location
+  resource_group_name           = var.resource_group_name
+  disable_bgp_route_propagation = true
+
+  route {
+    name                   = "default-via-firewall"
+    address_prefix         = "0.0.0.0/0"
+    next_hop_type          = "VirtualAppliance"
+    next_hop_in_ip_address = var.hub_firewall_private_ip
+  }
+
+  tags = var.tags
+}
+
+resource "azurerm_route_table" "svc" {
+  name                          = "${var.prefix}-${var.environment}-spoke-svc-rt"
+  location                      = var.location
+  resource_group_name           = var.resource_group_name
+  disable_bgp_route_propagation = true
+
+  route {
+    name                   = "default-via-firewall"
+    address_prefix         = "0.0.0.0/0"
+    next_hop_type          = "VirtualAppliance"
+    next_hop_in_ip_address = var.hub_firewall_private_ip
+  }
+
+  tags = var.tags
+}
+
+# ── Route Table → Subnet associations ─────────────────────────────────────────
+
+resource "azurerm_subnet_route_table_association" "aks" {
+  subnet_id      = azurerm_subnet.aks.id
+  route_table_id = azurerm_route_table.aks.id
+}
+
+resource "azurerm_subnet_route_table_association" "pe" {
+  subnet_id      = azurerm_subnet.pe.id
+  route_table_id = azurerm_route_table.pe.id
+}
+
+resource "azurerm_subnet_route_table_association" "svc" {
+  subnet_id      = azurerm_subnet.svc.id
+  route_table_id = azurerm_route_table.svc.id
+}
+
 # ── VNet Peering — bidirectional ──────────────────────────────────────────────
 
 # spoke → hub: allow spoke traffic to flow through hub firewall.

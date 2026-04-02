@@ -169,6 +169,32 @@ describe("GET /api/mcp/servers/:id/tools", () => {
     const res = await request(app).get(`/api/mcp/servers/${s.id}/tools`).set(H);
     expect(res.status).toBe(502);
   });
+
+  it("returns 502 when MCP server returns JSON-RPC error", async () => {
+    const s = mcpStore.add(USER, { name: "x", url: "https://mcp.example.com" });
+    global.fetch = jest.fn().mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ jsonrpc: "2.0", id: 1, error: { code: -32601, message: "Method not found" } }),
+    }) as unknown as typeof fetch;
+
+    const res = await request(app).get(`/api/mcp/servers/${s.id}/tools`).set(H);
+    expect(res.status).toBe(502);
+  });
+
+  it("includes auth header when server has auth credentials", async () => {
+    const s = mcpStore.add(USER, { name: "Secure", url: "https://mcp.example.com", authHeaderKey: "Authorization", authHeaderValue: "Bearer secret" });
+    let capturedHeaders: Record<string, string> = {};
+    global.fetch = jest.fn().mockImplementationOnce(async (_url: unknown, opts: { headers: Record<string, string> }) => {
+      capturedHeaders = opts.headers;
+      return {
+        ok: true,
+        json: async () => ({ jsonrpc: "2.0", id: 1, result: { tools: [] } }),
+      };
+    }) as unknown as typeof fetch;
+
+    await request(app).get(`/api/mcp/servers/${s.id}/tools`).set(H);
+    expect(capturedHeaders["Authorization"]).toBe("Bearer secret");
+  });
 });
 
 // ---------------------------------------------------------------------------

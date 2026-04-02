@@ -303,4 +303,25 @@ describe("POST /api/runs/file", () => {
     expect(res.body.id).toBeDefined();
     expect(res.body.status).toBe("pending");
   });
+
+  it("returns 202 when X-User-Id is provided (resolves openaiApiKey path)", async () => {
+    const res = await request(app)
+      .post("/api/runs/file")
+      .set("X-User-Id", "user-no-llm")
+      .field("templateId", "tpl-support-bot")
+      .attach("file", Buffer.from("Hello from user"), { filename: "note.txt", contentType: "text/plain" });
+    expect(res.status).toBe(202);
+  });
+
+  it("returns 422 when parseFile throws an error", async () => {
+    const fileParser = await import("./engine/fileParser");
+    jest.spyOn(fileParser, "parseFile").mockRejectedValueOnce(new Error("corrupt file"));
+
+    const res = await request(app)
+      .post("/api/runs/file")
+      .field("templateId", "tpl-support-bot")
+      .attach("file", Buffer.from("corrupt data"), { filename: "bad.bin", contentType: "application/octet-stream" });
+    expect(res.status).toBe(422);
+    expect(res.body.error).toMatch(/File parsing failed/);
+  });
 });

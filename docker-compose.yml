@@ -38,10 +38,16 @@ services:
       POSTGRES_USER: ${POSTGRES_USER:-autoflow}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required — set it in .env before running}
       POSTGRES_DB: ${POSTGRES_DB:-autoflow}
+      # APP_ENCRYPTION_KEY is passed through so pgcrypto column encryption can use it via
+      # current_setting('app.encryption_key'). Source from Key Vault in staging/prod.
+      # See infra/encryption-at-rest.md §1.2B for usage.
+      APP_ENCRYPTION_KEY: ${APP_ENCRYPTION_KEY:?APP_ENCRYPTION_KEY is required — set it in .env before running}
     ports:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+      # Initialises the pgcrypto extension (CIS #3 / infra/encryption-at-rest.md §1.2B)
+      - ./infra/postgres/init.sql:/docker-entrypoint-initdb.d/01-pgcrypto.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-autoflow}"]
       interval: 10s

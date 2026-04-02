@@ -10,6 +10,7 @@
  */
 
 import { Request } from "express";
+import { redactPii } from "./piiRedactor";
 
 export type SecurityEventType =
   | "auth_failure"
@@ -46,7 +47,8 @@ export function logSecurityEvent(
   }
 
   if (extras) {
-    Object.assign(entry, extras);
+    // Redact PII before writing to stdout — satisfies CIS #3 / data-classification.md §4
+    Object.assign(entry, redactPii(extras));
   }
 
   console.log(JSON.stringify(entry));

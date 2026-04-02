@@ -9,12 +9,13 @@ jest.mock("./engine/llmProviders", () => ({
   getProvider: jest.fn(),
 }));
 
-// Bypass JWT verification in unit tests — inject a synthetic auth principal
+// Bypass JWT verification in unit tests — inject a synthetic auth principal with Admin role
 jest.mock("./auth/authMiddleware", () => ({
   requireAuth: (req: Record<string, unknown>, _res: unknown, next: () => void) => {
-    req.auth = { sub: "test-user-id", email: "test@example.com" };
+    req.auth = { sub: "test-user-id", email: "test@example.com", roles: ["Admin"] };
     next();
   },
+  requireRole: (..._roles: string[]) => (_req: unknown, _res: unknown, next: () => void) => next(),
 }));
 
 import request from "supertest";

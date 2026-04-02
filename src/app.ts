@@ -21,7 +21,7 @@ import { llmConfigStore } from "./llmConfig/llmConfigStore";
 import { getProvider } from "./engine/llmProviders";
 import { parseFile } from "./engine/fileParser";
 import { resolveModelForTier } from "./engine/llmRouter";
-import { requireAuth, AuthenticatedRequest } from "./auth/authMiddleware";
+import { requireAuth, requireRole, AuthenticatedRequest } from "./auth/authMiddleware";
 import { logSecurityEvent } from "./auth/securityLogger";
 
 const app = express();
@@ -80,9 +80,9 @@ const upload = multer({
 });
 
 // ---------------------------------------------------------------------------
-// LLM Config API — BYOLLM provider credentials
+// LLM Config API — BYOLLM provider credentials (Admin only)
 // ---------------------------------------------------------------------------
-app.use("/api/llm-configs", llmConfigRoutes);
+app.use("/api/llm-configs", requireAuth, requireRole("Admin"), llmConfigRoutes);
 
 // ---------------------------------------------------------------------------
 // MCP Registry API — register and discover MCP server connections
@@ -164,7 +164,7 @@ app.get("/api/templates/:id/sample", (req, res) => {
  * Body: { templateId, input, config? }
  * Returns the new run (status=pending) immediately; execution is async.
  */
-app.post("/api/runs", authSensitiveLimiter, requireAuth, (req: AuthenticatedRequest, res) => {
+app.post("/api/runs", authSensitiveLimiter, requireAuth, requireRole("Operator", "Admin"), (req: AuthenticatedRequest, res) => {
   const { templateId, input, config } = req.body as {
     templateId?: string;
     input?: Record<string, unknown>;
@@ -307,7 +307,7 @@ Rules:
  * Headers: X-User-Id (required to resolve the user's LLM config)
  * Returns: { steps: WorkflowStep[] }
  */
-app.post("/api/workflows/generate", requireAuth, async (req: AuthenticatedRequest, res) => {
+app.post("/api/workflows/generate", requireAuth, requireRole("Operator", "Admin"), async (req: AuthenticatedRequest, res) => {
   const { description, llmConfigId } = req.body as {
     description?: unknown;
     llmConfigId?: unknown;
@@ -379,7 +379,7 @@ app.post("/api/workflows/generate", requireAuth, async (req: AuthenticatedReques
  * Trigger a workflow run from an inbound webhook.
  * The entire request body is forwarded as the run input.
  */
-app.post("/api/webhooks/:templateId", requireAuth, (req: AuthenticatedRequest, res) => {
+app.post("/api/webhooks/:templateId", requireAuth, requireRole("Operator", "Admin"), (req: AuthenticatedRequest, res) => {
   const { templateId } = req.params;
 
   let template: WorkflowTemplate;
@@ -440,7 +440,7 @@ app.get("/api/approvals/:id", requireAuth, (req: AuthenticatedRequest, res) => {
  * Body: { decision: "approved" | "rejected", comment?: string }
  * Resolves the approval request, resuming or terminating the paused run.
  */
-app.post("/api/approvals/:id/resolve", requireAuth, (req: AuthenticatedRequest, res) => {
+app.post("/api/approvals/:id/resolve", requireAuth, requireRole("Operator", "Admin"), (req: AuthenticatedRequest, res) => {
   const { decision, comment } = req.body as { decision?: string; comment?: string };
 
   if (decision !== "approved" && decision !== "rejected") {

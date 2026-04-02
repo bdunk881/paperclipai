@@ -1,14 +1,15 @@
 # syntax=docker/dockerfile:1
 
 # ─── Stage 1: Dependencies ────────────────────────────────────────────────────
-FROM node:20-alpine AS deps
+# Digest pinned 2026-04-02 — update via: docker pull node:20-alpine && docker inspect node:20-alpine --format='{{index .RepoDigests 0}}'
+FROM node:20-alpine@sha256:f598378b5240225e6beab68fa9f356db1fb8efe55173e6d4d8153113bb8f333c AS deps
 WORKDIR /app
 COPY dashboard/package.json dashboard/package-lock.json* ./
 RUN --mount=type=cache,target=/root/.npm \
     npm ci --prefer-offline
 
 # ─── Stage 2: Builder ─────────────────────────────────────────────────────────
-FROM node:20-alpine AS builder
+FROM node:20-alpine@sha256:f598378b5240225e6beab68fa9f356db1fb8efe55173e6d4d8153113bb8f333c AS builder
 WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY dashboard/ ./
@@ -22,7 +23,8 @@ ENV VITE_API_URL=${VITE_API_URL} \
 RUN npm run build
 
 # ─── Stage 3: Runtime (nginx) ─────────────────────────────────────────────────
-FROM nginx:1.27-alpine AS runtime
+# Digest pinned 2026-04-02 — update via: docker pull nginx:1.27-alpine && docker inspect nginx:1.27-alpine --format='{{index .RepoDigests 0}}'
+FROM nginx:1.27-alpine@sha256:65645c7bb6a0661892a8b03b89d0743208a18dd2f3f17a54ef4b76fb8e2f2a10 AS runtime
 LABEL org.opencontainers.image.source="https://github.com/bdunk881/paperclipai"
 
 # Non-root user for security

@@ -9,6 +9,17 @@ jest.mock("../engine/llmProviders", () => ({
   getProvider: jest.fn(),
 }));
 
+// Bypass JWT verification — derive auth.sub from X-User-Id header so multi-user
+// tests can keep using asUser(userId). requireRole is bypassed (Admin granted).
+jest.mock("../auth/authMiddleware", () => ({
+  requireAuth: (req: Record<string, unknown>, _res: unknown, next: () => void) => {
+    const headers = req.headers as Record<string, string>;
+    req.auth = { sub: headers["x-user-id"] ?? "anonymous", roles: ["Admin"] };
+    next();
+  },
+  requireRole: (..._roles: string[]) => (_req: unknown, _res: unknown, next: () => void) => next(),
+}));
+
 import request from "supertest";
 import app from "../app";
 import { llmConfigStore } from "./llmConfigStore";
@@ -68,13 +79,14 @@ describe("POST /api/llm-configs", () => {
     expect(JSON.stringify(res.body)).not.toContain("supersecret");
   });
 
-  it("returns 401 when X-User-Id header is missing", async () => {
+  it("creates a config using JWT identity when X-User-Id header is omitted", async () => {
+    // With JWT auth, identity comes from req.auth.sub (not X-User-Id).
+    // Requests without X-User-Id are authenticated via the JWT mock (sub = "anonymous").
     const res = await request(app)
       .post("/api/llm-configs")
       .send({ provider: "openai", label: "key", model: "gpt-4o", apiKey: "sk-test-1234" });
 
-    expect(res.status).toBe(401);
-    expect(res.body.error).toMatch(/X-User-Id/i);
+    expect(res.status).toBe(201);
   });
 
   it("returns 400 for an invalid provider", async () => {
@@ -183,9 +195,10 @@ describe("GET /api/llm-configs", () => {
     expect(JSON.stringify(res.body)).not.toContain("listtest");
   });
 
-  it("returns 401 when X-User-Id header is missing", async () => {
+  it("returns 200 with empty list when X-User-Id header is omitted (JWT identity used)", async () => {
     const res = await request(app).get("/api/llm-configs");
-    expect(res.status).toBe(401);
+    expect(res.status).toBe(200);
+    expect(res.body.configs).toHaveLength(0);
   });
 });
 
@@ -238,11 +251,11 @@ describe("PATCH /api/llm-configs/:id", () => {
     expect(res.status).toBe(404);
   });
 
-  it("returns 401 when X-User-Id header is missing", async () => {
+  it("returns 404 when X-User-Id header is omitted and resource does not belong to JWT identity", async () => {
     const res = await request(app)
       .patch("/api/llm-configs/some-id")
       .send({ label: "x" });
-    expect(res.status).toBe(401);
+    expect(res.status).toBe(404);
   });
 });
 
@@ -297,9 +310,9 @@ describe("DELETE /api/llm-configs/:id", () => {
     expect(list.body.configs).toHaveLength(1);
   });
 
-  it("returns 401 when X-User-Id header is missing", async () => {
+  it("returns 404 when X-User-Id header is omitted and resource does not belong to JWT identity", async () => {
     const res = await request(app).delete("/api/llm-configs/some-id");
-    expect(res.status).toBe(401);
+    expect(res.status).toBe(404);
   });
 });
 
@@ -375,8 +388,8 @@ describe("PATCH /api/llm-configs/:id/default", () => {
     expect(res.status).toBe(404);
   });
 
-  it("returns 401 when X-User-Id header is missing", async () => {
+  it("returns 404 when X-User-Id header is omitted and resource does not belong to JWT identity", async () => {
     const res = await request(app).patch("/api/llm-configs/some-id/default");
-    expect(res.status).toBe(401);
+    expect(res.status).toBe(404);
   });
 });

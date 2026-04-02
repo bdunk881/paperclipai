@@ -205,13 +205,16 @@ jobs:
           context: .
           file: docker/${{ matrix.service }}/Dockerfile
           push: false
+          load: true
+          tags: autoflow-${{ matrix.service }}:ci
           cache-from: type=gha,scope=${{ matrix.service }}
           cache-to: type=gha,mode=max,scope=${{ matrix.service }}
       - name: Container image scan — Trivy
-        uses: aquasecurity/trivy-action@master
+        uses: aquasecurity/trivy-action@0.28.0
         with:
-          scan-type: "fs"
-          scan-ref: "docker/${{ matrix.service }}"
+          scan-type: "image"
+          image-ref: "autoflow-${{ matrix.service }}:ci"
           severity: "CRITICAL,HIGH"
           exit-code: "1"
           ignore-unfixed: true
+          format: "table"

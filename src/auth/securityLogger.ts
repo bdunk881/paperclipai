@@ -14,6 +14,7 @@ import { Request } from "express";
 export type SecurityEventType =
   | "auth_failure"
   | "auth_success"
+  | "authz_failure"
   | "approval_resolved"
   | "llm_config_created"
   | "llm_config_updated"

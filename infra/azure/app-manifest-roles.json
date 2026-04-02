@@ -1,0 +1,30 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/core/appRoles.schema.json",
+  "_comment": "Azure Entra app manifest appRoles stanza for AutoFlow. Paste these role definitions into the App Registration manifest (appRoles array) in the Azure Portal or via the az CLI. Role values map 1:1 to the Role type in src/auth/authMiddleware.ts.",
+  "appRoles": [
+    {
+      "allowedMemberTypes": ["User"],
+      "description": "Read-only access to own workflow runs and approvals. Cannot trigger runs or modify any resource.",
+      "displayName": "Viewer",
+      "id": "b1d14f5a-1234-0000-0001-000000000001",
+      "isEnabled": true,
+      "value": "Viewer"
+    },
+    {
+      "allowedMemberTypes": ["User"],
+      "description": "Can trigger workflow runs, view and resolve approval requests. Cannot manage configuration.",
+      "displayName": "Operator",
+      "id": "b1d14f5a-1234-0000-0002-000000000002",
+      "isEnabled": true,
+      "value": "Operator"
+    },
+    {
+      "allowedMemberTypes": ["User"],
+      "description": "Full access including LLM provider configuration management, workflow runs, and approvals.",
+      "displayName": "Admin",
+      "id": "b1d14f5a-1234-0000-0003-000000000003",
+      "isEnabled": true,
+      "value": "Admin"
+    }
+  ]
+}

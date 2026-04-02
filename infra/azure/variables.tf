@@ -26,6 +26,19 @@ variable "tenant_id" {
   type        = string
 }
 
+# ── Management / RBAC ────────────────────────────────────────────────────────
+
+variable "devops_sp_object_id" {
+  description = "Object ID of the DevOps pipeline service principal; granted Contributor on Landing Zone MGs"
+  type        = string
+}
+
+variable "monitoring_principal_ids" {
+  description = "Object IDs of monitoring agents; granted Monitoring Reader at the autoflow management group"
+  type        = list(string)
+  default     = []
+}
+
 # ── AKS ───────────────────────────────────────────────────────────────────────
 
 variable "kubernetes_version" {

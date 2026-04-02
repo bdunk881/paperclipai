@@ -132,6 +132,18 @@ module "aks" {
   tags                      = local.common_tags
 }
 
+module "management" {
+  source = "./modules/management"
+
+  prefix                              = var.prefix
+  tenant_id                           = var.tenant_id
+  devops_sp_object_id                 = var.devops_sp_object_id
+  monitoring_principal_ids            = var.monitoring_principal_ids
+  aks_workload_identity_principal_id  = module.aks.kubelet_identity_object_id
+  key_vault_id                        = module.hub.key_vault_id
+  tags                                = local.common_tags
+}
+
 module "monitoring" {
   source = "./modules/monitoring"
 

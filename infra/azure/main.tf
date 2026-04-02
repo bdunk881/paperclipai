@@ -157,6 +157,16 @@ module "monitoring" {
   tags                       = local.common_tags
 }
 
+module "policy" {
+  source = "./modules/policy"
+
+  management_group_id        = module.management.autoflow_mg_id
+  log_analytics_workspace_id = module.aks.log_analytics_workspace_id
+  location                   = var.location
+  allowed_locations          = [var.location]
+  tags                       = local.common_tags
+}
+
 # ── Locals ────────────────────────────────────────────────────────────────────
 
 locals {

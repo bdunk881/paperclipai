@@ -167,6 +167,15 @@ module "policy" {
   tags                       = local.common_tags
 }
 
+module "security" {
+  source = "./modules/security"
+
+  log_analytics_workspace_id   = module.aks.log_analytics_workspace_id
+  alert_email                  = var.alert_email
+  enable_app_services_defender = false
+  tags                         = local.common_tags
+}
+
 # ── Locals ────────────────────────────────────────────────────────────────────
 
 locals {

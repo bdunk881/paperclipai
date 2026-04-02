@@ -327,7 +327,7 @@ Rules:
 /**
  * POST /api/workflows/generate
  * Body: { description: string, llmConfigId?: string }
- * Headers: X-User-Id (required to resolve the user's LLM config)
+ * Auth: Bearer JWT required; user ID taken from verified JWT sub claim.
  * Returns: { steps: WorkflowStep[] }
  */
 app.post("/api/workflows/generate", requireAuth, apiKeyLimiter, async (req: AuthenticatedRequest, res) => {

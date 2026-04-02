@@ -5,6 +5,19 @@
 
 jest.mock("../engine/llmProviders", () => ({ getProvider: jest.fn() }));
 
+// Bridge legacy X-User-Id header into req.auth.sub so tests work after JWT auth hardening.
+// Returns 401 when no X-User-Id is present, mirroring the real requireAuth 401 behaviour.
+jest.mock("../auth/authMiddleware", () => ({
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  requireAuth: (req: Record<string, unknown>, res: any, next: () => void) => {
+    const headers = req.headers as Record<string, string>;
+    const sub = headers["x-user-id"];
+    if (!sub) { res.status(401).json({ error: "Unauthorized" }); return; }
+    req.auth = { sub };
+    next();
+  },
+}));
+
 import request from "supertest";
 import app from "../app";
 import { memoryStore } from "../engine/memoryStore";

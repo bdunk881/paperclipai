@@ -44,6 +44,17 @@ resource "azurerm_resource_group" "main" {
 
 # ── Modules ──────────────────────────────────────────────────────────────────
 
+module "hub" {
+  source = "./modules/hub"
+
+  prefix              = var.prefix
+  environment         = var.environment
+  location            = var.location
+  resource_group_name = azurerm_resource_group.main.name
+  tenant_id           = var.tenant_id
+  tags                = local.common_tags
+}
+
 module "networking" {
   source = "./modules/networking"
 

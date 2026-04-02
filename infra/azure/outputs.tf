@@ -1,3 +1,18 @@
+output "hub_vnet_id" {
+  description = "Resource ID of the hub virtual network"
+  value       = module.hub.hub_vnet_id
+}
+
+output "hub_firewall_private_ip" {
+  description = "Private IP of the hub Azure Firewall (use in spoke UDRs)"
+  value       = module.hub.firewall_private_ip
+}
+
+output "hub_key_vault_uri" {
+  description = "URI of the hub Key Vault"
+  value       = module.hub.key_vault_uri
+}
+
 output "resource_group_name" {
   description = "Name of the main resource group"
   value       = azurerm_resource_group.main.name

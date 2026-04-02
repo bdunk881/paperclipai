@@ -19,6 +19,13 @@ variable "location" {
   default     = "eastus2"
 }
 
+# ── Azure Identity ────────────────────────────────────────────────────────────
+
+variable "tenant_id" {
+  description = "Azure AD tenant ID (used by Key Vault and identity resources)"
+  type        = string
+}
+
 # ── Networking ────────────────────────────────────────────────────────────────
 
 variable "vnet_address_space" {

@@ -73,22 +73,3 @@ resource "azurerm_subnet_network_security_group_association" "aks" {
   subnet_id                 = azurerm_subnet.aks.id
   network_security_group_id = azurerm_network_security_group.aks.id
 }
-
-# ── Private DNS zone for ACR ──────────────────────────────────────────────────
-
-resource "azurerm_private_dns_zone" "acr" {
-  name                = "privatelink.azurecr.io"
-  resource_group_name = var.resource_group_name
-
-  tags = var.tags
-}
-
-resource "azurerm_private_dns_zone_virtual_network_link" "acr" {
-  name                  = "${var.prefix}-acr-dns-link"
-  resource_group_name   = var.resource_group_name
-  private_dns_zone_name = azurerm_private_dns_zone.acr.name
-  virtual_network_id    = azurerm_virtual_network.main.id
-  registration_enabled  = false
-
-  tags = var.tags
-}

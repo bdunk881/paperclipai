@@ -114,7 +114,7 @@ app.get("/api/templates/:id/sample", (req, res) => {
  * Body: { templateId, input, config? }
  * Returns the new run (status=pending) immediately; execution is async.
  */
-app.post("/api/runs", (req, res) => {
+app.post("/api/runs", requireAuth, (req: AuthenticatedRequest, res) => {
   const { templateId, input, config } = req.body as {
     templateId?: string;
     input?: Record<string, unknown>;
@@ -134,8 +134,8 @@ app.post("/api/runs", (req, res) => {
     return;
   }
 
-  const userId = req.headers["x-user-id"];
-  const run = workflowEngine.startRun(template, input ?? {}, config, typeof userId === "string" ? userId : undefined);
+  const userId = req.auth?.sub;
+  const run = workflowEngine.startRun(template, input ?? {}, config, userId);
   res.status(202).json(run);
 });
 
@@ -255,7 +255,7 @@ Rules:
  * Headers: X-User-Id (required to resolve the user's LLM config)
  * Returns: { steps: WorkflowStep[] }
  */
-app.post("/api/workflows/generate", async (req, res) => {
+app.post("/api/workflows/generate", requireAuth, async (req: AuthenticatedRequest, res) => {
   const { description, llmConfigId } = req.body as {
     description?: unknown;
     llmConfigId?: unknown;
@@ -266,11 +266,7 @@ app.post("/api/workflows/generate", async (req, res) => {
     return;
   }
 
-  const userId = req.headers["x-user-id"];
-  if (typeof userId !== "string" || !userId.trim()) {
-    res.status(401).json({ error: "X-User-Id header is required to resolve LLM configuration" });
-    return;
-  }
+  const userId = req.auth!.sub;
 
   const resolved =
     typeof llmConfigId === "string" && llmConfigId
@@ -331,7 +327,7 @@ app.post("/api/workflows/generate", async (req, res) => {
  * Trigger a workflow run from an inbound webhook.
  * The entire request body is forwarded as the run input.
  */
-app.post("/api/webhooks/:templateId", (req, res) => {
+app.post("/api/webhooks/:templateId", requireAuth, (req: AuthenticatedRequest, res) => {
   const { templateId } = req.params;
 
   let template: WorkflowTemplate;
@@ -348,8 +344,7 @@ app.post("/api/webhooks/:templateId", (req, res) => {
     return;
   }
 
-  const webhookUserId = req.headers["x-user-id"];
-  const run = workflowEngine.startRun(template, input, undefined, typeof webhookUserId === "string" ? webhookUserId : undefined);
+  const run = workflowEngine.startRun(template, input, undefined, req.auth?.sub);
   res.status(202).json({ runId: run.id, status: run.status });
 });
 
@@ -391,7 +386,7 @@ app.get("/api/approvals/:id", (req, res) => {
  * Body: { decision: "approved" | "rejected", comment?: string }
  * Resolves the approval request, resuming or terminating the paused run.
  */
-app.post("/api/approvals/:id/resolve", (req, res) => {
+app.post("/api/approvals/:id/resolve", requireAuth, (req: AuthenticatedRequest, res) => {
   const { decision, comment } = req.body as { decision?: string; comment?: string };
 
   if (decision !== "approved" && decision !== "rejected") {

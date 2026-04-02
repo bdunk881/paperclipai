@@ -9,6 +9,7 @@
 
 import { Router, Request, Response } from "express";
 import { llmConfigStore, LLMProvider } from "./llmConfigStore";
+import { logSecurityEvent } from "../auth/securityLogger";
 
 const VALID_PROVIDERS: LLMProvider[] = [
   "openai",
@@ -72,6 +73,7 @@ router.post("/", (req: Request, res: Response) => {
     apiKey,
   });
 
+  logSecurityEvent("llm_config_created", { user_id: userId, config_id: config.id, provider: config.provider }, req);
   res.status(201).json(config);
 });
 
@@ -147,6 +149,7 @@ router.patch("/:id", (req: Request, res: Response) => {
     return;
   }
 
+  logSecurityEvent("llm_config_updated", { user_id: userId, config_id: updated.id, provider: updated.provider }, req);
   res.json(updated);
 });
 
@@ -168,6 +171,7 @@ router.delete("/:id", (req: Request, res: Response) => {
     return;
   }
 
+  logSecurityEvent("llm_config_deleted", { user_id: userId, config_id: req.params.id }, req);
   res.status(204).send();
 });
 

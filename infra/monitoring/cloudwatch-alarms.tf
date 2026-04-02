@@ -7,6 +7,10 @@ variable "pagerduty_webhook_url" {
   type      = string
   sensitive = true
 }
+variable "app_log_group" {
+  type        = string
+  description = "Name of the application CloudWatch log group (e.g. /ecs/autoflow-backend)"
+}
 
 locals {
   alarm_prefix = "autoflow-${var.env}"
@@ -172,4 +176,48 @@ resource "aws_cloudwatch_dashboard" "autoflow" {
       }
     ]
   })
+}
+
+# ---------------------------------------------------------------------------
+# Security audit logging — CIS Control #8
+# ---------------------------------------------------------------------------
+
+# Enforce 90-day minimum retention on the application log group.
+# The log group is created by ECS/Fargate at first run; this resource
+# adopts it and sets retention without re-creating it.
+resource "aws_cloudwatch_log_group" "app" {
+  name              = var.app_log_group
+  retention_in_days = 90
+}
+
+# Metric filter — count structured auth_failure events emitted by the backend.
+# Pattern matches the event_type field written by securityLogger.ts.
+resource "aws_cloudwatch_log_metric_filter" "auth_failure" {
+  name           = "${local.alarm_prefix}-auth-failure"
+  log_group_name = aws_cloudwatch_log_group.app.name
+  pattern        = "{ $.event_type = \"auth_failure\" }"
+
+  metric_transformation {
+    name          = "AuthFailureCount"
+    namespace     = "AutoFlow/${var.env}"
+    value         = "1"
+    default_value = "0"
+  }
+}
+
+# Alarm — brute-force / credential-stuffing detection (CIS #8).
+# Fires when auth failures exceed 10 in a single 60-second window.
+resource "aws_cloudwatch_metric_alarm" "auth_failure_rate" {
+  alarm_name          = "${local.alarm_prefix}-auth-failure-rate-high"
+  alarm_description   = "Auth failure rate > 10/min — possible brute-force or credential-stuffing attack"
+  comparison_operator = "GreaterThanThreshold"
+  evaluation_periods  = 1
+  metric_name         = "AuthFailureCount"
+  namespace           = "AutoFlow/${var.env}"
+  period              = 60
+  statistic           = "Sum"
+  threshold           = 10
+  treat_missing_data  = "notBreaching"
+  alarm_actions       = [aws_sns_topic.alerts.arn]
+  ok_actions          = [aws_sns_topic.alerts.arn]
 }

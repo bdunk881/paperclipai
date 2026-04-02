@@ -162,13 +162,13 @@ const STATUS_ICON: Record<string, React.ReactNode> = {
   success: <CheckCircle size={15} className="text-green-500" />,
   failure: <XCircle size={15} className="text-red-500" />,
   skipped: <SkipForward size={15} className="text-gray-400" />,
-  running: <Loader size={15} className="text-blue-500 animate-spin" />,
+  running: <Loader size={15} className="text-brand-teal animate-spin" />,
 };
 
 const RUN_STATUS_CONFIG = {
   completed: { color: "bg-green-100 text-green-700", label: "Completed" },
   failed: { color: "bg-red-100 text-red-700", label: "Failed" },
-  running: { color: "bg-blue-100 text-blue-700", label: "Live" },
+  running: { color: "bg-brand-teal/10 text-brand-teal", label: "Live" },
 };
 
 function formatDuration(ms: number): string {
@@ -221,18 +221,18 @@ function StepRow({ step }: { step: StepLog }) {
                   {!showExplanation ? (
                     <button
                       onClick={(e) => { e.stopPropagation(); setShowExplanation(true); }}
-                      className="flex items-center gap-1.5 text-xs text-blue-600 hover:text-blue-700 font-medium"
+                      className="flex items-center gap-1.5 text-xs text-brand-primary hover:text-brand-primary-hover font-medium"
                     >
                       <Lightbulb size={12} />
                       Explain Error with AI
                     </button>
                   ) : (
-                    <div className="mt-2 p-3 bg-blue-50 border border-blue-200 rounded-lg">
-                      <div className="flex items-center gap-1.5 text-xs font-medium text-blue-700 mb-1.5">
+                    <div className="mt-2 p-3 bg-brand-primary-light border border-brand-primary/20 rounded-lg">
+                      <div className="flex items-center gap-1.5 text-xs font-medium text-brand-primary mb-1.5">
                         <Brain size={12} />
                         AI Explanation
                       </div>
-                      <p className="text-xs text-blue-800 leading-relaxed">{step.aiExplanation}</p>
+                      <p className="text-xs text-brand-navy leading-relaxed">{step.aiExplanation}</p>
                     </div>
                   )}
                 </div>
@@ -271,7 +271,7 @@ function RunCard({ run }: { run: RunLog }) {
         className="flex items-center gap-4 px-6 py-4 cursor-pointer hover:bg-gray-50 transition"
       >
         {run.status === "running" && (
-          <Radio size={15} className="text-blue-500 animate-pulse" />
+          <Radio size={15} className="text-brand-teal animate-pulse" />
         )}
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
@@ -336,7 +336,7 @@ export default function ExecutionLogs() {
       <div className="bg-white border-b border-gray-200 px-8 py-6">
         <div className="flex items-center gap-3">
           <h1 className="text-2xl font-bold text-gray-900">Execution Logs</h1>
-          <span className="px-2 py-0.5 rounded-full bg-blue-50 text-blue-600 text-xs font-medium">
+          <span className="px-2 py-0.5 rounded-full bg-brand-primary-light text-brand-primary text-xs font-medium">
             In Development
           </span>
           <span className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-green-100 text-green-700 text-xs font-medium">

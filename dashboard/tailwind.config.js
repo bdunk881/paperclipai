@@ -5,6 +5,7 @@ export default {
     extend: {
       colors: {
         brand: {
+          // Palette
           teal: "#00D4B8",
           indigo: "#4A3AFF",
           coral: "#FF5F57",
@@ -12,6 +13,13 @@ export default {
           navy: "#0F1333",
           slate: "#2D3748",
           cloud: "#F7FAFC",
+          // Semantic aliases
+          primary: "#4A3AFF",
+          "primary-hover": "#3b2ce0",
+          "primary-light": "#ede8ff",
+          accent: "#00D4B8",
+          cta: "#FF5F57",
+          "cta-hover": "#e54e46",
         },
       },
       fontFamily: {

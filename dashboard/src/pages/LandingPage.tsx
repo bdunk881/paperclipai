@@ -90,7 +90,7 @@ export default function LandingPage() {
       <header className="fixed top-0 inset-x-0 z-50 bg-white/80 backdrop-blur border-b border-gray-100">
         <div className="max-w-6xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <div className="w-8 h-8 rounded-lg bg-blue-600 flex items-center justify-center">
+            <div className="w-8 h-8 rounded-lg bg-brand-primary flex items-center justify-center">
               <Zap className="w-4 h-4 text-white" />
             </div>
             <span className="text-lg font-bold tracking-tight">AutoFlow</span>
@@ -107,10 +107,10 @@ export default function LandingPage() {
       {/* Hero */}
       <section
         id="hero"
-        className="pt-32 pb-24 px-4 sm:px-6 bg-gradient-to-b from-blue-950 via-blue-900 to-blue-800 text-white"
+        className="pt-32 pb-24 px-4 sm:px-6 bg-gradient-to-b from-brand-navy via-brand-navy to-brand-indigo/30 text-white"
       >
         <div className="max-w-4xl mx-auto text-center">
-          <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-blue-700/50 border border-blue-500/40 text-blue-200 text-sm font-medium mb-8">
+          <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-brand-indigo/40 border border-brand-indigo/60 text-brand-teal/80 text-sm font-medium mb-8">
             <span className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse" />
             Private beta — limited spots available
           </div>
@@ -119,7 +119,7 @@ export default function LandingPage() {
             <br />
             <span className="text-cyan-400">Built for Modern Businesses</span>
           </h1>
-          <p className="text-lg sm:text-xl text-blue-200 max-w-2xl mx-auto mb-10 leading-relaxed">
+          <p className="text-lg sm:text-xl text-brand-teal/80 max-w-2xl mx-auto mb-10 leading-relaxed">
             Automate Everything. Deploy in Minutes.
             <br />
             Deploy AI agents that reason, adapt, and run your operations 24/7 —
@@ -145,7 +145,7 @@ export default function LandingPage() {
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   placeholder="you@company.com"
-                  className="flex-1 px-4 py-3 rounded-xl bg-white/10 border border-white/20 text-white placeholder-blue-300 focus:outline-none focus:ring-2 focus:ring-cyan-400 text-sm"
+                  className="flex-1 px-4 py-3 rounded-xl bg-white/10 border border-white/20 text-white placeholder-brand-teal/50 focus:outline-none focus:ring-2 focus:ring-brand-teal text-sm"
                 />
                 <button
                   type="submit"
@@ -157,7 +157,7 @@ export default function LandingPage() {
               </>
             )}
           </form>
-          <p className="mt-3 text-xs text-blue-400">
+          <p className="mt-3 text-xs text-brand-teal/50">
             No credit card required. Free early access for beta users.
           </p>
         </div>
@@ -168,7 +168,7 @@ export default function LandingPage() {
         <div className="max-w-5xl mx-auto">
           <div className="grid md:grid-cols-2 gap-12 items-center">
             <div>
-              <p className="text-sm font-semibold text-blue-600 uppercase tracking-widest mb-3">
+              <p className="text-sm font-semibold text-brand-primary uppercase tracking-widest mb-3">
                 The Problem
               </p>
               <h2 className="text-3xl sm:text-4xl font-extrabold tracking-tight leading-tight mb-6">
@@ -221,7 +221,7 @@ export default function LandingPage() {
       <section className="py-24 px-4 sm:px-6 bg-white">
         <div className="max-w-5xl mx-auto">
           <div className="text-center mb-16">
-            <p className="text-sm font-semibold text-blue-600 uppercase tracking-widest mb-3">
+            <p className="text-sm font-semibold text-brand-primary uppercase tracking-widest mb-3">
               How It Works
             </p>
             <h2 className="text-3xl sm:text-4xl font-extrabold tracking-tight">
@@ -231,7 +231,7 @@ export default function LandingPage() {
           <div className="grid md:grid-cols-3 gap-8">
             {HOW_IT_WORKS.map(({ step, title, description }) => (
               <div key={step} className="relative">
-                <div className="text-5xl font-black text-blue-100 mb-4 leading-none">
+                <div className="text-5xl font-black text-brand-cloud mb-4 leading-none">
                   {step}
                 </div>
                 <h3 className="text-xl font-bold mb-3">{title}</h3>
@@ -243,7 +243,7 @@ export default function LandingPage() {
       </section>
 
       {/* Features */}
-      <section className="py-24 px-4 sm:px-6 bg-blue-950 text-white">
+      <section className="py-24 px-4 sm:px-6 bg-brand-navy text-white">
         <div className="max-w-5xl mx-auto">
           <div className="text-center mb-16">
             <p className="text-sm font-semibold text-cyan-400 uppercase tracking-widest mb-3">
@@ -257,13 +257,13 @@ export default function LandingPage() {
             {FEATURES.map(({ icon: Icon, title, description }) => (
               <div
                 key={title}
-                className="p-6 rounded-2xl bg-blue-900/50 border border-blue-700/50 hover:border-cyan-500/50 transition-colors"
+                className="p-6 rounded-2xl bg-brand-navy/60 border border-brand-indigo/40 hover:border-brand-teal/50 transition-colors"
               >
-                <div className="w-10 h-10 rounded-xl bg-blue-700/60 flex items-center justify-center mb-4">
+                <div className="w-10 h-10 rounded-xl bg-brand-indigo/50 flex items-center justify-center mb-4">
                   <Icon className="w-5 h-5 text-cyan-400" />
                 </div>
                 <h3 className="font-bold text-lg mb-2">{title}</h3>
-                <p className="text-blue-300 text-sm leading-relaxed">
+                <p className="text-brand-teal/70 text-sm leading-relaxed">
                   {description}
                 </p>
               </div>
@@ -291,14 +291,14 @@ export default function LandingPage() {
       </section>
 
       {/* Bottom CTA */}
-      <section className="py-24 px-4 sm:px-6 bg-gradient-to-b from-blue-900 to-blue-950 text-white text-center">
+      <section className="py-24 px-4 sm:px-6 bg-gradient-to-b from-brand-indigo/20 to-brand-navy text-white text-center">
         <div className="max-w-2xl mx-auto">
           <h2 className="text-3xl sm:text-4xl font-extrabold tracking-tight mb-4">
             Stop doing manual work.
             <br />
             Start deploying agents.
           </h2>
-          <p className="text-blue-300 mb-10 text-lg">
+          <p className="text-brand-teal/70 mb-10 text-lg">
             Join the waitlist — get early access and free beta for the first 100
             users.
           </p>
@@ -316,7 +316,7 @@ export default function LandingPage() {
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   placeholder="you@company.com"
-                  className="flex-1 px-4 py-3 rounded-xl bg-white/10 border border-white/20 text-white placeholder-blue-300 focus:outline-none focus:ring-2 focus:ring-cyan-400 text-sm"
+                  className="flex-1 px-4 py-3 rounded-xl bg-white/10 border border-white/20 text-white placeholder-brand-teal/50 focus:outline-none focus:ring-2 focus:ring-brand-teal text-sm"
                 />
                 <button
                   type="submit"
@@ -328,22 +328,22 @@ export default function LandingPage() {
               </>
             )}
           </form>
-          <p className="mt-3 text-xs text-blue-400">
+          <p className="mt-3 text-xs text-brand-teal/50">
             No credit card required. Free for beta users.
           </p>
         </div>
       </section>
 
       {/* Footer */}
-      <footer className="py-8 px-4 sm:px-6 bg-blue-950 border-t border-blue-900 text-center text-blue-500 text-sm">
+      <footer className="py-8 px-4 sm:px-6 bg-brand-navy border-t border-brand-indigo/30 text-center text-brand-teal/60 text-sm">
         <div className="flex items-center justify-center gap-2 mb-2">
-          <div className="w-5 h-5 rounded bg-blue-600 flex items-center justify-center">
+          <div className="w-5 h-5 rounded bg-brand-primary flex items-center justify-center">
             <Zap className="w-3 h-3 text-white" />
           </div>
           <span className="font-bold text-white">AutoFlow</span>
         </div>
         <p>© {new Date().getFullYear()} AutoFlow. All rights reserved.</p>
-        <p className="mt-1 text-blue-600">
+        <p className="mt-1 text-brand-primary">
           Automate Everything. Deploy in Minutes.
         </p>
       </footer>

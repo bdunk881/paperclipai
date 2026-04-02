@@ -53,7 +53,7 @@ export default function RootLayout({
       <body className={`${inter.variable} ${poppins.variable} ${jetbrainsMono.variable} font-sans antialiased`}>
         <nav className="sticky top-0 z-50 bg-white/80 backdrop-blur-sm border-b border-gray-100">
           <div className="mx-auto max-w-7xl px-6 lg:px-8 flex h-16 items-center justify-between">
-            <Link href="/" className="text-xl font-display font-bold text-[#4A3AFF]">
+            <Link href="/" className="text-xl font-display font-bold text-[var(--color-primary)]">
               AutoFlow
             </Link>
             <div className="hidden md:flex items-center gap-8">
@@ -89,7 +89,7 @@ export default function RootLayout({
               </a>
               <a
                 href="#pricing"
-                className="rounded-lg bg-[#FF5F57] px-4 py-2 text-sm font-semibold text-white hover:bg-[#e54e46] transition-colors"
+                className="rounded-lg bg-[var(--color-cta)] px-4 py-2 text-sm font-semibold text-white hover:bg-[var(--color-cta-hover)] transition-colors"
               >
                 Start free
               </a>

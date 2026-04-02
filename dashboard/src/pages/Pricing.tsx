@@ -112,7 +112,7 @@ export default function Pricing() {
     <div className="min-h-full bg-gray-50">
       {/* Header */}
       <div className="bg-white border-b border-gray-200 px-8 py-10 text-center">
-        <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-blue-50 text-blue-600 text-xs font-medium mb-4">
+        <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-brand-primary-light text-brand-primary text-xs font-medium mb-4">
           <Zap size={12} />
           Unlimited Executions on Every Plan
         </div>
@@ -136,13 +136,13 @@ export default function Pricing() {
               key={tier.name}
               className={`relative rounded-2xl border-2 bg-white p-8 flex flex-col ${
                 tier.highlight
-                  ? "border-blue-500 shadow-xl shadow-blue-100"
+                  ? "border-brand-primary shadow-xl shadow-brand-primary-light"
                   : "border-gray-200"
               }`}
             >
               {tier.badge && (
                 <div className="absolute -top-3.5 left-1/2 -translate-x-1/2">
-                  <span className="px-3 py-1 rounded-full bg-blue-600 text-white text-xs font-semibold">
+                  <span className="px-3 py-1 rounded-full bg-brand-primary text-white text-xs font-semibold">
                     {tier.badge}
                   </span>
                 </div>
@@ -167,7 +167,7 @@ export default function Pricing() {
                 onClick={() => handleCta(tier.tierId)}
                 className={`w-full py-2.5 rounded-xl text-sm font-semibold transition mb-8 disabled:opacity-60 disabled:cursor-wait ${
                   tier.highlight
-                    ? "bg-blue-600 hover:bg-blue-700 text-white"
+                    ? "bg-brand-primary hover:bg-brand-primary-hover text-white"
                     : "border border-gray-300 text-gray-700 hover:bg-gray-50"
                 }`}
               >

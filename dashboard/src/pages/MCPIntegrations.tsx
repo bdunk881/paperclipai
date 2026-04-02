@@ -126,7 +126,7 @@ export default function MCPIntegrations() {
           <div>
             <div className="flex items-center gap-3">
               <h1 className="text-2xl font-bold text-gray-900">MCP Integration Hub</h1>
-              <span className="px-2 py-0.5 rounded-full bg-blue-50 text-blue-600 text-xs font-medium">
+              <span className="px-2 py-0.5 rounded-full bg-brand-primary-light text-brand-primary text-xs font-medium">
                 In Development
               </span>
             </div>
@@ -145,7 +145,7 @@ export default function MCPIntegrations() {
           <div className="relative flex-1 max-w-sm">
             <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
             <input
-              className="w-full pl-9 pr-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full pl-9 pr-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-primary"
               placeholder="Search servers..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
@@ -186,7 +186,7 @@ export default function MCPIntegrations() {
                     <div className="flex items-center gap-1.5">
                       <span className="font-semibold text-gray-900 text-sm">{server.name}</span>
                       {server.official && (
-                        <CheckCircle size={12} className="text-blue-500" />
+                        <CheckCircle size={12} className="text-brand-primary" />
                       )}
                     </div>
                     <div className="flex items-center gap-1 text-xs text-gray-400">
@@ -230,7 +230,7 @@ export default function MCPIntegrations() {
                   className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-xs font-medium transition ${
                     server.connected
                       ? "bg-red-50 text-red-600 hover:bg-red-100 border border-red-200"
-                      : "bg-blue-600 text-white hover:bg-blue-700"
+                      : "bg-brand-primary text-white hover:bg-brand-primary-hover"
                   }`}
                 >
                   <Plug size={12} />

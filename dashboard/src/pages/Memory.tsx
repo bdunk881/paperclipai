@@ -81,7 +81,7 @@ export default function Memory() {
           <div>
             <div className="flex items-center gap-3">
               <h1 className="text-2xl font-bold text-gray-900">Memory Store</h1>
-              <span className="px-2 py-0.5 rounded-full bg-blue-50 text-blue-600 text-xs font-medium">
+              <span className="px-2 py-0.5 rounded-full bg-brand-primary-light text-brand-primary text-xs font-medium">
                 Beta
               </span>
             </div>
@@ -99,7 +99,7 @@ export default function Memory() {
             </button>
             <button
               onClick={() => setShowAddModal(true)}
-              className="flex items-center gap-1.5 px-3 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition"
+              className="flex items-center gap-1.5 px-3 py-2 text-sm bg-brand-primary text-white rounded-lg hover:bg-brand-primary-hover transition"
             >
               <Plus size={14} />
               Add Entry
@@ -149,7 +149,7 @@ export default function Memory() {
             <div className="relative">
               <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
               <input
-                className="w-full pl-9 pr-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full pl-9 pr-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-primary"
                 placeholder="Search keys or content..."
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
@@ -174,7 +174,7 @@ export default function Memory() {
                   key={entry.id}
                   onClick={() => setSelected(entry)}
                   className={`px-4 py-3 border-b border-gray-50 cursor-pointer hover:bg-gray-50 transition ${
-                    selected?.id === entry.id ? "bg-blue-50 border-l-2 border-l-blue-500" : ""
+                    selected?.id === entry.id ? "bg-brand-primary-light border-l-2 border-l-brand-primary" : ""
                   }`}
                 >
                   <div className="flex items-center justify-between">
@@ -336,7 +336,7 @@ function AddEntryModal({ onClose, onSaved }: { onClose: () => void; onSaved: () 
           <div>
             <label className="block text-xs font-medium text-gray-600 mb-1">Key *</label>
             <input
-              className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg font-mono focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg font-mono focus:outline-none focus:ring-2 focus:ring-brand-primary"
               placeholder="e.g. user.preferences"
               value={key}
               onChange={(e) => setKey(e.target.value)}
@@ -346,7 +346,7 @@ function AddEntryModal({ onClose, onSaved }: { onClose: () => void; onSaved: () 
           <div>
             <label className="block text-xs font-medium text-gray-600 mb-1">Value *</label>
             <textarea
-              className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg font-mono focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+              className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg font-mono focus:outline-none focus:ring-2 focus:ring-brand-primary resize-none"
               placeholder='Plain text or JSON, e.g. {"tier": "pro"}'
               rows={4}
               value={text}
@@ -358,7 +358,7 @@ function AddEntryModal({ onClose, onSaved }: { onClose: () => void; onSaved: () 
             <div>
               <label className="block text-xs font-medium text-gray-600 mb-1">Workflow ID</label>
               <input
-                className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-primary"
                 placeholder="optional"
                 value={workflowId}
                 onChange={(e) => setWorkflowId(e.target.value)}
@@ -369,7 +369,7 @@ function AddEntryModal({ onClose, onSaved }: { onClose: () => void; onSaved: () 
               <input
                 type="number"
                 min="1"
-                className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-primary"
                 placeholder="no expiry"
                 value={ttlSeconds}
                 onChange={(e) => setTtlSeconds(e.target.value)}
@@ -390,7 +390,7 @@ function AddEntryModal({ onClose, onSaved }: { onClose: () => void; onSaved: () 
             <button
               type="submit"
               disabled={saving || !key.trim() || !text.trim()}
-              className="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 transition"
+              className="px-4 py-2 text-sm bg-brand-primary text-white rounded-lg hover:bg-brand-primary-hover disabled:opacity-50 transition"
             >
               {saving ? "Saving…" : "Save"}
             </button>

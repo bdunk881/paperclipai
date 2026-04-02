@@ -162,7 +162,7 @@ export default function Approvals() {
             {filter === "pending" && (
               <p className="text-xs text-gray-400 mt-1">
                 Start a workflow with an approval step from the{" "}
-                <Link to="/builder" className="text-blue-600 hover:underline">
+                <Link to="/builder" className="text-brand-primary hover:underline">
                   builder
                 </Link>
                 .
@@ -265,7 +265,7 @@ function ApprovalCard({
             onChange={(e) => setComment(e.target.value)}
             placeholder="Optional comment (visible to requester)…"
             rows={2}
-            className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 resize-none focus:outline-none focus:ring-2 focus:ring-blue-300 text-gray-700 placeholder-gray-400"
+            className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 resize-none focus:outline-none focus:ring-2 focus:ring-brand-primary/60 text-gray-700 placeholder-gray-400"
           />
 
           {submitError && (

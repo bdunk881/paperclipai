@@ -123,7 +123,7 @@ export default function RunHistory() {
                 className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"
               />
               <input
-                className="w-full pl-8 pr-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full pl-8 pr-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-primary"
                 placeholder="Run ID or workflow name…"
                 value={search}
                 onChange={(e) => { setSearch(e.target.value); setPage(1); }}
@@ -135,7 +135,7 @@ export default function RunHistory() {
           <div className="min-w-[140px]">
             <label className="block text-xs font-medium text-gray-500 mb-1">Status</label>
             <select
-              className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+              className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-primary bg-white"
               value={statusFilter}
               onChange={(e) => { setStatusFilter(e.target.value); setPage(1); }}
             >
@@ -150,7 +150,7 @@ export default function RunHistory() {
           <div className="min-w-[180px]">
             <label className="block text-xs font-medium text-gray-500 mb-1">Workflow</label>
             <select
-              className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+              className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-primary bg-white"
               value={templateFilter}
               onChange={(e) => { setTemplateFilter(e.target.value); setPage(1); }}
             >
@@ -166,7 +166,7 @@ export default function RunHistory() {
             <label className="block text-xs font-medium text-gray-500 mb-1">From</label>
             <input
               type="date"
-              className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-primary"
               value={dateFrom}
               onChange={(e) => { setDateFrom(e.target.value); setPage(1); }}
             />
@@ -177,7 +177,7 @@ export default function RunHistory() {
             <label className="block text-xs font-medium text-gray-500 mb-1">To</label>
             <input
               type="date"
-              className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-primary"
               value={dateTo}
               onChange={(e) => { setDateTo(e.target.value); setPage(1); }}
             />
@@ -212,7 +212,7 @@ export default function RunHistory() {
               className={clsx(
                 "px-2 py-0.5 rounded transition",
                 sort.field === f
-                  ? "text-blue-600 font-medium bg-blue-50"
+                  ? "text-brand-primary font-medium bg-brand-primary-light"
                   : "hover:text-gray-700"
               )}
             >
@@ -268,7 +268,7 @@ export default function RunHistory() {
                     <tr
                       className={clsx(
                         "cursor-pointer hover:bg-gray-50 transition-colors",
-                        isExpanded && "bg-blue-50/40"
+                        isExpanded && "bg-brand-primary-light/40"
                       )}
                       onClick={() => setExpandedId(isExpanded ? null : run.id)}
                     >
@@ -381,7 +381,7 @@ export default function RunHistory() {
                 className={clsx(
                   "w-9 h-9 rounded-lg text-sm font-medium transition",
                   p === currentPage
-                    ? "bg-blue-600 text-white"
+                    ? "bg-brand-primary text-white"
                     : "border border-gray-300 text-gray-600 hover:bg-gray-50"
                 )}
               >

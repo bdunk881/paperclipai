@@ -25,7 +25,7 @@ interface ProviderMeta {
 const PROVIDERS: Record<ProviderName, ProviderMeta> = {
   openai: { name: "OpenAI", color: "text-green-700", bg: "bg-green-100", abbr: "OAI" },
   anthropic: { name: "Anthropic", color: "text-orange-700", bg: "bg-orange-100", abbr: "ANT" },
-  gemini: { name: "Google Gemini", color: "text-blue-700", bg: "bg-blue-100", abbr: "GEM" },
+  gemini: { name: "Google Gemini", color: "text-brand-primary", bg: "bg-brand-primary-light", abbr: "GEM" },
   mistral: { name: "Mistral", color: "text-purple-700", bg: "bg-purple-100", abbr: "MIS" },
 };
 
@@ -115,7 +115,7 @@ function ConnectModal({ provider, onClose, onSuccess }: ConnectModalProps) {
               onChange={(e) => setLabel(e.target.value)}
               placeholder="e.g. My OpenAI Key"
               className={clsx(
-                "w-full px-3 py-2 rounded-lg border text-sm focus:outline-none focus:ring-2 focus:ring-blue-500",
+                "w-full px-3 py-2 rounded-lg border text-sm focus:outline-none focus:ring-2 focus:ring-brand-primary",
                 fieldErrors.label ? "border-red-300 bg-red-50" : "border-gray-300"
               )}
             />
@@ -135,7 +135,7 @@ function ConnectModal({ provider, onClose, onSuccess }: ConnectModalProps) {
               placeholder="sk-..."
               autoComplete="new-password"
               className={clsx(
-                "w-full px-3 py-2 rounded-lg border text-sm focus:outline-none focus:ring-2 focus:ring-blue-500",
+                "w-full px-3 py-2 rounded-lg border text-sm focus:outline-none focus:ring-2 focus:ring-brand-primary",
                 fieldErrors.apiKey ? "border-red-300 bg-red-50" : "border-gray-300"
               )}
             />
@@ -152,7 +152,7 @@ function ConnectModal({ provider, onClose, onSuccess }: ConnectModalProps) {
               value={model}
               onChange={(e) => setModel(e.target.value)}
               className={clsx(
-                "w-full px-3 py-2 rounded-lg border text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white",
+                "w-full px-3 py-2 rounded-lg border text-sm focus:outline-none focus:ring-2 focus:ring-brand-primary bg-white",
                 fieldErrors.model ? "border-red-300 bg-red-50" : "border-gray-300"
               )}
             >
@@ -176,7 +176,7 @@ function ConnectModal({ provider, onClose, onSuccess }: ConnectModalProps) {
             <button
               type="submit"
               disabled={submitting}
-              className="flex-1 px-4 py-2 rounded-lg bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 disabled:opacity-60 transition-colors"
+              className="flex-1 px-4 py-2 rounded-lg bg-brand-primary text-white text-sm font-medium hover:bg-brand-primary-hover disabled:opacity-60 transition-colors"
             >
               {submitting ? "Connecting…" : "Connect"}
             </button>
@@ -330,14 +330,14 @@ export default function LLMProviders() {
                 {isConnected ? (
                   <button
                     onClick={() => setConnectingProvider(providerKey)}
-                    className="text-xs text-blue-600 hover:text-blue-700 font-medium"
+                    className="text-xs text-brand-primary hover:text-brand-primary-hover font-medium"
                   >
                     + Add another ({count} connected)
                   </button>
                 ) : (
                   <button
                     onClick={() => setConnectingProvider(providerKey)}
-                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-600 text-white text-xs font-medium hover:bg-blue-700 transition-colors"
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-brand-primary text-white text-xs font-medium hover:bg-brand-primary-hover transition-colors"
                   >
                     <Plus size={12} />
                     Connect

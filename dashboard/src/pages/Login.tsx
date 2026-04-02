@@ -24,7 +24,7 @@ export default function Login() {
       <div className="w-full max-w-md">
         {/* Logo */}
         <div className="flex flex-col items-center mb-8">
-          <div className="flex items-center justify-center w-12 h-12 rounded-xl bg-blue-600 mb-4">
+          <div className="flex items-center justify-center w-12 h-12 rounded-xl bg-brand-primary mb-4">
             <Zap size={24} className="text-white" />
           </div>
           <h1 className="text-2xl font-bold text-gray-900">Sign in to AutoFlow</h1>
@@ -42,7 +42,7 @@ export default function Login() {
           <button
             onClick={handleSignIn}
             disabled={loading}
-            className="w-full flex items-center justify-center gap-3 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition disabled:opacity-60"
+            className="w-full flex items-center justify-center gap-3 py-2.5 bg-brand-primary hover:bg-brand-primary-hover text-white font-medium rounded-lg transition disabled:opacity-60"
           >
             {loading ? (
               <Loader2 size={18} className="animate-spin" />

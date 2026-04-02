@@ -102,7 +102,7 @@ function GenerateModal({ onClose, onGenerated }: GenerateModalProps) {
                   onChange={(e) => setName(e.target.value)}
                   placeholder="e.g. Production, CI/CD"
                   autoFocus
-                  className={`w-full px-3 py-2 rounded-lg border text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+                  className={`w-full px-3 py-2 rounded-lg border text-sm focus:outline-none focus:ring-2 focus:ring-brand-primary ${
                     nameError ? "border-red-300 bg-red-50" : "border-gray-300"
                   }`}
                 />
@@ -118,7 +118,7 @@ function GenerateModal({ onClose, onGenerated }: GenerateModalProps) {
                 </button>
                 <button
                   type="submit"
-                  className="flex-1 px-4 py-2 rounded-lg bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 transition-colors"
+                  className="flex-1 px-4 py-2 rounded-lg bg-brand-primary text-white text-sm font-medium hover:bg-brand-primary-hover transition-colors"
                 >
                   Generate
                 </button>
@@ -151,7 +151,7 @@ function GenerateModal({ onClose, onGenerated }: GenerateModalProps) {
               </div>
               <button
                 onClick={onClose}
-                className="w-full px-4 py-2 rounded-lg bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 transition-colors"
+                className="w-full px-4 py-2 rounded-lg bg-brand-primary text-white text-sm font-medium hover:bg-brand-primary-hover transition-colors"
               >
                 Done
               </button>
@@ -184,7 +184,7 @@ export default function ApiKeys() {
         </div>
         <button
           onClick={() => setShowModal(true)}
-          className="flex items-center gap-2 px-4 py-2 rounded-lg bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 transition-colors"
+          className="flex items-center gap-2 px-4 py-2 rounded-lg bg-brand-primary text-white text-sm font-medium hover:bg-brand-primary-hover transition-colors"
         >
           <Plus size={15} />
           Generate new key

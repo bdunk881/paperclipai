@@ -44,8 +44,8 @@ export default function Dashboard() {
         <StatCard
           label="Total Runs"
           value={stats.total}
-          icon={<TrendingUp size={20} className="text-blue-600" />}
-          bg="bg-blue-50"
+          icon={<TrendingUp size={20} className="text-brand-primary" />}
+          bg="bg-brand-primary-light"
         />
         <StatCard
           label="Running"
@@ -74,7 +74,7 @@ export default function Dashboard() {
             <h2 className="font-semibold text-gray-900">Recent Runs</h2>
             <Link
               to="/history"
-              className="flex items-center gap-1 text-sm text-blue-600 hover:text-blue-700"
+              className="flex items-center gap-1 text-sm text-brand-primary hover:text-brand-primary-hover"
             >
               View all <ArrowRight size={14} />
             </Link>
@@ -106,7 +106,7 @@ export default function Dashboard() {
             <h2 className="font-semibold text-gray-900">Templates</h2>
             <Link
               to="/builder"
-              className="flex items-center gap-1 text-sm text-blue-600 hover:text-blue-700"
+              className="flex items-center gap-1 text-sm text-brand-primary hover:text-brand-primary-hover"
             >
               New <ArrowRight size={14} />
             </Link>
@@ -121,8 +121,8 @@ export default function Dashboard() {
                 to={`/builder/${tpl.id}`}
                 className="flex items-center gap-3 px-6 py-3 hover:bg-gray-50 transition-colors"
               >
-                <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-blue-100">
-                  <Workflow size={16} className="text-blue-600" />
+                <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-brand-primary-light">
+                  <Workflow size={16} className="text-brand-primary" />
                 </div>
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-medium text-gray-900 truncate">

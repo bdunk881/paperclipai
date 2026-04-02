@@ -52,7 +52,7 @@ export default function Settings() {
         {SETTINGS_SECTIONS.map(({ to, icon: Icon, title, description }) => (
           <Link key={to} to={to} className="block">
             <div className="bg-white rounded-xl border border-gray-200 p-6 flex items-start gap-4 hover:shadow-md cursor-pointer transition-shadow">
-              <div className="flex items-center justify-center w-10 h-10 rounded-lg bg-blue-50 text-blue-600 flex-shrink-0">
+              <div className="flex items-center justify-center w-10 h-10 rounded-lg bg-brand-primary-light text-brand-primary flex-shrink-0">
                 <Icon size={20} />
               </div>
               <div>

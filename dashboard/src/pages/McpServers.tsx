@@ -150,7 +150,7 @@ export default function McpServers() {
           </div>
           <button
             onClick={() => setShowForm((v) => !v)}
-            className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition"
+            className="flex items-center gap-2 px-4 py-2 bg-brand-primary text-white text-sm font-medium rounded-lg hover:bg-brand-primary-hover transition"
           >
             <Plus size={14} />
             Add Server
@@ -172,7 +172,7 @@ export default function McpServers() {
               <label className="block text-xs font-medium text-gray-700 mb-1">Name *</label>
               <input
                 required
-                className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-primary"
                 placeholder="My MCP Server"
                 value={formName}
                 onChange={(e) => setFormName(e.target.value)}
@@ -182,7 +182,7 @@ export default function McpServers() {
               <label className="block text-xs font-medium text-gray-700 mb-1">Server URL *</label>
               <input
                 required
-                className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono"
+                className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-primary font-mono"
                 placeholder="https://mcp.example.com"
                 value={formUrl}
                 onChange={(e) => setFormUrl(e.target.value)}
@@ -194,7 +194,7 @@ export default function McpServers() {
             <div>
               <label className="block text-xs font-medium text-gray-700 mb-1">Auth Header Key <span className="text-gray-400">(optional)</span></label>
               <input
-                className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono"
+                className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-primary font-mono"
                 placeholder="Authorization"
                 value={formAuthKey}
                 onChange={(e) => setFormAuthKey(e.target.value)}
@@ -204,7 +204,7 @@ export default function McpServers() {
               <label className="block text-xs font-medium text-gray-700 mb-1">Auth Header Value <span className="text-gray-400">(optional)</span></label>
               <input
                 type="password"
-                className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono"
+                className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-primary font-mono"
                 placeholder="Bearer sk-..."
                 value={formAuthVal}
                 onChange={(e) => setFormAuthVal(e.target.value)}
@@ -216,7 +216,7 @@ export default function McpServers() {
             <button
               type="submit"
               disabled={submitting}
-              className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 disabled:opacity-50 transition"
+              className="flex items-center gap-2 px-4 py-2 bg-brand-primary text-white text-sm font-medium rounded-lg hover:bg-brand-primary-hover disabled:opacity-50 transition"
             >
               {submitting ? <Loader2 size={14} className="animate-spin" /> : <Plus size={14} />}
               {submitting ? "Adding…" : "Add Server"}
@@ -256,8 +256,8 @@ export default function McpServers() {
               <div key={server.id} className="bg-white border border-gray-200 rounded-xl p-5">
                 <div className="flex items-start justify-between">
                   <div className="flex items-center gap-3">
-                    <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center">
-                      <PlugZap size={16} className="text-blue-600" />
+                    <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-brand-primary-light to-brand-indigo/20 flex items-center justify-center">
+                      <PlugZap size={16} className="text-brand-primary" />
                     </div>
                     <div>
                       <p className="font-semibold text-gray-900 text-sm">{server.name}</p>

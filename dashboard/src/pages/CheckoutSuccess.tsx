@@ -14,7 +14,7 @@ export default function CheckoutSuccess() {
         </p>
         <Link
           to="/"
-          className="inline-block w-full py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold transition"
+          className="inline-block w-full py-2.5 rounded-xl bg-brand-primary hover:bg-brand-primary-hover text-white text-sm font-semibold transition"
         >
           Go to Dashboard
         </Link>

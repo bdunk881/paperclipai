@@ -35,8 +35,8 @@ const KIND_META: Record<
   trigger: {
     label: "Trigger",
     icon: <Zap size={14} />,
-    color: "text-blue-700",
-    bg: "bg-blue-100 border-blue-300",
+    color: "text-brand-primary",
+    bg: "bg-brand-primary-light border-brand-primary/40",
   },
   llm: {
     label: "LLM",
@@ -227,7 +227,7 @@ export default function WorkflowBuilder() {
         <div className="flex items-center justify-between px-6 py-4 bg-white border-b border-gray-200">
           <div className="flex items-center gap-3">
             <input
-              className="text-lg font-semibold text-gray-900 bg-transparent border-none outline-none focus:ring-2 focus:ring-blue-500 rounded px-1 -ml-1"
+              className="text-lg font-semibold text-gray-900 bg-transparent border-none outline-none focus:ring-2 focus:ring-brand-primary rounded px-1 -ml-1"
               value={template.name}
               onChange={(e) => setTemplate((t) => ({ ...t, name: e.target.value }))}
             />
@@ -258,7 +258,7 @@ export default function WorkflowBuilder() {
             <button
               onClick={handleRun}
               disabled={template.steps.length === 0}
-              className="flex items-center gap-2 px-3.5 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition disabled:opacity-50"
+              className="flex items-center gap-2 px-3.5 py-2 bg-brand-primary hover:bg-brand-primary-hover text-white text-sm font-medium rounded-lg transition disabled:opacity-50"
             >
               <Play size={15} />
               Run
@@ -319,7 +319,7 @@ export default function WorkflowBuilder() {
           <div className="p-5 space-y-5">
             <Field label="Name">
               <input
-                className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-primary"
                 value={selectedStep.name}
                 onChange={(e) => updateStep(selectedStep.id, { name: e.target.value })}
               />
@@ -327,7 +327,7 @@ export default function WorkflowBuilder() {
 
             <Field label="Kind">
               <select
-                className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-primary bg-white"
                 value={selectedStep.kind}
                 onChange={(e) =>
                   updateStep(selectedStep.id, { kind: e.target.value as StepKind })
@@ -343,7 +343,7 @@ export default function WorkflowBuilder() {
 
             <Field label="Description">
               <textarea
-                className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+                className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-primary resize-none"
                 rows={3}
                 value={selectedStep.description}
                 onChange={(e) =>
@@ -355,7 +355,7 @@ export default function WorkflowBuilder() {
             {selectedStep.kind === "llm" && (
               <Field label="Prompt Template">
                 <textarea
-                  className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none font-mono text-xs"
+                  className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-primary resize-none font-mono text-xs"
                   rows={5}
                   placeholder="Use {{key}} for variable interpolation"
                   value={selectedStep.promptTemplate ?? ""}
@@ -384,7 +384,7 @@ export default function WorkflowBuilder() {
                   </div>
                 ) : (
                   <select
-                    className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                    className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-primary bg-white"
                     value={selectedStep.llmConfigId ?? ""}
                     onChange={(e) =>
                       updateStep(selectedStep.id, {
@@ -406,7 +406,7 @@ export default function WorkflowBuilder() {
             {selectedStep.kind === "condition" && (
               <Field label="Condition Expression">
                 <input
-                  className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono"
+                  className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-primary font-mono"
                   placeholder='e.g. urgency === "high"'
                   value={selectedStep.condition ?? ""}
                   onChange={(e) =>
@@ -419,7 +419,7 @@ export default function WorkflowBuilder() {
             {selectedStep.kind === "action" && (
               <Field label="Action Target">
                 <input
-                  className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono"
+                  className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-primary font-mono"
                   placeholder="e.g. email.send"
                   value={selectedStep.action ?? ""}
                   onChange={(e) =>
@@ -433,7 +433,7 @@ export default function WorkflowBuilder() {
               <>
                 <Field label="Model">
                   <input
-                    className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-primary"
                     placeholder="e.g. claude-sonnet-4-6"
                     value={selectedStep.agentModel ?? ""}
                     onChange={(e) =>
@@ -443,7 +443,7 @@ export default function WorkflowBuilder() {
                 </Field>
                 <Field label="Instructions">
                   <textarea
-                    className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+                    className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-primary resize-none"
                     rows={4}
                     placeholder="System instructions for this agent…"
                     value={selectedStep.agentInstructions ?? ""}
@@ -457,7 +457,7 @@ export default function WorkflowBuilder() {
                     type="number"
                     min={1}
                     max={20}
-                    className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-primary"
                     placeholder="1"
                     value={selectedStep.subAgentSlots ?? 1}
                     onChange={(e) =>
@@ -472,7 +472,7 @@ export default function WorkflowBuilder() {
               <>
                 <Field label="Assignee (email or role)">
                   <input
-                    className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-primary"
                     placeholder="e.g. manager@company.com"
                     value={selectedStep.approvalAssignee ?? ""}
                     onChange={(e) =>
@@ -482,7 +482,7 @@ export default function WorkflowBuilder() {
                 </Field>
                 <Field label="Approval Request Message">
                   <textarea
-                    className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+                    className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-primary resize-none"
                     rows={3}
                     placeholder="Please review and approve this step before continuing…"
                     value={selectedStep.approvalMessage ?? ""}
@@ -495,7 +495,7 @@ export default function WorkflowBuilder() {
                   <input
                     type="number"
                     min={1}
-                    className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-primary"
                     placeholder="60"
                     value={selectedStep.approvalTimeoutMinutes ?? 60}
                     onChange={(e) =>
@@ -515,7 +515,7 @@ export default function WorkflowBuilder() {
               <>
                 <Field label="MCP Server URL">
                   <input
-                    className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono"
+                    className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-primary font-mono"
                     placeholder="https://mcp.example.com/sse"
                     value={selectedStep.mcpServerUrl ?? ""}
                     onChange={(e) =>
@@ -525,7 +525,7 @@ export default function WorkflowBuilder() {
                 </Field>
                 <Field label="Tool Name">
                   <input
-                    className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono"
+                    className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-primary font-mono"
                     placeholder="e.g. search_web"
                     value={selectedStep.mcpTool ?? ""}
                     onChange={(e) =>
@@ -539,7 +539,7 @@ export default function WorkflowBuilder() {
             {selectedStep.kind === "file_trigger" && (
               <Field label="Accepted File Types (comma-separated)">
                 <input
-                  className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-primary"
                   placeholder=".pdf, .png, .jpg, .mp3, .wav"
                   value={(selectedStep.acceptedFileTypes ?? []).join(", ")}
                   onChange={(e) =>
@@ -556,7 +556,7 @@ export default function WorkflowBuilder() {
 
             <Field label="Input Keys (comma-separated)">
               <input
-                className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-primary"
                 placeholder="key1, key2"
                 value={selectedStep.inputKeys.join(", ")}
                 onChange={(e) =>
@@ -572,7 +572,7 @@ export default function WorkflowBuilder() {
 
             <Field label="Output Keys (comma-separated)">
               <input
-                className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-primary"
                 placeholder="result1, result2"
                 value={selectedStep.outputKeys.join(", ")}
                 onChange={(e) =>
@@ -820,7 +820,7 @@ function StepNode({
       onClick={onSelect}
       className={clsx(
         "group relative bg-white rounded-xl border-2 cursor-pointer transition-all",
-        selected ? "border-blue-500 shadow-md" : "border-gray-200 hover:border-gray-300 hover:shadow-sm"
+        selected ? "border-brand-primary shadow-md" : "border-gray-200 hover:border-gray-300 hover:shadow-sm"
       )}
     >
       <div className="p-4">
@@ -862,7 +862,7 @@ function StepNode({
               <div>
                 <span className="text-gray-400 mr-1">out:</span>
                 {step.outputKeys.map((k) => (
-                  <span key={k} className="mr-1 px-1.5 py-0.5 bg-blue-50 text-blue-600 rounded">
+                  <span key={k} className="mr-1 px-1.5 py-0.5 bg-brand-primary-light text-brand-primary rounded">
                     {k}
                   </span>
                 ))}
@@ -917,7 +917,7 @@ function AddStepMenu({ onAdd }: { onAdd: (k: StepKind) => void }) {
     <div className="relative">
       <button
         onClick={() => setOpen((o) => !o)}
-        className="flex items-center gap-2 px-4 py-2 border-2 border-dashed border-gray-300 text-gray-500 rounded-xl text-sm font-medium hover:border-blue-400 hover:text-blue-600 transition"
+        className="flex items-center gap-2 px-4 py-2 border-2 border-dashed border-gray-300 text-gray-500 rounded-xl text-sm font-medium hover:border-brand-primary hover:text-brand-primary transition"
       >
         <Plus size={16} /> Add Step
       </button>
@@ -949,8 +949,8 @@ function EmptyCanvas({
 }) {
   return (
     <div className="flex flex-col items-center justify-center h-full min-h-[400px] text-center">
-      <div className="w-16 h-16 rounded-2xl bg-blue-50 flex items-center justify-center mb-4">
-        <Zap size={28} className="text-blue-500" />
+      <div className="w-16 h-16 rounded-2xl bg-brand-primary-light flex items-center justify-center mb-4">
+        <Zap size={28} className="text-brand-primary" />
       </div>
       <h3 className="text-lg font-semibold text-gray-900 mb-2">Start building your workflow</h3>
       <p className="text-gray-500 text-sm mb-6 max-w-xs">
@@ -966,7 +966,7 @@ function EmptyCanvas({
               <a
                 key={t.id}
                 href={`/builder/${t.id}`}
-                className="px-3 py-1.5 bg-white border border-gray-200 rounded-lg text-xs text-gray-600 hover:border-blue-400 hover:text-blue-600 transition"
+                className="px-3 py-1.5 bg-white border border-gray-200 rounded-lg text-xs text-gray-600 hover:border-brand-primary hover:text-brand-primary transition"
               >
                 {t.name}
               </a>

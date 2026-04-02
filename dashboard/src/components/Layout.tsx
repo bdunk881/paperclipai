@@ -44,7 +44,7 @@ export default function Layout() {
       <aside className="flex flex-col w-60 bg-gray-900 text-white">
         {/* Logo */}
         <div className="flex items-center gap-2 px-5 py-5 border-b border-gray-700">
-          <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-blue-600">
+          <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-brand-primary">
             <Zap size={16} className="text-white" />
           </div>
           <span className="font-bold text-lg tracking-tight">AutoFlow</span>
@@ -61,7 +61,7 @@ export default function Layout() {
                 clsx(
                   "flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors",
                   isActive
-                    ? "bg-blue-600 text-white"
+                    ? "bg-brand-primary text-white"
                     : "text-gray-400 hover:bg-gray-800 hover:text-white"
                 )
               }
@@ -79,7 +79,7 @@ export default function Layout() {
                 clsx(
                   "flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors",
                   isActive
-                    ? "bg-blue-600 text-white"
+                    ? "bg-brand-primary text-white"
                     : "text-gray-400 hover:bg-gray-800 hover:text-white"
                 )
               }
@@ -93,7 +93,7 @@ export default function Layout() {
                 clsx(
                   "flex items-center gap-3 px-3 py-2 pl-9 rounded-lg text-sm font-medium transition-colors",
                   isActive
-                    ? "bg-blue-600 text-white"
+                    ? "bg-brand-primary text-white"
                     : "text-gray-400 hover:bg-gray-800 hover:text-white"
                 )
               }
@@ -107,7 +107,7 @@ export default function Layout() {
         {/* User + logout */}
         <div className="px-4 py-4 border-t border-gray-700">
           <div className="flex items-center gap-3">
-            <div className="flex items-center justify-center w-8 h-8 rounded-full bg-blue-600 text-sm font-bold uppercase">
+            <div className="flex items-center justify-center w-8 h-8 rounded-full bg-brand-primary text-sm font-bold uppercase">
               {user?.name?.[0] ?? "U"}
             </div>
             <div className="flex-1 min-w-0">

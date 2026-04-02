@@ -108,7 +108,7 @@ export default function RunMonitor() {
             <p className="text-gray-600 font-medium">No active runs</p>
             <p className="text-gray-400 text-sm mt-1">
               Start a workflow from the{" "}
-              <Link to="/builder" className="text-blue-600 hover:underline">
+              <Link to="/builder" className="text-brand-primary hover:underline">
                 builder
               </Link>{" "}
               to see it here.
@@ -174,8 +174,8 @@ function RunCard({
         onClick={onToggle}
         className="w-full flex items-center gap-4 px-5 py-4 text-left hover:bg-gray-50 transition-colors"
       >
-        <div className="flex items-center justify-center w-9 h-9 rounded-lg bg-blue-50 shrink-0">
-          <Workflow size={18} className="text-blue-600" />
+        <div className="flex items-center justify-center w-9 h-9 rounded-lg bg-brand-primary-light shrink-0">
+          <Workflow size={18} className="text-brand-primary" />
         </div>
 
         <div className="flex-1 min-w-0">
@@ -203,7 +203,7 @@ function RunCard({
             <div
               className={clsx(
                 "h-full rounded-full transition-all duration-500",
-                run.status === "failed" ? "bg-red-400" : "bg-blue-500"
+                run.status === "failed" ? "bg-red-400" : "bg-brand-teal"
               )}
               style={{ width: `${progressPct}%` }}
             />
@@ -320,7 +320,7 @@ function StepRow({ step, index }: { step: StepResult; index: number }) {
             {hasOutput && step.status !== "running" && (
               <button
                 onClick={() => setShowOutput((v) => !v)}
-                className="text-xs text-blue-600 hover:underline"
+                className="text-xs text-brand-primary hover:underline"
               >
                 {showOutput ? "hide output" : "show output"}
               </button>

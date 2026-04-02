@@ -92,8 +92,8 @@ export default function NotificationsSettings() {
                 role="switch"
                 aria-checked={toggles[option.id]}
                 onClick={() => handleToggle(option.id)}
-                className={`relative inline-flex h-5 w-9 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-1 ${
-                  toggles[option.id] ? "bg-blue-600" : "bg-gray-200"
+                className={`relative inline-flex h-5 w-9 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-brand-primary focus:ring-offset-1 ${
+                  toggles[option.id] ? "bg-brand-primary" : "bg-gray-200"
                 }`}
               >
                 <span
@@ -110,7 +110,7 @@ export default function NotificationsSettings() {
           <button
             onClick={handleSave}
             disabled={saving}
-            className="px-5 py-2 rounded-lg bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 disabled:opacity-60 transition-colors"
+            className="px-5 py-2 rounded-lg bg-brand-primary text-white text-sm font-medium hover:bg-brand-primary-hover disabled:opacity-60 transition-colors"
           >
             {saving ? "Saving…" : "Save preferences"}
           </button>

@@ -89,13 +89,14 @@ module "aks" {
 module "monitoring" {
   source = "./modules/monitoring"
 
-  prefix              = var.prefix
-  environment         = var.environment
-  location            = var.location
-  resource_group_name = azurerm_resource_group.main.name
-  aks_cluster_id      = module.aks.cluster_id
-  alert_email         = var.alert_email
-  tags                = local.common_tags
+  prefix                     = var.prefix
+  environment                = var.environment
+  location                   = var.location
+  resource_group_name        = azurerm_resource_group.main.name
+  aks_cluster_id             = module.aks.cluster_id
+  log_analytics_workspace_id = module.aks.log_analytics_workspace_id
+  alert_email                = var.alert_email
+  tags                       = local.common_tags
 }
 
 # ── Locals ────────────────────────────────────────────────────────────────────

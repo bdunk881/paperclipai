@@ -1,4 +1,3 @@
 output "instrumentation_key" { value = azurerm_application_insights.main.instrumentation_key }
 output "connection_string" { value = azurerm_application_insights.main.connection_string }
 output "app_insights_id" { value = azurerm_application_insights.main.id }
-output "log_analytics_workspace_id" { value = azurerm_log_analytics_workspace.main.id }

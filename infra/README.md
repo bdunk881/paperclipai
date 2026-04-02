@@ -83,4 +83,13 @@ helloautoflow.com          → A  <hetzner-ip>
 
 ## Monitoring
 
-See `infra/monitoring/` for uptime and alerting configuration.
+Uptime monitoring uses **UptimeRobot free tier** (5-minute checks, 50 monitors).
+
+Set up after the VPS is live — see [`infra/monitoring/uptimerobot.md`](monitoring/uptimerobot.md) for
+the full monitor list, alert contact setup, and status page instructions.
+
+Monitors to create:
+- `https://helloautoflow.com/health` (production)
+- `https://staging.helloautoflow.com/health` (staging)
+- `https://helloautoflow.com` (production frontend)
+- `https://helloautoflow.com/api/health` (API)

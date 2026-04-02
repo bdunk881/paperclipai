@@ -55,9 +55,27 @@ export interface AuthenticatedRequest extends Request {
   };
 }
 
+function logSecurityEvent(
+  event: string,
+  req: Request,
+  extra?: Record<string, unknown>
+): void {
+  const entry = {
+    timestamp: new Date().toISOString(),
+    event,
+    ip: req.ip ?? (req.socket as { remoteAddress?: string })?.remoteAddress,
+    userAgent: req.headers["user-agent"],
+    path: req.path,
+    method: req.method,
+    ...extra,
+  };
+  console.log(JSON.stringify(entry));
+}
+
 /**
  * Express middleware that validates the Authorization: Bearer <token> header.
  * Attaches `req.auth` on success; responds 401 on failure.
+ * Emits structured JSON security events for all auth outcomes.
  */
 export function requireAuth(
   req: AuthenticatedRequest,
@@ -66,6 +84,7 @@ export function requireAuth(
 ): void {
   const authHeader = req.headers.authorization;
   if (!authHeader?.startsWith("Bearer ")) {
+    logSecurityEvent("auth_failure", req, { reason: "missing_or_malformed_header" });
     res.status(401).json({ error: "Missing or malformed Authorization header." });
     return;
   }
@@ -73,6 +92,7 @@ export function requireAuth(
   const token = authHeader.slice(7);
 
   if (!jwksUri) {
+    logSecurityEvent("auth_failure", req, { reason: "auth_service_not_configured" });
     res.status(503).json({ error: "Auth service not configured." });
     return;
   }
@@ -87,6 +107,10 @@ export function requireAuth(
     },
     (err, decoded) => {
       if (err || !decoded) {
+        logSecurityEvent("auth_failure", req, {
+          reason: "invalid_or_expired_token",
+          error: err?.message,
+        });
         res.status(401).json({ error: "Invalid or expired token." });
         return;
       }
@@ -100,6 +124,7 @@ export function requireAuth(
         oid: claims.oid as string | undefined,
       };
 
+      logSecurityEvent("auth_success", req, { sub: req.auth.sub });
       next();
     }
   );

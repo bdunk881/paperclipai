@@ -26,6 +26,10 @@ jobs:
       - run: pip install -r requirements-dev.txt
       - run: ruff check .
       - run: mypy .
+      - name: SAST — Bandit
+        run: pip install bandit && bandit -r . -ll -x ./tests
+      - name: Dependency audit — pip-audit
+        run: pip install pip-audit && pip-audit -r requirements.txt
 
   lint-frontend:
     name: Lint Frontend
@@ -172,6 +176,19 @@ jobs:
           path: dashboard/playwright-report/
           retention-days: 7
 
+  dependency-audit-node:
+    name: Dependency Audit (Node)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+      - run: npm ci
+      - name: npm audit (high+critical)
+        run: npm audit --audit-level=high
+
   build-check:
     name: Docker Build Check
     runs-on: ubuntu-latest
@@ -190,3 +207,11 @@ jobs:
           push: false
           cache-from: type=gha,scope=${{ matrix.service }}
           cache-to: type=gha,mode=max,scope=${{ matrix.service }}
+      - name: Container image scan — Trivy
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: "fs"
+          scan-ref: "docker/${{ matrix.service }}"
+          severity: "CRITICAL,HIGH"
+          exit-code: "1"
+          ignore-unfixed: true

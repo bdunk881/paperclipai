@@ -5,6 +5,9 @@
  */
 
 import express from "express";
+import helmet from "helmet";
+import cors from "cors";
+import rateLimit from "express-rate-limit";
 import multer from "multer";
 import { WORKFLOW_TEMPLATES, getTemplate, getTemplatesByCategory } from "./templates";
 import { WorkflowTemplate, WorkflowStep } from "./types/workflow";
@@ -21,6 +24,42 @@ import { resolveModelForTier } from "./engine/llmRouter";
 import { requireAuth, AuthenticatedRequest } from "./auth/authMiddleware";
 
 const app = express();
+
+// Security headers — sets CSP, HSTS, X-Frame-Options, X-Content-Type-Options, etc.
+app.use(helmet());
+
+// CORS — restrict to explicit allowed origins; defaults to localhost for dev
+const allowedOrigins = process.env.ALLOWED_ORIGINS
+  ? process.env.ALLOWED_ORIGINS.split(",").map((o) => o.trim())
+  : ["http://localhost:3000"];
+app.use(
+  cors({
+    origin: allowedOrigins,
+    methods: ["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
+    allowedHeaders: ["Authorization", "Content-Type", "X-User-Id"],
+  })
+);
+
+// Rate limiting — 100 requests per 15 minutes per IP for all API routes
+const apiLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 100,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "Too many requests, please try again later." },
+});
+app.use("/api/", apiLimiter);
+
+// Stricter limit for workflow generation (LLM calls are expensive)
+const generateLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "Workflow generation rate limit exceeded. Please wait before retrying." },
+});
+app.use("/api/workflows/generate", generateLimiter);
+
 app.use(express.json());
 
 // Multer — in-memory storage for file uploads (max 50 MB)
@@ -140,14 +179,14 @@ app.post("/api/runs", requireAuth, (req: AuthenticatedRequest, res) => {
 });
 
 /** List all runs, optionally filtered by templateId */
-app.get("/api/runs", (req, res) => {
+app.get("/api/runs", requireAuth, (req: AuthenticatedRequest, res) => {
   const { templateId } = req.query;
   const runs = runStore.list(typeof templateId === "string" ? templateId : undefined);
   res.json({ runs, total: runs.length });
 });
 
 /** Get a single run by ID */
-app.get("/api/runs/:id", (req, res) => {
+app.get("/api/runs/:id", requireAuth, (req: AuthenticatedRequest, res) => {
   const run = runStore.get(req.params.id);
   if (!run) {
     res.status(404).json({ error: `Run not found: ${req.params.id}` });
@@ -357,7 +396,7 @@ app.post("/api/webhooks/:templateId", requireAuth, (req: AuthenticatedRequest, r
  * Query params: status=pending|approved|rejected|timed_out
  * Returns all approval requests, optionally filtered by status.
  */
-app.get("/api/approvals", (req, res) => {
+app.get("/api/approvals", requireAuth, (req: AuthenticatedRequest, res) => {
   const { status } = req.query;
   const validStatuses = ["pending", "approved", "rejected", "timed_out"];
   const filter =
@@ -372,7 +411,7 @@ app.get("/api/approvals", (req, res) => {
  * GET /api/approvals/:id
  * Returns a single approval request by ID.
  */
-app.get("/api/approvals/:id", (req, res) => {
+app.get("/api/approvals/:id", requireAuth, (req: AuthenticatedRequest, res) => {
   const approval = approvalStore.get(req.params.id);
   if (!approval) {
     res.status(404).json({ error: `Approval not found: ${req.params.id}` });

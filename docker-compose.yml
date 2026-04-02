@@ -8,10 +8,10 @@ services:
     ports:
       - "8000:8000"
     environment:
-      DATABASE_URL: postgresql://autoflow:autoflow@postgres:5432/autoflow
-      REDIS_URL: redis://redis:6379
-      ENV: development
-      SECRET_KEY: dev-secret-key-not-for-production
+      DATABASE_URL: ${DATABASE_URL:-postgresql://autoflow:autoflow@postgres:5432/autoflow}
+      REDIS_URL: ${REDIS_URL:-redis://:${REDIS_PASSWORD:-changeme}@redis:6379}
+      ENV: ${ENV:-development}
+      SECRET_KEY: ${SECRET_KEY:?SECRET_KEY is required — set it in .env before running}
     depends_on:
       postgres:
         condition: service_healthy
@@ -50,10 +50,11 @@ services:
 
   redis:
     image: redis:7-alpine
+    command: redis-server --requirepass ${REDIS_PASSWORD:-changeme}
     ports:
       - "6379:6379"
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD:-changeme}", "ping"]
       interval: 10s
       timeout: 5s
       retries: 5

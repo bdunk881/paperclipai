@@ -18,6 +18,7 @@ import { llmConfigStore } from "./llmConfig/llmConfigStore";
 import { getProvider } from "./engine/llmProviders";
 import { parseFile } from "./engine/fileParser";
 import { resolveModelForTier } from "./engine/llmRouter";
+import { requireAuth, AuthenticatedRequest } from "./auth/authMiddleware";
 
 const app = express();
 app.use(express.json());
@@ -42,6 +43,15 @@ app.use("/api/mcp/servers", mcpRoutes);
 // Memory API — persistent context memory store for agents/workflows
 // ---------------------------------------------------------------------------
 app.use("/api/memory", memoryRoutes);
+
+// ---------------------------------------------------------------------------
+// Auth API — identity endpoint for authenticated callers
+// ---------------------------------------------------------------------------
+
+/** Returns the authenticated user's claims extracted from the Entra ID token. */
+app.get("/api/me", requireAuth, (req: AuthenticatedRequest, res) => {
+  res.json({ user: req.auth });
+});
 
 // ---------------------------------------------------------------------------
 // Templates API — used by the dashboard UI

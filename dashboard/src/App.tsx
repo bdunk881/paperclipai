@@ -1,5 +1,28 @@
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import { PublicClientApplication, EventType, AuthenticationResult } from "@azure/msal-browser";
+import { MsalProvider } from "@azure/msal-react";
+import { msalConfig } from "./auth/msalConfig";
 import { AuthProvider, useAuth } from "./context/AuthContext";
+
+const msalInstance = new PublicClientApplication(msalConfig);
+
+// Handle redirect response on page load
+msalInstance.initialize().then(() => {
+  // Set active account from redirect response if present
+  msalInstance.addEventCallback((event) => {
+    if (
+      event.eventType === EventType.LOGIN_SUCCESS &&
+      (event.payload as AuthenticationResult)?.account
+    ) {
+      msalInstance.setActiveAccount((event.payload as AuthenticationResult).account);
+    }
+  });
+
+  const accounts = msalInstance.getAllAccounts();
+  if (accounts.length > 0) {
+    msalInstance.setActiveAccount(accounts[0]);
+  }
+});
 import Layout from "./components/Layout";
 import Login from "./pages/Login";
 import Signup from "./pages/Signup";
@@ -34,6 +57,7 @@ function PublicRoute({ children }: { children: React.ReactNode }) {
 
 export default function App() {
   return (
+    <MsalProvider instance={msalInstance}>
     <AuthProvider>
       <BrowserRouter>
         <Routes>
@@ -85,5 +109,6 @@ export default function App() {
         </Routes>
       </BrowserRouter>
     </AuthProvider>
+    </MsalProvider>
   );
 }

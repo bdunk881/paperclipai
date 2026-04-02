@@ -1,52 +1,76 @@
-import React, { createContext, useContext, useState, useCallback } from "react";
+import React, { createContext, useContext } from "react";
+import {
+  useMsal,
+  useIsAuthenticated,
+  useAccount,
+} from "@azure/msal-react";
+import {
+  InteractionRequiredAuthError,
+  AccountInfo,
+} from "@azure/msal-browser";
+import { loginRequest } from "../auth/msalConfig";
 
 interface User {
   id: string;
   email: string;
   name: string;
+  tenantId?: string;
 }
 
 interface AuthContextValue {
   user: User | null;
-  login: (email: string, password: string) => Promise<void>;
-  signup: (name: string, email: string, password: string) => Promise<void>;
+  login: () => Promise<void>;
   logout: () => void;
+  getAccessToken: () => Promise<string | null>;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 
+function accountToUser(account: AccountInfo): User {
+  return {
+    id: account.homeAccountId,
+    email:
+      (account.idTokenClaims as Record<string, string> | undefined)?.email ??
+      account.username,
+    name: account.name ?? account.username,
+    tenantId: account.tenantId,
+  };
+}
+
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const [user, setUser] = useState<User | null>(() => {
-    const stored = localStorage.getItem("autoflow_user");
-    return stored ? JSON.parse(stored) : null;
-  });
+  const { instance, accounts } = useMsal();
+  const isAuthenticated = useIsAuthenticated();
+  const account = useAccount(accounts[0] ?? null);
 
-  const login = useCallback(async (email: string, _password: string) => {
-    // TODO: replace with real POST /api/auth/login
-    await new Promise((r) => setTimeout(r, 600));
-    const u: User = { id: "usr-1", email, name: email.split("@")[0] };
-    localStorage.setItem("autoflow_user", JSON.stringify(u));
-    setUser(u);
-  }, []);
+  const user = isAuthenticated && account ? accountToUser(account) : null;
 
-  const signup = useCallback(
-    async (name: string, email: string, _password: string) => {
-      // TODO: replace with real POST /api/auth/signup
-      await new Promise((r) => setTimeout(r, 800));
-      const u: User = { id: "usr-" + Date.now(), email, name };
-      localStorage.setItem("autoflow_user", JSON.stringify(u));
-      setUser(u);
-    },
-    []
-  );
+  const login = async () => {
+    await instance.loginRedirect(loginRequest);
+  };
 
-  const logout = useCallback(() => {
-    localStorage.removeItem("autoflow_user");
-    setUser(null);
-  }, []);
+  const logout = () => {
+    instance.logoutRedirect({ postLogoutRedirectUri: "/login" });
+  };
+
+  // Silently acquire a fresh access token; falls back to interactive redirect.
+  const getAccessToken = async (): Promise<string | null> => {
+    if (!account) return null;
+    try {
+      const result = await instance.acquireTokenSilent({
+        ...loginRequest,
+        account,
+      });
+      return result.accessToken;
+    } catch (err) {
+      if (err instanceof InteractionRequiredAuthError) {
+        await instance.acquireTokenRedirect({ ...loginRequest, account });
+      }
+      return null;
+    }
+  };
 
   return (
-    <AuthContext.Provider value={{ user, login, signup, logout }}>
+    <AuthContext.Provider value={{ user, login, logout, getAccessToken }}>
       {children}
     </AuthContext.Provider>
   );

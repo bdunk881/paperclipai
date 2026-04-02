@@ -318,8 +318,9 @@ Reference alarm configurations: `infra/monitoring/cloudwatch-alarms.tf`
 | Field | Value |
 |-------|-------|
 | Version | 1.0 |
-| Status | **Draft — Pending CTO Approval** |
+| Status | **Approved** |
 | Created | 2026-04-02 |
+| Approved | 2026-04-02 |
 | Next review | 2026-10-02 (6 months) |
 | Owner | Security Engineer |
 | Approver | CTO |
@@ -329,6 +330,7 @@ Reference alarm configurations: `infra/monitoring/cloudwatch-alarms.tf`
 | Version | Date | Author | Changes |
 |---------|------|--------|---------|
 | 1.0 | 2026-04-02 | Security Engineer | Initial document |
+| 1.0 | 2026-04-02 | CTO | Approved |
 
 ---
 

@@ -51,6 +51,16 @@ const apiLimiter = rateLimit({
 });
 app.use("/api/", apiLimiter);
 
+// Stricter limit for auth-adjacent endpoints — 20 req/15 min per IP
+const authSensitiveLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "Too many requests on this endpoint, please try again later." },
+});
+app.use("/api/me", authSensitiveLimiter);
+
 // Stricter limit for workflow generation (LLM calls are expensive)
 const generateLimiter = rateLimit({
   windowMs: 60 * 1000,
@@ -154,7 +164,7 @@ app.get("/api/templates/:id/sample", (req, res) => {
  * Body: { templateId, input, config? }
  * Returns the new run (status=pending) immediately; execution is async.
  */
-app.post("/api/runs", requireAuth, (req: AuthenticatedRequest, res) => {
+app.post("/api/runs", authSensitiveLimiter, requireAuth, (req: AuthenticatedRequest, res) => {
   const { templateId, input, config } = req.body as {
     templateId?: string;
     input?: Record<string, unknown>;

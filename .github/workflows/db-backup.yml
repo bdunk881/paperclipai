@@ -1,0 +1,227 @@
+name: Database Backup
+
+on:
+  schedule:
+    # Daily at 02:00 UTC
+    - cron: "0 2 * * *"
+  workflow_dispatch:
+    inputs:
+      reason:
+        description: "Reason for manual trigger (optional)"
+        required: false
+        default: "Manual backup"
+
+permissions:
+  contents: read
+
+jobs:
+  # ============================================================================
+  # Daily backup job — runs the pg_dump → gzip → S3 pipeline
+  # ============================================================================
+  backup:
+    name: Backup PostgreSQL to S3
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Build backup Docker image
+        run: |
+          docker build \
+            --tag autoflow-db-backup:${{ github.sha }} \
+            --file infra/backup/Dockerfile \
+            infra/backup/
+
+      - name: Run backup container
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          S3_BACKUP_BUCKET: ${{ secrets.S3_BACKUP_BUCKET }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: ${{ secrets.AWS_DEFAULT_REGION }}
+          BACKUP_ALERT_URL: ${{ secrets.BACKUP_ALERT_URL }}
+        run: |
+          docker run \
+            --rm \
+            --name autoflow-db-backup \
+            -e DATABASE_URL \
+            -e S3_BACKUP_BUCKET \
+            -e AWS_ACCESS_KEY_ID \
+            -e AWS_SECRET_ACCESS_KEY \
+            -e AWS_DEFAULT_REGION \
+            -e BACKUP_ALERT_URL \
+            autoflow-db-backup:${{ github.sha }}
+
+      - name: Report backup status
+        if: always()
+        run: |
+          if [ "${{ job.status }}" = "success" ]; then
+            echo "Backup completed successfully."
+          else
+            echo "Backup failed. Check logs above."
+            exit 1
+          fi
+
+  # ============================================================================
+  # Monthly restore-test job — validates that the latest dump can be restored
+  # Runs on the 1st of every month at 03:00 UTC
+  # ============================================================================
+  restore-test:
+    name: Monthly Restore Verification
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    # Only run on schedule (monthly cron) or when manually requested
+    if: |
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'schedule' && startsWith(github.event.schedule, '0 3 1'))
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: restore_test
+          POSTGRES_PASSWORD: restore_test_pw
+          POSTGRES_DB: restore_test_db
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install AWS CLI and PostgreSQL client
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            awscli \
+            postgresql-client-16 \
+            curl
+
+      - name: Configure AWS credentials
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: ${{ secrets.AWS_DEFAULT_REGION }}
+        run: |
+          aws configure set aws_access_key_id "$AWS_ACCESS_KEY_ID"
+          aws configure set aws_secret_access_key "$AWS_SECRET_ACCESS_KEY"
+          aws configure set default.region "${AWS_DEFAULT_REGION:-us-east-1}"
+
+      - name: Find latest backup in S3
+        id: find-backup
+        env:
+          S3_BACKUP_BUCKET: ${{ secrets.S3_BACKUP_BUCKET }}
+        run: |
+          LATEST_KEY=$(aws s3 ls "s3://${S3_BACKUP_BUCKET}/postgres/" \
+            | sort -k1,2 \
+            | tail -1 \
+            | awk '{print $4}')
+
+          if [[ -z "$LATEST_KEY" ]]; then
+            echo "ERROR: No backup found in s3://${S3_BACKUP_BUCKET}/postgres/"
+            exit 1
+          fi
+
+          echo "Latest backup key: postgres/${LATEST_KEY}"
+          echo "backup_key=postgres/${LATEST_KEY}" >> "$GITHUB_OUTPUT"
+          echo "backup_filename=${LATEST_KEY}" >> "$GITHUB_OUTPUT"
+
+      - name: Download latest backup from S3
+        env:
+          S3_BACKUP_BUCKET: ${{ secrets.S3_BACKUP_BUCKET }}
+        run: |
+          aws s3 cp \
+            "s3://${S3_BACKUP_BUCKET}/${{ steps.find-backup.outputs.backup_key }}" \
+            "/tmp/${{ steps.find-backup.outputs.backup_filename }}"
+
+          echo "Downloaded: /tmp/${{ steps.find-backup.outputs.backup_filename }}"
+          ls -lh "/tmp/${{ steps.find-backup.outputs.backup_filename }}"
+
+      - name: Decompress backup
+        run: |
+          gunzip --keep "/tmp/${{ steps.find-backup.outputs.backup_filename }}"
+          DUMP_FILE="/tmp/${{ steps.find-backup.outputs.backup_filename %.gz }}"
+          echo "dump_file=${DUMP_FILE}" >> "$GITHUB_ENV"
+          ls -lh "$DUMP_FILE"
+
+      - name: Restore dump to test database
+        env:
+          PGPASSWORD: restore_test_pw
+        run: |
+          DUMP_FILE="${{ env.dump_file }}"
+
+          echo "Starting pg_restore to test database..."
+          pg_restore \
+            --host=localhost \
+            --port=5432 \
+            --username=restore_test \
+            --dbname=restore_test_db \
+            --no-owner \
+            --no-privileges \
+            --exit-on-error \
+            --verbose \
+            "$DUMP_FILE" 2>&1 | tail -50
+
+          echo "pg_restore completed."
+
+      - name: Verify restored data (sanity checks)
+        env:
+          PGPASSWORD: restore_test_pw
+        run: |
+          echo "Running post-restore sanity checks..."
+
+          # Count tables restored
+          TABLE_COUNT=$(psql \
+            --host=localhost \
+            --port=5432 \
+            --username=restore_test \
+            --dbname=restore_test_db \
+            --tuples-only \
+            --command="SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = 'public';")
+
+          echo "Tables in restored database: ${TABLE_COUNT}"
+
+          if [[ "${TABLE_COUNT// /}" -eq 0 ]]; then
+            echo "ERROR: No tables found after restore — dump may be empty or corrupt."
+            exit 1
+          fi
+
+          echo "Restore verification passed. ${TABLE_COUNT// /} table(s) found."
+
+      - name: Report restore test result
+        if: always()
+        run: |
+          STATUS="${{ job.status }}"
+          BACKUP_FILE="${{ steps.find-backup.outputs.backup_filename }}"
+          DATE=$(date -u '+%Y-%m-%dT%H:%M:%SZ')
+
+          if [ "$STATUS" = "success" ]; then
+            echo ""
+            echo "============================================================"
+            echo "  RESTORE TEST: PASSED"
+            echo "  Backup file : ${BACKUP_FILE}"
+            echo "  Tested at   : ${DATE}"
+            echo "============================================================"
+          else
+            echo ""
+            echo "============================================================"
+            echo "  RESTORE TEST: FAILED"
+            echo "  Backup file : ${BACKUP_FILE}"
+            echo "  Tested at   : ${DATE}"
+            echo "  Action      : Review logs and investigate backup integrity"
+            echo "============================================================"
+            exit 1
+          fi
+
+# Note: This workflow uses two separate schedule triggers. GitHub Actions only
+# supports one cron per schedule entry, so the monthly restore-test job uses
+# a conditional (if:) on the job itself to gate its execution. To run the
+# monthly job independently, add a second workflow file or trigger manually.

@@ -4,8 +4,8 @@
 
 AutoFlow is an open-source AI workflow automation platform. Spin up autonomous AI businesses in minutes — complete with agents, workflow templates, and revenue infrastructure.
 
-> **Live demo:** [autoflow.app/demo](https://autoflow.app/demo)
-> **Docs:** [docs.autoflow.app](https://docs.autoflow.app)
+> **Live demo:** [helloautoflow.com/demo](https://helloautoflow.com/demo)
+> **Docs:** [docs.helloautoflow.com](https://docs.helloautoflow.com)
 > **Product Hunt:** [producthunt.com/posts/autoflow](https://www.producthunt.com/posts/autoflow)
 
 ---
@@ -83,7 +83,7 @@ The API is available at `http://localhost:8000`.
 
 ## API Reference
 
-Full API docs at [docs.autoflow.app/api-reference](https://docs.autoflow.app/api-reference).
+Full API docs at [docs.helloautoflow.com/api-reference](https://docs.helloautoflow.com/api-reference).
 
 ### Core endpoints
 
@@ -221,7 +221,7 @@ MIT — see [LICENSE](LICENSE).
 
 ## Links
 
-- **Website:** [autoflow.app](https://autoflow.app)
-- **Demo:** [autoflow.app/demo](https://autoflow.app/demo)
-- **Docs:** [docs.autoflow.app](https://docs.autoflow.app)
+- **Website:** [helloautoflow.com](https://helloautoflow.com)
+- **Demo:** [helloautoflow.com/demo](https://helloautoflow.com/demo)
+- **Docs:** [docs.helloautoflow.com](https://docs.helloautoflow.com)
 - **Issues:** [github.com/autoflow-hq/autoflow/issues](https://github.com/autoflow-hq/autoflow/issues)

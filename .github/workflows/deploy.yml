@@ -68,7 +68,7 @@ jobs:
     needs: build-and-push
     environment:
       name: staging
-      url: https://staging.autoflow.app
+      url: https://staging.helloautoflow.com
     steps:
       - name: Trigger Coolify redeploy — backend (staging)
         run: |
@@ -86,7 +86,7 @@ jobs:
         run: |
           sleep 30
           for i in {1..10}; do
-            STATUS=$(curl -s -o /dev/null -w "%{http_code}" https://staging.autoflow.app/health)
+            STATUS=$(curl -s -o /dev/null -w "%{http_code}" https://staging.helloautoflow.com/health)
             if [ "$STATUS" = "200" ]; then
               echo "Staging health check passed (attempt $i)"
               exit 0
@@ -103,7 +103,7 @@ jobs:
     needs: deploy-staging
     environment:
       name: production
-      url: https://autoflow.app
+      url: https://helloautoflow.com
     # GitHub environment protection rules enforce the manual approval gate
     steps:
       - name: Trigger Coolify redeploy — backend (production)
@@ -122,7 +122,7 @@ jobs:
         run: |
           sleep 30
           for i in {1..10}; do
-            STATUS=$(curl -s -o /dev/null -w "%{http_code}" https://autoflow.app/health)
+            STATUS=$(curl -s -o /dev/null -w "%{http_code}" https://helloautoflow.com/health)
             if [ "$STATUS" = "200" ]; then
               echo "Production health check passed (attempt $i)"
               exit 0

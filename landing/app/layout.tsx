@@ -73,7 +73,7 @@ export default function RootLayout({
                 Demo
               </a>
               <a
-                href="https://docs.autoflow.app"
+                href="https://docs.helloautoflow.com"
                 className="text-sm text-gray-600 hover:text-gray-900 transition-colors"
               >
                 Docs
@@ -95,7 +95,7 @@ export default function RootLayout({
               <a href="/demo" className="hover:text-white transition-colors">
                 Demo
               </a>
-              <a href="https://docs.autoflow.app" className="hover:text-white transition-colors">
+              <a href="https://docs.helloautoflow.com" className="hover:text-white transition-colors">
                 Docs
               </a>
               <a href="https://github.com/autoflow-hq/autoflow" className="hover:text-white transition-colors">
@@ -107,7 +107,7 @@ export default function RootLayout({
               <a href="/terms" className="hover:text-white transition-colors">
                 Terms
               </a>
-              <a href="mailto:hello@autoflow.app" className="hover:text-white transition-colors">
+              <a href="mailto:hello@helloautoflow.com" className="hover:text-white transition-colors">
                 Contact
               </a>
             </div>

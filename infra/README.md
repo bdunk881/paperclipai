@@ -45,7 +45,7 @@ Add these in the repo settings → Secrets and variables → Actions:
 | Secret | Description |
 |---|---|
 | `COOLIFY_TOKEN` | Coolify API token (Settings → API Tokens) |
-| `COOLIFY_URL` | Coolify instance URL, e.g. `https://coolify.autoflow.app` |
+| `COOLIFY_URL` | Coolify instance URL, e.g. `https://coolify.helloautoflow.com` |
 | `COOLIFY_STAGING_BACKEND_UUID` | UUID of the staging backend app in Coolify |
 | `COOLIFY_STAGING_FRONTEND_UUID` | UUID of the staging frontend app in Coolify |
 | `COOLIFY_PROD_BACKEND_UUID` | UUID of the production backend app in Coolify |
@@ -77,8 +77,8 @@ ENV=staging   # or production
 Point your domain to the Hetzner VPS IP via Cloudflare (proxy enabled for DDoS protection):
 
 ```
-staging.autoflow.app  → A  <hetzner-ip>
-autoflow.app          → A  <hetzner-ip>
+staging.helloautoflow.com  → A  <hetzner-ip>
+helloautoflow.com          → A  <hetzner-ip>
 ```
 
 ## Monitoring

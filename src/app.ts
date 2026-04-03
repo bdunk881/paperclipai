@@ -19,6 +19,11 @@ import { getProvider } from "./engine/llmProviders";
 import { parseFile } from "./engine/fileParser";
 import { resolveModelForTier } from "./engine/llmRouter";
 import { requireAuth, AuthenticatedRequest } from "./auth/authMiddleware";
+import integrationRoutes, {
+  catalogRouter as integrationCatalogRouter,
+  oauthCallbackRouter as integrationOAuthCallbackRouter,
+  webhookRelayRouter,
+} from "./integrations/integrationRoutes";
 
 const app = express();
 app.use(express.json());
@@ -43,6 +48,18 @@ app.use("/api/mcp/servers", mcpRoutes);
 // Memory API — persistent context memory store for agents/workflows
 // ---------------------------------------------------------------------------
 app.use("/api/memory", memoryRoutes);
+
+// ---------------------------------------------------------------------------
+// Integration Framework — catalog, connections, OAuth2, MCP adapter, webhooks
+// ---------------------------------------------------------------------------
+
+// Public routes (no auth required)
+app.use("/api/integrations/catalog", integrationCatalogRouter);
+app.use("/api/integrations/oauth2", integrationOAuthCallbackRouter);
+app.use("/api/webhooks/relay", webhookRelayRouter);
+
+// Protected routes (auth required)
+app.use("/api/integrations", requireAuth, integrationRoutes);
 
 // ---------------------------------------------------------------------------
 // Auth API — identity endpoint for authenticated callers

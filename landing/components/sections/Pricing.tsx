@@ -4,7 +4,7 @@ import { motion } from "framer-motion";
 import { useState } from "react";
 import { PRICING_TIERS } from "@/lib/stripe";
 
-// Beta pricing: Starter $99, Growth $299 (popular), Scale $749
+// Pricing: Explore (Free), Flow $19, Automate $49 (popular), Scale $99
 
 export function Pricing() {
   const [loading, setLoading] = useState<string | null>(null);
@@ -51,7 +51,7 @@ export function Pricing() {
           </motion.div>
         </div>
 
-        <div className="mx-auto mt-16 grid max-w-lg grid-cols-1 gap-y-6 sm:mt-20 lg:max-w-none lg:grid-cols-3 lg:gap-x-8">
+        <div className="mx-auto mt-16 grid max-w-lg grid-cols-1 gap-y-6 sm:mt-20 lg:max-w-none lg:grid-cols-4 lg:gap-x-8">
           {(Object.entries(PRICING_TIERS) as [keyof typeof PRICING_TIERS, (typeof PRICING_TIERS)[keyof typeof PRICING_TIERS]][]).map(
             ([key, tier], i) => (
               <motion.div
@@ -105,34 +105,45 @@ export function Pricing() {
                         : "text-gray-900",
                     ].join(" ")}
                   >
-                    ${tier.price}
+                    {tier.price === 0 ? "Free" : `$${tier.price}`}
                   </span>
-                  <span
-                    className={[
-                      "text-sm font-semibold leading-6",
-                      "popular" in tier && tier.popular
-                        ? "text-indigo-200"
-                        : "text-gray-600",
-                    ].join(" ")}
-                  >
-                    /month
-                  </span>
+                  {tier.price > 0 && (
+                    <span
+                      className={[
+                        "text-sm font-semibold leading-6",
+                        "popular" in tier && tier.popular
+                          ? "text-indigo-200"
+                          : "text-gray-600",
+                      ].join(" ")}
+                    >
+                      /month
+                    </span>
+                  )}
                 </p>
 
-                <button
-                  onClick={() => handleCheckout(key)}
-                  disabled={loading === key}
-                  className={[
-                    "mt-6 block w-full rounded-md px-3 py-2 text-center text-sm font-semibold leading-6 transition-all",
-                    "focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2",
-                    "disabled:opacity-70 disabled:cursor-not-allowed",
-                    "popular" in tier && tier.popular
-                      ? "bg-white text-indigo-600 hover:bg-indigo-50 focus-visible:outline-white"
-                      : "bg-indigo-600 text-white hover:bg-indigo-700 focus-visible:outline-indigo-600",
-                  ].join(" ")}
-                >
-                  {loading === key ? "Loading…" : "Get started"}
-                </button>
+                {tier.priceId ? (
+                  <button
+                    onClick={() => handleCheckout(key)}
+                    disabled={loading === key}
+                    className={[
+                      "mt-6 block w-full rounded-md px-3 py-2 text-center text-sm font-semibold leading-6 transition-all",
+                      "focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2",
+                      "disabled:opacity-70 disabled:cursor-not-allowed",
+                      "popular" in tier && tier.popular
+                        ? "bg-white text-indigo-600 hover:bg-indigo-50 focus-visible:outline-white"
+                        : "bg-indigo-600 text-white hover:bg-indigo-700 focus-visible:outline-indigo-600",
+                    ].join(" ")}
+                  >
+                    {loading === key ? "Loading…" : "Get started"}
+                  </button>
+                ) : (
+                  <a
+                    href="/signup"
+                    className="mt-6 block w-full rounded-md bg-indigo-50 px-3 py-2 text-center text-sm font-semibold leading-6 text-indigo-600 hover:bg-indigo-100 transition-all focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600"
+                  >
+                    Get started free
+                  </a>
+                )}
 
                 <ul
                   className={[

@@ -18,12 +18,12 @@ const FAQ_ITEMS = [
   {
     question: "How much does it cost?",
     answer:
-      "Plans start at $49/month for the Starter tier. See the Pricing section above for full details. All plans include a 14-day free trial.",
+      "AutoFlow has a free Explore tier to get started. Paid plans start at $19/month (Flow). See the Pricing section above for full details.",
   },
   {
     question: "Can I run multiple businesses?",
     answer:
-      "Yes. The Pro and Enterprise plans support multiple autonomous companies from a single account, each with its own isolated agents, workflows, and billing.",
+      "Yes. The Automate and Scale plans support multiple autonomous companies from a single account, each with its own isolated agents, workflows, and billing.",
   },
   {
     question: "How does the AI agent work?",

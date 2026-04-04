@@ -11,7 +11,7 @@ const router = Router();
 
 /**
  * POST /api/billing/checkout
- * Body: { tier: "starter"|"growth"|"scale", email?, firstName?, companyName?, userId? }
+ * Body: { tier: "flow"|"automate"|"scale", email?, firstName?, companyName?, userId? }
  * Returns: { url: string } — Stripe hosted checkout URL
  */
 router.post("/", async (req: Request, res: Response) => {
@@ -29,6 +29,11 @@ router.post("/", async (req: Request, res: Response) => {
   }
 
   const tierConfig = PRICING_TIERS[tier as TierKey];
+
+  if (tier === "explore") {
+    res.status(400).json({ error: "Explore is a free tier — no checkout required" });
+    return;
+  }
 
   if (!tierConfig.priceId) {
     res.status(503).json({ error: "Stripe pricing not configured for this tier" });

@@ -21,7 +21,7 @@ describe("subscriptionStore", () => {
     stripeCustomerId: "cus_1",
     userId: "user-1",
     email: "test@example.com",
-    tier: "starter" as const,
+    tier: "flow" as const,
     accessLevel: "active" as const,
     status: "active",
     currentPeriodStart: "2026-04-01T00:00:00Z",
@@ -56,8 +56,8 @@ describe("subscriptionStore", () => {
 
   it("update", () => {
     subscriptionStore.upsert(baseSub);
-    subscriptionStore.update("sub-1", { tier: "growth" });
-    expect(subscriptionStore.get("sub-1")?.tier).toBe("growth");
+    subscriptionStore.update("sub-1", { tier: "automate" });
+    expect(subscriptionStore.get("sub-1")?.tier).toBe("automate");
   });
 
   it("list returns all", () => {
@@ -113,15 +113,15 @@ describe("mapStripeStatusToAccess", () => {
 
 describe("resolveTier", () => {
   it("resolves from metadata", () => {
-    expect(resolveTier({ tier: "growth" })).toBe("growth");
+    expect(resolveTier({ tier: "automate" })).toBe("automate");
   });
 
-  it("defaults to starter", () => {
-    expect(resolveTier({})).toBe("starter");
+  it("defaults to explore", () => {
+    expect(resolveTier({})).toBe("explore");
   });
 
-  it("defaults to starter for unknown tier", () => {
-    expect(resolveTier({ tier: "enterprise" })).toBe("starter");
+  it("defaults to explore for unknown tier", () => {
+    expect(resolveTier({ tier: "enterprise" })).toBe("explore");
   });
 });
 
@@ -165,7 +165,7 @@ describe("GET /api/billing/subscription", () => {
       stripeCustomerId: "cus_test",
       userId: "user-test",
       email: "test@example.com",
-      tier: "growth",
+      tier: "automate",
       accessLevel: "active",
       status: "active",
       currentPeriodStart: "2026-04-01T00:00:00Z",
@@ -178,7 +178,7 @@ describe("GET /api/billing/subscription", () => {
 
     const res = await request(app).get("/api/billing/subscription?userId=user-test");
     expect(res.status).toBe(200);
-    expect(res.body.subscription.tier).toBe("growth");
+    expect(res.body.subscription.tier).toBe("automate");
     expect(res.body.accessLevel).toBe("active");
   });
 });
@@ -197,7 +197,7 @@ describe("POST /api/billing/subscription/cancel", () => {
 
 describe("POST /api/billing/subscription/change-tier", () => {
   it("rejects missing userId", async () => {
-    const res = await request(app).post("/api/billing/subscription/change-tier").send({ newTier: "growth" });
+    const res = await request(app).post("/api/billing/subscription/change-tier").send({ newTier: "automate" });
     expect(res.status).toBe(400);
   });
 
@@ -207,7 +207,7 @@ describe("POST /api/billing/subscription/change-tier", () => {
   });
 
   it("returns 404 for unknown user", async () => {
-    const res = await request(app).post("/api/billing/subscription/change-tier").send({ userId: "nope", newTier: "growth" });
+    const res = await request(app).post("/api/billing/subscription/change-tier").send({ userId: "nope", newTier: "automate" });
     expect(res.status).toBe(404);
   });
 });

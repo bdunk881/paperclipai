@@ -42,7 +42,7 @@ router.get("/", (req: Request, res: Response) => {
 
 /**
  * POST /api/billing/subscription/change-tier
- * Body: { userId: string, newTier: "starter"|"growth"|"scale" }
+ * Body: { userId: string, newTier: "flow"|"automate"|"scale" }
  * Upgrades or downgrades the subscription by swapping the Stripe price.
  */
 router.post("/change-tier", async (req: Request, res: Response) => {
@@ -65,6 +65,11 @@ router.post("/change-tier", async (req: Request, res: Response) => {
 
   if (sub.tier === newTier) {
     res.status(400).json({ error: `Already on the ${newTier} tier` });
+    return;
+  }
+
+  if (newTier === "explore") {
+    res.status(400).json({ error: "Cannot change to the free Explore tier — cancel instead" });
     return;
   }
 

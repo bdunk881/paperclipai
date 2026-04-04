@@ -4,7 +4,7 @@
  * Replace with a PostgreSQL-backed store for production (see ALT-30).
  */
 
-export type SubscriptionTier = "starter" | "growth" | "scale";
+export type SubscriptionTier = "explore" | "flow" | "automate" | "scale";
 export type AccessLevel = "trial" | "active" | "past_due" | "cancelled" | "none";
 
 export interface Subscription {
@@ -59,15 +59,16 @@ export function mapStripeStatusToAccess(stripeStatus: string, cancelAtPeriodEnd:
 /** Map Stripe price ID or metadata tier to internal tier */
 export function resolveTier(metadata?: Record<string, string>, priceId?: string): SubscriptionTier {
   const tierFromMeta = metadata?.tier as SubscriptionTier | undefined;
-  if (tierFromMeta && ["starter", "growth", "scale"].includes(tierFromMeta)) {
+  if (tierFromMeta && ["explore", "flow", "automate", "scale"].includes(tierFromMeta)) {
     return tierFromMeta;
   }
   // Fallback: match against known price env vars
   if (priceId) {
     if (priceId === process.env.STRIPE_SCALE_PRICE_ID) return "scale";
-    if (priceId === process.env.STRIPE_GROWTH_PRICE_ID) return "growth";
+    if (priceId === process.env.STRIPE_AUTOMATE_PRICE_ID) return "automate";
+    if (priceId === process.env.STRIPE_FLOW_PRICE_ID) return "flow";
   }
-  return "starter";
+  return "explore";
 }
 
 export const subscriptionStore = {

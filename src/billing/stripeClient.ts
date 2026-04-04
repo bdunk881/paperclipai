@@ -20,21 +20,27 @@ export function getStripe(): Stripe {
 
 /** Pricing tiers — matches landing/lib/stripe.ts */
 export const PRICING_TIERS = {
-  starter: {
-    name: "Starter",
-    price: 99,
-    priceId: process.env.STRIPE_STARTER_PRICE_ID ?? "",
+  explore: {
+    name: "Explore",
+    price: 0,
+    priceId: null,
+    trialDays: 0,
+  },
+  flow: {
+    name: "Flow",
+    price: 19,
+    priceId: process.env.STRIPE_FLOW_PRICE_ID ?? "",
     trialDays: 14,
   },
-  growth: {
-    name: "Growth",
-    price: 299,
-    priceId: process.env.STRIPE_GROWTH_PRICE_ID ?? "",
+  automate: {
+    name: "Automate",
+    price: 49,
+    priceId: process.env.STRIPE_AUTOMATE_PRICE_ID ?? "",
     trialDays: 14,
   },
   scale: {
     name: "Scale",
-    price: 749,
+    price: 99,
     priceId: process.env.STRIPE_SCALE_PRICE_ID ?? "",
     trialDays: 0,
   },

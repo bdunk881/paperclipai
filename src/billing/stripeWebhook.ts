@@ -239,7 +239,7 @@ async function handleInvoicePaymentFailed(invoice: Stripe.Invoice): Promise<void
   });
 
   console.log(`[stripe/webhook] invoice.payment_failed — flagged subscription ${stripeSubId} as past_due (attempt ${invoice.attempt_count})`);
-  // TODO: Trigger dunning email flow via Loops.so or other email provider
+  // TODO: Trigger dunning email flow via email provider
 }
 
 /**
@@ -253,7 +253,7 @@ async function handleTrialWillEnd(stripeSub: Stripe.Subscription): Promise<void>
   }
 
   console.log(`[stripe/webhook] trial_will_end — trial ending for ${sub.email} (subscription ${stripeSub.id}, ends ${sub.trialEnd})`);
-  // TODO: Send trial expiry warning email via Loops.so
+  // TODO: Send trial expiry warning email via email provider
 }
 
 /**

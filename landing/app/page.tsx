@@ -6,6 +6,7 @@ import { BringYourLLM } from "@/components/sections/BringYourLLM";
 import { Pricing } from "@/components/sections/Pricing";
 import { SocialProof } from "@/components/sections/SocialProof";
 import { FAQ } from "@/components/sections/FAQ";
+import { BetaSignup } from "@/components/sections/BetaSignup";
 import { FinalCTA } from "@/components/sections/FinalCTA";
 
 export default function LandingPage() {
@@ -18,6 +19,7 @@ export default function LandingPage() {
       <BringYourLLM />
       <Pricing />
       <SocialProof />
+      <BetaSignup />
       <FAQ />
       <FinalCTA />
     </main>

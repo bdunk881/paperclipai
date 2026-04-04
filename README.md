@@ -122,7 +122,7 @@ autoflow/
 ├── landing/              # Marketing site (Next.js)
 ├── docs/                 # Documentation site (Next.js)
 ├── docker/               # Dockerfiles
-├── infra/                # Deployment config (Hetzner + Coolify)
+├── infra/                # Deployment config (Azure + Vercel)
 └── docker-compose.yml
 ```
 
@@ -130,11 +130,11 @@ autoflow/
 
 ## Deployment
 
-AutoFlow is deployed on [Hetzner](https://www.hetzner.com/) via [Coolify](https://coolify.io/) (self-hosted PaaS). See [`infra/README.md`](infra/README.md) for full setup instructions.
+AutoFlow backend is deployed on Azure; the dashboard is hosted on Vercel. See [`infra/README.md`](infra/README.md) for full setup instructions.
 
 ### CI/CD
 
-Push to `main` → GitHub Actions builds Docker images → pushes to GHCR → Coolify redeploys.
+Push to `main` → GitHub Actions builds Docker images → pushes to GHCR → deploys to Azure (backend) and Vercel (dashboard).
 
 ---
 

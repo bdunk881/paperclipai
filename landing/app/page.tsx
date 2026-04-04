@@ -11,6 +11,7 @@ import { SocialProof } from "@/components/sections/SocialProof";
 import type { Testimonial } from "@/components/sections/SocialProof";
 import { FAQ } from "@/components/sections/FAQ";
 import type { FaqItem } from "@/components/sections/FAQ";
+import { BetaSignup } from "@/components/sections/BetaSignup";
 import { FinalCTA } from "@/components/sections/FinalCTA";
 import { getTestimonials, getFeatures, getFaqItems } from "@/lib/sanity";
 
@@ -60,6 +61,7 @@ export default async function LandingPage() {
       <ROICalculator />
       <CompetitorComparison />
       <SocialProof testimonials={testimonials} />
+      <BetaSignup />
       <FAQ items={faqItems} />
       <FinalCTA />
     </main>

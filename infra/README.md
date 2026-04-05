@@ -19,13 +19,23 @@ Azure (backend) + Vercel (dashboard) deployment with GitHub Actions CI/CD.
 | `backend` | Azure | `.github/workflows/deploy.yml` |
 | `dashboard` | Vercel | `.github/workflows/vercel.yml` |
 
-## GitHub Actions secrets required
-
-Add these in the repo settings -> Secrets and variables -> Actions:
+## Authentication
 
 ### Backend (Azure)
 
-Configured per Azure deployment method (AKS credentials, App Service publish profile, etc.).
+GitHub Actions authenticates to Azure via **OIDC workload identity federation** — no static credentials stored as secrets.
+
+| Setting | Value |
+|---|---|
+| App registration (client ID) | `1a18157f-bc97-4ad1-a170-1ebd3ae93968` |
+| Tenant ID | `b1cb1311-760a-4c88-a778-5d2c227a1f45` |
+| Auth method | `azure/login@v2` with `id-token: write` permission |
+
+The federated credential is configured in the app registration under Certificates & secrets → Federated credentials. No `AZURE_CREDENTIALS` secret is needed.
+
+## GitHub Actions secrets required
+
+Add these in the repo settings -> Secrets and variables -> Actions:
 
 ### Dashboard (Vercel)
 

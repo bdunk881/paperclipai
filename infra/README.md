@@ -37,17 +37,9 @@ The federated credential is configured in the app registration under Certificate
 
 ## GitHub Actions secrets required
 
-Add these in the repo settings → Secrets and variables → Actions:
-
 ### Backend (Azure)
 
-| Secret | Description |
-|---|---|
-| `AZURE_ACR_LOGIN_SERVER` | ACR login server, e.g. `autoflowacr.azurecr.io` |
-| `AKS_RESOURCE_GROUP` | Resource group containing the AKS cluster |
-| `AKS_CLUSTER_NAME` | AKS cluster name |
-
-No `AZURE_CREDENTIALS` secret needed — OIDC handles auth.
+**No secrets needed.** OIDC handles authentication, and ACR/AKS resource names are discovered dynamically via `az` CLI at deploy time. Zero credentials or configuration stored in GitHub.
 
 ### Dashboard (Vercel)
 

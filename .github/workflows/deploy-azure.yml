@@ -17,15 +17,45 @@ permissions:
   id-token: write   # required for OIDC / azure/login
 
 env:
-  REGISTRY: ${{ secrets.AZURE_ACR_LOGIN_SERVER }}
   ARM_CLIENT_ID: 1a18157f-bc97-4ad1-a170-1ebd3ae93968
   ARM_TENANT_ID: b1cb1311-760a-4c88-a778-5d2c227a1f45
   ARM_SUBSCRIPTION_ID: 776a7226-e364-4cd9-a3e6-d083641af9ea
 
 jobs:
+  discover:
+    name: Discover Azure Resources
+    runs-on: ubuntu-latest
+    environment: production
+    outputs:
+      acr_login_server: ${{ steps.discover.outputs.acr_login_server }}
+      aks_resource_group: ${{ steps.discover.outputs.aks_resource_group }}
+      aks_cluster_name: ${{ steps.discover.outputs.aks_cluster_name }}
+    steps:
+      - name: Login to Azure (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ env.ARM_CLIENT_ID }}
+          tenant-id: ${{ env.ARM_TENANT_ID }}
+          subscription-id: ${{ env.ARM_SUBSCRIPTION_ID }}
+
+      - name: Discover ACR and AKS
+        id: discover
+        run: |
+          ACR_LOGIN=$(az acr list --subscription "$ARM_SUBSCRIPTION_ID" --query "[0].loginServer" -o tsv)
+          AKS_RG=$(az aks list --subscription "$ARM_SUBSCRIPTION_ID" --query "[0].resourceGroup" -o tsv)
+          AKS_NAME=$(az aks list --subscription "$ARM_SUBSCRIPTION_ID" --query "[0].name" -o tsv)
+
+          echo "acr_login_server=$ACR_LOGIN" >> "$GITHUB_OUTPUT"
+          echo "aks_resource_group=$AKS_RG" >> "$GITHUB_OUTPUT"
+          echo "aks_cluster_name=$AKS_NAME" >> "$GITHUB_OUTPUT"
+
+          echo "ACR: $ACR_LOGIN"
+          echo "AKS: $AKS_NAME in $AKS_RG"
+
   build-and-push:
     name: Build & Push Images to ACR
     runs-on: ubuntu-latest
+    needs: discover
     environment: production
     strategy:
       matrix:
@@ -43,7 +73,7 @@ jobs:
           subscription-id: ${{ env.ARM_SUBSCRIPTION_ID }}
 
       - name: Login to ACR
-        run: az acr login --name ${{ secrets.AZURE_ACR_LOGIN_SERVER }}
+        run: az acr login --name ${{ needs.discover.outputs.acr_login_server }}
 
       - uses: docker/setup-buildx-action@v3
 
@@ -51,7 +81,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ${{ secrets.AZURE_ACR_LOGIN_SERVER }}/autoflow-${{ matrix.service }}
+          images: ${{ needs.discover.outputs.acr_login_server }}/autoflow-${{ matrix.service }}
           tags: |
             type=sha,format=long
             type=ref,event=branch
@@ -74,7 +104,7 @@ jobs:
   deploy-staging:
     name: Deploy to Staging
     runs-on: ubuntu-latest
-    needs: build-and-push
+    needs: [discover, build-and-push]
     environment:
       name: staging
       url: https://staging.helloautoflow.com
@@ -91,20 +121,20 @@ jobs:
       - name: Set AKS context
         uses: azure/aks-set-context@v3
         with:
-          resource-group: ${{ secrets.AKS_RESOURCE_GROUP }}
-          cluster-name: ${{ secrets.AKS_CLUSTER_NAME }}
+          resource-group: ${{ needs.discover.outputs.aks_resource_group }}
+          cluster-name: ${{ needs.discover.outputs.aks_cluster_name }}
           subscription: ${{ env.ARM_SUBSCRIPTION_ID }}
 
       - name: Deploy backend to staging AKS
         run: |
-          IMAGE="${{ secrets.AZURE_ACR_LOGIN_SERVER }}/autoflow-backend:sha-${{ github.sha }}"
+          IMAGE="${{ needs.discover.outputs.acr_login_server }}/autoflow-backend:sha-${{ github.sha }}"
           kubectl set image deployment/backend backend="${IMAGE}" \
             --namespace autoflow-staging
           kubectl rollout status deployment/backend --namespace autoflow-staging --timeout=5m
 
       - name: Deploy frontend to staging AKS
         run: |
-          IMAGE="${{ secrets.AZURE_ACR_LOGIN_SERVER }}/autoflow-frontend:sha-${{ github.sha }}"
+          IMAGE="${{ needs.discover.outputs.acr_login_server }}/autoflow-frontend:sha-${{ github.sha }}"
           kubectl set image deployment/frontend frontend="${IMAGE}" \
             --namespace autoflow-staging
           kubectl rollout status deployment/frontend --namespace autoflow-staging --timeout=5m
@@ -127,7 +157,7 @@ jobs:
   deploy-production:
     name: Deploy to Production
     runs-on: ubuntu-latest
-    needs: deploy-staging
+    needs: [discover, deploy-staging]
     environment:
       name: production
       url: https://helloautoflow.com
@@ -145,20 +175,20 @@ jobs:
       - name: Set AKS context
         uses: azure/aks-set-context@v3
         with:
-          resource-group: ${{ secrets.AKS_RESOURCE_GROUP }}
-          cluster-name: ${{ secrets.AKS_CLUSTER_NAME }}
+          resource-group: ${{ needs.discover.outputs.aks_resource_group }}
+          cluster-name: ${{ needs.discover.outputs.aks_cluster_name }}
           subscription: ${{ env.ARM_SUBSCRIPTION_ID }}
 
       - name: Deploy backend to production AKS
         run: |
-          IMAGE="${{ secrets.AZURE_ACR_LOGIN_SERVER }}/autoflow-backend:sha-${{ github.sha }}"
+          IMAGE="${{ needs.discover.outputs.acr_login_server }}/autoflow-backend:sha-${{ github.sha }}"
           kubectl set image deployment/backend backend="${IMAGE}" \
             --namespace autoflow-production
           kubectl rollout status deployment/backend --namespace autoflow-production --timeout=5m
 
       - name: Deploy frontend to production AKS
         run: |
-          IMAGE="${{ secrets.AZURE_ACR_LOGIN_SERVER }}/autoflow-frontend:sha-${{ github.sha }}"
+          IMAGE="${{ needs.discover.outputs.acr_login_server }}/autoflow-frontend:sha-${{ github.sha }}"
           kubectl set image deployment/frontend frontend="${IMAGE}" \
             --namespace autoflow-production
           kubectl rollout status deployment/frontend --namespace autoflow-production --timeout=5m

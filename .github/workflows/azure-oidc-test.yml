@@ -18,6 +18,7 @@ jobs:
   test-azure-access:
     name: Test Azure Subscription Access
     runs-on: ubuntu-latest
+    environment: production
     steps:
       - name: Checkout
         uses: actions/checkout@v4

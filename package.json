@@ -11,7 +11,8 @@
     "test:coverage": "jest --coverage",
     "test:templates": "jest src/templates",
     "test:api": "jest src/api",
-    "test:engine": "jest src/engine"
+    "test:engine": "jest src/engine",
+    "health-report": "ts-node src/integrations/apollo-attio/health-metrics.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.82.0",

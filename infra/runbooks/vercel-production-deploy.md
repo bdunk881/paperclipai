@@ -1,4 +1,4 @@
-# Runbook: Vercel Production Deployment (Dashboard)
+# Runbook: Vercel Production Deployment
 
 ## Overview
 
@@ -68,3 +68,29 @@ No code change or rebuild required.
 | API calls return 404 | API rewrite not matching | Check `vercel.json` rewrites; verify backend is running |
 | Mock data still showing | `VITE_USE_MOCK` is `true` | Confirm `.env.production` has `false`; check no Vercel env override |
 | CORS errors | Backend not allowing dashboard origin | Add `https://app.helloautoflow.com` to backend CORS config |
+
+---
+
+## Custom Domains
+
+### Domain Mapping (as of 2026-04-05)
+
+| Domain | Vercel Project | Purpose |
+|---|---|---|
+| `helloautoflow.com` | autoflow-landing | Landing page (primary) |
+| `www.helloautoflow.com` | autoflow-landing | 308 redirect → `helloautoflow.com` |
+| `staging.helloautoflow.com` | autoflow-landing | Landing page (staging) |
+| `app.helloautoflow.com` | dashboard | Dashboard app |
+
+### CloudFlare DNS Records (zone: `helloautoflow.com`)
+
+| Type | Name | Target | Proxied |
+|---|---|---|---|
+| A | `helloautoflow.com` | `76.76.21.21` | No |
+| CNAME | `www` | `cname.vercel-dns.com` | No |
+| CNAME | `staging` | `cname.vercel-dns.com` | No |
+| CNAME | `app` | `cname.vercel-dns.com` | No |
+
+> **Important:** CloudFlare proxy must be **disabled** (grey cloud / DNS-only) for all
+> Vercel-pointed records. Vercel must terminate TLS directly for its SSL certificates
+> to provision and renew correctly.

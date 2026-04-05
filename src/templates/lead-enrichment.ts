@@ -30,7 +30,7 @@ export const leadEnrichment: WorkflowTemplate = {
       label: "CRM Integration",
       type: "string",
       required: true,
-      options: ["hubspot", "salesforce", "pipedrive", "attio"],
+      options: ["attio", "salesforce", "pipedrive"],
       description: "CRM where enriched leads will be pushed.",
     },
     {

@@ -63,7 +63,7 @@ npm install`}</pre>
       "company": "Acme Corp"
     },
     "config": {
-      "crmIntegration": "hubspot",
+      "crmIntegration": "attio",
       "idealCustomerProfile": "Series A SaaS, 50-200 employees, US-based"
     }
   }'`}</pre>

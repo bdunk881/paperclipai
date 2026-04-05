@@ -55,7 +55,7 @@ class TestConfigFields:
         assert field.type == FieldType.string
         assert field.options is not None
         assert "salesforce" in field.options
-        assert "hubspot" in field.options
+        assert "attio" in field.options
 
     def test_has_icp_description(self):
         assert "icpDescription" in self.fields

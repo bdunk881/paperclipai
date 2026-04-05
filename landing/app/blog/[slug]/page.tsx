@@ -1,7 +1,9 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import Image from "next/image";
 import { notFound } from "next/navigation";
-import { getBlogPost } from "@/lib/sanity";
+import { PortableText } from "@portabletext/react";
+import { getBlogPost, urlFor } from "@/lib/sanity";
 import { getArticle, getAllArticles } from "@/lib/articles";
 
 interface Props {
@@ -23,6 +25,70 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 export async function generateStaticParams() {
   return getAllArticles().map((a) => ({ slug: a.slug }));
 }
+
+const portableTextComponents = {
+  types: {
+    image: ({ value }: { value: { asset: unknown; alt?: string } }) => {
+      const url = urlFor(value).width(800).url();
+      return (
+        <figure className="my-8">
+          <Image
+            src={url}
+            alt={value.alt ?? ""}
+            width={800}
+            height={450}
+            className="rounded-lg"
+          />
+          {value.alt && (
+            <figcaption className="mt-2 text-center text-sm text-gray-500">
+              {value.alt}
+            </figcaption>
+          )}
+        </figure>
+      );
+    },
+  },
+  block: {
+    h2: ({ children }: { children?: React.ReactNode }) => (
+      <h2 className="text-2xl font-bold mt-10 mb-4">{children}</h2>
+    ),
+    h3: ({ children }: { children?: React.ReactNode }) => (
+      <h3 className="text-xl font-semibold mt-8 mb-3">{children}</h3>
+    ),
+    normal: ({ children }: { children?: React.ReactNode }) => (
+      <p className="mt-4 leading-7 text-gray-700">{children}</p>
+    ),
+    blockquote: ({ children }: { children?: React.ReactNode }) => (
+      <blockquote className="border-l-4 border-indigo-300 pl-4 my-6 italic text-gray-600">
+        {children}
+      </blockquote>
+    ),
+  },
+  marks: {
+    strong: ({ children }: { children?: React.ReactNode }) => (
+      <strong className="font-semibold">{children}</strong>
+    ),
+    em: ({ children }: { children?: React.ReactNode }) => (
+      <em>{children}</em>
+    ),
+  },
+  list: {
+    bullet: ({ children }: { children?: React.ReactNode }) => (
+      <ul className="list-disc ml-6 mt-4 space-y-2">{children}</ul>
+    ),
+    number: ({ children }: { children?: React.ReactNode }) => (
+      <ol className="list-decimal ml-6 mt-4 space-y-2">{children}</ol>
+    ),
+  },
+  listItem: {
+    bullet: ({ children }: { children?: React.ReactNode }) => (
+      <li className="text-gray-700">{children}</li>
+    ),
+    number: ({ children }: { children?: React.ReactNode }) => (
+      <li className="text-gray-700">{children}</li>
+    ),
+  },
+};
 
 export default async function BlogPostPage({ params }: Props) {
   const { slug } = await params;
@@ -57,19 +123,16 @@ export default async function BlogPostPage({ params }: Props) {
         </h1>
         <p className="mt-2 text-sm text-gray-500">By {author}</p>
 
-        {/* CMS portable text rendering will go here once Sanity is live */}
-        {article && (
-          <div className="prose prose-gray prose-lg mt-10 max-w-none">
-            <MarkdownRenderer content={article.content} />
+        {cmsPost?.body && (
+          <div className="mt-10 max-w-none">
+            {/* @ts-expect-error -- PortableText component types are loosely typed */}
+            <PortableText value={cmsPost.body} components={portableTextComponents} />
           </div>
         )}
 
-        {cmsPost && (
+        {article && (
           <div className="prose prose-gray prose-lg mt-10 max-w-none">
-            <p className="text-gray-500 italic">
-              This post is managed via Sanity CMS. Portable Text rendering will
-              be enabled once the Sanity project is configured.
-            </p>
+            <MarkdownRenderer content={article.content} />
           </div>
         )}
       </article>
@@ -80,18 +143,13 @@ export default async function BlogPostPage({ params }: Props) {
 /** Minimal markdown-to-HTML renderer for the local article fallback. */
 function MarkdownRenderer({ content }: { content: string }) {
   const html = content
-    // headings
     .replace(/^### (.+)$/gm, '<h3 class="text-xl font-semibold mt-8 mb-3">$1</h3>')
     .replace(/^## (.+)$/gm, '<h2 class="text-2xl font-bold mt-10 mb-4">$1</h2>')
     .replace(/^# (.+)$/gm, '<h2 class="text-2xl font-bold mt-10 mb-4">$1</h2>')
-    // bold & italic
     .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
     .replace(/\*(.+?)\*/g, "<em>$1</em>")
-    // unordered lists
     .replace(/^- (.+)$/gm, '<li class="ml-4 list-disc">$1</li>')
-    // paragraphs (double newline)
     .replace(/\n\n/g, '</p><p class="mt-4">')
-    // single newlines inside paragraphs
     .replace(/\n/g, "<br/>");
 
   return (

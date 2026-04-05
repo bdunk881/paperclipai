@@ -64,3 +64,20 @@ output "app_insights_connection_string" {
   value       = module.monitoring.connection_string
   sensitive   = true
 }
+
+# ── Entra External ID (CIAM) ────────────────────────────────────────────────
+
+output "ciam_tenant_id" {
+  description = "Tenant ID of the CIAM directory (set as AZURE_TENANT_ID in backend env)"
+  value       = module.entra_ciam.ciam_tenant_id
+}
+
+output "ciam_tenant_subdomain" {
+  description = "CIAM subdomain (set as AZURE_TENANT_SUBDOMAIN / VITE_AZURE_TENANT_SUBDOMAIN)"
+  value       = module.entra_ciam.ciam_tenant_subdomain
+}
+
+output "ciam_spa_client_id" {
+  description = "SPA app client ID (set as AZURE_CLIENT_ID / VITE_AZURE_CLIENT_ID for auth)"
+  value       = module.entra_ciam.spa_client_id
+}

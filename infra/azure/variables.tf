@@ -71,6 +71,26 @@ variable "max_node_count" {
   default     = 5
 }
 
+# ── Entra External ID (CIAM) ──────────────────────────────────────────────────
+
+variable "ciam_tenant_subdomain" {
+  description = "Subdomain for the CIAM tenant (e.g. 'autoflow' → autoflow.ciamlogin.com). Must be globally unique."
+  type        = string
+  default     = "autoflow"
+}
+
+variable "spa_redirect_uris" {
+  description = "SPA redirect URIs for the CIAM app registration"
+  type        = list(string)
+  default     = ["http://localhost:5173"]
+}
+
+variable "spa_logout_uris" {
+  description = "Post-logout redirect URIs for the SPA"
+  type        = list(string)
+  default     = ["http://localhost:5173/login"]
+}
+
 # ── Monitoring ────────────────────────────────────────────────────────────────
 
 variable "alert_email" {

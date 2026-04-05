@@ -1,14 +1,14 @@
 # AutoFlow Infrastructure
 
-Azure (backend on AKS) + Vercel (dashboard) deployment with GitHub Actions CI/CD.
+All production services run on Azure (AKS). Only the marketing landing page is on Vercel.
 
 ## Stack
 
 | Layer | Tool |
 |---|---|
-| Backend hosting | Azure AKS |
-| Dashboard hosting | Vercel |
-| Container registry | Azure ACR + GitHub Container Registry (ghcr.io) |
+| Backend + Dashboard hosting | Azure AKS |
+| Landing page | Vercel |
+| Container registry | Azure ACR |
 | TLS | Managed by Azure / Vercel |
 | CI/CD | GitHub Actions |
 | IaC | Terraform (Azure CAF) |
@@ -18,12 +18,12 @@ Azure (backend on AKS) + Vercel (dashboard) deployment with GitHub Actions CI/CD
 | App | Platform | Workflow |
 |---|---|---|
 | `backend` | Azure AKS | `.github/workflows/deploy-azure.yml` |
-| `frontend` | Azure AKS | `.github/workflows/deploy-azure.yml` |
-| `dashboard` | Vercel | `.github/workflows/vercel.yml` |
+| `frontend` (dashboard) | Azure AKS | `.github/workflows/deploy-azure.yml` |
+| `landing` (marketing site) | Vercel | `.github/workflows/vercel.yml` |
 
 ## Authentication
 
-GitHub Actions authenticates to Azure via **OIDC workload identity federation** — no static credentials stored as secrets.
+GitHub Actions authenticates to Azure via **OIDC workload identity federation** — no static credentials or secrets stored anywhere.
 
 | Setting | Value |
 |---|---|
@@ -31,17 +31,17 @@ GitHub Actions authenticates to Azure via **OIDC workload identity federation** 
 | Tenant ID | `b1cb1311-760a-4c88-a778-5d2c227a1f45` |
 | Subscription ID | `776a7226-e364-4cd9-a3e6-d083641af9ea` |
 | Auth method | `azure/login@v2` with `id-token: write` permission |
-| GitHub environment | `production` (required for federated credential subject match) |
+| GitHub environments | `production` and `staging` (federated credentials for both) |
 
-The federated credential is configured in the app registration under Certificates & secrets → Federated credentials.
+ACR login server, AKS cluster name, and resource group are discovered dynamically via `az` CLI at deploy time. No GitHub secrets needed for Azure.
 
-## GitHub Actions secrets required
+## GitHub Actions secrets
 
-### Backend (Azure)
+### Azure
 
-**No secrets needed.** OIDC handles authentication, and ACR/AKS resource names are discovered dynamically via `az` CLI at deploy time. Zero credentials or configuration stored in GitHub.
+**None.** OIDC + dynamic discovery handles everything.
 
-### Dashboard (Vercel)
+### Landing page (Vercel)
 
 | Secret | Description |
 |---|---|
@@ -49,35 +49,27 @@ The federated credential is configured in the app registration under Certificate
 | `VERCEL_ORG_ID` | Vercel organization ID |
 | `VERCEL_PROJECT_ID` | Vercel project ID |
 
+## Workflows
+
+| Workflow | Purpose | Trigger |
+|---|---|---|
+| `infra-deploy.yml` | Terraform plan/apply for Azure CAF | Manual (workflow_dispatch) |
+| `deploy-azure.yml` | Build + push to ACR + deploy to AKS | Push to main / manual |
+| `vercel.yml` | Deploy landing page to Vercel | Push to main (landing/**) / manual |
+| `ci.yml` | Lint, test, build checks | Every PR |
+
+## Deploying infrastructure (first time)
+
+1. Go to **Actions → Deploy Azure Infrastructure → Run workflow**
+2. Select `staging`, `apply`, and check `bootstrap` (first time only)
+3. Once staging is confirmed, repeat for `production` (no bootstrap needed)
+
 ## Kubernetes manifests
 
-K8s manifests are in `k8s/`:
-
-```
-k8s/
-├── staging/
-│   ├── namespace.yaml
-│   ├── backend.yaml
-│   ├── frontend.yaml
-│   └── ingress.yaml
-└── production/
-    ├── namespace.yaml
-    ├── backend.yaml
-    ├── frontend.yaml
-    └── ingress.yaml
-```
-
-## Terraform (Azure CAF)
-
-Full IaC in `infra/azure/` — see `infra/azure/README.md` for architecture, prerequisites, and apply instructions.
+K8s manifests in `k8s/staging/` and `k8s/production/` — applied automatically after Terraform.
 
 ## Daily operations
 
-- **Deploy backend:** merge to `main` — GitHub Actions builds Docker images, pushes to ACR, deploys to AKS staging, then production (with approval gate).
-- **Deploy dashboard:** merge to `main` with changes under `dashboard/` — GitHub Actions deploys to Vercel.
-- **Rollback backend:** `kubectl set image` to a previous ACR tag, or redeploy a previous commit SHA.
-- **Rollback dashboard:** Vercel dashboard → Deployments → Promote previous deploy.
-
-## DNS
-
-Configure DNS records to point to Azure and Vercel per environment.
+- **Deploy backend/dashboard:** merge to `main` → builds Docker images, pushes to ACR, deploys to AKS
+- **Deploy landing page:** merge to `main` with changes under `landing/` → Vercel
+- **Rollback:** `kubectl set image` to previous ACR tag, or redeploy previous commit SHA

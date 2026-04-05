@@ -2,8 +2,14 @@
 
 import { motion } from "framer-motion";
 
-// TODO: Replace with real testimonials from Sanity CMS once available
-const TESTIMONIALS = [
+export interface Testimonial {
+  quote: string;
+  author: string;
+  title: string;
+  initials: string;
+}
+
+const FALLBACK_TESTIMONIALS: Testimonial[] = [
   {
     quote:
       "AutoFlow cut our operational overhead by 80%. We launched a new product line in two weeks instead of six months.",
@@ -27,7 +33,13 @@ const TESTIMONIALS = [
   },
 ];
 
-export function SocialProof() {
+export function SocialProof({
+  testimonials,
+}: {
+  testimonials?: Testimonial[];
+}) {
+  const items = testimonials ?? FALLBACK_TESTIMONIALS;
+
   return (
     <section className="bg-gray-50 py-24 sm:py-32">
       <div className="mx-auto max-w-7xl px-6 lg:px-8">
@@ -48,7 +60,7 @@ export function SocialProof() {
         </div>
 
         <div className="mx-auto mt-16 grid max-w-2xl grid-cols-1 gap-8 lg:mx-0 lg:max-w-none lg:grid-cols-3">
-          {TESTIMONIALS.map((testimonial, i) => (
+          {items.map((testimonial, i) => (
             <motion.figure
               key={testimonial.author}
               initial={{ opacity: 0, y: 20 }}
@@ -58,7 +70,9 @@ export function SocialProof() {
               className="rounded-2xl bg-white p-8 shadow-sm ring-1 ring-gray-900/5"
             >
               <blockquote className="text-gray-900">
-                <p className="text-sm leading-7">&ldquo;{testimonial.quote}&rdquo;</p>
+                <p className="text-sm leading-7">
+                  &ldquo;{testimonial.quote}&rdquo;
+                </p>
               </blockquote>
               <figcaption className="mt-6 flex items-center gap-x-4">
                 <div className="h-10 w-10 rounded-full bg-indigo-600 flex items-center justify-center text-white text-sm font-semibold">
@@ -68,7 +82,9 @@ export function SocialProof() {
                   <div className="font-semibold text-gray-900">
                     {testimonial.author}
                   </div>
-                  <div className="text-gray-600 text-sm">{testimonial.title}</div>
+                  <div className="text-gray-600 text-sm">
+                    {testimonial.title}
+                  </div>
                 </div>
               </figcaption>
             </motion.figure>

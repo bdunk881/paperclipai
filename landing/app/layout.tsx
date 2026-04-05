@@ -66,12 +66,18 @@ export default function RootLayout({
               >
                 Pricing
               </a>
-              <a
+              <Link
+                href="/blog"
+                className="text-sm text-gray-600 hover:text-gray-900 transition-colors"
+              >
+                Blog
+              </Link>
+              <Link
                 href="/demo"
                 className="text-sm text-gray-600 hover:text-gray-900 transition-colors"
               >
                 Demo
-              </a>
+              </Link>
               <a
                 href="https://docs.autoflow.app"
                 className="text-sm text-gray-600 hover:text-gray-900 transition-colors"
@@ -92,9 +98,12 @@ export default function RootLayout({
           <div className="mx-auto max-w-7xl px-6 lg:px-8 flex flex-col items-center gap-4 text-sm">
             <p className="font-bold text-white text-lg">AutoFlow</p>
             <div className="flex gap-6">
-              <a href="/demo" className="hover:text-white transition-colors">
+              <Link href="/blog" className="hover:text-white transition-colors">
+                Blog
+              </Link>
+              <Link href="/demo" className="hover:text-white transition-colors">
                 Demo
-              </a>
+              </Link>
               <a href="https://docs.autoflow.app" className="hover:text-white transition-colors">
                 Docs
               </a>

@@ -1,0 +1,56 @@
+name: Test Azure OIDC Auth
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - devops/test-azure-oidc-ALT-564
+
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  ARM_CLIENT_ID: 1a18157f-bc97-4ad1-a170-1ebd3ae93968
+  ARM_TENANT_ID: b1cb1311-760a-4c88-a778-5d2c227a1f45
+
+jobs:
+  test-azure-access:
+    name: Test Azure Subscription Access
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Azure Login (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ env.ARM_CLIENT_ID }}
+          tenant-id: ${{ env.ARM_TENANT_ID }}
+          subscription-id: ${{ vars.ARM_SUBSCRIPTION_ID || '' }}
+          allow-no-subscriptions: true
+
+      - name: List subscriptions
+        run: |
+          echo "=== Subscriptions ==="
+          az account list --output table
+
+      - name: Show current account
+        run: |
+          echo "=== Current Account ==="
+          az account show --output table || echo "No default subscription set"
+
+      - name: List resource groups
+        run: |
+          echo "=== Resource Groups ==="
+          az group list --output table || echo "No resource groups or insufficient permissions"
+
+      - name: Check service principal RBAC
+        run: |
+          echo "=== Role Assignments ==="
+          az role assignment list --assignee "$ARM_CLIENT_ID" --output table || echo "Cannot list role assignments"
+
+      - name: Verify tenant
+        run: |
+          echo "=== Tenant Details ==="
+          az account tenant list --output table

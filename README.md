@@ -65,7 +65,7 @@ curl -X POST http://localhost:3000/api/runs \
       "company": "Acme Corp"
     },
     "config": {
-      "crmIntegration": "hubspot",
+      "crmIntegration": "attio",
       "idealCustomerProfile": "Series A SaaS, 50-200 employees"
     }
   }'

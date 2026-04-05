@@ -37,7 +37,7 @@ lead_enrichment = WorkflowTemplate(
             label="CRM Target",
             type=FieldType.string,
             required=True,
-            options=["salesforce", "hubspot", "pipedrive"],
+            options=["salesforce", "attio", "pipedrive"],
             description="CRM system to receive qualified leads.",
         ),
         ConfigField(

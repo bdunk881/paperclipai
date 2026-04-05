@@ -108,7 +108,7 @@ export const MOCK_TEMPLATES: WorkflowTemplate[] = [
         label: "CRM Target",
         type: "string",
         required: true,
-        options: ["salesforce", "hubspot", "pipedrive"],
+        options: ["salesforce", "attio", "pipedrive"],
       },
     ],
     steps: [

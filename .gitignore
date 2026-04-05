@@ -33,13 +33,6 @@ backend/.env.*
 !dashboard/.env.example
 !dashboard/.env.production
 
-# Terraform
-infra/terraform/**/.terraform/
-infra/terraform/**/*.tfstate
-infra/terraform/**/*.tfstate.*
-infra/terraform/**/*.tfvars
-!infra/terraform/**/*.tfvars.example
-infra/terraform/**/.terraform.lock.hcl
 
 # Logs
 *.log

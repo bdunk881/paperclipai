@@ -19,8 +19,18 @@ import { getProvider } from "./engine/llmProviders";
 import { parseFile } from "./engine/fileParser";
 import { resolveModelForTier } from "./engine/llmRouter";
 import { requireAuth, AuthenticatedRequest } from "./auth/authMiddleware";
+import stripeWebhookRoutes from "./billing/stripeWebhook";
+import checkoutRoutes from "./billing/checkoutRoutes";
+import subscriptionRoutes from "./billing/subscriptionRoutes";
 
 const app = express();
+
+// ---------------------------------------------------------------------------
+// Stripe webhook — must be mounted BEFORE express.json() so the raw body
+// is available for signature verification
+// ---------------------------------------------------------------------------
+app.use("/api/webhooks/stripe", express.raw({ type: "application/json" }), stripeWebhookRoutes);
+
 app.use(express.json());
 
 // Multer — in-memory storage for file uploads (max 50 MB)
@@ -28,6 +38,12 @@ const upload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 50 * 1024 * 1024 },
 });
+
+// ---------------------------------------------------------------------------
+// Billing API — Stripe checkout sessions + subscription lifecycle
+// ---------------------------------------------------------------------------
+app.use("/api/billing/checkout", checkoutRoutes);
+app.use("/api/billing/subscription", subscriptionRoutes);
 
 // ---------------------------------------------------------------------------
 // LLM Config API — BYOLLM provider credentials

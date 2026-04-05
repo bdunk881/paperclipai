@@ -1,12 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import Stripe from "stripe";
 import { getStripe } from "@/lib/stripe";
-import {
-  mapTierToLoops,
-  sendLoopsEvent,
-  tierRequiresCSM,
-  upsertLoopsContact,
-} from "@/lib/loops";
 
 // Next.js App Router: disable body parsing so we can verify the raw signature
 export const config = { api: { bodyParser: false } };
@@ -113,47 +107,20 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     const firstName = meta.firstName ?? session.customer_details?.name?.split(" ")[0] ?? "";
     const companyName = meta.companyName ?? "";
     const userId = meta.userId ?? "";
-    const tier = meta.tier ?? "starter";
+    const tier = meta.tier ?? "explore";
     const signupDate = new Date().toISOString();
 
     if (!email) {
-      console.warn("[stripe/webhook] checkout.session.completed missing email — skipping Loops");
+      console.warn("[stripe/webhook] checkout.session.completed missing email — skipping");
       return NextResponse.json({ received: true });
     }
 
-    const loopsTier = mapTierToLoops(tier);
+    console.log(`[stripe/webhook] checkout.session.completed for ${email} (tier=${tier})`);
 
-    try {
-      // 1. Create / update Loops.so contact with all required properties
-      await upsertLoopsContact({
-        email,
-        firstName,
-        companyName,
-        userId,
-        userGroup: loopsTier,
-        signupDate,
-      });
-
-      // 2. Fire user_signed_up event to trigger Sequence B
-      await sendLoopsEvent(email, "user_signed_up", {
-        tier: loopsTier,
-        signupDate,
-        ...(firstName ? { firstName } : {}),
-        ...(companyName ? { companyName } : {}),
-        ...(userId ? { userId } : {}),
-      });
-
-      console.log(`[loops] user_signed_up fired for ${email} (tier=${loopsTier})`);
-    } catch (err) {
-      console.error("[loops] Error firing Loops.so event:", err);
-      // Return 500 so Stripe retries the webhook
-      return NextResponse.json({ error: "Loops event failed" }, { status: 500 });
-    }
-
-    // 3. CSM notification for growth / scale tiers
-    if (tierRequiresCSM(tier)) {
+    // CSM notification for automate / scale tiers
+    if (tier === "automate" || tier === "scale") {
       // Non-blocking — don't fail the webhook if CSM task creation fails
-      notifyCSM({ email, firstName, companyName, tier: loopsTier, signupDate, userId }).catch(
+      notifyCSM({ email, firstName, companyName, tier, signupDate, userId }).catch(
         (err) => console.error("[paperclip] notifyCSM error:", err)
       );
     }

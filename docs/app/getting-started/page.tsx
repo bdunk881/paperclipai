@@ -104,19 +104,19 @@ npm install`}</pre>
         </li>
       </ul>
 
-      <h2 id="self-hosting" className="text-xl font-semibold text-gray-900 mb-3">
-        Self-hosting in production
+      <h2 id="deployment" className="text-xl font-semibold text-gray-900 mb-3">
+        Production deployment
       </h2>
       <p className="text-gray-600 mb-3">
-        AutoFlow ships with a production-ready deployment config for{" "}
-        <a href="https://www.hetzner.com/" className="text-indigo-600 hover:underline">
-          Hetzner
-        </a>{" "}
-        +{" "}
-        <a href="https://coolify.io/" className="text-indigo-600 hover:underline">
-          Coolify
-        </a>{" "}
-        (~€7.49/mo for a VPS). See{" "}
+        AutoFlow backend runs on{" "}
+        <a href="https://azure.microsoft.com/" className="text-indigo-600 hover:underline">
+          Azure
+        </a>
+        ; the dashboard is hosted on{" "}
+        <a href="https://vercel.com/" className="text-indigo-600 hover:underline">
+          Vercel
+        </a>
+        . See{" "}
         <a
           href="https://github.com/autoflow-hq/autoflow/blob/main/infra/README.md"
           className="text-indigo-600 hover:underline"

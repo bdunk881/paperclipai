@@ -8,9 +8,9 @@
     "NEXT_PUBLIC_SANITY_DATASET": "@autoflow-sanity-dataset",
     "SANITY_API_TOKEN": "@autoflow-sanity-token",
     "STRIPE_SECRET_KEY": "@autoflow-stripe-secret-key",
-    "STRIPE_STARTER_PRICE_ID": "@autoflow-stripe-starter-price-id",
-    "STRIPE_PRO_PRICE_ID": "@autoflow-stripe-pro-price-id",
-    "STRIPE_ENTERPRISE_PRICE_ID": "@autoflow-stripe-enterprise-price-id",
+    "STRIPE_FLOW_PRICE_ID": "@autoflow-stripe-flow-price-id",
+    "STRIPE_AUTOMATE_PRICE_ID": "@autoflow-stripe-automate-price-id",
+    "STRIPE_SCALE_PRICE_ID": "@autoflow-stripe-scale-price-id",
     "RESEND_API_KEY": "@autoflow-resend-api-key",
     "RESEND_AUDIENCE_ID": "@autoflow-resend-audience-id",
     "NEXT_PUBLIC_BASE_URL": "@autoflow-base-url"

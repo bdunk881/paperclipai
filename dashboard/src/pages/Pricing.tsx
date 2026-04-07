@@ -3,9 +3,9 @@ import { Check, Zap } from "lucide-react";
 
 const TIERS = [
   {
-    name: "Starter",
-    tierId: "starter",
-    price: "$49",
+    name: "Flow",
+    tierId: "flow",
+    price: "$19",
     period: "/mo",
     description: "Perfect for individuals and small projects",
     highlight: false,
@@ -26,11 +26,11 @@ const TIERS = [
     ],
   },
   {
-    name: "Pro",
-    price: "$149",
+    name: "Automate",
+    price: "$49",
     period: "/mo",
     description: "For teams building production AI workflows",
-    tierId: "pro",
+    tierId: "automate",
     highlight: true,
     cta: "Start Free Trial",
     badge: "Most Popular",
@@ -51,21 +51,20 @@ const TIERS = [
     notIncluded: [],
   },
   {
-    name: "Enterprise",
-    price: "Custom",
-    period: "",
-    description: "For large teams with advanced security and compliance needs",
-    tierId: "enterprise",
+    name: "Scale",
+    price: "$99",
+    period: "/mo",
+    description: "For growing teams with advanced needs",
+    tierId: "scale",
     highlight: false,
-    cta: "Contact Sales",
+    cta: "Get Started",
     features: [
-      "Everything in Pro",
+      "Everything in Automate",
       "Custom SLA & uptime guarantees",
       "SSO / SAML authentication",
       "Audit logs & compliance exports",
       "Dedicated memory store (unlimited)",
       "Custom MCP server registry",
-      "On-premise deployment option",
       "Dedicated success manager",
       "Custom integrations & connectors",
       "99.99% uptime SLA",
@@ -75,10 +74,6 @@ const TIERS = [
 ];
 
 async function startCheckout(tierId: string): Promise<void> {
-  if (tierId === "enterprise") {
-    window.location.href = "mailto:sales@autoflow.ai?subject=AutoFlow%20Enterprise%20Inquiry";
-    return;
-  }
   const res = await fetch("/api/create-checkout-session", {
     method: "POST",
     headers: { "Content-Type": "application/json" },

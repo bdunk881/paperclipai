@@ -52,3 +52,8 @@ output "subscription_id" {
   description = "Azure subscription ID (set as AZURE_SUBSCRIPTION_ID in Actions OIDC)"
   value       = data.azurerm_subscription.current.subscription_id
 }
+
+output "migration_job_name" {
+  description = "Name of the Container App Job that runs Alembic migrations pre-deploy"
+  value       = azurerm_container_app_job.migration.name
+}

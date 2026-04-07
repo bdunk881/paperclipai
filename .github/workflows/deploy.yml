@@ -100,6 +100,38 @@ jobs:
           echo "revision=${REV}" >> "$GITHUB_OUTPUT"
           echo "Previous active revision: ${REV:-none}"
 
+      - name: Run Alembic migrations
+        run: |
+          JOB="caj-autoflow-staging-migration"
+          echo "Pinning migration job to ${IMAGE}"
+          az containerapp job update \
+            --name "$JOB" \
+            --resource-group "$RESOURCE_GROUP" \
+            --image "$IMAGE"
+
+          EXEC=$(az containerapp job start \
+            --name "$JOB" \
+            --resource-group "$RESOURCE_GROUP" \
+            --query "name" --output tsv)
+          echo "Job execution: ${EXEC}"
+
+          for i in $(seq 1 30); do
+            STATUS=$(az containerapp job execution show \
+              --name "$JOB" \
+              --resource-group "$RESOURCE_GROUP" \
+              --job-execution-name "$EXEC" \
+              --query "properties.status" --output tsv)
+            echo "  [${i}/30] status=${STATUS}"
+            case "$STATUS" in
+              Succeeded) echo "Migration succeeded"; break ;;
+              Failed|Stopped)
+                echo "::error::Migration ${STATUS} — aborting deployment"
+                exit 1 ;;
+            esac
+            sleep 10
+          done
+          [[ "$STATUS" == "Succeeded" ]] || { echo "::error::Migration timed out (status: ${STATUS})"; exit 1; }
+
       - name: Deploy new image revision
         run: |
           az containerapp update \
@@ -172,6 +204,38 @@ jobs:
             --output tsv 2>/dev/null || echo "")
           echo "revision=${REV}" >> "$GITHUB_OUTPUT"
           echo "Previous active revision: ${REV:-none}"
+
+      - name: Run Alembic migrations
+        run: |
+          JOB="caj-autoflow-production-migration"
+          echo "Pinning migration job to ${IMAGE}"
+          az containerapp job update \
+            --name "$JOB" \
+            --resource-group "$RESOURCE_GROUP" \
+            --image "$IMAGE"
+
+          EXEC=$(az containerapp job start \
+            --name "$JOB" \
+            --resource-group "$RESOURCE_GROUP" \
+            --query "name" --output tsv)
+          echo "Job execution: ${EXEC}"
+
+          for i in $(seq 1 30); do
+            STATUS=$(az containerapp job execution show \
+              --name "$JOB" \
+              --resource-group "$RESOURCE_GROUP" \
+              --job-execution-name "$EXEC" \
+              --query "properties.status" --output tsv)
+            echo "  [${i}/30] status=${STATUS}"
+            case "$STATUS" in
+              Succeeded) echo "Migration succeeded"; break ;;
+              Failed|Stopped)
+                echo "::error::Migration ${STATUS} — aborting deployment"
+                exit 1 ;;
+            esac
+            sleep 10
+          done
+          [[ "$STATUS" == "Succeeded" ]] || { echo "::error::Migration timed out (status: ${STATUS})"; exit 1; }
 
       - name: Deploy new image revision
         run: |

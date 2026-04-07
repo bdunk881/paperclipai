@@ -108,6 +108,66 @@ These are non-sensitive OIDC identifiers — no passwords stored in GitHub.
   auto-runs `terraform plan`.
 - **Apply infra changes:** trigger `infra-deploy.yml` manually with `action=apply`.
 
+## Database migrations
+
+Alembic migrations run automatically before every deployment via a Container App
+Job (`caj-autoflow-{environment}-migration`). The job uses the same backend image
+and managed identity as the application — no credentials are stored anywhere.
+
+### How it works
+
+1. `deploy.yml` updates the migration job with the new image tag.
+2. A job execution is started; the deploy workflow waits up to 5 minutes.
+3. If the execution succeeds, the Container App revision is updated and traffic
+   is cut over. If it fails, the deploy is aborted — no new revision is created.
+
+### First deploy (empty database)
+
+On the very first deployment the database will be empty. `alembic upgrade head`
+is idempotent — it creates the `alembic_version` tracking table and applies all
+migrations in order. No manual steps are required.
+
+### Generating a new migration
+
+```bash
+cd backend
+export DATABASE_URL="postgresql+asyncpg://user:pass@localhost:5432/autoflow"
+alembic revision --autogenerate -m "describe your change"
+# Review the generated file in alembic/versions/ before committing
+```
+
+### Applying migrations locally
+
+```bash
+cd backend
+export DATABASE_URL="postgresql+asyncpg://user:pass@localhost:5432/autoflow?sslmode=disable"
+alembic upgrade head
+```
+
+### Rolling back a migration
+
+```bash
+# Revert one step
+alembic downgrade -1
+
+# Revert to a specific revision
+alembic downgrade <revision-id>
+
+# Show revision history
+alembic history --verbose
+```
+
+To roll back in a live environment after a bad deploy, connect to the container:
+
+```bash
+az containerapp exec \
+  --name ca-autoflow-production-backend \
+  --resource-group rg-autoflow-production \
+  --command "alembic downgrade -1"
+```
+
+Then redeploy the previous image tag via `workflow_dispatch`.
+
 ## DNS
 
 Configure a CNAME from your domain to the Container App FQDN

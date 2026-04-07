@@ -138,3 +138,67 @@ resource "azurerm_container_app" "backend" {
 
   tags = local.tags
 }
+
+# ─── Migration Container App Job ─────────────────────────────────────────────
+# Triggered once per deployment (before traffic cutover) to run Alembic
+# migrations against the Azure PostgreSQL Flexible Server.  Authentication to
+# the database uses the same user-assigned managed identity as the backend app.
+
+resource "azurerm_container_app_job" "migration" {
+  name                         = "caj-${local.prefix}-migration"
+  resource_group_name          = azurerm_resource_group.main.name
+  location                     = azurerm_resource_group.main.location
+  container_app_environment_id = azurerm_container_app_environment.main.id
+
+  # Manual trigger — started explicitly by the deploy workflow before the new
+  # Container App revision goes live.
+  replica_timeout_in_seconds = 300
+  replica_retry_limit        = 0
+
+  manual_trigger_config {
+    parallelism              = 1
+    replica_completion_count = 1
+  }
+
+  identity {
+    type         = "UserAssigned"
+    identity_ids = [azurerm_user_assigned_identity.app.id]
+  }
+
+  registry {
+    server               = "ghcr.io"
+    username             = "x-access-token"
+    password_secret_name = "ghcr-pat"
+  }
+
+  secret {
+    name  = "ghcr-pat"
+    value = data.azurerm_key_vault_secret.ghcr_pat.value
+  }
+
+  secret {
+    name  = "database-url"
+    value = azurerm_key_vault_secret.database_url.value
+  }
+
+  template {
+    container {
+      name    = "migration"
+      image   = var.backend_image
+      cpu     = 0.25
+      memory  = "0.5Gi"
+      command = ["alembic", "upgrade", "head"]
+
+      env {
+        name        = "DATABASE_URL"
+        secret_name = "database-url"
+      }
+      env {
+        name  = "AZURE_CLIENT_ID"
+        value = azurerm_user_assigned_identity.app.client_id
+      }
+    }
+  }
+
+  tags = local.tags
+}

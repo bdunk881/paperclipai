@@ -228,6 +228,38 @@ with tracer.start_as_current_span("workflow.execute") as span:
     result = await run_workflow(...)
 ```
 
+### Frontend instrumentation
+
+The dashboard SPA (Vite/React) uses `@microsoft/applicationinsights-web` and is
+bootstrapped in `dashboard/src/telemetry.ts`, called from `dashboard/src/main.tsx`.
+
+**Auto-captured:** page views (SPA route changes), unhandled JS exceptions, and
+outbound fetch/XHR dependency calls with backend trace correlation.
+
+The connection string is passed at Vite build time as:
+
+```
+VITE_APPLICATIONINSIGHTS_CONNECTION_STRING=<connection_string>
+```
+
+Set this in the **Vercel project environment variables** (Production + Preview
+environments) — use the same `connection_string` output from Terraform:
+
+```bash
+terraform -chdir=infra/terraform output -raw app_insights_connection_string
+```
+
+In local development the variable is absent and telemetry is a no-op.
+
+Custom events from application code:
+
+```typescript
+import { trackEvent, trackException } from "./telemetry";
+
+trackEvent("workflow.created", { workflowId: id, templateId });
+trackException(error, { page: "WorkflowBuilder" });
+```
+
 ## DNS
 
 Configure a CNAME from your domain to the Container App FQDN

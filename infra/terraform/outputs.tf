@@ -52,3 +52,24 @@ output "subscription_id" {
   description = "Azure subscription ID (set as AZURE_SUBSCRIPTION_ID in Actions OIDC)"
   value       = data.azurerm_subscription.current.subscription_id
 }
+
+output "migration_job_name" {
+  description = "Name of the Container App Job that runs Alembic migrations pre-deploy"
+  value       = azurerm_container_app_job.migration.name
+}
+
+output "application_insights_name" {
+  description = "Application Insights resource name"
+  value       = azurerm_application_insights.main.name
+}
+
+output "application_insights_instrumentation_key" {
+  description = "Application Insights instrumentation key (use connection_string instead where possible)"
+  value       = azurerm_application_insights.main.instrumentation_key
+  sensitive   = true
+}
+
+output "monitor_action_group_id" {
+  description = "Resource ID of the alert action group — add receivers (email, webhook) here"
+  value       = azurerm_monitor_action_group.main.id
+}

@@ -84,6 +84,10 @@ resource "azurerm_container_app" "backend" {
         name        = "REDIS_URL"
         secret_name = "redis-url"
       }
+      env {
+        name        = "APPLICATIONINSIGHTS_CONNECTION_STRING"
+        secret_name = "appinsights-connection-string"
+      }
 
       liveness_probe {
         path             = "/health"
@@ -123,6 +127,11 @@ resource "azurerm_container_app" "backend" {
   secret {
     name  = "redis-url"
     value = azurerm_key_vault_secret.redis_url.value
+  }
+
+  secret {
+    name  = "appinsights-connection-string"
+    value = azurerm_key_vault_secret.appinsights_connection_string.value
   }
 
   ingress {

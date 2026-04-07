@@ -76,13 +76,12 @@ resource "azurerm_container_app" "backend" {
         name  = "AZURE_CLIENT_ID"
         value = azurerm_user_assigned_identity.app.client_id
       }
+      # Key Vault URI — tells the backend where to load runtime secrets from.
+      # The managed identity (AZURE_CLIENT_ID above) must have Get/List access on this vault.
+      # DATABASE_URL, REDIS_URL, Stripe keys, etc. are all loaded from KV at startup.
       env {
-        name        = "DATABASE_URL"
-        secret_name = "database-url"
-      }
-      env {
-        name        = "REDIS_URL"
-        secret_name = "redis-url"
+        name  = "AZURE_KEY_VAULT_URI"
+        value = azurerm_key_vault.main.vault_uri
       }
 
       liveness_probe {
@@ -112,17 +111,6 @@ resource "azurerm_container_app" "backend" {
         concurrentRequests = "50"
       }
     }
-  }
-
-  # Secrets pulled from Key Vault at deploy time
-  secret {
-    name  = "database-url"
-    value = azurerm_key_vault_secret.database_url.value
-  }
-
-  secret {
-    name  = "redis-url"
-    value = azurerm_key_vault_secret.redis_url.value
   }
 
   ingress {

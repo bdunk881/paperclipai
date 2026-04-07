@@ -1,0 +1,11 @@
+# Terraform remote state backend config for production.
+# Pass to terraform init: terraform init -backend-config=environments/production.backend
+#
+# The bootstrap storage account must be created once manually (or via bootstrap script)
+# before running Terraform for the first time.
+# See infra/README.md for bootstrap instructions.
+
+resource_group_name  = "rg-autoflow-tfstate"
+storage_account_name = "stautoflowterraform"
+container_name       = "tfstate"
+key                  = "autoflow.production.tfstate"

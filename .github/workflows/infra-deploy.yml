@@ -1,0 +1,86 @@
+name: Infra Deploy (Terraform)
+
+on:
+  # Manual trigger: choose environment and action
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Target environment
+        required: true
+        default: staging
+        type: choice
+        options: [staging, production]
+      action:
+        description: Terraform action
+        required: true
+        default: plan
+        type: choice
+        options: [plan, apply]
+
+  # Auto-plan on PR changes to infra/terraform/**
+  pull_request:
+    paths:
+      - "infra/terraform/**"
+    branches: [master]
+
+permissions:
+  contents: read
+  id-token: write   # required for OIDC token exchange with Azure
+
+env:
+  TF_DIR: infra/terraform
+  ARM_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+  ARM_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
+  ARM_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID }}
+  ARM_USE_OIDC: "true"
+
+jobs:
+  terraform:
+    name: Terraform ${{ github.event.inputs.action || 'plan' }} (${{ github.event.inputs.environment || 'staging' }})
+    runs-on: ubuntu-latest
+    environment: ${{ github.event.inputs.environment || 'staging' }}
+
+    defaults:
+      run:
+        working-directory: ${{ env.TF_DIR }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set environment variable
+        run: echo "TF_ENV=${{ github.event.inputs.environment || 'staging' }}" >> $GITHUB_ENV
+
+      - name: Login to Azure via OIDC
+        uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "~1.6"
+
+      - name: Terraform Init
+        run: |
+          terraform init \
+            -backend-config="environments/${{ env.TF_ENV }}.backend"
+
+      - name: Terraform Validate
+        run: terraform validate
+
+      - name: Terraform Plan
+        run: |
+          terraform plan \
+            -var-file="environments/${{ env.TF_ENV }}.tfvars" \
+            -out=tfplan \
+            -detailed-exitcode
+        continue-on-error: true
+
+      - name: Terraform Apply
+        if: |
+          github.event.inputs.action == 'apply' &&
+          github.event_name == 'workflow_dispatch'
+        run: |
+          terraform apply -auto-approve tfplan

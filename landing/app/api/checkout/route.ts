@@ -37,14 +37,12 @@ export async function POST(req: NextRequest) {
     const stripe = getStripe();
     const session = await stripe.checkout.sessions.create({
       mode: "subscription",
+      ui_mode: "embedded_page",
       payment_method_types: ["card"],
       line_items: [{ price: pricingTier.priceId, quantity: 1 }],
-      success_url: `${process.env.NEXT_PUBLIC_BASE_URL ?? ""}/success?session_id={CHECKOUT_SESSION_ID}`,
-      cancel_url: `${process.env.NEXT_PUBLIC_BASE_URL ?? ""}/#pricing`,
+      return_url: `${process.env.NEXT_PUBLIC_BASE_URL ?? ""}/checkout/return?session_id={CHECKOUT_SESSION_ID}`,
       allow_promotion_codes: true,
-      // Pre-fill email if provided by authenticated user
       ...(email ? { customer_email: email } : {}),
-      // Store user context for webhook processing
       metadata: {
         tier,
         ...(email ? { email } : {}),
@@ -54,7 +52,7 @@ export async function POST(req: NextRequest) {
       },
     });
 
-    return NextResponse.json({ url: session.url });
+    return NextResponse.json({ clientSecret: session.client_secret });
   } catch (err) {
     console.error("Stripe checkout error:", err);
     return NextResponse.json({ error: "Failed to create checkout session" }, { status: 500 });

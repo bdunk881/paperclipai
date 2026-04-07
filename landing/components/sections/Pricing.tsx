@@ -1,9 +1,18 @@
 "use client";
 
 import { motion } from "framer-motion";
-import { useState } from "react";
+import { useCallback, useState } from "react";
 import { Check, Shield, Clock, X } from "lucide-react";
+import { loadStripe } from "@stripe/stripe-js";
+import {
+  EmbeddedCheckoutProvider,
+  EmbeddedCheckout,
+} from "@stripe/react-stripe-js";
 import { PRICING_TIERS } from "@/lib/stripe";
+
+const stripePromise = loadStripe(
+  process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY ?? ""
+);
 
 const ANNUAL_DISCOUNT = 0.3; // 30% off
 
@@ -23,10 +32,10 @@ const TRUST_BADGES = [
 ];
 
 export function Pricing() {
-  const [loading, setLoading] = useState<string | null>(null);
   const [billingPeriod, setBillingPeriod] = useState<"monthly" | "annual">(
     "monthly"
   );
+  const [checkoutTier, setCheckoutTier] = useState<string | null>(null);
 
   function getDisplayPrice(price: number) {
     if (price === 0) return 0;
@@ -36,24 +45,19 @@ export function Pricing() {
     return price;
   }
 
-  async function handleCheckout(tier: keyof typeof PRICING_TIERS) {
-    setLoading(tier);
-    try {
-      const res = await fetch("/api/checkout", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ tier, billingPeriod }),
-      });
-      const data = (await res.json()) as { url?: string; error?: string };
-      if (data.url) {
-        window.location.href = data.url;
-      }
-    } catch (err) {
-      console.error("Checkout error:", err);
-    } finally {
-      setLoading(null);
-    }
-  }
+  const fetchClientSecret = useCallback(async () => {
+    const res = await fetch("/api/checkout", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ tier: checkoutTier, billingPeriod }),
+    });
+    const data = (await res.json()) as {
+      clientSecret?: string;
+      error?: string;
+    };
+    if (!data.clientSecret) throw new Error(data.error ?? "Checkout failed");
+    return data.clientSecret;
+  }, [checkoutTier, billingPeriod]);
 
   return (
     <section id="pricing" className="bg-white py-24 sm:py-32">
@@ -193,18 +197,16 @@ export function Pricing() {
 
                 {tier.priceId ? (
                   <button
-                    onClick={() => handleCheckout(key)}
-                    disabled={loading === key}
+                    onClick={() => setCheckoutTier(key)}
                     className={[
                       "mt-6 block w-full rounded-md px-3 py-2 text-center text-sm font-semibold leading-6 transition-all",
                       "focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2",
-                      "disabled:opacity-70 disabled:cursor-not-allowed",
                       isPopular
                         ? "bg-white text-indigo-600 hover:bg-indigo-50 focus-visible:outline-white"
                         : "bg-indigo-600 text-white hover:bg-indigo-700 focus-visible:outline-indigo-600",
                     ].join(" ")}
                   >
-                    {loading === key ? "Loading..." : "Start free trial"}
+                    Start free trial
                   </button>
                 ) : (
                   <a
@@ -278,6 +280,27 @@ export function Pricing() {
           </div>
         </motion.div>
       </div>
+
+      {/* Embedded Checkout Overlay */}
+      {checkoutTier && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="relative w-full max-w-lg rounded-2xl bg-white p-6 shadow-2xl max-h-[90vh] overflow-y-auto">
+            <button
+              onClick={() => setCheckoutTier(null)}
+              className="absolute right-4 top-4 rounded-full p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-600"
+              aria-label="Close checkout"
+            >
+              <X className="h-5 w-5" />
+            </button>
+            <EmbeddedCheckoutProvider
+              stripe={stripePromise}
+              options={{ fetchClientSecret }}
+            >
+              <EmbeddedCheckout />
+            </EmbeddedCheckoutProvider>
+          </div>
+        </div>
+      )}
     </section>
   );
 }

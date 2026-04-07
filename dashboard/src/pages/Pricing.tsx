@@ -1,5 +1,14 @@
-import { useState } from "react";
-import { Check, Zap } from "lucide-react";
+import { useCallback, useState } from "react";
+import { Check, X, Zap } from "lucide-react";
+import { loadStripe } from "@stripe/stripe-js";
+import {
+  EmbeddedCheckoutProvider,
+  EmbeddedCheckout,
+} from "@stripe/react-stripe-js";
+
+const stripePromise = loadStripe(
+  import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY ?? ""
+);
 
 const TIERS = [
   {
@@ -74,39 +83,37 @@ const TIERS = [
   },
 ];
 
-async function startCheckout(tierId: string): Promise<void> {
-  if (tierId === "enterprise") {
-    window.location.href = "mailto:sales@autoflow.ai?subject=AutoFlow%20Enterprise%20Inquiry";
-    return;
-  }
-  const res = await fetch("/api/create-checkout-session", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ tier: tierId }),
-  });
-  const data = (await res.json()) as { url?: string; error?: string };
-  if (data.url) {
-    window.location.href = data.url;
-  } else {
-    throw new Error(data.error ?? "Failed to start checkout");
-  }
-}
-
 export default function Pricing() {
-  const [loading, setLoading] = useState<string | null>(null);
+  const [checkoutTier, setCheckoutTier] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  async function handleCta(tierId: string) {
-    setLoading(tierId);
-    setError(null);
-    try {
-      await startCheckout(tierId);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Something went wrong");
-    } finally {
-      setLoading(null);
+  function handleCta(tierId: string) {
+    if (tierId === "enterprise") {
+      window.location.href =
+        "mailto:sales@autoflow.ai?subject=AutoFlow%20Enterprise%20Inquiry";
+      return;
     }
+    setError(null);
+    setCheckoutTier(tierId);
   }
+
+  const fetchClientSecret = useCallback(async () => {
+    const res = await fetch("/api/create-checkout-session", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ tier: checkoutTier }),
+    });
+    const data = (await res.json()) as {
+      clientSecret?: string;
+      error?: string;
+    };
+    if (!data.clientSecret) {
+      const msg = data.error ?? "Failed to start checkout";
+      setError(msg);
+      throw new Error(msg);
+    }
+    return data.clientSecret;
+  }, [checkoutTier]);
 
   return (
     <div className="min-h-full bg-gray-50">
@@ -163,15 +170,14 @@ export default function Pricing() {
               </div>
 
               <button
-                disabled={loading === tier.tierId}
                 onClick={() => handleCta(tier.tierId)}
-                className={`w-full py-2.5 rounded-xl text-sm font-semibold transition mb-8 disabled:opacity-60 disabled:cursor-wait ${
+                className={`w-full py-2.5 rounded-xl text-sm font-semibold transition mb-8 ${
                   tier.highlight
                     ? "bg-blue-600 hover:bg-blue-700 text-white"
                     : "border border-gray-300 text-gray-700 hover:bg-gray-50"
                 }`}
               >
-                {loading === tier.tierId ? "Redirecting…" : tier.cta}
+                {tier.cta}
               </button>
 
               <ul className="space-y-3 flex-1">
@@ -203,6 +209,27 @@ export default function Pricing() {
           </p>
         </div>
       </div>
+
+      {/* Embedded Checkout Overlay */}
+      {checkoutTier && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="relative w-full max-w-lg rounded-2xl bg-white p-6 shadow-2xl max-h-[90vh] overflow-y-auto">
+            <button
+              onClick={() => setCheckoutTier(null)}
+              className="absolute right-4 top-4 z-10 rounded-full p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-600"
+              aria-label="Close checkout"
+            >
+              <X size={20} />
+            </button>
+            <EmbeddedCheckoutProvider
+              stripe={stripePromise}
+              options={{ fetchClientSecret }}
+            >
+              <EmbeddedCheckout />
+            </EmbeddedCheckoutProvider>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

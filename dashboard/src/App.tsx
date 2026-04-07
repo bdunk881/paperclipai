@@ -44,6 +44,7 @@ import MCPIntegrations from "./pages/MCPIntegrations";
 import McpServers from "./pages/McpServers";
 import ExecutionLogs from "./pages/ExecutionLogs";
 import CheckoutSuccess from "./pages/CheckoutSuccess";
+import CheckoutReturn from "./pages/CheckoutReturn";
 
 function PrivateRoute({ children }: { children: React.ReactNode }) {
   const { user } = useAuth();
@@ -63,6 +64,7 @@ export default function App() {
         <Routes>
           <Route path="/waitlist" element={<LandingPage />} />
           <Route path="/checkout/success" element={<CheckoutSuccess />} />
+          <Route path="/checkout/return" element={<CheckoutReturn />} />
           <Route
             path="/login"
             element={

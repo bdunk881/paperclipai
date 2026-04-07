@@ -31,15 +31,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const stripe = new Stripe(stripeKey);
     const session = await stripe.checkout.sessions.create({
       mode: "subscription",
+      ui_mode: "embedded_page",
       payment_method_types: ["card"],
       line_items: [{ price: priceId, quantity: 1 }],
-      success_url: `${appUrl}/checkout/success?session_id={CHECKOUT_SESSION_ID}`,
-      cancel_url: `${appUrl}/pricing`,
+      return_url: `${appUrl}/checkout/return?session_id={CHECKOUT_SESSION_ID}`,
       allow_promotion_codes: true,
       billing_address_collection: "required",
     });
 
-    return res.status(200).json({ url: session.url });
+    return res.status(200).json({ clientSecret: session.client_secret });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Stripe error";
     return res.status(500).json({ error: message });

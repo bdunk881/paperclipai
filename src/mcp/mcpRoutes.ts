@@ -10,6 +10,7 @@
  */
 
 import { Router } from "express";
+import { AuthenticatedRequest } from "../auth/authMiddleware";
 import { mcpStore } from "./mcpStore";
 
 const router = Router();
@@ -18,9 +19,9 @@ const router = Router();
 // Auth helper — resolves user ID from X-User-Id header
 // ---------------------------------------------------------------------------
 
-function resolveUserId(req: { headers: Record<string, string | string[] | undefined> }): string | null {
-  const h = req.headers["x-user-id"];
-  return typeof h === "string" && h.trim() ? h.trim() : null;
+function resolveUserId(req: AuthenticatedRequest): string | null {
+  const userId = req.auth?.sub;
+  return typeof userId === "string" && userId.trim() ? userId : null;
 }
 
 // ---------------------------------------------------------------------------
@@ -82,20 +83,20 @@ async function callMcpRpc(
 // ---------------------------------------------------------------------------
 
 /** GET /api/mcp/servers */
-router.get("/", (req, res) => {
+router.get("/", (req: AuthenticatedRequest, res) => {
   const userId = resolveUserId(req);
   if (!userId) {
-    res.status(401).json({ error: "X-User-Id header is required" });
+    res.status(401).json({ error: "Authenticated user is required" });
     return;
   }
   res.json({ servers: mcpStore.list(userId) });
 });
 
 /** POST /api/mcp/servers */
-router.post("/", (req, res) => {
+router.post("/", (req: AuthenticatedRequest, res) => {
   const userId = resolveUserId(req);
   if (!userId) {
-    res.status(401).json({ error: "X-User-Id header is required" });
+    res.status(401).json({ error: "Authenticated user is required" });
     return;
   }
 
@@ -126,10 +127,10 @@ router.post("/", (req, res) => {
 });
 
 /** DELETE /api/mcp/servers/:id */
-router.delete("/:id", (req, res) => {
+router.delete("/:id", (req: AuthenticatedRequest, res) => {
   const userId = resolveUserId(req);
   if (!userId) {
-    res.status(401).json({ error: "X-User-Id header is required" });
+    res.status(401).json({ error: "Authenticated user is required" });
     return;
   }
 
@@ -143,10 +144,10 @@ router.delete("/:id", (req, res) => {
 });
 
 /** GET /api/mcp/servers/:id/tools — discover available tools */
-router.get("/:id/tools", async (req, res) => {
+router.get("/:id/tools", async (req: AuthenticatedRequest, res) => {
   const userId = resolveUserId(req);
   if (!userId) {
-    res.status(401).json({ error: "X-User-Id header is required" });
+    res.status(401).json({ error: "Authenticated user is required" });
     return;
   }
 
@@ -175,10 +176,10 @@ router.get("/:id/tools", async (req, res) => {
 });
 
 /** POST /api/mcp/servers/:id/test — connectivity check */
-router.post("/:id/test", async (req, res) => {
+router.post("/:id/test", async (req: AuthenticatedRequest, res) => {
   const userId = resolveUserId(req);
   if (!userId) {
-    res.status(401).json({ error: "X-User-Id header is required" });
+    res.status(401).json({ error: "Authenticated user is required" });
     return;
   }
 

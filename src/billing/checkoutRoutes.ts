@@ -5,6 +5,7 @@
 
 import { Router, Request, Response } from "express";
 import Stripe from "stripe";
+import { AuthenticatedRequest } from "../auth/authMiddleware";
 import { getStripe, PRICING_TIERS, TierKey } from "./stripeClient";
 
 const router = Router();
@@ -22,16 +23,16 @@ function resolveAppBaseUrl(req: Request): string {
 
 /**
  * POST /api/billing/checkout
- * Body: { tier: "flow"|"automate"|"scale", email?, firstName?, companyName?, userId? }
+ * Body: { tier: "flow"|"automate"|"scale", email?, firstName?, companyName? }
  * Returns: { url: string } — Stripe hosted checkout URL
  */
-router.post("/", async (req: Request, res: Response) => {
-  const { tier, email, firstName, companyName, userId } = req.body as {
+router.post("/", async (req: AuthenticatedRequest, res: Response) => {
+  const userId = req.auth?.sub;
+  const { tier, email, firstName, companyName } = req.body as {
     tier?: string;
     email?: string;
     firstName?: string;
     companyName?: string;
-    userId?: string;
   };
 
   if (!tier || !(tier in PRICING_TIERS)) {

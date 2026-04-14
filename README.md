@@ -74,6 +74,7 @@ curl -X POST http://localhost:3000/api/runs \
 ### Run via Docker
 
 ```bash
+cp .env.local.example .env.local
 docker compose up
 ```
 
@@ -135,6 +136,9 @@ AutoFlow backend is deployed on Azure; the dashboard is hosted on Vercel. See [`
 ### CI/CD
 
 Push to `main` → GitHub Actions builds Docker images → pushes to GHCR → deploys to Azure (backend) and Vercel (dashboard).
+
+Required GitHub Actions secret for backend test job:
+- `CI_POSTGRES_PASSWORD`
 
 ---
 

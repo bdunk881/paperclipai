@@ -9,6 +9,17 @@ import { getStripe, PRICING_TIERS, TierKey } from "./stripeClient";
 
 const router = Router();
 
+function resolveAppBaseUrl(req: Request): string {
+  const configured = (process.env.APP_BASE_URL ?? process.env.NEXT_PUBLIC_BASE_URL ?? "").trim();
+  if (configured) return configured.replace(/\/+$/, "");
+
+  const origin = (req.get("origin") ?? "").trim();
+  if (origin) return origin.replace(/\/+$/, "");
+
+  // Local fallback keeps tests and local manual QA deterministic without extra env setup.
+  return "http://localhost:3000";
+}
+
 /**
  * POST /api/billing/checkout
  * Body: { tier: "flow"|"automate"|"scale", email?, firstName?, companyName?, userId? }
@@ -42,13 +53,14 @@ router.post("/", async (req: Request, res: Response) => {
 
   try {
     const stripe = getStripe();
+    const appBaseUrl = resolveAppBaseUrl(req);
 
     const sessionParams: Stripe.Checkout.SessionCreateParams = {
       mode: "subscription",
       payment_method_types: ["card"],
       line_items: [{ price: tierConfig.priceId, quantity: 1 }],
-      success_url: `${process.env.APP_BASE_URL ?? process.env.NEXT_PUBLIC_BASE_URL ?? ""}/success?session_id={CHECKOUT_SESSION_ID}`,
-      cancel_url: `${process.env.APP_BASE_URL ?? process.env.NEXT_PUBLIC_BASE_URL ?? ""}/#pricing`,
+      success_url: `${appBaseUrl}/checkout/success?session_id={CHECKOUT_SESSION_ID}`,
+      cancel_url: `${appBaseUrl}/pricing`,
       allow_promotion_codes: true,
       metadata: {
         tier,

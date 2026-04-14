@@ -3,10 +3,64 @@ jest.mock("../engine/llmProviders", () => ({
   getProvider: jest.fn(),
 }));
 
+jest.mock("./stripeClient", () => ({
+  getStripe: jest.fn(),
+  PRICING_TIERS: {
+    explore: { name: "Explore", price: 0, priceId: null, trialDays: 0 },
+    flow: { name: "Flow", price: 19, priceId: "price_flow_test", trialDays: 14 },
+    automate: { name: "Automate", price: 49, priceId: "price_automate_test", trialDays: 14 },
+    scale: { name: "Scale", price: 99, priceId: "price_scale_test", trialDays: 0 },
+  },
+}));
+
 import request from "supertest";
 import app from "../app";
 import { subscriptionStore } from "./subscriptionStore";
 import { mapStripeStatusToAccess, resolveTier } from "./subscriptionStore";
+import { getStripe } from "./stripeClient";
+
+function makeStripeMock() {
+  return {
+    checkout: {
+      sessions: {
+        create: jest.fn(),
+      },
+    },
+    subscriptions: {
+      retrieve: jest.fn(),
+      update: jest.fn(),
+    },
+    webhooks: {
+      constructEvent: jest.fn(),
+    },
+  };
+}
+
+let stripeMock = makeStripeMock();
+
+const baseSubscription = {
+  id: "sub-store-1",
+  stripeSubscriptionId: "sub_stripe_store_1",
+  stripeCustomerId: "cus_store_1",
+  userId: "user-store-1",
+  email: "store@example.com",
+  tier: "flow" as const,
+  accessLevel: "active" as const,
+  status: "active",
+  currentPeriodStart: "2026-04-01T00:00:00.000Z",
+  currentPeriodEnd: "2026-05-01T00:00:00.000Z",
+  cancelAtPeriodEnd: false,
+  trialEnd: null,
+  createdAt: "2026-04-01T00:00:00.000Z",
+  updatedAt: "2026-04-01T00:00:00.000Z",
+};
+
+beforeEach(() => {
+  stripeMock = makeStripeMock();
+  (getStripe as jest.Mock).mockReturnValue(stripeMock);
+  subscriptionStore.clear();
+  process.env.STRIPE_WEBHOOK_SECRET = "whsec_test";
+});
 
 // ---------------------------------------------------------------------------
 // Unit tests — subscriptionStore
@@ -141,6 +195,38 @@ describe("POST /api/billing/checkout", () => {
     expect(res.status).toBe(400);
     expect(res.body.error).toMatch(/Invalid tier/);
   });
+
+  it("creates a checkout session for paid tiers", async () => {
+    stripeMock.checkout.sessions.create.mockResolvedValue({
+      url: "https://checkout.stripe.test/session_123",
+    });
+
+    const res = await request(app).post("/api/billing/checkout").send({
+      tier: "flow",
+      email: "buyer@example.com",
+      firstName: "Ada",
+      companyName: "AutoFlow",
+      userId: "user-123",
+    });
+
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ url: "https://checkout.stripe.test/session_123" });
+    expect(stripeMock.checkout.sessions.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        mode: "subscription",
+        customer_email: "buyer@example.com",
+        line_items: [{ price: "price_flow_test", quantity: 1 }],
+        subscription_data: { trial_period_days: 14 },
+        metadata: {
+          tier: "flow",
+          email: "buyer@example.com",
+          firstName: "Ada",
+          companyName: "AutoFlow",
+          userId: "user-123",
+        },
+      })
+    );
+  });
 });
 
 describe("GET /api/billing/subscription", () => {
@@ -193,6 +279,25 @@ describe("POST /api/billing/subscription/cancel", () => {
     const res = await request(app).post("/api/billing/subscription/cancel").send({ userId: "nope" });
     expect(res.status).toBe(404);
   });
+
+  it("schedules cancellation at period end", async () => {
+    subscriptionStore.upsert({ ...baseSubscription, userId: "cancel-user", id: "sub-cancel" });
+    stripeMock.subscriptions.update.mockResolvedValue({ status: "active" });
+
+    const res = await request(app).post("/api/billing/subscription/cancel").send({ userId: "cancel-user" });
+    const updated = subscriptionStore.get("sub-cancel");
+
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({
+      success: true,
+      cancelAtPeriodEnd: true,
+      accessUntil: "2026-05-01T00:00:00.000Z",
+    });
+    expect(stripeMock.subscriptions.update).toHaveBeenCalledWith("sub_stripe_store_1", {
+      cancel_at_period_end: true,
+    });
+    expect(updated?.cancelAtPeriodEnd).toBe(true);
+  });
 });
 
 describe("POST /api/billing/subscription/change-tier", () => {
@@ -210,6 +315,34 @@ describe("POST /api/billing/subscription/change-tier", () => {
     const res = await request(app).post("/api/billing/subscription/change-tier").send({ userId: "nope", newTier: "automate" });
     expect(res.status).toBe(404);
   });
+
+  it("changes tier and updates stripe subscription", async () => {
+    subscriptionStore.upsert({ ...baseSubscription, userId: "upgrade-user", id: "sub-upgrade" });
+    stripeMock.subscriptions.retrieve.mockResolvedValue({
+      items: { data: [{ id: "si_123" }] },
+      metadata: { userId: "upgrade-user" },
+    });
+    stripeMock.subscriptions.update.mockResolvedValue({ status: "active" });
+
+    const res = await request(app)
+      .post("/api/billing/subscription/change-tier")
+      .send({ userId: "upgrade-user", newTier: "automate" });
+    const updated = subscriptionStore.get("sub-upgrade");
+
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({
+      success: true,
+      previousTier: "flow",
+      newTier: "automate",
+      proration: "immediate",
+    });
+    expect(stripeMock.subscriptions.update).toHaveBeenCalledWith("sub_stripe_store_1", {
+      items: [{ id: "si_123", price: "price_automate_test" }],
+      proration_behavior: "create_prorations",
+      metadata: { userId: "upgrade-user", tier: "automate" },
+    });
+    expect(updated?.tier).toBe("automate");
+  });
 });
 
 describe("POST /api/billing/subscription/reactivate", () => {
@@ -222,6 +355,26 @@ describe("POST /api/billing/subscription/reactivate", () => {
     const res = await request(app).post("/api/billing/subscription/reactivate").send({ userId: "nope" });
     expect(res.status).toBe(404);
   });
+
+  it("reactivates a scheduled cancellation", async () => {
+    subscriptionStore.upsert({
+      ...baseSubscription,
+      id: "sub-reactivate",
+      userId: "reactivate-user",
+      cancelAtPeriodEnd: true,
+    });
+    stripeMock.subscriptions.update.mockResolvedValue({ status: "active" });
+
+    const res = await request(app).post("/api/billing/subscription/reactivate").send({ userId: "reactivate-user" });
+    const updated = subscriptionStore.get("sub-reactivate");
+
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ success: true, cancelAtPeriodEnd: false });
+    expect(stripeMock.subscriptions.update).toHaveBeenCalledWith("sub_stripe_store_1", {
+      cancel_at_period_end: false,
+    });
+    expect(updated?.cancelAtPeriodEnd).toBe(false);
+  });
 });
 
 describe("POST /api/webhooks/stripe", () => {
@@ -233,5 +386,156 @@ describe("POST /api/webhooks/stripe", () => {
     // Without STRIPE_WEBHOOK_SECRET set, returns 503
     // With it set but no sig, returns 400
     expect([400, 503]).toContain(res.status);
+  });
+
+  it("handles checkout.session.completed and provisions subscription", async () => {
+    stripeMock.webhooks.constructEvent.mockReturnValue({
+      type: "checkout.session.completed",
+      data: {
+        object: {
+          mode: "subscription",
+          metadata: { tier: "automate", userId: "webhook-user", email: "webhook@example.com" },
+          customer: "cus_webhook",
+          subscription: "sub_webhook_1",
+        },
+      },
+    });
+    stripeMock.subscriptions.retrieve.mockResolvedValue({
+      status: "active",
+      cancel_at_period_end: false,
+      trial_end: null,
+      items: {
+        data: [
+          {
+            price: { id: "price_automate_test" },
+            current_period_start: 1711929600,
+            current_period_end: 1714521600,
+          },
+        ],
+      },
+    });
+
+    const res = await request(app)
+      .post("/api/webhooks/stripe")
+      .set("stripe-signature", "sig_test")
+      .set("Content-Type", "application/json")
+      .send(JSON.stringify({ id: "evt_1" }));
+
+    const sub = subscriptionStore.getByStripeSubscriptionId("sub_webhook_1");
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ received: true });
+    expect(sub?.userId).toBe("webhook-user");
+    expect(sub?.tier).toBe("automate");
+    expect(sub?.accessLevel).toBe("active");
+  });
+
+  it("handles invoice.paid and refreshes period dates", async () => {
+    subscriptionStore.upsert({
+      ...baseSubscription,
+      id: "sub-invoice-paid",
+      stripeSubscriptionId: "sub_invoice_paid",
+      userId: "invoice-user",
+      currentPeriodStart: "2026-01-01T00:00:00.000Z",
+      currentPeriodEnd: "2026-02-01T00:00:00.000Z",
+    });
+    stripeMock.webhooks.constructEvent.mockReturnValue({
+      type: "invoice.paid",
+      data: {
+        object: {
+          parent: {
+            subscription_details: {
+              subscription: "sub_invoice_paid",
+            },
+          },
+        },
+      },
+    });
+    stripeMock.subscriptions.retrieve.mockResolvedValue({
+      status: "active",
+      cancel_at_period_end: false,
+      items: {
+        data: [
+          {
+            current_period_start: 1714521600,
+            current_period_end: 1717113600,
+          },
+        ],
+      },
+    });
+
+    const res = await request(app)
+      .post("/api/webhooks/stripe")
+      .set("stripe-signature", "sig_test")
+      .set("Content-Type", "application/json")
+      .send(JSON.stringify({ id: "evt_2" }));
+
+    const updated = subscriptionStore.get("sub-invoice-paid");
+    expect(res.status).toBe(200);
+    expect(updated?.currentPeriodStart).toBe("2024-05-01T00:00:00.000Z");
+    expect(updated?.currentPeriodEnd).toBe("2024-05-31T00:00:00.000Z");
+    expect(updated?.accessLevel).toBe("active");
+  });
+
+  it("handles invoice.payment_failed and marks subscription as past_due", async () => {
+    subscriptionStore.upsert({
+      ...baseSubscription,
+      id: "sub-payment-failed",
+      stripeSubscriptionId: "sub_payment_failed",
+      userId: "failed-user",
+    });
+    stripeMock.webhooks.constructEvent.mockReturnValue({
+      type: "invoice.payment_failed",
+      data: {
+        object: {
+          attempt_count: 2,
+          parent: {
+            subscription_details: {
+              subscription: "sub_payment_failed",
+            },
+          },
+        },
+      },
+    });
+
+    const res = await request(app)
+      .post("/api/webhooks/stripe")
+      .set("stripe-signature", "sig_test")
+      .set("Content-Type", "application/json")
+      .send(JSON.stringify({ id: "evt_3" }));
+
+    const updated = subscriptionStore.get("sub-payment-failed");
+    expect(res.status).toBe(200);
+    expect(updated?.status).toBe("past_due");
+    expect(updated?.accessLevel).toBe("past_due");
+  });
+
+  it("handles customer.subscription.deleted and revokes access", async () => {
+    subscriptionStore.upsert({
+      ...baseSubscription,
+      id: "sub-deleted",
+      stripeSubscriptionId: "sub_deleted",
+      userId: "deleted-user",
+      cancelAtPeriodEnd: true,
+    });
+    stripeMock.webhooks.constructEvent.mockReturnValue({
+      type: "customer.subscription.deleted",
+      data: {
+        object: {
+          id: "sub_deleted",
+        },
+      },
+    });
+
+    const res = await request(app)
+      .post("/api/webhooks/stripe")
+      .set("stripe-signature", "sig_test")
+      .set("Content-Type", "application/json")
+      .send(JSON.stringify({ id: "evt_4" }));
+
+    const updated = subscriptionStore.get("sub-deleted");
+    expect(res.status).toBe(200);
+    expect(updated?.status).toBe("canceled");
+    expect(updated?.accessLevel).toBe("cancelled");
+    expect(updated?.cancelAtPeriodEnd).toBe(false);
   });
 });

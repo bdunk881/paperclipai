@@ -3,6 +3,7 @@ import { featureSchema } from "./schemas/features";
 import { pricingSchema } from "./schemas/pricing";
 import { testimonialSchema } from "./schemas/testimonials";
 import { faqSchema } from "./schemas/faq";
+import { blogPostSchema } from "./schemas/blogPost";
 
 export const schemaTypes = [
   heroSchema,
@@ -10,4 +11,5 @@ export const schemaTypes = [
   pricingSchema,
   testimonialSchema,
   faqSchema,
+  blogPostSchema,
 ];

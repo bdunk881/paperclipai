@@ -30,14 +30,12 @@ jobs:
 
       - name: Deploy to Vercel
         id: deploy
-        working-directory: landing
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
           VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
           VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
         run: |
           npx vercel pull --yes --environment=production --token=$VERCEL_TOKEN
-          npx vercel build --prod --token=$VERCEL_TOKEN
-          URL=$(npx vercel deploy --prebuilt --prod --token=$VERCEL_TOKEN)
+          URL=$(npx vercel deploy --prod --token=$VERCEL_TOKEN)
           echo "url=$URL" >> $GITHUB_OUTPUT
           echo "Deployed to: $URL"

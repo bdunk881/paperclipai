@@ -3,19 +3,31 @@ import { Zap, Loader2 } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 
 export default function Login() {
-  const { login } = useAuth();
-  const [loading, setLoading] = useState(false);
+  const { login, signup } = useAuth();
+  const [loadingAction, setLoadingAction] = useState<"signin" | "signup" | null>(null);
   const [error, setError] = useState("");
 
   async function handleSignIn() {
     setError("");
-    setLoading(true);
+    setLoadingAction("signin");
     try {
       await login();
       // login() triggers a redirect — execution does not continue past this point
     } catch {
       setError("Sign-in failed. Please try again.");
-      setLoading(false);
+      setLoadingAction(null);
+    }
+  }
+
+  async function handleSignUp() {
+    setError("");
+    setLoadingAction("signup");
+    try {
+      await signup();
+      // signup() triggers a redirect — execution does not continue past this point
+    } catch {
+      setError("Sign-up failed. Please try again.");
+      setLoadingAction(null);
     }
   }
 
@@ -41,19 +53,34 @@ export default function Login() {
 
           <button
             onClick={handleSignIn}
-            disabled={loading}
+            disabled={loadingAction !== null}
             className="w-full flex items-center justify-center gap-3 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition disabled:opacity-60"
           >
-            {loading ? (
+            {loadingAction === "signin" ? (
               <Loader2 size={18} className="animate-spin" />
             ) : (
               <MicrosoftIcon />
             )}
-            {loading ? "Redirecting…" : "Continue with Microsoft"}
+            {loadingAction === "signin" ? "Redirecting…" : "Continue with Microsoft"}
+          </button>
+
+          <button
+            onClick={handleSignUp}
+            disabled={loadingAction !== null}
+            className="mt-3 w-full flex items-center justify-center gap-3 py-2.5 border border-blue-200 text-blue-700 bg-blue-50 hover:bg-blue-100 font-medium rounded-lg transition disabled:opacity-60"
+          >
+            {loadingAction === "signup" ? (
+              <Loader2 size={18} className="animate-spin" />
+            ) : (
+              <MicrosoftIcon />
+            )}
+            {loadingAction === "signup"
+              ? "Redirecting to Sign-up…"
+              : "Create account with email"}
           </button>
 
           <p className="text-xs text-center text-gray-400 mt-4">
-            New users are automatically registered on first sign-in.
+            Use Continue to sign in, or Create account to register with a personal email.
           </p>
         </div>
       </div>

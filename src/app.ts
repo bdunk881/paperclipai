@@ -6,6 +6,10 @@
 
 import express from "express";
 import multer from "multer";
+import cors from "cors";
+import helmet from "helmet";
+import cors from "cors";
+import helmet from "helmet";
 import { WORKFLOW_TEMPLATES, getTemplate, getTemplatesByCategory } from "./templates";
 import { WorkflowTemplate, WorkflowStep } from "./types/workflow";
 import { workflowEngine } from "./engine/WorkflowEngine";
@@ -25,6 +29,32 @@ import subscriptionRoutes from "./billing/subscriptionRoutes";
 
 const app = express();
 
+function getAllowedOrigins(): string[] {
+  const raw = process.env.ALLOWED_ORIGINS;
+  if (!raw) {
+    return [];
+  }
+
+  return raw
+    .split(",")
+    .map((origin) => origin.trim())
+    .filter((origin) => origin.length > 0 && origin !== "*");
+}
+
+const allowedOrigins = new Set(getAllowedOrigins());
+const corsOptions: cors.CorsOptions = {
+  credentials: true,
+  origin: (origin, callback) => {
+    if (!origin) {
+      callback(null, true);
+      return;
+    }
+    callback(null, allowedOrigins.has(origin));
+  },
+};
+
+app.use(helmet());
+app.use(cors(corsOptions));
 // ---------------------------------------------------------------------------
 // Stripe webhook — must be mounted BEFORE express.json() so the raw body
 // is available for signature verification

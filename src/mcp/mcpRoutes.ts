@@ -12,6 +12,7 @@
 import { Router } from "express";
 import { AuthenticatedRequest } from "../auth/authMiddleware";
 import { mcpStore } from "./mcpStore";
+import { assertSafeMcpUrl } from "./mcpUrlSecurity";
 
 const router = Router();
 
@@ -52,6 +53,8 @@ async function callMcpRpc(
   authHeaderKey?: string,
   authHeaderValue?: string
 ): Promise<unknown> {
+  await assertSafeMcpUrl(serverUrl);
+
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
     Accept: "application/json",
@@ -93,7 +96,7 @@ router.get("/", (req: AuthenticatedRequest, res) => {
 });
 
 /** POST /api/mcp/servers */
-router.post("/", (req: AuthenticatedRequest, res) => {
+router.post("/", async (req: AuthenticatedRequest, res) => {
   const userId = resolveUserId(req);
   if (!userId) {
     res.status(401).json({ error: "Authenticated user is required" });
@@ -116,9 +119,18 @@ router.post("/", (req: AuthenticatedRequest, res) => {
     return;
   }
 
+  let safeUrl: string;
+  try {
+    safeUrl = await assertSafeMcpUrl(url);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    res.status(400).json({ error: `Invalid MCP URL: ${msg}` });
+    return;
+  }
+
   const server = mcpStore.add(userId, {
     name,
-    url,
+    url: safeUrl,
     authHeaderKey: typeof authHeaderKey === "string" ? authHeaderKey : undefined,
     authHeaderValue: typeof authHeaderValue === "string" ? authHeaderValue : undefined,
   });

@@ -4,19 +4,20 @@
  */
 
 import { Router, Request, Response } from "express";
+import { AuthenticatedRequest } from "../auth/authMiddleware";
 import { getStripe, PRICING_TIERS, TierKey } from "./stripeClient";
 import { subscriptionStore, resolveTier } from "./subscriptionStore";
 
 const router = Router();
 
 /**
- * GET /api/billing/subscription?userId=:userId
+ * GET /api/billing/subscription
  * Returns the user's current subscription status.
  */
-router.get("/", (req: Request, res: Response) => {
-  const userId = (req.query.userId as string) ?? (req.headers["x-user-id"] as string);
+router.get("/", (req: AuthenticatedRequest, res: Response) => {
+  const userId = req.auth?.sub;
   if (!userId) {
-    res.status(400).json({ error: "userId query param or X-User-Id header is required" });
+    res.status(401).json({ error: "Authenticated user is required" });
     return;
   }
 
@@ -42,14 +43,15 @@ router.get("/", (req: Request, res: Response) => {
 
 /**
  * POST /api/billing/subscription/change-tier
- * Body: { userId: string, newTier: "flow"|"automate"|"scale" }
+ * Body: { newTier: "flow"|"automate"|"scale" }
  * Upgrades or downgrades the subscription by swapping the Stripe price.
  */
-router.post("/change-tier", async (req: Request, res: Response) => {
-  const { userId, newTier } = req.body as { userId?: string; newTier?: string };
+router.post("/change-tier", async (req: AuthenticatedRequest, res: Response) => {
+  const userId = req.auth?.sub;
+  const { newTier } = req.body as { newTier?: string };
 
   if (!userId) {
-    res.status(400).json({ error: "userId is required" });
+    res.status(401).json({ error: "Authenticated user is required" });
     return;
   }
   if (!newTier || !(newTier in PRICING_TIERS)) {
@@ -121,14 +123,13 @@ router.post("/change-tier", async (req: Request, res: Response) => {
 
 /**
  * POST /api/billing/subscription/cancel
- * Body: { userId: string }
+ * Body: {}
  * Cancels the subscription at end of current billing period.
  */
-router.post("/cancel", async (req: Request, res: Response) => {
-  const { userId } = req.body as { userId?: string };
-
+router.post("/cancel", async (req: AuthenticatedRequest, res: Response) => {
+  const userId = req.auth?.sub;
   if (!userId) {
-    res.status(400).json({ error: "userId is required" });
+    res.status(401).json({ error: "Authenticated user is required" });
     return;
   }
 
@@ -169,14 +170,13 @@ router.post("/cancel", async (req: Request, res: Response) => {
 
 /**
  * POST /api/billing/subscription/reactivate
- * Body: { userId: string }
+ * Body: {}
  * Reactivates a subscription that was scheduled for cancellation.
  */
-router.post("/reactivate", async (req: Request, res: Response) => {
-  const { userId } = req.body as { userId?: string };
-
+router.post("/reactivate", async (req: AuthenticatedRequest, res: Response) => {
+  const userId = req.auth?.sub;
   if (!userId) {
-    res.status(400).json({ error: "userId is required" });
+    res.status(401).json({ error: "Authenticated user is required" });
     return;
   }
 

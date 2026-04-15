@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: autoflow-production
+  labels:
+    environment: production
+    app.kubernetes.io/managed-by: kubectl

@@ -1,0 +1,209 @@
+name: Deploy to Azure (AKS)
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Target environment
+        required: true
+        default: staging
+        type: choice
+        options: [staging, production]
+
+permissions:
+  contents: read
+  id-token: write   # required for OIDC / azure/login
+
+env:
+  ARM_CLIENT_ID: 1a18157f-bc97-4ad1-a170-1ebd3ae93968
+  ARM_TENANT_ID: b1cb1311-760a-4c88-a778-5d2c227a1f45
+  ARM_SUBSCRIPTION_ID: 776a7226-e364-4cd9-a3e6-d083641af9ea
+
+jobs:
+  discover:
+    name: Discover Azure Resources
+    runs-on: ubuntu-latest
+    environment: production
+    outputs:
+      acr_login_server: ${{ steps.discover.outputs.acr_login_server }}
+      aks_resource_group: ${{ steps.discover.outputs.aks_resource_group }}
+      aks_cluster_name: ${{ steps.discover.outputs.aks_cluster_name }}
+    steps:
+      - name: Login to Azure (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ env.ARM_CLIENT_ID }}
+          tenant-id: ${{ env.ARM_TENANT_ID }}
+          subscription-id: ${{ env.ARM_SUBSCRIPTION_ID }}
+
+      - name: Discover ACR and AKS
+        id: discover
+        run: |
+          ACR_LOGIN=$(az acr list --subscription "$ARM_SUBSCRIPTION_ID" --query "[0].loginServer" -o tsv)
+          AKS_RG=$(az aks list --subscription "$ARM_SUBSCRIPTION_ID" --query "[0].resourceGroup" -o tsv)
+          AKS_NAME=$(az aks list --subscription "$ARM_SUBSCRIPTION_ID" --query "[0].name" -o tsv)
+
+          echo "acr_login_server=$ACR_LOGIN" >> "$GITHUB_OUTPUT"
+          echo "aks_resource_group=$AKS_RG" >> "$GITHUB_OUTPUT"
+          echo "aks_cluster_name=$AKS_NAME" >> "$GITHUB_OUTPUT"
+
+          echo "ACR: $ACR_LOGIN"
+          echo "AKS: $AKS_NAME in $AKS_RG"
+
+  build-and-push:
+    name: Build & Push Images to ACR
+    runs-on: ubuntu-latest
+    needs: discover
+    environment: production
+    strategy:
+      matrix:
+        service: [backend, frontend]
+    outputs:
+      image_tag: ${{ steps.meta.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Login to Azure (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ env.ARM_CLIENT_ID }}
+          tenant-id: ${{ env.ARM_TENANT_ID }}
+          subscription-id: ${{ env.ARM_SUBSCRIPTION_ID }}
+
+      - name: Login to ACR
+        run: az acr login --name ${{ needs.discover.outputs.acr_login_server }}
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Docker metadata (${{ matrix.service }})
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ needs.discover.outputs.acr_login_server }}/autoflow-${{ matrix.service }}
+          tags: |
+            type=sha,format=long
+            type=ref,event=branch
+            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
+
+      - name: Build and push ${{ matrix.service }}
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: docker/${{ matrix.service }}/Dockerfile
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha,scope=${{ matrix.service }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.service }}
+          build-args: |
+            BUILD_SHA=${{ github.sha }}
+            BUILD_DATE=${{ github.event.head_commit.timestamp }}
+
+  deploy-staging:
+    name: Deploy to Staging
+    runs-on: ubuntu-latest
+    needs: [discover, build-and-push]
+    environment:
+      name: staging
+      url: https://staging.helloautoflow.com
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Login to Azure (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ env.ARM_CLIENT_ID }}
+          tenant-id: ${{ env.ARM_TENANT_ID }}
+          subscription-id: ${{ env.ARM_SUBSCRIPTION_ID }}
+
+      - name: Set AKS context
+        uses: azure/aks-set-context@v3
+        with:
+          resource-group: ${{ needs.discover.outputs.aks_resource_group }}
+          cluster-name: ${{ needs.discover.outputs.aks_cluster_name }}
+          subscription: ${{ env.ARM_SUBSCRIPTION_ID }}
+
+      - name: Deploy backend to staging AKS
+        run: |
+          IMAGE="${{ needs.discover.outputs.acr_login_server }}/autoflow-backend:sha-${{ github.sha }}"
+          kubectl set image deployment/backend backend="${IMAGE}" \
+            --namespace autoflow-staging
+          kubectl rollout status deployment/backend --namespace autoflow-staging --timeout=5m
+
+      - name: Deploy frontend to staging AKS
+        run: |
+          IMAGE="${{ needs.discover.outputs.acr_login_server }}/autoflow-frontend:sha-${{ github.sha }}"
+          kubectl set image deployment/frontend frontend="${IMAGE}" \
+            --namespace autoflow-staging
+          kubectl rollout status deployment/frontend --namespace autoflow-staging --timeout=5m
+
+      - name: Smoke test staging
+        run: |
+          sleep 15
+          for i in $(seq 1 10); do
+            STATUS=$(curl -s -o /dev/null -w "%{http_code}" https://staging.helloautoflow.com/health)
+            if [ "$STATUS" = "200" ]; then
+              echo "Staging health check passed (attempt $i)"
+              exit 0
+            fi
+            echo "Attempt $i: got $STATUS, retrying in 15s..."
+            sleep 15
+          done
+          echo "Staging health check failed after 10 attempts"
+          exit 1
+
+  deploy-production:
+    name: Deploy to Production
+    runs-on: ubuntu-latest
+    needs: [discover, deploy-staging]
+    environment:
+      name: production
+      url: https://helloautoflow.com
+    # GitHub environment protection rules enforce the manual approval gate
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Login to Azure (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ env.ARM_CLIENT_ID }}
+          tenant-id: ${{ env.ARM_TENANT_ID }}
+          subscription-id: ${{ env.ARM_SUBSCRIPTION_ID }}
+
+      - name: Set AKS context
+        uses: azure/aks-set-context@v3
+        with:
+          resource-group: ${{ needs.discover.outputs.aks_resource_group }}
+          cluster-name: ${{ needs.discover.outputs.aks_cluster_name }}
+          subscription: ${{ env.ARM_SUBSCRIPTION_ID }}
+
+      - name: Deploy backend to production AKS
+        run: |
+          IMAGE="${{ needs.discover.outputs.acr_login_server }}/autoflow-backend:sha-${{ github.sha }}"
+          kubectl set image deployment/backend backend="${IMAGE}" \
+            --namespace autoflow-production
+          kubectl rollout status deployment/backend --namespace autoflow-production --timeout=5m
+
+      - name: Deploy frontend to production AKS
+        run: |
+          IMAGE="${{ needs.discover.outputs.acr_login_server }}/autoflow-frontend:sha-${{ github.sha }}"
+          kubectl set image deployment/frontend frontend="${IMAGE}" \
+            --namespace autoflow-production
+          kubectl rollout status deployment/frontend --namespace autoflow-production --timeout=5m
+
+      - name: Verify production health
+        run: |
+          sleep 15
+          for i in $(seq 1 10); do
+            STATUS=$(curl -s -o /dev/null -w "%{http_code}" https://helloautoflow.com/health)
+            if [ "$STATUS" = "200" ]; then
+              echo "Production health check passed (attempt $i)"
+              exit 0
+            fi
+            echo "Attempt $i: got $STATUS, retrying in 15s..."
+            sleep 15
+          done
+          echo "Production health check failed after 10 attempts"
+          exit 1

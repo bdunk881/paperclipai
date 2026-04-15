@@ -5,6 +5,7 @@
  */
 
 import express from "express";
+import rateLimit from "express-rate-limit";
 import multer from "multer";
 import cors from "cors";
 import helmet from "helmet";
@@ -53,6 +54,76 @@ const corsOptions: cors.CorsOptions = {
 
 app.use(helmet());
 app.use(cors(corsOptions));
+
+function getAuthenticatedUserId(req: express.Request): string | null {
+  const authReq = req as AuthenticatedRequest;
+  const userId = authReq.auth?.sub;
+  return typeof userId === "string" && userId.trim() ? userId.trim() : null;
+}
+
+function getHeaderUserId(req: express.Request): string | null {
+  const userId = req.headers["x-user-id"];
+  return typeof userId === "string" && userId.trim() ? userId.trim() : null;
+}
+
+function getRateLimitKey(req: express.Request): string {
+  const userId = getAuthenticatedUserId(req) ?? getHeaderUserId(req);
+  if (userId) {
+    return `user:${userId}`;
+  }
+  return `ip:${req.ip || req.socket.remoteAddress || "unknown"}`;
+}
+
+function createRateLimitHandler(windowMs: number) {
+  return (req: express.Request, res: express.Response) => {
+    const resetTime = (req as { rateLimit?: { resetTime?: Date } }).rateLimit?.resetTime;
+    const resetMs = resetTime ? resetTime.getTime() - Date.now() : windowMs;
+    const retryAfterSeconds = Math.max(1, Math.ceil(resetMs / 1000));
+    res.setHeader("Retry-After", String(retryAfterSeconds));
+    res.status(429).json({ error: "Too Many Requests" });
+  };
+}
+
+const generalApiRateLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  limit: 100,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: getRateLimitKey,
+  handler: createRateLimitHandler(60 * 1000),
+});
+
+const webhookRateLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  limit: 60,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => `ip:${req.ip || req.socket.remoteAddress || "unknown"}`,
+  handler: createRateLimitHandler(60 * 1000),
+});
+
+const llmEndpointRateLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  limit: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: getRateLimitKey,
+  handler: createRateLimitHandler(60 * 60 * 1000),
+});
+
+const billingMutationRateLimiter = rateLimit({
+  windowMs: 24 * 60 * 60 * 1000,
+  limit: 5,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: getRateLimitKey,
+  skip: (req) => !["POST", "PUT", "PATCH", "DELETE"].includes(req.method),
+  skipFailedRequests: true,
+  handler: createRateLimitHandler(24 * 60 * 60 * 1000),
+});
+
+app.use("/api", generalApiRateLimiter);
+app.use("/api/webhooks", webhookRateLimiter);
 // ---------------------------------------------------------------------------
 // Stripe webhook — must be mounted BEFORE express.json() so the raw body
 // is available for signature verification
@@ -70,8 +141,9 @@ const upload = multer({
 // ---------------------------------------------------------------------------
 // Billing API — Stripe checkout sessions + subscription lifecycle
 // ---------------------------------------------------------------------------
-app.use("/api/billing/checkout", requireAuth, checkoutRoutes);
-app.use("/api/billing/subscription", requireAuth, subscriptionRoutes);
+app.use("/api/billing", requireAuth, billingMutationRateLimiter);
+app.use("/api/billing/checkout", checkoutRoutes);
+app.use("/api/billing/subscription", subscriptionRoutes);
 
 // ---------------------------------------------------------------------------
 // LLM Config API — BYOLLM provider credentials
@@ -158,7 +230,7 @@ app.get("/api/templates/:id/sample", (req, res) => {
  * Body: { templateId, input, config? }
  * Returns the new run (status=pending) immediately; execution is async.
  */
-app.post("/api/runs", requireAuth, (req: AuthenticatedRequest, res) => {
+app.post("/api/runs", requireAuth, llmEndpointRateLimiter, (req: AuthenticatedRequest, res) => {
   const { templateId, input, config } = req.body as {
     templateId?: string;
     input?: Record<string, unknown>;
@@ -299,7 +371,7 @@ Rules:
  * Uses the authenticated JWT subject to resolve the user's LLM config.
  * Returns: { steps: WorkflowStep[] }
  */
-app.post("/api/workflows/generate", requireAuth, async (req: AuthenticatedRequest, res) => {
+app.post("/api/workflows/generate", requireAuth, llmEndpointRateLimiter, async (req: AuthenticatedRequest, res) => {
   const { description, llmConfigId } = req.body as {
     description?: unknown;
     llmConfigId?: unknown;

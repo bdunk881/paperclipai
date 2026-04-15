@@ -406,6 +406,43 @@ describe("GET /health — run stats", () => {
 });
 
 // ---------------------------------------------------------------------------
+// Rate limiting
+// ---------------------------------------------------------------------------
+
+describe("Rate limiting", () => {
+  it("enforces LLM endpoint limits per authenticated user and returns Retry-After", async () => {
+    for (let i = 0; i < 10; i += 1) {
+      const res = await request(app)
+        .post("/api/runs")
+        .set(asAuth("rate-limit-llm-user"))
+        .send({ templateId: "tpl-support-bot", input: { ticketId: `RL-${i}` } });
+      expect(res.status).toBe(202);
+    }
+
+    const blocked = await request(app)
+      .post("/api/runs")
+      .set(asAuth("rate-limit-llm-user"))
+      .send({ templateId: "tpl-support-bot", input: { ticketId: "RL-over" } });
+
+    expect(blocked.status).toBe(429);
+    expect(blocked.headers["retry-after"]).toBeDefined();
+    expect(Number(blocked.headers["retry-after"])).toBeGreaterThan(0);
+  });
+
+  it("enforces general API limits and returns Retry-After", async () => {
+    for (let i = 0; i < 100; i += 1) {
+      const res = await request(app).get("/api/templates").set("X-User-Id", "rate-limit-general-user");
+      expect(res.status).toBe(200);
+    }
+
+    const blocked = await request(app).get("/api/templates").set("X-User-Id", "rate-limit-general-user");
+    expect(blocked.status).toBe(429);
+    expect(blocked.headers["retry-after"]).toBeDefined();
+    expect(Number(blocked.headers["retry-after"])).toBeGreaterThan(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Content-type and error handling
 // ---------------------------------------------------------------------------
 

@@ -1,0 +1,31 @@
+name: QA Integration Evidence
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  qa-integration-evidence:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Run QA smoke evidence probes
+        env:
+          QA_API_BASE_URL: ${{ secrets.QA_API_BASE_URL }}
+          QA_E2E_BEARER_TOKEN: ${{ secrets.QA_E2E_BEARER_TOKEN }}
+          STRIPE_WEBHOOK_SECRET: ${{ secrets.STRIPE_WEBHOOK_SECRET }}
+          VITE_USE_MOCK: "true"
+        run: bash infra/scripts/qa_integration_smoke.sh
+
+      - name: Upload QA evidence artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: qa-integration-evidence-${{ github.run_id }}
+          path: artifacts/qa-integration/
+          retention-days: 14

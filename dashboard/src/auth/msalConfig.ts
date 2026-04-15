@@ -2,15 +2,15 @@ import { Configuration, PopupRequest } from "@azure/msal-browser";
 
 // Entra External ID (CIAM) uses the ciamlogin.com authority endpoint.
 // Set these env vars in .env.local for dev and in Vercel for prod:
-//   VITE_AZURE_CLIENT_ID       — App registration client ID from Azure Portal
-//   VITE_AZURE_TENANT_SUBDOMAIN — Tenant subdomain (e.g. "myapp" → myapp.ciamlogin.com)
+//   VITE_AZURE_CIAM_CLIENT_ID        — CIAM app registration client ID from Azure Portal
+//   VITE_AZURE_CIAM_TENANT_SUBDOMAIN — Tenant subdomain (e.g. "myapp" → myapp.ciamlogin.com)
 
-const clientId = import.meta.env.VITE_AZURE_CLIENT_ID as string;
-const tenantSubdomain = import.meta.env.VITE_AZURE_TENANT_SUBDOMAIN as string;
+const clientId = import.meta.env.VITE_AZURE_CIAM_CLIENT_ID as string;
+const tenantSubdomain = import.meta.env.VITE_AZURE_CIAM_TENANT_SUBDOMAIN as string;
 
 if (!clientId || !tenantSubdomain) {
   console.warn(
-    "[MSAL] VITE_AZURE_CLIENT_ID or VITE_AZURE_TENANT_SUBDOMAIN is not set. " +
+    "[MSAL] VITE_AZURE_CIAM_CLIENT_ID or VITE_AZURE_CIAM_TENANT_SUBDOMAIN is not set. " +
       "Auth will not work until these are configured."
   );
 }

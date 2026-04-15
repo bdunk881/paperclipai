@@ -9,10 +9,25 @@
 jest.mock("./engine/llmProviders", () => ({
   getProvider: jest.fn(),
 }));
+jest.mock("./auth/authMiddleware", () => ({
+  requireAuth: (req: { headers: { authorization?: string }; auth?: { sub: string } }, res: { status: (code: number) => { json: (body: unknown) => void } }, next: () => void) => {
+    const auth = req.headers.authorization;
+    if (!auth?.startsWith("Bearer ")) {
+      res.status(401).json({ error: "Missing or malformed Authorization header." });
+      return;
+    }
+    req.auth = { sub: auth.slice(7) };
+    next();
+  },
+}));
 
 import request from "supertest";
 import app from "./app";
 import { WORKFLOW_TEMPLATES } from "./templates";
+
+function asAuth(userId = "test-user") {
+  return { Authorization: `Bearer ${userId}` };
+}
 
 // ---------------------------------------------------------------------------
 // GET /health
@@ -200,9 +215,17 @@ describe("GET /api/templates/:id/sample", () => {
 // ---------------------------------------------------------------------------
 
 describe("POST /api/runs", () => {
+  it("returns 401 when Authorization header is missing", async () => {
+    const res = await request(app)
+      .post("/api/runs")
+      .send({ templateId: "tpl-support-bot", input: {} });
+    expect(res.status).toBe(401);
+  });
+
   it("returns 202 with a pending run for a valid templateId", async () => {
     const res = await request(app)
       .post("/api/runs")
+      .set(asAuth())
       .send({ templateId: "tpl-support-bot", input: { ticketId: "TKT-001", subject: "Help", body: "I need help", customerEmail: "test@example.com", channel: "email" } });
     expect(res.status).toBe(202);
     expect(res.body.id).toBeDefined();
@@ -213,6 +236,7 @@ describe("POST /api/runs", () => {
   it("returns 400 when templateId is missing", async () => {
     const res = await request(app)
       .post("/api/runs")
+      .set(asAuth())
       .send({ input: {} });
     expect(res.status).toBe(400);
     expect(res.body.error).toMatch(/templateId/i);
@@ -221,6 +245,7 @@ describe("POST /api/runs", () => {
   it("returns 404 for an unknown templateId", async () => {
     const res = await request(app)
       .post("/api/runs")
+      .set(asAuth())
       .send({ templateId: "tpl-nonexistent", input: {} });
     expect(res.status).toBe(404);
     expect(res.body.error).toMatch(/not found/i);
@@ -229,6 +254,7 @@ describe("POST /api/runs", () => {
   it("returns a run with startedAt timestamp", async () => {
     const res = await request(app)
       .post("/api/runs")
+      .set(asAuth())
       .send({ templateId: "tpl-support-bot", input: {} });
     expect(res.status).toBe(202);
     expect(typeof res.body.startedAt).toBe("string");
@@ -242,14 +268,14 @@ describe("POST /api/runs", () => {
 
 describe("GET /api/runs", () => {
   it("returns 200 with a runs array", async () => {
-    const res = await request(app).get("/api/runs");
+    const res = await request(app).get("/api/runs").set(asAuth());
     expect(res.status).toBe(200);
     expect(Array.isArray(res.body.runs)).toBe(true);
     expect(typeof res.body.total).toBe("number");
   });
 
   it("total matches runs array length", async () => {
-    const res = await request(app).get("/api/runs");
+    const res = await request(app).get("/api/runs").set(asAuth());
     expect(res.body.total).toBe(res.body.runs.length);
   });
 });
@@ -262,17 +288,18 @@ describe("GET /api/runs/:id", () => {
   it("returns 202 run and then retrieves it by id", async () => {
     const startRes = await request(app)
       .post("/api/runs")
+      .set(asAuth())
       .send({ templateId: "tpl-support-bot", input: { ticketId: "TKT-002", subject: "Issue", body: "Problem", customerEmail: "b@example.com", channel: "email" } });
     expect(startRes.status).toBe(202);
     const runId = startRes.body.id;
 
-    const getRes = await request(app).get(`/api/runs/${runId}`);
+    const getRes = await request(app).get(`/api/runs/${runId}`).set(asAuth());
     expect(getRes.status).toBe(200);
     expect(getRes.body.id).toBe(runId);
   });
 
   it("returns 404 for an unknown run id", async () => {
-    const res = await request(app).get("/api/runs/run-does-not-exist");
+    const res = await request(app).get("/api/runs/run-does-not-exist").set(asAuth());
     expect(res.status).toBe(404);
     expect(res.body.error).toMatch(/not found/i);
   });
@@ -335,7 +362,7 @@ describe("POST /api/webhooks/:templateId", () => {
     expect(webhookRes.status).toBe(202);
 
     const runId = webhookRes.body.runId;
-    const getRes = await request(app).get(`/api/runs/${runId}`);
+    const getRes = await request(app).get(`/api/runs/${runId}`).set(asAuth());
     expect(getRes.status).toBe(200);
     expect(getRes.body.id).toBe(runId);
   });

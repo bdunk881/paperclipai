@@ -42,23 +42,23 @@ const upload = multer({
 // ---------------------------------------------------------------------------
 // Billing API — Stripe checkout sessions + subscription lifecycle
 // ---------------------------------------------------------------------------
-app.use("/api/billing/checkout", checkoutRoutes);
-app.use("/api/billing/subscription", subscriptionRoutes);
+app.use("/api/billing/checkout", requireAuth, checkoutRoutes);
+app.use("/api/billing/subscription", requireAuth, subscriptionRoutes);
 
 // ---------------------------------------------------------------------------
 // LLM Config API — BYOLLM provider credentials
 // ---------------------------------------------------------------------------
-app.use("/api/llm-configs", llmConfigRoutes);
+app.use("/api/llm-configs", requireAuth, llmConfigRoutes);
 
 // ---------------------------------------------------------------------------
 // MCP Registry API — register and discover MCP server connections
 // ---------------------------------------------------------------------------
-app.use("/api/mcp/servers", mcpRoutes);
+app.use("/api/mcp/servers", requireAuth, mcpRoutes);
 
 // ---------------------------------------------------------------------------
 // Memory API — persistent context memory store for agents/workflows
 // ---------------------------------------------------------------------------
-app.use("/api/memory", memoryRoutes);
+app.use("/api/memory", requireAuth, memoryRoutes);
 
 // ---------------------------------------------------------------------------
 // Auth API — identity endpoint for authenticated callers
@@ -130,7 +130,7 @@ app.get("/api/templates/:id/sample", (req, res) => {
  * Body: { templateId, input, config? }
  * Returns the new run (status=pending) immediately; execution is async.
  */
-app.post("/api/runs", (req, res) => {
+app.post("/api/runs", requireAuth, (req: AuthenticatedRequest, res) => {
   const { templateId, input, config } = req.body as {
     templateId?: string;
     input?: Record<string, unknown>;
@@ -150,20 +150,20 @@ app.post("/api/runs", (req, res) => {
     return;
   }
 
-  const userId = req.headers["x-user-id"];
-  const run = workflowEngine.startRun(template, input ?? {}, config, typeof userId === "string" ? userId : undefined);
+  const userId = req.auth?.sub;
+  const run = workflowEngine.startRun(template, input ?? {}, config, userId);
   res.status(202).json(run);
 });
 
 /** List all runs, optionally filtered by templateId */
-app.get("/api/runs", (req, res) => {
+app.get("/api/runs", requireAuth, (req, res) => {
   const { templateId } = req.query;
   const runs = runStore.list(typeof templateId === "string" ? templateId : undefined);
   res.json({ runs, total: runs.length });
 });
 
 /** Get a single run by ID */
-app.get("/api/runs/:id", (req, res) => {
+app.get("/api/runs/:id", requireAuth, (req, res) => {
   const run = runStore.get(req.params.id);
   if (!run) {
     res.status(404).json({ error: `Run not found: ${req.params.id}` });
@@ -179,13 +179,13 @@ app.get("/api/runs/:id", (req, res) => {
 /**
  * POST /api/runs/file
  * Multipart body: { templateId: string, file: <binary> }
- * Headers: X-User-Id (optional, forwarded to run engine)
+ * Uses the authenticated JWT subject as the run user.
  *
  * Parses the uploaded file (PDF/image/audio/text) into text content, then
  * starts a workflow run with { content, mimeType, filename } injected as input.
  * Returns the created run (status=pending).
  */
-app.post("/api/runs/file", upload.single("file"), async (req, res) => {
+app.post("/api/runs/file", requireAuth, upload.single("file"), async (req: AuthenticatedRequest, res) => {
   const { templateId } = req.body as { templateId?: string };
 
   if (!templateId) {
@@ -207,7 +207,7 @@ app.post("/api/runs/file", upload.single("file"), async (req, res) => {
   }
 
   // Resolve an OpenAI key from the user's default LLM config (for vision/Whisper)
-  const userId = typeof req.headers["x-user-id"] === "string" ? req.headers["x-user-id"] : undefined;
+  const userId = req.auth?.sub;
   let openaiApiKey: string | undefined;
   if (userId) {
     const defaultConfig = llmConfigStore.getDecryptedDefault(userId);
@@ -268,10 +268,10 @@ Rules:
 /**
  * POST /api/workflows/generate
  * Body: { description: string, llmConfigId?: string }
- * Headers: X-User-Id (required to resolve the user's LLM config)
+ * Uses the authenticated JWT subject to resolve the user's LLM config.
  * Returns: { steps: WorkflowStep[] }
  */
-app.post("/api/workflows/generate", async (req, res) => {
+app.post("/api/workflows/generate", requireAuth, async (req: AuthenticatedRequest, res) => {
   const { description, llmConfigId } = req.body as {
     description?: unknown;
     llmConfigId?: unknown;
@@ -282,9 +282,9 @@ app.post("/api/workflows/generate", async (req, res) => {
     return;
   }
 
-  const userId = req.headers["x-user-id"];
-  if (typeof userId !== "string" || !userId.trim()) {
-    res.status(401).json({ error: "X-User-Id header is required to resolve LLM configuration" });
+  const userId = req.auth?.sub;
+  if (!userId) {
+    res.status(401).json({ error: "Authenticated user is required to resolve LLM configuration" });
     return;
   }
 

@@ -12,12 +12,27 @@ jest.mock("./stripeClient", () => ({
     scale: { name: "Scale", price: 99, priceId: "price_scale_test", trialDays: 0 },
   },
 }));
+jest.mock("../auth/authMiddleware", () => ({
+  requireAuth: (req: { headers: { authorization?: string }; auth?: { sub: string } }, res: { status: (code: number) => { json: (body: unknown) => void } }, next: () => void) => {
+    const auth = req.headers.authorization;
+    if (!auth?.startsWith("Bearer ")) {
+      res.status(401).json({ error: "Missing or malformed Authorization header." });
+      return;
+    }
+    req.auth = { sub: auth.slice(7) };
+    next();
+  },
+}));
 
 import request from "supertest";
 import app from "../app";
 import { subscriptionStore } from "./subscriptionStore";
 import { mapStripeStatusToAccess, resolveTier } from "./subscriptionStore";
 import { getStripe } from "./stripeClient";
+
+function asAuth(userId: string) {
+  return { Authorization: `Bearer ${userId}` };
+}
 
 function makeStripeMock() {
   return {
@@ -184,14 +199,19 @@ describe("resolveTier", () => {
 // ---------------------------------------------------------------------------
 
 describe("POST /api/billing/checkout", () => {
+  it("returns 401 without auth", async () => {
+    const res = await request(app).post("/api/billing/checkout").send({ tier: "flow" });
+    expect(res.status).toBe(401);
+  });
+
   it("rejects missing tier", async () => {
-    const res = await request(app).post("/api/billing/checkout").send({});
+    const res = await request(app).post("/api/billing/checkout").set(asAuth("user-123")).send({});
     expect(res.status).toBe(400);
     expect(res.body.error).toMatch(/Invalid tier/);
   });
 
   it("rejects invalid tier", async () => {
-    const res = await request(app).post("/api/billing/checkout").send({ tier: "enterprise" });
+    const res = await request(app).post("/api/billing/checkout").set(asAuth("user-123")).send({ tier: "enterprise" });
     expect(res.status).toBe(400);
     expect(res.body.error).toMatch(/Invalid tier/);
   });
@@ -201,12 +221,11 @@ describe("POST /api/billing/checkout", () => {
       url: "https://checkout.stripe.test/session_123",
     });
 
-    const res = await request(app).post("/api/billing/checkout").send({
+    const res = await request(app).post("/api/billing/checkout").set(asAuth("user-123")).send({
       tier: "flow",
       email: "buyer@example.com",
       firstName: "Ada",
       companyName: "AutoFlow",
-      userId: "user-123",
     });
 
     expect(res.status).toBe(200);
@@ -232,16 +251,16 @@ describe("POST /api/billing/checkout", () => {
 describe("GET /api/billing/subscription", () => {
   beforeEach(() => subscriptionStore.clear());
 
+  it("returns 401 without auth", async () => {
+    const res = await request(app).get("/api/billing/subscription");
+    expect(res.status).toBe(401);
+  });
+
   it("returns null subscription for unknown user", async () => {
-    const res = await request(app).get("/api/billing/subscription?userId=unknown");
+    const res = await request(app).get("/api/billing/subscription").set(asAuth("unknown"));
     expect(res.status).toBe(200);
     expect(res.body.subscription).toBeNull();
     expect(res.body.accessLevel).toBe("none");
-  });
-
-  it("requires userId", async () => {
-    const res = await request(app).get("/api/billing/subscription");
-    expect(res.status).toBe(400);
   });
 
   it("returns subscription for known user", async () => {
@@ -262,7 +281,7 @@ describe("GET /api/billing/subscription", () => {
       updatedAt: "2026-04-01T00:00:00Z",
     });
 
-    const res = await request(app).get("/api/billing/subscription?userId=user-test");
+    const res = await request(app).get("/api/billing/subscription").set(asAuth("user-test"));
     expect(res.status).toBe(200);
     expect(res.body.subscription.tier).toBe("automate");
     expect(res.body.accessLevel).toBe("active");
@@ -270,13 +289,13 @@ describe("GET /api/billing/subscription", () => {
 });
 
 describe("POST /api/billing/subscription/cancel", () => {
-  it("rejects missing userId", async () => {
+  it("returns 401 without auth", async () => {
     const res = await request(app).post("/api/billing/subscription/cancel").send({});
-    expect(res.status).toBe(400);
+    expect(res.status).toBe(401);
   });
 
   it("returns 404 for unknown user", async () => {
-    const res = await request(app).post("/api/billing/subscription/cancel").send({ userId: "nope" });
+    const res = await request(app).post("/api/billing/subscription/cancel").set(asAuth("nope")).send({});
     expect(res.status).toBe(404);
   });
 
@@ -284,7 +303,7 @@ describe("POST /api/billing/subscription/cancel", () => {
     subscriptionStore.upsert({ ...baseSubscription, userId: "cancel-user", id: "sub-cancel" });
     stripeMock.subscriptions.update.mockResolvedValue({ status: "active" });
 
-    const res = await request(app).post("/api/billing/subscription/cancel").send({ userId: "cancel-user" });
+    const res = await request(app).post("/api/billing/subscription/cancel").set(asAuth("cancel-user")).send({});
     const updated = subscriptionStore.get("sub-cancel");
 
     expect(res.status).toBe(200);
@@ -301,18 +320,18 @@ describe("POST /api/billing/subscription/cancel", () => {
 });
 
 describe("POST /api/billing/subscription/change-tier", () => {
-  it("rejects missing userId", async () => {
+  it("returns 401 without auth", async () => {
     const res = await request(app).post("/api/billing/subscription/change-tier").send({ newTier: "automate" });
-    expect(res.status).toBe(400);
+    expect(res.status).toBe(401);
   });
 
   it("rejects invalid tier", async () => {
-    const res = await request(app).post("/api/billing/subscription/change-tier").send({ userId: "u1", newTier: "enterprise" });
+    const res = await request(app).post("/api/billing/subscription/change-tier").set(asAuth("u1")).send({ newTier: "enterprise" });
     expect(res.status).toBe(400);
   });
 
   it("returns 404 for unknown user", async () => {
-    const res = await request(app).post("/api/billing/subscription/change-tier").send({ userId: "nope", newTier: "automate" });
+    const res = await request(app).post("/api/billing/subscription/change-tier").set(asAuth("nope")).send({ newTier: "automate" });
     expect(res.status).toBe(404);
   });
 
@@ -326,7 +345,8 @@ describe("POST /api/billing/subscription/change-tier", () => {
 
     const res = await request(app)
       .post("/api/billing/subscription/change-tier")
-      .send({ userId: "upgrade-user", newTier: "automate" });
+      .set(asAuth("upgrade-user"))
+      .send({ newTier: "automate" });
     const updated = subscriptionStore.get("sub-upgrade");
 
     expect(res.status).toBe(200);
@@ -346,13 +366,13 @@ describe("POST /api/billing/subscription/change-tier", () => {
 });
 
 describe("POST /api/billing/subscription/reactivate", () => {
-  it("rejects missing userId", async () => {
+  it("returns 401 without auth", async () => {
     const res = await request(app).post("/api/billing/subscription/reactivate").send({});
-    expect(res.status).toBe(400);
+    expect(res.status).toBe(401);
   });
 
   it("returns 404 for unknown user", async () => {
-    const res = await request(app).post("/api/billing/subscription/reactivate").send({ userId: "nope" });
+    const res = await request(app).post("/api/billing/subscription/reactivate").set(asAuth("nope")).send({});
     expect(res.status).toBe(404);
   });
 
@@ -365,7 +385,7 @@ describe("POST /api/billing/subscription/reactivate", () => {
     });
     stripeMock.subscriptions.update.mockResolvedValue({ status: "active" });
 
-    const res = await request(app).post("/api/billing/subscription/reactivate").send({ userId: "reactivate-user" });
+    const res = await request(app).post("/api/billing/subscription/reactivate").set(asAuth("reactivate-user")).send({});
     const updated = subscriptionStore.get("sub-reactivate");
 
     expect(res.status).toBe(200);

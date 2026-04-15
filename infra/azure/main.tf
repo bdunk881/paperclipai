@@ -176,6 +176,24 @@ module "security" {
   tags                         = local.common_tags
 }
 
+# ── Entra External ID (CIAM) ─────────────────────────────────────────────────
+# Provisions the customer-facing identity tenant and SPA app registration.
+# Requires the deploying SP to have Contributor on the subscription and
+# Microsoft.AzureActiveDirectory resource provider registered.
+
+module "entra_ciam" {
+  source = "./modules/entra-ciam"
+
+  prefix                = var.prefix
+  environment           = var.environment
+  location              = var.location
+  resource_group_name   = azurerm_resource_group.main.name
+  ciam_tenant_subdomain = var.ciam_tenant_subdomain
+  spa_redirect_uris     = var.spa_redirect_uris
+  spa_logout_uris       = var.spa_logout_uris
+  tags                  = local.common_tags
+}
+
 # ── Locals ────────────────────────────────────────────────────────────────────
 
 locals {

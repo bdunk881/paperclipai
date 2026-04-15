@@ -65,7 +65,7 @@ jobs:
         image: postgres:16
         env:
           POSTGRES_USER: autoflow
-          POSTGRES_PASSWORD: autoflow_test
+          POSTGRES_PASSWORD: ${{ secrets.CI_POSTGRES_PASSWORD }}
           POSTGRES_DB: autoflow_test
         options: >-
           --health-cmd pg_isready
@@ -87,7 +87,7 @@ jobs:
       run:
         working-directory: backend
     env:
-      DATABASE_URL: postgresql://autoflow:autoflow_test@localhost:5432/autoflow_test
+      DATABASE_URL: postgresql://autoflow:${{ secrets.CI_POSTGRES_PASSWORD }}@localhost:5432/autoflow_test
       REDIS_URL: redis://localhost:6379
       ENV: test
     steps:

@@ -1,14 +1,18 @@
 import { loadSecretsFromKeyVault } from "./secrets/keyVaultSecrets";
-import app from "./app";
-import { WORKFLOW_TEMPLATES } from "./templates";
 
 const PORT = process.env.PORT || 3000;
 
 async function start() {
-  // Load secrets from Azure Key Vault before the server accepts traffic.
-  // In production this replaces all env-var secrets with vault-resolved values.
-  // Crashes fast if Key Vault is configured but unreachable.
+  // Load secrets from Azure Key Vault BEFORE importing ./app or any module
+  // that snapshots env at module-eval time (e.g. billing/stripeClient's
+  // PRICING_TIERS, llmConfig/llmConfigStore's ENCRYPTION_KEY). Crashes fast
+  // if Key Vault is configured but unreachable.
   await loadSecretsFromKeyVault();
+
+  // Dynamic imports — MUST run after loadSecretsFromKeyVault so that any
+  // module-eval-time reads of process.env see vault-injected values.
+  const { default: app } = await import("./app");
+  const { WORKFLOW_TEMPLATES } = await import("./templates");
 
   app.listen(PORT, () => {
     console.log(`AutoFlow API running on port ${PORT}`);

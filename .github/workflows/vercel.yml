@@ -37,6 +37,32 @@ jobs:
           VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
         run: |
           npx vercel pull --yes --environment=production --token=$VERCEL_TOKEN
-          URL=$(npx vercel deploy --prod --token=$VERCEL_TOKEN)
+          URL=$(npx vercel deploy --prod --token=$VERCEL_TOKEN | tail -n 1 | tr -d '\r')
           echo "url=$URL" >> $GITHUB_OUTPUT
           echo "Deployed to: $URL"
+
+      - name: Smoke test landing routes
+        env:
+          DEPLOY_URL: ${{ steps.deploy.outputs.url }}
+        run: |
+          set -euo pipefail
+
+          ROUTES=(
+            "/"
+            "/demo"
+            "/blog"
+            "/privacy"
+            "/terms"
+            "/signup"
+            "/robots.txt"
+            "/sitemap.xml"
+          )
+
+          for route in "${ROUTES[@]}"; do
+            status=$(curl -sS -o /dev/null -w "%{http_code}" "${DEPLOY_URL}${route}")
+            if [ "$status" != "200" ]; then
+              echo "::error::Route ${route} returned ${status} on ${DEPLOY_URL}"
+              exit 1
+            fi
+            echo "OK ${route} -> ${status}"
+          done

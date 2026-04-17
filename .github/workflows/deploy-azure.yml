@@ -20,6 +20,9 @@ env:
   ARM_CLIENT_ID: ${{ vars.ARM_CLIENT_ID }}
   ARM_TENANT_ID: ${{ vars.ARM_TENANT_ID }}
   ARM_SUBSCRIPTION_ID: ${{ vars.ARM_SUBSCRIPTION_ID }}
+  AZURE_ACR_NAME: ${{ vars.AZURE_ACR_NAME }}
+  AZURE_AKS_RESOURCE_GROUP: ${{ vars.AZURE_AKS_RESOURCE_GROUP }}
+  AZURE_AKS_CLUSTER_NAME: ${{ vars.AZURE_AKS_CLUSTER_NAME }}
 
 jobs:
   discover:
@@ -42,10 +45,54 @@ jobs:
       - name: Discover ACR and AKS
         id: discover
         run: |
-          ACR_NAME=$(az acr list --subscription "$ARM_SUBSCRIPTION_ID" --query "[0].name" -o tsv)
-          ACR_LOGIN=$(az acr list --subscription "$ARM_SUBSCRIPTION_ID" --query "[0].loginServer" -o tsv)
-          AKS_RG=$(az aks list --subscription "$ARM_SUBSCRIPTION_ID" --query "[0].resourceGroup" -o tsv)
-          AKS_NAME=$(az aks list --subscription "$ARM_SUBSCRIPTION_ID" --query "[0].name" -o tsv)
+          set -euo pipefail
+
+          if [ -n "${AZURE_ACR_NAME:-}" ]; then
+            ACR_NAME="$AZURE_ACR_NAME"
+            ACR_LOGIN=$(az acr show --subscription "$ARM_SUBSCRIPTION_ID" --name "$ACR_NAME" --query "loginServer" -o tsv)
+          else
+            ACR_COUNT=$(az acr list --subscription "$ARM_SUBSCRIPTION_ID" --query "length(@)" -o tsv)
+            if [ "$ACR_COUNT" -eq 0 ]; then
+              echo "::error::No Azure Container Registry found in subscription $ARM_SUBSCRIPTION_ID."
+              echo "::error::Create an ACR or set repository variable AZURE_ACR_NAME."
+              exit 1
+            fi
+            if [ "$ACR_COUNT" -gt 1 ]; then
+              echo "::error::Found $ACR_COUNT ACR instances; automatic selection is ambiguous."
+              echo "::error::Set repository variable AZURE_ACR_NAME to choose a registry explicitly."
+              exit 1
+            fi
+
+            ACR_NAME=$(az acr list --subscription "$ARM_SUBSCRIPTION_ID" --query "[0].name" -o tsv)
+            ACR_LOGIN=$(az acr list --subscription "$ARM_SUBSCRIPTION_ID" --query "[0].loginServer" -o tsv)
+          fi
+
+          if [ -n "${AZURE_AKS_RESOURCE_GROUP:-}" ] && [ -n "${AZURE_AKS_CLUSTER_NAME:-}" ]; then
+            AKS_RG="$AZURE_AKS_RESOURCE_GROUP"
+            AKS_NAME="$AZURE_AKS_CLUSTER_NAME"
+            az aks show --subscription "$ARM_SUBSCRIPTION_ID" --resource-group "$AKS_RG" --name "$AKS_NAME" --query "name" -o tsv >/dev/null
+          else
+            AKS_COUNT=$(az aks list --subscription "$ARM_SUBSCRIPTION_ID" --query "length(@)" -o tsv)
+            if [ "$AKS_COUNT" -eq 0 ]; then
+              echo "::error::No AKS cluster found in subscription $ARM_SUBSCRIPTION_ID."
+              echo "::error::Create an AKS cluster or set AZURE_AKS_RESOURCE_GROUP and AZURE_AKS_CLUSTER_NAME."
+              exit 1
+            fi
+            if [ "$AKS_COUNT" -gt 1 ]; then
+              echo "::error::Found $AKS_COUNT AKS clusters; automatic selection is ambiguous."
+              echo "::error::Set AZURE_AKS_RESOURCE_GROUP and AZURE_AKS_CLUSTER_NAME explicitly."
+              exit 1
+            fi
+
+            AKS_RG=$(az aks list --subscription "$ARM_SUBSCRIPTION_ID" --query "[0].resourceGroup" -o tsv)
+            AKS_NAME=$(az aks list --subscription "$ARM_SUBSCRIPTION_ID" --query "[0].name" -o tsv)
+          fi
+
+          if [ -z "${ACR_NAME:-}" ] || [ -z "${ACR_LOGIN:-}" ] || [ -z "${AKS_RG:-}" ] || [ -z "${AKS_NAME:-}" ]; then
+            echo "::error::Azure resource discovery produced empty output values."
+            echo "::error::Check ARM_SUBSCRIPTION_ID and role assignments for the OIDC principal."
+            exit 1
+          fi
 
           echo "acr_name=$ACR_NAME" >> "$GITHUB_OUTPUT"
           echo "acr_login_server=$ACR_LOGIN" >> "$GITHUB_OUTPUT"

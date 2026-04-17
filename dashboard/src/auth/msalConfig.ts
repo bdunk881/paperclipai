@@ -1,12 +1,12 @@
 import { Configuration, PopupRequest } from "@azure/msal-browser";
 
 // Entra External ID (CIAM) uses the ciamlogin.com authority endpoint.
-// Set these env vars in .env.local for dev and in Vercel for prod:
-//   VITE_AZURE_CIAM_CLIENT_ID        — CIAM app registration client ID from Azure Portal
-//   VITE_AZURE_CIAM_TENANT_SUBDOMAIN — Tenant subdomain (e.g. "myapp" → myapp.ciamlogin.com)
-// Optional override when tenant domain differs from "<subdomain>.onmicrosoft.com":
-//   VITE_AZURE_CIAM_TENANT_DOMAIN    — e.g. "contosoexternal.onmicrosoft.com"
+// Override via env vars in .env.local (dev) or Vercel (prod):
+//   VITE_AZURE_CIAM_CLIENT_ID        — CIAM app registration client ID
+//   VITE_AZURE_CIAM_TENANT_SUBDOMAIN — e.g. "autoflowciam" → autoflowciam.ciamlogin.com
+//   VITE_AZURE_CIAM_TENANT_DOMAIN    — optional, e.g. "autoflowciam.onmicrosoft.com"
 
+// autoflow-dashboard app registration (recreated 2026-04-17, ALT-1257)
 const DEFAULT_CIAM_CLIENT_ID = "2dfd3a08-277c-4893-b07d-eca5ae322310";
 const DEFAULT_CIAM_TENANT_SUBDOMAIN = "autoflowciam";
 const DEFAULT_CIAM_TENANT_DOMAIN = "autoflowciam.onmicrosoft.com";

@@ -7,7 +7,7 @@ import { Configuration, PopupRequest } from "@azure/msal-browser";
 // Optional override when tenant domain differs from "<subdomain>.onmicrosoft.com":
 //   VITE_AZURE_CIAM_TENANT_DOMAIN    — e.g. "contosoexternal.onmicrosoft.com"
 
-const DEFAULT_CIAM_CLIENT_ID = "f0c4b48e-9052-43d6-a3e6-c5c65ba18ad7";
+const DEFAULT_CIAM_CLIENT_ID = "2dfd3a08-277c-4893-b07d-eca5ae322310";
 const DEFAULT_CIAM_TENANT_SUBDOMAIN = "autoflowciam";
 const DEFAULT_CIAM_TENANT_DOMAIN = "autoflowciam.onmicrosoft.com";
 const EMPTY_CLIENT_ID = "00000000-0000-0000-0000-000000000000";

@@ -1,4 +1,4 @@
-name: Deploy to Azure (AKS)
+name: Deploy to Azure Container Apps
 
 on:
   push:
@@ -14,246 +14,122 @@ on:
 
 permissions:
   contents: read
-  id-token: write   # required for OIDC / azure/login
+  id-token: write
+  packages: write
 
 env:
-  ARM_CLIENT_ID: ${{ vars.ARM_CLIENT_ID }}
-  ARM_TENANT_ID: ${{ vars.ARM_TENANT_ID }}
-  ARM_SUBSCRIPTION_ID: ${{ vars.ARM_SUBSCRIPTION_ID }}
-  AZURE_ACR_NAME: ${{ vars.AZURE_ACR_NAME }}
-  AZURE_AKS_RESOURCE_GROUP: ${{ vars.AZURE_AKS_RESOURCE_GROUP }}
-  AZURE_AKS_CLUSTER_NAME: ${{ vars.AZURE_AKS_CLUSTER_NAME }}
+  AZURE_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID }}
+  AZURE_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
+  AZURE_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+  REGISTRY: ghcr.io
+  IMAGE_REPO: ghcr.io/${{ github.repository }}-backend
 
 jobs:
-  discover:
-    name: Discover Azure Resources
+  deploy:
+    name: Build and Deploy Backend Container App
     runs-on: ubuntu-latest
-    environment: production
-    outputs:
-      acr_login_server: ${{ steps.discover.outputs.acr_login_server }}
-      acr_name: ${{ steps.discover.outputs.acr_name }}
-      aks_resource_group: ${{ steps.discover.outputs.aks_resource_group }}
-      aks_cluster_name: ${{ steps.discover.outputs.aks_cluster_name }}
-    steps:
-      - name: Login to Azure (OIDC)
-        uses: azure/login@v2
-        with:
-          client-id: ${{ env.ARM_CLIENT_ID }}
-          tenant-id: ${{ env.ARM_TENANT_ID }}
-          subscription-id: ${{ env.ARM_SUBSCRIPTION_ID }}
 
-      - name: Discover ACR and AKS
-        id: discover
-        run: |
-          set -euo pipefail
-
-          if [ -n "${AZURE_ACR_NAME:-}" ]; then
-            ACR_NAME="$AZURE_ACR_NAME"
-            ACR_LOGIN=$(az acr show --subscription "$ARM_SUBSCRIPTION_ID" --name "$ACR_NAME" --query "loginServer" -o tsv)
-          else
-            ACR_COUNT=$(az acr list --subscription "$ARM_SUBSCRIPTION_ID" --query "length(@)" -o tsv)
-            if [ "$ACR_COUNT" -eq 0 ]; then
-              echo "::error::No Azure Container Registry found in subscription $ARM_SUBSCRIPTION_ID."
-              echo "::error::Create an ACR or set repository variable AZURE_ACR_NAME."
-              exit 1
-            fi
-            if [ "$ACR_COUNT" -gt 1 ]; then
-              echo "::error::Found $ACR_COUNT ACR instances; automatic selection is ambiguous."
-              echo "::error::Set repository variable AZURE_ACR_NAME to choose a registry explicitly."
-              exit 1
-            fi
-
-            ACR_NAME=$(az acr list --subscription "$ARM_SUBSCRIPTION_ID" --query "[0].name" -o tsv)
-            ACR_LOGIN=$(az acr list --subscription "$ARM_SUBSCRIPTION_ID" --query "[0].loginServer" -o tsv)
-          fi
-
-          if [ -n "${AZURE_AKS_RESOURCE_GROUP:-}" ] && [ -n "${AZURE_AKS_CLUSTER_NAME:-}" ]; then
-            AKS_RG="$AZURE_AKS_RESOURCE_GROUP"
-            AKS_NAME="$AZURE_AKS_CLUSTER_NAME"
-            az aks show --subscription "$ARM_SUBSCRIPTION_ID" --resource-group "$AKS_RG" --name "$AKS_NAME" --query "name" -o tsv >/dev/null
-          else
-            AKS_COUNT=$(az aks list --subscription "$ARM_SUBSCRIPTION_ID" --query "length(@)" -o tsv)
-            if [ "$AKS_COUNT" -eq 0 ]; then
-              echo "::error::No AKS cluster found in subscription $ARM_SUBSCRIPTION_ID."
-              echo "::error::Create an AKS cluster or set AZURE_AKS_RESOURCE_GROUP and AZURE_AKS_CLUSTER_NAME."
-              exit 1
-            fi
-            if [ "$AKS_COUNT" -gt 1 ]; then
-              echo "::error::Found $AKS_COUNT AKS clusters; automatic selection is ambiguous."
-              echo "::error::Set AZURE_AKS_RESOURCE_GROUP and AZURE_AKS_CLUSTER_NAME explicitly."
-              exit 1
-            fi
-
-            AKS_RG=$(az aks list --subscription "$ARM_SUBSCRIPTION_ID" --query "[0].resourceGroup" -o tsv)
-            AKS_NAME=$(az aks list --subscription "$ARM_SUBSCRIPTION_ID" --query "[0].name" -o tsv)
-          fi
-
-          if [ -z "${ACR_NAME:-}" ] || [ -z "${ACR_LOGIN:-}" ] || [ -z "${AKS_RG:-}" ] || [ -z "${AKS_NAME:-}" ]; then
-            echo "::error::Azure resource discovery produced empty output values."
-            echo "::error::Check ARM_SUBSCRIPTION_ID and role assignments for the OIDC principal."
-            exit 1
-          fi
-
-          echo "acr_name=$ACR_NAME" >> "$GITHUB_OUTPUT"
-          echo "acr_login_server=$ACR_LOGIN" >> "$GITHUB_OUTPUT"
-          echo "aks_resource_group=$AKS_RG" >> "$GITHUB_OUTPUT"
-          echo "aks_cluster_name=$AKS_NAME" >> "$GITHUB_OUTPUT"
-
-          echo "ACR: $ACR_NAME ($ACR_LOGIN)"
-          echo "AKS: $AKS_NAME in $AKS_RG"
-
-  build-and-push:
-    name: Build & Push Images to ACR
-    runs-on: ubuntu-latest
-    needs: discover
-    environment: production
-    strategy:
-      matrix:
-        service: [backend, frontend]
-    outputs:
-      image_tag: ${{ steps.meta.outputs.version }}
     steps:
       - uses: actions/checkout@v4
-
-      - name: Login to Azure (OIDC)
-        uses: azure/login@v2
-        with:
-          client-id: ${{ env.ARM_CLIENT_ID }}
-          tenant-id: ${{ env.ARM_TENANT_ID }}
-          subscription-id: ${{ env.ARM_SUBSCRIPTION_ID }}
-
-      - name: Login to ACR
-        run: az acr login --name ${{ needs.discover.outputs.acr_name }}
 
       - uses: docker/setup-buildx-action@v3
 
-      - name: Docker metadata (${{ matrix.service }})
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Docker metadata
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ${{ needs.discover.outputs.acr_login_server }}/autoflow-${{ matrix.service }}
+          images: ${{ env.IMAGE_REPO }}
           tags: |
             type=sha,format=long
-            type=ref,event=branch
             type=raw,value=latest,enable=${{ github.ref == 'refs/heads/master' }}
 
-      - name: Build and push ${{ matrix.service }}
+      - name: Build and push backend image
         uses: docker/build-push-action@v5
         with:
           context: .
-          file: docker/${{ matrix.service }}/Dockerfile
+          file: docker/backend/Dockerfile
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha,scope=${{ matrix.service }}
-          cache-to: type=gha,mode=max,scope=${{ matrix.service }}
+          cache-from: type=gha,scope=backend
+          cache-to: type=gha,mode=max,scope=backend
           build-args: |
             BUILD_SHA=${{ github.sha }}
-            BUILD_DATE=${{ github.event.head_commit.timestamp }}
+            BUILD_DATE=${{ github.event.head_commit.timestamp || github.run_id }}
 
-  deploy-staging:
-    name: Deploy to Staging
-    runs-on: ubuntu-latest
-    needs: [discover, build-and-push]
-    environment:
-      name: staging
-      url: https://staging.helloautoflow.com
-    steps:
-      - uses: actions/checkout@v4
+      - name: Resolve deploy target
+        id: target
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            DEPLOY_ENV="${{ github.event.inputs.environment }}"
+          else
+            DEPLOY_ENV="staging"
+          fi
+
+          if [ "$DEPLOY_ENV" = "production" ]; then
+            RG_NAME="rg-autoflow-production"
+            APP_NAME="ca-autoflow-production-backend"
+          else
+            RG_NAME="rg-autoflow-staging"
+            APP_NAME="ca-autoflow-staging-backend"
+          fi
+
+          IMAGE_TAG="${{ env.IMAGE_REPO }}:sha-${{ github.sha }}"
+
+          echo "deploy_env=$DEPLOY_ENV" >> "$GITHUB_OUTPUT"
+          echo "resource_group=$RG_NAME" >> "$GITHUB_OUTPUT"
+          echo "container_app=$APP_NAME" >> "$GITHUB_OUTPUT"
+          echo "image_tag=$IMAGE_TAG" >> "$GITHUB_OUTPUT"
 
       - name: Login to Azure (OIDC)
         uses: azure/login@v2
         with:
-          client-id: ${{ env.ARM_CLIENT_ID }}
-          tenant-id: ${{ env.ARM_TENANT_ID }}
-          subscription-id: ${{ env.ARM_SUBSCRIPTION_ID }}
+          client-id: ${{ env.AZURE_CLIENT_ID }}
+          tenant-id: ${{ env.AZURE_TENANT_ID }}
+          subscription-id: ${{ env.AZURE_SUBSCRIPTION_ID }}
 
-      - name: Set AKS context
-        uses: azure/aks-set-context@v3
-        with:
-          resource-group: ${{ needs.discover.outputs.aks_resource_group }}
-          cluster-name: ${{ needs.discover.outputs.aks_cluster_name }}
-          subscription: ${{ env.ARM_SUBSCRIPTION_ID }}
-
-      - name: Deploy backend to staging AKS
+      - name: Deploy backend to Azure Container Apps
         run: |
-          IMAGE="${{ needs.discover.outputs.acr_login_server }}/autoflow-backend:sha-${{ github.sha }}"
-          kubectl set image deployment/backend backend="${IMAGE}" \
-            --namespace autoflow-staging
-          kubectl rollout status deployment/backend --namespace autoflow-staging --timeout=5m
+          set -euo pipefail
+          az containerapp update \
+            --name "${{ steps.target.outputs.container_app }}" \
+            --resource-group "${{ steps.target.outputs.resource_group }}" \
+            --image "${{ steps.target.outputs.image_tag }}"
 
-      - name: Deploy frontend to staging AKS
+      - name: Smoke test backend
         run: |
-          IMAGE="${{ needs.discover.outputs.acr_login_server }}/autoflow-frontend:sha-${{ github.sha }}"
-          kubectl set image deployment/frontend frontend="${IMAGE}" \
-            --namespace autoflow-staging
-          kubectl rollout status deployment/frontend --namespace autoflow-staging --timeout=5m
+          set -euo pipefail
+          FQDN=$(az containerapp show \
+            --name "${{ steps.target.outputs.container_app }}" \
+            --resource-group "${{ steps.target.outputs.resource_group }}" \
+            --query 'properties.configuration.ingress.fqdn' \
+            -o tsv)
 
-      - name: Smoke test staging
-        run: |
-          sleep 15
+          if [ -z "${FQDN:-}" ]; then
+            echo "Container App FQDN not found"
+            exit 1
+          fi
+
+          URL="https://${FQDN}/health"
+          echo "Health URL: $URL"
+
           for i in $(seq 1 10); do
-            STATUS=$(curl -s -o /dev/null -w "%{http_code}" https://staging.helloautoflow.com/health)
+            STATUS=$(curl -s -o /dev/null -w "%{http_code}" "$URL")
             if [ "$STATUS" = "200" ]; then
-              echo "Staging health check passed (attempt $i)"
+              echo "Health check passed (attempt $i)"
               exit 0
             fi
             echo "Attempt $i: got $STATUS, retrying in 15s..."
             sleep 15
           done
-          echo "Staging health check failed after 10 attempts"
-          exit 1
 
-  deploy-production:
-    name: Deploy to Production
-    runs-on: ubuntu-latest
-    needs: [discover, deploy-staging]
-    environment:
-      name: production
-      url: https://helloautoflow.com
-    # GitHub environment protection rules enforce the manual approval gate
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Login to Azure (OIDC)
-        uses: azure/login@v2
-        with:
-          client-id: ${{ env.ARM_CLIENT_ID }}
-          tenant-id: ${{ env.ARM_TENANT_ID }}
-          subscription-id: ${{ env.ARM_SUBSCRIPTION_ID }}
-
-      - name: Set AKS context
-        uses: azure/aks-set-context@v3
-        with:
-          resource-group: ${{ needs.discover.outputs.aks_resource_group }}
-          cluster-name: ${{ needs.discover.outputs.aks_cluster_name }}
-          subscription: ${{ env.ARM_SUBSCRIPTION_ID }}
-
-      - name: Deploy backend to production AKS
-        run: |
-          IMAGE="${{ needs.discover.outputs.acr_login_server }}/autoflow-backend:sha-${{ github.sha }}"
-          kubectl set image deployment/backend backend="${IMAGE}" \
-            --namespace autoflow-production
-          kubectl rollout status deployment/backend --namespace autoflow-production --timeout=5m
-
-      - name: Deploy frontend to production AKS
-        run: |
-          IMAGE="${{ needs.discover.outputs.acr_login_server }}/autoflow-frontend:sha-${{ github.sha }}"
-          kubectl set image deployment/frontend frontend="${IMAGE}" \
-            --namespace autoflow-production
-          kubectl rollout status deployment/frontend --namespace autoflow-production --timeout=5m
-
-      - name: Verify production health
-        run: |
-          sleep 15
-          for i in $(seq 1 10); do
-            STATUS=$(curl -s -o /dev/null -w "%{http_code}" https://helloautoflow.com/health)
-            if [ "$STATUS" = "200" ]; then
-              echo "Production health check passed (attempt $i)"
-              exit 0
-            fi
-            echo "Attempt $i: got $STATUS, retrying in 15s..."
-            sleep 15
-          done
-          echo "Production health check failed after 10 attempts"
+          echo "Health check failed after 10 attempts"
           exit 1

@@ -1,4 +1,8 @@
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { Loader2 } from "lucide-react";
+import { useAuth } from "../context/AuthContext";
+import { ApiError, apiGet, apiPatch } from "../api/settingsClient";
+import Toast from "../components/Toast";
 
 interface NotificationToggle {
   id: string;
@@ -30,15 +34,61 @@ const NOTIFICATION_OPTIONS: NotificationToggle[] = [
 ];
 
 export default function NotificationsSettings() {
+  const { user } = useAuth();
   const [toggles, setToggles] = useState<Record<string, boolean>>({
     run_completed: true,
     run_failed: true,
     weekly_digest: false,
     product_updates: false,
   });
+  const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [saved, setSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [toast, setToast] = useState<{ variant: "success" | "error"; message: string } | null>(null);
+
+  const fallbackStorageKey = useMemo(
+    () => `autoflow.notification-settings:${user?.id ?? "anonymous"}`,
+    [user?.id]
+  );
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadSettings() {
+      setLoading(true);
+      setError(null);
+      try {
+        const data = await apiGet<{ notifications?: Record<string, boolean> }>(
+          "/api/user/notifications",
+          user
+        );
+        if (cancelled) return;
+        if (data.notifications) setToggles((prev) => ({ ...prev, ...data.notifications }));
+      } catch (e) {
+        if (cancelled) return;
+        if (e instanceof ApiError && (e.status === 404 || e.status === 501)) {
+          const raw = localStorage.getItem(fallbackStorageKey);
+          const fallback = raw ? (JSON.parse(raw) as Record<string, boolean>) : null;
+          if (fallback) setToggles((prev) => ({ ...prev, ...fallback }));
+          return;
+        }
+        setError(e instanceof Error ? e.message : "Failed to load notification preferences.");
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    }
+
+    void loadSettings();
+    return () => {
+      cancelled = true;
+    };
+  }, [fallbackStorageKey, user]);
+
+  useEffect(() => {
+    if (!toast) return;
+    const timer = window.setTimeout(() => setToast(null), 3000);
+    return () => window.clearTimeout(timer);
+  }, [toast]);
 
   function handleToggle(id: string) {
     setToggles((prev) => ({ ...prev, [id]: !prev[id] }));
@@ -47,20 +97,42 @@ export default function NotificationsSettings() {
   async function handleSave() {
     setSaving(true);
     setError(null);
-    setSaved(false);
     try {
-      await new Promise((res) => setTimeout(res, 600));
-      setSaved(true);
-      setTimeout(() => setSaved(false), 3000);
-    } catch {
-      setError("Failed to save preferences. Please try again.");
+      await apiPatch("/api/user/notifications", { notifications: toggles }, user);
+      setToast({ variant: "success", message: "Preferences saved." });
+    } catch (e) {
+      if (e instanceof ApiError && (e.status === 404 || e.status === 501)) {
+        localStorage.setItem(fallbackStorageKey, JSON.stringify(toggles));
+        setToast({
+          variant: "success",
+          message: "Preferences saved locally while the backend endpoint is pending.",
+        });
+      } else {
+        setError("Failed to save preferences. Please try again.");
+        setToast({
+          variant: "error",
+          message: e instanceof Error ? e.message : "Failed to save preferences.",
+        });
+      }
     } finally {
       setSaving(false);
     }
   }
 
+  if (loading) {
+    return (
+      <div className="p-8 max-w-4xl">
+        <div className="flex items-center gap-2 text-sm text-gray-500">
+          <Loader2 size={16} className="animate-spin" />
+          Loading notification settings...
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="p-8 max-w-4xl">
+      {toast && <Toast variant={toast.variant} message={toast.message} />}
       <div className="mb-8">
         <h1 className="text-2xl font-bold text-gray-900">Notifications</h1>
         <p className="text-gray-500 mt-1">Choose when and how you get notified.</p>
@@ -75,12 +147,6 @@ export default function NotificationsSettings() {
             {error}
           </div>
         )}
-        {saved && (
-          <div className="mb-4 px-3 py-2 rounded-lg bg-green-50 border border-green-200 text-sm text-green-700">
-            Preferences saved.
-          </div>
-        )}
-
         <div className="divide-y divide-gray-100">
           {NOTIFICATION_OPTIONS.map((option) => (
             <div key={option.id} className="flex items-center justify-between py-4 first:pt-0">

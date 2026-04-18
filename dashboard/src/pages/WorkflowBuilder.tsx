@@ -23,10 +23,13 @@ import {
   UploadCloud,
   CheckCircle2,
   AlertCircle,
+  CircleHelp,
 } from "lucide-react";
-import { getTemplate, listTemplates, startRun, startRunWithFile, listLLMConfigs, generateWorkflow, type TemplateSummary, type LLMConfig } from "../api/client";
+import { getTemplate, listTemplates, startRun, startRunWithFile, listLLMConfigs, generateWorkflow, createTemplate, type TemplateSummary, type LLMConfig } from "../api/client";
 import type { WorkflowStep, StepKind, WorkflowTemplate } from "../types/workflow";
 import clsx from "clsx";
+import { ErrorState, LoadingState } from "../components/UiStates";
+import { Tooltip } from "../components/Tooltip";
 
 const KIND_META: Record<
   StepKind,
@@ -113,28 +116,40 @@ export default function WorkflowBuilder() {
   const [template, setTemplate] = useState<WorkflowTemplate>(BLANK_TEMPLATE);
   const [loading, setLoading] = useState(!!templateId);
   const [allTemplates, setAllTemplates] = useState<TemplateSummary[]>([]);
+  const [templatesError, setTemplatesError] = useState<string | null>(null);
+  const [templateLoadError, setTemplateLoadError] = useState<string | null>(null);
   const [selectedStepId, setSelectedStepId] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
   const [runError, setRunError] = useState<string | null>(null);
   const [llmConfigs, setLlmConfigs] = useState<LLMConfig[]>([]);
   const [llmConfigsLoading, setLlmConfigsLoading] = useState(false);
   const [llmConfigsError, setLlmConfigsError] = useState<string | null>(null);
   const [showNLModal, setShowNLModal] = useState(false);
   const [showFileUploadModal, setShowFileUploadModal] = useState(false);
+  const [showHelp, setShowHelp] = useState(false);
 
   const hasFileTrigger = template.steps.some((s) => s.kind === "file_trigger");
   const fileTriggerStep = template.steps.find((s) => s.kind === "file_trigger");
 
   useEffect(() => {
-    listTemplates().then(setAllTemplates).catch(console.error);
+    listTemplates()
+      .then(setAllTemplates)
+      .catch((e) => setTemplatesError(e instanceof Error ? e.message : "Failed to load templates"));
   }, []);
 
   useEffect(() => {
     if (!templateId) return;
     setLoading(true);
+    setTemplateLoadError(null);
     getTemplate(templateId)
       .then(setTemplate)
-      .catch((e) => console.error("Failed to load template:", e))
+      .catch((e) => {
+        setTemplateLoadError(
+          e instanceof Error ? e.message : "Failed to load selected template"
+        );
+      })
       .finally(() => setLoading(false));
   }, [templateId]);
 
@@ -186,10 +201,31 @@ export default function WorkflowBuilder() {
     setTemplate((t) => ({ ...t, steps: arr }));
   }
 
-  function handleSave() {
-    // TODO: POST /api/workflows
-    setSaved(true);
-    setTimeout(() => setSaved(false), 2000);
+  async function handleSave() {
+    setSaveError(null);
+    setSaving(true);
+    setSaved(false);
+    try {
+      const nextTemplate = await createTemplate({
+        ...template,
+        name: template.name.trim() || "Untitled Workflow",
+        description: template.description ?? "",
+        version: template.version || "1.0.0",
+        category: template.category || "custom",
+        configFields: template.configFields ?? [],
+        steps: template.steps ?? [],
+        sampleInput: template.sampleInput ?? {},
+        expectedOutput: template.expectedOutput ?? {},
+      });
+      setTemplate(nextTemplate);
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2000);
+      navigate(`/builder/${nextTemplate.id}`, { replace: true });
+    } catch (e) {
+      setSaveError(e instanceof Error ? e.message : "Failed to save workflow");
+    } finally {
+      setSaving(false);
+    }
   }
 
   async function handleRun() {
@@ -208,8 +244,20 @@ export default function WorkflowBuilder() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-full text-gray-400 text-sm">
-        Loading template…
+      <div className="p-8">
+        <LoadingState label="Loading workflow template..." />
+      </div>
+    );
+  }
+
+  if (templateLoadError) {
+    return (
+      <div className="p-8">
+        <ErrorState
+          title="Template unavailable"
+          message={templateLoadError}
+          onRetry={() => navigate("/builder")}
+        />
       </div>
     );
   }
@@ -221,6 +269,16 @@ export default function WorkflowBuilder() {
         {runError && (
           <div className="px-6 py-2 bg-red-50 border-b border-red-200 text-sm text-red-700">
             {runError}
+          </div>
+        )}
+        {templatesError && (
+          <div className="px-6 py-2 bg-amber-50 border-b border-amber-200 text-sm text-amber-800">
+            {templatesError}
+          </div>
+        )}
+        {saveError && (
+          <div className="px-6 py-2 bg-red-50 border-b border-red-200 text-sm text-red-700">
+            {saveError}
           </div>
         )}
         {/* Header */}
@@ -236,6 +294,15 @@ export default function WorkflowBuilder() {
             </span>
           </div>
           <div className="flex items-center gap-2">
+            <Tooltip content="Open setup guidance and best practices for this page">
+              <button
+                onClick={() => setShowHelp(true)}
+                className="flex items-center gap-2 px-3.5 py-2 text-sm font-medium rounded-lg border border-gray-300 text-gray-700 bg-white hover:bg-gray-50 transition"
+              >
+                <CircleHelp size={15} />
+                Guidance
+              </button>
+            </Tooltip>
             <button
               onClick={() => setShowNLModal(true)}
               className="flex items-center gap-2 px-3.5 py-2 text-sm font-medium rounded-lg border border-purple-300 text-purple-700 bg-purple-50 hover:bg-purple-100 transition"
@@ -244,16 +311,17 @@ export default function WorkflowBuilder() {
               Generate with AI
             </button>
             <button
-              onClick={handleSave}
+              onClick={() => void handleSave()}
+              disabled={saving}
               className={clsx(
-                "flex items-center gap-2 px-3.5 py-2 text-sm font-medium rounded-lg border transition",
+                "flex items-center gap-2 px-3.5 py-2 text-sm font-medium rounded-lg border transition disabled:opacity-50",
                 saved
                   ? "bg-green-50 border-green-300 text-green-700"
                   : "border-gray-300 text-gray-700 hover:bg-gray-50"
               )}
             >
-              <Save size={15} />
-              {saved ? "Saved!" : "Save"}
+              {saving ? <Loader size={15} className="animate-spin" /> : <Save size={15} />}
+              {saving ? "Saving..." : saved ? "Saved!" : "Save"}
             </button>
             <button
               onClick={handleRun}
@@ -612,6 +680,76 @@ export default function WorkflowBuilder() {
           }}
         />
       )}
+
+      {showHelp && <WorkflowBuilderHelpPanel onClose={() => setShowHelp(false)} />}
+    </div>
+  );
+}
+
+function WorkflowBuilderHelpPanel({ onClose }: { onClose: () => void }) {
+  useEffect(() => {
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") onClose();
+    }
+
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    window.addEventListener("keydown", onKeyDown);
+
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener("keydown", onKeyDown);
+    };
+  }, [onClose]);
+
+  return (
+    <div className="fixed inset-0 z-50 flex justify-end bg-gray-950/35">
+      <button className="flex-1" onClick={onClose} aria-label="Close guidance" />
+      <aside
+        role="dialog"
+        aria-modal="true"
+        aria-label="Workflow guidance"
+        className="w-full max-w-md overflow-y-auto border-l border-gray-200 bg-white p-6 shadow-xl"
+      >
+        <div className="mb-5 flex items-start justify-between gap-3">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-wide text-blue-600">Workflow help</p>
+            <h2 className="mt-1 text-lg font-semibold text-gray-900">Build and launch confidently</h2>
+          </div>
+          <button
+            onClick={onClose}
+            className="rounded-md p-1.5 text-gray-500 transition hover:bg-gray-100 hover:text-gray-800"
+            aria-label="Close guidance panel"
+          >
+            <X size={16} />
+          </button>
+        </div>
+
+        <div className="space-y-4 text-sm text-gray-700">
+          <section className="rounded-lg border border-gray-200 bg-gray-50 p-4">
+            <h3 className="font-medium text-gray-900">Suggested flow</h3>
+            <p className="mt-1">Trigger -&gt; LLM -&gt; Condition/Transform -&gt; Action -&gt; Output.</p>
+          </section>
+
+          <section className="rounded-lg border border-gray-200 p-4">
+            <h3 className="font-medium text-gray-900">High-impact tips</h3>
+            <ul className="mt-2 space-y-1 text-gray-600">
+              <li>Use clear step names so run logs are easy to debug.</li>
+              <li>Define input/output keys on each step to avoid brittle data passing.</li>
+              <li>Connect an LLM provider before testing any LLM step.</li>
+            </ul>
+          </section>
+
+          <section className="rounded-lg border border-gray-200 p-4">
+            <h3 className="font-medium text-gray-900">When runs fail</h3>
+            <ul className="mt-2 space-y-1 text-gray-600">
+              <li>Validate the MCP URL and tool name for MCP steps.</li>
+              <li>Check approval timeout for long-running approvals.</li>
+              <li>Run from a smaller sample payload first, then scale.</li>
+            </ul>
+          </section>
+        </div>
+      </aside>
     </div>
   );
 }
@@ -886,6 +1024,8 @@ function StepNode({
           <button
             onClick={(e) => { e.stopPropagation(); onMoveUp(); }}
             className="p-1 rounded hover:bg-gray-100 text-gray-400 hover:text-gray-700"
+            title="Move step up"
+            aria-label="Move step up"
           >
             <ChevronUp size={14} />
           </button>
@@ -894,6 +1034,8 @@ function StepNode({
           <button
             onClick={(e) => { e.stopPropagation(); onMoveDown(); }}
             className="p-1 rounded hover:bg-gray-100 text-gray-400 hover:text-gray-700"
+            title="Move step down"
+            aria-label="Move step down"
           >
             <ChevronDown size={14} />
           </button>
@@ -901,6 +1043,8 @@ function StepNode({
         <button
           onClick={(e) => { e.stopPropagation(); onRemove(); }}
           className="p-1 rounded hover:bg-red-50 text-gray-400 hover:text-red-500"
+          title="Delete step"
+          aria-label="Delete step"
         >
           <Trash2 size={14} />
         </button>

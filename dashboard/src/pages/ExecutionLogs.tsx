@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   CheckCircle,
   XCircle,
@@ -11,7 +11,11 @@ import {
   Brain,
   Lightbulb,
   Radio,
+  RefreshCw,
 } from "lucide-react";
+import { listRuns } from "../api/client";
+import type { StepResult, WorkflowRun } from "../types/workflow";
+import { EmptyState, ErrorState, LoadingState } from "../components/UiStates";
 
 interface StepLog {
   stepId: string;
@@ -19,7 +23,7 @@ interface StepLog {
   kind: string;
   status: "success" | "failure" | "skipped" | "running";
   durationMs: number;
-  startedAt: string;
+  startedAt?: string;
   input: Record<string, unknown>;
   output: Record<string, unknown>;
   error?: string;
@@ -35,128 +39,7 @@ interface RunLog {
   steps: StepLog[];
 }
 
-const MOCK_RUNS: RunLog[] = [
-  {
-    id: "run-abc123",
-    workflowName: "Customer Support Pipeline",
-    status: "failed",
-    startedAt: "2026-04-01T20:00:00Z",
-    durationMs: 4320,
-    steps: [
-      {
-        stepId: "step-1",
-        stepName: "Classify Intent",
-        kind: "llm",
-        status: "success",
-        durationMs: 850,
-        startedAt: "2026-04-01T20:00:00Z",
-        input: { message: "My order hasn't arrived yet" },
-        output: { intent: "shipping_inquiry", confidence: 0.97 },
-      },
-      {
-        stepId: "step-2",
-        stepName: "Fetch Order Status",
-        kind: "action",
-        status: "success",
-        durationMs: 210,
-        startedAt: "2026-04-01T20:00:00.850Z",
-        input: { intent: "shipping_inquiry", customerId: "cust-9988" },
-        output: { orderId: "ORD-442", status: "in_transit", eta: "2026-04-03" },
-      },
-      {
-        stepId: "step-3",
-        stepName: "Generate Response",
-        kind: "llm",
-        status: "failure",
-        durationMs: 3260,
-        startedAt: "2026-04-01T20:00:01.060Z",
-        input: { orderId: "ORD-442", status: "in_transit", eta: "2026-04-03" },
-        output: {},
-        error: "LLM provider timeout: request exceeded 3000ms limit",
-        aiExplanation:
-          "The LLM step timed out because the provider response took longer than the configured 3-second threshold. This is likely due to a momentary spike in provider latency. Consider increasing the timeout setting on this step to 5000ms, or adding a retry with exponential backoff.",
-      },
-    ],
-  },
-  {
-    id: "run-def456",
-    workflowName: "Invoice Processing",
-    status: "completed",
-    startedAt: "2026-04-01T18:30:00Z",
-    durationMs: 1890,
-    steps: [
-      {
-        stepId: "step-a",
-        stepName: "Parse Invoice",
-        kind: "transform",
-        status: "success",
-        durationMs: 120,
-        startedAt: "2026-04-01T18:30:00Z",
-        input: { fileUrl: "s3://invoices/inv-2890.pdf" },
-        output: { vendor: "Acme Supplies", amount: 12500, currency: "USD" },
-      },
-      {
-        stepId: "step-b",
-        stepName: "Validate Amount",
-        kind: "condition",
-        status: "success",
-        durationMs: 20,
-        startedAt: "2026-04-01T18:30:00.120Z",
-        input: { amount: 12500 },
-        output: { requiresApproval: true },
-      },
-      {
-        stepId: "step-c",
-        stepName: "Request Approval",
-        kind: "approval",
-        status: "skipped",
-        durationMs: 0,
-        startedAt: "2026-04-01T18:30:00.140Z",
-        input: { requiresApproval: true },
-        output: { skipped: true, reason: "Below auto-approve threshold override" },
-      },
-      {
-        stepId: "step-d",
-        stepName: "Post to Accounting",
-        kind: "action",
-        status: "success",
-        durationMs: 1750,
-        startedAt: "2026-04-01T18:30:00.140Z",
-        input: { vendor: "Acme Supplies", amount: 12500 },
-        output: { journalEntryId: "JE-8821", posted: true },
-      },
-    ],
-  },
-  {
-    id: "run-live",
-    workflowName: "Research Assistant",
-    status: "running",
-    startedAt: new Date(Date.now() - 5000).toISOString(),
-    durationMs: 0,
-    steps: [
-      {
-        stepId: "step-x",
-        stepName: "Fetch Sources",
-        kind: "mcp",
-        status: "success",
-        durationMs: 430,
-        startedAt: new Date(Date.now() - 5000).toISOString(),
-        input: { query: "AI agent frameworks 2026" },
-        output: { sources: 12, topResult: "arxiv.org/abs/2601.xxxxx" },
-      },
-      {
-        stepId: "step-y",
-        stepName: "Synthesize Report",
-        kind: "llm",
-        status: "running",
-        durationMs: 0,
-        startedAt: new Date(Date.now() - 4500).toISOString(),
-        input: { sources: 12 },
-        output: {},
-      },
-    ],
-  },
-];
+const POLL_INTERVAL_MS = 3000;
 
 const STATUS_ICON: Record<string, React.ReactNode> = {
   success: <CheckCircle size={15} className="text-green-500" />,
@@ -172,7 +55,7 @@ const RUN_STATUS_CONFIG = {
 };
 
 function formatDuration(ms: number): string {
-  if (ms === 0) return "—";
+  if (ms <= 0) return "—";
   if (ms < 1000) return `${ms}ms`;
   return `${(ms / 1000).toFixed(2)}s`;
 }
@@ -184,6 +67,46 @@ function timeAgo(iso: string): string {
   if (mins < 60) return `${mins}m ago`;
   const hrs = Math.floor(mins / 60);
   return `${hrs}h ago`;
+}
+
+function mapStepKind(step: StepResult): string {
+  if (step.stepId.includes("approval")) return "approval";
+  if (step.stepId.includes("mcp")) return "mcp";
+  return "step";
+}
+
+function mapRunToLog(run: WorkflowRun): RunLog {
+  const status: RunLog["status"] =
+    run.status === "failed"
+      ? "failed"
+      : run.status === "running" || run.status === "pending"
+        ? "running"
+        : "completed";
+
+  const durationMs = run.completedAt
+    ? Math.max(new Date(run.completedAt).getTime() - new Date(run.startedAt).getTime(), 0)
+    : 0;
+
+  return {
+    id: run.id,
+    workflowName: run.templateName,
+    status,
+    startedAt: run.startedAt,
+    durationMs,
+    steps: run.stepResults.map((step) => ({
+      stepId: step.stepId,
+      stepName: step.stepName,
+      kind: mapStepKind(step),
+      status: step.status,
+      durationMs: step.durationMs,
+      input: {},
+      output: step.output ?? {},
+      error: step.error,
+      aiExplanation: step.error
+        ? "Inspect this step output and provider configuration to determine root cause."
+        : undefined,
+    })),
+  };
 }
 
 function StepRow({ step }: { step: StepLog }) {
@@ -220,7 +143,10 @@ function StepRow({ step }: { step: StepLog }) {
                 <div className="mt-3">
                   {!showExplanation ? (
                     <button
-                      onClick={(e) => { e.stopPropagation(); setShowExplanation(true); }}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setShowExplanation(true);
+                      }}
                       className="flex items-center gap-1.5 text-xs text-blue-600 hover:text-blue-700 font-medium"
                     >
                       <Lightbulb size={12} />
@@ -270,15 +196,11 @@ function RunCard({ run }: { run: RunLog }) {
         onClick={() => setExpanded((e) => !e)}
         className="flex items-center gap-4 px-6 py-4 cursor-pointer hover:bg-gray-50 transition"
       >
-        {run.status === "running" && (
-          <Radio size={15} className="text-blue-500 animate-pulse" />
-        )}
+        {run.status === "running" && <Radio size={15} className="text-blue-500 animate-pulse" />}
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
             <span className="font-semibold text-gray-900 text-sm">{run.workflowName}</span>
-            <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${cfg.color}`}>
-              {cfg.label}
-            </span>
+            <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${cfg.color}`}>{cfg.label}</span>
           </div>
           <div className="flex items-center gap-3 mt-0.5 text-xs text-gray-400">
             <span className="font-mono">{run.id}</span>
@@ -323,30 +245,94 @@ function RunCard({ run }: { run: RunLog }) {
 
 export default function ExecutionLogs() {
   const [filter, setFilter] = useState<"all" | "failed" | "running">("all");
+  const [runs, setRuns] = useState<WorkflowRun[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [lastRefreshed, setLastRefreshed] = useState<Date>(new Date());
 
-  const filtered = MOCK_RUNS.filter((r) => {
-    if (filter === "failed") return r.status === "failed";
-    if (filter === "running") return r.status === "running";
-    return true;
-  });
+  async function fetchRuns(silent = false) {
+    if (!silent) setLoading(true);
+    setLoadError(null);
+    try {
+      const fetched = await listRuns();
+      const sorted = [...fetched].sort(
+        (a, b) => new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime()
+      );
+      setRuns(sorted);
+      setLastRefreshed(new Date());
+    } catch (e) {
+      setLoadError(e instanceof Error ? e.message : "Failed to load execution logs");
+    } finally {
+      if (!silent) setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    void fetchRuns();
+    const interval = window.setInterval(() => {
+      void fetchRuns(true);
+    }, POLL_INTERVAL_MS);
+    return () => window.clearInterval(interval);
+  }, []);
+
+  const filtered = useMemo(() => {
+    const normalized: RunLog[] = runs.map((run) => mapRunToLog(run));
+    return normalized.filter((r) => {
+      if (filter === "failed") return r.status === "failed";
+      if (filter === "running") return r.status === "running";
+      return true;
+    });
+  }, [filter, runs]);
+
+  if (loading) {
+    return (
+      <div className="p-8">
+        <LoadingState label="Loading execution logs..." />
+      </div>
+    );
+  }
+
+  if (loadError) {
+    return (
+      <div className="p-8">
+        <ErrorState
+          title="Execution logs unavailable"
+          message={loadError}
+          onRetry={() => {
+            void fetchRuns();
+          }}
+        />
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-full bg-gray-50">
-      {/* Header */}
       <div className="bg-white border-b border-gray-200 px-8 py-6">
-        <div className="flex items-center gap-3">
-          <h1 className="text-2xl font-bold text-gray-900">Execution Logs</h1>
-          <span className="px-2 py-0.5 rounded-full bg-blue-50 text-blue-600 text-xs font-medium">
-            In Development
-          </span>
-          <span className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-green-100 text-green-700 text-xs font-medium">
-            <Radio size={10} className="animate-pulse" />
-            Live
-          </span>
+        <div className="flex items-center justify-between gap-4">
+          <div>
+            <div className="flex items-center gap-3">
+              <h1 className="text-2xl font-bold text-gray-900">Execution Logs</h1>
+              <span className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-green-100 text-green-700 text-xs font-medium">
+                <Radio size={10} className="animate-pulse" />
+                Live
+              </span>
+            </div>
+            <p className="text-gray-500 text-sm mt-1">Step-by-step execution traces with automatic refresh.</p>
+          </div>
+          <div className="flex items-center gap-3">
+            <span className="text-xs text-gray-400">Last updated: {lastRefreshed.toLocaleTimeString()}</span>
+            <button
+              onClick={() => {
+                void fetchRuns();
+              }}
+              className="flex items-center gap-2 px-3.5 py-2 text-sm font-medium border border-gray-300 rounded-lg hover:bg-gray-50 transition text-gray-700"
+            >
+              <RefreshCw size={14} />
+              Refresh
+            </button>
+          </div>
         </div>
-        <p className="text-gray-500 text-sm mt-1">
-          Step-by-step execution traces with AI-powered error explanations.
-        </p>
 
         <div className="flex gap-1 mt-5">
           {(["all", "failed", "running"] as const).map((f) => (
@@ -354,9 +340,7 @@ export default function ExecutionLogs() {
               key={f}
               onClick={() => setFilter(f)}
               className={`px-4 py-1.5 rounded-lg text-sm font-medium capitalize transition ${
-                filter === f
-                  ? "bg-gray-900 text-white"
-                  : "text-gray-500 hover:bg-gray-100"
+                filter === f ? "bg-gray-900 text-white" : "text-gray-500 hover:bg-gray-100"
               }`}
             >
               {f}
@@ -370,10 +354,12 @@ export default function ExecutionLogs() {
           <RunCard key={run.id} run={run} />
         ))}
         {filtered.length === 0 && (
-          <div className="text-center py-16 text-gray-400">
-            <CheckCircle size={40} className="mx-auto mb-3 opacity-30" />
-            <p className="text-sm">No runs to show</p>
-          </div>
+          <EmptyState
+            title="No runs to show"
+            description="Try a different filter or start a new run from the workflow builder."
+            ctaLabel="Open builder"
+            ctaTo="/builder"
+          />
         )}
       </div>
     </div>

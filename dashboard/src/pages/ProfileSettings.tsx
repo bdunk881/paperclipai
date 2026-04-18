@@ -1,4 +1,8 @@
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { Loader2 } from "lucide-react";
+import { useAuth } from "../context/AuthContext";
+import { ApiError, apiGet, apiPatch } from "../api/settingsClient";
+import Toast from "../components/Toast";
 
 const TIMEZONES = [
   "UTC",
@@ -26,31 +30,111 @@ const TIMEZONES = [
 ];
 
 export default function ProfileSettings() {
+  const { user } = useAuth();
   const [displayName, setDisplayName] = useState("");
   const [timezone, setTimezone] = useState("UTC");
+  const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [saved, setSaved] = useState(false);
+  const [toast, setToast] = useState<{ variant: "success" | "error"; message: string } | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  const fallbackStorageKey = useMemo(
+    () => `autoflow.profile-settings:${user?.id ?? "anonymous"}`,
+    [user?.id]
+  );
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadProfile() {
+      setLoading(true);
+      setError(null);
+      try {
+        const data = await apiGet<{ profile?: { displayName?: string; timezone?: string } }>(
+          "/api/user/profile",
+          user
+        );
+        if (cancelled) return;
+        setDisplayName(data.profile?.displayName ?? user?.name ?? "");
+        setTimezone(data.profile?.timezone ?? "UTC");
+      } catch (e) {
+        if (cancelled) return;
+        if (e instanceof ApiError && e.status === 404) {
+          const raw = localStorage.getItem(fallbackStorageKey);
+          const fallback = raw
+            ? (JSON.parse(raw) as { displayName?: string; timezone?: string })
+            : null;
+          setDisplayName(fallback?.displayName ?? user?.name ?? "");
+          setTimezone(fallback?.timezone ?? "UTC");
+          return;
+        }
+        setDisplayName(user?.name ?? "");
+        setTimezone("UTC");
+        setError(e instanceof Error ? e.message : "Failed to load profile.");
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    }
+
+    void loadProfile();
+    return () => {
+      cancelled = true;
+    };
+  }, [fallbackStorageKey, user]);
+
+  useEffect(() => {
+    if (!toast) return;
+    const timer = window.setTimeout(() => setToast(null), 3000);
+    return () => window.clearTimeout(timer);
+  }, [toast]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setSaving(true);
     setError(null);
-    setSaved(false);
     try {
-      // Mock save — no backend yet
-      await new Promise((res) => setTimeout(res, 600));
-      setSaved(true);
-      setTimeout(() => setSaved(false), 3000);
-    } catch {
-      setError("Failed to save profile. Please try again.");
+      await apiPatch(
+        "/api/user/profile",
+        { displayName: displayName.trim(), timezone },
+        user
+      );
+      setToast({ variant: "success", message: "Profile saved successfully." });
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 404) {
+        localStorage.setItem(
+          fallbackStorageKey,
+          JSON.stringify({ displayName: displayName.trim(), timezone })
+        );
+        setToast({
+          variant: "success",
+          message: "Profile saved locally while the backend endpoint is pending.",
+        });
+      } else {
+        setError("Failed to save profile. Please try again.");
+        setToast({
+          variant: "error",
+          message: e instanceof Error ? e.message : "Profile save failed.",
+        });
+      }
     } finally {
       setSaving(false);
     }
   }
 
+  if (loading) {
+    return (
+      <div className="p-8 max-w-4xl">
+        <div className="flex items-center gap-2 text-sm text-gray-500">
+          <Loader2 size={16} className="animate-spin" />
+          Loading profile settings...
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="p-8 max-w-4xl">
+      {toast && <Toast variant={toast.variant} message={toast.message} />}
       <div className="mb-8">
         <h1 className="text-2xl font-bold text-gray-900">Profile</h1>
         <p className="text-gray-500 mt-1">Update your display name and account preferences.</p>
@@ -63,12 +147,6 @@ export default function ProfileSettings() {
               {error}
             </div>
           )}
-          {saved && (
-            <div className="px-3 py-2 rounded-lg bg-green-50 border border-green-200 text-sm text-green-700">
-              Profile saved successfully.
-            </div>
-          )}
-
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
               Display Name
@@ -88,7 +166,7 @@ export default function ProfileSettings() {
             </label>
             <input
               type="email"
-              value="user@example.com"
+              value={user?.email ?? ""}
               readOnly
               className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm bg-gray-50 text-gray-400 cursor-not-allowed"
             />

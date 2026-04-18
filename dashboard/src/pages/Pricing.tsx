@@ -79,16 +79,28 @@ async function startCheckout(tierId: string): Promise<void> {
     window.location.href = "mailto:sales@autoflow.ai?subject=AutoFlow%20Enterprise%20Inquiry";
     return;
   }
-  const res = await fetch("/api/create-checkout-session", {
+  const billingTierByUiTier: Record<string, string> = {
+    starter: "flow",
+    pro: "automate",
+  };
+  const billingTier = billingTierByUiTier[tierId];
+  if (!billingTier) {
+    throw new Error("Unsupported pricing tier");
+  }
+
+  const res = await fetch("/api/billing/checkout", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ tier: tierId }),
+    body: JSON.stringify({ tier: billingTier }),
   });
-  const data = (await res.json()) as { url?: string; error?: string };
-  if (data.url) {
+  const data = (await res.json().catch(() => null)) as { url?: string; error?: string } | null;
+  if (!res.ok) {
+    throw new Error(data?.error ?? `Checkout failed (${res.status})`);
+  }
+  if (data?.url) {
     window.location.href = data.url;
   } else {
-    throw new Error(data.error ?? "Failed to start checkout");
+    throw new Error(data?.error ?? "Failed to start checkout");
   }
 }
 

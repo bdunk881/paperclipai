@@ -59,11 +59,13 @@ export default function LandingPage() {
   const [email, setEmail] = useState("");
   const [submitted, setSubmitted] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!email.trim()) return;
     setSubmitting(true);
+    setSubmitError(null);
     try {
       if (import.meta.env.VITE_USE_MOCK === "true") {
         await new Promise((r) => setTimeout(r, 800));
@@ -76,9 +78,8 @@ export default function LandingPage() {
         if (!res.ok) throw new Error(`Signup failed: ${res.status}`);
       }
       setSubmitted(true);
-    } catch {
-      // still show success to the user — backend errors shouldn't block signups
-      setSubmitted(true);
+    } catch (error) {
+      setSubmitError(error instanceof Error ? error.message : "Failed to join waitlist");
     } finally {
       setSubmitting(false);
     }
@@ -160,6 +161,11 @@ export default function LandingPage() {
           <p className="mt-3 text-xs text-blue-400">
             No credit card required. Free early access for beta users.
           </p>
+          {submitError && (
+            <p role="alert" className="mt-3 text-xs text-red-300">
+              {submitError}
+            </p>
+          )}
         </div>
       </section>
 

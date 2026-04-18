@@ -19,6 +19,7 @@ import { listRuns, debugStep } from "../api/client";
 import { StatusBadge } from "../components/StatusBadge";
 import type { WorkflowRun, StepResult, AgentSlotResult } from "../types/workflow";
 import clsx from "clsx";
+import { EmptyState, ErrorState, LoadingState } from "../components/UiStates";
 
 const POLL_INTERVAL_MS = 3000;
 
@@ -26,8 +27,12 @@ export default function RunMonitor() {
   const [runs, setRuns] = useState<WorkflowRun[]>([]);
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
   const [lastRefreshed, setLastRefreshed] = useState(new Date());
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
-  async function fetchRuns() {
+  async function fetchRuns(silent = false) {
+    if (!silent) setLoading(true);
+    setLoadError(null);
     try {
       const fetched = [...(await listRuns())].sort(
         (a, b) => new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime()
@@ -41,13 +46,15 @@ export default function RunMonitor() {
         return next;
       });
     } catch (e) {
-      console.error(e);
+      setLoadError(e instanceof Error ? e.message : "Failed to load runs");
+    } finally {
+      if (!silent) setLoading(false);
     }
   }
 
   useEffect(() => {
-    fetchRuns();
-    const id = setInterval(fetchRuns, POLL_INTERVAL_MS);
+    void fetchRuns();
+    const id = setInterval(() => { void fetchRuns(true); }, POLL_INTERVAL_MS);
     return () => clearInterval(id);
   }, []);
 
@@ -60,7 +67,7 @@ export default function RunMonitor() {
   }
 
   function handleRefresh() {
-    fetchRuns();
+    void fetchRuns();
   }
 
   const activeRuns = runs.filter(
@@ -69,6 +76,28 @@ export default function RunMonitor() {
   const recentRuns = runs.filter(
     (r) => r.status !== "running" && r.status !== "pending" && r.status !== "awaiting_approval"
   );
+
+  if (loading) {
+    return (
+      <div className="p-8">
+        <LoadingState label="Loading run monitor..." />
+      </div>
+    );
+  }
+
+  if (loadError) {
+    return (
+      <div className="p-8">
+        <ErrorState
+          title="Run monitor unavailable"
+          message={loadError}
+          onRetry={() => {
+            void fetchRuns();
+          }}
+        />
+      </div>
+    );
+  }
 
   return (
     <div className="p-8">
@@ -133,16 +162,25 @@ export default function RunMonitor() {
         <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-4">
           Recently Completed ({recentRuns.length})
         </h2>
-        <div className="space-y-3">
-          {recentRuns.map((run) => (
-            <RunCard
-              key={run.id}
-              run={run}
-              expanded={expandedIds.has(run.id)}
-              onToggle={() => toggleExpand(run.id)}
-            />
-          ))}
-        </div>
+        {recentRuns.length === 0 ? (
+          <EmptyState
+            title="No completed runs yet"
+            description="Once runs complete, you will see execution details and failure insights here."
+            ctaLabel="Start a run"
+            ctaTo="/builder"
+          />
+        ) : (
+          <div className="space-y-3">
+            {recentRuns.map((run) => (
+              <RunCard
+                key={run.id}
+                run={run}
+                expanded={expandedIds.has(run.id)}
+                onToggle={() => toggleExpand(run.id)}
+              />
+            ))}
+          </div>
+        )}
       </section>
     </div>
   );

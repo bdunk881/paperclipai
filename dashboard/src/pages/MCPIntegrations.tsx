@@ -100,15 +100,7 @@ const CATEGORIES = ["All", ...Array.from(new Set(MCP_SERVERS.map((s) => s.catego
 export default function MCPIntegrations() {
   const [search, setSearch] = useState("");
   const [category, setCategory] = useState("All");
-  const [servers, setServers] = useState<MCPServer[]>(MCP_SERVERS);
-
-  function toggleConnect(id: string) {
-    setServers((prev) =>
-      prev.map((s) => (s.id === id ? { ...s, connected: !s.connected } : s))
-    );
-  }
-
-  const filtered = servers.filter((s) => {
+  const filtered = MCP_SERVERS.filter((s) => {
     const matchSearch =
       s.name.toLowerCase().includes(search.toLowerCase()) ||
       s.description.toLowerCase().includes(search.toLowerCase());
@@ -116,7 +108,7 @@ export default function MCPIntegrations() {
     return matchSearch && matchCategory;
   });
 
-  const connectedCount = servers.filter((s) => s.connected).length;
+  const connectedCount = 0;
 
   return (
     <div className="min-h-full bg-gray-50">
@@ -199,11 +191,9 @@ export default function MCPIntegrations() {
                   </div>
                 </div>
 
-                {server.connected && (
-                  <span className="px-2 py-0.5 rounded-full bg-green-100 text-green-700 text-xs font-medium">
-                    Connected
-                  </span>
-                )}
+                <span className="px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 text-xs font-medium">
+                  Coming soon
+                </span>
               </div>
 
               <p className="text-xs text-gray-500 mt-3 leading-relaxed">{server.description}</p>
@@ -226,15 +216,13 @@ export default function MCPIntegrations() {
 
               <div className="flex gap-2 mt-4 pt-3 border-t border-gray-100">
                 <button
-                  onClick={() => toggleConnect(server.id)}
-                  className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-xs font-medium transition ${
-                    server.connected
-                      ? "bg-red-50 text-red-600 hover:bg-red-100 border border-red-200"
-                      : "bg-blue-600 text-white hover:bg-blue-700"
-                  }`}
+                  type="button"
+                  disabled
+                  title="Connection flow is still in development. Use Settings > MCP Servers to register custom servers today."
+                  className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-xs font-medium bg-gray-100 text-gray-500 border border-gray-200 cursor-not-allowed"
                 >
                   <Plug size={12} />
-                  {server.connected ? "Disconnect" : "Connect"}
+                  Connect (coming soon)
                 </button>
                 <button className="px-2.5 py-2 rounded-lg border border-gray-200 text-gray-400 hover:text-gray-600 hover:border-gray-300 transition">
                   <ExternalLink size={12} />

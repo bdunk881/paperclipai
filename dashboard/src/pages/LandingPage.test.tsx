@@ -145,6 +145,24 @@ describe("LandingPage — submission flow", () => {
 
     expect(screen.queryAllByRole("button", { name: /join the waitlist/i }).length).toBe(0);
   });
+
+  it("shows an error and does not show success state when the API call fails", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({ ok: false, status: 500 } as Response)
+    );
+    render(<LandingPage />);
+
+    const emailInput = screen.getAllByPlaceholderText(/you@company\.com/i)[0];
+    fireEvent.change(emailInput, { target: { value: "waitlist@example.com" } });
+    fireEvent.click(screen.getAllByRole("button", { name: /join the waitlist/i })[0]);
+
+    await waitFor(() => {
+      expect(screen.getByRole("alert")).toHaveTextContent(/signup failed/i);
+    });
+
+    expect(screen.queryByText(/you're on the list/i)).toBeNull();
+  });
 });
 
 // ---------------------------------------------------------------------------

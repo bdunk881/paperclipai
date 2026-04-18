@@ -20,10 +20,12 @@ import { StatusBadge } from "../components/StatusBadge";
 import type { WorkflowRun, StepResult, AgentSlotResult } from "../types/workflow";
 import clsx from "clsx";
 import { EmptyState, ErrorState, LoadingState } from "../components/UiStates";
+import { useAuth } from "../context/AuthContext";
 
 const POLL_INTERVAL_MS = 3000;
 
 export default function RunMonitor() {
+  const { getAccessToken } = useAuth();
   const [runs, setRuns] = useState<WorkflowRun[]>([]);
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
   const [lastRefreshed, setLastRefreshed] = useState(new Date());
@@ -34,7 +36,8 @@ export default function RunMonitor() {
     if (!silent) setLoading(true);
     setLoadError(null);
     try {
-      const fetched = [...(await listRuns())].sort(
+      const accessToken = await getAccessToken() ?? undefined;
+      const fetched = [...(await listRuns(undefined, accessToken))].sort(
         (a, b) => new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime()
       );
       setRuns(fetched);

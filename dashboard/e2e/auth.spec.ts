@@ -1,8 +1,8 @@
 /**
  * E2E: Authentication critical paths
  *
- * Covers: protected-route redirects, CIAM login surface, signup redirect,
- * and waitlist public access.
+ * Covers: protected route redirect, Microsoft login CTA,
+ * and redirecting-state UX on auth actions.
  */
 
 import { test, expect } from "@playwright/test";
@@ -22,43 +22,31 @@ test("unauthenticated user visiting /builder is redirected to /login", async ({ 
 });
 
 // ---------------------------------------------------------------------------
-// Login page (MSAL / CIAM)
+// Login page
 // ---------------------------------------------------------------------------
 
 test("login page renders Microsoft sign-in CTA", async ({ page }) => {
   await page.goto("/login");
-  await expect(page.getByRole("heading", { name: /sign in to autoflow/i })).toBeVisible();
   await expect(page.getByRole("button", { name: /continue with microsoft/i })).toBeVisible();
-  await expect(page.getByRole("button", { name: /create account with email/i })).toBeVisible();
-  await expect(page.getByText(/register with a personal email/i)).toBeVisible();
-});
-
-test("signup route redirects to login", async ({ page }) => {
-  await page.goto("/signup");
-  await expect(page).toHaveURL(/\/login/);
 });
 
 test("sign-in button transitions to redirecting state when clicked", async ({ page }) => {
   await page.goto("/login");
 
   const signInButton = page.getByRole("button", { name: /continue with microsoft/i });
+  await expect(signInButton).toBeVisible();
   await signInButton.click();
 
-  // In CI mock runs the MSAL redirect is not completed; verify UI enters redirect state.
-  await expect(page.getByRole("button", { name: /redirecting/i })).toBeVisible();
+  await expect(page.getByRole("button", { name: /redirecting/i })).toBeDisabled();
 });
 
-test("create-account button transitions to signup redirect state when clicked", async ({
-  page,
-}) => {
-  await page.goto("/login");
+// ---------------------------------------------------------------------------
+// Signup entry points
+// ---------------------------------------------------------------------------
 
-  const createAccountButton = page.getByRole("button", {
-    name: /create account with email/i,
-  });
-  await createAccountButton.click();
-
-  await expect(page.getByRole("button", { name: /redirecting to sign-up/i })).toBeVisible();
+test("signup route redirects to login", async ({ page }) => {
+  await page.goto("/signup");
+  await expect(page).toHaveURL(/\/login/);
 });
 
 // ---------------------------------------------------------------------------

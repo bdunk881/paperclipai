@@ -90,6 +90,8 @@ export interface TemplateSummary {
   configFieldCount: number;
 }
 
+type CreateTemplateInput = Omit<WorkflowTemplate, "id"> & { id?: string };
+
 /** GET /api/templates */
 export async function listTemplates(category?: string): Promise<TemplateSummary[]> {
   if (USE_MOCK) {
@@ -102,6 +104,29 @@ export async function listTemplates(category?: string): Promise<TemplateSummary[
   if (!res.ok) throw new Error(`Failed to fetch templates: ${res.status}`);
   const data = await res.json();
   return data.templates as TemplateSummary[];
+}
+
+/** POST /api/templates */
+export async function createTemplate(input: CreateTemplateInput): Promise<WorkflowTemplate> {
+  if (USE_MOCK) {
+    await delay(150);
+    const next: WorkflowTemplate = {
+      ...input,
+      id: input.id ?? `tpl-custom-${Date.now()}`,
+    };
+    MOCK_TEMPLATES.unshift(next);
+    return next;
+  }
+  const res = await fetch(`${BASE}/templates`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => null);
+    throw new Error(err?.error ?? `Failed to save template: ${res.status}`);
+  }
+  return res.json() as Promise<WorkflowTemplate>;
 }
 
 /** GET /api/templates/:id */

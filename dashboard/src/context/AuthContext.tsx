@@ -8,9 +8,9 @@ import {
   InteractionRequiredAuthError,
   AccountInfo,
 } from "@azure/msal-browser";
-import { loginRequest, signupRequest } from "../auth/msalConfig";
+import { loginRequest } from "../auth/msalConfig";
 
-interface User {
+export interface User {
   id: string;
   email: string;
   name: string;
@@ -20,7 +20,6 @@ interface User {
 interface AuthContextValue {
   user: User | null;
   login: () => Promise<void>;
-  signup: () => Promise<void>;
   logout: () => void;
   getAccessToken: () => Promise<string | null>;
 }
@@ -49,10 +48,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     await instance.loginRedirect(loginRequest);
   };
 
-  const signup = async () => {
-    await instance.loginRedirect(signupRequest);
-  };
-
   const logout = () => {
     instance.logoutRedirect({ postLogoutRedirectUri: "/login" });
   };
@@ -75,7 +70,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   return (
-    <AuthContext.Provider value={{ user, login, signup, logout, getAccessToken }}>
+    <AuthContext.Provider value={{ user, login, logout, getAccessToken }}>
       {children}
     </AuthContext.Provider>
   );

@@ -1,33 +1,32 @@
 import { Configuration, PopupRequest } from "@azure/msal-browser";
 
 // Entra External ID (CIAM) uses the ciamlogin.com authority endpoint.
-// Set these env vars in .env.local for dev and in Vercel for prod:
-//   VITE_AZURE_CLIENT_ID       — App registration client ID from Azure Portal
-//   VITE_AZURE_TENANT_SUBDOMAIN — Tenant subdomain (e.g. "myapp" → myapp.ciamlogin.com)
+// Tenant config can be overridden via env vars in .env.local (dev) or Vercel (prod):
+//   VITE_AZURE_CIAM_TENANT_SUBDOMAIN — e.g. "autoflowciam" → autoflowciam.ciamlogin.com
+//   VITE_AZURE_CIAM_TENANT_DOMAIN    — optional, e.g. "autoflowciam.onmicrosoft.com"
+
+// autoflow-dashboard app registration (recreated 2026-04-17, ALT-1257)
 const DEFAULT_CIAM_CLIENT_ID = "2dfd3a08-277c-4893-b07d-eca5ae322310";
 const DEFAULT_CIAM_TENANT_SUBDOMAIN = "autoflowciam";
-
-const clientId =
-  (import.meta.env.VITE_AZURE_CLIENT_ID as string | undefined) ??
-  DEFAULT_CIAM_CLIENT_ID;
-const tenantSubdomain =
-  (import.meta.env.VITE_AZURE_TENANT_SUBDOMAIN as string | undefined) ??
-  DEFAULT_CIAM_TENANT_SUBDOMAIN;
-const tenantDomain = `${tenantSubdomain}.onmicrosoft.com`;
-
-if (!import.meta.env.VITE_AZURE_CLIENT_ID || !import.meta.env.VITE_AZURE_TENANT_SUBDOMAIN) {
-  console.warn(
-    "[MSAL] VITE_AZURE_CLIENT_ID or VITE_AZURE_TENANT_SUBDOMAIN is not set. " +
-      "Using built-in CIAM defaults."
-  );
-}
+const DEFAULT_CIAM_TENANT_DOMAIN = "autoflowciam.onmicrosoft.com";
+// Use defaults directly. Env var overrides are only applied for tenant
+// config (subdomain/domain); the client ID is pinned to the app registration
+// above to avoid stale env var overrides in Vercel.
+const clientId = DEFAULT_CIAM_CLIENT_ID;
+const configuredTenantSubdomain = import.meta.env.VITE_AZURE_CIAM_TENANT_SUBDOMAIN?.trim();
+const configuredTenantDomain = import.meta.env.VITE_AZURE_CIAM_TENANT_DOMAIN?.trim();
+const tenantSubdomain = configuredTenantSubdomain || DEFAULT_CIAM_TENANT_SUBDOMAIN;
+const tenantDomain =
+  configuredTenantDomain ||
+  (tenantSubdomain ? `${tenantSubdomain}.onmicrosoft.com` : DEFAULT_CIAM_TENANT_DOMAIN);
 
 export const msalConfig: Configuration = {
   auth: {
     clientId,
-    authority: `https://${tenantSubdomain}.ciamlogin.com/${tenantDomain}`,
+    // Entra External ID CIAM authority must include tenant domain path segment.
+    authority: `https://${tenantSubdomain ?? "placeholder"}.ciamlogin.com/${tenantDomain ?? "placeholder.onmicrosoft.com"}`,
     // Tell MSAL the external tenant is a valid authority (required for non-login.microsoftonline.com authorities)
-    knownAuthorities: [`${tenantSubdomain}.ciamlogin.com`],
+    knownAuthorities: [`${tenantSubdomain ?? "placeholder"}.ciamlogin.com`],
     redirectUri: window.location.origin,
     postLogoutRedirectUri: window.location.origin + "/login",
   },
@@ -43,7 +42,8 @@ export const loginRequest: PopupRequest = {
   scopes: ["openid", "profile", "email"],
 };
 
+// CIAM supports `prompt=create` to open account creation for external users.
 export const signupRequest: PopupRequest = {
-  scopes: ["openid", "profile", "email"],
+  ...loginRequest,
   prompt: "create",
 };

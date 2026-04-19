@@ -72,7 +72,6 @@ export async function handleLlm(
   }
 
   const originalFieldCount = Object.keys(ctx).length;
-
   // Data minimization: strip sensitive CRM fields before they reach the LLM
   const { sanitized, blockedCategories, strippedCount } = sanitizeContext(ctx);
   if (strippedCount > 0) {
@@ -114,20 +113,6 @@ export async function handleLlm(
     options: resolved.config.providerOptions,
   });
 
-  // Audit log: record CRM field categories sent to the LLM API
-  auditCrmApiCall({
-    userId,
-    runId,
-    stepId: step.id,
-    stepKind: "llm",
-    apiEndpoint: `${resolved.config.provider}/${tieredModel}`,
-    originalFieldCount,
-    sanitizedCtx: sanitized,
-    blockedCategories,
-    strippedCount,
-  });
-
-  // Audit log: record CRM field categories sent to the LLM API
   auditCrmApiCall({
     userId,
     runId,
@@ -561,8 +546,11 @@ export async function handleAgent(
     } satisfies AgentMessage);
   }
 
+<<<<<<< HEAD
   const agentOriginalFieldCount = Object.keys(ctx).length;
 
+=======
+>>>>>>> 88826e9 (feat(security): add CRM data minimization field allowlist (ALT-1408))
   // Data minimization: strip sensitive CRM fields before they reach the LLM
   const { sanitized: agentSanitized, blockedCategories: agentBlocked, strippedCount: agentStripped } = sanitizeContext(ctx);
   if (agentStripped > 0) {
@@ -572,6 +560,7 @@ export async function handleAgent(
     );
   }
 
+<<<<<<< HEAD
   // Audit log: record CRM field categories sent to agent API
   auditCrmApiCall({
     userId,
@@ -585,6 +574,8 @@ export async function handleAgent(
     strippedCount: agentStripped,
   });
 
+=======
+>>>>>>> 88826e9 (feat(security): add CRM data minimization field allowlist (ALT-1408))
   // Build context summary for the prompt
   const contextSummary = Object.entries(agentSanitized)
     .filter(([, v]) => v !== undefined && v !== null)

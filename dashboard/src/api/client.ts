@@ -33,13 +33,20 @@ export interface CreateLLMConfigInput {
   apiKey: string;
 }
 
+function buildAuthHeaders(accessToken?: string): HeadersInit | undefined {
+  if (!accessToken) return undefined;
+  return { Authorization: `Bearer ${accessToken}` };
+}
+
 // ---------------------------------------------------------------------------
 // LLM Config API functions
 // ---------------------------------------------------------------------------
 
 /** GET /api/llm-configs */
-export async function listLLMConfigs(): Promise<LLMConfig[]> {
-  const res = await fetch(`${BASE}/llm-configs`);
+export async function listLLMConfigs(accessToken?: string): Promise<LLMConfig[]> {
+  const res = await fetch(`${BASE}/llm-configs`, {
+    headers: buildAuthHeaders(accessToken),
+  });
   if (!res.ok) throw new Error(`Failed to fetch LLM configs: ${res.status}`);
   const data = await res.json();
   return data.configs as LLMConfig[];
@@ -143,7 +150,7 @@ export async function getTemplate(id: string): Promise<WorkflowTemplate> {
 }
 
 /** GET /api/runs */
-export async function listRuns(templateId?: string): Promise<WorkflowRun[]> {
+export async function listRuns(templateId?: string, accessToken?: string): Promise<WorkflowRun[]> {
   if (USE_MOCK) {
     await delay(200);
     return templateId ? MOCK_RUNS.filter((r) => r.templateId === templateId) : [...MOCK_RUNS];
@@ -151,7 +158,9 @@ export async function listRuns(templateId?: string): Promise<WorkflowRun[]> {
   const url = templateId
     ? `${BASE}/runs?templateId=${encodeURIComponent(templateId)}`
     : `${BASE}/runs`;
-  const res = await fetch(url);
+  const res = await fetch(url, {
+    headers: buildAuthHeaders(accessToken),
+  });
   if (!res.ok) throw new Error(`Failed to fetch runs: ${res.status}`);
   const data = await res.json();
   return data.runs as WorkflowRun[];

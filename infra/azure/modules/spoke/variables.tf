@@ -57,11 +57,6 @@ variable "hub_resource_group_name" {
   type        = string
 }
 
-variable "hub_firewall_private_ip" {
-  description = "Private IP of the hub Azure Firewall; used as DNS server for spoke VNet"
-  type        = string
-}
-
 # ── Network Watcher ───────────────────────────────────────────────────────────
 
 variable "network_watcher_name" {

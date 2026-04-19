@@ -24,6 +24,11 @@ jest.mock("./auth/authMiddleware", () => ({
 import request from "supertest";
 import app from "./app";
 import { WORKFLOW_TEMPLATES } from "./templates";
+import {
+  clearClassificationDecisionsForTests,
+  logClassificationDecision,
+} from "./engine/classificationLog";
+import { extractPromptFeatures } from "./engine/promptFeatures";
 
 function asAuth(userId = "test-user") {
   return { Authorization: `Bearer ${userId}` };
@@ -302,6 +307,54 @@ describe("GET /api/runs/:id", () => {
     const res = await request(app).get("/api/runs/run-does-not-exist").set(asAuth());
     expect(res.status).toBe(404);
     expect(res.body.error).toMatch(/not found/i);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// GET /api/analytics/routing-decisions
+// ---------------------------------------------------------------------------
+
+describe("GET /api/analytics/routing-decisions", () => {
+  beforeEach(() => {
+    clearClassificationDecisionsForTests();
+  });
+
+  afterEach(() => {
+    clearClassificationDecisionsForTests();
+  });
+
+  it("requires authentication", async () => {
+    const res = await request(app).get("/api/analytics/routing-decisions");
+    expect(res.status).toBe(401);
+  });
+
+  it("returns logged routing decisions for dashboard consumption", async () => {
+    logClassificationDecision({
+      promptHash: "hash-1",
+      features: extractPromptFeatures("Classify this ticket", 120, 1),
+      selectedTier: "lite",
+      confidenceScore: 0.9,
+      modelId: "gpt-4o-mini",
+    });
+
+    const res = await request(app)
+      .get("/api/analytics/routing-decisions")
+      .set(asAuth());
+
+    expect(res.status).toBe(200);
+    expect(Array.isArray(res.body.decisions)).toBe(true);
+    expect(res.body.total).toBe(1);
+    expect(typeof res.body.capacity).toBe("number");
+    expect(res.body.decisions[0]).toEqual(
+      expect.objectContaining({
+        promptHash: "hash-1",
+        selectedTier: "lite",
+        confidenceScore: 0.9,
+        modelId: "gpt-4o-mini",
+      })
+    );
+    expect(res.body.decisions[0].features).toBeDefined();
+    expect(typeof res.body.decisions[0].timestamp).toBe("string");
   });
 });
 

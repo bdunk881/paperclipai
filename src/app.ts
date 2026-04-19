@@ -21,10 +21,28 @@ import { llmConfigStore } from "./llmConfig/llmConfigStore";
 import { getProvider } from "./engine/llmProviders";
 import { parseFile } from "./engine/fileParser";
 import { resolveModelForTier } from "./engine/llmRouter";
+import {
+  getClassificationDecisionLogCapacity,
+  listClassificationDecisions,
+} from "./engine/classificationLog";
 import { requireAuth, AuthenticatedRequest } from "./auth/authMiddleware";
 import stripeWebhookRoutes from "./billing/stripeWebhook";
 import checkoutRoutes from "./billing/checkoutRoutes";
 import subscriptionRoutes from "./billing/subscriptionRoutes";
+import slackRoutes, { slackWebhookRouter } from "./integrations/slack/routes";
+import shopifyRoutes, { shopifyWebhookRouter } from "./integrations/shopify/routes";
+import docuSignRoutes, { docuSignWebhookRouter } from "./integrations/docusign/routes";
+import linearRoutes, { linearWebhookRouter } from "./integrations/linear/routes";
+import teamsRoutes, { teamsWebhookRouter } from "./integrations/teams/routes";
+import posthogRoutes, { posthogWebhookRouter } from "./integrations/posthog/routes";
+import intercomRoutes, { intercomWebhookRouter } from "./integrations/intercom/routes";
+import datadogAzureMonitorRoutes, {
+  datadogAzureMonitorWebhookRouter,
+} from "./integrations/datadog-azure-monitor/routes";
+import agentCatalogRoutes from "./integrations/agent-catalog/routes";
+import oauthBridgeRoutes from "./integrations/oauthBridgeRoutes";
+import googleWorkspaceConnectorRoutes from "./connectors/google-workspace/routes";
+import googleWorkspaceWebhookRoutes from "./connectors/google-workspace/webhookRoutes";
 
 const app = express();
 
@@ -129,6 +147,23 @@ app.use("/api/webhooks", webhookRateLimiter);
 // is available for signature verification
 // ---------------------------------------------------------------------------
 app.use("/api/webhooks/stripe", express.raw({ type: "application/json" }), stripeWebhookRoutes);
+// Slack webhook — mounted before express.json() for signature verification
+app.use("/api/webhooks/slack", slackWebhookRouter);
+// Shopify webhook — mounted before express.json() for signature verification
+app.use("/api/webhooks/shopify", shopifyWebhookRouter);
+// DocuSign webhook — mounted before express.json() for signature verification
+app.use("/api/webhooks/docusign", docuSignWebhookRouter);
+// Linear webhook — mounted before express.json() for signature verification
+app.use("/api/webhooks/linear", linearWebhookRouter);
+// Microsoft Teams webhook — mounted before express.json() for signature verification
+app.use("/api/webhooks/teams", teamsWebhookRouter);
+// PostHog webhook — mounted before express.json() for signature verification
+app.use("/api/webhooks/posthog", posthogWebhookRouter);
+// Intercom webhook — mounted before express.json() for signature verification
+app.use("/api/webhooks/intercom", intercomWebhookRouter);
+// Datadog + Azure Monitor webhook — mounted before express.json() for signature verification
+app.use("/api/webhooks/datadog-azure-monitor", datadogAzureMonitorWebhookRouter);
+app.use("/api/connectors/google-workspace", googleWorkspaceWebhookRoutes);
 
 app.use(express.json());
 
@@ -141,9 +176,10 @@ const upload = multer({
 // ---------------------------------------------------------------------------
 // Billing API — Stripe checkout sessions + subscription lifecycle
 // ---------------------------------------------------------------------------
-app.use("/api/billing", requireAuth, billingMutationRateLimiter);
-app.use("/api/billing/checkout", checkoutRoutes);
-app.use("/api/billing/subscription", subscriptionRoutes);
+// Checkout is intentionally public so unauthenticated users can start paid signup from pricing pages.
+// Downstream webhook processing still reconciles subscription ownership via metadata/email.
+app.use("/api/billing/checkout", billingMutationRateLimiter, checkoutRoutes);
+app.use("/api/billing/subscription", requireAuth, billingMutationRateLimiter, subscriptionRoutes);
 
 // ---------------------------------------------------------------------------
 // LLM Config API — BYOLLM provider credentials
@@ -159,6 +195,17 @@ app.use("/api/mcp/servers", requireAuth, mcpRoutes);
 // Memory API — persistent context memory store for agents/workflows
 // ---------------------------------------------------------------------------
 app.use("/api/memory", requireAuth, memoryRoutes);
+app.use("/api/integrations", oauthBridgeRoutes);
+app.use("/api/integrations/slack", slackRoutes);
+app.use("/api/integrations/shopify", shopifyRoutes);
+app.use("/api/integrations/docusign", docuSignRoutes);
+app.use("/api/integrations/linear", linearRoutes);
+app.use("/api/integrations/teams", teamsRoutes);
+app.use("/api/integrations/posthog", posthogRoutes);
+app.use("/api/integrations/intercom", intercomRoutes);
+app.use("/api/integrations/datadog-azure-monitor", datadogAzureMonitorRoutes);
+app.use("/api/integrations/agent-catalog", agentCatalogRoutes);
+app.use("/api/connectors/google-workspace", googleWorkspaceConnectorRoutes);
 
 // ---------------------------------------------------------------------------
 // Auth API — identity endpoint for authenticated callers
@@ -270,6 +317,19 @@ app.get("/api/runs/:id", requireAuth, (req, res) => {
     return;
   }
   res.json(run);
+});
+
+// ---------------------------------------------------------------------------
+// Routing analytics API — recent classifier decisions for dashboarding
+// ---------------------------------------------------------------------------
+
+app.get("/api/analytics/routing-decisions", requireAuth, (_req, res) => {
+  const decisions = listClassificationDecisions();
+  res.json({
+    decisions,
+    total: decisions.length,
+    capacity: getClassificationDecisionLogCapacity(),
+  });
 });
 
 // ---------------------------------------------------------------------------

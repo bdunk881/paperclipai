@@ -9,18 +9,18 @@ output "hub_vnet_name" {
 }
 
 output "firewall_private_ip" {
-  description = "Private IP address of the Azure Firewall (used for UDRs in spokes)"
-  value       = azurerm_firewall.hub.ip_configuration[0].private_ip_address
+  description = "Private IP address of the Azure Firewall (null when firewall is disabled)"
+  value       = try(azurerm_firewall.hub[0].ip_configuration[0].private_ip_address, null)
 }
 
 output "firewall_id" {
-  description = "Resource ID of the Azure Firewall"
-  value       = azurerm_firewall.hub.id
+  description = "Resource ID of the Azure Firewall (null when firewall is disabled)"
+  value       = try(azurerm_firewall.hub[0].id, null)
 }
 
 output "firewall_policy_id" {
-  description = "Resource ID of the Firewall Policy"
-  value       = azurerm_firewall_policy.hub.id
+  description = "Resource ID of the Firewall Policy (null when firewall is disabled)"
+  value       = try(azurerm_firewall_policy.hub[0].id, null)
 }
 
 output "key_vault_id" {

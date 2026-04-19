@@ -63,7 +63,7 @@ export default function McpServers() {
       setServers(data.servers);
     } catch (e) {
       if (e instanceof ApiError && e.status === 401) {
-        setError("Sign in to manage MCP servers.");
+        setError("Sign in to manage integrations.");
       } else {
         setError(e instanceof Error ? e.message : "Failed to load servers");
       }
@@ -162,9 +162,9 @@ export default function McpServers() {
         </Link>
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-bold text-gray-900">MCP Server Registry</h1>
+            <h1 className="text-2xl font-bold text-gray-900">Integration Registry</h1>
             <p className="text-gray-500 text-sm mt-1">
-              Register custom MCP servers to use in workflow steps.
+              Register custom integration servers to use in workflow steps.
             </p>
           </div>
           <div className="flex items-center gap-2">
@@ -182,7 +182,7 @@ export default function McpServers() {
               className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition"
             >
               <Plus size={14} />
-              Add Server
+              Add Integration
             </button>
           </div>
         </div>
@@ -191,7 +191,7 @@ export default function McpServers() {
       {/* Add-server form */}
       {showForm && (
         <form onSubmit={(e) => void handleAdd(e)} className="bg-white border border-gray-200 rounded-xl p-6 mb-6 space-y-4">
-          <h2 className="font-semibold text-gray-900 text-sm">New MCP Server</h2>
+          <h2 className="font-semibold text-gray-900 text-sm">New Integration</h2>
 
           {formError && (
             <p className="text-xs text-red-600 bg-red-50 border border-red-200 rounded px-3 py-2">{formError}</p>
@@ -203,7 +203,7 @@ export default function McpServers() {
               <input
                 required
                 className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                placeholder="My MCP Server"
+                placeholder="My Integration"
                 value={formName}
                 onChange={(e) => setFormName(e.target.value)}
               />
@@ -249,7 +249,7 @@ export default function McpServers() {
               className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 disabled:opacity-50 transition"
             >
               {submitting ? <Loader2 size={14} className="animate-spin" /> : <Plus size={14} />}
-              {submitting ? "Adding…" : "Add Server"}
+              {submitting ? "Adding…" : "Add Integration"}
             </button>
             <button
               type="button"
@@ -277,8 +277,8 @@ export default function McpServers() {
       ) : servers.length === 0 ? (
         <div className="text-center py-16 text-gray-400 border-2 border-dashed border-gray-200 rounded-xl">
           <PlugZap size={36} className="mx-auto mb-3 opacity-30" />
-          <p className="text-sm font-medium">No servers registered</p>
-          <p className="text-xs mt-1">Add an MCP server to use it in workflow steps.</p>
+          <p className="text-sm font-medium">No integrations registered</p>
+          <p className="text-xs mt-1">Add an integration server to use it in workflow steps.</p>
         </div>
       ) : (
         <div className="space-y-3">
@@ -308,7 +308,7 @@ export default function McpServers() {
                     <button
                       onClick={() => void handleDelete(server.id)}
                       className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition"
-                      title="Delete server"
+                      title="Delete integration"
                       aria-label={`Delete ${server.name}`}
                     >
                       <Trash2 size={14} />
@@ -376,7 +376,7 @@ export default function McpServers() {
                       }
                     }}
                     className="flex items-center gap-1.5 px-3 py-1.5 text-xs border border-gray-200 rounded-lg text-gray-600 hover:bg-gray-50 transition"
-                    title="Discover available MCP tools on this server"
+                    title="Discover available integration tools on this server"
                   >
                     {isExpanded ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
                     {isExpanded ? "Hide tools" : "Discover tools"}
@@ -394,13 +394,13 @@ export default function McpServers() {
           <aside
             role="dialog"
             aria-modal="true"
-            aria-label="MCP setup guidance"
+            aria-label="Integration setup guidance"
             className="w-full max-w-md overflow-y-auto border-l border-gray-200 bg-white p-6 shadow-xl"
           >
             <div className="mb-5 flex items-start justify-between gap-3">
               <div>
-                <p className="text-xs font-semibold uppercase tracking-wide text-blue-600">MCP setup help</p>
-                <h2 className="mt-1 text-lg font-semibold text-gray-900">Connect servers quickly</h2>
+                <p className="text-xs font-semibold uppercase tracking-wide text-blue-600">Integration setup help</p>
+                <h2 className="mt-1 text-lg font-semibold text-gray-900">Connect integrations quickly</h2>
               </div>
               <button
                 onClick={() => setShowHelp(false)}
@@ -414,7 +414,7 @@ export default function McpServers() {
               <section className="rounded-lg border border-gray-200 bg-gray-50 p-4">
                 <h3 className="font-medium text-gray-900">Checklist</h3>
                 <ul className="mt-2 space-y-1 text-gray-600">
-                  <li>Use the exact server base URL (include protocol).</li>
+                  <li>Use the exact integration server base URL (include protocol).</li>
                   <li>Set auth header key/value if the endpoint is protected.</li>
                   <li>Run Test connection before discovering tools.</li>
                 </ul>

@@ -40,12 +40,12 @@ describe("McpServers", () => {
       </MemoryRouter>
     );
 
-    expect(await screen.findByText("No servers registered")).toBeInTheDocument();
+    expect(await screen.findByText("No integrations registered")).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: /guidance/i }));
-    expect(screen.getByText("Connect servers quickly")).toBeInTheDocument();
+    expect(screen.getByText("Connect integrations quickly")).toBeInTheDocument();
 
     fireEvent.keyDown(window, { key: "Escape" });
-    expect(screen.queryByText("Connect servers quickly")).toBeNull();
+    expect(screen.queryByText("Connect integrations quickly")).toBeNull();
   });
 });

@@ -1,36 +1,73 @@
 import { useState } from "react";
-import { Zap, Bot, BarChart2, Shield, Clock, ChevronRight, Check } from "lucide-react";
+import {
+  Zap,
+  Bot,
+  BarChart2,
+  Shield,
+  Clock,
+  ChevronRight,
+  Check,
+  Workflow,
+  Plug,
+  Globe,
+  Lock,
+  Layers,
+} from "lucide-react";
 
 const FEATURES = [
   {
     icon: Bot,
     title: "AI-Native Agents",
     description:
-      "Deploy intelligent agents that reason, adapt, and handle complex multi-step workflows — not brittle rule-based triggers.",
+      "Deploy intelligent agents that reason, adapt, and handle complex multi-step workflows autonomously.",
+    gradient: "from-violet-500/20 to-purple-600/20",
+    iconColor: "text-violet-400",
+    borderColor: "border-violet-500/20 hover:border-violet-500/40",
   },
   {
-    icon: Zap,
-    title: "Deploy in Minutes",
+    icon: Workflow,
+    title: "Visual Workflow Builder",
     description:
-      "No code required. 100+ pre-built workflow templates get you from zero to automation in under 30 minutes.",
+      "Drag-and-drop node editor with 10+ step types. Build, test, and iterate in real time.",
+    gradient: "from-cyan-500/20 to-blue-600/20",
+    iconColor: "text-cyan-400",
+    borderColor: "border-cyan-500/20 hover:border-cyan-500/40",
+  },
+  {
+    icon: Plug,
+    title: "1,000+ Integrations",
+    description:
+      "Connect to any API, database, or SaaS tool. OAuth, API keys, and webhooks out of the box.",
+    gradient: "from-emerald-500/20 to-green-600/20",
+    iconColor: "text-emerald-400",
+    borderColor: "border-emerald-500/20 hover:border-emerald-500/40",
   },
   {
     icon: BarChart2,
     title: "Full Observability",
     description:
-      "Real-time run monitoring, step-by-step execution history, and performance dashboards built in.",
+      "Real-time monitoring, step-by-step execution logs, and performance dashboards built in.",
+    gradient: "from-amber-500/20 to-orange-600/20",
+    iconColor: "text-amber-400",
+    borderColor: "border-amber-500/20 hover:border-amber-500/40",
   },
   {
     icon: Clock,
     title: "Scale Without Headcount",
     description:
-      "Replace 10+ hours per week of manual work per workflow. Automate support, lead gen, data processing, and more.",
+      "Replace 10+ hours per week of manual work per workflow. Agents run 24/7, never drop the ball.",
+    gradient: "from-rose-500/20 to-pink-600/20",
+    iconColor: "text-rose-400",
+    borderColor: "border-rose-500/20 hover:border-rose-500/40",
   },
   {
     icon: Shield,
     title: "Enterprise-Grade Security",
     description:
-      "SOC 2 ready. Data stays in your environment. Role-based access control and full audit trails.",
+      "SOC 2 ready. Role-based access, encrypted credentials, and full audit trails.",
+    gradient: "from-blue-500/20 to-indigo-600/20",
+    iconColor: "text-blue-400",
+    borderColor: "border-blue-500/20 hover:border-blue-500/40",
   },
 ];
 
@@ -39,20 +76,42 @@ const HOW_IT_WORKS = [
     step: "01",
     title: "Deploy an Agent",
     description:
-      "Choose from 100+ pre-built workflow templates or describe what you want to automate in plain English. AutoFlow builds the agent for you.",
+      "Choose from pre-built templates or describe what you want in plain English. AutoFlow builds and configures the agent for you.",
+    icon: Bot,
+    color: "text-violet-400",
+    bg: "bg-violet-500/10",
   },
   {
     step: "02",
     title: "Configure Your Workflow",
     description:
-      "Connect your tools, define your triggers, and set your automation rules. No code, no complex integrations — just point and click.",
+      "Connect tools, set triggers, define logic. Drag-and-drop editor with real-time validation. No code required.",
+    icon: Workflow,
+    color: "text-cyan-400",
+    bg: "bg-cyan-500/10",
   },
   {
     step: "03",
     title: "Automate Everything",
     description:
-      "Your AI agents run 24/7, handling exceptions and edge cases that break rule-based tools. Watch your team reclaim hours every week.",
+      "Your AI agents run 24/7, handling edge cases that break rule-based tools. Monitor from a single dashboard.",
+    icon: Zap,
+    color: "text-emerald-400",
+    bg: "bg-emerald-500/10",
   },
+];
+
+const INTEGRATIONS = [
+  "Slack", "GitHub", "Notion", "Google Workspace", "Stripe",
+  "HubSpot", "Jira", "Linear", "Salesforce", "Intercom",
+  "PostHog", "Datadog", "DocuSign", "Apollo",
+];
+
+const STATS = [
+  { value: "10x", label: "Faster than manual" },
+  { value: "100+", label: "Pre-built templates" },
+  { value: "99.9%", label: "Uptime SLA" },
+  { value: "24/7", label: "Agent runtime" },
 ];
 
 export default function LandingPage() {
@@ -86,55 +145,72 @@ export default function LandingPage() {
   }
 
   return (
-    <div className="min-h-screen bg-white text-gray-900 font-sans">
+    <div className="min-h-screen bg-[#030712] text-white font-sans antialiased">
       {/* Nav */}
-      <header className="fixed top-0 inset-x-0 z-50 bg-white/80 backdrop-blur border-b border-gray-100">
-        <div className="max-w-6xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <div className="w-8 h-8 rounded-lg bg-blue-600 flex items-center justify-center">
+      <header className="fixed top-0 inset-x-0 z-50 border-b border-white/5">
+        <div className="absolute inset-0 bg-[#030712]/80 backdrop-blur-xl" />
+        <div className="relative max-w-6xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between">
+          <div className="flex items-center gap-2.5">
+            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-violet-500 to-cyan-500 flex items-center justify-center shadow-lg shadow-violet-500/20">
               <Zap className="w-4 h-4 text-white" />
             </div>
             <span className="text-lg font-bold tracking-tight">AutoFlow</span>
           </div>
-          <a
-            href="#waitlist"
-            className="hidden sm:inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-green-500 hover:bg-green-400 text-white text-sm font-semibold transition-colors"
-          >
-            Join the waitlist <ChevronRight className="w-3.5 h-3.5" />
-          </a>
+          <nav className="hidden md:flex items-center gap-8 text-sm text-gray-400">
+            <a href="#features" className="hover:text-white transition-colors">Features</a>
+            <a href="#how-it-works" className="hover:text-white transition-colors">How it works</a>
+            <a href="#integrations" className="hover:text-white transition-colors">Integrations</a>
+          </nav>
+          <div className="flex items-center gap-3">
+            <a href="/login" className="hidden sm:block text-sm text-gray-400 hover:text-white transition-colors">
+              Sign in
+            </a>
+            <a
+              href="#waitlist"
+              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-violet-600 hover:bg-violet-500 text-white text-sm font-semibold transition-all hover:shadow-lg hover:shadow-violet-500/25"
+            >
+              Get early access <ChevronRight className="w-3.5 h-3.5" />
+            </a>
+          </div>
         </div>
       </header>
 
       {/* Hero */}
-      <section
-        id="hero"
-        className="pt-32 pb-24 px-4 sm:px-6 bg-gradient-to-b from-blue-950 via-blue-900 to-blue-800 text-white"
-      >
-        <div className="max-w-4xl mx-auto text-center">
-          <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-blue-700/50 border border-blue-500/40 text-blue-200 text-sm font-medium mb-8">
-            <span className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse" />
-            Private beta — limited spots available
+      <section className="relative pt-32 pb-24 px-4 sm:px-6 overflow-hidden">
+        {/* Background effects */}
+        <div className="absolute inset-0 bg-[radial-gradient(ellipse_80%_60%_at_50%_-20%,rgba(124,58,237,0.3),transparent)] pointer-events-none" />
+        <div className="absolute inset-0 bg-[radial-gradient(ellipse_60%_40%_at_80%_50%,rgba(6,182,212,0.15),transparent)] pointer-events-none" />
+        <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[800px] h-[600px] bg-[radial-gradient(ellipse_at_center,rgba(124,58,237,0.08),transparent_70%)] pointer-events-none" />
+
+        <div className="relative max-w-5xl mx-auto text-center">
+          {/* Badge */}
+          <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-violet-500/10 border border-violet-500/20 text-violet-300 text-sm font-medium mb-8 animate-fade-in">
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+            Now in private beta
           </div>
-          <h1 className="text-4xl sm:text-5xl lg:text-6xl font-extrabold tracking-tight leading-tight mb-6">
-            The AI Automation Platform
+
+          {/* Heading */}
+          <h1 className="text-display-sm sm:text-display lg:text-display-xl mb-6 animate-slide-up">
+            <span className="text-white">The AI Platform That</span>
             <br />
-            <span className="text-cyan-400">Built for Modern Businesses</span>
+            <span className="text-gradient-hero animate-gradient-x bg-[length:200%_200%]">
+              Runs Your Operations
+            </span>
           </h1>
-          <p className="text-lg sm:text-xl text-blue-200 max-w-2xl mx-auto mb-10 leading-relaxed">
-            Automate Everything. Deploy in Minutes.
-            <br />
-            Deploy AI agents that reason, adapt, and run your operations 24/7 —
-            no code required.
+
+          <p className="text-lg sm:text-xl text-gray-400 max-w-2xl mx-auto mb-10 leading-relaxed animate-slide-up">
+            Deploy AI agents that reason, adapt, and automate your workflows end-to-end.
+            No code. No complexity. No limits.
           </p>
 
-          {/* Hero email capture */}
+          {/* Email capture */}
           <form
             id="waitlist"
             onSubmit={handleSubmit}
-            className="flex flex-col sm:flex-row gap-3 max-w-md mx-auto"
+            className="flex flex-col sm:flex-row gap-3 max-w-lg mx-auto animate-slide-up"
           >
             {submitted ? (
-              <div className="flex-1 flex items-center justify-center gap-2 px-5 py-3 rounded-xl bg-green-500/20 border border-green-400/40 text-green-300 font-semibold text-sm">
+              <div className="flex-1 flex items-center justify-center gap-2 px-5 py-3.5 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 font-semibold text-sm">
                 <Check className="w-4 h-4" />
                 You're on the list — we'll be in touch!
               </div>
@@ -146,73 +222,103 @@ export default function LandingPage() {
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   placeholder="you@company.com"
-                  className="flex-1 px-4 py-3 rounded-xl bg-white/10 border border-white/20 text-white placeholder-blue-300 focus:outline-none focus:ring-2 focus:ring-cyan-400 text-sm"
+                  className="flex-1 px-4 py-3.5 rounded-xl bg-white/5 border border-white/10 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-violet-500/50 focus:border-violet-500/50 text-sm transition-all"
                 />
                 <button
                   type="submit"
                   disabled={submitting}
-                  className="px-6 py-3 rounded-xl bg-green-500 hover:bg-green-400 disabled:opacity-60 text-white font-bold text-sm transition-colors whitespace-nowrap"
+                  className="px-6 py-3.5 rounded-xl bg-gradient-to-r from-violet-600 to-violet-500 hover:from-violet-500 hover:to-violet-400 disabled:opacity-60 text-white font-bold text-sm transition-all whitespace-nowrap shadow-lg shadow-violet-500/25 hover:shadow-violet-500/40"
                 >
-                  {submitting ? "Joining..." : "Join the waitlist →"}
+                  {submitting ? "Joining..." : "Get early access"}
                 </button>
               </>
             )}
           </form>
-          <p className="mt-3 text-xs text-blue-400">
-            No credit card required. Free early access for beta users.
-          </p>
           {submitError && (
-            <p role="alert" className="mt-3 text-xs text-red-300">
+            <p role="alert" className="mt-3 text-xs text-red-400">
               {submitError}
             </p>
           )}
+          <p className="mt-4 text-xs text-gray-600">
+            No credit card required. Free for beta users.
+          </p>
+
+          {/* Stats bar */}
+          <div className="mt-16 grid grid-cols-2 sm:grid-cols-4 gap-6 max-w-2xl mx-auto animate-fade-in">
+            {STATS.map(({ value, label }) => (
+              <div key={label} className="text-center">
+                <p className="text-2xl sm:text-3xl font-bold text-white">{value}</p>
+                <p className="text-xs text-gray-500 mt-1">{label}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* Trusted by */}
+      <section className="py-12 px-4 sm:px-6 border-y border-white/5">
+        <div className="max-w-5xl mx-auto text-center">
+          <p className="text-xs text-gray-600 font-medium uppercase tracking-[0.2em] mb-6">
+            Built for modern operations teams
+          </p>
+          <div className="flex flex-wrap justify-center gap-x-10 gap-y-3">
+            {["Operations Leaders", "Technical Founders", "Dev Teams", "Agencies", "SMBs"].map(
+              (label) => (
+                <span key={label} className="text-gray-500 font-medium text-sm">
+                  {label}
+                </span>
+              )
+            )}
+          </div>
         </div>
       </section>
 
       {/* Problem / Solution */}
-      <section className="py-24 px-4 sm:px-6 bg-gray-50">
+      <section className="py-24 px-4 sm:px-6">
         <div className="max-w-5xl mx-auto">
-          <div className="grid md:grid-cols-2 gap-12 items-center">
-            <div>
-              <p className="text-sm font-semibold text-blue-600 uppercase tracking-widest mb-3">
+          <div className="grid md:grid-cols-2 gap-16 items-start">
+            <div className="relative">
+              <div className="absolute -left-4 top-0 bottom-0 w-px bg-gradient-to-b from-red-500/50 to-transparent" />
+              <p className="text-xs font-semibold text-red-400 uppercase tracking-[0.2em] mb-4">
                 The Problem
               </p>
-              <h2 className="text-3xl sm:text-4xl font-extrabold tracking-tight leading-tight mb-6">
-                Repetitive work is killing your team's productivity
+              <h2 className="text-2xl sm:text-3xl font-bold tracking-tight mb-6 text-white">
+                Manual operations don't scale
               </h2>
-              <ul className="space-y-3 text-gray-600">
+              <ul className="space-y-4">
                 {[
-                  "Manual support tickets routed by hand",
-                  "Lead data copied between tools all day",
-                  "Reports generated from scratch every week",
-                  "Traditional automation breaks on any edge case",
+                  "Support tickets routed by hand, every single time",
+                  "Lead data copied between CRM, email, and spreadsheets",
+                  "Reports rebuilt from scratch every Monday morning",
+                  "Existing automation breaks on the first edge case",
                 ].map((item) => (
-                  <li key={item} className="flex items-start gap-3">
-                    <span className="mt-1 w-4 h-4 rounded-full bg-red-100 text-red-500 flex items-center justify-center text-xs font-bold shrink-0">
-                      ✕
+                  <li key={item} className="flex items-start gap-3 text-gray-400 text-sm">
+                    <span className="mt-0.5 w-5 h-5 rounded-full bg-red-500/10 border border-red-500/20 text-red-400 flex items-center justify-center text-xs shrink-0">
+                      x
                     </span>
                     <span>{item}</span>
                   </li>
                 ))}
               </ul>
             </div>
-            <div>
-              <p className="text-sm font-semibold text-green-600 uppercase tracking-widest mb-3">
+            <div className="relative">
+              <div className="absolute -left-4 top-0 bottom-0 w-px bg-gradient-to-b from-emerald-500/50 to-transparent" />
+              <p className="text-xs font-semibold text-emerald-400 uppercase tracking-[0.2em] mb-4">
                 The Solution
               </p>
-              <h2 className="text-3xl sm:text-4xl font-extrabold tracking-tight leading-tight mb-6">
-                AI agents that actually think — not just follow rules
+              <h2 className="text-2xl sm:text-3xl font-bold tracking-tight mb-6 text-white">
+                AI agents that think, then act
               </h2>
-              <ul className="space-y-3 text-gray-600">
+              <ul className="space-y-4">
                 {[
-                  "Deploy agents that handle decisions, not just triggers",
-                  "Zero-code setup — live in under 30 minutes",
-                  "Agents adapt when inputs change or exceptions occur",
+                  "Agents that understand context and make decisions",
+                  "Zero-code setup, running in under 30 minutes",
+                  "Graceful handling of exceptions and edge cases",
                   "Scale operations without growing headcount",
                 ].map((item) => (
-                  <li key={item} className="flex items-start gap-3">
-                    <span className="mt-1 w-4 h-4 rounded-full bg-green-100 text-green-600 flex items-center justify-center text-xs font-bold shrink-0">
-                      ✓
+                  <li key={item} className="flex items-start gap-3 text-gray-400 text-sm">
+                    <span className="mt-0.5 w-5 h-5 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 flex items-center justify-center text-xs shrink-0">
+                      <Check className="w-3 h-3" />
                     </span>
                     <span>{item}</span>
                   </li>
@@ -224,24 +330,27 @@ export default function LandingPage() {
       </section>
 
       {/* How it works */}
-      <section className="py-24 px-4 sm:px-6 bg-white">
+      <section id="how-it-works" className="py-24 px-4 sm:px-6">
         <div className="max-w-5xl mx-auto">
           <div className="text-center mb-16">
-            <p className="text-sm font-semibold text-blue-600 uppercase tracking-widest mb-3">
+            <p className="text-xs font-semibold text-violet-400 uppercase tracking-[0.2em] mb-3">
               How It Works
             </p>
-            <h2 className="text-3xl sm:text-4xl font-extrabold tracking-tight">
-              From idea to automation in 3 steps
+            <h2 className="text-3xl sm:text-4xl font-bold tracking-tight text-white">
+              From idea to automation in minutes
             </h2>
           </div>
           <div className="grid md:grid-cols-3 gap-8">
-            {HOW_IT_WORKS.map(({ step, title, description }) => (
-              <div key={step} className="relative">
-                <div className="text-5xl font-black text-blue-100 mb-4 leading-none">
-                  {step}
+            {HOW_IT_WORKS.map(({ step, title, description, icon: Icon, color, bg }) => (
+              <div key={step} className="relative group">
+                <div className="p-6 rounded-2xl border border-white/5 bg-white/[0.02] hover:bg-white/[0.04] transition-all duration-300">
+                  <div className={`w-12 h-12 rounded-xl ${bg} flex items-center justify-center mb-5`}>
+                    <Icon className={`w-6 h-6 ${color}`} />
+                  </div>
+                  <p className="text-xs font-mono text-gray-600 mb-2">Step {step}</p>
+                  <h3 className="text-lg font-bold text-white mb-3">{title}</h3>
+                  <p className="text-sm text-gray-400 leading-relaxed">{description}</p>
                 </div>
-                <h3 className="text-xl font-bold mb-3">{title}</h3>
-                <p className="text-gray-600 leading-relaxed">{description}</p>
               </div>
             ))}
           </div>
@@ -249,70 +358,101 @@ export default function LandingPage() {
       </section>
 
       {/* Features */}
-      <section className="py-24 px-4 sm:px-6 bg-blue-950 text-white">
+      <section id="features" className="py-24 px-4 sm:px-6">
         <div className="max-w-5xl mx-auto">
           <div className="text-center mb-16">
-            <p className="text-sm font-semibold text-cyan-400 uppercase tracking-widest mb-3">
-              Features
+            <p className="text-xs font-semibold text-cyan-400 uppercase tracking-[0.2em] mb-3">
+              Platform
             </p>
-            <h2 className="text-3xl sm:text-4xl font-extrabold tracking-tight">
-              Everything you need. Nothing you don't.
+            <h2 className="text-3xl sm:text-4xl font-bold tracking-tight text-white">
+              Everything you need to automate
             </h2>
           </div>
-          <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-6">
-            {FEATURES.map(({ icon: Icon, title, description }) => (
+          <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-5">
+            {FEATURES.map(({ icon: Icon, title, description, gradient, iconColor, borderColor }) => (
               <div
                 key={title}
-                className="p-6 rounded-2xl bg-blue-900/50 border border-blue-700/50 hover:border-cyan-500/50 transition-colors"
+                className={`p-6 rounded-2xl bg-gradient-to-br ${gradient} border ${borderColor} transition-all duration-300 hover:translate-y-[-2px]`}
               >
-                <div className="w-10 h-10 rounded-xl bg-blue-700/60 flex items-center justify-center mb-4">
-                  <Icon className="w-5 h-5 text-cyan-400" />
+                <div className="w-10 h-10 rounded-xl bg-white/5 flex items-center justify-center mb-4">
+                  <Icon className={`w-5 h-5 ${iconColor}`} />
                 </div>
-                <h3 className="font-bold text-lg mb-2">{title}</h3>
-                <p className="text-blue-300 text-sm leading-relaxed">
-                  {description}
-                </p>
+                <h3 className="font-bold text-white mb-2">{title}</h3>
+                <p className="text-sm text-gray-400 leading-relaxed">{description}</p>
               </div>
             ))}
           </div>
         </div>
       </section>
 
-      {/* Social proof placeholder */}
-      <section className="py-16 px-4 sm:px-6 bg-gray-50 border-y border-gray-100">
+      {/* Integrations */}
+      <section id="integrations" className="py-24 px-4 sm:px-6">
         <div className="max-w-5xl mx-auto text-center">
-          <p className="text-sm text-gray-500 mb-6 font-medium uppercase tracking-widest">
-            Trusted by operations leaders, founders, and developers
+          <p className="text-xs font-semibold text-emerald-400 uppercase tracking-[0.2em] mb-3">
+            Integrations
           </p>
-          <div className="flex flex-wrap justify-center gap-x-12 gap-y-4">
-            {["Operations Leaders", "Technical Founders", "Dev Teams", "SMBs", "Agencies"].map(
-              (label) => (
-                <span key={label} className="text-gray-400 font-semibold text-sm">
-                  {label}
-                </span>
-              )
-            )}
+          <h2 className="text-3xl sm:text-4xl font-bold tracking-tight text-white mb-4">
+            Connect to your entire stack
+          </h2>
+          <p className="text-gray-400 text-sm mb-12 max-w-lg mx-auto">
+            Out-of-the-box connectors for the tools you already use. OAuth, API keys, and webhooks supported.
+          </p>
+          <div className="flex flex-wrap justify-center gap-3 max-w-3xl mx-auto">
+            {INTEGRATIONS.map((name) => (
+              <span
+                key={name}
+                className="px-4 py-2 rounded-lg bg-white/[0.03] border border-white/[0.06] text-sm text-gray-300 font-medium hover:bg-white/[0.06] hover:border-white/[0.12] transition-all cursor-default"
+              >
+                {name}
+              </span>
+            ))}
+            <span className="px-4 py-2 rounded-lg bg-violet-500/10 border border-violet-500/20 text-sm text-violet-300 font-medium">
+              + many more
+            </span>
+          </div>
+        </div>
+      </section>
+
+      {/* Security */}
+      <section className="py-24 px-4 sm:px-6 border-t border-white/5">
+        <div className="max-w-5xl mx-auto">
+          <div className="grid md:grid-cols-3 gap-8">
+            {[
+              { icon: Lock, title: "Encrypted at Rest", desc: "AES-256 encryption for all credentials and sensitive data." },
+              { icon: Globe, title: "SOC 2 Ready", desc: "Enterprise compliance with full audit trails and access controls." },
+              { icon: Layers, title: "Your Infrastructure", desc: "Self-host or use our cloud. Data stays where you choose." },
+            ].map(({ icon: Icon, title, desc }) => (
+              <div key={title} className="flex items-start gap-4">
+                <div className="w-10 h-10 rounded-lg bg-white/5 flex items-center justify-center shrink-0">
+                  <Icon className="w-5 h-5 text-gray-400" />
+                </div>
+                <div>
+                  <h3 className="font-semibold text-white text-sm mb-1">{title}</h3>
+                  <p className="text-xs text-gray-500 leading-relaxed">{desc}</p>
+                </div>
+              </div>
+            ))}
           </div>
         </div>
       </section>
 
       {/* Bottom CTA */}
-      <section className="py-24 px-4 sm:px-6 bg-gradient-to-b from-blue-900 to-blue-950 text-white text-center">
-        <div className="max-w-2xl mx-auto">
-          <h2 className="text-3xl sm:text-4xl font-extrabold tracking-tight mb-4">
+      <section className="py-24 px-4 sm:px-6 relative overflow-hidden">
+        <div className="absolute inset-0 bg-[radial-gradient(ellipse_60%_50%_at_50%_50%,rgba(124,58,237,0.15),transparent)] pointer-events-none" />
+        <div className="relative max-w-2xl mx-auto text-center">
+          <h2 className="text-3xl sm:text-4xl font-bold tracking-tight text-white mb-4">
             Stop doing manual work.
             <br />
-            Start deploying agents.
+            <span className="text-gradient">Start deploying agents.</span>
           </h2>
-          <p className="text-blue-300 mb-10 text-lg">
-            Join the waitlist — get early access and free beta for the first 100
-            users.
+          <p className="text-gray-400 mb-10 text-base">
+            Join the waitlist for free early access.
           </p>
           <form onSubmit={handleSubmit} className="flex flex-col sm:flex-row gap-3 max-w-md mx-auto">
             {submitted ? (
-              <div className="flex-1 flex items-center justify-center gap-2 px-5 py-3 rounded-xl bg-green-500/20 border border-green-400/40 text-green-300 font-semibold text-sm">
+              <div className="flex-1 flex items-center justify-center gap-2 px-5 py-3.5 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 font-semibold text-sm">
                 <Check className="w-4 h-4" />
-                You're on the list — we'll be in touch!
+                You're on the list!
               </div>
             ) : (
               <>
@@ -322,35 +462,31 @@ export default function LandingPage() {
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   placeholder="you@company.com"
-                  className="flex-1 px-4 py-3 rounded-xl bg-white/10 border border-white/20 text-white placeholder-blue-300 focus:outline-none focus:ring-2 focus:ring-cyan-400 text-sm"
+                  className="flex-1 px-4 py-3.5 rounded-xl bg-white/5 border border-white/10 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-violet-500/50 text-sm transition-all"
                 />
                 <button
                   type="submit"
                   disabled={submitting}
-                  className="px-6 py-3 rounded-xl bg-green-500 hover:bg-green-400 disabled:opacity-60 text-white font-bold text-sm transition-colors whitespace-nowrap"
+                  className="px-6 py-3.5 rounded-xl bg-gradient-to-r from-violet-600 to-violet-500 hover:from-violet-500 hover:to-violet-400 disabled:opacity-60 text-white font-bold text-sm transition-all whitespace-nowrap shadow-lg shadow-violet-500/25"
                 >
-                  {submitting ? "Joining..." : "Get early access →"}
+                  {submitting ? "Joining..." : "Get early access"}
                 </button>
               </>
             )}
           </form>
-          <p className="mt-3 text-xs text-blue-400">
-            No credit card required. Free for beta users.
-          </p>
         </div>
       </section>
 
       {/* Footer */}
-      <footer className="py-8 px-4 sm:px-6 bg-blue-950 border-t border-blue-900 text-center text-blue-500 text-sm">
-        <div className="flex items-center justify-center gap-2 mb-2">
-          <div className="w-5 h-5 rounded bg-blue-600 flex items-center justify-center">
+      <footer className="py-8 px-4 sm:px-6 border-t border-white/5 text-center">
+        <div className="flex items-center justify-center gap-2 mb-3">
+          <div className="w-5 h-5 rounded bg-gradient-to-br from-violet-500 to-cyan-500 flex items-center justify-center">
             <Zap className="w-3 h-3 text-white" />
           </div>
-          <span className="font-bold text-white">AutoFlow</span>
+          <span className="font-bold text-white text-sm">AutoFlow</span>
         </div>
-        <p>© {new Date().getFullYear()} AutoFlow. All rights reserved.</p>
-        <p className="mt-1 text-blue-600">
-          Automate Everything. Deploy in Minutes.
+        <p className="text-xs text-gray-600">
+          &copy; {new Date().getFullYear()} AutoFlow. All rights reserved.
         </p>
       </footer>
     </div>

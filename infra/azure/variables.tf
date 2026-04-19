@@ -19,6 +19,18 @@ variable "location" {
   default     = "eastus2"
 }
 
+variable "enable_hub_firewall" {
+  description = "Whether to deploy Azure Firewall resources in the hub"
+  type        = bool
+  default     = false
+}
+
+variable "enable_hub_bastion" {
+  description = "Whether to deploy Azure Bastion resources in the hub"
+  type        = bool
+  default     = false
+}
+
 # ── Azure Identity ────────────────────────────────────────────────────────────
 
 variable "tenant_id" {

@@ -1,13 +1,412 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap');
+
 @tailwind base;
 @tailwind components;
-@tailwind utilities;
 
 @layer base {
-  body {
-    @apply bg-gray-50 text-gray-900 antialiased transition-colors duration-200;
+  :root {
+    --color-bg-primary: 248 250 252;
+    --color-bg-secondary: 255 255 255;
+    --color-bg-tertiary: 241 245 249;
+    --color-text-primary: 15 23 42;
+    --color-text-secondary: 71 85 105;
+    --color-text-tertiary: 148 163 184;
+    --color-border: 226 232 240;
+    --color-border-subtle: 241 245 249;
+    --color-accent: 124 58 237;
+    --color-accent-subtle: 124 58 237 / 0.08;
+    --card-shadow: 0 1px 3px rgba(0,0,0,0.04), 0 1px 2px rgba(0,0,0,0.06);
+    --card-shadow-hover: 0 4px 12px rgba(0,0,0,0.08), 0 2px 4px rgba(0,0,0,0.04);
   }
 
-  html.dark body {
-    @apply bg-gray-950 text-gray-100;
+  html.dark {
+    --color-bg-primary: 2 6 23;
+    --color-bg-secondary: 15 23 42;
+    --color-bg-tertiary: 30 41 59;
+    --color-text-primary: 241 245 249;
+    --color-text-secondary: 148 163 184;
+    --color-text-tertiary: 100 116 139;
+    --color-border: 30 41 59;
+    --color-border-subtle: 30 41 59 / 0.5;
+    --color-accent: 139 92 246;
+    --color-accent-subtle: 139 92 246 / 0.12;
+    --card-shadow: 0 1px 3px rgba(0,0,0,0.3), 0 1px 2px rgba(0,0,0,0.2), inset 0 1px 0 rgba(255,255,255,0.03);
+    --card-shadow-hover: 0 8px 24px rgba(0,0,0,0.4), 0 2px 8px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.05);
+  }
+
+  body {
+    @apply antialiased transition-colors duration-200;
+    font-family: 'Inter', ui-sans-serif, system-ui, -apple-system, sans-serif;
+    background-color: rgb(var(--color-bg-primary));
+    color: rgb(var(--color-text-primary));
   }
 }
+
+@layer utilities {
+  .text-gradient {
+    @apply bg-clip-text text-transparent;
+    background-image: linear-gradient(135deg, #7c3aed 0%, #06b6d4 50%, #8b5cf6 100%);
+    background-size: 200% 200%;
+  }
+
+  .text-gradient-hero {
+    @apply bg-clip-text text-transparent;
+    background-image: linear-gradient(135deg, #c4b5fd 0%, #67e8f9 40%, #a78bfa 70%, #22d3ee 100%);
+    background-size: 200% 200%;
+  }
+
+  .glass {
+    background: rgba(255, 255, 255, 0.7);
+    backdrop-filter: blur(12px) saturate(180%);
+    -webkit-backdrop-filter: blur(12px) saturate(180%);
+  }
+
+  .dark .glass {
+    background: rgba(15, 23, 42, 0.75);
+    backdrop-filter: blur(12px) saturate(180%);
+    -webkit-backdrop-filter: blur(12px) saturate(180%);
+  }
+
+  .glass-card {
+    background: rgba(255, 255, 255, 0.85);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    box-shadow: var(--card-shadow);
+    border: 1px solid rgb(var(--color-border));
+  }
+
+  .dark .glass-card {
+    background: rgba(15, 23, 42, 0.6);
+    border-color: rgba(148, 163, 184, 0.08);
+    box-shadow: var(--card-shadow);
+  }
+
+  .glass-card:hover {
+    box-shadow: var(--card-shadow-hover);
+  }
+
+  .glow-border {
+    position: relative;
+  }
+  .glow-border::before {
+    content: '';
+    position: absolute;
+    inset: -1px;
+    border-radius: inherit;
+    background: linear-gradient(135deg, rgba(124,58,237,0.3), rgba(6,182,212,0.2), rgba(124,58,237,0.15));
+    z-index: -1;
+    opacity: 0;
+    transition: opacity 0.3s ease;
+  }
+  .glow-border:hover::before {
+    opacity: 1;
+  }
+
+  .noise-overlay {
+    position: relative;
+  }
+  .noise-overlay::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background-image: url("https://cdn.helloautoflow.com/v0.1.0/textures/noise-overlay.svg");
+    pointer-events: none;
+    z-index: 1;
+    mix-blend-mode: overlay;
+  }
+
+  /* Dark mode overrides for legacy Tailwind utility classes */
+  .dark .bg-white {
+    background-color: rgb(15 23 42);
+  }
+  .dark .bg-gray-50 {
+    background-color: rgb(2 6 23);
+  }
+  .dark .bg-gray-100 {
+    background-color: rgb(30 41 59);
+  }
+  .dark .bg-gray-200 {
+    background-color: rgb(51 65 85);
+  }
+  .dark .bg-gray-300 {
+    background-color: rgb(71 85 105);
+  }
+  .dark .border-gray-100 {
+    border-color: rgb(30 41 59 / 0.7);
+  }
+  .dark .border-gray-200 {
+    border-color: rgb(30 41 59);
+  }
+  .dark .border-gray-300 {
+    border-color: rgb(51 65 85);
+  }
+  .dark .border-gray-50 {
+    border-color: rgb(51 65 85 / 0.4);
+  }
+  .dark .text-gray-900 {
+    color: rgb(241 245 249);
+  }
+  .dark .text-gray-800 {
+    color: rgb(226 232 240);
+  }
+  .dark .text-gray-700 {
+    color: rgb(203 213 225);
+  }
+  .dark .text-gray-600 {
+    color: rgb(148 163 184);
+  }
+  .dark .text-gray-500 {
+    color: rgb(148 163 184);
+  }
+  .dark .text-gray-400 {
+    color: rgb(100 116 139);
+  }
+  .dark .hover\:bg-gray-50:hover {
+    background-color: rgb(30 41 59);
+  }
+  .dark .hover\:bg-gray-100:hover {
+    background-color: rgb(30 41 59);
+  }
+  .dark .hover\:bg-red-50:hover {
+    background-color: rgb(69 10 10 / 0.55);
+  }
+  .dark .hover\:text-gray-500:hover,
+  .dark .hover\:text-gray-600:hover,
+  .dark .hover\:text-gray-700:hover {
+    color: rgb(226 232 240);
+  }
+
+  .dark .bg-red-50 {
+    background-color: rgb(69 10 10 / 0.4);
+  }
+  .dark .bg-amber-50 {
+    background-color: rgb(69 26 3 / 0.35);
+  }
+  .dark .bg-yellow-50 {
+    background-color: rgb(66 32 6 / 0.35);
+  }
+  .dark .bg-purple-50 {
+    background-color: rgb(59 7 100 / 0.35);
+  }
+  .dark .bg-indigo-50 {
+    background-color: rgb(30 27 75 / 0.35);
+  }
+  .dark .bg-blue-50 {
+    background-color: rgb(30 58 138 / 0.35);
+  }
+  .dark .bg-violet-50 {
+    background-color: rgb(46 16 101 / 0.35);
+  }
+  .dark .bg-emerald-50 {
+    background-color: rgb(6 78 59 / 0.35);
+  }
+  .dark .bg-green-50 {
+    background-color: rgb(5 46 22 / 0.35);
+  }
+  .dark .bg-cyan-50 {
+    background-color: rgb(22 78 99 / 0.35);
+  }
+
+  .dark .bg-blue-100 {
+    background-color: rgb(30 58 138 / 0.5);
+  }
+  .dark .bg-violet-100 {
+    background-color: rgb(46 16 101 / 0.5);
+  }
+  .dark .bg-indigo-100 {
+    background-color: rgb(30 27 75 / 0.5);
+  }
+  .dark .bg-emerald-100 {
+    background-color: rgb(6 78 59 / 0.5);
+  }
+  .dark .bg-green-100 {
+    background-color: rgb(5 46 22 / 0.5);
+  }
+  .dark .bg-amber-100 {
+    background-color: rgb(69 26 3 / 0.5);
+  }
+
+  .dark .border-red-200 {
+    border-color: rgb(127 29 29 / 0.5);
+  }
+  .dark .border-red-300 {
+    border-color: rgb(153 27 27 / 0.55);
+  }
+  .dark .border-amber-200 {
+    border-color: rgb(120 53 15 / 0.5);
+  }
+  .dark .border-yellow-200 {
+    border-color: rgb(113 63 18 / 0.5);
+  }
+  .dark .border-purple-200 {
+    border-color: rgb(88 28 135 / 0.5);
+  }
+  .dark .border-indigo-200 {
+    border-color: rgb(49 46 129 / 0.5);
+  }
+  .dark .border-indigo-300 {
+    border-color: rgb(67 56 202 / 0.55);
+  }
+  .dark .border-blue-200 {
+    border-color: rgb(30 58 138 / 0.5);
+  }
+  .dark .border-violet-200 {
+    border-color: rgb(46 16 101 / 0.5);
+  }
+  .dark .border-green-200 {
+    border-color: rgb(20 83 45 / 0.5);
+  }
+  .dark .border-emerald-200 {
+    border-color: rgb(6 78 59 / 0.5);
+  }
+
+  .dark .text-red-600 {
+    color: rgb(252 165 165);
+  }
+  .dark .text-red-700 {
+    color: rgb(254 202 202);
+  }
+  .dark .text-red-800 {
+    color: rgb(254 226 226);
+  }
+  .dark .text-amber-600 {
+    color: rgb(252 211 77);
+  }
+  .dark .text-amber-700 {
+    color: rgb(253 230 138);
+  }
+  .dark .text-amber-800 {
+    color: rgb(254 243 199);
+  }
+  .dark .text-yellow-600 {
+    color: rgb(253 224 71);
+  }
+  .dark .text-green-600 {
+    color: rgb(134 239 172);
+  }
+  .dark .text-green-700 {
+    color: rgb(187 247 208);
+  }
+  .dark .text-green-800 {
+    color: rgb(220 252 231);
+  }
+  .dark .text-emerald-600 {
+    color: rgb(110 231 183);
+  }
+  .dark .text-emerald-700 {
+    color: rgb(167 243 208);
+  }
+  .dark .text-blue-600 {
+    color: rgb(147 197 253);
+  }
+  .dark .text-blue-700 {
+    color: rgb(191 219 254);
+  }
+  .dark .text-blue-800 {
+    color: rgb(219 234 254);
+  }
+  .dark .text-violet-600 {
+    color: rgb(196 181 253);
+  }
+  .dark .text-violet-700 {
+    color: rgb(221 214 254);
+  }
+  .dark .text-violet-800 {
+    color: rgb(237 233 254);
+  }
+  .dark .text-indigo-600 {
+    color: rgb(165 180 252);
+  }
+  .dark .text-indigo-700 {
+    color: rgb(199 210 254);
+  }
+  .dark .text-indigo-800 {
+    color: rgb(224 231 255);
+  }
+  .dark .text-cyan-600 {
+    color: rgb(103 232 249);
+  }
+  .dark .text-sky-600 {
+    color: rgb(125 211 252);
+  }
+  .dark .text-sky-700 {
+    color: rgb(186 230 253);
+  }
+
+  .workflow-controls-pill {
+    border: 1px solid rgb(226 232 240);
+    border-radius: 9999px;
+    background: rgba(255, 255, 255, 0.95);
+    box-shadow: 0 10px 25px rgba(15, 23, 42, 0.12);
+    overflow: hidden;
+    backdrop-filter: blur(6px);
+  }
+
+  .workflow-controls-pill button {
+    border-color: rgb(226 232 240);
+    color: rgb(71 85 105);
+    background: transparent;
+  }
+
+  .workflow-controls-pill button:hover {
+    background: rgb(238 242 255);
+    color: rgb(79 70 229);
+  }
+
+  .workflow-edge path {
+    transition: stroke 160ms ease, filter 160ms ease;
+    stroke: #9ca3af;
+    stroke-width: 2px;
+  }
+
+  .workflow-edge:hover path,
+  .react-flow__edge.selected.workflow-edge path {
+    stroke: #6366f1;
+  }
+
+  .workflow-edge.workflow-edge-running path {
+    stroke: #6366f1;
+    stroke-dasharray: 8 6;
+    animation: workflow-edge-dash 0.9s linear infinite, workflow-edge-glow 1.5s ease-in-out infinite;
+  }
+
+  .workflow-node-running {
+    animation: workflow-node-pulse 1.6s ease-in-out infinite;
+  }
+
+  .workflow-node-success {
+    box-shadow: 0 8px 22px rgba(34, 197, 94, 0.26);
+  }
+
+  .workflow-node-error {
+    box-shadow: 0 8px 22px rgba(239, 68, 68, 0.24);
+  }
+
+  @keyframes workflow-edge-dash {
+    to {
+      stroke-dashoffset: -14;
+    }
+  }
+
+  @keyframes workflow-edge-glow {
+    0%,
+    100% {
+      filter: drop-shadow(0 0 0 rgba(99, 102, 241, 0));
+    }
+    50% {
+      filter: drop-shadow(0 0 5px rgba(99, 102, 241, 0.55));
+    }
+  }
+
+  @keyframes workflow-node-pulse {
+    0%,
+    100% {
+      box-shadow: 0 8px 22px rgba(99, 102, 241, 0.14);
+    }
+    50% {
+      box-shadow: 0 12px 28px rgba(99, 102, 241, 0.32);
+    }
+  }
+}
+
+@tailwind utilities;

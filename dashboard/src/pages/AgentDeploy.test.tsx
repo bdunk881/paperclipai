@@ -15,11 +15,12 @@ vi.mock("../context/AuthContext", () => ({
 
 describe("AgentDeploy", () => {
   afterEach(() => {
+    vi.useRealTimers();
     vi.restoreAllMocks();
   });
 
   beforeEach(() => {
-    vi.spyOn(global, "fetch").mockResolvedValue(
+    vi.spyOn(global, "fetch").mockImplementation(async () =>
       new Response(JSON.stringify({ connections: [], total: 0 }), {
         status: 200,
         headers: { "content-type": "application/json" },

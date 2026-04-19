@@ -1,4 +1,4 @@
-import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { ArrowLeft, Link2, LoaderCircle, Rocket, ShieldCheck, Unlink2 } from "lucide-react";
 import { createDeployment, getAgentTemplate } from "../data/agentMarketplaceData";
@@ -6,6 +6,8 @@ import { useAuth } from "../context/AuthContext";
 
 const API_BASE = (import.meta.env.VITE_API_URL ?? "").replace(/\/$/, "");
 const OAUTH_CALLBACK_EVENT = "autoflow:agent-catalog-oauth-callback";
+const OAUTH_POPUP_CLOSE_POLL_MS = 500;
+const OAUTH_POPUP_TIMEOUT_MS = 60_000;
 
 const PERMISSIONS = ["read", "write", "execute"] as const;
 const DEPLOY_STAGES = ["Validating configuration", "Provisioning runtime", "Connecting integrations", "Finalizing deployment"];
@@ -31,6 +33,11 @@ interface ProviderConnectionState {
   message?: string;
 }
 
+type PopupMonitor = {
+  closePollId: number;
+  timeoutId: number;
+};
+
 function defaultProviderStates(): Record<OAuthProvider, ProviderConnectionState> {
   return {
     google: { status: "disconnected" },
@@ -55,6 +62,7 @@ export default function AgentDeploy() {
   const [providerStates, setProviderStates] = useState<Record<OAuthProvider, ProviderConnectionState>>(
     defaultProviderStates()
   );
+  const popupMonitorsRef = useRef<Partial<Record<OAuthProvider, PopupMonitor>>>({});
 
   const authorizedFetch = useCallback(
     async (path: string, init?: RequestInit): Promise<Response> => {
@@ -108,6 +116,66 @@ export default function AgentDeploy() {
     void loadConnections();
   }, [loadConnections]);
 
+  const clearPopupMonitor = useCallback((provider: OAuthProvider) => {
+    const monitor = popupMonitorsRef.current[provider];
+    if (!monitor) return;
+    window.clearInterval(monitor.closePollId);
+    window.clearTimeout(monitor.timeoutId);
+    delete popupMonitorsRef.current[provider];
+  }, []);
+
+  const failConnectingProvider = useCallback(
+    (provider: OAuthProvider, message: string) => {
+      setProviderStates((current) => {
+        if (current[provider].status !== "connecting") {
+          return current;
+        }
+
+        return {
+          ...current,
+          [provider]: {
+            status: "error",
+            message,
+          },
+        };
+      });
+    },
+    []
+  );
+
+  const monitorPopup = useCallback(
+    (provider: OAuthProvider, popup: Window) => {
+      clearPopupMonitor(provider);
+
+      const closePollId = window.setInterval(() => {
+        if (!popup.closed) return;
+        clearPopupMonitor(provider);
+        failConnectingProvider(provider, "OAuth window closed before the connection completed. Retry to continue.");
+      }, OAUTH_POPUP_CLOSE_POLL_MS);
+
+      const timeoutId = window.setTimeout(() => {
+        clearPopupMonitor(provider);
+        try {
+          popup.close();
+        } catch {
+          // Ignore close failures from already-closed or cross-origin popups.
+        }
+        failConnectingProvider(provider, "OAuth connection timed out before the callback returned. Retry to continue.");
+      }, OAUTH_POPUP_TIMEOUT_MS);
+
+      popupMonitorsRef.current[provider] = { closePollId, timeoutId };
+    },
+    [clearPopupMonitor, failConnectingProvider]
+  );
+
+  useEffect(() => {
+    return () => {
+      for (const provider of PROVIDER_ORDER) {
+        clearPopupMonitor(provider);
+      }
+    };
+  }, [clearPopupMonitor]);
+
   useEffect(() => {
     function onMessage(event: MessageEvent) {
       if (event.origin !== window.location.origin) return;
@@ -119,6 +187,7 @@ export default function AgentDeploy() {
       };
 
       if (payload?.type !== OAUTH_CALLBACK_EVENT || !payload.provider) return;
+      clearPopupMonitor(payload.provider);
 
       if (payload.status !== "success") {
         setProviderStates((current) => ({
@@ -256,8 +325,10 @@ export default function AgentDeploy() {
       if (!popup) {
         throw new Error("Popup was blocked. Allow popups and retry.");
       }
+      monitorPopup(provider, popup);
       popup.focus();
     } catch (error) {
+      clearPopupMonitor(provider);
       setProviderStates((current) => ({
         ...current,
         [provider]: {
@@ -269,6 +340,7 @@ export default function AgentDeploy() {
   }
 
   async function handleDisconnectProvider(provider: OAuthProvider) {
+    clearPopupMonitor(provider);
     try {
       const response = await authorizedFetch(`/api/integrations/agent-catalog/${provider}/connection`, {
         method: "DELETE",

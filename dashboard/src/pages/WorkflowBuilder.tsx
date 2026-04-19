@@ -276,6 +276,7 @@ export default function WorkflowBuilder() {
 
   function addStep(kind: StepKind) {
     const newStepId = "step-" + Date.now();
+    let autoLinkError: string | null = null;
     setTemplate((t) => {
       const nextIndex = t.steps.length;
       const defaultPosition = {
@@ -300,16 +301,31 @@ export default function WorkflowBuilder() {
 
       const existingEdges = buildEdgesFromSteps(t.steps);
       const previousStepId = nextSteps[nextSteps.length - 2].id;
-      const nextEdges = existingEdges.some(
+      const alreadyLinked = existingEdges.some(
         (edge) => edge.source === previousStepId && edge.target === newStepId,
-      )
-        ? existingEdges
-        : [...existingEdges, buildDefaultEdge(previousStepId, newStepId)];
+      );
+      if (alreadyLinked) {
+        return { ...t, steps: serializeEdgesToSteps(nextSteps, existingEdges) };
+      }
+
+      const validation = validateEdgeCandidate({
+        sourceId: previousStepId,
+        targetId: newStepId,
+        steps: nextSteps,
+        edges: existingEdges,
+      });
+
+      if (!validation.valid) {
+        autoLinkError = validation.reason;
+        return { ...t, steps: nextSteps };
+      }
+
+      const nextEdges = [...existingEdges, buildDefaultEdge(previousStepId, newStepId)];
 
       return { ...t, steps: serializeEdgesToSteps(nextSteps, nextEdges) };
     });
     setSelectedStepId(newStepId);
-    setGraphError(null);
+    setGraphError(autoLinkError);
   }
 
   function updateStep(id: string, patch: Partial<WorkflowStep>) {

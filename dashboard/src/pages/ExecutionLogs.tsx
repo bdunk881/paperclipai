@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import {
   CheckCircle,
   XCircle,
@@ -13,10 +13,8 @@ import {
   Radio,
   RefreshCw,
 } from "lucide-react";
-import { listRuns } from "../api/client";
+import { debugStep, listRuns } from "../api/client";
 import type { StepResult, WorkflowRun } from "../types/workflow";
-import { EmptyState, ErrorState, LoadingState } from "../components/UiStates";
-import { useAuth } from "../context/AuthContext";
 
 interface StepLog {
   stepId: string;
@@ -24,7 +22,7 @@ interface StepLog {
   kind: string;
   status: "success" | "failure" | "skipped" | "running";
   durationMs: number;
-  startedAt?: string;
+  startedAt: string;
   input: Record<string, unknown>;
   output: Record<string, unknown>;
   error?: string;
@@ -40,8 +38,6 @@ interface RunLog {
   steps: StepLog[];
 }
 
-const POLL_INTERVAL_MS = 3000;
-
 const STATUS_ICON: Record<string, React.ReactNode> = {
   success: <CheckCircle size={15} className="text-green-500" />,
   failure: <XCircle size={15} className="text-red-500" />,
@@ -56,7 +52,7 @@ const RUN_STATUS_CONFIG = {
 };
 
 function formatDuration(ms: number): string {
-  if (ms <= 0) return "—";
+  if (ms === 0) return "—";
   if (ms < 1000) return `${ms}ms`;
   return `${(ms / 1000).toFixed(2)}s`;
 }
@@ -70,49 +66,58 @@ function timeAgo(iso: string): string {
   return `${hrs}h ago`;
 }
 
-function mapStepKind(step: StepResult): string {
-  if (step.stepId.includes("approval")) return "approval";
-  if (step.stepId.includes("mcp")) return "mcp";
-  return "step";
+function toStepLog(step: StepResult, startedAt: string): StepLog {
+  const output = step.output ?? {};
+  return {
+    stepId: step.stepId,
+    stepName: step.stepName,
+    kind: typeof output.kind === "string" ? output.kind : "step",
+    status: step.status,
+    durationMs: step.durationMs,
+    startedAt,
+    input: typeof output.input === "object" && output.input !== null ? (output.input as Record<string, unknown>) : {},
+    output: typeof output.output === "object" && output.output !== null ? (output.output as Record<string, unknown>) : output,
+    error: step.error,
+  };
 }
 
-function mapRunToLog(run: WorkflowRun): RunLog {
-  const status: RunLog["status"] =
-    run.status === "failed"
-      ? "failed"
-      : run.status === "running" || run.status === "pending"
-        ? "running"
-        : "completed";
-
-  const durationMs = run.completedAt
-    ? Math.max(new Date(run.completedAt).getTime() - new Date(run.startedAt).getTime(), 0)
-    : 0;
-
+function toRunLog(run: WorkflowRun): RunLog {
   return {
     id: run.id,
     workflowName: run.templateName,
-    status,
+    status: run.status === "running" ? "running" : run.status === "failed" ? "failed" : "completed",
     startedAt: run.startedAt,
-    durationMs,
-    steps: run.stepResults.map((step) => ({
-      stepId: step.stepId,
-      stepName: step.stepName,
-      kind: mapStepKind(step),
-      status: step.status,
-      durationMs: step.durationMs,
-      input: {},
-      output: step.output ?? {},
-      error: step.error,
-      aiExplanation: step.error
-        ? "Inspect this step output and provider configuration to determine root cause."
-        : undefined,
-    })),
+    durationMs:
+      run.completedAt != null
+        ? Math.max(0, new Date(run.completedAt).getTime() - new Date(run.startedAt).getTime())
+        : 0,
+    steps: run.stepResults.map((step) => toStepLog(step, run.startedAt)),
   };
 }
 
 function StepRow({ step }: { step: StepLog }) {
   const [expanded, setExpanded] = useState(false);
   const [showExplanation, setShowExplanation] = useState(false);
+  const [explanation, setExplanation] = useState(step.aiExplanation ?? "");
+  const [debugging, setDebugging] = useState(false);
+  const [debugError, setDebugError] = useState<string | null>(null);
+
+  async function handleExplain(e: React.MouseEvent<HTMLButtonElement>) {
+    e.stopPropagation();
+    setShowExplanation(true);
+    if (explanation || !step.error) return;
+
+    setDebugging(true);
+    setDebugError(null);
+    try {
+      const result = await debugStep(step.stepId, step.error, step.output);
+      setExplanation(result.explanation);
+    } catch (err) {
+      setDebugError(err instanceof Error ? err.message : "Failed to generate explanation");
+    } finally {
+      setDebugging(false);
+    }
+  }
 
   return (
     <div className="border border-gray-100 rounded-lg overflow-hidden">
@@ -140,14 +145,11 @@ function StepRow({ step }: { step: StepLog }) {
               <p className="text-xs font-medium text-red-700 mb-1">Error</p>
               <p className="text-xs text-red-600 font-mono">{step.error}</p>
 
-              {step.aiExplanation && (
+              {step.error && (
                 <div className="mt-3">
                   {!showExplanation ? (
                     <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setShowExplanation(true);
-                      }}
+                      onClick={handleExplain}
                       className="flex items-center gap-1.5 text-xs text-blue-600 hover:text-blue-700 font-medium"
                     >
                       <Lightbulb size={12} />
@@ -159,7 +161,17 @@ function StepRow({ step }: { step: StepLog }) {
                         <Brain size={12} />
                         AI Explanation
                       </div>
-                      <p className="text-xs text-blue-800 leading-relaxed">{step.aiExplanation}</p>
+                      {debugging ? (
+                        <p className="text-xs text-blue-800 leading-relaxed">Generating explanation…</p>
+                      ) : debugError ? (
+                        <p className="text-xs text-red-700 leading-relaxed">{debugError}</p>
+                      ) : explanation ? (
+                        <p className="text-xs text-blue-800 leading-relaxed">{explanation}</p>
+                      ) : (
+                        <p className="text-xs text-blue-800 leading-relaxed">
+                          No explanation available for this step.
+                        </p>
+                      )}
                     </div>
                   )}
                 </div>
@@ -197,11 +209,15 @@ function RunCard({ run }: { run: RunLog }) {
         onClick={() => setExpanded((e) => !e)}
         className="flex items-center gap-4 px-6 py-4 cursor-pointer hover:bg-gray-50 transition"
       >
-        {run.status === "running" && <Radio size={15} className="text-blue-500 animate-pulse" />}
+        {run.status === "running" && (
+          <Radio size={15} className="text-blue-500 animate-pulse" />
+        )}
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
             <span className="font-semibold text-gray-900 text-sm">{run.workflowName}</span>
-            <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${cfg.color}`}>{cfg.label}</span>
+            <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${cfg.color}`}>
+              {cfg.label}
+            </span>
           </div>
           <div className="flex items-center gap-3 mt-0.5 text-xs text-gray-400">
             <span className="font-mono">{run.id}</span>
@@ -245,97 +261,64 @@ function RunCard({ run }: { run: RunLog }) {
 }
 
 export default function ExecutionLogs() {
-  const { getAccessToken } = useAuth();
   const [filter, setFilter] = useState<"all" | "failed" | "running">("all");
-  const [runs, setRuns] = useState<WorkflowRun[]>([]);
+  const [runs, setRuns] = useState<RunLog[]>([]);
   const [loading, setLoading] = useState(true);
-  const [loadError, setLoadError] = useState<string | null>(null);
-  const [lastRefreshed, setLastRefreshed] = useState<Date>(new Date());
-
-  async function fetchRuns(silent = false) {
-    if (!silent) setLoading(true);
-    setLoadError(null);
-    try {
-      const accessToken = await getAccessToken() ?? undefined;
-      const fetched = await listRuns(undefined, accessToken);
-      const sorted = [...fetched].sort(
-        (a, b) => new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime()
-      );
-      setRuns(sorted);
-      setLastRefreshed(new Date());
-    } catch (e) {
-      setLoadError(e instanceof Error ? e.message : "Failed to load execution logs");
-    } finally {
-      if (!silent) setLoading(false);
-    }
-  }
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    void fetchRuns();
-    const interval = window.setInterval(() => {
-      void fetchRuns(true);
-    }, POLL_INTERVAL_MS);
-    return () => window.clearInterval(interval);
+    let cancelled = false;
+
+    async function loadRuns() {
+      setLoading(true);
+      setError(null);
+      try {
+        const fetchedRuns = await listRuns();
+        if (!cancelled) {
+          setRuns(fetchedRuns.map(toRunLog));
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setError(err instanceof Error ? err.message : "Failed to load execution logs");
+        }
+      } finally {
+        if (!cancelled) {
+          setLoading(false);
+        }
+      }
+    }
+
+    void loadRuns();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
-  const filtered = useMemo(() => {
-    const normalized: RunLog[] = runs.map((run) => mapRunToLog(run));
-    return normalized.filter((r) => {
-      if (filter === "failed") return r.status === "failed";
-      if (filter === "running") return r.status === "running";
-      return true;
-    });
-  }, [filter, runs]);
-
-  if (loading) {
-    return (
-      <div className="p-8">
-        <LoadingState label="Loading execution logs..." />
-      </div>
-    );
-  }
-
-  if (loadError) {
-    return (
-      <div className="p-8">
-        <ErrorState
-          title="Execution logs unavailable"
-          message={loadError}
-          onRetry={() => {
-            void fetchRuns();
-          }}
-        />
-      </div>
-    );
-  }
+  const filtered = runs.filter((r) => {
+    if (filter === "failed") return r.status === "failed";
+    if (filter === "running") return r.status === "running";
+    return true;
+  });
 
   return (
     <div className="min-h-full bg-gray-50">
+      {/* Header */}
       <div className="bg-white border-b border-gray-200 px-8 py-6">
-        <div className="flex items-center justify-between gap-4">
-          <div>
-            <div className="flex items-center gap-3">
-              <h1 className="text-2xl font-bold text-gray-900">Execution Logs</h1>
-              <span className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-green-100 text-green-700 text-xs font-medium">
-                <Radio size={10} className="animate-pulse" />
-                Live
-              </span>
-            </div>
-            <p className="text-gray-500 text-sm mt-1">Step-by-step execution traces with automatic refresh.</p>
-          </div>
-          <div className="flex items-center gap-3">
-            <span className="text-xs text-gray-400">Last updated: {lastRefreshed.toLocaleTimeString()}</span>
-            <button
-              onClick={() => {
-                void fetchRuns();
-              }}
-              className="flex items-center gap-2 px-3.5 py-2 text-sm font-medium border border-gray-300 rounded-lg hover:bg-gray-50 transition text-gray-700"
-            >
-              <RefreshCw size={14} />
-              Refresh
-            </button>
-          </div>
+        <div className="flex items-center gap-3">
+          <h1 className="text-2xl font-bold text-gray-900">Execution Logs</h1>
+          <span className="px-2 py-0.5 rounded-full bg-blue-50 text-blue-600 text-xs font-medium">
+            Live Data
+          </span>
+          {runs.some((run) => run.status === "running") ? (
+            <span className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-green-100 text-green-700 text-xs font-medium">
+              <Radio size={10} className="animate-pulse" />
+              Live
+            </span>
+          ) : null}
         </div>
+        <p className="text-gray-500 text-sm mt-1">
+          Step-by-step execution traces with AI-powered error explanations.
+        </p>
 
         <div className="flex gap-1 mt-5">
           {(["all", "failed", "running"] as const).map((f) => (
@@ -343,7 +326,9 @@ export default function ExecutionLogs() {
               key={f}
               onClick={() => setFilter(f)}
               className={`px-4 py-1.5 rounded-lg text-sm font-medium capitalize transition ${
-                filter === f ? "bg-gray-900 text-white" : "text-gray-500 hover:bg-gray-100"
+                filter === f
+                  ? "bg-gray-900 text-white"
+                  : "text-gray-500 hover:bg-gray-100"
               }`}
             >
               {f}
@@ -353,16 +338,27 @@ export default function ExecutionLogs() {
       </div>
 
       <div className="max-w-4xl mx-auto px-8 py-6 space-y-4">
+        {error ? (
+          <div className="rounded-xl border border-red-200 bg-red-50 px-5 py-4 text-sm text-red-700">
+            {error}
+          </div>
+        ) : null}
+        {loading ? (
+          <div className="flex items-center justify-center py-16 text-gray-500">
+            <RefreshCw size={18} className="animate-spin mr-2" />
+            Loading execution logs…
+          </div>
+        ) : null}
         {filtered.map((run) => (
           <RunCard key={run.id} run={run} />
         ))}
-        {filtered.length === 0 && (
-          <EmptyState
-            title="No runs to show"
-            description="Try a different filter or start a new run from the workflow builder."
-            ctaLabel="Open builder"
-            ctaTo="/builder"
-          />
+        {!loading && filtered.length === 0 && (
+          <div className="text-center py-16 text-gray-400">
+            <CheckCircle size={40} className="mx-auto mb-3 opacity-30" />
+            <p className="text-sm">
+              {runs.length === 0 ? "No execution logs are available yet." : "No runs match this filter."}
+            </p>
+          </div>
         )}
       </div>
     </div>

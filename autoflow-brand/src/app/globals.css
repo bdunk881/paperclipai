@@ -1,0 +1,127 @@
+@import "tailwindcss";
+
+:root {
+  --color-teal: #00D4B8;
+  --color-indigo: #4A3AFF;
+  --color-coral: #FF5F57;
+  --color-yellow: #FFD93D;
+  --color-navy: #0F1333;
+  --color-slate: #2D3748;
+  --color-cloud: #F7FAFC;
+}
+
+* {
+  box-sizing: border-box;
+  padding: 0;
+  margin: 0;
+}
+
+html, body {
+  max-width: 100vw;
+  overflow-x: hidden;
+}
+
+body {
+  font-family: 'Inter', sans-serif;
+  color: var(--color-slate);
+  background: var(--color-cloud);
+}
+
+body.konami-mode {
+  image-rendering: pixelated;
+  font-family: 'Courier New', monospace !important;
+  background: #000 !important;
+  color: #00FF00 !important;
+}
+
+body.konami-mode * {
+  font-family: 'Courier New', monospace !important;
+  border-radius: 0 !important;
+  border-color: #00FF00 !important;
+}
+
+@keyframes float {
+  0%, 100% { transform: translateY(0px); }
+  50% { transform: translateY(-12px); }
+}
+
+@keyframes spin-slow {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+@keyframes pulse-glow {
+  0%, 100% { box-shadow: 0 0 20px rgba(0, 212, 184, 0.4); }
+  50% { box-shadow: 0 0 40px rgba(0, 212, 184, 0.8), 0 0 60px rgba(74, 58, 255, 0.4); }
+}
+
+@keyframes pip-dance {
+  0% { transform: rotate(0deg) scale(1); }
+  15% { transform: rotate(-15deg) scale(1.1); }
+  30% { transform: rotate(15deg) scale(1.1); }
+  45% { transform: rotate(-10deg) scale(1.05); }
+  60% { transform: rotate(10deg) scale(1.05); }
+  75% { transform: rotate(-5deg) scale(1.02); }
+  90% { transform: rotate(5deg) scale(1.02); }
+  100% { transform: rotate(0deg) scale(1); }
+}
+
+@keyframes flow-dash {
+  0% { stroke-dashoffset: 300; }
+  100% { stroke-dashoffset: 0; }
+}
+
+@keyframes slide-in {
+  from { opacity: 0; transform: translateY(20px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.animate-float { animation: float 3s ease-in-out infinite; }
+.animate-spin-slow { animation: spin-slow 8s linear infinite; }
+.animate-pulse-glow { animation: pulse-glow 2s ease-in-out infinite; }
+.animate-pip-dance { animation: pip-dance 0.6s ease-in-out; }
+.animate-slide-in { animation: slide-in 0.5s ease-out forwards; }
+
+.gradient-hero {
+  background: linear-gradient(135deg, #4A3AFF 0%, #00D4B8 50%, #FFD93D 100%);
+}
+
+.gradient-text {
+  background: linear-gradient(135deg, #4A3AFF 0%, #00D4B8 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.flow-line {
+  stroke-dasharray: 300;
+  animation: flow-dash 2s ease-in-out infinite;
+}
+
+.node-card {
+  transition: all 0.2s ease;
+}
+
+.node-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 25px rgba(0, 212, 184, 0.25);
+}
+
+/* Konami scanlines effect */
+body.konami-mode::before {
+  content: '';
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: repeating-linear-gradient(
+    0deg,
+    transparent,
+    transparent 2px,
+    rgba(0, 0, 0, 0.1) 2px,
+    rgba(0, 0, 0, 0.1) 4px
+  );
+  pointer-events: none;
+  z-index: 9999;
+}

@@ -1,4 +1,5 @@
 import type { WorkflowTemplate, WorkflowRun, WorkflowStep } from "../types/workflow";
+import { getApiBasePath } from "./baseUrl";
 
 // ---------------------------------------------------------------------------
 // LLM Config types — mirrors src/engine/llmProviders/types.ts
@@ -82,7 +83,7 @@ export async function deleteLLMConfig(id: string): Promise<void> {
   if (!res.ok) throw new Error(`Failed to delete LLM config: ${res.status}`);
 }
 
-const BASE = "/api";
+const BASE = getApiBasePath();
 
 /** Template summary returned by GET /api/templates (list) */
 export interface TemplateSummary {
@@ -265,27 +266,33 @@ export interface WriteMemoryInput {
   ttlSeconds?: number;
 }
 
-function getMemoryHeaders(): Record<string, string> {
-  return { "Content-Type": "application/json", "X-User-Id": "demo-user" };
+function getMemoryHeaders(userId?: string): Record<string, string> {
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  if (userId) headers["X-User-Id"] = userId;
+  return headers;
 }
 
 /** GET /api/memory — list all entries for the current user */
-export async function listMemoryEntries(workflowId?: string): Promise<MemoryEntry[]> {
+export async function listMemoryEntries(userId?: string, workflowId?: string): Promise<MemoryEntry[]> {
   const url = workflowId
     ? `${BASE}/memory?workflowId=${encodeURIComponent(workflowId)}`
     : `${BASE}/memory`;
-  const res = await fetch(url, { headers: getMemoryHeaders() });
+  const res = await fetch(url, { headers: getMemoryHeaders(userId) });
   if (!res.ok) throw new Error(`Failed to fetch memory entries: ${res.status}`);
   const data = await res.json();
   return data.entries as MemoryEntry[];
 }
 
 /** GET /api/memory/search — keyword/semantic search */
-export async function searchMemory(query: string, agentId?: string): Promise<MemorySearchResult[]> {
+export async function searchMemory(
+  query: string,
+  userId?: string,
+  agentId?: string
+): Promise<MemorySearchResult[]> {
   const params = new URLSearchParams({ q: query });
   if (agentId) params.set("agentId", agentId);
   const res = await fetch(`${BASE}/memory/search?${params.toString()}`, {
-    headers: getMemoryHeaders(),
+    headers: getMemoryHeaders(userId),
   });
   if (!res.ok) throw new Error(`Memory search failed: ${res.status}`);
   const data = await res.json();
@@ -293,10 +300,10 @@ export async function searchMemory(query: string, agentId?: string): Promise<Mem
 }
 
 /** POST /api/memory — write (create or upsert) a memory entry */
-export async function writeMemoryEntry(input: WriteMemoryInput): Promise<MemoryEntry> {
+export async function writeMemoryEntry(input: WriteMemoryInput, userId?: string): Promise<MemoryEntry> {
   const res = await fetch(`${BASE}/memory`, {
     method: "POST",
-    headers: getMemoryHeaders(),
+    headers: getMemoryHeaders(userId),
     body: JSON.stringify(input),
   });
   if (!res.ok) {
@@ -307,17 +314,17 @@ export async function writeMemoryEntry(input: WriteMemoryInput): Promise<MemoryE
 }
 
 /** DELETE /api/memory/:id — delete a single entry */
-export async function deleteMemoryEntry(id: string): Promise<void> {
+export async function deleteMemoryEntry(id: string, userId?: string): Promise<void> {
   const res = await fetch(`${BASE}/memory/${encodeURIComponent(id)}`, {
     method: "DELETE",
-    headers: getMemoryHeaders(),
+    headers: getMemoryHeaders(userId),
   });
   if (!res.ok && res.status !== 404) throw new Error(`Failed to delete memory entry: ${res.status}`);
 }
 
 /** GET /api/memory/stats — usage stats */
-export async function getMemoryStats(): Promise<MemoryStats> {
-  const res = await fetch(`${BASE}/memory/stats`, { headers: getMemoryHeaders() });
+export async function getMemoryStats(userId?: string): Promise<MemoryStats> {
+  const res = await fetch(`${BASE}/memory/stats`, { headers: getMemoryHeaders(userId) });
   if (!res.ok) throw new Error(`Failed to fetch memory stats: ${res.status}`);
   return res.json() as Promise<MemoryStats>;
 }
@@ -370,4 +377,3 @@ export async function resolveApproval(
     throw new Error(err?.error ?? `Failed to resolve approval: ${res.status}`);
   }
 }
-

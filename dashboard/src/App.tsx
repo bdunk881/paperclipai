@@ -40,13 +40,14 @@ import ApiKeys from "./pages/ApiKeys";
 import Pricing from "./pages/Pricing";
 import Approvals from "./pages/Approvals";
 import Memory from "./pages/Memory";
-import MCPIntegrations from "./pages/MCPIntegrations";
+import IntegrationsHub from "./pages/MCPIntegrations";
 import McpServers from "./pages/McpServers";
 import ExecutionLogs from "./pages/ExecutionLogs";
 import CheckoutSuccess from "./pages/CheckoutSuccess";
 import AgentCatalog from "./pages/AgentCatalog";
 import AgentDetail from "./pages/AgentDetail";
 import AgentDeploy from "./pages/AgentDeploy";
+import AgentOAuthCallback from "./pages/AgentOAuthCallback";
 import MyAgents from "./pages/MyAgents";
 import AgentActivity from "./pages/AgentActivity";
 
@@ -68,6 +69,7 @@ export default function App() {
           <Routes>
             <Route path="/waitlist" element={<LandingPage />} />
             <Route path="/checkout/success" element={<CheckoutSuccess />} />
+            <Route path="/agents/oauth/callback" element={<AgentOAuthCallback />} />
             <Route
               path="/login"
               element={
@@ -103,11 +105,13 @@ export default function App() {
               <Route path="settings/security" element={<SecuritySettings />} />
               <Route path="settings/notifications" element={<NotificationsSettings />} />
               <Route path="settings/api-keys" element={<ApiKeys />} />
-              <Route path="settings/mcp-servers" element={<McpServers />} />
+              <Route path="settings/integrations" element={<McpServers />} />
+              <Route path="settings/mcp-servers" element={<Navigate to="/settings/integrations" replace />} />
               <Route path="pricing" element={<Pricing />} />
               <Route path="approvals" element={<Approvals />} />
               <Route path="memory" element={<Memory />} />
-              <Route path="integrations/mcp" element={<MCPIntegrations />} />
+              <Route path="integrations" element={<IntegrationsHub />} />
+              <Route path="integrations/mcp" element={<Navigate to="/integrations" replace />} />
               <Route path="logs" element={<ExecutionLogs />} />
               <Route path="agents" element={<AgentCatalog />} />
               <Route path="agents/:templateId" element={<AgentDetail />} />

@@ -177,6 +177,13 @@ describe("listRuns", () => {
     await expect(listRuns()).rejects.toThrow(/500/);
   });
 
+  it("adds Authorization header when access token is provided", async () => {
+    mockFetch({ runs: [sampleRun], total: 1 });
+    await listRuns(undefined, "token-123");
+    const headers = lastFetchOptions().headers as Record<string, string>;
+    expect(headers.Authorization).toBe("Bearer token-123");
+  });
+
   it("returns the runs array from the response", async () => {
     const runs = [sampleRun, { ...sampleRun, id: "run-002" }];
     mockFetch({ runs, total: 2 });

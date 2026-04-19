@@ -1,14 +1,49 @@
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { ArrowLeft, LoaderCircle, Rocket } from "lucide-react";
+import { ArrowLeft, Link2, LoaderCircle, Rocket, ShieldCheck, Unlink2 } from "lucide-react";
 import { createDeployment, getAgentTemplate } from "../data/agentMarketplaceData";
+import { useAuth } from "../context/AuthContext";
+
+const API_BASE = (import.meta.env.VITE_API_URL ?? "").replace(/\/$/, "");
+const OAUTH_CALLBACK_EVENT = "autoflow:agent-catalog-oauth-callback";
 
 const PERMISSIONS = ["read", "write", "execute"] as const;
 const DEPLOY_STAGES = ["Validating configuration", "Provisioning runtime", "Connecting integrations", "Finalizing deployment"];
 
+const PROVIDER_ORDER = ["google", "github", "notion"] as const;
+type OAuthProvider = (typeof PROVIDER_ORDER)[number];
+
+const PROVIDER_LABELS: Record<OAuthProvider, string> = {
+  google: "Google Workspace",
+  github: "GitHub",
+  notion: "Notion",
+};
+
+const INTEGRATION_PROVIDER_MAP: Record<string, OAuthProvider> = {
+  "Google Workspace": "google",
+  GitHub: "github",
+  Notion: "notion",
+};
+
+interface ProviderConnectionState {
+  status: "connected" | "disconnected" | "connecting" | "error";
+  accountLabel?: string;
+  message?: string;
+}
+
+function defaultProviderStates(): Record<OAuthProvider, ProviderConnectionState> {
+  return {
+    google: { status: "disconnected" },
+    github: { status: "disconnected" },
+    notion: { status: "disconnected" },
+  };
+}
+
 export default function AgentDeploy() {
   const params = useParams();
   const navigate = useNavigate();
+  const { getAccessToken } = useAuth();
+
   const template = params.templateId ? getAgentTemplate(params.templateId) : null;
 
   const [name, setName] = useState(template ? `${template.name} Instance` : "");
@@ -16,6 +51,119 @@ export default function AgentDeploy() {
   const [selectedIntegrations, setSelectedIntegrations] = useState<string[]>(template?.requiredIntegrations ?? []);
   const [isDeploying, setIsDeploying] = useState(false);
   const [progress, setProgress] = useState(0);
+  const [connectionError, setConnectionError] = useState<string | null>(null);
+  const [providerStates, setProviderStates] = useState<Record<OAuthProvider, ProviderConnectionState>>(
+    defaultProviderStates()
+  );
+
+  const authorizedFetch = useCallback(
+    async (path: string, init?: RequestInit): Promise<Response> => {
+      const token = await getAccessToken();
+      if (!token) {
+        throw new Error("Authentication session expired. Sign in again to continue.");
+      }
+
+      return fetch(`${API_BASE}${path}`, {
+        ...init,
+        headers: {
+          ...(init?.headers ?? {}),
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+      });
+    },
+    [getAccessToken]
+  );
+
+  const loadConnections = useCallback(async () => {
+    try {
+      const response = await authorizedFetch("/api/integrations/agent-catalog/connections", { method: "GET" });
+      if (!response.ok) {
+        const payload = (await response.json().catch(() => null)) as { error?: string } | null;
+        throw new Error(payload?.error ?? "Failed to load integration connection statuses");
+      }
+
+      const payload = (await response.json()) as {
+        connections: Array<{ provider: OAuthProvider; accountLabel: string }>;
+      };
+
+      const next = defaultProviderStates();
+      for (const provider of PROVIDER_ORDER) {
+        const match = payload.connections.find((connection) => connection.provider === provider);
+        if (match) {
+          next[provider] = {
+            status: "connected",
+            accountLabel: match.accountLabel,
+          };
+        }
+      }
+      setProviderStates(next);
+      setConnectionError(null);
+    } catch (error) {
+      setConnectionError(error instanceof Error ? error.message : "Failed to load connections");
+    }
+  }, [authorizedFetch]);
+
+  useEffect(() => {
+    void loadConnections();
+  }, [loadConnections]);
+
+  useEffect(() => {
+    function onMessage(event: MessageEvent) {
+      if (event.origin !== window.location.origin) return;
+      const payload = event.data as {
+        type?: string;
+        provider?: OAuthProvider;
+        status?: "success" | "error";
+        message?: string;
+      };
+
+      if (payload?.type !== OAUTH_CALLBACK_EVENT || !payload.provider) return;
+
+      if (payload.status !== "success") {
+        setProviderStates((current) => ({
+          ...current,
+          [payload.provider!]: {
+            status: "error",
+            message: payload.message || "Connection failed. Retry to continue.",
+          },
+        }));
+        return;
+      }
+
+      void (async () => {
+        setProviderStates((current) => ({
+          ...current,
+          [payload.provider!]: { status: "connecting" },
+        }));
+
+        try {
+          const testResponse = await authorizedFetch(`/api/integrations/agent-catalog/${payload.provider}/test`, {
+            method: "POST",
+            body: JSON.stringify({}),
+          });
+
+          if (!testResponse.ok) {
+            const failedPayload = (await testResponse.json().catch(() => null)) as { error?: string } | null;
+            throw new Error(failedPayload?.error ?? "Provider verification failed after OAuth callback");
+          }
+
+          await loadConnections();
+        } catch (error) {
+          setProviderStates((current) => ({
+            ...current,
+            [payload.provider!]: {
+              status: "error",
+              message: error instanceof Error ? error.message : "Provider verification failed",
+            },
+          }));
+        }
+      })();
+    }
+
+    window.addEventListener("message", onMessage);
+    return () => window.removeEventListener("message", onMessage);
+  }, [authorizedFetch, loadConnections]);
 
   useEffect(() => {
     if (!isDeploying) return;
@@ -85,6 +233,56 @@ export default function AgentDeploy() {
     );
   }
 
+  async function handleConnectProvider(provider: OAuthProvider) {
+    setConnectionError(null);
+    setProviderStates((current) => ({
+      ...current,
+      [provider]: { status: "connecting" },
+    }));
+
+    try {
+      const response = await authorizedFetch(`/api/integrations/agent-catalog/${provider}/oauth/start`, {
+        method: "POST",
+        body: JSON.stringify({}),
+      });
+
+      if (!response.ok) {
+        const payload = (await response.json().catch(() => null)) as { error?: string } | null;
+        throw new Error(payload?.error ?? `Could not start ${PROVIDER_LABELS[provider]} OAuth flow`);
+      }
+
+      const payload = (await response.json()) as { authUrl: string };
+      const popup = window.open(payload.authUrl, `oauth-${provider}`, "width=520,height=720");
+      if (!popup) {
+        throw new Error("Popup was blocked. Allow popups and retry.");
+      }
+      popup.focus();
+    } catch (error) {
+      setProviderStates((current) => ({
+        ...current,
+        [provider]: {
+          status: "error",
+          message: error instanceof Error ? error.message : "Could not start OAuth flow",
+        },
+      }));
+    }
+  }
+
+  async function handleDisconnectProvider(provider: OAuthProvider) {
+    try {
+      const response = await authorizedFetch(`/api/integrations/agent-catalog/${provider}/connection`, {
+        method: "DELETE",
+      });
+      if (!response.ok && response.status !== 204) {
+        const payload = (await response.json().catch(() => null)) as { error?: string } | null;
+        throw new Error(payload?.error ?? `Could not disconnect ${PROVIDER_LABELS[provider]}`);
+      }
+      await loadConnections();
+    } catch (error) {
+      setConnectionError(error instanceof Error ? error.message : "Failed to disconnect provider");
+    }
+  }
+
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!name.trim()) return;
@@ -92,6 +290,17 @@ export default function AgentDeploy() {
     if (!currentTemplate.requiredIntegrations.every((integration) => selectedIntegrations.includes(integration))) {
       return;
     }
+
+    const missingOAuthProvider = selectedIntegrations
+      .map((integration) => INTEGRATION_PROVIDER_MAP[integration])
+      .filter((provider): provider is OAuthProvider => Boolean(provider))
+      .find((provider) => providerStates[provider].status !== "connected");
+
+    if (missingOAuthProvider) {
+      setConnectionError(`${PROVIDER_LABELS[missingOAuthProvider]} must be connected before deployment.`);
+      return;
+    }
+
     setIsDeploying(true);
     setProgress(10);
   }
@@ -107,6 +316,12 @@ export default function AgentDeploy() {
         <div className="mt-4 bg-white rounded-xl border border-gray-200 p-6">
           <h1 className="text-2xl font-bold text-gray-900">Deploy {template.name}</h1>
           <p className="text-sm text-gray-500 mt-1">Configure runtime permissions and integrations before deployment.</p>
+
+          {connectionError && (
+            <p className="mt-4 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+              {connectionError}
+            </p>
+          )}
 
           <form className="mt-6 space-y-6" onSubmit={handleSubmit}>
             <section>
@@ -141,11 +356,65 @@ export default function AgentDeploy() {
             </section>
 
             <section>
+              <div className="mb-2 flex items-center gap-2">
+                <ShieldCheck size={14} className="text-gray-500" />
+                <p className="text-sm font-medium text-gray-700">OAuth connectors</p>
+              </div>
+              <p className="text-xs text-gray-500">Connected status is set only after provider verification succeeds.</p>
+
+              <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-3">
+                {PROVIDER_ORDER.map((provider) => {
+                  const state = providerStates[provider];
+                  const isConnected = state.status === "connected";
+                  return (
+                    <div key={provider} className="rounded-lg border border-gray-200 p-3 text-sm text-gray-700">
+                      <p className="font-medium text-gray-900">{PROVIDER_LABELS[provider]}</p>
+                      <p className="mt-1 text-xs text-gray-500">
+                        {isConnected
+                          ? `Connected as ${state.accountLabel}`
+                          : state.status === "connecting"
+                            ? "Completing OAuth and verifying account..."
+                            : state.message || "Not connected"}
+                      </p>
+
+                      <div className="mt-3 flex gap-2">
+                        <button
+                          type="button"
+                          onClick={() => void handleConnectProvider(provider)}
+                          disabled={isDeploying || state.status === "connecting"}
+                          className="inline-flex items-center gap-1 rounded-md border border-gray-200 px-2.5 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60"
+                        >
+                          {state.status === "connecting" ? <LoaderCircle size={12} className="animate-spin" /> : <Link2 size={12} />}
+                          {isConnected ? "Reconnect" : "Connect"}
+                        </button>
+
+                        {isConnected && (
+                          <button
+                            type="button"
+                            onClick={() => void handleDisconnectProvider(provider)}
+                            disabled={isDeploying}
+                            className="inline-flex items-center gap-1 rounded-md border border-red-200 px-2.5 py-1.5 text-xs font-medium text-red-700 hover:bg-red-50"
+                          >
+                            <Unlink2 size={12} />
+                            Disconnect
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </section>
+
+            <section>
               <p className="text-sm font-medium text-gray-700 mb-2">Integrations</p>
               <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                 {allIntegrations.map((integration) => {
                   const required = template.requiredIntegrations.includes(integration);
                   const checked = selectedIntegrations.includes(integration);
+                  const mappedProvider = INTEGRATION_PROVIDER_MAP[integration];
+                  const providerConnected = mappedProvider ? providerStates[mappedProvider].status === "connected" : true;
+
                   return (
                     <label
                       key={integration}
@@ -160,9 +429,20 @@ export default function AgentDeploy() {
                         />
                         <span>{integration}</span>
                       </div>
-                      {required ? (
-                        <span className="text-xs font-medium text-blue-700 bg-blue-50 rounded-full px-2 py-0.5">required</span>
-                      ) : null}
+                      <div className="flex items-center gap-2">
+                        {mappedProvider && (
+                          <span
+                            className={`rounded-full px-2 py-0.5 text-xs font-medium ${
+                              providerConnected ? "bg-green-50 text-green-700" : "bg-amber-50 text-amber-700"
+                            }`}
+                          >
+                            {providerConnected ? "connected" : "auth required"}
+                          </span>
+                        )}
+                        {required ? (
+                          <span className="text-xs font-medium text-blue-700 bg-blue-50 rounded-full px-2 py-0.5">required</span>
+                        ) : null}
+                      </div>
                     </label>
                   );
                 })}

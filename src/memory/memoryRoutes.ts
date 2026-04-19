@@ -1,7 +1,7 @@
 /**
  * Memory API routes.
  *
- * All routes require the X-User-Id header for scoping.
+ * All routes require authenticated user context (req.auth.sub) for scoping.
  *
  *   POST   /api/memory               — write (create/upsert) a memory entry
  *   GET    /api/memory               — list all entries for the user
@@ -11,6 +11,7 @@
  */
 
 import { Router } from "express";
+import { AuthenticatedRequest } from "../auth/authMiddleware";
 import { memoryStore } from "../engine/memoryStore";
 
 const router = Router();
@@ -19,19 +20,19 @@ const router = Router();
 // Auth helper
 // ---------------------------------------------------------------------------
 
-function resolveUserId(req: { headers: Record<string, string | string[] | undefined> }): string | null {
-  const h = req.headers["x-user-id"];
-  return typeof h === "string" && h.trim() ? h.trim() : null;
+function resolveUserId(req: AuthenticatedRequest): string | null {
+  const userId = req.auth?.sub;
+  return typeof userId === "string" && userId.trim() ? userId : null;
 }
 
 // ---------------------------------------------------------------------------
 // POST /api/memory — write entry
 // ---------------------------------------------------------------------------
 
-router.post("/", (req, res) => {
+router.post("/", (req: AuthenticatedRequest, res) => {
   const userId = resolveUserId(req);
   if (!userId) {
-    res.status(401).json({ error: "X-User-Id header is required" });
+    res.status(401).json({ error: "Authenticated user is required" });
     return;
   }
 
@@ -74,10 +75,10 @@ router.post("/", (req, res) => {
 // GET /api/memory/stats — usage stats (must precede /:id route)
 // ---------------------------------------------------------------------------
 
-router.get("/stats", (req, res) => {
+router.get("/stats", (req: AuthenticatedRequest, res) => {
   const userId = resolveUserId(req);
   if (!userId) {
-    res.status(401).json({ error: "X-User-Id header is required" });
+    res.status(401).json({ error: "Authenticated user is required" });
     return;
   }
   res.json(memoryStore.stats(userId));
@@ -87,10 +88,10 @@ router.get("/stats", (req, res) => {
 // GET /api/memory/search — keyword/semantic search
 // ---------------------------------------------------------------------------
 
-router.get("/search", (req, res) => {
+router.get("/search", (req: AuthenticatedRequest, res) => {
   const userId = resolveUserId(req);
   if (!userId) {
-    res.status(401).json({ error: "X-User-Id header is required" });
+    res.status(401).json({ error: "Authenticated user is required" });
     return;
   }
 
@@ -107,10 +108,10 @@ router.get("/search", (req, res) => {
 // GET /api/memory — list all entries
 // ---------------------------------------------------------------------------
 
-router.get("/", (req, res) => {
+router.get("/", (req: AuthenticatedRequest, res) => {
   const userId = resolveUserId(req);
   if (!userId) {
-    res.status(401).json({ error: "X-User-Id header is required" });
+    res.status(401).json({ error: "Authenticated user is required" });
     return;
   }
 
@@ -126,10 +127,10 @@ router.get("/", (req, res) => {
 // DELETE /api/memory/:id — delete entry
 // ---------------------------------------------------------------------------
 
-router.delete("/:id", (req, res) => {
+router.delete("/:id", (req: AuthenticatedRequest, res) => {
   const userId = resolveUserId(req);
   if (!userId) {
-    res.status(401).json({ error: "X-User-Id header is required" });
+    res.status(401).json({ error: "Authenticated user is required" });
     return;
   }
 

@@ -1,0 +1,7 @@
+<svg viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Stylized 'A' as node connections -->
+  <path d="M50 15L85 85H70L50 45L30 85H15L50 15Z" fill="#6366f1" />
+  <!-- Electric connection spark -->
+  <circle cx="50" cy="45" r="8" fill="#14b8a6" />
+  <path d="M50 45V15" stroke="#14b8a6" stroke-width="4" stroke-linecap="round" />
+</svg>

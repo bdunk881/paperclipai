@@ -6,28 +6,41 @@ export function getStripe() {
   });
 }
 
-// Beta pricing tiers — confirmed pricing from ALT-85/ALT-73
+// Pricing tiers — board-approved per ALT-451
 export const PRICING_TIERS = {
-  starter: {
-    name: "Starter",
-    price: 99,
-    priceId: process.env.STRIPE_STARTER_PRICE_ID ?? "price_starter_placeholder",
-    description: "For individuals and small teams",
+  explore: {
+    name: "Explore",
+    price: 0,
+    priceId: null,
+    description: "Get started for free",
     features: [
       "1 autonomous agent",
-      "100 tasks/month",
-      "Email support",
+      "50 tasks/month",
+      "Community support",
       "Basic analytics",
     ],
     popular: false,
   },
-  growth: {
-    name: "Growth",
-    price: 299,
-    priceId: process.env.STRIPE_GROWTH_PRICE_ID ?? "price_growth_placeholder",
+  flow: {
+    name: "Flow",
+    price: 19,
+    priceId: process.env.STRIPE_FLOW_PRICE_ID ?? "price_flow_placeholder",
+    description: "For individuals and small teams",
+    features: [
+      "3 autonomous agents",
+      "500 tasks/month",
+      "Email support",
+      "Advanced analytics",
+    ],
+    popular: false,
+  },
+  automate: {
+    name: "Automate",
+    price: 49,
+    priceId: process.env.STRIPE_AUTOMATE_PRICE_ID ?? "price_automate_placeholder",
     description: "For growing teams",
     features: [
-      "5 autonomous agents",
+      "10 autonomous agents",
       "Unlimited tasks",
       "Priority support",
       "Advanced analytics",
@@ -37,7 +50,7 @@ export const PRICING_TIERS = {
   },
   scale: {
     name: "Scale",
-    price: 749,
+    price: 99,
     priceId: process.env.STRIPE_SCALE_PRICE_ID ?? "price_scale_placeholder",
     description: "For large organizations",
     features: [

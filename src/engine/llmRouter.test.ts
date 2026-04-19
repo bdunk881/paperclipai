@@ -7,6 +7,7 @@
 
 import {
   classifyTier,
+  classifyTierWithConfidence,
   resolveModelForTier,
   estimateCost,
   buildCostLog,
@@ -64,113 +65,45 @@ describe("classifyTier — agent steps", () => {
 });
 
 // ---------------------------------------------------------------------------
-// classifyTier — large context
+// classifyTier — feature-based routing
 // ---------------------------------------------------------------------------
 
-describe("classifyTier — large context", () => {
-  it("routes large prompts (> 2000 chars) to power", () => {
-    const step = makeStep({ outputKeys: ["r"] });
-    expect(classifyTier(step, 2001)).toBe("power");
+describe("classifyTier — feature-based routing", () => {
+  it("routes short simple classification prompts to lite", () => {
+    const template = "Classify this support ticket as billing, bug, or feature. Respond only with JSON.";
+    const step = makeStep({ promptTemplate: template, outputKeys: ["category"] });
+    expect(classifyTier(step, template.length)).toBe("lite");
   });
 
-  it("does not route a 2000-char prompt to power", () => {
-    const step = makeStep({ outputKeys: ["r"], promptTemplate: "summarize the document" });
-    // "summarize" is not a lite keyword, so it falls to standard
-    expect(classifyTier(step, 2000)).toBe("standard");
-  });
-});
-
-// ---------------------------------------------------------------------------
-// classifyTier — lite tier detection
-// ---------------------------------------------------------------------------
-
-describe("classifyTier — lite tier heuristics", () => {
-  const LITE_CASES: Array<{ label: string; template: string; outputKeys: string[] }> = [
-    {
-      label: "classify keyword",
-      template: "Classify this ticket: {{body}}. Respond ONLY with the JSON object.",
-      outputKeys: ["intent"],
-    },
-    {
-      label: "yes or no question",
-      template: "Does this email contain a refund request? Answer yes or no.",
-      outputKeys: ["isRefund"],
-    },
-    {
-      label: "extract entities",
-      template: "Extract the company name and email from: {{text}}. Respond with a JSON object.",
-      outputKeys: ["company", "email"],
-    },
-    {
-      label: "categorize with few output keys",
-      template: "Categorize this message into one of: billing, bug, general.",
-      outputKeys: ["category", "confidence"],
-    },
-  ];
-
-  for (const tc of LITE_CASES) {
-    it(`classifies as lite: ${tc.label}`, () => {
-      const step = makeStep({
-        promptTemplate: tc.template,
-        outputKeys: tc.outputKeys,
-      });
-      expect(classifyTier(step, tc.template.length)).toBe("lite");
-    });
-  }
-
-  it("does NOT classify as lite when prompt is long even with lite keywords", () => {
-    const longTemplate = "Classify this: {{body}}\n" + "context: ".repeat(100);
-    const step = makeStep({
-      promptTemplate: longTemplate,
-      outputKeys: ["intent"],
-    });
-    expect(classifyTier(step, longTemplate.length)).not.toBe("lite");
-  });
-
-  it("does NOT classify as lite when too many output keys", () => {
-    const template = "Classify and extract: one of the following categories.";
-    const step = makeStep({
-      promptTemplate: template,
-      outputKeys: ["a", "b", "c", "d"], // 4 keys > 3 threshold
-    });
-    // 4 output keys → falls through lite check → standard
-    expect(classifyTier(step, template.length)).toBe("standard");
-  });
-});
-
-// ---------------------------------------------------------------------------
-// classifyTier — power keyword detection
-// ---------------------------------------------------------------------------
-
-describe("classifyTier — power keyword heuristics", () => {
-  it("routes orchestrate prompts to power", () => {
-    const template = "Orchestrate the following sub-agents to complete the task.";
-    const step = makeStep({ promptTemplate: template, outputKeys: ["plan"] });
+  it("routes code-heavy prompts with code blocks to power", () => {
+    const template = [
+      "Refactor this TypeScript function and explain runtime complexity.",
+      "```ts",
+      "function sortUsers(users: User[]) {",
+      "  return users.sort((a, b) => a.name.localeCompare(b.name));",
+      "}",
+      "```",
+    ].join("\n");
+    const step = makeStep({ promptTemplate: template, outputKeys: ["improvedCode", "analysis"] });
     expect(classifyTier(step, template.length)).toBe("power");
   });
 
-  it("routes 'plan ' (with space) to power", () => {
-    const template = "Plan the campaign strategy for Q2.";
+  it("routes multi-step analysis prompts to power", () => {
+    const template = [
+      "First analyze the customer event dataset for anomalies.",
+      "Second compute likely root causes.",
+      "Then produce a remediation plan and risk summary.",
+    ].join(" ");
+    const step = makeStep({ promptTemplate: template, outputKeys: ["analysis", "plan", "risks"] });
+    expect(classifyTier(step, template.length)).toBe("power");
+  });
+
+  it("falls back to standard when confidence is low (ambiguous prompt)", () => {
+    const template = "Review this message and provide a response.";
     const step = makeStep({ promptTemplate: template, outputKeys: ["result"] });
-    expect(classifyTier(step, template.length)).toBe("power");
-  });
-});
-
-// ---------------------------------------------------------------------------
-// classifyTier — standard fallback
-// ---------------------------------------------------------------------------
-
-describe("classifyTier — standard fallback", () => {
-  it("routes a medium-length prompt with no special keywords to standard", () => {
-    const template = "Draft a response to the customer issue: {{summary}}. Be empathetic and concise.";
-    const step = makeStep({ promptTemplate: template, outputKeys: ["draftResponse"] });
-    expect(classifyTier(step, template.length)).toBe("standard");
-  });
-
-  it("routes a workflow generation prompt to standard", () => {
-    const template = "Given the description of a business process, return a JSON array of steps.";
-    const step = makeStep({ promptTemplate: template, outputKeys: ["steps"] });
-    expect(classifyTier(step, template.length)).toBe("standard");
+    const result = classifyTierWithConfidence(step, template.length);
+    expect(result.tier).toBe("standard");
+    expect(result.usedFallback).toBe(true);
   });
 
   it("handles steps without promptTemplate (uses empty string fallback)", () => {

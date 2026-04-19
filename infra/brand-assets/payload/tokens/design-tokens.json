@@ -1,0 +1,23 @@
+{
+  "version": "0.1.0",
+  "colors": {
+    "primary": "#6366f1",
+    "accent": "#14b8a6",
+    "trigger": "#f97316",
+    "background": "#0f172a",
+    "text": "#f1f5f9"
+  },
+  "typography": {
+    "headings": "Inter",
+    "body": "Inter",
+    "code": "JetBrains Mono"
+  },
+  "spacing": {
+    "unit": 4,
+    "scale": [0, 4, 8, 12, 16, 24, 32, 48, 64]
+  },
+  "motion": {
+    "duration": 200,
+    "easing": "ease-in-out"
+  }
+}

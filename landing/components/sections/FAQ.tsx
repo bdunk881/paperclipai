@@ -3,8 +3,12 @@
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 
-// TODO: Populate from Sanity CMS and refine with CMO input from ALT-93
-const FAQ_ITEMS = [
+export interface FaqItem {
+  question: string;
+  answer: string;
+}
+
+const FALLBACK_FAQ_ITEMS: FaqItem[] = [
   {
     question: "What is AutoFlow?",
     answer:
@@ -18,12 +22,12 @@ const FAQ_ITEMS = [
   {
     question: "How much does it cost?",
     answer:
-      "Plans start at $49/month for the Starter tier. See the Pricing section above for full details. All plans include a 14-day free trial.",
+      "AutoFlow has a free Explore tier to get started. Paid plans start at $19/month (Flow). See the Pricing section above for full details.",
   },
   {
     question: "Can I run multiple businesses?",
     answer:
-      "Yes. The Pro and Enterprise plans support multiple autonomous companies from a single account, each with its own isolated agents, workflows, and billing.",
+      "Yes. The Automate and Scale plans support multiple autonomous companies from a single account, each with its own isolated agents, workflows, and billing.",
   },
   {
     question: "How does the AI agent work?",
@@ -38,7 +42,7 @@ const FAQ_ITEMS = [
   {
     question: "Can I use my own LLM API keys?",
     answer:
-      "Yes — this is a core feature. AutoFlow supports OpenAI, Anthropic, Google Gemini, and Mistral out of the box. Connect your own API keys and traffic routes directly to the provider. AutoFlow never sees your prompts or completions, and you pay providers at their standard rates with no markup.",
+      "Yes \u2014 this is a core feature. AutoFlow supports OpenAI, Anthropic, Google Gemini, and Mistral out of the box. Connect your own API keys and traffic routes directly to the provider. AutoFlow never sees your prompts or completions, and you pay providers at their standard rates with no markup.",
   },
   {
     question: "Which AI model should I use for my agents?",
@@ -47,8 +51,9 @@ const FAQ_ITEMS = [
   },
 ];
 
-export function FAQ() {
+export function FAQ({ items }: { items?: FaqItem[] }) {
   const [open, setOpen] = useState<number | null>(null);
+  const faqItems = items ?? FALLBACK_FAQ_ITEMS;
 
   return (
     <section id="faq" className="bg-white py-24 sm:py-32">
@@ -70,7 +75,7 @@ export function FAQ() {
         </div>
 
         <dl className="mt-16 space-y-4">
-          {FAQ_ITEMS.map((item, i) => (
+          {faqItems.map((item, i) => (
             <motion.div
               key={item.question}
               initial={{ opacity: 0, y: 10 }}
@@ -85,7 +90,7 @@ export function FAQ() {
               >
                 <span className="font-semibold">{item.question}</span>
                 <span className="ml-6 text-indigo-600 text-xl">
-                  {open === i ? "−" : "+"}
+                  {open === i ? "\u2212" : "+"}
                 </span>
               </button>
               <AnimatePresence>

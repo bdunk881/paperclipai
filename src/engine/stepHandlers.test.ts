@@ -24,6 +24,10 @@ import {
 import { WorkflowStep } from "../types/workflow";
 import { llmConfigStore } from "../llmConfig/llmConfigStore";
 import { getProvider } from "./llmProviders";
+import {
+  clearClassificationDecisionsForTests,
+  listClassificationDecisions,
+} from "./classificationLog";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -82,6 +86,7 @@ describe("handleLlm", () => {
 
   beforeEach(() => {
     llmConfigStore.clear();
+    clearClassificationDecisionsForTests();
     mockProviderFn = jest.fn().mockResolvedValue({
       text: JSON.stringify({ intent: "general", sentiment: "neutral" }),
     });
@@ -99,6 +104,7 @@ describe("handleLlm", () => {
 
   afterEach(() => {
     llmConfigStore.clear();
+    clearClassificationDecisionsForTests();
   });
 
   it("calls the provider and maps JSON response to output", async () => {
@@ -202,6 +208,27 @@ describe("handleLlm", () => {
     await expect(handleLlm(step, {}, TEST_USER)).rejects.toThrow(
       /promptTemplate/
     );
+  });
+
+  it("logs a routing decision entry for analytics", async () => {
+    const step = makeStep({
+      kind: "llm",
+      outputKeys: ["intent"],
+      promptTemplate: "Classify this support ticket into one category and return JSON.",
+    });
+    const ctx: StepContext = { body: "Billing issue with invoice mismatch" };
+
+    await handleLlm(step, ctx, TEST_USER);
+
+    const logs = listClassificationDecisions();
+    expect(logs).toHaveLength(1);
+    const entry = logs[0];
+    expect(entry.promptHash).toMatch(/^[a-f0-9]{64}$/);
+    expect(entry.selectedTier).toBe("lite");
+    expect(entry.confidenceScore).toBeGreaterThanOrEqual(0);
+    expect(entry.confidenceScore).toBeLessThanOrEqual(1);
+    expect(entry.modelId).toBe("gpt-4o-mini");
+    expect(entry.features).toBeDefined();
   });
 });
 

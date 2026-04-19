@@ -19,6 +19,13 @@ export async function POST(req: NextRequest) {
 
   const pricingTier = PRICING_TIERS[tier as keyof typeof PRICING_TIERS];
 
+  if (!pricingTier.priceId) {
+    return NextResponse.json(
+      { error: "This tier does not require checkout" },
+      { status: 400 }
+    );
+  }
+
   if (!process.env.STRIPE_SECRET_KEY || pricingTier.priceId.includes("placeholder")) {
     return NextResponse.json(
       { error: "Stripe checkout not yet configured." },
@@ -37,7 +44,7 @@ export async function POST(req: NextRequest) {
       allow_promotion_codes: true,
       // Pre-fill email if provided by authenticated user
       ...(email ? { customer_email: email } : {}),
-      // Store user context so the webhook can fire Loops.so events
+      // Store user context for webhook processing
       metadata: {
         tier,
         ...(email ? { email } : {}),

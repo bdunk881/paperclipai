@@ -7,10 +7,12 @@
  */
 
 import { WorkflowStep, AgentSlotResult, AgentMessage } from "../types/workflow";
+import { createHash } from "crypto";
 import { llmConfigStore } from "../llmConfig/llmConfigStore";
 import { getProvider } from "./llmProviders";
 import { getBus, releaseBus } from "./agentBus";
-import { classifyTier, resolveModelForTier, buildCostLog, LlmCostLog } from "./llmRouter";
+import { classifyTierWithConfidence, resolveModelForTier, buildCostLog, LlmCostLog } from "./llmRouter";
+import { logClassificationDecision } from "./classificationLog";
 
 export type StepContext = Record<string, unknown>;
 
@@ -22,6 +24,10 @@ export interface StepHandlerResult {
   agentSlotResults?: AgentSlotResult[];
   /** Cost and tier data for llm / agent steps */
   costLog?: LlmCostLog;
+}
+
+function hashPrompt(prompt: string): string {
+  return createHash("sha256").update(prompt).digest("hex");
 }
 
 /** Interpolate {{key}} placeholders in a template string using context values */
@@ -75,8 +81,15 @@ export async function handleLlm(
   }
 
   // Determine the appropriate model tier for this step's complexity
-  const tier = classifyTier(step, renderedPrompt.length);
-  const tieredModel = resolveModelForTier(resolved.config.provider, tier);
+  const classification = classifyTierWithConfidence(step, renderedPrompt.length);
+  const tieredModel = resolveModelForTier(resolved.config.provider, classification.tier);
+  logClassificationDecision({
+    promptHash: hashPrompt(renderedPrompt),
+    features: classification.features,
+    selectedTier: classification.tier,
+    confidenceScore: classification.confidence,
+    modelId: tieredModel,
+  });
 
   const provider = getProvider({
     provider: resolved.config.provider,
@@ -100,7 +113,7 @@ export async function handleLlm(
   }
 
   const costLog = buildCostLog(
-    tier,
+    classification.tier,
     tieredModel,
     response.usage?.promptTokens ?? 0,
     response.usage?.completionTokens ?? 0

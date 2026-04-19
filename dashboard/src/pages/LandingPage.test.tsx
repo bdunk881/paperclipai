@@ -30,12 +30,12 @@ describe("LandingPage — static content", () => {
 
   it("renders the hero headline", () => {
     render(<LandingPage />);
-    expect(screen.getByText(/AI Automation Platform/i)).toBeInTheDocument();
+    expect(screen.getByText(/Runs Your Operations/i)).toBeInTheDocument();
   });
 
-  it("renders at least one 'Join the waitlist' CTA", () => {
+  it("renders at least one 'Get early access' CTA", () => {
     render(<LandingPage />);
-    const ctas = screen.getAllByText(/join the waitlist/i);
+    const ctas = screen.getAllByText(/get early access/i);
     expect(ctas.length).toBeGreaterThan(0);
   });
 
@@ -43,7 +43,7 @@ describe("LandingPage — static content", () => {
     render(<LandingPage />);
     // All feature titles should be present
     expect(screen.getAllByText(/AI-Native Agents/i).length).toBeGreaterThan(0);
-    expect(screen.getAllByText(/Deploy in Minutes/i).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/Visual Workflow Builder/i).length).toBeGreaterThan(0);
     expect(screen.getAllByText(/Full Observability/i).length).toBeGreaterThan(0);
   });
 
@@ -67,7 +67,7 @@ describe("LandingPage — static content", () => {
 describe("LandingPage — form validation", () => {
   it("does not submit when email is empty", async () => {
     render(<LandingPage />);
-    const submitBtn = screen.getAllByRole("button", { name: /join the waitlist/i })[0];
+    const submitBtn = screen.getAllByRole("button", { name: /get early access/i })[0];
 
     await act(async () => {
       fireEvent.click(submitBtn);
@@ -80,7 +80,7 @@ describe("LandingPage — form validation", () => {
   it("does not submit when email is only whitespace", async () => {
     render(<LandingPage />);
     const emailInput = screen.getAllByPlaceholderText(/you@company\.com/i)[0];
-    const submitBtn = screen.getAllByRole("button", { name: /join the waitlist/i })[0];
+    const submitBtn = screen.getAllByRole("button", { name: /get early access/i })[0];
 
     await act(async () => {
       fireEvent.change(emailInput, { target: { value: "   " } });
@@ -105,7 +105,7 @@ describe("LandingPage — submission flow", () => {
     fireEvent.change(emailInput, { target: { value: "test@example.com" } });
 
     await act(async () => {
-      fireEvent.click(screen.getAllByRole("button", { name: /join the waitlist/i })[0]);
+      fireEvent.click(screen.getAllByRole("button", { name: /get early access/i })[0]);
     });
 
     expect(screen.getAllByText(/Joining\.\.\./i).length).toBeGreaterThan(0);
@@ -120,7 +120,7 @@ describe("LandingPage — submission flow", () => {
 
     const emailInput = screen.getAllByPlaceholderText(/you@company\.com/i)[0];
     fireEvent.change(emailInput, { target: { value: "waitlist@example.com" } });
-    fireEvent.click(screen.getAllByRole("button", { name: /join the waitlist/i })[0]);
+    fireEvent.click(screen.getAllByRole("button", { name: /get early access/i })[0]);
 
     await waitFor(() => {
       expect(screen.getAllByText(/you're on the list/i).length).toBeGreaterThan(0);
@@ -136,13 +136,31 @@ describe("LandingPage — submission flow", () => {
 
     const emailInput = screen.getAllByPlaceholderText(/you@company\.com/i)[0];
     fireEvent.change(emailInput, { target: { value: "early@adopter.com" } });
-    fireEvent.click(screen.getAllByRole("button", { name: /join the waitlist/i })[0]);
+    fireEvent.click(screen.getAllByRole("button", { name: /get early access/i })[0]);
 
     await waitFor(() => {
       expect(screen.getAllByText(/you're on the list/i).length).toBeGreaterThan(0);
     });
 
-    expect(screen.queryAllByRole("button", { name: /join the waitlist/i }).length).toBe(0);
+    expect(screen.queryAllByRole("button", { name: /get early access/i }).length).toBe(0);
+  });
+
+  it("shows an error and does not show success state when the API call fails", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({ ok: false, status: 500 } as Response)
+    );
+    render(<LandingPage />);
+
+    const emailInput = screen.getAllByPlaceholderText(/you@company\.com/i)[0];
+    fireEvent.change(emailInput, { target: { value: "waitlist@example.com" } });
+    fireEvent.click(screen.getAllByRole("button", { name: /get early access/i })[0]);
+
+    await waitFor(() => {
+      expect(screen.getByRole("alert")).toHaveTextContent(/signup failed/i);
+    });
+
+    expect(screen.queryByText(/you're on the list/i)).toBeNull();
   });
 });
 

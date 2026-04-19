@@ -35,8 +35,8 @@ AutoFlow gives you a library of pre-built AI workflow templates that you can dep
 
 ```bash
 # Clone the repo
-git clone https://github.com/autoflow-hq/autoflow.git
-cd autoflow
+git clone https://github.com/bdunk881/paperclipai.git
+cd paperclipai
 
 # Install dependencies
 npm install
@@ -74,6 +74,7 @@ curl -X POST http://localhost:3000/api/runs \
 ### Run via Docker
 
 ```bash
+cp .env.local.example .env.local
 docker compose up
 ```
 
@@ -122,7 +123,7 @@ autoflow/
 ├── landing/              # Marketing site (Next.js)
 ├── docs/                 # Documentation site (Next.js)
 ├── docker/               # Dockerfiles
-├── infra/                # Deployment config (Hetzner + Coolify)
+├── infra/                # Deployment config (Azure + Vercel)
 └── docker-compose.yml
 ```
 
@@ -130,11 +131,14 @@ autoflow/
 
 ## Deployment
 
-AutoFlow is deployed on [Hetzner](https://www.hetzner.com/) via [Coolify](https://coolify.io/) (self-hosted PaaS). See [`infra/README.md`](infra/README.md) for full setup instructions.
+AutoFlow backend is deployed on Azure; the dashboard is hosted on Vercel. See [`infra/README.md`](infra/README.md) for full setup instructions.
 
 ### CI/CD
 
-Push to `main` → GitHub Actions builds Docker images → pushes to GHCR → Coolify redeploys.
+Push to `main` → GitHub Actions builds Docker images → pushes to GHCR → deploys to Azure (backend) and Vercel (dashboard).
+
+Required GitHub Actions secret for backend test job:
+- `CI_POSTGRES_PASSWORD`
 
 ---
 
@@ -224,4 +228,4 @@ MIT — see [LICENSE](LICENSE).
 - **Website:** [helloautoflow.com](https://helloautoflow.com)
 - **Demo:** [helloautoflow.com/demo](https://helloautoflow.com/demo)
 - **Docs:** [docs.helloautoflow.com](https://docs.helloautoflow.com)
-- **Issues:** [github.com/autoflow-hq/autoflow/issues](https://github.com/autoflow-hq/autoflow/issues)
+- **Issues:** [github.com/bdunk881/paperclipai/issues](https://github.com/bdunk881/paperclipai/issues)

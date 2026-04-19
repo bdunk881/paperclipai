@@ -1,18 +1,9 @@
 import type { Metadata } from "next";
-import { Inter, Poppins, JetBrains_Mono } from "next/font/google";
+import { Inter } from "next/font/google";
 import Link from "next/link";
 import "./globals.css";
 
-const inter = Inter({ subsets: ["latin"], variable: "--font-inter" });
-const poppins = Poppins({
-  subsets: ["latin"],
-  weight: ["400", "600", "700", "800"],
-  variable: "--font-poppins",
-});
-const jetbrainsMono = JetBrains_Mono({
-  subsets: ["latin"],
-  variable: "--font-jetbrains-mono",
-});
+const inter = Inter({ subsets: ["latin"] });
 
 // TODO: Update with CMO-approved SEO copy from ALT-93
 export const metadata: Metadata = {
@@ -50,10 +41,10 @@ export default function RootLayout({
           />
         )}
       </head>
-      <body className={`${inter.variable} ${poppins.variable} ${jetbrainsMono.variable} font-sans antialiased`}>
+      <body className={`${inter.className} antialiased`}>
         <nav className="sticky top-0 z-50 bg-white/80 backdrop-blur-sm border-b border-gray-100">
           <div className="mx-auto max-w-7xl px-6 lg:px-8 flex h-16 items-center justify-between">
-            <Link href="/" className="text-xl font-display font-bold text-[#4A3AFF]">
+            <Link href="/" className="text-xl font-bold text-indigo-600">
               AutoFlow
             </Link>
             <div className="hidden md:flex items-center gap-8">
@@ -75,21 +66,27 @@ export default function RootLayout({
               >
                 Pricing
               </a>
-              <a
+              <Link
+                href="/blog"
+                className="text-sm text-gray-600 hover:text-gray-900 transition-colors"
+              >
+                Blog
+              </Link>
+              <Link
                 href="/demo"
                 className="text-sm text-gray-600 hover:text-gray-900 transition-colors"
               >
                 Demo
-              </a>
+              </Link>
               <a
-                href="https://docs.helloautoflow.com"
+                href="https://docs.autoflow.app"
                 className="text-sm text-gray-600 hover:text-gray-900 transition-colors"
               >
                 Docs
               </a>
               <a
                 href="#pricing"
-                className="rounded-lg bg-[#FF5F57] px-4 py-2 text-sm font-semibold text-white hover:bg-[#e54e46] transition-colors"
+                className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700 transition-colors"
               >
                 Start free
               </a>
@@ -101,10 +98,13 @@ export default function RootLayout({
           <div className="mx-auto max-w-7xl px-6 lg:px-8 flex flex-col items-center gap-4 text-sm">
             <p className="font-bold text-white text-lg">AutoFlow</p>
             <div className="flex gap-6">
-              <a href="/demo" className="hover:text-white transition-colors">
+              <Link href="/blog" className="hover:text-white transition-colors">
+                Blog
+              </Link>
+              <Link href="/demo" className="hover:text-white transition-colors">
                 Demo
-              </a>
-              <a href="https://docs.helloautoflow.com" className="hover:text-white transition-colors">
+              </Link>
+              <a href="https://docs.autoflow.app" className="hover:text-white transition-colors">
                 Docs
               </a>
               <a href="https://github.com/autoflow-hq/autoflow" className="hover:text-white transition-colors">
@@ -116,7 +116,7 @@ export default function RootLayout({
               <a href="/terms" className="hover:text-white transition-colors">
                 Terms
               </a>
-              <a href="mailto:hello@helloautoflow.com" className="hover:text-white transition-colors">
+              <a href="mailto:hello@autoflow.app" className="hover:text-white transition-colors">
                 Contact
               </a>
             </div>

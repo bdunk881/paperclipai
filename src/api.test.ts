@@ -9,6 +9,17 @@
 jest.mock("./engine/llmProviders", () => ({
   getProvider: jest.fn(),
 }));
+jest.mock("./auth/authMiddleware", () => ({
+  requireAuth: (req: { headers: { authorization?: string }; auth?: { sub: string } }, res: { status: (code: number) => { json: (body: unknown) => void } }, next: () => void) => {
+    const auth = req.headers.authorization;
+    if (!auth?.startsWith("Bearer ")) {
+      res.status(401).json({ error: "Missing or malformed Authorization header." });
+      return;
+    }
+    req.auth = { sub: auth.slice(7) };
+    next();
+  },
+}));
 
 // Bypass JWT verification in unit tests — inject a synthetic auth principal
 jest.mock("./auth/authMiddleware", () => ({
@@ -21,6 +32,15 @@ jest.mock("./auth/authMiddleware", () => ({
 import request from "supertest";
 import app from "./app";
 import { WORKFLOW_TEMPLATES } from "./templates";
+import {
+  clearClassificationDecisionsForTests,
+  logClassificationDecision,
+} from "./engine/classificationLog";
+import { extractPromptFeatures } from "./engine/promptFeatures";
+
+function asAuth(userId = "test-user") {
+  return { Authorization: `Bearer ${userId}` };
+}
 
 // ---------------------------------------------------------------------------
 // GET /health
@@ -208,9 +228,17 @@ describe("GET /api/templates/:id/sample", () => {
 // ---------------------------------------------------------------------------
 
 describe("POST /api/runs", () => {
+  it("returns 401 when Authorization header is missing", async () => {
+    const res = await request(app)
+      .post("/api/runs")
+      .send({ templateId: "tpl-support-bot", input: {} });
+    expect(res.status).toBe(401);
+  });
+
   it("returns 202 with a pending run for a valid templateId", async () => {
     const res = await request(app)
       .post("/api/runs")
+      .set(asAuth())
       .send({ templateId: "tpl-support-bot", input: { ticketId: "TKT-001", subject: "Help", body: "I need help", customerEmail: "test@example.com", channel: "email" } });
     expect(res.status).toBe(202);
     expect(res.body.id).toBeDefined();
@@ -221,6 +249,7 @@ describe("POST /api/runs", () => {
   it("returns 400 when templateId is missing", async () => {
     const res = await request(app)
       .post("/api/runs")
+      .set(asAuth())
       .send({ input: {} });
     expect(res.status).toBe(400);
     expect(res.body.error).toMatch(/templateId/i);
@@ -229,6 +258,7 @@ describe("POST /api/runs", () => {
   it("returns 404 for an unknown templateId", async () => {
     const res = await request(app)
       .post("/api/runs")
+      .set(asAuth())
       .send({ templateId: "tpl-nonexistent", input: {} });
     expect(res.status).toBe(404);
     expect(res.body.error).toMatch(/not found/i);
@@ -237,6 +267,7 @@ describe("POST /api/runs", () => {
   it("returns a run with startedAt timestamp", async () => {
     const res = await request(app)
       .post("/api/runs")
+      .set(asAuth())
       .send({ templateId: "tpl-support-bot", input: {} });
     expect(res.status).toBe(202);
     expect(typeof res.body.startedAt).toBe("string");
@@ -250,14 +281,14 @@ describe("POST /api/runs", () => {
 
 describe("GET /api/runs", () => {
   it("returns 200 with a runs array", async () => {
-    const res = await request(app).get("/api/runs");
+    const res = await request(app).get("/api/runs").set(asAuth());
     expect(res.status).toBe(200);
     expect(Array.isArray(res.body.runs)).toBe(true);
     expect(typeof res.body.total).toBe("number");
   });
 
   it("total matches runs array length", async () => {
-    const res = await request(app).get("/api/runs");
+    const res = await request(app).get("/api/runs").set(asAuth());
     expect(res.body.total).toBe(res.body.runs.length);
   });
 });
@@ -270,19 +301,68 @@ describe("GET /api/runs/:id", () => {
   it("returns 202 run and then retrieves it by id", async () => {
     const startRes = await request(app)
       .post("/api/runs")
+      .set(asAuth())
       .send({ templateId: "tpl-support-bot", input: { ticketId: "TKT-002", subject: "Issue", body: "Problem", customerEmail: "b@example.com", channel: "email" } });
     expect(startRes.status).toBe(202);
     const runId = startRes.body.id;
 
-    const getRes = await request(app).get(`/api/runs/${runId}`);
+    const getRes = await request(app).get(`/api/runs/${runId}`).set(asAuth());
     expect(getRes.status).toBe(200);
     expect(getRes.body.id).toBe(runId);
   });
 
   it("returns 404 for an unknown run id", async () => {
-    const res = await request(app).get("/api/runs/run-does-not-exist");
+    const res = await request(app).get("/api/runs/run-does-not-exist").set(asAuth());
     expect(res.status).toBe(404);
     expect(res.body.error).toMatch(/not found/i);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// GET /api/analytics/routing-decisions
+// ---------------------------------------------------------------------------
+
+describe("GET /api/analytics/routing-decisions", () => {
+  beforeEach(() => {
+    clearClassificationDecisionsForTests();
+  });
+
+  afterEach(() => {
+    clearClassificationDecisionsForTests();
+  });
+
+  it("requires authentication", async () => {
+    const res = await request(app).get("/api/analytics/routing-decisions");
+    expect(res.status).toBe(401);
+  });
+
+  it("returns logged routing decisions for dashboard consumption", async () => {
+    logClassificationDecision({
+      promptHash: "hash-1",
+      features: extractPromptFeatures("Classify this ticket", 120, 1),
+      selectedTier: "lite",
+      confidenceScore: 0.9,
+      modelId: "gpt-4o-mini",
+    });
+
+    const res = await request(app)
+      .get("/api/analytics/routing-decisions")
+      .set(asAuth());
+
+    expect(res.status).toBe(200);
+    expect(Array.isArray(res.body.decisions)).toBe(true);
+    expect(res.body.total).toBe(1);
+    expect(typeof res.body.capacity).toBe("number");
+    expect(res.body.decisions[0]).toEqual(
+      expect.objectContaining({
+        promptHash: "hash-1",
+        selectedTier: "lite",
+        confidenceScore: 0.9,
+        modelId: "gpt-4o-mini",
+      })
+    );
+    expect(res.body.decisions[0].features).toBeDefined();
+    expect(typeof res.body.decisions[0].timestamp).toBe("string");
   });
 });
 
@@ -343,7 +423,7 @@ describe("POST /api/webhooks/:templateId", () => {
     expect(webhookRes.status).toBe(202);
 
     const runId = webhookRes.body.runId;
-    const getRes = await request(app).get(`/api/runs/${runId}`);
+    const getRes = await request(app).get(`/api/runs/${runId}`).set(asAuth());
     expect(getRes.status).toBe(200);
     expect(getRes.body.id).toBe(runId);
   });
@@ -383,6 +463,43 @@ describe("GET /health — run stats", () => {
     expect(running).toBeGreaterThanOrEqual(0);
     expect(completed).toBeGreaterThanOrEqual(0);
     expect(failed).toBeGreaterThanOrEqual(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Rate limiting
+// ---------------------------------------------------------------------------
+
+describe("Rate limiting", () => {
+  it("enforces LLM endpoint limits per authenticated user and returns Retry-After", async () => {
+    for (let i = 0; i < 10; i += 1) {
+      const res = await request(app)
+        .post("/api/runs")
+        .set(asAuth("rate-limit-llm-user"))
+        .send({ templateId: "tpl-support-bot", input: { ticketId: `RL-${i}` } });
+      expect(res.status).toBe(202);
+    }
+
+    const blocked = await request(app)
+      .post("/api/runs")
+      .set(asAuth("rate-limit-llm-user"))
+      .send({ templateId: "tpl-support-bot", input: { ticketId: "RL-over" } });
+
+    expect(blocked.status).toBe(429);
+    expect(blocked.headers["retry-after"]).toBeDefined();
+    expect(Number(blocked.headers["retry-after"])).toBeGreaterThan(0);
+  });
+
+  it("enforces general API limits and returns Retry-After", async () => {
+    for (let i = 0; i < 100; i += 1) {
+      const res = await request(app).get("/api/templates").set("X-User-Id", "rate-limit-general-user");
+      expect(res.status).toBe(200);
+    }
+
+    const blocked = await request(app).get("/api/templates").set("X-User-Id", "rate-limit-general-user");
+    expect(blocked.status).toBe(429);
+    expect(blocked.headers["retry-after"]).toBeDefined();
+    expect(Number(blocked.headers["retry-after"])).toBeGreaterThan(0);
   });
 });
 

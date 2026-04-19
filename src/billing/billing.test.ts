@@ -199,9 +199,29 @@ describe("resolveTier", () => {
 // ---------------------------------------------------------------------------
 
 describe("POST /api/billing/checkout", () => {
-  it("returns 401 without auth", async () => {
+  it("allows unauthenticated checkout creation for paid tiers", async () => {
+    stripeMock.checkout.sessions.create.mockResolvedValue({
+      url: "https://checkout.stripe.test/session_public_123",
+    });
+
     const res = await request(app).post("/api/billing/checkout").send({ tier: "flow" });
-    expect(res.status).toBe(401);
+
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ url: "https://checkout.stripe.test/session_public_123" });
+    expect(stripeMock.checkout.sessions.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        metadata: expect.objectContaining({
+          tier: "flow",
+        }),
+      })
+    );
+    expect(stripeMock.checkout.sessions.create).toHaveBeenCalledWith(
+      expect.not.objectContaining({
+        metadata: expect.objectContaining({
+          userId: expect.any(String),
+        }),
+      })
+    );
   });
 
   it("rejects missing tier", async () => {
@@ -226,6 +246,7 @@ describe("POST /api/billing/checkout", () => {
       email: "buyer@example.com",
       firstName: "Ada",
       companyName: "AutoFlow",
+      userId: "user-123",
     });
 
     expect(res.status).toBe(200);

@@ -1,0 +1,35 @@
+name: Enforce Branch Protection
+
+on:
+  workflow_dispatch:
+    inputs:
+      required_checks:
+        description: "Comma-separated required status check names"
+        required: false
+        default: "Docker Build Check"
+
+permissions:
+  contents: read
+
+jobs:
+  protect:
+    name: Require PR Reviews on Default Branches
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate admin token
+        env:
+          GH_TOKEN: ${{ secrets.BRANCH_ADMIN_TOKEN }}
+        run: |
+          if [ -z "${GH_TOKEN:-}" ]; then
+            echo "::error::Missing BRANCH_ADMIN_TOKEN secret with repo admin scope"
+            exit 1
+          fi
+
+      - name: Apply branch protection
+        env:
+          GH_TOKEN: ${{ secrets.BRANCH_ADMIN_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          REQUIRED_CHECKS: ${{ github.event.inputs.required_checks || 'Docker Build Check' }}
+        run: infra/scripts/enforce_branch_protection.sh

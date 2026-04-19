@@ -1,0 +1,41 @@
+name: sync-mempalace
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Read version
+        id: version
+        run: |
+          test -f VERSION
+          VERSION="$(tr -d '[:space:]' < VERSION)"
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+
+      - name: Build local manifest
+        env:
+          ASSET_VERSION: ${{ steps.version.outputs.version }}
+          SKIP_R2_UPLOAD: "1"
+        run: |
+          chmod +x scripts/publish_to_r2.sh
+          scripts/publish_to_r2.sh .
+          test -f "brand-manifest-${{ steps.version.outputs.version }}.json"
+
+      - name: Sync manifest to MemPalace
+        env:
+          MEMPALACE_API_URL: ${{ secrets.MEMPALACE_API_URL }}
+          MEMPALACE_API_TOKEN: ${{ secrets.MEMPALACE_API_TOKEN }}
+          ASSET_VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          chmod +x scripts/sync_brand_mempalace.sh
+          scripts/sync_brand_mempalace.sh "brand-manifest-${{ steps.version.outputs.version }}.json"

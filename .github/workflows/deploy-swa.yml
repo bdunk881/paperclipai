@@ -1,6 +1,7 @@
 name: Deploy Dashboard to Azure Static Web Apps
 
 on:
+  # Customer-facing dashboard production deploy source branch.
   push:
     branches: [master]
     paths:

@@ -27,13 +27,14 @@ function resolveAppBaseUrl(req: Request): string {
  * Returns: { url: string } — Stripe hosted checkout URL
  */
 router.post("/", async (req: AuthenticatedRequest, res: Response) => {
-  const userId = req.auth?.sub;
-  const { tier, email, firstName, companyName } = req.body as {
+  const { tier, email, firstName, companyName, userId } = req.body as {
     tier?: string;
     email?: string;
     firstName?: string;
     companyName?: string;
+    userId?: string;
   };
+  const resolvedUserId = req.auth?.sub ?? (typeof userId === "string" ? userId : undefined);
 
   if (!tier || !(tier in PRICING_TIERS)) {
     res.status(400).json({ error: `Invalid tier. Must be one of: ${Object.keys(PRICING_TIERS).join(", ")}` });
@@ -68,7 +69,7 @@ router.post("/", async (req: AuthenticatedRequest, res: Response) => {
         ...(email ? { email } : {}),
         ...(firstName ? { firstName } : {}),
         ...(companyName ? { companyName } : {}),
-        ...(userId ? { userId } : {}),
+        ...(resolvedUserId ? { userId: resolvedUserId } : {}),
       },
     };
 

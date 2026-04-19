@@ -9,16 +9,16 @@ resource "azurerm_kubernetes_cluster" "main" {
 
   # ── Default node pool ──────────────────────────────────────────────────────
   default_node_pool {
-    name                = "default"
-    node_count          = var.node_count
-    vm_size             = var.node_vm_size
-    vnet_subnet_id      = var.aks_subnet_id
-    os_disk_size_gb     = 50
-    type                = "VirtualMachineScaleSets"
+    name            = "default"
+    node_count      = var.node_count
+    vm_size         = var.node_vm_size
+    vnet_subnet_id  = var.aks_subnet_id
+    os_disk_size_gb = 50
+    type            = "VirtualMachineScaleSets"
 
-    auto_scaling_enabled = true
-    min_count            = var.min_node_count
-    max_count            = var.max_node_count
+    enable_auto_scaling = true
+    min_count           = var.min_node_count
+    max_count           = var.max_node_count
 
     node_labels = {
       role = "system"
@@ -58,7 +58,7 @@ resource "azurerm_kubernetes_cluster" "main" {
 
   lifecycle {
     ignore_changes = [
-      default_node_pool[0].node_count,  # managed by autoscaler
+      default_node_pool[0].node_count, # managed by autoscaler
     ]
   }
 }

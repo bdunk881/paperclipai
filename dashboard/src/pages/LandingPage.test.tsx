@@ -55,7 +55,6 @@ describe("LandingPage — static content", () => {
 
   it("renders at least one email input", () => {
     render(<LandingPage />);
-    // eslint-disable-next-line testing-library/no-container
     const inputs = document.querySelectorAll('input[type="email"]');
     expect(inputs.length).toBeGreaterThan(0);
   });

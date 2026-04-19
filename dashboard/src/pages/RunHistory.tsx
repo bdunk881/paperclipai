@@ -5,6 +5,7 @@ import { StatusBadge } from "../components/StatusBadge";
 import type { WorkflowRun } from "../types/workflow";
 import clsx from "clsx";
 import { EmptyState, ErrorState, LoadingState } from "../components/UiStates";
+import { useAuth } from "../context/AuthContext";
 
 const PAGE_SIZE = 5;
 
@@ -14,6 +15,7 @@ type SortDir = "asc" | "desc";
 const ALL_STATUSES = ["pending", "running", "completed", "failed", "escalated"] as const;
 
 export default function RunHistory() {
+  const { getAccessToken } = useAuth();
   const [allRuns, setAllRuns] = useState<WorkflowRun[]>([]);
   const [templates, setTemplates] = useState<TemplateSummary[]>([]);
   const [loading, setLoading] = useState(true);
@@ -28,7 +30,8 @@ export default function RunHistory() {
     setLoading(true);
     setLoadError(null);
     try {
-      const [runs, fetchedTemplates] = await Promise.all([listRuns(), listTemplates()]);
+      const accessToken = await getAccessToken() ?? undefined;
+      const [runs, fetchedTemplates] = await Promise.all([listRuns(undefined, accessToken), listTemplates()]);
       setAllRuns(runs);
       setTemplates(fetchedTemplates);
     } catch (e) {

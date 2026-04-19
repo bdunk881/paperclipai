@@ -16,6 +16,7 @@ import {
 import { listRuns } from "../api/client";
 import type { StepResult, WorkflowRun } from "../types/workflow";
 import { EmptyState, ErrorState, LoadingState } from "../components/UiStates";
+import { useAuth } from "../context/AuthContext";
 
 interface StepLog {
   stepId: string;
@@ -244,6 +245,7 @@ function RunCard({ run }: { run: RunLog }) {
 }
 
 export default function ExecutionLogs() {
+  const { getAccessToken } = useAuth();
   const [filter, setFilter] = useState<"all" | "failed" | "running">("all");
   const [runs, setRuns] = useState<WorkflowRun[]>([]);
   const [loading, setLoading] = useState(true);
@@ -254,7 +256,8 @@ export default function ExecutionLogs() {
     if (!silent) setLoading(true);
     setLoadError(null);
     try {
-      const fetched = await listRuns();
+      const accessToken = await getAccessToken() ?? undefined;
+      const fetched = await listRuns(undefined, accessToken);
       const sorted = [...fetched].sort(
         (a, b) => new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime()
       );

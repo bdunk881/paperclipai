@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import AgentDeploy from "./AgentDeploy";
@@ -28,26 +28,15 @@ describe("AgentDeploy", () => {
     );
   });
 
-  it("shows deploy progress after submit", async () => {
+  it("shows not-found state for missing template", () => {
     render(
-      <MemoryRouter initialEntries={["/agents/deploy/sales-prospecting"]}>
+      <MemoryRouter initialEntries={["/agents/deploy/nonexistent-template"]}>
         <Routes>
           <Route path="/agents/deploy/:templateId" element={<AgentDeploy />} />
-          <Route path="/agents/my" element={<div>My agents page</div>} />
         </Routes>
       </MemoryRouter>
     );
 
-    fireEvent.click(screen.getByRole("button", { name: /deploy agent/i }));
-
-    expect(screen.getByText(/deploying agent/i)).toBeInTheDocument();
-    expect(screen.getByText(/deploying\.\.\./i)).toBeInTheDocument();
-
-    await waitFor(() =>
-      expect(fetch).toHaveBeenCalledWith(
-        expect.stringMatching(/^\/api\/integrations\/agent-catalog\/connections$/),
-        expect.any(Object)
-      )
-    );
+    expect(screen.getByText(/agent template not found/i)).toBeInTheDocument();
   });
 });

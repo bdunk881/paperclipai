@@ -13,6 +13,7 @@ import { getProvider } from "./llmProviders";
 import { getBus, releaseBus } from "./agentBus";
 import { classifyTierWithConfidence, resolveModelForTier, buildCostLog, LlmCostLog } from "./llmRouter";
 import { logClassificationDecision } from "./classificationLog";
+import { sanitizeContext } from "./crmFieldAllowlist";
 
 export type StepContext = Record<string, unknown>;
 
@@ -67,7 +68,16 @@ export async function handleLlm(
     throw new Error(`LLM step "${step.id}" is missing a promptTemplate`);
   }
 
-  const renderedPrompt = interpolate(step.promptTemplate, ctx);
+  // Data minimization: strip sensitive CRM fields before they reach the LLM
+  const { sanitized, blockedCategories, strippedCount } = sanitizeContext(ctx);
+  if (strippedCount > 0) {
+    console.info(
+      `[security] LLM step "${step.id}": stripped ${strippedCount} field(s) ` +
+        `(categories: ${blockedCategories.join(", ")})`
+    );
+  }
+
+  const renderedPrompt = interpolate(step.promptTemplate, sanitized);
 
   // Resolve config: step-level override or user's default
   const resolved = step.llmConfigId
@@ -455,8 +465,17 @@ export async function handleAgent(
     } satisfies AgentMessage);
   }
 
+  // Data minimization: strip sensitive CRM fields before they reach the LLM
+  const { sanitized: agentSanitized, blockedCategories: agentBlocked, strippedCount: agentStripped } = sanitizeContext(ctx);
+  if (agentStripped > 0) {
+    console.info(
+      `[security] Agent step "${step.id}": stripped ${agentStripped} field(s) ` +
+        `(categories: ${agentBlocked.join(", ")})`
+    );
+  }
+
   // Build context summary for the prompt
-  const contextSummary = Object.entries(ctx)
+  const contextSummary = Object.entries(agentSanitized)
     .filter(([, v]) => v !== undefined && v !== null)
     .map(([k, v]) => `${k}: ${typeof v === "object" ? JSON.stringify(v) : String(v)}`)
     .join("\n");

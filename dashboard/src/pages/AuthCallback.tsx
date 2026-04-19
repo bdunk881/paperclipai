@@ -25,7 +25,7 @@ export default function AuthCallback() {
           }
         }
         if (!cancelled) {
-          navigate(resolvedAccount ? "/dashboard" : "/login", { replace: true });
+          navigate(resolvedAccount ? "/" : "/login", { replace: true });
         }
       } catch {
         if (!cancelled) navigate("/login", { replace: true });

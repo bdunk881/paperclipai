@@ -7,6 +7,8 @@ on:
         description: "Comma-separated required status check names"
         required: false
         default: "Docker Build Check"
+  schedule:
+    - cron: "0 9 * * 1"
 
 permissions:
   contents: read

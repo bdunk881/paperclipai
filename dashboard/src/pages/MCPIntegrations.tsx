@@ -55,16 +55,6 @@ const INTEGRATION_OPTIONS: IntegrationOption[] = [
     logo: linearLogo,
   },
   {
-    id: "mcp-linear",
-    name: "Linear",
-    description: "Sync projects and issues with Linear to automate triage, assignment, and status updates.",
-    category: "Project Management",
-    tools: ["list_teams", "list_issues", "create_issue", "update_issue"],
-    rating: 4.8,
-    connected: false,
-    official: true,
-  },
-  {
     id: "mcp-slack",
     name: "Slack",
     description: "Send messages, read channels, and manage Slack workspaces.",

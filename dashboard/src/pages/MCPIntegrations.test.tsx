@@ -6,6 +6,8 @@ describe("MCPIntegrations", () => {
   it("shows non-deceptive coming-soon connect controls", () => {
     render(<MCPIntegrations />);
 
+    expect(screen.getByText("Linear")).toBeInTheDocument();
+
     expect(screen.getAllByText(/coming soon/i).length).toBeGreaterThan(0);
 
     const connectButtons = screen.getAllByRole("button", {

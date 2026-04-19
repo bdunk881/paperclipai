@@ -143,7 +143,7 @@ export default function RunHistory() {
     <div className="p-8">
       {/* Header */}
       <div className="mb-8">
-        <h1 className="text-2xl font-bold text-gray-900">Run History</h1>
+        <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">Run History</h1>
         <p className="text-gray-500 mt-1 text-sm">
           All workflow runs — {allRuns.length} total
         </p>
@@ -322,7 +322,7 @@ export default function RunHistory() {
                       onClick={() => setExpandedId(isExpanded ? null : run.id)}
                     >
                       <td className="px-5 py-3 font-mono text-xs text-gray-500">{run.id}</td>
-                      <td className="px-5 py-3 font-medium text-gray-900">{run.templateName}</td>
+                      <td className="px-5 py-3 font-medium text-gray-900 dark:text-gray-100">{run.templateName}</td>
                       <td className="px-5 py-3">
                         <StatusBadge status={run.status} />
                       </td>

@@ -9,10 +9,10 @@ const SETTINGS_SECTIONS = [
     description: "Connect your own API keys for OpenAI, Anthropic, Gemini, and Mistral to use in workflows.",
   },
   {
-    to: "/settings/mcp-servers",
+    to: "/settings/integrations",
     icon: PlugZap,
-    title: "MCP Servers",
-    description: "Register Model Context Protocol servers to use as steps in your workflows.",
+    title: "Integrations",
+    description: "Register and manage integration servers to use as steps in your workflows.",
   },
   {
     to: "/settings/profile",

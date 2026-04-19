@@ -14,7 +14,7 @@ module.exports = {
       'warn',
       {
         allowConstantExport: true,
-        allowExportNames: ['useAuth', 'useSkillsMarketplace'],
+        allowExportNames: ['useAuth'],
       },
     ],
   },

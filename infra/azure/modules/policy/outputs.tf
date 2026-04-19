@@ -22,3 +22,8 @@ output "diag_assignment_principal_id" {
   description = "Object ID of the managed identity attached to the diagnostic settings DINE assignment (used to grant Monitoring Contributor at subscription scope for remediation)"
   value       = azurerm_management_group_policy_assignment.diag_activity_log.identity[0].principal_id
 }
+
+output "defender_assignment_principal_id" {
+  description = "Object ID of the managed identity attached to the Defender for Containers DINE assignment (used to grant Security Admin at management group scope for remediation)"
+  value       = azurerm_management_group_policy_assignment.defender_containers.identity[0].principal_id
+}

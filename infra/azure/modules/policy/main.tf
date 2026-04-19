@@ -194,6 +194,12 @@ resource "azurerm_management_group_policy_assignment" "defender_containers" {
   policy_definition_id = "/providers/Microsoft.Authorization/policyDefinitions/1c988dd4-ced4-4da8-b9b3-7af0ba21b35a"
   management_group_id  = var.management_group_id
 
+  location = var.location
+
+  identity {
+    type = "SystemAssigned"
+  }
+
   enforce = false
 
   metadata = jsonencode({
@@ -231,4 +237,22 @@ resource "azurerm_management_group_policy_assignment" "diag_activity_log" {
   metadata = jsonencode({
     assignedBy = "terraform"
   })
+}
+
+# ── Role Assignments for DINE Policy Managed Identities ──────────────────────
+#
+# DINE policy assignments use managed identities to perform remediation tasks.
+# Without role assignments, remediation silently fails because the identity
+# lacks permission to create/modify resources.
+
+resource "azurerm_role_assignment" "defender_dine" {
+  scope                = var.management_group_id
+  role_definition_name = "Security Admin"
+  principal_id         = azurerm_management_group_policy_assignment.defender_containers.identity[0].principal_id
+}
+
+resource "azurerm_role_assignment" "diag_activity_log_dine" {
+  scope                = var.management_group_id
+  role_definition_name = "Monitoring Contributor"
+  principal_id         = azurerm_management_group_policy_assignment.diag_activity_log.identity[0].principal_id
 }

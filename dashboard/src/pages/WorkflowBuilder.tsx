@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import {
   Plus,
@@ -25,77 +25,148 @@ import {
   AlertCircle,
   CircleHelp,
 } from "lucide-react";
-import { getTemplate, listTemplates, startRun, startRunWithFile, listLLMConfigs, generateWorkflow, createTemplate, type TemplateSummary, type LLMConfig } from "../api/client";
-import type { WorkflowStep, StepKind, WorkflowTemplate } from "../types/workflow";
+import {
+  Background,
+  BackgroundVariant,
+  type Connection,
+  Controls,
+  Handle,
+  Position,
+  ReactFlow,
+  type Edge,
+  type Node,
+  type NodeProps,
+  type NodeTypes,
+  type XYPosition,
+} from "@xyflow/react";
 import clsx from "clsx";
-import { ErrorState, LoadingState } from "../components/UiStates";
+import { getTemplate, listTemplates, startRun, startRunWithFile, listLLMConfigs, generateWorkflow, createTemplate, type TemplateSummary, type LLMConfig } from "../api/client";
 import { Tooltip } from "../components/Tooltip";
+import { ErrorState, LoadingState } from "../components/UiStates";
+import type { WorkflowStep, StepKind, WorkflowTemplate } from "../types/workflow";
+import {
+  buildDefaultEdge,
+  buildEdgesFromSteps,
+  serializeEdgesToSteps,
+  STEP_POSITION_KEY,
+  validateEdgeCandidate,
+  validateGraphTopology,
+} from "./workflowGraph";
+import { useTheme } from "../hooks/useTheme";
 
 const KIND_META: Record<
   StepKind,
-  { label: string; icon: React.ReactNode; color: string; bg: string }
+  {
+    label: string;
+    icon: React.ReactNode;
+    chipColor: string;
+    chipBg: string;
+    categoryTint: string;
+    darkCategoryTint: string;
+    categoryBorder: string;
+  }
 > = {
   trigger: {
     label: "Trigger",
     icon: <Zap size={14} />,
-    color: "text-blue-700",
-    bg: "bg-blue-100 border-blue-300",
+    chipColor: "text-emerald-700 dark:text-emerald-400",
+    chipBg: "bg-emerald-50 border-emerald-200 dark:bg-emerald-500/10 dark:border-emerald-500/30",
+    categoryTint: "rgba(16,185,129,0.12)",
+    darkCategoryTint: "rgba(16,185,129,0.18)",
+    categoryBorder: "#10b981",
   },
   llm: {
     label: "LLM",
     icon: <Brain size={14} />,
-    color: "text-purple-700",
-    bg: "bg-purple-100 border-purple-300",
+    chipColor: "text-brand-700 dark:text-brand-300",
+    chipBg: "bg-brand-50 border-brand-200 dark:bg-brand-500/10 dark:border-brand-500/30",
+    categoryTint: "rgba(99,102,241,0.12)",
+    darkCategoryTint: "rgba(99,102,241,0.18)",
+    categoryBorder: "#6366f1",
   },
   condition: {
     label: "Condition",
     icon: <GitBranch size={14} />,
-    color: "text-yellow-700",
-    bg: "bg-yellow-100 border-yellow-300",
+    chipColor: "text-amber-700 dark:text-amber-400",
+    chipBg: "bg-amber-50 border-amber-200 dark:bg-amber-500/10 dark:border-amber-500/30",
+    categoryTint: "rgba(245,158,11,0.12)",
+    darkCategoryTint: "rgba(245,158,11,0.18)",
+    categoryBorder: "#f59e0b",
   },
   transform: {
     label: "Transform",
     icon: <Wrench size={14} />,
-    color: "text-orange-700",
-    bg: "bg-orange-100 border-orange-300",
+    chipColor: "text-brand-700 dark:text-brand-300",
+    chipBg: "bg-brand-50 border-brand-200 dark:bg-brand-500/10 dark:border-brand-500/30",
+    categoryTint: "rgba(99,102,241,0.12)",
+    darkCategoryTint: "rgba(99,102,241,0.18)",
+    categoryBorder: "#6366f1",
   },
   action: {
     label: "Action",
     icon: <ArrowRight size={14} />,
-    color: "text-green-700",
-    bg: "bg-green-100 border-green-300",
+    chipColor: "text-brand-700 dark:text-brand-300",
+    chipBg: "bg-brand-50 border-brand-200 dark:bg-brand-500/10 dark:border-brand-500/30",
+    categoryTint: "rgba(99,102,241,0.12)",
+    darkCategoryTint: "rgba(99,102,241,0.18)",
+    categoryBorder: "#6366f1",
   },
   output: {
     label: "Output",
     icon: <Flag size={14} />,
-    color: "text-gray-700",
-    bg: "bg-gray-100 border-gray-300",
+    chipColor: "text-brand-700 dark:text-brand-300",
+    chipBg: "bg-brand-50 border-brand-200 dark:bg-brand-500/10 dark:border-brand-500/30",
+    categoryTint: "rgba(99,102,241,0.12)",
+    darkCategoryTint: "rgba(99,102,241,0.18)",
+    categoryBorder: "#6366f1",
   },
   agent: {
     label: "Agent",
     icon: <Bot size={14} />,
-    color: "text-indigo-700",
-    bg: "bg-indigo-100 border-indigo-300",
+    chipColor: "text-brand-700 dark:text-brand-300",
+    chipBg: "bg-brand-50 border-brand-200 dark:bg-brand-500/10 dark:border-brand-500/30",
+    categoryTint: "rgba(99,102,241,0.12)",
+    darkCategoryTint: "rgba(99,102,241,0.18)",
+    categoryBorder: "#6366f1",
   },
   approval: {
     label: "Approval",
     icon: <UserCheck size={14} />,
-    color: "text-amber-700",
-    bg: "bg-amber-100 border-amber-300",
+    chipColor: "text-brand-700 dark:text-brand-300",
+    chipBg: "bg-brand-50 border-brand-200 dark:bg-brand-500/10 dark:border-brand-500/30",
+    categoryTint: "rgba(99,102,241,0.12)",
+    darkCategoryTint: "rgba(99,102,241,0.18)",
+    categoryBorder: "#6366f1",
   },
   mcp: {
-    label: "MCP",
+    label: "Integration",
     icon: <Plug size={14} />,
-    color: "text-teal-700",
-    bg: "bg-teal-100 border-teal-300",
+    chipColor: "text-sky-700 dark:text-sky-400",
+    chipBg: "bg-sky-50 border-sky-200 dark:bg-sky-500/10 dark:border-sky-500/30",
+    categoryTint: "rgba(14,165,233,0.12)",
+    darkCategoryTint: "rgba(14,165,233,0.18)",
+    categoryBorder: "#0ea5e9",
   },
   file_trigger: {
     label: "File Trigger",
     icon: <FileInput size={14} />,
-    color: "text-rose-700",
-    bg: "bg-rose-100 border-rose-300",
+    chipColor: "text-emerald-700 dark:text-emerald-400",
+    chipBg: "bg-emerald-50 border-emerald-200 dark:bg-emerald-500/10 dark:border-emerald-500/30",
+    categoryTint: "rgba(16,185,129,0.12)",
+    darkCategoryTint: "rgba(16,185,129,0.18)",
+    categoryBorder: "#10b981",
   },
 };
+
+type NodeVisualState = "idle" | "running" | "success" | "error";
+
+function readNodeVisualState(step: WorkflowStep): NodeVisualState {
+  const state = step.config?.__uiState;
+  if (state === "running" || state === "success" || state === "error") {
+    return state;
+  }
+  return "idle";
+}
 
 const BLANK_TEMPLATE: WorkflowTemplate = {
   id: "tpl-custom-" + Date.now(),
@@ -109,9 +180,45 @@ const BLANK_TEMPLATE: WorkflowTemplate = {
   expectedOutput: {},
 };
 
+const FLOW_STEP_X = 80;
+const FLOW_STEP_Y = 64;
+const FLOW_STEP_GAP_Y = 190;
+
+type FlowNodeData = {
+  step: WorkflowStep;
+  onSelect: (id: string) => void;
+  onMoveUp: (id: string) => void;
+  onMoveDown: (id: string) => void;
+  onRemove: (id: string) => void;
+  isFirst: boolean;
+  isLast: boolean;
+};
+
+type WorkflowFlowNode = Node<FlowNodeData, "workflowStep">;
+
+function readStepPosition(step: WorkflowStep, index: number): XYPosition {
+  const candidate = step.config?.[STEP_POSITION_KEY];
+  if (
+    candidate &&
+    typeof candidate === "object" &&
+    "x" in candidate &&
+    "y" in candidate &&
+    typeof candidate.x === "number" &&
+    typeof candidate.y === "number"
+  ) {
+    return { x: candidate.x, y: candidate.y };
+  }
+
+  return {
+    x: FLOW_STEP_X,
+    y: FLOW_STEP_Y + index * FLOW_STEP_GAP_Y,
+  };
+}
+
 export default function WorkflowBuilder() {
   const { templateId } = useParams<{ templateId?: string }>();
   const navigate = useNavigate();
+  const { theme } = useTheme();
 
   const [template, setTemplate] = useState<WorkflowTemplate>(BLANK_TEMPLATE);
   const [loading, setLoading] = useState(!!templateId);
@@ -123,6 +230,7 @@ export default function WorkflowBuilder() {
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [runError, setRunError] = useState<string | null>(null);
+  const [graphError, setGraphError] = useState<string | null>(null);
   const [llmConfigs, setLlmConfigs] = useState<LLMConfig[]>([]);
   const [llmConfigsLoading, setLlmConfigsLoading] = useState(false);
   const [llmConfigsError, setLlmConfigsError] = useState<string | null>(null);
@@ -167,16 +275,41 @@ export default function WorkflowBuilder() {
   }, [isLlmStep]);
 
   function addStep(kind: StepKind) {
-    const newStep: WorkflowStep = {
-      id: "step-" + Date.now(),
-      name: KIND_META[kind].label + " Step",
-      kind,
-      description: "",
-      inputKeys: [],
-      outputKeys: [],
-    };
-    setTemplate((t) => ({ ...t, steps: [...t.steps, newStep] }));
-    setSelectedStepId(newStep.id);
+    const newStepId = "step-" + Date.now();
+    setTemplate((t) => {
+      const nextIndex = t.steps.length;
+      const defaultPosition = {
+        x: FLOW_STEP_X,
+        y: FLOW_STEP_Y + nextIndex * FLOW_STEP_GAP_Y,
+      };
+      const newStep: WorkflowStep = {
+        id: newStepId,
+        name: KIND_META[kind].label + " Step",
+        kind,
+        description: "",
+        inputKeys: [],
+        outputKeys: [],
+        config: {
+          [STEP_POSITION_KEY]: defaultPosition,
+        },
+      };
+      const nextSteps = [...t.steps, newStep];
+      if (nextSteps.length < 2) {
+        return { ...t, steps: nextSteps };
+      }
+
+      const existingEdges = buildEdgesFromSteps(t.steps);
+      const previousStepId = nextSteps[nextSteps.length - 2].id;
+      const nextEdges = existingEdges.some(
+        (edge) => edge.source === previousStepId && edge.target === newStepId,
+      )
+        ? existingEdges
+        : [...existingEdges, buildDefaultEdge(previousStepId, newStepId)];
+
+      return { ...t, steps: serializeEdgesToSteps(nextSteps, nextEdges) };
+    });
+    setSelectedStepId(newStepId);
+    setGraphError(null);
   }
 
   function updateStep(id: string, patch: Partial<WorkflowStep>) {
@@ -187,8 +320,35 @@ export default function WorkflowBuilder() {
   }
 
   function removeStep(id: string) {
-    setTemplate((t) => ({ ...t, steps: t.steps.filter((s) => s.id !== id) }));
+    setTemplate((t) => {
+      const nextSteps = t.steps.filter((s) => s.id !== id);
+      const nextEdges = buildEdgesFromSteps(t.steps).filter(
+        (edge) => edge.source !== id && edge.target !== id,
+      );
+      return { ...t, steps: serializeEdgesToSteps(nextSteps, nextEdges) };
+    });
     if (selectedStepId === id) setSelectedStepId(null);
+    setGraphError(null);
+  }
+
+  function updateStepPosition(id: string, position: XYPosition) {
+    setTemplate((t) => ({
+      ...t,
+      steps: t.steps.map((s) =>
+        s.id === id
+          ? {
+              ...s,
+              config: {
+                ...(s.config ?? {}),
+                [STEP_POSITION_KEY]: {
+                  x: Math.round(position.x),
+                  y: Math.round(position.y),
+                },
+              },
+            }
+          : s
+      ),
+    }));
   }
 
   function moveStep(id: string, dir: -1 | 1) {
@@ -201,7 +361,87 @@ export default function WorkflowBuilder() {
     setTemplate((t) => ({ ...t, steps: arr }));
   }
 
+  const flowNodes: WorkflowFlowNode[] = template.steps.map((step, idx) => ({
+    id: step.id,
+    type: "workflowStep",
+    position: readStepPosition(step, idx),
+    draggable: true,
+    selectable: true,
+    data: {
+      step,
+      onSelect: setSelectedStepId,
+      onMoveUp: (stepId) => moveStep(stepId, -1),
+      onMoveDown: (stepId) => moveStep(stepId, 1),
+      onRemove: removeStep,
+      isFirst: idx === 0,
+      isLast: idx === template.steps.length - 1,
+    },
+  }));
+
+  const flowEdges = useMemo(() => {
+    const edges = buildEdgesFromSteps(template.steps);
+    const stepsById = new Map(template.steps.map((step) => [step.id, step]));
+
+    return edges.map((edge) => {
+      const sourceStep = stepsById.get(edge.source);
+      const sourceState = sourceStep ? readNodeVisualState(sourceStep) : "idle";
+      const edgeClass =
+        sourceState === "running"
+          ? "workflow-edge workflow-edge-running"
+          : "workflow-edge";
+
+      return {
+        ...edge,
+        className: edgeClass,
+        animated: sourceState === "running",
+      };
+    });
+  }, [template.steps]);
+
+  const nodeTypes = useMemo(
+    () =>
+      ({
+        workflowStep: WorkflowStepNode,
+      }) satisfies NodeTypes,
+    []
+  );
+
+  function persistEdges(nextEdges: Edge[]) {
+    setTemplate((t) => ({
+      ...t,
+      steps: serializeEdgesToSteps(t.steps, nextEdges),
+    }));
+  }
+
+  function handleConnect(connection: Connection) {
+    const sourceId = connection.source;
+    const targetId = connection.target;
+    if (!sourceId || !targetId) return;
+
+    const validation = validateEdgeCandidate({
+      sourceId,
+      targetId,
+      steps: template.steps,
+      edges: flowEdges,
+    });
+
+    if (!validation.valid) {
+      setGraphError(validation.reason);
+      return;
+    }
+
+    setGraphError(null);
+    persistEdges([...flowEdges, buildDefaultEdge(sourceId, targetId)]);
+  }
+
   async function handleSave() {
+    const topologyError = validateGraphTopology(template.steps, flowEdges);
+    if (topologyError) {
+      setGraphError(topologyError);
+      return;
+    }
+
+    setGraphError(null);
     setSaveError(null);
     setSaving(true);
     setSaved(false);
@@ -229,6 +469,13 @@ export default function WorkflowBuilder() {
   }
 
   async function handleRun() {
+    const topologyError = validateGraphTopology(template.steps, flowEdges);
+    if (topologyError) {
+      setGraphError(topologyError);
+      return;
+    }
+
+    setGraphError(null);
     if (hasFileTrigger) {
       setShowFileUploadModal(true);
       return;
@@ -263,7 +510,7 @@ export default function WorkflowBuilder() {
   }
 
   return (
-    <div className="flex h-full">
+    <div className="relative flex h-full">
       {/* Left panel — canvas */}
       <div className="flex-1 flex flex-col overflow-hidden">
         {runError && (
@@ -281,15 +528,20 @@ export default function WorkflowBuilder() {
             {saveError}
           </div>
         )}
+        {graphError && (
+          <div className="px-6 py-2 bg-amber-50 border-b border-amber-200 text-sm text-amber-800">
+            {graphError}
+          </div>
+        )}
         {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 bg-white border-b border-gray-200">
+        <div className="flex items-center justify-between px-6 py-4 bg-white dark:bg-surface-900 border-b border-gray-200 dark:border-surface-800">
           <div className="flex items-center gap-3">
             <input
-              className="text-lg font-semibold text-gray-900 bg-transparent border-none outline-none focus:ring-2 focus:ring-blue-500 rounded px-1 -ml-1"
+              className="text-lg font-semibold text-gray-900 dark:text-gray-100 bg-transparent border-none outline-none focus:ring-2 focus:ring-brand-500 rounded px-1 -ml-1"
               value={template.name}
               onChange={(e) => setTemplate((t) => ({ ...t, name: e.target.value }))}
             />
-            <span className="text-xs px-2 py-0.5 bg-gray-100 text-gray-500 rounded-full capitalize">
+            <span className="text-xs px-2 py-0.5 bg-gray-100 dark:bg-surface-800 text-gray-500 dark:text-surface-400 rounded-full capitalize">
               {template.category}
             </span>
           </div>
@@ -297,7 +549,7 @@ export default function WorkflowBuilder() {
             <Tooltip content="Open setup guidance and best practices for this page">
               <button
                 onClick={() => setShowHelp(true)}
-                className="flex items-center gap-2 px-3.5 py-2 text-sm font-medium rounded-lg border border-gray-300 text-gray-700 bg-white hover:bg-gray-50 transition"
+                className="flex items-center gap-2 px-3.5 py-2 text-sm font-medium rounded-lg border border-gray-300 dark:border-surface-700 text-gray-700 dark:text-gray-200 bg-white dark:bg-surface-800 hover:bg-gray-50 dark:hover:bg-surface-700 transition"
               >
                 <CircleHelp size={15} />
                 Guidance
@@ -305,7 +557,7 @@ export default function WorkflowBuilder() {
             </Tooltip>
             <button
               onClick={() => setShowNLModal(true)}
-              className="flex items-center gap-2 px-3.5 py-2 text-sm font-medium rounded-lg border border-purple-300 text-purple-700 bg-purple-50 hover:bg-purple-100 transition"
+              className="flex items-center gap-2 px-3.5 py-2 text-sm font-medium rounded-lg border border-purple-300 dark:border-purple-500/30 text-purple-700 dark:text-purple-300 bg-purple-50 dark:bg-purple-500/10 hover:bg-purple-100 dark:hover:bg-purple-500/20 transition"
             >
               <Sparkles size={15} />
               Generate with AI
@@ -316,8 +568,8 @@ export default function WorkflowBuilder() {
               className={clsx(
                 "flex items-center gap-2 px-3.5 py-2 text-sm font-medium rounded-lg border transition disabled:opacity-50",
                 saved
-                  ? "bg-green-50 border-green-300 text-green-700"
-                  : "border-gray-300 text-gray-700 hover:bg-gray-50"
+                  ? "bg-green-50 dark:bg-green-500/10 border-green-300 dark:border-green-500/30 text-green-700 dark:text-green-300"
+                  : "border-gray-300 dark:border-surface-700 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-surface-700"
               )}
             >
               {saving ? <Loader size={15} className="animate-spin" /> : <Save size={15} />}
@@ -326,7 +578,7 @@ export default function WorkflowBuilder() {
             <button
               onClick={handleRun}
               disabled={template.steps.length === 0}
-              className="flex items-center gap-2 px-3.5 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition disabled:opacity-50"
+              className="flex items-center gap-2 px-3.5 py-2 bg-brand-600 hover:bg-brand-700 text-white text-sm font-medium rounded-lg transition disabled:opacity-50"
             >
               <Play size={15} />
               Run
@@ -335,50 +587,58 @@ export default function WorkflowBuilder() {
         </div>
 
         {/* Canvas */}
-        <div className="flex-1 overflow-y-auto p-8 bg-gray-50">
+        <div className="relative flex-1 overflow-hidden bg-slate-50 dark:bg-surface-950">
           {template.steps.length === 0 ? (
             <EmptyCanvas onAdd={addStep} templates={allTemplates} />
           ) : (
-            <div className="max-w-xl mx-auto">
-              {template.steps.map((step, idx) => (
-                <div key={step.id}>
-                  <StepNode
-                    step={step}
-                    selected={selectedStepId === step.id}
-                    onSelect={() =>
-                      setSelectedStepId((id) => (id === step.id ? null : step.id))
-                    }
-                    onMoveUp={() => moveStep(step.id, -1)}
-                    onMoveDown={() => moveStep(step.id, 1)}
-                    onRemove={() => removeStep(step.id)}
-                    isFirst={idx === 0}
-                    isLast={idx === template.steps.length - 1}
-                  />
-                  {idx < template.steps.length - 1 && (
-                    <div className="flex justify-center py-1">
-                      <div className="w-px h-6 bg-gray-300" />
-                    </div>
-                  )}
+            <>
+              <ReactFlow
+                fitView
+                nodes={flowNodes}
+                edges={flowEdges}
+                nodeTypes={nodeTypes}
+                minZoom={0.5}
+                maxZoom={1.4}
+                snapToGrid
+                snapGrid={[20, 20]}
+                onNodeClick={(_, node) => setSelectedStepId(node.id)}
+                onPaneClick={() => setSelectedStepId(null)}
+                onConnect={handleConnect}
+                onEdgesDelete={(deletedEdges) => {
+                  if (deletedEdges.length === 0) return;
+                  const deletedIds = new Set(deletedEdges.map((edge) => edge.id));
+                  persistEdges(flowEdges.filter((edge) => !deletedIds.has(edge.id)));
+                  setGraphError(null);
+                }}
+                onNodeDragStop={(_, node) => {
+                  updateStepPosition(node.id, node.position);
+                }}
+              >
+                <Background variant={BackgroundVariant.Dots} gap={20} size={2} color={theme === "dark" ? "#1e293b" : "#cbd5e1"} />
+                <Controls
+                  position="bottom-right"
+                  showInteractive={false}
+                  className="workflow-controls-pill"
+                />
+              </ReactFlow>
+              <div className="pointer-events-none absolute bottom-6 left-1/2 z-10 -translate-x-1/2">
+                <div className="pointer-events-auto rounded-full border border-slate-200 dark:border-surface-700 bg-white/95 dark:bg-surface-800/95 px-2 py-1.5 shadow-md backdrop-blur">
+                  <AddStepMenu onAdd={addStep} />
                 </div>
-              ))}
-
-              {/* Add step button */}
-              <div className="flex justify-center mt-4">
-                <AddStepMenu onAdd={addStep} />
               </div>
-            </div>
+            </>
           )}
         </div>
       </div>
 
       {/* Right panel — step detail */}
       {selectedStep && (
-        <div className="w-80 bg-white border-l border-gray-200 overflow-y-auto">
-          <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
-            <h3 className="font-semibold text-gray-900 text-sm">Step Properties</h3>
+        <div className="absolute right-0 top-0 z-20 h-full w-[360px] overflow-y-auto border-l border-gray-200 dark:border-surface-800 bg-white dark:bg-surface-900 shadow-xl transition-transform duration-200">
+          <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100 dark:border-surface-800">
+            <h3 className="font-semibold text-gray-900 dark:text-gray-100 text-sm">Step Properties</h3>
             <button
               onClick={() => setSelectedStepId(null)}
-              className="p-1 rounded hover:bg-gray-100"
+              className="p-1 rounded hover:bg-gray-100 dark:hover:bg-surface-800"
             >
               <X size={16} className="text-gray-500" />
             </button>
@@ -387,7 +647,7 @@ export default function WorkflowBuilder() {
           <div className="p-5 space-y-5">
             <Field label="Name">
               <input
-                className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full px-3 py-2 text-sm border border-gray-300 dark:border-surface-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-500 bg-white dark:bg-surface-800 text-gray-900 dark:text-gray-100"
                 value={selectedStep.name}
                 onChange={(e) => updateStep(selectedStep.id, { name: e.target.value })}
               />
@@ -395,7 +655,7 @@ export default function WorkflowBuilder() {
 
             <Field label="Kind">
               <select
-                className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                className="w-full px-3 py-2 text-sm border border-gray-300 dark:border-surface-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-500 bg-white dark:bg-surface-800 text-gray-900 dark:text-gray-100"
                 value={selectedStep.kind}
                 onChange={(e) =>
                   updateStep(selectedStep.id, { kind: e.target.value as StepKind })
@@ -411,7 +671,7 @@ export default function WorkflowBuilder() {
 
             <Field label="Description">
               <textarea
-                className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+                className="w-full px-3 py-2 text-sm border border-gray-300 dark:border-surface-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-500 resize-none bg-white dark:bg-surface-800 text-gray-900 dark:text-gray-100"
                 rows={3}
                 value={selectedStep.description}
                 onChange={(e) =>
@@ -581,7 +841,7 @@ export default function WorkflowBuilder() {
 
             {selectedStep.kind === "mcp" && (
               <>
-                <Field label="MCP Server URL">
+                <Field label="Integration Server URL">
                   <input
                     className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono"
                     placeholder="https://mcp.example.com/sse"
@@ -709,41 +969,41 @@ function WorkflowBuilderHelpPanel({ onClose }: { onClose: () => void }) {
         role="dialog"
         aria-modal="true"
         aria-label="Workflow guidance"
-        className="w-full max-w-md overflow-y-auto border-l border-gray-200 bg-white p-6 shadow-xl"
+        className="w-full max-w-md overflow-y-auto border-l border-gray-200 dark:border-surface-800 bg-white dark:bg-surface-900 p-6 shadow-xl"
       >
         <div className="mb-5 flex items-start justify-between gap-3">
           <div>
-            <p className="text-xs font-semibold uppercase tracking-wide text-blue-600">Workflow help</p>
-            <h2 className="mt-1 text-lg font-semibold text-gray-900">Build and launch confidently</h2>
+            <p className="text-xs font-semibold uppercase tracking-wide text-brand-600 dark:text-brand-400">Workflow help</p>
+            <h2 className="mt-1 text-lg font-semibold text-gray-900 dark:text-gray-100">Build and launch confidently</h2>
           </div>
           <button
             onClick={onClose}
-            className="rounded-md p-1.5 text-gray-500 transition hover:bg-gray-100 hover:text-gray-800"
+            className="rounded-md p-1.5 text-gray-500 transition hover:bg-gray-100 dark:hover:bg-surface-800 hover:text-gray-800 dark:hover:text-gray-200"
             aria-label="Close guidance panel"
           >
             <X size={16} />
           </button>
         </div>
 
-        <div className="space-y-4 text-sm text-gray-700">
-          <section className="rounded-lg border border-gray-200 bg-gray-50 p-4">
-            <h3 className="font-medium text-gray-900">Suggested flow</h3>
+        <div className="space-y-4 text-sm text-gray-700 dark:text-gray-300">
+          <section className="rounded-lg border border-gray-200 dark:border-surface-800 bg-gray-50 dark:bg-surface-800/50 p-4">
+            <h3 className="font-medium text-gray-900 dark:text-gray-100">Suggested flow</h3>
             <p className="mt-1">Trigger -&gt; LLM -&gt; Condition/Transform -&gt; Action -&gt; Output.</p>
           </section>
 
-          <section className="rounded-lg border border-gray-200 p-4">
-            <h3 className="font-medium text-gray-900">High-impact tips</h3>
-            <ul className="mt-2 space-y-1 text-gray-600">
+          <section className="rounded-lg border border-gray-200 dark:border-surface-800 p-4">
+            <h3 className="font-medium text-gray-900 dark:text-gray-100">High-impact tips</h3>
+            <ul className="mt-2 space-y-1 text-gray-600 dark:text-gray-400">
               <li>Use clear step names so run logs are easy to debug.</li>
               <li>Define input/output keys on each step to avoid brittle data passing.</li>
               <li>Connect an LLM provider before testing any LLM step.</li>
             </ul>
           </section>
 
-          <section className="rounded-lg border border-gray-200 p-4">
-            <h3 className="font-medium text-gray-900">When runs fail</h3>
-            <ul className="mt-2 space-y-1 text-gray-600">
-              <li>Validate the MCP URL and tool name for MCP steps.</li>
+          <section className="rounded-lg border border-gray-200 dark:border-surface-800 p-4">
+            <h3 className="font-medium text-gray-900 dark:text-gray-100">When runs fail</h3>
+            <ul className="mt-2 space-y-1 text-gray-600 dark:text-gray-400">
+              <li>Validate the integration server URL and tool name for Integration steps.</li>
               <li>Check approval timeout for long-running approvals.</li>
               <li>Run from a smaller sample payload first, then scale.</li>
             </ul>
@@ -782,24 +1042,24 @@ function NLWorkflowModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg mx-4 overflow-hidden">
-        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
+      <div className="bg-white dark:bg-surface-900 rounded-2xl shadow-2xl w-full max-w-lg mx-4 overflow-hidden">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 dark:border-surface-800">
           <div className="flex items-center gap-2">
             <Sparkles size={18} className="text-purple-500" />
-            <h2 className="font-semibold text-gray-900">Generate Workflow with AI</h2>
+            <h2 className="font-semibold text-gray-900 dark:text-gray-100">Generate Workflow with AI</h2>
           </div>
-          <button onClick={onClose} className="p-1 rounded hover:bg-gray-100">
+          <button onClick={onClose} className="p-1 rounded hover:bg-gray-100 dark:hover:bg-surface-800">
             <X size={16} className="text-gray-500" />
           </button>
         </div>
 
         <div className="p-6 space-y-4">
           <div>
-            <label className="block text-xs font-medium text-gray-600 mb-1.5">
+            <label className="block text-xs font-medium text-gray-600 dark:text-surface-400 mb-1.5">
               Describe your workflow
             </label>
             <textarea
-              className="w-full px-3 py-2.5 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 resize-none"
+              className="w-full px-3 py-2.5 text-sm border border-gray-300 dark:border-surface-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 bg-white dark:bg-surface-800 text-gray-900 dark:text-gray-100 resize-none"
               rows={4}
               placeholder="e.g. When a customer support email arrives, classify its intent, check if it's urgent, and send an automated reply or escalate to a human agent…"
               value={prompt}
@@ -835,20 +1095,20 @@ function NLWorkflowModal({
           {preview && (
             <>
               <div>
-                <p className="text-xs font-medium text-gray-600 mb-2">
+                <p className="text-xs font-medium text-gray-600 dark:text-surface-400 mb-2">
                   Preview — {preview.length} steps suggested
                 </p>
-                <div className="rounded-xl border border-gray-200 divide-y divide-gray-100 overflow-hidden">
+                <div className="rounded-xl border border-gray-200 dark:border-surface-800 divide-y divide-gray-100 dark:divide-surface-800 overflow-hidden">
                   {preview.map((step, i) => {
                     const meta = KIND_META[step.kind];
                     return (
-                      <div key={step.id} className="flex items-center gap-3 px-4 py-2.5 text-sm bg-white">
-                        <span className="text-gray-300 text-xs w-4">{i + 1}</span>
-                        <span className={clsx("flex items-center gap-1 px-1.5 py-0.5 rounded text-xs font-medium border", meta.bg, meta.color)}>
+                      <div key={step.id} className="flex items-center gap-3 px-4 py-2.5 text-sm bg-white dark:bg-surface-900">
+                        <span className="text-gray-300 dark:text-surface-600 text-xs w-4">{i + 1}</span>
+                        <span className={clsx("flex items-center gap-1 px-1.5 py-0.5 rounded text-xs font-medium border", meta.chipBg, meta.chipColor)}>
                           {meta.icon}
                           {meta.label}
                         </span>
-                        <span className="text-gray-800 font-medium flex-1">{step.name}</span>
+                        <span className="text-gray-800 dark:text-gray-200 font-medium flex-1">{step.name}</span>
                       </div>
                     );
                   })}
@@ -863,7 +1123,7 @@ function NLWorkflowModal({
                 </button>
                 <button
                   onClick={() => { setPreview(null); setPrompt(""); }}
-                  className="px-4 py-2.5 rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50 text-sm font-medium transition"
+                  className="px-4 py-2.5 rounded-lg border border-gray-200 dark:border-surface-700 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-surface-800 text-sm font-medium transition"
                 >
                   Try Again
                 </button>
@@ -884,17 +1144,17 @@ function AgentCanvas({ model, slots }: { model: string; slots: number }) {
   const workerSlots = Math.max(1, Math.min(slots, 20));
   return (
     <div
-      className="mt-3 p-3 rounded-lg border border-indigo-200 bg-indigo-50"
+      className="mt-3 p-3 rounded-lg border border-brand-200 dark:border-brand-500/30 bg-brand-50 dark:bg-brand-500/10"
       onClick={(e) => e.stopPropagation()}
     >
-      <p className="text-xs font-semibold text-indigo-700 mb-2 flex items-center gap-1">
+      <p className="text-xs font-semibold text-brand-700 dark:text-brand-300 mb-2 flex items-center gap-1">
         <Bot size={11} />
         Agent Topology
       </p>
 
       {/* Manager node */}
       <div className="flex justify-center mb-1">
-        <div className="flex items-center gap-1 px-3 py-1.5 bg-indigo-600 text-white rounded-lg text-xs font-medium shadow-sm">
+        <div className="flex items-center gap-1 px-3 py-1.5 bg-brand-600 text-white rounded-lg text-xs font-medium shadow-sm">
           <Bot size={11} />
           Manager
           {model !== "default" && (
@@ -907,7 +1167,7 @@ function AgentCanvas({ model, slots }: { model: string; slots: number }) {
       <div className="flex justify-center gap-0 mb-1">
         {Array.from({ length: workerSlots }).map((_, i) => (
           <div key={i} className="flex flex-col items-center" style={{ width: `${100 / workerSlots}%` }}>
-            <div className="w-px h-4 bg-indigo-300" />
+            <div className="w-px h-4 bg-brand-300 dark:bg-brand-500/40" />
           </div>
         ))}
       </div>
@@ -917,7 +1177,7 @@ function AgentCanvas({ model, slots }: { model: string; slots: number }) {
         {Array.from({ length: workerSlots }).map((_, i) => (
           <div
             key={i}
-            className="flex items-center gap-1 px-2 py-1 bg-white border border-indigo-300 text-indigo-600 rounded-md text-xs"
+            className="flex items-center gap-1 px-2 py-1 bg-white dark:bg-surface-800 border border-brand-300 dark:border-brand-500/40 text-brand-600 dark:text-brand-300 rounded-md text-xs"
           >
             <Bot size={10} />
             W{i}
@@ -925,9 +1185,34 @@ function AgentCanvas({ model, slots }: { model: string; slots: number }) {
         ))}
       </div>
 
-      <p className="text-xs text-indigo-500 mt-2 text-center">
+      <p className="text-xs text-brand-500 dark:text-brand-400/70 mt-2 text-center">
         {workerSlots} parallel worker{workerSlots !== 1 ? "s" : ""} · results aggregated
       </p>
+    </div>
+  );
+}
+
+function WorkflowStepNode({
+  id,
+  data,
+  selected,
+  dragging,
+}: NodeProps<WorkflowFlowNode>) {
+  return (
+    <div className="w-[280px]">
+      <Handle type="target" position={Position.Top} className="!h-2 !w-2 !border-0 !bg-slate-500" />
+      <StepNode
+        step={data.step}
+        selected={selected}
+        dragging={dragging}
+        onSelect={() => data.onSelect(id)}
+        onMoveUp={() => data.onMoveUp(id)}
+        onMoveDown={() => data.onMoveDown(id)}
+        onRemove={() => data.onRemove(id)}
+        isFirst={data.isFirst}
+        isLast={data.isLast}
+      />
+      <Handle type="source" position={Position.Bottom} className="!h-2 !w-2 !border-0 !bg-slate-500" />
     </div>
   );
 }
@@ -935,6 +1220,7 @@ function AgentCanvas({ model, slots }: { model: string; slots: number }) {
 function StepNode({
   step,
   selected,
+  dragging,
   onSelect,
   onMoveUp,
   onMoveDown,
@@ -944,6 +1230,7 @@ function StepNode({
 }: {
   step: WorkflowStep;
   selected: boolean;
+  dragging: boolean;
   onSelect: () => void;
   onMoveUp: () => void;
   onMoveDown: () => void;
@@ -951,24 +1238,44 @@ function StepNode({
   isFirst: boolean;
   isLast: boolean;
 }) {
+  const { theme } = useTheme();
   const meta = KIND_META[step.kind];
+  const visualState = readNodeVisualState(step);
+  const showSuccessState = visualState === "success";
+  const showErrorState = visualState === "error";
+  const showRunningState = visualState === "running";
 
   return (
     <div
       onClick={onSelect}
+      style={{ borderColor: selected ? "#6366f1" : undefined }}
       className={clsx(
-        "group relative bg-white rounded-xl border-2 cursor-pointer transition-all",
-        selected ? "border-blue-500 shadow-md" : "border-gray-200 hover:border-gray-300 hover:shadow-sm"
+        "group workflow-step-node relative cursor-pointer overflow-hidden rounded-[12px] border bg-white dark:bg-surface-900 shadow-md transition-all",
+        selected
+          ? "border-2 border-brand-500 ring-2 ring-brand-500/20"
+          : "border border-gray-300 dark:border-surface-700 hover:border-brand-400 dark:hover:border-brand-500/50",
+        dragging ? "opacity-90 shadow-lg" : "",
+        showRunningState ? "workflow-node-running" : "",
+        showSuccessState ? "workflow-node-success" : "",
+        showErrorState ? "workflow-node-error" : ""
       )}
     >
+      <div className="h-10 border-b border-black/5 dark:border-white/5 px-4" style={{ backgroundColor: theme === "dark" ? meta.darkCategoryTint : meta.categoryTint }}>
+        <div className="flex h-full items-center gap-2 text-xs font-medium text-gray-700 dark:text-gray-300">
+          <span style={{ color: meta.categoryBorder }}>{meta.icon}</span>
+          {meta.label}
+          {showRunningState && <Loader size={12} className="ml-auto animate-spin text-brand-500" />}
+          {showSuccessState && <CheckCircle2 size={12} className="ml-auto text-emerald-600 dark:text-emerald-400" />}
+          {showErrorState && <AlertCircle size={12} className="ml-auto text-rose-600 dark:text-rose-400" />}
+        </div>
+      </div>
       <div className="p-4">
         <div className="flex items-start gap-3">
-          {/* Kind badge */}
           <div
             className={clsx(
               "flex items-center gap-1 px-2 py-1 rounded-md border text-xs font-medium mt-0.5",
-              meta.bg,
-              meta.color
+              meta.chipBg,
+              meta.chipColor
             )}
           >
             {meta.icon}
@@ -976,9 +1283,9 @@ function StepNode({
           </div>
 
           <div className="flex-1 min-w-0">
-            <p className="font-medium text-gray-900 text-sm">{step.name}</p>
+            <p className="font-medium text-gray-900 dark:text-gray-100 text-sm">{step.name}</p>
             {step.description && (
-              <p className="text-xs text-gray-500 mt-0.5 truncate">{step.description}</p>
+              <p className="text-xs text-gray-500 dark:text-surface-400 mt-0.5 truncate">{step.description}</p>
             )}
           </div>
         </div>
@@ -988,9 +1295,9 @@ function StepNode({
           <div className="flex gap-4 mt-3 text-xs">
             {step.inputKeys.length > 0 && (
               <div>
-                <span className="text-gray-400 mr-1">in:</span>
+                <span className="text-gray-400 dark:text-surface-500 mr-1">in:</span>
                 {step.inputKeys.map((k) => (
-                  <span key={k} className="mr-1 px-1.5 py-0.5 bg-gray-100 rounded text-gray-600">
+                  <span key={k} className="mr-1 px-1.5 py-0.5 bg-gray-100 dark:bg-surface-800 rounded text-gray-600 dark:text-surface-300">
                     {k}
                   </span>
                 ))}
@@ -998,9 +1305,9 @@ function StepNode({
             )}
             {step.outputKeys.length > 0 && (
               <div>
-                <span className="text-gray-400 mr-1">out:</span>
+                <span className="text-gray-400 dark:text-surface-500 mr-1">out:</span>
                 {step.outputKeys.map((k) => (
-                  <span key={k} className="mr-1 px-1.5 py-0.5 bg-blue-50 text-blue-600 rounded">
+                  <span key={k} className="mr-1 px-1.5 py-0.5 bg-brand-50 dark:bg-brand-500/10 text-brand-600 dark:text-brand-300 rounded">
                     {k}
                   </span>
                 ))}
@@ -1023,7 +1330,7 @@ function StepNode({
         {!isFirst && (
           <button
             onClick={(e) => { e.stopPropagation(); onMoveUp(); }}
-            className="p-1 rounded hover:bg-gray-100 text-gray-400 hover:text-gray-700"
+            className="p-1 rounded hover:bg-gray-100 dark:hover:bg-surface-800 text-gray-400 hover:text-gray-700 dark:hover:text-gray-200"
             title="Move step up"
             aria-label="Move step up"
           >
@@ -1033,7 +1340,7 @@ function StepNode({
         {!isLast && (
           <button
             onClick={(e) => { e.stopPropagation(); onMoveDown(); }}
-            className="p-1 rounded hover:bg-gray-100 text-gray-400 hover:text-gray-700"
+            className="p-1 rounded hover:bg-gray-100 dark:hover:bg-surface-800 text-gray-400 hover:text-gray-700 dark:hover:text-gray-200"
             title="Move step down"
             aria-label="Move step down"
           >
@@ -1042,7 +1349,7 @@ function StepNode({
         )}
         <button
           onClick={(e) => { e.stopPropagation(); onRemove(); }}
-          className="p-1 rounded hover:bg-red-50 text-gray-400 hover:text-red-500"
+          className="p-1 rounded hover:bg-red-50 dark:hover:bg-red-900/20 text-gray-400 hover:text-red-500"
           title="Delete step"
           aria-label="Delete step"
         >
@@ -1061,20 +1368,26 @@ function AddStepMenu({ onAdd }: { onAdd: (k: StepKind) => void }) {
     <div className="relative">
       <button
         onClick={() => setOpen((o) => !o)}
-        className="flex items-center gap-2 px-4 py-2 border-2 border-dashed border-gray-300 text-gray-500 rounded-xl text-sm font-medium hover:border-blue-400 hover:text-blue-600 transition"
+        aria-expanded={open}
+        className={clsx(
+          "flex items-center gap-2 rounded-full border px-4 py-2 text-sm font-medium transition",
+          open
+            ? "border-brand-300 dark:border-brand-500/50 bg-brand-50 dark:bg-brand-500/10 text-brand-700 dark:text-brand-300"
+            : "border-gray-300 dark:border-surface-700 text-gray-600 dark:text-gray-300 hover:border-brand-300 dark:hover:border-brand-500/50 hover:text-brand-700 dark:hover:text-brand-300"
+        )}
       >
-        <Plus size={16} /> Add Step
+        <Plus size={16} /> Node Palette
       </button>
 
       {open && (
-        <div className="absolute top-full mt-2 left-1/2 -translate-x-1/2 bg-white rounded-xl border border-gray-200 shadow-lg z-10 p-2 w-48">
+        <div className="absolute bottom-full mb-2 left-1/2 z-10 w-56 -translate-x-1/2 rounded-2xl border border-gray-200 dark:border-surface-800 bg-white dark:bg-surface-900 p-2 shadow-lg">
           {kinds.map(([kind, meta]) => (
             <button
               key={kind}
               onClick={() => { onAdd(kind); setOpen(false); }}
-              className="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-left rounded-lg hover:bg-gray-50 transition"
+              className="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-left rounded-lg hover:bg-gray-50 dark:hover:bg-surface-800 transition text-gray-700 dark:text-gray-300"
             >
-              <span className={clsx("p-1 rounded", meta.bg, meta.color)}>{meta.icon}</span>
+              <span className={clsx("rounded p-1", meta.chipBg, meta.chipColor)}>{meta.icon}</span>
               {meta.label}
             </button>
           ))}
@@ -1093,24 +1406,24 @@ function EmptyCanvas({
 }) {
   return (
     <div className="flex flex-col items-center justify-center h-full min-h-[400px] text-center">
-      <div className="w-16 h-16 rounded-2xl bg-blue-50 flex items-center justify-center mb-4">
-        <Zap size={28} className="text-blue-500" />
+      <div className="w-16 h-16 rounded-2xl bg-brand-50 dark:bg-brand-500/10 flex items-center justify-center mb-4">
+        <Zap size={28} className="text-brand-500" />
       </div>
-      <h3 className="text-lg font-semibold text-gray-900 mb-2">Start building your workflow</h3>
-      <p className="text-gray-500 text-sm mb-6 max-w-xs">
+      <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-2">Start building your workflow</h3>
+      <p className="text-gray-500 dark:text-surface-400 text-sm mb-6 max-w-xs">
         Add steps to compose your AI workflow. Each step passes data to the next.
       </p>
       <AddStepMenu onAdd={onAdd} />
 
       {templates.length > 0 && (
         <div className="mt-8">
-          <p className="text-xs text-gray-400 mb-3">Or start from a template:</p>
+          <p className="text-xs text-gray-400 dark:text-surface-500 mb-3">Or start from a template:</p>
           <div className="flex gap-2">
             {templates.map((t) => (
               <a
                 key={t.id}
                 href={`/builder/${t.id}`}
-                className="px-3 py-1.5 bg-white border border-gray-200 rounded-lg text-xs text-gray-600 hover:border-blue-400 hover:text-blue-600 transition"
+                className="px-3 py-1.5 bg-white dark:bg-surface-800 border border-gray-200 dark:border-surface-700 rounded-lg text-xs text-gray-600 dark:text-gray-300 hover:border-brand-400 dark:hover:border-brand-500/50 hover:text-brand-600 dark:hover:text-brand-300 transition"
               >
                 {t.name}
               </a>
@@ -1131,7 +1444,7 @@ function Field({
 }) {
   return (
     <div>
-      <label className="block text-xs font-medium text-gray-600 mb-1.5">{label}</label>
+      <label className="block text-xs font-medium text-gray-600 dark:text-surface-400 mb-1.5">{label}</label>
       {children}
     </div>
   );
@@ -1184,14 +1497,14 @@ function FileUploadModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md mx-4 overflow-hidden">
+      <div className="bg-white dark:bg-surface-900 rounded-2xl shadow-2xl w-full max-w-md mx-4 overflow-hidden">
         {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 dark:border-surface-800">
           <div className="flex items-center gap-2">
             <UploadCloud size={18} className="text-rose-500" />
-            <h2 className="font-semibold text-gray-900">Upload File to Run Workflow</h2>
+            <h2 className="font-semibold text-gray-900 dark:text-gray-100">Upload File to Run Workflow</h2>
           </div>
-          <button onClick={onClose} className="p-1 rounded hover:bg-gray-100" disabled={state === "uploading"}>
+          <button onClick={onClose} className="p-1 rounded hover:bg-gray-100 dark:hover:bg-surface-800" disabled={state === "uploading"}>
             <X size={16} className="text-gray-500" />
           </button>
         </div>
@@ -1204,7 +1517,7 @@ function FileUploadModal({
             onDrop={handleDrop}
             className={clsx(
               "relative flex flex-col items-center justify-center gap-3 rounded-xl border-2 border-dashed p-8 text-center cursor-pointer transition",
-              dragOver ? "border-rose-400 bg-rose-50" : "border-gray-300 hover:border-rose-300 hover:bg-gray-50"
+              dragOver ? "border-rose-400 bg-rose-50 dark:bg-rose-500/10" : "border-gray-300 dark:border-surface-700 hover:border-rose-300 hover:bg-gray-50 dark:hover:bg-surface-800"
             )}
             onClick={() => document.getElementById("file-upload-input")?.click()}
           >
@@ -1215,18 +1528,18 @@ function FileUploadModal({
               accept={acceptAttr}
               onChange={(e) => { const f = e.target.files?.[0]; if (f) setFile(f); }}
             />
-            <UploadCloud size={32} className={dragOver ? "text-rose-400" : "text-gray-300"} />
+            <UploadCloud size={32} className={dragOver ? "text-rose-400" : "text-gray-300 dark:text-surface-600"} />
             <div>
-              <p className="text-sm font-medium text-gray-700">
+              <p className="text-sm font-medium text-gray-700 dark:text-gray-200">
                 {file ? file.name : "Drop a file here, or click to browse"}
               </p>
               {acceptedFileTypes.length > 0 && (
-                <p className="text-xs text-gray-400 mt-1">
+                <p className="text-xs text-gray-400 dark:text-surface-500 mt-1">
                   Accepted: {acceptedFileTypes.join(", ")}
                 </p>
               )}
               {file && (
-                <p className="text-xs text-gray-400 mt-1">
+                <p className="text-xs text-gray-400 dark:text-surface-500 mt-1">
                   {(file.size / 1024).toFixed(1)} KB · {file.type || "unknown type"}
                 </p>
               )}
@@ -1235,13 +1548,13 @@ function FileUploadModal({
 
           {/* Status */}
           {state === "error" && errorMsg && (
-            <div className="flex items-start gap-2 px-3 py-2 rounded-lg bg-red-50 border border-red-200 text-sm text-red-700">
+            <div className="flex items-start gap-2 px-3 py-2 rounded-lg bg-red-50 dark:bg-red-500/10 border border-red-200 dark:border-red-500/30 text-sm text-red-700 dark:text-red-300">
               <AlertCircle size={15} className="mt-0.5 shrink-0" />
               {errorMsg}
             </div>
           )}
           {state === "done" && (
-            <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-green-50 border border-green-200 text-sm text-green-700">
+            <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-green-50 dark:bg-green-500/10 border border-green-200 dark:border-green-500/30 text-sm text-green-700 dark:text-green-300">
               <CheckCircle2 size={15} className="shrink-0" />
               Run started — redirecting to monitor…
             </div>
@@ -1252,7 +1565,7 @@ function FileUploadModal({
             <button
               onClick={onClose}
               disabled={state === "uploading" || state === "done"}
-              className="flex-1 py-2.5 rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50 text-sm font-medium transition disabled:opacity-50"
+              className="flex-1 py-2.5 rounded-lg border border-gray-200 dark:border-surface-700 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-surface-800 text-sm font-medium transition disabled:opacity-50"
             >
               Cancel
             </button>

@@ -566,42 +566,49 @@ export default function Memory() {
                 </div>
               ) : (
                 entries.map((entry) => (
-                  <button
+                  <div
                     key={entry.id}
-                    type="button"
-                    onClick={() => setSelected(entry)}
                     className={clsx(
-                      "flex w-full flex-col gap-2 border-b border-slate-800/60 px-4 py-4 text-left transition hover:bg-slate-900/80",
+                      "border-b border-slate-800/60 transition hover:bg-slate-900/80",
                       selected?.id === entry.id && "bg-indigo-500/10"
                     )}
                   >
-                    <div className="flex items-start justify-between gap-3">
-                      <span className="truncate font-mono text-xs text-slate-200">{entry.key}</span>
+                    <div className="flex items-start gap-3 px-4 py-4">
                       <button
                         type="button"
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          void handleDelete(entry.id);
-                        }}
-                        className="rounded-lg p-1 text-slate-500 transition hover:bg-red-500/10 hover:text-red-400"
+                        onClick={() => setSelected(entry)}
+                        className="min-w-0 flex-1 text-left"
+                        aria-label={`Select memory entry ${entry.key}`}
+                        aria-pressed={selected?.id === entry.id}
+                      >
+                        <div className="flex flex-col gap-2">
+                          <div className="flex items-start justify-between gap-3">
+                            <span className="truncate font-mono text-xs text-slate-200">{entry.key}</span>
+                          </div>
+                          <div className="flex flex-wrap items-center gap-2 text-[11px] text-slate-500">
+                            <span>{entry.workflowName ?? entry.workflowId ?? "Knowledge Ingest"}</span>
+                            <span>·</span>
+                            <Clock size={10} />
+                            <span>{timeAgo(entry.updatedAt)}</span>
+                            {entry.ttlSeconds && (
+                              <>
+                                <span>·</span>
+                                <span className="text-amber-300">{ttlLabel(entry.ttlSeconds)}</span>
+                              </>
+                            )}
+                          </div>
+                        </div>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => void handleDelete(entry.id)}
+                        className="shrink-0 rounded-lg p-1 text-slate-500 transition hover:bg-red-500/10 hover:text-red-400"
                         aria-label={`Delete memory entry ${entry.key}`}
                       >
                         <Trash2 size={13} />
                       </button>
                     </div>
-                    <div className="flex flex-wrap items-center gap-2 text-[11px] text-slate-500">
-                      <span>{entry.workflowName ?? entry.workflowId ?? "Knowledge Ingest"}</span>
-                      <span>·</span>
-                      <Clock size={10} />
-                      <span>{timeAgo(entry.updatedAt)}</span>
-                      {entry.ttlSeconds && (
-                        <>
-                          <span>·</span>
-                          <span className="text-amber-300">{ttlLabel(entry.ttlSeconds)}</span>
-                        </>
-                      )}
-                    </div>
-                  </button>
+                  </div>
                 ))
               )}
             </div>

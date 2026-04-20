@@ -31,6 +31,16 @@ describe("extractPromptFeatures", () => {
     expect(features.hasStructuredExample).toBe(true);
   });
 
+  it("detects plain YAML examples", () => {
+    const prompt = [
+      "Respond with YAML using this shape:",
+      "customer: active",
+      "plan: pro",
+    ].join("\n");
+    const features = extractPromptFeatures(prompt, prompt.length, 1);
+    expect(features.hasStructuredExample).toBe(true);
+  });
+
   it("detects domain signals", () => {
     const codePrompt = "Refactor this Python function and explain the algorithm.";
     const analysisPrompt = "Analyze this dataset trend and report key correlations.";
@@ -83,5 +93,16 @@ describe("scorePromptTier", () => {
     const result = scorePromptTier(features);
     expect(result.tier).toBe("standard");
     expect(result.usedFallback).toBe(false);
+  });
+
+  it("keeps short YAML example prompts out of lite", () => {
+    const prompt = [
+      "Return YAML using this shape:",
+      "customer: active",
+      "plan: pro",
+    ].join("\n");
+    const features = extractPromptFeatures(prompt, prompt.length, 1);
+    const result = scorePromptTier(features);
+    expect(result.tier).toBe("standard");
   });
 });

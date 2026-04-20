@@ -93,7 +93,7 @@ const STRUCTURED_OUTPUT_KEYWORDS = [
 ];
 
 const STRUCTURED_EXAMPLE_PATTERN =
-  /```(?:json|yaml|xml)|\{[\s\S]{0,160}"[\w-]+"\s*:|<[\w-]+>[\s\S]{0,160}<\/[\w-]+>/i;
+  /```(?:json|yaml|xml)|\{[\s\S]{0,160}"[\w-]+"\s*:|<[\w-]+>[\s\S]{0,160}<\/[\w-]+>|(?:^|\n)\s*[\w-]+:\s+\S+(?:\n\s*[\w-]+:\s+\S+)+/i;
 
 export const DEFAULT_PROMPT_TIER_SCORING_CONFIG: PromptTierScoringConfig = {
   confidenceThreshold: 0.2,

@@ -46,7 +46,7 @@ The SWA workflow maps `VITE_AZURE_CIAM_CLIENT_ID` and `VITE_AZURE_CIAM_TENANT_SU
 ## Daily operations
 
 - **Deploy backend:** merge to `main` — GitHub Actions builds Docker images, pushes to ghcr.io, deploys to Azure.
-- **Preview dashboard:** pull requests targeting `master` with `dashboard/` changes create/update SWA preview environments.
+- **Preview dashboard:** pull requests targeting `main`/`master` with `dashboard/` changes run `.github/workflows/dashboard-staging-gate.yml`, which publishes a Vercel preview for QA.
 - **Deploy dashboard production:** push to `master` with `dashboard/` changes — GitHub Actions deploys to Azure Static Web Apps production.
 - **Enforce branch protection:** run `enforce-branch-protection.yml` to require PR reviews plus CI gate(s) on `main`/`master`. Default required check is `Docker Build Check` with strict up-to-date enforcement.
 - **Rollback:** redeploy a previous image tag (backend) or follow `infra/runbooks/swa-dashboard-deploy.md` for dashboard DNS/rollback.

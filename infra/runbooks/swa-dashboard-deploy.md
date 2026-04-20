@@ -13,8 +13,7 @@ Set these repository secrets before enabling `.github/workflows/deploy-swa.yml`:
 
 ## Trigger model
 - Push to `master` touching `dashboard/**` triggers production SWA deploy.
-- Pull requests targeting `master` create/update preview environments.
-- Closing a PR tears down the preview environment.
+- Pull requests targeting `main`/`master` use `.github/workflows/dashboard-staging-gate.yml` for Vercel-based preview evidence instead of SWA staging environments.
 
 ## DNS cutover checklist (`app.helloautoflow.com`)
 1. In Azure Static Web Apps, add custom domain `app.helloautoflow.com`.

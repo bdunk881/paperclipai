@@ -61,7 +61,6 @@ jobs:
           done
 
       - name: Verify preview auth env parity
-        working-directory: dashboard
         run: |
           set -euo pipefail
           mkdir -p .vercel
@@ -75,7 +74,6 @@ jobs:
 
       - name: Deploy preview
         id: deploy
-        working-directory: dashboard
         run: |
           set -euo pipefail
           npx vercel pull --yes --environment=preview --token="$VERCEL_TOKEN"
@@ -153,7 +151,6 @@ jobs:
           done
 
       - name: Verify production auth env parity
-        working-directory: dashboard
         run: |
           set -euo pipefail
           mkdir -p .vercel
@@ -166,7 +163,6 @@ jobs:
           done
 
       - name: Deploy production
-        working-directory: dashboard
         run: |
           set -euo pipefail
           npx vercel pull --yes --environment=production --token="$VERCEL_TOKEN"

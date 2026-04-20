@@ -24,7 +24,7 @@ content_generator = WorkflowTemplate(
     ),
     category=TemplateCategory.content,
     version="1.0.0",
-    configFields=[
+    config_fields=[
         ConfigField(
             key="brandVoice",
             label="Brand Voice",
@@ -38,7 +38,7 @@ content_generator = WorkflowTemplate(
             label="Target Word Count",
             type=FieldType.number,
             required=False,
-            defaultValue=800,
+            default_value=800,
             description="Approximate word count for the main blog post.",
         ),
         ConfigField(
@@ -46,7 +46,7 @@ content_generator = WorkflowTemplate(
             label="Output Formats",
             type=FieldType.string_list,
             required=False,
-            defaultValue=["blog", "twitter", "linkedin"],
+            default_value=["blog", "twitter", "linkedin"],
             options=["blog", "twitter", "linkedin", "email"],
             description="Content types to generate for each brief.",
         ),
@@ -55,7 +55,7 @@ content_generator = WorkflowTemplate(
             label="SEO Focus",
             type=FieldType.boolean,
             required=False,
-            defaultValue=True,
+            default_value=True,
             description=(
                 "When enabled, the draft step optimises headings and "
                 "meta description for search engines."
@@ -68,8 +68,8 @@ content_generator = WorkflowTemplate(
             name="Receive Brief",
             kind=StepKind.trigger,
             description="Topic brief submitted via API, form, or content calendar.",
-            inputKeys=[],
-            outputKeys=["topic", "keywords", "audience", "tone"],
+            input_keys=[],
+            output_keys=["topic", "keywords", "audience", "tone"],
         ),
         WorkflowStep(
             id="step_outline",
@@ -79,9 +79,9 @@ content_generator = WorkflowTemplate(
                 "Creates a structured H2/H3 outline with key talking points "
                 "for each section."
             ),
-            inputKeys=["topic", "keywords", "audience"],
-            outputKeys=["outline", "metaDescription"],
-            promptTemplate=(
+            input_keys=["topic", "keywords", "audience"],
+            output_keys=["outline", "metaDescription"],
+            prompt_template=(
                 "You are a content strategist with expertise in SEO.\n\n"
                 "Topic: {{topic}}\n"
                 "Target audience: {{audience}}\n"
@@ -103,9 +103,9 @@ content_generator = WorkflowTemplate(
                 "Writes the complete blog post from the outline, matching "
                 "the configured brand voice and target word count."
             ),
-            inputKeys=["outline", "topic", "audience", "brandVoice", "targetWordCount", "seoFocus"],
-            outputKeys=["blogPost"],
-            promptTemplate=(
+            input_keys=["outline", "topic", "audience", "brandVoice", "targetWordCount", "seoFocus"],
+            output_keys=["blogPost"],
+            prompt_template=(
                 "You are a {{brandVoice}} content writer.\n\n"
                 "Write a ~{{targetWordCount}}-word blog post based on this outline:\n"
                 "{{outline}}\n\n"
@@ -124,9 +124,9 @@ content_generator = WorkflowTemplate(
             description=(
                 "Derives platform-native social media posts from the blog draft."
             ),
-            inputKeys=["blogPost", "topic", "brandVoice"],
-            outputKeys=["tweet", "linkedinPost"],
-            promptTemplate=(
+            input_keys=["blogPost", "topic", "brandVoice"],
+            output_keys=["tweet", "linkedinPost"],
+            prompt_template=(
                 "You are a {{brandVoice}} social media copywriter.\n\n"
                 "Based on this blog post:\n{{blogPost}}\n\n"
                 "Write:\n"
@@ -147,8 +147,8 @@ content_generator = WorkflowTemplate(
                 "Applies brand templates: adds header/footer, internal links, "
                 "and CTA blocks."
             ),
-            inputKeys=["blogPost", "metaDescription", "topic"],
-            outputKeys=["formattedPost"],
+            input_keys=["blogPost", "metaDescription", "topic"],
+            output_keys=["formattedPost"],
             action="content.applyBrandTemplate",
         ),
         WorkflowStep(
@@ -156,18 +156,18 @@ content_generator = WorkflowTemplate(
             name="Queue for Publication",
             kind=StepKind.output,
             description="Pushes all generated assets to the content publication queue.",
-            inputKeys=["formattedPost", "tweet", "linkedinPost", "metaDescription"],
-            outputKeys=["queueId"],
+            input_keys=["formattedPost", "tweet", "linkedinPost", "metaDescription"],
+            output_keys=["queueId"],
             action="content.queue",
         ),
     ],
-    sampleInput={
+    sample_input={
         "topic": "AI Workflow Automation for Startups",
         "keywords": ["no-code", "automation", "productivity", "AI agents"],
         "audience": "startup founders",
         "tone": "inspiring",
     },
-    expectedOutput={
+    expected_output={
         "blogPost": "...",
         "tweet": "...",
         "linkedinPost": "...",

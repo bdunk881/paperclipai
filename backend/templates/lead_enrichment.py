@@ -23,13 +23,13 @@ lead_enrichment = WorkflowTemplate(
     ),
     category=TemplateCategory.sales,
     version="1.0.0",
-    configFields=[
+    config_fields=[
         ConfigField(
             key="scoreThreshold",
             label="Minimum Lead Score",
             type=FieldType.number,
             required=True,
-            defaultValue=70,
+            default_value=70,
             description="Leads scoring at or above this value are synced to the CRM.",
         ),
         ConfigField(
@@ -45,7 +45,7 @@ lead_enrichment = WorkflowTemplate(
             label="Ideal Customer Profile",
             type=FieldType.string,
             required=False,
-            defaultValue="B2B SaaS companies with 50–500 employees",
+            default_value="B2B SaaS companies with 50–500 employees",
             description=(
                 "Free-text description of your ideal customer used by the "
                 "LLM scoring step."
@@ -58,8 +58,8 @@ lead_enrichment = WorkflowTemplate(
             name="New Lead",
             kind=StepKind.trigger,
             description="Lead captured from a web form, inbound API, or ad platform.",
-            inputKeys=[],
-            outputKeys=["email", "name", "company"],
+            input_keys=[],
+            output_keys=["email", "name", "company"],
         ),
         WorkflowStep(
             id="step_enrich",
@@ -69,8 +69,8 @@ lead_enrichment = WorkflowTemplate(
                 "Looks up firmographic data for the company: headcount, revenue, "
                 "industry, and technology stack."
             ),
-            inputKeys=["company", "email"],
-            outputKeys=["employees", "revenue", "industry", "techStack", "linkedinUrl"],
+            input_keys=["company", "email"],
+            output_keys=["employees", "revenue", "industry", "techStack", "linkedinUrl"],
             action="enrichment.lookup",
         ),
         WorkflowStep(
@@ -81,9 +81,9 @@ lead_enrichment = WorkflowTemplate(
                 "Uses the LLM to evaluate how well the lead matches the ICP "
                 "and assigns a 0–100 fit score."
             ),
-            inputKeys=["icpDescription", "employees", "revenue", "industry", "techStack"],
-            outputKeys=["leadScore", "fitReason"],
-            promptTemplate=(
+            input_keys=["icpDescription", "employees", "revenue", "industry", "techStack"],
+            output_keys=["leadScore", "fitReason"],
+            prompt_template=(
                 "You are a B2B sales qualification assistant.\n\n"
                 "Ideal Customer Profile: {{icpDescription}}\n\n"
                 "Lead details:\n"
@@ -106,8 +106,8 @@ lead_enrichment = WorkflowTemplate(
                 "Passes only leads whose score meets or exceeds the configured "
                 "threshold."
             ),
-            inputKeys=["leadScore"],
-            outputKeys=["qualified"],
+            input_keys=["leadScore"],
+            output_keys=["qualified"],
             condition="leadScore >= scoreThreshold",
         ),
         WorkflowStep(
@@ -118,7 +118,7 @@ lead_enrichment = WorkflowTemplate(
                 "Upserts the qualified lead record in the target CRM with "
                 "enriched data and fit score."
             ),
-            inputKeys=[
+            input_keys=[
                 "name",
                 "email",
                 "company",
@@ -129,7 +129,7 @@ lead_enrichment = WorkflowTemplate(
                 "fitReason",
                 "linkedinUrl",
             ],
-            outputKeys=["crmId", "crmUrl"],
+            output_keys=["crmId", "crmUrl"],
             action="crm.upsertLead",
         ),
         WorkflowStep(
@@ -137,17 +137,17 @@ lead_enrichment = WorkflowTemplate(
             name="Done",
             kind=StepKind.output,
             description="Records the qualification outcome for analytics.",
-            inputKeys=["email", "leadScore", "qualified", "crmId"],
-            outputKeys=["event"],
+            input_keys=["email", "leadScore", "qualified", "crmId"],
+            output_keys=["event"],
             action="events.emit",
         ),
     ],
-    sampleInput={
+    sample_input={
         "email": "cto@acmecorp.com",
         "name": "Jane Smith",
         "company": "Acme Corp",
     },
-    expectedOutput={
+    expected_output={
         "leadScore": 85,
         "qualified": True,
         "crmId": "lead_928",

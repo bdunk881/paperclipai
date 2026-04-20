@@ -31,6 +31,12 @@ variable "enable_hub_bastion" {
   default     = false
 }
 
+variable "restrict_spoke_internet_egress" {
+  description = "When true, spoke subnet NSGs enforce outbound deny-by-default with explicit allow-list rules."
+  type        = bool
+  default     = true
+}
+
 # ── Azure Identity ────────────────────────────────────────────────────────────
 
 variable "tenant_id" {

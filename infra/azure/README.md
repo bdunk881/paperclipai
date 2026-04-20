@@ -77,7 +77,7 @@ terraform apply \
 | Module | Path | Key Resources |
 |---|---|---|
 | `hub` | `modules/hub` | Hub VNet, Azure Firewall, Azure Bastion, Key Vault, private DNS zones |
-| `spoke` | `modules/spoke` | Spoke VNet, subnets, route table (UDR → Firewall), VNet peering |
+| `spoke` | `modules/spoke` | Spoke VNet, subnet NSGs + flow logs, route tables, VNet peering |
 | `acr` | `modules/acr` | Azure Container Registry (Premium), private endpoint |
 | `aks` | `modules/aks` | AKS cluster, node pools, Log Analytics workspace, kubelet identity |
 | `management` | `modules/management` | Management Group hierarchy, RBAC, Key Vault access policies |
@@ -130,6 +130,7 @@ The pipeline lives at `.github/workflows/deploy-azure.yml`.
 | `prefix` | `autoflow` | Used in all resource names |
 | `environment` | — | `staging` or `production` |
 | `location` | `eastus2` | Azure region |
+| `restrict_spoke_internet_egress` | `true` | Enables deny-by-default outbound NSG rules on spoke subnets |
 | `node_vm_size` | `Standard_B2s` | 2 vCPU, 4 GB RAM — suitable for early-stage |
 | `min_node_count` | `1` | Scale to zero not supported on system node pool |
 | `max_node_count` | `5` | Adjust based on load |

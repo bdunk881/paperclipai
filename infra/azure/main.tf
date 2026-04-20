@@ -64,35 +64,37 @@ module "hub" {
 module "spoke_prod" {
   source = "./modules/spoke"
 
-  prefix                  = var.prefix
-  environment             = "prod"
-  location                = var.location
-  resource_group_name     = azurerm_resource_group.main.name
-  spoke_vnet_cidr         = "10.2.0.0/16"
-  aks_subnet_cidr         = "10.2.1.0/24"
-  pe_subnet_cidr          = "10.2.2.0/24"
-  svc_subnet_cidr         = "10.2.3.0/24"
-  hub_vnet_id             = module.hub.hub_vnet_id
-  hub_vnet_name           = module.hub.hub_vnet_name
-  hub_resource_group_name = azurerm_resource_group.main.name
-  tags                    = local.common_tags
+  prefix                   = var.prefix
+  environment              = "prod"
+  location                 = var.location
+  resource_group_name      = azurerm_resource_group.main.name
+  spoke_vnet_cidr          = "10.2.0.0/16"
+  aks_subnet_cidr          = "10.2.1.0/24"
+  pe_subnet_cidr           = "10.2.2.0/24"
+  svc_subnet_cidr          = "10.2.3.0/24"
+  hub_vnet_id              = module.hub.hub_vnet_id
+  hub_vnet_name            = module.hub.hub_vnet_name
+  hub_resource_group_name  = azurerm_resource_group.main.name
+  restrict_internet_egress = var.restrict_spoke_internet_egress
+  tags                     = local.common_tags
 }
 
 module "spoke_staging" {
   source = "./modules/spoke"
 
-  prefix                  = var.prefix
-  environment             = "staging"
-  location                = var.location
-  resource_group_name     = azurerm_resource_group.main.name
-  spoke_vnet_cidr         = "10.3.0.0/16"
-  aks_subnet_cidr         = "10.3.1.0/24"
-  pe_subnet_cidr          = "10.3.2.0/24"
-  svc_subnet_cidr         = "10.3.3.0/24"
-  hub_vnet_id             = module.hub.hub_vnet_id
-  hub_vnet_name           = module.hub.hub_vnet_name
-  hub_resource_group_name = azurerm_resource_group.main.name
-  tags                    = local.common_tags
+  prefix                   = var.prefix
+  environment              = "staging"
+  location                 = var.location
+  resource_group_name      = azurerm_resource_group.main.name
+  spoke_vnet_cidr          = "10.3.0.0/16"
+  aks_subnet_cidr          = "10.3.1.0/24"
+  pe_subnet_cidr           = "10.3.2.0/24"
+  svc_subnet_cidr          = "10.3.3.0/24"
+  hub_vnet_id              = module.hub.hub_vnet_id
+  hub_vnet_name            = module.hub.hub_vnet_name
+  hub_resource_group_name  = azurerm_resource_group.main.name
+  restrict_internet_egress = var.restrict_spoke_internet_egress
+  tags                     = local.common_tags
 }
 
 # Select the correct spoke subnet IDs based on the deployment environment.

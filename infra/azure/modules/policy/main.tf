@@ -71,19 +71,119 @@ resource "azurerm_policy_definition" "aks_no_public_node_ip" {
   })
 }
 
+# ── Custom Policy Definition: No public IP resources ─────────────────────────
+
+resource "azurerm_policy_definition" "no_public_ip_resources" {
+  name         = "network-no-public-ip-resources"
+  policy_type  = "Custom"
+  mode         = "All"
+  display_name = "Network resources should avoid public IP addresses"
+  description  = "Audits public IP address resources to reduce accidental internet exposure."
+
+  management_group_id = var.management_group_id
+
+  metadata = jsonencode({
+    category = "Network"
+    version  = "1.0.0"
+  })
+
+  parameters = jsonencode({
+    effect = {
+      type = "String"
+      metadata = {
+        displayName = "Effect"
+        description = "Audit or Deny the request."
+      }
+      allowedValues = ["Audit", "Deny", "Disabled"]
+      defaultValue  = "Audit"
+    }
+  })
+
+  policy_rule = jsonencode({
+    "if" = {
+      field  = "type"
+      equals = "Microsoft.Network/publicIPAddresses"
+    }
+    then = {
+      effect = "[parameters('effect')]"
+    }
+  })
+}
+
+# ── Custom Policy Definition: No default internet routes ─────────────────────
+
+resource "azurerm_policy_definition" "no_default_internet_routes" {
+  name         = "network-no-default-internet-routes"
+  policy_type  = "Custom"
+  mode         = "All"
+  display_name = "Route tables should not use default internet egress"
+  description  = "Audits route tables that define 0.0.0.0/0 routes with next hop type Internet."
+
+  management_group_id = var.management_group_id
+
+  metadata = jsonencode({
+    category = "Network"
+    version  = "1.0.0"
+  })
+
+  parameters = jsonencode({
+    effect = {
+      type = "String"
+      metadata = {
+        displayName = "Effect"
+        description = "Audit or Deny the request."
+      }
+      allowedValues = ["Audit", "Deny", "Disabled"]
+      defaultValue  = "Audit"
+    }
+  })
+
+  policy_rule = jsonencode({
+    "if" = {
+      allOf = [
+        {
+          field  = "type"
+          equals = "Microsoft.Network/routeTables"
+        },
+        {
+          count = {
+            field = "Microsoft.Network/routeTables/routes[*]"
+            where = {
+              allOf = [
+                {
+                  field  = "Microsoft.Network/routeTables/routes[*].addressPrefix"
+                  equals = "0.0.0.0/0"
+                },
+                {
+                  field  = "Microsoft.Network/routeTables/routes[*].nextHopType"
+                  equals = "Internet"
+                }
+              ]
+            }
+          }
+          greater = 0
+        }
+      ]
+    }
+    then = {
+      effect = "[parameters('effect')]"
+    }
+  })
+}
+
 # ── Policy Initiative: autoflow-baseline (Policies 1–4) ───────────────────────
 
 resource "azurerm_policy_set_definition" "autoflow_baseline" {
   name         = "autoflow-baseline"
   policy_type  = "Custom"
   display_name = "AutoFlow Baseline Governance"
-  description  = "CAF baseline guardrails: tag enforcement, AKS no public IPs, private endpoints, allowed locations."
+  description  = "CAF baseline guardrails: tag enforcement, AKS and network public exposure controls, private endpoints, egress controls, allowed locations."
 
   management_group_id = var.management_group_id
 
   metadata = jsonencode({
     category = "AutoFlow"
-    version  = "1.0.0"
+    version  = "1.1.0"
   })
 
   # Initiative-level parameter — surfaced so the assignment can override allowed
@@ -136,6 +236,22 @@ resource "azurerm_policy_set_definition" "autoflow_baseline" {
     })
   }
 
+  policy_definition_reference {
+    policy_definition_id = azurerm_policy_definition.no_public_ip_resources.id
+    reference_id         = "network-no-public-ip-resources"
+    parameter_values = jsonencode({
+      effect = { value = "Audit" }
+    })
+  }
+
+  policy_definition_reference {
+    policy_definition_id = azurerm_policy_definition.no_default_internet_routes.id
+    reference_id         = "network-no-default-internet-routes"
+    parameter_values = jsonencode({
+      effect = { value = "Audit" }
+    })
+  }
+
   # ── 3a. ACR must use private link ──────────────────────────────────────────
   # Built-in: "Container registries should use private link"
   policy_definition_reference {
@@ -160,7 +276,11 @@ resource "azurerm_policy_set_definition" "autoflow_baseline" {
     })
   }
 
-  depends_on = [azurerm_policy_definition.aks_no_public_node_ip]
+  depends_on = [
+    azurerm_policy_definition.aks_no_public_node_ip,
+    azurerm_policy_definition.no_public_ip_resources,
+    azurerm_policy_definition.no_default_internet_routes
+  ]
 }
 
 # ── Initiative Assignment: autoflow-baseline ──────────────────────────────────

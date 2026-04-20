@@ -71,6 +71,12 @@ variable "network_watcher_rg" {
   default     = "NetworkWatcherRG"
 }
 
+variable "restrict_internet_egress" {
+  description = "When true, enforce deny-by-default outbound NSG rules with only required allow-list entries."
+  type        = bool
+  default     = true
+}
+
 variable "tags" {
   description = "Tags to apply to all resources"
   type        = map(string)

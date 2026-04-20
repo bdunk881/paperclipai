@@ -43,7 +43,7 @@ export function buildDefaultEdge(source: string, target: string): Edge {
     animated: false,
     className: "workflow-edge",
     markerEnd: { type: MarkerType.ArrowClosed, width: 18, height: 18 },
-    style: { stroke: "#9ca3af", strokeWidth: 2 },
+    style: { stroke: "#475569", strokeWidth: 2 },
   };
 }
 

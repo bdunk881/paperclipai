@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, Fragment } from "react";
+import { useState, useEffect, useMemo, Fragment, useCallback } from "react";
 import { ChevronLeft, ChevronRight, Search, Filter, X } from "lucide-react";
 import { listRuns, listTemplates, type TemplateSummary } from "../api/client";
 import { StatusBadge } from "../components/StatusBadge";
@@ -26,7 +26,7 @@ export default function RunHistory() {
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
 
-  async function loadData() {
+  const loadData = useCallback(async () => {
     setLoading(true);
     setLoadError(null);
     try {
@@ -39,11 +39,11 @@ export default function RunHistory() {
     } finally {
       setLoading(false);
     }
-  }
+  }, [getAccessToken]);
 
   useEffect(() => {
     void loadData();
-  }, []);
+  }, [loadData]);
   const [sort, setSort] = useState<{ field: SortField; dir: SortDir }>({
     field: "startedAt",
     dir: "desc",

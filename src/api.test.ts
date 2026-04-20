@@ -723,6 +723,159 @@ describe("Approvals API", () => {
 
 
 // ---------------------------------------------------------------------------
+// Control plane APIs
+// ---------------------------------------------------------------------------
+
+describe("Control plane APIs", () => {
+  it("requires X-Paperclip-Run-Id on mutating requests", async () => {
+    const res = await request(app)
+      .post("/api/control-plane/teams")
+      .set(asAuth())
+      .send({ name: "Growth Ops" });
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/X-Paperclip-Run-Id/i);
+  });
+
+  it("creates a team and lists it back", async () => {
+    const createRes = await request(app)
+      .post("/api/control-plane/teams")
+      .set(asAuth())
+      .set("X-Paperclip-Run-Id", "run-create-team")
+      .send({
+        name: "Revenue Automation",
+        budgetMonthlyUsd: 250,
+        deploymentMode: "continuous_agents",
+      });
+
+    expect(createRes.status).toBe(201);
+    expect(createRes.body.name).toBe("Revenue Automation");
+    expect(createRes.body.deploymentMode).toBe("continuous_agents");
+
+    const listRes = await request(app)
+      .get("/api/control-plane/teams")
+      .set(asAuth());
+
+    expect(listRes.status).toBe(200);
+    expect(listRes.body.total).toBe(1);
+    expect(listRes.body.teams[0].id).toBe(createRes.body.id);
+  });
+
+  it("deploys a workflow template as an agent team", async () => {
+    const res = await request(app)
+      .post("/api/control-plane/deployments/workflow")
+      .set(asAuth())
+      .set("X-Paperclip-Run-Id", "run-deploy-team")
+      .send({
+        templateId: "tpl-support-bot",
+        budgetMonthlyUsd: 120,
+        defaultIntervalMinutes: 30,
+      });
+
+    expect(res.status).toBe(201);
+    expect(res.body.team.workflowTemplateId).toBe("tpl-support-bot");
+    expect(res.body.workflow.name).toBe("Customer Support Bot");
+    expect(Array.isArray(res.body.agents)).toBe(true);
+    expect(res.body.agents.length).toBeGreaterThan(1);
+    expect(
+      res.body.agents.some((agent: { roleKey: string }) => agent.roleKey === "workflow-manager")
+    ).toBe(true);
+    expect(
+      res.body.agents
+        .filter((agent: { roleKey: string }) => agent.roleKey !== "workflow-manager")
+        .every(
+          (agent: { schedule: { type: string; intervalMinutes?: number } }) =>
+            agent.schedule.type === "interval" && agent.schedule.intervalMinutes === 30
+        )
+    ).toBe(true);
+  });
+
+  it("creates a bridged task and enforces atomic checkout", async () => {
+    const deployRes = await request(app)
+      .post("/api/control-plane/deployments/workflow")
+      .set(asAuth())
+      .set("X-Paperclip-Run-Id", "run-deploy-for-task")
+      .send({ templateId: "tpl-support-bot" });
+
+    const teamId = deployRes.body.team.id;
+    const workerAgent = deployRes.body.agents.find(
+      (agent: { roleKey: string }) => agent.roleKey !== "workflow-manager"
+    );
+
+    const createTaskRes = await request(app)
+      .post("/api/control-plane/tasks")
+      .set(asAuth())
+      .set("X-Paperclip-Run-Id", "run-create-task")
+      .send({
+        teamId,
+        title: "Handle escalated refund",
+        sourceRunId: "run_123",
+        sourceWorkflowStepId: workerAgent.workflowStepId,
+        assignedAgentId: workerAgent.id,
+      });
+
+    expect(createTaskRes.status).toBe(201);
+    expect(createTaskRes.body.status).toBe("todo");
+    expect(createTaskRes.body.auditTrail).toHaveLength(1);
+
+    const checkoutRes = await request(app)
+      .post(`/api/control-plane/tasks/${createTaskRes.body.id}/checkout`)
+      .set(asAuth())
+      .set("X-Paperclip-Run-Id", "run-checkout-1");
+
+    expect(checkoutRes.status).toBe(200);
+    expect(checkoutRes.body.status).toBe("in_progress");
+    expect(checkoutRes.body.checkedOutBy).toBe("run-checkout-1");
+
+    const conflictRes = await request(app)
+      .post(`/api/control-plane/tasks/${createTaskRes.body.id}/checkout`)
+      .set(asAuth())
+      .set("X-Paperclip-Run-Id", "run-checkout-2");
+
+    expect(conflictRes.status).toBe(409);
+    expect(conflictRes.body.error).toMatch(/already checked out/i);
+  });
+
+  it("records heartbeats for deployed agents", async () => {
+    const deployRes = await request(app)
+      .post("/api/control-plane/deployments/workflow")
+      .set(asAuth())
+      .set("X-Paperclip-Run-Id", "run-deploy-heartbeat")
+      .send({ templateId: "tpl-support-bot" });
+
+    const teamId = deployRes.body.team.id;
+    const workerAgent = deployRes.body.agents.find(
+      (agent: { roleKey: string }) => agent.roleKey !== "workflow-manager"
+    );
+
+    const heartbeatRes = await request(app)
+      .post("/api/control-plane/heartbeats")
+      .set(asAuth())
+      .set("X-Paperclip-Run-Id", "run-heartbeat-1")
+      .send({
+        teamId,
+        agentId: workerAgent.id,
+        status: "completed",
+        summary: "Processed the daily support queue",
+        costUsd: 1.42,
+        createdTaskIds: ["task-a", "task-b"],
+      });
+
+    expect(heartbeatRes.status).toBe(201);
+    expect(heartbeatRes.body.status).toBe("completed");
+    expect(heartbeatRes.body.createdTaskIds).toEqual(["task-a", "task-b"]);
+
+    const listRes = await request(app)
+      .get(`/api/control-plane/teams/${teamId}`)
+      .set(asAuth());
+
+    expect(listRes.status).toBe(200);
+    expect(listRes.body.heartbeats).toHaveLength(1);
+    expect(listRes.body.heartbeats[0].summary).toBe("Processed the daily support queue");
+  });
+});
+
+// ---------------------------------------------------------------------------
 // POST /api/runs
 // ---------------------------------------------------------------------------
 

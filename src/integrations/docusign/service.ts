@@ -9,6 +9,7 @@ import {
 } from "./oauth";
 import { consumePkceState, createPkceState } from "./pkceStore";
 import { ConnectorError, DocuSignConnectionHealth, DocuSignCredentialPublic } from "./types";
+import { runOAuthTokenRefreshMiddleware } from "../shared/tokenRefreshMiddleware";
 
 function requiredScopes(): string[] {
   return (process.env.DOCUSIGN_SCOPES ?? "signature extended offline_access")
@@ -328,43 +329,41 @@ export class DocuSignConnectorService {
       throw new ConnectorError("auth", "DocuSign connector is not configured", 404);
     }
 
-    if (credential.authMethod === "oauth2_pkce" && credential.refreshTokenEncrypted) {
-      const expiresAt = credential.metadata?.expiresAt;
-      if (expiresAt && Date.now() >= Date.parse(expiresAt) - 60_000) {
-        try {
-          const refreshToken = docuSignCredentialStore.decryptRefreshToken(credential);
-          if (!refreshToken) {
-            throw new ConnectorError("auth", "Missing refresh token", 401);
-          }
-
-          const refreshed = await refreshAccessToken(refreshToken);
-          docuSignCredentialStore.rotateToken({
-            credentialId: credential.id,
-            accessToken: refreshed.accessToken,
-            refreshToken: refreshed.refreshToken,
-            scopes: parseScopeSet(refreshed.scope),
-            accountName: refreshed.accountName,
-            baseUri: refreshed.baseUri,
-            metadata: {
-              ...(refreshed.expiresAt ? { expiresAt: refreshed.expiresAt } : {}),
-              accountId: refreshed.accountId,
-              baseUri: refreshed.baseUri,
-            },
-          });
-        } catch (error) {
-          logDocuSign({
-            event: "error",
-            level: "error",
-            connector: "docusign",
-            userId,
-            accountId: credential.accountId,
-            message: `DocuSign token refresh failed: ${error instanceof Error ? error.message : String(error)}`,
-            errorType: "auth",
-          });
-          throw new ConnectorError("auth", "DocuSign token refresh failed", 401);
-        }
-      }
-    }
+    await runOAuthTokenRefreshMiddleware({
+      shouldAttemptRefresh: credential.authMethod === "oauth2_pkce" && Boolean(credential.refreshTokenEncrypted),
+      expiresAt: credential.metadata?.expiresAt,
+      getRefreshToken: () => docuSignCredentialStore.decryptRefreshToken(credential),
+      refreshAccessToken,
+      persistRefreshedToken: (tokenSet) => {
+        docuSignCredentialStore.rotateToken({
+          credentialId: credential.id,
+          accessToken: tokenSet.accessToken,
+          refreshToken: tokenSet.refreshToken,
+          scopes: parseScopeSet(tokenSet.scope),
+          accountName: tokenSet.accountName,
+          baseUri: tokenSet.baseUri,
+          metadata: {
+            ...(tokenSet.expiresAt ? { expiresAt: tokenSet.expiresAt } : {}),
+            accountId: tokenSet.accountId,
+            baseUri: tokenSet.baseUri,
+          },
+        });
+      },
+      onRefreshFailure: (error) => {
+        logDocuSign({
+          event: "error",
+          level: "error",
+          connector: "docusign",
+          userId,
+          accountId: credential.accountId,
+          message: `DocuSign token refresh failed: ${error instanceof Error ? error.message : String(error)}`,
+          errorType: "auth",
+        });
+      },
+      isKnownError: (error) => error instanceof ConnectorError,
+      createAuthError: (message, statusCode) => new ConnectorError("auth", message, statusCode),
+      refreshFailedMessage: "DocuSign token refresh failed",
+    });
 
     const updated = docuSignCredentialStore.getActiveByUser(userId);
     if (!updated) {

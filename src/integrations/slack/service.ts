@@ -4,6 +4,7 @@ import { buildSlackOAuthUrl, exchangeCodeForTokens, refreshAccessToken } from ".
 import { createPkceState, consumePkceState } from "./pkceStore";
 import { SlackClient } from "./slackClient";
 import { ConnectorError, SlackConnectionHealth, SlackCredentialPublic } from "./types";
+import { runOAuthTokenRefreshMiddleware } from "../shared/tokenRefreshMiddleware";
 
 function parseScopes(scope?: string): string[] {
   if (!scope) return [];
@@ -246,39 +247,45 @@ export class SlackConnectorService {
       throw new ConnectorError("auth", "Slack connector is not configured", 404);
     }
 
-    if (credential.authMethod === "oauth2_pkce" && credential.refreshTokenEncrypted) {
-      const expiresAt = credential.metadata?.expiresAt;
-      if (expiresAt && Date.now() >= Date.parse(expiresAt) - 60_000) {
-        try {
-          const refreshToken = slackCredentialStore.decryptRefreshToken(credential);
-          if (!refreshToken) {
-            throw new ConnectorError("auth", "Missing refresh token", 401);
-          }
+    const refreshed = await runOAuthTokenRefreshMiddleware({
+      shouldAttemptRefresh: credential.authMethod === "oauth2_pkce" && Boolean(credential.refreshTokenEncrypted),
+      expiresAt: credential.metadata?.expiresAt,
+      getRefreshToken: () => slackCredentialStore.decryptRefreshToken(credential),
+      refreshAccessToken,
+      persistRefreshedToken: (tokenSet) => {
+        slackCredentialStore.rotateToken({
+          credentialId: credential.id,
+          accessToken: tokenSet.accessToken,
+          refreshToken: tokenSet.refreshToken,
+          scopes: parseScopes(tokenSet.scope),
+        });
+        credential.metadata = {
+          ...(credential.metadata ?? {}),
+          ...(tokenSet.expiresAt ? { expiresAt: tokenSet.expiresAt } : {}),
+        };
+      },
+      onRefreshFailure: (error) => {
+        logSlack({
+          event: "error",
+          level: "error",
+          connector: "slack",
+          userId,
+          teamId: credential.teamId,
+          message: `Slack token refresh failed: ${error instanceof Error ? error.message : String(error)}`,
+          errorType: "auth",
+        });
+      },
+      isKnownError: (error) => error instanceof ConnectorError,
+      createAuthError: (message, statusCode) => new ConnectorError("auth", message, statusCode),
+      refreshFailedMessage: "Slack token refresh failed",
+    });
 
-          const refreshed = await refreshAccessToken(refreshToken);
-          slackCredentialStore.rotateToken({
-            credentialId: credential.id,
-            accessToken: refreshed.accessToken,
-            refreshToken: refreshed.refreshToken,
-            scopes: parseScopes(refreshed.scope),
-          });
-          credential.metadata = {
-            ...(credential.metadata ?? {}),
-            ...(refreshed.expiresAt ? { expiresAt: refreshed.expiresAt } : {}),
-          };
-        } catch (error) {
-          logSlack({
-            event: "error",
-            level: "error",
-            connector: "slack",
-            userId,
-            teamId: credential.teamId,
-            message: `Slack token refresh failed: ${error instanceof Error ? error.message : String(error)}`,
-            errorType: "auth",
-          });
-          throw new ConnectorError("auth", "Slack token refresh failed", 401);
-        }
+    if (refreshed) {
+      const updatedCredential = slackCredentialStore.getActiveByUser(userId);
+      if (!updatedCredential) {
+        throw new ConnectorError("auth", "Credential missing after token refresh", 404);
       }
+      return updatedCredential;
     }
 
     return credential;

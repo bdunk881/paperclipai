@@ -15,6 +15,7 @@ import {
   IntercomConversation,
   IntercomCredentialPublic,
 } from "./types";
+import { runOAuthTokenRefreshMiddleware } from "../shared/tokenRefreshMiddleware";
 
 export class IntercomConnectorService {
   beginOAuth(userId: string): {
@@ -367,36 +368,42 @@ export class IntercomConnectorService {
       throw new ConnectorError("auth", "Intercom connector is not configured", 404);
     }
 
-    if (credential.authMethod === "oauth2_pkce" && credential.refreshTokenEncrypted) {
-      const expiresAt = credential.metadata?.expiresAt;
-      if (expiresAt && Date.now() >= Date.parse(expiresAt) - 60_000) {
-        try {
-          const refreshToken = intercomCredentialStore.decryptRefreshToken(credential);
-          if (!refreshToken) {
-            throw new ConnectorError("auth", "Missing refresh token", 401);
-          }
+    const refreshed = await runOAuthTokenRefreshMiddleware({
+      shouldAttemptRefresh: credential.authMethod === "oauth2_pkce" && Boolean(credential.refreshTokenEncrypted),
+      expiresAt: credential.metadata?.expiresAt,
+      getRefreshToken: () => intercomCredentialStore.decryptRefreshToken(credential),
+      refreshAccessToken,
+      persistRefreshedToken: (tokenSet) => {
+        intercomCredentialStore.rotateToken({
+          credentialId: credential.id,
+          accessToken: tokenSet.accessToken,
+          refreshToken: tokenSet.refreshToken,
+          scopes: parseIntercomScopes(tokenSet.scope),
+          expiresAt: tokenSet.expiresAt,
+        });
+      },
+      onRefreshFailure: (error) => {
+        logIntercom({
+          event: "error",
+          level: "error",
+          connector: "intercom",
+          userId,
+          workspaceId: credential.workspaceId,
+          message: `Intercom token refresh failed: ${error instanceof Error ? error.message : String(error)}`,
+          errorType: "auth",
+        });
+      },
+      isKnownError: (error) => error instanceof ConnectorError,
+      createAuthError: (message, statusCode) => new ConnectorError("auth", message, statusCode),
+      refreshFailedMessage: "Intercom token refresh failed",
+    });
 
-          const refreshed = await refreshAccessToken(refreshToken);
-          intercomCredentialStore.rotateToken({
-            credentialId: credential.id,
-            accessToken: refreshed.accessToken,
-            refreshToken: refreshed.refreshToken,
-            scopes: parseIntercomScopes(refreshed.scope),
-            expiresAt: refreshed.expiresAt,
-          });
-        } catch (error) {
-          logIntercom({
-            event: "error",
-            level: "error",
-            connector: "intercom",
-            userId,
-            workspaceId: credential.workspaceId,
-            message: `Intercom token refresh failed: ${error instanceof Error ? error.message : String(error)}`,
-            errorType: "auth",
-          });
-          throw new ConnectorError("auth", "Intercom token refresh failed", 401);
-        }
+    if (refreshed) {
+      const updatedCredential = intercomCredentialStore.getActiveByUser(userId);
+      if (!updatedCredential) {
+        throw new ConnectorError("auth", "Credential missing after token refresh", 404);
       }
+      return updatedCredential;
     }
 
     return credential;

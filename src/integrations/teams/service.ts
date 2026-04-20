@@ -7,6 +7,7 @@ import {
   refreshAccessToken,
 } from "./oauth";
 import { consumePkceState, createPkceState } from "./pkceStore";
+import { runOAuthTokenRefreshMiddleware } from "../shared/tokenRefreshMiddleware";
 import { TeamsClient } from "./teamsClient";
 import { ConnectorError, TeamsConnectionHealth, TeamsCredentialPublic } from "./types";
 
@@ -246,44 +247,41 @@ export class TeamsConnectorService {
       throw new ConnectorError("auth", "Microsoft Teams connector is not configured", 404);
     }
 
-    if (credential.authMethod === "oauth2_pkce" && credential.refreshTokenEncrypted) {
-      const expiresAt = credential.metadata?.expiresAt;
-      if (expiresAt && Date.now() >= Date.parse(expiresAt) - 60_000) {
-        try {
-          const refreshToken = teamsCredentialStore.decryptRefreshToken(credential);
-          if (!refreshToken) {
-            throw new ConnectorError("auth", "Missing refresh token", 401);
-          }
+    const refreshed = await runOAuthTokenRefreshMiddleware({
+      shouldAttemptRefresh: credential.authMethod === "oauth2_pkce" && Boolean(credential.refreshTokenEncrypted),
+      expiresAt: credential.metadata?.expiresAt,
+      getRefreshToken: () => teamsCredentialStore.decryptRefreshToken(credential),
+      refreshAccessToken,
+      persistRefreshedToken: (tokenSet) => {
+        teamsCredentialStore.rotateToken({
+          credentialId: credential.id,
+          accessToken: tokenSet.accessToken,
+          refreshToken: tokenSet.refreshToken,
+          scopes: parseTeamsScopes(tokenSet.scope),
+          expiresAt: tokenSet.expiresAt,
+        });
+      },
+      onRefreshSuccess: () => {
+        logTeams({
+          event: "sync",
+          level: "info",
+          connector: "microsoft-teams",
+          userId,
+          accountId: credential.accountId,
+          message: "Teams OAuth token refreshed",
+        });
+      },
+      isKnownError: (error) => error instanceof ConnectorError,
+      createAuthError: (message, statusCode) => new ConnectorError("auth", message, statusCode),
+      refreshFailedMessage: "Failed to refresh Teams token",
+    });
 
-          const refreshed = await refreshAccessToken(refreshToken);
-          teamsCredentialStore.rotateToken({
-            credentialId: credential.id,
-            accessToken: refreshed.accessToken,
-            refreshToken: refreshed.refreshToken,
-            scopes: parseTeamsScopes(refreshed.scope),
-            expiresAt: refreshed.expiresAt,
-          });
-
-          logTeams({
-            event: "sync",
-            level: "info",
-            connector: "microsoft-teams",
-            userId,
-            accountId: credential.accountId,
-            message: "Teams OAuth token refreshed",
-          });
-
-          const updatedCredential = teamsCredentialStore.getActiveByUser(userId);
-          if (!updatedCredential) {
-            throw new ConnectorError("auth", "Credential missing after token refresh", 404);
-          }
-          return updatedCredential;
-        } catch (error) {
-          throw error instanceof ConnectorError
-            ? error
-            : new ConnectorError("auth", "Failed to refresh Teams token", 401);
-        }
+    if (refreshed) {
+      const updatedCredential = teamsCredentialStore.getActiveByUser(userId);
+      if (!updatedCredential) {
+        throw new ConnectorError("auth", "Credential missing after token refresh", 404);
       }
+      return updatedCredential;
     }
 
     return credential;

@@ -9,6 +9,7 @@ import {
 } from "./oauth";
 import { consumePkceState, createPkceState } from "./pkceStore";
 import { ConnectorError, LinearConnectionHealth, LinearCredentialPublic } from "./types";
+import { runOAuthTokenRefreshMiddleware } from "../shared/tokenRefreshMiddleware";
 
 export class LinearConnectorService {
   beginOAuth(userId: string): {
@@ -269,36 +270,42 @@ export class LinearConnectorService {
       throw new ConnectorError("auth", "Linear connector is not configured", 404);
     }
 
-    if (credential.authMethod === "oauth2_pkce" && credential.refreshTokenEncrypted) {
-      const expiresAt = credential.metadata?.expiresAt;
-      if (expiresAt && Date.now() >= Date.parse(expiresAt) - 60_000) {
-        try {
-          const refreshToken = linearCredentialStore.decryptRefreshToken(credential);
-          if (!refreshToken) {
-            throw new ConnectorError("auth", "Missing refresh token", 401);
-          }
+    const refreshed = await runOAuthTokenRefreshMiddleware({
+      shouldAttemptRefresh: credential.authMethod === "oauth2_pkce" && Boolean(credential.refreshTokenEncrypted),
+      expiresAt: credential.metadata?.expiresAt,
+      getRefreshToken: () => linearCredentialStore.decryptRefreshToken(credential),
+      refreshAccessToken,
+      persistRefreshedToken: (tokenSet) => {
+        linearCredentialStore.rotateToken({
+          credentialId: credential.id,
+          accessToken: tokenSet.accessToken,
+          refreshToken: tokenSet.refreshToken,
+          scopes: parseLinearScopes(tokenSet.scope),
+          expiresAt: tokenSet.expiresAt,
+        });
+      },
+      onRefreshFailure: (error) => {
+        logLinear({
+          event: "error",
+          level: "error",
+          connector: "linear",
+          userId,
+          organizationId: credential.organizationId,
+          message: `Linear token refresh failed: ${error instanceof Error ? error.message : String(error)}`,
+          errorType: "auth",
+        });
+      },
+      isKnownError: (error) => error instanceof ConnectorError,
+      createAuthError: (message, statusCode) => new ConnectorError("auth", message, statusCode),
+      refreshFailedMessage: "Linear token refresh failed",
+    });
 
-          const refreshed = await refreshAccessToken(refreshToken);
-          linearCredentialStore.rotateToken({
-            credentialId: credential.id,
-            accessToken: refreshed.accessToken,
-            refreshToken: refreshed.refreshToken,
-            scopes: parseLinearScopes(refreshed.scope),
-            expiresAt: refreshed.expiresAt,
-          });
-        } catch (error) {
-          logLinear({
-            event: "error",
-            level: "error",
-            connector: "linear",
-            userId,
-            organizationId: credential.organizationId,
-            message: `Linear token refresh failed: ${error instanceof Error ? error.message : String(error)}`,
-            errorType: "auth",
-          });
-          throw new ConnectorError("auth", "Linear token refresh failed", 401);
-        }
+    if (refreshed) {
+      const updatedCredential = linearCredentialStore.getActiveByUser(userId);
+      if (!updatedCredential) {
+        throw new ConnectorError("auth", "Credential missing after token refresh", 404);
       }
+      return updatedCredential;
     }
 
     return credential;

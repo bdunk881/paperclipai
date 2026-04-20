@@ -16,6 +16,7 @@ import {
   MonitoringProvider,
 } from "./types";
 import { AzureMonitorClient } from "./azureMonitorClient";
+import { runOAuthTokenRefreshMiddleware } from "../shared/tokenRefreshMiddleware";
 
 const DEFAULT_DATADOG_SITE = "datadoghq.com";
 
@@ -339,48 +340,48 @@ export class DatadogAzureMonitorConnectorService {
       throw new ConnectorError("auth", "Datadog/Azure Monitor connector is not configured", 404);
     }
 
-    if (credential.provider === "azure_monitor" && credential.authMethod === "oauth2_pkce") {
-      const expiresAt = credential.metadata?.expiresAt;
-      if (expiresAt && Date.now() >= Date.parse(expiresAt) - 60_000) {
-        try {
-          const refreshToken = monitoringCredentialStore.decryptRefreshToken(credential);
-          if (!refreshToken) {
-            throw new ConnectorError("auth", "Missing refresh token", 401);
-          }
+    const refreshed = await runOAuthTokenRefreshMiddleware({
+      shouldAttemptRefresh:
+        credential.provider === "azure_monitor" &&
+        credential.authMethod === "oauth2_pkce" &&
+        Boolean(credential.refreshTokenEncrypted),
+      expiresAt: credential.metadata?.expiresAt,
+      getRefreshToken: () => monitoringCredentialStore.decryptRefreshToken(credential),
+      refreshAccessToken,
+      persistRefreshedToken: (tokenSet) => {
+        monitoringCredentialStore.rotateToken({
+          credentialId: credential.id,
+          accessToken: tokenSet.accessToken,
+          refreshToken: tokenSet.refreshToken,
+          scopes: parseAzureScopes(tokenSet.scope),
+          expiresAt: tokenSet.expiresAt,
+        });
+      },
+      onRefreshSuccess: () => {
+        logMonitoring({
+          event: "sync",
+          level: "info",
+          connector: "datadog-azure-monitor",
+          provider: "azure_monitor",
+          userId,
+          accountId: credential.accountId,
+          message: "Azure Monitor OAuth token refreshed",
+        });
+      },
+      isKnownError: (error) => error instanceof ConnectorError,
+      createAuthError: (message, statusCode) => new ConnectorError("auth", message, statusCode),
+      refreshFailedMessage: "Failed to refresh Azure Monitor token",
+    });
 
-          const refreshed = await refreshAccessToken(refreshToken);
-          monitoringCredentialStore.rotateToken({
-            credentialId: credential.id,
-            accessToken: refreshed.accessToken,
-            refreshToken: refreshed.refreshToken,
-            scopes: parseAzureScopes(refreshed.scope),
-            expiresAt: refreshed.expiresAt,
-          });
-
-          logMonitoring({
-            event: "sync",
-            level: "info",
-            connector: "datadog-azure-monitor",
-            provider: "azure_monitor",
-            userId,
-            accountId: credential.accountId,
-            message: "Azure Monitor OAuth token refreshed",
-          });
-
-          const updatedCredential = monitoringCredentialStore.getActiveByUserAndProvider(
-            userId,
-            "azure_monitor"
-          );
-          if (!updatedCredential) {
-            throw new ConnectorError("auth", "Credential missing after token refresh", 404);
-          }
-          return updatedCredential;
-        } catch (error) {
-          throw error instanceof ConnectorError
-            ? error
-            : new ConnectorError("auth", "Failed to refresh Azure Monitor token", 401);
-        }
+    if (refreshed) {
+      const updatedCredential = monitoringCredentialStore.getActiveByUserAndProvider(
+        userId,
+        "azure_monitor"
+      );
+      if (!updatedCredential) {
+        throw new ConnectorError("auth", "Credential missing after token refresh", 404);
       }
+      return updatedCredential;
     }
 
     return credential;

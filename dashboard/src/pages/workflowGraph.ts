@@ -307,14 +307,14 @@ export function validateGraphTopology(steps: WorkflowStep[], edges: Edge[]): str
 
   const unreachable = steps.find((step) => !visited.has(step.id));
   if (unreachable) {
-    return `Step \"${unreachable.name}\" is not reachable from a trigger.`;
+    return `Step "${unreachable.name}" is not reachable from a trigger.`;
   }
 
   const disconnected = steps.find(
     (step) => !isTriggerKind(step.kind) && (incomingCount.get(step.id) ?? 0) === 0,
   );
   if (disconnected) {
-    return `Step \"${disconnected.name}\" needs an incoming edge.`;
+    return `Step "${disconnected.name}" needs an incoming edge.`;
   }
 
   return null;

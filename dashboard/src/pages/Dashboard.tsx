@@ -63,6 +63,9 @@ export default function Dashboard() {
     }
   }
 
+  // Dashboard data loads once on mount; the fetch helper intentionally stays local to avoid
+  // coupling it to unrelated dashboard command-bar state updates already in progress here.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
     void loadDashboard();
   }, []);

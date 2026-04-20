@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   CheckCircle,
   XCircle,
@@ -252,7 +252,7 @@ export default function ExecutionLogs() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [lastRefreshed, setLastRefreshed] = useState<Date>(new Date());
 
-  async function fetchRuns(silent = false) {
+  const fetchRuns = useCallback(async (silent = false) => {
     if (!silent) setLoading(true);
     setLoadError(null);
     try {
@@ -268,7 +268,7 @@ export default function ExecutionLogs() {
     } finally {
       if (!silent) setLoading(false);
     }
-  }
+  }, [getAccessToken]);
 
   useEffect(() => {
     void fetchRuns();
@@ -276,7 +276,7 @@ export default function ExecutionLogs() {
       void fetchRuns(true);
     }, POLL_INTERVAL_MS);
     return () => window.clearInterval(interval);
-  }, []);
+  }, [fetchRuns]);
 
   const filtered = useMemo(() => {
     const normalized: RunLog[] = runs.map((run) => mapRunToLog(run));

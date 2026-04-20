@@ -38,6 +38,7 @@ jobs:
           app_build_command: CI= npm run build
         env:
           VITE_API_BASE_URL: ${{ secrets.VITE_API_BASE_URL }}
+          VITE_API_URL: ${{ secrets.VITE_API_BASE_URL }}
           VITE_AZURE_CLIENT_ID: ${{ secrets.VITE_AZURE_CLIENT_ID }}
           VITE_AZURE_TENANT_SUBDOMAIN: ${{ secrets.VITE_AZURE_TENANT_SUBDOMAIN }}
           VITE_AZURE_CIAM_CLIENT_ID: ${{ secrets.VITE_AZURE_CLIENT_ID }}

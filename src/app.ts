@@ -209,10 +209,12 @@ app.post("/api/runs/file", upload.single("file"), async (req, res) => {
   // Resolve an OpenAI key from the user's default LLM config (for vision/Whisper)
   const userId = typeof req.headers["x-user-id"] === "string" ? req.headers["x-user-id"] : undefined;
   let openaiApiKey: string | undefined;
+  let openaiInferenceGeo: "us" | "eu" | undefined;
   if (userId) {
     const defaultConfig = llmConfigStore.getDecryptedDefault(userId);
     if (defaultConfig?.config.provider === "openai") {
       openaiApiKey = defaultConfig.apiKey;
+      openaiInferenceGeo = defaultConfig.config.inferenceGeo;
     }
   }
 
@@ -222,7 +224,7 @@ app.post("/api/runs/file", upload.single("file"), async (req, res) => {
       req.file.buffer,
       req.file.mimetype,
       req.file.originalname,
-      { openaiApiKey }
+      { openaiApiKey, inferenceGeo: openaiInferenceGeo }
     );
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
@@ -306,6 +308,7 @@ app.post("/api/workflows/generate", async (req, res) => {
     provider: resolved.config.provider,
     model: generationModel,
     apiKey: resolved.apiKey,
+    inferenceGeo: resolved.config.inferenceGeo,
   });
 
   let rawText: string;

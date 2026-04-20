@@ -8,7 +8,7 @@
  */
 
 import { Router, Request, Response } from "express";
-import { llmConfigStore, LLMProvider } from "./llmConfigStore";
+import { llmConfigStore, InferenceGeo, LLMProvider } from "./llmConfigStore";
 
 const VALID_PROVIDERS: LLMProvider[] = [
   "openai",
@@ -16,11 +16,28 @@ const VALID_PROVIDERS: LLMProvider[] = [
   "gemini",
   "mistral",
 ];
+const VALID_INFERENCE_GEOS: InferenceGeo[] = ["us", "eu"];
 
 function getUserId(req: Request): string | null {
   const userId = req.headers["x-user-id"];
   if (typeof userId !== "string" || !userId.trim()) return null;
   return userId.trim();
+}
+
+function parseInferenceGeo(
+  value: unknown
+): { ok: true; value?: InferenceGeo } | { ok: false; error: string } {
+  if (value === undefined) return { ok: true };
+  if (
+    typeof value !== "string" ||
+    !VALID_INFERENCE_GEOS.includes(value as InferenceGeo)
+  ) {
+    return {
+      ok: false,
+      error: `inferenceGeo must be one of: ${VALID_INFERENCE_GEOS.join(", ")}`,
+    };
+  }
+  return { ok: true, value: value as InferenceGeo };
 }
 
 const router = Router();
@@ -35,7 +52,7 @@ router.post("/", (req: Request, res: Response) => {
     return;
   }
 
-  const { provider, label, model, apiKey } = req.body as Record<
+  const { provider, label, model, apiKey, inferenceGeo } = req.body as Record<
     string,
     unknown
   >;
@@ -63,6 +80,11 @@ router.post("/", (req: Request, res: Response) => {
       .json({ error: "apiKey is required (minimum 4 characters)" });
     return;
   }
+  const parsedInferenceGeo = parseInferenceGeo(inferenceGeo);
+  if (!parsedInferenceGeo.ok) {
+    res.status(400).json({ error: parsedInferenceGeo.error });
+    return;
+  }
 
   const config = llmConfigStore.create({
     userId,
@@ -70,6 +92,7 @@ router.post("/", (req: Request, res: Response) => {
     label: label.trim(),
     model: model.trim(),
     apiKey,
+    inferenceGeo: parsedInferenceGeo.value,
   });
 
   res.status(201).json(config);
@@ -121,8 +144,12 @@ router.patch("/:id", (req: Request, res: Response) => {
     return;
   }
 
-  const { label, model } = req.body as Record<string, unknown>;
-  const patch: Partial<{ label: string; model: string }> = {};
+  const { label, model, inferenceGeo } = req.body as Record<string, unknown>;
+  const patch: Partial<{
+    label: string;
+    model: string;
+    inferenceGeo: InferenceGeo;
+  }> = {};
 
   if (label !== undefined) {
     if (typeof label !== "string" || !label.trim()) {
@@ -137,6 +164,14 @@ router.patch("/:id", (req: Request, res: Response) => {
       return;
     }
     patch.model = model.trim();
+  }
+  const parsedInferenceGeo = parseInferenceGeo(inferenceGeo);
+  if (!parsedInferenceGeo.ok) {
+    res.status(400).json({ error: parsedInferenceGeo.error });
+    return;
+  }
+  if (parsedInferenceGeo.value) {
+    patch.inferenceGeo = parsedInferenceGeo.value;
   }
 
   const updated = llmConfigStore.update(req.params.id, userId, patch);

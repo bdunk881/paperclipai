@@ -63,7 +63,8 @@ function parsePdf(buffer: Buffer): string {
 async function parseImage(
   buffer: Buffer,
   mimeType: string,
-  openaiApiKey?: string
+  openaiApiKey?: string,
+  inferenceGeo?: "us" | "eu"
 ): Promise<string> {
   if (!openaiApiKey) {
     return "[Image received — configure an OpenAI API key to enable vision-based content extraction]";
@@ -73,7 +74,7 @@ async function parseImage(
   const base64 = buffer.toString("base64");
   const dataUrl = `data:${mimeType};base64,${base64}`;
 
-  const response = await client.chat.completions.create({
+  const request: Record<string, unknown> = {
     model: "gpt-4o",
     messages: [
       {
@@ -91,7 +92,12 @@ async function parseImage(
       },
     ],
     max_tokens: 1024,
-  });
+  };
+  if (inferenceGeo) {
+    request.inference_geo = inferenceGeo;
+  }
+
+  const response = await client.chat.completions.create(request as never);
 
   return response.choices[0]?.message?.content ?? "[No description returned]";
 }
@@ -131,6 +137,8 @@ async function parseAudio(
 export interface ParseOptions {
   /** OpenAI API key — enables vision (image) and Whisper (audio) parsing */
   openaiApiKey?: string;
+  /** Optional OpenAI inference routing preference for supported calls. */
+  inferenceGeo?: "us" | "eu";
 }
 
 /**
@@ -148,7 +156,7 @@ export async function parseFile(
   if (mimeType === "application/pdf" || filename.toLowerCase().endsWith(".pdf")) {
     content = parsePdf(buffer);
   } else if (mimeType.startsWith("image/")) {
-    content = await parseImage(buffer, mimeType, opts.openaiApiKey);
+    content = await parseImage(buffer, mimeType, opts.openaiApiKey, opts.inferenceGeo);
   } else if (
     mimeType.startsWith("audio/") ||
     /\.(mp3|mp4|mpeg|mpga|m4a|wav|webm|ogg)$/i.test(filename)

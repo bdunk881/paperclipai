@@ -6,11 +6,15 @@ export function createOpenAIProvider(config: LLMProviderConfig): LLMProvider {
 
   return async (prompt: string): Promise<LLMResponse> => {
     let response;
+    const request: Record<string, unknown> = {
+      model: config.model,
+      messages: [{ role: "user", content: prompt }],
+    };
+    if (config.inferenceGeo) {
+      request.inference_geo = config.inferenceGeo;
+    }
     try {
-      response = await client.chat.completions.create({
-        model: config.model,
-        messages: [{ role: "user", content: prompt }],
-      });
+      response = await client.chat.completions.create(request as never);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       throw new Error(`OpenAI API error: ${msg}`);

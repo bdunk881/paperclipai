@@ -12,6 +12,7 @@ import {
 import { v4 as uuidv4 } from "uuid";
 
 export type LLMProvider = "openai" | "anthropic" | "gemini" | "mistral";
+export type InferenceGeo = "us" | "eu";
 
 export interface LLMConfig {
   id: string;
@@ -19,6 +20,7 @@ export interface LLMConfig {
   provider: LLMProvider;
   label: string;
   model: string;
+  inferenceGeo: InferenceGeo;
   /** AES-256-GCM ciphertext. Never returned in API responses. */
   apiKeyEncrypted: string;
   /** Last 4 chars of the original key, e.g. "****abcd". */
@@ -85,6 +87,7 @@ export const llmConfigStore = {
     label: string;
     model: string;
     apiKey: string;
+    inferenceGeo?: InferenceGeo;
   }): LLMConfigPublic {
     const apiKeyMasked = `****${params.apiKey.slice(-4)}`;
     const cfg: LLMConfig = {
@@ -93,6 +96,7 @@ export const llmConfigStore = {
       provider: params.provider,
       label: params.label,
       model: params.model,
+      inferenceGeo: params.inferenceGeo ?? "us",
       apiKeyEncrypted: encrypt(params.apiKey),
       apiKeyMasked,
       isDefault: false,
@@ -117,7 +121,7 @@ export const llmConfigStore = {
   update(
     id: string,
     userId: string,
-    patch: Partial<Pick<LLMConfig, "label" | "model">>
+    patch: Partial<Pick<LLMConfig, "label" | "model" | "inferenceGeo">>
   ): LLMConfigPublic | undefined {
     const cfg = store.get(id);
     if (!cfg || cfg.userId !== userId) return undefined;

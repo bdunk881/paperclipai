@@ -88,8 +88,27 @@ npm install`}</pre>
       </p>
       <pre className="mb-8">{`curl http://localhost:3000/api/templates/tpl-lead-enrich/sample`}</pre>
 
+      <h2 id="eu-residency" className="text-xl font-semibold text-gray-900 mb-3">
+        5. Configure EU data residency for OpenAI
+      </h2>
+      <p className="text-gray-600 mb-3">
+        For EU enterprise customers, save the OpenAI provider config with{" "}
+        <code>inferenceGeo: "eu"</code>. AutoFlow validates the field server-side
+        and forwards it as <code>inference_geo</code> on supported OpenAI inference calls.
+      </p>
+      <pre className="mb-8">{`curl -X POST http://localhost:3000/api/llm-configs \\
+  -H "X-User-Id: <user-id>" \\
+  -H "Content-Type: application/json" \\
+  -d '{
+    "provider": "openai",
+    "label": "EU Enterprise OpenAI",
+    "model": "gpt-4o",
+    "apiKey": "sk-...",
+    "inferenceGeo": "eu"
+  }'`}</pre>
+
       <h2 id="docker" className="text-xl font-semibold text-gray-900 mb-3">
-        5. Run via Docker
+        6. Run via Docker
       </h2>
       <p className="text-gray-600 mb-3">
         The included <code>docker-compose.yml</code> starts the API backend and React dashboard:

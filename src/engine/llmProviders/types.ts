@@ -3,11 +3,13 @@
  */
 
 export type ProviderName = "openai" | "anthropic" | "gemini" | "mistral";
+export type InferenceGeo = "us" | "eu";
 
 export interface LLMProviderConfig {
   provider: ProviderName;
   model: string;
   apiKey: string;
+  inferenceGeo?: InferenceGeo;
 }
 
 export interface LLMResponse {

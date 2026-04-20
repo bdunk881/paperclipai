@@ -45,6 +45,7 @@ describe("POST /api/llm-configs", () => {
     expect(res.body.provider).toBe("openai");
     expect(res.body.label).toBe("My GPT-4o key");
     expect(res.body.model).toBe("gpt-4o");
+    expect(res.body.inferenceGeo).toBe("us");
     expect(res.body.apiKeyMasked).toBe("****1234");
     expect(res.body.isDefault).toBe(false);
     expect(res.body.userId).toBe(USER_A);
@@ -66,6 +67,22 @@ describe("POST /api/llm-configs", () => {
     expect(res.body.apiKey).toBeUndefined();
     expect(res.body.apiKeyEncrypted).toBeUndefined();
     expect(JSON.stringify(res.body)).not.toContain("supersecret");
+  });
+
+  it("accepts an explicit inferenceGeo override", async () => {
+    const res = await request(app)
+      .post("/api/llm-configs")
+      .set(asUser(USER_A))
+      .send({
+        provider: "openai",
+        label: "EU OpenAI key",
+        model: "gpt-4o",
+        apiKey: "sk-test-eu1234",
+        inferenceGeo: "eu",
+      });
+
+    expect(res.status).toBe(201);
+    expect(res.body.inferenceGeo).toBe("eu");
   });
 
   it("returns 401 when X-User-Id header is missing", async () => {
@@ -115,6 +132,22 @@ describe("POST /api/llm-configs", () => {
 
     expect(res.status).toBe(400);
     expect(res.body.error).toMatch(/apiKey/i);
+  });
+
+  it("returns 400 for an invalid inferenceGeo", async () => {
+    const res = await request(app)
+      .post("/api/llm-configs")
+      .set(asUser(USER_A))
+      .send({
+        provider: "openai",
+        label: "My key",
+        model: "gpt-4o",
+        apiKey: "sk-test-1234",
+        inferenceGeo: "apac",
+      });
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/inferenceGeo/i);
   });
 
   it("accepts all valid providers", async () => {
@@ -211,6 +244,38 @@ describe("PATCH /api/llm-configs/:id", () => {
     expect(res.body.label).toBe("New label");
     expect(res.body.model).toBe("gpt-4o");
     expect(res.body.apiKeyEncrypted).toBeUndefined();
+  });
+
+  it("updates inferenceGeo when provided", async () => {
+    const create = await request(app)
+      .post("/api/llm-configs")
+      .set(asUser(USER_A))
+      .send({ provider: "openai", label: "Old label", model: "gpt-4", apiKey: "sk-test-patchgeo" });
+
+    const id = create.body.id;
+
+    const res = await request(app)
+      .patch(`/api/llm-configs/${id}`)
+      .set(asUser(USER_A))
+      .send({ inferenceGeo: "eu" });
+
+    expect(res.status).toBe(200);
+    expect(res.body.inferenceGeo).toBe("eu");
+  });
+
+  it("returns 400 for an invalid patched inferenceGeo", async () => {
+    const create = await request(app)
+      .post("/api/llm-configs")
+      .set(asUser(USER_A))
+      .send({ provider: "openai", label: "Old label", model: "gpt-4", apiKey: "sk-test-badgeo" });
+
+    const res = await request(app)
+      .patch(`/api/llm-configs/${create.body.id}`)
+      .set(asUser(USER_A))
+      .send({ inferenceGeo: "latam" });
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/inferenceGeo/i);
   });
 
   it("returns 404 for unknown id", async () => {

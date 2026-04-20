@@ -82,6 +82,7 @@ export async function handleLlm(
     provider: resolved.config.provider,
     model: tieredModel,
     apiKey: resolved.apiKey,
+    inferenceGeo: resolved.config.inferenceGeo,
   });
 
   const response = await provider(renderedPrompt);
@@ -424,6 +425,7 @@ export async function handleAgent(
     provider: resolved.config.provider,
     model: resolved.config.model,
     apiKey: resolved.apiKey,
+    inferenceGeo: resolved.config.inferenceGeo,
   });
 
   const bus = getBus(runId, step.id);

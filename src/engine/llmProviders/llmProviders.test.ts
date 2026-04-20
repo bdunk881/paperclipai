@@ -168,6 +168,22 @@ describe("OpenAI adapter", () => {
       expect.objectContaining({ model: "gpt-4o" })
     );
   });
+
+  it("passes inference_geo to OpenAI when configured", async () => {
+    const provider = getProvider({
+      ...config,
+      inferenceGeo: "eu",
+    });
+    openaiInstance().chat.completions.create.mockResolvedValueOnce({
+      choices: [{ message: { content: "ok" } }],
+      usage: null,
+    });
+
+    await provider("Prompt");
+    expect(openaiInstance().chat.completions.create).toHaveBeenCalledWith(
+      expect.objectContaining({ inference_geo: "eu" })
+    );
+  });
 });
 
 // ---------------------------------------------------------------------------

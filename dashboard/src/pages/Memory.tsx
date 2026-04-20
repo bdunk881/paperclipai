@@ -27,7 +27,6 @@ import {
   type MemoryEntry,
   type MemoryStats,
 } from "../api/client";
-import { useAuth } from "../context/AuthContext";
 
 GlobalWorkerOptions.workerSrc = pdfWorkerSrc;
 
@@ -124,7 +123,6 @@ function buildQaText(question: string, answer: string): string {
 }
 
 export default function Memory() {
-  const { user } = useAuth();
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [entries, setEntries] = useState<MemoryEntry[]>([]);
   const [stats, setStats] = useState<MemoryStats>(DEFAULT_STATS);
@@ -146,9 +144,9 @@ export default function Memory() {
     try {
       const [fetched, fetchedStats] = await Promise.all([
         search.trim()
-          ? searchMemory(search, user?.id).then((results) => results.map((result) => result.entry))
-          : listMemoryEntries(user?.id),
-        getMemoryStats(user?.id),
+          ? searchMemory(search).then((results) => results.map((result) => result.entry))
+          : listMemoryEntries(),
+        getMemoryStats(),
       ]);
       setEntries(fetched);
       setStats(fetchedStats);
@@ -157,7 +155,7 @@ export default function Memory() {
     } finally {
       setLoading(false);
     }
-  }, [search, user?.id]);
+  }, [search]);
 
   useEffect(() => {
     const debounce = setTimeout(() => void loadEntries(), search.trim() ? 300 : 0);
@@ -166,10 +164,10 @@ export default function Memory() {
 
   async function handleDelete(id: string) {
     try {
-      await deleteMemoryEntry(id, user?.id);
+      await deleteMemoryEntry(id);
       setEntries((prev) => prev.filter((entry) => entry.id !== id));
       if (selected?.id === id) setSelected(null);
-      void getMemoryStats(user?.id).then(setStats);
+      void getMemoryStats().then(setStats);
     } catch {
       // Keep entry visible when deletion fails.
     }
@@ -235,7 +233,6 @@ export default function Memory() {
             text,
             workflowName: "Knowledge Ingest",
           },
-          user?.id
         );
         createdEntries.push(entry);
         setProgress({ current: index + 1, total: totalOperations });
@@ -249,7 +246,6 @@ export default function Memory() {
             text: buildQaText(row.question, row.answer),
             workflowName: "Knowledge Ingest",
           },
-          user?.id
         );
         createdEntries.push(entry);
         setProgress({ current: files.length + index + 1, total: totalOperations });

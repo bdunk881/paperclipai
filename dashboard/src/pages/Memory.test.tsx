@@ -100,8 +100,7 @@ describe("Memory", () => {
           key: expect.stringMatching(/^knowledge\.qa\./),
           text: "Question: What is the refund policy?\nAnswer: Refunds are allowed within 30 days.",
           workflowName: "Knowledge Ingest",
-        }),
-        "user-1"
+        })
       );
     });
 

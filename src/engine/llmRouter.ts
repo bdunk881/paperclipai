@@ -14,6 +14,7 @@
 
 import { WorkflowStep } from "../types/workflow";
 import { ProviderName } from "./llmProviders/types";
+import { extractPromptFeatures, scorePromptTier, PromptTierScore } from "./promptFeatures";
 
 export type LlmTier = "lite" | "standard" | "power";
 
@@ -75,42 +76,8 @@ const MODEL_COST_RATES: Record<string, TokenCostRate> = {
 };
 
 // ---------------------------------------------------------------------------
-// Complexity classifier (rule-based heuristics)
+// Complexity classifier (feature-based weighted scoring)
 // ---------------------------------------------------------------------------
-
-/**
- * Keywords in a prompt template that indicate a lightweight classification or
- * extraction task well-suited for the lite tier.
- */
-const LITE_KEYWORDS = [
-  "classify",
-  "categorize",
-  "extract",
-  "identify",
-  "label",
-  "tag",
-  "one of",
-  "respond only with",
-  "respond with a json",
-  "yes or no",
-  "true or false",
-  "boolean",
-];
-
-/**
- * Keywords indicating complex, creative, or multi-step work that needs at
- * least the standard tier.
- */
-const POWER_KEYWORDS = [
-  "orchestrat",
-  "plan ",
-  "multi-agent",
-  "multi agent",
-  "coordinate",
-  "synthesize",
-  "comprehensive analysis",
-  "detailed report",
-];
 
 /**
  * Classify the appropriate tier for an LLM step.
@@ -118,32 +85,45 @@ const POWER_KEYWORDS = [
  * Priority order:
  *  1. Explicit step-level override (`step.llmTier`)
  *  2. Agent steps → power (parallel orchestration)
- *  3. Large rendered prompt (> 2 000 chars) → power
- *  4. Short prompt + few output keys + lite keywords → lite
- *  5. Prompt contains power keywords → power
- *  6. Default → standard
+ *  3. Feature extraction + weighted scoring
+ *  4. Low-confidence fallback → standard
  */
 export function classifyTier(step: WorkflowStep, renderedPromptLength: number): LlmTier {
+  return classifyTierWithConfidence(step, renderedPromptLength).tier;
+}
+
+/**
+ * Returns the tier decision plus confidence and feature/score breakdown.
+ */
+export function classifyTierWithConfidence(step: WorkflowStep, renderedPromptLength: number): PromptTierScore {
   // Explicit override always wins
-  if (step.llmTier) return step.llmTier;
+  if (step.llmTier) {
+    return {
+      tier: step.llmTier,
+      confidence: 1,
+      scores: {
+        lite: step.llmTier === "lite" ? 1 : 0,
+        standard: step.llmTier === "standard" ? 1 : 0,
+        power: step.llmTier === "power" ? 1 : 0,
+      },
+      features: extractPromptFeatures(step.promptTemplate ?? "", renderedPromptLength, step.outputKeys.length),
+      usedFallback: false,
+    };
+  }
 
   // Agent steps are complex orchestration by nature
-  if (step.kind === "agent") return "power";
+  if (step.kind === "agent") {
+    return {
+      tier: "power",
+      confidence: 1,
+      scores: { lite: 0, standard: 0, power: 1 },
+      features: extractPromptFeatures(step.promptTemplate ?? "", renderedPromptLength, step.outputKeys.length),
+      usedFallback: false,
+    };
+  }
 
-  // Very large context requires the most capable model
-  if (renderedPromptLength > 2000) return "power";
-
-  const templateLower = (step.promptTemplate ?? "").toLowerCase();
-
-  // Check for complexity signals first (power beats lite)
-  if (POWER_KEYWORDS.some((kw) => templateLower.includes(kw))) return "power";
-
-  // Short prompts with simple extraction/classification patterns → lite
-  const hasLiteKeyword = LITE_KEYWORDS.some((kw) => templateLower.includes(kw));
-  const fewOutputKeys = step.outputKeys.length <= 3;
-  if (renderedPromptLength < 500 && fewOutputKeys && hasLiteKeyword) return "lite";
-
-  return "standard";
+  const features = extractPromptFeatures(step.promptTemplate ?? "", renderedPromptLength, step.outputKeys.length);
+  return scorePromptTier(features);
 }
 
 // ---------------------------------------------------------------------------

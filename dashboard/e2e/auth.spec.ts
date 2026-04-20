@@ -1,8 +1,8 @@
 /**
  * E2E: Authentication critical paths
  *
- * Covers: landing → login flow, protected route redirect,
- * login success → dashboard, logout.
+ * Covers: protected route redirect, Microsoft login CTA,
+ * and redirecting-state UX on auth actions.
  */
 
 import { test, expect } from "@playwright/test";
@@ -25,43 +25,27 @@ test("unauthenticated user visiting /builder is redirected to /login", async ({ 
 // Login page
 // ---------------------------------------------------------------------------
 
-test("login page renders email and password fields", async ({ page }) => {
+test("login page renders Microsoft sign-in CTA", async ({ page }) => {
   await page.goto("/login");
-  await expect(page.getByLabel(/email/i)).toBeVisible();
-  await expect(page.getByLabel(/password/i)).toBeVisible();
-  await expect(page.getByRole("button", { name: /sign in/i })).toBeVisible();
+  await expect(page.getByRole("button", { name: /continue with microsoft/i })).toBeVisible();
 });
 
-test("successful login navigates to dashboard", async ({ page }) => {
+test("sign-in button transitions to redirecting state when clicked", async ({ page }) => {
   await page.goto("/login");
 
-  await page.getByLabel(/email/i).fill("user@example.com");
-  await page.getByLabel(/password/i).fill("anypassword");
-  await page.getByRole("button", { name: /sign in/i }).click();
+  const signInButton = page.getByRole("button", { name: /continue with microsoft/i });
+  await expect(signInButton).toBeVisible();
+  await signInButton.click();
 
-  // AuthContext has a 600ms simulated delay — wait for navigation
-  await expect(page).toHaveURL("/", { timeout: 5000 });
-  await expect(page.getByText(/autoflow/i).first()).toBeVisible();
+  await expect(page.getByRole("button", { name: /redirecting/i })).toBeDisabled();
 });
 
 // ---------------------------------------------------------------------------
-// Logout
+// Signup entry points
 // ---------------------------------------------------------------------------
 
-test("logout returns user to login page", async ({ page }) => {
-  // Seed localStorage to skip login flow
-  await page.addInitScript(() => {
-    localStorage.setItem(
-      "autoflow_user",
-      JSON.stringify({ id: "usr-e2e", email: "e2e@example.com", name: "E2E User" })
-    );
-  });
-
-  await page.goto("/");
-  await expect(page).toHaveURL("/");
-
-  // Click logout button in the sidebar/nav
-  await page.getByRole("button", { name: /log out/i }).click();
+test("signup route redirects to login", async ({ page }) => {
+  await page.goto("/signup");
   await expect(page).toHaveURL(/\/login/);
 });
 

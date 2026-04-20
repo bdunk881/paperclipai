@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   CheckCircle,
   XCircle,
@@ -11,7 +11,10 @@ import {
   Brain,
   Lightbulb,
   Radio,
+  RefreshCw,
 } from "lucide-react";
+import { debugStep, listRuns } from "../api/client";
+import type { StepResult, WorkflowRun } from "../types/workflow";
 
 interface StepLog {
   stepId: string;
@@ -34,129 +37,6 @@ interface RunLog {
   durationMs: number;
   steps: StepLog[];
 }
-
-const MOCK_RUNS: RunLog[] = [
-  {
-    id: "run-abc123",
-    workflowName: "Customer Support Pipeline",
-    status: "failed",
-    startedAt: "2026-04-01T20:00:00Z",
-    durationMs: 4320,
-    steps: [
-      {
-        stepId: "step-1",
-        stepName: "Classify Intent",
-        kind: "llm",
-        status: "success",
-        durationMs: 850,
-        startedAt: "2026-04-01T20:00:00Z",
-        input: { message: "My order hasn't arrived yet" },
-        output: { intent: "shipping_inquiry", confidence: 0.97 },
-      },
-      {
-        stepId: "step-2",
-        stepName: "Fetch Order Status",
-        kind: "action",
-        status: "success",
-        durationMs: 210,
-        startedAt: "2026-04-01T20:00:00.850Z",
-        input: { intent: "shipping_inquiry", customerId: "cust-9988" },
-        output: { orderId: "ORD-442", status: "in_transit", eta: "2026-04-03" },
-      },
-      {
-        stepId: "step-3",
-        stepName: "Generate Response",
-        kind: "llm",
-        status: "failure",
-        durationMs: 3260,
-        startedAt: "2026-04-01T20:00:01.060Z",
-        input: { orderId: "ORD-442", status: "in_transit", eta: "2026-04-03" },
-        output: {},
-        error: "LLM provider timeout: request exceeded 3000ms limit",
-        aiExplanation:
-          "The LLM step timed out because the provider response took longer than the configured 3-second threshold. This is likely due to a momentary spike in provider latency. Consider increasing the timeout setting on this step to 5000ms, or adding a retry with exponential backoff.",
-      },
-    ],
-  },
-  {
-    id: "run-def456",
-    workflowName: "Invoice Processing",
-    status: "completed",
-    startedAt: "2026-04-01T18:30:00Z",
-    durationMs: 1890,
-    steps: [
-      {
-        stepId: "step-a",
-        stepName: "Parse Invoice",
-        kind: "transform",
-        status: "success",
-        durationMs: 120,
-        startedAt: "2026-04-01T18:30:00Z",
-        input: { fileUrl: "s3://invoices/inv-2890.pdf" },
-        output: { vendor: "Acme Supplies", amount: 12500, currency: "USD" },
-      },
-      {
-        stepId: "step-b",
-        stepName: "Validate Amount",
-        kind: "condition",
-        status: "success",
-        durationMs: 20,
-        startedAt: "2026-04-01T18:30:00.120Z",
-        input: { amount: 12500 },
-        output: { requiresApproval: true },
-      },
-      {
-        stepId: "step-c",
-        stepName: "Request Approval",
-        kind: "approval",
-        status: "skipped",
-        durationMs: 0,
-        startedAt: "2026-04-01T18:30:00.140Z",
-        input: { requiresApproval: true },
-        output: { skipped: true, reason: "Below auto-approve threshold override" },
-      },
-      {
-        stepId: "step-d",
-        stepName: "Post to Accounting",
-        kind: "action",
-        status: "success",
-        durationMs: 1750,
-        startedAt: "2026-04-01T18:30:00.140Z",
-        input: { vendor: "Acme Supplies", amount: 12500 },
-        output: { journalEntryId: "JE-8821", posted: true },
-      },
-    ],
-  },
-  {
-    id: "run-live",
-    workflowName: "Research Assistant",
-    status: "running",
-    startedAt: new Date(Date.now() - 5000).toISOString(),
-    durationMs: 0,
-    steps: [
-      {
-        stepId: "step-x",
-        stepName: "Fetch Sources",
-        kind: "mcp",
-        status: "success",
-        durationMs: 430,
-        startedAt: new Date(Date.now() - 5000).toISOString(),
-        input: { query: "AI agent frameworks 2026" },
-        output: { sources: 12, topResult: "arxiv.org/abs/2601.xxxxx" },
-      },
-      {
-        stepId: "step-y",
-        stepName: "Synthesize Report",
-        kind: "llm",
-        status: "running",
-        durationMs: 0,
-        startedAt: new Date(Date.now() - 4500).toISOString(),
-        input: { sources: 12 },
-        output: {},
-      },
-    ],
-  },
-];
 
 const STATUS_ICON: Record<string, React.ReactNode> = {
   success: <CheckCircle size={15} className="text-green-500" />,
@@ -186,9 +66,58 @@ function timeAgo(iso: string): string {
   return `${hrs}h ago`;
 }
 
+function toStepLog(step: StepResult, startedAt: string): StepLog {
+  const output = step.output ?? {};
+  return {
+    stepId: step.stepId,
+    stepName: step.stepName,
+    kind: typeof output.kind === "string" ? output.kind : "step",
+    status: step.status,
+    durationMs: step.durationMs,
+    startedAt,
+    input: typeof output.input === "object" && output.input !== null ? (output.input as Record<string, unknown>) : {},
+    output: typeof output.output === "object" && output.output !== null ? (output.output as Record<string, unknown>) : output,
+    error: step.error,
+  };
+}
+
+function toRunLog(run: WorkflowRun): RunLog {
+  return {
+    id: run.id,
+    workflowName: run.templateName,
+    status: run.status === "running" ? "running" : run.status === "failed" ? "failed" : "completed",
+    startedAt: run.startedAt,
+    durationMs:
+      run.completedAt != null
+        ? Math.max(0, new Date(run.completedAt).getTime() - new Date(run.startedAt).getTime())
+        : 0,
+    steps: run.stepResults.map((step) => toStepLog(step, run.startedAt)),
+  };
+}
+
 function StepRow({ step }: { step: StepLog }) {
   const [expanded, setExpanded] = useState(false);
   const [showExplanation, setShowExplanation] = useState(false);
+  const [explanation, setExplanation] = useState(step.aiExplanation ?? "");
+  const [debugging, setDebugging] = useState(false);
+  const [debugError, setDebugError] = useState<string | null>(null);
+
+  async function handleExplain(e: React.MouseEvent<HTMLButtonElement>) {
+    e.stopPropagation();
+    setShowExplanation(true);
+    if (explanation || !step.error) return;
+
+    setDebugging(true);
+    setDebugError(null);
+    try {
+      const result = await debugStep(step.stepId, step.error, step.output);
+      setExplanation(result.explanation);
+    } catch (err) {
+      setDebugError(err instanceof Error ? err.message : "Failed to generate explanation");
+    } finally {
+      setDebugging(false);
+    }
+  }
 
   return (
     <div className="border border-gray-100 rounded-lg overflow-hidden">
@@ -216,11 +145,11 @@ function StepRow({ step }: { step: StepLog }) {
               <p className="text-xs font-medium text-red-700 mb-1">Error</p>
               <p className="text-xs text-red-600 font-mono">{step.error}</p>
 
-              {step.aiExplanation && (
+              {step.error && (
                 <div className="mt-3">
                   {!showExplanation ? (
                     <button
-                      onClick={(e) => { e.stopPropagation(); setShowExplanation(true); }}
+                      onClick={handleExplain}
                       className="flex items-center gap-1.5 text-xs text-blue-600 hover:text-blue-700 font-medium"
                     >
                       <Lightbulb size={12} />
@@ -232,7 +161,17 @@ function StepRow({ step }: { step: StepLog }) {
                         <Brain size={12} />
                         AI Explanation
                       </div>
-                      <p className="text-xs text-blue-800 leading-relaxed">{step.aiExplanation}</p>
+                      {debugging ? (
+                        <p className="text-xs text-blue-800 leading-relaxed">Generating explanation…</p>
+                      ) : debugError ? (
+                        <p className="text-xs text-red-700 leading-relaxed">{debugError}</p>
+                      ) : explanation ? (
+                        <p className="text-xs text-blue-800 leading-relaxed">{explanation}</p>
+                      ) : (
+                        <p className="text-xs text-blue-800 leading-relaxed">
+                          No explanation available for this step.
+                        </p>
+                      )}
                     </div>
                   )}
                 </div>
@@ -323,8 +262,39 @@ function RunCard({ run }: { run: RunLog }) {
 
 export default function ExecutionLogs() {
   const [filter, setFilter] = useState<"all" | "failed" | "running">("all");
+  const [runs, setRuns] = useState<RunLog[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  const filtered = MOCK_RUNS.filter((r) => {
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadRuns() {
+      setLoading(true);
+      setError(null);
+      try {
+        const fetchedRuns = await listRuns();
+        if (!cancelled) {
+          setRuns(fetchedRuns.map(toRunLog));
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setError(err instanceof Error ? err.message : "Failed to load execution logs");
+        }
+      } finally {
+        if (!cancelled) {
+          setLoading(false);
+        }
+      }
+    }
+
+    void loadRuns();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const filtered = runs.filter((r) => {
     if (filter === "failed") return r.status === "failed";
     if (filter === "running") return r.status === "running";
     return true;
@@ -337,12 +307,14 @@ export default function ExecutionLogs() {
         <div className="flex items-center gap-3">
           <h1 className="text-2xl font-bold text-gray-900">Execution Logs</h1>
           <span className="px-2 py-0.5 rounded-full bg-blue-50 text-blue-600 text-xs font-medium">
-            In Development
+            Live Data
           </span>
-          <span className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-green-100 text-green-700 text-xs font-medium">
-            <Radio size={10} className="animate-pulse" />
-            Live
-          </span>
+          {runs.some((run) => run.status === "running") ? (
+            <span className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-green-100 text-green-700 text-xs font-medium">
+              <Radio size={10} className="animate-pulse" />
+              Live
+            </span>
+          ) : null}
         </div>
         <p className="text-gray-500 text-sm mt-1">
           Step-by-step execution traces with AI-powered error explanations.
@@ -366,13 +338,26 @@ export default function ExecutionLogs() {
       </div>
 
       <div className="max-w-4xl mx-auto px-8 py-6 space-y-4">
+        {error ? (
+          <div className="rounded-xl border border-red-200 bg-red-50 px-5 py-4 text-sm text-red-700">
+            {error}
+          </div>
+        ) : null}
+        {loading ? (
+          <div className="flex items-center justify-center py-16 text-gray-500">
+            <RefreshCw size={18} className="animate-spin mr-2" />
+            Loading execution logs…
+          </div>
+        ) : null}
         {filtered.map((run) => (
           <RunCard key={run.id} run={run} />
         ))}
-        {filtered.length === 0 && (
+        {!loading && filtered.length === 0 && (
           <div className="text-center py-16 text-gray-400">
             <CheckCircle size={40} className="mx-auto mb-3 opacity-30" />
-            <p className="text-sm">No runs to show</p>
+            <p className="text-sm">
+              {runs.length === 0 ? "No execution logs are available yet." : "No runs match this filter."}
+            </p>
           </div>
         )}
       </div>

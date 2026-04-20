@@ -17,6 +17,7 @@ import { approvalStore } from "./engine/approvalStore";
 import llmConfigRoutes from "./llmConfig/llmConfigRoutes";
 import mcpRoutes from "./mcp/mcpRoutes";
 import memoryRoutes from "./memory/memoryRoutes";
+import controlPlaneRoutes from "./controlPlane/controlPlaneRoutes";
 import { llmConfigStore } from "./llmConfig/llmConfigStore";
 import { getProvider } from "./engine/llmProviders";
 import { parseFile } from "./engine/fileParser";
@@ -159,6 +160,7 @@ app.use("/api/mcp/servers", requireAuth, mcpRoutes);
 // Memory API — persistent context memory store for agents/workflows
 // ---------------------------------------------------------------------------
 app.use("/api/memory", requireAuth, memoryRoutes);
+app.use("/api/control-plane", requireAuth, controlPlaneRoutes);
 
 // ---------------------------------------------------------------------------
 // Auth API — identity endpoint for authenticated callers

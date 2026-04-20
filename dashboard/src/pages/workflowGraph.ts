@@ -15,6 +15,19 @@ export type EdgeValidationResult =
   | { valid: true }
   | { valid: false; reason: string };
 
+type XYPosition = {
+  x: number;
+  y: number;
+};
+
+type InsertStepAfterTargetInput = {
+  steps: WorkflowStep[];
+  targetStepId: string;
+  insertedStep: WorkflowStep;
+  gapY: number;
+  fallbackPosition: XYPosition;
+};
+
 const TRIGGER_KINDS: ReadonlySet<StepKind> = new Set(["trigger", "file_trigger"]);
 
 function getSerializedTargets(step: WorkflowStep): string[] | null {
@@ -32,6 +45,32 @@ function hasSerializedGraph(steps: WorkflowStep[]): boolean {
 
 function isTriggerKind(kind: StepKind): boolean {
   return TRIGGER_KINDS.has(kind);
+}
+
+function readStepPosition(step: WorkflowStep): XYPosition | null {
+  const candidate = step.config?.[STEP_POSITION_KEY];
+  if (
+    candidate &&
+    typeof candidate === "object" &&
+    "x" in candidate &&
+    "y" in candidate &&
+    typeof candidate.x === "number" &&
+    typeof candidate.y === "number"
+  ) {
+    return { x: candidate.x, y: candidate.y };
+  }
+
+  return null;
+}
+
+function writeStepPosition(step: WorkflowStep, position: XYPosition): WorkflowStep {
+  return {
+    ...step,
+    config: {
+      ...(step.config ?? {}),
+      [STEP_POSITION_KEY]: position,
+    },
+  };
 }
 
 export function buildDefaultEdge(source: string, target: string): Edge {
@@ -94,6 +133,46 @@ export function serializeEdgesToSteps(steps: WorkflowStep[], edges: Edge[]): Wor
       [STEP_NEXT_IDS_KEY]: outgoingBySource.get(step.id) ?? [],
     },
   }));
+}
+
+export function insertStepAfterTarget({
+  steps,
+  targetStepId,
+  insertedStep,
+  gapY,
+  fallbackPosition,
+}: InsertStepAfterTargetInput): WorkflowStep[] {
+  const targetIndex = steps.findIndex((step) => step.id === targetStepId);
+  if (targetIndex < 0) return steps;
+
+  const targetPosition = readStepPosition(steps[targetIndex]);
+  const insertedPosition = targetPosition
+    ? { x: targetPosition.x, y: targetPosition.y + gapY }
+    : fallbackPosition;
+
+  const nextSteps = [
+    ...steps.slice(0, targetIndex + 1),
+    writeStepPosition(insertedStep, insertedPosition),
+    ...steps.slice(targetIndex + 1).map((step) => {
+      const position = readStepPosition(step);
+      return position
+        ? writeStepPosition(step, { x: position.x, y: position.y + gapY })
+        : step;
+    }),
+  ];
+
+  const existingEdges = buildEdgesFromSteps(steps);
+  const outgoingTargets = existingEdges
+    .filter((edge) => edge.source === targetStepId)
+    .map((edge) => edge.target);
+  const nextEdges = existingEdges.filter((edge) => edge.source !== targetStepId);
+
+  nextEdges.push(buildDefaultEdge(targetStepId, insertedStep.id));
+  for (const targetId of outgoingTargets) {
+    nextEdges.push(buildDefaultEdge(insertedStep.id, targetId));
+  }
+
+  return serializeEdgesToSteps(nextSteps, nextEdges);
 }
 
 function createsCycle(

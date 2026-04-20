@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { WorkflowStep } from "../types/workflow";
 import {
   buildEdgesFromSteps,
+  insertStepAfterTarget,
   serializeEdgesToSteps,
   validateEdgeCandidate,
   validateGraphTopology,
@@ -88,5 +89,39 @@ describe("workflowGraph", () => {
     const disconnected = [makeStep("a", "trigger"), makeStep("b", "action"), makeStep("c", "output")];
     const disconnectedEdges = [{ id: "a-->b", source: "a", target: "b" }];
     expect(validateGraphTopology(disconnected, disconnectedEdges)).toMatch(/not reachable/i);
+  });
+
+  it("rewires the serialized successor when inserting after a target step", () => {
+    const trigger = {
+      ...makeStep("trigger", "trigger"),
+      config: { __uiPosition: { x: 80, y: 64 } },
+    };
+    const detour = {
+      ...makeStep("detour", "action"),
+      config: { __uiPosition: { x: 80, y: 254 } },
+    };
+    const llm = {
+      ...makeStep("llm", "llm"),
+      config: { __uiPosition: { x: 80, y: 444 } },
+    };
+    const serialized = serializeEdgesToSteps([trigger, detour, llm], [
+      { id: "trigger-->llm", source: "trigger", target: "llm" },
+    ]);
+
+    const inserted = insertStepAfterTarget({
+      steps: serialized,
+      targetStepId: "trigger",
+      insertedStep: makeStep("notify", "action", "Send Slack Notification"),
+      gapY: 190,
+      fallbackPosition: { x: 80, y: 254 },
+    });
+
+    expect(inserted.map((step) => step.id)).toEqual(["trigger", "notify", "detour", "llm"]);
+    expect(inserted[0].config?.__uiNextStepIds).toEqual(["notify"]);
+    expect(inserted[1].config?.__uiNextStepIds).toEqual(["llm"]);
+    expect(inserted[3].config?.__uiNextStepIds).toEqual([]);
+    expect(inserted[1].config?.__uiPosition).toEqual({ x: 80, y: 254 });
+    expect(inserted[2].config?.__uiPosition).toEqual({ x: 80, y: 444 });
+    expect(inserted[3].config?.__uiPosition).toEqual({ x: 80, y: 634 });
   });
 });

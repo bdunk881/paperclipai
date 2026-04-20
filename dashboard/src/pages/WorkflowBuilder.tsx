@@ -50,6 +50,7 @@ import type { WorkflowStep, StepKind, WorkflowTemplate } from "../types/workflow
 import {
   buildDefaultEdge,
   buildEdgesFromSteps,
+  insertStepAfterTarget,
   serializeEdgesToSteps,
   STEP_POSITION_KEY,
   validateEdgeCandidate,
@@ -1665,15 +1666,23 @@ function applyCopilotProposal(
   if (!proposal.targetStepId) {
     return { ...template, steps: [...template.steps, ...proposal.steps] };
   }
-
-  const targetIndex = template.steps.findIndex((step) => step.id === proposal.targetStepId);
-  if (targetIndex === -1) {
-    return { ...template, steps: [...template.steps, ...proposal.steps] };
+  if (proposal.steps.length === 0) {
+    return template;
   }
 
-  const nextSteps = [...template.steps];
-  nextSteps.splice(targetIndex + 1, 0, ...proposal.steps);
-  return { ...template, steps: nextSteps };
+  return {
+    ...template,
+    steps: insertStepAfterTarget({
+      steps: template.steps,
+      targetStepId: proposal.targetStepId,
+      insertedStep: proposal.steps[0],
+      gapY: FLOW_STEP_GAP_Y,
+      fallbackPosition: {
+        x: FLOW_STEP_X,
+        y: FLOW_STEP_Y + (template.steps.length + 1) * FLOW_STEP_GAP_Y,
+      },
+    }),
+  };
 }
 
 // ---------------------------------------------------------------------------

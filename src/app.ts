@@ -27,6 +27,7 @@ import {
 } from "./engine/classificationLog";
 import { requireAuth, AuthenticatedRequest } from "./auth/authMiddleware";
 import stripeWebhookRoutes from "./billing/stripeWebhook";
+import apolloWebhookRoutes from "./integrations/apollo-attio/webhookRoute";
 import checkoutRoutes from "./billing/checkoutRoutes";
 import subscriptionRoutes from "./billing/subscriptionRoutes";
 import slackRoutes, { slackWebhookRouter } from "./integrations/slack/routes";
@@ -172,6 +173,11 @@ const upload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 50 * 1024 * 1024 },
 });
+
+// ---------------------------------------------------------------------------
+// Apollo webhook — receives Apollo email reply events → syncs to Attio
+// ---------------------------------------------------------------------------
+app.use("/api/webhooks/apollo", apolloWebhookRoutes);
 
 // ---------------------------------------------------------------------------
 // Billing API — Stripe checkout sessions + subscription lifecycle

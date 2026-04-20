@@ -6,6 +6,7 @@ import type { WorkflowRun } from "../types/workflow";
 import clsx from "clsx";
 import { EmptyState, ErrorState, LoadingState } from "../components/UiStates";
 import { useAuth } from "../context/AuthContext";
+import { RunAuditSidebar } from "../components/RunAuditSidebar";
 
 const PAGE_SIZE = 5;
 
@@ -49,7 +50,7 @@ export default function RunHistory() {
     dir: "desc",
   });
   const [page, setPage] = useState(1);
-  const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [selectedRun, setSelectedRun] = useState<WorkflowRun | null>(null);
 
   const filtered = useMemo(() => {
     let runs: WorkflowRun[] = [...allRuns];
@@ -313,17 +314,9 @@ export default function RunHistory() {
                     )
                   : null;
                 const successSteps = run.stepResults.filter((s) => s.status === "success").length;
-                const isExpanded = expandedId === run.id;
-
                 return (
                   <Fragment key={run.id}>
-                    <tr
-                      className={clsx(
-                        "cursor-pointer hover:bg-gray-50 transition-colors",
-                        isExpanded && "bg-blue-50/40"
-                      )}
-                      onClick={() => setExpandedId(isExpanded ? null : run.id)}
-                    >
+                    <tr className="hover:bg-gray-50 transition-colors">
                       <td className="px-5 py-3 font-mono text-xs text-gray-500">{run.id}</td>
                       <td className="px-5 py-3 font-medium text-gray-900 dark:text-gray-100">{run.templateName}</td>
                       <td className="px-5 py-3">
@@ -338,72 +331,18 @@ export default function RunHistory() {
                       <td className="px-5 py-3 text-gray-500">
                         {successSteps}/{run.stepResults.length}
                       </td>
-                      <td className="px-3 py-3 text-gray-400">
-                        {isExpanded ? <ChevronRight size={14} className="rotate-90" /> : <ChevronRight size={14} />}
+                      <td className="px-3 py-3 text-right">
+                        <button
+                          type="button"
+                          onClick={() => setSelectedRun(run)}
+                          className="inline-flex items-center gap-1 rounded-full border border-surface-700/20 bg-surface-900 px-3 py-1.5 text-xs font-medium text-surface-50 transition hover:border-brand-500/50 hover:text-white dark:bg-surface-950"
+                          aria-label={`Open run audit for ${run.templateName}`}
+                        >
+                          Audit view
+                          <ChevronRight size={14} />
+                        </button>
                       </td>
                     </tr>
-
-                    {isExpanded && (
-                      <tr>
-                        <td colSpan={7} className="px-5 py-4 bg-gray-50 border-t border-gray-100">
-                          <div className="space-y-2">
-                            {/* Input */}
-                            <div className="mb-3">
-                              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">
-                                Input
-                              </p>
-                              <pre className="text-xs bg-white border border-gray-200 rounded-lg p-3 overflow-x-auto text-gray-700">
-                                {JSON.stringify(run.input, null, 2)}
-                              </pre>
-                            </div>
-
-                            {run.error && (
-                              <div className="flex items-start gap-2 p-3 bg-red-50 rounded-lg text-sm text-red-700 mb-3">
-                                <span>{run.error}</span>
-                              </div>
-                            )}
-
-                            {/* Step results */}
-                            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
-                              Step Results
-                            </p>
-                            <div className="grid gap-2">
-                              {run.stepResults.map((step, idx) => (
-                                <div
-                                  key={step.stepId}
-                                  className="flex items-start gap-3 bg-white rounded-lg border border-gray-200 px-4 py-3"
-                                >
-                                  <span className="text-xs text-gray-400 w-4 shrink-0 mt-0.5">
-                                    {idx + 1}
-                                  </span>
-                                  <div className="flex-1 min-w-0">
-                                    <div className="flex items-center gap-2 mb-0.5">
-                                      <span className="text-sm font-medium text-gray-800">
-                                        {step.stepName}
-                                      </span>
-                                      <StatusBadge status={step.status} />
-                                      {step.durationMs > 0 && (
-                                        <span className="text-xs text-gray-400">
-                                          {step.durationMs}ms
-                                        </span>
-                                      )}
-                                    </div>
-                                    {step.error && (
-                                      <p className="text-xs text-red-600 mt-0.5">{step.error}</p>
-                                    )}
-                                    {Object.keys(step.output).length > 0 && (
-                                      <pre className="text-xs bg-gray-50 rounded p-2 mt-1 overflow-x-auto text-gray-600">
-                                        {JSON.stringify(step.output, null, 2)}
-                                      </pre>
-                                    )}
-                                  </div>
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-                        </td>
-                      </tr>
-                    )}
                   </Fragment>
                 );
               })}
@@ -450,6 +389,8 @@ export default function RunHistory() {
           </div>
         </div>
       )}
+
+      <RunAuditSidebar run={selectedRun} open={selectedRun !== null} onClose={() => setSelectedRun(null)} />
     </div>
   );
 }

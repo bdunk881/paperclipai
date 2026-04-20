@@ -11,10 +11,13 @@
     "test:coverage": "jest --coverage",
     "test:templates": "jest src/templates",
     "test:api": "jest src/api",
-    "test:engine": "jest src/engine"
+    "test:engine": "jest src/engine",
+    "health-report": "ts-node src/integrations/apollo-attio/health-metrics.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.82.0",
+    "@azure/identity": "^4.13.1",
+    "@azure/storage-blob": "^12.31.0",
     "@google/generative-ai": "^0.24.1",
     "@mistralai/mistralai": "^2.1.2",
     "@types/multer": "^2.1.0",

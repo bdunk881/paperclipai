@@ -61,6 +61,12 @@ The SWA workflow maps `VITE_AZURE_CIAM_CLIENT_ID` and `VITE_AZURE_CIAM_TENANT_SU
 - **Enforce branch protection:** run `enforce-branch-protection.yml` to require PR reviews plus CI gate(s) on `main`/`master`. Default required check is `Docker Build Check` with strict up-to-date enforcement.
 - **Rollback:** redeploy a previous image tag (backend) or follow `infra/runbooks/swa-dashboard-deploy.md` for dashboard DNS/rollback.
 
+## Infrastructure as Code
+
+| Component | Path | Tool |
+|-----------|------|------|
+| Blob Storage | `infra/storage/` | Terraform |
+
 ## DNS
 
 Configure DNS records to point to Azure per environment (dashboard uses SWA; landing uses Vercel).

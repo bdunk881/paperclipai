@@ -4,8 +4,8 @@
 
 AutoFlow is an open-source AI workflow automation platform. Spin up autonomous AI businesses in minutes — complete with agents, workflow templates, and revenue infrastructure.
 
-> **Live demo:** [autoflow.app/demo](https://autoflow.app/demo)
-> **Docs:** [docs.autoflow.app](https://docs.autoflow.app)
+> **Live demo:** [helloautoflow.com/demo](https://helloautoflow.com/demo)
+> **Docs:** [docs.helloautoflow.com](https://docs.helloautoflow.com)
 > **Product Hunt:** [producthunt.com/posts/autoflow](https://www.producthunt.com/posts/autoflow)
 
 ---
@@ -35,8 +35,8 @@ AutoFlow gives you a library of pre-built AI workflow templates that you can dep
 
 ```bash
 # Clone the repo
-git clone https://github.com/autoflow-hq/autoflow.git
-cd autoflow
+git clone https://github.com/bdunk881/paperclipai.git
+cd paperclipai
 
 # Install dependencies
 npm install
@@ -74,6 +74,7 @@ curl -X POST http://localhost:3000/api/runs \
 ### Run via Docker
 
 ```bash
+cp .env.local.example .env.local
 docker compose up
 ```
 
@@ -83,7 +84,7 @@ The API is available at `http://localhost:8000`.
 
 ## API Reference
 
-Full API docs at [docs.autoflow.app/api-reference](https://docs.autoflow.app/api-reference).
+Full API docs at [docs.helloautoflow.com/api-reference](https://docs.helloautoflow.com/api-reference).
 
 ### Core endpoints
 
@@ -135,6 +136,9 @@ AutoFlow backend is deployed on Azure; the dashboard is hosted on Vercel. See [`
 ### CI/CD
 
 Push to `main` → GitHub Actions builds Docker images → pushes to GHCR → deploys to Azure (backend) and Vercel (dashboard).
+
+Required GitHub Actions secret for backend test job:
+- `CI_POSTGRES_PASSWORD`
 
 ---
 
@@ -221,7 +225,7 @@ MIT — see [LICENSE](LICENSE).
 
 ## Links
 
-- **Website:** [autoflow.app](https://autoflow.app)
-- **Demo:** [autoflow.app/demo](https://autoflow.app/demo)
-- **Docs:** [docs.autoflow.app](https://docs.autoflow.app)
-- **Issues:** [github.com/autoflow-hq/autoflow/issues](https://github.com/autoflow-hq/autoflow/issues)
+- **Website:** [helloautoflow.com](https://helloautoflow.com)
+- **Demo:** [helloautoflow.com/demo](https://helloautoflow.com/demo)
+- **Docs:** [docs.helloautoflow.com](https://docs.helloautoflow.com)
+- **Issues:** [github.com/bdunk881/paperclipai/issues](https://github.com/bdunk881/paperclipai/issues)

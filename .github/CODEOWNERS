@@ -1,0 +1,11 @@
+# Auth-critical client configuration and context
+/dashboard/src/auth/ @bradduncan
+/dashboard/src/context/AuthContext.tsx @bradduncan
+
+# Auth-focused regression tests
+/dashboard/e2e/auth-regression.spec.ts @bradduncan
+/dashboard/e2e/auth.spec.ts @bradduncan
+/dashboard/e2e/preview-auth-smoke.spec.ts @bradduncan
+
+# CI auth gate definitions
+/.github/workflows/ci.yml @bradduncan

@@ -8,10 +8,10 @@ services:
     ports:
       - "8000:8000"
     environment:
-      DATABASE_URL: postgresql://autoflow:autoflow@postgres:5432/autoflow
+      DATABASE_URL: postgresql://autoflow:${POSTGRES_PASSWORD}@postgres:5432/autoflow
       REDIS_URL: redis://redis:6379
       ENV: development
-      SECRET_KEY: dev-secret-key-not-for-production
+      SECRET_KEY: ${SECRET_KEY}
     depends_on:
       postgres:
         condition: service_healthy
@@ -36,10 +36,8 @@ services:
     image: postgres:16-alpine
     environment:
       POSTGRES_USER: autoflow
-      POSTGRES_PASSWORD: autoflow
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       POSTGRES_DB: autoflow
-    ports:
-      - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -50,8 +48,6 @@ services:
 
   redis:
     image: redis:7-alpine
-    ports:
-      - "6379:6379"
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s

@@ -9,10 +9,10 @@ const SETTINGS_SECTIONS = [
     description: "Connect your own API keys for OpenAI, Anthropic, Gemini, and Mistral to use in workflows.",
   },
   {
-    to: "/settings/mcp-servers",
+    to: "/settings/integrations",
     icon: PlugZap,
-    title: "MCP Servers",
-    description: "Register Model Context Protocol servers to use as steps in your workflows.",
+    title: "Integrations",
+    description: "Register and manage integration servers to use as steps in your workflows.",
   },
   {
     to: "/settings/profile",
@@ -36,7 +36,7 @@ const SETTINGS_SECTIONS = [
     to: "/settings/api-keys",
     icon: Key,
     title: "API Keys",
-    description: "Generate and manage API keys for programmatic access to Alterflow.",
+    description: "Generate and manage API keys for programmatic access to AutoFlow.",
   },
 ];
 

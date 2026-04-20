@@ -1,15 +1,15 @@
-name: Deploy Dashboard to Vercel
+name: Deploy Landing Page to Vercel
 
 on:
   push:
     branches: [main, master]
     paths:
-      - "dashboard/**"
+      - "landing/**"
   workflow_dispatch:
 
 jobs:
   deploy:
-    name: Deploy to Vercel
+    name: Deploy Landing Page to Vercel
     runs-on: ubuntu-latest
     environment:
       name: production
@@ -22,26 +22,53 @@ jobs:
         with:
           node-version: 20
           cache: npm
-          cache-dependency-path: dashboard/package-lock.json
+          cache-dependency-path: landing/package-lock.json
 
       - name: Install dependencies
-        working-directory: dashboard
+        working-directory: landing
         run: npm ci
-
-      - name: Type-check
-        working-directory: dashboard
-        run: npm run type-check
 
       - name: Deploy to Vercel
         id: deploy
-        working-directory: dashboard
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
           VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
-          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_LANDING_PROJECT_ID }}
         run: |
           npx vercel pull --yes --environment=production --token=$VERCEL_TOKEN
-          npx vercel build --prod --token=$VERCEL_TOKEN
-          URL=$(npx vercel deploy --prebuilt --prod --token=$VERCEL_TOKEN)
+          URL=$(npx vercel deploy --prod --token=$VERCEL_TOKEN | tail -n 1 | tr -d '\r')
           echo "url=$URL" >> $GITHUB_OUTPUT
           echo "Deployed to: $URL"
+
+      - name: Smoke test landing routes
+        env:
+          DEPLOY_URL: ${{ steps.deploy.outputs.url }}
+        run: |
+          set -euo pipefail
+
+          BASE_URL="${DEPLOY_URL}"
+          root_status=$(curl -L -sS -o /dev/null -w "%{http_code}" "${DEPLOY_URL}/")
+          if [ "${root_status}" = "401" ]; then
+            BASE_URL="https://staging.helloautoflow.com"
+            echo "Deploy URL returned 401 (likely deployment protection). Falling back to ${BASE_URL} for smoke tests."
+          fi
+
+          ROUTES=(
+            "/"
+            "/demo"
+            "/blog"
+            "/privacy"
+            "/terms"
+            "/signup"
+            "/robots.txt"
+            "/sitemap.xml"
+          )
+
+          for route in "${ROUTES[@]}"; do
+            status=$(curl -L -sS -o /dev/null -w "%{http_code}" "${BASE_URL}${route}")
+            if [ "$status" != "200" ]; then
+              echo "::error::Route ${route} returned ${status} on ${BASE_URL}"
+              exit 1
+            fi
+            echo "OK ${route} -> ${status}"
+          done

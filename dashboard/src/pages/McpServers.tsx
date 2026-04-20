@@ -1,6 +1,22 @@
 import { useState, useEffect, useCallback } from "react";
 import { Link } from "react-router-dom";
-import { ArrowLeft, Plus, Trash2, PlugZap, RefreshCw, CheckCircle, XCircle, Loader2, ChevronDown, ChevronUp } from "lucide-react";
+import {
+  ArrowLeft,
+  Plus,
+  Trash2,
+  PlugZap,
+  RefreshCw,
+  CheckCircle,
+  XCircle,
+  Loader2,
+  ChevronDown,
+  ChevronUp,
+  CircleHelp,
+  X,
+} from "lucide-react";
+import { Tooltip } from "../components/Tooltip";
+import { useAuth } from "../context/AuthContext";
+import { ApiError, apiDelete, apiGet, apiPost } from "../api/settingsClient";
 
 interface McpServerPublic {
   id: string;
@@ -17,34 +33,8 @@ interface McpTool {
   description?: string;
 }
 
-const API_BASE = import.meta.env.VITE_API_URL ?? "http://localhost:3001";
-const HEADERS = { "Content-Type": "application/json", "X-User-Id": "demo-user" };
-
-async function apiGet<T>(path: string): Promise<T> {
-  const res = await fetch(`${API_BASE}${path}`, { headers: HEADERS });
-  if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
-  return res.json() as Promise<T>;
-}
-
-async function apiPost<T>(path: string, body: unknown): Promise<T> {
-  const res = await fetch(`${API_BASE}${path}`, {
-    method: "POST",
-    headers: HEADERS,
-    body: JSON.stringify(body),
-  });
-  if (!res.ok) {
-    const err = (await res.json().catch(() => ({ error: res.statusText }))) as { error?: string };
-    throw new Error(err.error ?? res.statusText);
-  }
-  return res.json() as Promise<T>;
-}
-
-async function apiDelete(path: string): Promise<void> {
-  const res = await fetch(`${API_BASE}${path}`, { method: "DELETE", headers: HEADERS });
-  if (!res.ok && res.status !== 204) throw new Error(`${res.status} ${res.statusText}`);
-}
-
 export default function McpServers() {
+  const { user } = useAuth();
   const [servers, setServers] = useState<McpServerPublic[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -57,38 +47,66 @@ export default function McpServers() {
   const [formAuthVal, setFormAuthVal] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
 
   // Per-server UI state
   const [testResults, setTestResults] = useState<Record<string, { ok: boolean; message: string } | "loading">>({});
   const [tools, setTools] = useState<Record<string, McpTool[] | "loading" | "error">>({});
   const [expandedTools, setExpandedTools] = useState<Record<string, boolean>>({});
+  const [showHelp, setShowHelp] = useState(false);
 
   const loadServers = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const data = await apiGet<{ servers: McpServerPublic[] }>("/api/mcp/servers");
+      const data = await apiGet<{ servers: McpServerPublic[] }>("/api/mcp/servers", user);
       setServers(data.servers);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to load servers");
+      if (e instanceof ApiError && e.status === 401) {
+        setError("Sign in to manage integrations.");
+      } else {
+        setError(e instanceof Error ? e.message : "Failed to load servers");
+      }
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [user]);
 
   useEffect(() => { void loadServers(); }, [loadServers]);
+
+  useEffect(() => {
+    if (!showHelp) return;
+
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") setShowHelp(false);
+    }
+
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    window.addEventListener("keydown", onKeyDown);
+
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener("keydown", onKeyDown);
+    };
+  }, [showHelp]);
 
   async function handleAdd(e: React.FormEvent) {
     e.preventDefault();
     setFormError(null);
+    setActionError(null);
     setSubmitting(true);
     try {
-      const server = await apiPost<McpServerPublic>("/api/mcp/servers", {
-        name: formName,
-        url: formUrl,
-        authHeaderKey: formAuthKey || undefined,
-        authHeaderValue: formAuthVal || undefined,
-      });
+      const server = await apiPost<McpServerPublic>(
+        "/api/mcp/servers",
+        {
+          name: formName,
+          url: formUrl,
+          authHeaderKey: formAuthKey || undefined,
+          authHeaderValue: formAuthVal || undefined,
+        },
+        user
+      );
       setServers((prev) => [...prev, server]);
       setFormName(""); setFormUrl(""); setFormAuthKey(""); setFormAuthVal("");
       setShowForm(false);
@@ -100,20 +118,21 @@ export default function McpServers() {
   }
 
   async function handleDelete(id: string) {
+    setActionError(null);
     try {
-      await apiDelete(`/api/mcp/servers/${id}`);
+      await apiDelete(`/api/mcp/servers/${id}`, user);
       setServers((prev) => prev.filter((s) => s.id !== id));
       setTestResults((prev) => { const n = { ...prev }; delete n[id]; return n; });
       setTools((prev) => { const n = { ...prev }; delete n[id]; return n; });
     } catch (e) {
-      alert(e instanceof Error ? e.message : "Delete failed");
+      setActionError(e instanceof Error ? e.message : "Delete failed");
     }
   }
 
   async function handleTest(id: string) {
     setTestResults((prev) => ({ ...prev, [id]: "loading" }));
     try {
-      const res = await apiPost<{ ok: boolean; message: string }>(`/api/mcp/servers/${id}/test`, {});
+      const res = await apiPost<{ ok: boolean; message: string }>(`/api/mcp/servers/${id}/test`, {}, user);
       setTestResults((prev) => ({ ...prev, [id]: res }));
     } catch (e) {
       setTestResults((prev) => ({
@@ -127,7 +146,7 @@ export default function McpServers() {
     setTools((prev) => ({ ...prev, [id]: "loading" }));
     setExpandedTools((prev) => ({ ...prev, [id]: true }));
     try {
-      const res = await apiGet<{ tools: McpTool[] }>(`/api/mcp/servers/${id}/tools`);
+      const res = await apiGet<{ tools: McpTool[] }>(`/api/mcp/servers/${id}/tools`, user);
       setTools((prev) => ({ ...prev, [id]: res.tools }));
     } catch {
       setTools((prev) => ({ ...prev, [id]: "error" }));
@@ -143,25 +162,36 @@ export default function McpServers() {
         </Link>
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-bold text-gray-900">MCP Server Registry</h1>
+            <h1 className="text-2xl font-bold text-gray-900">Integration Registry</h1>
             <p className="text-gray-500 text-sm mt-1">
-              Register custom MCP servers to use in workflow steps.
+              Register custom integration servers to use in workflow steps.
             </p>
           </div>
-          <button
-            onClick={() => setShowForm((v) => !v)}
-            className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition"
-          >
-            <Plus size={14} />
-            Add Server
-          </button>
+          <div className="flex items-center gap-2">
+            <Tooltip content="Read setup tips and connection troubleshooting">
+              <button
+                onClick={() => setShowHelp(true)}
+                className="flex items-center gap-2 px-3 py-2 border border-gray-200 bg-white text-sm font-medium text-gray-700 rounded-lg hover:bg-gray-50 transition"
+              >
+                <CircleHelp size={14} />
+                Guidance
+              </button>
+            </Tooltip>
+            <button
+              onClick={() => setShowForm((v) => !v)}
+              className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition"
+            >
+              <Plus size={14} />
+              Add Integration
+            </button>
+          </div>
         </div>
       </div>
 
       {/* Add-server form */}
       {showForm && (
         <form onSubmit={(e) => void handleAdd(e)} className="bg-white border border-gray-200 rounded-xl p-6 mb-6 space-y-4">
-          <h2 className="font-semibold text-gray-900 text-sm">New MCP Server</h2>
+          <h2 className="font-semibold text-gray-900 text-sm">New Integration</h2>
 
           {formError && (
             <p className="text-xs text-red-600 bg-red-50 border border-red-200 rounded px-3 py-2">{formError}</p>
@@ -173,7 +203,7 @@ export default function McpServers() {
               <input
                 required
                 className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                placeholder="My MCP Server"
+                placeholder="My Integration"
                 value={formName}
                 onChange={(e) => setFormName(e.target.value)}
               />
@@ -219,7 +249,7 @@ export default function McpServers() {
               className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 disabled:opacity-50 transition"
             >
               {submitting ? <Loader2 size={14} className="animate-spin" /> : <Plus size={14} />}
-              {submitting ? "Adding…" : "Add Server"}
+              {submitting ? "Adding…" : "Add Integration"}
             </button>
             <button
               type="button"
@@ -230,6 +260,11 @@ export default function McpServers() {
             </button>
           </div>
         </form>
+      )}
+      {actionError && (
+        <p className="mb-4 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+          {actionError}
+        </p>
       )}
 
       {/* Server list */}
@@ -242,8 +277,8 @@ export default function McpServers() {
       ) : servers.length === 0 ? (
         <div className="text-center py-16 text-gray-400 border-2 border-dashed border-gray-200 rounded-xl">
           <PlugZap size={36} className="mx-auto mb-3 opacity-30" />
-          <p className="text-sm font-medium">No servers registered</p>
-          <p className="text-xs mt-1">Add an MCP server to use it in workflow steps.</p>
+          <p className="text-sm font-medium">No integrations registered</p>
+          <p className="text-xs mt-1">Add an integration server to use it in workflow steps.</p>
         </div>
       ) : (
         <div className="space-y-3">
@@ -273,6 +308,8 @@ export default function McpServers() {
                     <button
                       onClick={() => void handleDelete(server.id)}
                       className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition"
+                      title="Delete integration"
+                      aria-label={`Delete ${server.name}`}
                     >
                       <Trash2 size={14} />
                     </button>
@@ -323,6 +360,7 @@ export default function McpServers() {
                     onClick={() => void handleTest(server.id)}
                     disabled={testResult === "loading"}
                     className="flex items-center gap-1.5 px-3 py-1.5 text-xs border border-gray-200 rounded-lg text-gray-600 hover:bg-gray-50 disabled:opacity-50 transition"
+                    title="Verify connectivity and authentication"
                   >
                     {testResult === "loading"
                       ? <Loader2 size={12} className="animate-spin" />
@@ -338,6 +376,7 @@ export default function McpServers() {
                       }
                     }}
                     className="flex items-center gap-1.5 px-3 py-1.5 text-xs border border-gray-200 rounded-lg text-gray-600 hover:bg-gray-50 transition"
+                    title="Discover available integration tools on this server"
                   >
                     {isExpanded ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
                     {isExpanded ? "Hide tools" : "Discover tools"}
@@ -346,6 +385,50 @@ export default function McpServers() {
               </div>
             );
           })}
+        </div>
+      )}
+
+      {showHelp && (
+        <div className="fixed inset-0 z-50 flex justify-end bg-gray-950/35">
+          <button className="flex-1" onClick={() => setShowHelp(false)} aria-label="Close guidance" />
+          <aside
+            role="dialog"
+            aria-modal="true"
+            aria-label="Integration setup guidance"
+            className="w-full max-w-md overflow-y-auto border-l border-gray-200 bg-white p-6 shadow-xl"
+          >
+            <div className="mb-5 flex items-start justify-between gap-3">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-wide text-blue-600">Integration setup help</p>
+                <h2 className="mt-1 text-lg font-semibold text-gray-900">Connect integrations quickly</h2>
+              </div>
+              <button
+                onClick={() => setShowHelp(false)}
+                className="rounded-md p-1.5 text-gray-500 transition hover:bg-gray-100 hover:text-gray-800"
+                aria-label="Close guidance panel"
+              >
+                <X size={16} />
+              </button>
+            </div>
+            <div className="space-y-4 text-sm text-gray-700">
+              <section className="rounded-lg border border-gray-200 bg-gray-50 p-4">
+                <h3 className="font-medium text-gray-900">Checklist</h3>
+                <ul className="mt-2 space-y-1 text-gray-600">
+                  <li>Use the exact integration server base URL (include protocol).</li>
+                  <li>Set auth header key/value if the endpoint is protected.</li>
+                  <li>Run Test connection before discovering tools.</li>
+                </ul>
+              </section>
+              <section className="rounded-lg border border-gray-200 p-4">
+                <h3 className="font-medium text-gray-900">Common failures</h3>
+                <ul className="mt-2 space-y-1 text-gray-600">
+                  <li>401/403 means auth header is missing or invalid.</li>
+                  <li>404 usually means the server URL path is incorrect.</li>
+                  <li>Timeouts can indicate firewall or DNS restrictions.</li>
+                </ul>
+              </section>
+            </div>
+          </aside>
         </div>
       )}
     </div>

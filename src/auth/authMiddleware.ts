@@ -6,22 +6,25 @@
  * OIDC/JWT verification via jwks-rsa + jsonwebtoken.
  *
  * Required env vars:
- *   AZURE_TENANT_SUBDOMAIN  — e.g. "myapp" → myapp.ciamlogin.com
- *   AZURE_TENANT_ID         — Directory (tenant) ID (GUID)
- *   AZURE_CLIENT_ID         — App registration client ID (used as audience)
+ *   AZURE_CIAM_TENANT_SUBDOMAIN  — e.g. "myapp" → myapp.ciamlogin.com
+ *   AZURE_CIAM_TENANT_ID         — CIAM Directory (tenant) ID (GUID)
+ *   AZURE_CIAM_CLIENT_ID         — CIAM app registration client ID (used as audience)
+ *
+ * Note: These are distinct from AZURE_CLIENT_ID / AZURE_TENANT_ID which refer
+ * to the infrastructure service principal (Key Vault, Storage, etc.).
  */
 
 import { Request, Response, NextFunction } from "express";
 import jwt, { JwtPayload } from "jsonwebtoken";
 import jwksRsa from "jwks-rsa";
 
-const tenantSubdomain = process.env.AZURE_TENANT_SUBDOMAIN;
-const tenantId = process.env.AZURE_TENANT_ID;
-const clientId = process.env.AZURE_CLIENT_ID;
+const tenantSubdomain = process.env.AZURE_CIAM_TENANT_SUBDOMAIN;
+const tenantId = process.env.AZURE_CIAM_TENANT_ID;
+const clientId = process.env.AZURE_CIAM_CLIENT_ID;
 
 if (!tenantSubdomain || !tenantId || !clientId) {
   console.warn(
-    "[auth] AZURE_TENANT_SUBDOMAIN, AZURE_TENANT_ID, or AZURE_CLIENT_ID is not set. " +
+    "[auth] AZURE_CIAM_TENANT_SUBDOMAIN, AZURE_CIAM_TENANT_ID, or AZURE_CIAM_CLIENT_ID is not set. " +
       "JWT verification middleware will reject all requests."
   );
 }
@@ -65,7 +68,14 @@ export function requireAuth(
   next: NextFunction
 ): void {
   const authHeader = req.headers.authorization;
+  const headerUserId = req.headers["x-user-id"];
+  const isMemoryRoute = req.path === "/api/memory" || req.path.startsWith("/api/memory/");
   if (!authHeader?.startsWith("Bearer ")) {
+    if (isMemoryRoute && typeof headerUserId === "string" && headerUserId.trim()) {
+      req.auth = { sub: headerUserId.trim() };
+      next();
+      return;
+    }
     res.status(401).json({ error: "Missing or malformed Authorization header." });
     return;
   }

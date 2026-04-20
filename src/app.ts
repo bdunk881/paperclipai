@@ -5,7 +5,10 @@
  */
 
 import express from "express";
+import rateLimit from "express-rate-limit";
 import multer from "multer";
+import cors from "cors";
+import helmet from "helmet";
 import { WORKFLOW_TEMPLATES, getTemplate, getTemplatesByCategory } from "./templates";
 import { WorkflowTemplate, WorkflowStep } from "./types/workflow";
 import { workflowEngine } from "./engine/WorkflowEngine";
@@ -18,18 +21,150 @@ import { llmConfigStore } from "./llmConfig/llmConfigStore";
 import { getProvider } from "./engine/llmProviders";
 import { parseFile } from "./engine/fileParser";
 import { resolveModelForTier } from "./engine/llmRouter";
+import {
+  getClassificationDecisionLogCapacity,
+  listClassificationDecisions,
+} from "./engine/classificationLog";
 import { requireAuth, AuthenticatedRequest } from "./auth/authMiddleware";
 import stripeWebhookRoutes from "./billing/stripeWebhook";
+import apolloWebhookRoutes from "./integrations/apollo-attio/webhookRoute";
 import checkoutRoutes from "./billing/checkoutRoutes";
 import subscriptionRoutes from "./billing/subscriptionRoutes";
+import slackRoutes, { slackWebhookRouter } from "./integrations/slack/routes";
+import shopifyRoutes, { shopifyWebhookRouter } from "./integrations/shopify/routes";
+import docuSignRoutes, { docuSignWebhookRouter } from "./integrations/docusign/routes";
+import linearRoutes, { linearWebhookRouter } from "./integrations/linear/routes";
+import teamsRoutes, { teamsWebhookRouter } from "./integrations/teams/routes";
+import posthogRoutes, { posthogWebhookRouter } from "./integrations/posthog/routes";
+import intercomRoutes, { intercomWebhookRouter } from "./integrations/intercom/routes";
+import datadogAzureMonitorRoutes, {
+  datadogAzureMonitorWebhookRouter,
+} from "./integrations/datadog-azure-monitor/routes";
+import agentCatalogRoutes from "./integrations/agent-catalog/routes";
+import oauthBridgeRoutes from "./integrations/oauthBridgeRoutes";
+import googleWorkspaceConnectorRoutes from "./connectors/google-workspace/routes";
+import googleWorkspaceWebhookRoutes from "./connectors/google-workspace/webhookRoutes";
 
 const app = express();
 
+function getAllowedOrigins(): string[] {
+  const raw = process.env.ALLOWED_ORIGINS;
+  if (!raw) {
+    return [];
+  }
+
+  return raw
+    .split(",")
+    .map((origin) => origin.trim())
+    .filter((origin) => origin.length > 0 && origin !== "*");
+}
+
+const allowedOrigins = new Set(getAllowedOrigins());
+const corsOptions: cors.CorsOptions = {
+  credentials: true,
+  origin: (origin, callback) => {
+    if (!origin) {
+      callback(null, true);
+      return;
+    }
+    callback(null, allowedOrigins.has(origin));
+  },
+};
+
+app.use(helmet());
+app.use(cors(corsOptions));
+
+function getAuthenticatedUserId(req: express.Request): string | null {
+  const authReq = req as AuthenticatedRequest;
+  const userId = authReq.auth?.sub;
+  return typeof userId === "string" && userId.trim() ? userId.trim() : null;
+}
+
+function getHeaderUserId(req: express.Request): string | null {
+  const userId = req.headers["x-user-id"];
+  return typeof userId === "string" && userId.trim() ? userId.trim() : null;
+}
+
+function getRateLimitKey(req: express.Request): string {
+  const userId = getAuthenticatedUserId(req) ?? getHeaderUserId(req);
+  if (userId) {
+    return `user:${userId}`;
+  }
+  return `ip:${req.ip || req.socket.remoteAddress || "unknown"}`;
+}
+
+function createRateLimitHandler(windowMs: number) {
+  return (req: express.Request, res: express.Response) => {
+    const resetTime = (req as { rateLimit?: { resetTime?: Date } }).rateLimit?.resetTime;
+    const resetMs = resetTime ? resetTime.getTime() - Date.now() : windowMs;
+    const retryAfterSeconds = Math.max(1, Math.ceil(resetMs / 1000));
+    res.setHeader("Retry-After", String(retryAfterSeconds));
+    res.status(429).json({ error: "Too Many Requests" });
+  };
+}
+
+const generalApiRateLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  limit: 100,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: getRateLimitKey,
+  handler: createRateLimitHandler(60 * 1000),
+});
+
+const webhookRateLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  limit: 60,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => `ip:${req.ip || req.socket.remoteAddress || "unknown"}`,
+  handler: createRateLimitHandler(60 * 1000),
+});
+
+const llmEndpointRateLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  limit: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: getRateLimitKey,
+  handler: createRateLimitHandler(60 * 60 * 1000),
+});
+
+const billingMutationRateLimiter = rateLimit({
+  windowMs: 24 * 60 * 60 * 1000,
+  limit: 5,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: getRateLimitKey,
+  skip: (req) => !["POST", "PUT", "PATCH", "DELETE"].includes(req.method),
+  skipFailedRequests: true,
+  handler: createRateLimitHandler(24 * 60 * 60 * 1000),
+});
+
+app.use("/api", generalApiRateLimiter);
+app.use("/api/webhooks", webhookRateLimiter);
 // ---------------------------------------------------------------------------
 // Stripe webhook — must be mounted BEFORE express.json() so the raw body
 // is available for signature verification
 // ---------------------------------------------------------------------------
 app.use("/api/webhooks/stripe", express.raw({ type: "application/json" }), stripeWebhookRoutes);
+// Slack webhook — mounted before express.json() for signature verification
+app.use("/api/webhooks/slack", slackWebhookRouter);
+// Shopify webhook — mounted before express.json() for signature verification
+app.use("/api/webhooks/shopify", shopifyWebhookRouter);
+// DocuSign webhook — mounted before express.json() for signature verification
+app.use("/api/webhooks/docusign", docuSignWebhookRouter);
+// Linear webhook — mounted before express.json() for signature verification
+app.use("/api/webhooks/linear", linearWebhookRouter);
+// Microsoft Teams webhook — mounted before express.json() for signature verification
+app.use("/api/webhooks/teams", teamsWebhookRouter);
+// PostHog webhook — mounted before express.json() for signature verification
+app.use("/api/webhooks/posthog", posthogWebhookRouter);
+// Intercom webhook — mounted before express.json() for signature verification
+app.use("/api/webhooks/intercom", intercomWebhookRouter);
+// Datadog + Azure Monitor webhook — mounted before express.json() for signature verification
+app.use("/api/webhooks/datadog-azure-monitor", datadogAzureMonitorWebhookRouter);
+app.use("/api/connectors/google-workspace", googleWorkspaceWebhookRoutes);
 
 app.use(express.json());
 
@@ -40,25 +175,43 @@ const upload = multer({
 });
 
 // ---------------------------------------------------------------------------
+// Apollo webhook — receives Apollo email reply events → syncs to Attio
+// ---------------------------------------------------------------------------
+app.use("/api/webhooks/apollo", apolloWebhookRoutes);
+
+// ---------------------------------------------------------------------------
 // Billing API — Stripe checkout sessions + subscription lifecycle
 // ---------------------------------------------------------------------------
-app.use("/api/billing/checkout", checkoutRoutes);
-app.use("/api/billing/subscription", subscriptionRoutes);
+// Checkout is intentionally public so unauthenticated users can start paid signup from pricing pages.
+// Downstream webhook processing still reconciles subscription ownership via metadata/email.
+app.use("/api/billing/checkout", billingMutationRateLimiter, checkoutRoutes);
+app.use("/api/billing/subscription", requireAuth, billingMutationRateLimiter, subscriptionRoutes);
 
 // ---------------------------------------------------------------------------
 // LLM Config API — BYOLLM provider credentials
 // ---------------------------------------------------------------------------
-app.use("/api/llm-configs", llmConfigRoutes);
+app.use("/api/llm-configs", requireAuth, llmConfigRoutes);
 
 // ---------------------------------------------------------------------------
 // MCP Registry API — register and discover MCP server connections
 // ---------------------------------------------------------------------------
-app.use("/api/mcp/servers", mcpRoutes);
+app.use("/api/mcp/servers", requireAuth, mcpRoutes);
 
 // ---------------------------------------------------------------------------
 // Memory API — persistent context memory store for agents/workflows
 // ---------------------------------------------------------------------------
-app.use("/api/memory", memoryRoutes);
+app.use("/api/memory", requireAuth, memoryRoutes);
+app.use("/api/integrations", oauthBridgeRoutes);
+app.use("/api/integrations/slack", slackRoutes);
+app.use("/api/integrations/shopify", shopifyRoutes);
+app.use("/api/integrations/docusign", docuSignRoutes);
+app.use("/api/integrations/linear", linearRoutes);
+app.use("/api/integrations/teams", teamsRoutes);
+app.use("/api/integrations/posthog", posthogRoutes);
+app.use("/api/integrations/intercom", intercomRoutes);
+app.use("/api/integrations/datadog-azure-monitor", datadogAzureMonitorRoutes);
+app.use("/api/integrations/agent-catalog", agentCatalogRoutes);
+app.use("/api/connectors/google-workspace", googleWorkspaceConnectorRoutes);
 
 // ---------------------------------------------------------------------------
 // Auth API — identity endpoint for authenticated callers
@@ -130,7 +283,7 @@ app.get("/api/templates/:id/sample", (req, res) => {
  * Body: { templateId, input, config? }
  * Returns the new run (status=pending) immediately; execution is async.
  */
-app.post("/api/runs", (req, res) => {
+app.post("/api/runs", requireAuth, llmEndpointRateLimiter, (req: AuthenticatedRequest, res) => {
   const { templateId, input, config } = req.body as {
     templateId?: string;
     input?: Record<string, unknown>;
@@ -150,20 +303,20 @@ app.post("/api/runs", (req, res) => {
     return;
   }
 
-  const userId = req.headers["x-user-id"];
-  const run = workflowEngine.startRun(template, input ?? {}, config, typeof userId === "string" ? userId : undefined);
+  const userId = req.auth?.sub;
+  const run = workflowEngine.startRun(template, input ?? {}, config, userId);
   res.status(202).json(run);
 });
 
 /** List all runs, optionally filtered by templateId */
-app.get("/api/runs", (req, res) => {
+app.get("/api/runs", requireAuth, (req, res) => {
   const { templateId } = req.query;
   const runs = runStore.list(typeof templateId === "string" ? templateId : undefined);
   res.json({ runs, total: runs.length });
 });
 
 /** Get a single run by ID */
-app.get("/api/runs/:id", (req, res) => {
+app.get("/api/runs/:id", requireAuth, (req, res) => {
   const run = runStore.get(req.params.id);
   if (!run) {
     res.status(404).json({ error: `Run not found: ${req.params.id}` });
@@ -173,19 +326,32 @@ app.get("/api/runs/:id", (req, res) => {
 });
 
 // ---------------------------------------------------------------------------
+// Routing analytics API — recent classifier decisions for dashboarding
+// ---------------------------------------------------------------------------
+
+app.get("/api/analytics/routing-decisions", requireAuth, (_req, res) => {
+  const decisions = listClassificationDecisions();
+  res.json({
+    decisions,
+    total: decisions.length,
+    capacity: getClassificationDecisionLogCapacity(),
+  });
+});
+
+// ---------------------------------------------------------------------------
 // File-triggered runs — multipart upload → parse → start run
 // ---------------------------------------------------------------------------
 
 /**
  * POST /api/runs/file
  * Multipart body: { templateId: string, file: <binary> }
- * Headers: X-User-Id (optional, forwarded to run engine)
+ * Uses the authenticated JWT subject as the run user.
  *
  * Parses the uploaded file (PDF/image/audio/text) into text content, then
  * starts a workflow run with { content, mimeType, filename } injected as input.
  * Returns the created run (status=pending).
  */
-app.post("/api/runs/file", upload.single("file"), async (req, res) => {
+app.post("/api/runs/file", requireAuth, upload.single("file"), async (req: AuthenticatedRequest, res) => {
   const { templateId } = req.body as { templateId?: string };
 
   if (!templateId) {
@@ -207,7 +373,7 @@ app.post("/api/runs/file", upload.single("file"), async (req, res) => {
   }
 
   // Resolve an OpenAI key from the user's default LLM config (for vision/Whisper)
-  const userId = typeof req.headers["x-user-id"] === "string" ? req.headers["x-user-id"] : undefined;
+  const userId = req.auth?.sub;
   let openaiApiKey: string | undefined;
   if (userId) {
     const defaultConfig = llmConfigStore.getDecryptedDefault(userId);
@@ -268,10 +434,10 @@ Rules:
 /**
  * POST /api/workflows/generate
  * Body: { description: string, llmConfigId?: string }
- * Headers: X-User-Id (required to resolve the user's LLM config)
+ * Uses the authenticated JWT subject to resolve the user's LLM config.
  * Returns: { steps: WorkflowStep[] }
  */
-app.post("/api/workflows/generate", async (req, res) => {
+app.post("/api/workflows/generate", requireAuth, llmEndpointRateLimiter, async (req: AuthenticatedRequest, res) => {
   const { description, llmConfigId } = req.body as {
     description?: unknown;
     llmConfigId?: unknown;
@@ -282,9 +448,9 @@ app.post("/api/workflows/generate", async (req, res) => {
     return;
   }
 
-  const userId = req.headers["x-user-id"];
-  if (typeof userId !== "string" || !userId.trim()) {
-    res.status(401).json({ error: "X-User-Id header is required to resolve LLM configuration" });
+  const userId = req.auth?.sub;
+  if (!userId) {
+    res.status(401).json({ error: "Authenticated user is required to resolve LLM configuration" });
     return;
   }
 

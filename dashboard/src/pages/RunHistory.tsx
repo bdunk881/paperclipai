@@ -4,6 +4,8 @@ import { listRuns, listTemplates, type TemplateSummary } from "../api/client";
 import { StatusBadge } from "../components/StatusBadge";
 import type { WorkflowRun } from "../types/workflow";
 import clsx from "clsx";
+import { EmptyState, ErrorState, LoadingState } from "../components/UiStates";
+import { useAuth } from "../context/AuthContext";
 
 const PAGE_SIZE = 5;
 
@@ -13,17 +15,34 @@ type SortDir = "asc" | "desc";
 const ALL_STATUSES = ["pending", "running", "completed", "failed", "escalated"] as const;
 
 export default function RunHistory() {
+  const { getAccessToken } = useAuth();
   const [allRuns, setAllRuns] = useState<WorkflowRun[]>([]);
   const [templates, setTemplates] = useState<TemplateSummary[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("");
   const [templateFilter, setTemplateFilter] = useState<string>("");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
 
+  async function loadData() {
+    setLoading(true);
+    setLoadError(null);
+    try {
+      const accessToken = await getAccessToken() ?? undefined;
+      const [runs, fetchedTemplates] = await Promise.all([listRuns(undefined, accessToken), listTemplates()]);
+      setAllRuns(runs);
+      setTemplates(fetchedTemplates);
+    } catch (e) {
+      setLoadError(e instanceof Error ? e.message : "Failed to load run history");
+    } finally {
+      setLoading(false);
+    }
+  }
+
   useEffect(() => {
-    listRuns().then(setAllRuns).catch(console.error);
-    listTemplates().then(setTemplates).catch(console.error);
+    void loadData();
   }, []);
   const [sort, setSort] = useState<{ field: SortField; dir: SortDir }>({
     field: "startedAt",
@@ -101,11 +120,33 @@ export default function RunHistory() {
 
   const hasFilters = search || statusFilter || templateFilter || dateFrom || dateTo;
 
+  if (loading) {
+    return (
+      <div className="p-8">
+        <LoadingState label="Loading run history..." />
+      </div>
+    );
+  }
+
+  if (loadError) {
+    return (
+      <div className="p-8">
+        <ErrorState
+          title="Run history unavailable"
+          message={loadError}
+          onRetry={() => {
+            void loadData();
+          }}
+        />
+      </div>
+    );
+  }
+
   return (
     <div className="p-8">
       {/* Header */}
       <div className="mb-8">
-        <h1 className="text-2xl font-bold text-gray-900">Run History</h1>
+        <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">Run History</h1>
         <p className="text-gray-500 mt-1 text-sm">
           All workflow runs — {allRuns.length} total
         </p>
@@ -226,7 +267,18 @@ export default function RunHistory() {
       {/* Table */}
       <div className="bg-white rounded-xl border border-gray-200 overflow-hidden mb-5">
         {pageRuns.length === 0 ? (
-          <div className="p-12 text-center text-gray-400 text-sm">No runs to display.</div>
+          <div className="p-5">
+            <EmptyState
+              title={hasFilters ? "No runs match your filters" : "No runs yet"}
+              description={
+                hasFilters
+                  ? "Try clearing filters or choosing a wider date range."
+                  : "Run your first workflow to populate history and step-level details."
+              }
+              ctaLabel={hasFilters ? undefined : "Create and run a workflow"}
+              ctaTo={hasFilters ? undefined : "/builder"}
+            />
+          </div>
         ) : (
           <table className="w-full text-sm">
             <thead className="bg-gray-50 border-b border-gray-200">
@@ -273,7 +325,7 @@ export default function RunHistory() {
                       onClick={() => setExpandedId(isExpanded ? null : run.id)}
                     >
                       <td className="px-5 py-3 font-mono text-xs text-gray-500">{run.id}</td>
-                      <td className="px-5 py-3 font-medium text-gray-900">{run.templateName}</td>
+                      <td className="px-5 py-3 font-medium text-gray-900 dark:text-gray-100">{run.templateName}</td>
                       <td className="px-5 py-3">
                         <StatusBadge status={run.status} />
                       </td>

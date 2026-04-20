@@ -1,0 +1,327 @@
+/**
+ * API contract tests for uncovered app.ts routes:
+ * - GET/POST /api/approvals
+ * - POST /api/workflows/generate
+ * - POST /api/runs/file
+ */
+
+jest.mock("./engine/llmProviders", () => ({
+  getProvider: jest.fn(),
+}));
+
+// Bypass JWT verification in unit tests — inject a synthetic auth principal
+jest.mock("./auth/authMiddleware", () => ({
+  requireAuth: (req: Record<string, unknown>, _res: unknown, next: () => void) => {
+    req.auth = { sub: "test-user-id", email: "test@example.com" };
+    next();
+  },
+}));
+
+import request from "supertest";
+import app from "./app";
+import { approvalStore } from "./engine/approvalStore";
+import { getProvider } from "./engine/llmProviders";
+
+const mockGetProvider = getProvider as jest.Mock;
+
+beforeEach(() => {
+  approvalStore.clear();
+  mockGetProvider.mockReset();
+  jest.restoreAllMocks();
+});
+
+// ---------------------------------------------------------------------------
+// GET /api/approvals
+// ---------------------------------------------------------------------------
+
+describe("GET /api/approvals", () => {
+  it("returns 200 with empty list when no approvals exist", async () => {
+    const res = await request(app).get("/api/approvals");
+    expect(res.status).toBe(200);
+    expect(res.body.approvals).toEqual([]);
+    expect(res.body.total).toBe(0);
+  });
+
+  it("returns all approvals without status filter", async () => {
+    approvalStore.create({ runId: "r1", templateName: "T", stepId: "s1", stepName: "Step", assignee: "u1", message: "approve?", timeoutMinutes: 60 });
+    const res = await request(app).get("/api/approvals");
+    expect(res.status).toBe(200);
+    expect(res.body.total).toBe(1);
+  });
+
+  it("filters by status=pending", async () => {
+    approvalStore.create({ runId: "r2", templateName: "T", stepId: "s2", stepName: "Step", assignee: "u1", message: "approve?", timeoutMinutes: 60 });
+    const res = await request(app).get("/api/approvals?status=pending");
+    expect(res.status).toBe(200);
+    expect(res.body.total).toBe(1);
+    expect(res.body.approvals[0].status).toBe("pending");
+  });
+
+  it("ignores invalid status filter and returns all", async () => {
+    approvalStore.create({ runId: "r3", templateName: "T", stepId: "s3", stepName: "Step", assignee: "u1", message: "approve?", timeoutMinutes: 60 });
+    const res = await request(app).get("/api/approvals?status=invalid");
+    expect(res.status).toBe(200);
+    expect(res.body.total).toBe(1);
+  });
+
+  it("filters by status=approved returns empty when none resolved", async () => {
+    approvalStore.create({ runId: "r4", templateName: "T", stepId: "s4", stepName: "Step", assignee: "u1", message: "approve?", timeoutMinutes: 60 });
+    const res = await request(app).get("/api/approvals?status=approved");
+    expect(res.status).toBe(200);
+    expect(res.body.total).toBe(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// GET /api/approvals/:id
+// ---------------------------------------------------------------------------
+
+describe("GET /api/approvals/:id", () => {
+  it("returns 200 with the approval for a known id", async () => {
+    const { id } = approvalStore.create({ runId: "r1", templateName: "T", stepId: "s1", stepName: "Step", assignee: "u1", message: "approve?", timeoutMinutes: 60 });
+    const res = await request(app).get(`/api/approvals/${id}`);
+    expect(res.status).toBe(200);
+    expect(res.body.id).toBe(id);
+    expect(res.body.status).toBe("pending");
+  });
+
+  it("returns 404 for unknown approval id", async () => {
+    const res = await request(app).get("/api/approvals/no-such-id");
+    expect(res.status).toBe(404);
+    expect(res.body.error).toContain("not found");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// POST /api/approvals/:id/resolve
+// ---------------------------------------------------------------------------
+
+describe("POST /api/approvals/:id/resolve", () => {
+  it("returns 400 when decision is not approved or rejected", async () => {
+    const { id } = approvalStore.create({ runId: "r1", templateName: "T", stepId: "s1", stepName: "Step", assignee: "u1", message: "approve?", timeoutMinutes: 60 });
+    const res = await request(app)
+      .post(`/api/approvals/${id}/resolve`)
+      .send({ decision: "maybe" });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/decision/);
+  });
+
+  it("resolves approved and returns success=true", async () => {
+    const { id } = approvalStore.create({ runId: "r2", templateName: "T", stepId: "s2", stepName: "Step", assignee: "u1", message: "approve?", timeoutMinutes: 60 });
+    const res = await request(app)
+      .post(`/api/approvals/${id}/resolve`)
+      .send({ decision: "approved" });
+    expect(res.status).toBe(200);
+    expect(res.body.success).toBe(true);
+  });
+
+  it("resolves rejected and returns success=true", async () => {
+    const { id } = approvalStore.create({ runId: "r3", templateName: "T", stepId: "s3", stepName: "Step", assignee: "u1", message: "approve?", timeoutMinutes: 60 });
+    const res = await request(app)
+      .post(`/api/approvals/${id}/resolve`)
+      .send({ decision: "rejected", comment: "Not ready" });
+    expect(res.status).toBe(200);
+    expect(res.body.success).toBe(true);
+  });
+
+  it("returns 404 for unknown approval id", async () => {
+    const res = await request(app)
+      .post("/api/approvals/no-such-id/resolve")
+      .send({ decision: "approved" });
+    expect(res.status).toBe(404);
+  });
+
+  it("returns 404 for already-resolved approval", async () => {
+    const { id } = approvalStore.create({ runId: "r4", templateName: "T", stepId: "s4", stepName: "Step", assignee: "u1", message: "approve?", timeoutMinutes: 60 });
+    approvalStore.resolve(id, "approved");
+    const res = await request(app)
+      .post(`/api/approvals/${id}/resolve`)
+      .send({ decision: "approved" });
+    expect(res.status).toBe(404);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// POST /api/workflows/generate
+// ---------------------------------------------------------------------------
+
+describe("POST /api/workflows/generate", () => {
+  it("returns 400 when description is missing", async () => {
+    const res = await request(app)
+      .post("/api/workflows/generate")
+      .set("X-User-Id", "user-1")
+      .send({});
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/description/);
+  });
+
+  it("returns 400 when description is empty string", async () => {
+    const res = await request(app)
+      .post("/api/workflows/generate")
+      .set("X-User-Id", "user-1")
+      .send({ description: "  " });
+    expect(res.status).toBe(400);
+  });
+
+  it("returns 422 when no LLM provider configured (identity from JWT, not X-User-Id)", async () => {
+    // User identity is now extracted from the validated JWT, not the X-User-Id header.
+    // A valid request without any LLM config returns 422, not 401.
+    const res = await request(app)
+      .post("/api/workflows/generate")
+      .send({ description: "Build a support bot" });
+    expect(res.status).toBe(422);
+    expect(res.body.error).toMatch(/No LLM provider/);
+  });
+
+  it("returns 422 when no LLM provider configured for user", async () => {
+    const res = await request(app)
+      .post("/api/workflows/generate")
+      .set("X-User-Id", "user-no-llm")
+      .send({ description: "Build a support bot" });
+    expect(res.status).toBe(422);
+    expect(res.body.error).toMatch(/No LLM provider/);
+  });
+
+  it("returns 502 when LLM call fails", async () => {
+    const { llmConfigStore } = await import("./llmConfig/llmConfigStore");
+    jest.spyOn(llmConfigStore, "getDecryptedDefault").mockReturnValue({
+      config: { provider: "openai", model: "gpt-4" },
+      apiKey: "sk-test",
+    } as ReturnType<typeof llmConfigStore.getDecryptedDefault>);
+    mockGetProvider.mockReturnValue(async () => { throw new Error("timeout"); });
+
+    const res = await request(app)
+      .post("/api/workflows/generate")
+      .set("X-User-Id", "user-1")
+      .send({ description: "Build a support bot" });
+    expect(res.status).toBe(502);
+    expect(res.body.error).toMatch(/LLM call failed/);
+  });
+
+  it("returns 422 when LLM returns non-JSON", async () => {
+    const { llmConfigStore } = await import("./llmConfig/llmConfigStore");
+    jest.spyOn(llmConfigStore, "getDecryptedDefault").mockReturnValue({
+      config: { provider: "openai", model: "gpt-4" },
+      apiKey: "sk-test",
+    } as ReturnType<typeof llmConfigStore.getDecryptedDefault>);
+    mockGetProvider.mockReturnValue(async () => ({ text: "not valid json at all" }));
+
+    const res = await request(app)
+      .post("/api/workflows/generate")
+      .set("X-User-Id", "user-1")
+      .send({ description: "Build a support bot" });
+    expect(res.status).toBe(422);
+    expect(res.body.error).toMatch(/invalid JSON/);
+  });
+
+  it("returns 422 when LLM returns JSON non-array", async () => {
+    const { llmConfigStore } = await import("./llmConfig/llmConfigStore");
+    jest.spyOn(llmConfigStore, "getDecryptedDefault").mockReturnValue({
+      config: { provider: "openai", model: "gpt-4" },
+      apiKey: "sk-test",
+    } as ReturnType<typeof llmConfigStore.getDecryptedDefault>);
+    mockGetProvider.mockReturnValue(async () => ({ text: '{"not":"an array"}' }));
+
+    const res = await request(app)
+      .post("/api/workflows/generate")
+      .set("X-User-Id", "user-1")
+      .send({ description: "Build a support bot" });
+    expect(res.status).toBe(422);
+  });
+
+  it("returns 200 steps array on valid LLM response", async () => {
+    const steps = [{ id: "step-1", name: "Trigger", kind: "trigger", description: "d", inputKeys: [], outputKeys: [] }];
+    const { llmConfigStore } = await import("./llmConfig/llmConfigStore");
+    jest.spyOn(llmConfigStore, "getDecryptedDefault").mockReturnValue({
+      config: { provider: "openai", model: "gpt-4" },
+      apiKey: "sk-test",
+    } as ReturnType<typeof llmConfigStore.getDecryptedDefault>);
+    mockGetProvider.mockReturnValue(async () => ({ text: JSON.stringify(steps) }));
+
+    const res = await request(app)
+      .post("/api/workflows/generate")
+      .set("X-User-Id", "user-1")
+      .send({ description: "Build a support bot" });
+    expect(res.status).toBe(200);
+    expect(Array.isArray(res.body.steps)).toBe(true);
+  });
+
+  it("strips markdown code fences from LLM response", async () => {
+    const steps = [{ id: "step-1", name: "Trigger", kind: "trigger", description: "d", inputKeys: [], outputKeys: [] }];
+    const { llmConfigStore } = await import("./llmConfig/llmConfigStore");
+    jest.spyOn(llmConfigStore, "getDecryptedDefault").mockReturnValue({
+      config: { provider: "openai", model: "gpt-4" },
+      apiKey: "sk-test",
+    } as ReturnType<typeof llmConfigStore.getDecryptedDefault>);
+    mockGetProvider.mockReturnValue(async () => ({ text: "```json\n" + JSON.stringify(steps) + "\n```" }));
+
+    const res = await request(app)
+      .post("/api/workflows/generate")
+      .set("X-User-Id", "user-1")
+      .send({ description: "Build a support bot" });
+    expect(res.status).toBe(200);
+    expect(res.body.steps).toHaveLength(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// POST /api/runs/file
+// ---------------------------------------------------------------------------
+
+describe("POST /api/runs/file", () => {
+  it("returns 400 when templateId is missing", async () => {
+    const res = await request(app)
+      .post("/api/runs/file")
+      .attach("file", Buffer.from("hello"), { filename: "f.txt", contentType: "text/plain" });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/templateId/);
+  });
+
+  it("returns 400 when file is missing", async () => {
+    const res = await request(app)
+      .post("/api/runs/file")
+      .field("templateId", "tpl-support-bot");
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/file is required/);
+  });
+
+  it("returns 404 for unknown templateId", async () => {
+    const res = await request(app)
+      .post("/api/runs/file")
+      .field("templateId", "no-such-template")
+      .attach("file", Buffer.from("hello"), { filename: "f.txt", contentType: "text/plain" });
+    expect(res.status).toBe(404);
+    expect(res.body.error).toMatch(/Template not found/);
+  });
+
+  it("returns 202 with run for a valid text file", async () => {
+    const res = await request(app)
+      .post("/api/runs/file")
+      .field("templateId", "tpl-support-bot")
+      .attach("file", Buffer.from("Customer complaint about billing"), { filename: "ticket.txt", contentType: "text/plain" });
+    expect(res.status).toBe(202);
+    expect(res.body.id).toBeDefined();
+    expect(res.body.status).toBe("pending");
+  });
+
+  it("returns 202 when X-User-Id is provided (resolves openaiApiKey path)", async () => {
+    const res = await request(app)
+      .post("/api/runs/file")
+      .set("X-User-Id", "user-no-llm")
+      .field("templateId", "tpl-support-bot")
+      .attach("file", Buffer.from("Hello from user"), { filename: "note.txt", contentType: "text/plain" });
+    expect(res.status).toBe(202);
+  });
+
+  it("returns 422 when parseFile throws an error", async () => {
+    const fileParser = await import("./engine/fileParser");
+    jest.spyOn(fileParser, "parseFile").mockRejectedValueOnce(new Error("corrupt file"));
+
+    const res = await request(app)
+      .post("/api/runs/file")
+      .field("templateId", "tpl-support-bot")
+      .attach("file", Buffer.from("corrupt data"), { filename: "bad.bin", contentType: "application/octet-stream" });
+    expect(res.status).toBe(422);
+    expect(res.body.error).toMatch(/File parsing failed/);
+  });
+});

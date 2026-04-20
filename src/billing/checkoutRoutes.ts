@@ -5,16 +5,28 @@
 
 import { Router, Request, Response } from "express";
 import Stripe from "stripe";
+import { AuthenticatedRequest } from "../auth/authMiddleware";
 import { getStripe, PRICING_TIERS, TierKey } from "./stripeClient";
 
 const router = Router();
 
+function resolveAppBaseUrl(req: Request): string {
+  const configured = (process.env.APP_BASE_URL ?? process.env.NEXT_PUBLIC_BASE_URL ?? "").trim();
+  if (configured) return configured.replace(/\/+$/, "");
+
+  const origin = (req.get("origin") ?? "").trim();
+  if (origin) return origin.replace(/\/+$/, "");
+
+  // Local fallback keeps tests and local manual QA deterministic without extra env setup.
+  return "http://localhost:3000";
+}
+
 /**
  * POST /api/billing/checkout
- * Body: { tier: "flow"|"automate"|"scale", email?, firstName?, companyName?, userId? }
+ * Body: { tier: "flow"|"automate"|"scale", email?, firstName?, companyName? }
  * Returns: { url: string } — Stripe hosted checkout URL
  */
-router.post("/", async (req: Request, res: Response) => {
+router.post("/", async (req: AuthenticatedRequest, res: Response) => {
   const { tier, email, firstName, companyName, userId } = req.body as {
     tier?: string;
     email?: string;
@@ -22,6 +34,7 @@ router.post("/", async (req: Request, res: Response) => {
     companyName?: string;
     userId?: string;
   };
+  const resolvedUserId = req.auth?.sub ?? (typeof userId === "string" ? userId : undefined);
 
   if (!tier || !(tier in PRICING_TIERS)) {
     res.status(400).json({ error: `Invalid tier. Must be one of: ${Object.keys(PRICING_TIERS).join(", ")}` });
@@ -42,20 +55,21 @@ router.post("/", async (req: Request, res: Response) => {
 
   try {
     const stripe = getStripe();
+    const appBaseUrl = resolveAppBaseUrl(req);
 
     const sessionParams: Stripe.Checkout.SessionCreateParams = {
       mode: "subscription",
       payment_method_types: ["card"],
       line_items: [{ price: tierConfig.priceId, quantity: 1 }],
-      success_url: `${process.env.APP_BASE_URL ?? process.env.NEXT_PUBLIC_BASE_URL ?? ""}/success?session_id={CHECKOUT_SESSION_ID}`,
-      cancel_url: `${process.env.APP_BASE_URL ?? process.env.NEXT_PUBLIC_BASE_URL ?? ""}/#pricing`,
+      success_url: `${appBaseUrl}/checkout/success?session_id={CHECKOUT_SESSION_ID}`,
+      cancel_url: `${appBaseUrl}/pricing`,
       allow_promotion_codes: true,
       metadata: {
         tier,
         ...(email ? { email } : {}),
         ...(firstName ? { firstName } : {}),
         ...(companyName ? { companyName } : {}),
-        ...(userId ? { userId } : {}),
+        ...(resolvedUserId ? { userId: resolvedUserId } : {}),
       },
     };
 

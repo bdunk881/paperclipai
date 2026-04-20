@@ -33,9 +33,29 @@ interface McpTool {
   description?: string;
 }
 
+interface McpPresetField {
+  key: string;
+  label: string;
+  placeholder?: string;
+  secret?: boolean;
+  required?: boolean;
+  helpText?: string;
+}
+
+interface McpPreset {
+  id: string;
+  name: string;
+  description: string;
+  category: string;
+  authType: string;
+  connected: boolean;
+  configFields: McpPresetField[];
+}
+
 export default function McpServers() {
   const { user } = useAuth();
   const [servers, setServers] = useState<McpServerPublic[]>([]);
+  const [presets, setPresets] = useState<McpPreset[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -45,6 +65,7 @@ export default function McpServers() {
   const [formUrl, setFormUrl] = useState("");
   const [formAuthKey, setFormAuthKey] = useState("");
   const [formAuthVal, setFormAuthVal] = useState("");
+  const [selectedPresetId, setSelectedPresetId] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
@@ -59,8 +80,12 @@ export default function McpServers() {
     setLoading(true);
     setError(null);
     try {
-      const data = await apiGet<{ servers: McpServerPublic[] }>("/api/mcp/servers", user);
-      setServers(data.servers);
+      const [serverData, libraryData] = await Promise.all([
+        apiGet<{ servers: McpServerPublic[] }>("/api/mcp/servers", user),
+        apiGet<{ presets: McpPreset[] }>("/api/mcp/servers/library", user),
+      ]);
+      setServers(serverData.servers);
+      setPresets(libraryData.presets);
     } catch (e) {
       if (e instanceof ApiError && e.status === 401) {
         setError("Sign in to manage integrations.");
@@ -100,6 +125,7 @@ export default function McpServers() {
       const server = await apiPost<McpServerPublic>(
         "/api/mcp/servers",
         {
+          presetId: selectedPresetId || undefined,
           name: formName,
           url: formUrl,
           authHeaderKey: formAuthKey || undefined,
@@ -108,7 +134,7 @@ export default function McpServers() {
         user
       );
       setServers((prev) => [...prev, server]);
-      setFormName(""); setFormUrl(""); setFormAuthKey(""); setFormAuthVal("");
+      setFormName(""); setFormUrl(""); setFormAuthKey(""); setFormAuthVal(""); setSelectedPresetId(null);
       setShowForm(false);
     } catch (e) {
       setFormError(e instanceof Error ? e.message : "Failed to add server");
@@ -153,6 +179,17 @@ export default function McpServers() {
     }
   }
 
+  function handlePresetSetup(preset: McpPreset) {
+    setSelectedPresetId(preset.id);
+    setFormName(preset.name);
+    setFormUrl("");
+    setFormAuthKey("");
+    setFormAuthVal("");
+    setFormError(null);
+    setActionError(null);
+    setShowForm(true);
+  }
+
   return (
     <div className="p-8 max-w-3xl">
       <div className="mb-6">
@@ -188,10 +225,57 @@ export default function McpServers() {
         </div>
       </div>
 
+      {presets.length > 0 && (
+        <div className="mb-6 rounded-xl border border-gray-200 bg-white p-6">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <h2 className="font-semibold text-gray-900 text-sm">Pre-built MCP library</h2>
+              <p className="mt-1 text-xs text-gray-500">
+                Start from a preset, then add the auth secret required by that MCP server.
+              </p>
+            </div>
+            <span className="text-xs text-gray-400">{presets.length} presets available</span>
+          </div>
+          <div className="mt-4 grid gap-3 md:grid-cols-2">
+            {presets.map((preset) => (
+              <button
+                key={preset.id}
+                type="button"
+                onClick={() => handlePresetSetup(preset)}
+                className="rounded-xl border border-gray-200 p-4 text-left hover:border-blue-300 hover:bg-blue-50/40 transition"
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="text-sm font-semibold text-gray-900">{preset.name}</p>
+                    <p className="mt-1 text-xs text-gray-500">{preset.description}</p>
+                  </div>
+                  <span className="rounded-full border border-gray-200 bg-gray-50 px-2 py-0.5 text-[11px] text-gray-600">
+                    {preset.connected ? "Connected" : preset.authType}
+                  </span>
+                </div>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* Add-server form */}
       {showForm && (
         <form onSubmit={(e) => void handleAdd(e)} className="bg-white border border-gray-200 rounded-xl p-6 mb-6 space-y-4">
-          <h2 className="font-semibold text-gray-900 text-sm">New Integration</h2>
+          <div className="flex items-center justify-between gap-3">
+            <h2 className="font-semibold text-gray-900 text-sm">
+              {selectedPresetId ? "Preset MCP setup" : "CustomMCP setup"}
+            </h2>
+            {selectedPresetId && (
+              <button
+                type="button"
+                onClick={() => setSelectedPresetId(null)}
+                className="text-xs text-gray-500 hover:text-gray-700"
+              >
+                Switch to custom
+              </button>
+            )}
+          </div>
 
           {formError && (
             <p className="text-xs text-red-600 bg-red-50 border border-red-200 rounded px-3 py-2">{formError}</p>
@@ -203,7 +287,7 @@ export default function McpServers() {
               <input
                 required
                 className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                placeholder="My Integration"
+                placeholder={selectedPresetId ? "Override display name" : "My Integration"}
                 value={formName}
                 onChange={(e) => setFormName(e.target.value)}
               />
@@ -211,14 +295,24 @@ export default function McpServers() {
             <div>
               <label className="block text-xs font-medium text-gray-700 mb-1">Server URL *</label>
               <input
-                required
+                required={!selectedPresetId}
                 className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono"
-                placeholder="https://mcp.example.com"
+                placeholder={selectedPresetId ? "Optional override for preset URL" : "https://mcp.example.com"}
                 value={formUrl}
                 onChange={(e) => setFormUrl(e.target.value)}
               />
             </div>
           </div>
+
+          {selectedPresetId ? (
+            <p className="text-xs text-gray-500">
+              The preset supplies the default server URL and header key. Only override them if your provider gave you a custom endpoint.
+            </p>
+          ) : (
+            <p className="text-xs text-gray-500">
+              CustomMCP accepts any MCP-compatible HTTPS endpoint plus optional auth headers.
+            </p>
+          )}
 
           <div className="grid grid-cols-2 gap-4">
             <div>

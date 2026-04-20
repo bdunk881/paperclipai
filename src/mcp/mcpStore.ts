@@ -5,6 +5,7 @@
  */
 
 import { v4 as uuidv4 } from "uuid";
+import { getMcpPreset } from "./mcpCatalog";
 
 export interface McpServer {
   id: string;
@@ -16,7 +17,23 @@ export interface McpServer {
   authHeaderKey?: string;
   /** Optional auth header value, e.g. "Bearer <token>" — stored in plaintext for MVP */
   authHeaderValue?: string;
+  source: "preset" | "custom";
+  presetId?: string;
+  category?: string;
+  description?: string;
+  authType: "apiKey" | "oauth" | "hybrid" | "none";
+  status: "pending" | "healthy" | "degraded";
+  healthMessage: string;
+  lastCheckedAt?: string;
+  lastError?: string;
+  lastDiscoveredAt?: string;
+  tools: McpToolSummary[];
   createdAt: string;
+}
+
+export interface McpToolSummary {
+  name: string;
+  description?: string;
 }
 
 export type McpServerPublic = Omit<McpServer, "authHeaderValue"> & {
@@ -45,19 +62,60 @@ export const mcpStore = {
 
   add(
     userId: string,
-    fields: { name: string; url: string; authHeaderKey?: string; authHeaderValue?: string }
+    fields: {
+      name?: string;
+      url?: string;
+      authHeaderKey?: string;
+      authHeaderValue?: string;
+      presetId?: string;
+      source?: "preset" | "custom";
+      category?: string;
+      description?: string;
+      authType?: "apiKey" | "oauth" | "hybrid" | "none";
+    }
   ): McpServerPublic {
+    const preset = fields.presetId ? getMcpPreset(fields.presetId) : undefined;
+    const source = fields.source ?? (preset ? "preset" : "custom");
+    const name = fields.name?.trim() || preset?.name;
+    const url = fields.url?.trim() || preset?.defaultUrl;
+    if (!name || !url) {
+      throw new Error("name and url are required");
+    }
+
     const server: McpServer = {
       id: uuidv4(),
       userId,
-      name: fields.name.trim(),
-      url: fields.url.trim().replace(/\/$/, ""),
-      authHeaderKey: fields.authHeaderKey?.trim() || undefined,
+      name,
+      url: url.replace(/\/$/, ""),
+      authHeaderKey: fields.authHeaderKey?.trim() || preset?.defaultAuthHeaderKey || undefined,
       authHeaderValue: fields.authHeaderValue?.trim() || undefined,
+      source,
+      presetId: preset?.id,
+      category: fields.category ?? preset?.category,
+      description: fields.description ?? preset?.description,
+      authType: fields.authType ?? preset?.authType ?? "none",
+      status: "pending",
+      healthMessage: "Not yet tested",
+      tools: [],
       createdAt: new Date().toISOString(),
     };
     store.set(server.id, server);
     return toPublic(server);
+  },
+
+  update(
+    id: string,
+    userId: string,
+    fields: Partial<
+      Pick<McpServer, "status" | "healthMessage" | "lastCheckedAt" | "lastError" | "lastDiscoveredAt" | "tools">
+    >
+  ): McpServerPublic | undefined {
+    const server = store.get(id);
+    if (!server || server.userId !== userId) return undefined;
+
+    const next: McpServer = { ...server, ...fields };
+    store.set(id, next);
+    return toPublic(next);
   },
 
   remove(id: string, userId: string): boolean {

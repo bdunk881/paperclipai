@@ -9,10 +9,13 @@ from templates.schemas import (
     ConfigField,
     FieldType,
     RunStatus,
+    RetryStrategy,
     StepKind,
+    StepPhase,
     StepResult,
     StepStatus,
     TemplateCategory,
+    WorkflowRetryPolicy,
     WorkflowRun,
     WorkflowStep,
     WorkflowTemplate,
@@ -47,8 +50,16 @@ class TestEnums:
         assert TemplateCategory.custom == "custom"
 
     def test_run_status_values(self):
-        expected = {"pending", "running", "completed", "failed", "escalated"}
+        expected = {"pending", "running", "completed", "failed", "escalated", "awaiting_approval"}
         assert {s.value for s in RunStatus} == expected
+
+    def test_retry_strategy_values(self):
+        expected = {"constant", "exponential", "random"}
+        assert {s.value for s in RetryStrategy} == expected
+
+    def test_step_phase_values(self):
+        expected = {"main", "errors", "finally"}
+        assert {s.value for s in StepPhase} == expected
 
     def test_step_status_values(self):
         expected = {"success", "failure", "skipped", "running"}
@@ -100,6 +111,25 @@ class TestConfigField:
         )
         assert via_alias.default_value == "v"
         assert via_snake.default_value == "v"
+
+
+class TestWorkflowRetryPolicy:
+    def test_retry_policy_alias_fields(self):
+        policy = WorkflowRetryPolicy(
+            type=RetryStrategy.exponential,
+            maxAttempts=4,
+            maxDuration=1000,
+            intervalMs=50,
+            delayFactor=2,
+            maxInterval=200,
+            warningOnRetry=True,
+        )
+        assert policy.max_attempts == 4
+        assert policy.max_duration == 1000
+        assert policy.interval_ms == 50
+        assert policy.delay_factor == 2
+        assert policy.max_interval == 200
+        assert policy.warning_on_retry is True
 
 
 # ---------------------------------------------------------------------------
@@ -171,6 +201,28 @@ class TestWorkflowStep:
         assert step.input_keys == ["a"]
         assert step.output_keys == ["b"]
 
+    def test_step_retry_policy(self):
+        step = WorkflowStep(
+            id="step_retry",
+            name="Retry Step",
+            kind=StepKind.action,
+            description="Retries a flaky action",
+            inputKeys=["payload"],
+            outputKeys=["result"],
+            action="test.retry",
+            retry={
+                "type": "constant",
+                "maxAttempts": 3,
+                "intervalMs": 25,
+                "warningOnRetry": True,
+            },
+        )
+        assert step.retry is not None
+        assert step.retry.type == RetryStrategy.constant
+        assert step.retry.max_attempts == 3
+        assert step.retry.interval_ms == 25
+        assert step.retry.warning_on_retry is True
+
 
 # ---------------------------------------------------------------------------
 # WorkflowTemplate
@@ -211,6 +263,62 @@ class TestWorkflowTemplate:
         assert len(tpl.config_fields) == 1
         assert tpl.config_fields[0].key == "k"
 
+    def test_retry_and_handler_blocks(self):
+        tpl = WorkflowTemplate(
+            **{
+                "id": "tpl-retry",
+                "name": "Retry",
+                "description": "Handles retries and cleanup",
+                "category": "custom",
+                "version": "1.0.0",
+                "configFields": [
+                    {"key": "k", "label": "L", "type": "string", "required": True}
+                ],
+                "steps": [
+                    {
+                        "id": "s1",
+                        "name": "Trigger",
+                        "kind": "trigger",
+                        "description": "d",
+                        "inputKeys": [],
+                        "outputKeys": ["payload"],
+                    }
+                ],
+                "retry": {"type": "exponential", "maxAttempts": 4, "delayFactor": 2},
+                "errors": [
+                    {
+                        "id": "s_err",
+                        "name": "Handle Error",
+                        "kind": "action",
+                        "description": "d",
+                        "inputKeys": ["error"],
+                        "outputKeys": ["recovered"],
+                        "action": "handle.error",
+                    }
+                ],
+                "_finally": [
+                    {
+                        "id": "s_finally",
+                        "name": "Cleanup",
+                        "kind": "action",
+                        "description": "d",
+                        "inputKeys": ["recovered"],
+                        "outputKeys": ["cleanedUp"],
+                        "action": "cleanup",
+                    }
+                ],
+                "sampleInput": {"payload": 1},
+                "expectedOutput": {"cleanedUp": True},
+            }
+        )
+        assert tpl.retry is not None
+        assert tpl.retry.type == RetryStrategy.exponential
+        assert tpl.retry.max_attempts == 4
+        assert len(tpl.errors) == 1
+        assert tpl.errors[0].id == "s_err"
+        assert len(tpl.finally_steps) == 1
+        assert tpl.finally_steps[0].id == "s_finally"
+
 
 # ---------------------------------------------------------------------------
 # WorkflowRun + StepResult
@@ -224,10 +332,14 @@ class TestWorkflowRun:
             status=StepStatus.success,
             output={"ticketId": "T001"},
             durationMs=42,
+            attemptCount=2,
+            phase="errors",
         )
         assert sr.step_id == "step_trigger"
         assert sr.status == StepStatus.success
         assert sr.duration_ms == 42
+        assert sr.attempt_count == 2
+        assert sr.phase == StepPhase.errors
 
     def test_workflow_run_construction(self):
         run = WorkflowRun(

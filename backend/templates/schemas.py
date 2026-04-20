@@ -36,6 +36,18 @@ class TemplateCategory(str, Enum):
     custom = "custom"
 
 
+class RetryStrategy(str, Enum):
+    constant = "constant"
+    exponential = "exponential"
+    random = "random"
+
+
+class StepPhase(str, Enum):
+    main = "main"
+    errors = "errors"
+    finally_ = "finally"
+
+
 class ConfigField(BaseModel):
     key: str
     label: str
@@ -44,6 +56,18 @@ class ConfigField(BaseModel):
     default_value: Any = Field(default=None, alias="defaultValue")
     description: str | None = None
     options: list[str] | None = None
+
+    model_config = {"populate_by_name": True}
+
+
+class WorkflowRetryPolicy(BaseModel):
+    type: RetryStrategy
+    max_attempts: int = Field(alias="maxAttempts")
+    max_duration: int | None = Field(None, alias="maxDuration")
+    interval_ms: int | None = Field(None, alias="intervalMs")
+    delay_factor: float | None = Field(None, alias="delayFactor")
+    max_interval: int | None = Field(None, alias="maxInterval")
+    warning_on_retry: bool | None = Field(None, alias="warningOnRetry")
 
     model_config = {"populate_by_name": True}
 
@@ -59,6 +83,7 @@ class WorkflowStep(BaseModel):
     condition: str | None = None
     action: str | None = None
     config: dict[str, Any] | None = None
+    retry: WorkflowRetryPolicy | None = None
 
     model_config = {"populate_by_name": True}
 
@@ -71,6 +96,9 @@ class WorkflowTemplate(BaseModel):
     version: str
     config_fields: list[ConfigField] = Field(default_factory=list, alias="configFields")
     steps: list[WorkflowStep]
+    retry: WorkflowRetryPolicy | None = None
+    errors: list[WorkflowStep] = Field(default_factory=list)
+    finally_steps: list[WorkflowStep] = Field(default_factory=list, alias="_finally")
     sample_input: dict[str, Any] = Field(default_factory=dict, alias="sampleInput")
     expected_output: dict[str, Any] = Field(default_factory=dict, alias="expectedOutput")
 
@@ -85,6 +113,7 @@ class RunStatus(str, Enum):
     completed = "completed"
     failed = "failed"
     escalated = "escalated"
+    awaiting_approval = "awaiting_approval"
 
 
 class StepStatus(str, Enum):
@@ -101,6 +130,8 @@ class StepResult(BaseModel):
     output: dict[str, Any] = Field(default_factory=dict)
     duration_ms: int = Field(alias="durationMs")
     error: str | None = None
+    attempt_count: int | None = Field(None, alias="attemptCount")
+    phase: StepPhase | None = None
 
     model_config = {"populate_by_name": True}
 

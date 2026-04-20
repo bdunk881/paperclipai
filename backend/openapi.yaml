@@ -1007,12 +1007,99 @@ components:
     # -------------------------------------------------------------------------
     LLMProvider:
       type: string
-      enum: [openai, anthropic, gemini, mistral]
+      enum:
+        - openai
+        - anthropic
+        - gemini
+        - mistral
+        - azure-openai
+        - bedrock
+        - vertex-ai
+        - groq
+        - fireworks
+        - together
+        - ollama
+        - localai
+        - cohere
+        - perplexity
+        - xai
+        - deepseek
       description: Supported LLM provider
+
+    LLMProviderCredentialsInput:
+      type: object
+      description: |
+        Provider secret payload. Values are stored encrypted and never returned in plaintext.
+        Use `apiKey` for API-key providers, AWS credentials for Bedrock, and either
+        `serviceAccountJson` or `oauthAccessToken` for Vertex AI.
+      properties:
+        apiKey:
+          type: string
+          minLength: 4
+        accessKeyId:
+          type: string
+        secretAccessKey:
+          type: string
+        sessionToken:
+          type: string
+        serviceAccountJson:
+          type: string
+        oauthAccessToken:
+          type: string
+
+    LLMProviderCredentialSummary:
+      type: object
+      description: Masked summary of stored secrets
+      properties:
+        apiKeyMasked:
+          type: string
+          example: "****abcd"
+        accessKeyIdMasked:
+          type: string
+          example: "****MPLE"
+        secretAccessKeyMasked:
+          type: string
+          example: "****KEY1"
+        sessionTokenMasked:
+          type: string
+          example: "****9999"
+        serviceAccountJsonMasked:
+          type: string
+          example: "****json"
+        oauthAccessTokenMasked:
+          type: string
+          example: "****token"
+
+    LLMProviderOptions:
+      type: object
+      description: Non-secret provider metadata
+      properties:
+        endpoint:
+          type: string
+          format: uri
+          description: Custom provider endpoint or Azure OpenAI resource URL
+        deployment:
+          type: string
+          description: Azure OpenAI deployment name
+        apiVersion:
+          type: string
+          description: Provider API version metadata, such as Azure OpenAI api-version
+        region:
+          type: string
+          description: AWS region for Bedrock credentials
+        projectId:
+          type: string
+          description: GCP project ID for Vertex AI
+        location:
+          type: string
+          description: GCP location/region for Vertex AI
+        authType:
+          type: string
+          enum: [api_key, aws, service_account, oauth]
 
     LLMConfigInput:
       type: object
-      required: [provider, label, model, apiKey]
+      required: [provider, label, model]
       properties:
         provider:
           $ref: "#/components/schemas/LLMProvider"
@@ -1026,14 +1113,21 @@ components:
           example: "gpt-4o"
         apiKey:
           type: string
-          description: Provider API key — stored encrypted, never returned
+          description: |
+            Backward-compatible shorthand for API-key providers. Stored encrypted and
+            never returned in plaintext.
           example: "sk-..."
           minLength: 4
+          deprecated: true
+        credentials:
+          $ref: "#/components/schemas/LLMProviderCredentialsInput"
+        providerOptions:
+          $ref: "#/components/schemas/LLMProviderOptions"
 
     LLMConfig:
       type: object
-      required: [id, userId, provider, label, model, apiKeyMasked, isDefault, createdAt]
-      description: LLM provider config (API key never returned — only masked last 4 chars)
+      required: [id, userId, provider, label, model, credentialSummary, isDefault, createdAt]
+      description: LLM provider config with encrypted secret storage and masked secret summaries
       properties:
         id:
           type: string
@@ -1051,8 +1145,12 @@ components:
           example: "gpt-4o"
         apiKeyMasked:
           type: string
-          description: Last 4 characters of the original key, prefixed with ****
+          description: Backward-compatible masked API key field for legacy clients
           example: "****abcd"
+        credentialSummary:
+          $ref: "#/components/schemas/LLMProviderCredentialSummary"
+        providerOptions:
+          $ref: "#/components/schemas/LLMProviderOptions"
         isDefault:
           type: boolean
           description: Whether this is the user's default LLM config

@@ -3,8 +3,9 @@ import { Zap, Loader2 } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 
 export default function Login() {
-  const { login } = useAuth();
+  const { login, signup } = useAuth();
   const [loading, setLoading] = useState(false);
+  const [signupLoading, setSignupLoading] = useState(false);
   const [error, setError] = useState("");
 
   async function handleSignIn() {
@@ -16,6 +17,18 @@ export default function Login() {
     } catch {
       setError("Sign-in failed. Please try again.");
       setLoading(false);
+    }
+  }
+
+  async function handleSignup() {
+    setError("");
+    setSignupLoading(true);
+    try {
+      await signup();
+      // signup() triggers a redirect — execution does not continue past this point
+    } catch {
+      setError("Signup failed. Please try again.");
+      setSignupLoading(false);
     }
   }
 
@@ -41,7 +54,7 @@ export default function Login() {
 
           <button
             onClick={handleSignIn}
-            disabled={loading}
+            disabled={loading || signupLoading}
             className="w-full flex items-center justify-center gap-3 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition disabled:opacity-60"
           >
             {loading ? (
@@ -50,6 +63,19 @@ export default function Login() {
               <MicrosoftIcon />
             )}
             {loading ? "Redirecting…" : "Continue with Microsoft"}
+          </button>
+
+          <button
+            onClick={handleSignup}
+            disabled={loading || signupLoading}
+            className="w-full mt-3 flex items-center justify-center gap-3 py-2.5 border border-blue-600 text-blue-700 hover:bg-blue-50 font-medium rounded-lg transition disabled:opacity-60"
+          >
+            {signupLoading ? (
+              <Loader2 size={18} className="animate-spin" />
+            ) : (
+              <MicrosoftIcon />
+            )}
+            {signupLoading ? "Redirecting…" : "Create account with email"}
           </button>
 
           <p className="text-xs text-center text-gray-400 mt-4">

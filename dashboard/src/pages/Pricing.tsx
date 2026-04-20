@@ -3,45 +3,68 @@ import { Check, Zap } from "lucide-react";
 
 const TIERS = [
   {
-    name: "Starter",
-    tierId: "starter",
-    price: "$49",
+    name: "Explore",
+    tierId: "explore",
+    price: "Free",
     period: "/mo",
-    description: "Perfect for individuals and small projects",
+    description: "Try AutoFlow with the essentials before you scale up.",
     highlight: false,
-    cta: "Get Started",
+    cta: "Start Free",
     features: [
       "Unlimited workflow executions",
-      "Up to 5 active workflows",
-      "3 LLM provider connections",
-      "Standard execution logs (7-day retention)",
+      "Up to 3 active workflows",
+      "1 LLM provider connection",
+      "Execution logs (3-day retention)",
       "Community support",
-      "Basic analytics dashboard",
+      "Basic workflow analytics",
     ],
     notIncluded: [
       "Multi-agent workflows",
       "Human-in-the-loop approvals",
-      "MCP integrations",
-      "Memory store",
+      "Integrations hub",
+      "Persistent memory store",
     ],
   },
   {
-    name: "Pro",
-    price: "$149",
+    name: "Flow",
+    price: "$19",
     period: "/mo",
-    description: "For teams building production AI workflows",
-    tierId: "pro",
+    description: "Production-ready automation for operators and small teams.",
+    tierId: "flow",
+    highlight: false,
+    cta: "Start 14-Day Trial",
+    features: [
+      "Unlimited workflow executions",
+      "Up to 25 active workflows",
+      "5 LLM provider connections",
+      "Execution logs (30-day retention)",
+      "Core integrations hub access",
+      "Persistent memory store (5 GB)",
+      "Email support",
+    ],
+    notIncluded: [
+      "Multi-agent workflows",
+      "Human-in-the-loop approvals",
+      "Advanced analytics & AI Debugger",
+    ],
+  },
+  {
+    name: "Automate",
+    price: "$49",
+    period: "/mo",
+    description: "For teams shipping multi-agent workflows in production.",
+    tierId: "automate",
     highlight: true,
-    cta: "Start Free Trial",
+    cta: "Start 14-Day Trial",
     badge: "Most Popular",
     features: [
       "Unlimited workflow executions",
       "Unlimited active workflows",
       "Unlimited LLM provider connections",
-      "Full execution logs (90-day retention)",
-      "Multi-agent workflows (Manager/Worker)",
+      "Execution logs (90-day retention)",
+      "Multi-agent workflows",
       "Human-in-the-loop approvals",
-      "MCP Integration Hub",
+      "Integrations hub",
       "Persistent memory store (10 GB)",
       "Natural language workflow creation",
       "Multi-modal input triggers",
@@ -51,44 +74,55 @@ const TIERS = [
     notIncluded: [],
   },
   {
-    name: "Enterprise",
-    price: "Custom",
-    period: "",
-    description: "For large teams with advanced security and compliance needs",
-    tierId: "enterprise",
+    name: "Scale",
+    price: "$99",
+    period: "/mo",
+    description: "For larger operations that need security, control, and scale.",
+    tierId: "scale",
     highlight: false,
-    cta: "Contact Sales",
+    cta: "Get Scale",
     features: [
-      "Everything in Pro",
-      "Custom SLA & uptime guarantees",
-      "SSO / SAML authentication",
+      "Everything in Automate",
+      "Dedicated memory store",
+      "Advanced access controls",
       "Audit logs & compliance exports",
-      "Dedicated memory store (unlimited)",
-      "Custom MCP server registry",
-      "On-premise deployment option",
-      "Dedicated success manager",
-      "Custom integrations & connectors",
-      "99.99% uptime SLA",
+      "Priority support with onboarding",
+      "Custom integration assistance",
+      "Expanded usage guardrails",
+      "Security review support",
     ],
     notIncluded: [],
   },
 ];
 
+function redirectTo(path: string): void {
+  window.history.pushState({}, "", path);
+  window.dispatchEvent(new PopStateEvent("popstate"));
+}
+
 async function startCheckout(tierId: string): Promise<void> {
-  if (tierId === "enterprise") {
-    window.location.href = "mailto:sales@autoflow.ai?subject=AutoFlow%20Enterprise%20Inquiry";
+  if (tierId === "explore") {
+    redirectTo("/signup");
     return;
   }
-  const res = await fetch("/api/create-checkout-session", {
+  const paidTierIds = new Set(["flow", "automate", "scale"]);
+  if (!paidTierIds.has(tierId)) {
+    throw new Error("Unsupported pricing tier");
+  }
+
+  const res = await fetch("/api/billing/checkout", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ tier: tierId }),
   });
-  const data = (await res.json()) as { url?: string; error?: string };
-  if (data.url) {
+  const data = (await res.json().catch(() => null)) as { url?: string; error?: string } | null;
+  if (!res.ok) {
+    throw new Error(data?.error ?? `Checkout failed (${res.status})`);
+  }
+  if (data?.url) {
     window.location.href = data.url;
   } else {
-    throw new Error(data.error ?? "Failed to start checkout");
+    throw new Error(data?.error ?? "Failed to start checkout");
   }
 }
 

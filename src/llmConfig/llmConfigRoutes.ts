@@ -3,11 +3,11 @@
  * Provides CRUD operations for user LLM provider credentials.
  * API keys are stored encrypted at rest; the raw key is never returned.
  *
- * Authentication: pass the caller's user ID in the X-User-Id header.
- * Replace with a real auth middleware (JWT, session, etc.) before production.
+ * Authentication: user identity is provided by requireAuth via req.auth.sub.
  */
 
 import { Router, Request, Response } from "express";
+import { AuthenticatedRequest } from "../auth/authMiddleware";
 import { llmConfigStore, LLMProvider } from "./llmConfigStore";
 
 const VALID_PROVIDERS: LLMProvider[] = [
@@ -17,10 +17,10 @@ const VALID_PROVIDERS: LLMProvider[] = [
   "mistral",
 ];
 
-function getUserId(req: Request): string | null {
-  const userId = req.headers["x-user-id"];
+function getUserId(req: AuthenticatedRequest): string | null {
+  const userId = req.auth?.sub;
   if (typeof userId !== "string" || !userId.trim()) return null;
-  return userId.trim();
+  return userId;
 }
 
 const router = Router();
@@ -28,10 +28,10 @@ const router = Router();
 // ---------------------------------------------------------------------------
 // POST /api/llm-configs — create config, store API key encrypted
 // ---------------------------------------------------------------------------
-router.post("/", (req: Request, res: Response) => {
+router.post("/", (req: AuthenticatedRequest, res: Response) => {
   const userId = getUserId(req);
   if (!userId) {
-    res.status(401).json({ error: "X-User-Id header is required" });
+    res.status(401).json({ error: "Authenticated user is required" });
     return;
   }
 
@@ -78,10 +78,10 @@ router.post("/", (req: Request, res: Response) => {
 // ---------------------------------------------------------------------------
 // GET /api/llm-configs — list user's configs (keys masked)
 // ---------------------------------------------------------------------------
-router.get("/", (req: Request, res: Response) => {
+router.get("/", (req: AuthenticatedRequest, res: Response) => {
   const userId = getUserId(req);
   if (!userId) {
-    res.status(401).json({ error: "X-User-Id header is required" });
+    res.status(401).json({ error: "Authenticated user is required" });
     return;
   }
 
@@ -93,10 +93,10 @@ router.get("/", (req: Request, res: Response) => {
 // PATCH /api/llm-configs/:id/default — set as default for user's LLM steps
 // Must be declared before /:id to avoid shadowing
 // ---------------------------------------------------------------------------
-router.patch("/:id/default", (req: Request, res: Response) => {
+router.patch("/:id/default", (req: AuthenticatedRequest, res: Response) => {
   const userId = getUserId(req);
   if (!userId) {
-    res.status(401).json({ error: "X-User-Id header is required" });
+    res.status(401).json({ error: "Authenticated user is required" });
     return;
   }
 
@@ -114,10 +114,10 @@ router.patch("/:id/default", (req: Request, res: Response) => {
 // ---------------------------------------------------------------------------
 // PATCH /api/llm-configs/:id — update label or model
 // ---------------------------------------------------------------------------
-router.patch("/:id", (req: Request, res: Response) => {
+router.patch("/:id", (req: AuthenticatedRequest, res: Response) => {
   const userId = getUserId(req);
   if (!userId) {
-    res.status(401).json({ error: "X-User-Id header is required" });
+    res.status(401).json({ error: "Authenticated user is required" });
     return;
   }
 
@@ -153,10 +153,10 @@ router.patch("/:id", (req: Request, res: Response) => {
 // ---------------------------------------------------------------------------
 // DELETE /api/llm-configs/:id — remove config
 // ---------------------------------------------------------------------------
-router.delete("/:id", (req: Request, res: Response) => {
+router.delete("/:id", (req: AuthenticatedRequest, res: Response) => {
   const userId = getUserId(req);
   if (!userId) {
-    res.status(401).json({ error: "X-User-Id header is required" });
+    res.status(401).json({ error: "Authenticated user is required" });
     return;
   }
 

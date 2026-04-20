@@ -5,7 +5,6 @@ Validates the template structure, step wiring, config fields,
 and sample data shape without requiring a live LLM or CRM.
 """
 
-import pytest
 from templates.lead_enrichment import lead_enrichment
 from templates.schemas import StepKind, FieldType, TemplateCategory
 

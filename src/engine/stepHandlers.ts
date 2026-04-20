@@ -14,6 +14,7 @@ import { getBus, releaseBus } from "./agentBus";
 import { classifyTierWithConfidence, resolveModelForTier, buildCostLog, LlmCostLog } from "./llmRouter";
 import { logClassificationDecision } from "./classificationLog";
 import { sanitizeContext } from "./crmFieldAllowlist";
+import { auditCrmApiCall } from "./crmAuditLog";
 
 export type StepContext = Record<string, unknown>;
 
@@ -62,11 +63,14 @@ export async function handleTrigger(
 export async function handleLlm(
   step: WorkflowStep,
   ctx: StepContext,
-  userId: string
+  userId: string,
+  runId: string = "unknown"
 ): Promise<StepHandlerResult> {
   if (!step.promptTemplate) {
     throw new Error(`LLM step "${step.id}" is missing a promptTemplate`);
   }
+
+  const originalFieldCount = Object.keys(ctx).length;
 
   // Data minimization: strip sensitive CRM fields before they reach the LLM
   const { sanitized, blockedCategories, strippedCount } = sanitizeContext(ctx);
@@ -107,6 +111,19 @@ export async function handleLlm(
     apiKey: resolved.apiKey,
     credentials: resolved.credentials,
     options: resolved.config.providerOptions,
+  });
+
+  // Audit log: record CRM field categories sent to the LLM API
+  auditCrmApiCall({
+    userId,
+    runId,
+    stepId: step.id,
+    stepKind: "llm",
+    apiEndpoint: `${resolved.config.provider}/${tieredModel}`,
+    originalFieldCount,
+    sanitizedCtx: sanitized,
+    blockedCategories,
+    strippedCount,
   });
 
   const response = await provider(renderedPrompt);
@@ -465,6 +482,8 @@ export async function handleAgent(
     } satisfies AgentMessage);
   }
 
+  const agentOriginalFieldCount = Object.keys(ctx).length;
+
   // Data minimization: strip sensitive CRM fields before they reach the LLM
   const { sanitized: agentSanitized, blockedCategories: agentBlocked, strippedCount: agentStripped } = sanitizeContext(ctx);
   if (agentStripped > 0) {
@@ -473,6 +492,19 @@ export async function handleAgent(
         `(categories: ${agentBlocked.join(", ")})`
     );
   }
+
+  // Audit log: record CRM field categories sent to agent API
+  auditCrmApiCall({
+    userId,
+    runId,
+    stepId: step.id,
+    stepKind: "agent",
+    apiEndpoint: `${resolved.config.provider}/${resolved.config.model}`,
+    originalFieldCount: agentOriginalFieldCount,
+    sanitizedCtx: agentSanitized,
+    blockedCategories: agentBlocked,
+    strippedCount: agentStripped,
+  });
 
   // Build context summary for the prompt
   const contextSummary = Object.entries(agentSanitized)

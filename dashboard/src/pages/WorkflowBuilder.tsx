@@ -1,11 +1,13 @@
-import { useState, useEffect, useMemo } from "react";
-import { useParams, useNavigate } from "react-router-dom";
+import { useDeferredValue, useEffect, useMemo, useState } from "react";
+import { useLocation, useNavigate, useParams } from "react-router-dom";
 import {
   Plus,
   Play,
   Trash2,
   ChevronDown,
   ChevronUp,
+  Cpu,
+  Database,
   Zap,
   Brain,
   GitBranch,
@@ -24,6 +26,9 @@ import {
   CheckCircle2,
   AlertCircle,
   CircleHelp,
+  MessageSquareText,
+  Send,
+  CornerDownRight,
 } from "lucide-react";
 import {
   Background,
@@ -47,6 +52,7 @@ import type { WorkflowStep, StepKind, WorkflowTemplate } from "../types/workflow
 import {
   buildDefaultEdge,
   buildEdgesFromSteps,
+  insertStepAfterTarget,
   serializeEdgesToSteps,
   STEP_POSITION_KEY,
   validateEdgeCandidate,
@@ -68,6 +74,24 @@ const KIND_META: Record<
 > = {
   trigger: {
     label: "Trigger",
+    icon: <Zap size={14} />,
+    chipColor: "text-emerald-700 dark:text-emerald-400",
+    chipBg: "bg-emerald-50 border-emerald-200 dark:bg-emerald-500/10 dark:border-emerald-500/30",
+    categoryTint: "rgba(16,185,129,0.12)",
+    darkCategoryTint: "rgba(16,185,129,0.18)",
+    categoryBorder: "#10b981",
+  },
+  cron_trigger: {
+    label: "Cron Trigger",
+    icon: <Zap size={14} />,
+    chipColor: "text-emerald-700 dark:text-emerald-400",
+    chipBg: "bg-emerald-50 border-emerald-200 dark:bg-emerald-500/10 dark:border-emerald-500/30",
+    categoryTint: "rgba(16,185,129,0.12)",
+    darkCategoryTint: "rgba(16,185,129,0.18)",
+    categoryBorder: "#10b981",
+  },
+  interval_trigger: {
+    label: "Interval Trigger",
     icon: <Zap size={14} />,
     chipColor: "text-emerald-700 dark:text-emerald-400",
     chipBg: "bg-emerald-50 border-emerald-200 dark:bg-emerald-500/10 dark:border-emerald-500/30",
@@ -192,9 +216,34 @@ type FlowNodeData = {
   onRemove: (id: string) => void;
   isFirst: boolean;
   isLast: boolean;
+  isHighlighted: boolean;
 };
 
 type WorkflowFlowNode = Node<FlowNodeData, "workflowStep">;
+
+type CopilotMessage = {
+  id: string;
+  role: "user" | "assistant";
+  content: string;
+};
+
+type CopilotProposal =
+  | {
+      id: string;
+      kind: "insert_step";
+      title: string;
+      summary: string;
+      step: WorkflowStep;
+      targetStepId: string;
+    }
+  | {
+      id: string;
+      kind: "replace_canvas";
+      title: string;
+      summary: string;
+      steps: WorkflowStep[];
+      targetStepId?: string;
+    };
 
 function readStepPosition(step: WorkflowStep, index: number): XYPosition {
   const candidate = step.config?.[STEP_POSITION_KEY];
@@ -217,6 +266,7 @@ function readStepPosition(step: WorkflowStep, index: number): XYPosition {
 
 export default function WorkflowBuilder() {
   const { templateId } = useParams<{ templateId?: string }>();
+  const location = useLocation();
   const navigate = useNavigate();
   const { theme } = useTheme();
 
@@ -237,9 +287,17 @@ export default function WorkflowBuilder() {
   const [showNLModal, setShowNLModal] = useState(false);
   const [showFileUploadModal, setShowFileUploadModal] = useState(false);
   const [showHelp, setShowHelp] = useState(false);
+  const [showCopilot, setShowCopilot] = useState(false);
+  const [copilotModel, setCopilotModel] = useState("Auto");
+  const [copilotDraft, setCopilotDraft] = useState("");
+  const [copilotMessages, setCopilotMessages] = useState<CopilotMessage[]>([]);
+  const [copilotProposal, setCopilotProposal] = useState<CopilotProposal | null>(null);
+  const [copilotBusy, setCopilotBusy] = useState(false);
+  const [highlightedStepId, setHighlightedStepId] = useState<string | null>(null);
 
   const hasFileTrigger = template.steps.some((s) => s.kind === "file_trigger");
   const fileTriggerStep = template.steps.find((s) => s.kind === "file_trigger");
+  const deferredCopilotDraft = useDeferredValue(copilotDraft);
 
   useEffect(() => {
     listTemplates()
@@ -260,6 +318,22 @@ export default function WorkflowBuilder() {
       })
       .finally(() => setLoading(false));
   }, [templateId]);
+
+  useEffect(() => {
+    const state = location.state as
+      | { copilotPrompt?: string; openCopilot?: boolean }
+      | null;
+    if (!state?.copilotPrompt && !state?.openCopilot) return;
+    setShowCopilot(true);
+    setCopilotDraft(state?.copilotPrompt ?? "");
+    navigate(location.pathname, { replace: true, state: null });
+  }, [location.pathname, location.state, navigate]);
+
+  useEffect(() => {
+    if (!highlightedStepId) return;
+    const timeout = window.setTimeout(() => setHighlightedStepId(null), 2200);
+    return () => window.clearTimeout(timeout);
+  }, [highlightedStepId]);
 
   const selectedStep = template.steps.find((s) => s.id === selectedStepId) ?? null;
   const isLlmStep = selectedStep?.kind === "llm";
@@ -391,6 +465,7 @@ export default function WorkflowBuilder() {
       onRemove: removeStep,
       isFirst: idx === 0,
       isLast: idx === template.steps.length - 1,
+      isHighlighted: highlightedStepId === step.id,
     },
   }));
 
@@ -448,6 +523,230 @@ export default function WorkflowBuilder() {
 
     setGraphError(null);
     persistEdges([...flowEdges, buildDefaultEdge(sourceId, targetId)]);
+  }
+
+  function selectProposalTarget(stepId?: string) {
+    if (!stepId) return;
+    setSelectedStepId(stepId);
+    setHighlightedStepId(stepId);
+  }
+
+  function createBaseStep(kind: StepKind, name: string, description: string): WorkflowStep {
+    return {
+      id: `copilot-${Date.now()}`,
+      name,
+      kind,
+      description,
+      inputKeys: [],
+      outputKeys: [],
+      config: {},
+    };
+  }
+
+  function buildSuggestedStep(prompt: string): WorkflowStep {
+    const normalized = prompt.toLowerCase();
+    if (/slack|notify|notification/.test(normalized)) {
+      return {
+        ...createBaseStep(
+          "action",
+          "Send Slack Notification",
+          "Notify the team when the workflow reaches this checkpoint."
+        ),
+        action: "slack.sendMessage",
+        outputKeys: ["notificationStatus"],
+      };
+    }
+    if (/approve|approval/.test(normalized)) {
+      return {
+        ...createBaseStep(
+          "approval",
+          "Request Approval",
+          "Pause the workflow until a reviewer approves the next action."
+        ),
+        approvalTimeoutMinutes: 60,
+      };
+    }
+    if (/email/.test(normalized)) {
+      return {
+        ...createBaseStep(
+          "action",
+          "Send Email Update",
+          "Deliver a customer-facing or internal status update by email."
+        ),
+        action: "email.send",
+        outputKeys: ["emailStatus"],
+      };
+    }
+    return {
+      ...createBaseStep(
+        "llm",
+        "Summarize Context",
+        "Use an LLM step to analyze the latest workflow output and produce a concise summary."
+      ),
+      promptTemplate: "Summarize the latest workflow context and recommend the next action.",
+      outputKeys: ["summary"],
+    };
+  }
+
+  function findTargetStep(prompt: string): WorkflowStep | null {
+    const normalized = prompt.toLowerCase();
+    const directMatch = template.steps.find((step) =>
+      normalized.includes(step.name.toLowerCase())
+    );
+    if (directMatch) return directMatch;
+
+    if (/after the llm/.test(normalized)) {
+      return template.steps.find((step) => step.kind === "llm") ?? null;
+    }
+    if (/after the trigger/.test(normalized)) {
+      return (
+        template.steps.find(
+          (step) => step.kind === "trigger" || step.kind === "file_trigger"
+        ) ?? null
+      );
+    }
+    if (/after step (\d+)/.test(normalized)) {
+      const match = normalized.match(/after step (\d+)/);
+      const index = Number(match?.[1] ?? "0") - 1;
+      return template.steps[index] ?? null;
+    }
+    return template.steps[template.steps.length - 1] ?? null;
+  }
+
+  function applyInsertedStep(targetStepId: string, nextStep: WorkflowStep) {
+    setTemplate((current) => {
+      const nextSteps = insertStepAfterTarget({
+        steps: current.steps,
+        targetStepId,
+        insertedStep: nextStep,
+        gapY: FLOW_STEP_GAP_Y,
+        fallbackPosition: {
+          x: FLOW_STEP_X,
+          y: FLOW_STEP_Y + (current.steps.length + 1) * FLOW_STEP_GAP_Y,
+        },
+      });
+      return { ...current, steps: nextSteps };
+    });
+    setSelectedStepId(nextStep.id);
+    setHighlightedStepId(nextStep.id);
+  }
+
+  function applyCopilotProposal() {
+    if (!copilotProposal) return;
+
+    if (copilotProposal.kind === "insert_step") {
+      applyInsertedStep(copilotProposal.targetStepId, copilotProposal.step);
+    } else {
+      setTemplate((current) => ({
+        ...current,
+        steps: copilotProposal.steps,
+      }));
+      if (copilotProposal.targetStepId) {
+        selectProposalTarget(copilotProposal.targetStepId);
+      }
+    }
+
+    setCopilotMessages((messages) => [
+      ...messages,
+      {
+        id: `assistant-applied-${Date.now()}`,
+        role: "assistant",
+        content: "Applied the proposed change to the canvas.",
+      },
+    ]);
+    setCopilotProposal(null);
+  }
+
+  async function streamAssistantMessage(content: string) {
+    const id = `assistant-${Date.now()}`;
+    setCopilotMessages((messages) => [...messages, { id, role: "assistant", content: "" }]);
+    const segments = content.split(" ");
+    for (const segment of segments) {
+      setCopilotMessages((messages) =>
+        messages.map((message) =>
+          message.id === id
+            ? { ...message, content: `${message.content}${message.content ? " " : ""}${segment}` }
+            : message
+        )
+      );
+      await new Promise((resolve) => window.setTimeout(resolve, 22));
+    }
+  }
+
+  function buildWorkflowExplanation(steps: WorkflowStep[]): string {
+    if (steps.length === 0) {
+      return "This canvas is empty. Start with a trigger, then chain the LLM, logic, and action steps you want Copilot to refine.";
+    }
+    const first = steps[0];
+    const kinds = Array.from(new Set(steps.map((step) => KIND_META[step.kind].label.toLowerCase())));
+    return `This workflow starts with ${first.name} and currently runs ${steps.length} steps across ${kinds.join(", ")}. The most likely outcome is ${steps
+      .map((step) => step.name)
+      .join(" -> ")}.`;
+  }
+
+  async function handleCopilotSubmit(rawPrompt: string) {
+    const prompt = rawPrompt.trim();
+    if (!prompt) return;
+    setCopilotBusy(true);
+    setCopilotDraft("");
+    setCopilotMessages((messages) => [
+      ...messages,
+      { id: `user-${Date.now()}`, role: "user", content: prompt },
+    ]);
+
+    try {
+      const normalized = prompt.toLowerCase();
+      setCopilotProposal(null);
+
+      if (/explain|what does this workflow do/.test(normalized)) {
+        await streamAssistantMessage(buildWorkflowExplanation(template.steps));
+        return;
+      }
+
+      if (/(add|insert)/.test(normalized)) {
+        const targetStep = findTargetStep(prompt);
+        if (targetStep) {
+          const step = buildSuggestedStep(prompt);
+          const summary = `I staged ${step.name} after ${targetStep.name}. Review the action card, then apply or reject the change.`;
+          setCopilotProposal({
+            id: `proposal-${Date.now()}`,
+            kind: "insert_step",
+            title: `Add ${step.name}`,
+            summary,
+            step,
+            targetStepId: targetStep.id,
+          });
+          selectProposalTarget(targetStep.id);
+          await streamAssistantMessage(summary);
+          return;
+        }
+      }
+
+      const generatedSteps = await generateWorkflow(
+        [
+          "Use the current workflow context to respond to this editor request.",
+          `User request: ${prompt}`,
+          `Current workflow: ${template.steps.map((step, index) => `${index + 1}. ${step.name} (${step.kind})`).join(" | ") || "empty canvas"}`,
+        ].join("\n")
+      );
+
+      setCopilotProposal({
+        id: `proposal-${Date.now()}`,
+        kind: "replace_canvas",
+        title: "Replace canvas with Copilot draft",
+        summary: `Copilot generated ${generatedSteps.length} step${generatedSteps.length === 1 ? "" : "s"} based on your request. Apply to replace the current canvas or reject to keep editing.`,
+        steps: generatedSteps,
+      });
+      await streamAssistantMessage(
+        `I generated a fresh ${generatedSteps.length}-step workflow draft from your request. Review the action card before applying it to the canvas.`
+      );
+    } catch (error) {
+      await streamAssistantMessage(
+        error instanceof Error ? error.message : "Copilot could not complete that request."
+      );
+    } finally {
+      setCopilotBusy(false);
+    }
   }
 
   async function handleSave() {
@@ -579,6 +878,18 @@ export default function WorkflowBuilder() {
               Generate with AI
             </button>
             <button
+              onClick={() => setShowCopilot((visible) => !visible)}
+              className={clsx(
+                "flex items-center gap-2 px-3.5 py-2 text-sm font-medium rounded-lg border transition",
+                showCopilot
+                  ? "border-accent-teal/40 bg-teal-50 text-teal-700 dark:border-accent-teal/40 dark:bg-teal-500/10 dark:text-teal-300"
+                  : "border-gray-300 dark:border-surface-700 text-gray-700 dark:text-gray-200 bg-white dark:bg-surface-800 hover:bg-gray-50 dark:hover:bg-surface-700"
+              )}
+            >
+              <MessageSquareText size={15} />
+              AutoFlow Copilot
+            </button>
+            <button
               onClick={() => void handleSave()}
               disabled={saving}
               className={clsx(
@@ -647,8 +958,26 @@ export default function WorkflowBuilder() {
         </div>
       </div>
 
-      {/* Right panel — step detail */}
-      {selectedStep && (
+      {/* Right panel — copilot / step detail */}
+      {showCopilot ? (
+        <WorkflowCopilotPanel
+          draft={copilotDraft}
+          onDraftChange={setCopilotDraft}
+          onClose={() => setShowCopilot(false)}
+          onSubmit={handleCopilotSubmit}
+          isBusy={copilotBusy}
+          messages={copilotMessages}
+          proposal={copilotProposal}
+          onApplyProposal={applyCopilotProposal}
+          onRejectProposal={() => setCopilotProposal(null)}
+          templates={allTemplates}
+          steps={template.steps}
+          model={copilotModel}
+          onModelChange={setCopilotModel}
+          deferredDraft={deferredCopilotDraft}
+        />
+      ) : (
+        selectedStep && (
         <div className="absolute right-0 top-0 z-20 h-full w-[360px] overflow-y-auto border-l border-gray-200 dark:border-surface-800 bg-white dark:bg-surface-900 shadow-xl transition-transform duration-200">
           <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100 dark:border-surface-800">
             <h3 className="font-semibold text-gray-900 dark:text-gray-100 text-sm">Step Properties</h3>
@@ -931,6 +1260,7 @@ export default function WorkflowBuilder() {
             </Field>
           </div>
         </div>
+        )
       )}
 
       {/* File Upload Modal */}
@@ -1152,58 +1482,361 @@ function NLWorkflowModal({
   );
 }
 
-// ---------------------------------------------------------------------------
-// AgentCanvas — visual manager→worker hierarchy for agent steps
-// ---------------------------------------------------------------------------
+function WorkflowCopilotPanel({
+  draft,
+  onDraftChange,
+  onClose,
+  onSubmit,
+  isBusy,
+  messages,
+  proposal,
+  onApplyProposal,
+  onRejectProposal,
+  templates,
+  steps,
+  model,
+  onModelChange,
+  deferredDraft,
+}: {
+  draft: string;
+  onDraftChange: (value: string) => void;
+  onClose: () => void;
+  onSubmit: (prompt: string) => void;
+  isBusy: boolean;
+  messages: CopilotMessage[];
+  proposal: CopilotProposal | null;
+  onApplyProposal: () => void;
+  onRejectProposal: () => void;
+  templates: TemplateSummary[];
+  steps: WorkflowStep[];
+  model: string;
+  onModelChange: (value: string) => void;
+  deferredDraft: string;
+}) {
+  const mentionMatch = deferredDraft.match(/@([^@\n]*)$/);
+  const mentionQuery = mentionMatch?.[1]?.trim().toLowerCase() ?? "";
+  const mentionItems = useMemo(() => {
+    if (!mentionMatch) return [];
+    return [
+      ...steps.map((step) => ({ id: step.id, label: step.name, hint: `${KIND_META[step.kind].label} step` })),
+      ...templates.slice(0, 6).map((template) => ({
+        id: template.id,
+        label: template.name,
+        hint: `${template.category} template`,
+      })),
+    ].filter((item) =>
+      mentionQuery ? item.label.toLowerCase().includes(mentionQuery) : true
+    );
+  }, [mentionMatch, mentionQuery, steps, templates]);
 
-function AgentCanvas({ model, slots }: { model: string; slots: number }) {
-  const workerSlots = Math.max(1, Math.min(slots, 20));
+  const lastAssistantMessage = [...messages].reverse().find((message) => message.role === "assistant");
+
+  function insertReference(label: string) {
+    if (!mentionMatch) return;
+    const start = draft.slice(0, mentionMatch.index ?? 0);
+    onDraftChange(`${start}@${label} `);
+  }
+
   return (
-    <div
-      className="mt-3 p-3 rounded-lg border border-brand-200 dark:border-brand-500/30 bg-brand-50 dark:bg-brand-500/10"
-      onClick={(e) => e.stopPropagation()}
-    >
-      <p className="text-xs font-semibold text-brand-700 dark:text-brand-300 mb-2 flex items-center gap-1">
-        <Bot size={11} />
-        Agent Topology
-      </p>
-
-      {/* Manager node */}
-      <div className="flex justify-center mb-1">
-        <div className="flex items-center gap-1 px-3 py-1.5 bg-brand-600 text-white rounded-lg text-xs font-medium shadow-sm">
-          <Bot size={11} />
-          Manager
-          {model !== "default" && (
-            <span className="ml-1 opacity-75 font-normal">{model}</span>
-          )}
+    <aside className="absolute right-0 top-0 z-20 flex h-full w-[360px] flex-col overflow-hidden border-l border-gray-200 bg-white shadow-xl transition-transform duration-200 ease-out dark:border-surface-800 dark:bg-surface-900">
+      <div className="border-b border-gray-100 px-5 py-4 dark:border-surface-800">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.24em] text-brand-500 dark:text-brand-300">
+              Workflow Copilot
+            </p>
+            <h3 className="mt-1 text-sm font-semibold text-gray-900 dark:text-gray-100">
+              AutoFlow Copilot
+            </h3>
+          </div>
+          <button
+            onClick={onClose}
+            className="rounded-md p-1.5 text-gray-500 transition hover:bg-gray-100 dark:hover:bg-surface-800"
+            aria-label="Close copilot"
+          >
+            <X size={16} />
+          </button>
+        </div>
+        <div className="mt-4 flex items-center gap-2">
+          <select
+            value={model}
+            onChange={(event) => onModelChange(event.target.value)}
+            className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-brand-500 dark:border-surface-700 dark:bg-surface-800 dark:text-gray-100"
+          >
+            {["Fast", "Auto", "Advanced", "Behemoth"].map((option) => (
+              <option key={option} value={option}>
+                {option}
+              </option>
+            ))}
+          </select>
         </div>
       </div>
 
-      {/* Connector lines */}
-      <div className="flex justify-center gap-0 mb-1">
-        {Array.from({ length: workerSlots }).map((_, i) => (
-          <div key={i} className="flex flex-col items-center" style={{ width: `${100 / workerSlots}%` }}>
-            <div className="w-px h-4 bg-brand-300 dark:bg-brand-500/40" />
+      <div className="flex-1 overflow-y-auto px-4 py-4">
+        <div aria-live="polite" className="sr-only">
+          {isBusy ? "Copilot is replying" : lastAssistantMessage?.content ?? ""}
+        </div>
+
+        {messages.length === 0 ? (
+          <div className="rounded-2xl border border-brand-200 bg-brand-50/80 p-4 text-sm text-brand-900 dark:border-brand-500/20 dark:bg-brand-500/10 dark:text-brand-100">
+            <p className="font-medium">Ask the canvas for a change or an explanation.</p>
+            <p className="mt-2 text-brand-700 dark:text-brand-200">
+              Try “Explain what this workflow does”, “Add a Slack notification step after the LLM step”, or “Regenerate this workflow for customer onboarding”.
+            </p>
           </div>
-        ))}
+        ) : (
+          <div className="space-y-3">
+            {messages.map((message) => (
+              <div
+                key={message.id}
+                className={clsx(
+                  "rounded-2xl px-4 py-3 text-sm leading-relaxed",
+                  message.role === "user"
+                    ? "ml-6 bg-surface-100 text-gray-800 dark:bg-surface-800 dark:text-gray-100"
+                    : "mr-6 border border-brand-200 bg-brand-50 text-gray-800 dark:border-brand-500/20 dark:bg-brand-500/10 dark:text-gray-100"
+                )}
+              >
+                {message.content || (isBusy && message.role === "assistant" ? "Thinking…" : "")}
+              </div>
+            ))}
+          </div>
+        )}
+
+        {proposal && (
+          <div className="mt-4 rounded-2xl border border-teal-500/50 bg-teal-50/80 p-4 dark:bg-teal-500/10">
+            <div className="flex items-start gap-3">
+              <div className="mt-1 rounded-xl bg-white p-2 text-teal-600 shadow-sm dark:bg-surface-800 dark:text-teal-300">
+                <CornerDownRight size={15} />
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-semibold text-gray-900 dark:text-gray-100">{proposal.title}</p>
+                <p className="mt-1 text-sm text-gray-700 dark:text-gray-300">{proposal.summary}</p>
+              </div>
+            </div>
+            <div className="mt-4 flex gap-2">
+              <button
+                onClick={onApplyProposal}
+                className="flex-1 rounded-xl bg-teal-600 px-3 py-2 text-sm font-medium text-white transition hover:bg-teal-500"
+              >
+                Apply
+              </button>
+              <button
+                onClick={onRejectProposal}
+                className="flex-1 rounded-xl border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 transition hover:bg-gray-50 dark:border-surface-700 dark:text-gray-200 dark:hover:bg-surface-800"
+              >
+                Reject
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
-      {/* Worker nodes */}
-      <div className="flex justify-center gap-1 flex-wrap">
-        {Array.from({ length: workerSlots }).map((_, i) => (
-          <div
-            key={i}
-            className="flex items-center gap-1 px-2 py-1 bg-white dark:bg-surface-800 border border-brand-300 dark:border-brand-500/40 text-brand-600 dark:text-brand-300 rounded-md text-xs"
-          >
-            <Bot size={10} />
-            W{i}
+      <div className="border-t border-gray-100 px-4 py-4 dark:border-surface-800">
+        <div className="mb-3 flex flex-wrap gap-2">
+          {["Explain this workflow", "Add a Slack notification step after the LLM step", "Regenerate this workflow for customer onboarding"].map((prompt) => (
+            <button
+              key={prompt}
+              type="button"
+              onClick={() => onSubmit(prompt)}
+              className="rounded-full border border-gray-200 px-3 py-1.5 text-xs text-gray-600 transition hover:border-brand-300 hover:text-brand-700 dark:border-surface-700 dark:text-surface-300 dark:hover:border-brand-500/50 dark:hover:text-brand-300"
+            >
+              {prompt}
+            </button>
+          ))}
+        </div>
+
+        <div className={clsx("relative rounded-2xl border bg-white p-2 dark:bg-surface-900", isBusy ? "border-brand-300 shadow-glow" : "border-gray-200 dark:border-surface-700")}>
+          <textarea
+            value={draft}
+            onChange={(event) => onDraftChange(event.target.value)}
+            rows={4}
+            placeholder="Ask Copilot to explain, fix, or extend this workflow…"
+            className="w-full resize-none border-none bg-transparent px-2 py-1 text-sm text-gray-900 outline-none focus:ring-0 dark:text-gray-100"
+          />
+          {mentionItems.length > 0 && (
+            <div className="absolute bottom-full left-0 mb-2 w-full rounded-2xl border border-gray-200 bg-white p-2 shadow-lg dark:border-surface-700 dark:bg-surface-850">
+              {mentionItems.slice(0, 6).map((item) => (
+                <button
+                  key={`${item.id}-${item.label}`}
+                  type="button"
+                  onClick={() => insertReference(item.label)}
+                  className="flex w-full items-center justify-between rounded-xl px-3 py-2 text-left text-sm transition hover:bg-gray-50 dark:hover:bg-surface-800"
+                >
+                  <span className="truncate text-gray-900 dark:text-gray-100">{item.label}</span>
+                  <span className="ml-3 shrink-0 text-xs text-gray-400 dark:text-surface-500">{item.hint}</span>
+                </button>
+              ))}
+            </div>
+          )}
+          <div className="mt-2 flex items-center justify-between px-2 pb-1">
+            <p className="text-xs text-gray-400 dark:text-surface-500">
+              Type <span className="font-semibold">@</span> to reference steps or templates.
+            </p>
+            <button
+              type="button"
+              onClick={() => onSubmit(draft)}
+              disabled={!draft.trim() || isBusy}
+              className="inline-flex items-center gap-2 rounded-xl bg-brand-600 px-3 py-2 text-sm font-medium text-white transition hover:bg-brand-500 disabled:opacity-50"
+            >
+              <Send size={14} />
+              Send
+            </button>
           </div>
-        ))}
+        </div>
+      </div>
+    </aside>
+  );
+}
+
+type AgentSlotDefinition = {
+  key: "model" | "memory" | "tools";
+  label: string;
+  value: string | null;
+  helper: string;
+  accent: string;
+  tint: string;
+  border: string;
+  icon: React.ReactNode;
+};
+
+function readAgentConfig(step: WorkflowStep): Record<string, unknown> {
+  return typeof step.config === "object" && step.config !== null
+    ? (step.config as Record<string, unknown>)
+    : {};
+}
+
+function readStringList(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter((entry): entry is string => typeof entry === "string" && entry.trim().length > 0) : [];
+}
+
+function formatSlotList(values: string[]): string | null {
+  if (values.length === 0) return null;
+  if (values.length === 1) return values[0];
+  if (values.length === 2) return values.join(" + ");
+  return `${values[0]} +${values.length - 1}`;
+}
+
+function buildAgentSlotDefinitions(step: WorkflowStep): AgentSlotDefinition[] {
+  const config = readAgentConfig(step);
+  const modelValue = step.agentModel?.trim() || null;
+  const memoryValue =
+    (typeof config.agentMemoryLabel === "string" && config.agentMemoryLabel.trim()) ||
+    (typeof config.memoryLabel === "string" && config.memoryLabel.trim()) ||
+    formatSlotList(
+      readStringList(config.memorySources).concat(
+        step.inputKeys.filter((key) => /memory|context|history|knowledge/i.test(key))
+      )
+    ) ||
+    ((config.memory === true || config.memoryEnabled === true) ? "Connected" : null);
+  const toolsValue =
+    (typeof config.agentToolsLabel === "string" && config.agentToolsLabel.trim()) ||
+    (typeof config.toolsLabel === "string" && config.toolsLabel.trim()) ||
+    formatSlotList(readStringList(config.tools).concat(readStringList(config.agentTools)));
+
+  return [
+    {
+      key: "model",
+      label: "Model",
+      value: modelValue,
+      helper: modelValue ? "Primary reasoning layer" : "Snap in a model",
+      accent: "#6366f1",
+      tint: "rgba(99,102,241,0.16)",
+      border: "rgba(99,102,241,0.34)",
+      icon: <Cpu size={14} />,
+    },
+    {
+      key: "memory",
+      label: "Memory",
+      value: memoryValue,
+      helper: memoryValue ? "Context stays attached" : "Attach memory",
+      accent: "#14b8a6",
+      tint: "rgba(20,184,166,0.16)",
+      border: "rgba(20,184,166,0.34)",
+      icon: <Database size={14} />,
+    },
+    {
+      key: "tools",
+      label: "Tools",
+      value: toolsValue,
+      helper: toolsValue ? "Actions ready to call" : "Attach tools",
+      accent: "#f97316",
+      tint: "rgba(249,115,22,0.16)",
+      border: "rgba(249,115,22,0.34)",
+      icon: <Wrench size={14} />,
+    },
+  ];
+}
+
+function AgentSlots({ step }: { step: WorkflowStep }) {
+  const slotDefinitions = buildAgentSlotDefinitions(step);
+
+  return (
+    <div
+      className="mt-4 rounded-[10px] border border-slate-700/80 bg-slate-950/70 p-3"
+      onClick={(e) => e.stopPropagation()}
+    >
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <div>
+          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">
+            Modular Attachments
+          </p>
+          <p className="mt-1 text-xs text-slate-500">
+            {Math.max(1, step.subAgentSlots ?? 1)} worker slot{(step.subAgentSlots ?? 1) === 1 ? "" : "s"} fan out from this agent.
+          </p>
+        </div>
+        <div className="rounded-full border border-slate-700 px-2.5 py-1 text-[11px] font-medium text-slate-300">
+          {step.subAgentSlots ?? 1} parallel
+        </div>
       </div>
 
-      <p className="text-xs text-brand-500 dark:text-brand-400/70 mt-2 text-center">
-        {workerSlots} parallel worker{workerSlots !== 1 ? "s" : ""} · results aggregated
-      </p>
+      <div className="grid grid-cols-3 gap-2">
+        {slotDefinitions.map((slot) => {
+          const isEmpty = !slot.value;
+          return (
+            <div
+              key={slot.key}
+              className={clsx(
+                "min-h-[98px] rounded-[10px] border p-3 transition-transform duration-150",
+                isEmpty ? "border-dashed" : ""
+              )}
+              style={{
+                borderColor: isEmpty ? slot.border : "rgba(51,65,85,0.96)",
+                background: isEmpty
+                  ? "rgba(15,23,42,0.38)"
+                  : `linear-gradient(180deg, ${slot.tint} 0%, rgba(15,23,42,0.66) 100%)`,
+              }}
+            >
+              <div className="flex items-center justify-between gap-2">
+                <div
+                  className="flex h-8 w-8 items-center justify-center rounded-[9px] border"
+                  style={{ borderColor: slot.border, backgroundColor: slot.tint, color: slot.accent }}
+                >
+                  {slot.icon}
+                </div>
+                {isEmpty && (
+                  <div
+                    className="flex h-6 w-6 items-center justify-center rounded-full border border-dashed text-slate-400"
+                    style={{ borderColor: slot.border }}
+                    aria-hidden="true"
+                  >
+                    <Plus size={12} />
+                  </div>
+                )}
+              </div>
+
+              <p className="mt-3 text-xs font-semibold uppercase tracking-[0.16em] text-slate-300">
+                {slot.label}
+              </p>
+              <p className={clsx("mt-2 text-sm font-medium", isEmpty ? "text-slate-500" : "text-slate-100")}>
+                {slot.value ?? "Empty"}
+              </p>
+              <p className="mt-1 text-[11px] leading-4 text-slate-400">
+                {slot.helper}
+              </p>
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }
@@ -1227,6 +1860,7 @@ function WorkflowStepNode({
         onRemove={() => data.onRemove(id)}
         isFirst={data.isFirst}
         isLast={data.isLast}
+        isHighlighted={data.isHighlighted}
       />
       <Handle type="source" position={Position.Bottom} className="!h-2 !w-2 !border-0 !bg-slate-500" />
     </div>
@@ -1243,6 +1877,7 @@ function StepNode({
   onRemove,
   isFirst,
   isLast,
+  isHighlighted,
 }: {
   step: WorkflowStep;
   selected: boolean;
@@ -1253,9 +1888,11 @@ function StepNode({
   onRemove: () => void;
   isFirst: boolean;
   isLast: boolean;
+  isHighlighted: boolean;
 }) {
   const { theme } = useTheme();
   const meta = KIND_META[step.kind];
+  const isAgentNode = step.kind === "agent";
   const visualState = readNodeVisualState(step);
   const showSuccessState = visualState === "success";
   const showErrorState = visualState === "error";
@@ -1266,18 +1903,26 @@ function StepNode({
       onClick={onSelect}
       style={{ borderColor: selected ? "#6366f1" : undefined }}
       className={clsx(
-        "group workflow-step-node relative cursor-pointer overflow-hidden rounded-[12px] border bg-white dark:bg-surface-900 shadow-md transition-all",
-        selected
-          ? "border-2 border-brand-500 ring-2 ring-brand-500/20"
-          : "border border-gray-300 dark:border-surface-700 hover:border-brand-400 dark:hover:border-brand-500/50",
+        "group workflow-step-node relative cursor-pointer overflow-hidden rounded-[12px] border shadow-md transition-all",
+        isAgentNode
+          ? selected
+            ? "border-2 border-brand-500 bg-slate-800 ring-2 ring-brand-500/20 shadow-[0_16px_34px_rgba(15,23,42,0.42)]"
+            : "border border-slate-700 bg-slate-800 hover:border-brand-500 shadow-[0_14px_28px_rgba(15,23,42,0.36)]"
+          : selected
+            ? "border-2 border-brand-500 bg-white ring-2 ring-brand-500/20 dark:bg-surface-900"
+            : "border border-gray-300 bg-white hover:border-brand-400 dark:border-surface-700 dark:bg-surface-900 dark:hover:border-brand-500/50",
+        isHighlighted ? "border-teal-400 ring-2 ring-teal-500/30 shadow-[0_0_0_1px_rgba(20,184,166,0.2),0_0_24px_rgba(20,184,166,0.25)]" : "",
         dragging ? "opacity-90 shadow-lg" : "",
         showRunningState ? "workflow-node-running" : "",
         showSuccessState ? "workflow-node-success" : "",
         showErrorState ? "workflow-node-error" : ""
       )}
     >
-      <div className="h-10 border-b border-black/5 dark:border-white/5 px-4" style={{ backgroundColor: theme === "dark" ? meta.darkCategoryTint : meta.categoryTint }}>
-        <div className="flex h-full items-center gap-2 text-xs font-medium text-gray-700 dark:text-gray-300">
+      <div
+        className={clsx("h-10 border-b px-4", isAgentNode ? "border-slate-700 bg-slate-900/80" : "border-black/5 dark:border-white/5")}
+        style={isAgentNode ? undefined : { backgroundColor: theme === "dark" ? meta.darkCategoryTint : meta.categoryTint }}
+      >
+        <div className={clsx("flex h-full items-center gap-2 text-xs font-medium", isAgentNode ? "text-slate-200" : "text-gray-700 dark:text-gray-300")}>
           <span style={{ color: meta.categoryBorder }}>{meta.icon}</span>
           {meta.label}
           {showRunningState && <Loader size={12} className="ml-auto animate-spin text-brand-500" />}
@@ -1290,8 +1935,8 @@ function StepNode({
           <div
             className={clsx(
               "flex items-center gap-1 px-2 py-1 rounded-md border text-xs font-medium mt-0.5",
-              meta.chipBg,
-              meta.chipColor
+              isAgentNode ? "border-brand-500/30 bg-brand-500/12 text-indigo-100" : meta.chipBg,
+              isAgentNode ? "" : meta.chipColor
             )}
           >
             {meta.icon}
@@ -1299,9 +1944,11 @@ function StepNode({
           </div>
 
           <div className="flex-1 min-w-0">
-            <p className="font-medium text-gray-900 dark:text-gray-100 text-sm">{step.name}</p>
+            <p className={clsx("text-sm font-medium", isAgentNode ? "text-slate-50" : "text-gray-900 dark:text-gray-100")}>{step.name}</p>
             {step.description && (
-              <p className="text-xs text-gray-500 dark:text-surface-400 mt-0.5 truncate">{step.description}</p>
+              <p className={clsx("mt-0.5 text-xs truncate", isAgentNode ? "text-slate-400" : "text-gray-500 dark:text-surface-400")}>
+                {step.description}
+              </p>
             )}
           </div>
         </div>
@@ -1311,9 +1958,17 @@ function StepNode({
           <div className="flex gap-4 mt-3 text-xs">
             {step.inputKeys.length > 0 && (
               <div>
-                <span className="text-gray-400 dark:text-surface-500 mr-1">in:</span>
+                <span className={clsx("mr-1", isAgentNode ? "text-slate-500" : "text-gray-400 dark:text-surface-500")}>in:</span>
                 {step.inputKeys.map((k) => (
-                  <span key={k} className="mr-1 px-1.5 py-0.5 bg-gray-100 dark:bg-surface-800 rounded text-gray-600 dark:text-surface-300">
+                  <span
+                    key={k}
+                    className={clsx(
+                      "mr-1 rounded px-1.5 py-0.5",
+                      isAgentNode
+                        ? "bg-slate-900 text-slate-300"
+                        : "bg-gray-100 text-gray-600 dark:bg-surface-800 dark:text-surface-300"
+                    )}
+                  >
                     {k}
                   </span>
                 ))}
@@ -1321,9 +1976,17 @@ function StepNode({
             )}
             {step.outputKeys.length > 0 && (
               <div>
-                <span className="text-gray-400 dark:text-surface-500 mr-1">out:</span>
+                <span className={clsx("mr-1", isAgentNode ? "text-slate-500" : "text-gray-400 dark:text-surface-500")}>out:</span>
                 {step.outputKeys.map((k) => (
-                  <span key={k} className="mr-1 px-1.5 py-0.5 bg-brand-50 dark:bg-brand-500/10 text-brand-600 dark:text-brand-300 rounded">
+                  <span
+                    key={k}
+                    className={clsx(
+                      "mr-1 rounded px-1.5 py-0.5",
+                      isAgentNode
+                        ? "bg-indigo-500/12 text-indigo-200"
+                        : "bg-brand-50 text-brand-600 dark:bg-brand-500/10 dark:text-brand-300"
+                    )}
+                  >
                     {k}
                   </span>
                 ))}
@@ -1332,12 +1995,9 @@ function StepNode({
           </div>
         )}
 
-        {/* Agent canvas — inline hierarchy for agent steps */}
+        {/* Agent slots — spec-driven modular layout for model, memory, and tools */}
         {step.kind === "agent" && (
-          <AgentCanvas
-            model={step.agentModel ?? "default"}
-            slots={step.subAgentSlots ?? 1}
-          />
+          <AgentSlots step={step} />
         )}
       </div>
 

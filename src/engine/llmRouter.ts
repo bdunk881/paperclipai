@@ -13,7 +13,7 @@
  */
 
 import { WorkflowStep } from "../types/workflow";
-import { ProviderName } from "./llmProviders/types";
+import { ProviderName, PROVIDER_MODELS } from "./llmProviders/types";
 
 export type LlmTier = "lite" | "standard" | "power";
 
@@ -49,6 +49,66 @@ export const TIER_MODELS: Record<ProviderName, Record<LlmTier, string>> = {
     lite: "mistral-small-latest",
     standard: "mistral-large-latest",
     power: "mistral-large-latest",
+  },
+  "azure-openai": {
+    lite: "gpt-4o-mini",
+    standard: "gpt-4o",
+    power: "gpt-4.1",
+  },
+  bedrock: {
+    lite: "amazon.nova-micro-v1:0",
+    standard: "amazon.nova-lite-v1:0",
+    power: "amazon.nova-pro-v1:0",
+  },
+  "vertex-ai": {
+    lite: "gemini-1.5-flash-002",
+    standard: "gemini-1.5-pro-002",
+    power: "claude-3-5-sonnet-v2@20241022",
+  },
+  groq: {
+    lite: "llama-3.1-8b-instant",
+    standard: "mixtral-8x7b-32768",
+    power: "llama-3.3-70b-versatile",
+  },
+  fireworks: {
+    lite: "accounts/fireworks/models/llama-v3p1-8b-instruct",
+    standard: "accounts/fireworks/models/llama-v3p1-70b-instruct",
+    power: "accounts/fireworks/models/deepseek-r1",
+  },
+  together: {
+    lite: "meta-llama/Meta-Llama-3.1-8B-Instruct-Turbo",
+    standard: "meta-llama/Meta-Llama-3.1-70B-Instruct-Turbo",
+    power: "deepseek-ai/DeepSeek-R1",
+  },
+  ollama: {
+    lite: "llama3.2",
+    standard: "llama3.1:70b",
+    power: "deepseek-r1:14b",
+  },
+  localai: {
+    lite: "llama-3.2-3b-instruct",
+    standard: "llama-3.1-8b-instruct",
+    power: "llama-3.1-70b-instruct",
+  },
+  cohere: {
+    lite: "command-r7b-12-2024",
+    standard: "command-r-plus-08-2024",
+    power: "command-a-03-2025",
+  },
+  perplexity: {
+    lite: "sonar",
+    standard: "sonar-pro",
+    power: "sonar-reasoning-pro",
+  },
+  xai: {
+    lite: "grok-3-mini-beta",
+    standard: "grok-2-1212",
+    power: "grok-3-beta",
+  },
+  deepseek: {
+    lite: "deepseek-chat",
+    standard: "deepseek-coder",
+    power: "deepseek-reasoner",
   },
 };
 
@@ -155,7 +215,10 @@ export function classifyTier(step: WorkflowStep, renderedPromptLength: number): 
  * Falls back to the provider's standard model if the tier has no mapping.
  */
 export function resolveModelForTier(provider: ProviderName, tier: LlmTier): string {
-  return TIER_MODELS[provider]?.[tier] ?? TIER_MODELS[provider]?.["standard"];
+  return TIER_MODELS[provider]?.[tier]
+    ?? TIER_MODELS[provider]?.standard
+    ?? PROVIDER_MODELS[provider]?.[0]
+    ?? PROVIDER_MODELS.openai[0];
 }
 
 // ---------------------------------------------------------------------------

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import {
   Activity,
@@ -48,7 +48,7 @@ export default function Dashboard() {
 
   const onboardingStorageKey = `${ONBOARDING_DISMISS_PREFIX}:${user?.id ?? "anonymous"}`;
 
-  async function loadDashboard() {
+  const loadDashboard = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
@@ -66,11 +66,11 @@ export default function Dashboard() {
     } finally {
       setLoading(false);
     }
-  }
+  }, [getAccessToken]);
 
   useEffect(() => {
     void loadDashboard();
-  }, []);
+  }, [loadDashboard]);
 
   const stats = {
     total: runs.length,

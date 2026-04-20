@@ -35,6 +35,7 @@ declare module "@xyflow/react" {
     dragging?: boolean;
   };
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   export type NodeTypes = Record<string, React.ComponentType<NodeProps<any>>>;
 
   export const Background: React.ComponentType<Record<string, unknown>>;

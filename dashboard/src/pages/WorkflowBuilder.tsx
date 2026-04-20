@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useCallback } from "react";
 import { useParams, useNavigate, useLocation } from "react-router-dom";
 import {
   Plus,
@@ -309,7 +309,7 @@ export default function WorkflowBuilder() {
       .finally(() => setLlmConfigsLoading(false));
   }, [isLlmStep]);
 
-  async function handleCopilotSubmit(rawPrompt?: string) {
+  const handleCopilotSubmit = useCallback(async (rawPrompt?: string) => {
     const prompt = (rawPrompt ?? copilotInput).trim();
     if (!prompt || copilotBusy) return;
 
@@ -344,7 +344,7 @@ export default function WorkflowBuilder() {
     } finally {
       setCopilotBusy(false);
     }
-  }
+  }, [copilotBusy, copilotInput, selectedStepId, template]);
 
   function handleApplyCopilotProposal(messageId: string, proposal: CopilotProposal) {
     setTemplate((currentTemplate) => applyCopilotProposal(currentTemplate, proposal));
@@ -386,7 +386,7 @@ export default function WorkflowBuilder() {
     setCopilotInput(incomingPrompt);
     void handleCopilotSubmit(incomingPrompt);
     navigate(location.pathname, { replace: true, state: null });
-  }, [incomingState, consumedIncomingPrompt, navigate, location.pathname]);
+  }, [incomingState, consumedIncomingPrompt, navigate, location.pathname, handleCopilotSubmit]);
 
   const copilotReferences = useMemo(() => {
     if (!copilotInput.includes("@")) return [];

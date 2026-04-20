@@ -233,7 +233,7 @@ export default function AgentDeploy() {
 
     window.addEventListener("message", onMessage);
     return () => window.removeEventListener("message", onMessage);
-  }, [authorizedFetch, loadConnections]);
+  }, [authorizedFetch, clearPopupMonitor, loadConnections]);
 
   useEffect(() => {
     if (!isDeploying) return;

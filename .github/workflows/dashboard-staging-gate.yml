@@ -68,7 +68,6 @@ jobs:
           done
 
       - name: Verify preview auth env parity
-        working-directory: dashboard
         run: |
           set -euo pipefail
           mkdir -p .vercel
@@ -82,7 +81,6 @@ jobs:
 
       - name: Deploy preview
         id: deploy
-        working-directory: dashboard
         run: |
           set -euo pipefail
           echo "Deploying ref: $DEPLOY_REF"
@@ -165,7 +163,6 @@ jobs:
           done
 
       - name: Verify production auth env parity
-        working-directory: dashboard
         run: |
           set -euo pipefail
           mkdir -p .vercel
@@ -179,7 +176,6 @@ jobs:
 
       - name: Deploy production
         id: deploy
-        working-directory: dashboard
         run: |
           set -euo pipefail
           echo "Deploying ref: $DEPLOY_REF"

@@ -81,6 +81,8 @@ export interface StepResultOverrides {
   output?: Record<string, unknown>;
   durationMs?: number;
   error?: string;
+  attemptCount?: number;
+  phase?: StepResult["phase"];
 }
 
 export function makeStepResult(overrides: StepResultOverrides = {}): StepResult {
@@ -91,6 +93,8 @@ export function makeStepResult(overrides: StepResultOverrides = {}): StepResult 
     output: overrides.output ?? {},
     durationMs: overrides.durationMs ?? 42,
     error: overrides.error,
+    attemptCount: overrides.attemptCount,
+    phase: overrides.phase,
   };
 }
 
@@ -173,6 +177,7 @@ export function makeWorkflowStep(overrides: Partial<WorkflowStep> = {}): Workflo
     condition: overrides.condition,
     action: overrides.action,
     config: overrides.config,
+    retry: overrides.retry,
   };
 }
 
@@ -211,6 +216,9 @@ export function makeWorkflowTemplate(overrides: Partial<WorkflowTemplate> = {}):
     version: overrides.version ?? "1.0.0",
     configFields: overrides.configFields ?? [makeConfigField({ key: "apiKey", required: true })],
     steps: overrides.steps ?? [triggerStep, outputStep],
+    retry: overrides.retry,
+    errors: overrides.errors,
+    _finally: overrides._finally,
     sampleInput: overrides.sampleInput ?? { input: "test" },
     expectedOutput: overrides.expectedOutput ?? { result: "test" },
   };

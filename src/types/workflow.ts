@@ -23,6 +23,18 @@ export type FieldType =
   | "string[]"
   | "object[]";
 
+export type RetryStrategy = "constant" | "exponential" | "random";
+
+export interface WorkflowRetryPolicy {
+  type: RetryStrategy;
+  maxAttempts: number;
+  maxDuration?: number;
+  intervalMs?: number;
+  delayFactor?: number;
+  maxInterval?: number;
+  warningOnRetry?: boolean;
+}
+
 /** A single configurable field exposed in the dashboard UI */
 export interface ConfigField {
   key: string;
@@ -93,6 +105,8 @@ export interface WorkflowStep {
   approvalTimeoutMinutes?: number;
   // file_trigger step
   acceptedFileTypes?: string[];
+  // step execution retry policy
+  retry?: WorkflowRetryPolicy;
 }
 
 /** A complete workflow definition */
@@ -107,6 +121,12 @@ export interface WorkflowTemplate {
   configFields: ConfigField[];
   /** Ordered list of steps; runtime executes them in sequence unless branched */
   steps: WorkflowStep[];
+  /** Workflow-level retry policy applied when a step does not define one */
+  retry?: WorkflowRetryPolicy;
+  /** Workflow-level catch block that runs after a main step fails */
+  errors?: WorkflowStep[];
+  /** Workflow-level cleanup block that always runs after the main flow exits */
+  _finally?: WorkflowStep[];
   /** Example input payload used for previewing in the dashboard */
   sampleInput: Record<string, unknown>;
   /** Expected output shape for test assertions */
@@ -154,6 +174,8 @@ export interface StepResult {
   output: Record<string, unknown>;
   durationMs: number;
   error?: string;
+  attemptCount?: number;
+  phase?: "main" | "errors" | "finally";
   /** Populated for agent steps — one entry per parallel worker slot */
   agentSlotResults?: AgentSlotResult[];
   /** Populated for llm / agent steps — model, tier, and cost data */

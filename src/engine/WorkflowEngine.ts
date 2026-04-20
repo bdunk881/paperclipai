@@ -13,6 +13,7 @@ import {
   WorkflowStep,
   StepResult,
   AgentSlotResult,
+  WorkflowRetryPolicy,
 } from "../types/workflow";
 import { runStore } from "./runStore";
 import { approvalStore } from "./approvalStore";
@@ -88,6 +89,16 @@ actionRegistry.set("content.publish", async (inputs) => {
 
 export function registerAction(name: string, handler: ActionHandler): void {
   actionRegistry.set(name, handler);
+}
+
+type StepPhase = NonNullable<StepResult["phase"]>;
+
+interface StepExecutionState {
+  output: Record<string, unknown>;
+  status: StepResult["status"];
+  error?: string;
+  agentSlotResults?: AgentSlotResult[];
+  costLog?: LlmCostLog;
 }
 
 // ---------------------------------------------------------------------------
@@ -218,6 +229,36 @@ async function executeOutput(
   return { ...out, completedAt: new Date().toISOString() };
 }
 
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function resolveRetryPolicy(
+  step: WorkflowStep,
+  template: WorkflowTemplate
+): WorkflowRetryPolicy | undefined {
+  return step.retry ?? template.retry;
+}
+
+function computeRetryDelayMs(policy: WorkflowRetryPolicy, attempt: number): number {
+  const baseInterval = Math.max(0, policy.intervalMs ?? 1_000);
+  const maxInterval = policy.maxInterval ?? Number.POSITIVE_INFINITY;
+  const delayFactor = policy.delayFactor ?? 2;
+
+  switch (policy.type) {
+    case "constant":
+      return Math.min(baseInterval, maxInterval);
+    case "exponential":
+      return Math.min(baseInterval * delayFactor ** (attempt - 1), maxInterval);
+    case "random": {
+      const windowMs = Math.min(baseInterval * delayFactor ** (attempt - 1), maxInterval);
+      return Math.floor(Math.random() * (windowMs + 1));
+    }
+    default:
+      return baseInterval;
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Main engine
 // ---------------------------------------------------------------------------
@@ -303,125 +344,69 @@ export class WorkflowEngine {
     // memory helpers are injected so LLM prompt templates can reference them.
     const context: Record<string, unknown> = { ...config, ...input, memory: memoryContext };
     const stepResults: StepResult[] = [];
+    let lastExecutedStep: WorkflowStep | undefined;
 
-    for (const step of template.steps) {
-      const start = Date.now();
-      let stepOutput: Record<string, unknown> = {};
-      let stepError: string | undefined;
-      let stepStatus: StepResult["status"] = "success";
-      let agentSlotResults: AgentSlotResult[] | undefined;
-      let stepCostLog: LlmCostLog | undefined;
+    const appendResult = (result: StepResult): void => {
+      stepResults.push(result);
+      runStore.update(runId, { stepResults: [...stepResults] });
+    };
 
-      try {
-        switch (step.kind) {
-          case "trigger":
-            stepOutput = await executeTrigger(step, context);
-            break;
-          case "llm": {
-            const llmResult = await executeLlm(step, context, userId);
-            stepOutput = llmResult.output;
-            stepCostLog = llmResult.costLog;
-            break;
-          }
-          case "transform":
-            stepOutput = await executeTransform(step, context);
-            break;
-          case "condition":
-            stepOutput = await executeCondition(step, context);
-            break;
-          case "action":
-            stepOutput = await executeAction(step, context, config);
-            break;
-          case "output":
-            stepOutput = await executeOutput(step, context);
-            break;
-          case "mcp": {
-            const mcpResult = await handleMcp(step, context);
-            stepOutput = mcpResult.output;
-            break;
-          }
-          case "file_trigger": {
-            const ftResult = await handleFileTrigger(step, context);
-            stepOutput = ftResult.output;
-            break;
-          }
-          case "agent": {
-            const agentResult = await handleAgent(step, context, runId, userId ?? "");
-            stepOutput = agentResult.output;
-            agentSlotResults = agentResult.agentSlotResults;
-            break;
-          }
-          // approval steps — pause the run and wait for human resolution
-          case "approval": {
-            const assignee = step.approvalAssignee ?? "unassigned";
-            const message = step.approvalMessage ?? "Approval required to continue.";
-            const timeoutMinutes = step.approvalTimeoutMinutes ?? 60;
+    const executePhaseSteps = async (
+      steps: WorkflowStep[] | undefined,
+      phase: StepPhase
+    ): Promise<StepResult | undefined> => {
+      for (const step of steps ?? []) {
+        const result = await this._executeStepWithRetry(
+          step,
+          context,
+          config,
+          runId,
+          template,
+          userId,
+          phase
+        );
 
-            runStore.update(runId, { status: "awaiting_approval" });
+        Object.assign(context, result.output);
+        appendResult(result);
+        lastExecutedStep = step;
 
-            const { id: approvalId, promise: approvalPromise } = approvalStore.create({
-              runId,
-              templateName: template.name,
-              stepId: step.id,
-              stepName: step.name,
-              assignee,
-              message,
-              timeoutMinutes,
-            });
-
-            const { approved, comment } = await approvalPromise;
-
-            runStore.update(runId, { status: "running" });
-
-            if (!approved) {
-              stepStatus = "failure";
-              stepError = `Approval rejected${comment ? `: ${comment}` : " (timed out or declined)"}`;
-            }
-
-            stepOutput = { approved, approvalId, approverComment: comment ?? null };
-            break;
-          }
-          default:
-            stepOutput = {};
+        if (result.status === "failure") {
+          this._applyFailureContext(context, result);
+          return result;
         }
-      } catch (err) {
-        stepStatus = "failure";
-        stepError = String(err);
       }
 
-      // Merge step outputs into context for downstream steps
-      Object.assign(context, stepOutput);
+      return undefined;
+    };
 
-      const result: StepResult = {
-        stepId: step.id,
-        stepName: step.name,
-        status: stepStatus,
-        output: stepOutput,
-        durationMs: Date.now() - start,
-        ...(stepError ? { error: stepError } : {}),
-        ...(agentSlotResults ? { agentSlotResults } : {}),
-        ...(stepCostLog ? { costLog: stepCostLog } : {}),
-      };
+    const mainFailure = await executePhaseSteps(template.steps, "main");
 
-      stepResults.push(result);
-
-      // Update run with latest step results so callers can see incremental progress
-      runStore.update(runId, { stepResults: [...stepResults] });
-
-      // If a step fails, abort the run
-      if (stepStatus === "failure") {
-        runStore.update(runId, {
-          status: "failed",
-          completedAt: new Date().toISOString(),
-          error: stepError,
-          stepResults,
-        });
-        return;
+    let terminalError = mainFailure?.error;
+    if (mainFailure && template.errors?.length) {
+      const errorHandlerFailure = await executePhaseSteps(template.errors, "errors");
+      terminalError = errorHandlerFailure?.error;
+      if (!errorHandlerFailure) {
+        terminalError = undefined;
       }
     }
 
+    const finallyFailure = await executePhaseSteps(template._finally, "finally");
+    if (finallyFailure) {
+      terminalError = finallyFailure.error;
+    }
+
+    if (terminalError) {
+      runStore.update(runId, {
+        status: "failed",
+        completedAt: new Date().toISOString(),
+        error: terminalError,
+        stepResults,
+      });
+      return;
+    }
+
     // Collect final output from context (keys produced by the last step)
-    const lastStep = template.steps[template.steps.length - 1];
+    const lastStep = lastExecutedStep ?? template.steps[template.steps.length - 1];
     const output: Record<string, unknown> = {};
     if (lastStep) {
       for (const key of [...lastStep.outputKeys, ...lastStep.inputKeys]) {
@@ -435,6 +420,162 @@ export class WorkflowEngine {
       output,
       stepResults,
     });
+  }
+
+  private async _executeStepWithRetry(
+    step: WorkflowStep,
+    context: Record<string, unknown>,
+    config: Record<string, unknown>,
+    runId: string,
+    template: WorkflowTemplate,
+    userId: string | undefined,
+    phase: StepPhase
+  ): Promise<StepResult> {
+    const startedAt = Date.now();
+    const retryPolicy = resolveRetryPolicy(step, template);
+    const maxAttempts = retryPolicy?.maxAttempts ?? 1;
+
+    let attemptCount = 0;
+    let lastState: StepExecutionState = { output: {}, status: "success" };
+
+    while (attemptCount < maxAttempts) {
+      attemptCount += 1;
+      lastState = await this._executeStepOnce(step, context, config, runId, template, userId);
+
+      if (lastState.status !== "failure") {
+        break;
+      }
+
+      const shouldRetry = Boolean(retryPolicy) && attemptCount < maxAttempts;
+      if (!shouldRetry) {
+        break;
+      }
+
+      const elapsedMs = Date.now() - startedAt;
+      const delayMs = computeRetryDelayMs(retryPolicy!, attemptCount);
+      const exceedsMaxDuration =
+        retryPolicy?.maxDuration !== undefined && elapsedMs + delayMs > retryPolicy.maxDuration;
+
+      if (exceedsMaxDuration) {
+        break;
+      }
+
+      if (retryPolicy?.warningOnRetry) {
+        console.warn(
+          `[workflow] Retrying step ${step.id} (${step.name}) after attempt ${attemptCount}`
+        );
+      }
+
+      await sleep(delayMs);
+    }
+
+    return {
+      stepId: step.id,
+      stepName: step.name,
+      status: lastState.status,
+      output: lastState.output,
+      durationMs: Date.now() - startedAt,
+      attemptCount,
+      phase,
+      ...(lastState.error ? { error: lastState.error } : {}),
+      ...(lastState.agentSlotResults ? { agentSlotResults: lastState.agentSlotResults } : {}),
+      ...(lastState.costLog ? { costLog: lastState.costLog } : {}),
+    };
+  }
+
+  private async _executeStepOnce(
+    step: WorkflowStep,
+    context: Record<string, unknown>,
+    config: Record<string, unknown>,
+    runId: string,
+    template: WorkflowTemplate,
+    userId?: string
+  ): Promise<StepExecutionState> {
+    try {
+      switch (step.kind) {
+        case "trigger":
+          return { output: await executeTrigger(step, context), status: "success" };
+        case "llm": {
+          const llmResult = await executeLlm(step, context, userId);
+          return { output: llmResult.output, status: "success", costLog: llmResult.costLog };
+        }
+        case "transform":
+          return { output: await executeTransform(step, context), status: "success" };
+        case "condition":
+          return { output: await executeCondition(step, context), status: "success" };
+        case "action":
+          return { output: await executeAction(step, context, config), status: "success" };
+        case "output":
+          return { output: await executeOutput(step, context), status: "success" };
+        case "mcp": {
+          const mcpResult = await handleMcp(step, context);
+          return { output: mcpResult.output, status: "success" };
+        }
+        case "file_trigger": {
+          const ftResult = await handleFileTrigger(step, context);
+          return { output: ftResult.output, status: "success" };
+        }
+        case "agent": {
+          const agentResult = await handleAgent(step, context, runId, userId ?? "");
+          return {
+            output: agentResult.output,
+            status: "success",
+            agentSlotResults: agentResult.agentSlotResults,
+          };
+        }
+        case "approval": {
+          const assignee = step.approvalAssignee ?? "unassigned";
+          const message = step.approvalMessage ?? "Approval required to continue.";
+          const timeoutMinutes = step.approvalTimeoutMinutes ?? 60;
+
+          runStore.update(runId, { status: "awaiting_approval" });
+
+          const { id: approvalId, promise: approvalPromise } = approvalStore.create({
+            runId,
+            templateName: template.name,
+            stepId: step.id,
+            stepName: step.name,
+            assignee,
+            message,
+            timeoutMinutes,
+          });
+
+          const { approved, comment } = await approvalPromise;
+
+          runStore.update(runId, { status: "running" });
+
+          if (!approved) {
+            return {
+              output: { approved, approvalId, approverComment: comment ?? null },
+              status: "failure",
+              error: `Approval rejected${comment ? `: ${comment}` : " (timed out or declined)"}`,
+            };
+          }
+
+          return {
+            output: { approved, approvalId, approverComment: comment ?? null },
+            status: "success",
+          };
+        }
+        default:
+          return { output: {}, status: "success" };
+      }
+    } catch (err) {
+      return {
+        output: {},
+        status: "failure",
+        error: err instanceof Error ? err.message : String(err),
+      };
+    }
+  }
+
+  private _applyFailureContext(context: Record<string, unknown>, result: StepResult): void {
+    context["error"] = result.error ?? `Step ${result.stepName} failed`;
+    context["lastError"] = context["error"];
+    context["failedStepId"] = result.stepId;
+    context["failedStepName"] = result.stepName;
+    context["failedPhase"] = result.phase ?? "main";
+    context["failedAttemptCount"] = result.attemptCount ?? 1;
   }
 }
 

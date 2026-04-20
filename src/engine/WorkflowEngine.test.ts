@@ -20,6 +20,7 @@ import { customerSupportBot } from "../templates/customer-support-bot";
 import { leadEnrichment } from "../templates/lead-enrichment";
 import { contentGenerator } from "../templates/content-generator";
 import { WorkflowTemplate, WorkflowStep } from "../types/workflow";
+import { makeWorkflowTemplate, makeWorkflowStep } from "../test-factories";
 
 const mockGetProvider = getProvider as jest.Mock;
 
@@ -227,6 +228,268 @@ describe("WorkflowEngine — error handling", () => {
     const completed = await waitForCompletion(run.id);
     expect(completed.status).toBe("failed");
     expect(completed.error).toBeDefined();
+  });
+
+  it("retries a flaky step with step-level constant retry policy", async () => {
+    let attempts = 0;
+    registerAction("test.flaky.constant", async () => {
+      attempts += 1;
+      if (attempts < 2) {
+        throw new Error("transient failure");
+      }
+      return { recovered: true };
+    });
+
+    const template = makeWorkflowTemplate({
+      id: "tpl-retry-constant",
+      steps: [
+        makeWorkflowStep({
+          id: "step_trigger",
+          name: "Trigger",
+          kind: "trigger",
+          outputKeys: ["input"],
+        }),
+        makeWorkflowStep({
+          id: "step_retry",
+          name: "Retry Step",
+          kind: "action",
+          action: "test.flaky.constant",
+          outputKeys: ["recovered"],
+          retry: {
+            type: "constant",
+            maxAttempts: 3,
+            intervalMs: 1,
+          },
+        }),
+        makeWorkflowStep({
+          id: "step_output",
+          name: "Output",
+          kind: "output",
+          inputKeys: ["recovered"],
+        }),
+      ],
+      sampleInput: { input: "x" },
+    });
+
+    const run = engine.startRun(template, { input: "x" });
+    const completed = await waitForCompletion(run.id);
+
+    expect(completed.status).toBe("completed");
+    expect(attempts).toBe(2);
+    expect(completed.stepResults.find((step) => step.stepId === "step_retry")?.attemptCount).toBe(2);
+  });
+
+  it("uses workflow-level exponential retry when a step does not define its own policy", async () => {
+    let attempts = 0;
+    registerAction("test.flaky.exponential", async () => {
+      attempts += 1;
+      if (attempts < 3) {
+        throw new Error("still failing");
+      }
+      return { stabilized: true };
+    });
+
+    const template = makeWorkflowTemplate({
+      id: "tpl-retry-exponential",
+      retry: {
+        type: "exponential",
+        maxAttempts: 4,
+        intervalMs: 1,
+        delayFactor: 2,
+        maxInterval: 4,
+      },
+      steps: [
+        makeWorkflowStep({
+          id: "step_trigger",
+          name: "Trigger",
+          kind: "trigger",
+          outputKeys: ["input"],
+        }),
+        makeWorkflowStep({
+          id: "step_retry",
+          name: "Retry Step",
+          kind: "action",
+          action: "test.flaky.exponential",
+          outputKeys: ["stabilized"],
+        }),
+        makeWorkflowStep({
+          id: "step_output",
+          name: "Output",
+          kind: "output",
+          inputKeys: ["stabilized"],
+        }),
+      ],
+      sampleInput: { input: "x" },
+    });
+
+    const run = engine.startRun(template, { input: "x" });
+    const completed = await waitForCompletion(run.id);
+
+    expect(completed.status).toBe("completed");
+    expect(attempts).toBe(3);
+    expect(completed.stepResults.find((step) => step.stepId === "step_retry")?.attemptCount).toBe(3);
+  });
+
+  it("supports random retry delays and warning logs", async () => {
+    const warnSpy = jest.spyOn(console, "warn").mockImplementation(() => undefined);
+    const randomSpy = jest.spyOn(Math, "random").mockReturnValue(0.5);
+    let attempts = 0;
+
+    registerAction("test.flaky.random", async () => {
+      attempts += 1;
+      if (attempts < 2) {
+        throw new Error("random backoff retry");
+      }
+      return { randomized: true };
+    });
+
+    const template = makeWorkflowTemplate({
+      id: "tpl-retry-random",
+      steps: [
+        makeWorkflowStep({
+          id: "step_trigger",
+          name: "Trigger",
+          kind: "trigger",
+          outputKeys: ["input"],
+        }),
+        makeWorkflowStep({
+          id: "step_retry",
+          name: "Retry Step",
+          kind: "action",
+          action: "test.flaky.random",
+          outputKeys: ["randomized"],
+          retry: {
+            type: "random",
+            maxAttempts: 2,
+            intervalMs: 2,
+            warningOnRetry: true,
+          },
+        }),
+        makeWorkflowStep({
+          id: "step_output",
+          name: "Output",
+          kind: "output",
+          inputKeys: ["randomized"],
+        }),
+      ],
+      sampleInput: { input: "x" },
+    });
+
+    const run = engine.startRun(template, { input: "x" });
+    const completed = await waitForCompletion(run.id);
+
+    expect(completed.status).toBe("completed");
+    expect(attempts).toBe(2);
+    expect(randomSpy).toHaveBeenCalled();
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining("Retrying step step_retry")
+    );
+
+    warnSpy.mockRestore();
+    randomSpy.mockRestore();
+  });
+
+  it("runs errors and finally blocks after a main-phase failure and marks the run completed when handled", async () => {
+    registerAction("test.fail.always", async () => {
+      throw new Error("boom");
+    });
+    registerAction("test.errors.handler", async () => ({ recovered: true }));
+    registerAction("test.finally.cleanup", async () => ({ cleanedUp: true }));
+
+    const template = makeWorkflowTemplate({
+      id: "tpl-error-finally-handled",
+      steps: [
+        makeWorkflowStep({
+          id: "step_trigger",
+          name: "Trigger",
+          kind: "trigger",
+          outputKeys: ["input"],
+        }),
+        makeWorkflowStep({
+          id: "step_main",
+          name: "Main Failure",
+          kind: "action",
+          action: "test.fail.always",
+        }),
+      ],
+      errors: [
+        makeWorkflowStep({
+          id: "step_error_handler",
+          name: "Error Handler",
+          kind: "action",
+          action: "test.errors.handler",
+          outputKeys: ["recovered"],
+        }),
+      ],
+      _finally: [
+        makeWorkflowStep({
+          id: "step_finally",
+          name: "Cleanup",
+          kind: "action",
+          action: "test.finally.cleanup",
+          outputKeys: ["cleanedUp"],
+        }),
+      ],
+      sampleInput: { input: "x" },
+    });
+
+    const run = engine.startRun(template, { input: "x" });
+    const completed = await waitForCompletion(run.id);
+
+    expect(completed.status).toBe("completed");
+    expect(completed.stepResults.map((step) => [step.stepId, step.phase, step.status])).toEqual([
+      ["step_trigger", "main", "success"],
+      ["step_main", "main", "failure"],
+      ["step_error_handler", "errors", "success"],
+      ["step_finally", "finally", "success"],
+    ]);
+  });
+
+  it("runs finally blocks even when the run remains failed", async () => {
+    registerAction("test.fail.nohandler", async () => {
+      throw new Error("fatal");
+    });
+    registerAction("test.finally.audit", async () => ({ auditLogged: true }));
+
+    const template = makeWorkflowTemplate({
+      id: "tpl-finally-on-failure",
+      steps: [
+        makeWorkflowStep({
+          id: "step_trigger",
+          name: "Trigger",
+          kind: "trigger",
+          outputKeys: ["input"],
+        }),
+        makeWorkflowStep({
+          id: "step_main",
+          name: "Main Failure",
+          kind: "action",
+          action: "test.fail.nohandler",
+        }),
+      ],
+      _finally: [
+        makeWorkflowStep({
+          id: "step_finally",
+          name: "Audit",
+          kind: "action",
+          action: "test.finally.audit",
+          outputKeys: ["auditLogged"],
+        }),
+      ],
+      sampleInput: { input: "x" },
+    });
+
+    const run = engine.startRun(template, { input: "x" });
+    const failed = await waitForCompletion(run.id);
+
+    expect(failed.status).toBe("failed");
+    expect(failed.stepResults.at(-1)).toEqual(
+      expect.objectContaining({
+        stepId: "step_finally",
+        phase: "finally",
+        status: "success",
+      })
+    );
   });
 });
 

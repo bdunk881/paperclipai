@@ -3,3 +3,37 @@
 .run-audit-mono {
   font-family: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
 }
+
+.run-audit-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: #334155 transparent;
+}
+
+.run-audit-scrollbar::-webkit-scrollbar {
+  width: 8px;
+}
+
+.run-audit-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.run-audit-scrollbar::-webkit-scrollbar-thumb {
+  border-radius: 9999px;
+  background: #334155;
+}
+
+.run-audit-step-enter {
+  animation: run-audit-slide-up 200ms ease-out both;
+}
+
+@keyframes run-audit-slide-up {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}

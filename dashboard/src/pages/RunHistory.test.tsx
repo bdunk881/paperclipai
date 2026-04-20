@@ -79,6 +79,8 @@ describe("RunHistory", () => {
     fireEvent.click(screen.getByRole("button", { name: /open run audit for daily ops audit/i }));
 
     expect(screen.getByRole("dialog", { name: /run audit view/i })).toBeInTheDocument();
-    expect(screen.getByText(/assessing anomalies and preparing remediation notes/i)).toBeInTheDocument();
+    expect(
+      screen.getAllByText(/assessing anomalies and preparing remediation notes/i).length
+    ).toBeGreaterThan(0);
   });
 });

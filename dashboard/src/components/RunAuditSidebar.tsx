@@ -2,16 +2,14 @@ import { useEffect, useMemo, useState } from "react";
 import clsx from "clsx";
 import "./RunAuditSidebar.css";
 import {
-  Bot,
+  AlertCircle,
   Brain,
   CheckCircle2,
   ChevronDown,
   ChevronUp,
   Clock3,
   Loader2,
-  Play,
   SkipForward,
-  Sparkles,
   Workflow,
   X,
   XCircle,
@@ -66,16 +64,6 @@ function formatRunDuration(run: WorkflowRun): string {
   const endTime = run.completedAt ? new Date(run.completedAt).getTime() : Date.now();
   const duration = Math.max(endTime - new Date(run.startedAt).getTime(), 0);
   return formatDuration(duration);
-}
-
-function pickStepGlyph(step: StepResult): LucideIcon {
-  const name = `${step.stepId} ${step.stepName}`.toLowerCase();
-  if (name.includes("agent")) return Bot;
-  if (name.includes("approval")) return CheckCircle2;
-  if (name.includes("llm") || name.includes("reason") || name.includes("think")) return Brain;
-  if (name.includes("mcp") || name.includes("tool")) return Sparkles;
-  if (name.includes("trigger")) return Play;
-  return Workflow;
 }
 
 function stringifyValue(value: unknown): string | null {
@@ -148,6 +136,104 @@ function getDefaultExpandedIndex(steps: StepResult[]): number {
   return Math.max(steps.length - 1, 0);
 }
 
+function JsonLine({
+  depth,
+  children,
+}: {
+  depth: number;
+  children: React.ReactNode;
+}) {
+  return <div style={{ paddingLeft: `${depth * 14}px` }}>{children}</div>;
+}
+
+function JsonValue({
+  value,
+  depth = 0,
+}: {
+  value: unknown;
+  depth?: number;
+}): React.ReactElement {
+  if (Array.isArray(value)) {
+    return (
+      <>
+        <JsonLine depth={depth}>[</JsonLine>
+        {value.map((item, index) => (
+          <JsonLine key={index} depth={depth + 1}>
+            <JsonValue value={item} depth={0} />
+            {index < value.length - 1 ? "," : ""}
+          </JsonLine>
+        ))}
+        <JsonLine depth={depth}>]</JsonLine>
+      </>
+    );
+  }
+
+  if (value && typeof value === "object") {
+    const entries = Object.entries(value);
+    return (
+      <>
+        <JsonLine depth={depth}>{"{"}</JsonLine>
+        {entries.map(([key, entryValue], index) => (
+          <JsonLine key={key} depth={depth + 1}>
+            <span className="text-[#818cf8]">"{key}"</span>: <JsonValue value={entryValue} depth={0} />
+            {index < entries.length - 1 ? "," : ""}
+          </JsonLine>
+        ))}
+        <JsonLine depth={depth}>{"}"}</JsonLine>
+      </>
+    );
+  }
+
+  if (typeof value === "string") {
+    return <span className="text-[#14b8a6]">"{value}"</span>;
+  }
+
+  if (typeof value === "number") {
+    return <span className="text-[#f97316]">{value}</span>;
+  }
+
+  if (typeof value === "boolean") {
+    return <span className="text-surface-300">{String(value)}</span>;
+  }
+
+  if (value === null) {
+    return <span className="text-surface-500">null</span>;
+  }
+
+  return <span className="text-surface-500">undefined</span>;
+}
+
+function JsonPanel({
+  label,
+  value,
+  defaultOpen = false,
+}: {
+  label: string;
+  value: unknown;
+  defaultOpen?: boolean;
+}) {
+  const [open, setOpen] = useState(defaultOpen);
+
+  return (
+    <div className="overflow-hidden rounded-xl border border-surface-800 bg-surface-950">
+      <button
+        type="button"
+        onClick={() => setOpen((current) => !current)}
+        className="flex w-full items-center justify-between gap-3 border-b border-surface-800 px-3 py-2 text-left text-[11px] font-semibold uppercase tracking-[0.22em] text-surface-500 transition hover:bg-surface-900"
+        aria-expanded={open}
+      >
+        <span>{label}</span>
+        {open ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+      </button>
+      {open && (
+        <div className="run-audit-mono overflow-x-auto px-3 py-3 text-xs leading-6 text-surface-300">
+          <JsonValue value={value} />
+        </div>
+      )}
+    </div>
+  );
+}
+
 function AuditStepCard({
   step,
   index,
@@ -164,12 +250,22 @@ function AuditStepCard({
   onToggle: () => void;
 }) {
   const statusMeta = STEP_STATUS_META[step.status];
-  const StepGlyph = pickStepGlyph(step);
   const StatusIcon = statusMeta.icon;
   const thoughtProcess = useMemo(() => extractThoughtProcess(step), [step]);
+  const [showData, setShowData] = useState(false);
+  const hasOutput = Boolean(step.output && Object.keys(step.output).length > 0);
+  const iconBorderClass =
+    step.status === "success"
+      ? "border-emerald-500"
+      : step.status === "failure"
+        ? "border-red-500"
+        : active
+          ? "border-brand-500"
+          : "border-surface-700";
+  const TimelineStatusIcon = step.status === "failure" ? AlertCircle : StatusIcon;
 
   return (
-    <div className="relative pl-12">
+    <div className="run-audit-step-enter relative pl-12" style={{ animationDelay: `${index * 20}ms` }}>
       {!isLast && (
         <div className="absolute left-[15px] top-10 h-[calc(100%-1rem)] w-0.5 bg-surface-800">
           <div
@@ -183,14 +279,15 @@ function AuditStepCard({
 
       <div
         className={clsx(
-          "absolute left-0 top-1 flex h-8 w-8 items-center justify-center rounded-full border border-surface-700 bg-surface-800",
+          "absolute left-0 top-1 flex h-8 w-8 items-center justify-center rounded-full border bg-surface-800",
+          iconBorderClass,
           statusMeta.glow
         )}
       >
         {step.status === "running" ? (
-          <StatusIcon size={15} className={clsx(statusMeta.iconClass, "animate-spin")} />
+          <TimelineStatusIcon size={15} className={clsx(statusMeta.iconClass, "animate-spin")} />
         ) : (
-          <StepGlyph size={15} className={statusMeta.iconClass} />
+          <TimelineStatusIcon size={15} className={statusMeta.iconClass} />
         )}
       </div>
 
@@ -222,9 +319,6 @@ function AuditStepCard({
                   {formatDuration(step.durationMs)}
                 </span>
               )}
-              {typeof step.attemptCount === "number" && step.attemptCount > 1 && (
-                <span>{step.attemptCount} attempts</span>
-              )}
             </div>
           </div>
 
@@ -238,6 +332,15 @@ function AuditStepCard({
             >
               Thought Process
               {expanded ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowData((current) => !current)}
+              className="inline-flex items-center gap-1 rounded-full border border-surface-700 bg-surface-950/80 px-2.5 py-1 text-[11px] font-medium text-surface-300 transition hover:border-brand-500/50 hover:text-surface-50"
+              aria-expanded={showData}
+            >
+              Data I/O
+              {showData ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
             </button>
           </div>
         </div>
@@ -254,10 +357,10 @@ function AuditStepCard({
             expanded ? "mt-3 max-h-[28rem] opacity-100" : "max-h-0 opacity-0"
           )}
         >
-          <div className="rounded-xl border-l-2 border-brand-500/30 bg-surface-950 px-3 py-3">
-            <div className="mb-2 flex items-center gap-2 text-[11px] uppercase tracking-[0.22em] text-surface-500">
+          <div className="rounded-xl border border-surface-800 bg-surface-950 px-3 py-3">
+            <div className="mb-2 flex items-center gap-2 text-[10px] font-bold uppercase tracking-[0.22em] text-surface-600">
               <Brain size={12} />
-              Thought Process
+              Thinking...
             </div>
             {thoughtProcess ? (
               <pre className="run-audit-mono overflow-x-auto whitespace-pre-wrap break-words text-xs leading-6 text-surface-300">
@@ -267,6 +370,25 @@ function AuditStepCard({
               <p className="run-audit-mono text-xs leading-6 text-surface-500">
                 No reasoning trace was captured for this step.
               </p>
+            )}
+          </div>
+        </div>
+
+        <div
+          className={clsx(
+            "overflow-hidden transition-all duration-200 ease-out",
+            showData ? "mt-3 max-h-[24rem] opacity-100" : "max-h-0 opacity-0"
+          )}
+        >
+          <div className="space-y-2">
+            {hasOutput ? (
+              <JsonPanel label="Output" value={step.output} defaultOpen />
+            ) : (
+              <div className="rounded-xl border border-surface-800 bg-surface-950 px-3 py-3">
+                <p className="run-audit-mono text-xs leading-6 text-surface-500">
+                  No step output was captured for this step.
+                </p>
+              </div>
             )}
           </div>
         </div>
@@ -323,7 +445,7 @@ export function RunAuditSidebar({
 
       <aside
         className={clsx(
-          "pointer-events-auto absolute right-0 top-0 flex h-full w-full max-w-[420px] flex-col border-l border-surface-700/50 bg-surface-900/80 shadow-[0_24px_80px_rgba(2,6,23,0.6)] backdrop-blur-xl transition-transform duration-300 ease-out",
+          "pointer-events-auto absolute right-0 top-0 flex h-full w-full max-w-[400px] flex-col border-l border-surface-700/50 bg-surface-900/80 shadow-[0_24px_80px_rgba(2,6,23,0.6)] backdrop-blur-[12px] transition-transform duration-300 ease-out",
           open ? "translate-x-0" : "translate-x-full"
         )}
         role="dialog"
@@ -352,7 +474,7 @@ export function RunAuditSidebar({
             <button
               type="button"
               onClick={onClose}
-              className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-surface-700 bg-surface-950/80 text-surface-300 transition hover:border-brand-500/50 hover:text-surface-50"
+              className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-surface-700 bg-surface-950/80 text-surface-300 transition hover:border-brand-500/50 hover:bg-surface-800 hover:text-surface-50"
               aria-label="Close audit sidebar"
             >
               <X size={16} />
@@ -371,7 +493,10 @@ export function RunAuditSidebar({
           </div>
         </div>
 
-        <div className="overflow-y-auto px-6 py-5">
+        <div className="run-audit-scrollbar overflow-y-auto px-6 py-5">
+          <div className="mb-3">
+            <JsonPanel label="Run Input" value={run.input} />
+          </div>
           <div className="relative space-y-3">
             {run.stepResults.map((step, index) => (
               <AuditStepCard

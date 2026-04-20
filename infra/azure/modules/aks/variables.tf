@@ -12,7 +12,6 @@ variable "max_node_count" { type = number }
 variable "tags" { type = map(string) }
 
 variable "api_server_authorized_ips" {
-  description = "List of CIDR blocks allowed to reach the Kubernetes API server"
+  description = "CIDR blocks allowed to reach the Kubernetes API server. Must not be empty in production."
   type        = list(string)
-  default     = []  # empty = public (restrict in production)
 }

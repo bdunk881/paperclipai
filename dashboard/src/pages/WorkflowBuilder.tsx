@@ -20,6 +20,8 @@ import {
   UserCheck,
   Plug,
   FileInput,
+  CalendarClock,
+  Timer,
   Sparkles,
   Loader,
   UploadCloud,
@@ -88,6 +90,24 @@ const KIND_META: Record<
   trigger: {
     label: "Trigger",
     icon: <Zap size={14} />,
+    chipColor: "text-emerald-700 dark:text-emerald-400",
+    chipBg: "bg-emerald-50 border-emerald-200 dark:bg-emerald-500/10 dark:border-emerald-500/30",
+    categoryTint: "rgba(16,185,129,0.12)",
+    darkCategoryTint: "rgba(16,185,129,0.18)",
+    categoryBorder: "#10b981",
+  },
+  cron_trigger: {
+    label: "Cron Trigger",
+    icon: <CalendarClock size={14} />,
+    chipColor: "text-emerald-700 dark:text-emerald-400",
+    chipBg: "bg-emerald-50 border-emerald-200 dark:bg-emerald-500/10 dark:border-emerald-500/30",
+    categoryTint: "rgba(16,185,129,0.12)",
+    darkCategoryTint: "rgba(16,185,129,0.18)",
+    categoryBorder: "#10b981",
+  },
+  interval_trigger: {
+    label: "Interval Trigger",
+    icon: <Timer size={14} />,
     chipColor: "text-emerald-700 dark:text-emerald-400",
     chipBg: "bg-emerald-50 border-emerald-200 dark:bg-emerald-500/10 dark:border-emerald-500/30",
     categoryTint: "rgba(16,185,129,0.12)",
@@ -223,6 +243,152 @@ type CopilotMessage = {
 const FLOW_STEP_X = 80;
 const FLOW_STEP_Y = 64;
 const FLOW_STEP_GAP_Y = 190;
+const COMMON_TIMEZONES = [
+  "UTC",
+  "America/New_York",
+  "America/Chicago",
+  "America/Denver",
+  "America/Los_Angeles",
+  "America/Phoenix",
+  "America/Toronto",
+  "America/Sao_Paulo",
+  "Europe/London",
+  "Europe/Paris",
+  "Europe/Berlin",
+  "Asia/Dubai",
+  "Asia/Kolkata",
+  "Asia/Singapore",
+  "Asia/Tokyo",
+  "Australia/Sydney",
+] as const;
+
+function getTimezoneOptions(): string[] {
+  const supportedValuesOf = (Intl as typeof Intl & {
+    supportedValuesOf?: (key: "timeZone") => string[];
+  }).supportedValuesOf;
+
+  if (typeof supportedValuesOf === "function") {
+    const supported = supportedValuesOf("timeZone");
+    return Array.from(new Set([...COMMON_TIMEZONES, ...supported]));
+  }
+  return [...COMMON_TIMEZONES];
+}
+
+function validateCronExpression(value: string): string | null {
+  const trimmed = value.trim();
+  if (!trimmed) return "Invalid cron expression. Please check the syntax.";
+
+  const fields = trimmed.split(/\s+/);
+  if (fields.length !== 5) {
+    return "Invalid cron expression. Please check the syntax.";
+  }
+
+  const validField = /^(\*|\?|[\d*/,\-A-Z]+)$/i;
+  if (fields.some((field) => !validField.test(field))) {
+    return "Invalid cron expression. Please check the syntax.";
+  }
+
+  return null;
+}
+
+function validateIntervalMinutes(value: number | undefined): string | null {
+  if (!Number.isInteger(value) || (value ?? 0) <= 0) {
+    return "Interval must be a positive integer.";
+  }
+  return null;
+}
+
+function formatTime(hour: number, minute: number, timezone: string): string {
+  return new Intl.DateTimeFormat("en-US", {
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+    timeZone: "UTC",
+  }).format(new Date(Date.UTC(2026, 0, 5, hour, minute))) + ` ${timezone}`;
+}
+
+function describeCronExpression(cronExpression: string, timezone: string): string | null {
+  if (validateCronExpression(cronExpression)) return null;
+
+  const [minute, hour, dayOfMonth, month, dayOfWeek] = cronExpression.trim().split(/\s+/);
+  const dayNames: Record<string, string> = {
+    "0": "Sunday",
+    "1": "Monday",
+    "2": "Tuesday",
+    "3": "Wednesday",
+    "4": "Thursday",
+    "5": "Friday",
+    "6": "Saturday",
+    "7": "Sunday",
+  };
+
+  if (minute === "*" && hour === "*" && dayOfMonth === "*" && month === "*" && dayOfWeek === "*") {
+    return `Runs every minute (${timezone})`;
+  }
+
+  if (/^\d+$/.test(minute) && hour === "*" && dayOfMonth === "*" && month === "*" && dayOfWeek === "*") {
+    return `Runs every hour at minute ${minute.padStart(2, "0")} (${timezone})`;
+  }
+
+  if (
+    /^\d+$/.test(minute) &&
+    /^\d+$/.test(hour) &&
+    dayOfMonth === "*" &&
+    month === "*" &&
+    dayOfWeek === "*"
+  ) {
+    return `Runs every day at ${formatTime(Number(hour), Number(minute), timezone)}`;
+  }
+
+  if (
+    /^\d+$/.test(minute) &&
+    /^\d+$/.test(hour) &&
+    dayOfMonth === "*" &&
+    month === "*" &&
+    dayOfWeek in dayNames
+  ) {
+    return `Runs every ${dayNames[dayOfWeek]} at ${formatTime(Number(hour), Number(minute), timezone)}`;
+  }
+
+  return `Runs on schedule ${cronExpression} (${timezone})`;
+}
+
+function buildStepFieldClass(options?: { mono?: boolean; hasError?: boolean; flashSuccess?: boolean }) {
+  return clsx(
+    "w-full rounded-lg border px-3 py-2 text-sm focus:outline-none focus:ring-2 bg-white dark:bg-surface-800 text-gray-900 dark:text-gray-100",
+    options?.mono && "font-mono",
+    options?.hasError
+      ? "border-red-500 focus:ring-red-500"
+      : options?.flashSuccess
+        ? "border-emerald-500 focus:ring-brand-500 ring-2 ring-emerald-500/20"
+        : "border-gray-300 dark:border-surface-700 focus:ring-brand-500",
+  );
+}
+
+function buildDefaultStep(kind: StepKind, id: string, position: XYPosition): WorkflowStep {
+  const step: WorkflowStep = {
+    id,
+    name: KIND_META[kind].label + " Step",
+    kind,
+    description: "",
+    inputKeys: [],
+    outputKeys: [],
+    config: {
+      [STEP_POSITION_KEY]: position,
+    },
+  };
+
+  if (kind === "cron_trigger") {
+    step.timezone = "UTC";
+  }
+
+  if (kind === "interval_trigger") {
+    step.intervalMinutes = 15;
+    step.timezone = "UTC";
+  }
+
+  return step;
+}
 
 type FlowNodeData = {
   step: WorkflowStep;
@@ -293,9 +459,11 @@ export default function WorkflowBuilder() {
   const [copilotModel, setCopilotModel] = useState("Auto");
   const [copilotLiveMessage, setCopilotLiveMessage] = useState("");
   const [consumedIncomingPrompt, setConsumedIncomingPrompt] = useState(false);
+  const [fieldFlashKey, setFieldFlashKey] = useState<string | null>(null);
 
   const hasFileTrigger = template.steps.some((s) => s.kind === "file_trigger");
   const fileTriggerStep = template.steps.find((s) => s.kind === "file_trigger");
+  const timezoneOptions = useMemo(() => getTimezoneOptions(), []);
 
   useEffect(() => {
     listTemplates()
@@ -329,6 +497,26 @@ export default function WorkflowBuilder() {
     }
     return mapping;
   }, [latestDeployment]);
+  const cronValidationError =
+    selectedStep?.kind === "cron_trigger"
+      ? validateCronExpression(selectedStep.cronExpression ?? "")
+      : null;
+  const intervalValidationError =
+    selectedStep?.kind === "interval_trigger"
+      ? validateIntervalMinutes(selectedStep.intervalMinutes)
+      : null;
+  const cronPreview =
+    selectedStep?.kind === "cron_trigger"
+      ? describeCronExpression(selectedStep.cronExpression ?? "", selectedStep.timezone ?? "UTC")
+      : null;
+  const cronFlashKey = selectedStep ? `cron:${selectedStep.id}` : null;
+  const intervalFlashKey = selectedStep ? `interval:${selectedStep.id}` : null;
+
+  useEffect(() => {
+    if (!fieldFlashKey) return;
+    const timeout = window.setTimeout(() => setFieldFlashKey(null), 900);
+    return () => window.clearTimeout(timeout);
+  }, [fieldFlashKey]);
 
   useEffect(() => {
     if (!isLlmStep) return;
@@ -437,17 +625,7 @@ export default function WorkflowBuilder() {
         x: FLOW_STEP_X,
         y: FLOW_STEP_Y + nextIndex * FLOW_STEP_GAP_Y,
       };
-      const newStep: WorkflowStep = {
-        id: newStepId,
-        name: KIND_META[kind].label + " Step",
-        kind,
-        description: "",
-        inputKeys: [],
-        outputKeys: [],
-        config: {
-          [STEP_POSITION_KEY]: defaultPosition,
-        },
-      };
+      const newStep = buildDefaultStep(kind, newStepId, defaultPosition);
       const nextSteps = [...t.steps, newStep];
       if (nextSteps.length < 2) {
         return { ...t, steps: nextSteps };
@@ -487,6 +665,10 @@ export default function WorkflowBuilder() {
       ...t,
       steps: t.steps.map((s) => (s.id === id ? { ...s, ...patch } : s)),
     }));
+  }
+
+  function flashField(key: string) {
+    setFieldFlashKey(key);
   }
 
   function removeStep(id: string) {
@@ -896,7 +1078,7 @@ export default function WorkflowBuilder() {
       {selectedStep && (
         <div
           className={clsx(
-            "absolute top-0 z-20 h-full w-[360px] overflow-y-auto border-l border-gray-200 dark:border-surface-800 bg-white dark:bg-surface-900 shadow-xl transition-transform duration-200",
+            "animate-slide-up absolute top-0 z-20 h-full w-[360px] overflow-y-auto border-l border-gray-200 dark:border-surface-800 bg-white dark:bg-surface-900 shadow-xl transition-transform duration-200",
             showCopilot ? "right-[360px]" : "right-0"
           )}
         >
@@ -958,6 +1140,121 @@ export default function WorkflowBuilder() {
                   }
                 />
               </Field>
+            )}
+
+            {selectedStep.kind === "cron_trigger" && (
+              <>
+                <Field label="Cron Expression">
+                  <div>
+                    <input
+                      aria-label="Cron Expression"
+                      className={buildStepFieldClass({
+                        mono: true,
+                        hasError: !!cronValidationError,
+                        flashSuccess: fieldFlashKey === cronFlashKey,
+                      })}
+                      placeholder="0 9 * * 1"
+                      value={selectedStep.cronExpression ?? ""}
+                      onChange={(e) => {
+                        const cronExpression = e.target.value;
+                        updateStep(selectedStep.id, { cronExpression });
+                        if (!validateCronExpression(cronExpression)) {
+                          flashField(`cron:${selectedStep.id}`);
+                        }
+                      }}
+                    />
+                    <p className="mt-1 text-xs text-gray-500 dark:text-surface-400">
+                      Standard crontab format.{" "}
+                      <a
+                        href="https://crontab.guru"
+                        target="_blank"
+                        rel="noreferrer"
+                        className="font-medium underline hover:text-brand-600 dark:hover:text-brand-300"
+                      >
+                        Learn more
+                      </a>
+                    </p>
+                    {cronValidationError ? (
+                      <p className="mt-1 text-xs text-red-600">{cronValidationError}</p>
+                    ) : cronPreview ? (
+                      <p className="mt-1 text-xs text-surface-500 dark:text-surface-400">{cronPreview}</p>
+                    ) : null}
+                  </div>
+                </Field>
+
+                <Field label="Timezone">
+                  <div>
+                    <input
+                      aria-label="Timezone"
+                      list="workflow-builder-timezones"
+                      className={buildStepFieldClass()}
+                      placeholder="UTC"
+                      value={selectedStep.timezone ?? "UTC"}
+                      onChange={(e) =>
+                        updateStep(selectedStep.id, { timezone: e.target.value || "UTC" })
+                      }
+                    />
+                    <datalist id="workflow-builder-timezones">
+                      {timezoneOptions.map((timezone) => (
+                        <option key={timezone} value={timezone} />
+                      ))}
+                    </datalist>
+                  </div>
+                </Field>
+              </>
+            )}
+
+            {selectedStep.kind === "interval_trigger" && (
+              <>
+                <Field label="Interval (Minutes)">
+                  <div>
+                    <input
+                      aria-label="Interval (Minutes)"
+                      type="number"
+                      min={1}
+                      className={buildStepFieldClass({
+                        hasError: !!intervalValidationError,
+                        flashSuccess: fieldFlashKey === intervalFlashKey,
+                      })}
+                      value={selectedStep.intervalMinutes ?? ""}
+                      onChange={(e) => {
+                        const rawValue = e.target.value;
+                        const intervalMinutes = rawValue === "" ? undefined : Number(rawValue);
+                        updateStep(selectedStep.id, { intervalMinutes });
+                        if (!validateIntervalMinutes(intervalMinutes)) {
+                          flashField(`interval:${selectedStep.id}`);
+                        }
+                      }}
+                    />
+                    <p className="mt-1 text-xs text-gray-500 dark:text-surface-400">
+                      How often the workflow should execute.
+                    </p>
+                    {intervalValidationError && (
+                      <p className="mt-1 text-xs text-red-600">{intervalValidationError}</p>
+                    )}
+                  </div>
+                </Field>
+
+                <Field label="Timezone">
+                  <div>
+                    <input
+                      aria-label="Timezone"
+                      list="workflow-builder-timezones"
+                      className={buildStepFieldClass()}
+                      placeholder="UTC"
+                      value={selectedStep.timezone ?? "UTC"}
+                      onChange={(e) =>
+                        updateStep(selectedStep.id, { timezone: e.target.value || "UTC" })
+                      }
+                    />
+                    <datalist id="workflow-builder-timezones">
+                      {timezoneOptions.map((timezone) => (
+                        <option key={timezone} value={timezone} />
+                      ))}
+                    </datalist>
+                  </div>
+                </Field>
+              </>
             )}
 
             {selectedStep.kind === "llm" && (

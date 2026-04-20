@@ -1,0 +1,60 @@
+name: ALT-1496 Promote Dashboard Production
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+  VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+  VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+
+jobs:
+  deploy-production:
+    name: Deploy ALT-1275 Dashboard to Production
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: dashboard/package-lock.json
+
+      - name: Validate Vercel secrets
+        run: |
+          set -euo pipefail
+          for key in VERCEL_TOKEN VERCEL_ORG_ID VERCEL_PROJECT_ID; do
+            if [ -z "${!key:-}" ]; then
+              echo "::error::Missing required secret: ${key}"
+              exit 1
+            fi
+          done
+
+      - name: Verify production auth env parity
+        working-directory: dashboard
+        run: |
+          set -euo pipefail
+          npx vercel pull --yes --environment=production --token="$VERCEL_TOKEN"
+          for required in VITE_AZURE_CLIENT_ID VITE_AZURE_TENANT_SUBDOMAIN; do
+            if ! grep -q "^${required}=" .vercel/.env.production.local; then
+              echo "::error::Missing ${required} in Vercel production environment"
+              exit 1
+            fi
+          done
+
+      - name: Deploy production
+        id: deploy
+        working-directory: dashboard
+        run: |
+          set -euo pipefail
+          PROD_URL="$(npx vercel deploy --prod --yes --token="$VERCEL_TOKEN" | tail -n 1 | tr -d '\r')"
+          if [ -z "$PROD_URL" ]; then
+            echo "::error::Vercel production deploy did not return a URL"
+            exit 1
+          fi
+          echo "production_url=$PROD_URL" >> "$GITHUB_OUTPUT"
+          echo "Production URL: $PROD_URL"

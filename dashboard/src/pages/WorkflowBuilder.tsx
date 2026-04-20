@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from "react";
-import { useParams, useNavigate } from "react-router-dom";
+import { useParams, useNavigate, useLocation } from "react-router-dom";
 import {
   Plus,
   Play,
@@ -24,6 +24,9 @@ import {
   CheckCircle2,
   AlertCircle,
   CircleHelp,
+  PanelRightOpen,
+  PanelRightClose,
+  Send,
 } from "lucide-react";
 import {
   Background,
@@ -180,6 +183,27 @@ const BLANK_TEMPLATE: WorkflowTemplate = {
   expectedOutput: {},
 };
 
+type BuilderLocationState = {
+  copilotPrompt?: string;
+} | null;
+
+type CopilotProposalMode = "replace" | "append" | "insert_after";
+
+type CopilotProposal = {
+  mode: CopilotProposalMode;
+  title: string;
+  summary: string;
+  steps: WorkflowStep[];
+  targetStepId?: string;
+};
+
+type CopilotMessage = {
+  id: string;
+  role: "user" | "assistant";
+  content: string;
+  proposal?: CopilotProposal;
+};
+
 const FLOW_STEP_X = 80;
 const FLOW_STEP_Y = 64;
 const FLOW_STEP_GAP_Y = 190;
@@ -194,7 +218,7 @@ type FlowNodeData = {
   isLast: boolean;
 };
 
-type WorkflowFlowNode = Node<FlowNodeData, "workflowStep">;
+type WorkflowFlowNode = Node<FlowNodeData>;
 
 function readStepPosition(step: WorkflowStep, index: number): XYPosition {
   const candidate = step.config?.[STEP_POSITION_KEY];
@@ -218,7 +242,9 @@ function readStepPosition(step: WorkflowStep, index: number): XYPosition {
 export default function WorkflowBuilder() {
   const { templateId } = useParams<{ templateId?: string }>();
   const navigate = useNavigate();
+  const location = useLocation();
   const { theme } = useTheme();
+  const incomingState = location.state as BuilderLocationState;
 
   const [template, setTemplate] = useState<WorkflowTemplate>(BLANK_TEMPLATE);
   const [loading, setLoading] = useState(!!templateId);
@@ -237,6 +263,13 @@ export default function WorkflowBuilder() {
   const [showNLModal, setShowNLModal] = useState(false);
   const [showFileUploadModal, setShowFileUploadModal] = useState(false);
   const [showHelp, setShowHelp] = useState(false);
+  const [showCopilot, setShowCopilot] = useState(Boolean(incomingState?.copilotPrompt));
+  const [copilotInput, setCopilotInput] = useState(incomingState?.copilotPrompt ?? "");
+  const [copilotMessages, setCopilotMessages] = useState<CopilotMessage[]>([]);
+  const [copilotBusy, setCopilotBusy] = useState(false);
+  const [copilotModel, setCopilotModel] = useState("Auto");
+  const [copilotLiveMessage, setCopilotLiveMessage] = useState("");
+  const [consumedIncomingPrompt, setConsumedIncomingPrompt] = useState(false);
 
   const hasFileTrigger = template.steps.some((s) => s.kind === "file_trigger");
   const fileTriggerStep = template.steps.find((s) => s.kind === "file_trigger");
@@ -273,6 +306,94 @@ export default function WorkflowBuilder() {
       .catch((e) => setLlmConfigsError(e instanceof Error ? e.message : "Failed to load providers"))
       .finally(() => setLlmConfigsLoading(false));
   }, [isLlmStep]);
+
+  async function handleCopilotSubmit(rawPrompt?: string) {
+    const prompt = (rawPrompt ?? copilotInput).trim();
+    if (!prompt || copilotBusy) return;
+
+    setShowCopilot(true);
+    setCopilotBusy(true);
+    setCopilotLiveMessage("AutoFlow Copilot is generating a response.");
+    setCopilotMessages((messages) => [
+      ...messages,
+      { id: `user-${Date.now()}`, role: "user", content: prompt },
+    ]);
+    setCopilotInput("");
+
+    try {
+      const response = await buildCopilotResponse(prompt, template, selectedStepId);
+      setCopilotMessages((messages) => [
+        ...messages,
+        { id: `assistant-${Date.now()}`, role: "assistant", ...response },
+      ]);
+      setCopilotLiveMessage(response.content);
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "AutoFlow Copilot could not process that request.";
+      setCopilotMessages((messages) => [
+        ...messages,
+        {
+          id: `assistant-${Date.now()}`,
+          role: "assistant",
+          content: message,
+        },
+      ]);
+      setCopilotLiveMessage(message);
+    } finally {
+      setCopilotBusy(false);
+    }
+  }
+
+  function handleApplyCopilotProposal(messageId: string, proposal: CopilotProposal) {
+    setTemplate((currentTemplate) => applyCopilotProposal(currentTemplate, proposal));
+    setCopilotMessages((messages) =>
+      messages.map((message) =>
+        message.id === messageId
+          ? {
+              ...message,
+              proposal: undefined,
+              content: `${message.content} Applied to the canvas.`,
+            }
+          : message
+      )
+    );
+    setCopilotLiveMessage("Copilot proposal applied to the canvas.");
+  }
+
+  function handleRejectCopilotProposal(messageId: string) {
+    setCopilotMessages((messages) =>
+      messages.map((message) =>
+        message.id === messageId
+          ? {
+              ...message,
+              proposal: undefined,
+              content: `${message.content} Proposal rejected.`,
+            }
+          : message
+      )
+    );
+    setCopilotLiveMessage("Copilot proposal rejected.");
+  }
+
+  useEffect(() => {
+    const incomingPrompt = incomingState?.copilotPrompt?.trim();
+    if (!incomingPrompt || consumedIncomingPrompt) return;
+
+    setConsumedIncomingPrompt(true);
+    setShowCopilot(true);
+    setCopilotInput(incomingPrompt);
+    void handleCopilotSubmit(incomingPrompt);
+    navigate(location.pathname, { replace: true, state: null });
+  }, [incomingState, consumedIncomingPrompt, navigate, location.pathname]);
+
+  const copilotReferences = useMemo(() => {
+    if (!copilotInput.includes("@")) return [];
+
+    return template.steps.map((step, index) => ({
+      id: step.id,
+      label: `@Step ${index + 1} · ${step.name}`,
+    }));
+  }, [copilotInput, template.steps]);
 
   function addStep(kind: StepKind) {
     const newStepId = "step-" + Date.now();
@@ -386,8 +507,8 @@ export default function WorkflowBuilder() {
     data: {
       step,
       onSelect: setSelectedStepId,
-      onMoveUp: (stepId) => moveStep(stepId, -1),
-      onMoveDown: (stepId) => moveStep(stepId, 1),
+      onMoveUp: (stepId: string) => moveStep(stepId, -1),
+      onMoveDown: (stepId: string) => moveStep(stepId, 1),
       onRemove: removeStep,
       isFirst: idx === 0,
       isLast: idx === template.steps.length - 1,
@@ -562,6 +683,13 @@ export default function WorkflowBuilder() {
             </span>
           </div>
           <div className="flex items-center gap-2">
+            <button
+              onClick={() => setShowCopilot((open) => !open)}
+              className="flex items-center gap-2 px-3.5 py-2 text-sm font-medium rounded-lg border border-brand-200 dark:border-brand-500/30 text-brand-700 dark:text-brand-300 bg-brand-50 dark:bg-brand-500/10 hover:bg-brand-100 dark:hover:bg-brand-500/20 transition"
+            >
+              {showCopilot ? <PanelRightClose size={15} /> : <PanelRightOpen size={15} />}
+              Copilot
+            </button>
             <Tooltip content="Open setup guidance and best practices for this page">
               <button
                 onClick={() => setShowHelp(true)}
@@ -617,16 +745,16 @@ export default function WorkflowBuilder() {
                 maxZoom={1.4}
                 snapToGrid
                 snapGrid={[20, 20]}
-                onNodeClick={(_, node) => setSelectedStepId(node.id)}
+                onNodeClick={(_: unknown, node: WorkflowFlowNode) => setSelectedStepId(node.id)}
                 onPaneClick={() => setSelectedStepId(null)}
                 onConnect={handleConnect}
-                onEdgesDelete={(deletedEdges) => {
+                onEdgesDelete={(deletedEdges: Edge[]) => {
                   if (deletedEdges.length === 0) return;
                   const deletedIds = new Set(deletedEdges.map((edge) => edge.id));
                   persistEdges(flowEdges.filter((edge) => !deletedIds.has(edge.id)));
                   setGraphError(null);
                 }}
-                onNodeDragStop={(_, node) => {
+                onNodeDragStop={(_: unknown, node: WorkflowFlowNode) => {
                   updateStepPosition(node.id, node.position);
                 }}
               >
@@ -647,9 +775,31 @@ export default function WorkflowBuilder() {
         </div>
       </div>
 
+      {showCopilot && (
+        <WorkflowCopilotSidebar
+          messages={copilotMessages}
+          input={copilotInput}
+          onInputChange={setCopilotInput}
+          onSubmit={() => void handleCopilotSubmit()}
+          onClose={() => setShowCopilot(false)}
+          onApply={handleApplyCopilotProposal}
+          onReject={handleRejectCopilotProposal}
+          busy={copilotBusy}
+          model={copilotModel}
+          onModelChange={setCopilotModel}
+          references={copilotReferences}
+          liveMessage={copilotLiveMessage}
+        />
+      )}
+
       {/* Right panel — step detail */}
       {selectedStep && (
-        <div className="absolute right-0 top-0 z-20 h-full w-[360px] overflow-y-auto border-l border-gray-200 dark:border-surface-800 bg-white dark:bg-surface-900 shadow-xl transition-transform duration-200">
+        <div
+          className={clsx(
+            "absolute top-0 z-20 h-full w-[360px] overflow-y-auto border-l border-gray-200 dark:border-surface-800 bg-white dark:bg-surface-900 shadow-xl transition-transform duration-200",
+            showCopilot ? "right-[360px]" : "right-0"
+          )}
+        >
           <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100 dark:border-surface-800">
             <h3 className="font-semibold text-gray-900 dark:text-gray-100 text-sm">Step Properties</h3>
             <button
@@ -1152,6 +1302,380 @@ function NLWorkflowModal({
   );
 }
 
+function WorkflowCopilotSidebar({
+  messages,
+  input,
+  onInputChange,
+  onSubmit,
+  onClose,
+  onApply,
+  onReject,
+  busy,
+  model,
+  onModelChange,
+  references,
+  liveMessage,
+}: {
+  messages: CopilotMessage[];
+  input: string;
+  onInputChange: (value: string) => void;
+  onSubmit: () => void;
+  onClose: () => void;
+  onApply: (messageId: string, proposal: CopilotProposal) => void;
+  onReject: (messageId: string) => void;
+  busy: boolean;
+  model: string;
+  onModelChange: (model: string) => void;
+  references: Array<{ id: string; label: string }>;
+  liveMessage: string;
+}) {
+  const modelOptions = ["Fast", "Auto", "Advanced", "Behemoth"];
+
+  return (
+    <aside
+      className="absolute right-0 top-0 z-20 flex h-full w-[360px] animate-slide-in-right flex-col border-l border-gray-200 bg-white shadow-xl dark:border-surface-800 dark:bg-surface-900"
+      role="dialog"
+      aria-modal="false"
+      aria-label="AutoFlow Copilot"
+    >
+      <div className="flex items-center justify-between border-b border-gray-100 px-5 py-4 dark:border-surface-800">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-wide text-brand-600 dark:text-brand-400">
+            AutoFlow Copilot
+          </p>
+          <h3 className="mt-1 text-sm font-semibold text-gray-900 dark:text-gray-100">
+            Ask, generate, and apply
+          </h3>
+        </div>
+        <button
+          onClick={onClose}
+          className="rounded-md p-1.5 text-gray-500 transition hover:bg-gray-100 dark:hover:bg-surface-800"
+          aria-label="Close copilot sidebar"
+        >
+          <X size={16} />
+        </button>
+      </div>
+
+      <div className="border-b border-gray-100 px-5 py-3 dark:border-surface-800">
+        <label className="mb-1 block text-xs font-medium text-gray-500 dark:text-surface-400">
+          Reasoning mode
+        </label>
+        <select
+          value={model}
+          onChange={(event) => onModelChange(event.target.value)}
+          className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-brand-500 dark:border-surface-700 dark:bg-surface-800 dark:text-gray-100"
+        >
+          {modelOptions.map((option) => (
+            <option key={option} value={option}>
+              {option}
+            </option>
+          ))}
+        </select>
+      </div>
+
+      <div className="flex-1 space-y-3 overflow-y-auto px-5 py-4">
+        {messages.length === 0 && (
+          <div className="rounded-2xl border border-brand-200 bg-brand-50/80 p-4 text-sm text-brand-700 dark:border-brand-500/30 dark:bg-brand-500/10 dark:text-brand-300">
+            Ask AutoFlow Copilot to explain this workflow, generate a new sequence, or propose a targeted node change.
+          </div>
+        )}
+
+        {messages.map((message) => (
+          <div key={message.id} className="space-y-2">
+            <div
+              className={clsx(
+                "rounded-2xl border px-4 py-3 text-sm leading-relaxed",
+                message.role === "user"
+                  ? "border-gray-200 bg-surface-100 text-gray-700 dark:border-surface-700 dark:bg-surface-800 dark:text-gray-200"
+                  : "border-brand-200 bg-brand-50 text-brand-900 dark:border-brand-500/20 dark:bg-brand-500/10 dark:text-brand-100"
+              )}
+            >
+              {message.content}
+            </div>
+
+            {message.proposal && (
+              <div className="rounded-2xl border border-teal-300 bg-teal-50/80 p-4 dark:border-teal-500/30 dark:bg-teal-500/10">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="text-sm font-semibold text-teal-900 dark:text-teal-200">
+                      {message.proposal.title}
+                    </p>
+                    <p className="mt-1 text-sm text-teal-700 dark:text-teal-300">
+                      {message.proposal.summary}
+                    </p>
+                  </div>
+                  <Sparkles size={16} className="mt-0.5 shrink-0 text-teal-600 dark:text-teal-300" />
+                </div>
+                <div className="mt-3 flex gap-2">
+                  <button
+                    onClick={() => onApply(message.id, message.proposal!)}
+                    className="rounded-lg bg-teal-600 px-3 py-2 text-sm font-medium text-white transition hover:bg-teal-500"
+                  >
+                    Apply
+                  </button>
+                  <button
+                    onClick={() => onReject(message.id)}
+                    className="rounded-lg border border-teal-300 px-3 py-2 text-sm font-medium text-teal-700 transition hover:bg-white dark:border-teal-500/40 dark:text-teal-300 dark:hover:bg-surface-900"
+                  >
+                    Reject
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        ))}
+
+        {busy && (
+          <div className="rounded-2xl border border-brand-200 bg-brand-50 px-4 py-3 text-sm text-brand-700 dark:border-brand-500/20 dark:bg-brand-500/10 dark:text-brand-300">
+            <div className="mb-2 flex items-center gap-2">
+              <Loader size={14} className="animate-spin" />
+              AutoFlow Copilot is thinking…
+            </div>
+            <div className="h-1.5 rounded-full bg-brand-200/70 dark:bg-brand-500/20">
+              <div className="h-1.5 w-1/3 animate-glow-pulse rounded-full bg-brand-500" />
+            </div>
+          </div>
+        )}
+      </div>
+
+      <div className="border-t border-gray-100 px-5 py-4 dark:border-surface-800">
+        <label htmlFor="workflow-copilot-input" className="mb-2 block text-xs font-medium text-gray-500 dark:text-surface-400">
+          Ask Copilot
+        </label>
+        <div className="rounded-2xl border border-gray-200 bg-white p-2 dark:border-surface-700 dark:bg-surface-900">
+          <textarea
+            id="workflow-copilot-input"
+            value={input}
+            onChange={(event) => onInputChange(event.target.value)}
+            rows={4}
+            placeholder="Add a Slack notification step after Step 3"
+            className="w-full resize-none bg-transparent px-2 py-2 text-sm text-gray-900 outline-none placeholder:text-gray-400 dark:text-gray-100 dark:placeholder:text-surface-500"
+          />
+          <div className="flex items-center justify-between gap-2 px-2 pt-1">
+            <span className="text-xs text-gray-400 dark:text-surface-500">
+              Use @ to reference steps on the canvas
+            </span>
+            <button
+              onClick={onSubmit}
+              disabled={!input.trim() || busy}
+              className="inline-flex items-center gap-2 rounded-xl bg-brand-600 px-3 py-2 text-sm font-medium text-white transition hover:bg-brand-500 disabled:opacity-50"
+            >
+              <Send size={14} />
+              Send
+            </button>
+          </div>
+        </div>
+
+        {references.length > 0 && (
+          <div className="mt-3 rounded-xl border border-gray-200 bg-white p-2 dark:border-surface-800 dark:bg-surface-900">
+            <p className="px-2 pb-1 text-xs font-medium text-gray-500 dark:text-surface-400">
+              References
+            </p>
+            <div className="space-y-1">
+              {references.map((reference) => (
+                <button
+                  key={reference.id}
+                  onClick={() => onInputChange(`${input}${input.endsWith("@") ? "" : " "}${reference.label} `)}
+                  className="block w-full rounded-lg px-2 py-1.5 text-left text-xs text-gray-600 transition hover:bg-gray-50 dark:text-surface-300 dark:hover:bg-surface-800"
+                >
+                  {reference.label}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        <div aria-live="polite" className="sr-only">
+          {liveMessage}
+        </div>
+      </div>
+    </aside>
+  );
+}
+
+async function buildCopilotResponse(
+  prompt: string,
+  template: WorkflowTemplate,
+  selectedStepId: string | null
+): Promise<Pick<CopilotMessage, "content" | "proposal">> {
+  const normalized = prompt.toLowerCase();
+
+  if (normalized.includes("explain")) {
+    return {
+      content: summarizeWorkflow(template),
+    };
+  }
+
+  const targetedProposal = buildTargetedProposal(prompt, template, selectedStepId);
+  if (targetedProposal) {
+    return {
+      content: "I prepared a targeted canvas change based on your instruction.",
+      proposal: targetedProposal,
+    };
+  }
+
+  const generatedSteps = await generateWorkflow(prompt.trim());
+  const mode: CopilotProposalMode = template.steps.length === 0 ? "replace" : "append";
+
+  return {
+    content:
+      mode === "replace"
+        ? "I drafted a workflow from your prompt and can apply it to the empty canvas."
+        : "I drafted a workflow sequence from your prompt and can append it to the current canvas.",
+    proposal: {
+      mode,
+      title: mode === "replace" ? "Generated workflow" : "Generated workflow extension",
+      summary: `${generatedSteps.length} suggested step${generatedSteps.length === 1 ? "" : "s"} ready to apply.`,
+      steps: generatedSteps,
+    },
+  };
+}
+
+function summarizeWorkflow(template: WorkflowTemplate): string {
+  if (template.steps.length === 0) {
+    return "The workflow canvas is empty. Ask me to generate a workflow or add a specific node.";
+  }
+
+  const orderedSteps = template.steps
+    .map((step, index) => `${index + 1}. ${step.name} (${KIND_META[step.kind].label})`)
+    .join(", ");
+
+  return `This workflow contains ${template.steps.length} step${template.steps.length === 1 ? "" : "s"}: ${orderedSteps}.`;
+}
+
+function buildTargetedProposal(
+  prompt: string,
+  template: WorkflowTemplate,
+  selectedStepId: string | null
+): CopilotProposal | null {
+  const normalized = prompt.toLowerCase();
+  if (!/(add|insert|append)/.test(normalized)) return null;
+
+  const suggestedStep = buildStepFromPrompt(normalized);
+  if (!suggestedStep) return null;
+
+  const match = normalized.match(/(?:after|following)\s+(?:step|node)\s+(\d+)/);
+  const targetIndex = match ? Math.max(0, Number.parseInt(match[1], 10) - 1) : -1;
+  const fallbackTargetId =
+    selectedStepId ?? template.steps[template.steps.length - 1]?.id;
+  const targetStepId = targetIndex >= 0 ? template.steps[targetIndex]?.id : fallbackTargetId;
+
+  return {
+    mode: "insert_after",
+    title: `Proposed change · ${suggestedStep.name}`,
+    summary: targetStepId
+      ? `Insert this step after the referenced canvas node.`
+      : `Add this step to the current workflow.`,
+    steps: [suggestedStep],
+    targetStepId,
+  };
+}
+
+function buildStepFromPrompt(prompt: string): WorkflowStep | null {
+  const baseStep = {
+    id: `step-${Date.now()}`,
+    description: "",
+    inputKeys: [],
+    outputKeys: [],
+  };
+
+  if (prompt.includes("slack")) {
+    return {
+      ...baseStep,
+      name: "Send Slack notification",
+      kind: "action",
+      action: "slack.send",
+      inputKeys: ["message"],
+      outputKeys: ["deliveryStatus"],
+      description: "Deliver a Slack notification after the prior step completes.",
+    };
+  }
+
+  if (prompt.includes("email")) {
+    return {
+      ...baseStep,
+      name: "Send email update",
+      kind: "action",
+      action: "email.send",
+      inputKeys: ["subject", "body"],
+      outputKeys: ["deliveryStatus"],
+      description: "Send an outbound email from the workflow.",
+    };
+  }
+
+  if (prompt.includes("approval")) {
+    return {
+      ...baseStep,
+      name: "Approval gate",
+      kind: "approval",
+      approvalTimeoutMinutes: 60,
+      description: "Pause for human approval before the workflow continues.",
+      inputKeys: ["approvalRequest"],
+      outputKeys: ["approvalDecision"],
+    };
+  }
+
+  if (prompt.includes("condition")) {
+    return {
+      ...baseStep,
+      name: "Decision branch",
+      kind: "condition",
+      condition: 'result === "approved"',
+      description: "Branch the workflow based on a condition.",
+      inputKeys: ["result"],
+      outputKeys: ["branch"],
+    };
+  }
+
+  if (prompt.includes("llm")) {
+    return {
+      ...baseStep,
+      name: "Draft with LLM",
+      kind: "llm",
+      promptTemplate: "Summarize {{input}} for the next workflow step.",
+      description: "Generate or transform content with an LLM.",
+      inputKeys: ["input"],
+      outputKeys: ["response"],
+    };
+  }
+
+  return {
+    ...baseStep,
+    name: "Follow-up action",
+    kind: "action",
+    action: "task.execute",
+    description: "Perform a follow-up action generated from your prompt.",
+    inputKeys: ["payload"],
+    outputKeys: ["result"],
+  };
+}
+
+function applyCopilotProposal(
+  template: WorkflowTemplate,
+  proposal: CopilotProposal
+): WorkflowTemplate {
+  if (proposal.mode === "replace") {
+    return { ...template, steps: proposal.steps };
+  }
+
+  if (proposal.mode === "append") {
+    return { ...template, steps: [...template.steps, ...proposal.steps] };
+  }
+
+  if (!proposal.targetStepId) {
+    return { ...template, steps: [...template.steps, ...proposal.steps] };
+  }
+
+  const targetIndex = template.steps.findIndex((step) => step.id === proposal.targetStepId);
+  if (targetIndex === -1) {
+    return { ...template, steps: [...template.steps, ...proposal.steps] };
+  }
+
+  const nextSteps = [...template.steps];
+  nextSteps.splice(targetIndex + 1, 0, ...proposal.steps);
+  return { ...template, steps: nextSteps };
+}
+
 // ---------------------------------------------------------------------------
 // AgentCanvas — visual manager→worker hierarchy for agent steps
 // ---------------------------------------------------------------------------
@@ -1219,8 +1743,8 @@ function WorkflowStepNode({
       <Handle type="target" position={Position.Top} className="!h-2 !w-2 !border-0 !bg-slate-500" />
       <StepNode
         step={data.step}
-        selected={selected}
-        dragging={dragging}
+        selected={selected ?? false}
+        dragging={dragging ?? false}
         onSelect={() => data.onSelect(id)}
         onMoveUp={() => data.onMoveUp(id)}
         onMoveDown={() => data.onMoveDown(id)}

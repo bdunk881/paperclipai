@@ -361,7 +361,7 @@ export default function DemoPage() {
               Start free
             </a>
             <a
-              href="https://docs.autoflow.app/getting-started"
+              href="https://docs.helloautoflow.com/getting-started"
               className="rounded-lg border border-gray-300 px-6 py-3 text-sm font-semibold text-gray-700 hover:bg-gray-50 transition-colors"
             >
               Read the docs →

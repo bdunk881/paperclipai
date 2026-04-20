@@ -35,7 +35,7 @@ export function DocsLayout({ children }: { children: React.ReactNode }) {
       <header className="sticky top-0 z-50 border-b border-gray-200 bg-white/90 backdrop-blur-sm">
         <div className="mx-auto flex h-14 max-w-screen-xl items-center justify-between px-6">
           <div className="flex items-center gap-6">
-            <Link href="https://autoflow.app" className="font-bold text-indigo-600 text-lg">
+            <Link href="https://helloautoflow.com" className="font-bold text-indigo-600 text-lg">
               AutoFlow
             </Link>
             <span className="text-gray-300 text-sm">|</span>
@@ -45,7 +45,7 @@ export function DocsLayout({ children }: { children: React.ReactNode }) {
           </div>
           <div className="flex items-center gap-4 text-sm">
             <Link
-              href="https://autoflow.app/demo"
+              href="https://helloautoflow.com/demo"
               className="text-gray-600 hover:text-gray-900 transition-colors"
             >
               Demo
@@ -57,7 +57,7 @@ export function DocsLayout({ children }: { children: React.ReactNode }) {
               GitHub
             </Link>
             <Link
-              href="https://autoflow.app/#pricing"
+              href="https://helloautoflow.com/#pricing"
               className="rounded-lg bg-indigo-600 px-3 py-1.5 font-semibold text-white hover:bg-indigo-700 transition-colors"
             >
               Start free
@@ -103,8 +103,8 @@ export function DocsLayout({ children }: { children: React.ReactNode }) {
       <footer className="border-t border-gray-100 py-6">
         <div className="mx-auto max-w-screen-xl px-6 text-center text-sm text-gray-500">
           © {new Date().getFullYear()} AutoFlow.{" "}
-          <Link href="https://autoflow.app" className="hover:text-gray-900">
-            autoflow.app
+          <Link href="https://helloautoflow.com" className="hover:text-gray-900">
+            helloautoflow.com
           </Link>
         </div>
       </footer>

@@ -9,6 +9,7 @@ import {
   type MemoryEntry,
   type MemoryStats,
 } from "../api/client";
+import { useAuth } from "../context/AuthContext";
 
 function ttlLabel(seconds?: number): string {
   if (!seconds) return "No expiry";
@@ -30,6 +31,7 @@ function timeAgo(iso: string): string {
 const DEFAULT_STATS: MemoryStats = { totalEntries: 0, totalBytes: 0, workflowCount: 0 };
 
 export default function Memory() {
+  const { user } = useAuth();
   const [entries, setEntries] = useState<MemoryEntry[]>([]);
   const [stats, setStats] = useState<MemoryStats>(DEFAULT_STATS);
   const [search, setSearch] = useState("");
@@ -44,9 +46,9 @@ export default function Memory() {
     try {
       const [fetched, fetchedStats] = await Promise.all([
         search.trim()
-          ? searchMemory(search).then((r) => r.map((sr) => sr.entry))
-          : listMemoryEntries(),
-        getMemoryStats(),
+          ? searchMemory(search, user?.id).then((r) => r.map((sr) => sr.entry))
+          : listMemoryEntries(user?.id),
+        getMemoryStats(user?.id),
       ]);
       setEntries(fetched);
       setStats(fetchedStats);
@@ -55,7 +57,7 @@ export default function Memory() {
     } finally {
       setLoading(false);
     }
-  }, [search]);
+  }, [search, user?.id]);
 
   useEffect(() => {
     const debounce = setTimeout(() => void loadEntries(), search.trim() ? 300 : 0);
@@ -64,10 +66,10 @@ export default function Memory() {
 
   async function handleDelete(id: string) {
     try {
-      await deleteMemoryEntry(id);
+      await deleteMemoryEntry(id, user?.id);
       setEntries((prev) => prev.filter((e) => e.id !== id));
       if (selected?.id === id) setSelected(null);
-      void getMemoryStats().then(setStats);
+      void getMemoryStats(user?.id).then(setStats);
     } catch {
       // keep entry on error
     }
@@ -280,6 +282,7 @@ export default function Memory() {
       {/* Add Entry Modal */}
       {showAddModal && (
         <AddEntryModal
+          userId={user?.id}
           onClose={() => setShowAddModal(false)}
           onSaved={() => {
             setShowAddModal(false);
@@ -295,7 +298,15 @@ export default function Memory() {
 // Add Entry Modal
 // ---------------------------------------------------------------------------
 
-function AddEntryModal({ onClose, onSaved }: { onClose: () => void; onSaved: () => void }) {
+function AddEntryModal({
+  userId,
+  onClose,
+  onSaved,
+}: {
+  userId?: string;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
   const [key, setKey] = useState("");
   const [text, setText] = useState("");
   const [workflowId, setWorkflowId] = useState("");
@@ -309,12 +320,15 @@ function AddEntryModal({ onClose, onSaved }: { onClose: () => void; onSaved: () 
     setSaving(true);
     setErr(null);
     try {
-      await writeMemoryEntry({
-        key: key.trim(),
-        text: text.trim(),
-        workflowId: workflowId.trim() || undefined,
-        ttlSeconds: ttlSeconds ? parseInt(ttlSeconds, 10) : undefined,
-      });
+      await writeMemoryEntry(
+        {
+          key: key.trim(),
+          text: text.trim(),
+          workflowId: workflowId.trim() || undefined,
+          ttlSeconds: ttlSeconds ? parseInt(ttlSeconds, 10) : undefined,
+        },
+        userId
+      );
       onSaved();
     } catch (e) {
       setErr(e instanceof Error ? e.message : "Failed to save");

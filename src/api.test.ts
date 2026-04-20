@@ -21,6 +21,14 @@ jest.mock("./auth/authMiddleware", () => ({
   },
 }));
 
+// Bypass JWT verification in unit tests — inject a synthetic auth principal
+jest.mock("./auth/authMiddleware", () => ({
+  requireAuth: (req: Record<string, unknown>, _res: unknown, next: () => void) => {
+    req.auth = { sub: "test-user-id", email: "test@example.com" };
+    next();
+  },
+}));
+
 import request from "supertest";
 import app from "./app";
 import { WORKFLOW_TEMPLATES } from "./templates";

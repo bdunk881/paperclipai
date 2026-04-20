@@ -3,8 +3,9 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 import { ArrowLeft, Link2, LoaderCircle, Rocket, ShieldCheck, Unlink2 } from "lucide-react";
 import { createDeployment, getAgentTemplate } from "../data/agentMarketplaceData";
 import { useAuth } from "../context/AuthContext";
+import { getConfiguredApiOrigin } from "../api/baseUrl";
 
-const API_BASE = (import.meta.env.VITE_API_URL ?? "").replace(/\/$/, "");
+const API_BASE = getConfiguredApiOrigin();
 const OAUTH_CALLBACK_EVENT = "autoflow:agent-catalog-oauth-callback";
 const OAUTH_POPUP_CLOSE_POLL_MS = 500;
 const OAUTH_POPUP_TIMEOUT_MS = 60_000;

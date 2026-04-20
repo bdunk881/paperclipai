@@ -2,17 +2,26 @@ import type { VercelRequest, VercelResponse } from "@vercel/node";
 
 type ErrorPayload = { error: string };
 
+function normalizeBackendBase(value?: string): string {
+  if (!value) return "";
+
+  const trimmed = value.trim().replace(/\/+$/, "");
+  if (!trimmed) return "";
+
+  return trimmed.endsWith("/api") ? trimmed.slice(0, -4) : trimmed;
+}
+
 function resolveBackendApiBase(): string {
   const candidates = [
     process.env.BILLING_API_BASE_URL,
     process.env.BACKEND_API_BASE_URL,
+    process.env.VITE_API_BASE_URL,
     process.env.VITE_API_URL,
     "https://api.helloautoflow.com",
   ];
 
   for (const value of candidates) {
-    if (!value) continue;
-    const trimmed = value.trim().replace(/\/+$/, "");
+    const trimmed = normalizeBackendBase(value);
     if (!trimmed) continue;
     return trimmed;
   }

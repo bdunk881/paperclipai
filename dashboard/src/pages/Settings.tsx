@@ -36,7 +36,7 @@ const SETTINGS_SECTIONS = [
     to: "/settings/api-keys",
     icon: Key,
     title: "API Keys",
-    description: "Generate and manage API keys for programmatic access to Alterflow.",
+    description: "Generate and manage API keys for programmatic access to AutoFlow.",
   },
 ];
 

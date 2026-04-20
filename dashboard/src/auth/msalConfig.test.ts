@@ -12,53 +12,59 @@ describe("msalConfig env parsing", () => {
   });
 
   it("falls back to built-in defaults when env vars are empty", async () => {
+    vi.stubEnv("VITE_AZURE_CIAM_CLIENT_ID", "");
     vi.stubEnv("VITE_AZURE_CIAM_TENANT_SUBDOMAIN", "   ");
-    vi.stubEnv("VITE_AZURE_CIAM_TENANT_DOMAIN", "");
 
-    const { msalConfig } = await loadConfig();
-
-    expect(msalConfig.auth.clientId).toBe("2dfd3a08-277c-4893-b07d-eca5ae322310");
-    expect(msalConfig.auth.authority).toBe(
-      "https://autoflowciam.ciamlogin.com/autoflowciam.onmicrosoft.com"
+    await expect(loadConfig()).rejects.toThrow(
+      "Missing required VITE_AZURE_CIAM_CLIENT_ID environment variable."
     );
-    expect(msalConfig.auth.knownAuthorities).toEqual(["autoflowciam.ciamlogin.com"]);
   });
 
-  it("falls back when tenant subdomain format is invalid", async () => {
+  it("throws when client id format is invalid", async () => {
+    vi.stubEnv("VITE_AZURE_CIAM_CLIENT_ID", "not-a-guid");
+    vi.stubEnv("VITE_AZURE_CIAM_TENANT_SUBDOMAIN", "autoflowciam");
+
+    await expect(loadConfig()).rejects.toThrow(
+      "Invalid VITE_AZURE_CIAM_CLIENT_ID format. Expected a GUID."
+    );
+  });
+
+  it("throws when tenant subdomain is missing", async () => {
+    vi.stubEnv("VITE_AZURE_CIAM_CLIENT_ID", "2dfd3a08-277c-4893-b07d-eca5ae322310");
+    vi.stubEnv("VITE_AZURE_CIAM_TENANT_SUBDOMAIN", "");
+
+    await expect(loadConfig()).rejects.toThrow(
+      "Missing required VITE_AZURE_CIAM_TENANT_SUBDOMAIN environment variable."
+    );
+  });
+
+  it("throws when tenant subdomain format is invalid", async () => {
+    vi.stubEnv("VITE_AZURE_CIAM_CLIENT_ID", "2dfd3a08-277c-4893-b07d-eca5ae322310");
     vi.stubEnv("VITE_AZURE_CIAM_TENANT_SUBDOMAIN", "bad subdomain");
 
-    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
-    const { msalConfig } = await loadConfig();
-
-    expect(msalConfig.auth.authority).toBe(
-      "https://autoflowciam.ciamlogin.com/autoflowciam.onmicrosoft.com"
-    );
-    expect(warnSpy).toHaveBeenCalledWith(
-      "[MSAL] Invalid VITE_AZURE_CIAM_TENANT_SUBDOMAIN format. Using built-in CIAM default."
+    await expect(loadConfig()).rejects.toThrow(
+      "Invalid VITE_AZURE_CIAM_TENANT_SUBDOMAIN format."
     );
   });
 
-  it("falls back when tenant domain format is invalid", async () => {
+  it("throws when tenant domain format is invalid", async () => {
+    vi.stubEnv("VITE_AZURE_CIAM_CLIENT_ID", "2dfd3a08-277c-4893-b07d-eca5ae322310");
     vi.stubEnv("VITE_AZURE_CIAM_TENANT_SUBDOMAIN", "autoflowciam");
     vi.stubEnv("VITE_AZURE_CIAM_TENANT_DOMAIN", "https://tenant.onmicrosoft.com");
 
-    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
-    const { msalConfig } = await loadConfig();
-
-    expect(msalConfig.auth.authority).toBe(
-      "https://autoflowciam.ciamlogin.com/autoflowciam.onmicrosoft.com"
-    );
-    expect(warnSpy).toHaveBeenCalledWith(
-      "[MSAL] Invalid VITE_AZURE_CIAM_TENANT_DOMAIN format. Using derived CIAM domain."
+    await expect(loadConfig()).rejects.toThrow(
+      "Invalid VITE_AZURE_CIAM_TENANT_DOMAIN format."
     );
   });
 
   it("uses valid env values when provided", async () => {
+    vi.stubEnv("VITE_AZURE_CIAM_CLIENT_ID", "2dfd3a08-277c-4893-b07d-eca5ae322310");
     vi.stubEnv("VITE_AZURE_CIAM_TENANT_SUBDOMAIN", "MyTenant01");
     vi.stubEnv("VITE_AZURE_CIAM_TENANT_DOMAIN", "mytenant01.onmicrosoft.com");
 
     const { msalConfig } = await loadConfig();
 
+    expect(msalConfig.auth.clientId).toBe("2dfd3a08-277c-4893-b07d-eca5ae322310");
     expect(msalConfig.auth.authority).toBe(
       "https://mytenant01.ciamlogin.com/mytenant01.onmicrosoft.com"
     );

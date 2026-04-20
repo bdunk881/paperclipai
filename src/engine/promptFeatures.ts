@@ -7,6 +7,7 @@ export interface PromptFeatures {
   hasLists: boolean;
   hasCodeBlock: boolean;
   hasMultiStepInstructions: boolean;
+  hasStructuredExample: boolean;
   outputKeyCount: number;
   requiresStructuredOutput: boolean;
   domainCodeGeneration: boolean;
@@ -91,6 +92,9 @@ const STRUCTURED_OUTPUT_KEYWORDS = [
   "structured",
 ];
 
+const STRUCTURED_EXAMPLE_PATTERN =
+  /```(?:json|yaml|xml)|\{[\s\S]{0,160}"[\w-]+"\s*:|<[\w-]+>[\s\S]{0,160}<\/[\w-]+>/i;
+
 export const DEFAULT_PROMPT_TIER_SCORING_CONFIG: PromptTierScoringConfig = {
   confidenceThreshold: 0.2,
   weights: {
@@ -100,6 +104,7 @@ export const DEFAULT_PROMPT_TIER_SCORING_CONFIG: PromptTierScoringConfig = {
       hasLists: -0.4,
       hasCodeBlock: -0.9,
       hasMultiStepInstructions: -1.4,
+      hasStructuredExample: -0.8,
       requiresStructuredOutput: 1.0,
       domainCodeGeneration: -1.1,
       domainDataAnalysis: -0.8,
@@ -113,6 +118,7 @@ export const DEFAULT_PROMPT_TIER_SCORING_CONFIG: PromptTierScoringConfig = {
       hasLists: 0.5,
       hasCodeBlock: 0.4,
       hasMultiStepInstructions: 0.9,
+      hasStructuredExample: 1.1,
       requiresStructuredOutput: 0.6,
       domainCodeGeneration: 0.7,
       domainDataAnalysis: 0.8,
@@ -126,6 +132,7 @@ export const DEFAULT_PROMPT_TIER_SCORING_CONFIG: PromptTierScoringConfig = {
       hasLists: 0.8,
       hasCodeBlock: 1.4,
       hasMultiStepInstructions: 2.4,
+      hasStructuredExample: 0.5,
       requiresStructuredOutput: 0.3,
       domainCodeGeneration: 1.8,
       domainDataAnalysis: 2.0,
@@ -162,6 +169,7 @@ export function extractPromptFeatures(
     hasLists: listPattern.test(promptTemplate),
     hasCodeBlock: /```/.test(promptTemplate),
     hasMultiStepInstructions: multiStepPattern.test(promptTemplate),
+    hasStructuredExample: STRUCTURED_EXAMPLE_PATTERN.test(promptTemplate),
     outputKeyCount,
     requiresStructuredOutput: includesAny(lowerPrompt, STRUCTURED_OUTPUT_KEYWORDS),
     domainCodeGeneration: includesAny(lowerPrompt, CODE_KEYWORDS),
@@ -189,6 +197,7 @@ export function scorePromptTier(
     rawScores[tier] += Number(features.hasLists) * (tierWeights.hasLists ?? 0);
     rawScores[tier] += Number(features.hasCodeBlock) * (tierWeights.hasCodeBlock ?? 0);
     rawScores[tier] += Number(features.hasMultiStepInstructions) * (tierWeights.hasMultiStepInstructions ?? 0);
+    rawScores[tier] += Number(features.hasStructuredExample) * (tierWeights.hasStructuredExample ?? 0);
     rawScores[tier] += Number(features.requiresStructuredOutput) * (tierWeights.requiresStructuredOutput ?? 0);
     rawScores[tier] += Number(features.domainCodeGeneration) * (tierWeights.domainCodeGeneration ?? 0);
     rawScores[tier] += Number(features.domainDataAnalysis) * (tierWeights.domainDataAnalysis ?? 0);

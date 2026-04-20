@@ -106,6 +106,15 @@ describe("classifyTier — feature-based routing", () => {
     expect(result.usedFallback).toBe(true);
   });
 
+  it("routes short schema-heavy prompts to standard instead of lite", () => {
+    const template = [
+      "Return JSON using this schema:",
+      '{"customer":{"name":"string","plan":"string","active":true}}',
+    ].join("\n");
+    const step = makeStep({ promptTemplate: template, outputKeys: ["customer"] });
+    expect(classifyTier(step, template.length)).toBe("standard");
+  });
+
   it("handles steps without promptTemplate (uses empty string fallback)", () => {
     // step.promptTemplate is undefined — triggers the ?? "" fallback at line 136
     const step = makeStep({ kind: "action", promptTemplate: undefined, outputKeys: [] });

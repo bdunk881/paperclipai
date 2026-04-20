@@ -18,6 +18,10 @@ on:
         default: preview
         type: choice
         options: [preview, production]
+      source_ref:
+        description: "Optional git ref to deploy instead of the workflow branch"
+        required: false
+        type: string
 
 permissions:
   contents: read
@@ -30,6 +34,7 @@ env:
   VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
   VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
   VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+  DEPLOY_REF: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.source_ref || github.ref }}
 
 jobs:
   preview-deploy:
@@ -43,6 +48,8 @@ jobs:
       preview_url: ${{ steps.deploy.outputs.preview_url }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.DEPLOY_REF }}
 
       - uses: actions/setup-node@v4
         with:
@@ -78,6 +85,7 @@ jobs:
         working-directory: dashboard
         run: |
           set -euo pipefail
+          echo "Deploying ref: $DEPLOY_REF"
           npx vercel pull --yes --environment=preview --token="$VERCEL_TOKEN"
           PREVIEW_URL="$(npx vercel deploy --yes --token="$VERCEL_TOKEN" | tail -n 1 | tr -d '\r')"
           if [ -z "$PREVIEW_URL" ]; then
@@ -94,6 +102,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.DEPLOY_REF }}
 
       - uses: actions/setup-node@v4
         with:
@@ -135,6 +145,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.DEPLOY_REF }}
 
       - uses: actions/setup-node@v4
         with:
@@ -166,9 +178,16 @@ jobs:
           done
 
       - name: Deploy production
+        id: deploy
         working-directory: dashboard
         run: |
           set -euo pipefail
+          echo "Deploying ref: $DEPLOY_REF"
           npx vercel pull --yes --environment=production --token="$VERCEL_TOKEN"
           PROD_URL="$(npx vercel deploy --prod --yes --token="$VERCEL_TOKEN" | tail -n 1 | tr -d '\r')"
+          if [ -z "$PROD_URL" ]; then
+            echo "::error::Vercel production deploy did not return a URL"
+            exit 1
+          fi
+          echo "production_url=$PROD_URL" >> "$GITHUB_OUTPUT"
           echo "Production URL: $PROD_URL"

@@ -41,7 +41,7 @@ class ConfigField(BaseModel):
     label: str
     type: FieldType
     required: bool
-    default_value: Any = Field(None, alias="defaultValue")
+    default_value: Any = Field(default=None, alias="defaultValue")
     description: str | None = None
     options: list[str] | None = None
 
@@ -55,7 +55,7 @@ class WorkflowStep(BaseModel):
     description: str
     input_keys: list[str] = Field(default_factory=list, alias="inputKeys")
     output_keys: list[str] = Field(default_factory=list, alias="outputKeys")
-    prompt_template: str | None = Field(None, alias="promptTemplate")
+    prompt_template: str | None = Field(default=None, alias="promptTemplate")
     condition: str | None = None
     action: str | None = None
     config: dict[str, Any] | None = None
@@ -111,7 +111,7 @@ class WorkflowRun(BaseModel):
     template_name: str = Field(alias="templateName")
     status: RunStatus
     started_at: str = Field(alias="startedAt")
-    completed_at: str | None = Field(None, alias="completedAt")
+    completed_at: str | None = Field(default=None, alias="completedAt")
     input: dict[str, Any] = Field(default_factory=dict)
     output: dict[str, Any] | None = None
     step_results: list[StepResult] = Field(default_factory=list, alias="stepResults")

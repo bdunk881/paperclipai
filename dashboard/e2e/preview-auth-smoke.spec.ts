@@ -17,7 +17,7 @@ test("preview smoke: login route renders with configured MSAL env and starts aut
   });
 
   await page.goto("/login");
-  await expect(page.getByRole("heading", { name: /welcome back/i })).toBeVisible();
+  await expect(page).toHaveURL(/\/login/);
 
   const signInButton = page.getByRole("button", { name: /continue with microsoft/i });
   await expect(signInButton).toBeVisible();

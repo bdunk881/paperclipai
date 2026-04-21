@@ -34,6 +34,11 @@ import {
 } from "./engine/classificationLog";
 import { extractPromptFeatures } from "./engine/promptFeatures";
 import { controlPlaneStore } from "./controlPlane/controlPlaneStore";
+import { resetImportedTemplatesForTests } from "./templates/importedTemplateStore";
+import {
+  PORTABLE_WORKFLOW_FORMAT,
+  PORTABLE_WORKFLOW_SCHEMA_VERSION,
+} from "./workflows/portableSchema";
 
 function asAuth(userId = "test-user") {
   return { Authorization: `Bearer ${userId}` };
@@ -41,6 +46,7 @@ function asAuth(userId = "test-user") {
 
 beforeEach(() => {
   controlPlaneStore.clear();
+  resetImportedTemplatesForTests();
 });
 
 // ---------------------------------------------------------------------------
@@ -71,10 +77,10 @@ describe("GET /api/templates", () => {
     expect(Array.isArray(res.body.templates)).toBe(true);
   });
 
-  it("returns all 3 templates when no category filter is applied", async () => {
+  it("returns all 13 templates when no category filter is applied", async () => {
     const res = await request(app).get("/api/templates");
-    expect(res.body.total).toBe(3);
-    expect(res.body.templates).toHaveLength(3);
+    expect(res.body.total).toBe(13);
+    expect(res.body.templates).toHaveLength(13);
   });
 
   it("each template summary has required shape fields", async () => {
@@ -207,8 +213,8 @@ describe("GET /api/templates/:id/sample", () => {
     expect(Object.keys(res.body.expectedOutput).length).toBeGreaterThan(0);
   });
 
-  it("sample endpoint works for all 3 templates", async () => {
-    const ids = ["tpl-support-bot", "tpl-lead-enrich", "tpl-content-gen"];
+  it("sample endpoint works for all built-in templates", async () => {
+    const ids = WORKFLOW_TEMPLATES.map((template) => template.id);
     for (const id of ids) {
       const res = await request(app).get(`/api/templates/${id}/sample`);
       expect(res.status).toBe(200);
@@ -221,6 +227,135 @@ describe("GET /api/templates/:id/sample", () => {
     const res = await request(app).get("/api/templates/tpl-unknown/sample");
     expect(res.status).toBe(404);
     expect(res.body.error).toMatch(/not found/i);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Portable workflow schema + import/export endpoints
+// ---------------------------------------------------------------------------
+
+describe("Portable workflow APIs", () => {
+  it("returns the portable schema descriptor", async () => {
+    const res = await request(app).get("/api/workflows/schema");
+    expect(res.status).toBe(200);
+    expect(res.body.format).toBe(PORTABLE_WORKFLOW_FORMAT);
+    expect(res.body.schemaVersion).toBe(PORTABLE_WORKFLOW_SCHEMA_VERSION);
+    expect(res.body.supportedStepKinds).toContain("cron_trigger");
+    expect(res.body.supportedStepKinds).toContain("interval_trigger");
+    expect(res.body.supportedStepKinds).toContain("llm");
+  });
+
+  it("exports a built-in template in portable format", async () => {
+    const res = await request(app).get("/api/templates/tpl-support-bot/export");
+    expect(res.status).toBe(200);
+    expect(res.body.format).toBe(PORTABLE_WORKFLOW_FORMAT);
+    expect(res.body.schemaVersion).toBe(PORTABLE_WORKFLOW_SCHEMA_VERSION);
+    expect(res.body.template.id).toBe("tpl-support-bot");
+  });
+
+  it("imports a portable template and exposes it through the templates API", async () => {
+    const exportRes = await request(app).get("/api/templates/tpl-support-bot/export");
+    const importedTemplate = {
+      ...exportRes.body.template,
+      id: "tpl-support-bot-clone",
+      name: "Customer Support Bot Clone",
+      category: "custom",
+    };
+
+    const importRes = await request(app)
+      .post("/api/templates/import")
+      .set(asAuth())
+      .send({
+        ...exportRes.body,
+        template: importedTemplate,
+      });
+
+    expect(importRes.status).toBe(201);
+    expect(importRes.body.imported).toBe(true);
+    expect(importRes.body.template.id).toBe("tpl-support-bot-clone");
+
+    const getRes = await request(app).get("/api/templates/tpl-support-bot-clone");
+    expect(getRes.status).toBe(200);
+    expect(getRes.body.name).toBe("Customer Support Bot Clone");
+
+    const listRes = await request(app).get("/api/templates");
+    expect(listRes.body.total).toBe(14);
+  });
+
+  it("rejects invalid portable payloads", async () => {
+    const res = await request(app)
+      .post("/api/templates/import")
+      .set(asAuth())
+      .send({ nope: true });
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/format|schemaVersion|template/i);
+  });
+
+  it("rejects interval_trigger templates without intervalMinutes", async () => {
+    const exportRes = await request(app).get("/api/templates/tpl-support-bot/export");
+    const importedTemplate = {
+      ...exportRes.body.template,
+      id: "tpl-invalid-interval-trigger",
+      name: "Invalid Interval Trigger",
+      category: "custom",
+      steps: [
+        {
+          id: "step_interval",
+          name: "Interval Trigger",
+          kind: "interval_trigger",
+          description: "Runs every interval",
+          inputKeys: [],
+          outputKeys: ["scheduledAt"],
+        },
+        {
+          id: "step_output",
+          name: "Output",
+          kind: "output",
+          description: "Collect output",
+          inputKeys: ["scheduledAt"],
+          outputKeys: ["scheduledAt"],
+        },
+        {
+          id: "step_output_2",
+          name: "Output Copy",
+          kind: "output",
+          description: "Keep schema length above minimum",
+          inputKeys: ["scheduledAt"],
+          outputKeys: ["scheduledAt"],
+        },
+        {
+          id: "step_output_3",
+          name: "Output Copy 2",
+          kind: "output",
+          description: "Keep schema length above minimum",
+          inputKeys: ["scheduledAt"],
+          outputKeys: ["scheduledAt"],
+        },
+      ],
+    };
+
+    const res = await request(app)
+      .post("/api/templates/import")
+      .set(asAuth())
+      .send({
+        ...exportRes.body,
+        template: importedTemplate,
+      });
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/intervalMinutes/);
+  });
+
+  it("rejects importing a template id that already exists", async () => {
+    const exportRes = await request(app).get("/api/templates/tpl-support-bot/export");
+    const res = await request(app)
+      .post("/api/templates/import")
+      .set(asAuth())
+      .send(exportRes.body);
+
+    expect(res.status).toBe(409);
+    expect(res.body.error).toMatch(/already exists/i);
   });
 });
 

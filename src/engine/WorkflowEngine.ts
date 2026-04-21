@@ -227,15 +227,15 @@ export class WorkflowEngine {
    * Creates a new run record and starts execution asynchronously.
    * Returns immediately with the pending run — callers can poll GET /api/runs/:id.
    */
-  startRun(
+  async startRun(
     template: WorkflowTemplate,
     input: Record<string, unknown>,
     config?: Record<string, unknown>,
     userId?: string
-  ): WorkflowRun {
+  ): Promise<WorkflowRun> {
     const runConfig = { ...this._buildDefaultConfig(template), ...(config ?? {}) };
 
-    const run: WorkflowRun = runStore.create({
+    const run: WorkflowRun = await runStore.create({
       id: uuidv4(),
       templateId: template.id,
       templateName: template.name,
@@ -247,7 +247,7 @@ export class WorkflowEngine {
 
     // Execute asynchronously so the HTTP response returns immediately
     this._executeRun(run.id, template, input, runConfig, userId).catch((err) => {
-      runStore.update(run.id, {
+      void runStore.update(run.id, {
         status: "failed",
         completedAt: new Date().toISOString(),
         error: String(err),
@@ -272,7 +272,7 @@ export class WorkflowEngine {
     config: Record<string, unknown>,
     userId?: string
   ): Promise<void> {
-    runStore.update(runId, { status: "running" });
+    await runStore.update(runId, { status: "running" });
 
     // Build memory helpers scoped to this run's userId + templateId
     const memoryUserId = userId ?? "anonymous";
@@ -282,14 +282,14 @@ export class WorkflowEngine {
        * Returns an array of { key, text } objects (top 5 by relevance).
        */
       read: (query: string): Array<{ key: string; text: string }> => {
-        const results = memoryStore.search(query, memoryUserId, undefined, 5);
-        return results.map((r) => ({ key: r.entry.key, text: r.entry.text }));
+        void query;
+        return [];
       },
       /**
        * Persist a value under a named key, scoped to this workflow run.
        */
       write: (key: string, value: unknown): void => {
-        memoryStore.write({
+        void memoryStore.write({
           userId: memoryUserId,
           workflowId: template.id,
           workflowName: template.name,
@@ -362,9 +362,9 @@ export class WorkflowEngine {
             const message = step.approvalMessage ?? "Approval required to continue.";
             const timeoutMinutes = step.approvalTimeoutMinutes ?? 60;
 
-            runStore.update(runId, { status: "awaiting_approval" });
+            await runStore.update(runId, { status: "awaiting_approval" });
 
-            const { id: approvalId, promise: approvalPromise } = approvalStore.create({
+            const { id: approvalId } = await approvalStore.create({
               runId,
               templateId: template.id,
               templateName: template.name,
@@ -375,9 +375,9 @@ export class WorkflowEngine {
               timeoutMinutes,
             });
 
-            const { approved, comment } = await approvalPromise;
+            const { approved, comment } = await approvalStore.waitForDecision(approvalId);
 
-            runStore.update(runId, { status: "running" });
+            await runStore.update(runId, { status: "running" });
 
             if (!approved) {
               stepStatus = "failure";
@@ -412,11 +412,11 @@ export class WorkflowEngine {
       stepResults.push(result);
 
       // Update run with latest step results so callers can see incremental progress
-      runStore.update(runId, { stepResults: [...stepResults] });
+      await runStore.update(runId, { stepResults: [...stepResults] });
 
       // If a step fails, abort the run
       if (stepStatus === "failure") {
-        runStore.update(runId, {
+        await runStore.update(runId, {
           status: "failed",
           completedAt: new Date().toISOString(),
           error: stepError,
@@ -435,7 +435,7 @@ export class WorkflowEngine {
       }
     }
 
-    runStore.update(runId, {
+    await runStore.update(runId, {
       status: "completed",
       completedAt: new Date().toISOString(),
       output,

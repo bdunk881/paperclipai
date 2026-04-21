@@ -1,6 +1,14 @@
-export function parseJsonColumn<T>(value: unknown, fallback: T): T {
+export function serializeJson(value: unknown): string {
+  return JSON.stringify(value ?? null);
+}
+
+export function parseJsonValue<T>(value: unknown, fallback: T): T {
   if (value === null || value === undefined) {
     return fallback;
+  }
+
+  if (typeof value === "object") {
+    return value as T;
   }
 
   if (typeof value === "string") {
@@ -11,5 +19,9 @@ export function parseJsonColumn<T>(value: unknown, fallback: T): T {
     }
   }
 
-  return value as T;
+  return fallback;
+}
+
+export function parseJsonColumn<T>(value: unknown, fallback: T): T {
+  return parseJsonValue(value, fallback);
 }

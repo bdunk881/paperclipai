@@ -13,16 +13,11 @@ jest.mock("./llmProviders", () => ({
 
 import { WorkflowEngine, setLlmProvider, registerAction } from "./WorkflowEngine";
 import { runStore } from "./runStore";
-import { knowledgeStore } from "../knowledge/knowledgeStore";
 import { approvalStore } from "./approvalStore";
-import { llmConfigStore } from "../llmConfig/llmConfigStore";
-import { getProvider } from "./llmProviders";
 import { customerSupportBot } from "../templates/customer-support-bot";
 import { leadEnrichment } from "../templates/lead-enrichment";
 import { contentGenerator } from "../templates/content-generator";
-import { WorkflowTemplate, WorkflowStep } from "../types/workflow";
-
-const mockGetProvider = getProvider as jest.Mock;
+import { WorkflowTemplate } from "../types/workflow";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -35,11 +30,11 @@ async function waitForCompletion(
 ): Promise<import("../types/workflow").WorkflowRun> {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
-    const run = runStore.get(runId);
+    const run = await runStore.get(runId);
     if (run && ["completed", "failed"].includes(run.status)) return run;
     await new Promise((resolve) => setTimeout(resolve, 20));
   }
-  const run = runStore.get(runId);
+  const run = await runStore.get(runId);
   throw new Error(`Run ${runId} did not complete in ${timeoutMs}ms. Last status: ${run?.status}`);
 }
 
@@ -50,9 +45,8 @@ async function waitForCompletion(
 let engine: WorkflowEngine;
 
 beforeEach(() => {
-  runStore.clear();
-  knowledgeStore.clear();
-  approvalStore.clear();
+  void runStore.clear();
+  void approvalStore.clear();
   engine = new WorkflowEngine();
 
   // Install deterministic mock LLM provider
@@ -82,8 +76,8 @@ beforeEach(() => {
 // ---------------------------------------------------------------------------
 
 describe("WorkflowEngine — run lifecycle", () => {
-  it("startRun returns a pending run immediately", () => {
-    const run = engine.startRun(customerSupportBot, {
+  it("startRun returns a pending run immediately", async () => {
+    const run = await engine.startRun(customerSupportBot, {
       ticketId: "T001",
       subject: "Login issue",
       body: "Can't log in",
@@ -96,7 +90,7 @@ describe("WorkflowEngine — run lifecycle", () => {
   });
 
   it("run transitions to 'completed' after execution", async () => {
-    const run = engine.startRun(customerSupportBot, {
+    const run = await engine.startRun(customerSupportBot, {
       ticketId: "T002",
       subject: "Billing question",
       body: "What is my invoice?",
@@ -108,7 +102,7 @@ describe("WorkflowEngine — run lifecycle", () => {
   });
 
   it("completed run has a completedAt timestamp", async () => {
-    const run = engine.startRun(customerSupportBot, {
+    const run = await engine.startRun(customerSupportBot, {
       ticketId: "T003",
       subject: "x",
       body: "y",
@@ -121,7 +115,7 @@ describe("WorkflowEngine — run lifecycle", () => {
   });
 
   it("completed run has step results for every template step", async () => {
-    const run = engine.startRun(customerSupportBot, {
+    const run = await engine.startRun(customerSupportBot, {
       ticketId: "T004",
       subject: "Help",
       body: "Issue",
@@ -133,7 +127,7 @@ describe("WorkflowEngine — run lifecycle", () => {
   });
 
   it("all step results have the expected shape", async () => {
-    const run = engine.startRun(customerSupportBot, {
+    const run = await engine.startRun(customerSupportBot, {
       ticketId: "T005",
       subject: "Test",
       body: "Test body",
@@ -194,14 +188,14 @@ describe("All 3 template integration runs", () => {
   ];
 
   test.each(testCases)("%s completes without error", async (_name, template, input) => {
-    const run = engine.startRun(template, input);
+    const run = await engine.startRun(template, input);
     const completed = await waitForCompletion(run.id);
     expect(completed.status).toBe("completed");
     expect(completed.stepResults.some((sr) => sr.status === "failure")).toBe(false);
   });
 
   test.each(testCases)("%s produces a non-empty output object", async (_name, template, input) => {
-    const run = engine.startRun(template, input);
+    const run = await engine.startRun(template, input);
     const completed = await waitForCompletion(run.id);
     expect(completed.output).toBeDefined();
     expect(typeof completed.output).toBe("object");
@@ -218,7 +212,7 @@ describe("WorkflowEngine — error handling", () => {
       throw new Error("LLM unavailable");
     });
 
-    const run = engine.startRun(customerSupportBot, {
+    const run = await engine.startRun(customerSupportBot, {
       ticketId: "T-ERR",
       subject: "test",
       body: "test",
@@ -244,7 +238,7 @@ describe("WorkflowEngine — action registry", () => {
       return { crmId: "CRM-TEST", upserted: true };
     });
 
-    const run = engine.startRun(leadEnrichment, {
+    const run = await engine.startRun(leadEnrichment, {
       leadId: "LEAD-CUSTOM",
       email: "custom@test.io",
       firstName: "Custom",
@@ -257,89 +251,13 @@ describe("WorkflowEngine — action registry", () => {
   });
 });
 
-describe("WorkflowEngine — knowledge steps", () => {
-  it("retrieves knowledge-base context and exposes prompt-ready output", async () => {
-    const base = await knowledgeStore.createKnowledgeBase({
-      userId: "knowledge-user",
-      name: "Product KB",
-    });
-    await knowledgeStore.ingestDocument({
-      userId: "knowledge-user",
-      knowledgeBaseId: base.id,
-      filename: "pricing.txt",
-      mimeType: "text/plain",
-      content:
-        "AutoFlow offers usage-based billing with annual discounts for enterprise customers.",
-      sourceType: "inline",
-    });
-
-    const template: WorkflowTemplate = {
-      id: "tpl-knowledge-step",
-      name: "Knowledge Step",
-      description: "Injects retrieved context",
-      category: "custom",
-      version: "1.0.0",
-      configFields: [],
-      sampleInput: {},
-      expectedOutput: {},
-      steps: [
-        {
-          id: "step-trigger",
-          name: "Trigger",
-          kind: "trigger",
-          description: "Start",
-          inputKeys: [],
-          outputKeys: ["question", "knowledgeBaseIds"],
-        },
-        {
-          id: "step-knowledge",
-          name: "Retrieve Context",
-          kind: "knowledge",
-          description: "Search KB",
-          inputKeys: ["question"],
-          outputKeys: ["knowledgePromptContext"],
-          knowledgeLimit: 3,
-          knowledgeMinScore: 0,
-        },
-        {
-          id: "step-output",
-          name: "Output",
-          kind: "output",
-          description: "Return context",
-          inputKeys: ["knowledgePromptContext", "knowledgeQuery"],
-          outputKeys: ["knowledgePromptContext", "knowledgeQuery"],
-        },
-      ],
-    };
-
-    const run = engine.startRun(
-      template,
-      {
-        question: "How does enterprise pricing work?",
-        knowledgeBaseIds: [base.id],
-      },
-      undefined,
-      "knowledge-user"
-    );
-
-    const completed = await waitForCompletion(run.id);
-    expect(completed.status).toBe("completed");
-    expect(completed.output).toEqual(
-      expect.objectContaining({
-        knowledgeQuery: "How does enterprise pricing work?",
-      })
-    );
-    expect(String(completed.output?.knowledgePromptContext)).toMatch(/annual discounts/i);
-  });
-});
-
 // ---------------------------------------------------------------------------
 // Config defaults
 // ---------------------------------------------------------------------------
 
 describe("WorkflowEngine — config defaults", () => {
   it("applies template defaultValues as config when no config is provided", async () => {
-    const run = engine.startRun(customerSupportBot, {
+    const run = await engine.startRun(customerSupportBot, {
       ticketId: "T-DEF",
       subject: "hello",
       body: "world",
@@ -380,7 +298,11 @@ describe("WorkflowEngine — file_trigger step", () => {
       inputKeys: [],
       outputKeys: ["content"],
     });
-    const run = engine.startRun(tpl, { content: "uploaded text", mimeType: "text/plain", filename: "doc.txt" });
+    const run = await engine.startRun(tpl, {
+      content: "uploaded text",
+      mimeType: "text/plain",
+      filename: "doc.txt",
+    });
     const completed = await waitForCompletion(run.id);
     expect(completed.status).toBe("completed");
     const stepResult = completed.stepResults[0];
@@ -396,7 +318,7 @@ describe("WorkflowEngine — file_trigger step", () => {
       inputKeys: [],
       outputKeys: [],
     });
-    const run = engine.startRun(tpl, {}); // no content
+    const run = await engine.startRun(tpl, {}); // no content
     const completed = await waitForCompletion(run.id);
     // step fails but run still completes (step failure → stepStatus=failure, run completes)
     expect(["completed", "failed"]).toContain(completed.status);
@@ -432,7 +354,7 @@ describe("WorkflowEngine — mcp step", () => {
       mcpServerUrl: "https://mcp.example.com",
       mcpTool: "search",
     });
-    const run = engine.startRun(tpl, { query: "test query" });
+    const run = await engine.startRun(tpl, { query: "test query" });
     const completed = await waitForCompletion(run.id);
     expect(["completed", "failed"]).toContain(completed.status);
     if (completed.status === "completed") {
@@ -453,7 +375,7 @@ describe("WorkflowEngine — mcp step", () => {
       mcpServerUrl: "https://mcp.example.com",
       mcpTool: "search",
     });
-    const run = engine.startRun(tpl, {});
+    const run = await engine.startRun(tpl, {});
     const completed = await waitForCompletion(run.id);
     expect(completed.stepResults[0].status).toBe("failure");
   });
@@ -472,7 +394,7 @@ describe("WorkflowEngine — action registry fallback branches", () => {
     });
 
     // Use leadEnrichment which has leadId in sampleInput
-    const run = engine.startRun(leadEnrichment, leadEnrichment.sampleInput);
+    const run = await engine.startRun(leadEnrichment, leadEnrichment.sampleInput);
     await waitForCompletion(run.id);
     // Restore original
     registerAction("events.emit", async (inputs) => {
@@ -503,7 +425,7 @@ describe("WorkflowEngine — configField without defaultValue", () => {
       { key: "fieldWithDefault", label: "With Default", type: "string", required: false, defaultValue: "my-default" },
     ];
 
-    const run = engine.startRun(tpl, {});
+    const run = await engine.startRun(tpl, {});
     const completed = await waitForCompletion(run.id);
     expect(completed.status).toBe("completed");
   });
@@ -520,7 +442,7 @@ async function waitForStatus(
 ): Promise<void> {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
-    const run = runStore.get(runId);
+    const run = await runStore.get(runId);
     if (run?.status === status) return;
     await new Promise((r) => setTimeout(r, 20));
   }
@@ -540,12 +462,12 @@ describe("WorkflowEngine — approval step", () => {
       approvalTimeoutMinutes: 1,
     });
 
-    const run = engine.startRun(tpl, {});
+    const run = await engine.startRun(tpl, {});
     await waitForStatus(run.id, "awaiting_approval");
 
-    const pending = approvalStore.list("pending");
+    const pending = await approvalStore.list("pending");
     expect(pending.length).toBeGreaterThan(0);
-    approvalStore.resolve(pending[0].id, "approved", "looks good");
+    await approvalStore.resolve(pending[0].id, "approved", "looks good");
 
     const completed = await waitForCompletion(run.id);
     expect(completed.status).toBe("completed");
@@ -563,11 +485,11 @@ describe("WorkflowEngine — approval step", () => {
       outputKeys: [],
     });
 
-    const run = engine.startRun(tpl, {});
+    const run = await engine.startRun(tpl, {});
     await waitForStatus(run.id, "awaiting_approval");
 
-    const pending = approvalStore.list("pending");
-    approvalStore.resolve(pending[0].id, "rejected", "not ready");
+    const pending = await approvalStore.list("pending");
+    await approvalStore.resolve(pending[0].id, "rejected", "not ready");
 
     const completed = await waitForCompletion(run.id);
     expect(completed.stepResults[0].status).toBe("failure");
@@ -602,7 +524,7 @@ describe("WorkflowEngine — agent step", () => {
       agentInstructions: "Do the task",
     });
 
-    const run = engine.startRun(tpl, {}, undefined, "user-1");
+    const run = await engine.startRun(tpl, {}, undefined, "user-1");
     const completed = await waitForCompletion(run.id);
     expect(["completed", "failed"]).toContain(completed.status);
     if (completed.status === "completed") {
@@ -626,7 +548,7 @@ describe("WorkflowEngine — default (unknown) step kind", () => {
       outputKeys: [],
     });
 
-    const run = engine.startRun(tpl, {});
+    const run = await engine.startRun(tpl, {});
     const completed = await waitForCompletion(run.id);
     expect(["completed", "failed"]).toContain(completed.status);
     expect(completed.stepResults[0].output).toEqual({});

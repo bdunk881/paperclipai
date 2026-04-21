@@ -25,7 +25,7 @@ import { getProvider } from "./engine/llmProviders";
 const mockGetProvider = getProvider as jest.Mock;
 
 beforeEach(() => {
-  approvalStore.clear();
+  void approvalStore.clear();
   mockGetProvider.mockReset();
   jest.restoreAllMocks();
 });
@@ -43,14 +43,14 @@ describe("GET /api/approvals", () => {
   });
 
   it("returns all approvals without status filter", async () => {
-    approvalStore.create({ runId: "r1", templateName: "T", stepId: "s1", stepName: "Step", assignee: "test-user-id", message: "approve?", timeoutMinutes: 60 });
+    await approvalStore.create({ runId: "r1", templateName: "T", stepId: "s1", stepName: "Step", assignee: "u1", message: "approve?", timeoutMinutes: 60 });
     const res = await request(app).get("/api/approvals");
     expect(res.status).toBe(200);
     expect(res.body.total).toBe(1);
   });
 
   it("filters by status=pending", async () => {
-    approvalStore.create({ runId: "r2", templateName: "T", stepId: "s2", stepName: "Step", assignee: "test-user-id", message: "approve?", timeoutMinutes: 60 });
+    await approvalStore.create({ runId: "r2", templateName: "T", stepId: "s2", stepName: "Step", assignee: "u1", message: "approve?", timeoutMinutes: 60 });
     const res = await request(app).get("/api/approvals?status=pending");
     expect(res.status).toBe(200);
     expect(res.body.total).toBe(1);
@@ -58,14 +58,14 @@ describe("GET /api/approvals", () => {
   });
 
   it("ignores invalid status filter and returns all", async () => {
-    approvalStore.create({ runId: "r3", templateName: "T", stepId: "s3", stepName: "Step", assignee: "test-user-id", message: "approve?", timeoutMinutes: 60 });
+    await approvalStore.create({ runId: "r3", templateName: "T", stepId: "s3", stepName: "Step", assignee: "u1", message: "approve?", timeoutMinutes: 60 });
     const res = await request(app).get("/api/approvals?status=invalid");
     expect(res.status).toBe(200);
     expect(res.body.total).toBe(1);
   });
 
   it("filters by status=approved returns empty when none resolved", async () => {
-    approvalStore.create({ runId: "r4", templateName: "T", stepId: "s4", stepName: "Step", assignee: "test-user-id", message: "approve?", timeoutMinutes: 60 });
+    await approvalStore.create({ runId: "r4", templateName: "T", stepId: "s4", stepName: "Step", assignee: "u1", message: "approve?", timeoutMinutes: 60 });
     const res = await request(app).get("/api/approvals?status=approved");
     expect(res.status).toBe(200);
     expect(res.body.total).toBe(0);
@@ -78,7 +78,7 @@ describe("GET /api/approvals", () => {
 
 describe("GET /api/approvals/:id", () => {
   it("returns 200 with the approval for a known id", async () => {
-    const { id } = approvalStore.create({ runId: "r1", templateName: "T", stepId: "s1", stepName: "Step", assignee: "test-user-id", message: "approve?", timeoutMinutes: 60 });
+    const { id } = await approvalStore.create({ runId: "r1", templateName: "T", stepId: "s1", stepName: "Step", assignee: "u1", message: "approve?", timeoutMinutes: 60 });
     const res = await request(app).get(`/api/approvals/${id}`);
     expect(res.status).toBe(200);
     expect(res.body.id).toBe(id);
@@ -98,7 +98,7 @@ describe("GET /api/approvals/:id", () => {
 
 describe("POST /api/approvals/:id/resolve", () => {
   it("returns 400 when decision is not approved or rejected", async () => {
-    const { id } = approvalStore.create({ runId: "r1", templateName: "T", stepId: "s1", stepName: "Step", assignee: "test-user-id", message: "approve?", timeoutMinutes: 60 });
+    const { id } = await approvalStore.create({ runId: "r1", templateName: "T", stepId: "s1", stepName: "Step", assignee: "u1", message: "approve?", timeoutMinutes: 60 });
     const res = await request(app)
       .post(`/api/approvals/${id}/resolve`)
       .send({ decision: "maybe" });
@@ -107,7 +107,7 @@ describe("POST /api/approvals/:id/resolve", () => {
   });
 
   it("resolves approved and returns success=true", async () => {
-    const { id } = approvalStore.create({ runId: "r2", templateName: "T", stepId: "s2", stepName: "Step", assignee: "test-user-id", message: "approve?", timeoutMinutes: 60 });
+    const { id } = await approvalStore.create({ runId: "r2", templateName: "T", stepId: "s2", stepName: "Step", assignee: "u1", message: "approve?", timeoutMinutes: 60 });
     const res = await request(app)
       .post(`/api/approvals/${id}/resolve`)
       .send({ decision: "approved" });
@@ -116,7 +116,7 @@ describe("POST /api/approvals/:id/resolve", () => {
   });
 
   it("resolves rejected and returns success=true", async () => {
-    const { id } = approvalStore.create({ runId: "r3", templateName: "T", stepId: "s3", stepName: "Step", assignee: "test-user-id", message: "approve?", timeoutMinutes: 60 });
+    const { id } = await approvalStore.create({ runId: "r3", templateName: "T", stepId: "s3", stepName: "Step", assignee: "u1", message: "approve?", timeoutMinutes: 60 });
     const res = await request(app)
       .post(`/api/approvals/${id}/resolve`)
       .send({ decision: "rejected", comment: "Not ready" });
@@ -132,8 +132,8 @@ describe("POST /api/approvals/:id/resolve", () => {
   });
 
   it("returns 404 for already-resolved approval", async () => {
-    const { id } = approvalStore.create({ runId: "r4", templateName: "T", stepId: "s4", stepName: "Step", assignee: "test-user-id", message: "approve?", timeoutMinutes: 60 });
-    approvalStore.resolve(id, "approved");
+    const { id } = await approvalStore.create({ runId: "r4", templateName: "T", stepId: "s4", stepName: "Step", assignee: "u1", message: "approve?", timeoutMinutes: 60 });
+    await approvalStore.resolve(id, "approved");
     const res = await request(app)
       .post(`/api/approvals/${id}/resolve`)
       .send({ decision: "approved" });

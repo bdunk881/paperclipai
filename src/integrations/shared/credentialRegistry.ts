@@ -1,4 +1,6 @@
 import { createCipheriv, createDecipheriv, randomBytes, scryptSync } from "crypto";
+import { parseJsonColumn } from "../../db/json";
+import { isPostgresConfigured, queryPostgres } from "../../db/postgres";
 
 export interface CredentialRegistryRecord {
   id: string;
@@ -135,6 +137,12 @@ interface CredentialRegistryOptions<TStored extends CredentialRegistryRecord, TP
   secretVault?: SecretVault;
 }
 
+interface PersistedCredentialRegistryRow {
+  id: string;
+  user_id: string;
+  record_data: unknown;
+}
+
 export class CredentialRegistry<TStored extends CredentialRegistryRecord, TPublic> {
   private readonly bucket: Map<string, TStored>;
 
@@ -144,7 +152,10 @@ export class CredentialRegistry<TStored extends CredentialRegistryRecord, TPubli
 
   private readonly secretVault: SecretVault;
 
+  private readonly service: string;
+
   constructor(options: CredentialRegistryOptions<TStored, TPublic>) {
+    this.service = options.service;
     this.bucket = getBucket<TStored>(options.service);
     this.toPublicMapper = options.toPublic;
     this.sortValue = options.sortValue ?? ((record) => record.createdAt);
@@ -153,6 +164,9 @@ export class CredentialRegistry<TStored extends CredentialRegistryRecord, TPubli
 
   save(record: TStored): TStored {
     this.bucket.set(record.id, record);
+    void this.persistRecord(record).catch((error) => {
+      console.error(`[credentialRegistry:${this.service}] Failed to persist credential`, error);
+    });
     return record;
   }
 
@@ -177,10 +191,34 @@ export class CredentialRegistry<TStored extends CredentialRegistryRecord, TPubli
     return this.bucket.get(id) ?? null;
   }
 
+  async getByIdAsync(id: string): Promise<TStored | null> {
+    const local = this.getById(id);
+    if (local || !isPostgresConfigured()) {
+      return local;
+    }
+
+    const result = await queryPostgres<PersistedCredentialRegistryRow>(
+      "SELECT id, user_id, record_data FROM connector_credentials WHERE service = $1 AND id = $2",
+      [this.service, id]
+    );
+    const row = result.rows[0];
+    return row ? this.mapPersistedRecord(row) : null;
+  }
+
   findLatest(predicate: (record: TStored) => boolean, includeRevoked = false): TStored | null {
     const matches = this.listStored(predicate, includeRevoked).sort((a, b) =>
       this.sortValue(b).localeCompare(this.sortValue(a))
     );
+    return matches[0] ?? null;
+  }
+
+  async findLatestAsync(
+    predicate: (record: TStored) => boolean,
+    includeRevoked = false
+  ): Promise<TStored | null> {
+    const matches = (await this.listStoredAsync(includeRevoked))
+      .filter(predicate)
+      .sort((a, b) => this.sortValue(b).localeCompare(this.sortValue(a)));
     return matches[0] ?? null;
   }
 
@@ -192,19 +230,57 @@ export class CredentialRegistry<TStored extends CredentialRegistryRecord, TPubli
 
     const updated = mutate(existing);
     this.bucket.set(id, updated);
+    void this.persistRecord(updated).catch((error) => {
+      console.error(`[credentialRegistry:${this.service}] Failed to persist credential update`, error);
+    });
     return updated;
   }
 
   purge(predicate: (record: TStored) => boolean): void {
+    const deletedIds: string[] = [];
     for (const [id, record] of this.bucket.entries()) {
       if (predicate(record)) {
         this.bucket.delete(id);
+        deletedIds.push(id);
       }
+    }
+
+    if (deletedIds.length > 0) {
+      void this.deletePersistedRecords(deletedIds).catch((error) => {
+        console.error(`[credentialRegistry:${this.service}] Failed to delete persisted credentials`, error);
+      });
     }
   }
 
   clear(): void {
     this.bucket.clear();
+  }
+
+  async listPublicByUserAsync(userId: string, includeRevoked = true): Promise<TPublic[]> {
+    return (await this.listStoredByUserAsync(userId, includeRevoked)).map((record) =>
+      this.toPublicMapper(record)
+    );
+  }
+
+  async listStoredByUserAsync(userId: string, includeRevoked = true): Promise<TStored[]> {
+    return (await this.listStoredAsync(includeRevoked)).filter((record) => record.userId === userId);
+  }
+
+  async listStoredAsync(includeRevoked = true): Promise<TStored[]> {
+    const local = Array.from(this.bucket.values()).filter((record) =>
+      includeRevoked ? true : !record.revokedAt
+    );
+    if (local.length > 0 || !isPostgresConfigured()) {
+      return local;
+    }
+
+    const result = await queryPostgres<PersistedCredentialRegistryRow>(
+      "SELECT id, user_id, record_data FROM connector_credentials WHERE service = $1 ORDER BY created_at DESC",
+      [this.service]
+    );
+    return result.rows
+      .map((row: PersistedCredentialRegistryRow) => this.mapPersistedRecord(row))
+      .filter((record: TStored) => (includeRevoked ? true : !record.revokedAt));
   }
 
   toPublic(record: TStored): TPublic {
@@ -217,5 +293,56 @@ export class CredentialRegistry<TStored extends CredentialRegistryRecord, TPubli
 
   decryptSecret(ciphertext: string): string {
     return this.secretVault.decrypt(ciphertext);
+  }
+
+  private mapPersistedRecord(row: PersistedCredentialRegistryRow): TStored {
+    const record = parseJsonColumn(row.record_data, null as TStored | null);
+    if (!record) {
+      throw new Error(`Persisted credential ${this.service}/${row.id} is missing record_data`);
+    }
+
+    this.bucket.set(record.id, record);
+    return record;
+  }
+
+  private async persistRecord(record: TStored): Promise<void> {
+    if (!isPostgresConfigured()) {
+      return;
+    }
+
+    await queryPostgres(
+      `INSERT INTO connector_credentials (
+        service,
+        id,
+        user_id,
+        created_at,
+        revoked_at,
+        record_data
+      ) VALUES ($1, $2, $3, $4::timestamptz, $5::timestamptz, $6::jsonb)
+      ON CONFLICT (service, id) DO UPDATE SET
+        user_id = EXCLUDED.user_id,
+        created_at = EXCLUDED.created_at,
+        revoked_at = EXCLUDED.revoked_at,
+        record_data = EXCLUDED.record_data`,
+      [
+        this.service,
+        record.id,
+        record.userId,
+        record.createdAt,
+        record.revokedAt ?? null,
+        JSON.stringify(record),
+      ]
+    );
+  }
+
+  private async deletePersistedRecords(ids: string[]): Promise<void> {
+    if (!isPostgresConfigured() || ids.length === 0) {
+      return;
+    }
+
+    await queryPostgres(
+      "DELETE FROM connector_credentials WHERE service = $1 AND id = ANY($2::text[])",
+      [this.service, ids]
+    );
   }
 }

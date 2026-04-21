@@ -59,7 +59,8 @@ Runtime environment variables required in the Vercel dashboard project:
 
 ## DNS
 
-Configure DNS records to point to Azure and Vercel per environment.
+Keep the production dashboard host `app.helloautoflow.com` pointed at Vercel (`cname.vercel-dns.com`).
+Backend and other Azure-hosted services can continue to use Azure-specific DNS records per environment.
 
 ## QA Integration Evidence
 

@@ -1,5 +1,7 @@
 # Runbook: Azure Static Web Apps Dashboard Deploy
 
+> Legacy runbook. The production dashboard host `app.helloautoflow.com` currently belongs on Vercel, not Azure Static Web Apps.
+
 ## Purpose
 Operate and troubleshoot dashboard deployments to Azure Static Web Apps (SWA).
 
@@ -17,9 +19,9 @@ Set these repository secrets before enabling `.github/workflows/deploy-swa.yml`:
 - Closing a PR tears down the preview environment.
 
 ## DNS cutover checklist (`app.helloautoflow.com`)
-1. In Azure Static Web Apps, add custom domain `app.helloautoflow.com`.
-2. Add the TXT validation record provided by Azure DNS validation.
-3. Replace current CNAME target (`cname.vercel-dns.com`) with SWA hostname (`<swa-default-hostname>`).
+1. Keep `app.helloautoflow.com` attached to the Vercel `dashboard` project.
+2. Keep the authoritative DNS `app` CNAME pointed at `cname.vercel-dns.com`.
+3. Do not repoint production dashboard traffic to Azure SWA unless there is an explicit rollback or migration decision covering auth, previews, and CIAM redirect URIs.
 4. Verify HTTPS cert issuance and route health:
    - `/` returns `200`
    - `/login` returns `200` (SPA fallback)
@@ -35,9 +37,9 @@ Set these repository secrets before enabling `.github/workflows/deploy-swa.yml`:
    hosts until the callback-route branch is fully merged and verified.
 
 ## Rollback
-1. Revert CNAME from SWA hostname back to `cname.vercel-dns.com`.
+1. If production was temporarily moved to Azure SWA, restore the `app` CNAME to `cname.vercel-dns.com`.
 2. Re-run Vercel deployment workflow if needed.
-3. Confirm `https://app.helloautoflow.com` serves expected Vercel build.
+3. Confirm `https://app.helloautoflow.com` serves the expected Vercel build.
 
 ## Common failure modes
 - Missing `AZURE_STATIC_WEB_APPS_API_TOKEN`: deployment action fails authentication.

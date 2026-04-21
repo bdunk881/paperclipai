@@ -10,21 +10,17 @@ jest.mock("./engine/llmProviders", () => ({
   getProvider: jest.fn(),
 }));
 jest.mock("./auth/authMiddleware", () => ({
-  requireAuth: (req: { headers: { authorization?: string }; auth?: { sub: string } }, res: { status: (code: number) => { json: (body: unknown) => void } }, next: () => void) => {
+  requireAuth: (
+    req: { headers: { authorization?: string }; auth?: { sub: string; email?: string } },
+    res: { status: (code: number) => { json: (body: unknown) => void } },
+    next: () => void
+  ) => {
     const auth = req.headers.authorization;
     if (!auth?.startsWith("Bearer ")) {
       res.status(401).json({ error: "Missing or malformed Authorization header." });
       return;
     }
-    req.auth = { sub: auth.slice(7) };
-    next();
-  },
-}));
-
-// Bypass JWT verification in unit tests — inject a synthetic auth principal
-jest.mock("./auth/authMiddleware", () => ({
-  requireAuth: (req: Record<string, unknown>, _res: unknown, next: () => void) => {
-    req.auth = { sub: "test-user-id", email: "test@example.com" };
+    req.auth = { sub: auth.slice(7), email: "test@example.com" };
     next();
   },
 }));

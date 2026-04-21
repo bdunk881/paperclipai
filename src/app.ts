@@ -42,6 +42,11 @@ import datadogAzureMonitorRoutes, {
 } from "./integrations/datadog-azure-monitor/routes";
 import agentCatalogRoutes from "./integrations/agent-catalog/routes";
 import oauthBridgeRoutes from "./integrations/oauthBridgeRoutes";
+import integrationRoutes, {
+  catalogRouter as integrationCatalogRoutes,
+  oauthCallbackRouter as integrationOAuthCallbackRoutes,
+  webhookRelayRouter,
+} from "./integrations/integrationRoutes";
 import googleWorkspaceConnectorRoutes from "./connectors/google-workspace/routes";
 import googleWorkspaceWebhookRoutes from "./connectors/google-workspace/webhookRoutes";
 
@@ -85,8 +90,19 @@ function getHeaderUserId(req: express.Request): string | null {
   return typeof userId === "string" && userId.trim() ? userId.trim() : null;
 }
 
+function getBearerTokenSubject(req: express.Request): string | null {
+  const authHeader = req.headers.authorization;
+  if (!authHeader?.startsWith("Bearer ")) {
+    return null;
+  }
+
+  const token = authHeader.slice(7).trim();
+  return token || null;
+}
+
 function getRateLimitKey(req: express.Request): string {
-  const userId = getAuthenticatedUserId(req) ?? getHeaderUserId(req);
+  const userId =
+    getAuthenticatedUserId(req) ?? getHeaderUserId(req) ?? getBearerTokenSubject(req);
   if (userId) {
     return `user:${userId}`;
   }
@@ -201,6 +217,10 @@ app.use("/api/mcp/servers", requireAuth, mcpRoutes);
 // Memory API — persistent context memory store for agents/workflows
 // ---------------------------------------------------------------------------
 app.use("/api/memory", requireAuth, memoryRoutes);
+app.use("/api/integrations/catalog", integrationCatalogRoutes);
+app.use("/api/integrations/oauth2", integrationOAuthCallbackRoutes);
+app.use("/api/integrations", requireAuth, integrationRoutes);
+app.use("/api/webhooks/relay", webhookRelayRouter);
 app.use("/api/integrations", oauthBridgeRoutes);
 app.use("/api/integrations/slack", slackRoutes);
 app.use("/api/integrations/shopify", shopifyRoutes);

@@ -24,7 +24,7 @@ describe("SecuritySettings", () => {
     vi.unstubAllGlobals();
   });
 
-  it("shows session loading error when backend call fails", async () => {
+  it("shows placeholder session copy when no backend session endpoint is wired", async () => {
     const fetchMock = vi
       .fn()
       .mockResolvedValueOnce({
@@ -37,7 +37,10 @@ describe("SecuritySettings", () => {
 
     render(<SecuritySettings />);
 
-    expect(await screen.findByText("Session load failed")).toBeInTheDocument();
-    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(screen.getByText("No active session data available")).toBeInTheDocument();
+    expect(
+      screen.getByText("This environment does not expose a backend session-management endpoint yet.")
+    ).toBeInTheDocument();
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 });

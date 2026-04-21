@@ -63,10 +63,10 @@ jobs:
       - name: Verify preview auth env parity
         run: |
           set -euo pipefail
-          mkdir -p dashboard/.vercel
-          npx vercel env pull dashboard/.vercel/.env.preview --environment=preview --yes --token="$VERCEL_TOKEN" >/dev/null
+          mkdir -p .vercel
+          npx vercel env pull .vercel/.env.preview --environment=preview --yes --token="$VERCEL_TOKEN" >/dev/null
           for required in VITE_AZURE_CLIENT_ID VITE_AZURE_TENANT_SUBDOMAIN; do
-            if ! grep -q "^${required}=" dashboard/.vercel/.env.preview; then
+            if ! grep -q "^${required}=" .vercel/.env.preview; then
               echo "::error::Missing ${required} in Vercel preview environment"
               exit 1
             fi
@@ -153,10 +153,10 @@ jobs:
       - name: Verify production auth env parity
         run: |
           set -euo pipefail
-          mkdir -p dashboard/.vercel
-          npx vercel env pull dashboard/.vercel/.env.production --environment=production --yes --token="$VERCEL_TOKEN" >/dev/null
+          mkdir -p .vercel
+          npx vercel env pull .vercel/.env.production --environment=production --yes --token="$VERCEL_TOKEN" >/dev/null
           for required in VITE_AZURE_CLIENT_ID VITE_AZURE_TENANT_SUBDOMAIN; do
-            if ! grep -q "^${required}=" dashboard/.vercel/.env.production; then
+            if ! grep -q "^${required}=" .vercel/.env.production; then
               echo "::error::Missing ${required} in Vercel production environment"
               exit 1
             fi

@@ -52,6 +52,14 @@ Add these in the repo settings -> Secrets and variables -> Actions:
 
 The SWA workflow maps `VITE_AZURE_CIAM_CLIENT_ID` and `VITE_AZURE_CIAM_TENANT_SUBDOMAIN` from
 `VITE_AZURE_CLIENT_ID` and `VITE_AZURE_TENANT_SUBDOMAIN` at build time.
+Runtime environment variables required in the Vercel dashboard project:
+
+| Variable | Description |
+|---|---|
+| `VITE_API_URL` | Base URL for backend API (for example `https://api.autoflowapp.ai`) |
+| `VITE_AZURE_CIAM_CLIENT_ID` | Entra External ID app registration client ID |
+| `VITE_AZURE_CIAM_TENANT_SUBDOMAIN` | Tenant prefix before `.ciamlogin.com` (for example `autoflowciam`) |
+| `QA_PREVIEW_ACCESS_TOKEN` | Preview-only shared secret used by `/api/qa-preview-access` to unlock smoke-test access for protected dashboard routes |
 
 ## Daily operations
 

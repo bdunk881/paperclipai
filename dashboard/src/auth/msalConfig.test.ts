@@ -69,5 +69,6 @@ describe("msalConfig env parsing", () => {
       "https://mytenant01.ciamlogin.com/mytenant01.onmicrosoft.com"
     );
     expect(msalConfig.auth.knownAuthorities).toEqual(["mytenant01.ciamlogin.com"]);
+    expect(msalConfig.auth.redirectUri).toBe("http://localhost:3000/auth/callback");
   });
 });

@@ -105,7 +105,7 @@ jobs:
 
       - name: Install Playwright browser
         working-directory: dashboard
-        run: npx playwright install --with-deps chromium
+        run: npx playwright install --with-deps chromium webkit
 
       - name: Run preview auth smoke test
         working-directory: dashboard

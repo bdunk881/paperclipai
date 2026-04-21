@@ -147,10 +147,12 @@ infra/azure/scripts/
   validate-ciam-prereqs.sh     — validate subscription + Graph access before provisioning
 ```
 
-The dashboard auth flow currently uses `window.location.origin + "/auth/callback"` for sign-in and
-`window.location.origin + "/login"` for logout. Keep those exact paths registered as SPA redirect
-URIs for production, staging, and localhost. Run `./scripts/sync-ciam-redirect-uris.sh` after any
-custom-domain cutover, preview-host policy change, or auth route change.
+The dashboard is in a transition period between root-based MSAL redirects and
+`${window.location.origin}/auth/callback`. Until that migration is fully merged
+and verified, keep both the host root and `/auth/callback` registered as SPA
+redirect URIs for production, staging, the active Vercel preview hosts, and
+localhost. Run `./scripts/sync-ciam-redirect-uris.sh` after any custom-domain
+cutover, preview-host policy change, or auth route change.
 
 ---
 

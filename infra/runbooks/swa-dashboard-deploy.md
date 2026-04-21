@@ -30,6 +30,9 @@ Set these repository secrets before enabling `.github/workflows/deploy-swa.yml`:
    cd infra/azure
    ./scripts/sync-ciam-redirect-uris.sh
    ```
+   During the ALT-1542 migration window, keep both the host root and
+   `/auth/callback` registered for production, staging, and the active preview
+   hosts until the callback-route branch is fully merged and verified.
 
 ## Rollback
 1. Revert CNAME from SWA hostname back to `cname.vercel-dns.com`.

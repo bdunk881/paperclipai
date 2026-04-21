@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # sync-ciam-redirect-uris.sh — Upserts the redirect URIs required by the
-# dashboard's current MSAL redirect + logout flow on an existing CIAM SPA app.
+# dashboard's current and in-flight MSAL redirect flows on an existing CIAM SPA app.
 #
 # Required env vars:
 #   CIAM_TENANT_ID
@@ -13,6 +13,11 @@
 #
 # Usage:
 #   ./sync-ciam-redirect-uris.sh
+#
+# Transition note:
+#   During the ALT-1542 callback migration we intentionally register both the
+#   host root and /auth/callback for production, staging, preview, and local
+#   hosts so current prod and the upcoming auth-callback branch both work.
 
 set -euo pipefail
 
@@ -69,10 +74,20 @@ obj = json.loads(os.environ["APP_JSON"])
 app = obj["value"][0]
 current = app.get("spa", {}).get("redirectUris", [])
 required = [
+    "https://app.helloautoflow.com",
     "https://app.helloautoflow.com/auth/callback",
     "https://app.helloautoflow.com/login",
+    "https://staging.app.helloautoflow.com",
     "https://staging.app.helloautoflow.com/auth/callback",
     "https://staging.app.helloautoflow.com/login",
+    "https://dashboard-beta-one-42.vercel.app",
+    "https://dashboard-beta-one-42.vercel.app/auth/callback",
+    "https://dashboard-brad-duncans-projects.vercel.app",
+    "https://dashboard-brad-duncans-projects.vercel.app/auth/callback",
+    "https://dashboard-git-master-brad-duncans-projects.vercel.app",
+    "https://dashboard-git-master-brad-duncans-projects.vercel.app/auth/callback",
+    "http://localhost:3000",
+    "http://localhost:3000/auth/callback",
     "http://localhost:5173",
     "http://localhost:5173/auth/callback",
     "http://localhost:5173/login",

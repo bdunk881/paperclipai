@@ -29,7 +29,7 @@ function resolveUserId(req: AuthenticatedRequest): string | null {
 // POST /api/memory — write entry
 // ---------------------------------------------------------------------------
 
-router.post("/", (req: AuthenticatedRequest, res) => {
+router.post("/", async (req: AuthenticatedRequest, res) => {
   const userId = resolveUserId(req);
   if (!userId) {
     res.status(401).json({ error: "Authenticated user is required" });
@@ -58,7 +58,7 @@ router.post("/", (req: AuthenticatedRequest, res) => {
     return;
   }
 
-  const entry = memoryStore.write({
+  const entry = await memoryStore.write({
     userId,
     key,
     text,
@@ -75,20 +75,20 @@ router.post("/", (req: AuthenticatedRequest, res) => {
 // GET /api/memory/stats — usage stats (must precede /:id route)
 // ---------------------------------------------------------------------------
 
-router.get("/stats", (req: AuthenticatedRequest, res) => {
+router.get("/stats", async (req: AuthenticatedRequest, res) => {
   const userId = resolveUserId(req);
   if (!userId) {
     res.status(401).json({ error: "Authenticated user is required" });
     return;
   }
-  res.json(memoryStore.stats(userId));
+  res.json(await memoryStore.stats(userId));
 });
 
 // ---------------------------------------------------------------------------
 // GET /api/memory/search — keyword/semantic search
 // ---------------------------------------------------------------------------
 
-router.get("/search", (req: AuthenticatedRequest, res) => {
+router.get("/search", async (req: AuthenticatedRequest, res) => {
   const userId = resolveUserId(req);
   if (!userId) {
     res.status(401).json({ error: "Authenticated user is required" });
@@ -100,7 +100,7 @@ router.get("/search", (req: AuthenticatedRequest, res) => {
   const agentFilter = typeof agentId === "string" ? agentId : undefined;
   const limitNum = typeof limit === "string" ? Math.min(parseInt(limit, 10) || 10, 100) : 10;
 
-  const results = memoryStore.search(query, userId, agentFilter, limitNum);
+  const results = await memoryStore.search(query, userId, agentFilter, limitNum);
   res.json({ results, total: results.length });
 });
 
@@ -108,7 +108,7 @@ router.get("/search", (req: AuthenticatedRequest, res) => {
 // GET /api/memory — list all entries
 // ---------------------------------------------------------------------------
 
-router.get("/", (req: AuthenticatedRequest, res) => {
+router.get("/", async (req: AuthenticatedRequest, res) => {
   const userId = resolveUserId(req);
   if (!userId) {
     res.status(401).json({ error: "Authenticated user is required" });
@@ -116,7 +116,7 @@ router.get("/", (req: AuthenticatedRequest, res) => {
   }
 
   const { workflowId } = req.query;
-  const entries = memoryStore.list(
+  const entries = await memoryStore.list(
     userId,
     typeof workflowId === "string" ? workflowId : undefined
   );
@@ -127,14 +127,14 @@ router.get("/", (req: AuthenticatedRequest, res) => {
 // DELETE /api/memory/:id — delete entry
 // ---------------------------------------------------------------------------
 
-router.delete("/:id", (req: AuthenticatedRequest, res) => {
+router.delete("/:id", async (req: AuthenticatedRequest, res) => {
   const userId = resolveUserId(req);
   if (!userId) {
     res.status(401).json({ error: "Authenticated user is required" });
     return;
   }
 
-  const removed = memoryStore.delete(req.params.id, userId);
+  const removed = await memoryStore.delete(req.params.id, userId);
   if (!removed) {
     res.status(404).json({ error: "Memory entry not found or not owned by you" });
     return;

@@ -4,6 +4,23 @@
  */
 
 jest.mock("../engine/llmProviders", () => ({ getProvider: jest.fn() }));
+jest.mock("../auth/authMiddleware", () => ({
+  requireAuth: (
+    req: Record<string, unknown>,
+    res: { status: (code: number) => { json: (body: unknown) => void } },
+    next: () => void
+  ) => {
+    const headers = (req.headers ?? {}) as Record<string, unknown>;
+    const userId = headers["x-user-id"];
+    if (typeof userId === "string" && userId.trim()) {
+      req.auth = { sub: userId };
+      next();
+      return;
+    }
+
+    res.status(401).json({ error: "Authentication required" });
+  },
+}));
 
 import request from "supertest";
 import app from "../app";
@@ -13,7 +30,7 @@ const USER = "user-mem-test";
 const H = { "X-User-Id": USER };
 
 beforeEach(() => {
-  memoryStore.clear();
+  void memoryStore.clear();
 });
 
 // ---------------------------------------------------------------------------
@@ -95,16 +112,16 @@ describe("GET /api/memory", () => {
   });
 
   it("returns only the user's entries", async () => {
-    memoryStore.write({ userId: USER, key: "a", text: "mine" });
-    memoryStore.write({ userId: "other", key: "b", text: "theirs" });
+    await memoryStore.write({ userId: USER, key: "a", text: "mine" });
+    await memoryStore.write({ userId: "other", key: "b", text: "theirs" });
     const res = await request(app).get("/api/memory").set(H);
     expect(res.body.entries).toHaveLength(1);
     expect(res.body.entries[0].userId).toBe(USER);
   });
 
   it("filters by workflowId when provided", async () => {
-    memoryStore.write({ userId: USER, key: "a", text: "wf1", workflowId: "wf-1" });
-    memoryStore.write({ userId: USER, key: "b", text: "wf2", workflowId: "wf-2" });
+    await memoryStore.write({ userId: USER, key: "a", text: "wf1", workflowId: "wf-1" });
+    await memoryStore.write({ userId: USER, key: "b", text: "wf2", workflowId: "wf-2" });
     const res = await request(app).get("/api/memory?workflowId=wf-1").set(H);
     expect(res.body.entries).toHaveLength(1);
     expect(res.body.entries[0].workflowId).toBe("wf-1");
@@ -122,8 +139,8 @@ describe("GET /api/memory/search", () => {
   });
 
   it("returns matching results", async () => {
-    memoryStore.write({ userId: USER, key: "color", text: "user likes blue" });
-    memoryStore.write({ userId: USER, key: "food", text: "user likes pizza" });
+    await memoryStore.write({ userId: USER, key: "color", text: "user likes blue" });
+    await memoryStore.write({ userId: USER, key: "food", text: "user likes pizza" });
     const res = await request(app).get("/api/memory/search?q=blue").set(H);
     expect(res.status).toBe(200);
     expect(res.body.results.length).toBeGreaterThan(0);
@@ -131,15 +148,15 @@ describe("GET /api/memory/search", () => {
   });
 
   it("returns all entries with empty query", async () => {
-    memoryStore.write({ userId: USER, key: "a", text: "anything" });
+    await memoryStore.write({ userId: USER, key: "a", text: "anything" });
     const res = await request(app).get("/api/memory/search?q=").set(H);
     expect(res.status).toBe(200);
     expect(res.body.results).toHaveLength(1);
   });
 
   it("filters by agentId", async () => {
-    memoryStore.write({ userId: USER, key: "ctx", text: "agent data", agentId: "agent-1" });
-    memoryStore.write({ userId: USER, key: "other", text: "other data" });
+    await memoryStore.write({ userId: USER, key: "ctx", text: "agent data", agentId: "agent-1" });
+    await memoryStore.write({ userId: USER, key: "other", text: "other data" });
     const res = await request(app).get("/api/memory/search?q=&agentId=agent-1").set(H);
     expect(res.body.results).toHaveLength(1);
   });
@@ -162,8 +179,8 @@ describe("GET /api/memory/stats", () => {
   });
 
   it("returns correct counts after writing entries", async () => {
-    memoryStore.write({ userId: USER, key: "a", text: "hello", workflowId: "wf-1" });
-    memoryStore.write({ userId: USER, key: "b", text: "world", workflowId: "wf-2" });
+    await memoryStore.write({ userId: USER, key: "a", text: "hello", workflowId: "wf-1" });
+    await memoryStore.write({ userId: USER, key: "b", text: "world", workflowId: "wf-2" });
     const res = await request(app).get("/api/memory/stats").set(H);
     expect(res.body.totalEntries).toBe(2);
     expect(res.body.workflowCount).toBe(2);
@@ -176,16 +193,16 @@ describe("GET /api/memory/stats", () => {
 
 describe("DELETE /api/memory/:id", () => {
   it("returns 401 without X-User-Id", async () => {
-    const e = memoryStore.write({ userId: USER, key: "x", text: "y" });
+    const e = await memoryStore.write({ userId: USER, key: "x", text: "y" });
     const res = await request(app).delete(`/api/memory/${e.id}`);
     expect(res.status).toBe(401);
   });
 
   it("deletes and returns 204", async () => {
-    const e = memoryStore.write({ userId: USER, key: "del", text: "me" });
+    const e = await memoryStore.write({ userId: USER, key: "del", text: "me" });
     const res = await request(app).delete(`/api/memory/${e.id}`).set(H);
     expect(res.status).toBe(204);
-    expect(memoryStore.get(e.id)).toBeUndefined();
+    await expect(memoryStore.get(e.id)).resolves.toBeUndefined();
   });
 
   it("returns 404 for unknown id", async () => {
@@ -194,7 +211,7 @@ describe("DELETE /api/memory/:id", () => {
   });
 
   it("returns 404 when entry belongs to another user", async () => {
-    const e = memoryStore.write({ userId: "other-user", key: "x", text: "y" });
+    const e = await memoryStore.write({ userId: "other-user", key: "x", text: "y" });
     const res = await request(app).delete(`/api/memory/${e.id}`).set(H);
     expect(res.status).toBe(404);
   });

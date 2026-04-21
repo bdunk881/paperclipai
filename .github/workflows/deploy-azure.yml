@@ -117,13 +117,13 @@ jobs:
       - name: Smoke test backend
         run: |
           set -euo pipefail
-          FQDN=$(az containerapp show \
+          REVISION_FQDN=$(az containerapp show \
             --name "${{ steps.target.outputs.container_app }}" \
             --resource-group "${{ steps.target.outputs.resource_group }}" \
-            --query 'properties.configuration.ingress.fqdn' \
+            --query 'properties.latestRevisionFqdn' \
             -o tsv)
 
-          URL="https://${FQDN}/health"
+          URL="https://${REVISION_FQDN}/health"
           for i in $(seq 1 10); do
             STATUS=$(curl -s -o /dev/null -w "%{http_code}" "$URL")
             if [ "$STATUS" = "200" ]; then

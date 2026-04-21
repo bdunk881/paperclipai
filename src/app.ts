@@ -329,15 +329,15 @@ app.post("/api/runs", requireAuth, llmEndpointRateLimiter, (req: AuthenticatedRe
 });
 
 /** List all runs, optionally filtered by templateId */
-app.get("/api/runs", requireAuth, (req, res) => {
+app.get("/api/runs", requireAuth, async (req, res) => {
   const { templateId } = req.query;
-  const runs = runStore.list(typeof templateId === "string" ? templateId : undefined);
+  const runs = await runStore.list(typeof templateId === "string" ? templateId : undefined);
   res.json({ runs, total: runs.length });
 });
 
 /** Get a single run by ID */
-app.get("/api/runs/:id", requireAuth, (req, res) => {
-  const run = runStore.get(req.params.id);
+app.get("/api/runs/:id", requireAuth, async (req, res) => {
+  const run = await runStore.get(req.params.id);
   if (!run) {
     res.status(404).json({ error: `Run not found: ${req.params.id}` });
     return;
@@ -422,7 +422,7 @@ app.post("/api/runs/file", requireAuth, upload.single("file"), async (req: Authe
     filename: parsed.filename,
   };
 
-  const run = workflowEngine.startRun(template, input, undefined, userId);
+  const run = await workflowEngine.startRun(template, input, undefined, userId);
   res.status(202).json(run);
 });
 
@@ -533,7 +533,7 @@ app.post("/api/workflows/generate", requireAuth, llmEndpointRateLimiter, async (
  * Trigger a workflow run from an inbound webhook.
  * The entire request body is forwarded as the run input.
  */
-app.post("/api/webhooks/:templateId", (req, res) => {
+app.post("/api/webhooks/:templateId", async (req, res) => {
   const { templateId } = req.params;
 
   let template: WorkflowTemplate;
@@ -551,7 +551,12 @@ app.post("/api/webhooks/:templateId", (req, res) => {
   }
 
   const webhookUserId = req.headers["x-user-id"];
-  const run = workflowEngine.startRun(template, input, undefined, typeof webhookUserId === "string" ? webhookUserId : undefined);
+  const run = await workflowEngine.startRun(
+    template,
+    input,
+    undefined,
+    typeof webhookUserId === "string" ? webhookUserId : undefined
+  );
   res.status(202).json({ runId: run.id, status: run.status });
 });
 
@@ -564,14 +569,14 @@ app.post("/api/webhooks/:templateId", (req, res) => {
  * Query params: status=pending|approved|rejected|timed_out
  * Returns all approval requests, optionally filtered by status.
  */
-app.get("/api/approvals", (req, res) => {
+app.get("/api/approvals", async (req, res) => {
   const { status } = req.query;
   const validStatuses = ["pending", "approved", "rejected", "timed_out"];
   const filter =
     typeof status === "string" && validStatuses.includes(status)
       ? (status as "pending" | "approved" | "rejected" | "timed_out")
       : undefined;
-  const approvals = approvalStore.list(filter);
+  const approvals = await approvalStore.list(filter);
   res.json({ approvals, total: approvals.length });
 });
 
@@ -579,8 +584,8 @@ app.get("/api/approvals", (req, res) => {
  * GET /api/approvals/:id
  * Returns a single approval request by ID.
  */
-app.get("/api/approvals/:id", (req, res) => {
-  const approval = approvalStore.get(req.params.id);
+app.get("/api/approvals/:id", async (req, res) => {
+  const approval = await approvalStore.get(req.params.id);
   if (!approval) {
     res.status(404).json({ error: `Approval not found: ${req.params.id}` });
     return;
@@ -593,7 +598,7 @@ app.get("/api/approvals/:id", (req, res) => {
  * Body: { decision: "approved" | "rejected", comment?: string }
  * Resolves the approval request, resuming or terminating the paused run.
  */
-app.post("/api/approvals/:id/resolve", (req, res) => {
+app.post("/api/approvals/:id/resolve", async (req, res) => {
   const { decision, comment } = req.body as { decision?: string; comment?: string };
 
   if (decision !== "approved" && decision !== "rejected") {
@@ -601,7 +606,7 @@ app.post("/api/approvals/:id/resolve", (req, res) => {
     return;
   }
 
-  const ok = approvalStore.resolve(req.params.id, decision, comment);
+  const ok = await approvalStore.resolve(req.params.id, decision, comment);
   if (!ok) {
     res.status(404).json({ error: "Approval not found or already resolved" });
     return;
@@ -613,8 +618,8 @@ app.post("/api/approvals/:id/resolve", (req, res) => {
 // ---------------------------------------------------------------------------
 // Health check
 // ---------------------------------------------------------------------------
-app.get("/health", (_req, res) => {
-  const runs = runStore.list();
+app.get("/health", async (_req, res) => {
+  const runs = await runStore.list();
   res.json({
     status: "ok",
     templates: WORKFLOW_TEMPLATES.length,

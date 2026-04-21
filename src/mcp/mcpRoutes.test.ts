@@ -5,13 +5,27 @@
  */
 
 jest.mock("../engine/llmProviders", () => ({ getProvider: jest.fn() }));
+jest.mock("./mcpUrlSecurity", () => ({
+  assertSafeMcpUrl: jest.fn(async (url: string) => url),
+}));
+jest.mock("../auth/authMiddleware", () => ({
+  requireAuth: (req: { headers: Record<string, string | undefined>; auth?: { sub: string } }, res: { status: (code: number) => { json: (body: unknown) => unknown } }, next: () => void) => {
+    const authHeader = req.headers.authorization;
+    if (!authHeader?.startsWith("Bearer ")) {
+      return res.status(401).json({ error: "Missing or malformed Authorization header." });
+    }
+
+    req.auth = { sub: authHeader.slice(7) };
+    next();
+  },
+}));
 
 import request from "supertest";
 import app from "../app";
 import { mcpStore } from "./mcpStore";
 
 const USER = "user-test-mcp";
-const H = { "X-User-Id": USER };
+const H = { Authorization: `Bearer ${USER}` };
 
 beforeEach(() => {
   mcpStore._clear();
@@ -23,7 +37,7 @@ beforeEach(() => {
 // ---------------------------------------------------------------------------
 
 describe("GET /api/mcp/servers", () => {
-  it("returns 401 without X-User-Id header", async () => {
+  it("returns 401 without Authorization header", async () => {
     const res = await request(app).get("/api/mcp/servers");
     expect(res.status).toBe(401);
   });
@@ -48,7 +62,7 @@ describe("GET /api/mcp/servers", () => {
 // ---------------------------------------------------------------------------
 
 describe("POST /api/mcp/servers", () => {
-  it("returns 401 without X-User-Id header", async () => {
+  it("returns 401 without Authorization header", async () => {
     const res = await request(app).post("/api/mcp/servers").send({ name: "x", url: "https://x.com" });
     expect(res.status).toBe(401);
   });
@@ -97,7 +111,7 @@ describe("POST /api/mcp/servers", () => {
 // ---------------------------------------------------------------------------
 
 describe("DELETE /api/mcp/servers/:id", () => {
-  it("returns 401 without X-User-Id header", async () => {
+  it("returns 401 without Authorization header", async () => {
     const s = mcpStore.add(USER, { name: "x", url: "https://x.com" });
     const res = await request(app).delete(`/api/mcp/servers/${s.id}`);
     expect(res.status).toBe(401);
@@ -127,7 +141,7 @@ describe("DELETE /api/mcp/servers/:id", () => {
 // ---------------------------------------------------------------------------
 
 describe("GET /api/mcp/servers/:id/tools", () => {
-  it("returns 401 without X-User-Id header", async () => {
+  it("returns 401 without Authorization header", async () => {
     const s = mcpStore.add(USER, { name: "x", url: "https://x.com" });
     const res = await request(app).get(`/api/mcp/servers/${s.id}/tools`);
     expect(res.status).toBe(401);
@@ -202,7 +216,7 @@ describe("GET /api/mcp/servers/:id/tools", () => {
 // ---------------------------------------------------------------------------
 
 describe("POST /api/mcp/servers/:id/test", () => {
-  it("returns 401 without X-User-Id header", async () => {
+  it("returns 401 without Authorization header", async () => {
     const s = mcpStore.add(USER, { name: "x", url: "https://x.com" });
     const res = await request(app).post(`/api/mcp/servers/${s.id}/test`);
     expect(res.status).toBe(401);

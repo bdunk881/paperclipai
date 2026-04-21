@@ -23,7 +23,13 @@ Set these repository secrets before enabling `.github/workflows/deploy-swa.yml`:
 4. Verify HTTPS cert issuance and route health:
    - `/` returns `200`
    - `/login` returns `200` (SPA fallback)
+   - `/auth/callback` returns `200` (SPA fallback used by MSAL redirect flow)
    - `/api/health` proxies to backend as expected
+5. Sync the CIAM SPA redirect URIs so the app registration matches the deployed auth paths:
+   ```bash
+   cd infra/azure
+   ./scripts/sync-ciam-redirect-uris.sh
+   ```
 
 ## Rollback
 1. Revert CNAME from SWA hostname back to `cname.vercel-dns.com`.

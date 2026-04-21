@@ -7,10 +7,12 @@
  */
 
 import { randomUUID } from "crypto";
+import { approvalNotificationStore } from "./approvalNotificationStore";
 
 export interface ApprovalRequest {
   id: string;
   runId: string;
+  templateId: string;
   templateName: string;
   stepId: string;
   stepName: string;
@@ -38,6 +40,7 @@ export const approvalStore = {
    */
   create(params: {
     runId: string;
+    templateId: string;
     templateName: string;
     stepId: string;
     stepName: string;
@@ -50,6 +53,7 @@ export const approvalStore = {
     const request: ApprovalRequest = {
       id,
       runId: params.runId,
+      templateId: params.templateId,
       templateName: params.templateName,
       stepId: params.stepId,
       stepName: params.stepName,
@@ -76,6 +80,16 @@ export const approvalStore = {
     }, timeoutMs);
 
     store.set(id, { request, resolve: resolveCallback, timeoutHandle });
+    approvalNotificationStore.publish({
+      approvalId: id,
+      runId: params.runId,
+      templateId: params.templateId,
+      templateName: params.templateName,
+      stepId: params.stepId,
+      stepName: params.stepName,
+      assignees: [params.assignee],
+      message: params.message,
+    });
     return { id, promise };
   },
 
@@ -109,6 +123,9 @@ export const approvalStore = {
   },
 
   clear(): void {
+    for (const entry of store.values()) {
+      clearTimeout(entry.timeoutHandle);
+    }
     store.clear();
   },
 };

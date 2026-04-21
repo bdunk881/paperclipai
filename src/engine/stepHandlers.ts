@@ -79,8 +79,8 @@ export async function handleLlm(
 
   // Resolve config: step-level override or user's default
   const resolved = step.llmConfigId
-    ? llmConfigStore.getDecrypted(step.llmConfigId, userId)
-    : llmConfigStore.getDecryptedDefault(userId);
+    ? await llmConfigStore.getDecryptedAsync(step.llmConfigId, userId)
+    : await llmConfigStore.getDecryptedDefaultAsync(userId);
 
   if (!resolved) {
     throw new Error(
@@ -440,7 +440,7 @@ export async function handleAgent(
   const model = step.agentModel ?? "default";
 
   // Resolve the LLM provider once (shared across slots)
-  const resolved = llmConfigStore.getDecryptedDefault(userId);
+  const resolved = await llmConfigStore.getDecryptedDefaultAsync(userId);
   if (!resolved) {
     throw new Error(
       `Agent step "${step.id}" failed: no LLM provider configured. ` +

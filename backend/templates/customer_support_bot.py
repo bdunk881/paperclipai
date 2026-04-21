@@ -23,7 +23,7 @@ customer_support_bot = WorkflowTemplate(
     ),
     category=TemplateCategory.support,
     version="1.0.0",
-    configFields=[
+    config_fields=[
         ConfigField(
             key="brandName",
             label="Brand / Product Name",
@@ -43,7 +43,7 @@ customer_support_bot = WorkflowTemplate(
             label="Auto-respond Categories",
             type=FieldType.string_list,
             required=False,
-            defaultValue=["general", "billing"],
+            default_value=["general", "billing"],
             options=["general", "billing", "refund", "bug"],
             description="Ticket categories that receive an automatic response.",
         ),
@@ -52,7 +52,7 @@ customer_support_bot = WorkflowTemplate(
             label="Escalate Categories",
             type=FieldType.string_list,
             required=False,
-            defaultValue=["bug", "refund"],
+            default_value=["bug", "refund"],
             options=["general", "billing", "refund", "bug"],
             description="Ticket categories routed to human agents.",
         ),
@@ -61,7 +61,7 @@ customer_support_bot = WorkflowTemplate(
             label="Response Tone",
             type=FieldType.string,
             required=False,
-            defaultValue="professional and friendly",
+            default_value="professional and friendly",
             description="Tone used by the AI when drafting responses.",
         ),
     ],
@@ -71,8 +71,8 @@ customer_support_bot = WorkflowTemplate(
             name="Receive Ticket",
             kind=StepKind.trigger,
             description="Accepts an inbound support ticket payload.",
-            inputKeys=[],
-            outputKeys=["ticketId", "customerEmail", "subject", "body", "channel"],
+            input_keys=[],
+            output_keys=["ticketId", "customerEmail", "subject", "body", "channel"],
         ),
         WorkflowStep(
             id="step_classify",
@@ -82,9 +82,9 @@ customer_support_bot = WorkflowTemplate(
                 "Sends the ticket body to the LLM to determine intent "
                 "category and sentiment."
             ),
-            inputKeys=["subject", "body"],
-            outputKeys=["intent", "sentiment", "summary"],
-            promptTemplate=(
+            input_keys=["subject", "body"],
+            output_keys=["intent", "sentiment", "summary"],
+            prompt_template=(
                 "You are a support ticket classifier for {{brandName}}.\n\n"
                 "Ticket subject: {{subject}}\n"
                 "Ticket body: {{body}}\n\n"
@@ -103,8 +103,8 @@ customer_support_bot = WorkflowTemplate(
                 "Routes the ticket to auto-respond or escalate based on "
                 "intent and configuration."
             ),
-            inputKeys=["intent"],
-            outputKeys=["shouldAutoRespond"],
+            input_keys=["intent"],
+            output_keys=["shouldAutoRespond"],
             condition="autoRespondCategories.includes(intent)",
         ),
         WorkflowStep(
@@ -115,9 +115,9 @@ customer_support_bot = WorkflowTemplate(
                 "Generates a helpful, on-brand response for tickets that "
                 "qualify for auto-handling."
             ),
-            inputKeys=["brandName", "toneOfVoice", "summary", "customerEmail"],
-            outputKeys=["draftResponse"],
-            promptTemplate=(
+            input_keys=["brandName", "toneOfVoice", "summary", "customerEmail"],
+            output_keys=["draftResponse"],
+            prompt_template=(
                 "You are a customer support agent for {{brandName}}. "
                 "Your tone is {{toneOfVoice}}.\n\n"
                 "Customer issue: {{summary}}\n\n"
@@ -135,7 +135,7 @@ customer_support_bot = WorkflowTemplate(
                 "Either sends the AI-drafted response to the customer or "
                 "escalates to a human agent queue."
             ),
-            inputKeys=[
+            input_keys=[
                 "shouldAutoRespond",
                 "customerEmail",
                 "draftResponse",
@@ -144,7 +144,7 @@ customer_support_bot = WorkflowTemplate(
                 "summary",
                 "sentiment",
             ],
-            outputKeys=["resolution", "escalated"],
+            output_keys=["resolution", "escalated"],
             action="support.sendOrEscalate",
         ),
         WorkflowStep(
@@ -152,12 +152,12 @@ customer_support_bot = WorkflowTemplate(
             name="Emit Resolution",
             kind=StepKind.output,
             description="Records the ticket resolution for analytics and audit.",
-            inputKeys=["ticketId", "intent", "resolution", "escalated"],
-            outputKeys=["event"],
+            input_keys=["ticketId", "intent", "resolution", "escalated"],
+            output_keys=["event"],
             action="events.emit",
         ),
     ],
-    sampleInput={
+    sample_input={
         "ticketId": "TKT-00147",
         "customerEmail": "alice@example.com",
         "subject": "Can't log into my account",
@@ -167,7 +167,7 @@ customer_support_bot = WorkflowTemplate(
         ),
         "channel": "email",
     },
-    expectedOutput={
+    expected_output={
         "ticketId": "TKT-00147",
         "intent": "general",
         "sentiment": "frustrated",

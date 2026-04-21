@@ -74,7 +74,7 @@ class TestConfigField:
             label="Tone",
             type=FieldType.string,
             required=False,
-            defaultValue="professional",
+            default_value="professional",
         )
         assert field.default_value == "professional"
         assert field.required is False
@@ -85,7 +85,7 @@ class TestConfigField:
             label="Category",
             type=FieldType.string,
             required=False,
-            defaultValue="general",
+            default_value="general",
             options=["general", "billing", "refund"],
         )
         assert field.options == ["general", "billing", "refund"]
@@ -93,7 +93,7 @@ class TestConfigField:
     def test_alias_populate_by_name(self):
         # Both camelCase (alias) and snake_case should work
         via_alias = ConfigField(
-            key="x", label="X", type=FieldType.string, required=False, defaultValue="v"
+            key="x", label="X", type=FieldType.string, required=False, default_value="v"
         )
         via_snake = ConfigField(
             **{"key": "x", "label": "X", "type": FieldType.string, "required": False, "default_value": "v"}
@@ -113,8 +113,8 @@ class TestWorkflowStep:
             name="Trigger",
             kind=StepKind.trigger,
             description="Entry point",
-            inputKeys=[],
-            outputKeys=["ticketId", "body"],
+            input_keys=[],
+            output_keys=["ticketId", "body"],
         )
         assert step.id == "step_trigger"
         assert step.kind == StepKind.trigger
@@ -127,9 +127,9 @@ class TestWorkflowStep:
             name="LLM Step",
             kind=StepKind.llm,
             description="Calls LLM",
-            inputKeys=["body"],
-            outputKeys=["intent"],
-            promptTemplate="Classify: {{body}}",
+            input_keys=["body"],
+            output_keys=["intent"],
+            prompt_template="Classify: {{body}}",
         )
         assert step.prompt_template == "Classify: {{body}}"
 
@@ -139,8 +139,8 @@ class TestWorkflowStep:
             name="Condition",
             kind=StepKind.condition,
             description="Branch",
-            inputKeys=["intent"],
-            outputKeys=["shouldEscalate"],
+            input_keys=["intent"],
+            output_keys=["shouldEscalate"],
             condition="intent === 'refund'",
         )
         assert step.condition == "intent === 'refund'"
@@ -151,8 +151,8 @@ class TestWorkflowStep:
             name="Action",
             kind=StepKind.action,
             description="Send email",
-            inputKeys=["draftResponse"],
-            outputKeys=["sent"],
+            input_keys=["draftResponse"],
+            output_keys=["sent"],
             action="email.send",
         )
         assert step.action == "email.send"

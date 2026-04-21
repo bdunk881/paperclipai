@@ -22,7 +22,7 @@ def minimal_template() -> WorkflowTemplate:
         description="Used in unit tests",
         category=TemplateCategory.custom,
         version="1.0.0",
-        configFields=[
+        config_fields=[
             ConfigField(
                 key="apiKey",
                 label="API Key",
@@ -36,20 +36,20 @@ def minimal_template() -> WorkflowTemplate:
                 name="Trigger",
                 kind=StepKind.trigger,
                 description="Entry point",
-                inputKeys=[],
-                outputKeys=["payload"],
+                input_keys=[],
+                output_keys=["payload"],
             ),
             WorkflowStep(
                 id="step_output",
                 name="Output",
                 kind=StepKind.output,
                 description="Exit point",
-                inputKeys=["payload"],
-                outputKeys=["result"],
+                input_keys=["payload"],
+                output_keys=["result"],
             ),
         ],
-        sampleInput={"payload": "test"},
-        expectedOutput={"result": "test"},
+        sample_input={"payload": "test"},
+        expected_output={"result": "test"},
     )
 
 

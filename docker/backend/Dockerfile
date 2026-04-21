@@ -12,6 +12,10 @@ COPY tsconfig.json ./
 COPY src ./src
 RUN npm run build
 
+FROM deps AS prod-deps
+WORKDIR /app
+RUN npm prune --omit=dev
+
 FROM node:20-alpine AS runtime
 LABEL org.opencontainers.image.source="https://github.com/bdunk881/paperclipai"
 
@@ -19,8 +23,7 @@ RUN addgroup -S appuser && adduser -S appuser -G appuser
 
 WORKDIR /app
 COPY package.json package-lock.json ./
-RUN --mount=type=cache,target=/root/.npm \
-    npm ci --omit=dev && npm cache clean --force
+COPY --from=prod-deps /app/node_modules ./node_modules
 COPY --from=builder /app/dist ./dist
 
 ENV NODE_ENV=production \

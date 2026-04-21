@@ -42,12 +42,20 @@ Runtime environment variables required in the Vercel dashboard project:
 | `VITE_API_URL` | Base URL for backend API (for example `https://api.autoflowapp.ai`) |
 | `VITE_AZURE_CIAM_CLIENT_ID` | Entra External ID app registration client ID |
 | `VITE_AZURE_CIAM_TENANT_SUBDOMAIN` | Tenant prefix before `.ciamlogin.com` (for example `autoflowciam`) |
+| `QA_PREVIEW_ACCESS_TOKEN` | Preview-only shared secret used by `/api/qa-preview-access` to unlock smoke-test access for protected dashboard routes |
 
 ## Daily operations
 
 - **Deploy backend:** merge to `main` — GitHub Actions builds Docker images, pushes to ghcr.io, deploys to Azure.
 - **Deploy dashboard:** merge to `main` with changes under `dashboard/` — GitHub Actions deploys to Vercel.
 - **Rollback:** redeploy a previous image tag (backend) or use Vercel's instant rollback (dashboard).
+
+## Protected Preview QA Access
+
+- Set `QA_PREVIEW_ACCESS_TOKEN` only on the dashboard Vercel project's `preview` environment.
+- Share QA links in the form `https://<preview-host>/agents?qaPreviewToken=<token>`.
+- The dashboard validates the token through `/api/qa-preview-access`, seeds a temporary local auth user, and then unlocks the protected `/agents` routes for smoke testing.
+- Do not set `QA_PREVIEW_ACCESS_TOKEN` on `production`.
 
 ## DNS
 

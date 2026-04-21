@@ -35,7 +35,7 @@ declare module "@xyflow/react" {
     dragging?: boolean;
   };
 
-  export type NodeTypes = Record<string, React.ComponentType<NodeProps<any>>>;
+  export type NodeTypes = Record<string, React.ComponentType<NodeProps>>;
 
   export const Background: React.ComponentType<Record<string, unknown>>;
   export const Controls: React.ComponentType<Record<string, unknown>>;

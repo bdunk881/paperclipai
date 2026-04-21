@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { Link } from "react-router-dom";
 import {
   RefreshCw,
@@ -32,7 +32,7 @@ export default function RunMonitor() {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
 
-  async function fetchRuns(silent = false) {
+  const fetchRuns = useCallback(async (silent = false) => {
     if (!silent) setLoading(true);
     setLoadError(null);
     try {
@@ -53,13 +53,13 @@ export default function RunMonitor() {
     } finally {
       if (!silent) setLoading(false);
     }
-  }
+  }, [getAccessToken]);
 
   useEffect(() => {
     void fetchRuns();
     const id = setInterval(() => { void fetchRuns(true); }, POLL_INTERVAL_MS);
     return () => clearInterval(id);
-  }, []);
+  }, [fetchRuns]);
 
   function toggleExpand(id: string) {
     setExpandedIds((prev) => {

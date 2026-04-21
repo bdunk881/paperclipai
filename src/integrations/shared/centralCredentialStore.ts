@@ -61,12 +61,50 @@ export class CentralCredentialStore<TMetadata extends object, TSecrets extends o
     return this.registry.save(record);
   }
 
+  async createAsync(params: {
+    userId: string;
+    authMethod: string;
+    label: string;
+    metadata: TMetadata;
+    secrets: TSecrets;
+    id?: string;
+    createdAt?: string;
+    updatedAt?: string;
+    revokedAt?: string;
+  }): Promise<CentralCredentialRecord<TMetadata>> {
+    const now = params.createdAt ?? new Date().toISOString();
+    const record: CentralCredentialRecord<TMetadata> = {
+      id: params.id ?? uuidv4(),
+      userId: params.userId,
+      authMethod: params.authMethod,
+      label: params.label,
+      createdAt: now,
+      updatedAt: params.updatedAt ?? now,
+      revokedAt: params.revokedAt,
+      metadata: params.metadata,
+      secretPayloadEncrypted: this.registry.encryptSecret(JSON.stringify(params.secrets)),
+    };
+
+    return this.registry.saveAsync(record);
+  }
+
   listByUser(userId: string, includeRevoked = true): CentralCredentialRecord<TMetadata>[] {
     return this.registry.listStoredByUser(userId, includeRevoked);
   }
 
+  async listByUserAsync(
+    userId: string,
+    includeRevoked = true,
+  ): Promise<CentralCredentialRecord<TMetadata>[]> {
+    return this.registry.listStoredByUserAsync(userId, includeRevoked);
+  }
+
   getById(id: string): CentralCredentialRecord<TMetadata> | null {
     return this.registry.getById(id);
+  }
+
+  async getByIdAsync(id: string): Promise<CentralCredentialRecord<TMetadata> | null> {
+    return this.registry.getByIdAsync(id);
   }
 
   findLatest(
@@ -76,8 +114,27 @@ export class CentralCredentialStore<TMetadata extends object, TSecrets extends o
     return this.registry.findLatest(predicate, includeRevoked);
   }
 
+  async findLatestAsync(
+    predicate: (record: CentralCredentialRecord<TMetadata>) => boolean,
+    includeRevoked = false,
+  ): Promise<CentralCredentialRecord<TMetadata> | null> {
+    return this.registry.findLatestAsync(predicate, includeRevoked);
+  }
+
   getDecrypted(id: string): CentralCredentialDecrypted<TMetadata, TSecrets> | null {
     const record = this.registry.getById(id);
+    if (!record) {
+      return null;
+    }
+
+    return {
+      record,
+      secrets: this.decodeSecrets(record.secretPayloadEncrypted),
+    };
+  }
+
+  async getDecryptedAsync(id: string): Promise<CentralCredentialDecrypted<TMetadata, TSecrets> | null> {
+    const record = await this.registry.getByIdAsync(id);
     if (!record) {
       return null;
     }

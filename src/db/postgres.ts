@@ -1,4 +1,4 @@
-import { Pool } from "pg";
+import { Pool, QueryResultRow } from "pg";
 
 let pool: Pool | null = null;
 
@@ -14,6 +14,8 @@ export function isPostgresPersistenceEnabled(): boolean {
   return typeof process.env.DATABASE_URL === "string" && process.env.DATABASE_URL.trim().length > 0;
 }
 
+export const isPostgresConfigured = isPostgresPersistenceEnabled;
+
 export function getPostgresPool(): Pool {
   if (!isPostgresPersistenceEnabled()) {
     throw new Error("DATABASE_URL is required for PostgreSQL persistence");
@@ -28,6 +30,13 @@ export function getPostgresPool(): Pool {
   }
 
   return pool;
+}
+
+export async function queryPostgres<T extends QueryResultRow = QueryResultRow>(
+  text: string,
+  params?: unknown[],
+) {
+  return getPostgresPool().query<T>(text, params);
 }
 
 export async function closePostgresPool(): Promise<void> {

@@ -142,12 +142,56 @@ export const llmConfigStore = {
     return toPublic(record);
   },
 
+  async createAsync(params: {
+    userId: string;
+    provider: LLMProvider;
+    label: string;
+    model: string;
+    credentials?: LLMProviderCredentials;
+    apiKey?: string;
+    providerOptions?: LLMProviderOptions;
+  }): Promise<LLMConfigPublic> {
+    const normalizedCredentials = normalizeCredentials(
+      params.credentials ?? (params.apiKey ? { apiKey: params.apiKey } : {}),
+    );
+    const credentialSummary = summarizeCredentials(normalizedCredentials);
+
+    const record = await store.createAsync({
+      userId: params.userId,
+      authMethod: params.provider,
+      label: params.label,
+      metadata: {
+        provider: params.provider,
+        model: params.model,
+        credentialSummary,
+        apiKeyMasked: credentialSummary.apiKeyMasked,
+        providerOptions: params.providerOptions,
+        isDefault: false,
+      },
+      secrets: normalizedCredentials,
+    });
+
+    return toPublic(record);
+  },
+
   list(userId: string): LLMConfigPublic[] {
     return store.listByUser(userId, false).map(toPublic);
   },
 
+  async listAsync(userId: string): Promise<LLMConfigPublic[]> {
+    return (await store.listByUserAsync(userId, false)).map(toPublic);
+  },
+
   get(id: string, userId: string): LLMConfigPublic | undefined {
     const record = store.getById(id);
+    if (!record || record.userId !== userId || record.revokedAt) {
+      return undefined;
+    }
+    return toPublic(record);
+  },
+
+  async getAsync(id: string, userId: string): Promise<LLMConfigPublic | undefined> {
+    const record = await store.getByIdAsync(id);
     if (!record || record.userId !== userId || record.revokedAt) {
       return undefined;
     }
@@ -203,6 +247,14 @@ export const llmConfigStore = {
     return store.delete(id);
   },
 
+  async deleteAsync(id: string, userId: string): Promise<boolean> {
+    const existing = await store.getByIdAsync(id);
+    if (!existing || existing.userId !== userId || existing.revokedAt) {
+      return false;
+    }
+    return store.delete(id);
+  },
+
   setDefault(id: string, userId: string): LLMConfigPublic | undefined {
     const target = store.getById(id);
     if (!target || target.userId !== userId || target.revokedAt) {
@@ -210,6 +262,43 @@ export const llmConfigStore = {
     }
 
     for (const record of store.listByUser(userId, false)) {
+      if (record.metadata.isDefault) {
+        store.update(record.id, (existing, secrets) => ({
+          record: {
+            ...existing,
+            updatedAt: new Date().toISOString(),
+            metadata: {
+              ...existing.metadata,
+              isDefault: false,
+            },
+          },
+          secrets,
+        }));
+      }
+    }
+
+    const updated = store.update(id, (existing, secrets) => ({
+      record: {
+        ...existing,
+        updatedAt: new Date().toISOString(),
+        metadata: {
+          ...existing.metadata,
+          isDefault: true,
+        },
+      },
+      secrets,
+    }));
+
+    return updated ? toPublic(updated) : undefined;
+  },
+
+  async setDefaultAsync(id: string, userId: string): Promise<LLMConfigPublic | undefined> {
+    const target = await store.getByIdAsync(id);
+    if (!target || target.userId !== userId || target.revokedAt) {
+      return undefined;
+    }
+
+    for (const record of await store.listByUserAsync(userId, false)) {
       if (record.metadata.isDefault) {
         store.update(record.id, (existing, secrets) => ({
           record: {
@@ -253,6 +342,19 @@ export const llmConfigStore = {
     };
   },
 
+  async getDecryptedAsync(id: string, userId: string): Promise<DecryptedLLMConfig | undefined> {
+    const decrypted = await store.getDecryptedAsync(id);
+    if (!decrypted || decrypted.record.userId !== userId || decrypted.record.revokedAt) {
+      return undefined;
+    }
+
+    return {
+      config: toPublic(decrypted.record),
+      credentials: decrypted.secrets,
+      apiKey: decrypted.secrets.apiKey,
+    };
+  },
+
   getDecryptedDefault(userId: string): DecryptedLLMConfig | undefined {
     const record = store.findLatest(
       (existing) => existing.userId === userId && existing.metadata.isDefault && !existing.revokedAt,
@@ -262,6 +364,26 @@ export const llmConfigStore = {
     }
 
     const decrypted = store.getDecrypted(record.id);
+    if (!decrypted) {
+      return undefined;
+    }
+
+    return {
+      config: toPublic(decrypted.record),
+      credentials: decrypted.secrets,
+      apiKey: decrypted.secrets.apiKey,
+    };
+  },
+
+  async getDecryptedDefaultAsync(userId: string): Promise<DecryptedLLMConfig | undefined> {
+    const record = await store.findLatestAsync(
+      (existing) => existing.userId === userId && existing.metadata.isDefault && !existing.revokedAt,
+    );
+    if (!record) {
+      return undefined;
+    }
+
+    const decrypted = await store.getDecryptedAsync(record.id);
     if (!decrypted) {
       return undefined;
     }

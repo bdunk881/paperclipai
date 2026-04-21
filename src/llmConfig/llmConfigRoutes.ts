@@ -175,7 +175,7 @@ function validateProviderConfig(params: {
 
 const router = Router();
 
-router.post("/", (req: AuthenticatedRequest, res: Response) => {
+router.post("/", async (req: AuthenticatedRequest, res: Response) => {
   const userId = getUserId(req);
   if (!userId) {
     res.status(401).json({ error: "Authenticated user is required" });
@@ -226,7 +226,7 @@ router.post("/", (req: AuthenticatedRequest, res: Response) => {
     return;
   }
 
-  const config = llmConfigStore.create({
+  const config = await llmConfigStore.createAsync({
     userId,
     provider: provider as LLMProvider,
     label: normalizedLabel,
@@ -238,25 +238,25 @@ router.post("/", (req: AuthenticatedRequest, res: Response) => {
   res.status(201).json(config);
 });
 
-router.get("/", (req: AuthenticatedRequest, res: Response) => {
+router.get("/", async (req: AuthenticatedRequest, res: Response) => {
   const userId = getUserId(req);
   if (!userId) {
     res.status(401).json({ error: "Authenticated user is required" });
     return;
   }
 
-  const configs = llmConfigStore.list(userId);
+  const configs = await llmConfigStore.listAsync(userId);
   res.json({ configs, total: configs.length });
 });
 
-router.patch("/:id/default", (req: AuthenticatedRequest, res: Response) => {
+router.patch("/:id/default", async (req: AuthenticatedRequest, res: Response) => {
   const userId = getUserId(req);
   if (!userId) {
     res.status(401).json({ error: "Authenticated user is required" });
     return;
   }
 
-  const updated = llmConfigStore.setDefault(req.params.id, userId);
+  const updated = await llmConfigStore.setDefaultAsync(req.params.id, userId);
   if (!updated) {
     res.status(404).json({ error: `LLM config not found: ${req.params.id}` });
     return;
@@ -265,14 +265,14 @@ router.patch("/:id/default", (req: AuthenticatedRequest, res: Response) => {
   res.json(updated);
 });
 
-router.patch("/:id", (req: AuthenticatedRequest, res: Response) => {
+router.patch("/:id", async (req: AuthenticatedRequest, res: Response) => {
   const userId = getUserId(req);
   if (!userId) {
     res.status(401).json({ error: "Authenticated user is required" });
     return;
   }
 
-  const existing = llmConfigStore.get(req.params.id, userId);
+  const existing = await llmConfigStore.getAsync(req.params.id, userId);
   if (!existing) {
     res.status(404).json({ error: `LLM config not found: ${req.params.id}` });
     return;
@@ -324,7 +324,7 @@ router.patch("/:id", (req: AuthenticatedRequest, res: Response) => {
     model: patch.model ?? existing.model,
     credentials:
       patch.credentials ??
-      llmConfigStore.getDecrypted(req.params.id, userId)?.credentials ??
+      (await llmConfigStore.getDecryptedAsync(req.params.id, userId))?.credentials ??
       {},
     providerOptions: patch.providerOptions ?? existing.providerOptions,
   });
@@ -343,14 +343,14 @@ router.patch("/:id", (req: AuthenticatedRequest, res: Response) => {
   res.json(updated);
 });
 
-router.delete("/:id", (req: AuthenticatedRequest, res: Response) => {
+router.delete("/:id", async (req: AuthenticatedRequest, res: Response) => {
   const userId = getUserId(req);
   if (!userId) {
     res.status(401).json({ error: "Authenticated user is required" });
     return;
   }
 
-  const deleted = llmConfigStore.delete(req.params.id, userId);
+  const deleted = await llmConfigStore.deleteAsync(req.params.id, userId);
   if (!deleted) {
     res.status(404).json({ error: `LLM config not found: ${req.params.id}` });
     return;

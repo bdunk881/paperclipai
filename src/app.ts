@@ -376,7 +376,7 @@ app.post("/api/runs/file", requireAuth, upload.single("file"), async (req: Authe
   const userId = req.auth?.sub;
   let openaiApiKey: string | undefined;
   if (userId) {
-    const defaultConfig = llmConfigStore.getDecryptedDefault(userId);
+    const defaultConfig = await llmConfigStore.getDecryptedDefaultAsync(userId);
     if (defaultConfig?.config.provider === "openai") {
       openaiApiKey = defaultConfig.apiKey;
     }
@@ -456,8 +456,8 @@ app.post("/api/workflows/generate", requireAuth, llmEndpointRateLimiter, async (
 
   const resolved =
     typeof llmConfigId === "string" && llmConfigId
-      ? llmConfigStore.getDecrypted(llmConfigId, userId)
-      : llmConfigStore.getDecryptedDefault(userId);
+      ? await llmConfigStore.getDecryptedAsync(llmConfigId, userId)
+      : await llmConfigStore.getDecryptedDefaultAsync(userId);
 
   if (!resolved) {
     res.status(422).json({

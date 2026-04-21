@@ -627,16 +627,16 @@ describe("handleAgent", () => {
   });
 
   it("throws when no LLM provider is configured", async () => {
-    jest.spyOn(llmConfigStore, "getDecryptedDefault").mockReturnValue(undefined);
+    jest.spyOn(llmConfigStore, "getDecryptedDefaultAsync").mockResolvedValue(undefined);
     const step = makeStep({ kind: "agent", subAgentSlots: 1 });
     await expect(handleAgent(step, {}, "run-1", "user-1")).rejects.toThrow("no LLM provider configured");
   });
 
   it("returns merged slot output on success", async () => {
-    jest.spyOn(llmConfigStore, "getDecryptedDefault").mockReturnValue({
+    jest.spyOn(llmConfigStore, "getDecryptedDefaultAsync").mockResolvedValue({
       config: { provider: "openai", model: "gpt-4" },
       apiKey: "sk-test",
-    } as ReturnType<typeof llmConfigStore.getDecryptedDefault>);
+    } as Awaited<ReturnType<typeof llmConfigStore.getDecryptedDefaultAsync>>);
     mockGetProvider.mockReturnValue(async () => ({ text: JSON.stringify({ answer: "42" }) }));
 
     const step = makeStep({ kind: "agent", subAgentSlots: 2, outputKeys: [] });
@@ -650,10 +650,10 @@ describe("handleAgent", () => {
   });
 
   it("records slot failure when provider throws", async () => {
-    jest.spyOn(llmConfigStore, "getDecryptedDefault").mockReturnValue({
+    jest.spyOn(llmConfigStore, "getDecryptedDefaultAsync").mockResolvedValue({
       config: { provider: "openai", model: "gpt-4" },
       apiKey: "sk-test",
-    } as ReturnType<typeof llmConfigStore.getDecryptedDefault>);
+    } as Awaited<ReturnType<typeof llmConfigStore.getDecryptedDefaultAsync>>);
     mockGetProvider.mockReturnValue(async () => { throw new Error("API timeout"); });
 
     const step = makeStep({ kind: "agent", subAgentSlots: 1 });
@@ -665,10 +665,10 @@ describe("handleAgent", () => {
   });
 
   it("uses default 1 slot when subAgentSlots is undefined", async () => {
-    jest.spyOn(llmConfigStore, "getDecryptedDefault").mockReturnValue({
+    jest.spyOn(llmConfigStore, "getDecryptedDefaultAsync").mockResolvedValue({
       config: { provider: "openai", model: "gpt-4" },
       apiKey: "sk-test",
-    } as ReturnType<typeof llmConfigStore.getDecryptedDefault>);
+    } as Awaited<ReturnType<typeof llmConfigStore.getDecryptedDefaultAsync>>);
     mockGetProvider.mockReturnValue(async () => ({ text: '{"ok":true}' }));
 
     const step = makeStep({ kind: "agent" });
@@ -678,10 +678,10 @@ describe("handleAgent", () => {
   });
 
   it("handles non-JSON LLM response gracefully", async () => {
-    jest.spyOn(llmConfigStore, "getDecryptedDefault").mockReturnValue({
+    jest.spyOn(llmConfigStore, "getDecryptedDefaultAsync").mockResolvedValue({
       config: { provider: "openai", model: "gpt-4" },
       apiKey: "sk-test",
-    } as ReturnType<typeof llmConfigStore.getDecryptedDefault>);
+    } as Awaited<ReturnType<typeof llmConfigStore.getDecryptedDefaultAsync>>);
     mockGetProvider.mockReturnValue(async () => ({ text: "plain text answer" }));
 
     const step = makeStep({ kind: "agent", subAgentSlots: 1 });

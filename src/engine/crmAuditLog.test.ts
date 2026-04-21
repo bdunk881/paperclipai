@@ -1,4 +1,3 @@
-import { describe, it, expect, beforeEach, vi } from "vitest";
 import {
   auditCrmApiCall,
   categorizeIncludedFields,
@@ -10,7 +9,7 @@ import {
 describe("crmAuditLog", () => {
   beforeEach(() => {
     clearAuditLog();
-    vi.restoreAllMocks();
+    jest.restoreAllMocks();
   });
 
   describe("categorizeIncludedFields", () => {
@@ -84,7 +83,7 @@ describe("crmAuditLog", () => {
 
   describe("auditCrmApiCall", () => {
     it("records an audit entry with all required fields", () => {
-      const consoleSpy = vi.spyOn(console, "info").mockImplementation(() => {});
+      const consoleSpy = jest.spyOn(console, "info").mockImplementation(() => {});
 
       auditCrmApiCall({
         userId: "user-123",
@@ -118,14 +117,14 @@ describe("crmAuditLog", () => {
       expect(entry.timestamp).toBeTruthy();
 
       // Verify structured JSON was logged
-      expect(consoleSpy).toHaveBeenCalledOnce();
+      expect(consoleSpy).toHaveBeenCalledTimes(1);
       const loggedJson = JSON.parse(consoleSpy.mock.calls[0][0] as string);
       expect(loggedJson.level).toBe("audit");
       expect(loggedJson.event).toBe("crm_data_api_call");
     });
 
     it("records entry for agent step kind", () => {
-      vi.spyOn(console, "info").mockImplementation(() => {});
+      jest.spyOn(console, "info").mockImplementation(() => {});
 
       auditCrmApiCall({
         userId: "user-789",
@@ -147,7 +146,7 @@ describe("crmAuditLog", () => {
     });
 
     it("does not include actual field values in audit entry", () => {
-      vi.spyOn(console, "info").mockImplementation(() => {});
+      jest.spyOn(console, "info").mockImplementation(() => {});
 
       auditCrmApiCall({
         userId: "user-1",
@@ -175,7 +174,7 @@ describe("crmAuditLog", () => {
     });
 
     it("sorts blocked categories alphabetically", () => {
-      vi.spyOn(console, "info").mockImplementation(() => {});
+      jest.spyOn(console, "info").mockImplementation(() => {});
 
       auditCrmApiCall({
         userId: "u",
@@ -197,7 +196,7 @@ describe("crmAuditLog", () => {
     });
 
     it("accumulates multiple entries", () => {
-      vi.spyOn(console, "info").mockImplementation(() => {});
+      jest.spyOn(console, "info").mockImplementation(() => {});
 
       for (let i = 0; i < 3; i++) {
         auditCrmApiCall({
@@ -219,7 +218,7 @@ describe("crmAuditLog", () => {
 
   describe("clearAuditLog", () => {
     it("empties the audit log", () => {
-      vi.spyOn(console, "info").mockImplementation(() => {});
+      jest.spyOn(console, "info").mockImplementation(() => {});
 
       auditCrmApiCall({
         userId: "u",

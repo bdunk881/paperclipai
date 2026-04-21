@@ -87,8 +87,8 @@ APP_RESPONSE=$(curl -s -w "\n%{http_code}" -X POST \
     "signInAudience": "AzureADandPersonalMicrosoftAccount",
     "spa": {
       "redirectUris": [
-        "http://localhost:5173",
-        "http://localhost:5173/login"
+        "http://localhost:5173/auth/callback",
+        "https://staging.app.helloautoflow.com/auth/callback"
       ]
     },
     "requiredResourceAccess": [
@@ -148,7 +148,9 @@ echo "VITE_AZURE_TENANT_SUBDOMAIN=$CIAM_TENANT_SUBDOMAIN"
 echo ""
 echo "=== Next Steps ==="
 echo "1. Set the env vars above in your .env and .env.local files"
-echo "2. In Azure Portal, add your Vercel production URL to the SPA redirect URIs:"
+echo "2. Verify the SPA redirect URIs include the local and staging callback routes:"
+echo "   - http://localhost:5173/auth/callback"
+echo "   - https://staging.app.helloautoflow.com/auth/callback"
 echo "   https://portal.azure.com → Entra ID (tenant: $CIAM_TENANT_SUBDOMAIN) →"
 echo "   App registrations → autoflow-dashboard → Authentication → Add URI"
 echo "3. Configure a sign-up/sign-in user flow in the CIAM tenant:"

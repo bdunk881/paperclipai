@@ -94,7 +94,10 @@ variable "ciam_tenant_subdomain" {
 variable "spa_redirect_uris" {
   description = "SPA redirect URIs for the CIAM app registration"
   type        = list(string)
-  default     = ["http://localhost:5173"]
+  default = [
+    "http://localhost:5173/auth/callback",
+    "https://staging.app.helloautoflow.com/auth/callback",
+  ]
 }
 
 variable "spa_logout_uris" {

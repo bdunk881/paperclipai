@@ -1,7 +1,7 @@
 /**
  * Memory API routes.
  *
- * All routes require the X-User-Id header for scoping.
+ * All routes require authenticated user context (req.auth.sub) for scoping.
  *
  *   POST   /api/memory               — write (create/upsert) a memory entry
  *   GET    /api/memory               — list all entries for the user
@@ -11,6 +11,7 @@
  */
 
 import { Router } from "express";
+import { AuthenticatedRequest } from "../auth/authMiddleware";
 import { memoryStore } from "../engine/memoryStore";
 
 const router = Router();
@@ -19,19 +20,19 @@ const router = Router();
 // Auth helper
 // ---------------------------------------------------------------------------
 
-function resolveUserId(req: { headers: Record<string, string | string[] | undefined> }): string | null {
-  const h = req.headers["x-user-id"];
-  return typeof h === "string" && h.trim() ? h.trim() : null;
+function resolveUserId(req: AuthenticatedRequest): string | null {
+  const userId = req.auth?.sub;
+  return typeof userId === "string" && userId.trim() ? userId : null;
 }
 
 // ---------------------------------------------------------------------------
 // POST /api/memory — write entry
 // ---------------------------------------------------------------------------
 
-router.post("/", (req, res) => {
+router.post("/", async (req: AuthenticatedRequest, res) => {
   const userId = resolveUserId(req);
   if (!userId) {
-    res.status(401).json({ error: "X-User-Id header is required" });
+    res.status(401).json({ error: "Authenticated user is required" });
     return;
   }
 
@@ -57,7 +58,7 @@ router.post("/", (req, res) => {
     return;
   }
 
-  const entry = memoryStore.write({
+  const entry = await memoryStore.write({
     userId,
     key,
     text,
@@ -74,23 +75,23 @@ router.post("/", (req, res) => {
 // GET /api/memory/stats — usage stats (must precede /:id route)
 // ---------------------------------------------------------------------------
 
-router.get("/stats", (req, res) => {
+router.get("/stats", async (req: AuthenticatedRequest, res) => {
   const userId = resolveUserId(req);
   if (!userId) {
-    res.status(401).json({ error: "X-User-Id header is required" });
+    res.status(401).json({ error: "Authenticated user is required" });
     return;
   }
-  res.json(memoryStore.stats(userId));
+  res.json(await memoryStore.stats(userId));
 });
 
 // ---------------------------------------------------------------------------
 // GET /api/memory/search — keyword/semantic search
 // ---------------------------------------------------------------------------
 
-router.get("/search", (req, res) => {
+router.get("/search", async (req: AuthenticatedRequest, res) => {
   const userId = resolveUserId(req);
   if (!userId) {
-    res.status(401).json({ error: "X-User-Id header is required" });
+    res.status(401).json({ error: "Authenticated user is required" });
     return;
   }
 
@@ -99,7 +100,7 @@ router.get("/search", (req, res) => {
   const agentFilter = typeof agentId === "string" ? agentId : undefined;
   const limitNum = typeof limit === "string" ? Math.min(parseInt(limit, 10) || 10, 100) : 10;
 
-  const results = memoryStore.search(query, userId, agentFilter, limitNum);
+  const results = await memoryStore.search(query, userId, agentFilter, limitNum);
   res.json({ results, total: results.length });
 });
 
@@ -107,15 +108,15 @@ router.get("/search", (req, res) => {
 // GET /api/memory — list all entries
 // ---------------------------------------------------------------------------
 
-router.get("/", (req, res) => {
+router.get("/", async (req: AuthenticatedRequest, res) => {
   const userId = resolveUserId(req);
   if (!userId) {
-    res.status(401).json({ error: "X-User-Id header is required" });
+    res.status(401).json({ error: "Authenticated user is required" });
     return;
   }
 
   const { workflowId } = req.query;
-  const entries = memoryStore.list(
+  const entries = await memoryStore.list(
     userId,
     typeof workflowId === "string" ? workflowId : undefined
   );
@@ -126,14 +127,14 @@ router.get("/", (req, res) => {
 // DELETE /api/memory/:id — delete entry
 // ---------------------------------------------------------------------------
 
-router.delete("/:id", (req, res) => {
+router.delete("/:id", async (req: AuthenticatedRequest, res) => {
   const userId = resolveUserId(req);
   if (!userId) {
-    res.status(401).json({ error: "X-User-Id header is required" });
+    res.status(401).json({ error: "Authenticated user is required" });
     return;
   }
 
-  const removed = memoryStore.delete(req.params.id, userId);
+  const removed = await memoryStore.delete(req.params.id, userId);
   if (!removed) {
     res.status(404).json({ error: "Memory entry not found or not owned by you" });
     return;

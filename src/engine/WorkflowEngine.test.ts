@@ -29,11 +29,11 @@ async function waitForCompletion(
 ): Promise<import("../types/workflow").WorkflowRun> {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
-    const run = runStore.get(runId);
+    const run = await runStore.get(runId);
     if (run && ["completed", "failed"].includes(run.status)) return run;
     await new Promise((resolve) => setTimeout(resolve, 20));
   }
-  const run = runStore.get(runId);
+  const run = await runStore.get(runId);
   throw new Error(`Run ${runId} did not complete in ${timeoutMs}ms. Last status: ${run?.status}`);
 }
 
@@ -44,7 +44,7 @@ async function waitForCompletion(
 let engine: WorkflowEngine;
 
 beforeEach(() => {
-  runStore.clear();
+  void runStore.clear();
   engine = new WorkflowEngine();
 
   // Install deterministic mock LLM provider
@@ -74,8 +74,8 @@ beforeEach(() => {
 // ---------------------------------------------------------------------------
 
 describe("WorkflowEngine — run lifecycle", () => {
-  it("startRun returns a pending run immediately", () => {
-    const run = engine.startRun(customerSupportBot, {
+  it("startRun returns a pending run immediately", async () => {
+    const run = await engine.startRun(customerSupportBot, {
       ticketId: "T001",
       subject: "Login issue",
       body: "Can't log in",
@@ -88,7 +88,7 @@ describe("WorkflowEngine — run lifecycle", () => {
   });
 
   it("run transitions to 'completed' after execution", async () => {
-    const run = engine.startRun(customerSupportBot, {
+    const run = await engine.startRun(customerSupportBot, {
       ticketId: "T002",
       subject: "Billing question",
       body: "What is my invoice?",
@@ -100,7 +100,7 @@ describe("WorkflowEngine — run lifecycle", () => {
   });
 
   it("completed run has a completedAt timestamp", async () => {
-    const run = engine.startRun(customerSupportBot, {
+    const run = await engine.startRun(customerSupportBot, {
       ticketId: "T003",
       subject: "x",
       body: "y",
@@ -113,7 +113,7 @@ describe("WorkflowEngine — run lifecycle", () => {
   });
 
   it("completed run has step results for every template step", async () => {
-    const run = engine.startRun(customerSupportBot, {
+    const run = await engine.startRun(customerSupportBot, {
       ticketId: "T004",
       subject: "Help",
       body: "Issue",
@@ -125,7 +125,7 @@ describe("WorkflowEngine — run lifecycle", () => {
   });
 
   it("all step results have the expected shape", async () => {
-    const run = engine.startRun(customerSupportBot, {
+    const run = await engine.startRun(customerSupportBot, {
       ticketId: "T005",
       subject: "Test",
       body: "Test body",
@@ -186,14 +186,14 @@ describe("All 3 template integration runs", () => {
   ];
 
   test.each(testCases)("%s completes without error", async (_name, template, input) => {
-    const run = engine.startRun(template, input);
+    const run = await engine.startRun(template, input);
     const completed = await waitForCompletion(run.id);
     expect(completed.status).toBe("completed");
     expect(completed.stepResults.some((sr) => sr.status === "failure")).toBe(false);
   });
 
   test.each(testCases)("%s produces a non-empty output object", async (_name, template, input) => {
-    const run = engine.startRun(template, input);
+    const run = await engine.startRun(template, input);
     const completed = await waitForCompletion(run.id);
     expect(completed.output).toBeDefined();
     expect(typeof completed.output).toBe("object");
@@ -210,7 +210,7 @@ describe("WorkflowEngine — error handling", () => {
       throw new Error("LLM unavailable");
     });
 
-    const run = engine.startRun(customerSupportBot, {
+    const run = await engine.startRun(customerSupportBot, {
       ticketId: "T-ERR",
       subject: "test",
       body: "test",
@@ -236,7 +236,7 @@ describe("WorkflowEngine — action registry", () => {
       return { crmId: "CRM-TEST", upserted: true };
     });
 
-    const run = engine.startRun(leadEnrichment, {
+    const run = await engine.startRun(leadEnrichment, {
       leadId: "LEAD-CUSTOM",
       email: "custom@test.io",
       firstName: "Custom",
@@ -255,7 +255,7 @@ describe("WorkflowEngine — action registry", () => {
 
 describe("WorkflowEngine — config defaults", () => {
   it("applies template defaultValues as config when no config is provided", async () => {
-    const run = engine.startRun(customerSupportBot, {
+    const run = await engine.startRun(customerSupportBot, {
       ticketId: "T-DEF",
       subject: "hello",
       body: "world",

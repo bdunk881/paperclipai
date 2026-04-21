@@ -35,7 +35,11 @@ declare module "@xyflow/react" {
     dragging?: boolean;
   };
 
-  export type NodeTypes = Record<string, React.ComponentType<NodeProps>>;
+  type NodeRenderer<Props extends NodeProps = NodeProps> = {
+    bivarianceHack(props: Props): React.ReactElement | null;
+  }["bivarianceHack"];
+
+  export type NodeTypes = Record<string, NodeRenderer>;
 
   export const Background: React.ComponentType<Record<string, unknown>>;
   export const Controls: React.ComponentType<Record<string, unknown>>;

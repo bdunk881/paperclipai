@@ -95,6 +95,8 @@ export async function handleLlm(
     provider: resolved.config.provider,
     model: tieredModel,
     apiKey: resolved.apiKey,
+    credentials: resolved.credentials,
+    options: resolved.config.providerOptions,
   });
 
   const response = await provider(renderedPrompt);
@@ -437,6 +439,8 @@ export async function handleAgent(
     provider: resolved.config.provider,
     model: resolved.config.model,
     apiKey: resolved.apiKey,
+    credentials: resolved.credentials,
+    options: resolved.config.providerOptions,
   });
 
   const bus = getBus(runId, step.id);

@@ -1,8 +1,27 @@
-import { createCipheriv, createDecipheriv, randomBytes, scryptSync } from "crypto";
-import { v4 as uuidv4 } from "uuid";
+import { CentralCredentialStore } from "../../integrations/shared/centralCredentialStore";
 
 export type GoogleWorkspaceAuthMethod = "oauth_pkce" | "api_key";
 export type GoogleWorkspaceCredentialStatus = "pending_validation" | "active" | "revoked";
+
+interface GoogleWorkspaceCredentialMetadata {
+  status: GoogleWorkspaceCredentialStatus;
+  lastValidatedAt: string | null;
+  tokenRefreshFailures: number;
+  clientId?: string;
+  redirectUri?: string;
+  scopesRequested?: string[];
+  scopesGranted?: string[];
+  accessTokenExpiresAt?: string | null;
+  apiKeyMasked?: string;
+}
+
+interface GoogleWorkspaceCredentialSecrets {
+  oauthClientSecret?: string;
+  accessToken?: string;
+  refreshToken?: string;
+  apiKey?: string;
+  webhookSigningSecret?: string;
+}
 
 export interface GoogleWorkspaceCredential {
   id: string;
@@ -18,13 +37,9 @@ export interface GoogleWorkspaceCredential {
   redirectUri?: string;
   scopesRequested?: string[];
   scopesGranted?: string[];
-  oauthClientSecretEncrypted?: string;
-  accessTokenEncrypted?: string;
-  refreshTokenEncrypted?: string;
   accessTokenExpiresAt?: string | null;
-  apiKeyEncrypted?: string;
   apiKeyMasked?: string;
-  webhookSigningSecretEncrypted?: string;
+  revokedAt?: string;
 }
 
 export interface GoogleWorkspaceCredentialDecrypted extends GoogleWorkspaceCredential {
@@ -35,68 +50,66 @@ export interface GoogleWorkspaceCredentialDecrypted extends GoogleWorkspaceCrede
   webhookSigningSecret?: string;
 }
 
-export type GoogleWorkspaceCredentialPublic = Omit<
-  GoogleWorkspaceCredential,
-  | "oauthClientSecretEncrypted"
-  | "accessTokenEncrypted"
-  | "refreshTokenEncrypted"
-  | "apiKeyEncrypted"
-  | "webhookSigningSecretEncrypted"
->;
+export type GoogleWorkspaceCredentialPublic = GoogleWorkspaceCredential;
 
-const ENCRYPTION_KEY: Buffer = (() => {
-  const envKey = process.env.CONNECTOR_CREDENTIALS_ENCRYPTION_KEY ?? process.env.LLM_CONFIG_ENCRYPTION_KEY;
-  if (envKey) return scryptSync(envKey, "autoflow-connectors-salt", 32) as Buffer;
-  return randomBytes(32);
-})();
+const store = new CentralCredentialStore<
+  GoogleWorkspaceCredentialMetadata,
+  GoogleWorkspaceCredentialSecrets
+>({
+  service: "google-workspace",
+});
 
-function encrypt(plaintext: string): string {
-  const iv = randomBytes(12);
-  const cipher = createCipheriv("aes-256-gcm", ENCRYPTION_KEY, iv);
-  const encrypted = Buffer.concat([cipher.update(plaintext, "utf8"), cipher.final()]);
-  const tag = cipher.getAuthTag();
-  return `${iv.toString("hex")}:${tag.toString("hex")}:${encrypted.toString("hex")}`;
+function maskSecret(secret: string): string {
+  return `****${secret.slice(-4)}`;
 }
 
-function decrypt(ciphertext: string): string {
-  const parts = ciphertext.split(":");
-  if (parts.length !== 3) throw new Error("Invalid ciphertext format");
-  const [ivHex, tagHex, dataHex] = parts;
-  const iv = Buffer.from(ivHex, "hex");
-  const tag = Buffer.from(tagHex, "hex");
-  const data = Buffer.from(dataHex, "hex");
-  const decipher = createDecipheriv("aes-256-gcm", ENCRYPTION_KEY, iv);
-  decipher.setAuthTag(tag);
-  return decipher.update(data).toString("utf8") + decipher.final("utf8");
-}
-
-const store = new Map<string, GoogleWorkspaceCredential>();
-
-function toPublic(credential: GoogleWorkspaceCredential): GoogleWorkspaceCredentialPublic {
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const {
-    oauthClientSecretEncrypted: _oauthSecret,
-    accessTokenEncrypted: _accessToken,
-    refreshTokenEncrypted: _refreshToken,
-    apiKeyEncrypted: _apiKey,
-    webhookSigningSecretEncrypted: _webhookSecret,
-    ...safe
-  } = credential;
-  return safe;
-}
-
-function toDecrypted(credential: GoogleWorkspaceCredential): GoogleWorkspaceCredentialDecrypted {
+function toPublic(record: {
+  id: string;
+  userId: string;
+  label: string;
+  authMethod: string;
+  createdAt: string;
+  updatedAt: string;
+  revokedAt?: string;
+  metadata: GoogleWorkspaceCredentialMetadata;
+}): GoogleWorkspaceCredentialPublic {
   return {
-    ...credential,
-    oauthClientSecret: credential.oauthClientSecretEncrypted
-      ? decrypt(credential.oauthClientSecretEncrypted)
-      : undefined,
-    accessToken: credential.accessTokenEncrypted ? decrypt(credential.accessTokenEncrypted) : undefined,
-    refreshToken: credential.refreshTokenEncrypted ? decrypt(credential.refreshTokenEncrypted) : undefined,
-    apiKey: credential.apiKeyEncrypted ? decrypt(credential.apiKeyEncrypted) : undefined,
-    webhookSigningSecret: credential.webhookSigningSecretEncrypted
-      ? decrypt(credential.webhookSigningSecretEncrypted)
-      : undefined,
+    id: record.id,
+    userId: record.userId,
+    label: record.label,
+    authMethod: record.authMethod as GoogleWorkspaceAuthMethod,
+    status: record.metadata.status,
+    createdAt: record.createdAt,
+    updatedAt: record.updatedAt,
+    lastValidatedAt: record.metadata.lastValidatedAt,
+    tokenRefreshFailures: record.metadata.tokenRefreshFailures,
+    clientId: record.metadata.clientId,
+    redirectUri: record.metadata.redirectUri,
+    scopesRequested: record.metadata.scopesRequested,
+    scopesGranted: record.metadata.scopesGranted,
+    accessTokenExpiresAt: record.metadata.accessTokenExpiresAt,
+    apiKeyMasked: record.metadata.apiKeyMasked,
+    revokedAt: record.revokedAt,
+  };
+}
+
+function toDecrypted(record: {
+  id: string;
+  userId: string;
+  label: string;
+  authMethod: string;
+  createdAt: string;
+  updatedAt: string;
+  revokedAt?: string;
+  metadata: GoogleWorkspaceCredentialMetadata;
+}, secrets: GoogleWorkspaceCredentialSecrets): GoogleWorkspaceCredentialDecrypted {
+  return {
+    ...toPublic(record),
+    oauthClientSecret: secrets.oauthClientSecret,
+    accessToken: secrets.accessToken,
+    refreshToken: secrets.refreshToken,
+    apiKey: secrets.apiKey,
+    webhookSigningSecret: secrets.webhookSigningSecret,
   };
 }
 
@@ -110,28 +123,25 @@ export const googleWorkspaceCredentialsStore = {
     scopesRequested: string[];
     webhookSigningSecret?: string;
   }): GoogleWorkspaceCredentialPublic {
-    const now = new Date().toISOString();
-    const entry: GoogleWorkspaceCredential = {
-      id: uuidv4(),
+    const record = store.create({
       userId: params.userId,
-      label: params.label,
       authMethod: "oauth_pkce",
-      status: "pending_validation",
-      createdAt: now,
-      updatedAt: now,
-      lastValidatedAt: null,
-      tokenRefreshFailures: 0,
-      clientId: params.clientId,
-      redirectUri: params.redirectUri,
-      scopesRequested: params.scopesRequested,
-      oauthClientSecretEncrypted: encrypt(params.clientSecret),
-      webhookSigningSecretEncrypted: params.webhookSigningSecret
-        ? encrypt(params.webhookSigningSecret)
-        : undefined,
-    };
+      label: params.label,
+      metadata: {
+        status: "pending_validation",
+        lastValidatedAt: null,
+        tokenRefreshFailures: 0,
+        clientId: params.clientId,
+        redirectUri: params.redirectUri,
+        scopesRequested: params.scopesRequested,
+      },
+      secrets: {
+        oauthClientSecret: params.clientSecret,
+        webhookSigningSecret: params.webhookSigningSecret,
+      },
+    });
 
-    store.set(entry.id, entry);
-    return toPublic(entry);
+    return toPublic(record);
   },
 
   createApiKey(params: {
@@ -140,63 +150,82 @@ export const googleWorkspaceCredentialsStore = {
     apiKey: string;
     webhookSigningSecret?: string;
   }): GoogleWorkspaceCredentialPublic {
-    const now = new Date().toISOString();
-    const entry: GoogleWorkspaceCredential = {
-      id: uuidv4(),
+    const record = store.create({
       userId: params.userId,
-      label: params.label,
       authMethod: "api_key",
-      status: "pending_validation",
-      createdAt: now,
-      updatedAt: now,
-      lastValidatedAt: null,
-      tokenRefreshFailures: 0,
-      apiKeyEncrypted: encrypt(params.apiKey),
-      apiKeyMasked: `****${params.apiKey.slice(-4)}`,
-      webhookSigningSecretEncrypted: params.webhookSigningSecret
-        ? encrypt(params.webhookSigningSecret)
-        : undefined,
-    };
+      label: params.label,
+      metadata: {
+        status: "pending_validation",
+        lastValidatedAt: null,
+        tokenRefreshFailures: 0,
+        apiKeyMasked: maskSecret(params.apiKey),
+      },
+      secrets: {
+        apiKey: params.apiKey,
+        webhookSigningSecret: params.webhookSigningSecret,
+      },
+    });
 
-    store.set(entry.id, entry);
-    return toPublic(entry);
+    return toPublic(record);
   },
 
   list(userId: string): GoogleWorkspaceCredentialPublic[] {
-    return Array.from(store.values())
-      .filter((entry) => entry.userId === userId)
-      .map(toPublic);
+    return store.listByUser(userId).map(toPublic);
   },
 
   get(id: string, userId: string): GoogleWorkspaceCredentialPublic | undefined {
-    const entry = store.get(id);
-    if (!entry || entry.userId !== userId) return undefined;
-    return toPublic(entry);
+    const record = store.getById(id);
+    if (!record || record.userId !== userId) {
+      return undefined;
+    }
+    return toPublic(record);
   },
 
   getAnyById(id: string): GoogleWorkspaceCredentialDecrypted | undefined {
-    const entry = store.get(id);
-    if (!entry || entry.status === "revoked") return undefined;
-    return toDecrypted(entry);
+    const decrypted = store.getDecrypted(id);
+    if (!decrypted || decrypted.record.metadata.status === "revoked") {
+      return undefined;
+    }
+    return toDecrypted(decrypted.record, decrypted.secrets);
   },
 
   getDecrypted(id: string, userId: string): GoogleWorkspaceCredentialDecrypted | undefined {
-    const entry = store.get(id);
-    if (!entry || entry.userId !== userId || entry.status === "revoked") return undefined;
-    return toDecrypted(entry);
+    const decrypted = store.getDecrypted(id);
+    if (
+      !decrypted ||
+      decrypted.record.userId !== userId ||
+      decrypted.record.metadata.status === "revoked"
+    ) {
+      return undefined;
+    }
+    return toDecrypted(decrypted.record, decrypted.secrets);
   },
 
   markValidated(id: string, userId: string): GoogleWorkspaceCredentialPublic | undefined {
-    const entry = store.get(id);
-    if (!entry || entry.userId !== userId || entry.status === "revoked") return undefined;
+    const updated = store.update(id, (existing, secrets) => {
+      if (existing.userId !== userId || existing.metadata.status === "revoked") {
+        return {};
+      }
 
-    const updated: GoogleWorkspaceCredential = {
-      ...entry,
-      status: "active",
-      updatedAt: new Date().toISOString(),
-      lastValidatedAt: new Date().toISOString(),
-    };
-    store.set(id, updated);
+      const now = new Date().toISOString();
+      return {
+        record: {
+          ...existing,
+          updatedAt: now,
+          metadata: {
+            ...existing.metadata,
+            status: "active",
+            lastValidatedAt: now,
+          },
+        },
+        secrets,
+      };
+    });
+
+    if (!updated || updated.userId !== userId || updated.metadata.status === "revoked") {
+      return undefined;
+    }
+
     return toPublic(updated);
   },
 
@@ -208,47 +237,91 @@ export const googleWorkspaceCredentialsStore = {
     expiresAt?: string | null;
     scopesGranted?: string[];
   }): GoogleWorkspaceCredentialPublic | undefined {
-    const entry = store.get(params.id);
-    if (!entry || entry.userId !== params.userId || entry.status === "revoked") return undefined;
+    const updated = store.update(params.id, (existing, secrets) => {
+      if (existing.userId !== params.userId || existing.metadata.status === "revoked") {
+        return {};
+      }
 
-    const updated: GoogleWorkspaceCredential = {
-      ...entry,
-      status: "active",
-      updatedAt: new Date().toISOString(),
-      lastValidatedAt: new Date().toISOString(),
-      tokenRefreshFailures: 0,
-      accessTokenEncrypted: encrypt(params.accessToken),
-      refreshTokenEncrypted: params.refreshToken ? encrypt(params.refreshToken) : entry.refreshTokenEncrypted,
-      accessTokenExpiresAt: params.expiresAt ?? null,
-      scopesGranted: params.scopesGranted ?? entry.scopesGranted ?? entry.scopesRequested,
-    };
-    store.set(params.id, updated);
+      const now = new Date().toISOString();
+      return {
+        record: {
+          ...existing,
+          updatedAt: now,
+          metadata: {
+            ...existing.metadata,
+            status: "active",
+            lastValidatedAt: now,
+            tokenRefreshFailures: 0,
+            accessTokenExpiresAt: params.expiresAt ?? null,
+            scopesGranted: params.scopesGranted ?? existing.metadata.scopesGranted ?? existing.metadata.scopesRequested,
+          },
+        },
+        secrets: {
+          ...secrets,
+          accessToken: params.accessToken,
+          refreshToken: params.refreshToken ?? secrets.refreshToken,
+        },
+      };
+    });
+
+    if (!updated || updated.userId !== params.userId || updated.metadata.status === "revoked") {
+      return undefined;
+    }
+
     return toPublic(updated);
   },
 
   recordTokenRefreshFailure(id: string, userId: string): GoogleWorkspaceCredentialPublic | undefined {
-    const entry = store.get(id);
-    if (!entry || entry.userId !== userId || entry.status === "revoked") return undefined;
+    const updated = store.update(id, (existing, secrets) => {
+      if (existing.userId !== userId || existing.metadata.status === "revoked") {
+        return {};
+      }
 
-    const updated: GoogleWorkspaceCredential = {
-      ...entry,
-      updatedAt: new Date().toISOString(),
-      tokenRefreshFailures: entry.tokenRefreshFailures + 1,
-    };
-    store.set(id, updated);
+      return {
+        record: {
+          ...existing,
+          updatedAt: new Date().toISOString(),
+          metadata: {
+            ...existing.metadata,
+            tokenRefreshFailures: existing.metadata.tokenRefreshFailures + 1,
+          },
+        },
+        secrets,
+      };
+    });
+
+    if (!updated || updated.userId !== userId || updated.metadata.status === "revoked") {
+      return undefined;
+    }
+
     return toPublic(updated);
   },
 
   revoke(id: string, userId: string): GoogleWorkspaceCredentialPublic | undefined {
-    const entry = store.get(id);
-    if (!entry || entry.userId !== userId) return undefined;
+    const updated = store.update(id, (existing, secrets) => {
+      if (existing.userId !== userId) {
+        return {};
+      }
 
-    const updated: GoogleWorkspaceCredential = {
-      ...entry,
-      status: "revoked",
-      updatedAt: new Date().toISOString(),
-    };
-    store.set(id, updated);
+      const now = new Date().toISOString();
+      return {
+        record: {
+          ...existing,
+          updatedAt: now,
+          revokedAt: now,
+          metadata: {
+            ...existing.metadata,
+            status: "revoked",
+          },
+        },
+        secrets,
+      };
+    });
+
+    if (!updated || updated.userId !== userId) {
+      return undefined;
+    }
+
     return toPublic(updated);
   },
 
@@ -259,22 +332,21 @@ export const googleWorkspaceCredentialsStore = {
     active: number;
     pendingValidation: number;
     revoked: number;
-    tokenRefreshFailures: number;
   } {
-    const entries = Array.from(store.values()).filter((entry) => entry.userId === userId);
-    const active = entries.filter((entry) => entry.status === "active").length;
-    const pendingValidation = entries.filter((entry) => entry.status === "pending_validation").length;
-    const revoked = entries.filter((entry) => entry.status === "revoked").length;
-    const tokenRefreshFailures = entries.reduce((acc, entry) => acc + entry.tokenRefreshFailures, 0);
+    const credentials = store.listByUser(userId);
+    const active = credentials.filter((entry) => entry.metadata.status === "active").length;
+    const pendingValidation = credentials.filter(
+      (entry) => entry.metadata.status === "pending_validation",
+    ).length;
+    const revoked = credentials.filter((entry) => entry.metadata.status === "revoked").length;
 
     return {
-      status: pendingValidation > 0 || revoked > 0 || tokenRefreshFailures > 0 ? "degraded" : "ok",
+      status: revoked > 0 ? "degraded" : "ok",
       connector: "google_workspace",
-      total: entries.length,
+      total: credentials.length,
       active,
       pendingValidation,
       revoked,
-      tokenRefreshFailures,
     };
   },
 

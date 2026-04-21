@@ -97,7 +97,7 @@ describe("handleLlm", () => {
       provider: "openai",
       label: "Test",
       model: "gpt-4o",
-      apiKey: "sk-test-1234-5678",
+      credentials: { apiKey: "sk-test-1234-5678" },
     });
     llmConfigStore.setDefault(cfg.id, TEST_USER);
   });
@@ -172,7 +172,7 @@ describe("handleLlm", () => {
       provider: "anthropic",
       label: "Specific",
       model: "claude-sonnet-4-6",
-      apiKey: "sk-ant-specific",
+      credentials: { apiKey: "sk-ant-specific" },
     });
 
     const step = makeStep({
@@ -185,7 +185,12 @@ describe("handleLlm", () => {
     await handleLlm(step, {}, TEST_USER);
 
     expect(getProvider).toHaveBeenCalledWith(
-      expect.objectContaining({ provider: "anthropic", model: "claude-sonnet-4-6" })
+      expect.objectContaining({
+        provider: "anthropic",
+        model: "claude-sonnet-4-6",
+        apiKey: "sk-ant-specific",
+        credentials: { apiKey: "sk-ant-specific" },
+      })
     );
   });
 

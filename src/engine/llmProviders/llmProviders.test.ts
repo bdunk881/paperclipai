@@ -111,7 +111,7 @@ describe("PROVIDER_MODELS", () => {
 
 describe("getProvider", () => {
   it("throws for an unknown provider", () => {
-    const badConfig = { provider: "cohere", model: "x", apiKey: "k" } as unknown as LLMProviderConfig;
+    const badConfig = { provider: "madeup-provider", model: "x", apiKey: "k" } as unknown as LLMProviderConfig;
     expect(() => getProvider(badConfig)).toThrow(/Unknown LLM provider/);
   });
 });
@@ -166,6 +166,38 @@ describe("OpenAI adapter", () => {
     await provider("Prompt");
     expect(openaiInstance().chat.completions.create).toHaveBeenCalledWith(
       expect.objectContaining({ model: "gpt-4o" })
+    );
+  });
+});
+
+describe("Azure OpenAI adapter", () => {
+  const config: LLMProviderConfig = {
+    provider: "azure-openai",
+    model: "gpt-4o",
+    credentials: { apiKey: "azure-test-key" },
+    options: {
+      endpoint: "https://example-resource.openai.azure.com/",
+      deployment: "gpt4o-prod",
+    },
+  };
+
+  it("uses providerOptions endpoint/deployment instead of overloading model", async () => {
+    const provider = getProvider(config);
+    openaiInstance().chat.completions.create.mockResolvedValueOnce({
+      choices: [{ message: { content: "Azure hello" } }],
+      usage: null,
+    });
+
+    await provider("Prompt");
+
+    expect(MockOpenAI.mock.calls[MockOpenAI.mock.calls.length - 1]?.[0]).toEqual(
+      expect.objectContaining({
+        apiKey: "azure-test-key",
+        baseURL: "https://example-resource.openai.azure.com/openai/deployments/gpt4o-prod",
+      })
+    );
+    expect(openaiInstance().chat.completions.create).toHaveBeenCalledWith(
+      expect.objectContaining({ model: "gpt4o-prod" })
     );
   });
 });

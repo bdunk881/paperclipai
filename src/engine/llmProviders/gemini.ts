@@ -2,7 +2,12 @@ import { GoogleGenerativeAI } from "@google/generative-ai";
 import { LLMProvider, LLMProviderConfig, LLMResponse } from "./types";
 
 export function createGeminiProvider(config: LLMProviderConfig): LLMProvider {
-  const genAI = new GoogleGenerativeAI(config.apiKey);
+  const apiKey = config.apiKey ?? config.credentials?.apiKey;
+  if (!apiKey) {
+    throw new Error(`Gemini API error: missing API key credentials for ${config.provider}`);
+  }
+
+  const genAI = new GoogleGenerativeAI(apiKey);
 
   return async (prompt: string): Promise<LLMResponse> => {
     let result;

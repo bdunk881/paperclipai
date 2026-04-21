@@ -1,0 +1,138 @@
+name: Deploy Backend to Azure Container Apps
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - "src/**"
+      - "package.json"
+      - "package-lock.json"
+      - "tsconfig.json"
+      - "docker/backend/Dockerfile"
+      - ".github/workflows/deploy-azure-backend.yml"
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Target environment
+        required: true
+        default: staging
+        type: choice
+        options: [staging, production]
+
+permissions:
+  contents: read
+  id-token: write
+  packages: write
+
+env:
+  ARM_CLIENT_ID: ${{ vars.ARM_CLIENT_ID }}
+  ARM_TENANT_ID: ${{ vars.ARM_TENANT_ID }}
+  ARM_SUBSCRIPTION_ID: ${{ vars.ARM_SUBSCRIPTION_ID }}
+  REGISTRY: ghcr.io
+
+jobs:
+  deploy:
+    name: Build and deploy backend
+    runs-on: ubuntu-latest
+    environment: ${{ github.event.inputs.environment || 'staging' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve target app
+        id: target
+        run: |
+          set -euo pipefail
+          DEPLOY_ENV="${{ github.event.inputs.environment || 'staging' }}"
+          if [ "$DEPLOY_ENV" = "production" ]; then
+            RG_NAME="rg-autoflow-production"
+            APP_NAME="ca-autoflow-production-backend"
+          else
+            RG_NAME="rg-autoflow-staging"
+            APP_NAME="ca-autoflow-staging-backend"
+          fi
+
+          IMAGE_NAME="${{ env.REGISTRY }}/${{ github.repository }}-backend:${{ github.sha }}"
+
+          echo "deploy_env=$DEPLOY_ENV" >> "$GITHUB_OUTPUT"
+          echo "resource_group=$RG_NAME" >> "$GITHUB_OUTPUT"
+          echo "app_name=$APP_NAME" >> "$GITHUB_OUTPUT"
+          echo "image_name=$IMAGE_NAME" >> "$GITHUB_OUTPUT"
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push backend image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: docker/backend/Dockerfile
+          push: true
+          tags: ${{ steps.target.outputs.image_name }}
+          cache-from: type=gha,scope=backend
+          cache-to: type=gha,mode=max,scope=backend
+
+      - name: Login to Azure (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ env.ARM_CLIENT_ID }}
+          tenant-id: ${{ env.ARM_TENANT_ID }}
+          subscription-id: ${{ env.ARM_SUBSCRIPTION_ID }}
+
+      - name: Verify container app exists
+        run: |
+          set -euo pipefail
+          az containerapp show \
+            --resource-group "${{ steps.target.outputs.resource_group }}" \
+            --name "${{ steps.target.outputs.app_name }}" \
+            --query "{name:name, provisioningState:properties.provisioningState, ingress:properties.configuration.ingress.targetPort}" \
+            -o json
+
+      - name: Validate required backend env wiring
+        run: |
+          set -euo pipefail
+          APP_JSON="$(az containerapp show --resource-group "${{ steps.target.outputs.resource_group }}" --name "${{ steps.target.outputs.app_name }}" -o json)"
+          echo "$APP_JSON" | jq -e '.properties.template.containers[0].env[] | select(.name == "DATABASE_URL")' >/dev/null
+          echo "$APP_JSON" | jq -e '.properties.template.containers[0].env[] | select(.name == "WORKFLOW_RUNTIME_PERSISTENCE_ENABLED" and .value == "1")' >/dev/null
+          echo "$APP_JSON" | jq -e '.properties.template.containers[0].env[] | select(.name == "LLM_CONFIG_ENCRYPTION_KEY")' >/dev/null
+          echo "$APP_JSON" | jq -e '.properties.template.containers[0].env[] | select(.name == "CONNECTOR_CREDENTIAL_ENCRYPTION_KEY")' >/dev/null
+          echo "$APP_JSON" | jq -e '.properties.template.containers[0].env[] | select(.name == "ALLOWED_ORIGINS" and .value == "https://app.helloautoflow.com")' >/dev/null
+
+      - name: Update backend image
+        run: |
+          set -euo pipefail
+          az containerapp update \
+            --resource-group "${{ steps.target.outputs.resource_group }}" \
+            --name "${{ steps.target.outputs.app_name }}" \
+            --image "${{ steps.target.outputs.image_name }}"
+
+      - name: Wait for ingress FQDN and healthy /health
+        run: |
+          set -euo pipefail
+          for i in $(seq 1 30); do
+            FQDN="$(az containerapp show \
+              --resource-group "${{ steps.target.outputs.resource_group }}" \
+              --name "${{ steps.target.outputs.app_name }}" \
+              --query 'properties.configuration.ingress.fqdn' -o tsv || true)"
+            if [ -n "$FQDN" ] && [ "$FQDN" != "null" ]; then
+              STATUS="$(curl -sS -o /tmp/backend-health.json -w '%{http_code}' "https://$FQDN/health" || true)"
+              if [ "$STATUS" = "200" ]; then
+                echo "Backend healthy at https://$FQDN/health"
+                cat /tmp/backend-health.json
+                exit 0
+              fi
+            fi
+            sleep 10
+          done
+
+          echo "Container app failed to report a healthy /health endpoint in time" >&2
+          az containerapp show \
+            --resource-group "${{ steps.target.outputs.resource_group }}" \
+            --name "${{ steps.target.outputs.app_name }}" \
+            -o json
+          exit 1

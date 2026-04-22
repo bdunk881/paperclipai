@@ -24,13 +24,23 @@ describe("SecuritySettings", () => {
     vi.unstubAllGlobals();
   });
 
-  it("shows the static empty-state message when no session endpoint is configured", () => {
-    const fetchMock = vi.fn();
+  it("shows placeholder session copy when no backend session endpoint is wired", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: false,
+        status: 500,
+        statusText: "Server Error",
+        json: async () => ({ error: "Session load failed" }),
+      });
     vi.stubGlobal("fetch", fetchMock);
 
     render(<SecuritySettings />);
 
     expect(screen.getByText("No active session data available")).toBeInTheDocument();
+    expect(
+      screen.getByText("This environment does not expose a backend session-management endpoint yet.")
+    ).toBeInTheDocument();
     expect(fetchMock).not.toHaveBeenCalled();
   });
 });

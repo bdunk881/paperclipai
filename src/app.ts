@@ -13,6 +13,7 @@ import { WORKFLOW_TEMPLATES, getTemplate, getTemplatesByCategory } from "./templ
 import { WorkflowTemplate, WorkflowStep } from "./types/workflow";
 import { workflowEngine } from "./engine/WorkflowEngine";
 import { startApprovalResumeCoordinator } from "./engine/approvalResumeCoordinator";
+import { startApprovalNotificationCoordinator } from "./engine/approvalNotificationCoordinator";
 import { runStore } from "./engine/runStore";
 import { approvalStore } from "./engine/approvalStore";
 import { approvalNotificationStore } from "./engine/approvalNotificationStore";
@@ -715,6 +716,10 @@ app.get("/health", async (_req, res) => {
 
 if (process.env.NODE_ENV !== "test" && process.env.AUTOFLOW_ENABLE_APPROVAL_RESUME_SWEEPER !== "false") {
   startApprovalResumeCoordinator();
+}
+
+if (process.env.NODE_ENV !== "test" && process.env.AUTOFLOW_ENABLE_APPROVAL_NOTIFICATION_SWEEPER !== "false") {
+  startApprovalNotificationCoordinator();
 }
 
 // Handle JSON parse errors from express.json() middleware

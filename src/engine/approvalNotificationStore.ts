@@ -139,6 +139,27 @@ export const approvalNotificationStore = {
     return result.rows.map(mapRowToNotification);
   },
 
+  async list(status?: ApprovalNotification["status"]): Promise<ApprovalNotification[]> {
+    if (!isPostgresPersistenceEnabled()) {
+      return Array.from(memoryStore.values())
+        .filter((notification) => (status ? notification.status === status : true))
+        .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime())
+        .map(cloneNotification);
+    }
+
+    const pool = getPostgresPool();
+    const result = await pool.query(
+      `
+        SELECT *
+        FROM approval_notifications
+        WHERE ($1::text IS NULL OR status = $1)
+        ORDER BY created_at ASC
+      `,
+      [status ?? null]
+    );
+    return result.rows.map(mapRowToNotification);
+  },
+
   async markSent(id: string): Promise<boolean> {
     const existing = await this.get(id);
     if (!existing) {
@@ -150,6 +171,22 @@ export const approvalNotificationStore = {
       status: "sent",
       sentAt: new Date().toISOString(),
       error: undefined,
+    };
+
+    await persistNotification(updated);
+    return true;
+  },
+
+  async markFailed(id: string, error: string): Promise<boolean> {
+    const existing = await this.get(id);
+    if (!existing) {
+      return false;
+    }
+
+    const updated: ApprovalNotification = {
+      ...existing,
+      status: "failed",
+      error,
     };
 
     await persistNotification(updated);

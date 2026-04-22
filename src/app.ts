@@ -675,14 +675,14 @@ app.get("/api/approvals/:id", requireAuth, async (req: AuthenticatedRequest, res
 
 /**
  * POST /api/approvals/:id/resolve
- * Body: { decision: "approved" | "rejected", comment?: string }
+ * Body: { decision: "approved" | "rejected" | "request_changes", comment?: string }
  * Resolves the approval request, resuming or terminating the paused run.
  */
 app.post("/api/approvals/:id/resolve", requireAuth, async (req: AuthenticatedRequest, res) => {
   const { decision, comment } = req.body as { decision?: string; comment?: string };
 
-  if (decision !== "approved" && decision !== "rejected") {
-    res.status(400).json({ error: "decision must be 'approved' or 'rejected'" });
+  if (decision !== "approved" && decision !== "rejected" && decision !== "request_changes") {
+    res.status(400).json({ error: "decision must be 'approved', 'rejected', or 'request_changes'" });
     return;
   }
 

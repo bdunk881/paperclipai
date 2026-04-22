@@ -98,7 +98,7 @@ describe("GET /api/approvals/:id", () => {
 // ---------------------------------------------------------------------------
 
 describe("POST /api/approvals/:id/resolve", () => {
-  it("returns 400 when decision is not approved or rejected", async () => {
+  it("returns 400 when decision is not approved, rejected, or request_changes", async () => {
     const { id } = await approvalStore.create({ runId: "r1", templateName: "T", stepId: "s1", stepName: "Step", assignee: "u1", message: "approve?", timeoutMinutes: 60 });
     const res = await request(app)
       .post(`/api/approvals/${id}/resolve`)
@@ -121,6 +121,15 @@ describe("POST /api/approvals/:id/resolve", () => {
     const res = await request(app)
       .post(`/api/approvals/${id}/resolve`)
       .send({ decision: "rejected", comment: "Not ready" });
+    expect(res.status).toBe(200);
+    expect(res.body.success).toBe(true);
+  });
+
+  it("resolves request_changes and returns success=true", async () => {
+    const { id } = await approvalStore.create({ runId: "r-request-changes", templateName: "T", stepId: "s5", stepName: "Step", assignee: "u1", message: "approve?", timeoutMinutes: 60 });
+    const res = await request(app)
+      .post(`/api/approvals/${id}/resolve`)
+      .send({ decision: "request_changes", comment: "Revise the previous step" });
     expect(res.status).toBe(200);
     expect(res.body.success).toBe(true);
   });

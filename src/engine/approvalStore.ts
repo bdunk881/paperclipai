@@ -18,10 +18,12 @@ export interface ApprovalRequest {
   message: string;
   timeoutMinutes: number;
   requestedAt: string;
-  status: "pending" | "approved" | "rejected" | "timed_out";
+  status: "pending" | "approved" | "rejected" | "request_changes" | "timed_out";
   resolvedAt?: string;
   comment?: string;
 }
+
+export type ApprovalDecision = Exclude<ApprovalRequest["status"], "pending">;
 
 interface PendingEntry {
   request: ApprovalRequest;
@@ -184,19 +186,23 @@ export const approvalStore = {
   async waitForDecision(
     id: string,
     pollIntervalMs = 1_000
-  ): Promise<{ approved: boolean; comment?: string }> {
+  ): Promise<{ decision: ApprovalDecision; comment?: string }> {
     while (true) {
       const request = await this.get(id);
       if (!request) {
-        return { approved: false };
+        return { decision: "timed_out" };
       }
 
       if (request.status === "approved") {
-        return { approved: true, comment: request.comment };
+        return { decision: "approved", comment: request.comment };
       }
 
-      if (request.status === "rejected" || request.status === "timed_out") {
-        return { approved: false, comment: request.comment };
+      if (
+        request.status === "rejected" ||
+        request.status === "request_changes" ||
+        request.status === "timed_out"
+      ) {
+        return { decision: request.status, comment: request.comment };
       }
 
       await new Promise((resolve) => setTimeout(resolve, pollIntervalMs));
@@ -205,7 +211,7 @@ export const approvalStore = {
 
   async resolve(
     id: string,
-    decision: "approved" | "rejected" | "timed_out",
+    decision: ApprovalDecision,
     comment?: string
   ): Promise<boolean> {
     const entry = store.get(id);

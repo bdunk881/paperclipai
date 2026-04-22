@@ -85,13 +85,28 @@ jobs:
           fi
           if [ "$DEPLOY_EXIT" -ne 0 ]; then
             echo "::warning::vercel deploy exited with code $DEPLOY_EXIT after returning $PREVIEW_URL; verifying deployment state."
-            set +e
-            INSPECT_OUTPUT="$(npx vercel inspect "$PREVIEW_URL" --token="$VERCEL_TOKEN" 2>&1)"
-            INSPECT_EXIT=$?
-            set -e
-            printf '%s\n' "$INSPECT_OUTPUT"
-            if [ "$INSPECT_EXIT" -ne 0 ] || ! printf '%s\n' "$INSPECT_OUTPUT" | grep -qi 'ready'; then
-              echo "::error::Vercel preview deploy exited non-zero and the deployment could not be verified as READY."
+            READY_VERIFIED=0
+            for attempt in $(seq 1 18); do
+              set +e
+              INSPECT_OUTPUT="$(npx vercel inspect "$PREVIEW_URL" --token="$VERCEL_TOKEN" 2>&1)"
+              INSPECT_EXIT=$?
+              set -e
+              printf '%s\n' "$INSPECT_OUTPUT"
+              if [ "$INSPECT_EXIT" -eq 0 ] && printf '%s\n' "$INSPECT_OUTPUT" | grep -qiE 'status[[:space:]]+.*ready'; then
+                READY_VERIFIED=1
+                break
+              fi
+              if [ "$INSPECT_EXIT" -eq 0 ] && printf '%s\n' "$INSPECT_OUTPUT" | grep -qiE 'status[[:space:]]+.*(error|failed|canceled)'; then
+                echo "::error::Vercel preview deployment entered a failed terminal state."
+                exit "$DEPLOY_EXIT"
+              fi
+              if [ "$attempt" -lt 18 ]; then
+                echo "Deployment not ready yet; retrying inspect ($attempt/18) in 10s."
+                sleep 10
+              fi
+            done
+            if [ "$READY_VERIFIED" -ne 1 ]; then
+              echo "::error::Vercel preview deploy exited non-zero and the deployment did not reach READY within 180 seconds."
               exit "$DEPLOY_EXIT"
             fi
             echo "::warning::Continuing because Vercel confirmed the preview deployment is READY despite a non-zero deploy exit."

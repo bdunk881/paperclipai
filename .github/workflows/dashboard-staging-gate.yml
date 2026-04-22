@@ -64,7 +64,7 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p dashboard/.vercel
-          npx vercel env pull dashboard/.vercel/.env.preview --environment=preview --yes --token="$VERCEL_TOKEN" >/dev/null
+          npx vercel env pull .vercel/.env.preview --cwd dashboard --environment=preview --yes --token="$VERCEL_TOKEN" >/dev/null
           for required in VITE_AZURE_CLIENT_ID VITE_AZURE_TENANT_SUBDOMAIN; do
             if ! grep -q "^${required}=" dashboard/.vercel/.env.preview; then
               echo "::error::Missing ${required} in Vercel preview environment"
@@ -76,8 +76,8 @@ jobs:
         id: deploy
         run: |
           set -euo pipefail
-          npx vercel pull --yes --environment=preview --token="$VERCEL_TOKEN"
-          PREVIEW_URL="$(npx vercel deploy --yes --token="$VERCEL_TOKEN" | tail -n 1 | tr -d '\r')"
+          npx vercel pull --cwd dashboard --yes --environment=preview --token="$VERCEL_TOKEN"
+          PREVIEW_URL="$(npx vercel deploy --cwd dashboard --yes --token="$VERCEL_TOKEN" | tail -n 1 | tr -d '\r')"
           if [ -z "$PREVIEW_URL" ]; then
             echo "::error::Vercel preview deploy did not return a URL"
             exit 1
@@ -154,7 +154,7 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p dashboard/.vercel
-          npx vercel env pull dashboard/.vercel/.env.production --environment=production --yes --token="$VERCEL_TOKEN" >/dev/null
+          npx vercel env pull .vercel/.env.production --cwd dashboard --environment=production --yes --token="$VERCEL_TOKEN" >/dev/null
           for required in VITE_AZURE_CLIENT_ID VITE_AZURE_TENANT_SUBDOMAIN; do
             if ! grep -q "^${required}=" dashboard/.vercel/.env.production; then
               echo "::error::Missing ${required} in Vercel production environment"
@@ -165,6 +165,6 @@ jobs:
       - name: Deploy production
         run: |
           set -euo pipefail
-          npx vercel pull --yes --environment=production --token="$VERCEL_TOKEN"
-          PROD_URL="$(npx vercel deploy --prod --yes --token="$VERCEL_TOKEN" | tail -n 1 | tr -d '\r')"
+          npx vercel pull --cwd dashboard --yes --environment=production --token="$VERCEL_TOKEN"
+          PROD_URL="$(npx vercel deploy --cwd dashboard --prod --yes --token="$VERCEL_TOKEN" | tail -n 1 | tr -d '\r')"
           echo "Production URL: $PROD_URL"

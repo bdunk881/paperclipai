@@ -1,3 +1,4 @@
+import type { ComponentType, ReactNode } from "react";
 import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
@@ -10,7 +11,32 @@ vi.mock("@xyflow/react", () => ({
   Handle: () => null,
   MarkerType: { ArrowClosed: "arrowclosed" },
   Position: { Top: "top", Bottom: "bottom", Left: "left", Right: "right" },
-  ReactFlow: ({ children }: { children?: React.ReactNode }) => <div data-testid="react-flow">{children}</div>,
+  ReactFlow: ({
+    children,
+    nodes = [],
+    nodeTypes = {},
+  }: {
+    children?: ReactNode;
+    nodes?: Array<{ id: string; type?: string; data?: unknown; selected?: boolean; dragging?: boolean }>;
+    nodeTypes?: Record<string, ComponentType<Record<string, unknown>>>;
+  }) => (
+    <div data-testid="react-flow">
+      {nodes.map((node) => {
+        const NodeComponent = node.type ? nodeTypes[node.type] : undefined;
+        if (!NodeComponent) return null;
+        return (
+          <NodeComponent
+            key={node.id}
+            id={node.id}
+            data={node.data}
+            selected={Boolean(node.selected)}
+            dragging={Boolean(node.dragging)}
+          />
+        );
+      })}
+      {children}
+    </div>
+  ),
 }));
 
 vi.mock("../api/client", () => ({
@@ -60,5 +86,26 @@ describe("WorkflowBuilder", () => {
     fireEvent.click(screen.getByRole("button", { name: /^action$/i }));
 
     expect(await screen.findByText("Output steps cannot connect to another step.")).toBeInTheDocument();
+  });
+
+  it("renders a newly added agent step inside the React Flow canvas", async () => {
+    render(
+      <MemoryRouter initialEntries={["/builder"]}>
+        <Routes>
+          <Route path="/builder" element={<WorkflowBuilder />} />
+        </Routes>
+      </MemoryRouter>
+    );
+
+    expect(await screen.findByText("Start building your workflow")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /node palette/i }));
+    fireEvent.click(screen.getByRole("button", { name: /^agent$/i }));
+
+    expect(await screen.findByTestId("react-flow")).toBeInTheDocument();
+    expect(screen.getByText("Agent Step")).toBeInTheDocument();
+    expect(screen.getByText("Step Properties")).toBeInTheDocument();
+    expect(screen.getByText("Model")).toBeInTheDocument();
+    expect(screen.getByPlaceholderText(/claude-sonnet-4-6/i)).toBeInTheDocument();
   });
 });

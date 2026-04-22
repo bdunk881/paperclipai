@@ -11,6 +11,7 @@ import { randomUUID } from "crypto";
 export interface ApprovalRequest {
   id: string;
   runId: string;
+  templateId: string;
   templateName: string;
   stepId: string;
   stepName: string;
@@ -38,6 +39,7 @@ export const approvalStore = {
    */
   create(params: {
     runId: string;
+    templateId: string;
     templateName: string;
     stepId: string;
     stepName: string;
@@ -50,6 +52,7 @@ export const approvalStore = {
     const request: ApprovalRequest = {
       id,
       runId: params.runId,
+      templateId: params.templateId,
       templateName: params.templateName,
       stepId: params.stepId,
       stepName: params.stepName,

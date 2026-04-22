@@ -33,9 +33,16 @@ export interface CreateLLMConfigInput {
   apiKey: string;
 }
 
-function buildAuthHeaders(accessToken?: string): HeadersInit | undefined {
-  if (!accessToken) return undefined;
-  return { Authorization: `Bearer ${accessToken}` };
+function buildAuthHeaders(
+  accessToken?: string,
+  headers?: HeadersInit
+): HeadersInit | undefined {
+  if (!accessToken && !headers) return undefined;
+  const resolvedHeaders = new Headers(headers);
+  if (accessToken) {
+    resolvedHeaders.set("Authorization", `Bearer ${accessToken}`);
+  }
+  return resolvedHeaders;
 }
 
 // ---------------------------------------------------------------------------
@@ -53,10 +60,13 @@ export async function listLLMConfigs(accessToken?: string): Promise<LLMConfig[]>
 }
 
 /** POST /api/llm-configs */
-export async function createLLMConfig(input: CreateLLMConfigInput): Promise<LLMConfig> {
+export async function createLLMConfig(
+  input: CreateLLMConfigInput,
+  accessToken?: string
+): Promise<LLMConfig> {
   const res = await fetch(`${BASE}/llm-configs`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: buildAuthHeaders(accessToken, { "Content-Type": "application/json" }),
     body: JSON.stringify(input),
   });
   if (!res.ok) {
@@ -67,18 +77,20 @@ export async function createLLMConfig(input: CreateLLMConfigInput): Promise<LLMC
 }
 
 /** PATCH /api/llm-configs/:id/default */
-export async function setDefaultLLMConfig(id: string): Promise<LLMConfig> {
+export async function setDefaultLLMConfig(id: string, accessToken?: string): Promise<LLMConfig> {
   const res = await fetch(`${BASE}/llm-configs/${encodeURIComponent(id)}/default`, {
     method: "PATCH",
+    headers: buildAuthHeaders(accessToken),
   });
   if (!res.ok) throw new Error(`Failed to set default: ${res.status}`);
   return res.json() as Promise<LLMConfig>;
 }
 
 /** DELETE /api/llm-configs/:id */
-export async function deleteLLMConfig(id: string): Promise<void> {
+export async function deleteLLMConfig(id: string, accessToken?: string): Promise<void> {
   const res = await fetch(`${BASE}/llm-configs/${encodeURIComponent(id)}`, {
     method: "DELETE",
+    headers: buildAuthHeaders(accessToken),
   });
   if (!res.ok) throw new Error(`Failed to delete LLM config: ${res.status}`);
 }
@@ -142,8 +154,10 @@ export async function listRuns(templateId?: string, accessToken?: string): Promi
 }
 
 /** GET /api/runs/:id */
-export async function getRun(id: string): Promise<WorkflowRun> {
-  const res = await fetch(`${BASE}/runs/${encodeURIComponent(id)}`);
+export async function getRun(id: string, accessToken?: string): Promise<WorkflowRun> {
+  const res = await fetch(`${BASE}/runs/${encodeURIComponent(id)}`, {
+    headers: buildAuthHeaders(accessToken),
+  });
   if (!res.ok) throw new Error(`Run not found: ${id}`);
   return res.json() as Promise<WorkflowRun>;
 }
@@ -152,11 +166,12 @@ export async function getRun(id: string): Promise<WorkflowRun> {
 export async function startRun(
   templateId: string,
   input: Record<string, unknown>,
-  config?: Record<string, unknown>
+  config?: Record<string, unknown>,
+  accessToken?: string
 ): Promise<WorkflowRun> {
   const res = await fetch(`${BASE}/runs`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: buildAuthHeaders(accessToken, { "Content-Type": "application/json" }),
     body: JSON.stringify({ templateId, input, config }),
   });
   if (!res.ok) {
@@ -169,11 +184,12 @@ export async function startRun(
 /** POST /api/workflows/generate — NL description → workflow steps */
 export async function generateWorkflow(
   description: string,
-  llmConfigId?: string
+  llmConfigId?: string,
+  accessToken?: string
 ): Promise<WorkflowStep[]> {
   const res = await fetch(`${BASE}/workflows/generate`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: buildAuthHeaders(accessToken, { "Content-Type": "application/json" }),
     body: JSON.stringify({ description, llmConfigId }),
   });
   if (!res.ok) {
@@ -193,16 +209,20 @@ export async function generateWorkflow(
 export async function startRunWithFile(
   templateId: string,
   file: File,
-  userId?: string
+  userId?: string,
+  accessToken?: string
 ): Promise<WorkflowRun> {
   const form = new FormData();
   form.append("templateId", templateId);
   form.append("file", file);
 
-  const headers: Record<string, string> = {};
-  if (userId) headers["X-User-Id"] = userId;
-
-  const res = await fetch(`${BASE}/runs/file`, { method: "POST", headers, body: form });
+  const headers = new Headers();
+  if (userId) headers.set("X-User-Id", userId);
+  const res = await fetch(`${BASE}/runs/file`, {
+    method: "POST",
+    headers: buildAuthHeaders(accessToken, headers),
+    body: form,
+  });
   if (!res.ok) {
     const err = await res.json().catch(() => null);
     throw new Error(err?.error ?? `Failed to start file run: ${res.status}`);

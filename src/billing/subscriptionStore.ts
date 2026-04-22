@@ -7,6 +7,32 @@
 export type SubscriptionTier = "explore" | "flow" | "automate" | "scale";
 export type AccessLevel = "trial" | "active" | "past_due" | "cancelled" | "none";
 
+function configuredPriceIds(): { flow: string[]; automate: string[]; scale: string[] } {
+  const collect = (...values: Array<string | undefined>): string[] =>
+    values
+      .filter((value): value is string => typeof value === "string" && value.trim().length > 0)
+      .map((value) => value.trim());
+
+  return {
+    flow: collect(
+      process.env.STRIPE_FLOW_PRICE_ID,
+      process.env.STRIPE_PRICE_FLOW,
+      process.env.STRIPE_PRICE_STARTER,
+    ),
+    automate: collect(
+      process.env.STRIPE_AUTOMATE_PRICE_ID,
+      process.env.STRIPE_PRICE_AUTOMATE,
+      process.env.STRIPE_PRICE_PROFESSIONAL,
+      process.env.STRIPE_PRICE_PRO,
+    ),
+    scale: collect(
+      process.env.STRIPE_SCALE_PRICE_ID,
+      process.env.STRIPE_PRICE_SCALE,
+      process.env.STRIPE_PRICE_ENTERPRISE,
+    ),
+  };
+}
+
 export interface Subscription {
   id: string;
   stripeSubscriptionId: string;
@@ -64,9 +90,10 @@ export function resolveTier(metadata?: Record<string, string>, priceId?: string)
   }
   // Fallback: match against known price env vars
   if (priceId) {
-    if (priceId === process.env.STRIPE_SCALE_PRICE_ID) return "scale";
-    if (priceId === process.env.STRIPE_AUTOMATE_PRICE_ID) return "automate";
-    if (priceId === process.env.STRIPE_FLOW_PRICE_ID) return "flow";
+    const prices = configuredPriceIds();
+    if (prices.scale.includes(priceId)) return "scale";
+    if (prices.automate.includes(priceId)) return "automate";
+    if (prices.flow.includes(priceId)) return "flow";
   }
   return "explore";
 }

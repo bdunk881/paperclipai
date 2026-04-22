@@ -59,7 +59,6 @@ async function persistImportedTemplate(
     ]
   );
 }
-
 export function listImportedTemplates(): WorkflowTemplate[] {
   return Array.from(importedTemplates.values());
 }
@@ -78,7 +77,6 @@ export async function listImportedTemplatesAsync(): Promise<WorkflowTemplate[]> 
     .map(mapPersistedImportedTemplate)
     .filter((template: WorkflowTemplate | undefined): template is WorkflowTemplate => Boolean(template));
 }
-
 export function getImportedTemplate(id: string): WorkflowTemplate | undefined {
   return importedTemplates.get(id);
 }

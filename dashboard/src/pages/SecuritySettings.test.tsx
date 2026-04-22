@@ -24,20 +24,13 @@ describe("SecuritySettings", () => {
     vi.unstubAllGlobals();
   });
 
-  it("shows session loading error when backend call fails", async () => {
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValueOnce({
-        ok: false,
-        status: 500,
-        statusText: "Server Error",
-        json: async () => ({ error: "Session load failed" }),
-      });
+  it("shows the static empty-state message when no session endpoint is configured", () => {
+    const fetchMock = vi.fn();
     vi.stubGlobal("fetch", fetchMock);
 
     render(<SecuritySettings />);
 
-    expect(await screen.findByText("Session load failed")).toBeInTheDocument();
-    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(screen.getByText("No active session data available")).toBeInTheDocument();
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 });

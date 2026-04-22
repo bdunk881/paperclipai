@@ -1,20 +1,13 @@
 import { approvalNotificationStore, ApprovalNotification } from "./approvalNotificationStore";
+import { buildApprovalNotificationSenders } from "./approvalNotificationSenders";
 
 type NotificationSender = (notification: ApprovalNotification) => Promise<void>;
 
 const activeDeliveries = new Set<string>();
 let deliverySweepTimer: ReturnType<typeof setInterval> | undefined;
 
-const senders: Record<ApprovalNotification["channel"], NotificationSender> = {
-  inbox: async () => {
-    return;
-  },
-  email: async (notification) => {
-    console.log(
-      `[approval-notifications] delivered email notification ${notification.id} to ${notification.recipient}`
-    );
-  },
-};
+const senders: Record<ApprovalNotification["channel"], NotificationSender> =
+  buildApprovalNotificationSenders();
 
 export function setApprovalNotificationSender(
   channel: ApprovalNotification["channel"],
@@ -24,14 +17,9 @@ export function setApprovalNotificationSender(
 }
 
 export function resetApprovalNotificationSenders(): void {
-  senders.inbox = async () => {
-    return;
-  };
-  senders.email = async (notification) => {
-    console.log(
-      `[approval-notifications] delivered email notification ${notification.id} to ${notification.recipient}`
-    );
-  };
+  const defaults = buildApprovalNotificationSenders();
+  senders.inbox = defaults.inbox;
+  senders.email = defaults.email;
 }
 
 export async function runApprovalNotificationSweep(): Promise<{

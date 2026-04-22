@@ -1,46 +1,50 @@
-import { render, screen } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { describe, expect, it } from "vitest";
 import SecuritySettings from "./SecuritySettings";
 
-const mockedAuthContext = {
-  user: { id: "test-user", email: "test@example.com", name: "Test User" },
-  login: vi.fn(),
-  logout: vi.fn(),
-  getAccessToken: vi.fn(),
-};
-
-vi.mock("../context/AuthContext", async () => {
-  const actual = await vi.importActual<typeof import("../context/AuthContext")>(
-    "../context/AuthContext"
-  );
-  return {
-    ...actual,
-    useAuth: () => mockedAuthContext,
-  };
-});
-
 describe("SecuritySettings", () => {
-  afterEach(() => {
-    vi.unstubAllGlobals();
-  });
-
-  it("shows placeholder session copy when no backend session endpoint is wired", async () => {
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValueOnce({
-        ok: false,
-        status: 500,
-        statusText: "Server Error",
-        json: async () => ({ error: "Session load failed" }),
-      });
-    vi.stubGlobal("fetch", fetchMock);
-
+  it("renders placeholder copy when backend session management is unavailable", () => {
     render(<SecuritySettings />);
 
+    expect(
+      screen.getByText(
+        "Password management is not connected to a backend endpoint in this environment yet."
+      )
+    ).toBeInTheDocument();
     expect(screen.getByText("No active session data available")).toBeInTheDocument();
     expect(
       screen.getByText("This environment does not expose a backend session-management endpoint yet.")
     ).toBeInTheDocument();
-    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("renders password form controls", () => {
+    render(<SecuritySettings />);
+
+    expect(screen.getByText("Current Password")).toBeInTheDocument();
+    expect(screen.getByText("New Password")).toBeInTheDocument();
+    expect(screen.getByText("Confirm New Password")).toBeInTheDocument();
+    expect(screen.getByText("Update password")).toBeInTheDocument();
+  });
+
+  it("shows the backend placeholder error when submitting the password form", async () => {
+    render(<SecuritySettings />);
+
+    fireEvent.click(screen.getByText("Update password"));
+
+    await waitFor(() => {
+      expect(
+        screen.getByText(
+          "Password updates are not available yet because no backend security endpoint is configured."
+        )
+      ).toBeInTheDocument();
+    });
+  });
+
+  it("renders the section headings and description", () => {
+    render(<SecuritySettings />);
+
+    expect(screen.getByText("Security")).toBeInTheDocument();
+    expect(screen.getByText("Manage your password and active sessions.")).toBeInTheDocument();
+    expect(screen.getByText("Active Sessions")).toBeInTheDocument();
   });
 });

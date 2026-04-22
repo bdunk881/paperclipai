@@ -25,6 +25,7 @@ import {
   AlertCircle,
 } from "lucide-react";
 import { getTemplate, listTemplates, startRun, startRunWithFile, listLLMConfigs, generateWorkflow, type TemplateSummary, type LLMConfig } from "../api/client";
+import { useAuth } from "../context/AuthContext";
 import type { WorkflowStep, StepKind, WorkflowTemplate } from "../types/workflow";
 import clsx from "clsx";
 
@@ -109,6 +110,7 @@ const BLANK_TEMPLATE: WorkflowTemplate = {
 export default function WorkflowBuilder() {
   const { templateId } = useParams<{ templateId?: string }>();
   const navigate = useNavigate();
+  const { getAccessToken } = useAuth();
 
   const [template, setTemplate] = useState<WorkflowTemplate>(BLANK_TEMPLATE);
   const [loading, setLoading] = useState(!!templateId);
@@ -145,11 +147,18 @@ export default function WorkflowBuilder() {
     if (!isLlmStep) return;
     setLlmConfigsLoading(true);
     setLlmConfigsError(null);
-    listLLMConfigs()
-      .then(setLlmConfigs)
-      .catch((e) => setLlmConfigsError(e instanceof Error ? e.message : "Failed to load providers"))
-      .finally(() => setLlmConfigsLoading(false));
-  }, [isLlmStep]);
+    void (async () => {
+      try {
+        const accessToken = (await getAccessToken()) ?? undefined;
+        const configs = await listLLMConfigs(accessToken);
+        setLlmConfigs(configs);
+      } catch (e) {
+        setLlmConfigsError(e instanceof Error ? e.message : "Failed to load providers");
+      } finally {
+        setLlmConfigsLoading(false);
+      }
+    })();
+  }, [getAccessToken, isLlmStep]);
 
   function addStep(kind: StepKind) {
     const newStep: WorkflowStep = {
@@ -199,7 +208,8 @@ export default function WorkflowBuilder() {
     }
     setRunError(null);
     try {
-      await startRun(template.id, template.sampleInput);
+      const accessToken = (await getAccessToken()) ?? undefined;
+      await startRun(template.id, template.sampleInput, undefined, accessToken);
       navigate("/monitor");
     } catch (e) {
       setRunError(e instanceof Error ? e.message : "Failed to start run");
@@ -594,6 +604,7 @@ export default function WorkflowBuilder() {
         <FileUploadModal
           templateId={template.id}
           acceptedFileTypes={fileTriggerStep?.acceptedFileTypes ?? []}
+          getAccessToken={getAccessToken}
           onClose={() => setShowFileUploadModal(false)}
           onStarted={() => {
             setShowFileUploadModal(false);
@@ -605,6 +616,7 @@ export default function WorkflowBuilder() {
       {/* NL Workflow Generation Modal */}
       {showNLModal && (
         <NLWorkflowModal
+          getAccessToken={getAccessToken}
           onClose={() => setShowNLModal(false)}
           onApply={(steps) => {
             setTemplate((t) => ({ ...t, steps }));
@@ -617,9 +629,11 @@ export default function WorkflowBuilder() {
 }
 
 function NLWorkflowModal({
+  getAccessToken,
   onClose,
   onApply,
 }: {
+  getAccessToken: () => Promise<string | null>;
   onClose: () => void;
   onApply: (steps: WorkflowStep[]) => void;
 }) {
@@ -633,7 +647,8 @@ function NLWorkflowModal({
     setGenerating(true);
     setGenerateError(null);
     try {
-      const steps = await generateWorkflow(prompt.trim());
+      const accessToken = (await getAccessToken()) ?? undefined;
+      const steps = await generateWorkflow(prompt.trim(), undefined, accessToken);
       setPreview(steps);
     } catch (e) {
       setGenerateError(e instanceof Error ? e.message : "Generation failed");
@@ -1002,11 +1017,13 @@ type UploadState = "idle" | "uploading" | "done" | "error";
 function FileUploadModal({
   templateId,
   acceptedFileTypes,
+  getAccessToken,
   onClose,
   onStarted,
 }: {
   templateId: string;
   acceptedFileTypes: string[];
+  getAccessToken: () => Promise<string | null>;
   onClose: () => void;
   onStarted: () => void;
 }) {
@@ -1029,7 +1046,8 @@ function FileUploadModal({
     setState("uploading");
     setErrorMsg(null);
     try {
-      await startRunWithFile(templateId, file);
+      const accessToken = (await getAccessToken()) ?? undefined;
+      await startRunWithFile(templateId, file, undefined, accessToken);
       setState("done");
       setTimeout(onStarted, 800);
     } catch (e) {

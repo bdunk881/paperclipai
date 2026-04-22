@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo, Fragment } from "react";
 import { ChevronLeft, ChevronRight, Search, Filter, X } from "lucide-react";
 import { listRuns, listTemplates, type TemplateSummary } from "../api/client";
 import { StatusBadge } from "../components/StatusBadge";
+import { useAuth } from "../context/AuthContext";
 import type { WorkflowRun } from "../types/workflow";
 import clsx from "clsx";
 
@@ -13,6 +14,7 @@ type SortDir = "asc" | "desc";
 const ALL_STATUSES = ["pending", "running", "completed", "failed", "escalated"] as const;
 
 export default function RunHistory() {
+  const { getAccessToken } = useAuth();
   const [allRuns, setAllRuns] = useState<WorkflowRun[]>([]);
   const [templates, setTemplates] = useState<TemplateSummary[]>([]);
   const [search, setSearch] = useState("");
@@ -22,9 +24,12 @@ export default function RunHistory() {
   const [dateTo, setDateTo] = useState("");
 
   useEffect(() => {
-    listRuns().then(setAllRuns).catch(console.error);
+    void (async () => {
+      const accessToken = (await getAccessToken()) ?? undefined;
+      listRuns(undefined, accessToken).then(setAllRuns).catch(console.error);
+    })();
     listTemplates().then(setTemplates).catch(console.error);
-  }, []);
+  }, [getAccessToken]);
   const [sort, setSort] = useState<{ field: SortField; dir: SortDir }>({
     field: "startedAt",
     dir: "desc",

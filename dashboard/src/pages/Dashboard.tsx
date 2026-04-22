@@ -10,16 +10,21 @@ import {
 } from "lucide-react";
 import { listRuns, listTemplates, type TemplateSummary } from "../api/client";
 import { StatusBadge } from "../components/StatusBadge";
+import { useAuth } from "../context/AuthContext";
 import type { WorkflowRun } from "../types/workflow";
 
 export default function Dashboard() {
+  const { getAccessToken } = useAuth();
   const [runs, setRuns] = useState<WorkflowRun[]>([]);
   const [templates, setTemplates] = useState<TemplateSummary[]>([]);
 
   useEffect(() => {
-    listRuns().then(setRuns).catch(console.error);
+    void (async () => {
+      const accessToken = (await getAccessToken()) ?? undefined;
+      listRuns(undefined, accessToken).then(setRuns).catch(console.error);
+    })();
     listTemplates().then(setTemplates).catch(console.error);
-  }, []);
+  }, [getAccessToken]);
 
   const stats = {
     total: runs.length,

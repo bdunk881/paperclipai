@@ -17,19 +17,22 @@ import {
 } from "lucide-react";
 import { listRuns, debugStep } from "../api/client";
 import { StatusBadge } from "../components/StatusBadge";
+import { useAuth } from "../context/AuthContext";
 import type { WorkflowRun, StepResult, AgentSlotResult } from "../types/workflow";
 import clsx from "clsx";
 
 const POLL_INTERVAL_MS = 3000;
 
 export default function RunMonitor() {
+  const { getAccessToken } = useAuth();
   const [runs, setRuns] = useState<WorkflowRun[]>([]);
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
   const [lastRefreshed, setLastRefreshed] = useState(new Date());
 
   async function fetchRuns() {
     try {
-      const fetched = [...(await listRuns())].sort(
+      const accessToken = (await getAccessToken()) ?? undefined;
+      const fetched = [...(await listRuns(undefined, accessToken))].sort(
         (a, b) => new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime()
       );
       setRuns(fetched);
@@ -46,10 +49,12 @@ export default function RunMonitor() {
   }
 
   useEffect(() => {
-    fetchRuns();
-    const id = setInterval(fetchRuns, POLL_INTERVAL_MS);
+    void fetchRuns();
+    const id = setInterval(() => {
+      void fetchRuns();
+    }, POLL_INTERVAL_MS);
     return () => clearInterval(id);
-  }, []);
+  }, [getAccessToken]);
 
   function toggleExpand(id: string) {
     setExpandedIds((prev) => {
@@ -60,7 +65,7 @@ export default function RunMonitor() {
   }
 
   function handleRefresh() {
-    fetchRuns();
+    void fetchRuns();
   }
 
   const activeRuns = runs.filter(

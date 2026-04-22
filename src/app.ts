@@ -751,6 +751,39 @@ app.get("/api/executions/:id/state", requireAuth, async (req, res) => {
   });
 });
 
+/**
+ * POST /api/executions/:id/resume
+ * Manually resumes a paused execution after its approval decision has already
+ * been persisted and the original live worker is gone.
+ */
+app.post("/api/executions/:id/resume", requireAuth, async (req: AuthenticatedRequest, res) => {
+  const run = await runStore.get(req.params.id);
+  if (!run) {
+    res.status(404).json({ error: `Execution not found: ${req.params.id}` });
+    return;
+  }
+
+  if (run.status !== "awaiting_approval") {
+    res.status(409).json({ error: "Execution is not currently paused at an approval step" });
+    return;
+  }
+
+  let template;
+  try {
+    template = getTemplate(run.templateId);
+  } catch (error) {
+    res.status(404).json({ error: String(error) });
+    return;
+  }
+
+  try {
+    const resumed = await workflowEngine.resumeRun(run.id, template, req.auth?.sub);
+    res.status(202).json(resumed);
+  } catch (error) {
+    res.status(409).json({ error: String(error) });
+  }
+});
+
 // ---------------------------------------------------------------------------
 // Health check
 // ---------------------------------------------------------------------------

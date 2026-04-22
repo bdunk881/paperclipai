@@ -280,6 +280,150 @@ describe("GET /api/executions/:id/state", () => {
   });
 });
 
+describe("POST /api/executions/:id/resume", () => {
+  it("resumes a paused execution after the approval is already resolved", async () => {
+    const waitSpy = jest.spyOn(approvalStore, "waitForDecision").mockImplementation(
+      async () => await new Promise(() => {})
+    );
+    const workflowEngineModule = await import("./engine/WorkflowEngine");
+
+    const template = {
+      id: "tpl-manual-resume",
+      name: "Manual resume",
+      description: "Resume after a lost live worker",
+      category: "custom" as const,
+      version: "1",
+      configFields: [],
+      steps: [
+        {
+          id: "trigger-1",
+          name: "Trigger",
+          kind: "trigger" as const,
+          description: "Start",
+          inputKeys: ["message"],
+          outputKeys: ["message"],
+        },
+        {
+          id: "approval-1",
+          name: "Approval checkpoint",
+          kind: "approval" as const,
+          description: "Pause",
+          inputKeys: ["message"],
+          outputKeys: ["approved"],
+          approvalAssignee: "manager",
+          approvalMessage: "Please approve",
+          approvalTimeoutMinutes: 5,
+        },
+        {
+          id: "output-1",
+          name: "Output",
+          kind: "output" as const,
+          description: "Finish",
+          inputKeys: ["message", "approvalDecision", "approverComment"],
+          outputKeys: ["message", "approvalDecision", "approverComment"],
+        },
+      ],
+      sampleInput: { message: "hello" },
+      expectedOutput: { message: "hello" },
+    };
+    const templatesModule = await import("./templates");
+    templatesModule.TEMPLATE_MAP[template.id] = template;
+
+    const run = await workflowEngineModule.workflowEngine.startRun(template, {
+      message: "hello",
+    });
+
+    const deadline = Date.now() + 2000;
+    let pendingApprovalId: string | undefined;
+    while (Date.now() < deadline) {
+      const state = await runStore.get(run.id);
+      const pendingApprovals = await approvalStore.list("pending");
+      const pending = pendingApprovals.find((approval) => approval.runId === run.id);
+      if (state?.status === "awaiting_approval" && pending) {
+        pendingApprovalId = pending.id;
+        break;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
+
+    expect(pendingApprovalId).toBeDefined();
+    await approvalStore.resolve(pendingApprovalId!, "approved", "resume now");
+
+    const res = await request(app).post(`/api/executions/${run.id}/resume`).send({});
+    expect(res.status).toBe(202);
+
+    let completed;
+    while (Date.now() < deadline) {
+      completed = await runStore.get(run.id);
+      if (completed?.status === "completed") {
+        break;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
+
+    expect(completed?.status).toBe("completed");
+    expect(completed?.output).toMatchObject({
+      message: "hello",
+      approvalDecision: "approved",
+      approverComment: "resume now",
+    });
+    waitSpy.mockRestore();
+    delete templatesModule.TEMPLATE_MAP[template.id];
+  });
+
+  it("returns 409 when the approval is still pending", async () => {
+    const waitSpy = jest.spyOn(approvalStore, "waitForDecision").mockImplementation(
+      async () => await new Promise(() => {})
+    );
+    const workflowEngineModule = await import("./engine/WorkflowEngine");
+    const { customerSupportBot } = await import("./templates/customer-support-bot");
+
+    const template = {
+      ...customerSupportBot,
+      id: "tpl-pending-resume",
+      steps: [
+        customerSupportBot.steps[0],
+        {
+          id: "approval-1",
+          name: "Approval checkpoint",
+          kind: "approval" as const,
+          description: "Pause",
+          inputKeys: ["subject"],
+          outputKeys: ["approved"],
+          approvalAssignee: "manager",
+          approvalMessage: "Please approve",
+          approvalTimeoutMinutes: 5,
+        },
+      ],
+    };
+    const templatesModule = await import("./templates");
+    templatesModule.TEMPLATE_MAP[template.id] = template;
+
+    const run = await workflowEngineModule.workflowEngine.startRun(template, {
+      ticketId: "T-pending",
+      subject: "Needs approval",
+      body: "body",
+      customerEmail: "pending@example.com",
+      channel: "email",
+    });
+
+    const deadline = Date.now() + 2000;
+    while (Date.now() < deadline) {
+      const state = await runStore.get(run.id);
+      if (state?.status === "awaiting_approval") {
+        break;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
+
+    const res = await request(app).post(`/api/executions/${run.id}/resume`).send({});
+    expect(res.status).toBe(409);
+    expect(res.body.error).toMatch(/still pending/i);
+    waitSpy.mockRestore();
+    delete templatesModule.TEMPLATE_MAP[template.id];
+  });
+});
+
 // ---------------------------------------------------------------------------
 // POST /api/workflows/generate
 // ---------------------------------------------------------------------------

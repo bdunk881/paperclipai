@@ -1,6 +1,6 @@
 {
   "name": "autoflow",
-  "version": "0.1.0",
+  "version": "0.3.0",
   "description": "AutoFlow — AI-powered workflow automation SaaS",
   "main": "dist/index.js",
   "scripts": {

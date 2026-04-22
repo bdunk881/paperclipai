@@ -4,6 +4,34 @@ import { Bot, ChevronRight, Search, Tag } from "lucide-react";
 import { listAgentTemplates } from "../data/agentMarketplaceData";
 
 const ALL_CATEGORY = "All";
+const MARKETPLACE_ENABLED = true;
+
+function TileArtwork({ templateId, name }: { templateId: string; name: string }) {
+  const [showFallback, setShowFallback] = useState(false);
+
+  if (showFallback) {
+    return (
+      <div className="flex h-full w-full items-center justify-center bg-slate-900 text-slate-100">
+        <div className="flex flex-col items-center gap-2 text-center">
+          <Bot size={28} />
+          <span className="text-xs font-semibold uppercase tracking-[0.24em] text-slate-300">
+            Marketplace Skill
+          </span>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <img
+      src={`/marketplace/${templateId}.svg`}
+      alt={name}
+      className="h-full w-full object-cover"
+      loading="lazy"
+      onError={() => setShowFallback(true)}
+    />
+  );
+}
 
 export default function AgentCatalog() {
   const templates = listAgentTemplates();
@@ -25,6 +53,18 @@ export default function AgentCatalog() {
       template.capabilities.some((capability) => capability.toLowerCase().includes(q));
     return categoryMatch && searchMatch;
   });
+
+  if (!MARKETPLACE_ENABLED) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[60vh] text-center px-4">
+        <Bot size={48} className="text-gray-300 mb-4" />
+        <h2 className="text-xl font-semibold text-gray-900">Marketplace Coming Soon</h2>
+        <p className="text-gray-500 mt-2 max-w-sm">
+          We are currently populating our catalog with 22+ enterprise-grade skills. Check back soon!
+        </p>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-full bg-gray-50">
@@ -64,62 +104,55 @@ export default function AgentCatalog() {
       </div>
 
       <div className="px-8 py-6 max-w-7xl mx-auto">
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+        <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
           {filtered.map((template) => (
             <article
               key={template.id}
-              className="bg-white rounded-xl border border-gray-200 p-5 hover:shadow-sm transition"
+              className="bg-white rounded-2xl border border-gray-200 overflow-hidden hover:shadow-lg transition-all duration-200 hover:-translate-y-1 flex flex-col"
             >
-              <div className="flex items-start justify-between gap-2">
-                <div>
-                  <h2 className="font-semibold text-gray-900">{template.name}</h2>
-                  <p className="text-xs text-gray-500 mt-1 flex items-center gap-1">
-                    <Tag size={12} />
-                    {template.category}
-                  </p>
+              <div className="aspect-video bg-slate-900 flex items-center justify-center relative overflow-hidden">
+                <TileArtwork templateId={template.id} name={template.name} />
+                <div className="absolute top-3 right-3">
+                  <span className="rounded-full bg-blue-50/90 backdrop-blur-sm text-blue-700 px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider border border-blue-100">
+                    {template.pricingTier}
+                  </span>
                 </div>
-                <span className="rounded-full bg-blue-50 text-blue-700 px-2 py-0.5 text-xs font-medium">
-                  {template.pricingTier}
-                </span>
               </div>
 
-              <p className="mt-3 text-sm text-gray-600 leading-relaxed">{template.description}</p>
+              <div className="p-5 flex-1 flex flex-col">
+                <div className="flex items-start justify-between gap-2 mb-2">
+                  <h2 className="text-lg font-bold text-gray-900 leading-tight">{template.name}</h2>
+                </div>
+                
+                <p className="text-[10px] font-semibold text-blue-600 uppercase tracking-widest flex items-center gap-1.5 mb-3">
+                  <Tag size={10} />
+                  {template.category}
+                </p>
 
-              <ul className="mt-4 space-y-1.5">
-                {template.capabilities.slice(0, 3).map((capability) => (
-                  <li key={capability} className="text-sm text-gray-700 flex items-start gap-2">
-                    <Bot size={14} className="mt-0.5 text-gray-400" />
-                    <span>{capability}</span>
-                  </li>
-                ))}
-              </ul>
+                <p className="text-sm text-gray-600 leading-relaxed line-clamp-3 mb-4 flex-1">
+                  {template.description}
+                </p>
 
-              <div className="mt-5 pt-4 border-t border-gray-100 flex items-center justify-between">
-                <p className="text-sm text-gray-500">${template.monthlyPriceUsd}/mo</p>
-                <Link
-                  to={`/agents/${template.id}`}
-                  className="inline-flex items-center gap-1.5 text-sm font-medium text-blue-600 hover:text-blue-700"
-                >
-                  View details
-                  <ChevronRight size={14} />
-                </Link>
+                <div className="pt-4 border-t border-gray-100 flex items-center justify-between mt-auto">
+                  <p className="text-sm font-semibold text-gray-900">${template.monthlyPriceUsd}<span className="text-gray-500 font-normal">/mo</span></p>
+                  <Link
+                    to={`/agents/${template.id}`}
+                    className="inline-flex items-center gap-1.5 text-sm font-bold text-blue-600 hover:text-blue-700 transition-colors"
+                  >
+                    Details
+                    <ChevronRight size={14} />
+                  </Link>
+                </div>
               </div>
             </article>
           ))}
         </div>
 
-        {templates.length === 0 ? (
-          <div className="py-16 text-center text-gray-400">
-            <Bot size={40} className="mx-auto mb-3 opacity-30" />
-            <p className="text-sm font-medium text-gray-600">Agent Marketplace coming soon</p>
-            <p className="text-xs mt-2 max-w-md mx-auto">
-              Prebuilt agent templates will be available here once the catalog backend is connected.
-            </p>
-          </div>
-        ) : filtered.length === 0 ? (
-          <div className="py-16 text-center text-gray-400">
-            <Bot size={40} className="mx-auto mb-3 opacity-30" />
-            <p className="text-sm">No agent templates match this filter.</p>
+        {filtered.length === 0 ? (
+          <div className="py-24 text-center text-gray-400">
+            <Bot size={48} className="mx-auto mb-4 opacity-20" />
+            <p className="text-lg font-medium text-gray-900">No matches found</p>
+            <p className="text-sm mt-1">Try adjusting your search or filters</p>
           </div>
         ) : null}
       </div>

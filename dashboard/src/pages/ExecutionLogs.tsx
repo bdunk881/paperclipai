@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 import { debugStep, listRuns } from "../api/client";
 import type { StepResult, WorkflowRun } from "../types/workflow";
+import { useAuth } from "../context/AuthContext";
 
 interface StepLog {
   stepId: string;
@@ -261,25 +262,27 @@ function RunCard({ run }: { run: RunLog }) {
 }
 
 export default function ExecutionLogs() {
+  const { getAccessToken } = useAuth();
   const [filter, setFilter] = useState<"all" | "failed" | "running">("all");
   const [runs, setRuns] = useState<RunLog[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
 
     async function loadRuns() {
       setLoading(true);
-      setError(null);
+      setLoadError(null);
       try {
-        const fetchedRuns = await listRuns();
+        const accessToken = await getAccessToken() ?? undefined;
+        const fetchedRuns = await listRuns(undefined, accessToken);
         if (!cancelled) {
           setRuns(fetchedRuns.map(toRunLog));
         }
       } catch (err) {
         if (!cancelled) {
-          setError(err instanceof Error ? err.message : "Failed to load execution logs");
+          setLoadError(err instanceof Error ? err.message : "Failed to load execution logs");
         }
       } finally {
         if (!cancelled) {
@@ -292,7 +295,7 @@ export default function ExecutionLogs() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [getAccessToken]);
 
   const filtered = runs.filter((r) => {
     if (filter === "failed") return r.status === "failed";
@@ -338,9 +341,9 @@ export default function ExecutionLogs() {
       </div>
 
       <div className="max-w-4xl mx-auto px-8 py-6 space-y-4">
-        {error ? (
+        {loadError ? (
           <div className="rounded-xl border border-red-200 bg-red-50 px-5 py-4 text-sm text-red-700">
-            {error}
+            {loadError}
           </div>
         ) : null}
         {loading ? (

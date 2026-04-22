@@ -41,6 +41,8 @@ tags:
     description: Legacy read-only template endpoints (backward-compatible aliases)
   - name: PortableWorkflows
     description: Portable workflow schema, import, and export endpoints
+  - name: Knowledge
+    description: Knowledge-base creation, ingestion, and search
   - name: Health
     description: Service health
 
@@ -703,6 +705,174 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
 
   # ---------------------------------------------------------------------------
+  # Knowledge
+  # ---------------------------------------------------------------------------
+  /api/knowledge/bases:
+    post:
+      operationId: createKnowledgeBase
+      summary: Create a knowledge base
+      tags: [Knowledge]
+      parameters:
+        - $ref: "#/components/parameters/UserIdHeader"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/KnowledgeBaseCreateInput"
+      responses:
+        "201":
+          description: Knowledge base created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/KnowledgeBase"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+    get:
+      operationId: listKnowledgeBases
+      summary: List knowledge bases for the current user
+      tags: [Knowledge]
+      parameters:
+        - $ref: "#/components/parameters/UserIdHeader"
+      responses:
+        "200":
+          description: Knowledge base list
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [bases, total]
+                properties:
+                  bases:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/KnowledgeBase"
+                  total:
+                    type: integer
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/knowledge/bases/{baseId}:
+    get:
+      operationId: getKnowledgeBase
+      summary: Get a knowledge base
+      tags: [Knowledge]
+      parameters:
+        - $ref: "#/components/parameters/KnowledgeBaseId"
+        - $ref: "#/components/parameters/UserIdHeader"
+      responses:
+        "200":
+          description: Knowledge base details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/KnowledgeBase"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+    patch:
+      operationId: updateKnowledgeBase
+      summary: Update a knowledge base
+      tags: [Knowledge]
+      parameters:
+        - $ref: "#/components/parameters/KnowledgeBaseId"
+        - $ref: "#/components/parameters/UserIdHeader"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/KnowledgeBaseUpdateInput"
+      responses:
+        "200":
+          description: Updated knowledge base
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/KnowledgeBase"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/knowledge/bases/{baseId}/documents:
+    post:
+      operationId: ingestKnowledgeDocument
+      summary: Ingest a document into a knowledge base
+      tags: [Knowledge]
+      parameters:
+        - $ref: "#/components/parameters/KnowledgeBaseId"
+        - $ref: "#/components/parameters/UserIdHeader"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/KnowledgeDocumentIngestInput"
+      responses:
+        "201":
+          description: Document ingested and chunked
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [document, chunks, total]
+                properties:
+                  document:
+                    $ref: "#/components/schemas/KnowledgeDocument"
+                  chunks:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/KnowledgeChunk"
+                  total:
+                    type: integer
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/knowledge/search:
+    post:
+      operationId: searchKnowledge
+      summary: Search across knowledge chunks
+      tags: [Knowledge]
+      parameters:
+        - $ref: "#/components/parameters/UserIdHeader"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/KnowledgeSearchInput"
+      responses:
+        "200":
+          description: Ranked search results
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [results, total]
+                properties:
+                  results:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/KnowledgeSearchResult"
+                  total:
+                    type: integer
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  # ---------------------------------------------------------------------------
   # Health
   # ---------------------------------------------------------------------------
   /health:
@@ -758,6 +928,23 @@ components:
         type: string
         format: uuid
       description: Run ID (UUID)
+
+    UserIdHeader:
+      name: X-User-Id
+      in: header
+      required: true
+      schema:
+        type: string
+      description: Authenticated user identifier. Staging also accepts Authorization bearer fallback.
+
+    KnowledgeBaseId:
+      name: baseId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+      description: Knowledge base ID (UUID)
 
   responses:
     BadRequest:
@@ -1370,6 +1557,205 @@ components:
         createdAt:
           type: string
           format: date-time
+
+    # -------------------------------------------------------------------------
+    # Knowledge schemas
+    # -------------------------------------------------------------------------
+    KnowledgeBase:
+      type: object
+      required: [id, userId, name, tags, metadata, chunkingConfig, createdAt, updatedAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        userId:
+          type: string
+        name:
+          type: string
+        description:
+          type: string
+          nullable: true
+        tags:
+          type: array
+          items:
+            type: string
+        metadata:
+          type: object
+          additionalProperties: true
+        chunkingConfig:
+          type: object
+          additionalProperties:
+            type: integer
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    KnowledgeBaseCreateInput:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+          nullable: true
+        tags:
+          type: array
+          items:
+            type: string
+        metadata:
+          type: object
+          additionalProperties: true
+        chunkingConfig:
+          type: object
+          additionalProperties:
+            type: integer
+
+    KnowledgeBaseUpdateInput:
+      type: object
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+          nullable: true
+        tags:
+          type: array
+          items:
+            type: string
+        metadata:
+          type: object
+          additionalProperties: true
+        chunkingConfig:
+          type: object
+          additionalProperties:
+            type: integer
+
+    KnowledgeDocument:
+      type: object
+      required:
+        [id, knowledgeBaseId, userId, filename, mimeType, sourceType, status, tags, metadata, chunkCount, createdAt, updatedAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        knowledgeBaseId:
+          type: string
+          format: uuid
+        userId:
+          type: string
+        filename:
+          type: string
+        mimeType:
+          type: string
+        sourceType:
+          type: string
+          enum: [inline, upload]
+        status:
+          type: string
+          enum: [ready]
+        tags:
+          type: array
+          items:
+            type: string
+        metadata:
+          type: object
+          additionalProperties: true
+        chunkCount:
+          type: integer
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    KnowledgeDocumentIngestInput:
+      type: object
+      required: [content]
+      properties:
+        filename:
+          type: string
+          default: inline.txt
+        mimeType:
+          type: string
+          default: text/plain
+        content:
+          type: string
+        sourceType:
+          type: string
+          enum: [inline, upload]
+          default: inline
+        tags:
+          type: array
+          items:
+            type: string
+        metadata:
+          type: object
+          additionalProperties: true
+
+    KnowledgeChunk:
+      type: object
+      required: [id, documentId, knowledgeBaseId, userId, chunkIndex, text, tokenCount, createdAt, updatedAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        documentId:
+          type: string
+          format: uuid
+        knowledgeBaseId:
+          type: string
+          format: uuid
+        userId:
+          type: string
+        chunkIndex:
+          type: integer
+        text:
+          type: string
+        tokenCount:
+          type: integer
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    KnowledgeSearchInput:
+      type: object
+      required: [query]
+      properties:
+        query:
+          type: string
+        knowledgeBaseIds:
+          type: array
+          items:
+            type: string
+            format: uuid
+        limit:
+          type: integer
+          default: 10
+        minScore:
+          type: number
+          default: 0.05
+
+    KnowledgeSearchResult:
+      type: object
+      required: [score, chunk, document, knowledgeBase]
+      properties:
+        score:
+          type: number
+          format: float
+        chunk:
+          $ref: "#/components/schemas/KnowledgeChunk"
+        document:
+          $ref: "#/components/schemas/KnowledgeDocument"
+        knowledgeBase:
+          $ref: "#/components/schemas/KnowledgeBase"
 
     # -------------------------------------------------------------------------
     # Error

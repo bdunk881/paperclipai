@@ -3,8 +3,7 @@
 FROM node:20-alpine AS deps
 WORKDIR /app
 COPY package.json package-lock.json ./
-RUN --mount=type=cache,target=/root/.npm \
-    npm ci --prefer-offline
+RUN npm ci
 
 FROM node:20-alpine AS builder
 WORKDIR /app
@@ -27,8 +26,7 @@ ENV NODE_ENV=production \
     PORT=3000
 
 COPY package.json package-lock.json ./
-RUN --mount=type=cache,target=/root/.npm \
-    npm ci --omit=dev --prefer-offline && npm cache clean --force
+RUN npm ci --omit=dev && npm cache clean --force
 
 COPY --from=builder /app/dist ./dist
 

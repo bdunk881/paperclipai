@@ -103,4 +103,63 @@ describe("CredentialRegistry persistence", () => {
     const publicRecords = await registry.listPublicByUserAsync("user-2");
     expect(publicRecords).toEqual([{ id: "cred-2" }]);
   });
+
+  it("merges persisted records into a warm cache during async listing", async () => {
+    const registry = new CredentialRegistry<TestCredential, { id: string }>({
+      service: "persist-list",
+      toPublic: (record) => ({ id: record.id }),
+    });
+
+    mockIsPostgresConfigured.mockReturnValue(true);
+    mockQueryPostgres.mockResolvedValue({
+      rows: [],
+      rowCount: 1,
+      command: "INSERT",
+      oid: 0,
+      fields: [],
+    });
+
+    registry.save({
+      id: "local-cred",
+      userId: "user-3",
+      createdAt: "2026-04-22T00:00:00.000Z",
+      tokenEncrypted: "ciphertext-local",
+    });
+
+    await Promise.resolve();
+
+    mockQueryPostgres.mockReset();
+    mockQueryPostgres.mockResolvedValue({
+      rows: [
+        {
+          id: "persisted-cred",
+          user_id: "user-3",
+          record_data: {
+            id: "persisted-cred",
+            userId: "user-3",
+            createdAt: "2026-04-21T00:00:00.000Z",
+            tokenEncrypted: "ciphertext-persisted",
+          },
+        },
+      ],
+      rowCount: 1,
+      command: "SELECT",
+      oid: 0,
+      fields: [],
+    });
+
+    const records = await registry.listStoredByUserAsync("user-3");
+
+    expect(records).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: "local-cred" }),
+        expect.objectContaining({ id: "persisted-cred" }),
+      ])
+    );
+    expect(records).toHaveLength(2);
+    expect(mockQueryPostgres).toHaveBeenCalledWith(
+      "SELECT id, user_id, record_data FROM connector_credentials WHERE service = $1 ORDER BY created_at DESC",
+      ["persist-list"]
+    );
+  });
 });

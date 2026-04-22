@@ -110,4 +110,58 @@ describe("llmConfigStore async persistence", () => {
       ["user-a"]
     );
   });
+
+  it("merges persisted configs into a warm cache during async list", async () => {
+    mockIsPostgresConfigured.mockReturnValue(true);
+    mockQueryPostgres.mockResolvedValue({
+      rows: [],
+      rowCount: 1,
+      command: "INSERT",
+      oid: 0,
+      fields: [],
+    });
+
+    const local = await llmConfigStore.createAsync({
+      userId: "user-a",
+      provider: "openai",
+      label: "Warm cache",
+      model: "gpt-4o",
+      apiKey: "sk-test-local1234",
+    });
+
+    mockQueryPostgres.mockReset();
+    mockQueryPostgres.mockResolvedValue({
+      rows: [
+        {
+          id: "persisted-config",
+          user_id: "user-a",
+          provider: "anthropic",
+          label: "Persisted",
+          model: "claude-3-5-sonnet-20241022",
+          api_key_encrypted: "persisted-encrypted",
+          api_key_masked: "****5678",
+          is_default: false,
+          created_at: "2026-04-20T00:00:00.000Z",
+        },
+      ],
+      rowCount: 1,
+      command: "SELECT",
+      oid: 0,
+      fields: [],
+    });
+
+    const listed = await llmConfigStore.listAsync("user-a");
+
+    expect(listed).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: local.id, label: "Warm cache" }),
+        expect.objectContaining({ id: "persisted-config", label: "Persisted" }),
+      ])
+    );
+    expect(listed).toHaveLength(2);
+    expect(mockQueryPostgres).toHaveBeenCalledWith(
+      "SELECT * FROM llm_configs WHERE user_id = $1 ORDER BY created_at DESC",
+      ["user-a"]
+    );
+  });
 });

@@ -112,6 +112,20 @@ const store = new CentralCredentialStore<LLMConfigMetadata, LLMProviderCredentia
   service: "llm-config",
 });
 
+function mergeConfigs(local: LLMConfig[], persisted: LLMConfig[]): LLMConfig[] {
+  const merged = new Map<string, LLMConfig>();
+
+  for (const config of persisted) {
+    merged.set(config.id, config);
+  }
+
+  for (const config of local) {
+    merged.set(config.id, config);
+  }
+
+  return Array.from(merged.values()).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+}
+
 export const llmConfigStore = {
   create(params: {
     userId: string;

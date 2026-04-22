@@ -143,6 +143,24 @@ interface PersistedCredentialRegistryRow {
   record_data: unknown;
 }
 
+function mergeStoredRecords<TStored extends CredentialRegistryRecord>(
+  local: TStored[],
+  persisted: TStored[],
+  sortValue: (record: TStored) => string
+): TStored[] {
+  const merged = new Map<string, TStored>();
+
+  for (const record of persisted) {
+    merged.set(record.id, record);
+  }
+
+  for (const record of local) {
+    merged.set(record.id, record);
+  }
+
+  return Array.from(merged.values()).sort((a, b) => sortValue(b).localeCompare(sortValue(a)));
+}
+
 export class CredentialRegistry<TStored extends CredentialRegistryRecord, TPublic> {
   private readonly bucket: Map<string, TStored>;
 
@@ -270,17 +288,18 @@ export class CredentialRegistry<TStored extends CredentialRegistryRecord, TPubli
     const local = Array.from(this.bucket.values()).filter((record) =>
       includeRevoked ? true : !record.revokedAt
     );
-    if (local.length > 0 || !isPostgresConfigured()) {
-      return local;
+    if (!isPostgresConfigured()) {
+      return local.sort((a, b) => this.sortValue(b).localeCompare(this.sortValue(a)));
     }
 
     const result = await queryPostgres<PersistedCredentialRegistryRow>(
       "SELECT id, user_id, record_data FROM connector_credentials WHERE service = $1 ORDER BY created_at DESC",
       [this.service]
     );
-    return result.rows
+    const persisted = result.rows
       .map((row: PersistedCredentialRegistryRow) => this.mapPersistedRecord(row))
       .filter((record: TStored) => (includeRevoked ? true : !record.revokedAt));
+    return mergeStoredRecords(local, persisted, this.sortValue);
   }
 
   toPublic(record: TStored): TPublic {

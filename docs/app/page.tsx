@@ -41,7 +41,7 @@ export default function DocsHomePage() {
         </Link>
 
         <a
-          href="https://autoflow.app/demo"
+          href="https://helloautoflow.com/demo"
           className="group rounded-xl border border-gray-200 p-5 hover:border-indigo-300 hover:bg-indigo-50/50 transition-all"
         >
           <div className="text-2xl mb-2">🎬</div>

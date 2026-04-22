@@ -61,7 +61,7 @@ export const msalConfig: Configuration = {
     authority: `https://${tenantSubdomain}.ciamlogin.com/${tenantDomain}`,
     // Tell MSAL the external tenant is a valid authority (required for non-login.microsoftonline.com authorities)
     knownAuthorities: [`${tenantSubdomain}.ciamlogin.com`],
-    redirectUri: window.location.origin,
+    redirectUri: `${window.location.origin}/auth/callback`,
     postLogoutRedirectUri: window.location.origin + "/login",
   },
   cache: {

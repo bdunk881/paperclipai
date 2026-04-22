@@ -83,6 +83,14 @@ variable "max_node_count" {
   default     = 5
 }
 
+variable "api_server_authorized_ips" {
+  description = "CIDR blocks allowed to reach the AKS API server. Must include CI runner IPs, hub mgmt subnet, and developer VPN."
+  type        = list(string)
+  default = [
+    "10.1.3.0/24", # Hub management / bastion subnet
+  ]
+}
+
 # ── Entra External ID (CIAM) ──────────────────────────────────────────────────
 
 variable "ciam_tenant_subdomain" {

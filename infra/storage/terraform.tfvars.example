@@ -1,0 +1,6 @@
+resource_group_name = "autoflow-rg"
+location            = "eastus2"
+storage_account_name = "altitudemediastorage"
+
+# Add Managed Identity principal IDs for agents/pipelines that need blob access
+managed_identity_principal_ids = []

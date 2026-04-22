@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
-import { Link } from "react-router-dom";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { Link, useNavigate } from "react-router-dom";
 import {
   Activity,
   CheckCircle2,
@@ -16,6 +16,8 @@ import {
   Clock,
   BarChart2,
   Plus,
+  Command,
+  Search,
 } from "lucide-react";
 import {
   listRuns,
@@ -34,16 +36,19 @@ const ONBOARDING_DISMISS_PREFIX = "autoflow:onboarding-dismissed:v1";
 
 export default function Dashboard() {
   const { user, getAccessToken } = useAuth();
+  const navigate = useNavigate();
   const [runs, setRuns] = useState<WorkflowRun[]>([]);
   const [templates, setTemplates] = useState<TemplateSummary[]>([]);
   const [llmConfigs, setLlmConfigs] = useState<LLMConfig[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showOnboarding, setShowOnboarding] = useState(false);
+  const [command, setCommand] = useState("");
+  const [commandResult, setCommandResult] = useState<DashboardCommandResult | null>(null);
 
   const onboardingStorageKey = `${ONBOARDING_DISMISS_PREFIX}:${user?.id ?? "anonymous"}`;
 
-  async function loadDashboard() {
+  const loadDashboard = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
@@ -61,11 +66,11 @@ export default function Dashboard() {
     } finally {
       setLoading(false);
     }
-  }
+  }, [getAccessToken]);
 
   useEffect(() => {
     void loadDashboard();
-  }, []);
+  }, [loadDashboard]);
 
   const stats = {
     total: runs.length,
@@ -82,6 +87,25 @@ export default function Dashboard() {
   const recentRuns = [...runs]
     .sort((a, b) => new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime())
     .slice(0, 5);
+
+  function handleCommandSubmit(rawPrompt: string) {
+    const prompt = rawPrompt.trim();
+    if (!prompt) return;
+
+    const result = buildDashboardCommandResult(prompt, templates, runs);
+    setCommandResult(result);
+
+    if (result.kind === "navigate" && result.to) {
+      navigate(result.to, {
+        state: result.builderPrompt ? { copilotPrompt: result.builderPrompt } : undefined,
+      });
+    }
+  }
+
+  function handlePromptChipClick(prompt: string) {
+    setCommand(prompt);
+    handleCommandSubmit(prompt);
+  }
 
   const onboardingSteps: OnboardingStep[] = useMemo(
     () => [
@@ -206,6 +230,14 @@ export default function Dashboard() {
           </div>
         </div>
       </div>
+
+      <DashboardCommandBar
+        value={command}
+        onChange={setCommand}
+        onSubmit={() => handleCommandSubmit(command)}
+        onPromptClick={handlePromptChipClick}
+        result={commandResult}
+      />
 
       {/* Stats grid */}
       <div className="mb-8 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
@@ -364,6 +396,214 @@ export default function Dashboard() {
           color="text-emerald-500 dark:text-emerald-400"
           bg="bg-emerald-50 dark:bg-emerald-500/10"
         />
+      </div>
+    </div>
+  );
+}
+
+type DashboardCommandResult =
+  | {
+      kind: "navigate";
+      title: string;
+      description: string;
+      to: string;
+      builderPrompt?: string;
+    }
+  | {
+      kind: "templates";
+      title: string;
+      description: string;
+      items: Array<Pick<TemplateSummary, "id" | "name" | "category">>;
+    }
+  | {
+      kind: "runs";
+      title: string;
+      description: string;
+      items: Array<Pick<WorkflowRun, "id" | "templateName" | "status" | "startedAt">>;
+    };
+
+function buildDashboardCommandResult(
+  prompt: string,
+  templates: TemplateSummary[],
+  runs: WorkflowRun[]
+): DashboardCommandResult {
+  const normalized = prompt.toLowerCase();
+
+  if (
+    normalized.includes("create") ||
+    normalized.includes("build") ||
+    normalized.includes("generate") ||
+    normalized.includes("make ")
+  ) {
+    return {
+      kind: "navigate",
+      title: "Launching Workflow Copilot",
+      description: "Opening the builder with your prompt loaded into AutoFlow Copilot.",
+      to: "/builder",
+      builderPrompt: prompt,
+    };
+  }
+
+  if (
+    normalized.includes("run") ||
+    normalized.includes("history") ||
+    normalized.includes("log") ||
+    normalized.includes("monitor")
+  ) {
+    const matchedRuns = runs
+      .filter((run) =>
+        `${run.templateName} ${run.status}`.toLowerCase().includes(normalized.replace("show me ", ""))
+      )
+      .slice(0, 4);
+
+    return {
+      kind: "runs",
+      title: matchedRuns.length > 0 ? "Matching runs" : "Run activity",
+      description:
+        matchedRuns.length > 0
+          ? "Closest matches from recent execution history."
+          : "No direct run match found. Try the full run history for broader filtering.",
+      items: matchedRuns.length > 0 ? matchedRuns : runs.slice(0, 4),
+    };
+  }
+
+  const matchedTemplates = templates
+    .filter((template) =>
+      `${template.name} ${template.category}`.toLowerCase().includes(normalized.replace("find ", ""))
+    )
+    .slice(0, 4);
+
+  return {
+    kind: "templates",
+    title: matchedTemplates.length > 0 ? "Suggested workflows" : "Workflow templates",
+    description:
+      matchedTemplates.length > 0
+        ? "Closest matches from your current workflow library."
+        : "No exact match found. Start a new build and let Copilot generate one for you.",
+    items: matchedTemplates.length > 0 ? matchedTemplates : templates.slice(0, 4),
+  };
+}
+
+function DashboardCommandBar({
+  value,
+  onChange,
+  onSubmit,
+  onPromptClick,
+  result,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  onSubmit: () => void;
+  onPromptClick: (prompt: string) => void;
+  result: DashboardCommandResult | null;
+}) {
+  const promptChips = [
+    "Create a lead magnet workflow",
+    "Monitor site uptime",
+    "Find templates for sales follow-up",
+  ];
+
+  return (
+    <div className="mb-8">
+      <div className="mx-auto max-w-3xl">
+        <div className="rounded-[20px] border border-gray-200 bg-white/80 p-2 backdrop-blur-xl transition-all hover:border-brand-300 dark:border-surface-800 dark:bg-surface-900/80 dark:hover:border-brand-500/50 focus-within:border-brand-300 focus-within:ring-2 focus-within:ring-brand-500/20 dark:focus-within:border-brand-500/50 shadow-sm focus-within:shadow-glow">
+          <div className="flex items-center gap-3 rounded-2xl px-4 py-3">
+            <Sparkles size={18} className="shrink-0 text-brand-500" />
+            <label htmlFor="dashboard-ai-command" className="sr-only">
+              What do you want to build?
+            </label>
+            <input
+              id="dashboard-ai-command"
+              value={value}
+              onChange={(event) => onChange(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") {
+                  event.preventDefault();
+                  onSubmit();
+                }
+              }}
+              placeholder="What do you want to build?"
+              className="min-w-0 flex-1 bg-transparent text-base text-gray-900 outline-none placeholder:text-gray-400 dark:text-white dark:placeholder:text-surface-500"
+            />
+            <div className="hidden items-center gap-1 rounded-xl border border-gray-200 bg-white px-2 py-1 text-xs font-medium text-gray-500 dark:border-surface-700 dark:bg-surface-800 dark:text-surface-400 md:flex">
+              <Command size={12} />
+              K
+            </div>
+            <button
+              type="button"
+              onClick={onSubmit}
+              className="inline-flex items-center gap-2 rounded-xl bg-brand-600 px-3 py-2 text-sm font-medium text-white transition hover:bg-brand-500"
+            >
+              <Search size={14} />
+              Ask
+            </button>
+          </div>
+        </div>
+
+        <div className="mt-3 flex flex-wrap justify-center gap-2">
+          {promptChips.map((prompt) => (
+            <button
+              key={prompt}
+              type="button"
+              onClick={() => onPromptClick(prompt)}
+              className="rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-600 transition hover:border-brand-300 hover:text-brand-700 dark:border-surface-800 dark:bg-surface-900/60 dark:text-surface-300 dark:hover:border-brand-500/50 dark:hover:text-brand-300"
+            >
+              {prompt}
+            </button>
+          ))}
+        </div>
+
+        {result && (
+          <div className="mt-4 rounded-2xl border border-gray-200 bg-white/90 p-4 shadow-sm dark:border-surface-800 dark:bg-surface-900/80">
+            <div className="mb-3 flex items-start gap-3">
+              <div className="mt-0.5 rounded-xl border border-brand-200 bg-brand-50 p-2 text-brand-600 dark:border-brand-500/30 dark:bg-brand-500/10 dark:text-brand-300">
+                <Sparkles size={16} />
+              </div>
+              <div>
+                <h2 className="text-sm font-semibold text-gray-900 dark:text-white">{result.title}</h2>
+                <p className="mt-1 text-sm text-gray-500 dark:text-surface-400">{result.description}</p>
+              </div>
+            </div>
+
+            {result.kind === "templates" && (
+              <div className="space-y-2">
+                {result.items.map((item) => (
+                  <Link
+                    key={item.id}
+                    to={`/builder/${item.id}`}
+                    className="flex items-center justify-between rounded-xl border border-gray-200 px-3 py-2.5 text-sm transition hover:border-brand-300 hover:bg-brand-50/60 dark:border-surface-800 dark:hover:border-brand-500/40 dark:hover:bg-brand-500/5"
+                  >
+                    <div>
+                      <p className="font-medium text-gray-900 dark:text-white">{item.name}</p>
+                      <p className="text-xs text-gray-400 dark:text-surface-500 capitalize">{item.category}</p>
+                    </div>
+                    <ArrowRight size={14} className="text-gray-300 dark:text-surface-600" />
+                  </Link>
+                ))}
+              </div>
+            )}
+
+            {result.kind === "runs" && (
+              <div className="space-y-2">
+                {result.items.map((item) => (
+                  <Link
+                    key={item.id}
+                    to="/history"
+                    className="flex items-center justify-between rounded-xl border border-gray-200 px-3 py-2.5 text-sm transition hover:border-brand-300 hover:bg-brand-50/60 dark:border-surface-800 dark:hover:border-brand-500/40 dark:hover:bg-brand-500/5"
+                  >
+                    <div>
+                      <p className="font-medium text-gray-900 dark:text-white">{item.templateName}</p>
+                      <p className="text-xs text-gray-400 dark:text-surface-500">
+                        {new Date(item.startedAt).toLocaleString()}
+                      </p>
+                    </div>
+                    <StatusBadge status={item.status} />
+                  </Link>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );

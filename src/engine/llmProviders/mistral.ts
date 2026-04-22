@@ -2,7 +2,12 @@ import { Mistral } from "@mistralai/mistralai";
 import { LLMProvider, LLMProviderConfig, LLMResponse } from "./types";
 
 export function createMistralProvider(config: LLMProviderConfig): LLMProvider {
-  const client = new Mistral({ apiKey: config.apiKey });
+  const apiKey = config.apiKey ?? config.credentials?.apiKey;
+  if (!apiKey) {
+    throw new Error(`Mistral API error: missing API key credentials for ${config.provider}`);
+  }
+
+  const client = new Mistral({ apiKey });
 
   return async (prompt: string): Promise<LLMResponse> => {
     let response;

@@ -69,7 +69,8 @@ export function requireAuth(
 ): void {
   const authHeader = req.headers.authorization;
   const headerUserId = req.headers["x-user-id"];
-  const isMemoryRoute = req.path === "/api/memory" || req.path.startsWith("/api/memory/");
+  const requestPath = (req.originalUrl || req.path).split("?")[0];
+  const isMemoryRoute = requestPath === "/api/memory" || requestPath.startsWith("/api/memory/");
   if (!authHeader?.startsWith("Bearer ")) {
     if (isMemoryRoute && typeof headerUserId === "string" && headerUserId.trim()) {
       req.auth = { sub: headerUserId.trim() };

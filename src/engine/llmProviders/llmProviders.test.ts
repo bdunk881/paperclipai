@@ -54,6 +54,36 @@ jest.mock("@mistralai/mistralai", () => {
   };
 });
 
+jest.mock("@aws-sdk/client-bedrock-runtime", () => {
+  return {
+    __esModule: true,
+    BedrockRuntimeClient: jest.fn().mockImplementation(() => ({
+      send: jest.fn(),
+    })),
+    ConverseCommand: jest.fn().mockImplementation((input) => ({ input })),
+  };
+});
+
+jest.mock("@google-cloud/vertexai", () => {
+  return {
+    __esModule: true,
+    VertexAI: jest.fn().mockImplementation(() => ({
+      getGenerativeModel: jest.fn().mockReturnValue({
+        generateContent: jest.fn(),
+      }),
+    })),
+  };
+});
+
+jest.mock("google-auth-library", () => {
+  return {
+    __esModule: true,
+    OAuth2Client: jest.fn().mockImplementation(() => ({
+      setCredentials: jest.fn(),
+    })),
+  };
+});
+
 // ---------------------------------------------------------------------------
 // Helpers to access mock instances
 // ---------------------------------------------------------------------------
@@ -62,11 +92,18 @@ import OpenAI from "openai";
 import Anthropic from "@anthropic-ai/sdk";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { Mistral } from "@mistralai/mistralai";
+import { BedrockRuntimeClient, ConverseCommand } from "@aws-sdk/client-bedrock-runtime";
+import { VertexAI } from "@google-cloud/vertexai";
+import { OAuth2Client } from "google-auth-library";
 
 const MockOpenAI = OpenAI as jest.MockedClass<typeof OpenAI>;
 const MockAnthropic = Anthropic as jest.MockedClass<typeof Anthropic>;
 const MockGoogleGenerativeAI = GoogleGenerativeAI as jest.MockedClass<typeof GoogleGenerativeAI>;
 const MockMistral = Mistral as jest.MockedClass<typeof Mistral>;
+const MockBedrockRuntimeClient = BedrockRuntimeClient as jest.MockedClass<typeof BedrockRuntimeClient>;
+const MockConverseCommand = ConverseCommand as unknown as jest.Mock;
+const MockVertexAI = VertexAI as jest.MockedClass<typeof VertexAI>;
+const MockOAuth2Client = OAuth2Client as jest.MockedClass<typeof OAuth2Client>;
 
 function openaiInstance() {
   return MockOpenAI.mock.results[MockOpenAI.mock.results.length - 1]?.value as {
@@ -92,6 +129,30 @@ function mistralInstance() {
   };
 }
 
+function bedrockInstance() {
+  return MockBedrockRuntimeClient.mock.results[
+    MockBedrockRuntimeClient.mock.results.length - 1
+  ]?.value as { send: jest.Mock };
+}
+
+function vertexInstance() {
+  return MockVertexAI.mock.results[MockVertexAI.mock.results.length - 1]?.value as {
+    getGenerativeModel: jest.Mock;
+  };
+}
+
+function vertexModelInstance() {
+  return vertexInstance().getGenerativeModel.mock.results[
+    vertexInstance().getGenerativeModel.mock.results.length - 1
+  ]?.value as { generateContent: jest.Mock };
+}
+
+function oauthClientInstance() {
+  return MockOAuth2Client.mock.results[MockOAuth2Client.mock.results.length - 1]?.value as {
+    setCredentials: jest.Mock;
+  };
+}
+
 // ---------------------------------------------------------------------------
 // PROVIDER_MODELS
 // ---------------------------------------------------------------------------
@@ -111,7 +172,7 @@ describe("PROVIDER_MODELS", () => {
 
 describe("getProvider", () => {
   it("throws for an unknown provider", () => {
-    const badConfig = { provider: "cohere", model: "x", apiKey: "k" } as unknown as LLMProviderConfig;
+    const badConfig = { provider: "madeup-provider", model: "x", apiKey: "k" } as unknown as LLMProviderConfig;
     expect(() => getProvider(badConfig)).toThrow(/Unknown LLM provider/);
   });
 });
@@ -166,6 +227,212 @@ describe("OpenAI adapter", () => {
     await provider("Prompt");
     expect(openaiInstance().chat.completions.create).toHaveBeenCalledWith(
       expect.objectContaining({ model: "gpt-4o" })
+    );
+  });
+});
+
+describe("Azure OpenAI adapter", () => {
+  const config: LLMProviderConfig = {
+    provider: "azure-openai",
+    model: "gpt-4o",
+    credentials: { apiKey: "azure-test-key" },
+    options: {
+      endpoint: "https://example-resource.openai.azure.com/",
+      deployment: "gpt4o-prod",
+    },
+  };
+
+  it("uses providerOptions endpoint/deployment instead of overloading model", async () => {
+    const provider = getProvider(config);
+    openaiInstance().chat.completions.create.mockResolvedValueOnce({
+      choices: [{ message: { content: "Azure hello" } }],
+      usage: null,
+    });
+
+    await provider("Prompt");
+
+    expect(MockOpenAI.mock.calls[MockOpenAI.mock.calls.length - 1]?.[0]).toEqual(
+      expect.objectContaining({
+        apiKey: "azure-test-key",
+        baseURL: "https://example-resource.openai.azure.com/openai/deployments/gpt4o-prod",
+      })
+    );
+    expect(openaiInstance().chat.completions.create).toHaveBeenCalledWith(
+      expect.objectContaining({ model: "gpt4o-prod" })
+    );
+  });
+});
+
+describe("AWS Bedrock adapter", () => {
+  const config: LLMProviderConfig = {
+    provider: "bedrock",
+    model: "amazon.nova-pro-v1:0",
+    credentials: {
+      accessKeyId: "AKIAIOSFODNN7EXAMPLE",
+      secretAccessKey: "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
+      sessionToken: "bedrock-session-token",
+    },
+    options: {
+      region: "us-east-1",
+    },
+  };
+
+  it("uses the Bedrock runtime client with AWS credentials", async () => {
+    const provider = getProvider(config);
+    bedrockInstance().send.mockResolvedValueOnce({
+      output: {
+        message: {
+          content: [{ text: "Hello from Bedrock" }],
+        },
+      },
+      usage: {
+        inputTokens: 12,
+        outputTokens: 7,
+      },
+    });
+
+    const result = await provider("Say hello");
+
+    expect(MockBedrockRuntimeClient).toHaveBeenCalledWith(
+      expect.objectContaining({
+        region: "us-east-1",
+        credentials: expect.objectContaining({
+          accessKeyId: "AKIAIOSFODNN7EXAMPLE",
+          secretAccessKey: "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
+          sessionToken: "bedrock-session-token",
+        }),
+      }),
+    );
+    expect(MockConverseCommand).toHaveBeenCalledWith(
+      expect.objectContaining({
+        modelId: "amazon.nova-pro-v1:0",
+        messages: [
+          {
+            role: "user",
+            content: [{ text: "Say hello" }],
+          },
+        ],
+      }),
+    );
+    expect(result).toEqual({
+      text: "Hello from Bedrock",
+      usage: { promptTokens: 12, completionTokens: 7 },
+    });
+  });
+
+  it("wraps Bedrock client errors with a descriptive message", async () => {
+    const provider = getProvider(config);
+    bedrockInstance().send.mockRejectedValueOnce(new Error("AccessDeniedException"));
+
+    await expect(provider("Prompt")).rejects.toThrow(
+      "AWS Bedrock API error: AccessDeniedException",
+    );
+  });
+});
+
+describe("Vertex AI adapter", () => {
+  const serviceAccountJson = JSON.stringify({
+    type: "service_account",
+    client_email: "vertex@example.iam.gserviceaccount.com",
+    private_key: "-----BEGIN PRIVATE KEY-----\\nabc\\n-----END PRIVATE KEY-----\\n",
+  });
+
+  it("uses service account credentials with the Vertex SDK", async () => {
+    const provider = getProvider({
+      provider: "vertex-ai",
+      model: "gemini-1.5-pro-002",
+      credentials: {
+        serviceAccountJson,
+      },
+      options: {
+        projectId: "autoflow-prod",
+        location: "us-central1",
+      },
+    });
+    vertexModelInstance().generateContent.mockResolvedValueOnce({
+      response: {
+        candidates: [
+          {
+            content: {
+              parts: [{ text: "Hello from Vertex" }],
+            },
+          },
+        ],
+        usageMetadata: {
+          promptTokenCount: 9,
+          candidatesTokenCount: 6,
+        },
+      },
+    });
+
+    const result = await provider("Say hello");
+
+    expect(MockVertexAI).toHaveBeenCalledWith(
+      expect.objectContaining({
+        project: "autoflow-prod",
+        location: "us-central1",
+        googleAuthOptions: expect.objectContaining({
+          credentials: expect.objectContaining({
+            client_email: "vertex@example.iam.gserviceaccount.com",
+          }),
+        }),
+      }),
+    );
+    expect(vertexInstance().getGenerativeModel).toHaveBeenCalledWith({ model: "gemini-1.5-pro-002" });
+    expect(vertexModelInstance().generateContent).toHaveBeenCalledWith("Say hello");
+    expect(result).toEqual({
+      text: "Hello from Vertex",
+      usage: { promptTokens: 9, completionTokens: 6 },
+    });
+  });
+
+  it("accepts oauth access tokens via google-auth-library", async () => {
+    const provider = getProvider({
+      provider: "vertex-ai",
+      model: "gemini-1.5-flash-002",
+      credentials: {
+        oauthAccessToken: "ya29.test-token",
+      },
+      options: {
+        projectId: "autoflow-prod",
+        location: "us-central1",
+      },
+    });
+    vertexModelInstance().generateContent.mockResolvedValueOnce({
+      response: { candidates: [], usageMetadata: undefined },
+    });
+
+    await provider("Prompt");
+
+    expect(MockOAuth2Client).toHaveBeenCalledTimes(1);
+    expect(oauthClientInstance().setCredentials).toHaveBeenCalledWith({
+      access_token: "ya29.test-token",
+    });
+    expect(MockVertexAI).toHaveBeenCalledWith(
+      expect.objectContaining({
+        googleAuthOptions: expect.objectContaining({
+          authClient: oauthClientInstance(),
+        }),
+      }),
+    );
+  });
+
+  it("wraps Vertex provider errors with a descriptive message", async () => {
+    const provider = getProvider({
+      provider: "vertex-ai",
+      model: "gemini-1.5-pro-002",
+      credentials: {
+        serviceAccountJson,
+      },
+      options: {
+        projectId: "autoflow-prod",
+        location: "us-central1",
+      },
+    });
+    vertexModelInstance().generateContent.mockRejectedValueOnce(new Error("permission denied"));
+
+    await expect(provider("Prompt")).rejects.toThrow(
+      "Vertex AI API error: permission denied",
     );
   });
 });

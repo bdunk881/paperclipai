@@ -5,6 +5,8 @@
 
 export type StepKind =
   | "trigger"
+  | "cron_trigger"
+  | "interval_trigger"
   | "llm"
   | "knowledge"
   | "transform"
@@ -23,6 +25,16 @@ export type FieldType =
   | "object"
   | "string[]"
   | "object[]";
+
+export type WorkflowCategory =
+  | "support"
+  | "sales"
+  | "content"
+  | "operations"
+  | "marketing"
+  | "finance"
+  | "engineering"
+  | "custom";
 
 /** A single configurable field exposed in the dashboard UI */
 export interface ConfigField {
@@ -99,6 +111,11 @@ export interface WorkflowStep {
   approvalTimeoutMinutes?: number;
   // file_trigger step
   acceptedFileTypes?: string[];
+  // cron_trigger step
+  cronExpression?: string;
+  timezone?: string;
+  // interval_trigger step
+  intervalMinutes?: number;
 }
 
 /** A complete workflow definition */
@@ -107,7 +124,7 @@ export interface WorkflowTemplate {
   name: string;
   description: string;
   /** Category used for filtering in the dashboard */
-  category: "support" | "sales" | "content" | "custom";
+  category: WorkflowCategory;
   version: string;
   /** Fields surfaced in the dashboard configuration UI */
   configFields: ConfigField[];

@@ -181,6 +181,24 @@ describe("mapStripeStatusToAccess", () => {
 // ---------------------------------------------------------------------------
 
 describe("resolveTier", () => {
+  const savedEnv = {
+    STRIPE_FLOW_PRICE_ID: process.env.STRIPE_FLOW_PRICE_ID,
+    STRIPE_AUTOMATE_PRICE_ID: process.env.STRIPE_AUTOMATE_PRICE_ID,
+    STRIPE_SCALE_PRICE_ID: process.env.STRIPE_SCALE_PRICE_ID,
+    STRIPE_PRICE_STARTER: process.env.STRIPE_PRICE_STARTER,
+    STRIPE_PRICE_PROFESSIONAL: process.env.STRIPE_PRICE_PROFESSIONAL,
+    STRIPE_PRICE_ENTERPRISE: process.env.STRIPE_PRICE_ENTERPRISE,
+  };
+
+  afterEach(() => {
+    process.env.STRIPE_FLOW_PRICE_ID = savedEnv.STRIPE_FLOW_PRICE_ID;
+    process.env.STRIPE_AUTOMATE_PRICE_ID = savedEnv.STRIPE_AUTOMATE_PRICE_ID;
+    process.env.STRIPE_SCALE_PRICE_ID = savedEnv.STRIPE_SCALE_PRICE_ID;
+    process.env.STRIPE_PRICE_STARTER = savedEnv.STRIPE_PRICE_STARTER;
+    process.env.STRIPE_PRICE_PROFESSIONAL = savedEnv.STRIPE_PRICE_PROFESSIONAL;
+    process.env.STRIPE_PRICE_ENTERPRISE = savedEnv.STRIPE_PRICE_ENTERPRISE;
+  });
+
   it("resolves from metadata", () => {
     expect(resolveTier({ tier: "automate" })).toBe("automate");
   });
@@ -191,6 +209,29 @@ describe("resolveTier", () => {
 
   it("defaults to explore for unknown tier", () => {
     expect(resolveTier({ tier: "enterprise" })).toBe("explore");
+  });
+
+  it("resolves by canonical stripe price env vars", () => {
+    process.env.STRIPE_FLOW_PRICE_ID = "price_flow_env";
+    process.env.STRIPE_AUTOMATE_PRICE_ID = "price_automate_env";
+    process.env.STRIPE_SCALE_PRICE_ID = "price_scale_env";
+
+    expect(resolveTier(undefined, "price_flow_env")).toBe("flow");
+    expect(resolveTier(undefined, "price_automate_env")).toBe("automate");
+    expect(resolveTier(undefined, "price_scale_env")).toBe("scale");
+  });
+
+  it("resolves by starter/professional/enterprise alias env vars", () => {
+    process.env.STRIPE_FLOW_PRICE_ID = "";
+    process.env.STRIPE_AUTOMATE_PRICE_ID = "";
+    process.env.STRIPE_SCALE_PRICE_ID = "";
+    process.env.STRIPE_PRICE_STARTER = "price_starter_alias";
+    process.env.STRIPE_PRICE_PROFESSIONAL = "price_professional_alias";
+    process.env.STRIPE_PRICE_ENTERPRISE = "price_enterprise_alias";
+
+    expect(resolveTier(undefined, "price_starter_alias")).toBe("flow");
+    expect(resolveTier(undefined, "price_professional_alias")).toBe("automate");
+    expect(resolveTier(undefined, "price_enterprise_alias")).toBe("scale");
   });
 });
 

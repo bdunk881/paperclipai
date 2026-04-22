@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { Search, Plug, PlugZap, Star, Tag, ExternalLink, CheckCircle, Loader2 } from "lucide-react";
+import { Search, Plug, PlugZap, Tag, ExternalLink, CheckCircle, Loader2 } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import { apiGet } from "../api/settingsClient";
 
@@ -17,8 +17,6 @@ interface IntegrationOption {
   description: string;
   category: string;
   tools: string[];
-  rating: number;
-  connected: boolean;
   official: boolean;
   logo?: string;
 }
@@ -38,8 +36,6 @@ const INTEGRATION_OPTIONS: IntegrationOption[] = [
     description: "Read and write GitHub repositories, issues, PRs, and code search.",
     category: "Developer Tools",
     tools: ["search_code", "create_issue", "list_prs", "get_file", "push_commit"],
-    rating: 4.9,
-    connected: true,
     official: true,
     logo: githubLogo,
   },
@@ -49,20 +45,8 @@ const INTEGRATION_OPTIONS: IntegrationOption[] = [
     description: "Sync projects and issues with Linear to automate triage, assignment, and status updates.",
     category: "Project Management",
     tools: ["list_teams", "list_issues", "create_issue", "update_issue"],
-    rating: 4.8,
-    connected: false,
     official: true,
     logo: linearLogo,
-  },
-  {
-    id: "mcp-linear",
-    name: "Linear",
-    description: "Sync projects and issues with Linear to automate triage, assignment, and status updates.",
-    category: "Project Management",
-    tools: ["list_teams", "list_issues", "create_issue", "update_issue"],
-    rating: 4.8,
-    connected: false,
-    official: true,
   },
   {
     id: "mcp-slack",
@@ -70,8 +54,6 @@ const INTEGRATION_OPTIONS: IntegrationOption[] = [
     description: "Send messages, read channels, and manage Slack workspaces.",
     category: "Communication",
     tools: ["send_message", "list_channels", "get_thread", "add_reaction"],
-    rating: 4.8,
-    connected: false,
     official: true,
     logo: slackLogo,
   },
@@ -81,8 +63,6 @@ const INTEGRATION_OPTIONS: IntegrationOption[] = [
     description: "Query and mutate PostgreSQL databases with schema introspection.",
     category: "Database",
     tools: ["query", "execute", "list_tables", "describe_table"],
-    rating: 4.7,
-    connected: false,
     official: true,
     logo: postgresLogo,
   },
@@ -92,8 +72,6 @@ const INTEGRATION_OPTIONS: IntegrationOption[] = [
     description: "Read and write files on your local or remote filesystem.",
     category: "Storage",
     tools: ["read_file", "write_file", "list_directory", "move_file", "delete_file"],
-    rating: 4.6,
-    connected: true,
     official: true,
   },
   {
@@ -102,8 +80,6 @@ const INTEGRATION_OPTIONS: IntegrationOption[] = [
     description: "Real-time web search via Brave's privacy-focused search API.",
     category: "Search",
     tools: ["web_search", "news_search", "image_search"],
-    rating: 4.5,
-    connected: false,
     official: false,
   },
   {
@@ -112,8 +88,6 @@ const INTEGRATION_OPTIONS: IntegrationOption[] = [
     description: "Manage payments, customers, subscriptions, and invoices via Stripe.",
     category: "Payments",
     tools: ["create_customer", "charge_card", "list_subscriptions", "create_invoice"],
-    rating: 4.8,
-    connected: false,
     official: true,
     logo: stripeLogo,
   },
@@ -123,8 +97,6 @@ const INTEGRATION_OPTIONS: IntegrationOption[] = [
     description: "Read and write Notion pages, databases, and blocks.",
     category: "Productivity",
     tools: ["get_page", "create_page", "query_database", "update_block"],
-    rating: 4.4,
-    connected: false,
     official: false,
     logo: notionLogo,
   },
@@ -134,8 +106,6 @@ const INTEGRATION_OPTIONS: IntegrationOption[] = [
     description: "Browser automation — navigate pages, click, fill forms, take screenshots.",
     category: "Browser",
     tools: ["navigate", "click", "type", "screenshot", "evaluate"],
-    rating: 4.3,
-    connected: false,
     official: false,
   },
 ];
@@ -169,10 +139,7 @@ export default function IntegrationsHub() {
     return matchSearch && matchCategory;
   });
 
-  const marketplaceConnectedCount = useMemo(
-    () => INTEGRATION_OPTIONS.filter((option) => option.connected).length,
-    []
-  );
+  const marketplaceConnectedCount = 0;
   const registeredCount = registered.length;
   const recentRegistered = registered
     .slice()
@@ -305,9 +272,6 @@ export default function IntegrationsHub() {
                       <div className="flex items-center gap-1 text-xs text-gray-400 dark:text-gray-500">
                         <Tag size={9} />
                         {server.category}
-                        <span className="mx-1">·</span>
-                        <Star size={9} className="text-yellow-400" />
-                        {server.rating}
                       </div>
                     </div>
                   </div>

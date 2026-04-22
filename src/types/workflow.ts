@@ -148,6 +148,12 @@ export interface WorkflowRun {
   input: Record<string, unknown>;
   output?: Record<string, unknown>;
   stepResults: StepResult[];
+  runtimeState?: {
+    config: Record<string, unknown>;
+    context: Record<string, unknown>;
+    currentStepIndex: number;
+    waitingApprovalId?: string;
+  };
   error?: string;
 }
 

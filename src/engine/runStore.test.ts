@@ -79,6 +79,27 @@ describe("runStore.update", () => {
     await runStore.update(run.id, { status: "running" });
     expect(run.status).toBe("pending");
   });
+
+  it("persists runtimeState snapshots", async () => {
+    const run = makeRun();
+    await runStore.create(run);
+    await runStore.update(run.id, {
+      runtimeState: {
+        config: { mode: "test" },
+        context: { ticketId: "T-1", revision: 2 },
+        currentStepIndex: 1,
+        waitingApprovalId: "approval-123",
+      },
+    });
+    await expect(runStore.get(run.id)).resolves.toMatchObject({
+      runtimeState: {
+        config: { mode: "test" },
+        context: { ticketId: "T-1", revision: 2 },
+        currentStepIndex: 1,
+        waitingApprovalId: "approval-123",
+      },
+    });
+  });
 });
 
 describe("runStore.list", () => {

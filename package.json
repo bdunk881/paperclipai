@@ -7,11 +7,11 @@
     "build": "tsc",
     "start": "node dist/index.js",
     "dev": "ts-node src/index.ts",
-    "test": "jest",
-    "test:coverage": "jest --coverage",
-    "test:templates": "jest src/templates",
-    "test:api": "jest src/api",
-    "test:engine": "jest src/engine",
+    "test": "jest --config jest.config.cjs --runInBand",
+    "test:coverage": "jest --config jest.config.cjs --coverage --runInBand",
+    "test:templates": "jest --config jest.config.cjs --runInBand src/templates",
+    "test:api": "jest --config jest.config.cjs --runInBand src/api",
+    "test:engine": "jest --config jest.config.cjs --runInBand src/engine",
     "health-report": "ts-node src/integrations/apollo-attio/health-metrics.ts"
   },
   "dependencies": {

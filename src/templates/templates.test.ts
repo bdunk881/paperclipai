@@ -50,8 +50,8 @@ function validateStepWiring(template: WorkflowTemplate): string[] {
 // ---------------------------------------------------------------------------
 
 describe("Template registry", () => {
-  it("exports 3 templates", () => {
-    expect(WORKFLOW_TEMPLATES).toHaveLength(3);
+  it("exports 13 templates", () => {
+    expect(WORKFLOW_TEMPLATES).toHaveLength(13);
   });
 
   it("all templates are indexed in TEMPLATE_MAP", () => {
@@ -81,11 +81,9 @@ describe("Template registry", () => {
 // Per-template structural tests
 // ---------------------------------------------------------------------------
 
-describe.each([
-  ["Customer Support Bot", customerSupportBot],
-  ["Lead Enrichment", leadEnrichment],
-  ["Content Generator", contentGenerator],
-] as [string, WorkflowTemplate][])(
+describe.each(
+  WORKFLOW_TEMPLATES.map((template) => [template.name, template] as [string, WorkflowTemplate])
+)(
   "Template: %s",
   (_name, template) => {
     it("has a unique non-empty id", () => {

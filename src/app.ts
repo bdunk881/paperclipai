@@ -9,7 +9,11 @@ import rateLimit from "express-rate-limit";
 import multer from "multer";
 import cors from "cors";
 import helmet from "helmet";
-import { WORKFLOW_TEMPLATES, getTemplate, getTemplatesByCategory } from "./templates";
+import {
+  getTemplate,
+  getTemplatesByCategory,
+  listTemplates,
+} from "./templates";
 import { WorkflowTemplate, WorkflowStep } from "./types/workflow";
 import { workflowEngine } from "./engine/WorkflowEngine";
 import { runStore } from "./engine/runStore";
@@ -17,6 +21,7 @@ import { approvalStore } from "./engine/approvalStore";
 import llmConfigRoutes from "./llmConfig/llmConfigRoutes";
 import mcpRoutes from "./mcp/mcpRoutes";
 import memoryRoutes from "./memory/memoryRoutes";
+import controlPlaneRoutes from "./controlPlane/controlPlaneRoutes";
 import { llmConfigStore } from "./llmConfig/llmConfigStore";
 import { getProvider } from "./engine/llmProviders";
 import { parseFile } from "./engine/fileParser";
@@ -49,6 +54,12 @@ import integrationRoutes, {
 } from "./integrations/integrationRoutes";
 import googleWorkspaceConnectorRoutes from "./connectors/google-workspace/routes";
 import googleWorkspaceWebhookRoutes from "./connectors/google-workspace/webhookRoutes";
+import {
+  createPortableWorkflowBundle,
+  getPortableWorkflowSchemaDescriptor,
+  parsePortableWorkflowBundle,
+} from "./workflows/portableSchema";
+import { saveImportedTemplate } from "./templates/importedTemplateStore";
 
 const app = express();
 
@@ -232,6 +243,7 @@ app.use("/api/integrations/intercom", intercomRoutes);
 app.use("/api/integrations/datadog-azure-monitor", datadogAzureMonitorRoutes);
 app.use("/api/integrations/agent-catalog", agentCatalogRoutes);
 app.use("/api/connectors/google-workspace", googleWorkspaceConnectorRoutes);
+app.use("/api/control-plane", requireAuth, controlPlaneRoutes);
 
 // ---------------------------------------------------------------------------
 // Auth API — identity endpoint for authenticated callers
@@ -254,7 +266,7 @@ app.get("/api/templates", (req, res) => {
   if (category && typeof category === "string") {
     templates = getTemplatesByCategory(category as WorkflowTemplate["category"]);
   } else {
-    templates = WORKFLOW_TEMPLATES;
+    templates = listTemplates();
   }
 
   res.json({
@@ -271,6 +283,11 @@ app.get("/api/templates", (req, res) => {
   });
 });
 
+/** Returns the current portable workflow schema contract */
+app.get("/api/workflows/schema", (_req, res) => {
+  res.json(getPortableWorkflowSchemaDescriptor());
+});
+
 /** Get a single template with full definition */
 app.get("/api/templates/:id", (req, res) => {
   try {
@@ -279,6 +296,43 @@ app.get("/api/templates/:id", (req, res) => {
   } catch {
     res.status(404).json({ error: `Template not found: ${req.params.id}` });
   }
+});
+
+/** Export a template in the portable AutoFlow workflow format */
+app.get("/api/templates/:id/export", (req, res) => {
+  try {
+    const template = getTemplate(req.params.id);
+    res.json(createPortableWorkflowBundle(template));
+  } catch {
+    res.status(404).json({ error: `Template not found: ${req.params.id}` });
+  }
+});
+
+/** Import a portable workflow template into the in-memory registry */
+app.post("/api/templates/import", requireAuth, async (req, res) => {
+  let bundle;
+  try {
+    bundle = parsePortableWorkflowBundle(req.body);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Invalid portable workflow payload";
+    res.status(400).json({ error: message });
+    return;
+  }
+
+  try {
+    getTemplate(bundle.template.id);
+    res.status(409).json({ error: `Template already exists: ${bundle.template.id}` });
+    return;
+  } catch {
+    // Template id is available; continue with import.
+  }
+
+  await saveImportedTemplate(bundle.template);
+  res.status(201).json({
+    imported: true,
+    template: bundle.template,
+    schemaVersion: bundle.schemaVersion,
+  });
 });
 
 /** Get sample data for a template (for dashboard preview) */
@@ -617,7 +671,7 @@ app.get("/health", (_req, res) => {
   const runs = runStore.list();
   res.json({
     status: "ok",
-    templates: WORKFLOW_TEMPLATES.length,
+    templates: listTemplates().length,
     runs: {
       total: runs.length,
       running: runs.filter((r) => r.status === "running").length,

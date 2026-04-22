@@ -17,6 +17,24 @@ describe("llmConfigStore async persistence", () => {
     mockIsPostgresConfigured.mockReturnValue(false);
   });
 
+  async function createConfig(params: {
+    userId: string;
+    provider: "openai" | "anthropic";
+    label: string;
+    model: string;
+    apiKey: string;
+  }) {
+    const created = llmConfigStore.create({
+      userId: params.userId,
+      provider: params.provider,
+      label: params.label,
+      model: params.model,
+      credentials: { apiKey: params.apiKey },
+    });
+    await Promise.resolve();
+    return created;
+  }
+
   it("persists created configs when Postgres is enabled", async () => {
     mockIsPostgresConfigured.mockReturnValue(true);
     mockQueryPostgres.mockResolvedValue({
@@ -27,7 +45,7 @@ describe("llmConfigStore async persistence", () => {
       fields: [],
     });
 
-    const created = await llmConfigStore.createAsync({
+    const created = await createConfig({
       userId: "user-a",
       provider: "openai",
       label: "Primary",
@@ -37,15 +55,11 @@ describe("llmConfigStore async persistence", () => {
 
     expect(created.apiKeyMasked).toBe("****1234");
     expect(mockQueryPostgres).toHaveBeenCalledWith(
-      expect.stringContaining("INSERT INTO llm_configs"),
+      expect.stringContaining("INSERT INTO connector_credentials"),
       expect.arrayContaining([
+        "llm-config",
         created.id,
         "user-a",
-        "openai",
-        "Primary",
-        "gpt-4o",
-        "****1234",
-        false,
       ])
     );
   });
@@ -60,16 +74,19 @@ describe("llmConfigStore async persistence", () => {
       fields: [],
     });
 
-    const created = await llmConfigStore.createAsync({
+    const created = await createConfig({
       userId: "user-a",
       provider: "anthropic",
       label: "Claude",
       model: "claude-3-5-sonnet-20241022",
       apiKey: "sk-ant-coldlookup",
     });
-    const insertParams = mockQueryPostgres.mock.calls[0]?.[1] as unknown[] | undefined;
-    const encryptedApiKey = typeof insertParams?.[5] === "string" ? insertParams[5] : undefined;
-    expect(encryptedApiKey).toBeDefined();
+    const persistedRecordJson = mockQueryPostgres.mock.calls[0]?.[1]?.[5] as string | undefined;
+    const persistedRecord = persistedRecordJson
+      ? (JSON.parse(persistedRecordJson) as Record<string, unknown>)
+      : undefined;
+
+    expect(persistedRecord?.["secretPayloadEncrypted"]).toBeDefined();
 
     llmConfigStore.clear();
     mockQueryPostgres.mockReset();
@@ -78,13 +95,22 @@ describe("llmConfigStore async persistence", () => {
         {
           id: created.id,
           user_id: "user-a",
-          provider: "anthropic",
-          label: "Claude",
-          model: "claude-3-5-sonnet-20241022",
-          api_key_encrypted: encryptedApiKey,
-          api_key_masked: "****okup",
-          is_default: true,
-          created_at: new Date().toISOString(),
+          record_data: {
+            ...(persistedRecord ?? {}),
+            id: created.id,
+            userId: "user-a",
+            authMethod: "anthropic",
+            label: "Claude",
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+            metadata: {
+              provider: "anthropic",
+              model: "claude-3-5-sonnet-20241022",
+              credentialSummary: { apiKeyMasked: "****okup" },
+              apiKeyMasked: "****okup",
+              isDefault: true,
+            },
+          },
         },
       ],
       rowCount: 1,
@@ -106,8 +132,8 @@ describe("llmConfigStore async persistence", () => {
       })
     );
     expect(mockQueryPostgres).toHaveBeenCalledWith(
-      "SELECT * FROM llm_configs WHERE user_id = $1 AND is_default = true LIMIT 1",
-      ["user-a"]
+      "SELECT id, user_id, record_data FROM connector_credentials WHERE service = $1 ORDER BY created_at DESC",
+      ["llm-config"]
     );
   });
 
@@ -121,7 +147,7 @@ describe("llmConfigStore async persistence", () => {
       fields: [],
     });
 
-    const local = await llmConfigStore.createAsync({
+    const local = await createConfig({
       userId: "user-a",
       provider: "openai",
       label: "Warm cache",
@@ -135,13 +161,22 @@ describe("llmConfigStore async persistence", () => {
         {
           id: "persisted-config",
           user_id: "user-a",
-          provider: "anthropic",
-          label: "Persisted",
-          model: "claude-3-5-sonnet-20241022",
-          api_key_encrypted: "persisted-encrypted",
-          api_key_masked: "****5678",
-          is_default: false,
-          created_at: "2026-04-20T00:00:00.000Z",
+          record_data: {
+            id: "persisted-config",
+            userId: "user-a",
+            authMethod: "anthropic",
+            label: "Persisted",
+            createdAt: "2026-04-20T00:00:00.000Z",
+            updatedAt: "2026-04-20T00:00:00.000Z",
+            metadata: {
+              provider: "anthropic",
+              model: "claude-3-5-sonnet-20241022",
+              credentialSummary: { apiKeyMasked: "****5678" },
+              apiKeyMasked: "****5678",
+              isDefault: false,
+            },
+            secretPayloadEncrypted: "persisted-encrypted",
+          },
         },
       ],
       rowCount: 1,
@@ -160,8 +195,8 @@ describe("llmConfigStore async persistence", () => {
     );
     expect(listed).toHaveLength(2);
     expect(mockQueryPostgres).toHaveBeenCalledWith(
-      "SELECT * FROM llm_configs WHERE user_id = $1 ORDER BY created_at DESC",
-      ["user-a"]
+      "SELECT id, user_id, record_data FROM connector_credentials WHERE service = $1 ORDER BY created_at DESC",
+      ["llm-config"]
     );
   });
 });

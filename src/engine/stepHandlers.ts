@@ -16,7 +16,6 @@ import { logClassificationDecision } from "./classificationLog";
 import { knowledgeStore } from "../knowledge/knowledgeStore";
 import { sanitizeContext } from "./crmFieldAllowlist";
 import { auditCrmApiCall } from "./crmAuditLog";
-import { knowledgeStore } from "../knowledge/knowledgeStore";
 
 export type StepContext = Record<string, unknown>;
 
@@ -547,11 +546,7 @@ export async function handleAgent(
     } satisfies AgentMessage);
   }
 
-<<<<<<< HEAD
   const agentOriginalFieldCount = Object.keys(ctx).length;
-
-=======
->>>>>>> 88826e9 (feat(security): add CRM data minimization field allowlist (ALT-1408))
   // Data minimization: strip sensitive CRM fields before they reach the LLM
   const { sanitized: agentSanitized, blockedCategories: agentBlocked, strippedCount: agentStripped } = sanitizeContext(ctx);
   if (agentStripped > 0) {
@@ -561,7 +556,6 @@ export async function handleAgent(
     );
   }
 
-<<<<<<< HEAD
   // Audit log: record CRM field categories sent to agent API
   auditCrmApiCall({
     userId,
@@ -574,9 +568,6 @@ export async function handleAgent(
     blockedCategories: agentBlocked,
     strippedCount: agentStripped,
   });
-
-=======
->>>>>>> 88826e9 (feat(security): add CRM data minimization field allowlist (ALT-1408))
   // Build context summary for the prompt
   const contextSummary = Object.entries(agentSanitized)
     .filter(([, v]) => v !== undefined && v !== null)

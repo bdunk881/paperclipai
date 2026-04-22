@@ -658,6 +658,7 @@ app.get("/api/executions/:id/state", requireAuth, async (req, res) => {
     approval,
     pausedAtStepId: approval.stepId,
     pausedAtStepName: approval.stepName,
+    runtimeState: run.runtimeState ?? null,
   });
 });
 

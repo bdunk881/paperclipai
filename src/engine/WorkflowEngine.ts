@@ -118,6 +118,32 @@ function evalCondition(expression: string, context: Record<string, unknown>): bo
   }
 }
 
+function makeRuntimeState(
+  config: Record<string, unknown>,
+  context: Record<string, unknown>,
+  currentStepIndex: number,
+  waitingApprovalId?: string
+): NonNullable<WorkflowRun["runtimeState"]> {
+  const serializableContext = JSON.parse(
+    JSON.stringify(context, (key, value) => {
+      if (key === "memory") {
+        return undefined;
+      }
+      if (typeof value === "function" || value === undefined) {
+        return undefined;
+      }
+      return value;
+    })
+  ) as Record<string, unknown>;
+
+  return {
+    config: JSON.parse(JSON.stringify(config)) as Record<string, unknown>,
+    context: serializableContext,
+    currentStepIndex,
+    waitingApprovalId,
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Step executors
 // ---------------------------------------------------------------------------
@@ -243,6 +269,11 @@ export class WorkflowEngine {
       startedAt: new Date().toISOString(),
       input,
       stepResults: [],
+      runtimeState: {
+        config: { ...runConfig },
+        context: { ...runConfig, ...input },
+        currentStepIndex: 0,
+      },
     });
 
     // Execute asynchronously so the HTTP response returns immediately
@@ -306,6 +337,10 @@ export class WorkflowEngine {
 
     for (let stepIndex = 0; stepIndex < template.steps.length; stepIndex += 1) {
       const step = template.steps[stepIndex];
+      await runStore.update(runId, {
+        runtimeState: makeRuntimeState(config, context, stepIndex),
+      });
+
       const start = Date.now();
       let stepOutput: Record<string, unknown> = {};
       let stepError: string | undefined;
@@ -369,6 +404,10 @@ export class WorkflowEngine {
               assignee,
               message,
               timeoutMinutes,
+            });
+
+            await runStore.update(runId, {
+              runtimeState: makeRuntimeState(config, context, stepIndex, approvalId),
             });
 
             const { decision, comment } = await approvalStore.waitForDecision(approvalId, 50);
@@ -443,6 +482,7 @@ export class WorkflowEngine {
           completedAt: new Date().toISOString(),
           error: stepError,
           stepResults,
+          runtimeState: makeRuntimeState(config, context, stepIndex),
         });
         return;
       }
@@ -466,6 +506,7 @@ export class WorkflowEngine {
       completedAt: new Date().toISOString(),
       output,
       stepResults,
+      runtimeState: makeRuntimeState(config, context, template.steps.length - 1),
     });
   }
 }

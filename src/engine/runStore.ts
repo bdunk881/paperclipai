@@ -17,6 +17,14 @@ function cloneRun(run: WorkflowRun): WorkflowRun {
     input: { ...run.input },
     output: run.output ? { ...run.output } : undefined,
     stepResults: [...run.stepResults],
+    runtimeState: run.runtimeState
+      ? {
+          config: { ...run.runtimeState.config },
+          context: { ...run.runtimeState.context },
+          currentStepIndex: run.runtimeState.currentStepIndex,
+          waitingApprovalId: run.runtimeState.waitingApprovalId,
+        }
+      : undefined,
   };
 }
 
@@ -30,6 +38,7 @@ function mapRowToRun(row: Record<string, unknown>): WorkflowRun {
     completedAt: row["completed_at"] ? new Date(String(row["completed_at"])).toISOString() : undefined,
     input: parseJsonValue<Record<string, unknown>>(row["input_json"], {}),
     output: parseJsonValue<Record<string, unknown> | undefined>(row["output_json"], undefined),
+    runtimeState: parseJsonValue<WorkflowRun["runtimeState"] | undefined>(row["runtime_state_json"], undefined),
     error: typeof row["error"] === "string" ? row["error"] : undefined,
     stepResults: [],
   };
@@ -106,9 +115,9 @@ export const runStore = {
       `
         INSERT INTO workflow_runs (
           id, template_id, template_name, status, started_at, completed_at,
-          input_json, output_json, error
+          input_json, output_json, runtime_state_json, error
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8::jsonb, $9)
+        VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8::jsonb, $9::jsonb, $10)
       `,
       [
         cloned.id,
@@ -119,6 +128,7 @@ export const runStore = {
         cloned.completedAt ?? null,
         serializeJson(cloned.input),
         serializeJson(cloned.output),
+        serializeJson(cloned.runtimeState),
         cloned.error ?? null,
       ]
     );
@@ -135,7 +145,7 @@ export const runStore = {
     const pool = getPostgresPool();
     const result = await pool.query(
       `
-        SELECT id, template_id, template_name, status, started_at, completed_at, input_json, output_json, error
+        SELECT id, template_id, template_name, status, started_at, completed_at, input_json, output_json, runtime_state_json, error
         FROM workflow_runs
         WHERE id = $1
       `,
@@ -164,6 +174,14 @@ export const runStore = {
       input: patch.input ? { ...patch.input } : existing.input,
       output: patch.output ? { ...patch.output } : existing.output,
       stepResults: patch.stepResults ? [...patch.stepResults] : existing.stepResults,
+      runtimeState: patch.runtimeState
+        ? {
+            config: { ...patch.runtimeState.config },
+            context: { ...patch.runtimeState.context },
+            currentStepIndex: patch.runtimeState.currentStepIndex,
+            waitingApprovalId: patch.runtimeState.waitingApprovalId,
+          }
+        : existing.runtimeState,
     };
 
     if (!isPostgresPersistenceEnabled()) {
@@ -182,7 +200,8 @@ export const runStore = {
             completed_at = $6,
             input_json = $7::jsonb,
             output_json = $8::jsonb,
-            error = $9,
+            runtime_state_json = $9::jsonb,
+            error = $10,
             updated_at = now()
         WHERE id = $1
       `,
@@ -195,6 +214,7 @@ export const runStore = {
         updated.completedAt ?? null,
         serializeJson(updated.input),
         serializeJson(updated.output),
+        serializeJson(updated.runtimeState),
         updated.error ?? null,
       ]
     );
@@ -212,7 +232,7 @@ export const runStore = {
     const pool = getPostgresPool();
     const result = await pool.query(
       `
-        SELECT id, template_id, template_name, status, started_at, completed_at, input_json, output_json, error
+        SELECT id, template_id, template_name, status, started_at, completed_at, input_json, output_json, runtime_state_json, error
         FROM workflow_runs
         WHERE ($1::text IS NULL OR template_id = $1)
         ORDER BY started_at DESC

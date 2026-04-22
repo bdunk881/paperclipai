@@ -219,6 +219,8 @@ describe("GET /api/executions/:id/state", () => {
     expect(stateRes!.body.run.status).toBe("awaiting_approval");
     expect(stateRes!.body.approval.runId).toBe(run.id);
     expect(stateRes!.body.pausedAtStepId).toBe("approval-1");
+    expect(stateRes!.body.runtimeState.currentStepIndex).toBe(1);
+    expect(stateRes!.body.runtimeState.waitingApprovalId).toBe(stateRes!.body.approval.id);
 
     await approvalStore.resolve(stateRes!.body.approval.id, "approved", "ok");
   });

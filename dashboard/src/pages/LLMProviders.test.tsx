@@ -174,7 +174,8 @@ describe("LLMProviders", () => {
     });
 
     fireEvent.click(getBodyRows(container)[1]?.querySelector("td:last-child button") as HTMLButtonElement);
-    fireEvent.click(screen.getAllByRole("button", { name: /^disconnect$/i }).at(-1) as HTMLButtonElement);
+    const disconnectButtons = screen.getAllByRole("button", { name: /^disconnect$/i });
+    fireEvent.click(disconnectButtons[disconnectButtons.length - 1] as HTMLButtonElement);
 
     await waitFor(() => {
       expect(deleteLLMConfigMock).toHaveBeenCalledWith("cfg-2");

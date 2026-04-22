@@ -94,6 +94,9 @@ Full API docs at [docs.helloautoflow.com/api-reference](https://docs.helloautofl
 | `GET` | `/api/templates` | List all workflow templates |
 | `GET` | `/api/templates/:id` | Get a single template definition |
 | `GET` | `/api/templates/:id/sample` | Get sample input/output for a template |
+| `GET` | `/api/workflows/schema` | Get the current portable workflow JSON schema descriptor |
+| `GET` | `/api/templates/:id/export` | Export a template in portable workflow JSON format |
+| `POST` | `/api/templates/import` | Import a portable workflow template |
 | `POST` | `/api/runs` | Start a new workflow run |
 | `GET` | `/api/runs` | List all runs |
 | `GET` | `/api/runs/:id` | Get a specific run + logs |
@@ -158,6 +161,20 @@ npm run test:engine   # Workflow engine
 npm run test:api      # API endpoints
 npm run test:templates # Template definitions
 npm run test:coverage  # Coverage report (80% threshold)
+```
+
+### Portable workflow bundle example
+
+```json
+{
+  "format": "autoflow.workflow-template",
+  "schemaVersion": "2026-04-19",
+  "exportedAt": "2026-04-20T00:00:00.000Z",
+  "template": {
+    "id": "tpl-support-bot",
+    "name": "Customer Support Bot"
+  }
+}
 ```
 
 ---

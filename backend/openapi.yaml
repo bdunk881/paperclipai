@@ -39,6 +39,8 @@ tags:
     description: User LLM provider credentials (BYOLLM)
   - name: Templates
     description: Legacy read-only template endpoints (backward-compatible aliases)
+  - name: PortableWorkflows
+    description: Portable workflow schema, import, and export endpoints
   - name: Health
     description: Service health
 
@@ -85,7 +87,7 @@ paths:
           in: query
           schema:
             type: string
-            enum: [support, sales, content, custom]
+            enum: [support, sales, content, operations, marketing, finance, engineering, custom]
           description: Filter by category
       responses:
         "200":
@@ -572,7 +574,7 @@ paths:
           in: query
           schema:
             type: string
-            enum: [support, sales, content, custom]
+            enum: [support, sales, content, operations, marketing, finance, engineering, custom]
       responses:
         "200":
           description: Template list
@@ -636,6 +638,69 @@ paths:
                     additionalProperties: true
         "404":
           $ref: "#/components/responses/NotFound"
+
+  /api/workflows/schema:
+    get:
+      operationId: getPortableWorkflowSchema
+      summary: Get the current portable workflow schema descriptor
+      tags: [PortableWorkflows]
+      responses:
+        "200":
+          description: Portable workflow JSON contract metadata
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PortableWorkflowSchemaDescriptor"
+
+  /api/templates/{id}/export:
+    get:
+      operationId: exportTemplate
+      summary: Export a template in portable workflow JSON format
+      tags: [PortableWorkflows]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Portable workflow bundle
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PortableWorkflowBundle"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/templates/import:
+    post:
+      operationId: importTemplate
+      summary: Import a portable workflow template
+      tags: [PortableWorkflows]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PortableWorkflowBundle"
+      responses:
+        "201":
+          description: Template imported successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PortableWorkflowImportResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "409":
+          description: Template ID already exists
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
 
   # ---------------------------------------------------------------------------
   # Health
@@ -726,7 +791,7 @@ components:
     # -------------------------------------------------------------------------
     StepKind:
       type: string
-      enum: [trigger, llm, transform, condition, action, output]
+      enum: [trigger, cron_trigger, interval_trigger, llm, transform, condition, action, output, agent, approval, mcp, file_trigger]
       description: Kind of step within a workflow
 
     FieldType:
@@ -746,7 +811,7 @@ components:
 
     WorkflowCategory:
       type: string
-      enum: [support, sales, content, custom]
+      enum: [support, sales, content, operations, marketing, finance, engineering, custom]
       description: Workflow category
 
     # -------------------------------------------------------------------------
@@ -817,6 +882,56 @@ components:
           type: object
           additionalProperties: true
           description: Step-level configuration overrides
+        llmConfigId:
+          type: string
+          description: LLM config identifier for llm steps
+        llmTier:
+          type: string
+          enum: [lite, standard, power]
+          description: Explicit model-tier override for llm or agent steps
+        mcpServerUrl:
+          type: string
+          description: MCP server URL for mcp steps
+        mcpTool:
+          type: string
+          description: MCP tool name for mcp steps
+        agentModel:
+          type: string
+          description: Model identifier for agent steps
+        agentInstructions:
+          type: string
+          description: System instructions passed to spawned agents
+        subAgentSlots:
+          type: integer
+          minimum: 1
+          description: Parallel worker count for agent steps
+        approvalAssignee:
+          type: string
+          description: Approval assignee for approval steps
+        approvalMessage:
+          type: string
+          description: Approval request message shown to the approver
+        approvalTimeoutMinutes:
+          type: integer
+          minimum: 1
+          description: Timeout window for approval steps
+        acceptedFileTypes:
+          type: array
+          items:
+            type: string
+          description: Allowed MIME types or extensions for file triggers
+        cronExpression:
+          type: string
+          description: Cron expression for cron triggers
+        timezone:
+          type: string
+          description: Timezone for cron triggers
+        intervalMinutes:
+          type: integer
+          minimum: 1
+          description: Interval frequency for interval triggers
+        retry:
+          $ref: "#/components/schemas/WorkflowRetryPolicy"
 
     WorkflowSummary:
       type: object
@@ -867,6 +982,16 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/WorkflowStep"
+        retry:
+          $ref: "#/components/schemas/WorkflowRetryPolicy"
+        errors:
+          type: array
+          items:
+            $ref: "#/components/schemas/WorkflowStep"
+        _finally:
+          type: array
+          items:
+            $ref: "#/components/schemas/WorkflowStep"
         sampleInput:
           type: object
           additionalProperties: true
@@ -896,12 +1021,100 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/WorkflowStep"
+        retry:
+          $ref: "#/components/schemas/WorkflowRetryPolicy"
+        errors:
+          type: array
+          items:
+            $ref: "#/components/schemas/WorkflowStep"
+        _finally:
+          type: array
+          items:
+            $ref: "#/components/schemas/WorkflowStep"
         sampleInput:
           type: object
           additionalProperties: true
         expectedOutput:
           type: object
           additionalProperties: true
+
+    WorkflowRetryPolicy:
+      type: object
+      required: [type, maxAttempts]
+      properties:
+        type:
+          type: string
+          enum: [constant, exponential, random]
+        maxAttempts:
+          type: integer
+          minimum: 1
+        maxDuration:
+          type: integer
+          minimum: 1
+        intervalMs:
+          type: integer
+          minimum: 0
+        delayFactor:
+          type: number
+          minimum: 0
+          exclusiveMinimum: true
+        maxInterval:
+          type: integer
+          minimum: 0
+        warningOnRetry:
+          type: boolean
+
+    PortableWorkflowSchemaDescriptor:
+      type: object
+      required: [format, schemaVersion, supportedCategories, supportedStepKinds, requiredTemplateFields]
+      properties:
+        format:
+          type: string
+          example: autoflow.workflow-template
+        schemaVersion:
+          type: string
+          example: "2026-04-19"
+        supportedCategories:
+          type: array
+          items:
+            $ref: "#/components/schemas/WorkflowCategory"
+        supportedStepKinds:
+          type: array
+          items:
+            $ref: "#/components/schemas/StepKind"
+        requiredTemplateFields:
+          type: array
+          items:
+            type: string
+
+    PortableWorkflowBundle:
+      type: object
+      required: [format, schemaVersion, exportedAt, template]
+      properties:
+        format:
+          type: string
+          enum: [autoflow.workflow-template]
+        schemaVersion:
+          type: string
+          enum: ["2026-04-19"]
+        exportedAt:
+          type: string
+          format: date-time
+        template:
+          $ref: "#/components/schemas/Workflow"
+
+    PortableWorkflowImportResponse:
+      type: object
+      required: [imported, template, schemaVersion]
+      properties:
+        imported:
+          type: boolean
+          example: true
+        template:
+          $ref: "#/components/schemas/Workflow"
+        schemaVersion:
+          type: string
+          example: "2026-04-19"
 
     # -------------------------------------------------------------------------
     # Run schemas

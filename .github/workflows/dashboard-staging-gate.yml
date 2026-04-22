@@ -7,6 +7,7 @@ on:
       - "dashboard/**"
       - ".github/workflows/dashboard-staging-gate.yml"
   push:
+    branches: [main, master]
     paths:
       - "dashboard/**"
       - ".github/workflows/dashboard-staging-gate.yml"
@@ -36,7 +37,6 @@ jobs:
     name: Deploy Dashboard Preview
     if: |
       github.event_name == 'pull_request' ||
-      (github.event_name == 'push' && github.ref != 'refs/heads/main' && github.ref != 'refs/heads/master') ||
       (github.event_name == 'workflow_dispatch' && github.event.inputs.target == 'preview')
     runs-on: ubuntu-latest
     outputs:

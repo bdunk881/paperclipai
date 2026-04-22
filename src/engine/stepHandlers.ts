@@ -16,6 +16,7 @@ import { logClassificationDecision } from "./classificationLog";
 import { knowledgeStore } from "../knowledge/knowledgeStore";
 import { sanitizeContext } from "./crmFieldAllowlist";
 import { auditCrmApiCall } from "./crmAuditLog";
+import { knowledgeStore } from "../knowledge/knowledgeStore";
 
 export type StepContext = Record<string, unknown>;
 

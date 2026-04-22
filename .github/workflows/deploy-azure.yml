@@ -98,31 +98,111 @@ jobs:
           subscription-id: ${{ env.ARM_SUBSCRIPTION_ID }}
 
       - name: Deploy backend to Azure Container Apps
+        id: deploy
         run: |
           set -euo pipefail
-          az containerapp update \
+          PREVIOUS_READY_REVISION=$(az containerapp show \
             --name "${{ steps.target.outputs.container_app }}" \
             --resource-group "${{ steps.target.outputs.resource_group }}" \
-            --image "${{ steps.target.outputs.image_tag }}"
+            --query 'properties.latestReadyRevisionName' \
+            -o tsv)
 
-      - name: Smoke test backend
-        run: |
-          set -euo pipefail
-          FQDN=$(az containerapp show \
+          NEW_REVISION=$(az containerapp update \
             --name "${{ steps.target.outputs.container_app }}" \
             --resource-group "${{ steps.target.outputs.resource_group }}" \
+            --image "${{ steps.target.outputs.image_tag }}" \
+            --query 'properties.latestRevisionName' \
+            -o tsv)
+
+          echo "Previous ready revision: ${PREVIOUS_READY_REVISION:-<none>}"
+          echo "New revision: $NEW_REVISION"
+
+          echo "previous_ready_revision=$PREVIOUS_READY_REVISION" >> "$GITHUB_OUTPUT"
+          echo "new_revision=$NEW_REVISION" >> "$GITHUB_OUTPUT"
+
+      - name: Wait for latest revision readiness
+        run: |
+          set -euo pipefail
+
+          TARGET_REVISION="${{ steps.deploy.outputs.new_revision }}"
+          APP_NAME="${{ steps.target.outputs.container_app }}"
+          RESOURCE_GROUP="${{ steps.target.outputs.resource_group }}"
+
+          for i in $(seq 1 40); do
+            LATEST_READY_REVISION=$(az containerapp show \
+              --name "$APP_NAME" \
+              --resource-group "$RESOURCE_GROUP" \
+              --query 'properties.latestReadyRevisionName' \
+              -o tsv)
+
+            if [ "$LATEST_READY_REVISION" = "$TARGET_REVISION" ]; then
+              echo "Revision $TARGET_REVISION is ready (attempt $i)"
+              exit 0
+            fi
+
+            echo "Attempt $i: waiting for revision $TARGET_REVISION to become ready; latest ready revision is ${LATEST_READY_REVISION:-<none>}."
+            az containerapp revision list \
+              --name "$APP_NAME" \
+              --resource-group "$RESOURCE_GROUP" \
+              --query "[].{name:name,active:properties.active,health:properties.healthState,running:properties.runningState,created:properties.createdTime}" \
+              -o table || true
+            sleep 15
+          done
+
+          echo "Revision $TARGET_REVISION never became latestReadyRevisionName."
+          exit 1
+
+      - name: Smoke test latest ready backend revision
+        run: |
+          set -euo pipefail
+
+          APP_NAME="${{ steps.target.outputs.container_app }}"
+          RESOURCE_GROUP="${{ steps.target.outputs.resource_group }}"
+          TARGET_REVISION="${{ steps.deploy.outputs.new_revision }}"
+
+          LATEST_READY_REVISION=$(az containerapp show \
+            --name "$APP_NAME" \
+            --resource-group "$RESOURCE_GROUP" \
+            --query 'properties.latestReadyRevisionName' \
+            -o tsv)
+
+          if [ "$LATEST_READY_REVISION" != "$TARGET_REVISION" ]; then
+            echo "Latest ready revision $LATEST_READY_REVISION does not match deployed revision $TARGET_REVISION."
+            exit 1
+          fi
+
+          REVISION_FQDN=$(az containerapp show \
+            --name "$APP_NAME" \
+            --resource-group "$RESOURCE_GROUP" \
+            --query 'properties.latestRevisionFqdn' \
+            -o tsv)
+          INGRESS_FQDN=$(az containerapp show \
+            --name "$APP_NAME" \
+            --resource-group "$RESOURCE_GROUP" \
             --query 'properties.configuration.ingress.fqdn' \
             -o tsv)
 
-          URL="https://${FQDN}/health"
+          if [ -n "$REVISION_FQDN" ]; then
+            URL="https://${REVISION_FQDN}/health"
+          else
+            URL="https://${INGRESS_FQDN}/health"
+          fi
+
           for i in $(seq 1 10); do
             STATUS=$(curl -s -o /dev/null -w "%{http_code}" "$URL")
             if [ "$STATUS" = "200" ]; then
-              echo "Health check passed (attempt $i)"
+              echo "Health check passed for $TARGET_REVISION via $URL (attempt $i)"
+              {
+                echo "### Azure backend deploy"
+                echo ""
+                echo "- Image: \`${{ steps.target.outputs.image_tag }}\`"
+                echo "- Revision: \`$TARGET_REVISION\`"
+                echo "- Smoke URL: \`$URL\`"
+              } >> "$GITHUB_STEP_SUMMARY"
               exit 0
             fi
-            echo "Attempt $i: got $STATUS, retrying in 15s..."
+            echo "Attempt $i: got $STATUS from $URL, retrying in 15s..."
             sleep 15
           done
-          echo "Health check failed after 10 attempts"
+          echo "Health check failed for revision $TARGET_REVISION after 10 attempts"
           exit 1

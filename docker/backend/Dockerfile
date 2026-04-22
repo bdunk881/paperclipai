@@ -1,45 +1,45 @@
 # syntax=docker/dockerfile:1
 
-# ─── Stage 1: Dependencies ────────────────────────────────────────────────────
-FROM python:3.12-slim AS deps
+FROM node:20-bookworm-slim AS deps
 WORKDIR /app
-COPY backend/requirements.txt ./
-RUN --mount=type=cache,target=/root/.cache/pip \
-    pip install --prefix=/install -r requirements.txt
+COPY package.json package-lock.json ./
+RUN --mount=type=cache,target=/root/.npm \
+    npm ci
 
-# ─── Stage 2: Builder ─────────────────────────────────────────────────────────
-FROM python:3.12-slim AS builder
+FROM deps AS builder
 WORKDIR /app
-COPY --from=deps /install /usr/local
-COPY backend/ ./
+COPY tsconfig.json ./
+COPY src ./src
 
 ARG BUILD_SHA=unknown
 ARG BUILD_DATE=unknown
 ENV BUILD_SHA=${BUILD_SHA} \
     BUILD_DATE=${BUILD_DATE}
 
-# Run any compile steps (e.g., compile translations, generate protobuf)
-RUN python -m compileall -q .
+RUN npm run build \
+    && npm prune --omit=dev
 
-# ─── Stage 3: Runtime ─────────────────────────────────────────────────────────
-FROM python:3.12-slim AS runtime
+FROM node:20-bookworm-slim AS runtime
 LABEL org.opencontainers.image.source="https://github.com/bdunk881/paperclipai"
 
-# Non-root user for security
-RUN groupadd -r appuser && useradd -r -g appuser appuser
-
 WORKDIR /app
-COPY --from=builder /usr/local /usr/local
-COPY --from=builder /app .
 
-# Health check
+ARG BUILD_SHA=unknown
+ARG BUILD_DATE=unknown
+ENV NODE_ENV=production \
+    PORT=3000 \
+    BUILD_SHA=${BUILD_SHA} \
+    BUILD_DATE=${BUILD_DATE}
+
+COPY --from=builder /app/package.json ./package.json
+COPY --from=builder /app/package-lock.json ./package-lock.json
+COPY --from=builder /app/node_modules ./node_modules
+COPY --from=builder /app/dist ./dist
+
 HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
-    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"
+    CMD node -e "fetch('http://127.0.0.1:' + (process.env.PORT || 3000) + '/health').then((res) => { if (!res.ok) process.exit(1); }).catch(() => process.exit(1))"
 
-USER appuser
-EXPOSE 8000
-ENV PYTHONUNBUFFERED=1 \
-    PYTHONDONTWRITEBYTECODE=1 \
-    PORT=8000
+USER node
+EXPOSE 3000
 
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "2"]
+CMD ["node", "dist/index.js"]

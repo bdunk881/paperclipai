@@ -40,6 +40,20 @@ The federated credential is configured in the app registration under Certificate
 
 Add these in the repo settings -> Secrets and variables -> Actions:
 
+### Backend (Azure Container Apps)
+
+Set these as environment variables on the `staging` and `production` GitHub environments used by `.github/workflows/deploy-azure.yml`:
+
+| Variable | Description |
+|---|---|
+| `AZURE_CIAM_CLIENT_ID` | Entra External ID app registration client ID used as the backend JWT audience |
+| `AZURE_CIAM_TENANT_ID` | Entra External ID tenant GUID used to build the backend issuer/JWKS URLs |
+| `AZURE_CIAM_TENANT_SUBDOMAIN` | Tenant prefix before `.ciamlogin.com` (for example `autoflowciam`) |
+
+The backend deploy workflow now validates these vars and writes them into the Container App with
+`az containerapp update --set-env-vars ...` so `/api/me` and other authenticated routes fail with
+real auth verdicts (`401/200`) instead of `503 Auth service not configured`.
+
 ### Dashboard (Azure Static Web Apps)
 
 | Secret | Description |

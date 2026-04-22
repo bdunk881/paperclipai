@@ -28,7 +28,11 @@ jobs:
   deploy:
     name: Build and Deploy Backend Container App
     runs-on: ubuntu-latest
-    environment: production
+    environment: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.environment || 'staging' }}
+    env:
+      AZURE_CIAM_CLIENT_ID: ${{ vars.AZURE_CIAM_CLIENT_ID }}
+      AZURE_CIAM_TENANT_ID: ${{ vars.AZURE_CIAM_TENANT_ID }}
+      AZURE_CIAM_TENANT_SUBDOMAIN: ${{ vars.AZURE_CIAM_TENANT_SUBDOMAIN }}
 
     steps:
       - uses: actions/checkout@v4
@@ -97,13 +101,27 @@ jobs:
           tenant-id: ${{ env.ARM_TENANT_ID }}
           subscription-id: ${{ env.ARM_SUBSCRIPTION_ID }}
 
+      - name: Validate CIAM backend auth env
+        run: |
+          set -euo pipefail
+          for key in AZURE_CIAM_CLIENT_ID AZURE_CIAM_TENANT_ID AZURE_CIAM_TENANT_SUBDOMAIN; do
+            if [ -z "${!key:-}" ]; then
+              echo "::error::Missing required backend auth variable: ${key}"
+              exit 1
+            fi
+          done
+
       - name: Deploy backend to Azure Container Apps
         run: |
           set -euo pipefail
           az containerapp update \
             --name "${{ steps.target.outputs.container_app }}" \
             --resource-group "${{ steps.target.outputs.resource_group }}" \
-            --image "${{ steps.target.outputs.image_tag }}"
+            --image "${{ steps.target.outputs.image_tag }}" \
+            --set-env-vars \
+              AZURE_CIAM_CLIENT_ID="${AZURE_CIAM_CLIENT_ID}" \
+              AZURE_CIAM_TENANT_ID="${AZURE_CIAM_TENANT_ID}" \
+              AZURE_CIAM_TENANT_SUBDOMAIN="${AZURE_CIAM_TENANT_SUBDOMAIN}"
 
       - name: Smoke test backend
         run: |
@@ -148,7 +166,15 @@ jobs:
             if [ "$LATEST_READY" = "$LATEST_REVISION" ] && [ -n "$REVISION_FQDN" ]; then
               STATUS=$(curl -s -o /dev/null -w "%{http_code}" "https://${REVISION_FQDN}/health")
               if [ "$STATUS" = "200" ]; then
-                echo "Health check passed on latest ready revision (attempt $i)"
+                AUTH_STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
+                  -H "Authorization: Bearer qa-smoke-user" \
+                  "https://${REVISION_FQDN}/api/me")
+                if [ "$AUTH_STATUS" = "503" ]; then
+                  echo "Auth smoke check failed: /api/me returned 503 Auth service not configured"
+                  exit 1
+                fi
+
+                echo "Health check passed on latest ready revision (attempt $i); /api/me returned ${AUTH_STATUS}"
                 exit 0
               fi
               echo "Revision is ready but /health returned $STATUS"

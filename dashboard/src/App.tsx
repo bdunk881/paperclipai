@@ -3,11 +3,6 @@ import { PublicClientApplication, EventType, AuthenticationResult } from "@azure
 import { MsalProvider } from "@azure/msal-react";
 import { msalConfig } from "./auth/msalConfig";
 import { AuthProvider, useAuth } from "./context/AuthContext";
-import {
-  readQaPreviewToken,
-  sanitizeQaPreviewRedirect,
-  writeStoredAuthUser,
-} from "./auth/authStorage";
 
 const msalInstance = new PublicClientApplication(msalConfig);
 
@@ -61,43 +56,6 @@ function PublicRoute({ children }: { children: React.ReactNode }) {
   return user ? <Navigate to="/" replace /> : <>{children}</>;
 }
 
-async function maybeActivateQaPreviewAccess(): Promise<void> {
-  const token = readQaPreviewToken(window.location.search);
-  if (!token) return;
-
-  const res = await fetch("/api/qa-preview-access", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ token }),
-  });
-
-  const redirectTarget = sanitizeQaPreviewRedirect(
-    new URLSearchParams(window.location.search).get("qaPreviewRedirect")
-  );
-
-  if (!res.ok) {
-    const failureSearch = new URLSearchParams();
-    failureSearch.set("qaPreviewError", "invalid");
-    const loginUrl = `/login?${failureSearch.toString()}`;
-    window.history.replaceState({}, "", loginUrl);
-    return;
-  }
-
-  const data = (await res.json()) as {
-    user?: { id: string; email: string; name: string; tenantId?: string };
-  };
-
-  if (!data.user) {
-    window.history.replaceState({}, "", "/login?qaPreviewError=invalid");
-    return;
-  }
-
-  writeStoredAuthUser(data.user);
-
-  const nextPath =
-    redirectTarget ?? `${window.location.pathname}${window.location.hash}`;
-  window.history.replaceState({}, "", nextPath);
-}
 
 export default function App() {
   return (

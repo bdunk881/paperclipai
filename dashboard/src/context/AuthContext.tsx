@@ -9,6 +9,12 @@ import {
   AccountInfo,
 } from "@azure/msal-browser";
 import { loginRequest, signupRequest } from "../auth/msalConfig";
+import {
+  StoredAuthUser,
+  AUTH_STORAGE_EVENT,
+  clearStoredAuthUser,
+  readStoredAuthUser,
+} from "../auth/authStorage";
 
 export interface User {
   id: string;
@@ -38,12 +44,34 @@ function accountToUser(account: AccountInfo): User {
   };
 }
 
+function storedUserToUser(user: StoredAuthUser): User {
+  return {
+    id: user.id,
+    email: user.email,
+    name: user.name,
+    tenantId: user.tenantId,
+  };
+}
+
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const { instance, accounts } = useMsal();
   const isAuthenticated = useIsAuthenticated();
   const account = useAccount(accounts[0] ?? null);
+  const [storedUser, setStoredUser] = React.useState<StoredAuthUser | null>(() => readStoredAuthUser());
 
-  const user = isAuthenticated && account ? accountToUser(account) : null;
+  React.useEffect(() => {
+    const syncStoredUser = () => setStoredUser(readStoredAuthUser());
+
+    window.addEventListener("storage", syncStoredUser);
+    window.addEventListener(AUTH_STORAGE_EVENT, syncStoredUser);
+
+    return () => {
+      window.removeEventListener("storage", syncStoredUser);
+      window.removeEventListener(AUTH_STORAGE_EVENT, syncStoredUser);
+    };
+  }, []);
+
+  const user = isAuthenticated && account ? accountToUser(account) : storedUser ? storedUserToUser(storedUser) : null;
 
   const login = async () => {
     await instance.loginRedirect(loginRequest);
@@ -54,6 +82,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const logout = () => {
+    clearStoredAuthUser();
+    if (!isAuthenticated || !account) {
+      return;
+    }
     instance.logoutRedirect({ postLogoutRedirectUri: "/login" });
   };
 

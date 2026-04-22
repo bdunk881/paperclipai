@@ -53,9 +53,9 @@ resource "azurerm_aadb2c_directory" "ciam" {
 # not the workforce tenant. The azuread provider must be aliased to authenticate
 # against the CIAM tenant once it exists. See outputs for the tenant_id needed.
 #
-# For initial deployment, the app registration below is a placeholder that
-# documents the desired config. A post-provisioning script (scripts/configure-ciam.sh)
-# creates the registration in the correct tenant.
+# For initial deployment, the app registration below documents the desired
+# config. Use infra/azure/scripts/sync-ciam-redirect-uris.sh to keep the live
+# registration aligned with the dashboard auth routes after domain changes.
 
 resource "azuread_application" "autoflow_spa" {
   display_name = "${var.prefix}-dashboard"

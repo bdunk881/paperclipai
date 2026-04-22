@@ -56,6 +56,7 @@ function PublicRoute({ children }: { children: React.ReactNode }) {
   return user ? <Navigate to="/" replace /> : <>{children}</>;
 }
 
+
 export default function App() {
   return (
     <MsalProvider instance={msalInstance}>

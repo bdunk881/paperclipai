@@ -86,8 +86,8 @@ export async function handleLlm(
 
   // Resolve config: step-level override or user's default
   const resolved = step.llmConfigId
-    ? llmConfigStore.getDecrypted(step.llmConfigId, userId)
-    : llmConfigStore.getDecryptedDefault(userId);
+    ? await llmConfigStore.getDecrypted(step.llmConfigId, userId)
+    : await llmConfigStore.getDecryptedDefault(userId);
 
   if (!resolved) {
     throw new Error(
@@ -112,6 +112,19 @@ export async function handleLlm(
     apiKey: resolved.apiKey,
     credentials: resolved.credentials,
     options: resolved.config.providerOptions,
+  });
+
+  // Audit log: record CRM field categories sent to the LLM API
+  auditCrmApiCall({
+    userId,
+    runId,
+    stepId: step.id,
+    stepKind: "llm",
+    apiEndpoint: `${resolved.config.provider}/${tieredModel}`,
+    originalFieldCount,
+    sanitizedCtx: sanitized,
+    blockedCategories,
+    strippedCount,
   });
 
   // Audit log: record CRM field categories sent to the LLM API
@@ -521,7 +534,7 @@ export async function handleAgent(
   const model = step.agentModel ?? "default";
 
   // Resolve the LLM provider once (shared across slots)
-  const resolved = llmConfigStore.getDecryptedDefault(userId);
+  const resolved = await llmConfigStore.getDecryptedDefault(userId);
   if (!resolved) {
     throw new Error(
       `Agent step "${step.id}" failed: no LLM provider configured. ` +

@@ -6,7 +6,11 @@ export default function Login() {
   const { login, signup } = useAuth();
   const [loading, setLoading] = useState(false);
   const [signupLoading, setSignupLoading] = useState(false);
-  const [error, setError] = useState("");
+  const searchParams = new URLSearchParams(window.location.search);
+  const qaPreviewError = searchParams.get("qaPreviewError") === "invalid";
+  const [error, setError] = useState(
+    qaPreviewError ? "Preview access link is invalid, expired, or not enabled for this deployment." : ""
+  );
 
   async function handleSignIn() {
     setError("");
@@ -81,6 +85,12 @@ export default function Login() {
           <p className="text-xs text-center text-gray-400 mt-4">
             New users are automatically registered on first sign-in.
           </p>
+
+          {qaPreviewError ? (
+            <p className="text-xs text-center text-amber-700 mt-4">
+              Request a fresh QA preview-access link if you still need smoke-test access.
+            </p>
+          ) : null}
         </div>
       </div>
     </div>

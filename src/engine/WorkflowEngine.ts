@@ -366,6 +366,7 @@ export class WorkflowEngine {
 
             const { id: approvalId, promise: approvalPromise } = approvalStore.create({
               runId,
+              templateId: template.id,
               templateName: template.name,
               stepId: step.id,
               stepName: step.name,

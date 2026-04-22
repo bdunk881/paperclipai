@@ -18,6 +18,7 @@ import { WorkflowTemplate, WorkflowStep } from "./types/workflow";
 import { workflowEngine } from "./engine/WorkflowEngine";
 import { runStore } from "./engine/runStore";
 import { approvalStore } from "./engine/approvalStore";
+import { approvalNotificationStore } from "./engine/approvalNotificationStore";
 import llmConfigRoutes from "./llmConfig/llmConfigRoutes";
 import mcpRoutes from "./mcp/mcpRoutes";
 import memoryRoutes from "./memory/memoryRoutes";
@@ -463,7 +464,7 @@ app.post("/api/runs/file", requireAuth, upload.single("file"), async (req: Authe
   const userId = req.auth?.sub;
   let openaiApiKey: string | undefined;
   if (userId) {
-    const defaultConfig = llmConfigStore.getDecryptedDefault(userId);
+    const defaultConfig = await llmConfigStore.getDecryptedDefault(userId);
     if (defaultConfig?.config.provider === "openai") {
       openaiApiKey = defaultConfig.apiKey;
     }
@@ -543,8 +544,8 @@ app.post("/api/workflows/generate", requireAuth, llmEndpointRateLimiter, async (
 
   const resolved =
     typeof llmConfigId === "string" && llmConfigId
-      ? llmConfigStore.getDecrypted(llmConfigId, userId)
-      : llmConfigStore.getDecryptedDefault(userId);
+      ? await llmConfigStore.getDecrypted(llmConfigId, userId)
+      : await llmConfigStore.getDecryptedDefault(userId);
 
   if (!resolved) {
     res.status(422).json({
@@ -631,25 +632,39 @@ app.post("/api/webhooks/:templateId", (req, res) => {
  * Query params: status=pending|approved|rejected|timed_out
  * Returns all approval requests, optionally filtered by status.
  */
-app.get("/api/approvals", (req, res) => {
+app.get("/api/approvals", requireAuth, (req: AuthenticatedRequest, res) => {
+  const userId = req.auth?.sub;
   const { status } = req.query;
   const validStatuses = ["pending", "approved", "rejected", "timed_out"];
   const filter =
     typeof status === "string" && validStatuses.includes(status)
       ? (status as "pending" | "approved" | "rejected" | "timed_out")
       : undefined;
-  const approvals = approvalStore.list(filter);
+  const approvals = approvalStore.list(filter).filter((approval) => approval.assignee === userId);
   res.json({ approvals, total: approvals.length });
+});
+
+/**
+ * GET /api/approvals/notifications
+ * Returns in-app approval notifications for the authenticated approver.
+ */
+app.get("/api/approvals/notifications", requireAuth, (req: AuthenticatedRequest, res) => {
+  const notifications = approvalNotificationStore.list({ assignee: req.auth?.sub });
+  res.json({ notifications, total: notifications.length });
 });
 
 /**
  * GET /api/approvals/:id
  * Returns a single approval request by ID.
  */
-app.get("/api/approvals/:id", (req, res) => {
+app.get("/api/approvals/:id", requireAuth, (req: AuthenticatedRequest, res) => {
   const approval = approvalStore.get(req.params.id);
   if (!approval) {
     res.status(404).json({ error: `Approval not found: ${req.params.id}` });
+    return;
+  }
+  if (approval.assignee !== req.auth?.sub) {
+    res.status(403).json({ error: "Forbidden" });
     return;
   }
   res.json(approval);
@@ -660,11 +675,21 @@ app.get("/api/approvals/:id", (req, res) => {
  * Body: { decision: "approved" | "rejected", comment?: string }
  * Resolves the approval request, resuming or terminating the paused run.
  */
-app.post("/api/approvals/:id/resolve", (req, res) => {
+app.post("/api/approvals/:id/resolve", requireAuth, (req: AuthenticatedRequest, res) => {
   const { decision, comment } = req.body as { decision?: string; comment?: string };
 
   if (decision !== "approved" && decision !== "rejected") {
     res.status(400).json({ error: "decision must be 'approved' or 'rejected'" });
+    return;
+  }
+
+  const approval = approvalStore.get(req.params.id);
+  if (!approval) {
+    res.status(404).json({ error: "Approval not found or already resolved" });
+    return;
+  }
+  if (approval.assignee !== req.auth?.sub) {
+    res.status(403).json({ error: "Forbidden" });
     return;
   }
 

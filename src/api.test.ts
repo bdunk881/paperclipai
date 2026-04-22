@@ -33,9 +33,11 @@ import {
   logClassificationDecision,
 } from "./engine/classificationLog";
 import { extractPromptFeatures } from "./engine/promptFeatures";
+import { controlPlaneStore } from "./controlPlane/controlPlaneStore";
+import { approvalStore } from "./engine/approvalStore";
+import { approvalNotificationStore } from "./engine/approvalNotificationStore";
 import { runStore } from "./engine/runStore";
 import { knowledgeStore } from "./knowledge/knowledgeStore";
-import { controlPlaneStore } from "./controlPlane/controlPlaneStore";
 import { resetImportedTemplatesForTests } from "./templates/importedTemplateStore";
 import {
   PORTABLE_WORKFLOW_FORMAT,
@@ -47,9 +49,11 @@ function asAuth(userId = "test-user") {
 }
 
 beforeEach(() => {
+  controlPlaneStore.clear();
+  approvalStore.clear();
+  approvalNotificationStore.clear();
   runStore.clear();
   knowledgeStore.clear();
-  controlPlaneStore.clear();
   resetImportedTemplatesForTests();
 });
 
@@ -587,6 +591,136 @@ describe("Control plane APIs", () => {
     expect(listRes.body.heartbeats[0].summary).toBe("Processed the daily support queue");
   });
 });
+
+describe("Approvals API", () => {
+  it("lists only approvals assigned to the authenticated user", async () => {
+    approvalStore.create({
+      runId: "run-1",
+      templateId: "tpl-1",
+      templateName: "Template 1",
+      stepId: "step-1",
+      stepName: "Approval",
+      assignee: "approver-1",
+      message: "Approve this",
+      timeoutMinutes: 30,
+    });
+    approvalStore.create({
+      runId: "run-2",
+      templateId: "tpl-1",
+      templateName: "Template 1",
+      stepId: "step-2",
+      stepName: "Approval",
+      assignee: "approver-2",
+      message: "Do not leak this",
+      timeoutMinutes: 30,
+    });
+
+    const res = await request(app)
+      .get("/api/approvals")
+      .set(asAuth("approver-1"));
+
+    expect(res.status).toBe(200);
+    expect(res.body.total).toBe(1);
+    expect(res.body.approvals).toHaveLength(1);
+    expect(res.body.approvals[0].assignee).toBe("approver-1");
+  });
+
+  it("forbids reading another user's approval", async () => {
+    const { id } = approvalStore.create({
+      runId: "run-1",
+      templateId: "tpl-1",
+      templateName: "Template 1",
+      stepId: "step-1",
+      stepName: "Approval",
+      assignee: "approver-1",
+      message: "Approve this",
+      timeoutMinutes: 30,
+    });
+
+    const res = await request(app)
+      .get(`/api/approvals/${id}`)
+      .set(asAuth("approver-2"));
+
+    expect(res.status).toBe(403);
+  });
+
+  it("allows the assignee to resolve their approval", async () => {
+    const { id, promise } = approvalStore.create({
+      runId: "run-1",
+      templateId: "tpl-1",
+      templateName: "Template 1",
+      stepId: "step-1",
+      stepName: "Approval",
+      assignee: "approver-1",
+      message: "Approve this",
+      timeoutMinutes: 30,
+    });
+
+    const res = await request(app)
+      .post(`/api/approvals/${id}/resolve`)
+      .set(asAuth("approver-1"))
+      .send({ decision: "approved", comment: "Looks good" });
+
+    expect(res.status).toBe(200);
+    await expect(promise).resolves.toEqual({
+      approved: true,
+      comment: "Looks good",
+    });
+  });
+
+  it("forbids resolving another user's approval", async () => {
+    const { id } = approvalStore.create({
+      runId: "run-1",
+      templateId: "tpl-1",
+      templateName: "Template 1",
+      stepId: "step-1",
+      stepName: "Approval",
+      assignee: "approver-1",
+      message: "Approve this",
+      timeoutMinutes: 30,
+    });
+
+    const res = await request(app)
+      .post(`/api/approvals/${id}/resolve`)
+      .set(asAuth("approver-2"))
+      .send({ decision: "approved" });
+
+    expect(res.status).toBe(403);
+  });
+
+  it("lists in-app approval notifications for the current approver only", async () => {
+    approvalStore.create({
+      runId: "run-1",
+      templateId: "tpl-1",
+      templateName: "Template 1",
+      stepId: "step-1",
+      stepName: "Approval",
+      assignee: "approver-1",
+      message: "Approve this",
+      timeoutMinutes: 30,
+    });
+    approvalStore.create({
+      runId: "run-2",
+      templateId: "tpl-2",
+      templateName: "Template 2",
+      stepId: "step-2",
+      stepName: "Approval",
+      assignee: "approver-2",
+      message: "Hidden",
+      timeoutMinutes: 30,
+    });
+
+    const res = await request(app)
+      .get("/api/approvals/notifications")
+      .set(asAuth("approver-1"));
+
+    expect(res.status).toBe(200);
+    expect(res.body.total).toBe(1);
+    expect(res.body.notifications).toHaveLength(1);
+    expect(res.body.notifications[0].assignee).toBe("approver-1");
+  });
+});
+
 
 // ---------------------------------------------------------------------------
 // POST /api/runs

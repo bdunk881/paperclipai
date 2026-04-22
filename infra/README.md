@@ -67,6 +67,13 @@ The SWA workflow maps `VITE_AZURE_CIAM_CLIENT_ID` and `VITE_AZURE_CIAM_TENANT_SU
 |-----------|------|------|
 | Blob Storage | `infra/storage/` | Terraform |
 
+## Protected Preview QA Access
+
+- Set `QA_PREVIEW_ACCESS_TOKEN` only on the dashboard Vercel project's `preview` environment.
+- Share QA links in the form `https://<preview-host>/agents?qaPreviewToken=<token>`.
+- The dashboard validates the token through `/api/qa-preview-access`, seeds a temporary local auth user, and then unlocks the protected `/agents` routes for smoke testing.
+- Do not set `QA_PREVIEW_ACCESS_TOKEN` on `production`.
+
 ## DNS
 
 Configure DNS records to point to Azure per environment (dashboard uses SWA; landing uses Vercel).

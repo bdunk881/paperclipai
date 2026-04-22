@@ -76,8 +76,7 @@ jobs:
         id: deploy
         run: |
           set -euo pipefail
-          npx vercel pull --cwd dashboard --yes --environment=preview --token="$VERCEL_TOKEN"
-          PREVIEW_URL="$(npx vercel deploy --cwd dashboard --yes --token="$VERCEL_TOKEN" | tail -n 1 | tr -d '\r')"
+          PREVIEW_URL="$(npx vercel deploy --yes --token="$VERCEL_TOKEN" | tail -n 1 | tr -d '\r')"
           if [ -z "$PREVIEW_URL" ]; then
             echo "::error::Vercel preview deploy did not return a URL"
             exit 1
@@ -165,6 +164,5 @@ jobs:
       - name: Deploy production
         run: |
           set -euo pipefail
-          npx vercel pull --cwd dashboard --yes --environment=production --token="$VERCEL_TOKEN"
-          PROD_URL="$(npx vercel deploy --cwd dashboard --prod --yes --token="$VERCEL_TOKEN" | tail -n 1 | tr -d '\r')"
+          PROD_URL="$(npx vercel deploy --prod --yes --token="$VERCEL_TOKEN" | tail -n 1 | tr -d '\r')"
           echo "Production URL: $PROD_URL"

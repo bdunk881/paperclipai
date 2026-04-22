@@ -44,9 +44,6 @@ jobs:
           cache: npm
           cache-dependency-path: dashboard/package-lock.json
 
-      - name: Install Vercel CLI
-        run: npm install -g vercel@52.0.0
-
       - name: Validate Vercel secrets
         run: |
           set -euo pipefail
@@ -73,9 +70,10 @@ jobs:
         id: deploy
         run: |
           set -euo pipefail
-          vercel pull --yes --environment=preview --token="$VERCEL_TOKEN"
-          vercel build --token="$VERCEL_TOKEN"
-          PREVIEW_URL="$(vercel deploy --prebuilt --yes --token="$VERCEL_TOKEN" | tail -n 1 | tr -d '\r')"
+          # Keep the CLI rooted at the repository so Vercel applies the linked
+          # dashboard rootDirectory exactly once instead of resolving dashboard/dashboard.
+          npx vercel pull --yes --environment=preview --token="$VERCEL_TOKEN"
+          PREVIEW_URL="$(npx vercel deploy --yes --token="$VERCEL_TOKEN" | tail -n 1 | tr -d '\r')"
           if [ -z "$PREVIEW_URL" ]; then
             echo "::error::Vercel preview deploy did not return a URL"
             exit 1
@@ -138,9 +136,6 @@ jobs:
           cache: npm
           cache-dependency-path: dashboard/package-lock.json
 
-      - name: Install Vercel CLI
-        run: npm install -g vercel@52.0.0
-
       - name: Validate Vercel secrets
         run: |
           set -euo pipefail
@@ -166,7 +161,8 @@ jobs:
       - name: Deploy production
         run: |
           set -euo pipefail
-          vercel pull --yes --environment=production --token="$VERCEL_TOKEN"
-          vercel build --prod --token="$VERCEL_TOKEN"
-          PROD_URL="$(vercel deploy --prebuilt --prod --yes --token="$VERCEL_TOKEN" | tail -n 1 | tr -d '\r')"
+          # Mirror preview behavior so production also respects the linked
+          # dashboard rootDirectory without double-appending the path.
+          npx vercel pull --yes --environment=production --token="$VERCEL_TOKEN"
+          PROD_URL="$(npx vercel deploy --prod --yes --token="$VERCEL_TOKEN" | tail -n 1 | tr -d '\r')"
           echo "Production URL: $PROD_URL"

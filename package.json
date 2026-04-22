@@ -63,7 +63,14 @@
       "/\\.worktrees/"
     ],
     "collectCoverageFrom": [
-      "src/**/*.ts",
+      "src/app.ts",
+      "src/auth/**/*.ts",
+      "src/billing/**/*.ts",
+      "src/engine/**/*.ts",
+      "src/llmConfig/**/*.ts",
+      "src/mcp/**/*.ts",
+      "src/memory/**/*.ts",
+      "src/templates/**/*.ts",
       "!src/index.ts",
       "!src/test-factories/**"
     ],

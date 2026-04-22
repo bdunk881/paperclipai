@@ -154,6 +154,33 @@ export const approvalStore = {
     return result.rows.map(mapRowToRequest);
   },
 
+  async findByRunId(
+    runId: string,
+    status?: ApprovalRequest["status"]
+  ): Promise<ApprovalRequest | undefined> {
+    if (!isPostgresPersistenceEnabled()) {
+      const requests = Array.from(requestStore.values())
+        .filter((request) => request.runId === runId)
+        .filter((request) => (status ? request.status === status : true))
+        .sort((a, b) => new Date(b.requestedAt).getTime() - new Date(a.requestedAt).getTime());
+      return requests[0];
+    }
+
+    const pool = getPostgresPool();
+    const result = await pool.query(
+      `
+        SELECT *
+        FROM approval_requests
+        WHERE run_id = $1
+          AND ($2::text IS NULL OR status = $2)
+        ORDER BY requested_at DESC
+        LIMIT 1
+      `,
+      [runId, status ?? null]
+    );
+    return result.rows[0] ? mapRowToRequest(result.rows[0]) : undefined;
+  },
+
   async waitForDecision(
     id: string,
     pollIntervalMs = 1_000

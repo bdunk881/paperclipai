@@ -705,6 +705,36 @@ app.post("/api/approvals/:id/resolve", requireAuth, async (req: AuthenticatedReq
   res.json({ success: true });
 });
 
+/**
+ * GET /api/executions/:id/state
+ * Returns the persisted paused execution state for an awaiting-approval run.
+ */
+app.get("/api/executions/:id/state", requireAuth, async (req, res) => {
+  const run = await runStore.get(req.params.id);
+  if (!run) {
+    res.status(404).json({ error: `Execution not found: ${req.params.id}` });
+    return;
+  }
+
+  if (run.status !== "awaiting_approval") {
+    res.status(409).json({ error: "Execution is not currently paused at an approval step" });
+    return;
+  }
+
+  const approval = await approvalStore.findByRunId(run.id, "pending");
+  if (!approval) {
+    res.status(404).json({ error: `Pending approval not found for execution: ${req.params.id}` });
+    return;
+  }
+
+  res.json({
+    run,
+    approval,
+    pausedAtStepId: approval.stepId,
+    pausedAtStepName: approval.stepName,
+  });
+});
+
 // ---------------------------------------------------------------------------
 // Health check
 // ---------------------------------------------------------------------------

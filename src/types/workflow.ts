@@ -91,6 +91,7 @@ export interface WorkflowStep {
   approvalAssignee?: string;
   approvalMessage?: string;
   approvalTimeoutMinutes?: number;
+  approvalRequestChangesStepId?: string;
   // file_trigger step
   acceptedFileTypes?: string[];
 }

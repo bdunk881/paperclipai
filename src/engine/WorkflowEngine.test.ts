@@ -255,6 +255,110 @@ describe("WorkflowEngine — action registry", () => {
   });
 });
 
+describe("WorkflowEngine — approval request changes loopback", () => {
+  it("loops back to the configured step when approval requests changes", async () => {
+    const revisions: number[] = [];
+
+    registerAction("test.reviseDraft", async (inputs) => {
+      const nextRevision = Number(inputs["revisionCount"] ?? 0) + 1;
+      revisions.push(nextRevision);
+      return { revisionCount: nextRevision, draft: `Draft revision ${nextRevision}` };
+    });
+
+    const template: WorkflowTemplate = {
+      id: "tpl-approval-loopback",
+      name: "Approval loopback",
+      description: "Tests request changes loopback behavior",
+      category: "custom",
+      version: "1",
+      configFields: [],
+      steps: [
+        {
+          id: "trigger-1",
+          name: "Trigger",
+          kind: "trigger",
+          description: "Start",
+          inputKeys: ["revisionCount"],
+          outputKeys: ["revisionCount"],
+        },
+        {
+          id: "revise-1",
+          name: "Revise draft",
+          kind: "action",
+          description: "Produces the next draft revision",
+          inputKeys: ["revisionCount"],
+          outputKeys: ["revisionCount", "draft"],
+          action: "test.reviseDraft",
+        },
+        {
+          id: "approval-1",
+          name: "Manager approval",
+          kind: "approval",
+          description: "Approve or request changes",
+          inputKeys: ["draft"],
+          outputKeys: ["approved", "approvalDecision", "approvalId", "approverComment"],
+          approvalAssignee: "manager@example.com",
+          approvalMessage: "Review the draft",
+          approvalTimeoutMinutes: 5,
+          approvalRequestChangesStepId: "revise-1",
+        },
+        {
+          id: "output-1",
+          name: "Output",
+          kind: "output",
+          description: "Finish",
+          inputKeys: ["revisionCount", "draft", "approvalDecision", "approverComment"],
+          outputKeys: ["revisionCount", "draft", "approvalDecision", "approverComment"],
+        },
+      ],
+      sampleInput: { revisionCount: 0 },
+      expectedOutput: { revisionCount: 2 },
+    };
+
+    const run = await engine.startRun(template, { revisionCount: 0 });
+
+    const deadline = Date.now() + 2000;
+    let firstApprovalId: string | undefined;
+    while (Date.now() < deadline) {
+      const pendingApprovals = await approvalStore.list("pending");
+      const firstApproval = pendingApprovals.find((approval) => approval.runId === run.id);
+      if (firstApproval) {
+        firstApprovalId = firstApproval.id;
+        break;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
+
+    expect(firstApprovalId).toBeDefined();
+    await approvalStore.resolve(firstApprovalId!, "request_changes", "Please revise and resubmit");
+
+    let secondApprovalId: string | undefined;
+    while (Date.now() < deadline) {
+      const runState = await runStore.get(run.id);
+      const pendingApprovals = await approvalStore.list("pending");
+      const nextApproval = pendingApprovals.find((approval) => approval.runId === run.id && approval.id !== firstApprovalId);
+      if (runState?.status === "awaiting_approval" && nextApproval) {
+        secondApprovalId = nextApproval.id;
+        break;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
+
+    expect(secondApprovalId).toBeDefined();
+    await approvalStore.resolve(secondApprovalId!, "approved", "Looks good now");
+
+    const completed = await waitForCompletion(run.id, 4000);
+    expect(completed.status).toBe("completed");
+    expect(revisions).toEqual([1, 2]);
+    expect(completed.output).toMatchObject({
+      revisionCount: 2,
+      draft: "Draft revision 2",
+      approvalDecision: "approved",
+      approverComment: "Looks good now",
+    });
+  });
+});
+
 // ---------------------------------------------------------------------------
 // Config defaults
 // ---------------------------------------------------------------------------

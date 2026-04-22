@@ -304,13 +304,15 @@ export class WorkflowEngine {
     const context: Record<string, unknown> = { ...config, ...input, memory: memoryContext };
     const stepResults: StepResult[] = [];
 
-    for (const step of template.steps) {
+    for (let stepIndex = 0; stepIndex < template.steps.length; stepIndex += 1) {
+      const step = template.steps[stepIndex];
       const start = Date.now();
       let stepOutput: Record<string, unknown> = {};
       let stepError: string | undefined;
       let stepStatus: StepResult["status"] = "success";
       let agentSlotResults: AgentSlotResult[] | undefined;
       let stepCostLog: LlmCostLog | undefined;
+      let jumpToStepIndex: number | undefined;
 
       try {
         switch (step.kind) {
@@ -369,16 +371,42 @@ export class WorkflowEngine {
               timeoutMinutes,
             });
 
-            const { approved, comment } = await approvalStore.waitForDecision(approvalId);
+            const { decision, comment } = await approvalStore.waitForDecision(approvalId, 50);
 
             await runStore.update(runId, { status: "running" });
 
-            if (!approved) {
+            if (decision === "request_changes") {
+              const targetStepId = step.approvalRequestChangesStepId;
+              const targetStepIndex = targetStepId
+                ? template.steps.findIndex((candidate) => candidate.id === targetStepId)
+                : -1;
+
+              if (!targetStepId) {
+                stepStatus = "failure";
+                stepError = "Approval requested changes but no approvalRequestChangesStepId is configured";
+              } else if (targetStepIndex === -1) {
+                stepStatus = "failure";
+                stepError = `Approval requested changes but target step was not found: ${targetStepId}`;
+              } else if (targetStepIndex >= stepIndex) {
+                stepStatus = "failure";
+                stepError = `Approval requested changes but target step must be earlier in the workflow: ${targetStepId}`;
+              } else {
+                jumpToStepIndex = targetStepIndex;
+              }
+            } else if (decision !== "approved") {
               stepStatus = "failure";
-              stepError = `Approval rejected${comment ? `: ${comment}` : " (timed out or declined)"}`;
+              stepError =
+                decision === "timed_out"
+                  ? `Approval timed out${comment ? `: ${comment}` : ""}`
+                  : `Approval rejected${comment ? `: ${comment}` : ""}`;
             }
 
-            stepOutput = { approved, approvalId, approverComment: comment ?? null };
+            stepOutput = {
+              approved: decision === "approved",
+              approvalDecision: decision,
+              approvalId,
+              approverComment: comment ?? null,
+            };
             break;
           }
           default:
@@ -417,6 +445,10 @@ export class WorkflowEngine {
           stepResults,
         });
         return;
+      }
+
+      if (jumpToStepIndex !== undefined) {
+        stepIndex = jumpToStepIndex - 1;
       }
     }
 

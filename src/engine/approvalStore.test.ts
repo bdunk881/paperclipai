@@ -85,6 +85,17 @@ describe("approvalStore.resolve — reject", () => {
   });
 });
 
+describe("approvalStore.resolve — request changes", () => {
+  it("returns true and records the request_changes decision", async () => {
+    const { id } = await approvalStore.create(base);
+    await approvalStore.resolve(id, "request_changes", "Please revise the draft");
+    await expect(approvalStore.get(id)).resolves.toMatchObject({
+      status: "request_changes",
+      comment: "Please revise the draft",
+    });
+  });
+});
+
 describe("approvalStore.resolve — guard conditions", () => {
   it("returns false for an unknown id", async () => {
     await expect(approvalStore.resolve("no-such-id", "approved")).resolves.toBe(false);

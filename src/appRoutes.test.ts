@@ -20,6 +20,7 @@ jest.mock("./auth/authMiddleware", () => ({
 import request from "supertest";
 import app from "./app";
 import { approvalStore } from "./engine/approvalStore";
+import { runStore } from "./engine/runStore";
 import { getProvider } from "./engine/llmProviders";
 
 const mockGetProvider = getProvider as jest.Mock;
@@ -138,6 +139,116 @@ describe("POST /api/approvals/:id/resolve", () => {
       .post(`/api/approvals/${id}/resolve`)
       .send({ decision: "approved" });
     expect(res.status).toBe(404);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// GET /api/executions/:id/state
+// ---------------------------------------------------------------------------
+
+describe("GET /api/executions/:id/state", () => {
+  it("returns paused execution state for an awaiting approval run", async () => {
+    const workflowEngineModule = await import("./engine/WorkflowEngine");
+    const { customerSupportBot } = await import("./templates/customer-support-bot");
+
+    const template = {
+      ...customerSupportBot,
+      id: "tpl-approval-state",
+      steps: [
+        customerSupportBot.steps[0],
+        {
+          id: "approval-1",
+          name: "Approval checkpoint",
+          kind: "approval" as const,
+          description: "Human approval required",
+          inputKeys: [],
+          outputKeys: ["approved"],
+          approvalAssignee: "manager",
+          approvalMessage: "Please approve",
+          approvalTimeoutMinutes: 5,
+        },
+      ],
+    };
+
+    const run = await workflowEngineModule.workflowEngine.startRun(template, {
+      ticketId: "T-state",
+      subject: "Approval needed",
+      body: "Pause here",
+      customerEmail: "state@example.com",
+      channel: "email",
+    });
+
+    const deadline = Date.now() + 2000;
+    let stateRes;
+    do {
+      stateRes = await request(app).get(`/api/executions/${run.id}/state`);
+      if (stateRes.status === 200) {
+        break;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    } while (Date.now() < deadline);
+
+    expect(stateRes!.status).toBe(200);
+    expect(stateRes!.body.run.id).toBe(run.id);
+    expect(stateRes!.body.run.status).toBe("awaiting_approval");
+    expect(stateRes!.body.approval.runId).toBe(run.id);
+    expect(stateRes!.body.pausedAtStepId).toBe("approval-1");
+
+    await approvalStore.resolve(stateRes!.body.approval.id, "approved", "ok");
+  });
+
+  it("returns 404 for unknown execution id", async () => {
+    const res = await request(app).get("/api/executions/no-such-run/state");
+    expect(res.status).toBe(404);
+  });
+
+  it("returns 409 when execution is not awaiting approval", async () => {
+    const workflowEngineModule = await import("./engine/WorkflowEngine");
+    const run = await workflowEngineModule.workflowEngine.startRun(
+      {
+        id: "tpl-non-paused",
+        name: "Immediate output",
+        description: "No approval step",
+        category: "custom",
+        version: "1",
+        configFields: [],
+        steps: [
+          {
+            id: "trigger-1",
+            name: "Trigger",
+            kind: "trigger",
+            description: "Start",
+            inputKeys: ["message"],
+            outputKeys: ["message"],
+          },
+          {
+            id: "output-1",
+            name: "Output",
+            kind: "output",
+            description: "Finish",
+            inputKeys: ["message"],
+            outputKeys: ["message"],
+          },
+        ],
+        sampleInput: { message: "hello" },
+        expectedOutput: { message: "hello" },
+      },
+      { message: "hello" }
+    );
+
+    const deadline = Date.now() + 2000;
+    let current;
+    do {
+      current = await runStore.get(run.id);
+      if (current?.status === "completed" || current?.status === "failed") {
+        break;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    } while (Date.now() < deadline);
+
+    const res = await request(app).get(`/api/executions/${run.id}/state`);
+    expect(res.status).toBe(409);
+    expect(res.body.error).toMatch(/not currently paused/);
   });
 });
 

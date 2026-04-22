@@ -181,6 +181,24 @@ describe("mapStripeStatusToAccess", () => {
 // ---------------------------------------------------------------------------
 
 describe("resolveTier", () => {
+  const savedEnv = {
+    STRIPE_FLOW_PRICE_ID: process.env.STRIPE_FLOW_PRICE_ID,
+    STRIPE_AUTOMATE_PRICE_ID: process.env.STRIPE_AUTOMATE_PRICE_ID,
+    STRIPE_SCALE_PRICE_ID: process.env.STRIPE_SCALE_PRICE_ID,
+    STRIPE_PRICE_STARTER: process.env.STRIPE_PRICE_STARTER,
+    STRIPE_PRICE_PROFESSIONAL: process.env.STRIPE_PRICE_PROFESSIONAL,
+    STRIPE_PRICE_ENTERPRISE: process.env.STRIPE_PRICE_ENTERPRISE,
+  };
+
+  afterEach(() => {
+    process.env.STRIPE_FLOW_PRICE_ID = savedEnv.STRIPE_FLOW_PRICE_ID;
+    process.env.STRIPE_AUTOMATE_PRICE_ID = savedEnv.STRIPE_AUTOMATE_PRICE_ID;
+    process.env.STRIPE_SCALE_PRICE_ID = savedEnv.STRIPE_SCALE_PRICE_ID;
+    process.env.STRIPE_PRICE_STARTER = savedEnv.STRIPE_PRICE_STARTER;
+    process.env.STRIPE_PRICE_PROFESSIONAL = savedEnv.STRIPE_PRICE_PROFESSIONAL;
+    process.env.STRIPE_PRICE_ENTERPRISE = savedEnv.STRIPE_PRICE_ENTERPRISE;
+  });
+
   it("resolves from metadata", () => {
     expect(resolveTier({ tier: "automate" })).toBe("automate");
   });
@@ -192,6 +210,29 @@ describe("resolveTier", () => {
   it("defaults to explore for unknown tier", () => {
     expect(resolveTier({ tier: "enterprise" })).toBe("explore");
   });
+
+  it("resolves by canonical stripe price env vars", () => {
+    process.env.STRIPE_FLOW_PRICE_ID = "price_flow_env";
+    process.env.STRIPE_AUTOMATE_PRICE_ID = "price_automate_env";
+    process.env.STRIPE_SCALE_PRICE_ID = "price_scale_env";
+
+    expect(resolveTier(undefined, "price_flow_env")).toBe("flow");
+    expect(resolveTier(undefined, "price_automate_env")).toBe("automate");
+    expect(resolveTier(undefined, "price_scale_env")).toBe("scale");
+  });
+
+  it("resolves by starter/professional/enterprise alias env vars", () => {
+    process.env.STRIPE_FLOW_PRICE_ID = "";
+    process.env.STRIPE_AUTOMATE_PRICE_ID = "";
+    process.env.STRIPE_SCALE_PRICE_ID = "";
+    process.env.STRIPE_PRICE_STARTER = "price_starter_alias";
+    process.env.STRIPE_PRICE_PROFESSIONAL = "price_professional_alias";
+    process.env.STRIPE_PRICE_ENTERPRISE = "price_enterprise_alias";
+
+    expect(resolveTier(undefined, "price_starter_alias")).toBe("flow");
+    expect(resolveTier(undefined, "price_professional_alias")).toBe("automate");
+    expect(resolveTier(undefined, "price_enterprise_alias")).toBe("scale");
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -199,9 +240,29 @@ describe("resolveTier", () => {
 // ---------------------------------------------------------------------------
 
 describe("POST /api/billing/checkout", () => {
-  it("returns 401 without auth", async () => {
+  it("allows unauthenticated checkout creation for paid tiers", async () => {
+    stripeMock.checkout.sessions.create.mockResolvedValue({
+      url: "https://checkout.stripe.test/session_public_123",
+    });
+
     const res = await request(app).post("/api/billing/checkout").send({ tier: "flow" });
-    expect(res.status).toBe(401);
+
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ url: "https://checkout.stripe.test/session_public_123" });
+    expect(stripeMock.checkout.sessions.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        metadata: expect.objectContaining({
+          tier: "flow",
+        }),
+      })
+    );
+    expect(stripeMock.checkout.sessions.create).toHaveBeenCalledWith(
+      expect.not.objectContaining({
+        metadata: expect.objectContaining({
+          userId: expect.any(String),
+        }),
+      })
+    );
   });
 
   it("rejects missing tier", async () => {
@@ -226,6 +287,7 @@ describe("POST /api/billing/checkout", () => {
       email: "buyer@example.com",
       firstName: "Ada",
       companyName: "AutoFlow",
+      userId: "user-123",
     });
 
     expect(res.status).toBe(200);

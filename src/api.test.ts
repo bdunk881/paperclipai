@@ -10,13 +10,17 @@ jest.mock("./engine/llmProviders", () => ({
   getProvider: jest.fn(),
 }));
 jest.mock("./auth/authMiddleware", () => ({
-  requireAuth: (req: { headers: { authorization?: string }; auth?: { sub: string } }, res: { status: (code: number) => { json: (body: unknown) => void } }, next: () => void) => {
+  requireAuth: (
+    req: { headers: { authorization?: string }; auth?: { sub: string; email?: string } },
+    res: { status: (code: number) => { json: (body: unknown) => void } },
+    next: () => void
+  ) => {
     const auth = req.headers.authorization;
     if (!auth?.startsWith("Bearer ")) {
       res.status(401).json({ error: "Missing or malformed Authorization header." });
       return;
     }
-    req.auth = { sub: auth.slice(7) };
+    req.auth = { sub: auth.slice(7), email: "test@example.com" };
     next();
   },
 }));
@@ -24,11 +28,21 @@ jest.mock("./auth/authMiddleware", () => ({
 import request from "supertest";
 import app from "./app";
 import { WORKFLOW_TEMPLATES } from "./templates";
+import {
+  clearClassificationDecisionsForTests,
+  logClassificationDecision,
+} from "./engine/classificationLog";
+import { extractPromptFeatures } from "./engine/promptFeatures";
 import { controlPlaneStore } from "./controlPlane/controlPlaneStore";
 import { approvalStore } from "./engine/approvalStore";
 import { approvalNotificationStore } from "./engine/approvalNotificationStore";
 import { runStore } from "./engine/runStore";
 import { knowledgeStore } from "./knowledge/knowledgeStore";
+import { resetImportedTemplatesForTests } from "./templates/importedTemplateStore";
+import {
+  PORTABLE_WORKFLOW_FORMAT,
+  PORTABLE_WORKFLOW_SCHEMA_VERSION,
+} from "./workflows/portableSchema";
 
 function asAuth(userId = "test-user") {
   return { Authorization: `Bearer ${userId}` };
@@ -40,6 +54,7 @@ beforeEach(() => {
   approvalNotificationStore.clear();
   runStore.clear();
   knowledgeStore.clear();
+  resetImportedTemplatesForTests();
 });
 
 // ---------------------------------------------------------------------------
@@ -70,10 +85,10 @@ describe("GET /api/templates", () => {
     expect(Array.isArray(res.body.templates)).toBe(true);
   });
 
-  it("returns all 3 templates when no category filter is applied", async () => {
+  it("returns all 13 templates when no category filter is applied", async () => {
     const res = await request(app).get("/api/templates");
-    expect(res.body.total).toBe(3);
-    expect(res.body.templates).toHaveLength(3);
+    expect(res.body.total).toBe(13);
+    expect(res.body.templates).toHaveLength(13);
   });
 
   it("each template summary has required shape fields", async () => {
@@ -206,8 +221,8 @@ describe("GET /api/templates/:id/sample", () => {
     expect(Object.keys(res.body.expectedOutput).length).toBeGreaterThan(0);
   });
 
-  it("sample endpoint works for all 3 templates", async () => {
-    const ids = ["tpl-support-bot", "tpl-lead-enrich", "tpl-content-gen"];
+  it("sample endpoint works for all built-in templates", async () => {
+    const ids = WORKFLOW_TEMPLATES.map((template) => template.id);
     for (const id of ids) {
       const res = await request(app).get(`/api/templates/${id}/sample`);
       expect(res.status).toBe(200);
@@ -296,47 +311,131 @@ describe("Knowledge base routes", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Integration expansion routes
+// Portable workflow schema + import/export endpoints
 // ---------------------------------------------------------------------------
 
-describe("Integration expansion routes", () => {
-  it.each([
-    ["/api/integrations/apollo/health"],
-    ["/api/integrations/hubspot/health"],
-    ["/api/integrations/sentry/health"],
-    ["/api/integrations/composio/health"],
-  ])("requires auth for %s", async (path) => {
-    const res = await request(app).get(path);
-
-    expect(res.status).toBe(401);
-    expect(res.body.error).toMatch(/authorization/i);
+describe("Portable workflow APIs", () => {
+  it("returns the portable schema descriptor", async () => {
+    const res = await request(app).get("/api/workflows/schema");
+    expect(res.status).toBe(200);
+    expect(res.body.format).toBe(PORTABLE_WORKFLOW_FORMAT);
+    expect(res.body.schemaVersion).toBe(PORTABLE_WORKFLOW_SCHEMA_VERSION);
+    expect(res.body.supportedStepKinds).toContain("cron_trigger");
+    expect(res.body.supportedStepKinds).toContain("interval_trigger");
+    expect(res.body.supportedStepKinds).toContain("llm");
   });
 
-  it.each([
-    ["/api/integrations/apollo/health"],
-    ["/api/integrations/hubspot/health"],
-    ["/api/integrations/sentry/health"],
-    ["/api/integrations/composio/health"],
-  ])("returns connector down health through app mount for %s", async (path) => {
-    const res = await request(app).get(path).set(asAuth());
-
-    expect(res.status).toBe(503);
-    expect(res.body.status).toBe("down");
-    expect(res.body.details?.errorType).toBe("auth");
+  it("exports a built-in template in portable format", async () => {
+    const res = await request(app).get("/api/templates/tpl-support-bot/export");
+    expect(res.status).toBe(200);
+    expect(res.body.format).toBe(PORTABLE_WORKFLOW_FORMAT);
+    expect(res.body.schemaVersion).toBe(PORTABLE_WORKFLOW_SCHEMA_VERSION);
+    expect(res.body.template.id).toBe("tpl-support-bot");
   });
 
-  it.each([
-    ["/api/webhooks/hubspot/events", "HUBSPOT_CLIENT_SECRET"],
-    ["/api/webhooks/sentry/events", "SENTRY_CLIENT_SECRET"],
-    ["/api/webhooks/composio/events", "COMPOSIO_WEBHOOK_SECRET"],
-  ])("resolves webhook mount for %s", async (path, expectedSecretEnv) => {
+  it("imports a portable template and exposes it through the templates API", async () => {
+    const exportRes = await request(app).get("/api/templates/tpl-support-bot/export");
+    const importedTemplate = {
+      ...exportRes.body.template,
+      id: "tpl-support-bot-clone",
+      name: "Customer Support Bot Clone",
+      category: "custom",
+    };
+
+    const importRes = await request(app)
+      .post("/api/templates/import")
+      .set(asAuth())
+      .send({
+        ...exportRes.body,
+        template: importedTemplate,
+      });
+
+    expect(importRes.status).toBe(201);
+    expect(importRes.body.imported).toBe(true);
+    expect(importRes.body.template.id).toBe("tpl-support-bot-clone");
+
+    const getRes = await request(app).get("/api/templates/tpl-support-bot-clone");
+    expect(getRes.status).toBe(200);
+    expect(getRes.body.name).toBe("Customer Support Bot Clone");
+
+    const listRes = await request(app).get("/api/templates");
+    expect(listRes.body.total).toBe(14);
+  });
+
+  it("rejects invalid portable payloads", async () => {
     const res = await request(app)
-      .post(path)
-      .set("Content-Type", "application/json")
-      .send({ ok: true });
+      .post("/api/templates/import")
+      .set(asAuth())
+      .send({ nope: true });
 
-    expect(res.status).toBe(503);
-    expect(res.body.error).toContain(expectedSecretEnv);
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/format|schemaVersion|template/i);
+  });
+
+  it("rejects interval_trigger templates without intervalMinutes", async () => {
+    const exportRes = await request(app).get("/api/templates/tpl-support-bot/export");
+    const importedTemplate = {
+      ...exportRes.body.template,
+      id: "tpl-invalid-interval-trigger",
+      name: "Invalid Interval Trigger",
+      category: "custom",
+      steps: [
+        {
+          id: "step_interval",
+          name: "Interval Trigger",
+          kind: "interval_trigger",
+          description: "Runs every interval",
+          inputKeys: [],
+          outputKeys: ["scheduledAt"],
+        },
+        {
+          id: "step_output",
+          name: "Output",
+          kind: "output",
+          description: "Collect output",
+          inputKeys: ["scheduledAt"],
+          outputKeys: ["scheduledAt"],
+        },
+        {
+          id: "step_output_2",
+          name: "Output Copy",
+          kind: "output",
+          description: "Keep schema length above minimum",
+          inputKeys: ["scheduledAt"],
+          outputKeys: ["scheduledAt"],
+        },
+        {
+          id: "step_output_3",
+          name: "Output Copy 2",
+          kind: "output",
+          description: "Keep schema length above minimum",
+          inputKeys: ["scheduledAt"],
+          outputKeys: ["scheduledAt"],
+        },
+      ],
+    };
+
+    const res = await request(app)
+      .post("/api/templates/import")
+      .set(asAuth())
+      .send({
+        ...exportRes.body,
+        template: importedTemplate,
+      });
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/intervalMinutes/);
+  });
+
+  it("rejects importing a template id that already exists", async () => {
+    const exportRes = await request(app).get("/api/templates/tpl-support-bot/export");
+    const res = await request(app)
+      .post("/api/templates/import")
+      .set(asAuth())
+      .send(exportRes.body);
+
+    expect(res.status).toBe(409);
+    expect(res.body.error).toMatch(/already exists/i);
   });
 });
 
@@ -622,6 +721,7 @@ describe("Approvals API", () => {
   });
 });
 
+
 // ---------------------------------------------------------------------------
 // POST /api/runs
 // ---------------------------------------------------------------------------
@@ -714,6 +814,54 @@ describe("GET /api/runs/:id", () => {
     const res = await request(app).get("/api/runs/run-does-not-exist").set(asAuth());
     expect(res.status).toBe(404);
     expect(res.body.error).toMatch(/not found/i);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// GET /api/analytics/routing-decisions
+// ---------------------------------------------------------------------------
+
+describe("GET /api/analytics/routing-decisions", () => {
+  beforeEach(() => {
+    clearClassificationDecisionsForTests();
+  });
+
+  afterEach(() => {
+    clearClassificationDecisionsForTests();
+  });
+
+  it("requires authentication", async () => {
+    const res = await request(app).get("/api/analytics/routing-decisions");
+    expect(res.status).toBe(401);
+  });
+
+  it("returns logged routing decisions for dashboard consumption", async () => {
+    logClassificationDecision({
+      promptHash: "hash-1",
+      features: extractPromptFeatures("Classify this ticket", 120, 1),
+      selectedTier: "lite",
+      confidenceScore: 0.9,
+      modelId: "gpt-4o-mini",
+    });
+
+    const res = await request(app)
+      .get("/api/analytics/routing-decisions")
+      .set(asAuth());
+
+    expect(res.status).toBe(200);
+    expect(Array.isArray(res.body.decisions)).toBe(true);
+    expect(res.body.total).toBe(1);
+    expect(typeof res.body.capacity).toBe("number");
+    expect(res.body.decisions[0]).toEqual(
+      expect.objectContaining({
+        promptHash: "hash-1",
+        selectedTier: "lite",
+        confidenceScore: 0.9,
+        modelId: "gpt-4o-mini",
+      })
+    );
+    expect(res.body.decisions[0].features).toBeDefined();
+    expect(typeof res.body.decisions[0].timestamp).toBe("string");
   });
 });
 

@@ -1,22 +1,35 @@
 import express from "express";
 import { AuthenticatedRequest, requireAuth } from "../auth/authMiddleware";
-import { apolloCredentialStore } from "./apollo/credentialStore";
-import { apolloConnectorService } from "./apollo/service";
-import { composioCredentialStore } from "./composio/credentialStore";
-import { composioConnectorService } from "./composio/service";
-import { gmailCredentialStore } from "./gmail/credentialStore";
-import { gmailConnectorService } from "./gmail/service";
-import { hubSpotCredentialStore } from "./hubspot/credentialStore";
-import { hubSpotConnectorService } from "./hubspot/service";
-import { sentryCredentialStore } from "./sentry/credentialStore";
-import { sentryConnectorService } from "./sentry/service";
-import { slackCredentialStore } from "./slack/credentialStore";
 import { slackConnectorService } from "./slack/service";
-import { stripeCredentialStore } from "./stripe/credentialStore";
-import { stripeConnectorService } from "./stripe/service";
+import { linearConnectorService } from "./linear/service";
+import { shopifyConnectorService } from "./shopify/service";
+import { docuSignConnectorService } from "./docusign/service";
+import { teamsConnectorService } from "./teams/service";
+import { posthogConnectorService } from "./posthog/service";
+import { intercomConnectorService } from "./intercom/service";
+import { datadogAzureMonitorConnectorService } from "./datadog-azure-monitor/service";
+import { slackCredentialStore } from "./slack/credentialStore";
+import { linearCredentialStore } from "./linear/credentialStore";
+import { shopifyCredentialStore } from "./shopify/credentialStore";
+import { docuSignCredentialStore } from "./docusign/credentialStore";
+import { teamsCredentialStore } from "./teams/credentialStore";
+import { posthogCredentialStore } from "./posthog/credentialStore";
+import { intercomCredentialStore } from "./intercom/credentialStore";
+import { monitoringCredentialStore } from "./datadog-azure-monitor/credentialStore";
 
-type OAuthProvider = "apollo" | "gmail" | "hubspot" | "sentry" | "slack" | "stripe";
-type StatusProvider = OAuthProvider | "composio";
+type UnifiedProvider =
+  | "slack"
+  | "linear"
+  | "shopify"
+  | "docusign"
+  | "teams"
+  | "posthog"
+  | "intercom"
+  | "datadog-azure-monitor";
+
+type StatusProvider =
+  | UnifiedProvider
+  | "stripe";
 
 type ProviderStatus = {
   connected: boolean;
@@ -24,59 +37,64 @@ type ProviderStatus = {
   scopes?: string[];
 };
 
-const OAUTH_PROVIDERS: Set<OAuthProvider> = new Set([
-  "apollo",
-  "gmail",
-  "hubspot",
-  "sentry",
+const PROVIDERS: Set<UnifiedProvider> = new Set([
   "slack",
-  "stripe",
+  "linear",
+  "shopify",
+  "docusign",
+  "teams",
+  "posthog",
+  "intercom",
+  "datadog-azure-monitor",
 ]);
 
 const STATUS_PROVIDERS: StatusProvider[] = [
-  "apollo",
-  "gmail",
-  "hubspot",
-  "sentry",
   "slack",
+  "linear",
+  "shopify",
+  "docusign",
+  "teams",
+  "posthog",
+  "intercom",
+  "datadog-azure-monitor",
   "stripe",
-  "composio",
 ];
 
-function isConnected(
-  connectedAt: string | undefined,
-  scopes: string[] | undefined
-): ProviderStatus {
+function isConnected(connectedAt: string | undefined, scopes: string[] | undefined) {
   if (!connectedAt) {
-    return { connected: false };
+    return { connected: false as const };
   }
-
   return {
-    connected: true,
+    connected: true as const,
     connectedAt,
     ...(Array.isArray(scopes) && scopes.length > 0 ? { scopes } : {}),
   };
 }
 
-function parseOAuthProvider(value: string | undefined): OAuthProvider | null {
-  if (!value) {
-    return null;
-  }
+function datadogAzureMonitorStatus(userId: string) {
+  const datadogCredential = monitoringCredentialStore.getActiveByUserAndProvider(userId, "datadog");
+  const azureCredential = monitoringCredentialStore.getActiveByUserAndProvider(userId, "azure_monitor");
 
-  if (OAUTH_PROVIDERS.has(value as OAuthProvider)) {
-    return value as OAuthProvider;
-  }
+  const chosen = [datadogCredential, azureCredential]
+    .filter((value): value is NonNullable<typeof value> => Boolean(value))
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0];
 
-  return null;
+  return isConnected(chosen?.createdAt, chosen?.scopes);
 }
 
-function parseStatusProvider(value: string | undefined): StatusProvider | null {
+function connectionStatusForCredential(credential: { createdAt: string; scopes: string[] } | null | undefined): ProviderStatus {
+  return isConnected(credential?.createdAt, credential?.scopes);
+}
+
+const router = express.Router();
+
+function parseProvider(value: string | undefined): UnifiedProvider | null {
   if (!value) {
     return null;
   }
 
-  if (STATUS_PROVIDERS.includes(value as StatusProvider)) {
-    return value as StatusProvider;
+  if (PROVIDERS.has(value as UnifiedProvider)) {
+    return value as UnifiedProvider;
   }
 
   return null;
@@ -116,10 +134,23 @@ function errorStatusCode(error: unknown): number {
   return 500;
 }
 
-const router = express.Router();
+function getShopDomain(req: AuthenticatedRequest): string {
+  const shopFromBody = (req.body as { shopDomain?: unknown })?.shopDomain;
+  const shopFromQuery = req.query.shop;
+
+  if (typeof shopFromBody === "string" && shopFromBody.trim()) {
+    return shopFromBody.trim();
+  }
+
+  if (typeof shopFromQuery === "string" && shopFromQuery.trim()) {
+    return shopFromQuery.trim();
+  }
+
+  return "";
+}
 
 router.post("/:provider/connect", requireAuth, (req: AuthenticatedRequest, res) => {
-  const provider = parseOAuthProvider(req.params.provider);
+  const provider = parseProvider(req.params.provider);
   if (!provider) {
     res.status(400).json({ error: "Unsupported provider" });
     return;
@@ -134,71 +165,81 @@ router.post("/:provider/connect", requireAuth, (req: AuthenticatedRequest, res) 
   try {
     const flow = (() => {
       switch (provider) {
-        case "apollo":
-          return apolloConnectorService.beginOAuth(userId);
-        case "gmail":
-          return gmailConnectorService.beginOAuth(userId);
-        case "hubspot":
-          return hubSpotConnectorService.beginOAuth(userId);
-        case "sentry":
-          return sentryConnectorService.beginOAuth(userId);
         case "slack":
           return slackConnectorService.beginOAuth(userId);
-        case "stripe":
-          return stripeConnectorService.beginOAuth(userId);
+        case "linear":
+          return linearConnectorService.beginOAuth(userId);
+        case "shopify": {
+          const shopDomain = getShopDomain(req);
+          if (!shopDomain) {
+            throw new Error("shopDomain is required for Shopify OAuth");
+          }
+          return shopifyConnectorService.beginOAuth({ userId, shopDomain });
+        }
+        case "docusign":
+          return docuSignConnectorService.beginOAuth(userId);
+        case "teams":
+          return teamsConnectorService.beginOAuth(userId);
+        case "posthog":
+          return posthogConnectorService.beginOAuth(userId);
+        case "intercom":
+          return intercomConnectorService.beginOAuth(userId);
+        case "datadog-azure-monitor":
+          return datadogAzureMonitorConnectorService.beginAzureOAuth(userId);
+        default:
+          throw new Error("Unsupported provider");
       }
     })();
 
     res.status(201).json({ redirectUrl: flow.authUrl });
   } catch (error) {
-    res.status(errorStatusCode(error)).json({ error: errorMessage(error) });
+    const message = errorMessage(error);
+    const statusCode = message.includes("required") ? 400 : errorStatusCode(error);
+    res.status(statusCode).json({ error: message });
   }
 });
 
-router.get("/status", requireAuth, async (req: AuthenticatedRequest, res) => {
+router.get("/status", requireAuth, (req: AuthenticatedRequest, res) => {
   const userId = getUserId(req);
   if (!userId) {
     res.status(401).json({ error: "Authenticated user required" });
     return;
   }
 
-  const [
-    apolloCredential,
-    gmailCredential,
-    hubspotCredential,
-    sentryCredential,
-    slackCredential,
-    stripeCredential,
-    composioCredential,
-  ] = await Promise.all([
-    apolloCredentialStore.getActiveByUserAsync(userId),
-    gmailCredentialStore.getActiveByUserAsync(userId),
-    hubSpotCredentialStore.getActiveByUserAsync(userId),
-    sentryCredentialStore.getActiveByUserAsync(userId),
-    slackCredentialStore.getActiveByUserAsync(userId),
-    stripeCredentialStore.getActiveByUserAsync(userId),
-    composioCredentialStore.getActiveByUserAsync(userId),
-  ]);
+  const slackCredential = slackCredentialStore.getActiveByUser(userId);
+  const linearCredential = linearCredentialStore.getActiveByUser(userId);
+  const shopifyCredential = shopifyCredentialStore.getActiveByUser(userId);
+  const docusignCredential = docuSignCredentialStore.getActiveByUser(userId);
+  const teamsCredential = teamsCredentialStore.getActiveByUser(userId);
+  const posthogCredential = posthogCredentialStore.getActiveByUser(userId);
+  const intercomCredential = intercomCredentialStore.getActiveByUser(userId);
 
   const providers: Record<StatusProvider, ProviderStatus> = {
-    apollo: isConnected(apolloCredential?.createdAt, apolloCredential?.scopes),
-    gmail: isConnected(gmailCredential?.createdAt, gmailCredential?.scopes),
-    hubspot: isConnected(hubspotCredential?.createdAt, hubspotCredential?.scopes),
-    sentry: isConnected(sentryCredential?.createdAt, sentryCredential?.scopes),
-    slack: isConnected(slackCredential?.createdAt, slackCredential?.scopes),
-    stripe: isConnected(stripeCredential?.createdAt, stripeCredential?.scopes),
-    composio: isConnected(composioCredential?.createdAt, undefined),
+    slack: connectionStatusForCredential(slackCredential),
+    linear: connectionStatusForCredential(linearCredential),
+    shopify: connectionStatusForCredential(shopifyCredential),
+    docusign: connectionStatusForCredential(docusignCredential),
+    teams: connectionStatusForCredential(teamsCredential),
+    posthog: connectionStatusForCredential(posthogCredential),
+    intercom: connectionStatusForCredential(intercomCredential),
+    "datadog-azure-monitor": datadogAzureMonitorStatus(userId),
+    stripe: { connected: false },
   };
+
+  for (const provider of STATUS_PROVIDERS) {
+    if (!providers[provider]) {
+      providers[provider] = { connected: false };
+    }
+  }
 
   res.json({ providers });
 });
 
 router.get("/callback", async (req, res) => {
-  const provider = parseOAuthProvider(typeof req.query.provider === "string" ? req.query.provider : undefined);
-  const providerName =
-    typeof req.query.provider === "string" && req.query.provider.trim()
-      ? req.query.provider
-      : "unknown";
+  const provider = parseProvider(typeof req.query.provider === "string" ? req.query.provider : undefined);
+  const providerName = typeof req.query.provider === "string" && req.query.provider.trim()
+    ? req.query.provider
+    : "unknown";
 
   if (!provider) {
     res.redirect(dashboardRedirect({ provider: providerName, status: "error", message: "Unsupported provider" }));
@@ -206,53 +247,69 @@ router.get("/callback", async (req, res) => {
   }
 
   const upstreamError = typeof req.query.error === "string" ? req.query.error : "";
-  const upstreamErrorDescription =
-    typeof req.query.error_description === "string" ? req.query.error_description : "";
+  const upstreamErrorDescription = typeof req.query.error_description === "string"
+    ? req.query.error_description
+    : "";
 
   if (upstreamError) {
     const message = upstreamErrorDescription || upstreamError;
-    res.redirect(dashboardRedirect({ provider, status: "error", message: `Authorization failed: ${message}` }));
+    res.redirect(
+      dashboardRedirect({ provider, status: "error", message: `Authorization failed: ${message}` })
+    );
     return;
   }
 
   const code = typeof req.query.code === "string" ? req.query.code : "";
   const state = typeof req.query.state === "string" ? req.query.state : "";
+  const shop = typeof req.query.shop === "string" ? req.query.shop : undefined;
 
   if (!code || !state) {
-    res.redirect(dashboardRedirect({ provider, status: "error", message: "Missing OAuth code or state" }));
+    res.redirect(
+      dashboardRedirect({ provider, status: "error", message: "Missing OAuth code or state" })
+    );
     return;
   }
 
   try {
     switch (provider) {
-      case "apollo":
-        await apolloConnectorService.completeOAuth({ code, state });
-        break;
-      case "gmail":
-        await gmailConnectorService.completeOAuth({ code, state });
-        break;
-      case "hubspot":
-        await hubSpotConnectorService.completeOAuth({ code, state });
-        break;
-      case "sentry":
-        await sentryConnectorService.completeOAuth({ code, state });
-        break;
       case "slack":
         await slackConnectorService.completeOAuth({ code, state });
         break;
-      case "stripe":
-        await stripeConnectorService.completeOAuth({ code, state });
+      case "linear":
+        await linearConnectorService.completeOAuth({ code, state });
         break;
+      case "shopify":
+        await shopifyConnectorService.completeOAuth({ code, state, shop });
+        break;
+      case "docusign":
+        await docuSignConnectorService.completeOAuth({ code, state });
+        break;
+      case "teams":
+        await teamsConnectorService.completeOAuth({ code, state });
+        break;
+      case "posthog":
+        await posthogConnectorService.completeOAuth({ code, state });
+        break;
+      case "intercom":
+        await intercomConnectorService.completeOAuth({ code, state });
+        break;
+      case "datadog-azure-monitor":
+        await datadogAzureMonitorConnectorService.completeAzureOAuth({ code, state });
+        break;
+      default:
+        throw new Error("Unsupported provider");
     }
 
     res.redirect(dashboardRedirect({ provider, status: "success" }));
   } catch (error) {
-    res.redirect(dashboardRedirect({ provider, status: "error", message: errorMessage(error) }));
+    res.redirect(
+      dashboardRedirect({ provider, status: "error", message: errorMessage(error) })
+    );
   }
 });
 
 router.delete("/:provider/disconnect", requireAuth, async (req: AuthenticatedRequest, res) => {
-  const provider = parseStatusProvider(req.params.provider);
+  const provider = parseProvider(req.params.provider);
   if (!provider) {
     res.status(400).json({ error: "Unsupported provider" });
     return;
@@ -265,55 +322,68 @@ router.delete("/:provider/disconnect", requireAuth, async (req: AuthenticatedReq
   }
 
   switch (provider) {
-    case "apollo": {
-      const current = await apolloCredentialStore.getActiveByUserAsync(userId);
-      if (current) {
-        await apolloConnectorService.disconnect(userId, current.id);
-      }
-      break;
-    }
-    case "gmail": {
-      const current = await gmailCredentialStore.getActiveByUserAsync(userId);
-      if (current) {
-        await gmailConnectorService.disconnect(userId, current.id);
-      }
-      break;
-    }
-    case "hubspot": {
-      const current = await hubSpotCredentialStore.getActiveByUserAsync(userId);
-      if (current) {
-        await hubSpotConnectorService.disconnect(userId, current.id);
-      }
-      break;
-    }
-    case "sentry": {
-      const current = await sentryCredentialStore.getActiveByUserAsync(userId);
-      if (current) {
-        await sentryConnectorService.disconnect(userId, current.id);
-      }
-      break;
-    }
     case "slack": {
-      const current = await slackCredentialStore.getActiveByUserAsync(userId);
+      const current = slackCredentialStore.getActiveByUser(userId);
       if (current) {
-        await slackConnectorService.disconnect(userId, current.id);
+        slackConnectorService.disconnect(userId, current.id);
       }
       break;
     }
-    case "stripe": {
-      const current = await stripeCredentialStore.getActiveByUserAsync(userId);
+    case "linear": {
+      const current = linearCredentialStore.getActiveByUser(userId);
       if (current) {
-        await stripeConnectorService.disconnect(userId, current.id);
+        linearConnectorService.disconnect(userId, current.id);
       }
       break;
     }
-    case "composio": {
-      const current = await composioCredentialStore.getActiveByUserAsync(userId);
+    case "shopify": {
+      const current = shopifyCredentialStore.getActiveByUser(userId);
       if (current) {
-        await composioConnectorService.disconnect(userId, current.id);
+        shopifyConnectorService.disconnect(userId, current.id);
       }
       break;
     }
+    case "docusign": {
+      const current = docuSignCredentialStore.getActiveByUser(userId);
+      if (current) {
+        docuSignConnectorService.disconnect(userId, current.id);
+      }
+      break;
+    }
+    case "teams": {
+      const current = teamsCredentialStore.getActiveByUser(userId);
+      if (current) {
+        teamsConnectorService.disconnect(userId, current.id);
+      }
+      break;
+    }
+    case "posthog": {
+      const current = posthogCredentialStore.getActiveByUser(userId);
+      if (current) {
+        posthogConnectorService.disconnect(userId, current.id);
+      }
+      break;
+    }
+    case "intercom": {
+      const current = intercomCredentialStore.getActiveByUser(userId);
+      if (current) {
+        intercomConnectorService.disconnect(userId, current.id);
+      }
+      break;
+    }
+    case "datadog-azure-monitor": {
+      const datadog = monitoringCredentialStore.getActiveByUserAndProvider(userId, "datadog");
+      const azure = monitoringCredentialStore.getActiveByUserAndProvider(userId, "azure_monitor");
+      if (datadog) {
+        datadogAzureMonitorConnectorService.disconnect(userId, datadog.id);
+      }
+      if (azure) {
+        datadogAzureMonitorConnectorService.disconnect(userId, azure.id);
+      }
+      break;
+    }
+    default:
+      break;
   }
 
   res.status(204).send();

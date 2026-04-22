@@ -51,6 +51,8 @@ module "hub" {
   environment         = var.environment
   location            = var.location
   resource_group_name = azurerm_resource_group.main.name
+  enable_firewall     = var.enable_hub_firewall
+  enable_bastion      = var.enable_hub_bastion
   tenant_id           = var.tenant_id
   tags                = local.common_tags
 }
@@ -62,45 +64,48 @@ module "hub" {
 module "spoke_prod" {
   source = "./modules/spoke"
 
-  prefix                     = var.prefix
-  environment                = "prod"
-  location                   = var.location
-  resource_group_name        = azurerm_resource_group.main.name
-  spoke_vnet_cidr            = "10.2.0.0/16"
-  aks_subnet_cidr            = "10.2.1.0/24"
-  pe_subnet_cidr             = "10.2.2.0/24"
-  svc_subnet_cidr            = "10.2.3.0/24"
-  hub_vnet_id                = module.hub.hub_vnet_id
-  hub_vnet_name              = module.hub.hub_vnet_name
-  hub_resource_group_name    = azurerm_resource_group.main.name
-  hub_firewall_private_ip    = module.hub.firewall_private_ip
-  tags                       = local.common_tags
+  prefix                  = var.prefix
+  environment             = "prod"
+  location                = var.location
+  resource_group_name     = azurerm_resource_group.main.name
+  spoke_vnet_cidr         = "10.2.0.0/16"
+  aks_subnet_cidr         = "10.2.1.0/24"
+  pe_subnet_cidr          = "10.2.2.0/24"
+  svc_subnet_cidr         = "10.2.3.0/24"
+  func_subnet_cidr        = "10.2.4.0/24"
+  hub_vnet_id             = module.hub.hub_vnet_id
+  hub_vnet_name           = module.hub.hub_vnet_name
+  hub_resource_group_name = azurerm_resource_group.main.name
+  hub_firewall_private_ip = module.hub.firewall_private_ip
+  tags                    = local.common_tags
 }
 
 module "spoke_staging" {
   source = "./modules/spoke"
 
-  prefix                     = var.prefix
-  environment                = "staging"
-  location                   = var.location
-  resource_group_name        = azurerm_resource_group.main.name
-  spoke_vnet_cidr            = "10.3.0.0/16"
-  aks_subnet_cidr            = "10.3.1.0/24"
-  pe_subnet_cidr             = "10.3.2.0/24"
-  svc_subnet_cidr            = "10.3.3.0/24"
-  hub_vnet_id                = module.hub.hub_vnet_id
-  hub_vnet_name              = module.hub.hub_vnet_name
-  hub_resource_group_name    = azurerm_resource_group.main.name
-  hub_firewall_private_ip    = module.hub.firewall_private_ip
-  tags                       = local.common_tags
+  prefix                  = var.prefix
+  environment             = "staging"
+  location                = var.location
+  resource_group_name     = azurerm_resource_group.main.name
+  spoke_vnet_cidr         = "10.3.0.0/16"
+  aks_subnet_cidr         = "10.3.1.0/24"
+  pe_subnet_cidr          = "10.3.2.0/24"
+  svc_subnet_cidr         = "10.3.3.0/24"
+  func_subnet_cidr        = "10.3.4.0/24"
+  hub_vnet_id             = module.hub.hub_vnet_id
+  hub_vnet_name           = module.hub.hub_vnet_name
+  hub_resource_group_name = azurerm_resource_group.main.name
+  hub_firewall_private_ip = module.hub.firewall_private_ip
+  tags                    = local.common_tags
 }
 
 # Select the correct spoke subnet IDs based on the deployment environment.
 # (Both spoke VNets are always deployed; active_* picks the right one for AKS/ACR.)
 locals {
-  active_aks_subnet_id = var.environment == "production" ? module.spoke_prod.aks_subnet_id : module.spoke_staging.aks_subnet_id
-  active_pe_subnet_id  = var.environment == "production" ? module.spoke_prod.pe_subnet_id  : module.spoke_staging.pe_subnet_id
-  active_vnet_id       = var.environment == "production" ? module.spoke_prod.spoke_vnet_id : module.spoke_staging.spoke_vnet_id
+  active_aks_subnet_id  = var.environment == "production" ? module.spoke_prod.aks_subnet_id : module.spoke_staging.aks_subnet_id
+  active_pe_subnet_id   = var.environment == "production" ? module.spoke_prod.pe_subnet_id : module.spoke_staging.pe_subnet_id
+  active_func_subnet_id = var.environment == "production" ? module.spoke_prod.func_subnet_id : module.spoke_staging.func_subnet_id
+  active_vnet_id        = var.environment == "production" ? module.spoke_prod.spoke_vnet_id : module.spoke_staging.spoke_vnet_id
 }
 
 module "acr" {
@@ -129,19 +134,20 @@ module "aks" {
   min_node_count            = var.min_node_count
   max_node_count            = var.max_node_count
   kubernetes_version        = var.kubernetes_version
+  api_server_authorized_ips = var.api_server_authorized_ips
   tags                      = local.common_tags
 }
 
 module "management" {
   source = "./modules/management"
 
-  prefix                              = var.prefix
-  tenant_id                           = var.tenant_id
-  devops_sp_object_id                 = var.devops_sp_object_id
-  monitoring_principal_ids            = var.monitoring_principal_ids
-  aks_workload_identity_principal_id  = module.aks.kubelet_identity_object_id
-  key_vault_id                        = module.hub.key_vault_id
-  tags                                = local.common_tags
+  prefix                             = var.prefix
+  tenant_id                          = var.tenant_id
+  devops_sp_object_id                = var.devops_sp_object_id
+  monitoring_principal_ids           = var.monitoring_principal_ids
+  aks_workload_identity_principal_id = module.aks.kubelet_identity_object_id
+  key_vault_id                       = module.hub.key_vault_id
+  tags                               = local.common_tags
 }
 
 module "monitoring" {

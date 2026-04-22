@@ -19,6 +19,18 @@ variable "location" {
   default     = "eastus2"
 }
 
+variable "enable_hub_firewall" {
+  description = "Whether to deploy Azure Firewall resources in the hub"
+  type        = bool
+  default     = false
+}
+
+variable "enable_hub_bastion" {
+  description = "Whether to deploy Azure Bastion resources in the hub"
+  type        = bool
+  default     = false
+}
+
 # ── Azure Identity ────────────────────────────────────────────────────────────
 
 variable "tenant_id" {
@@ -69,6 +81,14 @@ variable "max_node_count" {
   description = "Maximum nodes for autoscaling"
   type        = number
   default     = 5
+}
+
+variable "api_server_authorized_ips" {
+  description = "CIDR blocks allowed to reach the AKS API server. Must include CI runner IPs, hub mgmt subnet, and developer VPN."
+  type        = list(string)
+  default = [
+    "10.1.3.0/24", # Hub management / bastion subnet
+  ]
 }
 
 # ── Entra External ID (CIAM) ──────────────────────────────────────────────────

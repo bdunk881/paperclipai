@@ -100,7 +100,7 @@ export const apolloCredentialStore = {
   },
 
   async getPublicByUserAsync(userId: string): Promise<ApolloCredentialPublic[]> {
-    return registry.listPublicByUserAsync(userId);
+    return registry.listPublicByUser(userId);
   },
 
   getActiveByUser(userId: string): ApolloCredential | null {
@@ -108,7 +108,7 @@ export const apolloCredentialStore = {
   },
 
   async getActiveByUserAsync(userId: string): Promise<ApolloCredential | null> {
-    return registry.findLatestAsync((record) => record.userId === userId && !record.revokedAt);
+    return registry.findLatest((record) => record.userId === userId && !record.revokedAt);
   },
 
   decryptAccessToken(credential: ApolloCredential): string {
@@ -160,7 +160,7 @@ export const apolloCredentialStore = {
   },
 
   async revokeAsync(credentialId: string, userId: string): Promise<boolean> {
-    const existing = await registry.getByIdAsync(credentialId);
+    const existing = await registry.getById(credentialId);
     if (!existing || existing.userId !== userId || existing.revokedAt) {
       return false;
     }

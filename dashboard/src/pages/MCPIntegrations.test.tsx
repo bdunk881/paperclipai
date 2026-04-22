@@ -1,19 +1,51 @@
 import { render, screen } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
-import MCPIntegrations from "./MCPIntegrations";
+import { describe, expect, it, vi } from "vitest";
+import { MemoryRouter } from "react-router-dom";
+import IntegrationsHub from "./MCPIntegrations";
 
-describe("MCPIntegrations", () => {
-  it("shows non-deceptive coming-soon connect controls", () => {
-    render(<MCPIntegrations />);
+const mockedAuthContext = {
+  user: { id: "test-user", email: "test@example.com", name: "Test User" },
+  login: vi.fn(),
+  signup: vi.fn(),
+  logout: vi.fn(),
+  getAccessToken: vi.fn(),
+};
 
-    expect(screen.getByText("Linear")).toBeInTheDocument();
+vi.mock("../context/AuthContext", () => ({
+  useAuth: () => mockedAuthContext,
+}));
 
-    expect(screen.getAllByText(/coming soon/i).length).toBeGreaterThan(0);
+vi.mock("../api/settingsClient", () => ({
+  apiGet: vi.fn().mockResolvedValue({ servers: [] }),
+}));
 
-    const connectButtons = screen.getAllByRole("button", {
-      name: /connect \(coming soon\)/i,
-    });
-    expect(connectButtons.length).toBeGreaterThan(0);
-    expect(connectButtons.every((btn) => btn.hasAttribute("disabled"))).toBe(true);
+describe("IntegrationsHub", () => {
+  it("renders a Linear integration card", async () => {
+    render(
+      <MemoryRouter>
+        <IntegrationsHub />
+      </MemoryRouter>
+    );
+
+    expect(await screen.findByText("Linear")).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "Sync projects and issues with Linear to automate triage, assignment, and status updates."
+      )
+    ).toBeInTheDocument();
+    expect(screen.getAllByText("Linear")).toHaveLength(1);
+  });
+
+  it("does not render fake marketplace ratings and zeros the connected counter", async () => {
+    render(
+      <MemoryRouter>
+        <IntegrationsHub />
+      </MemoryRouter>
+    );
+
+    expect(await screen.findByText("marketplace integrations connected")).toBeInTheDocument();
+    expect(screen.getAllByText("0")).toHaveLength(2);
+    expect(screen.queryByText("4.9")).not.toBeInTheDocument();
+    expect(screen.queryByText("4.8")).not.toBeInTheDocument();
   });
 });

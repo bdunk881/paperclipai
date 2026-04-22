@@ -1,19 +1,13 @@
 import { slackCredentialStore } from "./credentialStore";
 import { logSlack } from "./logger";
 import { buildSlackOAuthUrl, exchangeCodeForTokens, refreshAccessToken } from "./oauth";
-import { consumePkceState, createPkceState } from "./pkceStore";
+import { createPkceState, consumePkceState } from "./pkceStore";
 import { SlackClient } from "./slackClient";
-import { ConnectorError, SlackConnectionHealth, SlackCredential, SlackCredentialPublic } from "./types";
+import { ConnectorError, SlackConnectionHealth, SlackCredentialPublic } from "./types";
 
 function parseScopes(scope?: string): string[] {
-  if (!scope) {
-    return [];
-  }
-
-  return scope
-    .split(",")
-    .map((item) => item.trim())
-    .filter(Boolean);
+  if (!scope) return [];
+  return scope.split(",").map((item) => item.trim()).filter(Boolean);
 }
 
 export class SlackConnectorService {
@@ -57,11 +51,13 @@ export class SlackConnectorService {
       codeVerifier: state.verifier,
     });
 
+    const scopes = parseScopes(tokenSet.scope);
+
     const credential = slackCredentialStore.saveOAuth({
       userId: state.userId,
       accessToken: tokenSet.accessToken,
       refreshToken: tokenSet.refreshToken,
-      scopes: parseScopes(tokenSet.scope),
+      scopes,
       teamId: tokenSet.teamId,
       teamName: tokenSet.teamName,
       metadata: tokenSet.expiresAt ? { expiresAt: tokenSet.expiresAt } : undefined,
@@ -101,15 +97,15 @@ export class SlackConnectorService {
       connector: "slack",
       userId: params.userId,
       teamId: auth.teamId,
-      message: "Slack API-key connection completed",
+      message: "Slack API-key fallback connection completed",
       metadata: { authMethod: "api_key" },
     });
 
     return credential;
   }
 
-  async listConnections(userId: string): Promise<SlackCredentialPublic[]> {
-    return slackCredentialStore.getPublicByUserAsync(userId);
+  listConnections(userId: string): SlackCredentialPublic[] {
+    return slackCredentialStore.getPublicByUser(userId);
   }
 
   async testConnection(userId: string): Promise<{ teamId: string; teamName?: string }> {
@@ -132,7 +128,7 @@ export class SlackConnectorService {
 
   async health(userId: string): Promise<SlackConnectionHealth> {
     const checkedAt = new Date().toISOString();
-    const credential = await slackCredentialStore.getActiveByUserAsync(userId);
+    const credential = slackCredentialStore.getActiveByUser(userId);
 
     if (!credential) {
       return {
@@ -201,12 +197,6 @@ export class SlackConnectorService {
         checkedAt,
         teamId: credential.teamId,
         authMethod: credential.authMethod,
-        tokenRefreshStatus:
-          credential.authMethod === "oauth2_pkce"
-            ? connectorError.type === "auth"
-              ? "failed"
-              : "healthy"
-            : "not_applicable",
         details: {
           auth: connectorError.type !== "auth",
           apiReachable: connectorError.type !== "network",
@@ -218,8 +208,8 @@ export class SlackConnectorService {
     }
   }
 
-  async disconnect(userId: string, credentialId: string): Promise<boolean> {
-    const revoked = await slackCredentialStore.revokeAsync(credentialId, userId);
+  disconnect(userId: string, credentialId: string): boolean {
+    const revoked = slackCredentialStore.revoke(credentialId, userId);
 
     if (revoked) {
       logSlack({
@@ -250,8 +240,8 @@ export class SlackConnectorService {
     return client.listChannelMessages(channel);
   }
 
-  private async ensureValidCredential(userId: string): Promise<SlackCredential> {
-    let credential = await slackCredentialStore.getActiveByUserAsync(userId);
+  private async ensureValidCredential(userId: string) {
+    const credential = slackCredentialStore.getActiveByUser(userId);
     if (!credential) {
       throw new ConnectorError("auth", "Slack connector is not configured", 404);
     }
@@ -271,10 +261,11 @@ export class SlackConnectorService {
             accessToken: refreshed.accessToken,
             refreshToken: refreshed.refreshToken,
             scopes: parseScopes(refreshed.scope),
-            expiresAt: refreshed.expiresAt,
           });
-
-          credential = (await slackCredentialStore.getActiveByUserAsync(userId)) ?? credential;
+          credential.metadata = {
+            ...(credential.metadata ?? {}),
+            ...(refreshed.expiresAt ? { expiresAt: refreshed.expiresAt } : {}),
+          };
         } catch (error) {
           logSlack({
             event: "error",

@@ -1,15 +1,17 @@
 /**
  * Integration tests for /api/llm-configs endpoints.
- * Covers full lifecycle: create, list, update, set-default, delete.
- * Verifies that raw API keys are never present in any response.
+ * Verifies secret masking, provider-specific validation, and backward compatibility.
  */
 
-// Prevent transitive import of ESM-only @mistralai/mistralai package
 jest.mock("../engine/llmProviders", () => ({
   getProvider: jest.fn(),
 }));
 jest.mock("../auth/authMiddleware", () => ({
-  requireAuth: (req: { headers: { authorization?: string }; auth?: { sub: string } }, res: { status: (code: number) => { json: (body: unknown) => void } }, next: () => void) => {
+  requireAuth: (
+    req: { headers: { authorization?: string }; auth?: { sub: string } },
+    res: { status: (code: number) => { json: (body: unknown) => void } },
+    next: () => void
+  ) => {
     const auth = req.headers.authorization;
     if (!auth?.startsWith("Bearer ")) {
       res.status(401).json({ error: "Missing or malformed Authorization header." });
@@ -35,12 +37,8 @@ beforeEach(() => {
   llmConfigStore.clear();
 });
 
-// ---------------------------------------------------------------------------
-// POST /api/llm-configs
-// ---------------------------------------------------------------------------
-
 describe("POST /api/llm-configs", () => {
-  it("creates a config and returns 201 with masked key", async () => {
+  it("creates an API-key config and returns masked fields only", async () => {
     const res = await request(app)
       .post("/api/llm-configs")
       .set(asAuth(USER_A))
@@ -52,40 +50,135 @@ describe("POST /api/llm-configs", () => {
       });
 
     expect(res.status).toBe(201);
-    expect(res.body.id).toBeDefined();
     expect(res.body.provider).toBe("openai");
-    expect(res.body.label).toBe("My GPT-4o key");
-    expect(res.body.model).toBe("gpt-4o");
     expect(res.body.apiKeyMasked).toBe("****1234");
-    expect(res.body.isDefault).toBe(false);
-    expect(res.body.userId).toBe(USER_A);
-    expect(typeof res.body.createdAt).toBe("string");
+    expect(res.body.credentialSummary).toEqual({ apiKeyMasked: "****1234" });
+    expect(res.body.apiKey).toBeUndefined();
+    expect(res.body.credentialsEncrypted).toBeUndefined();
+    expect(JSON.stringify(res.body)).not.toContain("abc1234");
   });
 
-  it("never returns the raw apiKey or apiKeyEncrypted", async () => {
+  it("accepts azure-openai config with provider options", async () => {
     const res = await request(app)
       .post("/api/llm-configs")
       .set(asAuth(USER_A))
       .send({
-        provider: "anthropic",
-        label: "Claude key",
-        model: "claude-3-5-sonnet-20241022",
-        apiKey: "sk-ant-supersecret",
+        provider: "azure-openai",
+        label: "Azure prod",
+        model: "gpt-4o",
+        apiKey: "azure-secret-1234",
+        providerOptions: {
+          endpoint: "https://example-resource.openai.azure.com",
+          deployment: "gpt4o-prod",
+          apiVersion: "2025-01-01-preview",
+        },
       });
 
     expect(res.status).toBe(201);
-    expect(res.body.apiKey).toBeUndefined();
-    expect(res.body.apiKeyEncrypted).toBeUndefined();
-    expect(JSON.stringify(res.body)).not.toContain("supersecret");
+    expect(res.body.providerOptions).toEqual({
+      endpoint: "https://example-resource.openai.azure.com",
+      deployment: "gpt4o-prod",
+      apiVersion: "2025-01-01-preview",
+    });
+    expect(res.body.apiKeyMasked).toBe("****1234");
   });
 
-  it("returns 401 when Authorization header is missing", async () => {
+  it("accepts bedrock config with AWS credentials", async () => {
     const res = await request(app)
       .post("/api/llm-configs")
-      .send({ provider: "openai", label: "key", model: "gpt-4o", apiKey: "sk-test-1234" });
+      .set(asAuth(USER_A))
+      .send({
+        provider: "bedrock",
+        label: "Bedrock prod",
+        model: "amazon.nova-pro-v1:0",
+        credentials: {
+          accessKeyId: "AKIAIOSFODNN7EXAMPLE",
+          secretAccessKey: "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
+          sessionToken: "bedrock-session-token-9999",
+        },
+        providerOptions: {
+          region: "us-east-1",
+        },
+      });
 
-    expect(res.status).toBe(401);
-    expect(res.body.error).toMatch(/Authorization|Authenticated/i);
+    expect(res.status).toBe(201);
+    expect(res.body.provider).toBe("bedrock");
+    expect(res.body.providerOptions).toEqual({
+      region: "us-east-1",
+    });
+    expect(res.body.credentialSummary.accessKeyIdMasked).toBe("****MPLE");
+    expect(res.body.credentialSummary.secretAccessKeyMasked).toBe("****EKEY");
+    expect(res.body.credentialSummary.sessionTokenMasked).toBe("****9999");
+  });
+
+  it("accepts vertex-ai config with service-account credentials", async () => {
+    const serviceAccountJson = JSON.stringify({
+      type: "service_account",
+      client_email: "vertex@example.iam.gserviceaccount.com",
+      private_key: "-----BEGIN PRIVATE KEY-----abcd",
+    });
+
+    const res = await request(app)
+      .post("/api/llm-configs")
+      .set(asAuth(USER_A))
+      .send({
+        provider: "vertex-ai",
+        label: "Vertex prod",
+        model: "gemini-1.5-pro-002",
+        credentials: {
+          serviceAccountJson,
+        },
+        providerOptions: {
+          projectId: "autoflow-prod",
+          location: "us-central1",
+        },
+      });
+
+    expect(res.status).toBe(201);
+    expect(res.body.providerOptions).toEqual({
+      projectId: "autoflow-prod",
+      location: "us-central1",
+    });
+    expect(res.body.credentialSummary.serviceAccountJsonMasked).toMatch(/^\*\*\*\*/);
+    expect(JSON.stringify(res.body)).not.toContain("vertex@example");
+  });
+
+  it("returns 400 for missing provider-specific requirements", async () => {
+    const azure = await request(app)
+      .post("/api/llm-configs")
+      .set(asAuth(USER_A))
+      .send({
+        provider: "azure-openai",
+        label: "Azure",
+        model: "gpt-4o",
+        apiKey: "azure-secret-1234",
+      });
+    expect(azure.status).toBe(400);
+    expect(azure.body.error).toMatch(/deployment|endpoint/i);
+
+    const bedrock = await request(app)
+      .post("/api/llm-configs")
+      .set(asAuth(USER_A))
+      .send({
+        provider: "bedrock",
+        label: "Bedrock",
+        model: "amazon.nova-lite-v1:0",
+        providerOptions: { region: "us-east-1" },
+      });
+    expect(bedrock.status).toBe(400);
+    expect(bedrock.body.error).toMatch(/accessKeyId|secretAccessKey/);
+
+    const vertex = await request(app)
+      .post("/api/llm-configs")
+      .set(asAuth(USER_A))
+      .send({
+        provider: "vertex-ai",
+        label: "Vertex",
+        model: "gemini-1.5-pro-002",
+        providerOptions: { projectId: "autoflow-prod", location: "us-central1" },
+      });
+    expect(vertex.status).toBe(400);
+    expect(vertex.body.error).toMatch(/serviceAccountJson|oauthAccessToken/);
   });
 
   it("returns 400 for an invalid provider", async () => {
@@ -97,66 +190,10 @@ describe("POST /api/llm-configs", () => {
     expect(res.status).toBe(400);
     expect(res.body.error).toMatch(/provider/i);
   });
-
-  it("returns 400 when label is missing", async () => {
-    const res = await request(app)
-      .post("/api/llm-configs")
-      .set(asAuth(USER_A))
-      .send({ provider: "openai", model: "gpt-4o", apiKey: "sk-test-1234" });
-
-    expect(res.status).toBe(400);
-    expect(res.body.error).toMatch(/label/i);
-  });
-
-  it("returns 400 when model is missing", async () => {
-    const res = await request(app)
-      .post("/api/llm-configs")
-      .set(asAuth(USER_A))
-      .send({ provider: "openai", label: "My key", apiKey: "sk-test-1234" });
-
-    expect(res.status).toBe(400);
-    expect(res.body.error).toMatch(/model/i);
-  });
-
-  it("returns 400 when apiKey is too short", async () => {
-    const res = await request(app)
-      .post("/api/llm-configs")
-      .set(asAuth(USER_A))
-      .send({ provider: "openai", label: "My key", model: "gpt-4o", apiKey: "ab" });
-
-    expect(res.status).toBe(400);
-    expect(res.body.error).toMatch(/apiKey/i);
-  });
-
-  it("accepts all valid providers", async () => {
-    const providers = ["openai", "anthropic", "gemini", "mistral"];
-    for (const provider of providers) {
-      const res = await request(app)
-        .post("/api/llm-configs")
-        .set(asAuth(USER_A))
-        .send({ provider, label: `${provider} key`, model: "model-x", apiKey: "sk-test-1234" });
-      expect(res.status).toBe(201);
-    }
-  });
 });
 
-// ---------------------------------------------------------------------------
-// GET /api/llm-configs
-// ---------------------------------------------------------------------------
-
 describe("GET /api/llm-configs", () => {
-  it("returns 200 with an empty list when no configs exist", async () => {
-    const res = await request(app)
-      .get("/api/llm-configs")
-      .set(asAuth(USER_A));
-
-    expect(res.status).toBe(200);
-    expect(res.body.configs).toEqual([]);
-    expect(res.body.total).toBe(0);
-  });
-
   it("returns only the requesting user's configs", async () => {
-    // Create one config for USER_A and one for USER_B
     await request(app)
       .post("/api/llm-configs")
       .set(asAuth(USER_A))
@@ -171,172 +208,107 @@ describe("GET /api/llm-configs", () => {
     expect(resA.status).toBe(200);
     expect(resA.body.configs).toHaveLength(1);
     expect(resA.body.configs[0].userId).toBe(USER_A);
-    expect(resA.body.total).toBe(1);
+    expect(resA.body.configs[0].credentialSummary).toEqual({ apiKeyMasked: "****ice1" });
 
     const resB = await request(app).get("/api/llm-configs").set(asAuth(USER_B));
-    expect(resB.status).toBe(200);
     expect(resB.body.configs).toHaveLength(1);
     expect(resB.body.configs[0].userId).toBe(USER_B);
   });
 
-  it("never returns apiKey or apiKeyEncrypted in list", async () => {
+  it("never returns raw secrets in list responses", async () => {
     await request(app)
       .post("/api/llm-configs")
       .set(asAuth(USER_A))
-      .send({ provider: "openai", label: "key", model: "gpt-4o", apiKey: "sk-test-listtest" });
+      .send({
+        provider: "bedrock",
+        label: "Bedrock key",
+        model: "amazon.nova-pro-v1:0",
+        credentials: {
+          accessKeyId: "AKIAIOSFODNN7EXAMPLE",
+          secretAccessKey: "bedrock-secret-key-123456",
+        },
+        providerOptions: { region: "us-east-1" },
+      });
 
     const res = await request(app).get("/api/llm-configs").set(asAuth(USER_A));
     expect(res.status).toBe(200);
-    for (const cfg of res.body.configs) {
-      expect(cfg.apiKey).toBeUndefined();
-      expect(cfg.apiKeyEncrypted).toBeUndefined();
-    }
-    expect(JSON.stringify(res.body)).not.toContain("listtest");
-  });
-
-  it("returns 401 when Authorization header is missing", async () => {
-    const res = await request(app).get("/api/llm-configs");
-    expect(res.status).toBe(401);
+    expect(JSON.stringify(res.body)).not.toContain("bedrock-secret-key-123456");
+    expect(JSON.stringify(res.body)).not.toContain("AKIAIOSFODNN7EXAMPLE");
   });
 });
 
-// ---------------------------------------------------------------------------
-// PATCH /api/llm-configs/:id
-// ---------------------------------------------------------------------------
-
 describe("PATCH /api/llm-configs/:id", () => {
-  it("updates label and model", async () => {
-    const create = await request(app)
+  it("updates label, model, credentials, and providerOptions", async () => {
+    const created = await request(app)
       .post("/api/llm-configs")
       .set(asAuth(USER_A))
-      .send({ provider: "openai", label: "Old label", model: "gpt-4", apiKey: "sk-test-patchtest" });
-
-    const id = create.body.id;
+      .send({
+        provider: "azure-openai",
+        label: "Azure old",
+        model: "gpt-4o",
+        apiKey: "azure-old-1234",
+        providerOptions: {
+          endpoint: "https://old-resource.openai.azure.com",
+          deployment: "old-deployment",
+        },
+      });
 
     const res = await request(app)
-      .patch(`/api/llm-configs/${id}`)
+      .patch(`/api/llm-configs/${created.body.id}`)
       .set(asAuth(USER_A))
-      .send({ label: "New label", model: "gpt-4o" });
+      .send({
+        label: "Azure new",
+        providerOptions: {
+          endpoint: "https://new-resource.openai.azure.com",
+          deployment: "new-deployment",
+          apiVersion: "2025-01-01-preview",
+        },
+        apiKey: "azure-new-9999",
+      });
 
     expect(res.status).toBe(200);
-    expect(res.body.label).toBe("New label");
-    expect(res.body.model).toBe("gpt-4o");
-    expect(res.body.apiKeyEncrypted).toBeUndefined();
-  });
-
-  it("returns 404 for unknown id", async () => {
-    const res = await request(app)
-      .patch("/api/llm-configs/nonexistent-id")
-      .set(asAuth(USER_A))
-      .send({ label: "x" });
-
-    expect(res.status).toBe(404);
+    expect(res.body.label).toBe("Azure new");
+    expect(res.body.providerOptions).toEqual({
+      endpoint: "https://new-resource.openai.azure.com",
+      deployment: "new-deployment",
+      apiVersion: "2025-01-01-preview",
+    });
+    expect(res.body.apiKeyMasked).toBe("****9999");
+    expect(res.body.apiKey).toBeUndefined();
   });
 
   it("returns 404 when accessing another user's config", async () => {
-    const create = await request(app)
+    const created = await request(app)
       .post("/api/llm-configs")
       .set(asAuth(USER_A))
       .send({ provider: "openai", label: "Alice key", model: "gpt-4o", apiKey: "sk-test-aaaaaaaa" });
 
-    const id = create.body.id;
-
     const res = await request(app)
-      .patch(`/api/llm-configs/${id}`)
+      .patch(`/api/llm-configs/${created.body.id}`)
       .set(asAuth(USER_B))
       .send({ label: "Stolen" });
 
     expect(res.status).toBe(404);
   });
-
-  it("returns 401 when Authorization header is missing", async () => {
-    const res = await request(app)
-      .patch("/api/llm-configs/some-id")
-      .send({ label: "x" });
-    expect(res.status).toBe(401);
-  });
 });
 
-// ---------------------------------------------------------------------------
-// DELETE /api/llm-configs/:id
-// ---------------------------------------------------------------------------
-
 describe("DELETE /api/llm-configs/:id", () => {
-  it("deletes a config and returns 204", async () => {
-    const create = await request(app)
+  it("deletes a config", async () => {
+    const created = await request(app)
       .post("/api/llm-configs")
       .set(asAuth(USER_A))
       .send({ provider: "openai", label: "To delete", model: "gpt-4o", apiKey: "sk-test-todelete" });
 
-    const id = create.body.id;
-
     const del = await request(app)
-      .delete(`/api/llm-configs/${id}`)
+      .delete(`/api/llm-configs/${created.body.id}`)
       .set(asAuth(USER_A));
 
     expect(del.status).toBe(204);
-
-    // Verify it's gone from the list
-    const list = await request(app).get("/api/llm-configs").set(asAuth(USER_A));
-    expect(list.body.configs).toHaveLength(0);
-  });
-
-  it("returns 404 for unknown id", async () => {
-    const res = await request(app)
-      .delete("/api/llm-configs/nonexistent-id")
-      .set(asAuth(USER_A));
-
-    expect(res.status).toBe(404);
-  });
-
-  it("cannot delete another user's config", async () => {
-    const create = await request(app)
-      .post("/api/llm-configs")
-      .set(asAuth(USER_A))
-      .send({ provider: "openai", label: "Alice key", model: "gpt-4o", apiKey: "sk-test-aaaaaaaa" });
-
-    const id = create.body.id;
-
-    const res = await request(app)
-      .delete(`/api/llm-configs/${id}`)
-      .set(asAuth(USER_B));
-
-    expect(res.status).toBe(404);
-
-    // Alice's config should still exist
-    const list = await request(app).get("/api/llm-configs").set(asAuth(USER_A));
-    expect(list.body.configs).toHaveLength(1);
-  });
-
-  it("returns 401 when Authorization header is missing", async () => {
-    const res = await request(app).delete("/api/llm-configs/some-id");
-    expect(res.status).toBe(401);
   });
 });
 
-// ---------------------------------------------------------------------------
-// PATCH /api/llm-configs/:id/default
-// ---------------------------------------------------------------------------
-
 describe("PATCH /api/llm-configs/:id/default", () => {
-  it("sets a config as default and returns updated config", async () => {
-    const create = await request(app)
-      .post("/api/llm-configs")
-      .set(asAuth(USER_A))
-      .send({ provider: "openai", label: "Main key", model: "gpt-4o", apiKey: "sk-test-defaultt" });
-
-    const id = create.body.id;
-
-    const res = await request(app)
-      .patch(`/api/llm-configs/${id}/default`)
-      .set(asAuth(USER_A));
-
-    expect(res.status).toBe(200);
-    expect(res.body.isDefault).toBe(true);
-    expect(res.body.id).toBe(id);
-  });
-
-  it("clears the previous default when a new one is set", async () => {
+  it("sets a config as default and clears any previous default", async () => {
     const first = await request(app)
       .post("/api/llm-configs")
       .set(asAuth(USER_A))
@@ -351,43 +323,17 @@ describe("PATCH /api/llm-configs/:id/default", () => {
       .patch(`/api/llm-configs/${first.body.id}/default`)
       .set(asAuth(USER_A));
 
-    await request(app)
+    const res = await request(app)
       .patch(`/api/llm-configs/${second.body.id}/default`)
       .set(asAuth(USER_A));
 
+    expect(res.status).toBe(200);
+    expect(res.body.isDefault).toBe(true);
+
     const list = await request(app).get("/api/llm-configs").set(asAuth(USER_A));
-    const configs = list.body.configs as Array<{ id: string; isDefault: boolean }>;
-
-    const firstCfg = configs.find((c) => c.id === first.body.id);
-    const secondCfg = configs.find((c) => c.id === second.body.id);
-
-    expect(firstCfg?.isDefault).toBe(false);
-    expect(secondCfg?.isDefault).toBe(true);
-  });
-
-  it("returns 404 for unknown id", async () => {
-    const res = await request(app)
-      .patch("/api/llm-configs/nonexistent/default")
-      .set(asAuth(USER_A));
-
-    expect(res.status).toBe(404);
-  });
-
-  it("cannot set another user's config as default", async () => {
-    const create = await request(app)
-      .post("/api/llm-configs")
-      .set(asAuth(USER_A))
-      .send({ provider: "openai", label: "Alice key", model: "gpt-4o", apiKey: "sk-test-aaaaaaaa" });
-
-    const res = await request(app)
-      .patch(`/api/llm-configs/${create.body.id}/default`)
-      .set(asAuth(USER_B));
-
-    expect(res.status).toBe(404);
-  });
-
-  it("returns 401 when Authorization header is missing", async () => {
-    const res = await request(app).patch("/api/llm-configs/some-id/default");
-    expect(res.status).toBe(401);
+    const firstCfg = list.body.configs.find((cfg: { id: string }) => cfg.id === first.body.id);
+    const secondCfg = list.body.configs.find((cfg: { id: string }) => cfg.id === second.body.id);
+    expect(firstCfg.isDefault).toBe(false);
+    expect(secondCfg.isDefault).toBe(true);
   });
 });

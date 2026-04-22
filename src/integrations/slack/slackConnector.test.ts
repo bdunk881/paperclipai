@@ -1,9 +1,9 @@
-import { createHmac } from "crypto";
 import { clearPkceState } from "./pkceStore";
 import { slackCredentialStore } from "./credentialStore";
 import { SlackConnectorService } from "./service";
 import { clearSlackWebhookReplayCache, verifySlackSignature } from "./webhook";
 import { SlackClient } from "./slackClient";
+import { createHmac } from "crypto";
 
 function mockJsonResponse(body: unknown, status = 200, headers?: Record<string, string>): Response {
   return new Response(JSON.stringify(body), {

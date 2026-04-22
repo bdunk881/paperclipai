@@ -7,13 +7,15 @@
  */
 
 import { WorkflowStep, AgentSlotResult, AgentMessage } from "../types/workflow";
+import { createHash } from "crypto";
 import { llmConfigStore } from "../llmConfig/llmConfigStore";
 import { getProvider } from "./llmProviders";
 import { getBus, releaseBus } from "./agentBus";
-import { classifyTier, resolveModelForTier, buildCostLog, LlmCostLog } from "./llmRouter";
+import { classifyTierWithConfidence, resolveModelForTier, buildCostLog, LlmCostLog } from "./llmRouter";
+import { logClassificationDecision } from "./classificationLog";
+import { knowledgeStore } from "../knowledge/knowledgeStore";
 import { sanitizeContext } from "./crmFieldAllowlist";
 import { auditCrmApiCall } from "./crmAuditLog";
-import { knowledgeStore } from "../knowledge/knowledgeStore";
 
 export type StepContext = Record<string, unknown>;
 
@@ -25,6 +27,10 @@ export interface StepHandlerResult {
   agentSlotResults?: AgentSlotResult[];
   /** Cost and tier data for llm / agent steps */
   costLog?: LlmCostLog;
+}
+
+function hashPrompt(prompt: string): string {
+  return createHash("sha256").update(prompt).digest("hex");
 }
 
 /** Interpolate {{key}} placeholders in a template string using context values */
@@ -80,8 +86,8 @@ export async function handleLlm(
 
   // Resolve config: step-level override or user's default
   const resolved = step.llmConfigId
-    ? await llmConfigStore.getDecryptedAsync(step.llmConfigId, userId)
-    : await llmConfigStore.getDecryptedDefaultAsync(userId);
+    ? await llmConfigStore.getDecrypted(step.llmConfigId, userId)
+    : await llmConfigStore.getDecryptedDefault(userId);
 
   if (!resolved) {
     throw new Error(
@@ -90,13 +96,35 @@ export async function handleLlm(
   }
 
   // Determine the appropriate model tier for this step's complexity
-  const tier = classifyTier(step, renderedPrompt.length);
-  const tieredModel = resolveModelForTier(resolved.config.provider, tier);
+  const classification = classifyTierWithConfidence(step, renderedPrompt.length);
+  const tieredModel = resolveModelForTier(resolved.config.provider, classification.tier);
+  logClassificationDecision({
+    promptHash: hashPrompt(renderedPrompt),
+    features: classification.features,
+    selectedTier: classification.tier,
+    confidenceScore: classification.confidence,
+    modelId: tieredModel,
+  });
 
   const provider = getProvider({
     provider: resolved.config.provider,
     model: tieredModel,
     apiKey: resolved.apiKey,
+    credentials: resolved.credentials,
+    options: resolved.config.providerOptions,
+  });
+
+  // Audit log: record CRM field categories sent to the LLM API
+  auditCrmApiCall({
+    userId,
+    runId,
+    stepId: step.id,
+    stepKind: "llm",
+    apiEndpoint: `${resolved.config.provider}/${tieredModel}`,
+    originalFieldCount,
+    sanitizedCtx: sanitized,
+    blockedCategories,
+    strippedCount,
   });
 
   // Audit log: record CRM field categories sent to the LLM API
@@ -128,7 +156,7 @@ export async function handleLlm(
   }
 
   const costLog = buildCostLog(
-    tier,
+    classification.tier,
     tieredModel,
     response.usage?.promptTokens ?? 0,
     response.usage?.completionTokens ?? 0
@@ -506,7 +534,7 @@ export async function handleAgent(
   const model = step.agentModel ?? "default";
 
   // Resolve the LLM provider once (shared across slots)
-  const resolved = await llmConfigStore.getDecryptedDefaultAsync(userId);
+  const resolved = await llmConfigStore.getDecryptedDefault(userId);
   if (!resolved) {
     throw new Error(
       `Agent step "${step.id}" failed: no LLM provider configured. ` +
@@ -517,6 +545,8 @@ export async function handleAgent(
     provider: resolved.config.provider,
     model: resolved.config.model,
     apiKey: resolved.apiKey,
+    credentials: resolved.credentials,
+    options: resolved.config.providerOptions,
   });
 
   const bus = getBus(runId, step.id);

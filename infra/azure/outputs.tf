@@ -14,7 +14,7 @@ output "spoke_staging_vnet_id" {
 }
 
 output "hub_firewall_private_ip" {
-  description = "Private IP of the hub Azure Firewall (use in spoke UDRs)"
+  description = "Private IP of the hub Azure Firewall (null when firewall is disabled)"
   value       = module.hub.firewall_private_ip
 }
 

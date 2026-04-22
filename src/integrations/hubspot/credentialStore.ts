@@ -88,7 +88,7 @@ export const hubSpotCredentialStore = {
   },
 
   async getPublicByUserAsync(userId: string): Promise<HubSpotCredentialPublic[]> {
-    return registry.listPublicByUserAsync(userId);
+    return registry.listPublicByUser(userId);
   },
 
   getActiveByUser(userId: string): HubSpotCredential | null {
@@ -96,7 +96,7 @@ export const hubSpotCredentialStore = {
   },
 
   async getActiveByUserAsync(userId: string): Promise<HubSpotCredential | null> {
-    return registry.findLatestAsync((credential) => credential.userId === userId && !credential.revokedAt);
+    return registry.findLatest((credential) => credential.userId === userId && !credential.revokedAt);
   },
 
   decryptAccessToken(credential: HubSpotCredential): string {
@@ -152,7 +152,7 @@ export const hubSpotCredentialStore = {
   },
 
   async revokeAsync(credentialId: string, userId: string): Promise<boolean> {
-    const existing = await registry.getByIdAsync(credentialId);
+    const existing = await registry.getById(credentialId);
     if (!existing || existing.userId !== userId || existing.revokedAt) {
       return false;
     }

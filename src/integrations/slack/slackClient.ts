@@ -16,13 +16,17 @@ function parseErrorType(status: number, bodyText: string): ConnectorErrorType {
 }
 
 export class SlackClient {
-  private readonly token: string;
+  private token: string;
 
   constructor(token: string) {
     this.token = token;
   }
 
-  private async request(path: string, init: RequestInit = {}, attempt = 0): Promise<unknown> {
+  private async request(
+    path: string,
+    init: RequestInit = {},
+    attempt = 0
+  ): Promise<any> {
     const url = `${SLACK_API_BASE}${path}`;
 
     try {
@@ -39,16 +43,15 @@ export class SlackClient {
         if (attempt >= MAX_RETRIES) {
           throw new ConnectorError("rate-limit", "Slack API rate limit exceeded", 429);
         }
-
         const retryAfterSeconds = Number(response.headers.get("Retry-After") ?? "1");
         await sleep(Math.max(1, retryAfterSeconds) * 1000);
         return this.request(path, init, attempt + 1);
       }
 
       const text = await response.text();
-      let data: { ok?: boolean; error?: string; [key: string]: unknown } = {};
+      let data: any = {};
       if (text.trim().length > 0) {
-        data = JSON.parse(text) as typeof data;
+        data = JSON.parse(text);
       }
 
       if (!response.ok) {
@@ -71,9 +74,7 @@ export class SlackClient {
 
       return data;
     } catch (error) {
-      if (error instanceof ConnectorError) {
-        throw error;
-      }
+      if (error instanceof ConnectorError) throw error;
 
       if (attempt < MAX_RETRIES) {
         await sleep(250 * Math.pow(2, attempt));
@@ -89,12 +90,7 @@ export class SlackClient {
   }
 
   async authTest(): Promise<{ teamId: string; teamName?: string; botUserId?: string }> {
-    const data = await this.request("/auth.test", { method: "POST" }) as {
-      team_id: string;
-      team?: string;
-      user_id?: string;
-    };
-
+    const data = await this.request("/auth.test", { method: "POST" });
     return {
       teamId: String(data.team_id),
       teamName: data.team,
@@ -111,16 +107,11 @@ export class SlackClient {
         limit: String(Math.min(200, Math.max(1, limit))),
         types: "public_channel,private_channel",
       });
-      if (cursor) {
-        params.set("cursor", cursor);
-      }
+      if (cursor) params.set("cursor", cursor);
 
       const data = await this.request(`/conversations.list?${params.toString()}`, {
         method: "GET",
-      }) as {
-        channels?: Array<{ id: string; name: string; is_private: boolean }>;
-        response_metadata?: { next_cursor?: string };
-      };
+      });
 
       const channels = Array.isArray(data.channels) ? data.channels : [];
       for (const channel of channels) {
@@ -149,16 +140,11 @@ export class SlackClient {
         channel,
         limit: String(Math.min(200, Math.max(1, limit))),
       });
-      if (cursor) {
-        params.set("cursor", cursor);
-      }
+      if (cursor) params.set("cursor", cursor);
 
       const data = await this.request(`/conversations.history?${params.toString()}`, {
         method: "GET",
-      }) as {
-        messages?: Array<{ ts: string; text?: string; user?: string }>;
-        response_metadata?: { next_cursor?: string };
-      };
+      });
 
       const messages = Array.isArray(data.messages) ? data.messages : [];
       for (const message of messages) {
@@ -173,5 +159,17 @@ export class SlackClient {
     } while (cursor);
 
     return results;
+  }
+
+  async sendMessage(channel: string, text: string): Promise<{ ts: string; channel: string }> {
+    const data = await this.request("/chat.postMessage", {
+      method: "POST",
+      body: JSON.stringify({ channel, text }),
+    });
+
+    return {
+      ts: String(data.ts),
+      channel: String(data.channel),
+    };
   }
 }

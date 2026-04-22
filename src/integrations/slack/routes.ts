@@ -73,24 +73,21 @@ router.post("/connect-api-key", requireAuth, async (req: AuthenticatedRequest, r
   }
 
   try {
-    const connection = await slackConnectorService.connectApiKey({
-      userId,
-      botToken: botToken.trim(),
-    });
+    const connection = await slackConnectorService.connectApiKey({ userId, botToken: botToken.trim() });
     res.status(201).json({ connection });
   } catch (error) {
     handleError(res, error);
   }
 });
 
-router.get("/connections", requireAuth, async (req: AuthenticatedRequest, res) => {
+router.get("/connections", requireAuth, (req: AuthenticatedRequest, res) => {
   const userId = getUserId(req);
   if (!userId) {
     res.status(401).json({ error: "Authenticated user required" });
     return;
   }
 
-  const connections = await slackConnectorService.listConnections(userId);
+  const connections = slackConnectorService.listConnections(userId);
   res.json({ connections, total: connections.length });
 });
 
@@ -121,14 +118,14 @@ router.get("/health", requireAuth, async (req: AuthenticatedRequest, res) => {
   res.status(statusCode).json(health);
 });
 
-router.delete("/connections/:id", requireAuth, async (req: AuthenticatedRequest, res) => {
+router.delete("/connections/:id", requireAuth, (req: AuthenticatedRequest, res) => {
   const userId = getUserId(req);
   if (!userId) {
     res.status(401).json({ error: "Authenticated user required" });
     return;
   }
 
-  const deleted = await slackConnectorService.disconnect(userId, req.params.id);
+  const deleted = slackConnectorService.disconnect(userId, req.params.id);
   if (!deleted) {
     res.status(404).json({ error: "Slack connection not found" });
     return;
@@ -184,12 +181,7 @@ slackWebhookRouter.post("/events", express.raw({ type: "application/json" }), (r
       signingSecret,
     });
 
-    const payload = JSON.parse(rawBody.toString("utf8")) as {
-      type?: string;
-      challenge?: string;
-      team_id?: string;
-      event?: { type?: string };
-    };
+    const payload = JSON.parse(rawBody.toString("utf8"));
 
     if (payload.type === "url_verification" && payload.challenge) {
       res.status(200).json({ challenge: payload.challenge });

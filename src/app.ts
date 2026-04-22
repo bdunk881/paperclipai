@@ -9,7 +9,11 @@ import rateLimit from "express-rate-limit";
 import multer from "multer";
 import cors from "cors";
 import helmet from "helmet";
-import { WORKFLOW_TEMPLATES, getTemplate, getTemplatesByCategory } from "./templates";
+import {
+  getTemplate,
+  getTemplatesByCategory,
+  listTemplates,
+} from "./templates";
 import { WorkflowTemplate, WorkflowStep } from "./types/workflow";
 import { workflowEngine } from "./engine/WorkflowEngine";
 import { runStore } from "./engine/runStore";
@@ -24,14 +28,40 @@ import { llmConfigStore } from "./llmConfig/llmConfigStore";
 import { getProvider } from "./engine/llmProviders";
 import { parseFile } from "./engine/fileParser";
 import { resolveModelForTier } from "./engine/llmRouter";
+import {
+  getClassificationDecisionLogCapacity,
+  listClassificationDecisions,
+} from "./engine/classificationLog";
 import { requireAuth, AuthenticatedRequest } from "./auth/authMiddleware";
 import stripeWebhookRoutes from "./billing/stripeWebhook";
+import apolloWebhookRoutes from "./integrations/apollo-attio/webhookRoute";
 import checkoutRoutes from "./billing/checkoutRoutes";
 import subscriptionRoutes from "./billing/subscriptionRoutes";
-import apolloRoutes from "./integrations/apollo/routes";
-import hubSpotRoutes, { hubSpotWebhookRouter } from "./integrations/hubspot/routes";
-import sentryRoutes, { sentryWebhookRouter } from "./integrations/sentry/routes";
-import composioRoutes, { composioWebhookRouter } from "./integrations/composio/routes";
+import slackRoutes, { slackWebhookRouter } from "./integrations/slack/routes";
+import shopifyRoutes, { shopifyWebhookRouter } from "./integrations/shopify/routes";
+import docuSignRoutes, { docuSignWebhookRouter } from "./integrations/docusign/routes";
+import linearRoutes, { linearWebhookRouter } from "./integrations/linear/routes";
+import teamsRoutes, { teamsWebhookRouter } from "./integrations/teams/routes";
+import posthogRoutes, { posthogWebhookRouter } from "./integrations/posthog/routes";
+import intercomRoutes, { intercomWebhookRouter } from "./integrations/intercom/routes";
+import datadogAzureMonitorRoutes, {
+  datadogAzureMonitorWebhookRouter,
+} from "./integrations/datadog-azure-monitor/routes";
+import agentCatalogRoutes from "./integrations/agent-catalog/routes";
+import oauthBridgeRoutes from "./integrations/oauthBridgeRoutes";
+import integrationRoutes, {
+  catalogRouter as integrationCatalogRoutes,
+  oauthCallbackRouter as integrationOAuthCallbackRoutes,
+  webhookRelayRouter,
+} from "./integrations/integrationRoutes";
+import googleWorkspaceConnectorRoutes from "./connectors/google-workspace/routes";
+import googleWorkspaceWebhookRoutes from "./connectors/google-workspace/webhookRoutes";
+import {
+  createPortableWorkflowBundle,
+  getPortableWorkflowSchemaDescriptor,
+  parsePortableWorkflowBundle,
+} from "./workflows/portableSchema";
+import { saveImportedTemplate } from "./templates/importedTemplateStore";
 
 const app = express();
 
@@ -73,8 +103,19 @@ function getHeaderUserId(req: express.Request): string | null {
   return typeof userId === "string" && userId.trim() ? userId.trim() : null;
 }
 
+function getBearerTokenSubject(req: express.Request): string | null {
+  const authHeader = req.headers.authorization;
+  if (!authHeader?.startsWith("Bearer ")) {
+    return null;
+  }
+
+  const token = authHeader.slice(7).trim();
+  return token || null;
+}
+
 function getRateLimitKey(req: express.Request): string {
-  const userId = getAuthenticatedUserId(req) ?? getHeaderUserId(req);
+  const userId =
+    getAuthenticatedUserId(req) ?? getHeaderUserId(req) ?? getBearerTokenSubject(req);
   if (userId) {
     return `user:${userId}`;
   }
@@ -147,9 +188,23 @@ app.use("/api/webhooks", webhookRateLimiter);
 // is available for signature verification
 // ---------------------------------------------------------------------------
 app.use("/api/webhooks/stripe", express.raw({ type: "application/json" }), stripeWebhookRoutes);
-app.use("/api/webhooks/hubspot", hubSpotWebhookRouter);
-app.use("/api/webhooks/sentry", sentryWebhookRouter);
-app.use("/api/webhooks/composio", composioWebhookRouter);
+// Slack webhook — mounted before express.json() for signature verification
+app.use("/api/webhooks/slack", slackWebhookRouter);
+// Shopify webhook — mounted before express.json() for signature verification
+app.use("/api/webhooks/shopify", shopifyWebhookRouter);
+// DocuSign webhook — mounted before express.json() for signature verification
+app.use("/api/webhooks/docusign", docuSignWebhookRouter);
+// Linear webhook — mounted before express.json() for signature verification
+app.use("/api/webhooks/linear", linearWebhookRouter);
+// Microsoft Teams webhook — mounted before express.json() for signature verification
+app.use("/api/webhooks/teams", teamsWebhookRouter);
+// PostHog webhook — mounted before express.json() for signature verification
+app.use("/api/webhooks/posthog", posthogWebhookRouter);
+// Intercom webhook — mounted before express.json() for signature verification
+app.use("/api/webhooks/intercom", intercomWebhookRouter);
+// Datadog + Azure Monitor webhook — mounted before express.json() for signature verification
+app.use("/api/webhooks/datadog-azure-monitor", datadogAzureMonitorWebhookRouter);
+app.use("/api/connectors/google-workspace", googleWorkspaceWebhookRoutes);
 
 app.use(express.json());
 
@@ -160,9 +215,16 @@ const upload = multer({
 });
 
 // ---------------------------------------------------------------------------
+// Apollo webhook — receives Apollo email reply events → syncs to Attio
+// ---------------------------------------------------------------------------
+app.use("/api/webhooks/apollo", apolloWebhookRoutes);
+
+// ---------------------------------------------------------------------------
 // Billing API — Stripe checkout sessions + subscription lifecycle
 // ---------------------------------------------------------------------------
-app.use("/api/billing/checkout", requireAuth, billingMutationRateLimiter, checkoutRoutes);
+// Checkout is intentionally public so unauthenticated users can start paid signup from pricing pages.
+// Downstream webhook processing still reconciles subscription ownership via metadata/email.
+app.use("/api/billing/checkout", billingMutationRateLimiter, checkoutRoutes);
 app.use("/api/billing/subscription", requireAuth, billingMutationRateLimiter, subscriptionRoutes);
 
 // ---------------------------------------------------------------------------
@@ -180,11 +242,22 @@ app.use("/api/mcp/servers", requireAuth, mcpRoutes);
 // ---------------------------------------------------------------------------
 app.use("/api/memory", requireAuth, memoryRoutes);
 app.use("/api/knowledge", requireAuth, knowledgeMutationRateLimiter, knowledgeRoutes);
+app.use("/api/integrations/catalog", integrationCatalogRoutes);
+app.use("/api/integrations/oauth2", integrationOAuthCallbackRoutes);
+app.use("/api/integrations", requireAuth, integrationRoutes);
+app.use("/api/webhooks/relay", webhookRelayRouter);
+app.use("/api/integrations", oauthBridgeRoutes);
+app.use("/api/integrations/slack", slackRoutes);
+app.use("/api/integrations/shopify", shopifyRoutes);
+app.use("/api/integrations/docusign", docuSignRoutes);
+app.use("/api/integrations/linear", linearRoutes);
+app.use("/api/integrations/teams", teamsRoutes);
+app.use("/api/integrations/posthog", posthogRoutes);
+app.use("/api/integrations/intercom", intercomRoutes);
+app.use("/api/integrations/datadog-azure-monitor", datadogAzureMonitorRoutes);
+app.use("/api/integrations/agent-catalog", agentCatalogRoutes);
+app.use("/api/connectors/google-workspace", googleWorkspaceConnectorRoutes);
 app.use("/api/control-plane", requireAuth, controlPlaneRoutes);
-app.use("/api/integrations/apollo", apolloRoutes);
-app.use("/api/integrations/hubspot", hubSpotRoutes);
-app.use("/api/integrations/sentry", sentryRoutes);
-app.use("/api/integrations/composio", composioRoutes);
 
 // ---------------------------------------------------------------------------
 // Auth API — identity endpoint for authenticated callers
@@ -207,7 +280,7 @@ app.get("/api/templates", (req, res) => {
   if (category && typeof category === "string") {
     templates = getTemplatesByCategory(category as WorkflowTemplate["category"]);
   } else {
-    templates = WORKFLOW_TEMPLATES;
+    templates = listTemplates();
   }
 
   res.json({
@@ -224,6 +297,11 @@ app.get("/api/templates", (req, res) => {
   });
 });
 
+/** Returns the current portable workflow schema contract */
+app.get("/api/workflows/schema", (_req, res) => {
+  res.json(getPortableWorkflowSchemaDescriptor());
+});
+
 /** Get a single template with full definition */
 app.get("/api/templates/:id", (req, res) => {
   try {
@@ -232,6 +310,43 @@ app.get("/api/templates/:id", (req, res) => {
   } catch {
     res.status(404).json({ error: `Template not found: ${req.params.id}` });
   }
+});
+
+/** Export a template in the portable AutoFlow workflow format */
+app.get("/api/templates/:id/export", (req, res) => {
+  try {
+    const template = getTemplate(req.params.id);
+    res.json(createPortableWorkflowBundle(template));
+  } catch {
+    res.status(404).json({ error: `Template not found: ${req.params.id}` });
+  }
+});
+
+/** Import a portable workflow template into the in-memory registry */
+app.post("/api/templates/import", requireAuth, async (req, res) => {
+  let bundle;
+  try {
+    bundle = parsePortableWorkflowBundle(req.body);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Invalid portable workflow payload";
+    res.status(400).json({ error: message });
+    return;
+  }
+
+  try {
+    getTemplate(bundle.template.id);
+    res.status(409).json({ error: `Template already exists: ${bundle.template.id}` });
+    return;
+  } catch {
+    // Template id is available; continue with import.
+  }
+
+  await saveImportedTemplate(bundle.template);
+  res.status(201).json({
+    imported: true,
+    template: bundle.template,
+    schemaVersion: bundle.schemaVersion,
+  });
 });
 
 /** Get sample data for a template (for dashboard preview) */
@@ -299,6 +414,19 @@ app.get("/api/runs/:id", requireAuth, (req, res) => {
 });
 
 // ---------------------------------------------------------------------------
+// Routing analytics API — recent classifier decisions for dashboarding
+// ---------------------------------------------------------------------------
+
+app.get("/api/analytics/routing-decisions", requireAuth, (_req, res) => {
+  const decisions = listClassificationDecisions();
+  res.json({
+    decisions,
+    total: decisions.length,
+    capacity: getClassificationDecisionLogCapacity(),
+  });
+});
+
+// ---------------------------------------------------------------------------
 // File-triggered runs — multipart upload → parse → start run
 // ---------------------------------------------------------------------------
 
@@ -336,7 +464,7 @@ app.post("/api/runs/file", requireAuth, upload.single("file"), async (req: Authe
   const userId = req.auth?.sub;
   let openaiApiKey: string | undefined;
   if (userId) {
-    const defaultConfig = await llmConfigStore.getDecryptedDefaultAsync(userId);
+    const defaultConfig = await llmConfigStore.getDecryptedDefault(userId);
     if (defaultConfig?.config.provider === "openai") {
       openaiApiKey = defaultConfig.apiKey;
     }
@@ -416,8 +544,8 @@ app.post("/api/workflows/generate", requireAuth, llmEndpointRateLimiter, async (
 
   const resolved =
     typeof llmConfigId === "string" && llmConfigId
-      ? await llmConfigStore.getDecryptedAsync(llmConfigId, userId)
-      : await llmConfigStore.getDecryptedDefaultAsync(userId);
+      ? await llmConfigStore.getDecrypted(llmConfigId, userId)
+      : await llmConfigStore.getDecryptedDefault(userId);
 
   if (!resolved) {
     res.status(422).json({
@@ -581,7 +709,7 @@ app.get("/health", (_req, res) => {
   const runs = runStore.list();
   res.json({
     status: "ok",
-    templates: WORKFLOW_TEMPLATES.length,
+    templates: listTemplates().length,
     runs: {
       total: runs.length,
       running: runs.filter((r) => r.status === "running").length,

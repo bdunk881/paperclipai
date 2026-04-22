@@ -16,7 +16,7 @@ function resolveUserId(req: AuthenticatedRequest): string | null {
 }
 
 async function resolveOpenAiKey(userId: string): Promise<string | undefined> {
-  const defaultConfig = await llmConfigStore.getDecryptedDefaultAsync(userId);
+  const defaultConfig = llmConfigStore.getDecryptedDefault(userId);
   if (defaultConfig?.config.provider === "openai") {
     return defaultConfig.apiKey;
   }

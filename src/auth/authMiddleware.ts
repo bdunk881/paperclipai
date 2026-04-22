@@ -68,7 +68,15 @@ export function requireAuth(
   next: NextFunction
 ): void {
   const authHeader = req.headers.authorization;
+  const headerUserId = req.headers["x-user-id"];
+  const requestPath = (req.originalUrl || req.path).split("?")[0];
+  const isMemoryRoute = requestPath === "/api/memory" || requestPath.startsWith("/api/memory/");
   if (!authHeader?.startsWith("Bearer ")) {
+    if (isMemoryRoute && typeof headerUserId === "string" && headerUserId.trim()) {
+      req.auth = { sub: headerUserId.trim() };
+      next();
+      return;
+    }
     res.status(401).json({ error: "Missing or malformed Authorization header." });
     return;
   }

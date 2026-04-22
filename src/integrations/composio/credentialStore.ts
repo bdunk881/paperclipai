@@ -45,7 +45,7 @@ export const composioCredentialStore = {
   },
 
   async getPublicByUserAsync(userId: string): Promise<ComposioCredentialPublic[]> {
-    return registry.listPublicByUserAsync(userId);
+    return registry.listPublicByUser(userId);
   },
 
   getActiveByUser(userId: string): ComposioCredential | null {
@@ -53,7 +53,7 @@ export const composioCredentialStore = {
   },
 
   async getActiveByUserAsync(userId: string): Promise<ComposioCredential | null> {
-    return registry.findLatestAsync((credential) => credential.userId === userId && !credential.revokedAt);
+    return registry.findLatest((credential) => credential.userId === userId && !credential.revokedAt);
   },
 
   decryptAccessToken(credential: ComposioCredential): string {
@@ -74,7 +74,7 @@ export const composioCredentialStore = {
   },
 
   async revokeAsync(credentialId: string, userId: string): Promise<boolean> {
-    const existing = await registry.getByIdAsync(credentialId);
+    const existing = await registry.getById(credentialId);
     if (!existing || existing.userId !== userId || existing.revokedAt) {
       return false;
     }

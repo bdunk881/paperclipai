@@ -1,4 +1,5 @@
-import { ConnectorError, SlackTokenSet } from "./types";
+import { ConnectorError } from "./types";
+import { SlackTokenSet } from "./types";
 
 const SLACK_OAUTH_BASE = "https://slack.com/oauth/v2";
 
@@ -11,10 +12,7 @@ function requiredEnv(name: string): string {
 }
 
 function parseScope(scope?: string): string[] {
-  if (!scope) {
-    return [];
-  }
-
+  if (!scope) return [];
   return scope
     .split(",")
     .map((item) => item.trim())
@@ -28,9 +26,7 @@ export function buildSlackOAuthUrl(params: {
 }): string {
   const clientId = requiredEnv("SLACK_CLIENT_ID");
   const redirectUri = requiredEnv("SLACK_REDIRECT_URI");
-  const botScopes =
-    process.env.SLACK_SCOPES ??
-    "channels:read,chat:write,groups:read,channels:history,groups:history";
+  const botScopes = process.env.SLACK_SCOPES ?? "channels:read,chat:write,groups:read,channels:history,groups:history";
 
   const query = new URLSearchParams({
     client_id: clientId,
@@ -68,19 +64,9 @@ export async function exchangeCodeForTokens(params: {
     body: payload,
   });
 
-  const body = await response.json() as {
-    ok?: boolean;
-    error?: string;
-    access_token?: string;
-    refresh_token?: string;
-    expires_in?: number;
-    scope?: string;
-    team?: { id?: string; name?: string };
-    bot_user_id?: string;
-    authed_user?: { scope?: string };
-  };
+  const body = await response.json() as any;
 
-  if (!response.ok || !body.ok || !body.access_token || !body.team?.id) {
+  if (!response.ok || !body.ok) {
     throw new ConnectorError(
       "auth",
       `Slack OAuth exchange failed: ${body.error ?? response.statusText}`,
@@ -98,8 +84,8 @@ export async function exchangeCodeForTokens(params: {
       ? new Date(Date.now() + Number(body.expires_in) * 1000).toISOString()
       : undefined,
     scope: [...new Set([...authedUserScope, ...botScope])].join(","),
-    teamId: body.team.id,
-    teamName: body.team.name,
+    teamId: body.team?.id,
+    teamName: body.team?.name,
     botUserId: body.bot_user_id,
   };
 }
@@ -121,18 +107,8 @@ export async function refreshAccessToken(refreshToken: string): Promise<SlackTok
     body: payload,
   });
 
-  const body = await response.json() as {
-    ok?: boolean;
-    error?: string;
-    access_token?: string;
-    refresh_token?: string;
-    expires_in?: number;
-    scope?: string;
-    team?: { id?: string; name?: string };
-    bot_user_id?: string;
-  };
-
-  if (!response.ok || !body.ok || !body.access_token || !body.team?.id) {
+  const body = await response.json() as any;
+  if (!response.ok || !body.ok) {
     throw new ConnectorError(
       "auth",
       `Slack token refresh failed: ${body.error ?? response.statusText}`,
@@ -147,8 +123,8 @@ export async function refreshAccessToken(refreshToken: string): Promise<SlackTok
       ? new Date(Date.now() + Number(body.expires_in) * 1000).toISOString()
       : undefined,
     scope: body.scope,
-    teamId: body.team.id,
-    teamName: body.team.name,
+    teamId: body.team?.id,
+    teamName: body.team?.name,
     botUserId: body.bot_user_id,
   };
 }

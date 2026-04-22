@@ -27,7 +27,7 @@ export default function ApiReferencePage() {
       <h1 className="text-3xl font-bold text-gray-900 mb-2">API Reference</h1>
       <p className="text-lg text-gray-500 mb-8">
         All endpoints are REST + JSON. Base URL: <code>http://localhost:3000</code> locally,{" "}
-        <code>https://autoflow.app</code> in production.
+        <code>https://helloautoflow.com</code> in production.
       </p>
 
       {/* Templates */}
@@ -257,7 +257,7 @@ export default function ApiReferencePage() {
           <div>
             <p className="text-sm font-semibold text-gray-700 mb-1">Example — Typeform integration</p>
             <pre className="text-xs">{`# Point your Typeform webhook at:
-POST https://autoflow.app/api/webhooks/tpl-lead-enrich
+POST https://helloautoflow.com/api/webhooks/tpl-lead-enrich
 
 # Body (forwarded as run input):
 {

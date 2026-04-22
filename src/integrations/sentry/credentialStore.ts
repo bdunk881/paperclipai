@@ -91,7 +91,7 @@ export const sentryCredentialStore = {
   },
 
   async getPublicByUserAsync(userId: string): Promise<SentryCredentialPublic[]> {
-    return registry.listPublicByUserAsync(userId);
+    return registry.listPublicByUser(userId);
   },
 
   getActiveByUser(userId: string): SentryCredential | null {
@@ -99,7 +99,7 @@ export const sentryCredentialStore = {
   },
 
   async getActiveByUserAsync(userId: string): Promise<SentryCredential | null> {
-    return registry.findLatestAsync((credential) => credential.userId === userId);
+    return registry.findLatest((credential) => credential.userId === userId);
   },
 
   decryptAccessToken(credential: SentryCredential): string {
@@ -149,7 +149,7 @@ export const sentryCredentialStore = {
   },
 
   async revokeAsync(credentialId: string, userId: string): Promise<boolean> {
-    const existing = await registry.getByIdAsync(credentialId);
+    const existing = await registry.getById(credentialId);
     if (!existing || existing.userId !== userId || existing.revokedAt) {
       return false;
     }

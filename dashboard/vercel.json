@@ -4,7 +4,7 @@
   "rewrites": [
     {
       "source": "/api/:path*",
-      "destination": "https://api.helloautoflow.com/api/:path*"
+      "destination": "https://ca-autoflow-staging-backend.blackplant-e4a41b70.eastus2.azurecontainerapps.io/api/:path*"
     },
     {
       "source": "/((?!api/).*)",

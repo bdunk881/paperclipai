@@ -85,7 +85,7 @@ export const gmailCredentialStore = {
   },
 
   async getPublicByUserAsync(userId: string): Promise<GmailCredentialPublic[]> {
-    return registry.listPublicByUserAsync(userId);
+    return registry.listPublicByUser(userId);
   },
 
   getActiveByUser(userId: string): GmailCredential | null {
@@ -93,7 +93,7 @@ export const gmailCredentialStore = {
   },
 
   async getActiveByUserAsync(userId: string): Promise<GmailCredential | null> {
-    return registry.findLatestAsync((record) => record.userId === userId && !record.revokedAt);
+    return registry.findLatest((record) => record.userId === userId && !record.revokedAt);
   },
 
   decryptAccessToken(credential: GmailCredential): string {
@@ -149,7 +149,7 @@ export const gmailCredentialStore = {
   },
 
   async revokeAsync(credentialId: string, userId: string): Promise<boolean> {
-    const existing = await registry.getByIdAsync(credentialId);
+    const existing = await registry.getById(credentialId);
     if (!existing || existing.userId !== userId || existing.revokedAt) {
       return false;
     }

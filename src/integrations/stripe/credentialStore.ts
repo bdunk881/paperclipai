@@ -110,7 +110,7 @@ export const stripeCredentialStore = {
   },
 
   async getPublicByUserAsync(userId: string): Promise<StripeCredentialPublic[]> {
-    return registry.listPublicByUserAsync(userId);
+    return registry.listPublicByUser(userId);
   },
 
   getActiveByUser(userId: string): StripeCredential | null {
@@ -118,7 +118,7 @@ export const stripeCredentialStore = {
   },
 
   async getActiveByUserAsync(userId: string): Promise<StripeCredential | null> {
-    return registry.findLatestAsync((record) => record.userId === userId && !record.revokedAt);
+    return registry.findLatest((record) => record.userId === userId && !record.revokedAt);
   },
 
   decryptAccessToken(credential: StripeCredential): string {
@@ -171,7 +171,7 @@ export const stripeCredentialStore = {
   },
 
   async revokeAsync(credentialId: string, userId: string): Promise<boolean> {
-    const existing = await registry.getByIdAsync(credentialId);
+    const existing = await registry.getById(credentialId);
     if (!existing || existing.userId !== userId || existing.revokedAt) {
       return false;
     }

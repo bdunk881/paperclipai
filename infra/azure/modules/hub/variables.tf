@@ -18,6 +18,18 @@ variable "resource_group_name" {
   type        = string
 }
 
+variable "enable_firewall" {
+  description = "Whether to deploy Azure Firewall resources in the hub"
+  type        = bool
+  default     = false
+}
+
+variable "enable_bastion" {
+  description = "Whether to deploy Azure Bastion resources in the hub"
+  type        = bool
+  default     = false
+}
+
 variable "hub_vnet_address_space" {
   description = "CIDR block for the hub virtual network"
   type        = string

@@ -20,9 +20,8 @@ export default function OnboardingWizard({
   onClose: () => void;
   steps: OnboardingStep[];
 }) {
-  if (!open) return null;
-
   useEffect(() => {
+    if (!open) return;
     function onKeyDown(event: KeyboardEvent) {
       if (event.key === "Escape") onClose();
     }
@@ -35,7 +34,9 @@ export default function OnboardingWizard({
       document.body.style.overflow = previousOverflow;
       window.removeEventListener("keydown", onKeyDown);
     };
-  }, [onClose]);
+  }, [onClose, open]);
+
+  if (!open) return null;
 
   const nextStep = steps.find((step) => !step.done) ?? steps[steps.length - 1];
   const completed = steps.filter((step) => step.done).length;
@@ -47,11 +48,11 @@ export default function OnboardingWizard({
         role="dialog"
         aria-modal="true"
         aria-label="First-run onboarding"
-        className="relative w-full max-w-2xl overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-xl dark:border-gray-700 dark:bg-gray-900"
+        className="relative w-full max-w-2xl overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-xl dark:border-surface-800 dark:bg-surface-900"
       >
-        <div className="flex items-start justify-between border-b border-gray-100 bg-gradient-to-r from-blue-50 to-cyan-50 p-6 dark:border-gray-700 dark:from-gray-900 dark:to-gray-800">
+        <div className="flex items-start justify-between border-b border-gray-100 bg-gradient-to-r from-brand-50 to-cyan-50 p-6 dark:border-surface-800 dark:from-surface-900 dark:to-surface-800">
           <div>
-            <div className="mb-2 inline-flex items-center gap-1 rounded-full border border-blue-200 bg-white px-2 py-1 text-xs font-medium text-blue-700 dark:border-gray-600 dark:bg-gray-800 dark:text-blue-300">
+            <div className="mb-2 inline-flex items-center gap-1 rounded-full border border-brand-200 bg-white px-2 py-1 text-xs font-medium text-brand-700 dark:border-surface-700 dark:bg-surface-800 dark:text-brand-300">
               <Sparkles size={12} />
               First-run onboarding
             </div>
@@ -62,7 +63,7 @@ export default function OnboardingWizard({
           </div>
           <button
             onClick={onClose}
-            className="rounded-lg p-1.5 text-gray-500 transition hover:bg-white hover:text-gray-800 dark:text-gray-300 dark:hover:bg-gray-700 dark:hover:text-gray-100"
+            className="rounded-lg p-1.5 text-gray-500 transition hover:bg-white hover:text-gray-800 dark:text-gray-300 dark:hover:bg-surface-800 dark:hover:text-gray-100"
             aria-label="Close onboarding"
           >
             <X size={16} />
@@ -73,13 +74,13 @@ export default function OnboardingWizard({
           {steps.map((step, index) => (
             <div
               key={step.id}
-              className="flex items-start gap-3 rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800"
+              className="flex items-start gap-3 rounded-xl border border-gray-200 bg-white p-4 dark:border-surface-800 dark:bg-surface-900"
             >
               <div className="mt-0.5">
                 {step.done ? (
                   <CheckCircle2 size={18} className="text-green-600" />
                 ) : (
-                  <Circle size={18} className="text-blue-600" />
+                  <Circle size={18} className="text-brand-600" />
                 )}
               </div>
               <div className="min-w-0 flex-1">
@@ -92,7 +93,7 @@ export default function OnboardingWizard({
               {!step.done && (
                 <Link
                   to={step.to}
-                  className="shrink-0 rounded-lg border border-blue-200 bg-blue-50 px-3 py-1.5 text-xs font-medium text-blue-700 transition hover:bg-blue-100"
+                  className="shrink-0 rounded-lg border border-brand-200 bg-brand-50 px-3 py-1.5 text-xs font-medium text-brand-700 transition hover:bg-brand-100"
                 >
                   {step.cta}
                 </Link>
@@ -101,13 +102,13 @@ export default function OnboardingWizard({
           ))}
         </div>
 
-        <div className="flex items-center justify-between border-t border-gray-100 bg-gray-50 px-6 py-4 dark:border-gray-700 dark:bg-gray-800">
+        <div className="flex items-center justify-between border-t border-gray-100 bg-gray-50 px-6 py-4 dark:border-surface-800 dark:bg-surface-900">
           <p className="text-xs text-gray-500 dark:text-gray-400">
             {completed}/{steps.length} steps complete
           </p>
           <Link
             to={nextStep.to}
-            className="rounded-lg bg-blue-600 px-3.5 py-2 text-sm font-medium text-white transition hover:bg-blue-700"
+            className="rounded-lg bg-brand-600 px-3.5 py-2 text-sm font-medium text-white transition hover:bg-brand-700"
           >
             {nextStep.done ? "Open dashboard" : `Continue: ${nextStep.cta}`}
           </Link>

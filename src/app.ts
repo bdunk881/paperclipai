@@ -14,6 +14,7 @@ import { WorkflowTemplate, WorkflowStep } from "./types/workflow";
 import { workflowEngine } from "./engine/WorkflowEngine";
 import { runStore } from "./engine/runStore";
 import { approvalStore } from "./engine/approvalStore";
+import { approvalNotificationStore } from "./engine/approvalNotificationStore";
 import llmConfigRoutes from "./llmConfig/llmConfigRoutes";
 import mcpRoutes from "./mcp/mcpRoutes";
 import memoryRoutes from "./memory/memoryRoutes";
@@ -591,6 +592,21 @@ app.get("/api/approvals/:id", async (req, res) => {
     return;
   }
   res.json(approval);
+});
+
+/**
+ * GET /api/approvals/:id/notifications
+ * Returns the durable notification outbox rows created for an approval request.
+ */
+app.get("/api/approvals/:id/notifications", async (req, res) => {
+  const approval = await approvalStore.get(req.params.id);
+  if (!approval) {
+    res.status(404).json({ error: `Approval request not found: ${req.params.id}` });
+    return;
+  }
+
+  const notifications = await approvalNotificationStore.listByApprovalRequest(req.params.id);
+  res.json({ notifications, total: notifications.length });
 });
 
 /**

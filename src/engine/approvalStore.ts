@@ -7,6 +7,7 @@
 
 import { randomUUID } from "crypto";
 import { getPostgresPool, isPostgresPersistenceEnabled } from "../db/postgres";
+import { approvalNotificationStore } from "./approvalNotificationStore";
 
 export interface ApprovalRequest {
   id: string;
@@ -118,6 +119,7 @@ export const approvalStore = {
 
     store.set(id, { request, timeoutHandle });
     await persistRequest(request);
+    await approvalNotificationStore.createForApproval(request);
     return { id };
   },
 
@@ -250,6 +252,7 @@ export const approvalStore = {
     }
     store.clear();
     requestStore.clear();
+    await approvalNotificationStore.clear();
 
     if (!isPostgresPersistenceEnabled()) {
       return;

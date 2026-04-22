@@ -17,6 +17,7 @@ import { approvalStore } from "./engine/approvalStore";
 import llmConfigRoutes from "./llmConfig/llmConfigRoutes";
 import mcpRoutes from "./mcp/mcpRoutes";
 import memoryRoutes from "./memory/memoryRoutes";
+import knowledgeRoutes from "./knowledge/routes";
 import { llmConfigStore } from "./llmConfig/llmConfigStore";
 import { getProvider } from "./engine/llmProviders";
 import { parseFile } from "./engine/fileParser";
@@ -140,6 +141,17 @@ const billingMutationRateLimiter = rateLimit({
   handler: createRateLimitHandler(24 * 60 * 60 * 1000),
 });
 
+const knowledgeMutationRateLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  limit: 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: getRateLimitKey,
+  skip: (req) => !["POST", "PUT", "PATCH", "DELETE"].includes(req.method),
+  skipFailedRequests: true,
+  handler: createRateLimitHandler(60 * 60 * 1000),
+});
+
 app.use("/api", generalApiRateLimiter);
 app.use("/api/webhooks", webhookRateLimiter);
 // ---------------------------------------------------------------------------
@@ -195,6 +207,7 @@ app.use("/api/mcp/servers", requireAuth, mcpRoutes);
 // Memory API — persistent context memory store for agents/workflows
 // ---------------------------------------------------------------------------
 app.use("/api/memory", requireAuth, memoryRoutes);
+app.use("/api/knowledge", requireAuth, knowledgeMutationRateLimiter, knowledgeRoutes);
 app.use("/api/integrations", oauthBridgeRoutes);
 app.use("/api/integrations/slack", slackRoutes);
 app.use("/api/integrations/shopify", shopifyRoutes);

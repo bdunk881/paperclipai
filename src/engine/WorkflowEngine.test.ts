@@ -13,6 +13,7 @@ jest.mock("./llmProviders", () => ({
 
 import { WorkflowEngine, setLlmProvider, registerAction } from "./WorkflowEngine";
 import { runStore } from "./runStore";
+import { knowledgeStore } from "../knowledge/knowledgeStore";
 import { customerSupportBot } from "../templates/customer-support-bot";
 import { leadEnrichment } from "../templates/lead-enrichment";
 import { contentGenerator } from "../templates/content-generator";
@@ -45,6 +46,7 @@ let engine: WorkflowEngine;
 
 beforeEach(() => {
   runStore.clear();
+  knowledgeStore.clear();
   engine = new WorkflowEngine();
 
   // Install deterministic mock LLM provider
@@ -246,6 +248,82 @@ describe("WorkflowEngine — action registry", () => {
 
     await waitForCompletion(run.id);
     expect(handled.length).toBeGreaterThan(0);
+  });
+});
+
+describe("WorkflowEngine — knowledge steps", () => {
+  it("retrieves knowledge-base context and exposes prompt-ready output", async () => {
+    const base = await knowledgeStore.createKnowledgeBase({
+      userId: "knowledge-user",
+      name: "Product KB",
+    });
+    await knowledgeStore.ingestDocument({
+      userId: "knowledge-user",
+      knowledgeBaseId: base.id,
+      filename: "pricing.txt",
+      mimeType: "text/plain",
+      content:
+        "AutoFlow offers usage-based billing with annual discounts for enterprise customers.",
+      sourceType: "inline",
+    });
+
+    const template: WorkflowTemplate = {
+      id: "tpl-knowledge-step",
+      name: "Knowledge Step",
+      description: "Injects retrieved context",
+      category: "custom",
+      version: "1.0.0",
+      configFields: [],
+      sampleInput: {},
+      expectedOutput: {},
+      steps: [
+        {
+          id: "step-trigger",
+          name: "Trigger",
+          kind: "trigger",
+          description: "Start",
+          inputKeys: [],
+          outputKeys: ["question", "knowledgeBaseIds"],
+        },
+        {
+          id: "step-knowledge",
+          name: "Retrieve Context",
+          kind: "knowledge",
+          description: "Search KB",
+          inputKeys: ["question"],
+          outputKeys: ["knowledgePromptContext"],
+          knowledgeLimit: 3,
+          knowledgeMinScore: 0,
+        },
+        {
+          id: "step-output",
+          name: "Output",
+          kind: "output",
+          description: "Return context",
+          inputKeys: ["knowledgePromptContext", "knowledgeQuery"],
+          outputKeys: ["knowledgePromptContext", "knowledgeQuery"],
+        },
+      ],
+    };
+
+    const run = engine.startRun(
+      template,
+      {
+        question: "How does enterprise pricing work?",
+        knowledgeBaseIds: [base.id],
+      },
+      undefined,
+      "knowledge-user"
+    );
+
+    const completed = await waitForCompletion(run.id);
+    expect(completed.status).toBe("completed");
+    expect(completed.output).toEqual(
+      expect.objectContaining({
+        knowledgeQuery: "How does enterprise pricing work?",
+      })
+    );
+    expect(String(completed.output?.knowledgePromptContext)).toMatch(/annual discounts/i);
   });
 });
 

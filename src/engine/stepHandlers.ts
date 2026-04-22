@@ -13,6 +13,7 @@ import { getProvider } from "./llmProviders";
 import { getBus, releaseBus } from "./agentBus";
 import { classifyTierWithConfidence, resolveModelForTier, buildCostLog, LlmCostLog } from "./llmRouter";
 import { logClassificationDecision } from "./classificationLog";
+import { knowledgeStore } from "../knowledge/knowledgeStore";
 
 export type StepContext = Record<string, unknown>;
 
@@ -120,6 +121,71 @@ export async function handleLlm(
   );
 
   return { output, costLog };
+}
+
+export async function handleKnowledge(
+  step: WorkflowStep,
+  ctx: StepContext,
+  userId: string
+): Promise<StepHandlerResult> {
+  const configuredBaseIds = Array.isArray(step.knowledgeBaseIds) ? step.knowledgeBaseIds : [];
+  const configBaseIds = Array.isArray(step.config?.["knowledgeBaseIds"])
+    ? (step.config["knowledgeBaseIds"] as string[])
+    : [];
+  const contextBaseIds = Array.isArray(ctx["knowledgeBaseIds"])
+    ? (ctx["knowledgeBaseIds"] as string[])
+    : [];
+  const knowledgeBaseIds = [...configuredBaseIds, ...configBaseIds, ...contextBaseIds].filter(
+    (value): value is string => typeof value === "string" && value.trim().length > 0
+  );
+
+  const queryKey =
+    (typeof step.config?.["queryKey"] === "string" && (step.config["queryKey"] as string)) ||
+    step.inputKeys[0] ||
+    "query";
+  const explicitQuery =
+    step.knowledgeQuery ??
+    (typeof step.config?.["knowledgeQuery"] === "string"
+      ? (step.config["knowledgeQuery"] as string)
+      : undefined);
+  const resolvedQuery =
+    explicitQuery ??
+    (typeof ctx[queryKey] === "string" ? (ctx[queryKey] as string) : String(ctx[queryKey] ?? ""));
+
+  const results = await knowledgeStore.search({
+    userId,
+    query: resolvedQuery,
+    knowledgeBaseIds: knowledgeBaseIds.length > 0 ? knowledgeBaseIds : undefined,
+    limit:
+      step.knowledgeLimit ??
+      (typeof step.config?.["knowledgeLimit"] === "number"
+        ? (step.config["knowledgeLimit"] as number)
+        : 5),
+    minScore:
+      step.knowledgeMinScore ??
+      (typeof step.config?.["knowledgeMinScore"] === "number"
+        ? (step.config["knowledgeMinScore"] as number)
+        : 0.15),
+  });
+
+  const knowledgePromptContext = results
+    .map((result, index) => {
+      return [
+        `[#${index + 1}] score=${result.score.toFixed(3)}`,
+        `knowledge_base=${result.knowledgeBase.name}`,
+        `document=${result.document.filename}`,
+        result.chunk.text.trim(),
+      ].join("\n");
+    })
+    .join("\n\n");
+
+  return {
+    output: {
+      knowledgeResults: results,
+      knowledgePromptContext,
+      knowledgeQuery: resolvedQuery,
+    },
+  };
 }
 
 // ---------------------------------------------------------------------------

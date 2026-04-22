@@ -12,7 +12,7 @@ import { approvalNotificationStore } from "./approvalNotificationStore";
 export interface ApprovalRequest {
   id: string;
   runId: string;
-  templateId: string;
+  templateId?: string;
   templateName: string;
   stepId: string;
   stepName: string;
@@ -40,7 +40,7 @@ export const approvalStore = {
    */
   create(params: {
     runId: string;
-    templateId: string;
+    templateId?: string;
     templateName: string;
     stepId: string;
     stepName: string;
@@ -83,7 +83,7 @@ export const approvalStore = {
     approvalNotificationStore.publish({
       approvalId: id,
       runId: params.runId,
-      templateId: params.templateId,
+      templateId: params.templateId ?? "",
       templateName: params.templateName,
       stepId: params.stepId,
       stepName: params.stepName,
@@ -123,9 +123,6 @@ export const approvalStore = {
   },
 
   clear(): void {
-    for (const entry of store.values()) {
-      clearTimeout(entry.timeoutHandle);
-    }
     store.clear();
   },
 };

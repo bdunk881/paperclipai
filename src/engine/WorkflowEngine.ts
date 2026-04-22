@@ -16,7 +16,7 @@ import {
 } from "../types/workflow";
 import { runStore } from "./runStore";
 import { approvalStore } from "./approvalStore";
-import { handleLlm, handleMcp, handleFileTrigger, handleAgent } from "./stepHandlers";
+import { handleLlm, handleMcp, handleFileTrigger, handleAgent, handleKnowledge } from "./stepHandlers";
 import { memoryStore } from "./memoryStore";
 import { LlmCostLog } from "./llmRouter";
 
@@ -321,6 +321,11 @@ export class WorkflowEngine {
             const llmResult = await executeLlm(step, context, userId);
             stepOutput = llmResult.output;
             stepCostLog = llmResult.costLog;
+            break;
+          }
+          case "knowledge": {
+            const knowledgeResult = await handleKnowledge(step, context, userId ?? "");
+            stepOutput = knowledgeResult.output;
             break;
           }
           case "transform":

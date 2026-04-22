@@ -8,6 +8,7 @@ export type StepKind =
   | "cron_trigger"
   | "interval_trigger"
   | "llm"
+  | "knowledge"
   | "transform"
   | "condition"
   | "action"
@@ -92,6 +93,11 @@ export interface WorkflowStep {
   action?: string;
   /** Step-level configuration overrides */
   config?: Record<string, unknown>;
+  // knowledge step
+  knowledgeBaseIds?: string[];
+  knowledgeQuery?: string;
+  knowledgeLimit?: number;
+  knowledgeMinScore?: number;
   // mcp step
   mcpServerUrl?: string;
   mcpTool?: string;

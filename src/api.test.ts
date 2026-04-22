@@ -27,6 +27,8 @@ import { WORKFLOW_TEMPLATES } from "./templates";
 import { controlPlaneStore } from "./controlPlane/controlPlaneStore";
 import { approvalStore } from "./engine/approvalStore";
 import { approvalNotificationStore } from "./engine/approvalNotificationStore";
+import { runStore } from "./engine/runStore";
+import { knowledgeStore } from "./knowledge/knowledgeStore";
 
 function asAuth(userId = "test-user") {
   return { Authorization: `Bearer ${userId}` };
@@ -36,6 +38,8 @@ beforeEach(() => {
   controlPlaneStore.clear();
   approvalStore.clear();
   approvalNotificationStore.clear();
+  runStore.clear();
+  knowledgeStore.clear();
 });
 
 // ---------------------------------------------------------------------------
@@ -216,6 +220,78 @@ describe("GET /api/templates/:id/sample", () => {
     const res = await request(app).get("/api/templates/tpl-unknown/sample");
     expect(res.status).toBe(404);
     expect(res.body.error).toMatch(/not found/i);
+  });
+});
+
+describe("Knowledge base routes", () => {
+  it("creates a knowledge base, ingests a document, and searches it", async () => {
+    const createRes = await request(app)
+      .post("/api/knowledge/bases")
+      .set(asAuth())
+      .send({
+        name: "Support KB",
+        description: "Customer support content",
+        tags: ["support"],
+      });
+
+    expect(createRes.status).toBe(201);
+    expect(createRes.body.name).toBe("Support KB");
+
+    const baseId = createRes.body.id as string;
+    const ingestRes = await request(app)
+      .post(`/api/knowledge/bases/${baseId}/documents`)
+      .set(asAuth())
+      .send({
+        filename: "refunds.txt",
+        mimeType: "text/plain",
+        content:
+          "Customers may request a refund within 30 days. Billing escalations go to finance.",
+      });
+
+    expect(ingestRes.status).toBe(201);
+    expect(ingestRes.body.document.status).toBe("ready");
+    expect(ingestRes.body.chunks.length).toBeGreaterThan(0);
+
+    const searchRes = await request(app)
+      .post("/api/knowledge/search")
+      .set(asAuth())
+      .send({
+        query: "refund policy",
+        knowledgeBaseIds: [baseId],
+      });
+
+    expect(searchRes.status).toBe(200);
+    expect(searchRes.body.total).toBeGreaterThan(0);
+    expect(searchRes.body.results[0].document.filename).toBe("refunds.txt");
+  });
+
+  it("supports chunk edits after ingestion", async () => {
+    const createRes = await request(app)
+      .post("/api/knowledge/bases")
+      .set(asAuth("knowledge-editor"))
+      .send({ name: "Ops KB" });
+    const baseId = createRes.body.id as string;
+
+    const ingestRes = await request(app)
+      .post(`/api/knowledge/bases/${baseId}/documents`)
+      .set(asAuth("knowledge-editor"))
+      .send({
+        filename: "runbook.txt",
+        mimeType: "text/plain",
+        content:
+          "Restart the service after deploy. Verify the health endpoint. Page support if recovery fails.",
+      });
+    const chunkId = ingestRes.body.chunks[0].id as string;
+
+    const patchRes = await request(app)
+      .patch(`/api/knowledge/chunks/${chunkId}`)
+      .set(asAuth("knowledge-editor"))
+      .send({
+        text: "Restart the service after deploy and verify the health endpoint before paging support.",
+      });
+
+    expect(patchRes.status).toBe(200);
+    expect(patchRes.body.text).toMatch(/verify the health endpoint/i);
   });
 });
 

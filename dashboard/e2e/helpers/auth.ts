@@ -13,5 +13,6 @@ export async function loginAsMockUser(page: Page): Promise<void> {
       "autoflow_user",
       JSON.stringify({ id: "usr-e2e", email: "e2e@example.com", name: "E2E User" })
     );
+    localStorage.setItem("autoflow:onboarding-dismissed:v1:usr-e2e", "true");
   });
 }

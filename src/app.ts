@@ -222,9 +222,7 @@ app.use("/api/webhooks/apollo", apolloWebhookRoutes);
 // ---------------------------------------------------------------------------
 // Billing API — Stripe checkout sessions + subscription lifecycle
 // ---------------------------------------------------------------------------
-// Checkout is intentionally public so unauthenticated users can start paid signup from pricing pages.
-// Downstream webhook processing still reconciles subscription ownership via metadata/email.
-app.use("/api/billing/checkout", billingMutationRateLimiter, checkoutRoutes);
+app.use("/api/billing/checkout", requireAuth, billingMutationRateLimiter, checkoutRoutes);
 app.use("/api/billing/subscription", requireAuth, billingMutationRateLimiter, subscriptionRoutes);
 
 // ---------------------------------------------------------------------------

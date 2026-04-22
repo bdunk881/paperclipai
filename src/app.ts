@@ -674,6 +674,21 @@ app.get("/api/approvals/:id", requireAuth, async (req: AuthenticatedRequest, res
 });
 
 /**
+ * GET /api/approvals/:id/notifications
+ * Returns the durable notification outbox rows created for an approval request.
+ */
+app.get("/api/approvals/:id/notifications", async (req, res) => {
+  const approval = await approvalStore.get(req.params.id);
+  if (!approval) {
+    res.status(404).json({ error: `Approval request not found: ${req.params.id}` });
+    return;
+  }
+
+  const notifications = await approvalNotificationStore.listByApprovalRequest(req.params.id);
+  res.json({ notifications, total: notifications.length });
+});
+
+/**
  * POST /api/approvals/:id/resolve
  * Body: { decision: "approved" | "rejected" | "request_changes", comment?: string }
  * Resolves the approval request, resuming or terminating the paused run.

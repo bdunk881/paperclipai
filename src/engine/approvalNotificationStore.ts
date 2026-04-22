@@ -1,87 +1,180 @@
 import { randomUUID } from "crypto";
+import { parseJsonValue, serializeJson } from "../db/json";
+import { getPostgresPool, isPostgresPersistenceEnabled } from "../db/postgres";
+import { ApprovalRequest } from "./approvalStore";
 
-export type ApprovalNotificationStatus = "sent";
-
-export interface ApprovalNotificationRecord {
+export interface ApprovalNotification {
   id: string;
-  approvalId: string;
+  approvalRequestId: string;
   runId: string;
-  templateId: string;
   templateName: string;
   stepId: string;
   stepName: string;
-  assignee: string;
-  message: string;
-  channel: "in_app";
-  status: ApprovalNotificationStatus;
+  recipient: string;
+  channel: "inbox" | "email";
+  status: "pending" | "sent" | "failed";
+  payload: Record<string, unknown>;
   createdAt: string;
-  sentAt: string;
+  sentAt?: string;
+  error?: string;
 }
 
-const notifications = new Map<string, ApprovalNotificationRecord>();
+const memoryStore = new Map<string, ApprovalNotification>();
 
-function makeKey(approvalId: string, assignee: string): string {
-  return `${approvalId}:${assignee}`;
+function cloneNotification(notification: ApprovalNotification): ApprovalNotification {
+  return {
+    ...notification,
+    payload: { ...notification.payload },
+  };
+}
+
+function mapRowToNotification(row: Record<string, unknown>): ApprovalNotification {
+  return {
+    id: String(row["id"]),
+    approvalRequestId: String(row["approval_request_id"]),
+    runId: String(row["run_id"]),
+    templateName: String(row["template_name"]),
+    stepId: String(row["step_id"]),
+    stepName: String(row["step_name"]),
+    recipient: String(row["recipient"]),
+    channel: row["channel"] as ApprovalNotification["channel"],
+    status: row["status"] as ApprovalNotification["status"],
+    payload: parseJsonValue<Record<string, unknown>>(row["payload_json"], {}),
+    createdAt: new Date(String(row["created_at"])).toISOString(),
+    sentAt: row["sent_at"] ? new Date(String(row["sent_at"])).toISOString() : undefined,
+    error: typeof row["error"] === "string" ? row["error"] : undefined,
+  };
+}
+
+async function persistNotification(notification: ApprovalNotification): Promise<void> {
+  if (!isPostgresPersistenceEnabled()) {
+    memoryStore.set(notification.id, cloneNotification(notification));
+    return;
+  }
+
+  const pool = getPostgresPool();
+  await pool.query(
+    `
+      INSERT INTO approval_notifications (
+        id, approval_request_id, run_id, template_name, step_id, step_name,
+        recipient, channel, status, payload_json, created_at, sent_at, error
+      )
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb, $11, $12, $13)
+      ON CONFLICT (id) DO UPDATE
+      SET status = EXCLUDED.status,
+          payload_json = EXCLUDED.payload_json,
+          sent_at = EXCLUDED.sent_at,
+          error = EXCLUDED.error,
+          updated_at = now()
+    `,
+    [
+      notification.id,
+      notification.approvalRequestId,
+      notification.runId,
+      notification.templateName,
+      notification.stepId,
+      notification.stepName,
+      notification.recipient,
+      notification.channel,
+      notification.status,
+      serializeJson(notification.payload),
+      notification.createdAt,
+      notification.sentAt ?? null,
+      notification.error ?? null,
+    ]
+  );
 }
 
 export const approvalNotificationStore = {
-  publish(params: {
-    approvalId: string;
-    runId: string;
-    templateId: string;
-    templateName: string;
-    stepId: string;
-    stepName: string;
-    assignees: string[];
-    message: string;
-  }): ApprovalNotificationRecord[] {
-    const timestamp = new Date().toISOString();
+  async createForApproval(request: ApprovalRequest): Promise<ApprovalNotification[]> {
+    const notifications: ApprovalNotification[] = ["inbox", "email"].map((channel) => ({
+      id: randomUUID(),
+      approvalRequestId: request.id,
+      runId: request.runId,
+      templateName: request.templateName,
+      stepId: request.stepId,
+      stepName: request.stepName,
+      recipient: request.assignee,
+      channel: channel as ApprovalNotification["channel"],
+      status: "pending",
+      payload: {
+        message: request.message,
+        timeoutMinutes: request.timeoutMinutes,
+        requestedAt: request.requestedAt,
+      },
+      createdAt: new Date().toISOString(),
+    }));
 
-    return params.assignees.map((assignee) => {
-      const key = makeKey(params.approvalId, assignee);
-      const record: ApprovalNotificationRecord = {
-        id: notifications.get(key)?.id ?? randomUUID(),
-        approvalId: params.approvalId,
-        runId: params.runId,
-        templateId: params.templateId,
-        templateName: params.templateName,
-        stepId: params.stepId,
-        stepName: params.stepName,
-        assignee,
-        message: params.message,
-        channel: "in_app",
-        status: "sent",
-        createdAt: notifications.get(key)?.createdAt ?? timestamp,
-        sentAt: timestamp,
-      };
-      notifications.set(key, record);
-      return record;
-    });
+    for (const notification of notifications) {
+      await persistNotification(notification);
+    }
+
+    return notifications.map(cloneNotification);
   },
 
-  list(filters?: {
-    assignee?: string;
-    approvalId?: string;
-    runId?: string;
-  }): ApprovalNotificationRecord[] {
-    let all = Array.from(notifications.values());
-
-    if (filters?.assignee) {
-      all = all.filter((record) => record.assignee === filters.assignee);
-    }
-    if (filters?.approvalId) {
-      all = all.filter((record) => record.approvalId === filters.approvalId);
-    }
-    if (filters?.runId) {
-      all = all.filter((record) => record.runId === filters.runId);
+  async listByApprovalRequest(
+    approvalRequestId: string,
+    status?: ApprovalNotification["status"]
+  ): Promise<ApprovalNotification[]> {
+    if (!isPostgresPersistenceEnabled()) {
+      return Array.from(memoryStore.values())
+        .filter((notification) => notification.approvalRequestId === approvalRequestId)
+        .filter((notification) => (status ? notification.status === status : true))
+        .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime())
+        .map(cloneNotification);
     }
 
-    return all.sort(
-      (left, right) => new Date(right.sentAt).getTime() - new Date(left.sentAt).getTime()
+    const pool = getPostgresPool();
+    const result = await pool.query(
+      `
+        SELECT *
+        FROM approval_notifications
+        WHERE approval_request_id = $1
+          AND ($2::text IS NULL OR status = $2)
+        ORDER BY created_at ASC
+      `,
+      [approvalRequestId, status ?? null]
     );
+
+    return result.rows.map(mapRowToNotification);
   },
 
-  clear(): void {
-    notifications.clear();
+  async markSent(id: string): Promise<boolean> {
+    const existing = await this.get(id);
+    if (!existing) {
+      return false;
+    }
+
+    const updated: ApprovalNotification = {
+      ...existing,
+      status: "sent",
+      sentAt: new Date().toISOString(),
+      error: undefined,
+    };
+
+    await persistNotification(updated);
+    return true;
+  },
+
+  async get(id: string): Promise<ApprovalNotification | undefined> {
+    if (!isPostgresPersistenceEnabled()) {
+      const notification = memoryStore.get(id);
+      return notification ? cloneNotification(notification) : undefined;
+    }
+
+    const pool = getPostgresPool();
+    const result = await pool.query("SELECT * FROM approval_notifications WHERE id = $1", [id]);
+    return result.rows[0] ? mapRowToNotification(result.rows[0]) : undefined;
+  },
+
+  async clear(): Promise<void> {
+    memoryStore.clear();
+
+    if (!isPostgresPersistenceEnabled()) {
+      return;
+    }
+
+    const pool = getPostgresPool();
+    await pool.query("DELETE FROM approval_notifications");
   },
 };

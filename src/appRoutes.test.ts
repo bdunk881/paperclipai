@@ -20,13 +20,15 @@ jest.mock("./auth/authMiddleware", () => ({
 import request from "supertest";
 import app from "./app";
 import { approvalStore } from "./engine/approvalStore";
+import { approvalNotificationStore } from "./engine/approvalNotificationStore";
 import { runStore } from "./engine/runStore";
 import { getProvider } from "./engine/llmProviders";
 
 const mockGetProvider = getProvider as jest.Mock;
 
-beforeEach(() => {
-  void approvalStore.clear();
+beforeEach(async () => {
+  await approvalStore.clear();
+  await approvalNotificationStore.clear();
   mockGetProvider.mockReset();
   jest.restoreAllMocks();
 });
@@ -90,6 +92,21 @@ describe("GET /api/approvals/:id", () => {
     const res = await request(app).get("/api/approvals/no-such-id");
     expect(res.status).toBe(404);
     expect(res.body.error).toContain("not found");
+  });
+});
+
+describe("GET /api/approvals/:id/notifications", () => {
+  it("returns notification outbox rows for a known approval id", async () => {
+    const { id } = await approvalStore.create({ runId: "r-notify", templateName: "T", stepId: "s-notify", stepName: "Step", assignee: "u1", message: "approve?", timeoutMinutes: 60 });
+    const res = await request(app).get(`/api/approvals/${id}/notifications`);
+    expect(res.status).toBe(200);
+    expect(res.body.total).toBe(2);
+    expect(res.body.notifications.map((n: { channel: string }) => n.channel)).toEqual(["inbox", "email"]);
+  });
+
+  it("returns 404 for an unknown approval id", async () => {
+    const res = await request(app).get("/api/approvals/no-such-id/notifications");
+    expect(res.status).toBe(404);
   });
 });
 

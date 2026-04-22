@@ -8,6 +8,7 @@
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import {
+  listLLMConfigs,
   listTemplates,
   getTemplate,
   listRuns,
@@ -51,6 +52,17 @@ function lastFetchUrl(): string {
 function lastFetchOptions(): RequestInit {
   const mock = vi.mocked(fetch as unknown as ReturnType<typeof vi.fn>);
   return (mock.mock.calls[0][1] ?? {}) as RequestInit;
+}
+
+function headerValue(name: string): string | null {
+  const headers = lastFetchOptions().headers;
+  if (!headers) return null;
+  if (headers instanceof Headers) return headers.get(name);
+  if (Array.isArray(headers)) {
+    const entry = headers.find(([key]) => key.toLowerCase() === name.toLowerCase());
+    return entry?.[1] ?? null;
+  }
+  return (headers as Record<string, string>)[name] ?? null;
 }
 
 // ---------------------------------------------------------------------------
@@ -183,6 +195,12 @@ describe("listRuns", () => {
     const result = await listRuns();
     expect(result).toHaveLength(2);
   });
+
+  it("sends an Authorization header when an access token is provided", async () => {
+    mockFetch({ runs: [sampleRun], total: 1 });
+    await listRuns(undefined, "token-123");
+    expect(headerValue("Authorization")).toBe("Bearer token-123");
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -270,5 +288,19 @@ describe("startRun", () => {
     const result = await startRun("tpl-support-bot", {});
     expect(result.status).toBe("pending");
     expect(result.templateId).toBe("tpl-support-bot");
+  });
+
+  it("includes the bearer token when provided", async () => {
+    mockFetch(sampleRun, 202);
+    await startRun("tpl-support-bot", {}, undefined, "token-abc");
+    expect(headerValue("Authorization")).toBe("Bearer token-abc");
+  });
+});
+
+describe("listLLMConfigs", () => {
+  it("includes the bearer token when provided", async () => {
+    mockFetch({ configs: [] });
+    await listLLMConfigs("token-llm");
+    expect(headerValue("Authorization")).toBe("Bearer token-llm");
   });
 });

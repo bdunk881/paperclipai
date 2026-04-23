@@ -306,6 +306,16 @@ export class WorkflowEngine {
 
     for (const step of template.steps) {
       const start = Date.now();
+      const stepIndex = stepResults.length;
+      stepResults.push({
+        stepId: step.id,
+        stepName: step.name,
+        status: "running",
+        output: {},
+        durationMs: 0,
+      });
+      runStore.update(runId, { stepResults: [...stepResults] });
+
       let stepOutput: Record<string, unknown> = {};
       let stepError: string | undefined;
       let stepStatus: StepResult["status"] = "success";
@@ -409,7 +419,7 @@ export class WorkflowEngine {
         ...(stepCostLog ? { costLog: stepCostLog } : {}),
       };
 
-      stepResults.push(result);
+      stepResults[stepIndex] = result;
 
       // Update run with latest step results so callers can see incremental progress
       runStore.update(runId, { stepResults: [...stepResults] });

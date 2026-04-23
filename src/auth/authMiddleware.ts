@@ -122,16 +122,22 @@ export interface AuthenticatedRequest extends Request {
 }
 
 function resolveQaE2EAuth(token: string): AuthenticatedRequest["auth"] | null {
-  const expectedToken = normalizeSecret(process.env.QA_E2E_BEARER_TOKEN);
-  if (!expectedToken || !isQaE2EBypassEnabled()) {
+  if (!isQaE2EBypassEnabled()) {
     return null;
   }
 
-  if (!timingSafeSecretMatch(token, expectedToken)) {
-    return null;
+  const expectedTokens = [
+    normalizeSecret(process.env.QA_E2E_BEARER_TOKEN),
+    normalizeSecret(process.env.QA_PREVIEW_ACCESS_TOKEN),
+  ].filter((value): value is string => Boolean(value));
+
+  for (const expectedToken of expectedTokens) {
+    if (timingSafeSecretMatch(token, expectedToken)) {
+      return QA_E2E_AUTH;
+    }
   }
 
-  return QA_E2E_AUTH;
+  return null;
 }
 
 /**

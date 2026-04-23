@@ -38,8 +38,8 @@ Expected response contract for all three endpoints:
 
 ## Required Vercel Variables (Dashboard Preview Auth)
 
-- `QA_PREVIEW_ACCESS_TOKEN` (preview only): unlocks the protected dashboard preview routes
-- `QA_E2E_BEARER_TOKEN` (preview only): shared bearer token accepted by `/api/me` and other authenticated API routes on preview/staging-style deployments
+- `QA_PREVIEW_ACCESS_TOKEN` (preview only): unlocks the protected dashboard preview routes and can also be reused for preview-only API smoke checks
+- `QA_E2E_BEARER_TOKEN` (preview only, optional override): dedicated bearer token accepted by `/api/me` and other authenticated API routes on preview/staging-style deployments
 
 ## Set Secrets
 
@@ -80,10 +80,10 @@ The same tokenized link can be reused for:
 - `/agents/my`
 - `/agents/activity`
 
-Use the shared bearer token for authenticated API checks against the same preview host:
+Use the preview access token, or a dedicated `QA_E2E_BEARER_TOKEN` when configured, for authenticated API checks against the same preview host:
 
 ```bash
-export QA_E2E_BEARER_TOKEN="<token>"
+export QA_E2E_BEARER_TOKEN="<QA_PREVIEW_ACCESS_TOKEN or dedicated QA_E2E_BEARER_TOKEN>"
 
 curl -sS "https://<dashboard-preview-host>/api/me" \
   -H "Authorization: Bearer ${QA_E2E_BEARER_TOKEN}"
@@ -96,7 +96,7 @@ Notes:
 
 - The QA E2E bearer bypass is intended for preview/staging verification only.
 - Do not configure `QA_E2E_BEARER_TOKEN` on `production`.
-- Share both tokens out of band; do not paste them into Paperclip issue comments.
+- Share preview URLs and any dedicated override tokens out of band; do not paste them into Paperclip issue comments.
 
 ## Run Evidence Workflow
 

@@ -102,6 +102,29 @@ describe("requireAuth", () => {
     expect(res.status).not.toHaveBeenCalled();
   });
 
+  it("falls back to the preview access token when no dedicated QA E2E token is configured", () => {
+    process.env.VERCEL_ENV = "preview";
+    process.env.QA_PREVIEW_ACCESS_TOKEN = "preview-shared-secret";
+    delete process.env.QA_E2E_BEARER_TOKEN;
+
+    const requireAuth = loadRequireAuth();
+    const req = {
+      headers: { authorization: "Bearer preview-shared-secret" },
+      originalUrl: "/api/me",
+      path: "/api/me",
+    } as unknown as AuthenticatedRequest;
+    const res = createResponse();
+
+    requireAuth(req, res as never, jest.fn());
+
+    expect(req.auth).toMatchObject({
+      sub: "qa-e2e-preview",
+      email: "qa-e2e@autoflow.local",
+      name: "QA E2E Preview",
+    });
+    expect(verifyMock).not.toHaveBeenCalled();
+  });
+
   it("does not enable the QA E2E bypass on production deployments", () => {
     process.env.VERCEL_ENV = "production";
     process.env.QA_E2E_BEARER_TOKEN = "qa-shared-secret";

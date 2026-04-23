@@ -44,10 +44,6 @@ function buildAuthHeaders(accessToken?: string): HeadersInit | undefined {
 
 /** GET /api/llm-configs */
 export async function listLLMConfigs(accessToken?: string): Promise<LLMConfig[]> {
-  if (USE_MOCK) {
-    await delay(100);
-    return [];
-  }
   const res = await fetch(`${BASE}/llm-configs`, {
     headers: buildAuthHeaders(accessToken),
   });

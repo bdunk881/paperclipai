@@ -61,6 +61,40 @@ describe("requireAuth", () => {
     expect(res.status).not.toHaveBeenCalled();
   });
 
+  it("accepts X-User-Id for /api/knowledge routes when Authorization is missing", () => {
+    const requireAuth = loadRequireAuth();
+    const req = {
+      headers: { "x-user-id": "qa-test-user" },
+      originalUrl: "/api/knowledge/bases",
+      path: "/api/knowledge/bases",
+    } as unknown as AuthenticatedRequest;
+    const res = createResponse();
+    const next = jest.fn();
+
+    requireAuth(req, res as never, next);
+
+    expect(next).toHaveBeenCalledTimes(1);
+    expect(req.auth?.sub).toBe("qa-test-user");
+    expect(res.status).not.toHaveBeenCalled();
+  });
+
+  it("accepts X-User-Id for /api/knowledge/search when Authorization is missing", () => {
+    const requireAuth = loadRequireAuth();
+    const req = {
+      headers: { "x-user-id": "qa-test-user" },
+      originalUrl: "/api/knowledge/search",
+      path: "/api/knowledge/search",
+    } as unknown as AuthenticatedRequest;
+    const res = createResponse();
+    const next = jest.fn();
+
+    requireAuth(req, res as never, next);
+
+    expect(next).toHaveBeenCalledTimes(1);
+    expect(req.auth?.sub).toBe("qa-test-user");
+    expect(res.status).not.toHaveBeenCalled();
+  });
+
   it("still rejects non-memory routes without Authorization", () => {
     const requireAuth = loadRequireAuth();
     const req = {

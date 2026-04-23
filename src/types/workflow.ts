@@ -108,9 +108,6 @@ export interface WorkflowStep {
   agentSkills?: string[];
   agentBudgetMonthlyUsd?: number;
   subAgentSlots?: number;
-  agentRoleKey?: string;
-  agentSkills?: string[];
-  agentBudgetMonthlyUsd?: number;
   agentScheduleType?: "manual" | "interval" | "cron";
   agentScheduleValue?: string;
   // approval step

@@ -261,7 +261,7 @@ export class WorkflowEngine {
   ): Promise<WorkflowRun> {
     const runConfig = { ...this._buildDefaultConfig(template), ...(config ?? {}) };
 
-    const run: WorkflowRun = runStore.create({
+    const run: WorkflowRun = await runStore.create({
       id: randomUUID(),
       templateId: template.id,
       templateName: template.name,
@@ -530,7 +530,6 @@ export class WorkflowEngine {
       });
 
       const start = Date.now();
-      const stepIndex = stepResults.length;
       stepResults.push({
         stepId: step.id,
         stepName: step.name,

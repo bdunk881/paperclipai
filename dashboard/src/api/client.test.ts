@@ -8,7 +8,10 @@
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import {
+  deployWorkflowAsTeam,
   listTemplates,
+  listControlPlaneTeams,
+  getControlPlaneTeam,
   getTemplate,
   listRuns,
   getRun,
@@ -79,6 +82,17 @@ const sampleRun: WorkflowRun = {
   startedAt: "2024-01-01T00:00:00.000Z",
   input: {},
   stepResults: [],
+};
+
+const sampleTeam = {
+  id: "team-001",
+  userId: "user-001",
+  name: "Support Team",
+  deploymentMode: "continuous_agents" as const,
+  budgetMonthlyUsd: 120,
+  orchestrationEnabled: true,
+  createdAt: "2026-04-23T00:00:00.000Z",
+  updatedAt: "2026-04-23T00:00:00.000Z",
 };
 
 // ---------------------------------------------------------------------------
@@ -277,5 +291,46 @@ describe("startRun", () => {
     const result = await startRun("tpl-support-bot", {});
     expect(result.status).toBe("pending");
     expect(result.templateId).toBe("tpl-support-bot");
+  });
+});
+
+describe("control plane client", () => {
+  it("lists deployed teams with auth", async () => {
+    mockFetch({ teams: [sampleTeam], total: 1 });
+    const result = await listControlPlaneTeams("token-123");
+    const headers = lastFetchOptions().headers as Record<string, string>;
+
+    expect(lastFetchUrl()).toBe("/api/control-plane/teams");
+    expect(headers.Authorization).toBe("Bearer token-123");
+    expect(result[0].id).toBe("team-001");
+  });
+
+  it("loads a deployed team detail by id", async () => {
+    mockFetch({ team: sampleTeam, agents: [], tasks: [], heartbeats: [] });
+    const result = await getControlPlaneTeam("team-001", "token-123");
+
+    expect(lastFetchUrl()).toBe("/api/control-plane/teams/team-001");
+    expect(result.team.name).toBe("Support Team");
+  });
+
+  it("deploys a workflow as a team and forwards the run header", async () => {
+    mockFetch({ team: sampleTeam, agents: [], workflow: { id: "tpl-1", name: "Support Flow", category: "support", version: "1.0.0" } }, 201);
+
+    await deployWorkflowAsTeam(
+      {
+        templateId: "tpl-1",
+        teamName: "Support Team",
+        budgetMonthlyUsd: 120,
+        defaultIntervalMinutes: 30,
+      },
+      "token-123",
+      "run-abc"
+    );
+
+    expect(lastFetchUrl()).toBe("/api/control-plane/deployments/workflow");
+    expect(lastFetchOptions().method).toBe("POST");
+    const headers = lastFetchOptions().headers as Record<string, string>;
+    expect(headers.Authorization).toBe("Bearer token-123");
+    expect(headers["X-Paperclip-Run-Id"]).toBe("run-abc");
   });
 });

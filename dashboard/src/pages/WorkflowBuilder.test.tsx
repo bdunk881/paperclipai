@@ -47,6 +47,17 @@ vi.mock("../api/client", () => ({
   startRunWithFile: vi.fn(),
   generateWorkflow: vi.fn(),
   createTemplate: vi.fn(),
+  deployWorkflowAsTeam: vi.fn().mockResolvedValue({
+    team: { id: "team-1", name: "Support Team" },
+    agents: [],
+    workflow: { id: "tpl-1", name: "Support Flow", category: "support", version: "1.0.0" },
+  }),
+}));
+
+vi.mock("../context/AuthContext", () => ({
+  useAuth: () => ({
+    getAccessToken: vi.fn().mockResolvedValue("token-123"),
+  }),
 }));
 
 describe("WorkflowBuilder", () => {
@@ -107,5 +118,24 @@ describe("WorkflowBuilder", () => {
     expect(screen.getByText("Step Properties")).toBeInTheDocument();
     expect(screen.getByText("Model")).toBeInTheDocument();
     expect(screen.getByPlaceholderText(/claude-sonnet-4-6/i)).toBeInTheDocument();
+  });
+
+  it("opens the deploy as team modal for populated workflows", async () => {
+    render(
+      <MemoryRouter initialEntries={["/builder"]}>
+        <Routes>
+          <Route path="/builder" element={<WorkflowBuilder />} />
+        </Routes>
+      </MemoryRouter>
+    );
+
+    expect(await screen.findByText("Start building your workflow")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /node palette/i }));
+    fireEvent.click(screen.getByRole("button", { name: /^agent$/i }));
+    fireEvent.click(screen.getByRole("button", { name: /deploy as team/i }));
+
+    expect(screen.getByText(/promote this workflow into a live agent roster/i)).toBeInTheDocument();
+    expect(screen.getByText(/team preview/i)).toBeInTheDocument();
   });
 });

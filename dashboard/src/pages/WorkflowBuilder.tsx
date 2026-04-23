@@ -43,7 +43,20 @@ import {
   type XYPosition,
 } from "@xyflow/react";
 import clsx from "clsx";
-import { getTemplate, listTemplates, startRun, startRunWithFile, listLLMConfigs, generateWorkflow, createTemplate, type TemplateSummary, type LLMConfig } from "../api/client";
+import {
+  createTemplate,
+  deployWorkflowAsTeam,
+  generateWorkflow,
+  getTemplate,
+  listLLMConfigs,
+  listTemplates,
+  startRun,
+  startRunWithFile,
+  type ControlPlaneAgent,
+  type ControlPlaneDeployment,
+  type LLMConfig,
+  type TemplateSummary,
+} from "../api/client";
 import { Tooltip } from "../components/Tooltip";
 import { ErrorState, LoadingState } from "../components/UiStates";
 import type { WorkflowStep, StepKind, WorkflowTemplate } from "../types/workflow";
@@ -56,6 +69,7 @@ import {
   validateGraphTopology,
 } from "./workflowGraph";
 import { useTheme } from "../hooks/useTheme";
+import { useAuth } from "../context/AuthContext";
 
 const KIND_META: Record<
   StepKind,
@@ -216,6 +230,8 @@ type FlowNodeData = {
   onRemove: (id: string) => void;
   isFirst: boolean;
   isLast: boolean;
+  teamAgent?: ControlPlaneAgent;
+  teamAgentHref?: string;
 };
 
 type WorkflowFlowNode = Node<FlowNodeData>;
@@ -244,6 +260,7 @@ export default function WorkflowBuilder() {
   const navigate = useNavigate();
   const location = useLocation();
   const { theme } = useTheme();
+  const { getAccessToken } = useAuth();
   const incomingState = location.state as BuilderLocationState;
 
   const [template, setTemplate] = useState<WorkflowTemplate>(BLANK_TEMPLATE);
@@ -263,7 +280,11 @@ export default function WorkflowBuilder() {
   const [showNLModal, setShowNLModal] = useState(false);
   const [showFileUploadModal, setShowFileUploadModal] = useState(false);
   const [showHelp, setShowHelp] = useState(false);
+  const [showDeployModal, setShowDeployModal] = useState(false);
   const [showCopilot, setShowCopilot] = useState(Boolean(incomingState?.copilotPrompt));
+  const [deployBusy, setDeployBusy] = useState(false);
+  const [deployError, setDeployError] = useState<string | null>(null);
+  const [latestDeployment, setLatestDeployment] = useState<ControlPlaneDeployment | null>(null);
   const [copilotInput, setCopilotInput] = useState(incomingState?.copilotPrompt ?? "");
   const [copilotMessages, setCopilotMessages] = useState<CopilotMessage[]>([]);
   const [copilotBusy, setCopilotBusy] = useState(false);
@@ -296,6 +317,16 @@ export default function WorkflowBuilder() {
 
   const selectedStep = template.steps.find((s) => s.id === selectedStepId) ?? null;
   const isLlmStep = selectedStep?.kind === "llm";
+  const deploymentAgentByStepId = useMemo(() => {
+    const mapping = new Map<string, ControlPlaneAgent>();
+    if (!latestDeployment) return mapping;
+    for (const agent of latestDeployment.agents) {
+      if (agent.workflowStepId && !mapping.has(agent.workflowStepId)) {
+        mapping.set(agent.workflowStepId, agent);
+      }
+    }
+    return mapping;
+  }, [latestDeployment]);
 
   useEffect(() => {
     if (!isLlmStep) return;
@@ -498,22 +529,32 @@ export default function WorkflowBuilder() {
     setTemplate((t) => ({ ...t, steps: arr }));
   }
 
-  const flowNodes: WorkflowFlowNode[] = template.steps.map((step, idx) => ({
-    id: step.id,
-    type: "workflowStep",
-    position: readStepPosition(step, idx),
-    draggable: true,
-    selectable: true,
-    data: {
-      step,
-      onSelect: setSelectedStepId,
-      onMoveUp: (stepId: string) => moveStep(stepId, -1),
-      onMoveDown: (stepId: string) => moveStep(stepId, 1),
-      onRemove: removeStep,
-      isFirst: idx === 0,
-      isLast: idx === template.steps.length - 1,
-    },
-  }));
+  const flowNodes: WorkflowFlowNode[] = template.steps.map((step, idx) => {
+    const teamAgent = deploymentAgentByStepId.get(step.id);
+    const teamAgentHref =
+      latestDeployment && teamAgent
+        ? `/agents/team/${latestDeployment.team.id}?agent=${encodeURIComponent(teamAgent.id)}`
+        : undefined;
+
+    return {
+      id: step.id,
+      type: "workflowStep",
+      position: readStepPosition(step, idx),
+      draggable: true,
+      selectable: true,
+      data: {
+        step,
+        onSelect: setSelectedStepId,
+        onMoveUp: (stepId: string) => moveStep(stepId, -1),
+        onMoveDown: (stepId: string) => moveStep(stepId, 1),
+        onRemove: removeStep,
+        isFirst: idx === 0,
+        isLast: idx === template.steps.length - 1,
+        teamAgent,
+        teamAgentHref,
+      },
+    };
+  });
 
   const flowEdges = useMemo(() => {
     const edges = buildEdgesFromSteps(template.steps);
@@ -626,6 +667,35 @@ export default function WorkflowBuilder() {
     }
   }
 
+  async function handleDeployTeam(input: {
+    teamName: string;
+    budgetMonthlyUsd?: number;
+    defaultIntervalMinutes?: number;
+  }) {
+    setDeployBusy(true);
+    setDeployError(null);
+    try {
+      const accessToken = (await getAccessToken()) ?? undefined;
+      const deployment = await deployWorkflowAsTeam(
+        {
+          templateId: template.id,
+          teamName: input.teamName.trim() || undefined,
+          budgetMonthlyUsd: input.budgetMonthlyUsd,
+          defaultIntervalMinutes: input.defaultIntervalMinutes,
+        },
+        accessToken
+      );
+      setLatestDeployment(deployment);
+      setShowDeployModal(false);
+    } catch (error) {
+      setDeployError(
+        error instanceof Error ? error.message : "Failed to deploy workflow as an agent team"
+      );
+    } finally {
+      setDeployBusy(false);
+    }
+  }
+
   if (loading) {
     return (
       <div className="p-8">
@@ -663,6 +733,25 @@ export default function WorkflowBuilder() {
         {saveError && (
           <div className="px-6 py-2 bg-red-50 border-b border-red-200 text-sm text-red-700">
             {saveError}
+          </div>
+        )}
+        {deployError && (
+          <div className="px-6 py-2 bg-red-50 border-b border-red-200 text-sm text-red-700">
+            {deployError}
+          </div>
+        )}
+        {latestDeployment && (
+          <div className="flex items-center justify-between gap-3 px-6 py-3 bg-teal-50 border-b border-teal-200 text-sm text-teal-900">
+            <div>
+              Deployed as <span className="font-semibold">{latestDeployment.team.name}</span> with{" "}
+              <span className="font-semibold">{latestDeployment.agents.length}</span> agents.
+            </div>
+            <a
+              href={`/agents/team/${latestDeployment.team.id}`}
+              className="rounded-full bg-teal-700 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-teal-800"
+            >
+              Open team monitor
+            </a>
           </div>
         )}
         {graphError && (
@@ -718,6 +807,14 @@ export default function WorkflowBuilder() {
             >
               {saving ? <Loader size={15} className="animate-spin" /> : <Save size={15} />}
               {saving ? "Saving..." : saved ? "Saved!" : "Save"}
+            </button>
+            <button
+              onClick={() => setShowDeployModal(true)}
+              disabled={template.steps.length === 0 || deployBusy}
+              className="flex items-center gap-2 rounded-lg border border-teal-300 bg-teal-50 px-3.5 py-2 text-sm font-medium text-teal-700 transition hover:bg-teal-100 disabled:opacity-50 dark:border-teal-500/30 dark:bg-teal-500/10 dark:text-teal-300"
+            >
+              {deployBusy ? <Loader size={15} className="animate-spin" /> : <Send size={15} />}
+              Deploy as Team
             </button>
             <button
               onClick={handleRun}
@@ -925,6 +1022,29 @@ export default function WorkflowBuilder() {
 
             {selectedStep.kind === "agent" && (
               <>
+                {latestDeployment && deploymentAgentByStepId.get(selectedStep.id) && (
+                  <div className="rounded-xl border border-teal-200 bg-teal-50 px-4 py-3 text-sm text-teal-900">
+                    <p className="font-medium">This node is mapped to a deployed agent.</p>
+                    <a
+                      href={`/agents/team/${latestDeployment.team.id}?agent=${encodeURIComponent(
+                        deploymentAgentByStepId.get(selectedStep.id)!.id
+                      )}`}
+                      className="mt-2 inline-flex text-xs font-semibold text-teal-700 underline"
+                    >
+                      Open agent detail
+                    </a>
+                  </div>
+                )}
+                <Field label="Role Key">
+                  <input
+                    className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    placeholder="e.g. workflow-manager"
+                    value={selectedStep.agentRoleKey ?? ""}
+                    onChange={(e) =>
+                      updateStep(selectedStep.id, { agentRoleKey: e.target.value })
+                    }
+                  />
+                </Field>
                 <Field label="Model">
                   <input
                     className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -946,6 +1066,64 @@ export default function WorkflowBuilder() {
                     }
                   />
                 </Field>
+                <Field label="Assigned Skills (comma-separated)">
+                  <input
+                    className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    placeholder="paperclip, para-memory-files, security-review"
+                    value={(selectedStep.agentSkills ?? []).join(", ")}
+                    onChange={(e) =>
+                      updateStep(selectedStep.id, {
+                        agentSkills: e.target.value
+                          .split(",")
+                          .map((skill) => skill.trim())
+                          .filter(Boolean),
+                      })
+                    }
+                  />
+                </Field>
+                <Field label="Monthly Budget (USD)">
+                  <input
+                    type="number"
+                    min={0}
+                    step="1"
+                    className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    placeholder="0"
+                    value={selectedStep.agentBudgetMonthlyUsd ?? 0}
+                    onChange={(e) =>
+                      updateStep(selectedStep.id, {
+                        agentBudgetMonthlyUsd: Number(e.target.value) || 0,
+                      })
+                    }
+                  />
+                </Field>
+                <Field label="Trigger Schedule">
+                  <select
+                    className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                    value={selectedStep.agentScheduleType ?? "manual"}
+                    onChange={(e) =>
+                      updateStep(selectedStep.id, {
+                        agentScheduleType: e.target.value as WorkflowStep["agentScheduleType"],
+                      })
+                    }
+                  >
+                    <option value="manual">Manual handoff</option>
+                    <option value="interval">Interval heartbeat</option>
+                    <option value="cron">Cron schedule</option>
+                  </select>
+                </Field>
+                {(selectedStep.agentScheduleType === "interval" ||
+                  selectedStep.agentScheduleType === "cron") && (
+                  <Field label={selectedStep.agentScheduleType === "interval" ? "Interval Minutes" : "Cron Expression"}>
+                    <input
+                      className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      placeholder={selectedStep.agentScheduleType === "interval" ? "30" : "0 * * * *"}
+                      value={selectedStep.agentScheduleValue ?? ""}
+                      onChange={(e) =>
+                        updateStep(selectedStep.id, { agentScheduleValue: e.target.value })
+                      }
+                    />
+                  </Field>
+                )}
                 <Field label="Parallel Worker Slots">
                   <input
                     type="number"
@@ -1104,6 +1282,15 @@ export default function WorkflowBuilder() {
             setTemplate((t) => ({ ...t, steps }));
             setShowNLModal(false);
           }}
+        />
+      )}
+
+      {showDeployModal && (
+        <DeployAsTeamModal
+          template={template}
+          busy={deployBusy}
+          onClose={() => setShowDeployModal(false)}
+          onDeploy={handleDeployTeam}
         />
       )}
 
@@ -1745,6 +1932,8 @@ function WorkflowStepNode({
         step={data.step}
         selected={selected ?? false}
         dragging={dragging ?? false}
+        teamAgent={data.teamAgent}
+        teamAgentHref={data.teamAgentHref}
         onSelect={() => data.onSelect(id)}
         onMoveUp={() => data.onMoveUp(id)}
         onMoveDown={() => data.onMoveDown(id)}
@@ -1761,6 +1950,8 @@ function StepNode({
   step,
   selected,
   dragging,
+  teamAgent,
+  teamAgentHref,
   onSelect,
   onMoveUp,
   onMoveDown,
@@ -1771,6 +1962,8 @@ function StepNode({
   step: WorkflowStep;
   selected: boolean;
   dragging: boolean;
+  teamAgent?: ControlPlaneAgent;
+  teamAgentHref?: string;
   onSelect: () => void;
   onMoveUp: () => void;
   onMoveDown: () => void;
@@ -1858,10 +2051,49 @@ function StepNode({
 
         {/* Agent canvas — inline hierarchy for agent steps */}
         {step.kind === "agent" && (
-          <AgentCanvas
-            model={step.agentModel ?? "default"}
-            slots={step.subAgentSlots ?? 1}
-          />
+          <>
+            <div className="mt-3 grid gap-2 text-xs text-slate-500 dark:text-surface-400">
+              <div className="flex flex-wrap gap-2">
+                <span className="rounded-full border border-indigo-200 bg-indigo-50 px-2 py-1 font-medium text-indigo-700 dark:border-brand-500/30 dark:bg-brand-500/10 dark:text-brand-300">
+                  {step.agentRoleKey ?? "custom-agent"}
+                </span>
+                <span className="rounded-full border border-slate-200 bg-slate-50 px-2 py-1 font-medium text-slate-600 dark:border-surface-700 dark:bg-surface-800 dark:text-surface-300">
+                  ${step.agentBudgetMonthlyUsd ?? 0}/mo
+                </span>
+                {teamAgent && (
+                  <span className="rounded-full border border-teal-200 bg-teal-50 px-2 py-1 font-medium capitalize text-teal-700 dark:border-teal-500/30 dark:bg-teal-500/10 dark:text-teal-300">
+                    {teamAgent.status}
+                  </span>
+                )}
+              </div>
+              {step.agentSkills && step.agentSkills.length > 0 && (
+                <div className="flex flex-wrap gap-1.5">
+                  {step.agentSkills.slice(0, 3).map((skill) => (
+                    <span
+                      key={skill}
+                      className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-600 dark:bg-surface-800 dark:text-surface-300"
+                    >
+                      {skill}
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
+            <AgentCanvas
+              model={step.agentModel ?? "default"}
+              slots={step.subAgentSlots ?? 1}
+            />
+            {teamAgentHref && (
+              <a
+                href={teamAgentHref}
+                onClick={(event) => event.stopPropagation()}
+                className="mt-3 inline-flex items-center gap-1 rounded-full border border-teal-200 bg-teal-50 px-3 py-1.5 text-[11px] font-semibold text-teal-700 transition hover:bg-teal-100 dark:border-teal-500/30 dark:bg-teal-500/10 dark:text-teal-300"
+              >
+                <Bot size={11} />
+                View deployed agent
+              </a>
+            )}
+          </>
         )}
       </div>
 
@@ -1986,6 +2218,198 @@ function Field({
     <div>
       <label className="block text-xs font-medium text-gray-600 dark:text-surface-400 mb-1.5">{label}</label>
       {children}
+    </div>
+  );
+}
+
+function DeployAsTeamModal({
+  template,
+  busy,
+  onClose,
+  onDeploy,
+}: {
+  template: WorkflowTemplate;
+  busy: boolean;
+  onClose: () => void;
+  onDeploy: (input: {
+    teamName: string;
+    budgetMonthlyUsd?: number;
+    defaultIntervalMinutes?: number;
+  }) => Promise<void>;
+}) {
+  const actionableSteps = template.steps.filter(
+    (step) => !["trigger", "output", "file_trigger"].includes(step.kind)
+  );
+  const [teamName, setTeamName] = useState(`${template.name} Team`);
+  const [budgetMonthlyUsd, setBudgetMonthlyUsd] = useState(120);
+  const [defaultIntervalMinutes, setDefaultIntervalMinutes] = useState(30);
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/45 px-4">
+      <div className="max-h-[90vh] w-full max-w-4xl overflow-hidden rounded-[32px] border border-slate-200 bg-white shadow-2xl dark:border-surface-800 dark:bg-surface-900">
+        <div className="flex items-center justify-between border-b border-slate-200 px-6 py-5 dark:border-surface-800">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-teal-600">
+              Deploy as Team
+            </p>
+            <h2 className="mt-1 text-xl font-semibold text-slate-900 dark:text-surface-50">
+              Promote this workflow into a live agent roster
+            </h2>
+          </div>
+          <button
+            onClick={onClose}
+            className="rounded-full p-2 text-slate-500 transition hover:bg-slate-100 hover:text-slate-900 dark:hover:bg-surface-800 dark:hover:text-surface-50"
+            disabled={busy}
+          >
+            <X size={16} />
+          </button>
+        </div>
+
+        <div className="grid gap-0 lg:grid-cols-[1.15fr_0.85fr]">
+          <div className="border-b border-slate-200 p-6 dark:border-surface-800 lg:border-b-0 lg:border-r">
+            <div className="mb-5">
+              <h3 className="text-sm font-semibold uppercase tracking-[0.16em] text-slate-400 dark:text-surface-500">
+                Team preview
+              </h3>
+              <p className="mt-2 text-sm text-slate-500 dark:text-surface-400">
+                The manager owns orchestration, then actionable workflow steps become worker agents.
+              </p>
+            </div>
+
+            <div className="space-y-3">
+              <div className="rounded-[24px] border border-indigo-200 bg-indigo-50 px-5 py-4 dark:border-brand-500/30 dark:bg-brand-500/10">
+                <div className="flex items-center gap-3">
+                  <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-indigo-600 text-white">
+                    <Bot size={18} />
+                  </div>
+                  <div>
+                    <p className="text-sm font-semibold text-slate-900 dark:text-surface-50">
+                      {template.name} Manager
+                    </p>
+                    <p className="text-xs uppercase tracking-[0.16em] text-indigo-700 dark:text-brand-300">
+                      workflow-manager
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {actionableSteps.map((step, index) => (
+                <div
+                  key={step.id}
+                  className="rounded-[24px] border border-slate-200 bg-slate-50 px-5 py-4 dark:border-surface-800 dark:bg-surface-950/40"
+                >
+                  <div className="flex items-start justify-between gap-4">
+                    <div>
+                      <p className="text-sm font-semibold text-slate-900 dark:text-surface-50">
+                        {step.name}
+                      </p>
+                      <p className="mt-1 text-xs uppercase tracking-[0.16em] text-slate-400 dark:text-surface-500">
+                        {step.agentRoleKey ?? `${step.kind}-${index + 1}`}
+                      </p>
+                    </div>
+                    <span className="rounded-full bg-white px-3 py-1 text-xs font-semibold text-slate-600 shadow-sm dark:bg-surface-900 dark:text-surface-300">
+                      {step.agentScheduleType === "interval"
+                        ? `${step.agentScheduleValue || defaultIntervalMinutes} min`
+                        : step.agentScheduleType === "cron"
+                        ? step.agentScheduleValue || "cron"
+                        : "manual"}
+                    </span>
+                  </div>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    <span className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-medium text-slate-600 dark:border-surface-700 dark:bg-surface-900 dark:text-surface-300">
+                      {step.agentModel ?? step.llmConfigId ?? "Default model"}
+                    </span>
+                    <span className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-medium text-slate-600 dark:border-surface-700 dark:bg-surface-900 dark:text-surface-300">
+                      ${step.agentBudgetMonthlyUsd ?? 0}/mo
+                    </span>
+                    {(step.agentSkills ?? []).slice(0, 3).map((skill) => (
+                      <span
+                        key={skill}
+                        className="rounded-full border border-teal-200 bg-teal-50 px-3 py-1 text-xs font-medium text-teal-700 dark:border-teal-500/30 dark:bg-teal-500/10 dark:text-teal-300"
+                      >
+                        {skill}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <form
+            className="space-y-5 p-6"
+            onSubmit={(event) => {
+              event.preventDefault();
+              void onDeploy({
+                teamName,
+                budgetMonthlyUsd,
+                defaultIntervalMinutes,
+              });
+            }}
+          >
+            <div>
+              <h3 className="text-sm font-semibold uppercase tracking-[0.16em] text-slate-400 dark:text-surface-500">
+                Launch settings
+              </h3>
+              <p className="mt-2 text-sm text-slate-500 dark:text-surface-400">
+                Use the approved agent-surface direction: teal health cues, indigo orchestration, and clear budget visibility.
+              </p>
+            </div>
+
+            <Field label="Team Name">
+              <input
+                className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-brand-500 dark:border-surface-700 dark:bg-surface-800 dark:text-surface-50"
+                value={teamName}
+                onChange={(event) => setTeamName(event.target.value)}
+              />
+            </Field>
+
+            <Field label="Monthly Team Budget (USD)">
+              <input
+                type="number"
+                min={0}
+                step="10"
+                className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-brand-500 dark:border-surface-700 dark:bg-surface-800 dark:text-surface-50"
+                value={budgetMonthlyUsd}
+                onChange={(event) => setBudgetMonthlyUsd(Number(event.target.value) || 0)}
+              />
+            </Field>
+
+            <Field label="Default Interval Minutes">
+              <input
+                type="number"
+                min={1}
+                className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-brand-500 dark:border-surface-700 dark:bg-surface-800 dark:text-surface-50"
+                value={defaultIntervalMinutes}
+                onChange={(event) => setDefaultIntervalMinutes(Number(event.target.value) || 1)}
+              />
+            </Field>
+
+            <div className="rounded-[24px] border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200">
+              Deploying creates a control-plane team and agent roster. Start/stop lifecycle controls are not exposed by the current backend yet, so monitoring and task handoff are the primary post-deploy actions available in this release.
+            </div>
+
+            <div className="flex items-center justify-end gap-3 pt-2">
+              <button
+                type="button"
+                onClick={onClose}
+                className="rounded-full border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50 dark:border-surface-700 dark:text-surface-200 dark:hover:bg-surface-800"
+                disabled={busy}
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={busy}
+                className="inline-flex items-center gap-2 rounded-full bg-teal-600 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-teal-700 disabled:opacity-60"
+              >
+                {busy ? <Loader size={15} className="animate-spin" /> : <Send size={15} />}
+                Confirm deployment
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
     </div>
   );
 }

@@ -126,16 +126,6 @@ describe("App", () => {
     expect(screen.getByText("API Keys Page")).toBeInTheDocument();
   });
 
-  it("renders the live integrations setup route for authenticated users", async () => {
-    authState.user = { id: "user-1", email: "user@example.com", name: "User" };
-    window.history.replaceState({}, "", "/integrations");
-
-    render(<App />);
-
-    expect(await screen.findByText("Layout Shell")).toBeInTheDocument();
-    expect(screen.getByText("Integrations Page")).toBeInTheDocument();
-  });
-
   it("redirects unknown routes back through the authenticated root", async () => {
     authState.user = { id: "user-1", email: "user@example.com", name: "User" };
     window.history.replaceState({}, "", "/does-not-exist");

@@ -1,16 +1,85 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { CheckCircle2, ExternalLink, Loader2, PlugZap, RefreshCw, Unplug, XCircle } from "lucide-react";
 import { useSearchParams } from "react-router-dom";
-import { getApiBasePath } from "../api/baseUrl";
+import { getConfiguredApiOrigin } from "../api/baseUrl";
 import { useAuth } from "../context/AuthContext";
-import {
-  LIVE_CONNECTOR_PROVIDERS as PROVIDERS,
-  type ProviderKey,
-  type ProviderMeta,
-  type ProviderStatus,
-} from "../integrations/liveConnectorCatalog";
 
-const API_BASE = getApiBasePath();
+type ProviderKey =
+  | "apollo"
+  | "gmail"
+  | "hubspot"
+  | "sentry"
+  | "slack"
+  | "stripe"
+  | "composio";
+
+interface ProviderStatus {
+  connected: boolean;
+  connectedAt?: string;
+  scopes?: string[];
+}
+
+interface ProviderMeta {
+  key: ProviderKey;
+  name: string;
+  category: string;
+  authMode: "oauth" | "api_key";
+  description: string;
+}
+
+const PROVIDERS: ProviderMeta[] = [
+  {
+    key: "apollo",
+    name: "Apollo",
+    category: "Sales",
+    authMode: "oauth",
+    description: "Lead enrichment and prospect data with OAuth plus API-key fallback.",
+  },
+  {
+    key: "gmail",
+    name: "Gmail",
+    category: "Communication",
+    authMode: "oauth",
+    description: "Mailbox access for inbound message workflows and agent-driven replies.",
+  },
+  {
+    key: "hubspot",
+    name: "HubSpot",
+    category: "CRM",
+    authMode: "oauth",
+    description: "Contacts, companies, deals, webhook intake, and health checks.",
+  },
+  {
+    key: "sentry",
+    name: "Sentry",
+    category: "Developer Tools",
+    authMode: "oauth",
+    description: "Issue and project sync with signed webhooks and PKCE auth.",
+  },
+  {
+    key: "slack",
+    name: "Slack",
+    category: "Communication",
+    authMode: "oauth",
+    description: "Workspace access for messaging, triage, and agent notifications.",
+  },
+  {
+    key: "stripe",
+    name: "Stripe",
+    category: "Payments",
+    authMode: "api_key",
+    description: "Customers, subscriptions, invoices, and payment workflow triggers via connector credentials.",
+  },
+  {
+    key: "composio",
+    name: "Composio",
+    category: "Automation",
+    authMode: "api_key",
+    description: "Connected accounts, trigger fan-out, and tool execution via API key.",
+  },
+];
+
+const API_BASE = getConfiguredApiOrigin();
 
 export default function Integrations() {
   const { getAccessToken } = useAuth();
@@ -20,21 +89,7 @@ export default function Integrations() {
   const [error, setError] = useState<string | null>(null);
   const [busyProvider, setBusyProvider] = useState<ProviderKey | null>(null);
 
-  async function loadStatuses() {
-    setLoading(true);
-    setError(null);
-    try {
-      const response = await authorizedFetch("/integrations/status");
-      const payload = (await response.json()) as { providers: Record<ProviderKey, ProviderStatus> };
-      setProviders(payload.providers);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load integrations");
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  async function authorizedFetch(path: string, init?: RequestInit) {
+  const authorizedFetch = useCallback(async (path: string, init?: RequestInit) => {
     const accessToken = await getAccessToken();
     const headers = new Headers(init?.headers);
     if (accessToken) {
@@ -52,12 +107,25 @@ export default function Integrations() {
     }
 
     return response;
-  }
+  }, [getAccessToken]);
+
+  const loadStatuses = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const response = await authorizedFetch("/api/integrations/status");
+      const payload = (await response.json()) as { providers: Record<ProviderKey, ProviderStatus> };
+      setProviders(payload.providers);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to load integrations");
+    } finally {
+      setLoading(false);
+    }
+  }, [authorizedFetch]);
 
   useEffect(() => {
     void loadStatuses();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [loadStatuses]);
 
   async function handleConnect(provider: ProviderMeta) {
     if (provider.authMode !== "oauth") {

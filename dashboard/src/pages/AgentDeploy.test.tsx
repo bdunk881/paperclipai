@@ -76,14 +76,20 @@ describe("AgentDeploy", () => {
     // Required integration locked — find integration checkboxes (labels with checkboxes)
     const integrationLabels = screen.getAllByText("GitHub");
     const ghLabel = integrationLabels.find((el) => el.closest("label")?.querySelector("input[type='checkbox']"));
-    const ghCb = ghLabel?.closest("label")?.querySelector("input")!;
+    const ghCb = ghLabel?.closest("label")?.querySelector("input");
+    if (!(ghCb instanceof HTMLInputElement)) {
+      throw new Error("Expected required GitHub checkbox");
+    }
     expect(ghCb.disabled).toBe(true);
     expect(ghCb.checked).toBe(true);
 
     // Optional integration toggleable
     const notionLabels = screen.getAllByText("Notion");
     const notionLabel = notionLabels.find((el) => el.closest("label")?.querySelector("input[type='checkbox']"));
-    const notionCb = notionLabel?.closest("label")?.querySelector("input")!;
+    const notionCb = notionLabel?.closest("label")?.querySelector("input");
+    if (!(notionCb instanceof HTMLInputElement)) {
+      throw new Error("Expected optional Notion checkbox");
+    }
     fireEvent.click(notionCb);
     expect(notionCb.checked).toBe(true);
 

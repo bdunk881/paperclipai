@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { CheckCircle2, ExternalLink, Loader2, PlugZap, RefreshCw, Unplug, XCircle } from "lucide-react";
 import { useSearchParams } from "react-router-dom";
 import { getConfiguredApiOrigin } from "../api/baseUrl";
@@ -89,7 +89,7 @@ export default function Integrations() {
   const [error, setError] = useState<string | null>(null);
   const [busyProvider, setBusyProvider] = useState<ProviderKey | null>(null);
 
-  async function authorizedFetch(path: string, init?: RequestInit) {
+  const authorizedFetch = useCallback(async (path: string, init?: RequestInit) => {
     const accessToken = await getAccessToken();
     const headers = new Headers(init?.headers);
     if (accessToken) {
@@ -107,9 +107,9 @@ export default function Integrations() {
     }
 
     return response;
-  }
+  }, [getAccessToken]);
 
-  async function loadStatuses() {
+  const loadStatuses = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
@@ -121,11 +121,11 @@ export default function Integrations() {
     } finally {
       setLoading(false);
     }
-  }
+  }, [authorizedFetch]);
 
   useEffect(() => {
     void loadStatuses();
-  }, []);
+  }, [loadStatuses]);
 
   async function handleConnect(provider: ProviderMeta) {
     if (provider.authMode !== "oauth") {

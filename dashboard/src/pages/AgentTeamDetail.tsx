@@ -1,4 +1,11 @@
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import {
+  Component,
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+  type ReactNode,
+} from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 import { ArrowLeft, Bot, Clock3, RefreshCw, Workflow } from "lucide-react";
 import {
@@ -14,7 +21,15 @@ import clsx from "clsx";
 
 const POLL_INTERVAL_MS = 5000;
 
-export default function AgentTeamDetail() {
+export default function AgentTeamDetailPage() {
+  return (
+    <AgentTeamDetailErrorBoundary>
+      <AgentTeamDetail />
+    </AgentTeamDetailErrorBoundary>
+  );
+}
+
+function AgentTeamDetail() {
   const { teamId } = useParams<{ teamId: string }>();
   const [searchParams] = useSearchParams();
   const { getAccessToken } = useAuth();
@@ -52,7 +67,10 @@ export default function AgentTeamDetail() {
     if (!detail) return mapping;
     for (const heartbeat of detail.heartbeats) {
       const current = mapping.get(heartbeat.agentId);
-      if (!current || current.startedAt < heartbeat.startedAt) {
+      if (
+        !current ||
+        new Date(current.startedAt).getTime() < new Date(heartbeat.startedAt).getTime()
+      ) {
         mapping.set(heartbeat.agentId, heartbeat);
       }
     }
@@ -120,6 +138,7 @@ export default function AgentTeamDetail() {
           onClick={() => {
             void loadTeam();
           }}
+          aria-label="Refresh deployed team status"
           className="inline-flex items-center gap-2 rounded-full border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition hover:border-indigo-300 hover:text-indigo-700 dark:border-surface-700 dark:bg-surface-900 dark:text-surface-200 dark:hover:border-brand-500/40 dark:hover:text-brand-300"
         >
           <RefreshCw size={14} />
@@ -312,4 +331,34 @@ function heartbeatTone(
   if (status === "running" || status === "queued") return "amber";
   if (status === "blocked") return "rose";
   return "slate";
+}
+
+class AgentTeamDetailErrorBoundary extends Component<
+  { children: ReactNode },
+  { hasError: boolean }
+> {
+  constructor(props: { children: ReactNode }) {
+    super(props);
+    this.state = { hasError: false };
+  }
+
+  static getDerivedStateFromError(): { hasError: boolean } {
+    return { hasError: true };
+  }
+
+  override render() {
+    if (this.state.hasError) {
+      return (
+        <div className="p-8">
+          <ErrorState
+            title="Team detail unavailable"
+            message="The deployed team page hit an unexpected rendering error. Return to the monitor and retry."
+            onRetry={() => window.location.reload()}
+          />
+        </div>
+      );
+    }
+
+    return this.props.children;
+  }
 }

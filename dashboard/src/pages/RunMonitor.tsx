@@ -136,6 +136,7 @@ export default function RunMonitor() {
           </span>
           <button
             onClick={handleRefresh}
+            aria-label="Refresh run monitor"
             className="flex items-center gap-2 px-3.5 py-2 text-sm font-medium border border-gray-300 rounded-lg hover:bg-gray-50 transition text-gray-700"
           >
             <RefreshCw size={14} />

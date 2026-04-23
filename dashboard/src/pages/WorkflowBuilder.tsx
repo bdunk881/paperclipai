@@ -811,6 +811,7 @@ export default function WorkflowBuilder() {
             <button
               onClick={() => setShowDeployModal(true)}
               disabled={template.steps.length === 0 || deployBusy}
+              aria-label="Deploy workflow as agent team"
               className="flex items-center gap-2 rounded-lg border border-teal-300 bg-teal-50 px-3.5 py-2 text-sm font-medium text-teal-700 transition hover:bg-teal-100 disabled:opacity-50 dark:border-teal-500/30 dark:bg-teal-500/10 dark:text-teal-300"
             >
               {deployBusy ? <Loader size={15} className="animate-spin" /> : <Send size={15} />}
@@ -2258,6 +2259,7 @@ function DeployAsTeamModal({
           </div>
           <button
             onClick={onClose}
+            aria-label="Close deploy as team dialog"
             className="rounded-full p-2 text-slate-500 transition hover:bg-slate-100 hover:text-slate-900 dark:hover:bg-surface-800 dark:hover:text-surface-50"
             disabled={busy}
           >
@@ -2393,6 +2395,7 @@ function DeployAsTeamModal({
               <button
                 type="button"
                 onClick={onClose}
+                aria-label="Cancel agent team deployment"
                 className="rounded-full border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50 dark:border-surface-700 dark:text-surface-200 dark:hover:bg-surface-800"
                 disabled={busy}
               >
@@ -2401,6 +2404,7 @@ function DeployAsTeamModal({
               <button
                 type="submit"
                 disabled={busy}
+                aria-label="Confirm agent team deployment"
                 className="inline-flex items-center gap-2 rounded-full bg-teal-600 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-teal-700 disabled:opacity-60"
               >
                 {busy ? <Loader size={15} className="animate-spin" /> : <Send size={15} />}

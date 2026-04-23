@@ -82,7 +82,7 @@ describe("GET /api/approvals", () => {
 
 describe("GET /api/approvals/:id", () => {
   it("returns 200 with the approval for a known id", async () => {
-    const { id } = await approvalStore.create({ runId: "r1", templateName: "T", stepId: "s1", stepName: "Step", assignee: "u1", message: "approve?", timeoutMinutes: 60, userId: "test-user-id" });
+    const { id } = await approvalStore.create({ runId: "r1", templateName: "T", stepId: "s1", stepName: "Step", assignee: "test-user-id", message: "approve?", timeoutMinutes: 60, userId: "test-user-id" });
     const res = await request(app).get(`/api/approvals/${id}`);
     expect(res.status).toBe(200);
     expect(res.body.id).toBe(id);
@@ -98,7 +98,7 @@ describe("GET /api/approvals/:id", () => {
 
 describe("GET /api/approvals/:id/notifications", () => {
   it("returns notification outbox rows for a known approval id", async () => {
-    const { id } = await approvalStore.create({ runId: "r-notify", templateName: "T", stepId: "s-notify", stepName: "Step", assignee: "u1", message: "approve?", timeoutMinutes: 60 });
+    const { id } = await approvalStore.create({ runId: "r-notify", templateName: "T", stepId: "s-notify", stepName: "Step", assignee: "u1", message: "approve?", timeoutMinutes: 60, userId: "test-user-id" });
     const res = await request(app).get(`/api/approvals/${id}/notifications`);
     expect(res.status).toBe(200);
     expect(res.body.total).toBe(2);
@@ -144,7 +144,7 @@ describe("POST /api/approvals/:id/resolve", () => {
   });
 
   it("resolves request_changes and returns success=true", async () => {
-    const { id } = await approvalStore.create({ runId: "r-request-changes", templateName: "T", stepId: "s5", stepName: "Step", assignee: "u1", message: "approve?", timeoutMinutes: 60 });
+    const { id } = await approvalStore.create({ runId: "r-request-changes", templateName: "T", stepId: "s5", stepName: "Step", assignee: "u1", message: "approve?", timeoutMinutes: 60, userId: "test-user-id" });
     const res = await request(app)
       .post(`/api/approvals/${id}/resolve`)
       .send({ decision: "request_changes", comment: "Revise the previous step" });

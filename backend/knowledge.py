@@ -133,14 +133,14 @@ class KnowledgeStore:
         now = _utc_now()
         base = KnowledgeBase(
             id=str(uuid4()),
-            userId=user_id,
+            user_id=user_id,
             name=payload.name.strip(),
             description=payload.description,
             tags=[tag.strip() for tag in payload.tags if tag.strip()],
             metadata=payload.metadata,
-            chunkingConfig=payload.chunking_config,
-            createdAt=now,
-            updatedAt=now,
+            chunking_config=payload.chunking_config,
+            created_at=now,
+            updated_at=now,
         )
         self._bases[base.id] = base
         return base
@@ -196,17 +196,17 @@ class KnowledgeStore:
         now = _utc_now()
         document = KnowledgeDocument(
             id=str(uuid4()),
-            knowledgeBaseId=base.id,
-            userId=user_id,
+            knowledge_base_id=base.id,
+            user_id=user_id,
             filename=payload.filename,
-            mimeType=payload.mime_type,
-            sourceType=payload.source_type,
+            mime_type=payload.mime_type,
+            source_type=payload.source_type,
             status="ready",
             tags=[tag.strip() for tag in payload.tags if tag.strip()],
             metadata=payload.metadata,
-            chunkCount=len(chunks_text),
-            createdAt=now,
-            updatedAt=now,
+            chunk_count=len(chunks_text),
+            created_at=now,
+            updated_at=now,
         )
         self._documents[document.id] = document
 
@@ -214,14 +214,14 @@ class KnowledgeStore:
         for index, text in enumerate(chunks_text):
             chunk = KnowledgeChunk(
                 id=str(uuid4()),
-                documentId=document.id,
-                knowledgeBaseId=base.id,
-                userId=user_id,
-                chunkIndex=index,
+                document_id=document.id,
+                knowledge_base_id=base.id,
+                user_id=user_id,
+                chunk_index=index,
                 text=text,
-                tokenCount=len(_tokenize(text)),
-                createdAt=now,
-                updatedAt=now,
+                token_count=len(_tokenize(text)),
+                created_at=now,
+                updated_at=now,
             )
             self._chunks[chunk.id] = chunk
             chunks.append(chunk)
@@ -245,7 +245,7 @@ class KnowledgeStore:
             document = self._documents[chunk.document_id]
             base = self._bases[chunk.knowledge_base_id]
             results.append(
-                SearchResult(score=round(score, 4), chunk=chunk, document=document, knowledgeBase=base)
+                SearchResult(score=round(score, 4), chunk=chunk, document=document, knowledge_base=base)
             )
 
         results.sort(key=lambda result: (-result.score, result.chunk.chunk_index, result.document.filename))

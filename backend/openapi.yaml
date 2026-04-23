@@ -43,6 +43,10 @@ tags:
     description: Portable workflow schema, import, and export endpoints
   - name: Knowledge
     description: Knowledge-base creation, ingestion, and search
+  - name: Agents
+    description: Agent CRUD, execution telemetry, and budget controls
+  - name: Routines
+    description: Agent routine scheduling and cadence management
   - name: Health
     description: Service health
 
@@ -873,6 +877,432 @@ paths:
           $ref: "#/components/responses/Unauthorized"
 
   # ---------------------------------------------------------------------------
+  # Agent management
+  # ---------------------------------------------------------------------------
+  /api/agents:
+    post:
+      operationId: createAgent
+      summary: Create an agent
+      tags: [Agents]
+      parameters:
+        - $ref: "#/components/parameters/UserIdHeader"
+        - $ref: "#/components/parameters/PaperclipRunIdHeader"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AgentCreateInput"
+      responses:
+        "201":
+          description: Agent created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Agent"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+    get:
+      operationId: listAgents
+      summary: List agents for the current user
+      tags: [Agents]
+      parameters:
+        - $ref: "#/components/parameters/UserIdHeader"
+        - name: status_filter
+          in: query
+          schema:
+            $ref: "#/components/schemas/AgentStatus"
+      responses:
+        "200":
+          description: Agent list
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [agents, total]
+                properties:
+                  agents:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Agent"
+                  total:
+                    type: integer
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/agents/{agentId}:
+    parameters:
+      - name: agentId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      operationId: getAgent
+      summary: Get an agent
+      tags: [Agents]
+      parameters:
+        - $ref: "#/components/parameters/UserIdHeader"
+      responses:
+        "200":
+          description: Agent details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Agent"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+    patch:
+      operationId: updateAgent
+      summary: Update an agent
+      tags: [Agents]
+      parameters:
+        - $ref: "#/components/parameters/UserIdHeader"
+        - $ref: "#/components/parameters/PaperclipRunIdHeader"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AgentUpdateInput"
+      responses:
+        "200":
+          description: Updated agent
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Agent"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+    delete:
+      operationId: deleteAgent
+      summary: Delete an agent
+      tags: [Agents]
+      parameters:
+        - $ref: "#/components/parameters/UserIdHeader"
+        - $ref: "#/components/parameters/PaperclipRunIdHeader"
+      responses:
+        "204":
+          description: Agent deleted
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/agents/{agentId}/heartbeat:
+    parameters:
+      - name: agentId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    post:
+      operationId: recordAgentHeartbeat
+      summary: Record a heartbeat event for an agent
+      tags: [Agents]
+      parameters:
+        - $ref: "#/components/parameters/UserIdHeader"
+        - $ref: "#/components/parameters/PaperclipRunIdHeader"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AgentHeartbeatWriteInput"
+      responses:
+        "201":
+          description: Heartbeat recorded
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AgentHeartbeat"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+    get:
+      operationId: getAgentHeartbeat
+      summary: Get the latest agent heartbeat
+      tags: [Agents]
+      parameters:
+        - $ref: "#/components/parameters/UserIdHeader"
+      responses:
+        "200":
+          description: Latest heartbeat
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AgentHeartbeat"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/agents/{agentId}/runs:
+    parameters:
+      - name: agentId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    post:
+      operationId: recordAgentRun
+      summary: Record an execution run for an agent
+      tags: [Agents]
+      parameters:
+        - $ref: "#/components/parameters/UserIdHeader"
+        - $ref: "#/components/parameters/PaperclipRunIdHeader"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AgentRunWriteInput"
+      responses:
+        "201":
+          description: Run recorded
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AgentRun"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+    get:
+      operationId: listAgentRuns
+      summary: List execution runs for an agent
+      tags: [Agents]
+      parameters:
+        - $ref: "#/components/parameters/UserIdHeader"
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 20
+      responses:
+        "200":
+          description: Agent runs
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [runs, total]
+                properties:
+                  runs:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/AgentRun"
+                  total:
+                    type: integer
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/agents/{agentId}/budget:
+    parameters:
+      - name: agentId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    post:
+      operationId: setAgentBudget
+      summary: Set the monthly budget for an agent
+      tags: [Agents]
+      parameters:
+        - $ref: "#/components/parameters/UserIdHeader"
+        - $ref: "#/components/parameters/PaperclipRunIdHeader"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AgentBudgetWriteInput"
+      responses:
+        "200":
+          description: Budget updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AgentBudgetSnapshot"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+    get:
+      operationId: getAgentBudget
+      summary: Get the current budget snapshot for an agent
+      tags: [Agents]
+      parameters:
+        - $ref: "#/components/parameters/UserIdHeader"
+      responses:
+        "200":
+          description: Budget snapshot
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AgentBudgetSnapshot"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/agents/{agentId}/token-usage:
+    parameters:
+      - name: agentId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      operationId: getAgentTokenUsage
+      summary: Get per-day token and cost usage for an agent
+      tags: [Agents]
+      parameters:
+        - $ref: "#/components/parameters/UserIdHeader"
+        - name: days
+          in: query
+          schema:
+            type: integer
+            default: 30
+      responses:
+        "200":
+          description: Token usage report
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TokenUsageReport"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/routines:
+    post:
+      operationId: createRoutine
+      summary: Create an agent routine
+      tags: [Routines]
+      parameters:
+        - $ref: "#/components/parameters/UserIdHeader"
+        - $ref: "#/components/parameters/PaperclipRunIdHeader"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RoutineCreateInput"
+      responses:
+        "201":
+          description: Routine created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Routine"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+    get:
+      operationId: listRoutines
+      summary: List routines for the current user
+      tags: [Routines]
+      parameters:
+        - $ref: "#/components/parameters/UserIdHeader"
+        - name: agent_id
+          in: query
+          schema:
+            type: string
+            format: uuid
+        - name: status_filter
+          in: query
+          schema:
+            $ref: "#/components/schemas/RoutineStatus"
+      responses:
+        "200":
+          description: Routine list
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [routines, total]
+                properties:
+                  routines:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Routine"
+                  total:
+                    type: integer
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/routines/{routineId}:
+    parameters:
+      - name: routineId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    patch:
+      operationId: updateRoutine
+      summary: Update an agent routine
+      tags: [Routines]
+      parameters:
+        - $ref: "#/components/parameters/UserIdHeader"
+        - $ref: "#/components/parameters/PaperclipRunIdHeader"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RoutineUpdateInput"
+      responses:
+        "200":
+          description: Updated routine
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Routine"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  # ---------------------------------------------------------------------------
   # Health
   # ---------------------------------------------------------------------------
   /health:
@@ -936,6 +1366,14 @@ components:
       schema:
         type: string
       description: Authenticated user identifier. Staging also accepts Authorization bearer fallback.
+
+    PaperclipRunIdHeader:
+      name: X-Paperclip-Run-Id
+      in: header
+      required: true
+      schema:
+        type: string
+      description: Trace identifier required for mutating agent-management requests.
 
     KnowledgeBaseId:
       name: baseId
@@ -1756,6 +2194,400 @@ components:
           $ref: "#/components/schemas/KnowledgeDocument"
         knowledgeBase:
           $ref: "#/components/schemas/KnowledgeBase"
+
+    AgentStatus:
+      type: string
+      enum: [running, paused, idle, error]
+
+    Agent:
+      type: object
+      required: [id, userId, name, instructions, status, budgetMonthlyUsd, metadata, createdAt, updatedAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        userId:
+          type: string
+        name:
+          type: string
+        description:
+          type: string
+          nullable: true
+        roleKey:
+          type: string
+          nullable: true
+        model:
+          type: string
+          nullable: true
+        instructions:
+          type: string
+        status:
+          $ref: "#/components/schemas/AgentStatus"
+        budgetMonthlyUsd:
+          type: number
+        metadata:
+          type: object
+          additionalProperties: true
+        lastHeartbeatAt:
+          type: string
+          format: date-time
+          nullable: true
+        lastRunAt:
+          type: string
+          format: date-time
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    AgentCreateInput:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        roleKey:
+          type: string
+        model:
+          type: string
+        instructions:
+          type: string
+        status:
+          $ref: "#/components/schemas/AgentStatus"
+        budgetMonthlyUsd:
+          type: number
+          minimum: 0
+        metadata:
+          type: object
+          additionalProperties: true
+
+    AgentUpdateInput:
+      type: object
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+          nullable: true
+        roleKey:
+          type: string
+          nullable: true
+        model:
+          type: string
+          nullable: true
+        instructions:
+          type: string
+        status:
+          $ref: "#/components/schemas/AgentStatus"
+        budgetMonthlyUsd:
+          type: number
+          minimum: 0
+        metadata:
+          type: object
+          additionalProperties: true
+
+    AgentHeartbeat:
+      type: object
+      required: [id, agentId, userId, status, tokenUsage, costUsd, createdByRunId, recordedAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        agentId:
+          type: string
+          format: uuid
+        userId:
+          type: string
+        status:
+          $ref: "#/components/schemas/AgentStatus"
+        summary:
+          type: string
+          nullable: true
+        tokenUsage:
+          type: integer
+        costUsd:
+          type: number
+        runId:
+          type: string
+          nullable: true
+        createdByRunId:
+          type: string
+        recordedAt:
+          type: string
+          format: date-time
+
+    AgentHeartbeatWriteInput:
+      type: object
+      required: [status]
+      properties:
+        status:
+          $ref: "#/components/schemas/AgentStatus"
+        summary:
+          type: string
+        tokenUsage:
+          type: integer
+          minimum: 0
+        costUsd:
+          type: number
+          minimum: 0
+        runId:
+          type: string
+        recordedAt:
+          type: string
+          format: date-time
+
+    AgentRunStatus:
+      type: string
+      enum: [queued, running, completed, failed, blocked]
+
+    AgentRun:
+      type: object
+      required: [id, agentId, userId, status, tokenUsage, costUsd, startedAt, createdByRunId, createdAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        agentId:
+          type: string
+          format: uuid
+        userId:
+          type: string
+        runId:
+          type: string
+          nullable: true
+        status:
+          $ref: "#/components/schemas/AgentRunStatus"
+        summary:
+          type: string
+          nullable: true
+        tokenUsage:
+          type: integer
+        costUsd:
+          type: number
+        startedAt:
+          type: string
+          format: date-time
+        completedAt:
+          type: string
+          format: date-time
+          nullable: true
+        createdByRunId:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+
+    AgentRunWriteInput:
+      type: object
+      required: [status]
+      properties:
+        runId:
+          type: string
+        status:
+          $ref: "#/components/schemas/AgentRunStatus"
+        summary:
+          type: string
+        tokenUsage:
+          type: integer
+          minimum: 0
+        costUsd:
+          type: number
+          minimum: 0
+        startedAt:
+          type: string
+          format: date-time
+        completedAt:
+          type: string
+          format: date-time
+
+    AgentBudgetWriteInput:
+      type: object
+      required: [monthlyUsd]
+      properties:
+        monthlyUsd:
+          type: number
+          minimum: 0
+        note:
+          type: string
+
+    AgentBudgetSnapshot:
+      type: object
+      required: [agentId, userId, monthlyUsd, spentUsd, remainingUsd, currentPeriod, autoPaused]
+      properties:
+        agentId:
+          type: string
+          format: uuid
+        userId:
+          type: string
+        monthlyUsd:
+          type: number
+        spentUsd:
+          type: number
+        remainingUsd:
+          type: number
+        currentPeriod:
+          type: string
+          example: "2026-04"
+        autoPaused:
+          type: boolean
+        lastUpdatedAt:
+          type: string
+          format: date-time
+          nullable: true
+
+    TokenUsageBucket:
+      type: object
+      required: [date, tokens, costUsd]
+      properties:
+        date:
+          type: string
+          format: date
+        tokens:
+          type: integer
+        costUsd:
+          type: number
+
+    TokenUsageReport:
+      type: object
+      required: [agentId, userId, days, totalTokens, totalCostUsd, daily]
+      properties:
+        agentId:
+          type: string
+          format: uuid
+        userId:
+          type: string
+        days:
+          type: integer
+        totalTokens:
+          type: integer
+        totalCostUsd:
+          type: number
+        daily:
+          type: array
+          items:
+            $ref: "#/components/schemas/TokenUsageBucket"
+
+    RoutineStatus:
+      type: string
+      enum: [active, paused]
+
+    RoutineScheduleType:
+      type: string
+      enum: [manual, interval, cron]
+
+    Routine:
+      type: object
+      required: [id, userId, agentId, name, scheduleType, status, metadata, createdAt, updatedAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        userId:
+          type: string
+        agentId:
+          type: string
+          format: uuid
+        name:
+          type: string
+        description:
+          type: string
+          nullable: true
+        scheduleType:
+          $ref: "#/components/schemas/RoutineScheduleType"
+        cronExpression:
+          type: string
+          nullable: true
+        intervalMinutes:
+          type: integer
+          nullable: true
+        prompt:
+          type: string
+          nullable: true
+        status:
+          $ref: "#/components/schemas/RoutineStatus"
+        metadata:
+          type: object
+          additionalProperties: true
+        lastRunAt:
+          type: string
+          format: date-time
+          nullable: true
+        nextRunAt:
+          type: string
+          format: date-time
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    RoutineCreateInput:
+      type: object
+      required: [agentId, name, scheduleType]
+      properties:
+        agentId:
+          type: string
+          format: uuid
+        name:
+          type: string
+        description:
+          type: string
+        scheduleType:
+          $ref: "#/components/schemas/RoutineScheduleType"
+        cronExpression:
+          type: string
+        intervalMinutes:
+          type: integer
+        prompt:
+          type: string
+        status:
+          $ref: "#/components/schemas/RoutineStatus"
+        metadata:
+          type: object
+          additionalProperties: true
+        nextRunAt:
+          type: string
+          format: date-time
+
+    RoutineUpdateInput:
+      type: object
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+          nullable: true
+        scheduleType:
+          $ref: "#/components/schemas/RoutineScheduleType"
+        cronExpression:
+          type: string
+          nullable: true
+        intervalMinutes:
+          type: integer
+          nullable: true
+        prompt:
+          type: string
+          nullable: true
+        status:
+          $ref: "#/components/schemas/RoutineStatus"
+        metadata:
+          type: object
+          additionalProperties: true
+        lastRunAt:
+          type: string
+          format: date-time
+          nullable: true
+        nextRunAt:
+          type: string
+          format: date-time
+          nullable: true
 
     # -------------------------------------------------------------------------
     # Error

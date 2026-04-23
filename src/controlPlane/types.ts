@@ -5,11 +5,27 @@ export type HeartbeatStatus = "queued" | "running" | "completed" | "blocked";
 export type ControlPlaneTaskStatus = "todo" | "in_progress" | "done" | "blocked";
 export type AgentScheduleType = "manual" | "interval" | "cron";
 export type TeamDeploymentMode = "workflow_runtime" | "continuous_agents";
+export type TeamLifecycleStatus = "active" | "paused" | "stopped";
+export type ControlPlaneExecutionStatus =
+  | "queued"
+  | "running"
+  | "completed"
+  | "blocked"
+  | "failed"
+  | "stopped";
+export type ControlPlaneLifecycleAction = "pause" | "resume" | "restart" | "stop";
 
 export interface ControlPlaneAgentSchedule {
   type: AgentScheduleType;
   cronExpression?: string;
   intervalMinutes?: number;
+}
+
+export interface ControlPlaneSkillDefinition {
+  id: string;
+  name: string;
+  description: string;
+  scope: "workflow" | "agent" | "security" | "integration";
 }
 
 export interface ControlPlaneAgent {
@@ -24,8 +40,12 @@ export interface ControlPlaneAgent {
   instructions: string;
   budgetMonthlyUsd: number;
   reportingToAgentId?: string;
+  skills: string[];
   schedule: ControlPlaneAgentSchedule;
   status: AgentLifecycleStatus;
+  currentExecutionId?: string;
+  lastHeartbeatAt?: string;
+  lastHeartbeatStatus?: HeartbeatStatus;
   createdAt: string;
   updatedAt: string;
 }
@@ -38,6 +58,9 @@ export interface ControlPlaneTeam {
   workflowTemplateId?: string;
   workflowTemplateName?: string;
   deploymentMode: TeamDeploymentMode;
+  status: TeamLifecycleStatus;
+  restartCount: number;
+  lastHeartbeatAt?: string;
   budgetMonthlyUsd: number;
   orchestrationEnabled: boolean;
   createdAt: string;
@@ -74,6 +97,7 @@ export interface AgentHeartbeatRecord {
   id: string;
   teamId: string;
   agentId: string;
+  executionId?: string;
   userId: string;
   status: HeartbeatStatus;
   summary?: string;
@@ -83,8 +107,30 @@ export interface AgentHeartbeatRecord {
   completedAt?: string;
 }
 
+export interface ControlPlaneExecution {
+  id: string;
+  teamId: string;
+  agentId: string;
+  userId: string;
+  sourceRunId: string;
+  sourceWorkflowStepId: string;
+  sourceWorkflowStepName: string;
+  taskId?: string;
+  status: ControlPlaneExecutionStatus;
+  appliedSkills: string[];
+  metadata?: Record<string, unknown>;
+  summary?: string;
+  costUsd?: number;
+  requestedAt: string;
+  startedAt?: string;
+  lastHeartbeatAt?: string;
+  completedAt?: string;
+  restartCount: number;
+}
+
 export interface ControlPlaneDeployment {
   team: ControlPlaneTeam;
   agents: ControlPlaneAgent[];
   workflow: Pick<WorkflowTemplate, "id" | "name" | "category" | "version">;
+  availableSkills: ControlPlaneSkillDefinition[];
 }

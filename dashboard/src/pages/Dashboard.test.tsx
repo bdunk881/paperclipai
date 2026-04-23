@@ -7,11 +7,13 @@ const {
   listRunsMock,
   listTemplatesMock,
   listLLMConfigsMock,
+  getControlPlaneSnapshotMock,
   getAccessTokenMock,
 } = vi.hoisted(() => ({
   listRunsMock: vi.fn(),
   listTemplatesMock: vi.fn(),
   listLLMConfigsMock: vi.fn(),
+  getControlPlaneSnapshotMock: vi.fn(),
   getAccessTokenMock: vi.fn(),
 }));
 
@@ -19,6 +21,10 @@ vi.mock("../api/client", () => ({
   listRuns: listRunsMock,
   listTemplates: listTemplatesMock,
   listLLMConfigs: listLLMConfigsMock,
+}));
+
+vi.mock("../api/controlPlane", () => ({
+  getControlPlaneSnapshot: getControlPlaneSnapshotMock,
 }));
 
 vi.mock("../context/AuthContext", () => ({
@@ -43,6 +49,7 @@ describe("Dashboard", () => {
     listRunsMock.mockResolvedValue([]);
     listTemplatesMock.mockResolvedValue([]);
     listLLMConfigsMock.mockResolvedValue([]);
+    getControlPlaneSnapshotMock.mockResolvedValue([]);
   });
 
   afterEach(() => {
@@ -61,6 +68,7 @@ describe("Dashboard", () => {
     expect(getAccessTokenMock).toHaveBeenCalledTimes(1);
     expect(listRunsMock).toHaveBeenCalledWith(undefined, "mock-token");
     expect(listLLMConfigsMock).toHaveBeenCalledWith("mock-token");
+    expect(getControlPlaneSnapshotMock).toHaveBeenCalledWith("mock-token");
     expect(screen.queryByText("Dashboard data unavailable")).not.toBeInTheDocument();
   });
 });

@@ -33,6 +33,14 @@ import McpServers from "./pages/McpServers";
 import ExecutionLogs from "./pages/ExecutionLogs";
 import CheckoutSuccess from "./pages/CheckoutSuccess";
 import AuthCallback from "./pages/AuthCallback";
+import AgentCatalog from "./pages/AgentCatalog";
+import AgentDetail from "./pages/AgentDetail";
+import AgentDeploy from "./pages/AgentDeploy";
+import MyAgents from "./pages/MyAgents";
+import AgentActivity from "./pages/AgentActivity";
+import Routines from "./pages/Routines";
+import OrgStructure from "./pages/OrgStructure";
+import BudgetDashboard from "./pages/BudgetDashboard";
 
 function PrivateRoute({ children }: { children: React.ReactNode }) {
   const { user } = useAuth();
@@ -153,6 +161,14 @@ export default function App() {
             <Route path="builder/:templateId" element={<WorkflowBuilder />} />
             <Route path="monitor" element={<RunMonitor />} />
             <Route path="history" element={<RunHistory />} />
+            <Route path="agents" element={<AgentCatalog />} />
+            <Route path="agents/:templateId" element={<AgentDetail />} />
+            <Route path="agents/deploy/:templateId" element={<AgentDeploy />} />
+            <Route path="agents/my" element={<MyAgents />} />
+            <Route path="agents/activity" element={<AgentActivity />} />
+            <Route path="agents/routines" element={<Routines />} />
+            <Route path="workspace/org-structure" element={<OrgStructure />} />
+            <Route path="workspace/budget-dashboard" element={<BudgetDashboard />} />
             <Route path="settings" element={<Settings />} />
             <Route path="settings/llm-providers" element={<LLMProviders />} />
             <Route path="settings/profile" element={<ProfileSettings />} />

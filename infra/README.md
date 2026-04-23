@@ -60,6 +60,7 @@ Runtime environment variables required in the Vercel dashboard project:
 | `VITE_AZURE_CIAM_CLIENT_ID` | Entra External ID app registration client ID |
 | `VITE_AZURE_CIAM_TENANT_SUBDOMAIN` | Tenant prefix before `.ciamlogin.com` (for example `autoflowciam`) |
 | `QA_PREVIEW_ACCESS_TOKEN` | Preview-only shared secret used by `/api/qa-preview-access` to unlock smoke-test access for protected dashboard routes |
+| `QA_E2E_BEARER_TOKEN` | Optional staging backend bearer token that unlocks `/api/me` and `/api/knowledge/*` for non-interactive QA verification |
 
 ## Daily operations
 
@@ -78,9 +79,11 @@ Runtime environment variables required in the Vercel dashboard project:
 ## Protected Preview QA Access
 
 - Set `QA_PREVIEW_ACCESS_TOKEN` only on the dashboard Vercel project's `preview` environment.
+- Set `QA_E2E_BEARER_TOKEN` only on the staging backend environment that QA is verifying.
 - Share QA links in the form `https://<preview-host>/agents?qaPreviewToken=<token>`.
 - The dashboard validates the token through `/api/qa-preview-access`, seeds a temporary local auth user, and then unlocks the protected `/agents` routes for smoke testing.
-- Do not set `QA_PREVIEW_ACCESS_TOKEN` on `production`.
+- Use `Authorization: Bearer <QA_E2E_BEARER_TOKEN>` for direct `/api/me` and `/api/knowledge/*` QA calls once the staging backend secret is deployed.
+- Do not set `QA_PREVIEW_ACCESS_TOKEN` or `QA_E2E_BEARER_TOKEN` on `production`.
 
 ## DNS
 

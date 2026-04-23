@@ -77,6 +77,57 @@ describe("requireAuth", () => {
     expect(res.status).toHaveBeenCalledWith(401);
   });
 
+  it("accepts the configured QA E2E bearer token for /api/me", () => {
+    process.env.QA_E2E_BEARER_TOKEN = "qa-secret";
+    process.env.QA_E2E_USER_ID = "usr-qa-preview";
+    process.env.QA_E2E_USER_EMAIL = "qa-preview@autoflow.local";
+    process.env.QA_E2E_USER_NAME = "QA Preview User";
+
+    const requireAuth = loadRequireAuth();
+    const req = {
+      headers: { authorization: "Bearer qa-secret" },
+      originalUrl: "/api/me",
+      path: "/api/me",
+    } as unknown as AuthenticatedRequest;
+    const res = createResponse();
+    const next = jest.fn();
+
+    requireAuth(req, res as never, next);
+
+    expect(next).toHaveBeenCalledTimes(1);
+    expect(req.auth).toEqual({
+      sub: "usr-qa-preview",
+      email: "qa-preview@autoflow.local",
+      name: "QA Preview User",
+    });
+    expect(verifyMock).not.toHaveBeenCalled();
+  });
+
+  it("rejects the QA E2E bearer token outside the allowed QA routes", () => {
+    process.env.QA_E2E_BEARER_TOKEN = "qa-secret";
+    delete process.env.AZURE_TENANT_SUBDOMAIN;
+    delete process.env.AZURE_TENANT_ID;
+    delete process.env.AZURE_CLIENT_ID;
+    delete process.env.AZURE_CIAM_TENANT_SUBDOMAIN;
+    delete process.env.AZURE_CIAM_TENANT_ID;
+    delete process.env.AZURE_CIAM_CLIENT_ID;
+
+    const requireAuth = loadRequireAuth();
+    const req = {
+      headers: { authorization: "Bearer qa-secret" },
+      originalUrl: "/api/runs",
+      path: "/api/runs",
+    } as unknown as AuthenticatedRequest;
+    const res = createResponse();
+    const warnSpy = jest.spyOn(console, "warn").mockImplementation(() => {});
+
+    requireAuth(req, res as never, jest.fn());
+
+    expect(verifyMock).not.toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(503);
+    warnSpy.mockRestore();
+  });
+
   it("uses legacy AZURE_* auth env vars when AZURE_CIAM_* vars are absent", () => {
     process.env.AZURE_TENANT_SUBDOMAIN = "legacyciam";
     process.env.AZURE_TENANT_ID = "legacy-tenant";
@@ -144,5 +195,30 @@ describe("requireAuth", () => {
         jwksUri: "https://newciam.ciamlogin.com/new-tenant/discovery/v2.0/keys",
       })
     );
+  });
+
+  it("uses a timing-safe comparison for the QA E2E bearer token", () => {
+    process.env.QA_E2E_BEARER_TOKEN = "qa-secret";
+    delete process.env.AZURE_TENANT_SUBDOMAIN;
+    delete process.env.AZURE_TENANT_ID;
+    delete process.env.AZURE_CLIENT_ID;
+    delete process.env.AZURE_CIAM_TENANT_SUBDOMAIN;
+    delete process.env.AZURE_CIAM_TENANT_ID;
+    delete process.env.AZURE_CIAM_CLIENT_ID;
+
+    const requireAuth = loadRequireAuth();
+    const req = {
+      headers: { authorization: "Bearer qa-secrex" },
+      originalUrl: "/api/me",
+      path: "/api/me",
+    } as unknown as AuthenticatedRequest;
+    const res = createResponse();
+    const warnSpy = jest.spyOn(console, "warn").mockImplementation(() => {});
+
+    requireAuth(req, res as never, jest.fn());
+
+    expect(res.status).toHaveBeenCalledWith(503);
+    expect(res.status).not.toHaveBeenCalledWith(200);
+    warnSpy.mockRestore();
   });
 });

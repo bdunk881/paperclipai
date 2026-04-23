@@ -14,6 +14,7 @@
  * to the infrastructure service principal (Key Vault, Storage, etc.).
  */
 
+import crypto from "node:crypto";
 import { Request, Response, NextFunction } from "express";
 import jwt, { JwtPayload } from "jsonwebtoken";
 import jwksRsa from "jwks-rsa";
@@ -28,6 +29,43 @@ type AuthConfig = {
 
 const jwksClientCache = new Map<string, jwksRsa.JwksClient>();
 let missingConfigWarningLogged = false;
+
+function normalizeSecret(value: string | undefined): string | null {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  return trimmed ? trimmed : null;
+}
+
+function resolveQaE2EBearerToken(): string | null {
+  return normalizeSecret(process.env.QA_E2E_BEARER_TOKEN);
+}
+
+function timingSafeTokenMatch(candidate: string, expected: string): boolean {
+  const candidateBuffer = Buffer.from(candidate);
+  const expectedBuffer = Buffer.from(expected);
+
+  if (candidateBuffer.length !== expectedBuffer.length) {
+    return false;
+  }
+
+  return crypto.timingSafeEqual(candidateBuffer, expectedBuffer);
+}
+
+function isQaE2ERoute(requestPath: string): boolean {
+  return (
+    requestPath === "/api/me" ||
+    requestPath === "/api/knowledge" ||
+    requestPath.startsWith("/api/knowledge/")
+  );
+}
+
+function qaE2EAuthIdentity() {
+  return {
+    sub: process.env.QA_E2E_USER_ID?.trim() || "usr-qa-e2e",
+    email: normalizeSecret(process.env.QA_E2E_USER_EMAIL) ?? "qa-e2e@autoflow.local",
+    name: normalizeSecret(process.env.QA_E2E_USER_NAME) ?? "QA E2E User",
+  };
+}
 
 function resolveAuthConfig(): AuthConfig | null {
   const tenantSubdomain = process.env.AZURE_CIAM_TENANT_SUBDOMAIN ?? process.env.AZURE_TENANT_SUBDOMAIN;
@@ -104,6 +142,19 @@ export function requireAuth(
   const headerUserId = req.headers["x-user-id"];
   const requestPath = (req.originalUrl || req.path).split("?")[0];
   const isMemoryRoute = requestPath === "/api/memory" || requestPath.startsWith("/api/memory/");
+  const qaE2EToken = resolveQaE2EBearerToken();
+
+  if (
+    authHeader?.startsWith("Bearer ") &&
+    qaE2EToken &&
+    timingSafeTokenMatch(authHeader.slice(7), qaE2EToken) &&
+    isQaE2ERoute(requestPath)
+  ) {
+    req.auth = qaE2EAuthIdentity();
+    next();
+    return;
+  }
+
   if (!authHeader?.startsWith("Bearer ")) {
     if (isMemoryRoute && typeof headerUserId === "string" && headerUserId.trim()) {
       req.auth = { sub: headerUserId.trim() };

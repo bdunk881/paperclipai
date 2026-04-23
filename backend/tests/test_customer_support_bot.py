@@ -5,7 +5,6 @@ Validates the template structure, step wiring, config fields,
 and sample data shape without requiring a live LLM.
 """
 
-import pytest
 from templates.customer_support_bot import customer_support_bot
 from templates.schemas import StepKind, FieldType, TemplateCategory
 

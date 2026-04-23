@@ -49,6 +49,7 @@ describe("dashboard/api/billing/checkout", () => {
     vi.restoreAllMocks();
     delete process.env.BILLING_API_BASE_URL;
     delete process.env.BACKEND_API_BASE_URL;
+    delete process.env.VITE_API_BASE_URL;
     delete process.env.VITE_API_URL;
   });
 
@@ -100,5 +101,24 @@ describe("dashboard/api/billing/checkout", () => {
 
     expect(res.statusCode).toBe(502);
     expect(res.payload).toEqual({ error: "Checkout failed" });
+  });
+
+  it("accepts VITE_API_BASE_URL values that already include /api", async () => {
+    process.env.VITE_API_BASE_URL = "https://backend.example.com/api";
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({ url: "https://checkout.stripe.test/sess_456" }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      }),
+    );
+
+    const req = makeReq();
+    const res = makeRes();
+
+    await handler(req as never, res as never);
+
+    expect(fetch).toHaveBeenCalledWith("https://backend.example.com/api/billing/checkout", expect.any(Object));
+    expect(res.statusCode).toBe(200);
+    expect(res.payload).toEqual({ url: "https://checkout.stripe.test/sess_456" });
   });
 });

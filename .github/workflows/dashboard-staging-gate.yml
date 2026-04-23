@@ -1,11 +1,6 @@
 name: Dashboard Staging QA Gate
 
 on:
-  pull_request:
-    branches: [main, master]
-    paths:
-      - "dashboard/**"
-      - ".github/workflows/dashboard-staging-gate.yml"
   push:
     paths:
       - "dashboard/**"
@@ -35,7 +30,6 @@ jobs:
   preview-deploy:
     name: Deploy Dashboard Preview
     if: |
-      github.event_name == 'pull_request' ||
       (github.event_name == 'push' && github.ref != 'refs/heads/main' && github.ref != 'refs/heads/master') ||
       (github.event_name == 'workflow_dispatch' && github.event.inputs.target == 'preview')
     runs-on: ubuntu-latest
@@ -50,6 +44,9 @@ jobs:
           cache: npm
           cache-dependency-path: dashboard/package-lock.json
 
+      - name: Install Vercel CLI
+        run: npm install -g vercel@52.0.0
+
       - name: Validate Vercel secrets
         run: |
           set -euo pipefail
@@ -61,13 +58,12 @@ jobs:
           done
 
       - name: Verify preview auth env parity
-        working-directory: dashboard
         run: |
           set -euo pipefail
-          mkdir -p .vercel
-          npx vercel env pull .vercel/.env.preview --environment=preview --yes --token="$VERCEL_TOKEN" >/dev/null
+          mkdir -p dashboard/.vercel
+          npx vercel env pull dashboard/.vercel/.env.preview --environment=preview --yes --token="$VERCEL_TOKEN" >/dev/null
           for required in VITE_AZURE_CLIENT_ID VITE_AZURE_TENANT_SUBDOMAIN; do
-            if ! grep -q "^${required}=" .vercel/.env.preview; then
+            if ! grep -q "^${required}=" dashboard/.vercel/.env.preview; then
               echo "::error::Missing ${required} in Vercel preview environment"
               exit 1
             fi
@@ -75,14 +71,47 @@ jobs:
 
       - name: Deploy preview
         id: deploy
-        working-directory: dashboard
         run: |
           set -euo pipefail
-          npx vercel pull --yes --environment=preview --token="$VERCEL_TOKEN"
-          PREVIEW_URL="$(npx vercel deploy --yes --token="$VERCEL_TOKEN" | tail -n 1 | tr -d '\r')"
+          vercel pull --yes --environment=preview --token="$VERCEL_TOKEN"
+          vercel build --token="$VERCEL_TOKEN"
+          set +e
+          DEPLOY_OUTPUT="$(vercel deploy --prebuilt --yes --token="$VERCEL_TOKEN" 2>&1)"
+          DEPLOY_EXIT=$?
+          set -e
+          printf '%s\n' "$DEPLOY_OUTPUT"
+          PREVIEW_URL="$(printf '%s\n' "$DEPLOY_OUTPUT" | grep -Eo 'https://[^[:space:]]+\.vercel\.app' | tail -n 1 | tr -d '\r')"
           if [ -z "$PREVIEW_URL" ]; then
             echo "::error::Vercel preview deploy did not return a URL"
             exit 1
+          fi
+          if [ "$DEPLOY_EXIT" -ne 0 ]; then
+            echo "::warning::vercel deploy exited with code $DEPLOY_EXIT after returning $PREVIEW_URL; verifying deployment state."
+            READY_VERIFIED=0
+            for attempt in $(seq 1 18); do
+              set +e
+              INSPECT_OUTPUT="$(vercel inspect "$PREVIEW_URL" --token="$VERCEL_TOKEN" 2>&1)"
+              INSPECT_EXIT=$?
+              set -e
+              printf '%s\n' "$INSPECT_OUTPUT"
+              if [ "$INSPECT_EXIT" -eq 0 ] && printf '%s\n' "$INSPECT_OUTPUT" | grep -qiE 'status[[:space:]]+.*ready'; then
+                READY_VERIFIED=1
+                break
+              fi
+              if [ "$INSPECT_EXIT" -eq 0 ] && printf '%s\n' "$INSPECT_OUTPUT" | grep -qiE 'status[[:space:]]+.*(error|failed|canceled)'; then
+                echo "::error::Vercel preview deployment entered a failed terminal state."
+                exit "$DEPLOY_EXIT"
+              fi
+              if [ "$attempt" -lt 18 ]; then
+                echo "Deployment not ready yet; retrying inspect ($attempt/18) in 10s."
+                sleep 10
+              fi
+            done
+            if [ "$READY_VERIFIED" -ne 1 ]; then
+              echo "::error::Vercel preview deploy exited non-zero and the deployment did not reach READY within 180 seconds."
+              exit "$DEPLOY_EXIT"
+            fi
+            echo "::warning::Continuing because Vercel confirmed the preview deployment is READY despite a non-zero deploy exit."
           fi
           echo "preview_url=$PREVIEW_URL" >> "$GITHUB_OUTPUT"
           echo "Preview URL: $PREVIEW_URL"
@@ -107,7 +136,7 @@ jobs:
 
       - name: Install Playwright browser
         working-directory: dashboard
-        run: npx playwright install --with-deps chromium
+        run: npx playwright install --with-deps chromium webkit
 
       - name: Run preview auth smoke test
         working-directory: dashboard
@@ -142,6 +171,9 @@ jobs:
           cache: npm
           cache-dependency-path: dashboard/package-lock.json
 
+      - name: Install Vercel CLI
+        run: npm install -g vercel@52.0.0
+
       - name: Validate Vercel secrets
         run: |
           set -euo pipefail
@@ -153,22 +185,21 @@ jobs:
           done
 
       - name: Verify production auth env parity
-        working-directory: dashboard
         run: |
           set -euo pipefail
-          mkdir -p .vercel
-          npx vercel env pull .vercel/.env.production --environment=production --yes --token="$VERCEL_TOKEN" >/dev/null
+          mkdir -p dashboard/.vercel
+          npx vercel env pull dashboard/.vercel/.env.production --environment=production --yes --token="$VERCEL_TOKEN" >/dev/null
           for required in VITE_AZURE_CLIENT_ID VITE_AZURE_TENANT_SUBDOMAIN; do
-            if ! grep -q "^${required}=" .vercel/.env.production; then
+            if ! grep -q "^${required}=" dashboard/.vercel/.env.production; then
               echo "::error::Missing ${required} in Vercel production environment"
               exit 1
             fi
           done
 
       - name: Deploy production
-        working-directory: dashboard
         run: |
           set -euo pipefail
-          npx vercel pull --yes --environment=production --token="$VERCEL_TOKEN"
-          PROD_URL="$(npx vercel deploy --prod --yes --token="$VERCEL_TOKEN" | tail -n 1 | tr -d '\r')"
+          vercel pull --yes --environment=production --token="$VERCEL_TOKEN"
+          vercel build --prod --token="$VERCEL_TOKEN"
+          PROD_URL="$(vercel deploy --prebuilt --prod --yes --token="$VERCEL_TOKEN" | tail -n 1 | tr -d '\r')"
           echo "Production URL: $PROD_URL"

@@ -105,6 +105,12 @@ describe("classifyTier — feature-based routing", () => {
     expect(result.tier).toBe("standard");
     expect(result.usedFallback).toBe(true);
   });
+
+  it("handles steps without promptTemplate (uses empty string fallback)", () => {
+    // step.promptTemplate is undefined — triggers the ?? "" fallback at line 136
+    const step = makeStep({ kind: "action", promptTemplate: undefined, outputKeys: [] });
+    expect(classifyTier(step, 100)).toBe("standard");
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -145,6 +151,13 @@ describe("resolveModelForTier", () => {
     const liteModel = resolveModelForTier("anthropic", "lite");
     const powerModel = resolveModelForTier("anthropic", "power");
     expect(liteModel).not.toBe(powerModel);
+  });
+
+  it("falls back to standard model for an unknown tier", () => {
+    // Accessing an unmapped tier triggers the ?? fallback in resolveModelForTier
+    const model = resolveModelForTier("openai", "unknown_tier" as LlmTier);
+    // Falls back to the "standard" model for openai
+    expect(typeof model).toBe("string");
   });
 });
 

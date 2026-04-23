@@ -5,9 +5,6 @@ Validates schema construction, field aliases, enum values, and serialisation
 without requiring a live database or API.
 """
 
-import pytest
-from pydantic import ValidationError
-
 from templates.schemas import (
     ConfigField,
     FieldType,

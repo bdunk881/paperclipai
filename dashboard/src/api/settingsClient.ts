@@ -1,6 +1,7 @@
 import { User } from "../context/AuthContext";
+import { getConfiguredApiOrigin } from "./baseUrl";
 
-const API_BASE = import.meta.env.VITE_API_URL ?? "http://localhost:3001";
+const API_BASE = getConfiguredApiOrigin();
 
 export class ApiError extends Error {
   status: number;
@@ -58,4 +59,3 @@ export async function apiDelete(path: string, user: User | null): Promise<void> 
   });
   if (!res.ok && res.status !== 204) throw await parseError(res);
 }
-

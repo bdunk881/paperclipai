@@ -177,7 +177,7 @@ jobs:
           cache-dependency-path: dashboard/package-lock.json
       - run: npm ci
       - name: Install Playwright browsers
-        run: npx playwright install --with-deps chromium
+        run: npx playwright install --with-deps chromium webkit
       - name: Run auth regression smoke tests
         run: npm run e2e:auth-regression
         env:
@@ -205,7 +205,7 @@ jobs:
           cache-dependency-path: dashboard/package-lock.json
       - run: npm ci
       - name: Install Playwright browsers
-        run: npx playwright install --with-deps chromium
+        run: npx playwright install --with-deps chromium webkit
       - name: Run E2E tests
         run: npm run e2e
         env:

@@ -33,5 +33,19 @@ describe("IntegrationsHub", () => {
         "Sync projects and issues with Linear to automate triage, assignment, and status updates."
       )
     ).toBeInTheDocument();
+    expect(screen.getAllByText("Linear")).toHaveLength(1);
+  });
+
+  it("does not render fake marketplace ratings and zeros the connected counter", async () => {
+    render(
+      <MemoryRouter>
+        <IntegrationsHub />
+      </MemoryRouter>
+    );
+
+    expect(await screen.findByText("marketplace integrations connected")).toBeInTheDocument();
+    expect(screen.getAllByText("0")).toHaveLength(2);
+    expect(screen.queryByText("4.9")).not.toBeInTheDocument();
+    expect(screen.queryByText("4.8")).not.toBeInTheDocument();
   });
 });

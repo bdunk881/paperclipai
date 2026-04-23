@@ -54,6 +54,26 @@ vercel env add NEXT_PUBLIC_PLAUSIBLE_DOMAIN production
 vercel env add NEXT_PUBLIC_PLAUSIBLE_DOMAIN preview
 ```
 
+Configure dashboard preview access in the Vercel `dashboard` project:
+
+```bash
+vercel env add QA_PREVIEW_ACCESS_TOKEN preview
+```
+
+Then share preview smoke-test links in this format:
+
+```text
+https://<dashboard-preview-host>/agents?qaPreviewToken=<QA_PREVIEW_ACCESS_TOKEN>
+```
+
+The same tokenized link can be reused for:
+
+- `/agents`
+- `/agents/<templateId>`
+- `/agents/deploy/<templateId>`
+- `/agents/my`
+- `/agents/activity`
+
 ## Run Evidence Workflow
 
 1. Open GitHub Actions and run `QA Integration Evidence`.

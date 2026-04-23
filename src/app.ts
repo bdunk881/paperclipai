@@ -658,7 +658,13 @@ app.get("/api/approvals", requireAuth, async (req: AuthenticatedRequest, res) =>
  * Returns in-app approval notifications for the authenticated approver.
  */
 app.get("/api/approvals/notifications", requireAuth, (req: AuthenticatedRequest, res) => {
-  const notifications = approvalNotificationStore.list({ assignee: req.auth?.sub });
+  const notifications = approvalNotificationStore
+    .list({ assignee: req.auth?.sub, status: "pending" })
+    .filter((notification) => notification.channel === "inbox")
+    .map((notification) => ({
+      ...notification,
+      assignee: notification.recipient,
+    }));
   res.json({ notifications, total: notifications.length });
 });
 

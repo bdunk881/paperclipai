@@ -12,6 +12,7 @@ import { approvalNotificationStore } from "./approvalNotificationStore";
 export interface ApprovalRequest {
   id: string;
   runId: string;
+  templateId?: string;
   templateName: string;
   stepId: string;
   stepName: string;
@@ -95,6 +96,7 @@ async function persistRequest(request: ApprovalRequest): Promise<void> {
 export const approvalStore = {
   async create(params: {
     runId: string;
+    templateId?: string;
     templateName: string;
     stepId: string;
     stepName: string;
@@ -107,6 +109,7 @@ export const approvalStore = {
     const request: ApprovalRequest = {
       id,
       runId: params.runId,
+      templateId: params.templateId,
       templateName: params.templateName,
       stepId: params.stepId,
       stepName: params.stepName,

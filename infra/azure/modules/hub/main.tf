@@ -12,6 +12,7 @@ resource "azurerm_virtual_network" "hub" {
 # ── Subnets ───────────────────────────────────────────────────────────────────
 
 resource "azurerm_subnet" "firewall" {
+  count                = var.enable_firewall ? 1 : 0
   name                 = "AzureFirewallSubnet"
   resource_group_name  = var.resource_group_name
   virtual_network_name = azurerm_virtual_network.hub.name
@@ -19,6 +20,7 @@ resource "azurerm_subnet" "firewall" {
 }
 
 resource "azurerm_subnet" "bastion" {
+  count                = var.enable_bastion ? 1 : 0
   name                 = "AzureBastionSubnet"
   resource_group_name  = var.resource_group_name
   virtual_network_name = azurerm_virtual_network.hub.name
@@ -42,6 +44,7 @@ resource "azurerm_subnet" "mgmt" {
 # ── Azure Firewall ────────────────────────────────────────────────────────────
 
 resource "azurerm_public_ip" "firewall" {
+  count               = var.enable_firewall ? 1 : 0
   name                = "${var.prefix}-hub-fw-pip"
   location            = var.location
   resource_group_name = var.resource_group_name
@@ -52,6 +55,7 @@ resource "azurerm_public_ip" "firewall" {
 }
 
 resource "azurerm_firewall_policy" "hub" {
+  count               = var.enable_firewall ? 1 : 0
   name                = "${var.prefix}-hub-fw-policy"
   location            = var.location
   resource_group_name = var.resource_group_name
@@ -73,8 +77,9 @@ resource "azurerm_firewall_policy" "hub" {
 # firewall is already the sole egress path.
 
 resource "azurerm_firewall_policy_rule_collection_group" "aks_egress" {
+  count              = var.enable_firewall ? 1 : 0
   name               = "aks-egress"
-  firewall_policy_id = azurerm_firewall_policy.hub.id
+  firewall_policy_id = azurerm_firewall_policy.hub[0].id
   priority           = 1000
 
   # ── Application Rules (FQDN-based HTTP/HTTPS) ────────────────────────────
@@ -86,9 +91,9 @@ resource "azurerm_firewall_policy_rule_collection_group" "aks_egress" {
 
     # Microsoft Container Registry — required for AKS system images
     rule {
-      name             = "allow-mcr"
-      source_addresses = ["*"]
-      target_fqdns     = ["mcr.microsoft.com", "*.data.mcr.microsoft.com"]
+      name              = "allow-mcr"
+      source_addresses  = ["*"]
+      destination_fqdns = ["mcr.microsoft.com", "*.data.mcr.microsoft.com"]
       protocols {
         type = "Https"
         port = 443
@@ -99,7 +104,7 @@ resource "azurerm_firewall_policy_rule_collection_group" "aks_egress" {
     rule {
       name             = "allow-aks-management"
       source_addresses = ["*"]
-      target_fqdns = [
+      destination_fqdns = [
         "management.azure.com",
         "login.microsoftonline.com",
         "*.hcp.${var.location}.azmk8s.io",
@@ -112,9 +117,9 @@ resource "azurerm_firewall_policy_rule_collection_group" "aks_egress" {
 
     # Azure Container Registry (private endpoint traffic also needs FQDN allow)
     rule {
-      name             = "allow-acr"
-      source_addresses = ["*"]
-      target_fqdns     = ["*.azurecr.io"]
+      name              = "allow-acr"
+      source_addresses  = ["*"]
+      destination_fqdns = ["*.azurecr.io"]
       protocols {
         type = "Https"
         port = 443
@@ -123,9 +128,9 @@ resource "azurerm_firewall_policy_rule_collection_group" "aks_egress" {
 
     # Azure Key Vault
     rule {
-      name             = "allow-keyvault"
-      source_addresses = ["*"]
-      target_fqdns     = ["*.vault.azure.net"]
+      name              = "allow-keyvault"
+      source_addresses  = ["*"]
+      destination_fqdns = ["*.vault.azure.net"]
       protocols {
         type = "Https"
         port = 443
@@ -136,7 +141,7 @@ resource "azurerm_firewall_policy_rule_collection_group" "aks_egress" {
     rule {
       name             = "allow-azure-monitor"
       source_addresses = ["*"]
-      target_fqdns = [
+      destination_fqdns = [
         "dc.services.visualstudio.com",
         "*.ods.opinsights.azure.com",
         "*.oms.opinsights.azure.com",
@@ -152,7 +157,7 @@ resource "azurerm_firewall_policy_rule_collection_group" "aks_egress" {
     rule {
       name             = "allow-docker-hub"
       source_addresses = ["*"]
-      target_fqdns = [
+      destination_fqdns = [
         "docker.io",
         "registry-1.docker.io",
         "auth.docker.io",
@@ -169,7 +174,7 @@ resource "azurerm_firewall_policy_rule_collection_group" "aks_egress" {
     rule {
       name             = "allow-ubuntu-updates"
       source_addresses = ["*"]
-      target_fqdns = [
+      destination_fqdns = [
         "security.ubuntu.com",
         "azure.archive.ubuntu.com",
         "changelogs.ubuntu.com",
@@ -186,9 +191,9 @@ resource "azurerm_firewall_policy_rule_collection_group" "aks_egress" {
 
     # GitHub (Helm charts, Flux, tooling)
     rule {
-      name             = "allow-github"
-      source_addresses = ["*"]
-      target_fqdns     = ["github.com", "*.githubusercontent.com"]
+      name              = "allow-github"
+      source_addresses  = ["*"]
+      destination_fqdns = ["github.com", "*.githubusercontent.com"]
       protocols {
         type = "Https"
         port = 443
@@ -197,9 +202,9 @@ resource "azurerm_firewall_policy_rule_collection_group" "aks_egress" {
 
     # Helm chart repositories
     rule {
-      name             = "allow-helm"
-      source_addresses = ["*"]
-      target_fqdns     = ["charts.helm.sh", "*.helm.sh"]
+      name              = "allow-helm"
+      source_addresses  = ["*"]
+      destination_fqdns = ["charts.helm.sh", "*.helm.sh"]
       protocols {
         type = "Https"
         port = 443
@@ -208,9 +213,9 @@ resource "azurerm_firewall_policy_rule_collection_group" "aks_egress" {
 
     # Google Container Registry (some AKS add-on images)
     rule {
-      name             = "allow-gcr"
-      source_addresses = ["*"]
-      target_fqdns     = ["gcr.io", "*.gcr.io", "storage.googleapis.com"]
+      name              = "allow-gcr"
+      source_addresses  = ["*"]
+      destination_fqdns = ["gcr.io", "*.gcr.io", "storage.googleapis.com"]
       protocols {
         type = "Https"
         port = 443
@@ -219,9 +224,9 @@ resource "azurerm_firewall_policy_rule_collection_group" "aks_egress" {
 
     # Quay.io (Red Hat / community images)
     rule {
-      name             = "allow-quay"
-      source_addresses = ["*"]
-      target_fqdns     = ["quay.io", "*.quay.io"]
+      name              = "allow-quay"
+      source_addresses  = ["*"]
+      destination_fqdns = ["quay.io", "*.quay.io"]
       protocols {
         type = "Https"
         port = 443
@@ -247,11 +252,11 @@ resource "azurerm_firewall_policy_rule_collection_group" "aks_egress" {
 
     # NTP — node clock synchronisation
     rule {
-      name                  = "allow-ntp"
-      protocols             = ["UDP"]
-      source_addresses      = ["*"]
-      destination_fqdns     = ["ntp.ubuntu.com"]
-      destination_ports     = ["123"]
+      name              = "allow-ntp"
+      protocols         = ["UDP"]
+      source_addresses  = ["*"]
+      destination_fqdns = ["ntp.ubuntu.com"]
+      destination_ports = ["123"]
     }
 
     # Azure backbone services via service tags
@@ -275,8 +280,9 @@ resource "azurerm_firewall_policy_rule_collection_group" "aks_egress" {
 }
 
 resource "azurerm_firewall_policy_rule_collection_group" "default_deny" {
+  count              = var.enable_firewall ? 1 : 0
   name               = "default-deny"
-  firewall_policy_id = azurerm_firewall_policy.hub.id
+  firewall_policy_id = azurerm_firewall_policy.hub[0].id
   priority           = 65000
 
   network_rule_collection {
@@ -295,17 +301,18 @@ resource "azurerm_firewall_policy_rule_collection_group" "default_deny" {
 }
 
 resource "azurerm_firewall" "hub" {
+  count               = var.enable_firewall ? 1 : 0
   name                = "${var.prefix}-hub-fw"
   location            = var.location
   resource_group_name = var.resource_group_name
   sku_name            = "AZFW_VNet"
   sku_tier            = "Standard"
-  firewall_policy_id  = azurerm_firewall_policy.hub.id
+  firewall_policy_id  = azurerm_firewall_policy.hub[0].id
 
   ip_configuration {
     name                 = "hub-fw-ipconfig"
-    subnet_id            = azurerm_subnet.firewall.id
-    public_ip_address_id = azurerm_public_ip.firewall.id
+    subnet_id            = azurerm_subnet.firewall[0].id
+    public_ip_address_id = azurerm_public_ip.firewall[0].id
   }
 
   tags = var.tags
@@ -314,6 +321,7 @@ resource "azurerm_firewall" "hub" {
 # ── Azure Bastion ─────────────────────────────────────────────────────────────
 
 resource "azurerm_public_ip" "bastion" {
+  count               = var.enable_bastion ? 1 : 0
   name                = "${var.prefix}-hub-bastion-pip"
   location            = var.location
   resource_group_name = var.resource_group_name
@@ -324,6 +332,7 @@ resource "azurerm_public_ip" "bastion" {
 }
 
 resource "azurerm_bastion_host" "hub" {
+  count               = var.enable_bastion ? 1 : 0
   name                = "${var.prefix}-hub-bastion"
   location            = var.location
   resource_group_name = var.resource_group_name
@@ -332,8 +341,8 @@ resource "azurerm_bastion_host" "hub" {
 
   ip_configuration {
     name                 = "hub-bastion-ipconfig"
-    subnet_id            = azurerm_subnet.bastion.id
-    public_ip_address_id = azurerm_public_ip.bastion.id
+    subnet_id            = azurerm_subnet.bastion[0].id
+    public_ip_address_id = azurerm_public_ip.bastion[0].id
   }
 
   tags = var.tags
@@ -342,14 +351,14 @@ resource "azurerm_bastion_host" "hub" {
 # ── Azure Key Vault ───────────────────────────────────────────────────────────
 
 resource "azurerm_key_vault" "hub" {
-  name                        = "${var.prefix}-hub-kv"
-  location                    = var.location
-  resource_group_name         = var.resource_group_name
-  tenant_id                   = var.tenant_id
-  sku_name                    = var.key_vault_sku
-  enable_rbac_authorization   = true
-  soft_delete_retention_days  = 90
-  purge_protection_enabled    = true
+  name                       = "${var.prefix}-hub-kv"
+  location                   = var.location
+  resource_group_name        = var.resource_group_name
+  tenant_id                  = var.tenant_id
+  sku_name                   = var.key_vault_sku
+  enable_rbac_authorization  = true
+  soft_delete_retention_days = 90
+  purge_protection_enabled   = true
 
   tags = var.tags
 }

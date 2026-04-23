@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { Link } from "react-router-dom";
 import {
   RefreshCw,
@@ -32,7 +32,7 @@ export default function RunMonitor() {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
 
-  async function fetchRuns(silent = false) {
+  const fetchRuns = useCallback(async (silent = false) => {
     if (!silent) setLoading(true);
     setLoadError(null);
     try {
@@ -53,13 +53,13 @@ export default function RunMonitor() {
     } finally {
       if (!silent) setLoading(false);
     }
-  }
+  }, [getAccessToken]);
 
   useEffect(() => {
     void fetchRuns();
     const id = setInterval(() => { void fetchRuns(true); }, POLL_INTERVAL_MS);
     return () => clearInterval(id);
-  }, []);
+  }, [fetchRuns]);
 
   function toggleExpand(id: string) {
     setExpandedIds((prev) => {
@@ -107,8 +107,8 @@ export default function RunMonitor() {
       {/* Header */}
       <div className="flex items-center justify-between mb-8">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Run Monitor</h1>
-          <p className="text-gray-500 mt-1 text-sm">
+          <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">Run Monitor</h1>
+          <p className="text-gray-500 dark:text-surface-400 mt-1 text-sm">
             Live view of active workflow runs · auto-refreshes every {POLL_INTERVAL_MS / 1000}s
           </p>
         </div>
@@ -128,19 +128,19 @@ export default function RunMonitor() {
 
       {/* Active runs */}
       <section className="mb-8">
-        <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-4">
+        <h2 className="text-sm font-semibold text-gray-500 dark:text-surface-400 uppercase tracking-wide mb-4">
           Active Runs ({activeRuns.length})
         </h2>
 
         {activeRuns.length === 0 ? (
-          <div className="bg-white rounded-xl border border-gray-200 p-12 text-center">
+          <div className="bg-white dark:bg-surface-900 rounded-xl border border-gray-200 dark:border-surface-800 p-12 text-center">
             <div className="w-12 h-12 rounded-full bg-green-50 flex items-center justify-center mx-auto mb-3">
               <CheckCircle2 size={22} className="text-green-500" />
             </div>
             <p className="text-gray-600 font-medium">No active runs</p>
             <p className="text-gray-400 text-sm mt-1">
               Start a workflow from the{" "}
-              <Link to="/builder" className="text-blue-600 hover:underline">
+              <Link to="/builder" className="text-brand-600 hover:underline">
                 builder
               </Link>{" "}
               to see it here.
@@ -162,7 +162,7 @@ export default function RunMonitor() {
 
       {/* Recent completed/failed */}
       <section>
-        <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-4">
+        <h2 className="text-sm font-semibold text-gray-500 dark:text-surface-400 uppercase tracking-wide mb-4">
           Recently Completed ({recentRuns.length})
         </h2>
         {recentRuns.length === 0 ? (
@@ -209,19 +209,19 @@ function RunCard({
   const progressPct = totalSteps > 0 ? Math.round((completedSteps / totalSteps) * 100) : 0;
 
   return (
-    <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+    <div className="bg-white dark:bg-surface-900 rounded-xl border border-gray-200 dark:border-surface-800 overflow-hidden">
       {/* Card header */}
       <button
         onClick={onToggle}
         className="w-full flex items-center gap-4 px-5 py-4 text-left hover:bg-gray-50 transition-colors"
       >
-        <div className="flex items-center justify-center w-9 h-9 rounded-lg bg-blue-50 shrink-0">
-          <Workflow size={18} className="text-blue-600" />
+        <div className="flex items-center justify-center w-9 h-9 rounded-lg bg-brand-50 shrink-0">
+          <Workflow size={18} className="text-brand-600" />
         </div>
 
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 mb-1">
-            <p className="text-sm font-semibold text-gray-900 truncate">{run.templateName}</p>
+            <p className="text-sm font-semibold text-gray-900 dark:text-gray-100 truncate">{run.templateName}</p>
             <StatusBadge status={run.status} />
           </div>
           <div className="flex items-center gap-4 text-xs text-gray-400">
@@ -244,7 +244,7 @@ function RunCard({
             <div
               className={clsx(
                 "h-full rounded-full transition-all duration-500",
-                run.status === "failed" ? "bg-red-400" : "bg-blue-500"
+                run.status === "failed" ? "bg-red-400" : "bg-brand-500"
               )}
               style={{ width: `${progressPct}%` }}
             />
@@ -324,7 +324,7 @@ function StepRow({ step, index }: { step: StepResult; index: number }) {
   return (
     <div className="flex items-start gap-3">
       <div className="flex flex-col items-center shrink-0 mt-0.5">
-        <span className="w-5 h-5 flex items-center justify-center rounded-full bg-gray-100 text-xs text-gray-500 font-medium">
+        <span className="w-5 h-5 flex items-center justify-center rounded-full bg-gray-100 text-xs text-gray-500 dark:text-surface-400 font-medium">
           {index}
         </span>
       </div>
@@ -361,7 +361,7 @@ function StepRow({ step, index }: { step: StepResult; index: number }) {
             {hasOutput && step.status !== "running" && (
               <button
                 onClick={() => setShowOutput((v) => !v)}
-                className="text-xs text-blue-600 hover:underline"
+                className="text-xs text-brand-600 hover:underline"
               >
                 {showOutput ? "hide output" : "show output"}
               </button>
@@ -405,7 +405,7 @@ function StepRow({ step, index }: { step: StepResult; index: number }) {
         )}
 
         {showOutput && hasOutput && (
-          <pre className="mt-2 text-xs bg-gray-50 border border-gray-200 rounded-lg p-3 overflow-x-auto text-gray-700">
+          <pre className="mt-2 text-xs bg-gray-50 border border-gray-200 dark:border-surface-800 rounded-lg p-3 overflow-x-auto text-gray-700">
             {JSON.stringify(step.output, null, 2)}
           </pre>
         )}
@@ -444,10 +444,10 @@ function AgentSlotPanel({ slots }: { slots: AgentSlotResult[] }) {
             className={clsx(
               "flex flex-col items-start gap-1 p-2 rounded-md border text-left transition",
               slot.status === "success"
-                ? "bg-white border-green-200 hover:border-green-400"
+                ? "bg-white dark:bg-surface-900 border-green-200 hover:border-green-400"
                 : slot.status === "failure"
                 ? "bg-red-50 border-red-200 hover:border-red-400"
-                : "bg-white border-yellow-200 hover:border-yellow-400"
+                : "bg-white dark:bg-surface-900 border-yellow-200 hover:border-yellow-400"
             )}
           >
             <div className="flex items-center gap-1 text-xs font-medium text-gray-700">
@@ -478,7 +478,7 @@ function AgentSlotPanel({ slots }: { slots: AgentSlotResult[] }) {
             )}
 
             {Object.keys(slot.output).length > 0 && (
-              <pre className="text-xs bg-white border border-indigo-200 rounded p-2 overflow-x-auto text-gray-700">
+              <pre className="text-xs bg-white dark:bg-surface-900 border border-indigo-200 rounded p-2 overflow-x-auto text-gray-700">
                 {JSON.stringify(slot.output, null, 2)}
               </pre>
             )}
@@ -493,7 +493,7 @@ function AgentSlotPanel({ slots }: { slots: AgentSlotResult[] }) {
                       "text-xs px-2 py-1 rounded",
                       msg.from === "manager"
                         ? "bg-indigo-100 text-indigo-700"
-                        : "bg-white border border-indigo-200 text-gray-700"
+                        : "bg-white dark:bg-surface-900 border border-indigo-200 text-gray-700"
                     )}
                   >
                     <span className="font-medium capitalize mr-1">{msg.from}→</span>

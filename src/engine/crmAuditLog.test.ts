@@ -125,7 +125,7 @@ describe("crmAuditLog", () => {
     });
 
     it("records entry for agent step kind", () => {
-      vi.spyOn(console, "info").mockImplementation(() => {});
+      jest.spyOn(console, "info").mockImplementation(() => {});
 
       auditCrmApiCall({
         userId: "user-789",
@@ -147,7 +147,7 @@ describe("crmAuditLog", () => {
     });
 
     it("does not include actual field values in audit entry", () => {
-      vi.spyOn(console, "info").mockImplementation(() => {});
+      jest.spyOn(console, "info").mockImplementation(() => {});
 
       auditCrmApiCall({
         userId: "user-1",
@@ -175,7 +175,7 @@ describe("crmAuditLog", () => {
     });
 
     it("sorts blocked categories alphabetically", () => {
-      vi.spyOn(console, "info").mockImplementation(() => {});
+      jest.spyOn(console, "info").mockImplementation(() => {});
 
       auditCrmApiCall({
         userId: "u",
@@ -197,7 +197,7 @@ describe("crmAuditLog", () => {
     });
 
     it("accumulates multiple entries", () => {
-      vi.spyOn(console, "info").mockImplementation(() => {});
+      jest.spyOn(console, "info").mockImplementation(() => {});
 
       for (let i = 0; i < 3; i++) {
         auditCrmApiCall({
@@ -219,7 +219,7 @@ describe("crmAuditLog", () => {
 
   describe("clearAuditLog", () => {
     it("empties the audit log", () => {
-      vi.spyOn(console, "info").mockImplementation(() => {});
+      jest.spyOn(console, "info").mockImplementation(() => {});
 
       auditCrmApiCall({
         userId: "u",

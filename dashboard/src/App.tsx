@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useEffect, useState } from "react";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { PublicClientApplication, EventType, AuthenticationResult } from "@azure/msal-browser";
 import { MsalProvider } from "@azure/msal-react";
@@ -11,7 +11,6 @@ import {
 } from "./auth/authStorage";
 
 const msalInstance = new PublicClientApplication(msalConfig);
-
 import Layout from "./components/Layout";
 import Login from "./pages/Login";
 import Signup from "./pages/Signup";
@@ -33,11 +32,7 @@ import MCPIntegrations from "./pages/MCPIntegrations";
 import McpServers from "./pages/McpServers";
 import ExecutionLogs from "./pages/ExecutionLogs";
 import CheckoutSuccess from "./pages/CheckoutSuccess";
-import AgentCatalog from "./pages/AgentCatalog";
-import AgentDetail from "./pages/AgentDetail";
-import AgentDeploy from "./pages/AgentDeploy";
-import MyAgents from "./pages/MyAgents";
-import AgentActivity from "./pages/AgentActivity";
+import AuthCallback from "./pages/AuthCallback";
 
 function PrivateRoute({ children }: { children: React.ReactNode }) {
   const { user } = useAuth();
@@ -121,65 +116,60 @@ export default function App() {
   }, []);
 
   if (!msalReady) return null;
-
   return (
     <MsalProvider instance={msalInstance}>
-      <AuthProvider>
-        <BrowserRouter>
-          <Routes>
-            <Route path="/waitlist" element={<LandingPage />} />
-            <Route path="/checkout/success" element={<CheckoutSuccess />} />
-            <Route
-              path="/login"
-              element={
-                <PublicRoute>
-                  <Login />
-                </PublicRoute>
-              }
-            />
-            <Route
-              path="/signup"
-              element={
-                <PublicRoute>
-                  <Signup />
-                </PublicRoute>
-              }
-            />
-            <Route
-              path="/"
-              element={
-                <PrivateRoute>
-                  <Layout />
-                </PrivateRoute>
-              }
-            >
-              <Route index element={<Dashboard />} />
-              <Route path="builder" element={<WorkflowBuilder />} />
-              <Route path="builder/:templateId" element={<WorkflowBuilder />} />
-              <Route path="monitor" element={<RunMonitor />} />
-              <Route path="history" element={<RunHistory />} />
-              <Route path="settings" element={<Settings />} />
-              <Route path="settings/llm-providers" element={<LLMProviders />} />
-              <Route path="settings/profile" element={<ProfileSettings />} />
-              <Route path="settings/security" element={<SecuritySettings />} />
-              <Route path="settings/notifications" element={<NotificationsSettings />} />
-              <Route path="settings/api-keys" element={<ApiKeys />} />
-              <Route path="settings/mcp-servers" element={<McpServers />} />
-              <Route path="pricing" element={<Pricing />} />
-              <Route path="approvals" element={<Approvals />} />
-              <Route path="memory" element={<Memory />} />
-              <Route path="integrations/mcp" element={<MCPIntegrations />} />
-              <Route path="logs" element={<ExecutionLogs />} />
-              <Route path="agents" element={<AgentCatalog />} />
-              <Route path="agents/:templateId" element={<AgentDetail />} />
-              <Route path="agents/deploy/:templateId" element={<AgentDeploy />} />
-              <Route path="agents/my" element={<MyAgents />} />
-              <Route path="agents/activity" element={<AgentActivity />} />
-            </Route>
-            <Route path="*" element={<Navigate to="/" replace />} />
-          </Routes>
-        </BrowserRouter>
-      </AuthProvider>
+    <AuthProvider>
+      <BrowserRouter>
+        <Routes>
+          <Route path="/waitlist" element={<LandingPage />} />
+          <Route path="/checkout/success" element={<CheckoutSuccess />} />
+          <Route path="/auth/callback" element={<AuthCallback />} />
+          <Route
+            path="/login"
+            element={
+              <PublicRoute>
+                <Login />
+              </PublicRoute>
+            }
+          />
+          <Route
+            path="/signup"
+            element={
+              <PublicRoute>
+                <Signup />
+              </PublicRoute>
+            }
+          />
+          <Route
+            path="/"
+            element={
+              <PrivateRoute>
+                <Layout />
+              </PrivateRoute>
+            }
+          >
+            <Route index element={<Dashboard />} />
+            <Route path="builder" element={<WorkflowBuilder />} />
+            <Route path="builder/:templateId" element={<WorkflowBuilder />} />
+            <Route path="monitor" element={<RunMonitor />} />
+            <Route path="history" element={<RunHistory />} />
+            <Route path="settings" element={<Settings />} />
+            <Route path="settings/llm-providers" element={<LLMProviders />} />
+            <Route path="settings/profile" element={<ProfileSettings />} />
+            <Route path="settings/security" element={<SecuritySettings />} />
+            <Route path="settings/notifications" element={<NotificationsSettings />} />
+            <Route path="settings/api-keys" element={<ApiKeys />} />
+            <Route path="settings/mcp-servers" element={<McpServers />} />
+            <Route path="pricing" element={<Pricing />} />
+            <Route path="approvals" element={<Approvals />} />
+            <Route path="memory" element={<Memory />} />
+            <Route path="integrations/mcp" element={<MCPIntegrations />} />
+            <Route path="logs" element={<ExecutionLogs />} />
+          </Route>
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Routes>
+      </BrowserRouter>
+    </AuthProvider>
     </MsalProvider>
   );
 }

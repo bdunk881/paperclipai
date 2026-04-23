@@ -1,0 +1,40 @@
+<svg width="1200" height="630" viewBox="0 0 1200 630" xmlns="http://www.w3.org/2000/svg">
+  <!-- Background -->
+  <rect width="1200" height="630" fill="#0F172A"/>
+  
+  <!-- Noise Texture Simulation -->
+  <filter id="noise">
+    <feTurbulence type="fractalNoise" baseFrequency="0.65" numOctaves="3" stitchTiles="stitch"/>
+    <feComponentTransfer opacity="0.1">
+      <feFuncA type="linear" slope="0.1"/>
+    </feComponentTransfer>
+  </filter>
+  <rect width="1200" height="630" filter="url(#noise)" opacity="0.05"/>
+
+  <!-- Accents -->
+  <circle cx="1100" cy="100" r="300" fill="#14B8A6" opacity="0.1" filter="blur(80px)"/>
+  <circle cx="100" cy="530" r="300" fill="#6366F1" opacity="0.1" filter="blur(80px)"/>
+
+  <!-- Header -->
+  <text x="60" y="50" font-family="Inter, sans-serif" font-size="20" font-weight="bold" fill="#6366F1">AutoFlow</text>
+  <text x="160" y="50" font-family="Inter, sans-serif" font-size="14" fill="#94A3B8">Features</text>
+  <text x="240" y="50" font-family="Inter, sans-serif" font-size="14" fill="#94A3B8">Pricing</text>
+  <text x="310" y="50" font-family="Inter, sans-serif" font-size="14" fill="#94A3B8">Docs</text>
+  <rect x="1050" y="25" width="100" height="36" rx="8" fill="#6366F1"/>
+  <text x="1100" y="48" font-family="Inter, sans-serif" font-size="12" font-weight="bold" fill="white" text-anchor="middle">Start free</text>
+
+  <!-- Hero Content -->
+  <text x="600" y="200" font-family="Inter, sans-serif" font-size="64" font-weight="800" fill="#F1F5F9" text-anchor="middle">Hire AI. Deploy Fast. Earn More.</text>
+  <text x="600" y="250" font-family="Inter, sans-serif" font-size="20" fill="#94A3B8" text-anchor="middle">The intelligent nervous system for modern teams. AI-native, MCP-standard, and BYOLLM-ready.</text>
+
+  <!-- CTA Form -->
+  <rect x="400" y="320" width="400" height="56" rx="12" fill="#1E293B" stroke="#334155"/>
+  <text x="420" y="355" font-family="Inter, sans-serif" font-size="16" fill="#64748B">Enter your work email</text>
+  <rect x="650" y="328" width="142" height="40" rx="8" fill="#14B8A6"/>
+  <text x="721" y="354" font-family="Inter, sans-serif" font-size="14" font-weight="bold" fill="#0F172A" text-anchor="middle">Join Waitlist</text>
+
+  <!-- Badge -->
+  <rect x="530" y="110" width="140" height="28" rx="14" fill="#1E293B" stroke="#14B8A6" stroke-opacity="0.3"/>
+  <circle cx="545" cy="124" r="4" fill="#14B8A6"/>
+  <text x="555" y="129" font-family="Inter, sans-serif" font-size="11" font-weight="medium" fill="#14B8A6">Now in public beta</text>
+</svg>

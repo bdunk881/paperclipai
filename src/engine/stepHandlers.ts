@@ -7,10 +7,13 @@
  */
 
 import { WorkflowStep, AgentSlotResult, AgentMessage } from "../types/workflow";
+import { createHash } from "crypto";
 import { llmConfigStore } from "../llmConfig/llmConfigStore";
 import { getProvider } from "./llmProviders";
 import { getBus, releaseBus } from "./agentBus";
-import { classifyTier, resolveModelForTier, buildCostLog, LlmCostLog } from "./llmRouter";
+import { classifyTierWithConfidence, resolveModelForTier, buildCostLog, LlmCostLog } from "./llmRouter";
+import { logClassificationDecision } from "./classificationLog";
+import { knowledgeStore } from "../knowledge/knowledgeStore";
 import { sanitizeContext } from "./crmFieldAllowlist";
 import { auditCrmApiCall } from "./crmAuditLog";
 
@@ -24,6 +27,10 @@ export interface StepHandlerResult {
   agentSlotResults?: AgentSlotResult[];
   /** Cost and tier data for llm / agent steps */
   costLog?: LlmCostLog;
+}
+
+function hashPrompt(prompt: string): string {
+  return createHash("sha256").update(prompt).digest("hex");
 }
 
 /** Interpolate {{key}} placeholders in a template string using context values */
@@ -65,7 +72,6 @@ export async function handleLlm(
   }
 
   const originalFieldCount = Object.keys(ctx).length;
-
   // Data minimization: strip sensitive CRM fields before they reach the LLM
   const { sanitized, blockedCategories, strippedCount } = sanitizeContext(ctx);
   if (strippedCount > 0) {
@@ -79,8 +85,8 @@ export async function handleLlm(
 
   // Resolve config: step-level override or user's default
   const resolved = step.llmConfigId
-    ? llmConfigStore.getDecrypted(step.llmConfigId, userId)
-    : llmConfigStore.getDecryptedDefault(userId);
+    ? await llmConfigStore.getDecrypted(step.llmConfigId, userId)
+    : await llmConfigStore.getDecryptedDefault(userId);
 
   if (!resolved) {
     throw new Error(
@@ -89,13 +95,34 @@ export async function handleLlm(
   }
 
   // Determine the appropriate model tier for this step's complexity
-  const tier = classifyTier(step, renderedPrompt.length);
-  const tieredModel = resolveModelForTier(resolved.config.provider, tier);
+  const classification = classifyTierWithConfidence(step, renderedPrompt.length);
+  const tieredModel = resolveModelForTier(resolved.config.provider, classification.tier);
+  logClassificationDecision({
+    promptHash: hashPrompt(renderedPrompt),
+    features: classification.features,
+    selectedTier: classification.tier,
+    confidenceScore: classification.confidence,
+    modelId: tieredModel,
+  });
 
   const provider = getProvider({
     provider: resolved.config.provider,
     model: tieredModel,
     apiKey: resolved.apiKey,
+    credentials: resolved.credentials,
+    options: resolved.config.providerOptions,
+  });
+
+  auditCrmApiCall({
+    userId,
+    runId,
+    stepId: step.id,
+    stepKind: "llm",
+    apiEndpoint: `${resolved.config.provider}/${tieredModel}`,
+    originalFieldCount,
+    sanitizedCtx: sanitized,
+    blockedCategories,
+    strippedCount,
   });
 
   // Audit log: record CRM field categories sent to the LLM API
@@ -127,13 +154,78 @@ export async function handleLlm(
   }
 
   const costLog = buildCostLog(
-    tier,
+    classification.tier,
     tieredModel,
     response.usage?.promptTokens ?? 0,
     response.usage?.completionTokens ?? 0
   );
 
   return { output, costLog };
+}
+
+export async function handleKnowledge(
+  step: WorkflowStep,
+  ctx: StepContext,
+  userId: string
+): Promise<StepHandlerResult> {
+  const configuredBaseIds = Array.isArray(step.knowledgeBaseIds) ? step.knowledgeBaseIds : [];
+  const configBaseIds = Array.isArray(step.config?.["knowledgeBaseIds"])
+    ? (step.config["knowledgeBaseIds"] as string[])
+    : [];
+  const contextBaseIds = Array.isArray(ctx["knowledgeBaseIds"])
+    ? (ctx["knowledgeBaseIds"] as string[])
+    : [];
+  const knowledgeBaseIds = [...configuredBaseIds, ...configBaseIds, ...contextBaseIds].filter(
+    (value): value is string => typeof value === "string" && value.trim().length > 0
+  );
+
+  const queryKey =
+    (typeof step.config?.["queryKey"] === "string" && (step.config["queryKey"] as string)) ||
+    step.inputKeys[0] ||
+    "query";
+  const explicitQuery =
+    step.knowledgeQuery ??
+    (typeof step.config?.["knowledgeQuery"] === "string"
+      ? (step.config["knowledgeQuery"] as string)
+      : undefined);
+  const resolvedQuery =
+    explicitQuery ??
+    (typeof ctx[queryKey] === "string" ? (ctx[queryKey] as string) : String(ctx[queryKey] ?? ""));
+
+  const results = await knowledgeStore.search({
+    userId,
+    query: resolvedQuery,
+    knowledgeBaseIds: knowledgeBaseIds.length > 0 ? knowledgeBaseIds : undefined,
+    limit:
+      step.knowledgeLimit ??
+      (typeof step.config?.["knowledgeLimit"] === "number"
+        ? (step.config["knowledgeLimit"] as number)
+        : 5),
+    minScore:
+      step.knowledgeMinScore ??
+      (typeof step.config?.["knowledgeMinScore"] === "number"
+        ? (step.config["knowledgeMinScore"] as number)
+        : 0.15),
+  });
+
+  const knowledgePromptContext = results
+    .map((result, index) => {
+      return [
+        `[#${index + 1}] score=${result.score.toFixed(3)}`,
+        `knowledge_base=${result.knowledgeBase.name}`,
+        `document=${result.document.filename}`,
+        result.chunk.text.trim(),
+      ].join("\n");
+    })
+    .join("\n\n");
+
+  return {
+    output: {
+      knowledgeResults: results,
+      knowledgePromptContext,
+      knowledgeQuery: resolvedQuery,
+    },
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -440,7 +532,7 @@ export async function handleAgent(
   const model = step.agentModel ?? "default";
 
   // Resolve the LLM provider once (shared across slots)
-  const resolved = llmConfigStore.getDecryptedDefault(userId);
+  const resolved = await llmConfigStore.getDecryptedDefault(userId);
   if (!resolved) {
     throw new Error(
       `Agent step "${step.id}" failed: no LLM provider configured. ` +
@@ -451,6 +543,8 @@ export async function handleAgent(
     provider: resolved.config.provider,
     model: resolved.config.model,
     apiKey: resolved.apiKey,
+    credentials: resolved.credentials,
+    options: resolved.config.providerOptions,
   });
 
   const bus = getBus(runId, step.id);
@@ -466,7 +560,6 @@ export async function handleAgent(
   }
 
   const agentOriginalFieldCount = Object.keys(ctx).length;
-
   // Data minimization: strip sensitive CRM fields before they reach the LLM
   const { sanitized: agentSanitized, blockedCategories: agentBlocked, strippedCount: agentStripped } = sanitizeContext(ctx);
   if (agentStripped > 0) {
@@ -488,7 +581,6 @@ export async function handleAgent(
     blockedCategories: agentBlocked,
     strippedCount: agentStripped,
   });
-
   // Build context summary for the prompt
   const contextSummary = Object.entries(agentSanitized)
     .filter(([, v]) => v !== undefined && v !== null)

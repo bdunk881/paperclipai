@@ -23,14 +23,40 @@ export const PROVIDER_NAMES = [
 
 export type ProviderName = (typeof PROVIDER_NAMES)[number];
 
+export interface LLMProviderCredentials {
+  apiKey?: string;
+  accessKeyId?: string;
+  secretAccessKey?: string;
+  sessionToken?: string;
+  serviceAccountJson?: string;
+  oauthAccessToken?: string;
+}
+
+export interface LLMProviderCredentialSummary {
+  apiKeyMasked?: string;
+  accessKeyIdMasked?: string;
+  secretAccessKeyMasked?: string;
+  sessionTokenMasked?: string;
+  serviceAccountJsonMasked?: string;
+  oauthAccessTokenMasked?: string;
+}
+
+export interface LLMProviderOptions {
+  endpoint?: string;
+  deployment?: string;
+  apiVersion?: string;
+  region?: string;
+  projectId?: string;
+  location?: string;
+  authType?: "api_key" | "aws" | "service_account" | "oauth";
+}
+
 export interface LLMProviderConfig {
   provider: ProviderName;
   model: string;
-  apiKey: string;
-  credentials?: {
-    apiKey?: string;
-  };
-  options?: Record<string, string | undefined>;
+  apiKey?: string;
+  credentials?: LLMProviderCredentials;
+  options?: LLMProviderOptions;
 }
 
 export interface LLMResponse {

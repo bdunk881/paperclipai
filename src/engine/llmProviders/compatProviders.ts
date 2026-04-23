@@ -1,5 +1,7 @@
 import { LLMProvider, LLMProviderConfig } from "./types";
 import { createOpenAICompatibleProvider } from "./openaiCompatible";
+export { createBedrockProvider } from "./bedrock";
+export { createVertexAIProvider } from "./vertexAi";
 
 export function createAzureOpenAIProvider(config: LLMProviderConfig): LLMProvider {
   return createOpenAICompatibleProvider(config, {
@@ -15,22 +17,6 @@ export function createAzureOpenAIProvider(config: LLMProviderConfig): LLMProvide
     },
     resolveModel: (providerConfig) =>
       providerConfig.options?.deployment ?? providerConfig.model,
-  });
-}
-
-export function createBedrockProvider(config: LLMProviderConfig): LLMProvider {
-  return createOpenAICompatibleProvider(config, {
-    label: "AWS Bedrock",
-    baseURLEnvVar: "BEDROCK_OPENAI_BASE_URL",
-    resolveBaseURL: (providerConfig) => providerConfig.options?.endpoint,
-  });
-}
-
-export function createVertexAIProvider(config: LLMProviderConfig): LLMProvider {
-  return createOpenAICompatibleProvider(config, {
-    label: "Vertex AI",
-    baseURLEnvVar: "VERTEX_AI_OPENAI_BASE_URL",
-    resolveBaseURL: (providerConfig) => providerConfig.options?.endpoint,
   });
 }
 

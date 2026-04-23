@@ -3,7 +3,7 @@ import { Link } from "react-router-dom";
 
 export function LoadingState({ label = "Loading..." }: { label?: string }) {
   return (
-    <div className="flex items-center justify-center gap-2 rounded-xl border border-gray-200 bg-white p-8 text-sm text-gray-500 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300">
+    <div className="flex items-center justify-center gap-2 rounded-xl border border-gray-200 bg-white p-8 text-sm text-gray-500 dark:border-surface-800 dark:bg-surface-900 dark:text-gray-300">
       <Loader2 size={16} className="animate-spin text-blue-600" />
       <span>{label}</span>
     </div>
@@ -50,7 +50,7 @@ export function EmptyState({
   ctaTo?: string;
 }) {
   return (
-    <div className="rounded-xl border border-dashed border-blue-200 bg-gradient-to-br from-blue-50 to-cyan-50 p-6 text-center dark:border-gray-700 dark:from-gray-900 dark:to-gray-800">
+    <div className="rounded-xl border border-dashed border-blue-200 bg-gradient-to-br from-blue-50 to-cyan-50 p-6 text-center dark:border-surface-800 dark:from-surface-900 dark:to-surface-800">
       <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100">{title}</h3>
       <p className="mx-auto mt-2 max-w-md text-sm text-gray-600 dark:text-gray-300">{description}</p>
       {ctaLabel && ctaTo && (

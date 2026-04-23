@@ -30,9 +30,6 @@ resource "azurerm_virtual_network" "spoke" {
   resource_group_name = var.resource_group_name
   address_space       = [var.spoke_vnet_cidr]
 
-  # Route DNS through the Hub Firewall so private DNS proxy resolves correctly.
-  dns_servers = [var.hub_firewall_private_ip]
-
   tags = var.tags
 }
 
@@ -280,9 +277,9 @@ resource "azurerm_network_watcher_flow_log" "svc" {
   tags = var.tags
 }
 
-# ── Route Tables + UDRs (force-tunnel spoke egress via Hub Firewall) ──────────
-# All egress from spoke subnets is force-tunnelled through the Hub Azure Firewall.
-# BGP route propagation is disabled so our explicit routes always win.
+# ── Route Tables + UDRs (default internet egress) ────────────────────────────
+# Firewall force-tunneling has been removed to avoid always-on hub firewall
+# spend when firewall is disabled in the hub module.
 
 resource "azurerm_route_table" "aks" {
   name                          = "${var.prefix}-${var.environment}-spoke-aks-rt"
@@ -291,10 +288,9 @@ resource "azurerm_route_table" "aks" {
   disable_bgp_route_propagation = true
 
   route {
-    name                   = "default-via-firewall"
-    address_prefix         = "0.0.0.0/0"
-    next_hop_type          = "VirtualAppliance"
-    next_hop_in_ip_address = var.hub_firewall_private_ip
+    name           = "default-to-internet"
+    address_prefix = "0.0.0.0/0"
+    next_hop_type  = "Internet"
   }
 
   tags = var.tags
@@ -307,10 +303,9 @@ resource "azurerm_route_table" "pe" {
   disable_bgp_route_propagation = true
 
   route {
-    name                   = "default-via-firewall"
-    address_prefix         = "0.0.0.0/0"
-    next_hop_type          = "VirtualAppliance"
-    next_hop_in_ip_address = var.hub_firewall_private_ip
+    name           = "default-to-internet"
+    address_prefix = "0.0.0.0/0"
+    next_hop_type  = "Internet"
   }
 
   tags = var.tags
@@ -323,10 +318,9 @@ resource "azurerm_route_table" "svc" {
   disable_bgp_route_propagation = true
 
   route {
-    name                   = "default-via-firewall"
-    address_prefix         = "0.0.0.0/0"
-    next_hop_type          = "VirtualAppliance"
-    next_hop_in_ip_address = var.hub_firewall_private_ip
+    name           = "default-to-internet"
+    address_prefix = "0.0.0.0/0"
+    next_hop_type  = "Internet"
   }
 
   tags = var.tags
@@ -351,7 +345,7 @@ resource "azurerm_subnet_route_table_association" "svc" {
 
 # ── VNet Peering — bidirectional ──────────────────────────────────────────────
 
-# spoke → hub: allow spoke traffic to flow through hub firewall.
+# spoke → hub: allow private traffic between hub and spoke VNets.
 resource "azurerm_virtual_network_peering" "spoke_to_hub" {
   name                      = "${var.prefix}-${var.environment}-spoke-to-hub"
   resource_group_name       = var.resource_group_name

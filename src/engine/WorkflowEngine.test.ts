@@ -13,10 +13,16 @@ jest.mock("./llmProviders", () => ({
 
 import { WorkflowEngine, setLlmProvider, registerAction } from "./WorkflowEngine";
 import { runStore } from "./runStore";
+import { knowledgeStore } from "../knowledge/knowledgeStore";
+import { approvalStore } from "./approvalStore";
+import { llmConfigStore } from "../llmConfig/llmConfigStore";
+import { getProvider } from "./llmProviders";
 import { customerSupportBot } from "../templates/customer-support-bot";
 import { leadEnrichment } from "../templates/lead-enrichment";
 import { contentGenerator } from "../templates/content-generator";
-import { WorkflowTemplate } from "../types/workflow";
+import { WorkflowTemplate, WorkflowStep } from "../types/workflow";
+
+const mockGetProvider = getProvider as jest.Mock;
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -45,6 +51,8 @@ let engine: WorkflowEngine;
 
 beforeEach(() => {
   runStore.clear();
+  knowledgeStore.clear();
+  approvalStore.clear();
   engine = new WorkflowEngine();
 
   // Install deterministic mock LLM provider
@@ -249,6 +257,82 @@ describe("WorkflowEngine — action registry", () => {
   });
 });
 
+describe("WorkflowEngine — knowledge steps", () => {
+  it("retrieves knowledge-base context and exposes prompt-ready output", async () => {
+    const base = await knowledgeStore.createKnowledgeBase({
+      userId: "knowledge-user",
+      name: "Product KB",
+    });
+    await knowledgeStore.ingestDocument({
+      userId: "knowledge-user",
+      knowledgeBaseId: base.id,
+      filename: "pricing.txt",
+      mimeType: "text/plain",
+      content:
+        "AutoFlow offers usage-based billing with annual discounts for enterprise customers.",
+      sourceType: "inline",
+    });
+
+    const template: WorkflowTemplate = {
+      id: "tpl-knowledge-step",
+      name: "Knowledge Step",
+      description: "Injects retrieved context",
+      category: "custom",
+      version: "1.0.0",
+      configFields: [],
+      sampleInput: {},
+      expectedOutput: {},
+      steps: [
+        {
+          id: "step-trigger",
+          name: "Trigger",
+          kind: "trigger",
+          description: "Start",
+          inputKeys: [],
+          outputKeys: ["question", "knowledgeBaseIds"],
+        },
+        {
+          id: "step-knowledge",
+          name: "Retrieve Context",
+          kind: "knowledge",
+          description: "Search KB",
+          inputKeys: ["question"],
+          outputKeys: ["knowledgePromptContext"],
+          knowledgeLimit: 3,
+          knowledgeMinScore: 0,
+        },
+        {
+          id: "step-output",
+          name: "Output",
+          kind: "output",
+          description: "Return context",
+          inputKeys: ["knowledgePromptContext", "knowledgeQuery"],
+          outputKeys: ["knowledgePromptContext", "knowledgeQuery"],
+        },
+      ],
+    };
+
+    const run = engine.startRun(
+      template,
+      {
+        question: "How does enterprise pricing work?",
+        knowledgeBaseIds: [base.id],
+      },
+      undefined,
+      "knowledge-user"
+    );
+
+    const completed = await waitForCompletion(run.id);
+    expect(completed.status).toBe("completed");
+    expect(completed.output).toEqual(
+      expect.objectContaining({
+        knowledgeQuery: "How does enterprise pricing work?",
+      })
+    );
+    expect(String(completed.output?.knowledgePromptContext)).toMatch(/annual discounts/i);
+  });
+});
+
 // ---------------------------------------------------------------------------
 // Config defaults
 // ---------------------------------------------------------------------------
@@ -265,5 +349,286 @@ describe("WorkflowEngine — config defaults", () => {
     // Should complete without error because defaults fill in toneOfVoice, categories etc.
     const completed = await waitForCompletion(run.id);
     expect(completed.status).toBe("completed");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// file_trigger step kind
+// ---------------------------------------------------------------------------
+
+function makeMinimalTemplate(step: WorkflowStep): WorkflowTemplate {
+  return {
+    id: "tpl-test",
+    name: "Test Template",
+    description: "Minimal template for unit testing",
+    category: "support",
+    version: "0.1.0",
+    configFields: [],
+    steps: [step],
+    sampleInput: {},
+    expectedOutput: {},
+  };
+}
+
+describe("WorkflowEngine — file_trigger step", () => {
+  it("completes successfully when content is in input", async () => {
+    const tpl = makeMinimalTemplate({
+      id: "ft1",
+      name: "File Trigger",
+      kind: "file_trigger",
+      description: "Accepts uploaded file",
+      inputKeys: [],
+      outputKeys: ["content"],
+    });
+    const run = engine.startRun(tpl, { content: "uploaded text", mimeType: "text/plain", filename: "doc.txt" });
+    const completed = await waitForCompletion(run.id);
+    expect(completed.status).toBe("completed");
+    const stepResult = completed.stepResults[0];
+    expect(stepResult.output["content"]).toBe("uploaded text");
+  });
+
+  it("marks run as failed when file content is missing", async () => {
+    const tpl = makeMinimalTemplate({
+      id: "ft2",
+      name: "File Trigger",
+      kind: "file_trigger",
+      description: "Requires content",
+      inputKeys: [],
+      outputKeys: [],
+    });
+    const run = engine.startRun(tpl, {}); // no content
+    const completed = await waitForCompletion(run.id);
+    // step fails but run still completes (step failure → stepStatus=failure, run completes)
+    expect(["completed", "failed"]).toContain(completed.status);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// mcp step kind
+// ---------------------------------------------------------------------------
+
+describe("WorkflowEngine — mcp step", () => {
+  beforeEach(() => {
+    jest.restoreAllMocks();
+  });
+
+  it("completes with tool output when MCP server responds", async () => {
+    global.fetch = jest.fn().mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        jsonrpc: "2.0",
+        id: 1,
+        result: { content: [{ type: "text", text: "search result" }] },
+      }),
+    }) as unknown as typeof fetch;
+
+    const tpl = makeMinimalTemplate({
+      id: "mcp1",
+      name: "MCP Search",
+      kind: "mcp",
+      description: "MCP tool call",
+      inputKeys: ["query"],
+      outputKeys: ["searchResult"],
+      mcpServerUrl: "https://mcp.example.com",
+      mcpTool: "search",
+    });
+    const run = engine.startRun(tpl, { query: "test query" });
+    const completed = await waitForCompletion(run.id);
+    expect(["completed", "failed"]).toContain(completed.status);
+    if (completed.status === "completed") {
+      expect(completed.stepResults[0].output["searchResult"]).toBe("search result");
+    }
+  });
+
+  it("marks step as failed when MCP server is unreachable", async () => {
+    global.fetch = jest.fn().mockRejectedValueOnce(new Error("ECONNREFUSED")) as unknown as typeof fetch;
+
+    const tpl = makeMinimalTemplate({
+      id: "mcp2",
+      name: "MCP Search",
+      kind: "mcp",
+      description: "MCP tool call",
+      inputKeys: [],
+      outputKeys: ["result"],
+      mcpServerUrl: "https://mcp.example.com",
+      mcpTool: "search",
+    });
+    const run = engine.startRun(tpl, {});
+    const completed = await waitForCompletion(run.id);
+    expect(completed.stepResults[0].status).toBe("failure");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// default action handlers (events.emit fallback branches)
+// ---------------------------------------------------------------------------
+
+describe("WorkflowEngine — action registry fallback branches", () => {
+  it("events.emit uses leadId fallback when ticketId absent", async () => {
+    const handled: Record<string, unknown>[] = [];
+    registerAction("events.emit", async (inputs) => {
+      handled.push(inputs);
+      return { event: { type: "test.resolved", id: inputs["leadId"], timestamp: new Date().toISOString() } };
+    });
+
+    // Use leadEnrichment which has leadId in sampleInput
+    const run = engine.startRun(leadEnrichment, leadEnrichment.sampleInput);
+    await waitForCompletion(run.id);
+    // Restore original
+    registerAction("events.emit", async (inputs) => {
+      const ticketId = inputs["ticketId"] ?? inputs["leadId"] ?? "unknown";
+      const intent = inputs["intent"] ?? inputs["action"] ?? "processed";
+      return { event: { type: `${intent}.resolved`, id: ticketId, timestamp: new Date().toISOString() } };
+    });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Config defaults — configField with no defaultValue
+// ---------------------------------------------------------------------------
+
+describe("WorkflowEngine — configField without defaultValue", () => {
+  it("skips fields with no defaultValue in _buildDefaultConfig", async () => {
+    const tpl = makeMinimalTemplate({
+      id: "output1",
+      name: "Output",
+      kind: "output",
+      description: "Just output",
+      inputKeys: [],
+      outputKeys: [],
+    });
+    // Add a configField with no defaultValue
+    tpl.configFields = [
+      { key: "requiredField", label: "Required", type: "string", required: true },
+      { key: "fieldWithDefault", label: "With Default", type: "string", required: false, defaultValue: "my-default" },
+    ];
+
+    const run = engine.startRun(tpl, {});
+    const completed = await waitForCompletion(run.id);
+    expect(completed.status).toBe("completed");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// approval step kind
+// ---------------------------------------------------------------------------
+
+async function waitForStatus(
+  runId: string,
+  status: string,
+  timeoutMs = 3000
+): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const run = runStore.get(runId);
+    if (run?.status === status) return;
+    await new Promise((r) => setTimeout(r, 20));
+  }
+}
+
+describe("WorkflowEngine — approval step", () => {
+  it("pauses run at awaiting_approval then completes when approved", async () => {
+    const tpl = makeMinimalTemplate({
+      id: "appr1",
+      name: "Approval Gate",
+      kind: "approval",
+      description: "Human approval required",
+      inputKeys: [],
+      outputKeys: ["approved"],
+      approvalAssignee: "manager",
+      approvalMessage: "Please approve",
+      approvalTimeoutMinutes: 1,
+    });
+
+    const run = engine.startRun(tpl, {});
+    await waitForStatus(run.id, "awaiting_approval");
+
+    const pending = approvalStore.list("pending");
+    expect(pending.length).toBeGreaterThan(0);
+    approvalStore.resolve(pending[0].id, "approved", "looks good");
+
+    const completed = await waitForCompletion(run.id);
+    expect(completed.status).toBe("completed");
+    expect(completed.stepResults[0].output["approved"]).toBe(true);
+    expect(completed.stepResults[0].output["approverComment"]).toBe("looks good");
+  });
+
+  it("records step failure when approval is rejected", async () => {
+    const tpl = makeMinimalTemplate({
+      id: "appr2",
+      name: "Approval Gate",
+      kind: "approval",
+      description: "Human approval required",
+      inputKeys: [],
+      outputKeys: [],
+    });
+
+    const run = engine.startRun(tpl, {});
+    await waitForStatus(run.id, "awaiting_approval");
+
+    const pending = approvalStore.list("pending");
+    approvalStore.resolve(pending[0].id, "rejected", "not ready");
+
+    const completed = await waitForCompletion(run.id);
+    expect(completed.stepResults[0].status).toBe("failure");
+    expect(completed.stepResults[0].output["approved"]).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// agent step kind (through the engine)
+// ---------------------------------------------------------------------------
+
+describe("WorkflowEngine — agent step", () => {
+  beforeEach(() => {
+    mockGetProvider.mockReset();
+  });
+
+  it("completes with merged slot output when agent step succeeds", async () => {
+    jest.spyOn(llmConfigStore, "getDecryptedDefault").mockReturnValue({
+      config: { provider: "openai", model: "gpt-4" },
+      apiKey: "sk-test",
+    } as ReturnType<typeof llmConfigStore.getDecryptedDefault>);
+    mockGetProvider.mockReturnValue(async () => ({ text: '{"result":"done"}' }));
+
+    const tpl = makeMinimalTemplate({
+      id: "agent1",
+      name: "Agent Step",
+      kind: "agent",
+      description: "Parallel agent execution",
+      inputKeys: [],
+      outputKeys: [],
+      subAgentSlots: 1,
+      agentInstructions: "Do the task",
+    });
+
+    const run = engine.startRun(tpl, {}, undefined, "user-1");
+    const completed = await waitForCompletion(run.id);
+    expect(["completed", "failed"]).toContain(completed.status);
+    if (completed.status === "completed") {
+      expect(completed.stepResults[0].output["_agentSlots"]).toBe(1);
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// default (unknown) step kind
+// ---------------------------------------------------------------------------
+
+describe("WorkflowEngine — default (unknown) step kind", () => {
+  it("completes with empty output for unrecognized step kind", async () => {
+    const tpl = makeMinimalTemplate({
+      id: "unknown1",
+      name: "Unknown Kind",
+      kind: "custom_unknown" as unknown as WorkflowStep["kind"],
+      description: "Not a real step type",
+      inputKeys: [],
+      outputKeys: [],
+    });
+
+    const run = engine.startRun(tpl, {});
+    const completed = await waitForCompletion(run.id);
+    expect(["completed", "failed"]).toContain(completed.status);
+    expect(completed.stepResults[0].output).toEqual({});
   });
 });

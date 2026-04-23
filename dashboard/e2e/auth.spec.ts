@@ -56,5 +56,5 @@ test("signup route redirects to login", async ({ page }) => {
 test("waitlist page is accessible without authentication", async ({ page }) => {
   await page.goto("/waitlist");
   await expect(page).toHaveURL("/waitlist");
-  await expect(page.getByText(/AI Automation Platform/i)).toBeVisible();
+  await expect(page.getByText(/Runs Your Operations/i)).toBeVisible();
 });

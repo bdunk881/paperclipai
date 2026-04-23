@@ -44,9 +44,6 @@ jobs:
           cache: npm
           cache-dependency-path: dashboard/package-lock.json
 
-      - name: Install Vercel CLI
-        run: npm install -g vercel@52.0.0
-
       - name: Validate Vercel secrets
         run: |
           set -euo pipefail
@@ -73,10 +70,11 @@ jobs:
         id: deploy
         run: |
           set -euo pipefail
-          vercel pull --yes --environment=preview --token="$VERCEL_TOKEN"
-          vercel build --token="$VERCEL_TOKEN"
+          # Keep the CLI rooted at the repository so Vercel applies the linked
+          # dashboard rootDirectory exactly once instead of resolving dashboard/dashboard.
+          npx vercel pull --yes --environment=preview --token="$VERCEL_TOKEN"
           set +e
-          DEPLOY_OUTPUT="$(vercel deploy --prebuilt --yes --token="$VERCEL_TOKEN" 2>&1)"
+          DEPLOY_OUTPUT="$(npx vercel deploy --yes --token="$VERCEL_TOKEN" 2>&1)"
           DEPLOY_EXIT=$?
           set -e
           printf '%s\n' "$DEPLOY_OUTPUT"
@@ -90,7 +88,7 @@ jobs:
             READY_VERIFIED=0
             for attempt in $(seq 1 18); do
               set +e
-              INSPECT_OUTPUT="$(vercel inspect "$PREVIEW_URL" --token="$VERCEL_TOKEN" 2>&1)"
+              INSPECT_OUTPUT="$(npx vercel inspect "$PREVIEW_URL" --token="$VERCEL_TOKEN" 2>&1)"
               INSPECT_EXIT=$?
               set -e
               printf '%s\n' "$INSPECT_OUTPUT"
@@ -171,9 +169,6 @@ jobs:
           cache: npm
           cache-dependency-path: dashboard/package-lock.json
 
-      - name: Install Vercel CLI
-        run: npm install -g vercel@52.0.0
-
       - name: Validate Vercel secrets
         run: |
           set -euo pipefail
@@ -199,7 +194,8 @@ jobs:
       - name: Deploy production
         run: |
           set -euo pipefail
-          vercel pull --yes --environment=production --token="$VERCEL_TOKEN"
-          vercel build --prod --token="$VERCEL_TOKEN"
-          PROD_URL="$(vercel deploy --prebuilt --prod --yes --token="$VERCEL_TOKEN" | tail -n 1 | tr -d '\r')"
+          # Mirror preview behavior so production also respects the linked
+          # dashboard rootDirectory without double-appending the path.
+          npx vercel pull --yes --environment=production --token="$VERCEL_TOKEN"
+          PROD_URL="$(npx vercel deploy --prod --yes --token="$VERCEL_TOKEN" | tail -n 1 | tr -d '\r')"
           echo "Production URL: $PROD_URL"

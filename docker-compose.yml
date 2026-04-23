@@ -5,21 +5,24 @@ services:
     build:
       context: .
       dockerfile: docker/backend/Dockerfile
+      target: deps
     ports:
-      - "8000:8000"
+      - "3000:3000"
     environment:
       DATABASE_URL: postgresql://autoflow:autoflow@postgres:5432/autoflow
       REDIS_URL: redis://redis:6379
       ENV: development
       SECRET_KEY: dev-secret-key-not-for-production
+      PORT: 3000
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
     volumes:
-      - ./backend:/app  # hot reload in dev
-    command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+      - .:/app
+      - /app/node_modules
+    command: npm run dev
 
   frontend:
     build:
@@ -28,7 +31,7 @@ services:
     ports:
       - "3000:3000"
     environment:
-      NEXT_PUBLIC_API_URL: http://localhost:8000
+      NEXT_PUBLIC_API_URL: http://localhost:3000
     depends_on:
       - backend
 

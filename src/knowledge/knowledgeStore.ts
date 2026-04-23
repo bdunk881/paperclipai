@@ -249,7 +249,7 @@ function mapKnowledgeChunk(row: PersistedKnowledgeChunkRow): KnowledgeChunk {
   return chunk;
 }
 
-async function ensureKnowledgeSchema(): Promise<void> {
+export async function ensureKnowledgeSchema(): Promise<void> {
   if (!isPostgresConfigured() || schemaEnsured) {
     return;
   }

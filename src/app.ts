@@ -703,8 +703,11 @@ app.post("/api/approvals/:id/resolve", requireAuth, (req: AuthenticatedRequest, 
 // ---------------------------------------------------------------------------
 // Health check
 // ---------------------------------------------------------------------------
-app.get("/health", (_req, res) => {
+app.get("/health", async (_req, res) => {
   const runs = runStore.list();
+  const { checkPostgresConnection, isPostgresConfigured } = await import("./db/postgres");
+  const pgConfigured = isPostgresConfigured();
+  const pgConnected = pgConfigured ? await checkPostgresConnection() : false;
   res.json({
     status: "ok",
     templates: listTemplates().length,
@@ -713,6 +716,10 @@ app.get("/health", (_req, res) => {
       running: runs.filter((r) => r.status === "running").length,
       completed: runs.filter((r) => r.status === "completed").length,
       failed: runs.filter((r) => r.status === "failed").length,
+    },
+    postgres: {
+      configured: pgConfigured,
+      connected: pgConnected,
     },
   });
 });

@@ -6,6 +6,8 @@ import {
   Trash2,
   ChevronDown,
   ChevronUp,
+  Cpu,
+  Database,
   Zap,
   Brain,
   GitBranch,
@@ -1864,58 +1866,157 @@ function applyCopilotProposal(
   return { ...template, steps: nextSteps };
 }
 
-// ---------------------------------------------------------------------------
-// AgentCanvas — visual manager→worker hierarchy for agent steps
-// ---------------------------------------------------------------------------
+type AgentSlotDefinition = {
+  key: "model" | "memory" | "tools";
+  label: string;
+  value: string | null;
+  helper: string;
+  accent: string;
+  tint: string;
+  border: string;
+  icon: React.ReactNode;
+};
 
-function AgentCanvas({ model, slots }: { model: string; slots: number }) {
-  const workerSlots = Math.max(1, Math.min(slots, 20));
+function readAgentConfig(step: WorkflowStep): Record<string, unknown> {
+  return typeof step.config === "object" && step.config !== null
+    ? (step.config as Record<string, unknown>)
+    : {};
+}
+
+function readStringList(value: unknown): string[] {
+  return Array.isArray(value)
+    ? value.filter((entry): entry is string => typeof entry === "string" && entry.trim().length > 0)
+    : [];
+}
+
+function formatSlotList(values: string[]): string | null {
+  if (values.length === 0) return null;
+  if (values.length === 1) return values[0];
+  if (values.length === 2) return values.join(" + ");
+  return `${values[0]} +${values.length - 1}`;
+}
+
+function buildAgentSlotDefinitions(step: WorkflowStep): AgentSlotDefinition[] {
+  const config = readAgentConfig(step);
+  const modelValue = step.agentModel?.trim() || null;
+  const memoryValue =
+    (typeof config.agentMemoryLabel === "string" && config.agentMemoryLabel.trim()) ||
+    (typeof config.memoryLabel === "string" && config.memoryLabel.trim()) ||
+    formatSlotList(
+      readStringList(config.memorySources).concat(
+        step.inputKeys.filter((key) => /memory|context|history|knowledge/i.test(key))
+      )
+    ) ||
+    ((config.memory === true || config.memoryEnabled === true) ? "Connected" : null);
+  const toolsValue =
+    (typeof config.agentToolsLabel === "string" && config.agentToolsLabel.trim()) ||
+    (typeof config.toolsLabel === "string" && config.toolsLabel.trim()) ||
+    formatSlotList(readStringList(config.tools).concat(readStringList(config.agentTools)));
+
+  return [
+    {
+      key: "model",
+      label: "Model",
+      value: modelValue,
+      helper: modelValue ? "Primary reasoning layer" : "Snap in a model",
+      accent: "#6366f1",
+      tint: "rgba(99,102,241,0.16)",
+      border: "rgba(99,102,241,0.34)",
+      icon: <Cpu size={14} />,
+    },
+    {
+      key: "memory",
+      label: "Memory",
+      value: memoryValue,
+      helper: memoryValue ? "Context stays attached" : "Attach memory",
+      accent: "#14b8a6",
+      tint: "rgba(20,184,166,0.16)",
+      border: "rgba(20,184,166,0.34)",
+      icon: <Database size={14} />,
+    },
+    {
+      key: "tools",
+      label: "Tools",
+      value: toolsValue,
+      helper: toolsValue ? "Actions ready to call" : "Attach tools",
+      accent: "#f97316",
+      tint: "rgba(249,115,22,0.16)",
+      border: "rgba(249,115,22,0.34)",
+      icon: <Wrench size={14} />,
+    },
+  ];
+}
+
+function AgentSlots({ step }: { step: WorkflowStep }) {
+  const slotDefinitions = buildAgentSlotDefinitions(step);
+
   return (
     <div
-      className="mt-3 p-3 rounded-lg border border-brand-200 dark:border-brand-500/30 bg-brand-50 dark:bg-brand-500/10"
+      className="mt-4 rounded-[10px] border border-slate-700/80 bg-slate-950/70 p-3"
       onClick={(e) => e.stopPropagation()}
     >
-      <p className="text-xs font-semibold text-brand-700 dark:text-brand-300 mb-2 flex items-center gap-1">
-        <Bot size={11} />
-        Agent Topology
-      </p>
-
-      {/* Manager node */}
-      <div className="flex justify-center mb-1">
-        <div className="flex items-center gap-1 px-3 py-1.5 bg-brand-600 text-white rounded-lg text-xs font-medium shadow-sm">
-          <Bot size={11} />
-          Manager
-          {model !== "default" && (
-            <span className="ml-1 opacity-75 font-normal">{model}</span>
-          )}
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <div>
+          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">
+            Modular Attachments
+          </p>
+          <p className="mt-1 text-xs text-slate-500">
+            {Math.max(1, step.subAgentSlots ?? 1)} worker slot{(step.subAgentSlots ?? 1) === 1 ? "" : "s"} fan out from this agent.
+          </p>
+        </div>
+        <div className="rounded-full border border-slate-700 px-2.5 py-1 text-[11px] font-medium text-slate-300">
+          {step.subAgentSlots ?? 1} parallel
         </div>
       </div>
 
-      {/* Connector lines */}
-      <div className="flex justify-center gap-0 mb-1">
-        {Array.from({ length: workerSlots }).map((_, i) => (
-          <div key={i} className="flex flex-col items-center" style={{ width: `${100 / workerSlots}%` }}>
-            <div className="w-px h-4 bg-brand-300 dark:bg-brand-500/40" />
-          </div>
-        ))}
-      </div>
+      <div className="grid grid-cols-3 gap-2">
+        {slotDefinitions.map((slot) => {
+          const isEmpty = !slot.value;
+          return (
+            <div
+              key={slot.key}
+              className={clsx(
+                "min-h-[98px] rounded-[10px] border p-3 transition-transform duration-150",
+                isEmpty ? "border-dashed" : ""
+              )}
+              style={{
+                borderColor: isEmpty ? slot.border : "rgba(51,65,85,0.96)",
+                background: isEmpty
+                  ? "rgba(15,23,42,0.38)"
+                  : `linear-gradient(180deg, ${slot.tint} 0%, rgba(15,23,42,0.66) 100%)`,
+              }}
+            >
+              <div className="flex items-center justify-between gap-2">
+                <div
+                  className="flex h-8 w-8 items-center justify-center rounded-[9px] border"
+                  style={{ borderColor: slot.border, backgroundColor: slot.tint, color: slot.accent }}
+                >
+                  {slot.icon}
+                </div>
+                {isEmpty && (
+                  <div
+                    className="flex h-6 w-6 items-center justify-center rounded-full border border-dashed text-slate-400"
+                    style={{ borderColor: slot.border }}
+                    aria-hidden="true"
+                  >
+                    <Plus size={12} />
+                  </div>
+                )}
+              </div>
 
-      {/* Worker nodes */}
-      <div className="flex justify-center gap-1 flex-wrap">
-        {Array.from({ length: workerSlots }).map((_, i) => (
-          <div
-            key={i}
-            className="flex items-center gap-1 px-2 py-1 bg-white dark:bg-surface-800 border border-brand-300 dark:border-brand-500/40 text-brand-600 dark:text-brand-300 rounded-md text-xs"
-          >
-            <Bot size={10} />
-            W{i}
-          </div>
-        ))}
+              <p className="mt-3 text-xs font-semibold uppercase tracking-[0.16em] text-slate-300">
+                {slot.label}
+              </p>
+              <p className={clsx("mt-2 text-sm font-medium", isEmpty ? "text-slate-500" : "text-slate-100")}>
+                {slot.value ?? "Empty"}
+              </p>
+              <p className="mt-1 text-[11px] leading-4 text-slate-400">
+                {slot.helper}
+              </p>
+            </div>
+          );
+        })}
       </div>
-
-      <p className="text-xs text-brand-500 dark:text-brand-400/70 mt-2 text-center">
-        {workerSlots} parallel worker{workerSlots !== 1 ? "s" : ""} · results aggregated
-      </p>
     </div>
   );
 }
@@ -1974,6 +2075,7 @@ function StepNode({
 }) {
   const { theme } = useTheme();
   const meta = KIND_META[step.kind];
+  const isAgentNode = step.kind === "agent";
   const visualState = readNodeVisualState(step);
   const showSuccessState = visualState === "success";
   const showErrorState = visualState === "error";
@@ -1984,18 +2086,25 @@ function StepNode({
       onClick={onSelect}
       style={{ borderColor: selected ? "#6366f1" : undefined }}
       className={clsx(
-        "group workflow-step-node relative cursor-pointer overflow-hidden rounded-[12px] border bg-white dark:bg-surface-900 shadow-md transition-all",
-        selected
-          ? "border-2 border-brand-500 ring-2 ring-brand-500/20"
-          : "border border-gray-300 dark:border-surface-700 hover:border-brand-400 dark:hover:border-brand-500/50",
+        "group workflow-step-node relative cursor-pointer overflow-hidden rounded-[12px] border shadow-md transition-all",
+        isAgentNode
+          ? selected
+            ? "border-2 border-brand-500 bg-slate-800 ring-2 ring-brand-500/20 shadow-[0_16px_34px_rgba(15,23,42,0.42)]"
+            : "border border-slate-700 bg-slate-800 hover:border-brand-500 shadow-[0_14px_28px_rgba(15,23,42,0.36)]"
+          : selected
+            ? "border-2 border-brand-500 bg-white ring-2 ring-brand-500/20 dark:bg-surface-900"
+            : "border border-gray-300 bg-white hover:border-brand-400 dark:border-surface-700 dark:bg-surface-900 dark:hover:border-brand-500/50",
         dragging ? "opacity-90 shadow-lg" : "",
         showRunningState ? "workflow-node-running" : "",
         showSuccessState ? "workflow-node-success" : "",
         showErrorState ? "workflow-node-error" : ""
       )}
     >
-      <div className="h-10 border-b border-black/5 dark:border-white/5 px-4" style={{ backgroundColor: theme === "dark" ? meta.darkCategoryTint : meta.categoryTint }}>
-        <div className="flex h-full items-center gap-2 text-xs font-medium text-gray-700 dark:text-gray-300">
+      <div
+        className={clsx("h-10 border-b px-4", isAgentNode ? "border-slate-700 bg-slate-900/80" : "border-black/5 dark:border-white/5")}
+        style={isAgentNode ? undefined : { backgroundColor: theme === "dark" ? meta.darkCategoryTint : meta.categoryTint }}
+      >
+        <div className={clsx("flex h-full items-center gap-2 text-xs font-medium", isAgentNode ? "text-slate-200" : "text-gray-700 dark:text-gray-300")}>
           <span style={{ color: meta.categoryBorder }}>{meta.icon}</span>
           {meta.label}
           {showRunningState && <Loader size={12} className="ml-auto animate-spin text-brand-500" />}
@@ -2008,8 +2117,8 @@ function StepNode({
           <div
             className={clsx(
               "flex items-center gap-1 px-2 py-1 rounded-md border text-xs font-medium mt-0.5",
-              meta.chipBg,
-              meta.chipColor
+              isAgentNode ? "border-brand-500/30 bg-brand-500/12 text-indigo-100" : meta.chipBg,
+              isAgentNode ? "" : meta.chipColor
             )}
           >
             {meta.icon}
@@ -2017,9 +2126,11 @@ function StepNode({
           </div>
 
           <div className="flex-1 min-w-0">
-            <p className="font-medium text-gray-900 dark:text-gray-100 text-sm">{step.name}</p>
+            <p className={clsx("text-sm font-medium", isAgentNode ? "text-slate-50" : "text-gray-900 dark:text-gray-100")}>{step.name}</p>
             {step.description && (
-              <p className="text-xs text-gray-500 dark:text-surface-400 mt-0.5 truncate">{step.description}</p>
+              <p className={clsx("mt-0.5 text-xs truncate", isAgentNode ? "text-slate-400" : "text-gray-500 dark:text-surface-400")}>
+                {step.description}
+              </p>
             )}
           </div>
         </div>
@@ -2029,9 +2140,17 @@ function StepNode({
           <div className="flex gap-4 mt-3 text-xs">
             {step.inputKeys.length > 0 && (
               <div>
-                <span className="text-gray-400 dark:text-surface-500 mr-1">in:</span>
+                <span className={clsx("mr-1", isAgentNode ? "text-slate-500" : "text-gray-400 dark:text-surface-500")}>in:</span>
                 {step.inputKeys.map((k) => (
-                  <span key={k} className="mr-1 px-1.5 py-0.5 bg-gray-100 dark:bg-surface-800 rounded text-gray-600 dark:text-surface-300">
+                  <span
+                    key={k}
+                    className={clsx(
+                      "mr-1 rounded px-1.5 py-0.5",
+                      isAgentNode
+                        ? "bg-slate-900 text-slate-300"
+                        : "bg-gray-100 text-gray-600 dark:bg-surface-800 dark:text-surface-300"
+                    )}
+                  >
                     {k}
                   </span>
                 ))}
@@ -2039,9 +2158,17 @@ function StepNode({
             )}
             {step.outputKeys.length > 0 && (
               <div>
-                <span className="text-gray-400 dark:text-surface-500 mr-1">out:</span>
+                <span className={clsx("mr-1", isAgentNode ? "text-slate-500" : "text-gray-400 dark:text-surface-500")}>out:</span>
                 {step.outputKeys.map((k) => (
-                  <span key={k} className="mr-1 px-1.5 py-0.5 bg-brand-50 dark:bg-brand-500/10 text-brand-600 dark:text-brand-300 rounded">
+                  <span
+                    key={k}
+                    className={clsx(
+                      "mr-1 rounded px-1.5 py-0.5",
+                      isAgentNode
+                        ? "bg-indigo-500/12 text-indigo-200"
+                        : "bg-brand-50 text-brand-600 dark:bg-brand-500/10 dark:text-brand-300"
+                    )}
+                  >
                     {k}
                   </span>
                 ))}
@@ -2050,7 +2177,7 @@ function StepNode({
           </div>
         )}
 
-        {/* Agent canvas — inline hierarchy for agent steps */}
+        {/* Agent slots — spec-driven modular layout for model, memory, and tools */}
         {step.kind === "agent" && (
           <>
             <div className="mt-3 grid gap-2 text-xs text-slate-500 dark:text-surface-400">

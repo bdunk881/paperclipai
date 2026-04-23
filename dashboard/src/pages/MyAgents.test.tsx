@@ -1,77 +1,94 @@
-import { fireEvent, render, screen } from "@testing-library/react";
-import { MemoryRouter } from "react-router-dom";
+import { render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { MemoryRouter } from "react-router-dom";
 import MyAgents from "./MyAgents";
 
-const listDeploymentsMock = vi.fn();
-const saveDeploymentsMock = vi.fn();
-const appendAgentActivityMock = vi.fn();
+const { getAccessTokenMock, listAgentsMock, getAgentHeartbeatMock, getAgentBudgetMock, getAgentTokenUsageMock } = vi.hoisted(() => ({
+  getAccessTokenMock: vi.fn(),
+  listAgentsMock: vi.fn(),
+  getAgentHeartbeatMock: vi.fn(),
+  getAgentBudgetMock: vi.fn(),
+  getAgentTokenUsageMock: vi.fn(),
+}));
 
-vi.mock("../data/agentMarketplaceData", () => ({
-  listDeployments: () => listDeploymentsMock(),
-  saveDeployments: (next: unknown) => saveDeploymentsMock(next),
-  appendAgentActivity: (entry: unknown) => appendAgentActivityMock(entry),
+vi.mock("../context/AuthContext", () => ({
+  useAuth: () => ({
+    user: { id: "user-1", email: "user@example.com", name: "User" },
+    login: vi.fn(),
+    signup: vi.fn(),
+    logout: vi.fn(),
+    getAccessToken: getAccessTokenMock,
+  }),
+}));
+
+vi.mock("../api/agentApi", () => ({
+  listAgents: listAgentsMock,
+  getAgentHeartbeat: getAgentHeartbeatMock,
+  getAgentBudget: getAgentBudgetMock,
+  getAgentTokenUsage: getAgentTokenUsageMock,
 }));
 
 describe("MyAgents", () => {
   beforeEach(() => {
-    listDeploymentsMock.mockReset();
-    saveDeploymentsMock.mockReset();
-    appendAgentActivityMock.mockReset();
-  });
-
-  it("renders the deployed agent summary and toggles pause state", () => {
-    listDeploymentsMock.mockReturnValue([
+    vi.clearAllMocks();
+    getAccessTokenMock.mockResolvedValue("token-123");
+    listAgentsMock.mockResolvedValue([
       {
         id: "agent-1",
-        name: "Sales Agent",
-        templateName: "Sales Template",
+        userId: "user-1",
+        name: "Outbound SDR",
+        description: "Revenue pipeline owner",
+        roleKey: "sales-operator",
+        model: "gpt-4o-mini",
+        instructions: "Handle outbound queue",
+        budgetMonthlyUsd: 120,
+        metadata: {},
         status: "running",
-        deployedAt: "2026-04-22T00:00:00.000Z",
-        lastActiveAt: "2026-04-22T01:00:00.000Z",
-        tokenUsage24h: 1234,
-        integrations: ["HubSpot", "Slack"],
+        createdAt: "2026-04-23T00:00:00.000Z",
+        updatedAt: "2026-04-23T00:00:00.000Z",
       },
     ]);
-
-    render(
-      <MemoryRouter>
-        <MyAgents />
-      </MemoryRouter>
-    );
-
-    expect(screen.getByText("My Agents")).toBeInTheDocument();
-    expect(screen.getByText("Sales Agent")).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: /view logs/i })).toHaveAttribute(
-      "href",
-      "/logs"
-    );
-
-    fireEvent.click(screen.getByRole("button", { name: /pause/i }));
-
-    expect(saveDeploymentsMock).toHaveBeenCalledTimes(1);
-    expect(appendAgentActivityMock).toHaveBeenCalledWith(
-      expect.objectContaining({
-        agentName: "Sales Agent",
-        action: "Agent paused",
-        status: "info",
-      })
-    );
+    getAgentHeartbeatMock.mockResolvedValue({
+      id: "heartbeat-1",
+      agentId: "agent-1",
+      userId: "user-1",
+      status: "running",
+      summary: "Processed outbound queue",
+      tokenUsage: 8500,
+      costUsd: 8.5,
+      createdByRunId: "run-1",
+      recordedAt: "2026-04-23T02:05:00.000Z",
+    });
+    getAgentBudgetMock.mockResolvedValue({
+      agentId: "agent-1",
+      userId: "user-1",
+      monthlyUsd: 120,
+      spentUsd: 8.5,
+      remainingUsd: 111.5,
+      currentPeriod: "2026-04",
+      autoPaused: false,
+      lastUpdatedAt: "2026-04-23T02:05:00.000Z",
+    });
+    getAgentTokenUsageMock.mockResolvedValue({
+      agentId: "agent-1",
+      userId: "user-1",
+      days: 30,
+      totalTokens: 8500,
+      totalCostUsd: 8.5,
+      daily: [],
+    });
   });
 
-  it("shows the empty state when there are no deployed agents", () => {
-    listDeploymentsMock.mockReturnValue([]);
-
+  it("renders live agent API data", async () => {
     render(
       <MemoryRouter>
         <MyAgents />
       </MemoryRouter>
     );
 
-    expect(screen.getByText(/no deployed agents yet/i)).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: /open marketplace/i })).toHaveAttribute(
-      "href",
-      "/agents"
-    );
+    expect(await screen.findByText("Outbound SDR")).toBeInTheDocument();
+    expect(screen.getByText("Revenue pipeline owner")).toBeInTheDocument();
+    expect(screen.getAllByText("$8.50")).toHaveLength(2);
+    expect(listAgentsMock).toHaveBeenCalledWith("token-123");
   });
 });

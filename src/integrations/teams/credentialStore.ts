@@ -4,7 +4,7 @@ import {
   randomBytes,
   scryptSync,
 } from "crypto";
-import { v4 as uuidv4 } from "uuid";
+import { randomUUID } from "node:crypto";
 import { TeamsCredential, TeamsCredentialPublic } from "./types";
 
 const ENCRYPTION_KEY: Buffer = (() => {
@@ -85,7 +85,7 @@ export const teamsCredentialStore = {
     metadata?: Record<string, string>;
   }): TeamsCredentialPublic {
     const credential: TeamsCredential = {
-      id: uuidv4(),
+      id: randomUUID(),
       userId: params.userId,
       authMethod: "oauth2_pkce",
       tokenEncrypted: encrypt(params.accessToken),
@@ -113,7 +113,7 @@ export const teamsCredentialStore = {
     metadata?: Record<string, string>;
   }): TeamsCredentialPublic {
     const credential: TeamsCredential = {
-      id: uuidv4(),
+      id: randomUUID(),
       userId: params.userId,
       authMethod: "api_key",
       tokenEncrypted: encrypt(params.apiKey),

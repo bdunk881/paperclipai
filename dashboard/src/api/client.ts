@@ -47,8 +47,27 @@ function buildAuthHeaders(accessToken?: string): HeadersInit | undefined {
   return { Authorization: `Bearer ${accessToken}` };
 }
 
-function isMockMode(): boolean {
-  return import.meta.env.VITE_USE_MOCK === "true";
+function buildJsonHeaders(
+  accessToken?: string,
+  extras?: Record<string, string | undefined>
+): HeadersInit {
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+  };
+
+  if (accessToken) {
+    headers.Authorization = `Bearer ${accessToken}`;
+  }
+
+  if (extras) {
+    for (const [key, value] of Object.entries(extras)) {
+      if (value) {
+        headers[key] = value;
+      }
+    }
+  }
+
+  return headers;
 }
 
 // ---------------------------------------------------------------------------
@@ -110,6 +129,109 @@ export interface TemplateSummary {
   version: string;
   stepCount: number;
   configFieldCount: number;
+}
+
+export type ControlPlaneAgentLifecycleStatus = "active" | "paused" | "terminated";
+export type ControlPlaneHeartbeatStatus = "queued" | "running" | "completed" | "blocked";
+export type ControlPlaneTaskStatus = "todo" | "in_progress" | "done" | "blocked";
+export type ControlPlaneTeamDeploymentMode = "workflow_runtime" | "continuous_agents";
+export type ControlPlaneAgentScheduleType = "manual" | "interval" | "cron";
+
+export interface ControlPlaneAgentSchedule {
+  type: ControlPlaneAgentScheduleType;
+  cronExpression?: string;
+  intervalMinutes?: number;
+}
+
+export interface ControlPlaneAgent {
+  id: string;
+  teamId: string;
+  userId: string;
+  name: string;
+  roleKey: string;
+  workflowStepId?: string;
+  workflowStepKind?: string;
+  model?: string;
+  instructions: string;
+  budgetMonthlyUsd: number;
+  reportingToAgentId?: string;
+  schedule: ControlPlaneAgentSchedule;
+  status: ControlPlaneAgentLifecycleStatus;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ControlPlaneTeam {
+  id: string;
+  userId: string;
+  name: string;
+  description?: string;
+  workflowTemplateId?: string;
+  workflowTemplateName?: string;
+  deploymentMode: ControlPlaneTeamDeploymentMode;
+  budgetMonthlyUsd: number;
+  orchestrationEnabled: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ControlPlaneTaskAuditEvent {
+  id: string;
+  type: "created" | "checked_out" | "status_changed";
+  actor: string;
+  detail: string;
+  timestamp: string;
+}
+
+export interface ControlPlaneTask {
+  id: string;
+  teamId: string;
+  userId: string;
+  title: string;
+  description?: string;
+  sourceRunId?: string;
+  sourceWorkflowStepId?: string;
+  assignedAgentId?: string;
+  checkedOutBy?: string;
+  checkedOutAt?: string;
+  status: ControlPlaneTaskStatus;
+  metadata?: Record<string, unknown>;
+  createdAt: string;
+  updatedAt: string;
+  auditTrail: ControlPlaneTaskAuditEvent[];
+}
+
+export interface ControlPlaneHeartbeatRecord {
+  id: string;
+  teamId: string;
+  agentId: string;
+  userId: string;
+  status: ControlPlaneHeartbeatStatus;
+  summary?: string;
+  costUsd?: number;
+  createdTaskIds: string[];
+  startedAt: string;
+  completedAt?: string;
+}
+
+export interface ControlPlaneDeployment {
+  team: ControlPlaneTeam;
+  agents: ControlPlaneAgent[];
+  workflow: Pick<WorkflowTemplate, "id" | "name" | "category" | "version">;
+}
+
+export interface ControlPlaneTeamDetail {
+  team: ControlPlaneTeam;
+  agents: ControlPlaneAgent[];
+  tasks: ControlPlaneTask[];
+  heartbeats: ControlPlaneHeartbeatRecord[];
+}
+
+export interface DeployWorkflowAsTeamInput {
+  templateId: string;
+  teamName?: string;
+  budgetMonthlyUsd?: number;
+  defaultIntervalMinutes?: number;
 }
 
 type CreateTemplateInput = Omit<WorkflowTemplate, "id"> & { id?: string };
@@ -177,6 +299,48 @@ export async function getRun(id: string): Promise<WorkflowRun> {
   const res = await fetch(`${BASE}/runs/${encodeURIComponent(id)}`);
   if (!res.ok) throw new Error(`Run not found: ${id}`);
   return res.json() as Promise<WorkflowRun>;
+}
+
+/** GET /api/control-plane/teams */
+export async function listControlPlaneTeams(accessToken?: string): Promise<ControlPlaneTeam[]> {
+  const res = await fetch(`${BASE}/control-plane/teams`, {
+    headers: buildAuthHeaders(accessToken),
+  });
+  if (!res.ok) throw new Error(`Failed to fetch deployed teams: ${res.status}`);
+  const data = await res.json();
+  return data.teams as ControlPlaneTeam[];
+}
+
+/** GET /api/control-plane/teams/:id */
+export async function getControlPlaneTeam(
+  teamId: string,
+  accessToken?: string
+): Promise<ControlPlaneTeamDetail> {
+  const res = await fetch(`${BASE}/control-plane/teams/${encodeURIComponent(teamId)}`, {
+    headers: buildAuthHeaders(accessToken),
+  });
+  if (!res.ok) throw new Error(`Failed to fetch deployed team: ${res.status}`);
+  return res.json() as Promise<ControlPlaneTeamDetail>;
+}
+
+/** POST /api/control-plane/deployments/workflow */
+export async function deployWorkflowAsTeam(
+  input: DeployWorkflowAsTeamInput,
+  accessToken?: string,
+  runId = globalThis.crypto?.randomUUID?.() ?? `control-plane-${Date.now()}`
+): Promise<ControlPlaneDeployment> {
+  const res = await fetch(`${BASE}/control-plane/deployments/workflow`, {
+    method: "POST",
+    headers: buildJsonHeaders(accessToken, {
+      "X-Paperclip-Run-Id": runId,
+    }),
+    body: JSON.stringify(input),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => null);
+    throw new Error(err?.error ?? `Failed to deploy workflow as team: ${res.status}`);
+  }
+  return res.json() as Promise<ControlPlaneDeployment>;
 }
 
 /** POST /api/runs */

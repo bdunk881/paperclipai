@@ -26,6 +26,13 @@ import {
   type TemplateSummary,
   type LLMConfig,
 } from "../api/client";
+import {
+  getAgentBudget,
+  listAgents,
+  listRoutines,
+  type Agent,
+  type Routine,
+} from "../api/agentApi";
 import { StatusBadge } from "../components/StatusBadge";
 import { EmptyState, ErrorState, LoadingState } from "../components/UiStates";
 import OnboardingWizard, { type OnboardingStep } from "../components/OnboardingWizard";
@@ -40,6 +47,9 @@ export default function Dashboard() {
   const [runs, setRuns] = useState<WorkflowRun[]>([]);
   const [templates, setTemplates] = useState<TemplateSummary[]>([]);
   const [llmConfigs, setLlmConfigs] = useState<LLMConfig[]>([]);
+  const [agents, setAgents] = useState<Agent[]>([]);
+  const [routines, setRoutines] = useState<Routine[]>([]);
+  const [budgetHealth, setBudgetHealth] = useState({ budget: 0, spend: 0 });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showOnboarding, setShowOnboarding] = useState(false);
@@ -53,14 +63,29 @@ export default function Dashboard() {
     setError(null);
     try {
       const accessToken = (await getAccessToken()) ?? undefined;
-      const [fetchedRuns, fetchedTemplates, fetchedConfigs] = await Promise.all([
+      const [fetchedRuns, fetchedTemplates, fetchedConfigs, fetchedAgents, fetchedRoutines] = await Promise.all([
         listRuns(undefined, accessToken),
         listTemplates(),
         listLLMConfigs(accessToken).catch(() => []),
+        accessToken ? listAgents(accessToken).catch(() => []) : Promise.resolve([]),
+        accessToken ? listRoutines(accessToken).catch(() => []) : Promise.resolve([]),
       ]);
       setRuns(fetchedRuns);
       setTemplates(fetchedTemplates);
       setLlmConfigs(fetchedConfigs);
+      setAgents(fetchedAgents);
+      setRoutines(fetchedRoutines);
+      if (accessToken && fetchedAgents.length > 0) {
+        const budgets = await Promise.all(
+          fetchedAgents.map((agent) => getAgentBudget(agent.id, accessToken).catch(() => null))
+        );
+        setBudgetHealth({
+          budget: budgets.reduce((sum, budget, index) => sum + (budget?.monthlyUsd ?? fetchedAgents[index].budgetMonthlyUsd), 0),
+          spend: budgets.reduce((sum, budget) => sum + (budget?.spentUsd ?? 0), 0),
+        });
+      } else {
+        setBudgetHealth({ budget: 0, spend: 0 });
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to load dashboard data");
     } finally {
@@ -81,6 +106,23 @@ export default function Dashboard() {
 
   const successRate =
     stats.total > 0 ? Math.round((stats.completed / stats.total) * 100) : 0;
+
+  const agentHealth = useMemo(() => {
+    const activeAgents = agents.filter((agent) => agent.status === "running").length;
+    const completed = runs.filter((run) => run.status === "completed").length;
+    const failed = runs.filter((run) => run.status === "failed").length;
+    const routineSuccessRate =
+      completed + failed > 0 ? Math.round((completed / (completed + failed)) * 100) : 0;
+    const budget = budgetHealth.budget;
+    const spend = budgetHealth.spend;
+    return {
+      activeAgents,
+      routineSuccessRate,
+      budget,
+      spend,
+      spendRatio: budget > 0 ? spend / budget : 0,
+    };
+  }, [agents, budgetHealth, runs]);
 
   const firstName = user?.name?.split(" ")[0] ?? user?.email?.split("@")[0] ?? null;
 
@@ -239,6 +281,39 @@ export default function Dashboard() {
         result={commandResult}
       />
 
+      <div className="mb-6 grid grid-cols-1 gap-4 md:grid-cols-3">
+        <StatCard
+          label="Active Agents"
+          value={agentHealth.activeAgents}
+          icon={<Bot size={18} />}
+          iconColor="text-teal-600 dark:text-teal-300"
+          iconBg="bg-teal-50 dark:bg-teal-500/10"
+          trend={agentHealth.activeAgents > 0 ? "active" : undefined}
+          trendValue="Live agents"
+          valueClassName="font-mono"
+        />
+        <StatCard
+          label="Routine Success"
+          value={`${agentHealth.routineSuccessRate}%`}
+          icon={<CheckCircle2 size={18} />}
+          iconColor="text-teal-600 dark:text-teal-300"
+          iconBg="bg-teal-50 dark:bg-teal-500/10"
+          trend={agentHealth.routineSuccessRate >= 80 ? "up" : undefined}
+          trendValue={routines.length > 0 ? `${routines.length} routines online` : "No active routines"}
+          valueClassName="font-mono"
+        />
+        <StatCard
+          label="Budget Health"
+          value={agentHealth.budget > 0 ? `${Math.round(agentHealth.spendRatio * 100)}%` : "n/a"}
+          icon={<Zap size={18} />}
+          iconColor="text-orange-500 dark:text-orange-300"
+          iconBg="bg-orange-50 dark:bg-orange-500/10"
+          trend={agentHealth.spendRatio >= 0.8 ? "down" : "up"}
+          trendValue={`${agentHealth.spend.toFixed(2)} / ${agentHealth.budget.toFixed(2)} USD`}
+          valueClassName="font-mono"
+        />
+      </div>
+
       {/* Stats grid */}
       <div className="mb-8 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <StatCard
@@ -373,26 +448,26 @@ export default function Dashboard() {
       {/* Quick actions */}
       <div className="mt-8 grid grid-cols-1 sm:grid-cols-3 gap-4">
         <QuickAction
-          to="/agents"
+          to="/agents/my"
           icon={<Bot size={18} />}
-          title="Agent Catalog"
-          description="Browse and deploy pre-built AI agents"
+          title="My Agents"
+          description="Monitor deployed teams and live health"
           color="text-brand-500 dark:text-brand-400"
           bg="bg-brand-50 dark:bg-brand-500/10"
         />
         <QuickAction
-          to="/integrations/mcp"
+          to="/workspace/budget-dashboard"
           icon={<Zap size={18} />}
-          title="Integrations"
-          description="Connect your tools and services"
-          color="text-cyan-500 dark:text-cyan-400"
-          bg="bg-cyan-50 dark:bg-cyan-500/10"
+          title="Budget Dashboard"
+          description="Track spend and quota thresholds"
+          color="text-orange-500 dark:text-orange-300"
+          bg="bg-orange-50 dark:bg-orange-500/10"
         />
         <QuickAction
-          to="/monitor"
+          to="/agents/routines"
           icon={<BarChart2 size={18} />}
-          title="Run Monitor"
-          description="Real-time execution monitoring"
+          title="Routines"
+          description="Review recurring schedules and cadence health"
           color="text-emerald-500 dark:text-emerald-400"
           bg="bg-emerald-50 dark:bg-emerald-500/10"
         />
@@ -618,15 +693,17 @@ function StatCard({
   trend,
   trendValue,
   subtitle,
+  valueClassName,
 }: {
   label: string;
-  value: number;
+  value: number | string;
   icon: React.ReactNode;
   iconColor: string;
   iconBg: string;
   trend?: "up" | "down" | "active";
   trendValue?: string;
   subtitle?: string;
+  valueClassName?: string;
 }) {
   return (
     <div className="rounded-2xl border border-gray-200 dark:border-surface-800/60 bg-white dark:bg-surface-900/50 p-5 transition-all hover:shadow-sm dark:hover:shadow-glow dark:hover:border-surface-700/60">
@@ -636,7 +713,7 @@ function StatCard({
           <span className={iconColor}>{icon}</span>
         </div>
       </div>
-      <p className="text-3xl font-bold text-gray-900 dark:text-white tracking-tight">{value}</p>
+      <p className={`text-3xl font-bold text-gray-900 dark:text-white tracking-tight ${valueClassName ?? ""}`}>{value}</p>
       {(trendValue || subtitle) && (
         <div className="mt-1.5 flex items-center gap-1">
           {trend === "up" && <ArrowUpRight size={13} className="text-emerald-500" />}

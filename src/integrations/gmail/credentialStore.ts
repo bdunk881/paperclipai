@@ -1,4 +1,4 @@
-import { v4 as uuidv4 } from "uuid";
+import { randomUUID } from "node:crypto";
 import { CredentialRegistry, maskSecret } from "../shared/credentialRegistry";
 import { GmailCredential, GmailCredentialPublic } from "./types";
 
@@ -39,7 +39,7 @@ export const gmailCredentialStore = {
     metadata?: Record<string, string>;
   }): GmailCredentialPublic {
     const credential: GmailCredential = {
-      id: uuidv4(),
+      id: randomUUID(),
       userId: params.userId,
       authMethod: "oauth2_pkce",
       tokenEncrypted: registry.encryptSecret(params.accessToken),
@@ -65,7 +65,7 @@ export const gmailCredentialStore = {
     metadata?: Record<string, string>;
   }): GmailCredentialPublic {
     const credential: GmailCredential = {
-      id: uuidv4(),
+      id: randomUUID(),
       userId: params.userId,
       authMethod: "api_key",
       tokenEncrypted: registry.encryptSecret(params.apiKey),

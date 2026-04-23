@@ -126,6 +126,29 @@
     animation: slide-in-right 0.2s ease-out;
   }
 
+  .animate-slide-in-down {
+    animation: slide-in-down 0.24s ease-out;
+  }
+
+  .scanline-skeleton {
+    position: relative;
+    overflow: hidden;
+    background: linear-gradient(90deg, rgba(15, 23, 42, 0.06) 0%, rgba(20, 184, 166, 0.18) 50%, rgba(15, 23, 42, 0.06) 100%);
+    background-size: 200% 100%;
+    animation: scanline 1.2s linear infinite;
+  }
+
+  .dark .scanline-skeleton {
+    background: linear-gradient(90deg, rgba(15, 23, 42, 0.6) 0%, rgba(20, 184, 166, 0.22) 50%, rgba(15, 23, 42, 0.6) 100%);
+    background-size: 200% 100%;
+  }
+
+  .signal-lost {
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    box-shadow: 0 10px 24px rgba(15, 23, 42, 0.06);
+  }
+
   @keyframes glow-pulse {
     0%, 100% {
       opacity: 0.45;
@@ -145,6 +168,26 @@
     to {
       opacity: 1;
       transform: translateX(0);
+    }
+  }
+
+  @keyframes slide-in-down {
+    from {
+      opacity: 0;
+      transform: translateY(-12px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  @keyframes scanline {
+    0% {
+      background-position: 200% 0;
+    }
+    100% {
+      background-position: -200% 0;
     }
   }
   /* Dark mode overrides for legacy Tailwind utility classes */
@@ -387,7 +430,7 @@
 
   .workflow-edge path {
     transition: stroke 160ms ease, filter 160ms ease;
-    stroke: #9ca3af;
+    stroke: #475569;
     stroke-width: 2px;
   }
 

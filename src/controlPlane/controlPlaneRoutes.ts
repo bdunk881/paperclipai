@@ -1,6 +1,7 @@
 import express from "express";
 import { AuthenticatedRequest } from "../auth/authMiddleware";
 import { getTemplate } from "../templates";
+import { WorkflowTemplate } from "../types/workflow";
 import { controlPlaneStore } from "./controlPlaneStore";
 
 const router = express.Router();
@@ -32,6 +33,11 @@ router.get("/teams", (req: AuthenticatedRequest, res) => {
 
   const teams = controlPlaneStore.listTeams(userId);
   res.json({ teams, total: teams.length });
+});
+
+router.get("/skills", (_req, res) => {
+  const skills = controlPlaneStore.listSkills();
+  res.json({ skills, total: skills.length });
 });
 
 router.post("/teams", requirePaperclipRunId, (req: AuthenticatedRequest, res) => {
@@ -82,15 +88,19 @@ router.post("/deployments/workflow", requirePaperclipRunId, (req: AuthenticatedR
     return;
   }
 
-  const { templateId, teamName, budgetMonthlyUsd, defaultIntervalMinutes } = req.body as {
+  const { templateId, template: templateDefinition, teamName, budgetMonthlyUsd, defaultIntervalMinutes } = req.body as {
     templateId?: unknown;
+    template?: unknown;
     teamName?: unknown;
     budgetMonthlyUsd?: unknown;
     defaultIntervalMinutes?: unknown;
   };
 
-  if (typeof templateId !== "string" || !templateId.trim()) {
-    res.status(400).json({ error: "templateId is required" });
+  if (
+    (typeof templateId !== "string" || !templateId.trim()) &&
+    (!templateDefinition || typeof templateDefinition !== "object")
+  ) {
+    res.status(400).json({ error: "templateId or template is required" });
     return;
   }
 
@@ -108,7 +118,10 @@ router.post("/deployments/workflow", requirePaperclipRunId, (req: AuthenticatedR
   }
 
   try {
-    const template = getTemplate(templateId);
+    const template =
+      typeof templateId === "string" && templateId.trim()
+        ? getTemplate(templateId)
+        : (templateDefinition as WorkflowTemplate);
     const deployment = controlPlaneStore.deployWorkflowAsTeam({
       userId,
       template,
@@ -139,7 +152,75 @@ router.get("/teams/:id", (req: AuthenticatedRequest, res) => {
   const agents = controlPlaneStore.listAgents(team.id, userId);
   const tasks = controlPlaneStore.listTasks(userId, team.id);
   const heartbeats = controlPlaneStore.listHeartbeats(userId, team.id);
-  res.json({ team, agents, tasks, heartbeats });
+  const executions = controlPlaneStore.listExecutions(userId, team.id);
+  res.json({ team, agents, tasks, heartbeats, executions });
+});
+
+router.post("/teams/:id/lifecycle", requirePaperclipRunId, (req: AuthenticatedRequest, res) => {
+  const userId = getUserId(req);
+  if (!userId) {
+    res.status(401).json({ error: "Authenticated user required" });
+    return;
+  }
+
+  const { action } = req.body as { action?: unknown };
+  if (action !== "pause" && action !== "resume" && action !== "restart" && action !== "stop") {
+    res.status(400).json({ error: "action must be one of pause, resume, restart, or stop" });
+    return;
+  }
+
+  try {
+    const team = controlPlaneStore.updateTeamLifecycle({
+      teamId: req.params.id,
+      userId,
+      action,
+    });
+    res.json(team);
+  } catch (error) {
+    if (error instanceof Error && error.message === "team_not_found") {
+      res.status(404).json({ error: "Team not found" });
+      return;
+    }
+    res.status(500).json({ error: "Unexpected control-plane lifecycle failure" });
+  }
+});
+
+router.post("/agents/:id/skills", requirePaperclipRunId, (req: AuthenticatedRequest, res) => {
+  const userId = getUserId(req);
+  if (!userId) {
+    res.status(401).json({ error: "Authenticated user required" });
+    return;
+  }
+
+  const { operation, skills } = req.body as { operation?: unknown; skills?: unknown };
+  if (operation !== "assign" && operation !== "revoke") {
+    res.status(400).json({ error: "operation must be assign or revoke" });
+    return;
+  }
+  if (!Array.isArray(skills) || skills.some((skill) => typeof skill !== "string" || !skill.trim())) {
+    res.status(400).json({ error: "skills must be an array of non-empty strings" });
+    return;
+  }
+
+  try {
+    const agent = controlPlaneStore.updateAgentSkills({
+      agentId: req.params.id,
+      userId,
+      operation,
+      skills: skills as string[],
+    });
+    res.json(agent);
+  } catch (error) {
+    if (error instanceof Error && error.message === "agent_not_found") {
+      res.status(404).json({ error: "Agent not found" });
+      return;
+    }
+    if (error instanceof Error && error.message.startsWith("invalid_skills:")) {
+      res.status(400).json({ error: `Unknown skills requested: ${error.message.slice("invalid_skills:".length)}` });
+      return;
+    }
+    res.status(500).json({ error: "Unexpected control-plane skill mutation failure" });
+  }
 });
 
 router.post("/tasks", requirePaperclipRunId, (req: AuthenticatedRequest, res) => {
@@ -209,6 +290,46 @@ router.get("/tasks", (req: AuthenticatedRequest, res) => {
   res.json({ tasks, total: tasks.length });
 });
 
+router.get("/executions", (req: AuthenticatedRequest, res) => {
+  const userId = getUserId(req);
+  if (!userId) {
+    res.status(401).json({ error: "Authenticated user required" });
+    return;
+  }
+  const teamId = typeof req.query.teamId === "string" ? req.query.teamId : undefined;
+  const executions = controlPlaneStore.listExecutions(userId, teamId);
+  res.json({ executions, total: executions.length });
+});
+
+router.post("/executions/:id/lifecycle", requirePaperclipRunId, (req: AuthenticatedRequest, res) => {
+  const userId = getUserId(req);
+  if (!userId) {
+    res.status(401).json({ error: "Authenticated user required" });
+    return;
+  }
+
+  const { action } = req.body as { action?: unknown };
+  if (action !== "restart" && action !== "stop") {
+    res.status(400).json({ error: "action must be restart or stop" });
+    return;
+  }
+
+  try {
+    const execution = controlPlaneStore.updateExecutionLifecycle({
+      executionId: req.params.id,
+      userId,
+      action,
+    });
+    res.json(execution);
+  } catch (error) {
+    if (error instanceof Error && error.message === "execution_not_found") {
+      res.status(404).json({ error: "Execution not found" });
+      return;
+    }
+    res.status(500).json({ error: "Unexpected control-plane execution lifecycle failure" });
+  }
+});
+
 router.post("/tasks/:id/checkout", requirePaperclipRunId, (req: AuthenticatedRequest, res) => {
   const userId = getUserId(req);
   if (!userId) {
@@ -273,9 +394,10 @@ router.post("/heartbeats", requirePaperclipRunId, (req: AuthenticatedRequest, re
     return;
   }
 
-  const { teamId, agentId, status, summary, costUsd, createdTaskIds, completedAt } = req.body as {
+  const { teamId, agentId, executionId, status, summary, costUsd, createdTaskIds, completedAt } = req.body as {
     teamId?: unknown;
     agentId?: unknown;
+    executionId?: unknown;
     status?: unknown;
     summary?: unknown;
     costUsd?: unknown;
@@ -309,6 +431,7 @@ router.post("/heartbeats", requirePaperclipRunId, (req: AuthenticatedRequest, re
       userId,
       teamId,
       agentId,
+      executionId: typeof executionId === "string" ? executionId : undefined,
       status,
       summary: typeof summary === "string" ? summary : undefined,
       costUsd: typeof costUsd === "number" ? costUsd : undefined,
@@ -321,6 +444,10 @@ router.post("/heartbeats", requirePaperclipRunId, (req: AuthenticatedRequest, re
   } catch (error) {
     if (error instanceof Error && error.message === "agent_not_found") {
       res.status(404).json({ error: "Agent not found for team" });
+      return;
+    }
+    if (error instanceof Error && error.message === "execution_not_found") {
+      res.status(404).json({ error: "Execution not found for team agent" });
       return;
     }
     res.status(500).json({ error: "Unexpected control-plane heartbeat failure" });

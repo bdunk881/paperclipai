@@ -8,7 +8,7 @@
  *   import { makeWorkflowRun, makeStepResult, makeSupportTicketInput } from "../test-factories";
  */
 
-import { v4 as uuidv4 } from "uuid";
+import { randomUUID } from "node:crypto";
 import {
   WorkflowRun,
   StepResult,
@@ -36,7 +36,7 @@ export interface WorkflowRunOverrides {
 
 export function makeWorkflowRun(overrides: WorkflowRunOverrides = {}): WorkflowRun {
   return {
-    id: overrides.id ?? `run-${uuidv4()}`,
+    id: overrides.id ?? `run-${randomUUID()}`,
     templateId: overrides.templateId ?? "tpl-support-bot",
     templateName: overrides.templateName ?? "Customer Support Bot",
     status: overrides.status ?? "pending",
@@ -129,7 +129,7 @@ export function makeLeadInput(
   }> = {}
 ): Record<string, unknown> {
   return {
-    leadId: overrides.leadId ?? `LEAD-${uuidv4().slice(0, 8).toUpperCase()}`,
+    leadId: overrides.leadId ?? `LEAD-${randomUUID().slice(0, 8).toUpperCase()}`,
     email: overrides.email ?? "lead@example.com",
     firstName: overrides.firstName ?? "Jane",
     lastName: overrides.lastName ?? "Doe",
@@ -163,7 +163,7 @@ export function makeContentBriefInput(
 
 export function makeWorkflowStep(overrides: Partial<WorkflowStep> = {}): WorkflowStep {
   return {
-    id: overrides.id ?? `step_${uuidv4().slice(0, 6)}`,
+    id: overrides.id ?? `step_${randomUUID().slice(0, 6)}`,
     name: overrides.name ?? "Test Step",
     kind: overrides.kind ?? "trigger",
     description: overrides.description ?? "A test step",
@@ -204,7 +204,7 @@ export function makeWorkflowTemplate(overrides: Partial<WorkflowTemplate> = {}):
   });
 
   return {
-    id: overrides.id ?? `tpl-test-${uuidv4().slice(0, 6)}`,
+    id: overrides.id ?? `tpl-test-${randomUUID().slice(0, 6)}`,
     name: overrides.name ?? "Test Template",
     description: overrides.description ?? "A test workflow template",
     category: overrides.category ?? "custom",

@@ -1,0 +1,3 @@
+ALT-1601 synthetic validation artifact
+Branch: feat/ALT-1601-dependabot-ci-evidence
+Purpose: trigger master PR deployment and QA evidence workflows after CI lane repairs.

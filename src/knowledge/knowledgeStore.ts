@@ -1,4 +1,4 @@
-import { v4 as uuidv4 } from "uuid";
+import { randomUUID } from "node:crypto";
 import { parseJsonColumn } from "../db/json";
 import { isPostgresConfigured, queryPostgres } from "../db/postgres";
 import { chunkDocument, ChunkingConfig, DEFAULT_CHUNKING_CONFIG } from "./chunking";
@@ -643,7 +643,7 @@ export const knowledgeStore = {
   async createKnowledgeBase(input: CreateKnowledgeBaseInput): Promise<KnowledgeBase> {
     const timestamp = nowIso();
     const base: KnowledgeBase = {
-      id: uuidv4(),
+      id: randomUUID(),
       userId: input.userId,
       name: input.name.trim(),
       description: input.description?.trim() || undefined,
@@ -716,7 +716,7 @@ export const knowledgeStore = {
 
     const createdAt = nowIso();
     const document: KnowledgeDocument = {
-      id: uuidv4(),
+      id: randomUUID(),
       knowledgeBaseId: base.id,
       userId: input.userId,
       filename: input.filename,
@@ -738,7 +738,7 @@ export const knowledgeStore = {
     for (const draft of chunkDrafts) {
       const timestamp = nowIso();
       const chunk: KnowledgeChunk = {
-        id: uuidv4(),
+        id: randomUUID(),
         documentId: document.id,
         knowledgeBaseId: base.id,
         userId: input.userId,
@@ -872,7 +872,7 @@ export const knowledgeStore = {
       const timestamp = nowIso();
       const chunk: KnowledgeChunk = {
         ...existing,
-        id: uuidv4(),
+        id: randomUUID(),
         index: insertIndex + i,
         text,
         tokenCount: text.split(/\s+/).filter(Boolean).length,

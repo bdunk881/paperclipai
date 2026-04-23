@@ -104,11 +104,20 @@ export interface WorkflowStep {
   // agent step
   agentModel?: string;
   agentInstructions?: string;
+  agentRoleKey?: string;
+  agentSkills?: string[];
+  agentBudgetMonthlyUsd?: number;
   subAgentSlots?: number;
+  agentRoleKey?: string;
+  agentSkills?: string[];
+  agentBudgetMonthlyUsd?: number;
+  agentScheduleType?: "manual" | "interval" | "cron";
+  agentScheduleValue?: string;
   // approval step
   approvalAssignee?: string;
   approvalMessage?: string;
   approvalTimeoutMinutes?: number;
+  approvalRequestChangesStepId?: string;
   // file_trigger step
   acceptedFileTypes?: string[];
   // cron_trigger step
@@ -147,7 +156,14 @@ export interface WorkflowRun {
   input: Record<string, unknown>;
   output?: Record<string, unknown>;
   stepResults: StepResult[];
+  runtimeState?: {
+    config: Record<string, unknown>;
+    context: Record<string, unknown>;
+    currentStepIndex: number;
+    waitingApprovalId?: string;
+  };
   error?: string;
+  userId?: string;
 }
 
 /** Result of one worker slot in a parallel agent step */

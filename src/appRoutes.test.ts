@@ -20,12 +20,16 @@ jest.mock("./auth/authMiddleware", () => ({
 import request from "supertest";
 import app from "./app";
 import { approvalStore } from "./engine/approvalStore";
+import { approvalNotificationStore } from "./engine/approvalNotificationStore";
+import { runStore } from "./engine/runStore";
 import { getProvider } from "./engine/llmProviders";
 
 const mockGetProvider = getProvider as jest.Mock;
 
-beforeEach(() => {
-  approvalStore.clear();
+beforeEach(async () => {
+  await approvalStore.clear();
+  await approvalNotificationStore.clear();
+  await runStore.clear();
   mockGetProvider.mockReset();
   jest.restoreAllMocks();
 });
@@ -43,14 +47,14 @@ describe("GET /api/approvals", () => {
   });
 
   it("returns all approvals without status filter", async () => {
-    approvalStore.create({ runId: "r1", templateName: "T", stepId: "s1", stepName: "Step", assignee: "test-user-id", message: "approve?", timeoutMinutes: 60 });
+    await approvalStore.create({ runId: "r1", templateName: "T", stepId: "s1", stepName: "Step", assignee: "test-user-id", message: "approve?", timeoutMinutes: 60, userId: "test-user-id" });
     const res = await request(app).get("/api/approvals");
     expect(res.status).toBe(200);
     expect(res.body.total).toBe(1);
   });
 
   it("filters by status=pending", async () => {
-    approvalStore.create({ runId: "r2", templateName: "T", stepId: "s2", stepName: "Step", assignee: "test-user-id", message: "approve?", timeoutMinutes: 60 });
+    await approvalStore.create({ runId: "r2", templateName: "T", stepId: "s2", stepName: "Step", assignee: "test-user-id", message: "approve?", timeoutMinutes: 60, userId: "test-user-id" });
     const res = await request(app).get("/api/approvals?status=pending");
     expect(res.status).toBe(200);
     expect(res.body.total).toBe(1);
@@ -58,14 +62,14 @@ describe("GET /api/approvals", () => {
   });
 
   it("ignores invalid status filter and returns all", async () => {
-    approvalStore.create({ runId: "r3", templateName: "T", stepId: "s3", stepName: "Step", assignee: "test-user-id", message: "approve?", timeoutMinutes: 60 });
+    await approvalStore.create({ runId: "r3", templateName: "T", stepId: "s3", stepName: "Step", assignee: "test-user-id", message: "approve?", timeoutMinutes: 60, userId: "test-user-id" });
     const res = await request(app).get("/api/approvals?status=invalid");
     expect(res.status).toBe(200);
     expect(res.body.total).toBe(1);
   });
 
   it("filters by status=approved returns empty when none resolved", async () => {
-    approvalStore.create({ runId: "r4", templateName: "T", stepId: "s4", stepName: "Step", assignee: "test-user-id", message: "approve?", timeoutMinutes: 60 });
+    await approvalStore.create({ runId: "r4", templateName: "T", stepId: "s4", stepName: "Step", assignee: "test-user-id", message: "approve?", timeoutMinutes: 60, userId: "test-user-id" });
     const res = await request(app).get("/api/approvals?status=approved");
     expect(res.status).toBe(200);
     expect(res.body.total).toBe(0);
@@ -78,7 +82,7 @@ describe("GET /api/approvals", () => {
 
 describe("GET /api/approvals/:id", () => {
   it("returns 200 with the approval for a known id", async () => {
-    const { id } = approvalStore.create({ runId: "r1", templateName: "T", stepId: "s1", stepName: "Step", assignee: "test-user-id", message: "approve?", timeoutMinutes: 60 });
+    const { id } = await approvalStore.create({ runId: "r1", templateName: "T", stepId: "s1", stepName: "Step", assignee: "test-user-id", message: "approve?", timeoutMinutes: 60, userId: "test-user-id" });
     const res = await request(app).get(`/api/approvals/${id}`);
     expect(res.status).toBe(200);
     expect(res.body.id).toBe(id);
@@ -92,13 +96,28 @@ describe("GET /api/approvals/:id", () => {
   });
 });
 
+describe("GET /api/approvals/:id/notifications", () => {
+  it("returns notification outbox rows for a known approval id", async () => {
+    const { id } = await approvalStore.create({ runId: "r-notify", templateName: "T", stepId: "s-notify", stepName: "Step", assignee: "test-user-id", message: "approve?", timeoutMinutes: 60, userId: "test-user-id" });
+    const res = await request(app).get(`/api/approvals/${id}/notifications`);
+    expect(res.status).toBe(200);
+    expect(res.body.total).toBe(2);
+    expect(res.body.notifications.map((n: { channel: string }) => n.channel)).toEqual(["inbox", "email"]);
+  });
+
+  it("returns 404 for an unknown approval id", async () => {
+    const res = await request(app).get("/api/approvals/no-such-id/notifications");
+    expect(res.status).toBe(404);
+  });
+});
+
 // ---------------------------------------------------------------------------
 // POST /api/approvals/:id/resolve
 // ---------------------------------------------------------------------------
 
 describe("POST /api/approvals/:id/resolve", () => {
-  it("returns 400 when decision is not approved or rejected", async () => {
-    const { id } = approvalStore.create({ runId: "r1", templateName: "T", stepId: "s1", stepName: "Step", assignee: "test-user-id", message: "approve?", timeoutMinutes: 60 });
+  it("returns 400 when decision is not approved, rejected, or request_changes", async () => {
+    const { id } = await approvalStore.create({ runId: "r1", templateName: "T", stepId: "s1", stepName: "Step", assignee: "test-user-id", message: "approve?", timeoutMinutes: 60, userId: "test-user-id" });
     const res = await request(app)
       .post(`/api/approvals/${id}/resolve`)
       .send({ decision: "maybe" });
@@ -107,7 +126,7 @@ describe("POST /api/approvals/:id/resolve", () => {
   });
 
   it("resolves approved and returns success=true", async () => {
-    const { id } = approvalStore.create({ runId: "r2", templateName: "T", stepId: "s2", stepName: "Step", assignee: "test-user-id", message: "approve?", timeoutMinutes: 60 });
+    const { id } = await approvalStore.create({ runId: "r2", templateName: "T", stepId: "s2", stepName: "Step", assignee: "test-user-id", message: "approve?", timeoutMinutes: 60, userId: "test-user-id" });
     const res = await request(app)
       .post(`/api/approvals/${id}/resolve`)
       .send({ decision: "approved" });
@@ -116,10 +135,19 @@ describe("POST /api/approvals/:id/resolve", () => {
   });
 
   it("resolves rejected and returns success=true", async () => {
-    const { id } = approvalStore.create({ runId: "r3", templateName: "T", stepId: "s3", stepName: "Step", assignee: "test-user-id", message: "approve?", timeoutMinutes: 60 });
+    const { id } = await approvalStore.create({ runId: "r3", templateName: "T", stepId: "s3", stepName: "Step", assignee: "test-user-id", message: "approve?", timeoutMinutes: 60, userId: "test-user-id" });
     const res = await request(app)
       .post(`/api/approvals/${id}/resolve`)
       .send({ decision: "rejected", comment: "Not ready" });
+    expect(res.status).toBe(200);
+    expect(res.body.success).toBe(true);
+  });
+
+  it("resolves request_changes and returns success=true", async () => {
+    const { id } = await approvalStore.create({ runId: "r-request-changes", templateName: "T", stepId: "s5", stepName: "Step", assignee: "test-user-id", message: "approve?", timeoutMinutes: 60, userId: "test-user-id" });
+    const res = await request(app)
+      .post(`/api/approvals/${id}/resolve`)
+      .send({ decision: "request_changes", comment: "Revise the previous step" });
     expect(res.status).toBe(200);
     expect(res.body.success).toBe(true);
   });
@@ -132,12 +160,268 @@ describe("POST /api/approvals/:id/resolve", () => {
   });
 
   it("returns 404 for already-resolved approval", async () => {
-    const { id } = approvalStore.create({ runId: "r4", templateName: "T", stepId: "s4", stepName: "Step", assignee: "test-user-id", message: "approve?", timeoutMinutes: 60 });
-    approvalStore.resolve(id, "approved");
+    const { id } = await approvalStore.create({ runId: "r4", templateName: "T", stepId: "s4", stepName: "Step", assignee: "test-user-id", message: "approve?", timeoutMinutes: 60, userId: "test-user-id" });
+    await approvalStore.resolve(id, "approved");
     const res = await request(app)
       .post(`/api/approvals/${id}/resolve`)
       .send({ decision: "approved" });
     expect(res.status).toBe(404);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// GET /api/executions/:id/state
+// ---------------------------------------------------------------------------
+
+describe("GET /api/executions/:id/state", () => {
+  it("returns paused execution state for an awaiting approval run", async () => {
+    const workflowEngineModule = await import("./engine/WorkflowEngine");
+    const { customerSupportBot } = await import("./templates/customer-support-bot");
+
+    const template = {
+      ...customerSupportBot,
+      id: "tpl-approval-state",
+      steps: [
+        customerSupportBot.steps[0],
+        {
+          id: "approval-1",
+          name: "Approval checkpoint",
+          kind: "approval" as const,
+          description: "Human approval required",
+          inputKeys: [],
+          outputKeys: ["approved"],
+          approvalAssignee: "manager",
+          approvalMessage: "Please approve",
+          approvalTimeoutMinutes: 5,
+        },
+      ],
+    };
+
+    const run = await workflowEngineModule.workflowEngine.startRun(template, {
+      ticketId: "T-state",
+      subject: "Approval needed",
+      body: "Pause here",
+      customerEmail: "state@example.com",
+      channel: "email",
+    });
+
+    const deadline = Date.now() + 2000;
+    let stateRes;
+    do {
+      stateRes = await request(app).get(`/api/executions/${run.id}/state`);
+      if (stateRes.status === 200) {
+        break;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    } while (Date.now() < deadline);
+
+    expect(stateRes!.status).toBe(200);
+    expect(stateRes!.body.run.id).toBe(run.id);
+    expect(stateRes!.body.run.status).toBe("awaiting_approval");
+    expect(stateRes!.body.approval.runId).toBe(run.id);
+    expect(stateRes!.body.pausedAtStepId).toBe("approval-1");
+    expect(stateRes!.body.runtimeState.currentStepIndex).toBe(1);
+    expect(stateRes!.body.runtimeState.waitingApprovalId).toBe(stateRes!.body.approval.id);
+
+    await approvalStore.resolve(stateRes!.body.approval.id, "approved", "ok");
+  });
+
+  it("returns 404 for unknown execution id", async () => {
+    const res = await request(app).get("/api/executions/no-such-run/state");
+    expect(res.status).toBe(404);
+  });
+
+  it("returns 409 when execution is not awaiting approval", async () => {
+    const workflowEngineModule = await import("./engine/WorkflowEngine");
+    const run = await workflowEngineModule.workflowEngine.startRun(
+      {
+        id: "tpl-non-paused",
+        name: "Immediate output",
+        description: "No approval step",
+        category: "custom",
+        version: "1",
+        configFields: [],
+        steps: [
+          {
+            id: "trigger-1",
+            name: "Trigger",
+            kind: "trigger",
+            description: "Start",
+            inputKeys: ["message"],
+            outputKeys: ["message"],
+          },
+          {
+            id: "output-1",
+            name: "Output",
+            kind: "output",
+            description: "Finish",
+            inputKeys: ["message"],
+            outputKeys: ["message"],
+          },
+        ],
+        sampleInput: { message: "hello" },
+        expectedOutput: { message: "hello" },
+      },
+      { message: "hello" }
+    );
+
+    const deadline = Date.now() + 2000;
+    let current;
+    do {
+      current = await runStore.get(run.id);
+      if (current?.status === "completed" || current?.status === "failed") {
+        break;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    } while (Date.now() < deadline);
+
+    const res = await request(app).get(`/api/executions/${run.id}/state`);
+    expect(res.status).toBe(409);
+    expect(res.body.error).toMatch(/not currently paused/);
+  });
+});
+
+describe("POST /api/executions/:id/resume", () => {
+  it("resumes a paused execution after the approval is already resolved", async () => {
+    const waitSpy = jest.spyOn(approvalStore, "waitForDecision").mockImplementation(
+      async () => await new Promise(() => {})
+    );
+    const workflowEngineModule = await import("./engine/WorkflowEngine");
+
+    const template = {
+      id: "tpl-manual-resume",
+      name: "Manual resume",
+      description: "Resume after a lost live worker",
+      category: "custom" as const,
+      version: "1",
+      configFields: [],
+      steps: [
+        {
+          id: "trigger-1",
+          name: "Trigger",
+          kind: "trigger" as const,
+          description: "Start",
+          inputKeys: ["message"],
+          outputKeys: ["message"],
+        },
+        {
+          id: "approval-1",
+          name: "Approval checkpoint",
+          kind: "approval" as const,
+          description: "Pause",
+          inputKeys: ["message"],
+          outputKeys: ["approved"],
+          approvalAssignee: "manager",
+          approvalMessage: "Please approve",
+          approvalTimeoutMinutes: 5,
+        },
+        {
+          id: "output-1",
+          name: "Output",
+          kind: "output" as const,
+          description: "Finish",
+          inputKeys: ["message", "approvalDecision", "approverComment"],
+          outputKeys: ["message", "approvalDecision", "approverComment"],
+        },
+      ],
+      sampleInput: { message: "hello" },
+      expectedOutput: { message: "hello" },
+    };
+    const templatesModule = await import("./templates");
+    templatesModule.TEMPLATE_MAP[template.id] = template;
+
+    const run = await workflowEngineModule.workflowEngine.startRun(template, {
+      message: "hello",
+    });
+
+    const deadline = Date.now() + 2000;
+    let pendingApprovalId: string | undefined;
+    while (Date.now() < deadline) {
+      const state = await runStore.get(run.id);
+      const pendingApprovals = await approvalStore.list("pending");
+      const pending = pendingApprovals.find((approval) => approval.runId === run.id);
+      if (state?.status === "awaiting_approval" && pending) {
+        pendingApprovalId = pending.id;
+        break;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
+
+    expect(pendingApprovalId).toBeDefined();
+    await approvalStore.resolve(pendingApprovalId!, "approved", "resume now");
+
+    const res = await request(app).post(`/api/executions/${run.id}/resume`).send({});
+    expect(res.status).toBe(202);
+
+    let completed;
+    while (Date.now() < deadline) {
+      completed = await runStore.get(run.id);
+      if (completed?.status === "completed") {
+        break;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
+
+    expect(completed?.status).toBe("completed");
+    expect(completed?.output).toMatchObject({
+      message: "hello",
+      approvalDecision: "approved",
+      approverComment: "resume now",
+    });
+    waitSpy.mockRestore();
+    delete templatesModule.TEMPLATE_MAP[template.id];
+  });
+
+  it("returns 409 when the approval is still pending", async () => {
+    const waitSpy = jest.spyOn(approvalStore, "waitForDecision").mockImplementation(
+      async () => await new Promise(() => {})
+    );
+    const workflowEngineModule = await import("./engine/WorkflowEngine");
+    const { customerSupportBot } = await import("./templates/customer-support-bot");
+
+    const template = {
+      ...customerSupportBot,
+      id: "tpl-pending-resume",
+      steps: [
+        customerSupportBot.steps[0],
+        {
+          id: "approval-1",
+          name: "Approval checkpoint",
+          kind: "approval" as const,
+          description: "Pause",
+          inputKeys: ["subject"],
+          outputKeys: ["approved"],
+          approvalAssignee: "manager",
+          approvalMessage: "Please approve",
+          approvalTimeoutMinutes: 5,
+        },
+      ],
+    };
+    const templatesModule = await import("./templates");
+    templatesModule.TEMPLATE_MAP[template.id] = template;
+
+    const run = await workflowEngineModule.workflowEngine.startRun(template, {
+      ticketId: "T-pending",
+      subject: "Needs approval",
+      body: "body",
+      customerEmail: "pending@example.com",
+      channel: "email",
+    });
+
+    const deadline = Date.now() + 2000;
+    while (Date.now() < deadline) {
+      const state = await runStore.get(run.id);
+      if (state?.status === "awaiting_approval") {
+        break;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
+
+    const res = await request(app).post(`/api/executions/${run.id}/resume`).send({});
+    expect(res.status).toBe(409);
+    expect(res.body.error).toMatch(/still pending/i);
+    waitSpy.mockRestore();
+    delete templatesModule.TEMPLATE_MAP[template.id];
   });
 });
 

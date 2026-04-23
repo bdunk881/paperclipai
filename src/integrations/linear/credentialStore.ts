@@ -4,7 +4,7 @@ import {
   randomBytes,
   scryptSync,
 } from "crypto";
-import { v4 as uuidv4 } from "uuid";
+import { randomUUID } from "node:crypto";
 import { LinearCredential, LinearCredentialPublic } from "./types";
 
 const ENCRYPTION_KEY: Buffer = (() => {
@@ -83,7 +83,7 @@ export const linearCredentialStore = {
     metadata?: Record<string, string>;
   }): LinearCredentialPublic {
     const credential: LinearCredential = {
-      id: uuidv4(),
+      id: randomUUID(),
       userId: params.userId,
       authMethod: "oauth2_pkce",
       tokenEncrypted: encrypt(params.accessToken),
@@ -109,7 +109,7 @@ export const linearCredentialStore = {
     metadata?: Record<string, string>;
   }): LinearCredentialPublic {
     const credential: LinearCredential = {
-      id: uuidv4(),
+      id: randomUUID(),
       userId: params.userId,
       authMethod: "api_key",
       tokenEncrypted: encrypt(params.apiKey),

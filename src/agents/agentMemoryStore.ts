@@ -1,4 +1,4 @@
-import { v4 as uuidv4 } from "uuid";
+import { randomUUID } from "node:crypto";
 import { parseJsonColumn } from "../db/json";
 import { isPostgresConfigured, queryPostgres } from "../db/postgres";
 import { cosineSimilarity, embedText } from "../knowledge/embeddings";
@@ -326,7 +326,7 @@ export const agentMemoryStore = {
 
     const timestamp = nowIso();
     const entry: StoredAgentMemoryEntry = {
-      id: uuidv4(),
+      id: randomUUID(),
       userId: input.userId,
       agentId: input.agentId,
       runId: input.runId,
@@ -452,7 +452,7 @@ export const agentMemoryStore = {
     await purgeExpiredForUser(input.userId);
 
     const fact: StoredKnowledgeFact = {
-      id: uuidv4(),
+      id: randomUUID(),
       userId: input.userId,
       agentId: input.agentId,
       runId: input.runId,
@@ -554,7 +554,7 @@ export const agentMemoryStore = {
     await purgeExpiredForUser(input.userId);
 
     const log: StoredHeartbeatLog = {
-      id: uuidv4(),
+      id: randomUUID(),
       userId: input.userId,
       agentId: input.agentId,
       runId: input.runId,

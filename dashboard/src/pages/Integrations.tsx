@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { CheckCircle2, ExternalLink, Loader2, PlugZap, RefreshCw, Unplug, XCircle } from "lucide-react";
 import { useSearchParams } from "react-router-dom";
+import { getConfiguredApiOrigin } from "../api/baseUrl";
 import { useAuth } from "../context/AuthContext";
 
 type ProviderKey =
@@ -78,7 +79,7 @@ const PROVIDERS: ProviderMeta[] = [
   },
 ];
 
-const API_BASE = import.meta.env.VITE_API_URL ?? "http://localhost:3001";
+const API_BASE = getConfiguredApiOrigin();
 
 export default function Integrations() {
   const { getAccessToken } = useAuth();

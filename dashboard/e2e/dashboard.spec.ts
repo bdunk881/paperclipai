@@ -22,7 +22,7 @@ test.beforeEach(async ({ page }) => {
 
 test("dashboard heading is visible", async ({ page }) => {
   await expect(page.getByRole("heading", { name: /welcome back, e2e/i })).toBeVisible();
-  await expect(page.getByText(/^dashboard$/i).first()).toBeVisible();
+  await expect(page.getByText("Dashboard")).toBeVisible();
 });
 
 test("renders four stat cards: Total Runs, Running, Completed, Failed", async ({ page }) => {

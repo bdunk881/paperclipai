@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { CheckCircle2, ExternalLink, Loader2, PlugZap, RefreshCw, Unplug, XCircle } from "lucide-react";
 import { useSearchParams } from "react-router-dom";
+import { getApiBasePath } from "../api/baseUrl";
 import { useAuth } from "../context/AuthContext";
 import {
   LIVE_CONNECTOR_PROVIDERS as PROVIDERS,
@@ -9,7 +10,7 @@ import {
   type ProviderStatus,
 } from "../integrations/liveConnectorCatalog";
 
-const API_BASE = import.meta.env.VITE_API_URL ?? "http://localhost:3001";
+const API_BASE = getApiBasePath();
 
 export default function Integrations() {
   const { getAccessToken } = useAuth();
@@ -18,6 +19,20 @@ export default function Integrations() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [busyProvider, setBusyProvider] = useState<ProviderKey | null>(null);
+
+  async function loadStatuses() {
+    setLoading(true);
+    setError(null);
+    try {
+      const response = await authorizedFetch("/integrations/status");
+      const payload = (await response.json()) as { providers: Record<ProviderKey, ProviderStatus> };
+      setProviders(payload.providers);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to load integrations");
+    } finally {
+      setLoading(false);
+    }
+  }
 
   async function authorizedFetch(path: string, init?: RequestInit) {
     const accessToken = await getAccessToken();
@@ -40,19 +55,6 @@ export default function Integrations() {
   }
 
   useEffect(() => {
-    async function loadStatuses() {
-      setLoading(true);
-      setError(null);
-      try {
-        const response = await authorizedFetch("/api/integrations/status");
-        const payload = (await response.json()) as { providers: Record<ProviderKey, ProviderStatus> };
-        setProviders(payload.providers);
-      } catch (err) {
-        setError(err instanceof Error ? err.message : "Failed to load integrations");
-      } finally {
-        setLoading(false);
-      }
-    }
     void loadStatuses();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -65,7 +67,7 @@ export default function Integrations() {
     setBusyProvider(provider.key);
     setError(null);
     try {
-      const response = await authorizedFetch(`/api/integrations/${provider.key}/connect`, {
+      const response = await authorizedFetch(`/integrations/${provider.key}/connect`, {
         method: "POST",
       });
       const payload = (await response.json()) as { redirectUrl: string };
@@ -81,7 +83,7 @@ export default function Integrations() {
     setBusyProvider(provider.key);
     setError(null);
     try {
-      await authorizedFetch(`/api/integrations/${provider.key}/disconnect`, {
+      await authorizedFetch(`/integrations/${provider.key}/disconnect`, {
         method: "DELETE",
       });
       await loadStatuses();

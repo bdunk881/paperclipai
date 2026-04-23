@@ -61,8 +61,8 @@ export const LIVE_CONNECTOR_PROVIDERS: ProviderMeta[] = [
     key: "stripe",
     name: "Stripe",
     category: "Payments",
-    authMode: "oauth",
-    description: "Customers, subscriptions, invoices, and payment workflow triggers.",
+    authMode: "api_key",
+    description: "Customers, subscriptions, invoices, and payment workflow triggers via connector credentials.",
   },
   {
     key: "composio",

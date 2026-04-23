@@ -2207,10 +2207,7 @@ function StepNode({
                 </div>
               )}
             </div>
-            <AgentCanvas
-              model={step.agentModel ?? "default"}
-              slots={step.subAgentSlots ?? 1}
-            />
+            <AgentSlots step={step} />
             {teamAgentHref && (
               <a
                 href={teamAgentHref}

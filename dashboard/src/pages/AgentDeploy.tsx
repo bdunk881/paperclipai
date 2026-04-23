@@ -154,22 +154,11 @@ export default function AgentDeploy() {
               source: "dashboard-agent-deploy",
               templateId: template.id,
             },
-<<<<<<< feat/ALT-1488-modular-agent-node-ui-master
-          }));
-        }
-      })();
-    }
-
-    window.addEventListener("message", onMessage);
-    return () => window.removeEventListener("message", onMessage);
-  }, [authorizedFetch, clearPopupMonitor, loadConnections]);
-=======
           },
           token
         );
         routineMessage = `Routine scheduled every ${defaultIntervalMinutes} minutes.`;
       }
->>>>>>> master
 
       navigate("/agents/my", {
         state: {

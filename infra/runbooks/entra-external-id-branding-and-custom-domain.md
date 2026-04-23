@@ -22,6 +22,31 @@ Runbook for `ALT-1648`.
 - Cloudflare zone access for `helloautoflow.com`
 - Tenant-local automation identity in the CIAM tenant if you want to script app-registration or branding follow-up
 
+## Current API credential status
+
+The CIAM app credentials already exist and can acquire an app-only Graph token in tenant `5e4f1080-8afc-4005-b05e-32b21e69363a`:
+
+- `CIAM_CLIENT_ID=f0c4b48e-9052-43d6-a3e6-c5c65ba18ad7`
+- token tenant: `5e4f1080-8afc-4005-b05e-32b21e69363a`
+
+Current app roles on that token:
+
+- `Application.ReadWrite.All`
+- `Application.Read.All`
+- `IdentityProvider.ReadWrite.All`
+- `IdentityUserFlow.ReadWrite.All`
+- `Organization.Read.All`
+- `Policy.ReadWrite.AuthenticationFlows`
+- `Policy.ReadWrite.TrustFramework`
+- `TrustFrameworkKeySet.ReadWrite.All`
+
+Missing for the API-first path:
+
+- `OrganizationalBranding.ReadWrite.All`
+- `Domain.ReadWrite.All`
+
+Without those permissions, we can authenticate to Graph and inspect tenant state, but we cannot update branding or create/verify custom domains through Graph.
+
 ## Brand assets
 
 Use the product assets already in-repo:
@@ -52,6 +77,48 @@ Notes:
 - If the banner logo is omitted, the tenant name is shown instead.
 - Custom CSS is supported for external-tenant branding flows documented by Microsoft Learn as of April 22, 2026.
 
+### API-first equivalent
+
+Branding is exposed through Microsoft Graph `organizationalBranding`.
+
+Required app permission:
+
+- `OrganizationalBranding.ReadWrite.All`
+
+Sequence:
+
+1. Acquire a Graph token in the CIAM tenant with `CIAM_CLIENT_ID`, `CIAM_CLIENT_SECRET`, and `CIAM_TENANT_ID`.
+2. PATCH the non-binary properties on `/v1.0/organization/{tenantId}/branding`.
+3. PUT the binary logo/image assets on the specific stream endpoints.
+
+Example text update:
+
+```bash
+curl -X PATCH "https://graph.microsoft.com/v1.0/organization/5e4f1080-8afc-4005-b05e-32b21e69363a/branding" \
+  -H "Authorization: Bearer $GRAPH_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "backgroundColor": "#0f172a",
+    "signInPageText": "Sign in to AutoFlow",
+    "usernameHintText": "Email address"
+  }'
+```
+
+Example banner upload:
+
+```bash
+curl -X PUT "https://graph.microsoft.com/v1.0/organization/5e4f1080-8afc-4005-b05e-32b21e69363a/branding/localizations/0/bannerLogo" \
+  -H "Authorization: Bearer $GRAPH_TOKEN" \
+  -H "Content-Type: image/png" \
+  --data-binary @banner-logo.png
+```
+
+Notes:
+
+- String properties use `PATCH`.
+- Stream properties such as `bannerLogo`, `backgroundImage`, and `headerLogo` use `PUT`.
+- Locale-specific branding can be added with `/branding/localizations`.
+
 ## Phase 2: Custom auth domain
 
 Microsoft Entra External ID custom auth domains require two layers:
@@ -76,6 +143,44 @@ Expected DNS record during verification:
 | Type | Name | Value |
 | --- | --- | --- |
 | TXT | `auth` | `MS=<tenant-generated-token>` |
+
+### API-first equivalent
+
+Domain management is exposed through Microsoft Graph `domain`.
+
+Required app permission:
+
+- `Domain.ReadWrite.All`
+
+Sequence:
+
+1. `POST /v1.0/domains` with `{ "id": "auth.helloautoflow.com" }`
+2. `GET /v1.0/domains/auth.helloautoflow.com/verificationDnsRecords`
+3. Publish the returned TXT record in Cloudflare
+4. `POST /v1.0/domains/auth.helloautoflow.com/verify`
+
+Example create call:
+
+```bash
+curl -X POST "https://graph.microsoft.com/v1.0/domains" \
+  -H "Authorization: Bearer $GRAPH_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{ "id": "auth.helloautoflow.com" }'
+```
+
+Example verification-record lookup:
+
+```bash
+curl "https://graph.microsoft.com/v1.0/domains/auth.helloautoflow.com/verificationDnsRecords" \
+  -H "Authorization: Bearer $GRAPH_TOKEN"
+```
+
+Example verify call:
+
+```bash
+curl -X POST "https://graph.microsoft.com/v1.0/domains/auth.helloautoflow.com/verify" \
+  -H "Authorization: Bearer $GRAPH_TOKEN"
+```
 
 ### Step 2.2: Create Azure Front Door
 
@@ -114,6 +219,16 @@ In the external tenant:
 
 Using the tenant GUID removes the visible `onmicrosoft.com` path segment.
 
+### API-first caveat
+
+Microsoft’s identity/network-access docs map custom URL domains to the `domain` APIs and the `CustomUrlDomain` entry in `supportedServices`. The update call that sets `supportedServices` to include `CustomUrlDomain` is still documented on Microsoft Graph `beta`, so treat this as the risky part of a pure app-only automation flow.
+
+Practical recommendation:
+
+- Use Graph API for create, verification-record lookup, and verify.
+- Use ARM or `az afd` for Azure Front Door creation and domain binding.
+- Keep a delegated admin fallback for the final External ID custom-URL association if the beta `PATCH /beta/domains/{id}` step is blocked or unstable.
+
 ## Validation checklist
 
 - `auth.helloautoflow.com` resolves to the Azure Front Door endpoint
@@ -122,20 +237,15 @@ Using the tenant GUID removes the visible `onmicrosoft.com` path segment.
 - Branding assets appear on the hosted sign-in page
 - The fallback `ciamlogin.com` host is still functional until the app authority is switched
 
-## Known blocker in current automation
+## Current blocker in current automation
 
-The current automation service principal is only present in workforce tenant `b1cb1311-760a-4c88-a778-5d2c227a1f45`.
+The CIAM app is present and can authenticate, but the permission set is incomplete for an API-only implementation.
 
-It cannot get a Graph token in the CIAM tenant:
+Current blockers:
 
-- CIAM tenant ID: `5e4f1080-8afc-4005-b05e-32b21e69363a`
-- Error observed: `AADSTS700016` because the application is not found in `Autoflow CIAM`
-
-That blocks scripted CIAM-tenant actions such as:
-
-- app registration inside the CIAM tenant
-- Graph-driven branding updates
-- any automation that requires tenant-local consent
+- no `OrganizationalBranding.ReadWrite.All`, so branding PATCH/PUT calls are blocked
+- no `Domain.ReadWrite.All`, so domain create/verify calls are blocked
+- the `supportedServices = ["CustomUrlDomain"]` association step remains beta-documented, so keep a delegated fallback ready
 
 ## Follow-up tickets after the domain is live
 

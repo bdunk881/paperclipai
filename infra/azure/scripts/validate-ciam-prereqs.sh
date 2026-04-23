@@ -21,6 +21,9 @@ warn() { echo -e "${YELLOW}[WARN]${NC} $1"; }
 errors=0
 ciam_tenant_id=""
 ciam_domain_name=""
+ciam_graph_client_id="${CIAM_CLIENT_ID:-}"
+ciam_graph_client_secret="${CIAM_CLIENT_SECRET:-}"
+ciam_graph_tenant_id="${CIAM_TENANT_ID:-}"
 
 echo "=== Entra External ID (CIAM) Prerequisites Check ==="
 echo ""
@@ -148,10 +151,19 @@ echo ""
 # 8. Check whether the automation identity exists in the CIAM tenant.
 if [ -n "$ciam_tenant_id" ]; then
   echo "--- CIAM tenant-local access ---"
-  CIAM_GRAPH_RESPONSE=$(curl -s -X POST "https://login.microsoftonline.com/$ciam_tenant_id/oauth2/v2.0/token" \
+  if [ -n "$ciam_graph_client_id" ] && [ -n "$ciam_graph_client_secret" ] && [ -n "$ciam_graph_tenant_id" ]; then
+    pass "CIAM_* credentials are set"
+  else
+    warn "CIAM_* credentials are not fully set; falling back to workforce automation credentials"
+    ciam_graph_client_id="$AZURE_CLIENT_ID"
+    ciam_graph_client_secret="$AZURE_CLIENT_SECRET"
+    ciam_graph_tenant_id="$ciam_tenant_id"
+  fi
+
+  CIAM_GRAPH_RESPONSE=$(curl -s -X POST "https://login.microsoftonline.com/$ciam_graph_tenant_id/oauth2/v2.0/token" \
     -H "Content-Type: application/x-www-form-urlencoded" \
-    -d "client_id=$AZURE_CLIENT_ID" \
-    -d "client_secret=$AZURE_CLIENT_SECRET" \
+    -d "client_id=$ciam_graph_client_id" \
+    -d "client_secret=$ciam_graph_client_secret" \
     -d "scope=https://graph.microsoft.com/.default" \
     -d "grant_type=client_credentials" 2>/dev/null)
 
@@ -159,6 +171,38 @@ if [ -n "$ciam_tenant_id" ]; then
 
   if [ -n "$CIAM_GRAPH_TOKEN" ]; then
     pass "Can acquire a Graph token against the CIAM tenant"
+
+    CIAM_GRAPH_ROLES=$(CIAM_GRAPH_TOKEN="$CIAM_GRAPH_TOKEN" python3 - <<'PY'
+import base64
+import json
+import os
+
+token = os.environ["CIAM_GRAPH_TOKEN"]
+payload = token.split(".")[1]
+payload += "=" * (-len(payload) % 4)
+claims = json.loads(base64.urlsafe_b64decode(payload))
+for role in claims.get("roles", []):
+    print(role)
+PY
+)
+
+    if printf '%s\n' "$CIAM_GRAPH_ROLES" | grep -qx 'OrganizationalBranding.ReadWrite.All'; then
+      pass "CIAM token includes OrganizationalBranding.ReadWrite.All"
+    else
+      fail "CIAM token is missing OrganizationalBranding.ReadWrite.All"
+      echo "  API-driven branding updates require this Graph application permission."
+      errors=$((errors + 1))
+    fi
+
+    if printf '%s\n' "$CIAM_GRAPH_ROLES" | grep -qx 'Domain.ReadWrite.All'; then
+      pass "CIAM token includes Domain.ReadWrite.All"
+    else
+      fail "CIAM token is missing Domain.ReadWrite.All"
+      echo "  API-driven domain create and verify calls require this Graph application permission."
+      errors=$((errors + 1))
+    fi
+
+    warn "Custom URL domain association via supportedServices/CustomUrlDomain is documented under domain APIs, but the update API currently remains beta-only. Keep a delegated admin fallback ready if the app-only flow can't complete that final association step."
   else
     fail "Cannot authenticate into the CIAM tenant with the current automation identity"
     CIAM_GRAPH_ERROR=$(echo "$CIAM_GRAPH_RESPONSE" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('error_description','unknown'))" 2>/dev/null || echo "unknown")
@@ -183,7 +227,9 @@ else
   echo "  2. Application.ReadWrite.All on Microsoft Graph (application permission)"
   echo "  3. Microsoft.AzureActiveDirectory resource provider registered on the subscription"
   if [ -n "$ciam_tenant_id" ]; then
-    echo "  4. The automation app must exist in the CIAM tenant $ciam_tenant_id for branding/custom-domain tasks"
+    echo "  4. A CIAM-tenant app registration must exist in tenant $ciam_tenant_id"
+    echo "  5. The CIAM app needs OrganizationalBranding.ReadWrite.All for branding updates"
+    echo "  6. The CIAM app needs Domain.ReadWrite.All for domain create/verify calls"
   fi
 fi
 

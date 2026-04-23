@@ -133,7 +133,7 @@ describe("WorkflowBuilder", () => {
 
     fireEvent.click(screen.getByRole("button", { name: /node palette/i }));
     fireEvent.click(screen.getByRole("button", { name: /^agent$/i }));
-    fireEvent.click(screen.getByRole("button", { name: /deploy as team/i }));
+    fireEvent.click(screen.getByRole("button", { name: /deploy workflow as agent team/i }));
 
     expect(screen.getByText(/promote this workflow into a live agent roster/i)).toBeInTheDocument();
     expect(screen.getByText(/team preview/i)).toBeInTheDocument();

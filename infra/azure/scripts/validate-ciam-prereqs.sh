@@ -127,6 +127,68 @@ else
 fi
 
 echo ""
+
+# 8. CIAM tenant-local access check
+echo "--- CIAM tenant-local access ---"
+CIAM_TENANT_ID="${CIAM_TENANT_ID:-}"
+
+if [ -z "$CIAM_TENANT_ID" ]; then
+  warn "CIAM_TENANT_ID not set — skipping CIAM tenant-local checks"
+  echo "  Set CIAM_TENANT_ID=5e4f1080-8afc-4005-b05e-32b21e69363a to enable"
+else
+  CIAM_CLIENT_ID="${CIAM_CLIENT_ID:-$AZURE_CLIENT_ID}"
+  CIAM_CLIENT_SECRET="${CIAM_CLIENT_SECRET:-$AZURE_CLIENT_SECRET}"
+
+  CIAM_GRAPH_RESPONSE=$(curl -s -X POST "https://login.microsoftonline.com/$CIAM_TENANT_ID/oauth2/v2.0/token" \
+    -H "Content-Type: application/x-www-form-urlencoded" \
+    -d "client_id=$CIAM_CLIENT_ID" \
+    -d "client_secret=$CIAM_CLIENT_SECRET" \
+    -d "scope=https://graph.microsoft.com/.default" \
+    -d "grant_type=client_credentials" 2>/dev/null)
+
+  CIAM_GRAPH_TOKEN=$(echo "$CIAM_GRAPH_RESPONSE" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('access_token',''))" 2>/dev/null || echo "")
+
+  if [ -z "$CIAM_GRAPH_TOKEN" ]; then
+    fail "Could not acquire Graph token for CIAM tenant ($CIAM_TENANT_ID)"
+    CIAM_ERROR=$(echo "$CIAM_GRAPH_RESPONSE" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('error_description','unknown')[:300])" 2>/dev/null || echo "unknown")
+    echo "  Error: $CIAM_ERROR"
+    echo ""
+    echo "  Fix: register an automation principal in the CIAM tenant."
+    echo "  Run: infra/azure/scripts/register-ciam-automation-principal.sh"
+    errors=$((errors + 1))
+  else
+    pass "Graph token acquired for CIAM tenant ($CIAM_TENANT_ID)"
+
+    # Verify we can list apps in the CIAM tenant
+    CIAM_APP_RESPONSE=$(curl -s -H "Authorization: Bearer $CIAM_GRAPH_TOKEN" \
+      "https://graph.microsoft.com/v1.0/applications?\$top=1" 2>/dev/null)
+
+    CIAM_APP_ERROR=$(echo "$CIAM_APP_RESPONSE" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('error',{}).get('code',''))" 2>/dev/null || echo "")
+
+    if [ -z "$CIAM_APP_ERROR" ]; then
+      pass "Can list app registrations in CIAM tenant"
+    else
+      fail "Cannot list app registrations in CIAM tenant (error: $CIAM_APP_ERROR)"
+      echo "  The automation principal needs Application.ReadWrite.All in the CIAM tenant."
+      errors=$((errors + 1))
+    fi
+
+    # Check Organization.ReadWrite.All (needed for branding)
+    CIAM_ORG_RESPONSE=$(curl -s -H "Authorization: Bearer $CIAM_GRAPH_TOKEN" \
+      "https://graph.microsoft.com/v1.0/organization" 2>/dev/null)
+
+    CIAM_ORG_ERROR=$(echo "$CIAM_ORG_RESPONSE" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('error',{}).get('code',''))" 2>/dev/null || echo "")
+
+    if [ -z "$CIAM_ORG_ERROR" ]; then
+      pass "Can read organization in CIAM tenant (needed for branding)"
+    else
+      warn "Cannot read organization in CIAM tenant (error: $CIAM_ORG_ERROR)"
+      echo "  Organization.ReadWrite.All is needed for custom branding in ALT-1648."
+    fi
+  fi
+fi
+
+echo ""
 echo "=== Summary ==="
 if [ $errors -eq 0 ]; then
   pass "All prerequisites passed. Ready to provision CIAM tenant."
@@ -137,6 +199,11 @@ else
   echo "  1. Contributor (or custom role) on subscription $AZURE_SUBSCRIPTION_ID"
   echo "  2. Application.ReadWrite.All on Microsoft Graph (application permission)"
   echo "  3. Microsoft.AzureActiveDirectory resource provider registered on the subscription"
+  echo ""
+  echo "For CIAM tenant-local access:"
+  echo "  4. An app registration in the CIAM tenant with Application.ReadWrite.All"
+  echo "  5. Organization.ReadWrite.All for branding operations"
+  echo "  Run: infra/azure/scripts/register-ciam-automation-principal.sh"
 fi
 
 exit $errors

@@ -166,6 +166,19 @@ describe("handleLlm", () => {
     expect(result.output["reply"]).toBe("Plain text response");
   });
 
+  it("maps scalar JSON responses to the first output key", async () => {
+    mockProviderFn.mockResolvedValue({ text: "7" });
+    const step = makeStep({
+      kind: "llm",
+      outputKeys: ["score"],
+      promptTemplate: "Score: {{prompt}}",
+    });
+
+    const result = await handleLlm(step, { prompt: "hello" }, TEST_USER);
+
+    expect(result.output["score"]).toBe("7");
+  });
+
   it("uses step-level llmConfigId when provided", async () => {
     const specific = llmConfigStore.create({
       userId: TEST_USER,
@@ -590,6 +603,27 @@ describe("handleMcp", () => {
 
     const result = await handleMcp(step, {});
     expect(result.output["data"]).toEqual({ count: 5 });
+  });
+
+  it("maps scalar MCP results to the declared output key", async () => {
+    const step = makeStep({
+      kind: "mcp",
+      mcpServerUrl: "https://mcp.example.com",
+      mcpTool: "getScalar",
+      inputKeys: [],
+      outputKeys: ["value"],
+    });
+    global.fetch = jest.fn().mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        jsonrpc: "2.0",
+        id: 1,
+        result: 42,
+      }),
+    }) as unknown as typeof fetch;
+
+    const result = await handleMcp(step, {});
+    expect(result.output["value"]).toBe(42);
   });
 
   it("passes inputKeys from context as tool arguments", async () => {

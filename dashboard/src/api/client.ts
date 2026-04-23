@@ -10,14 +10,6 @@ import {
   startMockRun,
 } from "./mockWorkflowData";
 
-const USE_MOCK = import.meta.env.VITE_USE_MOCK === "true";
-
-function delay(ms: number): Promise<void> {
-  return new Promise((resolve) => {
-    window.setTimeout(resolve, ms);
-  });
-}
-
 // ---------------------------------------------------------------------------
 // LLM Config types — mirrors src/engine/llmProviders/types.ts
 // ---------------------------------------------------------------------------
@@ -53,6 +45,10 @@ export interface CreateLLMConfigInput {
 function buildAuthHeaders(accessToken?: string): HeadersInit | undefined {
   if (!accessToken) return undefined;
   return { Authorization: `Bearer ${accessToken}` };
+}
+
+function isMockMode(): boolean {
+  return import.meta.env.VITE_USE_MOCK === "true";
 }
 
 function buildJsonHeaders(

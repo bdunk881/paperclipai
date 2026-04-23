@@ -9,7 +9,7 @@
  * Replace with a PostgreSQL-backed store for production (see ALT-121).
  */
 
-import { v4 as uuidv4 } from "uuid";
+import { randomUUID } from "node:crypto";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -122,7 +122,7 @@ export const memoryStore = {
     }
 
     const entry: MemoryEntry = {
-      id: uuidv4(),
+      id: randomUUID(),
       userId: input.userId,
       workflowId: input.workflowId,
       workflowName: input.workflowName,

@@ -6,7 +6,7 @@
  * llmProvider — wire in a real provider via setLlmProvider() (see TODO below).
  */
 
-import { v4 as uuidv4 } from "uuid";
+import { randomUUID } from "node:crypto";
 import {
   WorkflowTemplate,
   WorkflowRun,
@@ -79,11 +79,11 @@ actionRegistry.set("events.emit", async (inputs) => {
 });
 
 actionRegistry.set("crm.upsertLead", async (inputs) => {
-  return { crmId: `CRM-${uuidv4().slice(0, 8).toUpperCase()}`, upserted: true, lead: inputs };
+  return { crmId: `CRM-${randomUUID().slice(0, 8).toUpperCase()}`, upserted: true, lead: inputs };
 });
 
 actionRegistry.set("content.publish", async (inputs) => {
-  return { published: true, contentId: `CONT-${uuidv4().slice(0, 8).toUpperCase()}`, content: inputs["draft"] };
+  return { published: true, contentId: `CONT-${randomUUID().slice(0, 8).toUpperCase()}`, content: inputs["draft"] };
 });
 
 export function registerAction(name: string, handler: ActionHandler): void {
@@ -261,8 +261,8 @@ export class WorkflowEngine {
   ): Promise<WorkflowRun> {
     const runConfig = { ...this._buildDefaultConfig(template), ...(config ?? {}) };
 
-    const run: WorkflowRun = await runStore.create({
-      id: uuidv4(),
+    const run: WorkflowRun = runStore.create({
+      id: randomUUID(),
       templateId: template.id,
       templateName: template.name,
       status: "pending",

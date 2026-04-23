@@ -3,9 +3,14 @@ import { Link } from "react-router-dom";
 
 export function LoadingState({ label = "Loading..." }: { label?: string }) {
   return (
-    <div className="flex items-center justify-center gap-2 rounded-xl border border-gray-200 bg-white p-8 text-sm text-gray-500 dark:border-surface-800 dark:bg-surface-900 dark:text-gray-300">
-      <Loader2 size={16} className="animate-spin text-blue-600" />
-      <span>{label}</span>
+    <div className="rounded-2xl border border-teal-100 bg-white p-5 dark:border-surface-800 dark:bg-surface-900">
+      <div className="mb-4 flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.18em] text-teal-700 dark:text-teal-300">
+        <Loader2 size={14} className="animate-spin" />
+        Live Sync
+      </div>
+      <div className="scanline-skeleton h-3 rounded-full" />
+      <div className="scanline-skeleton mt-3 h-3 w-3/4 rounded-full" />
+      <p className="mt-4 text-sm text-gray-500 dark:text-gray-300">{label}</p>
     </div>
   );
 }
@@ -20,16 +25,16 @@ export function ErrorState({
   onRetry?: () => void;
 }) {
   return (
-    <div className="rounded-xl border border-red-200 bg-red-50 p-5 dark:border-red-900/60 dark:bg-red-950/40">
-      <div className="mb-2 flex items-center gap-2 text-sm font-semibold text-red-700">
+    <div className="signal-lost rounded-2xl border border-slate-300 bg-white/90 p-5 dark:border-surface-700 dark:bg-surface-900/90">
+      <div className="mb-2 flex items-center gap-2 text-sm font-semibold text-slate-700 dark:text-slate-200">
         <AlertCircle size={16} />
         {title}
       </div>
-      <p className="text-sm text-red-700">{message}</p>
+      <p className="text-sm text-slate-600 dark:text-slate-300">{message}</p>
       {onRetry && (
         <button
           onClick={onRetry}
-          className="mt-4 rounded-lg border border-red-300 bg-white px-3 py-1.5 text-xs font-medium text-red-700 transition hover:bg-red-100 dark:border-red-800 dark:bg-red-950 dark:text-red-200 dark:hover:bg-red-900/40"
+          className="mt-4 rounded-lg border border-indigo-200 bg-indigo-600 px-3 py-1.5 text-xs font-medium text-white transition hover:bg-indigo-500 dark:border-indigo-500/40"
         >
           Retry
         </button>

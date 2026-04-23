@@ -103,6 +103,7 @@ jobs:
         with:
           file: backend/coverage.xml
           flags: backend
+          fail_ci_if_error: false
 
   test-api:
     name: Test API (TypeScript)
@@ -121,6 +122,7 @@ jobs:
         with:
           file: coverage/lcov.info
           flags: api
+          fail_ci_if_error: false
 
   test-frontend:
     name: Test Frontend (Dashboard)
@@ -143,6 +145,7 @@ jobs:
         with:
           file: dashboard/coverage/lcov.info
           flags: dashboard
+          fail_ci_if_error: false
 
   build-frontend:
     name: Build Frontend (Dashboard)

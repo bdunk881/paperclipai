@@ -1,4 +1,4 @@
-import { v4 as uuidv4 } from "uuid";
+import { randomUUID } from "node:crypto";
 import { CredentialRegistry } from "../shared/credentialRegistry";
 import { StripeCredential, StripeCredentialPublic } from "./types";
 
@@ -55,7 +55,7 @@ export const stripeCredentialStore = {
     metadata?: Record<string, string>;
   }): StripeCredentialPublic {
     const credential: StripeCredential = {
-      id: uuidv4(),
+      id: randomUUID(),
       userId: params.userId,
       authMethod: "oauth2",
       tokenEncrypted: registry.encryptSecret(params.accessToken),
@@ -87,7 +87,7 @@ export const stripeCredentialStore = {
     metadata?: Record<string, string>;
   }): StripeCredentialPublic {
     const credential: StripeCredential = {
-      id: uuidv4(),
+      id: randomUUID(),
       userId: params.userId,
       authMethod: "api_key",
       tokenEncrypted: registry.encryptSecret(params.apiKey),

@@ -6,7 +6,7 @@
 import { Router, Request, Response } from "express";
 import Stripe from "stripe";
 import { getStripe } from "./stripeClient";
-import { v4 as uuid } from "uuid";
+import { randomUUID } from "node:crypto";
 import {
   subscriptionStore,
   mapStripeStatusToAccess,
@@ -130,7 +130,7 @@ async function handleCheckoutSessionCompleted(session: Stripe.Checkout.Session):
   const now = new Date().toISOString();
 
   const sub: Subscription = {
-    id: existing?.id ?? uuid(),
+    id: existing?.id ?? randomUUID(),
     stripeSubscriptionId: stripeSubId,
     stripeCustomerId: typeof session.customer === "string" ? session.customer : session.customer?.id ?? "",
     userId,
@@ -173,7 +173,7 @@ async function handleSubscriptionCreated(stripeSub: Stripe.Subscription): Promis
   const now = new Date().toISOString();
 
   const sub: Subscription = {
-    id: uuid(),
+    id: randomUUID(),
     stripeSubscriptionId: stripeSub.id,
     stripeCustomerId: customerId,
     userId: meta.userId ?? "",

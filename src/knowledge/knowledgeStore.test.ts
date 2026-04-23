@@ -3,10 +3,17 @@ jest.mock("../db/postgres", () => ({
   queryPostgres: jest.fn(),
 }));
 
+import { isPostgresConfigured, queryPostgres } from "../db/postgres";
 import { knowledgeStore } from "./knowledgeStore";
+
+const mockedIsPostgresConfigured = jest.mocked(isPostgresConfigured);
+const mockedQueryPostgres = jest.mocked(queryPostgres);
 
 beforeEach(() => {
   knowledgeStore.clear();
+  mockedIsPostgresConfigured.mockReset();
+  mockedIsPostgresConfigured.mockReturnValue(false);
+  mockedQueryPostgres.mockReset();
 });
 
 describe("knowledgeStore", () => {
@@ -81,5 +88,21 @@ describe("knowledgeStore", () => {
 
     const listed = await knowledgeStore.listChunks(document.id, "user-2");
     expect(listed.length).toBeGreaterThan(0);
+  });
+
+  it("falls back to in-memory results when postgres hydration fails", async () => {
+    mockedIsPostgresConfigured.mockReturnValue(true);
+    mockedQueryPostgres.mockRejectedValueOnce(new Error("connect ECONNREFUSED"));
+    const errorSpy = jest.spyOn(console, "error").mockImplementation(() => {});
+
+    await expect(knowledgeStore.listKnowledgeBases("qa-smoke-user")).resolves.toEqual([]);
+
+    expect(mockedQueryPostgres).toHaveBeenCalled();
+    expect(errorSpy).toHaveBeenCalledWith(
+      "[knowledge] Postgres hydrate failed, falling back to in-memory:",
+      "connect ECONNREFUSED"
+    );
+
+    errorSpy.mockRestore();
   });
 });

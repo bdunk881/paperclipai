@@ -27,6 +27,9 @@ export function getPostgresPool(): Pool {
       max: 10,
       idleTimeoutMillis: 30_000,
     });
+    pool.on("error", (err) => {
+      console.error("[postgres] Unexpected pool error:", err.message);
+    });
   }
 
   return pool;

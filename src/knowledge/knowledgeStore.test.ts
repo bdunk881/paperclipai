@@ -105,4 +105,24 @@ describe("knowledgeStore", () => {
 
     errorSpy.mockRestore();
   });
+
+  it("falls back to in-memory on create when postgres persist fails", async () => {
+    mockedIsPostgresConfigured.mockReturnValue(true);
+    mockedQueryPostgres.mockRejectedValue(new Error("extension \"vector\" is not available"));
+    const errorSpy = jest.spyOn(console, "error").mockImplementation(() => {});
+
+    const base = await knowledgeStore.createKnowledgeBase({
+      userId: "qa-smoke-user",
+      name: "Smoke Test KB",
+    });
+
+    expect(base).toBeDefined();
+    expect(base.name).toBe("Smoke Test KB");
+    expect(errorSpy).toHaveBeenCalledWith(
+      "[knowledge] Postgres persist failed, falling back to in-memory:",
+      expect.stringContaining("vector")
+    );
+
+    errorSpy.mockRestore();
+  });
 });

@@ -327,127 +327,139 @@ async function persistKnowledgeBase(base: KnowledgeBase): Promise<void> {
   if (!isPostgresConfigured()) {
     return;
   }
-  await ensureKnowledgeSchema();
-  await queryPostgres(
-    `INSERT INTO knowledge_bases (
-      id, user_id, name, description, tags, metadata, chunking_config, created_at, updated_at
-    ) VALUES ($1, $2, $3, $4, $5::jsonb, $6::jsonb, $7::jsonb, $8::timestamptz, $9::timestamptz)
-    ON CONFLICT (id) DO UPDATE SET
-      name = EXCLUDED.name,
-      description = EXCLUDED.description,
-      tags = EXCLUDED.tags,
-      metadata = EXCLUDED.metadata,
-      chunking_config = EXCLUDED.chunking_config,
-      updated_at = EXCLUDED.updated_at`,
-    [
-      base.id,
-      base.userId,
-      base.name,
-      base.description ?? null,
-      JSON.stringify(base.tags),
-      JSON.stringify(base.metadata),
-      JSON.stringify(base.chunkingConfig),
-      base.createdAt,
-      base.updatedAt,
-    ]
-  );
+  try {
+    await ensureKnowledgeSchema();
+    await queryPostgres(
+      `INSERT INTO knowledge_bases (
+        id, user_id, name, description, tags, metadata, chunking_config, created_at, updated_at
+      ) VALUES ($1, $2, $3, $4, $5::jsonb, $6::jsonb, $7::jsonb, $8::timestamptz, $9::timestamptz)
+      ON CONFLICT (id) DO UPDATE SET
+        name = EXCLUDED.name,
+        description = EXCLUDED.description,
+        tags = EXCLUDED.tags,
+        metadata = EXCLUDED.metadata,
+        chunking_config = EXCLUDED.chunking_config,
+        updated_at = EXCLUDED.updated_at`,
+      [
+        base.id,
+        base.userId,
+        base.name,
+        base.description ?? null,
+        JSON.stringify(base.tags),
+        JSON.stringify(base.metadata),
+        JSON.stringify(base.chunkingConfig),
+        base.createdAt,
+        base.updatedAt,
+      ]
+    );
+  } catch (err) {
+    console.error("[knowledge] Postgres persist failed, falling back to in-memory:", (err as Error).message);
+  }
 }
 
 async function persistKnowledgeDocument(document: KnowledgeDocument): Promise<void> {
   if (!isPostgresConfigured()) {
     return;
   }
-  await ensureKnowledgeSchema();
-  await queryPostgres(
-    `INSERT INTO knowledge_documents (
-      id, knowledge_base_id, user_id, filename, mime_type, source_type, status, tags, metadata,
-      content, chunk_count, created_at, updated_at, processed_at
-    ) VALUES (
-      $1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9::jsonb, $10, $11, $12::timestamptz, $13::timestamptz, $14::timestamptz
-    )
-    ON CONFLICT (id) DO UPDATE SET
-      filename = EXCLUDED.filename,
-      mime_type = EXCLUDED.mime_type,
-      status = EXCLUDED.status,
-      tags = EXCLUDED.tags,
-      metadata = EXCLUDED.metadata,
-      content = EXCLUDED.content,
-      chunk_count = EXCLUDED.chunk_count,
-      updated_at = EXCLUDED.updated_at,
-      processed_at = EXCLUDED.processed_at`,
-    [
-      document.id,
-      document.knowledgeBaseId,
-      document.userId,
-      document.filename,
-      document.mimeType,
-      document.sourceType,
-      document.status,
-      JSON.stringify(document.tags),
-      JSON.stringify(document.metadata),
-      document.content,
-      document.chunkCount,
-      document.createdAt,
-      document.updatedAt,
-      document.processedAt ?? null,
-    ]
-  );
+  try {
+    await ensureKnowledgeSchema();
+    await queryPostgres(
+      `INSERT INTO knowledge_documents (
+        id, knowledge_base_id, user_id, filename, mime_type, source_type, status, tags, metadata,
+        content, chunk_count, created_at, updated_at, processed_at
+      ) VALUES (
+        $1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9::jsonb, $10, $11, $12::timestamptz, $13::timestamptz, $14::timestamptz
+      )
+      ON CONFLICT (id) DO UPDATE SET
+        filename = EXCLUDED.filename,
+        mime_type = EXCLUDED.mime_type,
+        status = EXCLUDED.status,
+        tags = EXCLUDED.tags,
+        metadata = EXCLUDED.metadata,
+        content = EXCLUDED.content,
+        chunk_count = EXCLUDED.chunk_count,
+        updated_at = EXCLUDED.updated_at,
+        processed_at = EXCLUDED.processed_at`,
+      [
+        document.id,
+        document.knowledgeBaseId,
+        document.userId,
+        document.filename,
+        document.mimeType,
+        document.sourceType,
+        document.status,
+        JSON.stringify(document.tags),
+        JSON.stringify(document.metadata),
+        document.content,
+        document.chunkCount,
+        document.createdAt,
+        document.updatedAt,
+        document.processedAt ?? null,
+      ]
+    );
+  } catch (err) {
+    console.error("[knowledge] Postgres persist failed, falling back to in-memory:", (err as Error).message);
+  }
 }
 
 async function persistKnowledgeChunk(chunk: KnowledgeChunk, embedding: number[]): Promise<void> {
   if (!isPostgresConfigured()) {
     return;
   }
-  await ensureKnowledgeSchema();
-  await queryPostgres(
-    `INSERT INTO knowledge_chunks (
-      id, document_id, knowledge_base_id, user_id, chunk_index, text_content, token_count,
-      start_offset, end_offset, tags, metadata, created_at, updated_at
-    ) VALUES (
-      $1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb, $11::jsonb, $12::timestamptz, $13::timestamptz
-    )
-    ON CONFLICT (id) DO UPDATE SET
-      text_content = EXCLUDED.text_content,
-      token_count = EXCLUDED.token_count,
-      start_offset = EXCLUDED.start_offset,
-      end_offset = EXCLUDED.end_offset,
-      tags = EXCLUDED.tags,
-      metadata = EXCLUDED.metadata,
-      updated_at = EXCLUDED.updated_at`,
-    [
-      chunk.id,
-      chunk.documentId,
-      chunk.knowledgeBaseId,
-      chunk.userId,
-      chunk.index,
-      chunk.text,
-      chunk.tokenCount,
-      chunk.startOffset,
-      chunk.endOffset,
-      JSON.stringify(chunk.tags),
-      JSON.stringify(chunk.metadata),
-      chunk.createdAt,
-      chunk.updatedAt,
-    ]
-  );
-  await queryPostgres(
-    `INSERT INTO knowledge_embeddings (
-      chunk_id, knowledge_base_id, user_id, embedding, embedding_json, created_at, updated_at
-    ) VALUES ($1, $2, $3, $4::vector, $5::jsonb, $6::timestamptz, $7::timestamptz)
-    ON CONFLICT (chunk_id) DO UPDATE SET
-      embedding = EXCLUDED.embedding,
-      embedding_json = EXCLUDED.embedding_json,
-      updated_at = EXCLUDED.updated_at`,
-    [
-      chunk.id,
-      chunk.knowledgeBaseId,
-      chunk.userId,
-      embeddingToVectorLiteral(embedding),
-      JSON.stringify(embedding),
-      chunk.createdAt,
-      chunk.updatedAt,
-    ]
-  );
+  try {
+    await ensureKnowledgeSchema();
+    await queryPostgres(
+      `INSERT INTO knowledge_chunks (
+        id, document_id, knowledge_base_id, user_id, chunk_index, text_content, token_count,
+        start_offset, end_offset, tags, metadata, created_at, updated_at
+      ) VALUES (
+        $1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb, $11::jsonb, $12::timestamptz, $13::timestamptz
+      )
+      ON CONFLICT (id) DO UPDATE SET
+        text_content = EXCLUDED.text_content,
+        token_count = EXCLUDED.token_count,
+        start_offset = EXCLUDED.start_offset,
+        end_offset = EXCLUDED.end_offset,
+        tags = EXCLUDED.tags,
+        metadata = EXCLUDED.metadata,
+        updated_at = EXCLUDED.updated_at`,
+      [
+        chunk.id,
+        chunk.documentId,
+        chunk.knowledgeBaseId,
+        chunk.userId,
+        chunk.index,
+        chunk.text,
+        chunk.tokenCount,
+        chunk.startOffset,
+        chunk.endOffset,
+        JSON.stringify(chunk.tags),
+        JSON.stringify(chunk.metadata),
+        chunk.createdAt,
+        chunk.updatedAt,
+      ]
+    );
+    await queryPostgres(
+      `INSERT INTO knowledge_embeddings (
+        chunk_id, knowledge_base_id, user_id, embedding, embedding_json, created_at, updated_at
+      ) VALUES ($1, $2, $3, $4::vector, $5::jsonb, $6::timestamptz, $7::timestamptz)
+      ON CONFLICT (chunk_id) DO UPDATE SET
+        embedding = EXCLUDED.embedding,
+        embedding_json = EXCLUDED.embedding_json,
+        updated_at = EXCLUDED.updated_at`,
+      [
+        chunk.id,
+        chunk.knowledgeBaseId,
+        chunk.userId,
+        embeddingToVectorLiteral(embedding),
+        JSON.stringify(embedding),
+        chunk.createdAt,
+        chunk.updatedAt,
+      ]
+    );
+  } catch (err) {
+    console.error("[knowledge] Postgres persist failed, falling back to in-memory:", (err as Error).message);
+  }
 }
 
 async function hydrateKnowledgeBasesFromPostgres(userId: string): Promise<KnowledgeBase[]> {

@@ -16,6 +16,8 @@ import {
 } from "./templates";
 import { WorkflowTemplate, WorkflowStep } from "./types/workflow";
 import { workflowEngine } from "./engine/WorkflowEngine";
+import { startApprovalResumeCoordinator } from "./engine/approvalResumeCoordinator";
+import { startApprovalNotificationCoordinator } from "./engine/approvalNotificationCoordinator";
 import { runStore } from "./engine/runStore";
 import { approvalStore } from "./engine/approvalStore";
 import { approvalNotificationStore } from "./engine/approvalNotificationStore";
@@ -371,7 +373,7 @@ app.get("/api/templates/:id/sample", (req, res) => {
  * Body: { templateId, input, config? }
  * Returns the new run (status=pending) immediately; execution is async.
  */
-app.post("/api/runs", requireAuth, llmEndpointRateLimiter, (req: AuthenticatedRequest, res) => {
+app.post("/api/runs", requireAuth, llmEndpointRateLimiter, async (req: AuthenticatedRequest, res) => {
   const { templateId, input, config } = req.body as {
     templateId?: string;
     input?: Record<string, unknown>;
@@ -392,21 +394,25 @@ app.post("/api/runs", requireAuth, llmEndpointRateLimiter, (req: AuthenticatedRe
   }
 
   const userId = req.auth?.sub;
-  const run = workflowEngine.startRun(template, input ?? {}, config, userId);
+  const run = await workflowEngine.startRun(template, input ?? {}, config, userId);
   res.status(202).json(run);
 });
 
 /** List all runs, optionally filtered by templateId */
-app.get("/api/runs", requireAuth, (req, res) => {
+app.get("/api/runs", requireAuth, async (req: AuthenticatedRequest, res) => {
   const { templateId } = req.query;
-  const runs = runStore.list(typeof templateId === "string" ? templateId : undefined);
+  const runs = await runStore.list(
+    typeof templateId === "string" ? templateId : undefined,
+    req.auth?.sub
+  );
   res.json({ runs, total: runs.length });
 });
 
 /** Get a single run by ID */
-app.get("/api/runs/:id", requireAuth, (req, res) => {
-  const run = runStore.get(req.params.id);
-  if (!run) {
+app.get("/api/runs/:id", requireAuth, async (req: AuthenticatedRequest, res) => {
+  const run = await runStore.get(req.params.id);
+  const userId = req.auth?.sub;
+  if (!run || (run.userId !== undefined && run.userId !== userId)) {
     res.status(404).json({ error: `Run not found: ${req.params.id}` });
     return;
   }
@@ -490,7 +496,7 @@ app.post("/api/runs/file", requireAuth, upload.single("file"), async (req: Authe
     filename: parsed.filename,
   };
 
-  const run = workflowEngine.startRun(template, input, undefined, userId);
+  const run = await workflowEngine.startRun(template, input, undefined, userId);
   res.status(202).json(run);
 });
 
@@ -601,7 +607,7 @@ app.post("/api/workflows/generate", requireAuth, llmEndpointRateLimiter, async (
  * Trigger a workflow run from an inbound webhook.
  * The entire request body is forwarded as the run input.
  */
-app.post("/api/webhooks/:templateId", (req, res) => {
+app.post("/api/webhooks/:templateId", async (req, res) => {
   const { templateId } = req.params;
 
   let template: WorkflowTemplate;
@@ -619,7 +625,12 @@ app.post("/api/webhooks/:templateId", (req, res) => {
   }
 
   const webhookUserId = req.headers["x-user-id"];
-  const run = workflowEngine.startRun(template, input, undefined, typeof webhookUserId === "string" ? webhookUserId : undefined);
+  const run = await workflowEngine.startRun(
+    template,
+    input,
+    undefined,
+    typeof webhookUserId === "string" ? webhookUserId : undefined
+  );
   res.status(202).json({ runId: run.id, status: run.status });
 });
 
@@ -632,15 +643,15 @@ app.post("/api/webhooks/:templateId", (req, res) => {
  * Query params: status=pending|approved|rejected|timed_out
  * Returns all approval requests, optionally filtered by status.
  */
-app.get("/api/approvals", requireAuth, (req: AuthenticatedRequest, res) => {
+app.get("/api/approvals", requireAuth, async (req: AuthenticatedRequest, res) => {
   const userId = req.auth?.sub;
   const { status } = req.query;
-  const validStatuses = ["pending", "approved", "rejected", "timed_out"];
+  const validStatuses = ["pending", "approved", "rejected", "request_changes", "timed_out"];
   const filter =
     typeof status === "string" && validStatuses.includes(status)
-      ? (status as "pending" | "approved" | "rejected" | "timed_out")
+      ? (status as "pending" | "approved" | "rejected" | "request_changes" | "timed_out")
       : undefined;
-  const approvals = approvalStore.list(filter).filter((approval) => approval.assignee === userId);
+  const approvals = (await approvalStore.list(filter)).filter((approval) => approval.assignee === userId);
   res.json({ approvals, total: approvals.length });
 });
 
@@ -649,7 +660,13 @@ app.get("/api/approvals", requireAuth, (req: AuthenticatedRequest, res) => {
  * Returns in-app approval notifications for the authenticated approver.
  */
 app.get("/api/approvals/notifications", requireAuth, (req: AuthenticatedRequest, res) => {
-  const notifications = approvalNotificationStore.list({ assignee: req.auth?.sub });
+  const notifications = approvalNotificationStore
+    .list({ assignee: req.auth?.sub, status: "pending" })
+    .filter((notification) => notification.channel === "inbox")
+    .map((notification) => ({
+      ...notification,
+      assignee: notification.recipient,
+    }));
   res.json({ notifications, total: notifications.length });
 });
 
@@ -657,9 +674,10 @@ app.get("/api/approvals/notifications", requireAuth, (req: AuthenticatedRequest,
  * GET /api/approvals/:id
  * Returns a single approval request by ID.
  */
-app.get("/api/approvals/:id", requireAuth, (req: AuthenticatedRequest, res) => {
-  const approval = approvalStore.get(req.params.id);
-  if (!approval) {
+app.get("/api/approvals/:id", requireAuth, async (req: AuthenticatedRequest, res) => {
+  const approval = await approvalStore.get(req.params.id);
+  const userId = req.auth?.sub;
+  if (!approval || (approval.userId !== undefined && approval.userId !== userId)) {
     res.status(404).json({ error: `Approval not found: ${req.params.id}` });
     return;
   }
@@ -671,20 +689,37 @@ app.get("/api/approvals/:id", requireAuth, (req: AuthenticatedRequest, res) => {
 });
 
 /**
- * POST /api/approvals/:id/resolve
- * Body: { decision: "approved" | "rejected", comment?: string }
- * Resolves the approval request, resuming or terminating the paused run.
+ * GET /api/approvals/:id/notifications
+ * Returns the durable notification outbox rows created for an approval request.
  */
-app.post("/api/approvals/:id/resolve", requireAuth, (req: AuthenticatedRequest, res) => {
-  const { decision, comment } = req.body as { decision?: string; comment?: string };
-
-  if (decision !== "approved" && decision !== "rejected") {
-    res.status(400).json({ error: "decision must be 'approved' or 'rejected'" });
+app.get("/api/approvals/:id/notifications", requireAuth, async (req: AuthenticatedRequest, res) => {
+  const approval = await approvalStore.get(req.params.id);
+  const userId = req.auth?.sub;
+  if (!approval || (approval.userId !== undefined && approval.userId !== userId)) {
+    res.status(404).json({ error: `Approval request not found: ${req.params.id}` });
     return;
   }
 
-  const approval = approvalStore.get(req.params.id);
-  if (!approval) {
+  const notifications = await approvalNotificationStore.listByApprovalRequest(req.params.id);
+  res.json({ notifications, total: notifications.length });
+});
+
+/**
+ * POST /api/approvals/:id/resolve
+ * Body: { decision: "approved" | "rejected" | "request_changes", comment?: string }
+ * Resolves the approval request, resuming or terminating the paused run.
+ */
+app.post("/api/approvals/:id/resolve", requireAuth, async (req: AuthenticatedRequest, res) => {
+  const { decision, comment } = req.body as { decision?: string; comment?: string };
+
+  if (decision !== "approved" && decision !== "rejected" && decision !== "request_changes") {
+    res.status(400).json({ error: "decision must be 'approved', 'rejected', or 'request_changes'" });
+    return;
+  }
+
+  const approval = await approvalStore.get(req.params.id);
+  const userId = req.auth?.sub;
+  if (!approval || (approval.userId !== undefined && approval.userId !== userId)) {
     res.status(404).json({ error: "Approval not found or already resolved" });
     return;
   }
@@ -693,20 +728,84 @@ app.post("/api/approvals/:id/resolve", requireAuth, (req: AuthenticatedRequest, 
     return;
   }
 
-  const ok = approvalStore.resolve(req.params.id, decision, comment);
+  const ok = await approvalStore.resolve(req.params.id, decision, comment);
   if (!ok) {
     res.status(404).json({ error: "Approval not found or already resolved" });
     return;
   }
-
   res.json({ success: true });
+});
+
+/**
+ * GET /api/executions/:id/state
+ * Returns the persisted paused execution state for an awaiting-approval run.
+ */
+app.get("/api/executions/:id/state", requireAuth, async (req, res) => {
+  const run = await runStore.get(req.params.id);
+  const userId = getAuthenticatedUserId(req);
+  if (!run || (run.userId !== undefined && run.userId !== userId)) {
+    res.status(404).json({ error: `Execution not found: ${req.params.id}` });
+    return;
+  }
+
+  if (run.status !== "awaiting_approval") {
+    res.status(409).json({ error: "Execution is not currently paused at an approval step" });
+    return;
+  }
+
+  const approval = await approvalStore.findByRunId(run.id, "pending");
+  if (!approval || (approval.userId !== undefined && approval.userId !== userId)) {
+    res.status(404).json({ error: `Pending approval not found for execution: ${req.params.id}` });
+    return;
+  }
+
+  res.json({
+    run,
+    approval,
+    pausedAtStepId: approval.stepId,
+    pausedAtStepName: approval.stepName,
+    runtimeState: run.runtimeState ?? null,
+  });
+});
+
+/**
+ * POST /api/executions/:id/resume
+ * Manually resumes a paused execution after its approval decision has already
+ * been persisted and the original live worker is gone.
+ */
+app.post("/api/executions/:id/resume", requireAuth, async (req: AuthenticatedRequest, res) => {
+  const run = await runStore.get(req.params.id);
+  if (!run || (run.userId !== undefined && run.userId !== req.auth?.sub)) {
+    res.status(404).json({ error: `Execution not found: ${req.params.id}` });
+    return;
+  }
+
+  if (run.status !== "awaiting_approval") {
+    res.status(409).json({ error: "Execution is not currently paused at an approval step" });
+    return;
+  }
+
+  let template;
+  try {
+    template = getTemplate(run.templateId);
+  } catch (error) {
+    res.status(404).json({ error: String(error) });
+    return;
+  }
+
+  try {
+    const resumed = await workflowEngine.resumeRun(run.id, template, req.auth?.sub);
+    res.status(202).json(resumed);
+  } catch (error) {
+    res.status(409).json({ error: String(error) });
+  }
 });
 
 // ---------------------------------------------------------------------------
 // Health check
 // ---------------------------------------------------------------------------
-app.get("/health", (_req, res) => {
-  const runs = runStore.list();
+app.get("/health", async (_req, res) => {
+  const runs = await runStore.list();
   res.json({
     status: "ok",
     templates: listTemplates().length,
@@ -718,6 +817,14 @@ app.get("/health", (_req, res) => {
     },
   });
 });
+
+if (process.env.NODE_ENV !== "test" && process.env.AUTOFLOW_ENABLE_APPROVAL_RESUME_SWEEPER !== "false") {
+  startApprovalResumeCoordinator();
+}
+
+if (process.env.NODE_ENV !== "test" && process.env.AUTOFLOW_ENABLE_APPROVAL_NOTIFICATION_SWEEPER !== "false") {
+  startApprovalNotificationCoordinator();
+}
 
 // Handle JSON parse errors from express.json() middleware
 app.use((err: Error, _req: express.Request, res: express.Response, next: express.NextFunction) => {

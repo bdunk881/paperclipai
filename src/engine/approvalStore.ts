@@ -1,12 +1,12 @@
 /**
- * In-memory approval store for HITL (Human-in-the-Loop) workflow steps.
+ * Approval store with PostgreSQL-backed request metadata.
  *
- * When the WorkflowEngine hits an "approval" step it calls approvalStore.create(),
- * which returns a Promise that resolves once a human approves or rejects (or the
- * timeout fires).  The engine awaits that promise, pausing the run until resolved.
+ * Resolution is polled from durable state so the waiting workflow no longer
+ * depends on an in-memory resolver callback in the same process.
  */
 
 import { randomUUID } from "crypto";
+import { getPostgresPool, isPostgresPersistenceEnabled } from "../db/postgres";
 import { approvalNotificationStore } from "./approvalNotificationStore";
 
 export interface ApprovalRequest {
@@ -20,25 +20,81 @@ export interface ApprovalRequest {
   message: string;
   timeoutMinutes: number;
   requestedAt: string;
-  status: "pending" | "approved" | "rejected" | "timed_out";
+  status: "pending" | "approved" | "rejected" | "request_changes" | "timed_out";
   resolvedAt?: string;
   comment?: string;
+  userId?: string;
 }
+
+export type ApprovalDecision = Exclude<ApprovalRequest["status"], "pending">;
 
 interface PendingEntry {
   request: ApprovalRequest;
-  resolve: (result: { approved: boolean; comment?: string }) => void;
   timeoutHandle: ReturnType<typeof setTimeout>;
 }
 
 const store = new Map<string, PendingEntry>();
+const requestStore = new Map<string, ApprovalRequest>();
+
+function mapRowToRequest(row: Record<string, unknown>): ApprovalRequest {
+  return {
+    id: String(row["id"]),
+    runId: String(row["run_id"]),
+    templateName: String(row["template_name"]),
+    stepId: String(row["step_id"]),
+    stepName: String(row["step_name"]),
+    assignee: String(row["assignee"]),
+    message: String(row["message"]),
+    timeoutMinutes: Number(row["timeout_minutes"]),
+    requestedAt: new Date(String(row["requested_at"])).toISOString(),
+    status: row["status"] as ApprovalRequest["status"],
+    resolvedAt: row["resolved_at"] ? new Date(String(row["resolved_at"])).toISOString() : undefined,
+    comment: typeof row["comment"] === "string" ? row["comment"] : undefined,
+    userId: typeof row["user_id"] === "string" ? row["user_id"] : undefined,
+  };
+}
+
+async function persistRequest(request: ApprovalRequest): Promise<void> {
+  if (!isPostgresPersistenceEnabled()) {
+    requestStore.set(request.id, request);
+    return;
+  }
+
+  const pool = getPostgresPool();
+  await pool.query(
+    `
+      INSERT INTO approval_requests (
+        id, run_id, template_name, step_id, step_name, assignee, message,
+        timeout_minutes, requested_at, status, resolved_at, comment, user_id
+      )
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+      ON CONFLICT (id) DO UPDATE
+      SET status = EXCLUDED.status,
+          resolved_at = EXCLUDED.resolved_at,
+          comment = EXCLUDED.comment,
+          user_id = EXCLUDED.user_id,
+          updated_at = now()
+    `,
+    [
+      request.id,
+      request.runId,
+      request.templateName,
+      request.stepId,
+      request.stepName,
+      request.assignee,
+      request.message,
+      request.timeoutMinutes,
+      request.requestedAt,
+      request.status,
+      request.resolvedAt ?? null,
+      request.comment ?? null,
+      request.userId ?? null,
+    ]
+  );
+}
 
 export const approvalStore = {
-  /**
-   * Register a new approval request and return a Promise that settles when
-   * a human resolves it (or it times out).
-   */
-  create(params: {
+  async create(params: {
     runId: string;
     templateId?: string;
     templateName: string;
@@ -47,9 +103,9 @@ export const approvalStore = {
     assignee: string;
     message: string;
     timeoutMinutes: number;
-  }): { id: string; promise: Promise<{ approved: boolean; comment?: string }> } {
+    userId?: string;
+  }): Promise<{ id: string }> {
     const id = randomUUID();
-
     const request: ApprovalRequest = {
       id,
       runId: params.runId,
@@ -62,67 +118,168 @@ export const approvalStore = {
       timeoutMinutes: params.timeoutMinutes,
       requestedAt: new Date().toISOString(),
       status: "pending",
+      ...(params.userId !== undefined ? { userId: params.userId } : {}),
     };
-
-    let resolveCallback!: (result: { approved: boolean; comment?: string }) => void;
-    const promise = new Promise<{ approved: boolean; comment?: string }>((res) => {
-      resolveCallback = res;
-    });
 
     const timeoutMs = params.timeoutMinutes * 60 * 1000;
     const timeoutHandle = setTimeout(() => {
-      const entry = store.get(id);
-      if (entry && entry.request.status === "pending") {
-        entry.request.status = "timed_out";
-        entry.request.resolvedAt = new Date().toISOString();
-        resolveCallback({ approved: false });
-      }
+      void this.resolve(id, "timed_out");
     }, timeoutMs);
 
-    store.set(id, { request, resolve: resolveCallback, timeoutHandle });
-    approvalNotificationStore.publish({
-      approvalId: id,
-      runId: params.runId,
-      templateId: params.templateId ?? "",
-      templateName: params.templateName,
-      stepId: params.stepId,
-      stepName: params.stepName,
-      assignees: [params.assignee],
-      message: params.message,
-    });
-    return { id, promise };
+    store.set(id, { request, timeoutHandle });
+    await persistRequest(request);
+    await approvalNotificationStore.createForApproval(request);
+    return { id };
   },
 
-  get(id: string): ApprovalRequest | undefined {
-    return store.get(id)?.request;
+  async get(id: string): Promise<ApprovalRequest | undefined> {
+    if (isPostgresPersistenceEnabled()) {
+      const pool = getPostgresPool();
+      const result = await pool.query("SELECT * FROM approval_requests WHERE id = $1", [id]);
+      if (result.rows[0]) {
+        const persisted = mapRowToRequest(result.rows[0]);
+        const entry = store.get(id);
+        if (persisted.status !== "pending" && entry) {
+          clearTimeout(entry.timeoutHandle);
+          store.delete(id);
+        }
+        requestStore.set(id, persisted);
+        return persisted;
+      }
+    }
+
+    const pending = store.get(id)?.request;
+    if (pending) {
+      return pending;
+    }
+
+    return requestStore.get(id);
   },
 
-  list(status?: ApprovalRequest["status"]): ApprovalRequest[] {
-    const all = Array.from(store.values()).map((e) => e.request);
-    if (status) return all.filter((r) => r.status === status);
-    return all.sort((a, b) => new Date(b.requestedAt).getTime() - new Date(a.requestedAt).getTime());
+  async list(status?: ApprovalRequest["status"], userId?: string): Promise<ApprovalRequest[]> {
+    if (!isPostgresPersistenceEnabled()) {
+      const all = Array.from(requestStore.values());
+      const filtered = all
+        .filter((request) => (status ? request.status === status : true))
+        .filter((request) => (userId ? request.userId === userId : true));
+      return filtered.sort((a, b) => new Date(b.requestedAt).getTime() - new Date(a.requestedAt).getTime());
+    }
+
+    const pool = getPostgresPool();
+    const result = await pool.query(
+      `
+        SELECT *
+        FROM approval_requests
+        WHERE ($1::text IS NULL OR status = $1)
+          AND ($2::text IS NULL OR user_id = $2)
+        ORDER BY requested_at DESC
+      `,
+      [status ?? null, userId ?? null]
+    );
+    return result.rows.map(mapRowToRequest);
   },
 
-  /**
-   * Resolve an approval request (approve or reject).
-   * Returns false if the request is not found or already resolved.
-   */
-  resolve(
+  async findByRunId(
+    runId: string,
+    status?: ApprovalRequest["status"]
+  ): Promise<ApprovalRequest | undefined> {
+    if (!isPostgresPersistenceEnabled()) {
+      const requests = Array.from(requestStore.values())
+        .filter((request) => request.runId === runId)
+        .filter((request) => (status ? request.status === status : true))
+        .sort((a, b) => new Date(b.requestedAt).getTime() - new Date(a.requestedAt).getTime());
+      return requests[0];
+    }
+
+    const pool = getPostgresPool();
+    const result = await pool.query(
+      `
+        SELECT *
+        FROM approval_requests
+        WHERE run_id = $1
+          AND ($2::text IS NULL OR status = $2)
+        ORDER BY requested_at DESC
+        LIMIT 1
+      `,
+      [runId, status ?? null]
+    );
+    return result.rows[0] ? mapRowToRequest(result.rows[0]) : undefined;
+  },
+
+  async waitForDecision(
     id: string,
-    decision: "approved" | "rejected",
+    pollIntervalMs = 1_000
+  ): Promise<{ decision: ApprovalDecision; comment?: string }> {
+    while (true) {
+      const request = await this.get(id);
+      if (!request) {
+        return { decision: "timed_out" };
+      }
+
+      if (request.status === "approved") {
+        return { decision: "approved", comment: request.comment };
+      }
+
+      if (
+        request.status === "rejected" ||
+        request.status === "request_changes" ||
+        request.status === "timed_out"
+      ) {
+        return { decision: request.status, comment: request.comment };
+      }
+
+      await new Promise((resolve) => setTimeout(resolve, pollIntervalMs));
+    }
+  },
+
+  async resolve(
+    id: string,
+    decision: ApprovalDecision,
     comment?: string
-  ): boolean {
+  ): Promise<boolean> {
     const entry = store.get(id);
-    if (!entry || entry.request.status !== "pending") return false;
-    clearTimeout(entry.timeoutHandle);
-    entry.request.status = decision;
-    entry.request.resolvedAt = new Date().toISOString();
-    if (comment) entry.request.comment = comment;
-    entry.resolve({ approved: decision === "approved", comment });
+    let request = entry?.request ?? (await this.get(id));
+    if (!request || request.status !== "pending") {
+      return false;
+    }
+
+    if (entry) {
+      clearTimeout(entry.timeoutHandle);
+    }
+
+    request = {
+      ...request,
+      status: decision,
+      resolvedAt: new Date().toISOString(),
+      comment,
+    };
+
+    if (!isPostgresPersistenceEnabled()) {
+      requestStore.set(id, request);
+    }
+
+    await persistRequest(request);
+
+    if (entry) {
+      store.delete(id);
+    }
+
     return true;
   },
 
-  clear(): void {
+  async clear(): Promise<void> {
+    for (const entry of store.values()) {
+      clearTimeout(entry.timeoutHandle);
+    }
     store.clear();
+    requestStore.clear();
+    await approvalNotificationStore.clear();
+
+    if (!isPostgresPersistenceEnabled()) {
+      return;
+    }
+
+    const pool = getPostgresPool();
+    await pool.query("DELETE FROM approval_requests");
   },
 };

@@ -675,7 +675,7 @@ describe("Control plane APIs", () => {
 
 describe("Approvals API", () => {
   it("lists only approvals assigned to the authenticated user", async () => {
-    approvalStore.create({
+    await approvalStore.create({
       runId: "run-1",
       templateId: "tpl-1",
       templateName: "Template 1",
@@ -685,7 +685,7 @@ describe("Approvals API", () => {
       message: "Approve this",
       timeoutMinutes: 30,
     });
-    approvalStore.create({
+    await approvalStore.create({
       runId: "run-2",
       templateId: "tpl-1",
       templateName: "Template 1",
@@ -707,7 +707,7 @@ describe("Approvals API", () => {
   });
 
   it("forbids reading another user's approval", async () => {
-    const { id } = approvalStore.create({
+    const { id } = await approvalStore.create({
       runId: "run-1",
       templateId: "tpl-1",
       templateName: "Template 1",
@@ -726,7 +726,7 @@ describe("Approvals API", () => {
   });
 
   it("allows the assignee to resolve their approval", async () => {
-    const { id, promise } = approvalStore.create({
+    const { id } = await approvalStore.create({
       runId: "run-1",
       templateId: "tpl-1",
       templateName: "Template 1",
@@ -743,14 +743,13 @@ describe("Approvals API", () => {
       .send({ decision: "approved", comment: "Looks good" });
 
     expect(res.status).toBe(200);
-    await expect(promise).resolves.toEqual({
-      approved: true,
-      comment: "Looks good",
-    });
+    const resolved = await approvalStore.get(id);
+    expect(resolved?.status).toBe("approved");
+    expect(resolved?.comment).toBe("Looks good");
   });
 
   it("forbids resolving another user's approval", async () => {
-    const { id } = approvalStore.create({
+    const { id } = await approvalStore.create({
       runId: "run-1",
       templateId: "tpl-1",
       templateName: "Template 1",
@@ -770,7 +769,7 @@ describe("Approvals API", () => {
   });
 
   it("lists in-app approval notifications for the current approver only", async () => {
-    approvalStore.create({
+    await approvalStore.create({
       runId: "run-1",
       templateId: "tpl-1",
       templateName: "Template 1",
@@ -780,7 +779,7 @@ describe("Approvals API", () => {
       message: "Approve this",
       timeoutMinutes: 30,
     });
-    approvalStore.create({
+    await approvalStore.create({
       runId: "run-2",
       templateId: "tpl-2",
       templateName: "Template 2",

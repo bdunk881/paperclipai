@@ -118,6 +118,32 @@ function evalCondition(expression: string, context: Record<string, unknown>): bo
   }
 }
 
+function makeRuntimeState(
+  config: Record<string, unknown>,
+  context: Record<string, unknown>,
+  currentStepIndex: number,
+  waitingApprovalId?: string
+): NonNullable<WorkflowRun["runtimeState"]> {
+  const serializableContext = JSON.parse(
+    JSON.stringify(context, (key, value) => {
+      if (key === "memory") {
+        return undefined;
+      }
+      if (typeof value === "function" || value === undefined) {
+        return undefined;
+      }
+      return value;
+    })
+  ) as Record<string, unknown>;
+
+  return {
+    config: JSON.parse(JSON.stringify(config)) as Record<string, unknown>,
+    context: serializableContext,
+    currentStepIndex,
+    waitingApprovalId,
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Step executors
 // ---------------------------------------------------------------------------
@@ -227,12 +253,12 @@ export class WorkflowEngine {
    * Creates a new run record and starts execution asynchronously.
    * Returns immediately with the pending run — callers can poll GET /api/runs/:id.
    */
-  startRun(
+  async startRun(
     template: WorkflowTemplate,
     input: Record<string, unknown>,
     config?: Record<string, unknown>,
     userId?: string
-  ): WorkflowRun {
+  ): Promise<WorkflowRun> {
     const runConfig = { ...this._buildDefaultConfig(template), ...(config ?? {}) };
 
     const run: WorkflowRun = runStore.create({
@@ -243,11 +269,17 @@ export class WorkflowEngine {
       startedAt: new Date().toISOString(),
       input,
       stepResults: [],
+      runtimeState: {
+        config: { ...runConfig },
+        context: { ...runConfig, ...input },
+        currentStepIndex: 0,
+      },
+      ...(userId !== undefined ? { userId } : {}),
     });
 
     // Execute asynchronously so the HTTP response returns immediately
     this._executeRun(run.id, template, input, runConfig, userId).catch((err) => {
-      runStore.update(run.id, {
+      void runStore.update(run.id, {
         status: "failed",
         completedAt: new Date().toISOString(),
         error: String(err),
@@ -255,6 +287,50 @@ export class WorkflowEngine {
     });
 
     return run;
+  }
+
+  async resumeRun(
+    runId: string,
+    template: WorkflowTemplate,
+    userId?: string
+  ): Promise<WorkflowRun> {
+    const run = await runStore.get(runId);
+    if (!run) {
+      throw new Error(`Run not found: ${runId}`);
+    }
+
+    if (run.status !== "awaiting_approval") {
+      throw new Error(`Run is not awaiting approval: ${runId}`);
+    }
+
+    if (!run.runtimeState) {
+      throw new Error(`Run is missing runtime state: ${runId}`);
+    }
+
+    const approvalId =
+      run.runtimeState.waitingApprovalId ?? (await approvalStore.findByRunId(run.id))?.id;
+    if (!approvalId) {
+      throw new Error(`Run is missing waiting approval id: ${run.id}`);
+    }
+
+    const approval = await approvalStore.get(approvalId);
+    if (!approval) {
+      throw new Error(`Approval not found: ${approvalId}`);
+    }
+
+    if (approval.status === "pending") {
+      throw new Error(`Approval is still pending: ${approvalId}`);
+    }
+
+    this._resumePausedRun(run, template, userId).catch((err) => {
+      void runStore.update(run.id, {
+        status: "failed",
+        completedAt: new Date().toISOString(),
+        error: String(err),
+      });
+    });
+
+    return (await runStore.get(runId)) ?? run;
   }
 
   private _buildDefaultConfig(template: WorkflowTemplate): Record<string, unknown> {
@@ -265,31 +341,19 @@ export class WorkflowEngine {
     return config;
   }
 
-  private async _executeRun(
-    runId: string,
+  private _buildMemoryContext(
     template: WorkflowTemplate,
-    input: Record<string, unknown>,
-    config: Record<string, unknown>,
     userId?: string
-  ): Promise<void> {
-    runStore.update(runId, { status: "running" });
-
-    // Build memory helpers scoped to this run's userId + templateId
+  ): { read: (query: string) => Array<{ key: string; text: string }>; write: (key: string, value: unknown) => void } {
     const memoryUserId = userId ?? "anonymous";
-    const memoryContext = {
-      /**
-       * Read the most relevant memory entries for a query.
-       * Returns an array of { key, text } objects (top 5 by relevance).
-       */
+    return {
       read: (query: string): Array<{ key: string; text: string }> => {
-        const results = memoryStore.search(query, memoryUserId, undefined, 5);
-        return results.map((r) => ({ key: r.entry.key, text: r.entry.text }));
+        return memoryStore
+          .search(query, memoryUserId)
+          .map(({ entry }) => ({ key: entry.key, text: entry.text }));
       },
-      /**
-       * Persist a value under a named key, scoped to this workflow run.
-       */
       write: (key: string, value: unknown): void => {
-        memoryStore.write({
+        void memoryStore.write({
           userId: memoryUserId,
           workflowId: template.id,
           workflowName: template.name,
@@ -298,13 +362,173 @@ export class WorkflowEngine {
         });
       },
     };
+  }
+
+  private _resolveRequestChangesTarget(
+    template: WorkflowTemplate,
+    step: WorkflowStep,
+    stepIndex: number
+  ): { targetStepIndex?: number; error?: string } {
+    const targetStepId = step.approvalRequestChangesStepId;
+    const targetStepIndex = targetStepId
+      ? template.steps.findIndex((candidate) => candidate.id === targetStepId)
+      : -1;
+
+    if (!targetStepId) {
+      return { error: "Approval requested changes but no approvalRequestChangesStepId is configured" };
+    }
+
+    if (targetStepIndex === -1) {
+      return { error: `Approval requested changes but target step was not found: ${targetStepId}` };
+    }
+
+    if (targetStepIndex >= stepIndex) {
+      return { error: `Approval requested changes but target step must be earlier in the workflow: ${targetStepId}` };
+    }
+
+    return { targetStepIndex };
+  }
+
+  private async _executeRun(
+    runId: string,
+    template: WorkflowTemplate,
+    input: Record<string, unknown>,
+    config: Record<string, unknown>,
+    userId?: string
+  ): Promise<void> {
+    await runStore.update(runId, { status: "running" });
 
     // The execution context accumulates outputs from all steps + initial input + config
     // memory helpers are injected so LLM prompt templates can reference them.
-    const context: Record<string, unknown> = { ...config, ...input, memory: memoryContext };
+    const context: Record<string, unknown> = {
+      ...config,
+      ...input,
+      memory: this._buildMemoryContext(template, userId),
+    };
     const stepResults: StepResult[] = [];
 
-    for (const step of template.steps) {
+    await this._runSteps(runId, template, config, context, stepResults, 0, userId);
+  }
+
+  private async _resumePausedRun(
+    run: WorkflowRun,
+    template: WorkflowTemplate,
+    userId?: string
+  ): Promise<void> {
+    const runtimeState = run.runtimeState;
+    if (!runtimeState) {
+      throw new Error(`Run is missing runtime state: ${run.id}`);
+    }
+
+    const step = template.steps[runtimeState.currentStepIndex];
+    if (!step || step.kind !== "approval") {
+      throw new Error(`Run is not paused on an approval step: ${run.id}`);
+    }
+
+    const approvalId =
+      runtimeState.waitingApprovalId ?? (await approvalStore.findByRunId(run.id))?.id;
+    if (!approvalId) {
+      throw new Error(`Run is missing waiting approval id: ${run.id}`);
+    }
+
+    const approval = await approvalStore.get(approvalId);
+    if (!approval) {
+      throw new Error(`Approval not found: ${approvalId}`);
+    }
+
+    if (approval.status === "pending") {
+      throw new Error(`Approval is still pending: ${approvalId}`);
+    }
+
+    const context: Record<string, unknown> = {
+      ...runtimeState.context,
+      memory: this._buildMemoryContext(template, userId),
+    };
+    const config = runtimeState.config;
+    const stepResults = [...run.stepResults];
+
+    await runStore.update(run.id, {
+      status: "running",
+      runtimeState: makeRuntimeState(config, context, runtimeState.currentStepIndex),
+    });
+
+    let stepStatus: StepResult["status"] = "success";
+    let stepError: string | undefined;
+    let nextStepIndex = runtimeState.currentStepIndex + 1;
+
+    if (approval.status === "request_changes") {
+      const { targetStepIndex, error } = this._resolveRequestChangesTarget(
+        template,
+        step,
+        runtimeState.currentStepIndex
+      );
+      if (error) {
+        stepStatus = "failure";
+        stepError = error;
+      } else {
+        nextStepIndex = targetStepIndex!;
+      }
+    } else if (approval.status !== "approved") {
+      stepStatus = "failure";
+      stepError =
+        approval.status === "timed_out"
+          ? `Approval timed out${approval.comment ? `: ${approval.comment}` : ""}`
+          : `Approval rejected${approval.comment ? `: ${approval.comment}` : ""}`;
+    }
+
+    const stepOutput = {
+      approved: approval.status === "approved",
+      approvalDecision: approval.status,
+      approvalId,
+      approverComment: approval.comment ?? null,
+    };
+
+    Object.assign(context, stepOutput);
+
+    stepResults.push({
+      stepId: step.id,
+      stepName: step.name,
+      status: stepStatus,
+      output: stepOutput,
+      durationMs: 0,
+      ...(stepError ? { error: stepError } : {}),
+    });
+
+    await runStore.update(run.id, {
+      stepResults,
+      runtimeState: makeRuntimeState(config, context, runtimeState.currentStepIndex),
+    });
+
+    if (stepStatus === "failure") {
+      await runStore.update(run.id, {
+        status: "failed",
+        completedAt: new Date().toISOString(),
+        error: stepError,
+        stepResults,
+        runtimeState: makeRuntimeState(config, context, runtimeState.currentStepIndex),
+      });
+      return;
+    }
+
+    await this._runSteps(run.id, template, config, context, stepResults, nextStepIndex, userId);
+  }
+
+  private async _runSteps(
+    runId: string,
+    template: WorkflowTemplate,
+    config: Record<string, unknown>,
+    context: Record<string, unknown>,
+    stepResults: StepResult[],
+    startStepIndex: number,
+    userId?: string
+  ): Promise<void> {
+
+    for (let stepIndex = startStepIndex; stepIndex < template.steps.length; stepIndex += 1) {
+      const step = template.steps[stepIndex];
+      await runStore.update(runId, {
+        runtimeState: makeRuntimeState(config, context, stepIndex),
+      });
+
       const start = Date.now();
       const stepIndex = stepResults.length;
       stepResults.push({
@@ -321,6 +545,7 @@ export class WorkflowEngine {
       let stepStatus: StepResult["status"] = "success";
       let agentSlotResults: AgentSlotResult[] | undefined;
       let stepCostLog: LlmCostLog | undefined;
+      let jumpToStepIndex: number | undefined;
 
       try {
         switch (step.kind) {
@@ -372,9 +597,9 @@ export class WorkflowEngine {
             const message = step.approvalMessage ?? "Approval required to continue.";
             const timeoutMinutes = step.approvalTimeoutMinutes ?? 60;
 
-            runStore.update(runId, { status: "awaiting_approval" });
+            await runStore.update(runId, { status: "awaiting_approval" });
 
-            const { id: approvalId, promise: approvalPromise } = approvalStore.create({
+            const { id: approvalId } = await approvalStore.create({
               runId,
               templateId: template.id,
               templateName: template.name,
@@ -383,18 +608,43 @@ export class WorkflowEngine {
               assignee,
               message,
               timeoutMinutes,
+              userId,
             });
 
-            const { approved, comment } = await approvalPromise;
+            await runStore.update(runId, {
+              runtimeState: makeRuntimeState(config, context, stepIndex, approvalId),
+            });
 
-            runStore.update(runId, { status: "running" });
+            const { decision, comment } = await approvalStore.waitForDecision(approvalId, 50);
 
-            if (!approved) {
+            await runStore.update(runId, { status: "running" });
+
+            if (decision === "request_changes") {
+              const { targetStepIndex, error } = this._resolveRequestChangesTarget(
+                template,
+                step,
+                stepIndex
+              );
+              if (error) {
+                stepStatus = "failure";
+                stepError = error;
+              } else {
+                jumpToStepIndex = targetStepIndex;
+              }
+            } else if (decision !== "approved") {
               stepStatus = "failure";
-              stepError = `Approval rejected${comment ? `: ${comment}` : " (timed out or declined)"}`;
+              stepError =
+                decision === "timed_out"
+                  ? `Approval timed out${comment ? `: ${comment}` : ""}`
+                  : `Approval rejected${comment ? `: ${comment}` : ""}`;
             }
 
-            stepOutput = { approved, approvalId, approverComment: comment ?? null };
+            stepOutput = {
+              approved: decision === "approved",
+              approvalDecision: decision,
+              approvalId,
+              approverComment: comment ?? null,
+            };
             break;
           }
           default:
@@ -422,17 +672,22 @@ export class WorkflowEngine {
       stepResults[stepIndex] = result;
 
       // Update run with latest step results so callers can see incremental progress
-      runStore.update(runId, { stepResults: [...stepResults] });
+      await runStore.update(runId, { stepResults: [...stepResults] });
 
       // If a step fails, abort the run
       if (stepStatus === "failure") {
-        runStore.update(runId, {
+        await runStore.update(runId, {
           status: "failed",
           completedAt: new Date().toISOString(),
           error: stepError,
           stepResults,
+          runtimeState: makeRuntimeState(config, context, stepIndex),
         });
         return;
+      }
+
+      if (jumpToStepIndex !== undefined) {
+        stepIndex = jumpToStepIndex - 1;
       }
     }
 
@@ -445,11 +700,12 @@ export class WorkflowEngine {
       }
     }
 
-    runStore.update(runId, {
+    await runStore.update(runId, {
       status: "completed",
       completedAt: new Date().toISOString(),
       output,
       stepResults,
+      runtimeState: makeRuntimeState(config, context, template.steps.length - 1),
     });
   }
 }

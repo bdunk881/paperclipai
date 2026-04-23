@@ -1,5 +1,14 @@
 import type { WorkflowTemplate, WorkflowRun, WorkflowStep } from "../types/workflow";
 import { getApiBasePath } from "./baseUrl";
+import {
+  createMockTemplate,
+  getMockRun,
+  getMockTemplate,
+  listMockLLMConfigs,
+  listMockRuns,
+  listMockTemplates,
+  startMockRun,
+} from "./mockWorkflowData";
 
 const USE_MOCK = import.meta.env.VITE_USE_MOCK === "true";
 
@@ -46,12 +55,19 @@ function buildAuthHeaders(accessToken?: string): HeadersInit | undefined {
   return { Authorization: `Bearer ${accessToken}` };
 }
 
+function isMockMode(): boolean {
+  return import.meta.env.VITE_USE_MOCK === "true";
+}
+
 // ---------------------------------------------------------------------------
 // LLM Config API functions
 // ---------------------------------------------------------------------------
 
 /** GET /api/llm-configs */
 export async function listLLMConfigs(accessToken?: string): Promise<LLMConfig[]> {
+  if (isMockMode()) {
+    return listMockLLMConfigs();
+  }
   const res = await fetch(`${BASE}/llm-configs`, {
     headers: buildAuthHeaders(accessToken),
   });
@@ -108,6 +124,9 @@ type CreateTemplateInput = Omit<WorkflowTemplate, "id"> & { id?: string };
 
 /** GET /api/templates */
 export async function listTemplates(category?: string): Promise<TemplateSummary[]> {
+  if (isMockMode()) {
+    return listMockTemplates(category as WorkflowTemplate["category"] | undefined);
+  }
   const url = category ? `${BASE}/templates?category=${encodeURIComponent(category)}` : `${BASE}/templates`;
   const res = await fetch(url);
   if (!res.ok) throw new Error(`Failed to fetch templates: ${res.status}`);
@@ -117,6 +136,9 @@ export async function listTemplates(category?: string): Promise<TemplateSummary[
 
 /** POST /api/templates */
 export async function createTemplate(input: CreateTemplateInput): Promise<WorkflowTemplate> {
+  if (isMockMode()) {
+    return createMockTemplate(input);
+  }
   const res = await fetch(`${BASE}/templates`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -131,6 +153,9 @@ export async function createTemplate(input: CreateTemplateInput): Promise<Workfl
 
 /** GET /api/templates/:id */
 export async function getTemplate(id: string): Promise<WorkflowTemplate> {
+  if (isMockMode()) {
+    return getMockTemplate(id);
+  }
   const res = await fetch(`${BASE}/templates/${encodeURIComponent(id)}`);
   if (!res.ok) throw new Error(`Template not found: ${id}`);
   return res.json() as Promise<WorkflowTemplate>;
@@ -138,6 +163,9 @@ export async function getTemplate(id: string): Promise<WorkflowTemplate> {
 
 /** GET /api/runs */
 export async function listRuns(templateId?: string, accessToken?: string): Promise<WorkflowRun[]> {
+  if (isMockMode()) {
+    return listMockRuns(templateId);
+  }
   const url = templateId
     ? `${BASE}/runs?templateId=${encodeURIComponent(templateId)}`
     : `${BASE}/runs`;
@@ -151,6 +179,9 @@ export async function listRuns(templateId?: string, accessToken?: string): Promi
 
 /** GET /api/runs/:id */
 export async function getRun(id: string): Promise<WorkflowRun> {
+  if (isMockMode()) {
+    return getMockRun(id);
+  }
   const res = await fetch(`${BASE}/runs/${encodeURIComponent(id)}`);
   if (!res.ok) throw new Error(`Run not found: ${id}`);
   return res.json() as Promise<WorkflowRun>;
@@ -162,6 +193,10 @@ export async function startRun(
   input: Record<string, unknown>,
   config?: Record<string, unknown>
 ): Promise<WorkflowRun> {
+  if (isMockMode()) {
+    void config;
+    return startMockRun(templateId, input);
+  }
   const res = await fetch(`${BASE}/runs`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },

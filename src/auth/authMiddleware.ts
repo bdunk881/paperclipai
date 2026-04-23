@@ -104,8 +104,10 @@ export function requireAuth(
   const headerUserId = req.headers["x-user-id"];
   const requestPath = (req.originalUrl || req.path).split("?")[0];
   const isMemoryRoute = requestPath === "/api/memory" || requestPath.startsWith("/api/memory/");
+  const isKnowledgeRoute = requestPath === "/api/knowledge" || requestPath.startsWith("/api/knowledge/");
+  const allowHeaderAuth = isMemoryRoute || isKnowledgeRoute;
   if (!authHeader?.startsWith("Bearer ")) {
-    if (isMemoryRoute && typeof headerUserId === "string" && headerUserId.trim()) {
+    if (allowHeaderAuth && typeof headerUserId === "string" && headerUserId.trim()) {
       req.auth = { sub: headerUserId.trim() };
       next();
       return;

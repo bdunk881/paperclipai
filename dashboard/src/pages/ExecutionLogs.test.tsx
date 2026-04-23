@@ -6,8 +6,18 @@ const listRunsMock = vi.fn();
 const debugStepMock = vi.fn();
 
 vi.mock("../api/client", () => ({
-  listRuns: () => listRunsMock(),
+  listRuns: (...args: unknown[]) => listRunsMock(...args),
   debugStep: (...args: unknown[]) => debugStepMock(...args),
+}));
+
+vi.mock("../context/AuthContext", () => ({
+  useAuth: () => ({
+    user: { id: "user-1", email: "user@example.com", name: "User" },
+    login: vi.fn(),
+    signup: vi.fn(),
+    logout: vi.fn(),
+    getAccessToken: vi.fn().mockResolvedValue("token-123"),
+  }),
 }));
 
 describe("ExecutionLogs", () => {
@@ -70,6 +80,9 @@ describe("ExecutionLogs", () => {
     expect(screen.getByText(/loading execution logs/i)).toBeInTheDocument();
 
     expect(await screen.findByText("Customer Intake")).toBeInTheDocument();
+    await waitFor(() => {
+      expect(listRunsMock).toHaveBeenCalledWith(undefined, "token-123");
+    });
     expect(screen.getByText("Renewal Monitor")).toBeInTheDocument();
     expect(screen.getByText(/live data/i)).toBeInTheDocument();
 
@@ -78,11 +91,7 @@ describe("ExecutionLogs", () => {
     fireEvent.click(screen.getByRole("button", { name: /explain error with ai/i }));
 
     await waitFor(() => {
-      expect(debugStepMock).toHaveBeenCalledWith(
-        "step-1",
-        "Rate limit exceeded",
-        { retryable: false }
-      );
+      expect(debugStepMock).toHaveBeenCalledWith("step-1", "Rate limit exceeded", { retryable: false });
     });
 
     expect(

@@ -28,13 +28,14 @@ describe("agentMarketplaceData", () => {
   });
 
   it("returns the static template list and null for unknown templates", () => {
-    expect(listAgentTemplates()).toEqual([]);
+    expect(listAgentTemplates()).toHaveLength(23);
     expect(getAgentTemplate("missing-template")).toBeNull();
   });
 
   it("initializes deployment storage when missing and reads saved deployments", () => {
-    expect(listDeployments()).toEqual([]);
-    expect(window.localStorage.getItem("autoflow:agent-deployments")).toBe("[]");
+    const defaults = listDeployments();
+    expect(defaults).toHaveLength(2);
+    expect(window.localStorage.getItem("autoflow:agent-deployments")).toBe(JSON.stringify(defaults));
 
     const deployments = [
       {
@@ -60,13 +61,14 @@ describe("agentMarketplaceData", () => {
     window.localStorage.setItem("autoflow:agent-deployments", "{bad-json");
     window.localStorage.setItem("autoflow:agent-activity", "{bad-json");
 
-    expect(listDeployments()).toEqual([]);
-    expect(listAgentActivity()).toEqual([]);
+    expect(listDeployments()).toHaveLength(2);
+    expect(listAgentActivity()).toHaveLength(3);
   });
 
   it("initializes activity storage, saves activity, and prepends appended entries", () => {
-    expect(listAgentActivity()).toEqual([]);
-    expect(window.localStorage.getItem("autoflow:agent-activity")).toBe("[]");
+    const defaults = listAgentActivity();
+    expect(defaults).toHaveLength(3);
+    expect(window.localStorage.getItem("autoflow:agent-activity")).toBe(JSON.stringify(defaults));
 
     saveAgentActivity([
       {

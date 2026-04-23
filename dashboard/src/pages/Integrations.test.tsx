@@ -138,14 +138,14 @@ describe("Integrations", () => {
     });
   });
 
-  it("shows 'Configure via API-key endpoint' for composio", async () => {
+  it("shows 'Configure via API-key endpoint' for API-key providers", async () => {
     vi.spyOn(global, "fetch").mockResolvedValueOnce(
       new Response(JSON.stringify({ providers: connectedProviders }), { status: 200 })
     );
 
     renderWithRouter();
     await waitFor(() => {
-      expect(screen.getByText("Configure via API-key endpoint")).toBeInTheDocument();
+      expect(screen.getAllByText("Configure via API-key endpoint").length).toBe(2);
     });
   });
 
@@ -167,7 +167,7 @@ describe("Integrations", () => {
 
     renderWithRouter();
     await waitFor(() => {
-      expect(screen.getAllByText("Connect").length).toBe(4);
+      expect(screen.getAllByText("Connect").length).toBe(3);
     });
   });
 
@@ -188,7 +188,7 @@ describe("Integrations", () => {
 
     renderWithRouter();
     await waitFor(() => {
-      expect(screen.getAllByText("Connect").length).toBe(4);
+      expect(screen.getAllByText("Connect").length).toBe(3);
     });
 
     fireEvent.click(screen.getAllByText("Connect")[0]);
@@ -207,7 +207,7 @@ describe("Integrations", () => {
 
     renderWithRouter();
     await waitFor(() => {
-      expect(screen.getAllByText("Connect").length).toBe(4);
+      expect(screen.getAllByText("Connect").length).toBe(3);
     });
 
     fireEvent.click(screen.getAllByText("Connect")[0]);
@@ -225,9 +225,9 @@ describe("Integrations", () => {
 
     renderWithRouter();
     await waitFor(() => {
-      expect(screen.getByText("Configure via API-key endpoint")).toBeInTheDocument();
+      expect(screen.getAllByText("Configure via API-key endpoint").length).toBe(2);
     });
-    // Composio has no Connect button - it's API-key mode
+    // Composio and Stripe have no Connect button because they use API-key mode.
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 

@@ -88,7 +88,6 @@
   .shadow-glow {
     box-shadow: 0 0 0 1px rgba(99, 102, 241, 0.08), 0 12px 32px rgba(99, 102, 241, 0.18);
   }
-
   .glow-border {
     position: relative;
   }
@@ -148,7 +147,6 @@
       transform: translateX(0);
     }
   }
-
   /* Dark mode overrides for legacy Tailwind utility classes */
   .dark .bg-white {
     background-color: rgb(15 23 42);

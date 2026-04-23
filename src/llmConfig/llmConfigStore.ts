@@ -146,6 +146,10 @@ export const llmConfigStore = {
     return store.listByUser(userId, false).map(toPublic);
   },
 
+  async listAsync(userId: string): Promise<LLMConfigPublic[]> {
+    return (await store.listByUserAsync(userId, false)).map(toPublic);
+  },
+
   get(id: string, userId: string): LLMConfigPublic | undefined {
     const record = store.getById(id);
     if (!record || record.userId !== userId || record.revokedAt) {
@@ -262,6 +266,26 @@ export const llmConfigStore = {
     }
 
     const decrypted = store.getDecrypted(record.id);
+    if (!decrypted) {
+      return undefined;
+    }
+
+    return {
+      config: toPublic(decrypted.record),
+      credentials: decrypted.secrets,
+      apiKey: decrypted.secrets.apiKey,
+    };
+  },
+
+  async getDecryptedDefaultAsync(userId: string): Promise<DecryptedLLMConfig | undefined> {
+    const record = await store.findLatestAsync(
+      (existing) => existing.userId === userId && existing.metadata.isDefault && !existing.revokedAt,
+    );
+    if (!record) {
+      return undefined;
+    }
+
+    const decrypted = await store.getDecryptedAsync(record.id);
     if (!decrypted) {
       return undefined;
     }

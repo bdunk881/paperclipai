@@ -141,8 +141,18 @@ The pipeline lives at `.github/workflows/deploy-azure.yml`.
 
 ```
 infra/azure/scripts/
-  bootstrap-tfstate.sh   — one-time Terraform remote state setup
+  bootstrap-tfstate.sh         — one-time Terraform remote state setup
+  provision-ciam.sh            — create the CIAM SPA app registration and output env vars
+  sync-ciam-redirect-uris.sh   — upsert the dashboard auth callback/logout URIs on the CIAM SPA app
+  validate-ciam-prereqs.sh     — validate subscription + Graph access before provisioning
 ```
+
+The dashboard is in a transition period between root-based MSAL redirects and
+`${window.location.origin}/auth/callback`. Until that migration is fully merged
+and verified, keep both the host root and `/auth/callback` registered as SPA
+redirect URIs for production, staging, the active Vercel preview hosts, and
+localhost. Run `./scripts/sync-ciam-redirect-uris.sh` after any custom-domain
+cutover, preview-host policy change, or auth route change.
 
 ---
 

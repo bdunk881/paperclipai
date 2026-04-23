@@ -16,7 +16,7 @@ import {
 } from "../types/workflow";
 import { runStore } from "./runStore";
 import { approvalStore } from "./approvalStore";
-import { handleLlm, handleMcp, handleFileTrigger, handleAgent } from "./stepHandlers";
+import { handleLlm, handleMcp, handleFileTrigger, handleAgent, handleKnowledge } from "./stepHandlers";
 import { memoryStore } from "./memoryStore";
 import { LlmCostLog } from "./llmRouter";
 
@@ -323,6 +323,11 @@ export class WorkflowEngine {
             stepCostLog = llmResult.costLog;
             break;
           }
+          case "knowledge": {
+            const knowledgeResult = await handleKnowledge(step, context, userId ?? "");
+            stepOutput = knowledgeResult.output;
+            break;
+          }
           case "transform":
             stepOutput = await executeTransform(step, context);
             break;
@@ -361,6 +366,7 @@ export class WorkflowEngine {
 
             const { id: approvalId, promise: approvalPromise } = approvalStore.create({
               runId,
+              templateId: template.id,
               templateName: template.name,
               stepId: step.id,
               stepName: step.name,

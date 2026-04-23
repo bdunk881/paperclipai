@@ -238,14 +238,14 @@ router.post("/", (req: AuthenticatedRequest, res: Response) => {
   res.status(201).json(config);
 });
 
-router.get("/", (req: AuthenticatedRequest, res: Response) => {
+router.get("/", async (req: AuthenticatedRequest, res: Response) => {
   const userId = getUserId(req);
   if (!userId) {
     res.status(401).json({ error: "Authenticated user is required" });
     return;
   }
 
-  const configs = llmConfigStore.list(userId);
+  const configs = await llmConfigStore.listAsync(userId);
   res.json({ configs, total: configs.length });
 });
 

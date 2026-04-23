@@ -18,6 +18,7 @@ import Dashboard from "./pages/Dashboard";
 import WorkflowBuilder from "./pages/WorkflowBuilder";
 import RunMonitor from "./pages/RunMonitor";
 import RunHistory from "./pages/RunHistory";
+import AgentTeamDetail from "./pages/AgentTeamDetail";
 import LandingPage from "./pages/LandingPage";
 import LLMProviders from "./pages/LLMProviders";
 import Settings from "./pages/Settings";
@@ -160,6 +161,7 @@ export default function App() {
             <Route index element={<Dashboard />} />
             <Route path="builder" element={<WorkflowBuilder />} />
             <Route path="builder/:templateId" element={<WorkflowBuilder />} />
+            <Route path="agents/team/:teamId" element={<AgentTeamDetail />} />
             <Route path="monitor" element={<RunMonitor />} />
             <Route path="history" element={<RunHistory />} />
             <Route path="agents" element={<AgentCatalog />} />

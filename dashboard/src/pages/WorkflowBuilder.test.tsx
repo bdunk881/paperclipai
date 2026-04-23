@@ -1,10 +1,10 @@
 import type { ComponentType, ReactNode } from "react";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import WorkflowBuilder from "./WorkflowBuilder";
 import { generateWorkflow, listLLMConfigs, listTemplates, startRunWithFile } from "../api/client";
-import type { WorkflowStep } from "../types/workflow";
+
 
 vi.mock("@xyflow/react", () => ({
   Background: () => null,
@@ -148,5 +148,64 @@ describe("WorkflowBuilder", () => {
 
     expect(screen.getByText(/promote this workflow into a live agent roster/i)).toBeInTheDocument();
     expect(screen.getByText(/team preview/i)).toBeInTheDocument();
+  });
+
+  it("renders cron trigger fields and a live schedule preview", async () => {
+    render(
+      <MemoryRouter initialEntries={["/builder"]}>
+        <Routes>
+          <Route path="/builder" element={<WorkflowBuilder />} />
+        </Routes>
+      </MemoryRouter>
+    );
+
+    expect(await screen.findByText("Start building your workflow")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /node palette/i }));
+    fireEvent.click(screen.getByRole("button", { name: /^cron trigger$/i }));
+
+    const cronField = screen.getByLabelText("Cron Expression");
+    fireEvent.change(cronField, { target: { value: "0 9 * * 1" } });
+
+    expect(screen.getByDisplayValue("UTC")).toBeInTheDocument();
+    expect(screen.getByText(/standard crontab format/i)).toBeInTheDocument();
+    expect(screen.getByText("Runs every Monday at 9:00 AM UTC")).toBeInTheDocument();
+  });
+
+  it("shows an error for invalid cron expressions", async () => {
+    render(
+      <MemoryRouter initialEntries={["/builder"]}>
+        <Routes>
+          <Route path="/builder" element={<WorkflowBuilder />} />
+        </Routes>
+      </MemoryRouter>
+    );
+
+    expect(await screen.findByText("Start building your workflow")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /node palette/i }));
+    fireEvent.click(screen.getByRole("button", { name: /^cron trigger$/i }));
+    fireEvent.change(screen.getByLabelText("Cron Expression"), { target: { value: "bad cron" } });
+
+    expect(screen.getByText("Invalid cron expression. Please check the syntax.")).toBeInTheDocument();
+  });
+
+  it("shows an error when interval minutes are not positive", async () => {
+    render(
+      <MemoryRouter initialEntries={["/builder"]}>
+        <Routes>
+          <Route path="/builder" element={<WorkflowBuilder />} />
+        </Routes>
+      </MemoryRouter>
+    );
+
+    expect(await screen.findByText("Start building your workflow")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /node palette/i }));
+    fireEvent.click(screen.getByRole("button", { name: /^interval trigger$/i }));
+    fireEvent.change(screen.getByLabelText("Interval (Minutes)"), { target: { value: "0" } });
+
+    expect(screen.getByText("Interval must be a positive integer.")).toBeInTheDocument();
+    expect(screen.getByText("How often the workflow should execute.")).toBeInTheDocument();
   });
 });

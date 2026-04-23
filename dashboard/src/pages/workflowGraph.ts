@@ -15,7 +15,12 @@ export type EdgeValidationResult =
   | { valid: true }
   | { valid: false; reason: string };
 
-const TRIGGER_KINDS: ReadonlySet<StepKind> = new Set(["trigger", "file_trigger"]);
+const TRIGGER_KINDS: ReadonlySet<StepKind> = new Set([
+  "trigger",
+  "cron_trigger",
+  "interval_trigger",
+  "file_trigger",
+]);
 
 function getSerializedTargets(step: WorkflowStep): string[] | null {
   if (!step.config || typeof step.config !== "object") return null;
@@ -208,7 +213,7 @@ export function validateGraphTopology(steps: WorkflowStep[], edges: Edge[]): str
 
   const triggerIds = steps.filter((step) => isTriggerKind(step.kind)).map((step) => step.id);
   if (triggerIds.length === 0) {
-    return "At least one Trigger or File Trigger step is required.";
+    return "At least one Trigger step is required.";
   }
 
   const visited = new Set<string>();

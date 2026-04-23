@@ -22,6 +22,7 @@ import { approvalNotificationStore } from "./engine/approvalNotificationStore";
 import llmConfigRoutes from "./llmConfig/llmConfigRoutes";
 import mcpRoutes from "./mcp/mcpRoutes";
 import memoryRoutes from "./memory/memoryRoutes";
+import agentMemoryRoutes from "./agents/agentMemoryRoutes";
 import knowledgeRoutes from "./knowledge/routes";
 import controlPlaneRoutes from "./controlPlane/controlPlaneRoutes";
 import { llmConfigStore } from "./llmConfig/llmConfigStore";
@@ -239,6 +240,7 @@ app.use("/api/mcp/servers", requireAuth, mcpRoutes);
 // Memory API — persistent context memory store for agents/workflows
 // ---------------------------------------------------------------------------
 app.use("/api/memory", requireAuth, memoryRoutes);
+app.use("/api/agents/:agentId/memory", requireAuth, agentMemoryRoutes);
 app.use("/api/knowledge", requireAuth, knowledgeMutationRateLimiter, knowledgeRoutes);
 app.use("/api/integrations/catalog", integrationCatalogRoutes);
 app.use("/api/integrations/oauth2", integrationOAuthCallbackRoutes);

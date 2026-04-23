@@ -75,10 +75,43 @@ jobs:
           set -euo pipefail
           vercel pull --yes --environment=preview --token="$VERCEL_TOKEN"
           vercel build --token="$VERCEL_TOKEN"
-          PREVIEW_URL="$(vercel deploy --prebuilt --yes --token="$VERCEL_TOKEN" | tail -n 1 | tr -d '\r')"
+          set +e
+          DEPLOY_OUTPUT="$(vercel deploy --prebuilt --yes --token="$VERCEL_TOKEN" 2>&1)"
+          DEPLOY_EXIT=$?
+          set -e
+          printf '%s\n' "$DEPLOY_OUTPUT"
+          PREVIEW_URL="$(printf '%s\n' "$DEPLOY_OUTPUT" | grep -Eo 'https://[^[:space:]]+\.vercel\.app' | tail -n 1 | tr -d '\r')"
           if [ -z "$PREVIEW_URL" ]; then
             echo "::error::Vercel preview deploy did not return a URL"
             exit 1
+          fi
+          if [ "$DEPLOY_EXIT" -ne 0 ]; then
+            echo "::warning::vercel deploy exited with code $DEPLOY_EXIT after returning $PREVIEW_URL; verifying deployment state."
+            READY_VERIFIED=0
+            for attempt in $(seq 1 18); do
+              set +e
+              INSPECT_OUTPUT="$(vercel inspect "$PREVIEW_URL" --token="$VERCEL_TOKEN" 2>&1)"
+              INSPECT_EXIT=$?
+              set -e
+              printf '%s\n' "$INSPECT_OUTPUT"
+              if [ "$INSPECT_EXIT" -eq 0 ] && printf '%s\n' "$INSPECT_OUTPUT" | grep -qiE 'status[[:space:]]+.*ready'; then
+                READY_VERIFIED=1
+                break
+              fi
+              if [ "$INSPECT_EXIT" -eq 0 ] && printf '%s\n' "$INSPECT_OUTPUT" | grep -qiE 'status[[:space:]]+.*(error|failed|canceled)'; then
+                echo "::error::Vercel preview deployment entered a failed terminal state."
+                exit "$DEPLOY_EXIT"
+              fi
+              if [ "$attempt" -lt 18 ]; then
+                echo "Deployment not ready yet; retrying inspect ($attempt/18) in 10s."
+                sleep 10
+              fi
+            done
+            if [ "$READY_VERIFIED" -ne 1 ]; then
+              echo "::error::Vercel preview deploy exited non-zero and the deployment did not reach READY within 180 seconds."
+              exit "$DEPLOY_EXIT"
+            fi
+            echo "::warning::Continuing because Vercel confirmed the preview deployment is READY despite a non-zero deploy exit."
           fi
           echo "preview_url=$PREVIEW_URL" >> "$GITHUB_OUTPUT"
           echo "Preview URL: $PREVIEW_URL"

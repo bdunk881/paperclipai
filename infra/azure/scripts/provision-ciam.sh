@@ -88,8 +88,8 @@ APP_RESPONSE=$(curl -s -w "\n%{http_code}" -X POST \
     "signInAudience": "AzureADandPersonalMicrosoftAccount",
     "spa": {
       "redirectUris": [
-        "http://localhost:5173",
-        "http://localhost:5173/login"
+        "http://localhost:5173/auth/callback",
+        "https://staging.app.helloautoflow.com/auth/callback"
       ]
     },
     "requiredResourceAccess": [
@@ -153,7 +153,15 @@ echo "VITE_AZURE_TENANT_SUBDOMAIN=$CIAM_TENANT_SUBDOMAIN"
 echo ""
 echo "=== Next Steps ==="
 echo "1. Set the env vars above in your .env and .env.local files"
-echo "2. Configure a sign-up/sign-in user flow in the CIAM tenant:"
+echo "2. Verify the SPA redirect URIs include localhost, staging, and production auth/login routes:"
+echo "   - http://localhost:5173"
+echo "   - http://localhost:5173/auth/callback"
+echo "   - http://localhost:5173/login"
+echo "   - https://staging.app.helloautoflow.com/auth/callback"
+echo "   - https://staging.app.helloautoflow.com/login"
+echo "   - https://app.helloautoflow.com/auth/callback"
+echo "   - https://app.helloautoflow.com/login"
+echo "3. Configure a sign-up/sign-in user flow in the CIAM tenant:"
 echo "   External Identities → User flows → + New user flow → Sign up and sign in"
-echo "3. Re-run ./sync-ciam-redirect-uris.sh after adding new preview hosts or changing auth routes"
-echo "4. (Optional) Add Google/Apple identity providers under External Identities → All identity providers"
+echo "4. Re-run ./sync-ciam-redirect-uris.sh after adding new preview hosts or changing auth routes"
+echo "5. (Optional) Add Google/Apple identity providers under External Identities → All identity providers"

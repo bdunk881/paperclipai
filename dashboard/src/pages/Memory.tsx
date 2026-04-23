@@ -27,7 +27,6 @@ import {
   type MemoryEntry,
   type MemoryStats,
 } from "../api/client";
-import { useAuth } from "../context/AuthContext";
 
 GlobalWorkerOptions.workerSrc = pdfWorkerSrc;
 
@@ -124,7 +123,6 @@ function buildQaText(question: string, answer: string): string {
 }
 
 export default function Memory() {
-  const { user } = useAuth();
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [entries, setEntries] = useState<MemoryEntry[]>([]);
   const [stats, setStats] = useState<MemoryStats>(DEFAULT_STATS);
@@ -146,9 +144,9 @@ export default function Memory() {
     try {
       const [fetched, fetchedStats] = await Promise.all([
         search.trim()
-          ? searchMemory(search, user?.id).then((results) => results.map((result) => result.entry))
-          : listMemoryEntries(user?.id),
-        getMemoryStats(user?.id),
+          ? searchMemory(search).then((results) => results.map((result) => result.entry))
+          : listMemoryEntries(),
+        getMemoryStats(),
       ]);
       setEntries(fetched);
       setStats(fetchedStats);
@@ -157,7 +155,7 @@ export default function Memory() {
     } finally {
       setLoading(false);
     }
-  }, [search, user?.id]);
+  }, [search]);
 
   useEffect(() => {
     const debounce = setTimeout(() => void loadEntries(), search.trim() ? 300 : 0);
@@ -166,10 +164,10 @@ export default function Memory() {
 
   async function handleDelete(id: string) {
     try {
-      await deleteMemoryEntry(id, user?.id);
+      await deleteMemoryEntry(id);
       setEntries((prev) => prev.filter((entry) => entry.id !== id));
       if (selected?.id === id) setSelected(null);
-      void getMemoryStats(user?.id).then(setStats);
+      void getMemoryStats().then(setStats);
     } catch {
       // Keep entry visible when deletion fails.
     }
@@ -235,7 +233,6 @@ export default function Memory() {
             text,
             workflowName: "Knowledge Ingest",
           },
-          user?.id
         );
         createdEntries.push(entry);
         setProgress({ current: index + 1, total: totalOperations });
@@ -249,7 +246,6 @@ export default function Memory() {
             text: buildQaText(row.question, row.answer),
             workflowName: "Knowledge Ingest",
           },
-          user?.id
         );
         createdEntries.push(entry);
         setProgress({ current: files.length + index + 1, total: totalOperations });
@@ -570,42 +566,49 @@ export default function Memory() {
                 </div>
               ) : (
                 entries.map((entry) => (
-                  <button
+                  <div
                     key={entry.id}
-                    type="button"
-                    onClick={() => setSelected(entry)}
                     className={clsx(
-                      "flex w-full flex-col gap-2 border-b border-slate-800/60 px-4 py-4 text-left transition hover:bg-slate-900/80",
+                      "border-b border-slate-800/60 transition hover:bg-slate-900/80",
                       selected?.id === entry.id && "bg-indigo-500/10"
                     )}
                   >
-                    <div className="flex items-start justify-between gap-3">
-                      <span className="truncate font-mono text-xs text-slate-200">{entry.key}</span>
+                    <div className="flex items-start gap-3 px-4 py-4">
                       <button
                         type="button"
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          void handleDelete(entry.id);
-                        }}
-                        className="rounded-lg p-1 text-slate-500 transition hover:bg-red-500/10 hover:text-red-400"
+                        onClick={() => setSelected(entry)}
+                        className="min-w-0 flex-1 text-left"
+                        aria-label={`Select memory entry ${entry.key}`}
+                        aria-pressed={selected?.id === entry.id}
+                      >
+                        <div className="flex flex-col gap-2">
+                          <div className="flex items-start justify-between gap-3">
+                            <span className="truncate font-mono text-xs text-slate-200">{entry.key}</span>
+                          </div>
+                          <div className="flex flex-wrap items-center gap-2 text-[11px] text-slate-500">
+                            <span>{entry.workflowName ?? entry.workflowId ?? "Knowledge Ingest"}</span>
+                            <span>·</span>
+                            <Clock size={10} />
+                            <span>{timeAgo(entry.updatedAt)}</span>
+                            {entry.ttlSeconds && (
+                              <>
+                                <span>·</span>
+                                <span className="text-amber-300">{ttlLabel(entry.ttlSeconds)}</span>
+                              </>
+                            )}
+                          </div>
+                        </div>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => void handleDelete(entry.id)}
+                        className="shrink-0 rounded-lg p-1 text-slate-500 transition hover:bg-red-500/10 hover:text-red-400"
                         aria-label={`Delete memory entry ${entry.key}`}
                       >
                         <Trash2 size={13} />
                       </button>
                     </div>
-                    <div className="flex flex-wrap items-center gap-2 text-[11px] text-slate-500">
-                      <span>{entry.workflowName ?? entry.workflowId ?? "Knowledge Ingest"}</span>
-                      <span>·</span>
-                      <Clock size={10} />
-                      <span>{timeAgo(entry.updatedAt)}</span>
-                      {entry.ttlSeconds && (
-                        <>
-                          <span>·</span>
-                          <span className="text-amber-300">{ttlLabel(entry.ttlSeconds)}</span>
-                        </>
-                      )}
-                    </div>
-                  </button>
+                  </div>
                 ))
               )}
             </div>

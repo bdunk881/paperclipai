@@ -100,11 +100,35 @@ describe("Memory", () => {
           key: expect.stringMatching(/^knowledge\.qa\./),
           text: "Question: What is the refund policy?\nAnswer: Refunds are allowed within 30 days.",
           workflowName: "Knowledge Ingest",
-        }),
-        "user-1"
+        })
       );
     });
 
     expect(await screen.findByText(/ingested successfully/i)).toBeInTheDocument();
+  });
+
+  it("renders separate select and delete controls for memory entries", async () => {
+    listMemoryEntriesMock.mockResolvedValue([
+      {
+        id: "entry-1",
+        key: "knowledge.qa.1",
+        text: "Question: Q\nAnswer: A",
+        workflowName: "Knowledge Ingest",
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      },
+    ]);
+
+    render(
+      <MemoryRouter>
+        <Memory />
+      </MemoryRouter>
+    );
+
+    const selectButton = await screen.findByRole("button", { name: /select memory entry knowledge\.qa\.1/i });
+    const deleteButton = screen.getByRole("button", { name: /delete memory entry knowledge\.qa\.1/i });
+
+    expect(selectButton.contains(deleteButton)).toBe(false);
+    expect(deleteButton.closest("button")).toBe(deleteButton);
   });
 });

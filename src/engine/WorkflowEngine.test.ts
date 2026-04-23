@@ -14,6 +14,7 @@ jest.mock("./llmProviders", () => ({
 import { WorkflowEngine, setLlmProvider, registerAction } from "./WorkflowEngine";
 import { runStore } from "./runStore";
 import { approvalStore } from "./approvalStore";
+import { memoryStore } from "./memoryStore";
 import { llmConfigStore } from "../llmConfig/llmConfigStore";
 import { getProvider } from "./llmProviders";
 import { customerSupportBot } from "../templates/customer-support-bot";
@@ -51,6 +52,7 @@ let engine: WorkflowEngine;
 beforeEach(() => {
   void runStore.clear();
   void approvalStore.clear();
+  memoryStore.clear();
   engine = new WorkflowEngine();
 
   // Install deterministic mock LLM provider
@@ -252,6 +254,32 @@ describe("WorkflowEngine — action registry", () => {
 
     await waitForCompletion(run.id);
     expect(handled.length).toBeGreaterThan(0);
+  });
+});
+
+describe("WorkflowEngine — memory context", () => {
+  it("reads previously stored memory entries for the current user", () => {
+    memoryStore.write({
+      userId: "user-1",
+      workflowId: "tpl-memory",
+      workflowName: "Memory workflow",
+      key: "customer_history",
+      text: "VIP customer requested a refund last month",
+    });
+
+    const memory = (engine as unknown as {
+      _buildMemoryContext: (
+        template: WorkflowTemplate,
+        userId?: string
+      ) => { read: (query: string) => Array<{ key: string; text: string }> };
+    })._buildMemoryContext(customerSupportBot, "user-1");
+
+    expect(memory.read("refund")).toEqual([
+      {
+        key: "customer_history",
+        text: "VIP customer requested a refund last month",
+      },
+    ]);
   });
 });
 

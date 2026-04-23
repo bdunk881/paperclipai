@@ -3,6 +3,7 @@
  */
 
 import { approvalStore } from "./approvalStore";
+import * as postgres from "../db/postgres";
 
 beforeEach(() => {
   void approvalStore.clear();
@@ -11,6 +12,7 @@ beforeEach(() => {
 
 afterEach(() => {
   jest.useRealTimers();
+  jest.restoreAllMocks();
 });
 
 const base = {
@@ -145,6 +147,37 @@ describe("approvalStore.list", () => {
 describe("approvalStore.get", () => {
   it("returns undefined for an unknown id", async () => {
     await expect(approvalStore.get("unknown")).resolves.toBeUndefined();
+  });
+
+  it("prefers the persisted decision over a stale in-memory pending entry when PG persistence is enabled", async () => {
+    const { id } = await approvalStore.create(base);
+    const query = jest.fn().mockResolvedValue({
+      rows: [
+        {
+          id,
+          run_id: base.runId,
+          template_name: base.templateName,
+          step_id: base.stepId,
+          step_name: base.stepName,
+          assignee: base.assignee,
+          message: base.message,
+          timeout_minutes: base.timeoutMinutes,
+          requested_at: new Date("2026-04-22T00:00:00.000Z").toISOString(),
+          status: "approved",
+          resolved_at: new Date("2026-04-22T00:05:00.000Z").toISOString(),
+          comment: "approved elsewhere",
+          user_id: "test-user",
+        },
+      ],
+    });
+    jest.spyOn(postgres, "isPostgresPersistenceEnabled").mockReturnValue(true);
+    jest.spyOn(postgres, "getPostgresPool").mockReturnValue({ query } as unknown as ReturnType<typeof postgres.getPostgresPool>);
+
+    await expect(approvalStore.get(id)).resolves.toMatchObject({
+      status: "approved",
+      comment: "approved elsewhere",
+      userId: "test-user",
+    });
   });
 });
 

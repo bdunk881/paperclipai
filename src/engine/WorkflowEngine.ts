@@ -348,8 +348,9 @@ export class WorkflowEngine {
     const memoryUserId = userId ?? "anonymous";
     return {
       read: (query: string): Array<{ key: string; text: string }> => {
-        void query;
-        return [];
+        return memoryStore
+          .search(query, memoryUserId)
+          .map(({ entry }) => ({ key: entry.key, text: entry.text }));
       },
       write: (key: string, value: unknown): void => {
         void memoryStore.write({

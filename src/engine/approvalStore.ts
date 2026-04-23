@@ -130,18 +130,27 @@ export const approvalStore = {
   },
 
   async get(id: string): Promise<ApprovalRequest | undefined> {
+    if (isPostgresPersistenceEnabled()) {
+      const pool = getPostgresPool();
+      const result = await pool.query("SELECT * FROM approval_requests WHERE id = $1", [id]);
+      if (result.rows[0]) {
+        const persisted = mapRowToRequest(result.rows[0]);
+        const entry = store.get(id);
+        if (persisted.status !== "pending" && entry) {
+          clearTimeout(entry.timeoutHandle);
+          store.delete(id);
+        }
+        requestStore.set(id, persisted);
+        return persisted;
+      }
+    }
+
     const pending = store.get(id)?.request;
     if (pending) {
       return pending;
     }
 
-    if (!isPostgresPersistenceEnabled()) {
-      return requestStore.get(id);
-    }
-
-    const pool = getPostgresPool();
-    const result = await pool.query("SELECT * FROM approval_requests WHERE id = $1", [id]);
-    return result.rows[0] ? mapRowToRequest(result.rows[0]) : undefined;
+    return requestStore.get(id);
   },
 
   async list(status?: ApprovalRequest["status"], userId?: string): Promise<ApprovalRequest[]> {

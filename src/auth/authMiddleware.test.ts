@@ -77,6 +77,51 @@ describe("requireAuth", () => {
     expect(res.status).toHaveBeenCalledWith(401);
   });
 
+  it("accepts the shared QA E2E bearer token on preview/staging deployments", () => {
+    process.env.VERCEL_ENV = "preview";
+    process.env.QA_E2E_BEARER_TOKEN = "qa-shared-secret";
+
+    const requireAuth = loadRequireAuth();
+    const req = {
+      headers: { authorization: "Bearer qa-shared-secret" },
+      originalUrl: "/api/me",
+      path: "/api/me",
+    } as unknown as AuthenticatedRequest;
+    const res = createResponse();
+    const next = jest.fn();
+
+    requireAuth(req, res as never, next);
+
+    expect(next).toHaveBeenCalledTimes(1);
+    expect(req.auth).toMatchObject({
+      sub: "qa-e2e-preview",
+      email: "qa-e2e@autoflow.local",
+      name: "QA E2E Preview",
+    });
+    expect(verifyMock).not.toHaveBeenCalled();
+    expect(res.status).not.toHaveBeenCalled();
+  });
+
+  it("does not enable the QA E2E bypass on production deployments", () => {
+    process.env.VERCEL_ENV = "production";
+    process.env.QA_E2E_BEARER_TOKEN = "qa-shared-secret";
+    process.env.AZURE_CIAM_TENANT_SUBDOMAIN = "newciam";
+    process.env.AZURE_CIAM_TENANT_ID = "new-tenant";
+    process.env.AZURE_CIAM_CLIENT_ID = "new-client";
+
+    const requireAuth = loadRequireAuth();
+    const req = {
+      headers: { authorization: "Bearer qa-shared-secret" },
+      originalUrl: "/api/me",
+      path: "/api/me",
+    } as unknown as AuthenticatedRequest;
+    const res = createResponse();
+
+    requireAuth(req, res as never, jest.fn());
+
+    expect(verifyMock).toHaveBeenCalledTimes(1);
+  });
+
   it("uses legacy AZURE_* auth env vars when AZURE_CIAM_* vars are absent", () => {
     process.env.AZURE_TENANT_SUBDOMAIN = "legacyciam";
     process.env.AZURE_TENANT_ID = "legacy-tenant";

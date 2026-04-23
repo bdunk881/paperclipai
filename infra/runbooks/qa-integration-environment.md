@@ -36,6 +36,11 @@ Expected response contract for all three endpoints:
 - `NEXT_PUBLIC_PLAUSIBLE_DOMAIN` (required for analytics script injection in `landing/app/layout.tsx`)
 - `NEXT_PUBLIC_BASE_URL` should point at the active landing host under test (`https://staging.helloautoflow.com` for pre-release checks)
 
+## Required Vercel Variables (Dashboard Preview Auth)
+
+- `QA_PREVIEW_ACCESS_TOKEN` (preview only): unlocks the protected dashboard preview routes
+- `QA_E2E_BEARER_TOKEN` (preview only): shared bearer token accepted by `/api/me` and other authenticated API routes on preview/staging-style deployments
+
 ## Set Secrets
 
 ```bash
@@ -58,6 +63,7 @@ Configure dashboard preview access in the Vercel `dashboard` project:
 
 ```bash
 vercel env add QA_PREVIEW_ACCESS_TOKEN preview
+vercel env add QA_E2E_BEARER_TOKEN preview
 ```
 
 Then share preview smoke-test links in this format:
@@ -73,6 +79,24 @@ The same tokenized link can be reused for:
 - `/agents/deploy/<templateId>`
 - `/agents/my`
 - `/agents/activity`
+
+Use the shared bearer token for authenticated API checks against the same preview host:
+
+```bash
+export QA_E2E_BEARER_TOKEN="<token>"
+
+curl -sS "https://<dashboard-preview-host>/api/me" \
+  -H "Authorization: Bearer ${QA_E2E_BEARER_TOKEN}"
+
+curl -sS "https://<dashboard-preview-host>/api/knowledge/bases" \
+  -H "Authorization: Bearer ${QA_E2E_BEARER_TOKEN}"
+```
+
+Notes:
+
+- The QA E2E bearer bypass is intended for preview/staging verification only.
+- Do not configure `QA_E2E_BEARER_TOKEN` on `production`.
+- Share both tokens out of band; do not paste them into Paperclip issue comments.
 
 ## Run Evidence Workflow
 

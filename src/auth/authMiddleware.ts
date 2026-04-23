@@ -14,6 +14,7 @@
  * to the infrastructure service principal (Key Vault, Storage, etc.).
  */
 
+import crypto from "node:crypto";
 import { Request, Response, NextFunction } from "express";
 import jwt, { JwtPayload } from "jsonwebtoken";
 import jwksRsa from "jwks-rsa";
@@ -28,6 +29,35 @@ type AuthConfig = {
 
 const jwksClientCache = new Map<string, jwksRsa.JwksClient>();
 let missingConfigWarningLogged = false;
+
+const QA_E2E_AUTH = {
+  sub: "qa-e2e-preview",
+  email: "qa-e2e@autoflow.local",
+  name: "QA E2E Preview",
+};
+
+function normalizeSecret(value: string | undefined): string | null {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  return trimmed ? trimmed : null;
+}
+
+function timingSafeSecretMatch(candidate: string, expected: string): boolean {
+  const candidateBuffer = Buffer.from(candidate);
+  const expectedBuffer = Buffer.from(expected);
+
+  if (candidateBuffer.length !== expectedBuffer.length) {
+    return false;
+  }
+
+  return crypto.timingSafeEqual(candidateBuffer, expectedBuffer);
+}
+
+function isQaE2EBypassEnabled(): boolean {
+  const vercelEnv = normalizeSecret(process.env.VERCEL_ENV);
+  const appEnv = normalizeSecret(process.env.VITE_APP_ENV);
+  return vercelEnv === "preview" || appEnv === "staging";
+}
 
 function resolveAuthConfig(): AuthConfig | null {
   const tenantSubdomain = process.env.AZURE_CIAM_TENANT_SUBDOMAIN ?? process.env.AZURE_TENANT_SUBDOMAIN;
@@ -91,6 +121,19 @@ export interface AuthenticatedRequest extends Request {
   };
 }
 
+function resolveQaE2EAuth(token: string): AuthenticatedRequest["auth"] | null {
+  const expectedToken = normalizeSecret(process.env.QA_E2E_BEARER_TOKEN);
+  if (!expectedToken || !isQaE2EBypassEnabled()) {
+    return null;
+  }
+
+  if (!timingSafeSecretMatch(token, expectedToken)) {
+    return null;
+  }
+
+  return QA_E2E_AUTH;
+}
+
 /**
  * Express middleware that validates the Authorization: Bearer <token> header.
  * Attaches `req.auth` on success; responds 401 on failure.
@@ -115,6 +158,12 @@ export function requireAuth(
   }
 
   const token = authHeader.slice(7);
+  const qaAuth = resolveQaE2EAuth(token);
+  if (qaAuth) {
+    req.auth = qaAuth;
+    next();
+    return;
+  }
   const authConfig = resolveAuthConfig();
 
   if (!authConfig) {

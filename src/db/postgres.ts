@@ -32,6 +32,9 @@ export function getPostgresPool(): Pool {
     pool.on("error", (err) => {
       console.error("[postgres] Unexpected pool error:", err.message);
     });
+    pool.on("error", (err) => {
+      console.error("[postgres] Unexpected pool error:", err.message);
+    });
   }
 
   return pool;

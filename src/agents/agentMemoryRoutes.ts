@@ -2,9 +2,56 @@ import { RequestHandler, Response, Router } from "express";
 import { AuthenticatedRequest } from "../auth/authMiddleware";
 import { subscriptionStore } from "../billing/subscriptionStore";
 import { llmConfigStore } from "../llmConfig/llmConfigStore";
-import { agentMemoryStore, AgentMemoryPlan, AgentMemoryScope } from "./agentMemoryStore";
+import { agentMemoryStore, AgentMemoryScope, AgentMemoryTier } from "./agentMemoryStore";
 
 const router = Router({ mergeParams: true });
+const GIGABYTE = 1024 * 1024 * 1024;
+const semanticSearchUsage = new Map<string, number>();
+
+const TIER_POLICY: Record<
+  AgentMemoryTier,
+  {
+    agentMemoryEnabled: boolean;
+    storageBytes: number | null;
+    heartbeatRetentionDays: number;
+    semanticSearchDailyLimit: number | null;
+    knowledgeGraphEntityLimit: number | null;
+    sharedMemoryEnabled: boolean;
+  }
+> = {
+  explore: {
+    agentMemoryEnabled: false,
+    storageBytes: null,
+    heartbeatRetentionDays: 0,
+    semanticSearchDailyLimit: 0,
+    knowledgeGraphEntityLimit: 0,
+    sharedMemoryEnabled: false,
+  },
+  flow: {
+    agentMemoryEnabled: true,
+    storageBytes: 5 * GIGABYTE,
+    heartbeatRetentionDays: 7,
+    semanticSearchDailyLimit: 100,
+    knowledgeGraphEntityLimit: 500,
+    sharedMemoryEnabled: false,
+  },
+  automate: {
+    agentMemoryEnabled: true,
+    storageBytes: 10 * GIGABYTE,
+    heartbeatRetentionDays: 30,
+    semanticSearchDailyLimit: 1000,
+    knowledgeGraphEntityLimit: 5000,
+    sharedMemoryEnabled: true,
+  },
+  scale: {
+    agentMemoryEnabled: true,
+    storageBytes: null,
+    heartbeatRetentionDays: 90,
+    semanticSearchDailyLimit: null,
+    knowledgeGraphEntityLimit: null,
+    sharedMemoryEnabled: true,
+  },
+};
 
 function resolveUserId(req: AuthenticatedRequest): string | null {
   return typeof req.auth?.sub === "string" && req.auth.sub.trim() ? req.auth.sub.trim() : null;
@@ -25,25 +72,17 @@ const requireRunId: RequestHandler = (req, res, next) => {
   next();
 };
 
-function resolveMemoryPlan(userId: string): AgentMemoryPlan {
+function resolveMemoryTier(userId: string): AgentMemoryTier {
   const subscription = subscriptionStore.getByUserId(userId);
   if (!subscription) {
-    return "free";
+    return "explore";
   }
 
   if (!["active", "trial"].includes(subscription.accessLevel)) {
-    return "free";
+    return "explore";
   }
 
-  if (subscription.tier === "scale") {
-    return "enterprise";
-  }
-
-  if (subscription.tier === "flow" || subscription.tier === "automate") {
-    return "pro";
-  }
-
-  return "free";
+  return subscription.tier;
 }
 
 async function resolveOpenAiKey(userId: string): Promise<string | undefined> {
@@ -64,24 +103,54 @@ function parseScope(value: unknown): AgentMemoryScope | null {
   return null;
 }
 
-function rejectFreeFeature(plan: AgentMemoryPlan, res: Response, feature: string): boolean {
-  if (plan === "free") {
-    res.status(403).json({ error: `${feature} is available on Pro and Enterprise plans only`, plan });
+function rejectUnavailableTier(tier: AgentMemoryTier, res: Response, feature: string): boolean {
+  if (!TIER_POLICY[tier].agentMemoryEnabled) {
+    res.status(403).json({
+      error: `${feature} is not included on the Explore tier. Upgrade to Flow, Automate, or Scale.`,
+      tier,
+    });
     return true;
   }
   return false;
 }
 
 function rejectSharedFeature(
-  plan: AgentMemoryPlan,
+  tier: AgentMemoryTier,
   res: Response,
   feature = "Shared agent memory"
 ): boolean {
-  if (plan !== "enterprise") {
-    res.status(403).json({ error: `${feature} is available on the Enterprise plan only`, plan });
+  if (!TIER_POLICY[tier].sharedMemoryEnabled) {
+    res.status(403).json({ error: `${feature} is available on Automate and Scale only`, tier });
     return true;
   }
   return false;
+}
+
+function semanticSearchQuotaKey(userId: string): string {
+  return `${userId}:${new Date().toISOString().slice(0, 10)}`;
+}
+
+function consumeSemanticSearchQuota(tier: AgentMemoryTier, userId: string): boolean {
+  const limit = TIER_POLICY[tier].semanticSearchDailyLimit;
+  if (!limit) {
+    return true;
+  }
+  const key = semanticSearchQuotaKey(userId);
+  const current = semanticSearchUsage.get(key) ?? 0;
+  if (current >= limit) {
+    return false;
+  }
+  semanticSearchUsage.set(key, current + 1);
+  return true;
+}
+
+export function resetAgentMemorySearchQuotaForTests(): void {
+  semanticSearchUsage.clear();
+}
+
+export function seedAgentMemorySearchQuotaForTests(userId: string, count: number, isoDate?: string): void {
+  const date = isoDate ?? new Date().toISOString().slice(0, 10);
+  semanticSearchUsage.set(`${userId}:${date}`, count);
 }
 
 router.post("/", requireRunId, async (req: AuthenticatedRequest, res) => {
@@ -92,8 +161,8 @@ router.post("/", requireRunId, async (req: AuthenticatedRequest, res) => {
     return;
   }
 
-  const plan = resolveMemoryPlan(userId);
-  if (rejectFreeFeature(plan, res, "Persistent agent memory")) {
+  const tier = resolveMemoryTier(userId);
+  if (rejectUnavailableTier(tier, res, "Agent Memory")) {
     return;
   }
 
@@ -117,8 +186,24 @@ router.post("/", requireRunId, async (req: AuthenticatedRequest, res) => {
     res.status(400).json({ error: "scope must be either 'private' or 'shared'" });
     return;
   }
-  if (parsedScope === "shared" && rejectSharedFeature(plan, res)) {
+  if (parsedScope === "shared" && rejectSharedFeature(tier, res)) {
     return;
+  }
+
+  const storageLimit = TIER_POLICY[tier].storageBytes;
+  if (storageLimit !== null) {
+    const approximateUsage = await agentMemoryStore.getApproximateMemoryUsageBytes(userId);
+    const incomingBytes =
+      key.trim().length +
+      text.trim().length +
+      JSON.stringify(metadata && typeof metadata === "object" ? metadata : {}).length;
+    if (approximateUsage + incomingBytes > storageLimit) {
+      res.status(403).json({
+        error: `Agent Memory capacity exceeded for the ${tier} tier`,
+        tier,
+      });
+      return;
+    }
   }
 
   const entry = await agentMemoryStore.createEntry({
@@ -129,11 +214,11 @@ router.post("/", requireRunId, async (req: AuthenticatedRequest, res) => {
     key: key.trim(),
     text: text.trim(),
     metadata: metadata as Record<string, unknown>,
-    plan,
+    tier,
     openAiApiKey: await resolveOpenAiKey(userId),
   });
 
-  res.status(201).json({ plan, entry });
+  res.status(201).json({ tier, entry });
 });
 
 router.get("/search", async (req: AuthenticatedRequest, res) => {
@@ -144,13 +229,21 @@ router.get("/search", async (req: AuthenticatedRequest, res) => {
     return;
   }
 
-  const plan = resolveMemoryPlan(userId);
-  if (rejectFreeFeature(plan, res, "Semantic memory search")) {
+  const tier = resolveMemoryTier(userId);
+  if (rejectUnavailableTier(tier, res, "Agent Memory semantic search")) {
+    return;
+  }
+
+  if (!consumeSemanticSearchQuota(tier, userId)) {
+    res.status(429).json({
+      error: `Daily semantic search quota exceeded for the ${tier} tier`,
+      tier,
+    });
     return;
   }
 
   const includeShared = req.query.includeShared === "true";
-  if (includeShared && rejectSharedFeature(plan, res)) {
+  if (includeShared && rejectSharedFeature(tier, res)) {
     return;
   }
 
@@ -165,7 +258,7 @@ router.get("/search", async (req: AuthenticatedRequest, res) => {
     openAiApiKey: await resolveOpenAiKey(userId),
   });
 
-  res.json({ plan, results, total: results.length });
+  res.json({ tier, results, total: results.length });
 });
 
 router.post("/kg", requireRunId, async (req: AuthenticatedRequest, res) => {
@@ -176,8 +269,8 @@ router.post("/kg", requireRunId, async (req: AuthenticatedRequest, res) => {
     return;
   }
 
-  const plan = resolveMemoryPlan(userId);
-  if (rejectFreeFeature(plan, res, "Knowledge graph memory")) {
+  const tier = resolveMemoryTier(userId);
+  if (rejectUnavailableTier(tier, res, "Agent Memory knowledge graph")) {
     return;
   }
 
@@ -207,8 +300,20 @@ router.post("/kg", requireRunId, async (req: AuthenticatedRequest, res) => {
     res.status(400).json({ error: "scope must be either 'private' or 'shared'" });
     return;
   }
-  if (parsedScope === "shared" && rejectSharedFeature(plan, res, "Shared knowledge graph facts")) {
+  if (parsedScope === "shared" && rejectSharedFeature(tier, res, "Shared knowledge graph facts")) {
     return;
+  }
+
+  const entityLimit = TIER_POLICY[tier].knowledgeGraphEntityLimit;
+  if (entityLimit !== null) {
+    const currentFacts = await agentMemoryStore.countKnowledgeFacts(userId);
+    if (currentFacts >= entityLimit) {
+      res.status(403).json({
+        error: `Knowledge graph entity limit reached for the ${tier} tier`,
+        tier,
+      });
+      return;
+    }
   }
 
   const fact = await agentMemoryStore.addKnowledgeFact({
@@ -220,10 +325,10 @@ router.post("/kg", requireRunId, async (req: AuthenticatedRequest, res) => {
     predicate: predicate.trim(),
     object: object.trim(),
     metadata: metadata as Record<string, unknown>,
-    plan,
+    tier,
   });
 
-  res.status(201).json({ plan, fact });
+  res.status(201).json({ tier, fact });
 });
 
 router.get("/kg/query", async (req: AuthenticatedRequest, res) => {
@@ -234,13 +339,13 @@ router.get("/kg/query", async (req: AuthenticatedRequest, res) => {
     return;
   }
 
-  const plan = resolveMemoryPlan(userId);
-  if (rejectFreeFeature(plan, res, "Knowledge graph memory")) {
+  const tier = resolveMemoryTier(userId);
+  if (rejectUnavailableTier(tier, res, "Agent Memory knowledge graph")) {
     return;
   }
 
   const includeShared = req.query.includeShared === "true";
-  if (includeShared && rejectSharedFeature(plan, res, "Shared knowledge graph queries")) {
+  if (includeShared && rejectSharedFeature(tier, res, "Shared knowledge graph queries")) {
     return;
   }
 
@@ -255,7 +360,7 @@ router.get("/kg/query", async (req: AuthenticatedRequest, res) => {
     limit: typeof req.query.limit === "string" ? parseInt(req.query.limit, 10) : undefined,
   });
 
-  res.json({ plan, facts, total: facts.length });
+  res.json({ tier, facts, total: facts.length });
 });
 
 router.post("/heartbeat-log", requireRunId, async (req: AuthenticatedRequest, res) => {
@@ -280,7 +385,10 @@ router.post("/heartbeat-log", requireRunId, async (req: AuthenticatedRequest, re
     return;
   }
 
-  const plan = resolveMemoryPlan(userId);
+  const tier = resolveMemoryTier(userId);
+  if (rejectUnavailableTier(tier, res, "Agent Memory heartbeat logs")) {
+    return;
+  }
   const log = await agentMemoryStore.appendHeartbeatLog({
     userId,
     agentId,
@@ -288,10 +396,10 @@ router.post("/heartbeat-log", requireRunId, async (req: AuthenticatedRequest, re
     summary: summary.trim(),
     status: typeof status === "string" ? status.trim() : undefined,
     metadata: metadata as Record<string, unknown>,
-    plan,
+    tier,
   });
 
-  res.status(201).json({ plan, log });
+  res.status(201).json({ tier, log });
 });
 
 router.get("/heartbeat-log", async (req: AuthenticatedRequest, res) => {
@@ -302,15 +410,18 @@ router.get("/heartbeat-log", async (req: AuthenticatedRequest, res) => {
     return;
   }
 
-  const plan = resolveMemoryPlan(userId);
+  const tier = resolveMemoryTier(userId);
+  if (rejectUnavailableTier(tier, res, "Agent Memory heartbeat logs")) {
+    return;
+  }
   const logs = await agentMemoryStore.listHeartbeatLogs({
     userId,
     agentId,
-    plan,
+    tier,
     limit: typeof req.query.limit === "string" ? parseInt(req.query.limit, 10) : undefined,
   });
 
-  res.json({ plan, logs, total: logs.length });
+  res.json({ tier, logs, total: logs.length });
 });
 
 export default router;

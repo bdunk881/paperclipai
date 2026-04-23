@@ -3,7 +3,7 @@ import { parseJsonColumn } from "../db/json";
 import { isPostgresConfigured, queryPostgres } from "../db/postgres";
 import { cosineSimilarity, embedText } from "../knowledge/embeddings";
 
-export type AgentMemoryPlan = "free" | "pro" | "enterprise";
+export type AgentMemoryTier = "explore" | "flow" | "automate" | "scale";
 export type AgentMemoryScope = "private" | "shared";
 
 export interface AgentMemoryEntry {
@@ -111,11 +111,16 @@ function nowIso(): string {
   return new Date().toISOString();
 }
 
-function expiresAtForPlan(plan: AgentMemoryPlan): string | undefined {
-  if (plan !== "pro") {
+function expiresAtForHeartbeatTier(tier: AgentMemoryTier): string | undefined {
+  const retentionDays =
+    tier === "flow" ? 7 :
+      tier === "automate" ? 30 :
+        tier === "scale" ? 90 :
+          undefined;
+  if (!retentionDays) {
     return undefined;
   }
-  return new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
+  return new Date(Date.now() + retentionDays * 24 * 60 * 60 * 1000).toISOString();
 }
 
 function isExpired(expiresAt?: string): boolean {
@@ -294,33 +299,6 @@ async function purgeExpiredForUser(userId: string): Promise<void> {
   await queryPostgres("DELETE FROM agent_heartbeat_logs WHERE user_id = $1 AND expires_at IS NOT NULL AND expires_at <= NOW()", [userId]);
 }
 
-async function trimFreeHeartbeatLogs(userId: string, agentId: string): Promise<void> {
-  const localLogs = Array.from(heartbeatLogs.values())
-    .filter((log) => log.userId === userId && log.agentId === agentId)
-    .sort((left, right) => right.createdAt.localeCompare(left.createdAt));
-  for (const extra of localLogs.slice(10)) {
-    heartbeatLogs.delete(extra.id);
-  }
-
-  if (!isPostgresConfigured()) {
-    return;
-  }
-
-  await ensureSchema();
-  await queryPostgres(
-    `DELETE FROM agent_heartbeat_logs
-      WHERE user_id = $1
-        AND agent_id = $2
-        AND id IN (
-          SELECT id FROM agent_heartbeat_logs
-          WHERE user_id = $1 AND agent_id = $2
-          ORDER BY created_at DESC
-          OFFSET 10
-        )`,
-    [userId, agentId]
-  );
-}
-
 function isEntryVisible(
   entry: Pick<AgentMemoryEntry, "agentId" | "scope">,
   agentId: string,
@@ -341,7 +319,7 @@ export const agentMemoryStore = {
     key: string;
     text: string;
     metadata?: Record<string, unknown>;
-    plan: AgentMemoryPlan;
+    tier: AgentMemoryTier;
     openAiApiKey?: string;
   }): Promise<AgentMemoryEntry> {
     await purgeExpiredForUser(input.userId);
@@ -359,7 +337,7 @@ export const agentMemoryStore = {
       embedding: await embedText(`${input.key}\n${input.text}`, input.openAiApiKey),
       createdAt: timestamp,
       updatedAt: timestamp,
-      expiresAt: expiresAtForPlan(input.plan),
+      expiresAt: undefined,
     };
 
     memoryEntries.set(entry.id, entry);
@@ -469,7 +447,7 @@ export const agentMemoryStore = {
     predicate: string;
     object: string;
     metadata?: Record<string, unknown>;
-    plan: AgentMemoryPlan;
+    tier: AgentMemoryTier;
   }): Promise<AgentKnowledgeFact> {
     await purgeExpiredForUser(input.userId);
 
@@ -484,7 +462,7 @@ export const agentMemoryStore = {
       object: input.object,
       metadata: sanitizeMetadata(input.metadata),
       createdAt: nowIso(),
-      expiresAt: expiresAtForPlan(input.plan),
+      expiresAt: undefined,
     };
 
     knowledgeFacts.set(fact.id, fact);
@@ -571,7 +549,7 @@ export const agentMemoryStore = {
     summary: string;
     status?: string;
     metadata?: Record<string, unknown>;
-    plan: AgentMemoryPlan;
+    tier: AgentMemoryTier;
   }): Promise<AgentHeartbeatLog> {
     await purgeExpiredForUser(input.userId);
 
@@ -584,7 +562,7 @@ export const agentMemoryStore = {
       summary: input.summary,
       metadata: sanitizeMetadata(input.metadata),
       createdAt: nowIso(),
-      expiresAt: expiresAtForPlan(input.plan),
+      expiresAt: expiresAtForHeartbeatTier(input.tier),
     };
 
     heartbeatLogs.set(log.id, log);
@@ -609,23 +587,18 @@ export const agentMemoryStore = {
       );
     }
 
-    if (input.plan === "free") {
-      await trimFreeHeartbeatLogs(input.userId, input.agentId);
-    }
-
     return log;
   },
 
   async listHeartbeatLogs(input: {
     userId: string;
     agentId: string;
-    plan: AgentMemoryPlan;
+    tier: AgentMemoryTier;
     limit?: number;
   }): Promise<AgentHeartbeatLog[]> {
     await purgeExpiredForUser(input.userId);
 
-    const maxLimit = input.plan === "free" ? 10 : 100;
-    const limit = Math.min(Math.max(input.limit ?? maxLimit, 1), maxLimit);
+    const limit = Math.min(Math.max(input.limit ?? 100, 1), 100);
 
     if (isPostgresConfigured()) {
       await ensureSchema();
@@ -644,6 +617,48 @@ export const agentMemoryStore = {
       .filter((log) => log.userId === input.userId && log.agentId === input.agentId && !isExpired(log.expiresAt))
       .sort((left, right) => right.createdAt.localeCompare(left.createdAt))
       .slice(0, limit);
+  },
+
+  async countKnowledgeFacts(userId: string): Promise<number> {
+    await purgeExpiredForUser(userId);
+
+    if (isPostgresConfigured()) {
+      await ensureSchema();
+      const result = await queryPostgres<{ count: string }>(
+        "SELECT COUNT(*)::text AS count FROM agent_memory_kg_facts WHERE user_id = $1",
+        [userId]
+      );
+      return Number(result.rows[0]?.count ?? "0");
+    }
+
+    return Array.from(knowledgeFacts.values()).filter((fact) => fact.userId === userId).length;
+  },
+
+  async getApproximateMemoryUsageBytes(userId: string): Promise<number> {
+    await purgeExpiredForUser(userId);
+
+    if (isPostgresConfigured()) {
+      await ensureSchema();
+      const result = await queryPostgres<{ total_bytes: string }>(
+        `SELECT COALESCE(SUM(
+          OCTET_LENGTH(key) +
+          OCTET_LENGTH(text_value) +
+          OCTET_LENGTH(metadata::text)
+        ), 0)::text AS total_bytes
+        FROM agent_memory_entries
+        WHERE user_id = $1`,
+        [userId]
+      );
+      return Number(result.rows[0]?.total_bytes ?? "0");
+    }
+
+    return Array.from(memoryEntries.values())
+      .filter((entry) => entry.userId === userId)
+      .reduce(
+        (total, entry) =>
+          total + entry.key.length + entry.text.length + JSON.stringify(entry.metadata).length,
+        0
+      );
   },
 
   clear(): void {

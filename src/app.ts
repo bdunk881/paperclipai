@@ -807,16 +807,20 @@ app.post("/api/executions/:id/resume", requireAuth, async (req: AuthenticatedReq
 // Health check
 // ---------------------------------------------------------------------------
 app.get("/health", async (_req, res) => {
-  let runs: WorkflowRun[] = [];
+  const { checkPostgresConnection, isPostgresConfigured } = await import("./db/postgres");
+  const pgConfigured = isPostgresConfigured();
+  const pgConnected = pgConfigured ? await checkPostgresConnection() : false;
+  let runs = [] as Awaited<ReturnType<typeof runStore.list>>;
   let runStoreError: string | null = null;
+
   try {
     runs = await runStore.list();
   } catch (error) {
-    runStoreError = error instanceof Error ? error.message : String(error);
+    const message = error instanceof Error ? error.message : String(error);
+    runStoreError = message;
+    console.warn("[health] Run stats unavailable:", message);
   }
 
-  const pgConfigured = isPostgresConfigured();
-  const pgConnected = getPostgresConnectionStatus();
   res.json({
     status: runStoreError ? "degraded" : "ok",
     templates: listTemplates().length,

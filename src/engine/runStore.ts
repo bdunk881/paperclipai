@@ -105,63 +105,75 @@ async function writeStepResults(runId: string, stepResults: WorkflowRun["stepRes
 export const runStore = {
   async create(run: WorkflowRun): Promise<WorkflowRun> {
     const cloned = cloneRun(run);
+    memoryStore.set(cloned.id, cloned);
 
     if (!isPostgresPersistenceEnabled()) {
-      memoryStore.set(cloned.id, cloned);
       return cloneRun(cloned);
     }
 
-    const pool = getPostgresPool();
-    await pool.query(
-      `
-        INSERT INTO workflow_runs (
-          id, template_id, template_name, status, started_at, completed_at,
-          input_json, output_json, runtime_state_json, error, user_id
-        )
-        VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8::jsonb, $9::jsonb, $10, $11)
-      `,
-      [
-        cloned.id,
-        cloned.templateId,
-        cloned.templateName,
-        cloned.status,
-        cloned.startedAt,
-        cloned.completedAt ?? null,
-        serializeJson(cloned.input),
-        serializeJson(cloned.output),
-        serializeJson(cloned.runtimeState),
-        cloned.error ?? null,
-        cloned.userId ?? null,
-      ]
-    );
-    await writeStepResults(cloned.id, cloned.stepResults);
+    try {
+      const pool = getPostgresPool();
+      await pool.query(
+        `
+          INSERT INTO workflow_runs (
+            id, template_id, template_name, status, started_at, completed_at,
+            input_json, output_json, runtime_state_json, error, user_id
+          )
+          VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8::jsonb, $9::jsonb, $10, $11)
+        `,
+        [
+          cloned.id,
+          cloned.templateId,
+          cloned.templateName,
+          cloned.status,
+          cloned.startedAt,
+          cloned.completedAt ?? null,
+          serializeJson(cloned.input),
+          serializeJson(cloned.output),
+          serializeJson(cloned.runtimeState),
+          cloned.error ?? null,
+          cloned.userId ?? null,
+        ]
+      );
+      await writeStepResults(cloned.id, cloned.stepResults);
+    } catch (err) {
+      console.error("[runStore] Postgres persist failed, using in-memory:", (err as Error).message);
+    }
     return cloneRun(cloned);
   },
 
   async get(id: string): Promise<WorkflowRun | undefined> {
-    if (!isPostgresPersistenceEnabled()) {
-      const run = memoryStore.get(id);
-      return run ? cloneRun(run) : undefined;
+    const local = memoryStore.get(id);
+    if (local) {
+      return cloneRun(local);
     }
-
-    const pool = getPostgresPool();
-    const result = await pool.query(
-      `
-        SELECT id, template_id, template_name, status, started_at, completed_at, input_json, output_json, runtime_state_json, error, user_id
-        FROM workflow_runs
-        WHERE id = $1
-      `,
-      [id]
-    );
-
-    const row = result.rows[0];
-    if (!row) {
+    if (!isPostgresPersistenceEnabled()) {
       return undefined;
     }
 
-    const run = mapRowToRun(row);
-    run.stepResults = await loadStepResults(id);
-    return run;
+    try {
+      const pool = getPostgresPool();
+      const result = await pool.query(
+        `
+          SELECT id, template_id, template_name, status, started_at, completed_at, input_json, output_json, runtime_state_json, error, user_id
+          FROM workflow_runs
+          WHERE id = $1
+        `,
+        [id]
+      );
+
+      const row = result.rows[0];
+      if (!row) {
+        return undefined;
+      }
+
+      const run = mapRowToRun(row);
+      run.stepResults = await loadStepResults(id);
+      return run;
+    } catch (err) {
+      console.error("[runStore] Postgres read failed, using in-memory:", (err as Error).message);
+      return undefined;
+    }
   },
 
   async update(id: string, patch: Partial<WorkflowRun>): Promise<WorkflowRun | undefined> {
@@ -186,76 +198,90 @@ export const runStore = {
         : existing.runtimeState,
     };
 
+    memoryStore.set(id, updated);
+
     if (!isPostgresPersistenceEnabled()) {
-      memoryStore.set(id, updated);
       return cloneRun(updated);
     }
 
-    const pool = getPostgresPool();
-    await pool.query(
-      `
-        UPDATE workflow_runs
-        SET template_id = $2,
-            template_name = $3,
-            status = $4,
-            started_at = $5,
-            completed_at = $6,
-            input_json = $7::jsonb,
-            output_json = $8::jsonb,
-            runtime_state_json = $9::jsonb,
-            error = $10,
-            user_id = $11,
-            updated_at = now()
-        WHERE id = $1
-      `,
-      [
-        id,
-        updated.templateId,
-        updated.templateName,
-        updated.status,
-        updated.startedAt,
-        updated.completedAt ?? null,
-        serializeJson(updated.input),
-        serializeJson(updated.output),
-        serializeJson(updated.runtimeState),
-        updated.error ?? null,
-        updated.userId ?? null,
-      ]
-    );
-    await writeStepResults(id, updated.stepResults);
+    try {
+      const pool = getPostgresPool();
+      await pool.query(
+        `
+          UPDATE workflow_runs
+          SET template_id = $2,
+              template_name = $3,
+              status = $4,
+              started_at = $5,
+              completed_at = $6,
+              input_json = $7::jsonb,
+              output_json = $8::jsonb,
+              runtime_state_json = $9::jsonb,
+              error = $10,
+              user_id = $11,
+              updated_at = now()
+          WHERE id = $1
+        `,
+        [
+          id,
+          updated.templateId,
+          updated.templateName,
+          updated.status,
+          updated.startedAt,
+          updated.completedAt ?? null,
+          serializeJson(updated.input),
+          serializeJson(updated.output),
+          serializeJson(updated.runtimeState),
+          updated.error ?? null,
+          updated.userId ?? null,
+        ]
+      );
+      await writeStepResults(id, updated.stepResults);
+    } catch (err) {
+      console.error("[runStore] Postgres persist failed, using in-memory:", (err as Error).message);
+    }
     return cloneRun(updated);
   },
 
   async list(templateId?: string, userId?: string): Promise<WorkflowRun[]> {
-    if (!isPostgresPersistenceEnabled()) {
+    const localRuns = () => {
       const runs = Array.from(memoryStore.values());
-      const filtered = runs
+      return runs
         .filter((run) => (templateId ? run.templateId === templateId : true))
-        .filter((run) => (userId ? run.userId === userId : true));
-      return filtered.map((run) => cloneRun(run));
+        .filter((run) => (userId ? run.userId === userId : true))
+        .map((run) => cloneRun(run));
+    };
+
+    if (!isPostgresPersistenceEnabled()) {
+      return localRuns();
     }
 
-    const pool = getPostgresPool();
-    const result = await pool.query(
-      `
-        SELECT id, template_id, template_name, status, started_at, completed_at, input_json, output_json, runtime_state_json, error, user_id
-        FROM workflow_runs
-        WHERE ($1::text IS NULL OR template_id = $1)
-          AND ($2::text IS NULL OR user_id = $2)
-        ORDER BY started_at DESC
-      `,
-      [templateId ?? null, userId ?? null]
-    );
+    try {
+      const pool = getPostgresPool();
+      const result = await pool.query(
+        `
+          SELECT id, template_id, template_name, status, started_at, completed_at, input_json, output_json, runtime_state_json, error, user_id
+          FROM workflow_runs
+          WHERE ($1::text IS NULL OR template_id = $1)
+            AND ($2::text IS NULL OR user_id = $2)
+          ORDER BY started_at DESC
+        `,
+        [templateId ?? null, userId ?? null]
+      );
 
-    const runs = await Promise.all(
-      result.rows.map(async (row) => {
-        const run = mapRowToRun(row);
-        run.stepResults = await loadStepResults(run.id);
-        return run;
-      })
-    );
+      const runs = await Promise.all(
+        result.rows.map(async (row) => {
+          const run = mapRowToRun(row);
+          run.stepResults = await loadStepResults(run.id);
+          return run;
+        })
+      );
 
-    return runs;
+      return runs;
+    } catch (err) {
+      console.error("[runStore] Postgres read failed, falling back to in-memory:", (err as Error).message);
+      return localRuns();
+    }
   },
 
   async clear(): Promise<void> {
@@ -265,7 +291,11 @@ export const runStore = {
       return;
     }
 
-    const pool = getPostgresPool();
-    await pool.query("DELETE FROM workflow_runs");
+    try {
+      const pool = getPostgresPool();
+      await pool.query("DELETE FROM workflow_runs");
+    } catch (err) {
+      console.error("[runStore] Postgres clear failed:", (err as Error).message);
+    }
   },
 };

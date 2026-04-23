@@ -184,6 +184,8 @@ module "security" {
 
 # ── Entra External ID (CIAM) ─────────────────────────────────────────────────
 # Provisions the customer-facing identity tenant and SPA app registration.
+# Use infra/azure/scripts/sync-ciam-redirect-uris.sh to keep the existing app
+# registration aligned with the dashboard's current auth callback/logout paths.
 # Requires the deploying SP to have Contributor on the subscription and
 # Microsoft.AzureActiveDirectory resource provider registered.
 

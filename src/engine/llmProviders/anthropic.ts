@@ -2,7 +2,12 @@ import Anthropic from "@anthropic-ai/sdk";
 import { LLMProvider, LLMProviderConfig, LLMResponse } from "./types";
 
 export function createAnthropicProvider(config: LLMProviderConfig): LLMProvider {
-  const client = new Anthropic({ apiKey: config.apiKey });
+  const apiKey = config.apiKey ?? config.credentials?.apiKey;
+  if (!apiKey) {
+    throw new Error(`Anthropic API error: missing API key credentials for ${config.provider}`);
+  }
+
+  const client = new Anthropic({ apiKey });
 
   return async (prompt: string): Promise<LLMResponse> => {
     let response;

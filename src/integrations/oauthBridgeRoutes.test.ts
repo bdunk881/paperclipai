@@ -368,6 +368,17 @@ describe("unified oauth bridge routes", () => {
     expect(linearDisconnect).toHaveBeenCalledWith("user-123", "linear-credential-1");
   });
 
+  it("returns 204 for disconnect when the provider has no active credential", async () => {
+    linearGetActiveByUser.mockReturnValue(null);
+
+    const response = await request(app)
+      .delete("/api/integrations/linear/disconnect")
+      .set("Authorization", "Bearer user-123");
+
+    expect(response.status).toBe(204);
+    expect(linearDisconnect).not.toHaveBeenCalled();
+  });
+
   it("disconnects datadog-azure-monitor by revoking both provider credentials when present", async () => {
     monitoringGetActiveByUserAndProvider.mockImplementation((userId: string, provider: string) => {
       if (provider === "datadog") {

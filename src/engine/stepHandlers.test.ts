@@ -24,6 +24,7 @@ import {
 import { WorkflowStep } from "../types/workflow";
 import { llmConfigStore } from "../llmConfig/llmConfigStore";
 import { getProvider } from "./llmProviders";
+import { controlPlaneStore } from "../controlPlane/controlPlaneStore";
 import {
   clearClassificationDecisionsForTests,
   listClassificationDecisions,
@@ -97,7 +98,7 @@ describe("handleLlm", () => {
       provider: "openai",
       label: "Test",
       model: "gpt-4o",
-      apiKey: "sk-test-1234-5678",
+      credentials: { apiKey: "sk-test-1234-5678" },
     });
     llmConfigStore.setDefault(cfg.id, TEST_USER);
   });
@@ -166,13 +167,26 @@ describe("handleLlm", () => {
     expect(result.output["reply"]).toBe("Plain text response");
   });
 
+  it("maps scalar JSON responses to the first output key", async () => {
+    mockProviderFn.mockResolvedValue({ text: "7" });
+    const step = makeStep({
+      kind: "llm",
+      outputKeys: ["score"],
+      promptTemplate: "Score: {{prompt}}",
+    });
+
+    const result = await handleLlm(step, { prompt: "hello" }, TEST_USER);
+
+    expect(result.output["score"]).toBe("7");
+  });
+
   it("uses step-level llmConfigId when provided", async () => {
     const specific = llmConfigStore.create({
       userId: TEST_USER,
       provider: "anthropic",
       label: "Specific",
       model: "claude-sonnet-4-6",
-      apiKey: "sk-ant-specific",
+      credentials: { apiKey: "sk-ant-specific" },
     });
 
     const step = makeStep({
@@ -185,7 +199,12 @@ describe("handleLlm", () => {
     await handleLlm(step, {}, TEST_USER);
 
     expect(getProvider).toHaveBeenCalledWith(
-      expect.objectContaining({ provider: "anthropic", model: "claude-sonnet-4-6" })
+      expect.objectContaining({
+        provider: "anthropic",
+        model: "claude-sonnet-4-6",
+        apiKey: "sk-ant-specific",
+        credentials: { apiKey: "sk-ant-specific" },
+      })
     );
   });
 
@@ -587,6 +606,27 @@ describe("handleMcp", () => {
     expect(result.output["data"]).toEqual({ count: 5 });
   });
 
+  it("maps scalar MCP results to the declared output key", async () => {
+    const step = makeStep({
+      kind: "mcp",
+      mcpServerUrl: "https://mcp.example.com",
+      mcpTool: "getScalar",
+      inputKeys: [],
+      outputKeys: ["value"],
+    });
+    global.fetch = jest.fn().mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        jsonrpc: "2.0",
+        id: 1,
+        result: 42,
+      }),
+    }) as unknown as typeof fetch;
+
+    const result = await handleMcp(step, {});
+    expect(result.output["value"]).toBe(42);
+  });
+
   it("passes inputKeys from context as tool arguments", async () => {
     const step = makeStep({
       kind: "mcp",
@@ -619,6 +659,7 @@ describe("handleAgent", () => {
   beforeEach(() => {
     jest.restoreAllMocks();
     mockGetProvider.mockReset();
+    controlPlaneStore.clear();
   });
 
   it("throws when no LLM provider is configured", async () => {
@@ -685,5 +726,44 @@ describe("handleAgent", () => {
     expect(result.output["_agentSuccessCount"]).toBe(1);
     const slotOutput = result.output["slot_0"] as Record<string, unknown>;
     expect(slotOutput["result"]).toBe("plain text answer");
+  });
+
+  it("bridges agent execution into the control plane when configured", async () => {
+    jest.spyOn(llmConfigStore, "getDecryptedDefault").mockReturnValue({
+      config: { provider: "openai", model: "gpt-4" },
+      apiKey: "sk-test",
+    } as ReturnType<typeof llmConfigStore.getDecryptedDefault>);
+    mockGetProvider.mockReturnValue(async () => ({ text: '{"ok":true,"answer":"done"}' }));
+
+    const step = makeStep({
+      id: "step_agent_bridge",
+      kind: "agent",
+      agentSkills: ["paperclip"],
+      config: {
+        controlPlane: {
+          enabled: true,
+          autoProvision: true,
+          teamName: "Escalation Bridge Team",
+          taskTitle: "Work {{ticketId}}",
+        },
+      },
+    });
+
+    const result = await handleAgent(step, { ticketId: "TKT-42" }, "run-bridge", "user-1");
+
+    expect(result.output["_controlPlaneTeamId"]).toBeDefined();
+    expect(result.output["_controlPlaneExecutionId"]).toBeDefined();
+    expect(result.output["_controlPlaneTaskId"]).toBeDefined();
+
+    const teams = controlPlaneStore.listTeams("user-1");
+    expect(teams).toHaveLength(1);
+    const team = teams[0];
+    const executions = controlPlaneStore.listExecutions("user-1", team.id);
+    expect(executions).toHaveLength(1);
+    expect(executions[0].status).toBe("completed");
+
+    const tasks = controlPlaneStore.listTasks("user-1", team.id);
+    expect(tasks).toHaveLength(1);
+    expect(tasks[0].title).toBe("Work TKT-42");
   });
 });

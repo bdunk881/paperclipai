@@ -1,5 +1,5 @@
 import { createCipheriv, createDecipheriv, randomBytes, scryptSync } from "crypto";
-import { v4 as uuidv4 } from "uuid";
+import { randomUUID } from "node:crypto";
 import { AgentCatalogConnection, AgentCatalogConnectionPublic, AgentCatalogProvider } from "./types";
 
 const ENCRYPTION_KEY: Buffer = (() => {
@@ -86,7 +86,7 @@ export const agentCatalogCredentialStore = {
 
     const now = new Date().toISOString();
     const created: StoredConnection = {
-      id: uuidv4(),
+      id: randomUUID(),
       userId: params.userId,
       provider: params.provider,
       authMethod: "oauth2_pkce",

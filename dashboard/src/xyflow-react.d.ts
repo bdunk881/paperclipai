@@ -35,8 +35,11 @@ declare module "@xyflow/react" {
     dragging?: boolean;
   };
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  export type NodeTypes = Record<string, React.ComponentType<NodeProps<any>>>;
+  type NodeRenderer<Props extends NodeProps = NodeProps> = {
+    bivarianceHack(props: Props): React.ReactElement | null;
+  }["bivarianceHack"];
+
+  export type NodeTypes = Record<string, NodeRenderer>;
 
   export const Background: React.ComponentType<Record<string, unknown>>;
   export const Controls: React.ComponentType<Record<string, unknown>>;

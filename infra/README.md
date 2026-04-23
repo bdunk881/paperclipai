@@ -52,6 +52,14 @@ Add these in the repo settings -> Secrets and variables -> Actions:
 
 The SWA workflow maps `VITE_AZURE_CIAM_CLIENT_ID` and `VITE_AZURE_CIAM_TENANT_SUBDOMAIN` from
 `VITE_AZURE_CLIENT_ID` and `VITE_AZURE_TENANT_SUBDOMAIN` at build time.
+Runtime environment variables required in the Vercel dashboard project:
+
+| Variable | Description |
+|---|---|
+| `VITE_API_URL` | Base URL for backend API (for example `https://api.autoflowapp.ai`) |
+| `VITE_AZURE_CIAM_CLIENT_ID` | Entra External ID app registration client ID |
+| `VITE_AZURE_CIAM_TENANT_SUBDOMAIN` | Tenant prefix before `.ciamlogin.com` (for example `autoflowciam`) |
+| `QA_PREVIEW_ACCESS_TOKEN` | Preview-only shared secret used by `/api/qa-preview-access` to unlock smoke-test access for protected dashboard routes |
 
 ## Daily operations
 
@@ -66,6 +74,13 @@ The SWA workflow maps `VITE_AZURE_CIAM_CLIENT_ID` and `VITE_AZURE_CIAM_TENANT_SU
 | Component | Path | Tool |
 |-----------|------|------|
 | Blob Storage | `infra/storage/` | Terraform |
+
+## Protected Preview QA Access
+
+- Set `QA_PREVIEW_ACCESS_TOKEN` only on the dashboard Vercel project's `preview` environment.
+- Share QA links in the form `https://<preview-host>/agents?qaPreviewToken=<token>`.
+- The dashboard validates the token through `/api/qa-preview-access`, seeds a temporary local auth user, and then unlocks the protected `/agents` routes for smoke testing.
+- Do not set `QA_PREVIEW_ACCESS_TOKEN` on `production`.
 
 ## DNS
 

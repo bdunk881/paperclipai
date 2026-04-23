@@ -386,7 +386,11 @@ export default function WorkflowBuilder() {
     setCopilotInput(incomingPrompt);
     void handleCopilotSubmit(incomingPrompt);
     navigate(location.pathname, { replace: true, state: null });
+<<<<<<< feat/ALT-1488-modular-agent-node-ui-master
   }, [incomingState, consumedIncomingPrompt, navigate, location.pathname, handleCopilotSubmit]);
+=======
+  }, [incomingState, consumedIncomingPrompt, handleCopilotSubmit, navigate, location.pathname]);
+>>>>>>> master
 
   const copilotReferences = useMemo(() => {
     if (!copilotInput.includes("@")) return [];

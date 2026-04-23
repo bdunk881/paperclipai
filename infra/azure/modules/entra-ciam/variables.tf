@@ -30,15 +30,23 @@ variable "ciam_display_name" {
 }
 
 variable "spa_redirect_uris" {
-  description = "Redirect URIs for the SPA app registration (localhost for dev, Vercel URL for prod)"
+  description = "Redirect URIs for the SPA app registration (must include /auth/callback and /login for all deployed hosts)"
   type        = list(string)
-  default     = ["http://localhost:5173"]
+  default = [
+    "http://localhost:5173",
+    "http://localhost:5173/auth/callback",
+    "http://localhost:5173/login",
+    "https://staging.app.helloautoflow.com/auth/callback",
+    "https://staging.app.helloautoflow.com/login",
+    "https://app.helloautoflow.com/auth/callback",
+    "https://app.helloautoflow.com/login",
+  ]
 }
 
 variable "spa_logout_uris" {
-  description = "Post-logout redirect URIs for the SPA"
+  description = "Legacy post-logout redirect URIs for the SPA. Keep in sync with spa_redirect_uris."
   type        = list(string)
-  default     = ["http://localhost:5173/login"]
+  default     = ["http://localhost:5173/login", "https://staging.app.helloautoflow.com/login", "https://app.helloautoflow.com/login"]
 }
 
 variable "tags" {

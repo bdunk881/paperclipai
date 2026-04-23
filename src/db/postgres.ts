@@ -32,9 +32,6 @@ export function getPostgresPool(): Pool {
     pool.on("error", (err) => {
       console.error("[postgres] Unexpected pool error:", err.message);
     });
-    pool.on("error", (err) => {
-      console.error("[postgres] Unexpected pool error:", err.message);
-    });
   }
 
   return pool;
@@ -45,7 +42,7 @@ export async function checkPostgresConnection(): Promise<boolean> {
     return false;
   }
   try {
-    await getPool().query("SELECT 1");
+    await getPostgresPool().query("SELECT 1");
     return true;
   } catch (err) {
     console.error("[postgres] Connection check failed:", (err as Error).message);

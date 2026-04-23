@@ -17,10 +17,12 @@ import { closePostgresPoolForTests, queryPostgres } from "./postgres";
 describe("postgres pool", () => {
   const originalDatabaseUrl = process.env.DATABASE_URL;
   const originalPersistenceFlag = process.env.WORKFLOW_RUNTIME_PERSISTENCE_ENABLED;
+  const originalJestWorkerId = process.env.JEST_WORKER_ID;
 
   beforeEach(() => {
     process.env.DATABASE_URL = "postgres://autoflow:test@localhost:5432/autoflow";
     process.env.WORKFLOW_RUNTIME_PERSISTENCE_ENABLED = "1";
+    delete process.env.JEST_WORKER_ID;
     mockOn.mockClear();
     mockQuery.mockReset();
     mockQuery.mockResolvedValue({ rows: [], rowCount: 0 });
@@ -35,6 +37,9 @@ describe("postgres pool", () => {
   afterAll(() => {
     process.env.DATABASE_URL = originalDatabaseUrl;
     process.env.WORKFLOW_RUNTIME_PERSISTENCE_ENABLED = originalPersistenceFlag;
+    if (originalJestWorkerId !== undefined) {
+      process.env.JEST_WORKER_ID = originalJestWorkerId;
+    }
   });
 
   it("registers an error listener on the shared pool", async () => {

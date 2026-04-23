@@ -10,12 +10,12 @@ test("auth regression: protected routes redirect to /login when unauthenticated"
   await expect(page).toHaveURL(/\/login/);
 });
 
-test("auth regression: login CTA renders and starts Microsoft redirect flow", async ({
+test("auth regression: login CTA renders and starts redirect flow", async ({
   page,
 }) => {
   await page.goto("/login");
 
-  const signInButton = page.getByRole("button", { name: /continue with microsoft/i });
+  const signInButton = page.getByRole("button", { name: /^sign in$/i });
   await expect(signInButton).toBeVisible();
 
   await signInButton.click();

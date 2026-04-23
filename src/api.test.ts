@@ -668,7 +668,7 @@ describe("Approvals API", () => {
   });
 
   it("forbids resolving another user's approval", async () => {
-    const { id } = approvalStore.create({
+    const { id } = await approvalStore.create({
       runId: "run-1",
       templateId: "tpl-1",
       templateName: "Template 1",

@@ -1,7 +1,7 @@
 /**
  * E2E: Authentication critical paths
  *
- * Covers: protected route redirect, Microsoft login CTA,
+ * Covers: protected route redirect, login CTA,
  * and redirecting-state UX on auth actions.
  */
 
@@ -25,15 +25,15 @@ test("unauthenticated user visiting /builder is redirected to /login", async ({ 
 // Login page
 // ---------------------------------------------------------------------------
 
-test("login page renders Microsoft sign-in CTA", async ({ page }) => {
+test("login page renders AutoFlow sign-in CTA", async ({ page }) => {
   await page.goto("/login");
-  await expect(page.getByRole("button", { name: /continue with microsoft/i })).toBeVisible();
+  await expect(page.getByRole("button", { name: /^sign in$/i })).toBeVisible();
 });
 
 test("sign-in button transitions to redirecting state when clicked", async ({ page }) => {
   await page.goto("/login");
 
-  const signInButton = page.getByRole("button", { name: /continue with microsoft/i });
+  const signInButton = page.getByRole("button", { name: /^sign in$/i });
   await expect(signInButton).toBeVisible();
   await signInButton.click();
 

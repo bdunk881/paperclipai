@@ -594,7 +594,7 @@ describe("Control plane APIs", () => {
 
 describe("Approvals API", () => {
   it("lists only approvals assigned to the authenticated user", async () => {
-    approvalStore.create({
+    await approvalStore.create({
       runId: "run-1",
       templateId: "tpl-1",
       templateName: "Template 1",
@@ -604,7 +604,7 @@ describe("Approvals API", () => {
       message: "Approve this",
       timeoutMinutes: 30,
     });
-    approvalStore.create({
+    await approvalStore.create({
       runId: "run-2",
       templateId: "tpl-1",
       templateName: "Template 1",
@@ -688,7 +688,7 @@ describe("Approvals API", () => {
   });
 
   it("lists in-app approval notifications for the current approver only", async () => {
-    approvalStore.create({
+    await approvalStore.create({
       runId: "run-1",
       templateId: "tpl-1",
       templateName: "Template 1",
@@ -698,7 +698,7 @@ describe("Approvals API", () => {
       message: "Approve this",
       timeoutMinutes: 30,
     });
-    approvalStore.create({
+    await approvalStore.create({
       runId: "run-2",
       templateId: "tpl-2",
       templateName: "Template 2",

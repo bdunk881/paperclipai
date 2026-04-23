@@ -2,19 +2,24 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { ArrowRight, Bot, HeartPulse, ShieldCheck, Wallet } from "lucide-react";
 import {
-  getControlPlaneSnapshot,
-  type ControlPlaneAgent,
-  type ControlPlaneHeartbeat,
-  type ControlPlaneTeam,
-} from "../api/controlPlane";
+  getAgentBudget,
+  getAgentHeartbeat,
+  getAgentTokenUsage,
+  listAgents,
+  type Agent,
+  type AgentBudgetSnapshot,
+  type AgentHeartbeat,
+  type TokenUsageReport,
+} from "../api/agentApi";
 import { EmptyState, ErrorState, LoadingState } from "../components/UiStates";
 import { useAuth } from "../context/AuthContext";
 
 type AgentCard = {
-  agent: ControlPlaneAgent;
-  team: ControlPlaneTeam;
-  lastHeartbeat?: ControlPlaneHeartbeat;
+  agent: Agent;
+  lastHeartbeat?: AgentHeartbeat;
   spendUsd: number;
+  budget?: AgentBudgetSnapshot | null;
+  usage?: TokenUsageReport | null;
 };
 
 function formatDate(value?: string): string {
@@ -22,9 +27,10 @@ function formatDate(value?: string): string {
   return new Date(value).toLocaleString();
 }
 
-function lifecycleBadge(status: ControlPlaneAgent["status"]): string {
-  if (status === "active") return "bg-teal-100 text-teal-700";
+function lifecycleBadge(status: Agent["status"]): string {
+  if (status === "running") return "bg-teal-100 text-teal-700";
   if (status === "paused") return "bg-orange-100 text-orange-700";
+  if (status === "error") return "bg-red-100 text-red-700";
   return "bg-slate-100 text-slate-700";
 }
 
@@ -41,19 +47,20 @@ export default function MyAgents() {
     try {
       const token = await getAccessToken();
       if (!token) throw new Error("Authentication session expired.");
-      const snapshot = await getControlPlaneSnapshot(token);
-      const nextCards = snapshot.flatMap((detail) =>
-        detail.agents.map((agent) => {
-          const lastHeartbeat = [...detail.heartbeats]
-            .filter((heartbeat) => heartbeat.agentId === agent.id)
-            .sort((left, right) => right.startedAt.localeCompare(left.startedAt))[0];
+      const agents = await listAgents(token);
+      const nextCards = await Promise.all(
+        agents.map(async (agent) => {
+          const [lastHeartbeat, budget, usage] = await Promise.all([
+            getAgentHeartbeat(agent.id, token),
+            getAgentBudget(agent.id, token),
+            getAgentTokenUsage(agent.id, token),
+          ]);
           return {
             agent,
-            team: detail.team,
-            lastHeartbeat,
-            spendUsd: detail.heartbeats
-              .filter((heartbeat) => heartbeat.agentId === agent.id)
-              .reduce((sum, heartbeat) => sum + (heartbeat.costUsd ?? 0), 0),
+            lastHeartbeat: lastHeartbeat ?? undefined,
+            spendUsd: budget?.spentUsd ?? usage?.totalCostUsd ?? 0,
+            budget,
+            usage,
           };
         })
       );
@@ -72,7 +79,7 @@ export default function MyAgents() {
   const totals = useMemo(
     () => ({
       all: cards.length,
-      active: cards.filter(({ agent }) => agent.status === "active").length,
+      active: cards.filter(({ agent }) => agent.status === "running").length,
       paused: cards.filter(({ agent }) => agent.status === "paused").length,
       spendUsd: cards.reduce((sum, card) => sum + card.spendUsd, 0),
     }),
@@ -104,7 +111,7 @@ export default function MyAgents() {
           <div>
             <h1 className="text-2xl font-bold text-gray-900">My Agents</h1>
             <p className="mt-1 text-sm text-gray-500">
-              Live deployments, runtime health, and budget telemetry from the control plane.
+              Live agent health, heartbeat state, and budget telemetry from the agent API.
             </p>
           </div>
           <Link
@@ -133,14 +140,14 @@ export default function MyAgents() {
           <div className="mt-8">
             <EmptyState
               title="No deployed agents yet"
-              description="Deploy a workflow team from the marketplace to see live agent health and control-plane spend."
+              description="Deploy an agent from the marketplace to see live runtime health and budget telemetry."
               ctaLabel="Open marketplace"
               ctaTo="/agents"
             />
           </div>
         ) : (
           <div className="mt-6 space-y-4">
-            {cards.map(({ agent, team, lastHeartbeat, spendUsd }) => (
+            {cards.map(({ agent, lastHeartbeat, spendUsd, budget, usage }) => (
               <article key={agent.id} className="rounded-3xl border border-gray-200 bg-white p-5 shadow-sm">
                 <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
                   <div className="flex min-w-0 items-start gap-3">
@@ -149,9 +156,9 @@ export default function MyAgents() {
                     </div>
                     <div className="min-w-0">
                       <h2 className="truncate text-lg font-semibold text-gray-900">{agent.name}</h2>
-                      <p className="text-sm text-gray-500">{team.name}</p>
+                      <p className="text-sm text-gray-500">{agent.description ?? "Independent AutoFlow agent"}</p>
                       <p className="mt-1 text-xs uppercase tracking-[0.18em] text-gray-400">
-                        {agent.roleKey} · deployed {new Date(agent.createdAt).toLocaleDateString()}
+                        {agent.roleKey ?? "generalist"} · deployed {new Date(agent.createdAt).toLocaleDateString()}
                       </p>
                     </div>
                   </div>
@@ -160,16 +167,18 @@ export default function MyAgents() {
                     <span className={`rounded-full px-2.5 py-1 text-xs font-semibold uppercase tracking-[0.14em] ${lifecycleBadge(agent.status)}`}>
                       {agent.status}
                     </span>
-                    <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-slate-600">
-                      {agent.schedule.type}
-                    </span>
+                    {agent.model ? (
+                      <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-slate-600">
+                        {agent.model}
+                      </span>
+                    ) : null}
                   </div>
                 </div>
 
                 <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-                  <Detail label="Latest Heartbeat" value={formatDate(lastHeartbeat?.completedAt ?? lastHeartbeat?.startedAt)} />
+                  <Detail label="Latest Heartbeat" value={formatDate(lastHeartbeat?.recordedAt)} />
                   <Detail label="Heartbeat Status" value={lastHeartbeat?.status ?? "idle"} />
-                  <Detail label="Monthly Budget" value={`$${agent.budgetMonthlyUsd.toFixed(2)}`} mono />
+                  <Detail label="Monthly Budget" value={`$${(budget?.monthlyUsd ?? agent.budgetMonthlyUsd).toFixed(2)}`} mono />
                   <Detail label="Spend to Date" value={`$${spendUsd.toFixed(2)}`} mono />
                 </div>
 
@@ -177,6 +186,13 @@ export default function MyAgents() {
                   <p className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-400">Instructions</p>
                   <p className="mt-2 text-sm text-gray-600">{agent.instructions}</p>
                 </div>
+                {usage ? (
+                  <div className="mt-4 grid gap-4 rounded-2xl border border-gray-100 bg-white px-4 py-3 md:grid-cols-3">
+                    <Detail label="Tokens (30d)" value={usage.totalTokens.toLocaleString()} mono />
+                    <Detail label="Current Period" value={budget?.currentPeriod ?? "Current month"} />
+                    <Detail label="Remaining Budget" value={`$${(budget?.remainingUsd ?? 0).toFixed(2)}`} mono />
+                  </div>
+                ) : null}
               </article>
             ))}
           </div>

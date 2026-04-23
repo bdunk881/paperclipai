@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { AlertTriangle, BarChart3, CircleDollarSign } from "lucide-react";
-import { getControlPlaneSnapshot } from "../api/controlPlane";
+import { getAgentBudget, listAgents } from "../api/agentApi";
 import { EmptyState, ErrorState, LoadingState } from "../components/UiStates";
 import { useAuth } from "../context/AuthContext";
 
@@ -28,19 +28,16 @@ export default function BudgetDashboard() {
     try {
       const token = await getAccessToken();
       if (!token) throw new Error("Authentication session expired.");
-      const snapshot = await getControlPlaneSnapshot(token);
-      const nextSpend = snapshot.flatMap((detail) =>
-        detail.agents.map((agent) => ({
-          id: agent.id,
-          name: agent.name,
-          budget: agent.budgetMonthlyUsd,
-          spend: detail.heartbeats
-            .filter((heartbeat) => heartbeat.agentId === agent.id)
-            .reduce((sum, heartbeat) => sum + (heartbeat.costUsd ?? 0), 0),
-        }))
-      );
+      const agents = await listAgents(token);
+      const budgets = await Promise.all(agents.map((agent) => getAgentBudget(agent.id, token)));
+      const nextSpend = agents.map((agent, index) => ({
+        id: agent.id,
+        name: agent.name,
+        budget: budgets[index]?.monthlyUsd ?? agent.budgetMonthlyUsd,
+        spend: budgets[index]?.spentUsd ?? 0,
+      }));
       setAgentSpend(nextSpend.sort((left, right) => right.spend - left.spend));
-      setTeamBudget(snapshot.reduce((sum, detail) => sum + detail.team.budgetMonthlyUsd, 0));
+      setTeamBudget(nextSpend.reduce((sum, detail) => sum + detail.budget, 0));
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Failed to load budget dashboard");
     } finally {
@@ -86,7 +83,7 @@ export default function BudgetDashboard() {
             </div>
             <h1 className="text-2xl font-bold text-gray-900">Spend and Quota Health</h1>
             <p className="mt-1 text-sm text-gray-500">
-              Live control-plane cost signals with monthly budget tracking and agent-level spend.
+              Live budget snapshots and agent-level spend from the agent budget API.
             </p>
           </div>
         </div>
@@ -115,7 +112,7 @@ export default function BudgetDashboard() {
               <div className="mb-4 flex items-center justify-between gap-4">
                 <div>
                   <h2 className="text-lg font-semibold text-gray-900">Spend by Agent</h2>
-                  <p className="text-sm text-gray-500">Last known spend derived from real heartbeat cost telemetry.</p>
+                  <p className="text-sm text-gray-500">Last known spend derived from live budget snapshots.</p>
                 </div>
                 <div className="h-3 w-48 overflow-hidden rounded-full bg-gray-100">
                   <div

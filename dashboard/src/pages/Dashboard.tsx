@@ -26,7 +26,13 @@ import {
   type TemplateSummary,
   type LLMConfig,
 } from "../api/client";
-import { getControlPlaneSnapshot, type ControlPlaneTeamDetail } from "../api/controlPlane";
+import {
+  getAgentBudget,
+  listAgents,
+  listRoutines,
+  type Agent,
+  type Routine,
+} from "../api/agentApi";
 import { StatusBadge } from "../components/StatusBadge";
 import { EmptyState, ErrorState, LoadingState } from "../components/UiStates";
 import OnboardingWizard, { type OnboardingStep } from "../components/OnboardingWizard";
@@ -41,7 +47,9 @@ export default function Dashboard() {
   const [runs, setRuns] = useState<WorkflowRun[]>([]);
   const [templates, setTemplates] = useState<TemplateSummary[]>([]);
   const [llmConfigs, setLlmConfigs] = useState<LLMConfig[]>([]);
-  const [controlPlane, setControlPlane] = useState<ControlPlaneTeamDetail[]>([]);
+  const [agents, setAgents] = useState<Agent[]>([]);
+  const [routines, setRoutines] = useState<Routine[]>([]);
+  const [budgetHealth, setBudgetHealth] = useState({ budget: 0, spend: 0 });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showOnboarding, setShowOnboarding] = useState(false);
@@ -55,16 +63,29 @@ export default function Dashboard() {
     setError(null);
     try {
       const accessToken = (await getAccessToken()) ?? undefined;
-      const [fetchedRuns, fetchedTemplates, fetchedConfigs, fetchedControlPlane] = await Promise.all([
+      const [fetchedRuns, fetchedTemplates, fetchedConfigs, fetchedAgents, fetchedRoutines] = await Promise.all([
         listRuns(undefined, accessToken),
         listTemplates(),
         listLLMConfigs(accessToken).catch(() => []),
-        accessToken ? getControlPlaneSnapshot(accessToken).catch(() => []) : Promise.resolve([]),
+        accessToken ? listAgents(accessToken).catch(() => []) : Promise.resolve([]),
+        accessToken ? listRoutines(accessToken).catch(() => []) : Promise.resolve([]),
       ]);
       setRuns(fetchedRuns);
       setTemplates(fetchedTemplates);
       setLlmConfigs(fetchedConfigs);
-      setControlPlane(fetchedControlPlane);
+      setAgents(fetchedAgents);
+      setRoutines(fetchedRoutines);
+      if (accessToken && fetchedAgents.length > 0) {
+        const budgets = await Promise.all(
+          fetchedAgents.map((agent) => getAgentBudget(agent.id, accessToken).catch(() => null))
+        );
+        setBudgetHealth({
+          budget: budgets.reduce((sum, budget, index) => sum + (budget?.monthlyUsd ?? fetchedAgents[index].budgetMonthlyUsd), 0),
+          spend: budgets.reduce((sum, budget) => sum + (budget?.spentUsd ?? 0), 0),
+        });
+      } else {
+        setBudgetHealth({ budget: 0, spend: 0 });
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to load dashboard data");
     } finally {
@@ -87,26 +108,21 @@ export default function Dashboard() {
     stats.total > 0 ? Math.round((stats.completed / stats.total) * 100) : 0;
 
   const agentHealth = useMemo(() => {
-    const agents = controlPlane.flatMap((detail) => detail.agents);
-    const heartbeats = controlPlane.flatMap((detail) => detail.heartbeats);
-    const activeAgents = agents.filter((agent) => agent.status === "active").length;
-    const last24Hours = heartbeats.filter((heartbeat) => {
-      const startedAt = new Date(heartbeat.startedAt).getTime();
-      return Date.now() - startedAt <= 24 * 60 * 60 * 1000;
-    });
-    const completed = last24Hours.filter((heartbeat) => heartbeat.status === "completed").length;
-    const heartbeatSuccessRate =
-      last24Hours.length > 0 ? Math.round((completed / last24Hours.length) * 100) : 0;
-    const budget = controlPlane.reduce((sum, detail) => sum + detail.team.budgetMonthlyUsd, 0);
-    const spend = heartbeats.reduce((sum, heartbeat) => sum + (heartbeat.costUsd ?? 0), 0);
+    const activeAgents = agents.filter((agent) => agent.status === "running").length;
+    const completed = runs.filter((run) => run.status === "completed").length;
+    const failed = runs.filter((run) => run.status === "failed").length;
+    const routineSuccessRate =
+      completed + failed > 0 ? Math.round((completed / (completed + failed)) * 100) : 0;
+    const budget = budgetHealth.budget;
+    const spend = budgetHealth.spend;
     return {
       activeAgents,
-      heartbeatSuccessRate,
+      routineSuccessRate,
       budget,
       spend,
       spendRatio: budget > 0 ? spend / budget : 0,
     };
-  }, [controlPlane]);
+  }, [agents, budgetHealth, runs]);
 
   const firstName = user?.name?.split(" ")[0] ?? user?.email?.split("@")[0] ?? null;
 
@@ -273,17 +289,17 @@ export default function Dashboard() {
           iconColor="text-teal-600 dark:text-teal-300"
           iconBg="bg-teal-50 dark:bg-teal-500/10"
           trend={agentHealth.activeAgents > 0 ? "active" : undefined}
-          trendValue="Control plane"
+          trendValue="Live agents"
           valueClassName="font-mono"
         />
         <StatCard
           label="Routine Success"
-          value={`${agentHealth.heartbeatSuccessRate}%`}
+          value={`${agentHealth.routineSuccessRate}%`}
           icon={<CheckCircle2 size={18} />}
           iconColor="text-teal-600 dark:text-teal-300"
           iconBg="bg-teal-50 dark:bg-teal-500/10"
-          trend={agentHealth.heartbeatSuccessRate >= 80 ? "up" : undefined}
-          trendValue="Last 24h"
+          trend={agentHealth.routineSuccessRate >= 80 ? "up" : undefined}
+          trendValue={routines.length > 0 ? `${routines.length} routines online` : "No active routines"}
           valueClassName="font-mono"
         />
         <StatCard

@@ -2,7 +2,7 @@ import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { ArrowLeft, CheckCircle2, Link2, LoaderCircle, Rocket, ShieldCheck, TimerReset } from "lucide-react";
 import { getConfiguredApiOrigin } from "../api/baseUrl";
-import { deployWorkflowAsTeam } from "../api/controlPlane";
+import { createAgent, createRoutine } from "../api/agentApi";
 import { useAuth } from "../context/AuthContext";
 import { getAgentTemplate } from "../data/agentMarketplaceData";
 
@@ -42,7 +42,7 @@ export default function AgentDeploy() {
   const { getAccessToken } = useAuth();
   const template = params.templateId ? getAgentTemplate(params.templateId) : null;
 
-  const [teamName, setTeamName] = useState(template ? `${template.name} Control Plane` : "");
+  const [teamName, setTeamName] = useState(template ? template.name : "");
   const [budgetMonthlyUsd, setBudgetMonthlyUsd] = useState(template?.monthlyPriceUsd ?? 0);
   const [defaultIntervalMinutes, setDefaultIntervalMinutes] = useState(60);
   const [isDeploying, setIsDeploying] = useState(false);
@@ -121,20 +121,49 @@ export default function AgentDeploy() {
         throw new Error("Authentication session expired. Sign in again to continue.");
       }
 
-      const deployment = await deployWorkflowAsTeam(
+      const agent = await createAgent(
         {
-          templateId: template.id,
-          teamName: teamName.trim() || undefined,
+          name: teamName.trim() || template.name,
+          description: template.description,
+          roleKey: template.category,
+          instructions: `Deploy template "${template.name}" with capabilities: ${template.capabilities.join(", ")}.`,
           budgetMonthlyUsd,
-          defaultIntervalMinutes,
+          status: "idle",
+          metadata: {
+            templateId: template.id,
+            templateName: template.name,
+            pricingTier: template.pricingTier,
+            capabilities: template.capabilities,
+            requiredIntegrations: template.requiredIntegrations,
+          },
         },
         token
       );
 
+      let routineMessage = "Manual only.";
+      if (defaultIntervalMinutes > 0) {
+        await createRoutine(
+          {
+            agentId: agent.id,
+            name: `${agent.name} cadence`,
+            scheduleType: "interval",
+            intervalMinutes: defaultIntervalMinutes,
+            status: "active",
+            prompt: `Run the ${template.name} agent routine.`,
+            metadata: {
+              source: "dashboard-agent-deploy",
+              templateId: template.id,
+            },
+          },
+          token
+        );
+        routineMessage = `Routine scheduled every ${defaultIntervalMinutes} minutes.`;
+      }
+
       navigate("/agents/my", {
         state: {
-          teamId: deployment.team.id,
-          message: `${deployment.team.name} deployed with ${deployment.agents.length} live agent slots.`,
+          agentId: agent.id,
+          message: `${agent.name} deployed successfully. ${routineMessage}`,
         },
       });
     } catch (error) {
@@ -171,7 +200,7 @@ export default function AgentDeploy() {
               </div>
               <div>
                 <h1 className="text-2xl font-bold text-gray-900">Deploy {template.name}</h1>
-                <p className="text-sm text-gray-500">Create a real control-plane team from this workflow-backed agent template.</p>
+                <p className="text-sm text-gray-500">Create a real agent from this workflow-backed template.</p>
               </div>
             </div>
 
@@ -241,7 +270,7 @@ export default function AgentDeploy() {
                 className="inline-flex items-center gap-2 rounded-2xl bg-indigo-600 px-5 py-3 text-sm font-semibold text-white transition hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-70"
               >
                 {isDeploying ? <LoaderCircle size={16} className="animate-spin" /> : <Rocket size={16} />}
-                {isDeploying ? "Provisioning Team" : "Deploy to Control Plane"}
+                {isDeploying ? "Provisioning Agent" : "Create Agent"}
               </button>
               <Link
                 to="/agents/my"

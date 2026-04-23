@@ -2,10 +2,12 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { ArrowRight, CircleAlert, CircleCheck, CircleDashed, Search } from "lucide-react";
 import {
-  getControlPlaneSnapshot,
-  type ControlPlaneHeartbeat,
-  type ControlPlaneTask,
-} from "../api/controlPlane";
+  getAgentHeartbeat,
+  listAgentRuns,
+  listAgents,
+  type AgentHeartbeat,
+  type AgentRun,
+} from "../api/agentApi";
 import { EmptyState, ErrorState, LoadingState } from "../components/UiStates";
 import { useAuth } from "../context/AuthContext";
 
@@ -27,15 +29,15 @@ function statusIcon(status: ActivityStatus) {
   return <CircleDashed size={14} className="text-indigo-600" />;
 }
 
-function heartbeatStatusToTone(status: ControlPlaneHeartbeat["status"]): ActivityStatus {
-  if (status === "completed") return "success";
-  if (status === "blocked") return "warning";
+function heartbeatStatusToTone(status: AgentHeartbeat["status"]): ActivityStatus {
+  if (status === "running") return "success";
+  if (status === "error") return "warning";
   return "info";
 }
 
-function taskStatusToTone(status: ControlPlaneTask["status"]): ActivityStatus {
-  if (status === "done") return "success";
-  if (status === "blocked") return "warning";
+function runStatusToTone(status: AgentRun["status"]): ActivityStatus {
+  if (status === "completed") return "success";
+  if (status === "failed" || status === "blocked") return "warning";
   return "info";
 }
 
@@ -53,29 +55,40 @@ export default function AgentActivity() {
     try {
       const token = await getAccessToken();
       if (!token) throw new Error("Authentication session expired.");
-      const snapshot = await getControlPlaneSnapshot(token);
-      const items = snapshot.flatMap((detail) => {
-        const agentNames = new Map(detail.agents.map((agent) => [agent.id, agent.name]));
-        const heartbeats = detail.heartbeats.map((heartbeat) => ({
-          id: `heartbeat-${heartbeat.id}`,
-          agentName: agentNames.get(heartbeat.agentId) ?? "Unknown agent",
-          action: `Heartbeat ${heartbeat.status}`,
-          summary: heartbeat.summary ?? "Heartbeat recorded by the control plane.",
-          status: heartbeatStatusToTone(heartbeat.status),
-          tokenUsage: Math.round((heartbeat.costUsd ?? 0) * 1000),
-          createdAt: heartbeat.completedAt ?? heartbeat.startedAt,
-        }));
-        const tasks = detail.tasks.map((task) => ({
-          id: `task-${task.id}`,
-          agentName: task.assignedAgentId ? agentNames.get(task.assignedAgentId) ?? detail.team.name : detail.team.name,
-          action: `Task ${task.status}`,
-          summary: task.title,
-          status: taskStatusToTone(task.status),
-          tokenUsage: 0,
-          createdAt: task.updatedAt,
-        }));
-        return [...heartbeats, ...tasks];
-      });
+      const agents = await listAgents(token);
+      const items = (
+        await Promise.all(
+          agents.map(async (agent) => {
+            const [heartbeat, runs] = await Promise.all([
+              getAgentHeartbeat(agent.id, token),
+              listAgentRuns(agent.id, token),
+            ]);
+            const heartbeatItems = heartbeat
+              ? [
+                  {
+                    id: `heartbeat-${heartbeat.id}`,
+                    agentName: agent.name,
+                    action: `Heartbeat ${heartbeat.status}`,
+                    summary: heartbeat.summary ?? "Latest heartbeat recorded for this agent.",
+                    status: heartbeatStatusToTone(heartbeat.status),
+                    tokenUsage: heartbeat.tokenUsage,
+                    createdAt: heartbeat.recordedAt,
+                  },
+                ]
+              : [];
+            const runItems = runs.map((run) => ({
+              id: `run-${run.id}`,
+              agentName: agent.name,
+              action: `Run ${run.status}`,
+              summary: run.summary ?? `Agent execution ${run.status}.`,
+              status: runStatusToTone(run.status),
+              tokenUsage: run.tokenUsage,
+              createdAt: run.completedAt ?? run.startedAt ?? run.createdAt,
+            }));
+            return [...heartbeatItems, ...runItems];
+          })
+        )
+      ).flat();
       setActivity(items.sort((left, right) => right.createdAt.localeCompare(left.createdAt)));
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Failed to load activity");
@@ -124,7 +137,7 @@ export default function AgentActivity() {
           <div>
             <h1 className="text-2xl font-bold text-gray-900">Agent Activity Feed</h1>
             <p className="mt-1 text-sm text-gray-500">
-              Live stream of heartbeats, task updates, and runtime signals from the control plane.
+              Live stream of heartbeats, execution runs, and runtime signals from the agent API.
             </p>
           </div>
           <Link
@@ -200,7 +213,7 @@ export default function AgentActivity() {
           {filtered.length === 0 ? (
             <EmptyState
               title={activity.length === 0 ? "No activity yet" : "No activity matches this filter"}
-              description="Heartbeats and task transitions will appear here once control-plane teams are deployed and running."
+              description="Heartbeats and execution runs will appear here once your agents are deployed and running."
               ctaLabel="Deploy an agent"
               ctaTo="/agents"
             />

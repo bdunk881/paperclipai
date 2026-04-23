@@ -139,25 +139,30 @@ export const approvalNotificationStore = {
     return result.rows.map(mapRowToNotification);
   },
 
-  async list(status?: ApprovalNotification["status"]): Promise<ApprovalNotification[]> {
-    if (!isPostgresPersistenceEnabled()) {
-      return Array.from(memoryStore.values())
-        .filter((notification) => (status ? notification.status === status : true))
-        .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime())
-        .map(cloneNotification);
+  list(filters?: {
+    assignee?: string;
+    approvalId?: string;
+    runId?: string;
+    status?: ApprovalNotification["status"];
+  }): ApprovalNotification[] {
+    let all = Array.from(memoryStore.values());
+
+    if (filters?.assignee) {
+      all = all.filter((record) => record.recipient === filters.assignee);
+    }
+    if (filters?.approvalId) {
+      all = all.filter((record) => record.approvalRequestId === filters.approvalId);
+    }
+    if (filters?.runId) {
+      all = all.filter((record) => record.runId === filters.runId);
+    }
+    if (filters?.status) {
+      all = all.filter((record) => record.status === filters.status);
     }
 
-    const pool = getPostgresPool();
-    const result = await pool.query(
-      `
-        SELECT *
-        FROM approval_notifications
-        WHERE ($1::text IS NULL OR status = $1)
-        ORDER BY created_at ASC
-      `,
-      [status ?? null]
-    );
-    return result.rows.map(mapRowToNotification);
+    return all
+      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+      .map(cloneNotification);
   },
 
   async markSent(id: string): Promise<boolean> {

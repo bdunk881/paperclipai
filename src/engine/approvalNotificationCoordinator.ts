@@ -27,7 +27,7 @@ export async function runApprovalNotificationSweep(): Promise<{
   delivered: number;
   failed: number;
 }> {
-  const pendingNotifications = await approvalNotificationStore.list("pending");
+  const pendingNotifications = approvalNotificationStore.list({ status: "pending" });
   let delivered = 0;
   let failed = 0;
 

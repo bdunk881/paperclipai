@@ -95,7 +95,9 @@ export default function AgentActivity() {
 
           {filtered.length === 0 ? (
             <div className="rounded-xl border border-dashed border-gray-300 bg-white p-8 text-center text-sm text-gray-500">
-              No activity events match this filter.
+              {activity.length === 0
+                ? "No agent activity yet. Activity will appear here once agents are deployed and running."
+                : "No activity events match this filter."}
             </div>
           ) : null}
         </div>

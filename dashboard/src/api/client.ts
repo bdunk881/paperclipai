@@ -1,5 +1,14 @@
 import type { WorkflowTemplate, WorkflowRun, WorkflowStep } from "../types/workflow";
-import { MOCK_TEMPLATES, MOCK_RUNS, generateRunId } from "../data/mockData";
+import { getApiBasePath } from "./baseUrl";
+import {
+  createMockTemplate,
+  getMockRun,
+  getMockTemplate,
+  listMockLLMConfigs,
+  listMockRuns,
+  listMockTemplates,
+  startMockRun,
+} from "./mockWorkflowData";
 
 // ---------------------------------------------------------------------------
 // LLM Config types — mirrors src/engine/llmProviders/types.ts
@@ -38,12 +47,19 @@ function buildAuthHeaders(accessToken?: string): HeadersInit | undefined {
   return { Authorization: `Bearer ${accessToken}` };
 }
 
+function isMockMode(): boolean {
+  return import.meta.env.VITE_USE_MOCK === "true";
+}
+
 // ---------------------------------------------------------------------------
 // LLM Config API functions
 // ---------------------------------------------------------------------------
 
 /** GET /api/llm-configs */
 export async function listLLMConfigs(accessToken?: string): Promise<LLMConfig[]> {
+  if (isMockMode()) {
+    return listMockLLMConfigs();
+  }
   const res = await fetch(`${BASE}/llm-configs`, {
     headers: buildAuthHeaders(accessToken),
   });
@@ -83,8 +99,7 @@ export async function deleteLLMConfig(id: string): Promise<void> {
   if (!res.ok) throw new Error(`Failed to delete LLM config: ${res.status}`);
 }
 
-const BASE = "/api";
-const USE_MOCK = import.meta.env.VITE_USE_MOCK === "true";
+const BASE = getApiBasePath();
 
 /** Template summary returned by GET /api/templates (list) */
 export interface TemplateSummary {
@@ -101,10 +116,8 @@ type CreateTemplateInput = Omit<WorkflowTemplate, "id"> & { id?: string };
 
 /** GET /api/templates */
 export async function listTemplates(category?: string): Promise<TemplateSummary[]> {
-  if (USE_MOCK) {
-    await delay(150);
-    const filtered = category ? MOCK_TEMPLATES.filter((t) => t.category === category) : MOCK_TEMPLATES;
-    return filtered.map(toSummary);
+  if (isMockMode()) {
+    return listMockTemplates(category as WorkflowTemplate["category"] | undefined);
   }
   const url = category ? `${BASE}/templates?category=${encodeURIComponent(category)}` : `${BASE}/templates`;
   const res = await fetch(url);
@@ -115,14 +128,8 @@ export async function listTemplates(category?: string): Promise<TemplateSummary[
 
 /** POST /api/templates */
 export async function createTemplate(input: CreateTemplateInput): Promise<WorkflowTemplate> {
-  if (USE_MOCK) {
-    await delay(150);
-    const next: WorkflowTemplate = {
-      ...input,
-      id: input.id ?? `tpl-custom-${Date.now()}`,
-    };
-    MOCK_TEMPLATES.unshift(next);
-    return next;
+  if (isMockMode()) {
+    return createMockTemplate(input);
   }
   const res = await fetch(`${BASE}/templates`, {
     method: "POST",
@@ -138,11 +145,8 @@ export async function createTemplate(input: CreateTemplateInput): Promise<Workfl
 
 /** GET /api/templates/:id */
 export async function getTemplate(id: string): Promise<WorkflowTemplate> {
-  if (USE_MOCK) {
-    await delay(100);
-    const tpl = MOCK_TEMPLATES.find((t) => t.id === id);
-    if (!tpl) throw new Error(`Template not found: ${id}`);
-    return tpl;
+  if (isMockMode()) {
+    return getMockTemplate(id);
   }
   const res = await fetch(`${BASE}/templates/${encodeURIComponent(id)}`);
   if (!res.ok) throw new Error(`Template not found: ${id}`);
@@ -151,9 +155,8 @@ export async function getTemplate(id: string): Promise<WorkflowTemplate> {
 
 /** GET /api/runs */
 export async function listRuns(templateId?: string, accessToken?: string): Promise<WorkflowRun[]> {
-  if (USE_MOCK) {
-    await delay(200);
-    return templateId ? MOCK_RUNS.filter((r) => r.templateId === templateId) : [...MOCK_RUNS];
+  if (isMockMode()) {
+    return listMockRuns(templateId);
   }
   const url = templateId
     ? `${BASE}/runs?templateId=${encodeURIComponent(templateId)}`
@@ -168,11 +171,8 @@ export async function listRuns(templateId?: string, accessToken?: string): Promi
 
 /** GET /api/runs/:id */
 export async function getRun(id: string): Promise<WorkflowRun> {
-  if (USE_MOCK) {
-    await delay(100);
-    const run = MOCK_RUNS.find((r) => r.id === id);
-    if (!run) throw new Error(`Run not found: ${id}`);
-    return run;
+  if (isMockMode()) {
+    return getMockRun(id);
   }
   const res = await fetch(`${BASE}/runs/${encodeURIComponent(id)}`);
   if (!res.ok) throw new Error(`Run not found: ${id}`);
@@ -185,26 +185,9 @@ export async function startRun(
   input: Record<string, unknown>,
   config?: Record<string, unknown>
 ): Promise<WorkflowRun> {
-  if (USE_MOCK) {
-    await delay(600);
-    const tpl = MOCK_TEMPLATES.find((t) => t.id === templateId);
-    const newRun: WorkflowRun = {
-      id: generateRunId(),
-      templateId,
-      templateName: tpl?.name ?? templateId,
-      status: "running",
-      startedAt: new Date().toISOString(),
-      input,
-      stepResults: tpl?.steps.slice(0, 1).map((s) => ({
-        stepId: s.id,
-        stepName: s.name,
-        status: "running",
-        output: {},
-        durationMs: 0,
-      })) ?? [],
-    };
-    MOCK_RUNS.unshift(newRun);
-    return newRun;
+  if (isMockMode()) {
+    void config;
+    return startMockRun(templateId, input);
   }
   const res = await fetch(`${BASE}/runs`, {
     method: "POST",
@@ -223,31 +206,6 @@ export async function generateWorkflow(
   description: string,
   llmConfigId?: string
 ): Promise<WorkflowStep[]> {
-  if (USE_MOCK) {
-    await delay(1500);
-    const words = description.toLowerCase();
-    if (words.includes("email") || words.includes("support")) {
-      return [
-        { id: "gen-1", name: "Receive Email Trigger", kind: "trigger", description: "Triggers when a new email is received", inputKeys: [], outputKeys: ["email"] },
-        { id: "gen-2", name: "Classify Intent", kind: "llm", description: "Classifies the intent of the email", inputKeys: ["email"], outputKeys: ["intent", "urgency"], promptTemplate: "Classify the intent of: {{email}}" },
-        { id: "gen-3", name: "Route by Intent", kind: "condition", description: "Routes based on classified intent", inputKeys: ["intent"], outputKeys: ["route"], condition: 'intent === "support"' },
-        { id: "gen-4", name: "Send Response", kind: "action", description: "Sends an automated reply", inputKeys: ["route", "email"], outputKeys: [], action: "email.send" },
-      ];
-    }
-    if (words.includes("invoice") || words.includes("payment")) {
-      return [
-        { id: "gen-1", name: "File Upload Trigger", kind: "file_trigger", description: "Triggers when an invoice file is uploaded", inputKeys: [], outputKeys: ["file"], acceptedFileTypes: [".pdf"] },
-        { id: "gen-2", name: "Parse Invoice", kind: "transform", description: "Extracts data from the PDF", inputKeys: ["file"], outputKeys: ["amount", "vendor"] },
-        { id: "gen-3", name: "Approval Gate", kind: "approval", description: "Requires manager approval for large amounts", inputKeys: ["amount"], outputKeys: ["approved"], approvalAssignee: "finance@company.com", approvalMessage: "Please approve this invoice", approvalTimeoutMinutes: 120 },
-        { id: "gen-4", name: "Post to Accounting", kind: "action", description: "Records in accounting system", inputKeys: ["amount", "vendor", "approved"], outputKeys: [], action: "accounting.post" },
-      ];
-    }
-    return [
-      { id: "gen-1", name: "Trigger", kind: "trigger", description: "Workflow entry point", inputKeys: [], outputKeys: ["input"] },
-      { id: "gen-2", name: "Process with AI", kind: "llm", description: "AI processing step", inputKeys: ["input"], outputKeys: ["result"], promptTemplate: "Process: {{input}}" },
-      { id: "gen-3", name: "Output Result", kind: "output", description: "Returns the final result", inputKeys: ["result"], outputKeys: [] },
-    ];
-  }
   const res = await fetch(`${BASE}/workflows/generate`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -272,22 +230,6 @@ export async function startRunWithFile(
   file: File,
   userId?: string
 ): Promise<WorkflowRun> {
-  if (USE_MOCK) {
-    await delay(800);
-    const tpl = MOCK_TEMPLATES.find((t) => t.id === templateId);
-    const newRun: WorkflowRun = {
-      id: generateRunId(),
-      templateId,
-      templateName: tpl?.name ?? templateId,
-      status: "running",
-      startedAt: new Date().toISOString(),
-      input: { filename: file.name, mimeType: file.type, content: "[mock parsed content]" },
-      stepResults: [],
-    };
-    MOCK_RUNS.unshift(newRun);
-    return newRun;
-  }
-
   const form = new FormData();
   form.append("templateId", templateId);
   form.append("file", file);
@@ -309,15 +251,6 @@ export async function debugStep(
   error: string,
   output: Record<string, unknown>
 ): Promise<{ explanation: string; suggestion: string }> {
-  if (USE_MOCK) {
-    await delay(1200);
-    return {
-      explanation:
-        "The step failed because the input data was missing the required field \"email\". The LLM provider returned a validation error after the template variable could not be resolved.",
-      suggestion:
-        "Check that the upstream trigger step is passing an \"email\" key in its output. Update the Input Keys for this step to include \"email\" and verify the trigger payload includes it.",
-    };
-  }
   const res = await fetch(`${BASE}/debug/step`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -368,27 +301,33 @@ export interface WriteMemoryInput {
   ttlSeconds?: number;
 }
 
-function getMemoryHeaders(): Record<string, string> {
-  return { "Content-Type": "application/json", "X-User-Id": "demo-user" };
+function getMemoryHeaders(userId?: string): Record<string, string> {
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  if (userId) headers["X-User-Id"] = userId;
+  return headers;
 }
 
 /** GET /api/memory — list all entries for the current user */
-export async function listMemoryEntries(workflowId?: string): Promise<MemoryEntry[]> {
+export async function listMemoryEntries(userId?: string, workflowId?: string): Promise<MemoryEntry[]> {
   const url = workflowId
     ? `${BASE}/memory?workflowId=${encodeURIComponent(workflowId)}`
     : `${BASE}/memory`;
-  const res = await fetch(url, { headers: getMemoryHeaders() });
+  const res = await fetch(url, { headers: getMemoryHeaders(userId) });
   if (!res.ok) throw new Error(`Failed to fetch memory entries: ${res.status}`);
   const data = await res.json();
   return data.entries as MemoryEntry[];
 }
 
 /** GET /api/memory/search — keyword/semantic search */
-export async function searchMemory(query: string, agentId?: string): Promise<MemorySearchResult[]> {
+export async function searchMemory(
+  query: string,
+  userId?: string,
+  agentId?: string
+): Promise<MemorySearchResult[]> {
   const params = new URLSearchParams({ q: query });
   if (agentId) params.set("agentId", agentId);
   const res = await fetch(`${BASE}/memory/search?${params.toString()}`, {
-    headers: getMemoryHeaders(),
+    headers: getMemoryHeaders(userId),
   });
   if (!res.ok) throw new Error(`Memory search failed: ${res.status}`);
   const data = await res.json();
@@ -396,10 +335,10 @@ export async function searchMemory(query: string, agentId?: string): Promise<Mem
 }
 
 /** POST /api/memory — write (create or upsert) a memory entry */
-export async function writeMemoryEntry(input: WriteMemoryInput): Promise<MemoryEntry> {
+export async function writeMemoryEntry(input: WriteMemoryInput, userId?: string): Promise<MemoryEntry> {
   const res = await fetch(`${BASE}/memory`, {
     method: "POST",
-    headers: getMemoryHeaders(),
+    headers: getMemoryHeaders(userId),
     body: JSON.stringify(input),
   });
   if (!res.ok) {
@@ -410,17 +349,17 @@ export async function writeMemoryEntry(input: WriteMemoryInput): Promise<MemoryE
 }
 
 /** DELETE /api/memory/:id — delete a single entry */
-export async function deleteMemoryEntry(id: string): Promise<void> {
+export async function deleteMemoryEntry(id: string, userId?: string): Promise<void> {
   const res = await fetch(`${BASE}/memory/${encodeURIComponent(id)}`, {
     method: "DELETE",
-    headers: getMemoryHeaders(),
+    headers: getMemoryHeaders(userId),
   });
   if (!res.ok && res.status !== 404) throw new Error(`Failed to delete memory entry: ${res.status}`);
 }
 
 /** GET /api/memory/stats — usage stats */
-export async function getMemoryStats(): Promise<MemoryStats> {
-  const res = await fetch(`${BASE}/memory/stats`, { headers: getMemoryHeaders() });
+export async function getMemoryStats(userId?: string): Promise<MemoryStats> {
+  const res = await fetch(`${BASE}/memory/stats`, { headers: getMemoryHeaders(userId) });
   if (!res.ok) throw new Error(`Failed to fetch memory stats: ${res.status}`);
   return res.json() as Promise<MemoryStats>;
 }
@@ -472,22 +411,4 @@ export async function resolveApproval(
     const err = await res.json().catch(() => null);
     throw new Error(err?.error ?? `Failed to resolve approval: ${res.status}`);
   }
-}
-
-// --- helpers ---
-
-function delay(ms: number): Promise<void> {
-  return new Promise((r) => setTimeout(r, ms));
-}
-
-function toSummary(t: WorkflowTemplate): TemplateSummary {
-  return {
-    id: t.id,
-    name: t.name,
-    description: t.description,
-    category: t.category,
-    version: t.version,
-    stepCount: t.steps.length,
-    configFieldCount: t.configFields.length,
-  };
 }

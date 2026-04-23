@@ -9,14 +9,21 @@ import rateLimit from "express-rate-limit";
 import multer from "multer";
 import cors from "cors";
 import helmet from "helmet";
-import { WORKFLOW_TEMPLATES, getTemplate, getTemplatesByCategory } from "./templates";
+import {
+  getTemplate,
+  getTemplatesByCategory,
+  listTemplates,
+} from "./templates";
 import { WorkflowTemplate, WorkflowStep } from "./types/workflow";
 import { workflowEngine } from "./engine/WorkflowEngine";
 import { runStore } from "./engine/runStore";
 import { approvalStore } from "./engine/approvalStore";
+import { approvalNotificationStore } from "./engine/approvalNotificationStore";
 import llmConfigRoutes from "./llmConfig/llmConfigRoutes";
 import mcpRoutes from "./mcp/mcpRoutes";
 import memoryRoutes from "./memory/memoryRoutes";
+import knowledgeRoutes from "./knowledge/routes";
+import controlPlaneRoutes from "./controlPlane/controlPlaneRoutes";
 import { llmConfigStore } from "./llmConfig/llmConfigStore";
 import { getProvider } from "./engine/llmProviders";
 import { parseFile } from "./engine/fileParser";
@@ -27,6 +34,7 @@ import {
 } from "./engine/classificationLog";
 import { requireAuth, AuthenticatedRequest } from "./auth/authMiddleware";
 import stripeWebhookRoutes from "./billing/stripeWebhook";
+import apolloWebhookRoutes from "./integrations/apollo-attio/webhookRoute";
 import checkoutRoutes from "./billing/checkoutRoutes";
 import subscriptionRoutes from "./billing/subscriptionRoutes";
 import slackRoutes, { slackWebhookRouter } from "./integrations/slack/routes";
@@ -41,8 +49,19 @@ import datadogAzureMonitorRoutes, {
 } from "./integrations/datadog-azure-monitor/routes";
 import agentCatalogRoutes from "./integrations/agent-catalog/routes";
 import oauthBridgeRoutes from "./integrations/oauthBridgeRoutes";
+import integrationRoutes, {
+  catalogRouter as integrationCatalogRoutes,
+  oauthCallbackRouter as integrationOAuthCallbackRoutes,
+  webhookRelayRouter,
+} from "./integrations/integrationRoutes";
 import googleWorkspaceConnectorRoutes from "./connectors/google-workspace/routes";
 import googleWorkspaceWebhookRoutes from "./connectors/google-workspace/webhookRoutes";
+import {
+  createPortableWorkflowBundle,
+  getPortableWorkflowSchemaDescriptor,
+  parsePortableWorkflowBundle,
+} from "./workflows/portableSchema";
+import { saveImportedTemplate } from "./templates/importedTemplateStore";
 
 const app = express();
 
@@ -84,8 +103,19 @@ function getHeaderUserId(req: express.Request): string | null {
   return typeof userId === "string" && userId.trim() ? userId.trim() : null;
 }
 
+function getBearerTokenSubject(req: express.Request): string | null {
+  const authHeader = req.headers.authorization;
+  if (!authHeader?.startsWith("Bearer ")) {
+    return null;
+  }
+
+  const token = authHeader.slice(7).trim();
+  return token || null;
+}
+
 function getRateLimitKey(req: express.Request): string {
-  const userId = getAuthenticatedUserId(req) ?? getHeaderUserId(req);
+  const userId =
+    getAuthenticatedUserId(req) ?? getHeaderUserId(req) ?? getBearerTokenSubject(req);
   if (userId) {
     return `user:${userId}`;
   }
@@ -140,6 +170,17 @@ const billingMutationRateLimiter = rateLimit({
   handler: createRateLimitHandler(24 * 60 * 60 * 1000),
 });
 
+const knowledgeMutationRateLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  limit: 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: getRateLimitKey,
+  skip: (req) => !["POST", "PUT", "PATCH", "DELETE"].includes(req.method),
+  skipFailedRequests: true,
+  handler: createRateLimitHandler(60 * 60 * 1000),
+});
+
 app.use("/api", generalApiRateLimiter);
 app.use("/api/webhooks", webhookRateLimiter);
 // ---------------------------------------------------------------------------
@@ -174,11 +215,14 @@ const upload = multer({
 });
 
 // ---------------------------------------------------------------------------
+// Apollo webhook — receives Apollo email reply events → syncs to Attio
+// ---------------------------------------------------------------------------
+app.use("/api/webhooks/apollo", apolloWebhookRoutes);
+
+// ---------------------------------------------------------------------------
 // Billing API — Stripe checkout sessions + subscription lifecycle
 // ---------------------------------------------------------------------------
-// Checkout is intentionally public so unauthenticated users can start paid signup from pricing pages.
-// Downstream webhook processing still reconciles subscription ownership via metadata/email.
-app.use("/api/billing/checkout", billingMutationRateLimiter, checkoutRoutes);
+app.use("/api/billing/checkout", requireAuth, billingMutationRateLimiter, checkoutRoutes);
 app.use("/api/billing/subscription", requireAuth, billingMutationRateLimiter, subscriptionRoutes);
 
 // ---------------------------------------------------------------------------
@@ -195,6 +239,11 @@ app.use("/api/mcp/servers", requireAuth, mcpRoutes);
 // Memory API — persistent context memory store for agents/workflows
 // ---------------------------------------------------------------------------
 app.use("/api/memory", requireAuth, memoryRoutes);
+app.use("/api/knowledge", requireAuth, knowledgeMutationRateLimiter, knowledgeRoutes);
+app.use("/api/integrations/catalog", integrationCatalogRoutes);
+app.use("/api/integrations/oauth2", integrationOAuthCallbackRoutes);
+app.use("/api/integrations", requireAuth, integrationRoutes);
+app.use("/api/webhooks/relay", webhookRelayRouter);
 app.use("/api/integrations", oauthBridgeRoutes);
 app.use("/api/integrations/slack", slackRoutes);
 app.use("/api/integrations/shopify", shopifyRoutes);
@@ -206,6 +255,7 @@ app.use("/api/integrations/intercom", intercomRoutes);
 app.use("/api/integrations/datadog-azure-monitor", datadogAzureMonitorRoutes);
 app.use("/api/integrations/agent-catalog", agentCatalogRoutes);
 app.use("/api/connectors/google-workspace", googleWorkspaceConnectorRoutes);
+app.use("/api/control-plane", requireAuth, controlPlaneRoutes);
 
 // ---------------------------------------------------------------------------
 // Auth API — identity endpoint for authenticated callers
@@ -228,7 +278,7 @@ app.get("/api/templates", (req, res) => {
   if (category && typeof category === "string") {
     templates = getTemplatesByCategory(category as WorkflowTemplate["category"]);
   } else {
-    templates = WORKFLOW_TEMPLATES;
+    templates = listTemplates();
   }
 
   res.json({
@@ -245,6 +295,11 @@ app.get("/api/templates", (req, res) => {
   });
 });
 
+/** Returns the current portable workflow schema contract */
+app.get("/api/workflows/schema", (_req, res) => {
+  res.json(getPortableWorkflowSchemaDescriptor());
+});
+
 /** Get a single template with full definition */
 app.get("/api/templates/:id", (req, res) => {
   try {
@@ -253,6 +308,43 @@ app.get("/api/templates/:id", (req, res) => {
   } catch {
     res.status(404).json({ error: `Template not found: ${req.params.id}` });
   }
+});
+
+/** Export a template in the portable AutoFlow workflow format */
+app.get("/api/templates/:id/export", (req, res) => {
+  try {
+    const template = getTemplate(req.params.id);
+    res.json(createPortableWorkflowBundle(template));
+  } catch {
+    res.status(404).json({ error: `Template not found: ${req.params.id}` });
+  }
+});
+
+/** Import a portable workflow template into the in-memory registry */
+app.post("/api/templates/import", requireAuth, async (req, res) => {
+  let bundle;
+  try {
+    bundle = parsePortableWorkflowBundle(req.body);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Invalid portable workflow payload";
+    res.status(400).json({ error: message });
+    return;
+  }
+
+  try {
+    getTemplate(bundle.template.id);
+    res.status(409).json({ error: `Template already exists: ${bundle.template.id}` });
+    return;
+  } catch {
+    // Template id is available; continue with import.
+  }
+
+  await saveImportedTemplate(bundle.template);
+  res.status(201).json({
+    imported: true,
+    template: bundle.template,
+    schemaVersion: bundle.schemaVersion,
+  });
 });
 
 /** Get sample data for a template (for dashboard preview) */
@@ -370,7 +462,7 @@ app.post("/api/runs/file", requireAuth, upload.single("file"), async (req: Authe
   const userId = req.auth?.sub;
   let openaiApiKey: string | undefined;
   if (userId) {
-    const defaultConfig = llmConfigStore.getDecryptedDefault(userId);
+    const defaultConfig = await llmConfigStore.getDecryptedDefault(userId);
     if (defaultConfig?.config.provider === "openai") {
       openaiApiKey = defaultConfig.apiKey;
     }
@@ -450,8 +542,8 @@ app.post("/api/workflows/generate", requireAuth, llmEndpointRateLimiter, async (
 
   const resolved =
     typeof llmConfigId === "string" && llmConfigId
-      ? llmConfigStore.getDecrypted(llmConfigId, userId)
-      : llmConfigStore.getDecryptedDefault(userId);
+      ? await llmConfigStore.getDecrypted(llmConfigId, userId)
+      : await llmConfigStore.getDecryptedDefault(userId);
 
   if (!resolved) {
     res.status(422).json({
@@ -538,25 +630,39 @@ app.post("/api/webhooks/:templateId", (req, res) => {
  * Query params: status=pending|approved|rejected|timed_out
  * Returns all approval requests, optionally filtered by status.
  */
-app.get("/api/approvals", (req, res) => {
+app.get("/api/approvals", requireAuth, (req: AuthenticatedRequest, res) => {
+  const userId = req.auth?.sub;
   const { status } = req.query;
   const validStatuses = ["pending", "approved", "rejected", "timed_out"];
   const filter =
     typeof status === "string" && validStatuses.includes(status)
       ? (status as "pending" | "approved" | "rejected" | "timed_out")
       : undefined;
-  const approvals = approvalStore.list(filter);
+  const approvals = approvalStore.list(filter).filter((approval) => approval.assignee === userId);
   res.json({ approvals, total: approvals.length });
+});
+
+/**
+ * GET /api/approvals/notifications
+ * Returns in-app approval notifications for the authenticated approver.
+ */
+app.get("/api/approvals/notifications", requireAuth, (req: AuthenticatedRequest, res) => {
+  const notifications = approvalNotificationStore.list({ assignee: req.auth?.sub });
+  res.json({ notifications, total: notifications.length });
 });
 
 /**
  * GET /api/approvals/:id
  * Returns a single approval request by ID.
  */
-app.get("/api/approvals/:id", (req, res) => {
+app.get("/api/approvals/:id", requireAuth, (req: AuthenticatedRequest, res) => {
   const approval = approvalStore.get(req.params.id);
   if (!approval) {
     res.status(404).json({ error: `Approval not found: ${req.params.id}` });
+    return;
+  }
+  if (approval.assignee !== req.auth?.sub) {
+    res.status(403).json({ error: "Forbidden" });
     return;
   }
   res.json(approval);
@@ -567,11 +673,21 @@ app.get("/api/approvals/:id", (req, res) => {
  * Body: { decision: "approved" | "rejected", comment?: string }
  * Resolves the approval request, resuming or terminating the paused run.
  */
-app.post("/api/approvals/:id/resolve", (req, res) => {
+app.post("/api/approvals/:id/resolve", requireAuth, (req: AuthenticatedRequest, res) => {
   const { decision, comment } = req.body as { decision?: string; comment?: string };
 
   if (decision !== "approved" && decision !== "rejected") {
     res.status(400).json({ error: "decision must be 'approved' or 'rejected'" });
+    return;
+  }
+
+  const approval = approvalStore.get(req.params.id);
+  if (!approval) {
+    res.status(404).json({ error: "Approval not found or already resolved" });
+    return;
+  }
+  if (approval.assignee !== req.auth?.sub) {
+    res.status(403).json({ error: "Forbidden" });
     return;
   }
 
@@ -591,7 +707,7 @@ app.get("/health", (_req, res) => {
   const runs = runStore.list();
   res.json({
     status: "ok",
-    templates: WORKFLOW_TEMPLATES.length,
+    templates: listTemplates().length,
     runs: {
       total: runs.length,
       running: runs.filter((r) => r.status === "running").length,

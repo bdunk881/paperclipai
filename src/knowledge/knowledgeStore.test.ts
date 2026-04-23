@@ -1,0 +1,85 @@
+jest.mock("../db/postgres", () => ({
+  isPostgresConfigured: jest.fn(() => false),
+  queryPostgres: jest.fn(),
+}));
+
+import { knowledgeStore } from "./knowledgeStore";
+
+beforeEach(() => {
+  knowledgeStore.clear();
+});
+
+describe("knowledgeStore", () => {
+  it("creates a knowledge base and ingests searchable chunks", async () => {
+    const base = await knowledgeStore.createKnowledgeBase({
+      userId: "user-1",
+      name: "Support KB",
+      description: "FAQ and support guidance",
+      tags: ["support"],
+    });
+
+    const { document, chunks } = await knowledgeStore.ingestDocument({
+      userId: "user-1",
+      knowledgeBaseId: base.id,
+      filename: "refund-policy.md",
+      mimeType: "text/markdown",
+      content:
+        "# Refund policy\n\nCustomers can receive a refund within thirty days of purchase.\n\nEscalate billing disputes to finance.",
+      sourceType: "inline",
+    });
+
+    expect(document.status).toBe("ready");
+    expect(chunks.length).toBeGreaterThan(0);
+
+    const results = await knowledgeStore.search({
+      userId: "user-1",
+      query: "how long do customers have to request a refund",
+      knowledgeBaseIds: [base.id],
+    });
+
+    expect(results.length).toBeGreaterThan(0);
+    expect(results[0].document.id).toBe(document.id);
+    expect(results[0].chunk.text.toLowerCase()).toContain("refund");
+  });
+
+  it("supports chunk updates, splits, and merges", async () => {
+    const base = await knowledgeStore.createKnowledgeBase({
+      userId: "user-2",
+      name: "Ops KB",
+    });
+
+    const { document, chunks } = await knowledgeStore.ingestDocument({
+      userId: "user-2",
+      knowledgeBaseId: base.id,
+      filename: "runbook.txt",
+      mimeType: "text/plain",
+      content:
+        "Restart the worker service after deploy. Verify the health endpoint after restart. Notify support if the queue is still delayed.",
+      sourceType: "inline",
+    });
+
+    const updated = await knowledgeStore.updateChunk(chunks[0].id, "user-2", {
+      text: "Restart the worker service after each deploy and verify the health endpoint.",
+    });
+    expect(updated?.text).toContain("health endpoint");
+
+    const split = await knowledgeStore.splitChunk(
+      chunks[0].id,
+      "user-2",
+      [
+        "Restart the worker service after each deploy.",
+        "Verify the health endpoint after restart.",
+      ]
+    );
+    expect(split).toHaveLength(2);
+
+    const merged = await knowledgeStore.mergeChunks(
+      split!.map((chunk) => chunk.id),
+      "user-2"
+    );
+    expect(merged?.text).toContain("Restart the worker service");
+
+    const listed = await knowledgeStore.listChunks(document.id, "user-2");
+    expect(listed.length).toBeGreaterThan(0);
+  });
+});

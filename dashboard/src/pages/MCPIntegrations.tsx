@@ -1,8 +1,13 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { Search, Plug, PlugZap, Tag, ExternalLink, CheckCircle, Loader2 } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import { apiGet } from "../api/settingsClient";
+import {
+  LIVE_CONNECTOR_PROVIDER_BY_KEY,
+  type ProviderKey,
+  type ProviderStatus,
+} from "../integrations/liveConnectorCatalog";
 
 import githubLogo from "../assets/integrations/github.svg";
 import linearLogo from "../assets/integrations/linear.svg";
@@ -19,6 +24,7 @@ interface IntegrationOption {
   tools: string[];
   official: boolean;
   logo?: string;
+  liveProviderKey?: ProviderKey;
 }
 
 interface RegisteredIntegration {
@@ -56,6 +62,7 @@ const INTEGRATION_OPTIONS: IntegrationOption[] = [
     tools: ["send_message", "list_channels", "get_thread", "add_reaction"],
     official: true,
     logo: slackLogo,
+    liveProviderKey: "slack",
   },
   {
     id: "mcp-postgres",
@@ -90,6 +97,7 @@ const INTEGRATION_OPTIONS: IntegrationOption[] = [
     tools: ["create_customer", "charge_card", "list_subscriptions", "create_invoice"],
     official: true,
     logo: stripeLogo,
+    liveProviderKey: "stripe",
   },
   {
     id: "mcp-notion",
@@ -111,13 +119,55 @@ const INTEGRATION_OPTIONS: IntegrationOption[] = [
 ];
 
 const CATEGORIES = ["All", ...Array.from(new Set(INTEGRATION_OPTIONS.map((s) => s.category))).sort()];
+const API_BASE = import.meta.env.VITE_API_URL ?? "http://localhost:3001";
+
+function formatAvailability(option: IntegrationOption, liveStatuses: Record<ProviderKey, ProviderStatus> | null) {
+  if (!option.liveProviderKey) {
+    return {
+      badgeClassName: "bg-slate-100 text-slate-700",
+      badgeLabel: "Registry required",
+      helperText: "No native AutoFlow setup flow yet. Register a compatible MCP server in the Integration Registry.",
+      ctaLabel: "Register server",
+      ctaTo: "/settings/mcp-servers",
+      title: "This entry relies on a custom MCP server. Add your endpoint in the Integration Registry.",
+    };
+  }
+
+  const provider = LIVE_CONNECTOR_PROVIDER_BY_KEY[option.liveProviderKey];
+  const status = liveStatuses?.[option.liveProviderKey];
+
+  if (status?.connected) {
+    return {
+      badgeClassName: "bg-green-100 text-green-700",
+      badgeLabel: "Connected",
+      helperText: `${provider.name} is already connected through the live connector setup surface.`,
+      ctaLabel: "Manage connection",
+      ctaTo: "/integrations",
+      title: `Open the live ${provider.name} connector setup page.`,
+    };
+  }
+
+  return {
+    badgeClassName: "bg-blue-50 text-blue-700",
+    badgeLabel: provider.authMode === "oauth" ? "Setup available" : "API-key setup",
+    helperText:
+      provider.authMode === "oauth"
+        ? `${provider.name} has a live connector setup flow in AutoFlow today.`
+        : `${provider.name} is configured through the live API-key connector surface.`,
+    ctaLabel: "Open connector setup",
+    ctaTo: "/integrations",
+    title: `Open the live ${provider.name} connector setup page.`,
+  };
+}
 
 export default function IntegrationsHub() {
-  const { user } = useAuth();
+  const { user, getAccessToken } = useAuth();
   const [search, setSearch] = useState("");
   const [category, setCategory] = useState("All");
   const [registered, setRegistered] = useState<RegisteredIntegration[]>([]);
   const [loadingRegistered, setLoadingRegistered] = useState(true);
+  const [liveStatuses, setLiveStatuses] = useState<Record<ProviderKey, ProviderStatus> | null>(null);
+  const [loadingLiveStatuses, setLoadingLiveStatuses] = useState(true);
 
   useEffect(() => {
     async function loadRegistered() {
@@ -131,15 +181,51 @@ export default function IntegrationsHub() {
     void loadRegistered();
   }, [user]);
 
-  const filtered = INTEGRATION_OPTIONS.filter((s) => {
-    const matchSearch =
-      s.name.toLowerCase().includes(search.toLowerCase()) ||
-      s.description.toLowerCase().includes(search.toLowerCase());
-    const matchCategory = category === "All" || s.category === category;
-    return matchSearch && matchCategory;
-  });
+  useEffect(() => {
+    async function loadLiveStatuses() {
+      try {
+        const accessToken = await getAccessToken();
+        const headers = new Headers();
+        if (accessToken) {
+          headers.set("Authorization", `Bearer ${accessToken}`);
+        }
 
-  const marketplaceConnectedCount = 0;
+        const response = await fetch(`${API_BASE}/api/integrations/status`, { headers });
+        if (!response.ok) {
+          return;
+        }
+
+        const payload = (await response.json()) as { providers: Record<ProviderKey, ProviderStatus> };
+        setLiveStatuses(payload.providers);
+      } catch {
+        setLiveStatuses(null);
+      } finally {
+        setLoadingLiveStatuses(false);
+      }
+    }
+
+    void loadLiveStatuses();
+  }, [getAccessToken]);
+
+  const filtered = useMemo(
+    () =>
+      INTEGRATION_OPTIONS.filter((option) => {
+        const matchSearch =
+          option.name.toLowerCase().includes(search.toLowerCase()) ||
+          option.description.toLowerCase().includes(search.toLowerCase());
+        const matchCategory = category === "All" || option.category === category;
+        return matchSearch && matchCategory;
+      }),
+    [category, search]
+  );
+
+  const liveSetupOptions = INTEGRATION_OPTIONS.filter((option) => option.liveProviderKey);
+  const connectedLiveCount = liveSetupOptions.reduce((count, option) => {
+    if (option.liveProviderKey && liveStatuses?.[option.liveProviderKey]?.connected) {
+      return count + 1;
+    }
+    return count;
+  }, 0);
   const registeredCount = registered.length;
   const recentRegistered = registered
     .slice()
@@ -148,28 +234,30 @@ export default function IntegrationsHub() {
 
   return (
     <div className="min-h-full bg-gray-50">
-      {/* Header */}
-      <div className="bg-white border-b border-gray-200 px-8 py-6">
-        <div className="flex items-center justify-between">
+      <div className="border-b border-gray-200 bg-white px-8 py-6">
+        <div className="flex items-center justify-between gap-4">
           <div>
             <div className="flex items-center gap-3">
               <h1 className="text-2xl font-bold text-gray-900">Integrations Hub</h1>
-              <span className="px-2 py-0.5 rounded-full bg-blue-50 text-blue-600 text-xs font-medium">
-                In Development
+              <span className="rounded-full bg-blue-50 px-2 py-0.5 text-xs font-medium text-blue-600">
+                Live connector setup
               </span>
             </div>
-            <p className="text-gray-500 text-sm mt-1">
-              Connect integrations to give your agents access to external tools and services.
+            <p className="mt-1 text-sm text-gray-500">
+              Use the live connector setup page for supported SaaS providers, and use the Integration Registry for
+              custom MCP servers that do not have a native AutoFlow setup flow yet.
             </p>
           </div>
           <div className="text-right space-y-1">
             <div>
               <div className="text-2xl font-bold text-gray-900">{registeredCount}</div>
-              <div className="text-xs text-gray-400">custom integrations registered</div>
+              <div className="text-xs text-gray-400">custom MCP servers registered</div>
             </div>
             <div>
-              <div className="text-sm font-semibold text-gray-700">{marketplaceConnectedCount}</div>
-              <div className="text-xs text-gray-400">marketplace integrations connected</div>
+              <div className="text-sm font-semibold text-gray-700">
+                {loadingLiveStatuses ? "…" : `${connectedLiveCount}/${liveSetupOptions.length}`}
+              </div>
+              <div className="text-xs text-gray-400">cards with live setup already connected</div>
             </div>
           </div>
         </div>
@@ -179,12 +267,13 @@ export default function IntegrationsHub() {
             <div>
               <p className="text-sm font-semibold text-gray-900">Custom Integration Activity</p>
               <p className="mt-1 text-xs text-gray-500">
-                Manage your registered integration servers and verify auth before using them in workflows.
+                Register your own MCP servers here. For Slack and Stripe, open the live connector setup surface instead
+                of treating them as coming-soon marketplace entries.
               </p>
             </div>
             <Link
-              to="/settings/integrations"
-              className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 px-3 py-2 text-xs font-medium text-gray-700 hover:bg-gray-50 transition"
+              to="/settings/mcp-servers"
+              className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 px-3 py-2 text-xs font-medium text-gray-700 transition hover:bg-gray-50"
             >
               Manage registry
               <ExternalLink size={12} />
@@ -213,12 +302,11 @@ export default function IntegrationsHub() {
           )}
         </div>
 
-        {/* Search + filter */}
-        <div className="flex gap-3 mt-5">
-          <div className="relative flex-1 max-w-sm">
+        <div className="mt-5 flex gap-3">
+          <div className="relative max-w-sm flex-1">
             <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
             <input
-              className="w-full pl-9 pr-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full rounded-lg border border-gray-200 py-2 pl-9 pr-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
               placeholder="Search servers..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
@@ -229,10 +317,10 @@ export default function IntegrationsHub() {
               <button
                 key={cat}
                 onClick={() => setCategory(cat)}
-                className={`px-3 py-1.5 rounded-lg text-xs font-medium transition ${
+                className={`rounded-lg px-3 py-1.5 text-xs font-medium transition ${
                   category === cat
                     ? "bg-gray-900 text-white"
-                    : "bg-white border border-gray-200 text-gray-500 hover:border-gray-300"
+                    : "border border-gray-200 bg-white text-gray-500 hover:border-gray-300"
                 }`}
               >
                 {cat}
@@ -242,12 +330,12 @@ export default function IntegrationsHub() {
         </div>
       </div>
 
-      {/* Server grid */}
-      <div className="max-w-6xl mx-auto px-8 py-6">
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+      <div className="mx-auto max-w-6xl px-8 py-6">
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
           {filtered.map((server) => {
-            const Logo = server.logo ? (
-              <img src={server.logo} alt={`${server.name} logo`} className="w-6 h-6 object-contain" />
+            const availability = formatAvailability(server, liveStatuses);
+            const logo = server.logo ? (
+              <img src={server.logo} alt={`${server.name} logo`} className="h-6 w-6 object-contain" />
             ) : (
               <PlugZap size={16} className="text-gray-600 dark:text-gray-400" />
             );
@@ -255,19 +343,17 @@ export default function IntegrationsHub() {
             return (
               <div
                 key={server.id}
-                className="bg-white dark:bg-slate-900 rounded-xl border border-gray-200 dark:border-slate-800 p-5 hover:shadow-md hover:border-indigo-500/50 dark:hover:border-indigo-500/50 transition-all duration-300 group"
+                className="group rounded-xl border border-gray-200 bg-white p-5 transition-all duration-300 hover:border-indigo-500/50 hover:shadow-md dark:border-slate-800 dark:bg-slate-900 dark:hover:border-indigo-500/50"
               >
                 <div className="flex items-start justify-between">
                   <div className="flex items-center gap-2.5">
-                    <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-gray-100 to-gray-200 dark:from-slate-800 dark:to-slate-900 flex items-center justify-center group-hover:scale-110 transition-transform duration-300">
-                      {Logo}
+                    <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-gradient-to-br from-gray-100 to-gray-200 transition-transform duration-300 group-hover:scale-110 dark:from-slate-800 dark:to-slate-900">
+                      {logo}
                     </div>
                     <div>
                       <div className="flex items-center gap-1.5">
-                        <span className="font-semibold text-gray-900 dark:text-gray-100 text-sm">{server.name}</span>
-                        {server.official && (
-                          <CheckCircle size={12} className="text-blue-500 dark:text-blue-400" />
-                        )}
+                        <span className="text-sm font-semibold text-gray-900 dark:text-gray-100">{server.name}</span>
+                        {server.official && <CheckCircle size={12} className="text-blue-500 dark:text-blue-400" />}
                       </div>
                       <div className="flex items-center gap-1 text-xs text-gray-400 dark:text-gray-500">
                         <Tag size={9} />
@@ -276,50 +362,55 @@ export default function IntegrationsHub() {
                     </div>
                   </div>
 
-                  <span className="px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 text-xs font-medium">
-                    Coming soon
+                  <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${availability.badgeClassName}`}>
+                    {availability.badgeLabel}
                   </span>
                 </div>
 
-                <p className="text-xs text-gray-500 dark:text-gray-400 mt-3 leading-relaxed">{server.description}</p>
+                <p className="mt-3 text-xs leading-relaxed text-gray-500 dark:text-gray-400">{server.description}</p>
 
-              <div className="mt-3 flex flex-wrap gap-1">
-                {server.tools.slice(0, 3).map((tool) => (
-                  <span
-                    key={tool}
-                    className="px-2 py-0.5 bg-gray-100 dark:bg-slate-800 text-gray-600 dark:text-gray-300 rounded text-xs font-mono"
+                <div className="mt-3 flex flex-wrap gap-1">
+                  {server.tools.slice(0, 3).map((tool) => (
+                    <span
+                      key={tool}
+                      className="rounded bg-gray-100 px-2 py-0.5 font-mono text-xs text-gray-600 dark:bg-slate-800 dark:text-gray-300"
+                    >
+                      {tool}
+                    </span>
+                  ))}
+                  {server.tools.length > 3 && (
+                    <span className="rounded bg-gray-100 px-2 py-0.5 text-xs text-gray-400 dark:bg-slate-800 dark:text-gray-500">
+                      +{server.tools.length - 3} more
+                    </span>
+                  )}
+                </div>
+
+                <p className="mt-3 text-xs leading-relaxed text-gray-500">{availability.helperText}</p>
+
+                <div className="mt-4 flex gap-2 border-t border-gray-100 pt-3 dark:border-slate-800">
+                  <Link
+                    to={availability.ctaTo}
+                    title={availability.title}
+                    className="flex flex-1 items-center justify-center gap-1.5 rounded-lg border border-gray-200 px-3 py-2 text-xs font-medium text-gray-700 transition hover:bg-gray-50"
                   >
-                    {tool}
-                  </span>
-                ))}
-                {server.tools.length > 3 && (
-                  <span className="px-2 py-0.5 bg-gray-100 dark:bg-slate-800 text-gray-400 dark:text-gray-500 rounded text-xs">
-                    +{server.tools.length - 3} more
-                  </span>
-                )}
+                    <Plug size={12} />
+                    {availability.ctaLabel}
+                  </Link>
+                  <Link
+                    to={availability.ctaTo}
+                    title={availability.title}
+                    className="rounded-lg border border-gray-200 px-2.5 py-2 text-gray-400 transition hover:border-gray-300 hover:text-gray-600 dark:border-slate-800 dark:hover:border-slate-700 dark:hover:text-gray-200"
+                  >
+                    <ExternalLink size={12} />
+                  </Link>
+                </div>
               </div>
-
-              <div className="flex gap-2 mt-4 pt-3 border-t border-gray-100 dark:border-slate-800">
-                <button
-                  type="button"
-                  disabled
-                  title="Connection flow is still in development. Use Settings > Integrations to register custom integrations today."
-                  className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-xs font-medium bg-gray-100 dark:bg-slate-800 text-gray-500 dark:text-gray-500 border border-gray-200 dark:border-slate-700 cursor-not-allowed"
-                >
-                  <Plug size={12} />
-                  Connect (coming soon)
-                </button>
-                <button className="px-2.5 py-2 rounded-lg border border-gray-200 dark:border-slate-800 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 hover:border-gray-300 dark:hover:border-slate-700 transition">
-                  <ExternalLink size={12} />
-                </button>
-              </div>
-            </div>
-          );
-        })}
+            );
+          })}
         </div>
 
         {filtered.length === 0 && (
-          <div className="text-center py-16 text-gray-400">
+          <div className="py-16 text-center text-gray-400">
             <PlugZap size={40} className="mx-auto mb-3 opacity-30" />
             <p className="text-sm">No integrations match your search</p>
           </div>

@@ -135,7 +135,7 @@ export default function Integrations() {
     setBusyProvider(provider.key);
     setError(null);
     try {
-      const response = await authorizedFetch(`/api/integrations/${provider.key}/connect`, {
+      const response = await authorizedFetch(`/integrations/${provider.key}/connect`, {
         method: "POST",
       });
       const payload = (await response.json()) as { redirectUrl: string };
@@ -151,7 +151,7 @@ export default function Integrations() {
     setBusyProvider(provider.key);
     setError(null);
     try {
-      await authorizedFetch(`/api/integrations/${provider.key}/disconnect`, {
+      await authorizedFetch(`/integrations/${provider.key}/disconnect`, {
         method: "DELETE",
       });
       await loadStatuses();

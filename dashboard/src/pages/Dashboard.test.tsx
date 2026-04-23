@@ -7,12 +7,16 @@ const {
   listRunsMock,
   listTemplatesMock,
   listLLMConfigsMock,
+  listAgentsMock,
+  listRoutinesMock,
   getAccessTokenMock,
   navigateMock,
 } = vi.hoisted(() => ({
   listRunsMock: vi.fn(),
   listTemplatesMock: vi.fn(),
   listLLMConfigsMock: vi.fn(),
+  listAgentsMock: vi.fn(),
+  listRoutinesMock: vi.fn(),
   getAccessTokenMock: vi.fn(),
   navigateMock: vi.fn(),
 }));
@@ -21,6 +25,12 @@ vi.mock("../api/client", () => ({
   listRuns: listRunsMock,
   listTemplates: listTemplatesMock,
   listLLMConfigs: listLLMConfigsMock,
+}));
+
+vi.mock("../api/agentApi", () => ({
+  listAgents: listAgentsMock,
+  listRoutines: listRoutinesMock,
+  getAgentBudget: vi.fn().mockResolvedValue(null),
 }));
 
 vi.mock("../context/AuthContext", () => ({
@@ -53,6 +63,8 @@ describe("Dashboard", () => {
     listRunsMock.mockResolvedValue([]);
     listTemplatesMock.mockResolvedValue([]);
     listLLMConfigsMock.mockResolvedValue([]);
+    listAgentsMock.mockResolvedValue([]);
+    listRoutinesMock.mockResolvedValue([]);
   });
 
   afterEach(() => {
@@ -71,6 +83,8 @@ describe("Dashboard", () => {
     expect(getAccessTokenMock).toHaveBeenCalledTimes(1);
     expect(listRunsMock).toHaveBeenCalledWith(undefined, "mock-token");
     expect(listLLMConfigsMock).toHaveBeenCalledWith("mock-token");
+    expect(listAgentsMock).toHaveBeenCalledWith("mock-token");
+    expect(listRoutinesMock).toHaveBeenCalledWith("mock-token");
     expect(screen.queryByText("Dashboard data unavailable")).not.toBeInTheDocument();
   });
 

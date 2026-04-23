@@ -1,4 +1,4 @@
-import { v4 as uuidv4 } from "uuid";
+import { randomUUID } from "node:crypto";
 import { CredentialRegistry } from "../shared/credentialRegistry";
 import { ApolloCredential, ApolloCredentialPublic } from "./types";
 
@@ -51,7 +51,7 @@ export const apolloCredentialStore = {
     metadata?: Record<string, string>;
   }): ApolloCredentialPublic {
     const credential: ApolloCredential = {
-      id: uuidv4(),
+      id: randomUUID(),
       userId: params.userId,
       authMethod: "oauth2",
       tokenEncrypted: registry.encryptSecret(params.accessToken),
@@ -79,7 +79,7 @@ export const apolloCredentialStore = {
     metadata?: Record<string, string>;
   }): ApolloCredentialPublic {
     const credential: ApolloCredential = {
-      id: uuidv4(),
+      id: randomUUID(),
       userId: params.userId,
       authMethod: "api_key",
       tokenEncrypted: registry.encryptSecret(params.apiKey),

@@ -4,7 +4,7 @@ import {
   randomBytes,
   scryptSync,
 } from "crypto";
-import { v4 as uuidv4 } from "uuid";
+import { randomUUID } from "node:crypto";
 import { SlackCredential, SlackCredentialPublic } from "./types";
 
 const ENCRYPTION_KEY: Buffer = (() => {
@@ -83,7 +83,7 @@ export const slackCredentialStore = {
     metadata?: Record<string, string>;
   }): SlackCredentialPublic {
     const credential: SlackCredential = {
-      id: uuidv4(),
+      id: randomUUID(),
       userId: params.userId,
       authMethod: "oauth2_pkce",
       tokenEncrypted: encrypt(params.accessToken),
@@ -109,7 +109,7 @@ export const slackCredentialStore = {
     metadata?: Record<string, string>;
   }): SlackCredentialPublic {
     const credential: SlackCredential = {
-      id: uuidv4(),
+      id: randomUUID(),
       userId: params.userId,
       authMethod: "api_key",
       tokenEncrypted: encrypt(params.botToken),

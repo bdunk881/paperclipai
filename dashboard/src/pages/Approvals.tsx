@@ -26,12 +26,32 @@ function timeAgo(iso: string): string {
 
 const STATUS_CONFIG: Record<
   ApprovalRequest["status"],
-  { label: string; color: string; icon: React.ElementType }
+  { label: string; badge: string; card: string; icon: React.ElementType }
 > = {
-  pending: { label: "Pending", color: "bg-yellow-100 text-yellow-700", icon: Clock },
-  approved: { label: "Approved", color: "bg-green-100 text-green-700", icon: CheckCircle },
-  rejected: { label: "Rejected", color: "bg-red-100 text-red-700", icon: XCircle },
-  timed_out: { label: "Timed Out", color: "bg-gray-100 text-gray-500", icon: AlertCircle },
+  pending: {
+    label: "Awaiting Input",
+    badge: "bg-orange-100 text-orange-700",
+    card: "border-orange-300 border-dashed",
+    icon: Clock,
+  },
+  approved: {
+    label: "Approved",
+    badge: "bg-teal-100 text-teal-700",
+    card: "border-teal-300",
+    icon: CheckCircle,
+  },
+  rejected: {
+    label: "Rejected",
+    badge: "bg-red-100 text-red-700",
+    card: "border-red-300",
+    icon: XCircle,
+  },
+  timed_out: {
+    label: "Timed Out",
+    badge: "bg-gray-100 text-gray-500",
+    card: "border-slate-300",
+    icon: AlertCircle,
+  },
 };
 
 export default function Approvals() {
@@ -86,7 +106,7 @@ export default function Approvals() {
             <div className="flex items-center gap-3">
               <h1 className="text-2xl font-bold text-gray-900">Approvals</h1>
               {pendingCount > 0 && (
-                <span className="px-2 py-0.5 rounded-full bg-yellow-100 text-yellow-700 text-xs font-semibold">
+                <span className="px-2 py-0.5 rounded-full bg-orange-100 text-orange-700 text-xs font-semibold">
                   {pendingCount} pending
                 </span>
               )}
@@ -212,7 +232,7 @@ function ApprovalCard({
   }
 
   return (
-    <div className="bg-white rounded-xl border border-gray-200 p-6 shadow-sm">
+    <div className={`bg-white rounded-xl border p-6 shadow-sm ${cfg.card}`}>
       <div className="flex items-start justify-between gap-4">
         <div className="flex-1 min-w-0">
           {/* Workflow › Step header */}
@@ -221,7 +241,7 @@ function ApprovalCard({
             <span className="text-gray-300">›</span>
             <span className="text-gray-600 text-sm">{item.stepName}</span>
             <span
-              className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${cfg.color}`}
+              className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${cfg.badge}`}
             >
               <StatusIcon size={11} />
               {cfg.label}

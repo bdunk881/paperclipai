@@ -1,4 +1,4 @@
-import { v4 as uuidv4 } from "uuid";
+import { randomUUID } from "node:crypto";
 import { SentryCredential, SentryCredentialPublic } from "./types";
 import { CredentialRegistry, maskSecret } from "../shared/credentialRegistry";
 
@@ -39,7 +39,7 @@ export const sentryCredentialStore = {
     metadata?: Record<string, string>;
   }): SentryCredentialPublic {
     const credential: SentryCredential = {
-      id: uuidv4(),
+      id: randomUUID(),
       userId: params.userId,
       authMethod: "oauth2_pkce",
       tokenEncrypted: registry.encryptSecret(params.accessToken),
@@ -69,7 +69,7 @@ export const sentryCredentialStore = {
     metadata?: Record<string, string>;
   }): SentryCredentialPublic {
     const credential: SentryCredential = {
-      id: uuidv4(),
+      id: randomUUID(),
       userId: params.userId,
       authMethod: "api_key",
       tokenEncrypted: registry.encryptSecret(params.apiKey),

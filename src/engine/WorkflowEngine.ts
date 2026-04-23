@@ -6,7 +6,7 @@
  * llmProvider — wire in a real provider via setLlmProvider() (see TODO below).
  */
 
-import { v4 as uuidv4 } from "uuid";
+import { randomUUID } from "node:crypto";
 import {
   WorkflowTemplate,
   WorkflowRun,
@@ -79,11 +79,11 @@ actionRegistry.set("events.emit", async (inputs) => {
 });
 
 actionRegistry.set("crm.upsertLead", async (inputs) => {
-  return { crmId: `CRM-${uuidv4().slice(0, 8).toUpperCase()}`, upserted: true, lead: inputs };
+  return { crmId: `CRM-${randomUUID().slice(0, 8).toUpperCase()}`, upserted: true, lead: inputs };
 });
 
 actionRegistry.set("content.publish", async (inputs) => {
-  return { published: true, contentId: `CONT-${uuidv4().slice(0, 8).toUpperCase()}`, content: inputs["draft"] };
+  return { published: true, contentId: `CONT-${randomUUID().slice(0, 8).toUpperCase()}`, content: inputs["draft"] };
 });
 
 export function registerAction(name: string, handler: ActionHandler): void {
@@ -236,7 +236,7 @@ export class WorkflowEngine {
     const runConfig = { ...this._buildDefaultConfig(template), ...(config ?? {}) };
 
     const run: WorkflowRun = runStore.create({
-      id: uuidv4(),
+      id: randomUUID(),
       templateId: template.id,
       templateName: template.name,
       status: "pending",
@@ -306,6 +306,16 @@ export class WorkflowEngine {
 
     for (const step of template.steps) {
       const start = Date.now();
+      const stepIndex = stepResults.length;
+      stepResults.push({
+        stepId: step.id,
+        stepName: step.name,
+        status: "running",
+        output: {},
+        durationMs: 0,
+      });
+      runStore.update(runId, { stepResults: [...stepResults] });
+
       let stepOutput: Record<string, unknown> = {};
       let stepError: string | undefined;
       let stepStatus: StepResult["status"] = "success";
@@ -409,7 +419,7 @@ export class WorkflowEngine {
         ...(stepCostLog ? { costLog: stepCostLog } : {}),
       };
 
-      stepResults.push(result);
+      stepResults[stepIndex] = result;
 
       // Update run with latest step results so callers can see incremental progress
       runStore.update(runId, { stepResults: [...stepResults] });

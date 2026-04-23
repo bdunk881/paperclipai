@@ -4,7 +4,7 @@
  * Replace with a database-backed store for production.
  */
 
-import { v4 as uuidv4 } from "uuid";
+import { randomUUID } from "node:crypto";
 
 export interface McpServer {
   id: string;
@@ -48,7 +48,7 @@ export const mcpStore = {
     fields: { name: string; url: string; authHeaderKey?: string; authHeaderValue?: string }
   ): McpServerPublic {
     const server: McpServer = {
-      id: uuidv4(),
+      id: randomUUID(),
       userId,
       name: fields.name.trim(),
       url: fields.url.trim().replace(/\/$/, ""),

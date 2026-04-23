@@ -16,6 +16,7 @@ import { logClassificationDecision } from "./classificationLog";
 import { knowledgeStore } from "../knowledge/knowledgeStore";
 import { sanitizeContext } from "./crmFieldAllowlist";
 import { auditCrmApiCall } from "./crmAuditLog";
+import { controlPlaneStore } from "../controlPlane/controlPlaneStore";
 
 export type StepContext = Record<string, unknown>;
 
@@ -39,6 +40,52 @@ function interpolate(template: string, ctx: StepContext): string {
     const val = ctx[key];
     return val !== undefined ? String(val) : `{{${key}}}`;
   });
+}
+
+function getAgentBridgeConfig(step: WorkflowStep, ctx: StepContext): {
+  enabled: boolean;
+  teamId?: string;
+  autoProvision?: boolean;
+  teamName?: string;
+  agentId?: string;
+  taskTitle?: string;
+  taskDescription?: string;
+  metadata?: Record<string, unknown>;
+} {
+  const raw = step.config?.["controlPlane"];
+  const config =
+    raw && typeof raw === "object" && !Array.isArray(raw)
+      ? (raw as Record<string, unknown>)
+      : {};
+
+  return {
+    enabled:
+      Boolean(config["enabled"]) ||
+      typeof config["teamId"] === "string" ||
+      Boolean(config["autoProvision"]) ||
+      typeof ctx["controlPlaneTeamId"] === "string",
+    teamId:
+      typeof config["teamId"] === "string"
+        ? (config["teamId"] as string)
+        : typeof ctx["controlPlaneTeamId"] === "string"
+          ? (ctx["controlPlaneTeamId"] as string)
+          : undefined,
+    autoProvision: Boolean(config["autoProvision"]),
+    teamName:
+      typeof config["teamName"] === "string" ? (config["teamName"] as string) : undefined,
+    agentId:
+      typeof config["agentId"] === "string" ? (config["agentId"] as string) : undefined,
+    taskTitle:
+      typeof config["taskTitle"] === "string" ? interpolate(config["taskTitle"] as string, ctx) : undefined,
+    taskDescription:
+      typeof config["taskDescription"] === "string"
+        ? interpolate(config["taskDescription"] as string, ctx)
+        : undefined,
+    metadata:
+      config["metadata"] && typeof config["metadata"] === "object" && !Array.isArray(config["metadata"])
+        ? (config["metadata"] as Record<string, unknown>)
+        : undefined,
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -530,6 +577,16 @@ export async function handleAgent(
   const slots = Math.max(1, step.subAgentSlots ?? 1);
   const instructions = step.agentInstructions ?? "Process the provided input and return a result.";
   const model = step.agentModel ?? "default";
+  const bridgeConfig = getAgentBridgeConfig(step, ctx);
+  let bridgedExecution:
+    | {
+        executionId: string;
+        teamId: string;
+        agentId: string;
+        taskId?: string;
+        skills: string[];
+      }
+    | undefined;
 
   // Resolve the LLM provider once (shared across slots)
   const resolved = await llmConfigStore.getDecryptedDefault(userId);
@@ -548,6 +605,49 @@ export async function handleAgent(
   });
 
   const bus = getBus(runId, step.id);
+
+  if (bridgeConfig.enabled && userId) {
+    const bridgeTarget =
+      bridgeConfig.teamId
+        ? {
+            teamId: bridgeConfig.teamId,
+          }
+        : bridgeConfig.autoProvision
+          ? controlPlaneStore.ensureRuntimeTeamForStep({
+              userId,
+              step,
+              teamName: bridgeConfig.teamName,
+              actor: runId,
+            })
+          : undefined;
+
+    if (bridgeTarget) {
+      const teamId = "teamId" in bridgeTarget ? bridgeTarget.teamId : bridgeTarget.team.id;
+      const started = controlPlaneStore.startAgentExecution({
+        userId,
+        actor: runId,
+        teamId,
+        step,
+        sourceRunId: runId,
+        requestedAgentId: bridgeConfig.agentId ?? ("agent" in bridgeTarget ? bridgeTarget.agent.id : undefined),
+        taskTitle: bridgeConfig.taskTitle ?? `${step.name} dispatch`,
+        taskDescription: bridgeConfig.taskDescription,
+        metadata: {
+          ...(bridgeConfig.metadata ?? {}),
+          runId,
+          model,
+          slots,
+        },
+      });
+      bridgedExecution = {
+        executionId: started.execution.id,
+        teamId: started.execution.teamId,
+        agentId: started.execution.agentId,
+        taskId: started.task?.id,
+        skills: started.execution.appliedSkills,
+      };
+    }
+  }
 
   // Manager dispatch: announce tasks to all slots
   for (let i = 0; i < slots; i++) {
@@ -684,8 +784,26 @@ export async function handleAgent(
 
   mergedOutput["_agentSlots"] = slots;
   mergedOutput["_agentSuccessCount"] = successSlots.length;
+  if (bridgedExecution) {
+    mergedOutput["_controlPlaneExecutionId"] = bridgedExecution.executionId;
+    mergedOutput["_controlPlaneTeamId"] = bridgedExecution.teamId;
+    mergedOutput["_controlPlaneAgentId"] = bridgedExecution.agentId;
+    mergedOutput["_controlPlaneTaskId"] = bridgedExecution.taskId ?? null;
+    mergedOutput["_controlPlaneSkills"] = bridgedExecution.skills;
+  }
 
   const anyFailure = slotResults.some((r) => r.status === "failure");
+  if (bridgedExecution) {
+    controlPlaneStore.finalizeAgentExecution({
+      executionId: bridgedExecution.executionId,
+      userId,
+      status: successSlots.length > 0 ? "completed" : "failed",
+      summary:
+        successSlots.length > 0
+          ? `Completed ${successSlots.length}/${slots} slot(s) for workflow step ${step.name}`
+          : `All ${slots} slot(s) failed for workflow step ${step.name}`,
+    });
+  }
 
   return {
     output: mergedOutput,

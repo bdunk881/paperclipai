@@ -571,6 +571,87 @@ describe("Control plane APIs", () => {
     expect(listRes.body.heartbeats).toHaveLength(1);
     expect(listRes.body.heartbeats[0].summary).toBe("Processed the daily support queue");
   });
+
+  it("lists available skills and applies runtime skill injection to agents", async () => {
+    const deployRes = await request(app)
+      .post("/api/control-plane/deployments/workflow")
+      .set(asAuth())
+      .set("X-Paperclip-Run-Id", "run-deploy-skills")
+      .send({ templateId: "tpl-support-bot" });
+
+    const workerAgent = deployRes.body.agents.find(
+      (agent: { roleKey: string }) => agent.roleKey !== "workflow-manager"
+    );
+
+    const skillsRes = await request(app)
+      .get("/api/control-plane/skills")
+      .set(asAuth());
+
+    expect(skillsRes.status).toBe(200);
+    expect(skillsRes.body.skills.some((skill: { id: string }) => skill.id === "security-review")).toBe(true);
+
+    const assignRes = await request(app)
+      .post(`/api/control-plane/agents/${workerAgent.id}/skills`)
+      .set(asAuth())
+      .set("X-Paperclip-Run-Id", "run-assign-skills")
+      .send({ operation: "assign", skills: ["security-review"] });
+
+    expect(assignRes.status).toBe(200);
+    expect(assignRes.body.skills).toContain("security-review");
+  });
+
+  it("supports team lifecycle updates and exposes execution history", async () => {
+    const deployRes = await request(app)
+      .post("/api/control-plane/deployments/workflow")
+      .set(asAuth())
+      .set("X-Paperclip-Run-Id", "run-deploy-lifecycle")
+      .send({ templateId: "tpl-support-bot" });
+
+    const teamId = deployRes.body.team.id;
+    const step = WORKFLOW_TEMPLATES.find((template) => template.id === "tpl-support-bot")!.steps.find(
+      (candidate) => candidate.kind === "llm"
+    )!;
+    const workerAgent = deployRes.body.agents.find(
+      (agent: { roleKey: string }) => agent.roleKey !== "workflow-manager"
+    );
+
+    const started = controlPlaneStore.startAgentExecution({
+      userId: "test-user",
+      actor: "run-execution-seed",
+      teamId,
+      step,
+      sourceRunId: "workflow-run-1",
+      requestedAgentId: workerAgent.id,
+      taskTitle: "Process queued ticket",
+    });
+
+    const teamRes = await request(app)
+      .get(`/api/control-plane/teams/${teamId}`)
+      .set(asAuth());
+
+    expect(teamRes.status).toBe(200);
+    expect(teamRes.body.executions).toHaveLength(1);
+    expect(teamRes.body.executions[0].id).toBe(started.execution.id);
+
+    const pauseRes = await request(app)
+      .post(`/api/control-plane/teams/${teamId}/lifecycle`)
+      .set(asAuth())
+      .set("X-Paperclip-Run-Id", "run-pause-team")
+      .send({ action: "pause" });
+
+    expect(pauseRes.status).toBe(200);
+    expect(pauseRes.body.status).toBe("paused");
+
+    const executionRes = await request(app)
+      .post(`/api/control-plane/executions/${started.execution.id}/lifecycle`)
+      .set(asAuth())
+      .set("X-Paperclip-Run-Id", "run-restart-execution")
+      .send({ action: "restart" });
+
+    expect(executionRes.status).toBe(200);
+    expect(executionRes.body.status).toBe("queued");
+    expect(executionRes.body.restartCount).toBe(1);
+  });
 });
 
 describe("Approvals API", () => {

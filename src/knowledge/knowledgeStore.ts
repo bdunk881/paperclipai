@@ -249,7 +249,7 @@ function mapKnowledgeChunk(row: PersistedKnowledgeChunkRow): KnowledgeChunk {
   return chunk;
 }
 
-async function ensureKnowledgeSchema(): Promise<void> {
+export async function ensureKnowledgeSchema(): Promise<void> {
   if (!isPostgresConfigured() || schemaEnsured) {
     return;
   }
@@ -663,7 +663,12 @@ export const knowledgeStore = {
     if (local.length > 0 || !isPostgresConfigured()) {
       return local.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
     }
-    return hydrateKnowledgeBasesFromPostgres(userId);
+    try {
+      return await hydrateKnowledgeBasesFromPostgres(userId);
+    } catch (err) {
+      console.error("[knowledge] Postgres hydrate failed, falling back to in-memory:", (err as Error).message);
+      return local;
+    }
   },
 
   async getKnowledgeBase(id: string, userId: string): Promise<KnowledgeBase | undefined> {
@@ -674,7 +679,12 @@ export const knowledgeStore = {
     if (!isPostgresConfigured()) {
       return undefined;
     }
-    return hydrateKnowledgeBaseFromPostgres(userId, id);
+    try {
+      return await hydrateKnowledgeBaseFromPostgres(userId, id);
+    } catch (err) {
+      console.error("[knowledge] Postgres hydrate failed, falling back to in-memory:", (err as Error).message);
+      return undefined;
+    }
   },
 
   async updateKnowledgeBase(
@@ -783,7 +793,12 @@ export const knowledgeStore = {
     if (local.length > 0 || !isPostgresConfigured()) {
       return local.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
     }
-    return hydrateDocumentsFromPostgres(userId, knowledgeBaseId);
+    try {
+      return await hydrateDocumentsFromPostgres(userId, knowledgeBaseId);
+    } catch (err) {
+      console.error("[knowledge] Postgres hydrate failed, falling back to in-memory:", (err as Error).message);
+      return local;
+    }
   },
 
   async getDocument(documentId: string, userId: string): Promise<KnowledgeDocument | undefined> {
@@ -794,13 +809,18 @@ export const knowledgeStore = {
     if (!isPostgresConfigured()) {
       return undefined;
     }
-    await ensureKnowledgeSchema();
-    const result = await queryPostgres<PersistedKnowledgeDocumentRow>(
-      `SELECT * FROM knowledge_documents WHERE id = $1 AND user_id = $2`,
-      [documentId, userId]
-    );
-    const row = result.rows[0];
-    return row ? mapKnowledgeDocument(row) : undefined;
+    try {
+      await ensureKnowledgeSchema();
+      const result = await queryPostgres<PersistedKnowledgeDocumentRow>(
+        `SELECT * FROM knowledge_documents WHERE id = $1 AND user_id = $2`,
+        [documentId, userId]
+      );
+      const row = result.rows[0];
+      return row ? mapKnowledgeDocument(row) : undefined;
+    } catch (err) {
+      console.error("[knowledge] Postgres hydrate failed, falling back to in-memory:", (err as Error).message);
+      return undefined;
+    }
   },
 
   async listChunks(documentId: string, userId: string): Promise<KnowledgeChunk[]> {
@@ -810,7 +830,12 @@ export const knowledgeStore = {
     if (local.length > 0 || !isPostgresConfigured()) {
       return local.sort((a, b) => a.index - b.index);
     }
-    return hydrateChunksFromPostgres(userId, documentId);
+    try {
+      return await hydrateChunksFromPostgres(userId, documentId);
+    } catch (err) {
+      console.error("[knowledge] Postgres hydrate failed, falling back to in-memory:", (err as Error).message);
+      return local;
+    }
   },
 
   async updateChunk(
@@ -955,7 +980,11 @@ export const knowledgeStore = {
     });
 
     if (localChunks.length === 0 && isPostgresConfigured()) {
-      return searchPostgres(input);
+      try {
+        return await searchPostgres(input);
+      } catch (err) {
+        console.error("[knowledge] Postgres search failed, falling back to in-memory:", (err as Error).message);
+      }
     }
 
     const limit = Math.min(Math.max(input.limit ?? 8, 1), 25);

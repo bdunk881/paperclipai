@@ -25,11 +25,29 @@ export function getPostgresPool(): Pool {
     pool = new Pool({
       connectionString: process.env.DATABASE_URL,
       max: 10,
+      connectionTimeoutMillis: 5000,
       idleTimeoutMillis: 30_000,
+      statement_timeout: 30000,
+    });
+    pool.on("error", (err) => {
+      console.error("[postgres] Unexpected pool error:", err.message);
     });
   }
 
   return pool;
+}
+
+export async function checkPostgresConnection(): Promise<boolean> {
+  if (!isPostgresConfigured()) {
+    return false;
+  }
+  try {
+    await getPool().query("SELECT 1");
+    return true;
+  } catch (err) {
+    console.error("[postgres] Connection check failed:", (err as Error).message);
+    return false;
+  }
 }
 
 export async function queryPostgres<T extends QueryResultRow = QueryResultRow>(

@@ -1,6 +1,7 @@
 import { Pool, QueryResultRow } from "pg";
 
 let pool: Pool | null = null;
+let lastConnectionStatus: boolean | null = null;
 
 export function isPostgresPersistenceEnabled(): boolean {
   if (process.env.AUTOFLOW_DISABLE_PG_PERSISTENCE === "1") {
@@ -39,15 +40,22 @@ export function getPostgresPool(): Pool {
 
 export async function checkPostgresConnection(): Promise<boolean> {
   if (!isPostgresConfigured()) {
+    lastConnectionStatus = false;
     return false;
   }
   try {
     await getPostgresPool().query("SELECT 1");
+    lastConnectionStatus = true;
     return true;
   } catch (err) {
     console.error("[postgres] Connection check failed:", (err as Error).message);
+    lastConnectionStatus = false;
     return false;
   }
+}
+
+export function getPostgresConnectionStatus(): boolean | null {
+  return lastConnectionStatus;
 }
 
 export async function queryPostgres<T extends QueryResultRow = QueryResultRow>(

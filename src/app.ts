@@ -806,9 +806,9 @@ app.post("/api/executions/:id/resume", requireAuth, async (req: AuthenticatedReq
 // ---------------------------------------------------------------------------
 app.get("/health", async (_req, res) => {
   const runs = await runStore.list();
-  const { checkPostgresConnection, isPostgresConfigured } = await import("./db/postgres");
+  const { isPostgresConfigured, getPostgresConnectionStatus } = require("./db/postgres") as typeof import("./db/postgres");
   const pgConfigured = isPostgresConfigured();
-  const pgConnected = pgConfigured ? await checkPostgresConnection() : false;
+  const pgConnected = getPostgresConnectionStatus();
   res.json({
     status: "ok",
     templates: listTemplates().length,

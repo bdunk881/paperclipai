@@ -127,6 +127,60 @@ else
 fi
 
 echo ""
+
+# 8. CIAM tenant-local checks (optional — only runs when CIAM_* vars are set)
+if [ -n "${CIAM_TENANT_ID:-}" ] && [ -n "${CIAM_CLIENT_ID:-}" ] && [ -n "${CIAM_CLIENT_SECRET:-}" ]; then
+  echo "--- CIAM Tenant-Local Checks ---"
+  echo "  Tenant: $CIAM_TENANT_ID"
+  echo "  App:    $CIAM_CLIENT_ID"
+  echo ""
+
+  CIAM_GRAPH_RESPONSE=$(curl -s -X POST "https://login.microsoftonline.com/$CIAM_TENANT_ID/oauth2/v2.0/token" \
+    -H "Content-Type: application/x-www-form-urlencoded" \
+    -d "client_id=$CIAM_CLIENT_ID" \
+    -d "client_secret=$CIAM_CLIENT_SECRET" \
+    -d "scope=https://graph.microsoft.com/.default" \
+    -d "grant_type=client_credentials" 2>/dev/null)
+
+  CIAM_TOKEN=$(echo "$CIAM_GRAPH_RESPONSE" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('access_token',''))" 2>/dev/null || echo "")
+
+  if [ -z "$CIAM_TOKEN" ]; then
+    fail "Could not acquire CIAM Graph token"
+    CIAM_ERROR=$(echo "$CIAM_GRAPH_RESPONSE" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('error_description','unknown'))" 2>/dev/null || echo "unknown")
+    echo "  Error: $CIAM_ERROR"
+    errors=$((errors + 1))
+  else
+    pass "CIAM Graph token acquired"
+
+    # Check OrganizationalBranding.ReadWrite.All — try to read branding
+    BRAND_RESPONSE=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: Bearer $CIAM_TOKEN" \
+      "https://graph.microsoft.com/v1.0/organization/$CIAM_TENANT_ID/branding" 2>/dev/null)
+
+    if [ "$BRAND_RESPONSE" = "200" ] || [ "$BRAND_RESPONSE" = "404" ]; then
+      pass "OrganizationalBranding access OK (HTTP $BRAND_RESPONSE)"
+    else
+      fail "OrganizationalBranding access denied (HTTP $BRAND_RESPONSE)"
+      echo "  Grant OrganizationalBranding.ReadWrite.All and admin-consent in the CIAM tenant"
+      errors=$((errors + 1))
+    fi
+
+    # Check Domain.ReadWrite.All — try to list domains
+    DOMAIN_RESPONSE=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: Bearer $CIAM_TOKEN" \
+      "https://graph.microsoft.com/v1.0/domains" 2>/dev/null)
+
+    if [ "$DOMAIN_RESPONSE" = "200" ]; then
+      pass "Domain access OK (HTTP $DOMAIN_RESPONSE)"
+    else
+      fail "Domain access denied (HTTP $DOMAIN_RESPONSE)"
+      echo "  Grant Domain.ReadWrite.All and admin-consent in the CIAM tenant"
+      errors=$((errors + 1))
+    fi
+  fi
+else
+  warn "CIAM tenant-local checks skipped (set CIAM_TENANT_ID, CIAM_CLIENT_ID, CIAM_CLIENT_SECRET to enable)"
+fi
+
+echo ""
 echo "=== Summary ==="
 if [ $errors -eq 0 ]; then
   pass "All prerequisites passed. Ready to provision CIAM tenant."

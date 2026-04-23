@@ -141,8 +141,17 @@ The pipeline lives at `.github/workflows/deploy-azure.yml`.
 
 ```
 infra/azure/scripts/
-  bootstrap-tfstate.sh   — one-time Terraform remote state setup
+  bootstrap-tfstate.sh      — one-time Terraform remote state setup
+  provision-ciam.sh         — create the CIAM SPA app registration and output env vars
+  sync-ciam-redirect-uris.sh — upsert the dashboard auth callback/logout URIs on the CIAM SPA app
+  validate-ciam-prereqs.sh  — validate subscription access, Graph access, and CIAM tenant-local automation access
 ```
+
+For hosted-sign-in branding and a custom auth host such as
+`auth.helloautoflow.com`, follow the runbook at
+`../runbooks/entra-external-id-branding-and-custom-domain.md`. Microsoft Entra
+External ID custom auth domains require both external-tenant domain verification
+and Azure Front Door in front of `<tenant>.ciamlogin.com`.
 
 ---
 

@@ -2,81 +2,12 @@ import { useEffect, useState } from "react";
 import { CheckCircle2, ExternalLink, Loader2, PlugZap, RefreshCw, Unplug, XCircle } from "lucide-react";
 import { useSearchParams } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
-
-type ProviderKey =
-  | "apollo"
-  | "gmail"
-  | "hubspot"
-  | "sentry"
-  | "slack"
-  | "stripe"
-  | "composio";
-
-interface ProviderStatus {
-  connected: boolean;
-  connectedAt?: string;
-  scopes?: string[];
-}
-
-interface ProviderMeta {
-  key: ProviderKey;
-  name: string;
-  category: string;
-  authMode: "oauth" | "api_key";
-  description: string;
-}
-
-const PROVIDERS: ProviderMeta[] = [
-  {
-    key: "apollo",
-    name: "Apollo",
-    category: "Sales",
-    authMode: "oauth",
-    description: "Lead enrichment and prospect data with OAuth plus API-key fallback.",
-  },
-  {
-    key: "gmail",
-    name: "Gmail",
-    category: "Communication",
-    authMode: "oauth",
-    description: "Mailbox access for inbound message workflows and agent-driven replies.",
-  },
-  {
-    key: "hubspot",
-    name: "HubSpot",
-    category: "CRM",
-    authMode: "oauth",
-    description: "Contacts, companies, deals, webhook intake, and health checks.",
-  },
-  {
-    key: "sentry",
-    name: "Sentry",
-    category: "Developer Tools",
-    authMode: "oauth",
-    description: "Issue and project sync with signed webhooks and PKCE auth.",
-  },
-  {
-    key: "slack",
-    name: "Slack",
-    category: "Communication",
-    authMode: "oauth",
-    description: "Workspace access for messaging, triage, and agent notifications.",
-  },
-  {
-    key: "stripe",
-    name: "Stripe",
-    category: "Payments",
-    authMode: "oauth",
-    description: "Customers, subscriptions, invoices, and payment workflow triggers.",
-  },
-  {
-    key: "composio",
-    name: "Composio",
-    category: "Automation",
-    authMode: "api_key",
-    description: "Connected accounts, trigger fan-out, and tool execution via API key.",
-  },
-];
+import {
+  LIVE_CONNECTOR_PROVIDERS as PROVIDERS,
+  type ProviderKey,
+  type ProviderMeta,
+  type ProviderStatus,
+} from "../integrations/liveConnectorCatalog";
 
 const API_BASE = import.meta.env.VITE_API_URL ?? "http://localhost:3001";
 

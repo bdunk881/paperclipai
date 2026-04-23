@@ -28,6 +28,7 @@ import ApiKeys from "./pages/ApiKeys";
 import Pricing from "./pages/Pricing";
 import Approvals from "./pages/Approvals";
 import Memory from "./pages/Memory";
+import Integrations from "./pages/Integrations";
 import MCPIntegrations from "./pages/MCPIntegrations";
 import McpServers from "./pages/McpServers";
 import ExecutionLogs from "./pages/ExecutionLogs";
@@ -154,6 +155,7 @@ export default function App() {
             <Route path="monitor" element={<RunMonitor />} />
             <Route path="history" element={<RunHistory />} />
             <Route path="settings" element={<Settings />} />
+            <Route path="settings/integrations" element={<Integrations />} />
             <Route path="settings/llm-providers" element={<LLMProviders />} />
             <Route path="settings/profile" element={<ProfileSettings />} />
             <Route path="settings/security" element={<SecuritySettings />} />
@@ -163,6 +165,7 @@ export default function App() {
             <Route path="pricing" element={<Pricing />} />
             <Route path="approvals" element={<Approvals />} />
             <Route path="memory" element={<Memory />} />
+            <Route path="integrations" element={<Integrations />} />
             <Route path="integrations/mcp" element={<MCPIntegrations />} />
             <Route path="logs" element={<ExecutionLogs />} />
           </Route>

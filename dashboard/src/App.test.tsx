@@ -6,12 +6,14 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const {
   authState,
   initializeMock,
+  handleRedirectPromiseMock,
   addEventCallbackMock,
   getAllAccountsMock,
   setActiveAccountMock,
 } = vi.hoisted(() => ({
   authState: { user: null as null | { id: string; email: string; name: string } },
   initializeMock: vi.fn(() => Promise.resolve()),
+  handleRedirectPromiseMock: vi.fn(() => Promise.resolve(null)),
   addEventCallbackMock: vi.fn(),
   getAllAccountsMock: vi.fn(() => []),
   setActiveAccountMock: vi.fn(),
@@ -20,6 +22,7 @@ const {
 vi.mock("@azure/msal-browser", () => ({
   PublicClientApplication: vi.fn(() => ({
     initialize: initializeMock,
+    handleRedirectPromise: handleRedirectPromiseMock,
     addEventCallback: addEventCallbackMock,
     getAllAccounts: getAllAccountsMock,
     setActiveAccount: setActiveAccountMock,
@@ -67,6 +70,7 @@ vi.mock("./pages/ApiKeys", () => ({ default: () => <div>API Keys Page</div> }));
 vi.mock("./pages/Pricing", () => ({ default: () => <div>Pricing Page</div> }));
 vi.mock("./pages/Approvals", () => ({ default: () => <div>Approvals Page</div> }));
 vi.mock("./pages/Memory", () => ({ default: () => <div>Memory Page</div> }));
+vi.mock("./pages/Integrations", () => ({ default: () => <div>Integrations Page</div> }));
 vi.mock("./pages/MCPIntegrations", () => ({ default: () => <div>MCP Integrations Page</div> }));
 vi.mock("./pages/McpServers", () => ({ default: () => <div>MCP Servers Page</div> }));
 vi.mock("./pages/ExecutionLogs", () => ({ default: () => <div>Execution Logs Page</div> }));
@@ -79,6 +83,7 @@ describe("App", () => {
   beforeEach(() => {
     authState.user = null;
     initializeMock.mockClear();
+    handleRedirectPromiseMock.mockClear();
     addEventCallbackMock.mockClear();
     getAllAccountsMock.mockClear();
     setActiveAccountMock.mockClear();
@@ -89,45 +94,55 @@ describe("App", () => {
     window.history.replaceState({}, "", "/waitlist");
     render(<App />);
 
-    expect(screen.getByText("Landing Page")).toBeInTheDocument();
+    expect(await screen.findByText("Landing Page")).toBeInTheDocument();
   });
 
-  it("redirects private routes to login when unauthenticated", () => {
+  it("redirects private routes to login when unauthenticated", async () => {
     window.history.replaceState({}, "", "/logs");
     render(<App />);
 
-    expect(screen.getByText("Login Page")).toBeInTheDocument();
+    expect(await screen.findByText("Login Page")).toBeInTheDocument();
     expect(screen.queryByText("Execution Logs Page")).not.toBeInTheDocument();
   });
 
-  it("redirects authenticated users away from login to the dashboard", () => {
+  it("redirects authenticated users away from login to the dashboard", async () => {
     authState.user = { id: "user-1", email: "user@example.com", name: "User" };
     window.history.replaceState({}, "", "/login");
 
     render(<App />);
 
-    expect(screen.getByText("Layout Shell")).toBeInTheDocument();
+    expect(await screen.findByText("Layout Shell")).toBeInTheDocument();
     expect(screen.getByText("Dashboard Page")).toBeInTheDocument();
     expect(screen.queryByText("Login Page")).not.toBeInTheDocument();
   });
 
-  it("renders nested authenticated routes", () => {
+  it("renders nested authenticated routes", async () => {
     authState.user = { id: "user-1", email: "user@example.com", name: "User" };
     window.history.replaceState({}, "", "/settings/api-keys");
 
     render(<App />);
 
-    expect(screen.getByText("Layout Shell")).toBeInTheDocument();
+    expect(await screen.findByText("Layout Shell")).toBeInTheDocument();
     expect(screen.getByText("API Keys Page")).toBeInTheDocument();
   });
 
-  it("redirects unknown routes back through the authenticated root", () => {
+  it("renders the live integrations setup route for authenticated users", async () => {
+    authState.user = { id: "user-1", email: "user@example.com", name: "User" };
+    window.history.replaceState({}, "", "/integrations");
+
+    render(<App />);
+
+    expect(await screen.findByText("Layout Shell")).toBeInTheDocument();
+    expect(screen.getByText("Integrations Page")).toBeInTheDocument();
+  });
+
+  it("redirects unknown routes back through the authenticated root", async () => {
     authState.user = { id: "user-1", email: "user@example.com", name: "User" };
     window.history.replaceState({}, "", "/does-not-exist");
 
     render(<App />);
 
-    expect(screen.getByText("Layout Shell")).toBeInTheDocument();
+    expect(await screen.findByText("Layout Shell")).toBeInTheDocument();
     expect(screen.getByText("Dashboard Page")).toBeInTheDocument();
   });
 });

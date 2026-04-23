@@ -15,12 +15,7 @@ import {
   getTemplate,
   listRuns,
   getRun,
-  resolveApproval,
-  searchMemory,
-  setDefaultLLMConfig,
   startRun,
-  startRunWithFile,
-  writeMemoryEntry,
   type TemplateSummary,
 } from "./client";
 import type { WorkflowRun, WorkflowTemplate } from "../types/workflow";

@@ -1,0 +1,172 @@
+{
+  "$schema": "https://schema.management.azure.com/providers/Microsoft.Logic/schemas/2016-06-01/workflowdefinition.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "$connections": {
+      "defaultValue": {},
+      "type": "Object"
+    },
+    "attio_api_key": {
+      "defaultValue": "{{ATTIO_API_KEY}}",
+      "type": "SecureString",
+      "metadata": {
+        "description": "Attio API key — replace {{ATTIO_API_KEY}} with your personal access token from Settings > Developers > API Keys"
+      }
+    },
+    "apollo_reply_mailbox": {
+      "defaultValue": "{{APOLLO_REPLY_MAILBOX}}",
+      "type": "String",
+      "metadata": {
+        "description": "Email address of the Apollo reply mailbox — replace {{APOLLO_REPLY_MAILBOX}} with the monitored mailbox address"
+      }
+    }
+  },
+  "triggers": {
+    "When_new_email_arrives_in_Apollo_mailbox": {
+      "type": "ApiConnectionNotification",
+      "inputs": {
+        "host": {
+          "connection": {
+            "name": "@parameters('$connections')['office365']['connectionId']"
+          }
+        },
+        "fetch": {
+          "method": "get",
+          "pathTemplate": {
+            "template": "/v2/Mail/OnNewEmail",
+            "parameters": {
+              "folderPath": "Inbox",
+              "to": "@parameters('apollo_reply_mailbox')",
+              "importance": "Any",
+              "fetchOnlyWithAttachment": false,
+              "includeAttachments": false
+            }
+          }
+        },
+        "subscribe": {
+          "method": "post",
+          "pathTemplate": {
+            "template": "/v2/Mail/OnNewEmailSubscription",
+            "parameters": {
+              "folderPath": "Inbox",
+              "to": "@parameters('apollo_reply_mailbox')",
+              "importance": "Any",
+              "fetchOnlyWithAttachment": false,
+              "includeAttachments": false
+            }
+          }
+        }
+      },
+      "recurrence": {
+        "frequency": "Minute",
+        "interval": 3
+      }
+    }
+  },
+  "actions": {
+    "Parse_sender_info": {
+      "type": "Compose",
+      "inputs": {
+        "sender_email": "@triggerOutputs()?['body/from']",
+        "subject": "@triggerOutputs()?['body/subject']",
+        "reply_body": "@triggerOutputs()?['body/bodyPreview']"
+      },
+      "runAfter": {}
+    },
+    "Upsert_contact_in_Attio": {
+      "type": "Http",
+      "inputs": {
+        "method": "PUT",
+        "uri": "https://api.attio.com/v2/objects/people/records?matching_attribute=email_addresses",
+        "headers": {
+          "Authorization": "Bearer @{parameters('attio_api_key')}",
+          "Content-Type": "application/json"
+        },
+        "body": {
+          "data": {
+            "values": {
+              "email_addresses": [
+                "@{outputs('Parse_sender_info')?['sender_email']}"
+              ],
+              "source": "May5Launch"
+            }
+          }
+        },
+        "retryPolicy": {
+          "type": "exponential",
+          "count": 4,
+          "interval": "PT10S",
+          "minimumInterval": "PT5S",
+          "maximumInterval": "PT1H"
+        }
+      },
+      "runAfter": {
+        "Parse_sender_info": [
+          "Succeeded"
+        ]
+      }
+    },
+    "Parse_Attio_upsert_response": {
+      "type": "ParseJson",
+      "inputs": {
+        "content": "@body('Upsert_contact_in_Attio')",
+        "schema": {
+          "type": "object",
+          "properties": {
+            "data": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "object",
+                  "properties": {
+                    "record_id": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "runAfter": {
+        "Upsert_contact_in_Attio": [
+          "Succeeded"
+        ]
+      }
+    },
+    "Set_pipeline_stage_to_Prospect": {
+      "type": "Http",
+      "inputs": {
+        "method": "POST",
+        "uri": "https://api.attio.com/v2/lists/entries",
+        "headers": {
+          "Authorization": "Bearer @{parameters('attio_api_key')}",
+          "Content-Type": "application/json"
+        },
+        "body": {
+          "data": {
+            "parent_record_id": "@{body('Parse_Attio_upsert_response')?['data']?['id']?['record_id']}",
+            "parent_object": "people",
+            "entry_values": {
+              "stage": "Prospect"
+            }
+          }
+        },
+        "retryPolicy": {
+          "type": "exponential",
+          "count": 4,
+          "interval": "PT10S",
+          "minimumInterval": "PT5S",
+          "maximumInterval": "PT1H"
+        }
+      },
+      "runAfter": {
+        "Parse_Attio_upsert_response": [
+          "Succeeded"
+        ]
+      }
+    }
+  },
+  "outputs": {}
+}

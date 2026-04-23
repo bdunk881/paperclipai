@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# provision-ciam.sh — Provisions the Entra External ID app registration
-# and outputs the env vars needed by AutoFlow backend + frontend.
+# provision-ciam.sh — Provisions the Entra External ID app registration,
+# syncs the SPA redirect URIs used by the dashboard auth flow, and outputs the
+# env vars needed by AutoFlow backend + frontend.
 #
 # This script handles everything AFTER the CIAM tenant is created:
 #   1. Creates the SPA app registration in the CIAM tenant
@@ -87,8 +88,8 @@ APP_RESPONSE=$(curl -s -w "\n%{http_code}" -X POST \
     "signInAudience": "AzureADandPersonalMicrosoftAccount",
     "spa": {
       "redirectUris": [
-        "http://localhost:5173",
-        "http://localhost:5173/login"
+        "http://localhost:5173/auth/callback",
+        "https://staging.app.helloautoflow.com/auth/callback"
       ]
     },
     "requiredResourceAccess": [
@@ -130,6 +131,10 @@ echo "  Client ID:  $SPA_CLIENT_ID"
 echo "  Object ID:  $SPA_OBJECT_ID"
 echo ""
 
+echo "Syncing SPA redirect URIs for localhost, staging, and production..."
+TARGET_APP_CLIENT_ID="$SPA_CLIENT_ID" "$(dirname "$0")/sync-ciam-redirect-uris.sh"
+echo ""
+
 # Output the env vars
 echo "=== Environment Variables ==="
 echo ""
@@ -148,9 +153,15 @@ echo "VITE_AZURE_TENANT_SUBDOMAIN=$CIAM_TENANT_SUBDOMAIN"
 echo ""
 echo "=== Next Steps ==="
 echo "1. Set the env vars above in your .env and .env.local files"
-echo "2. In Azure Portal, add your Vercel production URL to the SPA redirect URIs:"
-echo "   https://portal.azure.com → Entra ID (tenant: $CIAM_TENANT_SUBDOMAIN) →"
-echo "   App registrations → autoflow-dashboard → Authentication → Add URI"
+echo "2. Verify the SPA redirect URIs include localhost, staging, and production auth/login routes:"
+echo "   - http://localhost:5173"
+echo "   - http://localhost:5173/auth/callback"
+echo "   - http://localhost:5173/login"
+echo "   - https://staging.app.helloautoflow.com/auth/callback"
+echo "   - https://staging.app.helloautoflow.com/login"
+echo "   - https://app.helloautoflow.com/auth/callback"
+echo "   - https://app.helloautoflow.com/login"
 echo "3. Configure a sign-up/sign-in user flow in the CIAM tenant:"
 echo "   External Identities → User flows → + New user flow → Sign up and sign in"
-echo "4. (Optional) Add Google/Apple identity providers under External Identities → All identity providers"
+echo "4. Re-run ./sync-ciam-redirect-uris.sh after adding new preview hosts or changing auth routes"
+echo "5. (Optional) Add Google/Apple identity providers under External Identities → All identity providers"

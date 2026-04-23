@@ -85,6 +85,9 @@
     box-shadow: var(--card-shadow-hover);
   }
 
+  .shadow-glow {
+    box-shadow: 0 0 0 1px rgba(99, 102, 241, 0.08), 0 12px 32px rgba(99, 102, 241, 0.18);
+  }
   .glow-border {
     position: relative;
   }
@@ -115,6 +118,78 @@
     mix-blend-mode: overlay;
   }
 
+  .animate-glow-pulse {
+    animation: glow-pulse 1.2s ease-in-out infinite;
+  }
+
+  .animate-slide-in-right {
+    animation: slide-in-right 0.2s ease-out;
+  }
+
+  .animate-slide-in-down {
+    animation: slide-in-down 0.24s ease-out;
+  }
+
+  .scanline-skeleton {
+    position: relative;
+    overflow: hidden;
+    background: linear-gradient(90deg, rgba(15, 23, 42, 0.06) 0%, rgba(20, 184, 166, 0.18) 50%, rgba(15, 23, 42, 0.06) 100%);
+    background-size: 200% 100%;
+    animation: scanline 1.2s linear infinite;
+  }
+
+  .dark .scanline-skeleton {
+    background: linear-gradient(90deg, rgba(15, 23, 42, 0.6) 0%, rgba(20, 184, 166, 0.22) 50%, rgba(15, 23, 42, 0.6) 100%);
+    background-size: 200% 100%;
+  }
+
+  .signal-lost {
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    box-shadow: 0 10px 24px rgba(15, 23, 42, 0.06);
+  }
+
+  @keyframes glow-pulse {
+    0%, 100% {
+      opacity: 0.45;
+      transform: scaleX(0.35);
+    }
+    50% {
+      opacity: 1;
+      transform: scaleX(1);
+    }
+  }
+
+  @keyframes slide-in-right {
+    from {
+      opacity: 0;
+      transform: translateX(16px);
+    }
+    to {
+      opacity: 1;
+      transform: translateX(0);
+    }
+  }
+
+  @keyframes slide-in-down {
+    from {
+      opacity: 0;
+      transform: translateY(-12px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  @keyframes scanline {
+    0% {
+      background-position: 200% 0;
+    }
+    100% {
+      background-position: -200% 0;
+    }
+  }
   /* Dark mode overrides for legacy Tailwind utility classes */
   .dark .bg-white {
     background-color: rgb(15 23 42);

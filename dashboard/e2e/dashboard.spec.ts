@@ -21,23 +21,23 @@ test.beforeEach(async ({ page }) => {
 // ---------------------------------------------------------------------------
 
 test("dashboard heading is visible", async ({ page }) => {
-  await expect(page.getByRole("heading", { name: /dashboard/i })).toBeVisible();
+  await expect(page.getByRole("heading", { name: /welcome back, e2e/i })).toBeVisible();
 });
 
 test("renders four stat cards: Total Runs, Running, Completed, Failed", async ({ page }) => {
-  await expect(page.getByText(/total runs/i)).toBeVisible();
-  await expect(page.getByText(/^running$/i)).toBeVisible();
-  await expect(page.getByText(/^completed$/i)).toBeVisible();
-  await expect(page.getByText(/^failed$/i)).toBeVisible();
+  await expect(page.getByText(/total runs/i).first()).toBeVisible();
+  await expect(page.getByText(/^running$/i).first()).toBeVisible();
+  await expect(page.getByText(/^completed$/i).first()).toBeVisible();
+  await expect(page.getByText(/^failed$/i).first()).toBeVisible();
 });
 
 test("renders Recent Runs section", async ({ page }) => {
   await expect(page.getByText(/recent runs/i)).toBeVisible();
 });
 
-test("renders Templates section with at least one template card", async ({ page }) => {
+test("renders Workflows section with at least one template card", async ({ page }) => {
   // Wait for mock data to load
-  await expect(page.getByText(/templates/i).first()).toBeVisible();
+  await expect(page.getByRole("heading", { name: /workflows/i })).toBeVisible();
   // There are 3 mock templates
   const templateLinks = page.getByRole("link", { name: /customer support bot|lead enrichment|content generator/i });
   await expect(templateLinks.first()).toBeVisible();
@@ -60,12 +60,12 @@ test("clicking a template card navigates to /builder/:templateId", async ({ page
   await expect(page).toHaveURL(/\/builder\//);
 });
 
-test("sidebar nav link 'Workflow Builder' navigates to /builder", async ({ page }) => {
-  await page.getByRole("link", { name: /workflow builder/i }).click();
+test("sidebar nav link 'Builder' navigates to /builder", async ({ page }) => {
+  await page.getByRole("link", { name: /^builder$/i }).click();
   await expect(page).toHaveURL(/\/builder/);
 });
 
-test("sidebar nav link 'Run History' navigates to /history", async ({ page }) => {
-  await page.getByRole("link", { name: /run history/i }).click();
+test("sidebar nav link 'History' navigates to /history", async ({ page }) => {
+  await page.getByRole("link", { name: /^history$/i }).click();
   await expect(page).toHaveURL(/\/history/);
 });

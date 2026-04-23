@@ -16,6 +16,9 @@ import {
   ScrollText,
   Bot,
   BotMessageSquare,
+  Repeat,
+  Network,
+  BarChart3,
   Menu,
   X,
   Moon,
@@ -25,20 +28,50 @@ import { useAuth } from "../context/AuthContext";
 import clsx from "clsx";
 import { useTheme } from "../hooks/useTheme";
 
-const NAV = [
-  { to: "/", icon: LayoutDashboard, label: "Dashboard", end: true },
-  { to: "/builder", icon: Workflow, label: "Builder" },
-  { to: "/monitor", icon: Activity, label: "Run Monitor" },
-  { to: "/history", icon: History, label: "History" },
-  { to: "/agents", icon: Bot, label: "Agent Catalog" },
-  { to: "/agents/my", icon: Activity, label: "My Agents" },
-  { to: "/agents/activity", icon: BotMessageSquare, label: "Agent Activity" },
-  { to: "/approvals", icon: CheckSquare, label: "Approvals" },
-  { to: "/logs", icon: ScrollText, label: "Logs" },
-  { to: "/memory", icon: Database, label: "Memory" },
-  { to: "/integrations", icon: PlugZap, label: "Integrations" },
-  { to: "/pricing", icon: DollarSign, label: "Pricing" },
-];
+type NavItem = {
+  to: string;
+  icon: React.ElementType;
+  label: string;
+  end?: boolean;
+};
+
+const NAV_SECTIONS: Array<{ title: string; items: NavItem[] }> = [
+  {
+    title: "Core",
+    items: [
+      { to: "/", icon: LayoutDashboard, label: "Dashboard", end: true },
+      { to: "/builder", icon: Workflow, label: "Builder" },
+      { to: "/monitor", icon: Activity, label: "Run Monitor" },
+      { to: "/history", icon: History, label: "History" },
+    ],
+  },
+  {
+    title: "Agents",
+    items: [
+      { to: "/agents", icon: Bot, label: "Agent Catalog" },
+      { to: "/agents/my", icon: Bot, label: "My Agents" },
+      { to: "/agents/activity", icon: BotMessageSquare, label: "Agent Activity" },
+      { to: "/agents/routines", icon: Repeat, label: "Routines" },
+    ],
+  },
+  {
+    title: "Workspace",
+    items: [
+      { to: "/workspace/org-structure", icon: Network, label: "Org Structure" },
+      { to: "/workspace/budget-dashboard", icon: BarChart3, label: "Budget Dashboard" },
+      { to: "/approvals", icon: CheckSquare, label: "Approvals" },
+    ],
+  },
+  {
+    title: "Ops",
+    items: [
+      { to: "/logs", icon: ScrollText, label: "Logs" },
+      { to: "/memory", icon: Database, label: "Memory" },
+      { to: "/integrations/mcp", icon: PlugZap, label: "Integrations" },
+      { to: "/pricing", icon: DollarSign, label: "Pricing" },
+    ],
+  },
+] as const;
 
 export default function Layout() {
   const { user, logout } = useAuth();
@@ -59,24 +92,33 @@ export default function Layout() {
   function NavItems({ nested = false }: { nested?: boolean }) {
     return (
       <>
-        {NAV.map(({ to, icon: Icon, label, end }) => (
-          <NavLink
-            key={to}
-            to={to}
-            end={end}
-            onClick={closeNav}
-            className={({ isActive }) =>
-              clsx(
-                "flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
-                isActive
-                  ? "bg-brand-600 text-white"
-                  : "text-gray-600 hover:bg-gray-100 hover:text-gray-900 dark:text-surface-400 dark:hover:bg-surface-800 dark:hover:text-white"
-              )
-            }
-          >
-            <Icon size={18} />
-            {label}
-          </NavLink>
+        {NAV_SECTIONS.map((section) => (
+          <div key={section.title} className="mb-4">
+            <p className="px-3 pb-2 text-[11px] font-semibold uppercase tracking-[0.22em] text-gray-400 dark:text-surface-500">
+              {section.title}
+            </p>
+            <div className="space-y-1">
+              {section.items.map(({ to, icon: Icon, label, end }) => (
+                <NavLink
+                  key={to}
+                  to={to}
+                  end={end}
+                  onClick={closeNav}
+                  className={({ isActive }) =>
+                    clsx(
+                      "flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
+                      isActive
+                        ? "bg-brand-600 text-white"
+                        : "text-gray-600 hover:bg-gray-100 hover:text-gray-900 dark:text-surface-400 dark:hover:bg-surface-800 dark:hover:text-white"
+                    )
+                  }
+                >
+                  <Icon size={18} />
+                  {label}
+                </NavLink>
+              ))}
+            </div>
+          </div>
         ))}
 
         <div className="mt-2 border-t border-gray-200 dark:border-surface-700 pt-3">

@@ -22,7 +22,7 @@ const TIERS = [
       "Multi-agent workflows",
       "Human-in-the-loop approvals",
       "Integrations hub",
-      "Persistent memory store",
+      "Agent Memory",
     ],
   },
   {
@@ -39,7 +39,7 @@ const TIERS = [
       "5 LLM provider connections",
       "Execution logs (30-day retention)",
       "Core integrations hub access",
-      "Persistent memory store (5 GB)",
+      "Agent Memory (5 GB)",
       "Email support",
     ],
     notIncluded: [
@@ -65,7 +65,7 @@ const TIERS = [
       "Multi-agent workflows",
       "Human-in-the-loop approvals",
       "Integrations hub",
-      "Persistent memory store (10 GB)",
+      "Agent Memory (10 GB)",
       "Natural language workflow creation",
       "Multi-modal input triggers",
       "Priority email support",
@@ -83,7 +83,7 @@ const TIERS = [
     cta: "Get Scale",
     features: [
       "Everything in Automate",
-      "Dedicated memory store",
+      "Dedicated Agent Memory",
       "Advanced access controls",
       "Audit logs & compliance exports",
       "Priority support with onboarding",

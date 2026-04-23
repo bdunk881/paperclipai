@@ -108,21 +108,63 @@ jobs:
       - name: Smoke test backend
         run: |
           set -euo pipefail
-          FQDN=$(az containerapp show \
-            --name "${{ steps.target.outputs.container_app }}" \
-            --resource-group "${{ steps.target.outputs.resource_group }}" \
-            --query 'properties.configuration.ingress.fqdn' \
+          APP_NAME="${{ steps.target.outputs.container_app }}"
+          RG_NAME="${{ steps.target.outputs.resource_group }}"
+          EXPECTED_IMAGE="${{ steps.target.outputs.image_tag }}"
+
+          LATEST_REVISION=$(az containerapp show \
+            --name "$APP_NAME" \
+            --resource-group "$RG_NAME" \
+            --query 'properties.latestRevisionName' \
             -o tsv)
 
-          URL="https://${FQDN}/health"
-          for i in $(seq 1 10); do
-            STATUS=$(curl -s -o /dev/null -w "%{http_code}" "$URL")
-            if [ "$STATUS" = "200" ]; then
-              echo "Health check passed (attempt $i)"
-              exit 0
+          echo "Waiting for revision $LATEST_REVISION to become ready"
+
+          for i in $(seq 1 20); do
+            LATEST_READY=$(az containerapp show \
+              --name "$APP_NAME" \
+              --resource-group "$RG_NAME" \
+              --query 'properties.latestReadyRevisionName' \
+              -o tsv)
+            REVISION_FQDN=$(az containerapp show \
+              --name "$APP_NAME" \
+              --resource-group "$RG_NAME" \
+              --query 'properties.latestRevisionFqdn' \
+              -o tsv)
+            REVISION_IMAGE=$(az containerapp revision show \
+              --name "$APP_NAME" \
+              --resource-group "$RG_NAME" \
+              --revision "$LATEST_REVISION" \
+              --query 'properties.template.containers[0].image' \
+              -o tsv)
+
+            echo "Attempt $i: latest=$LATEST_REVISION ready=$LATEST_READY fqdn=$REVISION_FQDN"
+
+            if [ "$REVISION_IMAGE" != "$EXPECTED_IMAGE" ]; then
+              echo "Revision image mismatch: expected $EXPECTED_IMAGE, got $REVISION_IMAGE"
+              exit 1
             fi
-            echo "Attempt $i: got $STATUS, retrying in 15s..."
+
+            if [ "$LATEST_READY" = "$LATEST_REVISION" ] && [ -n "$REVISION_FQDN" ]; then
+              STATUS=$(curl -s -o /dev/null -w "%{http_code}" "https://${REVISION_FQDN}/health")
+              if [ "$STATUS" = "200" ]; then
+                echo "Health check passed on latest ready revision (attempt $i)"
+                exit 0
+              fi
+              echo "Revision is ready but /health returned $STATUS"
+            fi
+
             sleep 15
           done
-          echo "Health check failed after 10 attempts"
+
+          echo "Revision failed to become ready"
+          az containerapp revision show \
+            --name "$APP_NAME" \
+            --resource-group "$RG_NAME" \
+            --revision "$LATEST_REVISION"
+          az containerapp logs show \
+            --name "$APP_NAME" \
+            --resource-group "$RG_NAME" \
+            --revision "$LATEST_REVISION" \
+            --tail 100 || true
           exit 1

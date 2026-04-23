@@ -13,7 +13,7 @@
  * (e.g. Redis, SQS, PostgreSQL).
  */
 
-import { v4 as uuidv4 } from "uuid";
+import { randomUUID } from "node:crypto";
 import { createHmac, timingSafeEqual } from "crypto";
 
 // ---------------------------------------------------------------------------
@@ -199,7 +199,7 @@ export const webhookRelay = {
     signatureHeaderKey?: string;
   }): WebhookSubscription {
     const subscription: WebhookSubscription = {
-      id: uuidv4(),
+      id: randomUUID(),
       userId: params.userId,
       integrationSlug: params.integrationSlug,
       triggerId: params.triggerId,
@@ -297,7 +297,7 @@ export const webhookRelay = {
     }
 
     const event: RelayedEvent = {
-      id: uuidv4(),
+      id: randomUUID(),
       subscriptionId,
       userId: sub.userId,
       integrationSlug: sub.integrationSlug,

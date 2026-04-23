@@ -44,6 +44,10 @@ describe("postgres pool", () => {
 
     expect(mockPoolConstructor).toHaveBeenCalledWith({
       connectionString: "postgres://autoflow:test@localhost:5432/autoflow",
+      max: 10,
+      connectionTimeoutMillis: 5000,
+      idleTimeoutMillis: 30000,
+      statement_timeout: 30000,
     });
     expect(mockOn).toHaveBeenCalledWith("error", expect.any(Function));
 

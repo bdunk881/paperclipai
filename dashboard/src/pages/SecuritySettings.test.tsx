@@ -17,7 +17,7 @@ describe("SecuritySettings", () => {
     ).toBeInTheDocument();
   });
 
-  it("renders password form controls", () => {
+  it("renders password form with three inputs", () => {
     render(<SecuritySettings />);
 
     expect(screen.getByText("Current Password")).toBeInTheDocument();
@@ -26,7 +26,7 @@ describe("SecuritySettings", () => {
     expect(screen.getByText("Update password")).toBeInTheDocument();
   });
 
-  it("shows the backend placeholder error when submitting the password form", async () => {
+  it("shows error message after submitting password form", async () => {
     render(<SecuritySettings />);
 
     fireEvent.click(screen.getByText("Update password"));
@@ -40,7 +40,7 @@ describe("SecuritySettings", () => {
     });
   });
 
-  it("renders the section headings and description", () => {
+  it("renders heading and active sessions description", () => {
     render(<SecuritySettings />);
 
     expect(screen.getByText("Security")).toBeInTheDocument();

@@ -4,6 +4,7 @@
 
 import { runStore } from "./runStore";
 import { WorkflowRun } from "../types/workflow";
+import * as postgres from "../db/postgres";
 
 function makeRun(overrides: Partial<WorkflowRun> = {}): WorkflowRun {
   return {
@@ -20,6 +21,10 @@ function makeRun(overrides: Partial<WorkflowRun> = {}): WorkflowRun {
 
 beforeEach(() => {
   return runStore.clear();
+});
+
+afterEach(() => {
+  jest.restoreAllMocks();
 });
 
 describe("runStore.create", () => {
@@ -127,6 +132,16 @@ describe("runStore.list", () => {
     await runStore.create(makeRun({ id: "run-1" }));
     await expect(runStore.list("tpl-unknown")).resolves.toEqual([]);
   });
+
+  it("filters by userId", async () => {
+    await runStore.create(makeRun({ id: "run-1", userId: "user-a" }));
+    await runStore.create(makeRun({ id: "run-2", userId: "user-b" }));
+    await runStore.create(makeRun({ id: "run-3" }));
+
+    const filtered = await runStore.list(undefined, "user-a");
+    expect(filtered).toHaveLength(1);
+    expect(filtered[0]?.id).toBe("run-1");
+  });
 });
 
 describe("runStore.clear", () => {
@@ -135,5 +150,206 @@ describe("runStore.clear", () => {
     await runStore.create(makeRun({ id: "run-2" }));
     await runStore.clear();
     await expect(runStore.list()).resolves.toHaveLength(0);
+  });
+});
+
+describe("runStore postgres persistence", () => {
+  it("writes run rows and step results when persistence is enabled", async () => {
+    const query = jest.fn().mockResolvedValue({ rows: [] });
+    jest.spyOn(postgres, "isPostgresPersistenceEnabled").mockReturnValue(true);
+    jest
+      .spyOn(postgres, "getPostgresPool")
+      .mockReturnValue({ query } as unknown as ReturnType<typeof postgres.getPostgresPool>);
+
+    const created = await runStore.create(
+      makeRun({
+        input: { customerId: "cust-1" },
+        output: { status: "ok" },
+        runtimeState: {
+          config: { mode: "resume" },
+          context: { ticketId: "T-1" },
+          currentStepIndex: 2,
+          waitingApprovalId: "approval-1",
+        },
+        stepResults: [
+          {
+            stepId: "step-1",
+            stepName: "Approve",
+            status: "success",
+            output: { approved: true },
+            durationMs: 12,
+          },
+        ],
+        userId: "user-1",
+      })
+    );
+
+    expect(created.input).toEqual({ customerId: "cust-1" });
+    expect(query).toHaveBeenCalledTimes(3);
+    expect(query.mock.calls[0]?.[0]).toContain("INSERT INTO workflow_runs");
+    expect(query.mock.calls[1]?.[0]).toContain("DELETE FROM workflow_step_results");
+    expect(query.mock.calls[2]?.[0]).toContain("INSERT INTO workflow_step_results");
+  });
+
+  it("loads persisted runs and step results", async () => {
+    const query = jest
+      .fn()
+      .mockResolvedValueOnce({
+        rows: [
+          {
+            id: "run-pg",
+            template_id: "tpl-support-bot",
+            template_name: "Customer Support Bot",
+            status: "awaiting_approval",
+            started_at: "2026-04-22T00:00:00.000Z",
+            completed_at: null,
+            input_json: JSON.stringify({ customerId: "cust-1" }),
+            output_json: JSON.stringify({ status: "pending" }),
+            runtime_state_json: JSON.stringify({
+              config: { mode: "resume" },
+              context: { ticketId: "T-1" },
+              currentStepIndex: 2,
+              waitingApprovalId: "approval-1",
+            }),
+            error: null,
+            user_id: "user-1",
+          },
+        ],
+      })
+      .mockResolvedValueOnce({
+        rows: [
+        {
+          step_id: "step-1",
+          step_name: "Approve",
+          status: "success",
+          output_json: JSON.stringify({ approved: true }),
+          duration_ms: 15,
+          error: null,
+            agent_slot_results_json: null,
+            cost_log_json: null,
+          },
+        ],
+      });
+    jest.spyOn(postgres, "isPostgresPersistenceEnabled").mockReturnValue(true);
+    jest
+      .spyOn(postgres, "getPostgresPool")
+      .mockReturnValue({ query } as unknown as ReturnType<typeof postgres.getPostgresPool>);
+
+    await expect(runStore.get("run-pg")).resolves.toMatchObject({
+      id: "run-pg",
+      status: "awaiting_approval",
+      userId: "user-1",
+      input: { customerId: "cust-1" },
+      output: { status: "pending" },
+      runtimeState: {
+        config: { mode: "resume" },
+        context: { ticketId: "T-1" },
+        currentStepIndex: 2,
+        waitingApprovalId: "approval-1",
+      },
+      stepResults: [
+        expect.objectContaining({
+          stepId: "step-1",
+          output: { approved: true },
+        }),
+      ],
+    });
+  });
+
+  it("lists persisted runs with template and user filters", async () => {
+    const query = jest
+      .fn()
+      .mockResolvedValueOnce({
+        rows: [
+          {
+            id: "run-pg-1",
+            template_id: "tpl-support-bot",
+            template_name: "Customer Support Bot",
+            status: "completed",
+            started_at: "2026-04-22T00:00:00.000Z",
+            completed_at: "2026-04-22T00:05:00.000Z",
+            input_json: JSON.stringify({ customerId: "cust-1" }),
+            output_json: JSON.stringify({ ok: true }),
+            runtime_state_json: null,
+            error: null,
+            user_id: "user-1",
+          },
+        ],
+      })
+      .mockResolvedValueOnce({ rows: [] });
+    jest.spyOn(postgres, "isPostgresPersistenceEnabled").mockReturnValue(true);
+    jest
+      .spyOn(postgres, "getPostgresPool")
+      .mockReturnValue({ query } as unknown as ReturnType<typeof postgres.getPostgresPool>);
+
+    const runs = await runStore.list("tpl-support-bot", "user-1");
+    expect(runs).toHaveLength(1);
+    expect(runs[0]).toMatchObject({ id: "run-pg-1", userId: "user-1" });
+    expect(query.mock.calls[0]?.[1]).toEqual(["tpl-support-bot", "user-1"]);
+  });
+
+  it("updates persisted runs and rewrites step results", async () => {
+    const query = jest
+      .fn()
+      .mockResolvedValueOnce({
+        rows: [
+          {
+            id: "run-pg",
+            template_id: "tpl-support-bot",
+            template_name: "Customer Support Bot",
+            status: "pending",
+            started_at: "2026-04-22T00:00:00.000Z",
+            completed_at: null,
+            input_json: JSON.stringify({ customerId: "cust-1" }),
+            output_json: null,
+            runtime_state_json: null,
+            error: null,
+            user_id: "user-1",
+          },
+        ],
+      })
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [] });
+    jest.spyOn(postgres, "isPostgresPersistenceEnabled").mockReturnValue(true);
+    jest
+      .spyOn(postgres, "getPostgresPool")
+      .mockReturnValue({ query } as unknown as ReturnType<typeof postgres.getPostgresPool>);
+
+    const updated = await runStore.update("run-pg", {
+      status: "completed",
+      completedAt: "2026-04-22T00:05:00.000Z",
+      output: { ok: true },
+      stepResults: [
+        {
+          stepId: "step-1",
+          stepName: "Approve",
+          status: "success",
+          output: { approved: true },
+          durationMs: 20,
+        },
+      ],
+    });
+
+    expect(updated).toMatchObject({
+      status: "completed",
+      output: { ok: true },
+      stepResults: [expect.objectContaining({ stepId: "step-1" })],
+    });
+    expect(query.mock.calls[2]?.[0]).toContain("UPDATE workflow_runs");
+    expect(query.mock.calls[3]?.[0]).toContain("DELETE FROM workflow_step_results");
+    expect(query.mock.calls[4]?.[0]).toContain("INSERT INTO workflow_step_results");
+  });
+
+  it("clears persisted runs when persistence is enabled", async () => {
+    const query = jest.fn().mockResolvedValue({ rows: [] });
+    jest.spyOn(postgres, "isPostgresPersistenceEnabled").mockReturnValue(true);
+    jest
+      .spyOn(postgres, "getPostgresPool")
+      .mockReturnValue({ query } as unknown as ReturnType<typeof postgres.getPostgresPool>);
+
+    await runStore.clear();
+    expect(query).toHaveBeenCalledWith("DELETE FROM workflow_runs");
   });
 });

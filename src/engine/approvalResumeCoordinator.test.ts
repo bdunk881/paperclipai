@@ -6,7 +6,11 @@ import { approvalStore } from "./approvalStore";
 import { approvalNotificationStore } from "./approvalNotificationStore";
 import { workflowEngine } from "./WorkflowEngine";
 import { runStore } from "./runStore";
-import { runApprovalResumeSweep } from "./approvalResumeCoordinator";
+import {
+  runApprovalResumeSweep,
+  startApprovalResumeCoordinator,
+  stopApprovalResumeCoordinator,
+} from "./approvalResumeCoordinator";
 import { TEMPLATE_MAP } from "../templates";
 
 async function waitForRunStatus(
@@ -150,5 +154,83 @@ describe("runApprovalResumeSweep", () => {
 
     waitSpy.mockRestore();
     delete TEMPLATE_MAP[template.id];
+  });
+
+  it("skips awaiting approval runs that are missing a waitingApprovalId snapshot", async () => {
+    await runStore.create({
+      id: "run-missing-snapshot",
+      templateId: "tpl-missing-snapshot",
+      templateName: "Missing snapshot",
+      status: "awaiting_approval",
+      startedAt: new Date().toISOString(),
+      input: {},
+      stepResults: [],
+      runtimeState: {
+        config: {},
+        context: {},
+        currentStepIndex: 0,
+      },
+    });
+
+    await expect(runApprovalResumeSweep()).resolves.toMatchObject({
+      scanned: 1,
+      skippedMissingSnapshot: 1,
+      resumed: 0,
+    });
+  });
+
+  it("skips awaiting approval runs when the template can no longer be loaded", async () => {
+    const approval = await approvalStore.create({
+      runId: "run-missing-template",
+      templateName: "Missing template",
+      stepId: "approval-1",
+      stepName: "Manager Approval",
+      assignee: "manager",
+      message: "Please approve",
+      timeoutMinutes: 5,
+    });
+    await approvalStore.resolve(approval.id, "approved");
+    await runStore.create({
+      id: "run-missing-template",
+      templateId: "tpl-missing-template",
+      templateName: "Missing template",
+      status: "awaiting_approval",
+      startedAt: new Date().toISOString(),
+      input: {},
+      stepResults: [],
+      runtimeState: {
+        config: {},
+        context: {},
+        currentStepIndex: 0,
+        waitingApprovalId: approval.id,
+      },
+    });
+
+    await expect(runApprovalResumeSweep()).resolves.toMatchObject({
+      scanned: 1,
+      skippedMissingSnapshot: 1,
+      resumed: 0,
+    });
+  });
+});
+
+describe("approval resume coordinator lifecycle", () => {
+  afterEach(() => {
+    stopApprovalResumeCoordinator();
+    jest.useRealTimers();
+  });
+
+  it("starts only one interval and stops cleanly", () => {
+    jest.useFakeTimers();
+    const setIntervalSpy = jest.spyOn(global, "setInterval");
+    const clearIntervalSpy = jest.spyOn(global, "clearInterval");
+
+    startApprovalResumeCoordinator(100);
+    startApprovalResumeCoordinator(100);
+    expect(setIntervalSpy).toHaveBeenCalledTimes(1);
+
+    stopApprovalResumeCoordinator();
+    stopApprovalResumeCoordinator();
+    expect(clearIntervalSpy).toHaveBeenCalledTimes(1);
   });
 });

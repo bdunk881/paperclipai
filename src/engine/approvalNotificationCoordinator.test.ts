@@ -3,6 +3,8 @@ import { approvalStore } from "./approvalStore";
 import {
   resetApprovalNotificationSenders,
   runApprovalNotificationSweep,
+  startApprovalNotificationCoordinator,
+  stopApprovalNotificationCoordinator,
   setApprovalNotificationSender,
 } from "./approvalNotificationCoordinator";
 
@@ -48,5 +50,34 @@ describe("runApprovalNotificationSweep", () => {
       status: "failed",
       error: expect.stringContaining("smtp unavailable"),
     });
+  });
+
+  it("returns zero work when there are no pending notifications", async () => {
+    await expect(runApprovalNotificationSweep()).resolves.toEqual({
+      scanned: 0,
+      delivered: 0,
+      failed: 0,
+    });
+  });
+});
+
+describe("approval notification coordinator lifecycle", () => {
+  afterEach(() => {
+    stopApprovalNotificationCoordinator();
+    jest.useRealTimers();
+  });
+
+  it("starts only one interval and stops cleanly", () => {
+    jest.useFakeTimers();
+    const setIntervalSpy = jest.spyOn(global, "setInterval");
+    const clearIntervalSpy = jest.spyOn(global, "clearInterval");
+
+    startApprovalNotificationCoordinator(100);
+    startApprovalNotificationCoordinator(100);
+    expect(setIntervalSpy).toHaveBeenCalledTimes(1);
+
+    stopApprovalNotificationCoordinator();
+    stopApprovalNotificationCoordinator();
+    expect(clearIntervalSpy).toHaveBeenCalledTimes(1);
   });
 });

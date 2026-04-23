@@ -39,22 +39,22 @@ export default function Integrations() {
     return response;
   }
 
-  async function loadStatuses() {
-    setLoading(true);
-    setError(null);
-    try {
-      const response = await authorizedFetch("/api/integrations/status");
-      const payload = (await response.json()) as { providers: Record<ProviderKey, ProviderStatus> };
-      setProviders(payload.providers);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load integrations");
-    } finally {
-      setLoading(false);
-    }
-  }
-
   useEffect(() => {
+    async function loadStatuses() {
+      setLoading(true);
+      setError(null);
+      try {
+        const response = await authorizedFetch("/api/integrations/status");
+        const payload = (await response.json()) as { providers: Record<ProviderKey, ProviderStatus> };
+        setProviders(payload.providers);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Failed to load integrations");
+      } finally {
+        setLoading(false);
+      }
+    }
     void loadStatuses();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   async function handleConnect(provider: ProviderMeta) {

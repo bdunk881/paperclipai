@@ -1,4 +1,4 @@
-import { v4 as uuidv4 } from "uuid";
+import { randomUUID } from "node:crypto";
 import { CredentialRegistry, maskSecret } from "../shared/credentialRegistry";
 import { HubSpotCredential, HubSpotCredentialPublic } from "./types";
 
@@ -41,7 +41,7 @@ export const hubSpotCredentialStore = {
     metadata?: Record<string, string>;
   }): HubSpotCredentialPublic {
     const credential: HubSpotCredential = {
-      id: uuidv4(),
+      id: randomUUID(),
       userId: params.userId,
       authMethod: "oauth2",
       tokenEncrypted: registry.encryptSecret(params.accessToken),
@@ -67,7 +67,7 @@ export const hubSpotCredentialStore = {
     metadata?: Record<string, string>;
   }): HubSpotCredentialPublic {
     const credential: HubSpotCredential = {
-      id: uuidv4(),
+      id: randomUUID(),
       userId: params.userId,
       authMethod: "api_key",
       tokenEncrypted: registry.encryptSecret(params.apiKey),

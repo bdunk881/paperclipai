@@ -13,7 +13,7 @@ import {
   randomBytes,
   scryptSync,
 } from "crypto";
-import { v4 as uuidv4 } from "uuid";
+import { randomUUID } from "node:crypto";
 import {
   IntegrationConnection,
   IntegrationConnectionPublic,
@@ -84,7 +84,7 @@ export const integrationCredentialStore = {
   }): IntegrationConnectionPublic {
     const now = new Date().toISOString();
     const conn: IntegrationConnection = {
-      id: uuidv4(),
+      id: randomUUID(),
       userId: params.userId,
       integrationSlug: params.integrationSlug,
       label: params.label,

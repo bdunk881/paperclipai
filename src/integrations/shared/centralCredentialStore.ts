@@ -1,4 +1,4 @@
-import { v4 as uuidv4 } from "uuid";
+import { randomUUID } from "node:crypto";
 
 import { CredentialRegistry, CredentialRegistryRecord } from "./credentialRegistry";
 
@@ -47,7 +47,7 @@ export class CentralCredentialStore<TMetadata extends object, TSecrets extends o
   }): CentralCredentialRecord<TMetadata> {
     const now = params.createdAt ?? new Date().toISOString();
     const record: CentralCredentialRecord<TMetadata> = {
-      id: params.id ?? uuidv4(),
+      id: params.id ?? randomUUID(),
       userId: params.userId,
       authMethod: params.authMethod,
       label: params.label,

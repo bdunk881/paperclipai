@@ -1,14 +1,6 @@
 import type { WorkflowTemplate, WorkflowRun, WorkflowStep } from "../types/workflow";
 import { getApiBasePath } from "./baseUrl";
 
-const USE_MOCK = import.meta.env.VITE_USE_MOCK === "true";
-
-function delay(ms: number): Promise<void> {
-  return new Promise((resolve) => {
-    window.setTimeout(resolve, ms);
-  });
-}
-
 // ---------------------------------------------------------------------------
 // LLM Config types — mirrors src/engine/llmProviders/types.ts
 // ---------------------------------------------------------------------------

@@ -195,7 +195,12 @@ describe("listRuns", () => {
 
   it("throws on non-ok response", async () => {
     mockFetchFail(500);
-    await expect(listRuns()).rejects.toThrow(/500/);
+    await expect(listRuns()).rejects.toThrow(/Not found/);
+  });
+
+  it("uses the backend error payload when runs loading fails", async () => {
+    mockFetchFail(401, { error: "Unauthorized" });
+    await expect(listRuns()).rejects.toThrow(/Unauthorized/);
   });
 
   it("adds Authorization header when access token is provided", async () => {
@@ -330,6 +335,11 @@ describe("control plane client", () => {
 
     expect(lastFetchUrl()).toBe("/api/control-plane/teams/team-001");
     expect(result.team.name).toBe("Support Team");
+  });
+
+  it("uses backend control-plane error payloads", async () => {
+    mockFetchFail(401, { error: "Team access denied" });
+    await expect(listControlPlaneTeams("token-123")).rejects.toThrow(/Team access denied/);
   });
 
   it("deploys a workflow as a team and forwards the run header", async () => {

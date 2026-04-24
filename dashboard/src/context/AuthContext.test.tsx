@@ -29,25 +29,28 @@ function CaptureAuth() {
 }
 
 describe("AuthContext", () => {
+  const cachedAccount = {
+    homeAccountId: "acct-1",
+    username: "user@example.com",
+    name: "Example User",
+    tenantId: "tenant-1",
+    idTokenClaims: { email: "user@example.com" },
+  };
+
   const instance = {
     loginRedirect: vi.fn(),
     logoutRedirect: vi.fn(),
     acquireTokenSilent: vi.fn(),
     acquireTokenRedirect: vi.fn(),
+    getActiveAccount: vi.fn(() => null),
   };
 
   beforeEach(() => {
     latestAuth = undefined;
     vi.clearAllMocks();
-    mockUseMsal.mockReturnValue({ instance, accounts: [{ homeAccountId: "acct-1" }] });
+    mockUseMsal.mockReturnValue({ instance, accounts: [cachedAccount] });
     mockUseIsAuthenticated.mockReturnValue(true);
-    mockUseAccount.mockReturnValue({
-      homeAccountId: "acct-1",
-      username: "user@example.com",
-      name: "Example User",
-      tenantId: "tenant-1",
-      idTokenClaims: { email: "user@example.com" },
-    });
+    mockUseAccount.mockReturnValue(cachedAccount);
   });
 
   afterEach(() => {
@@ -79,6 +82,7 @@ describe("AuthContext", () => {
   });
 
   it("returns null when no account is available", async () => {
+    mockUseMsal.mockReturnValue({ instance, accounts: [] });
     mockUseAccount.mockReturnValue(null);
 
     render(
@@ -89,6 +93,25 @@ describe("AuthContext", () => {
 
     expect(screen.getByText("no-user")).toBeInTheDocument();
     await expect(latestAuth?.getAccessToken()).resolves.toBeNull();
+  });
+
+  it("uses the cached MSAL account during auth hydration so deep links do not bounce through login", async () => {
+    mockUseIsAuthenticated.mockReturnValue(false);
+    mockUseAccount.mockReturnValue(null);
+
+    render(
+      <AuthProvider>
+        <CaptureAuth />
+      </AuthProvider>
+    );
+
+    expect(screen.getByText("user@example.com")).toBeInTheDocument();
+    expect(latestAuth?.user).toEqual({
+      id: "acct-1",
+      email: "user@example.com",
+      name: "Example User",
+      tenantId: "tenant-1",
+    });
   });
 
   it("returns a silent access token when token acquisition succeeds", async () => {

@@ -17,9 +17,8 @@ import {
   TicketSlaBadge,
   TicketSourceNotice,
   TicketStatusBadge,
-  primaryAssignee,
-  relativeTicketTime,
 } from "./tickets/ticketingUi";
+import { primaryAssignee, relativeTicketTime } from "./tickets/ticketingUtils";
 
 type StatusFilter = TicketStatus | "all";
 type PriorityFilter = TicketPriority | "all";

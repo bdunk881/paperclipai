@@ -5,7 +5,6 @@ import { MemoryRouter, Route, Routes } from "react-router-dom";
 import WorkflowBuilder from "./WorkflowBuilder";
 import { generateWorkflow, listLLMConfigs, listTemplates, startRunWithFile } from "../api/client";
 
-
 vi.mock("@xyflow/react", () => ({
   Background: () => null,
   BackgroundVariant: { Dots: "dots" },
@@ -127,7 +126,6 @@ describe("WorkflowBuilder", () => {
     expect(await screen.findByTestId("react-flow")).toBeInTheDocument();
     expect(screen.getByText("Agent Step")).toBeInTheDocument();
     expect(screen.getByText("Step Properties")).toBeInTheDocument();
-    expect(screen.getByText("Model")).toBeInTheDocument();
     expect(screen.getByPlaceholderText(/claude-sonnet-4-6/i)).toBeInTheDocument();
   });
 

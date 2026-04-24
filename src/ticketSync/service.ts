@@ -204,6 +204,44 @@ async function recordSyncError(ticket: TicketRecord, context: TicketSyncMutation
   });
 }
 
+async function applyInboundStatus(ticket: TicketRecord, metadata: TicketSyncConnectionMetadata, event: TicketSyncWebhookEvent) {
+  const mappedStatus = (
+    event.action === "closed"
+      ? "resolved"
+      : mapInboundValue(metadata.fieldMapping?.status, event.status)
+  ) as TicketRecord["status"] | undefined;
+  if (!mappedStatus || mappedStatus === ticket.status) {
+    return;
+  }
+
+  const primaryAssignee = ticket.assignees.find((assignee) => assignee.role === "primary");
+  if (!primaryAssignee) {
+    return;
+  }
+
+  const transition = async (status: TicketRecord["status"]) =>
+    ticketStore.transitionTicket({
+      ticketId: ticket.id,
+      actor: { type: primaryAssignee.type, id: primaryAssignee.id },
+      status,
+      reason: `Inbound ${event.provider} sync`,
+    });
+
+  if (ticket.status === "open" && mappedStatus === "resolved") {
+    await transition("in_progress");
+    await transition("resolved");
+    return;
+  }
+
+  if (ticket.status === "open" && mappedStatus === "blocked") {
+    await transition("in_progress");
+    await transition("blocked");
+    return;
+  }
+
+  await transition(mappedStatus);
+}
+
 function parseGitHubWebhook(rawBody: Buffer, headers: Record<string, string | undefined>): TicketSyncWebhookEvent {
   const event = headers["x-github-event"];
   const payload = JSON.parse(rawBody.toString("utf8")) as Record<string, any>;
@@ -577,6 +615,8 @@ export const ticketSyncService = {
       priority: mapInboundValue(built.decrypted.record.metadata.fieldMapping?.priority, event.priority) as any,
       tags: event.labels,
     });
+
+    await applyInboundStatus(linkedTicket, built.decrypted.record.metadata, event);
 
     return { status: "accepted", ticketId: linkedTicket.id };
   },

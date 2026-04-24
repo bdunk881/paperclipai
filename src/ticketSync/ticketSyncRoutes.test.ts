@@ -73,6 +73,10 @@ function auth(userId: string) {
   return { Authorization: `Bearer ${userId}` };
 }
 
+function hmac(secret: string, payload: string): string {
+  return crypto.createHmac("sha256", secret).update(payload).digest("hex");
+}
+
 function buildApp() {
   const app = express();
   app.use("/api/webhooks/ticket-sync", ticketSyncWebhookRoutes);
@@ -246,7 +250,7 @@ describe("ticket sync routes", () => {
         html_url: "https://github.test/issues/42",
       },
     });
-    const issueSignature = `sha256=${crypto.createHmac("sha256", "secret").update(issuePayload).digest("hex")}`;
+    const issueSignature = `sha256=${hmac("secret", issuePayload)}`;
 
     const webhook = await request(app)
       .post(`/api/webhooks/ticket-sync/github/${connection.body.id}`)
@@ -277,7 +281,7 @@ describe("ticket sync routes", () => {
         body: "<!--autoflow:source=autoflow;idempotency=abc-->\n[AutoFlow · user-1] echo",
       },
     });
-    const commentSignature = `sha256=${crypto.createHmac("sha256", "secret").update(commentPayload).digest("hex")}`;
+    const commentSignature = `sha256=${hmac("secret", commentPayload)}`;
 
     const echoed = await request(app)
       .post(`/api/webhooks/ticket-sync/github/${connection.body.id}`)
@@ -294,5 +298,163 @@ describe("ticket sync routes", () => {
 
     expect(activity.status).toBe(200);
     expect(activity.body.total).toBe(2);
+  });
+
+  it("imports Jira issues and comments through the ticket-sync webhook", async () => {
+    const app = buildApp();
+    const connection = await request(app)
+      .post("/api/ticket-sync/connections")
+      .set(auth("user-1"))
+      .send({
+        workspaceId: "11111111-1111-4111-8111-111111111111",
+        provider: "jira",
+        authMethod: "basic",
+        label: "Jira project",
+        config: {
+          site: "https://autoflow.atlassian.net",
+          defaultProjectKey: "ALT",
+          webhookSecret: "jira-secret",
+        },
+        secrets: { email: "ops@autoflow.test", apiToken: "jira_token" },
+      });
+
+    const issuePayload = JSON.stringify({
+      webhookEvent: "jira:issue_created",
+      issue: {
+        id: "jira-1",
+        key: "ALT-1",
+        self: "https://autoflow.atlassian.net/rest/api/3/issue/jira-1",
+        fields: {
+          summary: "Imported Jira issue",
+          description: "Created from Jira",
+          labels: ["autoflow"],
+          status: { name: "To Do" },
+          priority: { name: "High" },
+        },
+      },
+    });
+
+    const webhook = await request(app)
+      .post(`/api/webhooks/ticket-sync/jira/${connection.body.id}`)
+      .set("X-Atlassian-Webhook-Signature", hmac("jira-secret", issuePayload))
+      .set("Content-Type", "application/json")
+      .send(issuePayload);
+
+    expect(webhook.status).toBe(202);
+    expect(webhook.body.ticketId).toBeTruthy();
+
+    const commentPayload = JSON.stringify({
+      webhookEvent: "comment_created",
+      issue: {
+        id: "jira-1",
+        key: "ALT-1",
+        fields: { labels: ["autoflow"] },
+      },
+      comment: {
+        id: "comment-1",
+        body: "Inbound Jira comment",
+        author: { displayName: "Jira User" },
+      },
+    });
+
+    const comment = await request(app)
+      .post(`/api/webhooks/ticket-sync/jira/${connection.body.id}`)
+      .set("X-Atlassian-Webhook-Signature", hmac("jira-secret", commentPayload))
+      .set("Content-Type", "application/json")
+      .send(commentPayload);
+
+    expect(comment.status).toBe(202);
+
+    const activity = await request(app)
+      .get(`/api/tickets/${webhook.body.ticketId}/activity`)
+      .set(auth("user-1"));
+
+    expect(activity.status).toBe(200);
+    expect(activity.body.updates.some((update: any) => update.content === "Inbound Jira comment")).toBe(true);
+  });
+
+  it("updates linked tickets from Linear webhooks and suppresses echoed comments", async () => {
+    const app = buildApp();
+    const connection = await request(app)
+      .post("/api/ticket-sync/connections")
+      .set(auth("user-1"))
+      .send({
+        workspaceId: "11111111-1111-4111-8111-111111111111",
+        provider: "linear",
+        authMethod: "api_key",
+        label: "Linear workspace",
+        config: {
+          defaultTeamId: "team-1",
+          webhookSecret: "linear-secret",
+        },
+        secrets: { token: "lin_token" },
+      });
+
+    const created = await request(app)
+      .post("/api/tickets")
+      .set(auth("user-1"))
+      .set("X-Paperclip-Run-Id", "run-linear-ticket")
+      .send({
+        workspaceId: "11111111-1111-4111-8111-111111111111",
+        title: "Linear sync target",
+        assignees: [{ type: "user", id: "user-1", role: "primary" }],
+      });
+
+    const updatePayload = JSON.stringify({
+      action: "update",
+      type: "Issue",
+      data: {
+        id: "remote-1",
+        identifier: "LINEAR-1",
+        title: "Linear updated title",
+        description: "Updated from Linear",
+        state: { name: "In Progress" },
+        labels: [{ name: "autoflow" }],
+      },
+    });
+
+    const linearSignature = hmac("linear-secret", updatePayload);
+    const update = await request(app)
+      .post(`/api/webhooks/ticket-sync/linear/${connection.body.id}`)
+      .set("Linear-Signature", linearSignature)
+      .set("Linear-Delivery", "delivery-1")
+      .set("Content-Type", "application/json")
+      .send(updatePayload);
+
+    expect(update.status).toBe(202);
+
+    const ticket = await request(app)
+      .get(`/api/tickets/${created.body.ticket.id}`)
+      .set(auth("user-1"));
+
+    expect(ticket.status).toBe(200);
+    expect(ticket.body.ticket.title).toBe("Linear updated title");
+
+    const commentPayload = JSON.stringify({
+      action: "create",
+      type: "Comment",
+      data: {
+        id: "comment-1",
+        issueId: "remote-1",
+        issueIdentifier: "LINEAR-1",
+        body: "<!--autoflow:source=autoflow;idempotency=linear-echo-->\n[AutoFlow · user-1] echo",
+      },
+    });
+
+    const echoed = await request(app)
+      .post(`/api/webhooks/ticket-sync/linear/${connection.body.id}`)
+      .set("Linear-Signature", hmac("linear-secret", commentPayload))
+      .set("Linear-Delivery", "delivery-2")
+      .set("Content-Type", "application/json")
+      .send(commentPayload);
+
+    expect(echoed.status).toBe(202);
+
+    const activity = await request(app)
+      .get(`/api/tickets/${created.body.ticket.id}/activity`)
+      .set(auth("user-1"));
+
+    expect(activity.status).toBe(200);
+    expect(activity.body.updates.some((update: any) => String(update.content).includes("echo"))).toBe(false);
   });
 });

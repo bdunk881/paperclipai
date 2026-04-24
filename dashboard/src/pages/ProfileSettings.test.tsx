@@ -69,7 +69,7 @@ describe("ProfileSettings", () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
-  it("falls back to localStorage on 404", async () => {
+  it("falls back to sessionStorage on 404", async () => {
     const fetchMock = vi.fn().mockResolvedValueOnce({
       ok: false,
       status: 404,
@@ -85,7 +85,7 @@ describe("ProfileSettings", () => {
       setItem: vi.fn(),
       removeItem: vi.fn(),
     };
-    vi.stubGlobal("localStorage", mockStorage);
+    vi.stubGlobal("sessionStorage", mockStorage);
 
     render(<ProfileSettings />);
 
@@ -122,13 +122,13 @@ describe("ProfileSettings", () => {
     });
   });
 
-  it("save with 404 falls back to localStorage", async () => {
+  it("save with 404 falls back to sessionStorage", async () => {
     const mockStorage = {
       getItem: vi.fn().mockReturnValue(null),
       setItem: vi.fn(),
       removeItem: vi.fn(),
     };
-    vi.stubGlobal("localStorage", mockStorage);
+    vi.stubGlobal("sessionStorage", mockStorage);
 
     const fetchMock = vi.fn()
       .mockResolvedValueOnce({

@@ -66,6 +66,30 @@ interface TicketAggregate {
   updates: TicketUpdate[];
 }
 
+export type TicketCloseHookStatus = "completed" | "queued_for_retry";
+
+export interface TicketCloseHookResult {
+  hook: "agent_memory_ticket_close";
+  delivery: "non_blocking";
+  status: TicketCloseHookStatus;
+  agentId: string;
+  triggeredAt: string;
+  attempts: number;
+  error?: string;
+}
+
+export interface TicketCloseContract {
+  ticketId: string;
+  ticketUrl: string;
+  closedAt: string;
+  assignees: {
+    all: TicketAssignee[];
+    primary?: TicketAssignee;
+    collaborators: TicketAssignee[];
+  };
+  hooks: TicketCloseHookResult[];
+}
+
 export interface TicketCloseMemoryInput {
   agentId: string;
   taskSummary: string;
@@ -290,6 +314,26 @@ function metadataArtifacts(updates: TicketUpdate[]): string[] {
       .map((artifact) => artifact.trim())
       .filter(Boolean);
   }))];
+}
+
+function buildTicketCloseContract(
+  ticket: TicketRecord,
+  hooks: TicketCloseHookResult[],
+): TicketCloseContract {
+  const primary = getPrimaryAssignee(ticket);
+  return {
+    ticketId: ticket.id,
+    ticketUrl: buildTicketUrl(ticket),
+    closedAt: ticket.resolvedAt ?? new Date().toISOString(),
+    assignees: {
+      all: ticket.assignees.map(cloneAssignee),
+      primary: primary ? cloneAssignee(primary) : undefined,
+      collaborators: ticket.assignees
+        .filter((assignee) => assignee.role === "collaborator")
+        .map(cloneAssignee),
+    },
+    hooks: hooks.map((hook) => ({ ...hook })),
+  };
 }
 
 function normalizeTicketCloseMemoryInputs(
@@ -1083,6 +1127,7 @@ export const ticketStore = {
   }): Promise<{
     aggregate?: TicketAggregate;
     relevantMemories?: AgentMemorySearchResult[];
+    closeContract?: TicketCloseContract;
     error?: "not_found" | "forbidden" | "invalid_transition";
     message?: string;
   }> {
@@ -1172,6 +1217,7 @@ export const ticketStore = {
 
     const normalizedMemories = normalizeTicketCloseMemoryInputs(nextTicket, nextUpdates, input.memoryEntries);
     const finalUpdates = [...resultAggregate.updates];
+    const closeHooks: TicketCloseHookResult[] = [];
     for (const memoryEntry of normalizedMemories.entries ?? []) {
       const payload: PendingTicketCloseMemoryWrite = {
         id: randomUUID(),
@@ -1204,6 +1250,14 @@ export const ticketStore = {
       }
 
       if (written) {
+        closeHooks.push({
+          hook: "agent_memory_ticket_close",
+          delivery: "non_blocking",
+          status: "completed",
+          agentId: memoryEntry.agentId,
+          triggeredAt: nextTicket.resolvedAt ?? new Date().toISOString(),
+          attempts: Math.max(payload.attempts, 1),
+        });
         finalUpdates.push(
           buildStructuredUpdate({
             ticketId: nextTicket.id,
@@ -1217,6 +1271,15 @@ export const ticketStore = {
         );
       } else {
         pendingTicketCloseMemoryWrites.set(payload.id, payload);
+        closeHooks.push({
+          hook: "agent_memory_ticket_close",
+          delivery: "non_blocking",
+          status: "queued_for_retry",
+          agentId: memoryEntry.agentId,
+          triggeredAt: nextTicket.resolvedAt ?? new Date().toISOString(),
+          attempts: payload.attempts,
+          error: lastError,
+        });
         finalUpdates.push(
           buildStructuredUpdate({
             ticketId: nextTicket.id,
@@ -1233,8 +1296,9 @@ export const ticketStore = {
       }
     }
 
+    const closeContract = buildTicketCloseContract(nextTicket, closeHooks);
     if (finalUpdates.length === resultAggregate.updates.length) {
-      return { aggregate: resultAggregate };
+      return { aggregate: resultAggregate, closeContract };
     }
 
     const loggedAggregate = {
@@ -1245,7 +1309,7 @@ export const ticketStore = {
       updates: finalUpdates,
     };
     await persistAggregate(loggedAggregate);
-    return { aggregate: cloneAggregate(loggedAggregate) };
+    return { aggregate: cloneAggregate(loggedAggregate), closeContract };
   },
 
   async addUpdate(input: {

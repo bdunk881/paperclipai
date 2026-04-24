@@ -479,6 +479,35 @@ describe("ticket routes", () => {
 
     expect(resolved.status).toBe(200);
     expect(resolved.body.ticket.status).toBe("resolved");
+    expect(resolved.body.closeContract).toMatchObject({
+      ticketId: created.body.ticket.id,
+      ticketUrl: `/tickets/${created.body.ticket.id}`,
+      assignees: {
+        all: [
+          { type: "agent", id: "backend-agent", role: "primary" },
+          { type: "agent", id: "qa-agent", role: "collaborator" },
+        ],
+        primary: { type: "agent", id: "backend-agent", role: "primary" },
+        collaborators: [{ type: "agent", id: "qa-agent", role: "collaborator" }],
+      },
+      hooks: [
+        {
+          hook: "agent_memory_ticket_close",
+          delivery: "non_blocking",
+          status: "completed",
+          agentId: "backend-agent",
+          attempts: 1,
+        },
+        {
+          hook: "agent_memory_ticket_close",
+          delivery: "non_blocking",
+          status: "completed",
+          agentId: "qa-agent",
+          attempts: 1,
+        },
+      ],
+    });
+    expect(resolved.body.closeContract.closedAt).toBe(resolved.body.ticket.resolvedAt);
 
     const backendMemories = await agentMemoryStore.searchEntries({
       userId: "creator-1",
@@ -548,6 +577,22 @@ describe("ticket routes", () => {
     expect(resolved.body.ticket.status).toBe("resolved");
     expect(ticketStore.pendingTicketCloseMemoryWriteCountForTests()).toBe(1);
     expect(resolved.body.updates.at(-1).metadata.event).toBe("ticket_memory_retry_queued");
+    expect(resolved.body.closeContract).toMatchObject({
+      assignees: {
+        primary: { type: "agent", id: "backend-agent", role: "primary" },
+        collaborators: [],
+      },
+      hooks: [
+        {
+          hook: "agent_memory_ticket_close",
+          delivery: "non_blocking",
+          status: "queued_for_retry",
+          agentId: "backend-agent",
+          attempts: 2,
+          error: "temporary embedding outage",
+        },
+      ],
+    });
 
     createSpy.mockRestore();
     await ticketStore.retryPendingTicketCloseMemoryWrites();
@@ -608,6 +653,22 @@ describe("ticket routes", () => {
     expect(resolved.status).toBe(200);
     expect(resolved.body.ticket.status).toBe("resolved");
     expect(resolved.body.updates.at(-1).metadata.event).toBe("ticket_memory_logged");
+    expect(resolved.body.closeContract).toMatchObject({
+      assignees: {
+        all: [{ type: "agent", id: "backend-agent", role: "primary" }],
+        primary: { type: "agent", id: "backend-agent", role: "primary" },
+        collaborators: [],
+      },
+      hooks: [
+        {
+          hook: "agent_memory_ticket_close",
+          delivery: "non_blocking",
+          status: "completed",
+          agentId: "backend-agent",
+          attempts: 1,
+        },
+      ],
+    });
 
     const memories = await agentMemoryStore.searchEntries({
       userId: "creator-1",

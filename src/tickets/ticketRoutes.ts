@@ -465,6 +465,7 @@ router.post("/:id/transitions", requireRunId, async (req: AuthenticatedRequest, 
   res.json({
     ...result.aggregate,
     relevantMemories: result.relevantMemories ?? [],
+    ...(result.closeContract ? { closeContract: result.closeContract } : {}),
   });
 });
 

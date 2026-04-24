@@ -10,7 +10,6 @@ import { Configuration, PopupRequest } from "@azure/msal-browser";
 const DEFAULT_CIAM_CLIENT_ID = "2dfd3a08-277c-4893-b07d-eca5ae322310";
 const DEFAULT_CIAM_AUTHORITY_HOST = "https://auth.helloautoflow.com";
 const DEFAULT_CIAM_TENANT_ID = "5e4f1080-8afc-4005-b05e-32b21e69363a";
-const DEFAULT_CIAM_AUTHORITY = `${DEFAULT_CIAM_AUTHORITY_HOST}/${DEFAULT_CIAM_TENANT_ID}`;
 const DEFAULT_CIAM_KNOWN_AUTHORITIES = ["auth.helloautoflow.com"];
 
 const HOSTNAME_REGEX =

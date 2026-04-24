@@ -1,6 +1,9 @@
 import { randomUUID } from "crypto";
 import { parseJsonColumn, serializeJson } from "../db/json";
 import { getPostgresPool, isPostgresPersistenceEnabled } from "../db/postgres";
+import { agentMemoryStore, AgentMemorySearchResult, AgentMemoryTier } from "../agents/agentMemoryStore";
+import { subscriptionStore } from "../billing/subscriptionStore";
+import { llmConfigStore } from "../llmConfig/llmConfigStore";
 
 export type TicketActorType = "agent" | "user";
 export type TicketAssignmentRole = "primary" | "collaborator";
@@ -49,6 +52,33 @@ interface TicketAggregate {
   updates: TicketUpdate[];
 }
 
+export interface TicketCloseMemoryInput {
+  agentId: string;
+  taskSummary: string;
+  agentContribution: string;
+  keyLearnings: string;
+  artifactRefs?: string[];
+  tags?: string[];
+  extensionMetadata?: Record<string, unknown>;
+}
+
+interface PendingTicketCloseMemoryWrite {
+  id: string;
+  ticketId: string;
+  userId: string;
+  runId?: string;
+  agentId: string;
+  closedAt: string;
+  taskSummary: string;
+  agentContribution: string;
+  keyLearnings: string;
+  artifactRefs: string[];
+  tags: string[];
+  extensionMetadata?: Record<string, unknown>;
+  attempts: number;
+  lastError: string;
+}
+
 interface TicketRow {
   id: string;
   workspace_id: string;
@@ -67,6 +97,33 @@ interface TicketRow {
 
 const memoryTickets = new Map<string, TicketRecord>();
 const memoryUpdates = new Map<string, TicketUpdate[]>();
+const pendingTicketCloseMemoryWrites = new Map<string, PendingTicketCloseMemoryWrite>();
+const GIGABYTE = 1024 * 1024 * 1024;
+
+const TIER_POLICY: Record<
+  AgentMemoryTier,
+  {
+    agentMemoryEnabled: boolean;
+    storageBytes: number | null;
+  }
+> = {
+  explore: {
+    agentMemoryEnabled: false,
+    storageBytes: null,
+  },
+  flow: {
+    agentMemoryEnabled: true,
+    storageBytes: 5 * GIGABYTE,
+  },
+  automate: {
+    agentMemoryEnabled: true,
+    storageBytes: 10 * GIGABYTE,
+  },
+  scale: {
+    agentMemoryEnabled: true,
+    storageBytes: null,
+  },
+};
 
 function cloneActor(actor: TicketActorRef): TicketActorRef {
   return { ...actor };
@@ -168,6 +225,164 @@ function assigneesEqual(left: TicketAssignee[], right: TicketAssignee[]): boolea
 
 function normalizeTags(tags?: string[]): string[] {
   return [...new Set((tags ?? []).map((tag) => tag.trim()).filter(Boolean))];
+}
+
+function resolveMemoryTier(userId: string): AgentMemoryTier {
+  const subscription = subscriptionStore.getByUserId(userId);
+  if (!subscription) {
+    return "explore";
+  }
+
+  if (!["active", "trial"].includes(subscription.accessLevel)) {
+    return "explore";
+  }
+
+  return subscription.tier;
+}
+
+async function resolveOpenAiKey(userId: string): Promise<string | undefined> {
+  const defaultConfig = llmConfigStore.getDecryptedDefault(userId);
+  if (defaultConfig?.config.provider === "openai") {
+    return defaultConfig.apiKey;
+  }
+  return process.env.OPENAI_API_KEY;
+}
+
+function buildTicketUrl(ticket: TicketRecord): string {
+  return `/tickets/${ticket.id}`;
+}
+
+function summarizeAgentContribution(ticketId: string, agentId: string, updates: TicketUpdate[]): string {
+  const agentUpdates = updates.filter((update) => update.actor.type === "agent" && update.actor.id === agentId);
+  if (agentUpdates.length === 0) {
+    return `Contributed to ticket ${ticketId}.`;
+  }
+
+  return agentUpdates
+    .map((update) => update.content.trim())
+    .filter(Boolean)
+    .join("\n")
+    .slice(0, 4000);
+}
+
+function metadataArtifacts(updates: TicketUpdate[]): string[] {
+  return [...new Set(updates.flatMap((update) => {
+    const artifacts = update.metadata["artifactRefs"];
+    if (!Array.isArray(artifacts)) {
+      return [];
+    }
+    return artifacts
+      .filter((artifact): artifact is string => typeof artifact === "string")
+      .map((artifact) => artifact.trim())
+      .filter(Boolean);
+  }))];
+}
+
+function normalizeTicketCloseMemoryInputs(
+  ticket: TicketRecord,
+  updates: TicketUpdate[],
+  memoryEntries: TicketCloseMemoryInput[] | undefined
+): { entries?: TicketCloseMemoryInput[]; error?: string } {
+  const agentAssignees = ticket.assignees.filter((assignee) => assignee.type === "agent");
+  if (agentAssignees.length === 0) {
+    return { entries: [] };
+  }
+
+  const normalizedEntries = memoryEntries?.map((entry) => ({
+    agentId: entry.agentId.trim(),
+    taskSummary: entry.taskSummary.trim(),
+    agentContribution: entry.agentContribution.trim(),
+    keyLearnings: entry.keyLearnings.trim(),
+    artifactRefs: normalizeTags(entry.artifactRefs),
+    tags: normalizeTags(entry.tags),
+    extensionMetadata: entry.extensionMetadata,
+  }));
+
+  const defaultArtifacts = metadataArtifacts(updates);
+  const entriesByAgent = new Map((normalizedEntries ?? []).map((entry) => [entry.agentId, entry]));
+  return {
+    entries: agentAssignees.map((assignee) => {
+      const entry = entriesByAgent.get(assignee.id);
+      const contribution = entry?.agentContribution || summarizeAgentContribution(ticket.id, assignee.id, updates);
+      const taskSummary = entry?.taskSummary || ticket.description || ticket.title;
+      return {
+        agentId: assignee.id,
+        taskSummary,
+        agentContribution: contribution,
+        keyLearnings: entry?.keyLearnings || contribution,
+        artifactRefs: entry && entry.artifactRefs.length > 0 ? entry.artifactRefs : defaultArtifacts,
+        tags: entry && entry.tags.length > 0 ? entry.tags : ticket.tags,
+        extensionMetadata: entry?.extensionMetadata,
+      };
+    }),
+  };
+}
+
+async function searchRelevantTicketMemories(input: {
+  ticket: TicketRecord;
+  agentId: string;
+  limit?: number;
+}): Promise<AgentMemorySearchResult[]> {
+  const tier = resolveMemoryTier(input.ticket.creatorId);
+  if (!TIER_POLICY[tier].agentMemoryEnabled) {
+    return [];
+  }
+
+  const query = [input.ticket.title, input.ticket.description, input.ticket.tags.join(" ")]
+    .filter(Boolean)
+    .join("\n");
+  const openAiApiKey = await resolveOpenAiKey(input.ticket.creatorId);
+  return agentMemoryStore.searchEntries({
+    userId: input.ticket.creatorId,
+    agentId: input.agentId,
+    query,
+    entryType: "ticket_close",
+    tags: input.ticket.tags,
+    limit: input.limit ?? 5,
+    openAiApiKey,
+  });
+}
+
+async function writeTicketCloseMemory(input: PendingTicketCloseMemoryWrite): Promise<void> {
+  const tier = resolveMemoryTier(input.userId);
+  if (!TIER_POLICY[tier].agentMemoryEnabled) {
+    return;
+  }
+
+  const storageLimit = TIER_POLICY[tier].storageBytes;
+  if (storageLimit !== null) {
+    const approximateUsage = await agentMemoryStore.getApproximateMemoryUsageBytes(input.userId);
+    const incomingBytes =
+      input.taskSummary.length +
+      input.agentContribution.length +
+      input.keyLearnings.length +
+      JSON.stringify({
+        ticketId: input.ticketId,
+        artifactRefs: input.artifactRefs,
+        tags: input.tags,
+        extensionMetadata: input.extensionMetadata ?? {},
+      }).length;
+    if (approximateUsage + incomingBytes > storageLimit) {
+      throw new Error(`Agent Memory capacity exceeded for the ${tier} tier`);
+    }
+  }
+
+  await agentMemoryStore.createTicketCloseEntry({
+    userId: input.userId,
+    agentId: input.agentId,
+    runId: input.runId,
+    ticketId: input.ticketId,
+    ticketUrl: `/tickets/${input.ticketId}`,
+    closedAt: input.closedAt,
+    taskSummary: input.taskSummary,
+    agentContribution: input.agentContribution,
+    keyLearnings: input.keyLearnings,
+    artifactRefs: input.artifactRefs,
+    tags: input.tags,
+    extensionMetadata: input.extensionMetadata,
+    tier,
+    openAiApiKey: await resolveOpenAiKey(input.userId),
+  });
 }
 
 function buildStructuredUpdate(input: {
@@ -604,7 +819,16 @@ export const ticketStore = {
     actor: TicketActorRef;
     status: TicketStatus;
     reason?: string;
-  }): Promise<{ aggregate?: TicketAggregate; error?: "not_found" | "forbidden" | "invalid_transition" }> {
+    runId?: string;
+    memoryEntries?: TicketCloseMemoryInput[];
+  }): Promise<{
+    aggregate?: TicketAggregate;
+    relevantMemories?: AgentMemorySearchResult[];
+    error?: "not_found" | "forbidden" | "invalid_transition";
+    message?: string;
+  }> {
+    await this.retryPendingTicketCloseMemoryWrites();
+
     const existing = await this.get(input.ticketId);
     if (!existing) {
       return { error: "not_found" };
@@ -643,7 +867,98 @@ export const ticketStore = {
 
     const aggregate = { ticket: nextTicket, updates: nextUpdates };
     await persistAggregate(aggregate);
-    return { aggregate: cloneAggregate(aggregate) };
+
+    const resultAggregate = cloneAggregate(aggregate);
+    if (input.status === "in_progress" && input.actor.type === "agent") {
+      return {
+        aggregate: resultAggregate,
+        relevantMemories: await searchRelevantTicketMemories({
+          ticket: nextTicket,
+          agentId: input.actor.id,
+        }),
+      };
+    }
+
+    if (input.status !== "resolved") {
+      return { aggregate: resultAggregate };
+    }
+
+    const normalizedMemories = normalizeTicketCloseMemoryInputs(nextTicket, nextUpdates, input.memoryEntries);
+    const finalUpdates = [...resultAggregate.updates];
+    for (const memoryEntry of normalizedMemories.entries ?? []) {
+      const payload: PendingTicketCloseMemoryWrite = {
+        id: randomUUID(),
+        ticketId: nextTicket.id,
+        userId: nextTicket.creatorId,
+        runId: input.runId,
+        agentId: memoryEntry.agentId,
+        closedAt: nextTicket.resolvedAt ?? new Date().toISOString(),
+        taskSummary: memoryEntry.taskSummary,
+        agentContribution: memoryEntry.agentContribution,
+        keyLearnings: memoryEntry.keyLearnings,
+        artifactRefs: normalizeTags(memoryEntry.artifactRefs),
+        tags: normalizeTags(memoryEntry.tags),
+        extensionMetadata: memoryEntry.extensionMetadata,
+        attempts: 0,
+        lastError: "",
+      };
+
+      let written = false;
+      let lastError = "";
+      for (let attempt = 0; attempt < 2 && !written; attempt += 1) {
+        try {
+          await writeTicketCloseMemory(payload);
+          written = true;
+        } catch (error) {
+          lastError = error instanceof Error ? error.message : "Unknown ticket memory write failure";
+          payload.attempts = attempt + 1;
+          payload.lastError = lastError;
+        }
+      }
+
+      if (written) {
+        finalUpdates.push(
+          buildStructuredUpdate({
+            ticketId: nextTicket.id,
+            actor: input.actor,
+            content: `Ticket memory logged for agent ${memoryEntry.agentId}.`,
+            metadata: {
+              event: "ticket_memory_logged",
+              agentId: memoryEntry.agentId,
+            },
+          })
+        );
+      } else {
+        pendingTicketCloseMemoryWrites.set(payload.id, payload);
+        finalUpdates.push(
+          buildStructuredUpdate({
+            ticketId: nextTicket.id,
+            actor: input.actor,
+            content: `Ticket memory write failed for agent ${memoryEntry.agentId}; queued for retry.`,
+            metadata: {
+              event: "ticket_memory_retry_queued",
+              agentId: memoryEntry.agentId,
+              attempts: payload.attempts,
+              error: lastError,
+            },
+          })
+        );
+      }
+    }
+
+    if (finalUpdates.length === resultAggregate.updates.length) {
+      return { aggregate: resultAggregate };
+    }
+
+    const loggedAggregate = {
+      ticket: {
+        ...nextTicket,
+        updatedAt: new Date().toISOString(),
+      },
+      updates: finalUpdates,
+    };
+    await persistAggregate(loggedAggregate);
+    return { aggregate: cloneAggregate(loggedAggregate) };
   },
 
   async addUpdate(input: {
@@ -691,6 +1006,7 @@ export const ticketStore = {
   async clear(): Promise<void> {
     memoryTickets.clear();
     memoryUpdates.clear();
+    pendingTicketCloseMemoryWrites.clear();
 
     if (!isPostgresPersistenceEnabled()) {
       return;
@@ -700,5 +1016,21 @@ export const ticketStore = {
     await pool.query("DELETE FROM ticket_updates");
     await pool.query("DELETE FROM ticket_assignments");
     await pool.query("DELETE FROM tickets");
+  },
+
+  async retryPendingTicketCloseMemoryWrites(): Promise<void> {
+    for (const [id, pendingWrite] of pendingTicketCloseMemoryWrites.entries()) {
+      try {
+        await writeTicketCloseMemory(pendingWrite);
+        pendingTicketCloseMemoryWrites.delete(id);
+      } catch (error) {
+        pendingWrite.attempts += 1;
+        pendingWrite.lastError = error instanceof Error ? error.message : "Unknown ticket memory write failure";
+      }
+    }
+  },
+
+  pendingTicketCloseMemoryWriteCountForTests(): number {
+    return pendingTicketCloseMemoryWrites.size;
   },
 };

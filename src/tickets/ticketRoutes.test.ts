@@ -1,6 +1,8 @@
 import express from "express";
 import request from "supertest";
+import { agentMemoryStore } from "../agents/agentMemoryStore";
 import { AuthenticatedRequest } from "../auth/authMiddleware";
+import { subscriptionStore } from "../billing/subscriptionStore";
 import ticketRoutes from "./ticketRoutes";
 import { ticketStore } from "./ticketStore";
 
@@ -24,9 +26,31 @@ function buildTestApp() {
   return app;
 }
 
+function grantPlan(userId: string, tier: "flow" | "automate" | "scale") {
+  subscriptionStore.upsert({
+    id: `sub-${userId}`,
+    stripeSubscriptionId: `stripe-sub-${userId}`,
+    stripeCustomerId: `stripe-customer-${userId}`,
+    userId,
+    email: `${userId}@example.com`,
+    tier,
+    accessLevel: "active",
+    status: "active",
+    currentPeriodStart: "2026-04-01T00:00:00.000Z",
+    currentPeriodEnd: "2026-05-01T00:00:00.000Z",
+    cancelAtPeriodEnd: false,
+    trialEnd: null,
+    createdAt: "2026-04-01T00:00:00.000Z",
+    updatedAt: "2026-04-01T00:00:00.000Z",
+  });
+}
+
 describe("ticket routes", () => {
   beforeEach(async () => {
     await ticketStore.clear();
+    agentMemoryStore.clear();
+    subscriptionStore.clear();
+    jest.restoreAllMocks();
   });
 
   it("creates a ticket with a primary assignee and collaborator", async () => {
@@ -213,5 +237,258 @@ describe("ticket routes", () => {
     expect(ticket.status).toBe(200);
     expect(ticket.body.updates).toHaveLength(2);
     expect(ticket.body.updates[1].content).toMatch(/Investigating root cause now/i);
+  });
+
+  it("returns relevant ticket_close memories when an agent starts a ticket", async () => {
+    grantPlan("creator-1", "flow");
+    const app = buildTestApp();
+
+    await agentMemoryStore.createTicketCloseEntry({
+      userId: "creator-1",
+      agentId: "backend-agent",
+      runId: "run-memory-seed",
+      ticketId: "ALT-42",
+      ticketUrl: "/tickets/ALT-42",
+      closedAt: "2026-04-10T00:00:00.000Z",
+      taskSummary: "Resolved billing export mismatch for a queue ticket.",
+      agentContribution: "Patched the invoice aggregation path and verified the backfill.",
+      keyLearnings: "Billing regressions usually surface in queue and reconciliation workflows.",
+      artifactRefs: ["https://example.com/billing-runbook"],
+      tags: ["billing", "queue"],
+      tier: "flow",
+    });
+
+    const created = await request(app)
+      .post("/api/tickets")
+      .set(auth("creator-1"))
+      .set("X-Paperclip-Run-Id", "run-ticket-memory-create")
+      .send({
+        workspaceId: "11111111-1111-4111-8111-111111111111",
+        title: "Investigate billing queue mismatch",
+        description: "The billing queue shows duplicate reconciliation rows.",
+        tags: ["billing", "queue"],
+        assignees: [{ type: "agent", id: "backend-agent", role: "primary" }],
+      });
+
+    const started = await request(app)
+      .post(`/api/tickets/${created.body.ticket.id}/transitions`)
+      .set(auth("backend-agent"))
+      .set("X-Paperclip-Run-Id", "run-ticket-memory-start")
+      .send({ status: "in_progress", actorType: "agent" });
+
+    expect(started.status).toBe(200);
+    expect(started.body.ticket.status).toBe("in_progress");
+    expect(started.body.relevantMemories).toHaveLength(1);
+    expect(started.body.relevantMemories[0].entry.entryType).toBe("ticket_close");
+    expect(started.body.relevantMemories[0].entry.metadata.ticket_id).toBe("ALT-42");
+  });
+
+  it("writes a ticket_close memory for every agent assignee on resolve", async () => {
+    grantPlan("creator-1", "flow");
+    const app = buildTestApp();
+
+    const created = await request(app)
+      .post("/api/tickets")
+      .set(auth("creator-1"))
+      .set("X-Paperclip-Run-Id", "run-ticket-close-create")
+      .send({
+        workspaceId: "11111111-1111-4111-8111-111111111111",
+        title: "Close hook coverage",
+        description: "Need per-agent memory writes on resolve.",
+        tags: ["memory", "close-hook"],
+        assignees: [
+          { type: "agent", id: "backend-agent", role: "primary" },
+          { type: "agent", id: "qa-agent", role: "collaborator" },
+        ],
+      });
+
+    await request(app)
+      .post(`/api/tickets/${created.body.ticket.id}/updates`)
+      .set(auth("backend-agent"))
+      .set("X-Paperclip-Run-Id", "run-ticket-close-update-1")
+      .send({ type: "structured_update", content: "Implemented the close hook.", actorType: "agent", metadata: { artifactRefs: ["https://example.com/pr/1699"] } });
+
+    await request(app)
+      .post(`/api/tickets/${created.body.ticket.id}/updates`)
+      .set(auth("qa-agent"))
+      .set("X-Paperclip-Run-Id", "run-ticket-close-update-2")
+      .send({ type: "structured_update", content: "Validated the retry behavior in tests.", actorType: "agent" });
+
+    await request(app)
+      .post(`/api/tickets/${created.body.ticket.id}/transitions`)
+      .set(auth("backend-agent"))
+      .set("X-Paperclip-Run-Id", "run-ticket-close-progress")
+      .send({ status: "in_progress", actorType: "agent" });
+
+    const resolved = await request(app)
+      .post(`/api/tickets/${created.body.ticket.id}/transitions`)
+      .set(auth("backend-agent"))
+      .set("X-Paperclip-Run-Id", "run-ticket-close-resolve")
+      .send({
+        status: "resolved",
+        actorType: "agent",
+        reason: "Ticket complete",
+        memoryEntries: [
+          {
+            agentId: "backend-agent",
+            taskSummary: "Implemented ticket close memory hooks.",
+            agentContribution: "Added the resolved transition writer and retrieval path.",
+            keyLearnings: "Ticket-close memories should stay on the existing agent memory rail.",
+            artifactRefs: ["https://example.com/pr/1699"],
+            tags: ["memory", "close-hook"],
+          },
+          {
+            agentId: "qa-agent",
+            taskSummary: "Validated ticket close memory behavior.",
+            agentContribution: "Exercised the multi-agent resolve flow.",
+            keyLearnings: "Retry coverage needs both failure logging and eventual success paths.",
+            tags: ["memory", "qa"],
+          },
+        ],
+      });
+
+    expect(resolved.status).toBe(200);
+    expect(resolved.body.ticket.status).toBe("resolved");
+
+    const backendMemories = await agentMemoryStore.searchEntries({
+      userId: "creator-1",
+      agentId: "backend-agent",
+      query: "close hook",
+      entryType: "ticket_close",
+      tags: ["memory"],
+    });
+    const qaMemories = await agentMemoryStore.searchEntries({
+      userId: "creator-1",
+      agentId: "qa-agent",
+      query: "multi-agent",
+      entryType: "ticket_close",
+      tags: ["memory", "qa"],
+    });
+
+    expect(backendMemories).toHaveLength(1);
+    expect(backendMemories[0].entry.metadata.ticket_id).toBe(created.body.ticket.id);
+    expect(qaMemories).toHaveLength(1);
+    expect(qaMemories[0].entry.metadata.ticket_id).toBe(created.body.ticket.id);
+  });
+
+  it("logs and retries failed ticket_close writes without blocking resolution", async () => {
+    grantPlan("creator-1", "flow");
+    const app = buildTestApp();
+
+    const created = await request(app)
+      .post("/api/tickets")
+      .set(auth("creator-1"))
+      .set("X-Paperclip-Run-Id", "run-ticket-retry-create")
+      .send({
+        workspaceId: "11111111-1111-4111-8111-111111111111",
+        title: "Retry queue coverage",
+        assignees: [{ type: "agent", id: "backend-agent", role: "primary" }],
+      });
+
+    await request(app)
+      .post(`/api/tickets/${created.body.ticket.id}/transitions`)
+      .set(auth("backend-agent"))
+      .set("X-Paperclip-Run-Id", "run-ticket-retry-progress")
+      .send({ status: "in_progress", actorType: "agent" });
+
+    const createSpy = jest.spyOn(agentMemoryStore, "createTicketCloseEntry");
+    createSpy
+      .mockRejectedValueOnce(new Error("temporary embedding outage"))
+      .mockRejectedValueOnce(new Error("temporary embedding outage"));
+
+    const resolved = await request(app)
+      .post(`/api/tickets/${created.body.ticket.id}/transitions`)
+      .set(auth("backend-agent"))
+      .set("X-Paperclip-Run-Id", "run-ticket-retry-resolve")
+      .send({
+        status: "resolved",
+        actorType: "agent",
+        memoryEntries: [
+          {
+            agentId: "backend-agent",
+            taskSummary: "Attempted the resolve flow.",
+            agentContribution: "Triggered the close hook path.",
+            keyLearnings: "Transient embedding failures must not block ticket closure.",
+            tags: ["memory"],
+          },
+        ],
+      });
+
+    expect(resolved.status).toBe(200);
+    expect(resolved.body.ticket.status).toBe("resolved");
+    expect(ticketStore.pendingTicketCloseMemoryWriteCountForTests()).toBe(1);
+    expect(resolved.body.updates.at(-1).metadata.event).toBe("ticket_memory_retry_queued");
+
+    createSpy.mockRestore();
+    await ticketStore.retryPendingTicketCloseMemoryWrites();
+
+    expect(ticketStore.pendingTicketCloseMemoryWriteCountForTests()).toBe(0);
+    const memories = await agentMemoryStore.searchEntries({
+      userId: "creator-1",
+      agentId: "backend-agent",
+      query: "transient embedding failures",
+      entryType: "ticket_close",
+      tags: ["memory"],
+    });
+    expect(memories).toHaveLength(1);
+  });
+
+  it("derives ticket_close memories on resolve when explicit memoryEntries are omitted", async () => {
+    grantPlan("creator-1", "flow");
+    const app = buildTestApp();
+
+    const created = await request(app)
+      .post("/api/tickets")
+      .set(auth("creator-1"))
+      .set("X-Paperclip-Run-Id", "run-ticket-derived-create")
+      .send({
+        workspaceId: "11111111-1111-4111-8111-111111111111",
+        title: "Derived memory coverage",
+        description: "Ensure resolved tickets can infer memory payloads from ticket context.",
+        tags: ["memory", "derived"],
+        assignees: [{ type: "agent", id: "backend-agent", role: "primary" }],
+      });
+
+    await request(app)
+      .post(`/api/tickets/${created.body.ticket.id}/transitions`)
+      .set(auth("backend-agent"))
+      .set("X-Paperclip-Run-Id", "run-ticket-derived-progress")
+      .send({ status: "in_progress", actorType: "agent" });
+
+    await request(app)
+      .post(`/api/tickets/${created.body.ticket.id}/updates`)
+      .set(auth("backend-agent"))
+      .set("X-Paperclip-Run-Id", "run-ticket-derived-update")
+      .send({
+        type: "structured_update",
+        content: "Patched the inferred ticket-close memory path and validated the fallback content.",
+        actorType: "agent",
+      });
+
+    const resolved = await request(app)
+      .post(`/api/tickets/${created.body.ticket.id}/transitions`)
+      .set(auth("backend-agent"))
+      .set("X-Paperclip-Run-Id", "run-ticket-derived-resolve")
+      .send({
+        status: "resolved",
+        actorType: "agent",
+        reason: "Resolved with derived memory entry",
+      });
+
+    expect(resolved.status).toBe(200);
+    expect(resolved.body.ticket.status).toBe("resolved");
+    expect(resolved.body.updates.at(-1).metadata.event).toBe("ticket_memory_logged");
+
+    const memories = await agentMemoryStore.searchEntries({
+      userId: "creator-1",
+      agentId: "backend-agent",
+      query: "inferred ticket-close memory path",
+      entryType: "ticket_close",
+      tags: ["memory", "derived"],
+      ticketId: created.body.ticket.id,
+    });
+
+    expect(memories).toHaveLength(1);
+    expect(memories[0].entry.metadata.ticket_id).toBe(created.body.ticket.id);
   });
 });

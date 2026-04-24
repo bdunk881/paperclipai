@@ -78,9 +78,13 @@ jobs:
           if [ "$DEPLOY_ENV" = "production" ]; then
             RG_NAME="rg-autoflow-production"
             APP_NAME="ca-autoflow-production-backend"
+            QA_BYPASS_ENABLED="false"
+            QA_BYPASS_USERS=""
           else
             RG_NAME="rg-autoflow-staging"
             APP_NAME="ca-autoflow-staging-backend"
+            QA_BYPASS_ENABLED="true"
+            QA_BYPASS_USERS="qa-smoke-user"
           fi
 
           IMAGE_TAG="${{ env.IMAGE_REPO }}:sha-${{ github.sha }}"
@@ -89,6 +93,8 @@ jobs:
           echo "resource_group=$RG_NAME" >> "$GITHUB_OUTPUT"
           echo "container_app=$APP_NAME" >> "$GITHUB_OUTPUT"
           echo "image_tag=$IMAGE_TAG" >> "$GITHUB_OUTPUT"
+          echo "qa_bypass_enabled=$QA_BYPASS_ENABLED" >> "$GITHUB_OUTPUT"
+          echo "qa_bypass_users=$QA_BYPASS_USERS" >> "$GITHUB_OUTPUT"
 
       - name: Login to Azure (OIDC)
         uses: azure/login@v2
@@ -103,7 +109,10 @@ jobs:
           az containerapp update \
             --name "${{ steps.target.outputs.container_app }}" \
             --resource-group "${{ steps.target.outputs.resource_group }}" \
-            --image "${{ steps.target.outputs.image_tag }}"
+            --image "${{ steps.target.outputs.image_tag }}" \
+            --set-env-vars \
+              QA_AUTH_BYPASS_ENABLED="${{ steps.target.outputs.qa_bypass_enabled }}" \
+              QA_AUTH_BYPASS_USER_IDS="${{ steps.target.outputs.qa_bypass_users }}"
 
       - name: Smoke test backend
         run: |
@@ -111,6 +120,7 @@ jobs:
           APP_NAME="${{ steps.target.outputs.container_app }}"
           RG_NAME="${{ steps.target.outputs.resource_group }}"
           EXPECTED_IMAGE="${{ steps.target.outputs.image_tag }}"
+          DEPLOY_ENV="${{ steps.target.outputs.deploy_env }}"
 
           LATEST_REVISION=$(az containerapp show \
             --name "$APP_NAME" \
@@ -149,6 +159,29 @@ jobs:
               STATUS=$(curl -s -o /dev/null -w "%{http_code}" "https://${REVISION_FQDN}/health")
               if [ "$STATUS" = "200" ]; then
                 echo "Health check passed on latest ready revision (attempt $i)"
+
+                if [ "$DEPLOY_ENV" = "staging" ]; then
+                  RUNS_STATUS=$(curl -s -o /tmp/runs.json -w "%{http_code}" \
+                    -H "X-User-Id: qa-smoke-user" \
+                    "https://${REVISION_FQDN}/api/runs")
+                  if [ "$RUNS_STATUS" != "200" ]; then
+                    echo "Expected staging QA bypass to return 200 on /api/runs, got $RUNS_STATUS"
+                    cat /tmp/runs.json || true
+                    exit 1
+                  fi
+                  echo "Staging QA bypass smoke test passed on /api/runs"
+                else
+                  RUNS_STATUS=$(curl -s -o /tmp/runs.json -w "%{http_code}" \
+                    -H "X-User-Id: qa-smoke-user" \
+                    "https://${REVISION_FQDN}/api/runs")
+                  if [ "$RUNS_STATUS" = "200" ]; then
+                    echo "Production /api/runs unexpectedly allowed QA bypass"
+                    cat /tmp/runs.json || true
+                    exit 1
+                  fi
+                  echo "Production QA bypass remains disabled"
+                fi
+
                 exit 0
               fi
               echo "Revision is ready but /health returned $STATUS"

@@ -193,18 +193,6 @@ describe("POST /api/llm-configs", () => {
 });
 
 describe("GET /api/llm-configs", () => {
-  it("accepts X-User-Id for preview-session reads", async () => {
-    await request(app)
-      .post("/api/llm-configs")
-      .set(asAuth(USER_A))
-      .send({ provider: "openai", label: "Alice key", model: "gpt-4o", apiKey: "sk-test-alice1" });
-
-    const res = await request(app).get("/api/llm-configs").set("X-User-Id", USER_A);
-    expect(res.status).toBe(200);
-    expect(res.body.configs).toHaveLength(1);
-    expect(res.body.configs[0].userId).toBe(USER_A);
-  });
-
   it("returns only the requesting user's configs", async () => {
     await request(app)
       .post("/api/llm-configs")

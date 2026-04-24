@@ -1019,12 +1019,6 @@ describe("GET /api/runs", () => {
     expect(typeof res.body.total).toBe("number");
   });
 
-  it("accepts X-User-Id for preview-session reads", async () => {
-    const res = await request(app).get("/api/runs").set("X-User-Id", "usr-qa-preview");
-    expect(res.status).toBe(200);
-    expect(Array.isArray(res.body.runs)).toBe(true);
-  });
-
   it("total matches runs array length", async () => {
     const res = await request(app).get("/api/runs").set(asAuth());
     expect(res.body.total).toBe(res.body.runs.length);

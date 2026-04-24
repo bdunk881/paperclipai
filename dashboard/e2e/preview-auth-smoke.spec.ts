@@ -27,7 +27,9 @@ test("preview smoke: login route renders with configured MSAL env and starts aut
 
   let redirectStarted = false;
   try {
-    await page.waitForURL(/ciamlogin\.com|login\.microsoftonline\.com/i, { timeout: 10000 });
+    await page.waitForURL(/auth\.helloautoflow\.com|ciamlogin\.com|login\.microsoftonline\.com/i, {
+      timeout: 10000,
+    });
     redirectStarted = true;
   } catch {
     await expect(signInButton).toBeDisabled({ timeout: 5000 });

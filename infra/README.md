@@ -50,15 +50,16 @@ Add these in the repo settings -> Secrets and variables -> Actions:
 | `VITE_AZURE_TENANT_SUBDOMAIN` | Tenant prefix before `.ciamlogin.com` (for example `autoflowciam`) |
 | `BRANCH_ADMIN_TOKEN` | Admin-scoped GitHub token used by `enforce-branch-protection.yml` |
 
-The SWA workflow maps `VITE_AZURE_CIAM_CLIENT_ID` and `VITE_AZURE_CIAM_TENANT_SUBDOMAIN` from
-`VITE_AZURE_CLIENT_ID` and `VITE_AZURE_TENANT_SUBDOMAIN` at build time.
+The SWA workflow maps `VITE_AZURE_CIAM_CLIENT_ID` from `VITE_AZURE_CLIENT_ID` at build time.
 Runtime environment variables required in the Vercel dashboard project:
 
 | Variable | Description |
 |---|---|
 | `VITE_API_URL` | Base URL for backend API (for example `https://api.autoflowapp.ai`) |
 | `VITE_AZURE_CIAM_CLIENT_ID` | Entra External ID app registration client ID |
-| `VITE_AZURE_CIAM_TENANT_SUBDOMAIN` | Tenant prefix before `.ciamlogin.com` (for example `autoflowciam`) |
+| `VITE_AZURE_CIAM_AUTHORITY` | Full Entra External ID authority URL including tenant ID (for example `https://auth.helloautoflow.com/<tenant-id>`) |
+| `VITE_AZURE_CIAM_KNOWN_AUTHORITIES` | Comma-separated list of valid authority hosts (for example `auth.helloautoflow.com`) |
+| `VITE_AZURE_CIAM_TENANT_ID` | Tenant GUID used to build the default branded authority when `VITE_AZURE_CIAM_AUTHORITY` is omitted |
 | `QA_PREVIEW_ACCESS_TOKEN` | Preview-only shared secret used by `/api/qa-preview-access` to unlock smoke-test access for protected dashboard routes |
 
 ## Daily operations

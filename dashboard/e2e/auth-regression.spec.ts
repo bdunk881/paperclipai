@@ -21,7 +21,9 @@ test("auth regression: login CTA renders and starts redirect flow", async ({
   await signInButton.click();
 
   try {
-    await page.waitForURL(/ciamlogin\.com|login\.microsoftonline\.com/i, { timeout: 10_000 });
+    await page.waitForURL(/auth\.helloautoflow\.com|ciamlogin\.com|login\.microsoftonline\.com/i, {
+      timeout: 10_000,
+    });
   } catch {
     await expect(signInButton).toBeDisabled({ timeout: 5_000 });
   }

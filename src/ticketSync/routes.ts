@@ -41,6 +41,34 @@ const createConnectionSchema = z.object({
   }).default({}),
 });
 
+const bootstrapConnectionSchema = z.object({
+  workspaceId: z.string().uuid(),
+  provider: z.enum(["github", "jira", "linear"]),
+  label: z.string().trim().min(1).max(120),
+  syncDirection: z.enum(["outbound", "inbound", "bidirectional"]).default("bidirectional"),
+  enabled: z.boolean().default(true),
+  config: z.object({
+    owner: z.string().trim().optional(),
+    repo: z.string().trim().optional(),
+    site: z.string().trim().optional(),
+    defaultProjectKey: z.string().trim().optional(),
+    defaultIssueType: z.string().trim().optional(),
+    defaultTeamId: z.string().trim().optional(),
+    defaultProjectId: z.string().trim().optional(),
+    webhookSecret: z.string().trim().optional(),
+  }).default({}),
+  fieldMapping: z.object({
+    priority: z.record(z.string()).optional(),
+    status: z.record(z.string()).optional(),
+    assignee: z.record(z.string()).optional(),
+  }).optional(),
+  defaultAssignee: assigneeSchema.optional(),
+  source: z.object({
+    type: z.enum(["integration_connection", "linear_connector"]),
+    connectionId: z.string().trim().optional(),
+  }),
+});
+
 const updateConnectionSchema = z.object({
   label: z.string().trim().min(1).max(120).optional(),
   syncDirection: z.enum(["outbound", "inbound", "bidirectional"]).optional(),
@@ -120,6 +148,43 @@ router.post("/connections", async (req: AuthenticatedRequest, res) => {
   });
 
   res.status(201).json(connection);
+});
+
+router.post("/connections/bootstrap", async (req: AuthenticatedRequest, res) => {
+  const parsed = bootstrapConnectionSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Invalid request body" });
+    return;
+  }
+
+  const userId = req.auth?.sub?.trim();
+  if (!userId) {
+    res.status(401).json({ error: "Authenticated user required" });
+    return;
+  }
+
+  try {
+    const connection = await ticketSyncService.bootstrapConnection({
+      userId,
+      workspaceId: parsed.data.workspaceId,
+      provider: parsed.data.provider,
+      label: parsed.data.label,
+      syncDirection: parsed.data.syncDirection,
+      enabled: parsed.data.enabled,
+      config: parsed.data.config,
+      fieldMapping: parsed.data.fieldMapping,
+      defaultAssignee: parsed.data.defaultAssignee,
+      source: parsed.data.source,
+    });
+
+    res.status(201).json(connection);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Bootstrap failed";
+    const statusCode = typeof error === "object" && error && "statusCode" in error && typeof (error as any).statusCode === "number"
+      ? (error as any).statusCode
+      : 400;
+    res.status(statusCode).json({ error: message });
+  }
 });
 
 router.get("/connections/:id", async (req, res) => {

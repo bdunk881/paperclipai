@@ -12,6 +12,8 @@ import {
   TrackerProvider,
 } from "../integrations/tracker-sync";
 import { verifyLinearWebhook } from "../integrations/linear/webhook";
+import { linearCredentialStore } from "../integrations/linear/credentialStore";
+import { integrationCredentialStore } from "../integrations/integrationCredentialStore";
 import { TicketRecord, TicketUpdate, ticketStore } from "../tickets/ticketStore";
 import { ticketSyncConnectionStore } from "./connectionStore";
 import {
@@ -39,6 +41,11 @@ const SYNC_SUCCESS_EVENT = "tracker_sync_success";
 const MAX_RETRIES = 3;
 
 let adapterFactoryOverride: AdapterFactory | null = null;
+
+interface TicketSyncBootstrapSource {
+  type: "integration_connection" | "linear_connector";
+  connectionId?: string;
+}
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -404,6 +411,98 @@ async function buildAdapter(connectionId: string) {
   return { decrypted, adapter };
 }
 
+async function resolveBootstrapSecrets(params: {
+  userId: string;
+  provider: TrackerProvider;
+  source: TicketSyncBootstrapSource;
+  config: TicketSyncConnectionMetadata["config"];
+}): Promise<{
+  authMethod: TicketSyncConnectionMetadata["authMethod"];
+  config: TicketSyncConnectionMetadata["config"];
+  secrets: Record<string, string | undefined>;
+}> {
+  if (params.source.type === "linear_connector") {
+    if (params.provider !== "linear") {
+      throw new TrackerError("schema", "Linear connector bootstrap is only supported for the Linear provider", 400);
+    }
+
+    const credential = linearCredentialStore.getActiveByUser(params.userId);
+    if (!credential) {
+      throw new TrackerError("auth", "No active Linear connector credential found for this user", 404);
+    }
+
+    return {
+      authMethod: credential.authMethod,
+      config: params.config,
+      secrets: {
+        token: linearCredentialStore.decryptAccessToken(credential),
+      },
+    };
+  }
+
+  const decrypted = params.source.connectionId
+    ? integrationCredentialStore.getDecrypted(params.source.connectionId, params.userId)
+    : integrationCredentialStore.getDecryptedDefault(params.userId, params.provider);
+  if (!decrypted) {
+    throw new TrackerError("auth", `No ${params.provider} integration credential found for this user`, 404);
+  }
+  if (decrypted.connection.integrationSlug !== params.provider) {
+    throw new TrackerError("schema", `Integration credential ${decrypted.connection.id} does not belong to ${params.provider}`, 400);
+  }
+
+  if (params.provider === "github") {
+    const token = decrypted.credentials.token ?? decrypted.credentials.accessToken;
+    if (!token) {
+      throw new TrackerError("auth", "GitHub integration credential is missing a usable token", 400);
+    }
+
+    return {
+      authMethod: decrypted.credentials.accessToken ? "oauth2_pkce" : "api_key",
+      config: params.config,
+      secrets: { token },
+    };
+  }
+
+  if (params.provider === "jira") {
+    const email = decrypted.credentials.username;
+    const apiToken = decrypted.credentials.password ?? decrypted.credentials.token;
+    if (!email || !apiToken) {
+      throw new TrackerError("auth", "Jira integration credential is missing email or API token", 400);
+    }
+
+    const site =
+      params.config.site ??
+      (decrypted.credentials.instanceDomain
+        ? /^https?:\/\//i.test(decrypted.credentials.instanceDomain)
+          ? decrypted.credentials.instanceDomain
+          : `https://${decrypted.credentials.instanceDomain}.atlassian.net`
+        : undefined);
+    if (!site) {
+      throw new TrackerError("schema", "Jira bootstrap requires site or instanceDomain", 400);
+    }
+
+    return {
+      authMethod: "basic",
+      config: {
+        ...params.config,
+        site,
+      },
+      secrets: { email, apiToken },
+    };
+  }
+
+  const token = decrypted.credentials.token ?? decrypted.credentials.accessToken;
+  if (!token) {
+    throw new TrackerError("auth", `${params.provider} integration credential is missing a usable token`, 400);
+  }
+
+  return {
+    authMethod: decrypted.credentials.accessToken ? "oauth2_pkce" : "api_key",
+    config: params.config,
+    secrets: { token },
+  };
+}
+
 export const ticketSyncService = {
   setAdapterFactoryForTests(factory: AdapterFactory | null): void {
     adapterFactoryOverride = factory;
@@ -416,6 +515,43 @@ export const ticketSyncService = {
     secrets: Record<string, string | undefined>;
   }): Promise<TicketSyncConnectionPublic> {
     return ticketSyncConnectionStore.create(input);
+  },
+
+  async bootstrapConnection(input: {
+    userId: string;
+    label: string;
+    provider: TrackerProvider;
+    workspaceId: string;
+    syncDirection: TicketSyncConnectionMetadata["syncDirection"];
+    enabled: boolean;
+    config: TicketSyncConnectionMetadata["config"];
+    fieldMapping?: TicketSyncConnectionMetadata["fieldMapping"];
+    defaultAssignee?: TicketSyncConnectionMetadata["defaultAssignee"];
+    source: TicketSyncBootstrapSource;
+  }): Promise<TicketSyncConnectionPublic> {
+    const bootstrap = await resolveBootstrapSecrets({
+      userId: input.userId,
+      provider: input.provider,
+      source: input.source,
+      config: input.config,
+    });
+
+    return ticketSyncConnectionStore.create({
+      userId: input.userId,
+      label: input.label,
+      metadata: {
+        workspaceId: input.workspaceId,
+        provider: input.provider,
+        authMethod: bootstrap.authMethod,
+        label: input.label,
+        syncDirection: input.syncDirection,
+        enabled: input.enabled,
+        config: bootstrap.config,
+        fieldMapping: input.fieldMapping,
+        defaultAssignee: input.defaultAssignee,
+      },
+      secrets: bootstrap.secrets,
+    });
   },
 
   async listConnections(workspaceId: string): Promise<TicketSyncConnectionPublic[]> {

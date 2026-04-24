@@ -65,6 +65,15 @@ const transitionSchema = z.object({
   status: ticketStatusSchema,
   reason: z.string().trim().max(5000).optional(),
   actorType: actorTypeSchema.optional(),
+  memoryEntries: z.array(z.object({
+    agentId: z.string().trim().min(1),
+    taskSummary: z.string().trim().min(1).max(2000),
+    agentContribution: z.string().trim().min(1).max(5000),
+    keyLearnings: z.string().trim().min(1).max(5000),
+    artifactRefs: z.array(z.string().trim().min(1).max(512)).max(25).optional(),
+    tags: z.array(z.string().trim().min(1).max(64)).max(25).optional(),
+    extensionMetadata: z.record(z.unknown()).optional(),
+  })).optional(),
 });
 
 function parseBody<T>(
@@ -304,6 +313,8 @@ router.post("/:id/transitions", requireRunId, async (req: AuthenticatedRequest, 
     actor,
     status: parsed.status,
     reason: parsed.reason,
+    runId: req.header("X-Paperclip-Run-Id") as string,
+    memoryEntries: parsed.memoryEntries,
   });
 
   if (result.error === "not_found") {
@@ -318,8 +329,10 @@ router.post("/:id/transitions", requireRunId, async (req: AuthenticatedRequest, 
     res.status(409).json({ error: "Invalid ticket state transition" });
     return;
   }
-
-  res.json(result.aggregate);
+  res.json({
+    ...result.aggregate,
+    relevantMemories: result.relevantMemories ?? [],
+  });
 });
 
 export default router;

@@ -41,6 +41,7 @@ vi.mock("../context/AuthContext", () => ({
     signup: vi.fn(),
     logout: vi.fn(),
     getAccessToken: vi.fn(),
+    requireAccessToken: vi.fn().mockResolvedValue("token-123"),
   }),
 }));
 
@@ -100,7 +101,9 @@ describe("Memory", () => {
           key: expect.stringMatching(/^knowledge\.qa\./),
           text: "Question: What is the refund policy?\nAnswer: Refunds are allowed within 30 days.",
           workflowName: "Knowledge Ingest",
-        })
+        }),
+        "token-123",
+        "user-1"
       );
     });
 

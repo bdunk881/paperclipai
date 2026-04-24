@@ -30,7 +30,7 @@ const TIMEZONES = [
 ];
 
 export default function ProfileSettings() {
-  const { user } = useAuth();
+  const { user, requireAccessToken } = useAuth();
   const [displayName, setDisplayName] = useState("");
   const [timezone, setTimezone] = useState("UTC");
   const [loading, setLoading] = useState(true);
@@ -50,9 +50,11 @@ export default function ProfileSettings() {
       setLoading(true);
       setError(null);
       try {
+        const accessToken = await requireAccessToken();
         const data = await apiGet<{ profile?: { displayName?: string; timezone?: string } }>(
           "/api/user/profile",
-          user
+          user,
+          accessToken
         );
         if (cancelled) return;
         setDisplayName(data.profile?.displayName ?? user?.name ?? "");
@@ -80,7 +82,7 @@ export default function ProfileSettings() {
     return () => {
       cancelled = true;
     };
-  }, [fallbackStorageKey, user]);
+  }, [fallbackStorageKey, requireAccessToken, user]);
 
   useEffect(() => {
     if (!toast) return;
@@ -93,10 +95,12 @@ export default function ProfileSettings() {
     setSaving(true);
     setError(null);
     try {
+      const accessToken = await requireAccessToken();
       await apiPatch(
         "/api/user/profile",
         { displayName: displayName.trim(), timezone },
-        user
+        user,
+        accessToken
       );
       setToast({ variant: "success", message: "Profile saved successfully." });
     } catch (e) {

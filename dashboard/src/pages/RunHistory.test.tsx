@@ -7,10 +7,12 @@ const {
   listRunsMock,
   listTemplatesMock,
   getAccessTokenMock,
+  requireAccessTokenMock,
 } = vi.hoisted(() => ({
   listRunsMock: vi.fn(),
   listTemplatesMock: vi.fn(),
   getAccessTokenMock: vi.fn(),
+  requireAccessTokenMock: vi.fn(),
 }));
 
 vi.mock("../api/client", () => ({
@@ -25,6 +27,7 @@ vi.mock("../context/AuthContext", () => ({
     signup: vi.fn(),
     logout: vi.fn(),
     getAccessToken: getAccessTokenMock,
+    requireAccessToken: requireAccessTokenMock,
   }),
 }));
 
@@ -32,6 +35,7 @@ describe("RunHistory", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     getAccessTokenMock.mockResolvedValue("mock-token");
+    requireAccessTokenMock.mockResolvedValue("mock-token");
     listTemplatesMock.mockResolvedValue([]);
     listRunsMock.mockResolvedValue([
       {

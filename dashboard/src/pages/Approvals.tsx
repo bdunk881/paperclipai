@@ -11,6 +11,7 @@ import {
   RefreshCw,
 } from "lucide-react";
 import { listApprovals, resolveApproval, type ApprovalRequest } from "../api/client";
+import { useAuth } from "../context/AuthContext";
 
 const POLL_INTERVAL_MS = 10_000;
 
@@ -55,6 +56,7 @@ const STATUS_CONFIG: Record<
 };
 
 export default function Approvals() {
+  const { requireAccessToken } = useAuth();
   const [approvals, setApprovals] = useState<ApprovalRequest[]>([]);
   const [filter, setFilter] = useState<"all" | "pending" | "resolved">("all");
   const [loading, setLoading] = useState(true);
@@ -64,7 +66,8 @@ export default function Approvals() {
 
   async function fetchApprovals() {
     try {
-      const data = await listApprovals();
+      const accessToken = await requireAccessToken();
+      const data = await listApprovals(accessToken);
       setApprovals(data);
       setLastRefreshed(new Date());
       setError(null);
@@ -211,6 +214,7 @@ function ApprovalCard({
   item: ApprovalRequest;
   onResolved: (id: string, decision: "approved" | "rejected") => void;
 }) {
+  const { requireAccessToken } = useAuth();
   const [comment, setComment] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
@@ -222,7 +226,8 @@ function ApprovalCard({
     setSubmitting(true);
     setSubmitError(null);
     try {
-      await resolveApproval(item.id, decision, comment.trim() || undefined);
+      const accessToken = await requireAccessToken();
+      await resolveApproval(item.id, decision, accessToken, comment.trim() || undefined);
       onResolved(item.id, decision);
     } catch (e) {
       setSubmitError(e instanceof Error ? e.message : "Failed to submit");

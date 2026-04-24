@@ -9,17 +9,37 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import * as authStorage from "../auth/authStorage";
 import {
+  createLLMConfig,
+  createProposalDraft,
+  createTemplate,
+  debugStep,
+  deleteLLMConfig,
+  deleteMemoryEntry,
   deployWorkflowAsTeam,
-  listTemplates,
-  listControlPlaneTeams,
+  generateWorkflow,
   getControlPlaneTeam,
+  getProposalJobStatus,
+  getMemoryStats,
+  listApprovals,
+  listControlPlaneTeams,
+  listLLMConfigs,
+  listMemoryEntries,
+  listProposalContext,
+  listTemplates,
   getTemplate,
   listRuns,
   getRun,
+  resolveApproval,
+  searchMemory,
+  setDefaultLLMConfig,
   startRun,
+  startRunWithFile,
+  writeMemoryEntry,
   type TemplateSummary,
 } from "./client";
 import type { WorkflowRun, WorkflowTemplate } from "../types/workflow";
+
+const ACCESS_TOKEN = "token-123";
 
 // ---------------------------------------------------------------------------
 // Mock helpers
@@ -356,5 +376,277 @@ describe("control plane client", () => {
     const headers = lastFetchOptions().headers as Record<string, string>;
     expect(headers.Authorization).toBe("Bearer token-123");
     expect(headers["X-Paperclip-Run-Id"]).toBe("run-abc");
+  });
+});
+
+describe("proposal builder client", () => {
+  it("falls back to mock context when /api/proposals/context returns 404", async () => {
+    mockFetchFail(404);
+    const result = await listProposalContext(ACCESS_TOKEN);
+    expect(lastFetchUrl()).toBe("/api/proposals/context");
+    expect(result.records.length).toBeGreaterThan(0);
+    expect(result.templates.length).toBeGreaterThan(0);
+  });
+
+  it("posts to /api/proposals when creating a draft", async () => {
+    mockFetch({ jobId: "job-123", status: "queued" }, 202);
+    await createProposalDraft({ crmRecordIds: ["crm-1"], templateId: "tpl-1" }, ACCESS_TOKEN);
+    expect(lastFetchUrl()).toBe("/api/proposals");
+    expect(lastFetchOptions().method).toBe("POST");
+  });
+
+  it("falls back to a mock completed job when proposal polling returns 404", async () => {
+    mockFetchFail(404);
+    const result = await getProposalJobStatus("job-123", ACCESS_TOKEN);
+    expect(lastFetchUrl()).toBe("/api/proposals/job-123");
+    expect(result.status).toBe("completed");
+    expect(result.draft?.title).toBeTruthy();
+  });
+});
+
+describe("LLM config APIs", () => {
+  it("lists configs with auth header when provided", async () => {
+    mockFetch({
+      configs: [
+        {
+          id: "cfg_1",
+          label: "Primary",
+          provider: "openai",
+          model: "gpt-4o",
+          isDefault: true,
+          maskedApiKey: "sk-...1234",
+          createdAt: "2026-04-22T00:00:00.000Z",
+        },
+      ],
+    });
+
+    const result = await listLLMConfigs("token-123");
+    expect(result).toHaveLength(1);
+    expect(lastFetchUrl()).toBe("/api/llm-configs");
+    expect((lastFetchOptions().headers as Record<string, string>).Authorization).toBe("Bearer token-123");
+  });
+
+  it("creates, defaults, and deletes LLM configs", async () => {
+    mockFetch({
+      id: "cfg_1",
+      label: "Primary",
+      provider: "openai",
+      model: "gpt-4o",
+      isDefault: false,
+      maskedApiKey: "sk-...1234",
+      createdAt: "2026-04-22T00:00:00.000Z",
+    });
+    await createLLMConfig({
+      label: "Primary",
+      provider: "openai",
+      model: "gpt-4o",
+      apiKey: "sk-test",
+    }, ACCESS_TOKEN);
+    expect(lastFetchUrl()).toBe("/api/llm-configs");
+    expect(lastFetchOptions().method).toBe("POST");
+
+    mockFetch({
+      id: "cfg_1",
+      label: "Primary",
+      provider: "openai",
+      model: "gpt-4o",
+      isDefault: true,
+      maskedApiKey: "sk-...1234",
+      createdAt: "2026-04-22T00:00:00.000Z",
+    });
+    await setDefaultLLMConfig("cfg_1", ACCESS_TOKEN);
+    expect(lastFetchUrl()).toBe("/api/llm-configs/cfg_1/default");
+    expect(lastFetchOptions().method).toBe("PATCH");
+
+    mockFetch({}, 204);
+    await deleteLLMConfig("cfg_1", ACCESS_TOKEN);
+    expect(lastFetchUrl()).toBe("/api/llm-configs/cfg_1");
+    expect(lastFetchOptions().method).toBe("DELETE");
+  });
+
+  it("surfaces server errors for create and delete failures", async () => {
+    mockFetchFail(400, { error: "API key required" });
+    await expect(
+      createLLMConfig({
+        label: "Primary",
+        provider: "openai",
+        model: "gpt-4o",
+        apiKey: "",
+      }, ACCESS_TOKEN)
+    ).rejects.toThrow(/API key required/);
+
+    mockFetchFail(500);
+    await expect(deleteLLMConfig("cfg_1", ACCESS_TOKEN)).rejects.toThrow(/500/);
+  });
+});
+
+describe("template and workflow helpers", () => {
+  it("creates templates and generates workflow steps", async () => {
+    mockFetch({
+      id: "tpl_new",
+      name: "New Template",
+      description: "desc",
+      category: "support",
+      steps: [],
+      configFields: [],
+      sampleInput: {},
+      expectedOutput: {},
+      version: "1.0.0",
+    });
+
+    await createTemplate({
+      name: "New Template",
+      description: "desc",
+      category: "support",
+      steps: [],
+      configFields: [],
+      sampleInput: {},
+      expectedOutput: {},
+      version: "1.0.0",
+    });
+    expect(lastFetchUrl()).toBe("/api/templates");
+    expect(lastFetchOptions().method).toBe("POST");
+
+    mockFetch({ steps: [{ id: "step_1", type: "prompt", name: "Prompt", config: {} }] });
+    const steps = await generateWorkflow("build a workflow", "cfg_1");
+    expect(steps).toHaveLength(1);
+    expect(lastFetchUrl()).toBe("/api/workflows/generate");
+  });
+
+  it("posts multipart file runs and debug requests", async () => {
+    mockFetch(sampleRun, 202);
+    await startRunWithFile("tpl-support-bot", new File(["hello"], "input.txt"), "user-1");
+    const options = lastFetchOptions();
+    expect(lastFetchUrl()).toBe("/api/runs/file");
+    expect(options.method).toBe("POST");
+    expect((options.headers as Record<string, string>)["X-User-Id"]).toBe("user-1");
+    expect(options.body).toBeInstanceOf(FormData);
+
+    mockFetch({ explanation: "It failed", suggestion: "Retry" });
+    const debug = await debugStep("step-1", "boom", { output: true });
+    expect(debug.suggestion).toBe("Retry");
+    expect(lastFetchUrl()).toBe("/api/debug/step");
+  });
+
+  it("surfaces fallback error messages for workflow helpers", async () => {
+    mockFetchFail(500);
+    await expect(generateWorkflow("build")).rejects.toThrow(/Not found/);
+
+    mockFetchFail(422, { error: "Cannot debug this step" });
+    await expect(debugStep("step-1", "boom", {})).rejects.toThrow(/Cannot debug this step/);
+  });
+});
+
+describe("memory APIs", () => {
+  it("lists, searches, writes, deletes, and reads stats with user headers", async () => {
+    mockFetch({
+      entries: [
+        {
+          id: "mem_1",
+          userId: "user-1",
+          key: "alpha",
+          text: "Alpha memory",
+          createdAt: "2026-04-22T00:00:00.000Z",
+          updatedAt: "2026-04-22T00:00:00.000Z",
+        },
+      ],
+    });
+    const entries = await listMemoryEntries(ACCESS_TOKEN, "user-1", "workflow 1");
+    expect(entries).toHaveLength(1);
+    expect(lastFetchUrl()).toContain("/api/memory?workflowId=workflow%201");
+    expect((lastFetchOptions().headers as Record<string, string>)["X-User-Id"]).toBe("user-1");
+    expect((lastFetchOptions().headers as Record<string, string>).Authorization).toBe(`Bearer ${ACCESS_TOKEN}`);
+
+    mockFetch({
+      results: [
+        {
+          entry: {
+            id: "mem_1",
+            userId: "user-1",
+            key: "alpha",
+            text: "Alpha memory",
+            createdAt: "2026-04-22T00:00:00.000Z",
+            updatedAt: "2026-04-22T00:00:00.000Z",
+          },
+          score: 0.91,
+        },
+      ],
+    });
+    const results = await searchMemory("alpha beta", ACCESS_TOKEN, "user-1", "agent-7");
+    expect(results[0].score).toBe(0.91);
+    expect(lastFetchUrl()).toContain("/api/memory/search?q=alpha+beta&agentId=agent-7");
+
+    mockFetch({
+      id: "mem_1",
+      userId: "user-1",
+      key: "alpha",
+      text: "Alpha memory",
+      createdAt: "2026-04-22T00:00:00.000Z",
+      updatedAt: "2026-04-22T00:00:00.000Z",
+    });
+    await writeMemoryEntry({ key: "alpha", text: "Alpha memory" }, ACCESS_TOKEN, "user-1");
+    expect(lastFetchUrl()).toBe("/api/memory");
+    expect(lastFetchOptions().method).toBe("POST");
+
+    mockFetch({}, 204);
+    await deleteMemoryEntry("mem_1", ACCESS_TOKEN, "user-1");
+    expect(lastFetchUrl()).toBe("/api/memory/mem_1");
+    expect(lastFetchOptions().method).toBe("DELETE");
+
+    mockFetch({ totalEntries: 3, totalBytes: 100, workflowCount: 2 });
+    const stats = await getMemoryStats(ACCESS_TOKEN, "user-1");
+    expect(stats.totalEntries).toBe(3);
+    expect(lastFetchUrl()).toBe("/api/memory/stats");
+  });
+
+  it("handles write failures and ignores 404 deletes", async () => {
+    mockFetchFail(400, { error: "Key is required" });
+    await expect(writeMemoryEntry({ key: "", text: "x" }, ACCESS_TOKEN)).rejects.toThrow(/Key is required/);
+
+    mockFetchFail(404);
+    await expect(deleteMemoryEntry("missing", ACCESS_TOKEN)).resolves.toBeUndefined();
+
+    mockFetchFail(500);
+    await expect(deleteMemoryEntry("broken", ACCESS_TOKEN)).rejects.toThrow(/500/);
+  });
+});
+
+describe("approvals APIs", () => {
+  it("lists approvals with optional filters and resolves decisions", async () => {
+    mockFetch({
+      approvals: [
+        {
+          id: "approval_1",
+          runId: "run_1",
+          templateName: "Template",
+          stepId: "step_1",
+          stepName: "Approve",
+          assignee: "user-1",
+          message: "Need approval",
+          timeoutMinutes: 15,
+          requestedAt: "2026-04-22T00:00:00.000Z",
+          status: "pending",
+        },
+      ],
+    });
+
+    const approvals = await listApprovals(ACCESS_TOKEN, "pending");
+    expect(approvals).toHaveLength(1);
+    expect(lastFetchUrl()).toContain("/api/approvals?status=pending");
+
+    mockFetch({}, 204);
+    await resolveApproval("approval_1", "approved", ACCESS_TOKEN, "Looks good");
+    expect(lastFetchUrl()).toBe("/api/approvals/approval_1/resolve");
+    expect(lastFetchOptions().method).toBe("POST");
+  });
+
+  it("throws on approvals failures", async () => {
+    mockFetchFail(503);
+    await expect(listApprovals(ACCESS_TOKEN)).rejects.toThrow(/503/);
+
+    mockFetchFail(400, { error: "Decision is required" });
+    await expect(resolveApproval("approval_1", "rejected", ACCESS_TOKEN)).rejects.toThrow(/Decision is required/);
+  });
+});
   });
 });

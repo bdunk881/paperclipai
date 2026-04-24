@@ -41,8 +41,19 @@ import type { WorkflowRun } from "../types/workflow";
 
 const ONBOARDING_DISMISS_PREFIX = "autoflow:onboarding-dismissed:v1";
 
+function getBrowserStorage(): Storage | null {
+  if (typeof window === "undefined") return null;
+  const storage = window.localStorage;
+  if (!storage) return null;
+  return typeof storage.getItem === "function" &&
+    typeof storage.setItem === "function" &&
+    typeof storage.removeItem === "function"
+    ? storage
+    : null;
+}
+
 export default function Dashboard() {
-  const { user, getAccessToken } = useAuth();
+  const { user, requireAccessToken } = useAuth();
   const navigate = useNavigate();
   const [runs, setRuns] = useState<WorkflowRun[]>([]);
   const [templates, setTemplates] = useState<TemplateSummary[]>([]);
@@ -62,7 +73,7 @@ export default function Dashboard() {
     setLoading(true);
     setError(null);
     try {
-      const accessToken = (await getAccessToken()) ?? undefined;
+      const accessToken = await requireAccessToken();
       const [fetchedRuns, fetchedTemplates, fetchedConfigs, fetchedAgents, fetchedRoutines] = await Promise.all([
         listRuns(undefined, accessToken),
         listTemplates(),
@@ -91,7 +102,7 @@ export default function Dashboard() {
     } finally {
       setLoading(false);
     }
-  }, [getAccessToken]);
+  }, [requireAccessToken]);
 
   useEffect(() => {
     void loadDashboard();
@@ -191,17 +202,17 @@ export default function Dashboard() {
 
   useEffect(() => {
     if (loading || onboardingComplete) return;
-    const dismissed = localStorage.getItem(onboardingStorageKey) === "true";
+    const dismissed = getBrowserStorage()?.getItem(onboardingStorageKey) === "true";
     if (!dismissed) setShowOnboarding(true);
   }, [loading, onboardingComplete, onboardingStorageKey]);
 
   function closeOnboarding() {
-    localStorage.setItem(onboardingStorageKey, "true");
+    getBrowserStorage()?.setItem(onboardingStorageKey, "true");
     setShowOnboarding(false);
   }
 
   function reopenOnboarding() {
-    localStorage.removeItem(onboardingStorageKey);
+    getBrowserStorage()?.removeItem(onboardingStorageKey);
     setShowOnboarding(true);
   }
 

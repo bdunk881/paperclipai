@@ -43,7 +43,7 @@ interface ConnectModalProps {
 }
 
 function ConnectModal({ provider, onClose, onSuccess }: ConnectModalProps) {
-  const { getAccessToken } = useAuth();
+  const { requireAccessToken } = useAuth();
   const meta = PROVIDERS[provider];
   const models = PROVIDER_MODELS[provider];
 
@@ -73,7 +73,7 @@ function ConnectModal({ provider, onClose, onSuccess }: ConnectModalProps) {
     setError(null);
     setSubmitting(true);
     try {
-      const accessToken = (await getAccessToken()) ?? undefined;
+      const accessToken = await requireAccessToken();
       await createLLMConfig(
         { label: label.trim(), provider, model, apiKey: apiKey.trim() },
         accessToken
@@ -204,7 +204,7 @@ interface DeleteConfirmProps {
 }
 
 function DeleteConfirm({ config, onClose, onSuccess }: DeleteConfirmProps) {
-  const { getAccessToken } = useAuth();
+  const { requireAccessToken } = useAuth();
   const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -212,7 +212,7 @@ function DeleteConfirm({ config, onClose, onSuccess }: DeleteConfirmProps) {
     setDeleting(true);
     setError(null);
     try {
-      const accessToken = (await getAccessToken()) ?? undefined;
+      const accessToken = await requireAccessToken();
       await deleteLLMConfig(config.id, accessToken);
       onSuccess();
     } catch (err) {
@@ -257,7 +257,7 @@ function DeleteConfirm({ config, onClose, onSuccess }: DeleteConfirmProps) {
 // ---------------------------------------------------------------------------
 
 export default function LLMProviders() {
-  const { getAccessToken } = useAuth();
+  const { requireAccessToken } = useAuth();
   const [configs, setConfigs] = useState<LLMConfig[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -267,7 +267,7 @@ export default function LLMProviders() {
 
   const loadConfigs = useCallback(async () => {
     try {
-      const accessToken = (await getAccessToken()) ?? undefined;
+      const accessToken = await requireAccessToken();
       const data = await listLLMConfigs(accessToken);
       setConfigs(data);
       setError(null);
@@ -276,14 +276,14 @@ export default function LLMProviders() {
     } finally {
       setLoading(false);
     }
-  }, [getAccessToken]);
+  }, [requireAccessToken]);
 
   useEffect(() => { loadConfigs(); }, [loadConfigs]);
 
   async function handleSetDefault(id: string) {
     setTogglingDefault(id);
     try {
-      const accessToken = (await getAccessToken()) ?? undefined;
+      const accessToken = await requireAccessToken();
       const updated = await setDefaultLLMConfig(id, accessToken);
       setConfigs((prev) =>
         prev.map((c) => ({ ...c, isDefault: c.id === updated.id }))

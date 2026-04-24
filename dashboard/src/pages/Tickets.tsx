@@ -33,10 +33,8 @@ import {
   TicketSlaBadge,
   TicketSourceNotice,
   TicketStatusBadge,
-  collaboratorCount,
-  primaryAssignee,
-  relativeTicketTime,
 } from "./tickets/ticketingUi";
+import { collaboratorCount, primaryAssignee, relativeTicketTime } from "./tickets/ticketingUtils";
 
 type StatusFilter = TicketStatus | "all";
 type PriorityFilter = TicketPriority | "all";

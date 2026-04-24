@@ -10,8 +10,8 @@ import { useAuth } from "../context/AuthContext";
 import {
   TicketEmptyState,
   TicketSourceNotice,
-  aggregateActorCounts,
 } from "./tickets/ticketingUi";
+import { aggregateActorCounts } from "./tickets/ticketingUtils";
 
 export default function TicketTeamView() {
   const { getAccessToken } = useAuth();

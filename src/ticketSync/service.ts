@@ -12,6 +12,8 @@ import {
   TrackerProvider,
 } from "../integrations/tracker-sync";
 import { verifyLinearWebhook } from "../integrations/linear/webhook";
+import { linearCredentialStore } from "../integrations/linear/credentialStore";
+import { integrationCredentialStore } from "../integrations/integrationCredentialStore";
 import { TicketRecord, TicketUpdate, ticketStore } from "../tickets/ticketStore";
 import { ticketSyncConnectionStore } from "./connectionStore";
 import {
@@ -39,6 +41,11 @@ const SYNC_SUCCESS_EVENT = "tracker_sync_success";
 const MAX_RETRIES = 3;
 
 let adapterFactoryOverride: AdapterFactory | null = null;
+
+interface TicketSyncBootstrapSource {
+  type: "integration_connection" | "linear_connector";
+  connectionId?: string;
+}
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -242,6 +249,32 @@ async function applyInboundStatus(ticket: TicketRecord, metadata: TicketSyncConn
   await transition(mappedStatus);
 }
 
+function mapInboundAssignees(ticket: TicketRecord, metadata: TicketSyncConnectionMetadata, event: TicketSyncWebhookEvent) {
+  const mappedAssigneeId = mapInboundValue(metadata.fieldMapping?.assignee, event.assignee);
+  if (!mappedAssigneeId) {
+    return undefined;
+  }
+
+  const currentPrimary = ticket.assignees.find((assignee) => assignee.role === "primary");
+  const primaryType = currentPrimary?.type ?? metadata.defaultAssignee?.type ?? "user";
+  const nextPrimary = {
+    type: primaryType,
+    id: mappedAssigneeId,
+    role: "primary" as const,
+  };
+
+  if (
+    currentPrimary &&
+    currentPrimary.type === nextPrimary.type &&
+    currentPrimary.id === nextPrimary.id
+  ) {
+    return undefined;
+  }
+
+  const collaborators = ticket.assignees.filter((assignee) => assignee.role !== "primary");
+  return [nextPrimary, ...collaborators];
+}
+
 function parseGitHubWebhook(rawBody: Buffer, headers: Record<string, string | undefined>): TicketSyncWebhookEvent {
   const event = headers["x-github-event"];
   const payload = JSON.parse(rawBody.toString("utf8")) as Record<string, any>;
@@ -404,6 +437,98 @@ async function buildAdapter(connectionId: string) {
   return { decrypted, adapter };
 }
 
+async function resolveBootstrapSecrets(params: {
+  userId: string;
+  provider: TrackerProvider;
+  source: TicketSyncBootstrapSource;
+  config: TicketSyncConnectionMetadata["config"];
+}): Promise<{
+  authMethod: TicketSyncConnectionMetadata["authMethod"];
+  config: TicketSyncConnectionMetadata["config"];
+  secrets: Record<string, string | undefined>;
+}> {
+  if (params.source.type === "linear_connector") {
+    if (params.provider !== "linear") {
+      throw new TrackerError("schema", "Linear connector bootstrap is only supported for the Linear provider", 400);
+    }
+
+    const credential = linearCredentialStore.getActiveByUser(params.userId);
+    if (!credential) {
+      throw new TrackerError("auth", "No active Linear connector credential found for this user", 404);
+    }
+
+    return {
+      authMethod: credential.authMethod,
+      config: params.config,
+      secrets: {
+        token: linearCredentialStore.decryptAccessToken(credential),
+      },
+    };
+  }
+
+  const decrypted = params.source.connectionId
+    ? integrationCredentialStore.getDecrypted(params.source.connectionId, params.userId)
+    : integrationCredentialStore.getDecryptedDefault(params.userId, params.provider);
+  if (!decrypted) {
+    throw new TrackerError("auth", `No ${params.provider} integration credential found for this user`, 404);
+  }
+  if (decrypted.connection.integrationSlug !== params.provider) {
+    throw new TrackerError("schema", `Integration credential ${decrypted.connection.id} does not belong to ${params.provider}`, 400);
+  }
+
+  if (params.provider === "github") {
+    const token = decrypted.credentials.token ?? decrypted.credentials.accessToken;
+    if (!token) {
+      throw new TrackerError("auth", "GitHub integration credential is missing a usable token", 400);
+    }
+
+    return {
+      authMethod: decrypted.credentials.accessToken ? "oauth2_pkce" : "api_key",
+      config: params.config,
+      secrets: { token },
+    };
+  }
+
+  if (params.provider === "jira") {
+    const email = decrypted.credentials.username;
+    const apiToken = decrypted.credentials.password ?? decrypted.credentials.token;
+    if (!email || !apiToken) {
+      throw new TrackerError("auth", "Jira integration credential is missing email or API token", 400);
+    }
+
+    const site =
+      params.config.site ??
+      (decrypted.credentials.instanceDomain
+        ? /^https?:\/\//i.test(decrypted.credentials.instanceDomain)
+          ? decrypted.credentials.instanceDomain
+          : `https://${decrypted.credentials.instanceDomain}.atlassian.net`
+        : undefined);
+    if (!site) {
+      throw new TrackerError("schema", "Jira bootstrap requires site or instanceDomain", 400);
+    }
+
+    return {
+      authMethod: "basic",
+      config: {
+        ...params.config,
+        site,
+      },
+      secrets: { email, apiToken },
+    };
+  }
+
+  const token = decrypted.credentials.token ?? decrypted.credentials.accessToken;
+  if (!token) {
+    throw new TrackerError("auth", `${params.provider} integration credential is missing a usable token`, 400);
+  }
+
+  return {
+    authMethod: decrypted.credentials.accessToken ? "oauth2_pkce" : "api_key",
+    config: params.config,
+    secrets: { token },
+  };
+}
+
 export const ticketSyncService = {
   setAdapterFactoryForTests(factory: AdapterFactory | null): void {
     adapterFactoryOverride = factory;
@@ -418,8 +543,84 @@ export const ticketSyncService = {
     return ticketSyncConnectionStore.create(input);
   },
 
-  async listConnections(workspaceId: string): Promise<TicketSyncConnectionPublic[]> {
-    return ticketSyncConnectionStore.listByWorkspace(workspaceId);
+  async bootstrapConnection(input: {
+    userId: string;
+    label: string;
+    provider: TrackerProvider;
+    workspaceId: string;
+    syncDirection: TicketSyncConnectionMetadata["syncDirection"];
+    enabled: boolean;
+    config: TicketSyncConnectionMetadata["config"];
+    fieldMapping?: TicketSyncConnectionMetadata["fieldMapping"];
+    defaultAssignee?: TicketSyncConnectionMetadata["defaultAssignee"];
+    source: TicketSyncBootstrapSource;
+  }): Promise<TicketSyncConnectionPublic> {
+    const bootstrap = await resolveBootstrapSecrets({
+      userId: input.userId,
+      provider: input.provider,
+      source: input.source,
+      config: input.config,
+    });
+
+    return ticketSyncConnectionStore.create({
+      userId: input.userId,
+      label: input.label,
+      metadata: {
+        workspaceId: input.workspaceId,
+        provider: input.provider,
+        authMethod: bootstrap.authMethod,
+        label: input.label,
+        syncDirection: input.syncDirection,
+        enabled: input.enabled,
+        config: bootstrap.config,
+        fieldMapping: input.fieldMapping,
+        defaultAssignee: input.defaultAssignee,
+      },
+      secrets: bootstrap.secrets,
+    });
+  },
+
+  async listConnections(workspaceId: string, userId?: string): Promise<TicketSyncConnectionPublic[]> {
+    return userId
+      ? ticketSyncConnectionStore.listByWorkspaceForUser(workspaceId, userId)
+      : ticketSyncConnectionStore.listByWorkspace(workspaceId);
+  },
+
+  async getConnection(connectionId: string, userId?: string): Promise<TicketSyncConnectionPublic | null> {
+    return userId
+      ? ticketSyncConnectionStore.getByIdForUser(connectionId, userId)
+      : ticketSyncConnectionStore.getById(connectionId);
+  },
+
+  async updateConnection(input: {
+    connectionId: string;
+    userId: string;
+    patch: Partial<Pick<TicketSyncConnectionMetadata, "label" | "syncDirection" | "enabled" | "config" | "fieldMapping" | "defaultAssignee">>;
+    secrets?: Record<string, string | undefined>;
+  }): Promise<TicketSyncConnectionPublic | null> {
+    return ticketSyncConnectionStore.update(input.connectionId, input.userId, ({ record, secrets }) => ({
+      record: {
+        ...record,
+        label: input.patch.label ?? record.label,
+        metadata: {
+          ...record.metadata,
+          label: input.patch.label ?? record.metadata.label,
+          syncDirection: input.patch.syncDirection ?? record.metadata.syncDirection,
+          enabled: input.patch.enabled ?? record.metadata.enabled,
+          config: input.patch.config ? { ...record.metadata.config, ...input.patch.config } : record.metadata.config,
+          fieldMapping: input.patch.fieldMapping ?? record.metadata.fieldMapping,
+          defaultAssignee:
+            input.patch.defaultAssignee === undefined
+              ? record.metadata.defaultAssignee
+              : input.patch.defaultAssignee,
+        },
+      },
+      secrets: input.secrets ? { ...secrets, ...input.secrets } : secrets,
+    }));
+  },
+
+  async revokeConnection(connectionId: string, userId: string): Promise<boolean> {
+    return ticketSyncConnectionStore.revoke(connectionId, userId);
   },
 
   async listLinks(ticketId: string): Promise<TicketTrackerLink[]> {
@@ -427,7 +628,14 @@ export const ticketSyncService = {
     return updates ? dedupeLinks(updates) : [];
   },
 
-  async health(connectionId: string): Promise<TicketSyncConnectionPublic | null> {
+  async health(connectionId: string, userId?: string): Promise<TicketSyncConnectionPublic | null> {
+    if (userId) {
+      const connection = await ticketSyncConnectionStore.getByIdForUser(connectionId, userId);
+      if (!connection) {
+        return null;
+      }
+    }
+
     const built = await buildAdapter(connectionId);
     if (!built) {
       return null;
@@ -614,6 +822,7 @@ export const ticketSyncService = {
       description: event.description,
       priority: mapInboundValue(built.decrypted.record.metadata.fieldMapping?.priority, event.priority) as any,
       tags: event.labels,
+      assignees: mapInboundAssignees(linkedTicket, built.decrypted.record.metadata, event),
     });
 
     await applyInboundStatus(linkedTicket, built.decrypted.record.metadata, event);

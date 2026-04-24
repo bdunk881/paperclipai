@@ -4,6 +4,8 @@ import request from "supertest";
 import ticketRoutes from "../tickets/ticketRoutes";
 import { ticketStore } from "../tickets/ticketStore";
 import { TrackerAdapter, TrackerComment, TrackerHealth, TrackerIssue } from "../integrations/tracker-sync";
+import { integrationCredentialStore } from "../integrations/integrationCredentialStore";
+import { linearCredentialStore } from "../integrations/linear/credentialStore";
 import { ticketSyncConnectionStore } from "./connectionStore";
 import ticketSyncRoutes from "./routes";
 import { ticketSyncService } from "./service";
@@ -101,6 +103,8 @@ describe("ticket sync routes", () => {
   beforeEach(async () => {
     await ticketStore.clear();
     ticketSyncConnectionStore.clear();
+    integrationCredentialStore.clear();
+    linearCredentialStore.clear();
     adapters.clear();
     ticketSyncService.setAdapterFactoryForTests(({ connectionId, provider }) => {
       const adapter = new FakeTrackerAdapter(provider);
@@ -137,6 +141,178 @@ describe("ticket sync routes", () => {
 
     expect(tested.status).toBe(200);
     expect(tested.body.health.status).toBe("ok");
+  });
+
+  it("updates and revokes tracker connections from the dashboard routes", async () => {
+    const app = buildApp();
+    const created = await request(app)
+      .post("/api/ticket-sync/connections")
+      .set(auth("user-1"))
+      .send({
+        workspaceId: "11111111-1111-4111-8111-111111111111",
+        provider: "linear",
+        authMethod: "api_key",
+        label: "Linear workspace",
+        config: { defaultTeamId: "team-1", webhookSecret: "linear-secret" },
+        secrets: { token: "lin_token" },
+      });
+
+    expect(created.status).toBe(201);
+
+    const updated = await request(app)
+      .patch(`/api/ticket-sync/connections/${created.body.id}`)
+      .set(auth("user-1"))
+      .send({
+        label: "Linear production workspace",
+        enabled: false,
+        syncDirection: "inbound",
+        config: { defaultProjectId: "project-1" },
+      });
+
+    expect(updated.status).toBe(200);
+    expect(updated.body.label).toBe("Linear production workspace");
+    expect(updated.body.enabled).toBe(false);
+    expect(updated.body.syncDirection).toBe("inbound");
+    expect(updated.body.config.defaultProjectId).toBe("project-1");
+    expect(updated.body.config.hasWebhookSecret).toBe(true);
+
+    const listed = await request(app)
+      .get("/api/ticket-sync/connections?workspaceId=11111111-1111-4111-8111-111111111111")
+      .set(auth("user-1"));
+
+    expect(listed.status).toBe(200);
+    expect(listed.body.total).toBe(1);
+
+    const revoked = await request(app)
+      .delete(`/api/ticket-sync/connections/${created.body.id}`)
+      .set(auth("user-1"));
+
+    expect(revoked.status).toBe(204);
+
+    const missing = await request(app)
+      .get(`/api/ticket-sync/connections/${created.body.id}`)
+      .set(auth("user-1"));
+
+    expect(missing.status).toBe(404);
+
+    const listedAfterRevoke = await request(app)
+      .get("/api/ticket-sync/connections?workspaceId=11111111-1111-4111-8111-111111111111")
+      .set(auth("user-1"));
+
+    expect(listedAfterRevoke.status).toBe(200);
+    expect(listedAfterRevoke.body.total).toBe(0);
+  });
+
+  it("scopes dashboard connection routes to the authenticated credential owner", async () => {
+    const app = buildApp();
+    const created = await request(app)
+      .post("/api/ticket-sync/connections")
+      .set(auth("user-1"))
+      .send({
+        workspaceId: "11111111-1111-4111-8111-111111111111",
+        provider: "github",
+        authMethod: "api_key",
+        label: "Private GitHub board",
+        config: { owner: "autoflow", repo: "paperclipai" },
+        secrets: { token: "ghp_private" },
+      });
+
+    expect(created.status).toBe(201);
+
+    const foreignList = await request(app)
+      .get("/api/ticket-sync/connections?workspaceId=11111111-1111-4111-8111-111111111111")
+      .set(auth("user-2"));
+
+    expect(foreignList.status).toBe(200);
+    expect(foreignList.body.total).toBe(0);
+
+    const foreignGet = await request(app)
+      .get(`/api/ticket-sync/connections/${created.body.id}`)
+      .set(auth("user-2"));
+
+    expect(foreignGet.status).toBe(404);
+
+    const foreignHealth = await request(app)
+      .post(`/api/ticket-sync/connections/${created.body.id}/test`)
+      .set(auth("user-2"));
+
+    expect(foreignHealth.status).toBe(404);
+  });
+
+  it("bootstraps a GitHub tracker connection from an existing integration credential", async () => {
+    const app = buildApp();
+    const integration = integrationCredentialStore.create({
+      userId: "user-1",
+      integrationSlug: "github",
+      label: "GitHub PAT",
+      credentials: { token: "ghp_bootstrap" },
+    });
+
+    const created = await request(app)
+      .post("/api/ticket-sync/connections/bootstrap")
+      .set(auth("user-1"))
+      .send({
+        workspaceId: "11111111-1111-4111-8111-111111111111",
+        provider: "github",
+        label: "GitHub bootstrap",
+        config: { owner: "autoflow", repo: "paperclipai" },
+        source: {
+          type: "integration_connection",
+          connectionId: integration.id,
+        },
+      });
+
+    expect(created.status).toBe(201);
+    expect(created.body.provider).toBe("github");
+    expect(created.body.authMethod).toBe("api_key");
+  });
+
+  it("bootstraps a Linear tracker connection from the active Linear connector credential", async () => {
+    const app = buildApp();
+    linearCredentialStore.saveOAuth({
+      userId: "user-1",
+      accessToken: "lin_oauth_bootstrap",
+      refreshToken: "lin_refresh_bootstrap",
+      scopes: ["read", "write"],
+      organizationId: "org-1",
+      organizationName: "AutoFlow",
+    });
+
+    const connection = await request(app)
+      .post("/api/ticket-sync/connections/bootstrap")
+      .set(auth("user-1"))
+      .send({
+        workspaceId: "11111111-1111-4111-8111-111111111111",
+        provider: "linear",
+        label: "Linear bootstrap",
+        config: { defaultTeamId: "team-1" },
+        source: {
+          type: "linear_connector",
+        },
+      });
+
+    expect(connection.status).toBe(201);
+    expect(connection.body.authMethod).toBe("oauth2_pkce");
+
+    const created = await request(app)
+      .post("/api/tickets")
+      .set(auth("user-1"))
+      .set("X-Paperclip-Run-Id", "run-linear-bootstrap-ticket")
+      .send({
+        workspaceId: "11111111-1111-4111-8111-111111111111",
+        title: "Bootstrapped Linear sync target",
+        assignees: [{ type: "user", id: "user-1", role: "primary" }],
+      });
+
+    expect(created.status).toBe(201);
+
+    const links = await request(app)
+      .get(`/api/ticket-sync/tickets/${created.body.ticket.id}/links`)
+      .set(auth("user-1"));
+
+    expect(links.status).toBe(200);
+    expect(links.body.total).toBe(1);
+    expect(adapters.get(connection.body.id)?.createdIssues).toHaveLength(1);
   });
 
   it("creates an external issue and link when a local ticket is created", async () => {
@@ -387,6 +563,11 @@ describe("ticket sync routes", () => {
           defaultTeamId: "team-1",
           webhookSecret: "linear-secret",
         },
+        fieldMapping: {
+          assignee: {
+            "user-2": "lin-user-2",
+          },
+        },
         secrets: { token: "lin_token" },
       });
 
@@ -409,6 +590,7 @@ describe("ticket sync routes", () => {
         title: "Linear updated title",
         description: "Updated from Linear",
         state: { name: "In Progress" },
+        assignee: { id: "lin-user-2" },
         labels: [{ name: "autoflow" }],
       },
     });
@@ -429,6 +611,7 @@ describe("ticket sync routes", () => {
 
     expect(ticket.status).toBe(200);
     expect(ticket.body.ticket.title).toBe("Linear updated title");
+    expect(ticket.body.ticket.assignees).toEqual([{ type: "user", id: "user-2", role: "primary" }]);
 
     const commentPayload = JSON.stringify({
       action: "create",

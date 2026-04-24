@@ -151,8 +151,12 @@ function resolveAllowedNativeAuthPath(pathValue: string | undefined): string | n
       return "signup/v1.0/continue";
     case "resetpassword/v1.0/challenge":
       return "resetpassword/v1.0/challenge";
+    case "resetpassword/v1.0/start":
+      return "resetpassword/v1.0/start";
     case "resetpassword/v1.0/continue":
       return "resetpassword/v1.0/continue";
+    case "resetpassword/v1.0/poll_completion":
+      return "resetpassword/v1.0/poll_completion";
     case "resetpassword/v1.0/submit":
       return "resetpassword/v1.0/submit";
     default:

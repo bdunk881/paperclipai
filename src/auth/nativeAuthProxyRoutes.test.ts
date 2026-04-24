@@ -133,6 +133,56 @@ describe("native auth proxy routes", () => {
     expect(init.body).toBe(formBody);
   });
 
+  it("allows the documented reset-password endpoints used by the frontend", async () => {
+    (global.fetch as jest.Mock)
+      .mockResolvedValueOnce(
+        mockFetchResponse({
+          status: 200,
+          headers: { "content-type": "application/json; charset=utf-8" },
+          body: JSON.stringify({ continuation_token: "reset-123" }),
+        })
+      )
+      .mockResolvedValueOnce(
+        mockFetchResponse({
+          status: 200,
+          headers: { "content-type": "application/json; charset=utf-8" },
+          body: JSON.stringify({ status: "complete" }),
+        })
+      );
+
+    const app = loadApp({
+      ALLOWED_ORIGINS: "https://dashboard.autoflow.test",
+      AUTH_NATIVE_AUTH_PROXY_BASE_URL: "https://auth.helloautoflow.com/tenant-guid",
+    });
+
+    const startResponse = await request(app)
+      .post("/api/auth/native/resetpassword/v1.0/start")
+      .set("Origin", "https://dashboard.autoflow.test")
+      .set("Accept", "application/json")
+      .set("Content-Type", "application/x-www-form-urlencoded")
+      .send("username=alex%40example.com");
+
+    const pollResponse = await request(app)
+      .post("/api/auth/native/resetpassword/v1.0/poll_completion")
+      .set("Origin", "https://dashboard.autoflow.test")
+      .set("Accept", "application/json")
+      .set("Content-Type", "application/x-www-form-urlencoded")
+      .send("continuation_token=reset-123");
+
+    expect(startResponse.status).toBe(200);
+    expect(startResponse.body).toEqual({ continuation_token: "reset-123" });
+    expect(pollResponse.status).toBe(200);
+    expect(pollResponse.body).toEqual({ status: "complete" });
+    expect(global.fetch).toHaveBeenCalledTimes(2);
+
+    const [startUrl] = (global.fetch as jest.Mock).mock.calls[0] as [URL, RequestInit];
+    const [pollUrl] = (global.fetch as jest.Mock).mock.calls[1] as [URL, RequestInit];
+    expect(startUrl.toString()).toBe("https://auth.helloautoflow.com/tenant-guid/resetpassword/v1.0/start");
+    expect(pollUrl.toString()).toBe(
+      "https://auth.helloautoflow.com/tenant-guid/resetpassword/v1.0/poll_completion"
+    );
+  });
+
   it("rejects requests from origins outside the configured allowlist", async () => {
     const app = loadApp({
       ALLOWED_ORIGINS: "https://dashboard.autoflow.test",

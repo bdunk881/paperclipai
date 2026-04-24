@@ -644,6 +644,117 @@ describe("Control plane APIs", () => {
     expect(listRes.body.heartbeats[0].summary).toBe("Processed the daily support queue");
   });
 
+  it("exposes deployed agents and budget snapshots for dashboard workspace pages", async () => {
+    const deployRes = await request(app)
+      .post("/api/control-plane/deployments/workflow")
+      .set(asAuth())
+      .set("X-Paperclip-Run-Id", "run-deploy-agent-dashboard")
+      .send({ templateId: "tpl-support-bot", budgetMonthlyUsd: 120 });
+
+    const teamId = deployRes.body.team.id;
+    const managerAgent = deployRes.body.agents.find(
+      (agent: { roleKey: string }) => agent.roleKey === "workflow-manager"
+    );
+    const workerAgent = deployRes.body.agents.find(
+      (agent: { roleKey: string }) => agent.roleKey !== "workflow-manager"
+    );
+
+    await request(app)
+      .post("/api/control-plane/heartbeats")
+      .set(asAuth())
+      .set("X-Paperclip-Run-Id", "run-budget-heartbeat")
+      .send({
+        teamId,
+        agentId: workerAgent.id,
+        status: "completed",
+        summary: "Processed queue",
+        costUsd: 1.42,
+      });
+
+    const agentsRes = await request(app)
+      .get("/api/agents")
+      .set(asAuth());
+
+    expect(agentsRes.status).toBe(200);
+    expect(agentsRes.body.total).toBeGreaterThan(1);
+    const listedWorker = agentsRes.body.agents.find((agent: { id: string }) => agent.id === workerAgent.id);
+    expect(listedWorker).toBeTruthy();
+    expect(listedWorker.metadata.reportingToAgentId).toBe(managerAgent.id);
+    expect(listedWorker.status).toBe("idle");
+
+    const budgetRes = await request(app)
+      .get(`/api/agents/${workerAgent.id}/budget`)
+      .set(asAuth());
+
+    expect(budgetRes.status).toBe(200);
+    expect(budgetRes.body.monthlyUsd).toBe(workerAgent.budgetMonthlyUsd);
+    expect(budgetRes.body.spentUsd).toBe(1.42);
+    expect(budgetRes.body.remainingUsd).toBeCloseTo(workerAgent.budgetMonthlyUsd - 1.42, 2);
+  });
+
+  it("returns agent heartbeat and run history for dashboard activity views", async () => {
+    const deployRes = await request(app)
+      .post("/api/control-plane/deployments/workflow")
+      .set(asAuth())
+      .set("X-Paperclip-Run-Id", "run-deploy-agent-activity")
+      .send({ templateId: "tpl-support-bot" });
+
+    const teamId = deployRes.body.team.id;
+    const workerAgent = deployRes.body.agents.find(
+      (agent: { roleKey: string }) => agent.roleKey !== "workflow-manager"
+    );
+    const step = WORKFLOW_TEMPLATES.find((template) => template.id === "tpl-support-bot")!.steps.find(
+      (candidate) => candidate.kind === "llm"
+    )!;
+
+    const execution = controlPlaneStore.startAgentExecution({
+      userId: "test-user",
+      actor: "run-agent-activity-seed",
+      teamId,
+      step,
+      sourceRunId: "workflow-run-agent-1",
+      requestedAgentId: workerAgent.id,
+    }).execution;
+
+    controlPlaneStore.finalizeAgentExecution({
+      executionId: execution.id,
+      userId: "test-user",
+      status: "completed",
+      summary: "Completed the support step",
+      costUsd: 2.25,
+    });
+
+    await request(app)
+      .post("/api/control-plane/heartbeats")
+      .set(asAuth())
+      .set("X-Paperclip-Run-Id", "run-agent-heartbeat")
+      .send({
+        teamId,
+        agentId: workerAgent.id,
+        executionId: execution.id,
+        status: "running",
+        summary: "Investigating ticket backlog",
+        costUsd: 0.5,
+      });
+
+    const heartbeatRes = await request(app)
+      .get(`/api/agents/${workerAgent.id}/heartbeat`)
+      .set(asAuth());
+
+    expect(heartbeatRes.status).toBe(200);
+    expect(heartbeatRes.body.status).toBe("running");
+    expect(heartbeatRes.body.summary).toBe("Investigating ticket backlog");
+
+    const runsRes = await request(app)
+      .get(`/api/agents/${workerAgent.id}/runs`)
+      .set(asAuth());
+
+    expect(runsRes.status).toBe(200);
+    expect(runsRes.body.total).toBe(1);
+    expect(runsRes.body.runs[0].status).toBe("completed");
+    expect(runsRes.body.runs[0].summary).toBe("Completed the support step");
+  });
+
   it("lists available skills and applies runtime skill injection to agents", async () => {
     const deployRes = await request(app)
       .post("/api/control-plane/deployments/workflow")

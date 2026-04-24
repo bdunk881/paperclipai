@@ -259,10 +259,32 @@ export const controlPlaneStore = {
     return listAgentsForTeam(teamId, userId);
   },
 
+  listAllAgents(userId: string): ControlPlaneAgent[] {
+    return Array.from(agents.values())
+      .filter((agent) => agent.userId === userId)
+      .sort((left, right) => left.createdAt.localeCompare(right.createdAt));
+  },
+
+  getAgent(agentId: string, userId: string): ControlPlaneAgent | undefined {
+    return getAgentOwnedByUser(agentId, userId);
+  },
+
   listExecutions(userId: string, teamId?: string): ControlPlaneExecution[] {
     return Array.from(executions.values())
       .filter((execution) => execution.userId === userId && (!teamId || execution.teamId === teamId))
       .sort((left, right) => left.requestedAt.localeCompare(right.requestedAt));
+  },
+
+  listAgentExecutions(agentId: string, userId: string): ControlPlaneExecution[] {
+    return Array.from(executions.values())
+      .filter((execution) => execution.userId === userId && execution.agentId === agentId)
+      .sort((left, right) => left.requestedAt.localeCompare(right.requestedAt));
+  },
+
+  listAgentHeartbeats(agentId: string, userId: string): AgentHeartbeatRecord[] {
+    return Array.from(heartbeats.values())
+      .filter((heartbeat) => heartbeat.userId === userId && heartbeat.agentId === agentId)
+      .sort((left, right) => left.startedAt.localeCompare(right.startedAt));
   },
 
   deployWorkflowAsTeam(input: {

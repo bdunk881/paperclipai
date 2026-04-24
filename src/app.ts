@@ -18,7 +18,7 @@ import { llmConfigStore } from "./llmConfig/llmConfigStore";
 import { getProvider } from "./engine/llmProviders";
 import { parseFile } from "./engine/fileParser";
 import { resolveModelForTier } from "./engine/llmRouter";
-import { requireAuth, AuthenticatedRequest } from "./auth/authMiddleware";
+import { requireAuth, requireAuthOrQaBypass, AuthenticatedRequest } from "./auth/authMiddleware";
 import stripeWebhookRoutes from "./billing/stripeWebhook";
 import checkoutRoutes from "./billing/checkoutRoutes";
 import subscriptionRoutes from "./billing/subscriptionRoutes";
@@ -130,7 +130,7 @@ app.get("/api/templates/:id/sample", (req, res) => {
  * Body: { templateId, input, config? }
  * Returns the new run (status=pending) immediately; execution is async.
  */
-app.post("/api/runs", async (req, res) => {
+app.post("/api/runs", requireAuthOrQaBypass, async (req: AuthenticatedRequest, res) => {
   const { templateId, input, config } = req.body as {
     templateId?: string;
     input?: Record<string, unknown>;
@@ -150,20 +150,20 @@ app.post("/api/runs", async (req, res) => {
     return;
   }
 
-  const userId = req.headers["x-user-id"];
-  const run = await workflowEngine.startRun(template, input ?? {}, config, typeof userId === "string" ? userId : undefined);
+  const userId = req.auth?.sub;
+  const run = await workflowEngine.startRun(template, input ?? {}, config, userId);
   res.status(202).json(run);
 });
 
 /** List all runs, optionally filtered by templateId */
-app.get("/api/runs", async (req, res) => {
+app.get("/api/runs", requireAuthOrQaBypass, async (req, res) => {
   const { templateId } = req.query;
   const runs = await runStore.list(typeof templateId === "string" ? templateId : undefined);
   res.json({ runs, total: runs.length });
 });
 
 /** Get a single run by ID */
-app.get("/api/runs/:id", async (req, res) => {
+app.get("/api/runs/:id", requireAuthOrQaBypass, async (req, res) => {
   const run = await runStore.get(req.params.id);
   if (!run) {
     res.status(404).json({ error: `Run not found: ${req.params.id}` });
@@ -179,13 +179,13 @@ app.get("/api/runs/:id", async (req, res) => {
 /**
  * POST /api/runs/file
  * Multipart body: { templateId: string, file: <binary> }
- * Headers: X-User-Id (optional, forwarded to run engine)
+ * Uses the authenticated user or staging QA bypass user ID as the run owner.
  *
  * Parses the uploaded file (PDF/image/audio/text) into text content, then
  * starts a workflow run with { content, mimeType, filename } injected as input.
  * Returns the created run (status=pending).
  */
-app.post("/api/runs/file", upload.single("file"), async (req, res) => {
+app.post("/api/runs/file", requireAuthOrQaBypass, upload.single("file"), async (req: AuthenticatedRequest, res) => {
   const { templateId } = req.body as { templateId?: string };
 
   if (!templateId) {
@@ -207,7 +207,7 @@ app.post("/api/runs/file", upload.single("file"), async (req, res) => {
   }
 
   // Resolve an OpenAI key from the user's default LLM config (for vision/Whisper)
-  const userId = typeof req.headers["x-user-id"] === "string" ? req.headers["x-user-id"] : undefined;
+  const userId = req.auth?.sub;
   let openaiApiKey: string | undefined;
   if (userId) {
     const defaultConfig = llmConfigStore.getDecryptedDefault(userId);

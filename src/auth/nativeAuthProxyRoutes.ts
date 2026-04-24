@@ -53,21 +53,25 @@ function parseOriginAllowlist(value: string | undefined): Set<string> {
   );
 }
 
-function resolveFallbackCiamAuthority(): string | null {
+function resolveFallbackNativeAuthBaseUrl(): string | null {
   const tenantSubdomain = process.env.AZURE_CIAM_TENANT_SUBDOMAIN ?? process.env.AZURE_TENANT_SUBDOMAIN;
-  const tenantId = process.env.AZURE_CIAM_TENANT_ID ?? process.env.AZURE_TENANT_ID;
-  if (!tenantSubdomain?.trim() || !tenantId?.trim()) {
+  if (!tenantSubdomain?.trim()) {
     return null;
   }
 
-  return `https://${tenantSubdomain.trim()}.ciamlogin.com/${tenantId.trim()}`;
+  const normalizedSubdomain = tenantSubdomain.trim();
+  const tenantDomain =
+    process.env.AZURE_CIAM_TENANT_DOMAIN ??
+    process.env.AZURE_TENANT_DOMAIN ??
+    `${normalizedSubdomain}.onmicrosoft.com`;
+
+  return `https://${normalizedSubdomain}.ciamlogin.com/${tenantDomain.trim()}`;
 }
 
 export function resolveNativeAuthProxyBaseUrl(): string | null {
   return (
     normalizeHttpsUrl(process.env.AUTH_NATIVE_AUTH_PROXY_BASE_URL) ??
-    normalizeHttpsUrl(process.env.AZURE_CIAM_AUTHORITY) ??
-    resolveFallbackCiamAuthority()
+    resolveFallbackNativeAuthBaseUrl()
   );
 }
 
@@ -132,17 +136,18 @@ function resolveAllowedNativeAuthPath(pathValue: string | undefined): string | n
 
   switch (normalizedPath) {
     case "oauth/v2.0/initiate":
-      return "oauth/v2.0/initiate";
+    case "oauth2/v2.0/initiate":
+      return "oauth2/v2.0/initiate";
     case "oauth/v2.0/challenge":
-      return "oauth/v2.0/challenge";
+    case "oauth2/v2.0/challenge":
+      return "oauth2/v2.0/challenge";
     case "oauth/v2.0/token":
       return "oauth/v2.0/token";
     case "oauth/v2.0/introspect":
+    case "oauth2/v2.0/introspect":
       return "oauth/v2.0/introspect";
     case "oauth2/v2.0/token":
       return "oauth2/v2.0/token";
-    case "challenge/v1.0/continue":
-      return "challenge/v1.0/continue";
     case "signup/v1.0/start":
       return "signup/v1.0/start";
     case "signup/v1.0/challenge":

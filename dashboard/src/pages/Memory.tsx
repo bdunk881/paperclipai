@@ -28,6 +28,7 @@ import {
   type MemoryEntry,
   type MemoryStats,
 } from "../api/client";
+import { useAuth } from "../context/AuthContext";
 
 GlobalWorkerOptions.workerSrc = pdfWorkerSrc;
 

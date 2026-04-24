@@ -1,0 +1,114 @@
+import { Router } from "express";
+import { z } from "zod";
+import { AuthenticatedRequest } from "../auth/authMiddleware";
+import { ticketSyncService } from "./service";
+
+const router = Router();
+
+const assigneeSchema = z.object({
+  type: z.enum(["agent", "user"]),
+  id: z.string().trim().min(1),
+  role: z.enum(["primary", "collaborator"]),
+});
+
+const createConnectionSchema = z.object({
+  workspaceId: z.string().uuid(),
+  provider: z.enum(["github", "jira", "linear"]),
+  authMethod: z.enum(["oauth2_pkce", "api_key", "basic"]),
+  label: z.string().trim().min(1).max(120),
+  syncDirection: z.enum(["outbound", "inbound", "bidirectional"]).default("bidirectional"),
+  enabled: z.boolean().default(true),
+  config: z.object({
+    owner: z.string().trim().optional(),
+    repo: z.string().trim().optional(),
+    site: z.string().trim().optional(),
+    defaultProjectKey: z.string().trim().optional(),
+    defaultIssueType: z.string().trim().optional(),
+    defaultTeamId: z.string().trim().optional(),
+    defaultProjectId: z.string().trim().optional(),
+    webhookSecret: z.string().trim().optional(),
+  }).default({}),
+  fieldMapping: z.object({
+    priority: z.record(z.string()).optional(),
+    status: z.record(z.string()).optional(),
+    assignee: z.record(z.string()).optional(),
+  }).optional(),
+  defaultAssignee: assigneeSchema.optional(),
+  secrets: z.object({
+    token: z.string().trim().optional(),
+    email: z.string().trim().optional(),
+    apiToken: z.string().trim().optional(),
+  }).default({}),
+});
+
+router.get("/connections", async (req, res) => {
+  const workspaceId = typeof req.query.workspaceId === "string" ? req.query.workspaceId : "";
+  if (!workspaceId) {
+    res.status(400).json({ error: "workspaceId is required" });
+    return;
+  }
+
+  const connections = await ticketSyncService.listConnections(workspaceId);
+  res.json({ connections, total: connections.length });
+});
+
+router.post("/connections", async (req: AuthenticatedRequest, res) => {
+  const parsed = createConnectionSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Invalid request body" });
+    return;
+  }
+
+  const userId = req.auth?.sub?.trim();
+  if (!userId) {
+    res.status(401).json({ error: "Authenticated user required" });
+    return;
+  }
+
+  const connection = await ticketSyncService.createConnection({
+    userId,
+    label: parsed.data.label,
+    metadata: {
+      workspaceId: parsed.data.workspaceId,
+      provider: parsed.data.provider,
+      authMethod: parsed.data.authMethod,
+      label: parsed.data.label,
+      syncDirection: parsed.data.syncDirection,
+      enabled: parsed.data.enabled,
+      config: parsed.data.config,
+      fieldMapping: parsed.data.fieldMapping,
+      defaultAssignee: parsed.data.defaultAssignee,
+    },
+    secrets: parsed.data.secrets,
+  });
+
+  res.status(201).json(connection);
+});
+
+router.post("/connections/:id/test", async (req, res) => {
+  const connection = await ticketSyncService.health(req.params.id);
+  if (!connection) {
+    res.status(404).json({ error: "Connection not found" });
+    return;
+  }
+
+  res.json(connection);
+});
+
+router.get("/health", async (req, res) => {
+  const workspaceId = typeof req.query.workspaceId === "string" ? req.query.workspaceId : "";
+  if (!workspaceId) {
+    res.status(400).json({ error: "workspaceId is required" });
+    return;
+  }
+
+  const connections = await ticketSyncService.listConnections(workspaceId);
+  res.json({ connections, total: connections.length });
+});
+
+router.get("/tickets/:ticketId/links", async (req, res) => {
+  const links = await ticketSyncService.listLinks(req.params.ticketId);
+  res.json({ links, total: links.length });
+});
+
+export default router;

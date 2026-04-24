@@ -9,6 +9,7 @@ import {
   TicketUpdateType,
   ticketStore,
 } from "./ticketStore";
+import { ticketSyncService } from "../ticketSync/service";
 
 const router = Router();
 
@@ -156,6 +157,12 @@ router.post("/", requireRunId, async (req: AuthenticatedRequest, res) => {
     assignees: parsed.assignees,
   });
 
+  await ticketSyncService.syncTicketCreated(aggregate.ticket, {
+    actorType: actor.type,
+    actorId: actor.id,
+    actorLabel: actor.id,
+  });
+
   res.status(201).json(aggregate);
 });
 
@@ -293,6 +300,17 @@ router.post("/:id/updates", requireRunId, async (req: AuthenticatedRequest, res)
     return;
   }
 
+  if (update.type === "comment") {
+    const aggregate = await ticketStore.get(req.params.id);
+    if (aggregate) {
+      await ticketSyncService.syncTicketComment(aggregate.ticket, update, {
+        actorType: actor.type,
+        actorId: actor.id,
+        actorLabel: actor.id,
+      });
+    }
+  }
+
   res.status(201).json({ update });
 });
 
@@ -329,6 +347,15 @@ router.post("/:id/transitions", requireRunId, async (req: AuthenticatedRequest, 
     res.status(409).json({ error: "Invalid ticket state transition" });
     return;
   }
+
+  if (result.aggregate) {
+    await ticketSyncService.syncTicketUpdated(result.aggregate.ticket, {
+      actorType: actor.type,
+      actorId: actor.id,
+      actorLabel: actor.id,
+    });
+  }
+
   res.json({
     ...result.aggregate,
     relevantMemories: result.relevantMemories ?? [],

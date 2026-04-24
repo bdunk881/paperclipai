@@ -12,7 +12,14 @@ export async function runApprovalResumeSweep(): Promise<{
   skippedPending: number;
   skippedMissingSnapshot: number;
 }> {
-  const runs = await runStore.list();
+  let runs;
+  try {
+    runs = await runStore.list();
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.warn("[approval] Resume sweep skipped:", msg);
+    return { scanned: 0, resumed: 0, skippedPending: 0, skippedMissingSnapshot: 0 };
+  }
   const awaitingRuns = runs.filter((run) => run.status === "awaiting_approval");
 
   let resumed = 0;

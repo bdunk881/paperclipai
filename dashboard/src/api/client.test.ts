@@ -82,9 +82,17 @@ function lastFetchOptions(): RequestInit {
 // ---------------------------------------------------------------------------
 
 beforeEach(() => {
+  vi.unstubAllEnvs();
   vi.restoreAllMocks();
   vi.spyOn(authStorage, "readStoredAuthUser").mockReturnValue(null);
 });
+
+async function importClientWithMockMode() {
+  vi.resetModules();
+  vi.stubEnv("VITE_USE_MOCK", "true");
+  vi.stubGlobal("fetch", vi.fn());
+  return import("./client");
+}
 
 const sampleSummary: TemplateSummary = {
   id: "tpl-support-bot",
@@ -153,6 +161,13 @@ describe("listTemplates", () => {
     const result = await listTemplates();
     expect(result).toHaveLength(2);
   });
+
+  it("returns mock templates without calling fetch when VITE_USE_MOCK=true", async () => {
+    const client = await importClientWithMockMode();
+    const result = await client.listTemplates();
+    expect(result.map((template) => template.id)).toContain("tpl-support-bot");
+    expect(vi.mocked(fetch as unknown as ReturnType<typeof vi.fn>)).not.toHaveBeenCalled();
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -187,6 +202,13 @@ describe("getTemplate", () => {
     mockFetch(tpl);
     const result = await getTemplate("tpl-support-bot");
     expect(result.id).toBe("tpl-support-bot");
+  });
+
+  it("returns a mock template without calling fetch when VITE_USE_MOCK=true", async () => {
+    const client = await importClientWithMockMode();
+    const result = await client.getTemplate("tpl-support-bot");
+    expect(result.name).toBe("Customer Support Bot");
+    expect(vi.mocked(fetch as unknown as ReturnType<typeof vi.fn>)).not.toHaveBeenCalled();
   });
 });
 
@@ -243,6 +265,13 @@ describe("listRuns", () => {
     const result = await listRuns();
     expect(result).toHaveLength(2);
   });
+
+  it("returns mock runs without calling fetch when VITE_USE_MOCK=true", async () => {
+    const client = await importClientWithMockMode();
+    const result = await client.listRuns("tpl-support-bot");
+    expect(result.every((run) => run.templateId === "tpl-support-bot")).toBe(true);
+    expect(vi.mocked(fetch as unknown as ReturnType<typeof vi.fn>)).not.toHaveBeenCalled();
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -266,6 +295,30 @@ describe("getRun", () => {
     const result = await getRun("run-001");
     expect(result.id).toBe("run-001");
     expect(result.status).toBe("completed");
+  });
+
+  it("returns a mock run without calling fetch when VITE_USE_MOCK=true", async () => {
+    const client = await importClientWithMockMode();
+    const result = await client.getRun("run-001");
+    expect(result.id).toBe("run-001");
+    expect(vi.mocked(fetch as unknown as ReturnType<typeof vi.fn>)).not.toHaveBeenCalled();
+  });
+});
+
+describe("mock workflow actions", () => {
+  it("starts a mock run without calling fetch when VITE_USE_MOCK=true", async () => {
+    const client = await importClientWithMockMode();
+    const result = await client.startRun("tpl-support-bot", { subject: "Billing issue" });
+    expect(result.templateId).toBe("tpl-support-bot");
+    expect(result.status).toBe("running");
+    expect(vi.mocked(fetch as unknown as ReturnType<typeof vi.fn>)).not.toHaveBeenCalled();
+  });
+
+  it("returns mock LLM configs without calling fetch when VITE_USE_MOCK=true", async () => {
+    const client = await importClientWithMockMode();
+    const result = await client.listLLMConfigs("token-123");
+    expect(result[0]?.label).toBe("OpenAI Default");
+    expect(vi.mocked(fetch as unknown as ReturnType<typeof vi.fn>)).not.toHaveBeenCalled();
   });
 });
 

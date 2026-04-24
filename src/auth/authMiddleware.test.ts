@@ -172,8 +172,12 @@ describe("requireAuth", () => {
     const [, keyResolver, options] = verifyMock.mock.calls[0];
     expect(typeof keyResolver).toBe("function");
     expect(options).toMatchObject({
-      audience: "legacy-client",
-      issuer: "https://legacyciam.ciamlogin.com/legacy-tenant/v2.0",
+      audience: expect.arrayContaining([
+        "legacy-client",
+        "2dfd3a08-277c-4893-b07d-eca5ae322310",
+        "d36ce552-1a3d-4cd3-b851-beff4e3bf440",
+      ]),
+      issuer: ["https://legacyciam.ciamlogin.com/legacy-tenant/v2.0"],
       algorithms: ["RS256"],
     });
     keyResolver({ kid: "legacy-kid" }, jest.fn());
@@ -205,8 +209,8 @@ describe("requireAuth", () => {
 
     const [, , options] = verifyMock.mock.calls[0];
     expect(options).toMatchObject({
-      audience: "new-client",
-      issuer: "https://newciam.ciamlogin.com/new-tenant/v2.0",
+      audience: expect.arrayContaining(["new-client"]),
+      issuer: ["https://newciam.ciamlogin.com/new-tenant/v2.0"],
     });
     const [, keyResolver] = verifyMock.mock.calls[0];
     keyResolver({ kid: "new-kid" }, jest.fn());
@@ -215,5 +219,62 @@ describe("requireAuth", () => {
         jwksUri: "https://newciam.ciamlogin.com/new-tenant/discovery/v2.0/keys",
       })
     );
+  });
+
+  it("supports branded CIAM authorities while keeping tenant subdomain issuer fallback", () => {
+    process.env.AZURE_CIAM_AUTHORITY = "https://auth.helloautoflow.com/tenant-guid";
+    process.env.AZURE_CIAM_TENANT_SUBDOMAIN = "autoflowciam";
+    process.env.AZURE_CIAM_TENANT_ID = "tenant-guid";
+    process.env.AZURE_CIAM_CLIENT_ID = "custom-client";
+
+    const requireAuth = loadRequireAuth();
+    const req = {
+      headers: { authorization: "Bearer branded-token" },
+      originalUrl: "/api/me",
+      path: "/api/me",
+    } as unknown as AuthenticatedRequest;
+    const res = createResponse();
+
+    requireAuth(req, res as never, jest.fn());
+
+    const [, keyResolver, options] = verifyMock.mock.calls[0];
+    expect(options).toMatchObject({
+      audience: expect.arrayContaining(["custom-client"]),
+      issuer: [
+        "https://auth.helloautoflow.com/tenant-guid/v2.0",
+        "https://autoflowciam.ciamlogin.com/tenant-guid/v2.0",
+      ],
+      algorithms: ["RS256"],
+    });
+    keyResolver({ kid: "brand-kid" }, jest.fn());
+    expect(jwksClientMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        jwksUri: "https://auth.helloautoflow.com/tenant-guid/discovery/v2.0/keys",
+      })
+    );
+  });
+
+  it("accepts explicit audience allowlists for rotated app registrations", () => {
+    process.env.AZURE_CIAM_TENANT_SUBDOMAIN = "newciam";
+    process.env.AZURE_CIAM_TENANT_ID = "tenant-guid";
+    process.env.AZURE_CIAM_ALLOWED_AUDIENCES = "new-client,legacy-client";
+    delete process.env.AZURE_CIAM_CLIENT_ID;
+    delete process.env.AZURE_CLIENT_ID;
+
+    const requireAuth = loadRequireAuth();
+    const req = {
+      headers: { authorization: "Bearer rotated-token" },
+      originalUrl: "/api/me",
+      path: "/api/me",
+    } as unknown as AuthenticatedRequest;
+    const res = createResponse();
+
+    requireAuth(req, res as never, jest.fn());
+
+    const [, , options] = verifyMock.mock.calls[0];
+    expect(options).toMatchObject({
+      audience: expect.arrayContaining(["new-client", "legacy-client"]),
+      issuer: ["https://newciam.ciamlogin.com/tenant-guid/v2.0"],
+    });
   });
 });

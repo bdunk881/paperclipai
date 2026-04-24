@@ -1,21 +1,16 @@
 import React, { createContext, useContext } from "react";
 import {
-  useMsal,
-  useIsAuthenticated,
-  useAccount,
-} from "@azure/msal-react";
-import {
-  InteractionRequiredAuthError,
-  ClientConfigurationError,
-  AccountInfo,
-} from "@azure/msal-browser";
-import { loginRequest, signupRequest } from "../auth/msalConfig";
-import {
-  StoredAuthUser,
   AUTH_STORAGE_EVENT,
-  clearStoredAuthUser,
+  StoredAuthSession,
+  StoredAuthUser,
+  clearStoredAuthSession,
+  getInMemoryRefreshToken,
+  readStoredAuthSession,
   readStoredAuthUser,
+  setInMemoryRefreshToken,
+  writeStoredAuthSession,
 } from "../auth/authStorage";
+import { isSessionExpiring, refreshNativeAuthSession, sessionFromTokenResponse } from "../auth/nativeAuthClient";
 
 export interface User {
   id: string;
@@ -26,28 +21,14 @@ export interface User {
 
 interface AuthContextValue {
   user: User | null;
-  login: () => Promise<void>;
-  signup: () => Promise<void>;
   logout: () => void;
   getAccessToken: () => Promise<string | null>;
   requireAccessToken: () => Promise<string>;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
-const USE_MOCK_AUTH = import.meta.env.VITE_USE_MOCK === "true";
 
-function accountToUser(account: AccountInfo): User {
-  return {
-    id: account.homeAccountId,
-    email:
-      (account.idTokenClaims as Record<string, string> | undefined)?.email ??
-      account.username,
-    name: account.name ?? account.username,
-    tenantId: account.tenantId,
-  };
-}
-
-function storedUserToUser(user: StoredAuthUser): User {
+function userFromStoredUser(user: StoredAuthUser): User {
   return {
     id: user.id,
     email: user.email,
@@ -56,97 +37,92 @@ function storedUserToUser(user: StoredAuthUser): User {
   };
 }
 
+function sessionUser(session: StoredAuthSession | null, storedUser: StoredAuthUser | null): User | null {
+  if (session?.user) {
+    return userFromStoredUser(session.user);
+  }
+
+  if (storedUser) {
+    return userFromStoredUser(storedUser);
+  }
+
+  return null;
+}
+
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const { instance, accounts } = useMsal();
-  const isAuthenticated = useIsAuthenticated();
-  const account = useAccount(accounts[0] ?? null);
+  const [storedSession, setStoredSession] = React.useState<StoredAuthSession | null>(() => readStoredAuthSession());
   const [storedUser, setStoredUser] = React.useState<StoredAuthUser | null>(() => readStoredAuthUser());
-  const resolvedAccount = account ?? accounts[0] ?? instance.getActiveAccount?.() ?? null;
-  const mockAccessToken = storedUser ? `mock-access-token:${storedUser.id}` : null;
 
   React.useEffect(() => {
-    const syncStoredUser = () => setStoredUser(readStoredAuthUser());
+    const syncAuthState = () => {
+      setStoredSession(readStoredAuthSession());
+      setStoredUser(readStoredAuthUser());
+    };
 
-    window.addEventListener("storage", syncStoredUser);
-    window.addEventListener(AUTH_STORAGE_EVENT, syncStoredUser);
+    window.addEventListener("storage", syncAuthState);
+    window.addEventListener(AUTH_STORAGE_EVENT, syncAuthState);
 
     return () => {
-      window.removeEventListener("storage", syncStoredUser);
-      window.removeEventListener(AUTH_STORAGE_EVENT, syncStoredUser);
+      window.removeEventListener("storage", syncAuthState);
+      window.removeEventListener(AUTH_STORAGE_EVENT, syncAuthState);
     };
   }, []);
 
-  const user = isAuthenticated || resolvedAccount
-    ? resolvedAccount
-      ? accountToUser(resolvedAccount)
-      : storedUser
-        ? storedUserToUser(storedUser)
-        : null
-    : storedUser
-      ? storedUserToUser(storedUser)
-      : null;
+  const user = sessionUser(storedSession, storedUser);
 
-  const login = async () => {
-    await instance.loginRedirect(loginRequest);
-  };
+  const logout = React.useCallback(() => {
+    clearStoredAuthSession();
+    setStoredSession(null);
+    setStoredUser(null);
+  }, []);
 
-  const signup = async () => {
-    await instance.loginRedirect(signupRequest);
-  };
+  const getAccessToken = React.useCallback(async (): Promise<string | null> => {
+    const latestSession = readStoredAuthSession();
 
-  const logout = () => {
-    clearStoredAuthUser();
-    if (!isAuthenticated || !resolvedAccount) {
-      return;
-    }
-    instance.logoutRedirect({ postLogoutRedirectUri: "/login" });
-  };
-
-  // Silently acquire a fresh access token; falls back to interactive redirect.
-  const getAccessToken = async (): Promise<string | null> => {
-    if (USE_MOCK_AUTH && mockAccessToken) {
-      return mockAccessToken;
-    }
-    if (!resolvedAccount) return null;
-    try {
-      const result = await instance.acquireTokenSilent({
-        ...loginRequest,
-        account: resolvedAccount,
-      });
-      return result.accessToken;
-    } catch (err) {
-      if (err instanceof InteractionRequiredAuthError) {
-        await instance.acquireTokenRedirect({ ...loginRequest, account: resolvedAccount });
-        return null;
-      }
-      // Authority mismatch (e.g. cached tokens from old ciamlogin.com authority
-      // after switching to branded auth.helloautoflow.com domain) — clear stale
-      // MSAL cache and redirect to fresh login under the current authority.
-      if (
-        err instanceof ClientConfigurationError ||
-        (err instanceof Error && "errorCode" in err && (err as { errorCode: string }).errorCode === "authority_mismatch")
-      ) {
-        clearStoredAuthUser();
-        Object.keys(localStorage)
-          .filter((key) => key.startsWith("msal."))
-          .forEach((key) => localStorage.removeItem(key));
-        await instance.loginRedirect(loginRequest);
-        return null;
-      }
+    if (!latestSession) {
       return null;
     }
-  };
 
-  const requireAccessToken = async (): Promise<string> => {
+    if (!isSessionExpiring(latestSession)) {
+      if (latestSession !== storedSession) {
+        setStoredSession(latestSession);
+      }
+      return latestSession.accessToken;
+    }
+
+    const refreshToken = latestSession.refreshToken ?? getInMemoryRefreshToken();
+    if (!refreshToken) {
+      clearStoredAuthSession();
+      setInMemoryRefreshToken(undefined);
+      setStoredSession(null);
+      setStoredUser(null);
+      return null;
+    }
+
+    try {
+      const refreshed = sessionFromTokenResponse(await refreshNativeAuthSession(refreshToken));
+      writeStoredAuthSession(refreshed);
+      setStoredSession(refreshed);
+      setStoredUser(refreshed.user);
+      return refreshed.accessToken;
+    } catch {
+      clearStoredAuthSession();
+      setStoredSession(null);
+      setStoredUser(null);
+      return null;
+    }
+  }, [storedSession]);
+
+  const requireAccessToken = React.useCallback(async (): Promise<string> => {
     const accessToken = await getAccessToken();
     if (!accessToken) {
       throw new Error("Authentication session expired. Sign in again to continue.");
     }
     return accessToken;
-  };
+  }, [getAccessToken]);
 
   return (
-    <AuthContext.Provider value={{ user, login, signup, logout, getAccessToken, requireAccessToken }}>
+    <AuthContext.Provider value={{ user, logout, getAccessToken, requireAccessToken }}>
       {children}
     </AuthContext.Provider>
   );

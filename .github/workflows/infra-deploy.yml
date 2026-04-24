@@ -43,7 +43,7 @@ jobs:
       run:
         working-directory: infra/azure
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Login to Azure (OIDC)
         uses: azure/login@v2
@@ -92,7 +92,7 @@ jobs:
     if: ${{ inputs.action == 'apply' }}
     environment: production
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Login to Azure (OIDC)
         uses: azure/login@v2

@@ -2,7 +2,7 @@ import { RequestHandler, Response, Router } from "express";
 import { AuthenticatedRequest } from "../auth/authMiddleware";
 import { subscriptionStore } from "../billing/subscriptionStore";
 import { llmConfigStore } from "../llmConfig/llmConfigStore";
-import { agentMemoryStore, AgentMemoryScope, AgentMemoryTier } from "./agentMemoryStore";
+import { agentMemoryStore, AgentMemoryEntryType, AgentMemoryScope, AgentMemoryTier } from "./agentMemoryStore";
 
 const router = Router({ mergeParams: true });
 const GIGABYTE = 1024 * 1024 * 1024;
@@ -101,6 +101,26 @@ function parseScope(value: unknown): AgentMemoryScope | null {
     return value;
   }
   return null;
+}
+
+function parseEntryType(value: unknown): AgentMemoryEntryType | undefined {
+  if (value === "ticket_close") {
+    return "ticket_close";
+  }
+  if (value === "generic") {
+    return "generic";
+  }
+  return undefined;
+}
+
+function parseStringArray(value: unknown): string[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value
+    .map((entry) => (typeof entry === "string" ? entry.trim() : ""))
+    .filter(Boolean);
 }
 
 function rejectUnavailableTier(tier: AgentMemoryTier, res: Response, feature: string): boolean {
@@ -221,6 +241,127 @@ router.post("/", requireRunId, async (req: AuthenticatedRequest, res) => {
   res.status(201).json({ tier, entry });
 });
 
+router.post("/ticket-close", requireRunId, async (req: AuthenticatedRequest, res) => {
+  const userId = resolveUserId(req);
+  const agentId = resolveAgentId(req);
+  if (!userId || !agentId) {
+    res.status(401).json({ error: "Authenticated user and agentId are required" });
+    return;
+  }
+
+  const tier = resolveMemoryTier(userId);
+  if (rejectUnavailableTier(tier, res, "Agent ticket-close memory")) {
+    return;
+  }
+
+  const {
+    ticketId,
+    ticketUrl,
+    closedAt,
+    taskSummary,
+    agentContribution,
+    keyLearnings,
+    artifactRefs,
+    tags,
+    extensionMetadata,
+    scope,
+  } = req.body as {
+    ticketId?: unknown;
+    ticketUrl?: unknown;
+    closedAt?: unknown;
+    taskSummary?: unknown;
+    agentContribution?: unknown;
+    keyLearnings?: unknown;
+    artifactRefs?: unknown;
+    tags?: unknown;
+    extensionMetadata?: unknown;
+    scope?: unknown;
+  };
+
+  if (typeof ticketId !== "string" || !ticketId.trim()) {
+    res.status(400).json({ error: "ticketId is required and must be a non-empty string" });
+    return;
+  }
+  if (typeof ticketUrl !== "string" || !ticketUrl.trim()) {
+    res.status(400).json({ error: "ticketUrl is required and must be a non-empty string" });
+    return;
+  }
+  if (typeof closedAt !== "string" || !closedAt.trim()) {
+    res.status(400).json({ error: "closedAt is required and must be a non-empty string" });
+    return;
+  }
+  if (typeof taskSummary !== "string" || !taskSummary.trim()) {
+    res.status(400).json({ error: "taskSummary is required and must be a non-empty string" });
+    return;
+  }
+  if (typeof agentContribution !== "string" || !agentContribution.trim()) {
+    res.status(400).json({ error: "agentContribution is required and must be a non-empty string" });
+    return;
+  }
+  if (typeof keyLearnings !== "string" || !keyLearnings.trim()) {
+    res.status(400).json({ error: "keyLearnings is required and must be a non-empty string" });
+    return;
+  }
+
+  const parsedScope = parseScope(scope);
+  if (!parsedScope) {
+    res.status(400).json({ error: "scope must be either 'private' or 'shared'" });
+    return;
+  }
+  if (parsedScope === "shared" && rejectSharedFeature(tier, res)) {
+    return;
+  }
+
+  const storageLimit = TIER_POLICY[tier].storageBytes;
+  if (storageLimit !== null) {
+    const approximateUsage = await agentMemoryStore.getApproximateMemoryUsageBytes(userId);
+    const incomingBytes =
+      ticketId.trim().length +
+      ticketUrl.trim().length +
+      closedAt.trim().length +
+      taskSummary.trim().length +
+      agentContribution.trim().length +
+      keyLearnings.trim().length +
+      JSON.stringify(parseStringArray(artifactRefs)).length +
+      JSON.stringify(parseStringArray(tags)).length +
+      JSON.stringify(
+        extensionMetadata && typeof extensionMetadata === "object" && !Array.isArray(extensionMetadata)
+          ? extensionMetadata
+          : {}
+      ).length;
+    if (approximateUsage + incomingBytes > storageLimit) {
+      res.status(403).json({
+        error: `Agent Memory capacity exceeded for the ${tier} tier`,
+        tier,
+      });
+      return;
+    }
+  }
+
+  const entry = await agentMemoryStore.createTicketCloseEntry({
+    userId,
+    agentId,
+    runId: req.header("X-Paperclip-Run-Id") as string,
+    scope: parsedScope,
+    ticketId: ticketId.trim(),
+    ticketUrl: ticketUrl.trim(),
+    closedAt: closedAt.trim(),
+    taskSummary: taskSummary.trim(),
+    agentContribution: agentContribution.trim(),
+    keyLearnings: keyLearnings.trim(),
+    artifactRefs: parseStringArray(artifactRefs),
+    tags: parseStringArray(tags),
+    extensionMetadata:
+      extensionMetadata && typeof extensionMetadata === "object" && !Array.isArray(extensionMetadata)
+        ? extensionMetadata as Record<string, unknown>
+        : undefined,
+    tier,
+    openAiApiKey: await resolveOpenAiKey(userId),
+  });
+
+  res.status(201).json({ tier, entry });
+});
+
 router.get("/search", async (req: AuthenticatedRequest, res) => {
   const userId = resolveUserId(req);
   const agentId = resolveAgentId(req);
@@ -249,12 +390,21 @@ router.get("/search", async (req: AuthenticatedRequest, res) => {
 
   const query = typeof req.query.q === "string" ? req.query.q : "";
   const limit = typeof req.query.limit === "string" ? parseInt(req.query.limit, 10) : undefined;
+  const entryType = parseEntryType(req.query.entryType);
+  const ticketId = typeof req.query.ticketId === "string" ? req.query.ticketId.trim() : undefined;
+  const tags =
+    typeof req.query.tags === "string"
+      ? req.query.tags.split(",").map((tag) => tag.trim()).filter(Boolean)
+      : undefined;
   const results = await agentMemoryStore.searchEntries({
     userId,
     agentId,
     query,
     includeShared,
     limit,
+    entryType,
+    ticketId,
+    tags,
     openAiApiKey: await resolveOpenAiKey(userId),
   });
 

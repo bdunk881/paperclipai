@@ -648,5 +648,3 @@ describe("approvals APIs", () => {
     await expect(resolveApproval("approval_1", "rejected", ACCESS_TOKEN)).rejects.toThrow(/Decision is required/);
   });
 });
-  });
-});

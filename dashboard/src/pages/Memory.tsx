@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useAuth } from "../context/AuthContext";
 import clsx from "clsx";
 import {
   AlertCircle,

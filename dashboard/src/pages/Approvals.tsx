@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { Link } from "react-router-dom";
 import {
   CheckCircle,
@@ -64,7 +64,7 @@ export default function Approvals() {
   const [lastRefreshed, setLastRefreshed] = useState(new Date());
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  async function fetchApprovals() {
+  const fetchApprovals = useCallback(async () => {
     try {
       const accessToken = await requireAccessToken();
       const data = await listApprovals(accessToken);
@@ -76,7 +76,7 @@ export default function Approvals() {
     } finally {
       setLoading(false);
     }
-  }
+  }, [requireAccessToken]);
 
   useEffect(() => {
     fetchApprovals();
@@ -84,7 +84,7 @@ export default function Approvals() {
     return () => {
       if (intervalRef.current) clearInterval(intervalRef.current);
     };
-  }, []);
+  }, [fetchApprovals]);
 
   function handleResolved(id: string, decision: "approved" | "rejected") {
     setApprovals((prev) =>

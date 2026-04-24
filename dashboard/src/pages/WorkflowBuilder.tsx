@@ -428,7 +428,7 @@ export default function WorkflowBuilder() {
   const navigate = useNavigate();
   const location = useLocation();
   const { theme } = useTheme();
-  const { requireAccessToken } = useAuth();
+  const { requireAccessToken, getAccessToken } = useAuth();
   const incomingState = location.state as BuilderLocationState;
 
   const [template, setTemplate] = useState<WorkflowTemplate>(BLANK_TEMPLATE);

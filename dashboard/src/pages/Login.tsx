@@ -69,10 +69,16 @@ function mapNativeAuthError(error: unknown): string {
     return "Too many attempts. Wait a moment before trying again.";
   }
 
-  if (normalized.includes("user") && normalized.includes("not")) {
+  if (error.code === "user_not_found" || normalized.includes("user_not_found") || normalized.includes("user not found")) {
     return "We couldn’t find an account for that email address.";
   }
 
+  if (error.code === "unsupported_challenge_type") {
+    return "This sign-in method is not supported. Contact your administrator.";
+  }
+
+  // Surface the actual Azure error for unrecognized codes so they can be diagnosed.
+  console.warn("[NativeAuth] Unhandled error:", error.code, error.description ?? error.message);
   return error.description ?? error.message;
 }
 

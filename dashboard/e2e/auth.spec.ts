@@ -27,17 +27,17 @@ test("unauthenticated user visiting /builder is redirected to /login", async ({ 
 
 test("login page renders AutoFlow sign-in CTA", async ({ page }) => {
   await page.goto("/login");
-  await expect(page.getByRole("button", { name: /^sign in$/i })).toBeVisible();
+  await expect(page.locator("form").getByRole("button", { name: /^sign in$/i })).toBeVisible();
 });
 
-test("sign-in button transitions to redirecting state when clicked", async ({ page }) => {
+test("sign-in button validates required credentials when clicked empty", async ({ page }) => {
   await page.goto("/login");
 
-  const signInButton = page.getByRole("button", { name: /^sign in$/i });
+  const signInButton = page.locator("form").getByRole("button", { name: /^sign in$/i });
   await expect(signInButton).toBeVisible();
   await signInButton.click();
 
-  await expect(page.getByRole("button", { name: /redirecting/i })).toBeDisabled();
+  await expect(page.getByText(/enter both your email and password\./i)).toBeVisible();
 });
 
 // ---------------------------------------------------------------------------

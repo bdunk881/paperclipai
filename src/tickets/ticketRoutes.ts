@@ -32,6 +32,7 @@ const assigneeSchema = z.object({
 
 const createTicketSchema = z.object({
   workspaceId: z.string().uuid(),
+  parentId: z.string().uuid().optional(),
   title: z.string().trim().min(1).max(200),
   description: z.string().max(10000).optional(),
   priority: ticketPrioritySchema.optional(),
@@ -179,6 +180,7 @@ router.post("/", requireRunId, async (req: AuthenticatedRequest, res) => {
 
   const aggregate = await ticketStore.create({
     workspaceId: parsed.workspaceId,
+    parentId: parsed.parentId,
     title: parsed.title,
     description: parsed.description,
     creatorId: actor.id,
@@ -330,6 +332,17 @@ router.get("/:id/activity", async (req, res) => {
   }
 
   res.json({ updates: activity, total: activity.length });
+});
+
+router.get("/:id/children", async (req, res) => {
+  const aggregate = await ticketStore.get(req.params.id);
+  if (!aggregate) {
+    res.status(404).json({ error: "Ticket not found" });
+    return;
+  }
+
+  const tickets = await ticketStore.listChildren(req.params.id);
+  res.json({ tickets, total: tickets.length });
 });
 
 router.get("/:id", async (req, res) => {

@@ -317,6 +317,117 @@ describe("ticket routes", () => {
     expect(creatorNotifications.body.notifications.some((notification: { kind: string }) => notification.kind === "assignment")).toBe(true);
   });
 
+  it("persists child ticket links and mirrors child activity onto the parent", async () => {
+    const app = buildTestApp();
+    const parent = await request(app)
+      .post("/api/tickets")
+      .set(auth("creator-1"))
+      .set("X-Paperclip-Run-Id", "run-ticket-parent-create")
+      .send({
+        workspaceId: "11111111-1111-4111-8111-111111111111",
+        title: "Parent ticket",
+        assignees: [{ type: "agent", id: "backend-agent", role: "primary" }],
+      });
+
+    const child = await request(app)
+      .post("/api/tickets")
+      .set(auth("creator-1"))
+      .set("X-Paperclip-Run-Id", "run-ticket-child-create")
+      .send({
+        workspaceId: "11111111-1111-4111-8111-111111111111",
+        parentId: parent.body.ticket.id,
+        title: "Child ticket",
+        assignees: [{ type: "agent", id: "backend-agent", role: "primary" }],
+      });
+
+    expect(child.status).toBe(201);
+    expect(child.body.ticket.parentId).toBe(parent.body.ticket.id);
+
+    const children = await request(app)
+      .get(`/api/tickets/${parent.body.ticket.id}/children`)
+      .set(auth("creator-1"));
+
+    expect(children.status).toBe(200);
+    expect(children.body.total).toBe(1);
+    expect(children.body.tickets[0].id).toBe(child.body.ticket.id);
+
+    await request(app)
+      .post(`/api/tickets/${child.body.ticket.id}/transitions`)
+      .set(auth("backend-agent"))
+      .set("X-Paperclip-Run-Id", "run-ticket-child-progress")
+      .send({ status: "in_progress", actorType: "agent" });
+
+    const parentActivity = await request(app)
+      .get(`/api/tickets/${parent.body.ticket.id}/activity`)
+      .set(auth("creator-1"));
+
+    expect(parentActivity.status).toBe(200);
+    expect(parentActivity.body.updates.some((update: { metadata: Record<string, unknown> }) =>
+      update.metadata.event === "child_ticket_created" &&
+      update.metadata.childTicketId === child.body.ticket.id,
+    )).toBe(true);
+    expect(parentActivity.body.updates.some((update: { metadata: Record<string, unknown> }) =>
+      update.metadata.event === "child_ticket_status_changed" &&
+      update.metadata.childTicketId === child.body.ticket.id &&
+      update.metadata.toStatus === "in_progress",
+    )).toBe(true);
+  });
+
+  it("writes ready-to-close audit updates for collaborator requests and primary decisions", async () => {
+    const app = buildTestApp();
+    const created = await request(app)
+      .post("/api/tickets")
+      .set(auth("creator-1"))
+      .set("X-Paperclip-Run-Id", "run-ticket-ready-create")
+      .send({
+        workspaceId: "11111111-1111-4111-8111-111111111111",
+        title: "Ready to close coverage",
+        assignees: [
+          { type: "agent", id: "backend-agent", role: "primary" },
+          { type: "user", id: "creator-1", role: "collaborator" },
+        ],
+      });
+
+    const requested = await request(app)
+      .post(`/api/tickets/${created.body.ticket.id}/updates`)
+      .set(auth("creator-1"))
+      .set("X-Paperclip-Run-Id", "run-ticket-ready-request")
+      .send({
+        type: "comment",
+        content: "Work looks complete to me.",
+        actorType: "user",
+        metadata: { readyToClose: true },
+      });
+
+    expect(requested.status).toBe(201);
+
+    const approved = await request(app)
+      .post(`/api/tickets/${created.body.ticket.id}/updates`)
+      .set(auth("backend-agent"))
+      .set("X-Paperclip-Run-Id", "run-ticket-ready-approve")
+      .send({
+        type: "structured_update",
+        content: "Confirmed close readiness.",
+        actorType: "agent",
+        metadata: { readyToCloseDecision: "approved" },
+      });
+
+    expect(approved.status).toBe(201);
+
+    const ticket = await request(app)
+      .get(`/api/tickets/${created.body.ticket.id}`)
+      .set(auth("creator-1"));
+
+    expect(ticket.status).toBe(200);
+    expect(ticket.body.updates.some((update: { metadata: Record<string, unknown> }) =>
+      update.metadata.event === "ready_to_close_requested",
+    )).toBe(true);
+    expect(ticket.body.updates.some((update: { metadata: Record<string, unknown> }) =>
+      update.metadata.event === "ready_to_close_approved" &&
+      update.metadata.decision === "approved",
+    )).toBe(true);
+  });
+
   it("evaluates SLA state, breaches tickets, and applies escalation rules", async () => {
     const app = buildTestApp();
 

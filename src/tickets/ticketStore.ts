@@ -47,6 +47,7 @@ export interface TicketUpdate {
 export interface TicketRecord {
   id: string;
   workspaceId: string;
+  parentId?: string;
   title: string;
   description: string;
   creatorId: string;
@@ -120,6 +121,7 @@ interface PendingTicketCloseMemoryWrite {
 interface TicketRow {
   id: string;
   workspace_id: string;
+  parent_id: string | null;
   title: string;
   description: string;
   creator_id: string;
@@ -198,6 +200,7 @@ function mapTicketRow(row: TicketRow): TicketRecord {
   return {
     id: row.id,
     workspaceId: row.workspace_id,
+    parentId: row.parent_id ?? undefined,
     title: row.title,
     description: row.description,
     creatorId: row.creator_id,
@@ -288,6 +291,23 @@ async function resolveOpenAiKey(userId: string): Promise<string | undefined> {
 
 function buildTicketUrl(ticket: TicketRecord): string {
   return `/tickets/${ticket.id}`;
+}
+
+function isSameActor(left: TicketActorRef, right: TicketActorRef): boolean {
+  return left.type === right.type && left.id === right.id;
+}
+
+function isPrimaryActor(ticket: TicketRecord, actor: TicketActorRef): boolean {
+  const primary = getPrimaryAssignee(ticket);
+  return !!primary && isSameActor(primary, actor);
+}
+
+function readyToCloseDecision(metadata: Record<string, unknown>): "approved" | "rejected" | undefined {
+  const value = metadata["readyToCloseDecision"];
+  if (value === "approved" || value === "rejected") {
+    return value;
+  }
+  return undefined;
 }
 
 function summarizeAgentContribution(ticketId: string, agentId: string, updates: TicketUpdate[]): string {
@@ -712,6 +732,37 @@ function getPrimaryAssignee(ticket: TicketRecord): TicketAssignee | undefined {
   return ticket.assignees.find((assignee) => assignee.role === "primary");
 }
 
+async function appendChildActivityToParent(input: {
+  parentId?: string;
+  actor: TicketActorRef;
+  content: string;
+  metadata: Record<string, unknown>;
+}): Promise<void> {
+  if (!input.parentId) {
+    return;
+  }
+
+  const parentAggregate = await ticketStore.get(input.parentId);
+  if (!parentAggregate) {
+    return;
+  }
+
+  const update = buildStructuredUpdate({
+    ticketId: parentAggregate.ticket.id,
+    actor: input.actor,
+    content: input.content,
+    metadata: input.metadata,
+  });
+
+  await persistAggregate({
+    ticket: {
+      ...parentAggregate.ticket,
+      updatedAt: new Date().toISOString(),
+    },
+    updates: [...parentAggregate.updates.map(cloneUpdate), update],
+  });
+}
+
 async function persistAggregate(aggregate: TicketAggregate): Promise<void> {
   if (!isPostgresPersistenceEnabled()) {
     memoryTickets.set(aggregate.ticket.id, cloneTicket(aggregate.ticket));
@@ -730,12 +781,13 @@ async function persistAggregate(aggregate: TicketAggregate): Promise<void> {
     await client.query(
       `
         INSERT INTO tickets (
-          id, workspace_id, title, description, creator_id, status, priority,
+          id, workspace_id, parent_id, title, description, creator_id, status, priority,
           sla_state, due_date, resolved_at, tags_json, created_at, updated_at
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::jsonb, $12, $13)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12::jsonb, $13, $14)
         ON CONFLICT (id) DO UPDATE
-        SET title = EXCLUDED.title,
+        SET parent_id = EXCLUDED.parent_id,
+            title = EXCLUDED.title,
             description = EXCLUDED.description,
             status = EXCLUDED.status,
             priority = EXCLUDED.priority,
@@ -748,6 +800,7 @@ async function persistAggregate(aggregate: TicketAggregate): Promise<void> {
       [
         aggregate.ticket.id,
         aggregate.ticket.workspaceId,
+        aggregate.ticket.parentId ?? null,
         aggregate.ticket.title,
         aggregate.ticket.description,
         aggregate.ticket.creatorId,
@@ -868,6 +921,7 @@ async function loadUpdates(ticketId: string): Promise<TicketUpdate[]> {
 export const ticketStore = {
   async create(input: {
     workspaceId: string;
+    parentId?: string;
     title: string;
     description?: string;
     creatorId: string;
@@ -881,6 +935,7 @@ export const ticketStore = {
     const ticket: TicketRecord = {
       id: randomUUID(),
       workspaceId: input.workspaceId,
+      parentId: input.parentId,
       title: input.title.trim(),
       description: input.description?.trim() ?? "",
       creatorId: input.creatorId,
@@ -914,6 +969,17 @@ export const ticketStore = {
       await ticketSlaStore.save(buildSlaSnapshot(ticket, policy));
     }
     await enqueueAssignmentNotifications(ticket, ticket.assignees);
+    await appendChildActivityToParent({
+      parentId: ticket.parentId,
+      actor: { type: "user", id: input.creatorId },
+      content: `Child ticket created: ${ticket.title}.`,
+      metadata: {
+        event: "child_ticket_created",
+        childTicketId: ticket.id,
+        childStatus: ticket.status,
+        childPriority: ticket.priority,
+      },
+    });
     return cloneAggregate(aggregate);
   },
 
@@ -929,7 +995,7 @@ export const ticketStore = {
     if (isPostgresPersistenceEnabled()) {
       const result = await getPostgresPool().query(
         `
-          SELECT id, workspace_id, title, description, creator_id, status, priority,
+          SELECT id, workspace_id, parent_id, title, description, creator_id, status, priority,
                  sla_state, due_date, resolved_at, tags_json, created_at, updated_at
           FROM tickets
           WHERE id = $1
@@ -987,7 +1053,7 @@ export const ticketStore = {
 
     const result = await getPostgresPool().query(
       `
-        SELECT DISTINCT t.id, t.workspace_id, t.title, t.description, t.creator_id, t.status, t.priority,
+        SELECT DISTINCT t.id, t.workspace_id, t.parent_id, t.title, t.description, t.creator_id, t.status, t.priority,
                t.sla_state, t.due_date, t.resolved_at, t.tags_json, t.created_at, t.updated_at
         FROM tickets t
         LEFT JOIN ticket_assignments ta ON ta.ticket_id = t.id
@@ -1015,6 +1081,13 @@ export const ticketStore = {
       ticket.assignees = assignmentMap.get(ticket.id) ?? [];
       return ticket;
     });
+  },
+
+  async listChildren(parentId: string): Promise<TicketRecord[]> {
+    const tickets = await this.list();
+    return tickets
+      .filter((ticket) => ticket.parentId === parentId)
+      .sort((left, right) => right.createdAt.localeCompare(left.createdAt));
   },
 
   async updateTicket(input: {
@@ -1199,6 +1272,17 @@ export const ticketStore = {
 
     await persistAggregate(aggregate);
     await enqueueStatusChangeNotification(aggregate.ticket, input.status, input.runId);
+    await appendChildActivityToParent({
+      parentId: aggregate.ticket.parentId,
+      actor: input.actor,
+      content: `Child ticket ${aggregate.ticket.title} moved from ${existing.ticket.status} to ${input.status}.`,
+      metadata: {
+        event: "child_ticket_status_changed",
+        childTicketId: aggregate.ticket.id,
+        fromStatus: existing.ticket.status,
+        toStatus: input.status,
+      },
+    });
 
     const resultAggregate = cloneAggregate(aggregate);
     if (input.status === "in_progress" && input.actor.type === "agent") {
@@ -1324,13 +1408,46 @@ export const ticketStore = {
       return undefined;
     }
 
+    const normalizedMetadata = { ...(input.metadata ?? {}) };
+    const followUpUpdates: TicketUpdate[] = [];
+    if (normalizedMetadata["readyToClose"] === true && !isPrimaryActor(existing.ticket, input.actor)) {
+      followUpUpdates.push(
+        buildStructuredUpdate({
+          ticketId: input.ticketId,
+          actor: input.actor,
+          content: "Ready-to-close review requested from the primary assignee.",
+          metadata: {
+            event: "ready_to_close_requested",
+            requestedBy: cloneActor(input.actor),
+          },
+        }),
+      );
+    }
+    const decision = readyToCloseDecision(normalizedMetadata);
+    if (decision && isPrimaryActor(existing.ticket, input.actor)) {
+      followUpUpdates.push(
+        buildStructuredUpdate({
+          ticketId: input.ticketId,
+          actor: input.actor,
+          content:
+            decision === "approved"
+              ? "Primary assignee approved ready-to-close request."
+              : "Primary assignee rejected ready-to-close request.",
+          metadata: {
+            event: decision === "approved" ? "ready_to_close_approved" : "ready_to_close_rejected",
+            decision,
+          },
+        }),
+      );
+    }
+
     const update: TicketUpdate = {
       id: randomUUID(),
       ticketId: input.ticketId,
       actor: cloneActor(input.actor),
       type: input.type,
       content: input.content.trim(),
-      metadata: { ...(input.metadata ?? {}) },
+      metadata: normalizedMetadata,
       createdAt: new Date().toISOString(),
     };
 
@@ -1339,7 +1456,7 @@ export const ticketStore = {
         ...existing.ticket,
         updatedAt: new Date().toISOString(),
       },
-      updates: [...existing.updates.map(cloneUpdate), update],
+      updates: [...existing.updates.map(cloneUpdate), update, ...followUpUpdates],
     };
 
     const snapshot = await ticketSlaStore.get(input.ticketId);

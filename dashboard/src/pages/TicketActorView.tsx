@@ -14,12 +14,12 @@ import { useAuth } from "../context/AuthContext";
 import {
   TicketActorChip,
   TicketEmptyState,
+  TicketSourceNotice,
   TicketPriorityBadge,
   TicketSlaBadge,
-  TicketSourceNotice,
   TicketStatusBadge,
 } from "./tickets/ticketingUi";
-import { primaryAssignee, relativeTicketTime } from "./tickets/ticketingUtils";
+import { primaryAssignee, relativeTicketTime } from "./tickets/ticketingUi.helpers";
 
 type StatusFilter = TicketStatus | "all";
 type PriorityFilter = TicketPriority | "all";
@@ -38,7 +38,7 @@ export default function TicketActorView() {
 
   const actor = useMemo(
     () => (actorType && actorId ? { type: actorType, id: actorId } : null),
-    [actorType, actorId]
+    [actorId, actorType]
   );
   const profile = actor ? getTicketActorProfile(actor) : null;
 

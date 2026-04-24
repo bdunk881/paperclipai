@@ -38,7 +38,7 @@ import {
   TicketStatusBadge,
   TicketUpdateCard,
 } from "./tickets/ticketingUi";
-import { formatTicketTimestamp, primaryAssignee, relativeTicketTime } from "./tickets/ticketingUtils";
+import { formatTicketTimestamp, primaryAssignee, relativeTicketTime } from "./tickets/ticketingUi.helpers";
 
 const TRANSITIONS: Array<{ status: TicketStatus; label: string }> = [
   { status: "in_progress", label: "Start" },

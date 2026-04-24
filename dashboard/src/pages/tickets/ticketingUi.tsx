@@ -1,39 +1,32 @@
 import clsx from "clsx";
 import {
   AlertCircle,
-  AlertTriangle,
   ArrowUpRight,
   Bot,
-  CheckCircle2,
   Flag,
   Link2,
-  PauseCircle,
   Ticket,
   UserRound,
-  XCircle,
 } from "lucide-react";
-import type {
-  TicketActorRef,
-  TicketRecord,
-  TicketSlaStateLike,
-  TicketUpdate,
-} from "../../api/tickets";
-import { getTicketActorProfile, normalizeTicketSlaState } from "../../api/tickets";
+import type { TicketActorRef, TicketPriority, TicketRecord, TicketSlaStateLike, TicketStatus, TicketUpdate } from "../../api/tickets";
 import {
   formatTicketTimestamp,
   priorityLabel,
   relativeTicketTime,
   slaLabel,
-  statusLabel,
+  slaStateIcon,
+  normalizeTicketSlaState,
   ticketPriorityClasses,
   ticketSlaClasses,
   ticketStatusClasses,
   ticketUpdateIcon,
   ticketUpdateTone,
-} from "./ticketingUtils";
+  statusLabel,
+  primaryAssignee,
+  getTicketActorProfile,
+} from "./ticketingUi.helpers";
 
-
-export function TicketStatusBadge({ status }: { status: import("../../api/tickets").TicketStatus }) {
+export function TicketStatusBadge({ status }: { status: TicketStatus }) {
   return (
     <span
       className={clsx(
@@ -47,7 +40,7 @@ export function TicketStatusBadge({ status }: { status: import("../../api/ticket
   );
 }
 
-export function TicketPriorityBadge({ priority }: { priority: import("../../api/tickets").TicketPriority }) {
+export function TicketPriorityBadge({ priority }: { priority: TicketPriority }) {
   return (
     <span
       className={clsx(
@@ -63,14 +56,7 @@ export function TicketPriorityBadge({ priority }: { priority: import("../../api/
 
 export function TicketSlaBadge({ slaState }: { slaState: TicketSlaStateLike | string }) {
   const normalized = normalizeTicketSlaState(slaState);
-  const Icon =
-    normalized === "paused"
-      ? PauseCircle
-      : normalized === "breached"
-        ? XCircle
-        : normalized === "at_risk"
-          ? AlertTriangle
-          : CheckCircle2;
+  const Icon = slaStateIcon(normalized);
   return (
     <span
       className={clsx(
@@ -83,7 +69,6 @@ export function TicketSlaBadge({ slaState }: { slaState: TicketSlaStateLike | st
     </span>
   );
 }
-
 export function TicketActorChip({
   actor,
   role,

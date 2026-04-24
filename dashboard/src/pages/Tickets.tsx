@@ -35,7 +35,7 @@ import {
   TicketSourceNotice,
   TicketStatusBadge,
 } from "./tickets/ticketingUi";
-import { collaboratorCount, primaryAssignee, relativeTicketTime } from "./tickets/ticketingUtils";
+import { collaboratorCount, primaryAssignee, relativeTicketTime } from "./tickets/ticketingUi.helpers";
 
 type StatusFilter = TicketStatus | "all";
 type PriorityFilter = TicketPriority | "all";

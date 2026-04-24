@@ -15,6 +15,10 @@ jest.mock("./auth/authMiddleware", () => ({
     req.auth = { sub: "test-user-id", email: "test@example.com" };
     next();
   },
+  requireAuthOrQaBypass: (req: Record<string, unknown>, _res: unknown, next: () => void) => {
+    req.auth = { sub: "test-user-id", email: "test@example.com" };
+    next();
+  },
 }));
 
 import request from "supertest";

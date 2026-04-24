@@ -565,7 +565,7 @@ export default function WorkflowBuilder() {
     } finally {
       setCopilotBusy(false);
     }
-  }, [copilotBusy, copilotInput, selectedStepId, template]);
+  }, [copilotBusy, copilotInput, getAccessToken, selectedStepId, template]);
 
   function handleApplyCopilotProposal(messageId: string, proposal: CopilotProposal) {
     setTemplate((currentTemplate) => applyCopilotProposal(currentTemplate, proposal));

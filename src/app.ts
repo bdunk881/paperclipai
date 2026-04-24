@@ -64,7 +64,9 @@ import {
   getPortableWorkflowSchemaDescriptor,
   parsePortableWorkflowBundle,
 } from "./workflows/portableSchema";
+import { WorkflowRun } from "./types/workflow";
 import { saveImportedTemplate } from "./templates/importedTemplateStore";
+import { getPostgresConnectionStatus, isPostgresConfigured } from "./db/postgres";
 
 const app = express();
 
@@ -805,18 +807,25 @@ app.post("/api/executions/:id/resume", requireAuth, async (req: AuthenticatedReq
 // Health check
 // ---------------------------------------------------------------------------
 app.get("/health", async (_req, res) => {
-  const runs = await runStore.list();
-  const { isPostgresConfigured, getPostgresConnectionStatus } = require("./db/postgres") as typeof import("./db/postgres");
+  let runs: WorkflowRun[] = [];
+  let runStoreError: string | null = null;
+  try {
+    runs = await runStore.list();
+  } catch (error) {
+    runStoreError = error instanceof Error ? error.message : String(error);
+  }
+
   const pgConfigured = isPostgresConfigured();
   const pgConnected = getPostgresConnectionStatus();
   res.json({
-    status: "ok",
+    status: runStoreError ? "degraded" : "ok",
     templates: listTemplates().length,
     runs: {
       total: runs.length,
       running: runs.filter((r) => r.status === "running").length,
       completed: runs.filter((r) => r.status === "completed").length,
       failed: runs.filter((r) => r.status === "failed").length,
+      error: runStoreError,
     },
     postgres: {
       configured: pgConfigured,

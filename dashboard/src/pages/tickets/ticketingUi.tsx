@@ -1,4 +1,3 @@
-/* eslint-disable react-refresh/only-export-components -- intentional: shared helpers + presentational components */
 import clsx from "clsx";
 import {
   AlertCircle,

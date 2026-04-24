@@ -4,10 +4,8 @@ import {
   StoredAuthSession,
   StoredAuthUser,
   clearStoredAuthSession,
-  getInMemoryRefreshToken,
   readStoredAuthSession,
   readStoredAuthUser,
-  setInMemoryRefreshToken,
   writeStoredAuthSession,
 } from "../auth/authStorage";
 import { isSessionExpiring, refreshNativeAuthSession, sessionFromTokenResponse } from "../auth/nativeAuthClient";
@@ -87,17 +85,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       return latestSession.accessToken;
     }
 
-    const refreshToken = latestSession.refreshToken ?? getInMemoryRefreshToken();
-    if (!refreshToken) {
+    if (!latestSession.refreshToken) {
       clearStoredAuthSession();
-      setInMemoryRefreshToken(undefined);
       setStoredSession(null);
       setStoredUser(null);
       return null;
     }
 
     try {
-      const refreshed = sessionFromTokenResponse(await refreshNativeAuthSession(refreshToken));
+      const refreshed = sessionFromTokenResponse(await refreshNativeAuthSession(latestSession.refreshToken));
       writeStoredAuthSession(refreshed);
       setStoredSession(refreshed);
       setStoredUser(refreshed.user);

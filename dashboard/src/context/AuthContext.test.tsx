@@ -25,8 +25,6 @@ vi.mock("../auth/authStorage", () => ({
   readStoredAuthUser: readStoredAuthUserMock,
   clearStoredAuthSession: clearStoredAuthSessionMock,
   writeStoredAuthSession: writeStoredAuthSessionMock,
-  getInMemoryRefreshToken: vi.fn(),
-  setInMemoryRefreshToken: vi.fn(),
 }));
 
 vi.mock("../auth/nativeAuthClient", () => ({

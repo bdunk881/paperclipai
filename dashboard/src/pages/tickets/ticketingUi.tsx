@@ -22,7 +22,6 @@ import {
   ticketUpdateIcon,
   ticketUpdateTone,
   statusLabel,
-  primaryAssignee,
   getTicketActorProfile,
 } from "./ticketingUi.helpers";
 

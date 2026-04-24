@@ -84,9 +84,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
 
     if (!isSessionExpiring(latestSession)) {
-      if (latestSession !== storedSession) {
-        setStoredSession(latestSession);
-      }
       return latestSession.accessToken;
     }
 
@@ -111,7 +108,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setStoredUser(null);
       return null;
     }
-  }, [storedSession]);
+  }, []);
 
   const requireAccessToken = React.useCallback(async (): Promise<string> => {
     const accessToken = await getAccessToken();

@@ -130,10 +130,24 @@ jobs:
               -o tsv
           }
 
+          target_exists() {
+            local name="$1"
+            local resource_group="$2"
+            az containerapp show \
+              --name "$name" \
+              --resource-group "$resource_group" \
+              --query "name" \
+              -o tsv >/dev/null 2>&1
+          }
+
           if [ -n "$OVERRIDE_APP_NAME" ] && [ -n "$OVERRIDE_RESOURCE_GROUP" ]; then
-            echo "Using explicit Container App target from GitHub variables."
-            APP_NAME="$OVERRIDE_APP_NAME"
-            RESOURCE_GROUP="$OVERRIDE_RESOURCE_GROUP"
+            if target_exists "$OVERRIDE_APP_NAME" "$OVERRIDE_RESOURCE_GROUP"; then
+              echo "Using explicit Container App target from GitHub variables."
+              APP_NAME="$OVERRIDE_APP_NAME"
+              RESOURCE_GROUP="$OVERRIDE_RESOURCE_GROUP"
+            else
+              echo "::warning::Configured Container App target '$OVERRIDE_APP_NAME' in resource group '$OVERRIDE_RESOURCE_GROUP' does not exist. Falling back to DNS and Azure inventory discovery."
+            fi
           elif [ -n "$API_HOST" ]; then
             echo "Resolving live backend from DNS: $API_HOST"
             CANONICAL_HOST=$(dig +short "$API_HOST" \

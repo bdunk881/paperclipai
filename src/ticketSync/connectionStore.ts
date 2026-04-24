@@ -69,9 +69,25 @@ export const ticketSyncConnectionStore = {
       .map((record) => registry.toPublic(record));
   },
 
+  async listByWorkspaceForUser(workspaceId: string, userId: string): Promise<TicketSyncConnectionPublic[]> {
+    const records = await registry.listStoredAsync(false);
+    return records
+      .filter((record) => record.metadata.workspaceId === workspaceId && record.userId === userId)
+      .map((record) => registry.toPublic(record));
+  },
+
   async getById(id: string): Promise<TicketSyncConnectionPublic | null> {
     const record = await registry.getByIdAsync(id);
     if (!record || record.revokedAt) {
+      return null;
+    }
+
+    return registry.toPublic(record);
+  },
+
+  async getByIdForUser(id: string, userId: string): Promise<TicketSyncConnectionPublic | null> {
+    const record = await registry.getByIdAsync(id);
+    if (!record || record.revokedAt || record.userId !== userId) {
       return null;
     }
 

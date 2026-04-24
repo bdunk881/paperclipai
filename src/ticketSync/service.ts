@@ -580,12 +580,16 @@ export const ticketSyncService = {
     });
   },
 
-  async listConnections(workspaceId: string): Promise<TicketSyncConnectionPublic[]> {
-    return ticketSyncConnectionStore.listByWorkspace(workspaceId);
+  async listConnections(workspaceId: string, userId?: string): Promise<TicketSyncConnectionPublic[]> {
+    return userId
+      ? ticketSyncConnectionStore.listByWorkspaceForUser(workspaceId, userId)
+      : ticketSyncConnectionStore.listByWorkspace(workspaceId);
   },
 
-  async getConnection(connectionId: string): Promise<TicketSyncConnectionPublic | null> {
-    return ticketSyncConnectionStore.getById(connectionId);
+  async getConnection(connectionId: string, userId?: string): Promise<TicketSyncConnectionPublic | null> {
+    return userId
+      ? ticketSyncConnectionStore.getByIdForUser(connectionId, userId)
+      : ticketSyncConnectionStore.getById(connectionId);
   },
 
   async updateConnection(input: {
@@ -624,7 +628,14 @@ export const ticketSyncService = {
     return updates ? dedupeLinks(updates) : [];
   },
 
-  async health(connectionId: string): Promise<TicketSyncConnectionPublic | null> {
+  async health(connectionId: string, userId?: string): Promise<TicketSyncConnectionPublic | null> {
+    if (userId) {
+      const connection = await ticketSyncConnectionStore.getByIdForUser(connectionId, userId);
+      if (!connection) {
+        return null;
+      }
+    }
+
     const built = await buildAdapter(connectionId);
     if (!built) {
       return null;

@@ -113,7 +113,13 @@ router.get("/connections", async (req, res) => {
     return;
   }
 
-  const connections = await ticketSyncService.listConnections(workspaceId);
+  const userId = (req as AuthenticatedRequest).auth?.sub?.trim();
+  if (!userId) {
+    res.status(401).json({ error: "Authenticated user required" });
+    return;
+  }
+
+  const connections = await ticketSyncService.listConnections(workspaceId, userId);
   res.json({ connections, total: connections.length });
 });
 
@@ -188,7 +194,13 @@ router.post("/connections/bootstrap", async (req: AuthenticatedRequest, res) => 
 });
 
 router.get("/connections/:id", async (req, res) => {
-  const connection = await ticketSyncService.getConnection(req.params.id);
+  const userId = (req as AuthenticatedRequest).auth?.sub?.trim();
+  if (!userId) {
+    res.status(401).json({ error: "Authenticated user required" });
+    return;
+  }
+
+  const connection = await ticketSyncService.getConnection(req.params.id, userId);
   if (!connection) {
     res.status(404).json({ error: "Connection not found" });
     return;
@@ -249,7 +261,13 @@ router.delete("/connections/:id", async (req: AuthenticatedRequest, res) => {
 });
 
 router.post("/connections/:id/test", async (req, res) => {
-  const connection = await ticketSyncService.health(req.params.id);
+  const userId = (req as AuthenticatedRequest).auth?.sub?.trim();
+  if (!userId) {
+    res.status(401).json({ error: "Authenticated user required" });
+    return;
+  }
+
+  const connection = await ticketSyncService.health(req.params.id, userId);
   if (!connection) {
     res.status(404).json({ error: "Connection not found" });
     return;
@@ -265,7 +283,13 @@ router.get("/health", async (req, res) => {
     return;
   }
 
-  const connections = await ticketSyncService.listConnections(workspaceId);
+  const userId = (req as AuthenticatedRequest).auth?.sub?.trim();
+  if (!userId) {
+    res.status(401).json({ error: "Authenticated user required" });
+    return;
+  }
+
+  const connections = await ticketSyncService.listConnections(workspaceId, userId);
   res.json({ connections, total: connections.length });
 });
 

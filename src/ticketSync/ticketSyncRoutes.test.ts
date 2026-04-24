@@ -203,6 +203,42 @@ describe("ticket sync routes", () => {
     expect(listedAfterRevoke.body.total).toBe(0);
   });
 
+  it("scopes dashboard connection routes to the authenticated credential owner", async () => {
+    const app = buildApp();
+    const created = await request(app)
+      .post("/api/ticket-sync/connections")
+      .set(auth("user-1"))
+      .send({
+        workspaceId: "11111111-1111-4111-8111-111111111111",
+        provider: "github",
+        authMethod: "api_key",
+        label: "Private GitHub board",
+        config: { owner: "autoflow", repo: "paperclipai" },
+        secrets: { token: "ghp_private" },
+      });
+
+    expect(created.status).toBe(201);
+
+    const foreignList = await request(app)
+      .get("/api/ticket-sync/connections?workspaceId=11111111-1111-4111-8111-111111111111")
+      .set(auth("user-2"));
+
+    expect(foreignList.status).toBe(200);
+    expect(foreignList.body.total).toBe(0);
+
+    const foreignGet = await request(app)
+      .get(`/api/ticket-sync/connections/${created.body.id}`)
+      .set(auth("user-2"));
+
+    expect(foreignGet.status).toBe(404);
+
+    const foreignHealth = await request(app)
+      .post(`/api/ticket-sync/connections/${created.body.id}/test`)
+      .set(auth("user-2"));
+
+    expect(foreignHealth.status).toBe(404);
+  });
+
   it("bootstraps a GitHub tracker connection from an existing integration credential", async () => {
     const app = buildApp();
     const integration = integrationCredentialStore.create({

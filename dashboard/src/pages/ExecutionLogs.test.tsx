@@ -2,8 +2,11 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import ExecutionLogs from "./ExecutionLogs";
 
-const listRunsMock = vi.fn();
-const debugStepMock = vi.fn();
+const { listRunsMock, debugStepMock, getAccessTokenMock } = vi.hoisted(() => ({
+  listRunsMock: vi.fn(),
+  debugStepMock: vi.fn(),
+  getAccessTokenMock: vi.fn(),
+}));
 
 vi.mock("../api/client", () => ({
   listRuns: (...args: unknown[]) => listRunsMock(...args),
@@ -16,7 +19,7 @@ vi.mock("../context/AuthContext", () => ({
     login: vi.fn(),
     signup: vi.fn(),
     logout: vi.fn(),
-    getAccessToken: vi.fn().mockResolvedValue("token-123"),
+    getAccessToken: getAccessTokenMock,
   }),
 }));
 
@@ -24,6 +27,8 @@ describe("ExecutionLogs", () => {
   beforeEach(() => {
     listRunsMock.mockReset();
     debugStepMock.mockReset();
+    getAccessTokenMock.mockReset();
+    getAccessTokenMock.mockResolvedValue("token-123");
   });
 
   it("loads runs, filters them, and explains a failed step", async () => {

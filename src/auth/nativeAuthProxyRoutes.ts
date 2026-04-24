@@ -124,6 +124,42 @@ function normalizePath(pathValue: string | undefined): string | null {
   return segments.join("/");
 }
 
+function resolveAllowedNativeAuthPath(pathValue: string | undefined): string | null {
+  const normalizedPath = normalizePath(pathValue);
+  if (!normalizedPath) {
+    return null;
+  }
+
+  switch (normalizedPath) {
+    case "oauth/v2.0/initiate":
+      return "oauth/v2.0/initiate";
+    case "oauth/v2.0/challenge":
+      return "oauth/v2.0/challenge";
+    case "oauth/v2.0/token":
+      return "oauth/v2.0/token";
+    case "oauth/v2.0/introspect":
+      return "oauth/v2.0/introspect";
+    case "oauth2/v2.0/token":
+      return "oauth2/v2.0/token";
+    case "challenge/v1.0/continue":
+      return "challenge/v1.0/continue";
+    case "signup/v1.0/start":
+      return "signup/v1.0/start";
+    case "signup/v1.0/challenge":
+      return "signup/v1.0/challenge";
+    case "signup/v1.0/continue":
+      return "signup/v1.0/continue";
+    case "resetpassword/v1.0/challenge":
+      return "resetpassword/v1.0/challenge";
+    case "resetpassword/v1.0/continue":
+      return "resetpassword/v1.0/continue";
+    case "resetpassword/v1.0/submit":
+      return "resetpassword/v1.0/submit";
+    default:
+      return null;
+  }
+}
+
 function hasRequestBody(body: unknown): boolean {
   if (body == null) {
     return false;
@@ -191,9 +227,9 @@ router.post("/*", async (req, res) => {
   }
 
   const wildcardPath = (req.params as Record<string, string | undefined>)["0"];
-  const proxyPath = normalizePath(wildcardPath);
+  const proxyPath = resolveAllowedNativeAuthPath(wildcardPath);
   if (!proxyPath) {
-    res.status(400).json({ error: "Invalid native auth proxy path." });
+    res.status(400).json({ error: "Native auth proxy path is not allowed." });
     return;
   }
 

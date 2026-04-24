@@ -161,7 +161,23 @@ describe("native auth proxy routes", () => {
       .send({ email: "alex@example.com" });
 
     expect(response.status).toBe(400);
-    expect(response.body.error).toMatch(/invalid native auth proxy path/i);
+    expect(response.body.error).toMatch(/path is not allowed/i);
+    expect(global.fetch).not.toHaveBeenCalled();
+  });
+
+  it("rejects undocumented but syntactically safe endpoints", async () => {
+    const app = loadApp({
+      ALLOWED_ORIGINS: "https://dashboard.autoflow.test",
+      AUTH_NATIVE_AUTH_PROXY_BASE_URL: "https://auth.helloautoflow.com/tenant-guid",
+    });
+
+    const response = await request(app)
+      .post("/api/auth/native/signup/v1.0/submit")
+      .set("Origin", "https://dashboard.autoflow.test")
+      .send({ email: "alex@example.com" });
+
+    expect(response.status).toBe(400);
+    expect(response.body.error).toMatch(/path is not allowed/i);
     expect(global.fetch).not.toHaveBeenCalled();
   });
 

@@ -91,6 +91,48 @@ describe("native auth proxy routes", () => {
     expect(init.body).toBe(JSON.stringify({ email: "alex@example.com" }));
   });
 
+  it("proxies form-encoded requests to the configured native auth upstream", async () => {
+    (global.fetch as jest.Mock).mockResolvedValueOnce(
+      mockFetchResponse({
+        status: 200,
+        headers: {
+          "content-type": "application/json; charset=utf-8",
+        },
+        body: JSON.stringify({ continuation_token: "cont-123" }),
+      })
+    );
+
+    const app = loadApp({
+      ALLOWED_ORIGINS: "https://dashboard.autoflow.test",
+      AUTH_NATIVE_AUTH_PROXY_BASE_URL: "https://auth.helloautoflow.com/tenant-guid",
+    });
+
+    const formBody = new URLSearchParams({
+      client_id: "client-123",
+      challenge_type: "password",
+      username: "alex@example.com",
+    }).toString();
+
+    const response = await request(app)
+      .post("/api/auth/native/challenge/v1.0/continue")
+      .set("Origin", "https://dashboard.autoflow.test")
+      .set("Accept", "application/json")
+      .set("Content-Type", "application/x-www-form-urlencoded")
+      .send(formBody);
+
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual({ continuation_token: "cont-123" });
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+
+    const [url, init] = (global.fetch as jest.Mock).mock.calls[0] as [URL, RequestInit];
+    expect(url.toString()).toBe("https://auth.helloautoflow.com/tenant-guid/challenge/v1.0/continue");
+    expect(init.headers).toMatchObject({
+      accept: "application/json",
+      "content-type": "application/x-www-form-urlencoded",
+    });
+    expect(init.body).toBe(formBody);
+  });
+
   it("rejects requests from origins outside the configured allowlist", async () => {
     const app = loadApp({
       ALLOWED_ORIGINS: "https://dashboard.autoflow.test",
@@ -138,6 +180,23 @@ describe("native auth proxy routes", () => {
 
     expect(response.status).toBe(502);
     expect(response.body.error).toMatch(/native auth upstream request failed/i);
+  });
+
+  it("rejects unsupported content types", async () => {
+    const app = loadApp({
+      ALLOWED_ORIGINS: "https://dashboard.autoflow.test",
+      AUTH_NATIVE_AUTH_PROXY_BASE_URL: "https://auth.helloautoflow.com/tenant-guid",
+    });
+
+    const response = await request(app)
+      .post("/api/auth/native/oauth2/v2.0/token")
+      .set("Origin", "https://dashboard.autoflow.test")
+      .set("Content-Type", "text/plain")
+      .send("client_id=client-123");
+
+    expect(response.status).toBe(415);
+    expect(response.body.error).toMatch(/application\/json and application\/x-www-form-urlencoded/i);
+    expect(global.fetch).not.toHaveBeenCalled();
   });
 
   it("enforces a dedicated auth proxy rate limit", async () => {

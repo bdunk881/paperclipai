@@ -316,7 +316,12 @@ app.use("/api/ticket-sync", requireAuth, ticketSyncRoutes);
 // Auth API — identity endpoint for authenticated callers
 // ---------------------------------------------------------------------------
 
-app.use("/api/auth/native", nativeAuthProxyRateLimiter, nativeAuthProxyRoutes);
+app.use(
+  "/api/auth/native",
+  express.text({ type: "application/x-www-form-urlencoded" }),
+  nativeAuthProxyRateLimiter,
+  nativeAuthProxyRoutes
+);
 
 /** Returns the authenticated user's claims extracted from the Entra ID token. */
 app.get("/api/me", requireAuth, (req: AuthenticatedRequest, res) => {

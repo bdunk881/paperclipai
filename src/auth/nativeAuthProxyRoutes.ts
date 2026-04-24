@@ -164,6 +164,18 @@ function copyResponseHeaders(source: Headers, res: express.Response): void {
   }
 }
 
+function isSupportedContentType(contentType: string | undefined): boolean {
+  if (!contentType) {
+    return true;
+  }
+
+  const normalized = contentType.toLowerCase();
+  return (
+    normalized.includes("application/json") ||
+    normalized.includes("application/x-www-form-urlencoded")
+  );
+}
+
 const router = express.Router();
 
 router.post("/*", async (req, res) => {
@@ -186,8 +198,10 @@ router.post("/*", async (req, res) => {
   }
 
   const contentType = req.header("content-type");
-  if (contentType && !contentType.toLowerCase().includes("application/json")) {
-    res.status(415).json({ error: "Native auth proxy only supports application/json payloads." });
+  if (!isSupportedContentType(contentType)) {
+    res.status(415).json({
+      error: "Native auth proxy only supports application/json and application/x-www-form-urlencoded payloads.",
+    });
     return;
   }
 

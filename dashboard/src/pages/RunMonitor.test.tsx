@@ -8,6 +8,7 @@ const listControlPlaneTeamsMock = vi.fn();
 const getControlPlaneTeamMock = vi.fn();
 const debugStepMock = vi.fn();
 const getAccessTokenMock = vi.fn();
+const requireAccessTokenMock = vi.fn();
 
 vi.mock("../api/client", () => ({
   listRuns: (...args: unknown[]) => listRunsMock(...args),
@@ -19,6 +20,7 @@ vi.mock("../api/client", () => ({
 vi.mock("../context/AuthContext", () => ({
   useAuth: () => ({
     getAccessToken: getAccessTokenMock,
+    requireAccessToken: requireAccessTokenMock,
   }),
 }));
 
@@ -37,7 +39,9 @@ describe("RunMonitor", () => {
     getControlPlaneTeamMock.mockReset();
     debugStepMock.mockReset();
     getAccessTokenMock.mockReset();
+    requireAccessTokenMock.mockReset();
     getAccessTokenMock.mockResolvedValue("token-123");
+    requireAccessTokenMock.mockResolvedValue("token-123");
     listControlPlaneTeamsMock.mockResolvedValue([]);
     getControlPlaneTeamMock.mockResolvedValue(null);
   });

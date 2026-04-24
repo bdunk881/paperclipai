@@ -6,7 +6,7 @@ const listLLMConfigsMock = vi.fn();
 const createLLMConfigMock = vi.fn();
 const setDefaultLLMConfigMock = vi.fn();
 const deleteLLMConfigMock = vi.fn();
-const getAccessTokenMock = vi.fn();
+const requireAccessTokenMock = vi.fn();
 
 vi.mock("../api/client", () => ({
   listLLMConfigs: () => listLLMConfigsMock(),
@@ -23,7 +23,7 @@ vi.mock("../api/client", () => ({
 
 vi.mock("../context/AuthContext", () => ({
   useAuth: () => ({
-    getAccessToken: getAccessTokenMock,
+    requireAccessToken: requireAccessTokenMock,
   }),
 }));
 
@@ -50,8 +50,8 @@ describe("LLMProviders", () => {
     createLLMConfigMock.mockReset();
     setDefaultLLMConfigMock.mockReset();
     deleteLLMConfigMock.mockReset();
-    getAccessTokenMock.mockReset();
-    getAccessTokenMock.mockResolvedValue("token-123");
+    requireAccessTokenMock.mockReset();
+    requireAccessTokenMock.mockResolvedValue("token-123");
   });
 
   it("shows the backend error when config loading fails", async () => {

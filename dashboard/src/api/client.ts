@@ -1,5 +1,6 @@
 import type { WorkflowTemplate, WorkflowRun, WorkflowStep } from "../types/workflow";
 import { getApiBasePath } from "./baseUrl";
+import { readStoredAuthUser } from "../auth/authStorage";
 
 // ---------------------------------------------------------------------------
 // LLM Config types — mirrors src/engine/llmProviders/types.ts
@@ -34,8 +35,16 @@ export interface CreateLLMConfigInput {
 }
 
 function buildAuthHeaders(accessToken?: string): HeadersInit | undefined {
-  if (!accessToken) return undefined;
-  return { Authorization: `Bearer ${accessToken}` };
+  if (accessToken) {
+    return { Authorization: `Bearer ${accessToken}` };
+  }
+
+  const storedUser = readStoredAuthUser();
+  if (storedUser?.id) {
+    return { "X-User-Id": storedUser.id };
+  }
+
+  return undefined;
 }
 
 function buildJsonHeaders(

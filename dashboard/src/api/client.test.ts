@@ -7,6 +7,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import * as authStorage from "../auth/authStorage";
 import {
   deployWorkflowAsTeam,
   listTemplates,
@@ -67,6 +68,7 @@ function lastFetchOptions(): RequestInit {
 
 beforeEach(() => {
   vi.restoreAllMocks();
+  vi.spyOn(authStorage, "readStoredAuthUser").mockReturnValue(null);
 });
 
 const sampleSummary: TemplateSummary = {
@@ -201,6 +203,18 @@ describe("listRuns", () => {
     await listRuns(undefined, "token-123");
     const headers = lastFetchOptions().headers as Record<string, string>;
     expect(headers.Authorization).toBe("Bearer token-123");
+  });
+
+  it("falls back to X-User-Id when a preview user is stored", async () => {
+    vi.spyOn(authStorage, "readStoredAuthUser").mockReturnValue({
+      id: "usr-qa-preview",
+      email: "qa-preview@autoflow.local",
+      name: "QA Preview User",
+    });
+    mockFetch({ runs: [sampleRun], total: 1 });
+    await listRuns();
+    const headers = lastFetchOptions().headers as Record<string, string>;
+    expect(headers["X-User-Id"]).toBe("usr-qa-preview");
   });
 
   it("returns the runs array from the response", async () => {

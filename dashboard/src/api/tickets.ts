@@ -6,6 +6,16 @@ export type TicketStatus = "open" | "in_progress" | "resolved" | "blocked" | "ca
 export type TicketPriority = "low" | "medium" | "high" | "urgent";
 export type TicketUpdateType = "comment" | "status_change" | "structured_update";
 export type TicketSlaState = "on_track" | "warning" | "breached" | "paused";
+export type TicketSlaStateLike = TicketSlaState | "at_risk";
+
+/**
+ * Normalize backend SLA state strings for the frontend.
+ * The backend emits `"warning"` but the UI labels it `"at_risk"`.
+ */
+export function normalizeTicketSlaState(raw: TicketSlaStateLike | string): TicketSlaStateLike {
+  if (raw === "warning") return "at_risk";
+  return raw as TicketSlaStateLike;
+}
 
 export interface TicketActorRef {
   type: TicketActorType;

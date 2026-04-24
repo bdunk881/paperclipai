@@ -16,11 +16,12 @@ import {
   createTicket,
   getTicketActorProfile,
   listTickets,
+  normalizeTicketSlaState,
   type CreateTicketUiPayload,
   type TicketActorRef,
   type TicketPriority,
   type TicketRecord,
-  type TicketSlaState,
+  type TicketSlaStateLike,
   type TicketStatus,
 } from "../api/tickets";
 import { useAuth } from "../context/AuthContext";
@@ -38,11 +39,11 @@ import { collaboratorCount, primaryAssignee, relativeTicketTime } from "./ticket
 
 type StatusFilter = TicketStatus | "all";
 type PriorityFilter = TicketPriority | "all";
-type SlaFilter = TicketSlaState | "all";
+type SlaFilter = TicketSlaStateLike | "all";
 
 const STATUS_OPTIONS: StatusFilter[] = ["all", "open", "in_progress", "blocked", "resolved", "cancelled"];
 const PRIORITY_OPTIONS: PriorityFilter[] = ["all", "urgent", "high", "medium", "low"];
-const SLA_OPTIONS: SlaFilter[] = ["all", "breached", "warning", "on_track", "paused"];
+const SLA_OPTIONS: SlaFilter[] = ["all", "breached", "at_risk", "on_track", "paused"];
 
 const EMPTY_FORM = {
   title: "",
@@ -98,7 +99,7 @@ export default function Tickets() {
     return tickets.filter((ticket) => {
       if (statusFilter !== "all" && ticket.status !== statusFilter) return false;
       if (priorityFilter !== "all" && ticket.priority !== priorityFilter) return false;
-      if (slaFilter !== "all" && ticket.slaState !== slaFilter) return false;
+      if (slaFilter !== "all" && normalizeTicketSlaState(ticket.slaState) !== slaFilter) return false;
       if (!query.trim()) return true;
       const normalized = query.trim().toLowerCase();
       const owner = primaryAssignee(ticket);

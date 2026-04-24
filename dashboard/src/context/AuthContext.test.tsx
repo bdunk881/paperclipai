@@ -2,7 +2,7 @@ import React from "react";
 import { render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AuthProvider, useAuth } from "./AuthContext";
-import { InteractionRequiredAuthError } from "@azure/msal-browser";
+import { InteractionRequiredAuthError, ClientConfigurationError } from "@azure/msal-browser";
 import { loginRequest, signupRequest } from "../auth/msalConfig";
 
 const mockUseMsal = vi.fn();
@@ -17,6 +17,13 @@ vi.mock("@azure/msal-react", () => ({
 
 vi.mock("@azure/msal-browser", () => ({
   InteractionRequiredAuthError: class InteractionRequiredAuthError extends Error {},
+  ClientConfigurationError: class ClientConfigurationError extends Error {
+    errorCode: string;
+    constructor(errorCode: string, message?: string) {
+      super(message ?? errorCode);
+      this.errorCode = errorCode;
+    }
+  },
 }));
 
 let latestAuth:
@@ -144,6 +151,20 @@ describe("AuthContext", () => {
       ...loginRequest,
       account: mockUseAccount(),
     });
+  });
+
+  it("clears MSAL cache and redirects on authority_mismatch", async () => {
+    const mismatchError = new ClientConfigurationError("authority_mismatch");
+    instance.acquireTokenSilent.mockRejectedValue(mismatchError);
+
+    render(
+      <AuthProvider>
+        <CaptureAuth />
+      </AuthProvider>
+    );
+
+    await expect(latestAuth?.getAccessToken()).resolves.toBeNull();
+    expect(instance.loginRedirect).toHaveBeenCalledWith(loginRequest);
   });
 
   it("throws when a caller requires a token but none is available", async () => {

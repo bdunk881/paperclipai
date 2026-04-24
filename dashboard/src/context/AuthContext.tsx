@@ -6,6 +6,7 @@ import {
 } from "@azure/msal-react";
 import {
   InteractionRequiredAuthError,
+  ClientConfigurationError,
   AccountInfo,
 } from "@azure/msal-browser";
 import { loginRequest, signupRequest } from "../auth/msalConfig";
@@ -111,6 +112,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     } catch (err) {
       if (err instanceof InteractionRequiredAuthError) {
         await instance.acquireTokenRedirect({ ...loginRequest, account: resolvedAccount });
+        return null;
+      }
+      // Authority mismatch (e.g. cached tokens from old ciamlogin.com authority
+      // after switching to branded auth.helloautoflow.com domain) — clear stale
+      // MSAL cache and redirect to fresh login under the current authority.
+      if (
+        err instanceof ClientConfigurationError ||
+        (err instanceof Error && "errorCode" in err && (err as { errorCode: string }).errorCode === "authority_mismatch")
+      ) {
+        clearStoredAuthUser();
+        Object.keys(localStorage)
+          .filter((key) => key.startsWith("msal."))
+          .forEach((key) => localStorage.removeItem(key));
+        await instance.loginRedirect(loginRequest);
+        return null;
       }
       return null;
     }

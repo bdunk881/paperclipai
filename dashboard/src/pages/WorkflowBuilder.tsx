@@ -522,11 +522,12 @@ export default function WorkflowBuilder() {
     if (!isLlmStep) return;
     setLlmConfigsLoading(true);
     setLlmConfigsError(null);
-    listLLMConfigs()
+    void getAccessToken()
+      .then((accessToken) => listLLMConfigs(accessToken ?? undefined))
       .then(setLlmConfigs)
       .catch((e) => setLlmConfigsError(e instanceof Error ? e.message : "Failed to load providers"))
       .finally(() => setLlmConfigsLoading(false));
-  }, [isLlmStep]);
+  }, [getAccessToken, isLlmStep]);
 
   const handleCopilotSubmit = useCallback(async (rawPrompt?: string) => {
     const prompt = (rawPrompt ?? copilotInput).trim();
@@ -542,7 +543,8 @@ export default function WorkflowBuilder() {
     setCopilotInput("");
 
     try {
-      const response = await buildCopilotResponse(prompt, template, selectedStepId);
+      const accessToken = (await getAccessToken()) ?? undefined;
+      const response = await buildCopilotResponse(prompt, template, selectedStepId, accessToken);
       setCopilotMessages((messages) => [
         ...messages,
         { id: `assistant-${Date.now()}`, role: "assistant", ...response },
@@ -844,7 +846,8 @@ export default function WorkflowBuilder() {
     }
     setRunError(null);
     try {
-      await startRun(template.id, template.sampleInput);
+      const accessToken = (await getAccessToken()) ?? undefined;
+      await startRun(template.id, template.sampleInput, undefined, accessToken);
       navigate("/monitor");
     } catch (e) {
       setRunError(e instanceof Error ? e.message : "Failed to start run");
@@ -1674,6 +1677,7 @@ function NLWorkflowModal({
   onClose: () => void;
   onApply: (steps: WorkflowStep[]) => void;
 }) {
+  const { getAccessToken } = useAuth();
   const [prompt, setPrompt] = useState("");
   const [generating, setGenerating] = useState(false);
   const [preview, setPreview] = useState<WorkflowStep[] | null>(null);
@@ -1684,7 +1688,8 @@ function NLWorkflowModal({
     setGenerating(true);
     setGenerateError(null);
     try {
-      const steps = await generateWorkflow(prompt.trim());
+      const accessToken = (await getAccessToken()) ?? undefined;
+      const steps = await generateWorkflow(prompt.trim(), undefined, accessToken);
       setPreview(steps);
     } catch (e) {
       setGenerateError(e instanceof Error ? e.message : "Generation failed");
@@ -1983,7 +1988,8 @@ function WorkflowCopilotSidebar({
 async function buildCopilotResponse(
   prompt: string,
   template: WorkflowTemplate,
-  selectedStepId: string | null
+  selectedStepId: string | null,
+  accessToken?: string
 ): Promise<Pick<CopilotMessage, "content" | "proposal">> {
   const normalized = prompt.toLowerCase();
 
@@ -2001,7 +2007,7 @@ async function buildCopilotResponse(
     };
   }
 
-  const generatedSteps = await generateWorkflow(prompt.trim());
+  const generatedSteps = await generateWorkflow(prompt.trim(), undefined, accessToken);
   const mode: CopilotProposalMode = template.steps.length === 0 ? "replace" : "append";
 
   return {
@@ -2856,6 +2862,7 @@ function FileUploadModal({
   onClose: () => void;
   onStarted: () => void;
 }) {
+  const { getAccessToken } = useAuth();
   const [dragOver, setDragOver] = useState(false);
   const [file, setFile] = useState<File | null>(null);
   const [state, setState] = useState<UploadState>("idle");
@@ -2875,7 +2882,8 @@ function FileUploadModal({
     setState("uploading");
     setErrorMsg(null);
     try {
-      await startRunWithFile(templateId, file);
+      const accessToken = (await getAccessToken()) ?? undefined;
+      await startRunWithFile(templateId, file, undefined, accessToken);
       setState("done");
       setTimeout(onStarted, 800);
     } catch (e) {

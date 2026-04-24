@@ -71,6 +71,8 @@ jobs:
           set -euo pipefail
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             DEPLOY_ENV="${{ github.event.inputs.environment }}"
+          elif [ "${{ github.ref }}" = "refs/heads/master" ]; then
+            DEPLOY_ENV="production"
           else
             DEPLOY_ENV="staging"
           fi
@@ -170,16 +172,34 @@ jobs:
                     exit 1
                   fi
                   echo "Staging QA bypass smoke test passed on /api/runs"
+
+                  LLM_CONFIGS_STATUS=$(curl -s -o /tmp/llm-configs.json -w "%{http_code}" \
+                    -H "X-User-Id: qa-smoke-user" \
+                    "https://${REVISION_FQDN}/api/llm-configs")
+                  if [ "$LLM_CONFIGS_STATUS" != "200" ]; then
+                    echo "Expected staging QA bypass to return 200 on /api/llm-configs, got $LLM_CONFIGS_STATUS"
+                    cat /tmp/llm-configs.json || true
+                    exit 1
+                  fi
+                  echo "Staging QA bypass smoke test passed on /api/llm-configs"
                 else
                   RUNS_STATUS=$(curl -s -o /tmp/runs.json -w "%{http_code}" \
-                    -H "X-User-Id: qa-smoke-user" \
                     "https://${REVISION_FQDN}/api/runs")
-                  if [ "$RUNS_STATUS" = "200" ]; then
-                    echo "Production /api/runs unexpectedly allowed QA bypass"
+                  if [ "$RUNS_STATUS" != "401" ]; then
+                    echo "Expected production /api/runs to require auth with 401, got $RUNS_STATUS"
                     cat /tmp/runs.json || true
                     exit 1
                   fi
-                  echo "Production QA bypass remains disabled"
+                  echo "Production auth gate confirmed on /api/runs"
+
+                  LLM_CONFIGS_STATUS=$(curl -s -o /tmp/llm-configs.json -w "%{http_code}" \
+                    "https://${REVISION_FQDN}/api/llm-configs")
+                  if [ "$LLM_CONFIGS_STATUS" != "401" ]; then
+                    echo "Expected production /api/llm-configs to require auth with 401, got $LLM_CONFIGS_STATUS"
+                    cat /tmp/llm-configs.json || true
+                    exit 1
+                  fi
+                  echo "Production auth gate confirmed on /api/llm-configs"
                 fi
 
                 exit 0

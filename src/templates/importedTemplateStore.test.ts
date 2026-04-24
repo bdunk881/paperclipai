@@ -96,4 +96,26 @@ describe("importedTemplateStore", () => {
       ]
     );
   });
+
+  it("keeps imported templates cached when Postgres persistence fails", async () => {
+    const template = makeWorkflowTemplate({
+      id: "tpl-fallback-import",
+      name: "Fallback Import",
+      category: "custom",
+    });
+
+    const errorSpy = jest.spyOn(console, "error").mockImplementation(() => {});
+    mockIsPostgresConfigured.mockReturnValue(true);
+    mockQueryPostgres.mockRejectedValue(new Error('relation "workflow_imported_templates" does not exist'));
+
+    await saveImportedTemplate(template, "user-123");
+
+    expect(listImportedTemplates()).toEqual([template]);
+    expect(errorSpy).toHaveBeenCalledWith(
+      "[templates] Postgres persist failed, falling back to in-memory:",
+      'relation "workflow_imported_templates" does not exist'
+    );
+
+    errorSpy.mockRestore();
+  });
 });

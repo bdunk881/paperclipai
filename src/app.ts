@@ -325,7 +325,7 @@ app.get("/api/templates/:id/export", (req, res) => {
 });
 
 /** Import a portable workflow template into the in-memory registry */
-app.post("/api/templates/import", requireAuth, async (req, res) => {
+app.post("/api/templates/import", requireAuthOrQaBypass, async (req: AuthenticatedRequest, res) => {
   let bundle;
   try {
     bundle = parsePortableWorkflowBundle(req.body);
@@ -343,7 +343,7 @@ app.post("/api/templates/import", requireAuth, async (req, res) => {
     // Template id is available; continue with import.
   }
 
-  await saveImportedTemplate(bundle.template);
+  await saveImportedTemplate(bundle.template, req.auth?.sub);
   res.status(201).json({
     imported: true,
     template: bundle.template,

@@ -110,6 +110,18 @@ function withQaBypass(userIds = "qa-smoke-user") {
   process.env.QA_AUTH_BYPASS_USER_IDS = userIds;
 }
 
+async function waitForRunCompletion(runId: string, userId: string) {
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    const getRes = await request(app).get(`/api/runs/${runId}`).set("X-User-Id", userId);
+    if (getRes.status === 200 && ["completed", "failed"].includes(getRes.body.status)) {
+      return getRes;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+
+  throw new Error(`Run ${runId} did not complete within the expected polling window`);
+}
+
 // ---------------------------------------------------------------------------
 // GET /health
 // ---------------------------------------------------------------------------
@@ -413,6 +425,125 @@ describe("Portable workflow APIs", () => {
 
     const listRes = await request(app).get("/api/templates");
     expect(listRes.body.total).toBe(14);
+  });
+
+  it("allows an allowlisted staging QA user to import and run a knowledge-step template end-to-end", async () => {
+    withQaBypass();
+
+    const baseRes = await request(app)
+      .post("/api/knowledge/bases")
+      .set("X-User-Id", "qa-smoke-user")
+      .send({
+        name: "QA Knowledge Base",
+        description: "Used for staging QA verification",
+      });
+
+    expect(baseRes.status).toBe(201);
+
+    const documentRes = await request(app)
+      .post(`/api/knowledge/bases/${baseRes.body.id}/documents`)
+      .set("X-User-Id", "qa-smoke-user")
+      .send({
+        filename: "qa-staging.md",
+        mimeType: "text/markdown",
+        content: "Quarterly policy: knowledge-step QA verification is ready on staging.",
+      });
+
+    expect(documentRes.status).toBe(201);
+
+    const portableTemplate = {
+      format: PORTABLE_WORKFLOW_FORMAT,
+      schemaVersion: PORTABLE_WORKFLOW_SCHEMA_VERSION,
+      exportedAt: new Date().toISOString(),
+      template: {
+        id: "tpl-qa-knowledge-check",
+        name: "QA Knowledge Check",
+        description: "Minimal imported template that exercises a knowledge step.",
+        category: "custom",
+        version: "1.0.0",
+        configFields: [
+          {
+            key: "query",
+            label: "Query",
+            type: "string",
+            required: true,
+          },
+        ],
+        steps: [
+          {
+            id: "trigger-input",
+            name: "Trigger",
+            kind: "trigger",
+            description: "Accept the QA search query.",
+            inputKeys: [],
+            outputKeys: ["query", "knowledgeBaseIds"],
+          },
+          {
+            id: "knowledge-search",
+            name: "Knowledge Search",
+            kind: "knowledge",
+            description: "Search the QA knowledge base.",
+            inputKeys: ["query"],
+            outputKeys: ["knowledgeResults", "knowledgePromptContext", "knowledgeQuery"],
+          },
+          {
+            id: "collect-context",
+            name: "Collect Context",
+            kind: "transform",
+            description: "Pass the knowledge outputs through unchanged.",
+            inputKeys: ["knowledgeResults", "knowledgePromptContext", "knowledgeQuery"],
+            outputKeys: ["knowledgeResults", "knowledgePromptContext", "knowledgeQuery"],
+          },
+          {
+            id: "return-output",
+            name: "Return Output",
+            kind: "output",
+            description: "Return the knowledge results for verification.",
+            inputKeys: ["knowledgeResults", "knowledgePromptContext", "knowledgeQuery"],
+            outputKeys: ["knowledgeResults", "knowledgePromptContext", "knowledgeQuery"],
+          },
+        ],
+        sampleInput: {
+          query: "staging verification",
+          knowledgeBaseIds: ["kb-demo"],
+        },
+        expectedOutput: {
+          knowledgeResults: [],
+          knowledgePromptContext: "",
+          knowledgeQuery: "staging verification",
+        },
+      },
+    };
+
+    const importRes = await request(app)
+      .post("/api/templates/import")
+      .set("X-User-Id", "qa-smoke-user")
+      .send(portableTemplate);
+
+    expect(importRes.status).toBe(201);
+    expect(importRes.body.template.id).toBe("tpl-qa-knowledge-check");
+
+    const startRes = await request(app)
+      .post("/api/runs")
+      .set("X-User-Id", "qa-smoke-user")
+      .send({
+        templateId: "tpl-qa-knowledge-check",
+        input: {
+          query: "knowledge-step QA verification",
+          knowledgeBaseIds: [baseRes.body.id],
+        },
+      });
+
+    expect(startRes.status).toBe(202);
+
+    const getRes = await waitForRunCompletion(startRes.body.id, "qa-smoke-user");
+    expect(getRes.status).toBe(200);
+    expect(getRes.body.templateId).toBe("tpl-qa-knowledge-check");
+    expect(getRes.body.status).toBe("completed");
+    expect(getRes.body.output.knowledgeQuery).toBe("knowledge-step QA verification");
+    expect(getRes.body.output.knowledgePromptContext).toContain("QA verification is ready on staging");
+    expect(Array.isArray(getRes.body.output.knowledgeResults)).toBe(true);
+    expect(getRes.body.output.knowledgeResults.length).toBeGreaterThan(0);
   });
 
   it("rejects invalid portable payloads", async () => {

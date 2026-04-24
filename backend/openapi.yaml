@@ -718,6 +718,17 @@ paths:
       operationId: importTemplate
       summary: Import a portable workflow template
       tags: [PortableWorkflows]
+      description: |
+        Requires standard bearer auth, or `X-User-Id` when the staging-only QA bypass
+        is explicitly enabled via `QA_AUTH_BYPASS_ENABLED=true` and the user ID is
+        allowlisted in `QA_AUTH_BYPASS_USER_IDS`.
+      parameters:
+        - name: X-User-Id
+          in: header
+          required: false
+          schema:
+            type: string
+          description: Allowlisted staging QA bypass user ID for non-interactive verification.
       requestBody:
         required: true
         content:

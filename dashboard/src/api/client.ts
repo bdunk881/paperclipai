@@ -1,6 +1,15 @@
 import type { WorkflowTemplate, WorkflowRun, WorkflowStep } from "../types/workflow";
 import { getApiBasePath } from "./baseUrl";
 import { readStoredAuthUser } from "../auth/authStorage";
+import {
+  createMockTemplate,
+  getMockRun,
+  getMockTemplate,
+  listMockLLMConfigs,
+  listMockRuns,
+  listMockTemplates,
+  startMockRun,
+} from "./mockWorkflowData";
 
 // ---------------------------------------------------------------------------
 // LLM Config types — mirrors src/engine/llmProviders/types.ts
@@ -33,6 +42,8 @@ export interface CreateLLMConfigInput {
   model: string;
   apiKey: string;
 }
+
+const USE_MOCK_API = import.meta.env.VITE_USE_MOCK === "true";
 
 function buildAuthHeaders(accessToken?: string): HeadersInit | undefined {
   if (accessToken) {
@@ -80,18 +91,30 @@ async function readApiError(response: Response, fallback: string): Promise<strin
   return payload?.error ?? fallback;
 }
 
+async function withMockApi<T>(remote: () => Promise<T>, local: () => T | Promise<T>): Promise<T> {
+  if (USE_MOCK_API) {
+    return await local();
+  }
+  return await remote();
+}
+
 // ---------------------------------------------------------------------------
 // LLM Config API functions
 // ---------------------------------------------------------------------------
 
 /** GET /api/llm-configs */
 export async function listLLMConfigs(accessToken: string): Promise<LLMConfig[]> {
-  const res = await fetch(`${BASE}/llm-configs`, {
-    headers: buildAuthHeaders(accessToken),
-  });
-  if (!res.ok) throw new Error(`Failed to fetch LLM configs: ${res.status}`);
-  const data = await res.json();
-  return data.configs as LLMConfig[];
+  return withMockApi(
+    async () => {
+      const res = await fetch(`${BASE}/llm-configs`, {
+        headers: buildAuthHeaders(accessToken),
+      });
+      if (!res.ok) throw new Error(`Failed to fetch LLM configs: ${res.status}`);
+      const data = await res.json();
+      return data.configs as LLMConfig[];
+    },
+    () => listMockLLMConfigs()
+  );
 }
 
 /** POST /api/llm-configs */
@@ -250,64 +273,94 @@ type CreateTemplateInput = Omit<WorkflowTemplate, "id"> & { id?: string };
 
 /** GET /api/templates */
 export async function listTemplates(category?: string): Promise<TemplateSummary[]> {
-  const url = category ? `${BASE}/templates?category=${encodeURIComponent(category)}` : `${BASE}/templates`;
-  const res = await fetch(url);
-  if (!res.ok) throw new Error(`Failed to fetch templates: ${res.status}`);
-  const data = await res.json();
-  return data.templates as TemplateSummary[];
+  return withMockApi(
+    async () => {
+      const url = category ? `${BASE}/templates?category=${encodeURIComponent(category)}` : `${BASE}/templates`;
+      const res = await fetch(url);
+      if (!res.ok) throw new Error(`Failed to fetch templates: ${res.status}`);
+      const data = await res.json();
+      return data.templates as TemplateSummary[];
+    },
+    () => listMockTemplates(category as WorkflowTemplate["category"] | undefined)
+  );
 }
 
 /** POST /api/templates */
 export async function createTemplate(input: CreateTemplateInput): Promise<WorkflowTemplate> {
-  const res = await fetch(`${BASE}/templates`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(input),
-  });
-  if (!res.ok) {
-    const err = await res.json().catch(() => null);
-    throw new Error(err?.error ?? `Failed to save template: ${res.status}`);
-  }
-  return res.json() as Promise<WorkflowTemplate>;
+  return withMockApi(
+    async () => {
+      const res = await fetch(`${BASE}/templates`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(input),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => null);
+        throw new Error(err?.error ?? `Failed to save template: ${res.status}`);
+      }
+      return res.json() as Promise<WorkflowTemplate>;
+    },
+    () => createMockTemplate(input)
+  );
 }
 
 /** GET /api/templates/:id */
 export async function getTemplate(id: string): Promise<WorkflowTemplate> {
-  const res = await fetch(`${BASE}/templates/${encodeURIComponent(id)}`);
-  if (!res.ok) throw new Error(`Template not found: ${id}`);
-  return res.json() as Promise<WorkflowTemplate>;
+  return withMockApi(
+    async () => {
+      const res = await fetch(`${BASE}/templates/${encodeURIComponent(id)}`);
+      if (!res.ok) throw new Error(`Template not found: ${id}`);
+      return res.json() as Promise<WorkflowTemplate>;
+    },
+    () => getMockTemplate(id)
+  );
 }
 
 /** GET /api/runs */
 export async function listRuns(templateId?: string, accessToken?: string): Promise<WorkflowRun[]> {
-  const url = templateId
-    ? `${BASE}/runs?templateId=${encodeURIComponent(templateId)}`
-    : `${BASE}/runs`;
-  const res = await fetch(url, {
-    headers: buildAuthHeaders(accessToken),
-  });
-  if (!res.ok) throw new Error(await readApiError(res, `Failed to fetch runs: ${res.status}`));
-  const data = await res.json();
-  return data.runs as WorkflowRun[];
+  return withMockApi(
+    async () => {
+      const url = templateId
+        ? `${BASE}/runs?templateId=${encodeURIComponent(templateId)}`
+        : `${BASE}/runs`;
+      const res = await fetch(url, {
+        headers: buildAuthHeaders(accessToken),
+      });
+      if (!res.ok) throw new Error(await readApiError(res, `Failed to fetch runs: ${res.status}`));
+      const data = await res.json();
+      return data.runs as WorkflowRun[];
+    },
+    () => listMockRuns(templateId)
+  );
 }
 
 /** GET /api/runs/:id */
 export async function getRun(id: string, accessToken?: string): Promise<WorkflowRun> {
-  const res = await fetch(`${BASE}/runs/${encodeURIComponent(id)}`, {
-    headers: buildAuthHeaders(accessToken),
-  });
-  if (!res.ok) throw new Error(`Run not found: ${id}`);
-  return res.json() as Promise<WorkflowRun>;
+  return withMockApi(
+    async () => {
+      const res = await fetch(`${BASE}/runs/${encodeURIComponent(id)}`, {
+        headers: buildAuthHeaders(accessToken),
+      });
+      if (!res.ok) throw new Error(`Run not found: ${id}`);
+      return res.json() as Promise<WorkflowRun>;
+    },
+    () => getMockRun(id)
+  );
 }
 
 /** GET /api/control-plane/teams */
 export async function listControlPlaneTeams(accessToken?: string): Promise<ControlPlaneTeam[]> {
-  const res = await fetch(`${BASE}/control-plane/teams`, {
-    headers: buildAuthHeaders(accessToken),
-  });
-  if (!res.ok) throw new Error(await readApiError(res, `Failed to fetch deployed teams: ${res.status}`));
-  const data = await res.json();
-  return data.teams as ControlPlaneTeam[];
+  return withMockApi(
+    async () => {
+      const res = await fetch(`${BASE}/control-plane/teams`, {
+        headers: buildAuthHeaders(accessToken),
+      });
+      if (!res.ok) throw new Error(await readApiError(res, `Failed to fetch deployed teams: ${res.status}`));
+      const data = await res.json();
+      return data.teams as ControlPlaneTeam[];
+    },
+    () => []
+  );
 }
 
 /** GET /api/control-plane/teams/:id */
@@ -315,11 +368,18 @@ export async function getControlPlaneTeam(
   teamId: string,
   accessToken?: string
 ): Promise<ControlPlaneTeamDetail> {
-  const res = await fetch(`${BASE}/control-plane/teams/${encodeURIComponent(teamId)}`, {
-    headers: buildAuthHeaders(accessToken),
-  });
-  if (!res.ok) throw new Error(await readApiError(res, `Failed to fetch deployed team: ${res.status}`));
-  return res.json() as Promise<ControlPlaneTeamDetail>;
+  return withMockApi(
+    async () => {
+      const res = await fetch(`${BASE}/control-plane/teams/${encodeURIComponent(teamId)}`, {
+        headers: buildAuthHeaders(accessToken),
+      });
+      if (!res.ok) throw new Error(await readApiError(res, `Failed to fetch deployed team: ${res.status}`));
+      return res.json() as Promise<ControlPlaneTeamDetail>;
+    },
+    () => {
+      throw new Error(`Deployed team not found: ${teamId}`);
+    }
+  );
 }
 
 /** POST /api/control-plane/deployments/workflow */
@@ -349,16 +409,21 @@ export async function startRun(
   config?: Record<string, unknown>,
   accessToken?: string
 ): Promise<WorkflowRun> {
-  const res = await fetch(`${BASE}/runs`, {
-    method: "POST",
-    headers: buildJsonHeaders(accessToken),
-    body: JSON.stringify({ templateId, input, config }),
-  });
-  if (!res.ok) {
-    const err = await res.json().catch(() => null);
-    throw new Error(err?.error ?? `Failed to start run: ${res.status}`);
-  }
-  return res.json() as Promise<WorkflowRun>;
+  return withMockApi(
+    async () => {
+      const res = await fetch(`${BASE}/runs`, {
+        method: "POST",
+        headers: buildJsonHeaders(accessToken),
+        body: JSON.stringify({ templateId, input, config }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => null);
+        throw new Error(err?.error ?? `Failed to start run: ${res.status}`);
+      }
+      return res.json() as Promise<WorkflowRun>;
+    },
+    () => startMockRun(templateId, input)
+  );
 }
 
 /** POST /api/workflows/generate — NL description → workflow steps */
@@ -400,12 +465,17 @@ export async function startRunWithFile(
   if (userId) headers["X-User-Id"] = userId;
   if (accessToken) headers.Authorization = `Bearer ${accessToken}`;
 
-  const res = await fetch(`${BASE}/runs/file`, { method: "POST", headers, body: form });
-  if (!res.ok) {
-    const err = await res.json().catch(() => null);
-    throw new Error(err?.error ?? `Failed to start file run: ${res.status}`);
-  }
-  return res.json() as Promise<WorkflowRun>;
+  return withMockApi(
+    async () => {
+      const res = await fetch(`${BASE}/runs/file`, { method: "POST", headers, body: form });
+      if (!res.ok) {
+        const err = await res.json().catch(() => null);
+        throw new Error(err?.error ?? `Failed to start file run: ${res.status}`);
+      }
+      return res.json() as Promise<WorkflowRun>;
+    },
+    () => startMockRun(templateId, { fileName: file.name || "mock-upload" })
+  );
 }
 
 /** POST /api/debug/step — AI debugger for failed steps */

@@ -34,6 +34,7 @@ interface AuthContextValue {
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
+const USE_MOCK_AUTH = import.meta.env.VITE_USE_MOCK === "true";
 
 function accountToUser(account: AccountInfo): User {
   return {
@@ -61,6 +62,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const account = useAccount(accounts[0] ?? null);
   const [storedUser, setStoredUser] = React.useState<StoredAuthUser | null>(() => readStoredAuthUser());
   const resolvedAccount = account ?? accounts[0] ?? instance.getActiveAccount?.() ?? null;
+  const mockAccessToken = storedUser ? `mock-access-token:${storedUser.id}` : null;
 
   React.useEffect(() => {
     const syncStoredUser = () => setStoredUser(readStoredAuthUser());
@@ -102,6 +104,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   // Silently acquire a fresh access token; falls back to interactive redirect.
   const getAccessToken = async (): Promise<string | null> => {
+    if (USE_MOCK_AUTH && mockAccessToken) {
+      return mockAccessToken;
+    }
     if (!resolvedAccount) return null;
     try {
       const result = await instance.acquireTokenSilent({

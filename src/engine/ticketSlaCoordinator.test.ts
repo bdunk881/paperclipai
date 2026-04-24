@@ -59,4 +59,21 @@ describe("ticket notification coordinator", () => {
     startTicketNotificationCoordinator(100);
     expect(spy).toHaveBeenCalledTimes(1);
   });
+
+  it("does not crash the interval when persisted notification tables are missing", async () => {
+    jest.useFakeTimers();
+    const warnSpy = jest.spyOn(console, "warn").mockImplementation(() => {});
+    jest.spyOn(ticketNotificationStore, "list").mockRejectedValueOnce(new Error('relation "ticket_notifications" does not exist'));
+
+    startTicketNotificationCoordinator(100);
+    await jest.advanceTimersByTimeAsync(100);
+
+    expect(warnSpy).toHaveBeenCalledWith(
+      "[tickets] Notification sweep skipped:",
+      'relation "ticket_notifications" does not exist'
+    );
+
+    warnSpy.mockRestore();
+    jest.useRealTimers();
+  });
 });

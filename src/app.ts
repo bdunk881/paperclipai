@@ -68,9 +68,9 @@ import {
   getPortableWorkflowSchemaDescriptor,
   parsePortableWorkflowBundle,
 } from "./workflows/portableSchema";
-import { WorkflowRun } from "./types/workflow";
+
 import { saveImportedTemplate } from "./templates/importedTemplateStore";
-import { getPostgresConnectionStatus, isPostgresConfigured } from "./db/postgres";
+
 
 const app = express();
 
@@ -814,8 +814,8 @@ app.post("/api/executions/:id/resume", requireAuth, async (req: AuthenticatedReq
 // Health check
 // ---------------------------------------------------------------------------
 app.get("/health", async (_req, res) => {
-  const { checkPostgresConnection, isPostgresConfigured } = await import("./db/postgres");
-  const pgConfigured = isPostgresConfigured();
+  const { checkPostgresConnection, isPostgresConfigured: isPgConfigured } = await import("./db/postgres");
+  const pgConfigured = isPgConfigured();
   const pgConnected = pgConfigured ? await checkPostgresConnection() : false;
   let runs = [] as Awaited<ReturnType<typeof runStore.list>>;
   let runStoreError: string | null = null;
@@ -824,8 +824,8 @@ app.get("/health", async (_req, res) => {
     runs = await runStore.list();
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    runStoreError = message;
     console.warn("[health] Run stats unavailable:", message);
+    runStoreError = message;
   }
 
   res.json({

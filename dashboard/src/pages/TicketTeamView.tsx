@@ -11,7 +11,7 @@ import {
   TicketEmptyState,
   TicketSourceNotice,
 } from "./tickets/ticketingUi";
-import { aggregateActorCounts } from "./tickets/ticketingUtils";
+import { aggregateActorCounts } from "./tickets/ticketingUi.helpers";
 
 export default function TicketTeamView() {
   const { getAccessToken } = useAuth();

@@ -53,7 +53,8 @@ const baseAggregate = {
     creatorId: "alex.pm",
     status: "in_progress",
     priority: "high",
-    slaState: "warning",
+    slaState: "at_risk",
+    slaDeadlineAt: "2026-04-24T03:00:00.000Z",
     tags: ["ticketing", "collaboration"],
     assignees: [
       { type: "user", id: "user-1", role: "primary" },
@@ -156,6 +157,7 @@ describe("TicketDetail", () => {
     renderTicketDetail();
 
     expect(await screen.findByText("Memory")).toBeInTheDocument();
+    expect(screen.getByText("SLA Clock")).toBeInTheDocument();
     expect(screen.getByText("Wire mention metadata")).toBeInTheDocument();
     expect(
       screen.getByText("Primary-gated confirmation protects tickets from accidental resolution.")

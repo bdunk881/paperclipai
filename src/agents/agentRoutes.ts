@@ -4,25 +4,44 @@ import { controlPlaneStore } from "../controlPlane/controlPlaneStore";
 
 const router = express.Router();
 
+type DashboardAgentStatus = "running" | "paused" | "idle" | "error";
+type DashboardRunStatus = "queued" | "running" | "completed" | "failed" | "blocked";
+
 function getUserId(req: AuthenticatedRequest): string | null {
   const userId = req.auth?.sub;
   return typeof userId === "string" && userId.trim() ? userId.trim() : null;
 }
 
-function mapAgentStatus(status: string): string {
-  switch (status) {
-    case "active":
-      return "running";
-    case "paused":
-      return "paused";
-    case "terminated":
-      return "error";
-    default:
-      return "idle";
-  }
+function currentPeriodKey(date = new Date()): string {
+  return date.toISOString().slice(0, 7);
 }
 
-/** GET /api/agents — list all agents for the authenticated user */
+function toDashboardAgentStatus(
+  status: "active" | "paused" | "terminated",
+  lastHeartbeatStatus?: "queued" | "running" | "completed" | "blocked"
+): DashboardAgentStatus {
+  if (status === "paused") return "paused";
+  if (status === "terminated") return "idle";
+  if (lastHeartbeatStatus === "blocked") return "error";
+  if (lastHeartbeatStatus === "running") return "running";
+  return "idle";
+}
+
+function toDashboardHeartbeatStatus(
+  status: "queued" | "running" | "completed" | "blocked"
+): DashboardAgentStatus {
+  if (status === "running") return "running";
+  if (status === "blocked") return "error";
+  return "idle";
+}
+
+function toDashboardRunStatus(
+  status: "queued" | "running" | "completed" | "blocked" | "failed" | "stopped"
+): DashboardRunStatus {
+  if (status === "stopped") return "failed";
+  return status;
+}
+
 router.get("/", (req: AuthenticatedRequest, res) => {
   const userId = getUserId(req);
   if (!userId) {
@@ -30,28 +49,38 @@ router.get("/", (req: AuthenticatedRequest, res) => {
     return;
   }
 
-  const agents = controlPlaneStore.listAllAgents(userId).map((agent) => ({
-    id: agent.id,
-    userId: agent.userId,
-    name: agent.name,
-    description: null,
-    roleKey: agent.roleKey,
-    model: agent.model ?? null,
-    instructions: agent.instructions,
-    status: mapAgentStatus(agent.status),
-    budgetMonthlyUsd: agent.budgetMonthlyUsd,
-    metadata: {},
-    lastHeartbeatAt: agent.lastHeartbeatAt ?? null,
-    lastRunAt: agent.lastHeartbeatAt ?? null,
-    reportingToAgentId: agent.reportingToAgentId ?? null,
-    createdAt: agent.createdAt,
-    updatedAt: agent.updatedAt,
-  }));
+  const teams = new Map(controlPlaneStore.listTeams(userId).map((team) => [team.id, team]));
+  const agents = controlPlaneStore.listAllAgents(userId).map((agent) => {
+    const team = teams.get(agent.teamId);
+    const executions = controlPlaneStore.listAgentExecutions(agent.id, userId);
+    const lastExecution = executions.at(-1);
+    return {
+      id: agent.id,
+      userId: agent.userId,
+      name: agent.name,
+      description: team?.description ?? null,
+      roleKey: agent.roleKey,
+      model: agent.model ?? null,
+      instructions: agent.instructions,
+      status: toDashboardAgentStatus(agent.status, agent.lastHeartbeatStatus),
+      budgetMonthlyUsd: agent.budgetMonthlyUsd,
+      metadata: {
+        teamId: agent.teamId,
+        teamName: team?.name ?? null,
+        reportingToAgentId: agent.reportingToAgentId ?? null,
+        workflowStepId: agent.workflowStepId ?? null,
+        workflowStepKind: agent.workflowStepKind ?? null,
+      },
+      lastHeartbeatAt: agent.lastHeartbeatAt ?? null,
+      lastRunAt: lastExecution?.completedAt ?? lastExecution?.startedAt ?? null,
+      createdAt: agent.createdAt,
+      updatedAt: agent.updatedAt,
+    };
+  });
 
-  res.json({ agents });
+  res.json({ agents, total: agents.length });
 });
 
-/** GET /api/agents/:id/heartbeat — latest heartbeat for an agent */
 router.get("/:id/heartbeat", (req: AuthenticatedRequest, res) => {
   const userId = getUserId(req);
   if (!userId) {
@@ -65,31 +94,26 @@ router.get("/:id/heartbeat", (req: AuthenticatedRequest, res) => {
     return;
   }
 
-  const heartbeats = controlPlaneStore
-    .listHeartbeats(userId, agent.teamId)
-    .filter((hb) => hb.agentId === agent.id);
-
-  const latest = heartbeats.length > 0 ? heartbeats[heartbeats.length - 1] : null;
-  if (!latest) {
-    res.status(404).json({ error: "No heartbeat found" });
+  const heartbeat = controlPlaneStore.listAgentHeartbeats(agent.id, userId).at(-1);
+  if (!heartbeat) {
+    res.status(404).json({ error: "Heartbeat not found" });
     return;
   }
 
   res.json({
-    id: latest.id,
-    agentId: latest.agentId,
-    userId: latest.userId,
-    status: mapAgentStatus(agent.status),
-    summary: latest.summary ?? null,
+    id: heartbeat.id,
+    agentId: heartbeat.agentId,
+    userId: heartbeat.userId,
+    status: toDashboardHeartbeatStatus(heartbeat.status),
+    summary: heartbeat.summary ?? null,
     tokenUsage: 0,
-    costUsd: latest.costUsd ?? 0,
-    runId: latest.executionId ?? null,
-    createdByRunId: latest.executionId ?? latest.id,
-    recordedAt: latest.startedAt,
+    costUsd: heartbeat.costUsd ?? 0,
+    runId: heartbeat.executionId ?? null,
+    createdByRunId: heartbeat.executionId ?? "control-plane",
+    recordedAt: heartbeat.completedAt ?? heartbeat.startedAt,
   });
 });
 
-/** GET /api/agents/:id/runs — list runs (heartbeats) for an agent */
 router.get("/:id/runs", (req: AuthenticatedRequest, res) => {
   const userId = getUserId(req);
   if (!userId) {
@@ -103,29 +127,24 @@ router.get("/:id/runs", (req: AuthenticatedRequest, res) => {
     return;
   }
 
-  const heartbeats = controlPlaneStore
-    .listHeartbeats(userId, agent.teamId)
-    .filter((hb) => hb.agentId === agent.id);
-
-  const runs = heartbeats.map((hb) => ({
-    id: hb.id,
-    agentId: hb.agentId,
-    userId: hb.userId,
-    runId: hb.executionId ?? null,
-    status: hb.completedAt ? "completed" : hb.status === "running" ? "running" : "completed",
-    summary: hb.summary ?? null,
+  const runs = controlPlaneStore.listAgentExecutions(agent.id, userId).map((execution) => ({
+    id: execution.id,
+    agentId: execution.agentId,
+    userId: execution.userId,
+    runId: execution.sourceRunId,
+    status: toDashboardRunStatus(execution.status),
+    summary: execution.summary ?? null,
     tokenUsage: 0,
-    costUsd: hb.costUsd ?? 0,
-    startedAt: hb.startedAt,
-    completedAt: hb.completedAt ?? hb.startedAt,
-    createdByRunId: hb.executionId ?? hb.id,
-    createdAt: hb.startedAt,
+    costUsd: execution.costUsd ?? 0,
+    startedAt: execution.startedAt ?? execution.requestedAt,
+    completedAt: execution.completedAt ?? null,
+    createdByRunId: execution.sourceRunId,
+    createdAt: execution.requestedAt,
   }));
 
-  res.json({ runs });
+  res.json({ runs, total: runs.length });
 });
 
-/** GET /api/agents/:id/budget — budget snapshot for an agent */
 router.get("/:id/budget", (req: AuthenticatedRequest, res) => {
   const userId = getUserId(req);
   if (!userId) {
@@ -139,29 +158,30 @@ router.get("/:id/budget", (req: AuthenticatedRequest, res) => {
     return;
   }
 
-  const heartbeats = controlPlaneStore
-    .listHeartbeats(userId, agent.teamId)
-    .filter((hb) => hb.agentId === agent.id);
-
-  const now = new Date();
-  const currentPeriodStart = new Date(now.getFullYear(), now.getMonth(), 1);
-  const spentUsd = heartbeats
-    .filter((hb) => new Date(hb.startedAt) >= currentPeriodStart)
-    .reduce((sum, hb) => sum + (hb.costUsd ?? 0), 0);
+  const period = currentPeriodKey();
+  const heartbeats = controlPlaneStore.listAgentHeartbeats(agent.id, userId);
+  const spentUsd = Number(
+    heartbeats
+      .filter((heartbeat) => (heartbeat.completedAt ?? heartbeat.startedAt).startsWith(period))
+      .reduce((sum, heartbeat) => sum + (heartbeat.costUsd ?? 0), 0)
+      .toFixed(2)
+  );
+  const monthlyUsd = agent.budgetMonthlyUsd;
+  const remainingUsd = Number(Math.max(0, monthlyUsd - spentUsd).toFixed(2));
+  const lastUpdatedAt = heartbeats.at(-1)?.completedAt ?? heartbeats.at(-1)?.startedAt ?? agent.updatedAt;
 
   res.json({
     agentId: agent.id,
     userId: agent.userId,
-    monthlyUsd: agent.budgetMonthlyUsd,
+    monthlyUsd,
     spentUsd,
-    remainingUsd: Math.max(0, agent.budgetMonthlyUsd - spentUsd),
-    currentPeriod: currentPeriodStart.toISOString().slice(0, 7),
-    autoPaused: agent.status === "paused" && spentUsd >= agent.budgetMonthlyUsd,
-    lastUpdatedAt: agent.updatedAt,
+    remainingUsd,
+    currentPeriod: period,
+    autoPaused: agent.status === "paused" && monthlyUsd > 0 && spentUsd >= monthlyUsd,
+    lastUpdatedAt,
   });
 });
 
-/** GET /api/agents/:id/token-usage — token usage report for an agent */
 router.get("/:id/token-usage", (req: AuthenticatedRequest, res) => {
   const userId = getUserId(req);
   if (!userId) {
@@ -175,31 +195,37 @@ router.get("/:id/token-usage", (req: AuthenticatedRequest, res) => {
     return;
   }
 
-  const days = Math.min(90, Math.max(1, parseInt(req.query.days as string, 10) || 30));
-  const cutoff = new Date(Date.now() - days * 86400000);
+  const parsedDays = Number.parseInt(String(req.query.days ?? "30"), 10);
+  const days = Number.isFinite(parsedDays) && parsedDays > 0 ? parsedDays : 30;
+  const cutoff = new Date();
+  cutoff.setUTCHours(0, 0, 0, 0);
+  cutoff.setUTCDate(cutoff.getUTCDate() - (days - 1));
 
-  const heartbeats = controlPlaneStore
-    .listHeartbeats(userId, agent.teamId)
-    .filter((hb) => hb.agentId === agent.id && new Date(hb.startedAt) >= cutoff);
+  const dailyCosts = new Map<string, number>();
+  for (const heartbeat of controlPlaneStore.listAgentHeartbeats(agent.id, userId)) {
+    const timestamp = heartbeat.completedAt ?? heartbeat.startedAt;
+    if (new Date(timestamp) < cutoff) {
+      continue;
+    }
 
-  const dailyMap = new Map<string, { tokens: number; costUsd: number }>();
-  for (const hb of heartbeats) {
-    const date = hb.startedAt.slice(0, 10);
-    const entry = dailyMap.get(date) ?? { tokens: 0, costUsd: 0 };
-    entry.costUsd += hb.costUsd ?? 0;
-    dailyMap.set(date, entry);
+    const date = timestamp.slice(0, 10);
+    dailyCosts.set(date, Number(((dailyCosts.get(date) ?? 0) + (heartbeat.costUsd ?? 0)).toFixed(2)));
   }
 
-  const daily = Array.from(dailyMap.entries())
-    .sort(([a], [b]) => a.localeCompare(b))
-    .map(([date, data]) => ({ date, tokens: data.tokens, costUsd: data.costUsd }));
+  const daily = Array.from(dailyCosts.entries())
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([date, costUsd]) => ({
+      date,
+      tokens: 0,
+      costUsd,
+    }));
 
   res.json({
     agentId: agent.id,
     userId: agent.userId,
     days,
     totalTokens: 0,
-    totalCostUsd: daily.reduce((sum, d) => sum + d.costUsd, 0),
+    totalCostUsd: Number(daily.reduce((sum, entry) => sum + entry.costUsd, 0).toFixed(2)),
     daily,
   });
 });

@@ -321,7 +321,7 @@ describe("WorkflowBuilder", () => {
     fireEvent.click(screen.getByRole("button", { name: /run with file/i }));
 
     await waitFor(() => {
-      expect(startRunWithFileMock).toHaveBeenCalledWith(expect.any(String), file);
+      expect(startRunWithFileMock).toHaveBeenCalledWith(expect.any(String), file, undefined, "token-123");
     });
     expect(await screen.findByText(/run started — redirecting to monitor/i)).toBeInTheDocument();
   });

@@ -104,6 +104,14 @@ function resolveAuthConfig(): AuthConfig | null {
     issuers.push(`${ciamAuthority}/v2.0`);
   }
 
+  // Azure Entra External ID (CIAM) tokens use the tenant GUID as the
+  // ciamlogin.com subdomain in the issuer claim, regardless of whether a
+  // branded custom domain or a friendly tenant subdomain is configured.
+  const guidCiamIssuer = `https://${normalizedTenantId}.ciamlogin.com/${normalizedTenantId}/v2.0`;
+  if (!issuers.includes(guidCiamIssuer)) {
+    issuers.push(guidCiamIssuer);
+  }
+
   const jwksUri = authority
     ? `${authority}/discovery/v2.0/keys`
     : `${ciamAuthority}/discovery/v2.0/keys`;

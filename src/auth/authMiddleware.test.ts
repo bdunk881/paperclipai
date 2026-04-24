@@ -177,7 +177,10 @@ describe("requireAuth", () => {
         "2dfd3a08-277c-4893-b07d-eca5ae322310",
         "d36ce552-1a3d-4cd3-b851-beff4e3bf440",
       ]),
-      issuer: ["https://legacyciam.ciamlogin.com/legacy-tenant/v2.0"],
+      issuer: expect.arrayContaining([
+        "https://legacyciam.ciamlogin.com/legacy-tenant/v2.0",
+        "https://legacy-tenant.ciamlogin.com/legacy-tenant/v2.0",
+      ]),
       algorithms: ["RS256"],
     });
     keyResolver({ kid: "legacy-kid" }, jest.fn());
@@ -210,7 +213,10 @@ describe("requireAuth", () => {
     const [, , options] = verifyMock.mock.calls[0];
     expect(options).toMatchObject({
       audience: expect.arrayContaining(["new-client"]),
-      issuer: ["https://newciam.ciamlogin.com/new-tenant/v2.0"],
+      issuer: expect.arrayContaining([
+        "https://newciam.ciamlogin.com/new-tenant/v2.0",
+        "https://new-tenant.ciamlogin.com/new-tenant/v2.0",
+      ]),
     });
     const [, keyResolver] = verifyMock.mock.calls[0];
     keyResolver({ kid: "new-kid" }, jest.fn());
@@ -240,10 +246,11 @@ describe("requireAuth", () => {
     const [, keyResolver, options] = verifyMock.mock.calls[0];
     expect(options).toMatchObject({
       audience: expect.arrayContaining(["custom-client"]),
-      issuer: [
+      issuer: expect.arrayContaining([
         "https://auth.helloautoflow.com/tenant-guid/v2.0",
         "https://autoflowciam.ciamlogin.com/tenant-guid/v2.0",
-      ],
+        "https://tenant-guid.ciamlogin.com/tenant-guid/v2.0",
+      ]),
       algorithms: ["RS256"],
     });
     keyResolver({ kid: "brand-kid" }, jest.fn());
@@ -274,7 +281,10 @@ describe("requireAuth", () => {
     const [, , options] = verifyMock.mock.calls[0];
     expect(options).toMatchObject({
       audience: expect.arrayContaining(["new-client", "legacy-client"]),
-      issuer: ["https://newciam.ciamlogin.com/tenant-guid/v2.0"],
+      issuer: expect.arrayContaining([
+        "https://newciam.ciamlogin.com/tenant-guid/v2.0",
+        "https://tenant-guid.ciamlogin.com/tenant-guid/v2.0",
+      ]),
     });
   });
 });

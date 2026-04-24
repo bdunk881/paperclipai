@@ -249,6 +249,32 @@ async function applyInboundStatus(ticket: TicketRecord, metadata: TicketSyncConn
   await transition(mappedStatus);
 }
 
+function mapInboundAssignees(ticket: TicketRecord, metadata: TicketSyncConnectionMetadata, event: TicketSyncWebhookEvent) {
+  const mappedAssigneeId = mapInboundValue(metadata.fieldMapping?.assignee, event.assignee);
+  if (!mappedAssigneeId) {
+    return undefined;
+  }
+
+  const currentPrimary = ticket.assignees.find((assignee) => assignee.role === "primary");
+  const primaryType = currentPrimary?.type ?? metadata.defaultAssignee?.type ?? "user";
+  const nextPrimary = {
+    type: primaryType,
+    id: mappedAssigneeId,
+    role: "primary" as const,
+  };
+
+  if (
+    currentPrimary &&
+    currentPrimary.type === nextPrimary.type &&
+    currentPrimary.id === nextPrimary.id
+  ) {
+    return undefined;
+  }
+
+  const collaborators = ticket.assignees.filter((assignee) => assignee.role !== "primary");
+  return [nextPrimary, ...collaborators];
+}
+
 function parseGitHubWebhook(rawBody: Buffer, headers: Record<string, string | undefined>): TicketSyncWebhookEvent {
   const event = headers["x-github-event"];
   const payload = JSON.parse(rawBody.toString("utf8")) as Record<string, any>;
@@ -785,6 +811,7 @@ export const ticketSyncService = {
       description: event.description,
       priority: mapInboundValue(built.decrypted.record.metadata.fieldMapping?.priority, event.priority) as any,
       tags: event.labels,
+      assignees: mapInboundAssignees(linkedTicket, built.decrypted.record.metadata, event),
     });
 
     await applyInboundStatus(linkedTicket, built.decrypted.record.metadata, event);

@@ -527,6 +527,11 @@ describe("ticket sync routes", () => {
           defaultTeamId: "team-1",
           webhookSecret: "linear-secret",
         },
+        fieldMapping: {
+          assignee: {
+            "user-2": "lin-user-2",
+          },
+        },
         secrets: { token: "lin_token" },
       });
 
@@ -549,6 +554,7 @@ describe("ticket sync routes", () => {
         title: "Linear updated title",
         description: "Updated from Linear",
         state: { name: "In Progress" },
+        assignee: { id: "lin-user-2" },
         labels: [{ name: "autoflow" }],
       },
     });
@@ -569,6 +575,7 @@ describe("ticket sync routes", () => {
 
     expect(ticket.status).toBe(200);
     expect(ticket.body.ticket.title).toBe("Linear updated title");
+    expect(ticket.body.ticket.assignees).toEqual([{ type: "user", id: "user-2", role: "primary" }]);
 
     const commentPayload = JSON.stringify({
       action: "create",

@@ -177,6 +177,7 @@ Regression Suite
 
 Execution Procedure
 - Step 1: QA reviews the milestone ticket scope before engineering marks it complete.
+- Step 1.5: QA copies the relevant section from `docs/operational/processes/ticketing-system-milestone-signoff-checklist.md` into the milestone review workflow and fills in the required evidence block.
 - Step 2: QA confirms the required backend and frontend tests were added in the milestone PR or branch.
 - Step 3: QA runs the relevant automated test commands.
 - Step 4: For `feature` or `customer-facing` work, QA validates the deployed artifact and records URL, SHA, timestamp, and smoke result.
@@ -196,3 +197,4 @@ Exit Criteria For ALT-1705
 
 Revision History
 - 2026-04-23: Created initial ticketing-system-qa-plan.md for `ALT-1705`.
+- 2026-04-23: Linked the milestone sign-off checklist for ticket-level QA execution.

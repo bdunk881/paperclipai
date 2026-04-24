@@ -137,7 +137,14 @@ export function requireAuth(
   const requestPath = (req.originalUrl || req.path).split("?")[0];
   const isMemoryRoute = requestPath === "/api/memory" || requestPath.startsWith("/api/memory/");
   const isKnowledgeRoute = requestPath === "/api/knowledge" || requestPath.startsWith("/api/knowledge/");
-  const allowHeaderAuth = isMemoryRoute || isKnowledgeRoute;
+  const isDashboardPreviewReadRoute =
+    req.method === "GET" &&
+    (
+      requestPath === "/api/runs" ||
+      requestPath.startsWith("/api/runs/") ||
+      requestPath === "/api/llm-configs"
+    );
+  const allowHeaderAuth = isMemoryRoute || isKnowledgeRoute || isDashboardPreviewReadRoute;
   if (!authHeader?.startsWith("Bearer ")) {
     if (allowHeaderAuth && typeof headerUserId === "string" && headerUserId.trim()) {
       req.auth = { sub: headerUserId.trim() };

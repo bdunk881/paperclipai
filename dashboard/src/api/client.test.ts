@@ -7,6 +7,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import * as authStorage from "../auth/authStorage";
 import {
   deployWorkflowAsTeam,
   listTemplates,
@@ -15,12 +16,7 @@ import {
   getTemplate,
   listRuns,
   getRun,
-  resolveApproval,
-  searchMemory,
-  setDefaultLLMConfig,
   startRun,
-  startRunWithFile,
-  writeMemoryEntry,
   type TemplateSummary,
 } from "./client";
 import type { WorkflowRun, WorkflowTemplate } from "../types/workflow";
@@ -67,6 +63,7 @@ function lastFetchOptions(): RequestInit {
 
 beforeEach(() => {
   vi.restoreAllMocks();
+  vi.spyOn(authStorage, "readStoredAuthUser").mockReturnValue(null);
 });
 
 const sampleSummary: TemplateSummary = {
@@ -193,7 +190,12 @@ describe("listRuns", () => {
 
   it("throws on non-ok response", async () => {
     mockFetchFail(500);
-    await expect(listRuns()).rejects.toThrow(/500/);
+    await expect(listRuns()).rejects.toThrow(/Not found/);
+  });
+
+  it("uses the backend error payload when runs loading fails", async () => {
+    mockFetchFail(401, { error: "Unauthorized" });
+    await expect(listRuns()).rejects.toThrow(/Unauthorized/);
   });
 
   it("adds Authorization header when access token is provided", async () => {
@@ -201,6 +203,18 @@ describe("listRuns", () => {
     await listRuns(undefined, "token-123");
     const headers = lastFetchOptions().headers as Record<string, string>;
     expect(headers.Authorization).toBe("Bearer token-123");
+  });
+
+  it("falls back to X-User-Id when a preview user is stored", async () => {
+    vi.spyOn(authStorage, "readStoredAuthUser").mockReturnValue({
+      id: "usr-qa-preview",
+      email: "qa-preview@autoflow.local",
+      name: "QA Preview User",
+    });
+    mockFetch({ runs: [sampleRun], total: 1 });
+    await listRuns();
+    const headers = lastFetchOptions().headers as Record<string, string>;
+    expect(headers["X-User-Id"]).toBe("usr-qa-preview");
   });
 
   it("returns the runs array from the response", async () => {
@@ -316,6 +330,11 @@ describe("control plane client", () => {
 
     expect(lastFetchUrl()).toBe("/api/control-plane/teams/team-001");
     expect(result.team.name).toBe("Support Team");
+  });
+
+  it("uses backend control-plane error payloads", async () => {
+    mockFetchFail(401, { error: "Team access denied" });
+    await expect(listControlPlaneTeams("token-123")).rejects.toThrow(/Team access denied/);
   });
 
   it("deploys a workflow as a team and forwards the run header", async () => {

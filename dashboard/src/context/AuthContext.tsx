@@ -58,6 +58,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const isAuthenticated = useIsAuthenticated();
   const account = useAccount(accounts[0] ?? null);
   const [storedUser, setStoredUser] = React.useState<StoredAuthUser | null>(() => readStoredAuthUser());
+  const resolvedAccount = account ?? accounts[0] ?? instance.getActiveAccount?.() ?? null;
 
   React.useEffect(() => {
     const syncStoredUser = () => setStoredUser(readStoredAuthUser());
@@ -71,7 +72,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     };
   }, []);
 
-  const user = isAuthenticated && account ? accountToUser(account) : storedUser ? storedUserToUser(storedUser) : null;
+  const user = isAuthenticated || resolvedAccount
+    ? resolvedAccount
+      ? accountToUser(resolvedAccount)
+      : storedUser
+        ? storedUserToUser(storedUser)
+        : null
+    : storedUser
+      ? storedUserToUser(storedUser)
+      : null;
 
   const login = async () => {
     await instance.loginRedirect(loginRequest);
@@ -83,7 +92,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const logout = () => {
     clearStoredAuthUser();
-    if (!isAuthenticated || !account) {
+    if (!isAuthenticated || !resolvedAccount) {
       return;
     }
     instance.logoutRedirect({ postLogoutRedirectUri: "/login" });
@@ -91,16 +100,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   // Silently acquire a fresh access token; falls back to interactive redirect.
   const getAccessToken = async (): Promise<string | null> => {
-    if (!account) return null;
+    if (!resolvedAccount) return null;
     try {
       const result = await instance.acquireTokenSilent({
         ...loginRequest,
-        account,
+        account: resolvedAccount,
       });
       return result.accessToken;
     } catch (err) {
       if (err instanceof InteractionRequiredAuthError) {
-        await instance.acquireTokenRedirect({ ...loginRequest, account });
+        await instance.acquireTokenRedirect({ ...loginRequest, account: resolvedAccount });
       }
       return null;
     }

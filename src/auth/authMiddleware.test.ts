@@ -95,9 +95,46 @@ describe("requireAuth", () => {
     expect(res.status).not.toHaveBeenCalled();
   });
 
-  it("still rejects non-memory routes without Authorization", () => {
+  it("accepts X-User-Id for GET /api/runs when Authorization is missing", () => {
     const requireAuth = loadRequireAuth();
     const req = {
+      method: "GET",
+      headers: { "x-user-id": "preview-user" },
+      originalUrl: "/api/runs",
+      path: "/api/runs",
+    } as unknown as AuthenticatedRequest;
+    const res = createResponse();
+    const next = jest.fn();
+
+    requireAuth(req, res as never, next);
+
+    expect(next).toHaveBeenCalledTimes(1);
+    expect(req.auth?.sub).toBe("preview-user");
+    expect(res.status).not.toHaveBeenCalled();
+  });
+
+  it("accepts X-User-Id for GET /api/llm-configs when Authorization is missing", () => {
+    const requireAuth = loadRequireAuth();
+    const req = {
+      method: "GET",
+      headers: { "x-user-id": "preview-user" },
+      originalUrl: "/api/llm-configs",
+      path: "/api/llm-configs",
+    } as unknown as AuthenticatedRequest;
+    const res = createResponse();
+    const next = jest.fn();
+
+    requireAuth(req, res as never, next);
+
+    expect(next).toHaveBeenCalledTimes(1);
+    expect(req.auth?.sub).toBe("preview-user");
+    expect(res.status).not.toHaveBeenCalled();
+  });
+
+  it("still rejects non-allowlisted routes without Authorization", () => {
+    const requireAuth = loadRequireAuth();
+    const req = {
+      method: "POST",
       headers: { "x-user-id": "demo-user" },
       originalUrl: "/api/runs",
       path: "/api/runs",

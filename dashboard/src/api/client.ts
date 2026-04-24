@@ -1,5 +1,6 @@
 import type { WorkflowTemplate, WorkflowRun, WorkflowStep } from "../types/workflow";
 import { getApiBasePath } from "./baseUrl";
+import { readStoredAuthUser } from "../auth/authStorage";
 
 // ---------------------------------------------------------------------------
 // LLM Config types — mirrors src/engine/llmProviders/types.ts
@@ -34,8 +35,16 @@ export interface CreateLLMConfigInput {
 }
 
 function buildAuthHeaders(accessToken?: string): HeadersInit | undefined {
-  if (!accessToken) return undefined;
-  return { Authorization: `Bearer ${accessToken}` };
+  if (accessToken) {
+    return { Authorization: `Bearer ${accessToken}` };
+  }
+
+  const storedUser = readStoredAuthUser();
+  if (storedUser?.id) {
+    return { "X-User-Id": storedUser.id };
+  }
+
+  return undefined;
 }
 
 function buildJsonHeaders(
@@ -59,6 +68,11 @@ function buildJsonHeaders(
   }
 
   return headers;
+}
+
+async function readApiError(response: Response, fallback: string): Promise<string> {
+  const payload = (await response.json().catch(() => null)) as { error?: string } | null;
+  return payload?.error ?? fallback;
 }
 
 // ---------------------------------------------------------------------------
@@ -262,7 +276,7 @@ export async function listRuns(templateId?: string, accessToken?: string): Promi
   const res = await fetch(url, {
     headers: buildAuthHeaders(accessToken),
   });
-  if (!res.ok) throw new Error(`Failed to fetch runs: ${res.status}`);
+  if (!res.ok) throw new Error(await readApiError(res, `Failed to fetch runs: ${res.status}`));
   const data = await res.json();
   return data.runs as WorkflowRun[];
 }
@@ -279,7 +293,7 @@ export async function listControlPlaneTeams(accessToken?: string): Promise<Contr
   const res = await fetch(`${BASE}/control-plane/teams`, {
     headers: buildAuthHeaders(accessToken),
   });
-  if (!res.ok) throw new Error(`Failed to fetch deployed teams: ${res.status}`);
+  if (!res.ok) throw new Error(await readApiError(res, `Failed to fetch deployed teams: ${res.status}`));
   const data = await res.json();
   return data.teams as ControlPlaneTeam[];
 }
@@ -292,7 +306,7 @@ export async function getControlPlaneTeam(
   const res = await fetch(`${BASE}/control-plane/teams/${encodeURIComponent(teamId)}`, {
     headers: buildAuthHeaders(accessToken),
   });
-  if (!res.ok) throw new Error(`Failed to fetch deployed team: ${res.status}`);
+  if (!res.ok) throw new Error(await readApiError(res, `Failed to fetch deployed team: ${res.status}`));
   return res.json() as Promise<ControlPlaneTeamDetail>;
 }
 

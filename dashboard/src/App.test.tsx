@@ -126,6 +126,16 @@ describe("App", () => {
     expect(screen.getByText("API Keys Page")).toBeInTheDocument();
   });
 
+  it("renders the run monitor on a direct authenticated entry", async () => {
+    authState.user = { id: "user-1", email: "user@example.com", name: "User" };
+    window.history.replaceState({}, "", "/monitor");
+
+    render(<App />);
+
+    expect(await screen.findByText("Layout Shell")).toBeInTheDocument();
+    expect(screen.getByText("Run Monitor Page")).toBeInTheDocument();
+  });
+
   it("redirects unknown routes back through the authenticated root", async () => {
     authState.user = { id: "user-1", email: "user@example.com", name: "User" };
     window.history.replaceState({}, "", "/does-not-exist");

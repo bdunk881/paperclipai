@@ -62,7 +62,10 @@ export function startTicketNotificationCoordinator(intervalMs = 2_000): void {
     return;
   }
   ticketNotificationSweepTimer = setInterval(() => {
-    void runTicketNotificationSweep();
+    void runTicketNotificationSweep().catch((error) => {
+      const message = error instanceof Error ? error.message : String(error);
+      console.warn("[tickets] Notification sweep skipped:", message);
+    });
   }, intervalMs);
   ticketNotificationSweepTimer.unref?.();
 }

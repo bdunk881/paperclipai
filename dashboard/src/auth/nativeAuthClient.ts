@@ -216,7 +216,7 @@ export async function startSignUp(email: string, password: string, displayName: 
     client_id: clientId(),
     username: email,
     password,
-    challenge_type: "oob redirect",
+    challenge_type: "oob password redirect",
     attributes: JSON.stringify({ displayName }),
   });
 }

@@ -4,6 +4,7 @@ import { ArrowLeft, RefreshCw } from "lucide-react";
 import {
   getTicketActorProfile,
   listTicketQueue,
+  normalizeTicketSlaState,
   type TicketPriority,
   type TicketRecord,
   type TicketStatus,
@@ -65,7 +66,7 @@ export default function TicketActorView() {
     return tickets.filter((ticket) => {
       if (statusFilter !== "all" && ticket.status !== statusFilter) return false;
       if (priorityFilter !== "all" && ticket.priority !== priorityFilter) return false;
-      if (slaFilter !== "all" && ticket.slaState !== slaFilter) return false;
+      if (slaFilter !== "all" && normalizeTicketSlaState(ticket.slaState) !== slaFilter) return false;
       return true;
     });
   }, [priorityFilter, slaFilter, statusFilter, tickets]);
@@ -134,7 +135,7 @@ export default function TicketActorView() {
               label="SLA"
               value={slaFilter}
               onChange={(value) => setSlaFilter(value as SlaFilter)}
-              options={["all", "breached", "warning", "on_track", "paused"]}
+              options={["all", "breached", "at_risk", "on_track", "paused"]}
             />
           </div>
         </section>

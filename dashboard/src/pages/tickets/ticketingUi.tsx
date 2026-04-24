@@ -1,14 +1,16 @@
 import clsx from "clsx";
 import {
   AlertCircle,
+  AlertTriangle,
   ArrowUpRight,
   Bot,
-  Clock3,
+  CheckCircle2,
   Flag,
   Link2,
   PauseCircle,
   Ticket,
   UserRound,
+  XCircle,
 } from "lucide-react";
 import type {
   TicketActorRef,
@@ -60,17 +62,25 @@ export function TicketPriorityBadge({ priority }: { priority: import("../../api/
   );
 }
 
-export function TicketSlaBadge({ slaState }: { slaState: TicketSlaState | string }) {
-  const Icon = slaState === "paused" ? PauseCircle : slaState === "breached" ? AlertCircle : Clock3;
+export function TicketSlaBadge({ slaState }: { slaState: TicketSlaStateLike | string }) {
+  const normalized = normalizeTicketSlaState(slaState);
+  const Icon =
+    normalized === "paused"
+      ? PauseCircle
+      : normalized === "breached"
+        ? XCircle
+        : normalized === "at_risk"
+          ? AlertTriangle
+          : CheckCircle2;
   return (
     <span
       className={clsx(
-        "inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.18em]",
-        ticketSlaClasses(slaState)
+        "inline-flex items-center gap-1 rounded-full border px-2 py-0.5 font-ticket-mono text-[10px] font-bold uppercase tracking-[0.2em] transition-colors duration-300 ease-in-out",
+        ticketSlaClasses(normalized)
       )}
     >
       <Icon size={12} />
-      {slaLabel(slaState)}
+      {slaLabel(normalized)}
     </span>
   );
 }
@@ -194,14 +204,14 @@ export function TicketRowMeta({
 }: {
   ticket: TicketRecord;
 }) {
-  const owner = primaryAssignee(ticket);
+  const owner = ticket.assignees.find((a) => a.role === "primary");
 
   return (
     <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
       <span className="font-ticket-mono uppercase tracking-[0.16em] text-slate-400">{ticket.id}</span>
       {owner ? (
         <>
-          <span className="text-slate-700">•</span>
+          <span className="text-slate-700">&bull;</span>
           <span className="inline-flex items-center gap-1">
             {owner.type === "agent" ? <Bot size={12} /> : <UserRound size={12} />}
             {getTicketActorProfile(owner).name}
@@ -210,7 +220,7 @@ export function TicketRowMeta({
       ) : null}
       {ticket.dueDate ? (
         <>
-          <span className="text-slate-700">•</span>
+          <span className="text-slate-700">&bull;</span>
           <span>Due {formatTicketTimestamp(ticket.dueDate)}</span>
         </>
       ) : null}

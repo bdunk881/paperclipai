@@ -43,6 +43,9 @@ import { requireAuth, requireAuthOrQaBypass, AuthenticatedRequest } from "./auth
 import stripeWebhookRoutes from "./billing/stripeWebhook";
 import apolloWebhookRoutes from "./integrations/apollo-attio/webhookRoute";
 import checkoutRoutes from "./billing/checkoutRoutes";
+import apolloRoutes from "./integrations/apollo/routes";
+import hubSpotRoutes, { hubSpotWebhookRouter } from "./integrations/hubspot/routes";
+import sentryRoutes, { sentryWebhookRouter } from "./integrations/sentry/routes";
 import subscriptionRoutes from "./billing/subscriptionRoutes";
 import slackRoutes, { slackWebhookRouter } from "./integrations/slack/routes";
 import shopifyRoutes, { shopifyWebhookRouter } from "./integrations/shopify/routes";
@@ -205,8 +208,12 @@ app.use("/api/webhooks/shopify", shopifyWebhookRouter);
 app.use("/api/webhooks/docusign", docuSignWebhookRouter);
 // Linear webhook — mounted before express.json() for signature verification
 app.use("/api/webhooks/linear", linearWebhookRouter);
+// Sentry webhook — mounted before express.json() for signature verification
+app.use("/api/webhooks/sentry", sentryWebhookRouter);
 // Microsoft Teams webhook — mounted before express.json() for signature verification
 app.use("/api/webhooks/teams", teamsWebhookRouter);
+// HubSpot webhook — mounted before express.json() for signature verification
+app.use("/api/webhooks/hubspot", hubSpotWebhookRouter);
 // PostHog webhook — mounted before express.json() for signature verification
 app.use("/api/webhooks/posthog", posthogWebhookRouter);
 // Intercom webhook — mounted before express.json() for signature verification
@@ -260,7 +267,10 @@ app.use("/api/integrations/slack", slackRoutes);
 app.use("/api/integrations/shopify", shopifyRoutes);
 app.use("/api/integrations/docusign", docuSignRoutes);
 app.use("/api/integrations/linear", linearRoutes);
+app.use("/api/integrations/sentry", sentryRoutes);
+app.use("/api/integrations/hubspot", hubSpotRoutes);
 app.use("/api/integrations/teams", teamsRoutes);
+app.use("/api/integrations/apollo", apolloRoutes);
 app.use("/api/integrations/posthog", posthogRoutes);
 app.use("/api/integrations/intercom", intercomRoutes);
 app.use("/api/integrations/datadog-azure-monitor", datadogAzureMonitorRoutes);

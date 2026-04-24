@@ -21,7 +21,7 @@ import {
   type TicketActorRef,
   type TicketPriority,
   type TicketRecord,
-  type TicketSlaState,
+  type TicketSlaStateLike,
   type TicketStatus,
 } from "../api/tickets";
 import { useAuth } from "../context/AuthContext";
@@ -39,7 +39,7 @@ import { collaboratorCount, primaryAssignee, relativeTicketTime } from "./ticket
 
 type StatusFilter = TicketStatus | "all";
 type PriorityFilter = TicketPriority | "all";
-type SlaFilter = TicketSlaState | "all";
+type SlaFilter = TicketSlaStateLike | "all";
 
 const STATUS_OPTIONS: StatusFilter[] = ["all", "open", "in_progress", "blocked", "resolved", "cancelled"];
 const PRIORITY_OPTIONS: PriorityFilter[] = ["all", "urgent", "high", "medium", "low"];

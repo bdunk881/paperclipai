@@ -8,7 +8,7 @@ import {
   type TicketPriority,
   type TicketRecord,
   type TicketStatus,
-  type TicketSlaState,
+  type TicketSlaStateLike,
 } from "../api/tickets";
 import { useAuth } from "../context/AuthContext";
 import {
@@ -23,7 +23,7 @@ import { primaryAssignee, relativeTicketTime } from "./tickets/ticketingUtils";
 
 type StatusFilter = TicketStatus | "all";
 type PriorityFilter = TicketPriority | "all";
-type SlaFilter = TicketSlaState | "all";
+type SlaFilter = TicketSlaStateLike | "all";
 
 export default function TicketActorView() {
   const { actorType, actorId } = useParams<{ actorType: "agent" | "user"; actorId: string }>();

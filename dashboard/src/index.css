@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@500;600&display=swap');
 
 @tailwind base;
 @tailwind components;
@@ -39,6 +39,10 @@
     font-family: 'Inter', ui-sans-serif, system-ui, -apple-system, sans-serif;
     background-color: rgb(var(--color-bg-primary));
     color: rgb(var(--color-text-primary));
+  }
+
+  .font-ticket-mono {
+    font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
   }
 }
 
@@ -123,11 +127,19 @@
   }
 
   .animate-slide-in-right {
-    animation: slide-in-right 0.2s ease-out;
+    animation: slide-in-right 0.4s cubic-bezier(0.16, 1, 0.3, 1);
   }
 
   .animate-slide-in-down {
     animation: slide-in-down 0.24s ease-out;
+  }
+
+  .animate-scale-in {
+    animation: scale-in 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
+  }
+
+  .animate-ticket-modal {
+    animation: ticket-modal-enter 0.24s ease-out;
   }
 
   .scanline-skeleton {
@@ -179,6 +191,28 @@
     to {
       opacity: 1;
       transform: translateY(0);
+    }
+  }
+
+  @keyframes scale-in {
+    from {
+      opacity: 0;
+      transform: translateY(-4px) scale(0.96);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0) scale(1);
+    }
+  }
+
+  @keyframes ticket-modal-enter {
+    from {
+      opacity: 0;
+      transform: translateY(24px) scale(0.985);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0) scale(1);
     }
   }
 

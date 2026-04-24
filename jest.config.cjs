@@ -5,10 +5,12 @@ module.exports = {
   testPathIgnorePatterns: [
     "/node_modules/",
     "/dashboard/",
+    "/\\.claude/worktrees/",
     "/\\.worktrees/",
     "/paperclipai-alt\\d+/",
   ],
   modulePathIgnorePatterns: [
+    "<rootDir>/\\.claude/worktrees/",
     "<rootDir>/\\.worktrees/",
     "<rootDir>/paperclipai-alt\\d+/",
   ],

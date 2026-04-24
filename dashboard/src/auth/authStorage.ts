@@ -18,17 +18,6 @@ export const AUTH_STORAGE_KEY = "autoflow_user";
 export const AUTH_SESSION_STORAGE_KEY = "autoflow_auth_session";
 export const AUTH_STORAGE_EVENT = "autoflow-auth-user-changed";
 
-// Sensitive tokens kept in memory only — never persisted to browser storage.
-let inMemoryRefreshToken: string | undefined;
-
-export function getInMemoryRefreshToken(): string | undefined {
-  return inMemoryRefreshToken;
-}
-
-export function setInMemoryRefreshToken(token: string | undefined): void {
-  inMemoryRefreshToken = token;
-}
-
 function isStoredAuthUser(value: unknown): value is StoredAuthUser {
   if (!value || typeof value !== "object") return false;
   const candidate = value as Record<string, unknown>;
@@ -86,11 +75,7 @@ export function readStoredAuthUser(): StoredAuthUser | null {
 
 export function writeStoredAuthSession(session: StoredAuthSession): void {
   if (typeof window === "undefined") return;
-  // Keep refresh token in memory only — strip from persisted storage.
-  inMemoryRefreshToken = session.refreshToken;
-  const { refreshToken: _rt, idToken: _id, ...persistable } = session;
-  void _rt; void _id;
-  window.sessionStorage.setItem(AUTH_SESSION_STORAGE_KEY, JSON.stringify(persistable));
+  window.sessionStorage.setItem(AUTH_SESSION_STORAGE_KEY, JSON.stringify(session));
   window.sessionStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(session.user));
   dispatchAuthStorageEvent();
 }
@@ -103,7 +88,6 @@ export function writeStoredAuthUser(user: StoredAuthUser): void {
 
 export function clearStoredAuthSession(): void {
   if (typeof window === "undefined") return;
-  inMemoryRefreshToken = undefined;
   window.sessionStorage.removeItem(AUTH_SESSION_STORAGE_KEY);
   window.sessionStorage.removeItem(AUTH_STORAGE_KEY);
   dispatchAuthStorageEvent();

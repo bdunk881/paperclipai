@@ -36,7 +36,10 @@ export default function TicketActorView() {
   const [priorityFilter, setPriorityFilter] = useState<PriorityFilter>("all");
   const [slaFilter, setSlaFilter] = useState<SlaFilter>("all");
 
-  const actor = actorType && actorId ? { type: actorType, id: actorId } : null;
+  const actor = useMemo(
+    () => (actorType && actorId ? { type: actorType, id: actorId } : null),
+    [actorType, actorId]
+  );
   const profile = actor ? getTicketActorProfile(actor) : null;
 
   const load = useCallback(async () => {

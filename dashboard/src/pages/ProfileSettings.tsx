@@ -62,7 +62,7 @@ export default function ProfileSettings() {
       } catch (e) {
         if (cancelled) return;
         if (e instanceof ApiError && e.status === 404) {
-          const raw = localStorage.getItem(fallbackStorageKey);
+          const raw = sessionStorage.getItem(fallbackStorageKey);
           const fallback = raw
             ? (JSON.parse(raw) as { displayName?: string; timezone?: string })
             : null;
@@ -105,7 +105,7 @@ export default function ProfileSettings() {
       setToast({ variant: "success", message: "Profile saved successfully." });
     } catch (e) {
       if (e instanceof ApiError && e.status === 404) {
-        localStorage.setItem(
+        sessionStorage.setItem(
           fallbackStorageKey,
           JSON.stringify({ displayName: displayName.trim(), timezone })
         );

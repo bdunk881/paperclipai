@@ -35,7 +35,7 @@ import {
   getClassificationDecisionLogCapacity,
   listClassificationDecisions,
 } from "./engine/classificationLog";
-import { requireAuth, AuthenticatedRequest } from "./auth/authMiddleware";
+import { requireAuth, requireAuthOrQaBypass, AuthenticatedRequest } from "./auth/authMiddleware";
 import stripeWebhookRoutes from "./billing/stripeWebhook";
 import apolloWebhookRoutes from "./integrations/apollo-attio/webhookRoute";
 import checkoutRoutes from "./billing/checkoutRoutes";
@@ -373,7 +373,7 @@ app.get("/api/templates/:id/sample", (req, res) => {
  * Body: { templateId, input, config? }
  * Returns the new run (status=pending) immediately; execution is async.
  */
-app.post("/api/runs", requireAuth, llmEndpointRateLimiter, async (req: AuthenticatedRequest, res) => {
+app.post("/api/runs", requireAuthOrQaBypass, llmEndpointRateLimiter, async (req: AuthenticatedRequest, res) => {
   const { templateId, input, config } = req.body as {
     templateId?: string;
     input?: Record<string, unknown>;
@@ -399,7 +399,7 @@ app.post("/api/runs", requireAuth, llmEndpointRateLimiter, async (req: Authentic
 });
 
 /** List all runs, optionally filtered by templateId */
-app.get("/api/runs", requireAuth, async (req: AuthenticatedRequest, res) => {
+app.get("/api/runs", requireAuthOrQaBypass, async (req: AuthenticatedRequest, res) => {
   const { templateId } = req.query;
   const runs = await runStore.list(
     typeof templateId === "string" ? templateId : undefined,
@@ -409,7 +409,7 @@ app.get("/api/runs", requireAuth, async (req: AuthenticatedRequest, res) => {
 });
 
 /** Get a single run by ID */
-app.get("/api/runs/:id", requireAuth, async (req: AuthenticatedRequest, res) => {
+app.get("/api/runs/:id", requireAuthOrQaBypass, async (req: AuthenticatedRequest, res) => {
   const run = await runStore.get(req.params.id);
   const userId = req.auth?.sub;
   if (!run || (run.userId !== undefined && run.userId !== userId)) {
@@ -439,13 +439,13 @@ app.get("/api/analytics/routing-decisions", requireAuth, (_req, res) => {
 /**
  * POST /api/runs/file
  * Multipart body: { templateId: string, file: <binary> }
- * Uses the authenticated JWT subject as the run user.
+ * Uses the authenticated user or staging QA bypass user ID as the run owner.
  *
  * Parses the uploaded file (PDF/image/audio/text) into text content, then
  * starts a workflow run with { content, mimeType, filename } injected as input.
  * Returns the created run (status=pending).
  */
-app.post("/api/runs/file", requireAuth, upload.single("file"), async (req: AuthenticatedRequest, res) => {
+app.post("/api/runs/file", requireAuthOrQaBypass, upload.single("file"), async (req: AuthenticatedRequest, res) => {
   const { templateId } = req.body as { templateId?: string };
 
   if (!templateId) {

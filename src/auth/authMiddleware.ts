@@ -91,6 +91,38 @@ export interface AuthenticatedRequest extends Request {
   };
 }
 
+const DEFAULT_QA_BYPASS_USER_IDS = ["qa-smoke-user"];
+
+function parseQaBypassUserIds(): Set<string> {
+  const configuredIds = (process.env.QA_AUTH_BYPASS_USER_IDS ?? "")
+    .split(",")
+    .map((value) => value.trim())
+    .filter(Boolean);
+  const userIds = configuredIds.length > 0 ? configuredIds : DEFAULT_QA_BYPASS_USER_IDS;
+  return new Set(userIds);
+}
+
+function resolveQaBypassUserId(req: Request): string | null {
+  if (process.env.QA_AUTH_BYPASS_ENABLED !== "true") {
+    return null;
+  }
+
+  const headerValue = req.headers["x-user-id"];
+  const userId = typeof headerValue === "string" ? headerValue.trim() : "";
+  if (!userId) {
+    return null;
+  }
+
+  return parseQaBypassUserIds().has(userId) ? userId : null;
+}
+
+function attachQaBypassAuth(req: AuthenticatedRequest, userId: string): void {
+  req.auth = {
+    sub: userId,
+    name: "QA bypass user",
+  };
+}
+
 /**
  * Express middleware that validates the Authorization: Bearer <token> header.
  * Attaches `req.auth` on success; responds 401 on failure.
@@ -150,4 +182,23 @@ export function requireAuth(
       next();
     }
   );
+}
+
+/**
+ * Allows staging QA verification to authenticate with X-User-Id when the
+ * bypass is explicitly enabled and the caller is on the allowlist.
+ */
+export function requireAuthOrQaBypass(
+  req: AuthenticatedRequest,
+  res: Response,
+  next: NextFunction
+): void {
+  const qaBypassUserId = resolveQaBypassUserId(req);
+  if (qaBypassUserId) {
+    attachQaBypassAuth(req, qaBypassUserId);
+    next();
+    return;
+  }
+
+  requireAuth(req, res, next);
 }

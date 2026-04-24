@@ -231,12 +231,22 @@ paths:
       operationId: listRuns
       summary: List all runs
       tags: [Runs]
+      description: |
+        Requires standard bearer auth, or `X-User-Id` when the staging-only QA bypass
+        is explicitly enabled via `QA_AUTH_BYPASS_ENABLED=true` and the user ID is
+        allowlisted in `QA_AUTH_BYPASS_USER_IDS`.
       parameters:
         - name: templateId
           in: query
           schema:
             type: string
           description: Filter by workflow / template ID
+        - name: X-User-Id
+          in: header
+          required: false
+          schema:
+            type: string
+          description: Allowlisted staging QA bypass user ID for non-interactive verification.
       responses:
         "200":
           description: All runs
@@ -252,12 +262,25 @@ paths:
                       $ref: "#/components/schemas/WorkflowRun"
                   total:
                     type: integer
+        "401":
+          $ref: "#/components/responses/Unauthorized"
 
     post:
       operationId: createRun
       summary: Start a run (direct, by templateId)
       tags: [Runs]
-      description: Alternative to `POST /api/workflows/{id}/runs`. Accepts a `templateId` in the body.
+      description: |
+        Alternative to `POST /api/workflows/{id}/runs`. Accepts a `templateId` in the body.
+        Requires standard bearer auth, or `X-User-Id` when the staging-only QA bypass
+        is explicitly enabled via `QA_AUTH_BYPASS_ENABLED=true` and the user ID is
+        allowlisted in `QA_AUTH_BYPASS_USER_IDS`.
+      parameters:
+        - name: X-User-Id
+          in: header
+          required: false
+          schema:
+            type: string
+          description: Allowlisted staging QA bypass user ID for non-interactive verification.
       requestBody:
         required: true
         content:
@@ -284,6 +307,8 @@ paths:
                 $ref: "#/components/schemas/WorkflowRun"
         "400":
           $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
         "404":
           $ref: "#/components/responses/NotFound"
 
@@ -295,6 +320,17 @@ paths:
       operationId: getRun
       summary: Get run status and logs
       tags: [Runs]
+      description: |
+        Requires standard bearer auth, or `X-User-Id` when the staging-only QA bypass
+        is explicitly enabled via `QA_AUTH_BYPASS_ENABLED=true` and the user ID is
+        allowlisted in `QA_AUTH_BYPASS_USER_IDS`.
+      parameters:
+        - name: X-User-Id
+          in: header
+          required: false
+          schema:
+            type: string
+          description: Allowlisted staging QA bypass user ID for non-interactive verification.
       responses:
         "200":
           description: Run detail with all step results
@@ -302,6 +338,8 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/WorkflowRun"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
         "404":
           $ref: "#/components/responses/NotFound"
 

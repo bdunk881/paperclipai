@@ -248,6 +248,19 @@ describe("GET /api/llm-configs", () => {
     expect(JSON.stringify(res.body)).not.toContain("bedrock-secret-key-123456");
     expect(JSON.stringify(res.body)).not.toContain("AKIAIOSFODNN7EXAMPLE");
   });
+
+  it("returns 500 when the async config store fails", async () => {
+    const listAsyncSpy = jest
+      .spyOn(llmConfigStore, "listAsync")
+      .mockRejectedValueOnce(new Error("boom"));
+
+    const res = await request(app).get("/api/llm-configs").set(asAuth(USER_A));
+
+    expect(res.status).toBe(500);
+    expect(res.body).toEqual({ error: "Failed to load LLM configs." });
+
+    listAsyncSpy.mockRestore();
+  });
 });
 
 describe("PATCH /api/llm-configs/:id", () => {

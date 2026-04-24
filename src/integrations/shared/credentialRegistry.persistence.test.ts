@@ -104,6 +104,38 @@ describe("CredentialRegistry persistence", () => {
     expect(publicRecords).toEqual([{ id: "cred-2" }]);
   });
 
+  it("falls back to in-memory records when connector_credentials is unavailable", async () => {
+    const registry = new CredentialRegistry<TestCredential, { id: string }>({
+      service: "persist-fallback",
+      toPublic: (record) => ({ id: record.id }),
+    });
+
+    registry.save({
+      id: "local-only",
+      userId: "user-4",
+      createdAt: "2026-04-22T00:00:00.000Z",
+      tokenEncrypted: "ciphertext-local",
+    });
+
+    mockIsPostgresConfigured.mockReturnValue(true);
+    mockQueryPostgres.mockRejectedValue(
+      Object.assign(new Error('relation "connector_credentials" does not exist'), {
+        code: "42P01",
+      })
+    );
+
+    const records = await registry.listStoredByUserAsync("user-4");
+
+    expect(records).toEqual([
+      {
+        id: "local-only",
+        userId: "user-4",
+        createdAt: "2026-04-22T00:00:00.000Z",
+        tokenEncrypted: "ciphertext-local",
+      },
+    ]);
+  });
+
   it("merges persisted records into a warm cache during async listing", async () => {
     const registry = new CredentialRegistry<TestCredential, { id: string }>({
       service: "persist-list",

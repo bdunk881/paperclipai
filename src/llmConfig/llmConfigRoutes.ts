@@ -245,8 +245,14 @@ router.get("/", async (req: AuthenticatedRequest, res: Response) => {
     return;
   }
 
-  const configs = await llmConfigStore.listAsync(userId);
-  res.json({ configs, total: configs.length });
+  try {
+    const configs = await llmConfigStore.listAsync(userId);
+    res.json({ configs, total: configs.length });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.error("[llm-configs] Failed to list configs:", message);
+    res.status(500).json({ error: "Failed to load LLM configs." });
+  }
 });
 
 router.patch("/:id/default", (req: AuthenticatedRequest, res: Response) => {

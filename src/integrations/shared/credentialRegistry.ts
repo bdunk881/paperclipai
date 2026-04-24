@@ -163,6 +163,20 @@ interface PersistedCredentialRegistryRow {
   record_data: unknown;
 }
 
+function isMissingCredentialRegistryTableError(error: unknown): boolean {
+  if (!(error instanceof Error)) {
+    return false;
+  }
+
+  const pgError = error as Error & { code?: string };
+  if (pgError.code === "42P01") {
+    return true;
+  }
+
+  const message = error.message.toLowerCase();
+  return message.includes("connector_credentials") && message.includes("does not exist");
+}
+
 function mergeStoredRecords<TStored extends CredentialRegistryRecord>(
   local: TStored[],
   persisted: TStored[],
@@ -235,10 +249,22 @@ export class CredentialRegistry<TStored extends CredentialRegistryRecord, TPubli
       return local;
     }
 
-    const result = await queryPostgres<PersistedCredentialRegistryRow>(
-      "SELECT id, user_id, record_data FROM connector_credentials WHERE service = $1 AND id = $2",
-      [this.service, id]
-    );
+    let result;
+    try {
+      result = await queryPostgres<PersistedCredentialRegistryRow>(
+        "SELECT id, user_id, record_data FROM connector_credentials WHERE service = $1 AND id = $2",
+        [this.service, id]
+      );
+    } catch (error) {
+      if (isMissingCredentialRegistryTableError(error)) {
+        console.warn(
+          `[credentialRegistry:${this.service}] connector_credentials table unavailable; using in-memory credentials only`
+        );
+        return local;
+      }
+      throw error;
+    }
+
     const row = result.rows[0];
     return row ? this.mapPersistedRecord(row) : null;
   }
@@ -312,10 +338,22 @@ export class CredentialRegistry<TStored extends CredentialRegistryRecord, TPubli
       return local.sort((a, b) => this.sortValue(b).localeCompare(this.sortValue(a)));
     }
 
-    const result = await queryPostgres<PersistedCredentialRegistryRow>(
-      "SELECT id, user_id, record_data FROM connector_credentials WHERE service = $1 ORDER BY created_at DESC",
-      [this.service]
-    );
+    let result;
+    try {
+      result = await queryPostgres<PersistedCredentialRegistryRow>(
+        "SELECT id, user_id, record_data FROM connector_credentials WHERE service = $1 ORDER BY created_at DESC",
+        [this.service]
+      );
+    } catch (error) {
+      if (isMissingCredentialRegistryTableError(error)) {
+        console.warn(
+          `[credentialRegistry:${this.service}] connector_credentials table unavailable; using in-memory credentials only`
+        );
+        return local.sort((a, b) => this.sortValue(b).localeCompare(this.sortValue(a)));
+      }
+      throw error;
+    }
+
     const persisted = result.rows
       .map((row: PersistedCredentialRegistryRow) => this.mapPersistedRecord(row))
       .filter((record: TStored) => (includeRevoked ? true : !record.revokedAt));

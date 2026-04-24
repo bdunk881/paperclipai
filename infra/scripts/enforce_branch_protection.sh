@@ -13,7 +13,7 @@ fi
 
 REPO="${GITHUB_REPOSITORY}"
 API="https://api.github.com"
-TARGET_BRANCHES=("main" "master")
+TARGET_BRANCHES=("main" "master" "staging")
 REQUIRED_CHECKS="${REQUIRED_CHECKS:-Docker Build Check}"
 
 IFS=',' read -r -a CHECK_CONTEXTS <<<"$REQUIRED_CHECKS"

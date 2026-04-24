@@ -15,14 +15,13 @@ import {
 import type {
   TicketActorRef,
   TicketRecord,
-  TicketSlaState,
+  TicketSlaStateLike,
   TicketUpdate,
 } from "../../api/tickets";
-import { getTicketActorProfile } from "../../api/tickets";
+import { getTicketActorProfile, normalizeTicketSlaState } from "../../api/tickets";
 import {
   formatTicketTimestamp,
   priorityLabel,
-  primaryAssignee,
   relativeTicketTime,
   slaLabel,
   statusLabel,

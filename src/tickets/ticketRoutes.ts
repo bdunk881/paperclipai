@@ -17,6 +17,12 @@ const actorTypeSchema = z.enum(["agent", "user"]);
 const ticketPrioritySchema = z.enum(["low", "medium", "high", "urgent"]);
 const ticketStatusSchema = z.enum(["open", "in_progress", "resolved", "blocked", "cancelled"]);
 const ticketUpdateTypeSchema = z.enum(["comment", "status_change", "structured_update"]);
+const slaTargetSchema = z.object({
+  kind: z.enum(["minutes", "business_days"]),
+  value: z.number().int().positive(),
+});
+const notificationChannelSchema = z.enum(["inbox", "email", "agent_wake"]);
+const notificationStatusSchema = z.enum(["pending", "sent", "failed"]);
 
 const assigneeSchema = z.object({
   type: actorTypeSchema,
@@ -75,6 +81,31 @@ const transitionSchema = z.object({
     tags: z.array(z.string().trim().min(1).max(64)).max(25).optional(),
     extensionMetadata: z.record(z.unknown()).optional(),
   })).optional(),
+});
+
+const upsertPolicySchema = z.object({
+  workspaceId: z.string().uuid(),
+  firstResponseTarget: slaTargetSchema,
+  resolutionTarget: slaTargetSchema,
+  atRiskThreshold: z.number().min(0.5).max(0.99).optional(),
+  escalation: z
+    .object({
+      notify: z.boolean().optional(),
+      autoBumpPriority: z.boolean().optional(),
+      autoReassign: z.boolean().optional(),
+      fallbackAssignee: z
+        .object({
+          type: actorTypeSchema,
+          id: z.string().trim().min(1),
+        })
+        .optional(),
+    })
+    .optional(),
+});
+
+const evaluateSlaSchema = z.object({
+  workspaceId: z.string().uuid().optional(),
+  now: z.string().datetime().optional(),
 });
 
 function parseBody<T>(
@@ -185,6 +216,81 @@ router.get("/", async (req, res) => {
   });
 
   res.json({ tickets, total: tickets.length });
+});
+
+router.get("/sla/policies", async (req, res) => {
+  const workspaceId = typeof req.query.workspaceId === "string" ? req.query.workspaceId : undefined;
+  if (!workspaceId) {
+    res.status(400).json({ error: "workspaceId is required" });
+    return;
+  }
+  const policies = await ticketStore.listPolicies(workspaceId);
+  res.json({ policies, total: policies.length });
+});
+
+router.put("/sla/policies/:priority", requireRunId, async (req: AuthenticatedRequest, res) => {
+  const priorityResult = ticketPrioritySchema.safeParse(req.params.priority);
+  if (!priorityResult.success) {
+    res.status(400).json({ error: "priority must be one of low, medium, high, urgent" });
+    return;
+  }
+  const parsed = parseBody(upsertPolicySchema, req, res);
+  if (!parsed) {
+    return;
+  }
+  const policy = await ticketStore.upsertPolicy({
+    workspaceId: parsed.workspaceId,
+    priority: priorityResult.data as TicketPriority,
+    firstResponseTarget: parsed.firstResponseTarget,
+    resolutionTarget: parsed.resolutionTarget,
+    atRiskThreshold: parsed.atRiskThreshold,
+    escalation: parsed.escalation
+      ? {
+          notify: parsed.escalation.notify ?? true,
+          autoBumpPriority: parsed.escalation.autoBumpPriority ?? false,
+          autoReassign: parsed.escalation.autoReassign ?? false,
+          fallbackAssignee: parsed.escalation.fallbackAssignee,
+        }
+      : undefined,
+  });
+  res.json({ policy });
+});
+
+router.post("/sla/evaluate", requireRunId, async (req: AuthenticatedRequest, res) => {
+  const parsed = parseBody(evaluateSlaSchema, req, res);
+  if (!parsed) {
+    return;
+  }
+  const summary = await ticketStore.evaluateSla({
+    workspaceId: parsed.workspaceId,
+    now: parsed.now,
+    runId: req.header("X-Paperclip-Run-Id") as string,
+  });
+  res.json(summary);
+});
+
+router.get("/notifications", async (req: AuthenticatedRequest, res) => {
+  const channel = typeof req.query.channel === "string" ? req.query.channel : undefined;
+  const status = typeof req.query.status === "string" ? req.query.status : undefined;
+  const actorType = typeof req.query.actorType === "string" ? req.query.actorType : "user";
+  const ticketId = typeof req.query.ticketId === "string" ? req.query.ticketId : undefined;
+  const recipientId = req.auth?.sub;
+  if (!recipientId) {
+    res.status(401).json({ error: "Authenticated actor required" });
+    return;
+  }
+  const notifications = await ticketStore.listNotifications({
+    recipientType: actorTypeSchema.safeParse(actorType).success ? (actorType as TicketActorType) : "user",
+    recipientId,
+    ticketId,
+    channel: notificationChannelSchema.safeParse(channel).success
+      ? (channel as "inbox" | "email" | "agent_wake")
+      : undefined,
+    status: notificationStatusSchema.safeParse(status).success
+      ? (status as "pending" | "sent" | "failed")
+      : undefined,
+  });
+  res.json({ notifications, total: notifications.length });
 });
 
 router.get("/queue/:actorType/:actorId", async (req, res) => {

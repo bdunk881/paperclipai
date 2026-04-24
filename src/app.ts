@@ -18,6 +18,7 @@ import { WorkflowTemplate, WorkflowStep } from "./types/workflow";
 import { workflowEngine } from "./engine/WorkflowEngine";
 import { startApprovalResumeCoordinator } from "./engine/approvalResumeCoordinator";
 import { startApprovalNotificationCoordinator } from "./engine/approvalNotificationCoordinator";
+import { startTicketNotificationCoordinator } from "./engine/ticketSlaCoordinator";
 import { runStore } from "./engine/runStore";
 import { approvalStore } from "./engine/approvalStore";
 import { approvalNotificationStore } from "./engine/approvalNotificationStore";
@@ -837,6 +838,10 @@ if (process.env.NODE_ENV !== "test" && process.env.AUTOFLOW_ENABLE_APPROVAL_RESU
 
 if (process.env.NODE_ENV !== "test" && process.env.AUTOFLOW_ENABLE_APPROVAL_NOTIFICATION_SWEEPER !== "false") {
   startApprovalNotificationCoordinator();
+}
+
+if (process.env.NODE_ENV !== "test" && process.env.AUTOFLOW_ENABLE_TICKET_NOTIFICATION_SWEEPER !== "false") {
+  startTicketNotificationCoordinator();
 }
 
 // Handle JSON parse errors from express.json() middleware

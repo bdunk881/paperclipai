@@ -261,7 +261,7 @@ export class WorkflowEngine {
   ): Promise<WorkflowRun> {
     const runConfig = { ...this._buildDefaultConfig(template), ...(config ?? {}) };
 
-    const run: WorkflowRun = await runStore.create({
+    const run = await runStore.create({
       id: randomUUID(),
       templateId: template.id,
       templateName: template.name,
@@ -523,13 +523,14 @@ export class WorkflowEngine {
     userId?: string
   ): Promise<void> {
 
-    for (let stepIndex = startStepIndex; stepIndex < template.steps.length; stepIndex += 1) {
-      const step = template.steps[stepIndex];
+    for (let currentStepIndex = startStepIndex; currentStepIndex < template.steps.length; currentStepIndex += 1) {
+      const step = template.steps[currentStepIndex];
       await runStore.update(runId, {
-        runtimeState: makeRuntimeState(config, context, stepIndex),
+        runtimeState: makeRuntimeState(config, context, currentStepIndex),
       });
 
       const start = Date.now();
+      const resultIndex = stepResults.length;
       stepResults.push({
         stepId: step.id,
         stepName: step.name,
@@ -611,7 +612,7 @@ export class WorkflowEngine {
             });
 
             await runStore.update(runId, {
-              runtimeState: makeRuntimeState(config, context, stepIndex, approvalId),
+              runtimeState: makeRuntimeState(config, context, currentStepIndex, approvalId),
             });
 
             const { decision, comment } = await approvalStore.waitForDecision(approvalId, 50);
@@ -622,7 +623,7 @@ export class WorkflowEngine {
               const { targetStepIndex, error } = this._resolveRequestChangesTarget(
                 template,
                 step,
-                stepIndex
+                currentStepIndex
               );
               if (error) {
                 stepStatus = "failure";
@@ -668,7 +669,7 @@ export class WorkflowEngine {
         ...(stepCostLog ? { costLog: stepCostLog } : {}),
       };
 
-      stepResults[stepIndex] = result;
+      stepResults[resultIndex] = result;
 
       // Update run with latest step results so callers can see incremental progress
       await runStore.update(runId, { stepResults: [...stepResults] });
@@ -680,13 +681,13 @@ export class WorkflowEngine {
           completedAt: new Date().toISOString(),
           error: stepError,
           stepResults,
-          runtimeState: makeRuntimeState(config, context, stepIndex),
+          runtimeState: makeRuntimeState(config, context, currentStepIndex),
         });
         return;
       }
 
       if (jumpToStepIndex !== undefined) {
-        stepIndex = jumpToStepIndex - 1;
+        currentStepIndex = jumpToStepIndex - 1;
       }
     }
 

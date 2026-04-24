@@ -41,6 +41,7 @@ import {
   listClassificationDecisions,
 } from "./engine/classificationLog";
 import { requireAuth, requireAuthOrQaBypass, AuthenticatedRequest } from "./auth/authMiddleware";
+import nativeAuthProxyRoutes from "./auth/nativeAuthProxyRoutes";
 import stripeWebhookRoutes from "./billing/stripeWebhook";
 import apolloWebhookRoutes from "./integrations/apollo-attio/webhookRoute";
 import checkoutRoutes from "./billing/checkoutRoutes";
@@ -145,6 +146,16 @@ function createRateLimitHandler(windowMs: number) {
   };
 }
 
+function parsePositiveIntegerEnv(name: string, fallback: number): number {
+  const raw = process.env[name];
+  if (!raw) {
+    return fallback;
+  }
+
+  const parsed = Number.parseInt(raw, 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
 const generalApiRateLimiter = rateLimit({
   windowMs: 60 * 1000,
   limit: 100,
@@ -170,6 +181,20 @@ const llmEndpointRateLimiter = rateLimit({
   legacyHeaders: false,
   keyGenerator: getRateLimitKey,
   handler: createRateLimitHandler(60 * 60 * 1000),
+});
+
+const nativeAuthProxyRateLimitWindowMs = parsePositiveIntegerEnv(
+  "AUTH_NATIVE_AUTH_PROXY_RATE_LIMIT_WINDOW_MS",
+  60 * 1000
+);
+
+const nativeAuthProxyRateLimiter = rateLimit({
+  windowMs: nativeAuthProxyRateLimitWindowMs,
+  limit: parsePositiveIntegerEnv("AUTH_NATIVE_AUTH_PROXY_RATE_LIMIT_MAX", 20),
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => `ip:${req.ip || req.socket.remoteAddress || "unknown"}`,
+  handler: createRateLimitHandler(nativeAuthProxyRateLimitWindowMs),
 });
 
 const billingMutationRateLimiter = rateLimit({
@@ -290,6 +315,8 @@ app.use("/api/ticket-sync", requireAuth, ticketSyncRoutes);
 // ---------------------------------------------------------------------------
 // Auth API — identity endpoint for authenticated callers
 // ---------------------------------------------------------------------------
+
+app.use("/api/auth/native", nativeAuthProxyRateLimiter, nativeAuthProxyRoutes);
 
 /** Returns the authenticated user's claims extracted from the Entra ID token. */
 app.get("/api/me", requireAuth, (req: AuthenticatedRequest, res) => {

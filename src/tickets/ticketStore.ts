@@ -4,6 +4,20 @@ import { getPostgresPool, isPostgresPersistenceEnabled } from "../db/postgres";
 import { agentMemoryStore, AgentMemorySearchResult, AgentMemoryTier } from "../agents/agentMemoryStore";
 import { subscriptionStore } from "../billing/subscriptionStore";
 import { llmConfigStore } from "../llmConfig/llmConfigStore";
+import { ticketNotificationStore } from "./ticketNotificationStore";
+import { ticketSlaPolicyStore } from "./ticketSlaPolicyStore";
+import { ticketSlaStore } from "./ticketSlaStore";
+import {
+  buildSlaSnapshot,
+  completeFirstResponse,
+  evaluateSlaState,
+  isPrimaryAssignee,
+  nextPriority,
+  pauseSla,
+  resumeSla,
+  TicketSlaSnapshot,
+  TicketSlaState,
+} from "./ticketSla";
 
 export type TicketActorType = "agent" | "user";
 export type TicketAssignmentRole = "primary" | "collaborator";
@@ -38,7 +52,7 @@ export interface TicketRecord {
   creatorId: string;
   status: TicketStatus;
   priority: TicketPriority;
-  slaState: string;
+  slaState: TicketSlaState;
   dueDate?: string;
   resolvedAt?: string;
   tags: string[];
@@ -165,7 +179,7 @@ function mapTicketRow(row: TicketRow): TicketRecord {
     creatorId: row.creator_id,
     status: row.status,
     priority: row.priority,
-    slaState: row.sla_state,
+    slaState: row.sla_state as TicketSlaState,
     dueDate: row.due_date ? new Date(row.due_date).toISOString() : undefined,
     resolvedAt: row.resolved_at ? new Date(row.resolved_at).toISOString() : undefined,
     tags: parseJsonColumn<string[]>(row.tags_json, []),
@@ -425,6 +439,218 @@ function buildStatusUpdate(input: {
   };
 }
 
+function ticketMentions(metadata: Record<string, unknown>): TicketActorRef[] {
+  const mentions = metadata["mentions"];
+  if (!Array.isArray(mentions)) {
+    return [];
+  }
+
+  return mentions.flatMap((mention) => {
+    if (!mention || typeof mention !== "object") {
+      return [];
+    }
+    const actor = mention as Record<string, unknown>;
+    if ((actor["type"] !== "agent" && actor["type"] !== "user") || typeof actor["id"] !== "string") {
+      return [];
+    }
+    return [{ type: actor["type"] as TicketActorType, id: actor["id"] as string }];
+  });
+}
+
+function assignmentDelta(
+  previous: TicketAssignee[],
+  next: TicketAssignee[],
+): { added: TicketAssignee[]; removed: TicketAssignee[] } {
+  const previousKeys = new Set(previous.map((assignee) => `${assignee.type}:${assignee.id}:${assignee.role}`));
+  const nextKeys = new Set(next.map((assignee) => `${assignee.type}:${assignee.id}:${assignee.role}`));
+  return {
+    added: next.filter((assignee) => !previousKeys.has(`${assignee.type}:${assignee.id}:${assignee.role}`)),
+    removed: previous.filter((assignee) => !nextKeys.has(`${assignee.type}:${assignee.id}:${assignee.role}`)),
+  };
+}
+
+async function enqueueAssignmentNotifications(ticket: TicketRecord, assignees: TicketAssignee[], runId?: string): Promise<void> {
+  for (const assignee of assignees) {
+    await ticketNotificationStore.enqueueForActor({
+      ticketId: ticket.id,
+      runId,
+      recipient: { type: assignee.type, id: assignee.id },
+      kind: "assignment",
+      payload: {
+        title: ticket.title,
+        priority: ticket.priority,
+        role: assignee.role,
+      },
+    });
+  }
+}
+
+async function enqueueStatusChangeNotification(ticket: TicketRecord, status: TicketStatus, runId?: string): Promise<void> {
+  await ticketNotificationStore.enqueueForActor({
+    ticketId: ticket.id,
+    runId,
+    recipient: { type: "user", id: ticket.creatorId },
+    kind: "status_change",
+    payload: {
+      title: ticket.title,
+      status,
+      slaState: ticket.slaState,
+    },
+  });
+}
+
+async function handleSlaEffects(input: {
+  aggregate: TicketAggregate;
+  snapshot: TicketSlaSnapshot;
+  runId?: string;
+  now?: string;
+}): Promise<{ aggregate: TicketAggregate; snapshot: TicketSlaSnapshot }> {
+  const policy = await ticketSlaPolicyStore.get(input.aggregate.ticket.workspaceId, input.aggregate.ticket.priority);
+  if (!policy) {
+    return input;
+  }
+
+  const evaluation = evaluateSlaState(input.aggregate.ticket, input.snapshot, input.now);
+  let nextTicket = { ...input.aggregate.ticket, slaState: evaluation.snapshot.state };
+  let nextSnapshot = evaluation.snapshot;
+  const nextUpdates = input.aggregate.updates.map(cloneUpdate);
+
+  if (evaluation.enteredAtRisk) {
+    nextSnapshot = {
+      ...nextSnapshot,
+      atRiskNotifiedAt: nextSnapshot.atRiskNotifiedAt ?? new Date().toISOString(),
+    };
+    await ticketNotificationStore.enqueueForActor({
+      ticketId: nextTicket.id,
+      runId: input.runId,
+      recipient: { type: "user", id: nextTicket.creatorId },
+      kind: "sla_at_risk",
+      payload: {
+        title: nextTicket.title,
+        priority: nextTicket.priority,
+        state: "at_risk",
+      },
+    });
+    const primary = getPrimaryAssignee(nextTicket);
+    if (primary) {
+      await ticketNotificationStore.enqueueForActor({
+        ticketId: nextTicket.id,
+        runId: input.runId,
+        recipient: { type: primary.type, id: primary.id },
+        kind: "sla_at_risk",
+        payload: {
+          title: nextTicket.title,
+          priority: nextTicket.priority,
+          state: "at_risk",
+        },
+      });
+    }
+    nextUpdates.push(
+      buildStructuredUpdate({
+        ticketId: nextTicket.id,
+        actor: { type: "user", id: nextTicket.creatorId },
+        content: "SLA entered at-risk state.",
+        metadata: { event: "ticket_sla_at_risk" },
+      }),
+    );
+  }
+
+  if (evaluation.enteredBreach) {
+    await ticketNotificationStore.enqueueForActor({
+      ticketId: nextTicket.id,
+      runId: input.runId,
+      recipient: { type: "user", id: nextTicket.creatorId },
+      kind: "sla_breached",
+      payload: {
+        title: nextTicket.title,
+        priority: nextTicket.priority,
+        state: "breached",
+      },
+    });
+    nextUpdates.push(
+      buildStructuredUpdate({
+        ticketId: nextTicket.id,
+        actor: { type: "user", id: nextTicket.creatorId },
+        content: "SLA breached.",
+        metadata: { event: "ticket_sla_breached" },
+      }),
+    );
+
+    let updatedAssignees = nextTicket.assignees;
+    if (policy.escalation.autoBumpPriority && nextTicket.priority !== "urgent") {
+      nextTicket = {
+        ...nextTicket,
+        priority: nextPriority(nextTicket.priority),
+      };
+      nextUpdates.push(
+        buildStructuredUpdate({
+          ticketId: nextTicket.id,
+          actor: { type: "user", id: nextTicket.creatorId },
+          content: "SLA escalation auto-bumped ticket priority.",
+          metadata: {
+            event: "ticket_sla_auto_bump_priority",
+            priority: nextTicket.priority,
+          },
+        }),
+      );
+    }
+
+    if (policy.escalation.autoReassign && policy.escalation.fallbackAssignee) {
+      updatedAssignees = sortAssignees(
+        nextTicket.assignees
+          .filter((assignee) => assignee.role !== "primary")
+          .concat([
+            {
+              type: policy.escalation.fallbackAssignee.type,
+              id: policy.escalation.fallbackAssignee.id,
+              role: "primary",
+            },
+          ]),
+      );
+      nextUpdates.push(
+        buildStructuredUpdate({
+          ticketId: nextTicket.id,
+          actor: { type: "user", id: nextTicket.creatorId },
+          content: "SLA escalation auto-reassigned the primary assignee.",
+          metadata: {
+            event: "ticket_sla_auto_reassign",
+            fallbackAssignee: policy.escalation.fallbackAssignee,
+          },
+        }),
+      );
+      await ticketNotificationStore.enqueueForActor({
+        ticketId: nextTicket.id,
+        runId: input.runId,
+        recipient: { ...policy.escalation.fallbackAssignee },
+        kind: "assignment",
+        payload: {
+          title: nextTicket.title,
+          priority: nextTicket.priority,
+          role: "primary",
+          reason: "sla_breach_auto_reassign",
+        },
+      });
+    }
+
+    nextTicket = { ...nextTicket, assignees: updatedAssignees };
+    nextSnapshot = {
+      ...nextSnapshot,
+      escalationAppliedAt: nextSnapshot.escalationAppliedAt ?? new Date().toISOString(),
+    };
+  }
+
+  return {
+    aggregate: {
+      ticket: {
+        ...nextTicket,
+        updatedAt: new Date().toISOString(),
+      },
+      updates: nextUpdates,
+    },
+    snapshot: nextSnapshot,
+  };
+}
+
 function transitionAllowed(from: TicketStatus, to: TicketStatus): boolean {
   switch (from) {
     case "open":
@@ -607,6 +833,7 @@ export const ticketStore = {
     assignees: TicketAssignee[];
   }): Promise<TicketAggregate> {
     const now = new Date().toISOString();
+    const policy = await ticketSlaPolicyStore.get(input.workspaceId, input.priority ?? "medium");
     const ticket: TicketRecord = {
       id: randomUUID(),
       workspaceId: input.workspaceId,
@@ -615,7 +842,7 @@ export const ticketStore = {
       creatorId: input.creatorId,
       status: "open",
       priority: input.priority ?? "medium",
-      slaState: "untracked",
+      slaState: policy ? "on_track" : "untracked",
       dueDate: input.dueDate,
       tags: normalizeTags(input.tags),
       assignees: sortAssignees(input.assignees),
@@ -639,6 +866,10 @@ export const ticketStore = {
 
     const aggregate = { ticket, updates };
     await persistAggregate(aggregate);
+    if (policy) {
+      await ticketSlaStore.save(buildSlaSnapshot(ticket, policy));
+    }
+    await enqueueAssignmentNotifications(ticket, ticket.assignees);
     return cloneAggregate(aggregate);
   },
 
@@ -809,8 +1040,36 @@ export const ticketStore = {
       );
     }
 
-    const aggregate = { ticket: nextTicket, updates: nextUpdates };
+    let aggregate = { ticket: nextTicket, updates: nextUpdates };
+    const existingSnapshot = await ticketSlaStore.get(input.ticketId);
+    if (existingSnapshot) {
+      const policy = await ticketSlaPolicyStore.get(nextTicket.workspaceId, nextTicket.priority);
+      if (policy) {
+        const refreshedSnapshot: TicketSlaSnapshot = {
+          ...existingSnapshot,
+          policyId: policy.id,
+          priority: nextTicket.priority,
+          firstResponseTargetAt: existingSnapshot.firstResponseRespondedAt
+            ? existingSnapshot.firstResponseTargetAt
+            : buildSlaSnapshot(nextTicket, policy).firstResponseTargetAt,
+          resolutionTargetAt: buildSlaSnapshot(nextTicket, policy).resolutionTargetAt,
+          updatedAt: new Date().toISOString(),
+        };
+      const adjusted = await handleSlaEffects({
+        aggregate,
+        snapshot: refreshedSnapshot,
+        now: nextTicket.updatedAt,
+      });
+        aggregate = adjusted.aggregate;
+        await ticketSlaStore.save(adjusted.snapshot);
+      }
+    }
+
     await persistAggregate(aggregate);
+    if (input.assignees) {
+      const delta = assignmentDelta(existing.ticket.assignees, aggregate.ticket.assignees);
+      await enqueueAssignmentNotifications(aggregate.ticket, delta.added);
+    }
     return cloneAggregate(aggregate);
   },
 
@@ -865,8 +1124,36 @@ export const ticketStore = {
       })
     );
 
-    const aggregate = { ticket: nextTicket, updates: nextUpdates };
+    let aggregate = { ticket: nextTicket, updates: nextUpdates };
+    const existingSnapshot = await ticketSlaStore.get(input.ticketId);
+    let snapshot = existingSnapshot;
+    if (snapshot) {
+      if (!snapshot.firstResponseRespondedAt && isPrimaryAssignee(input.actor, nextTicket.assignees)) {
+        snapshot = completeFirstResponse(snapshot, nextTicket.updatedAt);
+      }
+      if (
+        input.status === "blocked" &&
+        input.actor.type === "user" &&
+        input.actor.id === nextTicket.creatorId
+      ) {
+        snapshot = pauseSla(snapshot, nextTicket.updatedAt);
+      } else if (existing.ticket.status === "blocked" && input.status === "in_progress") {
+        snapshot = resumeSla(snapshot, nextTicket.updatedAt);
+      }
+
+      const adjusted = await handleSlaEffects({
+        aggregate,
+        snapshot,
+        runId: input.runId,
+        now: nextTicket.updatedAt,
+      });
+      aggregate = adjusted.aggregate;
+      snapshot = adjusted.snapshot;
+      await ticketSlaStore.save(snapshot);
+    }
+
     await persistAggregate(aggregate);
+    await enqueueStatusChangeNotification(aggregate.ticket, input.status, input.runId);
 
     const resultAggregate = cloneAggregate(aggregate);
     if (input.status === "in_progress" && input.actor.type === "agent") {
@@ -983,7 +1270,7 @@ export const ticketStore = {
       createdAt: new Date().toISOString(),
     };
 
-    const aggregate = {
+    let aggregate = {
       ticket: {
         ...existing.ticket,
         updatedAt: new Date().toISOString(),
@@ -991,7 +1278,47 @@ export const ticketStore = {
       updates: [...existing.updates.map(cloneUpdate), update],
     };
 
+    const snapshot = await ticketSlaStore.get(input.ticketId);
+    if (snapshot) {
+      let nextSnapshot = snapshot;
+      if (!snapshot.firstResponseRespondedAt && isPrimaryAssignee(input.actor, existing.ticket.assignees)) {
+        nextSnapshot = completeFirstResponse(snapshot, update.createdAt);
+      }
+      const adjusted = await handleSlaEffects({
+        aggregate,
+        snapshot: nextSnapshot,
+        now: update.createdAt,
+      });
+      aggregate = adjusted.aggregate;
+      await ticketSlaStore.save(adjusted.snapshot);
+    }
+
     await persistAggregate(aggregate);
+    for (const mention of ticketMentions(update.metadata)) {
+      await ticketNotificationStore.enqueueForActor({
+        ticketId: input.ticketId,
+        recipient: mention,
+        kind: "mention",
+        payload: {
+          title: existing.ticket.title,
+          content: update.content,
+        },
+      });
+    }
+    if (update.metadata["readyToClose"] === true) {
+      const primary = getPrimaryAssignee(existing.ticket);
+      if (primary && (primary.type !== input.actor.type || primary.id !== input.actor.id)) {
+        await ticketNotificationStore.enqueueForActor({
+          ticketId: input.ticketId,
+          recipient: { type: primary.type, id: primary.id },
+          kind: "close_requested",
+          payload: {
+            title: existing.ticket.title,
+            content: update.content,
+          },
+        });
+      }
+    }
     return cloneUpdate(update);
   },
 
@@ -1007,6 +1334,9 @@ export const ticketStore = {
     memoryTickets.clear();
     memoryUpdates.clear();
     pendingTicketCloseMemoryWrites.clear();
+    await ticketSlaPolicyStore.clear();
+    await ticketSlaStore.clear();
+    await ticketNotificationStore.clear();
 
     if (!isPostgresPersistenceEnabled()) {
       return;
@@ -1015,6 +1345,9 @@ export const ticketStore = {
     const pool = getPostgresPool();
     await pool.query("DELETE FROM ticket_updates");
     await pool.query("DELETE FROM ticket_assignments");
+    await pool.query("DELETE FROM ticket_notifications");
+    await pool.query("DELETE FROM ticket_sla_snapshots");
+    await pool.query("DELETE FROM ticket_sla_policies");
     await pool.query("DELETE FROM tickets");
   },
 
@@ -1032,5 +1365,63 @@ export const ticketStore = {
 
   pendingTicketCloseMemoryWriteCountForTests(): number {
     return pendingTicketCloseMemoryWrites.size;
+  },
+
+  async listPolicies(workspaceId: string) {
+    return ticketSlaPolicyStore.ensureDefaults(workspaceId);
+  },
+
+  async upsertPolicy(input: Parameters<typeof ticketSlaPolicyStore.upsert>[0]) {
+    return ticketSlaPolicyStore.upsert(input);
+  },
+
+  async listNotifications(filters?: Parameters<typeof ticketNotificationStore.list>[0]) {
+    return ticketNotificationStore.list(filters);
+  },
+
+  async evaluateSla(input: { workspaceId?: string; now?: string; runId?: string } = {}) {
+    const tickets = await this.list({
+      workspaceId: input.workspaceId,
+    });
+    let evaluated = 0;
+    let changed = 0;
+    for (const ticket of tickets.filter((candidate) =>
+      ["open", "in_progress", "blocked"].includes(candidate.status),
+    )) {
+      const aggregate = await this.get(ticket.id);
+      const snapshot = await ticketSlaStore.get(ticket.id);
+      if (!aggregate || !snapshot) {
+        continue;
+      }
+      evaluated += 1;
+      const adjusted = await handleSlaEffects({
+        aggregate,
+        snapshot,
+        runId: input.runId,
+        now: input.now,
+      });
+      if (
+        adjusted.aggregate.ticket.slaState !== aggregate.ticket.slaState ||
+        adjusted.aggregate.ticket.priority !== aggregate.ticket.priority ||
+        !assigneesEqual(adjusted.aggregate.ticket.assignees, aggregate.ticket.assignees) ||
+        adjusted.aggregate.updates.length !== aggregate.updates.length
+      ) {
+        changed += 1;
+        await persistAggregate(adjusted.aggregate);
+        await ticketSlaStore.save(adjusted.snapshot);
+      } else if ((input.now ?? adjusted.snapshot.lastEvaluatedAt) !== snapshot.lastEvaluatedAt) {
+        const evaluation = evaluateSlaState(aggregate.ticket, snapshot, input.now);
+        if (evaluation.snapshot.state !== aggregate.ticket.slaState) {
+          const nextAggregate = {
+            ticket: { ...aggregate.ticket, slaState: evaluation.snapshot.state, updatedAt: new Date().toISOString() },
+            updates: aggregate.updates,
+          };
+          await persistAggregate(nextAggregate);
+          changed += 1;
+        }
+        await ticketSlaStore.save(evaluation.snapshot);
+      }
+    }
+    return { evaluated, changed };
   },
 };

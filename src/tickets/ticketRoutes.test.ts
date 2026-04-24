@@ -3,6 +3,8 @@ import request from "supertest";
 import { agentMemoryStore } from "../agents/agentMemoryStore";
 import { AuthenticatedRequest } from "../auth/authMiddleware";
 import { subscriptionStore } from "../billing/subscriptionStore";
+import { runTicketNotificationSweep } from "../engine/ticketSlaCoordinator";
+import { ticketNotificationStore } from "./ticketNotificationStore";
 import ticketRoutes from "./ticketRoutes";
 import { ticketStore } from "./ticketStore";
 
@@ -50,6 +52,7 @@ describe("ticket routes", () => {
     await ticketStore.clear();
     agentMemoryStore.clear();
     subscriptionStore.clear();
+    await ticketNotificationStore.clear();
     jest.restoreAllMocks();
   });
 
@@ -124,6 +127,38 @@ describe("ticket routes", () => {
     expect(res.status).toBe(200);
     expect(res.body.total).toBe(1);
     expect(res.body.tickets[0].title).toBe("Primary backend task");
+  });
+
+  it("returns default SLA policies and lets callers update one", async () => {
+    const app = buildTestApp();
+
+    const list = await request(app)
+      .get("/api/tickets/sla/policies?workspaceId=11111111-1111-4111-8111-111111111111")
+      .set(auth("creator-1"));
+
+    expect(list.status).toBe(200);
+    expect(list.body.total).toBe(4);
+    expect(list.body.policies.find((policy: { priority: string }) => policy.priority === "urgent")).toBeTruthy();
+
+    const updated = await request(app)
+      .put("/api/tickets/sla/policies/high")
+      .set(auth("creator-1"))
+      .set("X-Paperclip-Run-Id", "run-ticket-policy-update")
+      .send({
+        workspaceId: "11111111-1111-4111-8111-111111111111",
+        firstResponseTarget: { kind: "minutes", value: 45 },
+        resolutionTarget: { kind: "business_days", value: 2 },
+        escalation: {
+          notify: true,
+          autoBumpPriority: true,
+          autoReassign: true,
+          fallbackAssignee: { type: "agent", id: "escalation-agent" },
+        },
+      });
+
+    expect(updated.status).toBe(200);
+    expect(updated.body.policy.firstResponseTarget.value).toBe(45);
+    expect(updated.body.policy.escalation.autoReassign).toBe(true);
   });
 
   it("allows the primary assignee to transition the ticket and logs activity", async () => {
@@ -237,6 +272,101 @@ describe("ticket routes", () => {
     expect(ticket.status).toBe(200);
     expect(ticket.body.updates).toHaveLength(2);
     expect(ticket.body.updates[1].content).toMatch(/Investigating root cause now/i);
+  });
+
+  it("enqueues notifications for assignments, mentions, and close requests", async () => {
+    const app = buildTestApp();
+    const created = await request(app)
+      .post("/api/tickets")
+      .set(auth("creator-1"))
+      .set("X-Paperclip-Run-Id", "run-ticket-notify-create")
+      .send({
+        workspaceId: "11111111-1111-4111-8111-111111111111",
+        title: "Notification fanout",
+        assignees: [
+          { type: "agent", id: "backend-agent", role: "primary" },
+          { type: "user", id: "creator-1", role: "collaborator" },
+        ],
+      });
+
+    await request(app)
+      .post(`/api/tickets/${created.body.ticket.id}/updates`)
+      .set(auth("creator-1"))
+      .set("X-Paperclip-Run-Id", "run-ticket-notify-mention")
+      .send({
+        type: "comment",
+        content: "Please investigate this quickly.",
+        actorType: "user",
+        metadata: {
+          mentions: [{ type: "agent", id: "backend-agent" }],
+          readyToClose: true,
+        },
+      });
+
+    const assignmentNotifications = await ticketNotificationStore.list({
+      recipientType: "agent",
+      recipientId: "backend-agent",
+    });
+    expect(assignmentNotifications.some((notification) => notification.kind === "assignment")).toBe(true);
+    expect(assignmentNotifications.some((notification) => notification.kind === "mention")).toBe(true);
+
+    const creatorNotifications = await request(app)
+      .get("/api/tickets/notifications")
+      .set(auth("creator-1"));
+    expect(creatorNotifications.status).toBe(200);
+    expect(creatorNotifications.body.notifications.some((notification: { kind: string }) => notification.kind === "assignment")).toBe(true);
+  });
+
+  it("evaluates SLA state, breaches tickets, and applies escalation rules", async () => {
+    const app = buildTestApp();
+
+    await request(app)
+      .put("/api/tickets/sla/policies/medium")
+      .set(auth("creator-1"))
+      .set("X-Paperclip-Run-Id", "run-ticket-sla-policy")
+      .send({
+        workspaceId: "11111111-1111-4111-8111-111111111111",
+        firstResponseTarget: { kind: "minutes", value: 1 },
+        resolutionTarget: { kind: "minutes", value: 1 },
+        escalation: {
+          notify: true,
+          autoBumpPriority: true,
+          autoReassign: true,
+          fallbackAssignee: { type: "agent", id: "cto-agent" },
+        },
+      });
+
+    const created = await request(app)
+      .post("/api/tickets")
+      .set(auth("creator-1"))
+      .set("X-Paperclip-Run-Id", "run-ticket-sla-create")
+      .send({
+        workspaceId: "11111111-1111-4111-8111-111111111111",
+        title: "SLA breach coverage",
+        priority: "medium",
+        assignees: [{ type: "agent", id: "backend-agent", role: "primary" }],
+      });
+
+    const evaluated = await request(app)
+      .post("/api/tickets/sla/evaluate")
+      .set(auth("creator-1"))
+      .set("X-Paperclip-Run-Id", "run-ticket-sla-evaluate")
+      .send({
+        workspaceId: "11111111-1111-4111-8111-111111111111",
+        now: "2030-01-01T00:10:00.000Z",
+      });
+
+    expect(evaluated.status).toBe(200);
+    expect(evaluated.body.evaluated).toBeGreaterThan(0);
+
+    const ticket = await request(app).get(`/api/tickets/${created.body.ticket.id}`).set(auth("creator-1"));
+    expect(ticket.status).toBe(200);
+    expect(ticket.body.ticket.slaState).toBe("breached");
+    expect(ticket.body.ticket.priority).toBe("high");
+    expect(ticket.body.ticket.assignees[0]).toMatchObject({ type: "agent", id: "cto-agent", role: "primary" });
+
+    const sweep = await runTicketNotificationSweep();
+    expect(sweep.delivered).toBeGreaterThan(0);
   });
 
   it("returns relevant ticket_close memories when an agent starts a ticket", async () => {

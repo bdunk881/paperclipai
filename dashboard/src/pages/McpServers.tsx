@@ -34,7 +34,7 @@ interface McpTool {
 }
 
 export default function McpServers() {
-  const { user } = useAuth();
+  const { user, requireAccessToken } = useAuth();
   const [servers, setServers] = useState<McpServerPublic[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -59,7 +59,8 @@ export default function McpServers() {
     setLoading(true);
     setError(null);
     try {
-      const data = await apiGet<{ servers: McpServerPublic[] }>("/api/mcp/servers", user);
+      const accessToken = await requireAccessToken();
+      const data = await apiGet<{ servers: McpServerPublic[] }>("/api/mcp/servers", user, accessToken);
       setServers(data.servers);
     } catch (e) {
       if (e instanceof ApiError && e.status === 401) {
@@ -70,7 +71,7 @@ export default function McpServers() {
     } finally {
       setLoading(false);
     }
-  }, [user]);
+  }, [requireAccessToken, user]);
 
   useEffect(() => { void loadServers(); }, [loadServers]);
 
@@ -97,6 +98,7 @@ export default function McpServers() {
     setActionError(null);
     setSubmitting(true);
     try {
+      const accessToken = await requireAccessToken();
       const server = await apiPost<McpServerPublic>(
         "/api/mcp/servers",
         {
@@ -105,7 +107,8 @@ export default function McpServers() {
           authHeaderKey: formAuthKey || undefined,
           authHeaderValue: formAuthVal || undefined,
         },
-        user
+        user,
+        accessToken
       );
       setServers((prev) => [...prev, server]);
       setFormName(""); setFormUrl(""); setFormAuthKey(""); setFormAuthVal("");
@@ -120,7 +123,8 @@ export default function McpServers() {
   async function handleDelete(id: string) {
     setActionError(null);
     try {
-      await apiDelete(`/api/mcp/servers/${id}`, user);
+      const accessToken = await requireAccessToken();
+      await apiDelete(`/api/mcp/servers/${id}`, user, accessToken);
       setServers((prev) => prev.filter((s) => s.id !== id));
       setTestResults((prev) => { const n = { ...prev }; delete n[id]; return n; });
       setTools((prev) => { const n = { ...prev }; delete n[id]; return n; });
@@ -132,7 +136,13 @@ export default function McpServers() {
   async function handleTest(id: string) {
     setTestResults((prev) => ({ ...prev, [id]: "loading" }));
     try {
-      const res = await apiPost<{ ok: boolean; message: string }>(`/api/mcp/servers/${id}/test`, {}, user);
+      const accessToken = await requireAccessToken();
+      const res = await apiPost<{ ok: boolean; message: string }>(
+        `/api/mcp/servers/${id}/test`,
+        {},
+        user,
+        accessToken
+      );
       setTestResults((prev) => ({ ...prev, [id]: res }));
     } catch (e) {
       setTestResults((prev) => ({
@@ -146,7 +156,8 @@ export default function McpServers() {
     setTools((prev) => ({ ...prev, [id]: "loading" }));
     setExpandedTools((prev) => ({ ...prev, [id]: true }));
     try {
-      const res = await apiGet<{ tools: McpTool[] }>(`/api/mcp/servers/${id}/tools`, user);
+      const accessToken = await requireAccessToken();
+      const res = await apiGet<{ tools: McpTool[] }>(`/api/mcp/servers/${id}/tools`, user, accessToken);
       setTools((prev) => ({ ...prev, [id]: res.tools }));
     } catch {
       setTools((prev) => ({ ...prev, [id]: "error" }));

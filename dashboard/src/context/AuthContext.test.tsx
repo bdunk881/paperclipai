@@ -145,4 +145,18 @@ describe("AuthContext", () => {
       account: mockUseAccount(),
     });
   });
+
+  it("throws when a caller requires a token but none is available", async () => {
+    mockUseAccount.mockReturnValue(null);
+
+    render(
+      <AuthProvider>
+        <CaptureAuth />
+      </AuthProvider>
+    );
+
+    await expect(latestAuth?.requireAccessToken()).rejects.toThrow(
+      "Authentication session expired. Sign in again to continue."
+    );
+  });
 });

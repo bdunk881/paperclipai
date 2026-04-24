@@ -31,7 +31,7 @@ import { useAuth } from "../context/AuthContext";
 const POLL_INTERVAL_MS = 3000;
 
 export default function RunMonitor() {
-  const { getAccessToken } = useAuth();
+  const { requireAccessToken } = useAuth();
   const [runs, setRuns] = useState<WorkflowRun[]>([]);
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
   const [lastRefreshed, setLastRefreshed] = useState(new Date());
@@ -43,7 +43,7 @@ export default function RunMonitor() {
     if (!silent) setLoading(true);
     setLoadError(null);
     try {
-      const accessToken = await getAccessToken() ?? undefined;
+      const accessToken = await requireAccessToken();
       const [runResults, teams] = await Promise.all([
         listRuns(undefined, accessToken),
         listControlPlaneTeams(accessToken),
@@ -71,7 +71,7 @@ export default function RunMonitor() {
     } finally {
       if (!silent) setLoading(false);
     }
-  }, [getAccessToken]);
+  }, [requireAccessToken]);
 
   useEffect(() => {
     void fetchRuns();

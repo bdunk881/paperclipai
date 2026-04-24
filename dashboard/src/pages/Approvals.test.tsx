@@ -7,15 +7,23 @@ const { listApprovalsMock, resolveApprovalMock } = vi.hoisted(() => ({
   listApprovalsMock: vi.fn(),
   resolveApprovalMock: vi.fn(),
 }));
+const requireAccessTokenMock = vi.fn();
 
 vi.mock("../api/client", () => ({
   listApprovals: listApprovalsMock,
   resolveApproval: resolveApprovalMock,
 }));
 
+vi.mock("../context/AuthContext", () => ({
+  useAuth: () => ({
+    requireAccessToken: requireAccessTokenMock,
+  }),
+}));
+
 describe("Approvals", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    requireAccessTokenMock.mockResolvedValue("token-123");
   });
 
   it("renders the empty state when there are no approvals", async () => {
@@ -69,6 +77,7 @@ describe("Approvals", () => {
       expect(resolveApprovalMock).toHaveBeenCalledWith(
         "approval-1",
         "approved",
+        "token-123",
         "Looks good to send."
       );
     });

@@ -16,7 +16,7 @@ type SortDir = "asc" | "desc";
 const ALL_STATUSES = ["pending", "running", "completed", "failed", "escalated"] as const;
 
 export default function RunHistory() {
-  const { getAccessToken } = useAuth();
+  const { requireAccessToken } = useAuth();
   const [allRuns, setAllRuns] = useState<WorkflowRun[]>([]);
   const [templates, setTemplates] = useState<TemplateSummary[]>([]);
   const [loading, setLoading] = useState(true);
@@ -31,7 +31,7 @@ export default function RunHistory() {
     setLoading(true);
     setLoadError(null);
     try {
-      const accessToken = await getAccessToken() ?? undefined;
+      const accessToken = await requireAccessToken();
       const [runs, fetchedTemplates] = await Promise.all([listRuns(undefined, accessToken), listTemplates()]);
       setAllRuns(runs);
       setTemplates(fetchedTemplates);
@@ -40,7 +40,7 @@ export default function RunHistory() {
     } finally {
       setLoading(false);
     }
-  }, [getAccessToken]);
+  }, [requireAccessToken]);
 
   useEffect(() => {
     void loadData();

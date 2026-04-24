@@ -85,7 +85,7 @@ async function readApiError(response: Response, fallback: string): Promise<strin
 // ---------------------------------------------------------------------------
 
 /** GET /api/llm-configs */
-export async function listLLMConfigs(accessToken?: string): Promise<LLMConfig[]> {
+export async function listLLMConfigs(accessToken: string): Promise<LLMConfig[]> {
   const res = await fetch(`${BASE}/llm-configs`, {
     headers: buildAuthHeaders(accessToken),
   });
@@ -427,6 +427,226 @@ export async function debugStep(
 }
 
 // ---------------------------------------------------------------------------
+// Proposal Builder API
+// ---------------------------------------------------------------------------
+
+export interface ProposalCrmRecord {
+  id: string;
+  accountName: string;
+  contactName: string;
+  contactEmail: string;
+  dealValue: number;
+  stage: string;
+  owner: string;
+  updatedAt: string;
+}
+
+export interface ProposalTemplateOption {
+  id: string;
+  name: string;
+  description: string;
+  focus: string;
+}
+
+export interface ProposalHistoryItem {
+  id: string;
+  accountName: string;
+  status: "Draft" | "Sent" | "Exported";
+  format: "PDF" | "DOCX";
+  exportedAt: string;
+}
+
+export interface ProposalUsageSummary {
+  used: number;
+  limit: number;
+}
+
+export interface ProposalDraftResult {
+  title: string;
+  body: string;
+  variableHints: string[];
+}
+
+export interface ProposalContextResponse {
+  records: ProposalCrmRecord[];
+  templates: ProposalTemplateOption[];
+  history: ProposalHistoryItem[];
+  usage: ProposalUsageSummary;
+}
+
+export interface CreateProposalRequest {
+  crmRecordIds: string[];
+  templateId: string;
+}
+
+export interface CreateProposalResponse {
+  jobId: string;
+  status: "queued" | "processing";
+  pollUrl?: string;
+}
+
+export interface ProposalJobStatusResponse {
+  jobId: string;
+  status: "queued" | "processing" | "completed" | "failed";
+  draft?: ProposalDraftResult;
+  events: string[];
+  usage?: ProposalUsageSummary;
+}
+
+const PROPOSAL_CONTEXT_FALLBACK: ProposalContextResponse = {
+  records: [
+    {
+      id: "crm-001",
+      accountName: "Northwind Logistics",
+      contactName: "Jordan Lee",
+      contactEmail: "jordan@northwind.example",
+      dealValue: 125000,
+      stage: "Negotiation",
+      owner: "R. Bennett",
+      updatedAt: "2026-04-18T14:10:00.000Z",
+    },
+    {
+      id: "crm-002",
+      accountName: "Summit BioSystems",
+      contactName: "Amaya Patel",
+      contactEmail: "amaya@summit.example",
+      dealValue: 78000,
+      stage: "Proposal Requested",
+      owner: "D. Kim",
+      updatedAt: "2026-04-18T16:35:00.000Z",
+    },
+    {
+      id: "crm-003",
+      accountName: "Atlas Retail Group",
+      contactName: "Chris Romero",
+      contactEmail: "chris@atlas.example",
+      dealValue: 212000,
+      stage: "Discovery",
+      owner: "S. Flores",
+      updatedAt: "2026-04-18T19:03:00.000Z",
+    },
+  ],
+  templates: [
+    {
+      id: "tpl-enterprise-modern",
+      name: "Enterprise Modern",
+      description: "Executive summary and phased delivery model.",
+      focus: "Enterprise rollout",
+    },
+    {
+      id: "tpl-growth-velocity",
+      name: "Growth Velocity",
+      description: "Outcome-led narrative built around measurable upside.",
+      focus: "Revenue acceleration",
+    },
+    {
+      id: "tpl-technical-deep-dive",
+      name: "Technical Deep Dive",
+      description: "Security, architecture, and integration-heavy proposal framing.",
+      focus: "Technical buyers",
+    },
+  ],
+  history: [
+    {
+      id: "proposal-882",
+      accountName: "Aster Cloud",
+      status: "Exported",
+      format: "PDF",
+      exportedAt: "2026-04-15T13:10:00.000Z",
+    },
+    {
+      id: "proposal-881",
+      accountName: "Falcon Finance",
+      status: "Sent",
+      format: "DOCX",
+      exportedAt: "2026-04-14T10:22:00.000Z",
+    },
+    {
+      id: "proposal-880",
+      accountName: "Pioneer Health",
+      status: "Draft",
+      format: "PDF",
+      exportedAt: "2026-04-13T17:45:00.000Z",
+    },
+  ],
+  usage: { used: 4, limit: 5 },
+};
+
+const PROPOSAL_JOB_FALLBACK: ProposalJobStatusResponse = {
+  jobId: "mock-proposal-job",
+  status: "completed",
+  events: [
+    "CRM context validated",
+    "Proposal brief generated",
+    "Draft sections assembled",
+    "Formatting pass complete",
+  ],
+  draft: {
+    title: "AutoFlow Proposal Draft",
+    body:
+      "# Executive Summary\n\nAutoFlow can reduce manual proposal prep by 70%.\n\n## Solution Outline\n\n- CRM context ingestion\n- AI-assisted draft generation\n- Team review and export\n\n## Commercial Terms\n\nEstimated annual value: {{DealValue}}",
+    variableHints: ["{{ClientName}}", "{{DealValue}}", "{{OwnerName}}"],
+  },
+  usage: { used: 5, limit: 5 },
+};
+
+export async function listProposalContext(accessToken?: string): Promise<ProposalContextResponse> {
+  const res = await fetch(`${BASE}/proposals/context`, {
+    headers: buildAuthHeaders(accessToken),
+  });
+  if (res.status === 404) {
+    return PROPOSAL_CONTEXT_FALLBACK;
+  }
+  if (!res.ok) throw new Error(`Failed to fetch proposal context: ${res.status}`);
+  const data = await res.json();
+  return {
+    records: (data.records ?? PROPOSAL_CONTEXT_FALLBACK.records) as ProposalCrmRecord[],
+    templates: (data.templates ?? PROPOSAL_CONTEXT_FALLBACK.templates) as ProposalTemplateOption[],
+    history: (data.history ?? PROPOSAL_CONTEXT_FALLBACK.history) as ProposalHistoryItem[],
+    usage: (data.usage ?? PROPOSAL_CONTEXT_FALLBACK.usage) as ProposalUsageSummary,
+  };
+}
+
+export async function createProposalDraft(
+  input: CreateProposalRequest,
+  accessToken: string
+): Promise<CreateProposalResponse> {
+  const res = await fetch(`${BASE}/proposals`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      ...buildAuthHeaders(accessToken),
+    },
+    body: JSON.stringify(input),
+  });
+  if (res.status === 404) {
+    return { jobId: PROPOSAL_JOB_FALLBACK.jobId, status: "queued" };
+  }
+  if (!res.ok) {
+    const err = await res.json().catch(() => null);
+    throw new Error(err?.error ?? `Failed to create proposal draft: ${res.status}`);
+  }
+  return res.json() as Promise<CreateProposalResponse>;
+}
+
+export async function getProposalJobStatus(
+  jobId: string,
+  accessToken: string
+): Promise<ProposalJobStatusResponse> {
+  const res = await fetch(`${BASE}/proposals/${encodeURIComponent(jobId)}`, {
+    headers: buildAuthHeaders(accessToken),
+  });
+  if (res.status === 404) {
+    return { ...PROPOSAL_JOB_FALLBACK, jobId };
+  }
+  if (!res.ok) {
+    const err = await res.json().catch(() => null);
+    throw new Error(err?.error ?? `Failed to fetch proposal job status: ${res.status}`);
+  }
+  return res.json() as Promise<ProposalJobStatusResponse>;
+}
+
+// ---------------------------------------------------------------------------
 // Memory API — persistent context memory store
 // ---------------------------------------------------------------------------
 
@@ -464,18 +684,25 @@ export interface WriteMemoryInput {
   ttlSeconds?: number;
 }
 
-function getMemoryHeaders(userId?: string): Record<string, string> {
-  const headers: Record<string, string> = { "Content-Type": "application/json" };
+function getMemoryHeaders(accessToken: string, userId?: string): Record<string, string> {
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+    Authorization: `Bearer ${accessToken}`,
+  };
   if (userId) headers["X-User-Id"] = userId;
   return headers;
 }
 
 /** GET /api/memory — list all entries for the current user */
-export async function listMemoryEntries(userId?: string, workflowId?: string): Promise<MemoryEntry[]> {
+export async function listMemoryEntries(
+  accessToken: string,
+  userId?: string,
+  workflowId?: string
+): Promise<MemoryEntry[]> {
   const url = workflowId
     ? `${BASE}/memory?workflowId=${encodeURIComponent(workflowId)}`
     : `${BASE}/memory`;
-  const res = await fetch(url, { headers: getMemoryHeaders(userId) });
+  const res = await fetch(url, { headers: getMemoryHeaders(accessToken, userId) });
   if (!res.ok) throw new Error(`Failed to fetch memory entries: ${res.status}`);
   const data = await res.json();
   return data.entries as MemoryEntry[];
@@ -484,13 +711,14 @@ export async function listMemoryEntries(userId?: string, workflowId?: string): P
 /** GET /api/memory/search — keyword/semantic search */
 export async function searchMemory(
   query: string,
+  accessToken: string,
   userId?: string,
   agentId?: string
 ): Promise<MemorySearchResult[]> {
   const params = new URLSearchParams({ q: query });
   if (agentId) params.set("agentId", agentId);
   const res = await fetch(`${BASE}/memory/search?${params.toString()}`, {
-    headers: getMemoryHeaders(userId),
+    headers: getMemoryHeaders(accessToken, userId),
   });
   if (!res.ok) throw new Error(`Memory search failed: ${res.status}`);
   const data = await res.json();
@@ -498,10 +726,14 @@ export async function searchMemory(
 }
 
 /** POST /api/memory — write (create or upsert) a memory entry */
-export async function writeMemoryEntry(input: WriteMemoryInput, userId?: string): Promise<MemoryEntry> {
+export async function writeMemoryEntry(
+  input: WriteMemoryInput,
+  accessToken: string,
+  userId?: string
+): Promise<MemoryEntry> {
   const res = await fetch(`${BASE}/memory`, {
     method: "POST",
-    headers: getMemoryHeaders(userId),
+    headers: getMemoryHeaders(accessToken, userId),
     body: JSON.stringify(input),
   });
   if (!res.ok) {
@@ -512,17 +744,17 @@ export async function writeMemoryEntry(input: WriteMemoryInput, userId?: string)
 }
 
 /** DELETE /api/memory/:id — delete a single entry */
-export async function deleteMemoryEntry(id: string, userId?: string): Promise<void> {
+export async function deleteMemoryEntry(id: string, accessToken: string, userId?: string): Promise<void> {
   const res = await fetch(`${BASE}/memory/${encodeURIComponent(id)}`, {
     method: "DELETE",
-    headers: getMemoryHeaders(userId),
+    headers: getMemoryHeaders(accessToken, userId),
   });
   if (!res.ok && res.status !== 404) throw new Error(`Failed to delete memory entry: ${res.status}`);
 }
 
 /** GET /api/memory/stats — usage stats */
-export async function getMemoryStats(userId?: string): Promise<MemoryStats> {
-  const res = await fetch(`${BASE}/memory/stats`, { headers: getMemoryHeaders(userId) });
+export async function getMemoryStats(accessToken: string, userId?: string): Promise<MemoryStats> {
+  const res = await fetch(`${BASE}/memory/stats`, { headers: getMemoryHeaders(accessToken, userId) });
   if (!res.ok) throw new Error(`Failed to fetch memory stats: ${res.status}`);
   return res.json() as Promise<MemoryStats>;
 }
@@ -548,12 +780,13 @@ export interface ApprovalRequest {
 
 /** GET /api/approvals */
 export async function listApprovals(
+  accessToken: string,
   status?: "pending" | "approved" | "rejected" | "timed_out"
 ): Promise<ApprovalRequest[]> {
   const url = status
     ? `${BASE}/approvals?status=${encodeURIComponent(status)}`
     : `${BASE}/approvals`;
-  const res = await fetch(url);
+  const res = await fetch(url, { headers: buildAuthHeaders(accessToken) });
   if (!res.ok) throw new Error(`Failed to fetch approvals: ${res.status}`);
   const data = await res.json();
   return data.approvals as ApprovalRequest[];
@@ -563,11 +796,12 @@ export async function listApprovals(
 export async function resolveApproval(
   id: string,
   decision: "approved" | "rejected",
+  accessToken: string,
   comment?: string
 ): Promise<void> {
   const res = await fetch(`${BASE}/approvals/${encodeURIComponent(id)}/resolve`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...buildAuthHeaders(accessToken) },
     body: JSON.stringify({ decision, comment }),
   });
   if (!res.ok) {

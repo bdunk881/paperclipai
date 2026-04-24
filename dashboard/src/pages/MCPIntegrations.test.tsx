@@ -11,6 +11,7 @@ const mockedAuthContext = {
   signup: vi.fn(),
   logout: vi.fn(),
   getAccessToken: vi.fn().mockResolvedValue("mock-token"),
+  requireAccessToken: vi.fn().mockResolvedValue("token-123"),
 };
 
 vi.mock("../context/AuthContext", () => ({

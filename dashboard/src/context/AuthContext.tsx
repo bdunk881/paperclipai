@@ -29,6 +29,7 @@ interface AuthContextValue {
   signup: () => Promise<void>;
   logout: () => void;
   getAccessToken: () => Promise<string | null>;
+  requireAccessToken: () => Promise<string>;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -115,8 +116,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
+  const requireAccessToken = async (): Promise<string> => {
+    const accessToken = await getAccessToken();
+    if (!accessToken) {
+      throw new Error("Authentication session expired. Sign in again to continue.");
+    }
+    return accessToken;
+  };
+
   return (
-    <AuthContext.Provider value={{ user, login, signup, logout, getAccessToken }}>
+    <AuthContext.Provider value={{ user, login, signup, logout, getAccessToken, requireAccessToken }}>
       {children}
     </AuthContext.Provider>
   );

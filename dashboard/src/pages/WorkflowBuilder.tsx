@@ -428,7 +428,7 @@ export default function WorkflowBuilder() {
   const navigate = useNavigate();
   const location = useLocation();
   const { theme } = useTheme();
-  const { getAccessToken } = useAuth();
+  const { requireAccessToken, getAccessToken } = useAuth();
   const incomingState = location.state as BuilderLocationState;
 
   const [template, setTemplate] = useState<WorkflowTemplate>(BLANK_TEMPLATE);
@@ -520,14 +520,27 @@ export default function WorkflowBuilder() {
 
   useEffect(() => {
     if (!isLlmStep) return;
-    setLlmConfigsLoading(true);
-    setLlmConfigsError(null);
-    void getAccessToken()
-      .then((accessToken) => listLLMConfigs(accessToken ?? undefined))
-      .then(setLlmConfigs)
-      .catch((e) => setLlmConfigsError(e instanceof Error ? e.message : "Failed to load providers"))
-      .finally(() => setLlmConfigsLoading(false));
-  }, [getAccessToken, isLlmStep]);
+    let cancelled = false;
+    async function loadLlmConfigs() {
+      setLlmConfigsLoading(true);
+      setLlmConfigsError(null);
+      try {
+        const accessToken = await requireAccessToken();
+        const configs = await listLLMConfigs(accessToken);
+        if (!cancelled) setLlmConfigs(configs);
+      } catch (e) {
+        if (!cancelled) {
+          setLlmConfigsError(e instanceof Error ? e.message : "Failed to load providers");
+        }
+      } finally {
+        if (!cancelled) setLlmConfigsLoading(false);
+      }
+    }
+    void loadLlmConfigs();
+    return () => {
+      cancelled = true;
+    };
+  }, [isLlmStep, requireAccessToken]);
 
   const handleCopilotSubmit = useCallback(async (rawPrompt?: string) => {
     const prompt = (rawPrompt ?? copilotInput).trim();

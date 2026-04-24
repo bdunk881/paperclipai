@@ -10,6 +10,7 @@ const {
   listAgentsMock,
   listRoutinesMock,
   getAccessTokenMock,
+  requireAccessTokenMock,
   navigateMock,
 } = vi.hoisted(() => ({
   listRunsMock: vi.fn(),
@@ -18,6 +19,7 @@ const {
   listAgentsMock: vi.fn(),
   listRoutinesMock: vi.fn(),
   getAccessTokenMock: vi.fn(),
+  requireAccessTokenMock: vi.fn(),
   navigateMock: vi.fn(),
 }));
 
@@ -40,6 +42,7 @@ vi.mock("../context/AuthContext", () => ({
     signup: vi.fn(),
     logout: vi.fn(),
     getAccessToken: getAccessTokenMock,
+    requireAccessToken: requireAccessTokenMock,
   }),
 }));
 
@@ -60,6 +63,7 @@ describe("Dashboard", () => {
       removeItem: vi.fn(),
     });
     getAccessTokenMock.mockResolvedValue("mock-token");
+    requireAccessTokenMock.mockResolvedValue("mock-token");
     listRunsMock.mockResolvedValue([]);
     listTemplatesMock.mockResolvedValue([]);
     listLLMConfigsMock.mockResolvedValue([]);
@@ -80,7 +84,7 @@ describe("Dashboard", () => {
 
     await screen.findByText("Welcome back, Test");
 
-    expect(getAccessTokenMock).toHaveBeenCalledTimes(1);
+    expect(requireAccessTokenMock).toHaveBeenCalledTimes(1);
     expect(listRunsMock).toHaveBeenCalledWith(undefined, "mock-token");
     expect(listLLMConfigsMock).toHaveBeenCalledWith("mock-token");
     expect(listAgentsMock).toHaveBeenCalledWith("mock-token");

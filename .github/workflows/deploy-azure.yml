@@ -28,7 +28,7 @@ jobs:
   deploy:
     name: Build and Deploy Backend Container App
     runs-on: ubuntu-latest
-    environment: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.environment || 'production' }}
+    environment: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.environment || (github.ref == 'refs/heads/master' && 'production' || 'staging') }}
 
     steps:
       - uses: actions/checkout@v5

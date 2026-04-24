@@ -29,7 +29,9 @@ Expected response contract for all three endpoints:
 
 - `QA_API_BASE_URL` (required): stable dashboard base URL, example `https://app.helloautoflow.com`
 - `QA_E2E_BEARER_TOKEN` (optional): bearer token for protected QA endpoints
+- `QA_E2E_USER_ID` (optional): user identifier paired with the QA bearer token when a route expects a stable user context
 - `STRIPE_WEBHOOK_SECRET` (optional, recommended): Stripe webhook signing secret
+- `QA_CONNECTOR_HEALTH_SLUGS` (optional): space-delimited connector list for the Friday sweep; default `linear sentry hubspot teams apollo`
 
 ## Required Vercel Variables (Landing Analytics)
 
@@ -78,10 +80,28 @@ The same tokenized link can be reused for:
 
 1. Open GitHub Actions and run `QA Integration Evidence`.
 2. Download artifact `qa-integration-evidence-<run_id>`.
-3. Attach the artifact summary to:
+3. Review the connector health rows in `summary.md` for:
+- `200` healthy
+- `206` degraded
+- `503` route mounted but connector down/not configured for QA user
+- `401/403` auth gap or insufficient token scopes
+- `404/000` broken route or unreachable endpoint; file a connector regression ticket immediately
+4. Attach the artifact summary to:
 
 - [ALT-1071](/ALT/issues/ALT-1071)
 - [ALT-1080](/ALT/issues/ALT-1080)
+
+## Friday Connector Sweep Focus
+
+The default Friday sweep probes these connector health endpoints:
+
+- `/api/integrations/linear/health`
+- `/api/integrations/sentry/health`
+- `/api/integrations/hubspot/health`
+- `/api/integrations/teams/health`
+- `/api/integrations/apollo/health`
+
+If you need to expand the sweep for P1 work, set `QA_CONNECTOR_HEALTH_SLUGS` to a space-delimited list before running the workflow.
 
 ## Performance + Browser Matrix (Landing)
 

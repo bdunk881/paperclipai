@@ -1,0 +1,704 @@
+import { randomUUID } from "crypto";
+import { parseJsonColumn, serializeJson } from "../db/json";
+import { getPostgresPool, isPostgresPersistenceEnabled } from "../db/postgres";
+
+export type TicketActorType = "agent" | "user";
+export type TicketAssignmentRole = "primary" | "collaborator";
+export type TicketStatus = "open" | "in_progress" | "resolved" | "blocked" | "cancelled";
+export type TicketPriority = "low" | "medium" | "high" | "urgent";
+export type TicketUpdateType = "comment" | "status_change" | "structured_update";
+
+export interface TicketActorRef {
+  type: TicketActorType;
+  id: string;
+}
+
+export interface TicketAssignee extends TicketActorRef {
+  role: TicketAssignmentRole;
+}
+
+export interface TicketUpdate {
+  id: string;
+  ticketId: string;
+  actor: TicketActorRef;
+  type: TicketUpdateType;
+  content: string;
+  metadata: Record<string, unknown>;
+  createdAt: string;
+}
+
+export interface TicketRecord {
+  id: string;
+  workspaceId: string;
+  title: string;
+  description: string;
+  creatorId: string;
+  status: TicketStatus;
+  priority: TicketPriority;
+  slaState: string;
+  dueDate?: string;
+  resolvedAt?: string;
+  tags: string[];
+  assignees: TicketAssignee[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+interface TicketAggregate {
+  ticket: TicketRecord;
+  updates: TicketUpdate[];
+}
+
+interface TicketRow {
+  id: string;
+  workspace_id: string;
+  title: string;
+  description: string;
+  creator_id: string;
+  status: TicketStatus;
+  priority: TicketPriority;
+  sla_state: string;
+  due_date: string | null;
+  resolved_at: string | null;
+  tags_json: unknown;
+  created_at: string;
+  updated_at: string;
+}
+
+const memoryTickets = new Map<string, TicketRecord>();
+const memoryUpdates = new Map<string, TicketUpdate[]>();
+
+function cloneActor(actor: TicketActorRef): TicketActorRef {
+  return { ...actor };
+}
+
+function cloneAssignee(assignee: TicketAssignee): TicketAssignee {
+  return { ...assignee };
+}
+
+function cloneUpdate(update: TicketUpdate): TicketUpdate {
+  return {
+    ...update,
+    actor: cloneActor(update.actor),
+    metadata: { ...update.metadata },
+  };
+}
+
+function cloneTicket(ticket: TicketRecord): TicketRecord {
+  return {
+    ...ticket,
+    tags: [...ticket.tags],
+    assignees: ticket.assignees.map(cloneAssignee),
+  };
+}
+
+function cloneAggregate(aggregate: TicketAggregate): TicketAggregate {
+  return {
+    ticket: cloneTicket(aggregate.ticket),
+    updates: aggregate.updates.map(cloneUpdate),
+  };
+}
+
+function mapTicketRow(row: TicketRow): TicketRecord {
+  return {
+    id: row.id,
+    workspaceId: row.workspace_id,
+    title: row.title,
+    description: row.description,
+    creatorId: row.creator_id,
+    status: row.status,
+    priority: row.priority,
+    slaState: row.sla_state,
+    dueDate: row.due_date ? new Date(row.due_date).toISOString() : undefined,
+    resolvedAt: row.resolved_at ? new Date(row.resolved_at).toISOString() : undefined,
+    tags: parseJsonColumn<string[]>(row.tags_json, []),
+    assignees: [],
+    createdAt: new Date(row.created_at).toISOString(),
+    updatedAt: new Date(row.updated_at).toISOString(),
+  };
+}
+
+function mapAssignmentRow(row: Record<string, unknown>): TicketAssignee {
+  return {
+    type: row["actor_type"] as TicketActorType,
+    id: String(row["actor_id"]),
+    role: row["role"] as TicketAssignmentRole,
+  };
+}
+
+function mapUpdateRow(row: Record<string, unknown>): TicketUpdate {
+  return {
+    id: String(row["id"]),
+    ticketId: String(row["ticket_id"]),
+    actor: {
+      type: row["actor_type"] as TicketActorType,
+      id: String(row["actor_id"]),
+    },
+    type: row["update_type"] as TicketUpdateType,
+    content: String(row["content"]),
+    metadata: parseJsonColumn<Record<string, unknown>>(row["metadata_json"], {}),
+    createdAt: new Date(String(row["created_at"])).toISOString(),
+  };
+}
+
+function sortAssignees(assignees: TicketAssignee[]): TicketAssignee[] {
+  return [...assignees].sort((left, right) => {
+    if (left.role !== right.role) {
+      return left.role === "primary" ? -1 : 1;
+    }
+    if (left.type !== right.type) {
+      return left.type.localeCompare(right.type);
+    }
+    return left.id.localeCompare(right.id);
+  });
+}
+
+function assigneesEqual(left: TicketAssignee[], right: TicketAssignee[]): boolean {
+  const sortedLeft = sortAssignees(left);
+  const sortedRight = sortAssignees(right);
+  if (sortedLeft.length !== sortedRight.length) {
+    return false;
+  }
+
+  return sortedLeft.every((assignee, index) => {
+    const other = sortedRight[index];
+    return assignee.type === other.type && assignee.id === other.id && assignee.role === other.role;
+  });
+}
+
+function normalizeTags(tags?: string[]): string[] {
+  return [...new Set((tags ?? []).map((tag) => tag.trim()).filter(Boolean))];
+}
+
+function buildStructuredUpdate(input: {
+  ticketId: string;
+  actor: TicketActorRef;
+  content: string;
+  metadata?: Record<string, unknown>;
+}): TicketUpdate {
+  return {
+    id: randomUUID(),
+    ticketId: input.ticketId,
+    actor: cloneActor(input.actor),
+    type: "structured_update",
+    content: input.content,
+    metadata: { ...(input.metadata ?? {}) },
+    createdAt: new Date().toISOString(),
+  };
+}
+
+function buildStatusUpdate(input: {
+  ticketId: string;
+  actor: TicketActorRef;
+  fromStatus: TicketStatus;
+  toStatus: TicketStatus;
+  reason?: string;
+}): TicketUpdate {
+  return {
+    id: randomUUID(),
+    ticketId: input.ticketId,
+    actor: cloneActor(input.actor),
+    type: "status_change",
+    content: input.reason?.trim()
+      ? input.reason.trim()
+      : `Ticket status changed from ${input.fromStatus} to ${input.toStatus}.`,
+    metadata: {
+      fromStatus: input.fromStatus,
+      toStatus: input.toStatus,
+    },
+    createdAt: new Date().toISOString(),
+  };
+}
+
+function transitionAllowed(from: TicketStatus, to: TicketStatus): boolean {
+  switch (from) {
+    case "open":
+      return to === "in_progress";
+    case "in_progress":
+      return to === "resolved" || to === "blocked" || to === "cancelled";
+    case "blocked":
+      return to === "in_progress" || to === "cancelled";
+    default:
+      return false;
+  }
+}
+
+function getPrimaryAssignee(ticket: TicketRecord): TicketAssignee | undefined {
+  return ticket.assignees.find((assignee) => assignee.role === "primary");
+}
+
+async function persistAggregate(aggregate: TicketAggregate): Promise<void> {
+  if (!isPostgresPersistenceEnabled()) {
+    memoryTickets.set(aggregate.ticket.id, cloneTicket(aggregate.ticket));
+    memoryUpdates.set(
+      aggregate.ticket.id,
+      aggregate.updates.map(cloneUpdate)
+    );
+    return;
+  }
+
+  const pool = getPostgresPool();
+  const client = await pool.connect();
+
+  try {
+    await client.query("BEGIN");
+    await client.query(
+      `
+        INSERT INTO tickets (
+          id, workspace_id, title, description, creator_id, status, priority,
+          sla_state, due_date, resolved_at, tags_json, created_at, updated_at
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::jsonb, $12, $13)
+        ON CONFLICT (id) DO UPDATE
+        SET title = EXCLUDED.title,
+            description = EXCLUDED.description,
+            status = EXCLUDED.status,
+            priority = EXCLUDED.priority,
+            sla_state = EXCLUDED.sla_state,
+            due_date = EXCLUDED.due_date,
+            resolved_at = EXCLUDED.resolved_at,
+            tags_json = EXCLUDED.tags_json,
+            updated_at = EXCLUDED.updated_at
+      `,
+      [
+        aggregate.ticket.id,
+        aggregate.ticket.workspaceId,
+        aggregate.ticket.title,
+        aggregate.ticket.description,
+        aggregate.ticket.creatorId,
+        aggregate.ticket.status,
+        aggregate.ticket.priority,
+        aggregate.ticket.slaState,
+        aggregate.ticket.dueDate ?? null,
+        aggregate.ticket.resolvedAt ?? null,
+        serializeJson(aggregate.ticket.tags),
+        aggregate.ticket.createdAt,
+        aggregate.ticket.updatedAt,
+      ]
+    );
+
+    await client.query("DELETE FROM ticket_assignments WHERE ticket_id = $1", [aggregate.ticket.id]);
+    for (const assignee of aggregate.ticket.assignees) {
+      await client.query(
+        `
+          INSERT INTO ticket_assignments (id, ticket_id, actor_type, actor_id, role, created_at)
+          VALUES ($1, $2, $3, $4, $5, $6)
+        `,
+        [randomUUID(), aggregate.ticket.id, assignee.type, assignee.id, assignee.role, new Date().toISOString()]
+      );
+    }
+
+    for (const update of aggregate.updates) {
+      await client.query(
+        `
+          INSERT INTO ticket_updates (
+            id, ticket_id, actor_type, actor_id, update_type, content, metadata_json, created_at
+          )
+          VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8)
+          ON CONFLICT (id) DO NOTHING
+        `,
+        [
+          update.id,
+          update.ticketId,
+          update.actor.type,
+          update.actor.id,
+          update.type,
+          update.content,
+          serializeJson(update.metadata),
+          update.createdAt,
+        ]
+      );
+    }
+
+    await client.query("COMMIT");
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
+  }
+
+  memoryTickets.set(aggregate.ticket.id, cloneTicket(aggregate.ticket));
+  memoryUpdates.set(
+    aggregate.ticket.id,
+    aggregate.updates.map(cloneUpdate)
+  );
+}
+
+async function loadAssignments(ticketIds: string[]): Promise<Map<string, TicketAssignee[]>> {
+  const assignments = new Map<string, TicketAssignee[]>();
+
+  if (ticketIds.length === 0) {
+    return assignments;
+  }
+
+  if (!isPostgresPersistenceEnabled()) {
+    for (const ticketId of ticketIds) {
+      const ticket = memoryTickets.get(ticketId);
+      if (ticket) {
+        assignments.set(ticketId, ticket.assignees.map(cloneAssignee));
+      }
+    }
+    return assignments;
+  }
+
+  const result = await getPostgresPool().query(
+    `
+      SELECT ticket_id, actor_type, actor_id, role
+      FROM ticket_assignments
+      WHERE ticket_id = ANY($1::uuid[])
+      ORDER BY role ASC, actor_type ASC, actor_id ASC
+    `,
+    [ticketIds]
+  );
+
+  for (const row of result.rows) {
+    const ticketId = String(row["ticket_id"]);
+    const existing = assignments.get(ticketId) ?? [];
+    existing.push(mapAssignmentRow(row));
+    assignments.set(ticketId, existing);
+  }
+
+  return assignments;
+}
+
+async function loadUpdates(ticketId: string): Promise<TicketUpdate[]> {
+  if (!isPostgresPersistenceEnabled()) {
+    return (memoryUpdates.get(ticketId) ?? []).map(cloneUpdate);
+  }
+
+  const result = await getPostgresPool().query(
+    `
+      SELECT id, ticket_id, actor_type, actor_id, update_type, content, metadata_json, created_at
+      FROM ticket_updates
+      WHERE ticket_id = $1
+      ORDER BY created_at ASC, id ASC
+    `,
+    [ticketId]
+  );
+
+  return result.rows.map(mapUpdateRow);
+}
+
+export const ticketStore = {
+  async create(input: {
+    workspaceId: string;
+    title: string;
+    description?: string;
+    creatorId: string;
+    priority?: TicketPriority;
+    dueDate?: string;
+    tags?: string[];
+    assignees: TicketAssignee[];
+  }): Promise<TicketAggregate> {
+    const now = new Date().toISOString();
+    const ticket: TicketRecord = {
+      id: randomUUID(),
+      workspaceId: input.workspaceId,
+      title: input.title.trim(),
+      description: input.description?.trim() ?? "",
+      creatorId: input.creatorId,
+      status: "open",
+      priority: input.priority ?? "medium",
+      slaState: "untracked",
+      dueDate: input.dueDate,
+      tags: normalizeTags(input.tags),
+      assignees: sortAssignees(input.assignees),
+      createdAt: now,
+      updatedAt: now,
+    };
+
+    const updates = [
+      buildStructuredUpdate({
+        ticketId: ticket.id,
+        actor: { type: "user", id: input.creatorId },
+        content: "Ticket created.",
+        metadata: {
+          event: "created",
+          status: ticket.status,
+          priority: ticket.priority,
+          assignees: ticket.assignees,
+        },
+      }),
+    ];
+
+    const aggregate = { ticket, updates };
+    await persistAggregate(aggregate);
+    return cloneAggregate(aggregate);
+  },
+
+  async get(ticketId: string): Promise<TicketAggregate | undefined> {
+    const localTicket = memoryTickets.get(ticketId);
+    if (localTicket && !isPostgresPersistenceEnabled()) {
+      return {
+        ticket: cloneTicket(localTicket),
+        updates: (memoryUpdates.get(ticketId) ?? []).map(cloneUpdate),
+      };
+    }
+
+    if (isPostgresPersistenceEnabled()) {
+      const result = await getPostgresPool().query(
+        `
+          SELECT id, workspace_id, title, description, creator_id, status, priority,
+                 sla_state, due_date, resolved_at, tags_json, created_at, updated_at
+          FROM tickets
+          WHERE id = $1
+        `,
+        [ticketId]
+      );
+      const row = result.rows[0] as TicketRow | undefined;
+      if (!row) {
+        return undefined;
+      }
+
+      const ticket = mapTicketRow(row);
+      const assignmentMap = await loadAssignments([ticket.id]);
+      ticket.assignees = assignmentMap.get(ticket.id) ?? [];
+      const updates = await loadUpdates(ticket.id);
+      memoryTickets.set(ticket.id, cloneTicket(ticket));
+      memoryUpdates.set(ticket.id, updates.map(cloneUpdate));
+      return { ticket, updates };
+    }
+
+    if (!localTicket) {
+      return undefined;
+    }
+
+    return {
+      ticket: cloneTicket(localTicket),
+      updates: (memoryUpdates.get(ticketId) ?? []).map(cloneUpdate),
+    };
+  },
+
+  async list(filters: {
+    workspaceId?: string;
+    actorType?: TicketActorType;
+    actorId?: string;
+    status?: TicketStatus;
+    priority?: TicketPriority;
+    slaState?: string;
+  } = {}): Promise<TicketRecord[]> {
+    if (!isPostgresPersistenceEnabled()) {
+      return Array.from(memoryTickets.values())
+        .filter((ticket) => (filters.workspaceId ? ticket.workspaceId === filters.workspaceId : true))
+        .filter((ticket) => (filters.status ? ticket.status === filters.status : true))
+        .filter((ticket) => (filters.priority ? ticket.priority === filters.priority : true))
+        .filter((ticket) => (filters.slaState ? ticket.slaState === filters.slaState : true))
+        .filter((ticket) =>
+          filters.actorType && filters.actorId
+            ? ticket.assignees.some(
+                (assignee) => assignee.type === filters.actorType && assignee.id === filters.actorId
+              )
+            : true
+        )
+        .sort((left, right) => right.createdAt.localeCompare(left.createdAt))
+        .map(cloneTicket);
+    }
+
+    const result = await getPostgresPool().query(
+      `
+        SELECT DISTINCT t.id, t.workspace_id, t.title, t.description, t.creator_id, t.status, t.priority,
+               t.sla_state, t.due_date, t.resolved_at, t.tags_json, t.created_at, t.updated_at
+        FROM tickets t
+        LEFT JOIN ticket_assignments ta ON ta.ticket_id = t.id
+        WHERE ($1::uuid IS NULL OR t.workspace_id = $1)
+          AND ($2::text IS NULL OR t.status = $2)
+          AND ($3::text IS NULL OR t.priority = $3)
+          AND ($4::text IS NULL OR t.sla_state = $4)
+          AND ($5::text IS NULL OR ta.actor_type = $5)
+          AND ($6::text IS NULL OR ta.actor_id = $6)
+        ORDER BY t.created_at DESC
+      `,
+      [
+        filters.workspaceId ?? null,
+        filters.status ?? null,
+        filters.priority ?? null,
+        filters.slaState ?? null,
+        filters.actorType ?? null,
+        filters.actorId ?? null,
+      ]
+    );
+
+    const tickets = (result.rows as TicketRow[]).map(mapTicketRow);
+    const assignmentMap = await loadAssignments(tickets.map((ticket) => ticket.id));
+    return tickets.map((ticket) => {
+      ticket.assignees = assignmentMap.get(ticket.id) ?? [];
+      return ticket;
+    });
+  },
+
+  async updateTicket(input: {
+    ticketId: string;
+    actor: TicketActorRef;
+    title?: string;
+    description?: string;
+    priority?: TicketPriority;
+    dueDate?: string | null;
+    tags?: string[];
+    assignees?: TicketAssignee[];
+  }): Promise<TicketAggregate | undefined> {
+    const existing = await this.get(input.ticketId);
+    if (!existing) {
+      return undefined;
+    }
+
+    const nextTicket: TicketRecord = {
+      ...existing.ticket,
+      title: input.title?.trim() ?? existing.ticket.title,
+      description: input.description !== undefined ? input.description.trim() : existing.ticket.description,
+      priority: input.priority ?? existing.ticket.priority,
+      dueDate:
+        input.dueDate === null
+          ? undefined
+          : input.dueDate !== undefined
+            ? input.dueDate
+            : existing.ticket.dueDate,
+      tags: input.tags ? normalizeTags(input.tags) : existing.ticket.tags,
+      assignees: input.assignees ? sortAssignees(input.assignees) : existing.ticket.assignees,
+      updatedAt: new Date().toISOString(),
+    };
+
+    const nextUpdates = existing.updates.map(cloneUpdate);
+    const changedFields: string[] = [];
+    if (nextTicket.title !== existing.ticket.title) {
+      changedFields.push("title");
+    }
+    if (nextTicket.description !== existing.ticket.description) {
+      changedFields.push("description");
+    }
+    if (nextTicket.priority !== existing.ticket.priority) {
+      changedFields.push("priority");
+    }
+    if ((nextTicket.dueDate ?? null) !== (existing.ticket.dueDate ?? null)) {
+      changedFields.push("dueDate");
+    }
+    if (JSON.stringify(nextTicket.tags) !== JSON.stringify(existing.ticket.tags)) {
+      changedFields.push("tags");
+    }
+    if (!assigneesEqual(nextTicket.assignees, existing.ticket.assignees)) {
+      changedFields.push("assignees");
+    }
+
+    if (changedFields.length > 0) {
+      nextUpdates.push(
+        buildStructuredUpdate({
+          ticketId: nextTicket.id,
+          actor: input.actor,
+          content: "Ticket details updated.",
+          metadata: {
+            event: "ticket_updated",
+            changedFields,
+            assignees: nextTicket.assignees,
+          },
+        })
+      );
+    }
+
+    const aggregate = { ticket: nextTicket, updates: nextUpdates };
+    await persistAggregate(aggregate);
+    return cloneAggregate(aggregate);
+  },
+
+  async transitionTicket(input: {
+    ticketId: string;
+    actor: TicketActorRef;
+    status: TicketStatus;
+    reason?: string;
+  }): Promise<{ aggregate?: TicketAggregate; error?: "not_found" | "forbidden" | "invalid_transition" }> {
+    const existing = await this.get(input.ticketId);
+    if (!existing) {
+      return { error: "not_found" };
+    }
+
+    const primaryAssignee = getPrimaryAssignee(existing.ticket);
+    if (
+      !primaryAssignee ||
+      primaryAssignee.type !== input.actor.type ||
+      primaryAssignee.id !== input.actor.id
+    ) {
+      return { error: "forbidden" };
+    }
+
+    if (!transitionAllowed(existing.ticket.status, input.status)) {
+      return { error: "invalid_transition" };
+    }
+
+    const nextTicket: TicketRecord = {
+      ...existing.ticket,
+      status: input.status,
+      resolvedAt: input.status === "resolved" ? new Date().toISOString() : undefined,
+      updatedAt: new Date().toISOString(),
+    };
+
+    const nextUpdates = existing.updates.map(cloneUpdate);
+    nextUpdates.push(
+      buildStatusUpdate({
+        ticketId: nextTicket.id,
+        actor: input.actor,
+        fromStatus: existing.ticket.status,
+        toStatus: input.status,
+        reason: input.reason,
+      })
+    );
+
+    const aggregate = { ticket: nextTicket, updates: nextUpdates };
+    await persistAggregate(aggregate);
+    return { aggregate: cloneAggregate(aggregate) };
+  },
+
+  async addUpdate(input: {
+    ticketId: string;
+    actor: TicketActorRef;
+    type: TicketUpdateType;
+    content: string;
+    metadata?: Record<string, unknown>;
+  }): Promise<TicketUpdate | undefined> {
+    const existing = await this.get(input.ticketId);
+    if (!existing) {
+      return undefined;
+    }
+
+    const update: TicketUpdate = {
+      id: randomUUID(),
+      ticketId: input.ticketId,
+      actor: cloneActor(input.actor),
+      type: input.type,
+      content: input.content.trim(),
+      metadata: { ...(input.metadata ?? {}) },
+      createdAt: new Date().toISOString(),
+    };
+
+    const aggregate = {
+      ticket: {
+        ...existing.ticket,
+        updatedAt: new Date().toISOString(),
+      },
+      updates: [...existing.updates.map(cloneUpdate), update],
+    };
+
+    await persistAggregate(aggregate);
+    return cloneUpdate(update);
+  },
+
+  async listActivity(ticketId: string): Promise<TicketUpdate[] | undefined> {
+    const existing = await this.get(ticketId);
+    if (!existing) {
+      return undefined;
+    }
+    return existing.updates.map(cloneUpdate);
+  },
+
+  async clear(): Promise<void> {
+    memoryTickets.clear();
+    memoryUpdates.clear();
+
+    if (!isPostgresPersistenceEnabled()) {
+      return;
+    }
+
+    const pool = getPostgresPool();
+    await pool.query("DELETE FROM ticket_updates");
+    await pool.query("DELETE FROM ticket_assignments");
+    await pool.query("DELETE FROM tickets");
+  },
+};

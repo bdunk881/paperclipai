@@ -5,7 +5,17 @@ export interface StoredAuthUser {
   tenantId?: string;
 }
 
+export interface StoredAuthSession {
+  accessToken: string;
+  refreshToken?: string;
+  idToken?: string;
+  expiresAt: number;
+  scope?: string;
+  user: StoredAuthUser;
+}
+
 export const AUTH_STORAGE_KEY = "autoflow_user";
+export const AUTH_SESSION_STORAGE_KEY = "autoflow_auth_session";
 export const AUTH_STORAGE_EVENT = "autoflow-auth-user-changed";
 
 function isStoredAuthUser(value: unknown): value is StoredAuthUser {
@@ -23,11 +33,37 @@ function dispatchAuthStorageEvent() {
   window.dispatchEvent(new Event(AUTH_STORAGE_EVENT));
 }
 
+function isStoredAuthSession(value: unknown): value is StoredAuthSession {
+  if (!value || typeof value !== "object") return false;
+  const candidate = value as Record<string, unknown>;
+  return (
+    typeof candidate.accessToken === "string" &&
+    typeof candidate.expiresAt === "number" &&
+    isStoredAuthUser(candidate.user)
+  );
+}
+
+export function readStoredAuthSession(): StoredAuthSession | null {
+  if (typeof window === "undefined") return null;
+
+  const raw = window.sessionStorage.getItem(AUTH_SESSION_STORAGE_KEY);
+  if (!raw) return null;
+
+  try {
+    const parsed = JSON.parse(raw);
+    return isStoredAuthSession(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
 export function readStoredAuthUser(): StoredAuthUser | null {
   if (typeof window === "undefined") return null;
 
   const raw = window.sessionStorage.getItem(AUTH_STORAGE_KEY);
-  if (!raw) return null;
+  if (!raw) {
+    return readStoredAuthSession()?.user ?? null;
+  }
 
   try {
     const parsed = JSON.parse(raw);
@@ -37,14 +73,29 @@ export function readStoredAuthUser(): StoredAuthUser | null {
   }
 }
 
+export function writeStoredAuthSession(session: StoredAuthSession): void {
+  if (typeof window === "undefined") return;
+  window.sessionStorage.setItem(AUTH_SESSION_STORAGE_KEY, JSON.stringify(session));
+  window.sessionStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(session.user));
+  dispatchAuthStorageEvent();
+}
+
 export function writeStoredAuthUser(user: StoredAuthUser): void {
   if (typeof window === "undefined") return;
   window.sessionStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(user));
   dispatchAuthStorageEvent();
 }
 
+export function clearStoredAuthSession(): void {
+  if (typeof window === "undefined") return;
+  window.sessionStorage.removeItem(AUTH_SESSION_STORAGE_KEY);
+  window.sessionStorage.removeItem(AUTH_STORAGE_KEY);
+  dispatchAuthStorageEvent();
+}
+
 export function clearStoredAuthUser(): void {
   if (typeof window === "undefined") return;
+  window.sessionStorage.removeItem(AUTH_SESSION_STORAGE_KEY);
   window.sessionStorage.removeItem(AUTH_STORAGE_KEY);
   dispatchAuthStorageEvent();
 }

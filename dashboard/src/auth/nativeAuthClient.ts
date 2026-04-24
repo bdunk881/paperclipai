@@ -187,6 +187,7 @@ export async function signInWithPassword(email: string, password: string): Promi
     client_id: clientId(),
     scope: DEFAULT_SCOPE,
     username: email,
+    challenge_type: "oob password redirect",
   });
 
   if (!initiated.continuation_token) {
@@ -215,6 +216,7 @@ export async function startSignUp(email: string, password: string, displayName: 
     client_id: clientId(),
     username: email,
     password,
+    challenge_type: "oob redirect",
     attributes: JSON.stringify({ displayName }),
   });
 }
@@ -248,6 +250,7 @@ export async function startPasswordReset(email: string): Promise<NativeAuthFlowR
   return postForm<NativeAuthFlowResponse>("resetpassword/v1.0/start", {
     client_id: clientId(),
     username: email,
+    challenge_type: "oob redirect",
   });
 }
 

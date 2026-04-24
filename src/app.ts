@@ -18,6 +18,7 @@ import { WorkflowTemplate, WorkflowStep } from "./types/workflow";
 import { workflowEngine } from "./engine/WorkflowEngine";
 import { startApprovalResumeCoordinator } from "./engine/approvalResumeCoordinator";
 import { startApprovalNotificationCoordinator } from "./engine/approvalNotificationCoordinator";
+import { startTicketNotificationCoordinator } from "./engine/ticketSlaCoordinator";
 import { runStore } from "./engine/runStore";
 import { approvalStore } from "./engine/approvalStore";
 import { approvalNotificationStore } from "./engine/approvalNotificationStore";
@@ -27,6 +28,9 @@ import memoryRoutes from "./memory/memoryRoutes";
 import agentMemoryRoutes from "./agents/agentMemoryRoutes";
 import knowledgeRoutes from "./knowledge/routes";
 import controlPlaneRoutes from "./controlPlane/controlPlaneRoutes";
+import ticketRoutes from "./tickets/ticketRoutes";
+import ticketSyncRoutes from "./ticketSync/routes";
+import ticketSyncWebhookRoutes from "./ticketSync/webhookRoutes";
 import { llmConfigStore } from "./llmConfig/llmConfigStore";
 import { getProvider } from "./engine/llmProviders";
 import { parseFile } from "./engine/fileParser";
@@ -209,6 +213,7 @@ app.use("/api/webhooks/posthog", posthogWebhookRouter);
 app.use("/api/webhooks/intercom", intercomWebhookRouter);
 // Datadog + Azure Monitor webhook — mounted before express.json() for signature verification
 app.use("/api/webhooks/datadog-azure-monitor", datadogAzureMonitorWebhookRouter);
+app.use("/api/webhooks/ticket-sync", ticketSyncWebhookRoutes);
 app.use("/api/connectors/google-workspace", googleWorkspaceWebhookRoutes);
 
 app.use(express.json());
@@ -262,6 +267,8 @@ app.use("/api/integrations/datadog-azure-monitor", datadogAzureMonitorRoutes);
 app.use("/api/integrations/agent-catalog", agentCatalogRoutes);
 app.use("/api/connectors/google-workspace", googleWorkspaceConnectorRoutes);
 app.use("/api/control-plane", requireAuth, controlPlaneRoutes);
+app.use("/api/tickets", requireAuth, ticketRoutes);
+app.use("/api/ticket-sync", requireAuth, ticketSyncRoutes);
 
 // ---------------------------------------------------------------------------
 // Auth API — identity endpoint for authenticated callers
@@ -844,6 +851,10 @@ if (process.env.NODE_ENV !== "test" && process.env.AUTOFLOW_ENABLE_APPROVAL_RESU
 
 if (process.env.NODE_ENV !== "test" && process.env.AUTOFLOW_ENABLE_APPROVAL_NOTIFICATION_SWEEPER !== "false") {
   startApprovalNotificationCoordinator();
+}
+
+if (process.env.NODE_ENV !== "test" && process.env.AUTOFLOW_ENABLE_TICKET_NOTIFICATION_SWEEPER !== "false") {
+  startTicketNotificationCoordinator();
 }
 
 // Handle JSON parse errors from express.json() middleware

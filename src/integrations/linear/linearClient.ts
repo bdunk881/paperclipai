@@ -315,4 +315,144 @@ export class LinearClient {
       title: String(data.issueUpdate.issue.title),
     };
   }
+
+  async listComments(issueId: string, limit = 100): Promise<Array<{
+    id: string;
+    body: string;
+    author?: string;
+    createdAt?: string;
+    updatedAt?: string;
+  }>> {
+    const results: Array<{
+      id: string;
+      body: string;
+      author?: string;
+      createdAt?: string;
+      updatedAt?: string;
+    }> = [];
+    let cursor: string | null = null;
+
+    do {
+      const pageData: {
+        issue: {
+          comments: {
+            nodes: Array<{
+              id: string;
+              body: string;
+              createdAt?: string;
+              updatedAt?: string;
+              user?: { name?: string };
+            }>;
+            pageInfo: { hasNextPage: boolean; endCursor?: string | null };
+          };
+        };
+      } = await this.request<{
+        issue: {
+          comments: {
+            nodes: Array<{
+              id: string;
+              body: string;
+              createdAt?: string;
+              updatedAt?: string;
+              user?: { name?: string };
+            }>;
+            pageInfo: { hasNextPage: boolean; endCursor?: string | null };
+          };
+        };
+      }>(`
+        query IssueComments($id: String!, $first: Int!, $after: String) {
+          issue(id: $id) {
+            comments(first: $first, after: $after) {
+              nodes {
+                id
+                body
+                createdAt
+                updatedAt
+                user {
+                  name
+                }
+              }
+              pageInfo {
+                hasNextPage
+                endCursor
+              }
+            }
+          }
+        }
+      `, {
+        id: issueId,
+        first: Math.min(100, Math.max(1, limit - results.length)),
+        after: cursor,
+      });
+
+      for (const node of pageData.issue.comments.nodes ?? []) {
+        results.push({
+          id: String(node.id),
+          body: String(node.body),
+          author: typeof node.user?.name === "string" ? node.user.name : undefined,
+          createdAt: typeof node.createdAt === "string" ? node.createdAt : undefined,
+          updatedAt: typeof node.updatedAt === "string" ? node.updatedAt : undefined,
+        });
+      }
+
+      cursor = pageData.issue.comments.pageInfo.hasNextPage
+        ? pageData.issue.comments.pageInfo.endCursor ?? null
+        : null;
+    } while (cursor && results.length < limit);
+
+    return results;
+  }
+
+  async createComment(issueId: string, body: string): Promise<{
+    id: string;
+    body: string;
+    author?: string;
+    createdAt?: string;
+  }> {
+    const data = await this.request<{
+      commentCreate: {
+        success: boolean;
+        comment?: {
+          id: string;
+          body: string;
+          createdAt?: string;
+          user?: { name?: string };
+        };
+      };
+    }>(`
+      mutation CommentCreate($input: CommentCreateInput!) {
+        commentCreate(input: $input) {
+          success
+          comment {
+            id
+            body
+            createdAt
+            user {
+              name
+            }
+          }
+        }
+      }
+    `, {
+      input: {
+        issueId,
+        body,
+      },
+    });
+
+    if (!data.commentCreate.success || !data.commentCreate.comment) {
+      throw new ConnectorError("upstream", "Linear comment creation failed", 502);
+    }
+
+    return {
+      id: String(data.commentCreate.comment.id),
+      body: String(data.commentCreate.comment.body),
+      author: typeof data.commentCreate.comment.user?.name === "string"
+        ? data.commentCreate.comment.user.name
+        : undefined,
+      createdAt: typeof data.commentCreate.comment.createdAt === "string"
+        ? data.commentCreate.comment.createdAt
+        : undefined,
+    };
+  }
 }

@@ -5,6 +5,19 @@ import { cosineSimilarity, embedText } from "../knowledge/embeddings";
 
 export type AgentMemoryTier = "explore" | "flow" | "automate" | "scale";
 export type AgentMemoryScope = "private" | "shared";
+export type AgentMemoryEntryType = "generic" | "ticket_close";
+
+export interface TicketCloseMemoryMetadata extends Record<string, unknown> {
+  ticket_id: string;
+  ticket_url: string;
+  closed_at: string;
+  task_summary: string;
+  agent_contribution: string;
+  key_learnings: string;
+  artifact_refs: string[];
+  tags: string[];
+  extension_metadata?: Record<string, unknown>;
+}
 
 export interface AgentMemoryEntry {
   id: string;
@@ -12,6 +25,7 @@ export interface AgentMemoryEntry {
   agentId: string;
   runId?: string;
   scope: AgentMemoryScope;
+  entryType: AgentMemoryEntryType;
   key: string;
   text: string;
   metadata: Record<string, unknown>;
@@ -66,6 +80,7 @@ interface PersistedEntryRow {
   agent_id: string;
   run_id: string | null;
   scope: AgentMemoryScope;
+  entry_type: AgentMemoryEntryType;
   key: string;
   text_value: string;
   metadata: unknown;
@@ -137,6 +152,137 @@ function sanitizeMetadata(value: unknown): Record<string, unknown> {
   return value as Record<string, unknown>;
 }
 
+function sanitizeStringArray(value: unknown): string[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return [...new Set(value
+    .filter((entry): entry is string => typeof entry === "string")
+    .map((entry) => entry.trim())
+    .filter(Boolean))];
+}
+
+function normalizeEntryType(value: unknown): AgentMemoryEntryType {
+  return value === "ticket_close" ? "ticket_close" : "generic";
+}
+
+function getTicketCloseMetadata(metadata: Record<string, unknown>): TicketCloseMemoryMetadata | null {
+  if (normalizeEntryType(metadata["entryType"]) !== "ticket_close") {
+    return null;
+  }
+
+  const ticketId = typeof metadata["ticket_id"] === "string" ? metadata["ticket_id"].trim() : "";
+  const ticketUrl = typeof metadata["ticket_url"] === "string" ? metadata["ticket_url"].trim() : "";
+  const closedAt = typeof metadata["closed_at"] === "string" ? metadata["closed_at"].trim() : "";
+  const taskSummary = typeof metadata["task_summary"] === "string" ? metadata["task_summary"].trim() : "";
+  const contribution = typeof metadata["agent_contribution"] === "string" ? metadata["agent_contribution"].trim() : "";
+  const keyLearnings = typeof metadata["key_learnings"] === "string" ? metadata["key_learnings"].trim() : "";
+  const artifactRefs = sanitizeStringArray(metadata["artifact_refs"]);
+  const tags = sanitizeStringArray(metadata["tags"]);
+
+  if (
+    !ticketId ||
+    !ticketUrl ||
+    !closedAt ||
+    !taskSummary ||
+    !contribution ||
+    !keyLearnings
+  ) {
+    return null;
+  }
+
+  return {
+    ticket_id: ticketId,
+    ticket_url: ticketUrl,
+    closed_at: closedAt,
+    task_summary: taskSummary,
+    agent_contribution: contribution,
+    key_learnings: keyLearnings,
+    artifact_refs: artifactRefs,
+    tags,
+    extension_metadata:
+      metadata["extension_metadata"] && typeof metadata["extension_metadata"] === "object" && !Array.isArray(metadata["extension_metadata"])
+        ? metadata["extension_metadata"] as Record<string, unknown>
+        : undefined,
+  };
+}
+
+function buildTicketCloseMetadata(input: {
+  ticketId: string;
+  ticketUrl: string;
+  closedAt: string;
+  taskSummary: string;
+  agentContribution: string;
+  keyLearnings: string;
+  artifactRefs?: string[];
+  tags?: string[];
+  extensionMetadata?: Record<string, unknown>;
+}): TicketCloseMemoryMetadata {
+  return {
+    ticket_id: input.ticketId.trim(),
+    ticket_url: input.ticketUrl.trim(),
+    closed_at: input.closedAt.trim(),
+    task_summary: input.taskSummary.trim(),
+    agent_contribution: input.agentContribution.trim(),
+    key_learnings: input.keyLearnings.trim(),
+    artifact_refs: sanitizeStringArray(input.artifactRefs),
+    tags: sanitizeStringArray(input.tags),
+    ...(input.extensionMetadata ? { extension_metadata: sanitizeMetadata(input.extensionMetadata) } : {}),
+  };
+}
+
+function buildTicketCloseKey(metadata: TicketCloseMemoryMetadata): string {
+  return `ticket-close:${metadata.ticket_id}`;
+}
+
+function buildTicketCloseText(metadata: TicketCloseMemoryMetadata): string {
+  return [
+    metadata.task_summary,
+    metadata.agent_contribution,
+    metadata.key_learnings,
+    metadata.artifact_refs.join(" "),
+    metadata.tags.join(" "),
+  ]
+    .filter(Boolean)
+    .join("\n");
+}
+
+function metadataTags(metadata: Record<string, unknown>): string[] {
+  const ticketClose = getTicketCloseMetadata(metadata);
+  if (ticketClose) {
+    return ticketClose.tags;
+  }
+  return sanitizeStringArray(metadata["tags"]);
+}
+
+function entryMatchesTags(entry: StoredAgentMemoryEntry, tags?: string[]): boolean {
+  const filterTags = sanitizeStringArray(tags);
+  if (filterTags.length === 0) {
+    return true;
+  }
+
+  const entryTags = metadataTags(entry.metadata);
+  if (entryTags.length === 0) {
+    return false;
+  }
+
+  return filterTags.some((tag) => entryTags.includes(tag));
+}
+
+function entryMatchesTicketId(entry: StoredAgentMemoryEntry, ticketId?: string): boolean {
+  if (!ticketId?.trim()) {
+    return true;
+  }
+
+  const ticketClose = getTicketCloseMetadata(entry.metadata);
+  if (!ticketClose) {
+    return false;
+  }
+
+  return ticketClose.ticket_id === ticketId.trim();
+}
+
 function keywordScore(haystackValue: string, query: string): number {
   const tokens = query
     .toLowerCase()
@@ -156,6 +302,21 @@ function combinedScore(keyword: number, semantic: number): number {
   return Number((keyword * 0.35 + semantic * 0.65).toFixed(6));
 }
 
+function tagScoreBoost(entry: StoredAgentMemoryEntry, tags?: string[]): number {
+  const filterTags = sanitizeStringArray(tags);
+  if (filterTags.length === 0) {
+    return 0;
+  }
+
+  const entryTags = metadataTags(entry.metadata);
+  if (entryTags.length === 0) {
+    return 0;
+  }
+
+  const matches = filterTags.filter((tag) => entryTags.includes(tag)).length;
+  return matches > 0 ? Math.min(matches / filterTags.length, 1) * 0.2 : 0;
+}
+
 function toPublicEntry(entry: StoredAgentMemoryEntry): AgentMemoryEntry {
   return {
     id: entry.id,
@@ -163,6 +324,7 @@ function toPublicEntry(entry: StoredAgentMemoryEntry): AgentMemoryEntry {
     agentId: entry.agentId,
     runId: entry.runId,
     scope: entry.scope,
+    entryType: entry.entryType,
     key: entry.key,
     text: entry.text,
     metadata: entry.metadata,
@@ -179,6 +341,7 @@ function mapEntryRow(row: PersistedEntryRow): StoredAgentMemoryEntry {
     agentId: row.agent_id,
     runId: row.run_id ?? undefined,
     scope: row.scope,
+    entryType: row.entry_type,
     key: row.key,
     text: row.text_value,
     metadata: parseJsonColumn(row.metadata, {} as Record<string, unknown>),
@@ -231,6 +394,7 @@ async function ensureSchema(): Promise<void> {
       agent_id text NOT NULL,
       run_id text,
       scope text NOT NULL DEFAULT 'private' CHECK (scope IN ('private', 'shared')),
+      entry_type text NOT NULL DEFAULT 'generic' CHECK (entry_type IN ('generic', 'ticket_close')),
       key text NOT NULL,
       text_value text NOT NULL,
       metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
@@ -239,6 +403,10 @@ async function ensureSchema(): Promise<void> {
       updated_at timestamptz NOT NULL,
       expires_at timestamptz
     )
+  `);
+  await queryPostgres(`
+    ALTER TABLE agent_memory_entries
+    ADD COLUMN IF NOT EXISTS entry_type text NOT NULL DEFAULT 'generic'
   `);
   await queryPostgres(`
     CREATE TABLE IF NOT EXISTS agent_memory_kg_facts (
@@ -316,6 +484,7 @@ export const agentMemoryStore = {
     agentId: string;
     runId?: string;
     scope?: AgentMemoryScope;
+    entryType?: AgentMemoryEntryType;
     key: string;
     text: string;
     metadata?: Record<string, unknown>;
@@ -325,15 +494,21 @@ export const agentMemoryStore = {
     await purgeExpiredForUser(input.userId);
 
     const timestamp = nowIso();
+    const metadata = sanitizeMetadata(input.metadata);
+    const entryType = input.entryType ?? normalizeEntryType(metadata["entryType"]);
     const entry: StoredAgentMemoryEntry = {
       id: randomUUID(),
       userId: input.userId,
       agentId: input.agentId,
       runId: input.runId,
       scope: input.scope ?? "private",
+      entryType,
       key: input.key,
       text: input.text,
-      metadata: sanitizeMetadata(input.metadata),
+      metadata: {
+        ...metadata,
+        entryType,
+      },
       embedding: await embedText(`${input.key}\n${input.text}`, input.openAiApiKey),
       createdAt: timestamp,
       updatedAt: timestamp,
@@ -346,14 +521,15 @@ export const agentMemoryStore = {
       await ensureSchema();
       await queryPostgres(
         `INSERT INTO agent_memory_entries (
-          id, user_id, agent_id, run_id, scope, key, text_value, metadata, embedding, created_at, updated_at, expires_at
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9::jsonb, $10, $11, $12)`,
+          id, user_id, agent_id, run_id, scope, entry_type, key, text_value, metadata, embedding, created_at, updated_at, expires_at
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb, $10::jsonb, $11, $12, $13)`,
         [
           entry.id,
           entry.userId,
           entry.agentId,
           entry.runId ?? null,
           entry.scope,
+          entry.entryType,
           entry.key,
           entry.text,
           JSON.stringify(entry.metadata),
@@ -368,12 +544,47 @@ export const agentMemoryStore = {
     return toPublicEntry(entry);
   },
 
+  async createTicketCloseEntry(input: {
+    userId: string;
+    agentId: string;
+    runId?: string;
+    scope?: AgentMemoryScope;
+    ticketId: string;
+    ticketUrl: string;
+    closedAt: string;
+    taskSummary: string;
+    agentContribution: string;
+    keyLearnings: string;
+    artifactRefs?: string[];
+    tags?: string[];
+    extensionMetadata?: Record<string, unknown>;
+    tier: AgentMemoryTier;
+    openAiApiKey?: string;
+  }): Promise<AgentMemoryEntry> {
+    const metadata = buildTicketCloseMetadata(input);
+    return this.createEntry({
+      userId: input.userId,
+      agentId: input.agentId,
+      runId: input.runId,
+      scope: input.scope,
+      entryType: "ticket_close",
+      key: buildTicketCloseKey(metadata),
+      text: buildTicketCloseText(metadata),
+      metadata,
+      tier: input.tier,
+      openAiApiKey: input.openAiApiKey,
+    });
+  },
+
   async searchEntries(input: {
     userId: string;
     agentId: string;
     query: string;
     includeShared?: boolean;
     limit?: number;
+    entryType?: AgentMemoryEntryType;
+    ticketId?: string;
+    tags?: string[];
     openAiApiKey?: string;
   }): Promise<AgentMemorySearchResult[]> {
     await purgeExpiredForUser(input.userId);
@@ -382,22 +593,29 @@ export const agentMemoryStore = {
     if (isPostgresConfigured()) {
       await ensureSchema();
       const rows = await queryPostgres<PersistedEntryRow>(
-        `SELECT id, user_id, agent_id, run_id, scope, key, text_value, metadata, embedding, created_at, updated_at, expires_at
+        `SELECT id, user_id, agent_id, run_id, scope, entry_type, key, text_value, metadata, embedding, created_at, updated_at, expires_at
            FROM agent_memory_entries
           WHERE user_id = $1
             AND (
               agent_id = $2
               OR ($3 = true AND scope = 'shared')
             )
+            AND ($4::text IS NULL OR entry_type = $4)
           ORDER BY updated_at DESC`,
-        [input.userId, input.agentId, Boolean(input.includeShared)]
+        [input.userId, input.agentId, Boolean(input.includeShared), input.entryType ?? null]
       );
-      candidates = rows.rows.map(mapEntryRow);
+      candidates = rows.rows
+        .map(mapEntryRow)
+        .filter((entry) => entryMatchesTags(entry, input.tags))
+        .filter((entry) => entryMatchesTicketId(entry, input.ticketId));
     } else {
       candidates = Array.from(memoryEntries.values()).filter(
         (entry) =>
           entry.userId === input.userId &&
           isEntryVisible(entry, input.agentId, Boolean(input.includeShared)) &&
+          (input.entryType ? entry.entryType === input.entryType : true) &&
+          entryMatchesTags(entry, input.tags) &&
+          entryMatchesTicketId(entry, input.ticketId) &&
           !isExpired(entry.expiresAt)
       );
     }
@@ -423,9 +641,10 @@ export const agentMemoryStore = {
           input.query
         );
         const semantic = cosineSimilarity(queryEmbedding, entry.embedding);
+        const boosted = Math.min(combinedScore(keyword, semantic) + tagScoreBoost(entry, input.tags), 1);
         return {
           entry: toPublicEntry(entry),
-          score: combinedScore(keyword, semantic),
+          score: boosted,
           keywordScore: keyword,
           semanticScore: semantic,
         };
@@ -659,6 +878,14 @@ export const agentMemoryStore = {
           total + entry.key.length + entry.text.length + JSON.stringify(entry.metadata).length,
         0
       );
+  },
+
+  getPendingTicketCloseMetadataForTests(entryId: string): TicketCloseMemoryMetadata | null {
+    const entry = memoryEntries.get(entryId);
+    if (!entry) {
+      return null;
+    }
+    return getTicketCloseMetadata(entry.metadata);
   },
 
   clear(): void {

@@ -43,6 +43,10 @@ import AgentActivity from "./pages/AgentActivity";
 import Routines from "./pages/Routines";
 import OrgStructure from "./pages/OrgStructure";
 import BudgetDashboard from "./pages/BudgetDashboard";
+import Tickets from "./pages/Tickets";
+import TicketDetail from "./pages/TicketDetail";
+import TicketTeamView from "./pages/TicketTeamView";
+import TicketActorView from "./pages/TicketActorView";
 
 function PrivateRoute({ children }: { children: React.ReactNode }) {
   const { user } = useAuth();
@@ -172,6 +176,10 @@ export default function App() {
             <Route path="agents/routines" element={<Routines />} />
             <Route path="workspace/org-structure" element={<OrgStructure />} />
             <Route path="workspace/budget-dashboard" element={<BudgetDashboard />} />
+            <Route path="tickets" element={<Tickets />} />
+            <Route path="tickets/team" element={<TicketTeamView />} />
+            <Route path="tickets/actors/:actorType/:actorId" element={<TicketActorView />} />
+            <Route path="tickets/:ticketId" element={<TicketDetail />} />
             <Route path="settings" element={<Settings />} />
             <Route path="settings/integrations" element={<Integrations />} />
             <Route path="settings/llm-providers" element={<LLMProviders />} />

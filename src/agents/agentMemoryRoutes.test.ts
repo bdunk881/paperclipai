@@ -269,4 +269,78 @@ describe("Agent memory routes", () => {
     expect(listRes.body.logs).toHaveLength(1);
     expect(listRes.body.logs[0].summary).toBe("Fresh heartbeat");
   });
+
+  it("filters ticket_close searches by entry type and tags with relevant ranking", async () => {
+    grantPlan("flow-user", "flow");
+
+    await agentMemoryStore.createTicketCloseEntry({
+      userId: "flow-user",
+      agentId: "agent-1",
+      runId: "run-ticket-memory-1",
+      ticketId: "ALT-100",
+      ticketUrl: "/tickets/ALT-100",
+      closedAt: "2026-04-01T00:00:00.000Z",
+      taskSummary: "Resolved billing reconciliation failure for enterprise workspace.",
+      agentContribution: "Investigated duplicate invoice joins and patched the export query.",
+      keyLearnings: "Billing sync regressions cluster around invoice joins and reconciliation tags.",
+      artifactRefs: ["https://example.com/artifacts/billing-fix"],
+      tags: ["billing", "reconciliation"],
+      tier: "flow",
+    });
+
+    await agentMemoryStore.createTicketCloseEntry({
+      userId: "flow-user",
+      agentId: "agent-1",
+      runId: "run-ticket-memory-2",
+      ticketId: "ALT-101",
+      ticketUrl: "/tickets/ALT-101",
+      closedAt: "2026-04-02T00:00:00.000Z",
+      taskSummary: "Shipped UI polish for queue filters.",
+      agentContribution: "Adjusted spacing and button states.",
+      keyLearnings: "Visual polish tasks rarely share billing semantics.",
+      artifactRefs: ["https://example.com/artifacts/ui-fix"],
+      tags: ["frontend", "ux"],
+      tier: "flow",
+    });
+
+    const searchRes = await request(app)
+      .get("/api/agents/agent-1/memory/search?q=billing reconciliation&entryType=ticket_close&tags=billing")
+      .set(asAuth("flow-user"));
+
+    expect(searchRes.status).toBe(200);
+    expect(searchRes.body.results).toHaveLength(1);
+    expect(searchRes.body.results[0].entry.entryType).toBe("ticket_close");
+    expect(searchRes.body.results[0].entry.metadata.ticket_id).toBe("ALT-100");
+  });
+
+  it("writes ticket_close entries through the dedicated route and filters by ticketId", async () => {
+    grantPlan("flow-user", "flow");
+
+    const createRes = await request(app)
+      .post("/api/agents/agent-1/memory/ticket-close")
+      .set(asAuth("flow-user"))
+      .set("X-Paperclip-Run-Id", "run-ticket-close-route")
+      .send({
+        ticketId: "ALT-222",
+        ticketUrl: "/tickets/ALT-222",
+        closedAt: "2026-04-22T00:00:00.000Z",
+        taskSummary: "Closed queue memory regression.",
+        agentContribution: "Added ticket-scoped memory filters and a strict writer route.",
+        keyLearnings: "Ticket-close writes should stay append-only on the agent memory store.",
+        artifactRefs: ["https://example.com/pr/222"],
+        tags: ["memory", "queue"],
+      });
+
+    expect(createRes.status).toBe(201);
+    expect(createRes.body.entry.entryType).toBe("ticket_close");
+    expect(createRes.body.entry.metadata.ticket_id).toBe("ALT-222");
+
+    const searchRes = await request(app)
+      .get("/api/agents/agent-1/memory/search?q=append-only&entryType=ticket_close&ticketId=ALT-222")
+      .set(asAuth("flow-user"));
+
+    expect(searchRes.status).toBe(200);
+    expect(searchRes.body.results).toHaveLength(1);
+    expect(searchRes.body.results[0].entry.metadata.ticket_id).toBe("ALT-222");
+  });
 });

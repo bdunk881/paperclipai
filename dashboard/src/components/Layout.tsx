@@ -19,6 +19,7 @@ import {
   Repeat,
   Network,
   BarChart3,
+  Ticket,
   Menu,
   X,
   Moon,
@@ -40,6 +41,7 @@ const NAV_SECTIONS: Array<{ title: string; items: NavItem[] }> = [
     title: "Core",
     items: [
       { to: "/", icon: LayoutDashboard, label: "Dashboard", end: true },
+      { to: "/tickets", icon: Ticket, label: "Tickets" },
       { to: "/builder", icon: Workflow, label: "Builder" },
       { to: "/monitor", icon: Activity, label: "Run Monitor" },
       { to: "/history", icon: History, label: "History" },

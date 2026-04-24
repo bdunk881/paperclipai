@@ -67,7 +67,9 @@ export function startApprovalResumeCoordinator(intervalMs = 2_000): void {
   }
 
   resumeSweepTimer = setInterval(() => {
-    void runApprovalResumeSweep();
+    void runApprovalResumeSweep().catch((error) => {
+      console.error("Approval resume sweep failed", error);
+    });
   }, intervalMs);
 
   resumeSweepTimer.unref?.();

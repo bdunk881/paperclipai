@@ -212,6 +212,84 @@ describe("runApprovalResumeSweep", () => {
       resumed: 0,
     });
   });
+
+  it("rejects when listing runs fails", async () => {
+    const error = new Error("run store unavailable");
+    jest.spyOn(runStore, "list").mockRejectedValue(error);
+
+    await expect(runApprovalResumeSweep()).rejects.toThrow("run store unavailable");
+  });
+
+  it("skips runs that are already being resumed by another sweep", async () => {
+    const template = {
+      id: "tpl-coordinator-concurrent",
+      name: "Coordinator concurrent",
+      description: "Prevent duplicate resumes",
+      category: "custom" as const,
+      version: "1",
+      configFields: [],
+      steps: [],
+      sampleInput: {},
+      expectedOutput: {},
+    };
+    TEMPLATE_MAP[template.id] = template;
+
+    const run = {
+      id: "run-concurrent",
+      templateId: template.id,
+      templateName: template.name,
+      status: "awaiting_approval" as const,
+      startedAt: new Date().toISOString(),
+      input: {},
+      stepResults: [],
+      runtimeState: {
+        config: {},
+        context: {},
+        currentStepIndex: 0,
+        waitingApprovalId: "approval-concurrent",
+      },
+    };
+    let releaseResume!: () => void;
+    const resumeGate = new Promise<void>((resolve) => {
+      releaseResume = resolve;
+    });
+
+    jest.spyOn(runStore, "list").mockResolvedValue([run]);
+    jest.spyOn(approvalStore, "get").mockResolvedValue({
+      id: "approval-concurrent",
+      runId: run.id,
+      templateId: template.id,
+      templateName: template.name,
+      stepId: "approval-1",
+      stepName: "Approval",
+      assignee: "manager",
+      message: "Approve",
+      timeoutMinutes: 5,
+      requestedAt: new Date().toISOString(),
+      status: "approved",
+    });
+    const resumeSpy = jest.spyOn(workflowEngine, "resumeRun").mockImplementation(async () => {
+      await resumeGate;
+      throw new Error("unreachable");
+    });
+
+    const firstSweep = runApprovalResumeSweep();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    await expect(runApprovalResumeSweep()).resolves.toMatchObject({
+      scanned: 1,
+      resumed: 0,
+      skippedPending: 0,
+      skippedMissingSnapshot: 0,
+    });
+    expect(resumeSpy).toHaveBeenCalledTimes(1);
+
+    releaseResume();
+    await expect(firstSweep).rejects.toThrow("unreachable");
+    resumeSpy.mockRestore();
+    delete TEMPLATE_MAP[template.id];
+  });
 });
 
 describe("approval resume coordinator lifecycle", () => {
@@ -232,5 +310,20 @@ describe("approval resume coordinator lifecycle", () => {
     stopApprovalResumeCoordinator();
     stopApprovalResumeCoordinator();
     expect(clearIntervalSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it("logs and suppresses sweep errors from the interval callback", async () => {
+    jest.useFakeTimers();
+    const error = new Error("run store unavailable");
+    const sweepSpy = jest.spyOn(runStore, "list").mockRejectedValue(error);
+    const consoleErrorSpy = jest.spyOn(console, "error").mockImplementation(() => {});
+
+    startApprovalResumeCoordinator(100);
+    jest.advanceTimersByTime(100);
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(sweepSpy).toHaveBeenCalled();
+    expect(consoleErrorSpy).toHaveBeenCalledWith("Approval resume sweep failed", error);
   });
 });

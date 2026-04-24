@@ -18,6 +18,15 @@ jest.mock("../auth/authMiddleware", () => ({
     req.auth = { sub: authHeader.slice(7) };
     next();
   },
+  requireAuthOrQaBypass: (req: { headers: Record<string, string | undefined>; auth?: { sub: string } }, res: { status: (code: number) => { json: (body: unknown) => unknown } }, next: () => void) => {
+    const authHeader = req.headers.authorization;
+    if (!authHeader?.startsWith("Bearer ")) {
+      return res.status(401).json({ error: "Missing or malformed Authorization header." });
+    }
+
+    req.auth = { sub: authHeader.slice(7) };
+    next();
+  },
 }));
 
 import request from "supertest";
@@ -246,5 +255,18 @@ describe("POST /api/mcp/servers/:id/test", () => {
     const res = await request(app).post(`/api/mcp/servers/${s.id}/test`).set(H);
     expect(res.status).toBe(502);
     expect(res.body.ok).toBe(false);
+  });
+
+  it("stringifies non-Error connection failures", async () => {
+    const s = mcpStore.add(USER, { name: "x", url: "https://mcp.example.com" });
+    global.fetch = jest.fn().mockRejectedValueOnce("timeout") as unknown as typeof fetch;
+
+    const res = await request(app).post(`/api/mcp/servers/${s.id}/test`).set(H);
+
+    expect(res.status).toBe(502);
+    expect(res.body).toEqual({
+      ok: false,
+      message: "Connection failed: timeout",
+    });
   });
 });

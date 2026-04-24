@@ -1295,6 +1295,50 @@ describe("POST /api/webhooks/:templateId", () => {
 // ---------------------------------------------------------------------------
 
 describe("GET /health — run stats", () => {
+  it("counts running, completed, and failed runs", async () => {
+    await runStore.create({
+      id: "health-running",
+      templateId: "tpl-support-bot",
+      templateName: "Support Bot",
+      status: "running",
+      startedAt: new Date().toISOString(),
+      input: {},
+      stepResults: [],
+    });
+    await runStore.create({
+      id: "health-completed",
+      templateId: "tpl-support-bot",
+      templateName: "Support Bot",
+      status: "completed",
+      startedAt: new Date().toISOString(),
+      completedAt: new Date().toISOString(),
+      input: {},
+      output: {},
+      stepResults: [],
+    });
+    await runStore.create({
+      id: "health-failed",
+      templateId: "tpl-support-bot",
+      templateName: "Support Bot",
+      status: "failed",
+      startedAt: new Date().toISOString(),
+      input: {},
+      error: "boom",
+      stepResults: [],
+    });
+
+    const res = await request(app).get("/health");
+
+    expect(res.status).toBe(200);
+    expect(res.body.runs).toMatchObject({
+      total: 3,
+      running: 1,
+      completed: 1,
+      failed: 1,
+      error: null,
+    });
+  });
+
   it("returns runs object with total, running, completed, failed counts", async () => {
     const res = await request(app).get("/health");
     expect(res.status).toBe(200);
@@ -1312,6 +1356,32 @@ describe("GET /health — run stats", () => {
     expect(running).toBeGreaterThanOrEqual(0);
     expect(completed).toBeGreaterThanOrEqual(0);
     expect(failed).toBeGreaterThanOrEqual(0);
+  });
+
+  it("degrades gracefully when listing runs fails", async () => {
+    jest.spyOn(runStore, "list").mockRejectedValueOnce(new Error("run store unavailable"));
+
+    const res = await request(app).get("/health");
+
+    expect(res.status).toBe(200);
+    expect(res.body.status).toBe("degraded");
+    expect(res.body.runs).toEqual({
+      total: 0,
+      running: 0,
+      completed: 0,
+      failed: 0,
+      error: "run store unavailable",
+    });
+  });
+
+  it("stringifies non-Error run store failures", async () => {
+    jest.spyOn(runStore, "list").mockRejectedValueOnce("run store unavailable");
+
+    const res = await request(app).get("/health");
+
+    expect(res.status).toBe(200);
+    expect(res.body.status).toBe("degraded");
+    expect(res.body.runs.error).toBe("run store unavailable");
   });
 });
 

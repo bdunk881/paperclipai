@@ -422,6 +422,41 @@ export const ticketSyncService = {
     return ticketSyncConnectionStore.listByWorkspace(workspaceId);
   },
 
+  async getConnection(connectionId: string): Promise<TicketSyncConnectionPublic | null> {
+    return ticketSyncConnectionStore.getById(connectionId);
+  },
+
+  async updateConnection(input: {
+    connectionId: string;
+    userId: string;
+    patch: Partial<Pick<TicketSyncConnectionMetadata, "label" | "syncDirection" | "enabled" | "config" | "fieldMapping" | "defaultAssignee">>;
+    secrets?: Record<string, string | undefined>;
+  }): Promise<TicketSyncConnectionPublic | null> {
+    return ticketSyncConnectionStore.update(input.connectionId, input.userId, ({ record, secrets }) => ({
+      record: {
+        ...record,
+        label: input.patch.label ?? record.label,
+        metadata: {
+          ...record.metadata,
+          label: input.patch.label ?? record.metadata.label,
+          syncDirection: input.patch.syncDirection ?? record.metadata.syncDirection,
+          enabled: input.patch.enabled ?? record.metadata.enabled,
+          config: input.patch.config ? { ...record.metadata.config, ...input.patch.config } : record.metadata.config,
+          fieldMapping: input.patch.fieldMapping ?? record.metadata.fieldMapping,
+          defaultAssignee:
+            input.patch.defaultAssignee === undefined
+              ? record.metadata.defaultAssignee
+              : input.patch.defaultAssignee,
+        },
+      },
+      secrets: input.secrets ? { ...secrets, ...input.secrets } : secrets,
+    }));
+  },
+
+  async revokeConnection(connectionId: string, userId: string): Promise<boolean> {
+    return ticketSyncConnectionStore.revoke(connectionId, userId);
+  },
+
   async listLinks(ticketId: string): Promise<TicketTrackerLink[]> {
     const updates = await ticketStore.listActivity(ticketId);
     return updates ? dedupeLinks(updates) : [];

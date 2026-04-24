@@ -139,6 +139,66 @@ describe("ticket sync routes", () => {
     expect(tested.body.health.status).toBe("ok");
   });
 
+  it("updates and revokes tracker connections from the dashboard routes", async () => {
+    const app = buildApp();
+    const created = await request(app)
+      .post("/api/ticket-sync/connections")
+      .set(auth("user-1"))
+      .send({
+        workspaceId: "11111111-1111-4111-8111-111111111111",
+        provider: "linear",
+        authMethod: "api_key",
+        label: "Linear workspace",
+        config: { defaultTeamId: "team-1", webhookSecret: "linear-secret" },
+        secrets: { token: "lin_token" },
+      });
+
+    expect(created.status).toBe(201);
+
+    const updated = await request(app)
+      .patch(`/api/ticket-sync/connections/${created.body.id}`)
+      .set(auth("user-1"))
+      .send({
+        label: "Linear production workspace",
+        enabled: false,
+        syncDirection: "inbound",
+        config: { defaultProjectId: "project-1" },
+      });
+
+    expect(updated.status).toBe(200);
+    expect(updated.body.label).toBe("Linear production workspace");
+    expect(updated.body.enabled).toBe(false);
+    expect(updated.body.syncDirection).toBe("inbound");
+    expect(updated.body.config.defaultProjectId).toBe("project-1");
+    expect(updated.body.config.hasWebhookSecret).toBe(true);
+
+    const listed = await request(app)
+      .get("/api/ticket-sync/connections?workspaceId=11111111-1111-4111-8111-111111111111")
+      .set(auth("user-1"));
+
+    expect(listed.status).toBe(200);
+    expect(listed.body.total).toBe(1);
+
+    const revoked = await request(app)
+      .delete(`/api/ticket-sync/connections/${created.body.id}`)
+      .set(auth("user-1"));
+
+    expect(revoked.status).toBe(204);
+
+    const missing = await request(app)
+      .get(`/api/ticket-sync/connections/${created.body.id}`)
+      .set(auth("user-1"));
+
+    expect(missing.status).toBe(404);
+
+    const listedAfterRevoke = await request(app)
+      .get("/api/ticket-sync/connections?workspaceId=11111111-1111-4111-8111-111111111111")
+      .set(auth("user-1"));
+
+    expect(listedAfterRevoke.status).toBe(200);
+    expect(listedAfterRevoke.body.total).toBe(0);
+  });
+
   it("creates an external issue and link when a local ticket is created", async () => {
     const app = buildApp();
     const connection = await request(app)

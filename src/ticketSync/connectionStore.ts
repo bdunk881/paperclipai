@@ -31,6 +31,7 @@ function toPublic(record: TicketSyncConnectionRecord): TicketSyncConnectionPubli
     health: record.metadata.health,
     createdAt: record.createdAt,
     updatedAt: record.updatedAt,
+    revokedAt: record.revokedAt,
   };
 }
 
@@ -68,12 +69,21 @@ export const ticketSyncConnectionStore = {
       .map((record) => registry.toPublic(record));
   },
 
+  async getById(id: string): Promise<TicketSyncConnectionPublic | null> {
+    const record = await registry.getByIdAsync(id);
+    if (!record || record.revokedAt) {
+      return null;
+    }
+
+    return registry.toPublic(record);
+  },
+
   async getDecryptedById(id: string): Promise<{
     record: TicketSyncConnectionRecord;
     secrets: TicketSyncConnectionSecrets;
   } | null> {
     const record = await registry.getByIdAsync(id);
-    if (!record) {
+    if (!record || record.revokedAt) {
       return null;
     }
 
@@ -94,6 +104,57 @@ export const ticketSyncConnectionStore = {
     }));
 
     return updated ? registry.toPublic(updated) : null;
+  },
+
+  update(
+    id: string,
+    userId: string,
+    mutate: (input: {
+      record: TicketSyncConnectionRecord;
+      secrets: TicketSyncConnectionSecrets;
+    }) => {
+      record?: TicketSyncConnectionRecord;
+      secrets?: TicketSyncConnectionSecrets;
+    },
+  ): TicketSyncConnectionPublic | null {
+    const updated = registry.update(id, (record) => {
+      if (record.userId !== userId || record.revokedAt) {
+        return record;
+      }
+
+      const existingSecrets = JSON.parse(registry.decryptSecret(record.secretsEncrypted)) as TicketSyncConnectionSecrets;
+      const mutation = mutate({ record, secrets: existingSecrets });
+      const nextRecord = mutation.record ?? record;
+      const nextSecrets = mutation.secrets ?? existingSecrets;
+
+      return {
+        ...nextRecord,
+        updatedAt: new Date().toISOString(),
+        secretsEncrypted: registry.encryptSecret(JSON.stringify(nextSecrets)),
+      };
+    });
+
+    if (!updated || updated.userId !== userId || updated.revokedAt) {
+      return null;
+    }
+
+    return registry.toPublic(updated);
+  },
+
+  revoke(id: string, userId: string): boolean {
+    const updated = registry.update(id, (record) => {
+      if (record.userId !== userId || record.revokedAt) {
+        return record;
+      }
+
+      return {
+        ...record,
+        updatedAt: new Date().toISOString(),
+        revokedAt: new Date().toISOString(),
+      };
+    });
+
+    return Boolean(updated && updated.userId === userId && updated.revokedAt);
   },
 
   clear(): void {

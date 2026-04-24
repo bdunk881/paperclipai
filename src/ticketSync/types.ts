@@ -56,6 +56,7 @@ export interface TicketSyncConnectionPublic {
   health?: TrackerHealth;
   createdAt: string;
   updatedAt: string;
+  revokedAt?: string;
 }
 
 export interface TicketTrackerLink {

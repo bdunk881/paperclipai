@@ -2,6 +2,7 @@ import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "re
 import { Link, useParams } from "react-router-dom";
 import {
   ArrowLeft,
+  ArrowUpRight,
   Bot,
   Brain,
   BrainCircuit,
@@ -95,6 +96,7 @@ export default function TicketDetail() {
   const [showResolveBurst, setShowResolveBurst] = useState(false);
   const [holdProgress, setHoldProgress] = useState(0);
   const [holdActive, setHoldActive] = useState(false);
+  const [timerNow, setTimerNow] = useState(() => Date.now());
 
   const ticket = aggregate?.ticket ?? null;
   const updates = useMemo(() => aggregate?.updates ?? [], [aggregate]);
@@ -198,6 +200,11 @@ export default function TicketDetail() {
     const timeout = window.setTimeout(() => setShowResolveBurst(false), 1000);
     return () => window.clearTimeout(timeout);
   }, [showResolveBurst]);
+
+  useEffect(() => {
+    const interval = window.setInterval(() => setTimerNow(Date.now()), 60000);
+    return () => window.clearInterval(interval);
+  }, []);
 
   async function handleStatusChange(status: TicketStatus) {
     if (!ticketId) return;
@@ -547,6 +554,20 @@ export default function TicketDetail() {
             </div>
 
             <div className="flex flex-wrap items-center gap-3">
+              <Link
+                to="/tickets/sla"
+                className="inline-flex items-center gap-2 rounded-full border border-[#FFD93D]/30 bg-[#FFD93D]/10 px-3.5 py-2 text-sm font-medium text-[#fde68a] transition hover:border-[#FFD93D]/50 hover:text-[#fff1a6]"
+              >
+                SLA monitor
+                <ArrowUpRight size={14} />
+              </Link>
+              <Link
+                to="/settings/ticketing-sla"
+                className="inline-flex items-center gap-2 rounded-full border border-slate-700 bg-slate-900/80 px-3.5 py-2 text-sm font-medium text-slate-300 transition hover:border-indigo-500/30 hover:text-slate-100"
+              >
+                Policy editor
+                <ArrowUpRight size={14} />
+              </Link>
               {TRANSITIONS.map((transition) => (
                 <button
                   key={transition.status}
@@ -812,6 +833,8 @@ export default function TicketDetail() {
           <aside className="space-y-5 xl:sticky xl:top-24 xl:h-fit">
             <MemorySidebar memoryState={memoryState} />
 
+            <SlaTimerPanel ticket={ticket} nowMs={timerNow} />
+
             <section className="rounded-[30px] border border-slate-800 bg-slate-950/80 p-5">
               <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Ownership</p>
               <div className="mt-4 space-y-3">
@@ -825,6 +848,18 @@ export default function TicketDetail() {
             <section className="rounded-[30px] border border-slate-800 bg-slate-950/80 p-5">
               <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Metadata</p>
               <div className="mt-4 grid gap-3">
+                <MetadataRow
+                  label="SLA deadline"
+                  value={ticket.slaDeadlineAt ? formatTicketTimestamp(ticket.slaDeadlineAt) : "Not set"}
+                />
+                <MetadataRow
+                  label="First response"
+                  value={
+                    ticket.slaFirstResponseDeadlineAt
+                      ? formatTicketTimestamp(ticket.slaFirstResponseDeadlineAt)
+                      : "Not set"
+                  }
+                />
                 <MetadataRow label="Created" value={formatTicketTimestamp(ticket.createdAt)} />
                 <MetadataRow label="Last activity" value={relativeTicketTime(ticket.updatedAt)} />
                 <MetadataRow label="Due" value={ticket.dueDate ? formatTicketTimestamp(ticket.dueDate) : "Not set"} />
@@ -1170,6 +1205,32 @@ function MemorySidebar({ memoryState }: { memoryState: MemoryLoadState }) {
   );
 }
 
+function SlaTimerPanel({
+  ticket,
+  nowMs,
+}: {
+  ticket: TicketAggregate["ticket"];
+  nowMs: number;
+}) {
+  const deadline = ticket.slaDeadlineAt ?? ticket.dueDate;
+  const countdown = formatSlaCountdown(ticket.status, ticket.slaState, deadline, nowMs);
+
+  return (
+    <section className="rounded-[30px] border border-slate-800 bg-slate-950/80 p-5">
+      <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">SLA Clock</p>
+      <div className="mt-4 rounded-[24px] border border-slate-800 bg-slate-900/70 p-4">
+        <p className="font-ticket-mono text-[11px] uppercase tracking-[0.18em] text-slate-500">
+          Resolution timer
+        </p>
+        <p className="mt-3 font-ticket-mono tabular-nums text-3xl font-bold text-slate-100">
+          {countdown.primary}
+        </p>
+        <p className="mt-2 text-sm text-slate-400">{countdown.secondary}</p>
+      </div>
+    </section>
+  );
+}
+
 function ChildTicketStatusPill({ status }: { status: TicketStatus }) {
   const tone =
     status === "resolved"
@@ -1194,6 +1255,44 @@ function MetadataRow({ label, value }: { label: string; value: string }) {
       <p className="mt-2 text-sm text-slate-200">{value}</p>
     </div>
   );
+}
+
+function formatSlaCountdown(
+  status: TicketAggregate["ticket"]["status"],
+  slaState: string,
+  deadline: string | undefined,
+  nowMs: number
+): { primary: string; secondary: string } {
+  if (status === "resolved" || status === "cancelled") {
+    return { primary: "Stopped", secondary: "Ticket is already closed." };
+  }
+  if (slaState === "paused" || status === "blocked") {
+    return { primary: "Paused", secondary: "SLA timer is currently suspended." };
+  }
+  if (!deadline) {
+    return { primary: "--", secondary: "No SLA deadline is available on this ticket." };
+  }
+
+  const diffMs = new Date(deadline).getTime() - nowMs;
+  const absoluteMinutes = Math.max(1, Math.ceil(Math.abs(diffMs) / 60000));
+  const unit =
+    absoluteMinutes >= 1440
+      ? `${Math.ceil(absoluteMinutes / 1440)}d`
+      : absoluteMinutes >= 60
+        ? `${Math.ceil(absoluteMinutes / 60)}h`
+        : `${absoluteMinutes}m`;
+
+  if (diffMs < 0) {
+    return {
+      primary: `+${unit}`,
+      secondary: `Ticket breached its SLA deadline at ${formatTicketTimestamp(deadline)}.`,
+    };
+  }
+
+  return {
+    primary: unit,
+    secondary: `Time remaining until the SLA deadline at ${formatTicketTimestamp(deadline)}.`,
+  };
 }
 
 function actorLabelFromId(id: string): string {

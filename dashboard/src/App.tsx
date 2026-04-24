@@ -47,6 +47,8 @@ import Tickets from "./pages/Tickets";
 import TicketDetail from "./pages/TicketDetail";
 import TicketTeamView from "./pages/TicketTeamView";
 import TicketActorView from "./pages/TicketActorView";
+import TicketSlaDashboard from "./pages/TicketSlaDashboard";
+import TicketSlaSettings from "./pages/TicketSlaSettings";
 
 function PrivateRoute({ children }: { children: React.ReactNode }) {
   const { user } = useAuth();
@@ -177,10 +179,12 @@ export default function App() {
             <Route path="workspace/org-structure" element={<OrgStructure />} />
             <Route path="workspace/budget-dashboard" element={<BudgetDashboard />} />
             <Route path="tickets" element={<Tickets />} />
+            <Route path="tickets/sla" element={<TicketSlaDashboard />} />
             <Route path="tickets/team" element={<TicketTeamView />} />
             <Route path="tickets/actors/:actorType/:actorId" element={<TicketActorView />} />
             <Route path="tickets/:ticketId" element={<TicketDetail />} />
             <Route path="settings" element={<Settings />} />
+            <Route path="settings/ticketing-sla" element={<TicketSlaSettings />} />
             <Route path="settings/integrations" element={<Integrations />} />
             <Route path="settings/llm-providers" element={<LLMProviders />} />
             <Route path="settings/profile" element={<ProfileSettings />} />

@@ -80,6 +80,12 @@ vi.mock("./pages/McpServers", () => ({ default: () => <div>MCP Servers Page</div
 vi.mock("./pages/ExecutionLogs", () => ({ default: () => <div>Execution Logs Page</div> }));
 vi.mock("./pages/CheckoutSuccess", () => ({ default: () => <div>Checkout Success Page</div> }));
 vi.mock("./pages/AuthCallback", () => ({ default: () => <div>Auth Callback Page</div> }));
+vi.mock("./pages/Tickets", () => ({ default: () => <div>Tickets Page</div> }));
+vi.mock("./pages/TicketDetail", () => ({ default: () => <div>Ticket Detail Page</div> }));
+vi.mock("./pages/TicketTeamView", () => ({ default: () => <div>Ticket Team Page</div> }));
+vi.mock("./pages/TicketActorView", () => ({ default: () => <div>Ticket Actor Page</div> }));
+vi.mock("./pages/TicketSlaDashboard", () => ({ default: () => <div>Ticket SLA Dashboard Page</div> }));
+vi.mock("./pages/TicketSlaSettings", () => ({ default: () => <div>Ticket SLA Settings Page</div> }));
 
 import App from "./App";
 
@@ -140,6 +146,26 @@ describe("App", () => {
     expect(screen.getByText("Run Monitor Page")).toBeInTheDocument();
   });
 
+  it("renders the SLA dashboard route for authenticated users", async () => {
+    authState.user = { id: "user-1", email: "user@example.com", name: "User" };
+    window.history.replaceState({}, "", "/tickets/sla");
+
+    render(<App />);
+
+    expect(await screen.findByText("Layout Shell")).toBeInTheDocument();
+    expect(screen.getByText("Ticket SLA Dashboard Page")).toBeInTheDocument();
+  });
+
+  it("renders the SLA settings route for authenticated users", async () => {
+    authState.user = { id: "user-1", email: "user@example.com", name: "User" };
+    window.history.replaceState({}, "", "/settings/ticketing-sla");
+
+    render(<App />);
+
+    expect(await screen.findByText("Layout Shell")).toBeInTheDocument();
+    expect(screen.getByText("Ticket SLA Settings Page")).toBeInTheDocument();
+  });
+
   it("renders ticket routes behind authentication", async () => {
     authState.user = { id: "user-1", email: "user@example.com", name: "User" };
     window.history.replaceState({}, "", "/tickets");
@@ -157,7 +183,7 @@ describe("App", () => {
     render(<App />);
 
     expect(await screen.findByText("Layout Shell")).toBeInTheDocument();
-    expect(screen.getByText("Ticket Team View Page")).toBeInTheDocument();
+    expect(screen.getByText("Ticket Team Page")).toBeInTheDocument();
   });
 
   it("redirects unknown routes back through the authenticated root", async () => {

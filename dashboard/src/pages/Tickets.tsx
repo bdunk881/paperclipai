@@ -1,5 +1,5 @@
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import {
   ArrowRight,
   Filter,
@@ -59,6 +59,7 @@ const EMPTY_FORM = {
 
 export default function Tickets() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const { getAccessToken } = useAuth();
   const [tickets, setTickets] = useState<TicketRecord[]>([]);
   const [loading, setLoading] = useState(true);
@@ -66,9 +67,18 @@ export default function Tickets() {
   const [error, setError] = useState<string | null>(null);
   const [source, setSource] = useState<"api" | "mock">("mock");
   const [integrationWarnings, setIntegrationWarnings] = useState<string[]>([]);
-  const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
-  const [priorityFilter, setPriorityFilter] = useState<PriorityFilter>("all");
-  const [slaFilter, setSlaFilter] = useState<SlaFilter>("all");
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>(() => {
+    const value = searchParams.get("status");
+    return STATUS_OPTIONS.includes(value as StatusFilter) ? (value as StatusFilter) : "all";
+  });
+  const [priorityFilter, setPriorityFilter] = useState<PriorityFilter>(() => {
+    const value = searchParams.get("priority");
+    return PRIORITY_OPTIONS.includes(value as PriorityFilter) ? (value as PriorityFilter) : "all";
+  });
+  const [slaFilter, setSlaFilter] = useState<SlaFilter>(() => {
+    const value = searchParams.get("sla");
+    return SLA_OPTIONS.includes(value as SlaFilter) ? (value as SlaFilter) : "all";
+  });
   const [query, setQuery] = useState("");
   const [createOpen, setCreateOpen] = useState(false);
   const [formState, setFormState] = useState(EMPTY_FORM);
@@ -92,6 +102,17 @@ export default function Tickets() {
   useEffect(() => {
     void loadTickets();
   }, [loadTickets]);
+
+  useEffect(() => {
+    const status = searchParams.get("status");
+    const priority = searchParams.get("priority");
+    const sla = searchParams.get("sla");
+    setStatusFilter(STATUS_OPTIONS.includes(status as StatusFilter) ? (status as StatusFilter) : "all");
+    setPriorityFilter(
+      PRIORITY_OPTIONS.includes(priority as PriorityFilter) ? (priority as PriorityFilter) : "all"
+    );
+    setSlaFilter(SLA_OPTIONS.includes(sla as SlaFilter) ? (sla as SlaFilter) : "all");
+  }, [searchParams]);
 
   const actorOptions = useMemo(() => collectKnownActors(tickets), [tickets]);
 
@@ -191,6 +212,18 @@ export default function Tickets() {
                 </p>
               </div>
               <div className="flex flex-wrap items-center gap-3">
+                <Link
+                  to="/tickets/sla"
+                  className="inline-flex items-center gap-2 rounded-full border border-[#FFD93D]/30 bg-[#FFD93D]/10 px-4 py-2 text-sm font-medium text-[#fde68a] transition hover:border-[#FFD93D]/50 hover:text-[#fff1a6]"
+                >
+                  SLA monitor
+                </Link>
+                <Link
+                  to="/settings/ticketing-sla"
+                  className="inline-flex items-center gap-2 rounded-full border border-slate-700 bg-slate-900/80 px-4 py-2 text-sm font-medium text-slate-200 transition hover:border-indigo-500/40 hover:text-indigo-100"
+                >
+                  SLA settings
+                </Link>
                 <Link
                   to="/tickets/team"
                   className="inline-flex items-center gap-2 rounded-full border border-slate-700 bg-slate-900/80 px-4 py-2 text-sm font-medium text-slate-200 transition hover:border-teal-500/40 hover:text-teal-200"

@@ -5,17 +5,8 @@ export type TicketAssignmentRole = "primary" | "collaborator";
 export type TicketStatus = "open" | "in_progress" | "resolved" | "blocked" | "cancelled";
 export type TicketPriority = "low" | "medium" | "high" | "urgent";
 export type TicketUpdateType = "comment" | "status_change" | "structured_update";
-export type TicketSlaState = "on_track" | "warning" | "breached" | "paused";
-export type TicketSlaStateLike = TicketSlaState | "at_risk";
-
-/**
- * Normalize backend SLA state strings for the frontend.
- * The backend emits `"warning"` but the UI labels it `"at_risk"`.
- */
-export function normalizeTicketSlaState(raw: TicketSlaStateLike | string): TicketSlaStateLike {
-  if (raw === "warning") return "at_risk";
-  return raw as TicketSlaStateLike;
-}
+export type TicketSlaState = "on_track" | "at_risk" | "breached" | "paused";
+export type TicketSlaStateLike = TicketSlaState | "warning";
 
 export interface TicketActorRef {
   type: TicketActorType;
@@ -75,7 +66,9 @@ export interface TicketRecord {
   creatorId: string;
   status: TicketStatus;
   priority: TicketPriority;
-  slaState: TicketSlaState | string;
+  slaState: TicketSlaStateLike | string;
+  slaDeadlineAt?: string;
+  slaFirstResponseDeadlineAt?: string;
   dueDate?: string;
   resolvedAt?: string;
   tags: string[];
@@ -100,6 +93,12 @@ export interface TicketListFilters {
   status?: TicketStatus;
   priority?: TicketPriority;
   slaState?: string;
+}
+
+export function normalizeTicketSlaState(value: TicketSlaStateLike | string): TicketSlaState {
+  if (value === "warning") return "at_risk";
+  if (value === "breached" || value === "paused" || value === "on_track") return value;
+  return "at_risk";
 }
 
 export interface CreateTicketInput {
@@ -385,7 +384,9 @@ function buildMockAggregates(): TicketAggregate[] {
         creatorId: "alex.pm",
         status: "in_progress",
         priority: "high",
-        slaState: "warning",
+        slaState: "at_risk",
+        slaDeadlineAt: new Date(now.getTime() + 45 * 60 * 1000).toISOString(),
+        slaFirstResponseDeadlineAt: new Date(now.getTime() + 10 * 60 * 1000).toISOString(),
         dueDate: new Date(now.getTime() + 20 * 60 * 60 * 1000).toISOString(),
         tags: ["launch", "ticketing", "ui"],
         assignees: [
@@ -475,6 +476,8 @@ function buildMockAggregates(): TicketAggregate[] {
         status: "blocked",
         priority: "urgent",
         slaState: "breached",
+        slaDeadlineAt: new Date(now.getTime() - 90 * 60 * 1000).toISOString(),
+        slaFirstResponseDeadlineAt: new Date(now.getTime() - 3 * 60 * 60 * 1000).toISOString(),
         tags: ["billing", "sync", "enterprise"],
         assignees: [
           { type: "agent", id: "backend-engineer", role: "primary" },
@@ -514,6 +517,8 @@ function buildMockAggregates(): TicketAggregate[] {
         status: "open",
         priority: "medium",
         slaState: "on_track",
+        slaDeadlineAt: new Date(now.getTime() + 5 * 60 * 60 * 1000).toISOString(),
+        slaFirstResponseDeadlineAt: new Date(now.getTime() + 90 * 60 * 1000).toISOString(),
         tags: ["ops", "handoff"],
         assignees: [
           { type: "user", id: "jordan.ops", role: "primary" },
@@ -544,6 +549,7 @@ function buildMockAggregates(): TicketAggregate[] {
         status: "resolved",
         priority: "low",
         slaState: "paused",
+        slaDeadlineAt: new Date(now.getTime() - 4 * 60 * 60 * 1000).toISOString(),
         resolvedAt: earlier(5),
         tags: ["polish"],
         assignees: [{ type: "agent", id: "frontend-engineer", role: "primary" }],

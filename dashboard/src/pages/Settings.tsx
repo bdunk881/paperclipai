@@ -1,5 +1,5 @@
 import { Link } from "react-router-dom";
-import { Cpu, User, Bell, Shield, Key, PlugZap } from "lucide-react";
+import { Cpu, User, Bell, Shield, Key, PlugZap, ShieldAlert } from "lucide-react";
 
 const SETTINGS_SECTIONS = [
   {
@@ -13,6 +13,12 @@ const SETTINGS_SECTIONS = [
     icon: PlugZap,
     title: "Integrations",
     description: "Register and manage integration servers to use as steps in your workflows.",
+  },
+  {
+    to: "/settings/ticketing-sla",
+    icon: ShieldAlert,
+    title: "Ticketing SLA",
+    description: "Configure first-response targets, resolution windows, and escalation rules by priority.",
   },
   {
     to: "/settings/profile",

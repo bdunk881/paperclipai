@@ -28,7 +28,7 @@ jobs:
   deploy:
     name: Build and Deploy Backend Container App
     runs-on: ubuntu-latest
-    environment: production
+    environment: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.environment || 'production' }}
 
     steps:
       - uses: actions/checkout@v5
@@ -78,25 +78,31 @@ jobs:
           fi
 
           if [ "$DEPLOY_ENV" = "production" ]; then
-            RG_NAME="rg-autoflow-production"
-            APP_NAME="ca-autoflow-production-backend"
             QA_BYPASS_ENABLED="false"
             QA_BYPASS_USERS=""
+            EXPECTED_APP_NAME="${{ vars.AZURE_CONTAINER_APP_PRODUCTION_NAME }}"
+            EXPECTED_RESOURCE_GROUP="${{ vars.AZURE_CONTAINER_APP_PRODUCTION_RESOURCE_GROUP }}"
+            API_HOST="${{ vars.AZURE_PRODUCTION_API_HOST }}"
+            if [ -z "$API_HOST" ]; then
+              API_HOST="api.helloautoflow.com"
+            fi
           else
-            RG_NAME="rg-autoflow-staging"
-            APP_NAME="ca-autoflow-staging-backend"
             QA_BYPASS_ENABLED="true"
             QA_BYPASS_USERS="qa-smoke-user"
+            EXPECTED_APP_NAME="${{ vars.AZURE_CONTAINER_APP_STAGING_NAME }}"
+            EXPECTED_RESOURCE_GROUP="${{ vars.AZURE_CONTAINER_APP_STAGING_RESOURCE_GROUP }}"
+            API_HOST="${{ vars.AZURE_STAGING_API_HOST }}"
           fi
 
           IMAGE_TAG="${{ env.IMAGE_REPO }}:sha-${{ github.sha }}"
 
           echo "deploy_env=$DEPLOY_ENV" >> "$GITHUB_OUTPUT"
-          echo "resource_group=$RG_NAME" >> "$GITHUB_OUTPUT"
-          echo "container_app=$APP_NAME" >> "$GITHUB_OUTPUT"
           echo "image_tag=$IMAGE_TAG" >> "$GITHUB_OUTPUT"
           echo "qa_bypass_enabled=$QA_BYPASS_ENABLED" >> "$GITHUB_OUTPUT"
           echo "qa_bypass_users=$QA_BYPASS_USERS" >> "$GITHUB_OUTPUT"
+          echo "expected_container_app=$EXPECTED_APP_NAME" >> "$GITHUB_OUTPUT"
+          echo "expected_resource_group=$EXPECTED_RESOURCE_GROUP" >> "$GITHUB_OUTPUT"
+          echo "api_host=$API_HOST" >> "$GITHUB_OUTPUT"
 
       - name: Login to Azure (OIDC)
         uses: azure/login@v2
@@ -105,12 +111,103 @@ jobs:
           tenant-id: ${{ env.ARM_TENANT_ID }}
           subscription-id: ${{ env.ARM_SUBSCRIPTION_ID }}
 
+      - name: Discover Azure Container App target
+        id: discover
+        run: |
+          set -euo pipefail
+
+          DEPLOY_ENV="${{ steps.target.outputs.deploy_env }}"
+          OVERRIDE_APP_NAME="${{ steps.target.outputs.expected_container_app }}"
+          OVERRIDE_RESOURCE_GROUP="${{ steps.target.outputs.expected_resource_group }}"
+          API_HOST="${{ steps.target.outputs.api_host }}"
+          APP_NAME=""
+          RESOURCE_GROUP=""
+
+          exact_lookup() {
+            local name="$1"
+            az containerapp list \
+              --query "[?name=='${name}'].resourceGroup | [0]" \
+              -o tsv
+          }
+
+          if [ -n "$OVERRIDE_APP_NAME" ] && [ -n "$OVERRIDE_RESOURCE_GROUP" ]; then
+            echo "Using explicit Container App target from GitHub variables."
+            APP_NAME="$OVERRIDE_APP_NAME"
+            RESOURCE_GROUP="$OVERRIDE_RESOURCE_GROUP"
+          elif [ -n "$API_HOST" ]; then
+            echo "Resolving live backend from DNS: $API_HOST"
+            CANONICAL_HOST=$(dig +short "$API_HOST" \
+              | sed 's/\.$//' \
+              | grep 'azurecontainerapps.io$' \
+              | head -n1 || true)
+            if [ -n "$CANONICAL_HOST" ]; then
+              APP_NAME="${CANONICAL_HOST%%.*}"
+              RESOURCE_GROUP=$(exact_lookup "$APP_NAME")
+              if [ -n "$RESOURCE_GROUP" ]; then
+                echo "Resolved $API_HOST -> $CANONICAL_HOST -> $APP_NAME in $RESOURCE_GROUP"
+              fi
+            fi
+          fi
+
+          if [ -z "$APP_NAME" ] || [ -z "$RESOURCE_GROUP" ]; then
+            if [ "$DEPLOY_ENV" = "production" ]; then
+              NAME_FILTER="prod"
+            else
+              NAME_FILTER="staging"
+            fi
+
+            MATCH_COUNT=$(az containerapp list \
+              --query "[?contains(name, 'backend') && contains(name, '${NAME_FILTER}') ] | length(@)" \
+              -o tsv)
+
+            if [ "$MATCH_COUNT" = "1" ]; then
+              APP_NAME=$(az containerapp list \
+                --query "[?contains(name, 'backend') && contains(name, '${NAME_FILTER}') ].name | [0]" \
+                -o tsv)
+              RESOURCE_GROUP=$(exact_lookup "$APP_NAME")
+              echo "Resolved target from Azure inventory: $APP_NAME in $RESOURCE_GROUP"
+            fi
+          fi
+
+          if [ -z "$APP_NAME" ] || [ -z "$RESOURCE_GROUP" ]; then
+            BACKEND_COUNT=$(az containerapp list \
+              --query "[?contains(name, 'backend')] | length(@)" \
+              -o tsv)
+
+            if [ "$BACKEND_COUNT" = "1" ]; then
+              APP_NAME=$(az containerapp list \
+                --query "[?contains(name, 'backend')].name | [0]" \
+                -o tsv)
+              RESOURCE_GROUP=$(exact_lookup "$APP_NAME")
+              echo "Falling back to the only backend container app in the subscription: $APP_NAME in $RESOURCE_GROUP"
+            fi
+          fi
+
+          if [ -z "$APP_NAME" ] || [ -z "$RESOURCE_GROUP" ]; then
+            echo "Unable to resolve the Azure Container App target for $DEPLOY_ENV."
+            echo "Set AZURE_CONTAINER_APP_${DEPLOY_ENV^^}_NAME and AZURE_CONTAINER_APP_${DEPLOY_ENV^^}_RESOURCE_GROUP, or point AZURE_${DEPLOY_ENV^^}_API_HOST at the live API hostname."
+            echo "Available Container Apps:"
+            az containerapp list \
+              --query "[].{name:name,resourceGroup:resourceGroup,fqdn:properties.latestRevisionFqdn}" \
+              -o table
+            exit 1
+          fi
+
+          az containerapp show \
+            --name "$APP_NAME" \
+            --resource-group "$RESOURCE_GROUP" \
+            --query "{name:name,resourceGroup:resourceGroup,fqdn:properties.latestRevisionFqdn}" \
+            -o table
+
+          echo "container_app=$APP_NAME" >> "$GITHUB_OUTPUT"
+          echo "resource_group=$RESOURCE_GROUP" >> "$GITHUB_OUTPUT"
+
       - name: Deploy backend to Azure Container Apps
         run: |
           set -euo pipefail
           az containerapp update \
-            --name "${{ steps.target.outputs.container_app }}" \
-            --resource-group "${{ steps.target.outputs.resource_group }}" \
+            --name "${{ steps.discover.outputs.container_app }}" \
+            --resource-group "${{ steps.discover.outputs.resource_group }}" \
             --image "${{ steps.target.outputs.image_tag }}" \
             --set-env-vars \
               QA_AUTH_BYPASS_ENABLED="${{ steps.target.outputs.qa_bypass_enabled }}" \
@@ -119,8 +216,8 @@ jobs:
       - name: Smoke test backend
         run: |
           set -euo pipefail
-          APP_NAME="${{ steps.target.outputs.container_app }}"
-          RG_NAME="${{ steps.target.outputs.resource_group }}"
+          APP_NAME="${{ steps.discover.outputs.container_app }}"
+          RG_NAME="${{ steps.discover.outputs.resource_group }}"
           EXPECTED_IMAGE="${{ steps.target.outputs.image_tag }}"
           DEPLOY_ENV="${{ steps.target.outputs.deploy_env }}"
 

@@ -69,6 +69,34 @@ jobs:
         id: target
         run: |
           set -euo pipefail
+
+          require_nonempty() {
+            local value="$1"
+            local label="$2"
+            if [ -z "$value" ]; then
+              echo "::error::Missing required value: $label"
+              exit 1
+            fi
+          }
+
+          reject_cross_environment_target() {
+            local value="$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')"
+            local label="$2"
+            local deploy_env="$3"
+
+            if [ "$deploy_env" = "production" ]; then
+              if printf '%s' "$value" | grep -Eq 'staging|nonprod'; then
+                echo "::error::$label points at a non-production target: $1"
+                exit 1
+              fi
+            else
+              if printf '%s' "$value" | grep -Eq 'prod(uction)?' && ! printf '%s' "$value" | grep -Eq 'staging'; then
+                echo "::error::$label points at a production target: $1"
+                exit 1
+              fi
+            fi
+          }
+
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             DEPLOY_ENV="${{ github.event.inputs.environment }}"
           elif [ "${{ github.ref }}" = "refs/heads/master" ]; then
@@ -86,12 +114,20 @@ jobs:
             if [ -z "$API_HOST" ]; then
               API_HOST="api.helloautoflow.com"
             fi
+            require_nonempty "$EXPECTED_APP_NAME" "AZURE_CONTAINER_APP_PRODUCTION_NAME"
+            require_nonempty "$EXPECTED_RESOURCE_GROUP" "AZURE_CONTAINER_APP_PRODUCTION_RESOURCE_GROUP"
+            reject_cross_environment_target "$EXPECTED_APP_NAME" "AZURE_CONTAINER_APP_PRODUCTION_NAME" "$DEPLOY_ENV"
+            reject_cross_environment_target "$EXPECTED_RESOURCE_GROUP" "AZURE_CONTAINER_APP_PRODUCTION_RESOURCE_GROUP" "$DEPLOY_ENV"
+            reject_cross_environment_target "$API_HOST" "AZURE_PRODUCTION_API_HOST" "$DEPLOY_ENV"
           else
             QA_BYPASS_ENABLED="true"
             QA_BYPASS_USERS="qa-smoke-user"
             EXPECTED_APP_NAME="${{ vars.AZURE_CONTAINER_APP_STAGING_NAME }}"
             EXPECTED_RESOURCE_GROUP="${{ vars.AZURE_CONTAINER_APP_STAGING_RESOURCE_GROUP }}"
             API_HOST="${{ vars.AZURE_STAGING_API_HOST }}"
+            reject_cross_environment_target "$EXPECTED_APP_NAME" "AZURE_CONTAINER_APP_STAGING_NAME" "$DEPLOY_ENV"
+            reject_cross_environment_target "$EXPECTED_RESOURCE_GROUP" "AZURE_CONTAINER_APP_STAGING_RESOURCE_GROUP" "$DEPLOY_ENV"
+            reject_cross_environment_target "$API_HOST" "AZURE_STAGING_API_HOST" "$DEPLOY_ENV"
           fi
 
           IMAGE_TAG="${{ env.IMAGE_REPO }}:sha-${{ github.sha }}"
@@ -206,6 +242,22 @@ jobs:
               -o table
             exit 1
           fi
+
+          case "$DEPLOY_ENV" in
+            production)
+              if printf '%s\n%s\n' "$APP_NAME" "$RESOURCE_GROUP" | tr '[:upper:]' '[:lower:]' | grep -Eq 'staging|nonprod'; then
+                echo "::error::Resolved production target points at staging/nonprod resources: $APP_NAME in $RESOURCE_GROUP"
+                exit 1
+              fi
+              ;;
+            staging)
+              if printf '%s\n%s\n' "$APP_NAME" "$RESOURCE_GROUP" | tr '[:upper:]' '[:lower:]' | grep -Eq 'prod(uction)?' \
+                && ! printf '%s\n%s\n' "$APP_NAME" "$RESOURCE_GROUP" | tr '[:upper:]' '[:lower:]' | grep -Eq 'staging'; then
+                echo "::error::Resolved staging target points at production resources: $APP_NAME in $RESOURCE_GROUP"
+                exit 1
+              fi
+              ;;
+          esac
 
           az containerapp show \
             --name "$APP_NAME" \

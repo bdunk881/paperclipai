@@ -98,28 +98,53 @@ The pipeline lives at `.github/workflows/deploy-azure.yml`.
 
 | Stage | Trigger | Gate |
 |---|---|---|
-| Build & Push | Every push to `main` | CI pass (lint + tests) |
-| Deploy Staging | `main` branch only | Automatic after Build |
-| Deploy Production | `main` branch only | Manual approval via GitHub environment protection |
+| Build & Push | Every push to `master` | CI pass (lint + tests) |
+| Deploy Production | Push to `master` | GitHub `production` environment gate |
+| Deploy Staging | Manual `workflow_dispatch` | No approval gate by default |
 
-**Required GitHub Secrets (board must add):**
+The workflow currently deploys the backend to **Azure Container Apps**, not AKS.
+Terraform still provisions the broader Azure estate, but the GitHub deploy path
+updates the live backend revision with `az containerapp update`.
 
-| Secret | Description |
+**Required GitHub repository variables:**
+
+| Variable | Description |
 |---|---|
-| `AZURE_CREDENTIALS` | Service principal JSON from `az ad sp create-for-rbac --sdk-auth` |
-| `AZURE_SUBSCRIPTION_ID` | Azure subscription ID |
-| `AZURE_TENANT_ID` | Azure AD tenant ID |
-| `AZURE_ACR_LOGIN_SERVER` | ACR login server, e.g. `autoflowacr.azurecr.io` |
-| `AKS_CLUSTER_NAME` | AKS cluster name (Terraform output: `aks_cluster_name`) |
-| `AKS_RESOURCE_GROUP` | Resource group name (Terraform output: `resource_group_name`) |
+| `ARM_CLIENT_ID` | Azure federated credential client ID used by `azure/login@v2` |
+| `ARM_TENANT_ID` | Azure tenant ID |
+| `ARM_SUBSCRIPTION_ID` | Azure subscription ID |
+
+**Required GitHub environment variables:**
+
+| Environment | Variable | Description |
+|---|---|---|
+| `staging` | `AZURE_CONTAINER_APP_STAGING_NAME` | Expected staging backend Container App name |
+| `staging` | `AZURE_CONTAINER_APP_STAGING_RESOURCE_GROUP` | Resource group for the staging backend app |
+| `staging` | `AZURE_STAGING_API_HOST` | Public staging API hostname used for DNS-based discovery |
+| `production` | `AZURE_CONTAINER_APP_PRODUCTION_NAME` | Expected production backend Container App name |
+| `production` | `AZURE_CONTAINER_APP_PRODUCTION_RESOURCE_GROUP` | Resource group for the production backend app |
+| `production` | `AZURE_PRODUCTION_API_HOST` | Public production API hostname used for DNS-based discovery |
 
 **Setup steps:**
 
 1. Run `terraform apply` to create all Azure resources (see Usage above).
-2. Add the GitHub Secrets listed above to the repository.
+2. Add the repository-level OIDC variables listed above.
 3. Create two GitHub Environments in Settings → Environments:
    - `staging` — no approvals
-   - `production` — add required reviewers for manual approval gate
+   - `production` — add required reviewers for the manual approval gate
+4. Add the environment-scoped Container App variables for each environment.
+5. Verify production-specific values do not reference `staging` or `nonprod`
+   resource names; the workflow now hard-fails on cross-environment targets.
+
+**Validation checks**
+
+- `gh api repos/<owner>/<repo>/environments` should show a `production`
+  protection rule with required reviewers before production deploys are allowed.
+- `gh api repos/<owner>/<repo>/environments/production/variables` should include
+  the three production backend variables listed above.
+- `gh run list --workflow deploy-azure.yml` should show a successful
+  `workflow_dispatch` run for `production` before you cut traffic to the new
+  backend.
 
 ---
 
@@ -158,12 +183,14 @@ cutover, preview-host policy change, or auth route change.
 
 ## Secrets needed post-deploy
 
-After `terraform apply`, export these values and add them to GitHub Secrets / app environment:
+After `terraform apply`, export these values and wire them into the deployment
+systems that consume them:
 
 ```bash
 terraform output app_insights_connection_string   # APPLICATIONINSIGHTS_CONNECTION_STRING
-terraform output acr_login_server                 # AZURE_ACR_LOGIN_SERVER
-terraform output aks_cluster_name                 # AKS_CLUSTER_NAME
-terraform output resource_group_name              # AKS_RESOURCE_GROUP
-terraform output kube_config_command              # run to merge kubeconfig locally
+terraform output kube_config_command              # optional operator access for AKS troubleshooting
 ```
+
+For backend deploy automation, capture the resulting Container App names,
+resource groups, and public hostnames and store them in the environment-scoped
+GitHub variables documented above.

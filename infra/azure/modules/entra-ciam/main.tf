@@ -29,7 +29,8 @@ terraform {
 }
 
 locals {
-  display_name = var.ciam_display_name != "" ? var.ciam_display_name : "${var.prefix}-${var.environment}-ciam"
+  display_name     = var.ciam_display_name != "" ? var.ciam_display_name : "${var.prefix}-${var.environment}-ciam"
+  ciam_domain_name = "${var.ciam_tenant_subdomain}.onmicrosoft.com"
   normalized_spa_redirect_uris = [
     for uri in var.spa_redirect_uris :
     can(regex("^https?://[^/]+$", uri)) ? "${uri}/" : uri
@@ -40,7 +41,8 @@ locals {
 # This creates the External ID tenant linked to the Azure subscription for billing.
 
 resource "azurerm_aadb2c_directory" "ciam" {
-  domain_name             = "${var.ciam_tenant_subdomain}.onmicrosoft.com"
+  count                   = var.existing_ciam_tenant_id == null ? 1 : 0
+  domain_name             = local.ciam_domain_name
   display_name            = local.display_name
   resource_group_name     = var.resource_group_name
   country_code            = "US"

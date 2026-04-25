@@ -23,6 +23,12 @@ variable "ciam_tenant_subdomain" {
   type        = string
 }
 
+variable "existing_ciam_tenant_id" {
+  description = "Existing CIAM tenant ID to reuse instead of creating a new directory"
+  type        = string
+  default     = null
+}
+
 variable "ciam_display_name" {
   description = "Display name for the CIAM directory shown in Azure Portal"
   type        = string

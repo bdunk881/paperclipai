@@ -105,6 +105,12 @@ variable "ciam_tenant_subdomain" {
   default     = "autoflowciam"
 }
 
+variable "existing_ciam_tenant_id" {
+  description = "Existing CIAM tenant ID to reuse instead of creating a new directory"
+  type        = string
+  default     = "5e4f1080-8afc-4005-b05e-32b21e69363a"
+}
+
 variable "spa_redirect_uris" {
   description = "SPA redirect URIs for the CIAM app registration"
   type        = list(string)

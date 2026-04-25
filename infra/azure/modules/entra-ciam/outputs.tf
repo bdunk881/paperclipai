@@ -1,11 +1,11 @@
 output "ciam_tenant_id" {
   description = "Tenant ID (GUID) of the provisioned CIAM directory"
-  value       = azurerm_aadb2c_directory.ciam.tenant_id
+  value       = var.existing_ciam_tenant_id != null ? var.existing_ciam_tenant_id : azurerm_aadb2c_directory.ciam[0].tenant_id
 }
 
 output "ciam_domain_name" {
   description = "Domain name of the CIAM directory"
-  value       = azurerm_aadb2c_directory.ciam.domain_name
+  value       = local.ciam_domain_name
 }
 
 output "ciam_tenant_subdomain" {

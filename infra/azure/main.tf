@@ -10,10 +10,6 @@ terraform {
       source  = "hashicorp/azuread"
       version = "~> 2.50"
     }
-    random = {
-      source  = "hashicorp/random"
-      version = "~> 3.6"
-    }
   }
 
   backend "azurerm" {
@@ -36,14 +32,6 @@ provider "azurerm" {
 }
 
 provider "azuread" {}
-
-resource "random_string" "ciam_subdomain_suffix" {
-  length  = 6
-  lower   = true
-  numeric = true
-  special = false
-  upper   = false
-}
 
 # ── Resource group ──────────────────────────────────────────────────────────
 
@@ -217,14 +205,15 @@ module "security" {
 module "entra_ciam" {
   source = "./modules/entra-ciam"
 
-  prefix                = var.prefix
-  environment           = var.environment
-  location              = var.location
-  resource_group_name   = azurerm_resource_group.main.name
-  ciam_tenant_subdomain = "${var.ciam_tenant_subdomain}${random_string.ciam_subdomain_suffix.result}"
-  spa_redirect_uris     = var.spa_redirect_uris
-  spa_logout_uris       = var.spa_logout_uris
-  tags                  = local.common_tags
+  prefix                  = var.prefix
+  environment             = var.environment
+  location                = var.location
+  resource_group_name     = azurerm_resource_group.main.name
+  existing_ciam_tenant_id = var.existing_ciam_tenant_id
+  ciam_tenant_subdomain   = var.ciam_tenant_subdomain
+  spa_redirect_uris       = var.spa_redirect_uris
+  spa_logout_uris         = var.spa_logout_uris
+  tags                    = local.common_tags
 }
 
 # ── Locals ────────────────────────────────────────────────────────────────────

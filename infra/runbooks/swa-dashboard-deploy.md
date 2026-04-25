@@ -8,15 +8,44 @@ Operate and troubleshoot dashboard deployments to Azure Static Web Apps (SWA).
 ## GitHub Secrets
 Set these repository secrets before enabling `.github/workflows/deploy-swa.yml`:
 
-- `AZURE_STATIC_WEB_APPS_API_TOKEN`
+- `AZURE_STATIC_WEB_APPS_API_TOKEN` for production (`app.helloautoflow.com`)
+- `AZURE_STATIC_WEB_APPS_STAGING_API_TOKEN` for staging (`staging.app.helloautoflow.com`)
 - `VITE_AZURE_CLIENT_ID`
 - `VITE_AZURE_TENANT_SUBDOMAIN`
 - `VITE_API_BASE_URL`
 
+Optional staging overrides:
+
+- `VITE_AZURE_CLIENT_ID_STAGING`
+- `VITE_AZURE_TENANT_SUBDOMAIN_STAGING`
+- `VITE_API_BASE_URL_STAGING`
+
 ## Trigger model
 - Push to `master` touching `dashboard/**` triggers production SWA deploy.
+- Push to `staging` touching `dashboard/**` triggers staging SWA deploy.
 - Pull requests targeting `master` create/update preview environments.
 - Closing a PR tears down the preview environment.
+
+## Provision the SWA resources via IaC
+
+Use `infra/swa/main.bicep` for both production and staging so the setup stays reproducible.
+
+Example staging deployment:
+
+```bash
+az deployment group create \
+  --resource-group <rg-name> \
+  --template-file infra/swa/main.bicep \
+  --parameters \
+    appName=autoflow-dashboard-staging \
+    customDomain=staging.app.helloautoflow.com
+```
+
+After provisioning:
+
+1. Add the SWA-generated validation record in DNS for `staging.app.helloautoflow.com`.
+2. Wait for the custom domain to bind and certificate issuance to complete.
+3. Generate the staging deployment token in Azure and store it as `AZURE_STATIC_WEB_APPS_STAGING_API_TOKEN`.
 
 ## DNS cutover checklist (`app.helloautoflow.com`)
 1. Keep `app.helloautoflow.com` attached to the Vercel `dashboard` project.
@@ -41,7 +70,15 @@ Set these repository secrets before enabling `.github/workflows/deploy-swa.yml`:
 2. Re-run Vercel deployment workflow if needed.
 3. Confirm `https://app.helloautoflow.com` serves the expected Vercel build.
 
+## Staging verification checklist (`staging.app.helloautoflow.com`)
+
+1. Push a dashboard change to the `staging` branch.
+2. Confirm `.github/workflows/deploy-swa.yml` runs against the staging branch.
+3. Open `https://staging.app.helloautoflow.com/login` and verify the native auth login page loads.
+4. Complete an Entra sign-in and confirm the redirect lands back on `https://staging.app.helloautoflow.com/auth/callback` or the SPA root flow without an origin mismatch.
+5. Confirm API traffic uses the expected staging backend URL.
+
 ## Common failure modes
-- Missing `AZURE_STATIC_WEB_APPS_API_TOKEN`: deployment action fails authentication.
+- Missing `AZURE_STATIC_WEB_APPS_API_TOKEN` or `AZURE_STATIC_WEB_APPS_STAGING_API_TOKEN`: deployment action fails authentication for the targeted branch.
 - Missing `VITE_*` secrets: build succeeds with fallback/default auth settings; login may fail at runtime.
 - Proxy route errors (`/api/*`): confirm backend DNS/TLS and CORS policy for SWA origin.

@@ -65,6 +65,15 @@ resource "azurerm_management_group" "lz_development" {
 
 # ── RBAC: DevOps pipeline SP ──────────────────────────────────────────────────
 #
+# Reader on the top-level Autoflow MG so Terraform can refresh management-group
+# policy assignments and hierarchy objects during plan/apply without broader
+# write access at that scope.
+resource "azurerm_role_assignment" "devops_sp_root_reader" {
+  scope                = local.autoflow_management_group_id
+  role_definition_name = "Reader"
+  principal_id         = var.devops_sp_object_id
+}
+
 # Contributor on Production and Development Landing Zone MGs only.
 # Two separate assignments — one per MG — so access cannot be escalated by
 # moving a subscription between them.

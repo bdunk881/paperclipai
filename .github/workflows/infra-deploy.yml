@@ -38,7 +38,7 @@ jobs:
   terraform:
     name: Terraform ${{ inputs.action }} (${{ inputs.environment }})
     runs-on: ubuntu-latest
-    environment: production
+    environment: ${{ inputs.environment }}
     defaults:
       run:
         working-directory: infra/azure
@@ -90,7 +90,7 @@ jobs:
     runs-on: ubuntu-latest
     needs: terraform
     if: ${{ inputs.action == 'apply' }}
-    environment: production
+    environment: ${{ inputs.environment }}
     steps:
       - uses: actions/checkout@v5
 
@@ -103,9 +103,49 @@ jobs:
 
       - name: Discover AKS cluster
         id: aks
+        env:
+          AKS_CLUSTER_NAME_OVERRIDE: ${{ inputs.environment == 'production' && vars.AZURE_AKS_PRODUCTION_CLUSTER_NAME || vars.AZURE_AKS_STAGING_CLUSTER_NAME }}
+          AKS_RESOURCE_GROUP_OVERRIDE: ${{ inputs.environment == 'production' && vars.AZURE_AKS_PRODUCTION_RESOURCE_GROUP || vars.AZURE_AKS_STAGING_RESOURCE_GROUP }}
         run: |
-          AKS_RG=$(az aks list --subscription "$ARM_SUBSCRIPTION_ID" --query "[0].resourceGroup" -o tsv)
-          AKS_NAME=$(az aks list --subscription "$ARM_SUBSCRIPTION_ID" --query "[0].name" -o tsv)
+          set -euo pipefail
+
+          reject_cross_environment_target() {
+            local value="$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')"
+            local label="$2"
+            local deploy_env="$3"
+
+            if [ "$deploy_env" = "production" ]; then
+              if printf '%s' "$value" | grep -Eq 'staging|nonprod'; then
+                echo "::error::$label points at a non-production target: $1"
+                exit 1
+              fi
+            else
+              if printf '%s' "$value" | grep -Eq 'prod(uction)?' \
+                && ! printf '%s' "$value" | grep -Eq 'staging'; then
+                echo "::error::$label points at a production target: $1"
+                exit 1
+              fi
+            fi
+          }
+
+          AKS_RG="${AKS_RESOURCE_GROUP_OVERRIDE:-}"
+          AKS_NAME="${AKS_CLUSTER_NAME_OVERRIDE:-}"
+
+          if [ -z "$AKS_RG" ] || [ -z "$AKS_NAME" ]; then
+            NAME_FILTER="${{ inputs.environment }}"
+            AKS_RG=$(az aks list --subscription "$ARM_SUBSCRIPTION_ID" --query "[?contains(name, '${NAME_FILTER}')].resourceGroup | [0]" -o tsv)
+            AKS_NAME=$(az aks list --subscription "$ARM_SUBSCRIPTION_ID" --query "[?contains(name, '${NAME_FILTER}')].name | [0]" -o tsv)
+          fi
+
+          if [ -z "$AKS_RG" ] || [ -z "$AKS_NAME" ]; then
+            echo "::error::Unable to resolve the AKS cluster for ${{ inputs.environment }}"
+            az aks list --subscription "$ARM_SUBSCRIPTION_ID" --query "[].{name:name,resourceGroup:resourceGroup}" -o table
+            exit 1
+          fi
+
+          reject_cross_environment_target "$AKS_RG" "AKS resource group" "${{ inputs.environment }}"
+          reject_cross_environment_target "$AKS_NAME" "AKS cluster name" "${{ inputs.environment }}"
+
           echo "rg=$AKS_RG" >> "$GITHUB_OUTPUT"
           echo "name=$AKS_NAME" >> "$GITHUB_OUTPUT"
           echo "AKS: $AKS_NAME in $AKS_RG"
@@ -120,6 +160,7 @@ jobs:
       - name: Apply K8s manifests
         run: |
           echo "=== Applying ${{ inputs.environment }} manifests ==="
+          kubectl apply -f k8s/${{ inputs.environment }}/namespace.yaml
           kubectl apply -f k8s/${{ inputs.environment }}/
           echo ""
           echo "=== Verifying namespaces ==="

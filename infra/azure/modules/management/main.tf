@@ -16,17 +16,19 @@
 # that covers the access requirement.
 
 # ── Existing top-level autoflow management group ──────────────────────────────
-
-data "azurerm_management_group" "autoflow_existing" {
-  count = 1
-  name  = var.autoflow_management_group_name
+#
+# Azure already returns the management group's canonical resource ID from the
+# configured name/UUID, so avoid the extra provider lookup that has been
+# failing in production CI despite the group existing.
+locals {
+  autoflow_management_group_id = "/providers/Microsoft.Management/managementGroups/${var.autoflow_management_group_name}"
 }
 
 # ── Platform subtree ──────────────────────────────────────────────────────────
 
 resource "azurerm_management_group" "platform" {
   display_name               = "${var.prefix}-platform"
-  parent_management_group_id = data.azurerm_management_group.autoflow_existing[0].id
+  parent_management_group_id = local.autoflow_management_group_id
 }
 
 resource "azurerm_management_group" "connectivity" {
@@ -48,7 +50,7 @@ resource "azurerm_management_group" "management" {
 
 resource "azurerm_management_group" "landing_zones" {
   display_name               = "${var.prefix}-landing-zones"
-  parent_management_group_id = data.azurerm_management_group.autoflow_existing[0].id
+  parent_management_group_id = local.autoflow_management_group_id
 }
 
 resource "azurerm_management_group" "lz_production" {
@@ -87,7 +89,7 @@ resource "azurerm_role_assignment" "devops_sp_lz_dev" {
 resource "azurerm_role_assignment" "monitoring_reader" {
   for_each = toset(var.monitoring_principal_ids)
 
-  scope                = data.azurerm_management_group.autoflow_existing[0].id
+  scope                = local.autoflow_management_group_id
   role_definition_name = "Monitoring Reader"
   principal_id         = each.value
 }

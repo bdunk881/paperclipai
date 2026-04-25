@@ -1,6 +1,6 @@
 output "autoflow_mg_id" {
   description = "Resource ID of the top-level autoflow management group"
-  value       = data.azurerm_management_group.autoflow_existing[0].id
+  value       = local.autoflow_management_group_id
 }
 
 output "platform_mg_id" {

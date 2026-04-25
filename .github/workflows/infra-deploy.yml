@@ -26,12 +26,8 @@ permissions:
   id-token: write
 
 env:
-  ARM_CLIENT_ID: ${{ vars.ARM_CLIENT_ID }}
-  ARM_TENANT_ID: b1cb1311-760a-4c88-a778-5d2c227a1f45
-  ARM_SUBSCRIPTION_ID: 776a7226-e364-4cd9-a3e6-d083641af9ea
   ARM_USE_OIDC: true
   TF_VAR_environment: ${{ inputs.environment }}
-  TF_VAR_tenant_id: b1cb1311-760a-4c88-a778-5d2c227a1f45
   TF_VAR_alert_email: ops@helloautoflow.com
 
 jobs:
@@ -39,6 +35,11 @@ jobs:
     name: Terraform ${{ inputs.action }} (${{ inputs.environment }})
     runs-on: ubuntu-latest
     environment: ${{ inputs.environment }}
+    env:
+      ARM_CLIENT_ID: ${{ vars.ARM_CLIENT_ID }}
+      ARM_TENANT_ID: ${{ vars.ARM_TENANT_ID }}
+      ARM_SUBSCRIPTION_ID: ${{ vars.ARM_SUBSCRIPTION_ID }}
+      TF_VAR_tenant_id: ${{ vars.ARM_TENANT_ID }}
     defaults:
       run:
         working-directory: infra/azure
@@ -91,6 +92,10 @@ jobs:
     needs: terraform
     if: ${{ inputs.action == 'apply' }}
     environment: ${{ inputs.environment }}
+    env:
+      ARM_CLIENT_ID: ${{ vars.ARM_CLIENT_ID }}
+      ARM_TENANT_ID: ${{ vars.ARM_TENANT_ID }}
+      ARM_SUBSCRIPTION_ID: ${{ vars.ARM_SUBSCRIPTION_ID }}
     steps:
       - uses: actions/checkout@v5
 

@@ -25,6 +25,7 @@ spec:
             capabilities:
               drop:
                 - NET_RAW
+            allowPrivilegeEscalation: false
           ports:
             - containerPort: 80
           resources:

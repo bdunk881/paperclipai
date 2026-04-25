@@ -1,11 +1,12 @@
 data "azurerm_client_config" "current" {}
 
 resource "azurerm_kubernetes_cluster" "main" {
-  name                = "${var.prefix}-${var.environment}-aks"
-  location            = var.location
-  resource_group_name = var.resource_group_name
-  dns_prefix          = "${var.prefix}-${var.environment}"
-  kubernetes_version  = var.kubernetes_version
+  name                      = "${var.prefix}-${var.environment}-aks"
+  location                  = var.location
+  resource_group_name       = var.resource_group_name
+  dns_prefix                = "${var.prefix}-${var.environment}"
+  kubernetes_version        = var.kubernetes_version
+  automatic_upgrade_channel = "patch"
 
   # ── Default node pool ──────────────────────────────────────────────────────
   default_node_pool {

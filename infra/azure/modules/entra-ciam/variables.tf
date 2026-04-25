@@ -29,6 +29,11 @@ variable "ciam_display_name" {
   default     = ""
 }
 
+variable "existing_ciam_tenant_id" {
+  description = "Existing CIAM tenant ID when Terraform should reuse the already provisioned tenant."
+  type        = string
+}
+
 variable "spa_redirect_uris" {
   description = "Redirect URIs for the SPA app registration (must include /auth/callback and /login for all deployed hosts)"
   type        = list(string)

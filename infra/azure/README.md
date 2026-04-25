@@ -217,10 +217,12 @@ GitHub variables documented above.
 
 ## Terraform state migration
 
-The Azure backend now uses explicit per-environment state keys:
+The Azure backend now uses an explicit dedicated state key for staging while
+production continues to use the legacy shared key plus the `production`
+workspace until its state migration is completed:
 
 - `backend-config/staging.hcl` → `autoflow-staging.tfstate`
-- `backend-config/production.hcl` → `autoflow-production.tfstate`
+- `backend-config/production.hcl` → `autoflow.tfstate` with `terraform workspace select production`
 
 To migrate an existing workspace-backed state into a dedicated backend key:
 

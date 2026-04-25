@@ -71,6 +71,10 @@ jobs:
       - name: Terraform init
         run: terraform init -backend-config=backend-config/${{ inputs.environment }}.hcl
 
+      - name: Select Terraform workspace
+        if: ${{ inputs.environment == 'production' }}
+        run: terraform workspace select production
+
       - name: Terraform plan
         run: |
           terraform plan \

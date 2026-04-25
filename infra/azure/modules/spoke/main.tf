@@ -5,7 +5,7 @@ locals {
   network_watcher_name = coalesce(var.network_watcher_name, "NetworkWatcher_${var.location}")
 
   # Storage account names: lowercase alphanumeric, max 24 chars.
-  flow_log_sa_name = lower(replace("${var.prefix}${var.environment}flow", "-", ""))
+  flow_log_sa_name = lower(replace("${var.prefix}${var.environment}flowlogs", "-", ""))
 
   # Fall back to direct internet egress when the hub firewall is intentionally disabled.
   default_route_next_hop_type = var.hub_firewall_private_ip != null ? "VirtualAppliance" : "Internet"

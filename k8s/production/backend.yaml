@@ -21,6 +21,8 @@ spec:
         - name: backend
           # Image tag is overwritten by deploy-azure.yml via kubectl set image
           image: autoflowproductionacr.azurecr.io/autoflow-backend:latest
+          securityContext:
+            allowPrivilegeEscalation: false
           ports:
             - containerPort: 8000
           env:

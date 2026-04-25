@@ -6,7 +6,7 @@ resource "azurerm_kubernetes_cluster" "main" {
   resource_group_name       = var.resource_group_name
   dns_prefix                = "${var.prefix}-${var.environment}"
   kubernetes_version        = var.kubernetes_version
-  automatic_upgrade_channel = "patch"
+  automatic_channel_upgrade = "patch"
 
   # ── Default node pool ──────────────────────────────────────────────────────
   default_node_pool {

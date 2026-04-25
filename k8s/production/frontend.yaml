@@ -17,6 +17,8 @@ spec:
         app: frontend
         environment: production
     spec:
+      securityContext:
+        runAsNonRoot: true
       containers:
         - name: frontend
           # Image tag is overwritten by deploy-azure.yml via kubectl set image

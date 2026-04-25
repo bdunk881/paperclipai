@@ -107,6 +107,10 @@ locals {
   active_pe_subnet_id   = var.environment == "production" ? module.spoke_prod[0].pe_subnet_id : module.spoke_staging[0].pe_subnet_id
   active_func_subnet_id = var.environment == "production" ? module.spoke_prod[0].func_subnet_id : module.spoke_staging[0].func_subnet_id
   active_vnet_id        = var.environment == "production" ? module.spoke_prod[0].spoke_vnet_id : module.spoke_staging[0].spoke_vnet_id
+  # GitHub-hosted runner IPs are too large and too dynamic to fit AKS API
+  # allowlists in production. Keep staging locked to the hub management subnet,
+  # but leave production unrestricted until deploys move to stable egress.
+  effective_api_server_authorized_ips = var.environment == "production" ? [] : var.api_server_authorized_ips
 }
 
 module "acr" {
@@ -136,7 +140,7 @@ module "aks" {
   min_node_count            = var.min_node_count
   max_node_count            = var.max_node_count
   kubernetes_version        = var.kubernetes_version
-  api_server_authorized_ips = var.api_server_authorized_ips
+  api_server_authorized_ips = local.effective_api_server_authorized_ips
   tags                      = local.common_tags
 }
 

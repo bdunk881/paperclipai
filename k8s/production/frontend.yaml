@@ -21,6 +21,8 @@ spec:
         - name: frontend
           # Image tag is overwritten by deploy-azure.yml via kubectl set image
           image: autoflowacr.azurecr.io/autoflow-frontend:latest
+          securityContext:
+            allowPrivilegeEscalation: false
           ports:
             - containerPort: 80
           resources:

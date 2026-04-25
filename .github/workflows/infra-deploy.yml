@@ -32,6 +32,7 @@ env:
   ARM_USE_OIDC: true
   TF_VAR_environment: ${{ inputs.environment }}
   TF_VAR_tenant_id: b1cb1311-760a-4c88-a778-5d2c227a1f45
+  TF_VAR_autoflow_management_group_name: f4e6c3a4-6ee6-4604-8334-413e481dcf27
   TF_VAR_alert_email: ops@helloautoflow.com
 
 jobs:
@@ -63,6 +64,33 @@ jobs:
           SP_OID=$(az ad sp show --id "$ARM_CLIENT_ID" --query id -o tsv)
           echo "devops_sp_object_id=$SP_OID" >> "$GITHUB_OUTPUT"
           echo "DevOps SP Object ID: $SP_OID"
+
+      - name: Ensure management group Reader for Terraform SP
+        run: |
+          set -euo pipefail
+
+          MG_SCOPE="/providers/Microsoft.Management/managementGroups/$TF_VAR_autoflow_management_group_name"
+          SP_OID="${{ steps.sp.outputs.devops_sp_object_id }}"
+
+          EXISTING_ASSIGNMENT=$(az role assignment list \
+            --assignee-object-id "$SP_OID" \
+            --scope "$MG_SCOPE" \
+            --role "Reader" \
+            --query "[0].id" \
+            -o tsv)
+
+          if [ -n "$EXISTING_ASSIGNMENT" ]; then
+            echo "Reader assignment already present at $MG_SCOPE: $EXISTING_ASSIGNMENT"
+            exit 0
+          fi
+
+          echo "Granting Reader on $MG_SCOPE to service principal object $SP_OID"
+          az role assignment create \
+            --assignee-object-id "$SP_OID" \
+            --assignee-principal-type ServicePrincipal \
+            --role "Reader" \
+            --scope "$MG_SCOPE" \
+            --description "Bootstrap management-group read for Terraform policy refresh"
 
       - uses: hashicorp/setup-terraform@v3
         with:

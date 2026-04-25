@@ -1,14 +1,32 @@
+terraform {
+  required_providers {
+    azapi = {
+      source = "Azure/azapi"
+    }
+  }
+}
+
+data "azurerm_client_config" "current" {}
+
 # ── Locals ───────────────────────────────────────────────────────────────────
 
 locals {
   # Azure auto-creates a Network Watcher per region; derive name if not supplied.
   network_watcher_name = coalesce(var.network_watcher_name, "NetworkWatcher_${var.location}")
+  network_watcher_id   = "/subscriptions/${data.azurerm_client_config.current.subscription_id}/resourceGroups/${var.network_watcher_rg}/providers/Microsoft.Network/networkWatchers/${local.network_watcher_name}"
 
   # Storage account names: lowercase alphanumeric, max 24 chars.
   flow_log_sa_name = lower(replace("${var.prefix}${var.environment}flowlogs", "-", ""))
 
   # Fall back to direct internet egress when the hub firewall is intentionally disabled.
   default_route_next_hop_type = var.hub_firewall_private_ip != null ? "VirtualAppliance" : "Internet"
+
+  flow_log_targets = {
+    aks  = azurerm_subnet.aks.id
+    pe   = azurerm_subnet.pe.id
+    svc  = azurerm_subnet.svc.id
+    func = azurerm_subnet.func.id
+  }
 }
 
 # ── Log Analytics workspace for spoke NSG flow log traffic analytics ──────────
@@ -264,106 +282,41 @@ resource "azurerm_storage_account" "flow_logs" {
   tags = var.tags
 }
 
-# ── NSG Flow Logs (v2 + Traffic Analytics → Log Analytics) ───────────────────
+# ── Flow Logs (subnet-scoped via AzAPI to avoid deprecated NSG target path) ──
 
-resource "azurerm_network_watcher_flow_log" "aks" {
-  name                      = "${var.prefix}-${var.environment}-spoke-aks-flowlog"
-  network_watcher_name      = local.network_watcher_name
-  resource_group_name       = var.network_watcher_rg
-  network_security_group_id = azurerm_network_security_group.aks.id
-  storage_account_id        = azurerm_storage_account.flow_logs.id
-  enabled                   = true
-  version                   = 2
+resource "azapi_resource" "subnet_flow_logs" {
+  for_each = local.flow_log_targets
 
-  retention_policy {
-    enabled = true
-    days    = 30
+  type      = "Microsoft.Network/networkWatchers/flowLogs@2023-11-01"
+  name      = "${var.prefix}-${var.environment}-spoke-${each.key}-flowlog"
+  parent_id = local.network_watcher_id
+  location  = var.location
+  tags      = var.tags
+
+  body = {
+    properties = {
+      enabled = true
+      flowAnalyticsConfiguration = {
+        networkWatcherFlowAnalyticsConfiguration = {
+          enabled                  = true
+          trafficAnalyticsInterval = 10
+          workspaceId              = azurerm_log_analytics_workspace.spoke.workspace_id
+          workspaceRegion          = var.location
+          workspaceResourceId      = azurerm_log_analytics_workspace.spoke.id
+        }
+      }
+      format = {
+        type    = "JSON"
+        version = 2
+      }
+      retentionPolicy = {
+        days    = 30
+        enabled = true
+      }
+      storageId        = azurerm_storage_account.flow_logs.id
+      targetResourceId = each.value
+    }
   }
-
-  traffic_analytics {
-    enabled               = true
-    workspace_id          = azurerm_log_analytics_workspace.spoke.workspace_id
-    workspace_region      = var.location
-    workspace_resource_id = azurerm_log_analytics_workspace.spoke.id
-    interval_in_minutes   = 10
-  }
-
-  tags = var.tags
-}
-
-resource "azurerm_network_watcher_flow_log" "pe" {
-  name                      = "${var.prefix}-${var.environment}-spoke-pe-flowlog"
-  network_watcher_name      = local.network_watcher_name
-  resource_group_name       = var.network_watcher_rg
-  network_security_group_id = azurerm_network_security_group.pe.id
-  storage_account_id        = azurerm_storage_account.flow_logs.id
-  enabled                   = true
-  version                   = 2
-
-  retention_policy {
-    enabled = true
-    days    = 30
-  }
-
-  traffic_analytics {
-    enabled               = true
-    workspace_id          = azurerm_log_analytics_workspace.spoke.workspace_id
-    workspace_region      = var.location
-    workspace_resource_id = azurerm_log_analytics_workspace.spoke.id
-    interval_in_minutes   = 10
-  }
-
-  tags = var.tags
-}
-
-resource "azurerm_network_watcher_flow_log" "svc" {
-  name                      = "${var.prefix}-${var.environment}-spoke-svc-flowlog"
-  network_watcher_name      = local.network_watcher_name
-  resource_group_name       = var.network_watcher_rg
-  network_security_group_id = azurerm_network_security_group.svc.id
-  storage_account_id        = azurerm_storage_account.flow_logs.id
-  enabled                   = true
-  version                   = 2
-
-  retention_policy {
-    enabled = true
-    days    = 30
-  }
-
-  traffic_analytics {
-    enabled               = true
-    workspace_id          = azurerm_log_analytics_workspace.spoke.workspace_id
-    workspace_region      = var.location
-    workspace_resource_id = azurerm_log_analytics_workspace.spoke.id
-    interval_in_minutes   = 10
-  }
-
-  tags = var.tags
-}
-
-resource "azurerm_network_watcher_flow_log" "func" {
-  name                      = "${var.prefix}-${var.environment}-spoke-func-flowlog"
-  network_watcher_name      = local.network_watcher_name
-  resource_group_name       = var.network_watcher_rg
-  network_security_group_id = azurerm_network_security_group.func.id
-  storage_account_id        = azurerm_storage_account.flow_logs.id
-  enabled                   = true
-  version                   = 2
-
-  retention_policy {
-    enabled = true
-    days    = 30
-  }
-
-  traffic_analytics {
-    enabled               = true
-    workspace_id          = azurerm_log_analytics_workspace.spoke.workspace_id
-    workspace_region      = var.location
-    workspace_resource_id = azurerm_log_analytics_workspace.spoke.id
-    interval_in_minutes   = 10
-  }
-
-  tags = var.tags
 }
 
 # ── Route Tables + UDRs (default internet egress) ────────────────────────────

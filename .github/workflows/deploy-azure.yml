@@ -495,49 +495,7 @@ jobs:
           set -euo pipefail
 
           NAMESPACE="${{ steps.target.outputs.k8s_namespace }}"
-          TARGET=""
           INGRESS_TARGET=""
-
-          for i in $(seq 1 30); do
-            TARGET=$(kubectl get svc backend -n "$NAMESPACE" -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null || true)
-            if [ -z "$TARGET" ]; then
-              TARGET=$(kubectl get svc backend -n "$NAMESPACE" -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || true)
-            fi
-            if [ -n "$TARGET" ]; then
-              break
-            fi
-            echo "Waiting for production backend LoadBalancer endpoint ($i/30)"
-            sleep 10
-          done
-
-          if [ -z "$TARGET" ]; then
-            echo "::error::Production backend service did not receive a public load balancer endpoint."
-            kubectl describe svc backend -n "$NAMESPACE"
-            exit 1
-          fi
-
-          for i in $(seq 1 20); do
-            HEALTH_STATUS=$(curl -s -o /tmp/health.txt -w "%{http_code}" "http://${TARGET}/health" || true)
-            echo "Attempt $i: /health => $HEALTH_STATUS"
-            if [ "$HEALTH_STATUS" = "200" ]; then
-              break
-            fi
-            sleep 10
-          done
-
-          if [ "${HEALTH_STATUS:-}" != "200" ]; then
-            echo "::error::Production /health never returned 200"
-            cat /tmp/health.txt || true
-            kubectl logs deployment/backend -n "$NAMESPACE" --tail=100 || true
-            exit 1
-          fi
-
-          RUNS_STATUS=$(curl -s -o /tmp/runs.json -w "%{http_code}" "http://${TARGET}/api/runs" || true)
-          if [ "$RUNS_STATUS" != "401" ]; then
-            echo "::error::Expected production /api/runs to require auth with 401, got $RUNS_STATUS"
-            cat /tmp/runs.json || true
-            exit 1
-          fi
 
           for i in $(seq 1 30); do
             INGRESS_TARGET=$(kubectl get svc ingress-nginx-controller -n ingress-nginx -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || true)
@@ -614,4 +572,4 @@ jobs:
             exit 1
           fi
 
-          echo "Production smoke tests passed against ${TARGET} and TLS ingress ${INGRESS_TARGET}."
+          echo "Production smoke tests passed through TLS ingress ${INGRESS_TARGET}."

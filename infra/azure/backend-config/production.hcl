@@ -1,1 +1,1 @@
-key = "autoflow-production.tfstate"
+key = "autoflow.tfstate"

@@ -40,6 +40,8 @@ locals {
 # This creates the External ID tenant linked to the Azure subscription for billing.
 
 resource "azurerm_aadb2c_directory" "ciam" {
+  count = 0
+
   domain_name             = "${var.ciam_tenant_subdomain}.onmicrosoft.com"
   display_name            = local.display_name
   resource_group_name     = var.resource_group_name

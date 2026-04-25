@@ -102,10 +102,15 @@ module "spoke_staging" {
 
 # Select the correct spoke subnet IDs based on the active workspace environment.
 locals {
-  active_aks_subnet_id  = var.environment == "production" ? module.spoke_prod[0].aks_subnet_id : module.spoke_staging[0].aks_subnet_id
-  active_pe_subnet_id   = var.environment == "production" ? module.spoke_prod[0].pe_subnet_id : module.spoke_staging[0].pe_subnet_id
-  active_func_subnet_id = var.environment == "production" ? module.spoke_prod[0].func_subnet_id : module.spoke_staging[0].func_subnet_id
-  active_vnet_id        = var.environment == "production" ? module.spoke_prod[0].spoke_vnet_id : module.spoke_staging[0].spoke_vnet_id
+  active_aks_subnet_id         = var.environment == "production" ? module.spoke_prod[0].aks_subnet_id : module.spoke_staging[0].aks_subnet_id
+  active_pe_subnet_id          = var.environment == "production" ? module.spoke_prod[0].pe_subnet_id : module.spoke_staging[0].pe_subnet_id
+  active_func_subnet_id        = var.environment == "production" ? module.spoke_prod[0].func_subnet_id : module.spoke_staging[0].func_subnet_id
+  active_vnet_id               = var.environment == "production" ? module.spoke_prod[0].spoke_vnet_id : module.spoke_staging[0].spoke_vnet_id
+  effective_kubernetes_version = var.environment == "production" ? var.production_kubernetes_version : var.kubernetes_version
+  effective_node_count         = var.environment == "production" ? var.production_node_count : var.node_count
+  effective_node_vm_size       = var.environment == "production" ? var.production_node_vm_size : var.node_vm_size
+  effective_min_node_count     = var.environment == "production" ? var.production_min_node_count : var.min_node_count
+  effective_max_node_count     = var.environment == "production" ? var.production_max_node_count : var.max_node_count
   # GitHub-hosted runner IPs are too large and too dynamic to fit AKS API
   # allowlists in production. Keep staging locked to the hub management subnet,
   # but leave production unrestricted until deploys move to stable egress.
@@ -134,11 +139,11 @@ module "aks" {
   resource_group_name       = azurerm_resource_group.main.name
   aks_subnet_id             = local.active_aks_subnet_id
   acr_id                    = module.acr.acr_id
-  node_count                = var.node_count
-  node_vm_size              = var.node_vm_size
-  min_node_count            = var.min_node_count
-  max_node_count            = var.max_node_count
-  kubernetes_version        = var.kubernetes_version
+  node_count                = local.effective_node_count
+  node_vm_size              = local.effective_node_vm_size
+  min_node_count            = local.effective_min_node_count
+  max_node_count            = local.effective_max_node_count
+  kubernetes_version        = local.effective_kubernetes_version
   api_server_authorized_ips = local.effective_api_server_authorized_ips
   tags                      = local.common_tags
 }
@@ -147,7 +152,7 @@ module "management" {
   source = "./modules/management"
 
   prefix                             = var.prefix
-  tenant_id                          = var.tenant_id
+  autoflow_management_group_name     = var.autoflow_management_group_name
   devops_sp_object_id                = var.devops_sp_object_id
   monitoring_principal_ids           = var.monitoring_principal_ids
   aks_workload_identity_principal_id = module.aks.kubelet_identity_object_id
@@ -197,14 +202,15 @@ module "security" {
 module "entra_ciam" {
   source = "./modules/entra-ciam"
 
-  prefix                = var.prefix
-  environment           = var.environment
-  location              = var.location
-  resource_group_name   = azurerm_resource_group.main.name
-  ciam_tenant_subdomain = var.ciam_tenant_subdomain
-  spa_redirect_uris     = var.spa_redirect_uris
-  spa_logout_uris       = var.spa_logout_uris
-  tags                  = local.common_tags
+  prefix                  = var.prefix
+  environment             = var.environment
+  location                = var.location
+  resource_group_name     = azurerm_resource_group.main.name
+  ciam_tenant_subdomain   = var.ciam_tenant_subdomain
+  existing_ciam_tenant_id = var.existing_ciam_tenant_id
+  spa_redirect_uris       = var.spa_redirect_uris
+  spa_logout_uris         = var.spa_logout_uris
+  tags                    = local.common_tags
 }
 
 # ── Locals ────────────────────────────────────────────────────────────────────

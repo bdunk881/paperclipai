@@ -15,25 +15,18 @@
 # All RBAC assignments follow least-privilege, scoped to the narrowest MG
 # that covers the access requirement.
 
-# ── Tenant Root Group reference ───────────────────────────────────────────────
+# ── Existing top-level autoflow management group ──────────────────────────────
 
-data "azurerm_management_group" "root" {
-  # The tenant root group ID is always the tenant ID.
-  name = var.tenant_id
-}
-
-# ── Top-level: autoflow ───────────────────────────────────────────────────────
-
-resource "azurerm_management_group" "autoflow" {
-  display_name               = "${var.prefix}"
-  parent_management_group_id = data.azurerm_management_group.root.id
+data "azurerm_management_group" "autoflow_existing" {
+  count = 1
+  name  = var.autoflow_management_group_name
 }
 
 # ── Platform subtree ──────────────────────────────────────────────────────────
 
 resource "azurerm_management_group" "platform" {
   display_name               = "${var.prefix}-platform"
-  parent_management_group_id = azurerm_management_group.autoflow.id
+  parent_management_group_id = data.azurerm_management_group.autoflow_existing[0].id
 }
 
 resource "azurerm_management_group" "connectivity" {
@@ -55,7 +48,7 @@ resource "azurerm_management_group" "management" {
 
 resource "azurerm_management_group" "landing_zones" {
   display_name               = "${var.prefix}-landing-zones"
-  parent_management_group_id = azurerm_management_group.autoflow.id
+  parent_management_group_id = data.azurerm_management_group.autoflow_existing[0].id
 }
 
 resource "azurerm_management_group" "lz_production" {
@@ -94,7 +87,7 @@ resource "azurerm_role_assignment" "devops_sp_lz_dev" {
 resource "azurerm_role_assignment" "monitoring_reader" {
   for_each = toset(var.monitoring_principal_ids)
 
-  scope                = azurerm_management_group.autoflow.id
+  scope                = data.azurerm_management_group.autoflow_existing[0].id
   role_definition_name = "Monitoring Reader"
   principal_id         = each.value
 }

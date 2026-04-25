@@ -102,9 +102,15 @@ The pipeline lives at `.github/workflows/deploy-azure.yml`.
 | Deploy Production | Push to `master` | GitHub `production` environment gate |
 | Deploy Staging | Manual `workflow_dispatch` | No approval gate by default |
 
-The workflow currently deploys the backend to **Azure Container Apps**, not AKS.
-Terraform still provisions the broader Azure estate, but the GitHub deploy path
-updates the live backend revision with `az containerapp update`.
+The GitHub deploy paths are split by environment:
+
+- `staging` stays on **Azure Container Apps**
+- `production` rolls the backend workload onto **AKS**
+
+Terraform still provisions the broader Azure estate. The production deploy path
+imports the built backend image into the production ACR, bootstraps
+`autoflow-backend-secrets`, applies the AKS backend manifest, and updates the
+`backend` deployment image in `autoflow-production`.
 
 **Required GitHub repository variables:**
 
@@ -121,9 +127,15 @@ updates the live backend revision with `az containerapp update`.
 | `staging` | `AZURE_CONTAINER_APP_STAGING_NAME` | Expected staging backend Container App name |
 | `staging` | `AZURE_CONTAINER_APP_STAGING_RESOURCE_GROUP` | Resource group for the staging backend app |
 | `staging` | `AZURE_STAGING_API_HOST` | Public staging API hostname used for DNS-based discovery |
-| `production` | `AZURE_CONTAINER_APP_PRODUCTION_NAME` | Expected production backend Container App name |
-| `production` | `AZURE_CONTAINER_APP_PRODUCTION_RESOURCE_GROUP` | Resource group for the production backend app |
-| `production` | `AZURE_PRODUCTION_API_HOST` | Public production API hostname used for DNS-based discovery |
+| `production` | `AZURE_AKS_PRODUCTION_CLUSTER_NAME` | Production AKS cluster name |
+| `production` | `AZURE_AKS_PRODUCTION_RESOURCE_GROUP` | Resource group containing the production AKS cluster |
+| `production` | `AZURE_PRODUCTION_API_HOST` | Public production API hostname used for DNS and cutover tracking |
+
+**Required GitHub environment secrets:**
+
+| Environment | Secret | Description |
+|---|---|---|
+| `production` | `AZURE_BACKEND_ENV_PRODUCTION` | Newline-delimited env file materialized into the `autoflow-backend-secrets` Kubernetes secret |
 
 **Setup steps:**
 
@@ -131,9 +143,11 @@ updates the live backend revision with `az containerapp update`.
 2. Add the repository-level OIDC variables listed above.
 3. Create two GitHub Environments in Settings → Environments:
    - `staging` — no approvals
-   - `production` — add required reviewers for the manual approval gate
-4. Add the environment-scoped Container App variables for each environment.
-5. Verify production-specific values do not reference `staging` or `nonprod`
+   - `production` — add required reviewers for the production deployment gate
+4. Add the environment-scoped backend target variables for each environment.
+5. Add `AZURE_BACKEND_ENV_PRODUCTION` to the `production` environment so the
+   AKS rollout can create `autoflow-backend-secrets` before the deployment starts.
+6. Verify production-specific values do not reference `staging` or `nonprod`
    resource names; the workflow now hard-fails on cross-environment targets.
 
 **Validation checks**
@@ -141,10 +155,10 @@ updates the live backend revision with `az containerapp update`.
 - `gh api repos/<owner>/<repo>/environments` should show a `production`
   protection rule with required reviewers before production deploys are allowed.
 - `gh api repos/<owner>/<repo>/environments/production/variables` should include
-  the three production backend variables listed above.
+  the three production AKS variables listed above.
 - `gh run list --workflow deploy-azure.yml` should show a successful
-  `workflow_dispatch` run for `production` before you cut traffic to the new
-  backend.
+  production backend run that imports into ACR, creates the K8s secret, and
+  rolls out the AKS deployment before you cut traffic to the new backend.
 
 ---
 

@@ -61,9 +61,8 @@ Runtime environment variables required in the Vercel dashboard project:
 |---|---|
 | `VITE_API_URL` | Base URL for backend API (for example `https://api.autoflowapp.ai`) |
 | `VITE_AZURE_CIAM_CLIENT_ID` | Entra External ID app registration client ID |
-| `VITE_AZURE_CIAM_AUTHORITY` | Full Entra External ID authority URL including tenant ID (for example `https://auth.helloautoflow.com/<tenant-id>`) |
-| `VITE_AZURE_CIAM_KNOWN_AUTHORITIES` | Comma-separated list of valid authority hosts (for example `auth.helloautoflow.com`) |
-| `VITE_AZURE_CIAM_TENANT_ID` | Tenant GUID used to build the default branded authority when `VITE_AZURE_CIAM_AUTHORITY` is omitted |
+| `VITE_AZURE_CIAM_TENANT_SUBDOMAIN` | Entra External ID tenant subdomain used for the `ciamlogin.com` authority host (for example `autoflowciam`) |
+| `VITE_AZURE_CIAM_TENANT_DOMAIN` | Optional Entra External ID tenant domain path segment (for example `autoflowciam.onmicrosoft.com`) |
 | `QA_PREVIEW_ACCESS_TOKEN` | Preview-only shared secret used by `/api/qa-preview-access` to unlock smoke-test access for protected dashboard routes |
 
 ## Daily operations

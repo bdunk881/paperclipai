@@ -1,17 +1,15 @@
 import { Configuration, PopupRequest } from "@azure/msal-browser";
 
-// Entra External ID (CIAM) uses the branded custom auth host.
+// Entra External ID (CIAM) uses the tenant's ciamlogin.com authority endpoint.
 // Supported env vars in .env.local (dev) or Vercel (prod):
-//   VITE_AZURE_CIAM_AUTHORITY         — optional full authority URL, e.g. "https://auth.helloautoflow.com/<tenant-id>"
-//   VITE_AZURE_CIAM_KNOWN_AUTHORITIES — optional comma-separated authority hosts, e.g. "auth.helloautoflow.com"
-//   VITE_AZURE_CIAM_TENANT_ID         — optional tenant GUID for the default authority path
+//   VITE_AZURE_CIAM_TENANT_SUBDOMAIN — optional tenant subdomain, e.g. "autoflowciam"
+//   VITE_AZURE_CIAM_TENANT_DOMAIN    — optional tenant domain, e.g. "autoflowciam.onmicrosoft.com"
 
 // autoflow-dashboard app registration (recreated 2026-04-17, ALT-1257)
 const DEFAULT_CIAM_CLIENT_ID = "2dfd3a08-277c-4893-b07d-eca5ae322310";
-const DEFAULT_CIAM_AUTHORITY_HOST = "https://auth.helloautoflow.com";
-const DEFAULT_CIAM_TENANT_ID = "5e4f1080-8afc-4005-b05e-32b21e69363a";
-const DEFAULT_CIAM_KNOWN_AUTHORITIES = ["auth.helloautoflow.com"];
+const DEFAULT_CIAM_TENANT_SUBDOMAIN = "autoflowciam";
 
+const SUBDOMAIN_LABEL_REGEX = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/i;
 const HOSTNAME_REGEX =
   /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)*$/i;
 
@@ -25,75 +23,43 @@ function readNonEmptyEnv(value: string | undefined): string | null {
   return normalized;
 }
 
-function normalizeAuthority(value: string | undefined): string | null {
+function readTenantSubdomain(value: string | undefined): string {
   const normalized = readNonEmptyEnv(value);
-  if (!normalized) return null;
-
-  try {
-    const url = new URL(normalized);
-    if (url.protocol !== "https:" || url.username || url.password || url.search || url.hash) {
-      return null;
-    }
-
-    const normalizedPath = url.pathname.replace(/\/+$/, "");
-    return normalizedPath ? `${url.origin}${normalizedPath}` : url.origin;
-  } catch {
-    return null;
-  }
-}
-
-function readAuthority(value: string | undefined, fallbackAuthority: string): string {
-  const normalized = readNonEmptyEnv(value);
-  if (!normalized) return fallbackAuthority;
-
-  const parsed = normalizeAuthority(normalized);
-  if (!parsed) {
-    console.warn("[MSAL] Invalid VITE_AZURE_CIAM_AUTHORITY format. Using fallback authority.");
-    return fallbackAuthority;
-  }
-
-  return parsed;
-}
-
-function readKnownAuthorities(value: string | undefined, fallbackAuthorities: string[]): string[] {
-  const normalized = readNonEmptyEnv(value);
-  if (!normalized) return fallbackAuthorities;
-
-  const parsed = normalized
-    .split(",")
-    .map((entry) => entry.trim().toLowerCase())
-    .filter(Boolean);
-
-  if (parsed.length === 0 || parsed.some((entry) => !HOSTNAME_REGEX.test(entry))) {
+  if (!normalized) return DEFAULT_CIAM_TENANT_SUBDOMAIN;
+  const clean = normalized.toLowerCase();
+  if (!SUBDOMAIN_LABEL_REGEX.test(clean)) {
     console.warn(
-      "[MSAL] Invalid VITE_AZURE_CIAM_KNOWN_AUTHORITIES format. Using fallback knownAuthorities."
+      "[MSAL] Invalid VITE_AZURE_CIAM_TENANT_SUBDOMAIN format. Using built-in CIAM default."
     );
-    return fallbackAuthorities;
+    return DEFAULT_CIAM_TENANT_SUBDOMAIN;
   }
+  return clean;
+}
 
-  return parsed;
+function readTenantDomain(value: string | undefined, fallbackSubdomain: string): string {
+  const normalized = readNonEmptyEnv(value);
+  if (!normalized) return `${fallbackSubdomain}.onmicrosoft.com`;
+  const clean = normalized.toLowerCase();
+  if (!HOSTNAME_REGEX.test(clean)) {
+    console.warn("[MSAL] Invalid VITE_AZURE_CIAM_TENANT_DOMAIN format. Using derived CIAM domain.");
+    return `${fallbackSubdomain}.onmicrosoft.com`;
+  }
+  return clean;
 }
 
 // Use defaults directly. Env var overrides are only applied for tenant
-// config; the client ID is pinned to the app registration above to avoid
-// stale env var overrides in Vercel.
+// config (subdomain/domain); the client ID is pinned to the app registration
+// above to avoid stale env var overrides in Vercel.
 const clientId = DEFAULT_CIAM_CLIENT_ID;
-const tenantId = readNonEmptyEnv(import.meta.env.VITE_AZURE_CIAM_TENANT_ID) ?? DEFAULT_CIAM_TENANT_ID;
-const defaultAuthority = `${DEFAULT_CIAM_AUTHORITY_HOST}/${tenantId}`;
-const authority = readAuthority(import.meta.env.VITE_AZURE_CIAM_AUTHORITY, defaultAuthority);
-const fallbackKnownAuthorities =
-  authority === defaultAuthority ? DEFAULT_CIAM_KNOWN_AUTHORITIES : [new URL(authority).host];
-const knownAuthorities = readKnownAuthorities(
-  import.meta.env.VITE_AZURE_CIAM_KNOWN_AUTHORITIES,
-  fallbackKnownAuthorities
-);
+const tenantSubdomain = readTenantSubdomain(import.meta.env.VITE_AZURE_CIAM_TENANT_SUBDOMAIN);
+const tenantDomain = readTenantDomain(import.meta.env.VITE_AZURE_CIAM_TENANT_DOMAIN, tenantSubdomain);
 
 export const msalConfig: Configuration = {
   auth: {
     clientId,
-    authority,
-    // Tell MSAL the external tenant host(s) are valid authorities.
-    knownAuthorities,
+    authority: `https://${tenantSubdomain}.ciamlogin.com/${tenantDomain}`,
+    // Tell MSAL the external tenant is a valid authority.
+    knownAuthorities: [`${tenantSubdomain}.ciamlogin.com`],
     redirectUri: `${window.location.origin}/auth/callback`,
     postLogoutRedirectUri: window.location.origin + "/login",
   },

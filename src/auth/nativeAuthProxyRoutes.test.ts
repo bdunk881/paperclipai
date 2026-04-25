@@ -248,6 +248,63 @@ describe("native auth proxy routes", () => {
     expect(response.body.error).toMatch(/native auth upstream request failed/i);
   });
 
+  it("falls back to the derived ciamlogin authority when the branded host fetch fails", async () => {
+    (global.fetch as jest.Mock)
+      .mockRejectedValueOnce(new Error("fetch failed"))
+      .mockResolvedValueOnce(
+        mockFetchResponse({
+          status: 200,
+          headers: { "content-type": "application/json; charset=utf-8" },
+          body: JSON.stringify({ continuation_token: "fallback-123" }),
+        })
+      );
+
+    const app = loadApp({
+      ALLOWED_ORIGINS: "https://dashboard.autoflow.test",
+      AUTH_NATIVE_AUTH_PROXY_BASE_URL: "https://auth.helloautoflow.com/tenant-guid",
+      AZURE_CIAM_TENANT_SUBDOMAIN: "autoflowciam",
+      AZURE_CIAM_TENANT_ID: "tenant-guid",
+    });
+
+    const response = await request(app)
+      .post("/api/auth/native/challenge/v1.0/continue")
+      .set("Origin", "https://dashboard.autoflow.test")
+      .set("Accept", "application/json")
+      .set("Content-Type", "application/x-www-form-urlencoded")
+      .send("continuation_token=challenge-123");
+
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual({ continuation_token: "fallback-123" });
+    expect(global.fetch).toHaveBeenCalledTimes(2);
+
+    const [firstUrl] = (global.fetch as jest.Mock).mock.calls[0] as [URL, RequestInit];
+    const [secondUrl] = (global.fetch as jest.Mock).mock.calls[1] as [URL, RequestInit];
+    expect(firstUrl.toString()).toBe("https://auth.helloautoflow.com/tenant-guid/challenge/v1.0/continue");
+    expect(secondUrl.toString()).toBe("https://autoflowciam.ciamlogin.com/tenant-guid/challenge/v1.0/continue");
+  });
+
+  it("deduplicates native auth upstream candidates when configured values overlap", async () => {
+    (global.fetch as jest.Mock).mockRejectedValueOnce(new Error("fetch failed"));
+
+    const app = loadApp({
+      ALLOWED_ORIGINS: "https://dashboard.autoflow.test",
+      AUTH_NATIVE_AUTH_PROXY_BASE_URL: "https://autoflowciam.ciamlogin.com/tenant-guid",
+      AZURE_CIAM_AUTHORITY: "https://autoflowciam.ciamlogin.com/tenant-guid",
+      AZURE_CIAM_TENANT_SUBDOMAIN: "autoflowciam",
+      AZURE_CIAM_TENANT_ID: "tenant-guid",
+    });
+
+    const response = await request(app)
+      .post("/api/auth/native/challenge/v1.0/continue")
+      .set("Origin", "https://dashboard.autoflow.test")
+      .set("Accept", "application/json")
+      .set("Content-Type", "application/x-www-form-urlencoded")
+      .send("continuation_token=challenge-123");
+
+    expect(response.status).toBe(502);
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+  });
+
   it("rejects unsupported content types", async () => {
     const app = loadApp({
       ALLOWED_ORIGINS: "https://dashboard.autoflow.test",

@@ -19,6 +19,7 @@ resource "azurerm_storage_account" "this" {
   shared_access_key_enabled       = false
   default_to_oauth_authentication = true
   allow_nested_items_to_be_public = false
+  public_network_access_enabled   = false
 
   blob_properties {
     delete_retention_policy {

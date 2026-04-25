@@ -51,17 +51,14 @@ This creates the `autoflow-tfstate-rg` resource group, the `autoflowterraformsta
 
 ```bash
 cd infra/azure
-terraform init
-terraform workspace new staging   # first time only
-terraform workspace select staging
+terraform init -backend-config=backend-config/staging.hcl
 terraform apply -var="environment=staging" -var="alert_email=ops@helloautoflow.com"
 ```
 
 ### Production
 
 ```bash
-terraform workspace new production   # first time only
-terraform workspace select production
+terraform init -backend-config=backend-config/production.hcl
 terraform apply \
   -var="environment=production" \
   -var="alert_email=ops@helloautoflow.com" \
@@ -217,3 +214,23 @@ terraform output kube_config_command              # optional operator access for
 For backend deploy automation, capture the resulting Container App names,
 resource groups, and public hostnames and store them in the environment-scoped
 GitHub variables documented above.
+
+## Terraform state migration
+
+The Azure backend now uses explicit per-environment state keys:
+
+- `backend-config/staging.hcl` → `autoflow-staging.tfstate`
+- `backend-config/production.hcl` → `autoflow-production.tfstate`
+
+To migrate an existing workspace-backed state into a dedicated backend key:
+
+1. Select the source workspace and pull a backup copy:
+   `terraform workspace select <env>`
+   `terraform state pull > <env>-workspace.tfstate`
+2. Return to the default workspace before reconfiguring the backend:
+   `terraform workspace select default`
+3. Reinitialize against the target backend key:
+   `terraform init -reconfigure -backend-config=backend-config/<env>.hcl`
+4. Push the copied state into the dedicated backend:
+   `terraform state push <env>-workspace.tfstate`
+5. Run `terraform plan -var="environment=<env>"` and remove any resources that belong only to the other environment with `terraform state rm` before the next apply.

@@ -69,7 +69,7 @@ jobs:
           terraform_version: "~> 1.9"
 
       - name: Terraform init
-        run: terraform init
+        run: terraform init -backend-config=backend-config/${{ inputs.environment }}.hcl
 
       - name: Terraform plan
         run: |

@@ -112,6 +112,13 @@ imports the built backend image into the production ACR, bootstraps
 `autoflow-backend-secrets`, applies the AKS backend manifest, and updates the
 `backend` deployment image in `autoflow-production`.
 
+Because GitHub-hosted runner IPs are highly dynamic, production Terraform does
+not enforce AKS API authorized IP ranges by default. As of 2026-04-25, GitHub's
+official `GET /meta` response advertises thousands of Actions CIDRs, while AKS
+authorized IP ranges support only up to 200 entries. Re-enable the production
+allowlist only after moving deploys to stable egress such as self-hosted runners,
+GitHub larger runners with static IPs, or a dedicated VPN/NAT path.
+
 **Required GitHub repository variables:**
 
 | Variable | Description |
@@ -173,6 +180,7 @@ imports the built backend image into the production ACR, bootstraps
 | `min_node_count` | `1` | Scale to zero not supported on system node pool |
 | `max_node_count` | `5` | Adjust based on load |
 | `kubernetes_version` | `1.29` | Check `az aks get-versions` for latest |
+| `api_server_authorized_ips` | `["10.1.3.0/24"]` | Stable CIDRs only. Applied to staging; production is intentionally left open until CI uses stable egress. |
 
 ---
 

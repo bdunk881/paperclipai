@@ -61,6 +61,9 @@ As of 2026-04-24 / 2026-04-25 verification:
 - no `autoflow-production` namespace or backend workload is deployed yet
 - no in-cluster `autoflow-backend-secrets` secret exists yet
 - no repo-managed TLS termination path exists yet for `api.helloautoflow.com`
+- GitHub-hosted runners cannot be safely allowlisted for AKS API access because
+  GitHub's official meta endpoint currently publishes thousands of Actions CIDRs,
+  while AKS authorized IP ranges support only up to 200 entries
 
 This means the Azure load balancer target can be prepared in Kubernetes, but DNS cutover
 must stay blocked until workload secrets and TLS are resolved.

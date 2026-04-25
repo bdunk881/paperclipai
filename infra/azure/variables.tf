@@ -84,7 +84,7 @@ variable "max_node_count" {
 }
 
 variable "api_server_authorized_ips" {
-  description = "CIDR blocks allowed to reach the AKS API server. Must include CI runner IPs, hub mgmt subnet, and developer VPN."
+  description = "Stable CIDR blocks allowed to reach the AKS API server. Use only fixed egress ranges such as VPN, hub management, or self-hosted runner subnets."
   type        = list(string)
   default = [
     "10.1.3.0/24", # Hub management / bastion subnet

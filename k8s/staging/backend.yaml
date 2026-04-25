@@ -17,6 +17,8 @@ spec:
         app: backend
         environment: staging
     spec:
+      securityContext:
+        runAsNonRoot: true
       containers:
         - name: backend
           # Image tag is overwritten by deploy-azure.yml via kubectl set image

@@ -23,6 +23,10 @@ spec:
           image: autoflowacr.azurecr.io/autoflow-frontend:latest
           ports:
             - containerPort: 80
+          securityContext:
+            capabilities:
+              drop:
+                - NET_RAW
           resources:
             requests:
               cpu: "50m"

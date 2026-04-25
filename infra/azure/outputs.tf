@@ -5,12 +5,12 @@ output "hub_vnet_id" {
 
 output "spoke_prod_vnet_id" {
   description = "Resource ID of the production spoke virtual network"
-  value       = module.spoke_prod.spoke_vnet_id
+  value       = try(module.spoke_prod[0].spoke_vnet_id, null)
 }
 
 output "spoke_staging_vnet_id" {
   description = "Resource ID of the staging spoke virtual network"
-  value       = module.spoke_staging.spoke_vnet_id
+  value       = try(module.spoke_staging[0].spoke_vnet_id, null)
 }
 
 output "hub_firewall_private_ip" {

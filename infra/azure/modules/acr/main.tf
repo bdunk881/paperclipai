@@ -2,9 +2,9 @@ resource "azurerm_container_registry" "main" {
   name                          = "${var.prefix}${var.environment}acr"
   resource_group_name           = var.resource_group_name
   location                      = var.location
-  sku                           = "Premium"  # Premium required for private endpoints and geo-replication
-  admin_enabled                 = false       # Use workload identity / service principal only
-  public_network_access_enabled = false       # All access via private endpoint
+  sku                           = "Premium" # Premium required for private endpoints and geo-replication
+  admin_enabled                 = false     # Use workload identity / service principal only
+  public_network_access_enabled = false     # All access via private endpoint
 
   network_rule_bypass_option = "AzureServices"
 
@@ -28,13 +28,8 @@ resource "azurerm_private_endpoint" "acr" {
 
   private_dns_zone_group {
     name                 = "acr-dns-group"
-    private_dns_zone_ids = [data.azurerm_private_dns_zone.acr.id]
+    private_dns_zone_ids = [var.private_dns_zone_id]
   }
 
   tags = var.tags
-}
-
-data "azurerm_private_dns_zone" "acr" {
-  name                = "privatelink.azurecr.io"
-  resource_group_name = var.resource_group_name
 }

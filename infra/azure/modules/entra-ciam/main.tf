@@ -30,6 +30,10 @@ terraform {
 
 locals {
   display_name = var.ciam_display_name != "" ? var.ciam_display_name : "${var.prefix}-${var.environment}-ciam"
+  normalized_spa_redirect_uris = [
+    for uri in var.spa_redirect_uris :
+    can(regex("^https?://[^/]+$", uri)) ? "${uri}/" : uri
+  ]
 }
 
 # ── CIAM Directory ──────────────────────────────────────────────────────────
@@ -58,11 +62,11 @@ resource "azurerm_aadb2c_directory" "ciam" {
 # registration aligned with the dashboard auth routes after domain changes.
 
 resource "azuread_application" "autoflow_spa" {
-  display_name = "${var.prefix}-dashboard"
+  display_name     = "${var.prefix}-dashboard"
   sign_in_audience = "AzureADandPersonalMicrosoftAccount"
 
   single_page_application {
-    redirect_uris = var.spa_redirect_uris
+    redirect_uris = local.normalized_spa_redirect_uris
   }
 
   required_resource_access {

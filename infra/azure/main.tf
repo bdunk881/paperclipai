@@ -57,11 +57,12 @@ module "hub" {
   tags                = local.common_tags
 }
 
-# ── Spoke VNets (prod + staging) ──────────────────────────────────────────────
-# Replaces the old modules/networking single-environment module.
-# Each spoke peers bidirectionally to the hub and routes DNS through the Firewall.
+# ── Spoke VNets (workspace-scoped) ────────────────────────────────────────────
+# Each workspace provisions only its active spoke. This keeps the production
+# workspace from planning or mutating staging network resources.
 
 module "spoke_prod" {
+  count  = var.environment == "production" ? 1 : 0
   source = "./modules/spoke"
 
   prefix                  = var.prefix
@@ -81,6 +82,7 @@ module "spoke_prod" {
 }
 
 module "spoke_staging" {
+  count  = var.environment == "staging" ? 1 : 0
   source = "./modules/spoke"
 
   prefix                  = var.prefix
@@ -99,13 +101,12 @@ module "spoke_staging" {
   tags                    = local.common_tags
 }
 
-# Select the correct spoke subnet IDs based on the deployment environment.
-# (Both spoke VNets are always deployed; active_* picks the right one for AKS/ACR.)
+# Select the correct spoke subnet IDs based on the active workspace environment.
 locals {
-  active_aks_subnet_id  = var.environment == "production" ? module.spoke_prod.aks_subnet_id : module.spoke_staging.aks_subnet_id
-  active_pe_subnet_id   = var.environment == "production" ? module.spoke_prod.pe_subnet_id : module.spoke_staging.pe_subnet_id
-  active_func_subnet_id = var.environment == "production" ? module.spoke_prod.func_subnet_id : module.spoke_staging.func_subnet_id
-  active_vnet_id        = var.environment == "production" ? module.spoke_prod.spoke_vnet_id : module.spoke_staging.spoke_vnet_id
+  active_aks_subnet_id  = var.environment == "production" ? module.spoke_prod[0].aks_subnet_id : module.spoke_staging[0].aks_subnet_id
+  active_pe_subnet_id   = var.environment == "production" ? module.spoke_prod[0].pe_subnet_id : module.spoke_staging[0].pe_subnet_id
+  active_func_subnet_id = var.environment == "production" ? module.spoke_prod[0].func_subnet_id : module.spoke_staging[0].func_subnet_id
+  active_vnet_id        = var.environment == "production" ? module.spoke_prod[0].spoke_vnet_id : module.spoke_staging[0].spoke_vnet_id
 }
 
 module "acr" {
@@ -116,6 +117,7 @@ module "acr" {
   location            = var.location
   resource_group_name = azurerm_resource_group.main.name
   pe_subnet_id        = local.active_pe_subnet_id
+  private_dns_zone_id = module.hub.private_dns_zone_acr_id
   vnet_id             = local.active_vnet_id
   tags                = local.common_tags
 }

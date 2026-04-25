@@ -3,7 +3,8 @@
 Terraform IaC for the Azure-native deployment of AutoFlow.
 
 > **Status:** Primary deployment path — AutoFlow runs on AKS (Azure Kubernetes Service) with ACR, Key Vault, Hub/Spoke VNets, and Azure Policy following the Cloud Adoption Framework.
-> CI/CD is handled by `.github/workflows/deploy-azure.yml`.
+> Cluster infra and Kubernetes manifests are applied through `.github/workflows/infra-deploy.yml`.
+> The legacy `.github/workflows/deploy-azure.yml` workflow is staging-only and updates the staging Container App backend.
 >
 > See `COMPARISON.md` for historical context on the Hetzner → Azure migration decision.
 
@@ -92,19 +93,20 @@ See [`ARCHITECTURE.md`](ARCHITECTURE.md) for the full module dependency graph.
 
 ## GitHub Actions CI/CD Pipeline
 
-The pipeline lives at `.github/workflows/deploy-azure.yml`.
+The AKS infrastructure pipeline lives at `.github/workflows/infra-deploy.yml`.
 
 **Stages:**
 
 | Stage | Trigger | Gate |
 |---|---|---|
 | Build & Push | Every push to `master` | CI pass (lint + tests) |
-| Deploy Production | Push to `master` | GitHub `production` environment gate |
-| Deploy Staging | Manual `workflow_dispatch` | No approval gate by default |
+| Deploy Staging Container App | Push to `master` or manual dispatch | GitHub `staging` environment |
+| Terraform Plan / Apply | Manual dispatch | GitHub environment protection |
+| Apply K8s manifests | After Terraform apply | Same workflow, same environment gate |
 
-The workflow currently deploys the backend to **Azure Container Apps**, not AKS.
-Terraform still provisions the broader Azure estate, but the GitHub deploy path
-updates the live backend revision with `az containerapp update`.
+The Container Apps workflow now covers **staging only**.
+Production infrastructure remains AKS-first: Terraform provisions the Azure estate and
+the AKS manifest apply path lives in `.github/workflows/infra-deploy.yml`.
 
 **Required GitHub repository variables:**
 
@@ -121,32 +123,41 @@ updates the live backend revision with `az containerapp update`.
 | `staging` | `AZURE_CONTAINER_APP_STAGING_NAME` | Expected staging backend Container App name |
 | `staging` | `AZURE_CONTAINER_APP_STAGING_RESOURCE_GROUP` | Resource group for the staging backend app |
 | `staging` | `AZURE_STAGING_API_HOST` | Public staging API hostname used for DNS-based discovery |
-| `production` | `AZURE_CONTAINER_APP_PRODUCTION_NAME` | Expected production backend Container App name |
-| `production` | `AZURE_CONTAINER_APP_PRODUCTION_RESOURCE_GROUP` | Resource group for the production backend app |
-| `production` | `AZURE_PRODUCTION_API_HOST` | Public production API hostname used for DNS-based discovery |
 
 **Setup steps:**
 
 1. Run `terraform apply` to create all Azure resources (see Usage above).
 2. Add the repository-level OIDC variables listed above.
-3. Create two GitHub Environments in Settings → Environments:
-   - `staging` — no approvals
-   - `production` — add required reviewers for the manual approval gate
-4. Add the environment-scoped Container App variables for each environment.
-5. Verify production-specific values do not reference `staging` or `nonprod`
-   resource names; the workflow now hard-fails on cross-environment targets.
+3. Create the GitHub Environments used by the two deployment paths:
+   - `staging` — for the Container Apps backend workflow
+   - `production` — for the AKS infrastructure apply workflow
+4. Add the environment-scoped staging Container App variables listed above.
+5. Verify staging values do not reference `production` resources; the workflow hard-fails on cross-environment targets.
 
 **Validation checks**
 
-- `gh api repos/<owner>/<repo>/environments` should show a `production`
-  protection rule with required reviewers before production deploys are allowed.
-- `gh api repos/<owner>/<repo>/environments/production/variables` should include
-  the three production backend variables listed above.
+- `gh api repos/<owner>/<repo>/environments/staging/variables` should include
+  the three staging backend variables listed above.
 - `gh run list --workflow deploy-azure.yml` should show a successful
-  `workflow_dispatch` run for `production` before you cut traffic to the new
-  backend.
+  staging deployment before you rely on the staging Container App path.
 
 ---
+
+## Production API Exposure
+
+Production API traffic is expected to terminate on AKS, not on Azure Container Apps.
+The checked-in backend service manifest at `k8s/production/backend.yaml` now requests a
+public Azure Load Balancer with the DNS label `autoflow-production-api`, which produces a
+public hostname such as `autoflow-production-api.<region>.cloudapp.azure.com` after the
+service is applied successfully.
+
+That AKS service exposure is only one part of production cutover:
+
+1. the `autoflow-production` namespace and backend deployment must be applied
+2. the `autoflow-backend-secrets` secret must exist in-cluster
+3. a TLS termination path for `api.helloautoflow.com` must be in place before DNS cutover
+
+See `infra/runbooks/production-api-ingress.md` for the operational checklist.
 
 ## Key variables
 
@@ -192,5 +203,5 @@ terraform output kube_config_command              # optional operator access for
 ```
 
 For backend deploy automation, capture the resulting Container App names,
-resource groups, and public hostnames and store them in the environment-scoped
-GitHub variables documented above.
+resource groups, and public hostnames for staging and store them in the
+environment-scoped GitHub variables documented above.

@@ -1,4 +1,4 @@
-name: Deploy to Azure Container Apps
+name: Deploy Backend to Azure Container Apps (Staging)
 
 on:
   push:
@@ -10,7 +10,7 @@ on:
         required: true
         default: staging
         type: choice
-        options: [staging, production]
+        options: [staging]
 
 permissions:
   contents: read
@@ -26,9 +26,9 @@ env:
 
 jobs:
   deploy:
-    name: Build and Deploy Backend Container App
+    name: Build and Deploy Staging Backend Container App
     runs-on: ubuntu-latest
-    environment: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.environment || 'production' }}
+    environment: staging
 
     steps:
       - uses: actions/checkout@v5
@@ -100,35 +100,21 @@ jobs:
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             DEPLOY_ENV="${{ github.event.inputs.environment }}"
           elif [ "${{ github.ref }}" = "refs/heads/master" ]; then
-            DEPLOY_ENV="production"
+            DEPLOY_ENV="staging"
           else
             DEPLOY_ENV="staging"
           fi
 
-          if [ "$DEPLOY_ENV" = "production" ]; then
-            QA_BYPASS_ENABLED="false"
-            QA_BYPASS_USERS=""
-            EXPECTED_APP_NAME="${{ vars.AZURE_CONTAINER_APP_PRODUCTION_NAME }}"
-            EXPECTED_RESOURCE_GROUP="${{ vars.AZURE_CONTAINER_APP_PRODUCTION_RESOURCE_GROUP }}"
-            API_HOST="${{ vars.AZURE_PRODUCTION_API_HOST }}"
-            if [ -z "$API_HOST" ]; then
-              API_HOST="api.helloautoflow.com"
-            fi
-            require_nonempty "$EXPECTED_APP_NAME" "AZURE_CONTAINER_APP_PRODUCTION_NAME"
-            require_nonempty "$EXPECTED_RESOURCE_GROUP" "AZURE_CONTAINER_APP_PRODUCTION_RESOURCE_GROUP"
-            reject_cross_environment_target "$EXPECTED_APP_NAME" "AZURE_CONTAINER_APP_PRODUCTION_NAME" "$DEPLOY_ENV"
-            reject_cross_environment_target "$EXPECTED_RESOURCE_GROUP" "AZURE_CONTAINER_APP_PRODUCTION_RESOURCE_GROUP" "$DEPLOY_ENV"
-            reject_cross_environment_target "$API_HOST" "AZURE_PRODUCTION_API_HOST" "$DEPLOY_ENV"
-          else
-            QA_BYPASS_ENABLED="true"
-            QA_BYPASS_USERS="qa-smoke-user"
-            EXPECTED_APP_NAME="${{ vars.AZURE_CONTAINER_APP_STAGING_NAME }}"
-            EXPECTED_RESOURCE_GROUP="${{ vars.AZURE_CONTAINER_APP_STAGING_RESOURCE_GROUP }}"
-            API_HOST="${{ vars.AZURE_STAGING_API_HOST }}"
-            reject_cross_environment_target "$EXPECTED_APP_NAME" "AZURE_CONTAINER_APP_STAGING_NAME" "$DEPLOY_ENV"
-            reject_cross_environment_target "$EXPECTED_RESOURCE_GROUP" "AZURE_CONTAINER_APP_STAGING_RESOURCE_GROUP" "$DEPLOY_ENV"
-            reject_cross_environment_target "$API_HOST" "AZURE_STAGING_API_HOST" "$DEPLOY_ENV"
-          fi
+          QA_BYPASS_ENABLED="true"
+          QA_BYPASS_USERS="qa-smoke-user"
+          EXPECTED_APP_NAME="${{ vars.AZURE_CONTAINER_APP_STAGING_NAME }}"
+          EXPECTED_RESOURCE_GROUP="${{ vars.AZURE_CONTAINER_APP_STAGING_RESOURCE_GROUP }}"
+          API_HOST="${{ vars.AZURE_STAGING_API_HOST }}"
+          require_nonempty "$EXPECTED_APP_NAME" "AZURE_CONTAINER_APP_STAGING_NAME"
+          require_nonempty "$EXPECTED_RESOURCE_GROUP" "AZURE_CONTAINER_APP_STAGING_RESOURCE_GROUP"
+          reject_cross_environment_target "$EXPECTED_APP_NAME" "AZURE_CONTAINER_APP_STAGING_NAME" "$DEPLOY_ENV"
+          reject_cross_environment_target "$EXPECTED_RESOURCE_GROUP" "AZURE_CONTAINER_APP_STAGING_RESOURCE_GROUP" "$DEPLOY_ENV"
+          reject_cross_environment_target "$API_HOST" "AZURE_STAGING_API_HOST" "$DEPLOY_ENV"
 
           IMAGE_TAG="${{ env.IMAGE_REPO }}:sha-${{ github.sha }}"
 
@@ -200,19 +186,13 @@ jobs:
           fi
 
           if [ -z "$APP_NAME" ] || [ -z "$RESOURCE_GROUP" ]; then
-            if [ "$DEPLOY_ENV" = "production" ]; then
-              NAME_FILTER="prod"
-            else
-              NAME_FILTER="staging"
-            fi
-
             MATCH_COUNT=$(az containerapp list \
-              --query "[?contains(name, 'backend') && contains(name, '${NAME_FILTER}') ] | length(@)" \
+              --query "[?contains(name, 'backend') && contains(name, 'staging') ] | length(@)" \
               -o tsv)
 
             if [ "$MATCH_COUNT" = "1" ]; then
               APP_NAME=$(az containerapp list \
-                --query "[?contains(name, 'backend') && contains(name, '${NAME_FILTER}') ].name | [0]" \
+                --query "[?contains(name, 'backend') && contains(name, 'staging') ].name | [0]" \
                 -o tsv)
               RESOURCE_GROUP=$(exact_lookup "$APP_NAME")
               echo "Resolved target from Azure inventory: $APP_NAME in $RESOURCE_GROUP"

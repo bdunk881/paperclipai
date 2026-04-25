@@ -22,6 +22,9 @@ spec:
           # Image tag is overwritten by deploy-azure.yml via kubectl set image
           image: autoflowacr.azurecr.io/autoflow-backend:latest
           securityContext:
+            capabilities:
+              drop:
+                - NET_RAW
             allowPrivilegeEscalation: false
           ports:
             - containerPort: 8000

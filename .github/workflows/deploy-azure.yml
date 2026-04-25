@@ -575,8 +575,20 @@ jobs:
             exit 1
           fi
 
-          TLS_HEALTH_STATUS=$(curl -sS --resolve "${{ steps.target.outputs.api_host }}:443:${INGRESS_TARGET}" \
-            -o /tmp/tls-health.txt -w "%{http_code}" "https://${{ steps.target.outputs.api_host }}/health" || true)
+          echo "Using ingress HTTPS target: $INGRESS_TARGET"
+
+          TLS_HEALTH_STATUS=""
+          for i in $(seq 1 20); do
+            TLS_HEALTH_STATUS=$(curl -sS --connect-timeout 10 \
+              --resolve "${{ steps.target.outputs.api_host }}:443:${INGRESS_TARGET}" \
+              -o /tmp/tls-health.txt -w "%{http_code}" "https://${{ steps.target.outputs.api_host }}/health" || true)
+            echo "Attempt $i: TLS /health => $TLS_HEALTH_STATUS"
+            if [ "$TLS_HEALTH_STATUS" = "200" ]; then
+              break
+            fi
+            sleep 10
+          done
+
           if [ "$TLS_HEALTH_STATUS" != "200" ]; then
             echo "::error::Expected HTTPS /health through ingress to return 200, got $TLS_HEALTH_STATUS"
             cat /tmp/tls-health.txt || true
@@ -584,8 +596,18 @@ jobs:
             exit 1
           fi
 
-          TLS_RUNS_STATUS=$(curl -sS --resolve "${{ steps.target.outputs.api_host }}:443:${INGRESS_TARGET}" \
-            -o /tmp/tls-runs.json -w "%{http_code}" "https://${{ steps.target.outputs.api_host }}/api/runs" || true)
+          TLS_RUNS_STATUS=""
+          for i in $(seq 1 10); do
+            TLS_RUNS_STATUS=$(curl -sS --connect-timeout 10 \
+              --resolve "${{ steps.target.outputs.api_host }}:443:${INGRESS_TARGET}" \
+              -o /tmp/tls-runs.json -w "%{http_code}" "https://${{ steps.target.outputs.api_host }}/api/runs" || true)
+            echo "Attempt $i: TLS /api/runs => $TLS_RUNS_STATUS"
+            if [ "$TLS_RUNS_STATUS" = "401" ]; then
+              break
+            fi
+            sleep 5
+          done
+
           if [ "$TLS_RUNS_STATUS" != "401" ]; then
             echo "::error::Expected HTTPS /api/runs through ingress to require auth with 401, got $TLS_RUNS_STATUS"
             cat /tmp/tls-runs.json || true

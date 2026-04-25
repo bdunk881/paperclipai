@@ -2,7 +2,7 @@ name: Deploy to Azure Container Apps
 
 on:
   push:
-    branches: [master]
+    branches: [master, staging]
   workflow_dispatch:
     inputs:
       environment:
@@ -28,7 +28,7 @@ jobs:
   deploy:
     name: Build and Deploy Backend Container App
     runs-on: ubuntu-latest
-    environment: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.environment || 'production' }}
+    environment: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.environment || (github.ref == 'refs/heads/master' && 'production' || 'staging') }}
 
     steps:
       - uses: actions/checkout@v5
@@ -50,6 +50,7 @@ jobs:
           tags: |
             type=sha,format=long
             type=raw,value=latest,enable=${{ github.ref == 'refs/heads/master' }}
+            type=raw,value=staging,enable=${{ github.ref == 'refs/heads/staging' }}
 
       - name: Build and push backend image
         uses: docker/build-push-action@v5

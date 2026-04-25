@@ -62,7 +62,7 @@ describe("native auth proxy routes", () => {
 
     const app = loadApp({
       ALLOWED_ORIGINS: "https://dashboard.autoflow.test",
-      AUTH_NATIVE_AUTH_PROXY_BASE_URL: "https://auth.helloautoflow.com/tenant-guid",
+      AUTH_NATIVE_AUTH_PROXY_BASE_URL: "https://autoflowciam.ciamlogin.com/autoflowciam.onmicrosoft.com",
     });
 
     const response = await request(app)
@@ -80,7 +80,7 @@ describe("native auth proxy routes", () => {
 
     const [url, init] = (global.fetch as jest.Mock).mock.calls[0] as [URL, RequestInit];
     expect(url.toString()).toBe(
-      "https://auth.helloautoflow.com/tenant-guid/signup/v1.0/start?dc=ESTS-PUB-WUS2-AZ1-FD000-TEST"
+      "https://autoflowciam.ciamlogin.com/autoflowciam.onmicrosoft.com/signup/v1.0/start?dc=ESTS-PUB-WUS2-AZ1-FD000-TEST"
     );
     expect(init.method).toBe("POST");
     expect(init.headers).toMatchObject({
@@ -91,7 +91,7 @@ describe("native auth proxy routes", () => {
     expect(init.body).toBe(JSON.stringify({ email: "alex@example.com" }));
   });
 
-  it("proxies form-encoded requests to the configured native auth upstream", async () => {
+  it("proxies form-encoded sign-in challenge requests to the configured native auth upstream", async () => {
     (global.fetch as jest.Mock).mockResolvedValueOnce(
       mockFetchResponse({
         status: 200,
@@ -104,7 +104,7 @@ describe("native auth proxy routes", () => {
 
     const app = loadApp({
       ALLOWED_ORIGINS: "https://dashboard.autoflow.test",
-      AUTH_NATIVE_AUTH_PROXY_BASE_URL: "https://auth.helloautoflow.com/tenant-guid",
+      AUTH_NATIVE_AUTH_PROXY_BASE_URL: "https://autoflowciam.ciamlogin.com/autoflowciam.onmicrosoft.com",
     });
 
     const formBody = new URLSearchParams({
@@ -114,7 +114,7 @@ describe("native auth proxy routes", () => {
     }).toString();
 
     const response = await request(app)
-      .post("/api/auth/native/challenge/v1.0/continue")
+      .post("/api/auth/native/oauth2/v2.0/challenge")
       .set("Origin", "https://dashboard.autoflow.test")
       .set("Accept", "application/json")
       .set("Content-Type", "application/x-www-form-urlencoded")
@@ -125,7 +125,9 @@ describe("native auth proxy routes", () => {
     expect(global.fetch).toHaveBeenCalledTimes(1);
 
     const [url, init] = (global.fetch as jest.Mock).mock.calls[0] as [URL, RequestInit];
-    expect(url.toString()).toBe("https://auth.helloautoflow.com/tenant-guid/challenge/v1.0/continue");
+    expect(url.toString()).toBe(
+      "https://autoflowciam.ciamlogin.com/autoflowciam.onmicrosoft.com/oauth2/v2.0/challenge"
+    );
     expect(init.headers).toMatchObject({
       accept: "application/json",
       "content-type": "application/x-www-form-urlencoded",
@@ -152,7 +154,7 @@ describe("native auth proxy routes", () => {
 
     const app = loadApp({
       ALLOWED_ORIGINS: "https://dashboard.autoflow.test",
-      AUTH_NATIVE_AUTH_PROXY_BASE_URL: "https://auth.helloautoflow.com/tenant-guid",
+      AUTH_NATIVE_AUTH_PROXY_BASE_URL: "https://autoflowciam.ciamlogin.com/autoflowciam.onmicrosoft.com",
     });
 
     const startResponse = await request(app)
@@ -177,16 +179,48 @@ describe("native auth proxy routes", () => {
 
     const [startUrl] = (global.fetch as jest.Mock).mock.calls[0] as [URL, RequestInit];
     const [pollUrl] = (global.fetch as jest.Mock).mock.calls[1] as [URL, RequestInit];
-    expect(startUrl.toString()).toBe("https://auth.helloautoflow.com/tenant-guid/resetpassword/v1.0/start");
+    expect(startUrl.toString()).toBe(
+      "https://autoflowciam.ciamlogin.com/autoflowciam.onmicrosoft.com/resetpassword/v1.0/start"
+    );
     expect(pollUrl.toString()).toBe(
-      "https://auth.helloautoflow.com/tenant-guid/resetpassword/v1.0/poll_completion"
+      "https://autoflowciam.ciamlogin.com/autoflowciam.onmicrosoft.com/resetpassword/v1.0/poll_completion"
+    );
+  });
+
+  it("derives the documented ciamlogin native auth base from tenant env vars when no override is set", async () => {
+    (global.fetch as jest.Mock).mockResolvedValueOnce(
+      mockFetchResponse({
+        status: 200,
+        headers: { "content-type": "application/json; charset=utf-8" },
+        body: JSON.stringify({ continuation_token: "signup-ct" }),
+      })
+    );
+
+    const app = loadApp({
+      ALLOWED_ORIGINS: "https://dashboard.autoflow.test",
+      AZURE_CIAM_TENANT_SUBDOMAIN: "autoflowciam",
+    });
+
+    const response = await request(app)
+      .post("/api/auth/native/signup/v1.0/start")
+      .set("Origin", "https://dashboard.autoflow.test")
+      .set("Accept", "application/json")
+      .set("Content-Type", "application/x-www-form-urlencoded")
+      .send("username=alex%40example.com&challenge_type=oob%20password%20redirect");
+
+    expect(response.status).toBe(200);
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+
+    const [url] = (global.fetch as jest.Mock).mock.calls[0] as [URL, RequestInit];
+    expect(url.toString()).toBe(
+      "https://autoflowciam.ciamlogin.com/autoflowciam.onmicrosoft.com/signup/v1.0/start"
     );
   });
 
   it("rejects requests from origins outside the configured allowlist", async () => {
     const app = loadApp({
       ALLOWED_ORIGINS: "https://dashboard.autoflow.test",
-      AUTH_NATIVE_AUTH_PROXY_BASE_URL: "https://auth.helloautoflow.com/tenant-guid",
+      AUTH_NATIVE_AUTH_PROXY_BASE_URL: "https://autoflowciam.ciamlogin.com/autoflowciam.onmicrosoft.com",
     });
 
     const response = await request(app)
@@ -202,7 +236,7 @@ describe("native auth proxy routes", () => {
   it("rejects unsafe upstream paths", async () => {
     const app = loadApp({
       ALLOWED_ORIGINS: "https://dashboard.autoflow.test",
-      AUTH_NATIVE_AUTH_PROXY_BASE_URL: "https://auth.helloautoflow.com/tenant-guid",
+      AUTH_NATIVE_AUTH_PROXY_BASE_URL: "https://autoflowciam.ciamlogin.com/autoflowciam.onmicrosoft.com",
     });
 
     const response = await request(app)
@@ -218,7 +252,7 @@ describe("native auth proxy routes", () => {
   it("rejects undocumented but syntactically safe endpoints", async () => {
     const app = loadApp({
       ALLOWED_ORIGINS: "https://dashboard.autoflow.test",
-      AUTH_NATIVE_AUTH_PROXY_BASE_URL: "https://auth.helloautoflow.com/tenant-guid",
+      AUTH_NATIVE_AUTH_PROXY_BASE_URL: "https://autoflowciam.ciamlogin.com/autoflowciam.onmicrosoft.com",
     });
 
     const response = await request(app)
@@ -236,11 +270,11 @@ describe("native auth proxy routes", () => {
 
     const app = loadApp({
       ALLOWED_ORIGINS: "https://dashboard.autoflow.test",
-      AUTH_NATIVE_AUTH_PROXY_BASE_URL: "https://auth.helloautoflow.com/tenant-guid",
+      AUTH_NATIVE_AUTH_PROXY_BASE_URL: "https://autoflowciam.ciamlogin.com/autoflowciam.onmicrosoft.com",
     });
 
     const response = await request(app)
-      .post("/api/auth/native/challenge/v1.0/continue")
+      .post("/api/auth/native/oauth2/v2.0/challenge")
       .set("Origin", "https://dashboard.autoflow.test")
       .send({ challengeId: "challenge-123" });
 
@@ -251,7 +285,7 @@ describe("native auth proxy routes", () => {
   it("rejects unsupported content types", async () => {
     const app = loadApp({
       ALLOWED_ORIGINS: "https://dashboard.autoflow.test",
-      AUTH_NATIVE_AUTH_PROXY_BASE_URL: "https://auth.helloautoflow.com/tenant-guid",
+      AUTH_NATIVE_AUTH_PROXY_BASE_URL: "https://autoflowciam.ciamlogin.com/autoflowciam.onmicrosoft.com",
     });
 
     const response = await request(app)
@@ -276,17 +310,17 @@ describe("native auth proxy routes", () => {
 
     const app = loadApp({
       ALLOWED_ORIGINS: "https://dashboard.autoflow.test",
-      AUTH_NATIVE_AUTH_PROXY_BASE_URL: "https://auth.helloautoflow.com/tenant-guid",
+      AUTH_NATIVE_AUTH_PROXY_BASE_URL: "https://autoflowciam.ciamlogin.com/autoflowciam.onmicrosoft.com",
       AUTH_NATIVE_AUTH_PROXY_RATE_LIMIT_MAX: "1",
       AUTH_NATIVE_AUTH_PROXY_RATE_LIMIT_WINDOW_MS: "60000",
     });
 
     const first = await request(app)
-      .post("/api/auth/native/challenge/v1.0/continue")
+      .post("/api/auth/native/oauth2/v2.0/challenge")
       .set("Origin", "https://dashboard.autoflow.test")
       .send({ challengeId: "challenge-123" });
     const second = await request(app)
-      .post("/api/auth/native/challenge/v1.0/continue")
+      .post("/api/auth/native/oauth2/v2.0/challenge")
       .set("Origin", "https://dashboard.autoflow.test")
       .send({ challengeId: "challenge-123" });
 

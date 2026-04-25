@@ -23,16 +23,6 @@ output "firewall_policy_id" {
   value       = try(azurerm_firewall_policy.hub[0].id, null)
 }
 
-output "key_vault_id" {
-  description = "Resource ID of the hub Key Vault"
-  value       = azurerm_key_vault.hub.id
-}
-
-output "key_vault_uri" {
-  description = "URI of the hub Key Vault"
-  value       = azurerm_key_vault.hub.vault_uri
-}
-
 output "private_dns_zone_acr_id" {
   description = "Resource ID of the ACR private DNS zone"
   value       = azurerm_private_dns_zone.acr.id

@@ -18,6 +18,11 @@ variable "resource_group_name" {
   type        = string
 }
 
+variable "tenant_id" {
+  description = "Azure tenant ID used for spoke Key Vault creation"
+  type        = string
+}
+
 # ── Network CIDRs ─────────────────────────────────────────────────────────────
 
 variable "spoke_vnet_cidr" {
@@ -80,6 +85,12 @@ variable "network_watcher_rg" {
   description = "Resource group that contains the regional Network Watcher (Azure default: NetworkWatcherRG)"
   type        = string
   default     = "NetworkWatcherRG"
+}
+
+variable "key_vault_sku" {
+  description = "SKU for the spoke Key Vault (standard or premium)"
+  type        = string
+  default     = "standard"
 }
 
 variable "tags" {

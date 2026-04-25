@@ -25,7 +25,7 @@ data "azurerm_management_group" "root" {
 # ── Top-level: autoflow ───────────────────────────────────────────────────────
 
 resource "azurerm_management_group" "autoflow" {
-  display_name               = "${var.prefix}"
+  display_name               = var.prefix
   parent_management_group_id = data.azurerm_management_group.root.id
 }
 
@@ -101,8 +101,9 @@ resource "azurerm_role_assignment" "monitoring_reader" {
 
 # ── RBAC: AKS workload identity → Key Vault ───────────────────────────────────
 #
-# Key Vault Secrets User scoped directly to the hub Key Vault resource (not MG).
-# Narrowest possible scope — pods only read secrets, cannot manage vault config.
+# Key Vault Secrets User scoped directly to the active environment Key Vault
+# resource (not MG). Narrowest possible scope — pods only read secrets, cannot
+# manage vault config.
 
 resource "azurerm_role_assignment" "aks_kv_secrets_user" {
   scope                = var.key_vault_id

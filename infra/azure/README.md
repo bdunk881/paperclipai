@@ -19,7 +19,6 @@ See [`ARCHITECTURE.md`](ARCHITECTURE.md) for full topology diagrams, network add
                            │
                ┌───────────▼───────────┐
                │     Azure Firewall    │  ← Hub VNet 10.1.0.0/16
-               │     + Key Vault       │
                └─────────┬─────────────┘
              VNet peering │ (bidirectional)
         ┌─────────────────┼────────────────┐
@@ -27,6 +26,7 @@ See [`ARCHITECTURE.md`](ARCHITECTURE.md) for full topology diagrams, network add
  Prod Spoke (10.2.0.0/16)       Staging Spoke (10.3.0.0/16)
    └── AKS cluster (prod)          └── AKS cluster (staging)
    └── ACR private endpoint        └── ACR private endpoint
+   └── Key Vault (prod)            └── Key Vault (staging)
 ```
 
 ---
@@ -51,17 +51,14 @@ This creates the `autoflow-tfstate-rg` resource group, the `autoflowterraformsta
 
 ```bash
 cd infra/azure
-terraform init
-terraform workspace new staging   # first time only
-terraform workspace select staging
+terraform init -backend-config=backend-config/staging.hcl
 terraform apply -var="environment=staging" -var="alert_email=ops@helloautoflow.com"
 ```
 
 ### Production
 
 ```bash
-terraform workspace new production   # first time only
-terraform workspace select production
+terraform init -backend-config=backend-config/production.hcl
 terraform apply \
   -var="environment=production" \
   -var="alert_email=ops@helloautoflow.com" \
@@ -76,8 +73,8 @@ terraform apply \
 
 | Module | Path | Key Resources |
 |---|---|---|
-| `hub` | `modules/hub` | Hub VNet, Azure Firewall, Azure Bastion, Key Vault, private DNS zones |
-| `spoke` | `modules/spoke` | Spoke VNet, subnets, route table (UDR → Firewall), VNet peering |
+| `hub` | `modules/hub` | Hub VNet, Azure Firewall, Azure Bastion, private DNS zones |
+| `spoke` | `modules/spoke` | Spoke VNet, subnets, route table (UDR → Firewall), VNet peering, per-environment Key Vault |
 | `acr` | `modules/acr` | Azure Container Registry (Premium), private endpoint |
 | `aks` | `modules/aks` | AKS cluster, node pools, Log Analytics workspace, kubelet identity |
 | `management` | `modules/management` | Management Group hierarchy, RBAC, Key Vault access policies |
@@ -133,6 +130,9 @@ updates the live backend revision with `az containerapp update`.
    - `staging` — no approvals
    - `production` — add required reviewers for the manual approval gate
 4. Add the environment-scoped Container App variables for each environment.
+   - `ARM_CLIENT_ID`
+   - `ARM_SUBSCRIPTION_ID`
+   - `ARM_TENANT_ID`
 5. Verify production-specific values do not reference `staging` or `nonprod`
    resource names; the workflow now hard-fails on cross-environment targets.
 
@@ -188,9 +188,27 @@ systems that consume them:
 
 ```bash
 terraform output app_insights_connection_string   # APPLICATIONINSIGHTS_CONNECTION_STRING
+terraform output acr_login_server                 # AZURE_ACR_LOGIN_SERVER
+terraform output aks_cluster_name                 # AKS_CLUSTER_NAME
+terraform output resource_group_name              # AKS_RESOURCE_GROUP
+terraform output active_key_vault_uri             # environment-specific Key Vault URI
 terraform output kube_config_command              # optional operator access for AKS troubleshooting
 ```
 
 For backend deploy automation, capture the resulting Container App names,
 resource groups, and public hostnames and store them in the environment-scoped
 GitHub variables documented above.
+
+## Terraform state migration
+
+The remote backend now uses per-environment state keys:
+
+- `backend-config/staging.hcl` → `autoflow-staging.tfstate`
+- `backend-config/production.hcl` → `autoflow-production.tfstate`
+
+To migrate existing shared state safely:
+
+1. Pull the current shared state: `terraform state pull > shared.tfstate`
+2. Reinitialize to the target environment backend: `terraform init -reconfigure -backend-config=backend-config/<env>.hcl`
+3. Push the copied state into the target backend: `terraform state push shared.tfstate`
+4. Run `terraform plan -var="environment=<env>"` and remove resources that belong only to the other environment via `terraform state rm` before the first apply.

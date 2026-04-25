@@ -31,7 +31,7 @@ variable "aks_workload_identity_principal_id" {
 }
 
 variable "key_vault_id" {
-  description = "Resource ID of the hub Key Vault for AKS workload identity RBAC assignment"
+  description = "Resource ID of the active environment Key Vault for AKS workload identity RBAC assignment"
   type        = string
 }
 

@@ -60,14 +60,8 @@ variable "mgmt_subnet_cidr" {
   default     = "10.1.3.0/24"
 }
 
-variable "key_vault_sku" {
-  description = "SKU for Azure Key Vault (standard or premium)"
-  type        = string
-  default     = "standard"
-}
-
 variable "tenant_id" {
-  description = "Azure tenant ID (used for Key Vault)"
+  description = "Azure tenant ID"
   type        = string
 }
 

@@ -2,6 +2,13 @@ name: Test Azure OIDC Auth
 
 on:
   workflow_dispatch:
+    inputs:
+      environment:
+        description: Target environment
+        required: true
+        default: staging
+        type: choice
+        options: [staging, production]
   push:
     branches:
       - main
@@ -13,13 +20,15 @@ permissions:
   contents: read
 
 env:
-  ARM_CLIENT_ID: 1a18157f-bc97-4ad1-a170-1ebd3ae93968
+  ARM_CLIENT_ID: ${{ vars.ARM_CLIENT_ID }}
   ARM_TENANT_ID: b1cb1311-760a-4c88-a778-5d2c227a1f45
+  ARM_SUBSCRIPTION_ID: ${{ vars.ARM_SUBSCRIPTION_ID }}
 
 jobs:
   test-azure-access:
     name: Test Azure Subscription Access
     runs-on: ubuntu-latest
+    environment: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.environment || 'production' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v5
@@ -29,7 +38,7 @@ jobs:
         with:
           client-id: ${{ env.ARM_CLIENT_ID }}
           tenant-id: ${{ env.ARM_TENANT_ID }}
-          subscription-id: ${{ vars.ARM_SUBSCRIPTION_ID || '' }}
+          subscription-id: ${{ env.ARM_SUBSCRIPTION_ID || '' }}
           allow-no-subscriptions: true
 
       - name: List subscriptions

@@ -64,10 +64,18 @@ function resolveFallbackCiamAuthority(): string | null {
 }
 
 export function resolveNativeAuthProxyBaseUrl(): string | null {
-  return (
-    normalizeHttpsUrl(process.env.AUTH_NATIVE_AUTH_PROXY_BASE_URL) ??
-    normalizeHttpsUrl(process.env.AZURE_CIAM_AUTHORITY) ??
-    resolveFallbackCiamAuthority()
+  return resolveNativeAuthProxyBaseUrls()[0] ?? null;
+}
+
+export function resolveNativeAuthProxyBaseUrls(): string[] {
+  return Array.from(
+    new Set(
+      [
+        normalizeHttpsUrl(process.env.AUTH_NATIVE_AUTH_PROXY_BASE_URL),
+        normalizeHttpsUrl(process.env.AZURE_CIAM_AUTHORITY),
+        resolveFallbackCiamAuthority(),
+      ].filter((value): value is string => Boolean(value))
+    )
   );
 }
 
@@ -245,12 +253,6 @@ router.post("/*", async (req, res) => {
     return;
   }
 
-  const upstreamUrl = new URL(`${upstreamBaseUrl}/${proxyPath}`);
-  const queryIndex = req.originalUrl.indexOf("?");
-  if (queryIndex >= 0) {
-    upstreamUrl.search = req.originalUrl.slice(queryIndex);
-  }
-
   const init: RequestInit = {
     method: "POST",
     headers: getForwardHeaders(req),
@@ -263,23 +265,44 @@ router.post("/*", async (req, res) => {
         : JSON.stringify(req.body);
   }
 
-  try {
-    const upstreamResponse = await fetch(upstreamUrl, init);
-    copyResponseHeaders(upstreamResponse.headers, res);
+  const upstreamBaseUrls = resolveNativeAuthProxyBaseUrls();
+  const queryIndex = req.originalUrl.indexOf("?");
+  let lastError: Error | null = null;
 
-    const body = await upstreamResponse.text();
-    res.status(upstreamResponse.status);
-
-    if (!body) {
-      res.end();
-      return;
+  for (const upstreamBase of upstreamBaseUrls) {
+    const upstreamUrl = new URL(`${upstreamBase}/${proxyPath}`);
+    if (queryIndex >= 0) {
+      upstreamUrl.search = req.originalUrl.slice(queryIndex);
     }
 
-    res.send(body);
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "Unknown upstream error";
-    res.status(502).json({ error: `Native auth upstream request failed: ${message}` });
+    try {
+      const upstreamResponse = await fetch(upstreamUrl, init);
+      copyResponseHeaders(upstreamResponse.headers, res);
+
+      const body = await upstreamResponse.text();
+      res.status(upstreamResponse.status);
+
+      if (!body) {
+        res.end();
+        return;
+      }
+
+      res.send(body);
+      return;
+    } catch (error) {
+      lastError = error instanceof Error ? error : new Error("Unknown upstream error");
+      console.warn(
+        `[auth] Native auth upstream fetch failed for ${upstreamUrl.origin}: ${lastError.message}`
+      );
+    }
   }
+
+  if (lastError) {
+    res.status(502).json({ error: `Native auth upstream request failed: ${lastError.message}` });
+    return;
+  }
+
+  res.status(502).json({ error: "Native auth upstream request failed: Unknown upstream error" });
 });
 
 export default router;

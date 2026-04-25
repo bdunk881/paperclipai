@@ -137,6 +137,7 @@ GitHub larger runners with static IPs, or a dedicated VPN/NAT path.
 | `production` | `AZURE_AKS_PRODUCTION_CLUSTER_NAME` | Production AKS cluster name |
 | `production` | `AZURE_AKS_PRODUCTION_RESOURCE_GROUP` | Resource group containing the production AKS cluster |
 | `production` | `AZURE_PRODUCTION_API_HOST` | Public production API hostname used for DNS and cutover tracking |
+| `production` | `AZURE_PRODUCTION_LETSENCRYPT_EMAIL` | ACME account email used by the production cert-manager `ClusterIssuer` |
 
 **Required GitHub environment secrets:**
 

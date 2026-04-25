@@ -335,6 +335,7 @@ jobs:
           AKS_CLUSTER_NAME_OVERRIDE: ${{ vars.AZURE_AKS_PRODUCTION_CLUSTER_NAME }}
           AKS_RESOURCE_GROUP_OVERRIDE: ${{ vars.AZURE_AKS_PRODUCTION_RESOURCE_GROUP }}
           API_HOST_OVERRIDE: ${{ vars.AZURE_PRODUCTION_API_HOST }}
+          LETSENCRYPT_EMAIL_OVERRIDE: ${{ vars.AZURE_PRODUCTION_LETSENCRYPT_EMAIL }}
         run: |
           set -euo pipefail
 
@@ -359,12 +360,14 @@ jobs:
           AKS_CLUSTER_NAME="${AKS_CLUSTER_NAME_OVERRIDE:-}"
           AKS_RESOURCE_GROUP="${AKS_RESOURCE_GROUP_OVERRIDE:-}"
           API_HOST="${API_HOST_OVERRIDE:-api.helloautoflow.com}"
+          LETSENCRYPT_EMAIL="${LETSENCRYPT_EMAIL_OVERRIDE:-}"
           K8S_NAMESPACE="autoflow-production"
           K8S_SECRET_NAME="autoflow-backend-secrets"
           GHCR_IMAGE="${{ env.IMAGE_REPO }}:sha-${{ github.sha }}"
 
           require_nonempty "$AKS_CLUSTER_NAME" "AZURE_AKS_PRODUCTION_CLUSTER_NAME"
           require_nonempty "$AKS_RESOURCE_GROUP" "AZURE_AKS_PRODUCTION_RESOURCE_GROUP"
+          require_nonempty "$LETSENCRYPT_EMAIL" "AZURE_PRODUCTION_LETSENCRYPT_EMAIL"
           reject_nonprod_value "$AKS_CLUSTER_NAME" "AZURE_AKS_PRODUCTION_CLUSTER_NAME"
           reject_nonprod_value "$AKS_RESOURCE_GROUP" "AZURE_AKS_PRODUCTION_RESOURCE_GROUP"
           reject_nonprod_value "$API_HOST" "AZURE_PRODUCTION_API_HOST"
@@ -375,6 +378,7 @@ jobs:
           echo "k8s_namespace=$K8S_NAMESPACE" >> "$GITHUB_OUTPUT"
           echo "k8s_secret_name=$K8S_SECRET_NAME" >> "$GITHUB_OUTPUT"
           echo "ghcr_image=$GHCR_IMAGE" >> "$GITHUB_OUTPUT"
+          echo "letsencrypt_email=$LETSENCRYPT_EMAIL" >> "$GITHUB_OUTPUT"
 
       - name: Login to Azure (OIDC)
         uses: azure/login@v2
@@ -441,36 +445,30 @@ jobs:
             -o yaml \
             | kubectl apply -f -
 
-      - name: Bootstrap production API TLS secret
-        env:
-          PRODUCTION_API_TLS_CERT_PEM: ${{ secrets.AZURE_PRODUCTION_API_TLS_CERT_PEM }}
-          PRODUCTION_API_TLS_KEY_PEM: ${{ secrets.AZURE_PRODUCTION_API_TLS_KEY_PEM }}
+      - name: Install cert-manager
         run: |
           set -euo pipefail
 
-          if [ -z "${PRODUCTION_API_TLS_CERT_PEM}" ]; then
-            echo "::error::Missing required production TLS certificate secret: AZURE_PRODUCTION_API_TLS_CERT_PEM"
+          kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/v1.20.2/cert-manager.yaml
+          kubectl rollout status deployment/cert-manager -n cert-manager --timeout=300s
+          kubectl rollout status deployment/cert-manager-webhook -n cert-manager --timeout=300s
+          kubectl rollout status deployment/cert-manager-cainjector -n cert-manager --timeout=300s
+
+      - name: Apply production ClusterIssuer
+        env:
+          LETSENCRYPT_EMAIL: ${{ steps.target.outputs.letsencrypt_email }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "${LETSENCRYPT_EMAIL}" ]; then
+            echo "::error::Missing required production variable: AZURE_PRODUCTION_LETSENCRYPT_EMAIL"
             exit 1
           fi
 
-          if [ -z "${PRODUCTION_API_TLS_KEY_PEM}" ]; then
-            echo "::error::Missing required production TLS private key secret: AZURE_PRODUCTION_API_TLS_KEY_PEM"
-            exit 1
-          fi
-
-          cert_file=$(mktemp)
-          key_file=$(mktemp)
-          trap 'rm -f "$cert_file" "$key_file"' EXIT
-          printf '%s\n' "${PRODUCTION_API_TLS_CERT_PEM}" > "$cert_file"
-          printf '%s\n' "${PRODUCTION_API_TLS_KEY_PEM}" > "$key_file"
-
-          kubectl create secret tls autoflow-production-api-tls \
-            --cert="$cert_file" \
-            --key="$key_file" \
-            --namespace "${{ steps.target.outputs.k8s_namespace }}" \
-            --dry-run=client \
-            -o yaml \
+          sed "s|__LETSENCRYPT_EMAIL__|${LETSENCRYPT_EMAIL}|g" \
+            k8s/production/cert-manager-clusterissuer.yaml \
             | kubectl apply -f -
+          kubectl wait --for=condition=Ready clusterissuer/letsencrypt-production --timeout=300s
 
       - name: Ensure ingress-nginx controller is installed
         run: |
@@ -556,6 +554,24 @@ jobs:
           if [ -z "$INGRESS_TARGET" ]; then
             echo "::error::ingress-nginx controller did not receive a public endpoint."
             kubectl describe svc ingress-nginx-controller -n ingress-nginx
+            exit 1
+          fi
+
+          CERT_READY="false"
+          for i in $(seq 1 30); do
+            if kubectl wait --for=condition=Ready certificate/autoflow-production-api-tls \
+              -n "$NAMESPACE" --timeout=10s >/dev/null 2>&1; then
+              CERT_READY="true"
+              break
+            fi
+            echo "Waiting for cert-manager to issue autoflow-production-api-tls ($i/30)"
+            sleep 10
+          done
+
+          if [ "$CERT_READY" != "true" ]; then
+            echo "::error::cert-manager did not issue autoflow-production-api-tls."
+            kubectl get certificate,certificaterequest,order,challenge -n "$NAMESPACE" || true
+            kubectl describe certificate autoflow-production-api-tls -n "$NAMESPACE" || true
             exit 1
           fi
 

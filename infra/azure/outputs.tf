@@ -18,9 +18,19 @@ output "hub_firewall_private_ip" {
   value       = module.hub.firewall_private_ip
 }
 
-output "hub_key_vault_uri" {
-  description = "URI of the hub Key Vault"
-  value       = module.hub.key_vault_uri
+output "production_key_vault_uri" {
+  description = "URI of the production spoke Key Vault"
+  value       = module.spoke_prod.key_vault_uri
+}
+
+output "staging_key_vault_uri" {
+  description = "URI of the staging spoke Key Vault"
+  value       = module.spoke_staging.key_vault_uri
+}
+
+output "active_key_vault_uri" {
+  description = "URI of the Key Vault selected by var.environment"
+  value       = local.active_key_vault_uri
 }
 
 output "resource_group_name" {

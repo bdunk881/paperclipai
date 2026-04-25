@@ -26,19 +26,20 @@ permissions:
   id-token: write
 
 env:
-  ARM_CLIENT_ID: 1a18157f-bc97-4ad1-a170-1ebd3ae93968
-  ARM_TENANT_ID: b1cb1311-760a-4c88-a778-5d2c227a1f45
-  ARM_SUBSCRIPTION_ID: 776a7226-e364-4cd9-a3e6-d083641af9ea
   ARM_USE_OIDC: true
   TF_VAR_environment: ${{ inputs.environment }}
-  TF_VAR_tenant_id: b1cb1311-760a-4c88-a778-5d2c227a1f45
   TF_VAR_alert_email: ops@helloautoflow.com
 
 jobs:
   terraform:
     name: Terraform ${{ inputs.action }} (${{ inputs.environment }})
     runs-on: ubuntu-latest
-    environment: production
+    environment: ${{ inputs.environment }}
+    env:
+      ARM_CLIENT_ID: ${{ vars.ARM_CLIENT_ID }}
+      ARM_TENANT_ID: ${{ vars.ARM_TENANT_ID }}
+      ARM_SUBSCRIPTION_ID: ${{ vars.ARM_SUBSCRIPTION_ID }}
+      TF_VAR_tenant_id: ${{ vars.ARM_TENANT_ID }}
     defaults:
       run:
         working-directory: infra/azure
@@ -69,7 +70,7 @@ jobs:
           terraform_version: "~> 1.9"
 
       - name: Terraform init
-        run: terraform init
+        run: terraform init -backend-config="backend-config/${{ inputs.environment }}.hcl"
 
       - name: Terraform plan
         run: |
@@ -90,7 +91,11 @@ jobs:
     runs-on: ubuntu-latest
     needs: terraform
     if: ${{ inputs.action == 'apply' }}
-    environment: production
+    environment: ${{ inputs.environment }}
+    env:
+      ARM_CLIENT_ID: ${{ vars.ARM_CLIENT_ID }}
+      ARM_TENANT_ID: ${{ vars.ARM_TENANT_ID }}
+      ARM_SUBSCRIPTION_ID: ${{ vars.ARM_SUBSCRIPTION_ID }}
     steps:
       - uses: actions/checkout@v5
 

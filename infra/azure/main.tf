@@ -16,7 +16,6 @@ terraform {
     resource_group_name  = "autoflow-tfstate-rg"
     storage_account_name = "autoflowterraformstate"
     container_name       = "tfstate"
-    key                  = "autoflow.tfstate"
   }
 }
 
@@ -69,6 +68,7 @@ module "spoke_prod" {
   environment             = "prod"
   location                = var.location
   resource_group_name     = azurerm_resource_group.main.name
+  tenant_id               = var.tenant_id
   spoke_vnet_cidr         = "10.2.0.0/16"
   aks_subnet_cidr         = "10.2.1.0/24"
   pe_subnet_cidr          = "10.2.2.0/24"
@@ -89,6 +89,7 @@ module "spoke_staging" {
   environment             = "staging"
   location                = var.location
   resource_group_name     = azurerm_resource_group.main.name
+  tenant_id               = var.tenant_id
   spoke_vnet_cidr         = "10.3.0.0/16"
   aks_subnet_cidr         = "10.3.1.0/24"
   pe_subnet_cidr          = "10.3.2.0/24"
@@ -101,11 +102,13 @@ module "spoke_staging" {
   tags                    = local.common_tags
 }
 
-# Select the correct spoke subnet IDs based on the active workspace environment.
+# Select the correct spoke outputs based on the active workspace environment.
 locals {
   active_aks_subnet_id  = var.environment == "production" ? module.spoke_prod[0].aks_subnet_id : module.spoke_staging[0].aks_subnet_id
   active_pe_subnet_id   = var.environment == "production" ? module.spoke_prod[0].pe_subnet_id : module.spoke_staging[0].pe_subnet_id
   active_func_subnet_id = var.environment == "production" ? module.spoke_prod[0].func_subnet_id : module.spoke_staging[0].func_subnet_id
+  active_key_vault_id   = var.environment == "production" ? module.spoke_prod[0].key_vault_id : module.spoke_staging[0].key_vault_id
+  active_key_vault_uri  = var.environment == "production" ? module.spoke_prod[0].key_vault_uri : module.spoke_staging[0].key_vault_uri
   active_vnet_id        = var.environment == "production" ? module.spoke_prod[0].spoke_vnet_id : module.spoke_staging[0].spoke_vnet_id
 }
 
@@ -148,7 +151,7 @@ module "management" {
   devops_sp_object_id                = var.devops_sp_object_id
   monitoring_principal_ids           = var.monitoring_principal_ids
   aks_workload_identity_principal_id = module.aks.kubelet_identity_object_id
-  key_vault_id                       = module.hub.key_vault_id
+  key_vault_id                       = local.active_key_vault_id
   tags                               = local.common_tags
 }
 

@@ -9,6 +9,7 @@ locals {
 
   # Fall back to direct internet egress when the hub firewall is intentionally disabled.
   default_route_next_hop_type = var.hub_firewall_private_ip != null ? "VirtualAppliance" : "Internet"
+  key_vault_name              = lower(substr(replace("${var.prefix}-${var.environment}-kv", "-", ""), 0, 24))
 }
 
 # ── Log Analytics workspace for spoke NSG flow log traffic analytics ──────────
@@ -243,6 +244,21 @@ resource "azurerm_storage_account" "flow_logs" {
   account_tier             = "Standard"
   account_replication_type = "LRS"
   min_tls_version          = "TLS1_2"
+
+  tags = var.tags
+}
+
+# ── Key Vault ────────────────────────────────────────────────────────────────
+
+resource "azurerm_key_vault" "spoke" {
+  name                       = local.key_vault_name
+  location                   = var.location
+  resource_group_name        = var.resource_group_name
+  tenant_id                  = var.tenant_id
+  sku_name                   = var.key_vault_sku
+  enable_rbac_authorization  = true
+  soft_delete_retention_days = 90
+  purge_protection_enabled   = true
 
   tags = var.tags
 }

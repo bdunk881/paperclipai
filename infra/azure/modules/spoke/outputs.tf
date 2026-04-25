@@ -47,3 +47,13 @@ output "func_route_table_id" {
   description = "Resource ID of the route table associated with the functions subnet"
   value       = azurerm_route_table.func.id
 }
+
+output "key_vault_id" {
+  description = "Resource ID of the spoke Key Vault"
+  value       = azurerm_key_vault.spoke.id
+}
+
+output "key_vault_uri" {
+  description = "URI of the spoke Key Vault"
+  value       = azurerm_key_vault.spoke.vault_uri
+}

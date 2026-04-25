@@ -24,7 +24,7 @@ test("preview smoke: login route renders native auth form and accepts credential
   await expect(signInSubmit).toBeVisible();
   expect(envConfigWarnings).toEqual([]);
 
-  // Verify core form fields are present.
-  await expect(page.getByPlaceholder(/email/i)).toBeVisible();
-  await expect(page.getByPlaceholder(/password/i)).toBeVisible();
+  // Verify the native auth form fields render using their accessible labels.
+  await expect(page.getByLabel(/work email/i)).toBeVisible();
+  await expect(page.getByLabel(/^password$/i)).toBeVisible();
 });

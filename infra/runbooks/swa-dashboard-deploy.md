@@ -23,8 +23,7 @@ Optional staging overrides:
 ## Trigger model
 - Push to `master` touching `dashboard/**` triggers production SWA deploy.
 - Push to `staging` touching `dashboard/**` triggers staging SWA deploy.
-- Pull requests targeting `master` create/update preview environments.
-- Closing a PR tears down the preview environment.
+- Pull request previews stay on the Vercel-based dashboard preview workflow; `deploy-swa.yml` is branch-deploy only.
 
 ## Provision the SWA resources via IaC
 

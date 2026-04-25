@@ -191,7 +191,7 @@ resource "azurerm_management_group_policy_assignment" "defender_containers" {
   name                 = "defender-containers"
   display_name         = "Microsoft Defender for Containers should be enabled"
   description          = "Audits subscriptions where Microsoft Defender for Containers is not enabled."
-  policy_definition_id = "/providers/Microsoft.Authorization/policyDefinitions/1c988dd4-ced4-4da8-b9b3-7af0ba21b35a"
+  policy_definition_id = "/providers/Microsoft.Authorization/policyDefinitions/1c988dd6-ade4-430f-a608-2a3e5b0a6d38"
   management_group_id  = var.management_group_id
 
   enforce = false

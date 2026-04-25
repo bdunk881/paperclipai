@@ -54,17 +54,7 @@ resource "azurerm_security_center_contact" "main" {
   alerts_to_admins = true
 }
 
-# ── 3. Auto-Provisioning ──────────────────────────────────────────────────────
-#
-# Enables automatic deployment of the MMA/AMA monitoring agent to all VMs in
-# the subscription. Required for Defender for Servers and VM-level threat
-# detection to function without manual agent installation.
-
-resource "azurerm_security_center_auto_provisioning" "main" {
-  auto_provision = "On"
-}
-
-# ── 4. Workspace Association ──────────────────────────────────────────────────
+# ── 3. Workspace Association ──────────────────────────────────────────────────
 #
 # Routes Defender for Cloud raw security data (alerts, assessments, inventory)
 # to the central Log Analytics workspace. This enables KQL hunting queries and
@@ -75,7 +65,7 @@ resource "azurerm_security_center_workspace" "main" {
   workspace_id = var.log_analytics_workspace_id
 }
 
-# ── 5. Diagnostic Setting ─────────────────────────────────────────────────────
+# ── 4. Diagnostic Setting ─────────────────────────────────────────────────────
 #
 # Exports the subscription-level "Security" activity log category to the
 # central Log Analytics workspace. This captures control-plane security events

@@ -10,6 +10,10 @@ terraform {
       source  = "hashicorp/azuread"
       version = "~> 2.50"
     }
+    random = {
+      source  = "hashicorp/random"
+      version = "~> 3.6"
+    }
   }
 
   backend "azurerm" {
@@ -32,6 +36,14 @@ provider "azurerm" {
 }
 
 provider "azuread" {}
+
+resource "random_string" "ciam_subdomain_suffix" {
+  length  = 6
+  lower   = true
+  numeric = true
+  special = false
+  upper   = false
+}
 
 # ── Resource group ──────────────────────────────────────────────────────────
 
@@ -79,6 +91,8 @@ module "spoke_prod" {
   hub_resource_group_name = azurerm_resource_group.main.name
   hub_firewall_private_ip = module.hub.firewall_private_ip
   tags                    = local.common_tags
+
+  depends_on = [module.hub]
 }
 
 module "spoke_staging" {
@@ -99,6 +113,8 @@ module "spoke_staging" {
   hub_resource_group_name = azurerm_resource_group.main.name
   hub_firewall_private_ip = module.hub.firewall_private_ip
   tags                    = local.common_tags
+
+  depends_on = [module.hub]
 }
 
 # Select the correct spoke subnet IDs based on the active workspace environment.
@@ -120,6 +136,12 @@ module "acr" {
   private_dns_zone_id = module.hub.private_dns_zone_acr_id
   vnet_id             = local.active_vnet_id
   tags                = local.common_tags
+
+  depends_on = [
+    module.hub,
+    module.spoke_prod,
+    module.spoke_staging,
+  ]
 }
 
 module "aks" {
@@ -143,13 +165,14 @@ module "aks" {
 module "management" {
   source = "./modules/management"
 
-  prefix                             = var.prefix
-  tenant_id                          = var.tenant_id
-  devops_sp_object_id                = var.devops_sp_object_id
-  monitoring_principal_ids           = var.monitoring_principal_ids
-  aks_workload_identity_principal_id = module.aks.kubelet_identity_object_id
-  key_vault_id                       = module.hub.key_vault_id
-  tags                               = local.common_tags
+  prefix                                  = var.prefix
+  tenant_id                               = var.tenant_id
+  existing_autoflow_management_group_name = var.existing_autoflow_management_group_name
+  devops_sp_object_id                     = var.devops_sp_object_id
+  monitoring_principal_ids                = var.monitoring_principal_ids
+  aks_workload_identity_principal_id      = module.aks.kubelet_identity_object_id
+  key_vault_id                            = module.hub.key_vault_id
+  tags                                    = local.common_tags
 }
 
 module "monitoring" {
@@ -198,7 +221,7 @@ module "entra_ciam" {
   environment           = var.environment
   location              = var.location
   resource_group_name   = azurerm_resource_group.main.name
-  ciam_tenant_subdomain = var.ciam_tenant_subdomain
+  ciam_tenant_subdomain = "${var.ciam_tenant_subdomain}${random_string.ciam_subdomain_suffix.result}"
   spa_redirect_uris     = var.spa_redirect_uris
   spa_logout_uris       = var.spa_logout_uris
   tags                  = local.common_tags

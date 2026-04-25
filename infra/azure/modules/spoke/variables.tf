@@ -82,6 +82,12 @@ variable "network_watcher_rg" {
   default     = "NetworkWatcherRG"
 }
 
+variable "enable_nsg_flow_logs" {
+  description = "Whether to create NSG flow logs. Disabled by default because Azure blocks creation of new NSG flow logs."
+  type        = bool
+  default     = false
+}
+
 variable "tags" {
   description = "Tags to apply to all resources"
   type        = map(string)

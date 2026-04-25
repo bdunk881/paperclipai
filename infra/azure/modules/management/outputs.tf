@@ -1,6 +1,6 @@
 output "autoflow_mg_id" {
   description = "Resource ID of the top-level autoflow management group"
-  value       = azurerm_management_group.autoflow.id
+  value       = local.autoflow_mg_id
 }
 
 output "platform_mg_id" {

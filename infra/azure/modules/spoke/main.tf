@@ -5,7 +5,7 @@ locals {
   network_watcher_name = coalesce(var.network_watcher_name, "NetworkWatcher_${var.location}")
 
   # Storage account names: lowercase alphanumeric, max 24 chars.
-  flow_log_sa_name = lower(replace("${var.prefix}${var.environment}flow", "-", ""))
+  flow_log_sa_name = lower(replace("${var.prefix}${var.environment}flowlogs", "-", ""))
 
   # Fall back to direct internet egress when the hub firewall is intentionally disabled.
   default_route_next_hop_type = var.hub_firewall_private_ip != null ? "VirtualAppliance" : "Internet"
@@ -250,6 +250,7 @@ resource "azurerm_storage_account" "flow_logs" {
 # ── NSG Flow Logs (v2 + Traffic Analytics → Log Analytics) ───────────────────
 
 resource "azurerm_network_watcher_flow_log" "aks" {
+  count                     = var.enable_nsg_flow_logs ? 1 : 0
   name                      = "${var.prefix}-${var.environment}-spoke-aks-flowlog"
   network_watcher_name      = local.network_watcher_name
   resource_group_name       = var.network_watcher_rg
@@ -275,6 +276,7 @@ resource "azurerm_network_watcher_flow_log" "aks" {
 }
 
 resource "azurerm_network_watcher_flow_log" "pe" {
+  count                     = var.enable_nsg_flow_logs ? 1 : 0
   name                      = "${var.prefix}-${var.environment}-spoke-pe-flowlog"
   network_watcher_name      = local.network_watcher_name
   resource_group_name       = var.network_watcher_rg
@@ -300,6 +302,7 @@ resource "azurerm_network_watcher_flow_log" "pe" {
 }
 
 resource "azurerm_network_watcher_flow_log" "svc" {
+  count                     = var.enable_nsg_flow_logs ? 1 : 0
   name                      = "${var.prefix}-${var.environment}-spoke-svc-flowlog"
   network_watcher_name      = local.network_watcher_name
   resource_group_name       = var.network_watcher_rg
@@ -325,6 +328,7 @@ resource "azurerm_network_watcher_flow_log" "svc" {
 }
 
 resource "azurerm_network_watcher_flow_log" "func" {
+  count                     = var.enable_nsg_flow_logs ? 1 : 0
   name                      = "${var.prefix}-${var.environment}-spoke-func-flowlog"
   network_watcher_name      = local.network_watcher_name
   resource_group_name       = var.network_watcher_rg
@@ -474,6 +478,11 @@ resource "azurerm_private_dns_zone_virtual_network_link" "acr" {
   registration_enabled  = false
 
   tags = var.tags
+
+  depends_on = [
+    azurerm_subnet_route_table_association.pe,
+    azurerm_subnet_network_security_group_association.pe,
+  ]
 }
 
 resource "azurerm_private_dns_zone_virtual_network_link" "keyvault" {

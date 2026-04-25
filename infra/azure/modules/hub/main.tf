@@ -1,3 +1,7 @@
+locals {
+  hub_env_code = var.environment == "production" ? "prod" : var.environment
+}
+
 # ── Hub VNet ──────────────────────────────────────────────────────────────────
 
 resource "azurerm_virtual_network" "hub" {
@@ -351,7 +355,7 @@ resource "azurerm_bastion_host" "hub" {
 # ── Azure Key Vault ───────────────────────────────────────────────────────────
 
 resource "azurerm_key_vault" "hub" {
-  name                       = "${var.prefix}-hub-kv"
+  name                       = "${var.prefix}-${local.hub_env_code}-hub-kv"
   location                   = var.location
   resource_group_name        = var.resource_group_name
   tenant_id                  = var.tenant_id

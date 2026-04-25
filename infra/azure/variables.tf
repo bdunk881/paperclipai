@@ -45,6 +45,12 @@ variable "devops_sp_object_id" {
   type        = string
 }
 
+variable "existing_autoflow_management_group_name" {
+  description = "Existing Autoflow management group name/ID to reuse instead of creating a new top-level group under tenant root"
+  type        = string
+  default     = null
+}
+
 variable "monitoring_principal_ids" {
   description = "Object IDs of monitoring agents; granted Monitoring Reader at the autoflow management group"
   type        = list(string)
@@ -56,7 +62,7 @@ variable "monitoring_principal_ids" {
 variable "kubernetes_version" {
   description = "Kubernetes version for the AKS cluster"
   type        = string
-  default     = "1.29"
+  default     = "1.35.1"
 }
 
 variable "node_count" {
@@ -68,7 +74,7 @@ variable "node_count" {
 variable "node_vm_size" {
   description = "VM size for AKS nodes"
   type        = string
-  default     = "Standard_B2s"
+  default     = "Standard_D2as_v7"
 }
 
 variable "min_node_count" {
@@ -96,7 +102,7 @@ variable "api_server_authorized_ips" {
 variable "ciam_tenant_subdomain" {
   description = "Subdomain for the CIAM tenant (e.g. 'autoflow' → autoflow.ciamlogin.com). Must be globally unique."
   type        = string
-  default     = "autoflow"
+  default     = "autoflowciam"
 }
 
 variable "spa_redirect_uris" {

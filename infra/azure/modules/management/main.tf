@@ -18,22 +18,33 @@
 # ── Tenant Root Group reference ───────────────────────────────────────────────
 
 data "azurerm_management_group" "root" {
+  count = var.existing_autoflow_management_group_name == null ? 1 : 0
   # The tenant root group ID is always the tenant ID.
   name = var.tenant_id
+}
+
+data "azurerm_management_group" "autoflow_existing" {
+  count = var.existing_autoflow_management_group_name != null ? 1 : 0
+  name  = var.existing_autoflow_management_group_name
+}
+
+locals {
+  autoflow_mg_id = var.existing_autoflow_management_group_name != null ? data.azurerm_management_group.autoflow_existing[0].id : azurerm_management_group.autoflow[0].id
 }
 
 # ── Top-level: autoflow ───────────────────────────────────────────────────────
 
 resource "azurerm_management_group" "autoflow" {
-  display_name               = "${var.prefix}"
-  parent_management_group_id = data.azurerm_management_group.root.id
+  count                      = var.existing_autoflow_management_group_name == null ? 1 : 0
+  display_name               = var.prefix
+  parent_management_group_id = data.azurerm_management_group.root[0].id
 }
 
 # ── Platform subtree ──────────────────────────────────────────────────────────
 
 resource "azurerm_management_group" "platform" {
   display_name               = "${var.prefix}-platform"
-  parent_management_group_id = azurerm_management_group.autoflow.id
+  parent_management_group_id = local.autoflow_mg_id
 }
 
 resource "azurerm_management_group" "connectivity" {
@@ -55,7 +66,7 @@ resource "azurerm_management_group" "management" {
 
 resource "azurerm_management_group" "landing_zones" {
   display_name               = "${var.prefix}-landing-zones"
-  parent_management_group_id = azurerm_management_group.autoflow.id
+  parent_management_group_id = local.autoflow_mg_id
 }
 
 resource "azurerm_management_group" "lz_production" {
@@ -94,7 +105,7 @@ resource "azurerm_role_assignment" "devops_sp_lz_dev" {
 resource "azurerm_role_assignment" "monitoring_reader" {
   for_each = toset(var.monitoring_principal_ids)
 
-  scope                = azurerm_management_group.autoflow.id
+  scope                = local.autoflow_mg_id
   role_definition_name = "Monitoring Reader"
   principal_id         = each.value
 }

@@ -8,6 +8,12 @@ variable "tenant_id" {
   type        = string
 }
 
+variable "existing_autoflow_management_group_name" {
+  description = "Existing Autoflow management group name/ID to reuse instead of creating a new top-level group under tenant root"
+  type        = string
+  default     = null
+}
+
 # ── DevOps Pipeline Service Principal ────────────────────────────────────────
 
 variable "devops_sp_object_id" {

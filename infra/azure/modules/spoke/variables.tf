@@ -40,6 +40,11 @@ variable "svc_subnet_cidr" {
   type        = string
 }
 
+variable "func_subnet_cidr" {
+  description = "CIDR block for the functions / app-services subnet"
+  type        = string
+}
+
 # ── Hub references ────────────────────────────────────────────────────────────
 
 variable "hub_vnet_id" {
@@ -55,6 +60,12 @@ variable "hub_vnet_name" {
 variable "hub_resource_group_name" {
   description = "Resource group where hub VNet and private DNS zones reside"
   type        = string
+}
+
+variable "hub_firewall_private_ip" {
+  description = "Optional Azure Firewall private IP for forced egress routing"
+  type        = string
+  default     = null
 }
 
 # ── Network Watcher ───────────────────────────────────────────────────────────

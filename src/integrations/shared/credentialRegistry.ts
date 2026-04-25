@@ -15,6 +15,8 @@ interface SecretVaultOptions {
   salts?: string[];
 }
 
+const EPHEMERAL_KEY_ALLOWED_ENVS = new Set(["development", "test"]);
+
 function parseEnvList(value: string | undefined): string[] {
   if (!value) {
     return [];
@@ -45,6 +47,19 @@ function deriveKeys(seeds: string[], salts: string[]): Buffer[] {
   return keys;
 }
 
+function getRuntimeEnvironment(): string {
+  return (process.env.NODE_ENV ?? "development").trim().toLowerCase();
+}
+
+function createMissingEncryptionKeyError(currentKeyEnvVars: string[]): Error {
+  const runtimeEnvironment = getRuntimeEnvironment();
+  return new Error(
+    `Missing connector credential encryption key for NODE_ENV=${runtimeEnvironment}. ` +
+      `Set one of ${currentKeyEnvVars.join(", ")} before starting the server. ` +
+      "Ephemeral random fallback is only allowed in development or test."
+  );
+}
+
 export class SecretVault {
   private readonly primaryKey: Buffer;
 
@@ -58,9 +73,14 @@ export class SecretVault {
     );
 
     const primarySeed = currentSeeds[0];
-    this.primaryKey = primarySeed
-      ? deriveKeys([primarySeed], [salts[0]])[0]
-      : randomBytes(32);
+    if (!primarySeed) {
+      const runtimeEnvironment = getRuntimeEnvironment();
+      if (!EPHEMERAL_KEY_ALLOWED_ENVS.has(runtimeEnvironment)) {
+        throw createMissingEncryptionKeyError(options.currentKeyEnvVars);
+      }
+    }
+
+    this.primaryKey = primarySeed ? deriveKeys([primarySeed], [salts[0]])[0] : randomBytes(32);
 
     const candidateKeys = deriveKeys([...currentSeeds, ...previousSeeds], salts);
     this.candidateKeys = candidateKeys.length > 0 ? candidateKeys : [this.primaryKey];
@@ -143,6 +163,20 @@ interface PersistedCredentialRegistryRow {
   record_data: unknown;
 }
 
+function isMissingCredentialRegistryTableError(error: unknown): boolean {
+  if (!(error instanceof Error)) {
+    return false;
+  }
+
+  const pgError = error as Error & { code?: string };
+  if (pgError.code === "42P01") {
+    return true;
+  }
+
+  const message = error.message.toLowerCase();
+  return message.includes("connector_credentials") && message.includes("does not exist");
+}
+
 function mergeStoredRecords<TStored extends CredentialRegistryRecord>(
   local: TStored[],
   persisted: TStored[],
@@ -215,10 +249,22 @@ export class CredentialRegistry<TStored extends CredentialRegistryRecord, TPubli
       return local;
     }
 
-    const result = await queryPostgres<PersistedCredentialRegistryRow>(
-      "SELECT id, user_id, record_data FROM connector_credentials WHERE service = $1 AND id = $2",
-      [this.service, id]
-    );
+    let result;
+    try {
+      result = await queryPostgres<PersistedCredentialRegistryRow>(
+        "SELECT id, user_id, record_data FROM connector_credentials WHERE service = $1 AND id = $2",
+        [this.service, id]
+      );
+    } catch (error) {
+      if (isMissingCredentialRegistryTableError(error)) {
+        console.warn(
+          `[credentialRegistry:${this.service}] connector_credentials table unavailable; using in-memory credentials only`
+        );
+        return local;
+      }
+      throw error;
+    }
+
     const row = result.rows[0];
     return row ? this.mapPersistedRecord(row) : null;
   }
@@ -292,10 +338,22 @@ export class CredentialRegistry<TStored extends CredentialRegistryRecord, TPubli
       return local.sort((a, b) => this.sortValue(b).localeCompare(this.sortValue(a)));
     }
 
-    const result = await queryPostgres<PersistedCredentialRegistryRow>(
-      "SELECT id, user_id, record_data FROM connector_credentials WHERE service = $1 ORDER BY created_at DESC",
-      [this.service]
-    );
+    let result;
+    try {
+      result = await queryPostgres<PersistedCredentialRegistryRow>(
+        "SELECT id, user_id, record_data FROM connector_credentials WHERE service = $1 ORDER BY created_at DESC",
+        [this.service]
+      );
+    } catch (error) {
+      if (isMissingCredentialRegistryTableError(error)) {
+        console.warn(
+          `[credentialRegistry:${this.service}] connector_credentials table unavailable; using in-memory credentials only`
+        );
+        return local.sort((a, b) => this.sortValue(b).localeCompare(this.sortValue(a)));
+      }
+      throw error;
+    }
+
     const persisted = result.rows
       .map((row: PersistedCredentialRegistryRow) => this.mapPersistedRecord(row))
       .filter((record: TStored) => (includeRevoked ? true : !record.revokedAt));

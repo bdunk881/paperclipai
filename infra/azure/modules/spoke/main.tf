@@ -6,6 +6,9 @@ locals {
 
   # Storage account names: lowercase alphanumeric, max 24 chars.
   flow_log_sa_name = lower(replace("${var.prefix}${var.environment}flow", "-", ""))
+
+  # Fall back to direct internet egress when the hub firewall is intentionally disabled.
+  default_route_next_hop_type = var.hub_firewall_private_ip != null ? "VirtualAppliance" : "Internet"
 }
 
 # ── Log Analytics workspace for spoke NSG flow log traffic analytics ──────────
@@ -56,6 +59,13 @@ resource "azurerm_subnet" "svc" {
   resource_group_name  = var.resource_group_name
   virtual_network_name = azurerm_virtual_network.spoke.name
   address_prefixes     = [var.svc_subnet_cidr]
+}
+
+resource "azurerm_subnet" "func" {
+  name                 = "func-subnet"
+  resource_group_name  = var.resource_group_name
+  virtual_network_name = azurerm_virtual_network.spoke.name
+  address_prefixes     = [var.func_subnet_cidr]
 }
 
 # ── Network Security Groups ───────────────────────────────────────────────────
@@ -170,6 +180,38 @@ resource "azurerm_network_security_group" "svc" {
   tags = var.tags
 }
 
+resource "azurerm_network_security_group" "func" {
+  name                = "${var.prefix}-${var.environment}-spoke-func-nsg"
+  location            = var.location
+  resource_group_name = var.resource_group_name
+
+  security_rule {
+    name                       = "allow-vnet-inbound"
+    priority                   = 100
+    direction                  = "Inbound"
+    access                     = "Allow"
+    protocol                   = "*"
+    source_port_range          = "*"
+    destination_port_range     = "*"
+    source_address_prefix      = "VirtualNetwork"
+    destination_address_prefix = "*"
+  }
+
+  security_rule {
+    name                       = "deny-internet-inbound"
+    priority                   = 4000
+    direction                  = "Inbound"
+    access                     = "Deny"
+    protocol                   = "*"
+    source_port_range          = "*"
+    destination_port_range     = "*"
+    source_address_prefix      = "Internet"
+    destination_address_prefix = "*"
+  }
+
+  tags = var.tags
+}
+
 # ── NSG → Subnet associations ─────────────────────────────────────────────────
 
 resource "azurerm_subnet_network_security_group_association" "aks" {
@@ -185,6 +227,11 @@ resource "azurerm_subnet_network_security_group_association" "pe" {
 resource "azurerm_subnet_network_security_group_association" "svc" {
   subnet_id                 = azurerm_subnet.svc.id
   network_security_group_id = azurerm_network_security_group.svc.id
+}
+
+resource "azurerm_subnet_network_security_group_association" "func" {
+  subnet_id                 = azurerm_subnet.func.id
+  network_security_group_id = azurerm_network_security_group.func.id
 }
 
 # ── Storage account for NSG flow log retention ────────────────────────────────
@@ -277,6 +324,31 @@ resource "azurerm_network_watcher_flow_log" "svc" {
   tags = var.tags
 }
 
+resource "azurerm_network_watcher_flow_log" "func" {
+  name                      = "${var.prefix}-${var.environment}-spoke-func-flowlog"
+  network_watcher_name      = local.network_watcher_name
+  resource_group_name       = var.network_watcher_rg
+  network_security_group_id = azurerm_network_security_group.func.id
+  storage_account_id        = azurerm_storage_account.flow_logs.id
+  enabled                   = true
+  version                   = 2
+
+  retention_policy {
+    enabled = true
+    days    = 30
+  }
+
+  traffic_analytics {
+    enabled               = true
+    workspace_id          = azurerm_log_analytics_workspace.spoke.workspace_id
+    workspace_region      = var.location
+    workspace_resource_id = azurerm_log_analytics_workspace.spoke.id
+    interval_in_minutes   = 10
+  }
+
+  tags = var.tags
+}
+
 # ── Route Tables + UDRs (default internet egress) ────────────────────────────
 # Firewall force-tunneling has been removed to avoid always-on hub firewall
 # spend when firewall is disabled in the hub module.
@@ -288,9 +360,10 @@ resource "azurerm_route_table" "aks" {
   disable_bgp_route_propagation = true
 
   route {
-    name           = "default-to-internet"
-    address_prefix = "0.0.0.0/0"
-    next_hop_type  = "Internet"
+    name                   = "default-to-internet"
+    address_prefix         = "0.0.0.0/0"
+    next_hop_type          = local.default_route_next_hop_type
+    next_hop_in_ip_address = var.hub_firewall_private_ip
   }
 
   tags = var.tags
@@ -303,9 +376,10 @@ resource "azurerm_route_table" "pe" {
   disable_bgp_route_propagation = true
 
   route {
-    name           = "default-to-internet"
-    address_prefix = "0.0.0.0/0"
-    next_hop_type  = "Internet"
+    name                   = "default-to-internet"
+    address_prefix         = "0.0.0.0/0"
+    next_hop_type          = local.default_route_next_hop_type
+    next_hop_in_ip_address = var.hub_firewall_private_ip
   }
 
   tags = var.tags
@@ -318,9 +392,26 @@ resource "azurerm_route_table" "svc" {
   disable_bgp_route_propagation = true
 
   route {
-    name           = "default-to-internet"
-    address_prefix = "0.0.0.0/0"
-    next_hop_type  = "Internet"
+    name                   = "default-to-internet"
+    address_prefix         = "0.0.0.0/0"
+    next_hop_type          = local.default_route_next_hop_type
+    next_hop_in_ip_address = var.hub_firewall_private_ip
+  }
+
+  tags = var.tags
+}
+
+resource "azurerm_route_table" "func" {
+  name                          = "${var.prefix}-${var.environment}-spoke-func-rt"
+  location                      = var.location
+  resource_group_name           = var.resource_group_name
+  disable_bgp_route_propagation = true
+
+  route {
+    name                   = "default-to-internet"
+    address_prefix         = "0.0.0.0/0"
+    next_hop_type          = local.default_route_next_hop_type
+    next_hop_in_ip_address = var.hub_firewall_private_ip
   }
 
   tags = var.tags
@@ -341,6 +432,11 @@ resource "azurerm_subnet_route_table_association" "pe" {
 resource "azurerm_subnet_route_table_association" "svc" {
   subnet_id      = azurerm_subnet.svc.id
   route_table_id = azurerm_route_table.svc.id
+}
+
+resource "azurerm_subnet_route_table_association" "func" {
+  subnet_id      = azurerm_subnet.func.id
+  route_table_id = azurerm_route_table.func.id
 }
 
 # ── VNet Peering — bidirectional ──────────────────────────────────────────────

@@ -34,4 +34,8 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
     CMD wget -qO- "http://127.0.0.1:${PORT}/health" >/dev/null || exit 1
 
 EXPOSE 3000
+
+RUN chown -R 1000:1000 /app
+USER 1000
+
 CMD ["node", "dist/index.js"]

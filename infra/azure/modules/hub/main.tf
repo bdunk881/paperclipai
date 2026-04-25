@@ -351,14 +351,15 @@ resource "azurerm_bastion_host" "hub" {
 # ── Azure Key Vault ───────────────────────────────────────────────────────────
 
 resource "azurerm_key_vault" "hub" {
-  name                       = "${var.prefix}-hub-kv"
-  location                   = var.location
-  resource_group_name        = var.resource_group_name
-  tenant_id                  = var.tenant_id
-  sku_name                   = var.key_vault_sku
-  enable_rbac_authorization  = true
-  soft_delete_retention_days = 90
-  purge_protection_enabled   = true
+  name                          = "${var.prefix}-hub-kv"
+  location                      = var.location
+  resource_group_name           = var.resource_group_name
+  tenant_id                     = var.tenant_id
+  sku_name                      = var.key_vault_sku
+  enable_rbac_authorization     = true
+  soft_delete_retention_days    = 90
+  purge_protection_enabled      = true
+  public_network_access_enabled = false
 
   tags = var.tags
 }

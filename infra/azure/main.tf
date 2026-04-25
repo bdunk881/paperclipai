@@ -16,7 +16,6 @@ terraform {
     resource_group_name  = "autoflow-tfstate-rg"
     storage_account_name = "autoflowterraformstate"
     container_name       = "tfstate"
-    key                  = "autoflow.tfstate"
   }
 }
 

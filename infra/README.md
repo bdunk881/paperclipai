@@ -44,10 +44,14 @@ Add these in the repo settings -> Secrets and variables -> Actions:
 
 | Secret | Description |
 |---|---|
-| `AZURE_STATIC_WEB_APPS_API_TOKEN` | Azure Static Web Apps deploy token |
-| `VITE_API_BASE_URL` | Base URL for backend API (for example `https://api.autoflowapp.ai`) |
-| `VITE_AZURE_CLIENT_ID` | Entra External ID app registration client ID |
-| `VITE_AZURE_TENANT_SUBDOMAIN` | Tenant prefix before `.ciamlogin.com` (for example `autoflowciam`) |
+| `AZURE_STATIC_WEB_APPS_API_TOKEN` | Production Azure Static Web Apps deploy token (`app.helloautoflow.com`) |
+| `AZURE_STATIC_WEB_APPS_STAGING_API_TOKEN` | Staging Azure Static Web Apps deploy token (`staging.app.helloautoflow.com`) |
+| `VITE_API_BASE_URL` | Production backend API base URL (for example `https://api.autoflowapp.ai`) |
+| `VITE_API_BASE_URL_STAGING` | Optional staging backend API base URL; falls back to `VITE_API_BASE_URL` |
+| `VITE_AZURE_CLIENT_ID` | Production Entra External ID app registration client ID |
+| `VITE_AZURE_CLIENT_ID_STAGING` | Optional staging Entra client ID; falls back to `VITE_AZURE_CLIENT_ID` |
+| `VITE_AZURE_TENANT_SUBDOMAIN` | Production tenant prefix before `.ciamlogin.com` (for example `autoflowciam`) |
+| `VITE_AZURE_TENANT_SUBDOMAIN_STAGING` | Optional staging tenant prefix; falls back to `VITE_AZURE_TENANT_SUBDOMAIN` |
 | `BRANCH_ADMIN_TOKEN` | Admin-scoped GitHub token used by `enforce-branch-protection.yml` |
 
 The SWA workflow maps `VITE_AZURE_CIAM_CLIENT_ID` from `VITE_AZURE_CLIENT_ID` at build time.
@@ -65,8 +69,9 @@ Runtime environment variables required in the Vercel dashboard project:
 ## Daily operations
 
 - **Deploy backend:** merge to `main` — GitHub Actions builds Docker images, pushes to ghcr.io, deploys to Azure.
-- **Preview dashboard:** pull requests targeting `master` with `dashboard/` changes create/update SWA preview environments.
-- **Deploy dashboard production:** push to `master` with `dashboard/` changes — GitHub Actions deploys to Azure Static Web Apps production.
+- **Preview dashboard:** non-production dashboard branches use `.github/workflows/dashboard-staging-gate.yml` to create Vercel preview deployments.
+- **Deploy dashboard production:** push to `master` with `dashboard/` changes — GitHub Actions deploys to the production SWA host.
+- **Deploy dashboard staging:** push to `staging` with `dashboard/` changes — GitHub Actions deploys to the staging SWA host.
 - **Enforce branch protection:** run `enforce-branch-protection.yml` to require PR reviews plus CI gate(s) on `main`/`master`. Default required check is `Docker Build Check` with strict up-to-date enforcement.
 - **Rollback:** redeploy a previous image tag (backend) or follow `infra/runbooks/swa-dashboard-deploy.md` for dashboard DNS/rollback.
 
@@ -86,6 +91,10 @@ Runtime environment variables required in the Vercel dashboard project:
 ## DNS
 
 Configure DNS records to point to Azure per environment (dashboard uses SWA; landing uses Vercel).
+Recommended dashboard host split:
+
+- `app.helloautoflow.com` -> production SWA
+- `staging.app.helloautoflow.com` -> staging SWA
 
 ## QA Integration Evidence
 

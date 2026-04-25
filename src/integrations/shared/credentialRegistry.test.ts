@@ -11,8 +11,10 @@ interface TestCredential {
 describe("CredentialRegistry", () => {
   const originalCurrent = process.env.TEST_CONNECTOR_KEY;
   const originalPrevious = process.env.TEST_CONNECTOR_PREVIOUS;
+  const originalNodeEnv = process.env.NODE_ENV;
 
   beforeEach(() => {
+    process.env.NODE_ENV = "test";
     process.env.TEST_CONNECTOR_KEY = "current-key";
     process.env.TEST_CONNECTOR_PREVIOUS = "previous-key";
   });
@@ -28,6 +30,12 @@ describe("CredentialRegistry", () => {
       delete process.env.TEST_CONNECTOR_PREVIOUS;
     } else {
       process.env.TEST_CONNECTOR_PREVIOUS = originalPrevious;
+    }
+
+    if (originalNodeEnv === undefined) {
+      delete process.env.NODE_ENV;
+    } else {
+      process.env.NODE_ENV = originalNodeEnv;
     }
   });
 
@@ -72,6 +80,40 @@ describe("CredentialRegistry", () => {
     const ciphertext = previousVault.encrypt("rotating-secret");
     expect(rotatingVault.decrypt(ciphertext)).toBe("rotating-secret");
   });
+
+  it.each(["staging", "production"])(
+    "fails fast when no encryption key is configured in %s",
+    (nodeEnv) => {
+      delete process.env.TEST_CONNECTOR_KEY;
+      process.env.NODE_ENV = nodeEnv;
+
+      expect(
+        () =>
+          new SecretVault({
+            currentKeyEnvVars: ["TEST_CONNECTOR_KEY"],
+            salts: ["autoflow-connector-salt"],
+          })
+      ).toThrow(
+        `Missing connector credential encryption key for NODE_ENV=${nodeEnv}. Set one of TEST_CONNECTOR_KEY before starting the server. Ephemeral random fallback is only allowed in development or test.`
+      );
+    }
+  );
+
+  it.each(["development", "test"])(
+    "allows ephemeral fallback when no encryption key is configured in %s",
+    (nodeEnv) => {
+      delete process.env.TEST_CONNECTOR_KEY;
+      process.env.NODE_ENV = nodeEnv;
+
+      const vault = new SecretVault({
+        currentKeyEnvVars: ["TEST_CONNECTOR_KEY"],
+        salts: ["autoflow-connector-salt"],
+      });
+
+      const ciphertext = vault.encrypt("ephemeral-secret");
+      expect(vault.decrypt(ciphertext)).toBe("ephemeral-secret");
+    }
+  );
 
   it("masks secrets consistently", () => {
     expect(maskSecret("abcdef1234")).toBe("****1234");

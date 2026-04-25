@@ -22,6 +22,7 @@ The `production` GitHub environment must define:
   - `AZURE_AKS_PRODUCTION_CLUSTER_NAME=autoflow-production-aks`
   - `AZURE_AKS_PRODUCTION_RESOURCE_GROUP=autoflow-production-rg`
   - `AZURE_PRODUCTION_API_HOST=api.helloautoflow.com`
+  - `AZURE_PRODUCTION_LETSENCRYPT_EMAIL=ops@helloautoflow.com`
 - secret
   - `AZURE_BACKEND_ENV_PRODUCTION` — newline-delimited env file consumed by
     `kubectl create secret generic autoflow-backend-secrets --from-env-file=...`
@@ -29,7 +30,7 @@ The `production` GitHub environment must define:
 The environment should also enforce at least one required reviewer before manual
 production dispatches proceed.
 
-## Expected Public Target
+## Expected Public Targets
 
 The production backend service is defined as a public Azure Load Balancer service with:
 
@@ -43,6 +44,16 @@ After the manifest is applied and the service is healthy, AKS should allocate:
 
 Use `kubectl get svc backend -n autoflow-production` to capture both values.
 
+The repo-managed TLS path is an `ingress-nginx` controller plus a dedicated ingress:
+
+- controller service: `ingress-nginx-controller` in namespace `ingress-nginx`
+- ClusterIssuer manifest: `k8s/production/cert-manager-clusterissuer.yaml`
+- ingress manifest: `k8s/production/api-ingress.yaml`
+- cert-manager-managed TLS secret: `autoflow-production-api-tls`
+
+Use `kubectl get svc ingress-nginx-controller -n ingress-nginx` to capture the
+HTTPS entrypoint that should serve `api.helloautoflow.com`.
+
 ## Preconditions Before DNS Cutover
 
 1. `autoflow-production` namespace exists in the production cluster.
@@ -53,17 +64,32 @@ Use `kubectl get svc backend -n autoflow-production` to capture both values.
 
 Do not update `api.helloautoflow.com` DNS until all five conditions are true.
 
+## Deployment Flow
+
+The production deploy workflow now performs five API-specific steps after the
+backend image is available in AKS:
+
+1. Sync `autoflow-backend-secrets`
+2. Install or update `cert-manager`
+3. Render and apply `k8s/production/cert-manager-clusterissuer.yaml`
+4. Install or update `ingress-nginx`
+5. Apply `k8s/production/api-ingress.yaml`, wait for `autoflow-production-api-tls` to be issued, and verify HTTPS with `curl --resolve`
+
+The deploy is not ready for DNS cutover until the HTTPS verification succeeds.
+
 ## Current Gap
 
-As of 2026-04-24 / 2026-04-25 verification:
+As of 2026-04-25 with cert-manager automation prepared in-repo:
 
 - the production AKS cluster exists
-- no `autoflow-production` namespace or backend workload is deployed yet
-- no in-cluster `autoflow-backend-secrets` secret exists yet
-- no repo-managed TLS termination path exists yet for `api.helloautoflow.com`
-- GitHub-hosted runners cannot be safely allowlisted for AKS API access because
-  GitHub's official meta endpoint currently publishes thousands of Actions CIDRs,
-  while AKS authorized IP ranges support only up to 200 entries
+- the `autoflow-production` namespace and backend workload are deployed
+- `/health` returns `200` through the raw backend load balancer target
+- production AKS access from GitHub Actions is intentionally left open because
+  GitHub-hosted runner CIDRs exceed AKS authorized IP range limits
+- Let's Encrypt `HTTP-01` issuance for `api.helloautoflow.com` still requires the
+  public DNS record for that hostname to resolve to the production ingress target
 
-This means the Azure load balancer target can be prepared in Kubernetes, but DNS cutover
-must stay blocked until workload secrets and TLS are resolved.
+This means the repo can now install cert-manager, create the production
+`ClusterIssuer`, and request the certificate automatically, but final issuance
+cannot succeed until the DNS cutover sequence routes `api.helloautoflow.com` to
+the production ingress endpoint that serves the ACME challenge.

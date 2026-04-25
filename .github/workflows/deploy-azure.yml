@@ -335,6 +335,7 @@ jobs:
           AKS_CLUSTER_NAME_OVERRIDE: ${{ vars.AZURE_AKS_PRODUCTION_CLUSTER_NAME }}
           AKS_RESOURCE_GROUP_OVERRIDE: ${{ vars.AZURE_AKS_PRODUCTION_RESOURCE_GROUP }}
           API_HOST_OVERRIDE: ${{ vars.AZURE_PRODUCTION_API_HOST }}
+          LETSENCRYPT_EMAIL_OVERRIDE: ${{ vars.AZURE_PRODUCTION_LETSENCRYPT_EMAIL }}
         run: |
           set -euo pipefail
 
@@ -359,12 +360,14 @@ jobs:
           AKS_CLUSTER_NAME="${AKS_CLUSTER_NAME_OVERRIDE:-}"
           AKS_RESOURCE_GROUP="${AKS_RESOURCE_GROUP_OVERRIDE:-}"
           API_HOST="${API_HOST_OVERRIDE:-api.helloautoflow.com}"
+          LETSENCRYPT_EMAIL="${LETSENCRYPT_EMAIL_OVERRIDE:-}"
           K8S_NAMESPACE="autoflow-production"
           K8S_SECRET_NAME="autoflow-backend-secrets"
           GHCR_IMAGE="${{ env.IMAGE_REPO }}:sha-${{ github.sha }}"
 
           require_nonempty "$AKS_CLUSTER_NAME" "AZURE_AKS_PRODUCTION_CLUSTER_NAME"
           require_nonempty "$AKS_RESOURCE_GROUP" "AZURE_AKS_PRODUCTION_RESOURCE_GROUP"
+          require_nonempty "$LETSENCRYPT_EMAIL" "AZURE_PRODUCTION_LETSENCRYPT_EMAIL"
           reject_nonprod_value "$AKS_CLUSTER_NAME" "AZURE_AKS_PRODUCTION_CLUSTER_NAME"
           reject_nonprod_value "$AKS_RESOURCE_GROUP" "AZURE_AKS_PRODUCTION_RESOURCE_GROUP"
           reject_nonprod_value "$API_HOST" "AZURE_PRODUCTION_API_HOST"
@@ -375,6 +378,7 @@ jobs:
           echo "k8s_namespace=$K8S_NAMESPACE" >> "$GITHUB_OUTPUT"
           echo "k8s_secret_name=$K8S_SECRET_NAME" >> "$GITHUB_OUTPUT"
           echo "ghcr_image=$GHCR_IMAGE" >> "$GITHUB_OUTPUT"
+          echo "letsencrypt_email=$LETSENCRYPT_EMAIL" >> "$GITHUB_OUTPUT"
 
       - name: Login to Azure (OIDC)
         uses: azure/login@v2
@@ -441,16 +445,50 @@ jobs:
             -o yaml \
             | kubectl apply -f -
 
+      - name: Install cert-manager
+        run: |
+          set -euo pipefail
+
+          kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/v1.20.2/cert-manager.yaml
+          kubectl rollout status deployment/cert-manager -n cert-manager --timeout=300s
+          kubectl rollout status deployment/cert-manager-webhook -n cert-manager --timeout=300s
+          kubectl rollout status deployment/cert-manager-cainjector -n cert-manager --timeout=300s
+
+      - name: Apply production ClusterIssuer
+        env:
+          LETSENCRYPT_EMAIL: ${{ steps.target.outputs.letsencrypt_email }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "${LETSENCRYPT_EMAIL}" ]; then
+            echo "::error::Missing required production variable: AZURE_PRODUCTION_LETSENCRYPT_EMAIL"
+            exit 1
+          fi
+
+          sed "s|__LETSENCRYPT_EMAIL__|${LETSENCRYPT_EMAIL}|g" \
+            k8s/production/cert-manager-clusterissuer.yaml \
+            | kubectl apply -f -
+          kubectl wait --for=condition=Ready clusterissuer/letsencrypt-production --timeout=300s
+
+      - name: Ensure ingress-nginx controller is installed
+        run: |
+          set -euo pipefail
+
+          kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/controller-v1.11.1/deploy/static/provider/cloud/deploy.yaml
+          kubectl rollout status deployment/ingress-nginx-controller -n ingress-nginx --timeout=300s
+
       - name: Apply production backend manifests
         run: |
           set -euo pipefail
           kubectl apply -f k8s/production/backend.yaml
+          kubectl apply -f k8s/production/api-ingress.yaml
           kubectl set image deployment/backend \
             backend="${{ steps.acr.outputs.acr_image }}" \
             -n "${{ steps.target.outputs.k8s_namespace }}"
           kubectl rollout status deployment/backend -n "${{ steps.target.outputs.k8s_namespace }}" --timeout=300s
           kubectl get deployment backend -n "${{ steps.target.outputs.k8s_namespace }}" -o wide
           kubectl get service backend -n "${{ steps.target.outputs.k8s_namespace }}" -o wide
+          kubectl get ingress autoflow-production-api -n "${{ steps.target.outputs.k8s_namespace }}" -o wide
 
       - name: Smoke test production backend
         run: |
@@ -458,6 +496,7 @@ jobs:
 
           NAMESPACE="${{ steps.target.outputs.k8s_namespace }}"
           TARGET=""
+          INGRESS_TARGET=""
 
           for i in $(seq 1 30); do
             TARGET=$(kubectl get svc backend -n "$NAMESPACE" -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null || true)
@@ -500,4 +539,57 @@ jobs:
             exit 1
           fi
 
-          echo "Production smoke tests passed against ${TARGET}."
+          for i in $(seq 1 30); do
+            INGRESS_TARGET=$(kubectl get svc ingress-nginx-controller -n ingress-nginx -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || true)
+            if [ -z "$INGRESS_TARGET" ]; then
+              INGRESS_TARGET=$(kubectl get svc ingress-nginx-controller -n ingress-nginx -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null || true)
+            fi
+            if [ -n "$INGRESS_TARGET" ]; then
+              break
+            fi
+            echo "Waiting for ingress-nginx public endpoint ($i/30)"
+            sleep 10
+          done
+
+          if [ -z "$INGRESS_TARGET" ]; then
+            echo "::error::ingress-nginx controller did not receive a public endpoint."
+            kubectl describe svc ingress-nginx-controller -n ingress-nginx
+            exit 1
+          fi
+
+          CERT_READY="false"
+          for i in $(seq 1 30); do
+            if kubectl wait --for=condition=Ready certificate/autoflow-production-api-tls \
+              -n "$NAMESPACE" --timeout=10s >/dev/null 2>&1; then
+              CERT_READY="true"
+              break
+            fi
+            echo "Waiting for cert-manager to issue autoflow-production-api-tls ($i/30)"
+            sleep 10
+          done
+
+          if [ "$CERT_READY" != "true" ]; then
+            echo "::error::cert-manager did not issue autoflow-production-api-tls."
+            kubectl get certificate,certificaterequest,order,challenge -n "$NAMESPACE" || true
+            kubectl describe certificate autoflow-production-api-tls -n "$NAMESPACE" || true
+            exit 1
+          fi
+
+          TLS_HEALTH_STATUS=$(curl -sS --resolve "${{ steps.target.outputs.api_host }}:443:${INGRESS_TARGET}" \
+            -o /tmp/tls-health.txt -w "%{http_code}" "https://${{ steps.target.outputs.api_host }}/health" || true)
+          if [ "$TLS_HEALTH_STATUS" != "200" ]; then
+            echo "::error::Expected HTTPS /health through ingress to return 200, got $TLS_HEALTH_STATUS"
+            cat /tmp/tls-health.txt || true
+            kubectl describe ingress autoflow-production-api -n "$NAMESPACE" || true
+            exit 1
+          fi
+
+          TLS_RUNS_STATUS=$(curl -sS --resolve "${{ steps.target.outputs.api_host }}:443:${INGRESS_TARGET}" \
+            -o /tmp/tls-runs.json -w "%{http_code}" "https://${{ steps.target.outputs.api_host }}/api/runs" || true)
+          if [ "$TLS_RUNS_STATUS" != "401" ]; then
+            echo "::error::Expected HTTPS /api/runs through ingress to require auth with 401, got $TLS_RUNS_STATUS"
+            cat /tmp/tls-runs.json || true
+            exit 1
+          fi
+
+          echo "Production smoke tests passed against ${TARGET} and TLS ingress ${INGRESS_TARGET}."

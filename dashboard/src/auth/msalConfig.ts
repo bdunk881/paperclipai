@@ -64,7 +64,7 @@ export const msalConfig: Configuration = {
     postLogoutRedirectUri: window.location.origin + "/login",
   },
   cache: {
-    cacheLocation: "localStorage",
+    cacheLocation: "sessionStorage",
   },
 };
 

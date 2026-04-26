@@ -38,13 +38,23 @@ variable "spa_redirect_uris" {
   description = "Redirect URIs for the SPA app registration (must include /auth/callback and /login for all deployed hosts)"
   type        = list(string)
   default = [
+    "http://localhost:3000",
+    "http://localhost:3000/auth/callback",
     "http://localhost:5173",
     "http://localhost:5173/auth/callback",
     "http://localhost:5173/login",
+    "https://staging.app.helloautoflow.com",
     "https://staging.app.helloautoflow.com/auth/callback",
     "https://staging.app.helloautoflow.com/login",
+    "https://app.helloautoflow.com",
     "https://app.helloautoflow.com/auth/callback",
     "https://app.helloautoflow.com/login",
+    "https://dashboard-beta-one-42.vercel.app",
+    "https://dashboard-beta-one-42.vercel.app/auth/callback",
+    "https://dashboard-brad-duncans-projects.vercel.app",
+    "https://dashboard-brad-duncans-projects.vercel.app/auth/callback",
+    "https://dashboard-git-master-brad-duncans-projects.vercel.app",
+    "https://dashboard-git-master-brad-duncans-projects.vercel.app/auth/callback",
   ]
 }
 

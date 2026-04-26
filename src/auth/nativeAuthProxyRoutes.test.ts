@@ -183,6 +183,37 @@ describe("native auth proxy routes", () => {
     );
   });
 
+  it("allows the documented signin endpoints", async () => {
+    (global.fetch as jest.Mock).mockResolvedValueOnce(
+      mockFetchResponse({
+        status: 200,
+        headers: {
+          "content-type": "application/json; charset=utf-8",
+        },
+        body: JSON.stringify({ continuation_token: "signin-123" }),
+      })
+    );
+
+    const app = loadApp({
+      ALLOWED_ORIGINS: "https://dashboard.autoflow.test",
+      AUTH_NATIVE_AUTH_PROXY_BASE_URL: "https://auth.helloautoflow.com/tenant-guid",
+    });
+
+    const response = await request(app)
+      .post("/api/auth/native/signin/v1.0/start")
+      .set("Origin", "https://dashboard.autoflow.test")
+      .set("Accept", "application/json")
+      .set("Content-Type", "application/x-www-form-urlencoded")
+      .send("username=alex%40example.com");
+
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual({ continuation_token: "signin-123" });
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+
+    const [url] = (global.fetch as jest.Mock).mock.calls[0] as [URL, RequestInit];
+    expect(url.toString()).toBe("https://auth.helloautoflow.com/tenant-guid/signin/v1.0/start");
+  });
+
   it("rejects requests from origins outside the configured allowlist", async () => {
     const app = loadApp({
       ALLOWED_ORIGINS: "https://dashboard.autoflow.test",

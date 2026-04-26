@@ -95,7 +95,7 @@ resource "azuread_application" "autoflow_spa" {
   web {
     implicit_grant {
       access_token_issuance_enabled = false
-      id_token_issuance_enabled     = true
+      id_token_issuance_enabled     = false
     }
   }
 

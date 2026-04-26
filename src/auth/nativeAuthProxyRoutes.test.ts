@@ -85,10 +85,10 @@ describe("native auth proxy routes", () => {
     expect(init.method).toBe("POST");
     expect(init.headers).toMatchObject({
       accept: "application/json",
-      "content-type": "application/json",
+      "content-type": "application/x-www-form-urlencoded",
       "x-correlation-id": "corr-123",
     });
-    expect(init.body).toBe(JSON.stringify({ email: "alex@example.com" }));
+    expect(init.body).toBe("email=alex%40example.com");
   });
 
   it("proxies form-encoded requests to the configured native auth upstream", async () => {

@@ -283,6 +283,48 @@ describe("native auth proxy routes", () => {
     expect(secondUrl.toString()).toBe("https://autoflowciam.ciamlogin.com/tenant-guid/challenge/v1.0/continue");
   });
 
+  it("uses the AutoFlow CIAM defaults when the branded host is configured without tenant env vars", async () => {
+    (global.fetch as jest.Mock)
+      .mockRejectedValueOnce(new Error("fetch failed"))
+      .mockResolvedValueOnce(
+        mockFetchResponse({
+          status: 200,
+          headers: { "content-type": "application/json; charset=utf-8" },
+          body: JSON.stringify({ continuation_token: "default-fallback-123" }),
+        })
+      );
+
+    const app = loadApp({
+      ALLOWED_ORIGINS: "https://dashboard.autoflow.test",
+      AUTH_NATIVE_AUTH_PROXY_BASE_URL:
+        "https://auth.helloautoflow.com/5e4f1080-8afc-4005-b05e-32b21e69363a",
+      AZURE_CIAM_TENANT_SUBDOMAIN: undefined,
+      AZURE_CIAM_TENANT_ID: undefined,
+      AZURE_TENANT_SUBDOMAIN: undefined,
+      AZURE_TENANT_ID: undefined,
+    });
+
+    const response = await request(app)
+      .post("/api/auth/native/challenge/v1.0/continue")
+      .set("Origin", "https://dashboard.autoflow.test")
+      .set("Accept", "application/json")
+      .set("Content-Type", "application/x-www-form-urlencoded")
+      .send("continuation_token=challenge-123");
+
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual({ continuation_token: "default-fallback-123" });
+    expect(global.fetch).toHaveBeenCalledTimes(2);
+
+    const [firstUrl] = (global.fetch as jest.Mock).mock.calls[0] as [URL, RequestInit];
+    const [secondUrl] = (global.fetch as jest.Mock).mock.calls[1] as [URL, RequestInit];
+    expect(firstUrl.toString()).toBe(
+      "https://auth.helloautoflow.com/5e4f1080-8afc-4005-b05e-32b21e69363a/challenge/v1.0/continue"
+    );
+    expect(secondUrl.toString()).toBe(
+      "https://autoflowciam.ciamlogin.com/5e4f1080-8afc-4005-b05e-32b21e69363a/challenge/v1.0/continue"
+    );
+  });
+
   it("deduplicates native auth upstream candidates when configured values overlap", async () => {
     (global.fetch as jest.Mock).mockRejectedValueOnce(new Error("fetch failed"));
 

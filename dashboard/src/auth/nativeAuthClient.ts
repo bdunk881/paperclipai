@@ -196,6 +196,7 @@ export async function signInWithPassword(email: string, password: string): Promi
     scope: DEFAULT_SCOPE,
     username: email,
     challenge_type: "oob password redirect",
+    capabilities: "registration_required mfa_required",
   });
 
   if (!initiated.continuation_token) {
@@ -226,6 +227,7 @@ export async function startSignUp(email: string, password: string, displayName: 
     password,
     challenge_type: "oob password redirect",
     attributes: JSON.stringify({ displayName }),
+    capabilities: "registration_required mfa_required",
   });
 }
 

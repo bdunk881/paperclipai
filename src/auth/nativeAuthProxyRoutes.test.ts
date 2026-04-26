@@ -114,7 +114,7 @@ describe("native auth proxy routes", () => {
     }).toString();
 
     const response = await request(app)
-      .post("/api/auth/native/challenge/v1.0/continue")
+      .post("/api/auth/native/oauth2/v2.0/challenge")
       .set("Origin", "https://dashboard.autoflow.test")
       .set("Accept", "application/json")
       .set("Content-Type", "application/x-www-form-urlencoded")
@@ -125,7 +125,7 @@ describe("native auth proxy routes", () => {
     expect(global.fetch).toHaveBeenCalledTimes(1);
 
     const [url, init] = (global.fetch as jest.Mock).mock.calls[0] as [URL, RequestInit];
-    expect(url.toString()).toBe("https://autoflowciam.ciamlogin.com/tenant-guid/challenge/v1.0/continue");
+    expect(url.toString()).toBe("https://autoflowciam.ciamlogin.com/tenant-guid/oauth2/v2.0/challenge");
     expect(init.headers).toMatchObject({
       accept: "application/json",
       "content-type": "application/x-www-form-urlencoded",
@@ -269,7 +269,7 @@ describe("native auth proxy routes", () => {
     });
 
     const response = await request(app)
-      .post("/api/auth/native/challenge/v1.0/continue")
+      .post("/api/auth/native/oauth2/v2.0/challenge")
       .set("Origin", "https://dashboard.autoflow.test")
       .send({ challengeId: "challenge-123" });
 
@@ -295,7 +295,7 @@ describe("native auth proxy routes", () => {
     });
 
     const response = await request(app)
-      .post("/api/auth/native/challenge/v1.0/continue")
+      .post("/api/auth/native/oauth2/v2.0/challenge")
       .set("Origin", "https://dashboard.autoflow.test")
       .set("Accept", "application/json")
       .set("Content-Type", "application/x-www-form-urlencoded")
@@ -306,7 +306,7 @@ describe("native auth proxy routes", () => {
     expect(global.fetch).toHaveBeenCalledTimes(1);
 
     const [url] = (global.fetch as jest.Mock).mock.calls[0] as [URL, RequestInit];
-    expect(url.toString()).toBe("https://autoflowciam.ciamlogin.com/tenant-guid/challenge/v1.0/continue");
+    expect(url.toString()).toBe("https://autoflowciam.ciamlogin.com/tenant-guid/oauth2/v2.0/challenge");
   });
 
   it("falls back to the repo CIAM defaults when no valid ciam authority env is configured", async () => {
@@ -328,7 +328,7 @@ describe("native auth proxy routes", () => {
     });
 
     const response = await request(app)
-      .post("/api/auth/native/challenge/v1.0/continue")
+      .post("/api/auth/native/oauth2/v2.0/challenge")
       .set("Origin", "https://dashboard.autoflow.test")
       .set("Accept", "application/json")
       .set("Content-Type", "application/x-www-form-urlencoded")
@@ -340,7 +340,7 @@ describe("native auth proxy routes", () => {
 
     const [url] = (global.fetch as jest.Mock).mock.calls[0] as [URL, RequestInit];
     expect(url.origin).toBe("https://autoflowciam.ciamlogin.com");
-    expect(url.pathname).toMatch(/\/challenge\/v1\.0\/continue$/);
+    expect(url.pathname).toMatch(/\/oauth2\/v2\.0\/challenge$/);
   });
 
   it("deduplicates native auth upstream candidates when configured values overlap", async () => {
@@ -355,7 +355,7 @@ describe("native auth proxy routes", () => {
     });
 
     const response = await request(app)
-      .post("/api/auth/native/challenge/v1.0/continue")
+      .post("/api/auth/native/oauth2/v2.0/challenge")
       .set("Origin", "https://dashboard.autoflow.test")
       .set("Accept", "application/json")
       .set("Content-Type", "application/x-www-form-urlencoded")
@@ -399,11 +399,11 @@ describe("native auth proxy routes", () => {
     });
 
     const first = await request(app)
-      .post("/api/auth/native/challenge/v1.0/continue")
+      .post("/api/auth/native/oauth2/v2.0/challenge")
       .set("Origin", "https://dashboard.autoflow.test")
       .send({ challengeId: "challenge-123" });
     const second = await request(app)
-      .post("/api/auth/native/challenge/v1.0/continue")
+      .post("/api/auth/native/oauth2/v2.0/challenge")
       .set("Origin", "https://dashboard.autoflow.test")
       .send({ challengeId: "challenge-123" });
 

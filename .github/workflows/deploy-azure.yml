@@ -652,7 +652,7 @@ jobs:
               -H "Accept: application/json" \
               --data "client_id=smoke-client&scope=openid%20profile%20email&username=smoke%40helloautoflow.test&challenge_type=oob%20password%20redirect" \
               -o /tmp/native-auth-initiate.json -w "%{http_code}" \
-              "https://${{ steps.target.outputs.api_host }}/api/auth/native/oauth/v2.0/initiate" || true)
+              "https://${{ steps.target.outputs.api_host }}/api/auth/native/oauth2/v2.0/initiate" || true)
             echo "Attempt $i: native auth initiate => $NATIVE_AUTH_STATUS"
             if [ "$NATIVE_AUTH_STATUS" = "200" ] || [ "$NATIVE_AUTH_STATUS" = "400" ]; then
               break

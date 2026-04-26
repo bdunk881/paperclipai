@@ -183,7 +183,7 @@ export async function refreshNativeAuthSession(refreshToken: string): Promise<Na
 }
 
 export async function signInWithPassword(email: string, password: string): Promise<NativeAuthTokenResponse> {
-  const initiated = await postForm<NativeAuthFlowResponse>("oauth/v2.0/initiate", {
+  const initiated = await postForm<NativeAuthFlowResponse>("oauth2/v2.0/initiate", {
     client_id: clientId(),
     scope: DEFAULT_SCOPE,
     username: email,
@@ -194,10 +194,10 @@ export async function signInWithPassword(email: string, password: string): Promi
     throw new NativeAuthError("Sign-in did not return a continuation token.", 500);
   }
 
-  const challenged = await postForm<NativeAuthFlowResponse>("challenge/v1.0/continue", {
+  const challenged = await postForm<NativeAuthFlowResponse>("oauth2/v2.0/challenge", {
     client_id: clientId(),
     continuation_token: initiated.continuation_token,
-    challenge_type: "password",
+    challenge_type: "password redirect",
   });
 
   const continuationToken = challenged.continuation_token ?? initiated.continuation_token;
@@ -222,10 +222,10 @@ export async function startSignUp(email: string, password: string, displayName: 
 }
 
 export async function challengeSignUp(continuationToken: string): Promise<NativeAuthFlowResponse> {
-  return postForm<NativeAuthFlowResponse>("challenge/v1.0/continue", {
+  return postForm<NativeAuthFlowResponse>("signup/v1.0/challenge", {
     client_id: clientId(),
     continuation_token: continuationToken,
-    challenge_type: "oob",
+    challenge_type: "oob password redirect",
   });
 }
 
@@ -255,7 +255,7 @@ export async function startPasswordReset(email: string): Promise<NativeAuthFlowR
 }
 
 export async function challengePasswordReset(continuationToken: string): Promise<NativeAuthFlowResponse> {
-  return postForm<NativeAuthFlowResponse>("challenge/v1.0/continue", {
+  return postForm<NativeAuthFlowResponse>("resetpassword/v1.0/challenge", {
     client_id: clientId(),
     continuation_token: continuationToken,
     challenge_type: "oob",

@@ -169,12 +169,10 @@ function isSupportedContentType(contentType: string | undefined): boolean {
 const router = express.Router();
 
 const ALLOWED_NATIVE_AUTH_PATHS = [
-  "oauth/v2.0/initiate",
-  "oauth/v2.0/challenge",
-  "oauth/v2.0/token",
-  "oauth/v2.0/introspect",
   "oauth2/v2.0/token",
-  "challenge/v1.0/continue",
+  "oauth2/v2.0/initiate",
+  "oauth2/v2.0/challenge",
+  "oauth2/v2.0/introspect",
   "signup/v1.0/start",
   "signup/v1.0/challenge",
   "signup/v1.0/continue",

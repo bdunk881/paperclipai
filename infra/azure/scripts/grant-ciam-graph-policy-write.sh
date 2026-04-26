@@ -28,8 +28,7 @@ NC='\033[0m'
 
 # Well-known IDs
 MSGRAPH_APP_ID="00000003-0000-0000-c000-000000000000"
-# Policy.ReadWrite.AuthenticationMethod application permission GUID
-POLICY_RW_AUTH_METHOD_ROLE_ID="29c18626-4571-4f1a-9571-00e0d22b9fac"
+POLICY_RW_AUTH_METHOD_ROLE_VALUE="Policy.ReadWrite.AuthenticationMethod"
 
 echo "=== Grant CIAM SP Policy.ReadWrite.AuthenticationMethod ==="
 echo "  Tenant: $CIAM_TENANT_ID"
@@ -87,7 +86,7 @@ echo -e "${GREEN}Found SP: $CIAM_SP_ID${NC}"
 echo ""
 echo "Resolving Microsoft Graph service principal..."
 MSGRAPH_RESPONSE=$(curl -s -H "Authorization: Bearer $GRAPH_TOKEN" \
-  "https://graph.microsoft.com/v1.0/servicePrincipals?\$filter=appId%20eq%20'$MSGRAPH_APP_ID'&\$select=id,appId,displayName")
+  "https://graph.microsoft.com/v1.0/servicePrincipals?\$filter=appId%20eq%20'$MSGRAPH_APP_ID'&\$select=id,appId,displayName,appRoles")
 
 MSGRAPH_SP_ID=$(echo "$MSGRAPH_RESPONSE" | python3 -c "
 import sys, json
@@ -103,6 +102,28 @@ if [ -z "$MSGRAPH_SP_ID" ]; then
   exit 1
 fi
 echo -e "${GREEN}Graph SP: $MSGRAPH_SP_ID${NC}"
+
+echo ""
+echo "Resolving Graph app role for $POLICY_RW_AUTH_METHOD_ROLE_VALUE..."
+POLICY_RW_AUTH_METHOD_ROLE_ID=$(echo "$MSGRAPH_RESPONSE" | python3 -c "
+import sys, json
+d = json.load(sys.stdin)
+vals = d.get('value', [])
+app_roles = vals[0].get('appRoles', []) if vals else []
+for role in app_roles:
+    if role.get('value') == '$POLICY_RW_AUTH_METHOD_ROLE_VALUE':
+        print(role.get('id', ''))
+        break
+else:
+    print('')
+" 2>/dev/null || echo "")
+
+if [ -z "$POLICY_RW_AUTH_METHOD_ROLE_ID" ]; then
+  echo -e "${RED}Could not resolve Graph app role $POLICY_RW_AUTH_METHOD_ROLE_VALUE.${NC}"
+  echo "Check the Microsoft Graph service principal in the CIAM tenant for the correct app role."
+  exit 1
+fi
+echo -e "${GREEN}Resolved role ID: $POLICY_RW_AUTH_METHOD_ROLE_ID${NC}"
 
 # ── 4. Check if the permission is already granted (follows pagination) ──────
 echo ""

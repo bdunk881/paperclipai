@@ -154,6 +154,11 @@ GitHub larger runners with static IPs, or a dedicated VPN/NAT path.
    AKS rollout can create `autoflow-backend-secrets` before the deployment starts.
 6. Verify production-specific values do not reference `staging` or `nonprod`
    resource names; the workflow now hard-fails on cross-environment targets.
+7. Ensure `AZURE_BACKEND_ENV_PRODUCTION` includes CIAM auth fallback inputs
+   (`AZURE_CIAM_TENANT_ID`/`AZURE_TENANT_ID`, `AZURE_CIAM_TENANT_SUBDOMAIN`/`AZURE_TENANT_SUBDOMAIN`,
+   and a CIAM audience/client setting) plus `ALLOWED_ORIGINS` containing
+   `https://app.helloautoflow.com`. The workflow now rejects production deploys
+   that point at the unresolved branded host `auth.helloautoflow.com`.
 
 **Validation checks**
 

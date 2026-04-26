@@ -25,6 +25,8 @@ type AuthConfig = {
   issuers: [string, ...string[]];
 };
 
+const DEFAULT_CIAM_TENANT_SUBDOMAIN = "autoflowciam";
+const DEFAULT_CIAM_TENANT_ID = "5e4f1080-8afc-4005-b05e-32b21e69363a";
 const jwksClientCache = new Map<string, jwksRsa.JwksClient>();
 let missingConfigWarningLogged = false;
 const CURRENT_DASHBOARD_CIAM_CLIENT_ID = "2dfd3a08-277c-4893-b07d-eca5ae322310";
@@ -66,12 +68,16 @@ function parseDelimitedEnv(value: string | undefined): string[] {
 
 function resolveAuthConfig(): AuthConfig | null {
   const authority = normalizeAuthority(process.env.AZURE_CIAM_AUTHORITY);
-  const tenantSubdomain = process.env.AZURE_CIAM_TENANT_SUBDOMAIN ?? process.env.AZURE_TENANT_SUBDOMAIN;
-  const tenantId = process.env.AZURE_CIAM_TENANT_ID ?? process.env.AZURE_TENANT_ID;
+  const tenantSubdomain =
+    process.env.AZURE_CIAM_TENANT_SUBDOMAIN ??
+    process.env.AZURE_TENANT_SUBDOMAIN ??
+    DEFAULT_CIAM_TENANT_SUBDOMAIN;
+  const tenantId =
+    process.env.AZURE_CIAM_TENANT_ID ?? process.env.AZURE_TENANT_ID ?? DEFAULT_CIAM_TENANT_ID;
   const configuredAudiences = parseDelimitedEnv(process.env.AZURE_CIAM_ALLOWED_AUDIENCES);
   const clientId = process.env.AZURE_CIAM_CLIENT_ID ?? process.env.AZURE_CLIENT_ID;
 
-  if ((!authority && !tenantSubdomain) || !tenantId || (!clientId && configuredAudiences.length === 0)) {
+  if ((!authority && !tenantSubdomain) || !tenantId) {
     if (!missingConfigWarningLogged) {
       console.warn(
         "[auth] CIAM auth env is incomplete. Expected AZURE_CIAM_AUTHORITY or AZURE_CIAM_TENANT_SUBDOMAIN, " +

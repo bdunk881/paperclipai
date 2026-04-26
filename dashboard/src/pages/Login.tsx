@@ -1,6 +1,10 @@
 import { FormEvent, useMemo, useState } from "react";
+import type { AuthenticationResult } from "@azure/msal-browser";
+import { BrowserAuthError, BrowserAuthErrorCodes } from "@azure/msal-browser";
 import { Loader2, ArrowRight, CheckCircle2, KeyRound, Mail, ShieldCheck } from "lucide-react";
 import { useNavigate, useSearchParams } from "react-router-dom";
+import { loginRequest, signupRequest } from "../auth/msalConfig";
+import { initializeMsalInstance, msalInstance } from "../auth/msalInstance";
 import {
   NativeAuthError,
   challengePasswordReset,
@@ -15,7 +19,7 @@ import {
   startSignUp,
   submitPasswordReset,
 } from "../auth/nativeAuthClient";
-import { writeStoredAuthSession } from "../auth/authStorage";
+import { StoredAuthSession, writeStoredAuthSession } from "../auth/authStorage";
 
 type AuthMode = "signin" | "signup" | "reset";
 
@@ -86,6 +90,59 @@ function mapNativeAuthError(error: unknown): string {
   return error.description ?? error.message;
 }
 
+function firstString(value: unknown): string | undefined {
+  if (typeof value === "string" && value.trim()) return value;
+  if (!Array.isArray(value)) return undefined;
+
+  const candidate = value.find((entry) => typeof entry === "string" && entry.trim());
+  return typeof candidate === "string" ? candidate : undefined;
+}
+
+function sessionFromMicrosoftResult(result: AuthenticationResult): StoredAuthSession {
+  const claims = (result.idTokenClaims ?? {}) as Record<string, unknown>;
+  const email =
+    result.account?.username ??
+    firstString(claims.email) ??
+    firstString(claims.preferred_username) ??
+    firstString(claims.emails) ??
+    "unknown@autoflow.local";
+  const name =
+    result.account?.name ??
+    firstString(claims.name) ??
+    firstString(claims.given_name) ??
+    email;
+
+  return {
+    accessToken: result.accessToken || result.idToken,
+    idToken: result.idToken || undefined,
+    expiresAt: result.expiresOn?.getTime() ?? Date.now() + 60 * 60 * 1000,
+    scope: result.scopes.join(" "),
+    user: {
+      id: result.account?.homeAccountId ?? result.account?.localAccountId ?? email,
+      email,
+      name,
+      tenantId: result.account?.tenantId ?? firstString(claims.tid),
+    },
+  };
+}
+
+function mapMicrosoftAuthError(error: unknown): string {
+  if (!(error instanceof BrowserAuthError)) {
+    return "Microsoft sign-in failed. Try again in a new browser tab.";
+  }
+
+  switch (error.errorCode) {
+    case BrowserAuthErrorCodes.popupWindowError:
+    case BrowserAuthErrorCodes.emptyWindowError:
+    case BrowserAuthErrorCodes.timedOut:
+      return "Microsoft sign-in needs a popup window. Allow popups for AutoFlow and try again.";
+    case BrowserAuthErrorCodes.userCancelled:
+      return "Microsoft sign-in was canceled before completion.";
+    default:
+      return error.message || "Microsoft sign-in failed. Please try again.";
+  }
+}
+
 function cardTitle(mode: AuthMode, pendingSignUp: PendingSignUp | null, pendingReset: PendingReset | null): string {
   if (mode === "signup" && pendingSignUp) return "Verify your email";
   if (mode === "reset" && pendingReset) return "Confirm reset code";
@@ -126,11 +183,13 @@ export default function Login() {
   const [pendingSignUp, setPendingSignUp] = useState<PendingSignUp | null>(null);
   const [pendingReset, setPendingReset] = useState<PendingReset | null>(null);
   const [busy, setBusy] = useState(false);
+  const [microsoftAction, setMicrosoftAction] = useState<"signin" | "signup" | null>(null);
   const [error, setError] = useState(
     qaPreviewError ? "Preview access link is invalid, expired, or not enabled for this deployment." : ""
   );
   const [notice, setNotice] = useState("");
   const [shakeKey, setShakeKey] = useState(0);
+  const isAnyBusy = busy || microsoftAction !== null;
 
   const signals = useMemo(
     () => [
@@ -164,6 +223,26 @@ export default function Login() {
     const tokens = await tokenResponsePromise;
     writeStoredAuthSession(sessionFromTokenResponse(tokens));
     navigate("/", { replace: true });
+  }
+
+  async function handleMicrosoftAuth(action: "signin" | "signup") {
+    setMicrosoftAction(action);
+    setError("");
+    setNotice("");
+
+    try {
+      await initializeMsalInstance();
+      const result = await msalInstance.loginPopup(action === "signup" ? signupRequest : loginRequest);
+      if (result.account) {
+        msalInstance.setActiveAccount(result.account);
+      }
+      writeStoredAuthSession(sessionFromMicrosoftResult(result));
+      navigate("/", { replace: true });
+    } catch (authError) {
+      triggerError(mapMicrosoftAuthError(authError));
+    } finally {
+      setMicrosoftAction(null);
+    }
   }
 
   async function handleSignIn(event: FormEvent<HTMLFormElement>) {
@@ -419,6 +498,7 @@ export default function Login() {
                     autoComplete="email"
                     value={signinEmail}
                     onChange={(event) => setSigninEmail(event.target.value)}
+                    disabled={isAnyBusy}
                     className="auth-input"
                     placeholder="operator@company.com"
                   />
@@ -429,11 +509,22 @@ export default function Login() {
                     autoComplete="current-password"
                     value={signinPassword}
                     onChange={(event) => setSigninPassword(event.target.value)}
+                    disabled={isAnyBusy}
                     className="auth-input"
                     placeholder="Enter your password"
                   />
                 </Field>
-                <button type="submit" disabled={busy} className="auth-primary-button mt-2">
+                <button
+                  type="button"
+                  disabled={isAnyBusy}
+                  onClick={() => void handleMicrosoftAuth("signin")}
+                  className="auth-microsoft-button"
+                >
+                  {microsoftAction === "signin" ? <Loader2 size={18} className="animate-spin" /> : <MicrosoftIcon />}
+                  {microsoftAction === "signin" ? "Opening Microsoft..." : "Sign in with Microsoft"}
+                </button>
+                <OrDivider />
+                <button type="submit" disabled={isAnyBusy} className="auth-primary-button mt-2">
                   {busy ? <Loader2 size={18} className="animate-spin" /> : <ArrowRight size={18} />}
                   {busy ? "Authorizing..." : "Sign in"}
                 </button>
@@ -450,6 +541,7 @@ export default function Login() {
                         autoComplete="name"
                         value={signupName}
                         onChange={(event) => setSignupName(event.target.value)}
+                        disabled={isAnyBusy}
                         className="auth-input"
                         placeholder="Avery Quinn"
                       />
@@ -460,6 +552,7 @@ export default function Login() {
                         autoComplete="email"
                         value={signupEmail}
                         onChange={(event) => setSignupEmail(event.target.value)}
+                        disabled={isAnyBusy}
                         className="auth-input"
                         placeholder="avery@company.com"
                       />
@@ -470,6 +563,7 @@ export default function Login() {
                         autoComplete="new-password"
                         value={signupPassword}
                         onChange={(event) => setSignupPassword(event.target.value)}
+                        disabled={isAnyBusy}
                         className="auth-input"
                         placeholder="Choose a password"
                       />
@@ -480,6 +574,7 @@ export default function Login() {
                         autoComplete="new-password"
                         value={signupConfirmPassword}
                         onChange={(event) => setSignupConfirmPassword(event.target.value)}
+                        disabled={isAnyBusy}
                         className="auth-input"
                         placeholder="Repeat your password"
                       />
@@ -493,6 +588,7 @@ export default function Login() {
                       autoComplete="one-time-code"
                       value={signupCode}
                       onChange={(event) => setSignupCode(event.target.value)}
+                      disabled={isAnyBusy}
                       className="auth-input"
                       placeholder={
                         pendingSignUp?.codeLength ? `${pendingSignUp.codeLength}-digit code` : "Enter email code"
@@ -500,7 +596,21 @@ export default function Login() {
                     />
                   </Field>
                 )}
-                <button type="submit" disabled={busy} className="auth-primary-button mt-2">
+                {!showSignupVerification ? (
+                  <>
+                    <button
+                      type="button"
+                      disabled={isAnyBusy}
+                      onClick={() => void handleMicrosoftAuth("signup")}
+                      className="auth-microsoft-button"
+                    >
+                      {microsoftAction === "signup" ? <Loader2 size={18} className="animate-spin" /> : <MicrosoftIcon />}
+                      {microsoftAction === "signup" ? "Opening Microsoft..." : "Sign up with Microsoft"}
+                    </button>
+                    <OrDivider />
+                  </>
+                ) : null}
+                <button type="submit" disabled={isAnyBusy} className="auth-primary-button mt-2">
                   {busy ? <Loader2 size={18} className="animate-spin" /> : showSignupVerification ? <CheckCircle2 size={18} /> : <ArrowRight size={18} />}
                   {busy ? "Processing..." : showSignupVerification ? "Verify and create account" : "Send verification code"}
                 </button>
@@ -517,6 +627,7 @@ export default function Login() {
                         autoComplete="email"
                         value={resetEmail}
                         onChange={(event) => setResetEmail(event.target.value)}
+                        disabled={isAnyBusy}
                         className="auth-input"
                         placeholder="operator@company.com"
                       />
@@ -527,6 +638,7 @@ export default function Login() {
                         autoComplete="new-password"
                         value={resetPassword}
                         onChange={(event) => setResetPassword(event.target.value)}
+                        disabled={isAnyBusy}
                         className="auth-input"
                         placeholder="Choose a new password"
                       />
@@ -537,6 +649,7 @@ export default function Login() {
                         autoComplete="new-password"
                         value={resetConfirmPassword}
                         onChange={(event) => setResetConfirmPassword(event.target.value)}
+                        disabled={isAnyBusy}
                         className="auth-input"
                         placeholder="Repeat the new password"
                       />
@@ -550,12 +663,13 @@ export default function Login() {
                       autoComplete="one-time-code"
                       value={resetCode}
                       onChange={(event) => setResetCode(event.target.value)}
+                      disabled={isAnyBusy}
                       className="auth-input"
                       placeholder={pendingReset?.codeLength ? `${pendingReset.codeLength}-digit code` : "Enter email code"}
                     />
                   </Field>
                 )}
-                <button type="submit" disabled={busy} className="auth-primary-button mt-2">
+                <button type="submit" disabled={isAnyBusy} className="auth-primary-button mt-2">
                   {busy ? <Loader2 size={18} className="animate-spin" /> : showResetVerification ? <CheckCircle2 size={18} /> : <ArrowRight size={18} />}
                   {busy ? "Processing..." : showResetVerification ? "Apply new password" : "Send reset code"}
                 </button>
@@ -574,6 +688,14 @@ export default function Login() {
   );
 }
 
+function OrDivider() {
+  return (
+    <div className="auth-or-divider" aria-hidden="true">
+      <span>or</span>
+    </div>
+  );
+}
+
 function Field({
   label,
   delay,
@@ -588,5 +710,16 @@ function Field({
       <span className="mb-2 block text-xs font-medium uppercase tracking-[0.2em] text-slate-400">{label}</span>
       {children}
     </label>
+  );
+}
+
+function MicrosoftIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 21 21" fill="none" aria-hidden="true">
+      <rect x="1" y="1" width="9" height="9" fill="#F25022" />
+      <rect x="11" y="1" width="9" height="9" fill="#7FBA00" />
+      <rect x="1" y="11" width="9" height="9" fill="#00A4EF" />
+      <rect x="11" y="11" width="9" height="9" fill="#FFB900" />
+    </svg>
   );
 }

@@ -52,6 +52,10 @@ function prettyTarget(target: string | undefined, fallback: string): string {
 
 function mapNativeAuthError(error: unknown): string {
   if (!(error instanceof NativeAuthError)) {
+    console.error("[NativeAuth] Non-auth error (possible CORS/network issue):", error);
+    if (error instanceof TypeError) {
+      return "Unable to reach the authentication server. This may be a network or CORS issue — check the browser console for details.";
+    }
     return "Authentication failed. Check your details and try again.";
   }
 

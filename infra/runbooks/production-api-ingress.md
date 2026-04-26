@@ -87,7 +87,7 @@ backend image is available in AKS:
 
 The deploy is not ready for DNS cutover until the HTTPS verification succeeds.
 It also is not considered healthy until a native-auth initiate probe to
-`/api/auth/native/oauth/v2.0/initiate` reaches the upstream over TLS and
+`/api/auth/native/oauth2/v2.0/initiate` reaches the upstream over TLS and
 returns an application response (`200` or `400`) instead of a proxy failure.
 
 ## Current Gap

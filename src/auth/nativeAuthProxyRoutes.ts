@@ -1,5 +1,8 @@
 import express from "express";
 
+const DEFAULT_CIAM_TENANT_SUBDOMAIN = "autoflowciam";
+const DEFAULT_CIAM_TENANT_ID = "5e4f1080-8afc-4005-b05e-32b21e69363a";
+
 const FORWARDED_REQUEST_HEADERS = [
   "accept",
   "content-type",
@@ -54,8 +57,14 @@ function parseOriginAllowlist(value: string | undefined): Set<string> {
 }
 
 function resolveFallbackCiamAuthority(): string | null {
-  const tenantSubdomain = process.env.AZURE_CIAM_TENANT_SUBDOMAIN ?? process.env.AZURE_TENANT_SUBDOMAIN;
-  const tenantId = process.env.AZURE_CIAM_TENANT_ID ?? process.env.AZURE_TENANT_ID;
+  const tenantSubdomain =
+    process.env.AZURE_CIAM_TENANT_SUBDOMAIN ??
+    process.env.AZURE_TENANT_SUBDOMAIN ??
+    DEFAULT_CIAM_TENANT_SUBDOMAIN;
+  const tenantId =
+    process.env.AZURE_CIAM_TENANT_ID ??
+    process.env.AZURE_TENANT_ID ??
+    DEFAULT_CIAM_TENANT_ID;
   if (!tenantSubdomain?.trim() || !tenantId?.trim()) {
     return null;
   }
@@ -157,6 +166,12 @@ function resolveAllowedNativeAuthPath(pathValue: string | undefined): string | n
       return "signup/v1.0/challenge";
     case "signup/v1.0/continue":
       return "signup/v1.0/continue";
+    case "signin/v1.0/start":
+      return "signin/v1.0/start";
+    case "signin/v1.0/challenge":
+      return "signin/v1.0/challenge";
+    case "signin/v1.0/continue":
+      return "signin/v1.0/continue";
     case "resetpassword/v1.0/challenge":
       return "resetpassword/v1.0/challenge";
     case "resetpassword/v1.0/start":

@@ -314,9 +314,9 @@ describe("native auth proxy routes", () => {
     expect(secondUrl.toString()).toBe("https://autoflowciam.ciamlogin.com/tenant-guid/challenge/v1.0/continue");
   });
 
-  it("uses the AutoFlow CIAM defaults when the branded host is configured without tenant env vars", async () => {
+  it("falls back to the repo CIAM defaults when branded auth is configured without tenant fallback env", async () => {
     (global.fetch as jest.Mock)
-      .mockRejectedValueOnce(new Error("fetch failed"))
+      .mockRejectedValueOnce(new Error("getaddrinfo ENOTFOUND auth.helloautoflow.com"))
       .mockResolvedValueOnce(
         mockFetchResponse({
           status: 200,
@@ -327,8 +327,7 @@ describe("native auth proxy routes", () => {
 
     const app = loadApp({
       ALLOWED_ORIGINS: "https://dashboard.autoflow.test",
-      AUTH_NATIVE_AUTH_PROXY_BASE_URL:
-        "https://auth.helloautoflow.com/5e4f1080-8afc-4005-b05e-32b21e69363a",
+      AUTH_NATIVE_AUTH_PROXY_BASE_URL: "https://auth.helloautoflow.com/tenant-guid",
       AZURE_CIAM_TENANT_SUBDOMAIN: undefined,
       AZURE_CIAM_TENANT_ID: undefined,
       AZURE_TENANT_SUBDOMAIN: undefined,
@@ -348,9 +347,7 @@ describe("native auth proxy routes", () => {
 
     const [firstUrl] = (global.fetch as jest.Mock).mock.calls[0] as [URL, RequestInit];
     const [secondUrl] = (global.fetch as jest.Mock).mock.calls[1] as [URL, RequestInit];
-    expect(firstUrl.toString()).toBe(
-      "https://auth.helloautoflow.com/5e4f1080-8afc-4005-b05e-32b21e69363a/challenge/v1.0/continue"
-    );
+    expect(firstUrl.toString()).toBe("https://auth.helloautoflow.com/tenant-guid/challenge/v1.0/continue");
     expect(secondUrl.toString()).toBe(
       "https://autoflowciam.ciamlogin.com/5e4f1080-8afc-4005-b05e-32b21e69363a/challenge/v1.0/continue"
     );

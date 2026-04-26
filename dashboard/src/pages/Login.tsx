@@ -3,7 +3,7 @@ import type { AuthenticationResult } from "@azure/msal-browser";
 import { BrowserAuthError, BrowserAuthErrorCodes } from "@azure/msal-browser";
 import { Loader2, ArrowRight, CheckCircle2, KeyRound, Mail, ShieldCheck } from "lucide-react";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import { loginRequest, signupRequest } from "../auth/msalConfig";
+import { microsoftLoginRequest, microsoftSignupRequest } from "../auth/msalConfig";
 import { initializeMsalInstance, msalInstance } from "../auth/msalInstance";
 import {
   NativeAuthError,
@@ -232,7 +232,9 @@ export default function Login() {
 
     try {
       await initializeMsalInstance();
-      const result = await msalInstance.loginPopup(action === "signup" ? signupRequest : loginRequest);
+      const result = await msalInstance.loginPopup(
+        action === "signup" ? microsoftSignupRequest : microsoftLoginRequest
+      );
       if (result.account) {
         msalInstance.setActiveAccount(result.account);
       }

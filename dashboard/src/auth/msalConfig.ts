@@ -80,3 +80,16 @@ export const signupRequest: PopupRequest = {
   ...loginRequest,
   prompt: "create",
 };
+
+// When the user explicitly clicks our Microsoft button, hint CIAM to route
+// straight to the federated Microsoft Account IDP once the tenant-side OIDC
+// provider is configured.
+export const microsoftLoginRequest: PopupRequest = {
+  ...loginRequest,
+  domainHint: "login.live.com",
+};
+
+export const microsoftSignupRequest: PopupRequest = {
+  ...signupRequest,
+  domainHint: "login.live.com",
+};

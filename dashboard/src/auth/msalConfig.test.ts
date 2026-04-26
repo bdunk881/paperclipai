@@ -77,12 +77,15 @@ describe("msalConfig env parsing", () => {
     vi.stubEnv("VITE_AZURE_CIAM_TENANT_SUBDOMAIN", "MyTenant01");
     vi.stubEnv("VITE_AZURE_CIAM_TENANT_DOMAIN", "mytenant01.onmicrosoft.com");
 
-    const { msalConfig } = await loadConfig();
+    const { microsoftLoginRequest, microsoftSignupRequest, msalConfig } = await loadConfig();
 
     expect(msalConfig.auth.authority).toBe(
       "https://mytenant01.ciamlogin.com/mytenant01.onmicrosoft.com"
     );
     expect(msalConfig.auth.knownAuthorities).toEqual(["mytenant01.ciamlogin.com"]);
     expect(msalConfig.auth.redirectUri).toBe("http://localhost:3000/auth/callback");
+    expect(microsoftLoginRequest.domainHint).toBe("login.live.com");
+    expect(microsoftSignupRequest.domainHint).toBe("login.live.com");
+    expect(microsoftSignupRequest.prompt).toBe("create");
   });
 });

@@ -166,7 +166,12 @@ describe("Login", () => {
 
     await waitFor(() => {
       expect(initializeMsalInstanceMock).toHaveBeenCalledTimes(1);
-      expect(loginPopupMock).toHaveBeenCalledTimes(1);
+      expect(loginPopupMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          domainHint: "login.live.com",
+          scopes: ["openid", "profile", "email"],
+        })
+      );
       expect(setActiveAccountMock).toHaveBeenCalledWith(
         expect.objectContaining({ username: "user@example.com" })
       );

@@ -2,15 +2,7 @@ import type { StoredAuthSession, StoredAuthUser } from "./authStorage";
 
 const DEFAULT_CIAM_CLIENT_ID = "2dfd3a08-277c-4893-b07d-eca5ae322310";
 const DEFAULT_SCOPE = "openid profile email offline_access";
-const DEFAULT_CIAM_TENANT_SUBDOMAIN = "autoflowciam";
-
-function ciamAuthority(): string {
-  const subdomain =
-    import.meta.env.VITE_AZURE_CIAM_TENANT_SUBDOMAIN?.trim() || DEFAULT_CIAM_TENANT_SUBDOMAIN;
-  const domain =
-    import.meta.env.VITE_AZURE_CIAM_TENANT_DOMAIN?.trim() || `${subdomain}.onmicrosoft.com`;
-  return `https://${subdomain}.ciamlogin.com/${domain}`;
-}
+const NATIVE_AUTH_PROXY_BASE = "/api/auth/native";
 
 type NativeAuthPrimitive = string | number | boolean | null | undefined;
 type NativeAuthPayload = Record<string, NativeAuthPrimitive>;
@@ -79,7 +71,7 @@ async function readNativeAuthError(response: Response): Promise<NativeAuthError>
 }
 
 async function postForm<T>(path: string, payload: NativeAuthPayload): Promise<T> {
-  const response = await fetch(`${ciamAuthority()}/${path}`, {
+  const response = await fetch(`${NATIVE_AUTH_PROXY_BASE}/${path}`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",

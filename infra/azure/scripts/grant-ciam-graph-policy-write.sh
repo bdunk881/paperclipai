@@ -41,10 +41,10 @@ echo "Authenticating to CIAM tenant..."
 TOKEN_RESPONSE=$(curl -s -X POST \
   "https://login.microsoftonline.com/$CIAM_TENANT_ID/oauth2/v2.0/token" \
   -H "Content-Type: application/x-www-form-urlencoded" \
-  -d "client_id=$CIAM_CLIENT_ID" \
-  -d "client_secret=$CIAM_CLIENT_SECRET" \
-  -d "scope=https://graph.microsoft.com/.default" \
-  -d "grant_type=client_credentials")
+  --data-urlencode "client_id=$CIAM_CLIENT_ID" \
+  --data-urlencode "client_secret=$CIAM_CLIENT_SECRET" \
+  --data-urlencode "scope=https://graph.microsoft.com/.default" \
+  --data-urlencode "grant_type=client_credentials")
 
 GRAPH_TOKEN=$(echo "$TOKEN_RESPONSE" | python3 -c "
 import sys, json
@@ -104,13 +104,16 @@ if [ -z "$MSGRAPH_SP_ID" ]; then
 fi
 echo -e "${GREEN}Graph SP: $MSGRAPH_SP_ID${NC}"
 
-# ── 4. Check if the permission is already granted ───────────────────────────
+# ── 4. Check if the permission is already granted (follows pagination) ──────
 echo ""
 echo "Checking existing app role assignments..."
-EXISTING_RESPONSE=$(curl -s -H "Authorization: Bearer $GRAPH_TOKEN" \
-  "https://graph.microsoft.com/v1.0/servicePrincipals/$CIAM_SP_ID/appRoleAssignments")
+NEXT_URL="https://graph.microsoft.com/v1.0/servicePrincipals/$CIAM_SP_ID/appRoleAssignments"
+ALREADY_GRANTED="no"
 
-ALREADY_GRANTED=$(echo "$EXISTING_RESPONSE" | python3 -c "
+while [ -n "$NEXT_URL" ] && [ "$ALREADY_GRANTED" = "no" ]; do
+  PAGE_RESPONSE=$(curl -s -H "Authorization: Bearer $GRAPH_TOKEN" "$NEXT_URL")
+
+  ALREADY_GRANTED=$(echo "$PAGE_RESPONSE" | python3 -c "
 import sys, json
 d = json.load(sys.stdin)
 target = '$POLICY_RW_AUTH_METHOD_ROLE_ID'
@@ -121,6 +124,13 @@ for a in d.get('value', []):
 else:
     print('no')
 " 2>/dev/null || echo "no")
+
+  NEXT_URL=$(echo "$PAGE_RESPONSE" | python3 -c "
+import sys, json
+d = json.load(sys.stdin)
+print(d.get('@odata.nextLink', ''))
+" 2>/dev/null || echo "")
+done
 
 if [ "$ALREADY_GRANTED" = "yes" ]; then
   echo -e "${GREEN}Policy.ReadWrite.AuthenticationMethod is already granted.${NC}"

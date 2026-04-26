@@ -27,8 +27,8 @@ The `production` GitHub environment must define:
   - `AZURE_BACKEND_ENV_PRODUCTION` — newline-delimited env file consumed by
     `kubectl create secret generic autoflow-backend-secrets --from-env-file=...`
 
-The production env secret must pin native auth to the direct CIAM authority,
-not the dead branded hostname:
+The production env secret must pin native auth to the direct CIAM authority.
+The retired branded auth hostname is no longer a valid fallback:
 
 ```env
 AZURE_CIAM_TENANT_SUBDOMAIN=<tenant-subdomain>

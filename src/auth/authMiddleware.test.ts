@@ -270,8 +270,8 @@ describe("requireAuth", () => {
     );
   });
 
-  it("supports branded CIAM authorities while keeping tenant subdomain issuer fallback", () => {
-    process.env.AZURE_CIAM_AUTHORITY = "https://auth.helloautoflow.com/tenant-guid";
+  it("ignores retired non-ciam authorities and keeps tenant subdomain issuer fallback", () => {
+    process.env.AZURE_CIAM_AUTHORITY = "https://legacy-auth.example.com/tenant-guid";
     process.env.AZURE_CIAM_TENANT_SUBDOMAIN = "autoflowciam";
     process.env.AZURE_CIAM_TENANT_ID = "tenant-guid";
     process.env.AZURE_CIAM_CLIENT_ID = "custom-client";
@@ -290,7 +290,6 @@ describe("requireAuth", () => {
     expect(options).toMatchObject({
       audience: expect.arrayContaining(["custom-client"]),
       issuer: expect.arrayContaining([
-        "https://auth.helloautoflow.com/tenant-guid/v2.0",
         "https://autoflowciam.ciamlogin.com/tenant-guid/v2.0",
         "https://tenant-guid.ciamlogin.com/tenant-guid/v2.0",
       ]),
@@ -299,7 +298,7 @@ describe("requireAuth", () => {
     keyResolver({ kid: "brand-kid" }, jest.fn());
     expect(jwksClientMock).toHaveBeenCalledWith(
       expect.objectContaining({
-        jwksUri: "https://auth.helloautoflow.com/tenant-guid/discovery/v2.0/keys",
+        jwksUri: "https://autoflowciam.ciamlogin.com/tenant-guid/discovery/v2.0/keys",
       })
     );
   });

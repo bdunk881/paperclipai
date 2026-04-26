@@ -44,7 +44,14 @@ function normalizeAuthority(value: string | undefined): string | null {
 
   try {
     const parsed = new URL(normalized);
-    if (parsed.protocol !== "https:" || parsed.username || parsed.password || parsed.search || parsed.hash) {
+    if (
+      parsed.protocol !== "https:" ||
+      parsed.username ||
+      parsed.password ||
+      parsed.search ||
+      parsed.hash ||
+      !parsed.hostname.toLowerCase().endsWith(".ciamlogin.com")
+    ) {
       return null;
     }
 

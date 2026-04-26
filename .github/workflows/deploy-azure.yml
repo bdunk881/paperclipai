@@ -437,6 +437,52 @@ jobs:
           trap 'rm -f "$tmpfile"' EXIT
           printf '%s\n' "${BACKEND_ENV_PRODUCTION}" > "$tmpfile"
 
+          require_env_key() {
+            local key="$1"
+            if ! grep -Eq "^${key}=.+" "$tmpfile"; then
+              echo "::error::AZURE_BACKEND_ENV_PRODUCTION is missing required key ${key}"
+              exit 1
+            fi
+          }
+
+          read_env_value() {
+            local key="$1"
+            sed -n "s/^${key}=//p" "$tmpfile" | tail -n 1
+          }
+
+          require_any_env_key() {
+            for key in "$@"; do
+              if grep -Eq "^${key}=.+" "$tmpfile"; then
+                return 0
+              fi
+            done
+            echo "::error::AZURE_BACKEND_ENV_PRODUCTION must include one of: $*"
+            exit 1
+          }
+
+          require_env_key "ALLOWED_ORIGINS"
+          require_any_env_key "AZURE_CIAM_TENANT_ID" "AZURE_TENANT_ID"
+          require_any_env_key "AZURE_CIAM_TENANT_SUBDOMAIN" "AZURE_TENANT_SUBDOMAIN"
+          require_any_env_key "AZURE_CIAM_CLIENT_ID" "AZURE_CIAM_ALLOWED_AUDIENCES" "AZURE_CLIENT_ID"
+
+          if ! printf '%s' "$(read_env_value "ALLOWED_ORIGINS")" | tr ',' '\n' | grep -Fxq "https://app.helloautoflow.com"; then
+            echo "::error::AZURE_BACKEND_ENV_PRODUCTION must allow https://app.helloautoflow.com in ALLOWED_ORIGINS"
+            exit 1
+          fi
+
+          AUTHORITY_VALUE="$(read_env_value "AZURE_CIAM_AUTHORITY")"
+          PROXY_BASE_VALUE="$(read_env_value "AUTH_NATIVE_AUTH_PROXY_BASE_URL")"
+          for endpoint in "$AUTHORITY_VALUE" "$PROXY_BASE_VALUE"; do
+            if [ -z "$endpoint" ]; then
+              continue
+            fi
+            host="$(printf '%s' "$endpoint" | sed -E 's#^https://([^/]+)/?.*$#\1#')"
+            if [ "$host" = "auth.helloautoflow.com" ] && ! dig +short "$host" | grep -q '.'; then
+              echo "::error::${host} does not resolve publicly. Remove the branded authority from AZURE_BACKEND_ENV_PRODUCTION or repair DNS before deploying."
+              exit 1
+            fi
+          done
+
           kubectl apply -f k8s/production/namespace.yaml
           kubectl create secret generic "${{ steps.target.outputs.k8s_secret_name }}" \
             --from-env-file="$tmpfile" \

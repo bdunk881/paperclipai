@@ -261,6 +261,46 @@ describe("requireAuth", () => {
     );
   });
 
+  it("falls back to the repo CIAM defaults when no auth env vars are configured", () => {
+    delete process.env.AZURE_CIAM_AUTHORITY;
+    delete process.env.AZURE_CIAM_TENANT_SUBDOMAIN;
+    delete process.env.AZURE_CIAM_TENANT_ID;
+    delete process.env.AZURE_CIAM_CLIENT_ID;
+    delete process.env.AZURE_CIAM_ALLOWED_AUDIENCES;
+    delete process.env.AZURE_TENANT_SUBDOMAIN;
+    delete process.env.AZURE_TENANT_ID;
+    delete process.env.AZURE_CLIENT_ID;
+
+    const requireAuth = loadRequireAuth();
+    const req = {
+      headers: { authorization: "Bearer default-token" },
+      originalUrl: "/api/me",
+      path: "/api/me",
+    } as unknown as AuthenticatedRequest;
+    const res = createResponse();
+
+    requireAuth(req, res as never, jest.fn());
+
+    const [, keyResolver, options] = verifyMock.mock.calls[0];
+    expect(options).toMatchObject({
+      audience: expect.arrayContaining([
+        "2dfd3a08-277c-4893-b07d-eca5ae322310",
+        "d36ce552-1a3d-4cd3-b851-beff4e3bf440",
+      ]),
+      issuer: expect.arrayContaining([
+        "https://autoflowciam.ciamlogin.com/5e4f1080-8afc-4005-b05e-32b21e69363a/v2.0",
+        "https://5e4f1080-8afc-4005-b05e-32b21e69363a.ciamlogin.com/5e4f1080-8afc-4005-b05e-32b21e69363a/v2.0",
+      ]),
+    });
+    keyResolver({ kid: "default-kid" }, jest.fn());
+    expect(jwksClientMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        jwksUri:
+          "https://autoflowciam.ciamlogin.com/5e4f1080-8afc-4005-b05e-32b21e69363a/discovery/v2.0/keys",
+      })
+    );
+  });
+
   it("accepts explicit audience allowlists for rotated app registrations", () => {
     process.env.AZURE_CIAM_TENANT_SUBDOMAIN = "newciam";
     process.env.AZURE_CIAM_TENANT_ID = "tenant-guid";

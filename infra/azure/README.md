@@ -157,8 +157,19 @@ GitHub larger runners with static IPs, or a dedicated VPN/NAT path.
 7. Ensure `AZURE_BACKEND_ENV_PRODUCTION` includes CIAM auth fallback inputs
    (`AZURE_CIAM_TENANT_ID`/`AZURE_TENANT_ID`, `AZURE_CIAM_TENANT_SUBDOMAIN`/`AZURE_TENANT_SUBDOMAIN`,
    and a CIAM audience/client setting) plus `ALLOWED_ORIGINS` containing
-   `https://app.helloautoflow.com`. The workflow now rejects production deploys
-   that point at the unresolved branded host `auth.helloautoflow.com`.
+   `https://app.helloautoflow.com`.
+8. Set both `AZURE_CIAM_AUTHORITY` and `AUTH_NATIVE_AUTH_PROXY_BASE_URL` in
+   `AZURE_BACKEND_ENV_PRODUCTION` to the direct tenant authority:
+
+   `https://<tenant-subdomain>.ciamlogin.com/<tenant-guid>`
+
+   Example:
+
+   `https://autoflowciam.ciamlogin.com/5e4f1080-8afc-4005-b05e-32b21e69363a`
+
+   The production deploy workflow now rejects any other runtime value so the
+   backend cannot drift back to `auth.helloautoflow.com` without repo-managed
+   DNS/IaC support.
 
 **Validation checks**
 
@@ -167,8 +178,9 @@ GitHub larger runners with static IPs, or a dedicated VPN/NAT path.
 - `gh api repos/<owner>/<repo>/environments/production/variables` should include
   the three production AKS variables listed above.
 - `gh run list --workflow deploy-azure.yml` should show a successful
-  production backend run that imports into ACR, creates the K8s secret, and
-  rolls out the AKS deployment before you cut traffic to the new backend.
+  production backend run that imports into ACR, creates the K8s secret, rolls
+  out the AKS deployment, and passes the native-auth initiate smoke check
+  before you cut traffic to the new backend.
 
 ---
 

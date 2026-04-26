@@ -1,8 +1,8 @@
 import type { StoredAuthSession, StoredAuthUser } from "./authStorage";
+import { getApiBasePath } from "../api/baseUrl";
 
 const DEFAULT_CIAM_CLIENT_ID = "2dfd3a08-277c-4893-b07d-eca5ae322310";
 const DEFAULT_SCOPE = "openid profile email offline_access";
-const NATIVE_AUTH_PROXY_BASE = "/api/auth/native";
 
 type NativeAuthPrimitive = string | number | boolean | null | undefined;
 type NativeAuthPayload = Record<string, NativeAuthPrimitive>;
@@ -71,7 +71,7 @@ async function readNativeAuthError(response: Response): Promise<NativeAuthError>
 }
 
 async function postForm<T>(path: string, payload: NativeAuthPayload): Promise<T> {
-  const response = await fetch(`${NATIVE_AUTH_PROXY_BASE}/${path}`, {
+  const response = await fetch(`${getApiBasePath()}/auth/native/${path}`, {
     method: "POST",
     headers: {
       "Content-Type": "application/x-www-form-urlencoded",

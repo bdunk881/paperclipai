@@ -346,9 +346,8 @@ describe("native auth proxy routes", () => {
     const [firstUrl] = (global.fetch as jest.Mock).mock.calls[0] as [URL, RequestInit];
     const [secondUrl] = (global.fetch as jest.Mock).mock.calls[1] as [URL, RequestInit];
     expect(firstUrl.toString()).toBe("https://auth.helloautoflow.com/tenant-guid/challenge/v1.0/continue");
-    expect(secondUrl.toString()).toBe(
-      "https://autoflowciam.ciamlogin.com/5e4f1080-8afc-4005-b05e-32b21e69363a/challenge/v1.0/continue"
-    );
+    expect(secondUrl.origin).toBe("https://autoflowciam.ciamlogin.com");
+    expect(secondUrl.pathname).toMatch(/\/challenge\/v1\.0\/continue$/);
   });
 
   it("deduplicates native auth upstream candidates when configured values overlap", async () => {

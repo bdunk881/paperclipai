@@ -31,10 +31,10 @@ The production env secret must pin native auth to the direct CIAM authority,
 not the dead branded hostname:
 
 ```env
-AZURE_CIAM_TENANT_SUBDOMAIN=autoflowciam
-AZURE_CIAM_TENANT_ID=5e4f1080-8afc-4005-b05e-32b21e69363a
-AZURE_CIAM_AUTHORITY=https://autoflowciam.ciamlogin.com/5e4f1080-8afc-4005-b05e-32b21e69363a
-AUTH_NATIVE_AUTH_PROXY_BASE_URL=https://autoflowciam.ciamlogin.com/5e4f1080-8afc-4005-b05e-32b21e69363a
+AZURE_CIAM_TENANT_SUBDOMAIN=<tenant-subdomain>
+AZURE_CIAM_TENANT_ID=<tenant-guid>
+AZURE_CIAM_AUTHORITY=https://<tenant-subdomain>.ciamlogin.com/<tenant-guid>
+AUTH_NATIVE_AUTH_PROXY_BASE_URL=https://<tenant-subdomain>.ciamlogin.com/<tenant-guid>
 ```
 
 The environment should also enforce at least one required reviewer before manual

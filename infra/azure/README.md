@@ -165,7 +165,7 @@ GitHub larger runners with static IPs, or a dedicated VPN/NAT path.
 
    Example:
 
-   `https://autoflowciam.ciamlogin.com/5e4f1080-8afc-4005-b05e-32b21e69363a`
+   `https://<tenant-subdomain>.ciamlogin.com/<tenant-guid>`
 
    The production deploy workflow now rejects any other runtime value so the
    backend cannot drift back to `auth.helloautoflow.com` without repo-managed

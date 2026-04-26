@@ -2,15 +2,7 @@ import type { StoredAuthSession, StoredAuthUser } from "./authStorage";
 
 const DEFAULT_CIAM_CLIENT_ID = "2dfd3a08-277c-4893-b07d-eca5ae322310";
 const DEFAULT_SCOPE = "openid profile email offline_access";
-const DEFAULT_CIAM_TENANT_SUBDOMAIN = "autoflowciam";
-
-function ciamAuthority(): string {
-  const subdomain =
-    import.meta.env.VITE_AZURE_CIAM_TENANT_SUBDOMAIN?.trim() || DEFAULT_CIAM_TENANT_SUBDOMAIN;
-  const domain =
-    import.meta.env.VITE_AZURE_CIAM_TENANT_DOMAIN?.trim() || `${subdomain}.onmicrosoft.com`;
-  return `https://${subdomain}.ciamlogin.com/${domain}`;
-}
+const NATIVE_AUTH_PROXY_BASE = "/api/auth/native";
 
 type NativeAuthPrimitive = string | number | boolean | null | undefined;
 type NativeAuthPayload = Record<string, NativeAuthPrimitive>;
@@ -55,17 +47,17 @@ function clientId(): string {
   return import.meta.env.VITE_AZURE_CIAM_CLIENT_ID ?? DEFAULT_CIAM_CLIENT_ID;
 }
 
-function buildFormBody(input: NativeAuthPayload): URLSearchParams {
-  const params = new URLSearchParams();
+function buildJsonBody(input: NativeAuthPayload): string {
+  const clean: Record<string, string> = {};
 
   for (const [key, value] of Object.entries(input)) {
     if (value === undefined || value === null || value === "") {
       continue;
     }
-    params.set(key, String(value));
+    clean[key] = String(value);
   }
 
-  return params;
+  return JSON.stringify(clean);
 }
 
 async function readNativeAuthError(response: Response): Promise<NativeAuthError> {
@@ -79,13 +71,13 @@ async function readNativeAuthError(response: Response): Promise<NativeAuthError>
 }
 
 async function postForm<T>(path: string, payload: NativeAuthPayload): Promise<T> {
-  const response = await fetch(`${ciamAuthority()}/${path}`, {
+  const response = await fetch(`${NATIVE_AUTH_PROXY_BASE}/${path}`, {
     method: "POST",
     headers: {
-      "Content-Type": "application/x-www-form-urlencoded",
+      "Content-Type": "application/json",
       Accept: "application/json",
     },
-    body: buildFormBody(payload),
+    body: buildJsonBody(payload),
   });
 
   if (!response.ok) {

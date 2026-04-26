@@ -190,20 +190,30 @@ function serializeFormUrlEncodedBody(body: Record<string, unknown>): string {
   return params.toString();
 }
 
-function serializeRequestBody(body: unknown, contentType: string | undefined): RequestInit["body"] | undefined {
+/**
+ * Always serialize the request body as application/x-www-form-urlencoded for
+ * Azure CIAM, regardless of what the frontend sent.  The frontend may send
+ * JSON (which Vercel rewrites preserve) or form-encoded (which Vercel drops).
+ */
+function serializeRequestBodyAsForm(body: unknown): string | undefined {
   if (!hasRequestBody(body)) {
     return undefined;
   }
 
-  if (typeof body === "string" || Buffer.isBuffer(body)) {
+  // Already a form-encoded string (from express.text middleware)
+  if (typeof body === "string") {
     return body;
   }
 
-  if (isFormUrlEncodedContentType(contentType) && typeof body === "object" && body !== null) {
+  if (Buffer.isBuffer(body)) {
+    return body.toString("utf-8");
+  }
+
+  if (typeof body === "object" && body !== null) {
     return serializeFormUrlEncodedBody(body as Record<string, unknown>);
   }
 
-  return JSON.stringify(body);
+  return undefined;
 }
 
 const router = express.Router();
@@ -247,12 +257,16 @@ function createNativeAuthProxyHandler(proxyPath: (typeof ALLOWED_NATIVE_AUTH_PAT
       return;
     }
 
+    const upstreamHeaders = getForwardHeaders(req);
+    // Always send form-urlencoded to CIAM regardless of frontend content-type
+    upstreamHeaders["content-type"] = "application/x-www-form-urlencoded";
+
     const init: RequestInit = {
       method: "POST",
-      headers: getForwardHeaders(req),
+      headers: upstreamHeaders,
     };
 
-    const requestBody = serializeRequestBody(req.body, contentType);
+    const requestBody = serializeRequestBodyAsForm(req.body);
     if (requestBody !== undefined) {
       init.body = requestBody;
     }

@@ -318,7 +318,7 @@ app.use("/api/ticket-sync", requireAuth, ticketSyncRoutes);
 
 app.use(
   "/api/auth/native",
-  express.text({ type: "application/x-www-form-urlencoded" }),
+  express.urlencoded({ extended: false }),
   nativeAuthProxyRateLimiter,
   nativeAuthProxyRoutes
 );

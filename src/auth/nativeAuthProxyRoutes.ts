@@ -166,6 +166,46 @@ function isSupportedContentType(contentType: string | undefined): boolean {
   );
 }
 
+function isFormUrlEncodedContentType(contentType: string | undefined): boolean {
+  return typeof contentType === "string" && contentType.toLowerCase().includes("application/x-www-form-urlencoded");
+}
+
+function serializeFormUrlEncodedBody(body: Record<string, unknown>): string {
+  const params = new URLSearchParams();
+
+  for (const [key, rawValue] of Object.entries(body)) {
+    if (rawValue == null) {
+      continue;
+    }
+
+    const values = Array.isArray(rawValue) ? rawValue : [rawValue];
+    for (const value of values) {
+      if (value == null) {
+        continue;
+      }
+      params.append(key, String(value));
+    }
+  }
+
+  return params.toString();
+}
+
+function serializeRequestBody(body: unknown, contentType: string | undefined): RequestInit["body"] | undefined {
+  if (!hasRequestBody(body)) {
+    return undefined;
+  }
+
+  if (typeof body === "string" || Buffer.isBuffer(body)) {
+    return body;
+  }
+
+  if (isFormUrlEncodedContentType(contentType) && typeof body === "object" && body !== null) {
+    return serializeFormUrlEncodedBody(body as Record<string, unknown>);
+  }
+
+  return JSON.stringify(body);
+}
+
 const router = express.Router();
 
 const ALLOWED_NATIVE_AUTH_PATHS = [
@@ -212,11 +252,9 @@ function createNativeAuthProxyHandler(proxyPath: (typeof ALLOWED_NATIVE_AUTH_PAT
       headers: getForwardHeaders(req),
     };
 
-    if (hasRequestBody(req.body)) {
-      init.body =
-        typeof req.body === "string" || Buffer.isBuffer(req.body)
-          ? req.body
-          : JSON.stringify(req.body);
+    const requestBody = serializeRequestBody(req.body, contentType);
+    if (requestBody !== undefined) {
+      init.body = requestBody;
     }
 
     const upstreamBaseUrls = resolveNativeAuthProxyBaseUrls();

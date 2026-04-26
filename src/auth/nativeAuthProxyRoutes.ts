@@ -32,7 +32,14 @@ function normalizeHttpsUrl(value: string | undefined): string | null {
 
   try {
     const url = new URL(trimmed);
-    if (url.protocol !== "https:" || url.username || url.password || url.search || url.hash) {
+    if (
+      url.protocol !== "https:" ||
+      url.username ||
+      url.password ||
+      url.search ||
+      url.hash ||
+      !url.hostname.toLowerCase().endsWith(".ciamlogin.com")
+    ) {
       return null;
     }
 

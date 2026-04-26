@@ -167,9 +167,8 @@ GitHub larger runners with static IPs, or a dedicated VPN/NAT path.
 
    `https://<tenant-subdomain>.ciamlogin.com/<tenant-guid>`
 
-   The production deploy workflow now rejects any other runtime value so the
-   backend cannot drift back to `auth.helloautoflow.com` without repo-managed
-   DNS/IaC support.
+   The production deploy workflow now rejects any non-`ciamlogin.com` runtime
+   value so the backend cannot drift back to the retired branded auth host.
 
 **Validation checks**
 

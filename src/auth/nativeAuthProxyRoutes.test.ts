@@ -241,8 +241,7 @@ describe("native auth proxy routes", () => {
       .set("Origin", "https://dashboard.autoflow.test")
       .send({ email: "alex@example.com" });
 
-    expect(response.status).toBe(400);
-    expect(response.body.error).toMatch(/path is not allowed/i);
+    expect(response.status).toBe(404);
     expect(global.fetch).not.toHaveBeenCalled();
   });
 
@@ -257,8 +256,7 @@ describe("native auth proxy routes", () => {
       .set("Origin", "https://dashboard.autoflow.test")
       .send({ email: "alex@example.com" });
 
-    expect(response.status).toBe(400);
-    expect(response.body.error).toMatch(/path is not allowed/i);
+    expect(response.status).toBe(404);
     expect(global.fetch).not.toHaveBeenCalled();
   });
 

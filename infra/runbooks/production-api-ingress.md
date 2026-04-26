@@ -27,6 +27,16 @@ The `production` GitHub environment must define:
   - `AZURE_BACKEND_ENV_PRODUCTION` — newline-delimited env file consumed by
     `kubectl create secret generic autoflow-backend-secrets --from-env-file=...`
 
+The production env secret must pin native auth to the direct CIAM authority,
+not the dead branded hostname:
+
+```env
+AZURE_CIAM_TENANT_SUBDOMAIN=<tenant-subdomain>
+AZURE_CIAM_TENANT_ID=<tenant-guid>
+AZURE_CIAM_AUTHORITY=https://<tenant-subdomain>.ciamlogin.com/<tenant-guid>
+AUTH_NATIVE_AUTH_PROXY_BASE_URL=https://<tenant-subdomain>.ciamlogin.com/<tenant-guid>
+```
+
 The environment should also enforce at least one required reviewer before manual
 production dispatches proceed.
 
@@ -76,6 +86,9 @@ backend image is available in AKS:
 5. Apply `k8s/production/api-ingress.yaml`, wait for `autoflow-production-api-tls` to be issued, and verify HTTPS with `curl --resolve`
 
 The deploy is not ready for DNS cutover until the HTTPS verification succeeds.
+It also is not considered healthy until a native-auth initiate probe to
+`/api/auth/native/oauth/v2.0/initiate` reaches the upstream over TLS and
+returns an application response (`200` or `400`) instead of a proxy failure.
 
 ## Current Gap
 

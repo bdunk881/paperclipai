@@ -203,9 +203,11 @@ GitHub larger runners with static IPs, or a dedicated VPN/NAT path.
 ```
 infra/azure/scripts/
   bootstrap-tfstate.sh         — one-time Terraform remote state setup
+  enable-ciam-native-auth-sspr.sh — enable Email OTP SSPR for native auth in the external tenant
   provision-ciam.sh            — create the CIAM SPA app registration and output env vars
   sync-ciam-redirect-uris.sh   — upsert the dashboard auth callback/logout URIs on the CIAM SPA app
   validate-ciam-prereqs.sh     — validate subscription + Graph access before provisioning
+  verify-ciam-native-auth-sspr.sh — verify resetpassword/v1.0/start returns a continuation token
 ```
 
 The dashboard is in a transition period between root-based MSAL redirects and
@@ -214,6 +216,13 @@ and verified, keep both the host root and `/auth/callback` registered as SPA
 redirect URIs for production, staging, the active Vercel preview hosts, and
 localhost. Run `./scripts/sync-ciam-redirect-uris.sh` after any custom-domain
 cutover, preview-host policy change, or auth route change.
+
+Native auth password reset depends on Email OTP SSPR being enabled in the
+external tenant. After `provision-ciam.sh` creates the app registration, run
+`./scripts/enable-ciam-native-auth-sspr.sh` and then
+`./scripts/verify-ciam-native-auth-sspr.sh` with a real customer username.
+Without that tenant-side policy, Azure returns `AADSTS500222` from
+`resetpassword/v1.0/start` even when the app code and proxy routing are correct.
 
 ---
 

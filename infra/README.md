@@ -101,6 +101,13 @@ Recommended dashboard host split:
 - Smoke script: `infra/scripts/qa_integration_smoke.sh`
 - Runbook: `infra/runbooks/qa-integration-environment.md`
 
+## CIAM Native Auth Password Reset
+
+- Enable tenant-side Email OTP SSPR before relying on `resetpassword/v1.0/*` in native auth.
+- Script: `infra/azure/scripts/enable-ciam-native-auth-sspr.sh`
+- Verification: `infra/azure/scripts/verify-ciam-native-auth-sspr.sh`
+- Runbook: `infra/runbooks/ciam-native-auth-sspr.md`
+
 ## Brand asset infra package (ALT-1363)
 
 - IaC: `infra/brand-assets/terraform/cloudflare-r2/`

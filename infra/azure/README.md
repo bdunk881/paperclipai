@@ -140,6 +140,7 @@ GitHub larger runners with static IPs, or a dedicated VPN/NAT path.
 
 | Environment | Secret | Description |
 |---|---|---|
+| `staging` | `AZURE_BACKEND_ENV_STAGING_SOCIAL_AUTH` | Newline-delimited env file containing `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `APP_JWT_SECRET`, and `SOCIAL_AUTH_CALLBACK_BASE_URL` for the staging Container App |
 | `production` | `AZURE_BACKEND_ENV_PRODUCTION` | Newline-delimited env file materialized into the `autoflow-backend-secrets` Kubernetes secret |
 
 **Required Terraform variables for CIAM app-registration management:**
@@ -157,15 +158,26 @@ GitHub larger runners with static IPs, or a dedicated VPN/NAT path.
    - `staging` — no approvals
    - `production` — add required reviewers for the production deployment gate
 4. Add the environment-scoped backend target variables for each environment.
-5. Add `AZURE_BACKEND_ENV_PRODUCTION` to the `production` environment so the
+5. Add `AZURE_BACKEND_ENV_STAGING_SOCIAL_AUTH` to the `staging` environment with:
+
+   ```env
+   GOOGLE_CLIENT_ID=<google-oauth-client-id>
+   GOOGLE_CLIENT_SECRET=<google-oauth-client-secret>
+   APP_JWT_SECRET=<32+ char random secret>
+   SOCIAL_AUTH_CALLBACK_BASE_URL=https://staging.app.helloautoflow.com/auth
+   ```
+
+   The staging deploy workflow validates those four keys and injects them into
+   the Container App on every deploy alongside the QA bypass flags.
+6. Add `AZURE_BACKEND_ENV_PRODUCTION` to the `production` environment so the
    AKS rollout can create `autoflow-backend-secrets` before the deployment starts.
-6. Verify production-specific values do not reference `staging` or `nonprod`
+7. Verify production-specific values do not reference `staging` or `nonprod`
    resource names; the workflow now hard-fails on cross-environment targets.
-7. Ensure `AZURE_BACKEND_ENV_PRODUCTION` includes CIAM auth fallback inputs
+8. Ensure `AZURE_BACKEND_ENV_PRODUCTION` includes CIAM auth fallback inputs
    (`AZURE_CIAM_TENANT_ID`/`AZURE_TENANT_ID`, `AZURE_CIAM_TENANT_SUBDOMAIN`/`AZURE_TENANT_SUBDOMAIN`,
    and a CIAM audience/client setting) plus `ALLOWED_ORIGINS` containing
    `https://app.helloautoflow.com`.
-8. Set both `AZURE_CIAM_AUTHORITY` and `AUTH_NATIVE_AUTH_PROXY_BASE_URL` in
+9. Set both `AZURE_CIAM_AUTHORITY` and `AUTH_NATIVE_AUTH_PROXY_BASE_URL` in
    `AZURE_BACKEND_ENV_PRODUCTION` to the direct tenant authority:
 
    `https://<tenant-subdomain>.ciamlogin.com/<tenant-guid>`

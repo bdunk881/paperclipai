@@ -245,7 +245,15 @@ router.get("/", async (req: AuthenticatedRequest, res: Response) => {
     return;
   }
 
-  const configs = await llmConfigStore.listAsync(userId);
+  let configs;
+  try {
+    configs = await llmConfigStore.listAsync(userId);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.warn("[llmConfigRoutes] Postgres list failed, using in-memory fallback:", message);
+    configs = llmConfigStore.list(userId);
+  }
+
   res.json({ configs, total: configs.length });
 });
 

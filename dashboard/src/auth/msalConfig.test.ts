@@ -85,4 +85,14 @@ describe("msalConfig env parsing", () => {
     expect(msalConfig.auth.knownAuthorities).toEqual(["mytenant01.ciamlogin.com"]);
     expect(msalConfig.auth.redirectUri).toBe("http://localhost:3000/auth/callback");
   });
+
+  it("keeps Microsoft sign-in on standard OIDC scopes", async () => {
+    const { loginRequest } = await loadConfig();
+
+    expect(loginRequest.scopes).toEqual([
+      "openid",
+      "profile",
+      "email",
+    ]);
+  });
 });

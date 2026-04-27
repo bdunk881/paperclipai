@@ -25,6 +25,13 @@ type AuthConfig = {
   issuers: [string, ...string[]];
 };
 
+type JwtDiagnosticClaims = {
+  aud?: string | string[];
+  iss?: string;
+  exp?: number;
+  nbf?: number;
+};
+
 const jwksClientCache = new Map<string, jwksRsa.JwksClient>();
 let missingConfigWarningLogged = false;
 const CURRENT_DASHBOARD_CIAM_CLIENT_ID = "2dfd3a08-277c-4893-b07d-eca5ae322310";
@@ -71,6 +78,31 @@ function parseDelimitedEnv(value: string | undefined): string[] {
     .split(",")
     .map((entry) => entry.trim())
     .filter(Boolean);
+}
+
+function decodeJwtDiagnosticClaims(token: string): JwtDiagnosticClaims | null {
+  const [, rawPayload] = token.split(".");
+  if (!rawPayload) {
+    return null;
+  }
+
+  try {
+    const normalized = rawPayload.replace(/-/g, "+").replace(/_/g, "/");
+    const padded = normalized.padEnd(Math.ceil(normalized.length / 4) * 4, "=");
+    const parsed = JSON.parse(Buffer.from(padded, "base64").toString("utf8")) as Record<string, unknown>;
+
+    return {
+      aud:
+        typeof parsed.aud === "string" || Array.isArray(parsed.aud)
+          ? (parsed.aud as string | string[])
+          : undefined,
+      iss: typeof parsed.iss === "string" ? parsed.iss : undefined,
+      exp: typeof parsed.exp === "number" ? parsed.exp : undefined,
+      nbf: typeof parsed.nbf === "number" ? parsed.nbf : undefined,
+    };
+  } catch {
+    return null;
+  }
 }
 
 function resolveAuthConfig(): AuthConfig | null {
@@ -256,6 +288,18 @@ export function requireAuth(
     },
     (err: jwt.VerifyErrors | null, decoded?: string | JwtPayload) => {
       if (err || !decoded) {
+        const tokenClaims = decodeJwtDiagnosticClaims(token);
+        console.warn("[auth] JWT verification failed", {
+          errName: err?.name,
+          errMessage: err?.message,
+          tokenAud: tokenClaims?.aud,
+          tokenIss: tokenClaims?.iss,
+          tokenExp: tokenClaims?.exp,
+          tokenNbf: tokenClaims?.nbf,
+          expectedAudiences: authConfig.audiences,
+          expectedIssuers: authConfig.issuers,
+          jwksUri: authConfig.jwksUri,
+        });
         res.status(401).json({ error: "Invalid or expired token." });
         return;
       }

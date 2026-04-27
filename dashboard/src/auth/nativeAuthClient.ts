@@ -1,7 +1,8 @@
 import type { StoredAuthSession, StoredAuthUser } from "./authStorage";
 
 const DEFAULT_CIAM_CLIENT_ID = "2dfd3a08-277c-4893-b07d-eca5ae322310";
-const DEFAULT_SCOPE = "openid profile email offline_access";
+const DEFAULT_API_SCOPE = `api://${DEFAULT_CIAM_CLIENT_ID}/access_as_user`;
+const DEFAULT_SCOPE = `openid profile email offline_access ${DEFAULT_API_SCOPE}`;
 
 /**
  * In production the dashboard is served by Vercel and API calls go through a
@@ -185,11 +186,8 @@ export function sessionFromTokenResponse(tokens: NativeAuthTokenResponse): Store
   const idTokenClaims = decodeJwtPayload(tokens.id_token);
   const accessTokenClaims = decodeJwtPayload(tokens.access_token);
 
-  // Azure CIAM access tokens issued with only OIDC scopes (openid, profile,
-  // email) target Microsoft Graph (aud = 00000003-...), not our API.  The
-  // id_token carries aud = our client ID which the backend can verify.
   return {
-    accessToken: tokens.id_token ?? tokens.access_token,
+    accessToken: tokens.access_token,
     refreshToken: tokens.refresh_token,
     idToken: tokens.id_token,
     expiresAt: Date.now() + tokens.expires_in * 1000,

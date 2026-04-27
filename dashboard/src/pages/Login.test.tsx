@@ -174,7 +174,7 @@ describe("Login", () => {
       );
       expect(writeStoredAuthSessionMock).toHaveBeenCalledWith(
         expect.objectContaining({
-          accessToken: "msal-id-token",
+          accessToken: "msal-token-123",
           idToken: "msal-id-token",
           scope: "openid profile email",
           user: expect.objectContaining({

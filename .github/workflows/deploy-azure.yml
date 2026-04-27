@@ -2,7 +2,7 @@ name: Deploy Backend to Azure
 
 on:
   push:
-    branches: [master]
+    branches: [master, staging]
   workflow_dispatch:
     inputs:
       environment:
@@ -26,7 +26,12 @@ env:
 jobs:
   deploy-staging:
     name: Build and Deploy Staging Backend Container App
-    if: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'staging' }}
+    if: >-
+      ${{
+        github.ref == 'refs/heads/staging' ||
+        (github.event_name == 'workflow_dispatch' &&
+         github.event.inputs.environment == 'staging')
+      }}
     runs-on: ubuntu-latest
     environment: staging
 
@@ -287,7 +292,8 @@ jobs:
     name: Build and Deploy Production Backend to AKS
     if: >-
       ${{
-        github.event_name == 'push' ||
+        github.ref == 'refs/heads/master' ||
+        github.ref == 'refs/heads/main' ||
         (github.event_name == 'workflow_dispatch' &&
          github.event.inputs.environment == 'production')
       }}

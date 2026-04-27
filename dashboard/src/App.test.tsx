@@ -80,7 +80,6 @@ vi.mock("./pages/McpServers", () => ({ default: () => <div>MCP Servers Page</div
 vi.mock("./pages/ExecutionLogs", () => ({ default: () => <div>Execution Logs Page</div> }));
 vi.mock("./pages/CheckoutSuccess", () => ({ default: () => <div>Checkout Success Page</div> }));
 vi.mock("./pages/AuthCallback", () => ({ default: () => <div>Auth Callback Page</div> }));
-vi.mock("./pages/SocialAuthCallback", () => ({ default: () => <div>Social Auth Callback Page</div> }));
 vi.mock("./pages/Tickets", () => ({ default: () => <div>Tickets Page</div> }));
 vi.mock("./pages/TicketDetail", () => ({ default: () => <div>Ticket Detail Page</div> }));
 vi.mock("./pages/TicketTeamView", () => ({ default: () => <div>Ticket Team Page</div> }));
@@ -106,13 +105,6 @@ describe("App", () => {
     render(<App />);
 
     expect(await screen.findByText("Landing Page")).toBeInTheDocument();
-  });
-
-  it("renders the social auth callback route without authentication", async () => {
-    window.history.replaceState({}, "", "/auth/social-callback");
-    render(<App />);
-
-    expect(await screen.findByText("Social Auth Callback Page")).toBeInTheDocument();
   });
 
   it("redirects private routes to login when unauthenticated", async () => {

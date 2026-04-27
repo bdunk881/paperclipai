@@ -48,19 +48,19 @@ Add these in the repo settings -> Secrets and variables -> Actions:
 | `AZURE_STATIC_WEB_APPS_STAGING_API_TOKEN` | Staging Azure Static Web Apps deploy token (`staging.app.helloautoflow.com`) |
 | `VITE_API_BASE_URL` | Production backend API base URL (for example `https://api.autoflowapp.ai`) |
 | `VITE_API_BASE_URL_STAGING` | Optional staging backend API base URL; falls back to `VITE_API_BASE_URL` |
-| `VITE_AZURE_CLIENT_ID` | Production Entra External ID app registration client ID |
-| `VITE_AZURE_CLIENT_ID_STAGING` | Optional staging Entra client ID; falls back to `VITE_AZURE_CLIENT_ID` |
+| `VITE_AZURE_CLIENT_ID` | Production Entra External ID app registration client ID used for popup/browser auth |
+| `VITE_AZURE_CLIENT_ID_STAGING` | Optional staging Entra client ID used for popup/browser auth; falls back to `VITE_AZURE_CLIENT_ID` |
 | `VITE_AZURE_TENANT_SUBDOMAIN` | Production tenant prefix before `.ciamlogin.com` (for example `autoflowciam`) |
 | `VITE_AZURE_TENANT_SUBDOMAIN_STAGING` | Optional staging tenant prefix; falls back to `VITE_AZURE_TENANT_SUBDOMAIN` |
 | `BRANCH_ADMIN_TOKEN` | Admin-scoped GitHub token used by `enforce-branch-protection.yml` |
 
-The SWA workflow maps `VITE_AZURE_CIAM_CLIENT_ID` from `VITE_AZURE_CLIENT_ID` at build time.
+The SWA workflow no longer injects `VITE_AZURE_CIAM_CLIENT_ID` at build time. Native-auth requests are pinned in code to the CIAM public SPA app registration (`2dfd3a08-277c-4893-b07d-eca5ae322310`) so staging secrets cannot silently swap the flow onto a confidential client.
 Runtime environment variables required in the Vercel dashboard project:
 
 | Variable | Description |
 |---|---|
 | `VITE_API_URL` | Base URL for backend API (for example `https://api.autoflowapp.ai`) |
-| `VITE_AZURE_CIAM_CLIENT_ID` | Entra External ID app registration client ID |
+| `VITE_AZURE_CIAM_CLIENT_ID` | Legacy override for preview/Vercel flows; native-auth code ignores this and stays pinned to the CIAM public SPA app |
 | `VITE_AZURE_CIAM_TENANT_SUBDOMAIN` | Entra External ID tenant subdomain used for the `ciamlogin.com` authority host (for example `autoflowciam`) |
 | `VITE_AZURE_CIAM_TENANT_DOMAIN` | Optional Entra External ID tenant domain path segment (for example `autoflowciam.onmicrosoft.com`) |
 | `QA_PREVIEW_ACCESS_TOKEN` | Preview-only shared secret used by `/api/qa-preview-access` to unlock smoke-test access for protected dashboard routes |

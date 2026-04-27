@@ -83,6 +83,7 @@ function mapNativeAuthError(error: unknown): string {
   }
 
   if (error.code === "unsupported_challenge_type") {
+    console.error("[NativeAuth] unsupported_challenge_type detail:", error.description ?? error.message);
     return "This sign-in method is not supported. Contact your administrator.";
   }
 
@@ -380,13 +381,25 @@ export default function Login() {
       setNotice("");
 
       try {
-        const started = await startPasswordReset(resetEmail.trim());
+        let started: Awaited<ReturnType<typeof startPasswordReset>>;
+        try {
+          started = await startPasswordReset(resetEmail.trim());
+        } catch (startErr) {
+          console.error("[NativeAuth] resetpassword/start failed:", startErr instanceof NativeAuthError ? { code: startErr.code, description: startErr.description, status: startErr.status } : startErr);
+          throw startErr;
+        }
         const continuationToken = started.continuation_token;
         if (!continuationToken) {
           throw new NativeAuthError("Password reset did not provide a continuation token.", 500);
         }
 
-        const challenged = await challengePasswordReset(continuationToken);
+        let challenged: Awaited<ReturnType<typeof challengePasswordReset>>;
+        try {
+          challenged = await challengePasswordReset(continuationToken);
+        } catch (challengeErr) {
+          console.error("[NativeAuth] resetpassword/challenge failed:", challengeErr instanceof NativeAuthError ? { code: challengeErr.code, description: challengeErr.description, status: challengeErr.status } : challengeErr);
+          throw challengeErr;
+        }
         setPendingReset({
           continuationToken: challenged.continuation_token ?? continuationToken,
           email: resetEmail.trim(),

@@ -201,6 +201,15 @@ export async function signInWithPassword(email: string, password: string): Promi
     challenge_type: "password redirect",
   });
 
+  if (challenged.challenge_type === "redirect") {
+    throw new NativeAuthError(
+      "This account uses Microsoft sign-in. Use the \"Sign in with Microsoft\" button instead.",
+      400,
+      "redirect_required",
+      "This account was created with Microsoft and doesn't have a password. Use the \"Sign in with Microsoft\" button below.",
+    );
+  }
+
   const continuationToken = challenged.continuation_token ?? initiated.continuation_token;
 
   return postForm<NativeAuthTokenResponse>("oauth2/v2.0/token", {

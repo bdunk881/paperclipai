@@ -46,6 +46,9 @@ type PendingReset = {
 
 const lockupUrl = new URL("../../../infra/brand-assets/payload/logos/product/lockup.svg", import.meta.url).href;
 const noiseUrl = new URL("../../../infra/brand-assets/payload/textures/noise-overlay.svg", import.meta.url).href;
+const googleLogoUrl = new URL("../../../infra/brand-assets/payload/logos/integrations/google/logo.svg", import.meta.url).href;
+const facebookLogoUrl = new URL("../../../infra/brand-assets/payload/logos/integrations/facebook/logo.svg", import.meta.url).href;
+const appleLogoUrl = new URL("../../../infra/brand-assets/payload/logos/integrations/apple/logo.svg", import.meta.url).href;
 const socialProviders: Array<{ key: SocialAuthProvider; label: string }> = [
   { key: "google", label: "Google" },
   { key: "facebook", label: "Facebook" },
@@ -229,6 +232,7 @@ export default function Login() {
   const [notice, setNotice] = useState("");
   const [shakeKey, setShakeKey] = useState(0);
   const isAnyBusy = busy || microsoftAction !== null || socialProvider !== null;
+  const hasSocialError = Boolean(socialAuthError);
 
   const signals = useMemo(
     () => [
@@ -578,6 +582,24 @@ export default function Login() {
 
             {mode === "signin" ? (
               <form onSubmit={handleSignIn} className="space-y-4 transition-all duration-300">
+                <p className="text-xs font-semibold uppercase tracking-[0.24em] text-slate-500">Or continue with</p>
+                <button
+                  type="button"
+                  disabled={isAnyBusy}
+                  onClick={() => void handleMicrosoftAuth("signin")}
+                  className="auth-microsoft-button"
+                >
+                  {microsoftAction === "signin" ? <Loader2 size={18} className="animate-spin" /> : <MicrosoftIcon />}
+                  {microsoftAction === "signin" ? "Redirecting..." : "Sign in with Microsoft"}
+                </button>
+                <SocialButtonRail
+                  mode="signin"
+                  activeProvider={socialProvider}
+                  disabled={isAnyBusy}
+                  showError={hasSocialError}
+                  onSelect={handleSocialAuth}
+                />
+                <SectionDivider label="Or sign in with email" />
                 <Field label="Work email" delay={0}>
                   <input
                     type="email"
@@ -600,22 +622,6 @@ export default function Login() {
                     placeholder="Enter your password"
                   />
                 </Field>
-                <button
-                  type="button"
-                  disabled={isAnyBusy}
-                  onClick={() => void handleMicrosoftAuth("signin")}
-                  className="auth-microsoft-button"
-                >
-                  {microsoftAction === "signin" ? <Loader2 size={18} className="animate-spin" /> : <MicrosoftIcon />}
-                  {microsoftAction === "signin" ? "Opening Microsoft..." : "Sign in with Microsoft"}
-                </button>
-                <SocialButtonGrid
-                  mode="signin"
-                  activeProvider={socialProvider}
-                  disabled={isAnyBusy}
-                  onSelect={handleSocialAuth}
-                />
-                <OrDivider />
                 <button type="submit" disabled={isAnyBusy} className="auth-primary-button mt-2">
                   {busy ? <Loader2 size={18} className="animate-spin" /> : <ArrowRight size={18} />}
                   {busy ? "Authorizing..." : "Sign in"}
@@ -627,6 +633,24 @@ export default function Login() {
               <form onSubmit={handleSignUp} className="space-y-4 transition-all duration-300">
                 {!showSignupVerification ? (
                   <>
+                    <p className="text-xs font-semibold uppercase tracking-[0.24em] text-slate-500">Or continue with</p>
+                    <button
+                      type="button"
+                      disabled={isAnyBusy}
+                      onClick={() => void handleMicrosoftAuth("signup")}
+                      className="auth-microsoft-button"
+                    >
+                      {microsoftAction === "signup" ? <Loader2 size={18} className="animate-spin" /> : <MicrosoftIcon />}
+                      {microsoftAction === "signup" ? "Redirecting..." : "Sign up with Microsoft"}
+                    </button>
+                    <SocialButtonRail
+                      mode="signup"
+                      activeProvider={socialProvider}
+                      disabled={isAnyBusy}
+                      showError={hasSocialError}
+                      onSelect={handleSocialAuth}
+                    />
+                    <SectionDivider label="Or sign up with email" />
                     <Field label="Full name" delay={0}>
                       <input
                         type="text"
@@ -688,26 +712,6 @@ export default function Login() {
                     />
                   </Field>
                 )}
-                {!showSignupVerification ? (
-                  <>
-                    <button
-                      type="button"
-                      disabled={isAnyBusy}
-                      onClick={() => void handleMicrosoftAuth("signup")}
-                      className="auth-microsoft-button"
-                    >
-                      {microsoftAction === "signup" ? <Loader2 size={18} className="animate-spin" /> : <MicrosoftIcon />}
-                      {microsoftAction === "signup" ? "Opening Microsoft..." : "Sign up with Microsoft"}
-                    </button>
-                    <SocialButtonGrid
-                      mode="signup"
-                      activeProvider={socialProvider}
-                      disabled={isAnyBusy}
-                      onSelect={handleSocialAuth}
-                    />
-                    <OrDivider />
-                  </>
-                ) : null}
                 <button type="submit" disabled={isAnyBusy} className="auth-primary-button mt-2">
                   {busy ? <Loader2 size={18} className="animate-spin" /> : showSignupVerification ? <CheckCircle2 size={18} /> : <ArrowRight size={18} />}
                   {busy ? "Processing..." : showSignupVerification ? "Verify and create account" : "Send verification code"}
@@ -786,30 +790,36 @@ export default function Login() {
   );
 }
 
-function OrDivider() {
+function SectionDivider({ label }: { label: string }) {
   return (
     <div className="auth-or-divider" aria-hidden="true">
-      <span>or</span>
+      <span>{label}</span>
     </div>
   );
 }
 
-function SocialButtonGrid({
+function SocialButtonRail({
   mode,
   activeProvider,
   disabled,
+  showError,
   onSelect,
 }: {
   mode: "signin" | "signup";
   activeProvider: SocialAuthProvider | null;
   disabled: boolean;
+  showError: boolean;
   onSelect: (provider: SocialAuthProvider) => void;
 }) {
   return (
-    <div className="grid gap-3 sm:grid-cols-3">
+    <div className="space-y-3">
       {socialProviders.map((provider) => {
         const isActive = activeProvider === provider.key;
         const actionLabel = mode === "signin" ? "Sign in" : "Sign up";
+        const borderClass = showError && !isActive ? "border-red-500 text-red-300" : "border-[#3f4655] text-[#e8eaee]";
+        const stateClass = isActive
+          ? "bg-[#1a1d23] text-[#8a8e99]"
+          : "bg-[#1a1d23] hover:bg-[#242932] hover:border-[#4f5769] hover:text-white active:bg-[#0f1117] active:border-[#5865f2] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#5865f2]";
 
         return (
           <button
@@ -817,10 +827,13 @@ function SocialButtonGrid({
             type="button"
             disabled={disabled}
             onClick={() => onSelect(provider.key)}
-            className="flex min-h-16 items-center justify-center gap-3 rounded-2xl border border-slate-800 bg-slate-950/90 px-4 py-3 text-sm font-medium text-slate-100 transition hover:border-indigo-400/60 hover:bg-slate-900 disabled:cursor-not-allowed disabled:opacity-50"
+            className={`flex h-12 w-full items-center rounded-lg border px-4 text-sm font-medium transition duration-200 ease-out disabled:cursor-not-allowed disabled:border-[#2d3138] disabled:bg-[#0f1117] disabled:text-[#5a5f6b] ${borderClass} ${stateClass}`}
+            aria-label={`${actionLabel} with ${provider.label}`}
           >
-            {isActive ? <Loader2 size={18} className="animate-spin text-indigo-300" /> : <ProviderIcon provider={provider.key} />}
-            <span>{isActive ? `Opening ${provider.label}...` : `${actionLabel} with ${provider.label}`}</span>
+            <span className="mr-4 flex h-6 w-6 items-center justify-center">
+              {isActive ? <Loader2 size={18} className="animate-spin text-[#8a8e99]" /> : <ProviderIcon provider={provider.key} disabled={disabled} />}
+            </span>
+            <span>{isActive ? "Redirecting..." : `${actionLabel} with ${provider.label}`}</span>
           </button>
         );
       })}
@@ -856,30 +869,20 @@ function MicrosoftIcon() {
   );
 }
 
-function ProviderIcon({ provider }: { provider: SocialAuthProvider }) {
-  if (provider === "google") {
-    return (
-      <svg width="18" height="18" viewBox="0 0 18 18" fill="none" aria-hidden="true">
-        <path d="M17.64 9.2045C17.64 8.56632 17.5827 7.95268 17.4764 7.36359H9V10.8454H13.8436C13.635 11.9704 13.0009 12.9232 12.0482 13.5614V15.8205H14.9564C16.6582 14.2532 17.64 11.9459 17.64 9.2045Z" fill="#4285F4"/>
-        <path d="M9 18C11.43 18 13.4673 17.1941 14.9564 15.8205L12.0482 13.5614C11.2423 14.1014 10.2118 14.4205 9 14.4205C6.65591 14.4205 4.67182 12.8373 3.96409 10.71H0.957275V13.0427C2.43818 15.9845 5.48182 18 9 18Z" fill="#34A853"/>
-        <path d="M3.96409 10.71C3.78409 10.17 3.68182 9.59318 3.68182 9C3.68182 8.40682 3.78409 7.83 3.96409 7.29V4.95727H0.957273C0.347727 6.17273 0 7.54545 0 9C0 10.4545 0.347727 11.8273 0.957273 13.0427L3.96409 10.71Z" fill="#FBBC05"/>
-        <path d="M9 3.57955C10.3227 3.57955 11.5091 4.03409 12.4418 4.92545L15.0218 2.34545C13.4632 0.890909 11.4259 0 9 0C5.48182 0 2.43818 2.01545 0.957275 4.95727L3.96409 7.29C4.67182 5.16273 6.65591 3.57955 9 3.57955Z" fill="#EA4335"/>
-      </svg>
-    );
-  }
-
-  if (provider === "facebook") {
-    return (
-      <svg width="18" height="18" viewBox="0 0 18 18" fill="none" aria-hidden="true">
-        <path d="M18 9.05428C18 4.051 13.9706 0 9 0C4.02943 0 0 4.051 0 9.05428C0 13.5765 3.29118 17.3247 7.59375 18V11.6692H5.30859V9.05428H7.59375V7.06184C7.59375 4.78996 8.93735 3.53563 10.9933 3.53563C11.9781 3.53563 13.0078 3.71204 13.0078 3.71204V5.94211H11.8738C10.7565 5.94211 10.4062 6.64006 10.4062 7.35592V9.05428H12.9023L12.5032 11.6692H10.4062V18C14.7088 17.3247 18 13.5765 18 9.05428Z" fill="#1877F2"/>
-      </svg>
-    );
-  }
+function ProviderIcon({ provider, disabled }: { provider: SocialAuthProvider; disabled: boolean }) {
+  const logoSrc =
+    provider === "google"
+      ? googleLogoUrl
+      : provider === "facebook"
+        ? facebookLogoUrl
+        : appleLogoUrl;
 
   return (
-    <svg width="18" height="18" viewBox="0 0 18 18" fill="none" aria-hidden="true">
-      <path d="M12.7126 9.5768C12.7265 8.48626 13.2374 7.45707 14.0958 6.78922C13.5516 5.99817 12.6695 5.53048 11.7247 5.49968C10.729 5.39352 9.76426 6.08939 9.25737 6.08939C8.74042 6.08939 7.9592 5.51044 7.11536 5.52754C6.02649 5.56317 5.02237 6.1821 4.49211 7.12967C3.35724 9.09711 4.20395 12.0012 5.29059 13.5876C5.83479 14.3649 6.46853 15.2333 7.29737 15.2025C8.10826 15.1684 8.41158 14.6853 9.39053 14.6853C10.3602 14.6853 10.6458 15.2025 11.4905 15.182C12.3609 15.1684 12.9079 14.4042 13.4326 13.62C13.823 13.0667 14.123 12.4542 14.3211 11.805C13.2907 11.3562 12.7141 10.5106 12.7126 9.5768Z" fill="#F8FAFC"/>
-      <path d="M11.0747 4.43195C11.5514 3.86025 11.7864 3.12592 11.7305 2.38367C11.0025 2.46238 10.3295 2.80774 9.84158 3.35101C9.37079 3.87272 9.12421 4.58996 9.17526 5.29459C9.90789 5.3021 10.5986 4.97214 11.0747 4.43195Z" fill="#F8FAFC"/>
-    </svg>
+    <img
+      src={logoSrc}
+      alt=""
+      aria-hidden="true"
+      className={`h-6 w-6 object-contain ${disabled ? "grayscale opacity-60" : ""}`}
+    />
   );
 }

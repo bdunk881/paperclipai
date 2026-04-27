@@ -32,7 +32,43 @@ function loadApp(authenticateImpl: PassportAuthenticate, enabledProviders: strin
   }));
   jest.doMock("./socialAuthStrategies", () => ({
     configureSocialAuthStrategies: jest.fn(),
+    getSocialAuthConfigurationError: jest.fn(() => null),
     isSocialAuthProviderEnabled: (provider: string) => enabledProviders.includes(provider),
+  }));
+  jest.doMock("../db/postgres", () => ({
+    isPostgresConfigured: () => true,
+  }));
+  jest.doMock("../engine/llmProviders", () => ({
+    getProvider: jest.fn(),
+  }));
+
+  return require("../app").default as import("express").Express;
+}
+
+function loadAppWithConfigurationError(
+  authenticateImpl: PassportAuthenticate,
+  providerErrors: Partial<Record<string, string>> = {}
+) {
+  process.env = {
+    ...originalEnv,
+    APP_JWT_SECRET: "test-app-jwt-secret-with-sufficient-length",
+    DATABASE_URL: "postgres://autoflow:test@localhost:5432/autoflow",
+    ALLOWED_ORIGINS: "https://dashboard.autoflow.test",
+    SOCIAL_AUTH_DASHBOARD_URL: "https://dashboard.autoflow.test",
+  };
+
+  jest.resetModules();
+  jest.doMock("passport", () => ({
+    __esModule: true,
+    default: {
+      initialize: jest.fn(() => (_req: unknown, _res: unknown, next: () => void) => next()),
+      authenticate: jest.fn(authenticateImpl),
+    },
+  }));
+  jest.doMock("./socialAuthStrategies", () => ({
+    configureSocialAuthStrategies: jest.fn(),
+    getSocialAuthConfigurationError: (provider: string) => providerErrors[provider] ?? null,
+    isSocialAuthProviderEnabled: () => true,
   }));
   jest.doMock("../db/postgres", () => ({
     isPostgresConfigured: () => true,
@@ -224,6 +260,25 @@ describe("social auth routes", () => {
 
     expect(response.status).toBe(404);
     expect(response.body.error).toMatch(/provider is not enabled/i);
+  });
+
+  it("returns 503 JSON when a provider fails during strategy configuration", async () => {
+    const authenticate = jest.fn<ReturnType<PassportAuthenticate>, Parameters<PassportAuthenticate>>(
+      () => (_req, res) => {
+        res.status(204).end();
+      }
+    );
+    const app = loadAppWithConfigurationError(authenticate, {
+      google: "Cannot find module 'passport-google-oauth20'",
+    });
+
+    const response = await request(app).get("/api/auth/social/google");
+
+    expect(response.status).toBe(503);
+    expect(response.body).toEqual({
+      error: "Social auth provider is unavailable: google",
+      details: "Cannot find module 'passport-google-oauth20'",
+    });
   });
 
   it("returns 404 when the provider is unsupported", async () => {

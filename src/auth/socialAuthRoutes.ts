@@ -15,7 +15,10 @@ import {
   SOCIAL_AUTH_NONCE_MAX_AGE_MS,
   type SocialAuthProvider,
 } from "./appAuthTokens";
-import { configureSocialAuthStrategies, isSocialAuthProviderEnabled } from "./socialAuthStrategies";
+import {
+  getSocialAuthConfigurationError,
+  isSocialAuthProviderEnabled,
+} from "./socialAuthStrategies";
 
 type AuthenticatedSocialUser = {
   id: string;
@@ -25,8 +28,6 @@ type AuthenticatedSocialUser = {
 };
 
 const router = express.Router();
-
-configureSocialAuthStrategies();
 
 function parseProvider(value: string): SocialAuthProvider | null {
   if (value === "google" || value === "facebook" || value === "apple") {
@@ -55,6 +56,15 @@ function ensureSocialAuthReady(res: Response, provider: SocialAuthProvider): boo
 
   if (!isPostgresConfigured()) {
     res.status(503).json({ error: "Social auth requires PostgreSQL persistence." });
+    return false;
+  }
+
+  const configurationError = getSocialAuthConfigurationError(provider);
+  if (configurationError) {
+    res.status(503).json({
+      error: `Social auth provider is unavailable: ${provider}`,
+      details: configurationError,
+    });
     return false;
   }
 

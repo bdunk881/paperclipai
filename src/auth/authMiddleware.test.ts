@@ -27,6 +27,9 @@ describe("requireAuth", () => {
   beforeEach(() => {
     jest.resetModules();
     jest.clearAllMocks();
+    verifyMock.mockReset();
+    getSigningKeyMock.mockReset();
+    jwksClientMock.mockClear();
     process.env = { ...originalEnv };
 
     jest.doMock("jsonwebtoken", () => ({
@@ -149,6 +152,48 @@ describe("requireAuth", () => {
 
     expect(next).not.toHaveBeenCalled();
     expect(res.status).toHaveBeenCalledWith(401);
+  });
+
+  it("accepts app-issued JWTs when the issuer matches the local app auth config", () => {
+    process.env.APP_JWT_SECRET = "test-app-jwt-secret-with-sufficient-length";
+
+    verifyMock.mockReturnValue({
+      sub: "local-user-123",
+      email: "local@example.com",
+      name: "Local User",
+      provider: "google",
+      iss: "autoflow-app",
+    });
+
+    const payload = Buffer.from(JSON.stringify({ iss: "autoflow-app" })).toString("base64url");
+    const requireAuth = loadRequireAuth();
+    const req = {
+      headers: { authorization: `Bearer header.${payload}.signature` },
+      originalUrl: "/api/me",
+      path: "/api/me",
+    } as unknown as AuthenticatedRequest;
+    const res = createResponse();
+    const next = jest.fn();
+
+    requireAuth(req, res as never, next);
+
+    expect(next).toHaveBeenCalledTimes(1);
+    expect(req.auth).toMatchObject({
+      sub: "local-user-123",
+      email: "local@example.com",
+      name: "Local User",
+      provider: "google",
+      issuer: "autoflow-app",
+    });
+    expect(verifyMock).toHaveBeenCalledWith(
+      expect.any(String),
+      "test-app-jwt-secret-with-sufficient-length",
+      expect.objectContaining({
+        algorithms: ["HS256"],
+        audience: "autoflow-api",
+        issuer: "autoflow-app",
+      })
+    );
   });
 
   it("uses legacy AZURE_* auth env vars when AZURE_CIAM_* vars are absent", () => {

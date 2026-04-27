@@ -17,6 +17,7 @@
 import { Request, Response, NextFunction } from "express";
 import jwt, { JwtPayload } from "jsonwebtoken";
 import jwksRsa from "jwks-rsa";
+import { resolveAppJwtConfig, verifyAppUserToken } from "./appAuthTokens";
 
 type AuthConfig = {
   tenantId: string;
@@ -205,6 +206,8 @@ export interface AuthenticatedRequest extends Request {
     name?: string;
     tenantId?: string;
     oid?: string;
+    provider?: "entra" | "google" | "facebook" | "apple";
+    issuer?: string;
   };
 }
 
@@ -273,6 +276,28 @@ export function requireAuth(
   }
 
   const token = authHeader.slice(7);
+  const appAuthConfig = resolveAppJwtConfig();
+  const tokenClaims = decodeJwtDiagnosticClaims(token);
+
+  if (appAuthConfig && tokenClaims?.iss === appAuthConfig.issuer) {
+    const appClaims = verifyAppUserToken(token);
+    if (!appClaims?.sub) {
+      res.status(401).json({ error: "Invalid or expired token." });
+      return;
+    }
+
+    req.auth = {
+      sub: appClaims.sub,
+      email: appClaims.email,
+      name: appClaims.name,
+      provider: appClaims.provider,
+      issuer: appClaims.iss,
+    };
+
+    next();
+    return;
+  }
+
   const authConfig = resolveAuthConfig();
 
   if (!authConfig) {
@@ -290,7 +315,6 @@ export function requireAuth(
     },
     (err: jwt.VerifyErrors | null, decoded?: string | JwtPayload) => {
       if (err || !decoded) {
-        const tokenClaims = decodeJwtDiagnosticClaims(token);
         console.warn("[auth] JWT verification failed", {
           errName: err?.name,
           errMessage: err?.message,
@@ -313,6 +337,8 @@ export function requireAuth(
         name: claims.name as string | undefined,
         tenantId: claims.tid as string | undefined,
         oid: claims.oid as string | undefined,
+        provider: "entra",
+        issuer: claims.iss as string | undefined,
       };
 
       next();

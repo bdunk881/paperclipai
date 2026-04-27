@@ -8,6 +8,7 @@ import {
   parseSocialAuthState,
   readSocialAuthState,
   resolveAppJwtConfig,
+  resolveSocialAuthDashboardCallbackUrl,
   signAppUserToken,
   type SocialAuthProvider,
 } from "./appAuthTokens";
@@ -74,9 +75,14 @@ function handleFailure(
   message: string
 ): void {
   const state = parseSocialAuthState(readSocialAuthState(req));
-  if (state?.redirectUri && isAllowedSocialRedirectUri(state.redirectUri)) {
+  const redirectUri =
+    state?.redirectUri && isAllowedSocialRedirectUri(state.redirectUri)
+      ? state.redirectUri
+      : resolveSocialAuthDashboardCallbackUrl();
+
+  if (redirectUri) {
     res.redirect(
-      buildSocialAuthRedirect(state.redirectUri, {
+      buildSocialAuthRedirect(redirectUri, {
         error: "social_auth_failed",
         error_description: message,
         provider,
@@ -142,10 +148,14 @@ function runCallback(provider: SocialAuthProvider) {
           name: user.displayName ?? null,
           provider: user.provider,
         };
+        const redirectUri =
+          state?.redirectUri && isAllowedSocialRedirectUri(state.redirectUri)
+            ? state.redirectUri
+            : resolveSocialAuthDashboardCallbackUrl();
 
-        if (state?.redirectUri && isAllowedSocialRedirectUri(state.redirectUri)) {
+        if (redirectUri) {
           res.redirect(
-            buildSocialAuthRedirect(state.redirectUri, {
+            buildSocialAuthRedirect(redirectUri, {
               token,
               provider: user.provider,
             })

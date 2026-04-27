@@ -325,7 +325,7 @@ app.use(
   nativeAuthProxyRateLimiter,
   nativeAuthProxyRoutes
 );
-app.use("/api/auth/social", socialAuthRoutes);
+app.use("/api/auth/social", nativeAuthProxyRateLimiter, socialAuthRoutes);
 
 /** Returns the authenticated user's claims extracted from the Entra ID token. */
 app.get("/api/me", requireAuth, (req: AuthenticatedRequest, res) => {

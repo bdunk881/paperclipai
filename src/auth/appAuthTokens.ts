@@ -23,7 +23,7 @@ export type AppUserTokenClaims = JwtPayload & {
 
 const DEFAULT_APP_JWT_AUDIENCE = "autoflow-api";
 const DEFAULT_APP_JWT_ISSUER = "autoflow-app";
-const DEFAULT_APP_JWT_EXPIRES_IN = "7d";
+const DEFAULT_APP_JWT_EXPIRES_IN = "1h";
 
 function normalizeMultilineEnv(value: string | undefined): string | null {
   if (typeof value !== "string") {
@@ -179,6 +179,23 @@ export function isAllowedSocialRedirectUri(candidate: string): boolean {
     return configuredOrigins.has(parsed.origin);
   } catch {
     return false;
+  }
+}
+
+export function resolveSocialAuthDashboardCallbackUrl(): string | null {
+  const dashboardBase = process.env.SOCIAL_AUTH_DASHBOARD_URL?.trim();
+  if (!dashboardBase) {
+    return null;
+  }
+
+  try {
+    const target = new URL(dashboardBase);
+    target.pathname = `${target.pathname.replace(/\/+$/, "")}/auth/social-callback`;
+    target.search = "";
+    target.hash = "";
+    return target.toString();
+  } catch {
+    return null;
   }
 }
 

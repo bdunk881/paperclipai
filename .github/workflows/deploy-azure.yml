@@ -198,6 +198,7 @@ jobs:
       - name: Validate staging social auth env secret
         env:
           BACKEND_ENV_STAGING_SOCIAL_AUTH: ${{ secrets.AZURE_BACKEND_ENV_STAGING_SOCIAL_AUTH }}
+          GOOGLE_CLIENT_ID: ${{ vars.GOOGLE_CLIENT_ID }}
         run: |
           set -euo pipefail
 
@@ -209,6 +210,10 @@ jobs:
           tmpfile="$(mktemp)"
           trap 'rm -f "$tmpfile"' EXIT
           printf '%s\n' "$BACKEND_ENV_STAGING_SOCIAL_AUTH" > "$tmpfile"
+
+          if [ -n "${GOOGLE_CLIENT_ID:-}" ] && ! grep -Eq '^GOOGLE_CLIENT_ID=.+' "$tmpfile"; then
+            printf '\nGOOGLE_CLIENT_ID=%s\n' "$GOOGLE_CLIENT_ID" >> "$tmpfile"
+          fi
 
           require_env_key() {
             local key="$1"
@@ -238,12 +243,17 @@ jobs:
       - name: Deploy backend to Azure Container Apps
         env:
           BACKEND_ENV_STAGING_SOCIAL_AUTH: ${{ secrets.AZURE_BACKEND_ENV_STAGING_SOCIAL_AUTH }}
+          GOOGLE_CLIENT_ID: ${{ vars.GOOGLE_CLIENT_ID }}
         run: |
           set -euo pipefail
 
           tmpfile="$(mktemp)"
           trap 'rm -f "$tmpfile"' EXIT
           printf '%s\n' "$BACKEND_ENV_STAGING_SOCIAL_AUTH" > "$tmpfile"
+
+          if [ -n "${GOOGLE_CLIENT_ID:-}" ] && ! grep -Eq '^GOOGLE_CLIENT_ID=.+' "$tmpfile"; then
+            printf '\nGOOGLE_CLIENT_ID=%s\n' "$GOOGLE_CLIENT_ID" >> "$tmpfile"
+          fi
 
           env_args=()
           while IFS= read -r line || [ -n "$line" ]; do

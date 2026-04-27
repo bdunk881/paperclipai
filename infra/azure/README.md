@@ -131,6 +131,7 @@ GitHub larger runners with static IPs, or a dedicated VPN/NAT path.
 | `staging` | `AZURE_CONTAINER_APP_STAGING_NAME` | Expected staging backend Container App name |
 | `staging` | `AZURE_CONTAINER_APP_STAGING_RESOURCE_GROUP` | Resource group for the staging backend app |
 | `staging` | `AZURE_STAGING_API_HOST` | Public staging API hostname used for DNS-based discovery |
+| `staging` | `GOOGLE_CLIENT_ID` | Optional non-secret staging Google OAuth client ID; when set, the deploy workflow injects it if the multiline secret does not include it |
 | `production` | `AZURE_AKS_PRODUCTION_CLUSTER_NAME` | Production AKS cluster name |
 | `production` | `AZURE_AKS_PRODUCTION_RESOURCE_GROUP` | Resource group containing the production AKS cluster |
 | `production` | `AZURE_PRODUCTION_API_HOST` | Public production API hostname used for DNS and cutover tracking |
@@ -161,13 +162,15 @@ GitHub larger runners with static IPs, or a dedicated VPN/NAT path.
 5. Add `AZURE_BACKEND_ENV_STAGING_SOCIAL_AUTH` to the `staging` environment with:
 
    ```env
-   GOOGLE_CLIENT_ID=<google-oauth-client-id>
    GOOGLE_CLIENT_SECRET=<google-oauth-client-secret>
    APP_JWT_SECRET=<32+ char random secret>
    SOCIAL_AUTH_CALLBACK_BASE_URL=https://staging-api.helloautoflow.com/api/auth/social
    ```
 
-   The staging deploy workflow validates those four keys and injects them into
+   Set `GOOGLE_CLIENT_ID` either inside the multiline secret above or as the
+   staging environment variable `GOOGLE_CLIENT_ID`.
+
+   The staging deploy workflow validates the required keys and injects them into
    the Container App on every deploy alongside the QA bypass flags.
    For the Google OAuth client configuration in the Google Cloud console, use:
 

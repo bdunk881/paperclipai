@@ -29,7 +29,6 @@ import McpServers from "./pages/McpServers";
 import ExecutionLogs from "./pages/ExecutionLogs";
 import CheckoutSuccess from "./pages/CheckoutSuccess";
 import AuthCallback from "./pages/AuthCallback";
-import SocialAuthCallback from "./pages/SocialAuthCallback";
 import AgentCatalog from "./pages/AgentCatalog";
 import AgentDetail from "./pages/AgentDetail";
 import AgentDeploy from "./pages/AgentDeploy";
@@ -110,7 +109,6 @@ export default function App() {
           <Route path="/waitlist" element={<LandingPage />} />
           <Route path="/checkout/success" element={<CheckoutSuccess />} />
           <Route path="/auth/callback" element={<AuthCallback />} />
-          <Route path="/auth/social-callback" element={<SocialAuthCallback />} />
           <Route
             path="/login"
             element={

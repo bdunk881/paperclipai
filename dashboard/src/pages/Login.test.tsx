@@ -40,6 +40,7 @@ vi.mock("@azure/msal-browser", () => ({
     emptyWindowError: "empty_window_error",
     timedOut: "timed_out",
     userCancelled: "user_cancelled",
+    interactionInProgress: "interaction_in_progress",
   },
 }));
 
@@ -227,6 +228,74 @@ describe("Login", () => {
 
     expect(
       await screen.findByText(/allow popups for autoflow and try again/i)
+    ).toBeInTheDocument();
+  });
+
+  it("blocks a second Microsoft popup interaction while the first one is still in flight", async () => {
+    let resolveLogin: ((value: unknown) => void) | null = null;
+    loginPopupMock.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveLogin = resolve;
+        })
+    );
+
+    render(
+      <MemoryRouter initialEntries={["/login"]}>
+        <Routes>
+          <Route path="/login" element={<Login />} />
+          <Route path="/" element={<div>Dashboard Home</div>} />
+        </Routes>
+      </MemoryRouter>
+    );
+
+    const button = screen.getByRole("button", { name: "Sign in with Microsoft" });
+    fireEvent.click(button);
+    fireEvent.click(button);
+
+    await waitFor(() => {
+      expect(loginPopupMock).toHaveBeenCalledTimes(1);
+    });
+    expect(button).toBeDisabled();
+
+    resolveLogin?.({
+      accessToken: "msal-token-123",
+      idToken: "msal-id-token",
+      expiresOn: new Date("2026-04-26T22:30:00.000Z"),
+      scopes: ["openid", "profile", "email"],
+      account: {
+        homeAccountId: "home-account-1",
+        localAccountId: "local-account-1",
+        tenantId: "tenant-1",
+        username: "user@example.com",
+        name: "Example User",
+      },
+      idTokenClaims: { tid: "tenant-1" },
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText("Dashboard Home")).toBeInTheDocument();
+    });
+  });
+
+  it("shows a friendly message when MSAL reports an interaction is already in progress", async () => {
+    const { BrowserAuthError } = await import("@azure/msal-browser");
+    loginPopupMock.mockRejectedValueOnce(
+      new BrowserAuthError("Interaction already in progress", "interaction_in_progress")
+    );
+
+    render(
+      <MemoryRouter initialEntries={["/login"]}>
+        <Routes>
+          <Route path="/login" element={<Login />} />
+        </Routes>
+      </MemoryRouter>
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Sign in with Microsoft" }));
+
+    expect(
+      await screen.findByText(/microsoft sign-in is already in progress/i)
     ).toBeInTheDocument();
   });
 

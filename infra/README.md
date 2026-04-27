@@ -67,11 +67,12 @@ Runtime environment variables required in the Vercel dashboard project:
 
 ## Daily operations
 
-- **Deploy backend:** merge to `main` — GitHub Actions builds Docker images, pushes to ghcr.io, deploys to Azure.
+- **Deploy backend staging:** push to `staging` — `.github/workflows/deploy-azure.yml` builds the backend image, deploys the staging Container App, and runs the staging smoke checks.
+- **Deploy backend production:** merge to `master` — `.github/workflows/deploy-azure.yml` builds the backend image, deploys AKS, and runs the production smoke checks.
 - **Preview dashboard:** non-production dashboard branches use `.github/workflows/dashboard-staging-gate.yml` to create Vercel preview deployments.
 - **Deploy dashboard production:** push to `master` with `dashboard/` changes — GitHub Actions deploys to the production SWA host.
 - **Deploy dashboard staging:** push to `staging` with `dashboard/` changes — GitHub Actions deploys to the staging SWA host.
-- **Enforce branch protection:** run `enforce-branch-protection.yml` to require PR reviews plus CI gate(s) on `main`/`master`. Default required check is `Docker Build Check` with strict up-to-date enforcement.
+- **Enforce branch protection:** run `enforce-branch-protection.yml` to require one PR approval plus the CI workflow checks on `staging` and `master`. The default allowlist keeps merges restricted to `bdunk881`, which also covers agent automation because it currently authenticates through that GitHub identity.
 - **Rollback:** redeploy a previous image tag (backend) or follow `infra/runbooks/swa-dashboard-deploy.md` for dashboard DNS/rollback.
 
 ## Infrastructure as Code

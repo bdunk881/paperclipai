@@ -13,8 +13,14 @@ fi
 
 REPO="${GITHUB_REPOSITORY}"
 API="https://api.github.com"
-TARGET_BRANCHES=("main" "master")
+TARGET_BRANCHES=("staging" "master")
 REQUIRED_CHECKS="${REQUIRED_CHECKS:-Docker Build Check}"
+MASTER_ALLOWED_USERS="${MASTER_ALLOWED_USERS:-bdunk881}"
+STAGING_ALLOWED_USERS="${STAGING_ALLOWED_USERS:-bdunk881}"
+MASTER_ALLOWED_TEAMS="${MASTER_ALLOWED_TEAMS:-}"
+STAGING_ALLOWED_TEAMS="${STAGING_ALLOWED_TEAMS:-}"
+MASTER_ALLOWED_APPS="${MASTER_ALLOWED_APPS:-}"
+STAGING_ALLOWED_APPS="${STAGING_ALLOWED_APPS:-}"
 
 IFS=',' read -r -a CHECK_CONTEXTS <<<"$REQUIRED_CHECKS"
 for i in "${!CHECK_CONTEXTS[@]}"; do
@@ -22,6 +28,22 @@ for i in "${!CHECK_CONTEXTS[@]}"; do
 done
 
 CONTEXTS_JSON="$(printf '%s\n' "${CHECK_CONTEXTS[@]}" | jq -R . | jq -s .)"
+
+csv_to_json() {
+  local value="$1"
+
+  if [ -z "$value" ]; then
+    printf '[]'
+    return
+  fi
+
+  printf '%s\n' "$value" \
+    | tr ',' '\n' \
+    | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' \
+    | sed '/^$/d' \
+    | jq -R . \
+    | jq -s .
+}
 
 for BRANCH in "${TARGET_BRANCHES[@]}"; do
   STATUS_CODE="$(curl -sS -o /dev/null -w "%{http_code}" \
@@ -43,7 +65,29 @@ for BRANCH in "${TARGET_BRANCHES[@]}"; do
 
   echo "Applying branch protection for ${BRANCH} on ${REPO}"
 
-  jq -n --argjson contexts "$CONTEXTS_JSON" '{
+  case "$BRANCH" in
+    master)
+      USERS_JSON="$(csv_to_json "$MASTER_ALLOWED_USERS")"
+      TEAMS_JSON="$(csv_to_json "$MASTER_ALLOWED_TEAMS")"
+      APPS_JSON="$(csv_to_json "$MASTER_ALLOWED_APPS")"
+      ;;
+    staging)
+      USERS_JSON="$(csv_to_json "$STAGING_ALLOWED_USERS")"
+      TEAMS_JSON="$(csv_to_json "$STAGING_ALLOWED_TEAMS")"
+      APPS_JSON="$(csv_to_json "$STAGING_ALLOWED_APPS")"
+      ;;
+    *)
+      USERS_JSON='[]'
+      TEAMS_JSON='[]'
+      APPS_JSON='[]'
+      ;;
+  esac
+
+  jq -n \
+    --argjson contexts "$CONTEXTS_JSON" \
+    --argjson users "$USERS_JSON" \
+    --argjson teams "$TEAMS_JSON" \
+    --argjson apps "$APPS_JSON" '{
     required_status_checks: {
       strict: true,
       contexts: $contexts
@@ -52,9 +96,28 @@ for BRANCH in "${TARGET_BRANCHES[@]}"; do
     required_pull_request_reviews: {
       dismiss_stale_reviews: true,
       require_code_owner_reviews: false,
-      required_approving_review_count: 1
+      required_approving_review_count: 1,
+      require_last_push_approval: false,
+      bypass_pull_request_allowances: {
+        users: $users,
+        teams: $teams,
+        apps: $apps
+      }
     },
-    restrictions: null,
+    restrictions: {
+      users: $users,
+      teams: $teams,
+      apps: $apps
+    },
+    allow_force_pushes: {
+      enabled: false
+    },
+    allow_deletions: {
+      enabled: false
+    },
+    block_creations: true,
+    required_linear_history: false,
+    allow_fork_syncing: false,
     required_conversation_resolution: true
   }' | curl -sS \
     -X PUT \

@@ -9,6 +9,7 @@ import rateLimit from "express-rate-limit";
 import multer from "multer";
 import cors from "cors";
 import helmet from "helmet";
+import passport from "passport";
 import {
   getTemplate,
   getTemplatesByCategory,
@@ -42,6 +43,7 @@ import {
 } from "./engine/classificationLog";
 import { requireAuth, requireAuthOrQaBypass, AuthenticatedRequest } from "./auth/authMiddleware";
 import nativeAuthProxyRoutes from "./auth/nativeAuthProxyRoutes";
+import socialAuthRoutes from "./auth/socialAuthRoutes";
 import stripeWebhookRoutes from "./billing/stripeWebhook";
 import apolloWebhookRoutes from "./integrations/apollo-attio/webhookRoute";
 import checkoutRoutes from "./billing/checkoutRoutes";
@@ -250,6 +252,7 @@ app.use("/api/webhooks/ticket-sync", ticketSyncWebhookRoutes);
 app.use("/api/connectors/google-workspace", googleWorkspaceWebhookRoutes);
 
 app.use(express.json());
+app.use(passport.initialize());
 
 // Multer — in-memory storage for file uploads (max 50 MB)
 const upload = multer({
@@ -322,6 +325,7 @@ app.use(
   nativeAuthProxyRateLimiter,
   nativeAuthProxyRoutes
 );
+app.use("/api/auth/social", nativeAuthProxyRateLimiter, socialAuthRoutes);
 
 /** Returns the authenticated user's claims extracted from the Entra ID token. */
 app.get("/api/me", requireAuth, (req: AuthenticatedRequest, res) => {

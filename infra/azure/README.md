@@ -131,6 +131,7 @@ GitHub larger runners with static IPs, or a dedicated VPN/NAT path.
 | `staging` | `AZURE_CONTAINER_APP_STAGING_NAME` | Expected staging backend Container App name |
 | `staging` | `AZURE_CONTAINER_APP_STAGING_RESOURCE_GROUP` | Resource group for the staging backend app |
 | `staging` | `AZURE_STAGING_API_HOST` | Public staging API hostname used for DNS-based discovery |
+| `staging` | `AZURE_BACKEND_ENV_STAGING_SOCIAL_AUTH_CLIENTID` | Optional non-secret staging Google OAuth client ID; the deploy workflow injects it if the multiline secret does not include `GOOGLE_CLIENT_ID` |
 | `production` | `AZURE_AKS_PRODUCTION_CLUSTER_NAME` | Production AKS cluster name |
 | `production` | `AZURE_AKS_PRODUCTION_RESOURCE_GROUP` | Resource group containing the production AKS cluster |
 | `production` | `AZURE_PRODUCTION_API_HOST` | Public production API hostname used for DNS and cutover tracking |
@@ -140,6 +141,7 @@ GitHub larger runners with static IPs, or a dedicated VPN/NAT path.
 
 | Environment | Secret | Description |
 |---|---|---|
+| `staging` | `AZURE_BACKEND_ENV_STAGING_SOCIAL_AUTH` | Newline-delimited env file containing `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `APP_JWT_SECRET`, and `SOCIAL_AUTH_CALLBACK_BASE_URL` for the staging Container App |
 | `production` | `AZURE_BACKEND_ENV_PRODUCTION` | Newline-delimited env file materialized into the `autoflow-backend-secrets` Kubernetes secret |
 
 **Required Terraform variables for CIAM app-registration management:**
@@ -157,15 +159,37 @@ GitHub larger runners with static IPs, or a dedicated VPN/NAT path.
    - `staging` — no approvals
    - `production` — add required reviewers for the production deployment gate
 4. Add the environment-scoped backend target variables for each environment.
-5. Add `AZURE_BACKEND_ENV_PRODUCTION` to the `production` environment so the
+5. Add `AZURE_BACKEND_ENV_STAGING_SOCIAL_AUTH` to the `staging` environment with:
+
+   ```env
+   GOOGLE_CLIENT_SECRET=<google-oauth-client-secret>
+   APP_JWT_SECRET=<32+ char random secret>
+   SOCIAL_AUTH_CALLBACK_BASE_URL=https://staging-api.helloautoflow.com/api/auth/social
+   ```
+
+   Set `GOOGLE_CLIENT_ID` either inside the multiline secret above or as the
+   Actions variable `AZURE_BACKEND_ENV_STAGING_SOCIAL_AUTH_CLIENTID`. The
+   workflow also accepts `GOOGLE_CLIENT_ID` as a compatibility fallback if you
+   later rename the variable to match the runtime env key directly.
+
+   The staging deploy workflow validates the required keys and injects them into
+   the Container App on every deploy alongside the QA bypass flags.
+   For the Google OAuth client configuration in the Google Cloud console, use:
+
+   - Authorized JavaScript origins: `https://staging.app.helloautoflow.com`
+   - Authorized redirect URIs: `https://staging-api.helloautoflow.com/api/auth/social/google/callback`
+
+   If `AZURE_STAGING_API_HOST` changes, the redirect URI must change with it to
+   keep the Passport callback route aligned with the deployed backend host.
+6. Add `AZURE_BACKEND_ENV_PRODUCTION` to the `production` environment so the
    AKS rollout can create `autoflow-backend-secrets` before the deployment starts.
-6. Verify production-specific values do not reference `staging` or `nonprod`
+7. Verify production-specific values do not reference `staging` or `nonprod`
    resource names; the workflow now hard-fails on cross-environment targets.
-7. Ensure `AZURE_BACKEND_ENV_PRODUCTION` includes CIAM auth fallback inputs
+8. Ensure `AZURE_BACKEND_ENV_PRODUCTION` includes CIAM auth fallback inputs
    (`AZURE_CIAM_TENANT_ID`/`AZURE_TENANT_ID`, `AZURE_CIAM_TENANT_SUBDOMAIN`/`AZURE_TENANT_SUBDOMAIN`,
    and a CIAM audience/client setting) plus `ALLOWED_ORIGINS` containing
    `https://app.helloautoflow.com`.
-8. Set both `AZURE_CIAM_AUTHORITY` and `AUTH_NATIVE_AUTH_PROXY_BASE_URL` in
+9. Set both `AZURE_CIAM_AUTHORITY` and `AUTH_NATIVE_AUTH_PROXY_BASE_URL` in
    `AZURE_BACKEND_ENV_PRODUCTION` to the direct tenant authority:
 
    `https://<tenant-subdomain>.ciamlogin.com/<tenant-guid>`

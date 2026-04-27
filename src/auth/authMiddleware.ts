@@ -36,6 +36,7 @@ type JwtDiagnosticClaims = {
 const jwksClientCache = new Map<string, jwksRsa.JwksClient>();
 let missingConfigWarningLogged = false;
 const CURRENT_DASHBOARD_CIAM_CLIENT_ID = "2dfd3a08-277c-4893-b07d-eca5ae322310";
+const CURRENT_DASHBOARD_CIAM_API_URI = `api://${CURRENT_DASHBOARD_CIAM_CLIENT_ID}`;
 const LEGACY_DASHBOARD_CIAM_CLIENT_ID = "d36ce552-1a3d-4cd3-b851-beff4e3bf440";
 const DEFAULT_CIAM_TENANT_SUBDOMAIN = "autoflowciam";
 const DEFAULT_CIAM_TENANT_ID = "5e4f1080-8afc-4005-b05e-32b21e69363a";
@@ -134,6 +135,7 @@ function resolveAuthConfig(): AuthConfig | null {
     ...configuredAudiences,
     ...(clientId ? [clientId.trim()] : []),
     CURRENT_DASHBOARD_CIAM_CLIENT_ID,
+    CURRENT_DASHBOARD_CIAM_API_URI,
     LEGACY_DASHBOARD_CIAM_CLIENT_ID,
   ]);
   const audienceValues = Array.from(normalizedAudiences).filter(Boolean);

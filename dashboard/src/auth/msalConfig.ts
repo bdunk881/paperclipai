@@ -69,10 +69,9 @@ export const msalConfig: Configuration = {
 };
 
 // Scopes requested on every sign-in.
-// "openid" and "profile" are always included by MSAL; list any additional
-// API scopes your backend requires here (e.g. api://<clientId>/access_as_user).
+// The API scope ensures the access_token has aud = our client ID (not Graph).
 export const loginRequest: PopupRequest = {
-  scopes: ["openid", "profile", "email"],
+  scopes: ["openid", "profile", "email", `api://${clientId}/access_as_user`],
 };
 
 // CIAM supports `prompt=create` to open account creation for external users.

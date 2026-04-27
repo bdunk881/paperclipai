@@ -1,7 +1,7 @@
 import type { StoredAuthSession, StoredAuthUser } from "./authStorage";
 
 const DEFAULT_CIAM_CLIENT_ID = "2dfd3a08-277c-4893-b07d-eca5ae322310";
-const DEFAULT_SCOPE = "openid profile email offline_access";
+const DEFAULT_SCOPE = `openid profile email offline_access api://${DEFAULT_CIAM_CLIENT_ID}/access_as_user`;
 
 /**
  * In production the dashboard is served by Vercel and API calls go through a

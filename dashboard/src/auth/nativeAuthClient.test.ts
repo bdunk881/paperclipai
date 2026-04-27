@@ -58,6 +58,12 @@ describe("nativeAuthClient endpoint wiring", () => {
       "/api/auth/native/oauth2/v2.0/token",
       expect.objectContaining({ method: "POST" })
     );
+    expect(String(fetchMock.mock.calls[0]?.[1]?.body)).toContain(
+      "api://2dfd3a08-277c-4893-b07d-eca5ae322310/access_as_user"
+    );
+    expect(String(fetchMock.mock.calls[2]?.[1]?.body)).toContain(
+      "api://2dfd3a08-277c-4893-b07d-eca5ae322310/access_as_user"
+    );
   });
 
   it("uses signup challenge endpoint instead of the generic challenge endpoint", async () => {

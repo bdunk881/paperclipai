@@ -1,4 +1,4 @@
-import { FormEvent, useMemo, useState } from "react";
+import { FormEvent, useMemo, useRef, useState } from "react";
 import type { AuthenticationResult } from "@azure/msal-browser";
 import { BrowserAuthError, BrowserAuthErrorCodes } from "@azure/msal-browser";
 import { Loader2, ArrowRight, CheckCircle2, KeyRound, Mail, ShieldCheck } from "lucide-react";
@@ -138,6 +138,8 @@ function mapMicrosoftAuthError(error: unknown): string {
       return "Microsoft sign-in needs a popup window. Allow popups for AutoFlow and try again.";
     case BrowserAuthErrorCodes.userCancelled:
       return "Microsoft sign-in was canceled before completion.";
+    case "interaction_in_progress":
+      return "Microsoft sign-in is already in progress. Finish the open popup or close it before trying again.";
     default:
       return error.message || "Microsoft sign-in failed. Please try again.";
   }
@@ -184,6 +186,7 @@ export default function Login() {
   const [pendingReset, setPendingReset] = useState<PendingReset | null>(null);
   const [busy, setBusy] = useState(false);
   const [microsoftAction, setMicrosoftAction] = useState<"signin" | "signup" | null>(null);
+  const microsoftInteractionInFlightRef = useRef(false);
   const [error, setError] = useState(
     qaPreviewError ? "Preview access link is invalid, expired, or not enabled for this deployment." : ""
   );
@@ -226,6 +229,12 @@ export default function Login() {
   }
 
   async function handleMicrosoftAuth(action: "signin" | "signup") {
+    if (microsoftInteractionInFlightRef.current) {
+      triggerError("Microsoft sign-in is already in progress. Finish the open popup or close it before trying again.");
+      return;
+    }
+
+    microsoftInteractionInFlightRef.current = true;
     setMicrosoftAction(action);
     setError("");
     setNotice("");
@@ -241,6 +250,7 @@ export default function Login() {
     } catch (authError) {
       triggerError(mapMicrosoftAuthError(authError));
     } finally {
+      microsoftInteractionInFlightRef.current = false;
       setMicrosoftAction(null);
     }
   }

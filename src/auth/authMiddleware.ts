@@ -25,12 +25,20 @@ type AuthConfig = {
   issuers: [string, ...string[]];
 };
 
+type JwtDiagnosticClaims = {
+  aud?: string | string[];
+  iss?: string;
+  exp?: number;
+  nbf?: number;
+};
+
 const jwksClientCache = new Map<string, jwksRsa.JwksClient>();
 let missingConfigWarningLogged = false;
 const CURRENT_DASHBOARD_CIAM_CLIENT_ID = "2dfd3a08-277c-4893-b07d-eca5ae322310";
 const LEGACY_DASHBOARD_CIAM_CLIENT_ID = "d36ce552-1a3d-4cd3-b851-beff4e3bf440";
 const DEFAULT_CIAM_TENANT_SUBDOMAIN = "autoflowciam";
 const DEFAULT_CIAM_TENANT_ID = "5e4f1080-8afc-4005-b05e-32b21e69363a";
+const DASHBOARD_API_SCOPE = `api://${CURRENT_DASHBOARD_CIAM_CLIENT_ID}/access_as_user`;
 
 function normalizeAuthority(value: string | undefined): string | null {
   if (typeof value !== "string") {
@@ -73,6 +81,31 @@ function parseDelimitedEnv(value: string | undefined): string[] {
     .filter(Boolean);
 }
 
+function decodeJwtDiagnosticClaims(token: string): JwtDiagnosticClaims | null {
+  const [, rawPayload] = token.split(".");
+  if (!rawPayload) {
+    return null;
+  }
+
+  try {
+    const normalized = rawPayload.replace(/-/g, "+").replace(/_/g, "/");
+    const padded = normalized.padEnd(Math.ceil(normalized.length / 4) * 4, "=");
+    const parsed = JSON.parse(Buffer.from(padded, "base64").toString("utf8")) as Record<string, unknown>;
+
+    return {
+      aud:
+        typeof parsed.aud === "string" || Array.isArray(parsed.aud)
+          ? (parsed.aud as string | string[])
+          : undefined,
+      iss: typeof parsed.iss === "string" ? parsed.iss : undefined,
+      exp: typeof parsed.exp === "number" ? parsed.exp : undefined,
+      nbf: typeof parsed.nbf === "number" ? parsed.nbf : undefined,
+    };
+  } catch {
+    return null;
+  }
+}
+
 function resolveAuthConfig(): AuthConfig | null {
   const authority = normalizeAuthority(process.env.AZURE_CIAM_AUTHORITY);
   const tenantSubdomain =
@@ -102,6 +135,7 @@ function resolveAuthConfig(): AuthConfig | null {
     ...(clientId ? [clientId.trim()] : []),
     CURRENT_DASHBOARD_CIAM_CLIENT_ID,
     LEGACY_DASHBOARD_CIAM_CLIENT_ID,
+    DASHBOARD_API_SCOPE,
   ]);
   const audienceValues = Array.from(normalizedAudiences).filter(Boolean);
   if (audienceValues.length === 0) {
@@ -256,6 +290,18 @@ export function requireAuth(
     },
     (err: jwt.VerifyErrors | null, decoded?: string | JwtPayload) => {
       if (err || !decoded) {
+        const tokenClaims = decodeJwtDiagnosticClaims(token);
+        console.warn("[auth] JWT verification failed", {
+          errName: err?.name,
+          errMessage: err?.message,
+          tokenAud: tokenClaims?.aud,
+          tokenIss: tokenClaims?.iss,
+          tokenExp: tokenClaims?.exp,
+          tokenNbf: tokenClaims?.nbf,
+          expectedAudiences: authConfig.audiences,
+          expectedIssuers: authConfig.issuers,
+          jwksUri: authConfig.jwksUri,
+        });
         res.status(401).json({ error: "Invalid or expired token." });
         return;
       }

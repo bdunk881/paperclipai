@@ -1,3 +1,4 @@
+import type { JwtPayload } from "jsonwebtoken";
 import type { AuthenticatedRequest } from "./authMiddleware";
 
 function createResponse() {
@@ -21,6 +22,7 @@ describe("requireAuth", () => {
   const verifyMock = jest.fn();
   const getSigningKeyMock = jest.fn();
   const jwksClientMock = jest.fn(() => ({ getSigningKey: getSigningKeyMock }));
+  const warnMock = jest.spyOn(console, "warn").mockImplementation(() => undefined);
 
   beforeEach(() => {
     jest.resetModules();
@@ -41,6 +43,7 @@ describe("requireAuth", () => {
   });
 
   afterAll(() => {
+    warnMock.mockRestore();
     process.env = originalEnv;
   });
 
@@ -176,6 +179,7 @@ describe("requireAuth", () => {
         "legacy-client",
         "2dfd3a08-277c-4893-b07d-eca5ae322310",
         "d36ce552-1a3d-4cd3-b851-beff4e3bf440",
+        "api://2dfd3a08-277c-4893-b07d-eca5ae322310/access_as_user",
       ]),
       issuer: expect.arrayContaining([
         "https://legacyciam.ciamlogin.com/legacy-tenant/v2.0",
@@ -219,6 +223,7 @@ describe("requireAuth", () => {
       audience: expect.arrayContaining([
         "2dfd3a08-277c-4893-b07d-eca5ae322310",
         "d36ce552-1a3d-4cd3-b851-beff4e3bf440",
+        "api://2dfd3a08-277c-4893-b07d-eca5ae322310/access_as_user",
       ]),
       issuer: expect.arrayContaining([
         "https://autoflowciam.ciamlogin.com/5e4f1080-8afc-4005-b05e-32b21e69363a/v2.0",
@@ -322,11 +327,73 @@ describe("requireAuth", () => {
 
     const [, , options] = verifyMock.mock.calls[0];
     expect(options).toMatchObject({
-      audience: expect.arrayContaining(["new-client", "legacy-client"]),
+      audience: expect.arrayContaining([
+        "new-client",
+        "legacy-client",
+        "api://2dfd3a08-277c-4893-b07d-eca5ae322310/access_as_user",
+      ]),
       issuer: expect.arrayContaining([
         "https://newciam.ciamlogin.com/tenant-guid/v2.0",
         "https://tenant-guid.ciamlogin.com/tenant-guid/v2.0",
       ]),
     });
+  });
+
+  it("logs JWT verification diagnostics without logging the raw token", () => {
+    process.env.AZURE_CIAM_TENANT_SUBDOMAIN = "autoflowciam";
+    process.env.AZURE_CIAM_TENANT_ID = "tenant-guid";
+    process.env.AZURE_CIAM_CLIENT_ID = "custom-client";
+
+    verifyMock.mockImplementation(
+      (
+        _token: string,
+        _resolver: unknown,
+        _options: unknown,
+        callback: (err: Error | null, decoded?: string | JwtPayload) => void
+      ) => {
+        callback(new Error("jwt audience invalid. expected: custom-client"));
+      }
+    );
+
+    const requireAuth = loadRequireAuth();
+    const payload = Buffer.from(
+      JSON.stringify({
+        aud: "00000003-0000-0000-c000-000000000000",
+        iss: "https://tenant-guid.ciamlogin.com/tenant-guid/v2.0",
+        exp: 1234567890,
+        nbf: 1234567000,
+      })
+    ).toString("base64url");
+    const token = `header.${payload}.signature`;
+    const req = {
+      headers: { authorization: `Bearer ${token}` },
+      originalUrl: "/api/me",
+      path: "/api/me",
+    } as unknown as AuthenticatedRequest;
+    const res = createResponse();
+
+    requireAuth(req, res as never, jest.fn());
+
+    expect(warnMock).toHaveBeenCalledWith("[auth] JWT verification failed", {
+      errName: "Error",
+      errMessage: "jwt audience invalid. expected: custom-client",
+      tokenAud: "00000003-0000-0000-c000-000000000000",
+      tokenIss: "https://tenant-guid.ciamlogin.com/tenant-guid/v2.0",
+      tokenExp: 1234567890,
+      tokenNbf: 1234567000,
+      expectedAudiences: expect.arrayContaining([
+        "custom-client",
+        "2dfd3a08-277c-4893-b07d-eca5ae322310",
+        "d36ce552-1a3d-4cd3-b851-beff4e3bf440",
+        "api://2dfd3a08-277c-4893-b07d-eca5ae322310/access_as_user",
+      ]),
+      expectedIssuers: expect.arrayContaining([
+        "https://autoflowciam.ciamlogin.com/tenant-guid/v2.0",
+        "https://tenant-guid.ciamlogin.com/tenant-guid/v2.0",
+      ]),
+      jwksUri: "https://autoflowciam.ciamlogin.com/tenant-guid/discovery/v2.0/keys",
+    });
+    expect(JSON.stringify(warnMock.mock.calls)).not.toContain(token);
+    expect(res.status).toHaveBeenCalledWith(401);
   });
 });

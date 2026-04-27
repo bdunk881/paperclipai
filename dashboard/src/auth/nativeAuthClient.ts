@@ -274,6 +274,7 @@ export async function continueSignUp(continuationToken: string, code: string): P
   return postForm<NativeAuthFlowResponse>("signup/v1.0/continue", {
     client_id: clientId(),
     continuation_token: continuationToken,
+    grant_type: "oob",
     oob: code,
   });
 }
@@ -307,6 +308,7 @@ export async function continuePasswordReset(continuationToken: string, code: str
   return postForm<NativeAuthFlowResponse>("resetpassword/v1.0/continue", {
     client_id: clientId(),
     continuation_token: continuationToken,
+    grant_type: "oob",
     oob: code,
   });
 }

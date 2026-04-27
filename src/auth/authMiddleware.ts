@@ -206,7 +206,7 @@ export interface AuthenticatedRequest extends Request {
     name?: string;
     tenantId?: string;
     oid?: string;
-    provider?: string;
+    provider?: "entra" | "google" | "facebook" | "apple";
     issuer?: string;
   };
 }
@@ -337,6 +337,7 @@ export function requireAuth(
         name: claims.name as string | undefined,
         tenantId: claims.tid as string | undefined,
         oid: claims.oid as string | undefined,
+        provider: "entra",
         issuer: claims.iss as string | undefined,
       };
 

@@ -1,8 +1,5 @@
-import fs from "fs";
 import passport from "passport";
 import { Strategy as GoogleStrategy } from "passport-google-oauth20";
-import { Strategy as FacebookStrategy } from "passport-facebook";
-import AppleStrategy from "@nicokaiser/passport-apple";
 import type { SocialAuthProvider } from "./appAuthTokens";
 import {
   upsertLocalUserFromSocialProfile,
@@ -74,24 +71,6 @@ function resolveCallbackUrl(provider: SocialAuthProvider): string | null {
   return `${base.replace(/\/+$/, "")}/${provider}/callback`;
 }
 
-function normalizeApplePrivateKey(): string | null {
-  const inline = process.env.APPLE_PRIVATE_KEY?.trim();
-  if (inline) {
-    return inline.replace(/\\n/g, "\n");
-  }
-
-  const keyPath = process.env.APPLE_PRIVATE_KEY_PATH?.trim();
-  if (!keyPath) {
-    return null;
-  }
-
-  try {
-    return fs.readFileSync(keyPath, "utf8");
-  } catch {
-    return null;
-  }
-}
-
 function normalizeSocialProfile(
   provider: SocialAuthProvider,
   profile: ProfileLike
@@ -102,8 +81,6 @@ function normalizeSocialProfile(
       : typeof profile.emails?.[0]?.value === "string"
         ? profile.emails[0]?.value
         : null;
-  const photo =
-    typeof profile.photos?.[0]?.value === "string" ? profile.photos[0]?.value : null;
   const displayName =
     typeof profile.displayName === "string" && profile.displayName.trim()
       ? profile.displayName.trim()
@@ -117,8 +94,6 @@ function normalizeSocialProfile(
     providerSubject: typeof profile.id === "string" ? profile.id : "",
     email,
     displayName,
-    avatarUrl: photo,
-    rawProfile: (profile._json ?? profile) as Record<string, unknown>,
   };
 }
 
@@ -159,58 +134,6 @@ function registerGoogleStrategy(): void {
   enabledProviders.add("google");
 }
 
-function registerFacebookStrategy(): void {
-  const clientID = process.env.FACEBOOK_APP_ID?.trim();
-  const clientSecret = process.env.FACEBOOK_APP_SECRET?.trim();
-  const callbackURL = resolveCallbackUrl("facebook");
-  if (!clientID || !clientSecret || !callbackURL) {
-    return;
-  }
-
-  passport.use(
-    new FacebookStrategy(
-      {
-        clientID,
-        clientSecret,
-        callbackURL,
-        profileFields: ["id", "displayName", "emails", "name", "photos"],
-      },
-      async (_accessToken: string, _refreshToken: string, profile: ProfileLike, done: StrategyDone) => {
-        await verifyAndUpsert("facebook", profile, done);
-      }
-    ) as never
-  );
-  enabledProviders.add("facebook");
-}
-
-function registerAppleStrategy(): void {
-  const clientID = process.env.APPLE_CLIENT_ID?.trim();
-  const teamID = process.env.APPLE_TEAM_ID?.trim();
-  const keyID = process.env.APPLE_KEY_ID?.trim();
-  const key = normalizeApplePrivateKey();
-  const callbackURL = resolveCallbackUrl("apple");
-  if (!clientID || !teamID || !keyID || !key || !callbackURL) {
-    return;
-  }
-
-  passport.use(
-    new AppleStrategy(
-      {
-        clientID,
-        teamID,
-        keyID,
-        key,
-        callbackURL,
-        scope: ["name", "email"],
-      } as never,
-      async (_accessToken: string, _refreshToken: string, profile: ProfileLike, done: StrategyDone) => {
-        await verifyAndUpsert("apple", profile, done);
-      }
-    ) as never
-  );
-  enabledProviders.add("apple");
-}
-
 export function configureSocialAuthStrategies(): void {
   if (configured) {
     return;
@@ -218,8 +141,6 @@ export function configureSocialAuthStrategies(): void {
 
   configured = true;
   registerGoogleStrategy();
-  registerFacebookStrategy();
-  registerAppleStrategy();
 }
 
 export function listEnabledSocialAuthProviders(): SocialAuthProvider[] {

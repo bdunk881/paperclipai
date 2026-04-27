@@ -9,12 +9,13 @@ type PassportAuthenticate = (
   callback?: (error: Error | null, user?: unknown) => void
 ) => import("express").RequestHandler;
 
-function loadApp(authenticateImpl: PassportAuthenticate, enabledProviders: string[] = ["google", "facebook", "apple"]) {
+function loadApp(authenticateImpl: PassportAuthenticate, enabledProviders: string[] = ["google"]) {
   process.env = {
     ...originalEnv,
     APP_JWT_SECRET: "test-app-jwt-secret-with-sufficient-length",
     DATABASE_URL: "postgres://autoflow:test@localhost:5432/autoflow",
     ALLOWED_ORIGINS: "https://dashboard.autoflow.test",
+    SOCIAL_AUTH_DASHBOARD_URL: "https://dashboard.autoflow.test",
   };
 
   jest.resetModules();
@@ -39,6 +40,16 @@ function loadApp(authenticateImpl: PassportAuthenticate, enabledProviders: strin
   return require("../app").default as import("express").Express;
 }
 
+function loadAppWithoutDefaultDashboardRedirect(
+  authenticateImpl: PassportAuthenticate,
+  enabledProviders: string[] = ["google"]
+) {
+  delete process.env.SOCIAL_AUTH_DASHBOARD_URL;
+  const app = loadApp(authenticateImpl, enabledProviders);
+  delete process.env.SOCIAL_AUTH_DASHBOARD_URL;
+  return app;
+}
+
 describe("social auth routes", () => {
   afterEach(() => {
     process.env = originalEnv;
@@ -52,7 +63,7 @@ describe("social auth routes", () => {
         res.status(204).end();
       }
     );
-    const app = loadApp(authenticate);
+    const app = loadAppWithoutDefaultDashboardRedirect(authenticate);
 
     const response = await request(app)
       .get("/api/auth/social/google")
@@ -78,10 +89,10 @@ describe("social auth routes", () => {
           displayName: "Local User",
           provider: "google",
         });
-        next();
+        void next;
       }
     );
-    const app = loadApp(authenticate);
+    const app = loadAppWithoutDefaultDashboardRedirect(authenticate);
 
     const response = await request(app).get("/api/auth/social/google/callback?code=test-code");
 
@@ -104,7 +115,7 @@ describe("social auth routes", () => {
           displayName: "Local User",
           provider: "google",
         });
-        next();
+        void next;
       }
     );
     process.env = {
@@ -125,6 +136,42 @@ describe("social auth routes", () => {
     expect(response.headers.location).toMatch(
       /^https:\/\/dashboard\.autoflow\.test\/auth\/callback#token=.+&provider=google$/
     );
+  });
+
+  it("redirects to the default dashboard callback when no redirect_uri is supplied", async () => {
+    const authenticate = jest.fn<ReturnType<PassportAuthenticate>, Parameters<PassportAuthenticate>>(
+      (_strategy, _options, callback) => (_req, _res, next) => {
+        callback?.(null, {
+          id: "local-user-xyz",
+          email: "local@example.com",
+          displayName: "Local User",
+          provider: "google",
+        });
+        void next;
+      }
+    );
+    const app = loadApp(authenticate);
+
+    const response = await request(app).get("/api/auth/social/google/callback?code=test-code");
+
+    expect(response.status).toBe(302);
+    expect(response.headers.location).toMatch(
+      /^https:\/\/dashboard\.autoflow\.test\/auth\/social-callback#token=.+&provider=google$/
+    );
+  });
+
+  it("returns 404 when a provider is not enabled for the current release", async () => {
+    const authenticate = jest.fn<ReturnType<PassportAuthenticate>, Parameters<PassportAuthenticate>>(
+      () => (_req, res) => {
+        res.status(204).end();
+      }
+    );
+    const app = loadApp(authenticate, ["google"]);
+
+    const response = await request(app).get("/api/auth/social/facebook");
+
+    expect(response.status).toBe(404);
+    expect(response.body.error).toMatch(/provider is not enabled/i);
   });
 
   it("returns 404 when the provider is unsupported", async () => {

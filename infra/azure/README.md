@@ -163,8 +163,10 @@ GitHub larger runners with static IPs, or a dedicated VPN/NAT path.
    resource names; the workflow now hard-fails on cross-environment targets.
 7. Ensure `AZURE_BACKEND_ENV_PRODUCTION` includes CIAM auth fallback inputs
    (`AZURE_CIAM_TENANT_ID`/`AZURE_TENANT_ID`, `AZURE_CIAM_TENANT_SUBDOMAIN`/`AZURE_TENANT_SUBDOMAIN`,
-   and a CIAM audience/client setting) plus `ALLOWED_ORIGINS` containing
-   `https://app.helloautoflow.com`.
+   and a CIAM audience/client setting) plus `ALLOWED_ORIGINS` containing both
+   `https://app.helloautoflow.com` and `https://staging.app.helloautoflow.com`.
+   If `AUTH_NATIVE_AUTH_PROXY_ALLOWED_ORIGINS` is set, it must include the same
+   two origins.
 8. Set both `AZURE_CIAM_AUTHORITY` and `AUTH_NATIVE_AUTH_PROXY_BASE_URL` in
    `AZURE_BACKEND_ENV_PRODUCTION` to the direct tenant authority:
 

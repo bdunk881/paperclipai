@@ -12,6 +12,7 @@ import {
   continuePasswordReset,
   continueSignUp,
   exchangeContinuationToken,
+  isRedirectRequired,
   pollPasswordResetCompletion,
   sessionFromTokenResponse,
   signInWithPassword,
@@ -87,6 +88,14 @@ function mapNativeAuthError(error: unknown): string {
 
   if (error.code === "redirect_required") {
     return "This account uses Microsoft sign-in. Use the \"Sign in with Microsoft\" button below.";
+  }
+
+  if (normalized.includes("500222") || normalized.includes("does not support native credential recovery")) {
+    return "This account was created with Microsoft and cannot reset its password here. Sign in with the \"Sign in with Microsoft\" button instead, or reset your password at your email provider.";
+  }
+
+  if (normalized.includes("1003037") || normalized.includes("already have an account")) {
+    return "An account with this email already exists. Switch to \"Sign in\" and use the \"Sign in with Microsoft\" button.";
   }
 
   if (normalized.includes("aadsts1003037") || normalized.includes("already have an account")) {
@@ -280,6 +289,12 @@ export default function Login() {
     try {
       await finalizeSession(signInWithPassword(signinEmail.trim(), signinPassword));
     } catch (authError) {
+      if (isRedirectRequired(authError)) {
+        setNotice("This account uses Microsoft sign-in. Redirecting\u2026");
+        setBusy(false);
+        handleMicrosoftAuth("signin");
+        return;
+      }
       triggerError(mapNativeAuthError(authError));
       setBusy(false);
     }

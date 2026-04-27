@@ -43,6 +43,10 @@ export class NativeAuthError extends Error {
   }
 }
 
+export function isRedirectRequired(error: unknown): boolean {
+  return error instanceof NativeAuthError && error.code === "redirect_required";
+}
+
 function clientId(): string {
   return import.meta.env.VITE_AZURE_CIAM_CLIENT_ID ?? DEFAULT_CIAM_CLIENT_ID;
 }

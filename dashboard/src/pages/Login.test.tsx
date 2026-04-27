@@ -67,6 +67,7 @@ vi.mock("../auth/nativeAuthClient", () => ({
   submitPasswordReset: vi.fn(),
   pollPasswordResetCompletion: vi.fn(),
   sessionFromTokenResponse: sessionFromTokenResponseMock,
+  isRedirectRequired: vi.fn().mockReturnValue(false),
 }));
 
 vi.mock("../auth/authStorage", () => ({

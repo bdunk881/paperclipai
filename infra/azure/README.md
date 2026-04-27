@@ -164,11 +164,18 @@ GitHub larger runners with static IPs, or a dedicated VPN/NAT path.
    GOOGLE_CLIENT_ID=<google-oauth-client-id>
    GOOGLE_CLIENT_SECRET=<google-oauth-client-secret>
    APP_JWT_SECRET=<32+ char random secret>
-   SOCIAL_AUTH_CALLBACK_BASE_URL=https://staging.app.helloautoflow.com/auth
+   SOCIAL_AUTH_CALLBACK_BASE_URL=https://staging-api.helloautoflow.com/api/auth/social
    ```
 
    The staging deploy workflow validates those four keys and injects them into
    the Container App on every deploy alongside the QA bypass flags.
+   For the Google OAuth client configuration in the Google Cloud console, use:
+
+   - Authorized JavaScript origins: `https://staging.app.helloautoflow.com`
+   - Authorized redirect URIs: `https://staging-api.helloautoflow.com/api/auth/social/google/callback`
+
+   If `AZURE_STAGING_API_HOST` changes, the redirect URI must change with it to
+   keep the Passport callback route aligned with the deployed backend host.
 6. Add `AZURE_BACKEND_ENV_PRODUCTION` to the `production` environment so the
    AKS rollout can create `autoflow-backend-secrets` before the deployment starts.
 7. Verify production-specific values do not reference `staging` or `nonprod`

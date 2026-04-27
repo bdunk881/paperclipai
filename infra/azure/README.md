@@ -164,10 +164,15 @@ GitHub larger runners with static IPs, or a dedicated VPN/NAT path.
    GOOGLE_CLIENT_ID=<google-oauth-client-id>
    GOOGLE_CLIENT_SECRET=<google-oauth-client-secret>
    APP_JWT_SECRET=<32+ char random secret>
-   SOCIAL_AUTH_CALLBACK_BASE_URL=https://staging.app.helloautoflow.com/auth
+   SOCIAL_AUTH_CALLBACK_BASE_URL=https://staging-api.helloautoflow.com/api/auth/social
+   SOCIAL_AUTH_DASHBOARD_URL=https://staging.app.helloautoflow.com
+   AUTH_SOCIAL_ALLOWED_REDIRECT_ORIGINS=https://staging.app.helloautoflow.com
    ```
 
-   The staging deploy workflow validates those four keys and injects them into
+   The staging deploy workflow validates those keys, requires the dashboard URL
+   to match the staging host, and requires either
+   `AUTH_SOCIAL_ALLOWED_REDIRECT_ORIGINS` or `ALLOWED_ORIGINS` to include
+   `https://staging.app.helloautoflow.com`. It injects the resulting values into
    the Container App on every deploy alongside the QA bypass flags.
 6. Add `AZURE_BACKEND_ENV_PRODUCTION` to the `production` environment so the
    AKS rollout can create `autoflow-backend-secrets` before the deployment starts.

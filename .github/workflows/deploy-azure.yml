@@ -199,6 +199,7 @@ jobs:
         env:
           BACKEND_ENV_STAGING_SOCIAL_AUTH: ${{ secrets.AZURE_BACKEND_ENV_STAGING_SOCIAL_AUTH }}
           GOOGLE_CLIENT_ID: ${{ vars.GOOGLE_CLIENT_ID }}
+          STAGING_SOCIAL_AUTH_CLIENT_ID: ${{ vars.AZURE_BACKEND_ENV_STAGING_SOCIAL_AUTH_CLIENTID }}
         run: |
           set -euo pipefail
 
@@ -211,8 +212,13 @@ jobs:
           trap 'rm -f "$tmpfile"' EXIT
           printf '%s\n' "$BACKEND_ENV_STAGING_SOCIAL_AUTH" > "$tmpfile"
 
-          if [ -n "${GOOGLE_CLIENT_ID:-}" ] && ! grep -Eq '^GOOGLE_CLIENT_ID=.+' "$tmpfile"; then
-            printf '\nGOOGLE_CLIENT_ID=%s\n' "$GOOGLE_CLIENT_ID" >> "$tmpfile"
+          client_id="${GOOGLE_CLIENT_ID:-}"
+          if [ -z "$client_id" ]; then
+            client_id="${STAGING_SOCIAL_AUTH_CLIENT_ID:-}"
+          fi
+
+          if [ -n "$client_id" ] && ! grep -Eq '^GOOGLE_CLIENT_ID=.+' "$tmpfile"; then
+            printf '\nGOOGLE_CLIENT_ID=%s\n' "$client_id" >> "$tmpfile"
           fi
 
           require_env_key() {
@@ -244,6 +250,7 @@ jobs:
         env:
           BACKEND_ENV_STAGING_SOCIAL_AUTH: ${{ secrets.AZURE_BACKEND_ENV_STAGING_SOCIAL_AUTH }}
           GOOGLE_CLIENT_ID: ${{ vars.GOOGLE_CLIENT_ID }}
+          STAGING_SOCIAL_AUTH_CLIENT_ID: ${{ vars.AZURE_BACKEND_ENV_STAGING_SOCIAL_AUTH_CLIENTID }}
         run: |
           set -euo pipefail
 
@@ -251,8 +258,13 @@ jobs:
           trap 'rm -f "$tmpfile"' EXIT
           printf '%s\n' "$BACKEND_ENV_STAGING_SOCIAL_AUTH" > "$tmpfile"
 
-          if [ -n "${GOOGLE_CLIENT_ID:-}" ] && ! grep -Eq '^GOOGLE_CLIENT_ID=.+' "$tmpfile"; then
-            printf '\nGOOGLE_CLIENT_ID=%s\n' "$GOOGLE_CLIENT_ID" >> "$tmpfile"
+          client_id="${GOOGLE_CLIENT_ID:-}"
+          if [ -z "$client_id" ]; then
+            client_id="${STAGING_SOCIAL_AUTH_CLIENT_ID:-}"
+          fi
+
+          if [ -n "$client_id" ] && ! grep -Eq '^GOOGLE_CLIENT_ID=.+' "$tmpfile"; then
+            printf '\nGOOGLE_CLIENT_ID=%s\n' "$client_id" >> "$tmpfile"
           fi
 
           env_args=()

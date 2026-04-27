@@ -131,7 +131,7 @@ GitHub larger runners with static IPs, or a dedicated VPN/NAT path.
 | `staging` | `AZURE_CONTAINER_APP_STAGING_NAME` | Expected staging backend Container App name |
 | `staging` | `AZURE_CONTAINER_APP_STAGING_RESOURCE_GROUP` | Resource group for the staging backend app |
 | `staging` | `AZURE_STAGING_API_HOST` | Public staging API hostname used for DNS-based discovery |
-| `staging` | `GOOGLE_CLIENT_ID` | Optional non-secret staging Google OAuth client ID; when set, the deploy workflow injects it if the multiline secret does not include it |
+| `staging` | `AZURE_BACKEND_ENV_STAGING_SOCIAL_AUTH_CLIENTID` | Optional non-secret staging Google OAuth client ID; the deploy workflow injects it if the multiline secret does not include `GOOGLE_CLIENT_ID` |
 | `production` | `AZURE_AKS_PRODUCTION_CLUSTER_NAME` | Production AKS cluster name |
 | `production` | `AZURE_AKS_PRODUCTION_RESOURCE_GROUP` | Resource group containing the production AKS cluster |
 | `production` | `AZURE_PRODUCTION_API_HOST` | Public production API hostname used for DNS and cutover tracking |
@@ -168,7 +168,9 @@ GitHub larger runners with static IPs, or a dedicated VPN/NAT path.
    ```
 
    Set `GOOGLE_CLIENT_ID` either inside the multiline secret above or as the
-   staging environment variable `GOOGLE_CLIENT_ID`.
+   Actions variable `AZURE_BACKEND_ENV_STAGING_SOCIAL_AUTH_CLIENTID`. The
+   workflow also accepts `GOOGLE_CLIENT_ID` as a compatibility fallback if you
+   later rename the variable to match the runtime env key directly.
 
    The staging deploy workflow validates the required keys and injects them into
    the Container App on every deploy alongside the QA bypass flags.

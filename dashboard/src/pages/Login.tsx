@@ -135,7 +135,9 @@ function sessionFromMicrosoftResult(result: AuthenticationResult): StoredAuthSes
     email;
 
   return {
-    accessToken: result.accessToken || result.idToken,
+    // Prefer idToken — MSAL accessToken with OIDC-only scopes targets Graph,
+    // not our backend API.
+    accessToken: result.idToken || result.accessToken,
     idToken: result.idToken || undefined,
     expiresAt: result.expiresOn?.getTime() ?? Date.now() + 60 * 60 * 1000,
     scope: result.scopes.join(" "),

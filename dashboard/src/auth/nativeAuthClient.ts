@@ -185,8 +185,11 @@ export function sessionFromTokenResponse(tokens: NativeAuthTokenResponse): Store
   const idTokenClaims = decodeJwtPayload(tokens.id_token);
   const accessTokenClaims = decodeJwtPayload(tokens.access_token);
 
+  // Azure CIAM access tokens issued with only OIDC scopes (openid, profile,
+  // email) target Microsoft Graph (aud = 00000003-...), not our API.  The
+  // id_token carries aud = our client ID which the backend can verify.
   return {
-    accessToken: tokens.access_token,
+    accessToken: tokens.id_token ?? tokens.access_token,
     refreshToken: tokens.refresh_token,
     idToken: tokens.id_token,
     expiresAt: Date.now() + tokens.expires_in * 1000,

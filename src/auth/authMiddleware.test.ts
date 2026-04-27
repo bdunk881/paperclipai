@@ -179,7 +179,6 @@ describe("requireAuth", () => {
         "legacy-client",
         "2dfd3a08-277c-4893-b07d-eca5ae322310",
         "d36ce552-1a3d-4cd3-b851-beff4e3bf440",
-        "api://2dfd3a08-277c-4893-b07d-eca5ae322310/access_as_user",
       ]),
       issuer: expect.arrayContaining([
         "https://legacyciam.ciamlogin.com/legacy-tenant/v2.0",
@@ -223,7 +222,6 @@ describe("requireAuth", () => {
       audience: expect.arrayContaining([
         "2dfd3a08-277c-4893-b07d-eca5ae322310",
         "d36ce552-1a3d-4cd3-b851-beff4e3bf440",
-        "api://2dfd3a08-277c-4893-b07d-eca5ae322310/access_as_user",
       ]),
       issuer: expect.arrayContaining([
         "https://autoflowciam.ciamlogin.com/5e4f1080-8afc-4005-b05e-32b21e69363a/v2.0",
@@ -330,7 +328,6 @@ describe("requireAuth", () => {
       audience: expect.arrayContaining([
         "new-client",
         "legacy-client",
-        "api://2dfd3a08-277c-4893-b07d-eca5ae322310/access_as_user",
       ]),
       issuer: expect.arrayContaining([
         "https://newciam.ciamlogin.com/tenant-guid/v2.0",
@@ -385,7 +382,6 @@ describe("requireAuth", () => {
         "custom-client",
         "2dfd3a08-277c-4893-b07d-eca5ae322310",
         "d36ce552-1a3d-4cd3-b851-beff4e3bf440",
-        "api://2dfd3a08-277c-4893-b07d-eca5ae322310/access_as_user",
       ]),
       expectedIssuers: expect.arrayContaining([
         "https://autoflowciam.ciamlogin.com/tenant-guid/v2.0",

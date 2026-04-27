@@ -38,7 +38,6 @@ const CURRENT_DASHBOARD_CIAM_CLIENT_ID = "2dfd3a08-277c-4893-b07d-eca5ae322310";
 const LEGACY_DASHBOARD_CIAM_CLIENT_ID = "d36ce552-1a3d-4cd3-b851-beff4e3bf440";
 const DEFAULT_CIAM_TENANT_SUBDOMAIN = "autoflowciam";
 const DEFAULT_CIAM_TENANT_ID = "5e4f1080-8afc-4005-b05e-32b21e69363a";
-const DASHBOARD_API_SCOPE = `api://${CURRENT_DASHBOARD_CIAM_CLIENT_ID}/access_as_user`;
 
 function normalizeAuthority(value: string | undefined): string | null {
   if (typeof value !== "string") {
@@ -135,7 +134,6 @@ function resolveAuthConfig(): AuthConfig | null {
     ...(clientId ? [clientId.trim()] : []),
     CURRENT_DASHBOARD_CIAM_CLIENT_ID,
     LEGACY_DASHBOARD_CIAM_CLIENT_ID,
-    DASHBOARD_API_SCOPE,
   ]);
   const audienceValues = Array.from(normalizedAudiences).filter(Boolean);
   if (audienceValues.length === 0) {

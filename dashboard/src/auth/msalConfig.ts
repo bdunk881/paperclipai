@@ -53,7 +53,6 @@ function readTenantDomain(value: string | undefined, fallbackSubdomain: string):
 const clientId = DEFAULT_CIAM_CLIENT_ID;
 const tenantSubdomain = readTenantSubdomain(import.meta.env.VITE_AZURE_CIAM_TENANT_SUBDOMAIN);
 const tenantDomain = readTenantDomain(import.meta.env.VITE_AZURE_CIAM_TENANT_DOMAIN, tenantSubdomain);
-const dashboardApiScope = `api://${clientId}/access_as_user`;
 
 export const msalConfig: Configuration = {
   auth: {
@@ -73,7 +72,7 @@ export const msalConfig: Configuration = {
 // "openid" and "profile" are always included by MSAL; list any additional
 // API scopes your backend requires here (e.g. api://<clientId>/access_as_user).
 export const loginRequest: PopupRequest = {
-  scopes: ["openid", "profile", "email", dashboardApiScope],
+  scopes: ["openid", "profile", "email"],
 };
 
 // CIAM supports `prompt=create` to open account creation for external users.

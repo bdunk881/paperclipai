@@ -149,9 +149,9 @@ function formatAvailability(option: IntegrationOption, liveStatuses: Record<Prov
 
   return {
     badgeClassName: "bg-blue-50 text-blue-700",
-    badgeLabel: provider.authMode === "oauth" ? "Setup available" : "API-key setup",
+    badgeLabel: provider.supportsOAuth ? "Setup available" : "API-key setup",
     helperText:
-      provider.authMode === "oauth"
+      provider.supportsOAuth
         ? `${provider.name} has a live connector setup flow in AutoFlow today.`
         : `${provider.name} is configured through the live API-key connector surface.`,
     ctaLabel: "Open connector setup",

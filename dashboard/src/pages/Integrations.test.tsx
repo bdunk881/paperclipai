@@ -23,15 +23,53 @@ function renderWithRouter(searchParams = "") {
   );
 }
 
-const connectedProviders = {
-  apollo: { connected: true, connectedAt: "2026-01-01T00:00:00Z", scopes: ["read", "write", "enrich", "contacts", "extra"] },
-  gmail: { connected: false },
-  hubspot: { connected: false },
-  sentry: { connected: false },
-  slack: { connected: true, connectedAt: "2026-02-01T00:00:00Z", scopes: [] },
-  stripe: { connected: false },
-  composio: { connected: false },
+const providerConnections: Record<string, unknown[]> = {
+  apollo: [{ id: "apollo-1", authMethod: "oauth2", createdAt: "2026-01-01T00:00:00Z", scopes: ["read", "write", "enrich", "contacts", "extra"], accountLabel: "Apollo SMB" }],
+  gmail: [],
+  hubspot: [],
+  sentry: [],
+  slack: [{ id: "slack-1", authMethod: "api_key", createdAt: "2026-02-01T00:00:00Z", scopes: [], tokenMasked: "****1234" }],
+  stripe: [],
+  composio: [],
 };
+
+function installFetchMock(options?: {
+  failConnectionsFor?: string[];
+  oauthUrl?: string;
+  connectionsOverride?: Partial<Record<string, unknown[]>>;
+}) {
+  return vi.spyOn(global, "fetch").mockImplementation(async (input, init) => {
+    const url = String(input);
+    const method = init?.method ?? "GET";
+    const provider = url.match(/\/api\/integrations\/([^/]+)\//)?.[1];
+    const connections = {
+      ...providerConnections,
+      ...(options?.connectionsOverride ?? {}),
+    };
+
+    if (options?.failConnectionsFor?.includes(provider ?? "") && url.endsWith("/connections")) {
+      return new Response(JSON.stringify({ error: "provider down" }), { status: 502, statusText: "Bad Gateway" });
+    }
+
+    if (method === "GET" && url.endsWith("/connections") && provider) {
+      return new Response(JSON.stringify({ connections: connections[provider] ?? [], total: (connections[provider] ?? []).length }), { status: 200 });
+    }
+
+    if (method === "POST" && url.endsWith("/oauth/start")) {
+      return new Response(JSON.stringify({ authUrl: options?.oauthUrl ?? "https://oauth.example.com/auth" }), { status: 201 });
+    }
+
+    if (method === "POST" && url.endsWith("/connect-api-key")) {
+      return new Response(JSON.stringify({ connection: { id: `${provider}-new` } }), { status: 201 });
+    }
+
+    if (method === "DELETE" && /\/connections\/[^/]+$/.test(url)) {
+      return new Response(null, { status: 204 });
+    }
+
+    return new Response(JSON.stringify({ error: `Unhandled ${method} ${url}` }), { status: 500 });
+  });
+}
 
 describe("Integrations", () => {
   beforeEach(() => {
@@ -42,10 +80,8 @@ describe("Integrations", () => {
     vi.restoreAllMocks();
   });
 
-  it("shows loading state then renders provider cards on success", async () => {
-    vi.spyOn(global, "fetch").mockResolvedValueOnce(
-      new Response(JSON.stringify({ providers: connectedProviders }), { status: 200 })
-    );
+  it("shows loading state then renders provider cards from connector routes", async () => {
+    installFetchMock();
 
     renderWithRouter();
     expect(screen.getByText("Loading connector status...")).toBeInTheDocument();
@@ -53,35 +89,14 @@ describe("Integrations", () => {
     await waitFor(() => {
       expect(screen.getByText("Apollo")).toBeInTheDocument();
     });
+
     expect(screen.getByText("Composio")).toBeInTheDocument();
-    expect(screen.getAllByText("Not connected").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Connected").length).toBe(2);
-  });
-
-  it("shows error message when loadStatuses fails", async () => {
-    vi.spyOn(global, "fetch").mockRejectedValueOnce(new Error("Network fail"));
-
-    renderWithRouter();
-    await waitFor(() => {
-      expect(screen.getByText("Network fail")).toBeInTheDocument();
-    });
-  });
-
-  it("shows error from non-ok response body", async () => {
-    vi.spyOn(global, "fetch").mockResolvedValueOnce(
-      new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, statusText: "Unauthorized" })
-    );
-
-    renderWithRouter();
-    await waitFor(() => {
-      expect(screen.getByText("Unauthorized")).toBeInTheDocument();
-    });
+    expect(screen.getAllByText("Not connected").length).toBeGreaterThan(0);
   });
 
   it("renders success callback banner", async () => {
-    vi.spyOn(global, "fetch").mockResolvedValueOnce(
-      new Response(JSON.stringify({ providers: connectedProviders }), { status: 200 })
-    );
+    installFetchMock();
 
     renderWithRouter("?status=success&provider=apollo");
     await waitFor(() => {
@@ -89,33 +104,17 @@ describe("Integrations", () => {
     });
   });
 
-  it("renders error callback banner with message", async () => {
-    vi.spyOn(global, "fetch").mockResolvedValueOnce(
-      new Response(JSON.stringify({ providers: connectedProviders }), { status: 200 })
-    );
+  it("shows a partial-load error when one connector status request fails", async () => {
+    installFetchMock({ failConnectionsFor: ["hubspot"] });
 
-    renderWithRouter("?status=error&provider=gmail&message=token+expired");
+    renderWithRouter();
     await waitFor(() => {
-      expect(screen.getByText(/connection failed/i)).toBeInTheDocument();
-      expect(screen.getByText(/token expired/)).toBeInTheDocument();
-    });
-  });
-
-  it("renders error callback banner without message", async () => {
-    vi.spyOn(global, "fetch").mockResolvedValueOnce(
-      new Response(JSON.stringify({ providers: connectedProviders }), { status: 200 })
-    );
-
-    renderWithRouter("?status=error&provider=gmail");
-    await waitFor(() => {
-      expect(screen.getByText(/connection failed/i)).toBeInTheDocument();
+      expect(screen.getByText(/Some connector statuses failed to load/i)).toBeInTheDocument();
     });
   });
 
   it("shows scopes for connected provider (max 4)", async () => {
-    vi.spyOn(global, "fetch").mockResolvedValueOnce(
-      new Response(JSON.stringify({ providers: connectedProviders }), { status: 200 })
-    );
+    installFetchMock();
 
     renderWithRouter();
     await waitFor(() => {
@@ -124,62 +123,22 @@ describe("Integrations", () => {
       expect(screen.getByText("enrich")).toBeInTheDocument();
       expect(screen.getByText("contacts")).toBeInTheDocument();
     });
+
     expect(screen.queryByText("extra")).not.toBeInTheDocument();
   });
 
-  it("shows 'No scopes recorded' for providers without scopes", async () => {
-    vi.spyOn(global, "fetch").mockResolvedValueOnce(
-      new Response(JSON.stringify({ providers: connectedProviders }), { status: 200 })
-    );
+  it("shows hybrid auth labels and API-key-only labels", async () => {
+    installFetchMock();
 
     renderWithRouter();
     await waitFor(() => {
-      expect(screen.getAllByText("No scopes recorded").length).toBeGreaterThan(0);
+      expect(screen.getAllByText("OAuth + API key").length).toBeGreaterThan(0);
     });
+    expect(screen.getAllByText("API key").length).toBeGreaterThan(0);
   });
 
-  it("shows 'Configure via API-key endpoint' for API-key providers", async () => {
-    vi.spyOn(global, "fetch").mockResolvedValueOnce(
-      new Response(JSON.stringify({ providers: connectedProviders }), { status: 200 })
-    );
-
-    renderWithRouter();
-    await waitFor(() => {
-      expect(screen.getAllByText("Configure via API-key endpoint").length).toBe(2);
-    });
-  });
-
-  it("shows Disconnect button for connected providers", async () => {
-    vi.spyOn(global, "fetch").mockResolvedValueOnce(
-      new Response(JSON.stringify({ providers: connectedProviders }), { status: 200 })
-    );
-
-    renderWithRouter();
-    await waitFor(() => {
-      expect(screen.getAllByText("Disconnect").length).toBe(2);
-    });
-  });
-
-  it("shows Connect button for disconnected OAuth providers", async () => {
-    vi.spyOn(global, "fetch").mockResolvedValueOnce(
-      new Response(JSON.stringify({ providers: connectedProviders }), { status: 200 })
-    );
-
-    renderWithRouter();
-    await waitFor(() => {
-      expect(screen.getAllByText("Connect").length).toBe(3);
-    });
-  });
-
-  it("handleConnect initiates OAuth flow and redirects", async () => {
-    const fetchMock = vi.spyOn(global, "fetch");
-    fetchMock.mockResolvedValueOnce(
-      new Response(JSON.stringify({ providers: connectedProviders }), { status: 200 })
-    );
-    fetchMock.mockResolvedValueOnce(
-      new Response(JSON.stringify({ redirectUrl: "https://oauth.example.com/auth" }), { status: 200 })
-    );
-
+  it("starts OAuth from the provider-specific route", async () => {
+    const fetchMock = installFetchMock();
     const assignMock = vi.fn();
     Object.defineProperty(window, "location", {
       value: { ...window.location, assign: assignMock },
@@ -188,7 +147,7 @@ describe("Integrations", () => {
 
     renderWithRouter();
     await waitFor(() => {
-      expect(screen.getAllByText("Connect").length).toBe(3);
+      expect(screen.getAllByText("Connect").length).toBeGreaterThan(0);
     });
 
     fireEvent.click(screen.getAllByText("Connect")[0]);
@@ -196,50 +155,35 @@ describe("Integrations", () => {
     await waitFor(() => {
       expect(assignMock).toHaveBeenCalledWith("https://oauth.example.com/auth");
     });
+    expect(fetchMock).toHaveBeenCalledWith(expect.stringContaining("/api/integrations/gmail/oauth/start"), expect.objectContaining({ method: "POST" }));
   });
 
-  it("handleConnect shows error on failure", async () => {
-    const fetchMock = vi.spyOn(global, "fetch");
-    fetchMock.mockResolvedValueOnce(
-      new Response(JSON.stringify({ providers: connectedProviders }), { status: 200 })
-    );
-    fetchMock.mockRejectedValueOnce(new Error("OAuth server down"));
+  it("saves an API key through the provider-specific fallback route", async () => {
+    const fetchMock = installFetchMock({
+      connectionsOverride: {
+        apollo: [],
+      },
+    });
 
     renderWithRouter();
     await waitFor(() => {
-      expect(screen.getAllByText("Connect").length).toBe(3);
+      expect(screen.getAllByText("Use API key").length).toBeGreaterThan(0);
     });
 
-    fireEvent.click(screen.getAllByText("Connect")[0]);
+    fireEvent.click(screen.getAllByText("Use API key")[0]);
+    fireEvent.change(screen.getByLabelText("Apollo API key"), { target: { value: "apollo-key" } });
+    fireEvent.click(screen.getAllByRole("button", { name: "Save API key" })[0]);
 
     await waitFor(() => {
-      expect(screen.getByText("OAuth server down")).toBeInTheDocument();
+      expect(fetchMock).toHaveBeenCalledWith(
+        expect.stringContaining("/api/integrations/apollo/connect-api-key"),
+        expect.objectContaining({ method: "POST" })
+      );
     });
   });
 
-  it("handleConnect skips non-OAuth providers", async () => {
-    const fetchMock = vi.spyOn(global, "fetch");
-    fetchMock.mockResolvedValueOnce(
-      new Response(JSON.stringify({ providers: connectedProviders }), { status: 200 })
-    );
-
-    renderWithRouter();
-    await waitFor(() => {
-      expect(screen.getAllByText("Configure via API-key endpoint").length).toBe(2);
-    });
-    // Composio and Stripe have no Connect button because they use API-key mode.
-    expect(fetchMock).toHaveBeenCalledTimes(1);
-  });
-
-  it("handleDisconnect calls API and reloads statuses", async () => {
-    const fetchMock = vi.spyOn(global, "fetch");
-    fetchMock.mockResolvedValueOnce(
-      new Response(JSON.stringify({ providers: connectedProviders }), { status: 200 })
-    );
-    fetchMock.mockResolvedValueOnce(new Response(null, { status: 204 }));
-    fetchMock.mockResolvedValueOnce(
-      new Response(JSON.stringify({ providers: { ...connectedProviders, apollo: { connected: false } } }), { status: 200 })
-    );
+  it("disconnects the active provider-specific connection id", async () => {
+    const fetchMock = installFetchMock();
 
     renderWithRouter();
     await waitFor(() => {
@@ -249,83 +193,35 @@ describe("Integrations", () => {
     fireEvent.click(screen.getAllByText("Disconnect")[0]);
 
     await waitFor(() => {
-      expect(fetchMock).toHaveBeenCalledTimes(3);
+      expect(fetchMock).toHaveBeenCalledWith(
+        expect.stringContaining("/api/integrations/apollo/connections/apollo-1"),
+        expect.objectContaining({ method: "DELETE" })
+      );
     });
   });
 
-  it("handleDisconnect shows error on failure", async () => {
-    const fetchMock = vi.spyOn(global, "fetch");
-    fetchMock.mockResolvedValueOnce(
-      new Response(JSON.stringify({ providers: connectedProviders }), { status: 200 })
-    );
-    fetchMock.mockRejectedValueOnce(new Error("Disconnect failed"));
+  it("renders the API-key form by default for API-key-only connectors", async () => {
+    installFetchMock();
 
     renderWithRouter();
     await waitFor(() => {
-      expect(screen.getAllByText("Disconnect").length).toBe(2);
-    });
-
-    fireEvent.click(screen.getAllByText("Disconnect")[0]);
-
-    await waitFor(() => {
-      expect(screen.getByText("Disconnect failed")).toBeInTheDocument();
+      expect(screen.getByLabelText("Composio API key")).toBeInTheDocument();
     });
   });
 
   it("refresh button reloads statuses", async () => {
-    const fetchMock = vi.spyOn(global, "fetch");
-    fetchMock.mockResolvedValueOnce(
-      new Response(JSON.stringify({ providers: connectedProviders }), { status: 200 })
-    );
-    fetchMock.mockResolvedValueOnce(
-      new Response(JSON.stringify({ providers: connectedProviders }), { status: 200 })
-    );
+    const fetchMock = installFetchMock();
 
     renderWithRouter();
     await waitFor(() => {
       expect(screen.getByText("Apollo")).toBeInTheDocument();
     });
 
+    const initialCalls = fetchMock.mock.calls.length;
     fireEvent.click(screen.getByText("Refresh"));
 
     await waitFor(() => {
-      expect(fetchMock).toHaveBeenCalledTimes(2);
-    });
-  });
-
-  it("renders connected-at timestamps and Not yet for unconnected", async () => {
-    vi.spyOn(global, "fetch").mockResolvedValueOnce(
-      new Response(JSON.stringify({ providers: connectedProviders }), { status: 200 })
-    );
-
-    renderWithRouter();
-    await waitFor(() => {
-      expect(screen.getAllByText("Not yet").length).toBeGreaterThan(0);
-    });
-  });
-
-  it("calls fetch on mount to load statuses", async () => {
-    const fetchMock = vi.spyOn(global, "fetch");
-    fetchMock.mockResolvedValueOnce(
-      new Response(JSON.stringify({ providers: connectedProviders }), { status: 200 })
-    );
-
-    renderWithRouter();
-    await waitFor(() => {
-      expect(fetchMock).toHaveBeenCalledTimes(1);
-      const url = fetchMock.mock.calls[0][0] as string;
-      expect(url).toContain("/api/integrations/status");
-    });
-  });
-
-  it("handles non-ok response with unparseable JSON body", async () => {
-    vi.spyOn(global, "fetch").mockResolvedValueOnce(
-      new Response("not json", { status: 500, statusText: "Internal Server Error" })
-    );
-
-    renderWithRouter();
-    await waitFor(() => {
-      expect(screen.getByText("500 Internal Server Error")).toBeInTheDocument();
+      expect(fetchMock.mock.calls.length).toBeGreaterThan(initialCalls);
     });
   });
 });

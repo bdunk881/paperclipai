@@ -85,6 +85,18 @@ function mapNativeAuthError(error: unknown): string {
     return "This sign-in method is not supported. Contact your administrator.";
   }
 
+  if (error.code === "redirect_required") {
+    return "This account uses Microsoft sign-in. Use the \"Sign in with Microsoft\" button below.";
+  }
+
+  if (normalized.includes("aadsts1003037") || normalized.includes("already have an account")) {
+    return "An account with this email already exists. Switch to \"Sign in\" or use \"Sign in with Microsoft\" instead.";
+  }
+
+  if (normalized.includes("aadsts500222") || normalized.includes("does not support native credential recovery")) {
+    return "Password reset is not available for this account. Use \"Sign in with Microsoft\" on the Sign in tab instead.";
+  }
+
   // Surface the actual Azure error for unrecognized codes so they can be diagnosed.
   console.warn("[NativeAuth] Unhandled error:", error.code, error.description ?? error.message);
   return error.description ?? error.message;

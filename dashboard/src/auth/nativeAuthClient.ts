@@ -56,6 +56,8 @@ export type NativeAuthTokenResponse = {
   id_token?: string;
 };
 
+export type SocialAuthProvider = "google" | "facebook" | "apple";
+
 export class NativeAuthError extends Error {
   readonly code?: string;
   readonly description?: string;
@@ -193,6 +195,33 @@ export function sessionFromTokenResponse(tokens: NativeAuthTokenResponse): Store
     expiresAt: Date.now() + tokens.expires_in * 1000,
     scope: tokens.scope,
     user: claimsToUser(idTokenClaims, accessTokenClaims),
+  };
+}
+
+export function sessionFromAppToken(
+  accessToken: string,
+  provider?: SocialAuthProvider
+): StoredAuthSession {
+  const accessTokenClaims = decodeJwtPayload(accessToken);
+  if (!accessTokenClaims) {
+    throw new NativeAuthError("Social sign-in returned an unreadable access token.", 400);
+  }
+
+  const expiresAtClaim = accessTokenClaims.exp;
+  if (typeof expiresAtClaim !== "number") {
+    throw new NativeAuthError("Social sign-in token is missing an expiration timestamp.", 400);
+  }
+
+  const user = claimsToUser(null, accessTokenClaims);
+
+  if (!user.name.trim()) {
+    user.name = provider ? `${provider[0].toUpperCase()}${provider.slice(1)} user` : user.email;
+  }
+
+  return {
+    accessToken,
+    expiresAt: expiresAtClaim * 1000,
+    user,
   };
 }
 

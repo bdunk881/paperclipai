@@ -1,11 +1,6 @@
 import passport from "passport";
-import { Strategy as GoogleStrategy } from "passport-google-oauth20";
 import type { SocialAuthProvider } from "./appAuthTokens";
-import {
-  upsertLocalUserFromSocialProfile,
-  type LocalAuthUser,
-  type SocialAuthProfileInput,
-} from "./localUserStore";
+import type { LocalAuthUser, SocialAuthProfileInput } from "./localUserStore";
 
 type VerifiedUser = LocalAuthUser & { provider: SocialAuthProvider };
 
@@ -28,6 +23,7 @@ type ProfileLike = {
 type StrategyDone = (error: Error | null, user?: VerifiedUser | false) => void;
 
 const enabledProviders = new Set<SocialAuthProvider>();
+const providerConfigurationErrors = new Map<SocialAuthProvider, string>();
 let configured = false;
 
 function allowHttpLocalhostCallback(): boolean {
@@ -37,6 +33,14 @@ function allowHttpLocalhostCallback(): boolean {
 function isLocalhostHostname(hostname: string): boolean {
   const normalized = hostname.trim().toLowerCase();
   return normalized === "localhost" || normalized.endsWith(".localhost");
+}
+
+function setProviderConfigurationError(provider: SocialAuthProvider, error: unknown): void {
+  const message = error instanceof Error ? error.message : String(error);
+  if (!providerConfigurationErrors.has(provider)) {
+    console.error(`[auth/social] Failed to configure ${provider} strategy: ${message}`);
+  }
+  providerConfigurationErrors.set(provider, message);
 }
 
 export function normalizeSocialAuthCallbackUrl(value: string | undefined): string | null {
@@ -116,6 +120,7 @@ async function verifyAndUpsert(
 ): Promise<void> {
   try {
     const normalizedProfile = normalizeSocialProfile(provider, profile);
+    const { upsertLocalUserFromSocialProfile } = require("./localUserStore") as typeof import("./localUserStore");
     const user = await upsertLocalUserFromSocialProfile(normalizedProfile);
     done(null, { ...user, provider });
   } catch (error) {
@@ -131,19 +136,26 @@ function registerGoogleStrategy(): void {
     return;
   }
 
-  passport.use(
-    new GoogleStrategy(
-      {
-        clientID,
-        clientSecret,
-        callbackURL,
-      },
-      async (_accessToken: string, _refreshToken: string, profile: ProfileLike, done: StrategyDone) => {
-        await verifyAndUpsert("google", profile, done);
-      }
-    ) as never
-  );
-  enabledProviders.add("google");
+  try {
+    const { Strategy: GoogleStrategy } =
+      require("passport-google-oauth20") as typeof import("passport-google-oauth20");
+
+    passport.use(
+      new GoogleStrategy(
+        {
+          clientID,
+          clientSecret,
+          callbackURL,
+        },
+        async (_accessToken: string, _refreshToken: string, profile: ProfileLike, done: StrategyDone) => {
+          await verifyAndUpsert("google", profile, done);
+        }
+      ) as never
+    );
+    enabledProviders.add("google");
+  } catch (error) {
+    setProviderConfigurationError("google", error);
+  }
 }
 
 export function configureSocialAuthStrategies(): void {
@@ -163,4 +175,9 @@ export function listEnabledSocialAuthProviders(): SocialAuthProvider[] {
 export function isSocialAuthProviderEnabled(provider: SocialAuthProvider): boolean {
   configureSocialAuthStrategies();
   return enabledProviders.has(provider);
+}
+
+export function getSocialAuthConfigurationError(provider: SocialAuthProvider): string | null {
+  configureSocialAuthStrategies();
+  return providerConfigurationErrors.get(provider) ?? null;
 }

@@ -138,7 +138,12 @@ AutoFlow backend is deployed on Azure; the dashboard is hosted on Vercel. See [`
 
 ### CI/CD
 
-Push to `main` → GitHub Actions builds Docker images → pushes to GHCR → deploys to Azure (backend) and Vercel (dashboard).
+AutoFlow now uses a staging-first promotion flow:
+
+- Feature branches open PRs into `staging`.
+- `staging` deploys first and carries the validation checks.
+- Only the `staging` branch may open a PR into `master`.
+- PRs into `master` require one code-owner approval from `@bdunk881` plus the `Staging-First Promotion Gate` check before production deploys can proceed.
 
 Required GitHub Actions secret for backend test job:
 - `CI_POSTGRES_PASSWORD`
@@ -151,7 +156,8 @@ Required GitHub Actions secret for backend test job:
 2. Create a branch: `git checkout -b feat/my-feature`
 3. Make your changes and add tests
 4. Run `npm test` to verify everything passes
-5. Open a PR
+5. Open your PR against `staging`, not `master`
+6. After staging validation, promote `staging` to `master` with a dedicated PR reviewed by the production code owner
 
 ### Running tests
 

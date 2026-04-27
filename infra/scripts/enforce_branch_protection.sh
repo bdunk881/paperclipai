@@ -14,20 +14,14 @@ fi
 REPO="${GITHUB_REPOSITORY}"
 API="https://api.github.com"
 TARGET_BRANCHES=("staging" "master")
-REQUIRED_CHECKS="${REQUIRED_CHECKS:-Docker Build Check}"
+STAGING_REQUIRED_CHECKS="${STAGING_REQUIRED_CHECKS:-Docker Build Check}"
+MASTER_REQUIRED_CHECKS="${MASTER_REQUIRED_CHECKS:-${STAGING_REQUIRED_CHECKS},Staging-First Promotion Gate}"
 MASTER_ALLOWED_USERS="${MASTER_ALLOWED_USERS:-bdunk881}"
 STAGING_ALLOWED_USERS="${STAGING_ALLOWED_USERS:-bdunk881}"
 MASTER_ALLOWED_TEAMS="${MASTER_ALLOWED_TEAMS:-}"
 STAGING_ALLOWED_TEAMS="${STAGING_ALLOWED_TEAMS:-}"
 MASTER_ALLOWED_APPS="${MASTER_ALLOWED_APPS:-}"
 STAGING_ALLOWED_APPS="${STAGING_ALLOWED_APPS:-}"
-
-IFS=',' read -r -a CHECK_CONTEXTS <<<"$REQUIRED_CHECKS"
-for i in "${!CHECK_CONTEXTS[@]}"; do
-  CHECK_CONTEXTS[$i]="$(echo "${CHECK_CONTEXTS[$i]}" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
-done
-
-CONTEXTS_JSON="$(printf '%s\n' "${CHECK_CONTEXTS[@]}" | jq -R . | jq -s .)"
 
 csv_to_json() {
   local value="$1"
@@ -36,6 +30,17 @@ csv_to_json() {
     printf '[]'
     return
   fi
+
+  printf '%s\n' "$value" \
+    | tr ',' '\n' \
+    | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' \
+    | sed '/^$/d' \
+    | jq -R . \
+    | jq -s .
+}
+
+checks_to_json() {
+  local value="$1"
 
   printf '%s\n' "$value" \
     | tr ',' '\n' \
@@ -67,19 +72,25 @@ for BRANCH in "${TARGET_BRANCHES[@]}"; do
 
   case "$BRANCH" in
     master)
+      CONTEXTS_JSON="$(checks_to_json "$MASTER_REQUIRED_CHECKS")"
       USERS_JSON="$(csv_to_json "$MASTER_ALLOWED_USERS")"
       TEAMS_JSON="$(csv_to_json "$MASTER_ALLOWED_TEAMS")"
       APPS_JSON="$(csv_to_json "$MASTER_ALLOWED_APPS")"
+      REQUIRE_CODEOWNER_REVIEWS='true'
       ;;
     staging)
+      CONTEXTS_JSON="$(checks_to_json "$STAGING_REQUIRED_CHECKS")"
       USERS_JSON="$(csv_to_json "$STAGING_ALLOWED_USERS")"
       TEAMS_JSON="$(csv_to_json "$STAGING_ALLOWED_TEAMS")"
       APPS_JSON="$(csv_to_json "$STAGING_ALLOWED_APPS")"
+      REQUIRE_CODEOWNER_REVIEWS='false'
       ;;
     *)
+      CONTEXTS_JSON='[]'
       USERS_JSON='[]'
       TEAMS_JSON='[]'
       APPS_JSON='[]'
+      REQUIRE_CODEOWNER_REVIEWS='false'
       ;;
   esac
 
@@ -87,7 +98,8 @@ for BRANCH in "${TARGET_BRANCHES[@]}"; do
     --argjson contexts "$CONTEXTS_JSON" \
     --argjson users "$USERS_JSON" \
     --argjson teams "$TEAMS_JSON" \
-    --argjson apps "$APPS_JSON" '{
+    --argjson apps "$APPS_JSON" \
+    --argjson requireCodeOwnerReviews "$REQUIRE_CODEOWNER_REVIEWS" '{
     required_status_checks: {
       strict: true,
       contexts: $contexts
@@ -95,7 +107,7 @@ for BRANCH in "${TARGET_BRANCHES[@]}"; do
     enforce_admins: true,
     required_pull_request_reviews: {
       dismiss_stale_reviews: true,
-      require_code_owner_reviews: false,
+      require_code_owner_reviews: $requireCodeOwnerReviews,
       required_approving_review_count: 1,
       require_last_push_approval: false
     },

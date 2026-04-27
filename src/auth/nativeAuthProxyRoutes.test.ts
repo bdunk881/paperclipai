@@ -39,6 +39,8 @@ function loadApp(env: Record<string, string | undefined> = {}) {
 describe("native auth proxy routes", () => {
   beforeEach(() => {
     global.fetch = jest.fn() as unknown as typeof fetch;
+    jest.spyOn(console, "log").mockImplementation(() => undefined);
+    jest.spyOn(console, "warn").mockImplementation(() => undefined);
   });
 
   afterEach(() => {
@@ -318,6 +320,84 @@ describe("native auth proxy routes", () => {
 
     expect(response.status).toBe(502);
     expect(response.body.error).toMatch(/native auth upstream request failed/i);
+    expect(console.warn).toHaveBeenCalledWith(
+      expect.stringContaining("[native-auth] UPSTREAM_ERROR")
+    );
+  });
+
+  it("logs sanitized request and response details for proxied calls", async () => {
+    (global.fetch as jest.Mock).mockResolvedValueOnce(
+      mockFetchResponse({
+        status: 400,
+        headers: {
+          "content-type": "application/json; charset=utf-8",
+          "x-ms-request-id": "ms-request-123",
+          "x-ms-correlation-id": "ms-corr-123",
+        },
+        body: JSON.stringify({
+          error: "invalid_grant",
+          error_description: "Password reset required",
+        }),
+      })
+    );
+
+    const app = loadApp({
+      ALLOWED_ORIGINS: "https://dashboard.autoflow.test",
+      AUTH_NATIVE_AUTH_PROXY_BASE_URL: "https://autoflowciam.ciamlogin.com/tenant-guid",
+    });
+
+    await request(app)
+      .post("/api/auth/native/oauth2/v2.0/challenge")
+      .set("Origin", "https://dashboard.autoflow.test")
+      .set("X-Correlation-Id", "corr-789")
+      .set("Content-Type", "application/json")
+      .send({
+        username: "alex@example.com",
+        password: "super-secret-password",
+        continuation_token: "token-secret",
+      });
+
+    const logOutput = (console.log as jest.Mock).mock.calls.map(([message]) => String(message)).join("\n");
+    expect(logOutput).toContain("[native-auth] REQUEST");
+    expect(logOutput).toContain("[native-auth] RESPONSE");
+    expect(logOutput).toContain('"password":"[REDACTED]"');
+    expect(logOutput).toContain('"continuation_token":"[REDACTED]"');
+    expect(logOutput).toContain('"username":"alex@example.com"');
+    expect(logOutput).not.toContain("super-secret-password");
+    expect(logOutput).not.toContain("token-secret");
+    expect(logOutput).toContain('error="invalid_grant"');
+    expect(logOutput).toContain('errorDescription="Password reset required"');
+    expect(logOutput).toContain('xMsRequestId="ms-request-123"');
+    expect(logOutput).toContain('xMsCorrelationId="ms-corr-123"');
+  });
+
+  it("generates and forwards a correlation ID when the caller omits one", async () => {
+    (global.fetch as jest.Mock).mockResolvedValueOnce(
+      mockFetchResponse({
+        status: 200,
+        headers: {
+          "content-type": "application/json; charset=utf-8",
+        },
+        body: JSON.stringify({ ok: true }),
+      })
+    );
+
+    const app = loadApp({
+      ALLOWED_ORIGINS: "https://dashboard.autoflow.test",
+      AUTH_NATIVE_AUTH_PROXY_BASE_URL: "https://autoflowciam.ciamlogin.com/tenant-guid",
+    });
+
+    await request(app)
+      .post("/api/auth/native/signin/v1.0/start")
+      .set("Origin", "https://dashboard.autoflow.test")
+      .set("Content-Type", "application/json")
+      .send({ username: "alex@example.com", password: "super-secret-password" });
+
+    const [, init] = (global.fetch as jest.Mock).mock.calls[0] as [URL, RequestInit];
+    const headers = init.headers as Record<string, string>;
+    expect(headers["x-correlation-id"]).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+    );
   });
 
   it("ignores retired branded auth hosts and uses the direct ciamlogin authority", async () => {

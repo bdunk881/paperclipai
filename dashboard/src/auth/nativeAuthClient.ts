@@ -2,7 +2,33 @@ import type { StoredAuthSession, StoredAuthUser } from "./authStorage";
 
 const DEFAULT_CIAM_CLIENT_ID = "2dfd3a08-277c-4893-b07d-eca5ae322310";
 const DEFAULT_SCOPE = "openid profile email offline_access";
-const NATIVE_AUTH_PROXY_BASE = "/api/auth/native";
+
+/**
+ * In production the dashboard is served by Vercel and API calls go through a
+ * Vercel rewrite (`/api/* → https://api.helloautoflow.com/api/*`).  Vercel
+ * rewrites can silently drop or corrupt POST bodies in certain browsers,
+ * causing Azure CIAM to report missing parameters (AADSTS900144).
+ *
+ * Bypass the rewrite by sending native-auth requests directly to the API
+ * backend when running on the production dashboard domain.
+ */
+function resolveNativeAuthProxyBase(): string {
+  const envBase = import.meta.env.VITE_API_BASE_URL;
+  if (typeof envBase === "string" && envBase.trim()) {
+    return `${envBase.replace(/\/+$/, "")}/api/auth/native`;
+  }
+
+  if (
+    typeof window !== "undefined" &&
+    window.location.hostname === "app.helloautoflow.com"
+  ) {
+    return "https://api.helloautoflow.com/api/auth/native";
+  }
+
+  return "/api/auth/native";
+}
+
+const NATIVE_AUTH_PROXY_BASE = resolveNativeAuthProxyBase();
 
 type NativeAuthPrimitive = string | number | boolean | null | undefined;
 type NativeAuthPayload = Record<string, NativeAuthPrimitive>;

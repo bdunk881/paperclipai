@@ -20,7 +20,7 @@ test("preview smoke: login route renders native auth form and accepts credential
   await expect(page).toHaveURL(/\/login/);
 
   // The native auth Login page renders a form with a submit button inside it.
-  const signInSubmit = page.locator("form").getByRole("button", { name: /sign in/i });
+  const signInSubmit = page.locator("form").getByRole("button", { name: "Sign in", exact: true });
   await expect(signInSubmit).toBeVisible();
   expect(envConfigWarnings).toEqual([]);
 

@@ -97,12 +97,7 @@ for BRANCH in "${TARGET_BRANCHES[@]}"; do
       dismiss_stale_reviews: true,
       require_code_owner_reviews: false,
       required_approving_review_count: 1,
-      require_last_push_approval: false,
-      bypass_pull_request_allowances: {
-        users: $users,
-        teams: $teams,
-        apps: $apps
-      }
+      require_last_push_approval: false
     },
     restrictions: {
       users: $users,

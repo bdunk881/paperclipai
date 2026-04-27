@@ -1,0 +1,143 @@
+import request from "supertest";
+import { createSocialAuthState } from "./appAuthTokens";
+
+const originalEnv = process.env;
+
+type PassportAuthenticate = (
+  strategy: string,
+  options?: Record<string, unknown>,
+  callback?: (error: Error | null, user?: unknown) => void
+) => import("express").RequestHandler;
+
+function loadApp(authenticateImpl: PassportAuthenticate, enabledProviders: string[] = ["google", "facebook", "apple"]) {
+  process.env = {
+    ...originalEnv,
+    APP_JWT_SECRET: "test-app-jwt-secret-with-sufficient-length",
+    DATABASE_URL: "postgres://autoflow:test@localhost:5432/autoflow",
+    ALLOWED_ORIGINS: "https://dashboard.autoflow.test",
+  };
+
+  jest.resetModules();
+  jest.doMock("passport", () => ({
+    __esModule: true,
+    default: {
+      initialize: jest.fn(() => (_req: unknown, _res: unknown, next: () => void) => next()),
+      authenticate: jest.fn(authenticateImpl),
+    },
+  }));
+  jest.doMock("./socialAuthStrategies", () => ({
+    configureSocialAuthStrategies: jest.fn(),
+    isSocialAuthProviderEnabled: (provider: string) => enabledProviders.includes(provider),
+  }));
+  jest.doMock("../db/postgres", () => ({
+    isPostgresConfigured: () => true,
+  }));
+  jest.doMock("../engine/llmProviders", () => ({
+    getProvider: jest.fn(),
+  }));
+
+  return require("../app").default as import("express").Express;
+}
+
+describe("social auth routes", () => {
+  afterEach(() => {
+    process.env = originalEnv;
+    jest.resetModules();
+    jest.restoreAllMocks();
+  });
+
+  it("starts the Google auth flow with signed state and email scope", async () => {
+    const authenticate = jest.fn<ReturnType<PassportAuthenticate>, Parameters<PassportAuthenticate>>(
+      (_strategy, _options) => (_req, res) => {
+        res.status(204).end();
+      }
+    );
+    const app = loadApp(authenticate);
+
+    const response = await request(app)
+      .get("/api/auth/social/google")
+      .query({ redirect_uri: "https://dashboard.autoflow.test/auth/callback" });
+
+    expect(response.status).toBe(204);
+    expect(authenticate).toHaveBeenCalledWith(
+      "google",
+      expect.objectContaining({
+        scope: ["profile", "email"],
+        session: false,
+        state: expect.any(String),
+      })
+    );
+  });
+
+  it("returns an app-issued token and user payload after a successful callback", async () => {
+    const authenticate = jest.fn<ReturnType<PassportAuthenticate>, Parameters<PassportAuthenticate>>(
+      (_strategy, _options, callback) => (req, res, next) => {
+        callback?.(null, {
+          id: "local-user-123",
+          email: "local@example.com",
+          displayName: "Local User",
+          provider: "google",
+        });
+        next();
+      }
+    );
+    const app = loadApp(authenticate);
+
+    const response = await request(app).get("/api/auth/social/google/callback?code=test-code");
+
+    expect(response.status).toBe(200);
+    expect(response.body.user).toEqual({
+      id: "local-user-123",
+      email: "local@example.com",
+      name: "Local User",
+      provider: "google",
+    });
+    expect(typeof response.body.token).toBe("string");
+  });
+
+  it("redirects to the approved frontend target with the token in the fragment", async () => {
+    const authenticate = jest.fn<ReturnType<PassportAuthenticate>, Parameters<PassportAuthenticate>>(
+      (_strategy, _options, callback) => (_req, _res, next) => {
+        callback?.(null, {
+          id: "local-user-abc",
+          email: "local@example.com",
+          displayName: "Local User",
+          provider: "google",
+        });
+        next();
+      }
+    );
+    process.env = {
+      ...originalEnv,
+      APP_JWT_SECRET: "test-app-jwt-secret-with-sufficient-length",
+      ALLOWED_ORIGINS: "https://dashboard.autoflow.test",
+    };
+    const state = createSocialAuthState({
+      redirectUri: "https://dashboard.autoflow.test/auth/callback",
+    });
+    const app = loadApp(authenticate);
+
+    const response = await request(app)
+      .get("/api/auth/social/google/callback")
+      .query({ state, code: "provider-code" });
+
+    expect(response.status).toBe(302);
+    expect(response.headers.location).toMatch(
+      /^https:\/\/dashboard\.autoflow\.test\/auth\/callback#token=.+&provider=google$/
+    );
+  });
+
+  it("returns 404 when the provider is unsupported", async () => {
+    const authenticate = jest.fn<ReturnType<PassportAuthenticate>, Parameters<PassportAuthenticate>>(
+      () => (_req, res) => {
+        res.status(204).end();
+      }
+    );
+    const app = loadApp(authenticate);
+
+    const response = await request(app).get("/api/auth/social/linkedin");
+
+    expect(response.status).toBe(404);
+    expect(response.body.error).toMatch(/Unsupported social auth provider/i);
+  });
+});

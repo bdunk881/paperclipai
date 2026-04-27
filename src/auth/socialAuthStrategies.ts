@@ -30,7 +30,16 @@ type StrategyDone = (error: Error | null, user?: VerifiedUser | false) => void;
 const enabledProviders = new Set<SocialAuthProvider>();
 let configured = false;
 
-function normalizeHttpsUrl(value: string | undefined): string | null {
+function allowHttpLocalhostCallback(): boolean {
+  return process.env.NODE_ENV !== "production" || process.env.SOCIAL_AUTH_ALLOW_HTTP_CALLBACK === "true";
+}
+
+function isLocalhostHostname(hostname: string): boolean {
+  const normalized = hostname.trim().toLowerCase();
+  return normalized === "localhost" || normalized.endsWith(".localhost");
+}
+
+export function normalizeSocialAuthCallbackUrl(value: string | undefined): string | null {
   if (typeof value !== "string") {
     return null;
   }
@@ -42,7 +51,10 @@ function normalizeHttpsUrl(value: string | undefined): string | null {
 
   try {
     const parsed = new URL(normalized);
-    if (parsed.protocol !== "https:" && parsed.hostname !== "localhost") {
+    const isHttps = parsed.protocol === "https:";
+    const isAllowedLocalHttp =
+      parsed.protocol === "http:" && isLocalhostHostname(parsed.hostname) && allowHttpLocalhostCallback();
+    if (!isHttps && !isAllowedLocalHttp) {
       return null;
     }
     return parsed.toString();
@@ -58,12 +70,12 @@ function resolveCallbackUrl(provider: SocialAuthProvider): string | null {
       : provider === "facebook"
         ? process.env.FACEBOOK_CALLBACK_URL
         : process.env.APPLE_CALLBACK_URL;
-  const explicit = normalizeHttpsUrl(explicitEnv);
+  const explicit = normalizeSocialAuthCallbackUrl(explicitEnv);
   if (explicit) {
     return explicit;
   }
 
-  const base = normalizeHttpsUrl(process.env.SOCIAL_AUTH_CALLBACK_BASE_URL);
+  const base = normalizeSocialAuthCallbackUrl(process.env.SOCIAL_AUTH_CALLBACK_BASE_URL);
   if (!base) {
     return null;
   }

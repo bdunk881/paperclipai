@@ -81,3 +81,19 @@ output "ciam_spa_client_id" {
   description = "SPA app client ID (set as AZURE_CLIENT_ID / VITE_AZURE_CLIENT_ID for auth)"
   value       = module.entra_ciam.spa_client_id
 }
+
+output "ciam_msa_federation_client_id" {
+  description = "Microsoft-account OIDC federation client ID"
+  value       = module.entra_ciam.msa_federation_client_id
+}
+
+output "ciam_msa_federation_application_id" {
+  description = "Microsoft-account OIDC federation application object ID"
+  value       = module.entra_ciam.msa_federation_application_id
+}
+
+output "ciam_msa_federation_client_secret" {
+  description = "Microsoft-account OIDC federation client secret"
+  value       = module.entra_ciam.msa_federation_client_secret
+  sensitive   = true
+}

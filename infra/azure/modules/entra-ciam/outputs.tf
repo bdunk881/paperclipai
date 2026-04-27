@@ -22,3 +22,24 @@ output "spa_application_id" {
   description = "Object ID of the registered SPA application"
   value       = azuread_application.autoflow_spa.id
 }
+
+output "msa_federation_client_id" {
+  description = "Application (client) ID of the Microsoft-account federation app registration"
+  value       = azuread_application.autoflow_msa_federation.client_id
+}
+
+output "msa_federation_application_id" {
+  description = "Object ID of the Microsoft-account federation app registration"
+  value       = azuread_application.autoflow_msa_federation.id
+}
+
+output "msa_federation_client_secret" {
+  description = "Client secret for the Microsoft-account federation app registration"
+  value       = azuread_application_password.autoflow_msa_federation.value
+  sensitive   = true
+}
+
+output "msa_federation_redirect_uris" {
+  description = "Redirect URIs registered on the Microsoft-account federation app"
+  value       = local.msa_federation_redirect_uris
+}

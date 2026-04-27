@@ -64,6 +64,18 @@ variable "spa_logout_uris" {
   default     = ["http://localhost:5173/login", "https://staging.app.helloautoflow.com/login", "https://app.helloautoflow.com/login"]
 }
 
+variable "msa_federation_display_name" {
+  description = "Display name for the Microsoft-account OIDC federation app registration."
+  type        = string
+  default     = "autoflow-msa-federation"
+}
+
+variable "msa_federation_redirect_uris" {
+  description = "Redirect URIs for the Microsoft-account federation app registration. When omitted, the CIAM OIDC federation callbacks are derived automatically."
+  type        = list(string)
+  default     = []
+}
+
 variable "tags" {
   description = "Tags applied to all resources"
   type        = map(string)

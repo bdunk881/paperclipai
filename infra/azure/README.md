@@ -142,6 +142,13 @@ GitHub larger runners with static IPs, or a dedicated VPN/NAT path.
 |---|---|---|
 | `production` | `AZURE_BACKEND_ENV_PRODUCTION` | Newline-delimited env file materialized into the `autoflow-backend-secrets` Kubernetes secret |
 
+**Required Terraform variables for CIAM app-registration management:**
+
+| Variable | Description |
+|---|---|
+| `TF_VAR_ciam_graph_client_id` | Client ID for the CIAM-tenant Graph application used by the aliased `azuread.ciam` provider |
+| `TF_VAR_ciam_graph_client_secret` | Client secret for the same CIAM-tenant Graph application |
+
 **Setup steps:**
 
 1. Run `terraform apply` to create all Azure resources (see Usage above).
@@ -205,6 +212,7 @@ infra/azure/scripts/
   bootstrap-tfstate.sh         — one-time Terraform remote state setup
   enable-ciam-native-auth-sspr.sh — enable Email OTP SSPR for native auth in the external tenant
   provision-ciam.sh            — create the CIAM SPA app registration and output env vars
+  configure-ciam-microsoft-account-oidc.sh — create/update the Microsoft Account OIDC provider and attach it to a CIAM user flow
   sync-ciam-redirect-uris.sh   — upsert the dashboard auth callback/logout URIs on the CIAM SPA app
   validate-ciam-prereqs.sh     — validate subscription + Graph access before provisioning
   verify-ciam-native-auth-sspr.sh — verify resetpassword/v1.0/start returns a continuation token
@@ -223,6 +231,13 @@ external tenant. After `provision-ciam.sh` creates the app registration, run
 `./scripts/verify-ciam-native-auth-sspr.sh` with a real customer username.
 Without that tenant-side policy, Azure returns `AADSTS500222` from
 `resetpassword/v1.0/start` even when the app code and proxy routing are correct.
+
+Microsoft Account federation is split intentionally:
+
+- Terraform manages the `autoflow-msa-federation` application registration and
+  secret inside the CIAM tenant.
+- `./scripts/configure-ciam-microsoft-account-oidc.sh` manages the tenant-side
+  custom OIDC identity provider plus the user-flow attachment, using Graph.
 
 ---
 

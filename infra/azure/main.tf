@@ -38,6 +38,13 @@ provider "azurerm" {
 
 provider "azuread" {}
 
+provider "azuread" {
+  alias         = "ciam"
+  tenant_id     = var.existing_ciam_tenant_id
+  client_id     = var.ciam_graph_client_id != "" ? var.ciam_graph_client_id : null
+  client_secret = var.ciam_graph_client_secret != "" ? var.ciam_graph_client_secret : null
+}
+
 # ── Resource group ──────────────────────────────────────────────────────────
 
 resource "azurerm_resource_group" "main" {
@@ -207,6 +214,10 @@ module "security" {
 
 module "entra_ciam" {
   source = "./modules/entra-ciam"
+
+  providers = {
+    azuread = azuread.ciam
+  }
 
   prefix                  = var.prefix
   environment             = var.environment

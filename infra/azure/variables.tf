@@ -141,6 +141,19 @@ variable "existing_ciam_tenant_id" {
   default     = "5e4f1080-8afc-4005-b05e-32b21e69363a"
 }
 
+variable "ciam_graph_client_id" {
+  description = "Client ID for the CIAM-tenant Microsoft Graph application used by the aliased azuread provider."
+  type        = string
+  default     = ""
+}
+
+variable "ciam_graph_client_secret" {
+  description = "Client secret for the CIAM-tenant Microsoft Graph application used by the aliased azuread provider."
+  type        = string
+  default     = ""
+  sensitive   = true
+}
+
 variable "spa_redirect_uris" {
   description = "SPA redirect URIs for the CIAM app registration"
   type        = list(string)

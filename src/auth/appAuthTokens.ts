@@ -92,19 +92,31 @@ export function signAppUserToken(user: {
 }
 
 export function verifyAppUserToken(token: string): AppUserTokenClaims | null {
+  return verifyAppUserTokenWithDiagnostics(token).claims;
+}
+
+export function verifyAppUserTokenWithDiagnostics(token: string): {
+  claims: AppUserTokenClaims | null;
+  errorMessage?: string;
+} {
   const config = resolveAppJwtConfig();
   if (!config) {
-    return null;
+    return { claims: null, errorMessage: "APP_JWT_SECRET is not configured." };
   }
 
   try {
-    return jwt.verify(token, config.secret, {
-      algorithms: ["HS256"],
-      issuer: config.issuer,
-      audience: config.audience,
-    }) as AppUserTokenClaims;
-  } catch {
-    return null;
+    return {
+      claims: jwt.verify(token, config.secret, {
+        algorithms: ["HS256"],
+        issuer: config.issuer,
+        audience: config.audience,
+      }) as AppUserTokenClaims,
+    };
+  } catch (error) {
+    return {
+      claims: null,
+      errorMessage: error instanceof Error ? error.message : "Unknown token verification error.",
+    };
   }
 }
 

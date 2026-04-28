@@ -17,7 +17,7 @@
 import { Request, Response, NextFunction } from "express";
 import jwt, { JwtPayload } from "jsonwebtoken";
 import jwksRsa from "jwks-rsa";
-import { resolveAppJwtConfig, verifyAppUserToken } from "./appAuthTokens";
+import { resolveAppJwtConfig, verifyAppUserTokenWithDiagnostics } from "./appAuthTokens";
 
 type AuthConfig = {
   tenantId: string;
@@ -279,23 +279,39 @@ export function requireAuth(
   const appAuthConfig = resolveAppJwtConfig();
   const tokenClaims = decodeJwtDiagnosticClaims(token);
 
-  if (appAuthConfig && tokenClaims?.iss === appAuthConfig.issuer) {
-    const appClaims = verifyAppUserToken(token);
-    if (!appClaims?.sub) {
-      res.status(401).json({ error: "Invalid or expired token." });
+  if (appAuthConfig) {
+    const { claims: appClaims, errorMessage } = verifyAppUserTokenWithDiagnostics(token);
+    if (appClaims?.sub) {
+      req.auth = {
+        sub: appClaims.sub,
+        email: appClaims.email,
+        name: appClaims.name,
+        provider: appClaims.provider,
+        issuer: appClaims.iss,
+      };
+
+      next();
       return;
     }
 
-    req.auth = {
-      sub: appClaims.sub,
-      email: appClaims.email,
-      name: appClaims.name,
-      provider: appClaims.provider,
-      issuer: appClaims.iss,
-    };
+    const looksLikeAppToken =
+      tokenClaims?.iss === appAuthConfig.issuer ||
+      tokenClaims?.aud === appAuthConfig.audience ||
+      (Array.isArray(tokenClaims?.aud) && tokenClaims.aud.includes(appAuthConfig.audience));
 
-    next();
-    return;
+    if (looksLikeAppToken) {
+      console.warn("[auth] App JWT verification failed", {
+        errMessage: errorMessage,
+        tokenAud: tokenClaims?.aud,
+        tokenIss: tokenClaims?.iss,
+        tokenExp: tokenClaims?.exp,
+        tokenNbf: tokenClaims?.nbf,
+        expectedAudience: appAuthConfig.audience,
+        expectedIssuer: appAuthConfig.issuer,
+      });
+      res.status(401).json({ error: "Invalid or expired token." });
+      return;
+    }
   }
 
   const authConfig = resolveAuthConfig();

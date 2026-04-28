@@ -72,6 +72,7 @@ import integrationRoutes, {
 } from "./integrations/integrationRoutes";
 import googleWorkspaceConnectorRoutes from "./connectors/google-workspace/routes";
 import googleWorkspaceWebhookRoutes from "./connectors/google-workspace/webhookRoutes";
+import notificationRoutes from "./notifications/routes";
 import {
   createPortableWorkflowBundle,
   getPortableWorkflowSchemaDescriptor,
@@ -322,6 +323,7 @@ app.use("/api/connectors/google-workspace", googleWorkspaceConnectorRoutes);
 app.use("/api/control-plane", requireAuth, controlPlaneRoutes);
 app.use("/api/tickets", requireAuth, ticketRoutes);
 app.use("/api/ticket-sync", requireAuth, ticketSyncRoutes);
+app.use("/api/notifications", requireAuth, notificationRoutes);
 
 // ---------------------------------------------------------------------------
 // Auth API — identity endpoint for authenticated callers

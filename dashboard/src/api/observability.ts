@@ -98,7 +98,6 @@ export function getObservabilityExportUrl(
   }
   return `${BASE}/observability?${params.toString()}`;
 }
-
 export type ObservabilityEventCategory = "issue" | "run" | "heartbeat" | "budget" | "alert";
 
 export interface ObservabilityActorRef {

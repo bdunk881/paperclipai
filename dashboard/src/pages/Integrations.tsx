@@ -12,7 +12,7 @@ import {
 
 type ConnectorConnection = {
   id: string;
-  authMethod?: "oauth2" | "api_key";
+  authMethod?: "oauth2" | "oauth2_pkce" | "api_key";
   tokenMasked?: string;
   scopes?: string[];
   accountLabel?: string;
@@ -56,6 +56,16 @@ function authModeLabel(provider: ProviderMeta): string {
     return "OAuth + API key";
   }
   return provider.supportsOAuth ? "OAuth" : "API key";
+}
+
+function connectionTypeLabel(authMethod?: ConnectorConnection["authMethod"]): string {
+  if (authMethod === "oauth2" || authMethod === "oauth2_pkce") {
+    return "OAuth";
+  }
+  if (authMethod === "api_key") {
+    return "API key";
+  }
+  return "Not connected";
 }
 
 export default function Integrations() {
@@ -320,7 +330,7 @@ export default function Integrations() {
                     </div>
                     <div className="flex items-center justify-between gap-3">
                       <span className="font-medium text-gray-500">Connection type</span>
-                      <span>{status.authMethod === "oauth2" ? "OAuth" : status.authMethod === "api_key" ? "API key" : "Not connected"}</span>
+                      <span>{connectionTypeLabel(status.authMethod)}</span>
                     </div>
                     <div className="flex items-center justify-between gap-3">
                       <span className="font-medium text-gray-500">Account</span>

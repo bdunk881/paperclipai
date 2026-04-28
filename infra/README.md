@@ -102,6 +102,7 @@ Recommended dashboard host split:
 - Workflow: `.github/workflows/qa-integration-evidence.yml`
 - Smoke script: `infra/scripts/qa_integration_smoke.sh`
 - Runbook: `infra/runbooks/qa-integration-environment.md`
+- Tier 1 release path: `infra/runbooks/tier1-connector-release.md`
 
 ## CIAM Native Auth Password Reset
 

@@ -343,4 +343,143 @@ describe("Agent memory routes", () => {
     expect(searchRes.body.results).toHaveLength(1);
     expect(searchRes.body.results[0].entry.metadata.ticket_id).toBe("ALT-222");
   });
+
+  it("isolates layered memory by workspace tenant", async () => {
+    grantPlan("automate-user", "automate");
+
+    const createRes = await request(app)
+      .post("/api/agents/agent-a/memory")
+      .set(asAuth("automate-user"))
+      .set("X-Paperclip-Run-Id", "run-company-layer-1")
+      .send({
+        workspaceId: "workspace-alpha",
+        memoryLayer: "company",
+        key: "mission",
+        text: "Alpha only strategy memo",
+      });
+
+    expect(createRes.status).toBe(201);
+
+    const alphaSearch = await request(app)
+      .get("/api/agents/agent-b/memory/search?q=&workspaceId=workspace-alpha")
+      .set(asAuth("automate-user"));
+    const betaSearch = await request(app)
+      .get("/api/agents/agent-b/memory/search?q=&workspaceId=workspace-beta")
+      .set(asAuth("automate-user"));
+
+    expect(alphaSearch.status).toBe(200);
+    expect(alphaSearch.body.results).toHaveLength(1);
+    expect(betaSearch.status).toBe(200);
+    expect(betaSearch.body.results).toHaveLength(0);
+  });
+
+  it("scopes team-layer memory to the matching team only", async () => {
+    grantPlan("automate-user", "automate");
+
+    const createRes = await request(app)
+      .post("/api/agents/agent-a/memory")
+      .set(asAuth("automate-user"))
+      .set("X-Paperclip-Run-Id", "run-team-layer-1")
+      .send({
+        workspaceId: "workspace-alpha",
+        memoryLayer: "team",
+        teamId: "team-growth",
+        key: "okr",
+        text: "Growth team OKR is 20% activation lift",
+      });
+
+    expect(createRes.status).toBe(201);
+
+    const growthSearch = await request(app)
+      .get("/api/agents/agent-b/memory/search?q=&workspaceId=workspace-alpha&teamId=team-growth")
+      .set(asAuth("automate-user"));
+    const productSearch = await request(app)
+      .get("/api/agents/agent-b/memory/search?q=&workspaceId=workspace-alpha&teamId=team-product")
+      .set(asAuth("automate-user"));
+
+    expect(growthSearch.status).toBe(200);
+    expect(growthSearch.body.results).toHaveLength(1);
+    expect(productSearch.status).toBe(200);
+    expect(productSearch.body.results).toHaveLength(0);
+  });
+
+  it("replays workspace state from the append-only event log", async () => {
+    grantPlan("automate-user", "automate");
+
+    await request(app)
+      .post("/api/agents/agent-a/memory")
+      .set(asAuth("automate-user"))
+      .set("X-Paperclip-Run-Id", "run-state-entry")
+      .send({
+        workspaceId: "workspace-alpha",
+        memoryLayer: "company",
+        key: "brand-voice",
+        text: "Confident and direct",
+      });
+
+    await request(app)
+      .post("/api/agents/agent-a/memory/kg")
+      .set(asAuth("automate-user"))
+      .set("X-Paperclip-Run-Id", "run-state-kg")
+      .send({
+        workspaceId: "workspace-alpha",
+        memoryLayer: "company",
+        subject: "AutoFlow",
+        predicate: "brand_voice",
+        object: "Confident and direct",
+      });
+
+    const stateRes = await request(app)
+      .get("/api/agents/agent-b/memory/state?workspaceId=workspace-alpha")
+      .set(asAuth("automate-user"));
+
+    expect(stateRes.status).toBe(200);
+    expect(stateRes.body.state.entries).toHaveLength(1);
+    expect(stateRes.body.state.facts).toHaveLength(1);
+    expect(stateRes.body.state.events.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it("archives old workspace memory and hides it from replay and search", async () => {
+    grantPlan("automate-user", "automate");
+
+    jest.useFakeTimers();
+    jest.setSystemTime(new Date("2026-04-01T00:00:00.000Z"));
+
+    await request(app)
+      .post("/api/agents/agent-a/memory")
+      .set(asAuth("automate-user"))
+      .set("X-Paperclip-Run-Id", "run-archive-entry")
+      .send({
+        workspaceId: "workspace-alpha",
+        memoryLayer: "company",
+        key: "decision",
+        text: "Archive me later",
+      });
+
+    jest.setSystemTime(new Date("2026-04-20T00:00:00.000Z"));
+
+    const archiveRes = await request(app)
+      .post("/api/agents/agent-a/memory/archive")
+      .set(asAuth("automate-user"))
+      .set("X-Paperclip-Run-Id", "run-archive-memory")
+      .send({
+        workspaceId: "workspace-alpha",
+        olderThan: "2026-04-10T00:00:00.000Z",
+      });
+
+    expect(archiveRes.status).toBe(200);
+    expect(archiveRes.body.archived.archivedEntries).toBe(1);
+
+    const searchRes = await request(app)
+      .get("/api/agents/agent-b/memory/search?q=archive&workspaceId=workspace-alpha")
+      .set(asAuth("automate-user"));
+    const stateRes = await request(app)
+      .get("/api/agents/agent-b/memory/state?workspaceId=workspace-alpha")
+      .set(asAuth("automate-user"));
+
+    expect(searchRes.status).toBe(200);
+    expect(searchRes.body.results).toHaveLength(0);
+    expect(stateRes.status).toBe(200);
+    expect(stateRes.body.state.entries).toHaveLength(0);
+  });
 });

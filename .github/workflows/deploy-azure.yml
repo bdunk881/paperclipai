@@ -18,7 +18,7 @@ on:
         type: choice
         options: [deploy, rollback]
       rollback_image_tag:
-        description: Existing backend image tag to deploy when operation=rollback (example: sha-abc123)
+        description: "Existing backend image tag to deploy when operation=rollback (example: sha-abc123)"
         required: false
         type: string
 

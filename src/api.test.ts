@@ -755,6 +755,276 @@ describe("Control plane APIs", () => {
     expect(budgetRes.body.remainingUsd).toBeCloseTo(workerAgent.budgetMonthlyUsd - 1.42, 2);
   });
 
+  it("records real-time spend events and exposes threshold alerts in team spend snapshots", async () => {
+    const deployRes = await request(app)
+      .post("/api/control-plane/deployments/workflow")
+      .set(asAuth())
+      .set("X-Paperclip-Run-Id", "run-deploy-spend-snapshot")
+      .send({
+        budgetMonthlyUsd: 20,
+        toolBudgetCeilings: { "slack.send": 5 },
+        template: {
+          id: "tpl-spend-snapshot",
+          name: "Spend Snapshot Template",
+          description: "Exercises spend snapshots",
+          category: "support",
+          version: "1.0.0",
+          configFields: [],
+          sampleInput: {},
+          expectedOutput: {},
+          steps: [
+            { id: "step-only", name: "Only Agent", kind: "llm", description: "Only", inputKeys: [], outputKeys: [], agentBudgetMonthlyUsd: 10 },
+          ],
+        },
+      });
+
+    const teamId = deployRes.body.team.id;
+    const workerAgent = deployRes.body.agents.find(
+      (agent: { roleKey: string }) => agent.roleKey !== "workflow-manager"
+    );
+
+    const llmSpendRes = await request(app)
+      .post("/api/control-plane/spend-events")
+      .set(asAuth())
+      .set("X-Paperclip-Run-Id", "run-spend-llm")
+      .send({
+        teamId,
+        agentId: workerAgent.id,
+        category: "llm",
+        costUsd: 7,
+        model: "gpt-5.4-mini",
+        provider: "openai",
+      });
+
+    expect(llmSpendRes.status).toBe(201);
+
+    const toolSpendRes = await request(app)
+      .post("/api/control-plane/spend-events")
+      .set(asAuth())
+      .set("X-Paperclip-Run-Id", "run-spend-tool")
+      .send({
+        teamId,
+        agentId: workerAgent.id,
+        category: "tool",
+        costUsd: 1,
+        toolName: "slack.send",
+      });
+
+    expect(toolSpendRes.status).toBe(201);
+
+    const spendRes = await request(app)
+      .get(`/api/control-plane/teams/${teamId}/spend`)
+      .set(asAuth());
+
+    expect(spendRes.status).toBe(200);
+    expect(spendRes.body.team.spentUsd).toBe(8);
+    expect(spendRes.body.totalsByCategory.llm).toBe(7);
+    expect(spendRes.body.totalsByCategory.tool).toBe(1);
+    expect(
+      spendRes.body.agents.some(
+        (agent: { agentId: string; alertThresholdsTriggered: number[] }) =>
+          agent.agentId === workerAgent.id && agent.alertThresholdsTriggered.includes(0.8)
+      )
+    ).toBe(true);
+    expect(
+      spendRes.body.tools.some(
+        (tool: { toolName: string; spentUsd: number }) => tool.toolName === "slack.send" && tool.spentUsd === 1
+      )
+    ).toBe(true);
+    expect(spendRes.body.alerts.some((alert: { scope: string }) => alert.scope === "agent")).toBe(true);
+
+    const budgetRes = await request(app)
+      .get(`/api/agents/${workerAgent.id}/budget`)
+      .set(asAuth());
+
+    expect(budgetRes.status).toBe(200);
+    expect(budgetRes.body.thresholdState).toBe("warning");
+    expect(budgetRes.body.alertThresholdsTriggered).toContain(0.8);
+  });
+
+  it("halts new executions when the company budget cap is reached across agents", async () => {
+    const deployRes = await request(app)
+      .post("/api/control-plane/deployments/workflow")
+      .set(asAuth())
+      .set("X-Paperclip-Run-Id", "run-deploy-team-cap")
+      .send({
+        budgetMonthlyUsd: 5,
+        template: {
+          id: "tpl-team-cap",
+          name: "Team Cap Template",
+          description: "Exercises the team hard cap",
+          category: "support",
+          version: "1.0.0",
+          configFields: [],
+          sampleInput: {},
+          expectedOutput: {},
+          steps: [
+            { id: "step-a", name: "Agent A", kind: "llm", description: "A", inputKeys: [], outputKeys: [], agentBudgetMonthlyUsd: 10 },
+            { id: "step-b", name: "Agent B", kind: "llm", description: "B", inputKeys: [], outputKeys: [], agentBudgetMonthlyUsd: 10 },
+          ],
+        },
+      });
+
+    expect(deployRes.status).toBe(201);
+    const teamId = deployRes.body.team.id;
+    const workerAgents = deployRes.body.agents.filter(
+      (agent: { roleKey: string }) => agent.roleKey !== "workflow-manager"
+    );
+    expect(workerAgents).toHaveLength(2);
+
+    const firstSpendRes = await request(app)
+      .post("/api/control-plane/spend-events")
+      .set(asAuth())
+      .set("X-Paperclip-Run-Id", "run-team-cap-spend-1")
+      .send({
+        teamId,
+        agentId: workerAgents[0].id,
+        category: "llm",
+        costUsd: 4,
+        model: "gpt-5.4-mini",
+      });
+
+    expect(firstSpendRes.status).toBe(201);
+
+    const secondSpendRes = await request(app)
+      .post("/api/control-plane/spend-events")
+      .set(asAuth())
+      .set("X-Paperclip-Run-Id", "run-team-cap-spend-2")
+      .send({
+        teamId,
+        agentId: workerAgents[1].id,
+        category: "llm",
+        costUsd: 1,
+        model: "gpt-5.4-mini",
+      });
+
+    expect(secondSpendRes.status).toBe(201);
+
+    const spendRes = await request(app)
+      .get(`/api/control-plane/teams/${teamId}/spend`)
+      .set(asAuth());
+
+    expect(spendRes.body.team.spentUsd).toBe(5);
+    expect(spendRes.body.team.autoPaused).toBe(true);
+
+    const step = {
+      id: "step-b",
+      name: "Agent B",
+      kind: "llm" as const,
+      description: "B",
+      inputKeys: [],
+      outputKeys: [],
+    };
+
+    expect(() =>
+      controlPlaneStore.startAgentExecution({
+        userId: "test-user",
+        actor: "run-start-after-team-cap",
+        teamId,
+        step,
+        sourceRunId: "workflow-run-after-team-cap",
+        requestedAgentId: workerAgents[1].id,
+      })
+    ).toThrow("team_budget_exceeded");
+  });
+
+  it("enforces per-tool ceilings and per-agent caps in real time", async () => {
+    const deployRes = await request(app)
+      .post("/api/control-plane/deployments/workflow")
+      .set(asAuth())
+      .set("X-Paperclip-Run-Id", "run-deploy-tool-cap")
+      .send({
+        budgetMonthlyUsd: 20,
+        toolBudgetCeilings: { "slack.send": 1 },
+        template: {
+          id: "tpl-agent-cap",
+          name: "Agent Cap Template",
+          description: "Exercises tool and agent caps",
+          category: "support",
+          version: "1.0.0",
+          configFields: [],
+          sampleInput: {},
+          expectedOutput: {},
+          steps: [
+            { id: "step-only", name: "Only Agent", kind: "llm", description: "Only", inputKeys: [], outputKeys: [], agentBudgetMonthlyUsd: 2 },
+          ],
+        },
+      });
+
+    expect(deployRes.status).toBe(201);
+    const teamId = deployRes.body.team.id;
+    const workerAgent = deployRes.body.agents.find(
+      (agent: { roleKey: string }) => agent.roleKey !== "workflow-manager"
+    );
+
+    const toolSpendRes = await request(app)
+      .post("/api/control-plane/spend-events")
+      .set(asAuth())
+      .set("X-Paperclip-Run-Id", "run-tool-cap-1")
+      .send({
+        teamId,
+        agentId: workerAgent.id,
+        category: "tool",
+        costUsd: 1,
+        toolName: "slack.send",
+      });
+
+    expect(toolSpendRes.status).toBe(201);
+
+    const blockedToolSpendRes = await request(app)
+      .post("/api/control-plane/spend-events")
+      .set(asAuth())
+      .set("X-Paperclip-Run-Id", "run-tool-cap-2")
+      .send({
+        teamId,
+        agentId: workerAgent.id,
+        category: "tool",
+        costUsd: 0.1,
+        toolName: "slack.send",
+      });
+
+    expect(blockedToolSpendRes.status).toBe(409);
+    expect(blockedToolSpendRes.body.error).toBe("tool_budget_exceeded");
+
+    const agentBudgetSpendRes = await request(app)
+      .post("/api/control-plane/spend-events")
+      .set(asAuth())
+      .set("X-Paperclip-Run-Id", "run-agent-cap-1")
+      .send({
+        teamId,
+        agentId: workerAgent.id,
+        category: "llm",
+        costUsd: 1,
+        model: "gpt-5.4-mini",
+      });
+
+    expect(agentBudgetSpendRes.status).toBe(201);
+
+    const blockedAgentSpendRes = await request(app)
+      .post("/api/control-plane/spend-events")
+      .set(asAuth())
+      .set("X-Paperclip-Run-Id", "run-agent-cap-2")
+      .send({
+        teamId,
+        agentId: workerAgent.id,
+        category: "llm",
+        costUsd: 0.1,
+        model: "gpt-5.4-mini",
+      });
+
+    expect(blockedAgentSpendRes.status).toBe(409);
+    expect(blockedAgentSpendRes.body.error).toBe("agent_budget_exceeded");
+
+    const budgetRes = await request(app)
+      .get(`/api/agents/${workerAgent.id}/budget`)
+      .set(asAuth());
+
+    expect(budgetRes.status).toBe(200);
+    expect(budgetRes.body.spentUsd).toBe(2);
+    expect(budgetRes.body.autoPaused).toBe(true);
+    expect(budgetRes.body.thresholdState).toBe("limit_reached");
+  });
+
   it("returns agent heartbeat and run history for dashboard activity views", async () => {
     const deployRes = await request(app)
       .post("/api/control-plane/deployments/workflow")

@@ -6,6 +6,95 @@ import { controlPlaneStore } from "./controlPlaneStore";
 
 const router = express.Router();
 
+function parseToolBudgetCeilings(value: unknown): Record<string, number> | null {
+  if (value === undefined) {
+    return {};
+  }
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return null;
+  }
+
+  const entries = Object.entries(value);
+  const parsed = Object.fromEntries(
+    entries.map(([key, amount]) => [key.trim(), amount])
+  );
+  for (const [toolName, amount] of Object.entries(parsed)) {
+    if (!toolName || typeof amount !== "number" || amount < 0) {
+      return null;
+    }
+  }
+  return parsed as Record<string, number>;
+}
+
+function parseAlertThresholds(value: unknown): number[] | null {
+  if (value === undefined) {
+    return [0.8, 0.9, 1];
+  }
+  if (!Array.isArray(value) || value.some((entry) => typeof entry !== "number" || entry <= 0 || entry > 1)) {
+    return null;
+  }
+  return Array.from(new Set(value)).sort((left, right) => left - right) as number[];
+}
+
+function parseSpendEntries(value: unknown): Array<{
+  category: "llm" | "tool" | "api" | "compute" | "ad_spend" | "third_party";
+  costUsd: number;
+  model?: string;
+  provider?: string;
+  toolName?: string;
+  metadata?: Record<string, unknown>;
+}> | null {
+  if (value === undefined) {
+    return [];
+  }
+  if (!Array.isArray(value)) {
+    return null;
+  }
+
+  const parsed: Array<{
+    category: "llm" | "tool" | "api" | "compute" | "ad_spend" | "third_party";
+    costUsd: number;
+    model?: string;
+    provider?: string;
+    toolName?: string;
+    metadata?: Record<string, unknown>;
+  }> = [];
+  for (const entry of value) {
+    if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
+      return null;
+    }
+    const candidate = entry as Record<string, unknown>;
+    if (
+      candidate.category !== "llm" &&
+      candidate.category !== "tool" &&
+      candidate.category !== "api" &&
+      candidate.category !== "compute" &&
+      candidate.category !== "ad_spend" &&
+      candidate.category !== "third_party"
+    ) {
+      return null;
+    }
+    if (typeof candidate.costUsd !== "number" || candidate.costUsd < 0) {
+      return null;
+    }
+    if (candidate.toolName !== undefined && (typeof candidate.toolName !== "string" || !candidate.toolName.trim())) {
+      return null;
+    }
+    parsed.push({
+      category: candidate.category,
+      costUsd: candidate.costUsd,
+      model: typeof candidate.model === "string" ? candidate.model : undefined,
+      provider: typeof candidate.provider === "string" ? candidate.provider : undefined,
+      toolName: typeof candidate.toolName === "string" ? candidate.toolName.trim() : undefined,
+      metadata:
+        candidate.metadata && typeof candidate.metadata === "object" && !Array.isArray(candidate.metadata)
+          ? (candidate.metadata as Record<string, unknown>)
+          : undefined,
+    });
+  }
+  return parsed;
+}
+
 function getUserId(req: AuthenticatedRequest): string | null {
   const userId = req.auth?.sub;
   return typeof userId === "string" && userId.trim() ? userId.trim() : null;
@@ -95,10 +184,12 @@ router.post("/teams", requirePaperclipRunId, (req: AuthenticatedRequest, res) =>
     return;
   }
 
-  const { name, description, budgetMonthlyUsd, deploymentMode, orchestrationEnabled } = req.body as {
+  const { name, description, budgetMonthlyUsd, toolBudgetCeilings, alertThresholds, deploymentMode, orchestrationEnabled } = req.body as {
     name?: unknown;
     description?: unknown;
     budgetMonthlyUsd?: unknown;
+    toolBudgetCeilings?: unknown;
+    alertThresholds?: unknown;
     deploymentMode?: unknown;
     orchestrationEnabled?: unknown;
   };
@@ -112,12 +203,24 @@ router.post("/teams", requirePaperclipRunId, (req: AuthenticatedRequest, res) =>
     res.status(400).json({ error: "budgetMonthlyUsd must be a non-negative number when provided" });
     return;
   }
+  const parsedToolBudgetCeilings = parseToolBudgetCeilings(toolBudgetCeilings);
+  if (!parsedToolBudgetCeilings) {
+    res.status(400).json({ error: "toolBudgetCeilings must be an object of non-negative numbers when provided" });
+    return;
+  }
+  const parsedAlertThresholds = parseAlertThresholds(alertThresholds);
+  if (!parsedAlertThresholds) {
+    res.status(400).json({ error: "alertThresholds must be an array of numbers between 0 and 1 when provided" });
+    return;
+  }
 
   const team = controlPlaneStore.createTeam({
     userId,
     name: name.trim(),
     description: typeof description === "string" ? description : undefined,
     budgetMonthlyUsd: typeof budgetMonthlyUsd === "number" ? budgetMonthlyUsd : undefined,
+    toolBudgetCeilings: parsedToolBudgetCeilings,
+    alertThresholds: parsedAlertThresholds,
     deploymentMode:
       deploymentMode === "workflow_runtime" || deploymentMode === "continuous_agents"
         ? deploymentMode
@@ -136,11 +239,13 @@ router.post("/deployments/workflow", requirePaperclipRunId, (req: AuthenticatedR
     return;
   }
 
-  const { templateId, template: templateDefinition, teamName, budgetMonthlyUsd, defaultIntervalMinutes } = req.body as {
+  const { templateId, template: templateDefinition, teamName, budgetMonthlyUsd, toolBudgetCeilings, alertThresholds, defaultIntervalMinutes } = req.body as {
     templateId?: unknown;
     template?: unknown;
     teamName?: unknown;
     budgetMonthlyUsd?: unknown;
+    toolBudgetCeilings?: unknown;
+    alertThresholds?: unknown;
     defaultIntervalMinutes?: unknown;
   };
 
@@ -154,6 +259,16 @@ router.post("/deployments/workflow", requirePaperclipRunId, (req: AuthenticatedR
 
   if (budgetMonthlyUsd !== undefined && (typeof budgetMonthlyUsd !== "number" || budgetMonthlyUsd < 0)) {
     res.status(400).json({ error: "budgetMonthlyUsd must be a non-negative number when provided" });
+    return;
+  }
+  const parsedToolBudgetCeilings = parseToolBudgetCeilings(toolBudgetCeilings);
+  if (!parsedToolBudgetCeilings) {
+    res.status(400).json({ error: "toolBudgetCeilings must be an object of non-negative numbers when provided" });
+    return;
+  }
+  const parsedAlertThresholds = parseAlertThresholds(alertThresholds);
+  if (!parsedAlertThresholds) {
+    res.status(400).json({ error: "alertThresholds must be an array of numbers between 0 and 1 when provided" });
     return;
   }
 
@@ -175,6 +290,8 @@ router.post("/deployments/workflow", requirePaperclipRunId, (req: AuthenticatedR
       template,
       teamName: typeof teamName === "string" ? teamName : undefined,
       budgetMonthlyUsd: typeof budgetMonthlyUsd === "number" ? budgetMonthlyUsd : undefined,
+      toolBudgetCeilings: parsedToolBudgetCeilings,
+      alertThresholds: parsedAlertThresholds,
       defaultIntervalMinutes:
         typeof defaultIntervalMinutes === "number" ? defaultIntervalMinutes : undefined,
     });
@@ -201,7 +318,23 @@ router.get("/teams/:id", (req: AuthenticatedRequest, res) => {
   const tasks = controlPlaneStore.listTasks(userId, team.id);
   const heartbeats = controlPlaneStore.listHeartbeats(userId, team.id);
   const executions = controlPlaneStore.listExecutions(userId, team.id);
-  res.json({ team, agents, tasks, heartbeats, executions });
+  const spend = controlPlaneStore.getTeamSpendSnapshot(team.id, userId);
+  res.json({ team, agents, tasks, heartbeats, executions, spend });
+});
+
+router.get("/teams/:id/spend", (req: AuthenticatedRequest, res) => {
+  const userId = getUserId(req);
+  if (!userId) {
+    res.status(401).json({ error: "Authenticated user required" });
+    return;
+  }
+
+  const spend = controlPlaneStore.getTeamSpendSnapshot(req.params.id, userId);
+  if (!spend) {
+    res.status(404).json({ error: "Team not found" });
+    return;
+  }
+  res.json(spend);
 });
 
 router.post("/teams/:id/lifecycle", requirePaperclipRunId, (req: AuthenticatedRequest, res) => {
@@ -442,13 +575,14 @@ router.post("/heartbeats", requirePaperclipRunId, async (req: AuthenticatedReque
     return;
   }
 
-  const { teamId, agentId, executionId, status, summary, costUsd, createdTaskIds, completedAt } = req.body as {
+  const { teamId, agentId, executionId, status, summary, costUsd, spendEntries, createdTaskIds, completedAt } = req.body as {
     teamId?: unknown;
     agentId?: unknown;
     executionId?: unknown;
     status?: unknown;
     summary?: unknown;
     costUsd?: unknown;
+    spendEntries?: unknown;
     createdTaskIds?: unknown;
     completedAt?: unknown;
   };
@@ -473,6 +607,11 @@ router.post("/heartbeats", requirePaperclipRunId, async (req: AuthenticatedReque
     res.status(400).json({ error: "createdTaskIds must be an array when provided" });
     return;
   }
+  const parsedSpendEntries = parseSpendEntries(spendEntries);
+  if (!parsedSpendEntries) {
+    res.status(400).json({ error: "spendEntries must be an array of valid spend entry objects when provided" });
+    return;
+  }
 
   try {
     const heartbeat = await controlPlaneStore.recordHeartbeat({
@@ -483,6 +622,7 @@ router.post("/heartbeats", requirePaperclipRunId, async (req: AuthenticatedReque
       status,
       summary: typeof summary === "string" ? summary : undefined,
       costUsd: typeof costUsd === "number" ? costUsd : undefined,
+      spendEntries: parsedSpendEntries,
       createdTaskIds: Array.isArray(createdTaskIds)
         ? createdTaskIds.filter((entry): entry is string => typeof entry === "string")
         : undefined,
@@ -502,7 +642,98 @@ router.post("/heartbeats", requirePaperclipRunId, async (req: AuthenticatedReque
       res.status(409).json({ error: "Company is paused; no new heartbeats may start" });
       return;
     }
+    if (
+      error instanceof Error &&
+      (error.message === "team_budget_exceeded" ||
+        error.message === "agent_budget_exceeded" ||
+        error.message === "tool_budget_exceeded")
+    ) {
+      res.status(409).json({ error: error.message });
+      return;
+    }
     res.status(500).json({ error: "Unexpected control-plane heartbeat failure" });
+  }
+});
+
+router.post("/spend-events", requirePaperclipRunId, (req: AuthenticatedRequest, res) => {
+  const userId = getUserId(req);
+  if (!userId) {
+    res.status(401).json({ error: "Authenticated user required" });
+    return;
+  }
+
+  const { teamId, agentId, executionId, category, costUsd, model, provider, toolName, metadata } = req.body as {
+    teamId?: unknown;
+    agentId?: unknown;
+    executionId?: unknown;
+    category?: unknown;
+    costUsd?: unknown;
+    model?: unknown;
+    provider?: unknown;
+    toolName?: unknown;
+    metadata?: unknown;
+  };
+
+  if (typeof teamId !== "string" || !teamId.trim()) {
+    res.status(400).json({ error: "teamId is required" });
+    return;
+  }
+  if (typeof agentId !== "string" || !agentId.trim()) {
+    res.status(400).json({ error: "agentId is required" });
+    return;
+  }
+  if (
+    category !== "llm" &&
+    category !== "tool" &&
+    category !== "api" &&
+    category !== "compute" &&
+    category !== "ad_spend" &&
+    category !== "third_party"
+  ) {
+    res.status(400).json({ error: "category must be a valid spend category" });
+    return;
+  }
+  if (typeof costUsd !== "number" || costUsd < 0) {
+    res.status(400).json({ error: "costUsd is required and must be a non-negative number" });
+    return;
+  }
+
+  try {
+    const entry = controlPlaneStore.recordSpend({
+      userId,
+      teamId: teamId.trim(),
+      agentId: agentId.trim(),
+      executionId: typeof executionId === "string" ? executionId : undefined,
+      category,
+      costUsd,
+      model: typeof model === "string" ? model : undefined,
+      provider: typeof provider === "string" ? provider : undefined,
+      toolName: typeof toolName === "string" ? toolName.trim() : undefined,
+      metadata:
+        metadata && typeof metadata === "object" && !Array.isArray(metadata)
+          ? (metadata as Record<string, unknown>)
+          : undefined,
+    });
+    res.status(201).json(entry);
+  } catch (error) {
+    if (error instanceof Error && error.message === "agent_not_found") {
+      res.status(404).json({ error: "Agent not found for team" });
+      return;
+    }
+    if (error instanceof Error && error.message === "execution_not_found") {
+      res.status(404).json({ error: "Execution not found for team agent" });
+      return;
+    }
+    if (
+      error instanceof Error &&
+      (error.message === "team_budget_exceeded" ||
+        error.message === "agent_budget_exceeded" ||
+        error.message === "tool_budget_exceeded")
+    ) {
+      res.status(409).json({ error: error.message });
+      return;
+    }
+    res.status(500).json({ error: "Unexpected control-plane spend event failure" });
   }
 });
 

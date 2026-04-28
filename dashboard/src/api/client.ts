@@ -853,13 +853,18 @@ export async function listApprovals(
   accessToken: string,
   status?: "pending" | "approved" | "rejected" | "timed_out"
 ): Promise<ApprovalRequest[]> {
-  const url = status
-    ? `${BASE}/approvals?status=${encodeURIComponent(status)}`
-    : `${BASE}/approvals`;
-  const res = await fetch(url, { headers: buildAuthHeaders(accessToken) });
-  if (!res.ok) throw new Error(`Failed to fetch approvals: ${res.status}`);
-  const data = await res.json();
-  return data.approvals as ApprovalRequest[];
+  return withMockApi(
+    async () => {
+      const url = status
+        ? `${BASE}/approvals?status=${encodeURIComponent(status)}`
+        : `${BASE}/approvals`;
+      const res = await fetch(url, { headers: buildAuthHeaders(accessToken) });
+      if (!res.ok) throw new Error(`Failed to fetch approvals: ${res.status}`);
+      const data = await res.json();
+      return data.approvals as ApprovalRequest[];
+    },
+    () => []
+  );
 }
 
 /** POST /api/approvals/:id/resolve */

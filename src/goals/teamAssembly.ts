@@ -67,7 +67,7 @@ const phasePlanSchema = z.object({
   ownerRoleKeys: z.array(z.string().trim().min(1)).min(1),
 });
 
-const teamAssemblyResultSchema = z.object({
+export const teamAssemblyResultSchema = z.object({
   schemaVersion: z.literal(TEAM_ASSEMBLY_SCHEMA_VERSION),
   company: z.object({
     name: z.string().trim().min(1).nullable(),

@@ -645,6 +645,8 @@ describe("Company provisioning APIs", () => {
 
     expect(overflowRes.status).toBe(400);
     expect(overflowRes.body.error).toMatch(/budget/i);
+    expect(controlPlaneStore.listTeams("test-user")).toHaveLength(0);
+    expect(controlPlaneStore.listAllAgents("test-user")).toHaveLength(0);
 
     const unknownRoleRes = await request(app)
       .post("/api/companies")
@@ -689,6 +691,181 @@ describe("Company provisioning APIs", () => {
 
     expect(conflictingReplayRes.status).toBe(409);
     expect(conflictingReplayRes.body.error).toMatch(/idempotencyKey/i);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Team assembly approval provisioning
+// ---------------------------------------------------------------------------
+
+describe("Team assembly approval provisioning", () => {
+  function buildApprovedPlan() {
+    return {
+      schemaVersion: "2026-04-27",
+      company: {
+        name: "Acme AI",
+        goal: "Launch an AI operations product",
+        targetCustomer: "Technical founders",
+        budget: "$400/mo",
+        timeHorizon: "90 days",
+      },
+      summary: "Lean engineering team for launch.",
+      rationale: "Bias toward shipping the first version quickly.",
+      orgChart: {
+        executives: [],
+        operators: [
+          {
+            roleKey: "backend-engineer",
+            title: "Backend Engineer",
+            roleType: "operator",
+            department: "engineering",
+            headcount: 2,
+            reportsToRoleKey: "cto",
+            mandate: "Build APIs and business logic.",
+            justification: "Two backend contributors are needed for the API backlog.",
+            kpis: ["Ship provisioning API", "Maintain test coverage"],
+            skills: ["paperclip", "nodejs-backend-patterns"],
+            tools: ["github", "vercel"],
+            modelTier: "standard",
+            budgetMonthlyUsd: 200,
+            provisioningInstructions: "Implement APIs, workflows, and persistence.",
+          },
+          {
+            roleKey: "frontend-engineer",
+            title: "Frontend Engineer",
+            roleType: "operator",
+            department: "engineering",
+            headcount: 1,
+            reportsToRoleKey: "cto",
+            mandate: "Build review and approval flows.",
+            justification: "One frontend contributor is needed for the approval UI.",
+            kpis: ["Ship review flow"],
+            skills: ["paperclip", "frontend-design"],
+            tools: ["github", "vercel"],
+            modelTier: "standard",
+            budgetMonthlyUsd: 150,
+            provisioningInstructions: "Deliver the team assembly approval UI.",
+          },
+        ],
+        reportingLines: [
+          { managerRoleKey: "cto", reportRoleKey: "backend-engineer" },
+          { managerRoleKey: "cto", reportRoleKey: "frontend-engineer" },
+        ],
+      },
+      provisioningPlan: {
+        teamName: "Acme Launch Team",
+        deploymentMode: "continuous_agents",
+        agents: [
+          {
+            roleKey: "backend-engineer",
+            title: "Backend Engineer",
+            roleType: "operator",
+            department: "engineering",
+            headcount: 2,
+            reportsToRoleKey: "cto",
+            mandate: "Build APIs and business logic.",
+            justification: "Two backend contributors are needed for the API backlog.",
+            kpis: ["Ship provisioning API", "Maintain test coverage"],
+            skills: ["paperclip", "nodejs-backend-patterns"],
+            tools: ["github", "vercel"],
+            modelTier: "standard",
+            budgetMonthlyUsd: 200,
+            provisioningInstructions: "Implement APIs, workflows, and persistence.",
+          },
+          {
+            roleKey: "frontend-engineer",
+            title: "Frontend Engineer",
+            roleType: "operator",
+            department: "engineering",
+            headcount: 1,
+            reportsToRoleKey: "cto",
+            mandate: "Build review and approval flows.",
+            justification: "One frontend contributor is needed for the approval UI.",
+            kpis: ["Ship review flow"],
+            skills: ["paperclip", "frontend-design"],
+            tools: ["github", "vercel"],
+            modelTier: "standard",
+            budgetMonthlyUsd: 150,
+            provisioningInstructions: "Deliver the team assembly approval UI.",
+          },
+        ],
+      },
+      roadmap306090: {
+        day30: {
+          objectives: ["Stand up the first team"],
+          deliverables: ["Provisioned engineering pod"],
+          ownerRoleKeys: ["backend-engineer"],
+        },
+        day60: {
+          objectives: ["Ship review loops"],
+          deliverables: ["Approval workflow"],
+          ownerRoleKeys: ["frontend-engineer"],
+        },
+        day90: {
+          objectives: ["Launch publicly"],
+          deliverables: ["Customer-ready release"],
+          ownerRoleKeys: ["backend-engineer", "frontend-engineer"],
+        },
+      },
+    };
+  }
+
+  it("provisions approved staffing plans and returns frontend-ready status", async () => {
+    const res = await request(app)
+      .post("/api/goals/team-assembly/approve")
+      .set(asAuth())
+      .set("X-Paperclip-Run-Id", "run-team-assembly-approve")
+      .send({
+        approvedPlan: buildApprovedPlan(),
+        idempotencyKey: "team-assembly-acme-1",
+        budgetMonthlyUsd: 400,
+        secretBindings: { OPENAI_API_KEY: "sk-acme-1234" },
+      });
+
+    expect(res.status).toBe(201);
+    expect(res.body.provisioningStatus).toEqual({
+      status: "provisioned",
+      idempotentReplay: false,
+      allocatedBudgetMonthlyUsd: 350,
+      remainingBudgetMonthlyUsd: 50,
+    });
+    expect(res.body.team.name).toBe("Acme Launch Team");
+    expect(res.body.agents).toHaveLength(3);
+    expect(
+      res.body.agents.filter((agent: { roleKey: string }) => agent.roleKey.startsWith("backend-engineer"))
+    ).toHaveLength(2);
+    expect(
+      res.body.agents
+        .filter((agent: { roleKey: string }) => agent.roleKey.startsWith("backend-engineer"))
+        .every((agent: { budgetMonthlyUsd: number }) => agent.budgetMonthlyUsd === 100)
+    ).toBe(true);
+    expect(
+      res.body.agents.find((agent: { roleKey: string }) => agent.roleKey === "frontend-engineer")
+        .budgetMonthlyUsd
+    ).toBe(150);
+  });
+
+  it("rejects approved plans that are missing finalized budget numbers", async () => {
+    const approvedPlan = buildApprovedPlan();
+    (
+      approvedPlan.provisioningPlan.agents[0] as { budgetMonthlyUsd: number | null }
+    ).budgetMonthlyUsd = null;
+
+    const res = await request(app)
+      .post("/api/goals/team-assembly/approve")
+      .set(asAuth())
+      .set("X-Paperclip-Run-Id", "run-team-assembly-missing-budget")
+      .send({
+        approvedPlan,
+        idempotencyKey: "team-assembly-acme-2",
+        budgetMonthlyUsd: 400,
+        secretBindings: { OPENAI_API_KEY: "sk-acme-1234" },
+      });
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/missing budgetMonthlyUsd/i);
+    expect(controlPlaneStore.listTeams("test-user")).toHaveLength(0);
+    expect(controlPlaneStore.listAllAgents("test-user")).toHaveLength(0);
   });
 });
 

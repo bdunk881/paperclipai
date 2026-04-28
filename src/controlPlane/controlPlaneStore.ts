@@ -20,6 +20,7 @@ import {
   ProvisionedCompanySecretBinding,
   ProvisionedCompanyWorkspace,
 } from "./types";
+import { DEFAULT_ROLE_LIBRARY } from "../goals/teamAssembly";
 
 function nowIso(): string {
   return new Date().toISOString();
@@ -84,7 +85,18 @@ function toHeartbeatStatus(status: ControlPlaneExecutionStatus): HeartbeatStatus
   }
 }
 
-const SKILL_CATALOG: ControlPlaneSkillDefinition[] = [
+function modelForTier(tier: "lite" | "standard" | "power"): string {
+  switch (tier) {
+    case "lite":
+      return "gpt-5.4-mini";
+    case "standard":
+      return "gpt-5.4";
+    case "power":
+      return "gpt-5.2";
+  }
+}
+
+const BASE_SKILL_CATALOG: ControlPlaneSkillDefinition[] = [
   {
     id: "paperclip",
     name: "paperclip",
@@ -111,7 +123,19 @@ const SKILL_CATALOG: ControlPlaneSkillDefinition[] = [
   },
 ];
 
-const ROLE_TEMPLATE_CATALOG: ControlPlaneRoleTemplateDefinition[] = [
+const SKILL_CATALOG: ControlPlaneSkillDefinition[] = [
+  ...BASE_SKILL_CATALOG,
+  ...Array.from(
+    new Set(DEFAULT_ROLE_LIBRARY.flatMap((role) => role.defaultSkills).filter((skill) => skill !== "paperclip"))
+  ).map((skill) => ({
+    id: skill,
+    name: skill,
+    description: `AutoFlow role skill ${skill}.`,
+    scope: "agent" as const,
+  })),
+];
+
+const BASE_ROLE_TEMPLATE_CATALOG: ControlPlaneRoleTemplateDefinition[] = [
   {
     id: "workspace-manager",
     name: "Workspace Manager",
@@ -148,6 +172,20 @@ const ROLE_TEMPLATE_CATALOG: ControlPlaneRoleTemplateDefinition[] = [
       "Operate GitHub workflows safely, with strong auditability and fast CI feedback loops.",
     defaultSkills: ["paperclip", "gh-cli"],
   },
+];
+
+const ROLE_TEMPLATE_CATALOG: ControlPlaneRoleTemplateDefinition[] = [
+  ...BASE_ROLE_TEMPLATE_CATALOG,
+  ...DEFAULT_ROLE_LIBRARY.filter(
+    (role) => !BASE_ROLE_TEMPLATE_CATALOG.some((template) => template.id === role.roleKey)
+  ).map((role) => ({
+    id: role.roleKey,
+    name: role.title,
+    description: role.mandate,
+    defaultModel: modelForTier(role.defaultModelTier),
+    defaultInstructions: role.mandate,
+    defaultSkills: [...role.defaultSkills],
+  })),
 ];
 
 const teams = new Map<string, ControlPlaneTeam>();
@@ -267,7 +305,8 @@ function getExecutionOwnedByUser(executionId: string, userId: string): ControlPl
   return execution;
 }
 
-function createTeamRecord(input: {
+function createTeamRecord(
+  input: {
   userId: string;
   name: string;
   description?: string;
@@ -276,7 +315,9 @@ function createTeamRecord(input: {
   deploymentMode?: ControlPlaneTeam["deploymentMode"];
   budgetMonthlyUsd?: number;
   orchestrationEnabled?: boolean;
-}): ControlPlaneTeam {
+},
+  persist = true
+): ControlPlaneTeam {
   const timestamp = nowIso();
   const team: ControlPlaneTeam = {
     id: randomUUID(),
@@ -293,11 +334,16 @@ function createTeamRecord(input: {
     createdAt: timestamp,
     updatedAt: timestamp,
   };
-  teams.set(team.id, team);
+  if (persist) {
+    teams.set(team.id, team);
+  }
   return team;
 }
 
-function createAgentRecord(input: Omit<ControlPlaneAgent, "id" | "createdAt" | "updatedAt">): ControlPlaneAgent {
+function createAgentRecord(
+  input: Omit<ControlPlaneAgent, "id" | "createdAt" | "updatedAt">,
+  persist = true
+): ControlPlaneAgent {
   const timestamp = nowIso();
   const agent: ControlPlaneAgent = {
     ...input,
@@ -306,7 +352,9 @@ function createAgentRecord(input: Omit<ControlPlaneAgent, "id" | "createdAt" | "
     createdAt: timestamp,
     updatedAt: timestamp,
   };
-  agents.set(agent.id, agent);
+  if (persist) {
+    agents.set(agent.id, agent);
+  }
   return agent;
 }
 
@@ -449,7 +497,7 @@ export const controlPlaneStore = {
       deploymentMode: "continuous_agents",
       budgetMonthlyUsd: input.budgetMonthlyUsd,
       orchestrationEnabled: input.orchestrationEnabled ?? true,
-    });
+    }, false);
 
     const provisionedAgents = input.agents.map((agentInput, index) => {
       const roleTemplate = resolvedRoleTemplates[index];
@@ -468,7 +516,7 @@ export const controlPlaneStore = {
         skills: mergeSkills(roleTemplate.defaultSkills, agentInput.skills),
         schedule: { type: "manual" },
         status: "active",
-      });
+      }, false);
     });
 
     const allocatedBudgetMonthlyUsd = Number(
@@ -501,6 +549,10 @@ export const controlPlaneStore = {
       updatedAt: timestamp,
     };
 
+    teams.set(team.id, team);
+    provisionedAgents.forEach((agent) => {
+      agents.set(agent.id, agent);
+    });
     companies.set(company.id, company);
     companyWorkspaces.set(workspace.id, workspace);
     companySecretBindings.set(company.id, { ...input.secretBindings });

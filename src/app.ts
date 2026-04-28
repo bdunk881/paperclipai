@@ -47,6 +47,11 @@ import socialAuthRoutes from "./auth/socialAuthRoutes";
 import stripeWebhookRoutes from "./billing/stripeWebhook";
 import apolloWebhookRoutes from "./integrations/apollo-attio/webhookRoute";
 import checkoutRoutes from "./billing/checkoutRoutes";
+import {
+  buildTeamAssemblyPrompt,
+  parseTeamAssemblyResponse,
+  teamAssemblyRequestSchema,
+} from "./goals/teamAssembly";
 import apolloRoutes from "./integrations/apollo/routes";
 import hubSpotRoutes, { hubSpotWebhookRouter } from "./integrations/hubspot/routes";
 import sentryRoutes, { sentryWebhookRouter } from "./integrations/sentry/routes";
@@ -658,6 +663,61 @@ app.post("/api/workflows/generate", requireAuth, llmEndpointRateLimiter, async (
   }
 
   res.json({ steps });
+});
+
+// ---------------------------------------------------------------------------
+// POST /api/goals/team-assembly
+// ---------------------------------------------------------------------------
+
+app.post("/api/goals/team-assembly", requireAuth, llmEndpointRateLimiter, async (req: AuthenticatedRequest, res) => {
+  const parsedRequest = teamAssemblyRequestSchema.safeParse(req.body);
+  if (!parsedRequest.success) {
+    const issue = parsedRequest.error.issues[0];
+    const path = issue?.path?.[0];
+    const message =
+      issue?.message === "Required" && typeof path === "string"
+        ? `${path} is required`
+        : (issue?.message ?? "Invalid request body");
+    res.status(400).json({ error: message });
+    return;
+  }
+
+  const userId = req.auth?.sub;
+  if (!userId) {
+    res.status(401).json({ error: "Authenticated user is required to resolve LLM configuration" });
+    return;
+  }
+
+  const resolved = await llmConfigStore.getDecryptedDefault(userId);
+  if (!resolved) {
+    res.status(422).json({
+      error: "No LLM provider configured. Go to Settings > LLM Providers to connect one.",
+    });
+    return;
+  }
+
+  const assemblyModel = resolveModelForTier(resolved.config.provider, "power");
+  const provider = getProvider({
+    provider: resolved.config.provider,
+    model: assemblyModel,
+    apiKey: resolved.apiKey,
+  });
+
+  let rawText: string;
+  try {
+    rawText = (await provider(buildTeamAssemblyPrompt(parsedRequest.data))).text;
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    res.status(502).json({ error: `LLM call failed: ${msg}` });
+    return;
+  }
+
+  try {
+    res.json(parseTeamAssemblyResponse(rawText));
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    res.status(422).json({ error: `LLM returned invalid JSON: ${msg}`, raw: rawText });
+  }
 });
 
 // ---------------------------------------------------------------------------

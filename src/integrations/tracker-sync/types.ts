@@ -1,11 +1,13 @@
+import {
+  Tier1ConnectionHealthDetails,
+  Tier1ConnectorError,
+  Tier1ConnectorErrorType,
+  Tier1HealthStatus,
+} from "../shared/tier1Contract";
+
 export type TrackerProvider = "github" | "jira" | "linear";
 
-export type TrackerErrorType =
-  | "auth"
-  | "rate-limit"
-  | "schema"
-  | "network"
-  | "upstream";
+export type TrackerErrorType = Tier1ConnectorErrorType;
 
 export interface TrackerIssue {
   id: string;
@@ -51,16 +53,10 @@ export interface CreateTrackerCommentInput {
 }
 
 export interface TrackerHealth {
-  status: "ok" | "degraded" | "down";
+  status: Tier1HealthStatus;
   provider: TrackerProvider;
   checkedAt: string;
-  details: {
-    auth: boolean;
-    apiReachable: boolean;
-    rateLimited: boolean;
-    errorType?: TrackerErrorType;
-    message?: string;
-  };
+  details: Tier1ConnectionHealthDetails<TrackerErrorType>;
 }
 
 export interface TrackerAdapter {
@@ -74,14 +70,9 @@ export interface TrackerAdapter {
   createComment(issueId: string, input: CreateTrackerCommentInput): Promise<TrackerComment>;
 }
 
-export class TrackerError extends Error {
-  readonly type: TrackerErrorType;
-  readonly statusCode: number;
-
+export class TrackerError extends Tier1ConnectorError {
   constructor(type: TrackerErrorType, message: string, statusCode = 500) {
-    super(message);
+    super(type, message, statusCode);
     this.name = "TrackerError";
-    this.type = type;
-    this.statusCode = statusCode;
   }
 }

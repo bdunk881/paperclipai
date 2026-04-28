@@ -486,6 +486,7 @@ describe("ticket routes", () => {
 
     await agentMemoryStore.createTicketCloseEntry({
       userId: "creator-1",
+      workspaceId: "11111111-1111-4111-8111-111111111111",
       agentId: "backend-agent",
       runId: "run-memory-seed",
       ticketId: "ALT-42",
@@ -622,6 +623,7 @@ describe("ticket routes", () => {
 
     const backendMemories = await agentMemoryStore.searchEntries({
       userId: "creator-1",
+      workspaceId: "11111111-1111-4111-8111-111111111111",
       agentId: "backend-agent",
       query: "close hook",
       entryType: "ticket_close",
@@ -629,6 +631,7 @@ describe("ticket routes", () => {
     });
     const qaMemories = await agentMemoryStore.searchEntries({
       userId: "creator-1",
+      workspaceId: "11111111-1111-4111-8111-111111111111",
       agentId: "qa-agent",
       query: "multi-agent",
       entryType: "ticket_close",
@@ -711,6 +714,7 @@ describe("ticket routes", () => {
     expect(ticketStore.pendingTicketCloseMemoryWriteCountForTests()).toBe(0);
     const memories = await agentMemoryStore.searchEntries({
       userId: "creator-1",
+      workspaceId: "11111111-1111-4111-8111-111111111111",
       agentId: "backend-agent",
       query: "transient embedding failures",
       entryType: "ticket_close",
@@ -783,6 +787,7 @@ describe("ticket routes", () => {
 
     const memories = await agentMemoryStore.searchEntries({
       userId: "creator-1",
+      workspaceId: "11111111-1111-4111-8111-111111111111",
       agentId: "backend-agent",
       query: "inferred ticket-close memory path",
       entryType: "ticket_close",

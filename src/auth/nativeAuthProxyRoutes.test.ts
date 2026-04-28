@@ -39,6 +39,8 @@ function loadApp(env: Record<string, string | undefined> = {}) {
 describe("native auth proxy routes", () => {
   beforeEach(() => {
     global.fetch = jest.fn() as unknown as typeof fetch;
+    jest.spyOn(console, "log").mockImplementation(() => undefined);
+    jest.spyOn(console, "warn").mockImplementation(() => undefined);
   });
 
   afterEach(() => {
@@ -62,7 +64,7 @@ describe("native auth proxy routes", () => {
 
     const app = loadApp({
       ALLOWED_ORIGINS: "https://dashboard.autoflow.test",
-      AUTH_NATIVE_AUTH_PROXY_BASE_URL: "https://auth.helloautoflow.com/tenant-guid",
+      AUTH_NATIVE_AUTH_PROXY_BASE_URL: "https://autoflowciam.ciamlogin.com/tenant-guid",
     });
 
     const response = await request(app)
@@ -80,15 +82,15 @@ describe("native auth proxy routes", () => {
 
     const [url, init] = (global.fetch as jest.Mock).mock.calls[0] as [URL, RequestInit];
     expect(url.toString()).toBe(
-      "https://auth.helloautoflow.com/tenant-guid/signup/v1.0/start?dc=ESTS-PUB-WUS2-AZ1-FD000-TEST"
+      "https://autoflowciam.ciamlogin.com/tenant-guid/signup/v1.0/start?dc=ESTS-PUB-WUS2-AZ1-FD000-TEST"
     );
     expect(init.method).toBe("POST");
     expect(init.headers).toMatchObject({
       accept: "application/json",
-      "content-type": "application/json",
+      "content-type": "application/x-www-form-urlencoded",
       "x-correlation-id": "corr-123",
     });
-    expect(init.body).toBe(JSON.stringify({ email: "alex@example.com" }));
+    expect(init.body).toBe("email=alex%40example.com");
   });
 
   it("proxies form-encoded requests to the configured native auth upstream", async () => {
@@ -104,7 +106,7 @@ describe("native auth proxy routes", () => {
 
     const app = loadApp({
       ALLOWED_ORIGINS: "https://dashboard.autoflow.test",
-      AUTH_NATIVE_AUTH_PROXY_BASE_URL: "https://auth.helloautoflow.com/tenant-guid",
+      AUTH_NATIVE_AUTH_PROXY_BASE_URL: "https://autoflowciam.ciamlogin.com/tenant-guid",
     });
 
     const formBody = new URLSearchParams({
@@ -114,7 +116,7 @@ describe("native auth proxy routes", () => {
     }).toString();
 
     const response = await request(app)
-      .post("/api/auth/native/challenge/v1.0/continue")
+      .post("/api/auth/native/oauth2/v2.0/challenge")
       .set("Origin", "https://dashboard.autoflow.test")
       .set("Accept", "application/json")
       .set("Content-Type", "application/x-www-form-urlencoded")
@@ -125,12 +127,55 @@ describe("native auth proxy routes", () => {
     expect(global.fetch).toHaveBeenCalledTimes(1);
 
     const [url, init] = (global.fetch as jest.Mock).mock.calls[0] as [URL, RequestInit];
-    expect(url.toString()).toBe("https://auth.helloautoflow.com/tenant-guid/challenge/v1.0/continue");
+    expect(url.toString()).toBe("https://autoflowciam.ciamlogin.com/tenant-guid/oauth2/v2.0/challenge");
     expect(init.headers).toMatchObject({
       accept: "application/json",
       "content-type": "application/x-www-form-urlencoded",
     });
     expect(init.body).toBe(formBody);
+  });
+
+  it("preserves grant_type when forwarding parsed form bodies to the token endpoint", async () => {
+    (global.fetch as jest.Mock).mockResolvedValueOnce(
+      mockFetchResponse({
+        status: 200,
+        headers: {
+          "content-type": "application/json; charset=utf-8",
+        },
+        body: JSON.stringify({ access_token: "token-123" }),
+      })
+    );
+
+    const app = loadApp({
+      ALLOWED_ORIGINS: "https://dashboard.autoflow.test",
+      AUTH_NATIVE_AUTH_PROXY_BASE_URL: "https://autoflowciam.ciamlogin.com/tenant-guid",
+    });
+
+    const response = await request(app)
+      .post("/api/auth/native/oauth2/v2.0/token")
+      .set("Origin", "https://dashboard.autoflow.test")
+      .set("Accept", "application/json")
+      .type("form")
+      .send({
+        client_id: "client-123",
+        grant_type: "authorization_code",
+        code: "code-123",
+        redirect_uri: "http://localhost:3000/callback",
+      });
+
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual({ access_token: "token-123" });
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+
+    const [url, init] = (global.fetch as jest.Mock).mock.calls[0] as [URL, RequestInit];
+    expect(url.toString()).toBe("https://autoflowciam.ciamlogin.com/tenant-guid/oauth2/v2.0/token");
+    expect(init.headers).toMatchObject({
+      accept: "application/json",
+      "content-type": "application/x-www-form-urlencoded",
+    });
+    expect(init.body).toBe(
+      "client_id=client-123&grant_type=authorization_code&code=code-123&redirect_uri=http%3A%2F%2Flocalhost%3A3000%2Fcallback"
+    );
   });
 
   it("allows the documented reset-password endpoints used by the frontend", async () => {
@@ -152,7 +197,7 @@ describe("native auth proxy routes", () => {
 
     const app = loadApp({
       ALLOWED_ORIGINS: "https://dashboard.autoflow.test",
-      AUTH_NATIVE_AUTH_PROXY_BASE_URL: "https://auth.helloautoflow.com/tenant-guid",
+      AUTH_NATIVE_AUTH_PROXY_BASE_URL: "https://autoflowciam.ciamlogin.com/tenant-guid",
     });
 
     const startResponse = await request(app)
@@ -177,16 +222,47 @@ describe("native auth proxy routes", () => {
 
     const [startUrl] = (global.fetch as jest.Mock).mock.calls[0] as [URL, RequestInit];
     const [pollUrl] = (global.fetch as jest.Mock).mock.calls[1] as [URL, RequestInit];
-    expect(startUrl.toString()).toBe("https://auth.helloautoflow.com/tenant-guid/resetpassword/v1.0/start");
+    expect(startUrl.toString()).toBe("https://autoflowciam.ciamlogin.com/tenant-guid/resetpassword/v1.0/start");
     expect(pollUrl.toString()).toBe(
-      "https://auth.helloautoflow.com/tenant-guid/resetpassword/v1.0/poll_completion"
+      "https://autoflowciam.ciamlogin.com/tenant-guid/resetpassword/v1.0/poll_completion"
     );
+  });
+
+  it("allows the documented signin endpoints", async () => {
+    (global.fetch as jest.Mock).mockResolvedValueOnce(
+      mockFetchResponse({
+        status: 200,
+        headers: {
+          "content-type": "application/json; charset=utf-8",
+        },
+        body: JSON.stringify({ continuation_token: "signin-123" }),
+      })
+    );
+
+    const app = loadApp({
+      ALLOWED_ORIGINS: "https://dashboard.autoflow.test",
+      AUTH_NATIVE_AUTH_PROXY_BASE_URL: "https://autoflowciam.ciamlogin.com/tenant-guid",
+    });
+
+    const response = await request(app)
+      .post("/api/auth/native/signin/v1.0/start")
+      .set("Origin", "https://dashboard.autoflow.test")
+      .set("Accept", "application/json")
+      .set("Content-Type", "application/x-www-form-urlencoded")
+      .send("username=alex%40example.com");
+
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual({ continuation_token: "signin-123" });
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+
+    const [url] = (global.fetch as jest.Mock).mock.calls[0] as [URL, RequestInit];
+    expect(url.toString()).toBe("https://autoflowciam.ciamlogin.com/tenant-guid/signin/v1.0/start");
   });
 
   it("rejects requests from origins outside the configured allowlist", async () => {
     const app = loadApp({
       ALLOWED_ORIGINS: "https://dashboard.autoflow.test",
-      AUTH_NATIVE_AUTH_PROXY_BASE_URL: "https://auth.helloautoflow.com/tenant-guid",
+      AUTH_NATIVE_AUTH_PROXY_BASE_URL: "https://autoflowciam.ciamlogin.com/tenant-guid",
     });
 
     const response = await request(app)
@@ -202,7 +278,7 @@ describe("native auth proxy routes", () => {
   it("rejects unsafe upstream paths", async () => {
     const app = loadApp({
       ALLOWED_ORIGINS: "https://dashboard.autoflow.test",
-      AUTH_NATIVE_AUTH_PROXY_BASE_URL: "https://auth.helloautoflow.com/tenant-guid",
+      AUTH_NATIVE_AUTH_PROXY_BASE_URL: "https://autoflowciam.ciamlogin.com/tenant-guid",
     });
 
     const response = await request(app)
@@ -210,15 +286,14 @@ describe("native auth proxy routes", () => {
       .set("Origin", "https://dashboard.autoflow.test")
       .send({ email: "alex@example.com" });
 
-    expect(response.status).toBe(400);
-    expect(response.body.error).toMatch(/path is not allowed/i);
+    expect(response.status).toBe(404);
     expect(global.fetch).not.toHaveBeenCalled();
   });
 
   it("rejects undocumented but syntactically safe endpoints", async () => {
     const app = loadApp({
       ALLOWED_ORIGINS: "https://dashboard.autoflow.test",
-      AUTH_NATIVE_AUTH_PROXY_BASE_URL: "https://auth.helloautoflow.com/tenant-guid",
+      AUTH_NATIVE_AUTH_PROXY_BASE_URL: "https://autoflowciam.ciamlogin.com/tenant-guid",
     });
 
     const response = await request(app)
@@ -226,8 +301,7 @@ describe("native auth proxy routes", () => {
       .set("Origin", "https://dashboard.autoflow.test")
       .send({ email: "alex@example.com" });
 
-    expect(response.status).toBe(400);
-    expect(response.body.error).toMatch(/path is not allowed/i);
+    expect(response.status).toBe(404);
     expect(global.fetch).not.toHaveBeenCalled();
   });
 
@@ -236,22 +310,188 @@ describe("native auth proxy routes", () => {
 
     const app = loadApp({
       ALLOWED_ORIGINS: "https://dashboard.autoflow.test",
-      AUTH_NATIVE_AUTH_PROXY_BASE_URL: "https://auth.helloautoflow.com/tenant-guid",
+      AUTH_NATIVE_AUTH_PROXY_BASE_URL: "https://autoflowciam.ciamlogin.com/tenant-guid",
     });
 
     const response = await request(app)
-      .post("/api/auth/native/challenge/v1.0/continue")
+      .post("/api/auth/native/oauth2/v2.0/challenge")
       .set("Origin", "https://dashboard.autoflow.test")
       .send({ challengeId: "challenge-123" });
 
     expect(response.status).toBe(502);
     expect(response.body.error).toMatch(/native auth upstream request failed/i);
+    expect(console.warn).toHaveBeenCalledWith(
+      expect.stringContaining("[native-auth] UPSTREAM_ERROR")
+    );
+  });
+
+  it("logs sanitized request and response details for proxied calls", async () => {
+    (global.fetch as jest.Mock).mockResolvedValueOnce(
+      mockFetchResponse({
+        status: 400,
+        headers: {
+          "content-type": "application/json; charset=utf-8",
+          "x-ms-request-id": "ms-request-123",
+          "x-ms-correlation-id": "ms-corr-123",
+        },
+        body: JSON.stringify({
+          error: "invalid_grant",
+          error_description: "Password reset required",
+        }),
+      })
+    );
+
+    const app = loadApp({
+      ALLOWED_ORIGINS: "https://dashboard.autoflow.test",
+      AUTH_NATIVE_AUTH_PROXY_BASE_URL: "https://autoflowciam.ciamlogin.com/tenant-guid",
+    });
+
+    await request(app)
+      .post("/api/auth/native/oauth2/v2.0/challenge")
+      .set("Origin", "https://dashboard.autoflow.test")
+      .set("X-Correlation-Id", "corr-789")
+      .set("Content-Type", "application/json")
+      .send({
+        username: "alex@example.com",
+        password: "super-secret-password",
+        continuation_token: "token-secret",
+      });
+
+    const logOutput = (console.log as jest.Mock).mock.calls.map(([message]) => String(message)).join("\n");
+    expect(logOutput).toContain("[native-auth] REQUEST");
+    expect(logOutput).toContain("[native-auth] RESPONSE");
+    expect(logOutput).toContain('"password":"[REDACTED]"');
+    expect(logOutput).toContain('"continuation_token":"[REDACTED]"');
+    expect(logOutput).toContain('"username":"alex@example.com"');
+    expect(logOutput).not.toContain("super-secret-password");
+    expect(logOutput).not.toContain("token-secret");
+    expect(logOutput).toContain('error="invalid_grant"');
+    expect(logOutput).toContain('errorDescription="Password reset required"');
+    expect(logOutput).toContain('xMsRequestId="ms-request-123"');
+    expect(logOutput).toContain('xMsCorrelationId="ms-corr-123"');
+  });
+
+  it("generates and forwards a correlation ID when the caller omits one", async () => {
+    (global.fetch as jest.Mock).mockResolvedValueOnce(
+      mockFetchResponse({
+        status: 200,
+        headers: {
+          "content-type": "application/json; charset=utf-8",
+        },
+        body: JSON.stringify({ ok: true }),
+      })
+    );
+
+    const app = loadApp({
+      ALLOWED_ORIGINS: "https://dashboard.autoflow.test",
+      AUTH_NATIVE_AUTH_PROXY_BASE_URL: "https://autoflowciam.ciamlogin.com/tenant-guid",
+    });
+
+    await request(app)
+      .post("/api/auth/native/signin/v1.0/start")
+      .set("Origin", "https://dashboard.autoflow.test")
+      .set("Content-Type", "application/json")
+      .send({ username: "alex@example.com", password: "super-secret-password" });
+
+    const [, init] = (global.fetch as jest.Mock).mock.calls[0] as [URL, RequestInit];
+    const headers = init.headers as Record<string, string>;
+    expect(headers["x-correlation-id"]).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+    );
+  });
+
+  it("ignores retired branded auth hosts and uses the direct ciamlogin authority", async () => {
+    (global.fetch as jest.Mock)
+      .mockResolvedValueOnce(
+        mockFetchResponse({
+          status: 200,
+          headers: { "content-type": "application/json; charset=utf-8" },
+          body: JSON.stringify({ continuation_token: "direct-123" }),
+        })
+      );
+
+    const app = loadApp({
+      ALLOWED_ORIGINS: "https://dashboard.autoflow.test",
+      AUTH_NATIVE_AUTH_PROXY_BASE_URL: "https://legacy-auth.example.com/tenant-guid",
+      AZURE_CIAM_TENANT_SUBDOMAIN: "autoflowciam",
+      AZURE_CIAM_TENANT_ID: "tenant-guid",
+    });
+
+    const response = await request(app)
+      .post("/api/auth/native/oauth2/v2.0/challenge")
+      .set("Origin", "https://dashboard.autoflow.test")
+      .set("Accept", "application/json")
+      .set("Content-Type", "application/x-www-form-urlencoded")
+      .send("continuation_token=challenge-123");
+
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual({ continuation_token: "direct-123" });
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+
+    const [url] = (global.fetch as jest.Mock).mock.calls[0] as [URL, RequestInit];
+    expect(url.toString()).toBe("https://autoflowciam.ciamlogin.com/tenant-guid/oauth2/v2.0/challenge");
+  });
+
+  it("falls back to the repo CIAM defaults when no valid ciam authority env is configured", async () => {
+    (global.fetch as jest.Mock).mockResolvedValueOnce(
+      mockFetchResponse({
+        status: 200,
+        headers: { "content-type": "application/json; charset=utf-8" },
+        body: JSON.stringify({ continuation_token: "default-fallback-123" }),
+      })
+    );
+
+    const app = loadApp({
+      ALLOWED_ORIGINS: "https://dashboard.autoflow.test",
+      AUTH_NATIVE_AUTH_PROXY_BASE_URL: "https://legacy-auth.example.com/tenant-guid",
+      AZURE_CIAM_TENANT_SUBDOMAIN: undefined,
+      AZURE_CIAM_TENANT_ID: undefined,
+      AZURE_TENANT_SUBDOMAIN: undefined,
+      AZURE_TENANT_ID: undefined,
+    });
+
+    const response = await request(app)
+      .post("/api/auth/native/oauth2/v2.0/challenge")
+      .set("Origin", "https://dashboard.autoflow.test")
+      .set("Accept", "application/json")
+      .set("Content-Type", "application/x-www-form-urlencoded")
+      .send("continuation_token=challenge-123");
+
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual({ continuation_token: "default-fallback-123" });
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+
+    const [url] = (global.fetch as jest.Mock).mock.calls[0] as [URL, RequestInit];
+    expect(url.origin).toBe("https://autoflowciam.ciamlogin.com");
+    expect(url.pathname).toMatch(/\/oauth2\/v2\.0\/challenge$/);
+  });
+
+  it("deduplicates native auth upstream candidates when configured values overlap", async () => {
+    (global.fetch as jest.Mock).mockRejectedValueOnce(new Error("fetch failed"));
+
+    const app = loadApp({
+      ALLOWED_ORIGINS: "https://dashboard.autoflow.test",
+      AUTH_NATIVE_AUTH_PROXY_BASE_URL: "https://autoflowciam.ciamlogin.com/tenant-guid",
+      AZURE_CIAM_AUTHORITY: "https://autoflowciam.ciamlogin.com/tenant-guid",
+      AZURE_CIAM_TENANT_SUBDOMAIN: "autoflowciam",
+      AZURE_CIAM_TENANT_ID: "tenant-guid",
+    });
+
+    const response = await request(app)
+      .post("/api/auth/native/oauth2/v2.0/challenge")
+      .set("Origin", "https://dashboard.autoflow.test")
+      .set("Accept", "application/json")
+      .set("Content-Type", "application/x-www-form-urlencoded")
+      .send("continuation_token=challenge-123");
+
+    expect(response.status).toBe(502);
+    expect(global.fetch).toHaveBeenCalledTimes(1);
   });
 
   it("rejects unsupported content types", async () => {
     const app = loadApp({
       ALLOWED_ORIGINS: "https://dashboard.autoflow.test",
-      AUTH_NATIVE_AUTH_PROXY_BASE_URL: "https://auth.helloautoflow.com/tenant-guid",
+      AUTH_NATIVE_AUTH_PROXY_BASE_URL: "https://autoflowciam.ciamlogin.com/tenant-guid",
     });
 
     const response = await request(app)
@@ -276,17 +516,17 @@ describe("native auth proxy routes", () => {
 
     const app = loadApp({
       ALLOWED_ORIGINS: "https://dashboard.autoflow.test",
-      AUTH_NATIVE_AUTH_PROXY_BASE_URL: "https://auth.helloautoflow.com/tenant-guid",
+      AUTH_NATIVE_AUTH_PROXY_BASE_URL: "https://autoflowciam.ciamlogin.com/tenant-guid",
       AUTH_NATIVE_AUTH_PROXY_RATE_LIMIT_MAX: "1",
       AUTH_NATIVE_AUTH_PROXY_RATE_LIMIT_WINDOW_MS: "60000",
     });
 
     const first = await request(app)
-      .post("/api/auth/native/challenge/v1.0/continue")
+      .post("/api/auth/native/oauth2/v2.0/challenge")
       .set("Origin", "https://dashboard.autoflow.test")
       .send({ challengeId: "challenge-123" });
     const second = await request(app)
-      .post("/api/auth/native/challenge/v1.0/continue")
+      .post("/api/auth/native/oauth2/v2.0/challenge")
       .set("Origin", "https://dashboard.autoflow.test")
       .send({ challengeId: "challenge-123" });
 

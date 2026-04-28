@@ -85,4 +85,15 @@ describe("msalConfig env parsing", () => {
     expect(msalConfig.auth.knownAuthorities).toEqual(["mytenant01.ciamlogin.com"]);
     expect(msalConfig.auth.redirectUri).toBe("http://localhost:3000/auth/callback");
   });
+
+  it("requests the CIAM API scope alongside standard OIDC scopes", async () => {
+    const { loginRequest } = await loadConfig();
+
+    expect(loginRequest.scopes).toEqual([
+      "openid",
+      "profile",
+      "email",
+      "api://2dfd3a08-277c-4893-b07d-eca5ae322310/access_as_user",
+    ]);
+  });
 });

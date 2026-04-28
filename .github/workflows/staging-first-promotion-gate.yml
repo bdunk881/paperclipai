@@ -1,0 +1,30 @@
+name: Staging-First Promotion Gate
+
+on:
+  pull_request:
+    branches:
+      - master
+    types:
+      - opened
+      - reopened
+      - synchronize
+      - edited
+      - ready_for_review
+
+permissions:
+  contents: read
+
+jobs:
+  verify-source-branch:
+    name: Staging-First Promotion Gate
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require staging as the PR head branch
+        run: |
+          echo "Base branch: ${{ github.base_ref }}"
+          echo "Head branch: ${{ github.head_ref }}"
+
+          if [ "${{ github.head_ref }}" != "staging" ]; then
+            echo "::error title=Master promotions must come from staging::PRs targeting master must use staging as the head branch so the exact revision has already been validated on staging."
+            exit 1
+          fi

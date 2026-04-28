@@ -3,10 +3,14 @@ name: Enforce Branch Protection
 on:
   workflow_dispatch:
     inputs:
-      required_checks:
-        description: "Comma-separated required status check names"
+      staging_required_checks:
+        description: "Comma-separated CI status check names required on staging"
         required: false
-        default: "Docker Build Check"
+        default: "Lint Backend,Lint Frontend,Lint API (TypeScript),Test Backend,Test API (TypeScript),Test Frontend (Dashboard),Build Frontend (Dashboard),Auth Regression Smoke (Playwright),E2E Tests (Dashboard),Docker Build Check"
+      master_required_checks:
+        description: "Comma-separated CI status check names required on master"
+        required: false
+        default: "Lint Backend,Lint Frontend,Lint API (TypeScript),Test Backend,Test API (TypeScript),Test Frontend (Dashboard),Build Frontend (Dashboard),Auth Regression Smoke (Playwright),E2E Tests (Dashboard),Docker Build Check,Staging-First Promotion Gate"
   schedule:
     - cron: "0 9 * * 1"
 
@@ -15,7 +19,7 @@ permissions:
 
 jobs:
   protect:
-    name: Require PR Reviews on Default Branches
+    name: Enforce Protected Branch Rules
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
@@ -33,5 +37,8 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.BRANCH_ADMIN_TOKEN }}
           GITHUB_REPOSITORY: ${{ github.repository }}
-          REQUIRED_CHECKS: ${{ github.event.inputs.required_checks || 'Docker Build Check' }}
+          STAGING_REQUIRED_CHECKS: ${{ github.event.inputs.staging_required_checks || 'Lint Backend,Lint Frontend,Lint API (TypeScript),Test Backend,Test API (TypeScript),Test Frontend (Dashboard),Build Frontend (Dashboard),Auth Regression Smoke (Playwright),E2E Tests (Dashboard),Docker Build Check' }}
+          MASTER_REQUIRED_CHECKS: ${{ github.event.inputs.master_required_checks || 'Lint Backend,Lint Frontend,Lint API (TypeScript),Test Backend,Test API (TypeScript),Test Frontend (Dashboard),Build Frontend (Dashboard),Auth Regression Smoke (Playwright),E2E Tests (Dashboard),Docker Build Check,Staging-First Promotion Gate' }}
+          MASTER_ALLOWED_USERS: bdunk881
+          STAGING_ALLOWED_USERS: bdunk881
         run: infra/scripts/enforce_branch_protection.sh

@@ -9,6 +9,7 @@ import rateLimit from "express-rate-limit";
 import multer from "multer";
 import cors from "cors";
 import helmet from "helmet";
+import passport from "passport";
 import {
   getTemplate,
   getTemplatesByCategory,
@@ -42,6 +43,7 @@ import {
 } from "./engine/classificationLog";
 import { requireAuth, requireAuthOrQaBypass, AuthenticatedRequest } from "./auth/authMiddleware";
 import nativeAuthProxyRoutes from "./auth/nativeAuthProxyRoutes";
+import socialAuthRoutes from "./auth/socialAuthRoutes";
 import stripeWebhookRoutes from "./billing/stripeWebhook";
 import apolloWebhookRoutes from "./integrations/apollo-attio/webhookRoute";
 import checkoutRoutes from "./billing/checkoutRoutes";
@@ -81,16 +83,25 @@ import { saveImportedTemplate } from "./templates/importedTemplateStore";
 
 const app = express();
 
-function getAllowedOrigins(): string[] {
-  const raw = process.env.ALLOWED_ORIGINS;
-  if (!raw) {
+function parseAllowedOrigins(value: string | undefined): string[] {
+  if (!value) {
     return [];
   }
 
-  return raw
+  return value
     .split(",")
-    .map((origin) => origin.trim())
+    .map((origin) => origin.trim().replace(/\/+$/, ""))
     .filter((origin) => origin.length > 0 && origin !== "*");
+}
+
+function getAllowedOrigins(): string[] {
+  return Array.from(
+    new Set([
+      ...parseAllowedOrigins(process.env.ALLOWED_ORIGINS),
+      ...parseAllowedOrigins(process.env.AUTH_SOCIAL_ALLOWED_REDIRECT_ORIGINS),
+      ...parseAllowedOrigins(process.env.SOCIAL_AUTH_DASHBOARD_URL),
+    ])
+  );
 }
 
 const allowedOrigins = new Set(getAllowedOrigins());
@@ -256,6 +267,7 @@ app.use("/api/webhooks/ticket-sync", ticketSyncWebhookRoutes);
 app.use("/api/connectors/google-workspace", googleWorkspaceWebhookRoutes);
 
 app.use(express.json());
+app.use(passport.initialize());
 
 // Multer — in-memory storage for file uploads (max 50 MB)
 const upload = multer({
@@ -326,10 +338,11 @@ app.use("/api/ticket-sync", requireAuth, ticketSyncRoutes);
 
 app.use(
   "/api/auth/native",
-  express.text({ type: "application/x-www-form-urlencoded" }),
+  express.urlencoded({ extended: false }),
   nativeAuthProxyRateLimiter,
   nativeAuthProxyRoutes
 );
+app.use("/api/auth/social", nativeAuthProxyRateLimiter, socialAuthRoutes);
 
 /** Returns the authenticated user's claims extracted from the Entra ID token. */
 app.get("/api/me", requireAuth, (req: AuthenticatedRequest, res) => {

@@ -131,6 +131,7 @@ GitHub larger runners with static IPs, or a dedicated VPN/NAT path.
 | `staging` | `AZURE_CONTAINER_APP_STAGING_NAME` | Expected staging backend Container App name |
 | `staging` | `AZURE_CONTAINER_APP_STAGING_RESOURCE_GROUP` | Resource group for the staging backend app |
 | `staging` | `AZURE_STAGING_API_HOST` | Public staging API hostname used for DNS-based discovery |
+| `staging` | `AZURE_BACKEND_ENV_STAGING_SOCIAL_AUTH_CLIENTID` | Optional non-secret staging Google OAuth client ID; the deploy workflow injects it if the multiline secret does not include `GOOGLE_CLIENT_ID` |
 | `production` | `AZURE_AKS_PRODUCTION_CLUSTER_NAME` | Production AKS cluster name |
 | `production` | `AZURE_AKS_PRODUCTION_RESOURCE_GROUP` | Resource group containing the production AKS cluster |
 | `production` | `AZURE_PRODUCTION_API_HOST` | Public production API hostname used for DNS and cutover tracking |
@@ -140,7 +141,15 @@ GitHub larger runners with static IPs, or a dedicated VPN/NAT path.
 
 | Environment | Secret | Description |
 |---|---|---|
+| `staging` | `AZURE_BACKEND_ENV_STAGING_SOCIAL_AUTH` | Newline-delimited env file containing `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `APP_JWT_SECRET`, and `SOCIAL_AUTH_CALLBACK_BASE_URL` for the staging Container App |
 | `production` | `AZURE_BACKEND_ENV_PRODUCTION` | Newline-delimited env file materialized into the `autoflow-backend-secrets` Kubernetes secret |
+
+**Required Terraform variables for CIAM app-registration management:**
+
+| Variable | Description |
+|---|---|
+| `TF_VAR_ciam_graph_client_id` | Client ID for the CIAM-tenant Graph application used by the aliased `azuread.ciam` provider |
+| `TF_VAR_ciam_graph_client_secret` | Client secret for the same CIAM-tenant Graph application |
 
 **Setup steps:**
 
@@ -150,10 +159,52 @@ GitHub larger runners with static IPs, or a dedicated VPN/NAT path.
    - `staging` — no approvals
    - `production` — add required reviewers for the production deployment gate
 4. Add the environment-scoped backend target variables for each environment.
-5. Add `AZURE_BACKEND_ENV_PRODUCTION` to the `production` environment so the
+5. Add `AZURE_BACKEND_ENV_STAGING_SOCIAL_AUTH` to the `staging` environment with:
+
+   ```env
+   GOOGLE_CLIENT_SECRET=<google-oauth-client-secret>
+   APP_JWT_SECRET=<32+ char random secret>
+   SOCIAL_AUTH_CALLBACK_BASE_URL=https://staging-api.helloautoflow.com/api/auth/social
+   SOCIAL_AUTH_DASHBOARD_URL=https://staging.app.helloautoflow.com
+   AUTH_SOCIAL_ALLOWED_REDIRECT_ORIGINS=https://staging.app.helloautoflow.com
+   ```
+
+   Set `GOOGLE_CLIENT_ID` either inside the multiline secret above or as the
+   Actions variable `AZURE_BACKEND_ENV_STAGING_SOCIAL_AUTH_CLIENTID`. The
+   workflow also accepts `GOOGLE_CLIENT_ID` as a compatibility fallback if you
+   later rename the variable to match the runtime env key directly.
+
+   The staging deploy workflow validates those keys, requires the dashboard URL
+   to match the staging host, and requires either
+   `AUTH_SOCIAL_ALLOWED_REDIRECT_ORIGINS` or `ALLOWED_ORIGINS` to include
+   `https://staging.app.helloautoflow.com`. It injects the resulting values into
+   the Container App on every deploy alongside the QA bypass flags.
+   For the Google OAuth client configuration in the Google Cloud console, use:
+
+   - Authorized JavaScript origins: `https://staging.app.helloautoflow.com`
+   - Authorized redirect URIs: `https://staging-api.helloautoflow.com/api/auth/social/google/callback`
+
+   If `AZURE_STAGING_API_HOST` changes, the redirect URI must change with it to
+   keep the Passport callback route aligned with the deployed backend host.
+6. Add `AZURE_BACKEND_ENV_PRODUCTION` to the `production` environment so the
    AKS rollout can create `autoflow-backend-secrets` before the deployment starts.
-6. Verify production-specific values do not reference `staging` or `nonprod`
+7. Verify production-specific values do not reference `staging` or `nonprod`
    resource names; the workflow now hard-fails on cross-environment targets.
+8. Ensure `AZURE_BACKEND_ENV_PRODUCTION` includes CIAM auth fallback inputs
+   (`AZURE_CIAM_TENANT_ID`/`AZURE_TENANT_ID`, `AZURE_CIAM_TENANT_SUBDOMAIN`/`AZURE_TENANT_SUBDOMAIN`,
+   and a CIAM audience/client setting) plus `ALLOWED_ORIGINS` containing
+   `https://app.helloautoflow.com`.
+9. Set both `AZURE_CIAM_AUTHORITY` and `AUTH_NATIVE_AUTH_PROXY_BASE_URL` in
+   `AZURE_BACKEND_ENV_PRODUCTION` to the direct tenant authority:
+
+   `https://<tenant-subdomain>.ciamlogin.com/<tenant-guid>`
+
+   Example:
+
+   `https://<tenant-subdomain>.ciamlogin.com/<tenant-guid>`
+
+   The production deploy workflow now rejects any non-`ciamlogin.com` runtime
+   value so the backend cannot drift back to the retired branded auth host.
 
 **Validation checks**
 
@@ -162,8 +213,9 @@ GitHub larger runners with static IPs, or a dedicated VPN/NAT path.
 - `gh api repos/<owner>/<repo>/environments/production/variables` should include
   the three production AKS variables listed above.
 - `gh run list --workflow deploy-azure.yml` should show a successful
-  production backend run that imports into ACR, creates the K8s secret, and
-  rolls out the AKS deployment before you cut traffic to the new backend.
+  production backend run that imports into ACR, creates the K8s secret, rolls
+  out the AKS deployment, and passes the native-auth initiate smoke check
+  before you cut traffic to the new backend.
 
 ---
 
@@ -187,9 +239,12 @@ GitHub larger runners with static IPs, or a dedicated VPN/NAT path.
 ```
 infra/azure/scripts/
   bootstrap-tfstate.sh         — one-time Terraform remote state setup
+  enable-ciam-native-auth-sspr.sh — enable Email OTP SSPR for native auth in the external tenant
   provision-ciam.sh            — create the CIAM SPA app registration and output env vars
+  configure-ciam-microsoft-account-oidc.sh — create/update the Microsoft Account OIDC provider and attach it to a CIAM user flow
   sync-ciam-redirect-uris.sh   — upsert the dashboard auth callback/logout URIs on the CIAM SPA app
   validate-ciam-prereqs.sh     — validate subscription + Graph access before provisioning
+  verify-ciam-native-auth-sspr.sh — verify resetpassword/v1.0/start returns a continuation token
 ```
 
 The dashboard is in a transition period between root-based MSAL redirects and
@@ -198,6 +253,20 @@ and verified, keep both the host root and `/auth/callback` registered as SPA
 redirect URIs for production, staging, the active Vercel preview hosts, and
 localhost. Run `./scripts/sync-ciam-redirect-uris.sh` after any custom-domain
 cutover, preview-host policy change, or auth route change.
+
+Native auth password reset depends on Email OTP SSPR being enabled in the
+external tenant. After `provision-ciam.sh` creates the app registration, run
+`./scripts/enable-ciam-native-auth-sspr.sh` and then
+`./scripts/verify-ciam-native-auth-sspr.sh` with a real customer username.
+Without that tenant-side policy, Azure returns `AADSTS500222` from
+`resetpassword/v1.0/start` even when the app code and proxy routing are correct.
+
+Microsoft Account federation is split intentionally:
+
+- Terraform manages the `autoflow-msa-federation` application registration and
+  secret inside the CIAM tenant.
+- `./scripts/configure-ciam-microsoft-account-oidc.sh` manages the tenant-side
+  custom OIDC identity provider plus the user-flow attachment, using Graph.
 
 ---
 

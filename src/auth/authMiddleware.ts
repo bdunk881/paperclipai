@@ -17,6 +17,7 @@
 import { Request, Response, NextFunction } from "express";
 import jwt, { JwtPayload } from "jsonwebtoken";
 import jwksRsa from "jwks-rsa";
+import { resolveAppJwtConfig, verifyAppUserTokenWithDiagnostics } from "./appAuthTokens";
 
 type AuthConfig = {
   tenantId: string;
@@ -25,10 +26,20 @@ type AuthConfig = {
   issuers: [string, ...string[]];
 };
 
+type JwtDiagnosticClaims = {
+  aud?: string | string[];
+  iss?: string;
+  exp?: number;
+  nbf?: number;
+};
+
 const jwksClientCache = new Map<string, jwksRsa.JwksClient>();
 let missingConfigWarningLogged = false;
 const CURRENT_DASHBOARD_CIAM_CLIENT_ID = "2dfd3a08-277c-4893-b07d-eca5ae322310";
+const CURRENT_DASHBOARD_CIAM_API_URI = `api://${CURRENT_DASHBOARD_CIAM_CLIENT_ID}`;
 const LEGACY_DASHBOARD_CIAM_CLIENT_ID = "d36ce552-1a3d-4cd3-b851-beff4e3bf440";
+const DEFAULT_CIAM_TENANT_SUBDOMAIN = "autoflowciam";
+const DEFAULT_CIAM_TENANT_ID = "5e4f1080-8afc-4005-b05e-32b21e69363a";
 
 function normalizeAuthority(value: string | undefined): string | null {
   if (typeof value !== "string") {
@@ -42,7 +53,14 @@ function normalizeAuthority(value: string | undefined): string | null {
 
   try {
     const parsed = new URL(normalized);
-    if (parsed.protocol !== "https:" || parsed.username || parsed.password || parsed.search || parsed.hash) {
+    if (
+      parsed.protocol !== "https:" ||
+      parsed.username ||
+      parsed.password ||
+      parsed.search ||
+      parsed.hash ||
+      !parsed.hostname.toLowerCase().endsWith(".ciamlogin.com")
+    ) {
       return null;
     }
 
@@ -64,19 +82,48 @@ function parseDelimitedEnv(value: string | undefined): string[] {
     .filter(Boolean);
 }
 
+function decodeJwtDiagnosticClaims(token: string): JwtDiagnosticClaims | null {
+  const [, rawPayload] = token.split(".");
+  if (!rawPayload) {
+    return null;
+  }
+
+  try {
+    const normalized = rawPayload.replace(/-/g, "+").replace(/_/g, "/");
+    const padded = normalized.padEnd(Math.ceil(normalized.length / 4) * 4, "=");
+    const parsed = JSON.parse(Buffer.from(padded, "base64").toString("utf8")) as Record<string, unknown>;
+
+    return {
+      aud:
+        typeof parsed.aud === "string" || Array.isArray(parsed.aud)
+          ? (parsed.aud as string | string[])
+          : undefined,
+      iss: typeof parsed.iss === "string" ? parsed.iss : undefined,
+      exp: typeof parsed.exp === "number" ? parsed.exp : undefined,
+      nbf: typeof parsed.nbf === "number" ? parsed.nbf : undefined,
+    };
+  } catch {
+    return null;
+  }
+}
+
 function resolveAuthConfig(): AuthConfig | null {
   const authority = normalizeAuthority(process.env.AZURE_CIAM_AUTHORITY);
-  const tenantSubdomain = process.env.AZURE_CIAM_TENANT_SUBDOMAIN ?? process.env.AZURE_TENANT_SUBDOMAIN;
-  const tenantId = process.env.AZURE_CIAM_TENANT_ID ?? process.env.AZURE_TENANT_ID;
+  const tenantSubdomain =
+    process.env.AZURE_CIAM_TENANT_SUBDOMAIN ??
+    process.env.AZURE_TENANT_SUBDOMAIN ??
+    DEFAULT_CIAM_TENANT_SUBDOMAIN;
+  const tenantId =
+    process.env.AZURE_CIAM_TENANT_ID ?? process.env.AZURE_TENANT_ID ?? DEFAULT_CIAM_TENANT_ID;
   const configuredAudiences = parseDelimitedEnv(process.env.AZURE_CIAM_ALLOWED_AUDIENCES);
   const clientId = process.env.AZURE_CIAM_CLIENT_ID ?? process.env.AZURE_CLIENT_ID;
 
-  if ((!authority && !tenantSubdomain) || !tenantId || (!clientId && configuredAudiences.length === 0)) {
+  if ((!authority && !tenantSubdomain) || !tenantId) {
     if (!missingConfigWarningLogged) {
       console.warn(
         "[auth] CIAM auth env is incomplete. Expected AZURE_CIAM_AUTHORITY or AZURE_CIAM_TENANT_SUBDOMAIN, " +
-          "plus AZURE_CIAM_TENANT_ID and AZURE_CIAM_CLIENT_ID (or AZURE_CIAM_ALLOWED_AUDIENCES), " +
-          "with legacy fallback to AZURE_TENANT_SUBDOMAIN/AZURE_TENANT_ID/AZURE_CLIENT_ID."
+          "plus AZURE_CIAM_TENANT_ID, with fallback to repo CIAM defaults and " +
+          "legacy AZURE_TENANT_SUBDOMAIN/AZURE_TENANT_ID."
       );
       missingConfigWarningLogged = true;
     }
@@ -88,6 +135,7 @@ function resolveAuthConfig(): AuthConfig | null {
     ...configuredAudiences,
     ...(clientId ? [clientId.trim()] : []),
     CURRENT_DASHBOARD_CIAM_CLIENT_ID,
+    CURRENT_DASHBOARD_CIAM_API_URI,
     LEGACY_DASHBOARD_CIAM_CLIENT_ID,
   ]);
   const audienceValues = Array.from(normalizedAudiences).filter(Boolean);
@@ -158,6 +206,8 @@ export interface AuthenticatedRequest extends Request {
     name?: string;
     tenantId?: string;
     oid?: string;
+    provider?: "entra" | "google" | "facebook" | "apple";
+    issuer?: string;
   };
 }
 
@@ -226,6 +276,44 @@ export function requireAuth(
   }
 
   const token = authHeader.slice(7);
+  const appAuthConfig = resolveAppJwtConfig();
+  const tokenClaims = decodeJwtDiagnosticClaims(token);
+
+  if (appAuthConfig) {
+    const { claims: appClaims, errorMessage } = verifyAppUserTokenWithDiagnostics(token);
+    if (appClaims?.sub) {
+      req.auth = {
+        sub: appClaims.sub,
+        email: appClaims.email,
+        name: appClaims.name,
+        provider: appClaims.provider,
+        issuer: appClaims.iss,
+      };
+
+      next();
+      return;
+    }
+
+    const looksLikeAppToken =
+      tokenClaims?.iss === appAuthConfig.issuer ||
+      tokenClaims?.aud === appAuthConfig.audience ||
+      (Array.isArray(tokenClaims?.aud) && tokenClaims.aud.includes(appAuthConfig.audience));
+
+    if (looksLikeAppToken) {
+      console.warn("[auth] App JWT verification failed", {
+        errMessage: errorMessage,
+        tokenAud: tokenClaims?.aud,
+        tokenIss: tokenClaims?.iss,
+        tokenExp: tokenClaims?.exp,
+        tokenNbf: tokenClaims?.nbf,
+        expectedAudience: appAuthConfig.audience,
+        expectedIssuer: appAuthConfig.issuer,
+      });
+      res.status(401).json({ error: "Invalid or expired token." });
+      return;
+    }
+  }
+
   const authConfig = resolveAuthConfig();
 
   if (!authConfig) {
@@ -243,6 +331,17 @@ export function requireAuth(
     },
     (err: jwt.VerifyErrors | null, decoded?: string | JwtPayload) => {
       if (err || !decoded) {
+        console.warn("[auth] JWT verification failed", {
+          errName: err?.name,
+          errMessage: err?.message,
+          tokenAud: tokenClaims?.aud,
+          tokenIss: tokenClaims?.iss,
+          tokenExp: tokenClaims?.exp,
+          tokenNbf: tokenClaims?.nbf,
+          expectedAudiences: authConfig.audiences,
+          expectedIssuers: authConfig.issuers,
+          jwksUri: authConfig.jwksUri,
+        });
         res.status(401).json({ error: "Invalid or expired token." });
         return;
       }
@@ -254,6 +353,8 @@ export function requireAuth(
         name: claims.name as string | undefined,
         tenantId: claims.tid as string | undefined,
         oid: claims.oid as string | undefined,
+        provider: "entra",
+        issuer: claims.iss as string | undefined,
       };
 
       next();

@@ -2,7 +2,7 @@ name: Deploy Backend to Azure
 
 on:
   push:
-    branches: [master]
+    branches: [master, staging]
   workflow_dispatch:
     inputs:
       environment:
@@ -26,7 +26,12 @@ env:
 jobs:
   deploy-staging:
     name: Build and Deploy Staging Backend Container App
-    if: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'staging' }}
+    if: >-
+      ${{
+        github.ref == 'refs/heads/staging' ||
+        (github.event_name == 'workflow_dispatch' &&
+         github.event.inputs.environment == 'staging')
+      }}
     runs-on: ubuntu-latest
     environment: staging
 
@@ -195,14 +200,131 @@ jobs:
           echo "container_app=$APP_NAME" >> "$GITHUB_OUTPUT"
           echo "resource_group=$RESOURCE_GROUP" >> "$GITHUB_OUTPUT"
 
-      - name: Deploy backend to Azure Container Apps
+      - name: Validate staging social auth env secret
+        env:
+          BACKEND_ENV_STAGING_SOCIAL_AUTH: ${{ secrets.AZURE_BACKEND_ENV_STAGING_SOCIAL_AUTH }}
+          GOOGLE_CLIENT_ID: ${{ vars.GOOGLE_CLIENT_ID }}
+          STAGING_SOCIAL_AUTH_CLIENT_ID: ${{ vars.AZURE_BACKEND_ENV_STAGING_SOCIAL_AUTH_CLIENTID }}
         run: |
           set -euo pipefail
+
+          if [ -z "${BACKEND_ENV_STAGING_SOCIAL_AUTH}" ]; then
+            echo "::error::Missing required staging environment secret: AZURE_BACKEND_ENV_STAGING_SOCIAL_AUTH"
+            exit 1
+          fi
+
+          tmpfile="$(mktemp)"
+          trap 'rm -f "$tmpfile"' EXIT
+          printf '%s\n' "$BACKEND_ENV_STAGING_SOCIAL_AUTH" > "$tmpfile"
+
+          client_id="${GOOGLE_CLIENT_ID:-}"
+          if [ -z "$client_id" ]; then
+            client_id="${STAGING_SOCIAL_AUTH_CLIENT_ID:-}"
+          fi
+
+          if [ -n "$client_id" ] && ! grep -Eq '^GOOGLE_CLIENT_ID=.+' "$tmpfile"; then
+            printf '\nGOOGLE_CLIENT_ID=%s\n' "$client_id" >> "$tmpfile"
+          fi
+
+          require_env_key() {
+            local key="$1"
+            if ! grep -Eq "^${key}=.+" "$tmpfile"; then
+              echo "::error::AZURE_BACKEND_ENV_STAGING_SOCIAL_AUTH is missing required key ${key}"
+              exit 1
+            fi
+          }
+
+          require_exact_https_url() {
+            local key="$1"
+            local expected="$2"
+            local actual
+            actual="$(grep -E "^${key}=.+" "$tmpfile" | head -n1 | cut -d= -f2- | tr -d '\r' | sed -E 's/[[:space:]]+$//' | sed -E 's#/$##')"
+            if [ "$actual" != "$expected" ]; then
+              echo "::error::AZURE_BACKEND_ENV_STAGING_SOCIAL_AUTH must set ${key}=${expected}; found ${actual:-<empty>}"
+              exit 1
+            fi
+          }
+
+          read_env_value() {
+            local key="$1"
+            local value
+            value="$(grep -E "^${key}=.+" "$tmpfile" | head -n1 | cut -d= -f2- || true)"
+            value="${value%%#*}"
+            value="$(printf '%s' "$value" | tr -d '\r' | sed -E 's/[[:space:]]+$//')"
+            value="${value%/}"
+            printf '%s' "$value"
+          }
+
+          require_origin_in_allowlist() {
+            local expected_origin="$1"
+            local configured=""
+            local key
+            local value
+            for key in AUTH_SOCIAL_ALLOWED_REDIRECT_ORIGINS ALLOWED_ORIGINS; do
+              value="$(read_env_value "$key")"
+              if [ -z "$value" ]; then
+                continue
+              fi
+
+              configured="yes"
+              if printf '%s' "$value" | tr ',' '\n' | grep -Fxq "$expected_origin"; then
+                return 0
+              fi
+            done
+
+            if [ -z "$configured" ]; then
+              echo "::error::AZURE_BACKEND_ENV_STAGING_SOCIAL_AUTH must include either AUTH_SOCIAL_ALLOWED_REDIRECT_ORIGINS or ALLOWED_ORIGINS with ${expected_origin}"
+            else
+              echo "::error::AZURE_BACKEND_ENV_STAGING_SOCIAL_AUTH must allow ${expected_origin} in AUTH_SOCIAL_ALLOWED_REDIRECT_ORIGINS or ALLOWED_ORIGINS"
+            fi
+            exit 1
+          }
+
+          require_env_key "GOOGLE_CLIENT_ID"
+          require_env_key "GOOGLE_CLIENT_SECRET"
+          require_env_key "APP_JWT_SECRET"
+          require_env_key "SOCIAL_AUTH_CALLBACK_BASE_URL"
+          require_env_key "SOCIAL_AUTH_DASHBOARD_URL"
+          require_exact_https_url "SOCIAL_AUTH_CALLBACK_BASE_URL" "https://${{ steps.target.outputs.api_host }}/api/auth/social"
+          require_exact_https_url "SOCIAL_AUTH_DASHBOARD_URL" "https://staging.app.helloautoflow.com"
+          require_origin_in_allowlist "https://staging.app.helloautoflow.com"
+
+      - name: Deploy backend to Azure Container Apps
+        env:
+          BACKEND_ENV_STAGING_SOCIAL_AUTH: ${{ secrets.AZURE_BACKEND_ENV_STAGING_SOCIAL_AUTH }}
+          GOOGLE_CLIENT_ID: ${{ vars.GOOGLE_CLIENT_ID }}
+          STAGING_SOCIAL_AUTH_CLIENT_ID: ${{ vars.AZURE_BACKEND_ENV_STAGING_SOCIAL_AUTH_CLIENTID }}
+        run: |
+          set -euo pipefail
+
+          tmpfile="$(mktemp)"
+          trap 'rm -f "$tmpfile"' EXIT
+          printf '%s\n' "$BACKEND_ENV_STAGING_SOCIAL_AUTH" > "$tmpfile"
+
+          client_id="${GOOGLE_CLIENT_ID:-}"
+          if [ -z "$client_id" ]; then
+            client_id="${STAGING_SOCIAL_AUTH_CLIENT_ID:-}"
+          fi
+
+          if [ -n "$client_id" ] && ! grep -Eq '^GOOGLE_CLIENT_ID=.+' "$tmpfile"; then
+            printf '\nGOOGLE_CLIENT_ID=%s\n' "$client_id" >> "$tmpfile"
+          fi
+
+          env_args=()
+          while IFS= read -r line || [ -n "$line" ]; do
+            trimmed="$(printf '%s' "$line" | tr -d '\r' | sed -E 's/[[:space:]]+$//')"
+            if [ -z "$trimmed" ] || printf '%s' "$trimmed" | grep -Eq '^[[:space:]]*#'; then
+              continue
+            fi
+            env_args+=("$trimmed")
+          done < "$tmpfile"
+
           az containerapp update \
             --name "${{ steps.discover.outputs.container_app }}" \
             --resource-group "${{ steps.discover.outputs.resource_group }}" \
             --image "${{ steps.target.outputs.image_tag }}" \
             --set-env-vars \
+              "${env_args[@]}" \
               QA_AUTH_BYPASS_ENABLED="${{ steps.target.outputs.qa_bypass_enabled }}" \
               QA_AUTH_BYPASS_USER_IDS="${{ steps.target.outputs.qa_bypass_users }}"
 
@@ -287,7 +409,8 @@ jobs:
     name: Build and Deploy Production Backend to AKS
     if: >-
       ${{
-        github.event_name == 'push' ||
+        github.ref == 'refs/heads/master' ||
+        github.ref == 'refs/heads/main' ||
         (github.event_name == 'workflow_dispatch' &&
          github.event.inputs.environment == 'production')
       }}
@@ -437,6 +560,77 @@ jobs:
           trap 'rm -f "$tmpfile"' EXIT
           printf '%s\n' "${BACKEND_ENV_PRODUCTION}" > "$tmpfile"
 
+          require_env_key() {
+            local key="$1"
+            if ! grep -Eq "^${key}=.+" "$tmpfile"; then
+              echo "::error::AZURE_BACKEND_ENV_PRODUCTION is missing required key ${key}"
+              exit 1
+            fi
+          }
+
+          read_env_value() {
+            local key="$1"
+            sed -n "s/^${key}=//p" "$tmpfile" | tail -n 1
+          }
+
+          normalize_https_url() {
+            local value="$1"
+            value="${value%%#*}"
+            value="$(printf '%s' "$value" | tr -d '\r' | sed -E 's/[[:space:]]+$//')"
+            value="${value%/}"
+            printf '%s' "$value"
+          }
+
+          require_exact_env_value() {
+            local key="$1"
+            local expected="$2"
+            local actual
+            actual="$(normalize_https_url "$(read_env_value "$key")")"
+            if [ "$actual" != "$expected" ]; then
+              echo "::error::AZURE_BACKEND_ENV_PRODUCTION must set ${key}=${expected}; found ${actual:-<empty>}"
+              exit 1
+            fi
+          }
+
+          require_any_env_key() {
+            for key in "$@"; do
+              if grep -Eq "^${key}=.+" "$tmpfile"; then
+                return 0
+              fi
+            done
+            echo "::error::AZURE_BACKEND_ENV_PRODUCTION must include one of: $*"
+            exit 1
+          }
+
+          require_env_key "ALLOWED_ORIGINS"
+          require_any_env_key "AZURE_CIAM_TENANT_ID" "AZURE_TENANT_ID"
+          require_any_env_key "AZURE_CIAM_TENANT_SUBDOMAIN" "AZURE_TENANT_SUBDOMAIN"
+          require_any_env_key "AZURE_CIAM_CLIENT_ID" "AZURE_CIAM_ALLOWED_AUDIENCES" "AZURE_CLIENT_ID"
+          require_env_key "AZURE_CIAM_AUTHORITY"
+          require_env_key "AUTH_NATIVE_AUTH_PROXY_BASE_URL"
+
+          if ! printf '%s' "$(read_env_value "ALLOWED_ORIGINS")" | tr ',' '\n' | grep -Fxq "https://app.helloautoflow.com"; then
+            echo "::error::AZURE_BACKEND_ENV_PRODUCTION must allow https://app.helloautoflow.com in ALLOWED_ORIGINS"
+            exit 1
+          fi
+
+          TENANT_ID_VALUE="$(read_env_value "AZURE_CIAM_TENANT_ID")"
+          if [ -z "$TENANT_ID_VALUE" ]; then
+            TENANT_ID_VALUE="$(read_env_value "AZURE_TENANT_ID")"
+          fi
+
+          TENANT_SUBDOMAIN_VALUE="$(read_env_value "AZURE_CIAM_TENANT_SUBDOMAIN")"
+          if [ -z "$TENANT_SUBDOMAIN_VALUE" ]; then
+            TENANT_SUBDOMAIN_VALUE="$(read_env_value "AZURE_TENANT_SUBDOMAIN")"
+          fi
+
+          TENANT_ID_VALUE="$(printf '%s' "$TENANT_ID_VALUE" | tr -d '\r' | xargs)"
+          TENANT_SUBDOMAIN_VALUE="$(printf '%s' "$TENANT_SUBDOMAIN_VALUE" | tr -d '\r' | xargs)"
+          EXPECTED_CIAM_AUTHORITY="https://${TENANT_SUBDOMAIN_VALUE}.ciamlogin.com/${TENANT_ID_VALUE}"
+
+          require_exact_env_value "AZURE_CIAM_AUTHORITY" "$EXPECTED_CIAM_AUTHORITY"
+          require_exact_env_value "AUTH_NATIVE_AUTH_PROXY_BASE_URL" "$EXPECTED_CIAM_AUTHORITY"
+
           kubectl apply -f k8s/production/namespace.yaml
           kubectl create secret generic "${{ steps.target.outputs.k8s_secret_name }}" \
             --from-env-file="$tmpfile" \
@@ -495,49 +689,7 @@ jobs:
           set -euo pipefail
 
           NAMESPACE="${{ steps.target.outputs.k8s_namespace }}"
-          TARGET=""
           INGRESS_TARGET=""
-
-          for i in $(seq 1 30); do
-            TARGET=$(kubectl get svc backend -n "$NAMESPACE" -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null || true)
-            if [ -z "$TARGET" ]; then
-              TARGET=$(kubectl get svc backend -n "$NAMESPACE" -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || true)
-            fi
-            if [ -n "$TARGET" ]; then
-              break
-            fi
-            echo "Waiting for production backend LoadBalancer endpoint ($i/30)"
-            sleep 10
-          done
-
-          if [ -z "$TARGET" ]; then
-            echo "::error::Production backend service did not receive a public load balancer endpoint."
-            kubectl describe svc backend -n "$NAMESPACE"
-            exit 1
-          fi
-
-          for i in $(seq 1 20); do
-            HEALTH_STATUS=$(curl -s -o /tmp/health.txt -w "%{http_code}" "http://${TARGET}/health" || true)
-            echo "Attempt $i: /health => $HEALTH_STATUS"
-            if [ "$HEALTH_STATUS" = "200" ]; then
-              break
-            fi
-            sleep 10
-          done
-
-          if [ "${HEALTH_STATUS:-}" != "200" ]; then
-            echo "::error::Production /health never returned 200"
-            cat /tmp/health.txt || true
-            kubectl logs deployment/backend -n "$NAMESPACE" --tail=100 || true
-            exit 1
-          fi
-
-          RUNS_STATUS=$(curl -s -o /tmp/runs.json -w "%{http_code}" "http://${TARGET}/api/runs" || true)
-          if [ "$RUNS_STATUS" != "401" ]; then
-            echo "::error::Expected production /api/runs to require auth with 401, got $RUNS_STATUS"
-            cat /tmp/runs.json || true
-            exit 1
-          fi
 
           for i in $(seq 1 30); do
             INGRESS_TARGET=$(kubectl get svc ingress-nginx-controller -n ingress-nginx -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || true)
@@ -614,4 +766,27 @@ jobs:
             exit 1
           fi
 
-          echo "Production smoke tests passed against ${TARGET} and TLS ingress ${INGRESS_TARGET}."
+          NATIVE_AUTH_STATUS=""
+          for i in $(seq 1 10); do
+            NATIVE_AUTH_STATUS=$(curl -sS --connect-timeout 10 \
+              --resolve "${{ steps.target.outputs.api_host }}:443:${INGRESS_TARGET}" \
+              -H "Origin: https://app.helloautoflow.com" \
+              -H "Content-Type: application/x-www-form-urlencoded" \
+              -H "Accept: application/json" \
+              --data "client_id=smoke-client&scope=openid%20profile%20email&username=smoke%40helloautoflow.test&challenge_type=oob%20password%20redirect" \
+              -o /tmp/native-auth-initiate.json -w "%{http_code}" \
+              "https://${{ steps.target.outputs.api_host }}/api/auth/native/oauth2/v2.0/initiate" || true)
+            echo "Attempt $i: native auth initiate => $NATIVE_AUTH_STATUS"
+            if [ "$NATIVE_AUTH_STATUS" = "200" ] || [ "$NATIVE_AUTH_STATUS" = "400" ]; then
+              break
+            fi
+            sleep 5
+          done
+
+          if [ "$NATIVE_AUTH_STATUS" != "200" ] && [ "$NATIVE_AUTH_STATUS" != "400" ]; then
+            echo "::error::Expected native auth initiate smoke check to return 200/400 through ingress, got $NATIVE_AUTH_STATUS"
+            cat /tmp/native-auth-initiate.json || true
+            exit 1
+          fi
+
+          echo "Production smoke tests passed through TLS ingress ${INGRESS_TARGET}."

@@ -25,6 +25,10 @@ Optional staging overrides:
 - Push to `staging` touching `dashboard/**` triggers staging SWA deploy.
 - Pull request previews stay on the Vercel-based dashboard preview workflow; `deploy-swa.yml` is branch-deploy only.
 
+## Build artifact requirement
+
+Azure Static Web Apps only honors `staticwebapp.config.json` when the file is present in the deployed app artifact. This workflow deploys `dashboard/dist`, so the build must render `dashboard/dist/staticwebapp.config.json` before upload. `npm run build:swa` handles this by templating `dashboard/staticwebapp.config.template.json` with the branch-specific `VITE_API_BASE_URL`.
+
 ## Provision the SWA resources via IaC
 
 Use `infra/swa/main.bicep` for both production and staging so the setup stays reproducible.
@@ -80,4 +84,4 @@ After provisioning:
 ## Common failure modes
 - Missing `AZURE_STATIC_WEB_APPS_API_TOKEN` or `AZURE_STATIC_WEB_APPS_STAGING_API_TOKEN`: deployment action fails authentication for the targeted branch.
 - Missing `VITE_*` secrets: build succeeds with fallback/default auth settings; login may fail at runtime.
-- Proxy route errors (`/api/*`): confirm backend DNS/TLS and CORS policy for SWA origin.
+- Proxy route errors (`/api/*`): confirm `dashboard/dist/staticwebapp.config.json` exists in the deployed artifact, then confirm backend DNS/TLS and CORS policy for the SWA origin.

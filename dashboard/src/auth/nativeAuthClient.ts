@@ -1,8 +1,35 @@
 import type { StoredAuthSession, StoredAuthUser } from "./authStorage";
 
 const DEFAULT_CIAM_CLIENT_ID = "2dfd3a08-277c-4893-b07d-eca5ae322310";
-const DEFAULT_SCOPE = "openid profile email offline_access";
-const NATIVE_AUTH_PROXY_BASE = "/api/auth/native";
+const DEFAULT_API_SCOPE = `api://${DEFAULT_CIAM_CLIENT_ID}/access_as_user`;
+const DEFAULT_SCOPE = `openid profile email offline_access ${DEFAULT_API_SCOPE}`;
+
+/**
+ * In production the dashboard is served by Vercel and API calls go through a
+ * Vercel rewrite (`/api/* → https://api.helloautoflow.com/api/*`).  Vercel
+ * rewrites can silently drop or corrupt POST bodies in certain browsers,
+ * causing Azure CIAM to report missing parameters (AADSTS900144).
+ *
+ * Bypass the rewrite by sending native-auth requests directly to the API
+ * backend when running on the production dashboard domain.
+ */
+function resolveNativeAuthProxyBase(): string {
+  const envBase = import.meta.env.VITE_API_BASE_URL;
+  if (typeof envBase === "string" && envBase.trim()) {
+    return `${envBase.replace(/\/+$/, "")}/api/auth/native`;
+  }
+
+  if (
+    typeof window !== "undefined" &&
+    window.location.hostname === "app.helloautoflow.com"
+  ) {
+    return "https://api.helloautoflow.com/api/auth/native";
+  }
+
+  return "/api/auth/native";
+}
+
+const NATIVE_AUTH_PROXY_BASE = resolveNativeAuthProxyBase();
 
 type NativeAuthPrimitive = string | number | boolean | null | undefined;
 type NativeAuthPayload = Record<string, NativeAuthPrimitive>;
@@ -29,6 +56,8 @@ export type NativeAuthTokenResponse = {
   id_token?: string;
 };
 
+export type SocialAuthProvider = "google" | "facebook" | "apple";
+
 export class NativeAuthError extends Error {
   readonly code?: string;
   readonly description?: string;
@@ -43,21 +72,25 @@ export class NativeAuthError extends Error {
   }
 }
 
+export function isRedirectRequired(error: unknown): boolean {
+  return error instanceof NativeAuthError && error.code === "redirect_required";
+}
+
 function clientId(): string {
   return import.meta.env.VITE_AZURE_CIAM_CLIENT_ID ?? DEFAULT_CIAM_CLIENT_ID;
 }
 
-function buildFormBody(input: NativeAuthPayload): URLSearchParams {
-  const params = new URLSearchParams();
+function buildJsonBody(input: NativeAuthPayload): string {
+  const clean: Record<string, string> = {};
 
   for (const [key, value] of Object.entries(input)) {
     if (value === undefined || value === null || value === "") {
       continue;
     }
-    params.set(key, String(value));
+    clean[key] = String(value);
   }
 
-  return params;
+  return JSON.stringify(clean);
 }
 
 async function readNativeAuthError(response: Response): Promise<NativeAuthError> {
@@ -74,10 +107,10 @@ async function postForm<T>(path: string, payload: NativeAuthPayload): Promise<T>
   const response = await fetch(`${NATIVE_AUTH_PROXY_BASE}/${path}`, {
     method: "POST",
     headers: {
-      "Content-Type": "application/x-www-form-urlencoded",
+      "Content-Type": "application/json",
       Accept: "application/json",
     },
-    body: buildFormBody(payload),
+    body: buildJsonBody(payload),
   });
 
   if (!response.ok) {
@@ -165,6 +198,33 @@ export function sessionFromTokenResponse(tokens: NativeAuthTokenResponse): Store
   };
 }
 
+export function sessionFromAppToken(
+  accessToken: string,
+  provider?: SocialAuthProvider
+): StoredAuthSession {
+  const accessTokenClaims = decodeJwtPayload(accessToken);
+  if (!accessTokenClaims) {
+    throw new NativeAuthError("Social sign-in returned an unreadable access token.", 400);
+  }
+
+  const expiresAtClaim = accessTokenClaims.exp;
+  if (typeof expiresAtClaim !== "number") {
+    throw new NativeAuthError("Social sign-in token is missing an expiration timestamp.", 400);
+  }
+
+  const user = claimsToUser(null, accessTokenClaims);
+
+  if (!user.name.trim()) {
+    user.name = provider ? `${provider[0].toUpperCase()}${provider.slice(1)} user` : user.email;
+  }
+
+  return {
+    accessToken,
+    expiresAt: expiresAtClaim * 1000,
+    user,
+  };
+}
+
 export function isSessionExpiring(session: StoredAuthSession | null, thresholdMs = 60_000): boolean {
   if (!session) {
     return true;
@@ -183,22 +243,32 @@ export async function refreshNativeAuthSession(refreshToken: string): Promise<Na
 }
 
 export async function signInWithPassword(email: string, password: string): Promise<NativeAuthTokenResponse> {
-  const initiated = await postForm<NativeAuthFlowResponse>("oauth/v2.0/initiate", {
+  const initiated = await postForm<NativeAuthFlowResponse>("oauth2/v2.0/initiate", {
     client_id: clientId(),
     scope: DEFAULT_SCOPE,
     username: email,
     challenge_type: "oob password redirect",
+    capabilities: "registration_required mfa_required",
   });
 
   if (!initiated.continuation_token) {
     throw new NativeAuthError("Sign-in did not return a continuation token.", 500);
   }
 
-  const challenged = await postForm<NativeAuthFlowResponse>("challenge/v1.0/continue", {
+  const challenged = await postForm<NativeAuthFlowResponse>("oauth2/v2.0/challenge", {
     client_id: clientId(),
     continuation_token: initiated.continuation_token,
-    challenge_type: "password",
+    challenge_type: "password redirect",
   });
+
+  if (challenged.challenge_type === "redirect") {
+    throw new NativeAuthError(
+      "This account uses Microsoft sign-in. Use the \"Sign in with Microsoft\" button instead.",
+      400,
+      "redirect_required",
+      "This account was created with Microsoft and doesn't have a password. Use the \"Sign in with Microsoft\" button below.",
+    );
+  }
 
   const continuationToken = challenged.continuation_token ?? initiated.continuation_token;
 
@@ -218,14 +288,15 @@ export async function startSignUp(email: string, password: string, displayName: 
     password,
     challenge_type: "oob password redirect",
     attributes: JSON.stringify({ displayName }),
+    capabilities: "registration_required mfa_required",
   });
 }
 
 export async function challengeSignUp(continuationToken: string): Promise<NativeAuthFlowResponse> {
-  return postForm<NativeAuthFlowResponse>("challenge/v1.0/continue", {
+  return postForm<NativeAuthFlowResponse>("signup/v1.0/challenge", {
     client_id: clientId(),
     continuation_token: continuationToken,
-    challenge_type: "oob",
+    challenge_type: "oob password redirect",
   });
 }
 
@@ -233,6 +304,7 @@ export async function continueSignUp(continuationToken: string, code: string): P
   return postForm<NativeAuthFlowResponse>("signup/v1.0/continue", {
     client_id: clientId(),
     continuation_token: continuationToken,
+    grant_type: "oob",
     oob: code,
   });
 }
@@ -255,7 +327,7 @@ export async function startPasswordReset(email: string): Promise<NativeAuthFlowR
 }
 
 export async function challengePasswordReset(continuationToken: string): Promise<NativeAuthFlowResponse> {
-  return postForm<NativeAuthFlowResponse>("challenge/v1.0/continue", {
+  return postForm<NativeAuthFlowResponse>("resetpassword/v1.0/challenge", {
     client_id: clientId(),
     continuation_token: continuationToken,
     challenge_type: "oob",
@@ -266,6 +338,7 @@ export async function continuePasswordReset(continuationToken: string, code: str
   return postForm<NativeAuthFlowResponse>("resetpassword/v1.0/continue", {
     client_id: clientId(),
     continuation_token: continuationToken,
+    grant_type: "oob",
     oob: code,
   });
 }

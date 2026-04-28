@@ -67,11 +67,13 @@ Runtime environment variables required in the Vercel dashboard project:
 
 ## Daily operations
 
-- **Deploy backend:** merge to `main` — GitHub Actions builds Docker images, pushes to ghcr.io, deploys to Azure.
+- **Deploy backend staging:** push to `staging` — `.github/workflows/deploy-azure.yml` builds the backend image, deploys the staging Container App, and runs the staging smoke checks.
+- **Deploy backend production:** merge to `master` — `.github/workflows/deploy-azure.yml` builds the backend image, deploys AKS, and runs the production smoke checks.
+- **Promotion flow:** agents open feature-branch PRs into `staging`; production promotion happens through a dedicated `staging` -> `master` PR after staging validation passes.
 - **Preview dashboard:** non-production dashboard branches use `.github/workflows/dashboard-staging-gate.yml` to create Vercel preview deployments.
 - **Deploy dashboard production:** push to `master` with `dashboard/` changes — GitHub Actions deploys to the production SWA host.
 - **Deploy dashboard staging:** push to `staging` with `dashboard/` changes — GitHub Actions deploys to the staging SWA host.
-- **Enforce branch protection:** run `enforce-branch-protection.yml` to require PR reviews plus CI gate(s) on `main`/`master`. Default required check is `Docker Build Check` with strict up-to-date enforcement.
+- **Enforce branch protection:** run `enforce-branch-protection.yml` to require CI on both protected branches, plus an extra `Staging-First Promotion Gate` and code-owner approval on `master`. Both branches disallow direct pushes, and `master` promotions must come from a PR whose head branch is exactly `staging`.
 - **Rollback:** redeploy a previous image tag (backend) or follow `infra/runbooks/swa-dashboard-deploy.md` for dashboard DNS/rollback.
 
 ## Infrastructure as Code
@@ -100,6 +102,13 @@ Recommended dashboard host split:
 - Workflow: `.github/workflows/qa-integration-evidence.yml`
 - Smoke script: `infra/scripts/qa_integration_smoke.sh`
 - Runbook: `infra/runbooks/qa-integration-environment.md`
+
+## CIAM Native Auth Password Reset
+
+- Enable tenant-side Email OTP SSPR before relying on `resetpassword/v1.0/*` in native auth.
+- Script: `infra/azure/scripts/enable-ciam-native-auth-sspr.sh`
+- Verification: `infra/azure/scripts/verify-ciam-native-auth-sspr.sh`
+- Runbook: `infra/runbooks/ciam-native-auth-sspr.md`
 
 ## Brand asset infra package (ALT-1363)
 

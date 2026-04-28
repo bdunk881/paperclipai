@@ -34,6 +34,10 @@ locals {
     for uri in var.spa_redirect_uris :
     can(regex("^https?://[^/]+$", uri)) ? "${uri}/" : uri
   ]
+  msa_federation_redirect_uris = length(var.msa_federation_redirect_uris) > 0 ? var.msa_federation_redirect_uris : [
+    "https://${var.ciam_tenant_subdomain}.ciamlogin.com/${var.existing_ciam_tenant_id}/federation/oauth2",
+    "https://${var.ciam_tenant_subdomain}.ciamlogin.com/${var.ciam_tenant_subdomain}.onmicrosoft.com/federation/oauth2",
+  ]
 }
 
 # ── CIAM Directory ──────────────────────────────────────────────────────────
@@ -65,7 +69,7 @@ resource "azurerm_aadb2c_directory" "ciam" {
 
 resource "azuread_application" "autoflow_spa" {
   display_name     = "${var.prefix}-dashboard"
-  sign_in_audience = "AzureADandPersonalMicrosoftAccount"
+  sign_in_audience = "AzureADMyOrg"
 
   single_page_application {
     redirect_uris = local.normalized_spa_redirect_uris
@@ -95,7 +99,7 @@ resource "azuread_application" "autoflow_spa" {
   web {
     implicit_grant {
       access_token_issuance_enabled = false
-      id_token_issuance_enabled     = true
+      id_token_issuance_enabled     = false
     }
   }
 
@@ -109,4 +113,44 @@ resource "azuread_application" "autoflow_spa" {
       tags,
     ]
   }
+}
+
+resource "azuread_application" "autoflow_msa_federation" {
+  display_name     = var.msa_federation_display_name
+  sign_in_audience = "AzureADandPersonalMicrosoftAccount"
+
+  web {
+    homepage_url  = "https://app.helloautoflow.com/login"
+    redirect_uris = local.msa_federation_redirect_uris
+
+    implicit_grant {
+      access_token_issuance_enabled = false
+      id_token_issuance_enabled     = false
+    }
+  }
+
+  api {
+    requested_access_token_version = 2
+  }
+
+  optional_claims {
+    id_token {
+      name = "family_name"
+    }
+
+    id_token {
+      name = "given_name"
+    }
+  }
+
+  lifecycle {
+    ignore_changes = [
+      tags,
+    ]
+  }
+}
+
+resource "azuread_application_password" "autoflow_msa_federation" {
+  application_id = azuread_application.autoflow_msa_federation.id
+  display_name   = "Terraform-managed Microsoft Account OIDC secret"
 }

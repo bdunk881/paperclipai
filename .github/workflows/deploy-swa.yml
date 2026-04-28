@@ -43,7 +43,7 @@ jobs:
           action: upload
           app_location: dashboard
           output_location: dist
-          app_build_command: CI= npm run build
+          app_build_command: CI= npm run build:swa
         env:
           VITE_API_BASE_URL: ${{ env.VITE_API_BASE_URL }}
           VITE_API_URL: ${{ env.VITE_API_BASE_URL }}

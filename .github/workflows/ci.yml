@@ -2,9 +2,9 @@ name: CI
 
 on:
   pull_request:
-    branches: [master, main]
+    branches: [master, main, staging]
   push:
-    branches: [master, main]
+    branches: [master, main, staging]
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -64,7 +64,7 @@ jobs:
         image: postgres:16
         env:
           POSTGRES_USER: autoflow
-          POSTGRES_PASSWORD: ${{ secrets.CI_POSTGRES_PASSWORD }}
+          POSTGRES_PASSWORD: autoflow
           POSTGRES_DB: autoflow_test
         options: >-
           --health-cmd pg_isready
@@ -86,7 +86,7 @@ jobs:
       run:
         working-directory: backend
     env:
-      DATABASE_URL: postgresql://autoflow:${{ secrets.CI_POSTGRES_PASSWORD }}@localhost:5432/autoflow_test
+      DATABASE_URL: postgresql://autoflow:autoflow@localhost:5432/autoflow_test
       REDIS_URL: redis://localhost:6379
       ENV: test
     steps:
@@ -96,13 +96,15 @@ jobs:
           python-version: "3.12"
           cache: pip
       - run: pip install -r requirements.txt -r requirements-dev.txt
-      - run: pytest --cov=. --cov-report=xml --cov-fail-under=80 -q
-      - uses: codecov/codecov-action@v4
+      - run: pytest --cov=. --cov-report=xml:coverage.xml --cov-fail-under=80 -q
+      - uses: codecov/codecov-action@v5
         if: always()
         with:
-          file: backend/coverage.xml
+          files: backend/coverage.xml
+          disable_search: true
           flags: backend
           fail_ci_if_error: false
+          handle_no_reports_found: true
 
   test-api:
     name: Test API (TypeScript)

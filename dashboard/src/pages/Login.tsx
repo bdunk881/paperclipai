@@ -1,13 +1,21 @@
-import { FormEvent, useMemo, useState } from "react";
+import { FormEvent, useMemo, useRef, useState } from "react";
+import type { AuthenticationResult } from "@azure/msal-browser";
+import { BrowserAuthError, BrowserAuthErrorCodes } from "@azure/msal-browser";
 import { Loader2, ArrowRight, CheckCircle2, KeyRound, Mail, ShieldCheck } from "lucide-react";
 import { useNavigate, useSearchParams } from "react-router-dom";
+import { getConfiguredApiOrigin } from "../api/baseUrl";
+import { navigateToSocialAuth } from "../auth/socialAuthNavigation";
+import { loginRequest, signupRequest } from "../auth/msalConfig";
+import { initializeMsalInstance, msalInstance } from "../auth/msalInstance";
 import {
   NativeAuthError,
+  type SocialAuthProvider,
   challengePasswordReset,
   challengeSignUp,
   continuePasswordReset,
   continueSignUp,
   exchangeContinuationToken,
+  isRedirectRequired,
   pollPasswordResetCompletion,
   sessionFromTokenResponse,
   signInWithPassword,
@@ -15,7 +23,7 @@ import {
   startSignUp,
   submitPasswordReset,
 } from "../auth/nativeAuthClient";
-import { writeStoredAuthSession } from "../auth/authStorage";
+import { StoredAuthSession, writeStoredAuthSession } from "../auth/authStorage";
 
 type AuthMode = "signin" | "signup" | "reset";
 
@@ -38,6 +46,14 @@ type PendingReset = {
 
 const lockupUrl = new URL("../../../infra/brand-assets/payload/logos/product/lockup.svg", import.meta.url).href;
 const noiseUrl = new URL("../../../infra/brand-assets/payload/textures/noise-overlay.svg", import.meta.url).href;
+const googleLogoUrl = new URL("../../../infra/brand-assets/payload/logos/integrations/google/logo.svg", import.meta.url).href;
+const facebookLogoUrl = new URL("../../../infra/brand-assets/payload/logos/integrations/facebook/logo.svg", import.meta.url).href;
+const appleLogoUrl = new URL("../../../infra/brand-assets/payload/logos/integrations/apple/logo.svg", import.meta.url).href;
+const socialProviders: Array<{ key: SocialAuthProvider; label: string }> = [
+  { key: "google", label: "Google" },
+  { key: "facebook", label: "Facebook" },
+  { key: "apple", label: "Apple" },
+];
 
 function resolveMode(value: string | null): AuthMode {
   if (value === "signup") return "signup";
@@ -52,6 +68,10 @@ function prettyTarget(target: string | undefined, fallback: string): string {
 
 function mapNativeAuthError(error: unknown): string {
   if (!(error instanceof NativeAuthError)) {
+    console.error("[NativeAuth] Non-auth error (possible CORS/network issue):", error);
+    if (error instanceof TypeError) {
+      return "Unable to reach the authentication server. This may be a network or CORS issue — check the browser console for details.";
+    }
     return "Authentication failed. Check your details and try again.";
   }
 
@@ -74,12 +94,88 @@ function mapNativeAuthError(error: unknown): string {
   }
 
   if (error.code === "unsupported_challenge_type") {
+    console.error("[NativeAuth] unsupported_challenge_type detail:", error.description ?? error.message);
     return "This sign-in method is not supported. Contact your administrator.";
+  }
+
+  if (error.code === "redirect_required") {
+    return "This account uses Microsoft sign-in. Use the \"Sign in with Microsoft\" button below.";
+  }
+
+  if (normalized.includes("500222") || normalized.includes("does not support native credential recovery")) {
+    return "This account was created with Microsoft and cannot reset its password here. Sign in with the \"Sign in with Microsoft\" button instead, or reset your password at your email provider.";
+  }
+
+  if (normalized.includes("1003037") || normalized.includes("already have an account")) {
+    return "An account with this email already exists. Switch to \"Sign in\" and use the \"Sign in with Microsoft\" button.";
+  }
+
+  if (normalized.includes("aadsts1003037") || normalized.includes("already have an account")) {
+    return "An account with this email already exists. Switch to \"Sign in\" or use \"Sign in with Microsoft\" instead.";
+  }
+
+  if (normalized.includes("aadsts500222") || normalized.includes("does not support native credential recovery")) {
+    return "Password reset is not available for this account. Use \"Sign in with Microsoft\" on the Sign in tab instead.";
   }
 
   // Surface the actual Azure error for unrecognized codes so they can be diagnosed.
   console.warn("[NativeAuth] Unhandled error:", error.code, error.description ?? error.message);
   return error.description ?? error.message;
+}
+
+function firstString(value: unknown): string | undefined {
+  if (typeof value === "string" && value.trim()) return value;
+  if (!Array.isArray(value)) return undefined;
+
+  const candidate = value.find((entry) => typeof entry === "string" && entry.trim());
+  return typeof candidate === "string" ? candidate : undefined;
+}
+
+function sessionFromMicrosoftResult(result: AuthenticationResult): StoredAuthSession {
+  const claims = (result.idTokenClaims ?? {}) as Record<string, unknown>;
+  const email =
+    result.account?.username ??
+    firstString(claims.email) ??
+    firstString(claims.preferred_username) ??
+    firstString(claims.emails) ??
+    "unknown@autoflow.local";
+  const name =
+    result.account?.name ??
+    firstString(claims.name) ??
+    firstString(claims.given_name) ??
+    email;
+
+  return {
+    accessToken: result.accessToken || result.idToken,
+    idToken: result.idToken || undefined,
+    expiresAt: result.expiresOn?.getTime() ?? Date.now() + 60 * 60 * 1000,
+    scope: result.scopes.join(" "),
+    user: {
+      id: result.account?.homeAccountId ?? result.account?.localAccountId ?? email,
+      email,
+      name,
+      tenantId: result.account?.tenantId ?? firstString(claims.tid),
+    },
+  };
+}
+
+function mapMicrosoftAuthError(error: unknown): string {
+  if (!(error instanceof BrowserAuthError)) {
+    return "Microsoft sign-in failed. Try again in a new browser tab.";
+  }
+
+  switch (error.errorCode) {
+    case BrowserAuthErrorCodes.popupWindowError:
+    case BrowserAuthErrorCodes.emptyWindowError:
+    case BrowserAuthErrorCodes.timedOut:
+      return "Microsoft sign-in needs a popup window. Allow popups for AutoFlow and try again.";
+    case BrowserAuthErrorCodes.userCancelled:
+      return "Microsoft sign-in was canceled before completion.";
+    case "interaction_in_progress":
+      return "Microsoft sign-in is already in progress. Finish the open popup or close it before trying again.";
+    default:
+      return error.message || "Microsoft sign-in failed. Please try again.";
+  }
 }
 
 function cardTitle(mode: AuthMode, pendingSignUp: PendingSignUp | null, pendingReset: PendingReset | null): string {
@@ -107,6 +203,7 @@ export default function Login() {
   const [searchParams, setSearchParams] = useSearchParams();
   const mode = resolveMode(searchParams.get("mode"));
   const qaPreviewError = searchParams.get("qaPreviewError") === "invalid";
+  const socialAuthError = searchParams.get("socialAuthError");
 
   const [signinEmail, setSigninEmail] = useState("");
   const [signinPassword, setSigninPassword] = useState("");
@@ -122,11 +219,20 @@ export default function Login() {
   const [pendingSignUp, setPendingSignUp] = useState<PendingSignUp | null>(null);
   const [pendingReset, setPendingReset] = useState<PendingReset | null>(null);
   const [busy, setBusy] = useState(false);
+  const [microsoftAction, setMicrosoftAction] = useState<"signin" | "signup" | null>(null);
+  const [socialProvider, setSocialProvider] = useState<SocialAuthProvider | null>(null);
+  const microsoftInteractionInFlightRef = useRef(false);
   const [error, setError] = useState(
-    qaPreviewError ? "Preview access link is invalid, expired, or not enabled for this deployment." : ""
+    qaPreviewError
+      ? "Preview access link is invalid, expired, or not enabled for this deployment."
+      : socialAuthError
+        ? socialAuthError.replace(/\+/g, " ")
+        : ""
   );
   const [notice, setNotice] = useState("");
   const [shakeKey, setShakeKey] = useState(0);
+  const isAnyBusy = busy || microsoftAction !== null || socialProvider !== null;
+  const hasSocialError = Boolean(socialAuthError);
 
   const signals = useMemo(
     () => [
@@ -151,15 +257,64 @@ export default function Login() {
       nextParams.set("mode", nextMode);
     }
     nextParams.delete("qaPreviewError");
+    nextParams.delete("socialAuthError");
     setSearchParams(nextParams);
     setError("");
     setNotice("");
+  }
+
+  function socialAuthRedirectUrl(provider: SocialAuthProvider): string {
+    const apiOrigin = getConfiguredApiOrigin();
+    const base = apiOrigin || window.location.origin;
+    const target = new URL(`/api/auth/social/${provider}`, base);
+    target.searchParams.set("redirect_uri", `${window.location.origin}/auth/social-callback`);
+    return target.toString();
+  }
+
+  function handleSocialAuth(provider: SocialAuthProvider) {
+    setSocialProvider(provider);
+    setError("");
+    setNotice("");
+
+    try {
+      navigateToSocialAuth(socialAuthRedirectUrl(provider));
+    } catch (authError) {
+      setSocialProvider(null);
+      triggerError(authError instanceof Error ? authError.message : "Unable to start social sign-in.");
+    }
   }
 
   async function finalizeSession(tokenResponsePromise: Promise<ReturnType<typeof exchangeContinuationToken> extends Promise<infer T> ? T : never>) {
     const tokens = await tokenResponsePromise;
     writeStoredAuthSession(sessionFromTokenResponse(tokens));
     navigate("/", { replace: true });
+  }
+
+  async function handleMicrosoftAuth(action: "signin" | "signup") {
+    if (microsoftInteractionInFlightRef.current) {
+      triggerError("Microsoft sign-in is already in progress. Finish the open popup or close it before trying again.");
+      return;
+    }
+
+    microsoftInteractionInFlightRef.current = true;
+    setMicrosoftAction(action);
+    setError("");
+    setNotice("");
+
+    try {
+      await initializeMsalInstance();
+      const result = await msalInstance.loginPopup(action === "signup" ? signupRequest : loginRequest);
+      if (result.account) {
+        msalInstance.setActiveAccount(result.account);
+      }
+      writeStoredAuthSession(sessionFromMicrosoftResult(result));
+      navigate("/", { replace: true });
+    } catch (authError) {
+      triggerError(mapMicrosoftAuthError(authError));
+    } finally {
+      microsoftInteractionInFlightRef.current = false;
+      setMicrosoftAction(null);
+    }
   }
 
   async function handleSignIn(event: FormEvent<HTMLFormElement>) {
@@ -175,6 +330,12 @@ export default function Login() {
     try {
       await finalizeSession(signInWithPassword(signinEmail.trim(), signinPassword));
     } catch (authError) {
+      if (isRedirectRequired(authError)) {
+        setNotice("This account uses Microsoft sign-in. Redirecting\u2026");
+        setBusy(false);
+        handleMicrosoftAuth("signin");
+        return;
+      }
       triggerError(mapNativeAuthError(authError));
       setBusy(false);
     }
@@ -260,13 +421,25 @@ export default function Login() {
       setNotice("");
 
       try {
-        const started = await startPasswordReset(resetEmail.trim());
+        let started: Awaited<ReturnType<typeof startPasswordReset>>;
+        try {
+          started = await startPasswordReset(resetEmail.trim());
+        } catch (startErr) {
+          console.error("[NativeAuth] resetpassword/start failed:", startErr instanceof NativeAuthError ? { code: startErr.code, description: startErr.description, status: startErr.status } : startErr);
+          throw startErr;
+        }
         const continuationToken = started.continuation_token;
         if (!continuationToken) {
           throw new NativeAuthError("Password reset did not provide a continuation token.", 500);
         }
 
-        const challenged = await challengePasswordReset(continuationToken);
+        let challenged: Awaited<ReturnType<typeof challengePasswordReset>>;
+        try {
+          challenged = await challengePasswordReset(continuationToken);
+        } catch (challengeErr) {
+          console.error("[NativeAuth] resetpassword/challenge failed:", challengeErr instanceof NativeAuthError ? { code: challengeErr.code, description: challengeErr.description, status: challengeErr.status } : challengeErr);
+          throw challengeErr;
+        }
         setPendingReset({
           continuationToken: challenged.continuation_token ?? continuationToken,
           email: resetEmail.trim(),
@@ -409,12 +582,31 @@ export default function Login() {
 
             {mode === "signin" ? (
               <form onSubmit={handleSignIn} className="space-y-4 transition-all duration-300">
+                <p className="text-xs font-semibold uppercase tracking-[0.24em] text-slate-500">Or continue with</p>
+                <button
+                  type="button"
+                  disabled={isAnyBusy}
+                  onClick={() => void handleMicrosoftAuth("signin")}
+                  className="auth-microsoft-button"
+                >
+                  {microsoftAction === "signin" ? <Loader2 size={18} className="animate-spin" /> : <MicrosoftIcon />}
+                  {microsoftAction === "signin" ? "Redirecting..." : "Sign in with Microsoft"}
+                </button>
+                <SocialButtonRail
+                  mode="signin"
+                  activeProvider={socialProvider}
+                  disabled={isAnyBusy}
+                  showError={hasSocialError}
+                  onSelect={handleSocialAuth}
+                />
+                <SectionDivider label="Or sign in with email" />
                 <Field label="Work email" delay={0}>
                   <input
                     type="email"
                     autoComplete="email"
                     value={signinEmail}
                     onChange={(event) => setSigninEmail(event.target.value)}
+                    disabled={isAnyBusy}
                     className="auth-input"
                     placeholder="operator@company.com"
                   />
@@ -425,11 +617,12 @@ export default function Login() {
                     autoComplete="current-password"
                     value={signinPassword}
                     onChange={(event) => setSigninPassword(event.target.value)}
+                    disabled={isAnyBusy}
                     className="auth-input"
                     placeholder="Enter your password"
                   />
                 </Field>
-                <button type="submit" disabled={busy} className="auth-primary-button mt-2">
+                <button type="submit" disabled={isAnyBusy} className="auth-primary-button mt-2">
                   {busy ? <Loader2 size={18} className="animate-spin" /> : <ArrowRight size={18} />}
                   {busy ? "Authorizing..." : "Sign in"}
                 </button>
@@ -440,12 +633,31 @@ export default function Login() {
               <form onSubmit={handleSignUp} className="space-y-4 transition-all duration-300">
                 {!showSignupVerification ? (
                   <>
+                    <p className="text-xs font-semibold uppercase tracking-[0.24em] text-slate-500">Or continue with</p>
+                    <button
+                      type="button"
+                      disabled={isAnyBusy}
+                      onClick={() => void handleMicrosoftAuth("signup")}
+                      className="auth-microsoft-button"
+                    >
+                      {microsoftAction === "signup" ? <Loader2 size={18} className="animate-spin" /> : <MicrosoftIcon />}
+                      {microsoftAction === "signup" ? "Redirecting..." : "Sign up with Microsoft"}
+                    </button>
+                    <SocialButtonRail
+                      mode="signup"
+                      activeProvider={socialProvider}
+                      disabled={isAnyBusy}
+                      showError={hasSocialError}
+                      onSelect={handleSocialAuth}
+                    />
+                    <SectionDivider label="Or sign up with email" />
                     <Field label="Full name" delay={0}>
                       <input
                         type="text"
                         autoComplete="name"
                         value={signupName}
                         onChange={(event) => setSignupName(event.target.value)}
+                        disabled={isAnyBusy}
                         className="auth-input"
                         placeholder="Avery Quinn"
                       />
@@ -456,6 +668,7 @@ export default function Login() {
                         autoComplete="email"
                         value={signupEmail}
                         onChange={(event) => setSignupEmail(event.target.value)}
+                        disabled={isAnyBusy}
                         className="auth-input"
                         placeholder="avery@company.com"
                       />
@@ -466,6 +679,7 @@ export default function Login() {
                         autoComplete="new-password"
                         value={signupPassword}
                         onChange={(event) => setSignupPassword(event.target.value)}
+                        disabled={isAnyBusy}
                         className="auth-input"
                         placeholder="Choose a password"
                       />
@@ -476,6 +690,7 @@ export default function Login() {
                         autoComplete="new-password"
                         value={signupConfirmPassword}
                         onChange={(event) => setSignupConfirmPassword(event.target.value)}
+                        disabled={isAnyBusy}
                         className="auth-input"
                         placeholder="Repeat your password"
                       />
@@ -489,6 +704,7 @@ export default function Login() {
                       autoComplete="one-time-code"
                       value={signupCode}
                       onChange={(event) => setSignupCode(event.target.value)}
+                      disabled={isAnyBusy}
                       className="auth-input"
                       placeholder={
                         pendingSignUp?.codeLength ? `${pendingSignUp.codeLength}-digit code` : "Enter email code"
@@ -496,7 +712,7 @@ export default function Login() {
                     />
                   </Field>
                 )}
-                <button type="submit" disabled={busy} className="auth-primary-button mt-2">
+                <button type="submit" disabled={isAnyBusy} className="auth-primary-button mt-2">
                   {busy ? <Loader2 size={18} className="animate-spin" /> : showSignupVerification ? <CheckCircle2 size={18} /> : <ArrowRight size={18} />}
                   {busy ? "Processing..." : showSignupVerification ? "Verify and create account" : "Send verification code"}
                 </button>
@@ -513,6 +729,7 @@ export default function Login() {
                         autoComplete="email"
                         value={resetEmail}
                         onChange={(event) => setResetEmail(event.target.value)}
+                        disabled={isAnyBusy}
                         className="auth-input"
                         placeholder="operator@company.com"
                       />
@@ -523,6 +740,7 @@ export default function Login() {
                         autoComplete="new-password"
                         value={resetPassword}
                         onChange={(event) => setResetPassword(event.target.value)}
+                        disabled={isAnyBusy}
                         className="auth-input"
                         placeholder="Choose a new password"
                       />
@@ -533,6 +751,7 @@ export default function Login() {
                         autoComplete="new-password"
                         value={resetConfirmPassword}
                         onChange={(event) => setResetConfirmPassword(event.target.value)}
+                        disabled={isAnyBusy}
                         className="auth-input"
                         placeholder="Repeat the new password"
                       />
@@ -546,12 +765,13 @@ export default function Login() {
                       autoComplete="one-time-code"
                       value={resetCode}
                       onChange={(event) => setResetCode(event.target.value)}
+                      disabled={isAnyBusy}
                       className="auth-input"
                       placeholder={pendingReset?.codeLength ? `${pendingReset.codeLength}-digit code` : "Enter email code"}
                     />
                   </Field>
                 )}
-                <button type="submit" disabled={busy} className="auth-primary-button mt-2">
+                <button type="submit" disabled={isAnyBusy} className="auth-primary-button mt-2">
                   {busy ? <Loader2 size={18} className="animate-spin" /> : showResetVerification ? <CheckCircle2 size={18} /> : <ArrowRight size={18} />}
                   {busy ? "Processing..." : showResetVerification ? "Apply new password" : "Send reset code"}
                 </button>
@@ -570,6 +790,57 @@ export default function Login() {
   );
 }
 
+function SectionDivider({ label }: { label: string }) {
+  return (
+    <div className="auth-or-divider" aria-hidden="true">
+      <span>{label}</span>
+    </div>
+  );
+}
+
+function SocialButtonRail({
+  mode,
+  activeProvider,
+  disabled,
+  showError,
+  onSelect,
+}: {
+  mode: "signin" | "signup";
+  activeProvider: SocialAuthProvider | null;
+  disabled: boolean;
+  showError: boolean;
+  onSelect: (provider: SocialAuthProvider) => void;
+}) {
+  return (
+    <div className="space-y-3">
+      {socialProviders.map((provider) => {
+        const isActive = activeProvider === provider.key;
+        const actionLabel = mode === "signin" ? "Sign in" : "Sign up";
+        const borderClass = showError && !isActive ? "border-red-500 text-red-300" : "border-[#3f4655] text-[#e8eaee]";
+        const stateClass = isActive
+          ? "bg-[#1a1d23] text-[#8a8e99]"
+          : "bg-[#1a1d23] hover:bg-[#242932] hover:border-[#4f5769] hover:text-white active:bg-[#0f1117] active:border-[#5865f2] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#5865f2]";
+
+        return (
+          <button
+            key={provider.key}
+            type="button"
+            disabled={disabled}
+            onClick={() => onSelect(provider.key)}
+            className={`flex h-12 w-full items-center rounded-lg border px-4 text-sm font-medium transition duration-200 ease-out disabled:cursor-not-allowed disabled:border-[#2d3138] disabled:bg-[#0f1117] disabled:text-[#5a5f6b] ${borderClass} ${stateClass}`}
+            aria-label={`${actionLabel} with ${provider.label}`}
+          >
+            <span className="mr-4 flex h-6 w-6 items-center justify-center">
+              {isActive ? <Loader2 size={18} className="animate-spin text-[#8a8e99]" /> : <ProviderIcon provider={provider.key} disabled={disabled} />}
+            </span>
+            <span>{isActive ? "Redirecting..." : `${actionLabel} with ${provider.label}`}</span>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 function Field({
   label,
   delay,
@@ -584,5 +855,34 @@ function Field({
       <span className="mb-2 block text-xs font-medium uppercase tracking-[0.2em] text-slate-400">{label}</span>
       {children}
     </label>
+  );
+}
+
+function MicrosoftIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 21 21" fill="none" aria-hidden="true">
+      <rect x="1" y="1" width="9" height="9" fill="#F25022" />
+      <rect x="11" y="1" width="9" height="9" fill="#7FBA00" />
+      <rect x="1" y="11" width="9" height="9" fill="#00A4EF" />
+      <rect x="11" y="11" width="9" height="9" fill="#FFB900" />
+    </svg>
+  );
+}
+
+function ProviderIcon({ provider, disabled }: { provider: SocialAuthProvider; disabled: boolean }) {
+  const logoSrc =
+    provider === "google"
+      ? googleLogoUrl
+      : provider === "facebook"
+        ? facebookLogoUrl
+        : appleLogoUrl;
+
+  return (
+    <img
+      src={logoSrc}
+      alt=""
+      aria-hidden="true"
+      className={`h-6 w-6 object-contain ${disabled ? "grayscale opacity-60" : ""}`}
+    />
   );
 }

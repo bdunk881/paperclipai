@@ -214,7 +214,7 @@ function runCallback(provider: SocialAuthProvider) {
           provider: user.provider,
         };
         const redirectUri =
-          state?.redirectUri && isAllowedSocialRedirectUri(state.redirectUri)
+          state.redirectUri && isAllowedSocialRedirectUri(state.redirectUri)
             ? state.redirectUri
             : resolveSocialAuthDashboardCallbackUrl();
 

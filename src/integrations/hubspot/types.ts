@@ -1,11 +1,13 @@
+import {
+  Tier1ConnectionHealth,
+  Tier1ConnectionPublic,
+  Tier1ConnectorError,
+  Tier1ConnectorErrorType,
+} from "../shared/tier1Contract";
+
 export type HubSpotAuthMethod = "oauth2" | "api_key";
 
-export type ConnectorErrorType =
-  | "auth"
-  | "rate-limit"
-  | "schema"
-  | "network"
-  | "upstream";
+export type ConnectorErrorType = Tier1ConnectorErrorType;
 
 export interface HubSpotTokenSet {
   accessToken: string;
@@ -31,32 +33,15 @@ export interface HubSpotCredential {
   metadata?: Record<string, string>;
 }
 
-export interface HubSpotCredentialPublic {
-  id: string;
-  userId: string;
-  authMethod: HubSpotAuthMethod;
-  tokenMasked: string;
+export interface HubSpotCredentialPublic extends Tier1ConnectionPublic<HubSpotAuthMethod, {
   scopes: string[];
   hubId: string;
   hubDomain?: string;
-  createdAt: string;
-  revokedAt?: string;
-}
+}> {}
 
-export interface HubSpotConnectionHealth {
-  status: "ok" | "degraded" | "down";
-  checkedAt: string;
+export interface HubSpotConnectionHealth extends Tier1ConnectionHealth<HubSpotAuthMethod, {
   hubId?: string;
-  authMethod?: HubSpotAuthMethod;
-  tokenRefreshStatus?: "not_applicable" | "healthy" | "failed";
-  details: {
-    auth: boolean;
-    apiReachable: boolean;
-    rateLimited: boolean;
-    errorType?: ConnectorErrorType;
-    message?: string;
-  };
-}
+}> {}
 
 export interface HubSpotContact {
   id: string;
@@ -95,14 +80,9 @@ export interface HubSpotDeal {
   archived?: boolean;
 }
 
-export class ConnectorError extends Error {
-  readonly type: ConnectorErrorType;
-  readonly statusCode: number;
-
+export class ConnectorError extends Tier1ConnectorError {
   constructor(type: ConnectorErrorType, message: string, statusCode = 500) {
-    super(message);
+    super(type, message, statusCode);
     this.name = "ConnectorError";
-    this.type = type;
-    this.statusCode = statusCode;
   }
 }

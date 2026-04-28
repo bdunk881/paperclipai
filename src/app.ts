@@ -23,6 +23,7 @@ import { startTicketNotificationCoordinator } from "./engine/ticketSlaCoordinato
 import { runStore } from "./engine/runStore";
 import { approvalStore } from "./engine/approvalStore";
 import { approvalNotificationStore } from "./engine/approvalNotificationStore";
+import approvalPolicyRoutes from "./approvals/policyRoutes";
 import llmConfigRoutes from "./llmConfig/llmConfigRoutes";
 import mcpRoutes from "./mcp/mcpRoutes";
 import memoryRoutes from "./memory/memoryRoutes";
@@ -31,6 +32,7 @@ import agentRoutes from "./agents/agentRoutes";
 import knowledgeRoutes from "./knowledge/routes";
 import controlPlaneRoutes from "./controlPlane/controlPlaneRoutes";
 import { buildObservabilityCsv, buildObservabilityResponse } from "./observability/service";
+import reportRoutes from "./reporting/reportRoutes";
 import ticketRoutes from "./tickets/ticketRoutes";
 import ticketSyncRoutes from "./ticketSync/routes";
 import ticketSyncWebhookRoutes from "./ticketSync/webhookRoutes";
@@ -57,6 +59,8 @@ import shopifyRoutes, { shopifyWebhookRouter } from "./integrations/shopify/rout
 import docuSignRoutes, { docuSignWebhookRouter } from "./integrations/docusign/routes";
 import linearRoutes, { linearWebhookRouter } from "./integrations/linear/routes";
 import teamsRoutes, { teamsWebhookRouter } from "./integrations/teams/routes";
+import gmailRoutes, { gmailWebhookRouter } from "./integrations/gmail/routes";
+import stripeRoutes, { stripeConnectorWebhookRouter } from "./integrations/stripe/routes";
 import posthogRoutes, { posthogWebhookRouter } from "./integrations/posthog/routes";
 import intercomRoutes, { intercomWebhookRouter } from "./integrations/intercom/routes";
 import datadogAzureMonitorRoutes, {
@@ -71,6 +75,7 @@ import integrationRoutes, {
 } from "./integrations/integrationRoutes";
 import googleWorkspaceConnectorRoutes from "./connectors/google-workspace/routes";
 import googleWorkspaceWebhookRoutes from "./connectors/google-workspace/webhookRoutes";
+import notificationRoutes from "./notifications/routes";
 import {
   createPortableWorkflowBundle,
   getPortableWorkflowSchemaDescriptor,
@@ -82,16 +87,25 @@ import { saveImportedTemplate } from "./templates/importedTemplateStore";
 
 const app = express();
 
-function getAllowedOrigins(): string[] {
-  const raw = process.env.ALLOWED_ORIGINS;
-  if (!raw) {
+function parseAllowedOrigins(value: string | undefined): string[] {
+  if (!value) {
     return [];
   }
 
-  return raw
+  return value
     .split(",")
-    .map((origin) => origin.trim())
+    .map((origin) => origin.trim().replace(/\/+$/, ""))
     .filter((origin) => origin.length > 0 && origin !== "*");
+}
+
+function getAllowedOrigins(): string[] {
+  return Array.from(
+    new Set([
+      ...parseAllowedOrigins(process.env.ALLOWED_ORIGINS),
+      ...parseAllowedOrigins(process.env.AUTH_SOCIAL_ALLOWED_REDIRECT_ORIGINS),
+      ...parseAllowedOrigins(process.env.SOCIAL_AUTH_DASHBOARD_URL),
+    ])
+  );
 }
 
 const allowedOrigins = new Set(getAllowedOrigins());
@@ -239,10 +253,14 @@ app.use("/api/webhooks/docusign", docuSignWebhookRouter);
 app.use("/api/webhooks/linear", linearWebhookRouter);
 // Sentry webhook — mounted before express.json() for signature verification
 app.use("/api/webhooks/sentry", sentryWebhookRouter);
+// Gmail webhook — mounted before express.json() for Pub/Sub verification
+app.use("/api/webhooks/gmail", gmailWebhookRouter);
 // Microsoft Teams webhook — mounted before express.json() for signature verification
 app.use("/api/webhooks/teams", teamsWebhookRouter);
 // HubSpot webhook — mounted before express.json() for signature verification
 app.use("/api/webhooks/hubspot", hubSpotWebhookRouter);
+// Stripe connector webhook — mounted before express.json() for signature verification
+app.use("/api/webhooks/stripe/connect", stripeConnectorWebhookRouter);
 // PostHog webhook — mounted before express.json() for signature verification
 app.use("/api/webhooks/posthog", posthogWebhookRouter);
 // Intercom webhook — mounted before express.json() for signature verification
@@ -306,6 +324,8 @@ app.use("/api/integrations/linear", linearRoutes);
 app.use("/api/integrations/sentry", sentryRoutes);
 app.use("/api/integrations/hubspot", hubSpotRoutes);
 app.use("/api/integrations/teams", teamsRoutes);
+app.use("/api/integrations/gmail", gmailRoutes);
+app.use("/api/integrations/stripe", stripeRoutes);
 app.use("/api/integrations/apollo", apolloRoutes);
 app.use("/api/integrations/posthog", posthogRoutes);
 app.use("/api/integrations/intercom", intercomRoutes);
@@ -313,8 +333,11 @@ app.use("/api/integrations/datadog-azure-monitor", datadogAzureMonitorRoutes);
 app.use("/api/integrations/agent-catalog", agentCatalogRoutes);
 app.use("/api/connectors/google-workspace", googleWorkspaceConnectorRoutes);
 app.use("/api/control-plane", requireAuth, controlPlaneRoutes);
+app.use("/api/reporting", requireAuth, reportRoutes);
 app.use("/api/tickets", requireAuth, ticketRoutes);
 app.use("/api/ticket-sync", requireAuth, ticketSyncRoutes);
+app.use("/api/notifications", requireAuth, notificationRoutes);
+app.use("/api/approval-policies", requireAuth, approvalPolicyRoutes);
 
 // ---------------------------------------------------------------------------
 // Auth API — identity endpoint for authenticated callers

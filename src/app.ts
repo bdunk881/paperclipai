@@ -52,6 +52,7 @@ import socialAuthRoutes from "./auth/socialAuthRoutes";
 import stripeWebhookRoutes from "./billing/stripeWebhook";
 import apolloWebhookRoutes from "./integrations/apollo-attio/webhookRoute";
 import checkoutRoutes from "./billing/checkoutRoutes";
+import { buildGoalIntakePrompt, goalIntakeRequestSchema, parseGoalIntakeResponse } from "./goals/goalIntake";
 import {
   buildTeamAssemblyPrompt,
   parseTeamAssemblyResponse,
@@ -717,6 +718,71 @@ app.post("/api/workflows/generate", requireAuth, llmEndpointRateLimiter, async (
   }
 
   res.json({ steps });
+});
+
+// ---------------------------------------------------------------------------
+// POST /api/goals/intake
+// ---------------------------------------------------------------------------
+
+/**
+ * POST /api/goals/intake
+ * Body: {
+ *   goal: string,
+ *   answers?: Record<string, string>,
+ *   sourceDocument?: { sourceType: "notion" | "google-doc" | "markdown", content: string },
+ *   readinessThreshold?: number
+ * }
+ * Returns a structured clarification state or a PRD-ready goal document.
+ */
+app.post("/api/goals/intake", requireAuth, llmEndpointRateLimiter, async (req: AuthenticatedRequest, res) => {
+  const parsedRequest = goalIntakeRequestSchema.safeParse(req.body);
+  if (!parsedRequest.success) {
+    const issue = parsedRequest.error.issues[0];
+    const path = issue?.path?.[0];
+    const message =
+      issue?.message === "Required" && typeof path === "string"
+        ? `${path} is required`
+        : (issue?.message ?? "Invalid request body");
+    res.status(400).json({ error: message });
+    return;
+  }
+
+  const userId = req.auth?.sub;
+  if (!userId) {
+    res.status(401).json({ error: "Authenticated user is required to resolve LLM configuration" });
+    return;
+  }
+
+  const resolved = await llmConfigStore.getDecryptedDefault(userId);
+  if (!resolved) {
+    res.status(422).json({
+      error: "No LLM provider configured. Go to Settings > LLM Providers to connect one.",
+    });
+    return;
+  }
+
+  const provider = getProvider({
+    provider: resolved.config.provider,
+    model: resolveModelForTier(resolved.config.provider, "standard"),
+    apiKey: resolved.apiKey,
+  });
+
+  let rawText: string;
+  try {
+    rawText = (await provider(buildGoalIntakePrompt(parsedRequest.data))).text;
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    res.status(502).json({ error: `LLM call failed: ${msg}` });
+    return;
+  }
+
+  try {
+    const intakeResult = parseGoalIntakeResponse(rawText);
+    res.json(intakeResult);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    res.status(422).json({ error: `LLM returned invalid JSON: ${msg}`, raw: rawText });
+  }
 });
 
 // ---------------------------------------------------------------------------

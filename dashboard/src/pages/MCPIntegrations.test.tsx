@@ -11,6 +11,7 @@ const mockedAuthContext = {
   signup: vi.fn(),
   logout: vi.fn(),
   getAccessToken: vi.fn().mockResolvedValue("mock-token"),
+  requireAccessToken: vi.fn().mockResolvedValue("token-123"),
 };
 
 vi.mock("../context/AuthContext", () => ({
@@ -49,8 +50,14 @@ describe("IntegrationsHub", () => {
 
     expect(await screen.findByText("Slack")).toBeInTheDocument();
     expect(screen.getByText("cards with live setup already connected")).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Manage connection" })).toHaveAttribute("href", "/integrations");
-    expect(screen.getByRole("link", { name: "Open connector setup" })).toHaveAttribute("href", "/integrations");
+    expect(await screen.findByRole("link", { name: "Manage connection" })).toHaveAttribute(
+      "href",
+      "/integrations"
+    );
+    expect(await screen.findByRole("link", { name: "Open connector setup" })).toHaveAttribute(
+      "href",
+      "/integrations"
+    );
   });
 
   it("renders a Linear integration card", async () => {

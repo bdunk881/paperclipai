@@ -212,12 +212,46 @@ describe("runApprovalResumeSweep", () => {
       resumed: 0,
     });
   });
+
+  it("does not crash startup when persisted workflow tables are missing", async () => {
+    const listSpy = jest
+      .spyOn(runStore, "list")
+      .mockRejectedValueOnce(new Error('relation "workflow_runs" does not exist'));
+    const warnSpy = jest.spyOn(console, "warn").mockImplementation(() => {});
+
+    await expect(runApprovalResumeSweep()).resolves.toMatchObject({
+      scanned: 0,
+      resumed: 0,
+      skippedPending: 0,
+      skippedMissingSnapshot: 0,
+    });
+
+    expect(warnSpy).toHaveBeenCalledWith(
+      "[approval] Resume sweep skipped:",
+      'relation "workflow_runs" does not exist'
+    );
+
+    listSpy.mockRestore();
+    warnSpy.mockRestore();
+  });
 });
 
 describe("approval resume coordinator lifecycle", () => {
   afterEach(() => {
     stopApprovalResumeCoordinator();
     jest.useRealTimers();
+  });
+
+  it("returns zeroed counters when runStore.list() throws an Error", async () => {
+    jest.spyOn(runStore, "list").mockRejectedValueOnce(new Error("table missing"));
+    const result = await runApprovalResumeSweep();
+    expect(result).toEqual({ scanned: 0, resumed: 0, skippedPending: 0, skippedMissingSnapshot: 0 });
+  });
+
+  it("returns zeroed counters when runStore.list() throws a non-Error", async () => {
+    jest.spyOn(runStore, "list").mockRejectedValueOnce("string rejection");
+    const result = await runApprovalResumeSweep();
+    expect(result).toEqual({ scanned: 0, resumed: 0, skippedPending: 0, skippedMissingSnapshot: 0 });
   });
 
   it("starts only one interval and stops cleanly", () => {

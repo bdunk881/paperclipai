@@ -1,20 +1,16 @@
 import React, { createContext, useContext } from "react";
 import {
-  useMsal,
-  useIsAuthenticated,
-  useAccount,
-} from "@azure/msal-react";
-import {
-  InteractionRequiredAuthError,
-  AccountInfo,
-} from "@azure/msal-browser";
-import { loginRequest, signupRequest } from "../auth/msalConfig";
-import {
-  StoredAuthUser,
   AUTH_STORAGE_EVENT,
-  clearStoredAuthUser,
+  StoredAuthSession,
+  StoredAuthUser,
+  clearStoredAuthSession,
+  getInMemoryRefreshToken,
+  readStoredAuthSession,
   readStoredAuthUser,
+  setInMemoryRefreshToken,
+  writeStoredAuthSession,
 } from "../auth/authStorage";
+import { isSessionExpiring, refreshNativeAuthSession, sessionFromTokenResponse } from "../auth/nativeAuthClient";
 
 export interface User {
   id: string;
@@ -25,26 +21,14 @@ export interface User {
 
 interface AuthContextValue {
   user: User | null;
-  login: () => Promise<void>;
-  signup: () => Promise<void>;
   logout: () => void;
   getAccessToken: () => Promise<string | null>;
+  requireAccessToken: () => Promise<string>;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 
-function accountToUser(account: AccountInfo): User {
-  return {
-    id: account.homeAccountId,
-    email:
-      (account.idTokenClaims as Record<string, string> | undefined)?.email ??
-      account.username,
-    name: account.name ?? account.username,
-    tenantId: account.tenantId,
-  };
-}
-
-function storedUserToUser(user: StoredAuthUser): User {
+function userFromStoredUser(user: StoredAuthUser): User {
   return {
     id: user.id,
     email: user.email,
@@ -53,61 +37,89 @@ function storedUserToUser(user: StoredAuthUser): User {
   };
 }
 
+function sessionUser(session: StoredAuthSession | null, storedUser: StoredAuthUser | null): User | null {
+  if (session?.user) {
+    return userFromStoredUser(session.user);
+  }
+
+  if (storedUser) {
+    return userFromStoredUser(storedUser);
+  }
+
+  return null;
+}
+
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const { instance, accounts } = useMsal();
-  const isAuthenticated = useIsAuthenticated();
-  const account = useAccount(accounts[0] ?? null);
+  const [storedSession, setStoredSession] = React.useState<StoredAuthSession | null>(() => readStoredAuthSession());
   const [storedUser, setStoredUser] = React.useState<StoredAuthUser | null>(() => readStoredAuthUser());
 
   React.useEffect(() => {
-    const syncStoredUser = () => setStoredUser(readStoredAuthUser());
+    const syncAuthState = () => {
+      setStoredSession(readStoredAuthSession());
+      setStoredUser(readStoredAuthUser());
+    };
 
-    window.addEventListener("storage", syncStoredUser);
-    window.addEventListener(AUTH_STORAGE_EVENT, syncStoredUser);
+    window.addEventListener("storage", syncAuthState);
+    window.addEventListener(AUTH_STORAGE_EVENT, syncAuthState);
 
     return () => {
-      window.removeEventListener("storage", syncStoredUser);
-      window.removeEventListener(AUTH_STORAGE_EVENT, syncStoredUser);
+      window.removeEventListener("storage", syncAuthState);
+      window.removeEventListener(AUTH_STORAGE_EVENT, syncAuthState);
     };
   }, []);
 
-  const user = isAuthenticated && account ? accountToUser(account) : storedUser ? storedUserToUser(storedUser) : null;
+  const user = sessionUser(storedSession, storedUser);
 
-  const login = async () => {
-    await instance.loginRedirect(loginRequest);
-  };
+  const logout = React.useCallback(() => {
+    clearStoredAuthSession();
+    setStoredSession(null);
+    setStoredUser(null);
+  }, []);
 
-  const signup = async () => {
-    await instance.loginRedirect(signupRequest);
-  };
+  const getAccessToken = React.useCallback(async (): Promise<string | null> => {
+    const latestSession = readStoredAuthSession();
 
-  const logout = () => {
-    clearStoredAuthUser();
-    if (!isAuthenticated || !account) {
-      return;
-    }
-    instance.logoutRedirect({ postLogoutRedirectUri: "/login" });
-  };
-
-  // Silently acquire a fresh access token; falls back to interactive redirect.
-  const getAccessToken = async (): Promise<string | null> => {
-    if (!account) return null;
-    try {
-      const result = await instance.acquireTokenSilent({
-        ...loginRequest,
-        account,
-      });
-      return result.accessToken;
-    } catch (err) {
-      if (err instanceof InteractionRequiredAuthError) {
-        await instance.acquireTokenRedirect({ ...loginRequest, account });
-      }
+    if (!latestSession) {
       return null;
     }
-  };
+
+    if (!isSessionExpiring(latestSession)) {
+      return latestSession.accessToken;
+    }
+
+    const refreshToken = latestSession.refreshToken ?? getInMemoryRefreshToken();
+    if (!refreshToken) {
+      clearStoredAuthSession();
+      setInMemoryRefreshToken(undefined);
+      setStoredSession(null);
+      setStoredUser(null);
+      return null;
+    }
+
+    try {
+      const refreshed = sessionFromTokenResponse(await refreshNativeAuthSession(refreshToken));
+      writeStoredAuthSession(refreshed);
+      setStoredSession(refreshed);
+      setStoredUser(refreshed.user);
+      return refreshed.accessToken;
+    } catch {
+      clearStoredAuthSession();
+      setStoredSession(null);
+      setStoredUser(null);
+      return null;
+    }
+  }, []);
+
+  const requireAccessToken = React.useCallback(async (): Promise<string> => {
+    const accessToken = await getAccessToken();
+    if (!accessToken) {
+      throw new Error("Authentication session expired. Sign in again to continue.");
+    }
+    return accessToken;
+  }, [getAccessToken]);
 
   return (
-    <AuthContext.Provider value={{ user, login, signup, logout, getAccessToken }}>
+    <AuthContext.Provider value={{ user, logout, getAccessToken, requireAccessToken }}>
       {children}
     </AuthContext.Provider>
   );

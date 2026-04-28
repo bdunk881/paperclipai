@@ -6,6 +6,7 @@ const listLLMConfigsMock = vi.fn();
 const createLLMConfigMock = vi.fn();
 const setDefaultLLMConfigMock = vi.fn();
 const deleteLLMConfigMock = vi.fn();
+const requireAccessTokenMock = vi.fn();
 
 vi.mock("../api/client", () => ({
   listLLMConfigs: () => listLLMConfigsMock(),
@@ -18,6 +19,12 @@ vi.mock("../api/client", () => ({
     gemini: ["gemini-2.0-flash"],
     mistral: ["mistral-large-latest"],
   },
+}));
+
+vi.mock("../context/AuthContext", () => ({
+  useAuth: () => ({
+    requireAccessToken: requireAccessTokenMock,
+  }),
 }));
 
 function makeConfig(overrides: Partial<Record<string, unknown>> = {}) {
@@ -43,6 +50,8 @@ describe("LLMProviders", () => {
     createLLMConfigMock.mockReset();
     setDefaultLLMConfigMock.mockReset();
     deleteLLMConfigMock.mockReset();
+    requireAccessTokenMock.mockReset();
+    requireAccessTokenMock.mockResolvedValue("token-123");
   });
 
   it("shows the backend error when config loading fails", async () => {
@@ -85,7 +94,7 @@ describe("LLMProviders", () => {
         provider: "openai",
         model: "gpt-4o",
         apiKey: "sk-test-key",
-      });
+      }, "token-123");
     });
 
     expect(await screen.findByText("Team OpenAI")).toBeInTheDocument();
@@ -121,7 +130,7 @@ describe("LLMProviders", () => {
     fireEvent.click(secondRowButton);
 
     await waitFor(() => {
-      expect(setDefaultLLMConfigMock).toHaveBeenCalledWith("cfg-2");
+      expect(setDefaultLLMConfigMock).toHaveBeenCalledWith("cfg-2", "token-123");
     });
 
     await waitFor(() => {
@@ -169,7 +178,7 @@ describe("LLMProviders", () => {
     fireEvent.click(getBodyRows(container)[1]?.querySelector("td:nth-child(5) button") as HTMLButtonElement);
 
     await waitFor(() => {
-      expect(setDefaultLLMConfigMock).toHaveBeenCalledWith("cfg-2");
+      expect(setDefaultLLMConfigMock).toHaveBeenCalledWith("cfg-2", "token-123");
       expect(listLLMConfigsMock).toHaveBeenCalledTimes(2);
     });
 
@@ -178,7 +187,7 @@ describe("LLMProviders", () => {
     fireEvent.click(disconnectButtons[disconnectButtons.length - 1] as HTMLButtonElement);
 
     await waitFor(() => {
-      expect(deleteLLMConfigMock).toHaveBeenCalledWith("cfg-2");
+      expect(deleteLLMConfigMock).toHaveBeenCalledWith("cfg-2", "token-123");
       expect(listLLMConfigsMock).toHaveBeenCalledTimes(3);
     });
 

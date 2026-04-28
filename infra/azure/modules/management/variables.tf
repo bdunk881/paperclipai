@@ -3,8 +3,8 @@ variable "prefix" {
   type        = string
 }
 
-variable "tenant_id" {
-  description = "Azure AD tenant ID"
+variable "autoflow_management_group_name" {
+  description = "Azure name/UUID of the existing top-level autoflow management group."
   type        = string
 }
 

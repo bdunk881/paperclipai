@@ -644,6 +644,117 @@ describe("Control plane APIs", () => {
     expect(listRes.body.heartbeats[0].summary).toBe("Processed the daily support queue");
   });
 
+  it("exposes deployed agents and budget snapshots for dashboard workspace pages", async () => {
+    const deployRes = await request(app)
+      .post("/api/control-plane/deployments/workflow")
+      .set(asAuth())
+      .set("X-Paperclip-Run-Id", "run-deploy-agent-dashboard")
+      .send({ templateId: "tpl-support-bot", budgetMonthlyUsd: 120 });
+
+    const teamId = deployRes.body.team.id;
+    const managerAgent = deployRes.body.agents.find(
+      (agent: { roleKey: string }) => agent.roleKey === "workflow-manager"
+    );
+    const workerAgent = deployRes.body.agents.find(
+      (agent: { roleKey: string }) => agent.roleKey !== "workflow-manager"
+    );
+
+    await request(app)
+      .post("/api/control-plane/heartbeats")
+      .set(asAuth())
+      .set("X-Paperclip-Run-Id", "run-budget-heartbeat")
+      .send({
+        teamId,
+        agentId: workerAgent.id,
+        status: "completed",
+        summary: "Processed queue",
+        costUsd: 1.42,
+      });
+
+    const agentsRes = await request(app)
+      .get("/api/agents")
+      .set(asAuth());
+
+    expect(agentsRes.status).toBe(200);
+    expect(agentsRes.body.total).toBeGreaterThan(1);
+    const listedWorker = agentsRes.body.agents.find((agent: { id: string }) => agent.id === workerAgent.id);
+    expect(listedWorker).toBeTruthy();
+    expect(listedWorker.metadata.reportingToAgentId).toBe(managerAgent.id);
+    expect(listedWorker.status).toBe("idle");
+
+    const budgetRes = await request(app)
+      .get(`/api/agents/${workerAgent.id}/budget`)
+      .set(asAuth());
+
+    expect(budgetRes.status).toBe(200);
+    expect(budgetRes.body.monthlyUsd).toBe(workerAgent.budgetMonthlyUsd);
+    expect(budgetRes.body.spentUsd).toBe(1.42);
+    expect(budgetRes.body.remainingUsd).toBeCloseTo(workerAgent.budgetMonthlyUsd - 1.42, 2);
+  });
+
+  it("returns agent heartbeat and run history for dashboard activity views", async () => {
+    const deployRes = await request(app)
+      .post("/api/control-plane/deployments/workflow")
+      .set(asAuth())
+      .set("X-Paperclip-Run-Id", "run-deploy-agent-activity")
+      .send({ templateId: "tpl-support-bot" });
+
+    const teamId = deployRes.body.team.id;
+    const workerAgent = deployRes.body.agents.find(
+      (agent: { roleKey: string }) => agent.roleKey !== "workflow-manager"
+    );
+    const step = WORKFLOW_TEMPLATES.find((template) => template.id === "tpl-support-bot")!.steps.find(
+      (candidate) => candidate.kind === "llm"
+    )!;
+
+    const execution = controlPlaneStore.startAgentExecution({
+      userId: "test-user",
+      actor: "run-agent-activity-seed",
+      teamId,
+      step,
+      sourceRunId: "workflow-run-agent-1",
+      requestedAgentId: workerAgent.id,
+    }).execution;
+
+    controlPlaneStore.finalizeAgentExecution({
+      executionId: execution.id,
+      userId: "test-user",
+      status: "completed",
+      summary: "Completed the support step",
+      costUsd: 2.25,
+    });
+
+    await request(app)
+      .post("/api/control-plane/heartbeats")
+      .set(asAuth())
+      .set("X-Paperclip-Run-Id", "run-agent-heartbeat")
+      .send({
+        teamId,
+        agentId: workerAgent.id,
+        executionId: execution.id,
+        status: "running",
+        summary: "Investigating ticket backlog",
+        costUsd: 0.5,
+      });
+
+    const heartbeatRes = await request(app)
+      .get(`/api/agents/${workerAgent.id}/heartbeat`)
+      .set(asAuth());
+
+    expect(heartbeatRes.status).toBe(200);
+    expect(heartbeatRes.body.status).toBe("running");
+    expect(heartbeatRes.body.summary).toBe("Investigating ticket backlog");
+
+    const runsRes = await request(app)
+      .get(`/api/agents/${workerAgent.id}/runs`)
+      .set(asAuth());
+
+    expect(runsRes.status).toBe(200);
+    expect(runsRes.body.total).toBe(1);
+    expect(runsRes.body.runs[0].status).toBe("completed");
+    expect(runsRes.body.runs[0].summary).toBe("Completed the support step");
+  });
+
   it("lists available skills and applies runtime skill injection to agents", async () => {
     const deployRes = await request(app)
       .post("/api/control-plane/deployments/workflow")
@@ -1295,6 +1406,50 @@ describe("POST /api/webhooks/:templateId", () => {
 // ---------------------------------------------------------------------------
 
 describe("GET /health — run stats", () => {
+  it("counts running, completed, and failed runs", async () => {
+    await runStore.create({
+      id: "health-running",
+      templateId: "tpl-support-bot",
+      templateName: "Support Bot",
+      status: "running",
+      startedAt: new Date().toISOString(),
+      input: {},
+      stepResults: [],
+    });
+    await runStore.create({
+      id: "health-completed",
+      templateId: "tpl-support-bot",
+      templateName: "Support Bot",
+      status: "completed",
+      startedAt: new Date().toISOString(),
+      completedAt: new Date().toISOString(),
+      input: {},
+      output: {},
+      stepResults: [],
+    });
+    await runStore.create({
+      id: "health-failed",
+      templateId: "tpl-support-bot",
+      templateName: "Support Bot",
+      status: "failed",
+      startedAt: new Date().toISOString(),
+      input: {},
+      error: "boom",
+      stepResults: [],
+    });
+
+    const res = await request(app).get("/health");
+
+    expect(res.status).toBe(200);
+    expect(res.body.runs).toMatchObject({
+      total: 3,
+      running: 1,
+      completed: 1,
+      failed: 1,
+      error: null,
+    });
+  });
+
   it("returns runs object with total, running, completed, failed counts", async () => {
     const res = await request(app).get("/health");
     expect(res.status).toBe(200);
@@ -1312,6 +1467,32 @@ describe("GET /health — run stats", () => {
     expect(running).toBeGreaterThanOrEqual(0);
     expect(completed).toBeGreaterThanOrEqual(0);
     expect(failed).toBeGreaterThanOrEqual(0);
+  });
+
+  it("degrades gracefully when listing runs fails", async () => {
+    jest.spyOn(runStore, "list").mockRejectedValueOnce(new Error("run store unavailable"));
+
+    const res = await request(app).get("/health");
+
+    expect(res.status).toBe(200);
+    expect(res.body.status).toBe("degraded");
+    expect(res.body.runs).toEqual({
+      total: 0,
+      running: 0,
+      completed: 0,
+      failed: 0,
+      error: "run store unavailable",
+    });
+  });
+
+  it("stringifies non-Error run store failures", async () => {
+    jest.spyOn(runStore, "list").mockRejectedValueOnce("run store unavailable");
+
+    const res = await request(app).get("/health");
+
+    expect(res.status).toBe(200);
+    expect(res.body.status).toBe("degraded");
+    expect(res.body.runs.error).toBe("run store unavailable");
   });
 });
 

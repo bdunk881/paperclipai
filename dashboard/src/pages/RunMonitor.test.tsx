@@ -4,17 +4,23 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import RunMonitor from "./RunMonitor";
 
 const listRunsMock = vi.fn();
+const listControlPlaneTeamsMock = vi.fn();
+const getControlPlaneTeamMock = vi.fn();
 const debugStepMock = vi.fn();
 const getAccessTokenMock = vi.fn();
+const requireAccessTokenMock = vi.fn();
 
 vi.mock("../api/client", () => ({
   listRuns: (...args: unknown[]) => listRunsMock(...args),
+  listControlPlaneTeams: (...args: unknown[]) => listControlPlaneTeamsMock(...args),
+  getControlPlaneTeam: (...args: unknown[]) => getControlPlaneTeamMock(...args),
   debugStep: (...args: unknown[]) => debugStepMock(...args),
 }));
 
 vi.mock("../context/AuthContext", () => ({
   useAuth: () => ({
     getAccessToken: getAccessTokenMock,
+    requireAccessToken: requireAccessTokenMock,
   }),
 }));
 
@@ -29,9 +35,15 @@ function renderRunMonitor() {
 describe("RunMonitor", () => {
   beforeEach(() => {
     listRunsMock.mockReset();
+    listControlPlaneTeamsMock.mockReset();
+    getControlPlaneTeamMock.mockReset();
     debugStepMock.mockReset();
     getAccessTokenMock.mockReset();
+    requireAccessTokenMock.mockReset();
     getAccessTokenMock.mockResolvedValue("token-123");
+    requireAccessTokenMock.mockResolvedValue("token-123");
+    listControlPlaneTeamsMock.mockResolvedValue([]);
+    getControlPlaneTeamMock.mockResolvedValue(null);
   });
 
   it("loads authenticated runs, separates active and recent runs, and debugs a failed step", async () => {
@@ -188,5 +200,15 @@ describe("RunMonitor", () => {
     await waitFor(() => {
       expect(listRunsMock).toHaveBeenCalledTimes(2);
     });
+  });
+
+  it("surfaces API error messages from the runs endpoint instead of falling back to an empty state", async () => {
+    listRunsMock.mockRejectedValueOnce(new Error("Unauthorized"));
+
+    renderRunMonitor();
+
+    expect(await screen.findByText(/run monitor unavailable/i)).toBeInTheDocument();
+    expect(screen.getByText("Unauthorized")).toBeInTheDocument();
+    expect(screen.queryByText(/no active runs/i)).not.toBeInTheDocument();
   });
 });

@@ -1,19 +1,13 @@
 import { useEffect, useState } from "react";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
-import { PublicClientApplication, EventType, AuthenticationResult } from "@azure/msal-browser";
-import { MsalProvider } from "@azure/msal-react";
-import { msalConfig } from "./auth/msalConfig";
 import { AuthProvider, useAuth } from "./context/AuthContext";
 import {
   readQaPreviewToken,
   sanitizeQaPreviewRedirect,
   writeStoredAuthUser,
 } from "./auth/authStorage";
-
-const msalInstance = new PublicClientApplication(msalConfig);
 import Layout from "./components/Layout";
 import Login from "./pages/Login";
-import Signup from "./pages/Signup";
 import Dashboard from "./pages/Dashboard";
 import WorkflowBuilder from "./pages/WorkflowBuilder";
 import RunMonitor from "./pages/RunMonitor";
@@ -43,6 +37,12 @@ import AgentActivity from "./pages/AgentActivity";
 import Routines from "./pages/Routines";
 import OrgStructure from "./pages/OrgStructure";
 import BudgetDashboard from "./pages/BudgetDashboard";
+import Tickets from "./pages/Tickets";
+import TicketDetail from "./pages/TicketDetail";
+import TicketTeamView from "./pages/TicketTeamView";
+import TicketActorView from "./pages/TicketActorView";
+import TicketSlaDashboard from "./pages/TicketSlaDashboard";
+import TicketSlaSettings from "./pages/TicketSlaSettings";
 
 function PrivateRoute({ children }: { children: React.ReactNode }) {
   const { user } = useAuth();
@@ -93,41 +93,16 @@ async function maybeActivateQaPreviewAccess(): Promise<void> {
 }
 
 export default function App() {
-  const [msalReady, setMsalReady] = useState(false);
+  const [authReady, setAuthReady] = useState(false);
 
   useEffect(() => {
-    msalInstance
-      .initialize()
-      .then(() => msalInstance.handleRedirectPromise())
-      .then((response) => {
-        if (response?.account) {
-          msalInstance.setActiveAccount(response.account);
-        } else {
-          const accounts = msalInstance.getAllAccounts();
-          if (accounts.length > 0) {
-            msalInstance.setActiveAccount(accounts[0]);
-          }
-        }
-      })
-      .then(() => maybeActivateQaPreviewAccess())
-      .catch((err) => console.error("[MSAL] Initialization error:", err))
-      .finally(() => setMsalReady(true));
-
-    msalInstance.addEventCallback((event) => {
-      if (
-        event.eventType === EventType.LOGIN_SUCCESS &&
-        (event.payload as AuthenticationResult)?.account
-      ) {
-        msalInstance.setActiveAccount(
-          (event.payload as AuthenticationResult).account,
-        );
-      }
-    });
+    maybeActivateQaPreviewAccess()
+      .catch((err) => console.error("[auth] QA preview activation error:", err))
+      .finally(() => setAuthReady(true));
   }, []);
 
-  if (!msalReady) return null;
+  if (!authReady) return null;
   return (
-    <MsalProvider instance={msalInstance}>
     <AuthProvider>
       <BrowserRouter>
         <Routes>
@@ -144,11 +119,11 @@ export default function App() {
           />
           <Route
             path="/signup"
-            element={
-              <PublicRoute>
-                <Signup />
-              </PublicRoute>
-            }
+            element={<Navigate to="/login?mode=signup" replace />}
+          />
+          <Route
+            path="/reset-password"
+            element={<Navigate to="/login?mode=reset" replace />}
           />
           <Route
             path="/"
@@ -172,7 +147,13 @@ export default function App() {
             <Route path="agents/routines" element={<Routines />} />
             <Route path="workspace/org-structure" element={<OrgStructure />} />
             <Route path="workspace/budget-dashboard" element={<BudgetDashboard />} />
+            <Route path="tickets" element={<Tickets />} />
+            <Route path="tickets/sla" element={<TicketSlaDashboard />} />
+            <Route path="tickets/team" element={<TicketTeamView />} />
+            <Route path="tickets/actors/:actorType/:actorId" element={<TicketActorView />} />
+            <Route path="tickets/:ticketId" element={<TicketDetail />} />
             <Route path="settings" element={<Settings />} />
+            <Route path="settings/ticketing-sla" element={<TicketSlaSettings />} />
             <Route path="settings/integrations" element={<Integrations />} />
             <Route path="settings/llm-providers" element={<LLMProviders />} />
             <Route path="settings/profile" element={<ProfileSettings />} />
@@ -191,6 +172,5 @@ export default function App() {
         </Routes>
       </BrowserRouter>
     </AuthProvider>
-    </MsalProvider>
   );
 }

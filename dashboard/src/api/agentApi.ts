@@ -1,6 +1,7 @@
 import { getApiBasePath } from "./baseUrl";
 
 const BASE = getApiBasePath();
+const USE_MOCK_API = import.meta.env.VITE_USE_MOCK === "true";
 
 export type AgentStatus = "running" | "paused" | "idle" | "error";
 export type AgentRunStatus = "queued" | "running" | "completed" | "failed" | "blocked";
@@ -147,12 +148,24 @@ async function parseJsonOrError<T>(response: Response, fallback: string): Promis
   return response.json() as Promise<T>;
 }
 
+async function withMockApi<T>(remote: () => Promise<T>, local: () => T | Promise<T>): Promise<T> {
+  if (USE_MOCK_API) {
+    return await local();
+  }
+  return await remote();
+}
+
 export async function listAgents(accessToken: string): Promise<Agent[]> {
-  const response = await fetch(`${BASE}/agents`, {
-    headers: buildAuthHeaders(accessToken),
-  });
-  const payload = await parseJsonOrError<{ agents: Agent[] }>(response, `Failed to fetch agents: ${response.status}`);
-  return payload.agents;
+  return withMockApi(
+    async () => {
+      const response = await fetch(`${BASE}/agents`, {
+        headers: buildAuthHeaders(accessToken),
+      });
+      const payload = await parseJsonOrError<{ agents: Agent[] }>(response, `Failed to fetch agents: ${response.status}`);
+      return payload.agents;
+    },
+    () => []
+  );
 }
 
 export async function createAgent(input: AgentCreateInput, accessToken: string): Promise<Agent> {
@@ -168,43 +181,68 @@ export async function createAgent(input: AgentCreateInput, accessToken: string):
 }
 
 export async function getAgentHeartbeat(agentId: string, accessToken: string): Promise<AgentHeartbeat | null> {
-  const response = await fetch(`${BASE}/agents/${encodeURIComponent(agentId)}/heartbeat`, {
-    headers: buildAuthHeaders(accessToken),
-  });
-  if (response.status === 404) return null;
-  return parseJsonOrError<AgentHeartbeat>(response, `Failed to fetch heartbeat: ${response.status}`);
+  return withMockApi(
+    async () => {
+      const response = await fetch(`${BASE}/agents/${encodeURIComponent(agentId)}/heartbeat`, {
+        headers: buildAuthHeaders(accessToken),
+      });
+      if (response.status === 404) return null;
+      return parseJsonOrError<AgentHeartbeat>(response, `Failed to fetch heartbeat: ${response.status}`);
+    },
+    () => null
+  );
 }
 
 export async function listAgentRuns(agentId: string, accessToken: string): Promise<AgentRun[]> {
-  const response = await fetch(`${BASE}/agents/${encodeURIComponent(agentId)}/runs`, {
-    headers: buildAuthHeaders(accessToken),
-  });
-  const payload = await parseJsonOrError<{ runs: AgentRun[] }>(response, `Failed to fetch agent runs: ${response.status}`);
-  return payload.runs;
+  return withMockApi(
+    async () => {
+      const response = await fetch(`${BASE}/agents/${encodeURIComponent(agentId)}/runs`, {
+        headers: buildAuthHeaders(accessToken),
+      });
+      const payload = await parseJsonOrError<{ runs: AgentRun[] }>(response, `Failed to fetch agent runs: ${response.status}`);
+      return payload.runs;
+    },
+    () => []
+  );
 }
 
 export async function getAgentBudget(agentId: string, accessToken: string): Promise<AgentBudgetSnapshot | null> {
-  const response = await fetch(`${BASE}/agents/${encodeURIComponent(agentId)}/budget`, {
-    headers: buildAuthHeaders(accessToken),
-  });
-  if (response.status === 404) return null;
-  return parseJsonOrError<AgentBudgetSnapshot>(response, `Failed to fetch budget: ${response.status}`);
+  return withMockApi(
+    async () => {
+      const response = await fetch(`${BASE}/agents/${encodeURIComponent(agentId)}/budget`, {
+        headers: buildAuthHeaders(accessToken),
+      });
+      if (response.status === 404) return null;
+      return parseJsonOrError<AgentBudgetSnapshot>(response, `Failed to fetch budget: ${response.status}`);
+    },
+    () => null
+  );
 }
 
 export async function getAgentTokenUsage(agentId: string, accessToken: string, days = 30): Promise<TokenUsageReport | null> {
-  const response = await fetch(`${BASE}/agents/${encodeURIComponent(agentId)}/token-usage?days=${days}`, {
-    headers: buildAuthHeaders(accessToken),
-  });
-  if (response.status === 404) return null;
-  return parseJsonOrError<TokenUsageReport>(response, `Failed to fetch token usage: ${response.status}`);
+  return withMockApi(
+    async () => {
+      const response = await fetch(`${BASE}/agents/${encodeURIComponent(agentId)}/token-usage?days=${days}`, {
+        headers: buildAuthHeaders(accessToken),
+      });
+      if (response.status === 404) return null;
+      return parseJsonOrError<TokenUsageReport>(response, `Failed to fetch token usage: ${response.status}`);
+    },
+    () => null
+  );
 }
 
 export async function listRoutines(accessToken: string): Promise<Routine[]> {
-  const response = await fetch(`${BASE}/routines`, {
-    headers: buildAuthHeaders(accessToken),
-  });
-  const payload = await parseJsonOrError<{ routines: Routine[] }>(response, `Failed to fetch routines: ${response.status}`);
-  return payload.routines;
+  return withMockApi(
+    async () => {
+      const response = await fetch(`${BASE}/routines`, {
+        headers: buildAuthHeaders(accessToken),
+      });
+      const payload = await parseJsonOrError<{ routines: Routine[] }>(response, `Failed to fetch routines: ${response.status}`);
+      return payload.routines;
+    },
+    () => []
+  );
 }
 
 export async function createRoutine(input: RoutineCreateInput, accessToken: string): Promise<Routine> {

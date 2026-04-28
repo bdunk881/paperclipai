@@ -11,6 +11,10 @@ export interface ProviderStatus {
   connected: boolean;
   connectedAt?: string;
   scopes?: string[];
+  connectionId?: string;
+  authMethod?: "oauth2" | "api_key";
+  tokenMasked?: string;
+  accountLabel?: string;
 }
 
 export interface ProviderMeta {
@@ -18,6 +22,8 @@ export interface ProviderMeta {
   name: string;
   category: string;
   authMode: "oauth" | "api_key";
+  supportsOAuth: boolean;
+  supportsApiKey: boolean;
   description: string;
 }
 
@@ -27,6 +33,8 @@ export const LIVE_CONNECTOR_PROVIDERS: ProviderMeta[] = [
     name: "Apollo",
     category: "Sales",
     authMode: "oauth",
+    supportsOAuth: true,
+    supportsApiKey: true,
     description: "Lead enrichment and prospect data with OAuth plus API-key fallback.",
   },
   {
@@ -34,6 +42,8 @@ export const LIVE_CONNECTOR_PROVIDERS: ProviderMeta[] = [
     name: "Gmail",
     category: "Communication",
     authMode: "oauth",
+    supportsOAuth: true,
+    supportsApiKey: true,
     description: "Mailbox access for inbound message workflows and agent-driven replies.",
   },
   {
@@ -41,6 +51,8 @@ export const LIVE_CONNECTOR_PROVIDERS: ProviderMeta[] = [
     name: "HubSpot",
     category: "CRM",
     authMode: "oauth",
+    supportsOAuth: true,
+    supportsApiKey: true,
     description: "Contacts, companies, deals, webhook intake, and health checks.",
   },
   {
@@ -48,6 +60,8 @@ export const LIVE_CONNECTOR_PROVIDERS: ProviderMeta[] = [
     name: "Sentry",
     category: "Developer Tools",
     authMode: "oauth",
+    supportsOAuth: true,
+    supportsApiKey: true,
     description: "Issue and project sync with signed webhooks and PKCE auth.",
   },
   {
@@ -55,6 +69,8 @@ export const LIVE_CONNECTOR_PROVIDERS: ProviderMeta[] = [
     name: "Slack",
     category: "Communication",
     authMode: "oauth",
+    supportsOAuth: true,
+    supportsApiKey: true,
     description: "Workspace access for messaging, triage, and agent notifications.",
   },
   {
@@ -62,6 +78,8 @@ export const LIVE_CONNECTOR_PROVIDERS: ProviderMeta[] = [
     name: "Stripe",
     category: "Payments",
     authMode: "api_key",
+    supportsOAuth: true,
+    supportsApiKey: true,
     description: "Customers, subscriptions, invoices, and payment workflow triggers via connector credentials.",
   },
   {
@@ -69,6 +87,8 @@ export const LIVE_CONNECTOR_PROVIDERS: ProviderMeta[] = [
     name: "Composio",
     category: "Automation",
     authMode: "api_key",
+    supportsOAuth: false,
+    supportsApiKey: true,
     description: "Connected accounts, trigger fan-out, and tool execution via API key.",
   },
 ];

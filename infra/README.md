@@ -44,29 +44,36 @@ Add these in the repo settings -> Secrets and variables -> Actions:
 
 | Secret | Description |
 |---|---|
-| `AZURE_STATIC_WEB_APPS_API_TOKEN` | Azure Static Web Apps deploy token |
-| `VITE_API_BASE_URL` | Base URL for backend API (for example `https://api.autoflowapp.ai`) |
-| `VITE_AZURE_CLIENT_ID` | Entra External ID app registration client ID |
-| `VITE_AZURE_TENANT_SUBDOMAIN` | Tenant prefix before `.ciamlogin.com` (for example `autoflowciam`) |
+| `AZURE_STATIC_WEB_APPS_API_TOKEN` | Production Azure Static Web Apps deploy token (`app.helloautoflow.com`) |
+| `AZURE_STATIC_WEB_APPS_STAGING_API_TOKEN` | Staging Azure Static Web Apps deploy token (`staging.app.helloautoflow.com`) |
+| `VITE_API_BASE_URL` | Production backend API base URL (for example `https://api.autoflowapp.ai`) |
+| `VITE_API_BASE_URL_STAGING` | Optional staging backend API base URL; falls back to `VITE_API_BASE_URL` |
+| `VITE_AZURE_CLIENT_ID` | Production Entra External ID app registration client ID used for popup/browser auth |
+| `VITE_AZURE_CLIENT_ID_STAGING` | Optional staging Entra client ID used for popup/browser auth; falls back to `VITE_AZURE_CLIENT_ID` |
+| `VITE_AZURE_TENANT_SUBDOMAIN` | Production tenant prefix before `.ciamlogin.com` (for example `autoflowciam`) |
+| `VITE_AZURE_TENANT_SUBDOMAIN_STAGING` | Optional staging tenant prefix; falls back to `VITE_AZURE_TENANT_SUBDOMAIN` |
 | `BRANCH_ADMIN_TOKEN` | Admin-scoped GitHub token used by `enforce-branch-protection.yml` |
 
-The SWA workflow maps `VITE_AZURE_CIAM_CLIENT_ID` and `VITE_AZURE_CIAM_TENANT_SUBDOMAIN` from
-`VITE_AZURE_CLIENT_ID` and `VITE_AZURE_TENANT_SUBDOMAIN` at build time.
+The SWA workflow no longer injects `VITE_AZURE_CIAM_CLIENT_ID` at build time. Native-auth requests are pinned in code to the CIAM public SPA app registration (`2dfd3a08-277c-4893-b07d-eca5ae322310`) so staging secrets cannot silently swap the flow onto a confidential client.
 Runtime environment variables required in the Vercel dashboard project:
 
 | Variable | Description |
 |---|---|
 | `VITE_API_URL` | Base URL for backend API (for example `https://api.autoflowapp.ai`) |
-| `VITE_AZURE_CIAM_CLIENT_ID` | Entra External ID app registration client ID |
-| `VITE_AZURE_CIAM_TENANT_SUBDOMAIN` | Tenant prefix before `.ciamlogin.com` (for example `autoflowciam`) |
+| `VITE_AZURE_CIAM_CLIENT_ID` | Legacy override for preview/Vercel flows; native-auth code ignores this and stays pinned to the CIAM public SPA app |
+| `VITE_AZURE_CIAM_TENANT_SUBDOMAIN` | Entra External ID tenant subdomain used for the `ciamlogin.com` authority host (for example `autoflowciam`) |
+| `VITE_AZURE_CIAM_TENANT_DOMAIN` | Optional Entra External ID tenant domain path segment (for example `autoflowciam.onmicrosoft.com`) |
 | `QA_PREVIEW_ACCESS_TOKEN` | Preview-only shared secret used by `/api/qa-preview-access` to unlock smoke-test access for protected dashboard routes |
 
 ## Daily operations
 
-- **Deploy backend:** merge to `main` — GitHub Actions builds Docker images, pushes to ghcr.io, deploys to Azure.
-- **Preview dashboard:** pull requests targeting `master` with `dashboard/` changes create/update SWA preview environments.
-- **Deploy dashboard production:** push to `master` with `dashboard/` changes — GitHub Actions deploys to Azure Static Web Apps production.
-- **Enforce branch protection:** run `enforce-branch-protection.yml` to require PR reviews plus CI gate(s) on `main`/`master`. Default required check is `Docker Build Check` with strict up-to-date enforcement.
+- **Deploy backend staging:** push to `staging` — `.github/workflows/deploy-azure.yml` builds the backend image, deploys the staging Container App, and runs the staging smoke checks.
+- **Deploy backend production:** merge to `master` — `.github/workflows/deploy-azure.yml` builds the backend image, deploys AKS, and runs the production smoke checks.
+- **Promotion flow:** agents open feature-branch PRs into `staging`; production promotion happens through a dedicated `staging` -> `master` PR after staging validation passes.
+- **Preview dashboard:** non-production dashboard branches use `.github/workflows/dashboard-staging-gate.yml` to create Vercel preview deployments.
+- **Deploy dashboard production:** push to `master` with `dashboard/` changes — GitHub Actions deploys to the production SWA host.
+- **Deploy dashboard staging:** push to `staging` with `dashboard/` changes — GitHub Actions deploys to the staging SWA host.
+- **Enforce branch protection:** run `enforce-branch-protection.yml` to require CI on both protected branches, plus an extra `Staging-First Promotion Gate` and code-owner approval on `master`. Both branches disallow direct pushes, and `master` promotions must come from a PR whose head branch is exactly `staging`.
 - **Rollback:** redeploy a previous image tag (backend) or follow `infra/runbooks/swa-dashboard-deploy.md` for dashboard DNS/rollback.
 
 ## Infrastructure as Code
@@ -85,12 +92,23 @@ Runtime environment variables required in the Vercel dashboard project:
 ## DNS
 
 Configure DNS records to point to Azure per environment (dashboard uses SWA; landing uses Vercel).
+Recommended dashboard host split:
+
+- `app.helloautoflow.com` -> production SWA
+- `staging.app.helloautoflow.com` -> staging SWA
 
 ## QA Integration Evidence
 
 - Workflow: `.github/workflows/qa-integration-evidence.yml`
 - Smoke script: `infra/scripts/qa_integration_smoke.sh`
 - Runbook: `infra/runbooks/qa-integration-environment.md`
+
+## CIAM Native Auth Password Reset
+
+- Enable tenant-side Email OTP SSPR before relying on `resetpassword/v1.0/*` in native auth.
+- Script: `infra/azure/scripts/enable-ciam-native-auth-sspr.sh`
+- Verification: `infra/azure/scripts/verify-ciam-native-auth-sspr.sh`
+- Runbook: `infra/runbooks/ciam-native-auth-sspr.md`
 
 ## Brand asset infra package (ALT-1363)
 

@@ -38,6 +38,12 @@ variable "tenant_id" {
   type        = string
 }
 
+variable "autoflow_management_group_name" {
+  description = "Azure name/UUID for the existing top-level autoflow management group."
+  type        = string
+  default     = "f4e6c3a4-6ee6-4604-8334-413e481dcf27"
+}
+
 # ── Management / RBAC ────────────────────────────────────────────────────────
 
 variable "devops_sp_object_id" {
@@ -83,8 +89,38 @@ variable "max_node_count" {
   default     = 5
 }
 
+variable "production_kubernetes_version" {
+  description = "Pinned Kubernetes version for the live production AKS cluster."
+  type        = string
+  default     = "1.35.1"
+}
+
+variable "production_node_count" {
+  description = "Pinned default node count for the live production AKS cluster."
+  type        = number
+  default     = 2
+}
+
+variable "production_node_vm_size" {
+  description = "Pinned node VM size for the live production AKS cluster."
+  type        = string
+  default     = "Standard_D2as_v7"
+}
+
+variable "production_min_node_count" {
+  description = "Pinned minimum node count for the live production AKS cluster."
+  type        = number
+  default     = 2
+}
+
+variable "production_max_node_count" {
+  description = "Pinned maximum node count for the live production AKS cluster."
+  type        = number
+  default     = 10
+}
+
 variable "api_server_authorized_ips" {
-  description = "CIDR blocks allowed to reach the AKS API server. Must include CI runner IPs, hub mgmt subnet, and developer VPN."
+  description = "Stable CIDR blocks allowed to reach the AKS API server. Use only fixed egress ranges such as VPN, hub management, or self-hosted runner subnets."
   type        = list(string)
   default = [
     "10.1.3.0/24", # Hub management / bastion subnet
@@ -96,7 +132,26 @@ variable "api_server_authorized_ips" {
 variable "ciam_tenant_subdomain" {
   description = "Subdomain for the CIAM tenant (e.g. 'autoflow' → autoflow.ciamlogin.com). Must be globally unique."
   type        = string
-  default     = "autoflow"
+  default     = "autoflowciam"
+}
+
+variable "existing_ciam_tenant_id" {
+  description = "Existing CIAM tenant ID reused by Terraform outputs and app registration wiring."
+  type        = string
+  default     = "5e4f1080-8afc-4005-b05e-32b21e69363a"
+}
+
+variable "ciam_graph_client_id" {
+  description = "Client ID for the CIAM-tenant Microsoft Graph application used by the aliased azuread provider."
+  type        = string
+  default     = ""
+}
+
+variable "ciam_graph_client_secret" {
+  description = "Client secret for the CIAM-tenant Microsoft Graph application used by the aliased azuread provider."
+  type        = string
+  default     = ""
+  sensitive   = true
 }
 
 variable "spa_redirect_uris" {

@@ -9,6 +9,7 @@ const mockedAuthContext = {
   login: vi.fn(),
   logout: vi.fn(),
   getAccessToken: vi.fn(),
+  requireAccessToken: vi.fn(),
 };
 
 vi.mock("../context/AuthContext", async () => {
@@ -51,6 +52,7 @@ function renderPage() {
 describe("McpServers", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockedAuthContext.requireAccessToken.mockResolvedValue("token-123");
     apiGetMock.mockResolvedValue({ servers: [] });
     apiPostMock.mockResolvedValue({ ok: true, message: "Connection verified" });
     apiDeleteMock.mockResolvedValue(undefined);
@@ -114,7 +116,8 @@ describe("McpServers", () => {
         authHeaderKey: "Authorization",
         authHeaderValue: "Bearer secret",
       },
-      mockedAuthContext.user
+      mockedAuthContext.user,
+      "token-123"
     );
   });
 
@@ -157,7 +160,11 @@ describe("McpServers", () => {
     await waitFor(() => {
       expect(screen.queryByText("Linear MCP")).toBeNull();
     });
-    expect(apiDeleteMock).toHaveBeenCalledWith("/api/mcp/servers/server-1", mockedAuthContext.user);
+    expect(apiDeleteMock).toHaveBeenCalledWith(
+      "/api/mcp/servers/server-1",
+      mockedAuthContext.user,
+      "token-123"
+    );
   });
 
   it("shows auth-specific load failures", async () => {

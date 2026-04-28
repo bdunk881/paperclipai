@@ -15,6 +15,8 @@ interface SecretVaultOptions {
   salts?: string[];
 }
 
+const EPHEMERAL_KEY_ALLOWED_ENVS = new Set(["development", "test"]);
+
 function parseEnvList(value: string | undefined): string[] {
   if (!value) {
     return [];
@@ -45,6 +47,19 @@ function deriveKeys(seeds: string[], salts: string[]): Buffer[] {
   return keys;
 }
 
+function getRuntimeEnvironment(): string {
+  return (process.env.NODE_ENV ?? "development").trim().toLowerCase();
+}
+
+function createMissingEncryptionKeyError(currentKeyEnvVars: string[]): Error {
+  const runtimeEnvironment = getRuntimeEnvironment();
+  return new Error(
+    `Missing connector credential encryption key for NODE_ENV=${runtimeEnvironment}. ` +
+      `Set one of ${currentKeyEnvVars.join(", ")} before starting the server. ` +
+      "Ephemeral random fallback is only allowed in development or test."
+  );
+}
+
 export class SecretVault {
   private readonly primaryKey: Buffer;
 
@@ -58,9 +73,14 @@ export class SecretVault {
     );
 
     const primarySeed = currentSeeds[0];
-    this.primaryKey = primarySeed
-      ? deriveKeys([primarySeed], [salts[0]])[0]
-      : randomBytes(32);
+    if (!primarySeed) {
+      const runtimeEnvironment = getRuntimeEnvironment();
+      if (!EPHEMERAL_KEY_ALLOWED_ENVS.has(runtimeEnvironment)) {
+        throw createMissingEncryptionKeyError(options.currentKeyEnvVars);
+      }
+    }
+
+    this.primaryKey = primarySeed ? deriveKeys([primarySeed], [salts[0]])[0] : randomBytes(32);
 
     const candidateKeys = deriveKeys([...currentSeeds, ...previousSeeds], salts);
     this.candidateKeys = candidateKeys.length > 0 ? candidateKeys : [this.primaryKey];

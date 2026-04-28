@@ -43,7 +43,7 @@ export default function RunMonitor() {
     if (!silent) setLoading(true);
     setLoadError(null);
     try {
-      const accessToken = await getAccessToken() ?? undefined;
+      const accessToken = (await getAccessToken()) ?? undefined;
       const [runResults, teams] = await Promise.all([
         listRuns(undefined, accessToken),
         listControlPlaneTeams(accessToken),

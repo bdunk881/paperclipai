@@ -2,6 +2,10 @@ terraform {
   required_version = ">= 1.6"
 
   required_providers {
+    azapi = {
+      source  = "Azure/azapi"
+      version = "~> 2.9"
+    }
     azurerm = {
       source  = "hashicorp/azurerm"
       version = "~> 3.100"
@@ -16,9 +20,10 @@ terraform {
     resource_group_name  = "autoflow-tfstate-rg"
     storage_account_name = "autoflowterraformstate"
     container_name       = "tfstate"
-    key                  = "autoflow.tfstate"
   }
 }
+
+provider "azapi" {}
 
 provider "azurerm" {
   features {
@@ -32,6 +37,13 @@ provider "azurerm" {
 }
 
 provider "azuread" {}
+
+provider "azuread" {
+  alias         = "ciam"
+  tenant_id     = var.existing_ciam_tenant_id
+  client_id     = var.ciam_graph_client_id != "" ? var.ciam_graph_client_id : null
+  client_secret = var.ciam_graph_client_secret != "" ? var.ciam_graph_client_secret : null
+}
 
 # ── Resource group ──────────────────────────────────────────────────────────
 
@@ -57,11 +69,12 @@ module "hub" {
   tags                = local.common_tags
 }
 
-# ── Spoke VNets (prod + staging) ──────────────────────────────────────────────
-# Replaces the old modules/networking single-environment module.
-# Each spoke peers bidirectionally to the hub and routes DNS through the Firewall.
+# ── Spoke VNets (workspace-scoped) ────────────────────────────────────────────
+# Each workspace provisions only its active spoke. This keeps the production
+# workspace from planning or mutating staging network resources.
 
 module "spoke_prod" {
+  count  = var.environment == "production" ? 1 : 0
   source = "./modules/spoke"
 
   prefix                  = var.prefix
@@ -81,6 +94,7 @@ module "spoke_prod" {
 }
 
 module "spoke_staging" {
+  count  = var.environment == "staging" ? 1 : 0
   source = "./modules/spoke"
 
   prefix                  = var.prefix
@@ -99,13 +113,21 @@ module "spoke_staging" {
   tags                    = local.common_tags
 }
 
-# Select the correct spoke subnet IDs based on the deployment environment.
-# (Both spoke VNets are always deployed; active_* picks the right one for AKS/ACR.)
+# Select the correct spoke subnet IDs based on the active workspace environment.
 locals {
-  active_aks_subnet_id  = var.environment == "production" ? module.spoke_prod.aks_subnet_id : module.spoke_staging.aks_subnet_id
-  active_pe_subnet_id   = var.environment == "production" ? module.spoke_prod.pe_subnet_id : module.spoke_staging.pe_subnet_id
-  active_func_subnet_id = var.environment == "production" ? module.spoke_prod.func_subnet_id : module.spoke_staging.func_subnet_id
-  active_vnet_id        = var.environment == "production" ? module.spoke_prod.spoke_vnet_id : module.spoke_staging.spoke_vnet_id
+  active_aks_subnet_id         = var.environment == "production" ? module.spoke_prod[0].aks_subnet_id : module.spoke_staging[0].aks_subnet_id
+  active_pe_subnet_id          = var.environment == "production" ? module.spoke_prod[0].pe_subnet_id : module.spoke_staging[0].pe_subnet_id
+  active_func_subnet_id        = var.environment == "production" ? module.spoke_prod[0].func_subnet_id : module.spoke_staging[0].func_subnet_id
+  active_vnet_id               = var.environment == "production" ? module.spoke_prod[0].spoke_vnet_id : module.spoke_staging[0].spoke_vnet_id
+  effective_kubernetes_version = var.environment == "production" ? var.production_kubernetes_version : var.kubernetes_version
+  effective_node_count         = var.environment == "production" ? var.production_node_count : var.node_count
+  effective_node_vm_size       = var.environment == "production" ? var.production_node_vm_size : var.node_vm_size
+  effective_min_node_count     = var.environment == "production" ? var.production_min_node_count : var.min_node_count
+  effective_max_node_count     = var.environment == "production" ? var.production_max_node_count : var.max_node_count
+  # GitHub-hosted runner IPs are too large and too dynamic to fit AKS API
+  # allowlists in production. Keep staging locked to the hub management subnet,
+  # but leave production unrestricted until deploys move to stable egress.
+  effective_api_server_authorized_ips = var.environment == "production" ? [] : var.api_server_authorized_ips
 }
 
 module "acr" {
@@ -116,6 +138,7 @@ module "acr" {
   location            = var.location
   resource_group_name = azurerm_resource_group.main.name
   pe_subnet_id        = local.active_pe_subnet_id
+  private_dns_zone_id = module.hub.private_dns_zone_acr_id
   vnet_id             = local.active_vnet_id
   tags                = local.common_tags
 }
@@ -129,12 +152,12 @@ module "aks" {
   resource_group_name       = azurerm_resource_group.main.name
   aks_subnet_id             = local.active_aks_subnet_id
   acr_id                    = module.acr.acr_id
-  node_count                = var.node_count
-  node_vm_size              = var.node_vm_size
-  min_node_count            = var.min_node_count
-  max_node_count            = var.max_node_count
-  kubernetes_version        = var.kubernetes_version
-  api_server_authorized_ips = var.api_server_authorized_ips
+  node_count                = local.effective_node_count
+  node_vm_size              = local.effective_node_vm_size
+  min_node_count            = local.effective_min_node_count
+  max_node_count            = local.effective_max_node_count
+  kubernetes_version        = local.effective_kubernetes_version
+  api_server_authorized_ips = local.effective_api_server_authorized_ips
   tags                      = local.common_tags
 }
 
@@ -142,7 +165,7 @@ module "management" {
   source = "./modules/management"
 
   prefix                             = var.prefix
-  tenant_id                          = var.tenant_id
+  autoflow_management_group_name     = var.autoflow_management_group_name
   devops_sp_object_id                = var.devops_sp_object_id
   monitoring_principal_ids           = var.monitoring_principal_ids
   aks_workload_identity_principal_id = module.aks.kubelet_identity_object_id
@@ -192,14 +215,19 @@ module "security" {
 module "entra_ciam" {
   source = "./modules/entra-ciam"
 
-  prefix                = var.prefix
-  environment           = var.environment
-  location              = var.location
-  resource_group_name   = azurerm_resource_group.main.name
-  ciam_tenant_subdomain = var.ciam_tenant_subdomain
-  spa_redirect_uris     = var.spa_redirect_uris
-  spa_logout_uris       = var.spa_logout_uris
-  tags                  = local.common_tags
+  providers = {
+    azuread = azuread.ciam
+  }
+
+  prefix                  = var.prefix
+  environment             = var.environment
+  location                = var.location
+  resource_group_name     = azurerm_resource_group.main.name
+  ciam_tenant_subdomain   = var.ciam_tenant_subdomain
+  existing_ciam_tenant_id = var.existing_ciam_tenant_id
+  spa_redirect_uris       = var.spa_redirect_uris
+  spa_logout_uris         = var.spa_logout_uris
+  tags                    = local.common_tags
 }
 
 # ── Locals ────────────────────────────────────────────────────────────────────

@@ -20,6 +20,19 @@ jest.mock("../auth/authMiddleware", () => ({
     req.auth = { sub: auth.slice(7) };
     next();
   },
+  requireAuthOrQaBypass: (
+    req: { headers: { authorization?: string }; auth?: { sub: string } },
+    res: { status: (code: number) => { json: (body: unknown) => void } },
+    next: () => void
+  ) => {
+    const auth = req.headers.authorization;
+    if (!auth?.startsWith("Bearer ")) {
+      res.status(401).json({ error: "Missing or malformed Authorization header." });
+      return;
+    }
+    req.auth = { sub: auth.slice(7) };
+    next();
+  },
 }));
 
 import request from "supertest";
@@ -234,6 +247,34 @@ describe("GET /api/llm-configs", () => {
     expect(res.status).toBe(200);
     expect(JSON.stringify(res.body)).not.toContain("bedrock-secret-key-123456");
     expect(JSON.stringify(res.body)).not.toContain("AKIAIOSFODNN7EXAMPLE");
+  });
+
+  it("falls back to in-memory configs when async listing fails", async () => {
+    await request(app)
+      .post("/api/llm-configs")
+      .set(asAuth(USER_A))
+      .send({ provider: "openai", label: "Warm cache", model: "gpt-4o", apiKey: "sk-test-cache1" });
+
+    const listAsyncSpy = jest
+      .spyOn(llmConfigStore, "listAsync")
+      .mockRejectedValueOnce(new Error("relation connector_credentials does not exist"));
+    const warnSpy = jest.spyOn(console, "warn").mockImplementation(() => {});
+
+    try {
+      const res = await request(app).get("/api/llm-configs").set(asAuth(USER_A));
+
+      expect(res.status).toBe(200);
+      expect(res.body.total).toBe(1);
+      expect(res.body.configs).toHaveLength(1);
+      expect(res.body.configs[0].label).toBe("Warm cache");
+      expect(warnSpy).toHaveBeenCalledWith(
+        "[llmConfigRoutes] Postgres list failed, using in-memory fallback:",
+        "relation connector_credentials does not exist"
+      );
+    } finally {
+      listAsyncSpy.mockRestore();
+      warnSpy.mockRestore();
+    }
   });
 });
 

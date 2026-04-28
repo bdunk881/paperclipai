@@ -51,17 +51,14 @@ This creates the `autoflow-tfstate-rg` resource group, the `autoflowterraformsta
 
 ```bash
 cd infra/azure
-terraform init
-terraform workspace new staging   # first time only
-terraform workspace select staging
+terraform init -backend-config=backend-config/staging.hcl
 terraform apply -var="environment=staging" -var="alert_email=ops@helloautoflow.com"
 ```
 
 ### Production
 
 ```bash
-terraform workspace new production   # first time only
-terraform workspace select production
+terraform init -backend-config=backend-config/production.hcl
 terraform apply \
   -var="environment=production" \
   -var="alert_email=ops@helloautoflow.com" \
@@ -98,28 +95,110 @@ The pipeline lives at `.github/workflows/deploy-azure.yml`.
 
 | Stage | Trigger | Gate |
 |---|---|---|
-| Build & Push | Every push to `main` | CI pass (lint + tests) |
-| Deploy Staging | `main` branch only | Automatic after Build |
-| Deploy Production | `main` branch only | Manual approval via GitHub environment protection |
+| Build & Push | Every push to `master` | CI pass (lint + tests) |
+| Deploy Production | Push to `master` | GitHub `production` environment gate |
+| Deploy Staging | Manual `workflow_dispatch` | No approval gate by default |
 
-**Required GitHub Secrets (board must add):**
+The GitHub deploy paths are split by environment:
 
-| Secret | Description |
+- `staging` stays on **Azure Container Apps**
+- `production` rolls the backend workload onto **AKS**
+
+Terraform still provisions the broader Azure estate. The production deploy path
+imports the built backend image into the production ACR, bootstraps
+`autoflow-backend-secrets`, applies the AKS backend manifest, and updates the
+`backend` deployment image in `autoflow-production`.
+
+Because GitHub-hosted runner IPs are highly dynamic, production Terraform does
+not enforce AKS API authorized IP ranges by default. As of 2026-04-25, GitHub's
+official `GET /meta` response advertises thousands of Actions CIDRs, while AKS
+authorized IP ranges support only up to 200 entries. Re-enable the production
+allowlist only after moving deploys to stable egress such as self-hosted runners,
+GitHub larger runners with static IPs, or a dedicated VPN/NAT path.
+
+**Required GitHub repository variables:**
+
+| Variable | Description |
 |---|---|
-| `AZURE_CREDENTIALS` | Service principal JSON from `az ad sp create-for-rbac --sdk-auth` |
-| `AZURE_SUBSCRIPTION_ID` | Azure subscription ID |
-| `AZURE_TENANT_ID` | Azure AD tenant ID |
-| `AZURE_ACR_LOGIN_SERVER` | ACR login server, e.g. `autoflowacr.azurecr.io` |
-| `AKS_CLUSTER_NAME` | AKS cluster name (Terraform output: `aks_cluster_name`) |
-| `AKS_RESOURCE_GROUP` | Resource group name (Terraform output: `resource_group_name`) |
+| `ARM_CLIENT_ID` | Azure federated credential client ID used by `azure/login@v2` |
+| `ARM_TENANT_ID` | Azure tenant ID |
+| `ARM_SUBSCRIPTION_ID` | Azure subscription ID |
+
+**Required GitHub environment variables:**
+
+| Environment | Variable | Description |
+|---|---|---|
+| `staging` | `AZURE_CONTAINER_APP_STAGING_NAME` | Expected staging backend Container App name |
+| `staging` | `AZURE_CONTAINER_APP_STAGING_RESOURCE_GROUP` | Resource group for the staging backend app |
+| `staging` | `AZURE_STAGING_API_HOST` | Public staging API hostname used for DNS-based discovery |
+| `production` | `AZURE_AKS_PRODUCTION_CLUSTER_NAME` | Production AKS cluster name |
+| `production` | `AZURE_AKS_PRODUCTION_RESOURCE_GROUP` | Resource group containing the production AKS cluster |
+| `production` | `AZURE_PRODUCTION_API_HOST` | Public production API hostname used for DNS and cutover tracking |
+| `production` | `AZURE_PRODUCTION_LETSENCRYPT_EMAIL` | ACME account email used by the production cert-manager `ClusterIssuer` |
+
+**Required GitHub environment secrets:**
+
+| Environment | Secret | Description |
+|---|---|---|
+| `staging` | `AZURE_BACKEND_ENV_STAGING_SOCIAL_AUTH` | Newline-delimited env file containing `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `APP_JWT_SECRET`, and `SOCIAL_AUTH_CALLBACK_BASE_URL` for the staging Container App |
+| `production` | `AZURE_BACKEND_ENV_PRODUCTION` | Newline-delimited env file materialized into the `autoflow-backend-secrets` Kubernetes secret |
+
+**Required Terraform variables for CIAM app-registration management:**
+
+| Variable | Description |
+|---|---|
+| `TF_VAR_ciam_graph_client_id` | Client ID for the CIAM-tenant Graph application used by the aliased `azuread.ciam` provider |
+| `TF_VAR_ciam_graph_client_secret` | Client secret for the same CIAM-tenant Graph application |
 
 **Setup steps:**
 
 1. Run `terraform apply` to create all Azure resources (see Usage above).
-2. Add the GitHub Secrets listed above to the repository.
+2. Add the repository-level OIDC variables listed above.
 3. Create two GitHub Environments in Settings → Environments:
    - `staging` — no approvals
-   - `production` — add required reviewers for manual approval gate
+   - `production` — add required reviewers for the production deployment gate
+4. Add the environment-scoped backend target variables for each environment.
+5. Add `AZURE_BACKEND_ENV_STAGING_SOCIAL_AUTH` to the `staging` environment with:
+
+   ```env
+   GOOGLE_CLIENT_ID=<google-oauth-client-id>
+   GOOGLE_CLIENT_SECRET=<google-oauth-client-secret>
+   APP_JWT_SECRET=<32+ char random secret>
+   SOCIAL_AUTH_CALLBACK_BASE_URL=https://staging.app.helloautoflow.com/auth
+   ```
+
+   The staging deploy workflow validates those four keys and injects them into
+   the Container App on every deploy alongside the QA bypass flags.
+6. Add `AZURE_BACKEND_ENV_PRODUCTION` to the `production` environment so the
+   AKS rollout can create `autoflow-backend-secrets` before the deployment starts.
+7. Verify production-specific values do not reference `staging` or `nonprod`
+   resource names; the workflow now hard-fails on cross-environment targets.
+8. Ensure `AZURE_BACKEND_ENV_PRODUCTION` includes CIAM auth fallback inputs
+   (`AZURE_CIAM_TENANT_ID`/`AZURE_TENANT_ID`, `AZURE_CIAM_TENANT_SUBDOMAIN`/`AZURE_TENANT_SUBDOMAIN`,
+   and a CIAM audience/client setting) plus `ALLOWED_ORIGINS` containing
+   `https://app.helloautoflow.com`.
+9. Set both `AZURE_CIAM_AUTHORITY` and `AUTH_NATIVE_AUTH_PROXY_BASE_URL` in
+   `AZURE_BACKEND_ENV_PRODUCTION` to the direct tenant authority:
+
+   `https://<tenant-subdomain>.ciamlogin.com/<tenant-guid>`
+
+   Example:
+
+   `https://<tenant-subdomain>.ciamlogin.com/<tenant-guid>`
+
+   The production deploy workflow now rejects any non-`ciamlogin.com` runtime
+   value so the backend cannot drift back to the retired branded auth host.
+
+**Validation checks**
+
+- `gh api repos/<owner>/<repo>/environments` should show a `production`
+  protection rule with required reviewers before production deploys are allowed.
+- `gh api repos/<owner>/<repo>/environments/production/variables` should include
+  the three production AKS variables listed above.
+- `gh run list --workflow deploy-azure.yml` should show a successful
+  production backend run that imports into ACR, creates the K8s secret, rolls
+  out the AKS deployment, and passes the native-auth initiate smoke check
+  before you cut traffic to the new backend.
 
 ---
 
@@ -134,6 +213,7 @@ The pipeline lives at `.github/workflows/deploy-azure.yml`.
 | `min_node_count` | `1` | Scale to zero not supported on system node pool |
 | `max_node_count` | `5` | Adjust based on load |
 | `kubernetes_version` | `1.29` | Check `az aks get-versions` for latest |
+| `api_server_authorized_ips` | `["10.1.3.0/24"]` | Stable CIDRs only. Applied to staging; production is intentionally left open until CI uses stable egress. |
 
 ---
 
@@ -142,9 +222,12 @@ The pipeline lives at `.github/workflows/deploy-azure.yml`.
 ```
 infra/azure/scripts/
   bootstrap-tfstate.sh         — one-time Terraform remote state setup
+  enable-ciam-native-auth-sspr.sh — enable Email OTP SSPR for native auth in the external tenant
   provision-ciam.sh            — create the CIAM SPA app registration and output env vars
+  configure-ciam-microsoft-account-oidc.sh — create/update the Microsoft Account OIDC provider and attach it to a CIAM user flow
   sync-ciam-redirect-uris.sh   — upsert the dashboard auth callback/logout URIs on the CIAM SPA app
   validate-ciam-prereqs.sh     — validate subscription + Graph access before provisioning
+  verify-ciam-native-auth-sspr.sh — verify resetpassword/v1.0/start returns a continuation token
 ```
 
 The dashboard is in a transition period between root-based MSAL redirects and
@@ -154,16 +237,54 @@ redirect URIs for production, staging, the active Vercel preview hosts, and
 localhost. Run `./scripts/sync-ciam-redirect-uris.sh` after any custom-domain
 cutover, preview-host policy change, or auth route change.
 
+Native auth password reset depends on Email OTP SSPR being enabled in the
+external tenant. After `provision-ciam.sh` creates the app registration, run
+`./scripts/enable-ciam-native-auth-sspr.sh` and then
+`./scripts/verify-ciam-native-auth-sspr.sh` with a real customer username.
+Without that tenant-side policy, Azure returns `AADSTS500222` from
+`resetpassword/v1.0/start` even when the app code and proxy routing are correct.
+
+Microsoft Account federation is split intentionally:
+
+- Terraform manages the `autoflow-msa-federation` application registration and
+  secret inside the CIAM tenant.
+- `./scripts/configure-ciam-microsoft-account-oidc.sh` manages the tenant-side
+  custom OIDC identity provider plus the user-flow attachment, using Graph.
+
 ---
 
 ## Secrets needed post-deploy
 
-After `terraform apply`, export these values and add them to GitHub Secrets / app environment:
+After `terraform apply`, export these values and wire them into the deployment
+systems that consume them:
 
 ```bash
 terraform output app_insights_connection_string   # APPLICATIONINSIGHTS_CONNECTION_STRING
-terraform output acr_login_server                 # AZURE_ACR_LOGIN_SERVER
-terraform output aks_cluster_name                 # AKS_CLUSTER_NAME
-terraform output resource_group_name              # AKS_RESOURCE_GROUP
-terraform output kube_config_command              # run to merge kubeconfig locally
+terraform output kube_config_command              # optional operator access for AKS troubleshooting
 ```
+
+For backend deploy automation, capture the resulting Container App names,
+resource groups, and public hostnames and store them in the environment-scoped
+GitHub variables documented above.
+
+## Terraform state migration
+
+The Azure backend now uses an explicit dedicated state key for staging while
+production continues to use the legacy shared key plus the `production`
+workspace until its state migration is completed:
+
+- `backend-config/staging.hcl` → `autoflow-staging.tfstate`
+- `backend-config/production.hcl` → `autoflow.tfstate` with `terraform workspace select production`
+
+To migrate an existing workspace-backed state into a dedicated backend key:
+
+1. Select the source workspace and pull a backup copy:
+   `terraform workspace select <env>`
+   `terraform state pull > <env>-workspace.tfstate`
+2. Return to the default workspace before reconfiguring the backend:
+   `terraform workspace select default`
+3. Reinitialize against the target backend key:
+   `terraform init -reconfigure -backend-config=backend-config/<env>.hcl`
+4. Push the copied state into the dedicated backend:
+   `terraform state push <env>-workspace.tfstate`
+5. Run `terraform plan -var="environment=<env>"` and remove any resources that belong only to the other environment with `terraform state rm` before the next apply.

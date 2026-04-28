@@ -15,25 +15,20 @@
 # All RBAC assignments follow least-privilege, scoped to the narrowest MG
 # that covers the access requirement.
 
-# ── Tenant Root Group reference ───────────────────────────────────────────────
-
-data "azurerm_management_group" "root" {
-  # The tenant root group ID is always the tenant ID.
-  name = var.tenant_id
-}
-
-# ── Top-level: autoflow ───────────────────────────────────────────────────────
-
-resource "azurerm_management_group" "autoflow" {
-  display_name               = "${var.prefix}"
-  parent_management_group_id = data.azurerm_management_group.root.id
+# ── Existing top-level autoflow management group ──────────────────────────────
+#
+# Azure already returns the management group's canonical resource ID from the
+# configured name/UUID, so avoid the extra provider lookup that has been
+# failing in production CI despite the group existing.
+locals {
+  autoflow_management_group_id = "/providers/Microsoft.Management/managementGroups/${var.autoflow_management_group_name}"
 }
 
 # ── Platform subtree ──────────────────────────────────────────────────────────
 
 resource "azurerm_management_group" "platform" {
   display_name               = "${var.prefix}-platform"
-  parent_management_group_id = azurerm_management_group.autoflow.id
+  parent_management_group_id = local.autoflow_management_group_id
 }
 
 resource "azurerm_management_group" "connectivity" {
@@ -55,7 +50,7 @@ resource "azurerm_management_group" "management" {
 
 resource "azurerm_management_group" "landing_zones" {
   display_name               = "${var.prefix}-landing-zones"
-  parent_management_group_id = azurerm_management_group.autoflow.id
+  parent_management_group_id = local.autoflow_management_group_id
 }
 
 resource "azurerm_management_group" "lz_production" {
@@ -70,6 +65,15 @@ resource "azurerm_management_group" "lz_development" {
 
 # ── RBAC: DevOps pipeline SP ──────────────────────────────────────────────────
 #
+# Reader on the top-level Autoflow MG so Terraform can refresh management-group
+# policy assignments and hierarchy objects during plan/apply without broader
+# write access at that scope.
+resource "azurerm_role_assignment" "devops_sp_root_reader" {
+  scope                = local.autoflow_management_group_id
+  role_definition_name = "Reader"
+  principal_id         = var.devops_sp_object_id
+}
+
 # Contributor on Production and Development Landing Zone MGs only.
 # Two separate assignments — one per MG — so access cannot be escalated by
 # moving a subscription between them.
@@ -94,7 +98,7 @@ resource "azurerm_role_assignment" "devops_sp_lz_dev" {
 resource "azurerm_role_assignment" "monitoring_reader" {
   for_each = toset(var.monitoring_principal_ids)
 
-  scope                = azurerm_management_group.autoflow.id
+  scope                = local.autoflow_management_group_id
   role_definition_name = "Monitoring Reader"
   principal_id         = each.value
 }

@@ -1,40 +1,19 @@
 import { render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import AuthCallback from "./AuthCallback";
 
-const msalMocks = vi.hoisted(() => ({
-  handleRedirectPromise: vi.fn(),
-  getAllAccounts: vi.fn(() => []),
-  setActiveAccount: vi.fn(),
-}));
-
-vi.mock("@azure/msal-react", () => ({
-  useMsal: () => ({
-    instance: {
-      handleRedirectPromise: msalMocks.handleRedirectPromise,
-      getAllAccounts: msalMocks.getAllAccounts,
-      setActiveAccount: msalMocks.setActiveAccount,
-    },
-  }),
-}));
-
 describe("AuthCallback", () => {
-  beforeEach(() => {
-    msalMocks.handleRedirectPromise.mockReset();
-    msalMocks.getAllAccounts.mockReset();
-    msalMocks.getAllAccounts.mockReturnValue([]);
-    msalMocks.setActiveAccount.mockReset();
+  afterEach(() => {
+    vi.restoreAllMocks();
+    Reflect.deleteProperty(window, "opener");
   });
 
-  it("redirects to the dashboard when redirect resolution returns an account", async () => {
-    msalMocks.handleRedirectPromise.mockResolvedValue({ account: { username: "user@example.com" } });
-
+  it("renders the auth callback message and redirects back to login outside a popup", async () => {
     render(
       <MemoryRouter initialEntries={["/auth/callback"]}>
         <Routes>
           <Route path="/auth/callback" element={<AuthCallback />} />
-          <Route path="/" element={<div>Dashboard Home</div>} />
           <Route path="/login" element={<div>Login Page</div>} />
         </Routes>
       </MemoryRouter>
@@ -43,26 +22,30 @@ describe("AuthCallback", () => {
     expect(screen.getByText(/completing microsoft sign-in/i)).toBeInTheDocument();
 
     await waitFor(() => {
-      expect(screen.getByText("Dashboard Home")).toBeInTheDocument();
-      expect(msalMocks.setActiveAccount).toHaveBeenCalledTimes(1);
+      expect(screen.getByText("Login Page")).toBeInTheDocument();
     });
   });
 
-  it("redirects to login when redirect handling fails", async () => {
-    msalMocks.handleRedirectPromise.mockRejectedValue(new Error("redirect failed"));
+  it("closes the popup instead of redirecting when the callback is running in a popup window", async () => {
+    const closeSpy = vi.spyOn(window, "close").mockImplementation(() => undefined);
+    Object.defineProperty(window, "opener", {
+      configurable: true,
+      value: {},
+    });
 
     render(
       <MemoryRouter initialEntries={["/auth/callback"]}>
         <Routes>
           <Route path="/auth/callback" element={<AuthCallback />} />
-          <Route path="/" element={<div>Dashboard Home</div>} />
           <Route path="/login" element={<div>Login Page</div>} />
         </Routes>
       </MemoryRouter>
     );
 
     await waitFor(() => {
-      expect(screen.getByText("Login Page")).toBeInTheDocument();
+      expect(closeSpy).toHaveBeenCalledTimes(1);
     });
+
+    expect(screen.queryByText("Login Page")).not.toBeInTheDocument();
   });
 });

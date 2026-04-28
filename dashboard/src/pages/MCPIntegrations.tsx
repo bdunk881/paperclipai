@@ -149,9 +149,9 @@ function formatAvailability(option: IntegrationOption, liveStatuses: Record<Prov
 
   return {
     badgeClassName: "bg-blue-50 text-blue-700",
-    badgeLabel: provider.authMode === "oauth" ? "Setup available" : "API-key setup",
+    badgeLabel: provider.supportsOAuth ? "Setup available" : "API-key setup",
     helperText:
-      provider.authMode === "oauth"
+      provider.supportsOAuth
         ? `${provider.name} has a live connector setup flow in AutoFlow today.`
         : `${provider.name} is configured through the live API-key connector surface.`,
     ctaLabel: "Open connector setup",
@@ -161,7 +161,7 @@ function formatAvailability(option: IntegrationOption, liveStatuses: Record<Prov
 }
 
 export default function IntegrationsHub() {
-  const { user, getAccessToken } = useAuth();
+  const { user, requireAccessToken } = useAuth();
   const [search, setSearch] = useState("");
   const [category, setCategory] = useState("All");
   const [registered, setRegistered] = useState<RegisteredIntegration[]>([]);
@@ -172,23 +172,22 @@ export default function IntegrationsHub() {
   useEffect(() => {
     async function loadRegistered() {
       try {
-        const data = await apiGet<{ servers: RegisteredIntegration[] }>("/api/mcp/servers", user);
+        const accessToken = await requireAccessToken();
+        const data = await apiGet<{ servers: RegisteredIntegration[] }>("/api/mcp/servers", user, accessToken);
         setRegistered(data.servers);
       } finally {
         setLoadingRegistered(false);
       }
     }
     void loadRegistered();
-  }, [user]);
+  }, [requireAccessToken, user]);
 
   useEffect(() => {
     async function loadLiveStatuses() {
       try {
-        const accessToken = await getAccessToken();
+        const accessToken = await requireAccessToken();
         const headers = new Headers();
-        if (accessToken) {
-          headers.set("Authorization", `Bearer ${accessToken}`);
-        }
+        headers.set("Authorization", `Bearer ${accessToken}`);
 
         const response = await fetch(`${API_BASE}/api/integrations/status`, { headers });
         if (!response.ok) {
@@ -205,7 +204,7 @@ export default function IntegrationsHub() {
     }
 
     void loadLiveStatuses();
-  }, [getAccessToken]);
+  }, [requireAccessToken]);
 
   const filtered = useMemo(
     () =>

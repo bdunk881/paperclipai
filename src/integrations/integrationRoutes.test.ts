@@ -33,6 +33,21 @@ jest.mock("../auth/authMiddleware", () => ({
     req.auth = { sub, email: "test@example.com", roles: ["Operator"] };
     next();
   },
+  requireAuthOrQaBypass: (
+    req: Record<string, unknown>,
+    res: { status: (c: number) => { json: (b: unknown) => void } },
+    next: () => void,
+  ) => {
+    const headers = (req as { headers: Record<string, string | string[] | undefined> }).headers;
+    if (!headers["authorization"]) {
+      res.status(401).json({ error: "Missing or malformed Authorization header." });
+      return;
+    }
+    const h = headers["x-user-id"];
+    const sub = typeof h === "string" && h.trim() ? h.trim() : "test-user-id";
+    req.auth = { sub, email: "test@example.com", roles: ["Operator"] };
+    next();
+  },
   requireRole: (..._roles: string[]) => (_req: unknown, _res: unknown, next: () => void) => next(),
 }));
 

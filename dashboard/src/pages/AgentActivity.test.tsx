@@ -3,38 +3,68 @@ import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import AgentActivity from "./AgentActivity";
 
-const listAgentActivityMock = vi.fn();
+const { getAccessTokenMock, listAgentsMock, getAgentHeartbeatMock, listAgentRunsMock } = vi.hoisted(() => ({
+  getAccessTokenMock: vi.fn(),
+  listAgentsMock: vi.fn(),
+  getAgentHeartbeatMock: vi.fn(),
+  listAgentRunsMock: vi.fn(),
+}));
 
-vi.mock("../data/agentMarketplaceData", () => ({
-  listAgentActivity: () => listAgentActivityMock(),
+vi.mock("../context/AuthContext", () => ({
+  useAuth: () => ({
+    getAccessToken: getAccessTokenMock,
+  }),
+}));
+
+vi.mock("../api/agentApi", () => ({
+  listAgents: listAgentsMock,
+  getAgentHeartbeat: getAgentHeartbeatMock,
+  listAgentRuns: listAgentRunsMock,
 }));
 
 describe("AgentActivity", () => {
   beforeEach(() => {
-    listAgentActivityMock.mockReset();
+    getAccessTokenMock.mockReset();
+    listAgentsMock.mockReset();
+    getAgentHeartbeatMock.mockReset();
+    listAgentRunsMock.mockReset();
+
+    getAccessTokenMock.mockResolvedValue("token-123");
   });
 
-  it("filters activity by search query and status", () => {
-    listAgentActivityMock.mockReturnValue([
+  it("filters activity by search query and status", async () => {
+    listAgentsMock.mockResolvedValue([
       {
-        id: "1",
-        agentName: "Sales Agent",
-        action: "Agent resumed",
-        status: "info",
-        tokenUsage: 128,
-        summary: "Sales Agent resumed successfully.",
-        createdAt: "2026-04-22T00:00:00.000Z",
+        id: "agent-sales",
+        name: "Sales Agent",
       },
       {
-        id: "2",
-        agentName: "Support Agent",
-        action: "Agent warning",
-        status: "warning",
-        tokenUsage: 64,
-        summary: "Support Agent exceeded retry budget.",
-        createdAt: "2026-04-22T01:00:00.000Z",
+        id: "agent-support",
+        name: "Support Agent",
       },
     ]);
+    getAgentHeartbeatMock.mockImplementation(async (agentId: string) => {
+      if (agentId === "agent-sales") {
+        return {
+          id: "heartbeat-sales",
+          status: "paused",
+          summary: "Sales Agent resumed successfully.",
+          tokenUsage: 128,
+          recordedAt: "2026-04-22T00:00:00.000Z",
+        };
+      }
+      if (agentId === "agent-support") {
+        return {
+          id: "heartbeat-support",
+          status: "error",
+          summary: "Support Agent exceeded retry budget.",
+          tokenUsage: 64,
+          recordedAt: "2026-04-22T01:00:00.000Z",
+        };
+      }
+      return null;
+    });
+    listAgentRunsMock.mockResolvedValue([]);
 
     render(
       <MemoryRouter>
@@ -42,34 +72,37 @@ describe("AgentActivity", () => {
       </MemoryRouter>
     );
 
-    expect(screen.getByText("Agent resumed")).toBeInTheDocument();
-    expect(screen.getByText("Agent warning")).toBeInTheDocument();
+    expect(await screen.findByText("Heartbeat paused")).toBeInTheDocument();
+    expect(screen.getByText("Heartbeat error")).toBeInTheDocument();
 
     fireEvent.change(screen.getByPlaceholderText(/filter activity/i), {
       target: { value: "support" },
     });
 
-    expect(screen.queryByText("Agent resumed")).not.toBeInTheDocument();
-    expect(screen.getByText("Agent warning")).toBeInTheDocument();
+    expect(screen.queryByText("Heartbeat paused")).not.toBeInTheDocument();
+    expect(screen.getByText("Heartbeat error")).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "warning" }));
 
-    expect(screen.getByText("Agent warning")).toBeInTheDocument();
-    expect(screen.queryByText("Agent resumed")).not.toBeInTheDocument();
+    expect(screen.getByText("Heartbeat error")).toBeInTheDocument();
+    expect(screen.queryByText("Heartbeat paused")).not.toBeInTheDocument();
   });
 
-  it("shows an empty-state message when no events match the filter", () => {
-    listAgentActivityMock.mockReturnValue([
+  it("shows an empty-state message when no events match the filter", async () => {
+    listAgentsMock.mockResolvedValue([
       {
-        id: "1",
-        agentName: "Sales Agent",
-        action: "Agent resumed",
-        status: "info",
-        tokenUsage: 128,
-        summary: "Sales Agent resumed successfully.",
-        createdAt: "2026-04-22T00:00:00.000Z",
+        id: "agent-sales",
+        name: "Sales Agent",
       },
     ]);
+    getAgentHeartbeatMock.mockResolvedValue({
+      id: "heartbeat-sales",
+      status: "paused",
+      summary: "Sales Agent resumed successfully.",
+      tokenUsage: 128,
+      recordedAt: "2026-04-22T00:00:00.000Z",
+    });
+    listAgentRunsMock.mockResolvedValue([]);
 
     render(
       <MemoryRouter>
@@ -77,10 +110,12 @@ describe("AgentActivity", () => {
       </MemoryRouter>
     );
 
+    expect(await screen.findByText("Heartbeat paused")).toBeInTheDocument();
+
     fireEvent.change(screen.getByPlaceholderText(/filter activity/i), {
       target: { value: "no-match" },
     });
 
-    expect(screen.getByText(/no activity events match this filter/i)).toBeInTheDocument();
+    expect(screen.getByText(/no activity matches this filter/i)).toBeInTheDocument();
   });
 });

@@ -7,6 +7,7 @@ const mockedAuthContext = {
   login: vi.fn(),
   logout: vi.fn(),
   getAccessToken: vi.fn(),
+  requireAccessToken: vi.fn(),
 };
 
 vi.mock("../context/AuthContext", async () => {
@@ -20,6 +21,11 @@ vi.mock("../context/AuthContext", async () => {
 });
 
 describe("ProfileSettings", () => {
+  afterEach(() => {
+    mockedAuthContext.requireAccessToken.mockReset();
+    mockedAuthContext.requireAccessToken.mockResolvedValue("token-123");
+  });
+
   afterEach(() => {
     vi.unstubAllGlobals();
     vi.restoreAllMocks();
@@ -45,12 +51,15 @@ describe("ProfileSettings", () => {
   });
 
   it("shows backend error and falls back to current user profile defaults", async () => {
-    const fetchMock = vi.fn().mockResolvedValueOnce({
-      ok: false,
-      status: 500,
-      statusText: "Server Error",
-      json: async () => ({ error: "Profile load failed" }),
-    });
+    mockedAuthContext.requireAccessToken.mockResolvedValue("token-123");
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: false,
+        status: 500,
+        statusText: "Server Error",
+        json: async () => ({ error: "Profile load failed" }),
+      });
     vi.stubGlobal("fetch", fetchMock);
 
     render(<ProfileSettings />);
@@ -60,7 +69,7 @@ describe("ProfileSettings", () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
-  it("falls back to localStorage on 404", async () => {
+  it("falls back to sessionStorage on 404", async () => {
     const fetchMock = vi.fn().mockResolvedValueOnce({
       ok: false,
       status: 404,
@@ -76,7 +85,7 @@ describe("ProfileSettings", () => {
       setItem: vi.fn(),
       removeItem: vi.fn(),
     };
-    vi.stubGlobal("localStorage", mockStorage);
+    vi.stubGlobal("sessionStorage", mockStorage);
 
     render(<ProfileSettings />);
 
@@ -113,13 +122,13 @@ describe("ProfileSettings", () => {
     });
   });
 
-  it("save with 404 falls back to localStorage", async () => {
+  it("save with 404 falls back to sessionStorage", async () => {
     const mockStorage = {
       getItem: vi.fn().mockReturnValue(null),
       setItem: vi.fn(),
       removeItem: vi.fn(),
     };
-    vi.stubGlobal("localStorage", mockStorage);
+    vi.stubGlobal("sessionStorage", mockStorage);
 
     const fetchMock = vi.fn()
       .mockResolvedValueOnce({

@@ -9,6 +9,7 @@ import rateLimit from "express-rate-limit";
 import multer from "multer";
 import cors from "cors";
 import helmet from "helmet";
+import passport from "passport";
 import {
   getTemplate,
   getTemplatesByCategory,
@@ -18,6 +19,7 @@ import { WorkflowTemplate, WorkflowStep } from "./types/workflow";
 import { workflowEngine } from "./engine/WorkflowEngine";
 import { startApprovalResumeCoordinator } from "./engine/approvalResumeCoordinator";
 import { startApprovalNotificationCoordinator } from "./engine/approvalNotificationCoordinator";
+import { startTicketNotificationCoordinator } from "./engine/ticketSlaCoordinator";
 import { runStore } from "./engine/runStore";
 import { approvalStore } from "./engine/approvalStore";
 import { approvalNotificationStore } from "./engine/approvalNotificationStore";
@@ -25,8 +27,12 @@ import llmConfigRoutes from "./llmConfig/llmConfigRoutes";
 import mcpRoutes from "./mcp/mcpRoutes";
 import memoryRoutes from "./memory/memoryRoutes";
 import agentMemoryRoutes from "./agents/agentMemoryRoutes";
+import agentRoutes from "./agents/agentRoutes";
 import knowledgeRoutes from "./knowledge/routes";
 import controlPlaneRoutes from "./controlPlane/controlPlaneRoutes";
+import ticketRoutes from "./tickets/ticketRoutes";
+import ticketSyncRoutes from "./ticketSync/routes";
+import ticketSyncWebhookRoutes from "./ticketSync/webhookRoutes";
 import { llmConfigStore } from "./llmConfig/llmConfigStore";
 import { getProvider } from "./engine/llmProviders";
 import { parseFile } from "./engine/fileParser";
@@ -36,9 +42,14 @@ import {
   listClassificationDecisions,
 } from "./engine/classificationLog";
 import { requireAuth, requireAuthOrQaBypass, AuthenticatedRequest } from "./auth/authMiddleware";
+import nativeAuthProxyRoutes from "./auth/nativeAuthProxyRoutes";
+import socialAuthRoutes from "./auth/socialAuthRoutes";
 import stripeWebhookRoutes from "./billing/stripeWebhook";
 import apolloWebhookRoutes from "./integrations/apollo-attio/webhookRoute";
 import checkoutRoutes from "./billing/checkoutRoutes";
+import apolloRoutes from "./integrations/apollo/routes";
+import hubSpotRoutes, { hubSpotWebhookRouter } from "./integrations/hubspot/routes";
+import sentryRoutes, { sentryWebhookRouter } from "./integrations/sentry/routes";
 import subscriptionRoutes from "./billing/subscriptionRoutes";
 import slackRoutes, { slackWebhookRouter } from "./integrations/slack/routes";
 import shopifyRoutes, { shopifyWebhookRouter } from "./integrations/shopify/routes";
@@ -64,7 +75,9 @@ import {
   getPortableWorkflowSchemaDescriptor,
   parsePortableWorkflowBundle,
 } from "./workflows/portableSchema";
+
 import { saveImportedTemplate } from "./templates/importedTemplateStore";
+
 
 const app = express();
 
@@ -135,6 +148,16 @@ function createRateLimitHandler(windowMs: number) {
   };
 }
 
+function parsePositiveIntegerEnv(name: string, fallback: number): number {
+  const raw = process.env[name];
+  if (!raw) {
+    return fallback;
+  }
+
+  const parsed = Number.parseInt(raw, 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
 const generalApiRateLimiter = rateLimit({
   windowMs: 60 * 1000,
   limit: 100,
@@ -160,6 +183,20 @@ const llmEndpointRateLimiter = rateLimit({
   legacyHeaders: false,
   keyGenerator: getRateLimitKey,
   handler: createRateLimitHandler(60 * 60 * 1000),
+});
+
+const nativeAuthProxyRateLimitWindowMs = parsePositiveIntegerEnv(
+  "AUTH_NATIVE_AUTH_PROXY_RATE_LIMIT_WINDOW_MS",
+  60 * 1000
+);
+
+const nativeAuthProxyRateLimiter = rateLimit({
+  windowMs: nativeAuthProxyRateLimitWindowMs,
+  limit: parsePositiveIntegerEnv("AUTH_NATIVE_AUTH_PROXY_RATE_LIMIT_MAX", 20),
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => `ip:${req.ip || req.socket.remoteAddress || "unknown"}`,
+  handler: createRateLimitHandler(nativeAuthProxyRateLimitWindowMs),
 });
 
 const billingMutationRateLimiter = rateLimit({
@@ -199,17 +236,23 @@ app.use("/api/webhooks/shopify", shopifyWebhookRouter);
 app.use("/api/webhooks/docusign", docuSignWebhookRouter);
 // Linear webhook — mounted before express.json() for signature verification
 app.use("/api/webhooks/linear", linearWebhookRouter);
+// Sentry webhook — mounted before express.json() for signature verification
+app.use("/api/webhooks/sentry", sentryWebhookRouter);
 // Microsoft Teams webhook — mounted before express.json() for signature verification
 app.use("/api/webhooks/teams", teamsWebhookRouter);
+// HubSpot webhook — mounted before express.json() for signature verification
+app.use("/api/webhooks/hubspot", hubSpotWebhookRouter);
 // PostHog webhook — mounted before express.json() for signature verification
 app.use("/api/webhooks/posthog", posthogWebhookRouter);
 // Intercom webhook — mounted before express.json() for signature verification
 app.use("/api/webhooks/intercom", intercomWebhookRouter);
 // Datadog + Azure Monitor webhook — mounted before express.json() for signature verification
 app.use("/api/webhooks/datadog-azure-monitor", datadogAzureMonitorWebhookRouter);
+app.use("/api/webhooks/ticket-sync", ticketSyncWebhookRoutes);
 app.use("/api/connectors/google-workspace", googleWorkspaceWebhookRoutes);
 
 app.use(express.json());
+app.use(passport.initialize());
 
 // Multer — in-memory storage for file uploads (max 50 MB)
 const upload = multer({
@@ -243,6 +286,12 @@ app.use("/api/mcp/servers", requireAuth, mcpRoutes);
 // ---------------------------------------------------------------------------
 app.use("/api/memory", requireAuth, memoryRoutes);
 app.use("/api/agents/:agentId/memory", requireAuth, agentMemoryRoutes);
+app.use("/api/agents", requireAuth, agentRoutes);
+
+// Routines stub — returns empty list until a full routines store is implemented.
+app.get("/api/routines", requireAuth, (_req, res) => {
+  res.json({ routines: [] });
+});
 app.use("/api/knowledge", requireAuth, knowledgeMutationRateLimiter, knowledgeRoutes);
 app.use("/api/integrations/catalog", integrationCatalogRoutes);
 app.use("/api/integrations/oauth2", integrationOAuthCallbackRoutes);
@@ -253,17 +302,30 @@ app.use("/api/integrations/slack", slackRoutes);
 app.use("/api/integrations/shopify", shopifyRoutes);
 app.use("/api/integrations/docusign", docuSignRoutes);
 app.use("/api/integrations/linear", linearRoutes);
+app.use("/api/integrations/sentry", sentryRoutes);
+app.use("/api/integrations/hubspot", hubSpotRoutes);
 app.use("/api/integrations/teams", teamsRoutes);
+app.use("/api/integrations/apollo", apolloRoutes);
 app.use("/api/integrations/posthog", posthogRoutes);
 app.use("/api/integrations/intercom", intercomRoutes);
 app.use("/api/integrations/datadog-azure-monitor", datadogAzureMonitorRoutes);
 app.use("/api/integrations/agent-catalog", agentCatalogRoutes);
 app.use("/api/connectors/google-workspace", googleWorkspaceConnectorRoutes);
 app.use("/api/control-plane", requireAuth, controlPlaneRoutes);
+app.use("/api/tickets", requireAuth, ticketRoutes);
+app.use("/api/ticket-sync", requireAuth, ticketSyncRoutes);
 
 // ---------------------------------------------------------------------------
 // Auth API — identity endpoint for authenticated callers
 // ---------------------------------------------------------------------------
+
+app.use(
+  "/api/auth/native",
+  express.urlencoded({ extended: false }),
+  nativeAuthProxyRateLimiter,
+  nativeAuthProxyRoutes
+);
+app.use("/api/auth/social", nativeAuthProxyRateLimiter, socialAuthRoutes);
 
 /** Returns the authenticated user's claims extracted from the Entra ID token. */
 app.get("/api/me", requireAuth, (req: AuthenticatedRequest, res) => {
@@ -805,18 +867,29 @@ app.post("/api/executions/:id/resume", requireAuth, async (req: AuthenticatedReq
 // Health check
 // ---------------------------------------------------------------------------
 app.get("/health", async (_req, res) => {
-  const runs = await runStore.list();
-  const { isPostgresConfigured, getPostgresConnectionStatus } = require("./db/postgres") as typeof import("./db/postgres");
-  const pgConfigured = isPostgresConfigured();
-  const pgConnected = getPostgresConnectionStatus();
+  const { checkPostgresConnection, isPostgresConfigured: isPgConfigured } = await import("./db/postgres");
+  const pgConfigured = isPgConfigured();
+  const pgConnected = pgConfigured ? await checkPostgresConnection() : false;
+  let runs = [] as Awaited<ReturnType<typeof runStore.list>>;
+  let runStoreError: string | null = null;
+
+  try {
+    runs = await runStore.list();
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.warn("[health] Run stats unavailable:", message);
+    runStoreError = message;
+  }
+
   res.json({
-    status: "ok",
+    status: runStoreError ? "degraded" : "ok",
     templates: listTemplates().length,
     runs: {
       total: runs.length,
       running: runs.filter((r) => r.status === "running").length,
       completed: runs.filter((r) => r.status === "completed").length,
       failed: runs.filter((r) => r.status === "failed").length,
+      error: runStoreError,
     },
     postgres: {
       configured: pgConfigured,
@@ -831,6 +904,10 @@ if (process.env.NODE_ENV !== "test" && process.env.AUTOFLOW_ENABLE_APPROVAL_RESU
 
 if (process.env.NODE_ENV !== "test" && process.env.AUTOFLOW_ENABLE_APPROVAL_NOTIFICATION_SWEEPER !== "false") {
   startApprovalNotificationCoordinator();
+}
+
+if (process.env.NODE_ENV !== "test" && process.env.AUTOFLOW_ENABLE_TICKET_NOTIFICATION_SWEEPER !== "false") {
+  startTicketNotificationCoordinator();
 }
 
 // Handle JSON parse errors from express.json() middleware

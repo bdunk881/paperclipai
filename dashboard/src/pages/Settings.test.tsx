@@ -25,5 +25,9 @@ describe("Settings", () => {
         .getAllByRole("link")
         .find((link) => link.getAttribute("href") === "/settings/api-keys")
     ).toBeTruthy();
+    expect(screen.getByRole("link", { name: /Ticketing SLA/i })).toHaveAttribute(
+      "href",
+      "/settings/ticketing-sla"
+    );
   });
 });

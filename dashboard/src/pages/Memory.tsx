@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useAuth } from "../context/AuthContext";
 import clsx from "clsx";
 import {
   AlertCircle,
@@ -123,6 +124,7 @@ function buildQaText(question: string, answer: string): string {
 }
 
 export default function Memory() {
+  const { user, requireAccessToken } = useAuth();
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [entries, setEntries] = useState<MemoryEntry[]>([]);
   const [stats, setStats] = useState<MemoryStats>(DEFAULT_STATS);
@@ -142,11 +144,12 @@ export default function Memory() {
     setLoading(true);
     setError(null);
     try {
+      const accessToken = await requireAccessToken();
       const [fetched, fetchedStats] = await Promise.all([
         search.trim()
-          ? searchMemory(search).then((results) => results.map((result) => result.entry))
-          : listMemoryEntries(),
-        getMemoryStats(),
+          ? searchMemory(search, accessToken, user?.id).then((results) => results.map((result) => result.entry))
+          : listMemoryEntries(accessToken, user?.id),
+        getMemoryStats(accessToken, user?.id),
       ]);
       setEntries(fetched);
       setStats(fetchedStats);
@@ -155,7 +158,7 @@ export default function Memory() {
     } finally {
       setLoading(false);
     }
-  }, [search]);
+  }, [requireAccessToken, search, user?.id]);
 
   useEffect(() => {
     const debounce = setTimeout(() => void loadEntries(), search.trim() ? 300 : 0);
@@ -164,10 +167,11 @@ export default function Memory() {
 
   async function handleDelete(id: string) {
     try {
-      await deleteMemoryEntry(id);
+      const accessToken = await requireAccessToken();
+      await deleteMemoryEntry(id, accessToken, user?.id);
       setEntries((prev) => prev.filter((entry) => entry.id !== id));
       if (selected?.id === id) setSelected(null);
-      void getMemoryStats().then(setStats);
+      void getMemoryStats(accessToken, user?.id).then(setStats);
     } catch {
       // Keep entry visible when deletion fails.
     }
@@ -221,6 +225,7 @@ export default function Memory() {
     setUploadMessage(null);
     const totalOperations = files.length + qaRows.length;
     setProgress({ current: 0, total: totalOperations });
+    const accessToken = await requireAccessToken();
 
     const createdEntries: MemoryEntry[] = [];
     try {
@@ -233,6 +238,8 @@ export default function Memory() {
             text,
             workflowName: "Knowledge Ingest",
           },
+          accessToken,
+          user?.id
         );
         createdEntries.push(entry);
         setProgress({ current: index + 1, total: totalOperations });
@@ -246,6 +253,8 @@ export default function Memory() {
             text: buildQaText(row.question, row.answer),
             workflowName: "Knowledge Ingest",
           },
+          accessToken,
+          user?.id
         );
         createdEntries.push(entry);
         setProgress({ current: files.length + index + 1, total: totalOperations });

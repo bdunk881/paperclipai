@@ -31,7 +31,12 @@ for the **Production** environment:
 
 ## Deploy
 
-Deployment is automatic on push to `master` (when `dashboard/**` changes). Manual deploy:
+Deployment is automatic on push to `master` (when `dashboard/**` changes).
+The dashboard's same-origin `/api/*` traffic must rewrite to `https://api.helloautoflow.com/api/:path*` in [`dashboard/vercel.json`](../../dashboard/vercel.json) so production never points at the staging container app.
+
+Backend production deploys should also be automatic on push to `master` via `.github/workflows/deploy-azure.yml`; only use the manual workflow dispatch path when you intentionally need a one-off staging or production redeploy.
+
+Manual deploy:
 
 ```bash
 # From repo root

@@ -1,3 +1,9 @@
+# Match the existing prod key vault naming contract while leaving shared hub
+# resources on their historical names.
+locals {
+  key_vault_environment = var.environment == "production" ? "prod" : var.environment
+}
+
 # ── Hub VNet ──────────────────────────────────────────────────────────────────
 
 resource "azurerm_virtual_network" "hub" {
@@ -351,7 +357,7 @@ resource "azurerm_bastion_host" "hub" {
 # ── Azure Key Vault ───────────────────────────────────────────────────────────
 
 resource "azurerm_key_vault" "hub" {
-  name                       = "${var.prefix}-hub-kv"
+  name                       = "${var.prefix}-${local.key_vault_environment}-hub-kv"
   location                   = var.location
   resource_group_name        = var.resource_group_name
   tenant_id                  = var.tenant_id

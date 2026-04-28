@@ -1,8 +1,8 @@
-name: Deploy to Azure Container Apps
+name: Deploy Backend to Azure
 
 on:
   push:
-    branches: [master]
+    branches: [master, staging]
   workflow_dispatch:
     inputs:
       environment:
@@ -21,17 +21,22 @@ env:
   ARM_CLIENT_ID: ${{ vars.ARM_CLIENT_ID }}
   ARM_TENANT_ID: ${{ vars.ARM_TENANT_ID }}
   ARM_SUBSCRIPTION_ID: ${{ vars.ARM_SUBSCRIPTION_ID }}
-  REGISTRY: ghcr.io
   IMAGE_REPO: ghcr.io/${{ github.repository }}-backend
 
 jobs:
-  deploy:
-    name: Build and Deploy Backend Container App
+  deploy-staging:
+    name: Build and Deploy Staging Backend Container App
+    if: >-
+      ${{
+        github.ref == 'refs/heads/staging' ||
+        (github.event_name == 'workflow_dispatch' &&
+         github.event.inputs.environment == 'staging')
+      }}
     runs-on: ubuntu-latest
-    environment: production
+    environment: staging
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - uses: docker/setup-buildx-action@v3
 
@@ -69,32 +74,47 @@ jobs:
         id: target
         run: |
           set -euo pipefail
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            DEPLOY_ENV="${{ github.event.inputs.environment }}"
-          else
-            DEPLOY_ENV="staging"
-          fi
 
-          if [ "$DEPLOY_ENV" = "production" ]; then
-            RG_NAME="rg-autoflow-production"
-            APP_NAME="ca-autoflow-production-backend"
-            QA_BYPASS_ENABLED="false"
-            QA_BYPASS_USERS=""
-          else
-            RG_NAME="rg-autoflow-staging"
-            APP_NAME="ca-autoflow-staging-backend"
-            QA_BYPASS_ENABLED="true"
-            QA_BYPASS_USERS="qa-smoke-user"
-          fi
+          require_nonempty() {
+            local value="$1"
+            local label="$2"
+            if [ -z "$value" ]; then
+              echo "::error::Missing required value: $label"
+              exit 1
+            fi
+          }
 
+          reject_cross_environment_target() {
+            local value="$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')"
+            local label="$2"
+
+            if printf '%s' "$value" | grep -Eq 'prod(uction)?' \
+              && ! printf '%s' "$value" | grep -Eq 'staging'; then
+              echo "::error::$label points at a production target: $1"
+              exit 1
+            fi
+          }
+
+          QA_BYPASS_ENABLED="true"
+          QA_BYPASS_USERS="qa-smoke-user"
+          EXPECTED_APP_NAME="${{ vars.AZURE_CONTAINER_APP_STAGING_NAME }}"
+          EXPECTED_RESOURCE_GROUP="${{ vars.AZURE_CONTAINER_APP_STAGING_RESOURCE_GROUP }}"
+          API_HOST="${{ vars.AZURE_STAGING_API_HOST }}"
           IMAGE_TAG="${{ env.IMAGE_REPO }}:sha-${{ github.sha }}"
 
-          echo "deploy_env=$DEPLOY_ENV" >> "$GITHUB_OUTPUT"
-          echo "resource_group=$RG_NAME" >> "$GITHUB_OUTPUT"
-          echo "container_app=$APP_NAME" >> "$GITHUB_OUTPUT"
+          require_nonempty "$EXPECTED_APP_NAME" "AZURE_CONTAINER_APP_STAGING_NAME"
+          require_nonempty "$EXPECTED_RESOURCE_GROUP" "AZURE_CONTAINER_APP_STAGING_RESOURCE_GROUP"
+          require_nonempty "$API_HOST" "AZURE_STAGING_API_HOST"
+          reject_cross_environment_target "$EXPECTED_APP_NAME" "AZURE_CONTAINER_APP_STAGING_NAME"
+          reject_cross_environment_target "$EXPECTED_RESOURCE_GROUP" "AZURE_CONTAINER_APP_STAGING_RESOURCE_GROUP"
+          reject_cross_environment_target "$API_HOST" "AZURE_STAGING_API_HOST"
+
           echo "image_tag=$IMAGE_TAG" >> "$GITHUB_OUTPUT"
           echo "qa_bypass_enabled=$QA_BYPASS_ENABLED" >> "$GITHUB_OUTPUT"
           echo "qa_bypass_users=$QA_BYPASS_USERS" >> "$GITHUB_OUTPUT"
+          echo "expected_container_app=$EXPECTED_APP_NAME" >> "$GITHUB_OUTPUT"
+          echo "expected_resource_group=$EXPECTED_RESOURCE_GROUP" >> "$GITHUB_OUTPUT"
+          echo "api_host=$API_HOST" >> "$GITHUB_OUTPUT"
 
       - name: Login to Azure (OIDC)
         uses: azure/login@v2
@@ -103,32 +123,163 @@ jobs:
           tenant-id: ${{ env.ARM_TENANT_ID }}
           subscription-id: ${{ env.ARM_SUBSCRIPTION_ID }}
 
-      - name: Deploy backend to Azure Container Apps
+      - name: Discover Azure Container App target
+        id: discover
         run: |
           set -euo pipefail
+
+          OVERRIDE_APP_NAME="${{ steps.target.outputs.expected_container_app }}"
+          OVERRIDE_RESOURCE_GROUP="${{ steps.target.outputs.expected_resource_group }}"
+          API_HOST="${{ steps.target.outputs.api_host }}"
+          APP_NAME=""
+          RESOURCE_GROUP=""
+
+          exact_lookup() {
+            local name="$1"
+            az containerapp list \
+              --query "[?name=='${name}'].resourceGroup | [0]" \
+              -o tsv
+          }
+
+          target_exists() {
+            local name="$1"
+            local resource_group="$2"
+            az containerapp show \
+              --name "$name" \
+              --resource-group "$resource_group" \
+              --query "name" \
+              -o tsv >/dev/null 2>&1
+          }
+
+          if target_exists "$OVERRIDE_APP_NAME" "$OVERRIDE_RESOURCE_GROUP"; then
+            APP_NAME="$OVERRIDE_APP_NAME"
+            RESOURCE_GROUP="$OVERRIDE_RESOURCE_GROUP"
+            echo "Using explicit Container App target from GitHub variables."
+          else
+            echo "::warning::Configured staging Container App target does not exist. Falling back to DNS and Azure inventory discovery."
+          fi
+
+          if [ -z "$APP_NAME" ] || [ -z "$RESOURCE_GROUP" ]; then
+            echo "Resolving live backend from DNS: $API_HOST"
+            CANONICAL_HOST=$(dig +short "$API_HOST" \
+              | sed 's/\.$//' \
+              | grep 'azurecontainerapps.io$' \
+              | head -n1 || true)
+            if [ -n "$CANONICAL_HOST" ]; then
+              APP_NAME="${CANONICAL_HOST%%.*}"
+              RESOURCE_GROUP=$(exact_lookup "$APP_NAME")
+            fi
+          fi
+
+          if [ -z "$APP_NAME" ] || [ -z "$RESOURCE_GROUP" ]; then
+            MATCH_COUNT=$(az containerapp list \
+              --query "[?contains(name, 'backend') && contains(name, 'staging') ] | length(@)" \
+              -o tsv)
+            if [ "$MATCH_COUNT" = "1" ]; then
+              APP_NAME=$(az containerapp list \
+                --query "[?contains(name, 'backend') && contains(name, 'staging') ].name | [0]" \
+                -o tsv)
+              RESOURCE_GROUP=$(exact_lookup "$APP_NAME")
+            fi
+          fi
+
+          if [ -z "$APP_NAME" ] || [ -z "$RESOURCE_GROUP" ]; then
+            echo "::error::Unable to resolve the staging Azure Container App target."
+            az containerapp list \
+              --query "[].{name:name,resourceGroup:resourceGroup,fqdn:properties.latestRevisionFqdn}" \
+              -o table
+            exit 1
+          fi
+
+          if printf '%s\n%s\n' "$APP_NAME" "$RESOURCE_GROUP" | tr '[:upper:]' '[:lower:]' | grep -Eq 'prod(uction)?' \
+            && ! printf '%s\n%s\n' "$APP_NAME" "$RESOURCE_GROUP" | tr '[:upper:]' '[:lower:]' | grep -Eq 'staging'; then
+            echo "::error::Resolved staging target points at production resources: $APP_NAME in $RESOURCE_GROUP"
+            exit 1
+          fi
+
+          echo "container_app=$APP_NAME" >> "$GITHUB_OUTPUT"
+          echo "resource_group=$RESOURCE_GROUP" >> "$GITHUB_OUTPUT"
+
+      - name: Validate staging social auth env secret
+        env:
+          BACKEND_ENV_STAGING_SOCIAL_AUTH: ${{ secrets.AZURE_BACKEND_ENV_STAGING_SOCIAL_AUTH }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "${BACKEND_ENV_STAGING_SOCIAL_AUTH}" ]; then
+            echo "::error::Missing required staging environment secret: AZURE_BACKEND_ENV_STAGING_SOCIAL_AUTH"
+            exit 1
+          fi
+
+          tmpfile="$(mktemp)"
+          trap 'rm -f "$tmpfile"' EXIT
+          printf '%s\n' "$BACKEND_ENV_STAGING_SOCIAL_AUTH" > "$tmpfile"
+
+          require_env_key() {
+            local key="$1"
+            if ! grep -Eq "^${key}=.+" "$tmpfile"; then
+              echo "::error::AZURE_BACKEND_ENV_STAGING_SOCIAL_AUTH is missing required key ${key}"
+              exit 1
+            fi
+          }
+
+          require_exact_https_url() {
+            local key="$1"
+            local expected="$2"
+            local actual
+            actual="$(grep -E "^${key}=.+" "$tmpfile" | head -n1 | cut -d= -f2- | tr -d '\r' | sed -E 's/[[:space:]]+$//' | sed -E 's#/$##')"
+            if [ "$actual" != "$expected" ]; then
+              echo "::error::AZURE_BACKEND_ENV_STAGING_SOCIAL_AUTH must set ${key}=${expected}; found ${actual:-<empty>}"
+              exit 1
+            fi
+          }
+
+          require_env_key "GOOGLE_CLIENT_ID"
+          require_env_key "GOOGLE_CLIENT_SECRET"
+          require_env_key "APP_JWT_SECRET"
+          require_env_key "SOCIAL_AUTH_CALLBACK_BASE_URL"
+          require_exact_https_url "SOCIAL_AUTH_CALLBACK_BASE_URL" "https://${{ steps.target.outputs.api_host }}/auth"
+
+      - name: Deploy backend to Azure Container Apps
+        env:
+          BACKEND_ENV_STAGING_SOCIAL_AUTH: ${{ secrets.AZURE_BACKEND_ENV_STAGING_SOCIAL_AUTH }}
+        run: |
+          set -euo pipefail
+
+          tmpfile="$(mktemp)"
+          trap 'rm -f "$tmpfile"' EXIT
+          printf '%s\n' "$BACKEND_ENV_STAGING_SOCIAL_AUTH" > "$tmpfile"
+
+          env_args=()
+          while IFS= read -r line || [ -n "$line" ]; do
+            trimmed="$(printf '%s' "$line" | tr -d '\r' | sed -E 's/[[:space:]]+$//')"
+            if [ -z "$trimmed" ] || printf '%s' "$trimmed" | grep -Eq '^[[:space:]]*#'; then
+              continue
+            fi
+            env_args+=("$trimmed")
+          done < "$tmpfile"
+
           az containerapp update \
-            --name "${{ steps.target.outputs.container_app }}" \
-            --resource-group "${{ steps.target.outputs.resource_group }}" \
+            --name "${{ steps.discover.outputs.container_app }}" \
+            --resource-group "${{ steps.discover.outputs.resource_group }}" \
             --image "${{ steps.target.outputs.image_tag }}" \
             --set-env-vars \
+              "${env_args[@]}" \
               QA_AUTH_BYPASS_ENABLED="${{ steps.target.outputs.qa_bypass_enabled }}" \
               QA_AUTH_BYPASS_USER_IDS="${{ steps.target.outputs.qa_bypass_users }}"
 
-      - name: Smoke test backend
+      - name: Smoke test staging backend
         run: |
           set -euo pipefail
-          APP_NAME="${{ steps.target.outputs.container_app }}"
-          RG_NAME="${{ steps.target.outputs.resource_group }}"
+          APP_NAME="${{ steps.discover.outputs.container_app }}"
+          RG_NAME="${{ steps.discover.outputs.resource_group }}"
           EXPECTED_IMAGE="${{ steps.target.outputs.image_tag }}"
-          DEPLOY_ENV="${{ steps.target.outputs.deploy_env }}"
 
           LATEST_REVISION=$(az containerapp show \
             --name "$APP_NAME" \
             --resource-group "$RG_NAME" \
             --query 'properties.latestRevisionName' \
             -o tsv)
-
-          echo "Waiting for revision $LATEST_REVISION to become ready"
 
           for i in $(seq 1 20); do
             LATEST_READY=$(az containerapp show \
@@ -148,49 +299,41 @@ jobs:
               --query 'properties.template.containers[0].image' \
               -o tsv)
 
-            echo "Attempt $i: latest=$LATEST_REVISION ready=$LATEST_READY fqdn=$REVISION_FQDN"
-
             if [ "$REVISION_IMAGE" != "$EXPECTED_IMAGE" ]; then
-              echo "Revision image mismatch: expected $EXPECTED_IMAGE, got $REVISION_IMAGE"
+              echo "::error::Revision image mismatch: expected $EXPECTED_IMAGE, got $REVISION_IMAGE"
               exit 1
             fi
 
             if [ "$LATEST_READY" = "$LATEST_REVISION" ] && [ -n "$REVISION_FQDN" ]; then
-              STATUS=$(curl -s -o /dev/null -w "%{http_code}" "https://${REVISION_FQDN}/health")
-              if [ "$STATUS" = "200" ]; then
-                echo "Health check passed on latest ready revision (attempt $i)"
-
-                if [ "$DEPLOY_ENV" = "staging" ]; then
-                  RUNS_STATUS=$(curl -s -o /tmp/runs.json -w "%{http_code}" \
-                    -H "X-User-Id: qa-smoke-user" \
-                    "https://${REVISION_FQDN}/api/runs")
-                  if [ "$RUNS_STATUS" != "200" ]; then
-                    echo "Expected staging QA bypass to return 200 on /api/runs, got $RUNS_STATUS"
-                    cat /tmp/runs.json || true
-                    exit 1
-                  fi
-                  echo "Staging QA bypass smoke test passed on /api/runs"
-                else
-                  RUNS_STATUS=$(curl -s -o /tmp/runs.json -w "%{http_code}" \
-                    -H "X-User-Id: qa-smoke-user" \
-                    "https://${REVISION_FQDN}/api/runs")
-                  if [ "$RUNS_STATUS" = "200" ]; then
-                    echo "Production /api/runs unexpectedly allowed QA bypass"
-                    cat /tmp/runs.json || true
-                    exit 1
-                  fi
-                  echo "Production QA bypass remains disabled"
+              HEALTH_STATUS=$(curl -s -o /tmp/health.txt -w "%{http_code}" "https://${REVISION_FQDN}/health")
+              if [ "$HEALTH_STATUS" = "200" ]; then
+                RUNS_STATUS=$(curl -s -o /tmp/runs.json -w "%{http_code}" \
+                  -H "X-User-Id: qa-smoke-user" \
+                  "https://${REVISION_FQDN}/api/runs")
+                if [ "$RUNS_STATUS" != "200" ]; then
+                  echo "::error::Expected staging QA bypass to return 200 on /api/runs, got $RUNS_STATUS"
+                  cat /tmp/runs.json || true
+                  exit 1
                 fi
 
+                LLM_CONFIGS_STATUS=$(curl -s -o /tmp/llm-configs.json -w "%{http_code}" \
+                  -H "X-User-Id: qa-smoke-user" \
+                  "https://${REVISION_FQDN}/api/llm-configs")
+                if [ "$LLM_CONFIGS_STATUS" != "200" ]; then
+                  echo "::error::Expected staging QA bypass to return 200 on /api/llm-configs, got $LLM_CONFIGS_STATUS"
+                  cat /tmp/llm-configs.json || true
+                  exit 1
+                fi
+
+                echo "Staging smoke tests passed."
                 exit 0
               fi
-              echo "Revision is ready but /health returned $STATUS"
             fi
 
             sleep 15
           done
 
-          echo "Revision failed to become ready"
+          echo "::error::Staging revision failed to become ready"
           az containerapp revision show \
             --name "$APP_NAME" \
             --resource-group "$RG_NAME" \
@@ -201,3 +344,426 @@ jobs:
             --revision "$LATEST_REVISION" \
             --tail 100 || true
           exit 1
+
+  deploy-production:
+    name: Build and Deploy Production Backend to AKS
+    if: >-
+      ${{
+        github.ref == 'refs/heads/master' ||
+        github.ref == 'refs/heads/main' ||
+        (github.event_name == 'workflow_dispatch' &&
+         github.event.inputs.environment == 'production')
+      }}
+    runs-on: ubuntu-latest
+    environment: production
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Docker metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.IMAGE_REPO }}
+          tags: |
+            type=sha,format=long
+            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/master' }}
+
+      - name: Build and push backend image to GHCR
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: docker/backend/Dockerfile
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha,scope=backend
+          cache-to: type=gha,mode=max,scope=backend
+          build-args: |
+            BUILD_SHA=${{ github.sha }}
+            BUILD_DATE=${{ github.event.head_commit.timestamp || github.run_id }}
+
+      - name: Resolve production AKS target
+        id: target
+        env:
+          AKS_CLUSTER_NAME_OVERRIDE: ${{ vars.AZURE_AKS_PRODUCTION_CLUSTER_NAME }}
+          AKS_RESOURCE_GROUP_OVERRIDE: ${{ vars.AZURE_AKS_PRODUCTION_RESOURCE_GROUP }}
+          API_HOST_OVERRIDE: ${{ vars.AZURE_PRODUCTION_API_HOST }}
+          LETSENCRYPT_EMAIL_OVERRIDE: ${{ vars.AZURE_PRODUCTION_LETSENCRYPT_EMAIL }}
+        run: |
+          set -euo pipefail
+
+          require_nonempty() {
+            local value="$1"
+            local label="$2"
+            if [ -z "$value" ]; then
+              echo "::error::Missing required value: $label"
+              exit 1
+            fi
+          }
+
+          reject_nonprod_value() {
+            local value="$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')"
+            local label="$2"
+            if printf '%s' "$value" | grep -Eq 'staging|nonprod'; then
+              echo "::error::$label points at a non-production target: $1"
+              exit 1
+            fi
+          }
+
+          AKS_CLUSTER_NAME="${AKS_CLUSTER_NAME_OVERRIDE:-}"
+          AKS_RESOURCE_GROUP="${AKS_RESOURCE_GROUP_OVERRIDE:-}"
+          API_HOST="${API_HOST_OVERRIDE:-api.helloautoflow.com}"
+          LETSENCRYPT_EMAIL="${LETSENCRYPT_EMAIL_OVERRIDE:-}"
+          K8S_NAMESPACE="autoflow-production"
+          K8S_SECRET_NAME="autoflow-backend-secrets"
+          GHCR_IMAGE="${{ env.IMAGE_REPO }}:sha-${{ github.sha }}"
+
+          require_nonempty "$AKS_CLUSTER_NAME" "AZURE_AKS_PRODUCTION_CLUSTER_NAME"
+          require_nonempty "$AKS_RESOURCE_GROUP" "AZURE_AKS_PRODUCTION_RESOURCE_GROUP"
+          require_nonempty "$LETSENCRYPT_EMAIL" "AZURE_PRODUCTION_LETSENCRYPT_EMAIL"
+          reject_nonprod_value "$AKS_CLUSTER_NAME" "AZURE_AKS_PRODUCTION_CLUSTER_NAME"
+          reject_nonprod_value "$AKS_RESOURCE_GROUP" "AZURE_AKS_PRODUCTION_RESOURCE_GROUP"
+          reject_nonprod_value "$API_HOST" "AZURE_PRODUCTION_API_HOST"
+
+          echo "aks_cluster_name=$AKS_CLUSTER_NAME" >> "$GITHUB_OUTPUT"
+          echo "aks_resource_group=$AKS_RESOURCE_GROUP" >> "$GITHUB_OUTPUT"
+          echo "api_host=$API_HOST" >> "$GITHUB_OUTPUT"
+          echo "k8s_namespace=$K8S_NAMESPACE" >> "$GITHUB_OUTPUT"
+          echo "k8s_secret_name=$K8S_SECRET_NAME" >> "$GITHUB_OUTPUT"
+          echo "ghcr_image=$GHCR_IMAGE" >> "$GITHUB_OUTPUT"
+          echo "letsencrypt_email=$LETSENCRYPT_EMAIL" >> "$GITHUB_OUTPUT"
+
+      - name: Login to Azure (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ env.ARM_CLIENT_ID }}
+          tenant-id: ${{ env.ARM_TENANT_ID }}
+          subscription-id: ${{ env.ARM_SUBSCRIPTION_ID }}
+
+      - name: Import production image into ACR
+        id: acr
+        run: |
+          set -euo pipefail
+
+          ACR_NAME=$(az acr list \
+            --query "[?contains(name, 'autoflow') && contains(name, 'production')].name | [0]" \
+            -o tsv)
+          if [ -z "$ACR_NAME" ]; then
+            echo "::error::Unable to resolve the production ACR name."
+            exit 1
+          fi
+
+          ACR_LOGIN_SERVER=$(az acr show --name "$ACR_NAME" --query loginServer -o tsv)
+          ACR_IMAGE="${ACR_LOGIN_SERVER}/autoflow-backend:sha-${{ github.sha }}"
+
+          az acr import \
+            --name "$ACR_NAME" \
+            --source "${{ steps.target.outputs.ghcr_image }}" \
+            --image "autoflow-backend:sha-${{ github.sha }}" \
+            --username "${{ github.actor }}" \
+            --password "${{ secrets.GITHUB_TOKEN }}" \
+            --force
+
+          echo "acr_name=$ACR_NAME" >> "$GITHUB_OUTPUT"
+          echo "acr_login_server=$ACR_LOGIN_SERVER" >> "$GITHUB_OUTPUT"
+          echo "acr_image=$ACR_IMAGE" >> "$GITHUB_OUTPUT"
+
+      - name: Set AKS context
+        uses: azure/aks-set-context@v3
+        with:
+          resource-group: ${{ steps.target.outputs.aks_resource_group }}
+          cluster-name: ${{ steps.target.outputs.aks_cluster_name }}
+          subscription: ${{ env.ARM_SUBSCRIPTION_ID }}
+
+      - name: Bootstrap production backend secret
+        env:
+          BACKEND_ENV_PRODUCTION: ${{ secrets.AZURE_BACKEND_ENV_PRODUCTION }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "${BACKEND_ENV_PRODUCTION}" ]; then
+            echo "::error::Missing required production environment secret: AZURE_BACKEND_ENV_PRODUCTION"
+            exit 1
+          fi
+
+          tmpfile=$(mktemp)
+          trap 'rm -f "$tmpfile"' EXIT
+          printf '%s\n' "${BACKEND_ENV_PRODUCTION}" > "$tmpfile"
+
+          require_env_key() {
+            local key="$1"
+            if ! grep -Eq "^${key}=.+" "$tmpfile"; then
+              echo "::error::AZURE_BACKEND_ENV_PRODUCTION is missing required key ${key}"
+              exit 1
+            fi
+          }
+
+          read_env_value() {
+            local key="$1"
+            sed -n "s/^${key}=//p" "$tmpfile" | tail -n 1
+          }
+
+          normalize_https_url() {
+            local value="$1"
+            value="${value%%#*}"
+            value="$(printf '%s' "$value" | tr -d '\r' | sed -E 's/[[:space:]]+$//')"
+            value="${value%/}"
+            printf '%s' "$value"
+          }
+
+          require_exact_env_value() {
+            local key="$1"
+            local expected="$2"
+            local actual
+            actual="$(normalize_https_url "$(read_env_value "$key")")"
+            if [ "$actual" != "$expected" ]; then
+              echo "::error::AZURE_BACKEND_ENV_PRODUCTION must set ${key}=${expected}; found ${actual:-<empty>}"
+              exit 1
+            fi
+          }
+
+          require_any_env_key() {
+            for key in "$@"; do
+              if grep -Eq "^${key}=.+" "$tmpfile"; then
+                return 0
+              fi
+            done
+            echo "::error::AZURE_BACKEND_ENV_PRODUCTION must include one of: $*"
+            exit 1
+          }
+
+          require_env_key "ALLOWED_ORIGINS"
+          require_any_env_key "AZURE_CIAM_TENANT_ID" "AZURE_TENANT_ID"
+          require_any_env_key "AZURE_CIAM_TENANT_SUBDOMAIN" "AZURE_TENANT_SUBDOMAIN"
+          require_any_env_key "AZURE_CIAM_CLIENT_ID" "AZURE_CIAM_ALLOWED_AUDIENCES" "AZURE_CLIENT_ID"
+          require_env_key "AZURE_CIAM_AUTHORITY"
+          require_env_key "AUTH_NATIVE_AUTH_PROXY_BASE_URL"
+
+          require_origin_in_allowlist() {
+            local key="$1"
+            local origin="$2"
+            local actual
+            actual="$(read_env_value "$key")"
+            if ! printf '%s' "$actual" | tr ',' '\n' | sed -E 's/^[[:space:]]+|[[:space:]]+$//g' | grep -Fxq "$origin"; then
+              echo "::error::AZURE_BACKEND_ENV_PRODUCTION must allow ${origin} in ${key}"
+              exit 1
+            fi
+          }
+
+          require_origin_in_allowlist "ALLOWED_ORIGINS" "https://app.helloautoflow.com"
+          require_origin_in_allowlist "ALLOWED_ORIGINS" "https://staging.app.helloautoflow.com"
+
+          if grep -Eq '^AUTH_NATIVE_AUTH_PROXY_ALLOWED_ORIGINS=.+' "$tmpfile"; then
+            require_origin_in_allowlist "AUTH_NATIVE_AUTH_PROXY_ALLOWED_ORIGINS" "https://app.helloautoflow.com"
+            require_origin_in_allowlist "AUTH_NATIVE_AUTH_PROXY_ALLOWED_ORIGINS" "https://staging.app.helloautoflow.com"
+          fi
+
+          TENANT_ID_VALUE="$(read_env_value "AZURE_CIAM_TENANT_ID")"
+          if [ -z "$TENANT_ID_VALUE" ]; then
+            TENANT_ID_VALUE="$(read_env_value "AZURE_TENANT_ID")"
+          fi
+
+          TENANT_SUBDOMAIN_VALUE="$(read_env_value "AZURE_CIAM_TENANT_SUBDOMAIN")"
+          if [ -z "$TENANT_SUBDOMAIN_VALUE" ]; then
+            TENANT_SUBDOMAIN_VALUE="$(read_env_value "AZURE_TENANT_SUBDOMAIN")"
+          fi
+
+          TENANT_ID_VALUE="$(printf '%s' "$TENANT_ID_VALUE" | tr -d '\r' | xargs)"
+          TENANT_SUBDOMAIN_VALUE="$(printf '%s' "$TENANT_SUBDOMAIN_VALUE" | tr -d '\r' | xargs)"
+          EXPECTED_CIAM_AUTHORITY="https://${TENANT_SUBDOMAIN_VALUE}.ciamlogin.com/${TENANT_ID_VALUE}"
+
+          require_exact_env_value "AZURE_CIAM_AUTHORITY" "$EXPECTED_CIAM_AUTHORITY"
+          require_exact_env_value "AUTH_NATIVE_AUTH_PROXY_BASE_URL" "$EXPECTED_CIAM_AUTHORITY"
+
+          kubectl apply -f k8s/production/namespace.yaml
+          kubectl create secret generic "${{ steps.target.outputs.k8s_secret_name }}" \
+            --from-env-file="$tmpfile" \
+            --namespace "${{ steps.target.outputs.k8s_namespace }}" \
+            --dry-run=client \
+            -o yaml \
+            | kubectl apply -f -
+
+      - name: Install cert-manager
+        run: |
+          set -euo pipefail
+
+          kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/v1.20.2/cert-manager.yaml
+          kubectl rollout status deployment/cert-manager -n cert-manager --timeout=300s
+          kubectl rollout status deployment/cert-manager-webhook -n cert-manager --timeout=300s
+          kubectl rollout status deployment/cert-manager-cainjector -n cert-manager --timeout=300s
+
+      - name: Apply production ClusterIssuer
+        env:
+          LETSENCRYPT_EMAIL: ${{ steps.target.outputs.letsencrypt_email }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "${LETSENCRYPT_EMAIL}" ]; then
+            echo "::error::Missing required production variable: AZURE_PRODUCTION_LETSENCRYPT_EMAIL"
+            exit 1
+          fi
+
+          sed "s|__LETSENCRYPT_EMAIL__|${LETSENCRYPT_EMAIL}|g" \
+            k8s/production/cert-manager-clusterissuer.yaml \
+            | kubectl apply -f -
+          kubectl wait --for=condition=Ready clusterissuer/letsencrypt-production --timeout=300s
+
+      - name: Ensure ingress-nginx controller is installed
+        run: |
+          set -euo pipefail
+
+          kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/controller-v1.11.1/deploy/static/provider/cloud/deploy.yaml
+          kubectl rollout status deployment/ingress-nginx-controller -n ingress-nginx --timeout=300s
+
+      - name: Apply production backend manifests
+        run: |
+          set -euo pipefail
+          kubectl apply -f k8s/production/backend.yaml
+          kubectl apply -f k8s/production/api-ingress.yaml
+          kubectl set image deployment/backend \
+            backend="${{ steps.acr.outputs.acr_image }}" \
+            -n "${{ steps.target.outputs.k8s_namespace }}"
+          kubectl rollout status deployment/backend -n "${{ steps.target.outputs.k8s_namespace }}" --timeout=300s
+          kubectl get deployment backend -n "${{ steps.target.outputs.k8s_namespace }}" -o wide
+          kubectl get service backend -n "${{ steps.target.outputs.k8s_namespace }}" -o wide
+          kubectl get ingress autoflow-production-api -n "${{ steps.target.outputs.k8s_namespace }}" -o wide
+
+      - name: Smoke test production backend
+        run: |
+          set -euo pipefail
+
+          NAMESPACE="${{ steps.target.outputs.k8s_namespace }}"
+          INGRESS_TARGET=""
+
+          for i in $(seq 1 30); do
+            INGRESS_TARGET=$(kubectl get svc ingress-nginx-controller -n ingress-nginx -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || true)
+            if [ -z "$INGRESS_TARGET" ]; then
+              INGRESS_TARGET=$(kubectl get svc ingress-nginx-controller -n ingress-nginx -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null || true)
+            fi
+            if [ -n "$INGRESS_TARGET" ]; then
+              break
+            fi
+            echo "Waiting for ingress-nginx public endpoint ($i/30)"
+            sleep 10
+          done
+
+          if [ -z "$INGRESS_TARGET" ]; then
+            echo "::error::ingress-nginx controller did not receive a public endpoint."
+            kubectl describe svc ingress-nginx-controller -n ingress-nginx
+            exit 1
+          fi
+
+          CERT_READY="false"
+          for i in $(seq 1 30); do
+            if kubectl wait --for=condition=Ready certificate/autoflow-production-api-tls \
+              -n "$NAMESPACE" --timeout=10s >/dev/null 2>&1; then
+              CERT_READY="true"
+              break
+            fi
+            echo "Waiting for cert-manager to issue autoflow-production-api-tls ($i/30)"
+            sleep 10
+          done
+
+          if [ "$CERT_READY" != "true" ]; then
+            echo "::error::cert-manager did not issue autoflow-production-api-tls."
+            kubectl get certificate,certificaterequest,order,challenge -n "$NAMESPACE" || true
+            kubectl describe certificate autoflow-production-api-tls -n "$NAMESPACE" || true
+            exit 1
+          fi
+
+          echo "Using ingress HTTPS target: $INGRESS_TARGET"
+
+          TLS_HEALTH_STATUS=""
+          for i in $(seq 1 20); do
+            TLS_HEALTH_STATUS=$(curl -sS --connect-timeout 10 \
+              --resolve "${{ steps.target.outputs.api_host }}:443:${INGRESS_TARGET}" \
+              -o /tmp/tls-health.txt -w "%{http_code}" "https://${{ steps.target.outputs.api_host }}/health" || true)
+            echo "Attempt $i: TLS /health => $TLS_HEALTH_STATUS"
+            if [ "$TLS_HEALTH_STATUS" = "200" ]; then
+              break
+            fi
+            sleep 10
+          done
+
+          if [ "$TLS_HEALTH_STATUS" != "200" ]; then
+            echo "::error::Expected HTTPS /health through ingress to return 200, got $TLS_HEALTH_STATUS"
+            cat /tmp/tls-health.txt || true
+            kubectl describe ingress autoflow-production-api -n "$NAMESPACE" || true
+            exit 1
+          fi
+
+          TLS_RUNS_STATUS=""
+          for i in $(seq 1 10); do
+            TLS_RUNS_STATUS=$(curl -sS --connect-timeout 10 \
+              --resolve "${{ steps.target.outputs.api_host }}:443:${INGRESS_TARGET}" \
+              -o /tmp/tls-runs.json -w "%{http_code}" "https://${{ steps.target.outputs.api_host }}/api/runs" || true)
+            echo "Attempt $i: TLS /api/runs => $TLS_RUNS_STATUS"
+            if [ "$TLS_RUNS_STATUS" = "401" ]; then
+              break
+            fi
+            sleep 5
+          done
+
+          if [ "$TLS_RUNS_STATUS" != "401" ]; then
+            echo "::error::Expected HTTPS /api/runs through ingress to require auth with 401, got $TLS_RUNS_STATUS"
+            cat /tmp/tls-runs.json || true
+            exit 1
+          fi
+
+          NATIVE_AUTH_STATUS=""
+          for i in $(seq 1 10); do
+            NATIVE_AUTH_STATUS=$(curl -sS --connect-timeout 10 \
+              --resolve "${{ steps.target.outputs.api_host }}:443:${INGRESS_TARGET}" \
+              -H "Origin: https://app.helloautoflow.com" \
+              -H "Content-Type: application/x-www-form-urlencoded" \
+              -H "Accept: application/json" \
+              --data "client_id=smoke-client&scope=openid%20profile%20email&username=smoke%40helloautoflow.test&challenge_type=oob%20password%20redirect" \
+              -o /tmp/native-auth-initiate.json -w "%{http_code}" \
+              "https://${{ steps.target.outputs.api_host }}/api/auth/native/oauth2/v2.0/initiate" || true)
+            echo "Attempt $i: native auth initiate => $NATIVE_AUTH_STATUS"
+            if [ "$NATIVE_AUTH_STATUS" = "200" ] || [ "$NATIVE_AUTH_STATUS" = "400" ]; then
+              break
+            fi
+            sleep 5
+          done
+
+          if [ "$NATIVE_AUTH_STATUS" != "200" ] && [ "$NATIVE_AUTH_STATUS" != "400" ]; then
+            echo "::error::Expected native auth initiate smoke check to return 200/400 through ingress, got $NATIVE_AUTH_STATUS"
+            cat /tmp/native-auth-initiate.json || true
+            exit 1
+          fi
+
+          STAGING_NATIVE_AUTH_STATUS=""
+          for i in $(seq 1 10); do
+            STAGING_NATIVE_AUTH_STATUS=$(curl -sS --connect-timeout 10 \
+              --resolve "${{ steps.target.outputs.api_host }}:443:${INGRESS_TARGET}" \
+              -H "Origin: https://staging.app.helloautoflow.com" \
+              -H "Content-Type: application/x-www-form-urlencoded" \
+              -H "Accept: application/json" \
+              --data "client_id=smoke-client&scope=openid%20profile%20email&username=smoke%40helloautoflow.test&challenge_type=oob%20password%20redirect" \
+              -o /tmp/native-auth-initiate-staging.json -w "%{http_code}" \
+              "https://${{ steps.target.outputs.api_host }}/api/auth/native/oauth2/v2.0/initiate" || true)
+            echo "Attempt $i: staging native auth initiate => $STAGING_NATIVE_AUTH_STATUS"
+            if [ "$STAGING_NATIVE_AUTH_STATUS" = "200" ] || [ "$STAGING_NATIVE_AUTH_STATUS" = "400" ]; then
+              break
+            fi
+            sleep 5
+          done
+
+          if [ "$STAGING_NATIVE_AUTH_STATUS" != "200" ] && [ "$STAGING_NATIVE_AUTH_STATUS" != "400" ]; then
+            echo "::error::Expected staging native auth initiate smoke check to return 200/400 through ingress, got $STAGING_NATIVE_AUTH_STATUS"
+            cat /tmp/native-auth-initiate-staging.json || true
+            exit 1
+          fi
+
+          echo "Production smoke tests passed through TLS ingress ${INGRESS_TARGET}."

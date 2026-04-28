@@ -203,6 +203,8 @@ jobs:
       - name: Validate staging social auth env secret
         env:
           BACKEND_ENV_STAGING_SOCIAL_AUTH: ${{ secrets.AZURE_BACKEND_ENV_STAGING_SOCIAL_AUTH }}
+          GOOGLE_CLIENT_ID: ${{ vars.GOOGLE_CLIENT_ID }}
+          STAGING_SOCIAL_AUTH_CLIENT_ID: ${{ vars.AZURE_BACKEND_ENV_STAGING_SOCIAL_AUTH_CLIENTID }}
         run: |
           set -euo pipefail
 
@@ -214,6 +216,15 @@ jobs:
           tmpfile="$(mktemp)"
           trap 'rm -f "$tmpfile"' EXIT
           printf '%s\n' "$BACKEND_ENV_STAGING_SOCIAL_AUTH" > "$tmpfile"
+
+          client_id="${GOOGLE_CLIENT_ID:-}"
+          if [ -z "$client_id" ]; then
+            client_id="${STAGING_SOCIAL_AUTH_CLIENT_ID:-}"
+          fi
+
+          if [ -n "$client_id" ] && ! grep -Eq '^GOOGLE_CLIENT_ID=.+' "$tmpfile"; then
+            printf '\nGOOGLE_CLIENT_ID=%s\n' "$client_id" >> "$tmpfile"
+          fi
 
           require_env_key() {
             local key="$1"
@@ -234,21 +245,70 @@ jobs:
             fi
           }
 
+          read_env_value() {
+            local key="$1"
+            local value
+            value="$(grep -E "^${key}=.+" "$tmpfile" | head -n1 | cut -d= -f2- || true)"
+            value="${value%%#*}"
+            value="$(printf '%s' "$value" | tr -d '\r' | sed -E 's/[[:space:]]+$//')"
+            value="${value%/}"
+            printf '%s' "$value"
+          }
+
+          require_origin_in_allowlist() {
+            local expected_origin="$1"
+            local configured=""
+            local key
+            local value
+            for key in AUTH_SOCIAL_ALLOWED_REDIRECT_ORIGINS ALLOWED_ORIGINS; do
+              value="$(read_env_value "$key")"
+              if [ -z "$value" ]; then
+                continue
+              fi
+
+              configured="yes"
+              if printf '%s' "$value" | tr ',' '\n' | grep -Fxq "$expected_origin"; then
+                return 0
+              fi
+            done
+
+            if [ -z "$configured" ]; then
+              echo "::error::AZURE_BACKEND_ENV_STAGING_SOCIAL_AUTH must include either AUTH_SOCIAL_ALLOWED_REDIRECT_ORIGINS or ALLOWED_ORIGINS with ${expected_origin}"
+            else
+              echo "::error::AZURE_BACKEND_ENV_STAGING_SOCIAL_AUTH must allow ${expected_origin} in AUTH_SOCIAL_ALLOWED_REDIRECT_ORIGINS or ALLOWED_ORIGINS"
+            fi
+            exit 1
+          }
+
           require_env_key "GOOGLE_CLIENT_ID"
           require_env_key "GOOGLE_CLIENT_SECRET"
           require_env_key "APP_JWT_SECRET"
           require_env_key "SOCIAL_AUTH_CALLBACK_BASE_URL"
-          require_exact_https_url "SOCIAL_AUTH_CALLBACK_BASE_URL" "https://${{ steps.target.outputs.api_host }}/auth"
+          require_env_key "SOCIAL_AUTH_DASHBOARD_URL"
+          require_exact_https_url "SOCIAL_AUTH_CALLBACK_BASE_URL" "https://${{ steps.target.outputs.api_host }}/api/auth/social"
+          require_exact_https_url "SOCIAL_AUTH_DASHBOARD_URL" "https://staging.app.helloautoflow.com"
+          require_origin_in_allowlist "https://staging.app.helloautoflow.com"
 
       - name: Deploy backend to Azure Container Apps
         env:
           BACKEND_ENV_STAGING_SOCIAL_AUTH: ${{ secrets.AZURE_BACKEND_ENV_STAGING_SOCIAL_AUTH }}
+          GOOGLE_CLIENT_ID: ${{ vars.GOOGLE_CLIENT_ID }}
+          STAGING_SOCIAL_AUTH_CLIENT_ID: ${{ vars.AZURE_BACKEND_ENV_STAGING_SOCIAL_AUTH_CLIENTID }}
         run: |
           set -euo pipefail
 
           tmpfile="$(mktemp)"
           trap 'rm -f "$tmpfile"' EXIT
           printf '%s\n' "$BACKEND_ENV_STAGING_SOCIAL_AUTH" > "$tmpfile"
+
+          client_id="${GOOGLE_CLIENT_ID:-}"
+          if [ -z "$client_id" ]; then
+            client_id="${STAGING_SOCIAL_AUTH_CLIENT_ID:-}"
+          fi
+
+          if [ -n "$client_id" ] && ! grep -Eq '^GOOGLE_CLIENT_ID=.+' "$tmpfile"; then
+            printf '\nGOOGLE_CLIENT_ID=%s\n' "$client_id" >> "$tmpfile"
+          fi
 
           env_args=()
           while IFS= read -r line || [ -n "$line" ]; do

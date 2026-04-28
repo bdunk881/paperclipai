@@ -125,7 +125,7 @@ describe("social auth routes", () => {
 
   it("returns an app-issued token and user payload after a successful callback", async () => {
     const authenticate = jest.fn<ReturnType<PassportAuthenticate>, Parameters<PassportAuthenticate>>(
-      (_strategy, _options, callback) => (req, res, next) => {
+      (_strategy, _options, callback) => (_req, _res, next) => {
         callback?.(null, {
           id: "local-user-123",
           email: "local@example.com",

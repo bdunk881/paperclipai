@@ -75,7 +75,9 @@ jest.mock("./auth/authMiddleware", () => ({
 
 import request from "supertest";
 import app from "./app";
+import { listConnectorHealth } from "./connectors/health";
 import { WORKFLOW_TEMPLATES } from "./templates";
+import type { WorkflowStep } from "./types/workflow";
 import {
   clearClassificationDecisionsForTests,
   logClassificationDecision,
@@ -84,6 +86,7 @@ import { extractPromptFeatures } from "./engine/promptFeatures";
 import { controlPlaneStore } from "./controlPlane/controlPlaneStore";
 import { approvalStore } from "./engine/approvalStore";
 import { approvalNotificationStore } from "./engine/approvalNotificationStore";
+import { approvalPolicyStore } from "./approvals/policyStore";
 import { runStore } from "./engine/runStore";
 import { knowledgeStore } from "./knowledge/knowledgeStore";
 import { resetImportedTemplatesForTests } from "./templates/importedTemplateStore";
@@ -100,6 +103,7 @@ beforeEach(() => {
   controlPlaneStore.clear();
   approvalStore.clear();
   approvalNotificationStore.clear();
+  approvalPolicyStore.clear();
   runStore.clear();
   knowledgeStore.clear();
   resetImportedTemplatesForTests();
@@ -124,6 +128,32 @@ describe("GET /health", () => {
   it("returns the correct template count", async () => {
     const res = await request(app).get("/health");
     expect(res.body.templates).toBe(WORKFLOW_TEMPLATES.length);
+  });
+});
+
+describe("GET /api/connectors/health", () => {
+  it("returns connector health records and summary", async () => {
+    const res = await request(app).get("/api/connectors/health");
+    expect(res.status).toBe(200);
+    expect(Array.isArray(res.body.connectors)).toBe(true);
+    expect(typeof res.body.summary).toBe("object");
+  });
+
+  it("returns all Tier 1 connectors", async () => {
+    const res = await request(app).get("/api/connectors/health");
+    expect(res.body.connectors).toHaveLength(listConnectorHealth().length);
+  });
+
+  it("includes required fields on each connector", async () => {
+    const res = await request(app).get("/api/connectors/health");
+    for (const connector of res.body.connectors) {
+      expect(typeof connector.connectorKey).toBe("string");
+      expect(typeof connector.connectorName).toBe("string");
+      expect(typeof connector.state).toBe("string");
+      expect(typeof connector.successRate24h).toBe("number");
+      expect(Array.isArray(connector.transitions)).toBe(true);
+      expect(connector.source).toBe("mock");
+    }
   });
 });
 
@@ -249,6 +279,47 @@ describe("GET /api/templates/:id", () => {
     expect(typeof res.body.sampleInput).toBe("object");
     expect(res.body.expectedOutput).toBeDefined();
     expect(typeof res.body.expectedOutput).toBe("object");
+  });
+});
+
+describe("Approval tier policy API", () => {
+  const workspaceId = "11111111-1111-4111-8111-111111111111";
+
+  it("lists default approval tier policies for a workspace", async () => {
+    const res = await request(app)
+      .get(`/api/approval-policies?workspaceId=${workspaceId}`)
+      .set(asAuth());
+
+    expect(res.status).toBe(200);
+    expect(res.body.total).toBe(5);
+    expect(res.body.policies.every((policy: { mode: string }) => policy.mode === "require_approval")).toBe(true);
+  });
+
+  it("updates a workspace approval tier policy", async () => {
+    const res = await request(app)
+      .put("/api/approval-policies/public_posts")
+      .set(asAuth())
+      .send({
+        workspaceId,
+        mode: "notify_only",
+      });
+
+    expect(res.status).toBe(200);
+    expect(res.body.policy.actionType).toBe("public_posts");
+    expect(res.body.policy.mode).toBe("notify_only");
+  });
+
+  it("rejects invalid spend thresholds", async () => {
+    const res = await request(app)
+      .put("/api/approval-policies/spend_above_threshold")
+      .set(asAuth())
+      .send({
+        workspaceId,
+        mode: "require_approval",
+        spendThresholdCents: -1,
+      });
+
+    expect(res.status).toBe(400);
   });
 });
 
@@ -493,6 +564,206 @@ describe("Portable workflow APIs", () => {
 });
 
 // ---------------------------------------------------------------------------
+// Company provisioning APIs
+// ---------------------------------------------------------------------------
+
+describe("Company provisioning APIs", () => {
+  it("requires X-Paperclip-Run-Id on mutating requests", async () => {
+    const res = await request(app)
+      .post("/api/companies")
+      .set(asAuth())
+      .send({
+        name: "Acme AI",
+        idempotencyKey: "acme-1",
+        budgetMonthlyUsd: 300,
+        secretBindings: { OPENAI_API_KEY: "sk-test-1234" },
+        agents: [{ roleTemplateId: "workspace-manager" }],
+      });
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/X-Paperclip-Run-Id/i);
+  });
+
+  it("provisions a customer company workspace with role-library agents and masked secrets", async () => {
+    const res = await request(app)
+      .post("/api/companies")
+      .set(asAuth())
+      .set("X-Paperclip-Run-Id", "run-provision-company")
+      .send({
+        name: "Acme AI",
+        workspaceName: "Acme AI Workspace",
+        externalCompanyId: "crm-acme-42",
+        idempotencyKey: "acme-1",
+        budgetMonthlyUsd: 300,
+        secretBindings: {
+          OPENAI_API_KEY: "sk-live-openai-1234",
+          HUBSPOT_CLIENT_SECRET: "hubspot-secret-9876",
+        },
+        agents: [
+          { roleTemplateId: "workspace-manager", budgetMonthlyUsd: 60 },
+          { roleTemplateId: "backend-engineer", budgetMonthlyUsd: 140, skills: ["gh-cli"] },
+          { roleTemplateId: "integration-engineer" },
+        ],
+      });
+
+    expect(res.status).toBe(201);
+    expect(res.body.idempotentReplay).toBe(false);
+    expect(res.body.company.name).toBe("Acme AI");
+    expect(res.body.company.externalCompanyId).toBe("crm-acme-42");
+    expect(res.body.workspace.name).toBe("Acme AI Workspace");
+    expect(res.body.workspace.slug).toBe("acme-ai");
+    expect(res.body.company.teamId).toBe(res.body.team.id);
+    expect(res.body.team.name).toBe("Acme AI Workspace");
+    expect(res.body.company.allocatedBudgetMonthlyUsd).toBe(300);
+    expect(res.body.company.remainingBudgetMonthlyUsd).toBe(0);
+    expect(res.body.secretBindings).toEqual([
+      expect.objectContaining({ key: "HUBSPOT_CLIENT_SECRET" }),
+      expect.objectContaining({ key: "OPENAI_API_KEY" }),
+    ]);
+    expect(JSON.stringify(res.body)).not.toContain("sk-live-openai-1234");
+    expect(JSON.stringify(res.body)).not.toContain("hubspot-secret-9876");
+
+    expect(res.body.agents).toHaveLength(3);
+    const backendAgent = res.body.agents.find((agent: { roleKey: string }) => agent.roleKey === "backend-engineer");
+    expect(backendAgent).toBeTruthy();
+    expect(backendAgent.skills).toEqual(["gh-cli", "paperclip", "security-review"]);
+    expect(backendAgent.budgetMonthlyUsd).toBe(140);
+
+    const integrationAgent = res.body.agents.find(
+      (agent: { roleKey: string }) => agent.roleKey === "integration-engineer"
+    );
+    expect(integrationAgent.budgetMonthlyUsd).toBe(100);
+    expect(integrationAgent.skills).toEqual(["openai-docs", "paperclip"]);
+  });
+
+  it("replays idempotent retries and keeps tenant state isolated across companies", async () => {
+    const firstRes = await request(app)
+      .post("/api/companies")
+      .set(asAuth())
+      .set("X-Paperclip-Run-Id", "run-company-first")
+      .send({
+        name: "Acme AI",
+        idempotencyKey: "acme-2",
+        budgetMonthlyUsd: 200,
+        secretBindings: { OPENAI_API_KEY: "sk-acme-1234" },
+        agents: [
+          { roleTemplateId: "workspace-manager", budgetMonthlyUsd: 50 },
+          { roleTemplateId: "backend-engineer", budgetMonthlyUsd: 150 },
+        ],
+      });
+
+    const retryRes = await request(app)
+      .post("/api/companies")
+      .set(asAuth())
+      .set("X-Paperclip-Run-Id", "run-company-retry")
+      .send({
+        name: "Acme AI",
+        idempotencyKey: "acme-2",
+        budgetMonthlyUsd: 200,
+        secretBindings: { OPENAI_API_KEY: "sk-acme-1234" },
+        agents: [
+          { roleTemplateId: "workspace-manager", budgetMonthlyUsd: 50 },
+          { roleTemplateId: "backend-engineer", budgetMonthlyUsd: 150 },
+        ],
+      });
+
+    const secondRes = await request(app)
+      .post("/api/companies")
+      .set(asAuth())
+      .set("X-Paperclip-Run-Id", "run-company-second")
+      .send({
+        name: "Beta Labs",
+        idempotencyKey: "beta-1",
+        budgetMonthlyUsd: 180,
+        secretBindings: { OPENAI_API_KEY: "sk-beta-5678" },
+        agents: [
+          { roleTemplateId: "workspace-manager", budgetMonthlyUsd: 40 },
+          { roleTemplateId: "integration-engineer", budgetMonthlyUsd: 140 },
+        ],
+      });
+
+    expect(firstRes.status).toBe(201);
+    expect(retryRes.status).toBe(200);
+    expect(retryRes.body.idempotentReplay).toBe(true);
+    expect(retryRes.body.company.id).toBe(firstRes.body.company.id);
+    expect(retryRes.body.workspace.id).toBe(firstRes.body.workspace.id);
+    expect(retryRes.body.team.id).toBe(firstRes.body.team.id);
+
+    expect(secondRes.status).toBe(201);
+    expect(secondRes.body.company.id).not.toBe(firstRes.body.company.id);
+    expect(secondRes.body.workspace.id).not.toBe(firstRes.body.workspace.id);
+    expect(secondRes.body.team.id).not.toBe(firstRes.body.team.id);
+    expect(secondRes.body.agents.map((agent: { id: string }) => agent.id)).not.toEqual(
+      firstRes.body.agents.map((agent: { id: string }) => agent.id)
+    );
+  });
+
+  it("rejects budget overflow, unknown role templates, and conflicting idempotency reuse", async () => {
+    const overflowRes = await request(app)
+      .post("/api/companies")
+      .set(asAuth())
+      .set("X-Paperclip-Run-Id", "run-company-overflow")
+      .send({
+        name: "Gamma Co",
+        idempotencyKey: "gamma-1",
+        budgetMonthlyUsd: 100,
+        secretBindings: { OPENAI_API_KEY: "sk-gamma-1234" },
+        agents: [
+          { roleTemplateId: "workspace-manager", budgetMonthlyUsd: 60 },
+          { roleTemplateId: "backend-engineer", budgetMonthlyUsd: 60 },
+        ],
+      });
+
+    expect(overflowRes.status).toBe(400);
+    expect(overflowRes.body.error).toMatch(/budget/i);
+
+    const unknownRoleRes = await request(app)
+      .post("/api/companies")
+      .set(asAuth())
+      .set("X-Paperclip-Run-Id", "run-company-role-error")
+      .send({
+        name: "Gamma Co",
+        idempotencyKey: "gamma-2",
+        budgetMonthlyUsd: 100,
+        secretBindings: { OPENAI_API_KEY: "sk-gamma-1234" },
+        agents: [{ roleTemplateId: "non-existent-role" }],
+      });
+
+    expect(unknownRoleRes.status).toBe(400);
+    expect(unknownRoleRes.body.error).toMatch(/Unknown role template/i);
+
+    const initialProvisionRes = await request(app)
+      .post("/api/companies")
+      .set(asAuth())
+      .set("X-Paperclip-Run-Id", "run-company-initial")
+      .send({
+        name: "Delta Co",
+        idempotencyKey: "delta-1",
+        budgetMonthlyUsd: 100,
+        secretBindings: { OPENAI_API_KEY: "sk-delta-1234" },
+        agents: [{ roleTemplateId: "workspace-manager", budgetMonthlyUsd: 100 }],
+      });
+
+    expect(initialProvisionRes.status).toBe(201);
+
+    const conflictingReplayRes = await request(app)
+      .post("/api/companies")
+      .set(asAuth())
+      .set("X-Paperclip-Run-Id", "run-company-conflict")
+      .send({
+        name: "Delta Co",
+        idempotencyKey: "delta-1",
+        budgetMonthlyUsd: 120,
+        secretBindings: { OPENAI_API_KEY: "sk-delta-1234" },
+        agents: [{ roleTemplateId: "workspace-manager", budgetMonthlyUsd: 120 }],
+      });
+
+    expect(conflictingReplayRes.status).toBe(409);
+    expect(conflictingReplayRes.body.error).toMatch(/idempotencyKey/i);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Control plane APIs
 // ---------------------------------------------------------------------------
 
@@ -558,6 +829,25 @@ describe("Control plane APIs", () => {
             agent.schedule.type === "interval" && agent.schedule.intervalMinutes === 30
         )
     ).toBe(true);
+  });
+
+  it("sanitizes generated role keys without the polynomial trim regex", () => {
+    const step = {
+      id: "step-weird-kind",
+      name: "Weird Runtime Step",
+      kind: "---LLM---" as unknown as WorkflowStep["kind"],
+      description: "Regression fixture for slugify role-key generation",
+      inputKeys: [],
+      outputKeys: [],
+    };
+
+    const { agent } = controlPlaneStore.ensureRuntimeTeamForStep({
+      userId: "test-user",
+      actor: "run-runtime-team-rolekey",
+      step,
+    });
+
+    expect(agent.roleKey).toBe("llm");
   });
 
   it("creates a bridged task and enforces atomic checkout", async () => {
@@ -692,6 +982,276 @@ describe("Control plane APIs", () => {
     expect(budgetRes.body.remainingUsd).toBeCloseTo(workerAgent.budgetMonthlyUsd - 1.42, 2);
   });
 
+  it("records real-time spend events and exposes threshold alerts in team spend snapshots", async () => {
+    const deployRes = await request(app)
+      .post("/api/control-plane/deployments/workflow")
+      .set(asAuth())
+      .set("X-Paperclip-Run-Id", "run-deploy-spend-snapshot")
+      .send({
+        budgetMonthlyUsd: 20,
+        toolBudgetCeilings: { "slack.send": 5 },
+        template: {
+          id: "tpl-spend-snapshot",
+          name: "Spend Snapshot Template",
+          description: "Exercises spend snapshots",
+          category: "support",
+          version: "1.0.0",
+          configFields: [],
+          sampleInput: {},
+          expectedOutput: {},
+          steps: [
+            { id: "step-only", name: "Only Agent", kind: "llm", description: "Only", inputKeys: [], outputKeys: [], agentBudgetMonthlyUsd: 10 },
+          ],
+        },
+      });
+
+    const teamId = deployRes.body.team.id;
+    const workerAgent = deployRes.body.agents.find(
+      (agent: { roleKey: string }) => agent.roleKey !== "workflow-manager"
+    );
+
+    const llmSpendRes = await request(app)
+      .post("/api/control-plane/spend-events")
+      .set(asAuth())
+      .set("X-Paperclip-Run-Id", "run-spend-llm")
+      .send({
+        teamId,
+        agentId: workerAgent.id,
+        category: "llm",
+        costUsd: 7,
+        model: "gpt-5.4-mini",
+        provider: "openai",
+      });
+
+    expect(llmSpendRes.status).toBe(201);
+
+    const toolSpendRes = await request(app)
+      .post("/api/control-plane/spend-events")
+      .set(asAuth())
+      .set("X-Paperclip-Run-Id", "run-spend-tool")
+      .send({
+        teamId,
+        agentId: workerAgent.id,
+        category: "tool",
+        costUsd: 1,
+        toolName: "slack.send",
+      });
+
+    expect(toolSpendRes.status).toBe(201);
+
+    const spendRes = await request(app)
+      .get(`/api/control-plane/teams/${teamId}/spend`)
+      .set(asAuth());
+
+    expect(spendRes.status).toBe(200);
+    expect(spendRes.body.team.spentUsd).toBe(8);
+    expect(spendRes.body.totalsByCategory.llm).toBe(7);
+    expect(spendRes.body.totalsByCategory.tool).toBe(1);
+    expect(
+      spendRes.body.agents.some(
+        (agent: { agentId: string; alertThresholdsTriggered: number[] }) =>
+          agent.agentId === workerAgent.id && agent.alertThresholdsTriggered.includes(0.8)
+      )
+    ).toBe(true);
+    expect(
+      spendRes.body.tools.some(
+        (tool: { toolName: string; spentUsd: number }) => tool.toolName === "slack.send" && tool.spentUsd === 1
+      )
+    ).toBe(true);
+    expect(spendRes.body.alerts.some((alert: { scope: string }) => alert.scope === "agent")).toBe(true);
+
+    const budgetRes = await request(app)
+      .get(`/api/agents/${workerAgent.id}/budget`)
+      .set(asAuth());
+
+    expect(budgetRes.status).toBe(200);
+    expect(budgetRes.body.thresholdState).toBe("warning");
+    expect(budgetRes.body.alertThresholdsTriggered).toContain(0.8);
+  });
+
+  it("halts new executions when the company budget cap is reached across agents", async () => {
+    const deployRes = await request(app)
+      .post("/api/control-plane/deployments/workflow")
+      .set(asAuth())
+      .set("X-Paperclip-Run-Id", "run-deploy-team-cap")
+      .send({
+        budgetMonthlyUsd: 5,
+        template: {
+          id: "tpl-team-cap",
+          name: "Team Cap Template",
+          description: "Exercises the team hard cap",
+          category: "support",
+          version: "1.0.0",
+          configFields: [],
+          sampleInput: {},
+          expectedOutput: {},
+          steps: [
+            { id: "step-a", name: "Agent A", kind: "llm", description: "A", inputKeys: [], outputKeys: [], agentBudgetMonthlyUsd: 10 },
+            { id: "step-b", name: "Agent B", kind: "llm", description: "B", inputKeys: [], outputKeys: [], agentBudgetMonthlyUsd: 10 },
+          ],
+        },
+      });
+
+    expect(deployRes.status).toBe(201);
+    const teamId = deployRes.body.team.id;
+    const workerAgents = deployRes.body.agents.filter(
+      (agent: { roleKey: string }) => agent.roleKey !== "workflow-manager"
+    );
+    expect(workerAgents).toHaveLength(2);
+
+    const firstSpendRes = await request(app)
+      .post("/api/control-plane/spend-events")
+      .set(asAuth())
+      .set("X-Paperclip-Run-Id", "run-team-cap-spend-1")
+      .send({
+        teamId,
+        agentId: workerAgents[0].id,
+        category: "llm",
+        costUsd: 4,
+        model: "gpt-5.4-mini",
+      });
+
+    expect(firstSpendRes.status).toBe(201);
+
+    const secondSpendRes = await request(app)
+      .post("/api/control-plane/spend-events")
+      .set(asAuth())
+      .set("X-Paperclip-Run-Id", "run-team-cap-spend-2")
+      .send({
+        teamId,
+        agentId: workerAgents[1].id,
+        category: "llm",
+        costUsd: 1,
+        model: "gpt-5.4-mini",
+      });
+
+    expect(secondSpendRes.status).toBe(201);
+
+    const spendRes = await request(app)
+      .get(`/api/control-plane/teams/${teamId}/spend`)
+      .set(asAuth());
+
+    expect(spendRes.body.team.spentUsd).toBe(5);
+    expect(spendRes.body.team.autoPaused).toBe(true);
+
+    const step = {
+      id: "step-b",
+      name: "Agent B",
+      kind: "llm" as const,
+      description: "B",
+      inputKeys: [],
+      outputKeys: [],
+    };
+
+    await expect(
+      controlPlaneStore.startAgentExecution({
+        userId: "test-user",
+        actor: "run-start-after-team-cap",
+        teamId,
+        step,
+        sourceRunId: "workflow-run-after-team-cap",
+        requestedAgentId: workerAgents[1].id,
+      })
+    ).rejects.toThrow("team_budget_exceeded");
+  });
+
+  it("enforces per-tool ceilings and per-agent caps in real time", async () => {
+    const deployRes = await request(app)
+      .post("/api/control-plane/deployments/workflow")
+      .set(asAuth())
+      .set("X-Paperclip-Run-Id", "run-deploy-tool-cap")
+      .send({
+        budgetMonthlyUsd: 20,
+        toolBudgetCeilings: { "slack.send": 1 },
+        template: {
+          id: "tpl-agent-cap",
+          name: "Agent Cap Template",
+          description: "Exercises tool and agent caps",
+          category: "support",
+          version: "1.0.0",
+          configFields: [],
+          sampleInput: {},
+          expectedOutput: {},
+          steps: [
+            { id: "step-only", name: "Only Agent", kind: "llm", description: "Only", inputKeys: [], outputKeys: [], agentBudgetMonthlyUsd: 2 },
+          ],
+        },
+      });
+
+    expect(deployRes.status).toBe(201);
+    const teamId = deployRes.body.team.id;
+    const workerAgent = deployRes.body.agents.find(
+      (agent: { roleKey: string }) => agent.roleKey !== "workflow-manager"
+    );
+
+    const toolSpendRes = await request(app)
+      .post("/api/control-plane/spend-events")
+      .set(asAuth())
+      .set("X-Paperclip-Run-Id", "run-tool-cap-1")
+      .send({
+        teamId,
+        agentId: workerAgent.id,
+        category: "tool",
+        costUsd: 1,
+        toolName: "slack.send",
+      });
+
+    expect(toolSpendRes.status).toBe(201);
+
+    const blockedToolSpendRes = await request(app)
+      .post("/api/control-plane/spend-events")
+      .set(asAuth())
+      .set("X-Paperclip-Run-Id", "run-tool-cap-2")
+      .send({
+        teamId,
+        agentId: workerAgent.id,
+        category: "tool",
+        costUsd: 0.1,
+        toolName: "slack.send",
+      });
+
+    expect(blockedToolSpendRes.status).toBe(409);
+    expect(blockedToolSpendRes.body.error).toBe("tool_budget_exceeded");
+
+    const agentBudgetSpendRes = await request(app)
+      .post("/api/control-plane/spend-events")
+      .set(asAuth())
+      .set("X-Paperclip-Run-Id", "run-agent-cap-1")
+      .send({
+        teamId,
+        agentId: workerAgent.id,
+        category: "llm",
+        costUsd: 1,
+        model: "gpt-5.4-mini",
+      });
+
+    expect(agentBudgetSpendRes.status).toBe(201);
+
+    const blockedAgentSpendRes = await request(app)
+      .post("/api/control-plane/spend-events")
+      .set(asAuth())
+      .set("X-Paperclip-Run-Id", "run-agent-cap-2")
+      .send({
+        teamId,
+        agentId: workerAgent.id,
+        category: "llm",
+        costUsd: 0.1,
+        model: "gpt-5.4-mini",
+      });
+
+    expect(blockedAgentSpendRes.status).toBe(409);
+    expect(blockedAgentSpendRes.body.error).toBe("agent_budget_exceeded");
+
+    const budgetRes = await request(app)
+      .get(`/api/agents/${workerAgent.id}/budget`)
+      .set(asAuth());
+
+    expect(budgetRes.status).toBe(200);
+    expect(budgetRes.body.spentUsd).toBe(2);
+    expect(budgetRes.body.autoPaused).toBe(true);
+    expect(budgetRes.body.thresholdState).toBe("limit_reached");
+  });
+
   it("returns agent heartbeat and run history for dashboard activity views", async () => {
     const deployRes = await request(app)
       .post("/api/control-plane/deployments/workflow")
@@ -707,14 +1267,16 @@ describe("Control plane APIs", () => {
       (candidate) => candidate.kind === "llm"
     )!;
 
-    const execution = controlPlaneStore.startAgentExecution({
+    const execution = (
+      await controlPlaneStore.startAgentExecution({
       userId: "test-user",
       actor: "run-agent-activity-seed",
       teamId,
       step,
       sourceRunId: "workflow-run-agent-1",
       requestedAgentId: workerAgent.id,
-    }).execution;
+      })
+    ).execution;
 
     controlPlaneStore.finalizeAgentExecution({
       executionId: execution.id,
@@ -798,7 +1360,7 @@ describe("Control plane APIs", () => {
       (agent: { roleKey: string }) => agent.roleKey !== "workflow-manager"
     );
 
-    const started = controlPlaneStore.startAgentExecution({
+    const started = await controlPlaneStore.startAgentExecution({
       userId: "test-user",
       actor: "run-execution-seed",
       teamId,
@@ -834,6 +1396,127 @@ describe("Control plane APIs", () => {
     expect(executionRes.status).toBe(200);
     expect(executionRes.body.status).toBe("queued");
     expect(executionRes.body.restartCount).toBe(1);
+  });
+
+  it("supports company-wide pause and resume with lifecycle audit entries", async () => {
+    const firstDeployRes = await request(app)
+      .post("/api/control-plane/deployments/workflow")
+      .set(asAuth())
+      .set("X-Paperclip-Run-Id", "run-deploy-company-1")
+      .send({ templateId: "tpl-support-bot" });
+    const secondDeployRes = await request(app)
+      .post("/api/control-plane/deployments/workflow")
+      .set(asAuth())
+      .set("X-Paperclip-Run-Id", "run-deploy-company-2")
+      .send({ templateId: "tpl-support-bot" });
+
+    const activeTeamId = firstDeployRes.body.team.id;
+    const manuallyPausedTeamId = secondDeployRes.body.team.id;
+    const activeWorkerAgent = firstDeployRes.body.agents.find(
+      (agent: { roleKey: string }) => agent.roleKey !== "workflow-manager"
+    );
+    const step = WORKFLOW_TEMPLATES.find((template) => template.id === "tpl-support-bot")!.steps.find(
+      (candidate) => candidate.kind === "llm"
+    )!;
+
+    await request(app)
+      .post(`/api/control-plane/teams/${manuallyPausedTeamId}/lifecycle`)
+      .set(asAuth())
+      .set("X-Paperclip-Run-Id", "run-manual-pause")
+      .send({ action: "pause" });
+
+    const stateBeforeRes = await request(app)
+      .get("/api/control-plane/company/lifecycle")
+      .set(asAuth());
+
+    expect(stateBeforeRes.status).toBe(200);
+    expect(stateBeforeRes.body.status).toBe("active");
+
+    const startedBeforePause = await controlPlaneStore.startAgentExecution({
+      userId: "test-user",
+      actor: "run-before-pause",
+      teamId: activeTeamId,
+      step,
+      requestedAgentId: activeWorkerAgent.id,
+      sourceRunId: "workflow-run-before-pause",
+    });
+
+    const pauseRes = await request(app)
+      .post("/api/control-plane/company/lifecycle")
+      .set(asAuth())
+      .set("X-Paperclip-Run-Id", "run-company-pause")
+      .send({ action: "pause", reason: "Emergency stop" });
+
+    expect(pauseRes.status).toBe(200);
+    expect(pauseRes.body.state.status).toBe("paused");
+    expect(pauseRes.body.state.pauseReason).toBe("Emergency stop");
+    expect(pauseRes.body.affectedTeamIds).toContain(activeTeamId);
+    expect(pauseRes.body.affectedTeamIds).not.toContain(manuallyPausedTeamId);
+
+    await expect(
+      controlPlaneStore.startAgentExecution({
+        userId: "test-user",
+        actor: "run-company-paused-start",
+        teamId: activeTeamId,
+        step: WORKFLOW_TEMPLATES.find((template) => template.id === "tpl-support-bot")!.steps.find(
+          (candidate) => candidate.kind === "llm"
+        )!,
+        sourceRunId: "workflow-run-paused",
+        requestedAgentId: activeWorkerAgent.id,
+      })
+    ).rejects.toThrow("company_paused");
+
+    const blockedHeartbeatRes = await request(app)
+      .post("/api/control-plane/heartbeats")
+      .set(asAuth())
+      .set("X-Paperclip-Run-Id", "run-company-paused-heartbeat")
+      .send({
+        teamId: activeTeamId,
+        agentId: activeWorkerAgent.id,
+        status: "completed",
+        summary: "Should be blocked",
+      });
+
+    expect(blockedHeartbeatRes.status).toBe(409);
+    expect(blockedHeartbeatRes.body.error).toMatch(/company is paused/i);
+
+    const allowedHeartbeatRes = await request(app)
+      .post("/api/control-plane/heartbeats")
+      .set(asAuth())
+      .set("X-Paperclip-Run-Id", "run-company-paused-existing-execution")
+      .send({
+        teamId: activeTeamId,
+        agentId: activeWorkerAgent.id,
+        executionId: startedBeforePause.execution.id,
+        status: "completed",
+        summary: "In-flight execution completed",
+      });
+
+    expect(allowedHeartbeatRes.status).toBe(201);
+
+    const resumeRes = await request(app)
+      .post("/api/control-plane/company/lifecycle")
+      .set(asAuth())
+      .set("X-Paperclip-Run-Id", "run-company-resume")
+      .send({ action: "resume", reason: "Recovered" });
+
+    expect(resumeRes.status).toBe(200);
+    expect(resumeRes.body.state.status).toBe("active");
+    expect(resumeRes.body.affectedTeamIds).toContain(activeTeamId);
+    expect(resumeRes.body.affectedTeamIds).not.toContain(manuallyPausedTeamId);
+
+    const auditRes = await request(app)
+      .get("/api/control-plane/company/lifecycle/audit")
+      .set(asAuth());
+
+    expect(auditRes.status).toBe(200);
+    expect(auditRes.body.total).toBe(2);
+    expect(auditRes.body.auditTrail.some((entry: { action: string; runId: string }) => (
+      entry.action === "pause" && entry.runId === "run-company-pause"
+    ))).toBe(true);
+    expect(auditRes.body.auditTrail.some((entry: { action: string; runId: string }) => (
+      entry.action === "resume" && entry.runId === "run-company-resume"
+    ))).toBe(true);
   });
 });
 
@@ -1323,6 +2006,119 @@ describe("GET /api/analytics/routing-decisions", () => {
     );
     expect(res.body.decisions[0].features).toBeDefined();
     expect(typeof res.body.decisions[0].timestamp).toBe("string");
+  });
+});
+
+describe("GET /api/observability", () => {
+  it("returns searchable trace records and supports CSV export", async () => {
+    const deployRes = await request(app)
+      .post("/api/control-plane/deployments/workflow")
+      .set(asAuth())
+      .set("X-Paperclip-Run-Id", "run-deploy-observability")
+      .send({ templateId: "tpl-support-bot" });
+
+    const teamId = deployRes.body.team.id;
+    const workerAgent = deployRes.body.agents.find(
+      (agent: { roleKey: string }) => agent.roleKey !== "workflow-manager"
+    );
+    const step = WORKFLOW_TEMPLATES.find((template) => template.id === "tpl-support-bot")!.steps.find(
+      (candidate) => candidate.kind === "llm"
+    )!;
+
+    const started = await controlPlaneStore.startAgentExecution({
+      userId: "test-user",
+      actor: "run-observability-seed",
+      teamId,
+      step,
+      sourceRunId: "obs-run-1",
+      requestedAgentId: workerAgent.id,
+      taskTitle: "Handle observability trace",
+    });
+
+    controlPlaneStore.finalizeAgentExecution({
+      executionId: started.execution.id,
+      userId: "test-user",
+      status: "completed",
+      summary: "Completed the traceable step",
+      costUsd: 1.25,
+    });
+
+    await runStore.create({
+      id: "obs-run-1",
+      templateId: "tpl-support-bot",
+      templateName: "Support Bot",
+      status: "completed",
+      startedAt: "2026-04-28T03:00:00.000Z",
+      completedAt: "2026-04-28T03:00:05.000Z",
+      input: {},
+      output: {},
+      userId: "test-user",
+      stepResults: [
+        {
+          stepId: step.id,
+          stepName: step.name,
+          status: "success",
+          durationMs: 1500,
+          output: {
+            _observability: {
+              stepKind: step.kind,
+              startedAt: "2026-04-28T03:00:00.000Z",
+              completedAt: "2026-04-28T03:00:01.500Z",
+              reasoningTrace: "Reasoned about customer routing and escalation policy.",
+              toolCalls: [
+                {
+                  timestamp: "2026-04-28T03:00:01.000Z",
+                  toolType: "mcp",
+                  toolName: "crm.lookup",
+                  input: { ticketId: "T-1" },
+                  output: { accountName: "Acme" },
+                },
+              ],
+              agentExecution: {
+                executionId: started.execution.id,
+                teamId,
+                agentId: workerAgent.id,
+                taskId: started.task?.id ?? null,
+                skills: started.execution.appliedSkills,
+              },
+            },
+          },
+          costLog: {
+            modelTier: "power",
+            modelId: "gpt-4o",
+            promptTokens: 100,
+            completionTokens: 50,
+            estimatedCostUsd: 1.25,
+          },
+        },
+      ],
+    });
+
+    const res = await request(app)
+      .get(`/api/observability?agentId=${encodeURIComponent(workerAgent.id)}&search=crm.lookup`)
+      .set(asAuth());
+
+    expect(res.status).toBe(200);
+    expect(res.body.total).toBe(1);
+    expect(res.body.records[0]).toMatchObject({
+      templateName: "Support Bot",
+      stepName: step.name,
+      stepKind: "llm",
+      agentName: workerAgent.name,
+      taskTitle: "Handle observability trace",
+      costUsd: 1.25,
+      reasoningTrace: expect.stringContaining("customer routing"),
+    });
+    expect(res.body.records[0].toolCalls[0].toolName).toBe("crm.lookup");
+
+    const csvRes = await request(app)
+      .get(`/api/observability?format=csv&agentId=${encodeURIComponent(workerAgent.id)}`)
+      .set(asAuth());
+
+    expect(csvRes.status).toBe(200);
+    expect(csvRes.headers["content-type"]).toMatch(/text\/csv/);
+    expect(csvRes.text).toContain("crm.lookup");
+    expect(csvRes.text).toContain("Handle observability trace");
   });
 });
 

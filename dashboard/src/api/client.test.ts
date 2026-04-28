@@ -693,6 +693,14 @@ describe("approvals APIs", () => {
     expect(lastFetchOptions().method).toBe("POST");
   });
 
+  it("returns mock approvals without calling fetch when VITE_USE_MOCK=true", async () => {
+    const { listApprovals: listApprovalsInMockMode } = await importClientWithMockMode();
+    const approvals = await listApprovalsInMockMode(ACCESS_TOKEN, "pending");
+
+    expect(approvals).toEqual([]);
+    expect(vi.mocked(fetch as unknown as ReturnType<typeof vi.fn>)).not.toHaveBeenCalled();
+  });
+
   it("throws on approvals failures", async () => {
     mockFetchFail(503);
     await expect(listApprovals(ACCESS_TOKEN)).rejects.toThrow(/503/);

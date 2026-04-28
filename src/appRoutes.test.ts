@@ -12,11 +12,15 @@ jest.mock("./engine/llmProviders", () => ({
 // Bypass JWT verification in unit tests — inject a synthetic auth principal
 jest.mock("./auth/authMiddleware", () => ({
   requireAuth: (req: Record<string, unknown>, _res: unknown, next: () => void) => {
-    req.auth = { sub: "test-user-id", email: "test@example.com" };
+    const headers = (req.headers ?? {}) as Record<string, unknown>;
+    const requestedUserId = typeof headers["x-user-id"] === "string" ? headers["x-user-id"] : "test-user-id";
+    req.auth = { sub: requestedUserId, email: "test@example.com" };
     next();
   },
   requireAuthOrQaBypass: (req: Record<string, unknown>, _res: unknown, next: () => void) => {
-    req.auth = { sub: "test-user-id", email: "test@example.com" };
+    const headers = (req.headers ?? {}) as Record<string, unknown>;
+    const requestedUserId = typeof headers["x-user-id"] === "string" ? headers["x-user-id"] : "test-user-id";
+    req.auth = { sub: requestedUserId, email: "test@example.com" };
     next();
   },
 }));
@@ -549,6 +553,369 @@ describe("POST /api/workflows/generate", () => {
       .send({ description: "Build a support bot" });
     expect(res.status).toBe(200);
     expect(res.body.steps).toHaveLength(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// POST /api/goals/team-assembly
+// ---------------------------------------------------------------------------
+
+describe("POST /api/goals/team-assembly", () => {
+  const normalizedGoalDocument = {
+    sourceType: "free_text" as const,
+    goal: "Launch an AI bookkeeping concierge",
+    targetCustomer: "Shopify brands doing $1M-$10M in annual revenue.",
+    successMetrics: [
+      "Reach 20 pilot customers in 6 months",
+      "Reduce monthly close time from 10 days to 3 days",
+    ],
+    constraints: [
+      "Must integrate with Shopify and QuickBooks in v1",
+      "Keep launch budget under $75k",
+    ],
+    budget: "$75k for MVP development and GTM validation",
+    timeHorizon: "Launch paid pilots within 6 months",
+    importedContextSummary: null,
+    planReadinessThreshold: 0.8,
+  };
+
+  const prd = {
+    title: "AI Bookkeeping Concierge for Shopify Brands",
+    summary: "Provide an AI-first concierge that closes monthly books and flags anomalies.",
+    targetCustomer: "Shopify brands doing $1M-$10M in annual revenue.",
+    problemStatement: "Operators lose time reconciling transactions and miss cash flow issues.",
+    proposedSolution: "An AI concierge that ingests store, banking, and expense data and delivers weekly digests.",
+    successMetrics: [
+      "Reduce monthly close time from 10 days to 3 days",
+      "Reach 20 paid pilot accounts in 6 months",
+    ],
+    constraints: [
+      "Must integrate with Shopify and QuickBooks in v1",
+      "No human bookkeeper required for standard reconciliation flows",
+    ],
+    budget: "$75k for MVP development and GTM validation",
+    timeHorizon: "Launch paid pilots within 6 months",
+    assumptions: ["Customers will connect their financial systems self-serve."],
+    risks: ["Data quality may vary across merchant accounting setups."],
+    openQuestions: [],
+  };
+
+  it("returns 400 when normalizedGoalDocument is missing", async () => {
+    const res = await request(app)
+      .post("/api/goals/team-assembly")
+      .set("X-User-Id", "user-team-assembly-validation")
+      .send({});
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/normalizedGoalDocument/i);
+  });
+
+  it("returns 422 when no LLM provider configured", async () => {
+    const res = await request(app)
+      .post("/api/goals/team-assembly")
+      .set("X-User-Id", "user-team-assembly-no-llm")
+      .send({ normalizedGoalDocument });
+
+    expect(res.status).toBe(422);
+    expect(res.body.error).toMatch(/No LLM provider/);
+  });
+
+  it("returns 422 when the LLM response is invalid JSON", async () => {
+    const { llmConfigStore } = await import("./llmConfig/llmConfigStore");
+    jest.spyOn(llmConfigStore, "getDecryptedDefault").mockReturnValue({
+      config: { provider: "openai", model: "gpt-4" },
+      apiKey: "sk-test",
+    } as ReturnType<typeof llmConfigStore.getDecryptedDefault>);
+    mockGetProvider.mockReturnValue(async () => ({ text: "not valid json at all" }));
+
+    const res = await request(app)
+      .post("/api/goals/team-assembly")
+      .set("X-User-Id", "user-team-assembly-invalid-json")
+      .send({ normalizedGoalDocument, prd });
+
+    expect(res.status).toBe(422);
+    expect(res.body.error).toMatch(/invalid JSON/);
+  });
+
+  it("returns a structured team assembly plan", async () => {
+    const { llmConfigStore } = await import("./llmConfig/llmConfigStore");
+    jest.spyOn(llmConfigStore, "getDecryptedDefault").mockReturnValue({
+      config: { provider: "openai", model: "gpt-4" },
+      apiKey: "sk-test",
+    } as ReturnType<typeof llmConfigStore.getDecryptedDefault>);
+    mockGetProvider.mockReturnValue(async () => ({
+      text: JSON.stringify({
+        schemaVersion: "2026-04-27",
+        company: {
+          name: "LedgerPilot",
+          goal: normalizedGoalDocument.goal,
+          targetCustomer: normalizedGoalDocument.targetCustomer,
+          budget: normalizedGoalDocument.budget,
+          timeHorizon: normalizedGoalDocument.timeHorizon,
+        },
+        summary: "Launch a lean finance-focused company with product, growth, and revenue leadership.",
+        rationale: "The product needs a small cross-functional team to ship integrations, acquire pilots, and control spend.",
+        orgChart: {
+          executives: [
+            {
+              roleKey: "ceo",
+              title: "CEO",
+              roleType: "executive",
+              department: "executive",
+              headcount: 1,
+              reportsToRoleKey: null,
+              mandate: "Own strategy and cross-functional execution.",
+              justification: "A coordinating executive is required to translate the goal into weekly priorities.",
+              kpis: ["Pilot customer count", "Plan completion rate"],
+              skills: ["paperclip"],
+              tools: ["notion", "slack", "github"],
+              modelTier: "power",
+              budgetMonthlyUsd: 1200,
+              provisioningInstructions: "Provision as the top-level planner with access to company memory.",
+            },
+            {
+              roleKey: "cto",
+              title: "CTO",
+              roleType: "executive",
+              department: "engineering",
+              headcount: 1,
+              reportsToRoleKey: "ceo",
+              mandate: "Own product delivery and technical roadmap.",
+              justification: "The business depends on integrations and reliable automation.",
+              kpis: ["Integration milestones shipped", "Defect escape rate"],
+              skills: ["paperclip", "cto-routines"],
+              tools: ["github", "vercel"],
+              modelTier: "power",
+              budgetMonthlyUsd: 1000,
+              provisioningInstructions: "Provision with engineering planning and repo access.",
+            },
+          ],
+          operators: [
+            {
+              roleKey: "backend-engineer",
+              title: "Backend Engineer",
+              roleType: "operator",
+              department: "engineering",
+              headcount: 1,
+              reportsToRoleKey: "cto",
+              mandate: "Build integrations and bookkeeping workflow APIs.",
+              justification: "Core product value depends on data ingestion and reconciliation logic.",
+              kpis: ["Integration test pass rate", "Time to ship new connector"],
+              skills: ["paperclip", "nodejs-backend-patterns"],
+              tools: ["github", "vercel"],
+              modelTier: "standard",
+              budgetMonthlyUsd: 700,
+              provisioningInstructions: "Provision with backend implementation skills and integration context.",
+            },
+          ],
+          reportingLines: [
+            { managerRoleKey: "ceo", reportRoleKey: "cto" },
+            { managerRoleKey: "cto", reportRoleKey: "backend-engineer" },
+          ],
+        },
+        provisioningPlan: {
+          teamName: "LedgerPilot Launch Team",
+          deploymentMode: "continuous_agents",
+          agents: [
+            {
+              roleKey: "ceo",
+              title: "CEO",
+              roleType: "executive",
+              department: "executive",
+              headcount: 1,
+              reportsToRoleKey: null,
+              mandate: "Own strategy and cross-functional execution.",
+              justification: "A coordinating executive is required to translate the goal into weekly priorities.",
+              kpis: ["Pilot customer count", "Plan completion rate"],
+              skills: ["paperclip"],
+              tools: ["notion", "slack", "github"],
+              modelTier: "power",
+              budgetMonthlyUsd: 1200,
+              provisioningInstructions: "Provision as the top-level planner with access to company memory.",
+            },
+            {
+              roleKey: "cto",
+              title: "CTO",
+              roleType: "executive",
+              department: "engineering",
+              headcount: 1,
+              reportsToRoleKey: "ceo",
+              mandate: "Own product delivery and technical roadmap.",
+              justification: "The business depends on integrations and reliable automation.",
+              kpis: ["Integration milestones shipped", "Defect escape rate"],
+              skills: ["paperclip", "cto-routines"],
+              tools: ["github", "vercel"],
+              modelTier: "power",
+              budgetMonthlyUsd: 1000,
+              provisioningInstructions: "Provision with engineering planning and repo access.",
+            },
+            {
+              roleKey: "backend-engineer",
+              title: "Backend Engineer",
+              roleType: "operator",
+              department: "engineering",
+              headcount: 1,
+              reportsToRoleKey: "cto",
+              mandate: "Build integrations and bookkeeping workflow APIs.",
+              justification: "Core product value depends on data ingestion and reconciliation logic.",
+              kpis: ["Integration test pass rate", "Time to ship new connector"],
+              skills: ["paperclip", "nodejs-backend-patterns"],
+              tools: ["github", "vercel"],
+              modelTier: "standard",
+              budgetMonthlyUsd: 700,
+              provisioningInstructions: "Provision with backend implementation skills and integration context.",
+            },
+          ],
+        },
+        roadmap306090: {
+          day30: {
+            objectives: ["Validate integration scope and staffing assumptions"],
+            deliverables: ["Approved architecture plan", "Pilot pipeline definition"],
+            ownerRoleKeys: ["ceo", "cto"],
+          },
+          day60: {
+            objectives: ["Ship core integrations and recruit design partners"],
+            deliverables: ["QuickBooks connector", "Outbound pilot campaign"],
+            ownerRoleKeys: ["cto", "backend-engineer"],
+          },
+          day90: {
+            objectives: ["Launch paid pilots and instrument operating metrics"],
+            deliverables: ["Pilot onboarding workflow", "Weekly finance dashboard"],
+            ownerRoleKeys: ["ceo", "backend-engineer"],
+          },
+        },
+      }),
+    }));
+
+    const res = await request(app)
+      .post("/api/goals/team-assembly")
+      .set("X-User-Id", "user-team-assembly-success")
+      .send({
+        companyName: "LedgerPilot",
+        normalizedGoalDocument,
+        prd,
+      });
+
+    expect(res.status).toBe(200);
+    expect(res.body.schemaVersion).toBe("2026-04-27");
+    expect(res.body.orgChart.executives).toHaveLength(2);
+    expect(res.body.provisioningPlan.agents).toHaveLength(3);
+    expect(res.body.roadmap306090.day90.ownerRoleKeys).toContain("ceo");
+  });
+
+  it("passes the role library and PRD into the prompt", async () => {
+    const { llmConfigStore } = await import("./llmConfig/llmConfigStore");
+    jest.spyOn(llmConfigStore, "getDecryptedDefault").mockReturnValue({
+      config: { provider: "openai", model: "gpt-4" },
+      apiKey: "sk-test",
+    } as ReturnType<typeof llmConfigStore.getDecryptedDefault>);
+
+    const providerMock = jest.fn(async () => ({
+      text: JSON.stringify({
+        schemaVersion: "2026-04-27",
+        company: {
+          name: "LedgerPilot",
+          goal: normalizedGoalDocument.goal,
+          targetCustomer: normalizedGoalDocument.targetCustomer,
+          budget: normalizedGoalDocument.budget,
+          timeHorizon: normalizedGoalDocument.timeHorizon,
+        },
+        summary: "Lean plan",
+        rationale: "Use a minimal org to reach pilots quickly.",
+        orgChart: {
+          executives: [],
+          operators: [
+            {
+              roleKey: "backend-engineer",
+              title: "Backend Engineer",
+              roleType: "operator",
+              department: "engineering",
+              headcount: 1,
+              reportsToRoleKey: null,
+              mandate: "Build the MVP backend.",
+              justification: "The MVP is integration-heavy.",
+              kpis: ["API milestones"],
+              skills: ["paperclip"],
+              tools: ["github"],
+              modelTier: "standard",
+              budgetMonthlyUsd: 700,
+              provisioningInstructions: "Provision as an implementation agent.",
+            },
+          ],
+          reportingLines: [],
+        },
+        provisioningPlan: {
+          teamName: "LedgerPilot Launch Team",
+          deploymentMode: "continuous_agents",
+          agents: [
+            {
+              roleKey: "backend-engineer",
+              title: "Backend Engineer",
+              roleType: "operator",
+              department: "engineering",
+              headcount: 1,
+              reportsToRoleKey: null,
+              mandate: "Build the MVP backend.",
+              justification: "The MVP is integration-heavy.",
+              kpis: ["API milestones"],
+              skills: ["paperclip"],
+              tools: ["github"],
+              modelTier: "standard",
+              budgetMonthlyUsd: 700,
+              provisioningInstructions: "Provision as an implementation agent.",
+            },
+          ],
+        },
+        roadmap306090: {
+          day30: {
+            objectives: ["Define scope"],
+            deliverables: ["Architecture memo"],
+            ownerRoleKeys: ["backend-engineer"],
+          },
+          day60: {
+            objectives: ["Ship integration MVP"],
+            deliverables: ["Connector alpha"],
+            ownerRoleKeys: ["backend-engineer"],
+          },
+          day90: {
+            objectives: ["Run pilots"],
+            deliverables: ["Pilot dashboard"],
+            ownerRoleKeys: ["backend-engineer"],
+          },
+        },
+      }),
+    }));
+    mockGetProvider.mockReturnValue(providerMock);
+
+    const roleLibrary = [
+      {
+        roleKey: "backend-engineer",
+        title: "Backend Engineer",
+        roleType: "operator",
+        department: "engineering",
+        mandate: "Build APIs and integrations.",
+        defaultReportsToRoleKey: "cto",
+        defaultSkills: ["paperclip", "nodejs-backend-patterns"],
+        defaultTools: ["github", "vercel"],
+        defaultModelTier: "standard",
+        hiringSignals: ["API delivery"],
+      },
+    ];
+
+    const res = await request(app)
+      .post("/api/goals/team-assembly")
+      .set("X-User-Id", "user-team-assembly-prompt")
+      .send({
+        companyName: "LedgerPilot",
+        normalizedGoalDocument,
+        prd,
+        roleLibrary,
+      });
+
+    expect(res.status).toBe(200);
+    expect(providerMock).toHaveBeenCalledWith(expect.stringContaining("\"title\": \"AI Bookkeeping Concierge for Shopify Brands\""));
+    expect(providerMock).toHaveBeenCalledWith(expect.stringContaining("\"roleKey\": \"backend-engineer\""));
+    expect(providerMock).toHaveBeenCalledWith(expect.stringContaining("Company name: LedgerPilot"));
   });
 });
 

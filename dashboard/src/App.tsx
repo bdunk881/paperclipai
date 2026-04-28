@@ -29,6 +29,7 @@ import McpServers from "./pages/McpServers";
 import ExecutionLogs from "./pages/ExecutionLogs";
 import CheckoutSuccess from "./pages/CheckoutSuccess";
 import AuthCallback from "./pages/AuthCallback";
+import SocialAuthCallback from "./pages/SocialAuthCallback";
 import AgentCatalog from "./pages/AgentCatalog";
 import AgentDetail from "./pages/AgentDetail";
 import AgentDeploy from "./pages/AgentDeploy";
@@ -43,6 +44,7 @@ import TicketTeamView from "./pages/TicketTeamView";
 import TicketActorView from "./pages/TicketActorView";
 import TicketSlaDashboard from "./pages/TicketSlaDashboard";
 import TicketSlaSettings from "./pages/TicketSlaSettings";
+import ConnectorHealth from "./pages/ConnectorHealth";
 
 function PrivateRoute({ children }: { children: React.ReactNode }) {
   const { user } = useAuth();
@@ -109,6 +111,7 @@ export default function App() {
           <Route path="/waitlist" element={<LandingPage />} />
           <Route path="/checkout/success" element={<CheckoutSuccess />} />
           <Route path="/auth/callback" element={<AuthCallback />} />
+          <Route path="/auth/social-callback" element={<SocialAuthCallback />} />
           <Route
             path="/login"
             element={
@@ -165,6 +168,7 @@ export default function App() {
             <Route path="approvals" element={<Approvals />} />
             <Route path="memory" element={<Memory />} />
             <Route path="integrations" element={<Integrations />} />
+            <Route path="integrations/health" element={<ConnectorHealth />} />
             <Route path="integrations/mcp" element={<MCPIntegrations />} />
             <Route path="logs" element={<ExecutionLogs />} />
           </Route>

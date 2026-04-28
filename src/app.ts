@@ -23,6 +23,7 @@ import { startTicketNotificationCoordinator } from "./engine/ticketSlaCoordinato
 import { runStore } from "./engine/runStore";
 import { approvalStore } from "./engine/approvalStore";
 import { approvalNotificationStore } from "./engine/approvalNotificationStore";
+import approvalPolicyRoutes from "./approvals/policyRoutes";
 import llmConfigRoutes from "./llmConfig/llmConfigRoutes";
 import mcpRoutes from "./mcp/mcpRoutes";
 import memoryRoutes from "./memory/memoryRoutes";
@@ -30,6 +31,10 @@ import agentMemoryRoutes from "./agents/agentMemoryRoutes";
 import agentRoutes from "./agents/agentRoutes";
 import knowledgeRoutes from "./knowledge/routes";
 import controlPlaneRoutes from "./controlPlane/controlPlaneRoutes";
+import companyRoutes from "./companies/companyRoutes";
+import hitlRoutes from "./hitl/hitlRoutes";
+import { buildObservabilityCsv, buildObservabilityResponse } from "./observability/service";
+import reportRoutes from "./reporting/reportRoutes";
 import ticketRoutes from "./tickets/ticketRoutes";
 import ticketSyncRoutes from "./ticketSync/routes";
 import ticketSyncWebhookRoutes from "./ticketSync/webhookRoutes";
@@ -47,6 +52,11 @@ import socialAuthRoutes from "./auth/socialAuthRoutes";
 import stripeWebhookRoutes from "./billing/stripeWebhook";
 import apolloWebhookRoutes from "./integrations/apollo-attio/webhookRoute";
 import checkoutRoutes from "./billing/checkoutRoutes";
+import {
+  buildTeamAssemblyPrompt,
+  parseTeamAssemblyResponse,
+  teamAssemblyRequestSchema,
+} from "./goals/teamAssembly";
 import apolloRoutes from "./integrations/apollo/routes";
 import hubSpotRoutes, { hubSpotWebhookRouter } from "./integrations/hubspot/routes";
 import sentryRoutes, { sentryWebhookRouter } from "./integrations/sentry/routes";
@@ -72,6 +82,7 @@ import integrationRoutes, {
 } from "./integrations/integrationRoutes";
 import googleWorkspaceConnectorRoutes from "./connectors/google-workspace/routes";
 import googleWorkspaceWebhookRoutes from "./connectors/google-workspace/webhookRoutes";
+import notificationRoutes from "./notifications/routes";
 import {
   createPortableWorkflowBundle,
   getPortableWorkflowSchemaDescriptor,
@@ -79,20 +90,29 @@ import {
 } from "./workflows/portableSchema";
 
 import { saveImportedTemplate } from "./templates/importedTemplateStore";
-
+import { getConnectorHealthSummary, listConnectorHealth } from "./connectors/health";
 
 const app = express();
 
-function getAllowedOrigins(): string[] {
-  const raw = process.env.ALLOWED_ORIGINS;
-  if (!raw) {
+function parseAllowedOrigins(value: string | undefined): string[] {
+  if (!value) {
     return [];
   }
 
-  return raw
+  return value
     .split(",")
-    .map((origin) => origin.trim())
+    .map((origin) => origin.trim().replace(/\/+$/, ""))
     .filter((origin) => origin.length > 0 && origin !== "*");
+}
+
+function getAllowedOrigins(): string[] {
+  return Array.from(
+    new Set([
+      ...parseAllowedOrigins(process.env.ALLOWED_ORIGINS),
+      ...parseAllowedOrigins(process.env.AUTH_SOCIAL_ALLOWED_REDIRECT_ORIGINS),
+      ...parseAllowedOrigins(process.env.SOCIAL_AUTH_DASHBOARD_URL),
+    ])
+  );
 }
 
 const allowedOrigins = new Set(getAllowedOrigins());
@@ -319,9 +339,14 @@ app.use("/api/integrations/intercom", intercomRoutes);
 app.use("/api/integrations/datadog-azure-monitor", datadogAzureMonitorRoutes);
 app.use("/api/integrations/agent-catalog", agentCatalogRoutes);
 app.use("/api/connectors/google-workspace", googleWorkspaceConnectorRoutes);
+app.use("/api/companies", requireAuth, companyRoutes);
 app.use("/api/control-plane", requireAuth, controlPlaneRoutes);
+app.use("/api/hitl", requireAuth, hitlRoutes);
+app.use("/api/reporting", requireAuth, reportRoutes);
 app.use("/api/tickets", requireAuth, ticketRoutes);
 app.use("/api/ticket-sync", requireAuth, ticketSyncRoutes);
+app.use("/api/notifications", requireAuth, notificationRoutes);
+app.use("/api/approval-policies", requireAuth, approvalPolicyRoutes);
 
 // ---------------------------------------------------------------------------
 // Auth API — identity endpoint for authenticated callers
@@ -487,6 +512,32 @@ app.get("/api/runs/:id", requireAuthOrQaBypass, async (req: AuthenticatedRequest
     return;
   }
   res.json(run);
+});
+
+app.get("/api/observability", requireAuth, async (req: AuthenticatedRequest, res) => {
+  const userId = req.auth?.sub;
+  if (!userId) {
+    res.status(401).json({ error: "Authenticated user required" });
+    return;
+  }
+
+  const runs = await runStore.list(undefined, userId);
+  const response = buildObservabilityResponse(userId, runs, {
+    agentId: typeof req.query.agentId === "string" ? req.query.agentId : undefined,
+    taskId: typeof req.query.taskId === "string" ? req.query.taskId : undefined,
+    search: typeof req.query.search === "string" ? req.query.search : undefined,
+    from: typeof req.query.from === "string" ? req.query.from : undefined,
+    to: typeof req.query.to === "string" ? req.query.to : undefined,
+  });
+
+  if (req.query.format === "csv") {
+    res.setHeader("Content-Type", "text/csv; charset=utf-8");
+    res.setHeader("Content-Disposition", 'attachment; filename="observability-export.csv"');
+    res.send(buildObservabilityCsv(response.records));
+    return;
+  }
+
+  res.json(response);
 });
 
 // ---------------------------------------------------------------------------
@@ -666,6 +717,61 @@ app.post("/api/workflows/generate", requireAuth, llmEndpointRateLimiter, async (
   }
 
   res.json({ steps });
+});
+
+// ---------------------------------------------------------------------------
+// POST /api/goals/team-assembly
+// ---------------------------------------------------------------------------
+
+app.post("/api/goals/team-assembly", requireAuth, llmEndpointRateLimiter, async (req: AuthenticatedRequest, res) => {
+  const parsedRequest = teamAssemblyRequestSchema.safeParse(req.body);
+  if (!parsedRequest.success) {
+    const issue = parsedRequest.error.issues[0];
+    const path = issue?.path?.[0];
+    const message =
+      issue?.message === "Required" && typeof path === "string"
+        ? `${path} is required`
+        : (issue?.message ?? "Invalid request body");
+    res.status(400).json({ error: message });
+    return;
+  }
+
+  const userId = req.auth?.sub;
+  if (!userId) {
+    res.status(401).json({ error: "Authenticated user is required to resolve LLM configuration" });
+    return;
+  }
+
+  const resolved = await llmConfigStore.getDecryptedDefault(userId);
+  if (!resolved) {
+    res.status(422).json({
+      error: "No LLM provider configured. Go to Settings > LLM Providers to connect one.",
+    });
+    return;
+  }
+
+  const assemblyModel = resolveModelForTier(resolved.config.provider, "power");
+  const provider = getProvider({
+    provider: resolved.config.provider,
+    model: assemblyModel,
+    apiKey: resolved.apiKey,
+  });
+
+  let rawText: string;
+  try {
+    rawText = (await provider(buildTeamAssemblyPrompt(parsedRequest.data))).text;
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    res.status(502).json({ error: `LLM call failed: ${msg}` });
+    return;
+  }
+
+  try {
+    res.json(parseTeamAssemblyResponse(rawText));
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    res.status(422).json({ error: `LLM returned invalid JSON: ${msg}`, raw: rawText });
+  }
 });
 
 // ---------------------------------------------------------------------------
@@ -903,6 +1009,14 @@ app.get("/health", async (_req, res) => {
       configured: pgConfigured,
       connected: pgConnected,
     },
+  });
+});
+
+app.get("/api/connectors/health", (_req, res) => {
+  const connectors = listConnectorHealth();
+  res.json({
+    connectors,
+    summary: getConnectorHealthSummary(connectors),
   });
 });
 

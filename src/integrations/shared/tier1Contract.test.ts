@@ -65,8 +65,9 @@ function assertOAuthFlow(flow: Tier1OAuthStartResult, expectPkce: boolean): void
 }
 
 function assertHealthContract(health: Tier1ConnectionHealth | TrackerHealth): void {
-  expect(["ok", "degraded", "down"]).toContain(health.status);
+  expect(["healthy", "degraded", "auth_failed", "rate_limited", "provider_error", "disabled"]).toContain(health.status);
   assertIsoTimestamp(health.checkedAt);
+  expect(typeof health.recommendedNextAction).toBe("string");
   expect(typeof health.details.auth).toBe("boolean");
   expect(typeof health.details.apiReachable).toBe("boolean");
   expect(typeof health.details.rateLimited).toBe("boolean");
@@ -155,9 +156,9 @@ describe("tier1 v1 contract", () => {
   ])("keeps the %s health reporting on the documented v1 shape", async (_name, loadHealth) => {
     const health = await loadHealth();
     assertHealthContract(health);
-    expect(health.status).toBe("down");
+    expect(health.status).toBe("disabled");
     expect(health.details.auth).toBe(false);
-    expect(health.details.errorType).toBe("auth");
+    expect(health.recommendedNextAction).toMatch(/connect/i);
   });
 
   it("keeps jira ticket-sync health on the same error and health contract", async () => {
@@ -174,8 +175,8 @@ describe("tier1 v1 contract", () => {
 
     assertHealthContract(health);
     expect(health.provider).toBe("jira");
-    expect(health.status).toBe("down");
-    expect(health.details.errorType).toBe("auth");
+    expect(health.status).toBe("auth_failed");
+    expect(health.lastErrorCategory).toBe("auth");
   });
 
   it("pins connector public types to the shared v1 contract", () => {
@@ -285,61 +286,69 @@ describe("tier1 v1 contract", () => {
   it("pins health interfaces to the shared v1 contract", () => {
     const healthShapes = [
       {
-        status: "ok",
+        status: "healthy",
         checkedAt: "2026-04-28T00:00:00.000Z",
         authMethod: "oauth2_pkce",
         teamId: "T123",
+        recommendedNextAction: "No action required.",
         details: { auth: true, apiReachable: true, rateLimited: false },
       } satisfies SlackConnectionHealth satisfies Tier1ConnectionHealth<SlackAuthMethod, { teamId?: string }>,
       {
-        status: "ok",
+        status: "healthy",
         checkedAt: "2026-04-28T00:00:00.000Z",
         authMethod: "oauth2",
         hubId: "12345",
+        recommendedNextAction: "No action required.",
         details: { auth: true, apiReachable: true, rateLimited: false },
       } satisfies HubSpotConnectionHealth satisfies Tier1ConnectionHealth<HubSpotAuthMethod, { hubId?: string }>,
       {
-        status: "ok",
+        status: "healthy",
         checkedAt: "2026-04-28T00:00:00.000Z",
         authMethod: "oauth2",
         accountId: "acct_123",
+        recommendedNextAction: "No action required.",
         details: { auth: true, apiReachable: true, rateLimited: false },
       } satisfies StripeConnectionHealth satisfies Tier1ConnectionHealth<StripeAuthMethod, { accountId?: string }>,
       {
-        status: "ok",
+        status: "healthy",
         checkedAt: "2026-04-28T00:00:00.000Z",
         authMethod: "oauth2_pkce",
         emailAddress: "ops@autoflow.test",
+        recommendedNextAction: "No action required.",
         details: { auth: true, apiReachable: true, rateLimited: false },
       } satisfies GmailConnectionHealth satisfies Tier1ConnectionHealth<GmailAuthMethod, { emailAddress?: string }>,
       {
-        status: "ok",
+        status: "healthy",
         checkedAt: "2026-04-28T00:00:00.000Z",
         authMethod: "oauth2_pkce",
         organizationId: "org-1",
+        recommendedNextAction: "No action required.",
         details: { auth: true, apiReachable: true, rateLimited: false },
       } satisfies LinearConnectionHealth satisfies Tier1ConnectionHealth<LinearAuthMethod, { organizationId?: string }>,
       {
-        status: "ok",
+        status: "healthy",
         checkedAt: "2026-04-28T00:00:00.000Z",
         authMethod: "oauth2_pkce",
         organizationId: "org-1",
         organizationSlug: "autoflow",
+        recommendedNextAction: "No action required.",
         details: { auth: true, apiReachable: true, rateLimited: false },
       } satisfies SentryConnectionHealth satisfies Tier1ConnectionHealth<SentryAuthMethod, {
         organizationId?: string;
         organizationSlug?: string;
       }>,
       {
-        status: "ok",
+        status: "healthy",
         checkedAt: "2026-04-28T00:00:00.000Z",
         authMethod: "oauth2_pkce",
+        recommendedNextAction: "No action required.",
         details: { auth: true, apiReachable: true, rateLimited: false },
       } satisfies TeamsConnectionHealth satisfies Tier1ConnectionHealth<TeamsAuthMethod>,
       {
-        status: "ok",
+        status: "healthy",
         provider: "jira",
         checkedAt: "2026-04-28T00:00:00.000Z",
+        recommendedNextAction: "No action required.",
         details: { auth: true, apiReachable: true, rateLimited: false },
       } satisfies TrackerHealth,
     ];

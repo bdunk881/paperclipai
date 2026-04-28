@@ -9,6 +9,7 @@ import {
   TrackerIssue,
   UpdateTrackerIssueInput,
 } from "./types";
+import { buildTier1ConnectionHealth } from "../shared/tier1Contract";
 
 const DEFAULT_GITHUB_API_URL = "https://api.github.com";
 const MAX_RETRIES = 4;
@@ -196,14 +197,17 @@ export class GitHubIssuesAdapter implements TrackerAdapter {
     try {
       await this.request<{ login?: string }>("/user");
       return {
-        status: "ok",
         provider: this.provider,
-        checkedAt,
-        details: {
-          auth: true,
-          apiReachable: true,
-          rateLimited: false,
-        },
+        ...buildTier1ConnectionHealth({
+          connector: "tracker-sync-github",
+          subject: `${this.owner}/${this.repo}`,
+          checkedAt,
+          details: {
+            auth: true,
+            apiReachable: true,
+            rateLimited: false,
+          },
+        }),
       };
     } catch (error) {
       const trackerError = error instanceof TrackerError
@@ -211,16 +215,19 @@ export class GitHubIssuesAdapter implements TrackerAdapter {
         : new TrackerError("upstream", error instanceof Error ? error.message : String(error), 502);
 
       return {
-        status: trackerError.type === "rate-limit" ? "degraded" : "down",
         provider: this.provider,
-        checkedAt,
-        details: {
-          auth: trackerError.type !== "auth",
-          apiReachable: trackerError.type !== "network",
-          rateLimited: trackerError.type === "rate-limit",
-          errorType: trackerError.type,
-          message: trackerError.message,
-        },
+        ...buildTier1ConnectionHealth({
+          connector: "tracker-sync-github",
+          subject: `${this.owner}/${this.repo}`,
+          checkedAt,
+          details: {
+            auth: trackerError.type !== "auth",
+            apiReachable: trackerError.type !== "network",
+            rateLimited: trackerError.type === "rate-limit",
+            errorType: trackerError.type,
+            message: trackerError.message,
+          },
+        }),
       };
     }
   }

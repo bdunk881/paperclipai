@@ -8,6 +8,7 @@ import {
   refreshAccessToken,
 } from "./oauth";
 import { consumePkceState, createPkceState } from "./pkceStore";
+import { buildTier1ConnectionHealth } from "../shared/tier1Contract";
 import { ConnectorError, LinearConnectionHealth, LinearCredentialPublic } from "./types";
 
 export class LinearConnectorService {
@@ -129,17 +130,19 @@ export class LinearConnectorService {
     const credential = linearCredentialStore.getActiveByUser(userId);
 
     if (!credential) {
-      return {
-        status: "down",
+      return buildTier1ConnectionHealth({
+        connector: "linear",
+        subject: userId,
         checkedAt,
+        status: "disabled",
+        recommendedNextAction: "Connect a Linear credential from the dashboard to enable syncs.",
         details: {
           auth: false,
           apiReachable: false,
           rateLimited: false,
-          errorType: "auth",
           message: "No Linear credential is connected",
         },
-      };
+      });
     }
 
     try {
@@ -147,10 +150,10 @@ export class LinearConnectorService {
       const client = new LinearClient(token);
       await client.viewer();
 
-      const health: LinearConnectionHealth = {
-        status: "ok",
+      const health: LinearConnectionHealth = buildTier1ConnectionHealth({
+        connector: "linear",
+        subject: userId,
         checkedAt,
-        organizationId: credential.organizationId,
         authMethod: credential.authMethod,
         tokenRefreshStatus:
           credential.authMethod === "oauth2_pkce"
@@ -158,12 +161,15 @@ export class LinearConnectorService {
               ? "healthy"
               : "failed"
             : "not_applicable",
+        metadata: {
+          organizationId: credential.organizationId,
+        },
         details: {
           auth: true,
           apiReachable: true,
           rateLimited: false,
         },
-      };
+      });
 
       logLinear({
         event: "health",
@@ -190,10 +196,10 @@ export class LinearConnectorService {
         errorType: connectorError.type,
       });
 
-      return {
-        status: connectorError.type === "rate-limit" ? "degraded" : "down",
+      return buildTier1ConnectionHealth({
+        connector: "linear",
+        subject: userId,
         checkedAt,
-        organizationId: credential.organizationId,
         authMethod: credential.authMethod,
         tokenRefreshStatus:
           credential.authMethod === "oauth2_pkce"
@@ -201,6 +207,9 @@ export class LinearConnectorService {
               ? "failed"
               : "healthy"
             : "not_applicable",
+        metadata: {
+          organizationId: credential.organizationId,
+        },
         details: {
           auth: connectorError.type !== "auth",
           apiReachable: connectorError.type !== "network",
@@ -208,7 +217,7 @@ export class LinearConnectorService {
           errorType: connectorError.type,
           message: connectorError.message,
         },
-      };
+      });
     }
   }
 

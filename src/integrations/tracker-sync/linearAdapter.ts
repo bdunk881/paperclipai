@@ -1,4 +1,5 @@
 import { LinearClient } from "../linear/linearClient";
+import { buildTier1ConnectionHealth } from "../shared/tier1Contract";
 import { ConnectorError } from "../linear/types";
 import {
   CreateTrackerCommentInput,
@@ -59,14 +60,17 @@ export class LinearAdapter implements TrackerAdapter {
     try {
       await this.client.viewer();
       return {
-        status: "ok",
         provider: this.provider,
-        checkedAt,
-        details: {
-          auth: true,
-          apiReachable: true,
-          rateLimited: false,
-        },
+        ...buildTier1ConnectionHealth({
+          connector: "tracker-sync-linear",
+          subject: this.defaultTeamId ?? this.defaultProjectId ?? "default",
+          checkedAt,
+          details: {
+            auth: true,
+            apiReachable: true,
+            rateLimited: false,
+          },
+        }),
       };
     } catch (error) {
       const trackerError = error instanceof ConnectorError
@@ -74,16 +78,19 @@ export class LinearAdapter implements TrackerAdapter {
         : new TrackerError("upstream", error instanceof Error ? error.message : String(error), 502);
 
       return {
-        status: trackerError.type === "rate-limit" ? "degraded" : "down",
         provider: this.provider,
-        checkedAt,
-        details: {
-          auth: trackerError.type !== "auth",
-          apiReachable: trackerError.type !== "network",
-          rateLimited: trackerError.type === "rate-limit",
-          errorType: trackerError.type,
-          message: trackerError.message,
-        },
+        ...buildTier1ConnectionHealth({
+          connector: "tracker-sync-linear",
+          subject: this.defaultTeamId ?? this.defaultProjectId ?? "default",
+          checkedAt,
+          details: {
+            auth: trackerError.type !== "auth",
+            apiReachable: trackerError.type !== "network",
+            rateLimited: trackerError.type === "rate-limit",
+            errorType: trackerError.type,
+            message: trackerError.message,
+          },
+        }),
       };
     }
   }

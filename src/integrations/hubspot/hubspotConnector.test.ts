@@ -97,13 +97,13 @@ describe("HubSpot connector", () => {
     expect(connection.hubDomain).toBe("private-app-hub");
   });
 
-  it("returns down health when connector is not configured", async () => {
+  it("returns disabled health when connector is not configured", async () => {
     const service = new HubSpotConnectorService();
     const health = await service.health("missing-user");
 
-    expect(health.status).toBe("down");
+    expect(health.status).toBe("disabled");
     expect(health.details.auth).toBe(false);
-    expect(health.details.errorType).toBe("auth");
+    expect(health.recommendedNextAction).toMatch(/connect a hubspot credential/i);
   });
 
   it("refreshes OAuth access token when token is near expiry", async () => {

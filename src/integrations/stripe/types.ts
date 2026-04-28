@@ -1,11 +1,13 @@
+import {
+  Tier1ConnectionHealth,
+  Tier1ConnectionPublic,
+  Tier1ConnectorError,
+  Tier1ConnectorErrorType,
+} from "../shared/tier1Contract";
+
 export type StripeAuthMethod = "oauth2" | "api_key";
 
-export type ConnectorErrorType =
-  | "auth"
-  | "rate-limit"
-  | "schema"
-  | "network"
-  | "upstream";
+export type ConnectorErrorType = Tier1ConnectorErrorType;
 
 export interface StripeTokenSet {
   accessToken: string;
@@ -35,34 +37,17 @@ export interface StripeCredential {
   metadata?: Record<string, string>;
 }
 
-export interface StripeCredentialPublic {
-  id: string;
-  userId: string;
-  authMethod: StripeAuthMethod;
-  tokenMasked: string;
+export interface StripeCredentialPublic extends Tier1ConnectionPublic<StripeAuthMethod, {
   scopes: string[];
   accountId: string;
   accountName?: string;
   accountEmail?: string;
   livemode: boolean;
-  createdAt: string;
-  revokedAt?: string;
-}
+}> {}
 
-export interface StripeConnectionHealth {
-  status: "ok" | "degraded" | "down";
-  checkedAt: string;
+export interface StripeConnectionHealth extends Tier1ConnectionHealth<StripeAuthMethod, {
   accountId?: string;
-  authMethod?: StripeAuthMethod;
-  tokenRefreshStatus?: "not_applicable" | "healthy" | "failed";
-  details: {
-    auth: boolean;
-    apiReachable: boolean;
-    rateLimited: boolean;
-    errorType?: ConnectorErrorType;
-    message?: string;
-  };
-}
+}> {}
 
 export interface StripeAccountSummary {
   accountId: string;
@@ -126,14 +111,9 @@ export interface StripeWebhookEvent {
   livemode?: boolean;
 }
 
-export class ConnectorError extends Error {
-  readonly type: ConnectorErrorType;
-  readonly statusCode: number;
-
+export class ConnectorError extends Tier1ConnectorError {
   constructor(type: ConnectorErrorType, message: string, statusCode = 500) {
-    super(message);
+    super(type, message, statusCode);
     this.name = "ConnectorError";
-    this.type = type;
-    this.statusCode = statusCode;
   }
 }

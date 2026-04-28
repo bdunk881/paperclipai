@@ -19,6 +19,10 @@ export interface WorkspaceAwareRequest extends AuthenticatedRequest {
   workspaceId?: string;
 }
 
+function getResultCount<T extends { rowCount: number | null; rows: unknown[] }>(result: T): number {
+  return result.rowCount ?? result.rows.length;
+}
+
 /**
  * Creates Express middleware that resolves and validates workspace context.
  *
@@ -63,7 +67,7 @@ export function createWorkspaceResolver(pool: Pool) {
           [explicitWorkspaceId, userId],
         );
 
-        if (membershipCheck.rowCount === 0) {
+        if (getResultCount(membershipCheck) === 0) {
           res.status(403).json({ error: "Not a member of the requested workspace." });
           return;
         }
@@ -78,8 +82,9 @@ export function createWorkspaceResolver(pool: Pool) {
         `SELECT id FROM workspaces WHERE owner_user_id = $1 ORDER BY created_at ASC LIMIT 2`,
         [userId],
       );
+      const ownedWorkspaceCount = getResultCount(ownedWorkspaces);
 
-      if (ownedWorkspaces.rowCount === 0) {
+      if (ownedWorkspaceCount === 0) {
         // Check if user is a member of any workspace
         const memberWorkspaces = await pool.query(
           `SELECT wm.workspace_id AS id FROM workspace_members wm
@@ -87,13 +92,14 @@ export function createWorkspaceResolver(pool: Pool) {
            ORDER BY wm.created_at ASC LIMIT 2`,
           [userId],
         );
+        const memberWorkspaceCount = getResultCount(memberWorkspaces);
 
-        if (memberWorkspaces.rowCount === 0) {
+        if (memberWorkspaceCount === 0) {
           res.status(404).json({ error: "No workspace found for user." });
           return;
         }
 
-        if (memberWorkspaces.rowCount > 1) {
+        if (memberWorkspaceCount > 1) {
           res.status(400).json({
             error: "Multiple workspaces available. Specify X-Workspace-Id header.",
           });
@@ -105,7 +111,7 @@ export function createWorkspaceResolver(pool: Pool) {
         return;
       }
 
-      if (ownedWorkspaces.rowCount > 1) {
+      if (ownedWorkspaceCount > 1) {
         res.status(400).json({
           error: "Multiple workspaces available. Specify X-Workspace-Id header.",
         });

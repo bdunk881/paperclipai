@@ -12,11 +12,19 @@ jest.mock("./engine/llmProviders", () => ({
 // Bypass JWT verification in unit tests — inject a synthetic auth principal
 jest.mock("./auth/authMiddleware", () => ({
   requireAuth: (req: Record<string, unknown>, _res: unknown, next: () => void) => {
-    req.auth = { sub: "test-user-id", email: "test@example.com" };
+    const headerUserId =
+      typeof (req as { headers?: Record<string, unknown> }).headers?.["x-user-id"] === "string"
+        ? ((req as { headers?: Record<string, unknown> }).headers?.["x-user-id"] as string)
+        : "test-user-id";
+    req.auth = { sub: headerUserId, email: "test@example.com" };
     next();
   },
   requireAuthOrQaBypass: (req: Record<string, unknown>, _res: unknown, next: () => void) => {
-    req.auth = { sub: "test-user-id", email: "test@example.com" };
+    const headerUserId =
+      typeof (req as { headers?: Record<string, unknown> }).headers?.["x-user-id"] === "string"
+        ? ((req as { headers?: Record<string, unknown> }).headers?.["x-user-id"] as string)
+        : "test-user-id";
+    req.auth = { sub: headerUserId, email: "test@example.com" };
     next();
   },
 }));
@@ -560,7 +568,7 @@ describe("POST /api/goals/intake", () => {
   it("returns 400 when goal is missing", async () => {
     const res = await request(app)
       .post("/api/goals/intake")
-      .set("X-User-Id", "user-1")
+      .set("X-User-Id", "goal-user-missing")
       .send({});
     expect(res.status).toBe(400);
     expect(res.body.error).toMatch(/goal/i);
@@ -569,7 +577,7 @@ describe("POST /api/goals/intake", () => {
   it("returns 400 when readinessThreshold is out of range", async () => {
     const res = await request(app)
       .post("/api/goals/intake")
-      .set("X-User-Id", "user-1")
+      .set("X-User-Id", "goal-user-threshold")
       .send({ goal: "Launch an AI bookkeeping concierge", readinessThreshold: 2 });
     expect(res.status).toBe(400);
     expect(res.body.error).toMatch(/less than or equal to 1/);
@@ -578,7 +586,7 @@ describe("POST /api/goals/intake", () => {
   it("returns 422 when no LLM provider configured", async () => {
     const res = await request(app)
       .post("/api/goals/intake")
-      .set("X-User-Id", "user-no-llm")
+      .set("X-User-Id", "goal-user-no-llm")
       .send({ goal: "Launch an AI bookkeeping concierge" });
     expect(res.status).toBe(422);
     expect(res.body.error).toMatch(/No LLM provider/);
@@ -594,7 +602,7 @@ describe("POST /api/goals/intake", () => {
 
     const res = await request(app)
       .post("/api/goals/intake")
-      .set("X-User-Id", "user-1")
+      .set("X-User-Id", "goal-user-invalid-json")
       .send({ goal: "Launch an AI bookkeeping concierge" });
     expect(res.status).toBe(422);
     expect(res.body.error).toMatch(/invalid JSON/);
@@ -636,7 +644,7 @@ describe("POST /api/goals/intake", () => {
 
     const res = await request(app)
       .post("/api/goals/intake")
-      .set("X-User-Id", "user-1")
+      .set("X-User-Id", "goal-user-clarify")
       .send({ goal: "Launch an AI bookkeeping concierge" });
     expect(res.status).toBe(200);
     expect(res.body.status).toBe("needs_clarification");
@@ -698,7 +706,7 @@ describe("POST /api/goals/intake", () => {
 
     const res = await request(app)
       .post("/api/goals/intake")
-      .set("X-User-Id", "user-1")
+      .set("X-User-Id", "goal-user-ready")
       .send({
         goal: "Launch an AI bookkeeping concierge",
         readinessThreshold: 0.8,
@@ -751,7 +759,7 @@ describe("POST /api/goals/intake", () => {
 
     const res = await request(app)
       .post("/api/goals/intake")
-      .set("X-User-Id", "user-1")
+      .set("X-User-Id", "goal-user-imported-context")
       .send({
         goal: "Launch an AI bookkeeping concierge",
         answers: { target_customer: "Shopify brands", time_horizon: "6 months" },

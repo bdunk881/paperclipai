@@ -198,7 +198,6 @@ const llmEndpointRateLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   keyGenerator: getRateLimitKey,
-  skip: () => Boolean(process.env.JEST_WORKER_ID),
   handler: createRateLimitHandler(60 * 60 * 1000),
 });
 

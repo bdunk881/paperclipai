@@ -568,6 +568,35 @@ describe("Portable workflow APIs", () => {
 // ---------------------------------------------------------------------------
 
 describe("Company provisioning APIs", () => {
+  it("lists supported role templates and the approval payload contract", async () => {
+    const res = await request(app)
+      .get("/api/companies/role-templates")
+      .set(asAuth());
+
+    expect(res.status).toBe(200);
+    expect(res.body.total).toBeGreaterThan(3);
+    expect(res.body.provisioningContract).toMatchObject({
+      schemaVersion: "2026-04-28",
+      endpoint: "/api/companies",
+      requiredHeaders: ["X-Paperclip-Run-Id"],
+      companyFields: {
+        required: ["name", "idempotencyKey", "budgetMonthlyUsd", "secretBindings", "agents"],
+      },
+      agentFields: {
+        identifierFields: ["roleTemplateId", "roleKey"],
+        requiredOneOf: ["roleTemplateId", "roleKey"],
+      },
+    });
+    expect(
+      res.body.roleTemplates.some((template: { id: string; name: string }) => template.id === "ceo" && template.name === "CEO")
+    ).toBe(true);
+    expect(
+      res.body.roleTemplates.some(
+        (template: { id: string; name: string }) => template.id === "backend-engineer" && template.name === "Backend Engineer"
+      )
+    ).toBe(true);
+  });
+
   it("requires X-Paperclip-Run-Id on mutating requests", async () => {
     const res = await request(app)
       .post("/api/companies")
@@ -634,6 +663,35 @@ describe("Company provisioning APIs", () => {
     );
     expect(integrationAgent.budgetMonthlyUsd).toBe(100);
     expect(integrationAgent.skills).toEqual(["openai-docs", "paperclip"]);
+  });
+
+  it("accepts team-assembly role keys as provisioning identifiers", async () => {
+    const res = await request(app)
+      .post("/api/companies")
+      .set(asAuth())
+      .set("X-Paperclip-Run-Id", "run-provision-team-assembly-role-keys")
+      .send({
+        name: "Role Key Co",
+        idempotencyKey: "role-key-1",
+        budgetMonthlyUsd: 240,
+        secretBindings: { OPENAI_API_KEY: "sk-role-key-1234" },
+        agents: [
+          { roleKey: "ceo", budgetMonthlyUsd: 80 },
+          { roleKey: "frontend-engineer", budgetMonthlyUsd: 80 },
+          { roleKey: "qa-engineer", budgetMonthlyUsd: 80 },
+        ],
+      });
+
+    expect(res.status).toBe(201);
+    expect(res.body.agents.map((agent: { roleKey: string }) => agent.roleKey)).toEqual([
+      "ceo",
+      "frontend-engineer",
+      "qa-engineer",
+    ]);
+    expect(
+      res.body.agents.find((agent: { roleKey: string; skills: string[] }) => agent.roleKey === "frontend-engineer")
+        .skills
+    ).toEqual(["frontend-design", "paperclip"]);
   });
 
   it("replays idempotent retries and keeps tenant state isolated across companies", async () => {
@@ -762,6 +820,23 @@ describe("Company provisioning APIs", () => {
 
     expect(conflictingReplayRes.status).toBe(409);
     expect(conflictingReplayRes.body.error).toMatch(/idempotencyKey/i);
+  });
+
+  it("rejects conflicting roleTemplateId and roleKey identifiers", async () => {
+    const res = await request(app)
+      .post("/api/companies")
+      .set(asAuth())
+      .set("X-Paperclip-Run-Id", "run-company-mismatched-identifiers")
+      .send({
+        name: "Mismatch Co",
+        idempotencyKey: "mismatch-1",
+        budgetMonthlyUsd: 100,
+        secretBindings: { OPENAI_API_KEY: "sk-mismatch-1234" },
+        agents: [{ roleTemplateId: "backend-engineer", roleKey: "frontend-engineer" }],
+      });
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/must match/i);
   });
 });
 

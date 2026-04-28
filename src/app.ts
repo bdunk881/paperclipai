@@ -50,8 +50,10 @@ import hubSpotRoutes, { hubSpotWebhookRouter } from "./integrations/hubspot/rout
 import sentryRoutes, { sentryWebhookRouter } from "./integrations/sentry/routes";
 import subscriptionRoutes from "./billing/subscriptionRoutes";
 import slackRoutes, { slackWebhookRouter } from "./integrations/slack/routes";
+import stripeRoutes, { stripeConnectorWebhookRouter } from "./integrations/stripe/routes";
 import shopifyRoutes, { shopifyWebhookRouter } from "./integrations/shopify/routes";
 import docuSignRoutes, { docuSignWebhookRouter } from "./integrations/docusign/routes";
+import gmailRoutes, { gmailWebhookRouter } from "./integrations/gmail/routes";
 import linearRoutes, { linearWebhookRouter } from "./integrations/linear/routes";
 import teamsRoutes, { teamsWebhookRouter } from "./integrations/teams/routes";
 import posthogRoutes, { posthogWebhookRouter } from "./integrations/posthog/routes";
@@ -228,10 +230,14 @@ app.use("/api/webhooks", webhookRateLimiter);
 app.use("/api/webhooks/stripe", express.raw({ type: "application/json" }), stripeWebhookRoutes);
 // Slack webhook — mounted before express.json() for signature verification
 app.use("/api/webhooks/slack", slackWebhookRouter);
+// Stripe Connect webhook — mounted before express.json() for signature verification
+app.use("/api/webhooks/stripe-connect", stripeConnectorWebhookRouter);
 // Shopify webhook — mounted before express.json() for signature verification
 app.use("/api/webhooks/shopify", shopifyWebhookRouter);
 // DocuSign webhook — mounted before express.json() for signature verification
 app.use("/api/webhooks/docusign", docuSignWebhookRouter);
+// Gmail Pub/Sub webhook — mounted before express.json() to preserve provider payload
+app.use("/api/webhooks/gmail", gmailWebhookRouter);
 // Linear webhook — mounted before express.json() for signature verification
 app.use("/api/webhooks/linear", linearWebhookRouter);
 // Sentry webhook — mounted before express.json() for signature verification
@@ -295,7 +301,9 @@ app.use("/api/integrations/oauth2", integrationOAuthCallbackRoutes);
 app.use("/api/integrations", requireAuth, integrationRoutes);
 app.use("/api/webhooks/relay", webhookRelayRouter);
 app.use("/api/integrations", oauthBridgeRoutes);
+app.use("/api/integrations/gmail", gmailRoutes);
 app.use("/api/integrations/slack", slackRoutes);
+app.use("/api/integrations/stripe", stripeRoutes);
 app.use("/api/integrations/shopify", shopifyRoutes);
 app.use("/api/integrations/docusign", docuSignRoutes);
 app.use("/api/integrations/linear", linearRoutes);

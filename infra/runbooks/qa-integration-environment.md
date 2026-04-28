@@ -31,7 +31,8 @@ Expected response contract for all three endpoints:
 - `QA_E2E_BEARER_TOKEN` (optional): bearer token for protected QA endpoints
 - `QA_E2E_USER_ID` (optional): user identifier paired with the QA bearer token when a route expects a stable user context
 - `STRIPE_WEBHOOK_SECRET` (optional, recommended): Stripe webhook signing secret
-- `QA_CONNECTOR_HEALTH_SLUGS` (optional): space-delimited connector list for the Friday sweep; default `linear sentry hubspot teams apollo`
+- `QA_CONNECTOR_HEALTH_SLUGS` (optional): space-delimited connector list for Tier 1 auth verification; default `slack hubspot stripe gmail sentry linear teams`
+- `QA_JIRA_TICKET_SYNC_CONNECTION_ID` (optional): existing Jira ticket-sync connection ID used to verify the Jira auth path via `POST /api/ticket-sync/connections/:id/test`
 
 ## Required Vercel Variables (Landing Analytics)
 
@@ -86,22 +87,40 @@ The same tokenized link can be reused for:
 - `503` route mounted but connector down/not configured for QA user
 - `401/403` auth gap or insufficient token scopes
 - `404/000` broken route or unreachable endpoint; file a connector regression ticket immediately
+4. If `QA_JIRA_TICKET_SYNC_CONNECTION_ID` is set, review the `ticket_sync_jira_test` row as the Jira-specific auth verification signal.
 4. Attach the artifact summary to:
 
 - [ALT-1071](/ALT/issues/ALT-1071)
 - [ALT-1080](/ALT/issues/ALT-1080)
 
-## Friday Connector Sweep Focus
+## Tier 1 Verification Matrix
 
-The default Friday sweep probes these connector health endpoints:
+The default QA evidence run probes these Tier 1 health endpoints:
 
+- `/api/integrations/slack/health`
+- `/api/integrations/hubspot/health`
+- `/api/integrations/stripe/health`
+- `/api/integrations/gmail/health`
 - `/api/integrations/linear/health`
 - `/api/integrations/sentry/health`
-- `/api/integrations/hubspot/health`
 - `/api/integrations/teams/health`
-- `/api/integrations/apollo/health`
+
+Jira is currently verified through ticket-sync rather than a standalone `/api/integrations/jira/health` route:
+
+- `/api/ticket-sync/connections/:id/test`
 
 If you need to expand the sweep for P1 work, set `QA_CONNECTOR_HEALTH_SLUGS` to a space-delimited list before running the workflow.
+
+## Tier 1 OAuth/Auth Checklist
+
+For `ALT-1943`, capture evidence for each connector in this order:
+
+1. Start auth from the connector route (`/oauth/start` or equivalent API-key connect route).
+2. Complete provider consent using staging credentials.
+3. Confirm callback/token exchange succeeds and credential persistence is visible in the dashboard.
+4. Run the connector health endpoint or Jira ticket-sync test endpoint.
+5. Exercise one read/list call to confirm scopes and pagination work with real data.
+6. Record failure-mode behavior for invalid credentials, revoked scopes, and expired refresh tokens.
 
 ## Performance + Browser Matrix (Landing)
 

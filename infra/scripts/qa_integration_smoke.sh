@@ -24,7 +24,8 @@ USER_HEADER=()
 if [[ -n "${QA_E2E_USER_ID:-}" ]]; then
   USER_HEADER=(-H "X-User-Id: ${QA_E2E_USER_ID}")
 fi
-CONNECTOR_HEALTH_SLUGS=(${QA_CONNECTOR_HEALTH_SLUGS:-linear sentry hubspot teams apollo})
+CONNECTOR_HEALTH_SLUGS=(${QA_CONNECTOR_HEALTH_SLUGS:-slack hubspot stripe gmail sentry linear teams})
+JIRA_TICKET_SYNC_CONNECTION_ID="${QA_JIRA_TICKET_SYNC_CONNECTION_ID:-}"
 
 printf "endpoint\tstatus\n" > "$PROBE_LOG"
 
@@ -48,6 +49,10 @@ for slug in "${CONNECTOR_HEALTH_SLUGS[@]}"; do
   probe "${API_PREFIX}/integrations/${slug}/health" "connector_${slug}_health"
 done
 
+if [[ -n "$JIRA_TICKET_SYNC_CONNECTION_ID" ]]; then
+  probe "${API_PREFIX}/ticket-sync/connections/${JIRA_TICKET_SYNC_CONNECTION_ID}/test" "ticket_sync_jira_test"
+fi
+
 reachable_count=$(awk 'NR>1 && $2 != "000" {count++} END {print count+0}' "$PROBE_LOG")
 connector_route_failures=$(
   awk '
@@ -68,6 +73,7 @@ connector_route_failures=$(
   echo "- STRIPE_WEBHOOK_SECRET provided: $( [[ -n "${STRIPE_WEBHOOK_SECRET:-}" ]] && echo yes || echo no )"
   echo "- VITE_USE_MOCK: ${VITE_USE_MOCK:-unset}"
   echo "- Connector health sweep slugs: ${CONNECTOR_HEALTH_SLUGS[*]}"
+  echo "- Jira ticket-sync connection ID provided: $( [[ -n "$JIRA_TICKET_SYNC_CONNECTION_ID" ]] && echo yes || echo no )"
   echo
   echo "## Probe Results"
   echo

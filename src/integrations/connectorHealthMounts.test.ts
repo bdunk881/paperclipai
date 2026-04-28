@@ -39,8 +39,8 @@ import app from "../app";
 
 const AUTH = { Authorization: "Bearer test-token", "X-User-Id": "qa-smoke-user" };
 
-describe("connector health routes are mounted", () => {
-  it.each(["linear", "sentry", "hubspot", "teams", "apollo"])(
+describe("tier 1 connector health routes are mounted", () => {
+  it.each(["slack", "hubspot", "stripe", "gmail", "sentry", "linear", "teams"])(
     "serves %s health endpoint instead of 404",
     async (slug) => {
       const res = await request(app)

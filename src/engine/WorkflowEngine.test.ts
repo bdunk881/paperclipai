@@ -14,6 +14,7 @@ jest.mock("./llmProviders", () => ({
 import { WorkflowEngine, setLlmProvider, registerAction } from "./WorkflowEngine";
 import { runStore } from "./runStore";
 import { approvalStore } from "./approvalStore";
+import { approvalPolicyStore } from "../approvals/policyStore";
 import { memoryStore } from "./memoryStore";
 import { llmConfigStore } from "../llmConfig/llmConfigStore";
 import { getProvider } from "./llmProviders";
@@ -52,6 +53,7 @@ let engine: WorkflowEngine;
 beforeEach(() => {
   void runStore.clear();
   void approvalStore.clear();
+  void approvalPolicyStore.clear();
   memoryStore.clear();
   engine = new WorkflowEngine();
 
@@ -630,6 +632,77 @@ describe("WorkflowEngine — approval step", () => {
     const completed = await waitForCompletion(run.id);
     expect(completed.stepResults[0].status).toBe("failure");
     expect(completed.stepResults[0].output["approved"]).toBe(false);
+  });
+});
+
+describe("WorkflowEngine — approval tier governance", () => {
+  it("blocks a governed action step until approval is granted", async () => {
+    registerAction("content.publish", async () => ({ published: true, contentId: "post-1" }));
+
+    await approvalPolicyStore.upsert({
+      workspaceId: "11111111-1111-4111-8111-111111111111",
+      actionType: "public_posts",
+      mode: "require_approval",
+    });
+
+    const tpl = makeMinimalTemplate({
+      id: "gov-action-1",
+      name: "Publish content",
+      kind: "action",
+      description: "Publishes content",
+      inputKeys: ["draft"],
+      outputKeys: ["published", "contentId"],
+      action: "content.publish",
+    });
+
+    const run = await engine.startRun(tpl, {
+      workspaceId: "11111111-1111-4111-8111-111111111111",
+      draft: "Ship it",
+    });
+
+    await waitForStatus(run.id, "awaiting_approval");
+
+    const pending = await approvalStore.list("pending");
+    expect(pending).toHaveLength(1);
+    await approvalStore.resolve(pending[0].id, "approved", "approved for publishing");
+
+    const completed = await waitForCompletion(run.id);
+    expect(completed.status).toBe("completed");
+    expect(completed.stepResults[0].output["governanceActionType"]).toBe("public_posts");
+    expect(completed.stepResults[0].output["governanceMode"]).toBe("require_approval");
+  });
+
+  it("creates an auto-approved approval record for notify-only governed actions", async () => {
+    registerAction("content.publish", async () => ({ published: true, contentId: "post-2" }));
+
+    await approvalPolicyStore.upsert({
+      workspaceId: "11111111-1111-4111-8111-111111111111",
+      actionType: "public_posts",
+      mode: "notify_only",
+    });
+
+    const tpl = makeMinimalTemplate({
+      id: "gov-action-2",
+      name: "Publish content",
+      kind: "action",
+      description: "Publishes content",
+      inputKeys: ["draft"],
+      outputKeys: ["published", "contentId"],
+      action: "content.publish",
+    });
+
+    const run = await engine.startRun(tpl, {
+      workspaceId: "11111111-1111-4111-8111-111111111111",
+      draft: "Publish without blocking",
+    });
+
+    const completed = await waitForCompletion(run.id);
+    expect(completed.status).toBe("completed");
+
+    const approvals = await approvalStore.list("approved");
+    expect(approvals).toHaveLength(1);
+    expect(approvals[0].comment).toContain("notify-only");
+    expect(completed.stepResults[0].output["governanceMode"]).toBe("notify_only");
   });
 });
 

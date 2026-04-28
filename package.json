@@ -9,9 +9,11 @@
     "dev": "ts-node src/index.ts",
     "test": "jest --config jest.config.cjs --runInBand",
     "test:coverage": "jest --config jest.config.cjs --coverage --runInBand --forceExit",
+    "test:connectors:provider": "jest --config jest.config.cjs --runInBand src/integrations/provider-facing/tier1ProviderFacing.test.ts",
     "test:templates": "jest --config jest.config.cjs --runInBand src/templates",
     "test:api": "jest --config jest.config.cjs --runInBand src/api",
     "test:engine": "jest --config jest.config.cjs --runInBand src/engine",
+    "test:connectors:provider": "jest --config jest.config.cjs --runInBand src/integrations/provider-facing/tier1ProviderFacing.test.ts",
     "health-report": "ts-node src/integrations/apollo-attio/health-metrics.ts"
   },
   "dependencies": {

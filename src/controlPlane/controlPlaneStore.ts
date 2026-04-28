@@ -37,12 +37,21 @@ function currentPeriodKey(date = new Date()): string {
 }
 
 function slugify(value: string): string {
-  return value
+  const collapsed = value
     .trim()
     .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+/, "")
-    .replace(/-+$/, "");
+    .replace(/[^a-z0-9]+/g, "-");
+
+  let start = 0;
+  let end = collapsed.length;
+  while (start < end && collapsed.charCodeAt(start) === 45) {
+    start += 1;
+  }
+  while (end > start && collapsed.charCodeAt(end - 1) === 45) {
+    end -= 1;
+  }
+
+  return collapsed.slice(start, end);
 }
 
 function buildAuditEvent(

@@ -24,6 +24,7 @@ const NAV_SECTIONS = [
     items: [
       { label: "Workflow templates", href: "/getting-started#templates" },
       { label: "Self-hosting", href: "/getting-started#self-hosting" },
+      { label: "Integration SDK v1", href: "/integrations-sdk-v1" },
     ],
   },
 ];

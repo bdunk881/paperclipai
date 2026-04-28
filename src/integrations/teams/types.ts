@@ -1,11 +1,13 @@
+import {
+  Tier1ConnectionHealth,
+  Tier1ConnectionPublic,
+  Tier1ConnectorError,
+  Tier1ConnectorErrorType,
+} from "../shared/tier1Contract";
+
 export type TeamsAuthMethod = "oauth2_pkce" | "api_key";
 
-export type ConnectorErrorType =
-  | "auth"
-  | "rate-limit"
-  | "schema"
-  | "network"
-  | "upstream";
+export type ConnectorErrorType = Tier1ConnectorErrorType;
 
 export interface TeamsTokenSet {
   accessToken: string;
@@ -31,41 +33,18 @@ export interface TeamsCredential {
   metadata?: Record<string, string>;
 }
 
-export interface TeamsCredentialPublic {
-  id: string;
-  userId: string;
-  authMethod: TeamsAuthMethod;
-  tokenMasked: string;
+export interface TeamsCredentialPublic extends Tier1ConnectionPublic<TeamsAuthMethod, {
   scopes: string[];
   tenantId?: string;
   accountId?: string;
   accountName?: string;
-  createdAt: string;
-  revokedAt?: string;
-}
+}> {}
 
-export interface TeamsConnectionHealth {
-  status: "ok" | "degraded" | "down";
-  checkedAt: string;
-  authMethod?: TeamsAuthMethod;
-  tokenRefreshStatus?: "not_applicable" | "healthy" | "failed";
-  details: {
-    auth: boolean;
-    apiReachable: boolean;
-    rateLimited: boolean;
-    errorType?: ConnectorErrorType;
-    message?: string;
-  };
-}
+export interface TeamsConnectionHealth extends Tier1ConnectionHealth<TeamsAuthMethod> {}
 
-export class ConnectorError extends Error {
-  readonly type: ConnectorErrorType;
-  readonly statusCode: number;
-
+export class ConnectorError extends Tier1ConnectorError {
   constructor(type: ConnectorErrorType, message: string, statusCode = 500) {
-    super(message);
+    super(type, message, statusCode);
     this.name = "ConnectorError";
-    this.type = type;
-    this.statusCode = statusCode;
   }
 }

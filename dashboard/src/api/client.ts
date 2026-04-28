@@ -68,20 +68,20 @@ export interface ConnectorHealthRecord {
   authFailures15m: number;
   rateLimitEvents15m: number;
   transitions: ConnectorHealthTransition[];
-  source: "api";
+  source: "mock";
 }
 
 export interface ConnectorHealthSummary {
   total: number;
   states: Record<ConnectorHealthState, number>;
-  lastUpdatedAt: string | null;
+  lastUpdatedAt: string;
   alertPolicy: {
     degradedWithinMinutes: number;
     authFailureThreshold15m: number;
     rateLimitThreshold15m: number;
     outageThresholdMinutes: number;
   };
-  source: "api";
+  source: "mock";
 }
 
 const USE_MOCK_API = import.meta.env.VITE_USE_MOCK === "true";
@@ -252,6 +252,148 @@ export async function deleteLLMConfig(id: string, accessToken?: string): Promise
 
 const BASE = getApiBasePath();
 
+const MOCK_CONNECTOR_HEALTH: ConnectorHealthRecord[] = [
+  {
+    connectorKey: "slack",
+    connectorName: "Slack",
+    state: "healthy",
+    lastSuccessAt: "2026-04-28T04:35:00.000Z",
+    lastErrorAt: null,
+    lastErrorMessage: null,
+    successRate24h: 99.8,
+    authFailures15m: 0,
+    rateLimitEvents15m: 0,
+    transitions: [
+      {
+        at: "2026-04-28T02:10:00.000Z",
+        from: "degraded",
+        to: "healthy",
+        reason: "API latency recovered below threshold",
+      },
+    ],
+    source: "mock",
+  },
+  {
+    connectorKey: "hubspot",
+    connectorName: "HubSpot",
+    state: "degraded",
+    lastSuccessAt: "2026-04-28T04:31:00.000Z",
+    lastErrorAt: "2026-04-28T04:33:00.000Z",
+    lastErrorMessage: "Elevated 5xx responses from provider API",
+    successRate24h: 94.3,
+    authFailures15m: 0,
+    rateLimitEvents15m: 1,
+    transitions: [
+      {
+        at: "2026-04-28T04:20:00.000Z",
+        from: "healthy",
+        to: "degraded",
+        reason: "Connector-wide provider failures crossed threshold",
+      },
+    ],
+    source: "mock",
+  },
+  {
+    connectorKey: "stripe",
+    connectorName: "Stripe",
+    state: "healthy",
+    lastSuccessAt: "2026-04-28T04:34:00.000Z",
+    lastErrorAt: "2026-04-28T01:11:00.000Z",
+    lastErrorMessage: "Transient timeout retried successfully",
+    successRate24h: 99.5,
+    authFailures15m: 0,
+    rateLimitEvents15m: 0,
+    transitions: [],
+    source: "mock",
+  },
+  {
+    connectorKey: "gmail",
+    connectorName: "Gmail",
+    state: "rate_limited",
+    lastSuccessAt: "2026-04-28T04:32:00.000Z",
+    lastErrorAt: "2026-04-28T04:34:00.000Z",
+    lastErrorMessage: "429 rate limit window active for sync jobs",
+    successRate24h: 92.9,
+    authFailures15m: 0,
+    rateLimitEvents15m: 8,
+    transitions: [],
+    source: "mock",
+  },
+  {
+    connectorKey: "sentry",
+    connectorName: "Sentry",
+    state: "healthy",
+    lastSuccessAt: "2026-04-28T04:30:00.000Z",
+    lastErrorAt: null,
+    lastErrorMessage: null,
+    successRate24h: 99.9,
+    authFailures15m: 0,
+    rateLimitEvents15m: 0,
+    transitions: [],
+    source: "mock",
+  },
+  {
+    connectorKey: "linear",
+    connectorName: "Linear",
+    state: "auth_failure",
+    lastSuccessAt: "2026-04-28T03:58:00.000Z",
+    lastErrorAt: "2026-04-28T04:34:00.000Z",
+    lastErrorMessage: "OAuth refresh token rejected by provider",
+    successRate24h: 88.1,
+    authFailures15m: 6,
+    rateLimitEvents15m: 0,
+    transitions: [],
+    source: "mock",
+  },
+  {
+    connectorKey: "teams",
+    connectorName: "Teams",
+    state: "healthy",
+    lastSuccessAt: "2026-04-28T04:35:00.000Z",
+    lastErrorAt: "2026-04-27T22:42:00.000Z",
+    lastErrorMessage: "Webhook delivery delay recovered",
+    successRate24h: 98.7,
+    authFailures15m: 0,
+    rateLimitEvents15m: 0,
+    transitions: [],
+    source: "mock",
+  },
+  {
+    connectorKey: "jira",
+    connectorName: "Jira",
+    state: "down",
+    lastSuccessAt: "2026-04-28T02:48:00.000Z",
+    lastErrorAt: "2026-04-28T04:35:00.000Z",
+    lastErrorMessage: "Connector worker has not completed a successful sync in 90 minutes",
+    successRate24h: 76.4,
+    authFailures15m: 0,
+    rateLimitEvents15m: 0,
+    transitions: [],
+    source: "mock",
+  },
+];
+
+function summarizeConnectorHealth(connectors: ConnectorHealthRecord[]): ConnectorHealthSummary {
+  return {
+    total: connectors.length,
+    states: {
+      healthy: connectors.filter((c) => c.state === "healthy").length,
+      degraded: connectors.filter((c) => c.state === "degraded").length,
+      rate_limited: connectors.filter((c) => c.state === "rate_limited").length,
+      auth_failure: connectors.filter((c) => c.state === "auth_failure").length,
+      down: connectors.filter((c) => c.state === "down").length,
+    },
+    lastUpdatedAt: "2026-04-28T04:35:00.000Z",
+    alertPolicy: {
+      degradedWithinMinutes: 5,
+      authFailureThreshold15m: 5,
+      rateLimitThreshold15m: 5,
+      outageThresholdMinutes: 15,
+    },
+    source: "mock",
+  };
+}
+
 export function getObservabilityStreamPath(params?: {
   after?: string;
   categories?: ObservabilityEventCategory[];
@@ -416,207 +558,6 @@ export interface ControlPlaneDeployment {
   workflow: Pick<WorkflowTemplate, "id" | "name" | "category" | "version">;
 }
 
-export type TeamAssemblySourceType = "free_text" | "notion" | "google-doc" | "markdown";
-export type TeamAssemblyModelTier = "lite" | "standard" | "power";
-export type TeamAssemblyRoleType = "executive" | "operator";
-
-export interface TeamAssemblyNormalizedGoalDocument {
-  sourceType: TeamAssemblySourceType;
-  goal: string;
-  targetCustomer: string | null;
-  successMetrics: string[];
-  constraints: string[];
-  budget: string | null;
-  timeHorizon: string | null;
-  importedContextSummary?: string | null;
-  planReadinessThreshold: number;
-}
-
-export interface TeamAssemblyPrd {
-  title: string;
-  summary: string;
-  targetCustomer: string;
-  problemStatement: string;
-  proposedSolution: string;
-  successMetrics: string[];
-  constraints: string[];
-  budget: string;
-  timeHorizon: string;
-  assumptions?: string[];
-  risks?: string[];
-  openQuestions?: string[];
-}
-
-export interface TeamAssemblyRoleLibraryEntry {
-  roleKey: string;
-  title: string;
-  roleType: TeamAssemblyRoleType;
-  department: string;
-  mandate: string;
-  defaultReportsToRoleKey?: string | null;
-  defaultSkills?: string[];
-  defaultTools?: string[];
-  defaultModelTier: TeamAssemblyModelTier;
-  hiringSignals?: string[];
-}
-
-export interface TeamAssemblyStaffingRecommendation {
-  roleKey: string;
-  title: string;
-  roleType: TeamAssemblyRoleType;
-  department: string;
-  headcount: number;
-  reportsToRoleKey: string | null;
-  mandate: string;
-  justification: string;
-  kpis: string[];
-  skills: string[];
-  tools: string[];
-  modelTier: TeamAssemblyModelTier;
-  budgetMonthlyUsd: number | null;
-  provisioningInstructions: string;
-}
-
-export interface TeamAssemblyResult {
-  schemaVersion: string;
-  company: {
-    name: string | null;
-    goal: string;
-    targetCustomer: string | null;
-    budget: string | null;
-    timeHorizon: string | null;
-  };
-  summary: string;
-  rationale: string;
-  orgChart: {
-    executives: TeamAssemblyStaffingRecommendation[];
-    operators: TeamAssemblyStaffingRecommendation[];
-    reportingLines: Array<{
-      managerRoleKey: string;
-      reportRoleKey: string;
-    }>;
-  };
-  provisioningPlan: {
-    teamName: string;
-    deploymentMode: "continuous_agents";
-    agents: TeamAssemblyStaffingRecommendation[];
-  };
-  roadmap306090: {
-    day30: TeamAssemblyPhasePlan;
-    day60: TeamAssemblyPhasePlan;
-    day90: TeamAssemblyPhasePlan;
-  };
-}
-
-export interface TeamAssemblyPhasePlan {
-  objectives: string[];
-  deliverables: string[];
-  ownerRoleKeys: string[];
-}
-
-export interface TeamAssemblyRequestInput {
-  companyName?: string;
-  normalizedGoalDocument: TeamAssemblyNormalizedGoalDocument;
-  prd?: TeamAssemblyPrd;
-  roleLibrary?: TeamAssemblyRoleLibraryEntry[];
-}
-
-export interface CompanyRoleTemplate {
-  id: string;
-  name: string;
-  description: string;
-  defaultModel: string;
-  defaultInstructions: string;
-  defaultSkills: string[];
-}
-
-export interface CompanyProvisioningContract {
-  schemaVersion: string;
-  endpoint: string;
-  requiredHeaders: string[];
-  companyFields: {
-    required: string[];
-    optional: string[];
-  };
-  agentFields: {
-    identifierFields: string[];
-    requiredOneOf: string[];
-    optional: string[];
-  };
-}
-
-export interface CompanyRoleTemplateCatalogResponse {
-  roleTemplates: CompanyRoleTemplate[];
-  total: number;
-  provisioningContract: CompanyProvisioningContract;
-}
-
-export interface CompanyProvisioningAgentInput {
-  roleTemplateId?: string;
-  roleKey?: string;
-  name?: string;
-  budgetMonthlyUsd?: number;
-  model?: string;
-  instructions?: string;
-  skills?: string[];
-}
-
-export interface CompanyProvisioningInput {
-  name: string;
-  workspaceName?: string;
-  externalCompanyId?: string;
-  idempotencyKey: string;
-  budgetMonthlyUsd: number;
-  orchestrationEnabled?: boolean;
-  secretBindings: Record<string, string>;
-  agents: CompanyProvisioningAgentInput[];
-}
-
-export interface ProvisionedCompanySummary {
-  id: string;
-  userId: string;
-  name: string;
-  externalCompanyId?: string;
-  workspaceId: string;
-  teamId: string;
-  idempotencyKey: string;
-  budgetMonthlyUsd: number;
-  allocatedBudgetMonthlyUsd: number;
-  remainingBudgetMonthlyUsd: number;
-  createdAt: string;
-  updatedAt: string;
-}
-
-export interface ProvisionedWorkspaceSummary {
-  id: string;
-  name: string;
-  slug: string;
-  createdAt: string;
-  updatedAt: string;
-}
-
-export interface ProvisionedSecretSummary {
-  key: string;
-  maskedValue: string;
-}
-
-export interface ProvisioningSkillSummary {
-  id: string;
-  name: string;
-  description: string;
-  scope: "workflow" | "agent" | "security" | "integration";
-}
-
-export interface CompanyProvisioningResult {
-  company: ProvisionedCompanySummary;
-  workspace: ProvisionedWorkspaceSummary;
-  team: ControlPlaneTeam;
-  agents: ControlPlaneAgent[];
-  secretBindings: ProvisionedSecretSummary[];
-  availableSkills: ProvisioningSkillSummary[];
-  idempotentReplay: boolean;
-}
-
 export interface ControlPlaneTeamDetail {
   team: ControlPlaneTeam;
   agents: ControlPlaneAgent[];
@@ -696,13 +637,18 @@ export async function listRuns(templateId?: string, accessToken?: string): Promi
   );
 }
 
-export async function getConnectorHealth(accessToken?: string): Promise<{
+export async function getConnectorHealth(): Promise<{
   connectors: ConnectorHealthRecord[];
   summary: ConnectorHealthSummary;
 }> {
-  const res = await fetch(`${BASE}/connectors/health`, {
-    headers: buildAuthHeaders(accessToken),
-  });
+  if (USE_MOCK_API) {
+    return {
+      connectors: [...MOCK_CONNECTOR_HEALTH],
+      summary: summarizeConnectorHealth(MOCK_CONNECTOR_HEALTH),
+    };
+  }
+
+  const res = await fetch(`${BASE}/connectors/health`);
   if (!res.ok) throw new Error(`Failed to fetch connector health: ${res.status}`);
   return res.json() as Promise<{
     connectors: ConnectorHealthRecord[];
@@ -776,53 +722,6 @@ export async function deployWorkflowAsTeam(
     throw new Error(err?.error ?? `Failed to deploy workflow as team: ${res.status}`);
   }
   return res.json() as Promise<ControlPlaneDeployment>;
-}
-
-export async function generateTeamAssemblyPlan(
-  input: TeamAssemblyRequestInput,
-  accessToken?: string
-): Promise<TeamAssemblyResult> {
-  const res = await fetch(`${BASE}/goals/team-assembly`, {
-    method: "POST",
-    headers: buildJsonHeaders(accessToken),
-    body: JSON.stringify(input),
-  });
-  if (!res.ok) {
-    const err = await res.json().catch(() => null);
-    throw new Error(err?.error ?? `Failed to generate staffing plan: ${res.status}`);
-  }
-  return res.json() as Promise<TeamAssemblyResult>;
-}
-
-export async function listCompanyRoleTemplates(
-  accessToken?: string
-): Promise<CompanyRoleTemplateCatalogResponse> {
-  const res = await fetch(`${BASE}/companies/role-templates`, {
-    headers: buildAuthHeaders(accessToken),
-  });
-  return parseJsonOrError<CompanyRoleTemplateCatalogResponse>(
-    res,
-    `Failed to fetch company role templates: ${res.status}`
-  );
-}
-
-export async function provisionCompanyWorkspace(
-  input: CompanyProvisioningInput,
-  accessToken?: string,
-  runId = globalThis.crypto?.randomUUID?.() ?? `company-provision-${Date.now()}`
-): Promise<CompanyProvisioningResult> {
-  const res = await fetch(`${BASE}/companies`, {
-    method: "POST",
-    headers: buildJsonHeaders(accessToken, {
-      "X-Paperclip-Run-Id": runId,
-    }),
-    body: JSON.stringify(input),
-  });
-  if (!res.ok) {
-    const err = await res.json().catch(() => null);
-    throw new Error(err?.error ?? `Failed to provision company workspace: ${res.status}`);
-  }
-  return res.json() as Promise<CompanyProvisioningResult>;
 }
 
 /** POST /api/runs */
@@ -1306,4 +1205,315 @@ export async function resolveApproval(
     const err = await res.json().catch(() => null);
     throw new Error(err?.error ?? `Failed to resolve approval: ${res.status}`);
   }
+}
+
+// ---------------------------------------------------------------------------
+// HITL API — checkpoints, comments, Ask the CEO, and schedule controls
+// ---------------------------------------------------------------------------
+
+export type HitlNotificationChannel = "inbox" | "email" | "agent_wake";
+export type HitlRecipientType = "agent" | "user";
+export type HitlCheckpointTriggerType =
+  | "end_of_week_review"
+  | "milestone_gate"
+  | "kpi_deviation"
+  | "manual";
+export type HitlCheckpointStatus = "pending" | "acknowledged" | "resolved" | "dismissed";
+export type HitlCommentStatus = "open" | "resolved";
+
+export interface HitlKpiThreshold {
+  metricKey: string;
+  comparator: "gt" | "gte" | "lt" | "lte" | "percent_drop";
+  threshold: number;
+  window: "hour" | "day" | "week";
+}
+
+export interface HitlCheckpointSchedule {
+  id: string;
+  companyId: string;
+  userId: string;
+  enabled: boolean;
+  timezone: string;
+  notificationChannels: HitlNotificationChannel[];
+  weeklyReview: {
+    enabled: boolean;
+    dayOfWeek: number;
+    hour: number;
+    minute: number;
+  };
+  milestoneGate: {
+    enabled: boolean;
+    blockingStatuses: string[];
+  };
+  kpiDeviation: {
+    enabled: boolean;
+    thresholds: HitlKpiThreshold[];
+  };
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface HitlCheckpoint {
+  id: string;
+  companyId: string;
+  userId: string;
+  triggerType: HitlCheckpointTriggerType;
+  source: "system" | "manual";
+  title: string;
+  description?: string;
+  status: HitlCheckpointStatus;
+  dueAt?: string;
+  artifactRefs: string[];
+  metadata?: Record<string, unknown>;
+  createdAt: string;
+  updatedAt: string;
+  notificationIds: string[];
+}
+
+export interface HitlArtifactComment {
+  id: string;
+  companyId: string;
+  userId: string;
+  artifact: {
+    kind: "ticket" | "approval" | "run" | "document" | "workflow_step" | "other";
+    id: string;
+    title?: string;
+    path?: string;
+    version?: string;
+  };
+  anchor?: {
+    quote?: string;
+    lineStart?: number;
+    lineEnd?: number;
+    startOffset?: number;
+    endOffset?: number;
+    fieldKey?: string;
+  };
+  body: string;
+  status: HitlCommentStatus;
+  routing: {
+    recipientType: HitlRecipientType;
+    recipientId: string;
+    responsibleAgentId?: string;
+    reason?: string;
+  };
+  createdAt: string;
+  updatedAt: string;
+  notificationIds: string[];
+}
+
+export interface HitlAskCeoRequest {
+  id: string;
+  companyId: string;
+  userId: string;
+  question: string;
+  context?: {
+    artifactRef?: string;
+    taskId?: string;
+    checkpointId?: string;
+  };
+  status: "answered";
+  response: {
+    summary: string;
+    recommendedActions: string[];
+    citedEntities: Array<{
+      type: "team" | "task" | "checkpoint" | "artifact_comment";
+      id: string;
+      label: string;
+    }>;
+    companyStateVersion: string;
+  };
+  createdAt: string;
+}
+
+export interface HitlNotification {
+  id: string;
+  companyId: string;
+  userId: string;
+  kind: "checkpoint" | "artifact_comment" | "ask_ceo_response";
+  channel: HitlNotificationChannel;
+  recipientType: HitlRecipientType;
+  recipientId: string;
+  status: "pending" | "sent" | "failed";
+  payload: Record<string, unknown>;
+  createdAt: string;
+}
+
+export interface HitlCompanyState {
+  companyId: string;
+  version: string;
+  summary: {
+    companyId: string;
+    version: string;
+    team: {
+      id: string;
+      name: string;
+      status: string;
+      budgetMonthlyUsd: number;
+      agentCount: number;
+      activeExecutionCount: number;
+      openTaskCount: number;
+    } | null;
+    hitl: {
+      openCheckpointCount: number;
+      unresolvedCommentCount: number;
+      askCeoRequestCount: number;
+    };
+  };
+  checkpointSchedule: HitlCheckpointSchedule;
+  checkpoints: HitlCheckpoint[];
+  artifactComments: HitlArtifactComment[];
+  askCeoRequests: HitlAskCeoRequest[];
+}
+
+export interface UpdateHitlCheckpointScheduleInput {
+  enabled?: boolean;
+  timezone?: string;
+  notificationChannels?: HitlNotificationChannel[];
+  weeklyReview?: Partial<HitlCheckpointSchedule["weeklyReview"]>;
+  milestoneGate?: Partial<HitlCheckpointSchedule["milestoneGate"]>;
+  kpiDeviation?: {
+    enabled?: boolean;
+    thresholds?: HitlKpiThreshold[];
+  };
+}
+
+export interface CreateHitlCheckpointInput {
+  triggerType?: HitlCheckpointTriggerType;
+  title: string;
+  description?: string;
+  dueAt?: string;
+  artifactRefs?: string[];
+  metadata?: Record<string, unknown>;
+  recipientType: HitlRecipientType;
+  recipientId: string;
+}
+
+export interface CreateHitlArtifactCommentInput {
+  artifact: HitlArtifactComment["artifact"];
+  anchor?: HitlArtifactComment["anchor"];
+  body: string;
+  routing: HitlArtifactComment["routing"];
+}
+
+export interface CreateHitlAskCeoRequestInput {
+  question: string;
+  context?: HitlAskCeoRequest["context"];
+}
+
+function createPaperclipRunId(): string {
+  return globalThis.crypto?.randomUUID?.() ?? `hitl-${Date.now()}`;
+}
+
+/** GET /api/hitl/companies/:companyId/state */
+export async function getHitlCompanyState(
+  companyId: string,
+  accessToken?: string
+): Promise<HitlCompanyState> {
+  const res = await fetch(`${BASE}/hitl/companies/${encodeURIComponent(companyId)}/state`, {
+    headers: buildAuthHeaders(accessToken),
+  });
+  if (!res.ok) {
+    throw new Error(await readApiError(res, `Failed to fetch HITL state: ${res.status}`));
+  }
+  return res.json() as Promise<HitlCompanyState>;
+}
+
+/** GET /api/hitl/companies/:companyId/notifications */
+export async function listHitlNotifications(
+  companyId: string,
+  accessToken?: string
+): Promise<HitlNotification[]> {
+  const res = await fetch(`${BASE}/hitl/companies/${encodeURIComponent(companyId)}/notifications`, {
+    headers: buildAuthHeaders(accessToken),
+  });
+  if (!res.ok) {
+    throw new Error(await readApiError(res, `Failed to fetch HITL notifications: ${res.status}`));
+  }
+  const data = await res.json();
+  return data.notifications as HitlNotification[];
+}
+
+/** PUT /api/hitl/companies/:companyId/checkpoint-schedule */
+export async function updateHitlCheckpointSchedule(
+  companyId: string,
+  input: UpdateHitlCheckpointScheduleInput,
+  accessToken?: string,
+  runId = createPaperclipRunId()
+): Promise<HitlCheckpointSchedule> {
+  const res = await fetch(`${BASE}/hitl/companies/${encodeURIComponent(companyId)}/checkpoint-schedule`, {
+    method: "PUT",
+    headers: buildJsonHeaders(accessToken, {
+      "X-Paperclip-Run-Id": runId,
+    }),
+    body: JSON.stringify(input),
+  });
+  if (!res.ok) {
+    throw new Error(await readApiError(res, `Failed to update HITL schedule: ${res.status}`));
+  }
+  const data = await res.json();
+  return data.schedule as HitlCheckpointSchedule;
+}
+
+/** POST /api/hitl/companies/:companyId/checkpoints */
+export async function createHitlCheckpoint(
+  companyId: string,
+  input: CreateHitlCheckpointInput,
+  accessToken?: string,
+  runId = createPaperclipRunId()
+): Promise<HitlCheckpoint> {
+  const res = await fetch(`${BASE}/hitl/companies/${encodeURIComponent(companyId)}/checkpoints`, {
+    method: "POST",
+    headers: buildJsonHeaders(accessToken, {
+      "X-Paperclip-Run-Id": runId,
+    }),
+    body: JSON.stringify(input),
+  });
+  if (!res.ok) {
+    throw new Error(await readApiError(res, `Failed to create HITL checkpoint: ${res.status}`));
+  }
+  const data = await res.json();
+  return data.checkpoint as HitlCheckpoint;
+}
+
+/** POST /api/hitl/companies/:companyId/artifact-comments */
+export async function createHitlArtifactComment(
+  companyId: string,
+  input: CreateHitlArtifactCommentInput,
+  accessToken?: string,
+  runId = createPaperclipRunId()
+): Promise<HitlArtifactComment> {
+  const res = await fetch(`${BASE}/hitl/companies/${encodeURIComponent(companyId)}/artifact-comments`, {
+    method: "POST",
+    headers: buildJsonHeaders(accessToken, {
+      "X-Paperclip-Run-Id": runId,
+    }),
+    body: JSON.stringify(input),
+  });
+  if (!res.ok) {
+    throw new Error(await readApiError(res, `Failed to create HITL comment: ${res.status}`));
+  }
+  const data = await res.json();
+  return data.comment as HitlArtifactComment;
+}
+
+/** POST /api/hitl/companies/:companyId/ask-ceo/requests */
+export async function createHitlAskCeoRequest(
+  companyId: string,
+  input: CreateHitlAskCeoRequestInput,
+  accessToken?: string,
+  runId = createPaperclipRunId()
+): Promise<HitlAskCeoRequest> {
+  const res = await fetch(`${BASE}/hitl/companies/${encodeURIComponent(companyId)}/ask-ceo/requests`, {
+    method: "POST",
+    headers: buildJsonHeaders(accessToken, {
+      "X-Paperclip-Run-Id": runId,
+    }),
+    body: JSON.stringify(input),
+  });
+  if (!res.ok) {
+    throw new Error(await readApiError(res, `Failed to ask the CEO: ${res.status}`));
+  }
+  const data = await res.json();
+  return data.request as HitlAskCeoRequest;
 }

@@ -1,55 +1,13 @@
 import express from "express";
 import { AuthenticatedRequest } from "../auth/authMiddleware";
-import { isPostgresPersistenceEnabled } from "../db/postgres";
-import { WorkspaceAwareRequest } from "../middleware/workspaceResolver";
 import { controlPlaneStore } from "../controlPlane/controlPlaneStore";
 import { CompanyProvisioningAgentInput } from "../controlPlane/types";
 
 const router = express.Router();
-const COMPANY_PROVISIONING_CONTRACT_VERSION = "2026-04-28";
-
-const COMPANY_PROVISIONING_AGENT_IDENTIFIER_FIELDS = ["roleTemplateId", "roleKey"] as const;
-
-function buildProvisioningContract() {
-  return {
-    schemaVersion: COMPANY_PROVISIONING_CONTRACT_VERSION,
-    endpoint: "/api/companies",
-    requiredHeaders: ["X-Paperclip-Run-Id"],
-    companyFields: {
-      required: ["name", "idempotencyKey", "budgetMonthlyUsd", "secretBindings", "agents"],
-      optional: ["workspaceName", "externalCompanyId", "orchestrationEnabled"],
-    },
-    agentFields: {
-      identifierFields: [...COMPANY_PROVISIONING_AGENT_IDENTIFIER_FIELDS],
-      requiredOneOf: [...COMPANY_PROVISIONING_AGENT_IDENTIFIER_FIELDS],
-      optional: ["name", "budgetMonthlyUsd", "model", "instructions", "skills"],
-    },
-  };
-}
 
 function getUserId(req: AuthenticatedRequest): string | null {
   const userId = req.auth?.sub;
   return typeof userId === "string" && userId.trim() ? userId.trim() : null;
-}
-
-function resolveWorkspaceContext(req: WorkspaceAwareRequest, res: express.Response) {
-  const userId = getUserId(req);
-  if (!userId) {
-    res.status(401).json({ error: "Authenticated user required" });
-    return null;
-  }
-
-  const workspaceId = req.workspaceId?.trim();
-  if (workspaceId) {
-    return { workspaceId, userId };
-  }
-
-  if (!isPostgresPersistenceEnabled()) {
-    return { workspaceId: userId, userId };
-  }
-
-  res.status(500).json({ error: "Workspace context was not resolved for the request" });
-  return null;
 }
 
 function requirePaperclipRunId(
@@ -65,18 +23,10 @@ function requirePaperclipRunId(
   next();
 }
 
-router.get("/role-templates", (_req, res) => {
-  const roleTemplates = controlPlaneStore.listRoleTemplates();
-  res.json({
-    roleTemplates,
-    total: roleTemplates.length,
-    provisioningContract: buildProvisioningContract(),
-  });
-});
-
-router.post("/", requirePaperclipRunId, async (req: WorkspaceAwareRequest, res) => {
-  const context = resolveWorkspaceContext(req, res);
-  if (!context) {
+router.post("/", requirePaperclipRunId, (req: AuthenticatedRequest, res) => {
+  const userId = getUserId(req);
+  if (!userId) {
+    res.status(401).json({ error: "Authenticated user required" });
     return;
   }
 
@@ -154,38 +104,18 @@ router.post("/", requirePaperclipRunId, async (req: WorkspaceAwareRequest, res) 
       return;
     }
 
-    const {
-      roleTemplateId,
-      roleKey,
-      name: agentName,
-      budgetMonthlyUsd: agentBudgetMonthlyUsd,
-      model,
-      instructions,
-      skills,
-    } = agent as {
-      roleTemplateId?: unknown;
-      roleKey?: unknown;
-      name?: unknown;
-      budgetMonthlyUsd?: unknown;
-      model?: unknown;
-      instructions?: unknown;
-      skills?: unknown;
-    };
+    const { roleTemplateId, name: agentName, budgetMonthlyUsd: agentBudgetMonthlyUsd, model, instructions, skills } =
+      agent as {
+        roleTemplateId?: unknown;
+        name?: unknown;
+        budgetMonthlyUsd?: unknown;
+        model?: unknown;
+        instructions?: unknown;
+        skills?: unknown;
+      };
 
-    const normalizedRoleTemplateId =
-      typeof roleTemplateId === "string" && roleTemplateId.trim() ? roleTemplateId.trim() : undefined;
-    const normalizedRoleKey = typeof roleKey === "string" && roleKey.trim() ? roleKey.trim() : undefined;
-
-    if (!normalizedRoleTemplateId && !normalizedRoleKey) {
-      res.status(400).json({ error: "each agent requires a non-empty roleTemplateId or roleKey" });
-      return;
-    }
-    if (
-      normalizedRoleTemplateId &&
-      normalizedRoleKey &&
-      normalizedRoleTemplateId !== normalizedRoleKey
-    ) {
-      res.status(400).json({ error: "roleTemplateId and roleKey must match when both are provided" });
+    if (typeof roleTemplateId !== "string" || !roleTemplateId.trim()) {
+      res.status(400).json({ error: "each agent requires a non-empty roleTemplateId" });
       return;
     }
     if (agentName !== undefined && (typeof agentName !== "string" || !agentName.trim())) {
@@ -216,8 +146,7 @@ router.post("/", requirePaperclipRunId, async (req: WorkspaceAwareRequest, res) 
     }
 
     parsedAgents.push({
-      roleTemplateId: normalizedRoleTemplateId ?? normalizedRoleKey!,
-      roleKey: normalizedRoleKey,
+      roleTemplateId: roleTemplateId.trim(),
       name: typeof agentName === "string" ? agentName.trim() : undefined,
       budgetMonthlyUsd: typeof agentBudgetMonthlyUsd === "number" ? agentBudgetMonthlyUsd : undefined,
       model: typeof model === "string" ? model.trim() : undefined,
@@ -227,9 +156,8 @@ router.post("/", requirePaperclipRunId, async (req: WorkspaceAwareRequest, res) 
   }
 
   try {
-    const result = await controlPlaneStore.provisionCompanyWorkspace({
-      workspaceId: context.workspaceId,
-      userId: context.userId,
+    const result = controlPlaneStore.provisionCompanyWorkspace({
+      userId,
       name: name.trim(),
       workspaceName: typeof workspaceName === "string" ? workspaceName.trim() : undefined,
       externalCompanyId: typeof externalCompanyId === "string" ? externalCompanyId.trim() : undefined,

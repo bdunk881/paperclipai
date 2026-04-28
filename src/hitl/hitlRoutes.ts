@@ -1,9 +1,6 @@
 import express, { NextFunction, Response, Router } from "express";
 import { z } from "zod";
 import { AuthenticatedRequest } from "../auth/authMiddleware";
-import { controlPlaneStore } from "../controlPlane/controlPlaneStore";
-import { isPostgresPersistenceEnabled } from "../db/postgres";
-import { WorkspaceAwareRequest } from "../middleware/workspaceResolver";
 import {
   AskCeoRequest,
   HitlCheckpointStatus,
@@ -148,26 +145,6 @@ function requirePaperclipRunId(
 function getUserId(req: AuthenticatedRequest): string | null {
   const userId = req.auth?.sub;
   return typeof userId === "string" && userId.trim() ? userId.trim() : null;
-}
-
-function resolveWorkspaceContext(req: WorkspaceAwareRequest, res: Response) {
-  const userId = getUserId(req);
-  if (!userId) {
-    res.status(401).json({ error: "Authenticated user required" });
-    return null;
-  }
-
-  const workspaceId = req.workspaceId?.trim();
-  if (workspaceId) {
-    return { workspaceId, userId };
-  }
-
-  if (!isPostgresPersistenceEnabled()) {
-    return { workspaceId: userId, userId };
-  }
-
-  res.status(500).json({ error: "Workspace context was not resolved for the request" });
-  return null;
 }
 
 function requireUserId(req: AuthenticatedRequest, res: Response): string | null {
@@ -355,20 +332,13 @@ router.get("/companies/:companyId/ask-ceo/requests/:requestId", (req: Authentica
   res.json({ request: requestRecord });
 });
 
-router.get("/companies/:companyId/state", async (req: WorkspaceAwareRequest, res) => {
+router.get("/companies/:companyId/state", (req: AuthenticatedRequest, res) => {
   const userId = requireUserId(req, res);
   const companyId = readCompanyId(req, res);
   if (!userId || !companyId) {
     return;
   }
-
-  const context = resolveWorkspaceContext(req, res);
-  if (!context) {
-    return;
-  }
-
-  await controlPlaneStore.ensureWorkspaceHydrated(context.workspaceId, context.userId);
-  res.json(hitlStore.getCompanyState(context.userId, companyId, context.workspaceId));
+  res.json(hitlStore.getCompanyState(userId, companyId));
 });
 
 router.get("/companies/:companyId/notifications", (req: AuthenticatedRequest, res) => {

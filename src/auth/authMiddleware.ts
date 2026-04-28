@@ -18,7 +18,6 @@ import { NextFunction, Request, Response } from "express";
 import jwt, { JwtPayload } from "jsonwebtoken";
 import jwksRsa from "jwks-rsa";
 import { resolveAppJwtConfig, verifyAppUserTokenWithDiagnostics } from "./appAuthTokens";
-import { isQaBypassEnabledByName } from "../security/qaBypassGuard";
 
 type AuthConfig = {
   tenantId: string;
@@ -224,10 +223,7 @@ function parseQaBypassUserIds(): Set<string> {
 }
 
 function resolveQaBypassUserId(req: Request): string | null {
-  // Routed through qaBypassGuard so the production-boot guard sees a single
-  // source of truth and so this gate refuses the bypass when NODE_ENV is
-  // "production" (or absent), regardless of the env var value.
-  if (!isQaBypassEnabledByName("QA_AUTH_BYPASS_ENABLED")) {
+  if (process.env.QA_AUTH_BYPASS_ENABLED !== "true") {
     return null;
   }
 
@@ -256,13 +252,6 @@ export function requireAuth(
   res: Response,
   next: NextFunction
 ): void {
-  const qaBypassUserId = resolveQaBypassUserId(req);
-  if (qaBypassUserId) {
-    attachQaBypassAuth(req, qaBypassUserId);
-    next();
-    return;
-  }
-
   const authHeader = req.headers.authorization;
   const headerUserId = req.headers["x-user-id"];
   const requestPath = (req.originalUrl || req.path).split("?")[0];

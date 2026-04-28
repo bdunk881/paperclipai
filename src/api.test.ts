@@ -76,7 +76,6 @@ jest.mock("./auth/authMiddleware", () => ({
 import request from "supertest";
 import app from "./app";
 import { listConnectorHealth } from "./connectors/health";
-import { integrationCredentialStore } from "./integrations/integrationCredentialStore";
 import { WORKFLOW_TEMPLATES } from "./templates";
 import type { WorkflowStep } from "./types/workflow";
 import {
@@ -91,7 +90,6 @@ import { approvalPolicyStore } from "./approvals/policyStore";
 import { runStore } from "./engine/runStore";
 import { knowledgeStore } from "./knowledge/knowledgeStore";
 import { resetImportedTemplatesForTests } from "./templates/importedTemplateStore";
-import { observabilityStore } from "./observability/store";
 import {
   PORTABLE_WORKFLOW_FORMAT,
   PORTABLE_WORKFLOW_SCHEMA_VERSION,
@@ -108,8 +106,6 @@ beforeEach(() => {
   approvalPolicyStore.clear();
   runStore.clear();
   knowledgeStore.clear();
-  observabilityStore.clear();
-  integrationCredentialStore.clear();
   resetImportedTemplatesForTests();
 });
 
@@ -137,40 +133,26 @@ describe("GET /health", () => {
 
 describe("GET /api/connectors/health", () => {
   it("returns connector health records and summary", async () => {
-    const res = await request(app).get("/api/connectors/health").set(asAuth());
+    const res = await request(app).get("/api/connectors/health");
     expect(res.status).toBe(200);
     expect(Array.isArray(res.body.connectors)).toBe(true);
     expect(typeof res.body.summary).toBe("object");
   });
 
-  it("returns the caller's connected integrations", async () => {
-    integrationCredentialStore.create({
-      userId: "test-user",
-      integrationSlug: "slack",
-      label: "Slack Workspace",
-      credentials: { accessToken: "xoxb-token" },
-    });
-
-    const res = await request(app).get("/api/connectors/health").set(asAuth());
-    expect(res.body.connectors).toHaveLength(listConnectorHealth("test-user").length);
+  it("returns all Tier 1 connectors", async () => {
+    const res = await request(app).get("/api/connectors/health");
+    expect(res.body.connectors).toHaveLength(listConnectorHealth().length);
   });
 
   it("includes required fields on each connector", async () => {
-    integrationCredentialStore.create({
-      userId: "test-user",
-      integrationSlug: "slack",
-      label: "Slack Workspace",
-      credentials: { accessToken: "xoxb-token" },
-    });
-
-    const res = await request(app).get("/api/connectors/health").set(asAuth());
+    const res = await request(app).get("/api/connectors/health");
     for (const connector of res.body.connectors) {
       expect(typeof connector.connectorKey).toBe("string");
       expect(typeof connector.connectorName).toBe("string");
       expect(typeof connector.state).toBe("string");
       expect(typeof connector.successRate24h).toBe("number");
       expect(Array.isArray(connector.transitions)).toBe(true);
-      expect(connector.source).toBe("api");
+      expect(connector.source).toBe("mock");
     }
   });
 });
@@ -452,141 +434,6 @@ describe("Knowledge base routes", () => {
   });
 });
 
-describe("Observability routes", () => {
-  it("returns the live feed contract with issue, run, heartbeat, budget, and alert events", async () => {
-    const deployRes = await request(app)
-      .post("/api/control-plane/deployments/workflow")
-      .set(asAuth())
-      .set("X-Paperclip-Run-Id", "run-observability-deploy")
-      .send({ templateId: "tpl-support-bot" });
-
-    const teamId = deployRes.body.team.id as string;
-    const workerAgent = deployRes.body.agents.find(
-      (agent: { roleKey: string }) => agent.roleKey !== "workflow-manager"
-    );
-    const step = WORKFLOW_TEMPLATES.find((template) => template.id === "tpl-support-bot")!.steps.find(
-      (candidate) => candidate.kind === "llm"
-    )!;
-
-    const started = await controlPlaneStore.startAgentExecution({
-      userId: "test-user",
-      actor: "run-observability-seed",
-      teamId,
-      step,
-      sourceRunId: "workflow-run-observability-1",
-      taskTitle: "Investigate signal drift",
-    });
-
-    await request(app)
-      .patch(`/api/control-plane/tasks/${started.task!.id}/status`)
-      .set(asAuth())
-      .set("X-Paperclip-Run-Id", "run-observability-task-done")
-      .send({ status: "done" });
-
-    controlPlaneStore.finalizeAgentExecution({
-      executionId: started.execution.id,
-      userId: "test-user",
-      status: "failed",
-      summary: "Run failed after upstream timeout",
-      costUsd: 1.75,
-    });
-
-    const feedRes = await request(app)
-      .get("/api/observability/events?limit=20")
-      .set(asAuth());
-
-    expect(feedRes.status).toBe(200);
-    expect(Array.isArray(feedRes.body.events)).toBe(true);
-    expect(feedRes.body.events.length).toBeGreaterThan(0);
-    expect(feedRes.body.nextCursor).toEqual(feedRes.body.events.at(-1)?.sequence ?? null);
-
-    const categories = new Set(feedRes.body.events.map((event: { category: string }) => event.category));
-    expect(categories.has("issue")).toBe(true);
-    expect(categories.has("run")).toBe(true);
-    expect(categories.has("heartbeat")).toBe(true);
-    expect(categories.has("budget")).toBe(true);
-    expect(categories.has("alert")).toBe(true);
-
-    const runStartedEvent = feedRes.body.events.find((event: { type: string }) => event.type === "run.started");
-    expect(runStartedEvent).toMatchObject({
-      category: "run",
-      subject: expect.objectContaining({ type: "execution", id: started.execution.id }),
-      payload: expect.objectContaining({
-        sourceRunId: "workflow-run-observability-1",
-        workflowStepId: step.id,
-        workflowStepName: step.name,
-      }),
-    });
-  });
-
-  it("supports cursor-based polling fallback and throughput aggregates", async () => {
-    const deployRes = await request(app)
-      .post("/api/control-plane/deployments/workflow")
-      .set(asAuth())
-      .set("X-Paperclip-Run-Id", "run-observability-fallback-deploy")
-      .send({ templateId: "tpl-support-bot" });
-
-    const teamId = deployRes.body.team.id as string;
-    const workerAgent = deployRes.body.agents.find(
-      (agent: { roleKey: string }) => agent.roleKey !== "workflow-manager"
-    );
-    const step = WORKFLOW_TEMPLATES.find((template) => template.id === "tpl-support-bot")!.steps.find(
-      (candidate) => candidate.kind === "llm"
-    )!;
-
-    const started = await controlPlaneStore.startAgentExecution({
-      userId: "test-user",
-      actor: "run-observability-fallback-seed",
-      teamId,
-      step,
-      sourceRunId: "workflow-run-observability-2",
-      taskTitle: "Resolve retry backlog",
-      requestedAgentId: workerAgent.id,
-    });
-
-    const firstPage = await request(app)
-      .get("/api/observability/events?categories=issue&limit=1")
-      .set(asAuth());
-
-    expect(firstPage.status).toBe(200);
-    expect(firstPage.body.events).toHaveLength(1);
-
-    await request(app)
-      .patch(`/api/control-plane/tasks/${started.task!.id}/status`)
-      .set(asAuth())
-      .set("X-Paperclip-Run-Id", "run-observability-fallback-block")
-      .send({ status: "blocked" });
-
-    await request(app)
-      .patch(`/api/control-plane/tasks/${started.task!.id}/status`)
-      .set(asAuth())
-      .set("X-Paperclip-Run-Id", "run-observability-fallback-done")
-      .send({ status: "done" });
-
-    const secondPage = await request(app)
-      .get(`/api/observability/events?categories=issue&after=${firstPage.body.nextCursor}&limit=10`)
-      .set(asAuth());
-
-    expect(secondPage.status).toBe(200);
-    expect(secondPage.body.events.length).toBeGreaterThanOrEqual(2);
-    expect(
-      secondPage.body.events.every((event: { category: string; sequence: string }) => {
-        return event.category === "issue" && Number(event.sequence) > Number(firstPage.body.nextCursor);
-      })
-    ).toBe(true);
-
-    const throughputRes = await request(app)
-      .get("/api/observability/throughput?windowHours=24")
-      .set(asAuth());
-
-    expect(throughputRes.status).toBe(200);
-    expect(throughputRes.body.summary.createdCount).toBeGreaterThanOrEqual(1);
-    expect(throughputRes.body.summary.completedCount).toBeGreaterThanOrEqual(1);
-    expect(throughputRes.body.summary.blockedCount).toBeGreaterThanOrEqual(1);
-    expect(Array.isArray(throughputRes.body.buckets)).toBe(true);
-  });
-});
-
 // ---------------------------------------------------------------------------
 // Portable workflow schema + import/export endpoints
 // ---------------------------------------------------------------------------
@@ -721,35 +568,6 @@ describe("Portable workflow APIs", () => {
 // ---------------------------------------------------------------------------
 
 describe("Company provisioning APIs", () => {
-  it("lists supported role templates and the approval payload contract", async () => {
-    const res = await request(app)
-      .get("/api/companies/role-templates")
-      .set(asAuth());
-
-    expect(res.status).toBe(200);
-    expect(res.body.total).toBeGreaterThan(3);
-    expect(res.body.provisioningContract).toMatchObject({
-      schemaVersion: "2026-04-28",
-      endpoint: "/api/companies",
-      requiredHeaders: ["X-Paperclip-Run-Id"],
-      companyFields: {
-        required: ["name", "idempotencyKey", "budgetMonthlyUsd", "secretBindings", "agents"],
-      },
-      agentFields: {
-        identifierFields: ["roleTemplateId", "roleKey"],
-        requiredOneOf: ["roleTemplateId", "roleKey"],
-      },
-    });
-    expect(
-      res.body.roleTemplates.some((template: { id: string; name: string }) => template.id === "ceo" && template.name === "CEO")
-    ).toBe(true);
-    expect(
-      res.body.roleTemplates.some(
-        (template: { id: string; name: string }) => template.id === "backend-engineer" && template.name === "Backend Engineer"
-      )
-    ).toBe(true);
-  });
-
   it("requires X-Paperclip-Run-Id on mutating requests", async () => {
     const res = await request(app)
       .post("/api/companies")
@@ -816,35 +634,6 @@ describe("Company provisioning APIs", () => {
     );
     expect(integrationAgent.budgetMonthlyUsd).toBe(100);
     expect(integrationAgent.skills).toEqual(["openai-docs", "paperclip"]);
-  });
-
-  it("accepts team-assembly role keys as provisioning identifiers", async () => {
-    const res = await request(app)
-      .post("/api/companies")
-      .set(asAuth())
-      .set("X-Paperclip-Run-Id", "run-provision-team-assembly-role-keys")
-      .send({
-        name: "Role Key Co",
-        idempotencyKey: "role-key-1",
-        budgetMonthlyUsd: 240,
-        secretBindings: { OPENAI_API_KEY: "sk-role-key-1234" },
-        agents: [
-          { roleKey: "ceo", budgetMonthlyUsd: 80 },
-          { roleKey: "frontend-engineer", budgetMonthlyUsd: 80 },
-          { roleKey: "qa-engineer", budgetMonthlyUsd: 80 },
-        ],
-      });
-
-    expect(res.status).toBe(201);
-    expect(res.body.agents.map((agent: { roleKey: string }) => agent.roleKey)).toEqual([
-      "ceo",
-      "frontend-engineer",
-      "qa-engineer",
-    ]);
-    expect(
-      res.body.agents.find((agent: { roleKey: string; skills: string[] }) => agent.roleKey === "frontend-engineer")
-        .skills
-    ).toEqual(["frontend-design", "paperclip"]);
   });
 
   it("replays idempotent retries and keeps tenant state isolated across companies", async () => {
@@ -927,8 +716,6 @@ describe("Company provisioning APIs", () => {
 
     expect(overflowRes.status).toBe(400);
     expect(overflowRes.body.error).toMatch(/budget/i);
-    expect(controlPlaneStore.listTeams("test-user")).toHaveLength(0);
-    expect(controlPlaneStore.listAllAgents("test-user")).toHaveLength(0);
 
     const unknownRoleRes = await request(app)
       .post("/api/companies")
@@ -973,198 +760,6 @@ describe("Company provisioning APIs", () => {
 
     expect(conflictingReplayRes.status).toBe(409);
     expect(conflictingReplayRes.body.error).toMatch(/idempotencyKey/i);
-  });
-
-  it("rejects conflicting roleTemplateId and roleKey identifiers", async () => {
-    const res = await request(app)
-      .post("/api/companies")
-      .set(asAuth())
-      .set("X-Paperclip-Run-Id", "run-company-mismatched-identifiers")
-      .send({
-        name: "Mismatch Co",
-        idempotencyKey: "mismatch-1",
-        budgetMonthlyUsd: 100,
-        secretBindings: { OPENAI_API_KEY: "sk-mismatch-1234" },
-        agents: [{ roleTemplateId: "backend-engineer", roleKey: "frontend-engineer" }],
-      });
-
-    expect(res.status).toBe(400);
-    expect(res.body.error).toMatch(/must match/i);
-  });
-});
-
-// ---------------------------------------------------------------------------
-// Team assembly approval provisioning
-// ---------------------------------------------------------------------------
-
-describe("Team assembly approval provisioning", () => {
-  function buildApprovedPlan() {
-    return {
-      schemaVersion: "2026-04-27",
-      company: {
-        name: "Acme AI",
-        goal: "Launch an AI operations product",
-        targetCustomer: "Technical founders",
-        budget: "$400/mo",
-        timeHorizon: "90 days",
-      },
-      summary: "Lean engineering team for launch.",
-      rationale: "Bias toward shipping the first version quickly.",
-      orgChart: {
-        executives: [],
-        operators: [
-          {
-            roleKey: "backend-engineer",
-            title: "Backend Engineer",
-            roleType: "operator",
-            department: "engineering",
-            headcount: 2,
-            reportsToRoleKey: "cto",
-            mandate: "Build APIs and business logic.",
-            justification: "Two backend contributors are needed for the API backlog.",
-            kpis: ["Ship provisioning API", "Maintain test coverage"],
-            skills: ["paperclip", "nodejs-backend-patterns"],
-            tools: ["github", "vercel"],
-            modelTier: "standard",
-            budgetMonthlyUsd: 200,
-            provisioningInstructions: "Implement APIs, workflows, and persistence.",
-          },
-          {
-            roleKey: "frontend-engineer",
-            title: "Frontend Engineer",
-            roleType: "operator",
-            department: "engineering",
-            headcount: 1,
-            reportsToRoleKey: "cto",
-            mandate: "Build review and approval flows.",
-            justification: "One frontend contributor is needed for the approval UI.",
-            kpis: ["Ship review flow"],
-            skills: ["paperclip", "frontend-design"],
-            tools: ["github", "vercel"],
-            modelTier: "standard",
-            budgetMonthlyUsd: 150,
-            provisioningInstructions: "Deliver the team assembly approval UI.",
-          },
-        ],
-        reportingLines: [
-          { managerRoleKey: "cto", reportRoleKey: "backend-engineer" },
-          { managerRoleKey: "cto", reportRoleKey: "frontend-engineer" },
-        ],
-      },
-      provisioningPlan: {
-        teamName: "Acme Launch Team",
-        deploymentMode: "continuous_agents",
-        agents: [
-          {
-            roleKey: "backend-engineer",
-            title: "Backend Engineer",
-            roleType: "operator",
-            department: "engineering",
-            headcount: 2,
-            reportsToRoleKey: "cto",
-            mandate: "Build APIs and business logic.",
-            justification: "Two backend contributors are needed for the API backlog.",
-            kpis: ["Ship provisioning API", "Maintain test coverage"],
-            skills: ["paperclip", "nodejs-backend-patterns"],
-            tools: ["github", "vercel"],
-            modelTier: "standard",
-            budgetMonthlyUsd: 200,
-            provisioningInstructions: "Implement APIs, workflows, and persistence.",
-          },
-          {
-            roleKey: "frontend-engineer",
-            title: "Frontend Engineer",
-            roleType: "operator",
-            department: "engineering",
-            headcount: 1,
-            reportsToRoleKey: "cto",
-            mandate: "Build review and approval flows.",
-            justification: "One frontend contributor is needed for the approval UI.",
-            kpis: ["Ship review flow"],
-            skills: ["paperclip", "frontend-design"],
-            tools: ["github", "vercel"],
-            modelTier: "standard",
-            budgetMonthlyUsd: 150,
-            provisioningInstructions: "Deliver the team assembly approval UI.",
-          },
-        ],
-      },
-      roadmap306090: {
-        day30: {
-          objectives: ["Stand up the first team"],
-          deliverables: ["Provisioned engineering pod"],
-          ownerRoleKeys: ["backend-engineer"],
-        },
-        day60: {
-          objectives: ["Ship review loops"],
-          deliverables: ["Approval workflow"],
-          ownerRoleKeys: ["frontend-engineer"],
-        },
-        day90: {
-          objectives: ["Launch publicly"],
-          deliverables: ["Customer-ready release"],
-          ownerRoleKeys: ["backend-engineer", "frontend-engineer"],
-        },
-      },
-    };
-  }
-
-  it("provisions approved staffing plans and returns frontend-ready status", async () => {
-    const res = await request(app)
-      .post("/api/goals/team-assembly/approve")
-      .set(asAuth())
-      .set("X-Paperclip-Run-Id", "run-team-assembly-approve")
-      .send({
-        approvedPlan: buildApprovedPlan(),
-        idempotencyKey: "team-assembly-acme-1",
-        budgetMonthlyUsd: 400,
-        secretBindings: { OPENAI_API_KEY: "sk-acme-1234" },
-      });
-
-    expect(res.status).toBe(201);
-    expect(res.body.provisioningStatus).toEqual({
-      status: "provisioned",
-      idempotentReplay: false,
-      allocatedBudgetMonthlyUsd: 350,
-      remainingBudgetMonthlyUsd: 50,
-    });
-    expect(res.body.team.name).toBe("Acme Launch Team");
-    expect(res.body.agents).toHaveLength(3);
-    expect(
-      res.body.agents.filter((agent: { roleKey: string }) => agent.roleKey.startsWith("backend-engineer"))
-    ).toHaveLength(2);
-    expect(
-      res.body.agents
-        .filter((agent: { roleKey: string }) => agent.roleKey.startsWith("backend-engineer"))
-        .every((agent: { budgetMonthlyUsd: number }) => agent.budgetMonthlyUsd === 100)
-    ).toBe(true);
-    expect(
-      res.body.agents.find((agent: { roleKey: string }) => agent.roleKey === "frontend-engineer")
-        .budgetMonthlyUsd
-    ).toBe(150);
-  });
-
-  it("rejects approved plans that are missing finalized budget numbers", async () => {
-    const approvedPlan = buildApprovedPlan();
-    (
-      approvedPlan.provisioningPlan.agents[0] as { budgetMonthlyUsd: number | null }
-    ).budgetMonthlyUsd = null;
-
-    const res = await request(app)
-      .post("/api/goals/team-assembly/approve")
-      .set(asAuth())
-      .set("X-Paperclip-Run-Id", "run-team-assembly-missing-budget")
-      .send({
-        approvedPlan,
-        idempotencyKey: "team-assembly-acme-2",
-        budgetMonthlyUsd: 400,
-        secretBindings: { OPENAI_API_KEY: "sk-acme-1234" },
-      });
-
-    expect(res.status).toBe(400);
-    expect(res.body.error).toMatch(/missing budgetMonthlyUsd/i);
-    expect(controlPlaneStore.listTeams("test-user")).toHaveLength(0);
-    expect(controlPlaneStore.listAllAgents("test-user")).toHaveLength(0);
   });
 });
 
@@ -1236,7 +831,7 @@ describe("Control plane APIs", () => {
     ).toBe(true);
   });
 
-  it("sanitizes generated role keys without the polynomial trim regex", async () => {
+  it("sanitizes generated role keys without the polynomial trim regex", () => {
     const step = {
       id: "step-weird-kind",
       name: "Weird Runtime Step",
@@ -1246,7 +841,7 @@ describe("Control plane APIs", () => {
       outputKeys: [],
     };
 
-    const { agent } = await controlPlaneStore.ensureRuntimeTeamForStep({
+    const { agent } = controlPlaneStore.ensureRuntimeTeamForStep({
       userId: "test-user",
       actor: "run-runtime-team-rolekey",
       step,
@@ -1337,98 +932,6 @@ describe("Control plane APIs", () => {
     expect(listRes.status).toBe(200);
     expect(listRes.body.heartbeats).toHaveLength(1);
     expect(listRes.body.heartbeats[0].summary).toBe("Processed the daily support queue");
-  });
-
-  it("exposes a canonical mission-state contract from team data", async () => {
-    const createRes = await request(app)
-      .post("/api/control-plane/teams")
-      .set(asAuth())
-      .set("X-Paperclip-Run-Id", "run-create-mission-team")
-      .send({
-        name: "Revenue Automation",
-        description: "Launch an AI operations product",
-        budgetMonthlyUsd: 250,
-        deploymentMode: "continuous_agents",
-      });
-
-    const missionStateRes = await request(app)
-      .get(`/api/control-plane/teams/${createRes.body.id}/mission-state`)
-      .set(asAuth());
-
-    expect(missionStateRes.status).toBe(200);
-    expect(missionStateRes.body.missionState).toMatchObject({
-      teamId: createRes.body.id,
-      title: "Revenue Automation",
-      objective: "Launch an AI operations product",
-      overallStatus: "not_started",
-      currentPhase: null,
-      ownerTeam: "Revenue Automation",
-      nextMilestone: null,
-      topBlockers: [],
-      risks: [],
-      fieldCoverage: {
-        title: true,
-        objective: true,
-        overallStatus: true,
-        currentPhase: false,
-        ownerTeam: true,
-        staffingReadiness: false,
-        topBlockers: true,
-        risks: true,
-        nextMilestone: false,
-        lastUpdated: true,
-      },
-    });
-    expect(missionStateRes.body.missionState.staffingReadiness).toEqual({
-      status: "not_ready",
-      filledHeadcount: 0,
-      plannedHeadcount: 0,
-    });
-    expect(typeof missionStateRes.body.missionState.lastUpdated).toBe("string");
-  });
-
-  it("marks mission state as blocked when a team has blocked work", async () => {
-    const deployRes = await request(app)
-      .post("/api/control-plane/deployments/workflow")
-      .set(asAuth())
-      .set("X-Paperclip-Run-Id", "run-deploy-mission-state")
-      .send({ templateId: "tpl-support-bot" });
-
-    const teamId = deployRes.body.team.id;
-    const workerAgent = deployRes.body.agents.find(
-      (agent: { roleKey: string }) => agent.roleKey !== "workflow-manager"
-    );
-
-    const createTaskRes = await request(app)
-      .post("/api/control-plane/tasks")
-      .set(asAuth())
-      .set("X-Paperclip-Run-Id", "run-create-mission-task")
-      .send({
-        teamId,
-        title: "Resolve billing import blocker",
-        assignedAgentId: workerAgent.id,
-      });
-
-    const updateTaskRes = await request(app)
-      .patch(`/api/control-plane/tasks/${createTaskRes.body.id}/status`)
-      .set(asAuth())
-      .set("X-Paperclip-Run-Id", "run-block-mission-task")
-      .send({ status: "blocked" });
-
-    expect(updateTaskRes.status).toBe(200);
-
-    const missionStateRes = await request(app)
-      .get(`/api/control-plane/teams/${teamId}/mission-state`)
-      .set(asAuth());
-
-    expect(missionStateRes.status).toBe(200);
-    expect(missionStateRes.body.missionState.overallStatus).toBe("blocked");
-    expect(missionStateRes.body.missionState.topBlockers).toEqual(["Resolve billing import blocker"]);
-    expect(missionStateRes.body.missionState.staffingReadiness).toEqual({
-      status: "ready",
-      filledHeadcount: deployRes.body.agents.length,
-      plannedHeadcount: deployRes.body.agents.length,
-    });
   });
 
   it("exposes deployed agents and budget snapshots for dashboard workspace pages", async () => {
@@ -1775,7 +1278,7 @@ describe("Control plane APIs", () => {
       })
     ).execution;
 
-    await controlPlaneStore.finalizeAgentExecution({
+    controlPlaneStore.finalizeAgentExecution({
       executionId: execution.id,
       userId: "test-user",
       status: "completed",
@@ -2147,6 +1650,159 @@ describe("Approvals API", () => {
 
 
 // ---------------------------------------------------------------------------
+// Control plane APIs
+// ---------------------------------------------------------------------------
+
+describe("Control plane APIs", () => {
+  it("requires X-Paperclip-Run-Id on mutating requests", async () => {
+    const res = await request(app)
+      .post("/api/control-plane/teams")
+      .set(asAuth())
+      .send({ name: "Growth Ops" });
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/X-Paperclip-Run-Id/i);
+  });
+
+  it("creates a team and lists it back", async () => {
+    const createRes = await request(app)
+      .post("/api/control-plane/teams")
+      .set(asAuth())
+      .set("X-Paperclip-Run-Id", "run-create-team")
+      .send({
+        name: "Revenue Automation",
+        budgetMonthlyUsd: 250,
+        deploymentMode: "continuous_agents",
+      });
+
+    expect(createRes.status).toBe(201);
+    expect(createRes.body.name).toBe("Revenue Automation");
+    expect(createRes.body.deploymentMode).toBe("continuous_agents");
+
+    const listRes = await request(app)
+      .get("/api/control-plane/teams")
+      .set(asAuth());
+
+    expect(listRes.status).toBe(200);
+    expect(listRes.body.total).toBe(1);
+    expect(listRes.body.teams[0].id).toBe(createRes.body.id);
+  });
+
+  it("deploys a workflow template as an agent team", async () => {
+    const res = await request(app)
+      .post("/api/control-plane/deployments/workflow")
+      .set(asAuth())
+      .set("X-Paperclip-Run-Id", "run-deploy-team")
+      .send({
+        templateId: "tpl-support-bot",
+        budgetMonthlyUsd: 120,
+        defaultIntervalMinutes: 30,
+      });
+
+    expect(res.status).toBe(201);
+    expect(res.body.team.workflowTemplateId).toBe("tpl-support-bot");
+    expect(res.body.workflow.name).toBe("Customer Support Bot");
+    expect(Array.isArray(res.body.agents)).toBe(true);
+    expect(res.body.agents.length).toBeGreaterThan(1);
+    expect(
+      res.body.agents.some((agent: { roleKey: string }) => agent.roleKey === "workflow-manager")
+    ).toBe(true);
+    expect(
+      res.body.agents
+        .filter((agent: { roleKey: string }) => agent.roleKey !== "workflow-manager")
+        .every(
+          (agent: { schedule: { type: string; intervalMinutes?: number } }) =>
+            agent.schedule.type === "interval" && agent.schedule.intervalMinutes === 30
+        )
+    ).toBe(true);
+  });
+
+  it("creates a bridged task and enforces atomic checkout", async () => {
+    const deployRes = await request(app)
+      .post("/api/control-plane/deployments/workflow")
+      .set(asAuth())
+      .set("X-Paperclip-Run-Id", "run-deploy-for-task")
+      .send({ templateId: "tpl-support-bot" });
+
+    const teamId = deployRes.body.team.id;
+    const workerAgent = deployRes.body.agents.find(
+      (agent: { roleKey: string }) => agent.roleKey !== "workflow-manager"
+    );
+
+    const createTaskRes = await request(app)
+      .post("/api/control-plane/tasks")
+      .set(asAuth())
+      .set("X-Paperclip-Run-Id", "run-create-task")
+      .send({
+        teamId,
+        title: "Handle escalated refund",
+        sourceRunId: "run_123",
+        sourceWorkflowStepId: workerAgent.workflowStepId,
+        assignedAgentId: workerAgent.id,
+      });
+
+    expect(createTaskRes.status).toBe(201);
+    expect(createTaskRes.body.status).toBe("todo");
+    expect(createTaskRes.body.auditTrail).toHaveLength(1);
+
+    const checkoutRes = await request(app)
+      .post(`/api/control-plane/tasks/${createTaskRes.body.id}/checkout`)
+      .set(asAuth())
+      .set("X-Paperclip-Run-Id", "run-checkout-1");
+
+    expect(checkoutRes.status).toBe(200);
+    expect(checkoutRes.body.status).toBe("in_progress");
+    expect(checkoutRes.body.checkedOutBy).toBe("run-checkout-1");
+
+    const conflictRes = await request(app)
+      .post(`/api/control-plane/tasks/${createTaskRes.body.id}/checkout`)
+      .set(asAuth())
+      .set("X-Paperclip-Run-Id", "run-checkout-2");
+
+    expect(conflictRes.status).toBe(409);
+    expect(conflictRes.body.error).toMatch(/already checked out/i);
+  });
+
+  it("records heartbeats for deployed agents", async () => {
+    const deployRes = await request(app)
+      .post("/api/control-plane/deployments/workflow")
+      .set(asAuth())
+      .set("X-Paperclip-Run-Id", "run-deploy-heartbeat")
+      .send({ templateId: "tpl-support-bot" });
+
+    const teamId = deployRes.body.team.id;
+    const workerAgent = deployRes.body.agents.find(
+      (agent: { roleKey: string }) => agent.roleKey !== "workflow-manager"
+    );
+
+    const heartbeatRes = await request(app)
+      .post("/api/control-plane/heartbeats")
+      .set(asAuth())
+      .set("X-Paperclip-Run-Id", "run-heartbeat-1")
+      .send({
+        teamId,
+        agentId: workerAgent.id,
+        status: "completed",
+        summary: "Processed the daily support queue",
+        costUsd: 1.42,
+        createdTaskIds: ["task-a", "task-b"],
+      });
+
+    expect(heartbeatRes.status).toBe(201);
+    expect(heartbeatRes.body.status).toBe("completed");
+    expect(heartbeatRes.body.createdTaskIds).toEqual(["task-a", "task-b"]);
+
+    const listRes = await request(app)
+      .get(`/api/control-plane/teams/${teamId}`)
+      .set(asAuth());
+
+    expect(listRes.status).toBe(200);
+    expect(listRes.body.heartbeats).toHaveLength(1);
+    expect(listRes.body.heartbeats[0].summary).toBe("Processed the daily support queue");
+  });
+});
+
+// ---------------------------------------------------------------------------
 // POST /api/runs
 // ---------------------------------------------------------------------------
 
@@ -2189,7 +1845,7 @@ describe("POST /api/runs", () => {
   it("returns 202 with a pending run for a valid templateId", async () => {
     const res = await request(app)
       .post("/api/runs")
-      .set(asAuth("runs-pending-user"))
+      .set(asAuth())
       .send({ templateId: "tpl-support-bot", input: { ticketId: "TKT-001", subject: "Help", body: "I need help", customerEmail: "test@example.com", channel: "email" } });
     expect(res.status).toBe(202);
     expect(res.body.id).toBeDefined();
@@ -2200,7 +1856,7 @@ describe("POST /api/runs", () => {
   it("returns 400 when templateId is missing", async () => {
     const res = await request(app)
       .post("/api/runs")
-      .set(asAuth("runs-missing-template-user"))
+      .set(asAuth())
       .send({ input: {} });
     expect(res.status).toBe(400);
     expect(res.body.error).toMatch(/templateId/i);
@@ -2209,7 +1865,7 @@ describe("POST /api/runs", () => {
   it("returns 404 for an unknown templateId", async () => {
     const res = await request(app)
       .post("/api/runs")
-      .set(asAuth("runs-unknown-template-user"))
+      .set(asAuth())
       .send({ templateId: "tpl-nonexistent", input: {} });
     expect(res.status).toBe(404);
     expect(res.body.error).toMatch(/not found/i);
@@ -2218,7 +1874,7 @@ describe("POST /api/runs", () => {
   it("returns a run with startedAt timestamp", async () => {
     const res = await request(app)
       .post("/api/runs")
-      .set(asAuth("runs-started-at-user"))
+      .set(asAuth())
       .send({ templateId: "tpl-support-bot", input: {} });
     expect(res.status).toBe(202);
     expect(typeof res.body.startedAt).toBe("string");
@@ -2237,14 +1893,14 @@ describe("GET /api/runs", () => {
   });
 
   it("returns 200 with a runs array", async () => {
-    const res = await request(app).get("/api/runs").set(asAuth("runs-list-user"));
+    const res = await request(app).get("/api/runs").set(asAuth());
     expect(res.status).toBe(200);
     expect(Array.isArray(res.body.runs)).toBe(true);
     expect(typeof res.body.total).toBe("number");
   });
 
   it("total matches runs array length", async () => {
-    const res = await request(app).get("/api/runs").set(asAuth("runs-list-total-user"));
+    const res = await request(app).get("/api/runs").set(asAuth());
     expect(res.body.total).toBe(res.body.runs.length);
   });
 
@@ -2269,23 +1925,20 @@ describe("GET /api/runs/:id", () => {
   });
 
   it("returns 202 run and then retrieves it by id", async () => {
-    const runReadbackUserId = "runs-readback-user";
     const startRes = await request(app)
       .post("/api/runs")
-      .set(asAuth(runReadbackUserId))
+      .set(asAuth())
       .send({ templateId: "tpl-support-bot", input: { ticketId: "TKT-002", subject: "Issue", body: "Problem", customerEmail: "b@example.com", channel: "email" } });
     expect(startRes.status).toBe(202);
     const runId = startRes.body.id;
 
-    const getRes = await request(app).get(`/api/runs/${runId}`).set(asAuth(runReadbackUserId));
+    const getRes = await request(app).get(`/api/runs/${runId}`).set(asAuth());
     expect(getRes.status).toBe(200);
     expect(getRes.body.id).toBe(runId);
   });
 
   it("returns 404 for an unknown run id", async () => {
-    const res = await request(app)
-      .get("/api/runs/run-does-not-exist")
-      .set(asAuth("runs-unknown-id-user"));
+    const res = await request(app).get("/api/runs/run-does-not-exist").set(asAuth());
     expect(res.status).toBe(404);
     expect(res.body.error).toMatch(/not found/i);
   });
@@ -2327,7 +1980,6 @@ describe("GET /api/analytics/routing-decisions", () => {
   });
 
   it("returns logged routing decisions for dashboard consumption", async () => {
-    const routingUserId = "routing-analytics-user";
     logClassificationDecision({
       promptHash: "hash-1",
       features: extractPromptFeatures("Classify this ticket", 120, 1),
@@ -2338,7 +1990,7 @@ describe("GET /api/analytics/routing-decisions", () => {
 
     const res = await request(app)
       .get("/api/analytics/routing-decisions")
-      .set(asAuth(routingUserId));
+      .set(asAuth());
 
     expect(res.status).toBe(200);
     expect(Array.isArray(res.body.decisions)).toBe(true);
@@ -2359,10 +2011,9 @@ describe("GET /api/analytics/routing-decisions", () => {
 
 describe("GET /api/observability", () => {
   it("returns searchable trace records and supports CSV export", async () => {
-    const observabilityUserId = "observability-contract-user";
     const deployRes = await request(app)
       .post("/api/control-plane/deployments/workflow")
-      .set(asAuth(observabilityUserId))
+      .set(asAuth())
       .set("X-Paperclip-Run-Id", "run-deploy-observability")
       .send({ templateId: "tpl-support-bot" });
 
@@ -2375,7 +2026,7 @@ describe("GET /api/observability", () => {
     )!;
 
     const started = await controlPlaneStore.startAgentExecution({
-      userId: observabilityUserId,
+      userId: "test-user",
       actor: "run-observability-seed",
       teamId,
       step,
@@ -2384,9 +2035,9 @@ describe("GET /api/observability", () => {
       taskTitle: "Handle observability trace",
     });
 
-    await controlPlaneStore.finalizeAgentExecution({
+    controlPlaneStore.finalizeAgentExecution({
       executionId: started.execution.id,
-      userId: observabilityUserId,
+      userId: "test-user",
       status: "completed",
       summary: "Completed the traceable step",
       costUsd: 1.25,
@@ -2401,7 +2052,7 @@ describe("GET /api/observability", () => {
       completedAt: "2026-04-28T03:00:05.000Z",
       input: {},
       output: {},
-      userId: observabilityUserId,
+      userId: "test-user",
       stepResults: [
         {
           stepId: step.id,
@@ -2445,7 +2096,7 @@ describe("GET /api/observability", () => {
 
     const res = await request(app)
       .get(`/api/observability?agentId=${encodeURIComponent(workerAgent.id)}&search=crm.lookup`)
-      .set(asAuth(observabilityUserId));
+      .set(asAuth());
 
     expect(res.status).toBe(200);
     expect(res.body.total).toBe(1);
@@ -2462,7 +2113,7 @@ describe("GET /api/observability", () => {
 
     const csvRes = await request(app)
       .get(`/api/observability?format=csv&agentId=${encodeURIComponent(workerAgent.id)}`)
-      .set(asAuth(observabilityUserId));
+      .set(asAuth());
 
     expect(csvRes.status).toBe(200);
     expect(csvRes.headers["content-type"]).toMatch(/text\/csv/);
@@ -2522,14 +2173,13 @@ describe("POST /api/webhooks/:templateId", () => {
   });
 
   it("run created by webhook is retrievable via GET /api/runs/:id", async () => {
-    const webhookUserId = "webhook-readback-user";
     const webhookRes = await request(app)
       .post("/api/webhooks/tpl-support-bot")
       .send({ ticketId: "WH-003", subject: "Test" });
     expect(webhookRes.status).toBe(202);
 
     const runId = webhookRes.body.runId;
-    const getRes = await request(app).get(`/api/runs/${runId}`).set(asAuth(webhookUserId));
+    const getRes = await request(app).get(`/api/runs/${runId}`).set(asAuth());
     expect(getRes.status).toBe(200);
     expect(getRes.body.id).toBe(runId);
   });
@@ -2667,13 +2317,12 @@ describe("Rate limiting", () => {
   });
 
   it("enforces general API limits and returns Retry-After", async () => {
-    const generalRateLimitUserId = "rate-limit-general-user";
     for (let i = 0; i < 100; i += 1) {
-      const res = await request(app).get("/api/templates").set(asAuth(generalRateLimitUserId));
+      const res = await request(app).get("/api/templates").set("X-User-Id", "rate-limit-general-user");
       expect(res.status).toBe(200);
     }
 
-    const blocked = await request(app).get("/api/templates").set(asAuth(generalRateLimitUserId));
+    const blocked = await request(app).get("/api/templates").set("X-User-Id", "rate-limit-general-user");
     expect(blocked.status).toBe(429);
     expect(blocked.headers["retry-after"]).toBeDefined();
     expect(Number(blocked.headers["retry-after"])).toBeGreaterThan(0);

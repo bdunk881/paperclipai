@@ -3,12 +3,9 @@ name: Provider-Facing Connector Suite
 on:
   workflow_dispatch:
   push:
-    branches: [staging, master, main]
+    branches: [master, main]
   pull_request:
-    branches: [staging, master, main]
-
-permissions:
-  contents: read
+    branches: [master, main]
 
 jobs:
   tier1-provider-facing:
@@ -23,11 +20,6 @@ jobs:
       TIER1_GMAIL_TO_EMAIL: ${{ vars.TIER1_GMAIL_TO_EMAIL }}
       TIER1_HUBSPOT_API_KEY: ${{ secrets.TIER1_HUBSPOT_API_KEY }}
       TIER1_HUBSPOT_CONTACT_ID: ${{ vars.TIER1_HUBSPOT_CONTACT_ID }}
-      TIER1_JIRA_API_TOKEN: ${{ secrets.TIER1_JIRA_API_TOKEN }}
-      TIER1_JIRA_EMAIL: ${{ vars.TIER1_JIRA_EMAIL }}
-      TIER1_JIRA_ISSUE_KEY: ${{ vars.TIER1_JIRA_ISSUE_KEY }}
-      TIER1_JIRA_PROJECT_KEY: ${{ vars.TIER1_JIRA_PROJECT_KEY }}
-      TIER1_JIRA_SITE: ${{ vars.TIER1_JIRA_SITE }}
       TIER1_LINEAR_API_KEY: ${{ secrets.TIER1_LINEAR_API_KEY }}
       TIER1_LINEAR_ISSUE_ID: ${{ vars.TIER1_LINEAR_ISSUE_ID }}
       TIER1_SENTRY_API_KEY: ${{ secrets.TIER1_SENTRY_API_KEY }}

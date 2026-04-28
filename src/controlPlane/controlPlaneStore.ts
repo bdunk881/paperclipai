@@ -1,16 +1,10 @@
 import { randomUUID } from "crypto";
-import { PoolClient } from "pg";
 import { WorkflowStep, WorkflowTemplate } from "../types/workflow";
-import { DEFAULT_ROLE_LIBRARY } from "../goals/teamAssembly";
-import { getPostgresPool, isPostgresConfigured } from "../db/postgres";
-import { withWorkspaceContext } from "../middleware/workspaceContext";
-import { assertAgentWorkspaceBinding } from "../security/agentWorkspaceBinding";
 import { companyLifecycleStore } from "./companyLifecycleStore";
 import {
   AgentHeartbeatRecord,
   BudgetStatusSnapshot,
   CompanyProvisioningAgentInput,
-  ControlPlaneMissionState,
   CompanyProvisioningResult,
   ControlPlaneAgent,
   ControlPlaneBudgetAlert,
@@ -32,9 +26,6 @@ import {
   SpendCategory,
   TeamSpendSnapshot,
 } from "./types";
-import { observabilityStore } from "../observability/store";
-import { secretsRepository } from "./secretsRepository";
-import { controlPlaneRepository } from "./controlPlaneRepository";
 
 function nowIso(): string {
   return new Date().toISOString();
@@ -44,60 +35,13 @@ function currentPeriodKey(date = new Date()): string {
   return date.toISOString().slice(0, 7);
 }
 
-function periodKeyFromIso(iso: string): string {
-  return iso.slice(0, 7);
-}
-
-function budgetAlertDedupeKey(input: {
-  userId: string;
-  teamId: string;
-  period: string;
-  scope: ControlPlaneBudgetAlert["scope"];
-  agentId?: string;
-  toolName?: string;
-  threshold: number;
-}): string {
-  return [
-    input.userId,
-    input.teamId,
-    input.period,
-    input.scope,
-    input.agentId ?? "",
-    input.toolName ?? "",
-    input.threshold,
-  ].join(":");
-}
-
-const SLUGIFY_MAX_INPUT_LENGTH = 256;
-
 function slugify(value: string): string {
-  const bounded = value.slice(0, SLUGIFY_MAX_INPUT_LENGTH);
-  const lower = bounded.trim().toLowerCase();
-  const chars: number[] = [];
-  let lastWasDash = false;
-  for (let i = 0; i < lower.length; i += 1) {
-    const code = lower.charCodeAt(i);
-    const isAlnum =
-      (code >= 48 && code <= 57) || (code >= 97 && code <= 122);
-    if (isAlnum) {
-      chars.push(code);
-      lastWasDash = false;
-    } else if (!lastWasDash) {
-      chars.push(45);
-      lastWasDash = true;
-    }
-  }
-
-  let start = 0;
-  let end = chars.length;
-  while (start < end && chars[start] === 45) {
-    start += 1;
-  }
-  while (end > start && chars[end - 1] === 45) {
-    end -= 1;
-  }
-
-  return String.fromCharCode(...chars.slice(start, end));
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+/, "")
+    .replace(/-+$/, "");
 }
 
 function buildAuditEvent(
@@ -112,13 +56,6 @@ function buildAuditEvent(
     detail,
     timestamp: nowIso(),
   };
-}
-
-function inferObservabilityActor(actor: string): { type: "run" | "system"; id: string; label?: string } {
-  if (actor.startsWith("run-")) {
-    return { type: "run", id: actor, label: actor };
-  }
-  return { type: "system", id: actor, label: actor };
 }
 
 function toAgentStatus(action: ControlPlaneLifecycleAction): ControlPlaneAgent["status"] {
@@ -158,17 +95,6 @@ function toHeartbeatStatus(status: ControlPlaneExecutionStatus): HeartbeatStatus
   }
 }
 
-function modelForTier(tier: "lite" | "standard" | "power"): string {
-  switch (tier) {
-    case "lite":
-      return "gpt-5.4-mini";
-    case "standard":
-      return "gpt-5.4";
-    case "power":
-      return "gpt-5.2";
-  }
-}
-
 function thresholdStateForPercent(percentUsed: number): BudgetStatusSnapshot["thresholdState"] {
   if (percentUsed >= 1) {
     return "limit_reached";
@@ -182,7 +108,7 @@ function thresholdStateForPercent(percentUsed: number): BudgetStatusSnapshot["th
   return "healthy";
 }
 
-const BASE_SKILL_CATALOG: ControlPlaneSkillDefinition[] = [
+const SKILL_CATALOG: ControlPlaneSkillDefinition[] = [
   {
     id: "paperclip",
     name: "paperclip",
@@ -209,19 +135,7 @@ const BASE_SKILL_CATALOG: ControlPlaneSkillDefinition[] = [
   },
 ];
 
-const SKILL_CATALOG: ControlPlaneSkillDefinition[] = [
-  ...BASE_SKILL_CATALOG,
-  ...Array.from(
-    new Set(DEFAULT_ROLE_LIBRARY.flatMap((role) => role.defaultSkills).filter((skill) => skill !== "paperclip"))
-  ).map((skill) => ({
-    id: skill,
-    name: skill,
-    description: `AutoFlow role skill ${skill}.`,
-    scope: "agent" as const,
-  })),
-];
-
-const BASE_ROLE_TEMPLATE_CATALOG: ControlPlaneRoleTemplateDefinition[] = [
+const ROLE_TEMPLATE_CATALOG: ControlPlaneRoleTemplateDefinition[] = [
   {
     id: "workspace-manager",
     name: "Workspace Manager",
@@ -260,19 +174,6 @@ const BASE_ROLE_TEMPLATE_CATALOG: ControlPlaneRoleTemplateDefinition[] = [
   },
 ];
 
-const ROLE_TEMPLATE_CATALOG: ControlPlaneRoleTemplateDefinition[] = [
-  ...BASE_ROLE_TEMPLATE_CATALOG,
-  ...DEFAULT_ROLE_LIBRARY.filter(
-    (role) => !BASE_ROLE_TEMPLATE_CATALOG.some((template) => template.id === role.roleKey)
-  ).map((role) => ({
-    id: role.roleKey,
-    name: role.title,
-    description: role.mandate,
-    defaultModel: modelForTier(role.defaultModelTier),
-    defaultInstructions: role.mandate,
-    defaultSkills: [...role.defaultSkills],
-  })),
-];
 const teams = new Map<string, ControlPlaneTeam>();
 const agents = new Map<string, ControlPlaneAgent>();
 const tasks = new Map<string, ControlPlaneTask>();
@@ -284,96 +185,6 @@ const companySecretBindings = new Map<string, Record<string, string>>();
 const companyIdempotencyIndex = new Map<string, { companyId: string; fingerprint: string }>();
 const spendEntries = new Map<string, ControlPlaneSpendEntry>();
 const budgetAlerts = new Map<string, ControlPlaneBudgetAlert>();
-const teamWorkspaceIds = new Map<string, string>();
-const teamCompanyIds = new Map<string, string>();
-const companyTenantWorkspaceIds = new Map<string, string>();
-const hydratedWorkspaceUsers = new Set<string>();
-
-type PersistedTeamRow = {
-  id: string;
-  workspace_id: string;
-  user_id: string;
-  company_id: string | null;
-  name: string;
-  description: string | null;
-  workflow_template_id: string | null;
-  workflow_template_name: string | null;
-  deployment_mode: ControlPlaneTeam["deploymentMode"];
-  status: ControlPlaneTeam["status"];
-  paused_by_company_lifecycle: boolean;
-  restart_count: number;
-  budget_monthly_usd: number | string;
-  tool_budget_ceilings: unknown;
-  alert_thresholds: unknown;
-  orchestration_enabled: boolean;
-  last_heartbeat_at: Date | string | null;
-  created_at: Date | string;
-  updated_at: Date | string;
-};
-
-type PersistedAgentRow = {
-  id: string;
-  workspace_id: string;
-  user_id: string;
-  team_id: string;
-  name: string;
-  role_key: string;
-  workflow_step_id: string | null;
-  workflow_step_kind: string | null;
-  model: string | null;
-  instructions: string | null;
-  budget_monthly_usd: number | string;
-  reporting_to_agent_id: string | null;
-  skills: unknown;
-  schedule: unknown;
-  status: ControlPlaneAgent["status"];
-  paused_by_company_lifecycle: boolean;
-  current_execution_id: string | null;
-  last_heartbeat_at: Date | string | null;
-  last_heartbeat_status: ControlPlaneAgent["lastHeartbeatStatus"] | null;
-  created_at: Date | string;
-  updated_at: Date | string;
-};
-
-type PersistedExecutionRow = {
-  id: string;
-  workspace_id: string;
-  user_id: string;
-  team_id: string;
-  agent_id: string;
-  source_run_id: string;
-  source_workflow_step_id: string;
-  source_workflow_step_name: string;
-  task_id: string | null;
-  status: ControlPlaneExecution["status"];
-  applied_skills: unknown;
-  metadata: unknown;
-  summary: string | null;
-  cost_usd: number | string | null;
-  requested_at: Date | string;
-  started_at: Date | string | null;
-  completed_at: Date | string | null;
-  last_heartbeat_at: Date | string | null;
-  restart_count: number;
-};
-
-type PersistedProvisionedCompanyRow = {
-  id: string;
-  workspace_id: string;
-  user_id: string;
-  name: string;
-  external_company_id: string | null;
-  provisioned_workspace_id: string;
-  provisioned_workspace_name: string;
-  provisioned_workspace_slug: string;
-  team_id: string;
-  idempotency_key: string;
-  budget_monthly_usd: number | string;
-  allocated_budget_monthly_usd: number | string;
-  remaining_budget_monthly_usd: number | string;
-  created_at: Date | string;
-  updated_at: Date | string;
-};
 
 function getSkillCatalogIds(): Set<string> {
   return new Set(SKILL_CATALOG.map((skill) => skill.id));
@@ -413,100 +224,6 @@ function buildCompanySecretSummaries(secretBindings: Record<string, string>): Pr
       key,
       maskedValue: maskSecretValue(value),
     }));
-}
-
-function toIso(value: Date | string | null | undefined): string | undefined {
-  if (!value) {
-    return undefined;
-  }
-  return value instanceof Date ? value.toISOString() : new Date(value).toISOString();
-}
-
-function toNumber(value: number | string | null | undefined): number {
-  if (typeof value === "number") {
-    return value;
-  }
-  if (typeof value === "string" && value.trim().length > 0) {
-    return Number(value);
-  }
-  return 0;
-}
-
-function normalizeNumberRecord(value: unknown): Record<string, number> {
-  if (!value || typeof value !== "object" || Array.isArray(value)) {
-    return {};
-  }
-  return Object.entries(value).reduce<Record<string, number>>((acc, [key, entryValue]) => {
-    if (typeof entryValue === "number") {
-      acc[key] = entryValue;
-      return acc;
-    }
-    if (typeof entryValue === "string" && entryValue.trim().length > 0) {
-      acc[key] = Number(entryValue);
-    }
-    return acc;
-  }, {});
-}
-
-function normalizeNumberArray(value: unknown, fallback: number[]): number[] {
-  if (!Array.isArray(value)) {
-    return [...fallback];
-  }
-  const parsed = value.filter((entry): entry is number => typeof entry === "number");
-  return parsed.length > 0 ? [...parsed].sort((left, right) => left - right) : [...fallback];
-}
-
-function normalizeStringArray(value: unknown): string[] {
-  if (!Array.isArray(value)) {
-    return [];
-  }
-  return value.filter((entry): entry is string => typeof entry === "string" && entry.trim().length > 0);
-}
-
-function normalizeSchedule(value: unknown): ControlPlaneAgent["schedule"] {
-  if (!value || typeof value !== "object" || Array.isArray(value)) {
-    return { type: "manual" };
-  }
-
-  const candidate = value as Record<string, unknown>;
-  if (candidate.type === "interval" && typeof candidate.intervalMinutes === "number") {
-    return { type: "interval", intervalMinutes: candidate.intervalMinutes };
-  }
-  if (candidate.type === "cron" && typeof candidate.cronExpression === "string") {
-    return { type: "cron", cronExpression: candidate.cronExpression };
-  }
-  return { type: "manual" };
-}
-
-function requireWorkspaceIdForPersistence(workspaceId: string | undefined): string {
-  if (!workspaceId?.trim()) {
-    throw new Error("workspace_context_required");
-  }
-  return workspaceId;
-}
-
-function workspaceUserKey(workspaceId: string, userId: string): string {
-  return `${workspaceId}:${userId}`;
-}
-
-function workspaceContextForTeam(teamId: string, userId: string): { workspaceId: string; userId: string } | undefined {
-  if (!isPostgresConfigured()) {
-    return undefined;
-  }
-  const workspaceId = teamWorkspaceIds.get(teamId);
-  if (!workspaceId) {
-    return undefined;
-  }
-  return { workspaceId, userId };
-}
-
-function matchesWorkspace(teamId: string, workspaceId?: string): boolean {
-  if (!workspaceId) {
-    return true;
-  }
-
-  const storedWorkspaceId = teamWorkspaceIds.get(teamId);
-  return storedWorkspaceId ? storedWorkspaceId === workspaceId : true;
 }
 
 function serializeProvisioningFingerprint(input: {
@@ -552,113 +269,6 @@ function getProvisionedCompanyOwnedByUser(companyId: string, userId: string): Pr
   return company;
 }
 
-function latestIso(...timestamps: Array<string | undefined>): string {
-  return timestamps
-    .filter((value): value is string => Boolean(value))
-    .sort((left, right) => left.localeCompare(right))
-    .at(-1) ?? nowIso();
-}
-
-function buildMissionState(
-  team: ControlPlaneTeam,
-  userId: string,
-  workspaceId?: string
-): ControlPlaneMissionState {
-  const teamAgents = listAgentsForTeam(team.id, userId);
-  const teamTasks = Array.from(tasks.values()).filter((task) => task.userId === userId && task.teamId === team.id);
-  const teamExecutions = Array.from(executions.values()).filter(
-    (execution) =>
-      execution.userId === userId &&
-      execution.teamId === team.id &&
-      matchesWorkspace(execution.teamId, workspaceId)
-  );
-  const spendSnapshot = buildTeamSpendSnapshot(team);
-  const blockedTasks = teamTasks.filter((task) => task.status === "blocked");
-  const failedExecutions = teamExecutions.filter((execution) => execution.status === "failed");
-  const blockedExecutions = teamExecutions.filter((execution) => execution.status === "blocked");
-  const hasRuntimeActivity = teamTasks.length > 0 || teamExecutions.length > 0;
-
-  let overallStatus: ControlPlaneMissionState["overallStatus"] = "on_track";
-  if (!hasRuntimeActivity) {
-    overallStatus = "not_started";
-  } else if (team.status === "stopped" || failedExecutions.length > 0) {
-    overallStatus = "off_track";
-  } else if (team.status === "paused" || blockedTasks.length > 0) {
-    overallStatus = "blocked";
-  } else if (
-    blockedExecutions.length > 0 ||
-    spendSnapshot.team.thresholdState === "warning" ||
-    spendSnapshot.team.thresholdState === "critical" ||
-    spendSnapshot.team.thresholdState === "limit_reached"
-  ) {
-    overallStatus = "at_risk";
-  }
-
-  const plannedHeadcount = teamAgents.length;
-  const filledHeadcount = teamAgents.filter((agent) => agent.status !== "terminated").length;
-  let staffingStatus: ControlPlaneMissionState["staffingReadiness"]["status"] = "ready";
-  if (filledHeadcount === 0) {
-    staffingStatus = "not_ready";
-  } else if (filledHeadcount < plannedHeadcount) {
-    staffingStatus = "partial";
-  }
-
-  const risks: string[] = [];
-  if (spendSnapshot.team.thresholdState === "warning" || spendSnapshot.team.thresholdState === "critical") {
-    risks.push(`Budget usage is ${Math.round(spendSnapshot.team.percentUsed * 100)}% of monthly allocation.`);
-  }
-  if (spendSnapshot.team.thresholdState === "limit_reached") {
-    risks.push("Team budget limit has been reached.");
-  }
-  if (failedExecutions.length > 0) {
-    risks.push(`${failedExecutions.length} execution${failedExecutions.length === 1 ? "" : "s"} failed.`);
-  }
-
-  const topBlockers = blockedTasks.map((task) => task.title);
-  if (team.status === "paused" && topBlockers.length === 0) {
-    topBlockers.push("Team is currently paused.");
-  }
-  if (team.status === "stopped" && topBlockers.length === 0) {
-    topBlockers.push("Team is currently stopped.");
-  }
-
-  return {
-    teamId: team.id,
-    title: team.name,
-    objective: team.description?.trim() || null,
-    overallStatus,
-    currentPhase: null,
-    ownerTeam: team.name,
-    staffingReadiness: {
-      status: staffingStatus,
-      filledHeadcount,
-      plannedHeadcount,
-    },
-    topBlockers,
-    risks: Array.from(new Set(risks)),
-    nextMilestone: null,
-    lastUpdated: latestIso(
-      team.updatedAt,
-      ...teamTasks.map((task) => task.updatedAt),
-      ...teamExecutions.map(
-        (execution) => execution.lastHeartbeatAt ?? execution.completedAt ?? execution.startedAt ?? execution.requestedAt
-      )
-    ),
-    fieldCoverage: {
-      title: true,
-      objective: Boolean(team.description?.trim()),
-      overallStatus: true,
-      currentPhase: false,
-      ownerTeam: true,
-      staffingReadiness: plannedHeadcount > 0,
-      topBlockers: true,
-      risks: true,
-      nextMilestone: false,
-      lastUpdated: true,
-    },
-  };
-}
-
 function getTeamOwnedByUser(teamId: string, userId: string): ControlPlaneTeam | undefined {
   const team = teams.get(teamId);
   if (!team || team.userId !== userId) {
@@ -681,438 +291,6 @@ function getExecutionOwnedByUser(executionId: string, userId: string): ControlPl
     return undefined;
   }
   return execution;
-}
-
-function hydrateTeam(row: PersistedTeamRow): ControlPlaneTeam {
-  teamWorkspaceIds.set(row.id, row.workspace_id);
-  if (row.company_id) {
-    teamCompanyIds.set(row.id, row.company_id);
-  }
-  return {
-    id: row.id,
-    userId: row.user_id,
-    name: row.name,
-    description: row.description ?? undefined,
-    workflowTemplateId: row.workflow_template_id ?? undefined,
-    workflowTemplateName: row.workflow_template_name ?? undefined,
-    deploymentMode: row.deployment_mode,
-    status: row.status,
-    pausedByCompanyLifecycle: row.paused_by_company_lifecycle || undefined,
-    restartCount: row.restart_count,
-    lastHeartbeatAt: toIso(row.last_heartbeat_at),
-    budgetMonthlyUsd: toNumber(row.budget_monthly_usd),
-    toolBudgetCeilings: normalizeNumberRecord(row.tool_budget_ceilings),
-    alertThresholds: normalizeNumberArray(row.alert_thresholds, [0.8, 0.9, 1]),
-    orchestrationEnabled: row.orchestration_enabled,
-    createdAt: toIso(row.created_at) ?? nowIso(),
-    updatedAt: toIso(row.updated_at) ?? nowIso(),
-  };
-}
-
-function hydrateAgent(row: PersistedAgentRow): ControlPlaneAgent {
-  teamWorkspaceIds.set(row.team_id, row.workspace_id);
-  return {
-    id: row.id,
-    teamId: row.team_id,
-    userId: row.user_id,
-    name: row.name,
-    roleKey: row.role_key,
-    workflowStepId: row.workflow_step_id ?? undefined,
-    workflowStepKind: row.workflow_step_kind ?? undefined,
-    model: row.model ?? undefined,
-    instructions: row.instructions ?? "",
-    budgetMonthlyUsd: toNumber(row.budget_monthly_usd),
-    reportingToAgentId: row.reporting_to_agent_id ?? undefined,
-    skills: normalizeStringArray(row.skills),
-    schedule: normalizeSchedule(row.schedule),
-    status: row.status,
-    pausedByCompanyLifecycle: row.paused_by_company_lifecycle || undefined,
-    currentExecutionId: row.current_execution_id ?? undefined,
-    lastHeartbeatAt: toIso(row.last_heartbeat_at),
-    lastHeartbeatStatus: row.last_heartbeat_status ?? undefined,
-    createdAt: toIso(row.created_at) ?? nowIso(),
-    updatedAt: toIso(row.updated_at) ?? nowIso(),
-  };
-}
-
-function hydrateExecution(row: PersistedExecutionRow): ControlPlaneExecution {
-  teamWorkspaceIds.set(row.team_id, row.workspace_id);
-  return {
-    id: row.id,
-    teamId: row.team_id,
-    agentId: row.agent_id,
-    userId: row.user_id,
-    sourceRunId: row.source_run_id,
-    sourceWorkflowStepId: row.source_workflow_step_id,
-    sourceWorkflowStepName: row.source_workflow_step_name,
-    taskId: row.task_id ?? undefined,
-    status: row.status,
-    appliedSkills: normalizeStringArray(row.applied_skills),
-    metadata: row.metadata && typeof row.metadata === "object" && !Array.isArray(row.metadata)
-      ? (row.metadata as Record<string, unknown>)
-      : undefined,
-    summary: row.summary ?? undefined,
-    costUsd: row.cost_usd === null ? undefined : toNumber(row.cost_usd),
-    requestedAt: toIso(row.requested_at) ?? nowIso(),
-    startedAt: toIso(row.started_at),
-    completedAt: toIso(row.completed_at),
-    lastHeartbeatAt: toIso(row.last_heartbeat_at),
-    restartCount: row.restart_count,
-  };
-}
-
-function hydrateProvisionedCompany(row: PersistedProvisionedCompanyRow): {
-  company: ProvisionedCompanyRecord;
-  workspace: ProvisionedCompanyWorkspace;
-} {
-  companyTenantWorkspaceIds.set(row.id, row.workspace_id);
-  const workspace: ProvisionedCompanyWorkspace = {
-    id: row.provisioned_workspace_id,
-    name: row.provisioned_workspace_name,
-    slug: row.provisioned_workspace_slug,
-    createdAt: toIso(row.created_at) ?? nowIso(),
-    updatedAt: toIso(row.updated_at) ?? nowIso(),
-  };
-
-  const company: ProvisionedCompanyRecord = {
-    id: row.id,
-    userId: row.user_id,
-    name: row.name,
-    externalCompanyId: row.external_company_id ?? undefined,
-    workspaceId: row.provisioned_workspace_id,
-    teamId: row.team_id,
-    idempotencyKey: row.idempotency_key,
-    budgetMonthlyUsd: toNumber(row.budget_monthly_usd),
-    allocatedBudgetMonthlyUsd: toNumber(row.allocated_budget_monthly_usd),
-    remainingBudgetMonthlyUsd: toNumber(row.remaining_budget_monthly_usd),
-    createdAt: toIso(row.created_at) ?? nowIso(),
-    updatedAt: toIso(row.updated_at) ?? nowIso(),
-  };
-
-  return { company, workspace };
-}
-
-async function ensureWorkspaceHydrated(workspaceId: string | undefined, userId: string): Promise<void> {
-  if (!isPostgresConfigured()) {
-    return;
-  }
-
-  const resolvedWorkspaceId = requireWorkspaceIdForPersistence(workspaceId);
-  const cacheKey = workspaceUserKey(resolvedWorkspaceId, userId);
-  if (hydratedWorkspaceUsers.has(cacheKey)) {
-    return;
-  }
-
-  // Phase 4.2: also hydrate tasks / heartbeats / spend / alerts so they
-  // survive a process restart. Same RLS-bound context, separate repository
-  // calls so the SQL stays factored alongside the rest of execution-state PG.
-  const [hydratedTasks, hydratedHeartbeats, hydratedSpend, hydratedAlerts] = await Promise.all([
-    controlPlaneRepository.listTasks({ workspaceId: resolvedWorkspaceId, userId }),
-    controlPlaneRepository.listHeartbeats({ workspaceId: resolvedWorkspaceId, userId }),
-    controlPlaneRepository.listSpendEntries({ workspaceId: resolvedWorkspaceId, userId }),
-    controlPlaneRepository.listBudgetAlerts({ workspaceId: resolvedWorkspaceId, userId }),
-  ]);
-
-  await withWorkspaceContext(
-    getPostgresPool(),
-    { workspaceId: resolvedWorkspaceId, userId },
-    async (client) => {
-      const [teamResult, agentResult, executionResult, companyResult] = await Promise.all([
-        client.query<PersistedTeamRow>(
-          `SELECT id, workspace_id, user_id, company_id, name, description, workflow_template_id,
-                  workflow_template_name, deployment_mode, status, paused_by_company_lifecycle,
-                  restart_count, budget_monthly_usd, tool_budget_ceilings, alert_thresholds,
-                  orchestration_enabled, last_heartbeat_at, created_at, updated_at
-             FROM control_plane_teams
-            WHERE user_id = $1`,
-          [userId]
-        ),
-        client.query<PersistedAgentRow>(
-          `SELECT id, workspace_id, user_id, team_id, name, role_key, workflow_step_id,
-                  workflow_step_kind, model, instructions, budget_monthly_usd, reporting_to_agent_id,
-                  skills, schedule, status, paused_by_company_lifecycle, current_execution_id,
-                  last_heartbeat_at, last_heartbeat_status, created_at, updated_at
-             FROM control_plane_agents
-            WHERE user_id = $1`,
-          [userId]
-        ),
-        client.query<PersistedExecutionRow>(
-          `SELECT id, workspace_id, user_id, team_id, agent_id, source_run_id,
-                  source_workflow_step_id, source_workflow_step_name, task_id, status,
-                  applied_skills, metadata, summary, cost_usd, requested_at, started_at,
-                  completed_at, last_heartbeat_at, restart_count
-             FROM control_plane_executions
-            WHERE user_id = $1`,
-          [userId]
-        ),
-        client.query<PersistedProvisionedCompanyRow>(
-          `SELECT id, workspace_id, user_id, name, external_company_id,
-                  provisioned_workspace_id, provisioned_workspace_name, provisioned_workspace_slug,
-                  team_id, idempotency_key, budget_monthly_usd, allocated_budget_monthly_usd,
-                  remaining_budget_monthly_usd, created_at, updated_at
-             FROM provisioned_companies
-            WHERE user_id = $1`,
-          [userId]
-        ),
-      ]);
-
-      teamResult.rows.forEach((row) => {
-        teams.set(row.id, hydrateTeam(row));
-      });
-      agentResult.rows.forEach((row) => {
-        agents.set(row.id, hydrateAgent(row));
-      });
-      executionResult.rows.forEach((row) => {
-        executions.set(row.id, hydrateExecution(row));
-      });
-      companyResult.rows.forEach((row) => {
-        const { company, workspace } = hydrateProvisionedCompany(row);
-        companies.set(company.id, company);
-        companyWorkspaces.set(workspace.id, workspace);
-        companyIdempotencyIndex.set(`${company.userId}:${company.idempotencyKey}`, {
-          companyId: company.id,
-          fingerprint: "",
-        });
-      });
-    }
-  );
-
-  hydratedTasks.forEach((task) => {
-    tasks.set(task.id, task);
-  });
-  hydratedHeartbeats.forEach((heartbeat) => {
-    heartbeats.set(heartbeat.id, heartbeat);
-  });
-  hydratedSpend.forEach((entry) => {
-    spendEntries.set(entry.id, entry);
-  });
-  hydratedAlerts.forEach((alert) => {
-    const dedupeKey = budgetAlertDedupeKey({
-      userId: alert.userId,
-      teamId: alert.teamId,
-      period: periodKeyFromIso(alert.recordedAt),
-      scope: alert.scope,
-      agentId: alert.agentId,
-      toolName: alert.toolName,
-      threshold: alert.threshold,
-    });
-    budgetAlerts.set(dedupeKey, alert);
-  });
-
-  hydratedWorkspaceUsers.add(cacheKey);
-}
-
-async function upsertTeamRow(team: ControlPlaneTeam, workspaceId: string, client?: PoolClient): Promise<void> {
-  const companyId = teamCompanyIds.get(team.id) ?? null;
-  await (client ?? getPostgresPool()).query(
-    `INSERT INTO control_plane_teams (
-       id, workspace_id, user_id, company_id, name, description, workflow_template_id,
-       workflow_template_name, deployment_mode, status, paused_by_company_lifecycle,
-       restart_count, budget_monthly_usd, tool_budget_ceilings, alert_thresholds,
-       orchestration_enabled, last_heartbeat_at, created_at, updated_at
-     ) VALUES (
-       $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11,
-       $12, $13, $14::jsonb, $15::jsonb, $16, $17, $18, $19
-     )
-     ON CONFLICT (id) DO UPDATE
-       SET company_id = EXCLUDED.company_id,
-           name = EXCLUDED.name,
-           description = EXCLUDED.description,
-           workflow_template_id = EXCLUDED.workflow_template_id,
-           workflow_template_name = EXCLUDED.workflow_template_name,
-           deployment_mode = EXCLUDED.deployment_mode,
-           status = EXCLUDED.status,
-           paused_by_company_lifecycle = EXCLUDED.paused_by_company_lifecycle,
-           restart_count = EXCLUDED.restart_count,
-           budget_monthly_usd = EXCLUDED.budget_monthly_usd,
-           tool_budget_ceilings = EXCLUDED.tool_budget_ceilings,
-           alert_thresholds = EXCLUDED.alert_thresholds,
-           orchestration_enabled = EXCLUDED.orchestration_enabled,
-           last_heartbeat_at = EXCLUDED.last_heartbeat_at,
-           updated_at = EXCLUDED.updated_at`,
-    [
-      team.id,
-      workspaceId,
-      team.userId,
-      companyId,
-      team.name,
-      team.description ?? null,
-      team.workflowTemplateId ?? null,
-      team.workflowTemplateName ?? null,
-      team.deploymentMode,
-      team.status,
-      team.pausedByCompanyLifecycle ?? false,
-      team.restartCount,
-      team.budgetMonthlyUsd,
-      JSON.stringify(team.toolBudgetCeilings),
-      JSON.stringify(team.alertThresholds),
-      team.orchestrationEnabled,
-      team.lastHeartbeatAt ?? null,
-      team.createdAt,
-      team.updatedAt,
-    ]
-  );
-}
-
-async function upsertAgentRow(agent: ControlPlaneAgent, workspaceId: string, client?: PoolClient): Promise<void> {
-  await (client ?? getPostgresPool()).query(
-    `INSERT INTO control_plane_agents (
-       id, workspace_id, user_id, team_id, name, role_key, workflow_step_id, workflow_step_kind,
-       model, instructions, budget_monthly_usd, reporting_to_agent_id, skills, schedule,
-       status, paused_by_company_lifecycle, current_execution_id, last_heartbeat_at,
-       last_heartbeat_status, created_at, updated_at
-     ) VALUES (
-       $1, $2, $3, $4, $5, $6, $7, $8,
-       $9, $10, $11, $12, $13::jsonb, $14::jsonb,
-       $15, $16, $17, $18, $19, $20, $21
-     )
-     ON CONFLICT (id) DO UPDATE
-       SET team_id = EXCLUDED.team_id,
-           name = EXCLUDED.name,
-           role_key = EXCLUDED.role_key,
-           workflow_step_id = EXCLUDED.workflow_step_id,
-           workflow_step_kind = EXCLUDED.workflow_step_kind,
-           model = EXCLUDED.model,
-           instructions = EXCLUDED.instructions,
-           budget_monthly_usd = EXCLUDED.budget_monthly_usd,
-           reporting_to_agent_id = EXCLUDED.reporting_to_agent_id,
-           skills = EXCLUDED.skills,
-           schedule = EXCLUDED.schedule,
-           status = EXCLUDED.status,
-           paused_by_company_lifecycle = EXCLUDED.paused_by_company_lifecycle,
-           current_execution_id = EXCLUDED.current_execution_id,
-           last_heartbeat_at = EXCLUDED.last_heartbeat_at,
-           last_heartbeat_status = EXCLUDED.last_heartbeat_status,
-           updated_at = EXCLUDED.updated_at`,
-    [
-      agent.id,
-      workspaceId,
-      agent.userId,
-      agent.teamId,
-      agent.name,
-      agent.roleKey,
-      agent.workflowStepId ?? null,
-      agent.workflowStepKind ?? null,
-      agent.model ?? null,
-      agent.instructions,
-      agent.budgetMonthlyUsd,
-      agent.reportingToAgentId ?? null,
-      JSON.stringify(agent.skills),
-      JSON.stringify(agent.schedule),
-      agent.status,
-      agent.pausedByCompanyLifecycle ?? false,
-      agent.currentExecutionId ?? null,
-      agent.lastHeartbeatAt ?? null,
-      agent.lastHeartbeatStatus ?? null,
-      agent.createdAt,
-      agent.updatedAt,
-    ]
-  );
-}
-
-async function upsertExecutionRow(
-  execution: ControlPlaneExecution,
-  workspaceId: string,
-  client?: PoolClient
-): Promise<void> {
-  await (client ?? getPostgresPool()).query(
-    `INSERT INTO control_plane_executions (
-       id, workspace_id, user_id, team_id, agent_id, source_run_id, source_workflow_step_id,
-       source_workflow_step_name, task_id, status, applied_skills, metadata, summary, cost_usd,
-       requested_at, started_at, completed_at, last_heartbeat_at, restart_count
-     ) VALUES (
-       $1, $2, $3, $4, $5, $6, $7,
-       $8, $9, $10, $11::jsonb, $12::jsonb, $13, $14,
-       $15, $16, $17, $18, $19
-     )
-     ON CONFLICT (id) DO UPDATE
-       SET team_id = EXCLUDED.team_id,
-           agent_id = EXCLUDED.agent_id,
-           source_run_id = EXCLUDED.source_run_id,
-           source_workflow_step_id = EXCLUDED.source_workflow_step_id,
-           source_workflow_step_name = EXCLUDED.source_workflow_step_name,
-           task_id = EXCLUDED.task_id,
-           status = EXCLUDED.status,
-           applied_skills = EXCLUDED.applied_skills,
-           metadata = EXCLUDED.metadata,
-           summary = EXCLUDED.summary,
-           cost_usd = EXCLUDED.cost_usd,
-           requested_at = EXCLUDED.requested_at,
-           started_at = EXCLUDED.started_at,
-           completed_at = EXCLUDED.completed_at,
-           last_heartbeat_at = EXCLUDED.last_heartbeat_at,
-           restart_count = EXCLUDED.restart_count`,
-    [
-      execution.id,
-      workspaceId,
-      execution.userId,
-      execution.teamId,
-      execution.agentId,
-      execution.sourceRunId,
-      execution.sourceWorkflowStepId,
-      execution.sourceWorkflowStepName,
-      execution.taskId ?? null,
-      execution.status,
-      JSON.stringify(execution.appliedSkills),
-      execution.metadata ? JSON.stringify(execution.metadata) : null,
-      execution.summary ?? null,
-      execution.costUsd ?? null,
-      execution.requestedAt,
-      execution.startedAt ?? null,
-      execution.completedAt ?? null,
-      execution.lastHeartbeatAt ?? null,
-      execution.restartCount,
-    ]
-  );
-}
-
-async function upsertProvisionedCompanyRow(input: {
-  company: ProvisionedCompanyRecord;
-  workspace: ProvisionedCompanyWorkspace;
-  tenantWorkspaceId: string;
-  client?: PoolClient;
-}): Promise<void> {
-  companyTenantWorkspaceIds.set(input.company.id, input.tenantWorkspaceId);
-  await (input.client ?? getPostgresPool()).query(
-    `INSERT INTO provisioned_companies (
-       id, workspace_id, user_id, name, external_company_id, provisioned_workspace_id,
-       provisioned_workspace_name, provisioned_workspace_slug, team_id, idempotency_key,
-       budget_monthly_usd, allocated_budget_monthly_usd, remaining_budget_monthly_usd,
-       created_at, updated_at
-     ) VALUES (
-       $1, $2, $3, $4, $5, $6,
-       $7, $8, $9, $10, $11, $12, $13,
-       $14, $15
-     )
-     ON CONFLICT (id) DO UPDATE
-       SET name = EXCLUDED.name,
-           external_company_id = EXCLUDED.external_company_id,
-           provisioned_workspace_name = EXCLUDED.provisioned_workspace_name,
-           provisioned_workspace_slug = EXCLUDED.provisioned_workspace_slug,
-           team_id = EXCLUDED.team_id,
-           idempotency_key = EXCLUDED.idempotency_key,
-           budget_monthly_usd = EXCLUDED.budget_monthly_usd,
-           allocated_budget_monthly_usd = EXCLUDED.allocated_budget_monthly_usd,
-           remaining_budget_monthly_usd = EXCLUDED.remaining_budget_monthly_usd,
-           updated_at = EXCLUDED.updated_at`,
-    [
-      input.company.id,
-      input.tenantWorkspaceId,
-      input.company.userId,
-      input.company.name,
-      input.company.externalCompanyId ?? null,
-      input.workspace.id,
-      input.workspace.name,
-      input.workspace.slug,
-      input.company.teamId,
-      input.company.idempotencyKey,
-      input.company.budgetMonthlyUsd,
-      input.company.allocatedBudgetMonthlyUsd,
-      input.company.remainingBudgetMonthlyUsd,
-      input.company.createdAt,
-      input.company.updatedAt,
-    ]
-  );
 }
 
 function listSpendEntriesForPeriod(userId: string, period: string): ControlPlaneSpendEntry[] {
@@ -1221,7 +399,7 @@ function buildTeamSpendSnapshot(team: ControlPlaneTeam): TeamSpendSnapshot {
   };
 }
 
-async function upsertBudgetAlert(input: {
+function upsertBudgetAlert(input: {
   team: ControlPlaneTeam;
   threshold: number;
   scope: "team" | "agent" | "tool";
@@ -1229,26 +407,26 @@ async function upsertBudgetAlert(input: {
   budgetUsd: number;
   agentId?: string;
   toolName?: string;
-}): Promise<void> {
+}): void {
   if (input.budgetUsd <= 0 || input.spentUsd / input.budgetUsd < input.threshold) {
     return;
   }
 
-  const dedupeKey = budgetAlertDedupeKey({
-    userId: input.team.userId,
-    teamId: input.team.id,
-    period: currentPeriodKey(),
-    scope: input.scope,
-    agentId: input.agentId,
-    toolName: input.toolName,
-    threshold: input.threshold,
-  });
+  const dedupeKey = [
+    input.team.userId,
+    input.team.id,
+    currentPeriodKey(),
+    input.scope,
+    input.agentId ?? "",
+    input.toolName ?? "",
+    input.threshold,
+  ].join(":");
 
   if (budgetAlerts.has(dedupeKey)) {
     return;
   }
 
-  const alert: ControlPlaneBudgetAlert = {
+  budgetAlerts.set(dedupeKey, {
     id: randomUUID(),
     userId: input.team.userId,
     teamId: input.team.id,
@@ -1259,18 +437,7 @@ async function upsertBudgetAlert(input: {
     budgetUsd: Number(input.budgetUsd.toFixed(2)),
     spentUsd: Number(input.spentUsd.toFixed(2)),
     recordedAt: nowIso(),
-  };
-  budgetAlerts.set(dedupeKey, alert);
-
-  if (isPostgresConfigured()) {
-    const workspaceId = teamWorkspaceIds.get(input.team.id);
-    if (workspaceId) {
-      await controlPlaneRepository.upsertBudgetAlert(
-        { workspaceId, userId: input.team.userId },
-        alert
-      );
-    }
-  }
+  });
 }
 
 function pauseExecutionForBudget(agentId: string, executionId?: string): void {
@@ -1297,34 +464,32 @@ function pauseExecutionForBudget(agentId: string, executionId?: string): void {
   }
 }
 
-async function applyBudgetPolicies(team: ControlPlaneTeam, agentId: string, executionId?: string): Promise<void> {
+function applyBudgetPolicies(team: ControlPlaneTeam, agentId: string, executionId?: string): void {
   const snapshot = buildTeamSpendSnapshot(team);
   const agentSnapshot = snapshot.agents.find((entry) => entry.agentId === agentId);
 
-  for (const threshold of snapshot.team.alertThresholdsTriggered) {
-    await upsertBudgetAlert({
+  snapshot.team.alertThresholdsTriggered.forEach((threshold) => {
+    upsertBudgetAlert({
       team,
       threshold,
       scope: "team",
       spentUsd: snapshot.team.spentUsd,
       budgetUsd: snapshot.team.budgetUsd,
     });
-  }
-  if (agentSnapshot) {
-    for (const threshold of agentSnapshot.alertThresholdsTriggered) {
-      await upsertBudgetAlert({
-        team,
-        threshold,
-        scope: "agent",
-        agentId,
-        spentUsd: agentSnapshot.spentUsd,
-        budgetUsd: agentSnapshot.budgetUsd,
-      });
-    }
-  }
-  for (const toolSnapshot of snapshot.tools) {
-    for (const threshold of toolSnapshot.alertThresholdsTriggered) {
-      await upsertBudgetAlert({
+  });
+  agentSnapshot?.alertThresholdsTriggered.forEach((threshold) => {
+    upsertBudgetAlert({
+      team,
+      threshold,
+      scope: "agent",
+      agentId,
+      spentUsd: agentSnapshot.spentUsd,
+      budgetUsd: agentSnapshot.budgetUsd,
+    });
+  });
+  snapshot.tools.forEach((toolSnapshot) => {
+    toolSnapshot.alertThresholdsTriggered.forEach((threshold) => {
+      upsertBudgetAlert({
         team,
         threshold,
         scope: "tool",
@@ -1333,8 +498,8 @@ async function applyBudgetPolicies(team: ControlPlaneTeam, agentId: string, exec
         budgetUsd: toolSnapshot.budgetUsd,
         agentId,
       });
-    }
-  }
+    });
+  });
 
   if (snapshot.team.budgetUsd > 0 && snapshot.team.spentUsd >= snapshot.team.budgetUsd) {
     team.status = "paused";
@@ -1381,7 +546,6 @@ function assertExecutionAllowed(team: ControlPlaneTeam, agent: ControlPlaneAgent
 }
 
 function createTeamRecord(input: {
-  workspaceId?: string;
   userId: string;
   name: string;
   description?: string;
@@ -1392,9 +556,7 @@ function createTeamRecord(input: {
   toolBudgetCeilings?: Record<string, number>;
   alertThresholds?: number[];
   orchestrationEnabled?: boolean;
-},
-  persist = true
-): ControlPlaneTeam {
+}): ControlPlaneTeam {
   const timestamp = nowIso();
   const team: ControlPlaneTeam = {
     id: randomUUID(),
@@ -1413,19 +575,11 @@ function createTeamRecord(input: {
     createdAt: timestamp,
     updatedAt: timestamp,
   };
-  if (persist) {
-    teams.set(team.id, team);
-  }
-  if (input.workspaceId) {
-    teamWorkspaceIds.set(team.id, input.workspaceId);
-  }
+  teams.set(team.id, team);
   return team;
 }
 
-function createAgentRecord(
-  input: Omit<ControlPlaneAgent, "id" | "createdAt" | "updatedAt">,
-  persist = true
-): ControlPlaneAgent {
+function createAgentRecord(input: Omit<ControlPlaneAgent, "id" | "createdAt" | "updatedAt">): ControlPlaneAgent {
   const timestamp = nowIso();
   const agent: ControlPlaneAgent = {
     ...input,
@@ -1434,9 +588,7 @@ function createAgentRecord(
     createdAt: timestamp,
     updatedAt: timestamp,
   };
-  if (persist) {
-    agents.set(agent.id, agent);
-  }
+  agents.set(agent.id, agent);
   return agent;
 }
 
@@ -1490,10 +642,6 @@ function wasExecutionRequestedBeforePause(requestedAt: string, pausedAt?: string
   return new Date(requestedAt).getTime() <= new Date(pausedAt).getTime();
 }
 export const controlPlaneStore = {
-  async ensureWorkspaceHydrated(workspaceId: string | undefined, userId: string): Promise<void> {
-    await ensureWorkspaceHydrated(workspaceId, userId);
-  },
-
   listSkills(): ControlPlaneSkillDefinition[] {
     return SKILL_CATALOG.map((skill) => ({ ...skill }));
   },
@@ -1505,8 +653,7 @@ export const controlPlaneStore = {
     }));
   },
 
-  async provisionCompanyWorkspace(input: {
-    workspaceId?: string;
+  provisionCompanyWorkspace(input: {
     userId: string;
     name: string;
     workspaceName?: string;
@@ -1516,8 +663,7 @@ export const controlPlaneStore = {
     orchestrationEnabled?: boolean;
     secretBindings: Record<string, string>;
     agents: CompanyProvisioningAgentInput[];
-  }): Promise<CompanyProvisioningResult> {
-    await ensureWorkspaceHydrated(input.workspaceId, input.userId);
+  }): CompanyProvisioningResult {
     const normalizedName = input.name.trim();
     const normalizedWorkspaceName = input.workspaceName?.trim() || `${normalizedName} Workspace`;
     const normalizedIdempotencyKey = input.idempotencyKey.trim();
@@ -1534,7 +680,7 @@ export const controlPlaneStore = {
     const idempotencyIndexKey = `${input.userId}:${normalizedIdempotencyKey}`;
     const existingProvisioning = companyIdempotencyIndex.get(idempotencyIndexKey);
     if (existingProvisioning) {
-      if (existingProvisioning.fingerprint && existingProvisioning.fingerprint !== fingerprint) {
+      if (existingProvisioning.fingerprint !== fingerprint) {
         throw new Error("idempotency_conflict");
       }
 
@@ -1545,23 +691,12 @@ export const controlPlaneStore = {
         throw new Error("idempotency_target_missing");
       }
 
-      const replaySummaries = isPostgresConfigured()
-        ? await secretsRepository.listSecretSummaries(
-            {
-              workspaceId: requireWorkspaceIdForPersistence(input.workspaceId),
-              userId: input.userId,
-              actorUserId: input.userId,
-            },
-            company.id
-          )
-        : buildCompanySecretSummaries(companySecretBindings.get(company.id) ?? {});
-
       return {
         company: { ...company },
         workspace: { ...workspace },
         team: { ...team },
         agents: this.listAgents(team.id, input.userId),
-        secretBindings: replaySummaries,
+        secretBindings: buildCompanySecretSummaries(companySecretBindings.get(company.id) ?? {}),
         availableSkills: this.listSkills(),
         idempotentReplay: true,
       };
@@ -1590,14 +725,13 @@ export const controlPlaneStore = {
         : 0;
 
     const team = createTeamRecord({
-      workspaceId: input.workspaceId,
       userId: input.userId,
       name: normalizedWorkspaceName,
       description: `Provisioned company workspace for ${normalizedName}`,
       deploymentMode: "continuous_agents",
       budgetMonthlyUsd: input.budgetMonthlyUsd,
       orchestrationEnabled: input.orchestrationEnabled ?? true,
-    }, false);
+    });
 
     const provisionedAgents = input.agents.map((agentInput, index) => {
       const roleTemplate = resolvedRoleTemplates[index];
@@ -1616,7 +750,7 @@ export const controlPlaneStore = {
         skills: mergeSkills(roleTemplate.defaultSkills, agentInput.skills),
         schedule: { type: "manual" },
         status: "active",
-      }, false);
+      });
     });
 
     const allocatedBudgetMonthlyUsd = Number(
@@ -1649,39 +783,10 @@ export const controlPlaneStore = {
       updatedAt: timestamp,
     };
 
-    teams.set(team.id, team);
-    provisionedAgents.forEach((agent) => {
-      agents.set(agent.id, agent);
-    });
     companies.set(company.id, company);
     companyWorkspaces.set(workspace.id, workspace);
-    if (!isPostgresConfigured()) {
-      companySecretBindings.set(company.id, { ...input.secretBindings });
-    }
+    companySecretBindings.set(company.id, { ...input.secretBindings });
     companyIdempotencyIndex.set(idempotencyIndexKey, { companyId: company.id, fingerprint });
-    teamCompanyIds.set(team.id, company.id);
-
-    if (isPostgresConfigured()) {
-      const workspaceId = requireWorkspaceIdForPersistence(input.workspaceId);
-      await withWorkspaceContext(getPostgresPool(), { workspaceId, userId: input.userId }, async (client) => {
-        await upsertTeamRow(team, workspaceId, client);
-        for (const agent of provisionedAgents) {
-          await upsertAgentRow(agent, workspaceId, client);
-        }
-        await upsertProvisionedCompanyRow({
-          company,
-          workspace,
-          tenantWorkspaceId: workspaceId,
-          client,
-        });
-      });
-      await secretsRepository.setSecrets(
-        { workspaceId, userId: input.userId, actorUserId: input.userId },
-        company.id,
-        input.secretBindings
-      );
-      hydratedWorkspaceUsers.add(workspaceUserKey(workspaceId, input.userId));
-    }
 
     return {
       company: { ...company },
@@ -1694,8 +799,7 @@ export const controlPlaneStore = {
     };
   },
 
-  async createTeam(input: {
-    workspaceId?: string;
+  createTeam(input: {
     userId: string;
     name: string;
     description?: string;
@@ -1706,81 +810,43 @@ export const controlPlaneStore = {
     toolBudgetCeilings?: Record<string, number>;
     alertThresholds?: number[];
     orchestrationEnabled?: boolean;
-  }): Promise<ControlPlaneTeam> {
-    await ensureWorkspaceHydrated(input.workspaceId, input.userId);
-    const team = createTeamRecord(input);
-    if (isPostgresConfigured()) {
-      const workspaceId = requireWorkspaceIdForPersistence(input.workspaceId);
-      await withWorkspaceContext(getPostgresPool(), { workspaceId, userId: input.userId }, async (client) => {
-        await upsertTeamRow(team, workspaceId, client);
-      });
-      hydratedWorkspaceUsers.add(workspaceUserKey(workspaceId, input.userId));
-    }
-    return team;
+  }): ControlPlaneTeam {
+    return createTeamRecord(input);
   },
 
-  listTeams(userId: string, workspaceId?: string): ControlPlaneTeam[] {
+  listTeams(userId: string): ControlPlaneTeam[] {
     return Array.from(teams.values())
-      .filter((team) => team.userId === userId && matchesWorkspace(team.id, workspaceId))
+      .filter((team) => team.userId === userId)
       .sort((left, right) => left.createdAt.localeCompare(right.createdAt));
   },
 
-  getTeam(teamId: string, userId: string, workspaceId?: string): ControlPlaneTeam | undefined {
-    const team = getTeamOwnedByUser(teamId, userId);
-    if (!team || !matchesWorkspace(team.id, workspaceId)) {
-      return undefined;
-    }
-    return team;
+  getTeam(teamId: string, userId: string): ControlPlaneTeam | undefined {
+    return getTeamOwnedByUser(teamId, userId);
   },
 
-  getMissionState(teamId: string, userId: string, workspaceId?: string): ControlPlaneMissionState | undefined {
-    const team = getTeamOwnedByUser(teamId, userId);
-    if (!team || !matchesWorkspace(team.id, workspaceId)) {
-      return undefined;
-    }
-
-    return buildMissionState(team, userId, workspaceId);
-  },
-
-  listAgents(teamId: string, userId: string, workspaceId?: string): ControlPlaneAgent[] {
-    if (!matchesWorkspace(teamId, workspaceId)) {
-      return [];
-    }
+  listAgents(teamId: string, userId: string): ControlPlaneAgent[] {
     return listAgentsForTeam(teamId, userId);
   },
 
-  listAllAgents(userId: string, workspaceId?: string): ControlPlaneAgent[] {
+  listAllAgents(userId: string): ControlPlaneAgent[] {
     return Array.from(agents.values())
-      .filter((agent) => agent.userId === userId && matchesWorkspace(agent.teamId, workspaceId))
+      .filter((agent) => agent.userId === userId)
       .sort((left, right) => left.createdAt.localeCompare(right.createdAt));
   },
 
-  getAgent(agentId: string, userId: string, workspaceId?: string): ControlPlaneAgent | undefined {
-    const agent = getAgentOwnedByUser(agentId, userId);
-    if (!agent || !matchesWorkspace(agent.teamId, workspaceId)) {
-      return undefined;
-    }
-    return agent;
+  getAgent(agentId: string, userId: string): ControlPlaneAgent | undefined {
+    return getAgentOwnedByUser(agentId, userId);
   },
 
-  listExecutions(userId: string, teamId?: string, workspaceId?: string): ControlPlaneExecution[] {
+  listExecutions(userId: string, teamId?: string): ControlPlaneExecution[] {
     return Array.from(executions.values())
-      .filter((execution) => {
-        if (execution.userId !== userId) return false;
-        if (teamId && execution.teamId !== teamId) return false;
-        return matchesWorkspace(execution.teamId, workspaceId);
-      })
+      .filter((execution) => execution.userId === userId && (!teamId || execution.teamId === teamId))
       .sort((left, right) => left.requestedAt.localeCompare(right.requestedAt));
   },
 
-  listAgentExecutions(agentId: string, userId: string, workspaceId?: string): ControlPlaneExecution[] {
+  listAgentExecutions(agentId: string, userId: string): ControlPlaneExecution[] {
     return Array.from(executions.values())
-      .filter(
-        (execution) =>
-          execution.userId === userId &&
-          execution.agentId === agentId &&
-          matchesWorkspace(execution.teamId, workspaceId)
-      )
+      .filter((execution) => execution.userId === userId && execution.agentId === agentId)
       .sort((left, right) => left.requestedAt.localeCompare(right.requestedAt));
   },
 
@@ -1814,10 +880,7 @@ export const controlPlaneStore = {
       .sort((left, right) => left.recordedAt.localeCompare(right.recordedAt));
   },
 
-  getTeamSpendSnapshot(teamId: string, userId: string, workspaceId?: string): TeamSpendSnapshot | undefined {
-    if (!matchesWorkspace(teamId, workspaceId)) {
-      return undefined;
-    }
+  getTeamSpendSnapshot(teamId: string, userId: string): TeamSpendSnapshot | undefined {
     const team = getTeamOwnedByUser(teamId, userId);
     if (!team) {
       return undefined;
@@ -1825,8 +888,7 @@ export const controlPlaneStore = {
     return buildTeamSpendSnapshot(team);
   },
 
-  async deployWorkflowAsTeam(input: {
-    workspaceId?: string;
+  deployWorkflowAsTeam(input: {
     userId: string;
     template: WorkflowTemplate;
     teamName?: string;
@@ -1834,14 +896,12 @@ export const controlPlaneStore = {
     toolBudgetCeilings?: Record<string, number>;
     alertThresholds?: number[];
     defaultIntervalMinutes?: number;
-  }): Promise<ControlPlaneDeployment> {
-    await ensureWorkspaceHydrated(input.workspaceId, input.userId);
+  }): ControlPlaneDeployment {
     const actionableSteps = input.template.steps.filter(
       (step) => !["trigger", "cron_trigger", "interval_trigger", "output"].includes(step.kind)
     );
     const teamBudget = input.budgetMonthlyUsd ?? 0;
     const team = createTeamRecord({
-      workspaceId: input.workspaceId,
       userId: input.userId,
       name: input.teamName?.trim() || `${input.template.name} Control Plane`,
       description: `Agent team deployed from workflow template ${input.template.name}`,
@@ -1902,17 +962,6 @@ export const controlPlaneStore = {
       });
     }
 
-    if (isPostgresConfigured()) {
-      const workspaceId = requireWorkspaceIdForPersistence(input.workspaceId);
-      await withWorkspaceContext(getPostgresPool(), { workspaceId, userId: input.userId }, async (client) => {
-        await upsertTeamRow(team, workspaceId, client);
-        for (const agent of this.listAgents(team.id, input.userId)) {
-          await upsertAgentRow(agent, workspaceId, client);
-        }
-      });
-      hydratedWorkspaceUsers.add(workspaceUserKey(workspaceId, input.userId));
-    }
-
     return {
       team,
       agents: this.listAgents(team.id, input.userId),
@@ -1926,14 +975,12 @@ export const controlPlaneStore = {
     };
   },
 
-  async ensureRuntimeTeamForStep(input: {
-    workspaceId?: string;
+  ensureRuntimeTeamForStep(input: {
     userId: string;
     step: WorkflowStep;
     teamName?: string;
     actor: string;
-  }): Promise<{ team: ControlPlaneTeam; agent: ControlPlaneAgent }> {
-    await ensureWorkspaceHydrated(input.workspaceId, input.userId);
+  }): { team: ControlPlaneTeam; agent: ControlPlaneAgent } {
     const requestedTeamName = input.teamName?.trim() || `${input.step.name} Runtime Team`;
     let team = Array.from(teams.values()).find(
       (candidate) =>
@@ -1944,7 +991,6 @@ export const controlPlaneStore = {
 
     if (!team) {
       team = createTeamRecord({
-        workspaceId: input.workspaceId,
         userId: input.userId,
         name: requestedTeamName,
         description: `Runtime deployment bridge for workflow step ${input.step.name}`,
@@ -1964,25 +1010,14 @@ export const controlPlaneStore = {
       });
     }
 
-    if (isPostgresConfigured()) {
-      const workspaceId = requireWorkspaceIdForPersistence(input.workspaceId);
-      await withWorkspaceContext(getPostgresPool(), { workspaceId, userId: input.userId }, async (client) => {
-        await upsertTeamRow(team!, workspaceId, client);
-        await upsertAgentRow(agent!, workspaceId, client);
-      });
-      hydratedWorkspaceUsers.add(workspaceUserKey(workspaceId, input.userId));
-    }
-
     return { team, agent };
   },
 
-  async updateTeamLifecycle(input: {
-    workspaceId?: string;
+  updateTeamLifecycle(input: {
     teamId: string;
     userId: string;
     action: ControlPlaneLifecycleAction;
-  }): Promise<ControlPlaneTeam> {
-    await ensureWorkspaceHydrated(input.workspaceId, input.userId);
+  }): ControlPlaneTeam {
     const team = getTeamOwnedByUser(input.teamId, input.userId);
     if (!team) {
       throw new Error("team_not_found");
@@ -2042,30 +1077,15 @@ export const controlPlaneStore = {
     }
 
     teams.set(team.id, team);
-    if (isPostgresConfigured()) {
-      const workspaceId = requireWorkspaceIdForPersistence(input.workspaceId);
-      await withWorkspaceContext(getPostgresPool(), { workspaceId, userId: input.userId }, async (client) => {
-        await upsertTeamRow(team, workspaceId, client);
-        for (const agent of this.listAgents(team.id, input.userId)) {
-          await upsertAgentRow(agent, workspaceId, client);
-        }
-        for (const execution of this.listExecutions(input.userId, team.id)) {
-          await upsertExecutionRow(execution, workspaceId, client);
-        }
-      });
-      hydratedWorkspaceUsers.add(workspaceUserKey(workspaceId, input.userId));
-    }
     return team;
   },
 
-  async updateAgentSkills(input: {
-    workspaceId?: string;
+  updateAgentSkills(input: {
     agentId: string;
     userId: string;
     operation: "assign" | "revoke";
     skills: string[];
-  }): Promise<ControlPlaneAgent> {
-    await ensureWorkspaceHydrated(input.workspaceId, input.userId);
+  }): ControlPlaneAgent {
     const agent = getAgentOwnedByUser(input.agentId, input.userId);
     if (!agent) {
       throw new Error("agent_not_found");
@@ -2092,23 +1112,10 @@ export const controlPlaneStore = {
         execution.lastHeartbeatAt = nowIso();
       });
 
-    if (isPostgresConfigured()) {
-      const workspaceId = requireWorkspaceIdForPersistence(input.workspaceId);
-      await withWorkspaceContext(getPostgresPool(), { workspaceId, userId: input.userId }, async (client) => {
-        await upsertAgentRow(agent, workspaceId, client);
-        for (const execution of this.listExecutions(input.userId, agent.teamId).filter(
-          (candidate) => candidate.agentId === agent.id && candidate.status === "running"
-        )) {
-          await upsertExecutionRow(execution, workspaceId, client);
-        }
-      });
-      hydratedWorkspaceUsers.add(workspaceUserKey(workspaceId, input.userId));
-    }
-
     return agent;
   },
 
-  async createTask(input: {
+  createTask(input: {
     userId: string;
     teamId: string;
     title: string;
@@ -2118,7 +1125,7 @@ export const controlPlaneStore = {
     assignedAgentId?: string;
     metadata?: Record<string, unknown>;
     actor: string;
-  }): Promise<ControlPlaneTask> {
+  }): ControlPlaneTask {
     const team = getTeamOwnedByUser(input.teamId, input.userId);
     if (!team) {
       throw new Error("team_not_found");
@@ -2148,31 +1155,6 @@ export const controlPlaneStore = {
       auditTrail: [buildAuditEvent("created", input.actor, "Task created with status todo")],
     };
     tasks.set(task.id, task);
-    const taskCtx = workspaceContextForTeam(task.teamId, input.userId);
-    if (taskCtx) {
-      await controlPlaneRepository.upsertTask(taskCtx, task);
-    }
-    observabilityStore.record({
-      userId: input.userId,
-      category: "issue",
-      type: "issue.created",
-      actor: inferObservabilityActor(input.actor),
-      subject: {
-        type: "task",
-        id: task.id,
-        label: task.title,
-        parentType: "team",
-        parentId: task.teamId,
-      },
-      summary: `Task created: ${task.title}`,
-      payload: {
-        status: task.status,
-        sourceRunId: task.sourceRunId,
-        sourceWorkflowStepId: task.sourceWorkflowStepId,
-        metadata: task.metadata,
-      },
-      occurredAt: task.createdAt,
-    });
     return task;
   },
 
@@ -2182,11 +1164,11 @@ export const controlPlaneStore = {
       .sort((left, right) => left.createdAt.localeCompare(right.createdAt));
   },
 
-  async checkoutTask(input: {
+  checkoutTask(input: {
     taskId: string;
     userId: string;
     actor: string;
-  }): Promise<ControlPlaneTask> {
+  }): ControlPlaneTask {
     const task = tasks.get(input.taskId);
     if (!task || task.userId !== input.userId) {
       throw new Error("task_not_found");
@@ -2204,79 +1186,26 @@ export const controlPlaneStore = {
       buildAuditEvent("checked_out", input.actor, `Task checked out by ${input.actor}`)
     );
     tasks.set(task.id, task);
-    const taskCtx = workspaceContextForTeam(task.teamId, input.userId);
-    if (taskCtx) {
-      await controlPlaneRepository.upsertTask(taskCtx, task);
-    }
-    observabilityStore.record({
-      userId: input.userId,
-      category: "issue",
-      type: "issue.status_changed",
-      actor: inferObservabilityActor(input.actor),
-      subject: {
-        type: "task",
-        id: task.id,
-        label: task.title,
-        parentType: "team",
-        parentId: task.teamId,
-      },
-      summary: `Task moved to ${task.status}`,
-      payload: {
-        previousStatus: "todo",
-        status: task.status,
-        sourceRunId: task.sourceRunId,
-        sourceWorkflowStepId: task.sourceWorkflowStepId,
-        metadata: task.metadata,
-      },
-      occurredAt: task.updatedAt,
-    });
     return task;
   },
 
-  async updateTaskStatus(input: {
+  updateTaskStatus(input: {
     taskId: string;
     userId: string;
     actor: string;
     status: ControlPlaneTaskStatus;
-  }): Promise<ControlPlaneTask> {
+  }): ControlPlaneTask {
     const task = tasks.get(input.taskId);
     if (!task || task.userId !== input.userId) {
       throw new Error("task_not_found");
     }
 
-    const previousStatus = task.status;
     task.status = input.status;
     task.updatedAt = nowIso();
     task.auditTrail.push(
       buildAuditEvent("status_changed", input.actor, `Task status changed to ${input.status}`)
     );
     tasks.set(task.id, task);
-    const taskCtx = workspaceContextForTeam(task.teamId, input.userId);
-    if (taskCtx) {
-      await controlPlaneRepository.upsertTask(taskCtx, task);
-    }
-    observabilityStore.record({
-      userId: input.userId,
-      category: "issue",
-      type: "issue.status_changed",
-      actor: inferObservabilityActor(input.actor),
-      subject: {
-        type: "task",
-        id: task.id,
-        label: task.title,
-        parentType: "team",
-        parentId: task.teamId,
-      },
-      summary: `Task moved to ${task.status}`,
-      payload: {
-        previousStatus,
-        status: task.status,
-        sourceRunId: task.sourceRunId,
-        sourceWorkflowStepId: task.sourceWorkflowStepId,
-        metadata: task.metadata,
-      },
-      occurredAt: task.updatedAt,
-    });
     return task;
   },
 
@@ -2357,7 +1286,7 @@ export const controlPlaneStore = {
     return companyLifecycleStore.listAudit(userId);
   },
 
-  async recordSpend(input: {
+  recordSpend(input: {
     userId: string;
     teamId: string;
     agentId: string;
@@ -2368,7 +1297,7 @@ export const controlPlaneStore = {
     provider?: string;
     toolName?: string;
     metadata?: Record<string, unknown>;
-  }): Promise<ControlPlaneSpendEntry> {
+  }): ControlPlaneSpendEntry {
     const team = getTeamOwnedByUser(input.teamId, input.userId);
     const agent = getAgentOwnedByUser(input.agentId, input.userId);
     if (!team || !agent || agent.teamId !== team.id) {
@@ -2414,16 +1343,11 @@ export const controlPlaneStore = {
       recordedAt: nowIso(),
     };
     spendEntries.set(entry.id, entry);
-    const spendCtx = workspaceContextForTeam(input.teamId, input.userId);
-    if (spendCtx) {
-      await controlPlaneRepository.insertSpendEntry(spendCtx, entry);
-    }
     applyBudgetPolicies(team, agent.id, input.executionId);
     return entry;
   },
 
   async startAgentExecution(input: {
-    workspaceId?: string;
     userId: string;
     actor: string;
     teamId: string;
@@ -2434,7 +1358,6 @@ export const controlPlaneStore = {
     taskTitle?: string;
     taskDescription?: string;
   }): Promise<{ execution: ControlPlaneExecution; agent: ControlPlaneAgent; task?: ControlPlaneTask }> {
-    await ensureWorkspaceHydrated(input.workspaceId, input.userId);
     if (await companyLifecycleStore.isPaused(input.userId)) {
       throw new Error("company_paused");
     }
@@ -2450,14 +1373,6 @@ export const controlPlaneStore = {
     if (!agent || agent.teamId !== team.id) {
       throw new Error("agent_not_found");
     }
-
-    assertAgentWorkspaceBinding({
-      agentId: agent.id,
-      agentTeamId: agent.teamId,
-      resolvedTeamId: team.id,
-      teamWorkspaceId: teamWorkspaceIds.get(team.id),
-      claimedWorkspaceId: input.workspaceId,
-    });
 
     const teamSnapshot = buildTeamSpendSnapshot(team);
     const agentSnapshot = teamSnapshot.agents.find((entry) => entry.agentId === agent.id);
@@ -2477,7 +1392,7 @@ export const controlPlaneStore = {
 
     const task =
       input.taskTitle && input.taskTitle.trim()
-        ? await this.createTask({
+        ? this.createTask({
             userId: input.userId,
             teamId: team.id,
             title: input.taskTitle.trim(),
@@ -2519,7 +1434,6 @@ export const controlPlaneStore = {
     team.updatedAt = requestedAt;
 
     await this.recordHeartbeat({
-      workspaceId: input.workspaceId,
       userId: input.userId,
       teamId: team.id,
       agentId: agent.id,
@@ -2529,45 +1443,10 @@ export const controlPlaneStore = {
       createdTaskIds: task ? [task.id] : [],
     });
 
-    observabilityStore.record({
-      userId: input.userId,
-      category: "run",
-      type: "run.started",
-      actor: { type: "agent", id: agent.id, label: agent.name },
-      subject: {
-        type: "execution",
-        id: execution.id,
-        label: input.step.name,
-        parentType: "team",
-        parentId: team.id,
-      },
-      summary: `Started workflow step ${input.step.name}`,
-      payload: {
-        status: "running",
-        sourceRunId: input.sourceRunId,
-        workflowStepId: input.step.id,
-        workflowStepName: input.step.name,
-        taskId: task?.id,
-        metadata: input.metadata,
-      },
-      occurredAt: execution.requestedAt,
-    });
-
-    if (isPostgresConfigured()) {
-      const workspaceId = requireWorkspaceIdForPersistence(input.workspaceId);
-      await withWorkspaceContext(getPostgresPool(), { workspaceId, userId: input.userId }, async (client) => {
-        await upsertTeamRow(team, workspaceId, client);
-        await upsertAgentRow(agent, workspaceId, client);
-        await upsertExecutionRow(execution, workspaceId, client);
-      });
-      hydratedWorkspaceUsers.add(workspaceUserKey(workspaceId, input.userId));
-    }
-
     return { execution, agent, task };
   },
 
-  async finalizeAgentExecution(input: {
-    workspaceId?: string;
+  finalizeAgentExecution(input: {
     executionId: string;
     userId: string;
     status: Exclude<ControlPlaneExecutionStatus, "queued" | "running">;
@@ -2581,8 +1460,7 @@ export const controlPlaneStore = {
       toolName?: string;
       metadata?: Record<string, unknown>;
     }>;
-  }): Promise<ControlPlaneExecution> {
-    await ensureWorkspaceHydrated(input.workspaceId, input.userId);
+  }): ControlPlaneExecution {
     const execution = getExecutionOwnedByUser(input.executionId, input.userId);
     if (!execution) {
       throw new Error("execution_not_found");
@@ -2611,8 +1489,8 @@ export const controlPlaneStore = {
     }
 
     if (Array.isArray(input.spendEntries) && input.spendEntries.length > 0) {
-      for (const entry of input.spendEntries) {
-        await this.recordSpend({
+      input.spendEntries.forEach((entry) => {
+        this.recordSpend({
           userId: input.userId,
           teamId: execution.teamId,
           agentId: execution.agentId,
@@ -2624,9 +1502,9 @@ export const controlPlaneStore = {
           toolName: entry.toolName,
           metadata: entry.metadata,
         });
-      }
+      });
     } else if (typeof input.costUsd === "number" && input.costUsd > 0) {
-      await this.recordSpend({
+      this.recordSpend({
         userId: input.userId,
         teamId: execution.teamId,
         agentId: execution.agentId,
@@ -2637,8 +1515,7 @@ export const controlPlaneStore = {
       });
     }
 
-    void this.recordHeartbeat({
-      workspaceId: input.workspaceId,
+    this.recordHeartbeat({
       userId: input.userId,
       teamId: execution.teamId,
       agentId: execution.agentId,
@@ -2649,80 +1526,14 @@ export const controlPlaneStore = {
       completedAt: timestamp,
     });
 
-    observabilityStore.record({
-      userId: input.userId,
-      category: "run",
-      type: `run.${input.status}`,
-      actor: { type: "agent", id: execution.agentId, label: agent?.name },
-      subject: {
-        type: "execution",
-        id: execution.id,
-        label: execution.sourceWorkflowStepName,
-        parentType: "team",
-        parentId: execution.teamId,
-      },
-      summary: input.summary ?? `Execution ${input.status}`,
-      payload: {
-        status: input.status,
-        sourceRunId: execution.sourceRunId,
-        workflowStepId: execution.sourceWorkflowStepId,
-        workflowStepName: execution.sourceWorkflowStepName,
-        taskId: execution.taskId,
-        costUsd: input.costUsd,
-        metadata: execution.metadata,
-      },
-      occurredAt: timestamp,
-    });
-
-    if (input.status === "blocked" || input.status === "failed") {
-      observabilityStore.record({
-        userId: input.userId,
-        category: "alert",
-        type: "alert.triggered",
-        actor: { type: "agent", id: execution.agentId, label: agent?.name },
-        subject: {
-          type: "execution",
-          id: execution.id,
-          label: execution.sourceWorkflowStepName,
-          parentType: "team",
-          parentId: execution.teamId,
-        },
-        summary: input.summary ?? `Execution ${input.status}`,
-        payload: {
-          severity: input.status === "failed" ? "critical" : "warning",
-          code: input.status === "failed" ? "run_failed" : "run_blocked",
-          sourceCategory: "run",
-          sourceId: execution.id,
-          executionId: execution.id,
-        },
-        occurredAt: timestamp,
-      });
-    }
-
-    if (isPostgresConfigured()) {
-      const workspaceId = requireWorkspaceIdForPersistence(input.workspaceId);
-      await withWorkspaceContext(getPostgresPool(), { workspaceId, userId: input.userId }, async (client) => {
-        if (team) {
-          await upsertTeamRow(team, workspaceId, client);
-        }
-        if (agent) {
-          await upsertAgentRow(agent, workspaceId, client);
-        }
-        await upsertExecutionRow(execution, workspaceId, client);
-      });
-      hydratedWorkspaceUsers.add(workspaceUserKey(workspaceId, input.userId));
-    }
-
     return execution;
   },
 
-  async updateExecutionLifecycle(input: {
-    workspaceId?: string;
+  updateExecutionLifecycle(input: {
     executionId: string;
     userId: string;
     action: Extract<ControlPlaneLifecycleAction, "restart" | "stop">;
-  }): Promise<ControlPlaneExecution> {
-    await ensureWorkspaceHydrated(input.workspaceId, input.userId);
+  }): ControlPlaneExecution {
     const execution = getExecutionOwnedByUser(input.executionId, input.userId);
     if (!execution) {
       throw new Error("execution_not_found");
@@ -2740,18 +1551,10 @@ export const controlPlaneStore = {
     }
     execution.lastHeartbeatAt = timestamp;
     executions.set(execution.id, execution);
-    if (isPostgresConfigured()) {
-      const workspaceId = requireWorkspaceIdForPersistence(input.workspaceId);
-      await withWorkspaceContext(getPostgresPool(), { workspaceId, userId: input.userId }, async (client) => {
-        await upsertExecutionRow(execution, workspaceId, client);
-      });
-      hydratedWorkspaceUsers.add(workspaceUserKey(workspaceId, input.userId));
-    }
     return execution;
   },
 
   async recordHeartbeat(input: {
-    workspaceId?: string;
     userId: string;
     teamId: string;
     agentId: string;
@@ -2770,7 +1573,6 @@ export const controlPlaneStore = {
     createdTaskIds?: string[];
     completedAt?: string;
   }): Promise<AgentHeartbeatRecord> {
-    await ensureWorkspaceHydrated(input.workspaceId, input.userId);
     const companyState = await companyLifecycleStore.getState(input.userId);
     const team = getTeamOwnedByUser(input.teamId, input.userId);
     const agent = getAgentOwnedByUser(input.agentId, input.userId);
@@ -2824,8 +1626,8 @@ export const controlPlaneStore = {
     heartbeats.set(heartbeat.id, heartbeat);
 
     if (Array.isArray(input.spendEntries) && input.spendEntries.length > 0) {
-      for (const entry of input.spendEntries) {
-        await this.recordSpend({
+      input.spendEntries.forEach((entry) => {
+        this.recordSpend({
           userId: input.userId,
           teamId: input.teamId,
           agentId: input.agentId,
@@ -2837,9 +1639,9 @@ export const controlPlaneStore = {
           toolName: entry.toolName,
           metadata: entry.metadata,
         });
-      }
+      });
     } else if (typeof input.costUsd === "number" && input.costUsd > 0) {
-      await this.recordSpend({
+      this.recordSpend({
         userId: input.userId,
         teamId: input.teamId,
         agentId: input.agentId,
@@ -2848,89 +1650,6 @@ export const controlPlaneStore = {
         costUsd: input.costUsd,
         metadata: { source: "heartbeat" },
       });
-    }
-
-    observabilityStore.record({
-      userId: input.userId,
-      category: "heartbeat",
-      type: "heartbeat.recorded",
-      actor: { type: "agent", id: agent.id, label: agent.name },
-      subject: {
-        type: "agent",
-        id: agent.id,
-        label: agent.name,
-        parentType: "team",
-        parentId: team.id,
-      },
-      summary: input.summary ?? `Heartbeat ${input.status}`,
-      payload: {
-        status: input.status,
-        executionId: input.executionId,
-        createdTaskIds: input.createdTaskIds ?? [],
-        costUsd: input.costUsd,
-      },
-      occurredAt: heartbeat.completedAt ?? heartbeat.startedAt,
-    });
-
-    if (typeof input.costUsd === "number" && input.costUsd > 0) {
-      observabilityStore.record({
-        userId: input.userId,
-        category: "budget",
-        type: "budget.spent",
-        actor: { type: "agent", id: agent.id, label: agent.name },
-        subject: {
-          type: "agent",
-          id: agent.id,
-          label: agent.name,
-          parentType: "team",
-          parentId: team.id,
-        },
-        summary: `Recorded $${input.costUsd.toFixed(2)} spend for ${agent.name}`,
-        payload: {
-          deltaUsd: input.costUsd,
-          executionId: input.executionId,
-          period: (heartbeat.completedAt ?? heartbeat.startedAt).slice(0, 7),
-        },
-        occurredAt: heartbeat.completedAt ?? heartbeat.startedAt,
-      });
-    }
-
-    if (input.status === "blocked") {
-      observabilityStore.record({
-        userId: input.userId,
-        category: "alert",
-        type: "alert.triggered",
-        actor: { type: "agent", id: agent.id, label: agent.name },
-        subject: {
-          type: "agent",
-          id: agent.id,
-          label: agent.name,
-          parentType: "team",
-          parentId: team.id,
-        },
-        summary: input.summary ?? `${agent.name} heartbeat blocked`,
-        payload: {
-          severity: "warning",
-          code: "heartbeat_blocked",
-          sourceCategory: "heartbeat",
-          sourceId: heartbeat.id,
-          executionId: input.executionId,
-        },
-        occurredAt: heartbeat.completedAt ?? heartbeat.startedAt,
-      });
-    }
-
-    if (isPostgresConfigured()) {
-      const workspaceId = requireWorkspaceIdForPersistence(input.workspaceId);
-      await withWorkspaceContext(getPostgresPool(), { workspaceId, userId: input.userId }, async (client) => {
-        await upsertTeamRow(team, workspaceId, client);
-        await upsertAgentRow(agent, workspaceId, client);
-        if (execution) {
-          await upsertExecutionRow(execution, workspaceId, client);
-        }
-      });
-      await controlPlaneRepository.insertHeartbeat({ workspaceId, userId: input.userId }, heartbeat);
-      hydratedWorkspaceUsers.add(workspaceUserKey(workspaceId, input.userId));
     }
 
     return heartbeat;
@@ -2955,9 +1674,5 @@ export const controlPlaneStore = {
     companyLifecycleStore.clear();
     spendEntries.clear();
     budgetAlerts.clear();
-    teamWorkspaceIds.clear();
-    teamCompanyIds.clear();
-    companyTenantWorkspaceIds.clear();
-    hydratedWorkspaceUsers.clear();
   },
 };

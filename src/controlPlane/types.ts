@@ -82,39 +82,6 @@ export interface ControlPlaneTeam {
   updatedAt: string;
 }
 
-export type MissionStateStatus = "on_track" | "at_risk" | "blocked" | "off_track" | "not_started";
-export type MissionStateStaffingStatus = "ready" | "partial" | "not_ready";
-
-export interface ControlPlaneMissionState {
-  teamId: string;
-  title: string;
-  objective: string | null;
-  overallStatus: MissionStateStatus;
-  currentPhase: string | null;
-  ownerTeam: string | null;
-  staffingReadiness: {
-    status: MissionStateStaffingStatus;
-    filledHeadcount: number;
-    plannedHeadcount: number;
-  };
-  topBlockers: string[];
-  risks: string[];
-  nextMilestone: string | null;
-  lastUpdated: string;
-  fieldCoverage: {
-    title: boolean;
-    objective: boolean;
-    overallStatus: boolean;
-    currentPhase: boolean;
-    ownerTeam: boolean;
-    staffingReadiness: boolean;
-    topBlockers: boolean;
-    risks: boolean;
-    nextMilestone: boolean;
-    lastUpdated: boolean;
-  };
-}
-
 export interface ProvisionedCompanySecretBinding {
   key: string;
   maskedValue: string;
@@ -145,7 +112,6 @@ export interface ProvisionedCompanyRecord {
 
 export interface CompanyProvisioningAgentInput {
   roleTemplateId: string;
-  roleKey?: string;
   name?: string;
   budgetMonthlyUsd?: number;
   model?: string;

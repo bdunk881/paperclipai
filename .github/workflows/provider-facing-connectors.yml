@@ -10,6 +10,7 @@ on:
 jobs:
   tier1-provider-facing:
     name: Tier 1 Provider-Facing Connectors
+    if: ${{ vars.TIER1_PROVIDER_TESTS_ENABLED == 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:

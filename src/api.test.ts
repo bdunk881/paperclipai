@@ -76,6 +76,7 @@ jest.mock("./auth/authMiddleware", () => ({
 import request from "supertest";
 import app from "./app";
 import { WORKFLOW_TEMPLATES } from "./templates";
+import type { WorkflowStep } from "./types/workflow";
 import {
   clearClassificationDecisionsForTests,
   logClassificationDecision,
@@ -601,6 +602,25 @@ describe("Control plane APIs", () => {
             agent.schedule.type === "interval" && agent.schedule.intervalMinutes === 30
         )
     ).toBe(true);
+  });
+
+  it("sanitizes generated role keys without the polynomial trim regex", () => {
+    const step = {
+      id: "step-weird-kind",
+      name: "Weird Runtime Step",
+      kind: "---LLM---" as unknown as WorkflowStep["kind"],
+      description: "Regression fixture for slugify role-key generation",
+      inputKeys: [],
+      outputKeys: [],
+    };
+
+    const { agent } = controlPlaneStore.ensureRuntimeTeamForStep({
+      userId: "test-user",
+      actor: "run-runtime-team-rolekey",
+      step,
+    });
+
+    expect(agent.roleKey).toBe("llm");
   });
 
   it("creates a bridged task and enforces atomic checkout", async () => {

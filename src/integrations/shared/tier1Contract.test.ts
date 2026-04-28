@@ -1,3 +1,4 @@
+import { ApolloConnectorService } from "../apollo/service";
 import { GmailConnectorService } from "../gmail/service";
 import {
   GmailAuthMethod,
@@ -146,6 +147,7 @@ describe("tier1 v1 contract", () => {
   });
 
   it.each([
+    ["apollo", () => new ApolloConnectorService().health("missing-user")],
     ["slack", () => new SlackConnectorService().health("missing-user")],
     ["hubspot", () => new HubSpotConnectorService().health("missing-user")],
     ["stripe", () => new StripeConnectorService().health("missing-user")],

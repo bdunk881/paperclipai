@@ -159,13 +159,10 @@ router.get("/:id/budget", (req: AuthenticatedRequest, res) => {
   }
 
   const period = currentPeriodKey();
+  const teamSpend = controlPlaneStore.getTeamSpendSnapshot(agent.teamId, userId);
+  const agentSpend = teamSpend?.agents.find((entry) => entry.agentId === agent.id);
   const heartbeats = controlPlaneStore.listAgentHeartbeats(agent.id, userId);
-  const spentUsd = Number(
-    heartbeats
-      .filter((heartbeat) => (heartbeat.completedAt ?? heartbeat.startedAt).startsWith(period))
-      .reduce((sum, heartbeat) => sum + (heartbeat.costUsd ?? 0), 0)
-      .toFixed(2)
-  );
+  const spentUsd = agentSpend?.spentUsd ?? 0;
   const monthlyUsd = agent.budgetMonthlyUsd;
   const remainingUsd = Number(Math.max(0, monthlyUsd - spentUsd).toFixed(2));
   const lastUpdatedAt = heartbeats.at(-1)?.completedAt ?? heartbeats.at(-1)?.startedAt ?? agent.updatedAt;
@@ -178,6 +175,8 @@ router.get("/:id/budget", (req: AuthenticatedRequest, res) => {
     remainingUsd,
     currentPeriod: period,
     autoPaused: agent.status === "paused" && monthlyUsd > 0 && spentUsd >= monthlyUsd,
+    thresholdState: agentSpend?.thresholdState ?? "healthy",
+    alertThresholdsTriggered: agentSpend?.alertThresholdsTriggered ?? [],
     lastUpdatedAt,
   });
 });

@@ -3,15 +3,18 @@ import { WorkflowStep, WorkflowTemplate } from "../types/workflow";
 import { companyLifecycleStore } from "./companyLifecycleStore";
 import {
   AgentHeartbeatRecord,
+  BudgetStatusSnapshot,
   CompanyProvisioningAgentInput,
   CompanyProvisioningResult,
   ControlPlaneAgent,
+  ControlPlaneBudgetAlert,
   ControlPlaneDeployment,
   ControlPlaneExecution,
   ControlPlaneExecutionStatus,
   ControlPlaneLifecycleAction,
   ControlPlaneRoleTemplateDefinition,
   ControlPlaneSkillDefinition,
+  ControlPlaneSpendEntry,
   ControlPlaneTask,
   ControlPlaneTaskAuditEvent,
   ControlPlaneTaskStatus,
@@ -20,10 +23,16 @@ import {
   ProvisionedCompanyRecord,
   ProvisionedCompanySecretBinding,
   ProvisionedCompanyWorkspace,
+  SpendCategory,
+  TeamSpendSnapshot,
 } from "./types";
 
 function nowIso(): string {
   return new Date().toISOString();
+}
+
+function currentPeriodKey(date = new Date()): string {
+  return date.toISOString().slice(0, 7);
 }
 
 function slugify(value: string): string {
@@ -84,6 +93,19 @@ function toHeartbeatStatus(status: ControlPlaneExecutionStatus): HeartbeatStatus
     case "stopped":
       return "completed";
   }
+}
+
+function thresholdStateForPercent(percentUsed: number): BudgetStatusSnapshot["thresholdState"] {
+  if (percentUsed >= 1) {
+    return "limit_reached";
+  }
+  if (percentUsed >= 0.9) {
+    return "critical";
+  }
+  if (percentUsed >= 0.8) {
+    return "warning";
+  }
+  return "healthy";
 }
 
 const SKILL_CATALOG: ControlPlaneSkillDefinition[] = [
@@ -161,6 +183,8 @@ const companies = new Map<string, ProvisionedCompanyRecord>();
 const companyWorkspaces = new Map<string, ProvisionedCompanyWorkspace>();
 const companySecretBindings = new Map<string, Record<string, string>>();
 const companyIdempotencyIndex = new Map<string, { companyId: string; fingerprint: string }>();
+const spendEntries = new Map<string, ControlPlaneSpendEntry>();
+const budgetAlerts = new Map<string, ControlPlaneBudgetAlert>();
 
 function getSkillCatalogIds(): Set<string> {
   return new Set(SKILL_CATALOG.map((skill) => skill.id));
@@ -269,6 +293,258 @@ function getExecutionOwnedByUser(executionId: string, userId: string): ControlPl
   return execution;
 }
 
+function listSpendEntriesForPeriod(userId: string, period: string): ControlPlaneSpendEntry[] {
+  return Array.from(spendEntries.values()).filter((entry) => {
+    return entry.userId === userId && entry.recordedAt.startsWith(period);
+  });
+}
+
+function buildBudgetSnapshot(input: {
+  scope: "team" | "agent" | "tool";
+  budgetUsd: number;
+  spentUsd: number;
+  autoPaused: boolean;
+  alertThresholds: number[];
+}): BudgetStatusSnapshot {
+  const roundedSpend = Number(input.spentUsd.toFixed(2));
+  const roundedBudget = Number(input.budgetUsd.toFixed(2));
+  const remainingUsd = Number(Math.max(0, roundedBudget - roundedSpend).toFixed(2));
+  const percentUsed = roundedBudget > 0 ? Number((roundedSpend / roundedBudget).toFixed(4)) : 0;
+  const alertThresholdsTriggered = input.alertThresholds
+    .filter((threshold) => roundedBudget > 0 && percentUsed >= threshold)
+    .sort((left, right) => left - right);
+
+  return {
+    scope: input.scope,
+    budgetUsd: roundedBudget,
+    spentUsd: roundedSpend,
+    remainingUsd,
+    percentUsed,
+    thresholdState: thresholdStateForPercent(percentUsed),
+    alertThresholdsTriggered,
+    autoPaused: input.autoPaused,
+  };
+}
+
+function listAgentsForTeam(teamId: string, userId: string): ControlPlaneAgent[] {
+  return Array.from(agents.values())
+    .filter((agent) => agent.userId === userId && agent.teamId === teamId)
+    .sort((left, right) => left.createdAt.localeCompare(right.createdAt));
+}
+
+function buildTeamSpendSnapshot(team: ControlPlaneTeam): TeamSpendSnapshot {
+  const period = currentPeriodKey();
+  const entries = listSpendEntriesForPeriod(team.userId, period).filter((entry) => entry.teamId === team.id);
+  const alertThresholds = team.alertThresholds.length > 0 ? team.alertThresholds : [0.8, 0.9, 1];
+  const teamSpent = entries.reduce((sum, entry) => sum + entry.costUsd, 0);
+  const teamSnapshot = buildBudgetSnapshot({
+    scope: "team",
+    budgetUsd: team.budgetMonthlyUsd,
+    spentUsd: teamSpent,
+    autoPaused: team.status === "paused" && team.budgetMonthlyUsd > 0 && teamSpent >= team.budgetMonthlyUsd,
+    alertThresholds,
+  });
+
+  const agentSnapshots = listAgentsForTeam(team.id, team.userId).map((agent) => {
+    const spentUsd = entries
+      .filter((entry) => entry.agentId === agent.id)
+      .reduce((sum, entry) => sum + entry.costUsd, 0);
+    return {
+      agentId: agent.id,
+      name: agent.name,
+      ...buildBudgetSnapshot({
+        scope: "agent",
+        budgetUsd: agent.budgetMonthlyUsd,
+        spentUsd,
+        autoPaused: agent.status === "paused" && agent.budgetMonthlyUsd > 0 && spentUsd >= agent.budgetMonthlyUsd,
+        alertThresholds,
+      }),
+    };
+  });
+
+  const toolSnapshots = Object.entries(team.toolBudgetCeilings)
+    .map(([toolName, budgetUsd]) => {
+      const spentUsd = entries
+        .filter((entry) => entry.toolName === toolName)
+        .reduce((sum, entry) => sum + entry.costUsd, 0);
+      return {
+        toolName,
+        ...buildBudgetSnapshot({
+          scope: "tool",
+          budgetUsd,
+          spentUsd,
+          autoPaused: budgetUsd > 0 && spentUsd >= budgetUsd,
+          alertThresholds,
+        }),
+      };
+    })
+    .sort((left, right) => left.toolName.localeCompare(right.toolName));
+
+  const totalsByCategory = entries.reduce<Partial<Record<SpendCategory, number>>>((totals, entry) => {
+    totals[entry.category] = Number((((totals[entry.category] ?? 0) + entry.costUsd)).toFixed(2));
+    return totals;
+  }, {});
+
+  const alerts = Array.from(budgetAlerts.values())
+    .filter((alert) => alert.userId === team.userId && alert.teamId === team.id && alert.recordedAt.startsWith(period))
+    .sort((left, right) => left.recordedAt.localeCompare(right.recordedAt));
+
+  return {
+    period,
+    team: teamSnapshot,
+    agents: agentSnapshots,
+    tools: toolSnapshots,
+    alerts,
+    totalsByCategory,
+  };
+}
+
+function upsertBudgetAlert(input: {
+  team: ControlPlaneTeam;
+  threshold: number;
+  scope: "team" | "agent" | "tool";
+  spentUsd: number;
+  budgetUsd: number;
+  agentId?: string;
+  toolName?: string;
+}): void {
+  if (input.budgetUsd <= 0 || input.spentUsd / input.budgetUsd < input.threshold) {
+    return;
+  }
+
+  const dedupeKey = [
+    input.team.userId,
+    input.team.id,
+    currentPeriodKey(),
+    input.scope,
+    input.agentId ?? "",
+    input.toolName ?? "",
+    input.threshold,
+  ].join(":");
+
+  if (budgetAlerts.has(dedupeKey)) {
+    return;
+  }
+
+  budgetAlerts.set(dedupeKey, {
+    id: randomUUID(),
+    userId: input.team.userId,
+    teamId: input.team.id,
+    agentId: input.agentId,
+    toolName: input.toolName,
+    scope: input.scope,
+    threshold: input.threshold,
+    budgetUsd: Number(input.budgetUsd.toFixed(2)),
+    spentUsd: Number(input.spentUsd.toFixed(2)),
+    recordedAt: nowIso(),
+  });
+}
+
+function pauseExecutionForBudget(agentId: string, executionId?: string): void {
+  const timestamp = nowIso();
+  if (executionId) {
+    const execution = executions.get(executionId);
+    if (execution && execution.status === "running") {
+      execution.status = "blocked";
+      execution.summary = execution.summary ?? "Execution halted after budget limit was reached.";
+      execution.completedAt = timestamp;
+      execution.lastHeartbeatAt = timestamp;
+      executions.set(execution.id, execution);
+    }
+  }
+
+  const agent = agents.get(agentId);
+  if (agent) {
+    agent.currentExecutionId = undefined;
+    agent.lastHeartbeatAt = timestamp;
+    agent.lastHeartbeatStatus = "blocked";
+    agent.updatedAt = timestamp;
+    agent.status = "paused";
+    agents.set(agent.id, agent);
+  }
+}
+
+function applyBudgetPolicies(team: ControlPlaneTeam, agentId: string, executionId?: string): void {
+  const snapshot = buildTeamSpendSnapshot(team);
+  const agentSnapshot = snapshot.agents.find((entry) => entry.agentId === agentId);
+
+  snapshot.team.alertThresholdsTriggered.forEach((threshold) => {
+    upsertBudgetAlert({
+      team,
+      threshold,
+      scope: "team",
+      spentUsd: snapshot.team.spentUsd,
+      budgetUsd: snapshot.team.budgetUsd,
+    });
+  });
+  agentSnapshot?.alertThresholdsTriggered.forEach((threshold) => {
+    upsertBudgetAlert({
+      team,
+      threshold,
+      scope: "agent",
+      agentId,
+      spentUsd: agentSnapshot.spentUsd,
+      budgetUsd: agentSnapshot.budgetUsd,
+    });
+  });
+  snapshot.tools.forEach((toolSnapshot) => {
+    toolSnapshot.alertThresholdsTriggered.forEach((threshold) => {
+      upsertBudgetAlert({
+        team,
+        threshold,
+        scope: "tool",
+        toolName: toolSnapshot.toolName,
+        spentUsd: toolSnapshot.spentUsd,
+        budgetUsd: toolSnapshot.budgetUsd,
+        agentId,
+      });
+    });
+  });
+
+  if (snapshot.team.budgetUsd > 0 && snapshot.team.spentUsd >= snapshot.team.budgetUsd) {
+    team.status = "paused";
+    team.updatedAt = nowIso();
+    teams.set(team.id, team);
+    listAgentsForTeam(team.id, team.userId).forEach((teamAgent) => {
+      if (teamAgent.status === "active") {
+        teamAgent.status = "paused";
+        teamAgent.updatedAt = nowIso();
+        if (teamAgent.id === agentId) {
+          pauseExecutionForBudget(teamAgent.id, executionId);
+        } else {
+          agents.set(teamAgent.id, teamAgent);
+        }
+      }
+    });
+    return;
+  }
+
+  if (agentSnapshot && agentSnapshot.budgetUsd > 0 && agentSnapshot.spentUsd >= agentSnapshot.budgetUsd) {
+    pauseExecutionForBudget(agentId, executionId);
+  }
+
+  if (snapshot.tools.some((toolSnapshot) => toolSnapshot.budgetUsd > 0 && toolSnapshot.spentUsd >= toolSnapshot.budgetUsd)) {
+    pauseExecutionForBudget(agentId, executionId);
+  }
+}
+
+function assertExecutionAllowed(team: ControlPlaneTeam, agent: ControlPlaneAgent): void {
+  const snapshot = buildTeamSpendSnapshot(team);
+  const agentSnapshot = snapshot.agents.find((entry) => entry.agentId === agent.id);
+
+  if (snapshot.team.budgetUsd > 0 && snapshot.team.spentUsd >= snapshot.team.budgetUsd) {
+    team.status = "paused";
+    teams.set(team.id, team);
+    throw new Error("team_budget_exceeded");
+  }
+
+  if (agentSnapshot && agentSnapshot.budgetUsd > 0 && agentSnapshot.spentUsd >= agentSnapshot.budgetUsd) {
+    agent.status = "paused";
+    agents.set(agent.id, agent);
+    throw new Error("agent_budget_exceeded");
+  }
+}
+
 function createTeamRecord(input: {
   userId: string;
   name: string;
@@ -277,6 +553,8 @@ function createTeamRecord(input: {
   workflowTemplateName?: string;
   deploymentMode?: ControlPlaneTeam["deploymentMode"];
   budgetMonthlyUsd?: number;
+  toolBudgetCeilings?: Record<string, number>;
+  alertThresholds?: number[];
   orchestrationEnabled?: boolean;
 }): ControlPlaneTeam {
   const timestamp = nowIso();
@@ -291,6 +569,8 @@ function createTeamRecord(input: {
     status: "active",
     restartCount: 0,
     budgetMonthlyUsd: input.budgetMonthlyUsd ?? 0,
+    toolBudgetCeilings: { ...(input.toolBudgetCeilings ?? {}) },
+    alertThresholds: input.alertThresholds?.length ? [...input.alertThresholds].sort((a, b) => a - b) : [0.8, 0.9, 1],
     orchestrationEnabled: input.orchestrationEnabled ?? true,
     createdAt: timestamp,
     updatedAt: timestamp,
@@ -355,19 +635,12 @@ function getAgentForWorkflowStep(teamId: string, userId: string, step: WorkflowS
   });
 }
 
-function listAgentsForTeam(teamId: string, userId: string): ControlPlaneAgent[] {
-  return Array.from(agents.values())
-    .filter((agent) => agent.userId === userId && agent.teamId === teamId)
-    .sort((left, right) => left.createdAt.localeCompare(right.createdAt));
-}
-
 function wasExecutionRequestedBeforePause(requestedAt: string, pausedAt?: string): boolean {
   if (!pausedAt) {
     return true;
   }
   return new Date(requestedAt).getTime() <= new Date(pausedAt).getTime();
 }
-
 export const controlPlaneStore = {
   listSkills(): ControlPlaneSkillDefinition[] {
     return SKILL_CATALOG.map((skill) => ({ ...skill }));
@@ -534,6 +807,8 @@ export const controlPlaneStore = {
     workflowTemplateName?: string;
     deploymentMode?: ControlPlaneTeam["deploymentMode"];
     budgetMonthlyUsd?: number;
+    toolBudgetCeilings?: Record<string, number>;
+    alertThresholds?: number[];
     orchestrationEnabled?: boolean;
   }): ControlPlaneTeam {
     return createTeamRecord(input);
@@ -581,11 +856,45 @@ export const controlPlaneStore = {
       .sort((left, right) => left.startedAt.localeCompare(right.startedAt));
   },
 
+  listSpendEntries(userId: string, filters?: {
+    teamId?: string;
+    agentId?: string;
+    executionId?: string;
+    period?: string;
+  }): ControlPlaneSpendEntry[] {
+    return Array.from(spendEntries.values())
+      .filter((entry) => {
+        if (entry.userId !== userId) return false;
+        if (filters?.teamId && entry.teamId !== filters.teamId) return false;
+        if (filters?.agentId && entry.agentId !== filters.agentId) return false;
+        if (filters?.executionId && entry.executionId !== filters.executionId) return false;
+        if (filters?.period && !entry.recordedAt.startsWith(filters.period)) return false;
+        return true;
+      })
+      .sort((left, right) => left.recordedAt.localeCompare(right.recordedAt));
+  },
+
+  listBudgetAlerts(userId: string, teamId?: string): ControlPlaneBudgetAlert[] {
+    return Array.from(budgetAlerts.values())
+      .filter((alert) => alert.userId === userId && (!teamId || alert.teamId === teamId))
+      .sort((left, right) => left.recordedAt.localeCompare(right.recordedAt));
+  },
+
+  getTeamSpendSnapshot(teamId: string, userId: string): TeamSpendSnapshot | undefined {
+    const team = getTeamOwnedByUser(teamId, userId);
+    if (!team) {
+      return undefined;
+    }
+    return buildTeamSpendSnapshot(team);
+  },
+
   deployWorkflowAsTeam(input: {
     userId: string;
     template: WorkflowTemplate;
     teamName?: string;
     budgetMonthlyUsd?: number;
+    toolBudgetCeilings?: Record<string, number>;
+    alertThresholds?: number[];
     defaultIntervalMinutes?: number;
   }): ControlPlaneDeployment {
     const actionableSteps = input.template.steps.filter(
@@ -600,6 +909,8 @@ export const controlPlaneStore = {
       workflowTemplateName: input.template.name,
       deploymentMode: "continuous_agents",
       budgetMonthlyUsd: teamBudget,
+      toolBudgetCeilings: input.toolBudgetCeilings,
+      alertThresholds: input.alertThresholds,
       orchestrationEnabled: true,
     });
 
@@ -684,6 +995,7 @@ export const controlPlaneStore = {
         name: requestedTeamName,
         description: `Runtime deployment bridge for workflow step ${input.step.name}`,
         deploymentMode: "continuous_agents",
+        alertThresholds: [0.8, 0.9, 1],
         orchestrationEnabled: true,
       });
     }
@@ -974,6 +1286,67 @@ export const controlPlaneStore = {
     return companyLifecycleStore.listAudit(userId);
   },
 
+  recordSpend(input: {
+    userId: string;
+    teamId: string;
+    agentId: string;
+    executionId?: string;
+    category: SpendCategory;
+    costUsd: number;
+    model?: string;
+    provider?: string;
+    toolName?: string;
+    metadata?: Record<string, unknown>;
+  }): ControlPlaneSpendEntry {
+    const team = getTeamOwnedByUser(input.teamId, input.userId);
+    const agent = getAgentOwnedByUser(input.agentId, input.userId);
+    if (!team || !agent || agent.teamId !== team.id) {
+      throw new Error("agent_not_found");
+    }
+
+    if (input.executionId) {
+      const execution = getExecutionOwnedByUser(input.executionId, input.userId);
+      if (!execution || execution.teamId !== team.id || execution.agentId !== agent.id) {
+        throw new Error("execution_not_found");
+      }
+    }
+
+    const toolBudget = input.toolName ? team.toolBudgetCeilings[input.toolName] ?? 0 : 0;
+    const snapshot = buildTeamSpendSnapshot(team);
+    const teamWouldExceed =
+      team.budgetMonthlyUsd > 0 && snapshot.team.spentUsd >= team.budgetMonthlyUsd;
+    const agentSnapshot = snapshot.agents.find((entry) => entry.agentId === agent.id);
+    const agentWouldExceed =
+      !!agentSnapshot && agent.budgetMonthlyUsd > 0 && agentSnapshot.spentUsd >= agent.budgetMonthlyUsd;
+    const toolSnapshot = input.toolName
+      ? snapshot.tools.find((entry) => entry.toolName === input.toolName)
+      : undefined;
+    const toolWouldExceed =
+      !!toolSnapshot && toolBudget > 0 && toolSnapshot.spentUsd >= toolBudget;
+
+    if (teamWouldExceed) throw new Error("team_budget_exceeded");
+    if (agentWouldExceed) throw new Error("agent_budget_exceeded");
+    if (toolWouldExceed) throw new Error("tool_budget_exceeded");
+
+    const entry: ControlPlaneSpendEntry = {
+      id: randomUUID(),
+      teamId: input.teamId,
+      agentId: input.agentId,
+      executionId: input.executionId,
+      userId: input.userId,
+      category: input.category,
+      costUsd: Number(input.costUsd.toFixed(4)),
+      model: input.model,
+      provider: input.provider,
+      toolName: input.toolName,
+      metadata: input.metadata,
+      recordedAt: nowIso(),
+    };
+    spendEntries.set(entry.id, entry);
+    applyBudgetPolicies(team, agent.id, input.executionId);
+    return entry;
+  },
+
   async startAgentExecution(input: {
     userId: string;
     actor: string;
@@ -993,9 +1366,6 @@ export const controlPlaneStore = {
     if (!team) {
       throw new Error("team_not_found");
     }
-    if (team.status !== "active") {
-      throw new Error("team_not_active");
-    }
 
     const agent =
       (input.requestedAgentId ? getAgentOwnedByUser(input.requestedAgentId, input.userId) : undefined) ??
@@ -1003,9 +1373,22 @@ export const controlPlaneStore = {
     if (!agent || agent.teamId !== team.id) {
       throw new Error("agent_not_found");
     }
+
+    const teamSnapshot = buildTeamSpendSnapshot(team);
+    const agentSnapshot = teamSnapshot.agents.find((entry) => entry.agentId === agent.id);
+    if (team.status !== "active") {
+      if (teamSnapshot.team.budgetUsd > 0 && teamSnapshot.team.spentUsd >= teamSnapshot.team.budgetUsd) {
+        throw new Error("team_budget_exceeded");
+      }
+      throw new Error("team_not_active");
+    }
     if (agent.status !== "active") {
+      if (agentSnapshot && agentSnapshot.budgetUsd > 0 && agentSnapshot.spentUsd >= agentSnapshot.budgetUsd) {
+        throw new Error("agent_budget_exceeded");
+      }
       throw new Error("agent_not_active");
     }
+    assertExecutionAllowed(team, agent);
 
     const task =
       input.taskTitle && input.taskTitle.trim()
@@ -1069,6 +1452,14 @@ export const controlPlaneStore = {
     status: Exclude<ControlPlaneExecutionStatus, "queued" | "running">;
     summary?: string;
     costUsd?: number;
+    spendEntries?: Array<{
+      category: SpendCategory;
+      costUsd: number;
+      model?: string;
+      provider?: string;
+      toolName?: string;
+      metadata?: Record<string, unknown>;
+    }>;
   }): ControlPlaneExecution {
     const execution = getExecutionOwnedByUser(input.executionId, input.userId);
     if (!execution) {
@@ -1095,6 +1486,33 @@ export const controlPlaneStore = {
     if (team) {
       team.lastHeartbeatAt = timestamp;
       team.updatedAt = timestamp;
+    }
+
+    if (Array.isArray(input.spendEntries) && input.spendEntries.length > 0) {
+      input.spendEntries.forEach((entry) => {
+        this.recordSpend({
+          userId: input.userId,
+          teamId: execution.teamId,
+          agentId: execution.agentId,
+          executionId: execution.id,
+          category: entry.category,
+          costUsd: entry.costUsd,
+          model: entry.model,
+          provider: entry.provider,
+          toolName: entry.toolName,
+          metadata: entry.metadata,
+        });
+      });
+    } else if (typeof input.costUsd === "number" && input.costUsd > 0) {
+      this.recordSpend({
+        userId: input.userId,
+        teamId: execution.teamId,
+        agentId: execution.agentId,
+        executionId: execution.id,
+        category: "compute",
+        costUsd: input.costUsd,
+        metadata: { source: "execution_finalize" },
+      });
     }
 
     this.recordHeartbeat({
@@ -1144,6 +1562,14 @@ export const controlPlaneStore = {
     status: AgentHeartbeatRecord["status"];
     summary?: string;
     costUsd?: number;
+    spendEntries?: Array<{
+      category: SpendCategory;
+      costUsd: number;
+      model?: string;
+      provider?: string;
+      toolName?: string;
+      metadata?: Record<string, unknown>;
+    }>;
     createdTaskIds?: string[];
     completedAt?: string;
   }): Promise<AgentHeartbeatRecord> {
@@ -1198,6 +1624,34 @@ export const controlPlaneStore = {
       completedAt: input.completedAt,
     };
     heartbeats.set(heartbeat.id, heartbeat);
+
+    if (Array.isArray(input.spendEntries) && input.spendEntries.length > 0) {
+      input.spendEntries.forEach((entry) => {
+        this.recordSpend({
+          userId: input.userId,
+          teamId: input.teamId,
+          agentId: input.agentId,
+          executionId: input.executionId,
+          category: entry.category,
+          costUsd: entry.costUsd,
+          model: entry.model,
+          provider: entry.provider,
+          toolName: entry.toolName,
+          metadata: entry.metadata,
+        });
+      });
+    } else if (typeof input.costUsd === "number" && input.costUsd > 0) {
+      this.recordSpend({
+        userId: input.userId,
+        teamId: input.teamId,
+        agentId: input.agentId,
+        executionId: input.executionId,
+        category: "compute",
+        costUsd: input.costUsd,
+        metadata: { source: "heartbeat" },
+      });
+    }
+
     return heartbeat;
   },
 
@@ -1218,5 +1672,7 @@ export const controlPlaneStore = {
     companySecretBindings.clear();
     companyIdempotencyIndex.clear();
     companyLifecycleStore.clear();
+    spendEntries.clear();
+    budgetAlerts.clear();
   },
 };

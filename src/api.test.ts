@@ -76,6 +76,7 @@ jest.mock("./auth/authMiddleware", () => ({
 import request from "supertest";
 import app from "./app";
 import { WORKFLOW_TEMPLATES } from "./templates";
+import type { WorkflowStep } from "./types/workflow";
 import {
   clearClassificationDecisionsForTests,
   logClassificationDecision,
@@ -84,6 +85,7 @@ import { extractPromptFeatures } from "./engine/promptFeatures";
 import { controlPlaneStore } from "./controlPlane/controlPlaneStore";
 import { approvalStore } from "./engine/approvalStore";
 import { approvalNotificationStore } from "./engine/approvalNotificationStore";
+import { approvalPolicyStore } from "./approvals/policyStore";
 import { runStore } from "./engine/runStore";
 import { knowledgeStore } from "./knowledge/knowledgeStore";
 import { resetImportedTemplatesForTests } from "./templates/importedTemplateStore";
@@ -100,6 +102,7 @@ beforeEach(() => {
   controlPlaneStore.clear();
   approvalStore.clear();
   approvalNotificationStore.clear();
+  approvalPolicyStore.clear();
   runStore.clear();
   knowledgeStore.clear();
   resetImportedTemplatesForTests();
@@ -249,6 +252,47 @@ describe("GET /api/templates/:id", () => {
     expect(typeof res.body.sampleInput).toBe("object");
     expect(res.body.expectedOutput).toBeDefined();
     expect(typeof res.body.expectedOutput).toBe("object");
+  });
+});
+
+describe("Approval tier policy API", () => {
+  const workspaceId = "11111111-1111-4111-8111-111111111111";
+
+  it("lists default approval tier policies for a workspace", async () => {
+    const res = await request(app)
+      .get(`/api/approval-policies?workspaceId=${workspaceId}`)
+      .set(asAuth());
+
+    expect(res.status).toBe(200);
+    expect(res.body.total).toBe(5);
+    expect(res.body.policies.every((policy: { mode: string }) => policy.mode === "require_approval")).toBe(true);
+  });
+
+  it("updates a workspace approval tier policy", async () => {
+    const res = await request(app)
+      .put("/api/approval-policies/public_posts")
+      .set(asAuth())
+      .send({
+        workspaceId,
+        mode: "notify_only",
+      });
+
+    expect(res.status).toBe(200);
+    expect(res.body.policy.actionType).toBe("public_posts");
+    expect(res.body.policy.mode).toBe("notify_only");
+  });
+
+  it("rejects invalid spend thresholds", async () => {
+    const res = await request(app)
+      .put("/api/approval-policies/spend_above_threshold")
+      .set(asAuth())
+      .send({
+        workspaceId,
+        mode: "require_approval",
+        spendThresholdCents: -1,
+      });
+
+    expect(res.status).toBe(400);
   });
 });
 
@@ -560,6 +604,25 @@ describe("Control plane APIs", () => {
     ).toBe(true);
   });
 
+  it("sanitizes generated role keys without the polynomial trim regex", () => {
+    const step = {
+      id: "step-weird-kind",
+      name: "Weird Runtime Step",
+      kind: "---LLM---" as unknown as WorkflowStep["kind"],
+      description: "Regression fixture for slugify role-key generation",
+      inputKeys: [],
+      outputKeys: [],
+    };
+
+    const { agent } = controlPlaneStore.ensureRuntimeTeamForStep({
+      userId: "test-user",
+      actor: "run-runtime-team-rolekey",
+      step,
+    });
+
+    expect(agent.roleKey).toBe("llm");
+  });
+
   it("creates a bridged task and enforces atomic checkout", async () => {
     const deployRes = await request(app)
       .post("/api/control-plane/deployments/workflow")
@@ -707,14 +770,16 @@ describe("Control plane APIs", () => {
       (candidate) => candidate.kind === "llm"
     )!;
 
-    const execution = controlPlaneStore.startAgentExecution({
+    const execution = (
+      await controlPlaneStore.startAgentExecution({
       userId: "test-user",
       actor: "run-agent-activity-seed",
       teamId,
       step,
       sourceRunId: "workflow-run-agent-1",
       requestedAgentId: workerAgent.id,
-    }).execution;
+      })
+    ).execution;
 
     controlPlaneStore.finalizeAgentExecution({
       executionId: execution.id,
@@ -798,7 +863,7 @@ describe("Control plane APIs", () => {
       (agent: { roleKey: string }) => agent.roleKey !== "workflow-manager"
     );
 
-    const started = controlPlaneStore.startAgentExecution({
+    const started = await controlPlaneStore.startAgentExecution({
       userId: "test-user",
       actor: "run-execution-seed",
       teamId,
@@ -834,6 +899,127 @@ describe("Control plane APIs", () => {
     expect(executionRes.status).toBe(200);
     expect(executionRes.body.status).toBe("queued");
     expect(executionRes.body.restartCount).toBe(1);
+  });
+
+  it("supports company-wide pause and resume with lifecycle audit entries", async () => {
+    const firstDeployRes = await request(app)
+      .post("/api/control-plane/deployments/workflow")
+      .set(asAuth())
+      .set("X-Paperclip-Run-Id", "run-deploy-company-1")
+      .send({ templateId: "tpl-support-bot" });
+    const secondDeployRes = await request(app)
+      .post("/api/control-plane/deployments/workflow")
+      .set(asAuth())
+      .set("X-Paperclip-Run-Id", "run-deploy-company-2")
+      .send({ templateId: "tpl-support-bot" });
+
+    const activeTeamId = firstDeployRes.body.team.id;
+    const manuallyPausedTeamId = secondDeployRes.body.team.id;
+    const activeWorkerAgent = firstDeployRes.body.agents.find(
+      (agent: { roleKey: string }) => agent.roleKey !== "workflow-manager"
+    );
+    const step = WORKFLOW_TEMPLATES.find((template) => template.id === "tpl-support-bot")!.steps.find(
+      (candidate) => candidate.kind === "llm"
+    )!;
+
+    await request(app)
+      .post(`/api/control-plane/teams/${manuallyPausedTeamId}/lifecycle`)
+      .set(asAuth())
+      .set("X-Paperclip-Run-Id", "run-manual-pause")
+      .send({ action: "pause" });
+
+    const stateBeforeRes = await request(app)
+      .get("/api/control-plane/company/lifecycle")
+      .set(asAuth());
+
+    expect(stateBeforeRes.status).toBe(200);
+    expect(stateBeforeRes.body.status).toBe("active");
+
+    const startedBeforePause = await controlPlaneStore.startAgentExecution({
+      userId: "test-user",
+      actor: "run-before-pause",
+      teamId: activeTeamId,
+      step,
+      requestedAgentId: activeWorkerAgent.id,
+      sourceRunId: "workflow-run-before-pause",
+    });
+
+    const pauseRes = await request(app)
+      .post("/api/control-plane/company/lifecycle")
+      .set(asAuth())
+      .set("X-Paperclip-Run-Id", "run-company-pause")
+      .send({ action: "pause", reason: "Emergency stop" });
+
+    expect(pauseRes.status).toBe(200);
+    expect(pauseRes.body.state.status).toBe("paused");
+    expect(pauseRes.body.state.pauseReason).toBe("Emergency stop");
+    expect(pauseRes.body.affectedTeamIds).toContain(activeTeamId);
+    expect(pauseRes.body.affectedTeamIds).not.toContain(manuallyPausedTeamId);
+
+    await expect(
+      controlPlaneStore.startAgentExecution({
+        userId: "test-user",
+        actor: "run-company-paused-start",
+        teamId: activeTeamId,
+        step: WORKFLOW_TEMPLATES.find((template) => template.id === "tpl-support-bot")!.steps.find(
+          (candidate) => candidate.kind === "llm"
+        )!,
+        sourceRunId: "workflow-run-paused",
+        requestedAgentId: activeWorkerAgent.id,
+      })
+    ).rejects.toThrow("company_paused");
+
+    const blockedHeartbeatRes = await request(app)
+      .post("/api/control-plane/heartbeats")
+      .set(asAuth())
+      .set("X-Paperclip-Run-Id", "run-company-paused-heartbeat")
+      .send({
+        teamId: activeTeamId,
+        agentId: activeWorkerAgent.id,
+        status: "completed",
+        summary: "Should be blocked",
+      });
+
+    expect(blockedHeartbeatRes.status).toBe(409);
+    expect(blockedHeartbeatRes.body.error).toMatch(/company is paused/i);
+
+    const allowedHeartbeatRes = await request(app)
+      .post("/api/control-plane/heartbeats")
+      .set(asAuth())
+      .set("X-Paperclip-Run-Id", "run-company-paused-existing-execution")
+      .send({
+        teamId: activeTeamId,
+        agentId: activeWorkerAgent.id,
+        executionId: startedBeforePause.execution.id,
+        status: "completed",
+        summary: "In-flight execution completed",
+      });
+
+    expect(allowedHeartbeatRes.status).toBe(201);
+
+    const resumeRes = await request(app)
+      .post("/api/control-plane/company/lifecycle")
+      .set(asAuth())
+      .set("X-Paperclip-Run-Id", "run-company-resume")
+      .send({ action: "resume", reason: "Recovered" });
+
+    expect(resumeRes.status).toBe(200);
+    expect(resumeRes.body.state.status).toBe("active");
+    expect(resumeRes.body.affectedTeamIds).toContain(activeTeamId);
+    expect(resumeRes.body.affectedTeamIds).not.toContain(manuallyPausedTeamId);
+
+    const auditRes = await request(app)
+      .get("/api/control-plane/company/lifecycle/audit")
+      .set(asAuth());
+
+    expect(auditRes.status).toBe(200);
+    expect(auditRes.body.total).toBe(2);
+    expect(auditRes.body.auditTrail.some((entry: { action: string; runId: string }) => (
+      entry.action === "pause" && entry.runId === "run-company-pause"
+    ))).toBe(true);
+    expect(auditRes.body.auditTrail.some((entry: { action: string; runId: string }) => (
+      entry.action === "resume" && entry.runId === "run-company-resume"
+    ))).toBe(true);
   });
 });
 
@@ -1323,6 +1509,119 @@ describe("GET /api/analytics/routing-decisions", () => {
     );
     expect(res.body.decisions[0].features).toBeDefined();
     expect(typeof res.body.decisions[0].timestamp).toBe("string");
+  });
+});
+
+describe("GET /api/observability", () => {
+  it("returns searchable trace records and supports CSV export", async () => {
+    const deployRes = await request(app)
+      .post("/api/control-plane/deployments/workflow")
+      .set(asAuth())
+      .set("X-Paperclip-Run-Id", "run-deploy-observability")
+      .send({ templateId: "tpl-support-bot" });
+
+    const teamId = deployRes.body.team.id;
+    const workerAgent = deployRes.body.agents.find(
+      (agent: { roleKey: string }) => agent.roleKey !== "workflow-manager"
+    );
+    const step = WORKFLOW_TEMPLATES.find((template) => template.id === "tpl-support-bot")!.steps.find(
+      (candidate) => candidate.kind === "llm"
+    )!;
+
+    const started = await controlPlaneStore.startAgentExecution({
+      userId: "test-user",
+      actor: "run-observability-seed",
+      teamId,
+      step,
+      sourceRunId: "obs-run-1",
+      requestedAgentId: workerAgent.id,
+      taskTitle: "Handle observability trace",
+    });
+
+    controlPlaneStore.finalizeAgentExecution({
+      executionId: started.execution.id,
+      userId: "test-user",
+      status: "completed",
+      summary: "Completed the traceable step",
+      costUsd: 1.25,
+    });
+
+    await runStore.create({
+      id: "obs-run-1",
+      templateId: "tpl-support-bot",
+      templateName: "Support Bot",
+      status: "completed",
+      startedAt: "2026-04-28T03:00:00.000Z",
+      completedAt: "2026-04-28T03:00:05.000Z",
+      input: {},
+      output: {},
+      userId: "test-user",
+      stepResults: [
+        {
+          stepId: step.id,
+          stepName: step.name,
+          status: "success",
+          durationMs: 1500,
+          output: {
+            _observability: {
+              stepKind: step.kind,
+              startedAt: "2026-04-28T03:00:00.000Z",
+              completedAt: "2026-04-28T03:00:01.500Z",
+              reasoningTrace: "Reasoned about customer routing and escalation policy.",
+              toolCalls: [
+                {
+                  timestamp: "2026-04-28T03:00:01.000Z",
+                  toolType: "mcp",
+                  toolName: "crm.lookup",
+                  input: { ticketId: "T-1" },
+                  output: { accountName: "Acme" },
+                },
+              ],
+              agentExecution: {
+                executionId: started.execution.id,
+                teamId,
+                agentId: workerAgent.id,
+                taskId: started.task?.id ?? null,
+                skills: started.execution.appliedSkills,
+              },
+            },
+          },
+          costLog: {
+            modelTier: "power",
+            modelId: "gpt-4o",
+            promptTokens: 100,
+            completionTokens: 50,
+            estimatedCostUsd: 1.25,
+          },
+        },
+      ],
+    });
+
+    const res = await request(app)
+      .get(`/api/observability?agentId=${encodeURIComponent(workerAgent.id)}&search=crm.lookup`)
+      .set(asAuth());
+
+    expect(res.status).toBe(200);
+    expect(res.body.total).toBe(1);
+    expect(res.body.records[0]).toMatchObject({
+      templateName: "Support Bot",
+      stepName: step.name,
+      stepKind: "llm",
+      agentName: workerAgent.name,
+      taskTitle: "Handle observability trace",
+      costUsd: 1.25,
+      reasoningTrace: expect.stringContaining("customer routing"),
+    });
+    expect(res.body.records[0].toolCalls[0].toolName).toBe("crm.lookup");
+
+    const csvRes = await request(app)
+      .get(`/api/observability?format=csv&agentId=${encodeURIComponent(workerAgent.id)}`)
+      .set(asAuth());
+
+    expect(csvRes.status).toBe(200);
+    expect(csvRes.headers["content-type"]).toMatch(/text\/csv/);
+    expect(csvRes.text).toContain("crm.lookup");
+    expect(csvRes.text).toContain("Handle observability trace");
   });
 });
 

@@ -1,5 +1,6 @@
 import { randomUUID } from "crypto";
 import { WorkflowStep, WorkflowTemplate } from "../types/workflow";
+import { companyLifecycleStore } from "./companyLifecycleStore";
 import {
   AgentHeartbeatRecord,
   ControlPlaneAgent,
@@ -24,7 +25,8 @@ function slugify(value: string): string {
     .trim()
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "");
+    .replace(/^-+/, "")
+    .replace(/-+$/, "");
 }
 
 function buildAuditEvent(
@@ -227,6 +229,13 @@ function listAgentsForTeam(teamId: string, userId: string): ControlPlaneAgent[] 
     .sort((left, right) => left.createdAt.localeCompare(right.createdAt));
 }
 
+function wasExecutionRequestedBeforePause(requestedAt: string, pausedAt?: string): boolean {
+  if (!pausedAt) {
+    return true;
+  }
+  return new Date(requestedAt).getTime() <= new Date(pausedAt).getTime();
+}
+
 export const controlPlaneStore = {
   listSkills(): ControlPlaneSkillDefinition[] {
     return SKILL_CATALOG.map((skill) => ({ ...skill }));
@@ -421,13 +430,16 @@ export const controlPlaneStore = {
     switch (input.action) {
       case "pause":
         team.status = "paused";
+        team.pausedByCompanyLifecycle = false;
         break;
       case "resume":
       case "restart":
         team.status = "active";
+        team.pausedByCompanyLifecycle = false;
         break;
       case "stop":
         team.status = "stopped";
+        team.pausedByCompanyLifecycle = false;
         break;
     }
 
@@ -438,6 +450,7 @@ export const controlPlaneStore = {
 
     this.listAgents(team.id, input.userId).forEach((agent) => {
       agent.status = toAgentStatus(input.action);
+      agent.pausedByCompanyLifecycle = false;
       agent.updatedAt = timestamp;
       if (input.action === "stop") {
         agent.currentExecutionId = undefined;
@@ -603,7 +616,84 @@ export const controlPlaneStore = {
     return task;
   },
 
-  startAgentExecution(input: {
+  async updateCompanyLifecycle(input: {
+    userId: string;
+    action: "pause" | "resume";
+    actor: string;
+    reason?: string;
+  }): Promise<{
+    state: Awaited<ReturnType<typeof companyLifecycleStore.getState>>;
+    auditEntry: Awaited<ReturnType<typeof companyLifecycleStore.applyAction>>["auditEntry"];
+    affectedTeamIds: string[];
+    affectedAgentIds: string[];
+  }> {
+    const timestamp = nowIso();
+    const affectedTeamIds: string[] = [];
+    const affectedAgentIds: string[] = [];
+
+    Array.from(teams.values())
+      .filter((team) => team.userId === input.userId)
+      .forEach((team) => {
+        if (input.action === "pause") {
+          if (team.status === "active") {
+            team.status = "paused";
+            team.pausedByCompanyLifecycle = true;
+            team.updatedAt = timestamp;
+            affectedTeamIds.push(team.id);
+          }
+          return;
+        }
+
+        if (team.status === "paused" && team.pausedByCompanyLifecycle) {
+          team.status = "active";
+          team.pausedByCompanyLifecycle = false;
+          team.updatedAt = timestamp;
+          affectedTeamIds.push(team.id);
+        }
+      });
+
+    Array.from(agents.values())
+      .filter((agent) => agent.userId === input.userId)
+      .forEach((agent) => {
+        if (input.action === "pause") {
+          if (agent.status === "active") {
+            agent.status = "paused";
+            agent.pausedByCompanyLifecycle = true;
+            agent.updatedAt = timestamp;
+            affectedAgentIds.push(agent.id);
+          }
+          return;
+        }
+
+        if (agent.status === "paused" && agent.pausedByCompanyLifecycle) {
+          agent.status = "active";
+          agent.pausedByCompanyLifecycle = false;
+          agent.updatedAt = timestamp;
+          affectedAgentIds.push(agent.id);
+        }
+      });
+
+    const { state, auditEntry } = await companyLifecycleStore.applyAction({
+      userId: input.userId,
+      action: input.action,
+      runId: input.actor,
+      reason: input.reason,
+      affectedTeamIds,
+      affectedAgentIds,
+    });
+
+    return { state, auditEntry, affectedTeamIds, affectedAgentIds };
+  },
+
+  async getCompanyLifecycle(userId: string) {
+    return companyLifecycleStore.getState(userId);
+  },
+
+  async listCompanyLifecycleAudit(userId: string) {
+    return companyLifecycleStore.listAudit(userId);
+  },
+
+  async startAgentExecution(input: {
     userId: string;
     actor: string;
     teamId: string;
@@ -613,7 +703,11 @@ export const controlPlaneStore = {
     requestedAgentId?: string;
     taskTitle?: string;
     taskDescription?: string;
-  }): { execution: ControlPlaneExecution; agent: ControlPlaneAgent; task?: ControlPlaneTask } {
+  }): Promise<{ execution: ControlPlaneExecution; agent: ControlPlaneAgent; task?: ControlPlaneTask }> {
+    if (await companyLifecycleStore.isPaused(input.userId)) {
+      throw new Error("company_paused");
+    }
+
     const team = getTeamOwnedByUser(input.teamId, input.userId);
     if (!team) {
       throw new Error("team_not_found");
@@ -675,7 +769,7 @@ export const controlPlaneStore = {
     team.lastHeartbeatAt = requestedAt;
     team.updatedAt = requestedAt;
 
-    this.recordHeartbeat({
+    await this.recordHeartbeat({
       userId: input.userId,
       teamId: team.id,
       agentId: agent.id,
@@ -761,7 +855,7 @@ export const controlPlaneStore = {
     return execution;
   },
 
-  recordHeartbeat(input: {
+  async recordHeartbeat(input: {
     userId: string;
     teamId: string;
     agentId: string;
@@ -771,18 +865,33 @@ export const controlPlaneStore = {
     costUsd?: number;
     createdTaskIds?: string[];
     completedAt?: string;
-  }): AgentHeartbeatRecord {
+  }): Promise<AgentHeartbeatRecord> {
+    const companyState = await companyLifecycleStore.getState(input.userId);
     const team = getTeamOwnedByUser(input.teamId, input.userId);
     const agent = getAgentOwnedByUser(input.agentId, input.userId);
     if (!team || !agent || agent.teamId !== team.id) {
       throw new Error("agent_not_found");
     }
 
+    let execution = input.executionId
+      ? getExecutionOwnedByUser(input.executionId, input.userId)
+      : undefined;
+
     if (input.executionId) {
-      const execution = getExecutionOwnedByUser(input.executionId, input.userId);
       if (!execution || execution.teamId !== team.id || execution.agentId !== agent.id) {
         throw new Error("execution_not_found");
       }
+    }
+
+    if (companyState.status === "paused") {
+      const canProceed =
+        execution && wasExecutionRequestedBeforePause(execution.requestedAt, companyState.pausedAt);
+      if (!canProceed) {
+        throw new Error("company_paused");
+      }
+    }
+
+    if (execution) {
       execution.lastHeartbeatAt = nowIso();
       executions.set(execution.id, execution);
     }
@@ -823,5 +932,6 @@ export const controlPlaneStore = {
     tasks.clear();
     heartbeats.clear();
     executions.clear();
+    companyLifecycleStore.clear();
   },
 };

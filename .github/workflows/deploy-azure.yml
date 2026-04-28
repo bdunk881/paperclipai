@@ -11,6 +11,16 @@ on:
         default: staging
         type: choice
         options: [staging, production]
+      operation:
+        description: Deploy the current revision or roll back to an existing backend image tag
+        required: true
+        default: deploy
+        type: choice
+        options: [deploy, rollback]
+      rollback_image_tag:
+        description: Existing backend image tag to deploy when operation=rollback (example: sha-abc123)
+        required: false
+        type: string
 
 permissions:
   contents: read
@@ -57,6 +67,7 @@ jobs:
             type=raw,value=latest,enable=${{ github.ref == 'refs/heads/master' }}
 
       - name: Build and push backend image
+        if: github.event_name != 'workflow_dispatch' || github.event.inputs.operation != 'rollback'
         uses: docker/build-push-action@v5
         with:
           context: .
@@ -100,7 +111,15 @@ jobs:
           EXPECTED_APP_NAME="${{ vars.AZURE_CONTAINER_APP_STAGING_NAME }}"
           EXPECTED_RESOURCE_GROUP="${{ vars.AZURE_CONTAINER_APP_STAGING_RESOURCE_GROUP }}"
           API_HOST="${{ vars.AZURE_STAGING_API_HOST }}"
-          IMAGE_TAG="${{ env.IMAGE_REPO }}:sha-${{ github.sha }}"
+          OPERATION="${{ github.event.inputs.operation || 'deploy' }}"
+          ROLLBACK_IMAGE_TAG="${{ github.event.inputs.rollback_image_tag || '' }}"
+
+          if [ "$OPERATION" = "rollback" ]; then
+            require_nonempty "$ROLLBACK_IMAGE_TAG" "rollback_image_tag"
+            IMAGE_TAG="${{ env.IMAGE_REPO }}:${ROLLBACK_IMAGE_TAG}"
+          else
+            IMAGE_TAG="${{ env.IMAGE_REPO }}:sha-${{ github.sha }}"
+          fi
 
           require_nonempty "$EXPECTED_APP_NAME" "AZURE_CONTAINER_APP_STAGING_NAME"
           require_nonempty "$EXPECTED_RESOURCE_GROUP" "AZURE_CONTAINER_APP_STAGING_RESOURCE_GROUP"
@@ -203,6 +222,8 @@ jobs:
       - name: Validate staging social auth env secret
         env:
           BACKEND_ENV_STAGING_SOCIAL_AUTH: ${{ secrets.AZURE_BACKEND_ENV_STAGING_SOCIAL_AUTH }}
+          GOOGLE_CLIENT_ID: ${{ vars.GOOGLE_CLIENT_ID }}
+          STAGING_SOCIAL_AUTH_CLIENT_ID: ${{ vars.AZURE_BACKEND_ENV_STAGING_SOCIAL_AUTH_CLIENTID }}
         run: |
           set -euo pipefail
 
@@ -214,6 +235,15 @@ jobs:
           tmpfile="$(mktemp)"
           trap 'rm -f "$tmpfile"' EXIT
           printf '%s\n' "$BACKEND_ENV_STAGING_SOCIAL_AUTH" > "$tmpfile"
+
+          client_id="${GOOGLE_CLIENT_ID:-}"
+          if [ -z "$client_id" ]; then
+            client_id="${STAGING_SOCIAL_AUTH_CLIENT_ID:-}"
+          fi
+
+          if [ -n "$client_id" ] && ! grep -Eq '^GOOGLE_CLIENT_ID=.+' "$tmpfile"; then
+            printf '\nGOOGLE_CLIENT_ID=%s\n' "$client_id" >> "$tmpfile"
+          fi
 
           require_env_key() {
             local key="$1"
@@ -234,21 +264,70 @@ jobs:
             fi
           }
 
+          read_env_value() {
+            local key="$1"
+            local value
+            value="$(grep -E "^${key}=.+" "$tmpfile" | head -n1 | cut -d= -f2- || true)"
+            value="${value%%#*}"
+            value="$(printf '%s' "$value" | tr -d '\r' | sed -E 's/[[:space:]]+$//')"
+            value="${value%/}"
+            printf '%s' "$value"
+          }
+
+          require_origin_in_allowlist() {
+            local expected_origin="$1"
+            local configured=""
+            local key
+            local value
+            for key in AUTH_SOCIAL_ALLOWED_REDIRECT_ORIGINS ALLOWED_ORIGINS; do
+              value="$(read_env_value "$key")"
+              if [ -z "$value" ]; then
+                continue
+              fi
+
+              configured="yes"
+              if printf '%s' "$value" | tr ',' '\n' | grep -Fxq "$expected_origin"; then
+                return 0
+              fi
+            done
+
+            if [ -z "$configured" ]; then
+              echo "::error::AZURE_BACKEND_ENV_STAGING_SOCIAL_AUTH must include either AUTH_SOCIAL_ALLOWED_REDIRECT_ORIGINS or ALLOWED_ORIGINS with ${expected_origin}"
+            else
+              echo "::error::AZURE_BACKEND_ENV_STAGING_SOCIAL_AUTH must allow ${expected_origin} in AUTH_SOCIAL_ALLOWED_REDIRECT_ORIGINS or ALLOWED_ORIGINS"
+            fi
+            exit 1
+          }
+
           require_env_key "GOOGLE_CLIENT_ID"
           require_env_key "GOOGLE_CLIENT_SECRET"
           require_env_key "APP_JWT_SECRET"
           require_env_key "SOCIAL_AUTH_CALLBACK_BASE_URL"
-          require_exact_https_url "SOCIAL_AUTH_CALLBACK_BASE_URL" "https://${{ steps.target.outputs.api_host }}/auth"
+          require_env_key "SOCIAL_AUTH_DASHBOARD_URL"
+          require_exact_https_url "SOCIAL_AUTH_CALLBACK_BASE_URL" "https://${{ steps.target.outputs.api_host }}/api/auth/social"
+          require_exact_https_url "SOCIAL_AUTH_DASHBOARD_URL" "https://staging.app.helloautoflow.com"
+          require_origin_in_allowlist "https://staging.app.helloautoflow.com"
 
       - name: Deploy backend to Azure Container Apps
         env:
           BACKEND_ENV_STAGING_SOCIAL_AUTH: ${{ secrets.AZURE_BACKEND_ENV_STAGING_SOCIAL_AUTH }}
+          GOOGLE_CLIENT_ID: ${{ vars.GOOGLE_CLIENT_ID }}
+          STAGING_SOCIAL_AUTH_CLIENT_ID: ${{ vars.AZURE_BACKEND_ENV_STAGING_SOCIAL_AUTH_CLIENTID }}
         run: |
           set -euo pipefail
 
           tmpfile="$(mktemp)"
           trap 'rm -f "$tmpfile"' EXIT
           printf '%s\n' "$BACKEND_ENV_STAGING_SOCIAL_AUTH" > "$tmpfile"
+
+          client_id="${GOOGLE_CLIENT_ID:-}"
+          if [ -z "$client_id" ]; then
+            client_id="${STAGING_SOCIAL_AUTH_CLIENT_ID:-}"
+          fi
+
+          if [ -n "$client_id" ] && ! grep -Eq '^GOOGLE_CLIENT_ID=.+' "$tmpfile"; then
+            printf '\nGOOGLE_CLIENT_ID=%s\n' "$client_id" >> "$tmpfile"
+          fi
 
           env_args=()
           while IFS= read -r line || [ -n "$line" ]; do
@@ -325,6 +404,12 @@ jobs:
                   exit 1
                 fi
 
+                QA_API_BASE_URL="https://${REVISION_FQDN}" \
+                QA_E2E_USER_ID="qa-smoke-user" \
+                QA_CONNECTOR_HEALTH_SLUGS="slack hubspot stripe gmail sentry linear teams" \
+                QA_CATALOG_CONNECTOR_SLUGS="slack hubspot stripe gmail sentry linear jira microsoft-teams" \
+                bash infra/scripts/qa_integration_smoke.sh
+
                 echo "Staging smoke tests passed."
                 exit 0
               fi
@@ -344,6 +429,14 @@ jobs:
             --revision "$LATEST_REVISION" \
             --tail 100 || true
           exit 1
+
+      - name: Upload staging connector smoke evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: tier1-connectors-staging-evidence-${{ github.run_id }}
+          path: artifacts/qa-integration/
+          retention-days: 14
 
   deploy-production:
     name: Build and Deploy Production Backend to AKS
@@ -379,6 +472,7 @@ jobs:
             type=raw,value=latest,enable=${{ github.ref == 'refs/heads/master' }}
 
       - name: Build and push backend image to GHCR
+        if: github.event_name != 'workflow_dispatch' || github.event.inputs.operation != 'rollback'
         uses: docker/build-push-action@v5
         with:
           context: .
@@ -426,7 +520,15 @@ jobs:
           LETSENCRYPT_EMAIL="${LETSENCRYPT_EMAIL_OVERRIDE:-}"
           K8S_NAMESPACE="autoflow-production"
           K8S_SECRET_NAME="autoflow-backend-secrets"
-          GHCR_IMAGE="${{ env.IMAGE_REPO }}:sha-${{ github.sha }}"
+          OPERATION="${{ github.event.inputs.operation || 'deploy' }}"
+          ROLLBACK_IMAGE_TAG="${{ github.event.inputs.rollback_image_tag || '' }}"
+
+          if [ "$OPERATION" = "rollback" ]; then
+            require_nonempty "$ROLLBACK_IMAGE_TAG" "rollback_image_tag"
+            GHCR_IMAGE="${{ env.IMAGE_REPO }}:${ROLLBACK_IMAGE_TAG}"
+          else
+            GHCR_IMAGE="${{ env.IMAGE_REPO }}:sha-${{ github.sha }}"
+          fi
 
           require_nonempty "$AKS_CLUSTER_NAME" "AZURE_AKS_PRODUCTION_CLUSTER_NAME"
           require_nonempty "$AKS_RESOURCE_GROUP" "AZURE_AKS_PRODUCTION_RESOURCE_GROUP"
@@ -766,4 +868,17 @@ jobs:
             exit 1
           fi
 
+          QA_API_BASE_URL="https://${{ steps.target.outputs.api_host }}" \
+          QA_CONNECTOR_HEALTH_SLUGS="slack hubspot stripe gmail sentry linear teams" \
+          QA_CATALOG_CONNECTOR_SLUGS="slack hubspot stripe gmail sentry linear jira microsoft-teams" \
+          bash infra/scripts/qa_integration_smoke.sh
+
           echo "Production smoke tests passed through TLS ingress ${INGRESS_TARGET}."
+
+      - name: Upload production connector smoke evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: tier1-connectors-production-evidence-${{ github.run_id }}
+          path: artifacts/qa-integration/
+          retention-days: 14

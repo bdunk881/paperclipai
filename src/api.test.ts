@@ -537,6 +537,206 @@ describe("Portable workflow APIs", () => {
 });
 
 // ---------------------------------------------------------------------------
+// Company provisioning APIs
+// ---------------------------------------------------------------------------
+
+describe("Company provisioning APIs", () => {
+  it("requires X-Paperclip-Run-Id on mutating requests", async () => {
+    const res = await request(app)
+      .post("/api/companies")
+      .set(asAuth())
+      .send({
+        name: "Acme AI",
+        idempotencyKey: "acme-1",
+        budgetMonthlyUsd: 300,
+        secretBindings: { OPENAI_API_KEY: "sk-test-1234" },
+        agents: [{ roleTemplateId: "workspace-manager" }],
+      });
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/X-Paperclip-Run-Id/i);
+  });
+
+  it("provisions a customer company workspace with role-library agents and masked secrets", async () => {
+    const res = await request(app)
+      .post("/api/companies")
+      .set(asAuth())
+      .set("X-Paperclip-Run-Id", "run-provision-company")
+      .send({
+        name: "Acme AI",
+        workspaceName: "Acme AI Workspace",
+        externalCompanyId: "crm-acme-42",
+        idempotencyKey: "acme-1",
+        budgetMonthlyUsd: 300,
+        secretBindings: {
+          OPENAI_API_KEY: "sk-live-openai-1234",
+          HUBSPOT_CLIENT_SECRET: "hubspot-secret-9876",
+        },
+        agents: [
+          { roleTemplateId: "workspace-manager", budgetMonthlyUsd: 60 },
+          { roleTemplateId: "backend-engineer", budgetMonthlyUsd: 140, skills: ["gh-cli"] },
+          { roleTemplateId: "integration-engineer" },
+        ],
+      });
+
+    expect(res.status).toBe(201);
+    expect(res.body.idempotentReplay).toBe(false);
+    expect(res.body.company.name).toBe("Acme AI");
+    expect(res.body.company.externalCompanyId).toBe("crm-acme-42");
+    expect(res.body.workspace.name).toBe("Acme AI Workspace");
+    expect(res.body.workspace.slug).toBe("acme-ai");
+    expect(res.body.company.teamId).toBe(res.body.team.id);
+    expect(res.body.team.name).toBe("Acme AI Workspace");
+    expect(res.body.company.allocatedBudgetMonthlyUsd).toBe(300);
+    expect(res.body.company.remainingBudgetMonthlyUsd).toBe(0);
+    expect(res.body.secretBindings).toEqual([
+      expect.objectContaining({ key: "HUBSPOT_CLIENT_SECRET" }),
+      expect.objectContaining({ key: "OPENAI_API_KEY" }),
+    ]);
+    expect(JSON.stringify(res.body)).not.toContain("sk-live-openai-1234");
+    expect(JSON.stringify(res.body)).not.toContain("hubspot-secret-9876");
+
+    expect(res.body.agents).toHaveLength(3);
+    const backendAgent = res.body.agents.find((agent: { roleKey: string }) => agent.roleKey === "backend-engineer");
+    expect(backendAgent).toBeTruthy();
+    expect(backendAgent.skills).toEqual(["gh-cli", "paperclip", "security-review"]);
+    expect(backendAgent.budgetMonthlyUsd).toBe(140);
+
+    const integrationAgent = res.body.agents.find(
+      (agent: { roleKey: string }) => agent.roleKey === "integration-engineer"
+    );
+    expect(integrationAgent.budgetMonthlyUsd).toBe(100);
+    expect(integrationAgent.skills).toEqual(["openai-docs", "paperclip"]);
+  });
+
+  it("replays idempotent retries and keeps tenant state isolated across companies", async () => {
+    const firstRes = await request(app)
+      .post("/api/companies")
+      .set(asAuth())
+      .set("X-Paperclip-Run-Id", "run-company-first")
+      .send({
+        name: "Acme AI",
+        idempotencyKey: "acme-2",
+        budgetMonthlyUsd: 200,
+        secretBindings: { OPENAI_API_KEY: "sk-acme-1234" },
+        agents: [
+          { roleTemplateId: "workspace-manager", budgetMonthlyUsd: 50 },
+          { roleTemplateId: "backend-engineer", budgetMonthlyUsd: 150 },
+        ],
+      });
+
+    const retryRes = await request(app)
+      .post("/api/companies")
+      .set(asAuth())
+      .set("X-Paperclip-Run-Id", "run-company-retry")
+      .send({
+        name: "Acme AI",
+        idempotencyKey: "acme-2",
+        budgetMonthlyUsd: 200,
+        secretBindings: { OPENAI_API_KEY: "sk-acme-1234" },
+        agents: [
+          { roleTemplateId: "workspace-manager", budgetMonthlyUsd: 50 },
+          { roleTemplateId: "backend-engineer", budgetMonthlyUsd: 150 },
+        ],
+      });
+
+    const secondRes = await request(app)
+      .post("/api/companies")
+      .set(asAuth())
+      .set("X-Paperclip-Run-Id", "run-company-second")
+      .send({
+        name: "Beta Labs",
+        idempotencyKey: "beta-1",
+        budgetMonthlyUsd: 180,
+        secretBindings: { OPENAI_API_KEY: "sk-beta-5678" },
+        agents: [
+          { roleTemplateId: "workspace-manager", budgetMonthlyUsd: 40 },
+          { roleTemplateId: "integration-engineer", budgetMonthlyUsd: 140 },
+        ],
+      });
+
+    expect(firstRes.status).toBe(201);
+    expect(retryRes.status).toBe(200);
+    expect(retryRes.body.idempotentReplay).toBe(true);
+    expect(retryRes.body.company.id).toBe(firstRes.body.company.id);
+    expect(retryRes.body.workspace.id).toBe(firstRes.body.workspace.id);
+    expect(retryRes.body.team.id).toBe(firstRes.body.team.id);
+
+    expect(secondRes.status).toBe(201);
+    expect(secondRes.body.company.id).not.toBe(firstRes.body.company.id);
+    expect(secondRes.body.workspace.id).not.toBe(firstRes.body.workspace.id);
+    expect(secondRes.body.team.id).not.toBe(firstRes.body.team.id);
+    expect(secondRes.body.agents.map((agent: { id: string }) => agent.id)).not.toEqual(
+      firstRes.body.agents.map((agent: { id: string }) => agent.id)
+    );
+  });
+
+  it("rejects budget overflow, unknown role templates, and conflicting idempotency reuse", async () => {
+    const overflowRes = await request(app)
+      .post("/api/companies")
+      .set(asAuth())
+      .set("X-Paperclip-Run-Id", "run-company-overflow")
+      .send({
+        name: "Gamma Co",
+        idempotencyKey: "gamma-1",
+        budgetMonthlyUsd: 100,
+        secretBindings: { OPENAI_API_KEY: "sk-gamma-1234" },
+        agents: [
+          { roleTemplateId: "workspace-manager", budgetMonthlyUsd: 60 },
+          { roleTemplateId: "backend-engineer", budgetMonthlyUsd: 60 },
+        ],
+      });
+
+    expect(overflowRes.status).toBe(400);
+    expect(overflowRes.body.error).toMatch(/budget/i);
+
+    const unknownRoleRes = await request(app)
+      .post("/api/companies")
+      .set(asAuth())
+      .set("X-Paperclip-Run-Id", "run-company-role-error")
+      .send({
+        name: "Gamma Co",
+        idempotencyKey: "gamma-2",
+        budgetMonthlyUsd: 100,
+        secretBindings: { OPENAI_API_KEY: "sk-gamma-1234" },
+        agents: [{ roleTemplateId: "non-existent-role" }],
+      });
+
+    expect(unknownRoleRes.status).toBe(400);
+    expect(unknownRoleRes.body.error).toMatch(/Unknown role template/i);
+
+    const initialProvisionRes = await request(app)
+      .post("/api/companies")
+      .set(asAuth())
+      .set("X-Paperclip-Run-Id", "run-company-initial")
+      .send({
+        name: "Delta Co",
+        idempotencyKey: "delta-1",
+        budgetMonthlyUsd: 100,
+        secretBindings: { OPENAI_API_KEY: "sk-delta-1234" },
+        agents: [{ roleTemplateId: "workspace-manager", budgetMonthlyUsd: 100 }],
+      });
+
+    expect(initialProvisionRes.status).toBe(201);
+
+    const conflictingReplayRes = await request(app)
+      .post("/api/companies")
+      .set(asAuth())
+      .set("X-Paperclip-Run-Id", "run-company-conflict")
+      .send({
+        name: "Delta Co",
+        idempotencyKey: "delta-1",
+        budgetMonthlyUsd: 120,
+        secretBindings: { OPENAI_API_KEY: "sk-delta-1234" },
+        agents: [{ roleTemplateId: "workspace-manager", budgetMonthlyUsd: 120 }],
+      });
+
+    expect(conflictingReplayRes.status).toBe(409);
+    expect(conflictingReplayRes.body.error).toMatch(/idempotencyKey/i);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Control plane APIs
 // ---------------------------------------------------------------------------
 

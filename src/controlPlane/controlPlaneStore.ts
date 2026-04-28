@@ -4,12 +4,15 @@ import { companyLifecycleStore } from "./companyLifecycleStore";
 import {
   AgentHeartbeatRecord,
   BudgetStatusSnapshot,
+  CompanyProvisioningAgentInput,
+  CompanyProvisioningResult,
   ControlPlaneAgent,
   ControlPlaneBudgetAlert,
   ControlPlaneDeployment,
   ControlPlaneExecution,
   ControlPlaneExecutionStatus,
   ControlPlaneLifecycleAction,
+  ControlPlaneRoleTemplateDefinition,
   ControlPlaneSkillDefinition,
   ControlPlaneSpendEntry,
   ControlPlaneTask,
@@ -17,6 +20,9 @@ import {
   ControlPlaneTaskStatus,
   ControlPlaneTeam,
   HeartbeatStatus,
+  ProvisionedCompanyRecord,
+  ProvisionedCompanySecretBinding,
+  ProvisionedCompanyWorkspace,
   SpendCategory,
   TeamSpendSnapshot,
 } from "./types";
@@ -129,13 +135,139 @@ const SKILL_CATALOG: ControlPlaneSkillDefinition[] = [
   },
 ];
 
+const ROLE_TEMPLATE_CATALOG: ControlPlaneRoleTemplateDefinition[] = [
+  {
+    id: "workspace-manager",
+    name: "Workspace Manager",
+    description: "Coordinates tenant-level provisioning, operations, and audit trail ownership.",
+    defaultModel: "gpt-5.4",
+    defaultInstructions:
+      "Own workspace-level orchestration, keep tenant systems healthy, and coordinate downstream agents.",
+    defaultSkills: ["paperclip"],
+  },
+  {
+    id: "backend-engineer",
+    name: "Backend Engineer",
+    description: "Implements APIs, data models, and server-side integrations for the tenant.",
+    defaultModel: "gpt-5.4",
+    defaultInstructions:
+      "Build and maintain backend APIs, integrations, and persistence for the customer workspace.",
+    defaultSkills: ["paperclip", "security-review"],
+  },
+  {
+    id: "integration-engineer",
+    name: "Integration Engineer",
+    description: "Owns third-party connectors, credentials, and external system setup for the tenant.",
+    defaultModel: "gpt-5.4",
+    defaultInstructions:
+      "Configure and maintain customer integrations, credentials, and operational playbooks.",
+    defaultSkills: ["paperclip", "openai-docs"],
+  },
+  {
+    id: "github-operator",
+    name: "GitHub Operator",
+    description: "Handles repository automation, PR workflows, and CI follow-up tasks.",
+    defaultModel: "gpt-5.4-mini",
+    defaultInstructions:
+      "Operate GitHub workflows safely, with strong auditability and fast CI feedback loops.",
+    defaultSkills: ["paperclip", "gh-cli"],
+  },
+];
+
 const teams = new Map<string, ControlPlaneTeam>();
 const agents = new Map<string, ControlPlaneAgent>();
 const tasks = new Map<string, ControlPlaneTask>();
 const heartbeats = new Map<string, AgentHeartbeatRecord>();
 const executions = new Map<string, ControlPlaneExecution>();
+const companies = new Map<string, ProvisionedCompanyRecord>();
+const companyWorkspaces = new Map<string, ProvisionedCompanyWorkspace>();
+const companySecretBindings = new Map<string, Record<string, string>>();
+const companyIdempotencyIndex = new Map<string, { companyId: string; fingerprint: string }>();
 const spendEntries = new Map<string, ControlPlaneSpendEntry>();
 const budgetAlerts = new Map<string, ControlPlaneBudgetAlert>();
+
+function getSkillCatalogIds(): Set<string> {
+  return new Set(SKILL_CATALOG.map((skill) => skill.id));
+}
+
+function getRoleTemplateById(roleTemplateId: string): ControlPlaneRoleTemplateDefinition | undefined {
+  return ROLE_TEMPLATE_CATALOG.find((template) => template.id === roleTemplateId);
+}
+
+function ensureValidSkillIds(skillIds: string[]): void {
+  const validSkillIds = getSkillCatalogIds();
+  const invalidSkills = skillIds.filter((skill) => !validSkillIds.has(skill));
+  if (invalidSkills.length > 0) {
+    throw new Error(`invalid_skills:${invalidSkills.join(",")}`);
+  }
+}
+
+function mergeSkills(defaultSkills: string[], requestedSkills: string[] = []): string[] {
+  const merged = Array.from(new Set([...defaultSkills, ...requestedSkills]));
+  ensureValidSkillIds(merged);
+  return merged.sort();
+}
+
+function maskSecretValue(secret: string): string {
+  const trimmed = secret.trim();
+  if (!trimmed) {
+    return "****";
+  }
+  const suffix = trimmed.slice(-4);
+  return `${"*".repeat(Math.max(8, trimmed.length - suffix.length))}${suffix}`;
+}
+
+function buildCompanySecretSummaries(secretBindings: Record<string, string>): ProvisionedCompanySecretBinding[] {
+  return Object.entries(secretBindings)
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([key, value]) => ({
+      key,
+      maskedValue: maskSecretValue(value),
+    }));
+}
+
+function serializeProvisioningFingerprint(input: {
+  name: string;
+  workspaceName?: string;
+  externalCompanyId?: string;
+  budgetMonthlyUsd: number;
+  orchestrationEnabled?: boolean;
+  secretBindings: Record<string, string>;
+  agents: CompanyProvisioningAgentInput[];
+}): string {
+  const normalizedSecrets = Object.entries(input.secretBindings)
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([key, value]) => [key, value]);
+  const normalizedAgents = input.agents.map((agent) => ({
+    roleTemplateId: agent.roleTemplateId,
+    name: agent.name?.trim() ?? null,
+    budgetMonthlyUsd: agent.budgetMonthlyUsd ?? null,
+    model: agent.model?.trim() ?? null,
+    instructions: agent.instructions?.trim() ?? null,
+    skills: [...(agent.skills ?? [])].sort(),
+  }));
+  return JSON.stringify({
+    name: input.name.trim(),
+    workspaceName: input.workspaceName?.trim() ?? null,
+    externalCompanyId: input.externalCompanyId?.trim() ?? null,
+    budgetMonthlyUsd: input.budgetMonthlyUsd,
+    orchestrationEnabled: input.orchestrationEnabled ?? true,
+    secretBindings: normalizedSecrets,
+    agents: normalizedAgents,
+  });
+}
+
+function makeProvisioningRoleKey(roleTemplateId: string, occurrence: number): string {
+  return occurrence === 0 ? roleTemplateId : `${roleTemplateId}-${occurrence + 1}`;
+}
+
+function getProvisionedCompanyOwnedByUser(companyId: string, userId: string): ProvisionedCompanyRecord | undefined {
+  const company = companies.get(companyId);
+  if (!company || company.userId !== userId) {
+    return undefined;
+  }
+  return company;
+}
 
 function getTeamOwnedByUser(teamId: string, userId: string): ControlPlaneTeam | undefined {
   const team = teams.get(teamId);
@@ -514,6 +646,159 @@ export const controlPlaneStore = {
     return SKILL_CATALOG.map((skill) => ({ ...skill }));
   },
 
+  listRoleTemplates(): ControlPlaneRoleTemplateDefinition[] {
+    return ROLE_TEMPLATE_CATALOG.map((template) => ({
+      ...template,
+      defaultSkills: [...template.defaultSkills],
+    }));
+  },
+
+  provisionCompanyWorkspace(input: {
+    userId: string;
+    name: string;
+    workspaceName?: string;
+    externalCompanyId?: string;
+    idempotencyKey: string;
+    budgetMonthlyUsd: number;
+    orchestrationEnabled?: boolean;
+    secretBindings: Record<string, string>;
+    agents: CompanyProvisioningAgentInput[];
+  }): CompanyProvisioningResult {
+    const normalizedName = input.name.trim();
+    const normalizedWorkspaceName = input.workspaceName?.trim() || `${normalizedName} Workspace`;
+    const normalizedIdempotencyKey = input.idempotencyKey.trim();
+    const normalizedExternalCompanyId = input.externalCompanyId?.trim() || undefined;
+    const fingerprint = serializeProvisioningFingerprint({
+      name: normalizedName,
+      workspaceName: normalizedWorkspaceName,
+      externalCompanyId: normalizedExternalCompanyId,
+      budgetMonthlyUsd: input.budgetMonthlyUsd,
+      orchestrationEnabled: input.orchestrationEnabled,
+      secretBindings: input.secretBindings,
+      agents: input.agents,
+    });
+    const idempotencyIndexKey = `${input.userId}:${normalizedIdempotencyKey}`;
+    const existingProvisioning = companyIdempotencyIndex.get(idempotencyIndexKey);
+    if (existingProvisioning) {
+      if (existingProvisioning.fingerprint !== fingerprint) {
+        throw new Error("idempotency_conflict");
+      }
+
+      const company = getProvisionedCompanyOwnedByUser(existingProvisioning.companyId, input.userId);
+      const workspace = company ? companyWorkspaces.get(company.workspaceId) : undefined;
+      const team = company ? getTeamOwnedByUser(company.teamId, input.userId) : undefined;
+      if (!company || !workspace || !team) {
+        throw new Error("idempotency_target_missing");
+      }
+
+      return {
+        company: { ...company },
+        workspace: { ...workspace },
+        team: { ...team },
+        agents: this.listAgents(team.id, input.userId),
+        secretBindings: buildCompanySecretSummaries(companySecretBindings.get(company.id) ?? {}),
+        availableSkills: this.listSkills(),
+        idempotentReplay: true,
+      };
+    }
+
+    const roleTemplateUsage = new Map<string, number>();
+    const resolvedRoleTemplates = input.agents.map((agentInput) => {
+      const roleTemplate = getRoleTemplateById(agentInput.roleTemplateId);
+      if (!roleTemplate) {
+        throw new Error(`unknown_role_template:${agentInput.roleTemplateId}`);
+      }
+      if (agentInput.skills) {
+        ensureValidSkillIds(agentInput.skills);
+      }
+      return roleTemplate;
+    });
+    const explicitBudget = input.agents.reduce((sum, agent) => sum + (agent.budgetMonthlyUsd ?? 0), 0);
+    if (explicitBudget > input.budgetMonthlyUsd) {
+      throw new Error("budget_exceeded");
+    }
+    const agentsWithoutBudget = input.agents.filter((agent) => agent.budgetMonthlyUsd === undefined);
+    const remainingBudgetPool = Number((input.budgetMonthlyUsd - explicitBudget).toFixed(2));
+    const perAgentBudget =
+      agentsWithoutBudget.length > 0
+        ? Number((remainingBudgetPool / agentsWithoutBudget.length).toFixed(2))
+        : 0;
+
+    const team = createTeamRecord({
+      userId: input.userId,
+      name: normalizedWorkspaceName,
+      description: `Provisioned company workspace for ${normalizedName}`,
+      deploymentMode: "continuous_agents",
+      budgetMonthlyUsd: input.budgetMonthlyUsd,
+      orchestrationEnabled: input.orchestrationEnabled ?? true,
+    });
+
+    const provisionedAgents = input.agents.map((agentInput, index) => {
+      const roleTemplate = resolvedRoleTemplates[index];
+      const usageCount = roleTemplateUsage.get(roleTemplate.id) ?? 0;
+      roleTemplateUsage.set(roleTemplate.id, usageCount + 1);
+      return createAgentRecord({
+        teamId: team.id,
+        userId: input.userId,
+        name: agentInput.name?.trim() || roleTemplate.name,
+        roleKey: makeProvisioningRoleKey(roleTemplate.id, usageCount),
+        model: agentInput.model?.trim() || roleTemplate.defaultModel,
+        instructions: agentInput.instructions?.trim() || roleTemplate.defaultInstructions,
+        budgetMonthlyUsd:
+          agentInput.budgetMonthlyUsd !== undefined ? agentInput.budgetMonthlyUsd : perAgentBudget,
+        reportingToAgentId: undefined,
+        skills: mergeSkills(roleTemplate.defaultSkills, agentInput.skills),
+        schedule: { type: "manual" },
+        status: "active",
+      });
+    });
+
+    const allocatedBudgetMonthlyUsd = Number(
+      provisionedAgents.reduce((sum, agent) => sum + agent.budgetMonthlyUsd, 0).toFixed(2)
+    );
+    if (allocatedBudgetMonthlyUsd > input.budgetMonthlyUsd) {
+      throw new Error("budget_exceeded");
+    }
+
+    const timestamp = nowIso();
+    const workspace: ProvisionedCompanyWorkspace = {
+      id: randomUUID(),
+      name: normalizedWorkspaceName,
+      slug: slugify(normalizedName),
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    };
+    const company: ProvisionedCompanyRecord = {
+      id: randomUUID(),
+      userId: input.userId,
+      name: normalizedName,
+      externalCompanyId: normalizedExternalCompanyId,
+      workspaceId: workspace.id,
+      teamId: team.id,
+      idempotencyKey: normalizedIdempotencyKey,
+      budgetMonthlyUsd: input.budgetMonthlyUsd,
+      allocatedBudgetMonthlyUsd,
+      remainingBudgetMonthlyUsd: Number((input.budgetMonthlyUsd - allocatedBudgetMonthlyUsd).toFixed(2)),
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    };
+
+    companies.set(company.id, company);
+    companyWorkspaces.set(workspace.id, workspace);
+    companySecretBindings.set(company.id, { ...input.secretBindings });
+    companyIdempotencyIndex.set(idempotencyIndexKey, { companyId: company.id, fingerprint });
+
+    return {
+      company: { ...company },
+      workspace: { ...workspace },
+      team: { ...team },
+      agents: provisionedAgents.map((agent) => ({ ...agent, skills: [...agent.skills] })),
+      secretBindings: buildCompanySecretSummaries(input.secretBindings),
+      availableSkills: this.listSkills(),
+      idempotentReplay: false,
+    };
+  },
+
   createTeam(input: {
     userId: string;
     name: string;
@@ -806,11 +1091,7 @@ export const controlPlaneStore = {
       throw new Error("agent_not_found");
     }
 
-    const validSkillIds = new Set(SKILL_CATALOG.map((skill) => skill.id));
-    const invalidSkills = input.skills.filter((skill) => !validSkillIds.has(skill));
-    if (invalidSkills.length > 0) {
-      throw new Error(`invalid_skills:${invalidSkills.join(",")}`);
-    }
+    ensureValidSkillIds(input.skills);
 
     const current = new Set(agent.skills);
     input.skills.forEach((skill) => {
@@ -1386,6 +1667,10 @@ export const controlPlaneStore = {
     tasks.clear();
     heartbeats.clear();
     executions.clear();
+    companies.clear();
+    companyWorkspaces.clear();
+    companySecretBindings.clear();
+    companyIdempotencyIndex.clear();
     companyLifecycleStore.clear();
     spendEntries.clear();
     budgetAlerts.clear();

@@ -10,6 +10,7 @@ import {
   ticketStore,
 } from "./ticketStore";
 import { ticketSyncService } from "../ticketSync/service";
+import { observabilityStore } from "../observability/store";
 
 const router = Router();
 
@@ -194,6 +195,29 @@ router.post("/", requireRunId, async (req: AuthenticatedRequest, res) => {
     actorType: actor.type,
     actorId: actor.id,
     actorLabel: actor.id,
+  });
+
+  observabilityStore.record({
+    userId: actor.id,
+    category: "issue",
+    type: "issue.created",
+    actor: { type: actor.type, id: actor.id, label: actor.id },
+    subject: {
+      type: "ticket",
+      id: aggregate.ticket.id,
+      label: aggregate.ticket.title,
+      parentType: "workspace",
+      parentId: aggregate.ticket.workspaceId,
+    },
+    summary: `Ticket created: ${aggregate.ticket.title}`,
+    payload: {
+      status: aggregate.ticket.status,
+      metadata: {
+        priority: aggregate.ticket.priority,
+        tags: aggregate.ticket.tags,
+      },
+    },
+    occurredAt: aggregate.ticket.createdAt,
   });
 
   res.status(201).json(aggregate);
@@ -391,6 +415,30 @@ router.patch("/:id", requireRunId, async (req: AuthenticatedRequest, res) => {
     return;
   }
 
+  observabilityStore.record({
+    userId: actor.id,
+    category: "issue",
+    type: "issue.updated",
+    actor: { type: actor.type, id: actor.id, label: actor.id },
+    subject: {
+      type: "ticket",
+      id: aggregate.ticket.id,
+      label: aggregate.ticket.title,
+      parentType: "workspace",
+      parentId: aggregate.ticket.workspaceId,
+    },
+    summary: `Ticket updated: ${aggregate.ticket.title}`,
+    payload: {
+      status: aggregate.ticket.status,
+      metadata: {
+        priority: aggregate.ticket.priority,
+        dueDate: aggregate.ticket.dueDate ?? null,
+        tags: aggregate.ticket.tags,
+      },
+    },
+    occurredAt: aggregate.ticket.updatedAt,
+  });
+
   res.json(aggregate);
 });
 
@@ -426,6 +474,29 @@ router.post("/:id/updates", requireRunId, async (req: AuthenticatedRequest, res)
         actorType: actor.type,
         actorId: actor.id,
         actorLabel: actor.id,
+      });
+
+      observabilityStore.record({
+        userId: actor.id,
+        category: "issue",
+        type: "issue.commented",
+        actor: { type: actor.type, id: actor.id, label: actor.id },
+        subject: {
+          type: "ticket",
+          id: aggregate.ticket.id,
+          label: aggregate.ticket.title,
+          parentType: "workspace",
+          parentId: aggregate.ticket.workspaceId,
+        },
+        summary: `Comment added to ${aggregate.ticket.title}`,
+        payload: {
+          status: aggregate.ticket.status,
+          metadata: {
+            updateType: update.type,
+            updateId: update.id,
+          },
+        },
+        occurredAt: update.createdAt,
       });
     }
   }
@@ -472,6 +543,29 @@ router.post("/:id/transitions", requireRunId, async (req: AuthenticatedRequest, 
       actorType: actor.type,
       actorId: actor.id,
       actorLabel: actor.id,
+    });
+
+    observabilityStore.record({
+      userId: actor.id,
+      category: "issue",
+      type: "issue.status_changed",
+      actor: { type: actor.type, id: actor.id, label: actor.id },
+      subject: {
+        type: "ticket",
+        id: result.aggregate.ticket.id,
+        label: result.aggregate.ticket.title,
+        parentType: "workspace",
+        parentId: result.aggregate.ticket.workspaceId,
+      },
+      summary: `Ticket moved to ${result.aggregate.ticket.status}`,
+      payload: {
+        status: result.aggregate.ticket.status,
+        metadata: {
+          reason: parsed.reason ?? null,
+          relevantMemoryCount: result.relevantMemories?.length ?? 0,
+        },
+      },
+      occurredAt: result.aggregate.ticket.updatedAt,
     });
   }
 

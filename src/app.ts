@@ -33,6 +33,7 @@ import controlPlaneRoutes from "./controlPlane/controlPlaneRoutes";
 import ticketRoutes from "./tickets/ticketRoutes";
 import ticketSyncRoutes from "./ticketSync/routes";
 import ticketSyncWebhookRoutes from "./ticketSync/webhookRoutes";
+import observabilityRoutes from "./observability/routes";
 import { llmConfigStore } from "./llmConfig/llmConfigStore";
 import { getProvider } from "./engine/llmProviders";
 import { parseFile } from "./engine/fileParser";
@@ -329,6 +330,7 @@ app.use("/api/integrations/datadog-azure-monitor", datadogAzureMonitorRoutes);
 app.use("/api/integrations/agent-catalog", agentCatalogRoutes);
 app.use("/api/connectors/google-workspace", googleWorkspaceConnectorRoutes);
 app.use("/api/control-plane", requireAuth, controlPlaneRoutes);
+app.use("/api/observability", requireAuth, observabilityRoutes);
 app.use("/api/tickets", requireAuth, ticketRoutes);
 app.use("/api/ticket-sync", requireAuth, ticketSyncRoutes);
 

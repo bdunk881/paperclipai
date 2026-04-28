@@ -87,6 +87,7 @@ import { approvalNotificationStore } from "./engine/approvalNotificationStore";
 import { runStore } from "./engine/runStore";
 import { knowledgeStore } from "./knowledge/knowledgeStore";
 import { resetImportedTemplatesForTests } from "./templates/importedTemplateStore";
+import { observabilityStore } from "./observability/store";
 import {
   PORTABLE_WORKFLOW_FORMAT,
   PORTABLE_WORKFLOW_SCHEMA_VERSION,
@@ -102,6 +103,7 @@ beforeEach(() => {
   approvalNotificationStore.clear();
   runStore.clear();
   knowledgeStore.clear();
+  observabilityStore.clear();
   resetImportedTemplatesForTests();
 });
 
@@ -360,6 +362,141 @@ describe("Knowledge base routes", () => {
 
     expect(patchRes.status).toBe(200);
     expect(patchRes.body.text).toMatch(/verify the health endpoint/i);
+  });
+});
+
+describe("Observability routes", () => {
+  it("returns the live feed contract with issue, run, heartbeat, budget, and alert events", async () => {
+    const deployRes = await request(app)
+      .post("/api/control-plane/deployments/workflow")
+      .set(asAuth())
+      .set("X-Paperclip-Run-Id", "run-observability-deploy")
+      .send({ templateId: "tpl-support-bot" });
+
+    const teamId = deployRes.body.team.id as string;
+    const workerAgent = deployRes.body.agents.find(
+      (agent: { roleKey: string }) => agent.roleKey !== "workflow-manager"
+    );
+    const step = WORKFLOW_TEMPLATES.find((template) => template.id === "tpl-support-bot")!.steps.find(
+      (candidate) => candidate.kind === "llm"
+    )!;
+
+    const started = controlPlaneStore.startAgentExecution({
+      userId: "test-user",
+      actor: "run-observability-seed",
+      teamId,
+      step,
+      sourceRunId: "workflow-run-observability-1",
+      taskTitle: "Investigate signal drift",
+    });
+
+    await request(app)
+      .patch(`/api/control-plane/tasks/${started.task!.id}/status`)
+      .set(asAuth())
+      .set("X-Paperclip-Run-Id", "run-observability-task-done")
+      .send({ status: "done" });
+
+    controlPlaneStore.finalizeAgentExecution({
+      executionId: started.execution.id,
+      userId: "test-user",
+      status: "failed",
+      summary: "Run failed after upstream timeout",
+      costUsd: 1.75,
+    });
+
+    const feedRes = await request(app)
+      .get("/api/observability/events?limit=20")
+      .set(asAuth());
+
+    expect(feedRes.status).toBe(200);
+    expect(Array.isArray(feedRes.body.events)).toBe(true);
+    expect(feedRes.body.events.length).toBeGreaterThan(0);
+    expect(feedRes.body.nextCursor).toEqual(feedRes.body.events.at(-1)?.sequence ?? null);
+
+    const categories = new Set(feedRes.body.events.map((event: { category: string }) => event.category));
+    expect(categories.has("issue")).toBe(true);
+    expect(categories.has("run")).toBe(true);
+    expect(categories.has("heartbeat")).toBe(true);
+    expect(categories.has("budget")).toBe(true);
+    expect(categories.has("alert")).toBe(true);
+
+    const runStartedEvent = feedRes.body.events.find((event: { type: string }) => event.type === "run.started");
+    expect(runStartedEvent).toMatchObject({
+      category: "run",
+      subject: expect.objectContaining({ type: "execution", id: started.execution.id }),
+      payload: expect.objectContaining({
+        sourceRunId: "workflow-run-observability-1",
+        workflowStepId: step.id,
+        workflowStepName: step.name,
+      }),
+    });
+  });
+
+  it("supports cursor-based polling fallback and throughput aggregates", async () => {
+    const deployRes = await request(app)
+      .post("/api/control-plane/deployments/workflow")
+      .set(asAuth())
+      .set("X-Paperclip-Run-Id", "run-observability-fallback-deploy")
+      .send({ templateId: "tpl-support-bot" });
+
+    const teamId = deployRes.body.team.id as string;
+    const workerAgent = deployRes.body.agents.find(
+      (agent: { roleKey: string }) => agent.roleKey !== "workflow-manager"
+    );
+    const step = WORKFLOW_TEMPLATES.find((template) => template.id === "tpl-support-bot")!.steps.find(
+      (candidate) => candidate.kind === "llm"
+    )!;
+
+    const started = controlPlaneStore.startAgentExecution({
+      userId: "test-user",
+      actor: "run-observability-fallback-seed",
+      teamId,
+      step,
+      sourceRunId: "workflow-run-observability-2",
+      taskTitle: "Resolve retry backlog",
+      requestedAgentId: workerAgent.id,
+    });
+
+    const firstPage = await request(app)
+      .get("/api/observability/events?categories=issue&limit=1")
+      .set(asAuth());
+
+    expect(firstPage.status).toBe(200);
+    expect(firstPage.body.events).toHaveLength(1);
+
+    await request(app)
+      .patch(`/api/control-plane/tasks/${started.task!.id}/status`)
+      .set(asAuth())
+      .set("X-Paperclip-Run-Id", "run-observability-fallback-block")
+      .send({ status: "blocked" });
+
+    await request(app)
+      .patch(`/api/control-plane/tasks/${started.task!.id}/status`)
+      .set(asAuth())
+      .set("X-Paperclip-Run-Id", "run-observability-fallback-done")
+      .send({ status: "done" });
+
+    const secondPage = await request(app)
+      .get(`/api/observability/events?categories=issue&after=${firstPage.body.nextCursor}&limit=10`)
+      .set(asAuth());
+
+    expect(secondPage.status).toBe(200);
+    expect(secondPage.body.events.length).toBeGreaterThanOrEqual(2);
+    expect(
+      secondPage.body.events.every((event: { category: string; sequence: string }) => {
+        return event.category === "issue" && Number(event.sequence) > Number(firstPage.body.nextCursor);
+      })
+    ).toBe(true);
+
+    const throughputRes = await request(app)
+      .get("/api/observability/throughput?windowHours=24")
+      .set(asAuth());
+
+    expect(throughputRes.status).toBe(200);
+    expect(throughputRes.body.summary.createdCount).toBeGreaterThanOrEqual(1);
+    expect(throughputRes.body.summary.completedCount).toBeGreaterThanOrEqual(1);
+    expect(throughputRes.body.summary.blockedCount).toBeGreaterThanOrEqual(1);
+    expect(Array.isArray(throughputRes.body.buckets)).toBe(true);
   });
 });
 

@@ -2,7 +2,66 @@ import { getApiBasePath } from "./baseUrl";
 
 const BASE = getApiBasePath();
 const USE_MOCK_API = import.meta.env.VITE_USE_MOCK === "true";
-const MOCK_GENERATED_AT = "2026-04-29T10:15:00.000Z";
+
+const MOCK_OBSERVABILITY_EVENTS: ObservabilityEvent[] = [
+  {
+    id: "evt-9003",
+    sequence: "9003",
+    userId: "usr-e2e",
+    category: "alert",
+    type: "alert.raised",
+    actor: { type: "agent", id: "agent-routing", label: "Routing Watcher" },
+    subject: { type: "task", id: "task-signal-drift", label: "Signal drift alert" },
+    summary: "Critical alert raised for execution latency.",
+    payload: { severity: "critical" },
+    occurredAt: "2026-04-28T20:10:00.000Z",
+  },
+  {
+    id: "evt-9002",
+    sequence: "9002",
+    userId: "usr-e2e",
+    category: "run",
+    type: "run.completed",
+    actor: { type: "run", id: "run-support", label: "Support intake run" },
+    subject: { type: "execution", id: "exec-support", label: "Support intake execution" },
+    summary: "Support intake workflow completed with healthy handoff timing.",
+    payload: { latencyMs: 820 },
+    occurredAt: "2026-04-28T20:04:00.000Z",
+  },
+  {
+    id: "evt-9001",
+    sequence: "9001",
+    userId: "usr-e2e",
+    category: "issue",
+    type: "issue.created",
+    actor: { type: "user", id: "user-operator", label: "Ops Lead" },
+    subject: { type: "ticket", id: "ticket-ops-12", label: "Escalation queue" },
+    summary: "Escalation queue ticket created for approval latency review.",
+    payload: {},
+    occurredAt: "2026-04-28T19:58:00.000Z",
+  },
+];
+
+const MOCK_THROUGHPUT: ObservabilityThroughputSnapshot = {
+  windowHours: 24,
+  generatedAt: "2026-04-28T20:10:00.000Z",
+  summary: {
+    createdCount: 8,
+    completedCount: 6,
+    blockedCount: 1,
+    completionRate: 0.75,
+  },
+  buckets: [
+    { bucketStart: "2026-04-28T14:00:00.000Z", createdCount: 1, completedCount: 1, blockedCount: 0 },
+    { bucketStart: "2026-04-28T15:00:00.000Z", createdCount: 2, completedCount: 1, blockedCount: 0 },
+    { bucketStart: "2026-04-28T16:00:00.000Z", createdCount: 0, completedCount: 1, blockedCount: 0 },
+    { bucketStart: "2026-04-28T17:00:00.000Z", createdCount: 2, completedCount: 1, blockedCount: 1 },
+    { bucketStart: "2026-04-28T18:00:00.000Z", createdCount: 1, completedCount: 1, blockedCount: 0 },
+    { bucketStart: "2026-04-28T19:00:00.000Z", createdCount: 1, completedCount: 0, blockedCount: 0 },
+    { bucketStart: "2026-04-28T20:00:00.000Z", createdCount: 1, completedCount: 1, blockedCount: 0 },
+    { bucketStart: "2026-04-28T21:00:00.000Z", createdCount: 0, completedCount: 0, blockedCount: 0 },
+  ],
+};
 
 function buildAuthHeaders(accessToken: string): HeadersInit {
   return { Authorization: `Bearer ${accessToken}` };
@@ -100,6 +159,7 @@ export function getObservabilityExportUrl(
   }
   return `${BASE}/observability?${params.toString()}`;
 }
+
 export type ObservabilityEventCategory = "issue" | "run" | "heartbeat" | "budget" | "alert";
 
 export interface ObservabilityActorRef {
@@ -178,157 +238,6 @@ export interface StreamObservabilityEventsOptions extends ListObservabilityEvent
   onKeepalive?: (event: ObservabilityKeepaliveEvent) => void;
 }
 
-const MOCK_OBSERVABILITY_EVENTS: ObservabilityEvent[] = [
-  {
-    id: "obs-evt-105",
-    sequence: "105",
-    userId: "usr-e2e",
-    category: "alert",
-    type: "connector.rate_limited",
-    actor: { type: "system", id: "system-observability", label: "Control Plane" },
-    subject: {
-      type: "workspace",
-      id: "workspace-primary",
-      label: "Operator Workspace",
-    },
-    summary: "Gmail sync jobs entered a rate-limit window and switched to queued retries.",
-    payload: { connectorKey: "gmail", retryWindowSeconds: 60, queuedJobs: 12 },
-    occurredAt: "2026-04-29T10:15:00.000Z",
-  },
-  {
-    id: "obs-evt-104",
-    sequence: "104",
-    userId: "usr-e2e",
-    category: "run",
-    type: "run.completed",
-    actor: { type: "agent", id: "agt-ops-1", label: "Ops Analyst" },
-    subject: {
-      type: "execution",
-      id: "run-741",
-      label: "Observability sync",
-      parentType: "task",
-      parentId: "task-1939",
-    },
-    summary: "Observability feed replay completed with backlog drained for the operator view.",
-    payload: { durationMs: 1820, stepsCompleted: 7 },
-    occurredAt: "2026-04-29T10:13:30.000Z",
-  },
-  {
-    id: "obs-evt-103",
-    sequence: "103",
-    userId: "usr-e2e",
-    category: "issue",
-    type: "issue.blocked",
-    actor: { type: "agent", id: "agt-fe-1", label: "Frontend Engineer" },
-    subject: {
-      type: "ticket",
-      id: "ALT-1939",
-      label: "ALT-1939",
-      parentType: "team",
-      parentId: "team-product",
-    },
-    summary: "Dashboard review is waiting on the shared API rate-limit fix in staging.",
-    payload: { blocker: "ALT-1938", environment: "staging" },
-    occurredAt: "2026-04-29T10:11:00.000Z",
-  },
-  {
-    id: "obs-evt-102",
-    sequence: "102",
-    userId: "usr-e2e",
-    category: "heartbeat",
-    type: "heartbeat.completed",
-    actor: { type: "agent", id: "agt-be-1", label: "Backend Engineer" },
-    subject: {
-      type: "agent",
-      id: "agt-be-1",
-      label: "Backend Engineer",
-      parentType: "team",
-      parentId: "team-product",
-    },
-    summary: "Backend validation heartbeat completed and posted the staging test failure root cause.",
-    payload: { issueId: "ALT-1938", note: "429 rate limit regression" },
-    occurredAt: "2026-04-29T10:08:00.000Z",
-  },
-  {
-    id: "obs-evt-101",
-    sequence: "101",
-    userId: "usr-e2e",
-    category: "budget",
-    type: "budget.threshold",
-    actor: { type: "system", id: "system-budget", label: "Budget Guard" },
-    subject: {
-      type: "team",
-      id: "team-product",
-      label: "Product Team",
-    },
-    summary: "Sprint 2 reserve remains available for additional instrumentation work.",
-    payload: { reservePercent: 38, burnRateDelta: -0.07 },
-    occurredAt: "2026-04-29T10:05:00.000Z",
-  },
-];
-
-const MOCK_THROUGHPUT_BUCKETS: ObservabilityThroughputBucket[] = [
-  { bucketStart: "2026-04-29T03:00:00.000Z", createdCount: 4, completedCount: 3, blockedCount: 1 },
-  { bucketStart: "2026-04-29T04:00:00.000Z", createdCount: 5, completedCount: 4, blockedCount: 1 },
-  { bucketStart: "2026-04-29T05:00:00.000Z", createdCount: 6, completedCount: 5, blockedCount: 1 },
-  { bucketStart: "2026-04-29T06:00:00.000Z", createdCount: 7, completedCount: 6, blockedCount: 1 },
-  { bucketStart: "2026-04-29T07:00:00.000Z", createdCount: 8, completedCount: 6, blockedCount: 2 },
-  { bucketStart: "2026-04-29T08:00:00.000Z", createdCount: 5, completedCount: 5, blockedCount: 0 },
-  { bucketStart: "2026-04-29T09:00:00.000Z", createdCount: 4, completedCount: 3, blockedCount: 1 },
-  { bucketStart: "2026-04-29T10:00:00.000Z", createdCount: 3, completedCount: 2, blockedCount: 1 },
-];
-
-function filterMockEvents(
-  options: ListObservabilityEventsOptions = {}
-): ObservabilityEvent[] {
-  const categories = options.categories?.length ? new Set(options.categories) : null;
-  const afterSequence = options.after ? Number(options.after) : null;
-
-  return MOCK_OBSERVABILITY_EVENTS.filter((event) => {
-    if (categories && !categories.has(event.category)) {
-      return false;
-    }
-    if (afterSequence !== null && Number(event.sequence) <= afterSequence) {
-      return false;
-    }
-    return true;
-  }).slice(0, options.limit ?? MOCK_OBSERVABILITY_EVENTS.length);
-}
-
-function getMockObservabilityFeedPage(
-  options: ListObservabilityEventsOptions = {}
-): ObservabilityFeedPage {
-  const events = filterMockEvents(options);
-  return {
-    events,
-    nextCursor: events[0]?.sequence ?? null,
-    hasMore: false,
-    generatedAt: MOCK_GENERATED_AT,
-  };
-}
-
-function getMockObservabilityThroughput(windowHours: number): ObservabilityThroughputSnapshot {
-  const summary = MOCK_THROUGHPUT_BUCKETS.reduce(
-    (acc, bucket) => ({
-      createdCount: acc.createdCount + bucket.createdCount,
-      completedCount: acc.completedCount + bucket.completedCount,
-      blockedCount: acc.blockedCount + bucket.blockedCount,
-    }),
-    { createdCount: 0, completedCount: 0, blockedCount: 0 }
-  );
-
-  return {
-    windowHours,
-    generatedAt: MOCK_GENERATED_AT,
-    summary: {
-      ...summary,
-      completionRate:
-        summary.createdCount === 0 ? 0 : summary.completedCount / summary.createdCount,
-    },
-    buckets: MOCK_THROUGHPUT_BUCKETS,
-  };
-}
-
 function appendObservabilityParams(
   url: URL,
   options: { after?: string; categories?: ObservabilityEventCategory[]; limit?: number }
@@ -379,12 +288,38 @@ function parseSseJson<T>(raw: string | undefined): T | null {
   }
 }
 
+function clone<T>(value: T): T {
+  return JSON.parse(JSON.stringify(value)) as T;
+}
+
+function buildMockFeedPage(options: ListObservabilityEventsOptions = {}): ObservabilityFeedPage {
+  const filtered = MOCK_OBSERVABILITY_EVENTS.filter((event) => {
+    if (options.categories?.length && !options.categories.includes(event.category)) {
+      return false;
+    }
+    if (options.after && Number(event.sequence) <= Number(options.after)) {
+      return false;
+    }
+    return true;
+  }).sort((left, right) => Number(right.sequence) - Number(left.sequence));
+
+  const limit = options.limit ?? filtered.length;
+  const events = filtered.slice(0, limit);
+
+  return {
+    events: clone(events),
+    nextCursor: events[0]?.sequence ?? null,
+    hasMore: filtered.length > limit,
+    generatedAt: MOCK_THROUGHPUT.generatedAt,
+  };
+}
+
 export async function listObservabilityEvents(
   accessToken: string,
   options: ListObservabilityEventsOptions = {}
 ): Promise<ObservabilityFeedPage> {
   if (USE_MOCK_API) {
-    return getMockObservabilityFeedPage(options);
+    return buildMockFeedPage(options);
   }
 
   const url = new URL(`${BASE}/observability/events`, window.location.origin);
@@ -401,7 +336,10 @@ export async function getObservabilityThroughput(
   windowHours = 24
 ): Promise<ObservabilityThroughputSnapshot> {
   if (USE_MOCK_API) {
-    return getMockObservabilityThroughput(windowHours);
+    return {
+      ...clone(MOCK_THROUGHPUT),
+      windowHours,
+    };
   }
 
   const res = await fetch(
@@ -419,46 +357,32 @@ export async function streamObservabilityEvents(
   options: StreamObservabilityEventsOptions
 ): Promise<void> {
   if (USE_MOCK_API) {
-    const page = getMockObservabilityFeedPage(options);
+    const feed = buildMockFeedPage(options);
     options.onReady?.({
-      nextCursor: page.nextCursor,
-      replayed: page.events.length,
-      generatedAt: MOCK_GENERATED_AT,
+      nextCursor: feed.nextCursor,
+      replayed: feed.events.length,
+      generatedAt: feed.generatedAt,
     });
 
-    const nextEvent = page.events[0];
-    let keepaliveTimer: number | null = null;
-    let eventTimer: number | null = null;
-
-    if (nextEvent && !options.after) {
-      eventTimer = window.setTimeout(() => {
-        options.onEvent(nextEvent);
-      }, 350);
-    }
-
-    keepaliveTimer = window.setInterval(() => {
-      options.onKeepalive?.({ generatedAt: new Date().toISOString() });
-    }, 5_000);
-
-    await new Promise<void>((resolve) => {
-      const finish = () => {
-        if (eventTimer) {
-          window.clearTimeout(eventTimer);
-        }
-        if (keepaliveTimer) {
-          window.clearInterval(keepaliveTimer);
-        }
-        resolve();
-      };
-
+    return new Promise<void>((resolve) => {
       if (options.signal?.aborted) {
-        finish();
+        resolve();
         return;
       }
 
-      options.signal?.addEventListener("abort", finish, { once: true });
+      const keepalive = window.setInterval(() => {
+        options.onKeepalive?.({ generatedAt: new Date().toISOString() });
+      }, 10_000);
+
+      options.signal?.addEventListener(
+        "abort",
+        () => {
+          window.clearInterval(keepalive);
+          resolve();
+        },
+        { once: true }
+      );
     });
-    return;
   }
 
   const url = new URL(`${BASE}/observability/events/stream`, window.location.origin);
@@ -501,10 +425,8 @@ export async function streamObservabilityEvents(
     }
   };
 
-  let streamDone = false;
-  while (!streamDone) {
+  for (;;) {
     const { value, done } = await reader.read();
-    streamDone = done;
     if (done) break;
     buffer += decoder.decode(value, { stream: true });
 

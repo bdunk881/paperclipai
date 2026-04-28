@@ -2,7 +2,13 @@ import { RequestHandler, Response, Router } from "express";
 import { AuthenticatedRequest } from "../auth/authMiddleware";
 import { subscriptionStore } from "../billing/subscriptionStore";
 import { llmConfigStore } from "../llmConfig/llmConfigStore";
-import { agentMemoryStore, AgentMemoryEntryType, AgentMemoryScope, AgentMemoryTier } from "./agentMemoryStore";
+import {
+  agentMemoryStore,
+  AgentMemoryEntryType,
+  AgentMemoryLayer,
+  AgentMemoryScope,
+  AgentMemoryTier,
+} from "./agentMemoryStore";
 
 const router = Router({ mergeParams: true });
 const GIGABYTE = 1024 * 1024 * 1024;
@@ -113,6 +119,24 @@ function parseEntryType(value: unknown): AgentMemoryEntryType | undefined {
   return undefined;
 }
 
+function parseMemoryLayer(value: unknown): AgentMemoryLayer | null {
+  if (value === undefined) {
+    return "agent";
+  }
+  if (value === "agent" || value === "team" || value === "company") {
+    return value;
+  }
+  return null;
+}
+
+function parseWorkspaceId(value: unknown, fallbackUserId: string): string {
+  return typeof value === "string" && value.trim() ? value.trim() : fallbackUserId;
+}
+
+function parseTeamId(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
 function parseStringArray(value: unknown): string[] {
   if (!Array.isArray(value)) {
     return [];
@@ -186,11 +210,14 @@ router.post("/", requireRunId, async (req: AuthenticatedRequest, res) => {
     return;
   }
 
-  const { key, text, metadata, scope } = req.body as {
+  const { key, text, metadata, scope, workspaceId, memoryLayer, teamId } = req.body as {
     key?: unknown;
     text?: unknown;
     metadata?: unknown;
     scope?: unknown;
+    workspaceId?: unknown;
+    memoryLayer?: unknown;
+    teamId?: unknown;
   };
   if (typeof key !== "string" || !key.trim()) {
     res.status(400).json({ error: "key is required and must be a non-empty string" });
@@ -206,13 +233,24 @@ router.post("/", requireRunId, async (req: AuthenticatedRequest, res) => {
     res.status(400).json({ error: "scope must be either 'private' or 'shared'" });
     return;
   }
-  if (parsedScope === "shared" && rejectSharedFeature(tier, res)) {
+  const parsedLayer = parseMemoryLayer(memoryLayer);
+  if (!parsedLayer) {
+    res.status(400).json({ error: "memoryLayer must be one of 'agent', 'team', or 'company'" });
+    return;
+  }
+  const resolvedWorkspaceId = parseWorkspaceId(workspaceId, userId);
+  const resolvedTeamId = parseTeamId(teamId);
+  if (parsedLayer === "team" && !resolvedTeamId) {
+    res.status(400).json({ error: "teamId is required when memoryLayer is 'team'" });
+    return;
+  }
+  if ((parsedScope === "shared" || parsedLayer !== "agent") && rejectSharedFeature(tier, res)) {
     return;
   }
 
   const storageLimit = TIER_POLICY[tier].storageBytes;
   if (storageLimit !== null) {
-    const approximateUsage = await agentMemoryStore.getApproximateMemoryUsageBytes(userId);
+    const approximateUsage = await agentMemoryStore.getApproximateMemoryUsageBytes(userId, resolvedWorkspaceId);
     const incomingBytes =
       key.trim().length +
       text.trim().length +
@@ -228,9 +266,12 @@ router.post("/", requireRunId, async (req: AuthenticatedRequest, res) => {
 
   const entry = await agentMemoryStore.createEntry({
     userId,
+    workspaceId: resolvedWorkspaceId,
     agentId,
     runId: req.header("X-Paperclip-Run-Id") as string,
     scope: parsedScope,
+    memoryLayer: parsedLayer,
+    teamId: resolvedTeamId,
     key: key.trim(),
     text: text.trim(),
     metadata: metadata as Record<string, unknown>,
@@ -265,6 +306,9 @@ router.post("/ticket-close", requireRunId, async (req: AuthenticatedRequest, res
     tags,
     extensionMetadata,
     scope,
+    workspaceId,
+    memoryLayer,
+    teamId,
   } = req.body as {
     ticketId?: unknown;
     ticketUrl?: unknown;
@@ -276,6 +320,9 @@ router.post("/ticket-close", requireRunId, async (req: AuthenticatedRequest, res
     tags?: unknown;
     extensionMetadata?: unknown;
     scope?: unknown;
+    workspaceId?: unknown;
+    memoryLayer?: unknown;
+    teamId?: unknown;
   };
 
   if (typeof ticketId !== "string" || !ticketId.trim()) {
@@ -308,13 +355,24 @@ router.post("/ticket-close", requireRunId, async (req: AuthenticatedRequest, res
     res.status(400).json({ error: "scope must be either 'private' or 'shared'" });
     return;
   }
-  if (parsedScope === "shared" && rejectSharedFeature(tier, res)) {
+  const parsedLayer = parseMemoryLayer(memoryLayer);
+  if (!parsedLayer) {
+    res.status(400).json({ error: "memoryLayer must be one of 'agent', 'team', or 'company'" });
+    return;
+  }
+  const resolvedWorkspaceId = parseWorkspaceId(workspaceId, userId);
+  const resolvedTeamId = parseTeamId(teamId);
+  if (parsedLayer === "team" && !resolvedTeamId) {
+    res.status(400).json({ error: "teamId is required when memoryLayer is 'team'" });
+    return;
+  }
+  if ((parsedScope === "shared" || parsedLayer !== "agent") && rejectSharedFeature(tier, res)) {
     return;
   }
 
   const storageLimit = TIER_POLICY[tier].storageBytes;
   if (storageLimit !== null) {
-    const approximateUsage = await agentMemoryStore.getApproximateMemoryUsageBytes(userId);
+    const approximateUsage = await agentMemoryStore.getApproximateMemoryUsageBytes(userId, resolvedWorkspaceId);
     const incomingBytes =
       ticketId.trim().length +
       ticketUrl.trim().length +
@@ -340,9 +398,12 @@ router.post("/ticket-close", requireRunId, async (req: AuthenticatedRequest, res
 
   const entry = await agentMemoryStore.createTicketCloseEntry({
     userId,
+    workspaceId: resolvedWorkspaceId,
     agentId,
     runId: req.header("X-Paperclip-Run-Id") as string,
     scope: parsedScope,
+    memoryLayer: parsedLayer,
+    teamId: resolvedTeamId,
     ticketId: ticketId.trim(),
     ticketUrl: ticketUrl.trim(),
     closedAt: closedAt.trim(),
@@ -391,6 +452,13 @@ router.get("/search", async (req: AuthenticatedRequest, res) => {
   const query = typeof req.query.q === "string" ? req.query.q : "";
   const limit = typeof req.query.limit === "string" ? parseInt(req.query.limit, 10) : undefined;
   const entryType = parseEntryType(req.query.entryType);
+  const memoryLayer = req.query.memoryLayer === undefined ? undefined : parseMemoryLayer(req.query.memoryLayer);
+  if (req.query.memoryLayer !== undefined && !memoryLayer) {
+    res.status(400).json({ error: "memoryLayer must be one of 'agent', 'team', or 'company'" });
+    return;
+  }
+  const workspaceId = parseWorkspaceId(req.query.workspaceId, userId);
+  const teamId = parseTeamId(req.query.teamId);
   const ticketId = typeof req.query.ticketId === "string" ? req.query.ticketId.trim() : undefined;
   const tags =
     typeof req.query.tags === "string"
@@ -398,11 +466,14 @@ router.get("/search", async (req: AuthenticatedRequest, res) => {
       : undefined;
   const results = await agentMemoryStore.searchEntries({
     userId,
+    workspaceId,
     agentId,
+    teamId,
     query,
     includeShared,
     limit,
     entryType,
+    memoryLayer: memoryLayer ?? undefined,
     ticketId,
     tags,
     openAiApiKey: await resolveOpenAiKey(userId),
@@ -424,12 +495,15 @@ router.post("/kg", requireRunId, async (req: AuthenticatedRequest, res) => {
     return;
   }
 
-  const { subject, predicate, object, metadata, scope } = req.body as {
+  const { subject, predicate, object, metadata, scope, workspaceId, memoryLayer, teamId } = req.body as {
     subject?: unknown;
     predicate?: unknown;
     object?: unknown;
     metadata?: unknown;
     scope?: unknown;
+    workspaceId?: unknown;
+    memoryLayer?: unknown;
+    teamId?: unknown;
   };
 
   if (typeof subject !== "string" || !subject.trim()) {
@@ -450,13 +524,24 @@ router.post("/kg", requireRunId, async (req: AuthenticatedRequest, res) => {
     res.status(400).json({ error: "scope must be either 'private' or 'shared'" });
     return;
   }
-  if (parsedScope === "shared" && rejectSharedFeature(tier, res, "Shared knowledge graph facts")) {
+  const parsedLayer = parseMemoryLayer(memoryLayer);
+  if (!parsedLayer) {
+    res.status(400).json({ error: "memoryLayer must be one of 'agent', 'team', or 'company'" });
+    return;
+  }
+  const resolvedWorkspaceId = parseWorkspaceId(workspaceId, userId);
+  const resolvedTeamId = parseTeamId(teamId);
+  if (parsedLayer === "team" && !resolvedTeamId) {
+    res.status(400).json({ error: "teamId is required when memoryLayer is 'team'" });
+    return;
+  }
+  if ((parsedScope === "shared" || parsedLayer !== "agent") && rejectSharedFeature(tier, res, "Shared knowledge graph facts")) {
     return;
   }
 
   const entityLimit = TIER_POLICY[tier].knowledgeGraphEntityLimit;
   if (entityLimit !== null) {
-    const currentFacts = await agentMemoryStore.countKnowledgeFacts(userId);
+    const currentFacts = await agentMemoryStore.countKnowledgeFacts(userId, resolvedWorkspaceId);
     if (currentFacts >= entityLimit) {
       res.status(403).json({
         error: `Knowledge graph entity limit reached for the ${tier} tier`,
@@ -468,9 +553,12 @@ router.post("/kg", requireRunId, async (req: AuthenticatedRequest, res) => {
 
   const fact = await agentMemoryStore.addKnowledgeFact({
     userId,
+    workspaceId: resolvedWorkspaceId,
     agentId,
     runId: req.header("X-Paperclip-Run-Id") as string,
     scope: parsedScope,
+    memoryLayer: parsedLayer,
+    teamId: resolvedTeamId,
     subject: subject.trim(),
     predicate: predicate.trim(),
     object: object.trim(),
@@ -498,16 +586,26 @@ router.get("/kg/query", async (req: AuthenticatedRequest, res) => {
   if (includeShared && rejectSharedFeature(tier, res, "Shared knowledge graph queries")) {
     return;
   }
+  const memoryLayer = req.query.memoryLayer === undefined ? undefined : parseMemoryLayer(req.query.memoryLayer);
+  if (req.query.memoryLayer !== undefined && !memoryLayer) {
+    res.status(400).json({ error: "memoryLayer must be one of 'agent', 'team', or 'company'" });
+    return;
+  }
+  const workspaceId = parseWorkspaceId(req.query.workspaceId, userId);
+  const teamId = parseTeamId(req.query.teamId);
 
   const facts = await agentMemoryStore.queryKnowledgeFacts({
     userId,
+    workspaceId,
     agentId,
+    teamId,
     query: typeof req.query.q === "string" ? req.query.q : undefined,
     subject: typeof req.query.subject === "string" ? req.query.subject : undefined,
     predicate: typeof req.query.predicate === "string" ? req.query.predicate : undefined,
     object: typeof req.query.object === "string" ? req.query.object : undefined,
     includeShared,
     limit: typeof req.query.limit === "string" ? parseInt(req.query.limit, 10) : undefined,
+    memoryLayer: memoryLayer ?? undefined,
   });
 
   res.json({ tier, facts, total: facts.length });
@@ -521,10 +619,13 @@ router.post("/heartbeat-log", requireRunId, async (req: AuthenticatedRequest, re
     return;
   }
 
-  const { summary, status, metadata } = req.body as {
+  const { summary, status, metadata, workspaceId, memoryLayer, teamId } = req.body as {
     summary?: unknown;
     status?: unknown;
     metadata?: unknown;
+    workspaceId?: unknown;
+    memoryLayer?: unknown;
+    teamId?: unknown;
   };
   if (typeof summary !== "string" || !summary.trim()) {
     res.status(400).json({ error: "summary is required and must be a non-empty string" });
@@ -539,10 +640,27 @@ router.post("/heartbeat-log", requireRunId, async (req: AuthenticatedRequest, re
   if (rejectUnavailableTier(tier, res, "Agent Memory heartbeat logs")) {
     return;
   }
+  const parsedLayer = parseMemoryLayer(memoryLayer);
+  if (!parsedLayer) {
+    res.status(400).json({ error: "memoryLayer must be one of 'agent', 'team', or 'company'" });
+    return;
+  }
+  const resolvedWorkspaceId = parseWorkspaceId(workspaceId, userId);
+  const resolvedTeamId = parseTeamId(teamId);
+  if (parsedLayer === "team" && !resolvedTeamId) {
+    res.status(400).json({ error: "teamId is required when memoryLayer is 'team'" });
+    return;
+  }
+  if (parsedLayer !== "agent" && rejectSharedFeature(tier, res, "Layered heartbeat logs")) {
+    return;
+  }
   const log = await agentMemoryStore.appendHeartbeatLog({
     userId,
+    workspaceId: resolvedWorkspaceId,
     agentId,
     runId: req.header("X-Paperclip-Run-Id") as string,
+    memoryLayer: parsedLayer,
+    teamId: resolvedTeamId,
     summary: summary.trim(),
     status: typeof status === "string" ? status.trim() : undefined,
     metadata: metadata as Record<string, unknown>,
@@ -564,14 +682,79 @@ router.get("/heartbeat-log", async (req: AuthenticatedRequest, res) => {
   if (rejectUnavailableTier(tier, res, "Agent Memory heartbeat logs")) {
     return;
   }
+  const memoryLayer = req.query.memoryLayer === undefined ? undefined : parseMemoryLayer(req.query.memoryLayer);
+  if (req.query.memoryLayer !== undefined && !memoryLayer) {
+    res.status(400).json({ error: "memoryLayer must be one of 'agent', 'team', or 'company'" });
+    return;
+  }
+  const workspaceId = parseWorkspaceId(req.query.workspaceId, userId);
+  const teamId = parseTeamId(req.query.teamId);
   const logs = await agentMemoryStore.listHeartbeatLogs({
     userId,
+    workspaceId,
     agentId,
+    teamId,
     tier,
     limit: typeof req.query.limit === "string" ? parseInt(req.query.limit, 10) : undefined,
+    memoryLayer: memoryLayer ?? undefined,
   });
 
   res.json({ tier, logs, total: logs.length });
+});
+
+router.get("/state", async (req: AuthenticatedRequest, res) => {
+  const userId = resolveUserId(req);
+  const agentId = resolveAgentId(req);
+  if (!userId || !agentId) {
+    res.status(401).json({ error: "Authenticated user and agentId are required" });
+    return;
+  }
+
+  const tier = resolveMemoryTier(userId);
+  if (rejectUnavailableTier(tier, res, "Agent Memory state replay")) {
+    return;
+  }
+
+  const workspaceId = parseWorkspaceId(req.query.workspaceId, userId);
+  const teamId = parseTeamId(req.query.teamId);
+  const state = await agentMemoryStore.reconstructWorkspaceState({
+    userId,
+    workspaceId,
+    agentId,
+    teamId,
+  });
+
+  res.json({ tier, state });
+});
+
+router.post("/archive", requireRunId, async (req: AuthenticatedRequest, res) => {
+  const userId = resolveUserId(req);
+  const agentId = resolveAgentId(req);
+  if (!userId || !agentId) {
+    res.status(401).json({ error: "Authenticated user and agentId are required" });
+    return;
+  }
+
+  const tier = resolveMemoryTier(userId);
+  if (rejectUnavailableTier(tier, res, "Agent Memory archival")) {
+    return;
+  }
+
+  const { workspaceId, olderThan } = req.body as { workspaceId?: unknown; olderThan?: unknown };
+  if (typeof olderThan !== "string" || !olderThan.trim()) {
+    res.status(400).json({ error: "olderThan is required and must be an ISO timestamp" });
+    return;
+  }
+
+  const resolvedWorkspaceId = parseWorkspaceId(workspaceId, userId);
+  const archived = await agentMemoryStore.archiveWorkspaceMemory({
+    userId,
+    workspaceId: resolvedWorkspaceId,
+    olderThan: olderThan.trim(),
+    runId: req.header("X-Paperclip-Run-Id") as string,
+  });
+
+  res.status(200).json({ tier, archived });
 });
 
 export default router;

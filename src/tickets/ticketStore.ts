@@ -105,6 +105,7 @@ interface PendingTicketCloseMemoryWrite {
   id: string;
   ticketId: string;
   userId: string;
+  workspaceId: string;
   runId?: string;
   agentId: string;
   closedAt: string;
@@ -412,6 +413,7 @@ async function searchRelevantTicketMemories(input: {
   const openAiApiKey = await resolveOpenAiKey(input.ticket.creatorId);
   return agentMemoryStore.searchEntries({
     userId: input.ticket.creatorId,
+    workspaceId: input.ticket.workspaceId,
     agentId: input.agentId,
     query,
     entryType: "ticket_close",
@@ -429,7 +431,7 @@ async function writeTicketCloseMemory(input: PendingTicketCloseMemoryWrite): Pro
 
   const storageLimit = TIER_POLICY[tier].storageBytes;
   if (storageLimit !== null) {
-    const approximateUsage = await agentMemoryStore.getApproximateMemoryUsageBytes(input.userId);
+    const approximateUsage = await agentMemoryStore.getApproximateMemoryUsageBytes(input.userId, input.workspaceId);
     const incomingBytes =
       input.taskSummary.length +
       input.agentContribution.length +
@@ -447,8 +449,10 @@ async function writeTicketCloseMemory(input: PendingTicketCloseMemoryWrite): Pro
 
   await agentMemoryStore.createTicketCloseEntry({
     userId: input.userId,
+    workspaceId: input.workspaceId,
     agentId: input.agentId,
     runId: input.runId,
+    memoryLayer: "agent",
     ticketId: input.ticketId,
     ticketUrl: `/tickets/${input.ticketId}`,
     closedAt: input.closedAt,
@@ -1307,6 +1311,7 @@ export const ticketStore = {
         id: randomUUID(),
         ticketId: nextTicket.id,
         userId: nextTicket.creatorId,
+        workspaceId: nextTicket.workspaceId,
         runId: input.runId,
         agentId: memoryEntry.agentId,
         closedAt: nextTicket.resolvedAt ?? new Date().toISOString(),

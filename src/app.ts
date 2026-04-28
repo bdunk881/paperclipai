@@ -33,6 +33,7 @@ import knowledgeRoutes from "./knowledge/routes";
 import controlPlaneRoutes from "./controlPlane/controlPlaneRoutes";
 import { controlPlaneStore } from "./controlPlane/controlPlaneStore";
 import companyRoutes from "./companies/companyRoutes";
+import hitlRoutes from "./hitl/hitlRoutes";
 import { buildObservabilityCsv, buildObservabilityResponse } from "./observability/service";
 import reportRoutes from "./reporting/reportRoutes";
 import ticketRoutes from "./tickets/ticketRoutes";
@@ -400,6 +401,7 @@ app.use("/api/integrations/agent-catalog", agentCatalogRoutes);
 app.use("/api/connectors/google-workspace", googleWorkspaceConnectorRoutes);
 app.use("/api/companies", requireAuth, companyRoutes);
 app.use("/api/control-plane", requireAuth, controlPlaneRoutes);
+app.use("/api/hitl", requireAuth, hitlRoutes);
 app.use("/api/reporting", requireAuth, reportRoutes);
 app.use("/api/tickets", requireAuth, ticketRoutes);
 app.use("/api/ticket-sync", requireAuth, ticketSyncRoutes);
@@ -988,7 +990,6 @@ app.post(
     }
   }
 );
-
 // ---------------------------------------------------------------------------
 // Webhook trigger — activates a workflow from an external event
 // ---------------------------------------------------------------------------

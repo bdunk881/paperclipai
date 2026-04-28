@@ -610,7 +610,7 @@ export async function handleAgent(
 
     if (bridgeTarget) {
       const teamId = "teamId" in bridgeTarget ? bridgeTarget.teamId : bridgeTarget.team.id;
-      const started = controlPlaneStore.startAgentExecution({
+      const started = await controlPlaneStore.startAgentExecution({
         userId,
         actor: runId,
         teamId,

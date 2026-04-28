@@ -58,6 +58,8 @@ import shopifyRoutes, { shopifyWebhookRouter } from "./integrations/shopify/rout
 import docuSignRoutes, { docuSignWebhookRouter } from "./integrations/docusign/routes";
 import linearRoutes, { linearWebhookRouter } from "./integrations/linear/routes";
 import teamsRoutes, { teamsWebhookRouter } from "./integrations/teams/routes";
+import gmailRoutes, { gmailWebhookRouter } from "./integrations/gmail/routes";
+import stripeRoutes, { stripeConnectorWebhookRouter } from "./integrations/stripe/routes";
 import posthogRoutes, { posthogWebhookRouter } from "./integrations/posthog/routes";
 import intercomRoutes, { intercomWebhookRouter } from "./integrations/intercom/routes";
 import datadogAzureMonitorRoutes, {
@@ -250,10 +252,14 @@ app.use("/api/webhooks/docusign", docuSignWebhookRouter);
 app.use("/api/webhooks/linear", linearWebhookRouter);
 // Sentry webhook — mounted before express.json() for signature verification
 app.use("/api/webhooks/sentry", sentryWebhookRouter);
+// Gmail webhook — mounted before express.json() for Pub/Sub verification
+app.use("/api/webhooks/gmail", gmailWebhookRouter);
 // Microsoft Teams webhook — mounted before express.json() for signature verification
 app.use("/api/webhooks/teams", teamsWebhookRouter);
 // HubSpot webhook — mounted before express.json() for signature verification
 app.use("/api/webhooks/hubspot", hubSpotWebhookRouter);
+// Stripe connector webhook — mounted before express.json() for signature verification
+app.use("/api/webhooks/stripe/connect", stripeConnectorWebhookRouter);
 // PostHog webhook — mounted before express.json() for signature verification
 app.use("/api/webhooks/posthog", posthogWebhookRouter);
 // Intercom webhook — mounted before express.json() for signature verification
@@ -317,6 +323,8 @@ app.use("/api/integrations/linear", linearRoutes);
 app.use("/api/integrations/sentry", sentryRoutes);
 app.use("/api/integrations/hubspot", hubSpotRoutes);
 app.use("/api/integrations/teams", teamsRoutes);
+app.use("/api/integrations/gmail", gmailRoutes);
+app.use("/api/integrations/stripe", stripeRoutes);
 app.use("/api/integrations/apollo", apolloRoutes);
 app.use("/api/integrations/posthog", posthogRoutes);
 app.use("/api/integrations/intercom", intercomRoutes);

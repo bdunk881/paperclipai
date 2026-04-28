@@ -73,8 +73,9 @@ jobs:
           # Keep the CLI rooted at the repository so Vercel applies the linked
           # dashboard rootDirectory exactly once instead of resolving dashboard/dashboard.
           npx vercel pull --yes --environment=preview --token="$VERCEL_TOKEN"
+          npx vercel build --token="$VERCEL_TOKEN"
           set +e
-          DEPLOY_OUTPUT="$(npx vercel deploy --yes --token="$VERCEL_TOKEN" 2>&1)"
+          DEPLOY_OUTPUT="$(npx vercel deploy --prebuilt --yes --token="$VERCEL_TOKEN" 2>&1)"
           DEPLOY_EXIT=$?
           set -e
           printf '%s\n' "$DEPLOY_OUTPUT"
@@ -197,5 +198,6 @@ jobs:
           # Mirror preview behavior so production also respects the linked
           # dashboard rootDirectory without double-appending the path.
           npx vercel pull --yes --environment=production --token="$VERCEL_TOKEN"
-          PROD_URL="$(npx vercel deploy --prod --yes --token="$VERCEL_TOKEN" | tail -n 1 | tr -d '\r')"
+          npx vercel build --prod --token="$VERCEL_TOKEN"
+          PROD_URL="$(npx vercel deploy --prebuilt --prod --yes --token="$VERCEL_TOKEN" | tail -n 1 | tr -d '\r')"
           echo "Production URL: $PROD_URL"

@@ -9,6 +9,7 @@
     "dev": "ts-node src/index.ts",
     "test": "jest --config jest.config.cjs --runInBand",
     "test:coverage": "jest --config jest.config.cjs --coverage --runInBand",
+    "test:connectors:provider": "jest --config jest.config.cjs --runInBand src/integrations/provider-facing/tier1ProviderFacing.test.ts",
     "test:templates": "jest --config jest.config.cjs --runInBand src/templates",
     "test:api": "jest --config jest.config.cjs --runInBand src/api",
     "test:engine": "jest --config jest.config.cjs --runInBand src/engine",

@@ -1,11 +1,13 @@
 import { randomUUID } from "crypto";
+import { Pool, PoolClient } from "pg";
 import { parseJsonColumn, serializeJson } from "../db/json";
 import { getPostgresPool, isPostgresPersistenceEnabled } from "../db/postgres";
 import { agentMemoryStore, AgentMemorySearchResult, AgentMemoryTier } from "../agents/agentMemoryStore";
 import { subscriptionStore } from "../billing/subscriptionStore";
 import { llmConfigStore } from "../llmConfig/llmConfigStore";
+import { withWorkspaceContext } from "../middleware/workspaceContext";
 import { ticketNotificationStore } from "./ticketNotificationStore";
-import { ticketSlaPolicyStore } from "./ticketSlaPolicyStore";
+import { ticketSlaPolicyStore, TicketWorkspaceStoreContext } from "./ticketSlaPolicyStore";
 import { ticketSlaStore } from "./ticketSlaStore";
 import {
   buildSlaSnapshot,
@@ -140,6 +142,7 @@ const memoryTickets = new Map<string, TicketRecord>();
 const memoryUpdates = new Map<string, TicketUpdate[]>();
 const pendingTicketCloseMemoryWrites = new Map<string, PendingTicketCloseMemoryWrite>();
 const GIGABYTE = 1024 * 1024 * 1024;
+type Queryable = Pick<Pool, "query"> | Pick<PoolClient, "query">;
 
 const TIER_POLICY: Record<
   AgentMemoryTier,
@@ -195,6 +198,35 @@ function cloneAggregate(aggregate: TicketAggregate): TicketAggregate {
     ticket: cloneTicket(aggregate.ticket),
     updates: aggregate.updates.map(cloneUpdate),
   };
+}
+
+function requireWorkspaceContext(
+  context: TicketWorkspaceStoreContext | undefined,
+): TicketWorkspaceStoreContext {
+  if (!context) {
+    throw new Error("Workspace context is required for persisted ticket operations");
+  }
+  return context;
+}
+
+function deriveTicketContext(ticket: TicketRecord): TicketWorkspaceStoreContext {
+  return {
+    workspaceId: ticket.workspaceId,
+    userId: ticket.creatorId,
+  };
+}
+
+function resolveTicketWorkspace(
+  context: TicketWorkspaceStoreContext,
+  workspaceId?: string,
+): string {
+  if (!workspaceId) {
+    return context.workspaceId;
+  }
+  if (workspaceId !== context.workspaceId) {
+    throw new Error("Requested workspace does not match resolved workspace context");
+  }
+  return workspaceId;
 }
 
 function mapTicketRow(row: TicketRow): TicketRecord {
@@ -572,8 +604,13 @@ async function handleSlaEffects(input: {
   snapshot: TicketSlaSnapshot;
   runId?: string;
   now?: string;
+  context?: TicketWorkspaceStoreContext;
 }): Promise<{ aggregate: TicketAggregate; snapshot: TicketSlaSnapshot }> {
-  const policy = await ticketSlaPolicyStore.get(input.aggregate.ticket.workspaceId, input.aggregate.ticket.priority);
+  const policy = await ticketSlaPolicyStore.get(
+    input.aggregate.ticket.workspaceId,
+    input.aggregate.ticket.priority,
+    input.context,
+  );
   if (!policy) {
     return input;
   }
@@ -741,12 +778,13 @@ async function appendChildActivityToParent(input: {
   actor: TicketActorRef;
   content: string;
   metadata: Record<string, unknown>;
+  context?: TicketWorkspaceStoreContext;
 }): Promise<void> {
   if (!input.parentId) {
     return;
   }
 
-  const parentAggregate = await ticketStore.get(input.parentId);
+  const parentAggregate = await ticketStore.get(input.parentId, input.context);
   if (!parentAggregate) {
     return;
   }
@@ -758,16 +796,22 @@ async function appendChildActivityToParent(input: {
     metadata: input.metadata,
   });
 
-  await persistAggregate({
-    ticket: {
-      ...parentAggregate.ticket,
-      updatedAt: new Date().toISOString(),
+  await persistAggregate(
+    {
+      ticket: {
+        ...parentAggregate.ticket,
+        updatedAt: new Date().toISOString(),
+      },
+      updates: [...parentAggregate.updates.map(cloneUpdate), update],
     },
-    updates: [...parentAggregate.updates.map(cloneUpdate), update],
-  });
+    input.context ?? deriveTicketContext(parentAggregate.ticket),
+  );
 }
 
-async function persistAggregate(aggregate: TicketAggregate): Promise<void> {
+async function persistAggregate(
+  aggregate: TicketAggregate,
+  context: TicketWorkspaceStoreContext = deriveTicketContext(aggregate.ticket),
+): Promise<void> {
   if (!isPostgresPersistenceEnabled()) {
     memoryTickets.set(aggregate.ticket.id, cloneTicket(aggregate.ticket));
     memoryUpdates.set(
@@ -777,11 +821,7 @@ async function persistAggregate(aggregate: TicketAggregate): Promise<void> {
     return;
   }
 
-  const pool = getPostgresPool();
-  const client = await pool.connect();
-
-  try {
-    await client.query("BEGIN");
+  await withWorkspaceContext(getPostgresPool(), requireWorkspaceContext(context), async (client) => {
     await client.query(
       `
         INSERT INTO tickets (
@@ -851,14 +891,7 @@ async function persistAggregate(aggregate: TicketAggregate): Promise<void> {
         ]
       );
     }
-
-    await client.query("COMMIT");
-  } catch (error) {
-    await client.query("ROLLBACK");
-    throw error;
-  } finally {
-    client.release();
-  }
+  });
 
   memoryTickets.set(aggregate.ticket.id, cloneTicket(aggregate.ticket));
   memoryUpdates.set(
@@ -867,7 +900,10 @@ async function persistAggregate(aggregate: TicketAggregate): Promise<void> {
   );
 }
 
-async function loadAssignments(ticketIds: string[]): Promise<Map<string, TicketAssignee[]>> {
+async function loadAssignments(
+  ticketIds: string[],
+  queryable?: Queryable,
+): Promise<Map<string, TicketAssignee[]>> {
   const assignments = new Map<string, TicketAssignee[]>();
 
   if (ticketIds.length === 0) {
@@ -884,7 +920,7 @@ async function loadAssignments(ticketIds: string[]): Promise<Map<string, TicketA
     return assignments;
   }
 
-  const result = await getPostgresPool().query(
+  const result = await (queryable ?? getPostgresPool()).query(
     `
       SELECT ticket_id, actor_type, actor_id, role
       FROM ticket_assignments
@@ -904,12 +940,12 @@ async function loadAssignments(ticketIds: string[]): Promise<Map<string, TicketA
   return assignments;
 }
 
-async function loadUpdates(ticketId: string): Promise<TicketUpdate[]> {
+async function loadUpdates(ticketId: string, queryable?: Queryable): Promise<TicketUpdate[]> {
   if (!isPostgresPersistenceEnabled()) {
     return (memoryUpdates.get(ticketId) ?? []).map(cloneUpdate);
   }
 
-  const result = await getPostgresPool().query(
+  const result = await (queryable ?? getPostgresPool()).query(
     `
       SELECT id, ticket_id, actor_type, actor_id, update_type, content, metadata_json, created_at
       FROM ticket_updates
@@ -933,9 +969,15 @@ export const ticketStore = {
     dueDate?: string;
     tags?: string[];
     assignees: TicketAssignee[];
+    context?: TicketWorkspaceStoreContext;
   }): Promise<TicketAggregate> {
     const now = new Date().toISOString();
-    const policy = await ticketSlaPolicyStore.get(input.workspaceId, input.priority ?? "medium");
+    const context = input.context ?? { workspaceId: input.workspaceId, userId: input.creatorId };
+    const policy = await ticketSlaPolicyStore.get(
+      input.workspaceId,
+      input.priority ?? "medium",
+      context,
+    );
     const ticket: TicketRecord = {
       id: randomUUID(),
       workspaceId: input.workspaceId,
@@ -968,9 +1010,9 @@ export const ticketStore = {
     ];
 
     const aggregate = { ticket, updates };
-    await persistAggregate(aggregate);
+    await persistAggregate(aggregate, context);
     if (policy) {
-      await ticketSlaStore.save(buildSlaSnapshot(ticket, policy));
+      await ticketSlaStore.save(buildSlaSnapshot(ticket, policy), context);
     }
     await enqueueAssignmentNotifications(ticket, ticket.assignees);
     await appendChildActivityToParent({
@@ -983,11 +1025,15 @@ export const ticketStore = {
         childStatus: ticket.status,
         childPriority: ticket.priority,
       },
+      context,
     });
     return cloneAggregate(aggregate);
   },
 
-  async get(ticketId: string): Promise<TicketAggregate | undefined> {
+  async get(
+    ticketId: string,
+    context?: TicketWorkspaceStoreContext,
+  ): Promise<TicketAggregate | undefined> {
     const localTicket = memoryTickets.get(ticketId);
     if (localTicket && !isPostgresPersistenceEnabled()) {
       return {
@@ -997,27 +1043,33 @@ export const ticketStore = {
     }
 
     if (isPostgresPersistenceEnabled()) {
-      const result = await getPostgresPool().query(
-        `
-          SELECT id, workspace_id, parent_id, title, description, creator_id, status, priority,
-                 sla_state, due_date, resolved_at, tags_json, created_at, updated_at
-          FROM tickets
-          WHERE id = $1
-        `,
-        [ticketId]
-      );
-      const row = result.rows[0] as TicketRow | undefined;
-      if (!row) {
-        return undefined;
-      }
+      return withWorkspaceContext(
+        getPostgresPool(),
+        requireWorkspaceContext(context),
+        async (client) => {
+          const result = await client.query(
+            `
+              SELECT id, workspace_id, parent_id, title, description, creator_id, status, priority,
+                     sla_state, due_date, resolved_at, tags_json, created_at, updated_at
+              FROM tickets
+              WHERE id = $1
+            `,
+            [ticketId]
+          );
+          const row = result.rows[0] as TicketRow | undefined;
+          if (!row) {
+            return undefined;
+          }
 
-      const ticket = mapTicketRow(row);
-      const assignmentMap = await loadAssignments([ticket.id]);
-      ticket.assignees = assignmentMap.get(ticket.id) ?? [];
-      const updates = await loadUpdates(ticket.id);
-      memoryTickets.set(ticket.id, cloneTicket(ticket));
-      memoryUpdates.set(ticket.id, updates.map(cloneUpdate));
-      return { ticket, updates };
+          const ticket = mapTicketRow(row);
+          const assignmentMap = await loadAssignments([ticket.id], client);
+          ticket.assignees = assignmentMap.get(ticket.id) ?? [];
+          const updates = await loadUpdates(ticket.id, client);
+          memoryTickets.set(ticket.id, cloneTicket(ticket));
+          memoryUpdates.set(ticket.id, updates.map(cloneUpdate));
+          return { ticket, updates };
+        },
+      );
     }
 
     if (!localTicket) {
@@ -1037,7 +1089,7 @@ export const ticketStore = {
     status?: TicketStatus;
     priority?: TicketPriority;
     slaState?: string;
-  } = {}): Promise<TicketRecord[]> {
+  } = {}, context?: TicketWorkspaceStoreContext): Promise<TicketRecord[]> {
     if (!isPostgresPersistenceEnabled()) {
       return Array.from(memoryTickets.values())
         .filter((ticket) => (filters.workspaceId ? ticket.workspaceId === filters.workspaceId : true))
@@ -1055,40 +1107,47 @@ export const ticketStore = {
         .map(cloneTicket);
     }
 
-    const result = await getPostgresPool().query(
-      `
-        SELECT DISTINCT t.id, t.workspace_id, t.parent_id, t.title, t.description, t.creator_id, t.status, t.priority,
-               t.sla_state, t.due_date, t.resolved_at, t.tags_json, t.created_at, t.updated_at
-        FROM tickets t
-        LEFT JOIN ticket_assignments ta ON ta.ticket_id = t.id
-        WHERE ($1::uuid IS NULL OR t.workspace_id = $1)
-          AND ($2::text IS NULL OR t.status = $2)
-          AND ($3::text IS NULL OR t.priority = $3)
-          AND ($4::text IS NULL OR t.sla_state = $4)
-          AND ($5::text IS NULL OR ta.actor_type = $5)
-          AND ($6::text IS NULL OR ta.actor_id = $6)
-        ORDER BY t.created_at DESC
-      `,
-      [
-        filters.workspaceId ?? null,
-        filters.status ?? null,
-        filters.priority ?? null,
-        filters.slaState ?? null,
-        filters.actorType ?? null,
-        filters.actorId ?? null,
-      ]
-    );
+    const workspaceContext = requireWorkspaceContext(context);
+    const workspaceId = resolveTicketWorkspace(workspaceContext, filters.workspaceId);
+    return withWorkspaceContext(getPostgresPool(), workspaceContext, async (client) => {
+      const result = await client.query(
+        `
+          SELECT DISTINCT t.id, t.workspace_id, t.parent_id, t.title, t.description, t.creator_id, t.status, t.priority,
+                 t.sla_state, t.due_date, t.resolved_at, t.tags_json, t.created_at, t.updated_at
+          FROM tickets t
+          LEFT JOIN ticket_assignments ta ON ta.ticket_id = t.id
+          WHERE ($1::uuid IS NULL OR t.workspace_id = $1)
+            AND ($2::text IS NULL OR t.status = $2)
+            AND ($3::text IS NULL OR t.priority = $3)
+            AND ($4::text IS NULL OR t.sla_state = $4)
+            AND ($5::text IS NULL OR ta.actor_type = $5)
+            AND ($6::text IS NULL OR ta.actor_id = $6)
+          ORDER BY t.created_at DESC
+        `,
+        [
+          workspaceId,
+          filters.status ?? null,
+          filters.priority ?? null,
+          filters.slaState ?? null,
+          filters.actorType ?? null,
+          filters.actorId ?? null,
+        ]
+      );
 
-    const tickets = (result.rows as TicketRow[]).map(mapTicketRow);
-    const assignmentMap = await loadAssignments(tickets.map((ticket) => ticket.id));
-    return tickets.map((ticket) => {
-      ticket.assignees = assignmentMap.get(ticket.id) ?? [];
-      return ticket;
+      const tickets = (result.rows as TicketRow[]).map(mapTicketRow);
+      const assignmentMap = await loadAssignments(tickets.map((ticket) => ticket.id), client);
+      return tickets.map((ticket) => {
+        ticket.assignees = assignmentMap.get(ticket.id) ?? [];
+        return ticket;
+      });
     });
   },
 
-  async listChildren(parentId: string): Promise<TicketRecord[]> {
-    const tickets = await this.list();
+  async listChildren(
+    parentId: string,
+    context?: TicketWorkspaceStoreContext,
+  ): Promise<TicketRecord[]> {
+    const tickets = await this.list({}, context);
     return tickets
       .filter((ticket) => ticket.parentId === parentId)
       .sort((left, right) => right.createdAt.localeCompare(left.createdAt));
@@ -1103,11 +1162,13 @@ export const ticketStore = {
     dueDate?: string | null;
     tags?: string[];
     assignees?: TicketAssignee[];
+    context?: TicketWorkspaceStoreContext;
   }): Promise<TicketAggregate | undefined> {
-    const existing = await this.get(input.ticketId);
+    const existing = await this.get(input.ticketId, input.context);
     if (!existing) {
       return undefined;
     }
+    const context = input.context ?? deriveTicketContext(existing.ticket);
 
     const nextTicket: TicketRecord = {
       ...existing.ticket,
@@ -1162,9 +1223,9 @@ export const ticketStore = {
     }
 
     let aggregate = { ticket: nextTicket, updates: nextUpdates };
-    const existingSnapshot = await ticketSlaStore.get(input.ticketId);
+    const existingSnapshot = await ticketSlaStore.get(input.ticketId, context);
     if (existingSnapshot) {
-      const policy = await ticketSlaPolicyStore.get(nextTicket.workspaceId, nextTicket.priority);
+      const policy = await ticketSlaPolicyStore.get(nextTicket.workspaceId, nextTicket.priority, context);
       if (policy) {
         const refreshedSnapshot: TicketSlaSnapshot = {
           ...existingSnapshot,
@@ -1180,13 +1241,14 @@ export const ticketStore = {
         aggregate,
         snapshot: refreshedSnapshot,
         now: nextTicket.updatedAt,
+        context,
       });
         aggregate = adjusted.aggregate;
-        await ticketSlaStore.save(adjusted.snapshot);
+        await ticketSlaStore.save(adjusted.snapshot, context);
       }
     }
 
-    await persistAggregate(aggregate);
+    await persistAggregate(aggregate, context);
     if (input.assignees) {
       const delta = assignmentDelta(existing.ticket.assignees, aggregate.ticket.assignees);
       await enqueueAssignmentNotifications(aggregate.ticket, delta.added);
@@ -1201,6 +1263,7 @@ export const ticketStore = {
     reason?: string;
     runId?: string;
     memoryEntries?: TicketCloseMemoryInput[];
+    context?: TicketWorkspaceStoreContext;
   }): Promise<{
     aggregate?: TicketAggregate;
     relevantMemories?: AgentMemorySearchResult[];
@@ -1210,10 +1273,11 @@ export const ticketStore = {
   }> {
     await this.retryPendingTicketCloseMemoryWrites();
 
-    const existing = await this.get(input.ticketId);
+    const existing = await this.get(input.ticketId, input.context);
     if (!existing) {
       return { error: "not_found" };
     }
+    const context = input.context ?? deriveTicketContext(existing.ticket);
 
     const primaryAssignee = getPrimaryAssignee(existing.ticket);
     if (
@@ -1247,7 +1311,7 @@ export const ticketStore = {
     );
 
     let aggregate = { ticket: nextTicket, updates: nextUpdates };
-    const existingSnapshot = await ticketSlaStore.get(input.ticketId);
+    const existingSnapshot = await ticketSlaStore.get(input.ticketId, context);
     let snapshot = existingSnapshot;
     if (snapshot) {
       if (!snapshot.firstResponseRespondedAt && isPrimaryAssignee(input.actor, nextTicket.assignees)) {
@@ -1268,13 +1332,14 @@ export const ticketStore = {
         snapshot,
         runId: input.runId,
         now: nextTicket.updatedAt,
+        context,
       });
       aggregate = adjusted.aggregate;
       snapshot = adjusted.snapshot;
-      await ticketSlaStore.save(snapshot);
+      await ticketSlaStore.save(snapshot, context);
     }
 
-    await persistAggregate(aggregate);
+    await persistAggregate(aggregate, context);
     await enqueueStatusChangeNotification(aggregate.ticket, input.status, input.runId);
     await appendChildActivityToParent({
       parentId: aggregate.ticket.parentId,
@@ -1286,6 +1351,7 @@ export const ticketStore = {
         fromStatus: existing.ticket.status,
         toStatus: input.status,
       },
+      context,
     });
 
     const resultAggregate = cloneAggregate(aggregate);
@@ -1397,7 +1463,7 @@ export const ticketStore = {
       },
       updates: finalUpdates,
     };
-    await persistAggregate(loggedAggregate);
+    await persistAggregate(loggedAggregate, context);
     return { aggregate: cloneAggregate(loggedAggregate), closeContract };
   },
 
@@ -1407,11 +1473,13 @@ export const ticketStore = {
     type: TicketUpdateType;
     content: string;
     metadata?: Record<string, unknown>;
+    context?: TicketWorkspaceStoreContext;
   }): Promise<TicketUpdate | undefined> {
-    const existing = await this.get(input.ticketId);
+    const existing = await this.get(input.ticketId, input.context);
     if (!existing) {
       return undefined;
     }
+    const context = input.context ?? deriveTicketContext(existing.ticket);
 
     const normalizedMetadata = { ...(input.metadata ?? {}) };
     const followUpUpdates: TicketUpdate[] = [];
@@ -1464,7 +1532,7 @@ export const ticketStore = {
       updates: [...existing.updates.map(cloneUpdate), update, ...followUpUpdates],
     };
 
-    const snapshot = await ticketSlaStore.get(input.ticketId);
+    const snapshot = await ticketSlaStore.get(input.ticketId, context);
     if (snapshot) {
       let nextSnapshot = snapshot;
       if (!snapshot.firstResponseRespondedAt && isPrimaryAssignee(input.actor, existing.ticket.assignees)) {
@@ -1474,12 +1542,13 @@ export const ticketStore = {
         aggregate,
         snapshot: nextSnapshot,
         now: update.createdAt,
+        context,
       });
       aggregate = adjusted.aggregate;
-      await ticketSlaStore.save(adjusted.snapshot);
+      await ticketSlaStore.save(adjusted.snapshot, context);
     }
 
-    await persistAggregate(aggregate);
+    await persistAggregate(aggregate, context);
     for (const mention of ticketMentions(update.metadata)) {
       await ticketNotificationStore.enqueueForActor({
         ticketId: input.ticketId,
@@ -1508,8 +1577,11 @@ export const ticketStore = {
     return cloneUpdate(update);
   },
 
-  async listActivity(ticketId: string): Promise<TicketUpdate[] | undefined> {
-    const existing = await this.get(ticketId);
+  async listActivity(
+    ticketId: string,
+    context?: TicketWorkspaceStoreContext,
+  ): Promise<TicketUpdate[] | undefined> {
+    const existing = await this.get(ticketId, context);
     if (!existing) {
       return undefined;
     }
@@ -1553,8 +1625,8 @@ export const ticketStore = {
     return pendingTicketCloseMemoryWrites.size;
   },
 
-  async listPolicies(workspaceId: string) {
-    return ticketSlaPolicyStore.ensureDefaults(workspaceId);
+  async listPolicies(workspaceId: string, context?: TicketWorkspaceStoreContext) {
+    return ticketSlaPolicyStore.ensureDefaults(workspaceId, context);
   },
 
   async upsertPolicy(input: Parameters<typeof ticketSlaPolicyStore.upsert>[0]) {
@@ -1565,17 +1637,19 @@ export const ticketStore = {
     return ticketNotificationStore.list(filters);
   },
 
-  async evaluateSla(input: { workspaceId?: string; now?: string; runId?: string } = {}) {
+  async evaluateSla(
+    input: { workspaceId?: string; now?: string; runId?: string; context?: TicketWorkspaceStoreContext } = {},
+  ) {
     const tickets = await this.list({
       workspaceId: input.workspaceId,
-    });
+    }, input.context);
     let evaluated = 0;
     let changed = 0;
     for (const ticket of tickets.filter((candidate) =>
       ["open", "in_progress", "blocked"].includes(candidate.status),
     )) {
-      const aggregate = await this.get(ticket.id);
-      const snapshot = await ticketSlaStore.get(ticket.id);
+      const aggregate = await this.get(ticket.id, input.context);
+      const snapshot = await ticketSlaStore.get(ticket.id, input.context);
       if (!aggregate || !snapshot) {
         continue;
       }
@@ -1585,6 +1659,7 @@ export const ticketStore = {
         snapshot,
         runId: input.runId,
         now: input.now,
+        context: input.context ?? deriveTicketContext(aggregate.ticket),
       });
       if (
         adjusted.aggregate.ticket.slaState !== aggregate.ticket.slaState ||
@@ -1593,8 +1668,11 @@ export const ticketStore = {
         adjusted.aggregate.updates.length !== aggregate.updates.length
       ) {
         changed += 1;
-        await persistAggregate(adjusted.aggregate);
-        await ticketSlaStore.save(adjusted.snapshot);
+        await persistAggregate(adjusted.aggregate, input.context ?? deriveTicketContext(adjusted.aggregate.ticket));
+        await ticketSlaStore.save(
+          adjusted.snapshot,
+          input.context ?? deriveTicketContext(adjusted.aggregate.ticket),
+        );
       } else if ((input.now ?? adjusted.snapshot.lastEvaluatedAt) !== snapshot.lastEvaluatedAt) {
         const evaluation = evaluateSlaState(aggregate.ticket, snapshot, input.now);
         if (evaluation.snapshot.state !== aggregate.ticket.slaState) {
@@ -1602,10 +1680,13 @@ export const ticketStore = {
             ticket: { ...aggregate.ticket, slaState: evaluation.snapshot.state, updatedAt: new Date().toISOString() },
             updates: aggregate.updates,
           };
-          await persistAggregate(nextAggregate);
+          await persistAggregate(nextAggregate, input.context ?? deriveTicketContext(nextAggregate.ticket));
           changed += 1;
         }
-        await ticketSlaStore.save(evaluation.snapshot);
+        await ticketSlaStore.save(
+          evaluation.snapshot,
+          input.context ?? deriveTicketContext(aggregate.ticket),
+        );
       }
     }
     return { evaluated, changed };

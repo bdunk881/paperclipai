@@ -27,6 +27,7 @@ import {
   TicketSyncWebhookEvent,
   TicketTrackerLink,
 } from "./types";
+import { TicketWorkspaceStoreContext } from "../tickets/ticketSlaPolicyStore";
 
 type AdapterFactory = (input: {
   connectionId: string;
@@ -41,6 +42,13 @@ const SYNC_SUCCESS_EVENT = "tracker_sync_success";
 const MAX_RETRIES = 3;
 
 let adapterFactoryOverride: AdapterFactory | null = null;
+
+function ticketContext(ticket: Pick<TicketRecord, "workspaceId" | "creatorId">): TicketWorkspaceStoreContext {
+  return {
+    workspaceId: ticket.workspaceId,
+    userId: ticket.creatorId,
+  };
+}
 
 interface TicketSyncBootstrapSource {
   type: "integration_connection" | "linear_connector";
@@ -160,9 +168,14 @@ async function retry<T>(fn: () => Promise<T>): Promise<T> {
   throw lastError;
 }
 
-async function recordLink(ticketId: string, provider: TrackerProvider, connectionId: string, issue: TrackerIssue) {
+async function recordLink(
+  ticket: TicketRecord,
+  provider: TrackerProvider,
+  connectionId: string,
+  issue: TrackerIssue,
+) {
   await ticketStore.addUpdate({
-    ticketId,
+    ticketId: ticket.id,
     actor: { type: "agent", id: `${provider}-sync` },
     type: "structured_update",
     content: `Linked ticket to ${provider} issue ${issue.key}.`,
@@ -174,12 +187,13 @@ async function recordLink(ticketId: string, provider: TrackerProvider, connectio
       externalIssueKey: issue.key,
       externalIssueUrl: issue.url,
     },
+    context: ticketContext(ticket),
   });
 }
 
-async function recordSyncSuccess(ticketId: string, provider: TrackerProvider, action: string) {
+async function recordSyncSuccess(ticket: TicketRecord, provider: TrackerProvider, action: string) {
   await ticketStore.addUpdate({
-    ticketId,
+    ticketId: ticket.id,
     actor: { type: "agent", id: `${provider}-sync` },
     type: "structured_update",
     content: `External sync ${action} succeeded for ${provider}.`,
@@ -188,6 +202,7 @@ async function recordSyncSuccess(ticketId: string, provider: TrackerProvider, ac
       provider,
       action,
     },
+    context: ticketContext(ticket),
   });
 }
 
@@ -197,6 +212,7 @@ async function recordSyncError(ticket: TicketRecord, context: TicketSyncMutation
     ticketId: ticket.id,
     actor: { type: context.actorType, id: context.actorId },
     tags,
+    context: ticketContext(ticket),
   });
   await ticketStore.addUpdate({
     ticketId: ticket.id,
@@ -208,6 +224,7 @@ async function recordSyncError(ticket: TicketRecord, context: TicketSyncMutation
       provider,
       message,
     },
+    context: ticketContext(ticket),
   });
 }
 
@@ -232,6 +249,7 @@ async function applyInboundStatus(ticket: TicketRecord, metadata: TicketSyncConn
       actor: { type: primaryAssignee.type, id: primaryAssignee.id },
       status,
       reason: `Inbound ${event.provider} sync`,
+      context: ticketContext(ticket),
     });
 
   if (ticket.status === "open" && mappedStatus === "resolved") {
@@ -623,8 +641,11 @@ export const ticketSyncService = {
     return ticketSyncConnectionStore.revoke(connectionId, userId);
   },
 
-  async listLinks(ticketId: string): Promise<TicketTrackerLink[]> {
-    const updates = await ticketStore.listActivity(ticketId);
+  async listLinks(
+    ticketId: string,
+    context?: TicketWorkspaceStoreContext,
+  ): Promise<TicketTrackerLink[]> {
+    const updates = await ticketStore.listActivity(ticketId, context);
     return updates ? dedupeLinks(updates) : [];
   },
 
@@ -659,8 +680,8 @@ export const ticketSyncService = {
 
       try {
         const issue = await retry(() => built.adapter.createIssue(mapTicketToTrackerIssue(ticket, built.decrypted.record.metadata)));
-        await recordLink(ticket.id, connection.provider, connection.id, issue);
-        await recordSyncSuccess(ticket.id, connection.provider, "create");
+        await recordLink(ticket, connection.provider, connection.id, issue);
+        await recordSyncSuccess(ticket, connection.provider, "create");
       } catch (error) {
         await recordSyncError(ticket, context, connection.provider, error instanceof Error ? error.message : String(error));
       }
@@ -668,7 +689,7 @@ export const ticketSyncService = {
   },
 
   async syncTicketUpdated(ticket: TicketRecord, context: TicketSyncMutationContext): Promise<void> {
-    const links = await this.listLinks(ticket.id);
+    const links = await this.listLinks(ticket.id, ticketContext(ticket));
     for (const link of links) {
       const built = await buildAdapter(link.connectionId);
       if (!built || built.decrypted.record.metadata.syncDirection === "inbound") {
@@ -677,7 +698,7 @@ export const ticketSyncService = {
 
       try {
         await retry(() => built.adapter.updateIssue(link.externalIssueId, mapTicketToTrackerIssue(ticket, built.decrypted.record.metadata)));
-        await recordSyncSuccess(ticket.id, link.provider, "update");
+        await recordSyncSuccess(ticket, link.provider, "update");
       } catch (error) {
         await recordSyncError(ticket, context, link.provider, error instanceof Error ? error.message : String(error));
       }
@@ -685,7 +706,7 @@ export const ticketSyncService = {
   },
 
   async syncTicketComment(ticket: TicketRecord, update: TicketUpdate, context: TicketSyncMutationContext): Promise<void> {
-    const links = await this.listLinks(ticket.id);
+    const links = await this.listLinks(ticket.id, ticketContext(ticket));
     for (const link of links) {
       const built = await buildAdapter(link.connectionId);
       if (!built || built.decrypted.record.metadata.syncDirection === "inbound") {
@@ -711,7 +732,7 @@ export const ticketSyncService = {
             },
           }),
         }));
-        await recordSyncSuccess(ticket.id, link.provider, "comment");
+        await recordSyncSuccess(ticket, link.provider, "comment");
       } catch (error) {
         await recordSyncError(ticket, context, link.provider, error instanceof Error ? error.message : String(error));
       }
@@ -752,10 +773,17 @@ export const ticketSyncService = {
           ? parseJiraWebhook(input.rawBody)
           : parseLinearWebhook(input.rawBody);
 
-    const tickets = await ticketStore.list({ workspaceId: built.decrypted.record.metadata.workspaceId });
+    const syncContext = {
+      workspaceId: built.decrypted.record.metadata.workspaceId,
+      userId: built.decrypted.record.userId,
+    };
+    const tickets = await ticketStore.list(
+      { workspaceId: built.decrypted.record.metadata.workspaceId },
+      syncContext,
+    );
     let linkedTicket: TicketRecord | undefined;
     for (const ticket of tickets) {
-      const links = await this.listLinks(ticket.id);
+      const links = await this.listLinks(ticket.id, ticketContext(ticket));
       if (links.some((link) => link.connectionId === input.connectionId && link.externalIssueId === event.externalIssueId)) {
         linkedTicket = ticket;
         break;
@@ -776,8 +804,9 @@ export const ticketSyncService = {
         priority: (mapInboundValue(built.decrypted.record.metadata.fieldMapping?.priority, event.priority) as any) ?? "medium",
         tags: event.labels,
         assignees: [assignee],
+        context: syncContext,
       });
-      await recordLink(aggregate.ticket.id, event.provider, input.connectionId, {
+      await recordLink(aggregate.ticket, event.provider, input.connectionId, {
         id: event.externalIssueId,
         key: event.externalIssueKey,
         title: event.title ?? event.externalIssueKey,
@@ -811,6 +840,7 @@ export const ticketSyncService = {
           externalIssueId: event.externalIssueId,
           externalCommentId: event.comment.id,
         },
+        context: ticketContext(linkedTicket),
       });
       return { status: "accepted", ticketId: linkedTicket.id };
     }
@@ -823,6 +853,7 @@ export const ticketSyncService = {
       priority: mapInboundValue(built.decrypted.record.metadata.fieldMapping?.priority, event.priority) as any,
       tags: event.labels,
       assignees: mapInboundAssignees(linkedTicket, built.decrypted.record.metadata, event),
+      context: ticketContext(linkedTicket),
     });
 
     await applyInboundStatus(linkedTicket, built.decrypted.record.metadata, event);

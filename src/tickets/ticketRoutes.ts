@@ -1,6 +1,7 @@
 import { NextFunction, Response, Router } from "express";
 import { z } from "zod";
 import { AuthenticatedRequest } from "../auth/authMiddleware";
+import { WorkspaceAwareRequest } from "../middleware/workspaceResolver";
 import {
   TicketActorType,
   TicketAssignee,
@@ -105,7 +106,6 @@ const upsertPolicySchema = z.object({
 });
 
 const evaluateSlaSchema = z.object({
-  workspaceId: z.string().uuid().optional(),
   now: z.string().datetime().optional(),
 });
 
@@ -142,6 +142,31 @@ function resolveActor(req: AuthenticatedRequest, actorType?: TicketActorType) {
   };
 }
 
+function resolveWorkspaceContext(
+  req: WorkspaceAwareRequest,
+  res: Response,
+  requestedWorkspaceId?: string,
+) {
+  const userId = req.auth?.sub?.trim();
+  if (!userId) {
+    res.status(401).json({ error: "Authenticated user required" });
+    return null;
+  }
+
+  const workspaceId = req.workspaceId?.trim();
+  if (!workspaceId) {
+    res.status(500).json({ error: "Workspace context was not resolved for the request" });
+    return null;
+  }
+
+  if (requestedWorkspaceId && requestedWorkspaceId !== workspaceId) {
+    res.status(400).json({ error: "workspaceId does not match the resolved workspace context" });
+    return null;
+  }
+
+  return { workspaceId, userId };
+}
+
 function validateAssignees(assignees: TicketAssignee[]): string | null {
   const primaryCount = assignees.filter((assignee) => assignee.role === "primary").length;
   if (primaryCount !== 1) {
@@ -160,9 +185,13 @@ function validateAssignees(assignees: TicketAssignee[]): string | null {
   return null;
 }
 
-router.post("/", requireRunId, async (req: AuthenticatedRequest, res) => {
+router.post("/", requireRunId, async (req: WorkspaceAwareRequest, res) => {
   const parsed = parseBody(createTicketSchema, req, res);
   if (!parsed) {
+    return;
+  }
+  const context = resolveWorkspaceContext(req, res, parsed.workspaceId);
+  if (!context) {
     return;
   }
 
@@ -179,7 +208,7 @@ router.post("/", requireRunId, async (req: AuthenticatedRequest, res) => {
   }
 
   const aggregate = await ticketStore.create({
-    workspaceId: parsed.workspaceId,
+    workspaceId: context.workspaceId,
     parentId: parsed.parentId,
     title: parsed.title,
     description: parsed.description,
@@ -188,6 +217,7 @@ router.post("/", requireRunId, async (req: AuthenticatedRequest, res) => {
     dueDate: parsed.dueDate,
     tags: parsed.tags,
     assignees: parsed.assignees,
+    context,
   });
 
   await ticketSyncService.syncTicketCreated(aggregate.ticket, {
@@ -199,38 +229,42 @@ router.post("/", requireRunId, async (req: AuthenticatedRequest, res) => {
   res.status(201).json(aggregate);
 });
 
-router.get("/", async (req, res) => {
+router.get("/", async (req: WorkspaceAwareRequest, res) => {
   const status = typeof req.query.status === "string" ? req.query.status : undefined;
   const priority = typeof req.query.priority === "string" ? req.query.priority : undefined;
   const actorType = typeof req.query.actorType === "string" ? req.query.actorType : undefined;
   const workspaceId = typeof req.query.workspaceId === "string" ? req.query.workspaceId : undefined;
   const actorId = typeof req.query.actorId === "string" ? req.query.actorId : undefined;
   const slaState = typeof req.query.slaState === "string" ? req.query.slaState : undefined;
+  const context = resolveWorkspaceContext(req, res, workspaceId);
+  if (!context) {
+    return;
+  }
 
   const tickets = await ticketStore.list({
-    workspaceId,
+    workspaceId: context.workspaceId,
     actorType: actorTypeSchema.safeParse(actorType).success ? (actorType as TicketActorType) : undefined,
     actorId,
     status: ticketStatusSchema.safeParse(status).success ? (status as TicketStatus) : undefined,
     priority:
       ticketPrioritySchema.safeParse(priority).success ? (priority as TicketPriority) : undefined,
     slaState,
-  });
+  }, context);
 
   res.json({ tickets, total: tickets.length });
 });
 
-router.get("/sla/policies", async (req, res) => {
+router.get("/sla/policies", async (req: WorkspaceAwareRequest, res) => {
   const workspaceId = typeof req.query.workspaceId === "string" ? req.query.workspaceId : undefined;
-  if (!workspaceId) {
-    res.status(400).json({ error: "workspaceId is required" });
+  const context = resolveWorkspaceContext(req, res, workspaceId);
+  if (!context) {
     return;
   }
-  const policies = await ticketStore.listPolicies(workspaceId);
+  const policies = await ticketStore.listPolicies(context.workspaceId, context);
   res.json({ policies, total: policies.length });
 });
 
-router.put("/sla/policies/:priority", requireRunId, async (req: AuthenticatedRequest, res) => {
+router.put("/sla/policies/:priority", requireRunId, async (req: WorkspaceAwareRequest, res) => {
   const priorityResult = ticketPrioritySchema.safeParse(req.params.priority);
   if (!priorityResult.success) {
     res.status(400).json({ error: "priority must be one of low, medium, high, urgent" });
@@ -240,8 +274,12 @@ router.put("/sla/policies/:priority", requireRunId, async (req: AuthenticatedReq
   if (!parsed) {
     return;
   }
+  const context = resolveWorkspaceContext(req, res, parsed.workspaceId);
+  if (!context) {
+    return;
+  }
   const policy = await ticketStore.upsertPolicy({
-    workspaceId: parsed.workspaceId,
+    workspaceId: context.workspaceId,
     priority: priorityResult.data as TicketPriority,
     firstResponseTarget: parsed.firstResponseTarget,
     resolutionTarget: parsed.resolutionTarget,
@@ -254,19 +292,25 @@ router.put("/sla/policies/:priority", requireRunId, async (req: AuthenticatedReq
           fallbackAssignee: parsed.escalation.fallbackAssignee,
         }
       : undefined,
+    context,
   });
   res.json({ policy });
 });
 
-router.post("/sla/evaluate", requireRunId, async (req: AuthenticatedRequest, res) => {
+router.post("/sla/evaluate", requireRunId, async (req: WorkspaceAwareRequest, res) => {
   const parsed = parseBody(evaluateSlaSchema, req, res);
   if (!parsed) {
     return;
   }
+  const context = resolveWorkspaceContext(req, res);
+  if (!context) {
+    return;
+  }
   const summary = await ticketStore.evaluateSla({
-    workspaceId: parsed.workspaceId,
+    workspaceId: context.workspaceId,
     now: parsed.now,
     runId: req.header("X-Paperclip-Run-Id") as string,
+    context,
   });
   res.json(summary);
 });
@@ -295,7 +339,7 @@ router.get("/notifications", async (req: AuthenticatedRequest, res) => {
   res.json({ notifications, total: notifications.length });
 });
 
-router.get("/queue/:actorType/:actorId", async (req, res) => {
+router.get("/queue/:actorType/:actorId", async (req: WorkspaceAwareRequest, res) => {
   const actorTypeResult = actorTypeSchema.safeParse(req.params.actorType);
   if (!actorTypeResult.success) {
     res.status(400).json({ error: "actorType must be agent or user" });
@@ -306,16 +350,20 @@ router.get("/queue/:actorType/:actorId", async (req, res) => {
   const priority = typeof req.query.priority === "string" ? req.query.priority : undefined;
   const workspaceId = typeof req.query.workspaceId === "string" ? req.query.workspaceId : undefined;
   const slaState = typeof req.query.slaState === "string" ? req.query.slaState : undefined;
+  const context = resolveWorkspaceContext(req, res, workspaceId);
+  if (!context) {
+    return;
+  }
 
   const tickets = await ticketStore.list({
-    workspaceId,
+    workspaceId: context.workspaceId,
     actorType: actorTypeResult.data,
     actorId: req.params.actorId,
     status: ticketStatusSchema.safeParse(status).success ? (status as TicketStatus) : undefined,
     priority:
       ticketPrioritySchema.safeParse(priority).success ? (priority as TicketPriority) : undefined,
     slaState,
-  });
+  }, context);
 
   res.json({
     actor: { type: actorTypeResult.data, id: req.params.actorId },
@@ -324,8 +372,12 @@ router.get("/queue/:actorType/:actorId", async (req, res) => {
   });
 });
 
-router.get("/:id/activity", async (req, res) => {
-  const activity = await ticketStore.listActivity(req.params.id);
+router.get("/:id/activity", async (req: WorkspaceAwareRequest, res) => {
+  const context = resolveWorkspaceContext(req, res);
+  if (!context) {
+    return;
+  }
+  const activity = await ticketStore.listActivity(req.params.id, context);
   if (!activity) {
     res.status(404).json({ error: "Ticket not found" });
     return;
@@ -334,19 +386,27 @@ router.get("/:id/activity", async (req, res) => {
   res.json({ updates: activity, total: activity.length });
 });
 
-router.get("/:id/children", async (req, res) => {
-  const aggregate = await ticketStore.get(req.params.id);
+router.get("/:id/children", async (req: WorkspaceAwareRequest, res) => {
+  const context = resolveWorkspaceContext(req, res);
+  if (!context) {
+    return;
+  }
+  const aggregate = await ticketStore.get(req.params.id, context);
   if (!aggregate) {
     res.status(404).json({ error: "Ticket not found" });
     return;
   }
 
-  const tickets = await ticketStore.listChildren(req.params.id);
+  const tickets = await ticketStore.listChildren(req.params.id, context);
   res.json({ tickets, total: tickets.length });
 });
 
-router.get("/:id", async (req, res) => {
-  const aggregate = await ticketStore.get(req.params.id);
+router.get("/:id", async (req: WorkspaceAwareRequest, res) => {
+  const context = resolveWorkspaceContext(req, res);
+  if (!context) {
+    return;
+  }
+  const aggregate = await ticketStore.get(req.params.id, context);
   if (!aggregate) {
     res.status(404).json({ error: "Ticket not found" });
     return;
@@ -355,7 +415,7 @@ router.get("/:id", async (req, res) => {
   res.json(aggregate);
 });
 
-router.patch("/:id", requireRunId, async (req: AuthenticatedRequest, res) => {
+router.patch("/:id", requireRunId, async (req: WorkspaceAwareRequest, res) => {
   const parsed = parseBody(updateTicketSchema, req, res);
   if (!parsed) {
     return;
@@ -374,6 +434,10 @@ router.patch("/:id", requireRunId, async (req: AuthenticatedRequest, res) => {
       return;
     }
   }
+  const context = resolveWorkspaceContext(req, res);
+  if (!context) {
+    return;
+  }
 
   const aggregate = await ticketStore.updateTicket({
     ticketId: req.params.id,
@@ -384,6 +448,7 @@ router.patch("/:id", requireRunId, async (req: AuthenticatedRequest, res) => {
     dueDate: parsed.dueDate,
     tags: parsed.tags,
     assignees: parsed.assignees,
+    context,
   });
 
   if (!aggregate) {
@@ -394,7 +459,7 @@ router.patch("/:id", requireRunId, async (req: AuthenticatedRequest, res) => {
   res.json(aggregate);
 });
 
-router.post("/:id/updates", requireRunId, async (req: AuthenticatedRequest, res) => {
+router.post("/:id/updates", requireRunId, async (req: WorkspaceAwareRequest, res) => {
   const parsed = parseBody(createUpdateSchema, req, res);
   if (!parsed) {
     return;
@@ -405,6 +470,10 @@ router.post("/:id/updates", requireRunId, async (req: AuthenticatedRequest, res)
     res.status(401).json({ error: "Authenticated actor required" });
     return;
   }
+  const context = resolveWorkspaceContext(req, res);
+  if (!context) {
+    return;
+  }
 
   const update = await ticketStore.addUpdate({
     ticketId: req.params.id,
@@ -412,6 +481,7 @@ router.post("/:id/updates", requireRunId, async (req: AuthenticatedRequest, res)
     type: parsed.type as TicketUpdateType,
     content: parsed.content,
     metadata: parsed.metadata,
+    context,
   });
 
   if (!update) {
@@ -420,7 +490,7 @@ router.post("/:id/updates", requireRunId, async (req: AuthenticatedRequest, res)
   }
 
   if (update.type === "comment") {
-    const aggregate = await ticketStore.get(req.params.id);
+    const aggregate = await ticketStore.get(req.params.id, context);
     if (aggregate) {
       await ticketSyncService.syncTicketComment(aggregate.ticket, update, {
         actorType: actor.type,
@@ -433,7 +503,7 @@ router.post("/:id/updates", requireRunId, async (req: AuthenticatedRequest, res)
   res.status(201).json({ update });
 });
 
-router.post("/:id/transitions", requireRunId, async (req: AuthenticatedRequest, res) => {
+router.post("/:id/transitions", requireRunId, async (req: WorkspaceAwareRequest, res) => {
   const parsed = parseBody(transitionSchema, req, res);
   if (!parsed) {
     return;
@@ -444,6 +514,10 @@ router.post("/:id/transitions", requireRunId, async (req: AuthenticatedRequest, 
     res.status(401).json({ error: "Authenticated actor required" });
     return;
   }
+  const context = resolveWorkspaceContext(req, res);
+  if (!context) {
+    return;
+  }
 
   const result = await ticketStore.transitionTicket({
     ticketId: req.params.id,
@@ -452,6 +526,7 @@ router.post("/:id/transitions", requireRunId, async (req: AuthenticatedRequest, 
     reason: parsed.reason,
     runId: req.header("X-Paperclip-Run-Id") as string,
     memoryEntries: parsed.memoryEntries,
+    context,
   });
 
   if (result.error === "not_found") {

@@ -1326,6 +1326,119 @@ describe("GET /api/analytics/routing-decisions", () => {
   });
 });
 
+describe("GET /api/observability", () => {
+  it("returns searchable trace records and supports CSV export", async () => {
+    const deployRes = await request(app)
+      .post("/api/control-plane/deployments/workflow")
+      .set(asAuth())
+      .set("X-Paperclip-Run-Id", "run-deploy-observability")
+      .send({ templateId: "tpl-support-bot" });
+
+    const teamId = deployRes.body.team.id;
+    const workerAgent = deployRes.body.agents.find(
+      (agent: { roleKey: string }) => agent.roleKey !== "workflow-manager"
+    );
+    const step = WORKFLOW_TEMPLATES.find((template) => template.id === "tpl-support-bot")!.steps.find(
+      (candidate) => candidate.kind === "llm"
+    )!;
+
+    const started = await controlPlaneStore.startAgentExecution({
+      userId: "test-user",
+      actor: "run-observability-seed",
+      teamId,
+      step,
+      sourceRunId: "obs-run-1",
+      requestedAgentId: workerAgent.id,
+      taskTitle: "Handle observability trace",
+    });
+
+    controlPlaneStore.finalizeAgentExecution({
+      executionId: started.execution.id,
+      userId: "test-user",
+      status: "completed",
+      summary: "Completed the traceable step",
+      costUsd: 1.25,
+    });
+
+    await runStore.create({
+      id: "obs-run-1",
+      templateId: "tpl-support-bot",
+      templateName: "Support Bot",
+      status: "completed",
+      startedAt: "2026-04-28T03:00:00.000Z",
+      completedAt: "2026-04-28T03:00:05.000Z",
+      input: {},
+      output: {},
+      userId: "test-user",
+      stepResults: [
+        {
+          stepId: step.id,
+          stepName: step.name,
+          status: "success",
+          durationMs: 1500,
+          output: {
+            _observability: {
+              stepKind: step.kind,
+              startedAt: "2026-04-28T03:00:00.000Z",
+              completedAt: "2026-04-28T03:00:01.500Z",
+              reasoningTrace: "Reasoned about customer routing and escalation policy.",
+              toolCalls: [
+                {
+                  timestamp: "2026-04-28T03:00:01.000Z",
+                  toolType: "mcp",
+                  toolName: "crm.lookup",
+                  input: { ticketId: "T-1" },
+                  output: { accountName: "Acme" },
+                },
+              ],
+              agentExecution: {
+                executionId: started.execution.id,
+                teamId,
+                agentId: workerAgent.id,
+                taskId: started.task?.id ?? null,
+                skills: started.execution.appliedSkills,
+              },
+            },
+          },
+          costLog: {
+            modelTier: "power",
+            modelId: "gpt-4o",
+            promptTokens: 100,
+            completionTokens: 50,
+            estimatedCostUsd: 1.25,
+          },
+        },
+      ],
+    });
+
+    const res = await request(app)
+      .get(`/api/observability?agentId=${encodeURIComponent(workerAgent.id)}&search=crm.lookup`)
+      .set(asAuth());
+
+    expect(res.status).toBe(200);
+    expect(res.body.total).toBe(1);
+    expect(res.body.records[0]).toMatchObject({
+      templateName: "Support Bot",
+      stepName: step.name,
+      stepKind: "llm",
+      agentName: workerAgent.name,
+      taskTitle: "Handle observability trace",
+      costUsd: 1.25,
+      reasoningTrace: expect.stringContaining("customer routing"),
+    });
+    expect(res.body.records[0].toolCalls[0].toolName).toBe("crm.lookup");
+
+    const csvRes = await request(app)
+      .get(`/api/observability?format=csv&agentId=${encodeURIComponent(workerAgent.id)}`)
+      .set(asAuth());
+
+    expect(csvRes.status).toBe(200);
+    expect(csvRes.headers["content-type"]).toMatch(/text\/csv/);
+    expect(csvRes.text).toContain("crm.lookup");
+    expect(csvRes.text).toContain("Handle observability trace");
+  });
+});
+
 // ---------------------------------------------------------------------------
 // POST /api/webhooks/:templateId
 // ---------------------------------------------------------------------------

@@ -31,6 +31,7 @@ import agentMemoryRoutes from "./agents/agentMemoryRoutes";
 import agentRoutes from "./agents/agentRoutes";
 import knowledgeRoutes from "./knowledge/routes";
 import controlPlaneRoutes from "./controlPlane/controlPlaneRoutes";
+import { controlPlaneStore } from "./controlPlane/controlPlaneStore";
 import companyRoutes from "./companies/companyRoutes";
 import hitlRoutes from "./hitl/hitlRoutes";
 import { buildObservabilityCsv, buildObservabilityResponse } from "./observability/service";
@@ -57,7 +58,9 @@ import {
   buildTeamAssemblyPrompt,
   parseTeamAssemblyResponse,
   teamAssemblyRequestSchema,
+  teamAssemblyResultSchema,
 } from "./goals/teamAssembly";
+import { CompanyProvisioningAgentInput } from "./controlPlane/types";
 import apolloRoutes from "./integrations/apollo/routes";
 import hubSpotRoutes, { hubSpotWebhookRouter } from "./integrations/hubspot/routes";
 import sentryRoutes, { sentryWebhookRouter } from "./integrations/sentry/routes";
@@ -135,6 +138,63 @@ function getAuthenticatedUserId(req: express.Request): string | null {
   const authReq = req as AuthenticatedRequest;
   const userId = authReq.auth?.sub;
   return typeof userId === "string" && userId.trim() ? userId.trim() : null;
+}
+
+function requirePaperclipRunId(
+  req: express.Request,
+  res: express.Response,
+  next: express.NextFunction
+): void {
+  const runId = req.header("X-Paperclip-Run-Id");
+  if (!runId || !runId.trim()) {
+    res.status(400).json({ error: "X-Paperclip-Run-Id header is required for mutating goal requests" });
+    return;
+  }
+  next();
+}
+
+function resolveProvisioningModel(modelTier: "lite" | "standard" | "power"): string {
+  switch (modelTier) {
+    case "lite":
+      return "gpt-5.4-mini";
+    case "standard":
+      return "gpt-5.4";
+    case "power":
+      return "gpt-5.2";
+  }
+}
+
+function splitBudgetAcrossHeadcount(totalBudgetMonthlyUsd: number, headcount: number): number[] {
+  const totalCents = Math.round(totalBudgetMonthlyUsd * 100);
+  const baseCents = Math.floor(totalCents / headcount);
+  const remainder = totalCents - baseCents * headcount;
+  return Array.from({ length: headcount }, (_, index) => (baseCents + (index < remainder ? 1 : 0)) / 100);
+}
+
+function buildProvisioningAgentsFromApprovedPlan(
+  approvedPlan: ReturnType<typeof teamAssemblyResultSchema.parse>
+): CompanyProvisioningAgentInput[] {
+  return approvedPlan.provisioningPlan.agents.flatMap((agentRecommendation) => {
+    if (agentRecommendation.budgetMonthlyUsd === null) {
+      throw new Error(`missing_agent_budget:${agentRecommendation.roleKey}`);
+    }
+
+    const perAgentBudgets = splitBudgetAcrossHeadcount(
+      agentRecommendation.budgetMonthlyUsd,
+      agentRecommendation.headcount
+    );
+
+    return perAgentBudgets.map((budgetMonthlyUsd, index) => ({
+      roleTemplateId: agentRecommendation.roleKey,
+      name:
+        agentRecommendation.headcount > 1
+          ? `${agentRecommendation.title} ${index + 1}`
+          : agentRecommendation.title,
+      budgetMonthlyUsd,
+      model: resolveProvisioningModel(agentRecommendation.modelTier),
+      instructions: agentRecommendation.provisioningInstructions,
+    }));
+  });
 }
 
 function getHeaderUserId(req: express.Request): string | null {
@@ -840,6 +900,162 @@ app.post("/api/goals/team-assembly", requireAuth, llmEndpointRateLimiter, async 
   }
 });
 
+app.post(
+  "/api/goals/team-assembly/approve",
+  requireAuth,
+  requirePaperclipRunId,
+  (req: AuthenticatedRequest, res) => {
+    const parsedPlan = teamAssemblyResultSchema.safeParse(req.body?.approvedPlan);
+    if (!parsedPlan.success) {
+      const issue = parsedPlan.error.issues[0];
+      const path = issue?.path?.[0];
+      const message =
+        issue?.message === "Required" && typeof path === "string"
+          ? `approvedPlan.${path} is required`
+          : (issue?.message ?? "approvedPlan must match the team assembly schema");
+      res.status(400).json({ error: message });
+      return;
+    }
+
+    const userId = req.auth?.sub;
+    if (!userId) {
+      res.status(401).json({ error: "Authenticated user required" });
+      return;
+    }
+
+    const {
+      companyName,
+      workspaceName,
+      externalCompanyId,
+      idempotencyKey,
+      budgetMonthlyUsd,
+      orchestrationEnabled,
+      secretBindings,
+    } = req.body as {
+      companyName?: unknown;
+      workspaceName?: unknown;
+      externalCompanyId?: unknown;
+      idempotencyKey?: unknown;
+      budgetMonthlyUsd?: unknown;
+      orchestrationEnabled?: unknown;
+      secretBindings?: unknown;
+    };
+
+    const approvedPlan = parsedPlan.data;
+    const resolvedCompanyName =
+      typeof companyName === "string" && companyName.trim()
+        ? companyName.trim()
+        : approvedPlan.company.name?.trim() || undefined;
+
+    if (!resolvedCompanyName) {
+      res.status(400).json({ error: "companyName is required when approvedPlan.company.name is empty" });
+      return;
+    }
+    if (workspaceName !== undefined && (typeof workspaceName !== "string" || !workspaceName.trim())) {
+      res.status(400).json({ error: "workspaceName must be a non-empty string when provided" });
+      return;
+    }
+    if (
+      externalCompanyId !== undefined &&
+      (typeof externalCompanyId !== "string" || !externalCompanyId.trim())
+    ) {
+      res.status(400).json({ error: "externalCompanyId must be a non-empty string when provided" });
+      return;
+    }
+    if (typeof idempotencyKey !== "string" || !idempotencyKey.trim()) {
+      res.status(400).json({ error: "idempotencyKey is required and must be a non-empty string" });
+      return;
+    }
+    if (typeof budgetMonthlyUsd !== "number" || budgetMonthlyUsd < 0) {
+      res.status(400).json({ error: "budgetMonthlyUsd is required and must be a non-negative number" });
+      return;
+    }
+    if (orchestrationEnabled !== undefined && typeof orchestrationEnabled !== "boolean") {
+      res.status(400).json({ error: "orchestrationEnabled must be a boolean when provided" });
+      return;
+    }
+    if (!secretBindings || typeof secretBindings !== "object" || Array.isArray(secretBindings)) {
+      res.status(400).json({ error: "secretBindings is required and must be an object" });
+      return;
+    }
+
+    const parsedSecretBindings = Object.entries(secretBindings).reduce<Record<string, string>>((acc, [key, value]) => {
+      if (typeof value === "string" && value.trim()) {
+        acc[key] = value.trim();
+      }
+      return acc;
+    }, {});
+    if (Object.keys(parsedSecretBindings).length === 0) {
+      res.status(400).json({ error: "secretBindings must contain at least one non-empty secret value" });
+      return;
+    }
+
+    let agents: CompanyProvisioningAgentInput[];
+    try {
+      agents = buildProvisioningAgentsFromApprovedPlan(approvedPlan);
+    } catch (error) {
+      if (error instanceof Error && error.message.startsWith("missing_agent_budget:")) {
+        res.status(400).json({
+          error: `Approved plan is missing budgetMonthlyUsd for ${error.message.slice("missing_agent_budget:".length)}`,
+        });
+        return;
+      }
+      res.status(500).json({ error: "Unexpected approved plan transformation failure" });
+      return;
+    }
+
+    try {
+      const result = controlPlaneStore.provisionCompanyWorkspace({
+        userId,
+        name: resolvedCompanyName,
+        workspaceName:
+          typeof workspaceName === "string" ? workspaceName.trim() : approvedPlan.provisioningPlan.teamName,
+        externalCompanyId: typeof externalCompanyId === "string" ? externalCompanyId.trim() : undefined,
+        idempotencyKey: idempotencyKey.trim(),
+        budgetMonthlyUsd,
+        orchestrationEnabled: typeof orchestrationEnabled === "boolean" ? orchestrationEnabled : undefined,
+        secretBindings: parsedSecretBindings,
+        agents,
+      });
+
+      res.status(result.idempotentReplay ? 200 : 201).json({
+        provisioningStatus: {
+          status: "provisioned",
+          idempotentReplay: result.idempotentReplay,
+          allocatedBudgetMonthlyUsd: result.company.allocatedBudgetMonthlyUsd,
+          remainingBudgetMonthlyUsd: result.company.remainingBudgetMonthlyUsd,
+        },
+        ...result,
+      });
+    } catch (error) {
+      if (error instanceof Error && error.message === "budget_exceeded") {
+        res.status(400).json({
+          error: "Approved staffing plan exceeds the company budget cap",
+          provisioningStatus: { status: "failed", reason: "budget_exceeded" },
+        });
+        return;
+      }
+      if (error instanceof Error && error.message.startsWith("unknown_role_template:")) {
+        res.status(400).json({
+          error: `Approved staffing plan references unknown role template: ${error.message.slice("unknown_role_template:".length)}`,
+          provisioningStatus: { status: "failed", reason: "unknown_role_template" },
+        });
+        return;
+      }
+      if (error instanceof Error && error.message === "idempotency_conflict") {
+        res.status(409).json({
+          error: "idempotencyKey was already used with a different approved staffing plan",
+          provisioningStatus: { status: "failed", reason: "idempotency_conflict" },
+        });
+        return;
+      }
+      res.status(500).json({
+        error: "Unexpected approved plan provisioning failure",
+        provisioningStatus: { status: "failed", reason: "unexpected_error" },
+      });
+    }
+  }
+);
 // ---------------------------------------------------------------------------
 // Webhook trigger — activates a workflow from an external event
 // ---------------------------------------------------------------------------

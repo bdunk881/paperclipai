@@ -26,6 +26,7 @@ import {
   SpendCategory,
   TeamSpendSnapshot,
 } from "./types";
+import { DEFAULT_ROLE_LIBRARY } from "../goals/teamAssembly";
 
 function nowIso(): string {
   return new Date().toISOString();
@@ -36,12 +37,21 @@ function currentPeriodKey(date = new Date()): string {
 }
 
 function slugify(value: string): string {
-  return value
+  const collapsed = value
     .trim()
     .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+/, "")
-    .replace(/-+$/, "");
+    .replace(/[^a-z0-9]+/g, "-");
+
+  let start = 0;
+  let end = collapsed.length;
+  while (start < end && collapsed.charCodeAt(start) === 45) {
+    start += 1;
+  }
+  while (end > start && collapsed.charCodeAt(end - 1) === 45) {
+    end -= 1;
+  }
+
+  return collapsed.slice(start, end);
 }
 
 function buildAuditEvent(
@@ -95,6 +105,17 @@ function toHeartbeatStatus(status: ControlPlaneExecutionStatus): HeartbeatStatus
   }
 }
 
+function modelForTier(tier: "lite" | "standard" | "power"): string {
+  switch (tier) {
+    case "lite":
+      return "gpt-5.4-mini";
+    case "standard":
+      return "gpt-5.4";
+    case "power":
+      return "gpt-5.2";
+  }
+}
+
 function thresholdStateForPercent(percentUsed: number): BudgetStatusSnapshot["thresholdState"] {
   if (percentUsed >= 1) {
     return "limit_reached";
@@ -108,7 +129,7 @@ function thresholdStateForPercent(percentUsed: number): BudgetStatusSnapshot["th
   return "healthy";
 }
 
-const SKILL_CATALOG: ControlPlaneSkillDefinition[] = [
+const BASE_SKILL_CATALOG: ControlPlaneSkillDefinition[] = [
   {
     id: "paperclip",
     name: "paperclip",
@@ -135,7 +156,19 @@ const SKILL_CATALOG: ControlPlaneSkillDefinition[] = [
   },
 ];
 
-const ROLE_TEMPLATE_CATALOG: ControlPlaneRoleTemplateDefinition[] = [
+const SKILL_CATALOG: ControlPlaneSkillDefinition[] = [
+  ...BASE_SKILL_CATALOG,
+  ...Array.from(
+    new Set(DEFAULT_ROLE_LIBRARY.flatMap((role) => role.defaultSkills).filter((skill) => skill !== "paperclip"))
+  ).map((skill) => ({
+    id: skill,
+    name: skill,
+    description: `AutoFlow role skill ${skill}.`,
+    scope: "agent" as const,
+  })),
+];
+
+const BASE_ROLE_TEMPLATE_CATALOG: ControlPlaneRoleTemplateDefinition[] = [
   {
     id: "workspace-manager",
     name: "Workspace Manager",
@@ -174,6 +207,19 @@ const ROLE_TEMPLATE_CATALOG: ControlPlaneRoleTemplateDefinition[] = [
   },
 ];
 
+const ROLE_TEMPLATE_CATALOG: ControlPlaneRoleTemplateDefinition[] = [
+  ...BASE_ROLE_TEMPLATE_CATALOG,
+  ...DEFAULT_ROLE_LIBRARY.filter(
+    (role) => !BASE_ROLE_TEMPLATE_CATALOG.some((template) => template.id === role.roleKey)
+  ).map((role) => ({
+    id: role.roleKey,
+    name: role.title,
+    description: role.mandate,
+    defaultModel: modelForTier(role.defaultModelTier),
+    defaultInstructions: role.mandate,
+    defaultSkills: [...role.defaultSkills],
+  })),
+];
 const teams = new Map<string, ControlPlaneTeam>();
 const agents = new Map<string, ControlPlaneAgent>();
 const tasks = new Map<string, ControlPlaneTask>();
@@ -556,7 +602,9 @@ function createTeamRecord(input: {
   toolBudgetCeilings?: Record<string, number>;
   alertThresholds?: number[];
   orchestrationEnabled?: boolean;
-}): ControlPlaneTeam {
+},
+  persist = true
+): ControlPlaneTeam {
   const timestamp = nowIso();
   const team: ControlPlaneTeam = {
     id: randomUUID(),
@@ -575,11 +623,16 @@ function createTeamRecord(input: {
     createdAt: timestamp,
     updatedAt: timestamp,
   };
-  teams.set(team.id, team);
+  if (persist) {
+    teams.set(team.id, team);
+  }
   return team;
 }
 
-function createAgentRecord(input: Omit<ControlPlaneAgent, "id" | "createdAt" | "updatedAt">): ControlPlaneAgent {
+function createAgentRecord(
+  input: Omit<ControlPlaneAgent, "id" | "createdAt" | "updatedAt">,
+  persist = true
+): ControlPlaneAgent {
   const timestamp = nowIso();
   const agent: ControlPlaneAgent = {
     ...input,
@@ -588,7 +641,9 @@ function createAgentRecord(input: Omit<ControlPlaneAgent, "id" | "createdAt" | "
     createdAt: timestamp,
     updatedAt: timestamp,
   };
-  agents.set(agent.id, agent);
+  if (persist) {
+    agents.set(agent.id, agent);
+  }
   return agent;
 }
 
@@ -731,7 +786,7 @@ export const controlPlaneStore = {
       deploymentMode: "continuous_agents",
       budgetMonthlyUsd: input.budgetMonthlyUsd,
       orchestrationEnabled: input.orchestrationEnabled ?? true,
-    });
+    }, false);
 
     const provisionedAgents = input.agents.map((agentInput, index) => {
       const roleTemplate = resolvedRoleTemplates[index];
@@ -750,7 +805,7 @@ export const controlPlaneStore = {
         skills: mergeSkills(roleTemplate.defaultSkills, agentInput.skills),
         schedule: { type: "manual" },
         status: "active",
-      });
+      }, false);
     });
 
     const allocatedBudgetMonthlyUsd = Number(
@@ -783,6 +838,10 @@ export const controlPlaneStore = {
       updatedAt: timestamp,
     };
 
+    teams.set(team.id, team);
+    provisionedAgents.forEach((agent) => {
+      agents.set(agent.id, agent);
+    });
     companies.set(company.id, company);
     companyWorkspaces.set(workspace.id, workspace);
     companySecretBindings.set(company.id, { ...input.secretBindings });

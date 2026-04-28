@@ -1,11 +1,13 @@
+import {
+  Tier1ConnectionHealth,
+  Tier1ConnectionPublic,
+  Tier1ConnectorError,
+  Tier1ConnectorErrorType,
+} from "../shared/tier1Contract";
+
 export type GmailAuthMethod = "oauth2_pkce" | "api_key";
 
-export type ConnectorErrorType =
-  | "auth"
-  | "rate-limit"
-  | "schema"
-  | "network"
-  | "upstream";
+export type ConnectorErrorType = Tier1ConnectorErrorType;
 
 export interface GmailTokenSet {
   accessToken: string;
@@ -30,31 +32,14 @@ export interface GmailCredential {
   metadata?: Record<string, string>;
 }
 
-export interface GmailCredentialPublic {
-  id: string;
-  userId: string;
-  authMethod: GmailAuthMethod;
-  tokenMasked: string;
+export interface GmailCredentialPublic extends Tier1ConnectionPublic<GmailAuthMethod, {
   scopes: string[];
   emailAddress: string;
-  createdAt: string;
-  revokedAt?: string;
-}
+}> {}
 
-export interface GmailConnectionHealth {
-  status: "ok" | "degraded" | "down";
-  checkedAt: string;
+export interface GmailConnectionHealth extends Tier1ConnectionHealth<GmailAuthMethod, {
   emailAddress?: string;
-  authMethod?: GmailAuthMethod;
-  tokenRefreshStatus?: "not_applicable" | "healthy" | "failed";
-  details: {
-    auth: boolean;
-    apiReachable: boolean;
-    rateLimited: boolean;
-    errorType?: ConnectorErrorType;
-    message?: string;
-  };
-}
+}> {}
 
 export interface GmailMessageSummary {
   id: string;
@@ -102,14 +87,9 @@ export interface GmailWebhookNotification {
   historyId?: string;
 }
 
-export class ConnectorError extends Error {
-  readonly type: ConnectorErrorType;
-  readonly statusCode: number;
-
+export class ConnectorError extends Tier1ConnectorError {
   constructor(type: ConnectorErrorType, message: string, statusCode = 500) {
-    super(message);
+    super(type, message, statusCode);
     this.name = "ConnectorError";
-    this.type = type;
-    this.statusCode = statusCode;
   }
 }

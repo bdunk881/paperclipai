@@ -28,6 +28,15 @@ export interface ControlPlaneSkillDefinition {
   scope: "workflow" | "agent" | "security" | "integration";
 }
 
+export interface ControlPlaneRoleTemplateDefinition {
+  id: string;
+  name: string;
+  description: string;
+  defaultModel?: string;
+  defaultInstructions: string;
+  defaultSkills: string[];
+}
+
 export interface ControlPlaneAgent {
   id: string;
   teamId: string;
@@ -65,6 +74,53 @@ export interface ControlPlaneTeam {
   orchestrationEnabled: boolean;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface ProvisionedCompanySecretBinding {
+  key: string;
+  maskedValue: string;
+}
+
+export interface ProvisionedCompanyWorkspace {
+  id: string;
+  name: string;
+  slug: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ProvisionedCompanyRecord {
+  id: string;
+  userId: string;
+  name: string;
+  externalCompanyId?: string;
+  workspaceId: string;
+  teamId: string;
+  idempotencyKey: string;
+  budgetMonthlyUsd: number;
+  allocatedBudgetMonthlyUsd: number;
+  remainingBudgetMonthlyUsd: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CompanyProvisioningAgentInput {
+  roleTemplateId: string;
+  name?: string;
+  budgetMonthlyUsd?: number;
+  model?: string;
+  instructions?: string;
+  skills?: string[];
+}
+
+export interface CompanyProvisioningResult {
+  company: ProvisionedCompanyRecord;
+  workspace: ProvisionedCompanyWorkspace;
+  team: ControlPlaneTeam;
+  agents: ControlPlaneAgent[];
+  secretBindings: ProvisionedCompanySecretBinding[];
+  availableSkills: ControlPlaneSkillDefinition[];
+  idempotentReplay: boolean;
 }
 
 export interface ControlPlaneTaskAuditEvent {

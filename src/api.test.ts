@@ -75,6 +75,7 @@ jest.mock("./auth/authMiddleware", () => ({
 
 import request from "supertest";
 import app from "./app";
+import { listConnectorHealth } from "./connectors/health";
 import { WORKFLOW_TEMPLATES } from "./templates";
 import type { WorkflowStep } from "./types/workflow";
 import {
@@ -127,6 +128,32 @@ describe("GET /health", () => {
   it("returns the correct template count", async () => {
     const res = await request(app).get("/health");
     expect(res.body.templates).toBe(WORKFLOW_TEMPLATES.length);
+  });
+});
+
+describe("GET /api/connectors/health", () => {
+  it("returns connector health records and summary", async () => {
+    const res = await request(app).get("/api/connectors/health");
+    expect(res.status).toBe(200);
+    expect(Array.isArray(res.body.connectors)).toBe(true);
+    expect(typeof res.body.summary).toBe("object");
+  });
+
+  it("returns all Tier 1 connectors", async () => {
+    const res = await request(app).get("/api/connectors/health");
+    expect(res.body.connectors).toHaveLength(listConnectorHealth().length);
+  });
+
+  it("includes required fields on each connector", async () => {
+    const res = await request(app).get("/api/connectors/health");
+    for (const connector of res.body.connectors) {
+      expect(typeof connector.connectorKey).toBe("string");
+      expect(typeof connector.connectorName).toBe("string");
+      expect(typeof connector.state).toBe("string");
+      expect(typeof connector.successRate24h).toBe("number");
+      expect(Array.isArray(connector.transitions)).toBe(true);
+      expect(connector.source).toBe("mock");
+    }
   });
 });
 

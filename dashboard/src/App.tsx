@@ -44,6 +44,7 @@ import TicketTeamView from "./pages/TicketTeamView";
 import TicketActorView from "./pages/TicketActorView";
 import TicketSlaDashboard from "./pages/TicketSlaDashboard";
 import TicketSlaSettings from "./pages/TicketSlaSettings";
+import ConnectorHealth from "./pages/ConnectorHealth";
 
 function PrivateRoute({ children }: { children: React.ReactNode }) {
   const { user } = useAuth();
@@ -167,6 +168,7 @@ export default function App() {
             <Route path="approvals" element={<Approvals />} />
             <Route path="memory" element={<Memory />} />
             <Route path="integrations" element={<Integrations />} />
+            <Route path="integrations/health" element={<ConnectorHealth />} />
             <Route path="integrations/mcp" element={<MCPIntegrations />} />
             <Route path="logs" element={<ExecutionLogs />} />
           </Route>

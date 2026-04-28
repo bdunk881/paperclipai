@@ -1,172 +1,258 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Link } from "react-router-dom";
 import {
   Activity,
-  CheckCircle2,
-  XCircle,
-  Workflow,
-  ArrowRight,
+  AlertTriangle,
   ArrowUpRight,
-  ArrowDownRight,
-  TrendingUp,
-  Sparkles,
-  Rocket,
-  Zap,
-  Bot,
-  Clock,
-  BarChart2,
-  Plus,
-  Command,
-  Search,
+  BarChart3,
+  Clock3,
+  Filter,
+  RefreshCcw,
+  Wifi,
+  WifiOff,
 } from "lucide-react";
 import {
-  listRuns,
-  listTemplates,
-  listLLMConfigs,
-  type TemplateSummary,
-  type LLMConfig,
-} from "../api/client";
-import { StatusBadge } from "../components/StatusBadge";
-import { EmptyState, ErrorState, LoadingState } from "../components/UiStates";
-import OnboardingWizard, { type OnboardingStep } from "../components/OnboardingWizard";
+  getObservabilityThroughput,
+  listObservabilityEvents,
+  streamObservabilityEvents,
+  type ObservabilityEvent,
+  type ObservabilityEventCategory,
+  type ObservabilityThroughputSnapshot,
+} from "../api/observability";
+import { ErrorState, LoadingState } from "../components/UiStates";
 import { useAuth } from "../context/AuthContext";
-import type { WorkflowRun } from "../types/workflow";
 
-const ONBOARDING_DISMISS_PREFIX = "autoflow:onboarding-dismissed:v1";
+type FeedFilter = "all" | ObservabilityEventCategory;
+type TransportState = "connecting" | "live" | "reconnecting" | "polling" | "error";
+
+const WINDOW_OPTIONS = [1, 6, 24] as const;
+const FILTER_OPTIONS: Array<{ value: FeedFilter; label: string }> = [
+  { value: "all", label: "All activity" },
+  { value: "issue", label: "Issues" },
+  { value: "run", label: "Runs" },
+  { value: "alert", label: "Alerts" },
+];
+
+const MAX_FEED_ITEMS = 20;
+const POLLING_INTERVAL_MS = 15_000;
+const MAX_RECONNECT_ATTEMPTS = 2;
 
 export default function Dashboard() {
-  const { user, getAccessToken } = useAuth();
-  const navigate = useNavigate();
-  const [runs, setRuns] = useState<WorkflowRun[]>([]);
-  const [templates, setTemplates] = useState<TemplateSummary[]>([]);
-  const [llmConfigs, setLlmConfigs] = useState<LLMConfig[]>([]);
+  const { requireAccessToken } = useAuth();
+  const [feed, setFeed] = useState<ObservabilityEvent[]>([]);
+  const [throughput, setThroughput] = useState<ObservabilityThroughputSnapshot | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [showOnboarding, setShowOnboarding] = useState(false);
-  const [command, setCommand] = useState("");
-  const [commandResult, setCommandResult] = useState<DashboardCommandResult | null>(null);
+  const [transportState, setTransportState] = useState<TransportState>("connecting");
+  const [windowHours, setWindowHours] = useState<(typeof WINDOW_OPTIONS)[number]>(24);
+  const [categoryFilter, setCategoryFilter] = useState<FeedFilter>("all");
+  const [transportDetail, setTransportDetail] = useState<string | null>(null);
+  const [lastUpdatedAt, setLastUpdatedAt] = useState<string | null>(null);
 
-  const onboardingStorageKey = `${ONBOARDING_DISMISS_PREFIX}:${user?.id ?? "anonymous"}`;
+  const latestCursorRef = useRef<string | undefined>(undefined);
+  const reconnectAttemptRef = useRef(0);
+  const pollIntervalRef = useRef<number | null>(null);
+  const reconnectTimeoutRef = useRef<number | null>(null);
+  const streamAbortRef = useRef<AbortController | null>(null);
+
+  const selectedCategories = useMemo(
+    () => (categoryFilter === "all" ? undefined : [categoryFilter]),
+    [categoryFilter]
+  );
+
+  const mergeFeed = useCallback((incoming: ObservabilityEvent[]) => {
+    if (incoming.length === 0) return;
+
+    setFeed((current) => {
+      const merged = new Map(current.map((event) => [event.id, event]));
+      for (const event of incoming) {
+        merged.set(event.id, event);
+      }
+
+      const next = Array.from(merged.values())
+        .sort((left, right) => Number(right.sequence) - Number(left.sequence))
+        .slice(0, MAX_FEED_ITEMS);
+
+      latestCursorRef.current = next.reduce<string | undefined>((cursor, event) => {
+        if (!cursor || Number(event.sequence) > Number(cursor)) {
+          return event.sequence;
+        }
+        return cursor;
+      }, latestCursorRef.current);
+
+      return next;
+    });
+
+    setLastUpdatedAt(incoming[0]?.occurredAt ?? new Date().toISOString());
+  }, []);
+
+  const stopRealtime = useCallback(() => {
+    streamAbortRef.current?.abort();
+    streamAbortRef.current = null;
+
+    if (pollIntervalRef.current) {
+      window.clearInterval(pollIntervalRef.current);
+      pollIntervalRef.current = null;
+    }
+
+    if (reconnectTimeoutRef.current) {
+      window.clearTimeout(reconnectTimeoutRef.current);
+      reconnectTimeoutRef.current = null;
+    }
+  }, []);
+
+  const startPolling = useCallback(
+    (accessToken: string, reason: string) => {
+      stopRealtime();
+      setTransportState("polling");
+      setTransportDetail(reason);
+
+      pollIntervalRef.current = window.setInterval(() => {
+        void (async () => {
+          try {
+            const [page, snapshot] = await Promise.all([
+              listObservabilityEvents(accessToken, {
+                after: latestCursorRef.current,
+                categories: selectedCategories,
+                limit: MAX_FEED_ITEMS,
+              }),
+              getObservabilityThroughput(accessToken, windowHours),
+            ]);
+
+            mergeFeed(page.events);
+            setThroughput(snapshot);
+            setLastUpdatedAt(snapshot.generatedAt);
+          } catch (pollError) {
+            setTransportState("error");
+            setTransportDetail(
+              pollError instanceof Error ? pollError.message : "Polling fallback failed"
+            );
+          }
+        })();
+      }, POLLING_INTERVAL_MS);
+    },
+    [mergeFeed, selectedCategories, stopRealtime, windowHours]
+  );
+
+  const startStream = useCallback(
+    (accessToken: string) => {
+      stopRealtime();
+      const controller = new AbortController();
+      streamAbortRef.current = controller;
+      setTransportState(latestCursorRef.current ? "reconnecting" : "connecting");
+
+      void streamObservabilityEvents(accessToken, {
+        after: latestCursorRef.current,
+        categories: selectedCategories,
+        limit: 100,
+        signal: controller.signal,
+        onEvent: (event) => {
+          reconnectAttemptRef.current = 0;
+          setTransportState("live");
+          setTransportDetail("Fresh events are streaming from the control plane.");
+          mergeFeed([event]);
+        },
+        onReady: (ready) => {
+          reconnectAttemptRef.current = 0;
+          if (ready.nextCursor) {
+            latestCursorRef.current = ready.nextCursor;
+          }
+          setTransportState("live");
+          setTransportDetail(
+            ready.replayed > 0
+              ? `Replayed ${ready.replayed} events before switching to live updates.`
+              : "Streaming live updates."
+          );
+          setLastUpdatedAt(ready.generatedAt);
+        },
+        onKeepalive: (keepalive) => {
+          setLastUpdatedAt(keepalive.generatedAt);
+        },
+      })
+        .then(() => {
+          if (!controller.signal.aborted) {
+            startPolling(accessToken, "Live stream closed. Polling every 15 seconds.");
+          }
+        })
+        .catch((streamError) => {
+          if (controller.signal.aborted) return;
+
+          const message =
+            streamError instanceof Error ? streamError.message : "Live stream unavailable";
+          if (reconnectAttemptRef.current < MAX_RECONNECT_ATTEMPTS) {
+            reconnectAttemptRef.current += 1;
+            setTransportState("reconnecting");
+            setTransportDetail(`Reconnecting to live stream (${reconnectAttemptRef.current}/${MAX_RECONNECT_ATTEMPTS})...`);
+            reconnectTimeoutRef.current = window.setTimeout(() => {
+              startStream(accessToken);
+            }, 2_500);
+            return;
+          }
+
+          startPolling(accessToken, `${message} Falling back to polling.`);
+        });
+    },
+    [mergeFeed, selectedCategories, startPolling, stopRealtime]
+  );
 
   const loadDashboard = useCallback(async () => {
+    stopRealtime();
+    reconnectAttemptRef.current = 0;
     setLoading(true);
     setError(null);
+    setTransportDetail(null);
+
     try {
-      const accessToken = (await getAccessToken()) ?? undefined;
-      const [fetchedRuns, fetchedTemplates, fetchedConfigs] = await Promise.all([
-        listRuns(undefined, accessToken),
-        listTemplates(),
-        listLLMConfigs(accessToken).catch(() => []),
+      const accessToken = await requireAccessToken();
+      const [page, snapshot] = await Promise.all([
+        listObservabilityEvents(accessToken, {
+          categories: selectedCategories,
+          limit: MAX_FEED_ITEMS,
+        }),
+        getObservabilityThroughput(accessToken, windowHours),
       ]);
-      setRuns(fetchedRuns);
-      setTemplates(fetchedTemplates);
-      setLlmConfigs(fetchedConfigs);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to load dashboard data");
-    } finally {
+
+      const sortedFeed = [...page.events].sort(
+        (left, right) => Number(right.sequence) - Number(left.sequence)
+      );
+      setFeed(sortedFeed.slice(0, MAX_FEED_ITEMS));
+      latestCursorRef.current = sortedFeed[0]?.sequence;
+      setThroughput(snapshot);
+      setLastUpdatedAt(snapshot.generatedAt);
       setLoading(false);
+
+      startStream(accessToken);
+    } catch (loadError) {
+      setLoading(false);
+      setTransportState("error");
+      setError(loadError instanceof Error ? loadError.message : "Failed to load observability");
     }
-  }, [getAccessToken]);
+  }, [requireAccessToken, selectedCategories, startStream, stopRealtime, windowHours]);
 
   useEffect(() => {
     void loadDashboard();
-  }, [loadDashboard]);
+    return () => stopRealtime();
+  }, [loadDashboard, stopRealtime]);
 
-  const stats = {
-    total: runs.length,
-    running: runs.filter((r) => r.status === "running").length,
-    completed: runs.filter((r) => r.status === "completed").length,
-    failed: runs.filter((r) => r.status === "failed").length,
-  };
+  const renderedBuckets = useMemo(() => {
+    const buckets = throughput?.buckets.slice(-8) ?? [];
+    const maxValue = Math.max(
+      1,
+      ...buckets.map((bucket) => bucket.createdCount + bucket.completedCount + bucket.blockedCount)
+    );
 
-  const successRate =
-    stats.total > 0 ? Math.round((stats.completed / stats.total) * 100) : 0;
-
-  const firstName = user?.name?.split(" ")[0] ?? user?.email?.split("@")[0] ?? null;
-
-  const recentRuns = [...runs]
-    .sort((a, b) => new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime())
-    .slice(0, 5);
-
-  function handleCommandSubmit(rawPrompt: string) {
-    const prompt = rawPrompt.trim();
-    if (!prompt) return;
-
-    const result = buildDashboardCommandResult(prompt, templates, runs);
-    setCommandResult(result);
-
-    if (result.kind === "navigate" && result.to) {
-      navigate(result.to, {
-        state: result.builderPrompt ? { copilotPrompt: result.builderPrompt } : undefined,
-      });
-    }
-  }
-
-  function handlePromptChipClick(prompt: string) {
-    setCommand(prompt);
-    handleCommandSubmit(prompt);
-  }
-
-  const onboardingSteps: OnboardingStep[] = useMemo(
-    () => [
-      {
-        id: "connect-llm",
-        title: "Connect an LLM provider",
-        detail: "Add OpenAI, Anthropic, Gemini, or Mistral in Settings.",
-        to: "/settings/llm-providers",
-        cta: "Connect provider",
-        done: llmConfigs.length > 0,
-      },
-      {
-        id: "create-workflow",
-        title: "Create your first workflow",
-        detail: "Build from scratch or start from a template in the builder.",
-        to: "/builder",
-        cta: "Open builder",
-        done: templates.length > 0,
-      },
-      {
-        id: "run-workflow",
-        title: "Run your workflow",
-        detail: "Launch a run and track execution in the monitor.",
-        to: "/monitor",
-        cta: "View monitor",
-        done: runs.length > 0,
-      },
-      {
-        id: "review-results",
-        title: "Review outcomes and logs",
-        detail: "Verify success/failure and iterate quickly.",
-        to: "/history",
-        cta: "Open history",
-        done: runs.some((run) => run.status === "completed" || run.status === "failed"),
-      },
-    ],
-    [llmConfigs.length, templates.length, runs]
-  );
-
-  const onboardingComplete = onboardingSteps.every((step) => step.done);
-
-  useEffect(() => {
-    if (loading || onboardingComplete) return;
-    const dismissed = localStorage.getItem(onboardingStorageKey) === "true";
-    if (!dismissed) setShowOnboarding(true);
-  }, [loading, onboardingComplete, onboardingStorageKey]);
-
-  function closeOnboarding() {
-    localStorage.setItem(onboardingStorageKey, "true");
-    setShowOnboarding(false);
-  }
-
-  function reopenOnboarding() {
-    localStorage.removeItem(onboardingStorageKey);
-    setShowOnboarding(true);
-  }
+    return buckets.map((bucket) => ({
+      ...bucket,
+      total: bucket.createdCount + bucket.completedCount + bucket.blockedCount,
+      heightPercent:
+        ((bucket.createdCount + bucket.completedCount + bucket.blockedCount) / maxValue) * 100,
+    }));
+  }, [throughput]);
 
   if (loading) {
     return (
       <div className="p-8">
-        <LoadingState label="Loading your dashboard..." />
+        <LoadingState label="Loading observability cockpit..." />
       </div>
     );
   }
@@ -175,7 +261,7 @@ export default function Dashboard() {
     return (
       <div className="p-8">
         <ErrorState
-          title="Dashboard data unavailable"
+          title="Observability dashboard unavailable"
           message={error}
           onRetry={() => {
             void loadDashboard();
@@ -186,509 +272,493 @@ export default function Dashboard() {
   }
 
   return (
-    <div className="p-6 md:p-8 max-w-7xl mx-auto">
-      <OnboardingWizard open={showOnboarding} onClose={closeOnboarding} steps={onboardingSteps} />
+    <div className="mx-auto flex w-full max-w-7xl flex-col gap-6 px-4 py-6 md:px-8">
+      <section className="overflow-hidden rounded-[28px] border border-surface-800/70 bg-slate-950 text-white shadow-2xl shadow-slate-950/35">
+        <div className="relative overflow-hidden">
+          <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(99,102,241,0.32),transparent_38%),radial-gradient(circle_at_top_right,rgba(20,184,166,0.18),transparent_32%),radial-gradient(circle_at_bottom_left,rgba(249,115,22,0.16),transparent_28%)]" />
+          <div className="relative grid gap-6 px-6 py-6 lg:grid-cols-[1.35fr,0.65fr] lg:px-8">
+            <div>
+              <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs font-semibold uppercase tracking-[0.24em] text-slate-300">
+                <Activity className="h-3.5 w-3.5 text-brand-300" />
+                Observability cockpit
+              </div>
+              <h1 className="max-w-2xl text-3xl font-semibold tracking-tight text-white md:text-4xl">
+                Live activity, health, and throughput in one operator view.
+              </h1>
+              <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-300 md:text-base">
+                Sprint 1 is focused on fast operator judgment: one feed, one KPI, and clear
+                transport continuity when live updates degrade.
+              </p>
 
-      {/* Welcome header */}
-      <div className="relative mb-8 overflow-hidden rounded-2xl border border-gray-200 dark:border-surface-800/60 bg-white dark:bg-surface-900/50">
-        {/* Subtle gradient mesh */}
-        <div className="absolute inset-0 bg-[radial-gradient(ellipse_80%_50%_at_80%_-20%,rgba(124,58,237,0.06),transparent)] dark:bg-[radial-gradient(ellipse_80%_50%_at_80%_-20%,rgba(124,58,237,0.12),transparent)] pointer-events-none" />
-        <div className="absolute inset-0 bg-[radial-gradient(ellipse_50%_80%_at_0%_100%,rgba(6,182,212,0.04),transparent)] dark:bg-[radial-gradient(ellipse_50%_80%_at_0%_100%,rgba(6,182,212,0.08),transparent)] pointer-events-none" />
+              <div className="mt-6 flex flex-col gap-4">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="inline-flex items-center gap-2 text-xs font-medium uppercase tracking-[0.2em] text-slate-400">
+                    <Filter className="h-3.5 w-3.5" />
+                    Feed filter
+                  </span>
+                  {FILTER_OPTIONS.map((option) => (
+                    <button
+                      key={option.value}
+                      type="button"
+                      aria-pressed={categoryFilter === option.value}
+                      onClick={() => setCategoryFilter(option.value)}
+                      className={`rounded-full border px-3 py-1.5 text-sm transition ${
+                        categoryFilter === option.value
+                          ? "border-brand-300 bg-brand-500/20 text-white"
+                          : "border-white/10 bg-white/5 text-slate-300 hover:border-brand-400/50 hover:text-white"
+                      }`}
+                    >
+                      {option.label}
+                    </button>
+                  ))}
+                </div>
 
-        <div className="relative p-6 flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-          <div>
-            <div className="mb-3 inline-flex items-center gap-1.5 rounded-full border border-brand-200 dark:border-brand-500/20 bg-brand-50 dark:bg-brand-500/10 px-3 py-1 text-xs font-medium text-brand-700 dark:text-brand-300">
-              <Sparkles size={12} />
-              Dashboard
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="inline-flex items-center gap-2 text-xs font-medium uppercase tracking-[0.2em] text-slate-400">
+                    <Clock3 className="h-3.5 w-3.5" />
+                    Time range
+                  </span>
+                  {WINDOW_OPTIONS.map((option) => (
+                    <button
+                      key={option}
+                      type="button"
+                      aria-pressed={windowHours === option}
+                      onClick={() => setWindowHours(option)}
+                      className={`rounded-full border px-3 py-1.5 text-sm transition ${
+                        windowHours === option
+                          ? "border-teal-300 bg-teal-500/15 text-white"
+                          : "border-white/10 bg-white/5 text-slate-300 hover:border-teal-400/50 hover:text-white"
+                      }`}
+                    >
+                      {option}h
+                    </button>
+                  ))}
+                </div>
+              </div>
             </div>
-            <h1 className="text-2xl font-bold text-gray-900 dark:text-white tracking-tight">
-              {firstName ? `Welcome back, ${firstName}` : "Welcome to AutoFlow"}
-            </h1>
-            <p className="mt-1.5 text-sm text-gray-500 dark:text-gray-400">
-              {stats.total > 0
-                ? `${stats.running} active run${stats.running !== 1 ? "s" : ""} across ${templates.length} workflow${templates.length !== 1 ? "s" : ""}`
-                : "Start by creating a workflow, connecting a provider, and running your first automation."}
-            </p>
-          </div>
-          <div className="flex items-center gap-2">
-            {!onboardingComplete && (
-              <button
-                onClick={reopenOnboarding}
-                className="inline-flex items-center gap-2 rounded-lg border border-brand-200 dark:border-brand-500/30 bg-brand-50 dark:bg-brand-500/10 px-4 py-2 text-sm font-medium text-brand-700 dark:text-brand-300 transition-colors hover:bg-brand-100 dark:hover:bg-brand-500/20"
-              >
-                <Rocket size={14} />
-                Setup guide
-              </button>
-            )}
-            <Link
-              to="/builder"
-              className="inline-flex items-center gap-2 rounded-lg bg-brand-600 hover:bg-brand-500 px-4 py-2 text-sm font-medium text-white transition-all shadow-sm hover:shadow-md hover:shadow-brand-500/20"
-            >
-              <Plus size={14} />
-              New workflow
-            </Link>
+
+            <div className="rounded-[24px] border border-white/10 bg-white/5 p-5 backdrop-blur">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">
+                    Transport status
+                  </p>
+                  <p className="mt-1 text-lg font-semibold text-white">
+                    {transportStateLabel(transportState)}
+                  </p>
+                </div>
+                <TransportPill state={transportState} />
+              </div>
+
+              <p className="mt-4 text-sm leading-6 text-slate-300">
+                {transportDetail ?? "Waiting for the stream handshake to complete."}
+              </p>
+
+              <div className="mt-6 rounded-2xl border border-white/10 bg-slate-950/45 p-4">
+                <div className="flex items-center justify-between gap-3 text-sm text-slate-300">
+                  <span>Last refresh</span>
+                  <span className="font-medium text-white">
+                    {lastUpdatedAt ? formatDateTime(lastUpdatedAt) : "Waiting for data"}
+                  </span>
+                </div>
+                <div className="mt-3 flex items-center justify-between gap-3 text-sm text-slate-300">
+                  <span>Fallback mode</span>
+                  <span className="font-medium text-white">
+                    {transportState === "polling" ? "Polling every 15s" : "Standby"}
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    void loadDashboard();
+                  }}
+                  className="mt-4 inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-2 text-sm font-medium text-white transition hover:border-brand-400/50 hover:bg-brand-500/10"
+                >
+                  <RefreshCcw className="h-4 w-4" />
+                  Refresh data
+                </button>
+              </div>
+            </div>
           </div>
         </div>
-      </div>
+      </section>
 
-      <DashboardCommandBar
-        value={command}
-        onChange={setCommand}
-        onSubmit={() => handleCommandSubmit(command)}
-        onPromptClick={handlePromptChipClick}
-        result={commandResult}
-      />
+      {transportState === "polling" && (
+        <div className="rounded-2xl border border-amber-300/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-100">
+          Live streaming is unavailable. The dashboard is maintaining continuity with the polling
+          fallback defined in Sprint 1.
+        </div>
+      )}
 
-      {/* Stats grid */}
-      <div className="mb-8 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <StatCard
-          label="Total Runs"
-          value={stats.total}
-          icon={<TrendingUp size={18} />}
-          iconColor="text-brand-500 dark:text-brand-400"
-          iconBg="bg-brand-50 dark:bg-brand-500/10"
-          subtitle={`${templates.length} workflow${templates.length !== 1 ? "s" : ""}`}
-        />
-        <StatCard
-          label="Running"
-          value={stats.running}
-          icon={<Activity size={18} />}
-          iconColor="text-amber-500 dark:text-amber-400"
-          iconBg="bg-amber-50 dark:bg-amber-500/10"
-          trend={stats.running > 0 ? "active" : undefined}
-        />
-        <StatCard
-          label="Completed"
-          value={stats.completed}
-          icon={<CheckCircle2 size={18} />}
-          iconColor="text-emerald-500 dark:text-emerald-400"
-          iconBg="bg-emerald-50 dark:bg-emerald-500/10"
-          trend={stats.total > 0 ? "up" : undefined}
-          trendValue={stats.total > 0 ? `${successRate}% success` : undefined}
-        />
-        <StatCard
-          label="Failed"
-          value={stats.failed}
-          icon={<XCircle size={18} />}
-          iconColor="text-red-500 dark:text-red-400"
-          iconBg="bg-red-50 dark:bg-red-500/10"
-          trend={stats.failed > 0 ? "down" : undefined}
-          trendValue={stats.total > 0 ? `${100 - successRate}% failure` : undefined}
-        />
-      </div>
+      {transportState === "error" && (
+        <div className="rounded-2xl border border-red-300/40 bg-red-500/10 px-4 py-3 text-sm text-red-100">
+          Live transport is degraded. Use refresh to retry the stream handshake and keep the feed
+          current.
+        </div>
+      )}
 
-      {/* Content grid */}
-      <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
-        {/* Recent Runs */}
-        <div className="xl:col-span-2 rounded-2xl border border-gray-200 dark:border-surface-800/60 bg-white dark:bg-surface-900/50 overflow-hidden">
-          <div className="flex items-center justify-between border-b border-gray-100 dark:border-surface-800/60 px-6 py-4">
-            <div className="flex items-center gap-2">
-              <div className="w-7 h-7 rounded-lg bg-brand-50 dark:bg-brand-500/10 flex items-center justify-center">
-                <Clock size={14} className="text-brand-500 dark:text-brand-400" />
-              </div>
-              <h2 className="font-semibold text-gray-900 dark:text-white text-sm">Recent Runs</h2>
+      <div className="grid gap-6 xl:grid-cols-[0.9fr,1.1fr]">
+        <section className="rounded-[28px] border border-slate-200 bg-white p-6 shadow-sm dark:border-surface-800 dark:bg-surface-900/70">
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-400">
+                KPI prototype
+              </p>
+              <h2 className="mt-2 text-2xl font-semibold text-slate-950 dark:text-white">
+                Throughput over the last {windowHours} hours
+              </h2>
             </div>
+            <div className="rounded-2xl border border-brand-200 bg-brand-50 p-3 text-brand-600 dark:border-brand-500/20 dark:bg-brand-500/10 dark:text-brand-300">
+              <BarChart3 className="h-5 w-5" />
+            </div>
+          </div>
+
+          <div className="mt-8 flex items-end gap-4">
+            <div>
+              <p className="text-5xl font-semibold tracking-tight text-slate-950 dark:text-white">
+                {throughput?.summary.completedCount ?? 0}
+              </p>
+              <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">
+                completed tasks in the active window
+              </p>
+            </div>
+            <div className="mb-1 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-sm font-medium text-emerald-700 dark:border-emerald-500/20 dark:bg-emerald-500/10 dark:text-emerald-300">
+              {Math.round((throughput?.summary.completionRate ?? 0) * 100)}% completion rate
+            </div>
+          </div>
+
+          <div className="mt-8 grid gap-3 sm:grid-cols-3">
+            <MetricChip
+              label="Created"
+              value={throughput?.summary.createdCount ?? 0}
+              tone="brand"
+            />
+            <MetricChip
+              label="Completed"
+              value={throughput?.summary.completedCount ?? 0}
+              tone="teal"
+            />
+            <MetricChip
+              label="Blocked"
+              value={throughput?.summary.blockedCount ?? 0}
+              tone="orange"
+            />
+          </div>
+
+          <div className="mt-8 rounded-[24px] border border-slate-200 bg-slate-50/80 p-4 dark:border-surface-800 dark:bg-slate-950/40">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <p className="text-sm font-medium text-slate-900 dark:text-white">
+                  Window cadence
+                </p>
+                <p className="text-xs text-slate-500 dark:text-slate-400">
+                  Created, completed, and blocked activity by bucket
+                </p>
+              </div>
+              <span className="text-xs font-medium uppercase tracking-[0.2em] text-slate-400">
+                {windowHours}h
+              </span>
+            </div>
+
+            <div className="mt-5 grid grid-cols-8 items-end gap-2">
+              {renderedBuckets.map((bucket) => (
+                <div key={bucket.bucketStart} className="flex flex-col items-center gap-2">
+                  <div className="flex h-28 w-full items-end justify-center rounded-2xl bg-white px-2 py-2 dark:bg-surface-900">
+                    <div
+                      className="w-full rounded-full bg-gradient-to-t from-brand-500 via-teal-400 to-orange-300"
+                      style={{ height: `${Math.max(bucket.heightPercent, 12)}%` }}
+                    />
+                  </div>
+                  <span className="text-[11px] text-slate-500 dark:text-slate-400">
+                    {formatBucketLabel(bucket.bucketStart)}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </section>
+
+        <section className="rounded-[28px] border border-slate-200 bg-white p-6 shadow-sm dark:border-surface-800 dark:bg-surface-900/70">
+          <div className="flex flex-wrap items-start justify-between gap-4">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-400">
+                Live feed
+              </p>
+              <h2 className="mt-2 text-2xl font-semibold text-slate-950 dark:text-white">
+                Activity updates as they happen
+              </h2>
+              <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">
+                Showing the latest {Math.min(feed.length, MAX_FEED_ITEMS)} events with{" "}
+                {categoryFilter === "all" ? "all categories" : `${categoryFilter} focus`} across a{" "}
+                {windowHours}-hour operating window.
+              </p>
+            </div>
+
             <Link
               to="/history"
-              className="flex items-center gap-1 text-xs font-medium text-gray-400 hover:text-brand-600 dark:hover:text-brand-400 transition-colors"
+              className="inline-flex items-center gap-2 rounded-full border border-slate-200 px-3 py-2 text-sm font-medium text-slate-700 transition hover:border-brand-300 hover:text-brand-700 dark:border-surface-800 dark:text-slate-300 dark:hover:border-brand-500/50 dark:hover:text-brand-300"
             >
-              View all <ArrowRight size={12} />
+              Full history
+              <ArrowUpRight className="h-4 w-4" />
             </Link>
           </div>
-          <div className="divide-y divide-gray-50 dark:divide-surface-800/40">
-            {recentRuns.length === 0 ? (
-              <div className="p-6">
-                <EmptyState
-                  title="No runs yet"
-                  description="Run your first workflow to see execution status, duration, and step output here."
-                  ctaLabel="Create a workflow"
-                  ctaTo="/builder"
-                />
-              </div>
-            ) : (
-              recentRuns.map((run) => (
-                <div key={run.id} className="flex items-center gap-4 px-6 py-3.5 hover:bg-gray-50/50 dark:hover:bg-surface-800/20 transition-colors">
-                  <div className="w-8 h-8 rounded-lg bg-gray-50 dark:bg-surface-800/50 flex items-center justify-center shrink-0">
-                    <Workflow size={14} className="text-gray-400 dark:text-gray-500" />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="truncate text-sm font-medium text-gray-900 dark:text-white">{run.templateName}</p>
-                    <p className="text-xs text-gray-400 dark:text-gray-500">{new Date(run.startedAt).toLocaleString()}</p>
-                  </div>
-                  <StatusBadge status={run.status} />
-                </div>
-              ))
-            )}
-          </div>
-        </div>
 
-        {/* Workflows sidebar */}
-        <div className="rounded-2xl border border-gray-200 dark:border-surface-800/60 bg-white dark:bg-surface-900/50 overflow-hidden">
-          <div className="flex items-center justify-between border-b border-gray-100 dark:border-surface-800/60 px-6 py-4">
-            <div className="flex items-center gap-2">
-              <div className="w-7 h-7 rounded-lg bg-cyan-50 dark:bg-cyan-500/10 flex items-center justify-center">
-                <Workflow size={14} className="text-cyan-500 dark:text-cyan-400" />
-              </div>
-              <h2 className="font-semibold text-gray-900 dark:text-white text-sm">Workflows</h2>
-            </div>
-            <Link
-              to="/builder"
-              className="flex items-center gap-1 text-xs font-medium text-gray-400 hover:text-brand-600 dark:hover:text-brand-400 transition-colors"
-            >
-              New <Plus size={12} />
-            </Link>
-          </div>
-          <div className="divide-y divide-gray-50 dark:divide-surface-800/40">
-            {templates.length === 0 ? (
-              <div className="p-6">
-                <EmptyState
-                  title="No workflows yet"
-                  description="Create your first workflow to automate a repeatable task."
-                  ctaLabel="Create workflow"
-                  ctaTo="/builder"
-                />
+          <div className="mt-6 space-y-3">
+            {feed.length === 0 ? (
+              <div className="flex min-h-[360px] flex-col items-center justify-center rounded-[24px] border border-dashed border-slate-300 bg-slate-50/70 px-6 text-center dark:border-surface-700 dark:bg-slate-950/40">
+                <WifiOff className="h-10 w-10 text-slate-400" />
+                <h3 className="mt-4 text-lg font-medium text-slate-900 dark:text-white">
+                  No activity in this view
+                </h3>
+                <p className="mt-2 max-w-sm text-sm text-slate-500 dark:text-slate-400">
+                  Try a broader time range or switch the feed filter back to all activity to see
+                  more of the control-plane timeline.
+                </p>
               </div>
             ) : (
-              templates.slice(0, 6).map((tpl) => (
-                <Link
-                  key={tpl.id}
-                  to={`/builder/${tpl.id}`}
-                  className="flex items-center gap-3 px-6 py-3.5 transition-colors hover:bg-gray-50/50 dark:hover:bg-surface-800/20 group"
+              feed.map((event) => (
+                <article
+                  key={event.id}
+                  className="animate-slide-up rounded-[24px] border border-slate-200 bg-slate-50/70 px-4 py-4 transition hover:border-brand-300/40 hover:bg-brand-50/40 dark:border-surface-800 dark:bg-slate-950/45 dark:hover:border-brand-500/30 dark:hover:bg-brand-500/5"
                 >
-                  <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-brand-50 dark:bg-brand-500/10 group-hover:bg-brand-100 dark:group-hover:bg-brand-500/20 transition-colors">
-                    <Workflow size={14} className="text-brand-500 dark:text-brand-400" />
+                  <div className="flex gap-4">
+                    <div className="mt-1">{eventCategoryIcon(event.category)}</div>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className={eventCategoryBadge(event.category)}>
+                          {event.category}
+                        </span>
+                        <span className="text-xs text-slate-400">{formatDateTime(event.occurredAt)}</span>
+                      </div>
+                      <p className="mt-2 text-sm font-medium text-slate-950 dark:text-white">
+                        {event.summary}
+                      </p>
+                      <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-slate-500 dark:text-slate-400">
+                        <span>{event.subject.label ?? event.subject.type}</span>
+                        <span>{event.type}</span>
+                        <span>{event.actor.label ?? event.actor.id}</span>
+                      </div>
+                    </div>
                   </div>
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-medium text-gray-900 dark:text-white">{tpl.name}</p>
-                    <p className="text-xs text-gray-400 dark:text-gray-500 capitalize">{tpl.category}</p>
-                  </div>
-                  <ArrowRight size={14} className="text-gray-300 dark:text-gray-600 opacity-0 group-hover:opacity-100 transition-opacity" />
-                </Link>
+                </article>
               ))
             )}
           </div>
-        </div>
+        </section>
       </div>
 
-      {/* Quick actions */}
-      <div className="mt-8 grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <QuickAction
-          to="/agents"
-          icon={<Bot size={18} />}
-          title="Agent Catalog"
-          description="Browse and deploy pre-built AI agents"
-          color="text-brand-500 dark:text-brand-400"
-          bg="bg-brand-50 dark:bg-brand-500/10"
-        />
-        <QuickAction
-          to="/integrations/mcp"
-          icon={<Zap size={18} />}
-          title="Integrations"
-          description="Connect your tools and services"
-          color="text-cyan-500 dark:text-cyan-400"
-          bg="bg-cyan-50 dark:bg-cyan-500/10"
-        />
-        <QuickAction
-          to="/monitor"
-          icon={<BarChart2 size={18} />}
-          title="Run Monitor"
-          description="Real-time execution monitoring"
-          color="text-emerald-500 dark:text-emerald-400"
-          bg="bg-emerald-50 dark:bg-emerald-500/10"
-        />
-      </div>
-    </div>
-  );
-}
-
-type DashboardCommandResult =
-  | {
-      kind: "navigate";
-      title: string;
-      description: string;
-      to: string;
-      builderPrompt?: string;
-    }
-  | {
-      kind: "templates";
-      title: string;
-      description: string;
-      items: Array<Pick<TemplateSummary, "id" | "name" | "category">>;
-    }
-  | {
-      kind: "runs";
-      title: string;
-      description: string;
-      items: Array<Pick<WorkflowRun, "id" | "templateName" | "status" | "startedAt">>;
-    };
-
-function buildDashboardCommandResult(
-  prompt: string,
-  templates: TemplateSummary[],
-  runs: WorkflowRun[]
-): DashboardCommandResult {
-  const normalized = prompt.toLowerCase();
-
-  if (
-    normalized.includes("create") ||
-    normalized.includes("build") ||
-    normalized.includes("generate") ||
-    normalized.includes("make ")
-  ) {
-    return {
-      kind: "navigate",
-      title: "Launching Workflow Copilot",
-      description: "Opening the builder with your prompt loaded into AutoFlow Copilot.",
-      to: "/builder",
-      builderPrompt: prompt,
-    };
-  }
-
-  if (
-    normalized.includes("run") ||
-    normalized.includes("history") ||
-    normalized.includes("log") ||
-    normalized.includes("monitor")
-  ) {
-    const matchedRuns = runs
-      .filter((run) =>
-        `${run.templateName} ${run.status}`.toLowerCase().includes(normalized.replace("show me ", ""))
-      )
-      .slice(0, 4);
-
-    return {
-      kind: "runs",
-      title: matchedRuns.length > 0 ? "Matching runs" : "Run activity",
-      description:
-        matchedRuns.length > 0
-          ? "Closest matches from recent execution history."
-          : "No direct run match found. Try the full run history for broader filtering.",
-      items: matchedRuns.length > 0 ? matchedRuns : runs.slice(0, 4),
-    };
-  }
-
-  const matchedTemplates = templates
-    .filter((template) =>
-      `${template.name} ${template.category}`.toLowerCase().includes(normalized.replace("find ", ""))
-    )
-    .slice(0, 4);
-
-  return {
-    kind: "templates",
-    title: matchedTemplates.length > 0 ? "Suggested workflows" : "Workflow templates",
-    description:
-      matchedTemplates.length > 0
-        ? "Closest matches from your current workflow library."
-        : "No exact match found. Start a new build and let Copilot generate one for you.",
-    items: matchedTemplates.length > 0 ? matchedTemplates : templates.slice(0, 4),
-  };
-}
-
-function DashboardCommandBar({
-  value,
-  onChange,
-  onSubmit,
-  onPromptClick,
-  result,
-}: {
-  value: string;
-  onChange: (value: string) => void;
-  onSubmit: () => void;
-  onPromptClick: (prompt: string) => void;
-  result: DashboardCommandResult | null;
-}) {
-  const promptChips = [
-    "Create a lead magnet workflow",
-    "Monitor site uptime",
-    "Find templates for sales follow-up",
-  ];
-
-  return (
-    <div className="mb-8">
-      <div className="mx-auto max-w-3xl">
-        <div className="rounded-[20px] border border-gray-200 bg-white/80 p-2 backdrop-blur-xl transition-all hover:border-brand-300 dark:border-surface-800 dark:bg-surface-900/80 dark:hover:border-brand-500/50 focus-within:border-brand-300 focus-within:ring-2 focus-within:ring-brand-500/20 dark:focus-within:border-brand-500/50 shadow-sm focus-within:shadow-glow">
-          <div className="flex items-center gap-3 rounded-2xl px-4 py-3">
-            <Sparkles size={18} className="shrink-0 text-brand-500" />
-            <label htmlFor="dashboard-ai-command" className="sr-only">
-              What do you want to build?
-            </label>
-            <input
-              id="dashboard-ai-command"
-              value={value}
-              onChange={(event) => onChange(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === "Enter") {
-                  event.preventDefault();
-                  onSubmit();
-                }
-              }}
-              placeholder="What do you want to build?"
-              className="min-w-0 flex-1 bg-transparent text-base text-gray-900 outline-none placeholder:text-gray-400 dark:text-white dark:placeholder:text-surface-500"
+      <div className="grid gap-6 lg:grid-cols-2">
+        <section className="rounded-[28px] border border-slate-200 bg-white p-6 shadow-sm dark:border-surface-800 dark:bg-surface-900/70">
+          <p className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-400">
+            Transport continuity
+          </p>
+          <h3 className="mt-2 text-xl font-semibold text-slate-950 dark:text-white">
+            Sprint 1 live-state treatment is explicit, not inferred.
+          </h3>
+          <div className="mt-5 grid gap-3 sm:grid-cols-2">
+            <StateGuide
+              title="Live"
+              description="Green emphasis with streaming updates."
+              tone="emerald"
             />
-            <div className="hidden items-center gap-1 rounded-xl border border-gray-200 bg-white px-2 py-1 text-xs font-medium text-gray-500 dark:border-surface-700 dark:bg-surface-800 dark:text-surface-400 md:flex">
-              <Command size={12} />
-              K
-            </div>
-            <button
-              type="button"
-              onClick={onSubmit}
-              className="inline-flex items-center gap-2 rounded-xl bg-brand-600 px-3 py-2 text-sm font-medium text-white transition hover:bg-brand-500"
-            >
-              <Search size={14} />
-              Ask
-            </button>
+            <StateGuide
+              title="Reconnecting"
+              description="Amber pulse while the stream re-establishes."
+              tone="amber"
+            />
+            <StateGuide
+              title="Polling"
+              description="Dimmed continuity when live transport degrades."
+              tone="slate"
+            />
+            <StateGuide
+              title="Error"
+              description="Red escalation when neither stream nor polling is healthy."
+              tone="red"
+            />
           </div>
-        </div>
+        </section>
 
-        <div className="mt-3 flex flex-wrap justify-center gap-2">
-          {promptChips.map((prompt) => (
-            <button
-              key={prompt}
-              type="button"
-              onClick={() => onPromptClick(prompt)}
-              className="rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-600 transition hover:border-brand-300 hover:text-brand-700 dark:border-surface-800 dark:bg-surface-900/60 dark:text-surface-300 dark:hover:border-brand-500/50 dark:hover:text-brand-300"
-            >
-              {prompt}
-            </button>
-          ))}
-        </div>
-
-        {result && (
-          <div className="mt-4 rounded-2xl border border-gray-200 bg-white/90 p-4 shadow-sm dark:border-surface-800 dark:bg-surface-900/80">
-            <div className="mb-3 flex items-start gap-3">
-              <div className="mt-0.5 rounded-xl border border-brand-200 bg-brand-50 p-2 text-brand-600 dark:border-brand-500/30 dark:bg-brand-500/10 dark:text-brand-300">
-                <Sparkles size={16} />
-              </div>
-              <div>
-                <h2 className="text-sm font-semibold text-gray-900 dark:text-white">{result.title}</h2>
-                <p className="mt-1 text-sm text-gray-500 dark:text-surface-400">{result.description}</p>
-              </div>
-            </div>
-
-            {result.kind === "templates" && (
-              <div className="space-y-2">
-                {result.items.map((item) => (
-                  <Link
-                    key={item.id}
-                    to={`/builder/${item.id}`}
-                    className="flex items-center justify-between rounded-xl border border-gray-200 px-3 py-2.5 text-sm transition hover:border-brand-300 hover:bg-brand-50/60 dark:border-surface-800 dark:hover:border-brand-500/40 dark:hover:bg-brand-500/5"
-                  >
-                    <div>
-                      <p className="font-medium text-gray-900 dark:text-white">{item.name}</p>
-                      <p className="text-xs text-gray-400 dark:text-surface-500 capitalize">{item.category}</p>
-                    </div>
-                    <ArrowRight size={14} className="text-gray-300 dark:text-surface-600" />
-                  </Link>
-                ))}
-              </div>
-            )}
-
-            {result.kind === "runs" && (
-              <div className="space-y-2">
-                {result.items.map((item) => (
-                  <Link
-                    key={item.id}
-                    to="/history"
-                    className="flex items-center justify-between rounded-xl border border-gray-200 px-3 py-2.5 text-sm transition hover:border-brand-300 hover:bg-brand-50/60 dark:border-surface-800 dark:hover:border-brand-500/40 dark:hover:bg-brand-500/5"
-                  >
-                    <div>
-                      <p className="font-medium text-gray-900 dark:text-white">{item.templateName}</p>
-                      <p className="text-xs text-gray-400 dark:text-surface-500">
-                        {new Date(item.startedAt).toLocaleString()}
-                      </p>
-                    </div>
-                    <StatusBadge status={item.status} />
-                  </Link>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
+        <section className="rounded-[28px] border border-dashed border-slate-300 bg-slate-50/80 p-6 shadow-sm dark:border-surface-700 dark:bg-slate-950/30">
+          <p className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-400">
+            Sprint 2 reserve
+          </p>
+          <h3 className="mt-2 text-xl font-semibold text-slate-950 dark:text-white">
+            Space held for additional cards, charts, and alerting surfaces.
+          </h3>
+          <p className="mt-3 text-sm leading-6 text-slate-500 dark:text-slate-400">
+            The current composition leaves room for the broader observability stack without forcing
+            a layout reset after the first KPI prototype proves the interaction model.
+          </p>
+        </section>
       </div>
     </div>
   );
 }
 
-function StatCard({
+function MetricChip({
   label,
   value,
-  icon,
-  iconColor,
-  iconBg,
-  trend,
-  trendValue,
-  subtitle,
+  tone,
 }: {
   label: string;
   value: number;
-  icon: React.ReactNode;
-  iconColor: string;
-  iconBg: string;
-  trend?: "up" | "down" | "active";
-  trendValue?: string;
-  subtitle?: string;
+  tone: "brand" | "teal" | "orange";
 }) {
+  const toneClasses =
+    tone === "teal"
+      ? "border-teal-200 bg-teal-50 text-teal-700 dark:border-teal-500/20 dark:bg-teal-500/10 dark:text-teal-300"
+      : tone === "orange"
+        ? "border-orange-200 bg-orange-50 text-orange-700 dark:border-orange-500/20 dark:bg-orange-500/10 dark:text-orange-300"
+        : "border-brand-200 bg-brand-50 text-brand-700 dark:border-brand-500/20 dark:bg-brand-500/10 dark:text-brand-300";
+
   return (
-    <div className="rounded-2xl border border-gray-200 dark:border-surface-800/60 bg-white dark:bg-surface-900/50 p-5 transition-all hover:shadow-sm dark:hover:shadow-glow dark:hover:border-surface-700/60">
-      <div className="mb-3 flex items-center justify-between">
-        <span className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">{label}</span>
-        <div className={`rounded-lg p-2 ${iconBg}`}>
-          <span className={iconColor}>{icon}</span>
-        </div>
-      </div>
-      <p className="text-3xl font-bold text-gray-900 dark:text-white tracking-tight">{value}</p>
-      {(trendValue || subtitle) && (
-        <div className="mt-1.5 flex items-center gap-1">
-          {trend === "up" && <ArrowUpRight size={13} className="text-emerald-500" />}
-          {trend === "down" && <ArrowDownRight size={13} className="text-red-500" />}
-          {trend === "active" && (
-            <span className="mr-1 inline-block h-1.5 w-1.5 rounded-full bg-amber-400 animate-pulse" />
-          )}
-          <span
-            className={`text-xs font-medium ${
-              trend === "up"
-                ? "text-emerald-600 dark:text-emerald-400"
-                : trend === "down"
-                  ? "text-red-500 dark:text-red-400"
-                  : "text-gray-400 dark:text-gray-500"
-            }`}
-          >
-            {trendValue ?? subtitle}
-          </span>
-        </div>
-      )}
+    <div className={`rounded-[22px] border px-4 py-4 ${toneClasses}`}>
+      <p className="text-xs font-semibold uppercase tracking-[0.2em]">{label}</p>
+      <p className="mt-3 text-2xl font-semibold">{value}</p>
     </div>
   );
 }
 
-function QuickAction({
-  to,
-  icon,
+function StateGuide({
   title,
   description,
-  color,
-  bg,
+  tone,
 }: {
-  to: string;
-  icon: React.ReactNode;
   title: string;
   description: string;
-  color: string;
-  bg: string;
+  tone: "emerald" | "amber" | "slate" | "red";
 }) {
+  const toneClasses =
+    tone === "emerald"
+      ? "border-emerald-200 bg-emerald-50 dark:border-emerald-500/20 dark:bg-emerald-500/10"
+      : tone === "amber"
+        ? "border-amber-200 bg-amber-50 dark:border-amber-500/20 dark:bg-amber-500/10"
+        : tone === "red"
+          ? "border-red-200 bg-red-50 dark:border-red-500/20 dark:bg-red-500/10"
+          : "border-slate-200 bg-slate-50 dark:border-surface-800 dark:bg-slate-950/45";
+
   return (
-    <Link
-      to={to}
-      className="group flex items-center gap-4 rounded-2xl border border-gray-200 dark:border-surface-800/60 bg-white dark:bg-surface-900/50 p-5 transition-all hover:shadow-sm hover:border-gray-300 dark:hover:shadow-glow dark:hover:border-surface-700/60"
-    >
-      <div className={`w-10 h-10 rounded-xl ${bg} flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform`}>
-        <span className={color}>{icon}</span>
-      </div>
-      <div className="min-w-0">
-        <p className="text-sm font-semibold text-gray-900 dark:text-white">{title}</p>
-        <p className="text-xs text-gray-400 dark:text-gray-500">{description}</p>
-      </div>
-      <ArrowRight size={14} className="text-gray-300 dark:text-gray-600 opacity-0 group-hover:opacity-100 transition-opacity ml-auto shrink-0" />
-    </Link>
+    <div className={`rounded-2xl border p-4 ${toneClasses}`}>
+      <p className="text-sm font-semibold text-slate-950 dark:text-white">{title}</p>
+      <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">{description}</p>
+    </div>
   );
+}
+
+function TransportPill({ state }: { state: TransportState }) {
+  const config =
+    state === "live"
+      ? {
+          label: "Live",
+          icon: <Wifi className="h-4 w-4" />,
+          className:
+            "border-emerald-300/30 bg-emerald-500/15 text-emerald-100 shadow-[0_0_0_1px_rgba(16,185,129,0.08),0_0_18px_rgba(16,185,129,0.18)]",
+        }
+      : state === "reconnecting"
+        ? {
+            label: "Reconnecting",
+            icon: <RefreshCcw className="h-4 w-4 animate-spin" />,
+            className: "border-amber-300/30 bg-amber-500/15 text-amber-100",
+          }
+        : state === "polling"
+          ? {
+              label: "Polling",
+              icon: <WifiOff className="h-4 w-4" />,
+              className: "border-slate-300/20 bg-white/5 text-slate-200",
+            }
+          : state === "error"
+            ? {
+                label: "Error",
+                icon: <AlertTriangle className="h-4 w-4" />,
+                className: "border-red-300/30 bg-red-500/15 text-red-100",
+              }
+            : {
+                label: "Connecting",
+                icon: <Activity className="h-4 w-4 animate-glow-pulse" />,
+                className: "border-brand-300/30 bg-brand-500/15 text-brand-100",
+              };
+
+  return (
+    <div className={`inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-sm ${config.className}`}>
+      {config.icon}
+      <span>{config.label}</span>
+    </div>
+  );
+}
+
+function transportStateLabel(state: TransportState): string {
+  if (state === "live") return "Streaming";
+  if (state === "reconnecting") return "Recovering";
+  if (state === "polling") return "Fallback active";
+  if (state === "error") return "Attention needed";
+  return "Connecting";
+}
+
+function eventCategoryBadge(category: ObservabilityEventCategory): string {
+  if (category === "run") {
+    return "rounded-full border border-brand-200 bg-brand-50 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-brand-700 dark:border-brand-500/20 dark:bg-brand-500/10 dark:text-brand-300";
+  }
+  if (category === "heartbeat") {
+    return "rounded-full border border-teal-200 bg-teal-50 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-teal-700 dark:border-teal-500/20 dark:bg-teal-500/10 dark:text-teal-300";
+  }
+  if (category === "alert") {
+    return "rounded-full border border-red-200 bg-red-50 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-red-700 dark:border-red-500/20 dark:bg-red-500/10 dark:text-red-300";
+  }
+  if (category === "budget") {
+    return "rounded-full border border-cyan-200 bg-cyan-50 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-cyan-700 dark:border-cyan-500/20 dark:bg-cyan-500/10 dark:text-cyan-300";
+  }
+  return "rounded-full border border-orange-200 bg-orange-50 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-orange-700 dark:border-orange-500/20 dark:bg-orange-500/10 dark:text-orange-300";
+}
+
+function eventCategoryIcon(category: ObservabilityEventCategory) {
+  if (category === "run") {
+    return (
+      <div className="rounded-2xl border border-brand-200 bg-brand-50 p-3 text-brand-600 dark:border-brand-500/20 dark:bg-brand-500/10 dark:text-brand-300">
+        <Activity className="h-4 w-4" />
+      </div>
+    );
+  }
+  if (category === "heartbeat") {
+    return (
+      <div className="rounded-2xl border border-teal-200 bg-teal-50 p-3 text-teal-600 dark:border-teal-500/20 dark:bg-teal-500/10 dark:text-teal-300">
+        <Wifi className="h-4 w-4" />
+      </div>
+    );
+  }
+  if (category === "alert") {
+    return (
+      <div className="rounded-2xl border border-red-200 bg-red-50 p-3 text-red-600 dark:border-red-500/20 dark:bg-red-500/10 dark:text-red-300">
+        <AlertTriangle className="h-4 w-4" />
+      </div>
+    );
+  }
+  if (category === "budget") {
+    return (
+      <div className="rounded-2xl border border-cyan-200 bg-cyan-50 p-3 text-cyan-600 dark:border-cyan-500/20 dark:bg-cyan-500/10 dark:text-cyan-300">
+        <BarChart3 className="h-4 w-4" />
+      </div>
+    );
+  }
+  return (
+    <div className="rounded-2xl border border-orange-200 bg-orange-50 p-3 text-orange-600 dark:border-orange-500/20 dark:bg-orange-500/10 dark:text-orange-300">
+      <Clock3 className="h-4 w-4" />
+    </div>
+  );
+}
+
+function formatDateTime(value: string): string {
+  return new Date(value).toLocaleString([], {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
+
+function formatBucketLabel(value: string): string {
+  return new Date(value).toLocaleTimeString([], {
+    hour: "numeric",
+    minute: "2-digit",
+  });
 }

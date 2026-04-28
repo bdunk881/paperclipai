@@ -1,213 +1,170 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter } from "react-router-dom";
 import Dashboard from "./Dashboard";
+import type {
+  ObservabilityEvent,
+  ObservabilityFeedPage,
+  ObservabilityThroughputSnapshot,
+} from "../api/client";
 
 const {
-  listRunsMock,
-  listTemplatesMock,
-  listLLMConfigsMock,
-  getAccessTokenMock,
-  navigateMock,
+  getObservabilityThroughputMock,
+  listObservabilityEventsMock,
+  requireAccessTokenMock,
+  streamObservabilityEventsMock,
 } = vi.hoisted(() => ({
-  listRunsMock: vi.fn(),
-  listTemplatesMock: vi.fn(),
-  listLLMConfigsMock: vi.fn(),
-  getAccessTokenMock: vi.fn(),
-  navigateMock: vi.fn(),
+  getObservabilityThroughputMock: vi.fn(),
+  listObservabilityEventsMock: vi.fn(),
+  requireAccessTokenMock: vi.fn(),
+  streamObservabilityEventsMock: vi.fn(),
 }));
 
-vi.mock("../api/client", () => ({
-  listRuns: listRunsMock,
-  listTemplates: listTemplatesMock,
-  listLLMConfigs: listLLMConfigsMock,
+vi.mock("../api/observability", () => ({
+  getObservabilityThroughput: getObservabilityThroughputMock,
+  listObservabilityEvents: listObservabilityEventsMock,
+  streamObservabilityEvents: streamObservabilityEventsMock,
 }));
 
 vi.mock("../context/AuthContext", () => ({
   useAuth: () => ({
-    user: { id: "user-1", email: "user@example.com", name: "Test User" },
-    login: vi.fn(),
-    signup: vi.fn(),
-    logout: vi.fn(),
-    getAccessToken: getAccessTokenMock,
+    requireAccessToken: requireAccessTokenMock,
   }),
 }));
 
-vi.mock("react-router-dom", async () => {
-  const actual = await vi.importActual<typeof import("react-router-dom")>("react-router-dom");
-  return {
-    ...actual,
-    useNavigate: () => navigateMock,
-  };
+const sampleEvents: ObservabilityEvent[] = [
+  {
+    id: "evt-2",
+    sequence: "2",
+    userId: "user-1",
+    category: "alert",
+    type: "alert.raised",
+    actor: { type: "agent", id: "agent-2", label: "Routing Watcher" },
+    subject: { type: "task", id: "task-9", label: "Signal drift alert" },
+    summary: "Critical alert raised for execution latency.",
+    payload: {},
+    occurredAt: "2026-04-28T20:10:00.000Z",
+  },
+  {
+    id: "evt-1",
+    sequence: "1",
+    userId: "user-1",
+    category: "run",
+    type: "run.started",
+    actor: { type: "run", id: "run-1", label: "Lead intake run" },
+    subject: { type: "execution", id: "exec-1", label: "Lead intake execution" },
+    summary: "Lead intake workflow started.",
+    payload: {},
+    occurredAt: "2026-04-28T20:00:00.000Z",
+  },
+];
+
+const sampleFeedPage: ObservabilityFeedPage = {
+  events: sampleEvents,
+  nextCursor: "2",
+  hasMore: false,
+  generatedAt: "2026-04-28T20:10:00.000Z",
+};
+
+const sampleThroughput: ObservabilityThroughputSnapshot = {
+  windowHours: 24,
+  generatedAt: "2026-04-28T20:10:00.000Z",
+  summary: {
+    createdCount: 8,
+    completedCount: 6,
+    blockedCount: 1,
+    completionRate: 0.75,
+  },
+  buckets: [
+    { bucketStart: "2026-04-28T14:00:00.000Z", createdCount: 1, completedCount: 1, blockedCount: 0 },
+    { bucketStart: "2026-04-28T15:00:00.000Z", createdCount: 2, completedCount: 1, blockedCount: 0 },
+    { bucketStart: "2026-04-28T16:00:00.000Z", createdCount: 0, completedCount: 1, blockedCount: 0 },
+    { bucketStart: "2026-04-28T17:00:00.000Z", createdCount: 2, completedCount: 1, blockedCount: 1 },
+    { bucketStart: "2026-04-28T18:00:00.000Z", createdCount: 1, completedCount: 1, blockedCount: 0 },
+    { bucketStart: "2026-04-28T19:00:00.000Z", createdCount: 1, completedCount: 0, blockedCount: 0 },
+    { bucketStart: "2026-04-28T20:00:00.000Z", createdCount: 1, completedCount: 1, blockedCount: 0 },
+    { bucketStart: "2026-04-28T21:00:00.000Z", createdCount: 0, completedCount: 0, blockedCount: 0 },
+  ],
+};
+
+beforeEach(() => {
+  vi.clearAllMocks();
+  vi.useRealTimers();
+  requireAccessTokenMock.mockResolvedValue("mock-token");
+  listObservabilityEventsMock.mockResolvedValue(sampleFeedPage);
+  getObservabilityThroughputMock.mockResolvedValue(sampleThroughput);
+  streamObservabilityEventsMock.mockImplementation(
+    async (
+      _accessToken: string,
+      options: { onReady?: (event: { nextCursor: string | null; replayed: number; generatedAt: string }) => void }
+    ) => {
+      options.onReady?.({
+        nextCursor: "2",
+        replayed: 0,
+        generatedAt: "2026-04-28T20:10:00.000Z",
+      });
+    }
+  );
+});
+
+afterEach(() => {
+  vi.useRealTimers();
 });
 
 describe("Dashboard", () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    vi.stubGlobal("localStorage", {
-      getItem: vi.fn().mockReturnValue(null),
-      setItem: vi.fn(),
-      removeItem: vi.fn(),
+  it("loads throughput and feed data, then opens the live stream", async () => {
+    render(
+      <MemoryRouter>
+        <Dashboard />
+      </MemoryRouter>
+    );
+
+    expect(
+      await screen.findByText("Critical alert raised for execution latency.")
+    ).toBeInTheDocument();
+    expect(screen.getAllByText("6").length).toBeGreaterThan(0);
+
+    expect(requireAccessTokenMock).toHaveBeenCalledTimes(1);
+    expect(listObservabilityEventsMock).toHaveBeenCalledWith("mock-token", {
+      categories: undefined,
+      limit: 20,
     });
-    getAccessTokenMock.mockResolvedValue("mock-token");
-    listRunsMock.mockResolvedValue([]);
-    listTemplatesMock.mockResolvedValue([]);
-    listLLMConfigsMock.mockResolvedValue([]);
-  });
-
-  afterEach(() => {
-    vi.unstubAllGlobals();
-  });
-
-  it("passes access token to authenticated dashboard APIs", async () => {
-    render(
-      <MemoryRouter>
-        <Dashboard />
-      </MemoryRouter>
-    );
-
-    await screen.findByText("Welcome back, Test");
-
-    expect(getAccessTokenMock).toHaveBeenCalledTimes(1);
-    expect(listRunsMock).toHaveBeenCalledWith(undefined, "mock-token");
-    expect(listLLMConfigsMock).toHaveBeenCalledWith("mock-token");
-    expect(screen.queryByText("Dashboard data unavailable")).not.toBeInTheDocument();
-  });
-
-  it("renders dashboard stats, recent runs, workflows, and hides onboarding when completed", async () => {
-    vi.stubGlobal("localStorage", {
-      getItem: vi.fn().mockReturnValue("true"),
-      setItem: vi.fn(),
-      removeItem: vi.fn(),
-    });
-    listRunsMock.mockResolvedValue([
-      {
-        id: "run_1",
-        templateId: "tpl_1",
-        templateName: "Lead Routing",
-        status: "completed",
-        startedAt: "2026-04-22T08:00:00.000Z",
-        input: {},
-        output: {},
-        stepResults: [],
-      },
-      {
-        id: "run_2",
-        templateId: "tpl_2",
-        templateName: "Ops Audit",
-        status: "failed",
-        startedAt: "2026-04-22T09:00:00.000Z",
-        input: {},
-        output: {},
-        stepResults: [],
-      },
-      {
-        id: "run_3",
-        templateId: "tpl_3",
-        templateName: "Weekly Check-in",
-        status: "running",
-        startedAt: "2026-04-22T10:00:00.000Z",
-        input: {},
-        output: {},
-        stepResults: [],
-      },
-    ]);
-    listTemplatesMock.mockResolvedValue([
-      {
-        id: "tpl_1",
-        name: "Lead Routing",
-        description: "Routes leads",
-        category: "sales",
-        version: "1.0.0",
-        stepCount: 4,
-        configFieldCount: 2,
-      },
-      {
-        id: "tpl_2",
-        name: "Ops Audit",
-        description: "Checks ops",
-        category: "operations",
-        version: "1.0.0",
-        stepCount: 4,
-        configFieldCount: 2,
-      },
-    ]);
-    listLLMConfigsMock.mockResolvedValue([
-      {
-        id: "cfg_1",
-        label: "Primary",
-        provider: "openai",
-        model: "gpt-4o",
-        isDefault: true,
-        maskedApiKey: "sk-...1234",
-        createdAt: "2026-04-22T00:00:00.000Z",
-      },
-    ]);
-
-    render(
-      <MemoryRouter>
-        <Dashboard />
-      </MemoryRouter>
-    );
-
-    expect(await screen.findByText("3")).toBeInTheDocument();
-    expect(screen.getByText("33% success")).toBeInTheDocument();
-    expect(screen.getByText("67% failure")).toBeInTheDocument();
-    expect(screen.getAllByText("Lead Routing").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("Ops Audit").length).toBeGreaterThan(0);
-    expect(screen.queryByRole("button", { name: /setup guide/i })).not.toBeInTheDocument();
-  });
-
-  it("shows onboarding, reopens it, and navigates through command prompts", async () => {
-    const localStorageMock = {
-      getItem: vi.fn().mockReturnValue(null),
-      setItem: vi.fn(),
-      removeItem: vi.fn(),
-    };
-    vi.stubGlobal("localStorage", localStorageMock);
-    listRunsMock.mockResolvedValue([]);
-    listTemplatesMock.mockResolvedValue([
-      {
-        id: "tpl_sales",
-        name: "Sales Follow-up",
-        description: "Follow-up workflow",
-        category: "sales",
-        version: "1.0.0",
-        stepCount: 4,
-        configFieldCount: 2,
-      },
-    ]);
-    listLLMConfigsMock.mockResolvedValue([]);
-
-    render(
-      <MemoryRouter>
-        <Dashboard />
-      </MemoryRouter>
-    );
-
-    expect(await screen.findByRole("button", { name: /setup guide/i })).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: /setup guide/i }));
-    expect(localStorageMock.removeItem).toHaveBeenCalledWith("autoflow:onboarding-dismissed:v1:user-1");
-
-    fireEvent.click(screen.getByRole("button", { name: /create a lead magnet workflow/i }));
-    expect(navigateMock).toHaveBeenCalledWith(
-      "/builder",
+    expect(getObservabilityThroughputMock).toHaveBeenCalledWith("mock-token", 24);
+    expect(streamObservabilityEventsMock).toHaveBeenCalledWith(
+      "mock-token",
       expect.objectContaining({
-        state: { copilotPrompt: "Create a lead magnet workflow" },
+        after: "2",
+        categories: undefined,
+        limit: 100,
       })
     );
-
-    fireEvent.change(screen.getByLabelText(/what do you want to build/i), {
-      target: { value: "find sales follow-up" },
-    });
-    fireEvent.click(screen.getByRole("button", { name: /ask/i }));
-    expect(await screen.findByText("Suggested workflows")).toBeInTheDocument();
-    expect(screen.getAllByText("Sales Follow-up").length).toBeGreaterThan(0);
   });
 
-  it("renders the error state and retries loading", async () => {
-    listRunsMock.mockRejectedValueOnce(new Error("Dashboard broke"));
-    listRunsMock.mockResolvedValueOnce([]);
+  it("reloads the dashboard when feed filters or time range controls change", async () => {
+    render(
+      <MemoryRouter>
+        <Dashboard />
+      </MemoryRouter>
+    );
+
+    await screen.findByText("Activity updates as they happen");
+
+    fireEvent.click(screen.getByRole("button", { name: "Alerts" }));
+    await waitFor(() => {
+      expect(listObservabilityEventsMock).toHaveBeenLastCalledWith("mock-token", {
+        categories: ["alert"],
+        limit: 20,
+      });
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "6h" }));
+    await waitFor(() => {
+      expect(getObservabilityThroughputMock).toHaveBeenLastCalledWith("mock-token", 6);
+    });
+  });
+
+  it("shows a reconnecting transport state when the live stream fails", async () => {
+    streamObservabilityEventsMock.mockRejectedValue(new Error("stream offline"));
 
     render(
       <MemoryRouter>
@@ -215,9 +172,27 @@ describe("Dashboard", () => {
       </MemoryRouter>
     );
 
-    expect(await screen.findByText("Dashboard data unavailable")).toBeInTheDocument();
+    await screen.findByText("Critical alert raised for execution latency.");
+
+    await waitFor(() => {
+      expect(screen.getByText("Recovering")).toBeInTheDocument();
+      expect(screen.getByText(/reconnecting to live stream/i)).toBeInTheDocument();
+    });
+  });
+
+  it("renders the error state and retries the initial load", async () => {
+    listObservabilityEventsMock.mockRejectedValueOnce(new Error("Observability broke"));
+    listObservabilityEventsMock.mockResolvedValueOnce(sampleFeedPage);
+
+    render(
+      <MemoryRouter>
+        <Dashboard />
+      </MemoryRouter>
+    );
+
+    expect(await screen.findByText("Observability dashboard unavailable")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: /retry/i }));
-    expect(await screen.findByText("Welcome back, Test")).toBeInTheDocument();
-    expect(listRunsMock).toHaveBeenCalledTimes(2);
+    expect(await screen.findByText("Critical alert raised for execution latency.")).toBeInTheDocument();
+    expect(listObservabilityEventsMock).toHaveBeenCalled();
   });
 });

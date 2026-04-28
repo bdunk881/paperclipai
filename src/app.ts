@@ -78,6 +78,7 @@ import datadogAzureMonitorRoutes, {
   datadogAzureMonitorWebhookRouter,
 } from "./integrations/datadog-azure-monitor/routes";
 import agentCatalogRoutes from "./integrations/agent-catalog/routes";
+import { composioRoutes } from "./integrations/composio";
 import oauthBridgeRoutes from "./integrations/oauthBridgeRoutes";
 import integrationRoutes, {
   catalogRouter as integrationCatalogRoutes,
@@ -405,6 +406,7 @@ app.use("/api/integrations/posthog", posthogRoutes);
 app.use("/api/integrations/intercom", intercomRoutes);
 app.use("/api/integrations/datadog-azure-monitor", datadogAzureMonitorRoutes);
 app.use("/api/integrations/agent-catalog", agentCatalogRoutes);
+app.use("/api/integrations/composio", composioRoutes);
 app.use("/api/connectors/google-workspace", googleWorkspaceConnectorRoutes);
 app.use("/api/companies", requireAuth, companyRoutes);
 app.use("/api/control-plane", requireAuth, controlPlaneRoutes);

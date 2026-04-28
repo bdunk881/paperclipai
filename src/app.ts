@@ -90,7 +90,7 @@ import {
 } from "./workflows/portableSchema";
 
 import { saveImportedTemplate } from "./templates/importedTemplateStore";
-
+import { getConnectorHealthSummary, listConnectorHealth } from "./connectors/health";
 
 const app = express();
 
@@ -1009,6 +1009,14 @@ app.get("/health", async (_req, res) => {
       configured: pgConfigured,
       connected: pgConnected,
     },
+  });
+});
+
+app.get("/api/connectors/health", (_req, res) => {
+  const connectors = listConnectorHealth();
+  res.json({
+    connectors,
+    summary: getConnectorHealthSummary(connectors),
   });
 });
 

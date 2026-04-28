@@ -84,6 +84,7 @@ import { extractPromptFeatures } from "./engine/promptFeatures";
 import { controlPlaneStore } from "./controlPlane/controlPlaneStore";
 import { approvalStore } from "./engine/approvalStore";
 import { approvalNotificationStore } from "./engine/approvalNotificationStore";
+import { approvalPolicyStore } from "./approvals/policyStore";
 import { runStore } from "./engine/runStore";
 import { knowledgeStore } from "./knowledge/knowledgeStore";
 import { resetImportedTemplatesForTests } from "./templates/importedTemplateStore";
@@ -100,6 +101,7 @@ beforeEach(() => {
   controlPlaneStore.clear();
   approvalStore.clear();
   approvalNotificationStore.clear();
+  approvalPolicyStore.clear();
   runStore.clear();
   knowledgeStore.clear();
   resetImportedTemplatesForTests();
@@ -249,6 +251,47 @@ describe("GET /api/templates/:id", () => {
     expect(typeof res.body.sampleInput).toBe("object");
     expect(res.body.expectedOutput).toBeDefined();
     expect(typeof res.body.expectedOutput).toBe("object");
+  });
+});
+
+describe("Approval tier policy API", () => {
+  const workspaceId = "11111111-1111-4111-8111-111111111111";
+
+  it("lists default approval tier policies for a workspace", async () => {
+    const res = await request(app)
+      .get(`/api/approval-policies?workspaceId=${workspaceId}`)
+      .set(asAuth());
+
+    expect(res.status).toBe(200);
+    expect(res.body.total).toBe(5);
+    expect(res.body.policies.every((policy: { mode: string }) => policy.mode === "require_approval")).toBe(true);
+  });
+
+  it("updates a workspace approval tier policy", async () => {
+    const res = await request(app)
+      .put("/api/approval-policies/public_posts")
+      .set(asAuth())
+      .send({
+        workspaceId,
+        mode: "notify_only",
+      });
+
+    expect(res.status).toBe(200);
+    expect(res.body.policy.actionType).toBe("public_posts");
+    expect(res.body.policy.mode).toBe("notify_only");
+  });
+
+  it("rejects invalid spend thresholds", async () => {
+    const res = await request(app)
+      .put("/api/approval-policies/spend_above_threshold")
+      .set(asAuth())
+      .send({
+        workspaceId,
+        mode: "require_approval",
+        spendThresholdCents: -1,
+      });
+
+    expect(res.status).toBe(400);
   });
 });
 
@@ -1084,14 +1127,16 @@ describe("Control plane APIs", () => {
       (candidate) => candidate.kind === "llm"
     )!;
 
-    const execution = controlPlaneStore.startAgentExecution({
+    const execution = (
+      await controlPlaneStore.startAgentExecution({
       userId: "test-user",
       actor: "run-agent-activity-seed",
       teamId,
       step,
       sourceRunId: "workflow-run-agent-1",
       requestedAgentId: workerAgent.id,
-    }).execution;
+      })
+    ).execution;
 
     controlPlaneStore.finalizeAgentExecution({
       executionId: execution.id,
@@ -1175,7 +1220,7 @@ describe("Control plane APIs", () => {
       (agent: { roleKey: string }) => agent.roleKey !== "workflow-manager"
     );
 
-    const started = controlPlaneStore.startAgentExecution({
+    const started = await controlPlaneStore.startAgentExecution({
       userId: "test-user",
       actor: "run-execution-seed",
       teamId,
@@ -1211,6 +1256,127 @@ describe("Control plane APIs", () => {
     expect(executionRes.status).toBe(200);
     expect(executionRes.body.status).toBe("queued");
     expect(executionRes.body.restartCount).toBe(1);
+  });
+
+  it("supports company-wide pause and resume with lifecycle audit entries", async () => {
+    const firstDeployRes = await request(app)
+      .post("/api/control-plane/deployments/workflow")
+      .set(asAuth())
+      .set("X-Paperclip-Run-Id", "run-deploy-company-1")
+      .send({ templateId: "tpl-support-bot" });
+    const secondDeployRes = await request(app)
+      .post("/api/control-plane/deployments/workflow")
+      .set(asAuth())
+      .set("X-Paperclip-Run-Id", "run-deploy-company-2")
+      .send({ templateId: "tpl-support-bot" });
+
+    const activeTeamId = firstDeployRes.body.team.id;
+    const manuallyPausedTeamId = secondDeployRes.body.team.id;
+    const activeWorkerAgent = firstDeployRes.body.agents.find(
+      (agent: { roleKey: string }) => agent.roleKey !== "workflow-manager"
+    );
+    const step = WORKFLOW_TEMPLATES.find((template) => template.id === "tpl-support-bot")!.steps.find(
+      (candidate) => candidate.kind === "llm"
+    )!;
+
+    await request(app)
+      .post(`/api/control-plane/teams/${manuallyPausedTeamId}/lifecycle`)
+      .set(asAuth())
+      .set("X-Paperclip-Run-Id", "run-manual-pause")
+      .send({ action: "pause" });
+
+    const stateBeforeRes = await request(app)
+      .get("/api/control-plane/company/lifecycle")
+      .set(asAuth());
+
+    expect(stateBeforeRes.status).toBe(200);
+    expect(stateBeforeRes.body.status).toBe("active");
+
+    const startedBeforePause = await controlPlaneStore.startAgentExecution({
+      userId: "test-user",
+      actor: "run-before-pause",
+      teamId: activeTeamId,
+      step,
+      requestedAgentId: activeWorkerAgent.id,
+      sourceRunId: "workflow-run-before-pause",
+    });
+
+    const pauseRes = await request(app)
+      .post("/api/control-plane/company/lifecycle")
+      .set(asAuth())
+      .set("X-Paperclip-Run-Id", "run-company-pause")
+      .send({ action: "pause", reason: "Emergency stop" });
+
+    expect(pauseRes.status).toBe(200);
+    expect(pauseRes.body.state.status).toBe("paused");
+    expect(pauseRes.body.state.pauseReason).toBe("Emergency stop");
+    expect(pauseRes.body.affectedTeamIds).toContain(activeTeamId);
+    expect(pauseRes.body.affectedTeamIds).not.toContain(manuallyPausedTeamId);
+
+    await expect(
+      controlPlaneStore.startAgentExecution({
+        userId: "test-user",
+        actor: "run-company-paused-start",
+        teamId: activeTeamId,
+        step: WORKFLOW_TEMPLATES.find((template) => template.id === "tpl-support-bot")!.steps.find(
+          (candidate) => candidate.kind === "llm"
+        )!,
+        sourceRunId: "workflow-run-paused",
+        requestedAgentId: activeWorkerAgent.id,
+      })
+    ).rejects.toThrow("company_paused");
+
+    const blockedHeartbeatRes = await request(app)
+      .post("/api/control-plane/heartbeats")
+      .set(asAuth())
+      .set("X-Paperclip-Run-Id", "run-company-paused-heartbeat")
+      .send({
+        teamId: activeTeamId,
+        agentId: activeWorkerAgent.id,
+        status: "completed",
+        summary: "Should be blocked",
+      });
+
+    expect(blockedHeartbeatRes.status).toBe(409);
+    expect(blockedHeartbeatRes.body.error).toMatch(/company is paused/i);
+
+    const allowedHeartbeatRes = await request(app)
+      .post("/api/control-plane/heartbeats")
+      .set(asAuth())
+      .set("X-Paperclip-Run-Id", "run-company-paused-existing-execution")
+      .send({
+        teamId: activeTeamId,
+        agentId: activeWorkerAgent.id,
+        executionId: startedBeforePause.execution.id,
+        status: "completed",
+        summary: "In-flight execution completed",
+      });
+
+    expect(allowedHeartbeatRes.status).toBe(201);
+
+    const resumeRes = await request(app)
+      .post("/api/control-plane/company/lifecycle")
+      .set(asAuth())
+      .set("X-Paperclip-Run-Id", "run-company-resume")
+      .send({ action: "resume", reason: "Recovered" });
+
+    expect(resumeRes.status).toBe(200);
+    expect(resumeRes.body.state.status).toBe("active");
+    expect(resumeRes.body.affectedTeamIds).toContain(activeTeamId);
+    expect(resumeRes.body.affectedTeamIds).not.toContain(manuallyPausedTeamId);
+
+    const auditRes = await request(app)
+      .get("/api/control-plane/company/lifecycle/audit")
+      .set(asAuth());
+
+    expect(auditRes.status).toBe(200);
+    expect(auditRes.body.total).toBe(2);
+    expect(auditRes.body.auditTrail.some((entry: { action: string; runId: string }) => (
+      entry.action === "pause" && entry.runId === "run-company-pause"
+    ))).toBe(true);
+    expect(auditRes.body.auditTrail.some((entry: { action: string; runId: string }) => (
+      entry.action === "resume" && entry.runId === "run-company-resume"
+    ))).toBe(true);
   });
 });
 

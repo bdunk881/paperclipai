@@ -8,28 +8,18 @@ import {
   StripePaymentIntent,
   StripeSubscription,
 } from "./types";
+import {
+  classifyStandardErrorType,
+  isStandardRetryable,
+  resolveRetryDelayMs,
+  sleep,
+} from "../shared/retryPolicy";
 
 const STRIPE_API_BASE = (process.env.STRIPE_API_BASE_URL ?? "https://api.stripe.com/v1").replace(/\/$/, "");
 const MAX_RETRIES = 4;
 
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
 function parseErrorType(status: number, text: string): ConnectorErrorType {
-  if (status === 401 || status === 403) {
-    return "auth";
-  }
-  if (status === 429 || /rate.?limit/i.test(text)) {
-    return "rate-limit";
-  }
-  if (status >= 500) {
-    return "upstream";
-  }
-  if (status >= 400) {
-    return "schema";
-  }
-  return "network";
+  return classifyStandardErrorType(status, text);
 }
 
 function safeJsonParse(text: string): unknown {
@@ -221,9 +211,7 @@ export class StripeConnectorClient {
         if (attempt >= MAX_RETRIES) {
           throw new ConnectorError("rate-limit", "Stripe API rate limit exceeded", 429);
         }
-
-        const retryAfterSeconds = Number(response.headers.get("Retry-After") ?? "1");
-        await sleep(Math.max(1, retryAfterSeconds) * 1000);
+        await sleep(resolveRetryDelayMs({ attempt, headers: response.headers }));
         return this.request<T>(path, init, formData, attempt + 1);
       }
 
@@ -238,16 +226,15 @@ export class StripeConnectorClient {
       return safeJsonParse(text) as T;
     } catch (error) {
       if (error instanceof ConnectorError) {
-        const retryable = error.type === "upstream" || error.type === "network";
-        if (retryable && attempt < MAX_RETRIES) {
-          await sleep(250 * Math.pow(2, attempt));
+        if (isStandardRetryable(error.type) && attempt < MAX_RETRIES) {
+          await sleep(resolveRetryDelayMs({ attempt }));
           return this.request<T>(path, init, formData, attempt + 1);
         }
         throw error;
       }
 
       if (attempt < MAX_RETRIES) {
-        await sleep(250 * Math.pow(2, attempt));
+        await sleep(resolveRetryDelayMs({ attempt }));
         return this.request<T>(path, init, formData, attempt + 1);
       }
 

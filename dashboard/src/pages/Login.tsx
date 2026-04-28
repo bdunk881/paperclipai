@@ -3,10 +3,13 @@ import type { AuthenticationResult } from "@azure/msal-browser";
 import { BrowserAuthError, BrowserAuthErrorCodes } from "@azure/msal-browser";
 import { Loader2, ArrowRight, CheckCircle2, KeyRound, Mail, ShieldCheck } from "lucide-react";
 import { useNavigate, useSearchParams } from "react-router-dom";
+import { getConfiguredApiOrigin } from "../api/baseUrl";
+import { navigateToSocialAuth } from "../auth/socialAuthNavigation";
 import { loginRequest, signupRequest } from "../auth/msalConfig";
 import { initializeMsalInstance, msalInstance } from "../auth/msalInstance";
 import {
   NativeAuthError,
+  type SocialAuthProvider,
   challengePasswordReset,
   challengeSignUp,
   continuePasswordReset,
@@ -43,6 +46,14 @@ type PendingReset = {
 
 const lockupUrl = new URL("../../../infra/brand-assets/payload/logos/product/lockup.svg", import.meta.url).href;
 const noiseUrl = new URL("../../../infra/brand-assets/payload/textures/noise-overlay.svg", import.meta.url).href;
+const googleLogoUrl = new URL("../../../infra/brand-assets/payload/logos/integrations/google/logo.svg", import.meta.url).href;
+const facebookLogoUrl = new URL("../../../infra/brand-assets/payload/logos/integrations/facebook/logo.svg", import.meta.url).href;
+const appleLogoUrl = new URL("../../../infra/brand-assets/payload/logos/integrations/apple/logo.svg", import.meta.url).href;
+const socialProviders: Array<{ key: SocialAuthProvider; label: string }> = [
+  { key: "google", label: "Google" },
+  { key: "facebook", label: "Facebook" },
+  { key: "apple", label: "Apple" },
+];
 
 function resolveMode(value: string | null): AuthMode {
   if (value === "signup") return "signup";
@@ -192,6 +203,7 @@ export default function Login() {
   const [searchParams, setSearchParams] = useSearchParams();
   const mode = resolveMode(searchParams.get("mode"));
   const qaPreviewError = searchParams.get("qaPreviewError") === "invalid";
+  const socialAuthError = searchParams.get("socialAuthError");
 
   const [signinEmail, setSigninEmail] = useState("");
   const [signinPassword, setSigninPassword] = useState("");
@@ -208,13 +220,19 @@ export default function Login() {
   const [pendingReset, setPendingReset] = useState<PendingReset | null>(null);
   const [busy, setBusy] = useState(false);
   const [microsoftAction, setMicrosoftAction] = useState<"signin" | "signup" | null>(null);
+  const [socialProvider, setSocialProvider] = useState<SocialAuthProvider | null>(null);
   const microsoftInteractionInFlightRef = useRef(false);
   const [error, setError] = useState(
-    qaPreviewError ? "Preview access link is invalid, expired, or not enabled for this deployment." : ""
+    qaPreviewError
+      ? "Preview access link is invalid, expired, or not enabled for this deployment."
+      : socialAuthError
+        ? socialAuthError.replace(/\+/g, " ")
+        : ""
   );
   const [notice, setNotice] = useState("");
   const [shakeKey, setShakeKey] = useState(0);
-  const isAnyBusy = busy || microsoftAction !== null;
+  const isAnyBusy = busy || microsoftAction !== null || socialProvider !== null;
+  const hasSocialError = Boolean(socialAuthError);
 
   const signals = useMemo(
     () => [
@@ -239,9 +257,31 @@ export default function Login() {
       nextParams.set("mode", nextMode);
     }
     nextParams.delete("qaPreviewError");
+    nextParams.delete("socialAuthError");
     setSearchParams(nextParams);
     setError("");
     setNotice("");
+  }
+
+  function socialAuthRedirectUrl(provider: SocialAuthProvider): string {
+    const apiOrigin = getConfiguredApiOrigin();
+    const base = apiOrigin || window.location.origin;
+    const target = new URL(`/api/auth/social/${provider}`, base);
+    target.searchParams.set("redirect_uri", `${window.location.origin}/auth/social-callback`);
+    return target.toString();
+  }
+
+  function handleSocialAuth(provider: SocialAuthProvider) {
+    setSocialProvider(provider);
+    setError("");
+    setNotice("");
+
+    try {
+      navigateToSocialAuth(socialAuthRedirectUrl(provider));
+    } catch (authError) {
+      setSocialProvider(null);
+      triggerError(authError instanceof Error ? authError.message : "Unable to start social sign-in.");
+    }
   }
 
   async function finalizeSession(tokenResponsePromise: Promise<ReturnType<typeof exchangeContinuationToken> extends Promise<infer T> ? T : never>) {
@@ -542,6 +582,24 @@ export default function Login() {
 
             {mode === "signin" ? (
               <form onSubmit={handleSignIn} className="space-y-4 transition-all duration-300">
+                <p className="text-xs font-semibold uppercase tracking-[0.24em] text-slate-500">Or continue with</p>
+                <button
+                  type="button"
+                  disabled={isAnyBusy}
+                  onClick={() => void handleMicrosoftAuth("signin")}
+                  className="auth-microsoft-button"
+                >
+                  {microsoftAction === "signin" ? <Loader2 size={18} className="animate-spin" /> : <MicrosoftIcon />}
+                  {microsoftAction === "signin" ? "Redirecting..." : "Sign in with Microsoft"}
+                </button>
+                <SocialButtonRail
+                  mode="signin"
+                  activeProvider={socialProvider}
+                  disabled={isAnyBusy}
+                  showError={hasSocialError}
+                  onSelect={handleSocialAuth}
+                />
+                <SectionDivider label="Or sign in with email" />
                 <Field label="Work email" delay={0}>
                   <input
                     type="email"
@@ -564,16 +622,6 @@ export default function Login() {
                     placeholder="Enter your password"
                   />
                 </Field>
-                <button
-                  type="button"
-                  disabled={isAnyBusy}
-                  onClick={() => void handleMicrosoftAuth("signin")}
-                  className="auth-microsoft-button"
-                >
-                  {microsoftAction === "signin" ? <Loader2 size={18} className="animate-spin" /> : <MicrosoftIcon />}
-                  {microsoftAction === "signin" ? "Opening Microsoft..." : "Sign in with Microsoft"}
-                </button>
-                <OrDivider />
                 <button type="submit" disabled={isAnyBusy} className="auth-primary-button mt-2">
                   {busy ? <Loader2 size={18} className="animate-spin" /> : <ArrowRight size={18} />}
                   {busy ? "Authorizing..." : "Sign in"}
@@ -585,6 +633,24 @@ export default function Login() {
               <form onSubmit={handleSignUp} className="space-y-4 transition-all duration-300">
                 {!showSignupVerification ? (
                   <>
+                    <p className="text-xs font-semibold uppercase tracking-[0.24em] text-slate-500">Or continue with</p>
+                    <button
+                      type="button"
+                      disabled={isAnyBusy}
+                      onClick={() => void handleMicrosoftAuth("signup")}
+                      className="auth-microsoft-button"
+                    >
+                      {microsoftAction === "signup" ? <Loader2 size={18} className="animate-spin" /> : <MicrosoftIcon />}
+                      {microsoftAction === "signup" ? "Redirecting..." : "Sign up with Microsoft"}
+                    </button>
+                    <SocialButtonRail
+                      mode="signup"
+                      activeProvider={socialProvider}
+                      disabled={isAnyBusy}
+                      showError={hasSocialError}
+                      onSelect={handleSocialAuth}
+                    />
+                    <SectionDivider label="Or sign up with email" />
                     <Field label="Full name" delay={0}>
                       <input
                         type="text"
@@ -646,20 +712,6 @@ export default function Login() {
                     />
                   </Field>
                 )}
-                {!showSignupVerification ? (
-                  <>
-                    <button
-                      type="button"
-                      disabled={isAnyBusy}
-                      onClick={() => void handleMicrosoftAuth("signup")}
-                      className="auth-microsoft-button"
-                    >
-                      {microsoftAction === "signup" ? <Loader2 size={18} className="animate-spin" /> : <MicrosoftIcon />}
-                      {microsoftAction === "signup" ? "Opening Microsoft..." : "Sign up with Microsoft"}
-                    </button>
-                    <OrDivider />
-                  </>
-                ) : null}
                 <button type="submit" disabled={isAnyBusy} className="auth-primary-button mt-2">
                   {busy ? <Loader2 size={18} className="animate-spin" /> : showSignupVerification ? <CheckCircle2 size={18} /> : <ArrowRight size={18} />}
                   {busy ? "Processing..." : showSignupVerification ? "Verify and create account" : "Send verification code"}
@@ -738,10 +790,53 @@ export default function Login() {
   );
 }
 
-function OrDivider() {
+function SectionDivider({ label }: { label: string }) {
   return (
     <div className="auth-or-divider" aria-hidden="true">
-      <span>or</span>
+      <span>{label}</span>
+    </div>
+  );
+}
+
+function SocialButtonRail({
+  mode,
+  activeProvider,
+  disabled,
+  showError,
+  onSelect,
+}: {
+  mode: "signin" | "signup";
+  activeProvider: SocialAuthProvider | null;
+  disabled: boolean;
+  showError: boolean;
+  onSelect: (provider: SocialAuthProvider) => void;
+}) {
+  return (
+    <div className="space-y-3">
+      {socialProviders.map((provider) => {
+        const isActive = activeProvider === provider.key;
+        const actionLabel = mode === "signin" ? "Sign in" : "Sign up";
+        const borderClass = showError && !isActive ? "border-red-500 text-red-300" : "border-[#3f4655] text-[#e8eaee]";
+        const stateClass = isActive
+          ? "bg-[#1a1d23] text-[#8a8e99]"
+          : "bg-[#1a1d23] hover:bg-[#242932] hover:border-[#4f5769] hover:text-white active:bg-[#0f1117] active:border-[#5865f2] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#5865f2]";
+
+        return (
+          <button
+            key={provider.key}
+            type="button"
+            disabled={disabled}
+            onClick={() => onSelect(provider.key)}
+            className={`flex h-12 w-full items-center rounded-lg border px-4 text-sm font-medium transition duration-200 ease-out disabled:cursor-not-allowed disabled:border-[#2d3138] disabled:bg-[#0f1117] disabled:text-[#5a5f6b] ${borderClass} ${stateClass}`}
+            aria-label={`${actionLabel} with ${provider.label}`}
+          >
+            <span className="mr-4 flex h-6 w-6 items-center justify-center">
+              {isActive ? <Loader2 size={18} className="animate-spin text-[#8a8e99]" /> : <ProviderIcon provider={provider.key} disabled={disabled} />}
+            </span>
+            <span>{isActive ? "Redirecting..." : `${actionLabel} with ${provider.label}`}</span>
+          </button>
+        );
+      })}
     </div>
   );
 }
@@ -771,5 +866,23 @@ function MicrosoftIcon() {
       <rect x="1" y="11" width="9" height="9" fill="#00A4EF" />
       <rect x="11" y="11" width="9" height="9" fill="#FFB900" />
     </svg>
+  );
+}
+
+function ProviderIcon({ provider, disabled }: { provider: SocialAuthProvider; disabled: boolean }) {
+  const logoSrc =
+    provider === "google"
+      ? googleLogoUrl
+      : provider === "facebook"
+        ? facebookLogoUrl
+        : appleLogoUrl;
+
+  return (
+    <img
+      src={logoSrc}
+      alt=""
+      aria-hidden="true"
+      className={`h-6 w-6 object-contain ${disabled ? "grayscale opacity-60" : ""}`}
+    />
   );
 }

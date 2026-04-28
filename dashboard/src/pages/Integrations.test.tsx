@@ -23,14 +23,25 @@ function renderWithRouter(searchParams = "") {
   );
 }
 
+function providerCard(name: string): HTMLElement {
+  const heading = screen.getByRole("heading", { name });
+  const card = heading.closest("div.rounded-2xl");
+  if (!card) {
+    throw new Error(`Could not find card for provider ${name}`);
+  }
+  return card as HTMLElement;
+}
+
 const providerConnections: Record<string, unknown[]> = {
   apollo: [{ id: "apollo-1", authMethod: "oauth2", createdAt: "2026-01-01T00:00:00Z", scopes: ["read", "write", "enrich", "contacts", "extra"], accountLabel: "Apollo SMB" }],
   gmail: [],
   hubspot: [],
+  linear: [{ id: "linear-1", authMethod: "oauth2_pkce", createdAt: "2026-03-01T00:00:00Z", scopes: ["read", "write"], accountLabel: "Linear Workspace" }],
   sentry: [],
   slack: [{ id: "slack-1", authMethod: "api_key", createdAt: "2026-02-01T00:00:00Z", scopes: [], tokenMasked: "****1234" }],
   stripe: [],
   composio: [],
+  teams: [],
 };
 
 function installFetchMock(options?: {
@@ -91,7 +102,9 @@ describe("Integrations", () => {
     });
 
     expect(screen.getByText("Composio")).toBeInTheDocument();
-    expect(screen.getAllByText("Connected").length).toBe(2);
+    expect(screen.getByText("Linear")).toBeInTheDocument();
+    expect(screen.getByText("Microsoft Teams")).toBeInTheDocument();
+    expect(screen.getAllByText("Connected").length).toBe(3);
     expect(screen.getAllByText("Not connected").length).toBeGreaterThan(0);
   });
 
@@ -118,13 +131,13 @@ describe("Integrations", () => {
 
     renderWithRouter();
     await waitFor(() => {
-      expect(screen.getByText("read")).toBeInTheDocument();
-      expect(screen.getByText("write")).toBeInTheDocument();
-      expect(screen.getByText("enrich")).toBeInTheDocument();
-      expect(screen.getByText("contacts")).toBeInTheDocument();
+      expect(providerCard("Apollo")).toHaveTextContent("read");
+      expect(providerCard("Apollo")).toHaveTextContent("write");
+      expect(providerCard("Apollo")).toHaveTextContent("enrich");
+      expect(providerCard("Apollo")).toHaveTextContent("contacts");
     });
 
-    expect(screen.queryByText("extra")).not.toBeInTheDocument();
+    expect(providerCard("Apollo")).not.toHaveTextContent("extra");
   });
 
   it("shows hybrid auth labels and API-key-only labels", async () => {
@@ -135,6 +148,20 @@ describe("Integrations", () => {
       expect(screen.getAllByText("OAuth + API key").length).toBeGreaterThan(0);
     });
     expect(screen.getAllByText("API key").length).toBeGreaterThan(0);
+  });
+
+  it("renders PKCE-backed connections as OAuth instead of not connected", async () => {
+    installFetchMock();
+
+    renderWithRouter();
+    await waitFor(() => {
+      expect(screen.getByText("Linear")).toBeInTheDocument();
+    });
+
+    const linearCard = providerCard("Linear");
+    expect(linearCard).toHaveTextContent("Connection type");
+    expect(linearCard).toHaveTextContent("OAuth");
+    expect(linearCard).not.toHaveTextContent("Connection typeNot connected");
   });
 
   it("starts OAuth from the provider-specific route", async () => {
@@ -187,7 +214,7 @@ describe("Integrations", () => {
 
     renderWithRouter();
     await waitFor(() => {
-      expect(screen.getAllByText("Disconnect").length).toBe(2);
+      expect(screen.getAllByText("Disconnect").length).toBe(3);
     });
 
     fireEvent.click(screen.getAllByText("Disconnect")[0]);

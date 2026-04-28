@@ -2,17 +2,19 @@ export type ProviderKey =
   | "apollo"
   | "gmail"
   | "hubspot"
+  | "linear"
   | "sentry"
   | "slack"
   | "stripe"
-  | "composio";
+  | "composio"
+  | "teams";
 
 export interface ProviderStatus {
   connected: boolean;
   connectedAt?: string;
   scopes?: string[];
   connectionId?: string;
-  authMethod?: "oauth2" | "api_key";
+  authMethod?: "oauth2" | "oauth2_pkce" | "api_key";
   tokenMasked?: string;
   accountLabel?: string;
 }
@@ -56,6 +58,15 @@ export const LIVE_CONNECTOR_PROVIDERS: ProviderMeta[] = [
     description: "Contacts, companies, deals, webhook intake, and health checks.",
   },
   {
+    key: "linear",
+    name: "Linear",
+    category: "Developer Tools",
+    authMode: "oauth",
+    supportsOAuth: true,
+    supportsApiKey: true,
+    description: "Issue and project sync with PKCE auth, API-key fallback, and webhook-aware workflows.",
+  },
+  {
     key: "sentry",
     name: "Sentry",
     category: "Developer Tools",
@@ -90,6 +101,15 @@ export const LIVE_CONNECTOR_PROVIDERS: ProviderMeta[] = [
     supportsOAuth: false,
     supportsApiKey: true,
     description: "Connected accounts, trigger fan-out, and tool execution via API key.",
+  },
+  {
+    key: "teams",
+    name: "Microsoft Teams",
+    category: "Communication",
+    authMode: "oauth",
+    supportsOAuth: true,
+    supportsApiKey: true,
+    description: "Channels, chat delivery, and Graph-backed team workflows with OAuth plus token fallback.",
   },
 ];
 

@@ -90,6 +90,7 @@ import { approvalPolicyStore } from "./approvals/policyStore";
 import { runStore } from "./engine/runStore";
 import { knowledgeStore } from "./knowledge/knowledgeStore";
 import { resetImportedTemplatesForTests } from "./templates/importedTemplateStore";
+import { observabilityStore } from "./observability/store";
 import {
   PORTABLE_WORKFLOW_FORMAT,
   PORTABLE_WORKFLOW_SCHEMA_VERSION,
@@ -106,6 +107,7 @@ beforeEach(() => {
   approvalPolicyStore.clear();
   runStore.clear();
   knowledgeStore.clear();
+  observabilityStore.clear();
   resetImportedTemplatesForTests();
 });
 
@@ -431,6 +433,141 @@ describe("Knowledge base routes", () => {
 
     expect(patchRes.status).toBe(200);
     expect(patchRes.body.text).toMatch(/verify the health endpoint/i);
+  });
+});
+
+describe("Observability routes", () => {
+  it("returns the live feed contract with issue, run, heartbeat, budget, and alert events", async () => {
+    const deployRes = await request(app)
+      .post("/api/control-plane/deployments/workflow")
+      .set(asAuth())
+      .set("X-Paperclip-Run-Id", "run-observability-deploy")
+      .send({ templateId: "tpl-support-bot" });
+
+    const teamId = deployRes.body.team.id as string;
+    const workerAgent = deployRes.body.agents.find(
+      (agent: { roleKey: string }) => agent.roleKey !== "workflow-manager"
+    );
+    const step = WORKFLOW_TEMPLATES.find((template) => template.id === "tpl-support-bot")!.steps.find(
+      (candidate) => candidate.kind === "llm"
+    )!;
+
+    const started = await controlPlaneStore.startAgentExecution({
+      userId: "test-user",
+      actor: "run-observability-seed",
+      teamId,
+      step,
+      sourceRunId: "workflow-run-observability-1",
+      taskTitle: "Investigate signal drift",
+    });
+
+    await request(app)
+      .patch(`/api/control-plane/tasks/${started.task!.id}/status`)
+      .set(asAuth())
+      .set("X-Paperclip-Run-Id", "run-observability-task-done")
+      .send({ status: "done" });
+
+    controlPlaneStore.finalizeAgentExecution({
+      executionId: started.execution.id,
+      userId: "test-user",
+      status: "failed",
+      summary: "Run failed after upstream timeout",
+      costUsd: 1.75,
+    });
+
+    const feedRes = await request(app)
+      .get("/api/observability/events?limit=20")
+      .set(asAuth());
+
+    expect(feedRes.status).toBe(200);
+    expect(Array.isArray(feedRes.body.events)).toBe(true);
+    expect(feedRes.body.events.length).toBeGreaterThan(0);
+    expect(feedRes.body.nextCursor).toEqual(feedRes.body.events.at(-1)?.sequence ?? null);
+
+    const categories = new Set(feedRes.body.events.map((event: { category: string }) => event.category));
+    expect(categories.has("issue")).toBe(true);
+    expect(categories.has("run")).toBe(true);
+    expect(categories.has("heartbeat")).toBe(true);
+    expect(categories.has("budget")).toBe(true);
+    expect(categories.has("alert")).toBe(true);
+
+    const runStartedEvent = feedRes.body.events.find((event: { type: string }) => event.type === "run.started");
+    expect(runStartedEvent).toMatchObject({
+      category: "run",
+      subject: expect.objectContaining({ type: "execution", id: started.execution.id }),
+      payload: expect.objectContaining({
+        sourceRunId: "workflow-run-observability-1",
+        workflowStepId: step.id,
+        workflowStepName: step.name,
+      }),
+    });
+  });
+
+  it("supports cursor-based polling fallback and throughput aggregates", async () => {
+    const deployRes = await request(app)
+      .post("/api/control-plane/deployments/workflow")
+      .set(asAuth())
+      .set("X-Paperclip-Run-Id", "run-observability-fallback-deploy")
+      .send({ templateId: "tpl-support-bot" });
+
+    const teamId = deployRes.body.team.id as string;
+    const workerAgent = deployRes.body.agents.find(
+      (agent: { roleKey: string }) => agent.roleKey !== "workflow-manager"
+    );
+    const step = WORKFLOW_TEMPLATES.find((template) => template.id === "tpl-support-bot")!.steps.find(
+      (candidate) => candidate.kind === "llm"
+    )!;
+
+    const started = await controlPlaneStore.startAgentExecution({
+      userId: "test-user",
+      actor: "run-observability-fallback-seed",
+      teamId,
+      step,
+      sourceRunId: "workflow-run-observability-2",
+      taskTitle: "Resolve retry backlog",
+      requestedAgentId: workerAgent.id,
+    });
+
+    const firstPage = await request(app)
+      .get("/api/observability/events?categories=issue&limit=1")
+      .set(asAuth());
+
+    expect(firstPage.status).toBe(200);
+    expect(firstPage.body.events).toHaveLength(1);
+
+    await request(app)
+      .patch(`/api/control-plane/tasks/${started.task!.id}/status`)
+      .set(asAuth())
+      .set("X-Paperclip-Run-Id", "run-observability-fallback-block")
+      .send({ status: "blocked" });
+
+    await request(app)
+      .patch(`/api/control-plane/tasks/${started.task!.id}/status`)
+      .set(asAuth())
+      .set("X-Paperclip-Run-Id", "run-observability-fallback-done")
+      .send({ status: "done" });
+
+    const secondPage = await request(app)
+      .get(`/api/observability/events?categories=issue&after=${firstPage.body.nextCursor}&limit=10`)
+      .set(asAuth());
+
+    expect(secondPage.status).toBe(200);
+    expect(secondPage.body.events.length).toBeGreaterThanOrEqual(2);
+    expect(
+      secondPage.body.events.every((event: { category: string; sequence: string }) => {
+        return event.category === "issue" && Number(event.sequence) > Number(firstPage.body.nextCursor);
+      })
+    ).toBe(true);
+
+    const throughputRes = await request(app)
+      .get("/api/observability/throughput?windowHours=24")
+      .set(asAuth());
+
+    expect(throughputRes.status).toBe(200);
+    expect(throughputRes.body.summary.createdCount).toBeGreaterThanOrEqual(1);
+    expect(throughputRes.body.summary.completedCount).toBeGreaterThanOrEqual(1);
+    expect(throughputRes.body.summary.blockedCount).toBeGreaterThanOrEqual(1);
+    expect(Array.isArray(throughputRes.body.buckets)).toBe(true);
   });
 });
 
@@ -2157,6 +2294,7 @@ describe("GET /api/analytics/routing-decisions", () => {
   });
 
   it("returns logged routing decisions for dashboard consumption", async () => {
+    const routingUserId = "routing-analytics-user";
     logClassificationDecision({
       promptHash: "hash-1",
       features: extractPromptFeatures("Classify this ticket", 120, 1),
@@ -2167,7 +2305,7 @@ describe("GET /api/analytics/routing-decisions", () => {
 
     const res = await request(app)
       .get("/api/analytics/routing-decisions")
-      .set(asAuth());
+      .set(asAuth(routingUserId));
 
     expect(res.status).toBe(200);
     expect(Array.isArray(res.body.decisions)).toBe(true);
@@ -2188,9 +2326,10 @@ describe("GET /api/analytics/routing-decisions", () => {
 
 describe("GET /api/observability", () => {
   it("returns searchable trace records and supports CSV export", async () => {
+    const observabilityUserId = "observability-contract-user";
     const deployRes = await request(app)
       .post("/api/control-plane/deployments/workflow")
-      .set(asAuth())
+      .set(asAuth(observabilityUserId))
       .set("X-Paperclip-Run-Id", "run-deploy-observability")
       .send({ templateId: "tpl-support-bot" });
 
@@ -2203,7 +2342,7 @@ describe("GET /api/observability", () => {
     )!;
 
     const started = await controlPlaneStore.startAgentExecution({
-      userId: "test-user",
+      userId: observabilityUserId,
       actor: "run-observability-seed",
       teamId,
       step,
@@ -2350,13 +2489,14 @@ describe("POST /api/webhooks/:templateId", () => {
   });
 
   it("run created by webhook is retrievable via GET /api/runs/:id", async () => {
+    const webhookUserId = "webhook-readback-user";
     const webhookRes = await request(app)
       .post("/api/webhooks/tpl-support-bot")
       .send({ ticketId: "WH-003", subject: "Test" });
     expect(webhookRes.status).toBe(202);
 
     const runId = webhookRes.body.runId;
-    const getRes = await request(app).get(`/api/runs/${runId}`).set(asAuth());
+    const getRes = await request(app).get(`/api/runs/${runId}`).set(asAuth(webhookUserId));
     expect(getRes.status).toBe(200);
     expect(getRes.body.id).toBe(runId);
   });

@@ -916,7 +916,7 @@ describe("Control plane APIs", () => {
       outputKeys: [],
     };
 
-    expect(() =>
+    await expect(
       controlPlaneStore.startAgentExecution({
         userId: "test-user",
         actor: "run-start-after-team-cap",
@@ -925,7 +925,7 @@ describe("Control plane APIs", () => {
         sourceRunId: "workflow-run-after-team-cap",
         requestedAgentId: workerAgents[1].id,
       })
-    ).toThrow("team_budget_exceeded");
+    ).rejects.toThrow("team_budget_exceeded");
   });
 
   it("enforces per-tool ceilings and per-agent caps in real time", async () => {

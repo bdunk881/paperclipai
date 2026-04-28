@@ -503,12 +503,6 @@ function getAgentForWorkflowStep(teamId: string, userId: string, step: WorkflowS
   });
 }
 
-function listAgentsForTeam(teamId: string, userId: string): ControlPlaneAgent[] {
-  return Array.from(agents.values())
-    .filter((agent) => agent.userId === userId && agent.teamId === teamId)
-    .sort((left, right) => left.createdAt.localeCompare(right.createdAt));
-}
-
 function wasExecutionRequestedBeforePause(requestedAt: string, pausedAt?: string): boolean {
   if (!pausedAt) {
     return true;

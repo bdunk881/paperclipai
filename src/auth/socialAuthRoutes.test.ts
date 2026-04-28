@@ -36,6 +36,8 @@ function loadApp(authenticateImpl: PassportAuthenticate, enabledProviders: strin
     isSocialAuthProviderEnabled: (provider: string) => enabledProviders.includes(provider),
   }));
   jest.doMock("../db/postgres", () => ({
+    getPostgresPool: jest.fn(),
+    isPostgresPersistenceEnabled: () => false,
     isPostgresConfigured: () => true,
   }));
   jest.doMock("../engine/llmProviders", () => ({
@@ -71,6 +73,8 @@ function loadAppWithConfigurationError(
     isSocialAuthProviderEnabled: () => true,
   }));
   jest.doMock("../db/postgres", () => ({
+    getPostgresPool: jest.fn(),
+    isPostgresPersistenceEnabled: () => false,
     isPostgresConfigured: () => true,
   }));
   jest.doMock("../engine/llmProviders", () => ({

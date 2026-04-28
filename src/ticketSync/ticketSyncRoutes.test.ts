@@ -3,6 +3,7 @@ import express from "express";
 import request from "supertest";
 import ticketRoutes from "../tickets/ticketRoutes";
 import { ticketStore } from "../tickets/ticketStore";
+import { WorkspaceAwareRequest } from "../middleware/workspaceResolver";
 import { TrackerAdapter, TrackerComment, TrackerHealth, TrackerIssue } from "../integrations/tracker-sync";
 import { integrationCredentialStore } from "../integrations/integrationCredentialStore";
 import { linearCredentialStore } from "../integrations/linear/credentialStore";
@@ -91,6 +92,17 @@ function buildApp() {
       return;
     }
     req.auth = { sub: authHeader.slice(7), email: "test@example.com" };
+    next();
+  });
+  app.use((req: WorkspaceAwareRequest, _res, next) => {
+    const headerWorkspaceId =
+      typeof req.headers["x-workspace-id"] === "string" ? req.headers["x-workspace-id"].trim() : "";
+    const bodyWorkspaceId =
+      typeof (req.body as { workspaceId?: unknown } | undefined)?.workspaceId === "string"
+        ? String((req.body as { workspaceId?: string }).workspaceId).trim()
+        : "";
+    const queryWorkspaceId = typeof req.query.workspaceId === "string" ? req.query.workspaceId.trim() : "";
+    req.workspaceId = headerWorkspaceId || bodyWorkspaceId || queryWorkspaceId || "11111111-1111-4111-8111-111111111111";
     next();
   });
   app.use("/api/ticket-sync", ticketSyncRoutes);

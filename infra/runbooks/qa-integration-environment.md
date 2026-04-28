@@ -103,6 +103,8 @@ The default Friday sweep probes these connector health endpoints:
 
 If you need to expand the sweep for P1 work, set `QA_CONNECTOR_HEALTH_SLUGS` to a space-delimited list before running the workflow.
 
+Standard Tier 1 retry and recovery behavior is documented in [../../docs/integrations/tier1-retry-policy.md](../../docs/integrations/tier1-retry-policy.md).
+
 ## Performance + Browser Matrix (Landing)
 
 1. Run Lighthouse against `https://staging.helloautoflow.com` (mobile + desktop profiles).

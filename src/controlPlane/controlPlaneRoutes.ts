@@ -35,6 +35,54 @@ router.get("/teams", (req: AuthenticatedRequest, res) => {
   res.json({ teams, total: teams.length });
 });
 
+router.get("/company/lifecycle", async (req: AuthenticatedRequest, res) => {
+  const userId = getUserId(req);
+  if (!userId) {
+    res.status(401).json({ error: "Authenticated user required" });
+    return;
+  }
+
+  const state = await controlPlaneStore.getCompanyLifecycle(userId);
+  res.json(state);
+});
+
+router.get("/company/lifecycle/audit", async (req: AuthenticatedRequest, res) => {
+  const userId = getUserId(req);
+  if (!userId) {
+    res.status(401).json({ error: "Authenticated user required" });
+    return;
+  }
+
+  const auditTrail = await controlPlaneStore.listCompanyLifecycleAudit(userId);
+  res.json({ auditTrail, total: auditTrail.length });
+});
+
+router.post("/company/lifecycle", requirePaperclipRunId, async (req: AuthenticatedRequest, res) => {
+  const userId = getUserId(req);
+  if (!userId) {
+    res.status(401).json({ error: "Authenticated user required" });
+    return;
+  }
+
+  const { action, reason } = req.body as { action?: unknown; reason?: unknown };
+  if (action !== "pause" && action !== "resume") {
+    res.status(400).json({ error: "action must be pause or resume" });
+    return;
+  }
+  if (reason !== undefined && typeof reason !== "string") {
+    res.status(400).json({ error: "reason must be a string when provided" });
+    return;
+  }
+
+  const result = await controlPlaneStore.updateCompanyLifecycle({
+    userId,
+    action,
+    actor: req.header("X-Paperclip-Run-Id") as string,
+    reason: typeof reason === "string" ? reason : undefined,
+  });
+  res.json(result);
+});
+
 router.get("/skills", (_req, res) => {
   const skills = controlPlaneStore.listSkills();
   res.json({ skills, total: skills.length });
@@ -387,7 +435,7 @@ router.patch("/tasks/:id/status", requirePaperclipRunId, (req: AuthenticatedRequ
   }
 });
 
-router.post("/heartbeats", requirePaperclipRunId, (req: AuthenticatedRequest, res) => {
+router.post("/heartbeats", requirePaperclipRunId, async (req: AuthenticatedRequest, res) => {
   const userId = getUserId(req);
   if (!userId) {
     res.status(401).json({ error: "Authenticated user required" });
@@ -427,7 +475,7 @@ router.post("/heartbeats", requirePaperclipRunId, (req: AuthenticatedRequest, re
   }
 
   try {
-    const heartbeat = controlPlaneStore.recordHeartbeat({
+    const heartbeat = await controlPlaneStore.recordHeartbeat({
       userId,
       teamId,
       agentId,
@@ -448,6 +496,10 @@ router.post("/heartbeats", requirePaperclipRunId, (req: AuthenticatedRequest, re
     }
     if (error instanceof Error && error.message === "execution_not_found") {
       res.status(404).json({ error: "Execution not found for team agent" });
+      return;
+    }
+    if (error instanceof Error && error.message === "company_paused") {
+      res.status(409).json({ error: "Company is paused; no new heartbeats may start" });
       return;
     }
     res.status(500).json({ error: "Unexpected control-plane heartbeat failure" });

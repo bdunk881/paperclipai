@@ -1,11 +1,13 @@
+import {
+  Tier1ConnectionHealth,
+  Tier1ConnectionPublic,
+  Tier1ConnectorError,
+  Tier1ConnectorErrorType,
+} from "../shared/tier1Contract";
+
 export type LinearAuthMethod = "oauth2_pkce" | "api_key";
 
-export type ConnectorErrorType =
-  | "auth"
-  | "rate-limit"
-  | "schema"
-  | "network"
-  | "upstream";
+export type ConnectorErrorType = Tier1ConnectorErrorType;
 
 export interface LinearTokenSet {
   accessToken: string;
@@ -31,41 +33,19 @@ export interface LinearCredential {
   metadata?: Record<string, string>;
 }
 
-export interface LinearCredentialPublic {
-  id: string;
-  userId: string;
-  authMethod: LinearAuthMethod;
-  tokenMasked: string;
+export interface LinearCredentialPublic extends Tier1ConnectionPublic<LinearAuthMethod, {
   scopes: string[];
   organizationId: string;
   organizationName?: string;
-  createdAt: string;
-  revokedAt?: string;
-}
+}> {}
 
-export interface LinearConnectionHealth {
-  status: "ok" | "degraded" | "down";
-  checkedAt: string;
+export interface LinearConnectionHealth extends Tier1ConnectionHealth<LinearAuthMethod, {
   organizationId?: string;
-  authMethod?: LinearAuthMethod;
-  tokenRefreshStatus?: "not_applicable" | "healthy" | "failed";
-  details: {
-    auth: boolean;
-    apiReachable: boolean;
-    rateLimited: boolean;
-    errorType?: ConnectorErrorType;
-    message?: string;
-  };
-}
+}> {}
 
-export class ConnectorError extends Error {
-  readonly type: ConnectorErrorType;
-  readonly statusCode: number;
-
+export class ConnectorError extends Tier1ConnectorError {
   constructor(type: ConnectorErrorType, message: string, statusCode = 500) {
-    super(message);
+    super(type, message, statusCode);
     this.name = "ConnectorError";
-    this.type = type;
-    this.statusCode = statusCode;
   }
 }

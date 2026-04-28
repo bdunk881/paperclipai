@@ -196,6 +196,85 @@ describe("requireAuth", () => {
     );
   });
 
+  it("accepts app-issued JWTs even when decoded issuer metadata does not match the current env", () => {
+    process.env.APP_JWT_SECRET = "test-app-jwt-secret-with-sufficient-length";
+    process.env.APP_JWT_ISSUER = "autoflow-app-current";
+
+    verifyMock.mockReturnValue({
+      sub: "local-user-456",
+      email: "oauth@example.com",
+      name: "OAuth User",
+      provider: "google",
+      iss: "autoflow-app-current",
+    });
+
+    const payload = Buffer.from(JSON.stringify({ iss: "autoflow-app-previous" })).toString("base64url");
+    const requireAuth = loadRequireAuth();
+    const req = {
+      headers: { authorization: `Bearer header.${payload}.signature` },
+      originalUrl: "/api/agents",
+      path: "/api/agents",
+    } as unknown as AuthenticatedRequest;
+    const res = createResponse();
+    const next = jest.fn();
+
+    requireAuth(req, res as never, next);
+
+    expect(next).toHaveBeenCalledTimes(1);
+    expect(req.auth).toMatchObject({
+      sub: "local-user-456",
+      email: "oauth@example.com",
+      name: "OAuth User",
+      provider: "google",
+      issuer: "autoflow-app-current",
+    });
+    expect(verifyMock).toHaveBeenCalledTimes(1);
+    expect(verifyMock).toHaveBeenCalledWith(
+      expect.any(String),
+      "test-app-jwt-secret-with-sufficient-length",
+      expect.objectContaining({
+        algorithms: ["HS256"],
+        audience: "autoflow-api",
+        issuer: "autoflow-app-current",
+      })
+    );
+    expect(jwksClientMock).not.toHaveBeenCalled();
+  });
+
+  it("logs and rejects app-token-like JWTs when local app verification fails", () => {
+    process.env.APP_JWT_SECRET = "test-app-jwt-secret-with-sufficient-length";
+
+    verifyMock.mockImplementation(() => {
+      throw new Error("jwt audience invalid. expected: autoflow-api");
+    });
+
+    const payload = Buffer.from(
+      JSON.stringify({ iss: "autoflow-app", aud: "autoflow-api", exp: 1_900_000_000 })
+    ).toString("base64url");
+    const requireAuth = loadRequireAuth();
+    const req = {
+      headers: { authorization: `Bearer header.${payload}.signature` },
+      originalUrl: "/api/agents",
+      path: "/api/agents",
+    } as unknown as AuthenticatedRequest;
+    const res = createResponse();
+
+    requireAuth(req, res as never, jest.fn());
+
+    expect(res.status).toHaveBeenCalledWith(401);
+    expect(warnMock).toHaveBeenCalledWith(
+      "[auth] App JWT verification failed",
+      expect.objectContaining({
+        errMessage: "jwt audience invalid. expected: autoflow-api",
+        tokenAud: "autoflow-api",
+        tokenIss: "autoflow-app",
+        expectedAudience: "autoflow-api",
+        expectedIssuer: "autoflow-app",
+      })
+    );
+    expect(jwksClientMock).not.toHaveBeenCalled();
+  });
+
   it("uses legacy AZURE_* auth env vars when AZURE_CIAM_* vars are absent", () => {
     process.env.AZURE_TENANT_SUBDOMAIN = "legacyciam";
     process.env.AZURE_TENANT_ID = "legacy-tenant";

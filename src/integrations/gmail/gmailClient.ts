@@ -1,4 +1,10 @@
 import { ConnectorError, ConnectorErrorType, GmailLabel, GmailMessageDetail, GmailMessageSummary, GmailWatchResponse } from "./types";
+import {
+  classifyStandardErrorType,
+  isStandardRetryable,
+  resolveRetryDelayMs,
+  sleep,
+} from "../shared/retryPolicy";
 
 const GMAIL_API_BASE = "https://gmail.googleapis.com/gmail/v1";
 const MAX_RETRIES = 3;
@@ -13,16 +19,8 @@ interface GmailPayload extends GmailMessagePart {
   headers?: Array<{ name?: string; value?: string }>;
 }
 
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
 function parseErrorType(status: number, bodyText: string): ConnectorErrorType {
-  if (status === 401 || status === 403) return "auth";
-  if (status === 429 || bodyText.includes("rateLimitExceeded")) return "rate-limit";
-  if (status >= 500) return "upstream";
-  if (status >= 400) return "schema";
-  return "network";
+  return classifyStandardErrorType(status, bodyText, /rateLimitExceeded|rate.?limit/i);
 }
 
 function decodeBase64Url(input?: string): string | undefined {
@@ -93,8 +91,7 @@ export class GmailClient {
           throw new ConnectorError("rate-limit", "Gmail API rate limit exceeded", 429);
         }
 
-        const retryAfterSeconds = Number(response.headers.get("Retry-After") ?? "1");
-        await sleep(Math.max(1, retryAfterSeconds) * 1000);
+        await sleep(resolveRetryDelayMs({ attempt, headers: response.headers }));
         return this.request<T>(path, init, attempt + 1);
       }
 
@@ -121,8 +118,8 @@ export class GmailClient {
         const message = data.error?.message || text || response.statusText;
         const type = parseErrorType(response.status, message);
 
-        if ((type === "rate-limit" || type === "upstream") && attempt < MAX_RETRIES) {
-          await sleep(250 * Math.pow(2, attempt));
+        if (isStandardRetryable(type) && attempt < MAX_RETRIES) {
+          await sleep(resolveRetryDelayMs({ attempt }));
           return this.request<T>(path, init, attempt + 1);
         }
 
@@ -132,11 +129,15 @@ export class GmailClient {
       return data as T;
     } catch (error) {
       if (error instanceof ConnectorError) {
+        if (isStandardRetryable(error.type) && attempt < MAX_RETRIES) {
+          await sleep(resolveRetryDelayMs({ attempt }));
+          return this.request<T>(path, init, attempt + 1);
+        }
         throw error;
       }
 
       if (attempt < MAX_RETRIES) {
-        await sleep(250 * Math.pow(2, attempt));
+        await sleep(resolveRetryDelayMs({ attempt }));
         return this.request<T>(path, init, attempt + 1);
       }
 

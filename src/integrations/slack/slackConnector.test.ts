@@ -89,13 +89,13 @@ describe("Slack connector", () => {
     expect(connection.teamId).toBe("TAPI");
   });
 
-  it("returns down health when connector is not configured", async () => {
+  it("returns disabled health when connector is not configured", async () => {
     const service = new SlackConnectorService();
     const health = await service.health("missing-user");
 
-    expect(health.status).toBe("down");
+    expect(health.status).toBe("disabled");
     expect(health.details.auth).toBe(false);
-    expect(health.details.errorType).toBe("auth");
+    expect(health.recommendedNextAction).toMatch(/connect a slack credential/i);
   });
 
   it("refreshes OAuth access token when token is near expiry", async () => {

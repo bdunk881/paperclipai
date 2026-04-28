@@ -1,5 +1,6 @@
 import express from "express";
 import { AuthenticatedRequest, requireAuth } from "../../auth/authMiddleware";
+import { getTier1HealthHttpStatus } from "../shared/tier1Contract";
 import { logStripe } from "./logger";
 import { stripeConnectorService } from "./service";
 import { ConnectorError } from "./types";
@@ -123,8 +124,7 @@ router.get("/health", requireAuth, async (req: AuthenticatedRequest, res) => {
   }
 
   const health = await stripeConnectorService.health(userId);
-  const statusCode = health.status === "ok" ? 200 : health.status === "degraded" ? 206 : 503;
-  res.status(statusCode).json(health);
+  res.status(getTier1HealthHttpStatus(health.status)).json(health);
 });
 
 router.delete("/connections/:id", requireAuth, async (req: AuthenticatedRequest, res) => {

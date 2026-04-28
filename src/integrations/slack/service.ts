@@ -1,4 +1,5 @@
 import { slackCredentialStore } from "./credentialStore";
+import { buildTier1ConnectionHealth } from "../shared/tier1Contract";
 import { logSlack } from "./logger";
 import { buildSlackOAuthUrl, exchangeCodeForTokens, refreshAccessToken } from "./oauth";
 import { createPkceState, consumePkceState } from "./pkceStore";
@@ -131,17 +132,19 @@ export class SlackConnectorService {
     const credential = slackCredentialStore.getActiveByUser(userId);
 
     if (!credential) {
-      return {
-        status: "down",
+      return buildTier1ConnectionHealth({
+        connector: "slack",
+        subject: userId,
         checkedAt,
+        status: "disabled",
+        recommendedNextAction: "Connect a Slack credential from the dashboard to enable syncs.",
         details: {
           auth: false,
           apiReachable: false,
           rateLimited: false,
-          errorType: "auth",
           message: "No Slack credential is connected",
         },
-      };
+      });
     }
 
     try {
@@ -149,10 +152,10 @@ export class SlackConnectorService {
       const client = new SlackClient(token);
       await client.authTest();
 
-      const health: SlackConnectionHealth = {
-        status: "ok",
+      const health: SlackConnectionHealth = buildTier1ConnectionHealth({
+        connector: "slack",
+        subject: userId,
         checkedAt,
-        teamId: credential.teamId,
         authMethod: credential.authMethod,
         tokenRefreshStatus:
           credential.authMethod === "oauth2_pkce"
@@ -160,12 +163,15 @@ export class SlackConnectorService {
               ? "healthy"
               : "failed"
             : "not_applicable",
+        metadata: {
+          teamId: credential.teamId,
+        },
         details: {
           auth: true,
           apiReachable: true,
           rateLimited: false,
         },
-      };
+      });
 
       logSlack({
         event: "health",
@@ -192,11 +198,14 @@ export class SlackConnectorService {
         errorType: connectorError.type,
       });
 
-      return {
-        status: connectorError.type === "rate-limit" ? "degraded" : "down",
+      return buildTier1ConnectionHealth({
+        connector: "slack",
+        subject: userId,
         checkedAt,
-        teamId: credential.teamId,
         authMethod: credential.authMethod,
+        metadata: {
+          teamId: credential.teamId,
+        },
         details: {
           auth: connectorError.type !== "auth",
           apiReachable: connectorError.type !== "network",
@@ -204,7 +213,7 @@ export class SlackConnectorService {
           errorType: connectorError.type,
           message: connectorError.message,
         },
-      };
+      });
     }
   }
 

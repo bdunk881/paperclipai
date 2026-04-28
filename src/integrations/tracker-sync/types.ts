@@ -56,6 +56,9 @@ export interface TrackerHealth {
   status: Tier1HealthStatus;
   provider: TrackerProvider;
   checkedAt: string;
+  lastSuccessfulSyncAt?: string;
+  lastErrorCategory?: TrackerErrorType;
+  recommendedNextAction: string;
   details: Tier1ConnectionHealthDetails<TrackerErrorType>;
 }
 

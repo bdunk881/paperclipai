@@ -98,13 +98,13 @@ describe("Stripe connector", () => {
     expect(connection.accountName).toBe("Billing Workspace");
   });
 
-  it("returns down health when connector is not configured", async () => {
+  it("returns disabled health when connector is not configured", async () => {
     const service = new StripeConnectorService();
     const health = await service.health("missing-user");
 
-    expect(health.status).toBe("down");
+    expect(health.status).toBe("disabled");
     expect(health.details.auth).toBe(false);
-    expect(health.details.errorType).toBe("auth");
+    expect(health.recommendedNextAction).toMatch(/connect a stripe credential/i);
   });
 
   it("refreshes an OAuth credential when an auth error occurs", async () => {

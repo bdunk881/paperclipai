@@ -1,4 +1,5 @@
 import { hubSpotCredentialStore } from "./credentialStore";
+import { buildTier1ConnectionHealth } from "../shared/tier1Contract";
 import { HubSpotClient } from "./hubspotClient";
 import { logHubSpot } from "./logger";
 import { buildHubSpotOAuthUrl, exchangeCodeForTokens, parseHubSpotScopes, refreshAccessToken } from "./oauth";
@@ -126,17 +127,19 @@ export class HubSpotConnectorService {
     const credential = await hubSpotCredentialStore.getActiveByUserAsync(userId);
 
     if (!credential) {
-      return {
-        status: "down",
+      return buildTier1ConnectionHealth({
+        connector: "hubspot",
+        subject: userId,
         checkedAt,
+        status: "disabled",
+        recommendedNextAction: "Connect a HubSpot credential from the dashboard to enable syncs.",
         details: {
           auth: false,
           apiReachable: false,
           rateLimited: false,
-          errorType: "auth",
           message: "No HubSpot credential is connected",
         },
-      };
+      });
     }
 
     try {
@@ -144,10 +147,10 @@ export class HubSpotConnectorService {
       const client = new HubSpotClient(token, credential.authMethod);
       await client.viewer();
 
-      const health: HubSpotConnectionHealth = {
-        status: "ok",
+      const health: HubSpotConnectionHealth = buildTier1ConnectionHealth({
+        connector: "hubspot",
+        subject: userId,
         checkedAt,
-        hubId: credential.hubId,
         authMethod: credential.authMethod,
         tokenRefreshStatus:
           credential.authMethod === "oauth2"
@@ -155,12 +158,15 @@ export class HubSpotConnectorService {
               ? "healthy"
               : "failed"
             : "not_applicable",
+        metadata: {
+          hubId: credential.hubId,
+        },
         details: {
           auth: true,
           apiReachable: true,
           rateLimited: false,
         },
-      };
+      });
 
       logHubSpot({
         event: "health",
@@ -187,10 +193,10 @@ export class HubSpotConnectorService {
         errorType: connectorError.type,
       });
 
-      return {
-        status: connectorError.type === "rate-limit" ? "degraded" : "down",
+      return buildTier1ConnectionHealth({
+        connector: "hubspot",
+        subject: userId,
         checkedAt,
-        hubId: credential.hubId,
         authMethod: credential.authMethod,
         tokenRefreshStatus:
           credential.authMethod === "oauth2"
@@ -198,6 +204,9 @@ export class HubSpotConnectorService {
               ? "failed"
               : "healthy"
             : "not_applicable",
+        metadata: {
+          hubId: credential.hubId,
+        },
         details: {
           auth: connectorError.type !== "auth",
           apiReachable: connectorError.type !== "network",
@@ -205,7 +214,7 @@ export class HubSpotConnectorService {
           errorType: connectorError.type,
           message: connectorError.message,
         },
-      };
+      });
     }
   }
 

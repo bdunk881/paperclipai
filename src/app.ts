@@ -30,6 +30,7 @@ import agentMemoryRoutes from "./agents/agentMemoryRoutes";
 import agentRoutes from "./agents/agentRoutes";
 import knowledgeRoutes from "./knowledge/routes";
 import controlPlaneRoutes from "./controlPlane/controlPlaneRoutes";
+import reportRoutes from "./reporting/reportRoutes";
 import ticketRoutes from "./tickets/ticketRoutes";
 import ticketSyncRoutes from "./ticketSync/routes";
 import ticketSyncWebhookRoutes from "./ticketSync/webhookRoutes";
@@ -83,16 +84,25 @@ import { saveImportedTemplate } from "./templates/importedTemplateStore";
 
 const app = express();
 
-function getAllowedOrigins(): string[] {
-  const raw = process.env.ALLOWED_ORIGINS;
-  if (!raw) {
+function parseAllowedOrigins(value: string | undefined): string[] {
+  if (!value) {
     return [];
   }
 
-  return raw
+  return value
     .split(",")
-    .map((origin) => origin.trim())
+    .map((origin) => origin.trim().replace(/\/+$/, ""))
     .filter((origin) => origin.length > 0 && origin !== "*");
+}
+
+function getAllowedOrigins(): string[] {
+  return Array.from(
+    new Set([
+      ...parseAllowedOrigins(process.env.ALLOWED_ORIGINS),
+      ...parseAllowedOrigins(process.env.AUTH_SOCIAL_ALLOWED_REDIRECT_ORIGINS),
+      ...parseAllowedOrigins(process.env.SOCIAL_AUTH_DASHBOARD_URL),
+    ])
+  );
 }
 
 const allowedOrigins = new Set(getAllowedOrigins());
@@ -320,6 +330,7 @@ app.use("/api/integrations/datadog-azure-monitor", datadogAzureMonitorRoutes);
 app.use("/api/integrations/agent-catalog", agentCatalogRoutes);
 app.use("/api/connectors/google-workspace", googleWorkspaceConnectorRoutes);
 app.use("/api/control-plane", requireAuth, controlPlaneRoutes);
+app.use("/api/reporting", requireAuth, reportRoutes);
 app.use("/api/tickets", requireAuth, ticketRoutes);
 app.use("/api/ticket-sync", requireAuth, ticketSyncRoutes);
 

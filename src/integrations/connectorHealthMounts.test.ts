@@ -40,7 +40,7 @@ import app from "../app";
 const AUTH = { Authorization: "Bearer test-token", "X-User-Id": "qa-smoke-user" };
 
 describe("connector health routes are mounted", () => {
-  it.each(["linear", "sentry", "hubspot", "teams", "apollo"])(
+  it.each(["linear", "sentry", "hubspot", "teams", "apollo", "slack", "gmail", "stripe"])(
     "serves %s health endpoint instead of 404",
     async (slug) => {
       const res = await request(app)
@@ -57,6 +57,20 @@ describe("connector health routes are mounted", () => {
           apiReachable: expect.any(Boolean),
           rateLimited: expect.any(Boolean),
         }),
+      }));
+    }
+  );
+
+  it.each(["slack", "hubspot", "stripe", "gmail", "sentry", "linear", "jira", "microsoft-teams"])(
+    "publishes %s in the integration catalog",
+    async (slug) => {
+      const res = await request(app).get(`/api/integrations/catalog/${slug}`);
+
+      expect(res.status).toBe(200);
+      expect(res.body).toEqual(expect.objectContaining({
+        slug,
+        name: expect.any(String),
+        authKind: expect.any(String),
       }));
     }
   );

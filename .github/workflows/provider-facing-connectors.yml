@@ -1,0 +1,39 @@
+name: Provider-Facing Connector Suite
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [master, main]
+  pull_request:
+    branches: [master, main]
+
+jobs:
+  tier1-provider-facing:
+    name: Tier 1 Provider-Facing Connectors
+    if: ${{ vars.TIER1_PROVIDER_TESTS_ENABLED == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      REQUIRE_ALL_TIER1_CONNECTORS: "true"
+      TIER1_APOLLO_API_KEY: ${{ secrets.TIER1_APOLLO_API_KEY }}
+      TIER1_GMAIL_API_KEY: ${{ secrets.TIER1_GMAIL_API_KEY }}
+      TIER1_GMAIL_TO_EMAIL: ${{ vars.TIER1_GMAIL_TO_EMAIL }}
+      TIER1_HUBSPOT_API_KEY: ${{ secrets.TIER1_HUBSPOT_API_KEY }}
+      TIER1_HUBSPOT_CONTACT_ID: ${{ vars.TIER1_HUBSPOT_CONTACT_ID }}
+      TIER1_LINEAR_API_KEY: ${{ secrets.TIER1_LINEAR_API_KEY }}
+      TIER1_LINEAR_ISSUE_ID: ${{ vars.TIER1_LINEAR_ISSUE_ID }}
+      TIER1_SENTRY_API_KEY: ${{ secrets.TIER1_SENTRY_API_KEY }}
+      TIER1_SLACK_BOT_TOKEN: ${{ secrets.TIER1_SLACK_BOT_TOKEN }}
+      TIER1_SLACK_CHANNEL_ID: ${{ vars.TIER1_SLACK_CHANNEL_ID }}
+      TIER1_STRIPE_API_KEY: ${{ secrets.TIER1_STRIPE_API_KEY }}
+      TIER1_STRIPE_CUSTOMER_ID: ${{ vars.TIER1_STRIPE_CUSTOMER_ID }}
+      TIER1_TEAMS_API_KEY: ${{ secrets.TIER1_TEAMS_API_KEY }}
+      TEAMS_TENANT_ID: ${{ vars.TEAMS_TENANT_ID }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+      - run: npm ci
+      - run: npm run test:connectors:provider

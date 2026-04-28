@@ -3,6 +3,7 @@ import passport from "passport";
 import { isPostgresConfigured } from "../db/postgres";
 import {
   buildSocialAuthRedirect,
+  createSocialAuthNonce,
   createSocialAuthState,
   isAllowedSocialRedirectUri,
   parseSocialAuthState,
@@ -10,6 +11,8 @@ import {
   resolveAppJwtConfig,
   resolveSocialAuthDashboardCallbackUrl,
   signAppUserToken,
+  SOCIAL_AUTH_NONCE_COOKIE_NAME,
+  SOCIAL_AUTH_NONCE_MAX_AGE_MS,
   type SocialAuthProvider,
 } from "./appAuthTokens";
 import {
@@ -78,6 +81,46 @@ function getRequestedRedirectUri(req: Request): string | undefined {
   return typeof value === "string" && value.trim() ? value.trim() : undefined;
 }
 
+function readCookieValue(req: Request, cookieName: string): string | undefined {
+  const rawCookieHeader = req.headers.cookie;
+  if (typeof rawCookieHeader !== "string" || !rawCookieHeader.trim()) {
+    return undefined;
+  }
+
+  const cookies = rawCookieHeader.split(";");
+  for (const cookie of cookies) {
+    const separatorIndex = cookie.indexOf("=");
+    if (separatorIndex === -1) {
+      continue;
+    }
+
+    const name = cookie.slice(0, separatorIndex).trim();
+    if (name !== cookieName) {
+      continue;
+    }
+
+    const value = cookie.slice(separatorIndex + 1).trim();
+    return value ? decodeURIComponent(value) : undefined;
+  }
+
+  return undefined;
+}
+
+function socialAuthNonceCookieOptions(provider: SocialAuthProvider): express.CookieOptions {
+  return {
+    httpOnly: true,
+    maxAge: SOCIAL_AUTH_NONCE_MAX_AGE_MS,
+    path: `/api/auth/social/${provider}/callback`,
+    sameSite: "strict",
+  };
+}
+
+function clearSocialAuthNonceCookie(res: Response, provider: SocialAuthProvider): void {
+  const { maxAge: _maxAge, ...options } = socialAuthNonceCookieOptions(provider);
+  void _maxAge;
+  res.clearCookie(SOCIAL_AUTH_NONCE_COOKIE_NAME, options);
+}
+
 function handleFailure(
   req: Request,
   res: Response,
@@ -121,7 +164,9 @@ router.get("/:provider", (req, res, next) => {
     return;
   }
 
-  const state = redirectUri ? createSocialAuthState({ redirectUri }) : undefined;
+  const nonce = createSocialAuthNonce();
+  const state = createSocialAuthState({ nonce, redirectUri });
+  res.cookie(SOCIAL_AUTH_NONCE_COOKIE_NAME, nonce, socialAuthNonceCookieOptions(provider));
   passport.authenticate(provider, getStartOptions(provider, state))(req, res, next);
 });
 
@@ -136,12 +181,23 @@ function runCallback(provider: SocialAuthProvider) {
       { session: false },
       (error: Error | null, user?: AuthenticatedSocialUser | false) => {
         if (error) {
+          clearSocialAuthNonceCookie(res, provider);
           handleFailure(req, res, provider, error.message);
           return;
         }
 
         if (!user) {
+          clearSocialAuthNonceCookie(res, provider);
           handleFailure(req, res, provider, "Authentication failed.");
+          return;
+        }
+
+        const state = parseSocialAuthState(readSocialAuthState(req));
+        const nonceCookie = readCookieValue(req, SOCIAL_AUTH_NONCE_COOKIE_NAME);
+        clearSocialAuthNonceCookie(res, provider);
+
+        if (!state || !nonceCookie || state.nonce !== nonceCookie) {
+          handleFailure(req, res, provider, "Authentication state is invalid or expired.");
           return;
         }
 
@@ -151,7 +207,6 @@ function runCallback(provider: SocialAuthProvider) {
           displayName: user.displayName,
           provider: user.provider,
         });
-        const state = parseSocialAuthState(readSocialAuthState(req));
         const responseUser = {
           id: user.id,
           email: user.email ?? null,
@@ -159,7 +214,7 @@ function runCallback(provider: SocialAuthProvider) {
           provider: user.provider,
         };
         const redirectUri =
-          state?.redirectUri && isAllowedSocialRedirectUri(state.redirectUri)
+          state.redirectUri && isAllowedSocialRedirectUri(state.redirectUri)
             ? state.redirectUri
             : resolveSocialAuthDashboardCallbackUrl();
 

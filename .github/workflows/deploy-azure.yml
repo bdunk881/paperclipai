@@ -609,9 +609,23 @@ jobs:
           require_env_key "AZURE_CIAM_AUTHORITY"
           require_env_key "AUTH_NATIVE_AUTH_PROXY_BASE_URL"
 
-          if ! printf '%s' "$(read_env_value "ALLOWED_ORIGINS")" | tr ',' '\n' | grep -Fxq "https://app.helloautoflow.com"; then
-            echo "::error::AZURE_BACKEND_ENV_PRODUCTION must allow https://app.helloautoflow.com in ALLOWED_ORIGINS"
-            exit 1
+          require_origin_in_allowlist() {
+            local key="$1"
+            local origin="$2"
+            local actual
+            actual="$(read_env_value "$key")"
+            if ! printf '%s' "$actual" | tr ',' '\n' | sed -E 's/^[[:space:]]+|[[:space:]]+$//g' | grep -Fxq "$origin"; then
+              echo "::error::AZURE_BACKEND_ENV_PRODUCTION must allow ${origin} in ${key}"
+              exit 1
+            fi
+          }
+
+          require_origin_in_allowlist "ALLOWED_ORIGINS" "https://app.helloautoflow.com"
+          require_origin_in_allowlist "ALLOWED_ORIGINS" "https://staging.app.helloautoflow.com"
+
+          if grep -Eq '^AUTH_NATIVE_AUTH_PROXY_ALLOWED_ORIGINS=.+' "$tmpfile"; then
+            require_origin_in_allowlist "AUTH_NATIVE_AUTH_PROXY_ALLOWED_ORIGINS" "https://app.helloautoflow.com"
+            require_origin_in_allowlist "AUTH_NATIVE_AUTH_PROXY_ALLOWED_ORIGINS" "https://staging.app.helloautoflow.com"
           fi
 
           TENANT_ID_VALUE="$(read_env_value "AZURE_CIAM_TENANT_ID")"
@@ -786,6 +800,29 @@ jobs:
           if [ "$NATIVE_AUTH_STATUS" != "200" ] && [ "$NATIVE_AUTH_STATUS" != "400" ]; then
             echo "::error::Expected native auth initiate smoke check to return 200/400 through ingress, got $NATIVE_AUTH_STATUS"
             cat /tmp/native-auth-initiate.json || true
+            exit 1
+          fi
+
+          STAGING_NATIVE_AUTH_STATUS=""
+          for i in $(seq 1 10); do
+            STAGING_NATIVE_AUTH_STATUS=$(curl -sS --connect-timeout 10 \
+              --resolve "${{ steps.target.outputs.api_host }}:443:${INGRESS_TARGET}" \
+              -H "Origin: https://staging.app.helloautoflow.com" \
+              -H "Content-Type: application/x-www-form-urlencoded" \
+              -H "Accept: application/json" \
+              --data "client_id=smoke-client&scope=openid%20profile%20email&username=smoke%40helloautoflow.test&challenge_type=oob%20password%20redirect" \
+              -o /tmp/native-auth-initiate-staging.json -w "%{http_code}" \
+              "https://${{ steps.target.outputs.api_host }}/api/auth/native/oauth2/v2.0/initiate" || true)
+            echo "Attempt $i: staging native auth initiate => $STAGING_NATIVE_AUTH_STATUS"
+            if [ "$STAGING_NATIVE_AUTH_STATUS" = "200" ] || [ "$STAGING_NATIVE_AUTH_STATUS" = "400" ]; then
+              break
+            fi
+            sleep 5
+          done
+
+          if [ "$STAGING_NATIVE_AUTH_STATUS" != "200" ] && [ "$STAGING_NATIVE_AUTH_STATUS" != "400" ]; then
+            echo "::error::Expected staging native auth initiate smoke check to return 200/400 through ingress, got $STAGING_NATIVE_AUTH_STATUS"
+            cat /tmp/native-auth-initiate-staging.json || true
             exit 1
           fi
 

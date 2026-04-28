@@ -77,7 +77,7 @@ export function isRedirectRequired(error: unknown): boolean {
 }
 
 function clientId(): string {
-  return import.meta.env.VITE_AZURE_CIAM_CLIENT_ID ?? DEFAULT_CIAM_CLIENT_ID;
+  return DEFAULT_CIAM_CLIENT_ID;
 }
 
 function buildJsonBody(input: NativeAuthPayload): string {

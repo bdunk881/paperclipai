@@ -37,6 +37,14 @@ AZURE_CIAM_AUTHORITY=https://<tenant-subdomain>.ciamlogin.com/<tenant-guid>
 AUTH_NATIVE_AUTH_PROXY_BASE_URL=https://<tenant-subdomain>.ciamlogin.com/<tenant-guid>
 ```
 
+The origin allowlists must include both dashboard hosts because the production
+backend serves native-auth requests for the production and staging frontends:
+
+```env
+ALLOWED_ORIGINS=https://app.helloautoflow.com,https://staging.app.helloautoflow.com
+AUTH_NATIVE_AUTH_PROXY_ALLOWED_ORIGINS=https://app.helloautoflow.com,https://staging.app.helloautoflow.com
+```
+
 The environment should also enforce at least one required reviewer before manual
 production dispatches proceed.
 

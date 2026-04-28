@@ -1,3 +1,4 @@
+import { randomBytes } from "node:crypto";
 import type { Request } from "express";
 import jwt, { JwtPayload } from "jsonwebtoken";
 
@@ -12,6 +13,7 @@ export type AppJwtConfig = {
 
 export type SocialAuthState = {
   redirectUri?: string;
+  nonce: string;
 };
 
 export type AppUserTokenClaims = JwtPayload & {
@@ -24,6 +26,8 @@ export type AppUserTokenClaims = JwtPayload & {
 const DEFAULT_APP_JWT_AUDIENCE = "autoflow-api";
 const DEFAULT_APP_JWT_ISSUER = "autoflow-app";
 const DEFAULT_APP_JWT_EXPIRES_IN = "1h";
+export const SOCIAL_AUTH_NONCE_COOKIE_NAME = "autoflow_social_auth_nonce";
+export const SOCIAL_AUTH_NONCE_MAX_AGE_MS = 10 * 60 * 1000;
 
 function normalizeMultilineEnv(value: string | undefined): string | null {
   if (typeof value !== "string") {
@@ -130,6 +134,7 @@ export function createSocialAuthState(state: SocialAuthState): string {
     {
       type: "social_auth_state",
       redirectUri: state.redirectUri,
+      nonce: state.nonce,
     },
     config.secret,
     {
@@ -156,18 +161,28 @@ export function parseSocialAuthState(token: string | undefined): SocialAuthState
       algorithms: ["HS256"],
       issuer: config.issuer,
       audience: `${config.audience}:state`,
-    }) as JwtPayload & { redirectUri?: string; type?: string };
+    }) as JwtPayload & { nonce?: string; redirectUri?: string; type?: string };
 
     if (decoded.type !== "social_auth_state") {
       return null;
     }
 
+    const nonce = typeof decoded.nonce === "string" ? decoded.nonce : null;
+    if (!nonce) {
+      return null;
+    }
+
     return {
       redirectUri: typeof decoded.redirectUri === "string" ? decoded.redirectUri : undefined,
+      nonce,
     };
   } catch {
     return null;
   }
+}
+
+export function createSocialAuthNonce(): string {
+  return randomBytes(32).toString("base64url");
 }
 
 export function readSocialAuthState(req: Request): string | undefined {

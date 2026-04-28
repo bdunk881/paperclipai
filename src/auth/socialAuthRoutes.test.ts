@@ -1,5 +1,9 @@
 import request from "supertest";
-import { createSocialAuthState } from "./appAuthTokens";
+import {
+  createSocialAuthNonce,
+  createSocialAuthState,
+  SOCIAL_AUTH_NONCE_COOKIE_NAME,
+} from "./appAuthTokens";
 
 const originalEnv = process.env;
 
@@ -114,11 +118,14 @@ describe("social auth routes", () => {
         state: expect.any(String),
       })
     );
+    expect(response.headers["set-cookie"]).toEqual(
+      expect.arrayContaining([expect.stringMatching(new RegExp(`^${SOCIAL_AUTH_NONCE_COOKIE_NAME}=`))])
+    );
   });
 
   it("returns an app-issued token and user payload after a successful callback", async () => {
     const authenticate = jest.fn<ReturnType<PassportAuthenticate>, Parameters<PassportAuthenticate>>(
-      (_strategy, _options, callback) => (req, res, next) => {
+      (_strategy, _options, callback) => (_req, _res, next) => {
         callback?.(null, {
           id: "local-user-123",
           email: "local@example.com",
@@ -130,7 +137,12 @@ describe("social auth routes", () => {
     );
     const app = loadAppWithoutDefaultDashboardRedirect(authenticate);
 
-    const response = await request(app).get("/api/auth/social/google/callback?code=test-code");
+    const nonce = createSocialAuthNonce();
+    const state = createSocialAuthState({ nonce });
+    const response = await request(app)
+      .get("/api/auth/social/google/callback")
+      .query({ state, code: "test-code" })
+      .set("Cookie", `${SOCIAL_AUTH_NONCE_COOKIE_NAME}=${encodeURIComponent(nonce)}`);
 
     expect(response.status).toBe(200);
     expect(response.body.user).toEqual({
@@ -140,6 +152,9 @@ describe("social auth routes", () => {
       provider: "google",
     });
     expect(typeof response.body.token).toBe("string");
+    expect(response.headers["set-cookie"]).toEqual(
+      expect.arrayContaining([expect.stringMatching(new RegExp(`^${SOCIAL_AUTH_NONCE_COOKIE_NAME}=;`))])
+    );
   });
 
   it("redirects to the approved frontend target with the token in the fragment", async () => {
@@ -159,14 +174,17 @@ describe("social auth routes", () => {
       APP_JWT_SECRET: "test-app-jwt-secret-with-sufficient-length",
       ALLOWED_ORIGINS: "https://dashboard.autoflow.test",
     };
+    const nonce = createSocialAuthNonce();
     const state = createSocialAuthState({
+      nonce,
       redirectUri: "https://dashboard.autoflow.test/auth/callback",
     });
     const app = loadApp(authenticate);
 
     const response = await request(app)
       .get("/api/auth/social/google/callback")
-      .query({ state, code: "provider-code" });
+      .query({ state, code: "provider-code" })
+      .set("Cookie", `${SOCIAL_AUTH_NONCE_COOKIE_NAME}=${encodeURIComponent(nonce)}`);
 
     expect(response.status).toBe(302);
     expect(response.headers.location).toMatch(
@@ -187,12 +205,46 @@ describe("social auth routes", () => {
       }
     );
     const app = loadApp(authenticate);
+    const nonce = createSocialAuthNonce();
+    const state = createSocialAuthState({ nonce });
 
-    const response = await request(app).get("/api/auth/social/google/callback?code=test-code");
+    const response = await request(app)
+      .get("/api/auth/social/google/callback")
+      .query({ state, code: "test-code" })
+      .set("Cookie", `${SOCIAL_AUTH_NONCE_COOKIE_NAME}=${encodeURIComponent(nonce)}`);
 
     expect(response.status).toBe(302);
     expect(response.headers.location).toMatch(
       /^https:\/\/dashboard\.autoflow\.test\/auth\/social-callback#token=.+&provider=google$/
+    );
+  });
+
+  it("rejects callbacks when the session-binding nonce does not match", async () => {
+    const authenticate = jest.fn<ReturnType<PassportAuthenticate>, Parameters<PassportAuthenticate>>(
+      (_strategy, _options, callback) => (_req, _res, next) => {
+        callback?.(null, {
+          id: "local-user-mismatch",
+          email: "local@example.com",
+          displayName: "Local User",
+          provider: "google",
+        });
+        void next;
+      }
+    );
+    const app = loadApp(authenticate);
+    const state = createSocialAuthState({
+      nonce: createSocialAuthNonce(),
+      redirectUri: "https://dashboard.autoflow.test/auth/callback",
+    });
+
+    const response = await request(app)
+      .get("/api/auth/social/google/callback")
+      .query({ state, code: "provider-code" })
+      .set("Cookie", `${SOCIAL_AUTH_NONCE_COOKIE_NAME}=different-nonce`);
+
+    expect(response.status).toBe(302);
+    expect(response.headers.location).toMatch(
+      /#error=social_auth_failed&error_description=Authentication\+state\+is\+invalid\+or\+expired\./
     );
   });
 

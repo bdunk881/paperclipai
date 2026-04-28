@@ -1,9 +1,14 @@
-import { beforeEach, afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   challengePasswordReset,
   challengeSignUp,
   signInWithPassword,
 } from "./nativeAuthClient";
+
+async function loadClientModule() {
+  vi.resetModules();
+  return import(`./nativeAuthClient?ts=${Date.now()}`);
+}
 
 describe("nativeAuthClient endpoint wiring", () => {
   const originalFetch = global.fetch;
@@ -75,6 +80,42 @@ describe("nativeAuthClient endpoint wiring", () => {
     expect(global.fetch).toHaveBeenCalledWith(
       "/api/auth/native/resetpassword/v1.0/challenge",
       expect.objectContaining({ method: "POST" })
+    );
+  });
+
+  it("ignores CIAM client id env overrides and keeps the pinned public client id", async () => {
+    vi.stubEnv("VITE_AZURE_CIAM_CLIENT_ID", "11111111-1111-1111-1111-111111111111");
+    const { signInWithPassword: signInWithPasswordReloaded } = await loadClientModule();
+
+    const fetchMock = global.fetch as unknown as ReturnType<typeof vi.fn>;
+    fetchMock
+      .mockResolvedValueOnce({
+        ok: true,
+        json: vi.fn().mockResolvedValue({ continuation_token: "init-123" }),
+      } as unknown as Response)
+      .mockResolvedValueOnce({
+        ok: true,
+        json: vi.fn().mockResolvedValue({ continuation_token: "challenge-123" }),
+      } as unknown as Response)
+      .mockResolvedValueOnce({
+        ok: true,
+        json: vi.fn().mockResolvedValue({
+          access_token: "access",
+          expires_in: 3600,
+          token_type: "Bearer",
+        }),
+      } as unknown as Response);
+
+    await signInWithPasswordReloaded("user@example.com", "secret-pass");
+
+    const firstCall = fetchMock.mock.calls[0];
+    expect(firstCall).toBeDefined();
+    const request = firstCall?.[1] as RequestInit | undefined;
+    expect(request?.body).toContain(
+      '"client_id":"2dfd3a08-277c-4893-b07d-eca5ae322310"'
+    );
+    expect(request?.body).not.toContain(
+      '"client_id":"11111111-1111-1111-1111-111111111111"'
     );
   });
 });

@@ -84,6 +84,7 @@ import { extractPromptFeatures } from "./engine/promptFeatures";
 import { controlPlaneStore } from "./controlPlane/controlPlaneStore";
 import { approvalStore } from "./engine/approvalStore";
 import { approvalNotificationStore } from "./engine/approvalNotificationStore";
+import { approvalPolicyStore } from "./approvals/policyStore";
 import { runStore } from "./engine/runStore";
 import { knowledgeStore } from "./knowledge/knowledgeStore";
 import { resetImportedTemplatesForTests } from "./templates/importedTemplateStore";
@@ -100,6 +101,7 @@ beforeEach(() => {
   controlPlaneStore.clear();
   approvalStore.clear();
   approvalNotificationStore.clear();
+  approvalPolicyStore.clear();
   runStore.clear();
   knowledgeStore.clear();
   resetImportedTemplatesForTests();
@@ -249,6 +251,47 @@ describe("GET /api/templates/:id", () => {
     expect(typeof res.body.sampleInput).toBe("object");
     expect(res.body.expectedOutput).toBeDefined();
     expect(typeof res.body.expectedOutput).toBe("object");
+  });
+});
+
+describe("Approval tier policy API", () => {
+  const workspaceId = "11111111-1111-4111-8111-111111111111";
+
+  it("lists default approval tier policies for a workspace", async () => {
+    const res = await request(app)
+      .get(`/api/approval-policies?workspaceId=${workspaceId}`)
+      .set(asAuth());
+
+    expect(res.status).toBe(200);
+    expect(res.body.total).toBe(5);
+    expect(res.body.policies.every((policy: { mode: string }) => policy.mode === "require_approval")).toBe(true);
+  });
+
+  it("updates a workspace approval tier policy", async () => {
+    const res = await request(app)
+      .put("/api/approval-policies/public_posts")
+      .set(asAuth())
+      .send({
+        workspaceId,
+        mode: "notify_only",
+      });
+
+    expect(res.status).toBe(200);
+    expect(res.body.policy.actionType).toBe("public_posts");
+    expect(res.body.policy.mode).toBe("notify_only");
+  });
+
+  it("rejects invalid spend thresholds", async () => {
+    const res = await request(app)
+      .put("/api/approval-policies/spend_above_threshold")
+      .set(asAuth())
+      .send({
+        workspaceId,
+        mode: "require_approval",
+        spendThresholdCents: -1,
+      });
+
+    expect(res.status).toBe(400);
   });
 });
 

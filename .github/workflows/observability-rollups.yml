@@ -1,0 +1,45 @@
+name: Observability Rollups
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "*/15 * * * *"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: observability-rollups
+  cancel-in-progress: false
+
+jobs:
+  rollups:
+    name: Refresh rollups and retention
+    runs-on: ubuntu-latest
+    env:
+      OBSERVABILITY_DATABASE_URL: ${{ secrets.OBSERVABILITY_DATABASE_URL }}
+      OBS_FUTURE_PARTITION_DAYS: ${{ vars.OBS_FUTURE_PARTITION_DAYS }}
+      OBS_ROLLUP_LOOKBACK_HOURS: ${{ vars.OBS_ROLLUP_LOOKBACK_HOURS }}
+      OBS_RAW_RETENTION_DAYS: ${{ vars.OBS_RAW_RETENTION_DAYS }}
+      OBS_15M_RETENTION_DAYS: ${{ vars.OBS_15M_RETENTION_DAYS }}
+      OBS_DAILY_RETENTION_DAYS: ${{ vars.OBS_DAILY_RETENTION_DAYS }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install PostgreSQL client
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client
+
+      - name: Run observability maintenance
+        run: |
+          chmod +x infra/scripts/run_observability_rollups.sh
+          infra/scripts/run_observability_rollups.sh | tee observability-rollups.log
+
+      - name: Upload maintenance log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: observability-rollups-log
+          path: observability-rollups.log
+          retention-days: 14

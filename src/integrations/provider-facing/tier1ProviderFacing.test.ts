@@ -3,6 +3,7 @@ import { GmailConnectorService } from "../gmail/service";
 import { HubSpotConnectorService } from "../hubspot/service";
 import { LinearConnectorService } from "../linear/service";
 import { SentryConnectorService } from "../sentry/service";
+import { Tier1ConnectionHealth } from "../shared/tier1Contract";
 import { SlackClient } from "../slack/slackClient";
 import { SlackConnectorService } from "../slack/service";
 import { StripeConnectorService } from "../stripe/service";
@@ -33,7 +34,7 @@ type ConnectorHarness = {
   connect: (userId: string, token: string) => Promise<unknown>;
   listConnections: (userId: string) => Promise<unknown[]>;
   testConnection: (userId: string) => Promise<Record<string, unknown>>;
-  health: (userId: string) => Promise<{ status: string; details: Record<string, unknown> }>;
+  health: (userId: string) => Promise<Tier1ConnectionHealth>;
   readScenario: {
     name: string;
     run: (userId: string) => Promise<unknown>;

@@ -32,6 +32,7 @@ import agentRoutes from "./agents/agentRoutes";
 import knowledgeRoutes from "./knowledge/routes";
 import controlPlaneRoutes from "./controlPlane/controlPlaneRoutes";
 import hitlRoutes from "./hitl/hitlRoutes";
+import { buildObservabilityCsv, buildObservabilityResponse } from "./observability/service";
 import reportRoutes from "./reporting/reportRoutes";
 import ticketRoutes from "./tickets/ticketRoutes";
 import ticketSyncRoutes from "./ticketSync/routes";
@@ -504,6 +505,32 @@ app.get("/api/runs/:id", requireAuthOrQaBypass, async (req: AuthenticatedRequest
     return;
   }
   res.json(run);
+});
+
+app.get("/api/observability", requireAuth, async (req: AuthenticatedRequest, res) => {
+  const userId = req.auth?.sub;
+  if (!userId) {
+    res.status(401).json({ error: "Authenticated user required" });
+    return;
+  }
+
+  const runs = await runStore.list(undefined, userId);
+  const response = buildObservabilityResponse(userId, runs, {
+    agentId: typeof req.query.agentId === "string" ? req.query.agentId : undefined,
+    taskId: typeof req.query.taskId === "string" ? req.query.taskId : undefined,
+    search: typeof req.query.search === "string" ? req.query.search : undefined,
+    from: typeof req.query.from === "string" ? req.query.from : undefined,
+    to: typeof req.query.to === "string" ? req.query.to : undefined,
+  });
+
+  if (req.query.format === "csv") {
+    res.setHeader("Content-Type", "text/csv; charset=utf-8");
+    res.setHeader("Content-Disposition", 'attachment; filename="observability-export.csv"');
+    res.send(buildObservabilityCsv(response.records));
+    return;
+  }
+
+  res.json(response);
 });
 
 // ---------------------------------------------------------------------------

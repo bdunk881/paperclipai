@@ -1086,3 +1086,314 @@ export async function resolveApproval(
     throw new Error(err?.error ?? `Failed to resolve approval: ${res.status}`);
   }
 }
+
+// ---------------------------------------------------------------------------
+// HITL API — checkpoints, comments, Ask the CEO, and schedule controls
+// ---------------------------------------------------------------------------
+
+export type HitlNotificationChannel = "inbox" | "email" | "agent_wake";
+export type HitlRecipientType = "agent" | "user";
+export type HitlCheckpointTriggerType =
+  | "end_of_week_review"
+  | "milestone_gate"
+  | "kpi_deviation"
+  | "manual";
+export type HitlCheckpointStatus = "pending" | "acknowledged" | "resolved" | "dismissed";
+export type HitlCommentStatus = "open" | "resolved";
+
+export interface HitlKpiThreshold {
+  metricKey: string;
+  comparator: "gt" | "gte" | "lt" | "lte" | "percent_drop";
+  threshold: number;
+  window: "hour" | "day" | "week";
+}
+
+export interface HitlCheckpointSchedule {
+  id: string;
+  companyId: string;
+  userId: string;
+  enabled: boolean;
+  timezone: string;
+  notificationChannels: HitlNotificationChannel[];
+  weeklyReview: {
+    enabled: boolean;
+    dayOfWeek: number;
+    hour: number;
+    minute: number;
+  };
+  milestoneGate: {
+    enabled: boolean;
+    blockingStatuses: string[];
+  };
+  kpiDeviation: {
+    enabled: boolean;
+    thresholds: HitlKpiThreshold[];
+  };
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface HitlCheckpoint {
+  id: string;
+  companyId: string;
+  userId: string;
+  triggerType: HitlCheckpointTriggerType;
+  source: "system" | "manual";
+  title: string;
+  description?: string;
+  status: HitlCheckpointStatus;
+  dueAt?: string;
+  artifactRefs: string[];
+  metadata?: Record<string, unknown>;
+  createdAt: string;
+  updatedAt: string;
+  notificationIds: string[];
+}
+
+export interface HitlArtifactComment {
+  id: string;
+  companyId: string;
+  userId: string;
+  artifact: {
+    kind: "ticket" | "approval" | "run" | "document" | "workflow_step" | "other";
+    id: string;
+    title?: string;
+    path?: string;
+    version?: string;
+  };
+  anchor?: {
+    quote?: string;
+    lineStart?: number;
+    lineEnd?: number;
+    startOffset?: number;
+    endOffset?: number;
+    fieldKey?: string;
+  };
+  body: string;
+  status: HitlCommentStatus;
+  routing: {
+    recipientType: HitlRecipientType;
+    recipientId: string;
+    responsibleAgentId?: string;
+    reason?: string;
+  };
+  createdAt: string;
+  updatedAt: string;
+  notificationIds: string[];
+}
+
+export interface HitlAskCeoRequest {
+  id: string;
+  companyId: string;
+  userId: string;
+  question: string;
+  context?: {
+    artifactRef?: string;
+    taskId?: string;
+    checkpointId?: string;
+  };
+  status: "answered";
+  response: {
+    summary: string;
+    recommendedActions: string[];
+    citedEntities: Array<{
+      type: "team" | "task" | "checkpoint" | "artifact_comment";
+      id: string;
+      label: string;
+    }>;
+    companyStateVersion: string;
+  };
+  createdAt: string;
+}
+
+export interface HitlNotification {
+  id: string;
+  companyId: string;
+  userId: string;
+  kind: "checkpoint" | "artifact_comment" | "ask_ceo_response";
+  channel: HitlNotificationChannel;
+  recipientType: HitlRecipientType;
+  recipientId: string;
+  status: "pending" | "sent" | "failed";
+  payload: Record<string, unknown>;
+  createdAt: string;
+}
+
+export interface HitlCompanyState {
+  companyId: string;
+  version: string;
+  summary: {
+    companyId: string;
+    version: string;
+    team: {
+      id: string;
+      name: string;
+      status: string;
+      budgetMonthlyUsd: number;
+      agentCount: number;
+      activeExecutionCount: number;
+      openTaskCount: number;
+    } | null;
+    hitl: {
+      openCheckpointCount: number;
+      unresolvedCommentCount: number;
+      askCeoRequestCount: number;
+    };
+  };
+  checkpointSchedule: HitlCheckpointSchedule;
+  checkpoints: HitlCheckpoint[];
+  artifactComments: HitlArtifactComment[];
+  askCeoRequests: HitlAskCeoRequest[];
+}
+
+export interface UpdateHitlCheckpointScheduleInput {
+  enabled?: boolean;
+  timezone?: string;
+  notificationChannels?: HitlNotificationChannel[];
+  weeklyReview?: Partial<HitlCheckpointSchedule["weeklyReview"]>;
+  milestoneGate?: Partial<HitlCheckpointSchedule["milestoneGate"]>;
+  kpiDeviation?: {
+    enabled?: boolean;
+    thresholds?: HitlKpiThreshold[];
+  };
+}
+
+export interface CreateHitlCheckpointInput {
+  triggerType?: HitlCheckpointTriggerType;
+  title: string;
+  description?: string;
+  dueAt?: string;
+  artifactRefs?: string[];
+  metadata?: Record<string, unknown>;
+  recipientType: HitlRecipientType;
+  recipientId: string;
+}
+
+export interface CreateHitlArtifactCommentInput {
+  artifact: HitlArtifactComment["artifact"];
+  anchor?: HitlArtifactComment["anchor"];
+  body: string;
+  routing: HitlArtifactComment["routing"];
+}
+
+export interface CreateHitlAskCeoRequestInput {
+  question: string;
+  context?: HitlAskCeoRequest["context"];
+}
+
+function createPaperclipRunId(): string {
+  return globalThis.crypto?.randomUUID?.() ?? `hitl-${Date.now()}`;
+}
+
+/** GET /api/hitl/companies/:companyId/state */
+export async function getHitlCompanyState(
+  companyId: string,
+  accessToken?: string
+): Promise<HitlCompanyState> {
+  const res = await fetch(`${BASE}/hitl/companies/${encodeURIComponent(companyId)}/state`, {
+    headers: buildAuthHeaders(accessToken),
+  });
+  if (!res.ok) {
+    throw new Error(await readApiError(res, `Failed to fetch HITL state: ${res.status}`));
+  }
+  return res.json() as Promise<HitlCompanyState>;
+}
+
+/** GET /api/hitl/companies/:companyId/notifications */
+export async function listHitlNotifications(
+  companyId: string,
+  accessToken?: string
+): Promise<HitlNotification[]> {
+  const res = await fetch(`${BASE}/hitl/companies/${encodeURIComponent(companyId)}/notifications`, {
+    headers: buildAuthHeaders(accessToken),
+  });
+  if (!res.ok) {
+    throw new Error(await readApiError(res, `Failed to fetch HITL notifications: ${res.status}`));
+  }
+  const data = await res.json();
+  return data.notifications as HitlNotification[];
+}
+
+/** PUT /api/hitl/companies/:companyId/checkpoint-schedule */
+export async function updateHitlCheckpointSchedule(
+  companyId: string,
+  input: UpdateHitlCheckpointScheduleInput,
+  accessToken?: string,
+  runId = createPaperclipRunId()
+): Promise<HitlCheckpointSchedule> {
+  const res = await fetch(`${BASE}/hitl/companies/${encodeURIComponent(companyId)}/checkpoint-schedule`, {
+    method: "PUT",
+    headers: buildJsonHeaders(accessToken, {
+      "X-Paperclip-Run-Id": runId,
+    }),
+    body: JSON.stringify(input),
+  });
+  if (!res.ok) {
+    throw new Error(await readApiError(res, `Failed to update HITL schedule: ${res.status}`));
+  }
+  const data = await res.json();
+  return data.schedule as HitlCheckpointSchedule;
+}
+
+/** POST /api/hitl/companies/:companyId/checkpoints */
+export async function createHitlCheckpoint(
+  companyId: string,
+  input: CreateHitlCheckpointInput,
+  accessToken?: string,
+  runId = createPaperclipRunId()
+): Promise<HitlCheckpoint> {
+  const res = await fetch(`${BASE}/hitl/companies/${encodeURIComponent(companyId)}/checkpoints`, {
+    method: "POST",
+    headers: buildJsonHeaders(accessToken, {
+      "X-Paperclip-Run-Id": runId,
+    }),
+    body: JSON.stringify(input),
+  });
+  if (!res.ok) {
+    throw new Error(await readApiError(res, `Failed to create HITL checkpoint: ${res.status}`));
+  }
+  const data = await res.json();
+  return data.checkpoint as HitlCheckpoint;
+}
+
+/** POST /api/hitl/companies/:companyId/artifact-comments */
+export async function createHitlArtifactComment(
+  companyId: string,
+  input: CreateHitlArtifactCommentInput,
+  accessToken?: string,
+  runId = createPaperclipRunId()
+): Promise<HitlArtifactComment> {
+  const res = await fetch(`${BASE}/hitl/companies/${encodeURIComponent(companyId)}/artifact-comments`, {
+    method: "POST",
+    headers: buildJsonHeaders(accessToken, {
+      "X-Paperclip-Run-Id": runId,
+    }),
+    body: JSON.stringify(input),
+  });
+  if (!res.ok) {
+    throw new Error(await readApiError(res, `Failed to create HITL comment: ${res.status}`));
+  }
+  const data = await res.json();
+  return data.comment as HitlArtifactComment;
+}
+
+/** POST /api/hitl/companies/:companyId/ask-ceo/requests */
+export async function createHitlAskCeoRequest(
+  companyId: string,
+  input: CreateHitlAskCeoRequestInput,
+  accessToken?: string,
+  runId = createPaperclipRunId()
+): Promise<HitlAskCeoRequest> {
+  const res = await fetch(`${BASE}/hitl/companies/${encodeURIComponent(companyId)}/ask-ceo/requests`, {
+    method: "POST",
+    headers: buildJsonHeaders(accessToken, {
+      "X-Paperclip-Run-Id": runId,
+    }),
+    body: JSON.stringify(input),
+  });
+  if (!res.ok) {
+    throw new Error(await readApiError(res, `Failed to ask the CEO: ${res.status}`));
+  }
+  const data = await res.json();
+  return data.request as HitlAskCeoRequest;
+}

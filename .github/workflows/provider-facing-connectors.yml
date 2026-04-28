@@ -3,9 +3,9 @@ name: Provider-Facing Connector Suite
 on:
   workflow_dispatch:
   push:
-    branches: [master, main]
+    branches: [staging, master, main]
   pull_request:
-    branches: [master, main]
+    branches: [staging, master, main]
 
 jobs:
   tier1-provider-facing:

@@ -81,16 +81,25 @@ import { saveImportedTemplate } from "./templates/importedTemplateStore";
 
 const app = express();
 
-function getAllowedOrigins(): string[] {
-  const raw = process.env.ALLOWED_ORIGINS;
-  if (!raw) {
+function parseAllowedOrigins(value: string | undefined): string[] {
+  if (!value) {
     return [];
   }
 
-  return raw
+  return value
     .split(",")
-    .map((origin) => origin.trim())
+    .map((origin) => origin.trim().replace(/\/+$/, ""))
     .filter((origin) => origin.length > 0 && origin !== "*");
+}
+
+function getAllowedOrigins(): string[] {
+  return Array.from(
+    new Set([
+      ...parseAllowedOrigins(process.env.ALLOWED_ORIGINS),
+      ...parseAllowedOrigins(process.env.AUTH_SOCIAL_ALLOWED_REDIRECT_ORIGINS),
+      ...parseAllowedOrigins(process.env.SOCIAL_AUTH_DASHBOARD_URL),
+    ])
+  );
 }
 
 const allowedOrigins = new Set(getAllowedOrigins());

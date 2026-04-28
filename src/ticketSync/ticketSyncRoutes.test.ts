@@ -22,9 +22,10 @@ class FakeTrackerAdapter implements TrackerAdapter {
 
   async health(): Promise<TrackerHealth> {
     return {
-      status: "ok",
+      status: "healthy",
       provider: this.provider,
       checkedAt: new Date().toISOString(),
+      recommendedNextAction: "No action required.",
       details: {
         auth: true,
         apiReachable: true,
@@ -140,7 +141,7 @@ describe("ticket sync routes", () => {
       .set(auth("user-1"));
 
     expect(tested.status).toBe(200);
-    expect(tested.body.health.status).toBe("ok");
+    expect(tested.body.health.status).toBe("healthy");
   });
 
   it("updates and revokes tracker connections from the dashboard routes", async () => {

@@ -1,6 +1,6 @@
 import request from "supertest";
 
-function loadAppWithAllowedOrigins(allowedOrigins?: string) {
+function loadAppWithAllowedOrigins(allowedOrigins?: string, extraEnv: Record<string, string | undefined> = {}) {
   const originalEnv = process.env;
   process.env = { ...originalEnv };
 
@@ -8,6 +8,14 @@ function loadAppWithAllowedOrigins(allowedOrigins?: string) {
     delete process.env.ALLOWED_ORIGINS;
   } else {
     process.env.ALLOWED_ORIGINS = allowedOrigins;
+  }
+
+  for (const [key, value] of Object.entries(extraEnv)) {
+    if (value === undefined) {
+      delete process.env[key];
+    } else {
+      process.env[key] = value;
+    }
   }
 
   jest.resetModules();
@@ -67,5 +75,19 @@ describe("app security middleware", () => {
 
     expect(res.status).toBe(200);
     expect(res.headers["access-control-allow-origin"]).toBeUndefined();
+  });
+
+  it("allows dashboard origins declared through the social auth allowlist", async () => {
+    const app = loadAppWithAllowedOrigins("https://app.helloautoflow.com", {
+      AUTH_SOCIAL_ALLOWED_REDIRECT_ORIGINS: "https://staging.app.helloautoflow.com",
+      SOCIAL_AUTH_DASHBOARD_URL: "https://staging.app.helloautoflow.com",
+    });
+    const res = await request(app)
+      .get("/health")
+      .set("Origin", "https://staging.app.helloautoflow.com");
+
+    expect(res.status).toBe(200);
+    expect(res.headers["access-control-allow-origin"]).toBe("https://staging.app.helloautoflow.com");
+    expect(res.headers["access-control-allow-credentials"]).toBe("true");
   });
 });

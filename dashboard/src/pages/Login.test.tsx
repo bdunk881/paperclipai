@@ -13,6 +13,7 @@ const {
   loginPopupMock,
   setActiveAccountMock,
   sessionFromTokenResponseMock,
+  navigateToSocialAuthMock,
   writeStoredAuthSessionMock,
 } = vi.hoisted(() => ({
   signInWithPasswordMock: vi.fn(),
@@ -24,6 +25,7 @@ const {
   loginPopupMock: vi.fn(),
   setActiveAccountMock: vi.fn(),
   sessionFromTokenResponseMock: vi.fn(),
+  navigateToSocialAuthMock: vi.fn(),
   writeStoredAuthSessionMock: vi.fn(),
 }));
 
@@ -82,6 +84,14 @@ vi.mock("../auth/msalInstance", () => ({
   },
 }));
 
+vi.mock("../api/baseUrl", () => ({
+  getConfiguredApiOrigin: vi.fn(() => ""),
+}));
+
+vi.mock("../auth/socialAuthNavigation", () => ({
+  navigateToSocialAuth: navigateToSocialAuthMock,
+}));
+
 describe("Login", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -91,6 +101,7 @@ describe("Login", () => {
       expiresAt: Date.now() + 60_000,
       user: { id: "user-1", email: "user@example.com", name: "Example User" },
     });
+    window.history.replaceState({}, "", "/login");
   });
 
   it("renders the native sign-in surface by default", () => {
@@ -186,6 +197,24 @@ describe("Login", () => {
         })
       );
       expect(screen.getByText("Dashboard Home")).toBeInTheDocument();
+    });
+  });
+
+  it("starts Google social sign-in from the login surface", async () => {
+    render(
+      <MemoryRouter initialEntries={["/login"]}>
+        <Routes>
+          <Route path="/login" element={<Login />} />
+        </Routes>
+      </MemoryRouter>
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Sign in with Google" }));
+
+    await waitFor(() => {
+      expect(navigateToSocialAuthMock).toHaveBeenCalledWith(
+        "http://localhost:3000/api/auth/social/google?redirect_uri=http%3A%2F%2Flocalhost%3A3000%2Fauth%2Fsocial-callback"
+      );
     });
   });
 
@@ -347,5 +376,8 @@ describe("Login", () => {
     );
 
     expect(screen.getByRole("button", { name: "Sign up with Microsoft" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Sign up with Google" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Sign up with Facebook" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Sign up with Apple" })).toBeInTheDocument();
   });
 });

@@ -9,6 +9,9 @@ updates:
       # Ignore major version bumps - these require manual migration
       - dependency-name: "*"
         update-types: ["version-update:semver-major"]
+      # v0.5+ requires ESLint 9/10 and flat config; dashboard is still on ESLint 8.
+      - dependency-name: "eslint-plugin-react-refresh"
+        versions: [">=0.5.0"]
     groups:
       npm_and_yarn:
         patterns:

@@ -16,6 +16,15 @@ import {
 } from "../types/workflow";
 import { runStore } from "./runStore";
 import { approvalStore } from "./approvalStore";
+import { approvalPolicyStore } from "../approvals/policyStore";
+import {
+  ApprovalTierActionType,
+  ApprovalTierMode,
+  defaultApprovalTierPolicyForAction,
+  isApprovalTierActionType,
+  resolveApprovalTierActionType,
+  resolveSpendAmountCents,
+} from "../approvals/policyTypes";
 import { handleLlm, handleMcp, handleFileTrigger, handleAgent, handleKnowledge } from "./stepHandlers";
 import { memoryStore } from "./memoryStore";
 import { LlmCostLog } from "./llmRouter";
@@ -389,6 +398,242 @@ export class WorkflowEngine {
     return { targetStepIndex };
   }
 
+  private _resolveWorkspaceId(
+    context: Record<string, unknown>,
+    config: Record<string, unknown>,
+  ): string | undefined {
+    const candidates = [
+      context["workspaceId"],
+      config["workspaceId"],
+      context["companyId"],
+      config["companyId"],
+    ];
+
+    for (const candidate of candidates) {
+      if (typeof candidate === "string" && candidate.trim()) {
+        return candidate.trim();
+      }
+    }
+
+    return undefined;
+  }
+
+  private _resolveApprovalAssignee(
+    step: WorkflowStep,
+    context: Record<string, unknown>,
+    config: Record<string, unknown>,
+    userId?: string,
+  ): string {
+    const governance =
+      step.config?.["governance"] &&
+      typeof step.config["governance"] === "object" &&
+      !Array.isArray(step.config["governance"])
+        ? (step.config["governance"] as Record<string, unknown>)
+        : {};
+
+    const candidates = [
+      governance["assignee"],
+      step.approvalAssignee,
+      context["approvalAssignee"],
+      config["approvalAssignee"],
+      userId,
+    ];
+
+    for (const candidate of candidates) {
+      if (typeof candidate === "string" && candidate.trim()) {
+        return candidate.trim();
+      }
+    }
+
+    return "unassigned";
+  }
+
+  private _resolveApprovalMessage(
+    step: WorkflowStep,
+    actionType: ApprovalTierActionType,
+    mode: ApprovalTierMode,
+    context: Record<string, unknown>,
+  ): string {
+    const governance =
+      step.config?.["governance"] &&
+      typeof step.config["governance"] === "object" &&
+      !Array.isArray(step.config["governance"])
+        ? (step.config["governance"] as Record<string, unknown>)
+        : {};
+
+    const configuredMessage =
+      typeof governance["message"] === "string"
+        ? (governance["message"] as string)
+        : step.approvalMessage;
+
+    if (configuredMessage?.trim()) {
+      return configuredMessage.trim();
+    }
+
+    if (mode === "notify_only") {
+      return `Notify-only governance event for ${actionType}: ${step.name}`;
+    }
+
+    return `Approval required for ${actionType}: ${step.name}`;
+  }
+
+  private async _createGovernanceApproval(params: {
+    runId: string;
+    template: WorkflowTemplate;
+    step: WorkflowStep;
+    currentStepIndex: number;
+    config: Record<string, unknown>;
+    context: Record<string, unknown>;
+    actionType: ApprovalTierActionType;
+    mode: ApprovalTierMode;
+    userId?: string;
+  }): Promise<{ decision: "approved" | "rejected" | "request_changes" | "timed_out"; comment?: string; approvalId: string }> {
+    const assignee = this._resolveApprovalAssignee(
+      params.step,
+      params.context,
+      params.config,
+      params.userId,
+    );
+    const message = this._resolveApprovalMessage(
+      params.step,
+      params.actionType,
+      params.mode,
+      params.context,
+    );
+    const timeoutMinutes = params.step.approvalTimeoutMinutes ?? 60;
+
+    await runStore.update(params.runId, { status: "awaiting_approval" });
+
+    const { id: approvalId } = await approvalStore.create({
+      runId: params.runId,
+      templateId: params.template.id,
+      templateName: params.template.name,
+      stepId: params.step.id,
+      stepName: params.step.name,
+      assignee,
+      message,
+      timeoutMinutes,
+      userId: params.userId,
+    });
+
+    await runStore.update(params.runId, {
+      runtimeState: makeRuntimeState(
+        params.config,
+        params.context,
+        params.currentStepIndex,
+        approvalId,
+      ),
+    });
+
+    if (params.mode === "notify_only") {
+      await approvalStore.resolve(
+        approvalId,
+        "approved",
+        "Auto-approved by notify-only governance policy.",
+      );
+    }
+
+    const { decision, comment } = await approvalStore.waitForDecision(approvalId, 50);
+    await runStore.update(params.runId, { status: "running" });
+    return { decision, comment, approvalId };
+  }
+
+  private async _evaluateActionGovernance(params: {
+    runId: string;
+    template: WorkflowTemplate;
+    step: WorkflowStep;
+    currentStepIndex: number;
+    config: Record<string, unknown>;
+    context: Record<string, unknown>;
+    userId?: string;
+  }): Promise<{
+    actionType?: ApprovalTierActionType;
+    mode?: ApprovalTierMode;
+    approvalId?: string;
+    comment?: string;
+    failure?: string;
+  }> {
+    const actionType = resolveApprovalTierActionType(params.step);
+    if (!actionType) {
+      return {};
+    }
+
+    const governance =
+      params.step.config?.["governance"] &&
+      typeof params.step.config["governance"] === "object" &&
+      !Array.isArray(params.step.config["governance"])
+        ? (params.step.config["governance"] as Record<string, unknown>)
+        : {};
+    const hasExplicitActionType = isApprovalTierActionType(governance["actionType"]);
+    const workspaceId = this._resolveWorkspaceId(params.context, params.config);
+    if (!workspaceId && !hasExplicitActionType) {
+      return {};
+    }
+
+    const policy = workspaceId
+      ? await approvalPolicyStore.get(workspaceId, actionType)
+      : defaultApprovalTierPolicyForAction("workspace-default", actionType);
+
+    if (!policy) {
+      return {};
+    }
+
+    if (actionType === "spend_above_threshold") {
+      const spendAmountCents = resolveSpendAmountCents(params.step, params.context);
+      if (
+        spendAmountCents !== undefined &&
+        policy.spendThresholdCents !== undefined &&
+        spendAmountCents < policy.spendThresholdCents
+      ) {
+        return {
+          actionType,
+          mode: "auto_approve",
+        };
+      }
+    }
+
+    if (policy.mode === "auto_approve") {
+      return {
+        actionType,
+        mode: policy.mode,
+      };
+    }
+
+    const { decision, comment, approvalId } = await this._createGovernanceApproval({
+      runId: params.runId,
+      template: params.template,
+      step: params.step,
+      currentStepIndex: params.currentStepIndex,
+      config: params.config,
+      context: params.context,
+      actionType,
+      mode: policy.mode,
+      userId: params.userId,
+    });
+
+    if (decision !== "approved") {
+      return {
+        actionType,
+        mode: policy.mode,
+        approvalId,
+        comment,
+        failure:
+          decision === "timed_out"
+            ? `Governance approval timed out${comment ? `: ${comment}` : ""}`
+            : decision === "request_changes"
+              ? `Governance requested changes${comment ? `: ${comment}` : ""}`
+              : `Governance approval rejected${comment ? `: ${comment}` : ""}`,
+      };
+    }
+
+    return {
+      actionType,
+      mode: policy.mode,
+      approvalId,
+      comment,
+    };
+  }
+
   private async _executeRun(
     runId: string,
     template: WorkflowTemplate,
@@ -570,8 +815,44 @@ export class WorkflowEngine {
             stepOutput = await executeCondition(step, context);
             break;
           case "action":
-            stepOutput = await executeAction(step, context, config);
+          {
+            const governance = await this._evaluateActionGovernance({
+              runId,
+              template,
+              step,
+              currentStepIndex,
+              config,
+              context,
+              userId,
+            });
+            if (governance.failure) {
+              stepStatus = "failure";
+              stepError = governance.failure;
+              stepOutput = {
+                approved: false,
+                approvalDecision:
+                  governance.mode === "notify_only" ? "approved" : "rejected",
+                approvalId: governance.approvalId ?? null,
+                approverComment: governance.comment ?? null,
+                governanceActionType: governance.actionType ?? null,
+                governanceMode: governance.mode ?? null,
+              };
+              break;
+            }
+
+            const actionOutput = await executeAction(step, context, config);
+            stepOutput = {
+              ...actionOutput,
+              ...(governance.actionType
+                ? {
+                    governanceActionType: governance.actionType,
+                    governanceMode: governance.mode ?? "auto_approve",
+                    governanceApprovalId: governance.approvalId ?? null,
+                  }
+                : {}),
+            };
             break;
+          }
           case "output":
             stepOutput = await executeOutput(step, context);
             break;

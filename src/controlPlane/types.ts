@@ -43,6 +43,7 @@ export interface ControlPlaneAgent {
   skills: string[];
   schedule: ControlPlaneAgentSchedule;
   status: AgentLifecycleStatus;
+  pausedByCompanyLifecycle?: boolean;
   currentExecutionId?: string;
   lastHeartbeatAt?: string;
   lastHeartbeatStatus?: HeartbeatStatus;
@@ -59,6 +60,7 @@ export interface ControlPlaneTeam {
   workflowTemplateName?: string;
   deploymentMode: TeamDeploymentMode;
   status: TeamLifecycleStatus;
+  pausedByCompanyLifecycle?: boolean;
   restartCount: number;
   lastHeartbeatAt?: string;
   budgetMonthlyUsd: number;

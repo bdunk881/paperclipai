@@ -20,6 +20,7 @@ Azure deployment with GitHub Actions CI/CD.
 | `dashboard` | Azure Static Web Apps | `.github/workflows/deploy-swa.yml` |
 | `dashboard` branch protection | GitHub Branch API | `.github/workflows/enforce-branch-protection.yml` |
 | `landing` | Vercel | `.github/workflows/vercel.yml` |
+| `observability rollups` | GitHub Actions + PostgreSQL | `.github/workflows/observability-rollups.yml` |
 | `autoflow-brand` (planned) | GitHub + Cloudflare R2 + MemPalace | `infra/brand-assets/*` |
 
 ## Authentication
@@ -102,6 +103,14 @@ Recommended dashboard host split:
 - Workflow: `.github/workflows/qa-integration-evidence.yml`
 - Smoke script: `infra/scripts/qa_integration_smoke.sh`
 - Runbook: `infra/runbooks/qa-integration-environment.md`
+- Tier 1 release path: `infra/runbooks/tier1-connector-release.md`
+
+## Observability Rollups
+
+- Migration: `migrations/013_observability_events.sql`
+- Workflow: `.github/workflows/observability-rollups.yml`
+- Maintenance script: `infra/scripts/run_observability_rollups.sh`
+- Runbook: `infra/runbooks/observability-postgres-rollups.md`
 
 ## CIAM Native Auth Password Reset
 

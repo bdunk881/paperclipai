@@ -30,8 +30,49 @@ export interface StepHandlerResult {
   costLog?: LlmCostLog;
 }
 
+interface ToolAuditEntry {
+  timestamp: string;
+  toolType: string;
+  toolName: string;
+  serverUrl?: string;
+  input: Record<string, unknown>;
+  output: unknown;
+}
+
+interface StepObservabilityMetadata {
+  stepKind: string;
+  startedAt: string;
+  completedAt: string;
+  reasoningTrace?: string;
+  toolCalls?: ToolAuditEntry[];
+  agentExecution?: {
+    executionId: string;
+    teamId: string;
+    agentId: string;
+    taskId: string | null;
+    skills: string[];
+  };
+}
+
 function hashPrompt(prompt: string): string {
   return createHash("sha256").update(prompt).digest("hex");
+}
+
+function withObservability(
+  output: Record<string, unknown>,
+  metadata: StepObservabilityMetadata
+): Record<string, unknown> {
+  return {
+    ...output,
+    _observability: metadata,
+  };
+}
+
+function summarizeMessages(messages: AgentMessage[]): string | undefined {
+  const transcript = messages
+    .map((message) => `[${message.timestamp}] ${message.from} slot ${message.slotIndex}: ${message.content}`)
+    .join("\n");
+  return transcript || undefined;
 }
 
 /** Interpolate {{key}} placeholders in a template string using context values */
@@ -114,6 +155,7 @@ export async function handleLlm(
   userId: string,
   runId: string = "unknown"
 ): Promise<StepHandlerResult> {
+  const startedAt = new Date().toISOString();
   if (!step.promptTemplate) {
     throw new Error(`LLM step "${step.id}" is missing a promptTemplate`);
   }
@@ -194,7 +236,15 @@ export async function handleLlm(
     response.usage?.completionTokens ?? 0
   );
 
-  return { output, costLog };
+  return {
+    output: withObservability(output, {
+      stepKind: step.kind,
+      startedAt,
+      completedAt: new Date().toISOString(),
+      reasoningTrace: response.text,
+    }),
+    costLog,
+  };
 }
 
 export async function handleKnowledge(
@@ -460,6 +510,7 @@ export async function handleMcp(
   step: WorkflowStep,
   ctx: StepContext
 ): Promise<StepHandlerResult> {
+  const startedAt = new Date().toISOString();
   const serverUrl = step.mcpServerUrl;
   const toolName = step.mcpTool;
 
@@ -532,7 +583,23 @@ export async function handleMcp(
     }
   }
 
-  return { output: toolOutput };
+  return {
+    output: withObservability(toolOutput, {
+      stepKind: step.kind,
+      startedAt,
+      completedAt: new Date().toISOString(),
+      toolCalls: [
+        {
+          timestamp: new Date().toISOString(),
+          toolType: "mcp",
+          toolName,
+          serverUrl: resolvedUrl,
+          input: toolArgs,
+          output: toolOutput,
+        },
+      ],
+    }),
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -561,6 +628,7 @@ export async function handleAgent(
   runId: string,
   userId: string
 ): Promise<StepHandlerResult> {
+  const startedAt = new Date().toISOString();
   const slots = Math.max(1, step.subAgentSlots ?? 1);
   const instructions = step.agentInstructions ?? "Process the provided input and return a result.";
   const model = step.agentModel ?? "default";
@@ -610,7 +678,7 @@ export async function handleAgent(
 
     if (bridgeTarget) {
       const teamId = "teamId" in bridgeTarget ? bridgeTarget.teamId : bridgeTarget.team.id;
-      const started = controlPlaneStore.startAgentExecution({
+      const started = await controlPlaneStore.startAgentExecution({
         userId,
         actor: runId,
         teamId,
@@ -675,6 +743,8 @@ export async function handleAgent(
     .join("\n");
 
   // Spawn N worker slots in parallel
+  let totalPromptTokens = 0;
+  let totalCompletionTokens = 0;
   const slotResultPromises = Array.from({ length: slots }, async (_, i): Promise<AgentSlotResult> => {
     const slotStart = Date.now();
     const prompt = [
@@ -692,6 +762,8 @@ export async function handleAgent(
 
     try {
       const response = await provider(prompt);
+      totalPromptTokens += response.usage?.promptTokens ?? 0;
+      totalCompletionTokens += response.usage?.completionTokens ?? 0;
       let parsed: Record<string, unknown> = {};
       try {
         const raw = JSON.parse(response.text) as unknown;
@@ -780,6 +852,8 @@ export async function handleAgent(
   }
 
   const anyFailure = slotResults.some((r) => r.status === "failure");
+  const reasoningTrace = summarizeMessages(allMessages);
+  const costLog = buildCostLog("power", resolved.config.model, totalPromptTokens, totalCompletionTokens);
   if (bridgedExecution) {
     controlPlaneStore.finalizeAgentExecution({
       executionId: bridgedExecution.executionId,
@@ -789,12 +863,28 @@ export async function handleAgent(
         successSlots.length > 0
           ? `Completed ${successSlots.length}/${slots} slot(s) for workflow step ${step.name}`
           : `All ${slots} slot(s) failed for workflow step ${step.name}`,
+      costUsd: costLog.estimatedCostUsd,
     });
   }
 
   return {
-    output: mergedOutput,
+    output: withObservability(mergedOutput, {
+      stepKind: step.kind,
+      startedAt,
+      completedAt: new Date().toISOString(),
+      reasoningTrace,
+      agentExecution: bridgedExecution
+        ? {
+            executionId: bridgedExecution.executionId,
+            teamId: bridgedExecution.teamId,
+            agentId: bridgedExecution.agentId,
+            taskId: bridgedExecution.taskId ?? null,
+            skills: bridgedExecution.skills,
+          }
+        : undefined,
+    }),
     agentSlotResults: slotResults,
+    costLog,
     ...(anyFailure && successSlots.length === 0
       ? {}
       : {}),

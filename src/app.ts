@@ -23,6 +23,7 @@ import { startTicketNotificationCoordinator } from "./engine/ticketSlaCoordinato
 import { runStore } from "./engine/runStore";
 import { approvalStore } from "./engine/approvalStore";
 import { approvalNotificationStore } from "./engine/approvalNotificationStore";
+import approvalPolicyRoutes from "./approvals/policyRoutes";
 import llmConfigRoutes from "./llmConfig/llmConfigRoutes";
 import mcpRoutes from "./mcp/mcpRoutes";
 import memoryRoutes from "./memory/memoryRoutes";
@@ -30,6 +31,7 @@ import agentMemoryRoutes from "./agents/agentMemoryRoutes";
 import agentRoutes from "./agents/agentRoutes";
 import knowledgeRoutes from "./knowledge/routes";
 import controlPlaneRoutes from "./controlPlane/controlPlaneRoutes";
+import { buildObservabilityCsv, buildObservabilityResponse } from "./observability/service";
 import reportRoutes from "./reporting/reportRoutes";
 import ticketRoutes from "./tickets/ticketRoutes";
 import ticketSyncRoutes from "./ticketSync/routes";
@@ -57,6 +59,8 @@ import shopifyRoutes, { shopifyWebhookRouter } from "./integrations/shopify/rout
 import docuSignRoutes, { docuSignWebhookRouter } from "./integrations/docusign/routes";
 import linearRoutes, { linearWebhookRouter } from "./integrations/linear/routes";
 import teamsRoutes, { teamsWebhookRouter } from "./integrations/teams/routes";
+import gmailRoutes, { gmailWebhookRouter } from "./integrations/gmail/routes";
+import stripeRoutes, { stripeConnectorWebhookRouter } from "./integrations/stripe/routes";
 import posthogRoutes, { posthogWebhookRouter } from "./integrations/posthog/routes";
 import intercomRoutes, { intercomWebhookRouter } from "./integrations/intercom/routes";
 import datadogAzureMonitorRoutes, {
@@ -71,6 +75,7 @@ import integrationRoutes, {
 } from "./integrations/integrationRoutes";
 import googleWorkspaceConnectorRoutes from "./connectors/google-workspace/routes";
 import googleWorkspaceWebhookRoutes from "./connectors/google-workspace/webhookRoutes";
+import notificationRoutes from "./notifications/routes";
 import {
   createPortableWorkflowBundle,
   getPortableWorkflowSchemaDescriptor,
@@ -248,10 +253,14 @@ app.use("/api/webhooks/docusign", docuSignWebhookRouter);
 app.use("/api/webhooks/linear", linearWebhookRouter);
 // Sentry webhook — mounted before express.json() for signature verification
 app.use("/api/webhooks/sentry", sentryWebhookRouter);
+// Gmail webhook — mounted before express.json() for Pub/Sub verification
+app.use("/api/webhooks/gmail", gmailWebhookRouter);
 // Microsoft Teams webhook — mounted before express.json() for signature verification
 app.use("/api/webhooks/teams", teamsWebhookRouter);
 // HubSpot webhook — mounted before express.json() for signature verification
 app.use("/api/webhooks/hubspot", hubSpotWebhookRouter);
+// Stripe connector webhook — mounted before express.json() for signature verification
+app.use("/api/webhooks/stripe/connect", stripeConnectorWebhookRouter);
 // PostHog webhook — mounted before express.json() for signature verification
 app.use("/api/webhooks/posthog", posthogWebhookRouter);
 // Intercom webhook — mounted before express.json() for signature verification
@@ -315,6 +324,8 @@ app.use("/api/integrations/linear", linearRoutes);
 app.use("/api/integrations/sentry", sentryRoutes);
 app.use("/api/integrations/hubspot", hubSpotRoutes);
 app.use("/api/integrations/teams", teamsRoutes);
+app.use("/api/integrations/gmail", gmailRoutes);
+app.use("/api/integrations/stripe", stripeRoutes);
 app.use("/api/integrations/apollo", apolloRoutes);
 app.use("/api/integrations/posthog", posthogRoutes);
 app.use("/api/integrations/intercom", intercomRoutes);
@@ -325,6 +336,8 @@ app.use("/api/control-plane", requireAuth, controlPlaneRoutes);
 app.use("/api/reporting", requireAuth, reportRoutes);
 app.use("/api/tickets", requireAuth, ticketRoutes);
 app.use("/api/ticket-sync", requireAuth, ticketSyncRoutes);
+app.use("/api/notifications", requireAuth, notificationRoutes);
+app.use("/api/approval-policies", requireAuth, approvalPolicyRoutes);
 
 // ---------------------------------------------------------------------------
 // Auth API — identity endpoint for authenticated callers
@@ -490,6 +503,32 @@ app.get("/api/runs/:id", requireAuthOrQaBypass, async (req: AuthenticatedRequest
     return;
   }
   res.json(run);
+});
+
+app.get("/api/observability", requireAuth, async (req: AuthenticatedRequest, res) => {
+  const userId = req.auth?.sub;
+  if (!userId) {
+    res.status(401).json({ error: "Authenticated user required" });
+    return;
+  }
+
+  const runs = await runStore.list(undefined, userId);
+  const response = buildObservabilityResponse(userId, runs, {
+    agentId: typeof req.query.agentId === "string" ? req.query.agentId : undefined,
+    taskId: typeof req.query.taskId === "string" ? req.query.taskId : undefined,
+    search: typeof req.query.search === "string" ? req.query.search : undefined,
+    from: typeof req.query.from === "string" ? req.query.from : undefined,
+    to: typeof req.query.to === "string" ? req.query.to : undefined,
+  });
+
+  if (req.query.format === "csv") {
+    res.setHeader("Content-Type", "text/csv; charset=utf-8");
+    res.setHeader("Content-Disposition", 'attachment; filename="observability-export.csv"');
+    res.send(buildObservabilityCsv(response.records));
+    return;
+  }
+
+  res.json(response);
 });
 
 // ---------------------------------------------------------------------------

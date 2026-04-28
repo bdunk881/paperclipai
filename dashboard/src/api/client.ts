@@ -43,6 +43,47 @@ export interface CreateLLMConfigInput {
   apiKey: string;
 }
 
+export type ConnectorHealthState =
+  | "healthy"
+  | "degraded"
+  | "rate_limited"
+  | "auth_failure"
+  | "down";
+
+export interface ConnectorHealthTransition {
+  at: string;
+  from: ConnectorHealthState;
+  to: ConnectorHealthState;
+  reason: string;
+}
+
+export interface ConnectorHealthRecord {
+  connectorKey: string;
+  connectorName: string;
+  state: ConnectorHealthState;
+  lastSuccessAt: string | null;
+  lastErrorAt: string | null;
+  lastErrorMessage: string | null;
+  successRate24h: number;
+  authFailures15m: number;
+  rateLimitEvents15m: number;
+  transitions: ConnectorHealthTransition[];
+  source: "mock";
+}
+
+export interface ConnectorHealthSummary {
+  total: number;
+  states: Record<ConnectorHealthState, number>;
+  lastUpdatedAt: string;
+  alertPolicy: {
+    degradedWithinMinutes: number;
+    authFailureThreshold15m: number;
+    rateLimitThreshold15m: number;
+    outageThresholdMinutes: number;
+  };
+  source: "mock";
+}
+
 const USE_MOCK_API = import.meta.env.VITE_USE_MOCK === "true";
 
 function buildAuthHeaders(accessToken?: string): HeadersInit | undefined {
@@ -154,6 +195,148 @@ export async function deleteLLMConfig(id: string, accessToken?: string): Promise
 }
 
 const BASE = getApiBasePath();
+
+const MOCK_CONNECTOR_HEALTH: ConnectorHealthRecord[] = [
+  {
+    connectorKey: "slack",
+    connectorName: "Slack",
+    state: "healthy",
+    lastSuccessAt: "2026-04-28T04:35:00.000Z",
+    lastErrorAt: null,
+    lastErrorMessage: null,
+    successRate24h: 99.8,
+    authFailures15m: 0,
+    rateLimitEvents15m: 0,
+    transitions: [
+      {
+        at: "2026-04-28T02:10:00.000Z",
+        from: "degraded",
+        to: "healthy",
+        reason: "API latency recovered below threshold",
+      },
+    ],
+    source: "mock",
+  },
+  {
+    connectorKey: "hubspot",
+    connectorName: "HubSpot",
+    state: "degraded",
+    lastSuccessAt: "2026-04-28T04:31:00.000Z",
+    lastErrorAt: "2026-04-28T04:33:00.000Z",
+    lastErrorMessage: "Elevated 5xx responses from provider API",
+    successRate24h: 94.3,
+    authFailures15m: 0,
+    rateLimitEvents15m: 1,
+    transitions: [
+      {
+        at: "2026-04-28T04:20:00.000Z",
+        from: "healthy",
+        to: "degraded",
+        reason: "Connector-wide provider failures crossed threshold",
+      },
+    ],
+    source: "mock",
+  },
+  {
+    connectorKey: "stripe",
+    connectorName: "Stripe",
+    state: "healthy",
+    lastSuccessAt: "2026-04-28T04:34:00.000Z",
+    lastErrorAt: "2026-04-28T01:11:00.000Z",
+    lastErrorMessage: "Transient timeout retried successfully",
+    successRate24h: 99.5,
+    authFailures15m: 0,
+    rateLimitEvents15m: 0,
+    transitions: [],
+    source: "mock",
+  },
+  {
+    connectorKey: "gmail",
+    connectorName: "Gmail",
+    state: "rate_limited",
+    lastSuccessAt: "2026-04-28T04:32:00.000Z",
+    lastErrorAt: "2026-04-28T04:34:00.000Z",
+    lastErrorMessage: "429 rate limit window active for sync jobs",
+    successRate24h: 92.9,
+    authFailures15m: 0,
+    rateLimitEvents15m: 8,
+    transitions: [],
+    source: "mock",
+  },
+  {
+    connectorKey: "sentry",
+    connectorName: "Sentry",
+    state: "healthy",
+    lastSuccessAt: "2026-04-28T04:30:00.000Z",
+    lastErrorAt: null,
+    lastErrorMessage: null,
+    successRate24h: 99.9,
+    authFailures15m: 0,
+    rateLimitEvents15m: 0,
+    transitions: [],
+    source: "mock",
+  },
+  {
+    connectorKey: "linear",
+    connectorName: "Linear",
+    state: "auth_failure",
+    lastSuccessAt: "2026-04-28T03:58:00.000Z",
+    lastErrorAt: "2026-04-28T04:34:00.000Z",
+    lastErrorMessage: "OAuth refresh token rejected by provider",
+    successRate24h: 88.1,
+    authFailures15m: 6,
+    rateLimitEvents15m: 0,
+    transitions: [],
+    source: "mock",
+  },
+  {
+    connectorKey: "teams",
+    connectorName: "Teams",
+    state: "healthy",
+    lastSuccessAt: "2026-04-28T04:35:00.000Z",
+    lastErrorAt: "2026-04-27T22:42:00.000Z",
+    lastErrorMessage: "Webhook delivery delay recovered",
+    successRate24h: 98.7,
+    authFailures15m: 0,
+    rateLimitEvents15m: 0,
+    transitions: [],
+    source: "mock",
+  },
+  {
+    connectorKey: "jira",
+    connectorName: "Jira",
+    state: "down",
+    lastSuccessAt: "2026-04-28T02:48:00.000Z",
+    lastErrorAt: "2026-04-28T04:35:00.000Z",
+    lastErrorMessage: "Connector worker has not completed a successful sync in 90 minutes",
+    successRate24h: 76.4,
+    authFailures15m: 0,
+    rateLimitEvents15m: 0,
+    transitions: [],
+    source: "mock",
+  },
+];
+
+function summarizeConnectorHealth(connectors: ConnectorHealthRecord[]): ConnectorHealthSummary {
+  return {
+    total: connectors.length,
+    states: {
+      healthy: connectors.filter((c) => c.state === "healthy").length,
+      degraded: connectors.filter((c) => c.state === "degraded").length,
+      rate_limited: connectors.filter((c) => c.state === "rate_limited").length,
+      auth_failure: connectors.filter((c) => c.state === "auth_failure").length,
+      down: connectors.filter((c) => c.state === "down").length,
+    },
+    lastUpdatedAt: "2026-04-28T04:35:00.000Z",
+    alertPolicy: {
+      degradedWithinMinutes: 5,
+      authFailureThreshold15m: 5,
+      rateLimitThreshold15m: 5,
+      outageThresholdMinutes: 15,
+    },
+    source: "mock",
+  };
+}
 
 /** Template summary returned by GET /api/templates (list) */
 export interface TemplateSummary {
@@ -332,6 +515,25 @@ export async function listRuns(templateId?: string, accessToken?: string): Promi
     },
     () => listMockRuns(templateId)
   );
+}
+
+export async function getConnectorHealth(): Promise<{
+  connectors: ConnectorHealthRecord[];
+  summary: ConnectorHealthSummary;
+}> {
+  if (USE_MOCK_API) {
+    return {
+      connectors: [...MOCK_CONNECTOR_HEALTH],
+      summary: summarizeConnectorHealth(MOCK_CONNECTOR_HEALTH),
+    };
+  }
+
+  const res = await fetch(`${BASE}/connectors/health`);
+  if (!res.ok) throw new Error(`Failed to fetch connector health: ${res.status}`);
+  return res.json() as Promise<{
+    connectors: ConnectorHealthRecord[];
+    summary: ConnectorHealthSummary;
+  }>;
 }
 
 /** GET /api/runs/:id */

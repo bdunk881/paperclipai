@@ -24,6 +24,7 @@ import {
   X,
   Moon,
   Sun,
+  Siren,
 } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import clsx from "clsx";
@@ -69,6 +70,7 @@ const NAV_SECTIONS: Array<{ title: string; items: NavItem[] }> = [
     items: [
       { to: "/logs", icon: ScrollText, label: "Logs" },
       { to: "/memory", icon: Database, label: "Memory" },
+      { to: "/integrations/health", icon: Siren, label: "Connector Health" },
       { to: "/integrations/mcp", icon: PlugZap, label: "Integrations" },
       { to: "/pricing", icon: DollarSign, label: "Pricing" },
     ],

@@ -31,7 +31,7 @@ test("renders transport controls and KPI prototype sections", async ({ page }) =
   await expect(page.getByRole("button", { name: /all activity/i })).toBeVisible();
   await expect(page.getByRole("button", { name: /alerts/i })).toBeVisible();
   await expect(page.getByRole("button", { name: /24h/i })).toBeVisible();
-  await expect(page.getByText(/kpi prototype/i)).toBeVisible();
+  await expect(page.getByText("KPI prototype", { exact: true })).toBeVisible();
   await expect(page.getByText(/throughput over the last 24 hours/i)).toBeVisible();
   await expect(page.getByText(/^created$/i)).toBeVisible();
   await expect(page.getByText(/^completed$/i)).toBeVisible();
@@ -40,8 +40,8 @@ test("renders transport controls and KPI prototype sections", async ({ page }) =
 
 test("renders live feed and continuity sections", async ({ page }) => {
   await expect(page.getByText(/activity updates as they happen/i)).toBeVisible();
-  await expect(page.getByText(/transport continuity/i)).toBeVisible();
-  await expect(page.getByText(/sprint 2 reserve/i)).toBeVisible();
+  await expect(page.getByText("Transport continuity", { exact: true })).toBeVisible();
+  await expect(page.getByText("Sprint 2 reserve", { exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: /refresh data/i })).toBeVisible();
 });
 

@@ -74,7 +74,7 @@ router.get("/role-templates", (_req, res) => {
   });
 });
 
-router.post("/", requirePaperclipRunId, (req: WorkspaceAwareRequest, res) => {
+router.post("/", requirePaperclipRunId, async (req: WorkspaceAwareRequest, res) => {
   const context = resolveWorkspaceContext(req, res);
   if (!context) {
     return;
@@ -227,7 +227,7 @@ router.post("/", requirePaperclipRunId, (req: WorkspaceAwareRequest, res) => {
   }
 
   try {
-    const result = controlPlaneStore.provisionCompanyWorkspace({
+    const result = await controlPlaneStore.provisionCompanyWorkspace({
       workspaceId: context.workspaceId,
       userId: context.userId,
       name: name.trim(),

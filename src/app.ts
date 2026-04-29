@@ -919,7 +919,7 @@ app.post(
   "/api/goals/team-assembly/approve",
   requireAuth,
   requirePaperclipRunId,
-  (req: AuthenticatedRequest, res) => {
+  async (req: AuthenticatedRequest, res) => {
     const parsedPlan = teamAssemblyResultSchema.safeParse(req.body?.approvedPlan);
     if (!parsedPlan.success) {
       const issue = parsedPlan.error.issues[0];
@@ -1020,7 +1020,7 @@ app.post(
     }
 
     try {
-      const result = controlPlaneStore.provisionCompanyWorkspace({
+      const result = await controlPlaneStore.provisionCompanyWorkspace({
         userId,
         name: resolvedCompanyName,
         workspaceName:

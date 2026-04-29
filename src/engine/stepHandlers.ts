@@ -674,7 +674,7 @@ export async function handleAgent(
             teamId: bridgeConfig.teamId,
           }
         : bridgeConfig.autoProvision
-          ? controlPlaneStore.ensureRuntimeTeamForStep({
+          ? await controlPlaneStore.ensureRuntimeTeamForStep({
               workspaceId,
               userId,
               step,
@@ -863,7 +863,7 @@ export async function handleAgent(
   const reasoningTrace = summarizeMessages(allMessages);
   const costLog = buildCostLog("power", resolved.config.model, totalPromptTokens, totalCompletionTokens);
   if (bridgedExecution) {
-    controlPlaneStore.finalizeAgentExecution({
+    await controlPlaneStore.finalizeAgentExecution({
       workspaceId,
       executionId: bridgedExecution.executionId,
       userId,

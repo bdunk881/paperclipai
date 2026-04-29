@@ -162,7 +162,7 @@ describe("HITL contract routes", () => {
       budgetMonthlyUsd: 5000,
       orchestrationEnabled: true,
     });
-    controlPlaneStore.createTask({
+    await controlPlaneStore.createTask({
       userId: "user-1",
       teamId: team.id,
       title: "Ship HITL contracts",

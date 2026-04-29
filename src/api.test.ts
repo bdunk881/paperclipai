@@ -2232,9 +2232,10 @@ describe("POST /api/runs", () => {
   });
 
   it("returns 202 with a pending run for a valid templateId", async () => {
+    const postRunsUserId = "post-runs-user";
     const res = await request(app)
       .post("/api/runs")
-      .set(asAuth())
+      .set(asAuth(postRunsUserId))
       .send({ templateId: "tpl-support-bot", input: { ticketId: "TKT-001", subject: "Help", body: "I need help", customerEmail: "test@example.com", channel: "email" } });
     expect(res.status).toBe(202);
     expect(res.body.id).toBeDefined();
@@ -2243,27 +2244,30 @@ describe("POST /api/runs", () => {
   });
 
   it("returns 400 when templateId is missing", async () => {
+    const postRunsUserId = "post-runs-user";
     const res = await request(app)
       .post("/api/runs")
-      .set(asAuth())
+      .set(asAuth(postRunsUserId))
       .send({ input: {} });
     expect(res.status).toBe(400);
     expect(res.body.error).toMatch(/templateId/i);
   });
 
   it("returns 404 for an unknown templateId", async () => {
+    const postRunsUserId = "post-runs-user";
     const res = await request(app)
       .post("/api/runs")
-      .set(asAuth())
+      .set(asAuth(postRunsUserId))
       .send({ templateId: "tpl-nonexistent", input: {} });
     expect(res.status).toBe(404);
     expect(res.body.error).toMatch(/not found/i);
   });
 
   it("returns a run with startedAt timestamp", async () => {
+    const postRunsUserId = "post-runs-user";
     const res = await request(app)
       .post("/api/runs")
-      .set(asAuth())
+      .set(asAuth(postRunsUserId))
       .send({ templateId: "tpl-support-bot", input: {} });
     expect(res.status).toBe(202);
     expect(typeof res.body.startedAt).toBe("string");
@@ -2282,14 +2286,16 @@ describe("GET /api/runs", () => {
   });
 
   it("returns 200 with a runs array", async () => {
-    const res = await request(app).get("/api/runs").set(asAuth());
+    const listRunsUserId = "list-runs-user";
+    const res = await request(app).get("/api/runs").set(asAuth(listRunsUserId));
     expect(res.status).toBe(200);
     expect(Array.isArray(res.body.runs)).toBe(true);
     expect(typeof res.body.total).toBe("number");
   });
 
   it("total matches runs array length", async () => {
-    const res = await request(app).get("/api/runs").set(asAuth());
+    const listRunsUserId = "list-runs-user";
+    const res = await request(app).get("/api/runs").set(asAuth(listRunsUserId));
     expect(res.body.total).toBe(res.body.runs.length);
   });
 
@@ -2314,20 +2320,22 @@ describe("GET /api/runs/:id", () => {
   });
 
   it("returns 202 run and then retrieves it by id", async () => {
+    const runDetailsUserId = "run-details-user";
     const startRes = await request(app)
       .post("/api/runs")
-      .set(asAuth())
+      .set(asAuth(runDetailsUserId))
       .send({ templateId: "tpl-support-bot", input: { ticketId: "TKT-002", subject: "Issue", body: "Problem", customerEmail: "b@example.com", channel: "email" } });
     expect(startRes.status).toBe(202);
     const runId = startRes.body.id;
 
-    const getRes = await request(app).get(`/api/runs/${runId}`).set(asAuth());
+    const getRes = await request(app).get(`/api/runs/${runId}`).set(asAuth(runDetailsUserId));
     expect(getRes.status).toBe(200);
     expect(getRes.body.id).toBe(runId);
   });
 
   it("returns 404 for an unknown run id", async () => {
-    const res = await request(app).get("/api/runs/run-does-not-exist").set(asAuth());
+    const runDetailsUserId = "run-details-user";
+    const res = await request(app).get("/api/runs/run-does-not-exist").set(asAuth(runDetailsUserId));
     expect(res.status).toBe(404);
     expect(res.body.error).toMatch(/not found/i);
   });

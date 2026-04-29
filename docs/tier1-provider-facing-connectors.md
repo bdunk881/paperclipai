@@ -4,9 +4,9 @@ This suite validates the live Tier 1 connector contract against provider-managed
 
 ## Covered connectors
 
-- `apollo`
 - `gmail`
 - `hubspot`
+- `jira`
 - `linear`
 - `sentry`
 - `slack`
@@ -24,9 +24,9 @@ This suite validates the live Tier 1 connector contract against provider-managed
 
 Set these GitHub Actions secrets before enabling the workflow:
 
-- `TIER1_APOLLO_API_KEY`
 - `TIER1_GMAIL_API_KEY`
 - `TIER1_HUBSPOT_API_KEY`
+- `TIER1_JIRA_API_TOKEN`
 - `TIER1_LINEAR_API_KEY`
 - `TIER1_SENTRY_API_KEY`
 - `TIER1_SLACK_BOT_TOKEN`
@@ -39,6 +39,10 @@ Set these GitHub Actions repository variables to turn on the corresponding write
 
 - `TIER1_GMAIL_TO_EMAIL`
 - `TIER1_HUBSPOT_CONTACT_ID`
+- `TIER1_JIRA_EMAIL`
+- `TIER1_JIRA_ISSUE_KEY`
+- `TIER1_JIRA_PROJECT_KEY`
+- `TIER1_JIRA_SITE`
 - `TIER1_LINEAR_ISSUE_ID`
 - `TIER1_SLACK_CHANNEL_ID`
 - `TIER1_STRIPE_CUSTOMER_ID`
@@ -65,6 +69,7 @@ Without connector env vars, the connector suites are skipped by default.
 
 - `stripe` write coverage creates a draft invoice against a test customer and deletes it in the same run.
 - `hubspot` and `linear` write coverage update reusable fixture records, so those fixtures should be dedicated to QA.
+- `jira` write coverage updates a reusable fixture issue when `TIER1_JIRA_ISSUE_KEY` is configured.
 - `gmail` write coverage sends to a dedicated test mailbox when `TIER1_GMAIL_TO_EMAIL` is configured.
 - `slack` write coverage posts to a dedicated sandbox channel when `TIER1_SLACK_CHANNEL_ID` is configured.
 

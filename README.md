@@ -159,6 +159,9 @@ Required GitHub Actions secret for backend test job:
 5. Open your PR against `staging`, not `master`
 6. After staging validation, promote `staging` to `master` with a dedicated PR reviewed by the production code owner
 
+Operational routine note:
+- The CTO stale-PR pinger lives at `scripts/stale-pr-pinger.sh`. Run it from the repo root with `PAPERCLIP_API_URL`, `PAPERCLIP_COMPANY_ID`, and either `PAPERCLIP_API_KEY` or agent JWT env vars present. Use `DRY_RUN=1` to preview mentions without posting comments.
+
 ### Running tests
 
 ```bash

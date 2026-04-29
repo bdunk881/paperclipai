@@ -110,6 +110,124 @@ api_post() {
     "${API_URL}${path}"
 }
 
+is_terminal_issue_status() {
+  local status="$1"
+  [[ "$status" == "cancelled" || "$status" == "done" ]]
+}
+
+get_issue_by_identifier() {
+  local identifier="$1"
+  local issue_matches
+  local issue_json
+  local issue_id
+
+  issue_matches="$(api_get_with_query "/api/companies/${COMPANY_ID}/issues" "q" "$identifier")"
+  issue_json="$(jq -c --arg identifier "$identifier" 'map(select(.identifier == $identifier)) | first // empty' <<<"$issue_matches")"
+  if [[ -z "$issue_json" ]]; then
+    return 1
+  fi
+
+  issue_id="$(jq -r '.id' <<<"$issue_json")"
+  api_get "/api/issues/${issue_id}"
+}
+
+find_replacement_issue() {
+  local issue_json="$1"
+  local parent_id
+  local self_id
+  local blocked_by_candidate
+  local sibling_matches
+  local sibling_candidate
+
+  blocked_by_candidate="$(
+    jq -c '
+      [.blockedBy[]? | select((.status // "") != "cancelled" and (.status // "") != "done")]
+      | sort_by(.updatedAt // "")
+      | reverse
+      | first // empty
+    ' <<<"$issue_json"
+  )"
+  if [[ -n "$blocked_by_candidate" ]]; then
+    jq -cn --arg source "blockedBy" --argjson issue "$blocked_by_candidate" '{source: $source, issue: $issue}'
+    return 0
+  fi
+
+  parent_id="$(jq -r '.parentId // empty' <<<"$issue_json")"
+  if [[ -z "$parent_id" ]]; then
+    return 1
+  fi
+
+  self_id="$(jq -r '.id' <<<"$issue_json")"
+  sibling_matches="$(api_get_with_query "/api/companies/${COMPANY_ID}/issues" "parentId" "$parent_id")"
+  sibling_candidate="$(
+    jq -c --arg self_id "$self_id" '
+      map(select(.id != $self_id and (.status // "") != "cancelled" and (.status // "") != "done"))
+      | sort_by(.updatedAt // "")
+      | reverse
+      | first // empty
+    ' <<<"$sibling_matches"
+  )"
+  if [[ -n "$sibling_candidate" ]]; then
+    jq -cn --arg source "parentId sibling" --argjson issue "$sibling_candidate" '{source: $source, issue: $issue}'
+    return 0
+  fi
+
+  return 1
+}
+
+resolve_linked_issue() {
+  local issue_json="$1"
+  local pr_number="$2"
+  local depth=0
+  local max_depth=5
+  local identifier
+  local status
+  local replacement_json
+  local replacement_issue
+  local replacement_source
+  local replacement_identifier
+  local replacement_status
+
+  while (( depth < max_depth )); do
+    identifier="$(jq -r '.identifier' <<<"$issue_json")"
+    status="$(jq -r '.status // empty' <<<"$issue_json")"
+    if ! is_terminal_issue_status "$status"; then
+      printf '%s\n' "$issue_json"
+      return 0
+    fi
+
+    # Closed branch-linked issues may be duplicate shells. Prefer an active
+    # blockedBy target first, then an active sibling under the same parent.
+    if ! replacement_json="$(find_replacement_issue "$issue_json")"; then
+      printf 'Skipping PR #%s for %s: linked issue status=%s and no active duplicate target was found\n' \
+        "$pr_number" \
+        "$identifier" \
+        "$status" >&2
+      return 1
+    fi
+
+    replacement_source="$(jq -r '.source' <<<"$replacement_json")"
+    replacement_issue="$(jq -c '.issue' <<<"$replacement_json")"
+    replacement_identifier="$(jq -r '.identifier' <<<"$replacement_issue")"
+    replacement_status="$(jq -r '.status // empty' <<<"$replacement_issue")"
+
+    printf 'Resolved linked issue %s (%s) -> %s (%s) via %s heuristic\n' \
+      "$identifier" \
+      "$status" \
+      "$replacement_identifier" \
+      "$replacement_status" \
+      "$replacement_source" >&2
+
+    issue_json="$replacement_issue"
+    depth=$((depth + 1))
+  done
+
+  printf 'Skipping PR #%s: exceeded duplicate-resolution depth for linked issue %s\n' \
+    "$pr_number" \
+    "$(jq -r '.identifier' <<<"$issue_json")" >&2
+  return 1
+}
+
 is_stale_pr() {
   local updated_at="$1"
   python3 - "$updated_at" "$STALE_MINUTES" <<'PY'
@@ -159,14 +277,19 @@ while IFS= read -r pr; do
     continue
   fi
 
-  issue_matches="$(api_get_with_query "/api/companies/${COMPANY_ID}/issues" "q" "$issue_identifier")"
-  issue_json="$(jq -c --arg identifier "$issue_identifier" 'map(select(.identifier == $identifier)) | first // empty' <<<"$issue_matches")"
-  if [[ -z "$issue_json" ]]; then
+  if ! issue_json="$(get_issue_by_identifier "$issue_identifier")"; then
+    skipped_count=$((skipped_count + 1))
+    continue
+  fi
+
+  pr_number="$(jq -r '.number' <<<"$pr")"
+  if ! issue_json="$(resolve_linked_issue "$issue_json" "$pr_number")"; then
     skipped_count=$((skipped_count + 1))
     continue
   fi
 
   issue_id="$(jq -r '.id' <<<"$issue_json")"
+  issue_identifier="$(jq -r '.identifier' <<<"$issue_json")"
   assignee_agent_id="$(jq -r '.assigneeAgentId // empty' <<<"$issue_json")"
   if [[ -z "$assignee_agent_id" ]]; then
     skipped_count=$((skipped_count + 1))
@@ -182,7 +305,6 @@ while IFS= read -r pr; do
   latest_comment_json="$(api_get "/api/issues/${issue_id}/comments?order=desc&limit=1")"
   latest_author_agent_id="$(jq -r '.[0].authorAgentId // empty' <<<"$latest_comment_json")"
   latest_body="$(jq -r '.[0].body // empty' <<<"$latest_comment_json")"
-  pr_number="$(jq -r '.number' <<<"$pr")"
 
   if [[ "$latest_author_agent_id" == "$COMMENTER_AGENT_ID" && "$latest_body" == *"PR #${pr_number}"* && "$latest_body" == *"CI is failing"* ]]; then
     skipped_count=$((skipped_count + 1))

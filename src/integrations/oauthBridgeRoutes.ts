@@ -2,6 +2,7 @@ import express from "express";
 import { AuthenticatedRequest, requireAuth } from "../auth/authMiddleware";
 import { slackConnectorService } from "./slack/service";
 import { linearConnectorService } from "./linear/service";
+import { apolloConnectorService } from "./apollo/service";
 import { shopifyConnectorService } from "./shopify/service";
 import { docuSignConnectorService } from "./docusign/service";
 import { teamsConnectorService } from "./teams/service";
@@ -10,6 +11,7 @@ import { intercomConnectorService } from "./intercom/service";
 import { datadogAzureMonitorConnectorService } from "./datadog-azure-monitor/service";
 import { slackCredentialStore } from "./slack/credentialStore";
 import { linearCredentialStore } from "./linear/credentialStore";
+import { apolloCredentialStore } from "./apollo/credentialStore";
 import { shopifyCredentialStore } from "./shopify/credentialStore";
 import { docuSignCredentialStore } from "./docusign/credentialStore";
 import { teamsCredentialStore } from "./teams/credentialStore";
@@ -20,6 +22,7 @@ import { monitoringCredentialStore } from "./datadog-azure-monitor/credentialSto
 type UnifiedProvider =
   | "slack"
   | "linear"
+  | "apollo"
   | "shopify"
   | "docusign"
   | "teams"
@@ -40,6 +43,7 @@ type ProviderStatus = {
 const PROVIDERS: Set<UnifiedProvider> = new Set([
   "slack",
   "linear",
+  "apollo",
   "shopify",
   "docusign",
   "teams",
@@ -169,6 +173,8 @@ router.post("/:provider/connect", requireAuth, (req: AuthenticatedRequest, res) 
           return slackConnectorService.beginOAuth(userId);
         case "linear":
           return linearConnectorService.beginOAuth(userId);
+        case "apollo":
+          return apolloConnectorService.beginOAuth(userId);
         case "shopify": {
           const shopDomain = getShopDomain(req);
           if (!shopDomain) {
@@ -208,6 +214,7 @@ router.get("/status", requireAuth, (req: AuthenticatedRequest, res) => {
 
   const slackCredential = slackCredentialStore.getActiveByUser(userId);
   const linearCredential = linearCredentialStore.getActiveByUser(userId);
+  const apolloCredential = apolloCredentialStore.getActiveByUser(userId);
   const shopifyCredential = shopifyCredentialStore.getActiveByUser(userId);
   const docusignCredential = docuSignCredentialStore.getActiveByUser(userId);
   const teamsCredential = teamsCredentialStore.getActiveByUser(userId);
@@ -217,6 +224,7 @@ router.get("/status", requireAuth, (req: AuthenticatedRequest, res) => {
   const providers: Record<StatusProvider, ProviderStatus> = {
     slack: connectionStatusForCredential(slackCredential),
     linear: connectionStatusForCredential(linearCredential),
+    apollo: connectionStatusForCredential(apolloCredential),
     shopify: connectionStatusForCredential(shopifyCredential),
     docusign: connectionStatusForCredential(docusignCredential),
     teams: connectionStatusForCredential(teamsCredential),
@@ -278,6 +286,9 @@ router.get("/callback", async (req, res) => {
       case "linear":
         await linearConnectorService.completeOAuth({ code, state });
         break;
+      case "apollo":
+        await apolloConnectorService.completeOAuth({ code, state });
+        break;
       case "shopify":
         await shopifyConnectorService.completeOAuth({ code, state, shop });
         break;
@@ -333,6 +344,13 @@ router.delete("/:provider/disconnect", requireAuth, async (req: AuthenticatedReq
       const current = linearCredentialStore.getActiveByUser(userId);
       if (current) {
         linearConnectorService.disconnect(userId, current.id);
+      }
+      break;
+    }
+    case "apollo": {
+      const current = apolloCredentialStore.getActiveByUser(userId);
+      if (current) {
+        await apolloConnectorService.disconnect(userId, current.id);
       }
       break;
     }

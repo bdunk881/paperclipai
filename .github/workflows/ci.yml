@@ -11,6 +11,17 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  validate-required-checks:
+    name: Branch Protection Sync Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "24"
+      - name: Validate required check names
+        run: npm run validate:required-checks
+
   lint-backend:
     name: Lint Backend
     runs-on: ubuntu-latest
@@ -233,9 +244,9 @@ jobs:
           retention-days: 7
 
   build-check:
-    name: Docker Build Check
+    name: Docker Build Check (${{ matrix.service }})
     runs-on: ubuntu-latest
-    needs: [test-backend, test-api, test-frontend, build-frontend]
+    needs: [validate-required-checks, test-backend, test-api, test-frontend, build-frontend]
     strategy:
       matrix:
         service: [backend, frontend]
@@ -250,3 +261,16 @@ jobs:
           push: false
           cache-from: type=gha,scope=${{ matrix.service }}
           cache-to: type=gha,mode=max,scope=${{ matrix.service }}
+
+  docker-build-summary:
+    name: Docker Build Check
+    runs-on: ubuntu-latest
+    needs: [build-check]
+    if: always()
+    steps:
+      - name: Fail if any matrix build failed
+        run: |
+          if [ "${{ needs.build-check.result }}" != "success" ]; then
+            echo "At least one Docker matrix build failed."
+            exit 1
+          fi

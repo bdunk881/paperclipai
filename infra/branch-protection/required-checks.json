@@ -1,0 +1,29 @@
+{
+  "staging": [
+    "Lint Backend",
+    "Lint Frontend",
+    "Lint API (TypeScript)",
+    "Test Backend",
+    "Test API (TypeScript)",
+    "Test Frontend (Dashboard)",
+    "Build Frontend (Dashboard)",
+    "Auth Regression Smoke (Playwright)",
+    "E2E Tests (Dashboard)",
+    "Branch Protection Sync Check",
+    "Docker Build Check"
+  ],
+  "master": [
+    "Lint Backend",
+    "Lint Frontend",
+    "Lint API (TypeScript)",
+    "Test Backend",
+    "Test API (TypeScript)",
+    "Test Frontend (Dashboard)",
+    "Build Frontend (Dashboard)",
+    "Auth Regression Smoke (Playwright)",
+    "E2E Tests (Dashboard)",
+    "Branch Protection Sync Check",
+    "Docker Build Check",
+    "Staging-First Promotion Gate"
+  ]
+}

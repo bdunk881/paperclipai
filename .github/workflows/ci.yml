@@ -137,6 +137,7 @@ jobs:
       - run: npm run test:coverage
       - uses: codecov/codecov-action@v5
         if: always()
+        continue-on-error: true
         with:
           files: coverage/lcov.info
           disable_search: true

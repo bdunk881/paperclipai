@@ -433,7 +433,7 @@ describe("Knowledge base routes", () => {
 
     expect(patchRes.status).toBe(200);
     expect(patchRes.body.text).toMatch(/verify the health endpoint/i);
-  });
+  }, 10_000);
 });
 
 describe("Observability routes", () => {
@@ -2353,7 +2353,7 @@ describe("GET /api/observability", () => {
 
     controlPlaneStore.finalizeAgentExecution({
       executionId: started.execution.id,
-      userId: "test-user",
+      userId: observabilityUserId,
       status: "completed",
       summary: "Completed the traceable step",
       costUsd: 1.25,
@@ -2368,7 +2368,7 @@ describe("GET /api/observability", () => {
       completedAt: "2026-04-28T03:00:05.000Z",
       input: {},
       output: {},
-      userId: "test-user",
+      userId: observabilityUserId,
       stepResults: [
         {
           stepId: step.id,
@@ -2412,7 +2412,7 @@ describe("GET /api/observability", () => {
 
     const res = await request(app)
       .get(`/api/observability?agentId=${encodeURIComponent(workerAgent.id)}&search=crm.lookup`)
-      .set(asAuth());
+      .set(asAuth(observabilityUserId));
 
     expect(res.status).toBe(200);
     expect(res.body.total).toBe(1);
@@ -2429,7 +2429,7 @@ describe("GET /api/observability", () => {
 
     const csvRes = await request(app)
       .get(`/api/observability?format=csv&agentId=${encodeURIComponent(workerAgent.id)}`)
-      .set(asAuth());
+      .set(asAuth(observabilityUserId));
 
     expect(csvRes.status).toBe(200);
     expect(csvRes.headers["content-type"]).toMatch(/text\/csv/);

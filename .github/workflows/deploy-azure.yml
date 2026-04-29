@@ -335,6 +335,12 @@ jobs:
             if [ -z "$trimmed" ] || printf '%s' "$trimmed" | grep -Eq '^[[:space:]]*#'; then
               continue
             fi
+            key="${trimmed%%=*}"
+            case "$key" in
+              QA_AUTH_BYPASS_ENABLED|QA_AUTH_BYPASS_USER_IDS)
+                continue
+                ;;
+            esac
             env_args+=("$trimmed")
           done < "$tmpfile"
 

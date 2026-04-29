@@ -3,6 +3,7 @@ import { ApolloClient } from "./apolloClient";
 import { logApollo } from "./logger";
 import { buildApolloOAuthUrl, exchangeCodeForTokens, parseApolloScopes, refreshAccessToken } from "./oauth";
 import { consumeOAuthState, createOAuthState } from "./oauthStateStore";
+import { buildTier1ConnectionHealth } from "../shared/tier1Contract";
 import { ApolloConnectionHealth, ApolloCredential, ApolloCredentialPublic, ConnectorError } from "./types";
 
 export class ApolloConnectorService {
@@ -111,9 +112,12 @@ export class ApolloConnectorService {
     const credential = await apolloCredentialStore.getActiveByUserAsync(userId);
 
     if (!credential) {
-      return {
-        status: "down",
+      return buildTier1ConnectionHealth({
+        connector: "apollo",
+        subject: userId,
         checkedAt,
+        status: "disabled",
+        recommendedNextAction: "Connect an Apollo credential from the dashboard to enable prospecting workflows.",
         details: {
           auth: false,
           apiReachable: false,
@@ -121,7 +125,7 @@ export class ApolloConnectorService {
           errorType: "auth",
           message: "No Apollo credential is connected",
         },
-      };
+      });
     }
 
     try {
@@ -129,10 +133,10 @@ export class ApolloConnectorService {
       const client = new ApolloClient(token, credential.authMethod);
       await client.viewer();
 
-      const health: ApolloConnectionHealth = {
-        status: "ok",
+      const health: ApolloConnectionHealth = buildTier1ConnectionHealth({
+        connector: "apollo",
+        subject: userId,
         checkedAt,
-        accountId: credential.accountId,
         authMethod: credential.authMethod,
         tokenRefreshStatus:
           credential.authMethod === "oauth2"
@@ -140,12 +144,15 @@ export class ApolloConnectorService {
               ? "healthy"
               : "failed"
             : "not_applicable",
+        metadata: {
+          accountId: credential.accountId,
+        },
         details: {
           auth: true,
           apiReachable: true,
           rateLimited: false,
         },
-      };
+      });
 
       logApollo({
         event: "health",
@@ -172,10 +179,10 @@ export class ApolloConnectorService {
         errorType: connectorError.type,
       });
 
-      return {
-        status: connectorError.type === "rate-limit" ? "degraded" : "down",
+      return buildTier1ConnectionHealth({
+        connector: "apollo",
+        subject: userId,
         checkedAt,
-        accountId: credential.accountId,
         authMethod: credential.authMethod,
         tokenRefreshStatus:
           credential.authMethod === "oauth2"
@@ -183,6 +190,9 @@ export class ApolloConnectorService {
               ? "failed"
               : "healthy"
             : "not_applicable",
+        metadata: {
+          accountId: credential.accountId,
+        },
         details: {
           auth: connectorError.type !== "auth",
           apiReachable: connectorError.type !== "network",
@@ -190,7 +200,7 @@ export class ApolloConnectorService {
           errorType: connectorError.type,
           message: connectorError.message,
         },
-      };
+      });
     }
   }
 

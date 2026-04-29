@@ -426,7 +426,7 @@ router.post("/agents/:id/skills", requirePaperclipRunId, async (req: WorkspaceAw
   }
 });
 
-router.post("/tasks", requirePaperclipRunId, (req: AuthenticatedRequest, res) => {
+router.post("/tasks", requirePaperclipRunId, async (req: AuthenticatedRequest, res) => {
   const userId = getUserId(req);
   if (!userId) {
     res.status(401).json({ error: "Authenticated user required" });
@@ -454,7 +454,7 @@ router.post("/tasks", requirePaperclipRunId, (req: AuthenticatedRequest, res) =>
   }
 
   try {
-    const task = controlPlaneStore.createTask({
+    const task = await controlPlaneStore.createTask({
       userId,
       teamId,
       title: title.trim(),
@@ -533,7 +533,7 @@ router.post("/executions/:id/lifecycle", requirePaperclipRunId, async (req: Work
   }
 });
 
-router.post("/tasks/:id/checkout", requirePaperclipRunId, (req: AuthenticatedRequest, res) => {
+router.post("/tasks/:id/checkout", requirePaperclipRunId, async (req: AuthenticatedRequest, res) => {
   const userId = getUserId(req);
   if (!userId) {
     res.status(401).json({ error: "Authenticated user required" });
@@ -541,7 +541,7 @@ router.post("/tasks/:id/checkout", requirePaperclipRunId, (req: AuthenticatedReq
   }
 
   try {
-    const task = controlPlaneStore.checkoutTask({
+    const task = await controlPlaneStore.checkoutTask({
       taskId: req.params.id,
       userId,
       actor: req.header("X-Paperclip-Run-Id") as string,
@@ -560,7 +560,7 @@ router.post("/tasks/:id/checkout", requirePaperclipRunId, (req: AuthenticatedReq
   }
 });
 
-router.patch("/tasks/:id/status", requirePaperclipRunId, (req: AuthenticatedRequest, res) => {
+router.patch("/tasks/:id/status", requirePaperclipRunId, async (req: AuthenticatedRequest, res) => {
   const userId = getUserId(req);
   if (!userId) {
     res.status(401).json({ error: "Authenticated user required" });
@@ -574,7 +574,7 @@ router.patch("/tasks/:id/status", requirePaperclipRunId, (req: AuthenticatedRequ
   }
 
   try {
-    const task = controlPlaneStore.updateTaskStatus({
+    const task = await controlPlaneStore.updateTaskStatus({
       taskId: req.params.id,
       userId,
       actor: req.header("X-Paperclip-Run-Id") as string,
@@ -677,7 +677,7 @@ router.post("/heartbeats", requirePaperclipRunId, async (req: WorkspaceAwareRequ
   }
 });
 
-router.post("/spend-events", requirePaperclipRunId, (req: AuthenticatedRequest, res) => {
+router.post("/spend-events", requirePaperclipRunId, async (req: AuthenticatedRequest, res) => {
   const userId = getUserId(req);
   if (!userId) {
     res.status(401).json({ error: "Authenticated user required" });
@@ -721,7 +721,7 @@ router.post("/spend-events", requirePaperclipRunId, (req: AuthenticatedRequest, 
   }
 
   try {
-    const entry = controlPlaneStore.recordSpend({
+    const entry = await controlPlaneStore.recordSpend({
       userId,
       teamId: teamId.trim(),
       agentId: agentId.trim(),

@@ -205,8 +205,10 @@ export async function streamObservabilityEvents(
     }
   };
 
-  while (true) {
+  let streamDone = false;
+  while (!streamDone) {
     const { value, done } = await reader.read();
+    streamDone = done;
     if (done) break;
     buffer += decoder.decode(value, { stream: true });
 

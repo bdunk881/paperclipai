@@ -1,11 +1,10 @@
 /**
- * E2E: Dashboard critical path
+ * E2E: Observability dashboard critical path
  *
- * Covers: stats cards render, recent runs list, template cards,
- * navigation links to builder and history.
+ * Covers: observability shell render, transport controls, KPI prototype,
+ * live feed frame, and navigation links that remain on the dashboard surface.
  *
- * Runs in VITE_USE_MOCK=true mode — all API data comes from the
- * in-memory mock store, so assertions use mock-data-aware values.
+ * Runs in VITE_USE_MOCK=true mode.
  */
 
 import { test, expect } from "@playwright/test";
@@ -20,52 +19,57 @@ test.beforeEach(async ({ page }) => {
 // Page structure
 // ---------------------------------------------------------------------------
 
-test("dashboard heading is visible", async ({ page }) => {
-  await expect(page.getByRole("heading", { name: /dashboard/i })).toBeVisible();
+test("observability cockpit heading is visible", async ({ page }) => {
+  await expect(page.getByText(/observability cockpit/i)).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: /live activity, health, and throughput in one operator view\./i })
+  ).toBeVisible();
 });
 
-test("renders four stat cards: Total Runs, Running, Completed, Failed", async ({ page }) => {
-  await expect(page.getByText(/total runs/i)).toBeVisible();
-  await expect(page.getByText(/^running$/i)).toBeVisible();
+test("renders transport controls and KPI prototype sections", async ({ page }) => {
+  await expect(page.getByText(/transport status/i)).toBeVisible();
+  await expect(page.getByRole("button", { name: /all activity/i })).toBeVisible();
+  await expect(page.getByRole("button", { name: /alerts/i })).toBeVisible();
+  await expect(page.getByRole("button", { name: /24h/i })).toBeVisible();
+  await expect(page.getByText(/kpi prototype/i)).toBeVisible();
+  await expect(page.getByText(/throughput over the last 24 hours/i)).toBeVisible();
+  await expect(page.getByText(/^created$/i)).toBeVisible();
   await expect(page.getByText(/^completed$/i)).toBeVisible();
-  await expect(page.getByText(/^failed$/i)).toBeVisible();
+  await expect(page.getByText(/^blocked$/i)).toBeVisible();
 });
 
-test("renders Recent Runs section", async ({ page }) => {
-  await expect(page.getByText(/recent runs/i)).toBeVisible();
+test("renders live feed and continuity sections", async ({ page }) => {
+  await expect(page.getByText(/activity updates as they happen/i)).toBeVisible();
+  await expect(page.getByText(/transport continuity/i)).toBeVisible();
+  await expect(page.getByText(/sprint 2 reserve/i)).toBeVisible();
+  await expect(page.getByRole("button", { name: /refresh data/i })).toBeVisible();
 });
 
-test("renders Templates section with at least one template card", async ({ page }) => {
-  // Wait for mock data to load
-  await expect(page.getByText(/templates/i).first()).toBeVisible();
-  // There are 3 mock templates
-  const templateLinks = page.getByRole("link", { name: /customer support bot|lead enrichment|content generator/i });
-  await expect(templateLinks.first()).toBeVisible();
+test("feed filter buttons toggle pressed state", async ({ page }) => {
+  const allActivity = page.getByRole("button", { name: /all activity/i });
+  const alerts = page.getByRole("button", { name: /alerts/i });
+
+  await expect(allActivity).toHaveAttribute("aria-pressed", "true");
+  await alerts.click();
+  await expect(alerts).toHaveAttribute("aria-pressed", "true");
+  await expect(allActivity).toHaveAttribute("aria-pressed", "false");
 });
 
 // ---------------------------------------------------------------------------
 // Navigation
 // ---------------------------------------------------------------------------
 
-test("'View all' runs link navigates to /history", async ({ page }) => {
-  await page.getByRole("link", { name: /view all/i }).click();
+test("'Full history' link navigates to /history", async ({ page }) => {
+  await page.getByRole("link", { name: /full history/i }).click();
   await expect(page).toHaveURL(/\/history/);
 });
 
-test("clicking a template card navigates to /builder/:templateId", async ({ page }) => {
-  // Wait for templates to render
-  const builderLink = page.getByRole("link", { name: /customer support bot/i }).first();
-  await expect(builderLink).toBeVisible({ timeout: 5000 });
-  await builderLink.click();
-  await expect(page).toHaveURL(/\/builder\//);
-});
-
-test("sidebar nav link 'Workflow Builder' navigates to /builder", async ({ page }) => {
-  await page.getByRole("link", { name: /workflow builder/i }).click();
+test("sidebar nav link 'Builder' navigates to /builder", async ({ page }) => {
+  await page.getByRole("link", { name: /^builder$/i }).click();
   await expect(page).toHaveURL(/\/builder/);
 });
 
-test("sidebar nav link 'Run History' navigates to /history", async ({ page }) => {
-  await page.getByRole("link", { name: /run history/i }).click();
+test("sidebar nav link 'History' navigates to /history", async ({ page }) => {
+  await page.getByRole("link", { name: /^history$/i }).click();
   await expect(page).toHaveURL(/\/history/);
 });

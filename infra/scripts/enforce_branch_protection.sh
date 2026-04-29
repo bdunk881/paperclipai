@@ -14,8 +14,21 @@ fi
 REPO="${GITHUB_REPOSITORY}"
 API="https://api.github.com"
 TARGET_BRANCHES=("staging" "master")
-STAGING_REQUIRED_CHECKS="${STAGING_REQUIRED_CHECKS:-Docker Build Check}"
-MASTER_REQUIRED_CHECKS="${MASTER_REQUIRED_CHECKS:-${STAGING_REQUIRED_CHECKS},Staging-First Promotion Gate}"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REQUIRED_CHECKS_FILE="${SCRIPT_DIR}/../branch-protection/required-checks.json"
+
+if [ ! -f "$REQUIRED_CHECKS_FILE" ]; then
+  echo "Missing required checks file: ${REQUIRED_CHECKS_FILE}"
+  exit 1
+fi
+
+load_required_checks() {
+  local branch="$1"
+  jq -r --arg branch "$branch" '.[$branch] | join(",")' "$REQUIRED_CHECKS_FILE"
+}
+
+STAGING_REQUIRED_CHECKS="${STAGING_REQUIRED_CHECKS:-$(load_required_checks staging)}"
+MASTER_REQUIRED_CHECKS="${MASTER_REQUIRED_CHECKS:-$(load_required_checks master)}"
 MASTER_ALLOWED_USERS="${MASTER_ALLOWED_USERS:-bdunk881}"
 STAGING_ALLOWED_USERS="${STAGING_ALLOWED_USERS:-bdunk881}"
 MASTER_ALLOWED_TEAMS="${MASTER_ALLOWED_TEAMS:-}"

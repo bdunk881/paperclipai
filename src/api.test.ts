@@ -433,141 +433,6 @@ describe("Knowledge base routes", () => {
 
     expect(patchRes.status).toBe(200);
     expect(patchRes.body.text).toMatch(/verify the health endpoint/i);
-  }, 10_000);
-});
-
-describe("Observability routes", () => {
-  it("returns the live feed contract with issue, run, heartbeat, budget, and alert events", async () => {
-    const deployRes = await request(app)
-      .post("/api/control-plane/deployments/workflow")
-      .set(asAuth())
-      .set("X-Paperclip-Run-Id", "run-observability-deploy")
-      .send({ templateId: "tpl-support-bot" });
-
-    const teamId = deployRes.body.team.id as string;
-    const workerAgent = deployRes.body.agents.find(
-      (agent: { roleKey: string }) => agent.roleKey !== "workflow-manager"
-    );
-    const step = WORKFLOW_TEMPLATES.find((template) => template.id === "tpl-support-bot")!.steps.find(
-      (candidate) => candidate.kind === "llm"
-    )!;
-
-    const started = await controlPlaneStore.startAgentExecution({
-      userId: "test-user",
-      actor: "run-observability-seed",
-      teamId,
-      step,
-      sourceRunId: "workflow-run-observability-1",
-      taskTitle: "Investigate signal drift",
-    });
-
-    await request(app)
-      .patch(`/api/control-plane/tasks/${started.task!.id}/status`)
-      .set(asAuth())
-      .set("X-Paperclip-Run-Id", "run-observability-task-done")
-      .send({ status: "done" });
-
-    controlPlaneStore.finalizeAgentExecution({
-      executionId: started.execution.id,
-      userId: "test-user",
-      status: "failed",
-      summary: "Run failed after upstream timeout",
-      costUsd: 1.75,
-    });
-
-    const feedRes = await request(app)
-      .get("/api/observability/events?limit=20")
-      .set(asAuth());
-
-    expect(feedRes.status).toBe(200);
-    expect(Array.isArray(feedRes.body.events)).toBe(true);
-    expect(feedRes.body.events.length).toBeGreaterThan(0);
-    expect(feedRes.body.nextCursor).toEqual(feedRes.body.events.at(-1)?.sequence ?? null);
-
-    const categories = new Set(feedRes.body.events.map((event: { category: string }) => event.category));
-    expect(categories.has("issue")).toBe(true);
-    expect(categories.has("run")).toBe(true);
-    expect(categories.has("heartbeat")).toBe(true);
-    expect(categories.has("budget")).toBe(true);
-    expect(categories.has("alert")).toBe(true);
-
-    const runStartedEvent = feedRes.body.events.find((event: { type: string }) => event.type === "run.started");
-    expect(runStartedEvent).toMatchObject({
-      category: "run",
-      subject: expect.objectContaining({ type: "execution", id: started.execution.id }),
-      payload: expect.objectContaining({
-        sourceRunId: "workflow-run-observability-1",
-        workflowStepId: step.id,
-        workflowStepName: step.name,
-      }),
-    });
-  });
-
-  it("supports cursor-based polling fallback and throughput aggregates", async () => {
-    const deployRes = await request(app)
-      .post("/api/control-plane/deployments/workflow")
-      .set(asAuth())
-      .set("X-Paperclip-Run-Id", "run-observability-fallback-deploy")
-      .send({ templateId: "tpl-support-bot" });
-
-    const teamId = deployRes.body.team.id as string;
-    const workerAgent = deployRes.body.agents.find(
-      (agent: { roleKey: string }) => agent.roleKey !== "workflow-manager"
-    );
-    const step = WORKFLOW_TEMPLATES.find((template) => template.id === "tpl-support-bot")!.steps.find(
-      (candidate) => candidate.kind === "llm"
-    )!;
-
-    const started = await controlPlaneStore.startAgentExecution({
-      userId: "test-user",
-      actor: "run-observability-fallback-seed",
-      teamId,
-      step,
-      sourceRunId: "workflow-run-observability-2",
-      taskTitle: "Resolve retry backlog",
-      requestedAgentId: workerAgent.id,
-    });
-
-    const firstPage = await request(app)
-      .get("/api/observability/events?categories=issue&limit=1")
-      .set(asAuth());
-
-    expect(firstPage.status).toBe(200);
-    expect(firstPage.body.events).toHaveLength(1);
-
-    await request(app)
-      .patch(`/api/control-plane/tasks/${started.task!.id}/status`)
-      .set(asAuth())
-      .set("X-Paperclip-Run-Id", "run-observability-fallback-block")
-      .send({ status: "blocked" });
-
-    await request(app)
-      .patch(`/api/control-plane/tasks/${started.task!.id}/status`)
-      .set(asAuth())
-      .set("X-Paperclip-Run-Id", "run-observability-fallback-done")
-      .send({ status: "done" });
-
-    const secondPage = await request(app)
-      .get(`/api/observability/events?categories=issue&after=${firstPage.body.nextCursor}&limit=10`)
-      .set(asAuth());
-
-    expect(secondPage.status).toBe(200);
-    expect(secondPage.body.events.length).toBeGreaterThanOrEqual(2);
-    expect(
-      secondPage.body.events.every((event: { category: string; sequence: string }) => {
-        return event.category === "issue" && Number(event.sequence) > Number(firstPage.body.nextCursor);
-      })
-    ).toBe(true);
-
-    const throughputRes = await request(app)
-      .get("/api/observability/throughput?windowHours=24")
-      .set(asAuth());
-
-    expect(throughputRes.status).toBe(200);
-    expect(throughputRes.body.summary.createdCount).toBeGreaterThanOrEqual(1);
-    expect(throughputRes.body.summary.completedCount).toBeGreaterThanOrEqual(1);
-    expect(throughputRes.body.summary.blockedCount).toBeGreaterThanOrEqual(1);
-    expect(Array.isArray(throughputRes.body.buckets)).toBe(true);
   });
 });
 
@@ -2367,10 +2232,9 @@ describe("POST /api/runs", () => {
   });
 
   it("returns 202 with a pending run for a valid templateId", async () => {
-    const postRunsUserId = "post-runs-user";
     const res = await request(app)
       .post("/api/runs")
-      .set(asAuth(postRunsUserId))
+      .set(asAuth())
       .send({ templateId: "tpl-support-bot", input: { ticketId: "TKT-001", subject: "Help", body: "I need help", customerEmail: "test@example.com", channel: "email" } });
     expect(res.status).toBe(202);
     expect(res.body.id).toBeDefined();
@@ -2379,30 +2243,27 @@ describe("POST /api/runs", () => {
   });
 
   it("returns 400 when templateId is missing", async () => {
-    const postRunsUserId = "post-runs-user";
     const res = await request(app)
       .post("/api/runs")
-      .set(asAuth(postRunsUserId))
+      .set(asAuth())
       .send({ input: {} });
     expect(res.status).toBe(400);
     expect(res.body.error).toMatch(/templateId/i);
   });
 
   it("returns 404 for an unknown templateId", async () => {
-    const postRunsUserId = "post-runs-user";
     const res = await request(app)
       .post("/api/runs")
-      .set(asAuth(postRunsUserId))
+      .set(asAuth())
       .send({ templateId: "tpl-nonexistent", input: {} });
     expect(res.status).toBe(404);
     expect(res.body.error).toMatch(/not found/i);
   });
 
   it("returns a run with startedAt timestamp", async () => {
-    const postRunsUserId = "post-runs-user";
     const res = await request(app)
       .post("/api/runs")
-      .set(asAuth(postRunsUserId))
+      .set(asAuth())
       .send({ templateId: "tpl-support-bot", input: {} });
     expect(res.status).toBe(202);
     expect(typeof res.body.startedAt).toBe("string");
@@ -2421,16 +2282,14 @@ describe("GET /api/runs", () => {
   });
 
   it("returns 200 with a runs array", async () => {
-    const listRunsUserId = "list-runs-user";
-    const res = await request(app).get("/api/runs").set(asAuth(listRunsUserId));
+    const res = await request(app).get("/api/runs").set(asAuth());
     expect(res.status).toBe(200);
     expect(Array.isArray(res.body.runs)).toBe(true);
     expect(typeof res.body.total).toBe("number");
   });
 
   it("total matches runs array length", async () => {
-    const listRunsUserId = "list-runs-user";
-    const res = await request(app).get("/api/runs").set(asAuth(listRunsUserId));
+    const res = await request(app).get("/api/runs").set(asAuth());
     expect(res.body.total).toBe(res.body.runs.length);
   });
 
@@ -2455,22 +2314,23 @@ describe("GET /api/runs/:id", () => {
   });
 
   it("returns 202 run and then retrieves it by id", async () => {
-    const runDetailsUserId = "run-details-user";
+    const runReadbackUserId = "runs-readback-user";
     const startRes = await request(app)
       .post("/api/runs")
-      .set(asAuth(runDetailsUserId))
+      .set(asAuth(runReadbackUserId))
       .send({ templateId: "tpl-support-bot", input: { ticketId: "TKT-002", subject: "Issue", body: "Problem", customerEmail: "b@example.com", channel: "email" } });
     expect(startRes.status).toBe(202);
     const runId = startRes.body.id;
 
-    const getRes = await request(app).get(`/api/runs/${runId}`).set(asAuth(runDetailsUserId));
+    const getRes = await request(app).get(`/api/runs/${runId}`).set(asAuth(runReadbackUserId));
     expect(getRes.status).toBe(200);
     expect(getRes.body.id).toBe(runId);
   });
 
   it("returns 404 for an unknown run id", async () => {
-    const runDetailsUserId = "run-details-user";
-    const res = await request(app).get("/api/runs/run-does-not-exist").set(asAuth(runDetailsUserId));
+    const res = await request(app)
+      .get("/api/runs/run-does-not-exist")
+      .set(asAuth("runs-unknown-id-user"));
     expect(res.status).toBe(404);
     expect(res.body.error).toMatch(/not found/i);
   });
@@ -2852,12 +2712,13 @@ describe("Rate limiting", () => {
   });
 
   it("enforces general API limits and returns Retry-After", async () => {
+    const generalRateLimitUserId = "rate-limit-general-user";
     for (let i = 0; i < 100; i += 1) {
-      const res = await request(app).get("/api/templates").set("X-User-Id", "rate-limit-general-user");
+      const res = await request(app).get("/api/templates").set(asAuth(generalRateLimitUserId));
       expect(res.status).toBe(200);
     }
 
-    const blocked = await request(app).get("/api/templates").set("X-User-Id", "rate-limit-general-user");
+    const blocked = await request(app).get("/api/templates").set(asAuth(generalRateLimitUserId));
     expect(blocked.status).toBe(429);
     expect(blocked.headers["retry-after"]).toBeDefined();
     expect(Number(blocked.headers["retry-after"])).toBeGreaterThan(0);

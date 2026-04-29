@@ -4,6 +4,26 @@ import { controlPlaneStore } from "../controlPlane/controlPlaneStore";
 import { CompanyProvisioningAgentInput } from "../controlPlane/types";
 
 const router = express.Router();
+const COMPANY_PROVISIONING_CONTRACT_VERSION = "2026-04-28";
+
+const COMPANY_PROVISIONING_AGENT_IDENTIFIER_FIELDS = ["roleTemplateId", "roleKey"] as const;
+
+function buildProvisioningContract() {
+  return {
+    schemaVersion: COMPANY_PROVISIONING_CONTRACT_VERSION,
+    endpoint: "/api/companies",
+    requiredHeaders: ["X-Paperclip-Run-Id"],
+    companyFields: {
+      required: ["name", "idempotencyKey", "budgetMonthlyUsd", "secretBindings", "agents"],
+      optional: ["workspaceName", "externalCompanyId", "orchestrationEnabled"],
+    },
+    agentFields: {
+      identifierFields: [...COMPANY_PROVISIONING_AGENT_IDENTIFIER_FIELDS],
+      requiredOneOf: [...COMPANY_PROVISIONING_AGENT_IDENTIFIER_FIELDS],
+      optional: ["name", "budgetMonthlyUsd", "model", "instructions", "skills"],
+    },
+  };
+}
 
 function getUserId(req: AuthenticatedRequest): string | null {
   const userId = req.auth?.sub;
@@ -22,6 +42,15 @@ function requirePaperclipRunId(
   }
   next();
 }
+
+router.get("/role-templates", (_req, res) => {
+  const roleTemplates = controlPlaneStore.listRoleTemplates();
+  res.json({
+    roleTemplates,
+    total: roleTemplates.length,
+    provisioningContract: buildProvisioningContract(),
+  });
+});
 
 router.post("/", requirePaperclipRunId, (req: AuthenticatedRequest, res) => {
   const userId = getUserId(req);
@@ -104,18 +133,38 @@ router.post("/", requirePaperclipRunId, (req: AuthenticatedRequest, res) => {
       return;
     }
 
-    const { roleTemplateId, name: agentName, budgetMonthlyUsd: agentBudgetMonthlyUsd, model, instructions, skills } =
-      agent as {
-        roleTemplateId?: unknown;
-        name?: unknown;
-        budgetMonthlyUsd?: unknown;
-        model?: unknown;
-        instructions?: unknown;
-        skills?: unknown;
-      };
+    const {
+      roleTemplateId,
+      roleKey,
+      name: agentName,
+      budgetMonthlyUsd: agentBudgetMonthlyUsd,
+      model,
+      instructions,
+      skills,
+    } = agent as {
+      roleTemplateId?: unknown;
+      roleKey?: unknown;
+      name?: unknown;
+      budgetMonthlyUsd?: unknown;
+      model?: unknown;
+      instructions?: unknown;
+      skills?: unknown;
+    };
 
-    if (typeof roleTemplateId !== "string" || !roleTemplateId.trim()) {
-      res.status(400).json({ error: "each agent requires a non-empty roleTemplateId" });
+    const normalizedRoleTemplateId =
+      typeof roleTemplateId === "string" && roleTemplateId.trim() ? roleTemplateId.trim() : undefined;
+    const normalizedRoleKey = typeof roleKey === "string" && roleKey.trim() ? roleKey.trim() : undefined;
+
+    if (!normalizedRoleTemplateId && !normalizedRoleKey) {
+      res.status(400).json({ error: "each agent requires a non-empty roleTemplateId or roleKey" });
+      return;
+    }
+    if (
+      normalizedRoleTemplateId &&
+      normalizedRoleKey &&
+      normalizedRoleTemplateId !== normalizedRoleKey
+    ) {
+      res.status(400).json({ error: "roleTemplateId and roleKey must match when both are provided" });
       return;
     }
     if (agentName !== undefined && (typeof agentName !== "string" || !agentName.trim())) {
@@ -146,7 +195,8 @@ router.post("/", requirePaperclipRunId, (req: AuthenticatedRequest, res) => {
     }
 
     parsedAgents.push({
-      roleTemplateId: roleTemplateId.trim(),
+      roleTemplateId: normalizedRoleTemplateId ?? normalizedRoleKey!,
+      roleKey: normalizedRoleKey,
       name: typeof agentName === "string" ? agentName.trim() : undefined,
       budgetMonthlyUsd: typeof agentBudgetMonthlyUsd === "number" ? agentBudgetMonthlyUsd : undefined,
       model: typeof model === "string" ? model.trim() : undefined,

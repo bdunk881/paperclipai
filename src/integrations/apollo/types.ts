@@ -1,11 +1,13 @@
+import {
+  Tier1ConnectionHealth,
+  Tier1ConnectionPublic,
+  Tier1ConnectorError,
+  Tier1ConnectorErrorType,
+} from "../shared/tier1Contract";
+
 export type ApolloAuthMethod = "oauth2" | "api_key";
 
-export type ConnectorErrorType =
-  | "auth"
-  | "rate-limit"
-  | "schema"
-  | "network"
-  | "upstream";
+export type ConnectorErrorType = Tier1ConnectorErrorType;
 
 export interface ApolloTokenSet {
   accessToken: string;
@@ -31,41 +33,19 @@ export interface ApolloCredential {
   metadata?: Record<string, string>;
 }
 
-export interface ApolloCredentialPublic {
-  id: string;
-  userId: string;
-  authMethod: ApolloAuthMethod;
-  tokenMasked: string;
+export interface ApolloCredentialPublic extends Tier1ConnectionPublic<ApolloAuthMethod, {
   scopes: string[];
   accountId: string;
   accountLabel?: string;
-  createdAt: string;
-  revokedAt?: string;
-}
+}> {}
 
-export interface ApolloConnectionHealth {
-  status: "ok" | "degraded" | "down";
-  checkedAt: string;
+export interface ApolloConnectionHealth extends Tier1ConnectionHealth<ApolloAuthMethod, {
   accountId?: string;
-  authMethod?: ApolloAuthMethod;
-  tokenRefreshStatus?: "not_applicable" | "healthy" | "failed";
-  details: {
-    auth: boolean;
-    apiReachable: boolean;
-    rateLimited: boolean;
-    errorType?: ConnectorErrorType;
-    message?: string;
-  };
-}
+}> {}
 
-export class ConnectorError extends Error {
-  readonly type: ConnectorErrorType;
-  readonly statusCode: number;
-
+export class ConnectorError extends Tier1ConnectorError {
   constructor(type: ConnectorErrorType, message: string, statusCode = 500) {
-    super(message);
+    super(type, message, statusCode);
     this.name = "ConnectorError";
-    this.type = type;
-    this.statusCode = statusCode;
   }
 }

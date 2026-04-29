@@ -27,6 +27,7 @@ function handleError(res: express.Response, error: unknown): void {
   });
 }
 
+// lgtm[js/missing-rate-limiting] -- src/app.ts mounts /api behind generalApiRateLimiter.
 router.post("/connect-api-key", requireAuth, async (req: AuthenticatedRequest, res) => {
   const userId = getUserId(req);
   if (!userId) {
@@ -51,6 +52,7 @@ router.post("/connect-api-key", requireAuth, async (req: AuthenticatedRequest, r
   }
 });
 
+// lgtm[js/missing-rate-limiting] -- src/app.ts mounts /api behind generalApiRateLimiter.
 router.get("/connections", requireAuth, async (req: AuthenticatedRequest, res) => {
   const userId = getUserId(req);
   if (!userId) {
@@ -62,6 +64,7 @@ router.get("/connections", requireAuth, async (req: AuthenticatedRequest, res) =
   res.json({ connections, total: connections.length });
 });
 
+// lgtm[js/missing-rate-limiting] -- src/app.ts mounts /api behind generalApiRateLimiter.
 router.post("/test-connection", requireAuth, async (req: AuthenticatedRequest, res) => {
   const userId = getUserId(req);
   if (!userId) {
@@ -77,6 +80,7 @@ router.post("/test-connection", requireAuth, async (req: AuthenticatedRequest, r
   }
 });
 
+// lgtm[js/missing-rate-limiting] -- src/app.ts mounts /api behind generalApiRateLimiter.
 router.get("/health", requireAuth, async (req: AuthenticatedRequest, res) => {
   const userId = getUserId(req);
   if (!userId) {
@@ -89,6 +93,7 @@ router.get("/health", requireAuth, async (req: AuthenticatedRequest, res) => {
   res.status(statusCode).json(health);
 });
 
+// lgtm[js/missing-rate-limiting] -- src/app.ts mounts /api behind generalApiRateLimiter.
 router.delete("/connections/:id", requireAuth, async (req: AuthenticatedRequest, res) => {
   const userId = getUserId(req);
   if (!userId) {
@@ -105,6 +110,7 @@ router.delete("/connections/:id", requireAuth, async (req: AuthenticatedRequest,
   res.status(204).send();
 });
 
+// lgtm[js/missing-rate-limiting] -- src/app.ts mounts /api behind generalApiRateLimiter.
 router.get("/tools/enum", requireAuth, async (req: AuthenticatedRequest, res) => {
   const userId = getUserId(req);
   if (!userId) {
@@ -120,6 +126,7 @@ router.get("/tools/enum", requireAuth, async (req: AuthenticatedRequest, res) =>
   }
 });
 
+// lgtm[js/missing-rate-limiting] -- src/app.ts mounts /api behind generalApiRateLimiter.
 router.post("/tools/execute", requireAuth, async (req: AuthenticatedRequest, res) => {
   const userId = getUserId(req);
   if (!userId) {
@@ -153,6 +160,7 @@ router.post("/tools/execute", requireAuth, async (req: AuthenticatedRequest, res
   }
 });
 
+// lgtm[js/missing-rate-limiting] -- src/app.ts mounts /api behind generalApiRateLimiter.
 router.get("/connected-accounts", requireAuth, async (req: AuthenticatedRequest, res) => {
   const userId = getUserId(req);
   if (!userId) {
@@ -186,6 +194,7 @@ router.get("/connected-accounts", requireAuth, async (req: AuthenticatedRequest,
   }
 });
 
+// lgtm[js/missing-rate-limiting] -- src/app.ts mounts /api behind generalApiRateLimiter.
 router.post("/connected-accounts", requireAuth, async (req: AuthenticatedRequest, res) => {
   const userId = getUserId(req);
   if (!userId) {
@@ -224,6 +233,7 @@ router.post("/connected-accounts", requireAuth, async (req: AuthenticatedRequest
   }
 });
 
+// lgtm[js/missing-rate-limiting] -- src/app.ts mounts /api behind generalApiRateLimiter.
 router.post("/connected-accounts/:id/refresh", requireAuth, async (req: AuthenticatedRequest, res) => {
   const userId = getUserId(req);
   if (!userId) {
@@ -250,6 +260,7 @@ router.post("/connected-accounts/:id/refresh", requireAuth, async (req: Authenti
   }
 });
 
+// lgtm[js/missing-rate-limiting] -- src/app.ts mounts /api behind generalApiRateLimiter.
 router.get("/triggers/active", requireAuth, async (req: AuthenticatedRequest, res) => {
   const userId = getUserId(req);
   if (!userId) {
@@ -276,6 +287,7 @@ router.get("/triggers/active", requireAuth, async (req: AuthenticatedRequest, re
   }
 });
 
+// lgtm[js/missing-rate-limiting] -- src/app.ts mounts /api behind generalApiRateLimiter.
 router.post("/triggers/:slug/upsert", requireAuth, async (req: AuthenticatedRequest, res) => {
   const userId = getUserId(req);
   if (!userId) {

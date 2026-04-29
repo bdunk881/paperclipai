@@ -1346,7 +1346,7 @@ export const controlPlaneStore = {
             {
               workspaceId: requireWorkspaceIdForPersistence(input.workspaceId),
               userId: input.userId,
-              actor: input.userId,
+              actorUserId: input.userId,
             },
             company.id
           )
@@ -1472,7 +1472,7 @@ export const controlPlaneStore = {
         });
       });
       await secretsRepository.setSecrets(
-        { workspaceId, userId: input.userId, actor: input.userId },
+        { workspaceId, userId: input.userId, actorUserId: input.userId },
         company.id,
         input.secretBindings
       );

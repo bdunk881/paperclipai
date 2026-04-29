@@ -9,10 +9,17 @@ import {
 } from "./secretEncryption";
 import type { ProvisionedCompanySecretBinding } from "./types";
 
+// SecretsContext now carries server-derived principal identity instead of a
+// caller-supplied free-form `actor` string. ALT-2027: a workspace-scoped caller
+// must not be able to spoof another principal in the audit ledger, so the
+// repository never accepts a single opaque actor field. At least one of
+// actorUserId / actorAgentId must be present (matched by the
+// control_plane_secret_audit_actor_present CHECK constraint in migration 018).
 export interface SecretsContext {
   workspaceId: string;
   userId: string;
-  actor: string;
+  actorUserId?: string;
+  actorAgentId?: string;
 }
 
 interface SecretRow {
@@ -22,7 +29,12 @@ interface SecretRow {
   key_version: number;
 }
 
-interface SecretListRow {
+interface SecretListSummaryRow {
+  key: string;
+  value_mask_suffix: string | null;
+}
+
+interface SecretRotationRow {
   key: string;
   ciphertext: Buffer;
   iv: Buffer;
@@ -30,13 +42,42 @@ interface SecretListRow {
   key_version: number;
 }
 
-function maskSecretValue(secret: string): string {
-  const trimmed = secret.trim();
-  if (!trimmed) {
-    return "****";
+const LIST_AUDIT_KEY = "*";
+const MASK_PREFIX = "********";
+
+type AuditAction = "read" | "read_failed" | "write" | "rotate" | "delete" | "list";
+
+function computeMaskSuffix(plaintext: string): string {
+  const trimmed = plaintext.trim();
+  return trimmed.slice(-4);
+}
+
+function renderMaskedValue(suffix: string | null | undefined): string {
+  return suffix ? `${MASK_PREFIX}${suffix}` : MASK_PREFIX;
+}
+
+function resolveAuditActor(ctx: SecretsContext): {
+  actorUserId: string | null;
+  actorAgentId: string | null;
+} {
+  const actorUserId = ctx.actorUserId?.trim() || null;
+  const actorAgentId = ctx.actorAgentId?.trim() || null;
+  if (!actorUserId && !actorAgentId) {
+    // Mirror the DB CHECK so callers fail fast in app code instead of
+    // surfacing a constraint-violation error from Postgres.
+    throw new Error("secrets_audit_actor_required");
   }
-  const suffix = trimmed.slice(-4);
-  return `${"*".repeat(Math.max(8, trimmed.length - suffix.length))}${suffix}`;
+  return { actorUserId, actorAgentId };
+}
+
+function describeError(err: unknown): string {
+  if (err instanceof Error) {
+    return err.message;
+  }
+  if (typeof err === "string") {
+    return err;
+  }
+  return "unknown_error";
 }
 
 async function recordAudit(
@@ -45,22 +86,25 @@ async function recordAudit(
     workspaceId: string;
     companyId: string;
     key: string;
-    action: "read" | "write" | "rotate" | "delete";
-    actor: string;
+    action: AuditAction;
+    actorUserId: string | null;
+    actorAgentId: string | null;
     keyVersion: number;
     metadata?: Record<string, unknown>;
   }
 ): Promise<void> {
   await client.query(
     `INSERT INTO control_plane_secret_audit (
-       workspace_id, company_id, key, action, actor, key_version, metadata
-     ) VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+       workspace_id, company_id, key, action,
+       actor_user_id, actor_agent_id, key_version, metadata
+     ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
     [
       params.workspaceId,
       params.companyId,
       params.key,
       params.action,
-      params.actor,
+      params.actorUserId,
+      params.actorAgentId,
       params.keyVersion,
       params.metadata ? JSON.stringify(params.metadata) : null,
     ]
@@ -88,29 +132,42 @@ export const secretsRepository = {
     key: string,
     value: string
   ): Promise<{ keyVersion: number }> {
+    const { actorUserId, actorAgentId } = resolveAuditActor(ctx);
     const { ciphertext, iv, authTag, keyVersion } = encryptSecret(value);
+    const maskSuffix = computeMaskSuffix(value);
     return withWorkspaceContext(
       getPostgresPool(),
       { workspaceId: ctx.workspaceId, userId: ctx.userId },
       async (client) => {
         await client.query(
           `INSERT INTO provisioned_company_secrets (
-             workspace_id, company_id, key, ciphertext, iv, auth_tag, key_version
-           ) VALUES ($1, $2, $3, $4, $5, $6, $7)
+             workspace_id, company_id, key, ciphertext, iv, auth_tag, key_version, value_mask_suffix
+           ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
            ON CONFLICT (company_id, key) DO UPDATE
              SET ciphertext = EXCLUDED.ciphertext,
                  iv = EXCLUDED.iv,
                  auth_tag = EXCLUDED.auth_tag,
                  key_version = EXCLUDED.key_version,
+                 value_mask_suffix = EXCLUDED.value_mask_suffix,
                  updated_at = now()`,
-          [ctx.workspaceId, companyId, key, ciphertext, iv, authTag, keyVersion]
+          [
+            ctx.workspaceId,
+            companyId,
+            key,
+            ciphertext,
+            iv,
+            authTag,
+            keyVersion,
+            maskSuffix,
+          ]
         );
         await recordAudit(client, {
           workspaceId: ctx.workspaceId,
           companyId,
           key,
           action: "write",
-          actor: ctx.actor,
+          actorUserId,
+          actorAgentId,
           keyVersion,
         });
         return { keyVersion };
@@ -127,25 +184,28 @@ export const secretsRepository = {
     if (entries.length === 0) {
       return;
     }
+    const { actorUserId, actorAgentId } = resolveAuditActor(ctx);
     const activeVersion = getActiveKeyVersion();
     const encrypted = entries.map(([key, value]) => ({
       key,
       record: encryptSecret(value, activeVersion),
+      maskSuffix: computeMaskSuffix(value),
     }));
     await withWorkspaceContext(
       getPostgresPool(),
       { workspaceId: ctx.workspaceId, userId: ctx.userId },
       async (client) => {
-        for (const { key, record } of encrypted) {
+        for (const { key, record, maskSuffix } of encrypted) {
           await client.query(
             `INSERT INTO provisioned_company_secrets (
-               workspace_id, company_id, key, ciphertext, iv, auth_tag, key_version
-             ) VALUES ($1, $2, $3, $4, $5, $6, $7)
+               workspace_id, company_id, key, ciphertext, iv, auth_tag, key_version, value_mask_suffix
+             ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
              ON CONFLICT (company_id, key) DO UPDATE
                SET ciphertext = EXCLUDED.ciphertext,
                    iv = EXCLUDED.iv,
                    auth_tag = EXCLUDED.auth_tag,
                    key_version = EXCLUDED.key_version,
+                   value_mask_suffix = EXCLUDED.value_mask_suffix,
                    updated_at = now()`,
             [
               ctx.workspaceId,
@@ -155,6 +215,7 @@ export const secretsRepository = {
               record.iv,
               record.authTag,
               record.keyVersion,
+              maskSuffix,
             ]
           );
           await recordAudit(client, {
@@ -162,7 +223,8 @@ export const secretsRepository = {
             companyId,
             key,
             action: "write",
-            actor: ctx.actor,
+            actorUserId,
+            actorAgentId,
             keyVersion: record.keyVersion,
           });
         }
@@ -175,6 +237,7 @@ export const secretsRepository = {
     companyId: string,
     key: string
   ): Promise<string | null> {
+    const { actorUserId, actorAgentId } = resolveAuditActor(ctx);
     return withWorkspaceContext(
       getPostgresPool(),
       { workspaceId: ctx.workspaceId, userId: ctx.userId },
@@ -189,16 +252,34 @@ export const secretsRepository = {
           authTag: row.auth_tag,
           keyVersion: row.key_version,
         };
-        const plaintext = decryptSecret(record);
-        await recordAudit(client, {
-          workspaceId: ctx.workspaceId,
-          companyId,
-          key,
-          action: "read",
-          actor: ctx.actor,
-          keyVersion: row.key_version,
-        });
-        return plaintext;
+        try {
+          const plaintext = decryptSecret(record);
+          await recordAudit(client, {
+            workspaceId: ctx.workspaceId,
+            companyId,
+            key,
+            action: "read",
+            actorUserId,
+            actorAgentId,
+            keyVersion: row.key_version,
+          });
+          return plaintext;
+        } catch (err) {
+          // Tamper / wrong-key-version / corrupted-row paths: leave a
+          // tamper-evident trail before surfacing the error so SIEM can flag
+          // them without needing to correlate with application logs.
+          await recordAudit(client, {
+            workspaceId: ctx.workspaceId,
+            companyId,
+            key,
+            action: "read_failed",
+            actorUserId,
+            actorAgentId,
+            keyVersion: row.key_version,
+            metadata: { reason: describeError(err) },
+          });
+          throw err;
+        }
       }
     );
   },
@@ -207,26 +288,35 @@ export const secretsRepository = {
     ctx: SecretsContext,
     companyId: string
   ): Promise<ProvisionedCompanySecretBinding[]> {
+    const { actorUserId, actorAgentId } = resolveAuditActor(ctx);
     return withWorkspaceContext(
       getPostgresPool(),
       { workspaceId: ctx.workspaceId, userId: ctx.userId },
       async (client) => {
-        const result = await client.query<SecretListRow>(
-          `SELECT key, ciphertext, iv, auth_tag, key_version
+        // Read only the masked suffix; no plaintext leaves the database. This
+        // also avoids pulling every ciphertext/IV/auth-tag tuple back to the
+        // app layer just to compute a UI mask.
+        const result = await client.query<SecretListSummaryRow>(
+          `SELECT key, value_mask_suffix
              FROM provisioned_company_secrets
             WHERE company_id = $1
             ORDER BY key ASC`,
           [companyId]
         );
-        return result.rows.map((row) => {
-          const plaintext = decryptSecret({
-            ciphertext: row.ciphertext,
-            iv: row.iv,
-            authTag: row.auth_tag,
-            keyVersion: row.key_version,
-          });
-          return { key: row.key, maskedValue: maskSecretValue(plaintext) };
+        await recordAudit(client, {
+          workspaceId: ctx.workspaceId,
+          companyId,
+          key: LIST_AUDIT_KEY,
+          action: "list",
+          actorUserId,
+          actorAgentId,
+          keyVersion: getActiveKeyVersion(),
+          metadata: { count: result.rows.length },
         });
+        return result.rows.map((row) => ({
+          key: row.key,
+          maskedValue: renderMaskedValue(row.value_mask_suffix),
+        }));
       }
     );
   },
@@ -236,6 +326,7 @@ export const secretsRepository = {
     companyId: string,
     key: string
   ): Promise<boolean> {
+    const { actorUserId, actorAgentId } = resolveAuditActor(ctx);
     return withWorkspaceContext(
       getPostgresPool(),
       { workspaceId: ctx.workspaceId, userId: ctx.userId },
@@ -252,7 +343,8 @@ export const secretsRepository = {
           companyId,
           key,
           action: "delete",
-          actor: ctx.actor,
+          actorUserId,
+          actorAgentId,
           keyVersion: getActiveKeyVersion(),
         });
         return true;
@@ -265,11 +357,12 @@ export const secretsRepository = {
     companyId: string,
     newKeyVersion: number
   ): Promise<{ rotated: number }> {
+    const { actorUserId, actorAgentId } = resolveAuditActor(ctx);
     return withWorkspaceContext(
       getPostgresPool(),
       { workspaceId: ctx.workspaceId, userId: ctx.userId },
       async (client) => {
-        const rows = await client.query<SecretListRow>(
+        const rows = await client.query<SecretRotationRow>(
           `SELECT key, ciphertext, iv, auth_tag, key_version
              FROM provisioned_company_secrets
             WHERE company_id = $1
@@ -285,22 +378,33 @@ export const secretsRepository = {
             keyVersion: row.key_version,
           });
           const re = encryptSecret(plaintext, newKeyVersion);
+          const maskSuffix = computeMaskSuffix(plaintext);
           await client.query(
             `UPDATE provisioned_company_secrets
                SET ciphertext = $1,
                    iv = $2,
                    auth_tag = $3,
                    key_version = $4,
+                   value_mask_suffix = $5,
                    updated_at = now()
-             WHERE company_id = $5 AND key = $6`,
-            [re.ciphertext, re.iv, re.authTag, re.keyVersion, companyId, row.key]
+             WHERE company_id = $6 AND key = $7`,
+            [
+              re.ciphertext,
+              re.iv,
+              re.authTag,
+              re.keyVersion,
+              maskSuffix,
+              companyId,
+              row.key,
+            ]
           );
           await recordAudit(client, {
             workspaceId: ctx.workspaceId,
             companyId,
             key: row.key,
             action: "rotate",
-            actor: ctx.actor,
+            actorUserId,
+            actorAgentId,
             keyVersion: re.keyVersion,
             metadata: { previousKeyVersion: row.key_version },
           });

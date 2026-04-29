@@ -1,6 +1,67 @@
 import { getApiBasePath } from "./baseUrl";
 
 const BASE = getApiBasePath();
+const USE_MOCK_API = import.meta.env.VITE_USE_MOCK === "true";
+
+const MOCK_OBSERVABILITY_EVENTS: ObservabilityEvent[] = [
+  {
+    id: "evt-9003",
+    sequence: "9003",
+    userId: "usr-e2e",
+    category: "alert",
+    type: "alert.raised",
+    actor: { type: "agent", id: "agent-routing", label: "Routing Watcher" },
+    subject: { type: "task", id: "task-signal-drift", label: "Signal drift alert" },
+    summary: "Critical alert raised for execution latency.",
+    payload: { severity: "critical" },
+    occurredAt: "2026-04-28T20:10:00.000Z",
+  },
+  {
+    id: "evt-9002",
+    sequence: "9002",
+    userId: "usr-e2e",
+    category: "run",
+    type: "run.completed",
+    actor: { type: "run", id: "run-support", label: "Support intake run" },
+    subject: { type: "execution", id: "exec-support", label: "Support intake execution" },
+    summary: "Support intake workflow completed with healthy handoff timing.",
+    payload: { latencyMs: 820 },
+    occurredAt: "2026-04-28T20:04:00.000Z",
+  },
+  {
+    id: "evt-9001",
+    sequence: "9001",
+    userId: "usr-e2e",
+    category: "issue",
+    type: "issue.created",
+    actor: { type: "user", id: "user-operator", label: "Ops Lead" },
+    subject: { type: "ticket", id: "ticket-ops-12", label: "Escalation queue" },
+    summary: "Escalation queue ticket created for approval latency review.",
+    payload: {},
+    occurredAt: "2026-04-28T19:58:00.000Z",
+  },
+];
+
+const MOCK_THROUGHPUT: ObservabilityThroughputSnapshot = {
+  windowHours: 24,
+  generatedAt: "2026-04-28T20:10:00.000Z",
+  summary: {
+    createdCount: 8,
+    completedCount: 6,
+    blockedCount: 1,
+    completionRate: 0.75,
+  },
+  buckets: [
+    { bucketStart: "2026-04-28T14:00:00.000Z", createdCount: 1, completedCount: 1, blockedCount: 0 },
+    { bucketStart: "2026-04-28T15:00:00.000Z", createdCount: 2, completedCount: 1, blockedCount: 0 },
+    { bucketStart: "2026-04-28T16:00:00.000Z", createdCount: 0, completedCount: 1, blockedCount: 0 },
+    { bucketStart: "2026-04-28T17:00:00.000Z", createdCount: 2, completedCount: 1, blockedCount: 1 },
+    { bucketStart: "2026-04-28T18:00:00.000Z", createdCount: 1, completedCount: 1, blockedCount: 0 },
+    { bucketStart: "2026-04-28T19:00:00.000Z", createdCount: 1, completedCount: 0, blockedCount: 0 },
+    { bucketStart: "2026-04-28T20:00:00.000Z", createdCount: 1, completedCount: 1, blockedCount: 0 },
+    { bucketStart: "2026-04-28T21:00:00.000Z", createdCount: 0, completedCount: 0, blockedCount: 0 },
+  ],
+};
 
 function buildAuthHeaders(accessToken: string): HeadersInit {
   return { Authorization: `Bearer ${accessToken}` };
@@ -227,10 +288,40 @@ function parseSseJson<T>(raw: string | undefined): T | null {
   }
 }
 
+function clone<T>(value: T): T {
+  return JSON.parse(JSON.stringify(value)) as T;
+}
+
+function buildMockFeedPage(options: ListObservabilityEventsOptions = {}): ObservabilityFeedPage {
+  const filtered = MOCK_OBSERVABILITY_EVENTS.filter((event) => {
+    if (options.categories?.length && !options.categories.includes(event.category)) {
+      return false;
+    }
+    if (options.after && Number(event.sequence) <= Number(options.after)) {
+      return false;
+    }
+    return true;
+  }).sort((left, right) => Number(right.sequence) - Number(left.sequence));
+
+  const limit = options.limit ?? filtered.length;
+  const events = filtered.slice(0, limit);
+
+  return {
+    events: clone(events),
+    nextCursor: events[0]?.sequence ?? null,
+    hasMore: filtered.length > limit,
+    generatedAt: MOCK_THROUGHPUT.generatedAt,
+  };
+}
+
 export async function listObservabilityEvents(
   accessToken: string,
   options: ListObservabilityEventsOptions = {}
 ): Promise<ObservabilityFeedPage> {
+  if (USE_MOCK_API) {
+    return buildMockFeedPage(options);
+  }
+
   const url = new URL(`${BASE}/observability/events`, window.location.origin);
   appendObservabilityParams(url, options);
   const res = await fetch(url.pathname + url.search, {
@@ -244,6 +335,13 @@ export async function getObservabilityThroughput(
   accessToken: string,
   windowHours = 24
 ): Promise<ObservabilityThroughputSnapshot> {
+  if (USE_MOCK_API) {
+    return {
+      ...clone(MOCK_THROUGHPUT),
+      windowHours,
+    };
+  }
+
   const res = await fetch(
     `${BASE}/observability/throughput?windowHours=${encodeURIComponent(String(windowHours))}`,
     {
@@ -258,6 +356,35 @@ export async function streamObservabilityEvents(
   accessToken: string,
   options: StreamObservabilityEventsOptions
 ): Promise<void> {
+  if (USE_MOCK_API) {
+    const feed = buildMockFeedPage(options);
+    options.onReady?.({
+      nextCursor: feed.nextCursor,
+      replayed: feed.events.length,
+      generatedAt: feed.generatedAt,
+    });
+
+    return new Promise<void>((resolve) => {
+      if (options.signal?.aborted) {
+        resolve();
+        return;
+      }
+
+      const keepalive = window.setInterval(() => {
+        options.onKeepalive?.({ generatedAt: new Date().toISOString() });
+      }, 10_000);
+
+      options.signal?.addEventListener(
+        "abort",
+        () => {
+          window.clearInterval(keepalive);
+          resolve();
+        },
+        { once: true }
+      );
+    });
+  }
+
   const url = new URL(`${BASE}/observability/events/stream`, window.location.origin);
   appendObservabilityParams(url, options);
   const res = await fetch(url.pathname + url.search, {

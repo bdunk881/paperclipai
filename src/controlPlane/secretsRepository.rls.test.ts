@@ -33,6 +33,13 @@ describe("secretsRepository RLS integration", () => {
     const teamId = randomUUID();
     const provisionedWorkspaceId = randomUUID();
     await withWorkspaceContext(pool, { workspaceId, userId }, async (client) => {
+      // provisioned_companies.team_id has a deferred FK to control_plane_teams.
+      // Seed the team row in the same transaction so the FK resolves at COMMIT.
+      await client.query(
+        `INSERT INTO control_plane_teams (id, workspace_id, user_id, name)
+         VALUES ($1, $2, $3, $4)`,
+        [teamId, workspaceId, userId, `${label} Team`]
+      );
       await client.query(
         `INSERT INTO provisioned_companies (
            id, workspace_id, user_id, name,
@@ -93,6 +100,7 @@ describe("secretsRepository RLS integration", () => {
       "DELETE FROM provisioned_companies WHERE id = ANY($1::uuid[])",
       [[companyA, companyB]]
     );
+    await postgres.queryPostgres("DELETE FROM control_plane_teams WHERE user_id = $1", [userId]);
     await postgres.queryPostgres("DELETE FROM workspace_members WHERE user_id = $1", [userId]);
     await postgres.queryPostgres("DELETE FROM workspaces WHERE owner_user_id = $1", [userId]);
     await postgres.closePostgresPoolForTests();
@@ -115,8 +123,10 @@ describe("secretsRepository RLS integration", () => {
     await seedCompany(postgres.getPostgresPool(), workspaceContext.withWorkspaceContext, workspaceA, companyA, "Company A");
     await seedCompany(postgres.getPostgresPool(), workspaceContext.withWorkspaceContext, workspaceB, companyB, "Company B");
 
-    const ctxA = { workspaceId: workspaceA, userId, actor: userId };
-    const ctxB = { workspaceId: workspaceB, userId, actor: userId };
+    const ctxA = { workspaceId: workspaceA, userId, actorUserId: userId };
+    const ctxB = { workspaceId: workspaceB, userId, actorUserId: userId };
+    const agentActor = "agent-rls-test";
+    const ctxAasAgent = { workspaceId: workspaceA, userId, actorAgentId: agentActor };
 
     await secrets.secretsRepository.setSecret(ctxA, companyA, "OPENAI_API_KEY", "sk-tenant-a-1234");
     await secrets.secretsRepository.setSecret(ctxB, companyB, "OPENAI_API_KEY", "sk-tenant-b-9999");
@@ -161,15 +171,28 @@ describe("secretsRepository RLS integration", () => {
     });
 
     // Audit log: at least one write + one read recorded for tenant A, scoped to workspace A.
+    // ALT-2027: actor is now split into actor_user_id / actor_agent_id; the legacy
+    // free-form `actor` column is gone, so a workspace-scoped caller cannot spoof
+    // another principal's identity in the ledger.
     await workspaceContext.withWorkspaceContext(pool, ctxA, async (client) => {
-      const result = await client.query<{ action: string; actor: string; key_version: number }>(
-        `SELECT action, actor, key_version FROM control_plane_secret_audit
+      const result = await client.query<{
+        action: string;
+        actor_user_id: string | null;
+        actor_agent_id: string | null;
+        key_version: number;
+      }>(
+        `SELECT action, actor_user_id, actor_agent_id, key_version
+           FROM control_plane_secret_audit
           WHERE company_id = $1 AND key = $2 ORDER BY at ASC`,
         [companyA, "OPENAI_API_KEY"]
       );
       const actions = result.rows.map((row) => row.action);
       expect(actions).toEqual(expect.arrayContaining(["write", "read"]));
-      expect(result.rows.every((row) => row.actor === userId)).toBe(true);
+      expect(
+        result.rows.every(
+          (row) => row.actor_user_id === userId && row.actor_agent_id === null
+        )
+      ).toBe(true);
     });
 
     // Audit log under workspace B context must NOT see workspace A audit rows.
@@ -181,11 +204,32 @@ describe("secretsRepository RLS integration", () => {
       expect(result.rowCount ?? result.rows.length).toBe(0);
     });
 
+    // ALT-2027: agent-attributed access lands as actor_agent_id, never as a
+    // user-id, so SIEM can distinguish principal type at query time.
+    expect(
+      await secrets.secretsRepository.getSecret(ctxAasAgent, companyA, "OPENAI_API_KEY")
+    ).toBe("sk-tenant-a-1234");
+    await workspaceContext.withWorkspaceContext(pool, ctxA, async (client) => {
+      const result = await client.query<{
+        actor_user_id: string | null;
+        actor_agent_id: string | null;
+      }>(
+        `SELECT actor_user_id, actor_agent_id
+           FROM control_plane_secret_audit
+          WHERE company_id = $1
+            AND action = 'read'
+            AND actor_agent_id = $2`,
+        [companyA, agentActor]
+      );
+      expect(result.rowCount).toBeGreaterThanOrEqual(1);
+      expect(result.rows.every((row) => row.actor_user_id === null)).toBe(true);
+    });
+
     // Audit log is append-only: UPDATE and DELETE are denied even within the owning tenant.
     await expect(
       workspaceContext.withWorkspaceContext(pool, ctxA, async (client) => {
         await client.query(
-          `UPDATE control_plane_secret_audit SET actor = 'tampered' WHERE company_id = $1`,
+          `UPDATE control_plane_secret_audit SET actor_user_id = 'tampered' WHERE company_id = $1`,
           [companyA]
         );
       })
@@ -234,5 +278,85 @@ describe("secretsRepository RLS integration", () => {
       expect(result.rowCount).toBe(1);
       expect((result.rows[0]?.metadata as { previousKeyVersion?: number })?.previousKeyVersion).toBe(1);
     });
+
+    // ALT-2027: list path no longer decrypts every row, so a stored
+    // value_mask_suffix is the source of truth for the masked tail.
+    await workspaceContext.withWorkspaceContext(pool, ctxA, async (client) => {
+      const result = await client.query<{ value_mask_suffix: string | null }>(
+        `SELECT value_mask_suffix FROM provisioned_company_secrets
+          WHERE company_id = $1 AND key = $2`,
+        [companyA, "OPENAI_API_KEY"]
+      );
+      expect(result.rows[0]?.value_mask_suffix).toBe("1234");
+    });
+
+    const summaries = await secrets.secretsRepository.listSecretSummaries(ctxA, companyA);
+    expect(summaries).toEqual([
+      { key: "OPENAI_API_KEY", maskedValue: "********1234" },
+    ]);
+
+    // Single `list` audit row per call, with the row count in metadata so SIEM
+    // can detect enumeration without exploding the ledger.
+    await workspaceContext.withWorkspaceContext(pool, ctxA, async (client) => {
+      const result = await client.query<{
+        action: string;
+        key: string;
+        metadata: Record<string, unknown> | null;
+      }>(
+        `SELECT action, key, metadata FROM control_plane_secret_audit
+          WHERE company_id = $1 AND action = 'list'`,
+        [companyA]
+      );
+      expect(result.rowCount).toBe(1);
+      expect(result.rows[0]?.key).toBe("*");
+      expect((result.rows[0]?.metadata as { count?: number })?.count).toBe(1);
+    });
+
+    // ALT-2027: tamper / wrong-key-version reads emit a `read_failed` audit
+    // row. Simulate by directly clobbering the auth_tag (which RLS allows
+    // because we are inside the owning workspace context) and then attempting
+    // a read.
+    await workspaceContext.withWorkspaceContext(pool, ctxA, async (client) => {
+      await client.query(
+        `UPDATE provisioned_company_secrets
+            SET auth_tag = $1
+          WHERE company_id = $2 AND key = $3`,
+        [Buffer.alloc(16, 0), companyA, "OPENAI_API_KEY"]
+      );
+    });
+
+    await expect(
+      secrets.secretsRepository.getSecret(ctxA, companyA, "OPENAI_API_KEY")
+    ).rejects.toThrow();
+
+    await workspaceContext.withWorkspaceContext(pool, ctxA, async (client) => {
+      const result = await client.query<{
+        action: string;
+        actor_user_id: string | null;
+        metadata: Record<string, unknown> | null;
+      }>(
+        `SELECT action, actor_user_id, metadata
+           FROM control_plane_secret_audit
+          WHERE company_id = $1 AND action = 'read_failed'
+          ORDER BY at DESC
+          LIMIT 1`,
+        [companyA]
+      );
+      expect(result.rowCount).toBe(1);
+      expect(result.rows[0]?.actor_user_id).toBe(userId);
+      expect((result.rows[0]?.metadata as { reason?: string })?.reason).toBeDefined();
+    });
+
+    // ALT-2027: the repository must reject calls that supply neither a user
+    // nor an agent actor, so audit rows are never anonymous.
+    await expect(
+      secrets.secretsRepository.getSecret(
+        { workspaceId: workspaceA, userId } as unknown as Parameters<
+          typeof secrets.secretsRepository.getSecret
+        >[0],
+        companyA,
+        "OPENAI_API_KEY"
+      )
+    ).rejects.toThrow(/secrets_audit_actor_required/);
   });
 });

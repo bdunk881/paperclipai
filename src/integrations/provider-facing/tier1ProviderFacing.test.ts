@@ -1,4 +1,3 @@
-import { ApolloConnectorService } from "../apollo/service";
 import { GmailConnectorService } from "../gmail/service";
 import { HubSpotConnectorService } from "../hubspot/service";
 import { LinearConnectorService } from "../linear/service";
@@ -7,13 +6,13 @@ import { SlackClient } from "../slack/slackClient";
 import { SlackConnectorService } from "../slack/service";
 import { StripeConnectorService } from "../stripe/service";
 import { TeamsConnectorService } from "../teams/service";
+import { JiraAdapter } from "../tracker-sync/jiraAdapter";
 
 jest.setTimeout(120_000);
 
 const REQUIRE_ALL = process.env.REQUIRE_ALL_TIER1_CONNECTORS === "true";
 const INVALID_TOKEN = "pc_invalid_provider_token";
 
-const apolloService = new ApolloConnectorService();
 const gmailService = new GmailConnectorService();
 const hubSpotService = new HubSpotConnectorService();
 const linearService = new LinearConnectorService();
@@ -86,17 +85,46 @@ async function expectProviderFailure(run: () => Promise<unknown>) {
   throw new Error("Expected provider-facing call to fail");
 }
 
+function createJiraAdapter(apiToken = requiredEnv("TIER1_JIRA_API_TOKEN")) {
+  return new JiraAdapter({
+    site: requiredEnv("TIER1_JIRA_SITE"),
+    email: requiredEnv("TIER1_JIRA_EMAIL"),
+    apiToken,
+    defaultProjectKey: env("TIER1_JIRA_PROJECT_KEY"),
+  });
+}
+
 const harnesses: ConnectorHarness[] = [
   {
-    name: "apollo",
-    tokenEnv: "TIER1_APOLLO_API_KEY",
-    connect: (testUserId, token) => apolloService.connectApiKey({ userId: testUserId, apiKey: token }),
-    listConnections: async (testUserId) => apolloService.listConnections(testUserId),
-    testConnection: (testUserId) => apolloService.testConnection(testUserId),
-    health: (testUserId) => apolloService.health(testUserId),
+    name: "jira",
+    tokenEnv: "TIER1_JIRA_API_TOKEN",
+    connect: async (_testUserId, token) => {
+      await createJiraAdapter(token).listIssues(1);
+    },
+    listConnections: async () => [{ site: requiredEnv("TIER1_JIRA_SITE") }],
+    testConnection: async () => {
+      const health = await createJiraAdapter().health();
+      return {
+        provider: health.provider,
+        status: health.status,
+        subject: requiredEnv("TIER1_JIRA_SITE"),
+      };
+    },
+    health: async () => createJiraAdapter().health(),
     readScenario: {
-      name: "viewer lookup",
-      run: (testUserId) => apolloService.testConnection(testUserId),
+      name: "issue listing",
+      run: async () => createJiraAdapter().listIssues(5),
+    },
+    writeScenario: {
+      requiredEnv: ["TIER1_JIRA_ISSUE_KEY"],
+      run: async () => {
+        const updated = await createJiraAdapter().updateIssue(
+          requiredEnv("TIER1_JIRA_ISSUE_KEY"),
+          { description: `Provider-facing QA smoke update ${new Date().toISOString()}` }
+        );
+
+        expect(updated.key).toBe(requiredEnv("TIER1_JIRA_ISSUE_KEY"));
+      },
     },
   },
   {

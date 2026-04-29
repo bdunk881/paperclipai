@@ -366,6 +366,17 @@ describe("ticket sync routes", () => {
     expect(adapters.get(connection.body.id)?.createdIssues).toHaveLength(1);
   });
 
+  it("rejects invalid ticket ids for link lookups", async () => {
+    const app = buildApp();
+
+    const links = await request(app)
+      .get("/api/ticket-sync/tickets/test-ticket/links")
+      .set(auth("user-1"));
+
+    expect(links.status).toBe(400);
+    expect(links.body).toEqual({ error: "ticketId must be a valid UUID" });
+  });
+
   it("mirrors local comments outward with AutoFlow metadata", async () => {
     const app = buildApp();
     const connection = await request(app)

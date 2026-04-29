@@ -19,6 +19,7 @@ import {
   Repeat,
   Network,
   BarChart3,
+  BriefcaseBusiness,
   Ticket,
   Menu,
   X,
@@ -60,6 +61,7 @@ const NAV_SECTIONS: Array<{ title: string; items: NavItem[] }> = [
   {
     title: "Workspace",
     items: [
+      { to: "/workspace/staffing-plan", icon: BriefcaseBusiness, label: "Staffing Plan" },
       { to: "/workspace/org-structure", icon: Network, label: "Org Structure" },
       { to: "/workspace/budget-dashboard", icon: BarChart3, label: "Budget Dashboard" },
       { to: "/approvals", icon: CheckSquare, label: "Approvals" },

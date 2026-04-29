@@ -1,5 +1,7 @@
 import express from "express";
 import { AuthenticatedRequest } from "../auth/authMiddleware";
+import { isPostgresPersistenceEnabled } from "../db/postgres";
+import { WorkspaceAwareRequest } from "../middleware/workspaceResolver";
 import { controlPlaneStore } from "../controlPlane/controlPlaneStore";
 import { CompanyProvisioningAgentInput } from "../controlPlane/types";
 
@@ -30,6 +32,26 @@ function getUserId(req: AuthenticatedRequest): string | null {
   return typeof userId === "string" && userId.trim() ? userId.trim() : null;
 }
 
+function resolveWorkspaceContext(req: WorkspaceAwareRequest, res: express.Response) {
+  const userId = getUserId(req);
+  if (!userId) {
+    res.status(401).json({ error: "Authenticated user required" });
+    return null;
+  }
+
+  const workspaceId = req.workspaceId?.trim();
+  if (workspaceId) {
+    return { workspaceId, userId };
+  }
+
+  if (!isPostgresPersistenceEnabled()) {
+    return { workspaceId: userId, userId };
+  }
+
+  res.status(500).json({ error: "Workspace context was not resolved for the request" });
+  return null;
+}
+
 function requirePaperclipRunId(
   req: express.Request,
   res: express.Response,
@@ -52,10 +74,9 @@ router.get("/role-templates", (_req, res) => {
   });
 });
 
-router.post("/", requirePaperclipRunId, (req: AuthenticatedRequest, res) => {
-  const userId = getUserId(req);
-  if (!userId) {
-    res.status(401).json({ error: "Authenticated user required" });
+router.post("/", requirePaperclipRunId, (req: WorkspaceAwareRequest, res) => {
+  const context = resolveWorkspaceContext(req, res);
+  if (!context) {
     return;
   }
 
@@ -207,7 +228,8 @@ router.post("/", requirePaperclipRunId, (req: AuthenticatedRequest, res) => {
 
   try {
     const result = controlPlaneStore.provisionCompanyWorkspace({
-      userId,
+      workspaceId: context.workspaceId,
+      userId: context.userId,
       name: name.trim(),
       workspaceName: typeof workspaceName === "string" ? workspaceName.trim() : undefined,
       externalCompanyId: typeof externalCompanyId === "string" ? externalCompanyId.trim() : undefined,

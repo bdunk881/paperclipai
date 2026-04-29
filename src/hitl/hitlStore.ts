@@ -254,10 +254,10 @@ function compareThreshold(
   }
 }
 
-function buildCompanyStateSummary(userId: string, companyId: string): CompanyStateSummary {
-  const team = controlPlaneStore.getTeam(companyId, userId);
-  const teamAgents = team ? controlPlaneStore.listAgents(team.id, userId) : [];
-  const teamExecutions = team ? controlPlaneStore.listExecutions(userId, team.id) : [];
+function buildCompanyStateSummary(userId: string, companyId: string, workspaceId?: string): CompanyStateSummary {
+  const team = controlPlaneStore.getTeam(companyId, userId, workspaceId);
+  const teamAgents = team ? controlPlaneStore.listAgents(team.id, userId, workspaceId) : [];
+  const teamExecutions = team ? controlPlaneStore.listExecutions(userId, team.id, workspaceId) : [];
   const teamTasks = team ? controlPlaneStore.listTasks(userId, team.id) : [];
   const companyCheckpoints = Array.from(checkpoints.values()).filter(
     (checkpoint) => checkpoint.userId === userId && checkpoint.companyId === companyId
@@ -637,8 +637,8 @@ export const hitlStore = {
       .sort((left, right) => right.createdAt.localeCompare(left.createdAt));
   },
 
-  getCompanyState(userId: string, companyId: string) {
-    const summary = buildCompanyStateSummary(userId, companyId);
+  getCompanyState(userId: string, companyId: string, workspaceId?: string) {
+    const summary = buildCompanyStateSummary(userId, companyId, workspaceId);
     const schedule = this.getSchedule(userId, companyId);
     return {
       companyId,

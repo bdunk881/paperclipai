@@ -70,6 +70,7 @@ export interface ObservabilityResponse {
 }
 
 export interface ObservabilityQuery {
+  workspaceId?: string;
   agentId?: string;
   taskId?: string;
   search?: string;
@@ -217,11 +218,11 @@ export function buildObservabilityResponse(
   runs: WorkflowRun[],
   query: ObservabilityQuery
 ): ObservabilityResponse {
-  const agents = controlPlaneStore.listAllAgents(userId);
+  const agents = controlPlaneStore.listAllAgents(userId, query.workspaceId);
   const agentMap = new Map(agents.map((agent) => [agent.id, agent]));
   const tasks = controlPlaneStore.listTasks(userId);
   const taskMap = new Map(tasks.map((task) => [task.id, task]));
-  const executions = controlPlaneStore.listExecutions(userId);
+  const executions = controlPlaneStore.listExecutions(userId, undefined, query.workspaceId);
   const executionByStep = new Map(
     executions.map((execution) => [`${execution.sourceRunId}:${execution.sourceWorkflowStepId}`, execution] as const)
   );

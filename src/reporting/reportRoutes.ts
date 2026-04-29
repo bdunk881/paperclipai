@@ -1,5 +1,7 @@
 import express from "express";
 import { AuthenticatedRequest } from "../auth/authMiddleware";
+import { isPostgresPersistenceEnabled } from "../db/postgres";
+import { WorkspaceAwareRequest } from "../middleware/workspaceResolver";
 import { controlPlaneStore } from "../controlPlane/controlPlaneStore";
 import { stripeConnectorService } from "../integrations/stripe/service";
 import { reportStore } from "./reportStore";
@@ -17,6 +19,26 @@ const router = express.Router();
 function getUserId(req: AuthenticatedRequest): string | null {
   const userId = req.auth?.sub;
   return typeof userId === "string" && userId.trim() ? userId.trim() : null;
+}
+
+function resolveWorkspaceContext(req: WorkspaceAwareRequest, res: express.Response) {
+  const userId = getUserId(req);
+  if (!userId) {
+    res.status(401).json({ error: "Authenticated user required" });
+    return null;
+  }
+
+  const workspaceId = req.workspaceId?.trim();
+  if (workspaceId) {
+    return { workspaceId, userId };
+  }
+
+  if (!isPostgresPersistenceEnabled()) {
+    return { workspaceId: userId, userId };
+  }
+
+  res.status(500).json({ error: "Workspace context was not resolved for the request" });
+  return null;
 }
 
 function requireRunId(req: express.Request, res: express.Response, next: express.NextFunction): void {
@@ -76,10 +98,9 @@ router.get("/:id", async (req: AuthenticatedRequest, res) => {
   res.json({ report });
 });
 
-router.post("/generate", requireRunId, async (req: AuthenticatedRequest, res) => {
-  const userId = getUserId(req);
-  if (!userId) {
-    res.status(401).json({ error: "Authenticated user required" });
+router.post("/generate", requireRunId, async (req: WorkspaceAwareRequest, res) => {
+  const context = resolveWorkspaceContext(req, res);
+  if (!context) {
     return;
   }
 
@@ -106,7 +127,8 @@ router.post("/generate", requireRunId, async (req: AuthenticatedRequest, res) =>
         return;
       }
 
-      const team = controlPlaneStore.getTeam(teamId, userId);
+      await controlPlaneStore.ensureWorkspaceHydrated(context.workspaceId, context.userId);
+      const team = controlPlaneStore.getTeam(teamId, context.userId, context.workspaceId);
       if (!team) {
         res.status(404).json({ error: "Team not found" });
         return;
@@ -114,9 +136,9 @@ router.post("/generate", requireRunId, async (req: AuthenticatedRequest, res) =>
 
       generated = createBoardMemoReport({
         team,
-        tasks: controlPlaneStore.listTasks(userId, teamId),
-        executions: controlPlaneStore.listExecutions(userId, teamId),
-        agents: controlPlaneStore.listAgents(teamId, userId),
+        tasks: controlPlaneStore.listTasks(context.userId, teamId),
+        executions: controlPlaneStore.listExecutions(context.userId, teamId, context.workspaceId),
+        agents: controlPlaneStore.listAgents(teamId, context.userId, context.workspaceId),
         window,
         template,
         delivery,
@@ -127,9 +149,9 @@ router.post("/generate", requireRunId, async (req: AuthenticatedRequest, res) =>
         : {};
 
       const [invoices, paymentIntents, subscriptions] = await Promise.all([
-        stripeConnectorService.listInvoices(userId, { limit: typeof financialInputs.limit === "number" ? financialInputs.limit : 100 }),
-        stripeConnectorService.listPaymentIntents(userId, { limit: typeof financialInputs.limit === "number" ? financialInputs.limit : 100 }),
-        stripeConnectorService.listSubscriptions(userId, { limit: typeof financialInputs.limit === "number" ? financialInputs.limit : 100 }),
+        stripeConnectorService.listInvoices(context.userId, { limit: typeof financialInputs.limit === "number" ? financialInputs.limit : 100 }),
+        stripeConnectorService.listPaymentIntents(context.userId, { limit: typeof financialInputs.limit === "number" ? financialInputs.limit : 100 }),
+        stripeConnectorService.listSubscriptions(context.userId, { limit: typeof financialInputs.limit === "number" ? financialInputs.limit : 100 }),
       ]);
 
       generated = createFinancialStatementReport({
@@ -173,7 +195,7 @@ router.post("/generate", requireRunId, async (req: AuthenticatedRequest, res) =>
       });
     }
 
-    const report = await reportStore.save({ userId, ...generated });
+    const report = await reportStore.save({ userId: context.userId, ...generated });
     res.status(201).json({ report });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unexpected report generation failure";

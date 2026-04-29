@@ -31,6 +31,7 @@ import {
   TeamSpendSnapshot,
 } from "./types";
 import { observabilityStore } from "../observability/store";
+import { secretsRepository } from "./secretsRepository";
 
 function nowIso(): string {
   return new Date().toISOString();
@@ -1340,12 +1341,23 @@ export const controlPlaneStore = {
         throw new Error("idempotency_target_missing");
       }
 
+      const replaySummaries = isPostgresConfigured()
+        ? await secretsRepository.listSecretSummaries(
+            {
+              workspaceId: requireWorkspaceIdForPersistence(input.workspaceId),
+              userId: input.userId,
+              actor: input.userId,
+            },
+            company.id
+          )
+        : buildCompanySecretSummaries(companySecretBindings.get(company.id) ?? {});
+
       return {
         company: { ...company },
         workspace: { ...workspace },
         team: { ...team },
         agents: this.listAgents(team.id, input.userId),
-        secretBindings: buildCompanySecretSummaries(companySecretBindings.get(company.id) ?? {}),
+        secretBindings: replaySummaries,
         availableSkills: this.listSkills(),
         idempotentReplay: true,
       };
@@ -1439,7 +1451,9 @@ export const controlPlaneStore = {
     });
     companies.set(company.id, company);
     companyWorkspaces.set(workspace.id, workspace);
-    companySecretBindings.set(company.id, { ...input.secretBindings });
+    if (!isPostgresConfigured()) {
+      companySecretBindings.set(company.id, { ...input.secretBindings });
+    }
     companyIdempotencyIndex.set(idempotencyIndexKey, { companyId: company.id, fingerprint });
     teamCompanyIds.set(team.id, company.id);
 
@@ -1457,6 +1471,11 @@ export const controlPlaneStore = {
           client,
         });
       });
+      await secretsRepository.setSecrets(
+        { workspaceId, userId: input.userId, actor: input.userId },
+        company.id,
+        input.secretBindings
+      );
       hydratedWorkspaceUsers.add(workspaceUserKey(workspaceId, input.userId));
     }
 

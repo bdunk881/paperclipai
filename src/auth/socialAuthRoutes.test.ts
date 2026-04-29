@@ -121,6 +121,9 @@ describe("social auth routes", () => {
     expect(response.headers["set-cookie"]).toEqual(
       expect.arrayContaining([expect.stringMatching(new RegExp(`^${SOCIAL_AUTH_NONCE_COOKIE_NAME}=`))])
     );
+    expect(response.headers["set-cookie"]).toEqual(
+      expect.arrayContaining([expect.stringMatching(/HttpOnly/i), expect.stringMatching(/SameSite=Lax/i)])
+    );
   });
 
   it("returns an app-issued token and user payload after a successful callback", async () => {

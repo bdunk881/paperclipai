@@ -1,5 +1,6 @@
 import { randomUUID } from "crypto";
 import { WorkflowStep, WorkflowTemplate } from "../types/workflow";
+import { DEFAULT_ROLE_LIBRARY } from "../goals/teamAssembly";
 import { companyLifecycleStore } from "./companyLifecycleStore";
 import {
   AgentHeartbeatRecord,

@@ -112,6 +112,7 @@ export interface ProvisionedCompanyRecord {
 
 export interface CompanyProvisioningAgentInput {
   roleTemplateId: string;
+  roleKey?: string;
   name?: string;
   budgetMonthlyUsd?: number;
   model?: string;

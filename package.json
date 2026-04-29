@@ -13,6 +13,7 @@
     "test:templates": "jest --config jest.config.cjs --runInBand src/templates",
     "test:api": "jest --config jest.config.cjs --runInBand src/api",
     "test:engine": "jest --config jest.config.cjs --runInBand src/engine",
+    "validate:required-checks": "node scripts/validate-required-checks.js",
     "health-report": "ts-node src/integrations/apollo-attio/health-metrics.ts"
   },
   "dependencies": {

@@ -433,7 +433,7 @@ describe("Knowledge base routes", () => {
 
     expect(patchRes.status).toBe(200);
     expect(patchRes.body.text).toMatch(/verify the health endpoint/i);
-  }, 10_000);
+  });
 });
 
 describe("Observability routes", () => {
@@ -2232,10 +2232,9 @@ describe("POST /api/runs", () => {
   });
 
   it("returns 202 with a pending run for a valid templateId", async () => {
-    const postRunsUserId = "post-runs-user";
     const res = await request(app)
       .post("/api/runs")
-      .set(asAuth(postRunsUserId))
+      .set(asAuth())
       .send({ templateId: "tpl-support-bot", input: { ticketId: "TKT-001", subject: "Help", body: "I need help", customerEmail: "test@example.com", channel: "email" } });
     expect(res.status).toBe(202);
     expect(res.body.id).toBeDefined();
@@ -2244,30 +2243,27 @@ describe("POST /api/runs", () => {
   });
 
   it("returns 400 when templateId is missing", async () => {
-    const postRunsUserId = "post-runs-user";
     const res = await request(app)
       .post("/api/runs")
-      .set(asAuth(postRunsUserId))
+      .set(asAuth())
       .send({ input: {} });
     expect(res.status).toBe(400);
     expect(res.body.error).toMatch(/templateId/i);
   });
 
   it("returns 404 for an unknown templateId", async () => {
-    const postRunsUserId = "post-runs-user";
     const res = await request(app)
       .post("/api/runs")
-      .set(asAuth(postRunsUserId))
+      .set(asAuth())
       .send({ templateId: "tpl-nonexistent", input: {} });
     expect(res.status).toBe(404);
     expect(res.body.error).toMatch(/not found/i);
   });
 
   it("returns a run with startedAt timestamp", async () => {
-    const postRunsUserId = "post-runs-user";
     const res = await request(app)
       .post("/api/runs")
-      .set(asAuth(postRunsUserId))
+      .set(asAuth())
       .send({ templateId: "tpl-support-bot", input: {} });
     expect(res.status).toBe(202);
     expect(typeof res.body.startedAt).toBe("string");
@@ -2286,16 +2282,14 @@ describe("GET /api/runs", () => {
   });
 
   it("returns 200 with a runs array", async () => {
-    const listRunsUserId = "list-runs-user";
-    const res = await request(app).get("/api/runs").set(asAuth(listRunsUserId));
+    const res = await request(app).get("/api/runs").set(asAuth());
     expect(res.status).toBe(200);
     expect(Array.isArray(res.body.runs)).toBe(true);
     expect(typeof res.body.total).toBe("number");
   });
 
   it("total matches runs array length", async () => {
-    const listRunsUserId = "list-runs-user";
-    const res = await request(app).get("/api/runs").set(asAuth(listRunsUserId));
+    const res = await request(app).get("/api/runs").set(asAuth());
     expect(res.body.total).toBe(res.body.runs.length);
   });
 
@@ -2320,22 +2314,23 @@ describe("GET /api/runs/:id", () => {
   });
 
   it("returns 202 run and then retrieves it by id", async () => {
-    const runDetailsUserId = "run-details-user";
+    const runReadbackUserId = "runs-readback-user";
     const startRes = await request(app)
       .post("/api/runs")
-      .set(asAuth(runDetailsUserId))
+      .set(asAuth(runReadbackUserId))
       .send({ templateId: "tpl-support-bot", input: { ticketId: "TKT-002", subject: "Issue", body: "Problem", customerEmail: "b@example.com", channel: "email" } });
     expect(startRes.status).toBe(202);
     const runId = startRes.body.id;
 
-    const getRes = await request(app).get(`/api/runs/${runId}`).set(asAuth(runDetailsUserId));
+    const getRes = await request(app).get(`/api/runs/${runId}`).set(asAuth(runReadbackUserId));
     expect(getRes.status).toBe(200);
     expect(getRes.body.id).toBe(runId);
   });
 
   it("returns 404 for an unknown run id", async () => {
-    const runDetailsUserId = "run-details-user";
-    const res = await request(app).get("/api/runs/run-does-not-exist").set(asAuth(runDetailsUserId));
+    const res = await request(app)
+      .get("/api/runs/run-does-not-exist")
+      .set(asAuth("runs-unknown-id-user"));
     expect(res.status).toBe(404);
     expect(res.body.error).toMatch(/not found/i);
   });
@@ -2717,12 +2712,13 @@ describe("Rate limiting", () => {
   });
 
   it("enforces general API limits and returns Retry-After", async () => {
+    const generalRateLimitUserId = "rate-limit-general-user";
     for (let i = 0; i < 100; i += 1) {
-      const res = await request(app).get("/api/templates").set("X-User-Id", "rate-limit-general-user");
+      const res = await request(app).get("/api/templates").set(asAuth(generalRateLimitUserId));
       expect(res.status).toBe(200);
     }
 
-    const blocked = await request(app).get("/api/templates").set("X-User-Id", "rate-limit-general-user");
+    const blocked = await request(app).get("/api/templates").set(asAuth(generalRateLimitUserId));
     expect(blocked.status).toBe(429);
     expect(blocked.headers["retry-after"]).toBeDefined();
     expect(Number(blocked.headers["retry-after"])).toBeGreaterThan(0);

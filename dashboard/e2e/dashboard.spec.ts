@@ -41,7 +41,7 @@ test("renders transport controls and KPI prototype sections", async ({ page }) =
 test("renders live feed and continuity sections", async ({ page }) => {
   await expect(page.getByText(/activity updates as they happen/i)).toBeVisible();
   await expect(page.getByText("Transport continuity", { exact: true })).toBeVisible();
-  await expect(page.getByText("Sprint 2 reserve", { exact: true })).toBeVisible();
+  await expect(page.getByText(/sprint 2 reserve/i)).toBeVisible();
   await expect(page.getByRole("button", { name: /refresh data/i })).toBeVisible();
 });
 

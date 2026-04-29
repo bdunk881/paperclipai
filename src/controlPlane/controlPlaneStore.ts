@@ -32,6 +32,7 @@ import {
 } from "./types";
 import { observabilityStore } from "../observability/store";
 import { secretsRepository } from "./secretsRepository";
+import { controlPlaneRepository } from "./controlPlaneRepository";
 
 function nowIso(): string {
   return new Date().toISOString();
@@ -39,6 +40,30 @@ function nowIso(): string {
 
 function currentPeriodKey(date = new Date()): string {
   return date.toISOString().slice(0, 7);
+}
+
+function periodKeyFromIso(iso: string): string {
+  return iso.slice(0, 7);
+}
+
+function budgetAlertDedupeKey(input: {
+  userId: string;
+  teamId: string;
+  period: string;
+  scope: ControlPlaneBudgetAlert["scope"];
+  agentId?: string;
+  toolName?: string;
+  threshold: number;
+}): string {
+  return [
+    input.userId,
+    input.teamId,
+    input.period,
+    input.scope,
+    input.agentId ?? "",
+    input.toolName ?? "",
+    input.threshold,
+  ].join(":");
 }
 
 function slugify(value: string): string {
@@ -448,6 +473,17 @@ function workspaceUserKey(workspaceId: string, userId: string): string {
   return `${workspaceId}:${userId}`;
 }
 
+function workspaceContextForTeam(teamId: string, userId: string): { workspaceId: string; userId: string } | undefined {
+  if (!isPostgresConfigured()) {
+    return undefined;
+  }
+  const workspaceId = teamWorkspaceIds.get(teamId);
+  if (!workspaceId) {
+    return undefined;
+  }
+  return { workspaceId, userId };
+}
+
 function matchesWorkspace(teamId: string, workspaceId?: string): boolean {
   if (!workspaceId) {
     return true;
@@ -644,6 +680,16 @@ async function ensureWorkspaceHydrated(workspaceId: string | undefined, userId: 
     return;
   }
 
+  // Phase 4.2: also hydrate tasks / heartbeats / spend / alerts so they
+  // survive a process restart. Same RLS-bound context, separate repository
+  // calls so the SQL stays factored alongside the rest of execution-state PG.
+  const [hydratedTasks, hydratedHeartbeats, hydratedSpend, hydratedAlerts] = await Promise.all([
+    controlPlaneRepository.listTasks({ workspaceId: resolvedWorkspaceId, userId }),
+    controlPlaneRepository.listHeartbeats({ workspaceId: resolvedWorkspaceId, userId }),
+    controlPlaneRepository.listSpendEntries({ workspaceId: resolvedWorkspaceId, userId }),
+    controlPlaneRepository.listBudgetAlerts({ workspaceId: resolvedWorkspaceId, userId }),
+  ]);
+
   await withWorkspaceContext(
     getPostgresPool(),
     { workspaceId: resolvedWorkspaceId, userId },
@@ -707,6 +753,28 @@ async function ensureWorkspaceHydrated(workspaceId: string | undefined, userId: 
       });
     }
   );
+
+  hydratedTasks.forEach((task) => {
+    tasks.set(task.id, task);
+  });
+  hydratedHeartbeats.forEach((heartbeat) => {
+    heartbeats.set(heartbeat.id, heartbeat);
+  });
+  hydratedSpend.forEach((entry) => {
+    spendEntries.set(entry.id, entry);
+  });
+  hydratedAlerts.forEach((alert) => {
+    const dedupeKey = budgetAlertDedupeKey({
+      userId: alert.userId,
+      teamId: alert.teamId,
+      period: periodKeyFromIso(alert.recordedAt),
+      scope: alert.scope,
+      agentId: alert.agentId,
+      toolName: alert.toolName,
+      threshold: alert.threshold,
+    });
+    budgetAlerts.set(dedupeKey, alert);
+  });
 
   hydratedWorkspaceUsers.add(cacheKey);
 }
@@ -1030,7 +1098,7 @@ function buildTeamSpendSnapshot(team: ControlPlaneTeam): TeamSpendSnapshot {
   };
 }
 
-function upsertBudgetAlert(input: {
+async function upsertBudgetAlert(input: {
   team: ControlPlaneTeam;
   threshold: number;
   scope: "team" | "agent" | "tool";
@@ -1038,26 +1106,26 @@ function upsertBudgetAlert(input: {
   budgetUsd: number;
   agentId?: string;
   toolName?: string;
-}): void {
+}): Promise<void> {
   if (input.budgetUsd <= 0 || input.spentUsd / input.budgetUsd < input.threshold) {
     return;
   }
 
-  const dedupeKey = [
-    input.team.userId,
-    input.team.id,
-    currentPeriodKey(),
-    input.scope,
-    input.agentId ?? "",
-    input.toolName ?? "",
-    input.threshold,
-  ].join(":");
+  const dedupeKey = budgetAlertDedupeKey({
+    userId: input.team.userId,
+    teamId: input.team.id,
+    period: currentPeriodKey(),
+    scope: input.scope,
+    agentId: input.agentId,
+    toolName: input.toolName,
+    threshold: input.threshold,
+  });
 
   if (budgetAlerts.has(dedupeKey)) {
     return;
   }
 
-  budgetAlerts.set(dedupeKey, {
+  const alert: ControlPlaneBudgetAlert = {
     id: randomUUID(),
     userId: input.team.userId,
     teamId: input.team.id,
@@ -1068,7 +1136,18 @@ function upsertBudgetAlert(input: {
     budgetUsd: Number(input.budgetUsd.toFixed(2)),
     spentUsd: Number(input.spentUsd.toFixed(2)),
     recordedAt: nowIso(),
-  });
+  };
+  budgetAlerts.set(dedupeKey, alert);
+
+  if (isPostgresConfigured()) {
+    const workspaceId = teamWorkspaceIds.get(input.team.id);
+    if (workspaceId) {
+      await controlPlaneRepository.upsertBudgetAlert(
+        { workspaceId, userId: input.team.userId },
+        alert
+      );
+    }
+  }
 }
 
 function pauseExecutionForBudget(agentId: string, executionId?: string): void {
@@ -1095,32 +1174,34 @@ function pauseExecutionForBudget(agentId: string, executionId?: string): void {
   }
 }
 
-function applyBudgetPolicies(team: ControlPlaneTeam, agentId: string, executionId?: string): void {
+async function applyBudgetPolicies(team: ControlPlaneTeam, agentId: string, executionId?: string): Promise<void> {
   const snapshot = buildTeamSpendSnapshot(team);
   const agentSnapshot = snapshot.agents.find((entry) => entry.agentId === agentId);
 
-  snapshot.team.alertThresholdsTriggered.forEach((threshold) => {
-    upsertBudgetAlert({
+  for (const threshold of snapshot.team.alertThresholdsTriggered) {
+    await upsertBudgetAlert({
       team,
       threshold,
       scope: "team",
       spentUsd: snapshot.team.spentUsd,
       budgetUsd: snapshot.team.budgetUsd,
     });
-  });
-  agentSnapshot?.alertThresholdsTriggered.forEach((threshold) => {
-    upsertBudgetAlert({
-      team,
-      threshold,
-      scope: "agent",
-      agentId,
-      spentUsd: agentSnapshot.spentUsd,
-      budgetUsd: agentSnapshot.budgetUsd,
-    });
-  });
-  snapshot.tools.forEach((toolSnapshot) => {
-    toolSnapshot.alertThresholdsTriggered.forEach((threshold) => {
-      upsertBudgetAlert({
+  }
+  if (agentSnapshot) {
+    for (const threshold of agentSnapshot.alertThresholdsTriggered) {
+      await upsertBudgetAlert({
+        team,
+        threshold,
+        scope: "agent",
+        agentId,
+        spentUsd: agentSnapshot.spentUsd,
+        budgetUsd: agentSnapshot.budgetUsd,
+      });
+    }
+  }
+  for (const toolSnapshot of snapshot.tools) {
+    for (const threshold of toolSnapshot.alertThresholdsTriggered) {
+      await upsertBudgetAlert({
         team,
         threshold,
         scope: "tool",
@@ -1129,8 +1210,8 @@ function applyBudgetPolicies(team: ControlPlaneTeam, agentId: string, executionI
         budgetUsd: toolSnapshot.budgetUsd,
         agentId,
       });
-    });
-  });
+    }
+  }
 
   if (snapshot.team.budgetUsd > 0 && snapshot.team.spentUsd >= snapshot.team.budgetUsd) {
     team.status = "paused";

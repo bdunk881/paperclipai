@@ -27,7 +27,6 @@ import {
   SpendCategory,
   TeamSpendSnapshot,
 } from "./types";
-import { DEFAULT_ROLE_LIBRARY } from "../goals/teamAssembly";
 import { observabilityStore } from "../observability/store";
 
 function nowIso(): string {

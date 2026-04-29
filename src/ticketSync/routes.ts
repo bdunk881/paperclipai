@@ -128,6 +128,10 @@ const updateConnectionSchema = z.object({
   { message: "At least one connection field must be provided" },
 );
 
+const ticketLinkParamsSchema = z.object({
+  ticketId: z.string().uuid(),
+});
+
 router.get("/connections", async (req, res) => {
   const workspaceId = typeof req.query.workspaceId === "string" ? req.query.workspaceId : "";
   if (!workspaceId) {
@@ -310,11 +314,17 @@ router.get("/health", async (req: WorkspaceAwareRequest, res) => {
 });
 
 router.get("/tickets/:ticketId/links", async (req: WorkspaceAwareRequest, res) => {
+  const parsed = ticketLinkParamsSchema.safeParse(req.params);
+  if (!parsed.success) {
+    res.status(400).json({ error: "ticketId must be a valid UUID" });
+    return;
+  }
+
   const context = resolveWorkspaceContext(req, res);
   if (!context) {
     return;
   }
-  const links = await ticketSyncService.listLinks(req.params.ticketId, context);
+  const links = await ticketSyncService.listLinks(parsed.data.ticketId, context);
   res.json({ links, total: links.length });
 });
 

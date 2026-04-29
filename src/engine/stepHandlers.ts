@@ -633,6 +633,12 @@ export async function handleAgent(
   const instructions = step.agentInstructions ?? "Process the provided input and return a result.";
   const model = step.agentModel ?? "default";
   const bridgeConfig = getAgentBridgeConfig(step, ctx);
+  const workspaceId =
+    typeof ctx.workspaceId === "string" && ctx.workspaceId.trim()
+      ? ctx.workspaceId.trim()
+      : typeof ctx.companyId === "string" && ctx.companyId.trim()
+        ? ctx.companyId.trim()
+        : undefined;
   let bridgedExecution:
     | {
         executionId: string;
@@ -669,6 +675,7 @@ export async function handleAgent(
           }
         : bridgeConfig.autoProvision
           ? controlPlaneStore.ensureRuntimeTeamForStep({
+              workspaceId,
               userId,
               step,
               teamName: bridgeConfig.teamName,
@@ -679,6 +686,7 @@ export async function handleAgent(
     if (bridgeTarget) {
       const teamId = "teamId" in bridgeTarget ? bridgeTarget.teamId : bridgeTarget.team.id;
       const started = await controlPlaneStore.startAgentExecution({
+        workspaceId,
         userId,
         actor: runId,
         teamId,
@@ -856,6 +864,7 @@ export async function handleAgent(
   const costLog = buildCostLog("power", resolved.config.model, totalPromptTokens, totalCompletionTokens);
   if (bridgedExecution) {
     controlPlaneStore.finalizeAgentExecution({
+      workspaceId,
       executionId: bridgedExecution.executionId,
       userId,
       status: successSlots.length > 0 ? "completed" : "failed",

@@ -132,6 +132,13 @@ async function readApiError(response: Response, fallback: string): Promise<strin
   return payload?.error ?? fallback;
 }
 
+async function parseJsonOrError<T>(response: Response, fallback: string): Promise<T> {
+  if (!response.ok) {
+    throw new Error(await readApiError(response, fallback));
+  }
+  return response.json() as Promise<T>;
+}
+
 async function withMockApi<T>(remote: () => Promise<T>, local: () => T | Promise<T>): Promise<T> {
   if (USE_MOCK_API) {
     return await local();

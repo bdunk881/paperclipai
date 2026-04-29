@@ -1976,7 +1976,7 @@ export const controlPlaneStore = {
     return agent;
   },
 
-  createTask(input: {
+  async createTask(input: {
     userId: string;
     teamId: string;
     title: string;
@@ -1986,7 +1986,7 @@ export const controlPlaneStore = {
     assignedAgentId?: string;
     metadata?: Record<string, unknown>;
     actor: string;
-  }): ControlPlaneTask {
+  }): Promise<ControlPlaneTask> {
     const team = getTeamOwnedByUser(input.teamId, input.userId);
     if (!team) {
       throw new Error("team_not_found");
@@ -2016,6 +2016,10 @@ export const controlPlaneStore = {
       auditTrail: [buildAuditEvent("created", input.actor, "Task created with status todo")],
     };
     tasks.set(task.id, task);
+    const taskCtx = workspaceContextForTeam(task.teamId, input.userId);
+    if (taskCtx) {
+      await controlPlaneRepository.upsertTask(taskCtx, task);
+    }
     observabilityStore.record({
       userId: input.userId,
       category: "issue",
@@ -2046,11 +2050,11 @@ export const controlPlaneStore = {
       .sort((left, right) => left.createdAt.localeCompare(right.createdAt));
   },
 
-  checkoutTask(input: {
+  async checkoutTask(input: {
     taskId: string;
     userId: string;
     actor: string;
-  }): ControlPlaneTask {
+  }): Promise<ControlPlaneTask> {
     const task = tasks.get(input.taskId);
     if (!task || task.userId !== input.userId) {
       throw new Error("task_not_found");
@@ -2068,6 +2072,10 @@ export const controlPlaneStore = {
       buildAuditEvent("checked_out", input.actor, `Task checked out by ${input.actor}`)
     );
     tasks.set(task.id, task);
+    const taskCtx = workspaceContextForTeam(task.teamId, input.userId);
+    if (taskCtx) {
+      await controlPlaneRepository.upsertTask(taskCtx, task);
+    }
     observabilityStore.record({
       userId: input.userId,
       category: "issue",
@@ -2093,12 +2101,12 @@ export const controlPlaneStore = {
     return task;
   },
 
-  updateTaskStatus(input: {
+  async updateTaskStatus(input: {
     taskId: string;
     userId: string;
     actor: string;
     status: ControlPlaneTaskStatus;
-  }): ControlPlaneTask {
+  }): Promise<ControlPlaneTask> {
     const task = tasks.get(input.taskId);
     if (!task || task.userId !== input.userId) {
       throw new Error("task_not_found");
@@ -2111,6 +2119,10 @@ export const controlPlaneStore = {
       buildAuditEvent("status_changed", input.actor, `Task status changed to ${input.status}`)
     );
     tasks.set(task.id, task);
+    const taskCtx = workspaceContextForTeam(task.teamId, input.userId);
+    if (taskCtx) {
+      await controlPlaneRepository.upsertTask(taskCtx, task);
+    }
     observabilityStore.record({
       userId: input.userId,
       category: "issue",
@@ -2213,7 +2225,7 @@ export const controlPlaneStore = {
     return companyLifecycleStore.listAudit(userId);
   },
 
-  recordSpend(input: {
+  async recordSpend(input: {
     userId: string;
     teamId: string;
     agentId: string;
@@ -2224,7 +2236,7 @@ export const controlPlaneStore = {
     provider?: string;
     toolName?: string;
     metadata?: Record<string, unknown>;
-  }): ControlPlaneSpendEntry {
+  }): Promise<ControlPlaneSpendEntry> {
     const team = getTeamOwnedByUser(input.teamId, input.userId);
     const agent = getAgentOwnedByUser(input.agentId, input.userId);
     if (!team || !agent || agent.teamId !== team.id) {
@@ -2270,6 +2282,10 @@ export const controlPlaneStore = {
       recordedAt: nowIso(),
     };
     spendEntries.set(entry.id, entry);
+    const spendCtx = workspaceContextForTeam(input.teamId, input.userId);
+    if (spendCtx) {
+      await controlPlaneRepository.insertSpendEntry(spendCtx, entry);
+    }
     applyBudgetPolicies(team, agent.id, input.executionId);
     return entry;
   },
@@ -2321,7 +2337,7 @@ export const controlPlaneStore = {
 
     const task =
       input.taskTitle && input.taskTitle.trim()
-        ? this.createTask({
+        ? await this.createTask({
             userId: input.userId,
             teamId: team.id,
             title: input.taskTitle.trim(),
@@ -2455,8 +2471,8 @@ export const controlPlaneStore = {
     }
 
     if (Array.isArray(input.spendEntries) && input.spendEntries.length > 0) {
-      input.spendEntries.forEach((entry) => {
-        this.recordSpend({
+      for (const entry of input.spendEntries) {
+        await this.recordSpend({
           userId: input.userId,
           teamId: execution.teamId,
           agentId: execution.agentId,
@@ -2468,9 +2484,9 @@ export const controlPlaneStore = {
           toolName: entry.toolName,
           metadata: entry.metadata,
         });
-      });
+      }
     } else if (typeof input.costUsd === "number" && input.costUsd > 0) {
-      this.recordSpend({
+      await this.recordSpend({
         userId: input.userId,
         teamId: execution.teamId,
         agentId: execution.agentId,
@@ -2668,8 +2684,8 @@ export const controlPlaneStore = {
     heartbeats.set(heartbeat.id, heartbeat);
 
     if (Array.isArray(input.spendEntries) && input.spendEntries.length > 0) {
-      input.spendEntries.forEach((entry) => {
-        this.recordSpend({
+      for (const entry of input.spendEntries) {
+        await this.recordSpend({
           userId: input.userId,
           teamId: input.teamId,
           agentId: input.agentId,
@@ -2681,9 +2697,9 @@ export const controlPlaneStore = {
           toolName: entry.toolName,
           metadata: entry.metadata,
         });
-      });
+      }
     } else if (typeof input.costUsd === "number" && input.costUsd > 0) {
-      this.recordSpend({
+      await this.recordSpend({
         userId: input.userId,
         teamId: input.teamId,
         agentId: input.agentId,
@@ -2773,6 +2789,7 @@ export const controlPlaneStore = {
           await upsertExecutionRow(execution, workspaceId, client);
         }
       });
+      await controlPlaneRepository.insertHeartbeat({ workspaceId, userId: input.userId }, heartbeat);
       hydratedWorkspaceUsers.add(workspaceUserKey(workspaceId, input.userId));
     }
 

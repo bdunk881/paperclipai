@@ -146,6 +146,55 @@ async function withMockApi<T>(remote: () => Promise<T>, local: () => T | Promise
   return await remote();
 }
 
+export type ObservabilityEventCategory = "issue" | "run" | "heartbeat" | "budget" | "alert";
+
+export interface ObservabilityEvent {
+  id: string;
+  sequence: string;
+  userId: string;
+  category: ObservabilityEventCategory;
+  type: string;
+  actor: {
+    type: "agent" | "user" | "system" | "run";
+    id: string;
+    label?: string;
+  };
+  subject: {
+    type: "team" | "agent" | "task" | "execution" | "ticket" | "workspace";
+    id: string;
+    label?: string;
+    parentType?: "team" | "agent" | "task" | "execution" | "ticket" | "workspace";
+    parentId?: string;
+  };
+  summary: string;
+  payload: Record<string, unknown>;
+  occurredAt: string;
+}
+
+export interface ObservabilityFeedPage {
+  events: ObservabilityEvent[];
+  nextCursor: string | null;
+  hasMore: boolean;
+  generatedAt: string;
+}
+
+export interface ObservabilityThroughputSnapshot {
+  windowHours: number;
+  generatedAt: string;
+  summary: {
+    createdCount: number;
+    completedCount: number;
+    blockedCount: number;
+    completionRate: number;
+  };
+  buckets: Array<{
+    bucketStart: string;
+    createdCount: number;
+    completedCount: number;
+    blockedCount: number;
+  }>;
+}
+
 // ---------------------------------------------------------------------------
 // LLM Config API functions
 // ---------------------------------------------------------------------------
@@ -343,6 +392,70 @@ function summarizeConnectorHealth(connectors: ConnectorHealthRecord[]): Connecto
     },
     source: "mock",
   };
+}
+
+export function getObservabilityStreamPath(params?: {
+  after?: string;
+  categories?: ObservabilityEventCategory[];
+  limit?: number;
+}): string {
+  const search = new URLSearchParams();
+  if (params?.after) {
+    search.set("after", params.after);
+  }
+  if (params?.categories?.length) {
+    search.set("categories", params.categories.join(","));
+  }
+  if (typeof params?.limit === "number") {
+    search.set("limit", String(params.limit));
+  }
+
+  const query = search.toString();
+  return `${BASE}/observability/events/stream${query ? `?${query}` : ""}`;
+}
+
+export async function listObservabilityEvents(
+  input: {
+    after?: string;
+    categories?: ObservabilityEventCategory[];
+    limit?: number;
+  } = {},
+  accessToken?: string
+): Promise<ObservabilityFeedPage> {
+  const search = new URLSearchParams();
+  if (input.after) {
+    search.set("after", input.after);
+  }
+  if (input.categories?.length) {
+    search.set("categories", input.categories.join(","));
+  }
+  if (typeof input.limit === "number") {
+    search.set("limit", String(input.limit));
+  }
+
+  const response = await fetch(
+    `${BASE}/observability/events${search.toString() ? `?${search.toString()}` : ""}`,
+    {
+      headers: buildAuthHeaders(accessToken),
+    }
+  );
+  return parseJsonOrError<ObservabilityFeedPage>(
+    response,
+    `Failed to fetch observability events: ${response.status}`
+  );
+}
+
+export async function getObservabilityThroughput(
+  windowHours = 24,
+  accessToken?: string
+): Promise<ObservabilityThroughputSnapshot> {
+  const response = await fetch(`${BASE}/observability/throughput?windowHours=${windowHours}`, {
+    headers: buildAuthHeaders(accessToken),
+  });
+  return parseJsonOrError<ObservabilityThroughputSnapshot>(
+    response,
+    `Failed to fetch throughput snapshot: ${response.status}`
+  );
 }
 
 /** Template summary returned by GET /api/templates (list) */

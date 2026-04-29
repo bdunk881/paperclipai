@@ -21,10 +21,13 @@ import {
   getControlPlaneTeam,
   listCompanyRoleTemplates,
   getProposalJobStatus,
+  getObservabilityStreamPath,
+  getObservabilityThroughput,
   getMemoryStats,
   listApprovals,
   listControlPlaneTeams,
   listLLMConfigs,
+  listObservabilityEvents,
   listMemoryEntries,
   listProposalContext,
   listTemplates,
@@ -424,6 +427,36 @@ describe("getRun", () => {
     const result = await client.getRun("run-001");
     expect(result.id).toBe("run-001");
     expect(vi.mocked(fetch as unknown as ReturnType<typeof vi.fn>)).not.toHaveBeenCalled();
+  });
+});
+
+describe("observability client helpers", () => {
+  it("builds the SSE stream path with cursor and category filters", () => {
+    const path = getObservabilityStreamPath({
+      after: "101",
+      categories: ["issue", "run"],
+      limit: 25,
+    });
+    expect(path).toBe("/api/observability/events/stream?after=101&categories=issue%2Crun&limit=25");
+  });
+
+  it("calls the polling fallback endpoint with auth headers", async () => {
+    mockFetch({ events: [], nextCursor: null, hasMore: false, generatedAt: "2026-04-28T00:00:00.000Z" });
+    await listObservabilityEvents({ after: "42", categories: ["heartbeat"], limit: 10 }, ACCESS_TOKEN);
+    expect(lastFetchUrl()).toBe("/api/observability/events?after=42&categories=heartbeat&limit=10");
+    const headers = lastFetchOptions().headers as Record<string, string>;
+    expect(headers.Authorization).toBe(`Bearer ${ACCESS_TOKEN}`);
+  });
+
+  it("requests the throughput aggregate window", async () => {
+    mockFetch({
+      windowHours: 24,
+      generatedAt: "2026-04-28T00:00:00.000Z",
+      summary: { createdCount: 2, completedCount: 1, blockedCount: 1, completionRate: 0.5 },
+      buckets: [],
+    });
+    await getObservabilityThroughput(24, ACCESS_TOKEN);
+    expect(lastFetchUrl()).toBe("/api/observability/throughput?windowHours=24");
   });
 });
 

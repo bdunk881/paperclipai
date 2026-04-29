@@ -27,6 +27,7 @@ import {
   SpendCategory,
   TeamSpendSnapshot,
 } from "./types";
+import { observabilityStore } from "../observability/store";
 
 function nowIso(): string {
   return new Date().toISOString();
@@ -66,6 +67,13 @@ function buildAuditEvent(
     detail,
     timestamp: nowIso(),
   };
+}
+
+function inferObservabilityActor(actor: string): { type: "run" | "system"; id: string; label?: string } {
+  if (actor.startsWith("run-")) {
+    return { type: "run", id: actor, label: actor };
+  }
+  return { type: "system", id: actor, label: actor };
 }
 
 function toAgentStatus(action: ControlPlaneLifecycleAction): ControlPlaneAgent["status"] {
@@ -1220,6 +1228,27 @@ export const controlPlaneStore = {
       auditTrail: [buildAuditEvent("created", input.actor, "Task created with status todo")],
     };
     tasks.set(task.id, task);
+    observabilityStore.record({
+      userId: input.userId,
+      category: "issue",
+      type: "issue.created",
+      actor: inferObservabilityActor(input.actor),
+      subject: {
+        type: "task",
+        id: task.id,
+        label: task.title,
+        parentType: "team",
+        parentId: task.teamId,
+      },
+      summary: `Task created: ${task.title}`,
+      payload: {
+        status: task.status,
+        sourceRunId: task.sourceRunId,
+        sourceWorkflowStepId: task.sourceWorkflowStepId,
+        metadata: task.metadata,
+      },
+      occurredAt: task.createdAt,
+    });
     return task;
   },
 
@@ -1251,6 +1280,28 @@ export const controlPlaneStore = {
       buildAuditEvent("checked_out", input.actor, `Task checked out by ${input.actor}`)
     );
     tasks.set(task.id, task);
+    observabilityStore.record({
+      userId: input.userId,
+      category: "issue",
+      type: "issue.status_changed",
+      actor: inferObservabilityActor(input.actor),
+      subject: {
+        type: "task",
+        id: task.id,
+        label: task.title,
+        parentType: "team",
+        parentId: task.teamId,
+      },
+      summary: `Task moved to ${task.status}`,
+      payload: {
+        previousStatus: "todo",
+        status: task.status,
+        sourceRunId: task.sourceRunId,
+        sourceWorkflowStepId: task.sourceWorkflowStepId,
+        metadata: task.metadata,
+      },
+      occurredAt: task.updatedAt,
+    });
     return task;
   },
 
@@ -1265,12 +1316,35 @@ export const controlPlaneStore = {
       throw new Error("task_not_found");
     }
 
+    const previousStatus = task.status;
     task.status = input.status;
     task.updatedAt = nowIso();
     task.auditTrail.push(
       buildAuditEvent("status_changed", input.actor, `Task status changed to ${input.status}`)
     );
     tasks.set(task.id, task);
+    observabilityStore.record({
+      userId: input.userId,
+      category: "issue",
+      type: "issue.status_changed",
+      actor: inferObservabilityActor(input.actor),
+      subject: {
+        type: "task",
+        id: task.id,
+        label: task.title,
+        parentType: "team",
+        parentId: task.teamId,
+      },
+      summary: `Task moved to ${task.status}`,
+      payload: {
+        previousStatus,
+        status: task.status,
+        sourceRunId: task.sourceRunId,
+        sourceWorkflowStepId: task.sourceWorkflowStepId,
+        metadata: task.metadata,
+      },
+      occurredAt: task.updatedAt,
+    });
     return task;
   },
 
@@ -1509,6 +1583,30 @@ export const controlPlaneStore = {
       createdTaskIds: task ? [task.id] : [],
     });
 
+    observabilityStore.record({
+      userId: input.userId,
+      category: "run",
+      type: "run.started",
+      actor: { type: "agent", id: agent.id, label: agent.name },
+      subject: {
+        type: "execution",
+        id: execution.id,
+        label: input.step.name,
+        parentType: "team",
+        parentId: team.id,
+      },
+      summary: `Started workflow step ${input.step.name}`,
+      payload: {
+        status: "running",
+        sourceRunId: input.sourceRunId,
+        workflowStepId: input.step.id,
+        workflowStepName: input.step.name,
+        taskId: task?.id,
+        metadata: input.metadata,
+      },
+      occurredAt: execution.requestedAt,
+    });
+
     return { execution, agent, task };
   },
 
@@ -1592,6 +1690,56 @@ export const controlPlaneStore = {
       costUsd: input.costUsd,
       completedAt: timestamp,
     });
+
+    observabilityStore.record({
+      userId: input.userId,
+      category: "run",
+      type: `run.${input.status}`,
+      actor: { type: "agent", id: execution.agentId, label: agent?.name },
+      subject: {
+        type: "execution",
+        id: execution.id,
+        label: execution.sourceWorkflowStepName,
+        parentType: "team",
+        parentId: execution.teamId,
+      },
+      summary: input.summary ?? `Execution ${input.status}`,
+      payload: {
+        status: input.status,
+        sourceRunId: execution.sourceRunId,
+        workflowStepId: execution.sourceWorkflowStepId,
+        workflowStepName: execution.sourceWorkflowStepName,
+        taskId: execution.taskId,
+        costUsd: input.costUsd,
+        metadata: execution.metadata,
+      },
+      occurredAt: timestamp,
+    });
+
+    if (input.status === "blocked" || input.status === "failed") {
+      observabilityStore.record({
+        userId: input.userId,
+        category: "alert",
+        type: "alert.triggered",
+        actor: { type: "agent", id: execution.agentId, label: agent?.name },
+        subject: {
+          type: "execution",
+          id: execution.id,
+          label: execution.sourceWorkflowStepName,
+          parentType: "team",
+          parentId: execution.teamId,
+        },
+        summary: input.summary ?? `Execution ${input.status}`,
+        payload: {
+          severity: input.status === "failed" ? "critical" : "warning",
+          code: input.status === "failed" ? "run_failed" : "run_blocked",
+          sourceCategory: "run",
+          sourceId: execution.id,
+          executionId: execution.id,
+        },
+        occurredAt: timestamp,
+      });
+    }
 
     return execution;
   },
@@ -1717,6 +1865,76 @@ export const controlPlaneStore = {
         category: "compute",
         costUsd: input.costUsd,
         metadata: { source: "heartbeat" },
+      });
+    }
+
+    observabilityStore.record({
+      userId: input.userId,
+      category: "heartbeat",
+      type: "heartbeat.recorded",
+      actor: { type: "agent", id: agent.id, label: agent.name },
+      subject: {
+        type: "agent",
+        id: agent.id,
+        label: agent.name,
+        parentType: "team",
+        parentId: team.id,
+      },
+      summary: input.summary ?? `Heartbeat ${input.status}`,
+      payload: {
+        status: input.status,
+        executionId: input.executionId,
+        createdTaskIds: input.createdTaskIds ?? [],
+        costUsd: input.costUsd,
+      },
+      occurredAt: heartbeat.completedAt ?? heartbeat.startedAt,
+    });
+
+    if (typeof input.costUsd === "number" && input.costUsd > 0) {
+      observabilityStore.record({
+        userId: input.userId,
+        category: "budget",
+        type: "budget.spent",
+        actor: { type: "agent", id: agent.id, label: agent.name },
+        subject: {
+          type: "agent",
+          id: agent.id,
+          label: agent.name,
+          parentType: "team",
+          parentId: team.id,
+        },
+        summary: `Recorded $${input.costUsd.toFixed(2)} spend for ${agent.name}`,
+        payload: {
+          deltaUsd: input.costUsd,
+          executionId: input.executionId,
+          period: (heartbeat.completedAt ?? heartbeat.startedAt).slice(0, 7),
+        },
+        occurredAt: heartbeat.completedAt ?? heartbeat.startedAt,
+      });
+    }
+
+    if (input.status === "blocked") {
+      observabilityStore.record({
+        userId: input.userId,
+        category: "alert",
+        type: "alert.triggered",
+        actor: { type: "agent", id: agent.id, label: agent.name },
+        subject: {
+          type: "agent",
+          id: agent.id,
+          label: agent.name,
+          parentType: "team",
+          parentId: team.id,
+        },
+        summary: input.summary ?? `${agent.name} heartbeat blocked`,
+        payload: {
+          severity: "warning",
+          code: "heartbeat_blocked",
+          sourceCategory: "heartbeat",
+          sourceId: heartbeat.id,
+          executionId: input.executionId,
+        },
+        occurredAt: heartbeat.completedAt ?? heartbeat.startedAt,
       });
     }
 

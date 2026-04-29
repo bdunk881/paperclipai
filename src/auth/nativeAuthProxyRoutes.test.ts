@@ -546,6 +546,32 @@ describe("native auth proxy routes", () => {
     expect(global.fetch).toHaveBeenCalledTimes(1);
   });
 
+  it("allows origins inherited from the staging social auth dashboard env", async () => {
+    (global.fetch as jest.Mock).mockResolvedValueOnce(
+      mockFetchResponse({
+        status: 200,
+        headers: { "content-type": "application/json; charset=utf-8" },
+        body: JSON.stringify({ continuation_token: "challenge-123" }),
+      })
+    );
+
+    const app = loadApp({
+      SOCIAL_AUTH_DASHBOARD_URL: "https://staging.app.helloautoflow.com",
+      AUTH_NATIVE_AUTH_PROXY_BASE_URL: "https://autoflowciam.ciamlogin.com/tenant-guid",
+    });
+
+    const response = await request(app)
+      .post("/api/auth/native/oauth2/v2.0/challenge")
+      .set("Origin", "https://staging.app.helloautoflow.com")
+      .set("Accept", "application/json")
+      .set("Content-Type", "application/x-www-form-urlencoded")
+      .send("continuation_token=challenge-123");
+
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual({ continuation_token: "challenge-123" });
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+  });
+
   it("rejects unsupported content types", async () => {
     const app = loadApp({
       ALLOWED_ORIGINS: "https://dashboard.autoflow.test",

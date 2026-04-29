@@ -1,9 +1,31 @@
 import { Router } from "express";
 import { z } from "zod";
 import { AuthenticatedRequest } from "../auth/authMiddleware";
+import { WorkspaceAwareRequest } from "../middleware/workspaceResolver";
 import { ticketSyncService } from "./service";
 
 const router = Router();
+
+function resolveWorkspaceContext(req: WorkspaceAwareRequest, res: any, requestedWorkspaceId?: string) {
+  const userId = req.auth?.sub?.trim();
+  if (!userId) {
+    res.status(401).json({ error: "Authenticated user required" });
+    return null;
+  }
+
+  const workspaceId = req.workspaceId?.trim();
+  if (!workspaceId) {
+    res.status(500).json({ error: "Workspace context was not resolved for the request" });
+    return null;
+  }
+
+  if (requestedWorkspaceId && requestedWorkspaceId !== workspaceId) {
+    res.status(400).json({ error: "workspaceId does not match the resolved workspace context" });
+    return null;
+  }
+
+  return { workspaceId, userId };
+}
 
 const assigneeSchema = z.object({
   type: z.enum(["agent", "user"]),
@@ -276,25 +298,23 @@ router.post("/connections/:id/test", async (req, res) => {
   res.json(connection);
 });
 
-router.get("/health", async (req, res) => {
+router.get("/health", async (req: WorkspaceAwareRequest, res) => {
   const workspaceId = typeof req.query.workspaceId === "string" ? req.query.workspaceId : "";
-  if (!workspaceId) {
-    res.status(400).json({ error: "workspaceId is required" });
+  const context = resolveWorkspaceContext(req, res, workspaceId);
+  if (!context) {
     return;
   }
 
-  const userId = (req as AuthenticatedRequest).auth?.sub?.trim();
-  if (!userId) {
-    res.status(401).json({ error: "Authenticated user required" });
-    return;
-  }
-
-  const connections = await ticketSyncService.listConnections(workspaceId, userId);
+  const connections = await ticketSyncService.listConnections(context.workspaceId, context.userId);
   res.json({ connections, total: connections.length });
 });
 
-router.get("/tickets/:ticketId/links", async (req, res) => {
-  const links = await ticketSyncService.listLinks(req.params.ticketId);
+router.get("/tickets/:ticketId/links", async (req: WorkspaceAwareRequest, res) => {
+  const context = resolveWorkspaceContext(req, res);
+  if (!context) {
+    return;
+  }
+  const links = await ticketSyncService.listLinks(req.params.ticketId, context);
   res.json({ links, total: links.length });
 });
 

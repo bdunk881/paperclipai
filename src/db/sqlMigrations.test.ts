@@ -1,3 +1,6 @@
+import { readFileSync } from "fs";
+import path from "path";
+
 const mockReaddir = jest.fn();
 const mockReadFile = jest.fn();
 const mockIsPostgresConfigured = jest.fn();
@@ -75,5 +78,20 @@ describe("sql migrations", () => {
     expect(mockReaddir).toHaveBeenCalledTimes(1);
     expect(mockReadFile).toHaveBeenCalledTimes(1);
     expect(mockQueryPostgres).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps the RLS hardening migration idempotent for policy recreation", () => {
+    const migration = readFileSync(
+      path.resolve(__dirname, "..", "..", "migrations", "014_rls_hardening.sql"),
+      "utf8"
+    );
+
+    expect(migration).toContain("DROP POLICY IF EXISTS tickets_tenant_isolation ON tickets;");
+    expect(migration).toContain(
+      "DROP POLICY IF EXISTS ticket_sla_policies_tenant_isolation ON ticket_sla_policies;"
+    );
+    expect(migration).toContain(
+      "DROP POLICY IF EXISTS ticket_sla_snapshots_tenant_isolation ON ticket_sla_snapshots;"
+    );
   });
 });

@@ -1220,7 +1220,7 @@ describe("Control plane APIs", () => {
     ).toBe(true);
   });
 
-  it("sanitizes generated role keys without the polynomial trim regex", () => {
+  it("sanitizes generated role keys without the polynomial trim regex", async () => {
     const step = {
       id: "step-weird-kind",
       name: "Weird Runtime Step",
@@ -1230,7 +1230,7 @@ describe("Control plane APIs", () => {
       outputKeys: [],
     };
 
-    const { agent } = controlPlaneStore.ensureRuntimeTeamForStep({
+    const { agent } = await controlPlaneStore.ensureRuntimeTeamForStep({
       userId: "test-user",
       actor: "run-runtime-team-rolekey",
       step,
@@ -1667,7 +1667,7 @@ describe("Control plane APIs", () => {
       })
     ).execution;
 
-    controlPlaneStore.finalizeAgentExecution({
+    await controlPlaneStore.finalizeAgentExecution({
       executionId: execution.id,
       userId: "test-user",
       status: "completed",
@@ -2429,7 +2429,7 @@ describe("GET /api/observability", () => {
       taskTitle: "Handle observability trace",
     });
 
-    controlPlaneStore.finalizeAgentExecution({
+    await controlPlaneStore.finalizeAgentExecution({
       executionId: started.execution.id,
       userId: observabilityUserId,
       status: "completed",

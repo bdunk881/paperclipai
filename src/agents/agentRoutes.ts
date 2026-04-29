@@ -1,5 +1,7 @@
 import express from "express";
 import { AuthenticatedRequest } from "../auth/authMiddleware";
+import { isPostgresPersistenceEnabled } from "../db/postgres";
+import { WorkspaceAwareRequest } from "../middleware/workspaceResolver";
 import { controlPlaneStore } from "../controlPlane/controlPlaneStore";
 
 const router = express.Router();
@@ -10,6 +12,26 @@ type DashboardRunStatus = "queued" | "running" | "completed" | "failed" | "block
 function getUserId(req: AuthenticatedRequest): string | null {
   const userId = req.auth?.sub;
   return typeof userId === "string" && userId.trim() ? userId.trim() : null;
+}
+
+function resolveWorkspaceContext(req: WorkspaceAwareRequest, res: express.Response) {
+  const userId = getUserId(req);
+  if (!userId) {
+    res.status(401).json({ error: "Authenticated user required" });
+    return null;
+  }
+
+  const workspaceId = req.workspaceId?.trim();
+  if (workspaceId) {
+    return { workspaceId, userId };
+  }
+
+  if (!isPostgresPersistenceEnabled()) {
+    return { workspaceId: userId, userId };
+  }
+
+  res.status(500).json({ error: "Workspace context was not resolved for the request" });
+  return null;
 }
 
 function currentPeriodKey(date = new Date()): string {
@@ -42,17 +64,17 @@ function toDashboardRunStatus(
   return status;
 }
 
-router.get("/", (req: AuthenticatedRequest, res) => {
-  const userId = getUserId(req);
-  if (!userId) {
-    res.status(401).json({ error: "Authenticated user required" });
+router.get("/", async (req: WorkspaceAwareRequest, res) => {
+  const context = resolveWorkspaceContext(req, res);
+  if (!context) {
     return;
   }
 
-  const teams = new Map(controlPlaneStore.listTeams(userId).map((team) => [team.id, team]));
-  const agents = controlPlaneStore.listAllAgents(userId).map((agent) => {
+  await controlPlaneStore.ensureWorkspaceHydrated(context.workspaceId, context.userId);
+  const teams = new Map(controlPlaneStore.listTeams(context.userId, context.workspaceId).map((team) => [team.id, team]));
+  const agents = controlPlaneStore.listAllAgents(context.userId, context.workspaceId).map((agent) => {
     const team = teams.get(agent.teamId);
-    const executions = controlPlaneStore.listAgentExecutions(agent.id, userId);
+    const executions = controlPlaneStore.listAgentExecutions(agent.id, context.userId, context.workspaceId);
     const lastExecution = executions.at(-1);
     return {
       id: agent.id,
@@ -81,20 +103,20 @@ router.get("/", (req: AuthenticatedRequest, res) => {
   res.json({ agents, total: agents.length });
 });
 
-router.get("/:id/heartbeat", (req: AuthenticatedRequest, res) => {
-  const userId = getUserId(req);
-  if (!userId) {
-    res.status(401).json({ error: "Authenticated user required" });
+router.get("/:id/heartbeat", async (req: WorkspaceAwareRequest, res) => {
+  const context = resolveWorkspaceContext(req, res);
+  if (!context) {
     return;
   }
 
-  const agent = controlPlaneStore.getAgent(req.params.id, userId);
+  await controlPlaneStore.ensureWorkspaceHydrated(context.workspaceId, context.userId);
+  const agent = controlPlaneStore.getAgent(req.params.id, context.userId, context.workspaceId);
   if (!agent) {
     res.status(404).json({ error: "Agent not found" });
     return;
   }
 
-  const heartbeat = controlPlaneStore.listAgentHeartbeats(agent.id, userId).at(-1);
+  const heartbeat = controlPlaneStore.listAgentHeartbeats(agent.id, context.userId).at(-1);
   if (!heartbeat) {
     res.status(404).json({ error: "Heartbeat not found" });
     return;
@@ -114,20 +136,20 @@ router.get("/:id/heartbeat", (req: AuthenticatedRequest, res) => {
   });
 });
 
-router.get("/:id/runs", (req: AuthenticatedRequest, res) => {
-  const userId = getUserId(req);
-  if (!userId) {
-    res.status(401).json({ error: "Authenticated user required" });
+router.get("/:id/runs", async (req: WorkspaceAwareRequest, res) => {
+  const context = resolveWorkspaceContext(req, res);
+  if (!context) {
     return;
   }
 
-  const agent = controlPlaneStore.getAgent(req.params.id, userId);
+  await controlPlaneStore.ensureWorkspaceHydrated(context.workspaceId, context.userId);
+  const agent = controlPlaneStore.getAgent(req.params.id, context.userId, context.workspaceId);
   if (!agent) {
     res.status(404).json({ error: "Agent not found" });
     return;
   }
 
-  const runs = controlPlaneStore.listAgentExecutions(agent.id, userId).map((execution) => ({
+  const runs = controlPlaneStore.listAgentExecutions(agent.id, context.userId, context.workspaceId).map((execution) => ({
     id: execution.id,
     agentId: execution.agentId,
     userId: execution.userId,
@@ -145,23 +167,23 @@ router.get("/:id/runs", (req: AuthenticatedRequest, res) => {
   res.json({ runs, total: runs.length });
 });
 
-router.get("/:id/budget", (req: AuthenticatedRequest, res) => {
-  const userId = getUserId(req);
-  if (!userId) {
-    res.status(401).json({ error: "Authenticated user required" });
+router.get("/:id/budget", async (req: WorkspaceAwareRequest, res) => {
+  const context = resolveWorkspaceContext(req, res);
+  if (!context) {
     return;
   }
 
-  const agent = controlPlaneStore.getAgent(req.params.id, userId);
+  await controlPlaneStore.ensureWorkspaceHydrated(context.workspaceId, context.userId);
+  const agent = controlPlaneStore.getAgent(req.params.id, context.userId, context.workspaceId);
   if (!agent) {
     res.status(404).json({ error: "Agent not found" });
     return;
   }
 
   const period = currentPeriodKey();
-  const teamSpend = controlPlaneStore.getTeamSpendSnapshot(agent.teamId, userId);
+  const teamSpend = controlPlaneStore.getTeamSpendSnapshot(agent.teamId, context.userId, context.workspaceId);
   const agentSpend = teamSpend?.agents.find((entry) => entry.agentId === agent.id);
-  const heartbeats = controlPlaneStore.listAgentHeartbeats(agent.id, userId);
+  const heartbeats = controlPlaneStore.listAgentHeartbeats(agent.id, context.userId);
   const spentUsd = agentSpend?.spentUsd ?? 0;
   const monthlyUsd = agent.budgetMonthlyUsd;
   const remainingUsd = Number(Math.max(0, monthlyUsd - spentUsd).toFixed(2));
@@ -181,14 +203,14 @@ router.get("/:id/budget", (req: AuthenticatedRequest, res) => {
   });
 });
 
-router.get("/:id/token-usage", (req: AuthenticatedRequest, res) => {
-  const userId = getUserId(req);
-  if (!userId) {
-    res.status(401).json({ error: "Authenticated user required" });
+router.get("/:id/token-usage", async (req: WorkspaceAwareRequest, res) => {
+  const context = resolveWorkspaceContext(req, res);
+  if (!context) {
     return;
   }
 
-  const agent = controlPlaneStore.getAgent(req.params.id, userId);
+  await controlPlaneStore.ensureWorkspaceHydrated(context.workspaceId, context.userId);
+  const agent = controlPlaneStore.getAgent(req.params.id, context.userId, context.workspaceId);
   if (!agent) {
     res.status(404).json({ error: "Agent not found" });
     return;
@@ -201,7 +223,7 @@ router.get("/:id/token-usage", (req: AuthenticatedRequest, res) => {
   cutoff.setUTCDate(cutoff.getUTCDate() - (days - 1));
 
   const dailyCosts = new Map<string, number>();
-  for (const heartbeat of controlPlaneStore.listAgentHeartbeats(agent.id, userId)) {
+  for (const heartbeat of controlPlaneStore.listAgentHeartbeats(agent.id, context.userId)) {
     const timestamp = heartbeat.completedAt ?? heartbeat.startedAt;
     if (new Date(timestamp) < cutoff) {
       continue;

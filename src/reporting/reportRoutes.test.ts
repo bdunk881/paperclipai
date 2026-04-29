@@ -57,7 +57,7 @@ describe("report routes", () => {
 
   it("generates, archives, lists, and fetches a board memo report", async () => {
     const userId = `report-user-${Date.now()}`;
-    const team = controlPlaneStore.createTeam({ userId, name: "Ops Team" });
+    const team = await controlPlaneStore.createTeam({ userId, name: "Ops Team" });
     const done = controlPlaneStore.createTask({ userId, teamId: team.id, title: "Ship API", actor: "tester" });
     controlPlaneStore.updateTaskStatus({ taskId: done.id, userId, actor: "tester", status: "done" });
     const blocked = controlPlaneStore.createTask({ userId, teamId: team.id, title: "Fix billing edge case", actor: "tester" });

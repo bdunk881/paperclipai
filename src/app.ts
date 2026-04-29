@@ -90,7 +90,7 @@ import googleWorkspaceConnectorRoutes from "./connectors/google-workspace/routes
 import googleWorkspaceWebhookRoutes from "./connectors/google-workspace/webhookRoutes";
 import notificationRoutes from "./notifications/routes";
 import { getPostgresPool, isPostgresPersistenceEnabled } from "./db/postgres";
-import { createWorkspaceResolver } from "./middleware/workspaceResolver";
+import { createWorkspaceResolver, WorkspaceAwareRequest } from "./middleware/workspaceResolver";
 import {
   createPortableWorkflowBundle,
   getPortableWorkflowSchemaDescriptor,
@@ -384,7 +384,7 @@ app.use("/api/mcp/servers", requireAuth, mcpRoutes);
 // ---------------------------------------------------------------------------
 app.use("/api/memory", requireAuth, memoryRoutes);
 app.use("/api/agents/:agentId/memory", requireAuth, agentMemoryRoutes);
-app.use("/api/agents", requireAuth, agentRoutes);
+app.use("/api/agents", requireAuth, workspaceResolver, agentRoutes);
 
 // Routines stub — returns empty list until a full routines store is implemented.
 app.get("/api/routines", requireAuth, (_req, res) => {
@@ -416,9 +416,9 @@ app.use("/api/integrations/composio", composioRoutes);
 app.use("/api/connectors/google-workspace", googleWorkspaceConnectorRoutes);
 app.use("/api/companies", requireAuth, workspaceResolver, companyRoutes);
 app.use("/api/control-plane", requireAuth, workspaceResolver, controlPlaneRoutes);
-app.use("/api/hitl", requireAuth, hitlRoutes);
+app.use("/api/hitl", requireAuth, workspaceResolver, hitlRoutes);
 app.use("/api/observability", requireAuth, observabilityRoutes);
-app.use("/api/reporting", requireAuth, reportRoutes);
+app.use("/api/reporting", requireAuth, workspaceResolver, reportRoutes);
 app.use("/api/tickets", requireAuth, workspaceResolver, ticketRoutes);
 app.use("/api/ticket-sync", requireAuth, workspaceResolver, ticketSyncRoutes);
 app.use("/api/notifications", requireAuth, notificationRoutes);
@@ -590,15 +590,23 @@ app.get("/api/runs/:id", requireAuthOrQaBypass, async (req: AuthenticatedRequest
   res.json(run);
 });
 
-app.get("/api/observability", requireAuth, async (req: AuthenticatedRequest, res) => {
+app.get("/api/observability", requireAuth, workspaceResolver, async (req: WorkspaceAwareRequest, res) => {
   const userId = req.auth?.sub;
   if (!userId) {
     res.status(401).json({ error: "Authenticated user required" });
     return;
   }
 
+  const workspaceId = req.workspaceId?.trim() || (isPostgresPersistenceEnabled() ? undefined : userId);
+  if (isPostgresPersistenceEnabled() && !workspaceId) {
+    res.status(500).json({ error: "Workspace context was not resolved for the request" });
+    return;
+  }
+
+  await controlPlaneStore.ensureWorkspaceHydrated(workspaceId, userId);
   const runs = await runStore.list(undefined, userId);
   const response = buildObservabilityResponse(userId, runs, {
+    workspaceId,
     agentId: typeof req.query.agentId === "string" ? req.query.agentId : undefined,
     taskId: typeof req.query.taskId === "string" ? req.query.taskId : undefined,
     search: typeof req.query.search === "string" ? req.query.search : undefined,
@@ -919,7 +927,7 @@ app.post(
   "/api/goals/team-assembly/approve",
   requireAuth,
   requirePaperclipRunId,
-  (req: AuthenticatedRequest, res) => {
+  async (req: AuthenticatedRequest, res) => {
     const parsedPlan = teamAssemblyResultSchema.safeParse(req.body?.approvedPlan);
     if (!parsedPlan.success) {
       const issue = parsedPlan.error.issues[0];
@@ -1020,7 +1028,7 @@ app.post(
     }
 
     try {
-      const result = controlPlaneStore.provisionCompanyWorkspace({
+      const result = await controlPlaneStore.provisionCompanyWorkspace({
         userId,
         name: resolvedCompanyName,
         workspaceName:

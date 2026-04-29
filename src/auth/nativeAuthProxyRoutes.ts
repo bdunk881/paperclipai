@@ -112,9 +112,10 @@ export function resolveNativeAuthProxyBaseUrls(): string[] {
 }
 
 function getAllowedOrigins(): Set<string> {
-  return parseOriginAllowlist(
-    process.env.AUTH_NATIVE_AUTH_PROXY_ALLOWED_ORIGINS ?? process.env.ALLOWED_ORIGINS
-  );
+  return new Set([
+    ...parseOriginAllowlist(process.env.ALLOWED_ORIGINS),
+    ...parseOriginAllowlist(process.env.AUTH_NATIVE_AUTH_PROXY_ALLOWED_ORIGINS),
+  ]);
 }
 
 function isAllowedOrigin(originHeader: string | undefined): boolean {

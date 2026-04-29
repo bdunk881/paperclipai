@@ -324,7 +324,7 @@ export async function listObservabilityEvents(
 
   const url = new URL(`${BASE}/observability/events`, window.location.origin);
   appendObservabilityParams(url, options);
-  const res = await fetch(url.pathname + url.search, {
+  const res = await fetch(url.toString(), {
     headers: buildAuthHeaders(accessToken),
   });
   if (!res.ok) throw new Error(`Failed to fetch observability events: ${res.status}`);
@@ -387,7 +387,7 @@ export async function streamObservabilityEvents(
 
   const url = new URL(`${BASE}/observability/events/stream`, window.location.origin);
   appendObservabilityParams(url, options);
-  const res = await fetch(url.pathname + url.search, {
+  const res = await fetch(url.toString(), {
     headers: buildAuthHeaders(accessToken),
     signal: options.signal,
   });

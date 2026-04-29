@@ -1,12 +1,10 @@
 /**
- * E2E: Customer dashboard critical path
+ * E2E: Observability dashboard critical path
  *
- * Covers: command-center shell render, KPI sections, empty approval state,
- * command-center shortcuts, and persistent sidebar navigation.
+ * Covers: observability shell render, transport controls, KPI prototype,
+ * live feed frame, and navigation links that remain on the dashboard surface.
  *
- * Runs in VITE_USE_MOCK=true mode — workflow data comes from the
- * in-memory mock store and agent/approval surfaces should degrade
- * cleanly without a live backend.
+ * Runs in VITE_USE_MOCK=true mode.
  */
 
 import { test, expect } from "@playwright/test";
@@ -21,40 +19,49 @@ test.beforeEach(async ({ page }) => {
 // Page structure
 // ---------------------------------------------------------------------------
 
-test("customer command center heading is visible", async ({ page }) => {
-  await expect(page.getByText(/customer command center/i)).toBeVisible();
-  await expect(page.getByRole("heading", { name: /e2e, your company is live\./i })).toBeVisible();
+test("observability cockpit heading is visible", async ({ page }) => {
+  await expect(page.getByText(/observability cockpit/i)).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: /live activity, health, and throughput in one operator view\./i })
+  ).toBeVisible();
 });
 
-test("renders the primary KPI cards", async ({ page }) => {
-  await expect(page.locator("article").filter({ hasText: /org status/i }).first()).toBeVisible();
-  await expect(page.locator("article").filter({ hasText: /kpi trajectory/i }).first()).toBeVisible();
-  await expect(page.locator("article").filter({ hasText: /spend pressure/i }).first()).toBeVisible();
-  await expect(page.locator("article").filter({ hasText: /approvals at risk/i }).first()).toBeVisible();
+test("renders transport controls and KPI prototype sections", async ({ page }) => {
+  await expect(page.getByText(/transport status/i)).toBeVisible();
+  await expect(page.getByRole("button", { name: /all activity/i })).toBeVisible();
+  await expect(page.getByRole("button", { name: /alerts/i })).toBeVisible();
+  await expect(page.getByRole("button", { name: /24h/i })).toBeVisible();
+  await expect(page.getByText(/kpi prototype/i)).toBeVisible();
+  await expect(page.getByText(/throughput over the last 24 hours/i)).toBeVisible();
+  await expect(page.getByText(/^created$/i)).toBeVisible();
+  await expect(page.getByText(/^completed$/i)).toBeVisible();
+  await expect(page.getByText(/^blocked$/i)).toBeVisible();
 });
 
-test("renders the execution and spend panels", async ({ page }) => {
-  await expect(page.getByText(/execution burndown/i)).toBeVisible();
-  await expect(page.getByText(/spend vs budget/i)).toBeVisible();
+test("renders live feed and continuity sections", async ({ page }) => {
+  await expect(page.getByText(/activity updates as they happen/i)).toBeVisible();
+  await expect(page.getByText(/transport continuity/i)).toBeVisible();
+  await expect(page.getByText(/sprint 2 reserve/i)).toBeVisible();
+  await expect(page.getByRole("button", { name: /refresh data/i })).toBeVisible();
 });
 
-test("renders the empty approvals state in mock mode", async ({ page }) => {
-  await expect(page.getByText(/queued approvals/i)).toBeVisible();
-  await expect(page.getByText(/no approvals waiting/i)).toBeVisible();
+test("feed filter buttons toggle pressed state", async ({ page }) => {
+  const allActivity = page.getByRole("button", { name: /all activity/i });
+  const alerts = page.getByRole("button", { name: /alerts/i });
+
+  await expect(allActivity).toHaveAttribute("aria-pressed", "true");
+  await alerts.click();
+  await expect(alerts).toHaveAttribute("aria-pressed", "true");
+  await expect(allActivity).toHaveAttribute("aria-pressed", "false");
 });
 
 // ---------------------------------------------------------------------------
 // Navigation
 // ---------------------------------------------------------------------------
 
-test("'Review approvals' shortcut navigates to /approvals", async ({ page }) => {
-  await page.getByRole("link", { name: /review approvals/i }).click();
-  await expect(page).toHaveURL(/\/approvals/);
-});
-
-test("'Inspect spend' shortcut navigates to the budget dashboard", async ({ page }) => {
-  await page.getByRole("link", { name: /inspect spend/i }).click();
-  await expect(page).toHaveURL(/\/workspace\/budget-dashboard/);
+test("'Full history' link navigates to /history", async ({ page }) => {
+  await page.getByRole("link", { name: /full history/i }).click();
+  await expect(page).toHaveURL(/\/history/);
 });
 
 test("sidebar nav link 'Builder' navigates to /builder", async ({ page }) => {

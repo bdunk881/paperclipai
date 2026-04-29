@@ -223,4 +223,76 @@ describe("sql migrations", () => {
       expect(migration.trim().endsWith("COMMIT;")).toBe(true);
     });
   });
+
+  describe("migration 019 control plane execution state (ALT-2042 Phase 4)", () => {
+    const migration = readFileSync(
+      path.resolve(__dirname, "..", "..", "migrations", "019_control_plane_execution_state.sql"),
+      "utf8"
+    );
+
+    const tables = [
+      "control_plane_tasks",
+      "control_plane_heartbeats",
+      "control_plane_spend_entries",
+      "control_plane_budget_alerts",
+    ];
+
+    it.each(tables)("declares %s with workspace_id NOT NULL referencing workspaces", (table) => {
+      const definitionPattern = new RegExp(
+        `CREATE TABLE IF NOT EXISTS ${table} \\([\\s\\S]*?workspace_id uuid NOT NULL REFERENCES workspaces\\(id\\) ON DELETE CASCADE`,
+        "m"
+      );
+      expect(migration).toMatch(definitionPattern);
+    });
+
+    it.each(tables)("enables row-level security on %s", (table) => {
+      expect(migration).toContain(`ALTER TABLE ${table} ENABLE ROW LEVEL SECURITY;`);
+    });
+
+    it.each(tables)("forces row-level security on %s so the table owner cannot bypass", (table) => {
+      expect(migration).toContain(`ALTER TABLE ${table} FORCE ROW LEVEL SECURITY;`);
+    });
+
+    it.each(tables)("recreates the tenant-isolation policy on %s idempotently", (table) => {
+      expect(migration).toContain(`DROP POLICY IF EXISTS ${table}_tenant_isolation ON ${table};`);
+      expect(migration).toContain(`CREATE POLICY ${table}_tenant_isolation`);
+    });
+
+    it.each(tables)("uses NULL-denial RLS pattern on %s (USING and WITH CHECK both)", (table) => {
+      const policyPattern = new RegExp(
+        `CREATE POLICY ${table}_tenant_isolation\\s+ON ${table}\\s+USING \\(\\s*app_current_workspace_id\\(\\) IS NOT NULL\\s+AND workspace_id = app_current_workspace_id\\(\\)\\s*\\)\\s+WITH CHECK \\(\\s*app_current_workspace_id\\(\\) IS NOT NULL\\s+AND workspace_id = app_current_workspace_id\\(\\)\\s*\\);`,
+        "m"
+      );
+      expect(migration).toMatch(policyPattern);
+    });
+
+    it("constrains task status to the runtime enum", () => {
+      expect(migration).toContain("CHECK (status IN ('todo', 'in_progress', 'done', 'blocked'))");
+    });
+
+    it("constrains heartbeat status to the runtime enum", () => {
+      expect(migration).toContain("CHECK (status IN ('queued', 'running', 'blocked', 'completed'))");
+    });
+
+    it("constrains spend category to the runtime enum", () => {
+      expect(migration).toContain(
+        "CHECK (category IN ('llm', 'tool', 'api', 'compute', 'ad_spend', 'third_party'))"
+      );
+    });
+
+    it("constrains budget-alert scope to team|agent|tool", () => {
+      expect(migration).toContain("CHECK (scope IN ('team', 'agent', 'tool'))");
+    });
+
+    it("dedupes budget alerts per scope/threshold via partial unique indexes", () => {
+      expect(migration).toContain("uq_control_plane_budget_alerts_team_scope");
+      expect(migration).toContain("uq_control_plane_budget_alerts_agent_scope");
+      expect(migration).toContain("uq_control_plane_budget_alerts_tool_scope");
+    });
+
+    it("wraps schema changes in a single transaction", () => {
+      expect(migration).toContain("BEGIN;");
+      expect(migration.trim().endsWith("COMMIT;")).toBe(true);
+    });
+  });
 });

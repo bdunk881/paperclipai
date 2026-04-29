@@ -148,4 +148,79 @@ describe("sql migrations", () => {
       expect(migration.trim().endsWith("COMMIT;")).toBe(true);
     });
   });
+
+  describe("migration 017 control plane secrets (ALT-2022 Phase 3)", () => {
+    const migration = readFileSync(
+      path.resolve(__dirname, "..", "..", "migrations", "017_control_plane_secrets.sql"),
+      "utf8"
+    );
+
+    const tables = ["provisioned_company_secrets", "control_plane_secret_audit"];
+
+    it.each(tables)("declares %s with workspace_id NOT NULL referencing workspaces", (table) => {
+      const definitionPattern = new RegExp(
+        `CREATE TABLE IF NOT EXISTS ${table} \\([\\s\\S]*?workspace_id uuid NOT NULL REFERENCES workspaces\\(id\\) ON DELETE CASCADE`,
+        "m"
+      );
+      expect(migration).toMatch(definitionPattern);
+    });
+
+    it.each(tables)("declares %s with company_id NOT NULL referencing provisioned_companies", (table) => {
+      const definitionPattern = new RegExp(
+        `CREATE TABLE IF NOT EXISTS ${table} \\([\\s\\S]*?company_id uuid NOT NULL REFERENCES provisioned_companies\\(id\\) ON DELETE CASCADE`,
+        "m"
+      );
+      expect(migration).toMatch(definitionPattern);
+    });
+
+    it.each(tables)("enables row-level security on %s", (table) => {
+      expect(migration).toContain(`ALTER TABLE ${table} ENABLE ROW LEVEL SECURITY;`);
+    });
+
+    it.each(tables)("forces row-level security on %s so the table owner cannot bypass", (table) => {
+      expect(migration).toContain(`ALTER TABLE ${table} FORCE ROW LEVEL SECURITY;`);
+    });
+
+    it.each(tables)("recreates the tenant-isolation policy on %s idempotently", (table) => {
+      expect(migration).toContain(`DROP POLICY IF EXISTS ${table}_tenant_isolation ON ${table};`);
+      expect(migration).toContain(`CREATE POLICY ${table}_tenant_isolation`);
+    });
+
+    it.each(tables)("uses NULL-denial RLS pattern on %s (USING and WITH CHECK both)", (table) => {
+      const policyPattern = new RegExp(
+        `CREATE POLICY ${table}_tenant_isolation\\s+ON ${table}\\s+USING \\(\\s*app_current_workspace_id\\(\\) IS NOT NULL\\s+AND workspace_id = app_current_workspace_id\\(\\)\\s*\\)\\s+WITH CHECK \\(\\s*app_current_workspace_id\\(\\) IS NOT NULL\\s+AND workspace_id = app_current_workspace_id\\(\\)\\s*\\);`,
+        "m"
+      );
+      expect(migration).toMatch(policyPattern);
+    });
+
+    it("enforces 12-byte IV and 16-byte auth tag length checks on provisioned_company_secrets", () => {
+      expect(migration).toContain("CONSTRAINT provisioned_company_secrets_iv_length CHECK (octet_length(iv) = 12)");
+      expect(migration).toContain(
+        "CONSTRAINT provisioned_company_secrets_auth_tag_length CHECK (octet_length(auth_tag) = 16)"
+      );
+    });
+
+    it("scopes provisioned_company_secrets uniqueness per (company_id, key)", () => {
+      expect(migration).toContain("UNIQUE (company_id, key)");
+    });
+
+    it("makes the audit ledger append-only by denying UPDATE and DELETE inside RLS policies", () => {
+      expect(migration).toContain("DROP POLICY IF EXISTS control_plane_secret_audit_no_update ON control_plane_secret_audit;");
+      const noUpdatePolicy = /CREATE POLICY control_plane_secret_audit_no_update\s+ON control_plane_secret_audit\s+FOR UPDATE\s+USING \(false\)\s+WITH CHECK \(false\);/m;
+      expect(migration).toMatch(noUpdatePolicy);
+      expect(migration).toContain("DROP POLICY IF EXISTS control_plane_secret_audit_no_delete ON control_plane_secret_audit;");
+      const noDeletePolicy = /CREATE POLICY control_plane_secret_audit_no_delete\s+ON control_plane_secret_audit\s+FOR DELETE\s+USING \(false\);/m;
+      expect(migration).toMatch(noDeletePolicy);
+    });
+
+    it("constrains the audit action enum to read|write|rotate|delete", () => {
+      expect(migration).toContain("CHECK (action IN ('read', 'write', 'rotate', 'delete'))");
+    });
+
+    it("wraps schema changes in a single transaction", () => {
+      expect(migration).toContain("BEGIN;");
+      expect(migration.trim().endsWith("COMMIT;")).toBe(true);
+    });
+  });
 });

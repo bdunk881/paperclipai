@@ -2,6 +2,7 @@ import express from "express";
 import request from "supertest";
 import { agentMemoryStore } from "../agents/agentMemoryStore";
 import { AuthenticatedRequest } from "../auth/authMiddleware";
+import { WorkspaceAwareRequest } from "../middleware/workspaceResolver";
 import { subscriptionStore } from "../billing/subscriptionStore";
 import { runTicketNotificationSweep } from "../engine/ticketSlaCoordinator";
 import { ticketNotificationStore } from "./ticketNotificationStore";
@@ -22,6 +23,17 @@ function buildTestApp() {
       return;
     }
     req.auth = { sub: authHeader.slice(7), email: "test@example.com" };
+    next();
+  });
+  app.use((req: WorkspaceAwareRequest, _res, next) => {
+    const headerWorkspaceId =
+      typeof req.headers["x-workspace-id"] === "string" ? req.headers["x-workspace-id"].trim() : "";
+    const bodyWorkspaceId =
+      typeof (req.body as { workspaceId?: unknown } | undefined)?.workspaceId === "string"
+        ? String((req.body as { workspaceId?: string }).workspaceId).trim()
+        : "";
+    const queryWorkspaceId = typeof req.query.workspaceId === "string" ? req.query.workspaceId.trim() : "";
+    req.workspaceId = headerWorkspaceId || bodyWorkspaceId || queryWorkspaceId || "11111111-1111-4111-8111-111111111111";
     next();
   });
   app.use("/api/tickets", ticketRoutes);
@@ -90,6 +102,23 @@ describe("ticket routes", () => {
 
     expect(res.status).toBe(400);
     expect(res.body.error).toMatch(/X-Paperclip-Run-Id/i);
+  });
+
+  it("rejects mismatched workspace IDs when resolver context differs from the payload", async () => {
+    const app = buildTestApp();
+    const res = await request(app)
+      .post("/api/tickets")
+      .set(auth("creator-1"))
+      .set("X-Paperclip-Run-Id", "run-ticket-workspace-mismatch")
+      .set("X-Workspace-Id", "22222222-2222-4222-8222-222222222222")
+      .send({
+        workspaceId: "11111111-1111-4111-8111-111111111111",
+        title: "Workspace mismatch",
+        assignees: [{ type: "user", id: "creator-1", role: "primary" }],
+      });
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/workspaceId does not match/i);
   });
 
   it("lists queue tickets for a specific actor with filters", async () => {

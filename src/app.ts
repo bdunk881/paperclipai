@@ -87,6 +87,8 @@ import integrationRoutes, {
 import googleWorkspaceConnectorRoutes from "./connectors/google-workspace/routes";
 import googleWorkspaceWebhookRoutes from "./connectors/google-workspace/webhookRoutes";
 import notificationRoutes from "./notifications/routes";
+import { getPostgresPool, isPostgresPersistenceEnabled } from "./db/postgres";
+import { createWorkspaceResolver } from "./middleware/workspaceResolver";
 import {
   createPortableWorkflowBundle,
   getPortableWorkflowSchemaDescriptor,
@@ -97,6 +99,9 @@ import { saveImportedTemplate } from "./templates/importedTemplateStore";
 import { getConnectorHealthSummary, listConnectorHealth } from "./connectors/health";
 
 const app = express();
+const workspaceResolver = isPostgresPersistenceEnabled()
+  ? createWorkspaceResolver(getPostgresPool())
+  : ((_req: express.Request, _res: express.Response, next: express.NextFunction) => next());
 
 function parseAllowedOrigins(value: string | undefined): string[] {
   if (!value) {
@@ -410,8 +415,8 @@ app.use("/api/companies", requireAuth, companyRoutes);
 app.use("/api/control-plane", requireAuth, controlPlaneRoutes);
 app.use("/api/hitl", requireAuth, hitlRoutes);
 app.use("/api/reporting", requireAuth, reportRoutes);
-app.use("/api/tickets", requireAuth, ticketRoutes);
-app.use("/api/ticket-sync", requireAuth, ticketSyncRoutes);
+app.use("/api/tickets", requireAuth, workspaceResolver, ticketRoutes);
+app.use("/api/ticket-sync", requireAuth, workspaceResolver, ticketSyncRoutes);
 app.use("/api/notifications", requireAuth, notificationRoutes);
 app.use("/api/approval-policies", requireAuth, approvalPolicyRoutes);
 

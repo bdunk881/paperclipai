@@ -11,17 +11,6 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  validate-required-checks:
-    name: Branch Protection Sync Check
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-node@v5
-        with:
-          node-version: "24"
-      - name: Validate required check names
-        run: npm run validate:required-checks
-
   lint-backend:
     name: Lint Backend
     runs-on: ubuntu-latest
@@ -70,9 +59,6 @@ jobs:
   test-backend:
     name: Test Backend
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      id-token: write
     services:
       postgres:
         image: postgres:16
@@ -119,14 +105,10 @@ jobs:
           flags: backend
           fail_ci_if_error: false
           handle_no_reports_found: true
-          use_oidc: true
 
   test-api:
     name: Test API (TypeScript)
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      id-token: write
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v5
@@ -135,22 +117,16 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run test:coverage
-      - uses: codecov/codecov-action@v5
+      - uses: codecov/codecov-action@v4
         if: always()
-        continue-on-error: true
         with:
-          files: coverage/lcov.info
-          disable_search: true
+          file: coverage/lcov.info
           flags: api
           fail_ci_if_error: false
-          use_oidc: true
 
   test-frontend:
     name: Test Frontend (Dashboard)
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      id-token: write
     defaults:
       run:
         working-directory: dashboard
@@ -163,14 +139,12 @@ jobs:
           cache-dependency-path: dashboard/package-lock.json
       - run: npm ci
       - run: npm run test:coverage
-      - uses: codecov/codecov-action@v5
+      - uses: codecov/codecov-action@v4
         if: always()
         with:
-          files: dashboard/coverage/lcov.info
-          disable_search: true
+          file: dashboard/coverage/lcov.info
           flags: dashboard
           fail_ci_if_error: false
-          use_oidc: true
 
   build-frontend:
     name: Build Frontend (Dashboard)
@@ -245,9 +219,9 @@ jobs:
           retention-days: 7
 
   build-check:
-    name: Docker Build Check (${{ matrix.service }})
+    name: Docker Build Check
     runs-on: ubuntu-latest
-    needs: [validate-required-checks, test-backend, test-api, test-frontend, build-frontend]
+    needs: [test-backend, test-api, test-frontend, build-frontend]
     strategy:
       matrix:
         service: [backend, frontend]
@@ -262,16 +236,3 @@ jobs:
           push: false
           cache-from: type=gha,scope=${{ matrix.service }}
           cache-to: type=gha,mode=max,scope=${{ matrix.service }}
-
-  docker-build-summary:
-    name: Docker Build Check
-    runs-on: ubuntu-latest
-    needs: [build-check]
-    if: always()
-    steps:
-      - name: Fail if any matrix build failed
-        run: |
-          if [ "${{ needs.build-check.result }}" != "success" ]; then
-            echo "At least one Docker matrix build failed."
-            exit 1
-          fi

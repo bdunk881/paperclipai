@@ -2418,7 +2418,7 @@ export const controlPlaneStore = {
     if (spendCtx) {
       await controlPlaneRepository.insertSpendEntry(spendCtx, entry);
     }
-    applyBudgetPolicies(team, agent.id, input.executionId);
+    await applyBudgetPolicies(team, agent.id, input.executionId);
     return entry;
   },
 

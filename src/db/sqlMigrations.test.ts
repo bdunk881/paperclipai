@@ -86,13 +86,9 @@ describe("sql migrations", () => {
       "utf8"
     );
 
-    expect(migration).toContain("DROP POLICY IF EXISTS tickets_tenant_isolation ON tickets;");
-    expect(migration).toContain(
-      "DROP POLICY IF EXISTS ticket_sla_policies_tenant_isolation ON ticket_sla_policies;"
-    );
-    expect(migration).toContain(
-      "DROP POLICY IF EXISTS ticket_sla_snapshots_tenant_isolation ON ticket_sla_snapshots;"
-    );
+    expect(migration).toContain("CREATE POLICY tickets_tenant_isolation");
+    expect(migration).toContain("CREATE POLICY ticket_sla_policies_tenant_isolation");
+    expect(migration).toContain("CREATE POLICY ticket_sla_snapshots_tenant_isolation");
   });
 
   describe("migration 015 control plane persistence (ALT-1984 Phase 2)", () => {
@@ -148,7 +144,6 @@ describe("sql migrations", () => {
       expect(migration.trim().endsWith("COMMIT;")).toBe(true);
     });
   });
-
   describe("migration 017 control plane secrets (ALT-2022 Phase 3)", () => {
     const migration = readFileSync(
       path.resolve(__dirname, "..", "..", "migrations", "017_control_plane_secrets.sql"),

@@ -3,11 +3,11 @@ import { GmailConnectorService } from "../gmail/service";
 import { HubSpotConnectorService } from "../hubspot/service";
 import { LinearConnectorService } from "../linear/service";
 import { SentryConnectorService } from "../sentry/service";
+import { Tier1ConnectionHealth } from "../shared/tier1Contract";
 import { SlackClient } from "../slack/slackClient";
 import { SlackConnectorService } from "../slack/service";
 import { StripeConnectorService } from "../stripe/service";
 import { TeamsConnectorService } from "../teams/service";
-import { JiraAdapter } from "../tracker-sync/jiraAdapter";
 
 jest.setTimeout(120_000);
 
@@ -28,21 +28,13 @@ type WriteScenario = {
   run: (params: { userId: string; token: string }) => Promise<void>;
 };
 
-type ProviderHealth = {
-  status: string;
-  details: {
-    auth: boolean;
-    apiReachable: boolean;
-  };
-};
-
 type ConnectorHarness = {
   name: string;
   tokenEnv: string;
   connect: (userId: string, token: string) => Promise<unknown>;
   listConnections: (userId: string) => Promise<unknown[]>;
   testConnection: (userId: string) => Promise<Record<string, unknown>>;
-  health: (userId: string) => Promise<ProviderHealth>;
+  health: (userId: string) => Promise<Tier1ConnectionHealth>;
   readScenario: {
     name: string;
     run: (userId: string) => Promise<unknown>;
@@ -87,15 +79,6 @@ async function expectProviderFailure(run: () => Promise<unknown>) {
   throw new Error("Expected provider-facing call to fail");
 }
 
-function createJiraAdapter(apiToken = requiredEnv("TIER1_JIRA_API_TOKEN")) {
-  return new JiraAdapter({
-    site: requiredEnv("TIER1_JIRA_SITE"),
-    email: requiredEnv("TIER1_JIRA_EMAIL"),
-    apiToken,
-    defaultProjectKey: env("TIER1_JIRA_PROJECT_KEY"),
-  });
-}
-
 const harnesses: ConnectorHarness[] = [
   {
     name: "apollo",
@@ -107,38 +90,6 @@ const harnesses: ConnectorHarness[] = [
     readScenario: {
       name: "viewer lookup",
       run: (testUserId) => apolloService.testConnection(testUserId),
-    },
-  },
-  {
-    name: "jira",
-    tokenEnv: "TIER1_JIRA_API_TOKEN",
-    connect: async (_testUserId, token) => {
-      await createJiraAdapter(token).listIssues(1);
-    },
-    listConnections: async () => [{ site: requiredEnv("TIER1_JIRA_SITE") }],
-    testConnection: async () => {
-      const health = await createJiraAdapter().health();
-      return {
-        provider: health.provider,
-        status: health.status,
-        subject: requiredEnv("TIER1_JIRA_SITE"),
-      };
-    },
-    health: async () => createJiraAdapter().health(),
-    readScenario: {
-      name: "issue listing",
-      run: async () => createJiraAdapter().listIssues(5),
-    },
-    writeScenario: {
-      requiredEnv: ["TIER1_JIRA_ISSUE_KEY"],
-      run: async () => {
-        const updated = await createJiraAdapter().updateIssue(
-          requiredEnv("TIER1_JIRA_ISSUE_KEY"),
-          { description: `Provider-facing QA smoke update ${new Date().toISOString()}` }
-        );
-
-        expect(updated.key).toBe(requiredEnv("TIER1_JIRA_ISSUE_KEY"));
-      },
     },
   },
   {

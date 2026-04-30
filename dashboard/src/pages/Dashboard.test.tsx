@@ -9,15 +9,41 @@ import type {
 } from "../api/observability";
 
 const {
+  createTicketMock,
+  getAgentBudgetMock,
+  getAgentHeartbeatMock,
   getObservabilityThroughputMock,
+  listAgentRunsMock,
+  listAgentsMock,
+  listApprovalsMock,
   listObservabilityEventsMock,
+  listRunsMock,
   requireAccessTokenMock,
   streamObservabilityEventsMock,
 } = vi.hoisted(() => ({
+  createTicketMock: vi.fn(),
+  getAgentBudgetMock: vi.fn(),
+  getAgentHeartbeatMock: vi.fn(),
   getObservabilityThroughputMock: vi.fn(),
+  listAgentRunsMock: vi.fn(),
+  listAgentsMock: vi.fn(),
+  listApprovalsMock: vi.fn(),
   listObservabilityEventsMock: vi.fn(),
+  listRunsMock: vi.fn(),
   requireAccessTokenMock: vi.fn(),
   streamObservabilityEventsMock: vi.fn(),
+}));
+
+vi.mock("../api/client", () => ({
+  listRuns: listRunsMock,
+  listApprovals: listApprovalsMock,
+}));
+
+vi.mock("../api/agentApi", () => ({
+  listAgents: listAgentsMock,
+  getAgentBudget: getAgentBudgetMock,
+  getAgentHeartbeat: getAgentHeartbeatMock,
+  listAgentRuns: listAgentRunsMock,
 }));
 
 vi.mock("../api/observability", () => ({
@@ -26,8 +52,17 @@ vi.mock("../api/observability", () => ({
   streamObservabilityEvents: streamObservabilityEventsMock,
 }));
 
+vi.mock("../api/tickets", () => ({
+  createTicket: createTicketMock,
+}));
+
+vi.mock("../components/RunAuditSidebar", () => ({
+  RunAuditSidebar: ({ open }: { open: boolean }) => (open ? <div>Run audit open</div> : null),
+}));
+
 vi.mock("../context/AuthContext", () => ({
   useAuth: () => ({
+    user: { id: "user-1", email: "user@example.com", name: "Test User" },
     requireAccessToken: requireAccessTokenMock,
   }),
 }));
@@ -87,44 +122,166 @@ const sampleThroughput: ObservabilityThroughputSnapshot = {
   ],
 };
 
-beforeEach(() => {
-  vi.clearAllMocks();
-  vi.useRealTimers();
-  requireAccessTokenMock.mockResolvedValue("mock-token");
-  listObservabilityEventsMock.mockResolvedValue(sampleFeedPage);
-  getObservabilityThroughputMock.mockResolvedValue(sampleThroughput);
-  streamObservabilityEventsMock.mockImplementation(
-    async (
-      _accessToken: string,
-      options: { onReady?: (event: { nextCursor: string | null; replayed: number; generatedAt: string }) => void }
-    ) => {
-      options.onReady?.({
-        nextCursor: "2",
-        replayed: 0,
-        generatedAt: "2026-04-28T20:10:00.000Z",
-      });
-    }
-  );
-});
-
-afterEach(() => {
-  vi.useRealTimers();
-});
-
 describe("Dashboard", () => {
-  it("loads throughput and feed data, then opens the live stream", async () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.useRealTimers();
+
+    requireAccessTokenMock.mockResolvedValue("mock-token");
+    listRunsMock.mockResolvedValue([
+      {
+        id: "run-design",
+        templateId: "tpl-design",
+        templateName: "Design Review",
+        status: "completed",
+        startedAt: "2026-04-27T10:00:00.000Z",
+        completedAt: "2026-04-27T10:10:00.000Z",
+        input: {},
+        output: { summary: "Homepage concept approved with three revision notes." },
+        stepResults: [],
+      },
+      {
+        id: "run-code",
+        templateId: "tpl-code",
+        templateName: "Frontend Build",
+        status: "running",
+        startedAt: "2026-04-27T12:00:00.000Z",
+        input: {},
+        output: {},
+        stepResults: [],
+      },
+    ]);
+    listApprovalsMock.mockResolvedValue([
+      {
+        id: "approval-1",
+        runId: "run-code",
+        templateName: "Frontend Build",
+        stepId: "step-approve",
+        stepName: "Publish sign-off",
+        assignee: "Brad",
+        message: "Approve the final ship candidate.",
+        timeoutMinutes: 60,
+        requestedAt: "2026-04-27T12:15:00.000Z",
+        status: "pending",
+      },
+    ]);
+    listAgentsMock.mockResolvedValue([
+      {
+        id: "agent-graphic",
+        userId: "user-1",
+        name: "Graphic Designer",
+        instructions: "",
+        status: "running",
+        budgetMonthlyUsd: 200,
+        metadata: { teamName: "Brand" },
+        createdAt: "2026-04-20T00:00:00.000Z",
+        updatedAt: "2026-04-27T12:00:00.000Z",
+      },
+      {
+        id: "agent-frontend",
+        userId: "user-1",
+        name: "Frontend Engineer",
+        instructions: "",
+        status: "running",
+        budgetMonthlyUsd: 240,
+        metadata: { teamName: "Engineering" },
+        createdAt: "2026-04-20T00:00:00.000Z",
+        updatedAt: "2026-04-27T12:00:00.000Z",
+      },
+    ]);
+    getAgentBudgetMock.mockImplementation(async (agentId: string) =>
+      agentId === "agent-graphic"
+        ? {
+            agentId,
+            userId: "user-1",
+            monthlyUsd: 200,
+            spentUsd: 40,
+            remainingUsd: 160,
+            currentPeriod: "2026-04",
+          }
+        : {
+            agentId,
+            userId: "user-1",
+            monthlyUsd: 240,
+            spentUsd: 120,
+            remainingUsd: 120,
+            currentPeriod: "2026-04",
+          }
+    );
+    getAgentHeartbeatMock.mockImplementation(async (agentId: string) => ({
+      id: `heartbeat-${agentId}`,
+      agentId,
+      userId: "user-1",
+      status: "running",
+      summary:
+        agentId === "agent-graphic"
+          ? "Preparing final visual QA for customer review."
+          : "Reviewing the dashboard implementation details.",
+      tokenUsage: 12,
+      costUsd: 0.25,
+      createdByRunId: `run-${agentId}`,
+      recordedAt: "2026-04-27T12:30:00.000Z",
+    }));
+    listAgentRunsMock.mockImplementation(async (agentId: string) => [
+      {
+        id: `agent-run-${agentId}`,
+        agentId,
+        userId: "user-1",
+        status: "completed",
+        summary:
+          agentId === "agent-graphic" ? "Delivered the approved visual direction." : "Shipped the latest UI pass.",
+        tokenUsage: 120,
+        costUsd: 0.8,
+        startedAt: "2026-04-27T11:00:00.000Z",
+        completedAt: "2026-04-27T11:30:00.000Z",
+        createdByRunId: `source-run-${agentId}`,
+        createdAt: "2026-04-27T11:00:00.000Z",
+      },
+    ]);
+    createTicketMock.mockResolvedValue({
+      ticket: { id: "ticket-1" },
+      updates: [],
+      source: "api",
+      integrationWarnings: [],
+    });
+    listObservabilityEventsMock.mockResolvedValue(sampleFeedPage);
+    getObservabilityThroughputMock.mockResolvedValue(sampleThroughput);
+    streamObservabilityEventsMock.mockImplementation(
+      async (
+        _accessToken: string,
+        options: { onReady?: (event: { nextCursor: string | null; replayed: number; generatedAt: string }) => void }
+      ) => {
+        options.onReady?.({
+          nextCursor: "2",
+          replayed: 0,
+          generatedAt: "2026-04-28T20:10:00.000Z",
+        });
+      }
+    );
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.useRealTimers();
+  });
+
+  it("loads customer dashboard and observability data with the access token", async () => {
     render(
       <MemoryRouter>
         <Dashboard />
       </MemoryRouter>
     );
 
-    expect(
-      await screen.findByText("Critical alert raised for execution latency.")
-    ).toBeInTheDocument();
-    expect(screen.getAllByText("6").length).toBeGreaterThan(0);
+    await screen.findByText(/Test, your company is live/i);
+    expect(await screen.findByText("Critical alert raised for execution latency.")).toBeInTheDocument();
 
     expect(requireAccessTokenMock).toHaveBeenCalledTimes(1);
+    expect(listRunsMock).toHaveBeenCalledWith(undefined, "mock-token");
+    expect(listApprovalsMock).toHaveBeenCalledWith("mock-token");
+    expect(listAgentsMock).toHaveBeenCalledWith("mock-token");
+    expect(getAgentBudgetMock).toHaveBeenCalledTimes(2);
+    expect(getAgentHeartbeatMock).toHaveBeenCalledTimes(2);
+    expect(listAgentRunsMock).toHaveBeenCalledTimes(2);
     expect(listObservabilityEventsMock).toHaveBeenCalledWith("mock-token", {
       categories: undefined,
       limit: 20,
@@ -140,7 +297,52 @@ describe("Dashboard", () => {
     );
   });
 
-  it("reloads the dashboard when feed filters or time range controls change", async () => {
+  it("renders the command center sections alongside observability panels", async () => {
+    render(
+      <MemoryRouter>
+        <Dashboard />
+      </MemoryRouter>
+    );
+
+    expect(await screen.findByText("Customer command center")).toBeInTheDocument();
+    expect(screen.getByText("Execution Burndown")).toBeInTheDocument();
+    expect(screen.getByText("Spend vs Budget")).toBeInTheDocument();
+    expect(screen.getByText("Queued Approvals")).toBeInTheDocument();
+    expect(screen.getByText("Artifact Review")).toBeInTheDocument();
+    expect(screen.getByText("Observability Cockpit")).toBeInTheDocument();
+    expect(screen.getByText("Throughput over the last 24 hours")).toBeInTheDocument();
+    expect(screen.getByText("Activity updates as they happen")).toBeInTheDocument();
+    expect(screen.getByText("Approve the final ship candidate.")).toBeInTheDocument();
+    expect(screen.getAllByText("Graphic Designer").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Frontend Engineer").length).toBeGreaterThan(0);
+  });
+
+  it("routes inline artifact feedback to the matched owner via ticket creation", async () => {
+    render(
+      <MemoryRouter>
+        <Dashboard />
+      </MemoryRouter>
+    );
+
+    await screen.findByText("Artifact Review");
+
+    fireEvent.change(screen.getAllByPlaceholderText(/route artifact feedback/i)[0], {
+      target: { value: "Tighten the headline spacing before customer review." },
+    });
+    fireEvent.click(screen.getAllByRole("button", { name: /send to owner/i })[0]);
+
+    await waitFor(() => expect(createTicketMock).toHaveBeenCalledTimes(1));
+    expect(createTicketMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        title: "Artifact review: Frontend Build",
+        assignees: [{ type: "agent", id: "agent-frontend", role: "primary" }],
+      }),
+      "mock-token"
+    );
+    expect(await screen.findByText(/feedback routed to Frontend Engineer/i)).toBeInTheDocument();
+  });
+
+  it("reloads observability when filters or time range controls change", async () => {
     render(
       <MemoryRouter>
         <Dashboard />
@@ -180,9 +382,8 @@ describe("Dashboard", () => {
     });
   });
 
-  it("renders the error state and retries the initial load", async () => {
-    listObservabilityEventsMock.mockRejectedValueOnce(new Error("Observability broke"));
-    listObservabilityEventsMock.mockResolvedValueOnce(sampleFeedPage);
+  it("renders the error state and retries loading", async () => {
+    listRunsMock.mockRejectedValueOnce(new Error("dashboard failed"));
 
     render(
       <MemoryRouter>
@@ -190,9 +391,9 @@ describe("Dashboard", () => {
       </MemoryRouter>
     );
 
-    expect(await screen.findByText("Observability dashboard unavailable")).toBeInTheDocument();
+    expect(await screen.findByText("Customer dashboard unavailable")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: /retry/i }));
-    expect(await screen.findByText("Critical alert raised for execution latency.")).toBeInTheDocument();
-    expect(listObservabilityEventsMock).toHaveBeenCalled();
+    expect(await screen.findByText(/Test, your company is live/i)).toBeInTheDocument();
+    expect(listRunsMock).toHaveBeenCalledTimes(2);
   });
 });

@@ -38,7 +38,6 @@ import AgentActivity from "./pages/AgentActivity";
 import Routines from "./pages/Routines";
 import OrgStructure from "./pages/OrgStructure";
 import BudgetDashboard from "./pages/BudgetDashboard";
-import StaffingPlanReview from "./pages/StaffingPlanReview";
 import Tickets from "./pages/Tickets";
 import TicketDetail from "./pages/TicketDetail";
 import TicketTeamView from "./pages/TicketTeamView";
@@ -46,7 +45,6 @@ import TicketActorView from "./pages/TicketActorView";
 import TicketSlaDashboard from "./pages/TicketSlaDashboard";
 import TicketSlaSettings from "./pages/TicketSlaSettings";
 import ConnectorHealth from "./pages/ConnectorHealth";
-import MissionState from "./pages/MissionState";
 
 function PrivateRoute({ children }: { children: React.ReactNode }) {
   const { user } = useAuth();
@@ -139,15 +137,6 @@ export default function App() {
             }
           >
             <Route index element={<Dashboard />} />
-            <Route path="mission-state" element={<MissionState />} />
-            <Route
-              path="staffing-plan"
-              element={<Navigate to="/mission-state?entry=staffing-plan&focus=readiness" replace />}
-            />
-            <Route
-              path="staffing-plan/mission-state"
-              element={<Navigate to="/mission-state?entry=staffing-plan&focus=readiness" replace />}
-            />
             <Route path="builder" element={<WorkflowBuilder />} />
             <Route path="builder/:templateId" element={<WorkflowBuilder />} />
             <Route path="agents/team/:teamId" element={<AgentTeamDetail />} />
@@ -161,7 +150,6 @@ export default function App() {
             <Route path="agents/routines" element={<Routines />} />
             <Route path="workspace/org-structure" element={<OrgStructure />} />
             <Route path="workspace/budget-dashboard" element={<BudgetDashboard />} />
-            <Route path="workspace/staffing-plan" element={<StaffingPlanReview />} />
             <Route path="tickets" element={<Tickets />} />
             <Route path="tickets/sla" element={<TicketSlaDashboard />} />
             <Route path="tickets/team" element={<TicketTeamView />} />

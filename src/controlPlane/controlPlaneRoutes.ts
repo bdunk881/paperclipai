@@ -1,5 +1,7 @@
 import express from "express";
 import { AuthenticatedRequest } from "../auth/authMiddleware";
+import { recordControlPlaneAudit, recordControlPlaneAuditBatch } from "../auditing/controlPlaneAudit";
+import { isPostgresPersistenceEnabled } from "../db/postgres";
 import { WorkspaceAwareRequest } from "../middleware/workspaceResolver";
 import { getTemplate } from "../templates";
 import { WorkflowTemplate } from "../types/workflow";
@@ -113,9 +115,12 @@ function resolveWorkspaceContext(req: WorkspaceAwareRequest, res: express.Respon
     return { workspaceId, userId };
   }
 
-  // Control-plane routes on this branch remain user-scoped in memory, so they
-  // must continue working before workspace bootstrap has created any rows.
-  return { workspaceId: userId, userId };
+  if (!isPostgresPersistenceEnabled()) {
+    return { workspaceId: userId, userId };
+  }
+
+  res.status(500).json({ error: "Workspace context was not resolved for the request" });
+  return null;
 }
 
 function requirePaperclipRunId(
@@ -131,13 +136,12 @@ function requirePaperclipRunId(
   next();
 }
 
-router.get("/teams", async (req: WorkspaceAwareRequest, res) => {
+router.get("/teams", (req: WorkspaceAwareRequest, res) => {
   const context = resolveWorkspaceContext(req, res);
   if (!context) {
     return;
   }
 
-  await controlPlaneStore.ensureWorkspaceHydrated(context.workspaceId, context.userId);
   const teams = controlPlaneStore.listTeams(context.userId, context.workspaceId);
   res.json({ teams, total: teams.length });
 });
@@ -164,10 +168,9 @@ router.get("/company/lifecycle/audit", async (req: AuthenticatedRequest, res) =>
   res.json({ auditTrail, total: auditTrail.length });
 });
 
-router.post("/company/lifecycle", requirePaperclipRunId, async (req: AuthenticatedRequest, res) => {
-  const userId = getUserId(req);
-  if (!userId) {
-    res.status(401).json({ error: "Authenticated user required" });
+router.post("/company/lifecycle", requirePaperclipRunId, async (req: WorkspaceAwareRequest, res) => {
+  const context = resolveWorkspaceContext(req, res);
+  if (!context) {
     return;
   }
 
@@ -182,10 +185,24 @@ router.post("/company/lifecycle", requirePaperclipRunId, async (req: Authenticat
   }
 
   const result = await controlPlaneStore.updateCompanyLifecycle({
-    userId,
+    userId: context.userId,
     action,
     actor: req.header("X-Paperclip-Run-Id") as string,
     reason: typeof reason === "string" ? reason : undefined,
+  });
+
+  await recordControlPlaneAudit({
+    workspaceId: context.workspaceId,
+    userId: context.userId,
+    category: "team_lifecycle",
+    action: action === "pause" ? "company_paused" : "company_resumed",
+    target: { type: "workspace", id: context.workspaceId },
+    metadata: {
+      runId: req.header("X-Paperclip-Run-Id"),
+      reason: typeof reason === "string" ? reason : null,
+      affectedTeamIds: result.affectedTeamIds,
+      affectedAgentIds: result.affectedAgentIds,
+    },
   });
   res.json(result);
 });
@@ -245,6 +262,19 @@ router.post("/teams", requirePaperclipRunId, async (req: WorkspaceAwareRequest, 
         : undefined,
     orchestrationEnabled:
       typeof orchestrationEnabled === "boolean" ? orchestrationEnabled : undefined,
+  });
+
+  await recordControlPlaneAudit({
+    workspaceId: context.workspaceId,
+    userId: context.userId,
+    category: "team_lifecycle",
+    action: "team_created",
+    target: { type: "team", id: team.id },
+    metadata: {
+      runId: req.header("X-Paperclip-Run-Id"),
+      deploymentMode: team.deploymentMode,
+      orchestrationEnabled: team.orchestrationEnabled,
+    },
   });
 
   res.status(201).json(team);
@@ -313,19 +343,48 @@ router.post("/deployments/workflow", requirePaperclipRunId, async (req: Workspac
       defaultIntervalMinutes:
         typeof defaultIntervalMinutes === "number" ? defaultIntervalMinutes : undefined,
     });
+
+    await recordControlPlaneAuditBatch([
+      {
+        workspaceId: context.workspaceId,
+        userId: context.userId,
+        category: "provisioning",
+        action: "workflow_team_deployed",
+        target: { type: "team", id: deployment.team.id },
+        metadata: {
+          runId: req.header("X-Paperclip-Run-Id"),
+          templateId: deployment.workflow.id,
+          templateName: deployment.workflow.name,
+          agentCount: deployment.agents.length,
+        },
+      },
+      ...deployment.agents.map((agent) => ({
+        workspaceId: context.workspaceId,
+        userId: context.userId,
+        category: "agent_lifecycle" as const,
+        action: "agent_created",
+        target: { type: "agent", id: agent.id },
+        metadata: {
+          runId: req.header("X-Paperclip-Run-Id"),
+          teamId: deployment.team.id,
+          roleKey: agent.roleKey,
+          source: "workflow_deployment",
+        },
+      })),
+    ]);
+
     res.status(201).json(deployment);
   } catch {
     res.status(404).json({ error: `Template not found: ${templateId}` });
   }
 });
 
-router.get("/teams/:id", async (req: WorkspaceAwareRequest, res) => {
+router.get("/teams/:id", (req: WorkspaceAwareRequest, res) => {
   const context = resolveWorkspaceContext(req, res);
   if (!context) {
     return;
   }
 
-  await controlPlaneStore.ensureWorkspaceHydrated(context.workspaceId, context.userId);
   const team = controlPlaneStore.getTeam(req.params.id, context.userId, context.workspaceId);
   if (!team) {
     res.status(404).json({ error: "Team not found" });
@@ -340,29 +399,12 @@ router.get("/teams/:id", async (req: WorkspaceAwareRequest, res) => {
   res.json({ team, agents, tasks, heartbeats, executions, spend });
 });
 
-router.get("/teams/:id/mission-state", async (req: WorkspaceAwareRequest, res) => {
+router.get("/teams/:id/spend", (req: WorkspaceAwareRequest, res) => {
   const context = resolveWorkspaceContext(req, res);
   if (!context) {
     return;
   }
 
-  await controlPlaneStore.ensureWorkspaceHydrated(context.workspaceId, context.userId);
-  const missionState = controlPlaneStore.getMissionState(req.params.id, context.userId, context.workspaceId);
-  if (!missionState) {
-    res.status(404).json({ error: "Team not found" });
-    return;
-  }
-
-  res.json({ missionState });
-});
-
-router.get("/teams/:id/spend", async (req: WorkspaceAwareRequest, res) => {
-  const context = resolveWorkspaceContext(req, res);
-  if (!context) {
-    return;
-  }
-
-  await controlPlaneStore.ensureWorkspaceHydrated(context.workspaceId, context.userId);
   const spend = controlPlaneStore.getTeamSpendSnapshot(req.params.id, context.userId, context.workspaceId);
   if (!spend) {
     res.status(404).json({ error: "Team not found" });
@@ -390,6 +432,20 @@ router.post("/teams/:id/lifecycle", requirePaperclipRunId, async (req: Workspace
       userId: context.userId,
       action,
     });
+
+    await recordControlPlaneAudit({
+      workspaceId: context.workspaceId,
+      userId: context.userId,
+      category: "team_lifecycle",
+      action: `team_${action}`,
+      target: { type: "team", id: team.id },
+      metadata: {
+        runId: req.header("X-Paperclip-Run-Id"),
+        status: team.status,
+        restartCount: team.restartCount,
+      },
+    });
+
     res.json(team);
   } catch (error) {
     if (error instanceof Error && error.message === "team_not_found") {
@@ -424,6 +480,21 @@ router.post("/agents/:id/skills", requirePaperclipRunId, async (req: WorkspaceAw
       operation,
       skills: skills as string[],
     });
+
+    await recordControlPlaneAudit({
+      workspaceId: context.workspaceId,
+      userId: context.userId,
+      category: "agent_lifecycle",
+      action: operation === "assign" ? "agent_skills_assigned" : "agent_skills_revoked",
+      target: { type: "agent", id: agent.id },
+      metadata: {
+        runId: req.header("X-Paperclip-Run-Id"),
+        teamId: agent.teamId,
+        roleKey: agent.roleKey,
+        skills,
+      },
+    });
+
     res.json(agent);
   } catch (error) {
     if (error instanceof Error && error.message === "agent_not_found") {
@@ -505,12 +576,11 @@ router.get("/tasks", (req: AuthenticatedRequest, res) => {
   res.json({ tasks, total: tasks.length });
 });
 
-router.get("/executions", async (req: WorkspaceAwareRequest, res) => {
+router.get("/executions", (req: WorkspaceAwareRequest, res) => {
   const context = resolveWorkspaceContext(req, res);
   if (!context) {
     return;
   }
-  await controlPlaneStore.ensureWorkspaceHydrated(context.workspaceId, context.userId);
   const teamId = typeof req.query.teamId === "string" ? req.query.teamId : undefined;
   const executions = controlPlaneStore.listExecutions(context.userId, teamId, context.workspaceId);
   res.json({ executions, total: executions.length });
@@ -535,6 +605,22 @@ router.post("/executions/:id/lifecycle", requirePaperclipRunId, async (req: Work
       userId: context.userId,
       action,
     });
+
+    await recordControlPlaneAudit({
+      workspaceId: context.workspaceId,
+      userId: context.userId,
+      category: "execution",
+      action: action === "restart" ? "execution_restarted" : "execution_stopped",
+      target: { type: "execution", id: execution.id },
+      metadata: {
+        runId: req.header("X-Paperclip-Run-Id"),
+        teamId: execution.teamId,
+        agentId: execution.agentId,
+        status: execution.status,
+        restartCount: execution.restartCount,
+      },
+    });
+
     res.json(execution);
   } catch (error) {
     if (error instanceof Error && error.message === "execution_not_found") {
@@ -572,7 +658,7 @@ router.post("/tasks/:id/checkout", requirePaperclipRunId, async (req: Authentica
   }
 });
 
-router.patch("/tasks/:id/status", requirePaperclipRunId, async (req: AuthenticatedRequest, res) => {
+router.patch("/tasks/:id/status", requirePaperclipRunId, (req: AuthenticatedRequest, res) => {
   const userId = getUserId(req);
   if (!userId) {
     res.status(401).json({ error: "Authenticated user required" });
@@ -586,7 +672,7 @@ router.patch("/tasks/:id/status", requirePaperclipRunId, async (req: Authenticat
   }
 
   try {
-    const task = await controlPlaneStore.updateTaskStatus({
+    const task = controlPlaneStore.updateTaskStatus({
       taskId: req.params.id,
       userId,
       actor: req.header("X-Paperclip-Run-Id") as string,
@@ -602,9 +688,10 @@ router.patch("/tasks/:id/status", requirePaperclipRunId, async (req: Authenticat
   }
 });
 
-router.post("/heartbeats", requirePaperclipRunId, async (req: WorkspaceAwareRequest, res) => {
-  const context = resolveWorkspaceContext(req, res);
-  if (!context) {
+router.post("/heartbeats", requirePaperclipRunId, async (req: AuthenticatedRequest, res) => {
+  const userId = getUserId(req);
+  if (!userId) {
+    res.status(401).json({ error: "Authenticated user required" });
     return;
   }
 
@@ -648,8 +735,7 @@ router.post("/heartbeats", requirePaperclipRunId, async (req: WorkspaceAwareRequ
 
   try {
     const heartbeat = await controlPlaneStore.recordHeartbeat({
-      workspaceId: context.workspaceId,
-      userId: context.userId,
+      userId,
       teamId,
       agentId,
       executionId: typeof executionId === "string" ? executionId : undefined,

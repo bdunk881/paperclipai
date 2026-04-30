@@ -34,7 +34,7 @@ function makeConfig(overrides: Partial<Record<string, unknown>> = {}) {
     provider: "openai",
     model: "gpt-4o",
     isDefault: true,
-    maskedApiKey: "sk-...1234",
+    apiKeyMasked: "sk-...1234",
     createdAt: "2026-04-22T00:00:00.000Z",
     ...overrides,
   };
@@ -110,7 +110,7 @@ describe("LLMProviders", () => {
         provider: "anthropic",
         model: "claude-sonnet-4-6",
         isDefault: false,
-        maskedApiKey: "sk-...5678",
+        apiKeyMasked: "sk-...5678",
       }),
     ]);
     setDefaultLLMConfigMock.mockResolvedValue(makeConfig({
@@ -119,7 +119,7 @@ describe("LLMProviders", () => {
       provider: "anthropic",
       model: "claude-sonnet-4-6",
       isDefault: true,
-      maskedApiKey: "sk-...5678",
+      apiKeyMasked: "sk-...5678",
     }));
 
     const { container } = render(<LLMProviders />);
@@ -151,7 +151,7 @@ describe("LLMProviders", () => {
           provider: "anthropic",
           model: "claude-sonnet-4-6",
           isDefault: false,
-          maskedApiKey: "sk-...5678",
+          apiKeyMasked: "sk-...5678",
         }),
       ])
       .mockResolvedValueOnce([
@@ -162,7 +162,7 @@ describe("LLMProviders", () => {
           provider: "anthropic",
           model: "claude-sonnet-4-6",
           isDefault: false,
-          maskedApiKey: "sk-...5678",
+          apiKeyMasked: "sk-...5678",
         }),
       ])
       .mockResolvedValueOnce([

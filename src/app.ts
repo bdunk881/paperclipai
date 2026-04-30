@@ -73,8 +73,8 @@ import intercomRoutes, { intercomWebhookRouter } from "./integrations/intercom/r
 import datadogAzureMonitorRoutes, {
   datadogAzureMonitorWebhookRouter,
 } from "./integrations/datadog-azure-monitor/routes";
-import agentCatalogRoutes from "./integrations/agent-catalog/routes";
 import { composioRoutes, composioWebhookRouter } from "./integrations/composio";
+import agentCatalogRoutes from "./integrations/agent-catalog/routes";
 import oauthBridgeRoutes from "./integrations/oauthBridgeRoutes";
 import integrationRoutes, {
   catalogRouter as integrationCatalogRoutes,
@@ -280,7 +280,7 @@ app.use("/api/webhooks/posthog", posthogWebhookRouter);
 app.use("/api/webhooks/intercom", intercomWebhookRouter);
 // Datadog + Azure Monitor webhook — mounted before express.json() for signature verification
 app.use("/api/webhooks/datadog-azure-monitor", datadogAzureMonitorWebhookRouter);
-// Composio webhook — mounted before express.json() for signature verification
+// Composio webhook — mounted before express.json() because the route verifies the raw payload
 app.use("/api/webhooks/composio", composioWebhookRouter);
 app.use("/api/webhooks/ticket-sync", ticketSyncWebhookRoutes);
 app.use("/api/connectors/google-workspace", googleWorkspaceWebhookRoutes);
@@ -345,8 +345,8 @@ app.use("/api/integrations/apollo", apolloRoutes);
 app.use("/api/integrations/posthog", posthogRoutes);
 app.use("/api/integrations/intercom", intercomRoutes);
 app.use("/api/integrations/datadog-azure-monitor", datadogAzureMonitorRoutes);
-app.use("/api/integrations/agent-catalog", agentCatalogRoutes);
 app.use("/api/integrations/composio", composioRoutes);
+app.use("/api/integrations/agent-catalog", agentCatalogRoutes);
 app.use("/api/connectors/google-workspace", googleWorkspaceConnectorRoutes);
 app.use("/api/companies", requireAuth, workspaceResolver, companyRoutes);
 app.use("/api/control-plane", requireAuth, controlPlaneRoutes);

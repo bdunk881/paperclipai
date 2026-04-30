@@ -58,7 +58,12 @@ describe("report routes", () => {
   it("generates, archives, lists, and fetches a board memo report", async () => {
     const userId = `report-user-${Date.now()}`;
     const team = await controlPlaneStore.createTeam({ userId, name: "Ops Team" });
-    const done = await controlPlaneStore.createTask({ userId, teamId: team.id, title: "Ship API", actor: "tester" });
+    const done = await controlPlaneStore.createTask({
+      userId,
+      teamId: team.id,
+      title: "Ship API",
+      actor: "tester",
+    });
     await controlPlaneStore.updateTaskStatus({ taskId: done.id, userId, actor: "tester", status: "done" });
     const blocked = await controlPlaneStore.createTask({
       userId,
@@ -66,7 +71,12 @@ describe("report routes", () => {
       title: "Fix billing edge case",
       actor: "tester",
     });
-    await controlPlaneStore.updateTaskStatus({ taskId: blocked.id, userId, actor: "tester", status: "blocked" });
+    await controlPlaneStore.updateTaskStatus({
+      taskId: blocked.id,
+      userId,
+      actor: "tester",
+      status: "blocked",
+    });
 
     const createRes = await request(app)
       .post("/api/reporting/generate")

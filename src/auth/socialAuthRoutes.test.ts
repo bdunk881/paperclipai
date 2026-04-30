@@ -23,13 +23,17 @@ function loadApp(authenticateImpl: PassportAuthenticate, enabledProviders: strin
   };
 
   jest.resetModules();
-  jest.doMock("passport", () => ({
-    __esModule: true,
-    default: {
+  jest.doMock("passport", () => {
+    const mockedPassport = {
       initialize: jest.fn(() => (_req: unknown, _res: unknown, next: () => void) => next()),
       authenticate: jest.fn(authenticateImpl),
-    },
-  }), { virtual: true });
+    };
+    return {
+      __esModule: true,
+      ...mockedPassport,
+      default: mockedPassport,
+    };
+  });
   jest.doMock("./socialAuthStrategies", () => ({
     configureSocialAuthStrategies: jest.fn(),
     getSocialAuthConfigurationError: jest.fn(() => null),
@@ -60,13 +64,17 @@ function loadAppWithConfigurationError(
   };
 
   jest.resetModules();
-  jest.doMock("passport", () => ({
-    __esModule: true,
-    default: {
+  jest.doMock("passport", () => {
+    const mockedPassport = {
       initialize: jest.fn(() => (_req: unknown, _res: unknown, next: () => void) => next()),
       authenticate: jest.fn(authenticateImpl),
-    },
-  }), { virtual: true });
+    };
+    return {
+      __esModule: true,
+      ...mockedPassport,
+      default: mockedPassport,
+    };
+  });
   jest.doMock("./socialAuthStrategies", () => ({
     configureSocialAuthStrategies: jest.fn(),
     getSocialAuthConfigurationError: (provider: string) => providerErrors[provider] ?? null,

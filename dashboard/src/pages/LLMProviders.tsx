@@ -331,11 +331,7 @@ export default function LLMProviders() {
   }, {});
 
   function getMaskedApiKey(config: LLMConfig): string {
-    return (
-      config.apiKeyMasked ??
-      (config as LLMConfig & { maskedApiKey?: string }).maskedApiKey ??
-      "Hidden"
-    );
+    return config.apiKeyMasked ?? "Hidden";
   }
 
   return (

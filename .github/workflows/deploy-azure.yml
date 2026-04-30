@@ -354,6 +354,7 @@ jobs:
             --image "${{ steps.target.outputs.image_tag }}" \
             --set-env-vars \
               "${env_args[@]}" \
+              NODE_ENV=staging \
               QA_AUTH_BYPASS_ENABLED="${{ steps.target.outputs.qa_bypass_enabled }}" \
               QA_AUTH_BYPASS_USER_IDS="${{ steps.target.outputs.qa_bypass_users }}"
 
@@ -387,9 +388,20 @@ jobs:
               --revision "$LATEST_REVISION" \
               --query 'properties.template.containers[0].image' \
               -o tsv)
+            REVISION_NODE_ENV=$(az containerapp revision show \
+              --name "$APP_NAME" \
+              --resource-group "$RG_NAME" \
+              --revision "$LATEST_REVISION" \
+              --query "properties.template.containers[0].env[?name=='NODE_ENV'].value | [0]" \
+              -o tsv)
 
             if [ "$REVISION_IMAGE" != "$EXPECTED_IMAGE" ]; then
               echo "::error::Revision image mismatch: expected $EXPECTED_IMAGE, got $REVISION_IMAGE"
+              exit 1
+            fi
+
+            if [ "$REVISION_NODE_ENV" != "staging" ]; then
+              echo "::error::Expected staging revision NODE_ENV=staging, got ${REVISION_NODE_ENV:-<unset>}"
               exit 1
             fi
 

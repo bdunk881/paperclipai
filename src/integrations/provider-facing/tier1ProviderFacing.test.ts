@@ -1,3 +1,4 @@
+import { ApolloConnectorService } from "../apollo/service";
 import { GmailConnectorService } from "../gmail/service";
 import { HubSpotConnectorService } from "../hubspot/service";
 import { LinearConnectorService } from "../linear/service";
@@ -13,6 +14,7 @@ jest.setTimeout(120_000);
 const REQUIRE_ALL = process.env.REQUIRE_ALL_TIER1_CONNECTORS === "true";
 const INVALID_TOKEN = "pc_invalid_provider_token";
 
+const apolloService = new ApolloConnectorService();
 const gmailService = new GmailConnectorService();
 const hubSpotService = new HubSpotConnectorService();
 const linearService = new LinearConnectorService();
@@ -95,6 +97,18 @@ function createJiraAdapter(apiToken = requiredEnv("TIER1_JIRA_API_TOKEN")) {
 }
 
 const harnesses: ConnectorHarness[] = [
+  {
+    name: "apollo",
+    tokenEnv: "TIER1_APOLLO_API_KEY",
+    connect: (testUserId, token) => apolloService.connectApiKey({ userId: testUserId, apiKey: token }),
+    listConnections: async (testUserId) => apolloService.listConnections(testUserId),
+    testConnection: (testUserId) => apolloService.testConnection(testUserId),
+    health: (testUserId) => apolloService.health(testUserId),
+    readScenario: {
+      name: "viewer lookup",
+      run: (testUserId) => apolloService.testConnection(testUserId),
+    },
+  },
   {
     name: "jira",
     tokenEnv: "TIER1_JIRA_API_TOKEN",

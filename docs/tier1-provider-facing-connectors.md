@@ -4,6 +4,7 @@ This suite validates the live Tier 1 connector contract against provider-managed
 
 ## Covered connectors
 
+- `apollo`
 - `gmail`
 - `hubspot`
 - `jira`
@@ -24,6 +25,7 @@ This suite validates the live Tier 1 connector contract against provider-managed
 
 Set these GitHub Actions secrets before enabling the workflow:
 
+- `TIER1_APOLLO_API_KEY`
 - `TIER1_GMAIL_API_KEY`
 - `TIER1_HUBSPOT_API_KEY`
 - `TIER1_JIRA_API_TOKEN`
@@ -68,6 +70,7 @@ Without connector env vars, the connector suites are skipped by default.
 ## Test data lifecycle
 
 - `stripe` write coverage creates a draft invoice against a test customer and deletes it in the same run.
+- `apollo` currently validates auth and read access only.
 - `hubspot` and `linear` write coverage update reusable fixture records, so those fixtures should be dedicated to QA.
 - `jira` write coverage updates a reusable fixture issue when `TIER1_JIRA_ISSUE_KEY` is configured.
 - `gmail` write coverage sends to a dedicated test mailbox when `TIER1_GMAIL_TO_EMAIL` is configured.

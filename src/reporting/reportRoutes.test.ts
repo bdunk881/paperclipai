@@ -64,7 +64,12 @@ describe("report routes", () => {
       title: "Ship API",
       actor: "tester",
     });
-    await controlPlaneStore.updateTaskStatus({ taskId: done.id, userId, actor: "tester", status: "done" });
+    await controlPlaneStore.updateTaskStatus({
+      taskId: done.id,
+      userId,
+      actor: "tester",
+      status: "done",
+    });
     const blocked = await controlPlaneStore.createTask({
       userId,
       teamId: team.id,

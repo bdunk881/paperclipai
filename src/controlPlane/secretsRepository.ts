@@ -1,6 +1,7 @@
 import { PoolClient } from "pg";
 import { withWorkspaceContext } from "../middleware/workspaceContext";
 import { getPostgresPool } from "../db/postgres";
+import { recordActionWithin } from "../auditing/auditService";
 import {
   decryptSecret,
   encryptSecret,
@@ -170,6 +171,21 @@ export const secretsRepository = {
           actorAgentId,
           keyVersion,
         });
+        await recordActionWithin(
+          client,
+          {
+            workspaceId: ctx.workspaceId,
+            userId: ctx.userId,
+            actorUserId,
+            actorAgentId,
+          },
+          {
+            category: "secret",
+            action: "secret.write",
+            target: { type: "provisioned_company_secret", id: `${companyId}:${key}` },
+            metadata: { companyId, key, keyVersion },
+          },
+        );
         return { keyVersion };
       }
     );
@@ -227,6 +243,21 @@ export const secretsRepository = {
             actorAgentId,
             keyVersion: record.keyVersion,
           });
+          await recordActionWithin(
+            client,
+            {
+              workspaceId: ctx.workspaceId,
+              userId: ctx.userId,
+              actorUserId,
+              actorAgentId,
+            },
+            {
+              category: "secret",
+              action: "secret.write",
+              target: { type: "provisioned_company_secret", id: `${companyId}:${key}` },
+              metadata: { companyId, key, keyVersion: record.keyVersion },
+            },
+          );
         }
       }
     );
@@ -263,6 +294,21 @@ export const secretsRepository = {
             actorAgentId,
             keyVersion: row.key_version,
           });
+          await recordActionWithin(
+            client,
+            {
+              workspaceId: ctx.workspaceId,
+              userId: ctx.userId,
+              actorUserId,
+              actorAgentId,
+            },
+            {
+              category: "secret",
+              action: "secret.read",
+              target: { type: "provisioned_company_secret", id: `${companyId}:${key}` },
+              metadata: { companyId, key, keyVersion: row.key_version },
+            },
+          );
           return plaintext;
         } catch (err) {
           // Tamper / wrong-key-version / corrupted-row paths: leave a
@@ -278,6 +324,26 @@ export const secretsRepository = {
             keyVersion: row.key_version,
             metadata: { reason: describeError(err) },
           });
+          await recordActionWithin(
+            client,
+            {
+              workspaceId: ctx.workspaceId,
+              userId: ctx.userId,
+              actorUserId,
+              actorAgentId,
+            },
+            {
+              category: "secret",
+              action: "secret.read_failed",
+              target: { type: "provisioned_company_secret", id: `${companyId}:${key}` },
+              metadata: {
+                companyId,
+                key,
+                keyVersion: row.key_version,
+                reason: describeError(err),
+              },
+            },
+          );
           throw err;
         }
       }
@@ -313,6 +379,21 @@ export const secretsRepository = {
           keyVersion: getActiveKeyVersion(),
           metadata: { count: result.rows.length },
         });
+        await recordActionWithin(
+          client,
+          {
+            workspaceId: ctx.workspaceId,
+            userId: ctx.userId,
+            actorUserId,
+            actorAgentId,
+          },
+          {
+            category: "secret",
+            action: "secret.list",
+            target: { type: "provisioned_company", id: companyId },
+            metadata: { companyId, count: result.rows.length },
+          },
+        );
         return result.rows.map((row) => ({
           key: row.key,
           maskedValue: renderMaskedValue(row.value_mask_suffix),
@@ -347,6 +428,21 @@ export const secretsRepository = {
           actorAgentId,
           keyVersion: getActiveKeyVersion(),
         });
+        await recordActionWithin(
+          client,
+          {
+            workspaceId: ctx.workspaceId,
+            userId: ctx.userId,
+            actorUserId,
+            actorAgentId,
+          },
+          {
+            category: "secret",
+            action: "secret.delete",
+            target: { type: "provisioned_company_secret", id: `${companyId}:${key}` },
+            metadata: { companyId, key, keyVersion: getActiveKeyVersion() },
+          },
+        );
         return true;
       }
     );
@@ -408,6 +504,29 @@ export const secretsRepository = {
             keyVersion: re.keyVersion,
             metadata: { previousKeyVersion: row.key_version },
           });
+          await recordActionWithin(
+            client,
+            {
+              workspaceId: ctx.workspaceId,
+              userId: ctx.userId,
+              actorUserId,
+              actorAgentId,
+            },
+            {
+              category: "secret",
+              action: "secret.rotate",
+              target: {
+                type: "provisioned_company_secret",
+                id: `${companyId}:${row.key}`,
+              },
+              metadata: {
+                companyId,
+                key: row.key,
+                keyVersion: re.keyVersion,
+                previousKeyVersion: row.key_version,
+              },
+            },
+          );
           rotated += 1;
         }
         return { rotated };

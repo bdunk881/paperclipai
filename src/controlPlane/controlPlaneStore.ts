@@ -4,6 +4,7 @@ import { WorkflowStep, WorkflowTemplate } from "../types/workflow";
 import { DEFAULT_ROLE_LIBRARY } from "../goals/teamAssembly";
 import { getPostgresPool, isPostgresConfigured } from "../db/postgres";
 import { withWorkspaceContext } from "../middleware/workspaceContext";
+import { assertAgentWorkspaceBinding } from "../middleware/workspaceSandbox";
 import { companyLifecycleStore } from "./companyLifecycleStore";
 import {
   AgentHeartbeatRecord,
@@ -33,6 +34,7 @@ import {
 import { observabilityStore } from "../observability/store";
 import { secretsRepository } from "./secretsRepository";
 import { controlPlaneRepository } from "./controlPlaneRepository";
+import { recordActionWithin } from "../auditing/auditService";
 
 function nowIso(): string {
   return new Date().toISOString();
@@ -1565,6 +1567,53 @@ export const controlPlaneStore = {
           tenantWorkspaceId: workspaceId,
           client,
         });
+        await recordActionWithin(
+          client,
+          { workspaceId, userId: input.userId, actorUserId: input.userId },
+          {
+            category: "provisioning",
+            action: "company.create",
+            target: { type: "provisioned_company", id: company.id },
+            metadata: {
+              teamId: team.id,
+              tenantWorkspaceId: workspace.id,
+              agentCount: provisionedAgents.length,
+              budgetMonthlyUsd: input.budgetMonthlyUsd,
+              orchestrationEnabled: input.orchestrationEnabled ?? true,
+            },
+          },
+        );
+        for (const provisionedAgent of provisionedAgents) {
+          await recordActionWithin(
+            client,
+            { workspaceId, userId: input.userId, actorUserId: input.userId },
+            {
+              category: "agent_lifecycle",
+              action: "agent.create",
+              target: { type: "control_plane_agent", id: provisionedAgent.id },
+              metadata: {
+                teamId: team.id,
+                companyId: company.id,
+                roleKey: provisionedAgent.roleKey,
+                skillCount: provisionedAgent.skills.length,
+              },
+            },
+          );
+        }
+        await recordActionWithin(
+          client,
+          { workspaceId, userId: input.userId, actorUserId: input.userId },
+          {
+            category: "team_lifecycle",
+            action: "team.create",
+            target: { type: "control_plane_team", id: team.id },
+            metadata: {
+              companyId: company.id,
+              deploymentMode: team.deploymentMode,
+              budgetMonthlyUsd: team.budgetMonthlyUsd,
+            },
+          },
+        );
       });
       await secretsRepository.setSecrets(
         { workspaceId, userId: input.userId, actorUserId: input.userId },
@@ -1604,6 +1653,20 @@ export const controlPlaneStore = {
       const workspaceId = requireWorkspaceIdForPersistence(input.workspaceId);
       await withWorkspaceContext(getPostgresPool(), { workspaceId, userId: input.userId }, async (client) => {
         await upsertTeamRow(team, workspaceId, client);
+        await recordActionWithin(
+          client,
+          { workspaceId, userId: input.userId, actorUserId: input.userId },
+          {
+            category: "team_lifecycle",
+            action: "team.create",
+            target: { type: "control_plane_team", id: team.id },
+            metadata: {
+              deploymentMode: team.deploymentMode,
+              budgetMonthlyUsd: team.budgetMonthlyUsd,
+              workflowTemplateId: input.workflowTemplateId,
+            },
+          },
+        );
       });
       hydratedWorkspaceUsers.add(workspaceUserKey(workspaceId, input.userId));
     }
@@ -1786,10 +1849,42 @@ export const controlPlaneStore = {
 
     if (isPostgresConfigured()) {
       const workspaceId = requireWorkspaceIdForPersistence(input.workspaceId);
+      const provisionedAgents = this.listAgents(team.id, input.userId);
       await withWorkspaceContext(getPostgresPool(), { workspaceId, userId: input.userId }, async (client) => {
         await upsertTeamRow(team, workspaceId, client);
-        for (const agent of this.listAgents(team.id, input.userId)) {
+        for (const agent of provisionedAgents) {
           await upsertAgentRow(agent, workspaceId, client);
+        }
+        await recordActionWithin(
+          client,
+          { workspaceId, userId: input.userId, actorUserId: input.userId },
+          {
+            category: "team_lifecycle",
+            action: "team.create",
+            target: { type: "control_plane_team", id: team.id },
+            metadata: {
+              deploymentMode: team.deploymentMode,
+              workflowTemplateId: input.template.id,
+              agentCount: provisionedAgents.length,
+              budgetMonthlyUsd: team.budgetMonthlyUsd,
+            },
+          },
+        );
+        for (const agent of provisionedAgents) {
+          await recordActionWithin(
+            client,
+            { workspaceId, userId: input.userId, actorUserId: input.userId },
+            {
+              category: "agent_lifecycle",
+              action: "agent.create",
+              target: { type: "control_plane_agent", id: agent.id },
+              metadata: {
+                teamId: team.id,
+                roleKey: agent.roleKey,
+                skillCount: agent.skills.length,
+              },
+            },
+          );
         }
       });
       hydratedWorkspaceUsers.add(workspaceUserKey(workspaceId, input.userId));
@@ -1824,6 +1919,7 @@ export const controlPlaneStore = {
         candidate.deploymentMode === "continuous_agents"
     );
 
+    let teamCreated = false;
     if (!team) {
       team = createTeamRecord({
         workspaceId: input.workspaceId,
@@ -1834,9 +1930,11 @@ export const controlPlaneStore = {
         alertThresholds: [0.8, 0.9, 1],
         orchestrationEnabled: true,
       });
+      teamCreated = true;
     }
 
     let agent = getAgentForWorkflowStep(team.id, input.userId, input.step);
+    let agentCreated = false;
     if (!agent) {
       agent = provisionStepAgent({
         teamId: team.id,
@@ -1844,6 +1942,7 @@ export const controlPlaneStore = {
         step: input.step,
         budgetMonthlyUsd: input.step.agentBudgetMonthlyUsd ?? 0,
       });
+      agentCreated = true;
     }
 
     if (isPostgresConfigured()) {
@@ -1851,6 +1950,37 @@ export const controlPlaneStore = {
       await withWorkspaceContext(getPostgresPool(), { workspaceId, userId: input.userId }, async (client) => {
         await upsertTeamRow(team!, workspaceId, client);
         await upsertAgentRow(agent!, workspaceId, client);
+        if (teamCreated) {
+          await recordActionWithin(
+            client,
+            { workspaceId, userId: input.userId, actorUserId: input.userId },
+            {
+              category: "team_lifecycle",
+              action: "team.create",
+              target: { type: "control_plane_team", id: team!.id },
+              metadata: {
+                deploymentMode: team!.deploymentMode,
+                origin: "ensureRuntimeTeamForStep",
+              },
+            },
+          );
+        }
+        if (agentCreated) {
+          await recordActionWithin(
+            client,
+            { workspaceId, userId: input.userId, actorUserId: input.userId },
+            {
+              category: "agent_lifecycle",
+              action: "agent.create",
+              target: { type: "control_plane_agent", id: agent!.id },
+              metadata: {
+                teamId: team!.id,
+                roleKey: agent!.roleKey,
+                origin: "ensureRuntimeTeamForStep",
+              },
+            },
+          );
+        }
       });
       hydratedWorkspaceUsers.add(workspaceUserKey(workspaceId, input.userId));
     }
@@ -1926,14 +2056,31 @@ export const controlPlaneStore = {
     teams.set(team.id, team);
     if (isPostgresConfigured()) {
       const workspaceId = requireWorkspaceIdForPersistence(input.workspaceId);
+      const affectedAgents = this.listAgents(team.id, input.userId);
+      const affectedExecutions = this.listExecutions(input.userId, team.id);
       await withWorkspaceContext(getPostgresPool(), { workspaceId, userId: input.userId }, async (client) => {
         await upsertTeamRow(team, workspaceId, client);
-        for (const agent of this.listAgents(team.id, input.userId)) {
+        for (const agent of affectedAgents) {
           await upsertAgentRow(agent, workspaceId, client);
         }
-        for (const execution of this.listExecutions(input.userId, team.id)) {
+        for (const execution of affectedExecutions) {
           await upsertExecutionRow(execution, workspaceId, client);
         }
+        await recordActionWithin(
+          client,
+          { workspaceId, userId: input.userId, actorUserId: input.userId },
+          {
+            category: "team_lifecycle",
+            action: `team.${input.action}`,
+            target: { type: "control_plane_team", id: team.id },
+            metadata: {
+              status: team.status,
+              agentCount: affectedAgents.length,
+              affectedExecutionCount: affectedExecutions.length,
+              restartCount: team.restartCount,
+            },
+          },
+        );
       });
       hydratedWorkspaceUsers.add(workspaceUserKey(workspaceId, input.userId));
     }
@@ -1983,6 +2130,20 @@ export const controlPlaneStore = {
         )) {
           await upsertExecutionRow(execution, workspaceId, client);
         }
+        await recordActionWithin(
+          client,
+          { workspaceId, userId: input.userId, actorUserId: input.userId },
+          {
+            category: "agent_lifecycle",
+            action: `agent.skills.${input.operation}`,
+            target: { type: "control_plane_agent", id: agent.id },
+            metadata: {
+              teamId: agent.teamId,
+              skillCount: agent.skills.length,
+              changedSkillCount: input.skills.length,
+            },
+          },
+        );
       });
       hydratedWorkspaceUsers.add(workspaceUserKey(workspaceId, input.userId));
     }
@@ -2333,6 +2494,14 @@ export const controlPlaneStore = {
       throw new Error("agent_not_found");
     }
 
+    assertAgentWorkspaceBinding({
+      agentId: agent.id,
+      agentTeamId: agent.teamId,
+      teamId: team.id,
+      teamWorkspaceId: teamWorkspaceIds.get(team.id),
+      claimedWorkspaceId: input.workspaceId,
+    });
+
     const teamSnapshot = buildTeamSpendSnapshot(team);
     const agentSnapshot = teamSnapshot.agents.find((entry) => entry.agentId === agent.id);
     if (team.status !== "active") {
@@ -2433,6 +2602,22 @@ export const controlPlaneStore = {
         await upsertTeamRow(team, workspaceId, client);
         await upsertAgentRow(agent, workspaceId, client);
         await upsertExecutionRow(execution, workspaceId, client);
+        await recordActionWithin(
+          client,
+          { workspaceId, userId: input.userId, actorUserId: input.userId },
+          {
+            category: "execution",
+            action: "exec.start",
+            target: { type: "control_plane_execution", id: execution.id },
+            metadata: {
+              teamId: team.id,
+              agentId: agent.id,
+              taskId: task?.id ?? null,
+              workflowStepId: input.step.id,
+              sourceRunId: input.sourceRunId,
+            },
+          },
+        );
       });
       hydratedWorkspaceUsers.add(workspaceUserKey(workspaceId, input.userId));
     }
@@ -2583,6 +2768,22 @@ export const controlPlaneStore = {
           await upsertAgentRow(agent, workspaceId, client);
         }
         await upsertExecutionRow(execution, workspaceId, client);
+        await recordActionWithin(
+          client,
+          { workspaceId, userId: input.userId, actorUserId: input.userId },
+          {
+            category: "execution",
+            action: "exec.end",
+            target: { type: "control_plane_execution", id: execution.id },
+            metadata: {
+              teamId: execution.teamId,
+              agentId: execution.agentId,
+              taskId: execution.taskId ?? null,
+              status: input.status,
+              costUsd: typeof input.costUsd === "number" ? input.costUsd : null,
+            },
+          },
+        );
       });
       hydratedWorkspaceUsers.add(workspaceUserKey(workspaceId, input.userId));
     }
@@ -2618,6 +2819,22 @@ export const controlPlaneStore = {
       const workspaceId = requireWorkspaceIdForPersistence(input.workspaceId);
       await withWorkspaceContext(getPostgresPool(), { workspaceId, userId: input.userId }, async (client) => {
         await upsertExecutionRow(execution, workspaceId, client);
+        await recordActionWithin(
+          client,
+          { workspaceId, userId: input.userId, actorUserId: input.userId },
+          {
+            category: "execution",
+            action: `exec.${input.action}`,
+            target: { type: "control_plane_execution", id: execution.id },
+            metadata: {
+              teamId: execution.teamId,
+              agentId: execution.agentId,
+              taskId: execution.taskId ?? null,
+              status: execution.status,
+              restartCount: execution.restartCount,
+            },
+          },
+        );
       });
       hydratedWorkspaceUsers.add(workspaceUserKey(workspaceId, input.userId));
     }

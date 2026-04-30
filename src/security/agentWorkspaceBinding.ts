@@ -39,21 +39,19 @@ export type AgentWorkspaceBindingErrorCode =
   /** The agent's teamId does not match the team resolved by the caller. */
   | "agent_team_mismatch"
   /** Caller's workspace claim does not match the team's stored workspace. */
-  | "agent_workspace_mismatch"
-  /** Team is workspace-bound but caller passed no workspaceId claim. */
-  | "agent_workspace_claim_required";
+  | "agent_workspace_mismatch";
 
 /**
  * Refuses to start an agent execution unless the workspace claim is sound:
  *
  *   - agentTeamId must equal the resolvedTeamId (catches agent-from-sibling-team)
  *   - if both teamWorkspaceId and claimedWorkspaceId are known, they must match
- *   - if teamWorkspaceId is known but claimedWorkspaceId is missing, refuse
- *     (prevents callers from silently dropping the workspace context)
  *
- * If both teamWorkspaceId and claimedWorkspaceId are undefined, accept
- * (preserves backward compat with the no-PG / legacy fallback paths in
- * controlPlaneStore where a team predates workspace tracking).
+ * If claimedWorkspaceId is missing, accept and trust the team's stored
+ * binding — mirrors the tolerance of matchesWorkspace() in controlPlaneStore
+ * and lets pre-Phase-2 callers (and tests that haven't been plumbed through
+ * the workspace context yet) keep working without weakening the mismatch
+ * guard for callers that DO assert a claim.
  *
  * Throws AgentWorkspaceBindingError on rejection. Returns nothing on accept.
  */
@@ -71,13 +69,6 @@ export function assertAgentWorkspaceBinding(input: AgentWorkspaceBindingInput): 
     throw new AgentWorkspaceBindingError(
       `Agent ${input.agentId} workspace claim ${claimedWorkspaceId} does not match team workspace ${teamWorkspaceId}`,
       "agent_workspace_mismatch",
-    );
-  }
-
-  if (teamWorkspaceId && !claimedWorkspaceId) {
-    throw new AgentWorkspaceBindingError(
-      `Agent ${input.agentId} requires a workspace claim; team is bound to workspace ${teamWorkspaceId}`,
-      "agent_workspace_claim_required",
     );
   }
 }

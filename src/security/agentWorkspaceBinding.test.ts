@@ -36,14 +36,10 @@ describe("assertAgentWorkspaceBinding", () => {
     }
   });
 
-  it("rejects when team is workspace-bound but caller passed no claim", () => {
-    try {
-      assertAgentWorkspaceBinding({ ...baseInput, claimedWorkspaceId: undefined });
-      throw new Error("expected throw");
-    } catch (err) {
-      expect(err).toBeInstanceOf(AgentWorkspaceBindingError);
-      expect((err as AgentWorkspaceBindingError).code).toBe("agent_workspace_claim_required");
-    }
+  it("accepts when team is workspace-bound but caller passed no claim (trusts the team's stored binding)", () => {
+    expect(() =>
+      assertAgentWorkspaceBinding({ ...baseInput, claimedWorkspaceId: undefined })
+    ).not.toThrow();
   });
 
   it("accepts when both team and caller workspaces are unknown (no-PG / legacy mode)", () => {

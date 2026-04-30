@@ -107,6 +107,7 @@ WITH CHECK (
 -- 2a. tickets (from migration 008)
 ALTER TABLE tickets ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS tickets_tenant_isolation ON tickets;
 CREATE POLICY tickets_tenant_isolation
 ON tickets
 USING (
@@ -121,6 +122,7 @@ WITH CHECK (
 -- 2b. ticket_sla_policies (from migration 010)
 ALTER TABLE ticket_sla_policies ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS ticket_sla_policies_tenant_isolation ON ticket_sla_policies;
 CREATE POLICY ticket_sla_policies_tenant_isolation
 ON ticket_sla_policies
 USING (
@@ -135,6 +137,7 @@ WITH CHECK (
 -- 2c. ticket_sla_snapshots (from migration 010)
 ALTER TABLE ticket_sla_snapshots ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS ticket_sla_snapshots_tenant_isolation ON ticket_sla_snapshots;
 CREATE POLICY ticket_sla_snapshots_tenant_isolation
 ON ticket_sla_snapshots
 USING (

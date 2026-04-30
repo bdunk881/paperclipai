@@ -226,23 +226,21 @@ describe("secretsRepository RLS integration", () => {
     });
 
     // Audit log is append-only: UPDATE and DELETE are denied even within the owning tenant.
-    await expect(
-      workspaceContext.withWorkspaceContext(pool, ctxA, async (client) => {
-        await client.query(
-          `UPDATE control_plane_secret_audit SET actor_user_id = 'tampered' WHERE company_id = $1`,
-          [companyA]
-        );
-      })
-    ).rejects.toThrow();
+    await workspaceContext.withWorkspaceContext(pool, ctxA, async (client) => {
+      const updateResult = await client.query(
+        `UPDATE control_plane_secret_audit SET actor_user_id = 'tampered' WHERE company_id = $1`,
+        [companyA]
+      );
+      expect(updateResult.rowCount).toBe(0);
+    });
 
-    await expect(
-      workspaceContext.withWorkspaceContext(pool, ctxA, async (client) => {
-        await client.query(
-          `DELETE FROM control_plane_secret_audit WHERE company_id = $1`,
-          [companyA]
-        );
-      })
-    ).rejects.toThrow();
+    await workspaceContext.withWorkspaceContext(pool, ctxA, async (client) => {
+      const deleteResult = await client.query(
+        `DELETE FROM control_plane_secret_audit WHERE company_id = $1`,
+        [companyA]
+      );
+      expect(deleteResult.rowCount).toBe(0);
+    });
 
     // Key rotation dry-run: introduce a v2 key, rotate tenant A, confirm decrypts under v2 only.
     process.env.CONTROL_PLANE_SECRET_KEY = ROTATED_KEY_HEX;

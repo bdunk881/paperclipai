@@ -156,7 +156,7 @@ describe("requireAuth", () => {
     expect(res.status).not.toHaveBeenCalled();
   });
 
-  it("accepts the allowlisted QA bypass user for protected routes when explicitly enabled", () => {
+  it("does not allow QA bypass on protected routes through requireAuth", () => {
     process.env.NODE_ENV = "test";
     process.env.QA_AUTH_BYPASS_ENABLED = "true";
     process.env.QA_AUTH_BYPASS_USER_IDS = "qa-smoke-user";
@@ -173,12 +173,9 @@ describe("requireAuth", () => {
 
     requireAuth(req, res as never, next);
 
-    expect(next).toHaveBeenCalledTimes(1);
-    expect(req.auth).toMatchObject({
-      sub: "qa-smoke-user",
-      name: "QA bypass user",
-    });
-    expect(res.status).not.toHaveBeenCalled();
+    expect(next).not.toHaveBeenCalled();
+    expect(req.auth).toBeUndefined();
+    expect(res.status).toHaveBeenCalledWith(401);
   });
 
   it("rejects non-allowlisted QA bypass users on protected routes", () => {

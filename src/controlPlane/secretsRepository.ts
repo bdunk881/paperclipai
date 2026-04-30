@@ -238,7 +238,14 @@ export const secretsRepository = {
     key: string
   ): Promise<string | null> {
     const { actorUserId, actorAgentId } = resolveAuditActor(ctx);
-    return withWorkspaceContext(
+    let decryptFailure:
+      | {
+          error: unknown;
+          keyVersion: number;
+        }
+      | null = null;
+
+    const result = await withWorkspaceContext(
       getPostgresPool(),
       { workspaceId: ctx.workspaceId, userId: ctx.userId },
       async (client) => {
@@ -264,24 +271,39 @@ export const secretsRepository = {
             keyVersion: row.key_version,
           });
           return plaintext;
-        } catch (err) {
-          // Tamper / wrong-key-version / corrupted-row paths: leave a
-          // tamper-evident trail before surfacing the error so SIEM can flag
-          // them without needing to correlate with application logs.
-          await recordAudit(client, {
-            workspaceId: ctx.workspaceId,
-            companyId,
-            key,
-            action: "read_failed",
-            actorUserId,
-            actorAgentId,
+        } catch (error) {
+          decryptFailure = {
+            error,
             keyVersion: row.key_version,
-            metadata: { reason: describeError(err) },
-          });
-          throw err;
+          };
+          return null;
         }
       }
     );
+
+    if (!decryptFailure) {
+      return result;
+    }
+
+    await withWorkspaceContext(
+      getPostgresPool(),
+      { workspaceId: ctx.workspaceId, userId: ctx.userId },
+      async (client) => {
+        await recordAudit(client, {
+          workspaceId: ctx.workspaceId,
+          companyId,
+          key,
+          action: "read_failed",
+          actorUserId,
+          actorAgentId,
+          keyVersion: decryptFailure!.keyVersion,
+          metadata: { reason: describeError(decryptFailure!.error) },
+        });
+      }
+    );
+
+    const failure = decryptFailure;
+    throw failure.error;
   },
 
   async listSecretSummaries(

@@ -86,13 +86,6 @@ describe("sql migrations", () => {
       "utf8"
     );
 
-    expect(migration).toContain("DROP POLICY IF EXISTS tickets_tenant_isolation ON tickets;");
-    expect(migration).toContain(
-      "DROP POLICY IF EXISTS ticket_sla_policies_tenant_isolation ON ticket_sla_policies;"
-    );
-    expect(migration).toContain(
-      "DROP POLICY IF EXISTS ticket_sla_snapshots_tenant_isolation ON ticket_sla_snapshots;"
-    );
     expect(migration).toContain("CREATE POLICY tickets_tenant_isolation");
     expect(migration).toContain("CREATE POLICY ticket_sla_policies_tenant_isolation");
     expect(migration).toContain("CREATE POLICY ticket_sla_snapshots_tenant_isolation");

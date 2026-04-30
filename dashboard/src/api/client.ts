@@ -558,6 +558,207 @@ export interface ControlPlaneDeployment {
   workflow: Pick<WorkflowTemplate, "id" | "name" | "category" | "version">;
 }
 
+export type TeamAssemblySourceType = "free_text" | "notion" | "google-doc" | "markdown";
+export type TeamAssemblyModelTier = "lite" | "standard" | "power";
+export type TeamAssemblyRoleType = "executive" | "operator";
+
+export interface TeamAssemblyNormalizedGoalDocument {
+  sourceType: TeamAssemblySourceType;
+  goal: string;
+  targetCustomer: string | null;
+  successMetrics: string[];
+  constraints: string[];
+  budget: string | null;
+  timeHorizon: string | null;
+  importedContextSummary?: string | null;
+  planReadinessThreshold: number;
+}
+
+export interface TeamAssemblyPrd {
+  title: string;
+  summary: string;
+  targetCustomer: string;
+  problemStatement: string;
+  proposedSolution: string;
+  successMetrics: string[];
+  constraints: string[];
+  budget: string;
+  timeHorizon: string;
+  assumptions?: string[];
+  risks?: string[];
+  openQuestions?: string[];
+}
+
+export interface TeamAssemblyRoleLibraryEntry {
+  roleKey: string;
+  title: string;
+  roleType: TeamAssemblyRoleType;
+  department: string;
+  mandate: string;
+  defaultReportsToRoleKey?: string | null;
+  defaultSkills?: string[];
+  defaultTools?: string[];
+  defaultModelTier: TeamAssemblyModelTier;
+  hiringSignals?: string[];
+}
+
+export interface TeamAssemblyStaffingRecommendation {
+  roleKey: string;
+  title: string;
+  roleType: TeamAssemblyRoleType;
+  department: string;
+  headcount: number;
+  reportsToRoleKey: string | null;
+  mandate: string;
+  justification: string;
+  kpis: string[];
+  skills: string[];
+  tools: string[];
+  modelTier: TeamAssemblyModelTier;
+  budgetMonthlyUsd: number | null;
+  provisioningInstructions: string;
+}
+
+export interface TeamAssemblyResult {
+  schemaVersion: string;
+  company: {
+    name: string | null;
+    goal: string;
+    targetCustomer: string | null;
+    budget: string | null;
+    timeHorizon: string | null;
+  };
+  summary: string;
+  rationale: string;
+  orgChart: {
+    executives: TeamAssemblyStaffingRecommendation[];
+    operators: TeamAssemblyStaffingRecommendation[];
+    reportingLines: Array<{
+      managerRoleKey: string;
+      reportRoleKey: string;
+    }>;
+  };
+  provisioningPlan: {
+    teamName: string;
+    deploymentMode: "continuous_agents";
+    agents: TeamAssemblyStaffingRecommendation[];
+  };
+  roadmap306090: {
+    day30: TeamAssemblyPhasePlan;
+    day60: TeamAssemblyPhasePlan;
+    day90: TeamAssemblyPhasePlan;
+  };
+}
+
+export interface TeamAssemblyPhasePlan {
+  objectives: string[];
+  deliverables: string[];
+  ownerRoleKeys: string[];
+}
+
+export interface TeamAssemblyRequestInput {
+  companyName?: string;
+  normalizedGoalDocument: TeamAssemblyNormalizedGoalDocument;
+  prd?: TeamAssemblyPrd;
+  roleLibrary?: TeamAssemblyRoleLibraryEntry[];
+}
+
+export interface CompanyRoleTemplate {
+  id: string;
+  name: string;
+  description: string;
+  defaultModel: string;
+  defaultInstructions: string;
+  defaultSkills: string[];
+}
+
+export interface CompanyProvisioningContract {
+  schemaVersion: string;
+  endpoint: string;
+  requiredHeaders: string[];
+  companyFields: {
+    required: string[];
+    optional: string[];
+  };
+  agentFields: {
+    identifierFields: string[];
+    requiredOneOf: string[];
+    optional: string[];
+  };
+}
+
+export interface CompanyRoleTemplateCatalogResponse {
+  roleTemplates: CompanyRoleTemplate[];
+  total: number;
+  provisioningContract: CompanyProvisioningContract;
+}
+
+export interface CompanyProvisioningAgentInput {
+  roleTemplateId?: string;
+  roleKey?: string;
+  name?: string;
+  budgetMonthlyUsd?: number;
+  model?: string;
+  instructions?: string;
+  skills?: string[];
+}
+
+export interface CompanyProvisioningInput {
+  name: string;
+  workspaceName?: string;
+  externalCompanyId?: string;
+  idempotencyKey: string;
+  budgetMonthlyUsd: number;
+  orchestrationEnabled?: boolean;
+  secretBindings: Record<string, string>;
+  agents: CompanyProvisioningAgentInput[];
+}
+
+export interface ProvisionedCompanySummary {
+  id: string;
+  userId: string;
+  name: string;
+  externalCompanyId?: string;
+  workspaceId: string;
+  teamId: string;
+  idempotencyKey: string;
+  budgetMonthlyUsd: number;
+  allocatedBudgetMonthlyUsd: number;
+  remainingBudgetMonthlyUsd: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ProvisionedWorkspaceSummary {
+  id: string;
+  name: string;
+  slug: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ProvisionedSecretSummary {
+  key: string;
+  maskedValue: string;
+}
+
+export interface ProvisioningSkillSummary {
+  id: string;
+  name: string;
+  description: string;
+  scope: "workflow" | "agent" | "security" | "integration";
+}
+
+export interface CompanyProvisioningResult {
+  company: ProvisionedCompanySummary;
+  workspace: ProvisionedWorkspaceSummary;
+  team: ControlPlaneTeam;
+  agents: ControlPlaneAgent[];
+  secretBindings: ProvisionedSecretSummary[];
+  availableSkills: ProvisioningSkillSummary[];
+  idempotentReplay: boolean;
+}
+
 export interface ControlPlaneTeamDetail {
   team: ControlPlaneTeam;
   agents: ControlPlaneAgent[];
@@ -722,6 +923,53 @@ export async function deployWorkflowAsTeam(
     throw new Error(err?.error ?? `Failed to deploy workflow as team: ${res.status}`);
   }
   return res.json() as Promise<ControlPlaneDeployment>;
+}
+
+export async function generateTeamAssemblyPlan(
+  input: TeamAssemblyRequestInput,
+  accessToken?: string
+): Promise<TeamAssemblyResult> {
+  const res = await fetch(`${BASE}/goals/team-assembly`, {
+    method: "POST",
+    headers: buildJsonHeaders(accessToken),
+    body: JSON.stringify(input),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => null);
+    throw new Error(err?.error ?? `Failed to generate staffing plan: ${res.status}`);
+  }
+  return res.json() as Promise<TeamAssemblyResult>;
+}
+
+export async function listCompanyRoleTemplates(
+  accessToken?: string
+): Promise<CompanyRoleTemplateCatalogResponse> {
+  const res = await fetch(`${BASE}/companies/role-templates`, {
+    headers: buildAuthHeaders(accessToken),
+  });
+  return parseJsonOrError<CompanyRoleTemplateCatalogResponse>(
+    res,
+    `Failed to fetch company role templates: ${res.status}`
+  );
+}
+
+export async function provisionCompanyWorkspace(
+  input: CompanyProvisioningInput,
+  accessToken?: string,
+  runId = globalThis.crypto?.randomUUID?.() ?? `company-provision-${Date.now()}`
+): Promise<CompanyProvisioningResult> {
+  const res = await fetch(`${BASE}/companies`, {
+    method: "POST",
+    headers: buildJsonHeaders(accessToken, {
+      "X-Paperclip-Run-Id": runId,
+    }),
+    body: JSON.stringify(input),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => null);
+    throw new Error(err?.error ?? `Failed to provision company workspace: ${res.status}`);
+  }
+  return res.json() as Promise<CompanyProvisioningResult>;
 }
 
 /** POST /api/runs */

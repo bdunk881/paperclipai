@@ -55,23 +55,23 @@ describe("workspace resolver route mounting", () => {
     workspaceResolverSpy.mockClear();
   });
 
-  it("gates control-plane routes behind the workspace resolver", async () => {
+  it("does not gate control-plane routes behind the workspace resolver", async () => {
     const res = await request(app)
       .get("/api/control-plane/teams")
+      .set("Authorization", "Bearer test-user-id");
+
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ teams: [], total: 0 });
+    expect(workspaceResolverSpy).not.toHaveBeenCalled();
+  });
+
+  it("keeps ticket routes behind the workspace resolver", async () => {
+    const res = await request(app)
+      .get("/api/tickets")
       .set("Authorization", "Bearer test-user-id");
 
     expect(res.status).toBe(418);
     expect(res.body.error).toBe("workspace resolver invoked");
     expect(workspaceResolverSpy).toHaveBeenCalledTimes(1);
-  });
-
-  it("does not gate ticket routes behind the workspace resolver middleware", async () => {
-    const res = await request(app)
-      .get("/api/tickets")
-      .set("Authorization", "Bearer test-user-id");
-
-    expect(res.status).toBe(500);
-    expect(res.body.error).toBe("Workspace context was not resolved for the request");
-    expect(workspaceResolverSpy).not.toHaveBeenCalled();
   });
 });

@@ -2961,3 +2961,7 @@ export const controlPlaneStore = {
     hydratedWorkspaceUsers.clear();
   },
 };
+
+export function resetControlPlaneStoreForTests(): void {
+  controlPlaneStore.clear();
+}

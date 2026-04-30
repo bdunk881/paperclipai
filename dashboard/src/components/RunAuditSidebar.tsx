@@ -3,6 +3,7 @@ import clsx from "clsx";
 import "./RunAuditSidebar.css";
 import {
   AlertCircle,
+  ArrowUpRight,
   Brain,
   CheckCircle2,
   ChevronDown,
@@ -17,6 +18,7 @@ import {
 } from "lucide-react";
 import { StatusBadge } from "./StatusBadge";
 import type { StepResult, WorkflowRun } from "../types/workflow";
+import { buildWorkflowBuilderRoute } from "../utils/workflowBuilderRoute";
 
 type StepStatus = StepResult["status"];
 
@@ -424,6 +426,11 @@ export function RunAuditSidebar({
   if (!run) return null;
 
   const completedSteps = run.stepResults.filter((step) => step.status === "success").length;
+  const popoutHref = buildWorkflowBuilderRoute(run.templateId, {
+    popout: true,
+    mode: "readonly",
+    from: "/history",
+  });
 
   return (
     <div
@@ -468,6 +475,17 @@ export function RunAuditSidebar({
                 <span className="rounded-full border border-surface-700 bg-surface-950 px-2.5 py-1 text-xs text-surface-400">
                   {formatRunDuration(run)}
                 </span>
+              </div>
+              <div className="mt-4">
+                <button
+                  type="button"
+                  onClick={() => window.open(popoutHref, "_blank", "noopener,noreferrer")}
+                  className="inline-flex items-center gap-2 rounded-full border border-brand-500/35 bg-surface-950 px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-surface-50 shadow-[0_14px_28px_rgba(15,23,42,0.26)] transition duration-200 ease-in-out hover:-translate-y-0.5 hover:border-brand-400/70 hover:shadow-[0_18px_36px_rgba(15,23,42,0.34)]"
+                  aria-label={`Open ${run.templateName} in the workflow builder`}
+                >
+                  Open in Builder
+                  <ArrowUpRight size={12} />
+                </button>
               </div>
             </div>
 

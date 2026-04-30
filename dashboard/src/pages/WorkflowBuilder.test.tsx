@@ -3,8 +3,8 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import WorkflowBuilder from "./WorkflowBuilder";
-import { generateWorkflow, listLLMConfigs, listTemplates, startRunWithFile } from "../api/client";
-import type { WorkflowStep } from "../types/workflow";
+import { generateWorkflow, getTemplate, listLLMConfigs, listTemplates, startRunWithFile } from "../api/client";
+import type { WorkflowStep, WorkflowTemplate } from "../types/workflow";
 
 const requireAccessTokenMock = vi.fn();
 
@@ -66,15 +66,28 @@ vi.mock("../context/AuthContext", () => ({
 }));
 
 const listTemplatesMock = vi.mocked(listTemplates);
+const getTemplateMock = vi.mocked(getTemplate);
 const listLLMConfigsMock = vi.mocked(listLLMConfigs);
 const generateWorkflowMock = vi.mocked(generateWorkflow);
 const startRunWithFileMock = vi.mocked(startRunWithFile);
 
-function renderBuilder() {
+const TEMPLATE_FIXTURE: WorkflowTemplate = {
+  id: "tpl-1",
+  name: "Support triage",
+  description: "Assist inbound support triage.",
+  category: "support",
+  version: "1.0.0",
+  configFields: [],
+  steps: [],
+  sampleInput: {},
+  expectedOutput: {},
+};
+
+function renderBuilder(entry = "/builder", routePath = "/builder") {
   render(
-    <MemoryRouter initialEntries={["/builder"]}>
+    <MemoryRouter initialEntries={[entry]}>
       <Routes>
-        <Route path="/builder" element={<WorkflowBuilder />} />
+        <Route path={routePath} element={<WorkflowBuilder />} />
       </Routes>
     </MemoryRouter>
   );
@@ -88,6 +101,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   requireAccessTokenMock.mockResolvedValue("token-123");
   listTemplatesMock.mockResolvedValue([]);
+  getTemplateMock.mockReset();
   listLLMConfigsMock.mockResolvedValue([]);
   generateWorkflowMock.mockReset();
   startRunWithFileMock.mockReset();
@@ -324,5 +338,43 @@ describe("WorkflowBuilder", () => {
       expect(startRunWithFileMock).toHaveBeenCalledWith(expect.any(String), file, undefined, "token-123");
     });
     expect(await screen.findByText(/run started — redirecting to monitor/i)).toBeInTheDocument();
+  });
+
+  it("shows explicit read-only state for pop-out builder routes", async () => {
+    getTemplateMock.mockResolvedValue({
+      ...TEMPLATE_FIXTURE,
+      steps: [
+        {
+          id: "step-1",
+          name: "Triage",
+          kind: "trigger",
+          description: "Start the workflow.",
+          inputKeys: [],
+          outputKeys: ["payload"],
+        },
+      ],
+    });
+
+    renderBuilder("/builder/tpl-1?popout=1&mode=readonly&from=%2Fhistory", "/builder/:templateId");
+
+    expect(await screen.findByRole("heading", { name: "Support triage" })).toBeInTheDocument();
+    expect(screen.getAllByText("Read-only")).toHaveLength(2);
+    expect(screen.getByRole("button", { name: /^read-only$/i })).toBeDisabled();
+    expect(screen.getByRole("button", { name: /generate with ai/i })).toBeDisabled();
+    expect(screen.getByRole("button", { name: /copilot/i })).toBeDisabled();
+    expect(screen.getByRole("button", { name: /node palette/i })).toBeDisabled();
+    expect(document.title).toContain("Read-only workflow");
+  });
+
+  it("renders the pop-out failure state with a back action", async () => {
+    getTemplateMock.mockRejectedValue(new Error("Template not found: missing-template"));
+
+    renderBuilder("/builder/missing-template?popout=1&from=%2Fhistory", "/builder/:templateId");
+
+    expect(
+      await screen.findByRole("heading", { name: /this workflow cannot be loaded right now/i })
+    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /back to workflows/i })).toBeInTheDocument();
+    expect(document.title).toContain("Workflow unavailable");
   });
 });

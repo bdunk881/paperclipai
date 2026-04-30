@@ -36,6 +36,9 @@ test("renders the primary KPI cards", async ({ page }) => {
 test("renders the execution and spend panels", async ({ page }) => {
   await expect(page.getByText(/execution burndown/i)).toBeVisible();
   await expect(page.getByText(/spend vs budget/i)).toBeVisible();
+  await expect(page.getByText(/observability cockpit/i)).toBeVisible();
+  await expect(page.getByText(/throughput over the last 24 hours/i)).toBeVisible();
+  await expect(page.getByText(/activity updates as they happen/i)).toBeVisible();
 });
 
 test("renders the empty approvals state in mock mode", async ({ page }) => {
@@ -55,6 +58,11 @@ test("'Review approvals' shortcut navigates to /approvals", async ({ page }) => 
 test("'Inspect spend' shortcut navigates to the budget dashboard", async ({ page }) => {
   await page.getByRole("link", { name: /inspect spend/i }).click();
   await expect(page).toHaveURL(/\/workspace\/budget-dashboard/);
+});
+
+test("'Full history' link navigates to /history", async ({ page }) => {
+  await page.getByRole("link", { name: /full history/i }).click();
+  await expect(page).toHaveURL(/\/history/);
 });
 
 test("sidebar nav link 'Builder' navigates to /builder", async ({ page }) => {

@@ -2,8 +2,9 @@ export type ConnectorHealthState =
   | "healthy"
   | "degraded"
   | "rate_limited"
-  | "auth_failure"
-  | "down";
+  | "auth_failed"
+  | "provider_error"
+  | "disabled";
 
 export interface ConnectorHealthTransition {
   at: string;
@@ -123,7 +124,7 @@ const CONNECTOR_HEALTH: ConnectorHealthRecord[] = [
   {
     connectorKey: "linear",
     connectorName: "Linear",
-    state: "auth_failure",
+    state: "auth_failed",
     lastSuccessAt: "2026-04-28T03:58:00.000Z",
     lastErrorAt: "2026-04-28T04:34:00.000Z",
     lastErrorMessage: "OAuth refresh token rejected by provider",
@@ -134,7 +135,7 @@ const CONNECTOR_HEALTH: ConnectorHealthRecord[] = [
       {
         at: "2026-04-28T04:18:00.000Z",
         from: "healthy",
-        to: "auth_failure",
+        to: "auth_failed",
         reason: "Repeated token refresh failures exceeded policy",
       },
     ],
@@ -156,7 +157,7 @@ const CONNECTOR_HEALTH: ConnectorHealthRecord[] = [
   {
     connectorKey: "jira",
     connectorName: "Jira",
-    state: "down",
+    state: "provider_error",
     lastSuccessAt: "2026-04-28T02:48:00.000Z",
     lastErrorAt: "2026-04-28T04:35:00.000Z",
     lastErrorMessage: "Connector worker has not completed a successful sync in 90 minutes",
@@ -167,7 +168,7 @@ const CONNECTOR_HEALTH: ConnectorHealthRecord[] = [
       {
         at: "2026-04-28T03:52:00.000Z",
         from: "degraded",
-        to: "down",
+        to: "provider_error",
         reason: "Extended outage threshold exceeded",
       },
     ],
@@ -184,8 +185,9 @@ export function getConnectorHealthSummary(records = CONNECTOR_HEALTH) {
     healthy: 0,
     degraded: 0,
     rate_limited: 0,
-    auth_failure: 0,
-    down: 0,
+    auth_failed: 0,
+    provider_error: 0,
+    disabled: 0,
   };
 
   for (const record of records) {

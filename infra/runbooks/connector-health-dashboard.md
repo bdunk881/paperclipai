@@ -12,7 +12,16 @@ This runbook covers the scaffolded connector health dashboard and the alerting i
 
 ## Health model contract
 
-Each connector record exposes:
+Each connector record exposes the normalized ALT-1945 states:
+
+- `healthy`
+- `degraded`
+- `auth_failed`
+- `rate_limited`
+- `provider_error`
+- `disabled`
+
+Each connector record also exposes:
 
 - `connectorKey`
 - `connectorName`
@@ -29,7 +38,7 @@ The dashboard assumes Tier 1 connectors emit one normalized record per health tr
 
 ## Alert policies
 
-- Connector-wide degradation: any connector in `degraded` or `down` state during a 5 minute window
+- Connector-wide degradation: any connector in `degraded` or `provider_error` state during a 5 minute window
 - Repeated auth failures: `>= 5` auth failures in 15 minutes for a connector
 - Extended rate limiting: `>= 5` rate-limit events in 15 minutes for a connector
 

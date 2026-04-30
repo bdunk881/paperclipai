@@ -41,7 +41,7 @@ resource connectorWideDegradation 'Microsoft.Insights/scheduledQueryRules@2023-1
   name: '${alertPrefix}-degraded'
   location: location
   properties: {
-    description: 'Fires when any Tier 1 connector reports degraded or down state within five minutes.'
+    description: 'Fires when any Tier 1 connector reports degraded or provider_error state within five minutes.'
     enabled: true
     severity: 2
     scopes: [
@@ -54,7 +54,7 @@ resource connectorWideDegradation 'Microsoft.Insights/scheduledQueryRules@2023-1
         {
           query: '''
             ConnectorHealth_CL
-            | where State_s in ('degraded', 'down')
+            | where State_s in ('degraded', 'provider_error')
             | summarize AffectedConnectors = dcount(ConnectorKey_s) by bin(TimeGenerated, 5m)
           '''
           timeAggregation: 'Count'
@@ -94,7 +94,7 @@ resource repeatedAuthFailures 'Microsoft.Insights/scheduledQueryRules@2023-12-01
         {
           query: '''
             ConnectorHealth_CL
-            | where State_s == 'auth_failure'
+            | where State_s == 'auth_failed'
             | summarize AuthFailures = count() by ConnectorKey_s, bin(TimeGenerated, 15m)
           '''
           timeAggregation: 'Maximum'

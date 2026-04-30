@@ -31,6 +31,7 @@ jest.mock("./auth/authMiddleware", () => ({
 
 jest.mock("./db/postgres", () => ({
   getPostgresPool: jest.fn(() => ({})),
+  isPostgresConfigured: jest.fn(() => false),
   isPostgresPersistenceEnabled: jest.fn(() => true),
 }));
 

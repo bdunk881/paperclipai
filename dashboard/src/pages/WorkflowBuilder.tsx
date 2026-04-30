@@ -31,6 +31,8 @@ import {
   PanelRightOpen,
   PanelRightClose,
   Send,
+  Lock,
+  ArrowLeft,
 } from "lucide-react";
 import {
   Background,
@@ -400,6 +402,7 @@ type FlowNodeData = {
   isLast: boolean;
   teamAgent?: ControlPlaneAgent;
   teamAgentHref?: string;
+  readOnly: boolean;
 };
 
 type WorkflowFlowNode = Node<FlowNodeData>;
@@ -460,6 +463,12 @@ export default function WorkflowBuilder() {
   const [copilotLiveMessage, setCopilotLiveMessage] = useState("");
   const [consumedIncomingPrompt, setConsumedIncomingPrompt] = useState(false);
   const [fieldFlashKey, setFieldFlashKey] = useState<string | null>(null);
+  const routeParams = useMemo(() => new URLSearchParams(location.search), [location.search]);
+  const isPopout = routeParams.get("popout") === "1";
+  const isReadOnly = routeParams.get("mode") === "readonly";
+  const backTo = routeParams.get("from") || "/history";
+  const titleName = template.name?.trim() || "Untitled Workflow";
+  const readOnlyButtonClass = "opacity-50 cursor-not-allowed shadow-none hover:bg-inherit";
 
   const hasFileTrigger = template.steps.some((s) => s.kind === "file_trigger");
   const fileTriggerStep = template.steps.find((s) => s.kind === "file_trigger");
@@ -484,6 +493,15 @@ export default function WorkflowBuilder() {
       })
       .finally(() => setLoading(false));
   }, [templateId]);
+
+  useEffect(() => {
+    const pageLabel = templateLoadError
+      ? "Workflow unavailable"
+      : isReadOnly
+        ? `${titleName} | Read-only workflow`
+        : `${titleName} | Workflow Builder`;
+    document.title = pageLabel;
+  }, [isReadOnly, templateLoadError, titleName]);
 
   const selectedStep = template.steps.find((s) => s.id === selectedStepId) ?? null;
   const isLlmStep = selectedStep?.kind === "llm";
@@ -632,6 +650,7 @@ export default function WorkflowBuilder() {
   }, [copilotInput, template.steps]);
 
   function addStep(kind: StepKind) {
+    if (isReadOnly) return;
     const newStepId = "step-" + Date.now();
     let autoLinkError: string | null = null;
     setTemplate((t) => {
@@ -676,6 +695,7 @@ export default function WorkflowBuilder() {
   }
 
   function updateStep(id: string, patch: Partial<WorkflowStep>) {
+    if (isReadOnly) return;
     setTemplate((t) => ({
       ...t,
       steps: t.steps.map((s) => (s.id === id ? { ...s, ...patch } : s)),
@@ -687,6 +707,7 @@ export default function WorkflowBuilder() {
   }
 
   function removeStep(id: string) {
+    if (isReadOnly) return;
     setTemplate((t) => {
       const nextSteps = t.steps.filter((s) => s.id !== id);
       const nextEdges = buildEdgesFromSteps(t.steps).filter(
@@ -699,6 +720,7 @@ export default function WorkflowBuilder() {
   }
 
   function updateStepPosition(id: string, position: XYPosition) {
+    if (isReadOnly) return;
     setTemplate((t) => ({
       ...t,
       steps: t.steps.map((s) =>
@@ -719,6 +741,7 @@ export default function WorkflowBuilder() {
   }
 
   function moveStep(id: string, dir: -1 | 1) {
+    if (isReadOnly) return;
     const idx = template.steps.findIndex((s) => s.id === id);
     if (idx < 0) return;
     const next = idx + dir;
@@ -751,6 +774,7 @@ export default function WorkflowBuilder() {
         isLast: idx === template.steps.length - 1,
         teamAgent,
         teamAgentHref,
+        readOnly: isReadOnly,
       },
     };
   });
@@ -784,6 +808,7 @@ export default function WorkflowBuilder() {
   );
 
   function persistEdges(nextEdges: Edge[]) {
+    if (isReadOnly) return;
     setTemplate((t) => ({
       ...t,
       steps: serializeEdgesToSteps(t.steps, nextEdges),
@@ -791,6 +816,7 @@ export default function WorkflowBuilder() {
   }
 
   function handleConnect(connection: Connection) {
+    if (isReadOnly) return;
     const sourceId = connection.source;
     const targetId = connection.target;
     if (!sourceId || !targetId) return;
@@ -812,6 +838,7 @@ export default function WorkflowBuilder() {
   }
 
   async function handleSave() {
+    if (isReadOnly) return;
     const topologyError = validateGraphTopology(template.steps, flowEdges);
     if (topologyError) {
       setGraphError(topologyError);
@@ -846,6 +873,7 @@ export default function WorkflowBuilder() {
   }
 
   async function handleRun() {
+    if (isReadOnly) return;
     const topologyError = validateGraphTopology(template.steps, flowEdges);
     if (topologyError) {
       setGraphError(topologyError);
@@ -906,18 +934,46 @@ export default function WorkflowBuilder() {
 
   if (templateLoadError) {
     return (
-      <div className="p-8">
-        <ErrorState
-          title="Template unavailable"
-          message={templateLoadError}
-          onRetry={() => navigate("/builder")}
-        />
+      <div className={isPopout ? "flex min-h-full items-center justify-center bg-surface-950 px-6 py-10" : "p-8"}>
+        {isPopout ? (
+          <div className="w-full max-w-3xl animate-workflow-popout-fade rounded-[28px] border border-surface-800 bg-slate-900 px-8 py-10 shadow-[0_28px_80px_rgba(2,6,23,0.55)]">
+            <div className="flex justify-center">
+              <div className="flex h-16 w-16 items-center justify-center rounded-full border border-orange-500/40 bg-orange-500/10 text-orange-400 animate-workflow-error-pulse">
+                <AlertCircle size={28} />
+              </div>
+            </div>
+            <div className="mx-auto mt-6 max-w-2xl text-center">
+              <p className="text-xs font-semibold uppercase tracking-[0.24em] text-slate-500">Workflow unavailable</p>
+              <h1 className="mt-3 text-3xl font-semibold text-slate-50">This workflow cannot be loaded right now.</h1>
+              <p className="mt-4 text-sm leading-7 text-slate-300">{templateLoadError}</p>
+            </div>
+            <button
+              type="button"
+              onClick={() => navigate(backTo)}
+              className="mt-8 inline-flex w-full items-center justify-center gap-2 rounded-2xl border border-orange-400/40 bg-orange-500 px-5 py-3.5 text-sm font-semibold text-slate-950 shadow-[0_16px_40px_rgba(249,115,22,0.3)] transition duration-200 ease-in-out hover:-translate-y-0.5 hover:shadow-[0_20px_46px_rgba(249,115,22,0.38)]"
+            >
+              <ArrowLeft size={16} />
+              Back to Workflows
+            </button>
+          </div>
+        ) : (
+          <ErrorState
+            title="Template unavailable"
+            message={templateLoadError}
+            onRetry={() => navigate("/builder")}
+          />
+        )}
       </div>
     );
   }
 
   return (
-    <div className="relative flex h-full">
+    <div
+      className={clsx(
+        "relative flex h-full",
+        isPopout && "min-h-full animate-workflow-popout-fade bg-surface-950 text-surface-50"
+      )}
+    >
       {/* Left panel — canvas */}
       <div className="flex-1 flex flex-col overflow-hidden">
         {runError && (
@@ -960,21 +1016,55 @@ export default function WorkflowBuilder() {
           </div>
         )}
         {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 bg-white dark:bg-surface-900 border-b border-gray-200 dark:border-surface-800">
-          <div className="flex items-center gap-3">
-            <input
-              className="text-lg font-semibold text-gray-900 dark:text-gray-100 bg-transparent border-none outline-none focus:ring-2 focus:ring-brand-500 rounded px-1 -ml-1"
-              value={template.name}
-              onChange={(e) => setTemplate((t) => ({ ...t, name: e.target.value }))}
-            />
-            <span className="text-xs px-2 py-0.5 bg-gray-100 dark:bg-surface-800 text-gray-500 dark:text-surface-400 rounded-full capitalize">
-              {template.category}
-            </span>
+        <div className="flex items-center justify-between border-b border-gray-200 bg-white px-6 py-4 dark:border-surface-800 dark:bg-surface-900">
+          <div className="flex min-w-0 items-center gap-3">
+            {isPopout ? (
+              <div className="min-w-0">
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => navigate(backTo)}
+                    className="inline-flex items-center gap-1 rounded-full border border-surface-700 bg-surface-950/80 px-3 py-1 text-xs font-medium text-surface-300 transition duration-200 ease-in-out hover:-translate-y-0.5 hover:border-brand-500/50 hover:shadow-[0_12px_28px_rgba(15,23,42,0.32)]"
+                  >
+                    <ArrowLeft size={12} />
+                    Back to Workflows
+                  </button>
+                  <span className="text-xs px-2 py-0.5 bg-gray-100 dark:bg-surface-800 text-gray-500 dark:text-surface-400 rounded-full capitalize">
+                    {template.category}
+                  </span>
+                </div>
+                <p className="mt-3 text-xs font-semibold uppercase tracking-[0.22em] text-slate-500">
+                  Workflow Builder
+                </p>
+                <h1 className="truncate text-2xl font-semibold text-slate-950 dark:text-slate-50">
+                  {titleName}
+                </h1>
+              </div>
+            ) : (
+              <>
+                <input
+                  className="text-lg font-semibold text-gray-900 dark:text-gray-100 bg-transparent border-none outline-none focus:ring-2 focus:ring-brand-500 rounded px-1 -ml-1"
+                  value={template.name}
+                  readOnly={isReadOnly}
+                  onChange={(e) => setTemplate((t) => ({ ...t, name: e.target.value }))}
+                />
+                <span className="text-xs px-2 py-0.5 bg-gray-100 dark:bg-surface-800 text-gray-500 dark:text-surface-400 rounded-full capitalize">
+                  {template.category}
+                </span>
+              </>
+            )}
           </div>
           <div className="flex items-center gap-2">
+            {isReadOnly && (
+              <span className="inline-flex items-center gap-2 rounded-full border border-slate-700 bg-slate-800 px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.22em] text-slate-200">
+                <Lock size={12} />
+                Read-only
+              </span>
+            )}
             <button
               onClick={() => setShowCopilot((open) => !open)}
-              className="flex items-center gap-2 px-3.5 py-2 text-sm font-medium rounded-lg border border-brand-200 dark:border-brand-500/30 text-brand-700 dark:text-brand-300 bg-brand-50 dark:bg-brand-500/10 hover:bg-brand-100 dark:hover:bg-brand-500/20 transition"
+              disabled={isReadOnly}
+              className="flex items-center gap-2 px-3.5 py-2 text-sm font-medium rounded-lg border border-brand-200 dark:border-brand-500/30 text-brand-700 dark:text-brand-300 bg-brand-50 dark:bg-brand-500/10 hover:bg-brand-100 dark:hover:bg-brand-500/20 transition disabled:cursor-not-allowed disabled:opacity-50"
             >
               {showCopilot ? <PanelRightClose size={15} /> : <PanelRightOpen size={15} />}
               Copilot
@@ -990,16 +1080,18 @@ export default function WorkflowBuilder() {
             </Tooltip>
             <button
               onClick={() => setShowNLModal(true)}
-              className="flex items-center gap-2 px-3.5 py-2 text-sm font-medium rounded-lg border border-purple-300 dark:border-purple-500/30 text-purple-700 dark:text-purple-300 bg-purple-50 dark:bg-purple-500/10 hover:bg-purple-100 dark:hover:bg-purple-500/20 transition"
+              disabled={isReadOnly}
+              className="flex items-center gap-2 px-3.5 py-2 text-sm font-medium rounded-lg border border-purple-300 dark:border-purple-500/30 text-purple-700 dark:text-purple-300 bg-purple-50 dark:bg-purple-500/10 hover:bg-purple-100 dark:hover:bg-purple-500/20 transition disabled:cursor-not-allowed disabled:opacity-50"
             >
               <Sparkles size={15} />
               Generate with AI
             </button>
             <button
               onClick={() => void handleSave()}
-              disabled={saving}
+              disabled={saving || isReadOnly}
               className={clsx(
                 "flex items-center gap-2 px-3.5 py-2 text-sm font-medium rounded-lg border transition disabled:opacity-50",
+                isReadOnly && readOnlyButtonClass,
                 saved
                   ? "bg-green-50 dark:bg-green-500/10 border-green-300 dark:border-green-500/30 text-green-700 dark:text-green-300"
                   : "border-gray-300 dark:border-surface-700 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-surface-700"
@@ -1019,11 +1111,11 @@ export default function WorkflowBuilder() {
             </button>
             <button
               onClick={handleRun}
-              disabled={template.steps.length === 0}
-              className="flex items-center gap-2 px-3.5 py-2 bg-brand-600 hover:bg-brand-700 text-white text-sm font-medium rounded-lg transition disabled:opacity-50"
+              disabled={template.steps.length === 0 || isReadOnly}
+              className="flex items-center gap-2 px-3.5 py-2 bg-brand-600 hover:bg-brand-700 text-white text-sm font-medium rounded-lg transition disabled:cursor-not-allowed disabled:opacity-50"
             >
               <Play size={15} />
-              Run
+              {isReadOnly ? "Read-only" : "Run"}
             </button>
           </div>
         </div>
@@ -1031,7 +1123,7 @@ export default function WorkflowBuilder() {
         {/* Canvas */}
         <div className="relative flex-1 overflow-hidden bg-slate-50 dark:bg-surface-950">
           {template.steps.length === 0 ? (
-            <EmptyCanvas onAdd={addStep} templates={allTemplates} />
+            <EmptyCanvas onAdd={addStep} templates={allTemplates} disabled={isReadOnly} />
           ) : (
             <>
               <ReactFlow
@@ -1043,16 +1135,19 @@ export default function WorkflowBuilder() {
                 maxZoom={1.4}
                 snapToGrid
                 snapGrid={[20, 20]}
+                nodesDraggable={!isReadOnly}
+                nodesConnectable={!isReadOnly}
+                elementsSelectable
                 onNodeClick={(_: unknown, node: WorkflowFlowNode) => setSelectedStepId(node.id)}
                 onPaneClick={() => setSelectedStepId(null)}
-                onConnect={handleConnect}
-                onEdgesDelete={(deletedEdges: Edge[]) => {
+                onConnect={isReadOnly ? undefined : handleConnect}
+                onEdgesDelete={isReadOnly ? undefined : (deletedEdges: Edge[]) => {
                   if (deletedEdges.length === 0) return;
                   const deletedIds = new Set(deletedEdges.map((edge) => edge.id));
                   persistEdges(flowEdges.filter((edge) => !deletedIds.has(edge.id)));
                   setGraphError(null);
                 }}
-                onNodeDragStop={(_: unknown, node: WorkflowFlowNode) => {
+                onNodeDragStop={isReadOnly ? undefined : (_: unknown, node: WorkflowFlowNode) => {
                   updateStepPosition(node.id, node.position);
                 }}
               >
@@ -1065,7 +1160,7 @@ export default function WorkflowBuilder() {
               </ReactFlow>
               <div className="pointer-events-none absolute bottom-6 left-1/2 z-10 -translate-x-1/2">
                 <div className="pointer-events-auto rounded-full border border-slate-200 dark:border-surface-700 bg-white/95 dark:bg-surface-800/95 px-2 py-1.5 shadow-md backdrop-blur">
-                  <AddStepMenu onAdd={addStep} />
+                  <AddStepMenu onAdd={addStep} disabled={isReadOnly} />
                 </div>
               </div>
             </>
@@ -1108,7 +1203,7 @@ export default function WorkflowBuilder() {
             </button>
           </div>
 
-          <div className="p-5 space-y-5">
+          <fieldset className="p-5 space-y-5 disabled:opacity-50" disabled={isReadOnly}>
             <Field label="Name">
               <input
                 className="w-full px-3 py-2 text-sm border border-gray-300 dark:border-surface-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-500 bg-white dark:bg-surface-800 text-gray-900 dark:text-gray-100"
@@ -1571,9 +1666,9 @@ export default function WorkflowBuilder() {
                       .filter(Boolean),
                   })
                 }
-              />
-            </Field>
-          </div>
+                />
+              </Field>
+          </fieldset>
         </div>
       )}
 
@@ -2358,6 +2453,7 @@ function WorkflowStepNode({
         onRemove={() => data.onRemove(id)}
         isFirst={data.isFirst}
         isLast={data.isLast}
+        readOnly={data.readOnly}
       />
       <Handle type="source" position={Position.Bottom} className="!h-2 !w-2 !border-0 !bg-slate-500" />
     </div>
@@ -2376,6 +2472,7 @@ function StepNode({
   onRemove,
   isFirst,
   isLast,
+  readOnly,
 }: {
   step: WorkflowStep;
   selected: boolean;
@@ -2388,6 +2485,7 @@ function StepNode({
   onRemove: () => void;
   isFirst: boolean;
   isLast: boolean;
+  readOnly: boolean;
 }) {
   const { theme } = useTheme();
   const meta = KIND_META[step.kind];
@@ -2543,7 +2641,8 @@ function StepNode({
         {!isFirst && (
           <button
             onClick={(e) => { e.stopPropagation(); onMoveUp(); }}
-            className="p-1 rounded hover:bg-gray-100 dark:hover:bg-surface-800 text-gray-400 hover:text-gray-700 dark:hover:text-gray-200"
+            disabled={readOnly}
+            className="p-1 rounded hover:bg-gray-100 dark:hover:bg-surface-800 text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 disabled:cursor-not-allowed disabled:opacity-50"
             title="Move step up"
             aria-label="Move step up"
           >
@@ -2553,7 +2652,8 @@ function StepNode({
         {!isLast && (
           <button
             onClick={(e) => { e.stopPropagation(); onMoveDown(); }}
-            className="p-1 rounded hover:bg-gray-100 dark:hover:bg-surface-800 text-gray-400 hover:text-gray-700 dark:hover:text-gray-200"
+            disabled={readOnly}
+            className="p-1 rounded hover:bg-gray-100 dark:hover:bg-surface-800 text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 disabled:cursor-not-allowed disabled:opacity-50"
             title="Move step down"
             aria-label="Move step down"
           >
@@ -2562,7 +2662,8 @@ function StepNode({
         )}
         <button
           onClick={(e) => { e.stopPropagation(); onRemove(); }}
-          className="p-1 rounded hover:bg-red-50 dark:hover:bg-red-900/20 text-gray-400 hover:text-red-500"
+          disabled={readOnly}
+          className="p-1 rounded hover:bg-red-50 dark:hover:bg-red-900/20 text-gray-400 hover:text-red-500 disabled:cursor-not-allowed disabled:opacity-50"
           title="Delete step"
           aria-label="Delete step"
         >
@@ -2573,17 +2674,24 @@ function StepNode({
   );
 }
 
-function AddStepMenu({ onAdd }: { onAdd: (k: StepKind) => void }) {
+function AddStepMenu({
+  onAdd,
+  disabled = false,
+}: {
+  onAdd: (k: StepKind) => void;
+  disabled?: boolean;
+}) {
   const [open, setOpen] = useState(false);
   const kinds = Object.entries(KIND_META) as [StepKind, (typeof KIND_META)[StepKind]][];
 
   return (
     <div className="relative">
       <button
+        disabled={disabled}
         onClick={() => setOpen((o) => !o)}
         aria-expanded={open}
         className={clsx(
-          "flex items-center gap-2 rounded-full border px-4 py-2 text-sm font-medium transition",
+          "flex items-center gap-2 rounded-full border px-4 py-2 text-sm font-medium transition disabled:cursor-not-allowed disabled:opacity-50",
           open
             ? "border-brand-300 dark:border-brand-500/50 bg-brand-50 dark:bg-brand-500/10 text-brand-700 dark:text-brand-300"
             : "border-gray-300 dark:border-surface-700 text-gray-600 dark:text-gray-300 hover:border-brand-300 dark:hover:border-brand-500/50 hover:text-brand-700 dark:hover:text-brand-300"
@@ -2613,37 +2721,46 @@ function AddStepMenu({ onAdd }: { onAdd: (k: StepKind) => void }) {
 function EmptyCanvas({
   onAdd,
   templates,
+  disabled = false,
 }: {
   onAdd: (k: StepKind) => void;
   templates: TemplateSummary[];
+  disabled?: boolean;
 }) {
   return (
-    <div className="flex flex-col items-center justify-center h-full min-h-[400px] text-center">
-      <div className="w-16 h-16 rounded-2xl bg-brand-50 dark:bg-brand-500/10 flex items-center justify-center mb-4">
-        <Zap size={28} className="text-brand-500" />
-      </div>
-      <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-2">Start building your workflow</h3>
-      <p className="text-gray-500 dark:text-surface-400 text-sm mb-6 max-w-xs">
-        Add steps to compose your AI workflow. Each step passes data to the next.
-      </p>
-      <AddStepMenu onAdd={onAdd} />
-
-      {templates.length > 0 && (
-        <div className="mt-8">
-          <p className="text-xs text-gray-400 dark:text-surface-500 mb-3">Or start from a template:</p>
-          <div className="flex gap-2">
-            {templates.map((t) => (
-              <a
-                key={t.id}
-                href={`/builder/${t.id}`}
-                className="px-3 py-1.5 bg-white dark:bg-surface-800 border border-gray-200 dark:border-surface-700 rounded-lg text-xs text-gray-600 dark:text-gray-300 hover:border-brand-400 dark:hover:border-brand-500/50 hover:text-brand-600 dark:hover:text-brand-300 transition"
-              >
-                {t.name}
-              </a>
-            ))}
-          </div>
+    <div className="h-full overflow-y-auto px-6 py-8">
+      <div className="mx-auto flex min-h-full w-full max-w-4xl flex-col items-center justify-center text-center">
+        <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-brand-50 dark:bg-brand-500/10">
+          <Zap size={28} className="text-brand-500" />
         </div>
-      )}
+        <h3 className="mb-2 text-lg font-semibold text-gray-900 dark:text-gray-100">Start building your workflow</h3>
+        <p className="mb-6 max-w-xs text-sm text-gray-500 dark:text-surface-400">
+          Add steps to compose your AI workflow. Each step passes data to the next.
+        </p>
+        <AddStepMenu onAdd={onAdd} disabled={disabled} />
+
+        {templates.length > 0 && (
+          <div className="mt-8 w-full max-w-3xl">
+            <p className="mb-3 text-xs text-gray-400 dark:text-surface-500">Or start from a template:</p>
+            <div
+              aria-label="Workflow templates"
+              className="max-h-[min(40vh,26rem)] overflow-y-auto rounded-2xl border border-gray-200 bg-white/80 p-3 shadow-sm backdrop-blur dark:border-surface-800 dark:bg-surface-900/80"
+            >
+              <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
+                {templates.map((t) => (
+                  <a
+                    key={t.id}
+                    href={`/builder/${t.id}`}
+                    className="rounded-xl border border-gray-200 bg-white px-3 py-2 text-left text-xs text-gray-600 transition hover:border-brand-400 hover:text-brand-600 dark:border-surface-700 dark:bg-surface-800 dark:text-gray-300 dark:hover:border-brand-500/50 dark:hover:text-brand-300"
+                  >
+                    {t.name}
+                  </a>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   );
 }

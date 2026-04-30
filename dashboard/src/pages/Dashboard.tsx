@@ -89,7 +89,7 @@ const POLLING_INTERVAL_MS = 15_000;
 const MAX_RECONNECT_ATTEMPTS = 2;
 
 export default function Dashboard() {
-  const { user, requireAccessToken } = useAuth();
+  const { accessMode, user, requireAccessToken } = useAuth();
   const [runs, setRuns] = useState<WorkflowRun[]>([]);
   const [approvals, setApprovals] = useState<ApprovalRequest[]>([]);
   const [agentSnapshots, setAgentSnapshots] = useState<AgentSnapshot[]>([]);
@@ -263,6 +263,13 @@ export default function Dashboard() {
     setError(null);
     setTransportDetail(null);
     try {
+      if (accessMode === "preview") {
+        setRuns([]);
+        setApprovals([]);
+        setAgentSnapshots([]);
+        return;
+      }
+
       const accessToken = await requireAccessToken();
       const [fetchedRuns, fetchedAgents, fetchedApprovals, observabilityPage, observabilitySnapshot] = await Promise.all([
         listRuns(undefined, accessToken),
@@ -308,7 +315,7 @@ export default function Dashboard() {
     } finally {
       setLoading(false);
     }
-  }, [requireAccessToken, selectedCategories, startStream, stopRealtime, windowHours]);
+  }, [accessMode, requireAccessToken, selectedCategories, startStream, stopRealtime, windowHours]);
 
   useEffect(() => {
     void loadDashboard();

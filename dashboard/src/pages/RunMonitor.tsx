@@ -31,7 +31,7 @@ import { useAuth } from "../context/AuthContext";
 const POLL_INTERVAL_MS = 3000;
 
 export default function RunMonitor() {
-  const { getAccessToken } = useAuth();
+  const { accessMode, getAccessToken } = useAuth();
   const [runs, setRuns] = useState<WorkflowRun[]>([]);
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
   const [lastRefreshed, setLastRefreshed] = useState(new Date());
@@ -44,19 +44,22 @@ export default function RunMonitor() {
     setLoadError(null);
     try {
       const accessToken = (await getAccessToken()) ?? undefined;
+      const previewMode = accessMode === "preview" && !accessToken;
       const [runResults, teams] = await Promise.all([
         listRuns(undefined, accessToken),
-        listControlPlaneTeams(accessToken),
+        previewMode ? Promise.resolve([]) : listControlPlaneTeams(accessToken),
       ]);
       const fetched = [...runResults].sort(
         (a, b) => new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime()
       );
-      const fetchedTeamDetails = await Promise.all(
-        [...teams]
-          .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
-          .slice(0, 4)
-          .map(async (team) => getControlPlaneTeam(team.id, accessToken))
-      );
+      const fetchedTeamDetails = previewMode
+        ? []
+        : await Promise.all(
+            [...teams]
+              .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+              .slice(0, 4)
+              .map(async (team) => getControlPlaneTeam(team.id, accessToken))
+          );
       setRuns(fetched);
       setTeamDetails(fetchedTeamDetails);
       setLastRefreshed(new Date());
@@ -71,7 +74,7 @@ export default function RunMonitor() {
     } finally {
       if (!silent) setLoading(false);
     }
-  }, [getAccessToken]);
+  }, [accessMode, getAccessToken]);
 
   useEffect(() => {
     void fetchRuns();

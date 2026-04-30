@@ -20,6 +20,7 @@ const {
   listRunsMock,
   requireAccessTokenMock,
   streamObservabilityEventsMock,
+  accessModeMock,
 } = vi.hoisted(() => ({
   createTicketMock: vi.fn(),
   getAgentBudgetMock: vi.fn(),
@@ -32,6 +33,7 @@ const {
   listRunsMock: vi.fn(),
   requireAccessTokenMock: vi.fn(),
   streamObservabilityEventsMock: vi.fn(),
+  accessModeMock: vi.fn(),
 }));
 
 vi.mock("../api/client", () => ({
@@ -62,7 +64,9 @@ vi.mock("../components/RunAuditSidebar", () => ({
 
 vi.mock("../context/AuthContext", () => ({
   useAuth: () => ({
+    accessMode: accessModeMock(),
     user: { id: "user-1", email: "user@example.com", name: "Test User" },
+    getAccessToken: vi.fn(),
     requireAccessToken: requireAccessTokenMock,
   }),
 }));
@@ -126,7 +130,7 @@ describe("Dashboard", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.useRealTimers();
-
+    accessModeMock.mockReturnValue("authenticated");
     requireAccessTokenMock.mockResolvedValue("mock-token");
     listRunsMock.mockResolvedValue([
       {
@@ -395,5 +399,21 @@ describe("Dashboard", () => {
     fireEvent.click(screen.getByRole("button", { name: /retry/i }));
     expect(await screen.findByText(/Test, your company is live/i)).toBeInTheDocument();
     expect(listRunsMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("renders preview access without calling bearer-protected dashboard APIs", async () => {
+    accessModeMock.mockReturnValue("preview");
+
+    render(
+      <MemoryRouter>
+        <Dashboard />
+      </MemoryRouter>
+    );
+
+    expect(await screen.findByText(/Test, your company is live/i)).toBeInTheDocument();
+    expect(screen.getByText("Artifact Review")).toBeInTheDocument();
+    expect(requireAccessTokenMock).not.toHaveBeenCalled();
+    expect(listRunsMock).not.toHaveBeenCalled();
+    expect(listAgentsMock).not.toHaveBeenCalled();
   });
 });

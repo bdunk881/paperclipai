@@ -82,7 +82,7 @@ function TeamTree({ agents }: { agents: Agent[] }) {
 }
 
 export default function OrgStructure() {
-  const { getAccessToken } = useAuth();
+  const { accessMode, getAccessToken } = useAuth();
   const [agents, setAgents] = useState<Agent[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -92,6 +92,10 @@ export default function OrgStructure() {
     setError(null);
     try {
       const token = await getAccessToken();
+      if (accessMode === "preview" && !token) {
+        setAgents([]);
+        return;
+      }
       if (!token) throw new Error("Authentication session expired.");
       setAgents(await listAgents(token));
     } catch (cause) {
@@ -99,7 +103,7 @@ export default function OrgStructure() {
     } finally {
       setLoading(false);
     }
-  }, [getAccessToken]);
+  }, [accessMode, getAccessToken]);
 
   useEffect(() => {
     void loadOrg();

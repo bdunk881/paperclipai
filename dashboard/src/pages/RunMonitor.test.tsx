@@ -9,6 +9,7 @@ const getControlPlaneTeamMock = vi.fn();
 const debugStepMock = vi.fn();
 const getAccessTokenMock = vi.fn();
 const requireAccessTokenMock = vi.fn();
+const accessModeMock = vi.fn();
 
 vi.mock("../api/client", () => ({
   listRuns: (...args: unknown[]) => listRunsMock(...args),
@@ -19,6 +20,7 @@ vi.mock("../api/client", () => ({
 
 vi.mock("../context/AuthContext", () => ({
   useAuth: () => ({
+    accessMode: accessModeMock(),
     getAccessToken: getAccessTokenMock,
     requireAccessToken: requireAccessTokenMock,
   }),
@@ -40,6 +42,8 @@ describe("RunMonitor", () => {
     debugStepMock.mockReset();
     getAccessTokenMock.mockReset();
     requireAccessTokenMock.mockReset();
+    accessModeMock.mockReset();
+    accessModeMock.mockReturnValue("authenticated");
     getAccessTokenMock.mockResolvedValue("token-123");
     requireAccessTokenMock.mockResolvedValue("token-123");
     listControlPlaneTeamsMock.mockResolvedValue([]);
@@ -210,5 +214,18 @@ describe("RunMonitor", () => {
     expect(await screen.findByText(/run monitor unavailable/i)).toBeInTheDocument();
     expect(screen.getByText("Unauthorized")).toBeInTheDocument();
     expect(screen.queryByText(/no active runs/i)).not.toBeInTheDocument();
+  });
+
+  it("skips bearer-protected team calls for preview-only access and renders empty states", async () => {
+    accessModeMock.mockReturnValue("preview");
+    getAccessTokenMock.mockResolvedValue(null);
+    listRunsMock.mockResolvedValue([]);
+
+    renderRunMonitor();
+
+    expect(await screen.findByText(/no active runs/i)).toBeInTheDocument();
+    expect(listRunsMock).toHaveBeenCalledWith(undefined, undefined);
+    expect(listControlPlaneTeamsMock).not.toHaveBeenCalled();
+    expect(getControlPlaneTeamMock).not.toHaveBeenCalled();
   });
 });

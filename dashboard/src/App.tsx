@@ -148,6 +148,7 @@ export default function App() {
             <Route path="agents/my" element={<MyAgents />} />
             <Route path="agents/activity" element={<AgentActivity />} />
             <Route path="agents/routines" element={<Routines />} />
+            <Route path="workspace/staffing-plan" element={<Dashboard />} />
             <Route path="workspace/org-structure" element={<OrgStructure />} />
             <Route path="workspace/budget-dashboard" element={<BudgetDashboard />} />
             <Route path="tickets" element={<Tickets />} />

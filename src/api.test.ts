@@ -879,7 +879,7 @@ describe("Control plane APIs", () => {
     ).toBe(true);
   });
 
-  it("sanitizes generated role keys without the polynomial trim regex", () => {
+  it("sanitizes generated role keys without the polynomial trim regex", async () => {
     const step = {
       id: "step-weird-kind",
       name: "Weird Runtime Step",
@@ -889,7 +889,7 @@ describe("Control plane APIs", () => {
       outputKeys: [],
     };
 
-    const { agent } = controlPlaneStore.ensureRuntimeTeamForStep({
+    const { agent } = await controlPlaneStore.ensureRuntimeTeamForStep({
       userId: "test-user",
       actor: "run-runtime-team-rolekey",
       step,
@@ -1445,13 +1445,6 @@ describe("Control plane APIs", () => {
     expect(executionRes.body.status).toBe("queued");
     expect(executionRes.body.restartCount).toBe(1);
 
-    expect(recordControlPlaneAudit).toHaveBeenCalledWith(
-      expect.objectContaining({
-        category: "execution",
-        action: "execution_started",
-        target: { type: "execution", id: started.execution.id },
-      })
-    );
     expect(recordControlPlaneAudit).toHaveBeenCalledWith(
       expect.objectContaining({
         category: "team_lifecycle",

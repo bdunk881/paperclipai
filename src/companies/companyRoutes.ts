@@ -205,7 +205,7 @@ router.post("/", requirePaperclipRunId, async (req: WorkspaceAwareRequest, res) 
   }
 
   try {
-    const result = controlPlaneStore.provisionCompanyWorkspace({
+    const result = await controlPlaneStore.provisionCompanyWorkspace({
       workspaceId: context.workspaceId,
       userId: context.userId,
       name: name.trim(),

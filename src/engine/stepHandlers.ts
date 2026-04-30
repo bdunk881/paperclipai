@@ -674,7 +674,7 @@ export async function handleAgent(
             teamId: bridgeConfig.teamId,
           }
         : bridgeConfig.autoProvision
-          ? controlPlaneStore.ensureRuntimeTeamForStep({
+          ? await controlPlaneStore.ensureRuntimeTeamForStep({
               workspaceId,
               userId,
               step,

@@ -281,9 +281,11 @@ export const secretsRepository = {
       }
     );
 
-    if (!decryptFailure) {
+    if (decryptFailure === null) {
       return result;
     }
+
+    const failure: { error: unknown; keyVersion: number } = decryptFailure;
 
     await withWorkspaceContext(
       getPostgresPool(),
@@ -296,13 +298,12 @@ export const secretsRepository = {
           action: "read_failed",
           actorUserId,
           actorAgentId,
-          keyVersion: decryptFailure!.keyVersion,
-          metadata: { reason: describeError(decryptFailure!.error) },
+          keyVersion: failure.keyVersion,
+          metadata: { reason: describeError(failure.error) },
         });
       }
     );
 
-    const failure = decryptFailure;
     throw failure.error;
   },
 

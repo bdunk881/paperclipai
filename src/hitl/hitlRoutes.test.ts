@@ -156,13 +156,13 @@ describe("HITL contract routes", () => {
 
   it("returns company state and Ask the CEO responses with cited entities", async () => {
     const app = buildApp();
-    const team = controlPlaneStore.createTeam({
+    const team = await controlPlaneStore.createTeam({
       userId: "user-1",
       name: "AutoFlow Build",
       budgetMonthlyUsd: 5000,
       orchestrationEnabled: true,
     });
-    controlPlaneStore.createTask({
+    await controlPlaneStore.createTask({
       userId: "user-1",
       teamId: team.id,
       title: "Ship HITL contracts",

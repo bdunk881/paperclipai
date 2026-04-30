@@ -1339,6 +1339,98 @@ describe("Control plane APIs", () => {
     expect(listRes.body.heartbeats[0].summary).toBe("Processed the daily support queue");
   });
 
+  it("exposes a canonical mission-state contract from team data", async () => {
+    const createRes = await request(app)
+      .post("/api/control-plane/teams")
+      .set(asAuth())
+      .set("X-Paperclip-Run-Id", "run-create-mission-team")
+      .send({
+        name: "Revenue Automation",
+        description: "Launch an AI operations product",
+        budgetMonthlyUsd: 250,
+        deploymentMode: "continuous_agents",
+      });
+
+    const missionStateRes = await request(app)
+      .get(`/api/control-plane/teams/${createRes.body.id}/mission-state`)
+      .set(asAuth());
+
+    expect(missionStateRes.status).toBe(200);
+    expect(missionStateRes.body.missionState).toMatchObject({
+      teamId: createRes.body.id,
+      title: "Revenue Automation",
+      objective: "Launch an AI operations product",
+      overallStatus: "not_started",
+      currentPhase: null,
+      ownerTeam: "Revenue Automation",
+      nextMilestone: null,
+      topBlockers: [],
+      risks: [],
+      fieldCoverage: {
+        title: true,
+        objective: true,
+        overallStatus: true,
+        currentPhase: false,
+        ownerTeam: true,
+        staffingReadiness: false,
+        topBlockers: true,
+        risks: true,
+        nextMilestone: false,
+        lastUpdated: true,
+      },
+    });
+    expect(missionStateRes.body.missionState.staffingReadiness).toEqual({
+      status: "not_ready",
+      filledHeadcount: 0,
+      plannedHeadcount: 0,
+    });
+    expect(typeof missionStateRes.body.missionState.lastUpdated).toBe("string");
+  });
+
+  it("marks mission state as blocked when a team has blocked work", async () => {
+    const deployRes = await request(app)
+      .post("/api/control-plane/deployments/workflow")
+      .set(asAuth())
+      .set("X-Paperclip-Run-Id", "run-deploy-mission-state")
+      .send({ templateId: "tpl-support-bot" });
+
+    const teamId = deployRes.body.team.id;
+    const workerAgent = deployRes.body.agents.find(
+      (agent: { roleKey: string }) => agent.roleKey !== "workflow-manager"
+    );
+
+    const createTaskRes = await request(app)
+      .post("/api/control-plane/tasks")
+      .set(asAuth())
+      .set("X-Paperclip-Run-Id", "run-create-mission-task")
+      .send({
+        teamId,
+        title: "Resolve billing import blocker",
+        assignedAgentId: workerAgent.id,
+      });
+
+    const updateTaskRes = await request(app)
+      .patch(`/api/control-plane/tasks/${createTaskRes.body.id}/status`)
+      .set(asAuth())
+      .set("X-Paperclip-Run-Id", "run-block-mission-task")
+      .send({ status: "blocked" });
+
+    expect(updateTaskRes.status).toBe(200);
+
+    const missionStateRes = await request(app)
+      .get(`/api/control-plane/teams/${teamId}/mission-state`)
+      .set(asAuth());
+
+    expect(missionStateRes.status).toBe(200);
+    expect(missionStateRes.body.missionState.overallStatus).toBe("blocked");
+    expect(missionStateRes.body.missionState.topBlockers).toEqual(["Resolve billing import blocker"]);
+    expect(missionStateRes.body.missionState.staffingReadiness).toEqual({
+      status: "ready",
+      filledHeadcount: deployRes.body.agents.length,
+      plannedHeadcount: deployRes.body.agents.length,
+    });
+  });
+
   it("exposes deployed agents and budget snapshots for dashboard workspace pages", async () => {
     const deployRes = await request(app)
       .post("/api/control-plane/deployments/workflow")

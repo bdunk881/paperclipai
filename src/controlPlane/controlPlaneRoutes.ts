@@ -340,6 +340,22 @@ router.get("/teams/:id", async (req: WorkspaceAwareRequest, res) => {
   res.json({ team, agents, tasks, heartbeats, executions, spend });
 });
 
+router.get("/teams/:id/mission-state", async (req: WorkspaceAwareRequest, res) => {
+  const context = resolveWorkspaceContext(req, res);
+  if (!context) {
+    return;
+  }
+
+  await controlPlaneStore.ensureWorkspaceHydrated(context.workspaceId, context.userId);
+  const missionState = controlPlaneStore.getMissionState(req.params.id, context.userId, context.workspaceId);
+  if (!missionState) {
+    res.status(404).json({ error: "Team not found" });
+    return;
+  }
+
+  res.json({ missionState });
+});
+
 router.get("/teams/:id/spend", async (req: WorkspaceAwareRequest, res) => {
   const context = resolveWorkspaceContext(req, res);
   if (!context) {

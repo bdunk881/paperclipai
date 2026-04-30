@@ -9,6 +9,11 @@
 jest.mock("./engine/llmProviders", () => ({
   getProvider: jest.fn(),
 }));
+jest.mock("./auditing/controlPlaneAudit", () => ({
+  recordControlPlaneAudit: jest.fn().mockResolvedValue(undefined),
+  recordControlPlaneAuditBatch: jest.fn().mockResolvedValue(undefined),
+  resolveAuditWorkspaceIdForUser: jest.fn().mockResolvedValue(null),
+}));
 jest.mock("./auth/authMiddleware", () => ({
   requireAuth: (
     req: { headers: { authorization?: string }; auth?: { sub: string; email?: string } },
@@ -75,6 +80,7 @@ jest.mock("./auth/authMiddleware", () => ({
 
 import request from "supertest";
 import app from "./app";
+import { recordControlPlaneAudit, recordControlPlaneAuditBatch } from "./auditing/controlPlaneAudit";
 import { listConnectorHealth } from "./connectors/health";
 import { WORKFLOW_TEMPLATES } from "./templates";
 import type { WorkflowStep } from "./types/workflow";
@@ -100,6 +106,7 @@ function asAuth(userId = "test-user") {
 }
 
 beforeEach(() => {
+  jest.clearAllMocks();
   controlPlaneStore.clear();
   approvalStore.clear();
   approvalNotificationStore.clear();
@@ -634,6 +641,30 @@ describe("Company provisioning APIs", () => {
     );
     expect(integrationAgent.budgetMonthlyUsd).toBe(100);
     expect(integrationAgent.skills).toEqual(["openai-docs", "paperclip"]);
+
+    expect(recordControlPlaneAuditBatch).toHaveBeenCalledTimes(1);
+    expect(recordControlPlaneAuditBatch).toHaveBeenCalledWith(
+      expect.arrayContaining([
+        expect.objectContaining({
+          workspaceId: res.body.workspace.id,
+          category: "provisioning",
+          action: "company_provisioned",
+          target: { type: "company", id: res.body.company.id },
+        }),
+        expect.objectContaining({
+          workspaceId: res.body.workspace.id,
+          category: "team_lifecycle",
+          action: "team_created",
+          target: { type: "team", id: res.body.team.id },
+        }),
+        expect.objectContaining({
+          workspaceId: res.body.workspace.id,
+          category: "secret",
+          action: "secret_bindings_configured",
+          target: { type: "company", id: res.body.company.id },
+        }),
+      ])
+    );
   });
 
   it("replays idempotent retries and keeps tenant state isolated across companies", async () => {
@@ -695,6 +726,23 @@ describe("Company provisioning APIs", () => {
     expect(secondRes.body.team.id).not.toBe(firstRes.body.team.id);
     expect(secondRes.body.agents.map((agent: { id: string }) => agent.id)).not.toEqual(
       firstRes.body.agents.map((agent: { id: string }) => agent.id)
+    );
+
+    const provisioningCalls = (recordControlPlaneAuditBatch as jest.Mock).mock.calls.map(
+      ([entries]) => entries[0]
+    );
+    expect(provisioningCalls).toHaveLength(2);
+    expect(provisioningCalls[0]).toEqual(
+      expect.objectContaining({
+        workspaceId: firstRes.body.workspace.id,
+        target: { type: "company", id: firstRes.body.company.id },
+      })
+    );
+    expect(provisioningCalls[1]).toEqual(
+      expect.objectContaining({
+        workspaceId: secondRes.body.workspace.id,
+        target: { type: "company", id: secondRes.body.company.id },
+      })
     );
   });
 
@@ -1278,7 +1326,7 @@ describe("Control plane APIs", () => {
       })
     ).execution;
 
-    controlPlaneStore.finalizeAgentExecution({
+    await controlPlaneStore.finalizeAgentExecution({
       executionId: execution.id,
       userId: "test-user",
       status: "completed",
@@ -1396,6 +1444,28 @@ describe("Control plane APIs", () => {
     expect(executionRes.status).toBe(200);
     expect(executionRes.body.status).toBe("queued");
     expect(executionRes.body.restartCount).toBe(1);
+
+    expect(recordControlPlaneAudit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        category: "execution",
+        action: "execution_started",
+        target: { type: "execution", id: started.execution.id },
+      })
+    );
+    expect(recordControlPlaneAudit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        category: "team_lifecycle",
+        action: "team_pause",
+        target: { type: "team", id: teamId },
+      })
+    );
+    expect(recordControlPlaneAudit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        category: "execution",
+        action: "execution_restarted",
+        target: { type: "execution", id: started.execution.id },
+      })
+    );
   });
 
   it("supports company-wide pause and resume with lifecycle audit entries", async () => {
@@ -2035,7 +2105,7 @@ describe("GET /api/observability", () => {
       taskTitle: "Handle observability trace",
     });
 
-    controlPlaneStore.finalizeAgentExecution({
+    await controlPlaneStore.finalizeAgentExecution({
       executionId: started.execution.id,
       userId: "test-user",
       status: "completed",

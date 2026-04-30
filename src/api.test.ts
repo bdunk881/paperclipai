@@ -2294,7 +2294,7 @@ describe("POST /api/workflows/generate", () => {
       provider: "openai",
       label: "Primary OpenAI",
       model: "gpt-4o",
-      apiKey: "sk-workflow-user-1234",
+      credentials: { apiKey: "sk-workflow-user-1234" },
     });
     llmConfigStore.setDefault(cfg.id, "workflow-user");
 
@@ -2337,7 +2337,7 @@ describe("POST /api/workflows/generate", () => {
       provider: "anthropic",
       label: "Claude",
       model: "claude-sonnet-4-6",
-      apiKey: "sk-ant-workflow-1234",
+      credentials: { apiKey: "sk-ant-workflow-1234" },
     });
     llmConfigStore.setDefault(cfg.id, "workflow-user");
     mockGetProvider.mockReturnValue(

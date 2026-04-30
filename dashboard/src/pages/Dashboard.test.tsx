@@ -415,5 +415,8 @@ describe("Dashboard", () => {
     expect(requireAccessTokenMock).not.toHaveBeenCalled();
     expect(listRunsMock).not.toHaveBeenCalled();
     expect(listAgentsMock).not.toHaveBeenCalled();
+    expect(listObservabilityEventsMock).not.toHaveBeenCalled();
+    expect(getObservabilityThroughputMock).not.toHaveBeenCalled();
+    expect(streamObservabilityEventsMock).not.toHaveBeenCalled();
   });
 });

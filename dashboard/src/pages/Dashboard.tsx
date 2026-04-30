@@ -267,6 +267,11 @@ export default function Dashboard() {
         setRuns([]);
         setApprovals([]);
         setAgentSnapshots([]);
+        setObservabilityFeed([]);
+        setThroughput(null);
+        setTransportState("connecting");
+        setLastUpdatedAt(null);
+        latestCursorRef.current = undefined;
         return;
       }
 

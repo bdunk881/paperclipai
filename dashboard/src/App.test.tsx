@@ -54,6 +54,7 @@ vi.mock("./components/Layout", () => ({
 vi.mock("./pages/Login", () => ({ default: () => <div>Login Page</div> }));
 vi.mock("./pages/Signup", () => ({ default: () => <div>Signup Page</div> }));
 vi.mock("./pages/Dashboard", () => ({ default: () => <div>Dashboard Page</div> }));
+vi.mock("./pages/MissionState", () => ({ default: () => <div>Mission State Page</div> }));
 vi.mock("./pages/WorkflowBuilder", () => ({ default: () => <div>Workflow Builder Page</div> }));
 vi.mock("./pages/RunMonitor", () => ({ default: () => <div>Run Monitor Page</div> }));
 vi.mock("./pages/RunHistory", () => ({ default: () => <div>Run History Page</div> }));
@@ -119,6 +120,25 @@ describe("App", () => {
 
     expect(screen.getByText("Layout Shell")).toBeInTheDocument();
     expect(screen.getByText("API Keys Page")).toBeInTheDocument();
+  });
+
+  it("renders the Mission State route for authenticated users", () => {
+    authState.user = { id: "user-1", email: "user@example.com", name: "User" };
+    window.history.replaceState({}, "", "/mission-state");
+
+    render(<App />);
+
+    expect(screen.getByText("Layout Shell")).toBeInTheDocument();
+    expect(screen.getByText("Mission State Page")).toBeInTheDocument();
+  });
+
+  it("redirects staffing-plan deep links into the canonical Mission State route", () => {
+    authState.user = { id: "user-1", email: "user@example.com", name: "User" };
+    window.history.replaceState({}, "", "/staffing-plan");
+
+    render(<App />);
+
+    expect(screen.getByText("Mission State Page")).toBeInTheDocument();
   });
 
   it("redirects unknown routes back through the authenticated root", () => {

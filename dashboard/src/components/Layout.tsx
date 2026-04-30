@@ -1,7 +1,9 @@
-import { useState } from "react";
-import { Outlet, NavLink, useNavigate } from "react-router-dom";
+import { useMemo, useState } from "react";
+import { Outlet, NavLink, useLocation, useNavigate } from "react-router-dom";
 import {
   LayoutDashboard,
+  Flag,
+  Users,
   Workflow,
   Activity,
   History,
@@ -20,31 +22,66 @@ import {
   X,
   Moon,
   Sun,
+  FilePenLine,
 } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import clsx from "clsx";
 import { useTheme } from "../hooks/useTheme";
 
-const NAV = [
-  { to: "/", icon: LayoutDashboard, label: "Dashboard", end: true },
-  { to: "/builder", icon: Workflow, label: "Builder" },
-  { to: "/monitor", icon: Activity, label: "Run Monitor" },
-  { to: "/history", icon: History, label: "History" },
-  { to: "/agents", icon: Bot, label: "Agent Catalog" },
-  { to: "/agents/my", icon: Activity, label: "My Agents" },
-  { to: "/agents/activity", icon: BotMessageSquare, label: "Agent Activity" },
-  { to: "/approvals", icon: CheckSquare, label: "Approvals" },
-  { to: "/logs", icon: ScrollText, label: "Logs" },
-  { to: "/memory", icon: Database, label: "Memory" },
-  { to: "/integrations", icon: PlugZap, label: "Integrations" },
-  { to: "/pricing", icon: DollarSign, label: "Pricing" },
-];
+type NavItem = {
+  to: string;
+  icon: typeof LayoutDashboard;
+  label: string;
+  end?: boolean;
+};
+
+const NAV_SECTIONS: Array<{ title: string; items: NavItem[] }> = [
+  {
+    title: "Core",
+    items: [
+      { to: "/", icon: LayoutDashboard, label: "Dashboard", end: true },
+      { to: "/mission-state", icon: Flag, label: "Mission State" },
+      { to: "/staffing-plan", icon: Users, label: "Staffing Plan" },
+      { to: "/builder", icon: Workflow, label: "Builder" },
+      { to: "/proposals", icon: FilePenLine, label: "Proposal Builder" },
+    ],
+  },
+  {
+    title: "Operations",
+    items: [
+      { to: "/monitor", icon: Activity, label: "Run Monitor" },
+      { to: "/history", icon: History, label: "History" },
+      { to: "/agents", icon: Bot, label: "Agent Catalog" },
+      { to: "/agents/my", icon: Activity, label: "My Agents" },
+      { to: "/agents/activity", icon: BotMessageSquare, label: "Agent Activity" },
+    ],
+  },
+  {
+    title: "Platform",
+    items: [
+      { to: "/approvals", icon: CheckSquare, label: "Approvals" },
+      { to: "/logs", icon: ScrollText, label: "Logs" },
+      { to: "/memory", icon: Database, label: "Memory" },
+      { to: "/integrations", icon: PlugZap, label: "Integrations" },
+      { to: "/pricing", icon: DollarSign, label: "Pricing" },
+    ],
+  },
+] as const;
 
 export default function Layout() {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
   const { theme, toggleTheme } = useTheme();
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  const isBuilderPopout = useMemo(() => {
+    if (!location.pathname.startsWith("/builder")) {
+      return false;
+    }
+
+    const params = new URLSearchParams(location.search);
+    return params.get("popout") === "1";
+  }, [location.pathname, location.search]);
 
   function handleLogout() {
     setMobileNavOpen(false);
@@ -59,24 +96,31 @@ export default function Layout() {
   function NavItems({ nested = false }: { nested?: boolean }) {
     return (
       <>
-        {NAV.map(({ to, icon: Icon, label, end }) => (
-          <NavLink
-            key={to}
-            to={to}
-            end={end}
-            onClick={closeNav}
-            className={({ isActive }) =>
-              clsx(
-                "flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
-                isActive
-                  ? "bg-brand-600 text-white"
-                  : "text-gray-600 hover:bg-gray-100 hover:text-gray-900 dark:text-surface-400 dark:hover:bg-surface-800 dark:hover:text-white"
-              )
-            }
-          >
-            <Icon size={18} />
-            {label}
-          </NavLink>
+        {NAV_SECTIONS.map((section) => (
+          <div key={section.title} className="space-y-1">
+            <p className="px-3 pb-1 text-xs font-semibold uppercase tracking-[0.18em] text-gray-400 dark:text-surface-500">
+              {section.title}
+            </p>
+            {section.items.map(({ to, icon: Icon, label, end }) => (
+              <NavLink
+                key={to}
+                to={to}
+                end={end}
+                onClick={closeNav}
+                className={({ isActive }) =>
+                  clsx(
+                    "flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
+                    isActive
+                      ? "bg-brand-600 text-white"
+                      : "text-gray-600 hover:bg-gray-100 hover:text-gray-900 dark:text-surface-400 dark:hover:bg-surface-800 dark:hover:text-white"
+                  )
+                }
+              >
+                <Icon size={18} />
+                {label}
+              </NavLink>
+            ))}
+          </div>
         ))}
 
         <div className="mt-2 border-t border-gray-200 dark:border-surface-700 pt-3">
@@ -119,6 +163,7 @@ export default function Layout() {
 
   return (
     <div className="relative flex h-screen bg-surface-50 text-gray-900 transition-colors duration-200 dark:bg-surface-950 dark:text-gray-100">
+      {!isBuilderPopout && (
       <header className="fixed inset-x-0 top-0 z-40 flex items-center justify-between border-b border-gray-200 bg-white px-4 py-3 transition-colors duration-200 lg:hidden dark:border-surface-800 dark:bg-surface-900">
         <button
           onClick={() => setMobileNavOpen((prev) => !prev)}
@@ -152,8 +197,9 @@ export default function Layout() {
           </button>
         </div>
       </header>
+      )}
 
-      {mobileNavOpen && (
+      {!isBuilderPopout && mobileNavOpen && (
         <button
           onClick={closeNav}
           className="fixed inset-0 z-30 bg-surface-950/35 lg:hidden"
@@ -161,6 +207,7 @@ export default function Layout() {
         />
       )}
 
+      {!isBuilderPopout && (
       <aside
         className={clsx(
           "fixed bottom-0 left-0 top-0 z-40 flex w-72 flex-col border-r border-gray-200 bg-white text-gray-900 transition-transform lg:relative lg:w-60 lg:translate-x-0 dark:border-surface-800 dark:bg-surface-900 dark:text-gray-100",
@@ -208,9 +255,15 @@ export default function Layout() {
           </div>
         </div>
       </aside>
+      )}
 
       {/* Main content */}
-      <main className="flex-1 overflow-y-auto bg-surface-50 pt-14 transition-colors duration-200 lg:pt-0 dark:bg-surface-950">
+      <main
+        className={clsx(
+          "flex-1 overflow-y-auto bg-surface-50 transition-colors duration-200 dark:bg-surface-950",
+          isBuilderPopout ? "pt-0" : "pt-14 lg:pt-0"
+        )}
+      >
         <Outlet />
       </main>
     </div>

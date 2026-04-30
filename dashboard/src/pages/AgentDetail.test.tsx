@@ -1,63 +1,72 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { describe, expect, it, vi } from "vitest";
 import AgentDetail from "./AgentDetail";
 
-const getAgentTemplateMock = vi.fn();
+const getAgentCatalogTemplateMock = vi.fn();
 
-vi.mock("../data/agentMarketplaceData", () => ({
-  getAgentTemplate: (templateId: string) => getAgentTemplateMock(templateId),
+vi.mock("../context/AuthContext", () => ({
+  useAuth: () => ({
+    getAccessToken: vi.fn().mockResolvedValue("mock-token"),
+  }),
+}));
+
+vi.mock("../api/agentCatalog", () => ({
+  getAgentCatalogTemplate: (templateId: string, accessToken: string) =>
+    getAgentCatalogTemplateMock(templateId, accessToken),
 }));
 
 describe("AgentDetail", () => {
-  it("shows the not-found state when the template lookup fails", () => {
-    getAgentTemplateMock.mockReturnValue(null);
+  it("shows the not-found state when the template lookup fails", async () => {
+    getAgentCatalogTemplateMock.mockResolvedValueOnce(null);
 
     render(
-      <MemoryRouter initialEntries={["/agents/template/missing"]}>
+      <MemoryRouter initialEntries={["/agents/missing"]}>
         <Routes>
-          <Route path="/agents/template/:templateId" element={<AgentDetail />} />
+          <Route path="/agents/:templateId" element={<AgentDetail />} />
         </Routes>
       </MemoryRouter>
     );
 
-    expect(screen.getByText(/agent template not found/i)).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.getByText(/agent template not found/i)).toBeInTheDocument();
+    });
     expect(screen.getByRole("link", { name: /back to catalog/i })).toHaveAttribute(
       "href",
       "/agents"
     );
   });
 
-  it("renders template details and deployment actions", () => {
-    getAgentTemplateMock.mockReturnValue({
-      id: "sales-agent",
-      name: "Sales Agent",
-      category: "Revenue",
-      pricingTier: "Pro",
-      monthlyPriceUsd: 49,
-      description: "Automates prospect follow-up.",
-      capabilities: ["Lead enrichment", "Outbound sequencing"],
-      requiredIntegrations: ["HubSpot"],
-      optionalIntegrations: ["Slack", "Apollo"],
+  it("renders template details and deployment actions", async () => {
+    getAgentCatalogTemplateMock.mockResolvedValueOnce({
+      id: "backend-engineer",
+      name: "Backend Engineer",
+      category: "Engineering",
+      description: "Builds APIs and integrations.",
+      defaultModel: "gpt-5.4",
+      defaultInstructions: "Own backend systems.",
+      skills: ["paperclip", "security-review"],
+      suggestedBudgetMonthlyUsd: 100,
     });
 
     render(
-      <MemoryRouter initialEntries={["/agents/template/sales-agent"]}>
+      <MemoryRouter initialEntries={["/agents/backend-engineer"]}>
         <Routes>
-          <Route path="/agents/template/:templateId" element={<AgentDetail />} />
+          <Route path="/agents/:templateId" element={<AgentDetail />} />
         </Routes>
       </MemoryRouter>
     );
 
-    expect(screen.getByText("Sales Agent")).toBeInTheDocument();
-    expect(screen.getByText("Revenue template")).toBeInTheDocument();
-    expect(screen.getByText("Automates prospect follow-up.")).toBeInTheDocument();
-    expect(screen.getByText("Lead enrichment")).toBeInTheDocument();
-    expect(screen.getByText("HubSpot")).toBeInTheDocument();
-    expect(screen.getByText(/Optional: Slack, Apollo/i)).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.getByText("Backend Engineer")).toBeInTheDocument();
+      expect(screen.getByText("Engineering template")).toBeInTheDocument();
+      expect(screen.getByText("Builds APIs and integrations.")).toBeInTheDocument();
+      expect(screen.getByText("paperclip")).toBeInTheDocument();
+      expect(screen.getByText("Own backend systems.")).toBeInTheDocument();
+    });
     expect(screen.getByRole("link", { name: /deploy agent/i })).toHaveAttribute(
       "href",
-      "/agents/deploy/sales-agent"
+      "/agents/deploy/backend-engineer"
     );
     expect(screen.getByRole("link", { name: /view my agents/i })).toHaveAttribute(
       "href",

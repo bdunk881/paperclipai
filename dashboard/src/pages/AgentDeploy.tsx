@@ -1,10 +1,18 @@
-import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import { FormEvent, useCallback, useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { ArrowLeft, CheckCircle2, Link2, LoaderCircle, Rocket, ShieldCheck, TimerReset } from "lucide-react";
+import {
+  ArrowLeft,
+  CheckCircle2,
+  Link2,
+  LoaderCircle,
+  Rocket,
+  ShieldCheck,
+  TimerReset,
+} from "lucide-react";
 import { getConfiguredApiOrigin } from "../api/baseUrl";
+import { getAgentCatalogTemplate, type AgentCatalogTemplate } from "../api/agentCatalog";
 import { createAgent, createRoutine } from "../api/agentApi";
 import { useAuth } from "../context/AuthContext";
-import { getAgentTemplate } from "../data/agentMarketplaceData";
 
 const API_BASE = getConfiguredApiOrigin();
 const PROVIDER_ORDER = ["google", "github", "notion"] as const;
@@ -16,16 +24,9 @@ const PROVIDER_LABELS: Record<OAuthProvider, string> = {
   notion: "Notion",
 };
 
-const INTEGRATION_PROVIDER_MAP: Record<string, OAuthProvider> = {
-  "Google Workspace": "google",
-  GitHub: "github",
-  Notion: "notion",
-};
-
 interface ProviderConnectionState {
-  status: "connected" | "disconnected" | "connecting" | "error";
+  status: "connected" | "disconnected";
   accountLabel?: string;
-  message?: string;
 }
 
 function defaultProviderStates(): Record<OAuthProvider, ProviderConnectionState> {
@@ -40,10 +41,9 @@ export default function AgentDeploy() {
   const params = useParams();
   const navigate = useNavigate();
   const { getAccessToken } = useAuth();
-  const template = params.templateId ? getAgentTemplate(params.templateId) : null;
-
-  const [teamName, setTeamName] = useState(template ? template.name : "");
-  const [budgetMonthlyUsd, setBudgetMonthlyUsd] = useState(template?.monthlyPriceUsd ?? 0);
+  const [template, setTemplate] = useState<AgentCatalogTemplate | null | undefined>(undefined);
+  const [teamName, setTeamName] = useState("");
+  const [budgetMonthlyUsd, setBudgetMonthlyUsd] = useState(0);
   const [defaultIntervalMinutes, setDefaultIntervalMinutes] = useState(60);
   const [isDeploying, setIsDeploying] = useState(false);
   const [deployError, setDeployError] = useState<string | null>(null);
@@ -52,11 +52,21 @@ export default function AgentDeploy() {
     defaultProviderStates()
   );
 
-  const requiredProviders = useMemo(
-    () =>
-      [...new Set((template?.requiredIntegrations ?? []).map((integration) => INTEGRATION_PROVIDER_MAP[integration]).filter(Boolean))] as OAuthProvider[],
-    [template]
-  );
+  useEffect(() => {
+    void (async () => {
+      const accessToken = await getAccessToken();
+      if (!accessToken || !params.templateId) {
+        setTemplate(null);
+        return;
+      }
+      const nextTemplate = await getAgentCatalogTemplate(params.templateId, accessToken);
+      setTemplate(nextTemplate);
+      if (nextTemplate) {
+        setTeamName(nextTemplate.name);
+        setBudgetMonthlyUsd(nextTemplate.suggestedBudgetMonthlyUsd);
+      }
+    })();
+  }, [getAccessToken, params.templateId]);
 
   const authorizedFetch = useCallback(
     async (path: string): Promise<Response> => {
@@ -74,39 +84,37 @@ export default function AgentDeploy() {
     [getAccessToken]
   );
 
-  const loadConnections = useCallback(async () => {
-    try {
-      const response = await authorizedFetch("/api/integrations/agent-catalog/connections");
-      if (!response.ok) {
-        const payload = (await response.json().catch(() => null)) as { error?: string } | null;
-        throw new Error(payload?.error ?? "Failed to load integration connection statuses");
-      }
-
-      const payload = (await response.json()) as {
-        connections: Array<{ provider: OAuthProvider; accountLabel: string }>;
-      };
-
-      const next = defaultProviderStates();
-      for (const provider of PROVIDER_ORDER) {
-        const match = payload.connections.find((connection) => connection.provider === provider);
-        if (match) {
-          next[provider] = {
-            status: "connected",
-            accountLabel: match.accountLabel,
-          };
-        }
-      }
-
-      setProviderStates(next);
-      setConnectionError(null);
-    } catch (error) {
-      setConnectionError(error instanceof Error ? error.message : "Failed to load integration status");
-    }
-  }, [authorizedFetch]);
-
   useEffect(() => {
-    void loadConnections();
-  }, [loadConnections]);
+    void (async () => {
+      try {
+        const response = await authorizedFetch("/api/integrations/agent-catalog/connections");
+        if (!response.ok) {
+          const payload = (await response.json().catch(() => null)) as { error?: string } | null;
+          throw new Error(payload?.error ?? "Failed to load integration connection statuses");
+        }
+
+        const payload = (await response.json()) as {
+          connections: Array<{ provider: OAuthProvider; accountLabel: string }>;
+        };
+
+        const next = defaultProviderStates();
+        for (const provider of PROVIDER_ORDER) {
+          const match = payload.connections.find((connection) => connection.provider === provider);
+          if (match) {
+            next[provider] = {
+              status: "connected",
+              accountLabel: match.accountLabel,
+            };
+          }
+        }
+
+        setProviderStates(next);
+        setConnectionError(null);
+      } catch (error) {
+        setConnectionError(error instanceof Error ? error.message : "Failed to load integration status");
+      }
+    })();
+  }, [authorizedFetch]);
 
   async function handleDeploy(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -125,16 +133,15 @@ export default function AgentDeploy() {
         {
           name: teamName.trim() || template.name,
           description: template.description,
-          roleKey: template.category,
-          instructions: `Deploy template "${template.name}" with capabilities: ${template.capabilities.join(", ")}.`,
+          roleKey: template.id,
+          instructions: template.defaultInstructions,
           budgetMonthlyUsd,
           status: "idle",
           metadata: {
             templateId: template.id,
             templateName: template.name,
-            pricingTier: template.pricingTier,
-            capabilities: template.capabilities,
-            requiredIntegrations: template.requiredIntegrations,
+            category: template.category,
+            skills: template.skills,
           },
         },
         token
@@ -172,6 +179,10 @@ export default function AgentDeploy() {
     }
   }
 
+  if (template === undefined) {
+    return <div className="p-8 text-sm text-gray-500">Loading agent template...</div>;
+  }
+
   if (!template) {
     return (
       <div className="p-8">
@@ -200,7 +211,7 @@ export default function AgentDeploy() {
               </div>
               <div>
                 <h1 className="text-2xl font-bold text-gray-900">Deploy {template.name}</h1>
-                <p className="text-sm text-gray-500">Create a real agent from this workflow-backed template.</p>
+                <p className="text-sm text-gray-500">Create a real agent from this role-backed template.</p>
               </div>
             </div>
 
@@ -251,9 +262,9 @@ export default function AgentDeploy() {
               </div>
               <div className="mt-3 grid gap-3 md:grid-cols-2">
                 <InfoLine label="Template" value={template.name} />
-                <InfoLine label="Tier" value={`${template.pricingTier} · $${template.monthlyPriceUsd}/mo`} />
-                <InfoLine label="Capabilities" value={template.capabilities.join(", ")} />
-                <InfoLine label="Required Integrations" value={template.requiredIntegrations.join(", ")} />
+                <InfoLine label="Category" value={template.category} />
+                <InfoLine label="Model" value={template.defaultModel ?? "Workspace default"} />
+                <InfoLine label="Skills" value={template.skills.join(", ")} />
               </div>
             </div>
 
@@ -294,20 +305,17 @@ export default function AgentDeploy() {
             <div className="space-y-3">
               {PROVIDER_ORDER.map((provider) => {
                 const state = providerStates[provider];
-                const required = requiredProviders.includes(provider);
                 return (
                   <div key={provider} className="rounded-2xl border border-gray-200 p-4">
                     <div className="flex items-center justify-between gap-3">
                       <div>
                         <p className="font-medium text-gray-900">{PROVIDER_LABELS[provider]}</p>
-                        <p className="text-xs text-gray-500">{required ? "Required for this template" : "Optional for this template"}</p>
+                        <p className="text-xs text-gray-500">Optional workspace connection</p>
                       </div>
                       <span
                         className={`rounded-full px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] ${
                           state.status === "connected"
                             ? "bg-teal-100 text-teal-700"
-                            : required
-                            ? "bg-orange-100 text-orange-700"
                             : "bg-slate-100 text-slate-600"
                         }`}
                       >
@@ -316,11 +324,6 @@ export default function AgentDeploy() {
                     </div>
                     {state.accountLabel ? (
                       <p className="mt-2 text-sm text-gray-600">Connected as {state.accountLabel}</p>
-                    ) : null}
-                    {required && state.status !== "connected" ? (
-                      <p className="mt-2 text-xs text-orange-700">
-                        Connect this provider before using the linked workflow actions at runtime.
-                      </p>
                     ) : null}
                     {state.status === "connected" ? (
                       <div className="mt-3 inline-flex items-center gap-1.5 text-xs font-medium text-teal-700">

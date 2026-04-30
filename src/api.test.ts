@@ -76,6 +76,7 @@ jest.mock("./auth/authMiddleware", () => ({
 import request from "supertest";
 import app from "./app";
 import { listConnectorHealth } from "./connectors/health";
+import { integrationCredentialStore } from "./integrations/integrationCredentialStore";
 import { WORKFLOW_TEMPLATES } from "./templates";
 import type { WorkflowStep } from "./types/workflow";
 import {
@@ -108,6 +109,7 @@ beforeEach(() => {
   runStore.clear();
   knowledgeStore.clear();
   observabilityStore.clear();
+  integrationCredentialStore.clear();
   resetImportedTemplatesForTests();
 });
 
@@ -135,26 +137,40 @@ describe("GET /health", () => {
 
 describe("GET /api/connectors/health", () => {
   it("returns connector health records and summary", async () => {
-    const res = await request(app).get("/api/connectors/health");
+    const res = await request(app).get("/api/connectors/health").set(asAuth());
     expect(res.status).toBe(200);
     expect(Array.isArray(res.body.connectors)).toBe(true);
     expect(typeof res.body.summary).toBe("object");
   });
 
-  it("returns all Tier 1 connectors", async () => {
-    const res = await request(app).get("/api/connectors/health");
-    expect(res.body.connectors).toHaveLength(listConnectorHealth().length);
+  it("returns the caller's connected integrations", async () => {
+    integrationCredentialStore.create({
+      userId: "test-user",
+      integrationSlug: "slack",
+      label: "Slack Workspace",
+      credentials: { accessToken: "xoxb-token" },
+    });
+
+    const res = await request(app).get("/api/connectors/health").set(asAuth());
+    expect(res.body.connectors).toHaveLength(listConnectorHealth("test-user").length);
   });
 
   it("includes required fields on each connector", async () => {
-    const res = await request(app).get("/api/connectors/health");
+    integrationCredentialStore.create({
+      userId: "test-user",
+      integrationSlug: "slack",
+      label: "Slack Workspace",
+      credentials: { accessToken: "xoxb-token" },
+    });
+
+    const res = await request(app).get("/api/connectors/health").set(asAuth());
     for (const connector of res.body.connectors) {
       expect(typeof connector.connectorKey).toBe("string");
       expect(typeof connector.connectorName).toBe("string");
       expect(typeof connector.state).toBe("string");
       expect(typeof connector.successRate24h).toBe("number");
       expect(Array.isArray(connector.transitions)).toBe(true);
-      expect(connector.source).toBe("mock");
+      expect(connector.source).toBe("api");
     }
   });
 });

@@ -13,6 +13,7 @@ import {
   type ConnectorHealthState,
   type ConnectorHealthSummary,
 } from "../api/client";
+import { useAuth } from "../context/AuthContext";
 
 const STATE_STYLES: Record<ConnectorHealthState, string> = {
   healthy: "bg-emerald-100 text-emerald-800",
@@ -31,20 +32,23 @@ const STATE_LABELS: Record<ConnectorHealthState, string> = {
 };
 
 export default function ConnectorHealth() {
+  const { getAccessToken } = useAuth();
   const [connectors, setConnectors] = useState<ConnectorHealthRecord[]>([]);
   const [summary, setSummary] = useState<ConnectorHealthSummary | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    getConnectorHealth()
-      .then((data) => {
+    void (async () => {
+      try {
+        const accessToken = (await getAccessToken()) ?? undefined;
+        const data = await getConnectorHealth(accessToken);
         setConnectors(data.connectors);
         setSummary(data.summary);
-      })
-      .catch((err) => {
+      } catch (err) {
         setError(err instanceof Error ? err.message : "Failed to load connector health");
-      });
-  }, []);
+      }
+    })();
+  }, [getAccessToken]);
 
   return (
     <div className="space-y-8 p-8">
@@ -52,15 +56,14 @@ export default function ConnectorHealth() {
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Connector Health</h1>
           <p className="mt-1 max-w-3xl text-sm text-gray-500">
-            Operational view of Tier 1 connector state, recent failures, and alerting
-            thresholds. This scaffold is wired to mock telemetry until the connector
-            health-state model from `ALT-1945` is emitting live data.
+            Operational view of monitored connector state, recent sync activity, and
+            alert thresholds derived from your real integration connections.
           </p>
         </div>
         {summary ? (
           <div className="rounded-2xl border border-blue-100 bg-blue-50 px-4 py-3 text-sm text-blue-900">
             <div className="font-medium">Last updated</div>
-            <div>{new Date(summary.lastUpdatedAt).toLocaleString()}</div>
+            <div>{summary.lastUpdatedAt ? new Date(summary.lastUpdatedAt).toLocaleString() : "No connector activity yet"}</div>
           </div>
         ) : null}
       </section>
@@ -113,50 +116,59 @@ export default function ConnectorHealth() {
               Current state, last good execution, and latest operator-facing error.
             </p>
           </div>
-          <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-gray-100">
-              <thead className="bg-gray-50 text-left text-xs uppercase tracking-wide text-gray-500">
-                <tr>
-                  <th className="px-6 py-3 font-medium">Connector</th>
-                  <th className="px-6 py-3 font-medium">State</th>
-                  <th className="px-6 py-3 font-medium">24h Success</th>
-                  <th className="px-6 py-3 font-medium">Last Success</th>
-                  <th className="px-6 py-3 font-medium">Last Error</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-100 bg-white text-sm text-gray-700">
-                {connectors.map((connector) => (
-                  <tr key={connector.connectorKey}>
-                    <td className="px-6 py-4">
-                      <div className="font-medium text-gray-900">{connector.connectorName}</div>
-                      <div className="mt-1 text-xs uppercase tracking-wide text-gray-400">
-                        {connector.connectorKey}
-                      </div>
-                    </td>
-                    <td className="px-6 py-4">
-                      <span
-                        className={`inline-flex rounded-full px-2.5 py-1 text-xs font-medium ${STATE_STYLES[connector.state]}`}
-                      >
-                        {STATE_LABELS[connector.state]}
-                      </span>
-                    </td>
-                    <td className="px-6 py-4">{connector.successRate24h.toFixed(1)}%</td>
-                    <td className="px-6 py-4 text-gray-500">
-                      {formatTimestamp(connector.lastSuccessAt)}
-                    </td>
-                    <td className="px-6 py-4">
-                      <div className="text-gray-500">{formatTimestamp(connector.lastErrorAt)}</div>
-                      {connector.lastErrorMessage ? (
-                        <div className="mt-1 max-w-sm text-xs text-gray-400">
-                          {connector.lastErrorMessage}
-                        </div>
-                      ) : null}
-                    </td>
+          {connectors.length === 0 ? (
+            <div className="px-6 py-12 text-center">
+              <p className="text-sm font-medium text-gray-700">No monitored connectors yet</p>
+              <p className="mt-2 text-sm text-gray-500">
+                Connect a provider from the Integrations page to start tracking connector health here.
+              </p>
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="min-w-full divide-y divide-gray-100">
+                <thead className="bg-gray-50 text-left text-xs uppercase tracking-wide text-gray-500">
+                  <tr>
+                    <th className="px-6 py-3 font-medium">Connector</th>
+                    <th className="px-6 py-3 font-medium">State</th>
+                    <th className="px-6 py-3 font-medium">24h Success</th>
+                    <th className="px-6 py-3 font-medium">Last Success</th>
+                    <th className="px-6 py-3 font-medium">Last Error</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody className="divide-y divide-gray-100 bg-white text-sm text-gray-700">
+                  {connectors.map((connector) => (
+                    <tr key={connector.connectorKey}>
+                      <td className="px-6 py-4">
+                        <div className="font-medium text-gray-900">{connector.connectorName}</div>
+                        <div className="mt-1 text-xs uppercase tracking-wide text-gray-400">
+                          {connector.connectorKey}
+                        </div>
+                      </td>
+                      <td className="px-6 py-4">
+                        <span
+                          className={`inline-flex rounded-full px-2.5 py-1 text-xs font-medium ${STATE_STYLES[connector.state]}`}
+                        >
+                          {STATE_LABELS[connector.state]}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4">{connector.successRate24h.toFixed(1)}%</td>
+                      <td className="px-6 py-4 text-gray-500">
+                        {formatTimestamp(connector.lastSuccessAt)}
+                      </td>
+                      <td className="px-6 py-4">
+                        <div className="text-gray-500">{formatTimestamp(connector.lastErrorAt)}</div>
+                        {connector.lastErrorMessage ? (
+                          <div className="mt-1 max-w-sm text-xs text-gray-400">
+                            {connector.lastErrorMessage}
+                          </div>
+                        ) : null}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
 
         <div className="space-y-6">

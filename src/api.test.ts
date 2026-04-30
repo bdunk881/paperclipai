@@ -2279,7 +2279,7 @@ describe("POST /api/runs", () => {
   it("returns a run with startedAt timestamp", async () => {
     const res = await request(app)
       .post("/api/runs")
-      .set(asAuth())
+      .set(asAuth("runs-started-at-user"))
       .send({ templateId: "tpl-support-bot", input: {} });
     expect(res.status).toBe(202);
     expect(typeof res.body.startedAt).toBe("string");
@@ -2298,14 +2298,14 @@ describe("GET /api/runs", () => {
   });
 
   it("returns 200 with a runs array", async () => {
-    const res = await request(app).get("/api/runs").set(asAuth());
+    const res = await request(app).get("/api/runs").set(asAuth("runs-list-user"));
     expect(res.status).toBe(200);
     expect(Array.isArray(res.body.runs)).toBe(true);
     expect(typeof res.body.total).toBe("number");
   });
 
   it("total matches runs array length", async () => {
-    const res = await request(app).get("/api/runs").set(asAuth());
+    const res = await request(app).get("/api/runs").set(asAuth("runs-list-user"));
     expect(res.body.total).toBe(res.body.runs.length);
   });
 

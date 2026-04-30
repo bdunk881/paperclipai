@@ -176,6 +176,11 @@ router.post("/company/lifecycle", requirePaperclipRunId, async (req: WorkspaceAw
   if (!context) {
     return;
   }
+  const workspaceId = context.workspaceId;
+  if (!workspaceId) {
+    res.status(500).json({ error: "Workspace context was not resolved for the request" });
+    return;
+  }
 
   const { action, reason } = req.body as { action?: unknown; reason?: unknown };
   if (action !== "pause" && action !== "resume") {
@@ -195,11 +200,11 @@ router.post("/company/lifecycle", requirePaperclipRunId, async (req: WorkspaceAw
   });
 
   await recordControlPlaneAudit({
-    workspaceId: context.workspaceId,
+    workspaceId,
     userId: context.userId,
     category: "team_lifecycle",
     action: action === "pause" ? "company_paused" : "company_resumed",
-    target: { type: "workspace", id: context.workspaceId },
+    target: { type: "workspace", id: workspaceId },
     metadata: {
       runId: req.header("X-Paperclip-Run-Id"),
       reason: typeof reason === "string" ? reason : null,

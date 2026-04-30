@@ -367,11 +367,18 @@ describe("controlPlaneStore (Phase 4.2b) hydration round-trip", () => {
 
       // PG-level invariant: the partial unique index on (team_id, threshold)
       // means at most one row exists for this scope, regardless of dedupe key.
-      const pg = await fresh.postgres.queryPostgres<{ count: string }>(
-        "SELECT COUNT(*)::text AS count FROM control_plane_budget_alerts WHERE team_id = $1 AND scope = 'team'",
-        [teamId]
+      const pool = fresh.postgres.getPostgresPool();
+      await fresh.workspaceContext.withWorkspaceContext(
+        pool,
+        { workspaceId, userId },
+        async (client) => {
+          const pg = await client.query<{ count: string }>(
+            "SELECT COUNT(*)::text AS count FROM control_plane_budget_alerts WHERE team_id = $1 AND scope = 'team'",
+            [teamId]
+          );
+          expect(Number(pg.rows[0].count)).toBe(1);
+        }
       );
-      expect(Number(pg.rows[0].count)).toBe(1);
     }
   });
 });

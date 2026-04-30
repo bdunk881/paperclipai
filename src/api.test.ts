@@ -150,6 +150,16 @@ describe("GET /api/connectors/health", () => {
     expect(res.status).toBe(200);
     expect(Array.isArray(res.body.connectors)).toBe(true);
     expect(typeof res.body.summary).toBe("object");
+    expect(res.body.summary.states).toEqual({
+      healthy: expect.any(Number),
+      degraded: expect.any(Number),
+      rate_limited: expect.any(Number),
+      auth_failed: expect.any(Number),
+      provider_error: expect.any(Number),
+      disabled: expect.any(Number),
+    });
+    expect(res.body.summary.states.auth_failure).toBeUndefined();
+    expect(res.body.summary.states.down).toBeUndefined();
   });
 
   it("returns all Tier 1 connectors", async () => {
@@ -162,7 +172,14 @@ describe("GET /api/connectors/health", () => {
     for (const connector of res.body.connectors) {
       expect(typeof connector.connectorKey).toBe("string");
       expect(typeof connector.connectorName).toBe("string");
-      expect(typeof connector.state).toBe("string");
+      expect([
+        "healthy",
+        "degraded",
+        "rate_limited",
+        "auth_failed",
+        "provider_error",
+        "disabled",
+      ]).toContain(connector.state);
       expect(typeof connector.successRate24h).toBe("number");
       expect(Array.isArray(connector.transitions)).toBe(true);
       expect(connector.source).toBe("mock");

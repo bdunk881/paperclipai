@@ -87,8 +87,9 @@ export type ConnectorHealthState =
   | "healthy"
   | "degraded"
   | "rate_limited"
-  | "auth_failure"
-  | "down";
+  | "auth_failed"
+  | "provider_error"
+  | "disabled";
 
 export interface ConnectorHealthTransition {
   at: string;
@@ -375,7 +376,7 @@ const MOCK_CONNECTOR_HEALTH: ConnectorHealthRecord[] = [
   {
     connectorKey: "linear",
     connectorName: "Linear",
-    state: "auth_failure",
+    state: "auth_failed",
     lastSuccessAt: "2026-04-28T03:58:00.000Z",
     lastErrorAt: "2026-04-28T04:34:00.000Z",
     lastErrorMessage: "OAuth refresh token rejected by provider",
@@ -401,7 +402,7 @@ const MOCK_CONNECTOR_HEALTH: ConnectorHealthRecord[] = [
   {
     connectorKey: "jira",
     connectorName: "Jira",
-    state: "down",
+    state: "provider_error",
     lastSuccessAt: "2026-04-28T02:48:00.000Z",
     lastErrorAt: "2026-04-28T04:35:00.000Z",
     lastErrorMessage: "Connector worker has not completed a successful sync in 90 minutes",
@@ -420,8 +421,9 @@ function summarizeConnectorHealth(connectors: ConnectorHealthRecord[]): Connecto
       healthy: connectors.filter((c) => c.state === "healthy").length,
       degraded: connectors.filter((c) => c.state === "degraded").length,
       rate_limited: connectors.filter((c) => c.state === "rate_limited").length,
-      auth_failure: connectors.filter((c) => c.state === "auth_failure").length,
-      down: connectors.filter((c) => c.state === "down").length,
+      auth_failed: connectors.filter((c) => c.state === "auth_failed").length,
+      provider_error: connectors.filter((c) => c.state === "provider_error").length,
+      disabled: connectors.filter((c) => c.state === "disabled").length,
     },
     lastUpdatedAt: "2026-04-28T04:35:00.000Z",
     alertPolicy: {

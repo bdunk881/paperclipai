@@ -4,7 +4,7 @@ import { WorkflowStep, WorkflowTemplate } from "../types/workflow";
 import { DEFAULT_ROLE_LIBRARY } from "../goals/teamAssembly";
 import { getPostgresPool, isPostgresConfigured } from "../db/postgres";
 import { withWorkspaceContext } from "../middleware/workspaceContext";
-import { assertAgentWorkspaceBinding } from "../middleware/workspaceSandbox";
+import { assertAgentWorkspaceBinding } from "../security/agentWorkspaceBinding";
 import { companyLifecycleStore } from "./companyLifecycleStore";
 import {
   AgentHeartbeatRecord,
@@ -2497,7 +2497,7 @@ export const controlPlaneStore = {
     assertAgentWorkspaceBinding({
       agentId: agent.id,
       agentTeamId: agent.teamId,
-      teamId: team.id,
+      resolvedTeamId: team.id,
       teamWorkspaceId: teamWorkspaceIds.get(team.id),
       claimedWorkspaceId: input.workspaceId,
     });

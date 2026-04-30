@@ -1,0 +1,51 @@
+name: Auto-Retarget Master PRs
+
+on:
+  pull_request_target:
+    branches:
+      - master
+    types:
+      - opened
+      - reopened
+      - edited
+      - ready_for_review
+
+permissions:
+  pull-requests: write
+  issues: write
+
+jobs:
+  retarget-feature-prs:
+    name: Retarget feature PRs to staging
+    if: ${{ github.event.pull_request.head.ref != 'staging' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Retarget PR base to staging
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const pull_number = context.payload.pull_request.number;
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+
+            await github.rest.pulls.update({
+              owner,
+              repo,
+              pull_number,
+              base: "staging"
+            });
+
+            await github.rest.issues.createComment({
+              owner,
+              repo,
+              issue_number: pull_number,
+              body: [
+                "Retargeted this PR from `master` to `staging` automatically.",
+                "",
+                "AutoFlow uses a staging-first promotion flow:",
+                "- Feature and Dependabot PRs merge into `staging`.",
+                "- Only the dedicated `staging` -> `master` promotion PR should target `master`.",
+                "",
+                "Reference: `CONTRIBUTING.md` -> `Branch And PR Flow`."
+              ].join("\\n")
+            });

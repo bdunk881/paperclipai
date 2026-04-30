@@ -73,4 +73,20 @@ describe("Layout", () => {
     fireEvent.click(lightButtons[0]);
     expect(document.documentElement.classList.contains("dark")).toBe(false);
   });
+
+  it("hides the app chrome for builder pop-out routes", () => {
+    render(
+      <MemoryRouter initialEntries={["/builder/tpl-1?popout=1"]}>
+        <Routes>
+          <Route path="/" element={<Layout />}>
+            <Route path="builder/:templateId" element={<div>Builder pop-out</div>} />
+          </Route>
+        </Routes>
+      </MemoryRouter>
+    );
+
+    expect(screen.getByText("Builder pop-out")).toBeInTheDocument();
+    expect(screen.queryByText("AutoFlow")).toBeNull();
+    expect(screen.queryByRole("button", { name: /toggle navigation/i })).toBeNull();
+  });
 });

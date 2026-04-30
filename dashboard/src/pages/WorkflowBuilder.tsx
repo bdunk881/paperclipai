@@ -1052,6 +1052,9 @@ export default function WorkflowBuilder() {
                   persistEdges(flowEdges.filter((edge) => !deletedIds.has(edge.id)));
                   setGraphError(null);
                 }}
+                onNodeDrag={(_: unknown, node: WorkflowFlowNode) => {
+                  updateStepPosition(node.id, node.position);
+                }}
                 onNodeDragStop={(_: unknown, node: WorkflowFlowNode) => {
                   updateStepPosition(node.id, node.position);
                 }}
@@ -2618,32 +2621,39 @@ function EmptyCanvas({
   templates: TemplateSummary[];
 }) {
   return (
-    <div className="flex flex-col items-center justify-center h-full min-h-[400px] text-center">
-      <div className="w-16 h-16 rounded-2xl bg-brand-50 dark:bg-brand-500/10 flex items-center justify-center mb-4">
-        <Zap size={28} className="text-brand-500" />
-      </div>
-      <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-2">Start building your workflow</h3>
-      <p className="text-gray-500 dark:text-surface-400 text-sm mb-6 max-w-xs">
-        Add steps to compose your AI workflow. Each step passes data to the next.
-      </p>
-      <AddStepMenu onAdd={onAdd} />
-
-      {templates.length > 0 && (
-        <div className="mt-8">
-          <p className="text-xs text-gray-400 dark:text-surface-500 mb-3">Or start from a template:</p>
-          <div className="flex gap-2">
-            {templates.map((t) => (
-              <a
-                key={t.id}
-                href={`/builder/${t.id}`}
-                className="px-3 py-1.5 bg-white dark:bg-surface-800 border border-gray-200 dark:border-surface-700 rounded-lg text-xs text-gray-600 dark:text-gray-300 hover:border-brand-400 dark:hover:border-brand-500/50 hover:text-brand-600 dark:hover:text-brand-300 transition"
-              >
-                {t.name}
-              </a>
-            ))}
-          </div>
+    <div className="h-full overflow-y-auto px-6 py-8">
+      <div className="mx-auto flex min-h-full w-full max-w-4xl flex-col items-center justify-center text-center">
+        <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-brand-50 dark:bg-brand-500/10">
+          <Zap size={28} className="text-brand-500" />
         </div>
-      )}
+        <h3 className="mb-2 text-lg font-semibold text-gray-900 dark:text-gray-100">Start building your workflow</h3>
+        <p className="mb-6 max-w-xs text-sm text-gray-500 dark:text-surface-400">
+          Add steps to compose your AI workflow. Each step passes data to the next.
+        </p>
+        <AddStepMenu onAdd={onAdd} />
+
+        {templates.length > 0 && (
+          <div className="mt-8 w-full max-w-3xl">
+            <p className="mb-3 text-xs text-gray-400 dark:text-surface-500">Or start from a template:</p>
+            <div
+              aria-label="Workflow templates"
+              className="max-h-[min(40vh,26rem)] overflow-y-auto rounded-2xl border border-gray-200 bg-white/80 p-3 shadow-sm backdrop-blur dark:border-surface-800 dark:bg-surface-900/80"
+            >
+              <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
+                {templates.map((t) => (
+                  <a
+                    key={t.id}
+                    href={`/builder/${t.id}`}
+                    className="rounded-xl border border-gray-200 bg-white px-3 py-2 text-left text-xs text-gray-600 transition hover:border-brand-400 hover:text-brand-600 dark:border-surface-700 dark:bg-surface-800 dark:text-gray-300 dark:hover:border-brand-500/50 dark:hover:text-brand-300"
+                  >
+                    {t.name}
+                  </a>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   );
 }

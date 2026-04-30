@@ -1,5 +1,5 @@
 import type { ComponentType, ReactNode } from "react";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import WorkflowBuilder from "./WorkflowBuilder";
@@ -7,6 +7,7 @@ import { generateWorkflow, listLLMConfigs, listTemplates, startRunWithFile } fro
 import type { WorkflowStep } from "../types/workflow";
 
 const requireAccessTokenMock = vi.fn();
+const reactFlowPropsMock = vi.fn();
 
 vi.mock("@xyflow/react", () => ({
   Background: () => null,
@@ -19,28 +20,33 @@ vi.mock("@xyflow/react", () => ({
     children,
     nodes = [],
     nodeTypes = {},
+    ...props
   }: {
     children?: ReactNode;
     nodes?: Array<{ id: string; type?: string; data?: unknown; selected?: boolean; dragging?: boolean }>;
     nodeTypes?: Record<string, ComponentType<Record<string, unknown>>>;
-  }) => (
-    <div data-testid="react-flow">
-      {nodes.map((node) => {
-        const NodeComponent = node.type ? nodeTypes[node.type] : undefined;
-        if (!NodeComponent) return null;
-        return (
-          <NodeComponent
-            key={node.id}
-            id={node.id}
-            data={node.data}
-            selected={Boolean(node.selected)}
-            dragging={Boolean(node.dragging)}
-          />
-        );
-      })}
-      {children}
-    </div>
-  ),
+    [key: string]: unknown;
+  }) => {
+    reactFlowPropsMock({ nodes, nodeTypes, ...props });
+    return (
+      <div data-testid="react-flow">
+        {nodes.map((node) => {
+          const NodeComponent = node.type ? nodeTypes[node.type] : undefined;
+          if (!NodeComponent) return null;
+          return (
+            <NodeComponent
+              key={node.id}
+              id={node.id}
+              data={node.data}
+              selected={Boolean(node.selected)}
+              dragging={Boolean(node.dragging)}
+            />
+          );
+        })}
+        {children}
+      </div>
+    );
+  },
 }));
 
 vi.mock("../api/client", () => ({
@@ -210,6 +216,53 @@ describe("WorkflowBuilder", () => {
 
     expect(screen.getByText("Interval must be a positive integer.")).toBeInTheDocument();
     expect(screen.getByText("How often the workflow should execute.")).toBeInTheDocument();
+  });
+
+  it("renders the template list inside a scrollable panel when templates are available", async () => {
+    listTemplatesMock.mockResolvedValue([
+      { id: "tpl-1", name: "Support triage", description: "", category: "support", version: "1.0.0" },
+      { id: "tpl-2", name: "Lead routing", description: "", category: "sales", version: "1.0.0" },
+      { id: "tpl-3", name: "Escalations", description: "", category: "support", version: "1.0.0" },
+    ]);
+
+    renderBuilder();
+
+    const templatePanel = await screen.findByLabelText(/workflow templates/i);
+    expect(templatePanel.className).toContain("max-h-[min(40vh,26rem)]");
+    expect(templatePanel.className).toContain("overflow-y-auto");
+  });
+
+  it("updates node positions continuously while dragging", async () => {
+    renderBuilder();
+
+    expect(await screen.findByText("Start building your workflow")).toBeInTheDocument();
+
+    openNodePalette();
+    fireEvent.click(screen.getByRole("button", { name: /^trigger$/i }));
+
+    await waitFor(() => {
+      expect(reactFlowPropsMock).toHaveBeenCalled();
+    });
+
+    const latestProps = reactFlowPropsMock.mock.calls.at(-1)?.[0] as {
+      nodes: Array<{ id: string; position: { x: number; y: number } }>;
+      onNodeDrag?: (_event: unknown, node: { id: string; position: { x: number; y: number } }) => void;
+    };
+
+    expect(latestProps.onNodeDrag).toBeTypeOf("function");
+    await act(async () => {
+      latestProps.onNodeDrag?.(undefined, {
+        id: latestProps.nodes[0].id,
+        position: { x: 240, y: 320 },
+      });
+    });
+
+    await waitFor(() => {
+      const updatedProps = reactFlowPropsMock.mock.calls.at(-1)?.[0] as {
+        nodes: Array<{ id: string; position: { x: number; y: number } }>;
+      };
+      expect(updatedProps.nodes[0].position).toEqual({ x: 240, y: 320 });
+    });
   });
 
   it("uses copilot to explain the canvas and apply a targeted slack step", async () => {

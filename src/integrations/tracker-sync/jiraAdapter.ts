@@ -15,6 +15,7 @@ import {
   resolveRetryDelayMs,
   sleep,
 } from "../shared/retryPolicy";
+import { buildTier1ConnectionHealth } from "../shared/tier1Contract";
 
 const MAX_RETRIES = 4;
 
@@ -173,14 +174,17 @@ export class JiraAdapter implements TrackerAdapter {
     try {
       await this.request<{ accountId?: string }>("/rest/api/3/myself");
       return {
-        status: "ok",
         provider: this.provider,
-        checkedAt,
-        details: {
-          auth: true,
-          apiReachable: true,
-          rateLimited: false,
-        },
+        ...buildTier1ConnectionHealth({
+          connector: "jira-ticket-sync",
+          subject: this.baseUrl,
+          checkedAt,
+          details: {
+            auth: true,
+            apiReachable: true,
+            rateLimited: false,
+          },
+        }),
       };
     } catch (error) {
       const trackerError = error instanceof TrackerError
@@ -188,16 +192,19 @@ export class JiraAdapter implements TrackerAdapter {
         : new TrackerError("upstream", error instanceof Error ? error.message : String(error), 502);
 
       return {
-        status: trackerError.type === "rate-limit" ? "degraded" : "down",
         provider: this.provider,
-        checkedAt,
-        details: {
-          auth: trackerError.type !== "auth",
-          apiReachable: trackerError.type !== "network",
-          rateLimited: trackerError.type === "rate-limit",
-          errorType: trackerError.type,
-          message: trackerError.message,
-        },
+        ...buildTier1ConnectionHealth({
+          connector: "jira-ticket-sync",
+          subject: this.baseUrl,
+          checkedAt,
+          details: {
+            auth: trackerError.type !== "auth",
+            apiReachable: trackerError.type !== "network",
+            rateLimited: trackerError.type === "rate-limit",
+            errorType: trackerError.type,
+            message: trackerError.message,
+          },
+        }),
       };
     }
   }

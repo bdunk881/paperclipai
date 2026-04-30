@@ -53,6 +53,11 @@ describe("StatusBadge — run statuses", () => {
     expect(badge.className).toMatch(/gray/);
   });
 
+  it("renders awaiting approval with the mapped label", () => {
+    render(<StatusBadge status="awaiting_approval" />);
+    expect(screen.getByText("awaiting approval")).toBeInTheDocument();
+  });
+
   it("shows animated pulse indicator when status is 'running'", () => {
     const { container } = render(<StatusBadge status="running" />);
     const pulse = container.querySelector(".animate-pulse");
@@ -73,7 +78,7 @@ describe("StatusBadge — run statuses", () => {
 // ---------------------------------------------------------------------------
 
 describe("StatusBadge — step statuses", () => {
-  const stepStatuses = ["success", "failure", "skipped"] as const;
+  const stepStatuses = ["success", "failure", "skipped", "running"] as const;
 
   for (const status of stepStatuses) {
     it(`renders the '${status}' label`, () => {
@@ -98,6 +103,32 @@ describe("StatusBadge — step statuses", () => {
     render(<StatusBadge status="skipped" />);
     const badge = screen.getByText("skipped");
     expect(badge.className).toMatch(/gray/);
+  });
+});
+
+describe("StatusBadge — mission statuses", () => {
+  const missionStatuses = ["On Track", "At Risk", "Blocked", "Off Track", "Not Started"] as const;
+
+  for (const status of missionStatuses) {
+    it(`renders the '${status}' label`, () => {
+      render(<StatusBadge status={status} />);
+      expect(screen.getByText(status)).toBeInTheDocument();
+    });
+  }
+
+  it("applies teal styling for 'On Track'", () => {
+    render(<StatusBadge status="On Track" />);
+    expect(screen.getByText("On Track").className).toMatch(/teal/);
+  });
+
+  it("applies orange styling for 'At Risk'", () => {
+    render(<StatusBadge status="At Risk" />);
+    expect(screen.getByText("At Risk").className).toMatch(/orange/);
+  });
+
+  it("applies red styling for 'Blocked'", () => {
+    render(<StatusBadge status="Blocked" />);
+    expect(screen.getByText("Blocked").className).toMatch(/red/);
   });
 });
 

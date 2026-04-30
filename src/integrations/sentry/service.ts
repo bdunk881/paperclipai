@@ -3,6 +3,7 @@ import { logSentry } from "./logger";
 import { exchangeCodeForTokens, parseSentryScopes, refreshAccessToken, buildSentryOAuthUrl } from "./oauth";
 import { consumePkceState, createPkceState } from "./pkceStore";
 import { SentryClient } from "./sentryClient";
+import { buildTier1ConnectionHealth } from "../shared/tier1Contract";
 import {
   ConnectorError,
   SentryConnectionHealth,
@@ -152,17 +153,19 @@ export class SentryConnectorService {
     const credential = await sentryCredentialStore.getActiveByUserAsync(userId);
 
     if (!credential) {
-      return {
-        status: "down",
+      return buildTier1ConnectionHealth({
+        connector: "sentry",
+        subject: userId,
         checkedAt,
+        status: "disabled",
+        recommendedNextAction: "Connect a Sentry credential from the dashboard to enable syncs.",
         details: {
           auth: false,
           apiReachable: false,
           rateLimited: false,
-          errorType: "auth",
           message: "No Sentry credential is connected",
         },
-      };
+      });
     }
 
     try {
@@ -172,11 +175,10 @@ export class SentryConnectorService {
       );
       await client.viewer();
 
-      const health: SentryConnectionHealth = {
-        status: "ok",
+      const health: SentryConnectionHealth = buildTier1ConnectionHealth({
+        connector: "sentry",
+        subject: userId,
         checkedAt,
-        organizationId: credential.organizationId,
-        organizationSlug: credential.organizationSlug,
         authMethod: credential.authMethod,
         tokenRefreshStatus:
           credential.authMethod === "oauth2_pkce"
@@ -184,12 +186,16 @@ export class SentryConnectorService {
               ? "healthy"
               : "failed"
             : "not_applicable",
+        metadata: {
+          organizationId: credential.organizationId,
+          organizationSlug: credential.organizationSlug,
+        },
         details: {
           auth: true,
           apiReachable: true,
           rateLimited: false,
         },
-      };
+      });
 
       logSentry({
         event: "health",
@@ -218,11 +224,10 @@ export class SentryConnectorService {
         errorType: connectorError.type,
       });
 
-      return {
-        status: connectorError.type === "rate-limit" ? "degraded" : "down",
+      return buildTier1ConnectionHealth({
+        connector: "sentry",
+        subject: userId,
         checkedAt,
-        organizationId: credential.organizationId,
-        organizationSlug: credential.organizationSlug,
         authMethod: credential.authMethod,
         tokenRefreshStatus:
           credential.authMethod === "oauth2_pkce"
@@ -230,6 +235,10 @@ export class SentryConnectorService {
               ? "failed"
               : "healthy"
             : "not_applicable",
+        metadata: {
+          organizationId: credential.organizationId,
+          organizationSlug: credential.organizationSlug,
+        },
         details: {
           auth: connectorError.type !== "auth",
           apiReachable: connectorError.type !== "network",
@@ -237,7 +246,7 @@ export class SentryConnectorService {
           errorType: connectorError.type,
           message: connectorError.message,
         },
-      };
+      });
     }
   }
 

@@ -7,6 +7,7 @@ import {
   refreshAccessToken,
 } from "./oauth";
 import { consumePkceState, createPkceState } from "./pkceStore";
+import { buildTier1ConnectionHealth } from "../shared/tier1Contract";
 import { TeamsClient } from "./teamsClient";
 import { ConnectorError, TeamsConnectionHealth, TeamsCredentialPublic } from "./types";
 
@@ -131,17 +132,19 @@ export class TeamsConnectorService {
     const credential = teamsCredentialStore.getActiveByUser(userId);
 
     if (!credential) {
-      return {
-        status: "down",
+      return buildTier1ConnectionHealth({
+        connector: "microsoft-teams",
+        subject: userId,
         checkedAt,
+        status: "disabled",
+        recommendedNextAction: "Connect a Microsoft Teams credential from the dashboard to enable syncs.",
         details: {
           auth: false,
           apiReachable: false,
           rateLimited: false,
-          errorType: "auth",
           message: "No Microsoft Teams credential is connected",
         },
-      };
+      });
     }
 
     try {
@@ -149,8 +152,9 @@ export class TeamsConnectorService {
       const client = new TeamsClient(token);
       await client.me();
 
-      return {
-        status: "ok",
+      return buildTier1ConnectionHealth({
+        connector: "microsoft-teams",
+        subject: userId,
         checkedAt,
         authMethod: credential.authMethod,
         tokenRefreshStatus:
@@ -164,7 +168,7 @@ export class TeamsConnectorService {
           apiReachable: true,
           rateLimited: false,
         },
-      };
+      });
     } catch (error) {
       const connectorError = error instanceof ConnectorError
         ? error
@@ -180,8 +184,9 @@ export class TeamsConnectorService {
         errorType: connectorError.type,
       });
 
-      return {
-        status: connectorError.type === "rate-limit" ? "degraded" : "down",
+      return buildTier1ConnectionHealth({
+        connector: "microsoft-teams",
+        subject: userId,
         checkedAt,
         authMethod: credential.authMethod,
         tokenRefreshStatus:
@@ -197,7 +202,7 @@ export class TeamsConnectorService {
           errorType: connectorError.type,
           message: connectorError.message,
         },
-      };
+      });
     }
   }
 

@@ -16,6 +16,8 @@ jobs:
     env:
       QA_API_BASE_URL: ${{ secrets.QA_API_BASE_URL }}
       QA_E2E_BEARER_TOKEN: ${{ secrets.QA_E2E_BEARER_TOKEN }}
+      QA_E2E_USER_ID: ${{ secrets.QA_E2E_USER_ID }}
+      QA_JIRA_TICKET_SYNC_CONNECTION_ID: ${{ secrets.QA_JIRA_TICKET_SYNC_CONNECTION_ID }}
       STRIPE_WEBHOOK_SECRET: ${{ secrets.STRIPE_WEBHOOK_SECRET }}
       VITE_USE_MOCK: "true"
     steps:
@@ -27,7 +29,7 @@ jobs:
         run: |
           mkdir -p artifacts/qa-integration
 
-          if [ -n "${QA_API_BASE_URL}" ] && [ -n "${QA_E2E_BEARER_TOKEN}" ] && [ -n "${STRIPE_WEBHOOK_SECRET}" ]; then
+          if [ -n "${QA_API_BASE_URL}" ] && [ -n "${QA_E2E_BEARER_TOKEN}" ]; then
             echo "can_run=true" >> "$GITHUB_OUTPUT"
             echo "QA probe prerequisites present." > artifacts/qa-integration/summary.txt
             exit 0

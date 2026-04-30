@@ -1,7 +1,8 @@
-import { useState } from "react";
-import { Outlet, NavLink, useNavigate } from "react-router-dom";
+import { useMemo, useState } from "react";
+import { Outlet, NavLink, useLocation, useNavigate } from "react-router-dom";
 import {
   LayoutDashboard,
+  Flag,
   Workflow,
   Activity,
   History,
@@ -19,6 +20,7 @@ import {
   Repeat,
   Network,
   BarChart3,
+  BriefcaseBusiness,
   Ticket,
   Menu,
   X,
@@ -42,6 +44,7 @@ const NAV_SECTIONS: Array<{ title: string; items: NavItem[] }> = [
     title: "Core",
     items: [
       { to: "/", icon: LayoutDashboard, label: "Dashboard", end: true },
+      { to: "/mission-state", icon: Flag, label: "Mission State" },
       { to: "/tickets", icon: Ticket, label: "Tickets" },
       { to: "/builder", icon: Workflow, label: "Builder" },
       { to: "/monitor", icon: Activity, label: "Run Monitor" },
@@ -60,6 +63,7 @@ const NAV_SECTIONS: Array<{ title: string; items: NavItem[] }> = [
   {
     title: "Workspace",
     items: [
+      { to: "/workspace/staffing-plan", icon: BriefcaseBusiness, label: "Staffing Plan" },
       { to: "/workspace/org-structure", icon: Network, label: "Org Structure" },
       { to: "/workspace/budget-dashboard", icon: BarChart3, label: "Budget Dashboard" },
       { to: "/approvals", icon: CheckSquare, label: "Approvals" },
@@ -80,8 +84,17 @@ const NAV_SECTIONS: Array<{ title: string; items: NavItem[] }> = [
 export default function Layout() {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
   const { theme, toggleTheme } = useTheme();
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  const isBuilderPopout = useMemo(() => {
+    if (!location.pathname.startsWith("/builder")) {
+      return false;
+    }
+
+    const params = new URLSearchParams(location.search);
+    return params.get("popout") === "1";
+  }, [location.pathname, location.search]);
 
   function handleLogout() {
     setMobileNavOpen(false);
@@ -165,6 +178,7 @@ export default function Layout() {
 
   return (
     <div className="relative flex h-screen bg-surface-50 text-gray-900 transition-colors duration-200 dark:bg-surface-950 dark:text-gray-100">
+      {!isBuilderPopout && (
       <header className="fixed inset-x-0 top-0 z-40 flex items-center justify-between border-b border-gray-200 bg-white px-4 py-3 transition-colors duration-200 lg:hidden dark:border-surface-800 dark:bg-surface-900">
         <button
           onClick={() => setMobileNavOpen((prev) => !prev)}
@@ -198,8 +212,9 @@ export default function Layout() {
           </button>
         </div>
       </header>
+      )}
 
-      {mobileNavOpen && (
+      {!isBuilderPopout && mobileNavOpen && (
         <button
           onClick={closeNav}
           className="fixed inset-0 z-30 bg-surface-950/35 lg:hidden"
@@ -207,6 +222,7 @@ export default function Layout() {
         />
       )}
 
+      {!isBuilderPopout && (
       <aside
         className={clsx(
           "fixed bottom-0 left-0 top-0 z-40 flex w-72 flex-col border-r border-gray-200 bg-white text-gray-900 transition-transform lg:relative lg:w-60 lg:translate-x-0 dark:border-surface-800 dark:bg-surface-900 dark:text-gray-100",
@@ -254,9 +270,15 @@ export default function Layout() {
           </div>
         </div>
       </aside>
+      )}
 
       {/* Main content */}
-      <main className="flex-1 overflow-y-auto bg-surface-50 pt-14 transition-colors duration-200 lg:pt-0 dark:bg-surface-950">
+      <main
+        className={clsx(
+          "flex-1 overflow-y-auto bg-surface-50 transition-colors duration-200 dark:bg-surface-950",
+          isBuilderPopout ? "pt-0" : "pt-14 lg:pt-0"
+        )}
+      >
         <Outlet />
       </main>
     </div>

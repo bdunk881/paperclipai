@@ -26,6 +26,7 @@ if [[ -n "${QA_E2E_USER_ID:-}" ]]; then
 fi
 CONNECTOR_HEALTH_SLUGS=(${QA_CONNECTOR_HEALTH_SLUGS:-slack hubspot stripe gmail sentry linear teams})
 CATALOG_CONNECTOR_SLUGS=(${QA_CATALOG_CONNECTOR_SLUGS:-slack hubspot stripe gmail sentry linear jira microsoft-teams})
+JIRA_TICKET_SYNC_CONNECTION_ID="${QA_JIRA_TICKET_SYNC_CONNECTION_ID:-}"
 
 printf "endpoint\tstatus\n" > "$PROBE_LOG"
 
@@ -53,6 +54,10 @@ for slug in "${CATALOG_CONNECTOR_SLUGS[@]}"; do
   probe "${API_PREFIX}/integrations/catalog/${slug}" "catalog_${slug}"
 done
 
+if [[ -n "$JIRA_TICKET_SYNC_CONNECTION_ID" ]]; then
+  probe "${API_PREFIX}/ticket-sync/connections/${JIRA_TICKET_SYNC_CONNECTION_ID}/test" "ticket_sync_jira_test"
+fi
+
 reachable_count=$(awk 'NR>1 && $2 != "000" {count++} END {print count+0}' "$PROBE_LOG")
 connector_route_failures=$(
   awk '
@@ -77,6 +82,8 @@ connector_route_failures=$(
   echo "- VITE_USE_MOCK: ${VITE_USE_MOCK:-unset}"
   echo "- Connector health sweep slugs: ${CONNECTOR_HEALTH_SLUGS[*]}"
   echo "- Connector catalog sweep slugs: ${CATALOG_CONNECTOR_SLUGS[*]}"
+  echo "- Connector catalog sweep slugs: ${CATALOG_CONNECTOR_SLUGS[*]}"
+  echo "- Jira ticket-sync connection ID provided: $( [[ -n "$JIRA_TICKET_SYNC_CONNECTION_ID" ]] && echo yes || echo no )"
   echo
   echo "## Probe Results"
   echo

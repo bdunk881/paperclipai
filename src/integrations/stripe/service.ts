@@ -1,5 +1,6 @@
 import { stripeCredentialStore } from "./credentialStore";
 import { logStripe } from "./logger";
+import { buildTier1ConnectionHealth } from "../shared/tier1Contract";
 import { buildStripeOAuthUrl, exchangeCodeForTokens, parseStripeScopes, refreshAccessToken } from "./oauth";
 import { consumeOAuthState, createOAuthState } from "./oauthStateStore";
 import { StripeConnectorClient } from "./stripeClient";
@@ -122,26 +123,28 @@ export class StripeConnectorService {
     const credential = await stripeCredentialStore.getActiveByUserAsync(userId);
 
     if (!credential) {
-      return {
-        status: "down",
+      return buildTier1ConnectionHealth({
+        connector: "stripe",
+        subject: userId,
         checkedAt,
+        status: "disabled",
+        recommendedNextAction: "Connect a Stripe credential from the dashboard to enable syncs.",
         details: {
           auth: false,
           apiReachable: false,
           rateLimited: false,
-          errorType: "auth",
           message: "No Stripe credential is connected",
         },
-      };
+      });
     }
 
     try {
       await this.withClient(userId, (client) => client.viewer());
 
-      const health: StripeConnectionHealth = {
-        status: "ok",
+      const health: StripeConnectionHealth = buildTier1ConnectionHealth({
+        connector: "stripe",
+        subject: userId,
         checkedAt,
-        accountId: credential.accountId,
         authMethod: credential.authMethod,
         tokenRefreshStatus:
           credential.authMethod === "oauth2"
@@ -149,12 +152,15 @@ export class StripeConnectorService {
               ? "healthy"
               : "not_applicable"
             : "not_applicable",
+        metadata: {
+          accountId: credential.accountId,
+        },
         details: {
           auth: true,
           apiReachable: true,
           rateLimited: false,
         },
-      };
+      });
 
       logStripe({
         event: "health",
@@ -181,10 +187,10 @@ export class StripeConnectorService {
         errorType: connectorError.type,
       });
 
-      return {
-        status: connectorError.type === "rate-limit" ? "degraded" : "down",
+      return buildTier1ConnectionHealth({
+        connector: "stripe",
+        subject: userId,
         checkedAt,
-        accountId: credential.accountId,
         authMethod: credential.authMethod,
         tokenRefreshStatus:
           credential.authMethod === "oauth2"
@@ -192,6 +198,9 @@ export class StripeConnectorService {
               ? "failed"
               : "healthy"
             : "not_applicable",
+        metadata: {
+          accountId: credential.accountId,
+        },
         details: {
           auth: connectorError.type !== "auth",
           apiReachable: connectorError.type !== "network",
@@ -199,7 +208,7 @@ export class StripeConnectorService {
           errorType: connectorError.type,
           message: connectorError.message,
         },
-      };
+      });
     }
   }
 

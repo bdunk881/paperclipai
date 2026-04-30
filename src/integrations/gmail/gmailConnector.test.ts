@@ -122,13 +122,13 @@ describe("Gmail connector", () => {
     expect(connection.emailAddress).toBe("api@autoflow.test");
   });
 
-  it("returns down health when connector is not configured", async () => {
+  it("returns disabled health when connector is not configured", async () => {
     const service = new GmailConnectorService();
     const health = await service.health("missing-user");
 
-    expect(health.status).toBe("down");
+    expect(health.status).toBe("disabled");
     expect(health.details.auth).toBe(false);
-    expect(health.details.errorType).toBe("auth");
+    expect(health.recommendedNextAction).toMatch(/connect a gmail credential/i);
   });
 
   it("refreshes OAuth access token when the token is near expiry", async () => {

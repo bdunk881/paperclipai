@@ -3,6 +3,7 @@ import { GmailClient } from "./gmailClient";
 import { logGmail } from "./logger";
 import { buildGmailOAuthUrl, exchangeCodeForTokens, parseGmailScopes, refreshAccessToken } from "./oauth";
 import { consumePkceState, createPkceState } from "./pkceStore";
+import { buildTier1ConnectionHealth } from "../shared/tier1Contract";
 import {
   ConnectorError,
   GmailConnectionHealth,
@@ -136,17 +137,19 @@ export class GmailConnectorService {
     const credential = await gmailCredentialStore.getActiveByUserAsync(userId);
 
     if (!credential) {
-      return {
-        status: "down",
+      return buildTier1ConnectionHealth({
+        connector: "gmail",
+        subject: userId,
         checkedAt,
+        status: "disabled",
+        recommendedNextAction: "Connect a Gmail credential from the dashboard to enable syncs.",
         details: {
           auth: false,
           apiReachable: false,
           rateLimited: false,
-          errorType: "auth",
           message: "No Gmail credential is connected",
         },
-      };
+      });
     }
 
     try {
@@ -160,10 +163,10 @@ export class GmailConnectorService {
         message: "Gmail health check passed",
       });
 
-      return {
-        status: "ok",
+      return buildTier1ConnectionHealth({
+        connector: "gmail",
+        subject: userId,
         checkedAt,
-        emailAddress: credential.emailAddress,
         authMethod: credential.authMethod,
         tokenRefreshStatus:
           credential.authMethod === "oauth2_pkce"
@@ -171,12 +174,15 @@ export class GmailConnectorService {
               ? "healthy"
               : "failed"
             : "not_applicable",
+        metadata: {
+          emailAddress: credential.emailAddress,
+        },
         details: {
           auth: true,
           apiReachable: true,
           rateLimited: false,
         },
-      };
+      });
     } catch (error) {
       const connectorError = error instanceof ConnectorError
         ? error
@@ -192,10 +198,10 @@ export class GmailConnectorService {
         errorType: connectorError.type,
       });
 
-      return {
-        status: connectorError.type === "rate-limit" ? "degraded" : "down",
+      return buildTier1ConnectionHealth({
+        connector: "gmail",
+        subject: userId,
         checkedAt,
-        emailAddress: credential.emailAddress,
         authMethod: credential.authMethod,
         tokenRefreshStatus:
           credential.authMethod === "oauth2_pkce"
@@ -203,6 +209,9 @@ export class GmailConnectorService {
               ? "failed"
               : "healthy"
             : "not_applicable",
+        metadata: {
+          emailAddress: credential.emailAddress,
+        },
         details: {
           auth: connectorError.type !== "auth",
           apiReachable: connectorError.type !== "network",
@@ -210,7 +219,7 @@ export class GmailConnectorService {
           errorType: connectorError.type,
           message: connectorError.message,
         },
-      };
+      });
     }
   }
 

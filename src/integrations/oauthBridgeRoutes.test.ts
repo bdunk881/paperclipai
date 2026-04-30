@@ -24,6 +24,9 @@ const slackDisconnect = jest.fn();
 const linearBeginOAuth = jest.fn();
 const linearCompleteOAuth = jest.fn();
 const linearDisconnect = jest.fn();
+const apolloBeginOAuth = jest.fn();
+const apolloCompleteOAuth = jest.fn();
+const apolloDisconnect = jest.fn();
 const shopifyBeginOAuth = jest.fn();
 const shopifyCompleteOAuth = jest.fn();
 const shopifyDisconnect = jest.fn();
@@ -45,6 +48,7 @@ const datadogDisconnect = jest.fn();
 
 const slackGetActiveByUser = jest.fn();
 const linearGetActiveByUser = jest.fn();
+const apolloGetActiveByUser = jest.fn();
 const shopifyGetActiveByUser = jest.fn();
 const docusignGetActiveByUser = jest.fn();
 const teamsGetActiveByUser = jest.fn();
@@ -65,6 +69,14 @@ jest.mock("./linear/service", () => ({
     beginOAuth: (...args: unknown[]) => linearBeginOAuth(...args),
     completeOAuth: (...args: unknown[]) => linearCompleteOAuth(...args),
     disconnect: (...args: unknown[]) => linearDisconnect(...args),
+  },
+}));
+
+jest.mock("./apollo/service", () => ({
+  apolloConnectorService: {
+    beginOAuth: (...args: unknown[]) => apolloBeginOAuth(...args),
+    completeOAuth: (...args: unknown[]) => apolloCompleteOAuth(...args),
+    disconnect: (...args: unknown[]) => apolloDisconnect(...args),
   },
 }));
 
@@ -128,6 +140,12 @@ jest.mock("./linear/credentialStore", () => ({
   },
 }));
 
+jest.mock("./apollo/credentialStore", () => ({
+  apolloCredentialStore: {
+    getActiveByUser: (...args: unknown[]) => apolloGetActiveByUser(...args),
+  },
+}));
+
 jest.mock("./shopify/credentialStore", () => ({
   shopifyCredentialStore: {
     getActiveByUser: (...args: unknown[]) => shopifyGetActiveByUser(...args),
@@ -176,6 +194,7 @@ describe("unified oauth bridge routes", () => {
     jest.clearAllMocks();
     slackBeginOAuth.mockReturnValue({ authUrl: "https://slack.example/oauth" });
     linearBeginOAuth.mockReturnValue({ authUrl: "https://linear.example/oauth" });
+    apolloBeginOAuth.mockReturnValue({ authUrl: "https://apollo.example/oauth" });
     shopifyBeginOAuth.mockReturnValue({ authUrl: "https://shopify.example/oauth" });
     docusignBeginOAuth.mockReturnValue({ authUrl: "https://docusign.example/oauth" });
     teamsBeginOAuth.mockReturnValue({ authUrl: "https://teams.example/oauth" });
@@ -184,6 +203,7 @@ describe("unified oauth bridge routes", () => {
     datadogBeginOAuth.mockReturnValue({ authUrl: "https://azure.example/oauth" });
     slackCompleteOAuth.mockResolvedValue({ id: "conn-1" });
     linearCompleteOAuth.mockResolvedValue({ id: "conn-1" });
+    apolloCompleteOAuth.mockResolvedValue({ id: "conn-1" });
     shopifyCompleteOAuth.mockResolvedValue({ id: "conn-1" });
     docusignCompleteOAuth.mockResolvedValue({ id: "conn-1" });
     teamsCompleteOAuth.mockResolvedValue({ id: "conn-1" });
@@ -192,6 +212,7 @@ describe("unified oauth bridge routes", () => {
     datadogCompleteOAuth.mockResolvedValue({ id: "conn-1" });
     slackDisconnect.mockReturnValue(true);
     linearDisconnect.mockReturnValue(true);
+    apolloDisconnect.mockReturnValue(true);
     shopifyDisconnect.mockReturnValue(true);
     docusignDisconnect.mockReturnValue(true);
     teamsDisconnect.mockReturnValue(true);
@@ -200,6 +221,7 @@ describe("unified oauth bridge routes", () => {
     datadogDisconnect.mockReturnValue(true);
     slackGetActiveByUser.mockReturnValue(null);
     linearGetActiveByUser.mockReturnValue(null);
+    apolloGetActiveByUser.mockReturnValue(null);
     shopifyGetActiveByUser.mockReturnValue(null);
     docusignGetActiveByUser.mockReturnValue(null);
     teamsGetActiveByUser.mockReturnValue(null);
@@ -221,6 +243,17 @@ describe("unified oauth bridge routes", () => {
     expect(response.status).toBe(201);
     expect(response.body).toEqual({ redirectUrl: "https://slack.example/oauth" });
     expect(slackBeginOAuth).toHaveBeenCalledWith("user-123");
+  });
+
+  it("returns redirectUrl for Apollo connect", async () => {
+    const response = await request(app)
+      .post("/api/integrations/apollo/connect")
+      .set("Authorization", "Bearer user-123")
+      .send({});
+
+    expect(response.status).toBe(201);
+    expect(response.body).toEqual({ redirectUrl: "https://apollo.example/oauth" });
+    expect(apolloBeginOAuth).toHaveBeenCalledWith("user-123");
   });
 
   it("requires shopDomain for Shopify connect", async () => {
@@ -271,6 +304,17 @@ describe("unified oauth bridge routes", () => {
     expect(response.headers.location).toContain("status=success");
   });
 
+  it("redirects Apollo callback success", async () => {
+    const response = await request(app).get(
+      "/api/integrations/callback?provider=apollo&code=oauth-code&state=oauth-state"
+    );
+
+    expect(response.status).toBe(302);
+    expect(apolloCompleteOAuth).toHaveBeenCalledWith({ code: "oauth-code", state: "oauth-state" });
+    expect(response.headers.location).toContain("provider=apollo");
+    expect(response.headers.location).toContain("status=success");
+  });
+
   it("redirects unified callback errors from provider", async () => {
     const response = await request(app).get(
       "/api/integrations/callback?provider=slack&error=access_denied&error_description=user_cancelled"
@@ -318,6 +362,11 @@ describe("unified oauth bridge routes", () => {
       createdAt: "2026-04-18T12:00:00.000Z",
       scopes: ["issues:read"],
     });
+    apolloGetActiveByUser.mockReturnValue({
+      id: "apollo-1",
+      createdAt: "2026-04-18T12:30:00.000Z",
+      scopes: ["contacts:read"],
+    });
     monitoringGetActiveByUserAndProvider.mockImplementation((userId: string, provider: string) => {
       if (provider === "datadog") {
         return {
@@ -344,6 +393,11 @@ describe("unified oauth bridge routes", () => {
       connectedAt: "2026-04-18T12:00:00.000Z",
       scopes: ["issues:read"],
     });
+    expect(response.body.providers.apollo).toEqual({
+      connected: true,
+      connectedAt: "2026-04-18T12:30:00.000Z",
+      scopes: ["contacts:read"],
+    });
     expect(response.body.providers.stripe).toEqual({ connected: false });
     expect(response.body.providers["datadog-azure-monitor"]).toEqual({
       connected: true,
@@ -366,6 +420,21 @@ describe("unified oauth bridge routes", () => {
 
     expect(response.status).toBe(204);
     expect(linearDisconnect).toHaveBeenCalledWith("user-123", "linear-credential-1");
+  });
+
+  it("disconnects Apollo by revoking the active credential", async () => {
+    apolloGetActiveByUser.mockReturnValue({
+      id: "apollo-credential-1",
+      createdAt: "2026-04-18T12:00:00.000Z",
+      scopes: ["contacts:read"],
+    });
+
+    const response = await request(app)
+      .delete("/api/integrations/apollo/disconnect")
+      .set("Authorization", "Bearer user-123");
+
+    expect(response.status).toBe(204);
+    expect(apolloDisconnect).toHaveBeenCalledWith("user-123", "apollo-credential-1");
   });
 
   it("returns 204 for disconnect when the provider has no active credential", async () => {

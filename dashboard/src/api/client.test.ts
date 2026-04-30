@@ -16,19 +16,25 @@ import {
   deleteLLMConfig,
   deleteMemoryEntry,
   deployWorkflowAsTeam,
+  generateTeamAssemblyPlan,
   generateWorkflow,
   getControlPlaneTeam,
+  listCompanyRoleTemplates,
   getProposalJobStatus,
+  getObservabilityStreamPath,
+  getObservabilityThroughput,
   getMemoryStats,
   listApprovals,
   listControlPlaneTeams,
   listLLMConfigs,
+  listObservabilityEvents,
   listMemoryEntries,
   listProposalContext,
   listTemplates,
   getTemplate,
   listRuns,
   getRun,
+  provisionCompanyWorkspace,
   resolveApproval,
   searchMemory,
   setDefaultLLMConfig,
@@ -212,6 +218,125 @@ describe("getTemplate", () => {
   });
 });
 
+describe("team assembly client", () => {
+  it("posts to /api/goals/team-assembly", async () => {
+    mockFetch({
+      schemaVersion: "2026-04-27",
+      company: {
+        name: "LedgerPilot",
+        goal: "Build a finance workflow team",
+        targetCustomer: null,
+        budget: null,
+        timeHorizon: null,
+      },
+      summary: "Lean staffing plan",
+      rationale: "Keep the first team compact.",
+      orgChart: { executives: [], operators: [], reportingLines: [] },
+      provisioningPlan: { teamName: "LedgerPilot Launch Team", deploymentMode: "continuous_agents", agents: [] },
+      roadmap306090: {
+        day30: { objectives: ["Define scope"], deliverables: ["Architecture memo"], ownerRoleKeys: ["ceo"] },
+        day60: { objectives: ["Ship MVP"], deliverables: ["Pilot workflow"], ownerRoleKeys: ["cto"] },
+        day90: { objectives: ["Launch pilots"], deliverables: ["Pilot dashboard"], ownerRoleKeys: ["ceo"] },
+      },
+    });
+
+    await generateTeamAssemblyPlan(
+      {
+        companyName: "LedgerPilot",
+        normalizedGoalDocument: {
+          sourceType: "free_text",
+          goal: "Build a finance workflow team",
+          targetCustomer: null,
+          successMetrics: [],
+          constraints: [],
+          budget: null,
+          timeHorizon: null,
+          planReadinessThreshold: 0.7,
+        },
+      },
+      ACCESS_TOKEN
+    );
+
+    expect(lastFetchUrl()).toBe("/api/goals/team-assembly");
+    expect(lastFetchOptions().method).toBe("POST");
+    expect(lastFetchOptions().headers).toMatchObject({
+      Authorization: `Bearer ${ACCESS_TOKEN}`,
+      "Content-Type": "application/json",
+    });
+  });
+
+  it("gets /api/companies/role-templates", async () => {
+    mockFetch({
+      roleTemplates: [],
+      total: 0,
+      provisioningContract: {
+        schemaVersion: "2026-04-28",
+        endpoint: "/api/companies",
+        requiredHeaders: ["X-Paperclip-Run-Id"],
+        companyFields: { required: [], optional: [] },
+        agentFields: { identifierFields: ["roleTemplateId", "roleKey"], requiredOneOf: [], optional: [] },
+      },
+    });
+
+    await listCompanyRoleTemplates(ACCESS_TOKEN);
+    expect(lastFetchUrl()).toBe("/api/companies/role-templates");
+    expect(lastFetchOptions().headers).toMatchObject({
+      Authorization: `Bearer ${ACCESS_TOKEN}`,
+    });
+  });
+
+  it("posts provisioning payload to /api/companies", async () => {
+    mockFetch({
+      company: {
+        id: "company-1",
+        userId: "user-1",
+        name: "LedgerPilot",
+        workspaceId: "workspace-1",
+        teamId: "team-1",
+        idempotencyKey: "staffing-plan-1",
+        budgetMonthlyUsd: 2400,
+        allocatedBudgetMonthlyUsd: 2400,
+        remainingBudgetMonthlyUsd: 0,
+        createdAt: "2026-04-29T00:00:00.000Z",
+        updatedAt: "2026-04-29T00:00:00.000Z",
+      },
+      workspace: {
+        id: "workspace-1",
+        name: "LedgerPilot Launch Team",
+        slug: "ledgerpilot",
+        createdAt: "2026-04-29T00:00:00.000Z",
+        updatedAt: "2026-04-29T00:00:00.000Z",
+      },
+      team: sampleTeam,
+      agents: [],
+      secretBindings: [],
+      availableSkills: [],
+      idempotentReplay: false,
+    });
+
+    await provisionCompanyWorkspace(
+      {
+        name: "LedgerPilot",
+        workspaceName: "LedgerPilot Launch Team",
+        idempotencyKey: "staffing-plan-1",
+        budgetMonthlyUsd: 2400,
+        secretBindings: { OPENAI_API_KEY: "sk-test" },
+        agents: [{ roleKey: "ceo", budgetMonthlyUsd: 1200 }],
+      },
+      ACCESS_TOKEN,
+      "run-staffing"
+    );
+
+    expect(lastFetchUrl()).toBe("/api/companies");
+    expect(lastFetchOptions().method).toBe("POST");
+    expect(lastFetchOptions().headers).toMatchObject({
+      Authorization: `Bearer ${ACCESS_TOKEN}`,
+      "Content-Type": "application/json",
+      "X-Paperclip-Run-Id": "run-staffing",
+    });
+  });
+});
+
 // ---------------------------------------------------------------------------
 // listRuns
 // ---------------------------------------------------------------------------
@@ -302,6 +427,36 @@ describe("getRun", () => {
     const result = await client.getRun("run-001");
     expect(result.id).toBe("run-001");
     expect(vi.mocked(fetch as unknown as ReturnType<typeof vi.fn>)).not.toHaveBeenCalled();
+  });
+});
+
+describe("observability client helpers", () => {
+  it("builds the SSE stream path with cursor and category filters", () => {
+    const path = getObservabilityStreamPath({
+      after: "101",
+      categories: ["issue", "run"],
+      limit: 25,
+    });
+    expect(path).toBe("/api/observability/events/stream?after=101&categories=issue%2Crun&limit=25");
+  });
+
+  it("calls the polling fallback endpoint with auth headers", async () => {
+    mockFetch({ events: [], nextCursor: null, hasMore: false, generatedAt: "2026-04-28T00:00:00.000Z" });
+    await listObservabilityEvents({ after: "42", categories: ["heartbeat"], limit: 10 }, ACCESS_TOKEN);
+    expect(lastFetchUrl()).toBe("/api/observability/events?after=42&categories=heartbeat&limit=10");
+    const headers = lastFetchOptions().headers as Record<string, string>;
+    expect(headers.Authorization).toBe(`Bearer ${ACCESS_TOKEN}`);
+  });
+
+  it("requests the throughput aggregate window", async () => {
+    mockFetch({
+      windowHours: 24,
+      generatedAt: "2026-04-28T00:00:00.000Z",
+      summary: { createdCount: 2, completedCount: 1, blockedCount: 1, completionRate: 0.5 },
+      buckets: [],
+    });
+    await getObservabilityThroughput(24, ACCESS_TOKEN);
+    expect(lastFetchUrl()).toBe("/api/observability/throughput?windowHours=24");
   });
 });
 

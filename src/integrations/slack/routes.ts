@@ -1,5 +1,6 @@
 import express from "express";
 import { requireAuth, AuthenticatedRequest } from "../../auth/authMiddleware";
+import { getTier1HealthHttpStatus } from "../shared/tier1Contract";
 import { slackConnectorService } from "./service";
 import { ConnectorError } from "./types";
 import { logSlack } from "./logger";
@@ -114,8 +115,7 @@ router.get("/health", requireAuth, async (req: AuthenticatedRequest, res) => {
   }
 
   const health = await slackConnectorService.health(userId);
-  const statusCode = health.status === "ok" ? 200 : health.status === "degraded" ? 206 : 503;
-  res.status(statusCode).json(health);
+  res.status(getTier1HealthHttpStatus(health.status)).json(health);
 });
 
 router.delete("/connections/:id", requireAuth, (req: AuthenticatedRequest, res) => {

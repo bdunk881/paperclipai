@@ -3,6 +3,7 @@ import express from "express";
 import request from "supertest";
 import ticketRoutes from "../tickets/ticketRoutes";
 import { ticketStore } from "../tickets/ticketStore";
+import { WorkspaceAwareRequest } from "../middleware/workspaceResolver";
 import { TrackerAdapter, TrackerComment, TrackerHealth, TrackerIssue } from "../integrations/tracker-sync";
 import { integrationCredentialStore } from "../integrations/integrationCredentialStore";
 import { linearCredentialStore } from "../integrations/linear/credentialStore";
@@ -22,9 +23,10 @@ class FakeTrackerAdapter implements TrackerAdapter {
 
   async health(): Promise<TrackerHealth> {
     return {
-      status: "ok",
+      status: "healthy",
       provider: this.provider,
       checkedAt: new Date().toISOString(),
+      recommendedNextAction: "No action required.",
       details: {
         auth: true,
         apiReachable: true,
@@ -92,6 +94,17 @@ function buildApp() {
     req.auth = { sub: authHeader.slice(7), email: "test@example.com" };
     next();
   });
+  app.use((req: WorkspaceAwareRequest, _res, next) => {
+    const headerWorkspaceId =
+      typeof req.headers["x-workspace-id"] === "string" ? req.headers["x-workspace-id"].trim() : "";
+    const bodyWorkspaceId =
+      typeof (req.body as { workspaceId?: unknown } | undefined)?.workspaceId === "string"
+        ? String((req.body as { workspaceId?: string }).workspaceId).trim()
+        : "";
+    const queryWorkspaceId = typeof req.query.workspaceId === "string" ? req.query.workspaceId.trim() : "";
+    req.workspaceId = headerWorkspaceId || bodyWorkspaceId || queryWorkspaceId || "11111111-1111-4111-8111-111111111111";
+    next();
+  });
   app.use("/api/ticket-sync", ticketSyncRoutes);
   app.use("/api/tickets", ticketRoutes);
   return app;
@@ -140,7 +153,7 @@ describe("ticket sync routes", () => {
       .set(auth("user-1"));
 
     expect(tested.status).toBe(200);
-    expect(tested.body.health.status).toBe("ok");
+    expect(tested.body.health.status).toBe("healthy");
   });
 
   it("updates and revokes tracker connections from the dashboard routes", async () => {
@@ -351,6 +364,17 @@ describe("ticket sync routes", () => {
     expect(links.body.total).toBe(1);
     expect(links.body.links[0].connectionId).toBe(connection.body.id);
     expect(adapters.get(connection.body.id)?.createdIssues).toHaveLength(1);
+  });
+
+  it("rejects invalid ticket ids for link lookups", async () => {
+    const app = buildApp();
+
+    const links = await request(app)
+      .get("/api/ticket-sync/tickets/test-ticket/links")
+      .set(auth("user-1"));
+
+    expect(links.status).toBe(400);
+    expect(links.body).toEqual({ error: "ticketId must be a valid UUID" });
   });
 
   it("mirrors local comments outward with AutoFlow metadata", async () => {

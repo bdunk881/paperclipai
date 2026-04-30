@@ -1,8 +1,9 @@
 import crypto from "node:crypto";
 import type { VercelRequest, VercelResponse } from "@vercel/node";
+import { signAppUserToken } from "../../src/auth/appAuthTokens";
 
 const QA_PREVIEW_USER = {
-  id: "usr-qa-preview",
+  id: "qa-smoke-user",
   email: "qa-preview@autoflow.local",
   name: "QA Preview User",
 };
@@ -61,5 +62,17 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(401).json({ error: "invalid preview access token" });
   }
 
-  return res.status(200).json({ user: QA_PREVIEW_USER });
+  let accessToken: string;
+  try {
+    accessToken = signAppUserToken({
+      id: QA_PREVIEW_USER.id,
+      email: QA_PREVIEW_USER.email,
+      displayName: QA_PREVIEW_USER.name,
+    });
+  } catch (error) {
+    console.error("[qa-preview-access] failed to issue app token", error);
+    return res.status(503).json({ error: "QA preview access is not fully configured" });
+  }
+
+  return res.status(200).json({ accessToken, user: QA_PREVIEW_USER });
 }

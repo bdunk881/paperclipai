@@ -95,6 +95,8 @@ import { approvalNotificationStore } from "./engine/approvalNotificationStore";
 import { approvalPolicyStore } from "./approvals/policyStore";
 import { runStore } from "./engine/runStore";
 import { knowledgeStore } from "./knowledge/knowledgeStore";
+import { llmConfigStore } from "./llmConfig/llmConfigStore";
+import { getProvider } from "./engine/llmProviders";
 import { resetImportedTemplatesForTests } from "./templates/importedTemplateStore";
 import {
   PORTABLE_WORKFLOW_FORMAT,
@@ -105,6 +107,8 @@ function asAuth(userId = "test-user") {
   return { Authorization: `Bearer ${userId}` };
 }
 
+const mockGetProvider = getProvider as jest.MockedFunction<typeof getProvider>;
+
 beforeEach(() => {
   jest.clearAllMocks();
   controlPlaneStore.clear();
@@ -113,6 +117,8 @@ beforeEach(() => {
   approvalPolicyStore.clear();
   runStore.clear();
   knowledgeStore.clear();
+  llmConfigStore.clear();
+  mockGetProvider.mockReset();
   resetImportedTemplatesForTests();
 });
 
@@ -2264,6 +2270,87 @@ describe("POST /api/webhooks/:templateId", () => {
       const res = await request(app).post(`/api/webhooks/${id}`).send(body);
       expect(res.status).toBe(202);
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// POST /api/workflows/generate
+// ---------------------------------------------------------------------------
+
+describe("POST /api/workflows/generate", () => {
+  it("returns 422 when no default LLM config exists", async () => {
+    const res = await request(app)
+      .post("/api/workflows/generate")
+      .set(asAuth("no-config-user"))
+      .send({ description: "Build a support triage workflow" });
+
+    expect(res.status).toBe(422);
+    expect(res.body.error).toMatch(/No LLM provider configured/i);
+  });
+
+  it("uses the authenticated user's default provider config for generation", async () => {
+    const cfg = llmConfigStore.create({
+      userId: "workflow-user",
+      provider: "openai",
+      label: "Primary OpenAI",
+      model: "gpt-4o",
+      credentials: { apiKey: "sk-workflow-user-1234" },
+    });
+    llmConfigStore.setDefault(cfg.id, "workflow-user");
+
+    const providerCall = jest.fn().mockResolvedValue({
+      text: JSON.stringify([
+        {
+          id: "step-1",
+          name: "Trigger",
+          kind: "trigger",
+          description: "Workflow entry point",
+          inputKeys: [],
+          outputKeys: ["input"],
+        },
+      ]),
+    });
+    mockGetProvider.mockReturnValue(providerCall);
+
+    const res = await request(app)
+      .post("/api/workflows/generate")
+      .set(asAuth("workflow-user"))
+      .send({ description: "Build a support triage workflow" });
+
+    expect(res.status).toBe(200);
+    expect(mockGetProvider).toHaveBeenCalledWith(
+      expect.objectContaining({
+        provider: "openai",
+        model: "gpt-4o",
+        apiKey: "sk-workflow-user-1234",
+      })
+    );
+    expect(providerCall).toHaveBeenCalledWith(
+      expect.stringContaining("Build a support triage workflow")
+    );
+    expect(res.body.steps).toHaveLength(1);
+  });
+
+  it("returns 502 when the provider call fails", async () => {
+    const cfg = llmConfigStore.create({
+      userId: "workflow-user",
+      provider: "anthropic",
+      label: "Claude",
+      model: "claude-sonnet-4-6",
+      credentials: { apiKey: "sk-ant-workflow-1234" },
+    });
+    llmConfigStore.setDefault(cfg.id, "workflow-user");
+    mockGetProvider.mockReturnValue(
+      jest.fn().mockRejectedValue(new Error("401 Unauthorized"))
+    );
+
+    const res = await request(app)
+      .post("/api/workflows/generate")
+      .set(asAuth("workflow-user"))
+      .send({ description: "Build a support triage workflow" });
+
+    expect(res.status).toBe(502);
+    expect(res.body.error).toMatch(/LLM call failed: 401 Unauthorized/);
   });
 });
 

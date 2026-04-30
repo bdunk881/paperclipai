@@ -25,6 +25,6 @@ jobs:
           echo "Head branch: ${{ github.head_ref }}"
 
           if [ "${{ github.head_ref }}" != "staging" ]; then
-            echo "::error title=Master promotions must come from staging::PRs targeting master must use staging as the head branch so the exact revision has already been validated on staging."
+            echo "::error title=Master promotions must come from staging::Feature and Dependabot PRs must target staging. Only the dedicated staging -> master promotion PR may target master. If this PR was opened against master by mistake, retarget it with 'gh pr edit ${{ github.event.pull_request.number }} --base staging' or let the Auto-Retarget workflow fix it."
             exit 1
           fi

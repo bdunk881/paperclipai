@@ -1,6 +1,5 @@
 import crypto from "node:crypto";
 import type { VercelRequest, VercelResponse } from "@vercel/node";
-import { signAppUserToken } from "../../src/auth/appAuthTokens";
 
 const QA_PREVIEW_USER = {
   id: "qa-smoke-user",
@@ -8,10 +7,85 @@ const QA_PREVIEW_USER = {
   name: "QA Preview User",
 };
 
+const DEFAULT_APP_JWT_AUDIENCE = "autoflow-api";
+const DEFAULT_APP_JWT_ISSUER = "autoflow-app";
+const DEFAULT_APP_JWT_EXPIRES_IN_SECONDS = 60 * 60;
+
 function normalizeSecret(value: string | undefined): string | null {
   if (typeof value !== "string") return null;
-  const trimmed = value.trim();
+  const trimmed = value.trim().replace(/\\n/g, "\n");
   return trimmed ? trimmed : null;
+}
+
+function resolveAppJwtConfig(): {
+  audience: string;
+  expiresInSeconds: number;
+  issuer: string;
+  secret: string;
+} | null {
+  const secret = normalizeSecret(process.env.APP_JWT_SECRET);
+  if (!secret) {
+    return null;
+  }
+
+  return {
+    secret,
+    issuer: process.env.APP_JWT_ISSUER?.trim() || DEFAULT_APP_JWT_ISSUER,
+    audience: process.env.APP_JWT_AUDIENCE?.trim() || DEFAULT_APP_JWT_AUDIENCE,
+    expiresInSeconds: parseJwtExpirySeconds(process.env.APP_JWT_EXPIRES_IN),
+  };
+}
+
+function parseJwtExpirySeconds(value: string | undefined): number {
+  const normalized = value?.trim();
+  if (!normalized) {
+    return DEFAULT_APP_JWT_EXPIRES_IN_SECONDS;
+  }
+
+  if (/^\d+$/.test(normalized)) {
+    return Number(normalized);
+  }
+
+  const match = normalized.match(/^(\d+)([smhd])$/i);
+  if (!match) {
+    return DEFAULT_APP_JWT_EXPIRES_IN_SECONDS;
+  }
+
+  const amount = Number(match[1]);
+  const unit = match[2].toLowerCase();
+  const multiplier =
+    unit === "s" ? 1 :
+    unit === "m" ? 60 :
+    unit === "h" ? 60 * 60 :
+    60 * 60 * 24;
+  return amount * multiplier;
+}
+
+function signQaPreviewToken(user: typeof QA_PREVIEW_USER): string {
+  const config = resolveAppJwtConfig();
+  if (!config) {
+    throw new Error("APP_JWT_SECRET is required for social auth");
+  }
+
+  const now = Math.floor(Date.now() / 1000);
+  const header = Buffer.from(JSON.stringify({ alg: "HS256", typ: "JWT" })).toString("base64url");
+  const payload = Buffer.from(
+    JSON.stringify({
+      sub: user.id,
+      email: user.email,
+      name: user.name,
+      iss: config.issuer,
+      aud: config.audience,
+      iat: now,
+      exp: now + config.expiresInSeconds,
+    })
+  ).toString("base64url");
+  const signature = crypto
+    .createHmac("sha256", config.secret)
+    .update(`${header}.${payload}`)
+    .digest("base64url");
+
+  return `${header}.${payload}.${signature}`;
 }
 
 function timingSafeTokenMatch(candidate: string, expected: string): boolean {
@@ -64,11 +138,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   let accessToken: string;
   try {
-    accessToken = signAppUserToken({
-      id: QA_PREVIEW_USER.id,
-      email: QA_PREVIEW_USER.email,
-      displayName: QA_PREVIEW_USER.name,
-    });
+    accessToken = signQaPreviewToken(QA_PREVIEW_USER);
   } catch (error) {
     console.error("[qa-preview-access] failed to issue app token", error);
     return res.status(503).json({ error: "QA preview access is not fully configured" });

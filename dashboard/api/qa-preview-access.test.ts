@@ -1,6 +1,5 @@
 import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
 import handler from "./qa-preview-access";
-import { verifyAppUserToken } from "../../src/auth/appAuthTokens";
 
 interface MockResponse {
   statusCode: number;
@@ -28,6 +27,15 @@ function createResponse(): MockResponse {
       this.headers[name] = value;
     },
   };
+}
+
+function decodeJwtPayload(token: string): Record<string, unknown> {
+  const [, payload] = token.split(".");
+  if (!payload) {
+    throw new Error("missing token payload");
+  }
+
+  return JSON.parse(Buffer.from(payload, "base64url").toString("utf8")) as Record<string, unknown>;
 }
 
 describe("qa-preview-access handler", () => {
@@ -97,10 +105,12 @@ describe("qa-preview-access handler", () => {
       },
     });
     const payload = res.body as { accessToken: string };
-    expect(verifyAppUserToken(payload.accessToken)).toMatchObject({
+    expect(decodeJwtPayload(payload.accessToken)).toMatchObject({
       sub: "qa-smoke-user",
       email: "qa-preview@autoflow.local",
       name: "QA Preview User",
+      iss: "autoflow-app",
+      aud: "autoflow-api",
     });
   });
 

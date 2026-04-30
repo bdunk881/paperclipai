@@ -36,7 +36,7 @@ describe("AgentDeploy", () => {
   });
 
   it("shows not-found state for missing template", async () => {
-    getAgentCatalogTemplateMock.mockResolvedValueOnce(null);
+    getAgentCatalogTemplateMock.mockResolvedValue(null);
 
     render(
       <MemoryRouter initialEntries={["/agents/deploy/nonexistent-template"]}>

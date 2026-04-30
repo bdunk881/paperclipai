@@ -17,7 +17,7 @@ vi.mock("../api/agentCatalog", () => ({
 
 describe("AgentCatalog", () => {
   it("renders an empty state when the backend returns no templates", async () => {
-    listAgentCatalogTemplatesMock.mockResolvedValueOnce([]);
+    listAgentCatalogTemplatesMock.mockResolvedValue([]);
 
     render(
       <MemoryRouter>
@@ -31,7 +31,7 @@ describe("AgentCatalog", () => {
   });
 
   it("renders page heading and live template content", async () => {
-    listAgentCatalogTemplatesMock.mockResolvedValueOnce([
+    listAgentCatalogTemplatesMock.mockResolvedValue([
       {
         id: "backend-engineer",
         name: "Backend Engineer",
@@ -55,8 +55,8 @@ describe("AgentCatalog", () => {
 
     await waitFor(() => {
       expect(screen.getByText("Backend Engineer")).toBeInTheDocument();
+      expect(screen.getByText("Builds APIs and integrations.")).toBeInTheDocument();
+      expect(screen.getByText("paperclip")).toBeInTheDocument();
     });
-    expect(screen.getByText("Builds APIs and integrations.")).toBeInTheDocument();
-    expect(screen.getByText("paperclip")).toBeInTheDocument();
   });
 });

@@ -18,7 +18,7 @@ vi.mock("../api/agentCatalog", () => ({
 
 describe("AgentDetail", () => {
   it("shows the not-found state when the template lookup fails", async () => {
-    getAgentCatalogTemplateMock.mockResolvedValueOnce(null);
+    getAgentCatalogTemplateMock.mockResolvedValue(null);
 
     render(
       <MemoryRouter initialEntries={["/agents/missing"]}>
@@ -28,17 +28,13 @@ describe("AgentDetail", () => {
       </MemoryRouter>
     );
 
-    await waitFor(() => {
-      expect(screen.getByText(/agent template not found/i)).toBeInTheDocument();
-    });
-    expect(screen.getByRole("link", { name: /back to catalog/i })).toHaveAttribute(
-      "href",
-      "/agents"
-    );
+    const backLink = await screen.findByRole("link", { name: /back to catalog/i });
+    expect(screen.getByText(/agent template not found/i)).toBeInTheDocument();
+    expect(backLink).toHaveAttribute("href", "/agents");
   });
 
   it("renders template details and deployment actions", async () => {
-    getAgentCatalogTemplateMock.mockResolvedValueOnce({
+    getAgentCatalogTemplateMock.mockResolvedValue({
       id: "backend-engineer",
       name: "Backend Engineer",
       category: "Engineering",
@@ -57,20 +53,13 @@ describe("AgentDetail", () => {
       </MemoryRouter>
     );
 
-    await waitFor(() => {
-      expect(screen.getByText("Backend Engineer")).toBeInTheDocument();
-      expect(screen.getByText("Engineering template")).toBeInTheDocument();
-      expect(screen.getByText("Builds APIs and integrations.")).toBeInTheDocument();
-      expect(screen.getByText("paperclip")).toBeInTheDocument();
-      expect(screen.getByText("Own backend systems.")).toBeInTheDocument();
-    });
-    expect(screen.getByRole("link", { name: /deploy agent/i })).toHaveAttribute(
-      "href",
-      "/agents/deploy/backend-engineer"
-    );
-    expect(screen.getByRole("link", { name: /view my agents/i })).toHaveAttribute(
-      "href",
-      "/agents/my"
-    );
+    const deployLink = await screen.findByRole("link", { name: /deploy agent/i });
+    expect(screen.getByText("Backend Engineer")).toBeInTheDocument();
+    expect(screen.getByText("Engineering template")).toBeInTheDocument();
+    expect(screen.getByText("Builds APIs and integrations.")).toBeInTheDocument();
+    expect(screen.getByText("paperclip")).toBeInTheDocument();
+    expect(screen.getByText("Own backend systems.")).toBeInTheDocument();
+    expect(deployLink).toHaveAttribute("href", "/agents/deploy/backend-engineer");
+    expect(screen.getByRole("link", { name: /view my agents/i })).toHaveAttribute("href", "/agents/my");
   });
 });

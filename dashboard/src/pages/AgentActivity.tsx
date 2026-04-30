@@ -42,7 +42,7 @@ function runStatusToTone(status: AgentRun["status"]): ActivityStatus {
 }
 
 export default function AgentActivity() {
-  const { getAccessToken } = useAuth();
+  const { accessMode, getAccessToken } = useAuth();
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState<"all" | ActivityStatus>("all");
   const [activity, setActivity] = useState<ActivityItem[]>([]);
@@ -54,6 +54,10 @@ export default function AgentActivity() {
     setError(null);
     try {
       const token = await getAccessToken();
+      if (accessMode === "preview" && !token) {
+        setActivity([]);
+        return;
+      }
       if (!token) throw new Error("Authentication session expired.");
       const agents = await listAgents(token);
       const items = (
@@ -95,7 +99,7 @@ export default function AgentActivity() {
     } finally {
       setLoading(false);
     }
-  }, [getAccessToken]);
+  }, [accessMode, getAccessToken]);
 
   useEffect(() => {
     void loadActivity();

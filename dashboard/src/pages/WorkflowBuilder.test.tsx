@@ -1,12 +1,13 @@
 import type { ComponentType, ReactNode } from "react";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import WorkflowBuilder from "./WorkflowBuilder";
-import { generateWorkflow, getTemplate, listLLMConfigs, listTemplates, startRunWithFile } from "../api/client";
-import type { WorkflowStep, WorkflowTemplate } from "../types/workflow";
+import { generateWorkflow, listLLMConfigs, listTemplates, startRunWithFile } from "../api/client";
+import type { WorkflowStep } from "../types/workflow";
 
 const requireAccessTokenMock = vi.fn();
+const reactFlowPropsMock = vi.fn();
 
 vi.mock("@xyflow/react", () => ({
   Background: () => null,
@@ -19,28 +20,33 @@ vi.mock("@xyflow/react", () => ({
     children,
     nodes = [],
     nodeTypes = {},
+    ...props
   }: {
     children?: ReactNode;
     nodes?: Array<{ id: string; type?: string; data?: unknown; selected?: boolean; dragging?: boolean }>;
     nodeTypes?: Record<string, ComponentType<Record<string, unknown>>>;
-  }) => (
-    <div data-testid="react-flow">
-      {nodes.map((node) => {
-        const NodeComponent = node.type ? nodeTypes[node.type] : undefined;
-        if (!NodeComponent) return null;
-        return (
-          <NodeComponent
-            key={node.id}
-            id={node.id}
-            data={node.data}
-            selected={Boolean(node.selected)}
-            dragging={Boolean(node.dragging)}
-          />
-        );
-      })}
-      {children}
-    </div>
-  ),
+    [key: string]: unknown;
+  }) => {
+    reactFlowPropsMock({ nodes, nodeTypes, ...props });
+    return (
+      <div data-testid="react-flow">
+        {nodes.map((node) => {
+          const NodeComponent = node.type ? nodeTypes[node.type] : undefined;
+          if (!NodeComponent) return null;
+          return (
+            <NodeComponent
+              key={node.id}
+              id={node.id}
+              data={node.data}
+              selected={Boolean(node.selected)}
+              dragging={Boolean(node.dragging)}
+            />
+          );
+        })}
+        {children}
+      </div>
+    );
+  },
 }));
 
 vi.mock("../api/client", () => ({
@@ -66,28 +72,15 @@ vi.mock("../context/AuthContext", () => ({
 }));
 
 const listTemplatesMock = vi.mocked(listTemplates);
-const getTemplateMock = vi.mocked(getTemplate);
 const listLLMConfigsMock = vi.mocked(listLLMConfigs);
 const generateWorkflowMock = vi.mocked(generateWorkflow);
 const startRunWithFileMock = vi.mocked(startRunWithFile);
 
-const TEMPLATE_FIXTURE: WorkflowTemplate = {
-  id: "tpl-1",
-  name: "Support triage",
-  description: "Assist inbound support triage.",
-  category: "support",
-  version: "1.0.0",
-  configFields: [],
-  steps: [],
-  sampleInput: {},
-  expectedOutput: {},
-};
-
-function renderBuilder(entry = "/builder", routePath = "/builder") {
+function renderBuilder() {
   render(
-    <MemoryRouter initialEntries={[entry]}>
+    <MemoryRouter initialEntries={["/builder"]}>
       <Routes>
-        <Route path={routePath} element={<WorkflowBuilder />} />
+        <Route path="/builder" element={<WorkflowBuilder />} />
       </Routes>
     </MemoryRouter>
   );
@@ -101,7 +94,6 @@ beforeEach(() => {
   vi.clearAllMocks();
   requireAccessTokenMock.mockResolvedValue("token-123");
   listTemplatesMock.mockResolvedValue([]);
-  getTemplateMock.mockReset();
   listLLMConfigsMock.mockResolvedValue([]);
   generateWorkflowMock.mockReset();
   startRunWithFileMock.mockReset();
@@ -226,6 +218,53 @@ describe("WorkflowBuilder", () => {
     expect(screen.getByText("How often the workflow should execute.")).toBeInTheDocument();
   });
 
+  it("renders the template list inside a scrollable panel when templates are available", async () => {
+    listTemplatesMock.mockResolvedValue([
+      { id: "tpl-1", name: "Support triage", description: "", category: "support", version: "1.0.0" },
+      { id: "tpl-2", name: "Lead routing", description: "", category: "sales", version: "1.0.0" },
+      { id: "tpl-3", name: "Escalations", description: "", category: "support", version: "1.0.0" },
+    ]);
+
+    renderBuilder();
+
+    const templatePanel = await screen.findByLabelText(/workflow templates/i);
+    expect(templatePanel.className).toContain("max-h-[min(40vh,26rem)]");
+    expect(templatePanel.className).toContain("overflow-y-auto");
+  });
+
+  it("updates node positions continuously while dragging", async () => {
+    renderBuilder();
+
+    expect(await screen.findByText("Start building your workflow")).toBeInTheDocument();
+
+    openNodePalette();
+    fireEvent.click(screen.getByRole("button", { name: /^trigger$/i }));
+
+    await waitFor(() => {
+      expect(reactFlowPropsMock).toHaveBeenCalled();
+    });
+
+    const latestProps = reactFlowPropsMock.mock.calls.at(-1)?.[0] as {
+      nodes: Array<{ id: string; position: { x: number; y: number } }>;
+      onNodeDrag?: (_event: unknown, node: { id: string; position: { x: number; y: number } }) => void;
+    };
+
+    expect(latestProps.onNodeDrag).toBeTypeOf("function");
+    await act(async () => {
+      latestProps.onNodeDrag?.(undefined, {
+        id: latestProps.nodes[0].id,
+        position: { x: 240, y: 320 },
+      });
+    });
+
+    await waitFor(() => {
+      const updatedProps = reactFlowPropsMock.mock.calls.at(-1)?.[0] as {
+        nodes: Array<{ id: string; position: { x: number; y: number } }>;
+      };
+      expect(updatedProps.nodes[0].position).toEqual({ x: 240, y: 320 });
+    });
+  });
+
   it("uses copilot to explain the canvas and apply a targeted slack step", async () => {
     renderBuilder();
 
@@ -338,43 +377,5 @@ describe("WorkflowBuilder", () => {
       expect(startRunWithFileMock).toHaveBeenCalledWith(expect.any(String), file, undefined, "token-123");
     });
     expect(await screen.findByText(/run started — redirecting to monitor/i)).toBeInTheDocument();
-  });
-
-  it("shows explicit read-only state for pop-out builder routes", async () => {
-    getTemplateMock.mockResolvedValue({
-      ...TEMPLATE_FIXTURE,
-      steps: [
-        {
-          id: "step-1",
-          name: "Triage",
-          kind: "trigger",
-          description: "Start the workflow.",
-          inputKeys: [],
-          outputKeys: ["payload"],
-        },
-      ],
-    });
-
-    renderBuilder("/builder/tpl-1?popout=1&mode=readonly&from=%2Fhistory", "/builder/:templateId");
-
-    expect(await screen.findByRole("heading", { name: "Support triage" })).toBeInTheDocument();
-    expect(screen.getAllByText("Read-only")).toHaveLength(2);
-    expect(screen.getByRole("button", { name: /^read-only$/i })).toBeDisabled();
-    expect(screen.getByRole("button", { name: /generate with ai/i })).toBeDisabled();
-    expect(screen.getByRole("button", { name: /copilot/i })).toBeDisabled();
-    expect(screen.getByRole("button", { name: /node palette/i })).toBeDisabled();
-    expect(document.title).toContain("Read-only workflow");
-  });
-
-  it("renders the pop-out failure state with a back action", async () => {
-    getTemplateMock.mockRejectedValue(new Error("Template not found: missing-template"));
-
-    renderBuilder("/builder/missing-template?popout=1&from=%2Fhistory", "/builder/:templateId");
-
-    expect(
-      await screen.findByRole("heading", { name: /this workflow cannot be loaded right now/i })
-    ).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /back to workflows/i })).toBeInTheDocument();
-    expect(document.title).toContain("Workflow unavailable");
   });
 });

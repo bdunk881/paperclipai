@@ -9,9 +9,11 @@ const { getAccessTokenMock, listAgentsMock, getAgentHeartbeatMock, listAgentRuns
   getAgentHeartbeatMock: vi.fn(),
   listAgentRunsMock: vi.fn(),
 }));
+const accessModeMock = vi.fn();
 
 vi.mock("../context/AuthContext", () => ({
   useAuth: () => ({
+    accessMode: accessModeMock(),
     getAccessToken: getAccessTokenMock,
   }),
 }));
@@ -28,7 +30,9 @@ describe("AgentActivity", () => {
     listAgentsMock.mockReset();
     getAgentHeartbeatMock.mockReset();
     listAgentRunsMock.mockReset();
+    accessModeMock.mockReset();
 
+    accessModeMock.mockReturnValue("authenticated");
     getAccessTokenMock.mockResolvedValue("token-123");
   });
 
@@ -117,5 +121,19 @@ describe("AgentActivity", () => {
     });
 
     expect(screen.getByText(/no activity matches this filter/i)).toBeInTheDocument();
+  });
+
+  it("renders the preview empty state without calling protected agent APIs", async () => {
+    accessModeMock.mockReturnValue("preview");
+    getAccessTokenMock.mockResolvedValue(null);
+
+    render(
+      <MemoryRouter>
+        <AgentActivity />
+      </MemoryRouter>
+    );
+
+    expect(await screen.findByText(/no activity yet/i)).toBeInTheDocument();
+    expect(listAgentsMock).not.toHaveBeenCalled();
   });
 });

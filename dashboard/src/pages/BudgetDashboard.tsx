@@ -16,7 +16,7 @@ function formatUsd(value: number): string {
 }
 
 export default function BudgetDashboard() {
-  const { getAccessToken } = useAuth();
+  const { accessMode, getAccessToken } = useAuth();
   const [agentSpend, setAgentSpend] = useState<AgentSpend[]>([]);
   const [teamBudget, setTeamBudget] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -27,6 +27,11 @@ export default function BudgetDashboard() {
     setError(null);
     try {
       const token = await getAccessToken();
+      if (accessMode === "preview" && !token) {
+        setAgentSpend([]);
+        setTeamBudget(0);
+        return;
+      }
       if (!token) throw new Error("Authentication session expired.");
       const agents = await listAgents(token);
       const budgets = await Promise.all(agents.map((agent) => getAgentBudget(agent.id, token)));
@@ -43,7 +48,7 @@ export default function BudgetDashboard() {
     } finally {
       setLoading(false);
     }
-  }, [getAccessToken]);
+  }, [accessMode, getAccessToken]);
 
   useEffect(() => {
     void loadBudget();

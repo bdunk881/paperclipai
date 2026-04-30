@@ -100,7 +100,9 @@ jobs:
           cache: pip
       - run: pip install -r requirements.txt -r requirements-dev.txt
       - run: pytest --cov=. --cov-report=xml:coverage.xml --cov-fail-under=80 -q
-      - uses: codecov/codecov-action@v5
+      - name: Upload backend coverage to Codecov
+        continue-on-error: true
+        uses: codecov/codecov-action@v5
         if: always()
         with:
           files: backend/coverage.xml
@@ -123,7 +125,9 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run test:coverage
-      - uses: codecov/codecov-action@v5
+      - name: Upload API coverage to Codecov
+        continue-on-error: true
+        uses: codecov/codecov-action@v5
         if: always()
         with:
           files: coverage/lcov.info
@@ -151,7 +155,9 @@ jobs:
           cache-dependency-path: dashboard/package-lock.json
       - run: npm ci
       - run: npm run test:coverage
-      - uses: codecov/codecov-action@v5
+      - name: Upload dashboard coverage to Codecov
+        continue-on-error: true
+        uses: codecov/codecov-action@v5
         if: always()
         with:
           files: dashboard/coverage/lcov.info

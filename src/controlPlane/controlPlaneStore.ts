@@ -10,6 +10,7 @@ import {
   AgentHeartbeatRecord,
   BudgetStatusSnapshot,
   CompanyProvisioningAgentInput,
+  ControlPlaneMissionState,
   CompanyProvisioningResult,
   ControlPlaneAgent,
   ControlPlaneBudgetAlert,
@@ -549,6 +550,113 @@ function getProvisionedCompanyOwnedByUser(companyId: string, userId: string): Pr
     return undefined;
   }
   return company;
+}
+
+function latestIso(...timestamps: Array<string | undefined>): string {
+  return timestamps
+    .filter((value): value is string => Boolean(value))
+    .sort((left, right) => left.localeCompare(right))
+    .at(-1) ?? nowIso();
+}
+
+function buildMissionState(
+  team: ControlPlaneTeam,
+  userId: string,
+  workspaceId?: string
+): ControlPlaneMissionState {
+  const teamAgents = listAgentsForTeam(team.id, userId);
+  const teamTasks = Array.from(tasks.values()).filter((task) => task.userId === userId && task.teamId === team.id);
+  const teamExecutions = Array.from(executions.values()).filter(
+    (execution) =>
+      execution.userId === userId &&
+      execution.teamId === team.id &&
+      matchesWorkspace(execution.teamId, workspaceId)
+  );
+  const spendSnapshot = buildTeamSpendSnapshot(team);
+  const blockedTasks = teamTasks.filter((task) => task.status === "blocked");
+  const failedExecutions = teamExecutions.filter((execution) => execution.status === "failed");
+  const blockedExecutions = teamExecutions.filter((execution) => execution.status === "blocked");
+  const hasRuntimeActivity = teamTasks.length > 0 || teamExecutions.length > 0;
+
+  let overallStatus: ControlPlaneMissionState["overallStatus"] = "on_track";
+  if (!hasRuntimeActivity) {
+    overallStatus = "not_started";
+  } else if (team.status === "stopped" || failedExecutions.length > 0) {
+    overallStatus = "off_track";
+  } else if (team.status === "paused" || blockedTasks.length > 0) {
+    overallStatus = "blocked";
+  } else if (
+    blockedExecutions.length > 0 ||
+    spendSnapshot.team.thresholdState === "warning" ||
+    spendSnapshot.team.thresholdState === "critical" ||
+    spendSnapshot.team.thresholdState === "limit_reached"
+  ) {
+    overallStatus = "at_risk";
+  }
+
+  const plannedHeadcount = teamAgents.length;
+  const filledHeadcount = teamAgents.filter((agent) => agent.status !== "terminated").length;
+  let staffingStatus: ControlPlaneMissionState["staffingReadiness"]["status"] = "ready";
+  if (filledHeadcount === 0) {
+    staffingStatus = "not_ready";
+  } else if (filledHeadcount < plannedHeadcount) {
+    staffingStatus = "partial";
+  }
+
+  const risks: string[] = [];
+  if (spendSnapshot.team.thresholdState === "warning" || spendSnapshot.team.thresholdState === "critical") {
+    risks.push(`Budget usage is ${Math.round(spendSnapshot.team.percentUsed * 100)}% of monthly allocation.`);
+  }
+  if (spendSnapshot.team.thresholdState === "limit_reached") {
+    risks.push("Team budget limit has been reached.");
+  }
+  if (failedExecutions.length > 0) {
+    risks.push(`${failedExecutions.length} execution${failedExecutions.length === 1 ? "" : "s"} failed.`);
+  }
+
+  const topBlockers = blockedTasks.map((task) => task.title);
+  if (team.status === "paused" && topBlockers.length === 0) {
+    topBlockers.push("Team is currently paused.");
+  }
+  if (team.status === "stopped" && topBlockers.length === 0) {
+    topBlockers.push("Team is currently stopped.");
+  }
+
+  return {
+    teamId: team.id,
+    title: team.name,
+    objective: team.description?.trim() || null,
+    overallStatus,
+    currentPhase: null,
+    ownerTeam: team.name,
+    staffingReadiness: {
+      status: staffingStatus,
+      filledHeadcount,
+      plannedHeadcount,
+    },
+    topBlockers,
+    risks: Array.from(new Set(risks)),
+    nextMilestone: null,
+    lastUpdated: latestIso(
+      team.updatedAt,
+      ...teamTasks.map((task) => task.updatedAt),
+      ...teamExecutions.map(
+        (execution) => execution.lastHeartbeatAt ?? execution.completedAt ?? execution.startedAt ?? execution.requestedAt
+      )
+    ),
+    fieldCoverage: {
+      title: true,
+      objective: Boolean(team.description?.trim()),
+      overallStatus: true,
+      currentPhase: false,
+      ownerTeam: true,
+      staffingReadiness: plannedHeadcount > 0,
+      topBlockers: true,
+      risks: true,
+      nextMilestone: false,
+      lastUpdated: true,
+    },
+  };
 }
 
 function getTeamOwnedByUser(teamId: string, userId: string): ControlPlaneTeam | undefined {
@@ -1623,6 +1731,15 @@ export const controlPlaneStore = {
       return undefined;
     }
     return team;
+  },
+
+  getMissionState(teamId: string, userId: string, workspaceId?: string): ControlPlaneMissionState | undefined {
+    const team = getTeamOwnedByUser(teamId, userId);
+    if (!team || !matchesWorkspace(team.id, workspaceId)) {
+      return undefined;
+    }
+
+    return buildMissionState(team, userId, workspaceId);
   },
 
   listAgents(teamId: string, userId: string, workspaceId?: string): ControlPlaneAgent[] {

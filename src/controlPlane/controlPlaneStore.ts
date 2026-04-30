@@ -66,22 +66,36 @@ function budgetAlertDedupeKey(input: {
   ].join(":");
 }
 
+const SLUGIFY_MAX_INPUT_LENGTH = 256;
+
 function slugify(value: string): string {
-  const collapsed = value
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-");
+  const bounded = value.slice(0, SLUGIFY_MAX_INPUT_LENGTH);
+  const lower = bounded.trim().toLowerCase();
+  const chars: number[] = [];
+  let lastWasDash = false;
+  for (let i = 0; i < lower.length; i += 1) {
+    const code = lower.charCodeAt(i);
+    const isAlnum =
+      (code >= 48 && code <= 57) || (code >= 97 && code <= 122);
+    if (isAlnum) {
+      chars.push(code);
+      lastWasDash = false;
+    } else if (!lastWasDash) {
+      chars.push(45);
+      lastWasDash = true;
+    }
+  }
 
   let start = 0;
-  let end = collapsed.length;
-  while (start < end && collapsed.charCodeAt(start) === 45) {
+  let end = chars.length;
+  while (start < end && chars[start] === 45) {
     start += 1;
   }
-  while (end > start && collapsed.charCodeAt(end - 1) === 45) {
+  while (end > start && chars[end - 1] === 45) {
     end -= 1;
   }
 
-  return collapsed.slice(start, end);
+  return String.fromCharCode(...chars.slice(start, end));
 }
 
 function buildAuditEvent(

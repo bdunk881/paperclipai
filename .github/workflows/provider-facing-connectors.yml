@@ -18,6 +18,7 @@ jobs:
     timeout-minutes: 30
     env:
       REQUIRE_ALL_TIER1_CONNECTORS: "true"
+      TIER1_APOLLO_API_KEY: ${{ secrets.TIER1_APOLLO_API_KEY }}
       TIER1_GMAIL_API_KEY: ${{ secrets.TIER1_GMAIL_API_KEY }}
       TIER1_GMAIL_TO_EMAIL: ${{ vars.TIER1_GMAIL_TO_EMAIL }}
       TIER1_HUBSPOT_API_KEY: ${{ secrets.TIER1_HUBSPOT_API_KEY }}

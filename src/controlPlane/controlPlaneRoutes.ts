@@ -118,7 +118,6 @@ function resolveWorkspaceContext(req: WorkspaceAwareRequest, res: express.Respon
   if (req.method === "GET" || req.method === "HEAD" || req.method === "OPTIONS") {
     return { workspaceId: undefined, userId };
   }
-
   if (!isPostgresPersistenceEnabled()) {
     return { workspaceId: userId, userId };
   }
@@ -194,11 +193,6 @@ router.post("/company/lifecycle", requirePaperclipRunId, async (req: WorkspaceAw
     actor: req.header("X-Paperclip-Run-Id") as string,
     reason: typeof reason === "string" ? reason : undefined,
   });
-
-  if (!context.workspaceId) {
-    res.status(500).json({ error: "Workspace context was not resolved for the request" });
-    return;
-  }
 
   await recordControlPlaneAudit({
     workspaceId: context.workspaceId,

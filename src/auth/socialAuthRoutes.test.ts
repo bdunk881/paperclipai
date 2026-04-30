@@ -29,7 +29,7 @@ function loadApp(authenticateImpl: PassportAuthenticate, enabledProviders: strin
       initialize: jest.fn(() => (_req: unknown, _res: unknown, next: () => void) => next()),
       authenticate: jest.fn(authenticateImpl),
     },
-  }));
+  }), { virtual: true });
   jest.doMock("./socialAuthStrategies", () => ({
     configureSocialAuthStrategies: jest.fn(),
     getSocialAuthConfigurationError: jest.fn(() => null),
@@ -39,6 +39,7 @@ function loadApp(authenticateImpl: PassportAuthenticate, enabledProviders: strin
     getPostgresPool: jest.fn(),
     isPostgresPersistenceEnabled: () => false,
     isPostgresConfigured: () => true,
+    isPostgresPersistenceEnabled: () => true,
   }));
   jest.doMock("../engine/llmProviders", () => ({
     getProvider: jest.fn(),
@@ -66,7 +67,7 @@ function loadAppWithConfigurationError(
       initialize: jest.fn(() => (_req: unknown, _res: unknown, next: () => void) => next()),
       authenticate: jest.fn(authenticateImpl),
     },
-  }));
+  }), { virtual: true });
   jest.doMock("./socialAuthStrategies", () => ({
     configureSocialAuthStrategies: jest.fn(),
     getSocialAuthConfigurationError: (provider: string) => providerErrors[provider] ?? null,
@@ -76,6 +77,7 @@ function loadAppWithConfigurationError(
     getPostgresPool: jest.fn(),
     isPostgresPersistenceEnabled: () => false,
     isPostgresConfigured: () => true,
+    isPostgresPersistenceEnabled: () => true,
   }));
   jest.doMock("../engine/llmProviders", () => ({
     getProvider: jest.fn(),

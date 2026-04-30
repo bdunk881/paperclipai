@@ -225,7 +225,10 @@ function parseQaBypassUserIds(): Set<string> {
 }
 
 function resolveQaBypassUserId(req: Request): string | null {
-  if (process.env.QA_AUTH_BYPASS_ENABLED !== "true") {
+  // Routed through qaBypassGuard so the production-boot guard sees a single
+  // source of truth and so this gate refuses the bypass when NODE_ENV is
+  // "production" (or absent), regardless of the env var value.
+  if (!isQaBypassEnabledByName("QA_AUTH_BYPASS_ENABLED")) {
     return null;
   }
 

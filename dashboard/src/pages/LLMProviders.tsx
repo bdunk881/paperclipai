@@ -74,7 +74,7 @@ interface ConnectModalProps {
 function ConnectModal({ provider, onClose, onSuccess }: ConnectModalProps) {
   const { requireAccessToken } = useAuth();
   const meta = PROVIDERS[provider];
-  const models = PROVIDER_MODELS[provider];
+  const models = PROVIDER_MODELS[provider] ?? [];
 
   const [label, setLabel] = useState("");
   const [apiKey, setApiKey] = useState("");
@@ -330,6 +330,14 @@ export default function LLMProviders() {
     return acc;
   }, {});
 
+  function getMaskedApiKey(config: LLMConfig): string {
+    return (
+      config.apiKeyMasked ??
+      (config as LLMConfig & { maskedApiKey?: string }).maskedApiKey ??
+      "Hidden"
+    );
+  }
+
   return (
     <div className="p-8 max-w-4xl">
       <div className="mb-8">
@@ -345,6 +353,7 @@ export default function LLMProviders() {
           const meta = PROVIDERS[providerKey];
           const count = connectedByProvider[providerKey] ?? 0;
           const isConnected = count > 0;
+          const availableModels = PROVIDER_MODELS[providerKey] ?? [];
 
           return (
             <div
@@ -365,7 +374,7 @@ export default function LLMProviders() {
                   ) : null}
                 </div>
                 <p className="text-xs text-gray-400 mb-3">
-                  {PROVIDER_MODELS[providerKey].length} models available
+                  {availableModels.length} models available
                 </p>
                 {isConnected ? (
                   <button
@@ -434,7 +443,7 @@ export default function LLMProviders() {
                         </span>
                       </td>
                       <td className="px-5 py-3 text-gray-600 font-mono text-xs">{cfg.model}</td>
-                      <td className="px-5 py-3 text-gray-400 font-mono text-xs">{cfg.apiKeyMasked}</td>
+                      <td className="px-5 py-3 text-gray-400 font-mono text-xs">{getMaskedApiKey(cfg)}</td>
                       <td className="px-5 py-3">
                         <button
                           onClick={() => !cfg.isDefault && handleSetDefault(cfg.id)}

@@ -11,6 +11,8 @@ AutoFlow uses a staging-first promotion model:
 
 Do not open direct feature PRs to `master`. Production only accepts the promoted `staging` branch.
 
+If a feature or Dependabot PR is opened against `master` by mistake, `.github/workflows/auto-retarget-master-prs.yml` automatically retargets it to `staging`. The only PRs that should remain on `master` are dedicated `staging` -> `master` promotion PRs.
+
 ## Dependabot Policy
 
 Dependabot PRs must also target `staging`. The repository config in `.github/dependabot.yml` sets `target-branch: staging` for every package ecosystem so dependency updates follow the same gate as human-authored changes.

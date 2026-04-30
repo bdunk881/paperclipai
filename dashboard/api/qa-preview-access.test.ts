@@ -29,11 +29,21 @@ function createResponse(): MockResponse {
   };
 }
 
+function decodeJwtPayload(token: string): Record<string, unknown> {
+  const [, payload] = token.split(".");
+  if (!payload) {
+    throw new Error("missing token payload");
+  }
+
+  return JSON.parse(Buffer.from(payload, "base64url").toString("utf8")) as Record<string, unknown>;
+}
+
 describe("qa-preview-access handler", () => {
   const originalNodeEnv = process.env.NODE_ENV;
 
   beforeEach(() => {
     vi.unstubAllEnvs();
+    delete process.env.APP_JWT_SECRET;
     delete process.env.QA_PREVIEW_ACCESS_TOKEN;
     delete process.env.QA_PREVIEW_ACCESS_ALLOW_NON_PREVIEW;
     delete process.env.VERCEL_ENV;
@@ -78,6 +88,7 @@ describe("qa-preview-access handler", () => {
 
   it("returns the QA preview user for valid preview tokens", async () => {
     process.env.VERCEL_ENV = "preview";
+    process.env.APP_JWT_SECRET = "test-app-jwt-secret-with-sufficient-length";
     process.env.QA_PREVIEW_ACCESS_TOKEN = "secret-token";
     const res = createResponse();
 
@@ -85,13 +96,33 @@ describe("qa-preview-access handler", () => {
 
     expect(res.statusCode).toBe(200);
     expect(res.headers["Cache-Control"]).toBe("no-store");
-    expect(res.body).toEqual({
+    expect(res.body).toMatchObject({
+      accessToken: expect.any(String),
       user: {
-        id: "usr-qa-preview",
+        id: "qa-smoke-user",
         email: "qa-preview@autoflow.local",
         name: "QA Preview User",
       },
     });
+    const payload = res.body as { accessToken: string };
+    expect(decodeJwtPayload(payload.accessToken)).toMatchObject({
+      sub: "qa-smoke-user",
+      email: "qa-preview@autoflow.local",
+      name: "QA Preview User",
+      iss: "autoflow-app",
+      aud: "autoflow-api",
+    });
+  });
+
+  it("returns 503 when app token signing is not configured", async () => {
+    process.env.VERCEL_ENV = "preview";
+    process.env.QA_PREVIEW_ACCESS_TOKEN = "secret-token";
+    const res = createResponse();
+
+    await handler({ method: "POST", body: { token: "secret-token" } } as never, res as never);
+
+    expect(res.statusCode).toBe(503);
+    expect(res.body).toEqual({ error: "QA preview access is not fully configured" });
   });
 
   // ALT-2078 Phase 5: production-boot guard parity. The
@@ -113,6 +144,7 @@ describe("qa-preview-access handler", () => {
   it("honors QA_PREVIEW_ACCESS_ALLOW_NON_PREVIEW outside production for QA smoke runs", async () => {
     process.env.NODE_ENV = "test";
     process.env.VERCEL_ENV = "development";
+    process.env.APP_JWT_SECRET = "test-app-jwt-secret-with-sufficient-length";
     process.env.QA_PREVIEW_ACCESS_TOKEN = "secret-token";
     process.env.QA_PREVIEW_ACCESS_ALLOW_NON_PREVIEW = "true";
     const res = createResponse();

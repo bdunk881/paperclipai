@@ -89,4 +89,19 @@ describe("Layout", () => {
     expect(screen.queryByText("AutoFlow")).toBeNull();
     expect(screen.queryByRole("button", { name: /toggle navigation/i })).toBeNull();
   });
+
+  it("marks Mission State as the active primary-nav destination", () => {
+    render(
+      <MemoryRouter initialEntries={["/mission-state"]}>
+        <Routes>
+          <Route path="/" element={<Layout />}>
+            <Route path="mission-state" element={<div>Mission State content</div>} />
+          </Route>
+        </Routes>
+      </MemoryRouter>
+    );
+
+    expect(screen.getByText("Core")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Mission State" })).toHaveAttribute("aria-current", "page");
+  });
 });

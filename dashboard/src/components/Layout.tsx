@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import { Outlet, NavLink, useLocation, useNavigate } from "react-router-dom";
 import {
   LayoutDashboard,
+  Flag,
   Workflow,
   Activity,
   History,
@@ -43,6 +44,7 @@ const NAV_SECTIONS: Array<{ title: string; items: NavItem[] }> = [
     title: "Core",
     items: [
       { to: "/", icon: LayoutDashboard, label: "Dashboard", end: true },
+      { to: "/mission-state", icon: Flag, label: "Mission State" },
       { to: "/tickets", icon: Ticket, label: "Tickets" },
       { to: "/builder", icon: Workflow, label: "Builder" },
       { to: "/monitor", icon: Activity, label: "Run Monitor" },

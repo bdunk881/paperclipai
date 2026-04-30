@@ -244,8 +244,10 @@ PY
 
 cd "$REPO_ROOT"
 
+PINGER_MARKER="<!-- stale-pr-pinger:v2 -->"
+
 agents_json="$(api_get "/api/companies/${COMPANY_ID}/agents")"
-prs_json="$(gh pr list --state open --limit 100 --json number,title,url,headRefName,isDraft,updatedAt,statusCheckRollup,author)"
+prs_json="$(gh pr list --state open --limit 100 --json number,title,url,headRefName,baseRefName,isDraft,updatedAt,statusCheckRollup,mergeStateStatus,mergeable,author)"
 
 posted_count=0
 skipped_count=0
@@ -265,7 +267,22 @@ while IFS= read -r pr; do
   fi
 
   failed_checks="$(jq -r '[.statusCheckRollup[]? | select(.conclusion == "FAILURE") | (.name // .context // "unknown")] | unique | join(", ")' <<<"$pr")"
-  if [[ -z "$failed_checks" ]]; then
+  merge_state="$(jq -r '.mergeStateStatus // ""' <<<"$pr")"
+  mergeable="$(jq -r '.mergeable // ""' <<<"$pr")"
+  base_ref="$(jq -r '.baseRefName // ""' <<<"$pr")"
+
+  problems=()
+  if [[ -n "$failed_checks" ]]; then
+    problems+=("CI is failing (failed checks: ${failed_checks})")
+  fi
+  if [[ "$merge_state" == "BEHIND" ]]; then
+    problems+=("branch is behind base \`${base_ref}\` and needs an update")
+  fi
+  if [[ "$merge_state" == "DIRTY" || "$mergeable" == "CONFLICTING" ]]; then
+    problems+=("branch has merge conflicts with base \`${base_ref}\`")
+  fi
+
+  if [[ ${#problems[@]} -eq 0 ]]; then
     skipped_count=$((skipped_count + 1))
     continue
   fi
@@ -306,7 +323,7 @@ while IFS= read -r pr; do
   latest_author_agent_id="$(jq -r '.[0].authorAgentId // empty' <<<"$latest_comment_json")"
   latest_body="$(jq -r '.[0].body // empty' <<<"$latest_comment_json")"
 
-  if [[ "$latest_author_agent_id" == "$COMMENTER_AGENT_ID" && "$latest_body" == *"PR #${pr_number}"* && "$latest_body" == *"CI is failing"* ]]; then
+  if [[ "$latest_author_agent_id" == "$COMMENTER_AGENT_ID" && "$latest_body" == *"$PINGER_MARKER"* && "$latest_body" == *"PR #${pr_number}"* ]]; then
     skipped_count=$((skipped_count + 1))
     continue
   fi
@@ -314,12 +331,17 @@ while IFS= read -r pr; do
   candidate_count=$((candidate_count + 1))
 
   pr_url="$(jq -r '.url' <<<"$pr")"
+  problem_lines=""
+  for problem in "${problems[@]}"; do
+    problem_lines+=$'\n- '"$problem"
+  done
   comment_body="$(
-    printf '@%s CI is failing on [PR #%s](%s).\n- Failed checks: %s\n- Last activity: %s\nPlease address or mark blocked.' \
+    printf '%s\n@%s [PR #%s](%s) needs attention:%s\n- Last activity: %s\n\nPlease address or mark blocked.' \
+      "$PINGER_MARKER" \
       "$mention_target" \
       "$pr_number" \
       "$pr_url" \
-      "$failed_checks" \
+      "$problem_lines" \
       "$updated_at"
   )"
 
@@ -334,7 +356,7 @@ while IFS= read -r pr; do
 
   api_post "/api/issues/${issue_id}/comments" "$(jq -n --arg body "$comment_body" '{body: $body}')" >/dev/null
   posted_count=$((posted_count + 1))
-  printf 'Posted stale CI ping for %s via PR #%s\n' "$issue_identifier" "$pr_number"
+  printf 'Posted stale-PR ping for %s via PR #%s (problems: %s)\n' "$issue_identifier" "$pr_number" "$(IFS='; '; echo "${problems[*]}")"
 done < <(jq -c '.[]' <<<"$prs_json")
 
 printf 'stale-pr-pinger summary: candidates=%s posted=%s skipped=%s\n' "$candidate_count" "$posted_count" "$skipped_count"

@@ -28,6 +28,18 @@ const PROVIDERS: Record<ProviderName, ProviderMeta> = {
   anthropic: { name: "Anthropic", color: "text-orange-700", bg: "bg-orange-100", abbr: "ANT" },
   gemini: { name: "Google Gemini", color: "text-blue-700", bg: "bg-blue-100", abbr: "GEM" },
   mistral: { name: "Mistral", color: "text-purple-700", bg: "bg-purple-100", abbr: "MIS" },
+  "azure-openai": { name: "Azure OpenAI", color: "text-sky-700", bg: "bg-sky-100", abbr: "AZR" },
+  groq: { name: "Groq", color: "text-emerald-700", bg: "bg-emerald-100", abbr: "GRQ" },
+  fireworks: { name: "Fireworks AI", color: "text-rose-700", bg: "bg-rose-100", abbr: "FWK" },
+  together: { name: "Together AI", color: "text-fuchsia-700", bg: "bg-fuchsia-100", abbr: "TGT" },
+  ollama: { name: "Ollama", color: "text-stone-700", bg: "bg-stone-100", abbr: "OLL" },
+  localai: { name: "LocalAI", color: "text-slate-700", bg: "bg-slate-100", abbr: "LCL" },
+  cohere: { name: "Cohere", color: "text-indigo-700", bg: "bg-indigo-100", abbr: "COH" },
+  perplexity: { name: "Perplexity", color: "text-cyan-700", bg: "bg-cyan-100", abbr: "PPL" },
+  xai: { name: "xAI", color: "text-zinc-700", bg: "bg-zinc-100", abbr: "XAI" },
+  deepseek: { name: "DeepSeek", color: "text-teal-700", bg: "bg-teal-100", abbr: "DSK" },
+  bedrock: { name: "AWS Bedrock", color: "text-amber-700", bg: "bg-amber-100", abbr: "AWS" },
+  "vertex-ai": { name: "Vertex AI", color: "text-lime-700", bg: "bg-lime-100", abbr: "VTX" },
 };
 
 const PROVIDER_ORDER: ProviderName[] = [
@@ -35,6 +47,18 @@ const PROVIDER_ORDER: ProviderName[] = [
   "anthropic",
   "gemini",
   "mistral",
+  "azure-openai",
+  "groq",
+  "fireworks",
+  "together",
+  "ollama",
+  "localai",
+  "cohere",
+  "perplexity",
+  "xai",
+  "deepseek",
+  "bedrock",
+  "vertex-ai",
 ];
 
 // ---------------------------------------------------------------------------
@@ -308,6 +332,11 @@ export default function LLMProviders() {
 
   function getMaskedApiKey(config: LLMConfig): string {
     return config.maskedApiKey || "Hidden";
+    return (
+      config.apiKeyMasked ??
+      (config as LLMConfig & { maskedApiKey?: string }).maskedApiKey ??
+      "Hidden"
+    );
   }
 
   return (

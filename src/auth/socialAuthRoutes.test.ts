@@ -37,7 +37,6 @@ function loadApp(authenticateImpl: PassportAuthenticate, enabledProviders: strin
   }));
   jest.doMock("../db/postgres", () => ({
     getPostgresPool: jest.fn(),
-    isPostgresPersistenceEnabled: () => false,
     isPostgresConfigured: () => true,
     isPostgresPersistenceEnabled: () => true,
   }));
@@ -75,7 +74,6 @@ function loadAppWithConfigurationError(
   }));
   jest.doMock("../db/postgres", () => ({
     getPostgresPool: jest.fn(),
-    isPostgresPersistenceEnabled: () => false,
     isPostgresConfigured: () => true,
     isPostgresPersistenceEnabled: () => true,
   }));

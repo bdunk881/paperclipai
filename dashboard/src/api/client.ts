@@ -15,7 +15,23 @@ import {
 // LLM Config types — mirrors src/engine/llmProviders/types.ts
 // ---------------------------------------------------------------------------
 
-export type ProviderName = "openai" | "anthropic" | "gemini" | "mistral";
+export type ProviderName =
+  | "openai"
+  | "anthropic"
+  | "gemini"
+  | "mistral"
+  | "azure-openai"
+  | "groq"
+  | "fireworks"
+  | "together"
+  | "ollama"
+  | "localai"
+  | "cohere"
+  | "perplexity"
+  | "xai"
+  | "deepseek"
+  | "bedrock"
+  | "vertex-ai";
 
 /** Available models per provider — mirrors PROVIDER_MODELS from the backend */
 export const PROVIDER_MODELS: Record<ProviderName, string[]> = {
@@ -23,6 +39,30 @@ export const PROVIDER_MODELS: Record<ProviderName, string[]> = {
   anthropic: ["claude-opus-4-6", "claude-sonnet-4-6", "claude-haiku-4-5-20251001"],
   gemini: ["gemini-2.0-flash", "gemini-1.5-pro", "gemini-1.5-flash"],
   mistral: ["mistral-large-latest", "mistral-small-latest", "open-mistral-7b"],
+  "azure-openai": ["gpt-4o", "gpt-4o-mini", "gpt-4.1"],
+  groq: ["llama-3.3-70b-versatile", "llama-3.1-8b-instant", "mixtral-8x7b-32768"],
+  fireworks: [
+    "accounts/fireworks/models/llama-v3p1-8b-instruct",
+    "accounts/fireworks/models/llama-v3p1-70b-instruct",
+    "accounts/fireworks/models/mixtral-8x7b-instruct",
+  ],
+  together: [
+    "meta-llama/Meta-Llama-3.1-8B-Instruct-Turbo",
+    "meta-llama/Meta-Llama-3.1-70B-Instruct-Turbo",
+    "mistralai/Mixtral-8x7B-Instruct-v0.1",
+  ],
+  ollama: ["llama3.1:8b", "llama3.1:70b", "mixtral:8x7b"],
+  localai: ["llama-3.1-8b-instruct", "llama-3.1-70b-instruct", "mixtral-8x7b-instruct"],
+  cohere: ["command-r", "command-r-plus", "command-a-03-2025"],
+  perplexity: ["sonar", "sonar-pro", "llama-3.1-sonar-large-128k-online"],
+  xai: ["grok-2-1212", "grok-2-vision-1212", "grok-beta"],
+  deepseek: ["deepseek-chat", "deepseek-reasoner", "deepseek-coder"],
+  bedrock: [
+    "anthropic.claude-3-5-sonnet-20241022-v2:0",
+    "meta.llama3-1-70b-instruct-v1:0",
+    "amazon.nova-pro-v1:0",
+  ],
+  "vertex-ai": ["gemini-2.0-flash-001", "gemini-1.5-pro-002", "claude-3-5-sonnet-v2@20241022"],
 };
 
 /** A saved LLM provider config (API key stored server-side, never returned) */
@@ -32,7 +72,7 @@ export interface LLMConfig {
   provider: ProviderName;
   model: string;
   isDefault: boolean;
-  maskedApiKey: string; // e.g. "sk-...x7k3"
+  apiKeyMasked: string; // e.g. "****x7k3"
   createdAt: string;
 }
 

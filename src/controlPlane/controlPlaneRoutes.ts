@@ -1,6 +1,5 @@
 import express from "express";
 import { AuthenticatedRequest } from "../auth/authMiddleware";
-import { isPostgresPersistenceEnabled } from "../db/postgres";
 import { WorkspaceAwareRequest } from "../middleware/workspaceResolver";
 import { getTemplate } from "../templates";
 import { WorkflowTemplate } from "../types/workflow";
@@ -114,12 +113,9 @@ function resolveWorkspaceContext(req: WorkspaceAwareRequest, res: express.Respon
     return { workspaceId, userId };
   }
 
-  if (!isPostgresPersistenceEnabled()) {
-    return { workspaceId: userId, userId };
-  }
-
-  res.status(500).json({ error: "Workspace context was not resolved for the request" });
-  return null;
+  // Control-plane routes on this branch remain user-scoped in memory, so they
+  // must continue working before workspace bootstrap has created any rows.
+  return { workspaceId: userId, userId };
 }
 
 function requirePaperclipRunId(

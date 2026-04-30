@@ -1,4 +1,5 @@
 import { randomUUID } from "crypto";
+import { recordControlPlaneAudit } from "../auditing/controlPlaneAudit";
 import { WorkflowStep, WorkflowTemplate } from "../types/workflow";
 import { companyLifecycleStore } from "./companyLifecycleStore";
 import {
@@ -654,6 +655,7 @@ export const controlPlaneStore = {
   },
 
   provisionCompanyWorkspace(input: {
+    workspaceId?: string;
     userId: string;
     name: string;
     workspaceName?: string;
@@ -800,6 +802,7 @@ export const controlPlaneStore = {
   },
 
   createTeam(input: {
+    workspaceId?: string;
     userId: string;
     name: string;
     description?: string;
@@ -814,37 +817,37 @@ export const controlPlaneStore = {
     return createTeamRecord(input);
   },
 
-  listTeams(userId: string): ControlPlaneTeam[] {
+  listTeams(userId: string, _workspaceId?: string): ControlPlaneTeam[] {
     return Array.from(teams.values())
       .filter((team) => team.userId === userId)
       .sort((left, right) => left.createdAt.localeCompare(right.createdAt));
   },
 
-  getTeam(teamId: string, userId: string): ControlPlaneTeam | undefined {
+  getTeam(teamId: string, userId: string, _workspaceId?: string): ControlPlaneTeam | undefined {
     return getTeamOwnedByUser(teamId, userId);
   },
 
-  listAgents(teamId: string, userId: string): ControlPlaneAgent[] {
+  listAgents(teamId: string, userId: string, _workspaceId?: string): ControlPlaneAgent[] {
     return listAgentsForTeam(teamId, userId);
   },
 
-  listAllAgents(userId: string): ControlPlaneAgent[] {
+  listAllAgents(userId: string, _workspaceId?: string): ControlPlaneAgent[] {
     return Array.from(agents.values())
       .filter((agent) => agent.userId === userId)
       .sort((left, right) => left.createdAt.localeCompare(right.createdAt));
   },
 
-  getAgent(agentId: string, userId: string): ControlPlaneAgent | undefined {
+  getAgent(agentId: string, userId: string, _workspaceId?: string): ControlPlaneAgent | undefined {
     return getAgentOwnedByUser(agentId, userId);
   },
 
-  listExecutions(userId: string, teamId?: string): ControlPlaneExecution[] {
+  listExecutions(userId: string, teamId?: string, _workspaceId?: string): ControlPlaneExecution[] {
     return Array.from(executions.values())
       .filter((execution) => execution.userId === userId && (!teamId || execution.teamId === teamId))
       .sort((left, right) => left.requestedAt.localeCompare(right.requestedAt));
   },
 
-  listAgentExecutions(agentId: string, userId: string): ControlPlaneExecution[] {
+  listAgentExecutions(agentId: string, userId: string, _workspaceId?: string): ControlPlaneExecution[] {
     return Array.from(executions.values())
       .filter((execution) => execution.userId === userId && execution.agentId === agentId)
       .sort((left, right) => left.requestedAt.localeCompare(right.requestedAt));
@@ -880,7 +883,7 @@ export const controlPlaneStore = {
       .sort((left, right) => left.recordedAt.localeCompare(right.recordedAt));
   },
 
-  getTeamSpendSnapshot(teamId: string, userId: string): TeamSpendSnapshot | undefined {
+  getTeamSpendSnapshot(teamId: string, userId: string, _workspaceId?: string): TeamSpendSnapshot | undefined {
     const team = getTeamOwnedByUser(teamId, userId);
     if (!team) {
       return undefined;
@@ -889,6 +892,7 @@ export const controlPlaneStore = {
   },
 
   deployWorkflowAsTeam(input: {
+    workspaceId?: string;
     userId: string;
     template: WorkflowTemplate;
     teamName?: string;
@@ -976,6 +980,7 @@ export const controlPlaneStore = {
   },
 
   ensureRuntimeTeamForStep(input: {
+    workspaceId?: string;
     userId: string;
     step: WorkflowStep;
     teamName?: string;
@@ -1014,6 +1019,7 @@ export const controlPlaneStore = {
   },
 
   updateTeamLifecycle(input: {
+    workspaceId?: string;
     teamId: string;
     userId: string;
     action: ControlPlaneLifecycleAction;
@@ -1081,6 +1087,7 @@ export const controlPlaneStore = {
   },
 
   updateAgentSkills(input: {
+    workspaceId?: string;
     agentId: string;
     userId: string;
     operation: "assign" | "revoke";
@@ -1348,6 +1355,7 @@ export const controlPlaneStore = {
   },
 
   async startAgentExecution(input: {
+    workspaceId?: string;
     userId: string;
     actor: string;
     teamId: string;
@@ -1443,10 +1451,28 @@ export const controlPlaneStore = {
       createdTaskIds: task ? [task.id] : [],
     });
 
+    await recordControlPlaneAudit({
+      workspaceId: input.workspaceId,
+      userId: input.userId,
+      actorAgentId: agent.id,
+      category: "execution",
+      action: "execution_started",
+      target: { type: "execution", id: execution.id },
+      metadata: {
+        sourceRunId: input.sourceRunId,
+        teamId: team.id,
+        agentId: agent.id,
+        taskId: task?.id ?? null,
+        stepId: input.step.id,
+        stepName: input.step.name,
+      },
+    });
+
     return { execution, agent, task };
   },
 
-  finalizeAgentExecution(input: {
+  async finalizeAgentExecution(input: {
+    workspaceId?: string;
     executionId: string;
     userId: string;
     status: Exclude<ControlPlaneExecutionStatus, "queued" | "running">;
@@ -1460,7 +1486,7 @@ export const controlPlaneStore = {
       toolName?: string;
       metadata?: Record<string, unknown>;
     }>;
-  }): ControlPlaneExecution {
+  }): Promise<ControlPlaneExecution> {
     const execution = getExecutionOwnedByUser(input.executionId, input.userId);
     if (!execution) {
       throw new Error("execution_not_found");
@@ -1526,10 +1552,26 @@ export const controlPlaneStore = {
       completedAt: timestamp,
     });
 
+    await recordControlPlaneAudit({
+      workspaceId: input.workspaceId,
+      userId: input.userId,
+      actorAgentId: execution.agentId,
+      category: "execution",
+      action: `execution_${input.status}`,
+      target: { type: "execution", id: execution.id },
+      metadata: {
+        teamId: execution.teamId,
+        agentId: execution.agentId,
+        summary: input.summary ?? null,
+        costUsd: input.costUsd ?? null,
+      },
+    });
+
     return execution;
   },
 
   updateExecutionLifecycle(input: {
+    workspaceId?: string;
     executionId: string;
     userId: string;
     action: Extract<ControlPlaneLifecycleAction, "restart" | "stop">;

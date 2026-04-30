@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
 import handler from "./qa-preview-access";
 
 interface MockResponse {
@@ -30,11 +30,22 @@ function createResponse(): MockResponse {
 }
 
 describe("qa-preview-access handler", () => {
+  const originalNodeEnv = process.env.NODE_ENV;
+
   beforeEach(() => {
     vi.unstubAllEnvs();
     delete process.env.QA_PREVIEW_ACCESS_TOKEN;
     delete process.env.QA_PREVIEW_ACCESS_ALLOW_NON_PREVIEW;
     delete process.env.VERCEL_ENV;
+    process.env.NODE_ENV = "test";
+  });
+
+  afterAll(() => {
+    if (originalNodeEnv === undefined) {
+      delete process.env.NODE_ENV;
+    } else {
+      process.env.NODE_ENV = originalNodeEnv;
+    }
   });
 
   it("rejects non-POST methods", async () => {
@@ -81,5 +92,33 @@ describe("qa-preview-access handler", () => {
         name: "QA Preview User",
       },
     });
+  });
+
+  // ALT-2078 Phase 5: production-boot guard parity. The
+  // QA_PREVIEW_ACCESS_ALLOW_NON_PREVIEW override must be ignored when
+  // NODE_ENV is "production" so a stray preview override cannot relax the
+  // gate in a real production deployment.
+  it("ignores QA_PREVIEW_ACCESS_ALLOW_NON_PREVIEW when NODE_ENV is production", async () => {
+    process.env.NODE_ENV = "production";
+    process.env.VERCEL_ENV = "production";
+    process.env.QA_PREVIEW_ACCESS_TOKEN = "secret-token";
+    process.env.QA_PREVIEW_ACCESS_ALLOW_NON_PREVIEW = "true";
+    const res = createResponse();
+
+    await handler({ method: "POST", body: { token: "secret-token" } } as never, res as never);
+
+    expect(res.statusCode).toBe(403);
+  });
+
+  it("honors QA_PREVIEW_ACCESS_ALLOW_NON_PREVIEW outside production for QA smoke runs", async () => {
+    process.env.NODE_ENV = "test";
+    process.env.VERCEL_ENV = "development";
+    process.env.QA_PREVIEW_ACCESS_TOKEN = "secret-token";
+    process.env.QA_PREVIEW_ACCESS_ALLOW_NON_PREVIEW = "true";
+    const res = createResponse();
+
+    await handler({ method: "POST", body: { token: "secret-token" } } as never, res as never);
+
+    expect(res.statusCode).toBe(200);
   });
 });

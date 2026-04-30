@@ -25,6 +25,8 @@ describe("initializePersistence", () => {
     error: jest.fn(),
   };
 
+  const originalEnv = process.env;
+
   beforeEach(() => {
     mockCheckPostgresConnection.mockReset();
     mockIsPostgresConfigured.mockReset();
@@ -33,6 +35,13 @@ describe("initializePersistence", () => {
     logger.log.mockReset();
     logger.warn.mockReset();
     logger.error.mockReset();
+    process.env = { ...originalEnv, NODE_ENV: "test" };
+    delete process.env.QA_AUTH_BYPASS_ENABLED;
+    delete process.env.QA_PREVIEW_ACCESS_ALLOW_NON_PREVIEW;
+  });
+
+  afterAll(() => {
+    process.env = originalEnv;
   });
 
   it("skips initialization when postgres is not configured", async () => {
@@ -90,5 +99,20 @@ describe("initializePersistence", () => {
     await initializePersistence(logger);
 
     expect(logger.error).toHaveBeenCalledWith("[knowledge] Schema init failed:", "schema failure");
+  });
+
+  it("refuses to boot in production when a QA bypass flag is asserted (runs before postgres init)", async () => {
+    process.env.NODE_ENV = "production";
+    process.env.QA_AUTH_BYPASS_ENABLED = "true";
+    mockIsPostgresConfigured.mockReturnValue(true);
+    mockCheckPostgresConnection.mockResolvedValue(true);
+
+    await expect(initializePersistence(logger)).rejects.toThrow(/Refusing to boot/);
+
+    // Production-safety is the first thing we run, so postgres must be left untouched.
+    expect(mockIsPostgresConfigured).not.toHaveBeenCalled();
+    expect(mockCheckPostgresConnection).not.toHaveBeenCalled();
+    expect(mockEnsureSqlMigrationsApplied).not.toHaveBeenCalled();
+    expect(mockEnsureKnowledgeSchema).not.toHaveBeenCalled();
   });
 });

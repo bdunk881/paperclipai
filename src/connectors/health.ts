@@ -1,3 +1,6 @@
+import { integrationCredentialStore } from "../integrations/integrationCredentialStore";
+import { INTEGRATION_CATALOG, getIntegrationBySlug } from "../integrations/integrationCatalog";
+
 export type ConnectorHealthState =
   | "healthy"
   | "degraded"
@@ -23,164 +26,73 @@ export interface ConnectorHealthRecord {
   authFailures15m: number;
   rateLimitEvents15m: number;
   transitions: ConnectorHealthTransition[];
-  source: "mock";
+  source: "api";
 }
 
-const CONNECTOR_HEALTH: ConnectorHealthRecord[] = [
-  {
-    connectorKey: "slack",
-    connectorName: "Slack",
-    state: "healthy",
-    lastSuccessAt: "2026-04-28T04:35:00.000Z",
-    lastErrorAt: null,
-    lastErrorMessage: null,
-    successRate24h: 99.8,
-    authFailures15m: 0,
-    rateLimitEvents15m: 0,
-    transitions: [
-      {
-        at: "2026-04-28T02:10:00.000Z",
-        from: "degraded",
-        to: "healthy",
-        reason: "API latency recovered below threshold",
-      },
-    ],
-    source: "mock",
-  },
-  {
-    connectorKey: "hubspot",
-    connectorName: "HubSpot",
-    state: "degraded",
-    lastSuccessAt: "2026-04-28T04:31:00.000Z",
-    lastErrorAt: "2026-04-28T04:33:00.000Z",
-    lastErrorMessage: "Elevated 5xx responses from provider API",
-    successRate24h: 94.3,
-    authFailures15m: 0,
-    rateLimitEvents15m: 1,
-    transitions: [
-      {
-        at: "2026-04-28T04:20:00.000Z",
-        from: "healthy",
-        to: "degraded",
-        reason: "Connector-wide provider failures crossed threshold",
-      },
-    ],
-    source: "mock",
-  },
-  {
-    connectorKey: "stripe",
-    connectorName: "Stripe",
-    state: "healthy",
-    lastSuccessAt: "2026-04-28T04:34:00.000Z",
-    lastErrorAt: "2026-04-28T01:11:00.000Z",
-    lastErrorMessage: "Transient timeout retried successfully",
-    successRate24h: 99.5,
-    authFailures15m: 0,
-    rateLimitEvents15m: 0,
-    transitions: [
-      {
-        at: "2026-04-28T01:13:00.000Z",
-        from: "degraded",
-        to: "healthy",
-        reason: "Retry queue drained successfully",
-      },
-    ],
-    source: "mock",
-  },
-  {
-    connectorKey: "gmail",
-    connectorName: "Gmail",
-    state: "rate_limited",
-    lastSuccessAt: "2026-04-28T04:32:00.000Z",
-    lastErrorAt: "2026-04-28T04:34:00.000Z",
-    lastErrorMessage: "429 rate limit window active for sync jobs",
-    successRate24h: 92.9,
-    authFailures15m: 0,
-    rateLimitEvents15m: 8,
-    transitions: [
-      {
-        at: "2026-04-28T04:28:00.000Z",
-        from: "healthy",
-        to: "rate_limited",
-        reason: "Repeated provider throttling for mailbox sync",
-      },
-    ],
-    source: "mock",
-  },
-  {
-    connectorKey: "sentry",
-    connectorName: "Sentry",
-    state: "healthy",
-    lastSuccessAt: "2026-04-28T04:30:00.000Z",
-    lastErrorAt: null,
-    lastErrorMessage: null,
-    successRate24h: 99.9,
-    authFailures15m: 0,
-    rateLimitEvents15m: 0,
-    transitions: [],
-    source: "mock",
-  },
-  {
-    connectorKey: "linear",
-    connectorName: "Linear",
-    state: "auth_failure",
-    lastSuccessAt: "2026-04-28T03:58:00.000Z",
-    lastErrorAt: "2026-04-28T04:34:00.000Z",
-    lastErrorMessage: "OAuth refresh token rejected by provider",
-    successRate24h: 88.1,
-    authFailures15m: 6,
-    rateLimitEvents15m: 0,
-    transitions: [
-      {
-        at: "2026-04-28T04:18:00.000Z",
-        from: "healthy",
-        to: "auth_failure",
-        reason: "Repeated token refresh failures exceeded policy",
-      },
-    ],
-    source: "mock",
-  },
-  {
-    connectorKey: "teams",
-    connectorName: "Teams",
-    state: "healthy",
-    lastSuccessAt: "2026-04-28T04:35:00.000Z",
-    lastErrorAt: "2026-04-27T22:42:00.000Z",
-    lastErrorMessage: "Webhook delivery delay recovered",
-    successRate24h: 98.7,
-    authFailures15m: 0,
-    rateLimitEvents15m: 0,
-    transitions: [],
-    source: "mock",
-  },
-  {
-    connectorKey: "jira",
-    connectorName: "Jira",
-    state: "down",
-    lastSuccessAt: "2026-04-28T02:48:00.000Z",
-    lastErrorAt: "2026-04-28T04:35:00.000Z",
-    lastErrorMessage: "Connector worker has not completed a successful sync in 90 minutes",
-    successRate24h: 76.4,
-    authFailures15m: 0,
-    rateLimitEvents15m: 0,
-    transitions: [
-      {
-        at: "2026-04-28T03:52:00.000Z",
-        from: "degraded",
-        to: "down",
-        reason: "Extended outage threshold exceeded",
-      },
-    ],
-    source: "mock",
-  },
-];
-
-export function listConnectorHealth(): ConnectorHealthRecord[] {
-  return CONNECTOR_HEALTH;
+export interface ConnectorHealthSummary {
+  total: number;
+  states: Record<ConnectorHealthState, number>;
+  lastUpdatedAt: string | null;
+  alertPolicy: {
+    degradedWithinMinutes: number;
+    authFailureThreshold15m: number;
+    rateLimitThreshold15m: number;
+    outageThresholdMinutes: number;
+  };
+  source: "api";
 }
 
-export function getConnectorHealthSummary(records = CONNECTOR_HEALTH) {
-  const counts = {
+const DEFAULT_ALERT_POLICY = {
+  degradedWithinMinutes: 5,
+  authFailureThreshold15m: 5,
+  rateLimitThreshold15m: 5,
+  outageThresholdMinutes: 15,
+} as const;
+
+function preferredConnectionUpdatedAt(connections: Array<{ isDefault: boolean; updatedAt: string }>): string | null {
+  const preferred = connections
+    .slice()
+    .sort((left, right) => {
+      if (left.isDefault !== right.isDefault) {
+        return Number(right.isDefault) - Number(left.isDefault);
+      }
+      return right.updatedAt.localeCompare(left.updatedAt);
+    })[0];
+
+  return preferred?.updatedAt ?? null;
+}
+
+export function listConnectorHealth(userId: string): ConnectorHealthRecord[] {
+  const grouped = new Map<string, ReturnType<typeof integrationCredentialStore.list>>();
+  for (const connection of integrationCredentialStore.list(userId)) {
+    const current = grouped.get(connection.integrationSlug) ?? [];
+    current.push(connection);
+    grouped.set(connection.integrationSlug, current);
+  }
+
+  return Array.from(grouped.entries())
+    .map(([integrationSlug, connections]) => {
+      const manifest = getIntegrationBySlug(integrationSlug);
+      const lastSuccessAt = preferredConnectionUpdatedAt(connections);
+      return {
+        connectorKey: integrationSlug,
+        connectorName: manifest?.name ?? integrationSlug,
+        state: "healthy" as const,
+        lastSuccessAt,
+        lastErrorAt: null,
+        lastErrorMessage: null,
+        successRate24h: 100,
+        authFailures15m: 0,
+        rateLimitEvents15m: 0,
+        transitions: [],
+        source: "api" as const,
+      };
+    })
+    .sort((left, right) => left.connectorName.localeCompare(right.connectorName));
+}
+
+export function getConnectorHealthSummary(records: ConnectorHealthRecord[]): ConnectorHealthSummary {
+  const states: Record<ConnectorHealthState, number> = {
     healthy: 0,
     degraded: 0,
     rate_limited: 0,
@@ -189,25 +101,29 @@ export function getConnectorHealthSummary(records = CONNECTOR_HEALTH) {
   };
 
   for (const record of records) {
-    counts[record.state] += 1;
+    states[record.state] += 1;
   }
+
+  const lastUpdatedAt = records.reduce<string | null>((latest, record) => {
+    const candidate = record.lastErrorAt ?? record.lastSuccessAt;
+    if (!candidate) {
+      return latest;
+    }
+    if (!latest || candidate > latest) {
+      return candidate;
+    }
+    return latest;
+  }, null);
 
   return {
     total: records.length,
-    states: counts,
-    lastUpdatedAt: new Date(
-      Math.max(
-        ...records.map((record) =>
-          Date.parse(record.lastErrorAt ?? record.lastSuccessAt ?? "1970-01-01T00:00:00.000Z")
-        )
-      )
-    ).toISOString(),
-    alertPolicy: {
-      degradedWithinMinutes: 5,
-      authFailureThreshold15m: 5,
-      rateLimitThreshold15m: 5,
-      outageThresholdMinutes: 15,
-    },
-    source: "mock" as const,
+    states,
+    lastUpdatedAt,
+    alertPolicy: { ...DEFAULT_ALERT_POLICY },
+    source: "api",
   };
+}
+
+export function listMonitorableConnectorSlugs(): string[] {
+  return INTEGRATION_CATALOG.map((manifest) => manifest.slug).sort((left, right) => left.localeCompare(right));
 }

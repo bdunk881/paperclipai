@@ -1317,8 +1317,14 @@ app.get("/health", async (_req, res) => {
   });
 });
 
-app.get("/api/connectors/health", (_req, res) => {
-  const connectors = listConnectorHealth();
+app.get("/api/connectors/health", requireAuth, (req: AuthenticatedRequest, res) => {
+  const userId = req.auth?.sub;
+  if (!userId) {
+    res.status(401).json({ error: "Authenticated user required" });
+    return;
+  }
+
+  const connectors = listConnectorHealth(userId);
   res.json({
     connectors,
     summary: getConnectorHealthSummary(connectors),

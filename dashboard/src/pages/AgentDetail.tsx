@@ -1,10 +1,30 @@
+import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { ArrowLeft, Rocket, ShieldCheck, PlugZap } from "lucide-react";
-import { getAgentTemplate } from "../data/agentMarketplaceData";
+import { ArrowLeft, Bot, Rocket, ShieldCheck } from "lucide-react";
+import { getAgentCatalogTemplate, type AgentCatalogTemplate } from "../api/agentCatalog";
+import { useAuth } from "../context/AuthContext";
 
 export default function AgentDetail() {
   const params = useParams();
-  const template = params.templateId ? getAgentTemplate(params.templateId) : null;
+  const { getAccessToken } = useAuth();
+  const [template, setTemplate] = useState<AgentCatalogTemplate | null | undefined>(undefined);
+
+  useEffect(() => {
+    void (async () => {
+      const accessToken = await getAccessToken();
+      if (!accessToken || !params.templateId) {
+        setTemplate(null);
+        return;
+      }
+      setTemplate(await getAgentCatalogTemplate(params.templateId, accessToken));
+    })();
+  }, [getAccessToken, params.templateId]);
+
+  if (template === undefined) {
+    return (
+      <div className="p-8 text-sm text-gray-500">Loading agent template...</div>
+    );
+  }
 
   if (!template) {
     return (
@@ -32,12 +52,11 @@ export default function AgentDetail() {
               <h1 className="text-2xl font-bold text-gray-900">{template.name}</h1>
               <p className="text-sm text-gray-500 mt-1">{template.category} template</p>
             </div>
-            <div className="text-left md:text-right">
+            {template.defaultModel ? (
               <span className="inline-flex rounded-full bg-blue-50 text-blue-700 px-2.5 py-1 text-xs font-medium">
-                {template.pricingTier}
+                {template.defaultModel}
               </span>
-              <p className="text-lg font-semibold text-gray-900 mt-2">${template.monthlyPriceUsd}/mo</p>
-            </div>
+            ) : null}
           </div>
 
           <p className="mt-5 text-gray-700 leading-relaxed">{template.description}</p>
@@ -46,30 +65,21 @@ export default function AgentDetail() {
             <section className="rounded-lg border border-gray-200 p-4">
               <h2 className="text-sm font-semibold text-gray-900 flex items-center gap-2">
                 <ShieldCheck size={16} className="text-gray-500" />
-                Capabilities
+                Default Skills
               </h2>
               <ul className="mt-3 space-y-2 text-sm text-gray-700">
-                {template.capabilities.map((capability) => (
-                  <li key={capability}>{capability}</li>
+                {template.skills.map((skill) => (
+                  <li key={skill}>{skill}</li>
                 ))}
               </ul>
             </section>
 
             <section className="rounded-lg border border-gray-200 p-4">
               <h2 className="text-sm font-semibold text-gray-900 flex items-center gap-2">
-                <PlugZap size={16} className="text-gray-500" />
-                Required integrations
+                <Bot size={16} className="text-gray-500" />
+                Default Instructions
               </h2>
-              <ul className="mt-3 space-y-2 text-sm text-gray-700">
-                {template.requiredIntegrations.map((integration) => (
-                  <li key={integration}>{integration}</li>
-                ))}
-              </ul>
-              {template.optionalIntegrations.length > 0 ? (
-                <p className="text-xs text-gray-500 mt-3">
-                  Optional: {template.optionalIntegrations.join(", ")}
-                </p>
-              ) : null}
+              <p className="mt-3 text-sm leading-relaxed text-gray-700">{template.defaultInstructions}</p>
             </section>
           </div>
 

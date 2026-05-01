@@ -56,7 +56,7 @@ export function FAQ({ items }: { items?: FaqItem[] }) {
   const faqItems = items ?? FALLBACK_FAQ_ITEMS;
 
   return (
-    <section id="faq" className="bg-white py-24 sm:py-32">
+    <section id="faq" className="bg-slate-950 py-24 sm:py-32">
       <div className="mx-auto max-w-4xl px-6 lg:px-8">
         <div className="mx-auto max-w-2xl text-center">
           <motion.div
@@ -65,10 +65,10 @@ export function FAQ({ items }: { items?: FaqItem[] }) {
             viewport={{ once: true }}
             transition={{ duration: 0.5 }}
           >
-            <h2 className="text-base font-semibold leading-7 text-indigo-600">
+            <h2 className="text-base font-semibold leading-7 text-brand-teal">
               FAQ
             </h2>
-            <p className="mt-2 text-3xl font-bold tracking-tight text-gray-900 sm:text-4xl">
+            <p className="mt-2 text-3xl font-bold tracking-tight text-white sm:text-4xl">
               Common questions
             </p>
           </motion.div>
@@ -82,14 +82,14 @@ export function FAQ({ items }: { items?: FaqItem[] }) {
               whileInView={{ opacity: 1, y: 0 }}
               viewport={{ once: true }}
               transition={{ duration: 0.4, delay: i * 0.05 }}
-              className="rounded-xl border border-gray-200 overflow-hidden"
+              className="rounded-xl border border-white/10 overflow-hidden bg-white/5"
             >
               <button
                 onClick={() => setOpen(open === i ? null : i)}
-                className="flex w-full items-center justify-between px-6 py-5 text-left text-gray-900 hover:bg-gray-50 transition-colors"
+                className="flex w-full items-center justify-between px-6 py-5 text-left text-white hover:bg-white/10 transition-colors"
               >
                 <span className="font-semibold">{item.question}</span>
-                <span className="ml-6 text-indigo-600 text-xl">
+                <span className="ml-6 text-brand-teal text-xl">
                   {open === i ? "\u2212" : "+"}
                 </span>
               </button>
@@ -101,7 +101,7 @@ export function FAQ({ items }: { items?: FaqItem[] }) {
                     exit={{ height: 0, opacity: 0 }}
                     transition={{ duration: 0.2 }}
                   >
-                    <div className="px-6 pb-5 text-gray-600 leading-7">
+                    <div className="px-6 pb-5 text-slate-400 leading-7">
                       {item.answer}
                     </div>
                   </motion.div>

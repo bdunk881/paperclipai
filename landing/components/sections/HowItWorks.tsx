@@ -29,7 +29,7 @@ const STEPS = [
 
 export function HowItWorks() {
   return (
-    <section id="how-it-works" className="bg-white py-24 sm:py-32">
+    <section id="how-it-works" className="bg-obsidian-dark py-24 sm:py-32">
       <div className="mx-auto max-w-7xl px-6 lg:px-8">
         <div className="mx-auto max-w-2xl text-center">
           <motion.div
@@ -38,10 +38,10 @@ export function HowItWorks() {
             viewport={{ once: true }}
             transition={{ duration: 0.5 }}
           >
-            <h2 className="text-base font-semibold leading-7 text-indigo-600">
+            <h2 className="text-base font-semibold leading-7 text-brand-teal">
               How It Works
             </h2>
-            <p className="mt-2 text-3xl font-bold tracking-tight text-gray-900 sm:text-4xl">
+            <p className="mt-2 text-3xl font-bold tracking-tight text-white sm:text-4xl">
               Three steps to an autonomous business
             </p>
           </motion.div>
@@ -56,18 +56,21 @@ export function HowItWorks() {
                 whileInView={{ opacity: 1, y: 0 }}
                 viewport={{ once: true }}
                 transition={{ duration: 0.5, delay: i * 0.15 }}
-                className="relative flex flex-col rounded-2xl border border-gray-200 bg-white p-8 shadow-sm"
+                className="relative flex flex-col rounded-2xl border border-white/10 bg-slate-900/50 p-8 shadow-xl backdrop-blur-sm"
               >
                 <div className="flex items-center gap-4 mb-6">
                   <span className="text-4xl">{step.icon}</span>
-                  <span className="text-5xl font-bold text-indigo-100">
+                  <span className="text-5xl font-bold text-white/5">
                     {step.step}
                   </span>
                 </div>
-                <h3 className="text-xl font-semibold text-gray-900">
+                <h3 className="text-xl font-semibold text-white">
                   {step.title}
                 </h3>
-                <p className="mt-3 text-gray-600 leading-7">{step.description}</p>
+                <p className="mt-3 text-slate-400 leading-7">{step.description}</p>
+                
+                {/* Visual accent */}
+                <div className="absolute bottom-0 left-0 h-1 w-0 bg-brand-teal transition-all group-hover:w-full" />
               </motion.div>
             ))}
           </div>

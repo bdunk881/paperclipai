@@ -101,21 +101,32 @@ export default function AgentCatalog() {
             {filtered.map((template) => (
               <article
                 key={template.id}
-                className="bg-white rounded-xl border border-gray-200 p-5 hover:shadow-sm transition"
+                className="bg-white rounded-xl border border-gray-200 p-5 hover:shadow-md transition group"
               >
-                <div className="flex items-start justify-between gap-2">
-                  <div>
-                    <h2 className="font-semibold text-gray-900">{template.name}</h2>
+                <div className="flex items-start justify-between gap-4">
+                  <div className="flex-1">
+                    {template.tileIcon ? (
+                      <div className="w-12 h-12 mb-4 rounded-lg bg-gray-50 flex items-center justify-center group-hover:scale-110 transition-transform duration-300">
+                        <img
+                          src={new URL(`../assets/marketplace/${template.tileIcon}`, import.meta.url).href}
+                          alt=""
+                          className="w-10 h-10 object-contain"
+                        />
+                      </div>
+                    ) : (
+                      <div className="w-12 h-12 mb-4 rounded-lg bg-gray-50 flex items-center justify-center">
+                        <Bot size={24} className="text-gray-400" />
+                      </div>
+                    )}
+                    <h2 className="font-semibold text-gray-900 text-lg">{template.name}</h2>
                     <p className="text-xs text-gray-500 mt-1 flex items-center gap-1">
                       <Tag size={12} />
                       {template.category}
                     </p>
                   </div>
-                  {template.defaultModel ? (
-                    <span className="rounded-full bg-blue-50 text-blue-700 px-2 py-0.5 text-xs font-medium">
-                      {template.defaultModel}
-                    </span>
-                  ) : null}
+                  <span className="rounded-full bg-brand-50 text-brand-700 px-2.5 py-0.5 text-xs font-semibold">
+                    {template.pricingTier}
+                  </span>
                 </div>
 
                 <p className="mt-3 text-sm text-gray-600 leading-relaxed">{template.description}</p>

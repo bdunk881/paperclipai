@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { type ElementType, useMemo, useState } from "react";
 import { Outlet, NavLink, useLocation, useNavigate } from "react-router-dom";
 import {
   LayoutDashboard,
@@ -7,7 +7,6 @@ import {
   Activity,
   History,
   LogOut,
-  Zap,
   Cpu,
   Settings,
   DollarSign,
@@ -28,13 +27,14 @@ import {
   Sun,
   Siren,
 } from "lucide-react";
-import { useAuth } from "../context/AuthContext";
 import clsx from "clsx";
+import logoLockup from "../assets/logo/lockup.svg";
+import { useAuth } from "../context/AuthContext";
 import { useTheme } from "../hooks/useTheme";
 
 type NavItem = {
   to: string;
-  icon: React.ElementType;
+  icon: ElementType;
   label: string;
   end?: boolean;
 };
@@ -138,7 +138,7 @@ export default function Layout() {
           </div>
         ))}
 
-        <div className="mt-2 border-t border-gray-200 dark:border-surface-700 pt-3">
+        <div className="mt-2 border-t border-gray-200 pt-3 dark:border-surface-700">
           <NavLink
             to="/settings"
             end
@@ -179,39 +179,36 @@ export default function Layout() {
   return (
     <div className="relative flex h-screen bg-surface-50 text-gray-900 transition-colors duration-200 dark:bg-surface-950 dark:text-gray-100">
       {!isBuilderPopout && (
-      <header className="fixed inset-x-0 top-0 z-40 flex items-center justify-between border-b border-gray-200 bg-white px-4 py-3 transition-colors duration-200 lg:hidden dark:border-surface-800 dark:bg-surface-900">
-        <button
-          onClick={() => setMobileNavOpen((prev) => !prev)}
-          className="rounded-lg border border-gray-200 p-2 text-gray-700 transition-colors hover:bg-gray-50 dark:border-surface-700 dark:text-gray-200 dark:hover:bg-surface-800"
-          aria-label="Toggle navigation"
-        >
-          {mobileNavOpen ? <X size={18} /> : <Menu size={18} />}
-        </button>
-        <div className="flex items-center gap-2">
-          <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-brand-600">
-            <Zap size={14} className="text-white" />
+        <header className="fixed inset-x-0 top-0 z-40 flex items-center justify-between border-b border-gray-200 bg-white px-4 py-3 transition-colors duration-200 lg:hidden dark:border-surface-800 dark:bg-surface-900">
+          <button
+            onClick={() => setMobileNavOpen((prev) => !prev)}
+            className="rounded-lg border border-gray-200 p-2 text-gray-700 transition-colors hover:bg-gray-50 dark:border-surface-700 dark:text-gray-200 dark:hover:bg-surface-800"
+            aria-label="Toggle navigation"
+          >
+            {mobileNavOpen ? <X size={18} /> : <Menu size={18} />}
+          </button>
+          <div className="flex items-center gap-2">
+            <img src={logoLockup} alt="AutoFlow" className="h-8 w-auto object-contain text-gray-900 dark:text-gray-100" />
           </div>
-          <span className="text-sm font-bold tracking-tight text-gray-900 dark:text-gray-100">AutoFlow</span>
-        </div>
-        <div className="flex items-center gap-2">
-          <button
-            onClick={toggleTheme}
-            className="rounded-lg border border-gray-200 p-2 text-gray-600 transition-colors hover:bg-gray-50 dark:border-surface-700 dark:text-gray-200 dark:hover:bg-surface-800"
-            title={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
-            aria-label={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
-          >
-            {theme === "dark" ? <Sun size={16} /> : <Moon size={16} />}
-          </button>
-          <button
-            onClick={handleLogout}
-            className="rounded-lg border border-gray-200 p-2 text-gray-600 transition-colors hover:bg-gray-50 dark:border-surface-700 dark:text-gray-200 dark:hover:bg-surface-800"
-            title="Sign out"
-            aria-label="Sign out"
-          >
-            <LogOut size={16} />
-          </button>
-        </div>
-      </header>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={toggleTheme}
+              className="rounded-lg border border-gray-200 p-2 text-gray-600 transition-colors hover:bg-gray-50 dark:border-surface-700 dark:text-gray-200 dark:hover:bg-surface-800"
+              title={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
+              aria-label={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
+            >
+              {theme === "dark" ? <Sun size={16} /> : <Moon size={16} />}
+            </button>
+            <button
+              onClick={handleLogout}
+              className="rounded-lg border border-gray-200 p-2 text-gray-600 transition-colors hover:bg-gray-50 dark:border-surface-700 dark:text-gray-200 dark:hover:bg-surface-800"
+              title="Sign out"
+              aria-label="Sign out"
+            >
+              <LogOut size={16} />
+            </button>
+          </div>
+        </header>
       )}
 
       {!isBuilderPopout && mobileNavOpen && (
@@ -223,56 +220,50 @@ export default function Layout() {
       )}
 
       {!isBuilderPopout && (
-      <aside
-        className={clsx(
-          "fixed bottom-0 left-0 top-0 z-40 flex w-72 flex-col border-r border-gray-200 bg-white text-gray-900 transition-transform lg:relative lg:w-60 lg:translate-x-0 dark:border-surface-800 dark:bg-surface-900 dark:text-gray-100",
-          mobileNavOpen ? "translate-x-0" : "-translate-x-full"
-        )}
-      >
-        {/* Logo */}
-        <div className="flex items-center gap-2 border-b border-gray-200 px-5 py-5 dark:border-surface-800">
-          <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-brand-600">
-            <Zap size={16} className="text-white" />
+        <aside
+          className={clsx(
+            "fixed bottom-0 left-0 top-0 z-40 flex w-72 flex-col border-r border-gray-200 bg-white text-gray-900 transition-transform lg:relative lg:w-60 lg:translate-x-0 dark:border-surface-800 dark:bg-surface-900 dark:text-gray-100",
+            mobileNavOpen ? "translate-x-0" : "-translate-x-full"
+          )}
+        >
+          <div className="flex items-center gap-2 border-b border-gray-200 px-5 py-5 dark:border-surface-800">
+            <img src={logoLockup} alt="AutoFlow" className="h-9 w-auto object-contain text-gray-900 dark:text-gray-100" />
           </div>
-          <span className="font-bold text-lg tracking-tight">AutoFlow</span>
-        </div>
 
-        {/* Nav links */}
-        <nav className="flex-1 px-3 py-4 space-y-1">
-          <NavItems nested />
-        </nav>
+          <nav className="flex-1 space-y-1 px-3 py-4">
+            <NavItems nested />
+          </nav>
 
-        {/* User + logout */}
-        <div className="border-t border-gray-200 px-4 py-4 dark:border-surface-800">
-          <div className="flex items-center gap-3">
-            <div className="flex items-center justify-center w-8 h-8 rounded-full bg-brand-600 text-sm font-bold uppercase text-white">
-              {user?.name?.[0] ?? "U"}
+          <div className="border-t border-gray-200 px-4 py-4 dark:border-surface-800">
+            <div className="flex items-center gap-3">
+              <div className="flex h-8 w-8 items-center justify-center rounded-full bg-brand-600 text-sm font-bold uppercase text-white">
+                {user?.name?.[0] ?? "U"}
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-sm font-medium">{user?.name}</p>
+                <p className="truncate text-xs text-gray-500 dark:text-surface-400">{user?.email}</p>
+              </div>
+              <button
+                onClick={toggleTheme}
+                className="rounded-lg p-1.5 text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-900 dark:text-surface-400 dark:hover:bg-surface-800 dark:hover:text-white"
+                title={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
+                aria-label={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
+              >
+                {theme === "dark" ? <Sun size={16} /> : <Moon size={16} />}
+              </button>
+              <button
+                onClick={handleLogout}
+                className="rounded-lg p-1.5 text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-900 dark:text-surface-400 dark:hover:bg-surface-800 dark:hover:text-white"
+                title="Sign out"
+                aria-label="Sign out"
+              >
+                <LogOut size={16} />
+              </button>
             </div>
-            <div className="flex-1 min-w-0">
-              <p className="text-sm font-medium truncate">{user?.name}</p>
-              <p className="truncate text-xs text-gray-500 dark:text-surface-400">{user?.email}</p>
-            </div>
-            <button
-              onClick={toggleTheme}
-              className="rounded-lg p-1.5 text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-900 dark:text-surface-400 dark:hover:bg-surface-800 dark:hover:text-white"
-              title={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
-              aria-label={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
-            >
-              {theme === "dark" ? <Sun size={16} /> : <Moon size={16} />}
-            </button>
-            <button
-              onClick={handleLogout}
-              className="rounded-lg p-1.5 text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-900 dark:text-surface-400 dark:hover:bg-surface-800 dark:hover:text-white"
-              title="Sign out"
-            >
-              <LogOut size={16} />
-            </button>
           </div>
-        </div>
-      </aside>
+        </aside>
       )}
 
-      {/* Main content */}
       <main
         className={clsx(
           "flex-1 overflow-y-auto bg-surface-50 transition-colors duration-200 dark:bg-surface-950",

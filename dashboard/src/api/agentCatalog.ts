@@ -11,6 +11,8 @@ export interface AgentCatalogTemplate {
   defaultInstructions: string;
   skills: string[];
   suggestedBudgetMonthlyUsd: number;
+  tileIcon?: string;
+  pricingTier?: string;
 }
 
 interface RoleTemplateResponse {

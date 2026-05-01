@@ -1,0 +1,35 @@
+<svg width="400" height="300" viewBox="0 0 400 300" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg_grad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#1e293b;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#0f172a;stop-opacity:1" />
+    </linearGradient>
+  </defs>
+  <!-- Background -->
+  <rect width="400" height="300" rx="12" fill="url(#bg_grad)" />
+  <rect x="0.5" y="0.5" width="399" height="299" rx="11.5" fill="none" stroke="#334155" stroke-width="1"/>
+  
+  <!-- Logo Box -->
+  <rect x="24" y="24" width="48" height="48" rx="8" fill="#1e293b" stroke="#334155" stroke-width="1"/>
+  <text x="48" y="55" font-family="Inter, sans-serif" font-size="24" fill="#6366f1" text-anchor="middle" font-weight="bold">G</text>
+
+  <!-- Skill Name -->
+  <text x="88" y="52" font-family="Inter, sans-serif" font-weight="600" font-size="18" fill="white">Campaign Optimizer</text>
+  <text x="88" y="72" font-family="Inter, sans-serif" font-size="12" fill="#6366f1" font-weight="500">MARKETING</text>
+
+  <!-- Description -->
+  <foreignObject x="24" y="100" width="352" height="100">
+    <div xmlns="http://www.w3.org/1999/xhtml" style="font-family:Inter, sans-serif; font-size:14px; color:#94a3b8; line-height:1.5;">
+      Monitors performance and proposes budget shifts.
+    </div>
+  </foreignObject>
+
+  <!-- Footer -->
+  <line x1="24" y1="240" x2="376" y2="240" stroke="#1e293b" stroke-width="1" />
+  
+  <circle cx="32" cy="268" r="4" fill="#14b8a6"/>
+  <text x="44" y="272" font-family="Inter, sans-serif" font-size="12" fill="#94a3b8">Ready to deploy</text>
+  
+  <rect x="280" y="258" width="96" height="20" rx="10" fill="#6366f1" fill-opacity="0.1"/>
+  <text x="328" y="272" font-family="Inter, sans-serif" font-weight="600" font-size="9" fill="#6366f1" text-anchor="middle">MCP VERIFIED</text>
+</svg>

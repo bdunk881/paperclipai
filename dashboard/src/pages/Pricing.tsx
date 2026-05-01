@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Check, Zap } from "lucide-react";
+import { Check, Zap, Sparkles } from "lucide-react";
 
 const TIERS = [
   {
@@ -143,20 +143,20 @@ export default function Pricing() {
   }
 
   return (
-    <div className="min-h-full bg-gray-50">
+    <div className="min-h-full bg-surface-50 dark:bg-surface-950 transition-colors duration-200">
       {/* Header */}
-      <div className="bg-white border-b border-gray-200 px-8 py-10 text-center">
-        <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-blue-50 text-blue-600 text-xs font-medium mb-4">
+      <div className="bg-white dark:bg-surface-900 border-b border-gray-200 dark:border-surface-800 px-8 py-10 text-center">
+        <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-brand-50 dark:bg-brand-500/10 text-brand-600 dark:text-brand-300 text-xs font-medium mb-4">
           <Zap size={12} />
           Unlimited Executions on Every Plan
         </div>
-        <h1 className="text-3xl font-bold text-gray-900 mb-3">Simple, Flat-Fee Pricing</h1>
-        <p className="text-gray-500 max-w-xl mx-auto">
+        <h1 className="text-3xl font-bold text-gray-900 dark:text-white mb-3 tracking-tight">Simple, Flat-Fee Pricing</h1>
+        <p className="text-gray-500 dark:text-gray-400 max-w-xl mx-auto text-sm">
           No per-execution charges. No usage limits. Pay a flat monthly fee and run
           as many workflows as you need.
         </p>
         {error && (
-          <div className="mt-4 inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-red-50 border border-red-200 text-red-700 text-xs">
+          <div className="mt-4 inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-red-50 dark:bg-red-950/20 border border-red-200 dark:border-red-900/50 text-red-700 dark:text-red-400 text-xs">
             {error}
           </div>
         )}
@@ -168,30 +168,30 @@ export default function Pricing() {
           {TIERS.map((tier) => (
             <div
               key={tier.name}
-              className={`relative rounded-2xl border-2 bg-white p-8 flex flex-col ${
+              className={`relative rounded-2xl border-2 p-8 flex flex-col transition-all duration-200 ${
                 tier.highlight
-                  ? "border-blue-500 shadow-xl shadow-blue-100"
-                  : "border-gray-200"
+                  ? "border-brand-500 bg-white dark:bg-surface-900 shadow-xl shadow-brand-500/10 dark:shadow-brand-500/5 scale-105 z-10"
+                  : "border-gray-200 dark:border-surface-800 bg-white dark:bg-surface-900 shadow-sm"
               }`}
             >
               {tier.badge && (
                 <div className="absolute -top-3.5 left-1/2 -translate-x-1/2">
-                  <span className="px-3 py-1 rounded-full bg-blue-600 text-white text-xs font-semibold">
+                  <span className="px-3 py-1 rounded-full bg-brand-600 text-white text-[10px] font-bold uppercase tracking-wider">
                     {tier.badge}
                   </span>
                 </div>
               )}
 
               <div className="mb-6">
-                <h2 className="text-xl font-bold text-gray-900">{tier.name}</h2>
-                <p className="text-gray-500 text-sm mt-1">{tier.description}</p>
+                <h2 className="text-xl font-bold text-gray-900 dark:text-white">{tier.name}</h2>
+                <p className="text-gray-500 dark:text-gray-400 text-sm mt-1">{tier.description}</p>
                 <div className="mt-4 flex items-end gap-1">
-                  <span className="text-4xl font-extrabold text-gray-900">{tier.price}</span>
+                  <span className="text-4xl font-extrabold text-gray-900 dark:text-white">{tier.price}</span>
                   {tier.period && (
-                    <span className="text-gray-400 text-sm mb-1">{tier.period}</span>
+                    <span className="text-gray-400 dark:text-gray-500 text-sm mb-1">{tier.period}</span>
                   )}
                 </div>
-                <div className="mt-1 text-xs text-green-600 font-medium">
+                <div className="mt-1 text-xs text-accent-teal font-medium uppercase tracking-wide">
                   Unlimited executions included
                 </div>
               </div>
@@ -199,10 +199,10 @@ export default function Pricing() {
               <button
                 disabled={loading === tier.tierId}
                 onClick={() => handleCta(tier.tierId)}
-                className={`w-full py-2.5 rounded-xl text-sm font-semibold transition mb-8 disabled:opacity-60 disabled:cursor-wait ${
+                className={`w-full py-2.5 rounded-xl text-sm font-bold transition-all mb-8 disabled:opacity-60 disabled:cursor-wait ${
                   tier.highlight
-                    ? "bg-blue-600 hover:bg-blue-700 text-white"
-                    : "border border-gray-300 text-gray-700 hover:bg-gray-50"
+                    ? "bg-brand-600 hover:bg-brand-700 text-white shadow-lg shadow-brand-600/20"
+                    : "border border-gray-300 dark:border-surface-700 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-surface-800"
                 }`}
               >
                 {loading === tier.tierId ? "Redirecting…" : tier.cta}
@@ -210,14 +210,14 @@ export default function Pricing() {
 
               <ul className="space-y-3 flex-1">
                 {tier.features.map((f) => (
-                  <li key={f} className="flex items-start gap-2.5 text-sm text-gray-700">
-                    <Check size={15} className="text-green-500 mt-0.5 shrink-0" />
+                  <li key={f} className="flex items-start gap-2.5 text-sm text-gray-700 dark:text-gray-300">
+                    <Check size={15} className="text-accent-teal mt-0.5 shrink-0" />
                     {f}
                   </li>
                 ))}
                 {tier.notIncluded.map((f) => (
-                  <li key={f} className="flex items-start gap-2.5 text-sm text-gray-400 line-through">
-                    <span className="w-3.5 h-3.5 mt-0.5 shrink-0 rounded-full border border-gray-300 inline-block" />
+                  <li key={f} className="flex items-start gap-2.5 text-sm text-gray-400 dark:text-gray-600 line-through opacity-60">
+                    <span className="w-3.5 h-3.5 mt-0.5 shrink-0 rounded-full border border-gray-300 dark:border-surface-700 inline-block" />
                     {f}
                   </li>
                 ))}
@@ -227,14 +227,20 @@ export default function Pricing() {
         </div>
 
         {/* Feature comparison note */}
-        <div className="mt-12 rounded-2xl bg-gray-900 text-white p-8">
-          <h3 className="text-lg font-bold mb-2">Why flat-fee pricing?</h3>
-          <p className="text-gray-300 text-sm leading-relaxed max-w-2xl">
-            Traditional AI platforms charge per token or per execution — costs that spiral as your
-            workflows scale. AutoFlow believes your team should iterate freely without worrying about
-            runaway bills. Our flat-fee model means you can run experiments, debug in production, and
-            scale to millions of executions on the same predictable monthly cost.
-          </p>
+        <div className="mt-12 rounded-2xl bg-surface-900 dark:bg-surface-850 text-white p-8 border border-surface-800 shadow-xl overflow-hidden relative">
+          <div className="absolute top-0 right-0 w-64 h-64 bg-brand-500/10 blur-3xl -mr-32 -mt-32 rounded-full pointer-events-none" />
+          <div className="relative z-10">
+            <h3 className="text-lg font-bold mb-2 flex items-center gap-2">
+              <Sparkles size={20} className="text-brand-400" />
+              Why flat-fee pricing?
+            </h3>
+            <p className="text-surface-300 text-sm leading-relaxed max-w-2xl">
+              Traditional AI platforms charge per token or per execution — costs that spiral as your
+              workflows scale. AutoFlow believes your team should iterate freely without worrying about
+              runaway bills. Our flat-fee model means you can run experiments, debug in production, and
+              scale to millions of executions on the same predictable monthly cost.
+            </p>
+          </div>
         </div>
       </div>
     </div>

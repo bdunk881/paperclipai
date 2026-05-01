@@ -63,9 +63,9 @@ const COMPETITORS: Record<
 function CellValue({ value }: { value: string | boolean }) {
   if (typeof value === "boolean") {
     return value ? (
-      <Check className="mx-auto h-5 w-5 text-green-600" aria-label="Yes" />
+      <Check className="mx-auto h-5 w-5 text-brand-teal" aria-label="Yes" />
     ) : (
-      <X className="mx-auto h-5 w-5 text-gray-300" aria-label="No" />
+      <X className="mx-auto h-5 w-5 text-slate-700" aria-label="No" />
     );
   }
   return <span>{value}</span>;
@@ -76,7 +76,7 @@ export function CompetitorComparison() {
   const competitor = COMPETITORS[selected];
 
   return (
-    <section className="bg-white py-24 sm:py-32">
+    <section className="bg-slate-950 py-24 sm:py-32">
       <div className="mx-auto max-w-7xl px-6 lg:px-8">
         <div className="mx-auto max-w-2xl text-center">
           <motion.div
@@ -85,13 +85,13 @@ export function CompetitorComparison() {
             viewport={{ once: true }}
             transition={{ duration: 0.5 }}
           >
-            <h2 className="text-base font-semibold leading-7 text-indigo-600">
+            <h2 className="text-base font-semibold leading-7 text-brand-teal">
               Compare
             </h2>
-            <p className="mt-2 text-3xl font-bold tracking-tight text-gray-900 sm:text-4xl">
+            <p className="mt-2 text-3xl font-bold tracking-tight text-white sm:text-4xl">
               How AutoFlow stacks up
             </p>
-            <p className="mt-6 text-lg leading-8 text-gray-600">
+            <p className="mt-6 text-lg leading-8 text-slate-400">
               See how we compare to other automation platforms.
             </p>
           </motion.div>
@@ -99,15 +99,15 @@ export function CompetitorComparison() {
 
         {/* Competitor Tabs */}
         <div className="mt-10 flex justify-center">
-          <nav className="flex gap-1 rounded-full bg-gray-100 p-1" aria-label="Competitor">
+          <nav className="flex gap-1 rounded-full bg-slate-900 p-1 ring-1 ring-white/10" aria-label="Competitor">
             {(Object.keys(COMPETITORS) as CompetitorKey[]).map((key) => (
               <button
                 key={key}
                 onClick={() => setSelected(key)}
                 className={`rounded-full px-5 py-2 text-sm font-medium transition-all ${
                   selected === key
-                    ? "bg-white text-gray-900 shadow-sm"
-                    : "text-gray-500 hover:text-gray-700"
+                    ? "bg-brand-teal text-obsidian-dark shadow-sm"
+                    : "text-slate-400 hover:text-white"
                 }`}
               >
                 vs {COMPETITORS[key].name}
@@ -121,7 +121,7 @@ export function CompetitorComparison() {
           key={selected}
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
-          className="mt-6 text-center text-sm font-medium text-indigo-600"
+          className="mt-6 text-center text-sm font-medium text-brand-teal"
         >
           AutoFlow: {competitor.pitch}
         </motion.p>
@@ -132,33 +132,33 @@ export function CompetitorComparison() {
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.3 }}
-          className="mx-auto mt-8 max-w-3xl overflow-hidden rounded-2xl ring-1 ring-gray-200"
+          className="mx-auto mt-8 max-w-3xl overflow-hidden rounded-2xl ring-1 ring-white/10"
         >
-          <table className="w-full text-sm">
+          <table className="w-full text-sm text-slate-300">
             <thead>
-              <tr className="bg-gray-50">
-                <th className="px-6 py-4 text-left font-semibold text-gray-900">
+              <tr className="bg-white/5">
+                <th className="px-6 py-4 text-left font-semibold text-white">
                   Feature
                 </th>
-                <th className="px-6 py-4 text-center font-semibold text-indigo-600">
+                <th className="px-6 py-4 text-center font-semibold text-brand-teal">
                   AutoFlow
                 </th>
-                <th className="px-6 py-4 text-center font-semibold text-gray-500">
+                <th className="px-6 py-4 text-center font-semibold text-slate-500">
                   {competitor.name}
                 </th>
               </tr>
             </thead>
-            <tbody>
+            <tbody className="divide-y divide-white/5">
               {competitor.rows.map((row, i) => (
                 <tr
                   key={row.feature}
-                  className={i % 2 === 0 ? "bg-white" : "bg-gray-50/50"}
+                  className={i % 2 === 0 ? "bg-transparent" : "bg-white/5"}
                 >
-                  <td className="px-6 py-3 text-gray-700">{row.feature}</td>
-                  <td className="px-6 py-3 text-center font-medium text-gray-900">
+                  <td className="px-6 py-3">{row.feature}</td>
+                  <td className="px-6 py-3 text-center font-medium text-white">
                     <CellValue value={row.autoflow} />
                   </td>
-                  <td className="px-6 py-3 text-center text-gray-500">
+                  <td className="px-6 py-3 text-center text-slate-500">
                     <CellValue value={row.competitor} />
                   </td>
                 </tr>
@@ -170,7 +170,7 @@ export function CompetitorComparison() {
         <div className="mt-10 text-center">
           <a
             href="#pricing"
-            className="inline-flex items-center rounded-lg bg-indigo-600 px-6 py-3 text-sm font-semibold text-white shadow-sm hover:bg-indigo-700 transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600"
+            className="inline-flex items-center rounded-lg bg-brand-teal px-6 py-3 text-sm font-semibold text-obsidian-dark shadow-sm hover:bg-teal-400 transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-teal"
           >
             Switch to AutoFlow
           </a>

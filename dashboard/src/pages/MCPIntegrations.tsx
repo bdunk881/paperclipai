@@ -15,6 +15,19 @@ import slackLogo from "../assets/integrations/slack.svg";
 import postgresLogo from "../assets/integrations/postgresql.svg";
 import notionLogo from "../assets/integrations/notion.svg";
 import stripeLogo from "../assets/integrations/stripe.svg";
+import hubspotLogo from "../assets/integrations/hubspot.svg";
+import googleLogo from "../assets/integrations/google.svg";
+import braveLogo from "../assets/integrations/brave-search.svg";
+import filesystemLogo from "../assets/integrations/filesystem.svg";
+import puppeteerLogo from "../assets/integrations/puppeteer.svg";
+import intercomLogo from "../assets/integrations/intercom.svg";
+import sanityLogo from "../assets/integrations/sanity.svg";
+import oktaLogo from "../assets/integrations/okta.svg";
+import jiraLogo from "../assets/integrations/jira.svg";
+import discordLogo from "../assets/integrations/discord.svg";
+import gmailLogo from "../assets/integrations/gmail.svg";
+import twitterLogo from "../assets/integrations/twitter.svg";
+import quickbooksLogo from "../assets/integrations/quickbooks.svg";
 
 interface IntegrationOption {
   id: string;
@@ -25,6 +38,8 @@ interface IntegrationOption {
   official: boolean;
   logo?: string;
   liveProviderKey?: ProviderKey;
+  rating?: number;
+  connected?: boolean;
 }
 
 interface RegisteredIntegration {
@@ -80,6 +95,7 @@ const INTEGRATION_OPTIONS: IntegrationOption[] = [
     category: "Storage",
     tools: ["read_file", "write_file", "list_directory", "move_file", "delete_file"],
     official: true,
+    logo: filesystemLogo,
   },
   {
     id: "mcp-brave",
@@ -88,6 +104,29 @@ const INTEGRATION_OPTIONS: IntegrationOption[] = [
     category: "Search",
     tools: ["web_search", "news_search", "image_search"],
     official: false,
+    logo: braveLogo,
+  },
+  {
+    id: "mcp-hubspot",
+    name: "HubSpot",
+    description: "Sync contacts, companies, and deals with HubSpot CRM.",
+    category: "CRM",
+    tools: ["get_contact", "update_deal", "list_companies"],
+    rating: 4.7,
+    connected: false,
+    official: true,
+    logo: hubspotLogo,
+  },
+  {
+    id: "mcp-google",
+    name: "Google Workspace",
+    description: "Send emails via Gmail and manage files in Google Drive.",
+    category: "Productivity",
+    tools: ["send_email", "list_files", "create_doc"],
+    rating: 4.8,
+    connected: false,
+    official: true,
+    logo: googleLogo,
   },
   {
     id: "mcp-stripe",
@@ -115,6 +154,95 @@ const INTEGRATION_OPTIONS: IntegrationOption[] = [
     category: "Browser",
     tools: ["navigate", "click", "type", "screenshot", "evaluate"],
     official: false,
+    logo: puppeteerLogo,
+  },
+  {
+    id: "mcp-intercom",
+    name: "Intercom",
+    description: "Sync customer data and manage conversations via Intercom.",
+    category: "Support",
+    tools: ["get_contact", "list_conversations", "send_reply"],
+    rating: 4.7,
+    connected: false,
+    official: true,
+    logo: intercomLogo,
+  },
+  {
+    id: "mcp-sanity",
+    name: "Sanity",
+    description: "Query and mutate content in your Sanity CMS datasets.",
+    category: "Content",
+    tools: ["query_content", "create_document", "patch_document"],
+    rating: 4.6,
+    connected: false,
+    official: false,
+    logo: sanityLogo,
+  },
+  {
+    id: "mcp-okta",
+    name: "Okta",
+    description: "Manage user access and authentication via Okta SSO.",
+    category: "Identity",
+    tools: ["list_users", "get_user", "update_user_status"],
+    rating: 4.8,
+    connected: false,
+    official: true,
+    logo: oktaLogo,
+  },
+  {
+    id: "mcp-jira",
+    name: "Jira",
+    description: "Automate Jira issue creation and project tracking.",
+    category: "Project Management",
+    tools: ["create_issue", "update_issue", "list_projects"],
+    rating: 4.7,
+    connected: false,
+    official: true,
+    logo: jiraLogo,
+  },
+  {
+    id: "mcp-discord",
+    name: "Discord",
+    description: "Send notifications and manage community interactions via Discord.",
+    category: "Communication",
+    tools: ["send_message", "list_guilds", "add_member"],
+    rating: 4.5,
+    connected: false,
+    official: false,
+    logo: discordLogo,
+  },
+  {
+    id: "mcp-gmail",
+    name: "Gmail",
+    description: "Send emails and manage inbox workflows via Gmail.",
+    category: "Productivity",
+    tools: ["send_email", "list_messages", "create_draft"],
+    rating: 4.9,
+    connected: false,
+    official: true,
+    logo: gmailLogo,
+  },
+  {
+    id: "mcp-twitter",
+    name: "Twitter",
+    description: "Schedule tweets and monitor mentions via X (Twitter).",
+    category: "Social",
+    tools: ["create_tweet", "get_mentions", "search_tweets"],
+    rating: 4.4,
+    connected: false,
+    official: false,
+    logo: twitterLogo,
+  },
+  {
+    id: "mcp-quickbooks",
+    name: "Quickbooks",
+    description: "Automate bookkeeping and financial reporting via Quickbooks.",
+    category: "Finance",
+    tools: ["list_invoices", "create_expense", "get_reports"],
+    rating: 4.7,
+    connected: false,
+    official: true,
+    logo: quickbooksLogo,
   },
 ];
 

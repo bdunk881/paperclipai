@@ -1,14 +1,35 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { Bot, ChevronRight, Search, Tag } from "lucide-react";
-import { listAgentTemplates } from "../data/agentMarketplaceData";
+import { Bot, ChevronRight, Loader2, Search, Tag } from "lucide-react";
+import { listAgentCatalogTemplates, type AgentCatalogTemplate } from "../api/agentCatalog";
+import { useAuth } from "../context/AuthContext";
 
 const ALL_CATEGORY = "All";
 
 export default function AgentCatalog() {
-  const templates = listAgentTemplates();
+  const { getAccessToken } = useAuth();
+  const [templates, setTemplates] = useState<AgentCatalogTemplate[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [category, setCategory] = useState(ALL_CATEGORY);
+
+  useEffect(() => {
+    void (async () => {
+      try {
+        const accessToken = await getAccessToken();
+        if (!accessToken) {
+          throw new Error("Authentication session expired.");
+        }
+        setTemplates(await listAgentCatalogTemplates(accessToken));
+        setError(null);
+      } catch (loadError) {
+        setError(loadError instanceof Error ? loadError.message : "Failed to load agent catalog");
+      } finally {
+        setLoading(false);
+      }
+    })();
+  }, [getAccessToken]);
 
   const categories = useMemo(
     () => [ALL_CATEGORY, ...Array.from(new Set(templates.map((t) => t.category))).sort()],
@@ -22,7 +43,7 @@ export default function AgentCatalog() {
       q.length === 0 ||
       template.name.toLowerCase().includes(q) ||
       template.description.toLowerCase().includes(q) ||
-      template.capabilities.some((capability) => capability.toLowerCase().includes(q));
+      template.skills.some((skill) => skill.toLowerCase().includes(q));
     return categoryMatch && searchMatch;
   });
 
@@ -64,6 +85,7 @@ export default function AgentCatalog() {
       </div>
 
       <div className="px-8 py-6 max-w-7xl mx-auto">
+<<<<<<< HEAD
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
           {filtered.map((template) => (
             <article
@@ -95,41 +117,78 @@ export default function AgentCatalog() {
                   {template.pricingTier}
                 </span>
               </div>
+=======
+        {error ? (
+          <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+            {error}
+          </div>
+        ) : null}
 
-              <p className="mt-3 text-sm text-gray-600 leading-relaxed">{template.description}</p>
+        {loading ? (
+          <div className="rounded-2xl border border-gray-200 bg-white p-12 text-center text-gray-500">
+            <Loader2 size={18} className="mx-auto mb-3 animate-spin" />
+            Loading agent templates...
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+            {filtered.map((template) => (
+              <article
+                key={template.id}
+                className="bg-white rounded-xl border border-gray-200 p-5 hover:shadow-sm transition"
+              >
+                <div className="flex items-start justify-between gap-2">
+                  <div>
+                    <h2 className="font-semibold text-gray-900">{template.name}</h2>
+                    <p className="text-xs text-gray-500 mt-1 flex items-center gap-1">
+                      <Tag size={12} />
+                      {template.category}
+                    </p>
+                  </div>
+                  {template.defaultModel ? (
+                    <span className="rounded-full bg-blue-50 text-blue-700 px-2 py-0.5 text-xs font-medium">
+                      {template.defaultModel}
+                    </span>
+                  ) : null}
+                </div>
+>>>>>>> origin/staging
 
-              <ul className="mt-4 space-y-1.5">
-                {template.capabilities.slice(0, 3).map((capability) => (
-                  <li key={capability} className="text-sm text-gray-700 flex items-start gap-2">
-                    <Bot size={14} className="mt-0.5 text-gray-400" />
-                    <span>{capability}</span>
-                  </li>
-                ))}
-              </ul>
+                <p className="mt-3 text-sm text-gray-600 leading-relaxed">{template.description}</p>
 
-              <div className="mt-5 pt-4 border-t border-gray-100 flex items-center justify-between">
-                <p className="text-sm text-gray-500">${template.monthlyPriceUsd}/mo</p>
-                <Link
-                  to={`/agents/${template.id}`}
-                  className="inline-flex items-center gap-1.5 text-sm font-medium text-blue-600 hover:text-blue-700"
-                >
-                  View details
-                  <ChevronRight size={14} />
-                </Link>
-              </div>
-            </article>
-          ))}
-        </div>
+                <ul className="mt-4 space-y-1.5">
+                  {template.skills.slice(0, 3).map((skill) => (
+                    <li key={skill} className="text-sm text-gray-700 flex items-start gap-2">
+                      <Bot size={14} className="mt-0.5 text-gray-400" />
+                      <span>{skill}</span>
+                    </li>
+                  ))}
+                </ul>
 
-        {templates.length === 0 ? (
+                <div className="mt-5 pt-4 border-t border-gray-100 flex items-center justify-between">
+                  <p className="text-sm text-gray-500">
+                    {template.skills.length} skill{template.skills.length === 1 ? "" : "s"}
+                  </p>
+                  <Link
+                    to={`/agents/${template.id}`}
+                    className="inline-flex items-center gap-1.5 text-sm font-medium text-blue-600 hover:text-blue-700"
+                  >
+                    View details
+                    <ChevronRight size={14} />
+                  </Link>
+                </div>
+              </article>
+            ))}
+          </div>
+        )}
+
+        {!loading && templates.length === 0 ? (
           <div className="py-16 text-center text-gray-400">
             <Bot size={40} className="mx-auto mb-3 opacity-30" />
-            <p className="text-sm font-medium text-gray-600">Agent Marketplace coming soon</p>
+            <p className="text-sm font-medium text-gray-600">No agent templates available</p>
             <p className="text-xs mt-2 max-w-md mx-auto">
-              Prebuilt agent templates will be available here once the catalog backend is connected.
+              Your workspace does not have any role templates published to the catalog yet.
             </p>
           </div>
-        ) : filtered.length === 0 ? (
+        ) : !loading && filtered.length === 0 ? (
           <div className="py-16 text-center text-gray-400">
             <Bot size={40} className="mx-auto mb-3 opacity-30" />
             <p className="text-sm">No agent templates match this filter.</p>

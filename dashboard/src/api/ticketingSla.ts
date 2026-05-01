@@ -60,6 +60,7 @@ export interface TicketSlaSettingsPayload {
 }
 
 const BASE = getApiBasePath();
+const USE_MOCK_TICKETING = import.meta.env.VITE_USE_MOCK === "true";
 
 let mockSettings: TicketSlaSettingsPayload = {
   policies: [
@@ -105,43 +106,8 @@ let mockSettings: TicketSlaSettingsPayload = {
   updatedAt: "2026-04-24T02:10:00.000Z",
 };
 
-const mockDashboard: TicketSlaDashboard = {
-  summaryCards: [
-    { key: "breach_rate", label: "Breach Rate", value: "8.4%", delta: "-1.2%", trend: "improving" },
-    { key: "avg_first_response", label: "Avg Time to First Response", value: "42m", delta: "-6m", trend: "improving" },
-    { key: "active_breaches", label: "Active Breaches", value: "3", delta: "+1", trend: "worsening" },
-  ],
-  resolutionBuckets: [
-    { label: "<1h", count: 14, percent: 18 },
-    { label: "1-4h", count: 28, percent: 35 },
-    { label: "4-24h", count: 21, percent: 26 },
-    { label: "1-3d", count: 11, percent: 14 },
-    { label: "3d+", count: 6, percent: 7 },
-  ],
-  actorBreakdown: [
-    { actor: { type: "agent", id: "frontend-engineer" }, activeCount: 9, atRiskCount: 2, breachedCount: 1, avgResolutionHours: 7.4 },
-    { actor: { type: "agent", id: "backend-engineer" }, activeCount: 12, atRiskCount: 1, breachedCount: 1, avgResolutionHours: 5.9 },
-    { actor: { type: "user", id: "sam.support" }, activeCount: 6, atRiskCount: 1, breachedCount: 0, avgResolutionHours: 3.6 },
-  ],
-  priorityBreakdown: [
-    { priority: "urgent", activeCount: 4, atRiskCount: 1, breachRate: 16, avgFirstResponseMinutes: 12 },
-    { priority: "high", activeCount: 13, atRiskCount: 2, breachRate: 9, avgFirstResponseMinutes: 38 },
-    { priority: "medium", activeCount: 18, atRiskCount: 1, breachRate: 5, avgFirstResponseMinutes: 64 },
-    { priority: "low", activeCount: 7, atRiskCount: 0, breachRate: 2, avgFirstResponseMinutes: 118 },
-  ],
-};
-
 function cloneActor(actor: TicketActorRef): TicketActorRef {
   return { ...actor };
-}
-
-function cloneDashboard(data: TicketSlaDashboard): TicketSlaDashboard {
-  return {
-    summaryCards: data.summaryCards.map((card) => ({ ...card })),
-    resolutionBuckets: data.resolutionBuckets.map((bucket) => ({ ...bucket })),
-    actorBreakdown: data.actorBreakdown.map((row) => ({ ...row, actor: cloneActor(row.actor) })),
-    priorityBreakdown: data.priorityBreakdown.map((row) => ({ ...row })),
-  };
 }
 
 function cloneSettings(data: TicketSlaSettingsPayload): TicketSlaSettingsPayload {
@@ -175,23 +141,26 @@ function isMockFallbackStatus(status: number): boolean {
 }
 
 function withMockFallback<T>(factory: () => Promise<T>, fallback: () => T | Promise<T>): Promise<T> {
-  return factory().catch(() => Promise.resolve(fallback()));
+  return factory().catch((error) => {
+    if (!USE_MOCK_TICKETING) {
+      if (error instanceof Error && error.message === "fallback") {
+        throw new Error("Live ticketing SLA data is unavailable and mock fallback is disabled.");
+      }
+      throw error;
+    }
+
+    return Promise.resolve(fallback());
+  });
 }
 
 export async function getTicketSlaDashboard(accessToken?: string): Promise<TicketSlaDashboard> {
-  return withMockFallback(
-    async () => {
-      const res = await fetch(`${BASE}/tickets/sla/dashboard`, {
-        headers: buildAuthHeaders(accessToken),
-      });
-      if (!res.ok) {
-        if (isMockFallbackStatus(res.status)) throw new Error("fallback");
-        throw new Error(`Failed to load SLA dashboard: ${res.status}`);
-      }
-      return (await res.json()) as TicketSlaDashboard;
-    },
-    () => cloneDashboard(mockDashboard)
-  );
+  const res = await fetch(`${BASE}/tickets/sla/dashboard`, {
+    headers: buildAuthHeaders(accessToken),
+  });
+  if (!res.ok) {
+    throw new Error(`Failed to load SLA dashboard: ${res.status}`);
+  }
+  return (await res.json()) as TicketSlaDashboard;
 }
 
 export async function getTicketSlaSettings(accessToken?: string): Promise<TicketSlaSettingsPayload> {

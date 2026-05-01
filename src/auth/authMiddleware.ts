@@ -18,6 +18,8 @@ import { NextFunction, Request, Response } from "express";
 import jwt, { JwtPayload } from "jsonwebtoken";
 import jwksRsa from "jwks-rsa";
 import { resolveAppJwtConfig, verifyAppUserTokenWithDiagnostics } from "./appAuthTokens";
+import { recordControlPlaneAudit, resolveAuditWorkspaceIdForUser } from "../auditing/controlPlaneAudit";
+import { isQaBypassEnabledByName } from "../security/qaBypassGuard";
 
 type AuthConfig = {
   tenantId: string;
@@ -223,7 +225,10 @@ function parseQaBypassUserIds(): Set<string> {
 }
 
 function resolveQaBypassUserId(req: Request): string | null {
-  if (process.env.QA_AUTH_BYPASS_ENABLED !== "true") {
+  // Routed through qaBypassGuard so the production-boot guard sees a single
+  // source of truth and so this gate refuses the bypass when NODE_ENV is
+  // "production" (or absent), regardless of the env var value.
+  if (!isQaBypassEnabledByName("QA_AUTH_BYPASS_ENABLED")) {
     return null;
   }
 
@@ -241,6 +246,52 @@ function attachQaBypassAuth(req: AuthenticatedRequest, userId: string): void {
     sub: userId,
     name: "QA bypass user",
   };
+}
+
+function queueQaBypassAudit(
+  req: Request,
+  userId: string,
+  outcome: "allowed" | "denied",
+  reason: "allowlisted" | "not_allowlisted" | "disabled" | "missing_user_id",
+): void {
+  const requestPath = (req.originalUrl || req.path).split("?")[0];
+  const explicitWorkspaceId =
+    typeof req.headers["x-workspace-id"] === "string" ? req.headers["x-workspace-id"].trim() : null;
+
+  void (async () => {
+    const workspaceId = await resolveAuditWorkspaceIdForUser(userId, explicitWorkspaceId);
+    if (!workspaceId) {
+      return;
+    }
+
+    await recordControlPlaneAudit({
+      workspaceId,
+      userId,
+      category: "bypass_attempt",
+      action: "qa_auth_bypass_attempt",
+      target: { type: "user", id: userId },
+      metadata: {
+        outcome,
+        reason,
+        method: req.method,
+        path: requestPath,
+      },
+    });
+
+    if (outcome === "allowed") {
+      await recordControlPlaneAudit({
+        workspaceId,
+        userId,
+        category: "auth",
+        action: "qa_auth_bypass_authenticated",
+        target: { type: "user", id: userId },
+        metadata: {
+          method: req.method,
+          path: requestPath,
+        },
+      });
+    }
+  })();
 }
 
 /**
@@ -371,11 +422,24 @@ export function requireAuthOrQaBypass(
   res: Response,
   next: NextFunction
 ): void {
+  const headerValue = req.headers["x-user-id"];
+  const attemptedUserId = typeof headerValue === "string" ? headerValue.trim() : "";
+  const bypassEnabled = isQaBypassEnabledByName("QA_AUTH_BYPASS_ENABLED");
   const qaBypassUserId = resolveQaBypassUserId(req);
   if (qaBypassUserId) {
+    queueQaBypassAudit(req, qaBypassUserId, "allowed", "allowlisted");
     attachQaBypassAuth(req, qaBypassUserId);
     next();
     return;
+  }
+
+  if (attemptedUserId) {
+    queueQaBypassAudit(
+      req,
+      attemptedUserId,
+      "denied",
+      bypassEnabled ? "not_allowlisted" : "disabled",
+    );
   }
 
   requireAuth(req, res, next);

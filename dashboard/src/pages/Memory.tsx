@@ -278,10 +278,10 @@ export default function Memory() {
     progress.total > 0 ? Math.max(8, Math.round((progress.current / progress.total) * 100)) : 0;
 
   return (
-    <div className="min-h-full bg-[#0f172a] text-slate-100">
+    <div className="min-h-full bg-slate-50 text-slate-900 dark:bg-surface-base dark:text-slate-100">
       <div className="mx-auto flex w-full max-w-7xl flex-col gap-8 px-4 py-6 md:px-8 md:py-8">
-        <section className="glass-card noise-overlay overflow-hidden rounded-[28px] border border-slate-800/80">
-          <div className="relative border-b border-slate-800/80 px-8 py-7">
+        <section className="glass-card noise-overlay overflow-hidden rounded-[28px] border border-slate-200 bg-white/90 dark:border-slate-800/80">
+          <div className="relative border-b border-slate-200 px-8 py-7 dark:border-slate-800/80">
             <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(99,102,241,0.16),transparent_40%),radial-gradient(circle_at_bottom_left,rgba(20,184,166,0.12),transparent_35%)]" />
             <div className="relative flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
               <div className="max-w-2xl">
@@ -289,17 +289,17 @@ export default function Memory() {
                   <Sparkles size={12} />
                   Data / Knowledge
                 </div>
-                <h1 className="text-2xl font-semibold text-slate-100 md:text-[24px]">
+                <h1 className="text-2xl font-semibold text-slate-900 dark:text-slate-100 md:text-[24px]">
                   Knowledge Ingest
                 </h1>
-                <p className="mt-2 max-w-xl text-sm text-slate-400">
+                <p className="mt-2 max-w-xl text-sm text-slate-600 dark:text-slate-400">
                   Ingest source files and structured Q&A pairs into the shared memory layer for
                   workflows and agents.
                 </p>
               </div>
               <button
                 onClick={() => void loadEntries()}
-                className="inline-flex items-center gap-2 self-start rounded-xl border border-slate-700 bg-slate-900/70 px-4 py-2 text-sm font-medium text-slate-300 transition hover:border-slate-600 hover:bg-slate-800/80 hover:text-slate-100"
+                className="inline-flex items-center gap-2 self-start rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition hover:border-slate-300 hover:bg-slate-100 hover:text-slate-900 dark:border-slate-700 dark:bg-slate-900/70 dark:text-slate-300 dark:hover:border-slate-600 dark:hover:bg-slate-800/80 dark:hover:text-slate-100"
                 title="Refresh memory data"
               >
                 <RefreshCw size={14} className={loading ? "animate-spin" : ""} />
@@ -308,7 +308,7 @@ export default function Memory() {
             </div>
           </div>
 
-          <div className="grid gap-4 border-b border-slate-800/70 px-8 py-6 md:grid-cols-3">
+          <div className="grid gap-4 border-b border-slate-200 px-8 py-6 dark:border-slate-800/70 md:grid-cols-3">
             <MetricCard icon={<Database size={14} />} label="Total Entries" value={stats.totalEntries} />
             <MetricCard
               icon={<BarChart2 size={14} />}
@@ -354,10 +354,10 @@ export default function Memory() {
                 onDrop={handleDrop}
                 onClick={openFilePicker}
                 className={clsx(
-                  "glass-card w-full rounded-2xl border-2 border-dashed px-6 py-10 text-left transition-all duration-200 ease-in-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400 focus-visible:ring-offset-2 focus-visible:ring-offset-[#0f172a]",
+                  "glass-card w-full rounded-2xl border-2 border-dashed px-6 py-10 text-left transition-all duration-200 ease-in-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-50 dark:focus-visible:ring-offset-surface-base",
                   dragOver
                     ? "border-indigo-500 bg-indigo-500/5 shadow-[0_0_15px_rgba(99,102,241,0.2)]"
-                    : "border-slate-700 hover:border-indigo-500 hover:bg-slate-800/70",
+                    : "border-slate-300 bg-white hover:border-indigo-500 hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-800/70",
                   uploadState === "success" && "border-emerald-500/80",
                   uploadState === "error" && "border-red-500/80"
                 )}
@@ -375,7 +375,7 @@ export default function Memory() {
                   )}
 
                   <div>
-                    <p className="text-sm font-medium text-slate-100">
+                    <p className="text-sm font-medium text-slate-900 dark:text-slate-100">
                       Drag &amp; drop files here or click to browse
                     </p>
                     <p className="mt-1 text-xs text-slate-500">
@@ -388,7 +388,7 @@ export default function Memory() {
                       {files.map((file) => (
                         <span
                           key={`${file.name}-${file.size}`}
-                          className="inline-flex items-center gap-2 rounded-full border border-slate-700 bg-slate-900/70 px-3 py-1 text-xs text-slate-300"
+                          className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-slate-100 px-3 py-1 text-xs text-slate-700 dark:border-slate-700 dark:bg-slate-900/70 dark:text-slate-300"
                         >
                           <FileText size={12} />
                           {file.name}
@@ -413,31 +413,31 @@ export default function Memory() {
                 <button
                   type="button"
                   onClick={addRow}
-                  className="glow-border inline-flex items-center gap-2 rounded-xl border border-indigo-500/40 bg-transparent px-3 py-2 text-sm font-medium text-indigo-300 transition hover:bg-indigo-500/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400 focus-visible:ring-offset-2 focus-visible:ring-offset-[#0f172a]"
+                  className="glow-border inline-flex items-center gap-2 rounded-xl border border-indigo-500/40 bg-transparent px-3 py-2 text-sm font-medium text-indigo-300 transition hover:bg-indigo-500/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-50 dark:focus-visible:ring-offset-surface-base"
                 >
                   <Plus size={14} />
                   Add row
                 </button>
               </div>
 
-              <div className="glass-card overflow-hidden rounded-2xl border border-slate-700/80">
-                <div className="hidden grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)_88px] gap-4 bg-[rgba(30,41,59,0.8)] px-4 py-3 md:grid">
-                  <span className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">
+              <div className="glass-card overflow-hidden rounded-2xl border border-slate-200 bg-white/90 dark:border-slate-700/80">
+                <div className="hidden grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)_88px] gap-4 bg-slate-100 px-4 py-3 dark:bg-[rgba(30,41,59,0.8)] md:grid">
+                  <span className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
                     Question
                   </span>
-                  <span className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">
+                  <span className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
                     Answer
                   </span>
-                  <span className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">
+                  <span className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
                     Actions
                   </span>
                 </div>
 
-                <div className="divide-y divide-slate-800/90">
+                <div className="divide-y divide-slate-200 dark:divide-slate-800/90">
                   {rows.map((row, index) => (
                     <div
                       key={row.id}
-                      className="grid gap-3 px-4 py-4 transition-colors duration-200 ease-in-out hover:bg-slate-800/50 md:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)_88px] md:items-start"
+                      className="grid gap-3 px-4 py-4 transition-colors duration-200 ease-in-out hover:bg-slate-50 dark:hover:bg-slate-800/50 md:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)_88px] md:items-start"
                     >
                       <div className="space-y-2">
                         <label className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500 md:hidden">
@@ -448,7 +448,7 @@ export default function Memory() {
                           value={row.question}
                           onChange={(event) => updateRow(row.id, "question", event.target.value)}
                           placeholder="What should the agent know?"
-                          className="min-h-[92px] w-full resize-y rounded-xl border border-slate-700/70 bg-transparent px-3 py-2 text-sm text-slate-100 placeholder:text-slate-600 transition focus:bg-[#0f172a] focus:outline-none focus:ring-2 focus:ring-indigo-400"
+                          className="min-h-[92px] w-full resize-y rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 transition focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-400 dark:border-slate-700/70 dark:bg-transparent dark:text-slate-100 dark:placeholder:text-slate-600 dark:focus:bg-surface-base"
                         />
                       </div>
 
@@ -461,7 +461,7 @@ export default function Memory() {
                           value={row.answer}
                           onChange={(event) => updateRow(row.id, "answer", event.target.value)}
                           placeholder="Provide the canonical answer or context."
-                          className="min-h-[92px] w-full resize-y rounded-xl border border-slate-700/70 bg-transparent px-3 py-2 text-sm text-slate-100 placeholder:text-slate-600 transition focus:bg-[#0f172a] focus:outline-none focus:ring-2 focus:ring-indigo-400"
+                          className="min-h-[92px] w-full resize-y rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 transition focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-400 dark:border-slate-700/70 dark:bg-transparent dark:text-slate-100 dark:placeholder:text-slate-600 dark:focus:bg-surface-base"
                         />
                       </div>
 
@@ -470,7 +470,7 @@ export default function Memory() {
                         <button
                           type="button"
                           onClick={() => removeRow(row.id)}
-                          className="inline-flex items-center gap-2 rounded-xl border border-slate-700 px-3 py-2 text-sm text-slate-400 transition hover:border-red-500/40 hover:text-red-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400"
+                          className="inline-flex items-center gap-2 rounded-xl border border-slate-300 px-3 py-2 text-sm text-slate-500 transition hover:border-red-500/40 hover:text-red-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400 dark:border-slate-700 dark:text-slate-400 dark:hover:text-red-400"
                           aria-label={`Remove Q&A row ${index + 1}`}
                         >
                           <Trash2 size={14} />
@@ -484,10 +484,10 @@ export default function Memory() {
             </section>
           </div>
 
-          <div className="space-y-4 border-t border-slate-800/70 px-8 py-6">
+          <div className="space-y-4 border-t border-slate-200 px-8 py-6 dark:border-slate-800/70">
             {uploadState === "uploading" && (
               <div className="space-y-2">
-                <div className="h-1 overflow-hidden rounded-full bg-slate-700">
+                <div className="h-1 overflow-hidden rounded-full bg-slate-200 dark:bg-slate-700">
                   <div
                     className="h-full rounded-full bg-indigo-500 transition-all duration-200 ease-in-out"
                     style={{ width: `${progressPercent}%` }}
@@ -521,7 +521,7 @@ export default function Memory() {
                 type="button"
                 onClick={() => void handleIngest()}
                 disabled={uploadState === "uploading"}
-                className="inline-flex items-center justify-center gap-2 rounded-xl bg-indigo-500 px-6 py-3 text-sm font-bold text-white transition hover:bg-indigo-600 disabled:cursor-not-allowed disabled:bg-slate-700 disabled:text-slate-500"
+                className="inline-flex items-center justify-center gap-2 rounded-xl bg-indigo-500 px-6 py-3 text-sm font-bold text-white transition hover:bg-indigo-600 disabled:cursor-not-allowed disabled:bg-slate-300 disabled:text-slate-500 dark:disabled:bg-slate-700"
               >
                 {uploadState === "uploading" ? (
                   <>
@@ -545,16 +545,16 @@ export default function Memory() {
           </div>
         )}
 
-        <section className="grid gap-0 overflow-hidden rounded-[28px] border border-slate-800/80 bg-slate-950/80 xl:grid-cols-[380px_minmax(0,1fr)]">
-          <div className="border-b border-slate-800/80 bg-slate-950/90 xl:border-b-0 xl:border-r">
-            <div className="border-b border-slate-800/80 p-4">
+        <section className="grid gap-0 overflow-hidden rounded-[28px] border border-slate-200 bg-white/95 dark:border-slate-800/80 dark:bg-slate-950/80 xl:grid-cols-[380px_minmax(0,1fr)]">
+          <div className="border-b border-slate-200 bg-slate-50/90 dark:border-slate-800/80 dark:bg-slate-950/90 xl:border-b-0 xl:border-r">
+            <div className="border-b border-slate-200 p-4 dark:border-slate-800/80">
               <div className="relative">
                 <Search
                   size={14}
-                  className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-500"
+                  className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 dark:text-slate-500"
                 />
                 <input
-                  className="w-full rounded-xl border border-slate-700 bg-slate-900/70 py-2 pl-9 pr-3 text-sm text-slate-100 placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-400"
+                  className="w-full rounded-xl border border-slate-300 bg-white py-2 pl-9 pr-3 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-400 dark:border-slate-700 dark:bg-slate-900/70 dark:text-slate-100 dark:placeholder:text-slate-500"
                   placeholder="Search keys or content..."
                   value={search}
                   onChange={(event) => setSearch(event.target.value)}
@@ -578,7 +578,7 @@ export default function Memory() {
                   <div
                     key={entry.id}
                     className={clsx(
-                      "border-b border-slate-800/60 transition hover:bg-slate-900/80",
+                      "border-b border-slate-200 transition hover:bg-slate-50 dark:border-slate-800/60 dark:hover:bg-slate-900/80",
                       selected?.id === entry.id && "bg-indigo-500/10"
                     )}
                   >
@@ -592,7 +592,7 @@ export default function Memory() {
                       >
                         <div className="flex flex-col gap-2">
                           <div className="flex items-start justify-between gap-3">
-                            <span className="truncate font-mono text-xs text-slate-200">{entry.key}</span>
+                            <span className="truncate font-mono text-xs text-slate-700 dark:text-slate-200">{entry.key}</span>
                           </div>
                           <div className="flex flex-wrap items-center gap-2 text-[11px] text-slate-500">
                             <span>{entry.workflowName ?? entry.workflowId ?? "Knowledge Ingest"}</span>
@@ -631,7 +631,7 @@ export default function Memory() {
                     <p className="mb-2 text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
                       Selected Entry
                     </p>
-                    <h2 className="break-all font-mono text-lg font-semibold text-slate-100">
+                    <h2 className="break-all font-mono text-lg font-semibold text-slate-900 dark:text-slate-100">
                       {selected.key}
                     </h2>
                   </div>
@@ -650,11 +650,11 @@ export default function Memory() {
                   <DetailCard label="TTL" value={ttlLabel(selected.ttlSeconds)} />
                   <DetailCard label="Last Updated" value={timeAgo(selected.updatedAt)} />
                   {selected.expiresAt ? (
-                    <div className="rounded-2xl border border-amber-500/30 bg-amber-500/10 p-4 md:col-span-2">
-                      <div className="text-xs font-semibold uppercase tracking-[0.18em] text-amber-200">
+                    <div className="rounded-2xl border border-amber-300 bg-amber-50 p-4 md:col-span-2 dark:border-amber-500/30 dark:bg-amber-500/10">
+                      <div className="text-xs font-semibold uppercase tracking-[0.18em] text-amber-800 dark:text-amber-200">
                         Expires At
                       </div>
-                      <div className="mt-2 text-sm text-amber-100">
+                      <div className="mt-2 text-sm text-amber-900 dark:text-amber-100">
                         {new Date(selected.expiresAt).toLocaleString()}
                       </div>
                     </div>
@@ -665,7 +665,7 @@ export default function Memory() {
                   <label className="mb-2 block text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
                     Value
                   </label>
-                  <pre className="overflow-x-auto rounded-2xl border border-slate-800 bg-slate-950 px-4 py-4 text-xs leading-relaxed text-emerald-300">
+                  <pre className="overflow-x-auto rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 text-xs leading-relaxed text-emerald-700 dark:border-slate-800 dark:bg-slate-950 dark:text-emerald-300">
                     {(() => {
                       try {
                         return JSON.stringify(JSON.parse(selected.text), null, 2);
@@ -679,7 +679,7 @@ export default function Memory() {
             ) : (
               <div className="flex h-full flex-col items-center justify-center text-center text-slate-500">
                 <Database size={40} className="mb-4 opacity-30" />
-                <p className="text-sm text-slate-400">Select a memory entry to inspect the ingested payload.</p>
+                <p className="text-sm text-slate-500 dark:text-slate-400">Select a memory entry to inspect the ingested payload.</p>
               </div>
             )}
           </div>
@@ -701,12 +701,12 @@ function MetricCard({
   helper?: string;
 }) {
   return (
-    <div className="rounded-2xl border border-slate-800/90 bg-slate-950/60 p-4">
+    <div className="rounded-2xl border border-slate-200 bg-white/95 p-4 dark:border-slate-800/90 dark:bg-slate-950/60">
       <div className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
         {icon}
         {label}
       </div>
-      <div className="text-2xl font-semibold text-slate-100">{value}</div>
+      <div className="text-2xl font-semibold text-slate-900 dark:text-slate-100">{value}</div>
       {helper ? <div className="mt-1 text-xs text-slate-500">{helper}</div> : null}
     </div>
   );
@@ -722,9 +722,9 @@ function DetailCard({
   mono?: boolean;
 }) {
   return (
-    <div className="rounded-2xl border border-slate-800/90 bg-slate-900/70 p-4">
+    <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-800/90 dark:bg-slate-900/70">
       <div className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">{label}</div>
-      <div className={clsx("mt-2 text-sm text-slate-100", mono && "font-mono")}>{value}</div>
+      <div className={clsx("mt-2 text-sm text-slate-800 dark:text-slate-100", mono && "font-mono")}>{value}</div>
     </div>
   );
 }

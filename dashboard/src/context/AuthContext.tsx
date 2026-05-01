@@ -19,8 +19,11 @@ export interface User {
   tenantId?: string;
 }
 
+export type AuthAccessMode = "authenticated" | "preview" | "anonymous";
+
 interface AuthContextValue {
   user: User | null;
+  accessMode: AuthAccessMode;
   logout: () => void;
   getAccessToken: () => Promise<string | null>;
   requireAccessToken: () => Promise<string>;
@@ -59,6 +62,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setStoredUser(readStoredAuthUser());
     };
 
+    // Re-read storage on mount so sessions written during initial route
+    // handling are not missed before listeners are attached.
+    syncAuthState();
+
     window.addEventListener("storage", syncAuthState);
     window.addEventListener(AUTH_STORAGE_EVENT, syncAuthState);
 
@@ -69,6 +76,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const user = sessionUser(storedSession, storedUser);
+  const accessMode: AuthAccessMode = storedSession
+    ? "authenticated"
+    : storedUser
+      ? "preview"
+      : "anonymous";
 
   const logout = React.useCallback(() => {
     clearStoredAuthSession();
@@ -119,7 +131,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [getAccessToken]);
 
   return (
-    <AuthContext.Provider value={{ user, logout, getAccessToken, requireAccessToken }}>
+    <AuthContext.Provider value={{ user, accessMode, logout, getAccessToken, requireAccessToken }}>
       {children}
     </AuthContext.Provider>
   );

@@ -1,7 +1,9 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import AgentDeploy from "./AgentDeploy";
+
+const getAgentCatalogTemplateMock = vi.fn();
 
 vi.mock("../context/AuthContext", () => ({
   useAuth: () => ({
@@ -11,6 +13,11 @@ vi.mock("../context/AuthContext", () => ({
     logout: vi.fn(),
     getAccessToken: vi.fn().mockResolvedValue("mock-token"),
   }),
+}));
+
+vi.mock("../api/agentCatalog", () => ({
+  getAgentCatalogTemplate: (templateId: string, accessToken: string) =>
+    getAgentCatalogTemplateMock(templateId, accessToken),
 }));
 
 describe("AgentDeploy", () => {
@@ -28,7 +35,9 @@ describe("AgentDeploy", () => {
     );
   });
 
-  it("shows not-found state for missing template", () => {
+  it("shows not-found state for missing template", async () => {
+    getAgentCatalogTemplateMock.mockResolvedValue(null);
+
     render(
       <MemoryRouter initialEntries={["/agents/deploy/nonexistent-template"]}>
         <Routes>
@@ -37,6 +46,8 @@ describe("AgentDeploy", () => {
       </MemoryRouter>
     );
 
-    expect(screen.getByText(/agent template not found/i)).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.getByText(/agent template not found/i)).toBeInTheDocument();
+    });
   });
 });

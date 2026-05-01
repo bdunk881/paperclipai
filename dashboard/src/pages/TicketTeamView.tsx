@@ -18,7 +18,7 @@ export default function TicketTeamView() {
   const [tickets, setTickets] = useState<TicketRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [source, setSource] = useState<"api" | "mock">("mock");
+  const [source, setSource] = useState<"api" | "mock" | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);

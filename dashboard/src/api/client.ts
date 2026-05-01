@@ -15,7 +15,23 @@ import {
 // LLM Config types — mirrors src/engine/llmProviders/types.ts
 // ---------------------------------------------------------------------------
 
-export type ProviderName = "openai" | "anthropic" | "gemini" | "mistral";
+export type ProviderName =
+  | "openai"
+  | "anthropic"
+  | "gemini"
+  | "mistral"
+  | "azure-openai"
+  | "groq"
+  | "fireworks"
+  | "together"
+  | "ollama"
+  | "localai"
+  | "cohere"
+  | "perplexity"
+  | "xai"
+  | "deepseek"
+  | "bedrock"
+  | "vertex-ai";
 
 /** Available models per provider — mirrors PROVIDER_MODELS from the backend */
 export const PROVIDER_MODELS: Record<ProviderName, string[]> = {
@@ -23,6 +39,30 @@ export const PROVIDER_MODELS: Record<ProviderName, string[]> = {
   anthropic: ["claude-opus-4-6", "claude-sonnet-4-6", "claude-haiku-4-5-20251001"],
   gemini: ["gemini-2.0-flash", "gemini-1.5-pro", "gemini-1.5-flash"],
   mistral: ["mistral-large-latest", "mistral-small-latest", "open-mistral-7b"],
+  "azure-openai": ["gpt-4o", "gpt-4o-mini", "gpt-4.1"],
+  groq: ["llama-3.3-70b-versatile", "llama-3.1-8b-instant", "mixtral-8x7b-32768"],
+  fireworks: [
+    "accounts/fireworks/models/llama-v3p1-8b-instruct",
+    "accounts/fireworks/models/llama-v3p1-70b-instruct",
+    "accounts/fireworks/models/mixtral-8x7b-instruct",
+  ],
+  together: [
+    "meta-llama/Meta-Llama-3.1-8B-Instruct-Turbo",
+    "meta-llama/Meta-Llama-3.1-70B-Instruct-Turbo",
+    "mistralai/Mixtral-8x7B-Instruct-v0.1",
+  ],
+  ollama: ["llama3.1:8b", "llama3.1:70b", "mixtral:8x7b"],
+  localai: ["llama-3.1-8b-instruct", "llama-3.1-70b-instruct", "mixtral-8x7b-instruct"],
+  cohere: ["command-r", "command-r-plus", "command-a-03-2025"],
+  perplexity: ["sonar", "sonar-pro", "llama-3.1-sonar-large-128k-online"],
+  xai: ["grok-2-1212", "grok-2-vision-1212", "grok-beta"],
+  deepseek: ["deepseek-chat", "deepseek-reasoner", "deepseek-coder"],
+  bedrock: [
+    "anthropic.claude-3-5-sonnet-20241022-v2:0",
+    "meta.llama3-1-70b-instruct-v1:0",
+    "amazon.nova-pro-v1:0",
+  ],
+  "vertex-ai": ["gemini-2.0-flash-001", "gemini-1.5-pro-002", "claude-3-5-sonnet-v2@20241022"],
 };
 
 /** A saved LLM provider config (API key stored server-side, never returned) */
@@ -32,7 +72,7 @@ export interface LLMConfig {
   provider: ProviderName;
   model: string;
   isDefault: boolean;
-  maskedApiKey: string; // e.g. "sk-...x7k3"
+  apiKeyMasked: string; // e.g. "****x7k3"
   createdAt: string;
 }
 
@@ -47,8 +87,9 @@ export type ConnectorHealthState =
   | "healthy"
   | "degraded"
   | "rate_limited"
-  | "auth_failure"
-  | "down";
+  | "auth_failed"
+  | "provider_error"
+  | "disabled";
 
 export interface ConnectorHealthTransition {
   at: string;
@@ -68,7 +109,7 @@ export interface ConnectorHealthRecord {
   authFailures15m: number;
   rateLimitEvents15m: number;
   transitions: ConnectorHealthTransition[];
-  source: "mock";
+  source?: "mock" | "api";
 }
 
 export interface ConnectorHealthSummary {
@@ -81,7 +122,7 @@ export interface ConnectorHealthSummary {
     rateLimitThreshold15m: number;
     outageThresholdMinutes: number;
   };
-  source: "mock";
+  source?: "mock" | "api";
 }
 
 const USE_MOCK_API = import.meta.env.VITE_USE_MOCK === "true";
@@ -132,11 +173,67 @@ async function readApiError(response: Response, fallback: string): Promise<strin
   return payload?.error ?? fallback;
 }
 
+async function parseJsonOrError<T>(response: Response, fallback: string): Promise<T> {
+  if (!response.ok) {
+    throw new Error(await readApiError(response, fallback));
+  }
+  return response.json() as Promise<T>;
+}
+
 async function withMockApi<T>(remote: () => Promise<T>, local: () => T | Promise<T>): Promise<T> {
   if (USE_MOCK_API) {
     return await local();
   }
   return await remote();
+}
+
+export type ObservabilityEventCategory = "issue" | "run" | "heartbeat" | "budget" | "alert";
+
+export interface ObservabilityEvent {
+  id: string;
+  sequence: string;
+  userId: string;
+  category: ObservabilityEventCategory;
+  type: string;
+  actor: {
+    type: "agent" | "user" | "system" | "run";
+    id: string;
+    label?: string;
+  };
+  subject: {
+    type: "team" | "agent" | "task" | "execution" | "ticket" | "workspace";
+    id: string;
+    label?: string;
+    parentType?: "team" | "agent" | "task" | "execution" | "ticket" | "workspace";
+    parentId?: string;
+  };
+  summary: string;
+  payload: Record<string, unknown>;
+  occurredAt: string;
+}
+
+export interface ObservabilityFeedPage {
+  events: ObservabilityEvent[];
+  nextCursor: string | null;
+  hasMore: boolean;
+  generatedAt: string;
+}
+
+export interface ObservabilityThroughputSnapshot {
+  windowHours: number;
+  generatedAt: string;
+  summary: {
+    createdCount: number;
+    completedCount: number;
+    blockedCount: number;
+    completionRate: number;
+  };
+  buckets: Array<{
+    bucketStart: string;
+    createdCount: number;
+    completedCount: number;
+    blockedCount: number;
+  }>;
 }
 
 // ---------------------------------------------------------------------------
@@ -279,7 +376,7 @@ const MOCK_CONNECTOR_HEALTH: ConnectorHealthRecord[] = [
   {
     connectorKey: "linear",
     connectorName: "Linear",
-    state: "auth_failure",
+    state: "auth_failed",
     lastSuccessAt: "2026-04-28T03:58:00.000Z",
     lastErrorAt: "2026-04-28T04:34:00.000Z",
     lastErrorMessage: "OAuth refresh token rejected by provider",
@@ -305,7 +402,7 @@ const MOCK_CONNECTOR_HEALTH: ConnectorHealthRecord[] = [
   {
     connectorKey: "jira",
     connectorName: "Jira",
-    state: "down",
+    state: "provider_error",
     lastSuccessAt: "2026-04-28T02:48:00.000Z",
     lastErrorAt: "2026-04-28T04:35:00.000Z",
     lastErrorMessage: "Connector worker has not completed a successful sync in 90 minutes",
@@ -324,8 +421,9 @@ function summarizeConnectorHealth(connectors: ConnectorHealthRecord[]): Connecto
       healthy: connectors.filter((c) => c.state === "healthy").length,
       degraded: connectors.filter((c) => c.state === "degraded").length,
       rate_limited: connectors.filter((c) => c.state === "rate_limited").length,
-      auth_failure: connectors.filter((c) => c.state === "auth_failure").length,
-      down: connectors.filter((c) => c.state === "down").length,
+      auth_failed: connectors.filter((c) => c.state === "auth_failed").length,
+      provider_error: connectors.filter((c) => c.state === "provider_error").length,
+      disabled: connectors.filter((c) => c.state === "disabled").length,
     },
     lastUpdatedAt: "2026-04-28T04:35:00.000Z",
     alertPolicy: {
@@ -336,6 +434,70 @@ function summarizeConnectorHealth(connectors: ConnectorHealthRecord[]): Connecto
     },
     source: "mock",
   };
+}
+
+export function getObservabilityStreamPath(params?: {
+  after?: string;
+  categories?: ObservabilityEventCategory[];
+  limit?: number;
+}): string {
+  const search = new URLSearchParams();
+  if (params?.after) {
+    search.set("after", params.after);
+  }
+  if (params?.categories?.length) {
+    search.set("categories", params.categories.join(","));
+  }
+  if (typeof params?.limit === "number") {
+    search.set("limit", String(params.limit));
+  }
+
+  const query = search.toString();
+  return `${BASE}/observability/events/stream${query ? `?${query}` : ""}`;
+}
+
+export async function listObservabilityEvents(
+  input: {
+    after?: string;
+    categories?: ObservabilityEventCategory[];
+    limit?: number;
+  } = {},
+  accessToken?: string
+): Promise<ObservabilityFeedPage> {
+  const search = new URLSearchParams();
+  if (input.after) {
+    search.set("after", input.after);
+  }
+  if (input.categories?.length) {
+    search.set("categories", input.categories.join(","));
+  }
+  if (typeof input.limit === "number") {
+    search.set("limit", String(input.limit));
+  }
+
+  const response = await fetch(
+    `${BASE}/observability/events${search.toString() ? `?${search.toString()}` : ""}`,
+    {
+      headers: buildAuthHeaders(accessToken),
+    }
+  );
+  return parseJsonOrError<ObservabilityFeedPage>(
+    response,
+    `Failed to fetch observability events: ${response.status}`
+  );
+}
+
+export async function getObservabilityThroughput(
+  windowHours = 24,
+  accessToken?: string
+): Promise<ObservabilityThroughputSnapshot> {
+  const response = await fetch(`${BASE}/observability/throughput?windowHours=${windowHours}`, {
+    headers: buildAuthHeaders(accessToken),
+  });
+  return parseJsonOrError<ObservabilityThroughputSnapshot>(
+    response,
+    `Failed to fetch throughput snapshot: ${response.status}`
+  );
 }
 
 /** Template summary returned by GET /api/templates (list) */
@@ -438,6 +600,207 @@ export interface ControlPlaneDeployment {
   workflow: Pick<WorkflowTemplate, "id" | "name" | "category" | "version">;
 }
 
+export type TeamAssemblySourceType = "free_text" | "notion" | "google-doc" | "markdown";
+export type TeamAssemblyModelTier = "lite" | "standard" | "power";
+export type TeamAssemblyRoleType = "executive" | "operator";
+
+export interface TeamAssemblyNormalizedGoalDocument {
+  sourceType: TeamAssemblySourceType;
+  goal: string;
+  targetCustomer: string | null;
+  successMetrics: string[];
+  constraints: string[];
+  budget: string | null;
+  timeHorizon: string | null;
+  importedContextSummary?: string | null;
+  planReadinessThreshold: number;
+}
+
+export interface TeamAssemblyPrd {
+  title: string;
+  summary: string;
+  targetCustomer: string;
+  problemStatement: string;
+  proposedSolution: string;
+  successMetrics: string[];
+  constraints: string[];
+  budget: string;
+  timeHorizon: string;
+  assumptions?: string[];
+  risks?: string[];
+  openQuestions?: string[];
+}
+
+export interface TeamAssemblyRoleLibraryEntry {
+  roleKey: string;
+  title: string;
+  roleType: TeamAssemblyRoleType;
+  department: string;
+  mandate: string;
+  defaultReportsToRoleKey?: string | null;
+  defaultSkills?: string[];
+  defaultTools?: string[];
+  defaultModelTier: TeamAssemblyModelTier;
+  hiringSignals?: string[];
+}
+
+export interface TeamAssemblyStaffingRecommendation {
+  roleKey: string;
+  title: string;
+  roleType: TeamAssemblyRoleType;
+  department: string;
+  headcount: number;
+  reportsToRoleKey: string | null;
+  mandate: string;
+  justification: string;
+  kpis: string[];
+  skills: string[];
+  tools: string[];
+  modelTier: TeamAssemblyModelTier;
+  budgetMonthlyUsd: number | null;
+  provisioningInstructions: string;
+}
+
+export interface TeamAssemblyResult {
+  schemaVersion: string;
+  company: {
+    name: string | null;
+    goal: string;
+    targetCustomer: string | null;
+    budget: string | null;
+    timeHorizon: string | null;
+  };
+  summary: string;
+  rationale: string;
+  orgChart: {
+    executives: TeamAssemblyStaffingRecommendation[];
+    operators: TeamAssemblyStaffingRecommendation[];
+    reportingLines: Array<{
+      managerRoleKey: string;
+      reportRoleKey: string;
+    }>;
+  };
+  provisioningPlan: {
+    teamName: string;
+    deploymentMode: "continuous_agents";
+    agents: TeamAssemblyStaffingRecommendation[];
+  };
+  roadmap306090: {
+    day30: TeamAssemblyPhasePlan;
+    day60: TeamAssemblyPhasePlan;
+    day90: TeamAssemblyPhasePlan;
+  };
+}
+
+export interface TeamAssemblyPhasePlan {
+  objectives: string[];
+  deliverables: string[];
+  ownerRoleKeys: string[];
+}
+
+export interface TeamAssemblyRequestInput {
+  companyName?: string;
+  normalizedGoalDocument: TeamAssemblyNormalizedGoalDocument;
+  prd?: TeamAssemblyPrd;
+  roleLibrary?: TeamAssemblyRoleLibraryEntry[];
+}
+
+export interface CompanyRoleTemplate {
+  id: string;
+  name: string;
+  description: string;
+  defaultModel: string;
+  defaultInstructions: string;
+  defaultSkills: string[];
+}
+
+export interface CompanyProvisioningContract {
+  schemaVersion: string;
+  endpoint: string;
+  requiredHeaders: string[];
+  companyFields: {
+    required: string[];
+    optional: string[];
+  };
+  agentFields: {
+    identifierFields: string[];
+    requiredOneOf: string[];
+    optional: string[];
+  };
+}
+
+export interface CompanyRoleTemplateCatalogResponse {
+  roleTemplates: CompanyRoleTemplate[];
+  total: number;
+  provisioningContract: CompanyProvisioningContract;
+}
+
+export interface CompanyProvisioningAgentInput {
+  roleTemplateId?: string;
+  roleKey?: string;
+  name?: string;
+  budgetMonthlyUsd?: number;
+  model?: string;
+  instructions?: string;
+  skills?: string[];
+}
+
+export interface CompanyProvisioningInput {
+  name: string;
+  workspaceName?: string;
+  externalCompanyId?: string;
+  idempotencyKey: string;
+  budgetMonthlyUsd: number;
+  orchestrationEnabled?: boolean;
+  secretBindings: Record<string, string>;
+  agents: CompanyProvisioningAgentInput[];
+}
+
+export interface ProvisionedCompanySummary {
+  id: string;
+  userId: string;
+  name: string;
+  externalCompanyId?: string;
+  workspaceId: string;
+  teamId: string;
+  idempotencyKey: string;
+  budgetMonthlyUsd: number;
+  allocatedBudgetMonthlyUsd: number;
+  remainingBudgetMonthlyUsd: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ProvisionedWorkspaceSummary {
+  id: string;
+  name: string;
+  slug: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ProvisionedSecretSummary {
+  key: string;
+  maskedValue: string;
+}
+
+export interface ProvisioningSkillSummary {
+  id: string;
+  name: string;
+  description: string;
+  scope: "workflow" | "agent" | "security" | "integration";
+}
+
+export interface CompanyProvisioningResult {
+  company: ProvisionedCompanySummary;
+  workspace: ProvisionedWorkspaceSummary;
+  team: ControlPlaneTeam;
+  agents: ControlPlaneAgent[];
+  secretBindings: ProvisionedSecretSummary[];
+  availableSkills: ProvisioningSkillSummary[];
+  idempotentReplay: boolean;
+}
+
 export interface ControlPlaneTeamDetail {
   team: ControlPlaneTeam;
   agents: ControlPlaneAgent[];
@@ -530,10 +893,16 @@ export async function getConnectorHealth(): Promise<{
 
   const res = await fetch(`${BASE}/connectors/health`);
   if (!res.ok) throw new Error(`Failed to fetch connector health: ${res.status}`);
-  return res.json() as Promise<{
+  const payload = (await res.json()) as {
     connectors: ConnectorHealthRecord[];
     summary: ConnectorHealthSummary;
-  }>;
+  };
+
+  if (payload.summary?.source === "mock") {
+    throw new Error("Connector health is still serving mock telemetry.");
+  }
+
+  return payload;
 }
 
 /** GET /api/runs/:id */
@@ -602,6 +971,53 @@ export async function deployWorkflowAsTeam(
     throw new Error(err?.error ?? `Failed to deploy workflow as team: ${res.status}`);
   }
   return res.json() as Promise<ControlPlaneDeployment>;
+}
+
+export async function generateTeamAssemblyPlan(
+  input: TeamAssemblyRequestInput,
+  accessToken?: string
+): Promise<TeamAssemblyResult> {
+  const res = await fetch(`${BASE}/goals/team-assembly`, {
+    method: "POST",
+    headers: buildJsonHeaders(accessToken),
+    body: JSON.stringify(input),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => null);
+    throw new Error(err?.error ?? `Failed to generate staffing plan: ${res.status}`);
+  }
+  return res.json() as Promise<TeamAssemblyResult>;
+}
+
+export async function listCompanyRoleTemplates(
+  accessToken?: string
+): Promise<CompanyRoleTemplateCatalogResponse> {
+  const res = await fetch(`${BASE}/companies/role-templates`, {
+    headers: buildAuthHeaders(accessToken),
+  });
+  return parseJsonOrError<CompanyRoleTemplateCatalogResponse>(
+    res,
+    `Failed to fetch company role templates: ${res.status}`
+  );
+}
+
+export async function provisionCompanyWorkspace(
+  input: CompanyProvisioningInput,
+  accessToken?: string,
+  runId = globalThis.crypto?.randomUUID?.() ?? `company-provision-${Date.now()}`
+): Promise<CompanyProvisioningResult> {
+  const res = await fetch(`${BASE}/companies`, {
+    method: "POST",
+    headers: buildJsonHeaders(accessToken, {
+      "X-Paperclip-Run-Id": runId,
+    }),
+    body: JSON.stringify(input),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => null);
+    throw new Error(err?.error ?? `Failed to provision company workspace: ${res.status}`);
+  }
+  return res.json() as Promise<CompanyProvisioningResult>;
 }
 
 /** POST /api/runs */
@@ -1085,4 +1501,315 @@ export async function resolveApproval(
     const err = await res.json().catch(() => null);
     throw new Error(err?.error ?? `Failed to resolve approval: ${res.status}`);
   }
+}
+
+// ---------------------------------------------------------------------------
+// HITL API — checkpoints, comments, Ask the CEO, and schedule controls
+// ---------------------------------------------------------------------------
+
+export type HitlNotificationChannel = "inbox" | "email" | "agent_wake";
+export type HitlRecipientType = "agent" | "user";
+export type HitlCheckpointTriggerType =
+  | "end_of_week_review"
+  | "milestone_gate"
+  | "kpi_deviation"
+  | "manual";
+export type HitlCheckpointStatus = "pending" | "acknowledged" | "resolved" | "dismissed";
+export type HitlCommentStatus = "open" | "resolved";
+
+export interface HitlKpiThreshold {
+  metricKey: string;
+  comparator: "gt" | "gte" | "lt" | "lte" | "percent_drop";
+  threshold: number;
+  window: "hour" | "day" | "week";
+}
+
+export interface HitlCheckpointSchedule {
+  id: string;
+  companyId: string;
+  userId: string;
+  enabled: boolean;
+  timezone: string;
+  notificationChannels: HitlNotificationChannel[];
+  weeklyReview: {
+    enabled: boolean;
+    dayOfWeek: number;
+    hour: number;
+    minute: number;
+  };
+  milestoneGate: {
+    enabled: boolean;
+    blockingStatuses: string[];
+  };
+  kpiDeviation: {
+    enabled: boolean;
+    thresholds: HitlKpiThreshold[];
+  };
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface HitlCheckpoint {
+  id: string;
+  companyId: string;
+  userId: string;
+  triggerType: HitlCheckpointTriggerType;
+  source: "system" | "manual";
+  title: string;
+  description?: string;
+  status: HitlCheckpointStatus;
+  dueAt?: string;
+  artifactRefs: string[];
+  metadata?: Record<string, unknown>;
+  createdAt: string;
+  updatedAt: string;
+  notificationIds: string[];
+}
+
+export interface HitlArtifactComment {
+  id: string;
+  companyId: string;
+  userId: string;
+  artifact: {
+    kind: "ticket" | "approval" | "run" | "document" | "workflow_step" | "other";
+    id: string;
+    title?: string;
+    path?: string;
+    version?: string;
+  };
+  anchor?: {
+    quote?: string;
+    lineStart?: number;
+    lineEnd?: number;
+    startOffset?: number;
+    endOffset?: number;
+    fieldKey?: string;
+  };
+  body: string;
+  status: HitlCommentStatus;
+  routing: {
+    recipientType: HitlRecipientType;
+    recipientId: string;
+    responsibleAgentId?: string;
+    reason?: string;
+  };
+  createdAt: string;
+  updatedAt: string;
+  notificationIds: string[];
+}
+
+export interface HitlAskCeoRequest {
+  id: string;
+  companyId: string;
+  userId: string;
+  question: string;
+  context?: {
+    artifactRef?: string;
+    taskId?: string;
+    checkpointId?: string;
+  };
+  status: "answered";
+  response: {
+    summary: string;
+    recommendedActions: string[];
+    citedEntities: Array<{
+      type: "team" | "task" | "checkpoint" | "artifact_comment";
+      id: string;
+      label: string;
+    }>;
+    companyStateVersion: string;
+  };
+  createdAt: string;
+}
+
+export interface HitlNotification {
+  id: string;
+  companyId: string;
+  userId: string;
+  kind: "checkpoint" | "artifact_comment" | "ask_ceo_response";
+  channel: HitlNotificationChannel;
+  recipientType: HitlRecipientType;
+  recipientId: string;
+  status: "pending" | "sent" | "failed";
+  payload: Record<string, unknown>;
+  createdAt: string;
+}
+
+export interface HitlCompanyState {
+  companyId: string;
+  version: string;
+  summary: {
+    companyId: string;
+    version: string;
+    team: {
+      id: string;
+      name: string;
+      status: string;
+      budgetMonthlyUsd: number;
+      agentCount: number;
+      activeExecutionCount: number;
+      openTaskCount: number;
+    } | null;
+    hitl: {
+      openCheckpointCount: number;
+      unresolvedCommentCount: number;
+      askCeoRequestCount: number;
+    };
+  };
+  checkpointSchedule: HitlCheckpointSchedule;
+  checkpoints: HitlCheckpoint[];
+  artifactComments: HitlArtifactComment[];
+  askCeoRequests: HitlAskCeoRequest[];
+}
+
+export interface UpdateHitlCheckpointScheduleInput {
+  enabled?: boolean;
+  timezone?: string;
+  notificationChannels?: HitlNotificationChannel[];
+  weeklyReview?: Partial<HitlCheckpointSchedule["weeklyReview"]>;
+  milestoneGate?: Partial<HitlCheckpointSchedule["milestoneGate"]>;
+  kpiDeviation?: {
+    enabled?: boolean;
+    thresholds?: HitlKpiThreshold[];
+  };
+}
+
+export interface CreateHitlCheckpointInput {
+  triggerType?: HitlCheckpointTriggerType;
+  title: string;
+  description?: string;
+  dueAt?: string;
+  artifactRefs?: string[];
+  metadata?: Record<string, unknown>;
+  recipientType: HitlRecipientType;
+  recipientId: string;
+}
+
+export interface CreateHitlArtifactCommentInput {
+  artifact: HitlArtifactComment["artifact"];
+  anchor?: HitlArtifactComment["anchor"];
+  body: string;
+  routing: HitlArtifactComment["routing"];
+}
+
+export interface CreateHitlAskCeoRequestInput {
+  question: string;
+  context?: HitlAskCeoRequest["context"];
+}
+
+function createPaperclipRunId(): string {
+  return globalThis.crypto?.randomUUID?.() ?? `hitl-${Date.now()}`;
+}
+
+/** GET /api/hitl/companies/:companyId/state */
+export async function getHitlCompanyState(
+  companyId: string,
+  accessToken?: string
+): Promise<HitlCompanyState> {
+  const res = await fetch(`${BASE}/hitl/companies/${encodeURIComponent(companyId)}/state`, {
+    headers: buildAuthHeaders(accessToken),
+  });
+  if (!res.ok) {
+    throw new Error(await readApiError(res, `Failed to fetch HITL state: ${res.status}`));
+  }
+  return res.json() as Promise<HitlCompanyState>;
+}
+
+/** GET /api/hitl/companies/:companyId/notifications */
+export async function listHitlNotifications(
+  companyId: string,
+  accessToken?: string
+): Promise<HitlNotification[]> {
+  const res = await fetch(`${BASE}/hitl/companies/${encodeURIComponent(companyId)}/notifications`, {
+    headers: buildAuthHeaders(accessToken),
+  });
+  if (!res.ok) {
+    throw new Error(await readApiError(res, `Failed to fetch HITL notifications: ${res.status}`));
+  }
+  const data = await res.json();
+  return data.notifications as HitlNotification[];
+}
+
+/** PUT /api/hitl/companies/:companyId/checkpoint-schedule */
+export async function updateHitlCheckpointSchedule(
+  companyId: string,
+  input: UpdateHitlCheckpointScheduleInput,
+  accessToken?: string,
+  runId = createPaperclipRunId()
+): Promise<HitlCheckpointSchedule> {
+  const res = await fetch(`${BASE}/hitl/companies/${encodeURIComponent(companyId)}/checkpoint-schedule`, {
+    method: "PUT",
+    headers: buildJsonHeaders(accessToken, {
+      "X-Paperclip-Run-Id": runId,
+    }),
+    body: JSON.stringify(input),
+  });
+  if (!res.ok) {
+    throw new Error(await readApiError(res, `Failed to update HITL schedule: ${res.status}`));
+  }
+  const data = await res.json();
+  return data.schedule as HitlCheckpointSchedule;
+}
+
+/** POST /api/hitl/companies/:companyId/checkpoints */
+export async function createHitlCheckpoint(
+  companyId: string,
+  input: CreateHitlCheckpointInput,
+  accessToken?: string,
+  runId = createPaperclipRunId()
+): Promise<HitlCheckpoint> {
+  const res = await fetch(`${BASE}/hitl/companies/${encodeURIComponent(companyId)}/checkpoints`, {
+    method: "POST",
+    headers: buildJsonHeaders(accessToken, {
+      "X-Paperclip-Run-Id": runId,
+    }),
+    body: JSON.stringify(input),
+  });
+  if (!res.ok) {
+    throw new Error(await readApiError(res, `Failed to create HITL checkpoint: ${res.status}`));
+  }
+  const data = await res.json();
+  return data.checkpoint as HitlCheckpoint;
+}
+
+/** POST /api/hitl/companies/:companyId/artifact-comments */
+export async function createHitlArtifactComment(
+  companyId: string,
+  input: CreateHitlArtifactCommentInput,
+  accessToken?: string,
+  runId = createPaperclipRunId()
+): Promise<HitlArtifactComment> {
+  const res = await fetch(`${BASE}/hitl/companies/${encodeURIComponent(companyId)}/artifact-comments`, {
+    method: "POST",
+    headers: buildJsonHeaders(accessToken, {
+      "X-Paperclip-Run-Id": runId,
+    }),
+    body: JSON.stringify(input),
+  });
+  if (!res.ok) {
+    throw new Error(await readApiError(res, `Failed to create HITL comment: ${res.status}`));
+  }
+  const data = await res.json();
+  return data.comment as HitlArtifactComment;
+}
+
+/** POST /api/hitl/companies/:companyId/ask-ceo/requests */
+export async function createHitlAskCeoRequest(
+  companyId: string,
+  input: CreateHitlAskCeoRequestInput,
+  accessToken?: string,
+  runId = createPaperclipRunId()
+): Promise<HitlAskCeoRequest> {
+  const res = await fetch(`${BASE}/hitl/companies/${encodeURIComponent(companyId)}/ask-ceo/requests`, {
+    method: "POST",
+    headers: buildJsonHeaders(accessToken, {
+      "X-Paperclip-Run-Id": runId,
+    }),
+    body: JSON.stringify(input),
+  });
+  if (!res.ok) {
+    throw new Error(await readApiError(res, `Failed to ask the CEO: ${res.status}`));
+  }
+  const data = await res.json();
+  return data.request as HitlAskCeoRequest;
 }

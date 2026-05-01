@@ -4,8 +4,9 @@ import { AuthProvider, useAuth } from "./context/AuthContext";
 import {
   readQaPreviewToken,
   sanitizeQaPreviewRedirect,
-  writeStoredAuthUser,
+  writeStoredAuthSession,
 } from "./auth/authStorage";
+import { sessionFromAppToken } from "./auth/nativeAuthClient";
 import Layout from "./components/Layout";
 import Login from "./pages/Login";
 import Dashboard from "./pages/Dashboard";
@@ -79,15 +80,16 @@ async function maybeActivateQaPreviewAccess(): Promise<void> {
   }
 
   const data = (await res.json()) as {
+    accessToken?: string;
     user?: { id: string; email: string; name: string; tenantId?: string };
   };
 
-  if (!data.user) {
+  if (!data.user || !data.accessToken) {
     window.history.replaceState({}, "", "/login?qaPreviewError=invalid");
     return;
   }
 
-  writeStoredAuthUser(data.user);
+  writeStoredAuthSession(sessionFromAppToken(data.accessToken));
 
   const nextPath =
     redirectTarget ?? `${window.location.pathname}${window.location.hash}`;
@@ -148,6 +150,7 @@ export default function App() {
             <Route path="agents/my" element={<MyAgents />} />
             <Route path="agents/activity" element={<AgentActivity />} />
             <Route path="agents/routines" element={<Routines />} />
+            <Route path="workspace/staffing-plan" element={<Dashboard />} />
             <Route path="workspace/org-structure" element={<OrgStructure />} />
             <Route path="workspace/budget-dashboard" element={<BudgetDashboard />} />
             <Route path="tickets" element={<Tickets />} />

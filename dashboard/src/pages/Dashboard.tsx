@@ -4,10 +4,13 @@ import {
   useDeferredValue,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 import { Link } from "react-router-dom";
 import {
+  Activity,
+  AlertTriangle,
   ArrowRight,
   BadgeCheck,
   Bot,
@@ -17,9 +20,12 @@ import {
   DollarSign,
   Gauge,
   MessageSquare,
+  RefreshCcw,
   ShieldAlert,
   Sparkles,
   TrendingUp,
+  Wifi,
+  WifiOff,
 } from "lucide-react";
 import { listApprovals, listRuns, type ApprovalRequest } from "../api/client";
 import {
@@ -32,6 +38,14 @@ import {
   type AgentHeartbeat,
   type AgentRun,
 } from "../api/agentApi";
+import {
+  getObservabilityThroughput,
+  listObservabilityEvents,
+  streamObservabilityEvents,
+  type ObservabilityEvent,
+  type ObservabilityEventCategory,
+  type ObservabilityThroughputSnapshot,
+} from "../api/observability";
 import { createTicket, type TicketAssignee } from "../api/tickets";
 import { RunAuditSidebar } from "../components/RunAuditSidebar";
 import { ErrorState, LoadingState } from "../components/UiStates";
@@ -59,10 +73,23 @@ type ArtifactFeedbackState = {
   notice: string | null;
 };
 
+type FeedFilter = "all" | ObservabilityEventCategory;
+type TransportState = "connecting" | "live" | "reconnecting" | "polling" | "error";
+
 const DAYS = 7;
+const WINDOW_OPTIONS = [1, 6, 24] as const;
+const FILTER_OPTIONS: Array<{ value: FeedFilter; label: string }> = [
+  { value: "all", label: "All activity" },
+  { value: "issue", label: "Issues" },
+  { value: "run", label: "Runs" },
+  { value: "alert", label: "Alerts" },
+];
+const MAX_FEED_ITEMS = 20;
+const POLLING_INTERVAL_MS = 15_000;
+const MAX_RECONNECT_ATTEMPTS = 2;
 
 export default function Dashboard() {
-  const { user, requireAccessToken } = useAuth();
+  const { accessMode, user, requireAccessToken } = useAuth();
   const [runs, setRuns] = useState<WorkflowRun[]>([]);
   const [approvals, setApprovals] = useState<ApprovalRequest[]>([]);
   const [agentSnapshots, setAgentSnapshots] = useState<AgentSnapshot[]>([]);
@@ -73,16 +100,193 @@ export default function Dashboard() {
   const deferredArtifactQuery = useDeferredValue(artifactQuery);
   const [feedbackDrafts, setFeedbackDrafts] = useState<Record<string, string>>({});
   const [feedbackState, setFeedbackState] = useState<Record<string, ArtifactFeedbackState>>({});
+  const [observabilityFeed, setObservabilityFeed] = useState<ObservabilityEvent[]>([]);
+  const [throughput, setThroughput] = useState<ObservabilityThroughputSnapshot | null>(null);
+  const [transportState, setTransportState] = useState<TransportState>("connecting");
+  const [windowHours, setWindowHours] = useState<(typeof WINDOW_OPTIONS)[number]>(24);
+  const [categoryFilter, setCategoryFilter] = useState<FeedFilter>("all");
+  const [transportDetail, setTransportDetail] = useState<string | null>(null);
+  const [lastUpdatedAt, setLastUpdatedAt] = useState<string | null>(null);
+
+  const latestCursorRef = useRef<string | undefined>(undefined);
+  const reconnectAttemptRef = useRef(0);
+  const pollIntervalRef = useRef<number | null>(null);
+  const reconnectTimeoutRef = useRef<number | null>(null);
+  const streamAbortRef = useRef<AbortController | null>(null);
+
+  const selectedCategories = useMemo(
+    () => (categoryFilter === "all" ? undefined : [categoryFilter]),
+    [categoryFilter]
+  );
+
+  const mergeFeed = useCallback((incoming: ObservabilityEvent[]) => {
+    if (incoming.length === 0) return;
+
+    setObservabilityFeed((current) => {
+      const merged = new Map(current.map((event) => [event.id, event]));
+      for (const event of incoming) {
+        merged.set(event.id, event);
+      }
+
+      const next = Array.from(merged.values())
+        .sort((left, right) => Number(right.sequence) - Number(left.sequence))
+        .slice(0, MAX_FEED_ITEMS);
+
+      latestCursorRef.current = next.reduce<string | undefined>((cursor, event) => {
+        if (!cursor || Number(event.sequence) > Number(cursor)) {
+          return event.sequence;
+        }
+        return cursor;
+      }, latestCursorRef.current);
+
+      return next;
+    });
+
+    setLastUpdatedAt(incoming[0]?.occurredAt ?? new Date().toISOString());
+  }, []);
+
+  const stopRealtime = useCallback(() => {
+    streamAbortRef.current?.abort();
+    streamAbortRef.current = null;
+
+    if (pollIntervalRef.current) {
+      window.clearInterval(pollIntervalRef.current);
+      pollIntervalRef.current = null;
+    }
+
+    if (reconnectTimeoutRef.current) {
+      window.clearTimeout(reconnectTimeoutRef.current);
+      reconnectTimeoutRef.current = null;
+    }
+  }, []);
+
+  const startPolling = useCallback(
+    (accessToken: string, reason: string) => {
+      stopRealtime();
+      setTransportState("polling");
+      setTransportDetail(reason);
+
+      pollIntervalRef.current = window.setInterval(() => {
+        void (async () => {
+          try {
+            const [page, snapshot] = await Promise.all([
+              listObservabilityEvents(accessToken, {
+                after: latestCursorRef.current,
+                categories: selectedCategories,
+                limit: MAX_FEED_ITEMS,
+              }),
+              getObservabilityThroughput(accessToken, windowHours),
+            ]);
+
+            mergeFeed(page.events);
+            setThroughput(snapshot);
+            setLastUpdatedAt(snapshot.generatedAt);
+          } catch (pollError) {
+            setTransportState("error");
+            setTransportDetail(
+              pollError instanceof Error ? pollError.message : "Polling fallback failed"
+            );
+          }
+        })();
+      }, POLLING_INTERVAL_MS);
+    },
+    [mergeFeed, selectedCategories, stopRealtime, windowHours]
+  );
+
+  const startStream = useCallback(
+    (accessToken: string) => {
+      stopRealtime();
+      const controller = new AbortController();
+      streamAbortRef.current = controller;
+      setTransportState(latestCursorRef.current ? "reconnecting" : "connecting");
+
+      void streamObservabilityEvents(accessToken, {
+        after: latestCursorRef.current,
+        categories: selectedCategories,
+        limit: 100,
+        signal: controller.signal,
+        onEvent: (event) => {
+          reconnectAttemptRef.current = 0;
+          setTransportState("live");
+          setTransportDetail("Fresh events are streaming from the control plane.");
+          mergeFeed([event]);
+        },
+        onReady: (ready) => {
+          reconnectAttemptRef.current = 0;
+          if (ready.nextCursor) {
+            latestCursorRef.current = ready.nextCursor;
+          }
+          setTransportState("live");
+          setTransportDetail(
+            ready.replayed > 0
+              ? `Replayed ${ready.replayed} events before switching to live updates.`
+              : "Streaming live updates."
+          );
+          setLastUpdatedAt(ready.generatedAt);
+        },
+        onKeepalive: (keepalive) => {
+          setLastUpdatedAt(keepalive.generatedAt);
+        },
+      })
+        .then(() => {
+          if (!controller.signal.aborted) {
+            startPolling(accessToken, "Live stream closed. Polling every 15 seconds.");
+          }
+        })
+        .catch((streamError) => {
+          if (controller.signal.aborted) return;
+
+          const message =
+            streamError instanceof Error ? streamError.message : "Live stream unavailable";
+          if (reconnectAttemptRef.current < MAX_RECONNECT_ATTEMPTS) {
+            reconnectAttemptRef.current += 1;
+            setTransportState("reconnecting");
+            setTransportDetail(
+              `Reconnecting to live stream (${reconnectAttemptRef.current}/${MAX_RECONNECT_ATTEMPTS})...`
+            );
+            reconnectTimeoutRef.current = window.setTimeout(() => {
+              startStream(accessToken);
+            }, 2_500);
+            return;
+          }
+
+          startPolling(accessToken, `${message} Falling back to polling.`);
+        });
+    },
+    [mergeFeed, selectedCategories, startPolling, stopRealtime]
+  );
 
   const loadDashboard = useCallback(async () => {
+    stopRealtime();
+    reconnectAttemptRef.current = 0;
     setLoading(true);
     setError(null);
+    setTransportDetail(null);
     try {
+      if (accessMode === "preview") {
+        setRuns([]);
+        setApprovals([]);
+        setAgentSnapshots([]);
+        setObservabilityFeed([]);
+        setThroughput(null);
+        setTransportState("connecting");
+        setLastUpdatedAt(null);
+        latestCursorRef.current = undefined;
+        return;
+      }
+
       const accessToken = await requireAccessToken();
       const [fetchedRuns, fetchedAgents, fetchedApprovals] = await Promise.all([
         listRuns(undefined, accessToken),
         listAgents(accessToken).catch(() => []),
         listApprovals(accessToken).catch(() => []),
+      ]);
+      const [observabilityPageResult, observabilitySnapshotResult] = await Promise.allSettled([
+        listObservabilityEvents(accessToken, {
+          categories: selectedCategories,
+          limit: MAX_FEED_ITEMS,
+        }),
+        getObservabilityThroughput(accessToken, windowHours),
       ]);
 
       const snapshots = await Promise.all(
@@ -104,16 +308,50 @@ export default function Dashboard() {
       setRuns(fetchedRuns);
       setApprovals(fetchedApprovals);
       setAgentSnapshots(snapshots);
+
+      if (
+        observabilityPageResult.status === "fulfilled" &&
+        observabilitySnapshotResult.status === "fulfilled"
+      ) {
+        const sortedFeed = [...observabilityPageResult.value.events].sort(
+          (left, right) => Number(right.sequence) - Number(left.sequence)
+        );
+        setObservabilityFeed(sortedFeed.slice(0, MAX_FEED_ITEMS));
+        latestCursorRef.current = sortedFeed[0]?.sequence;
+        setThroughput(observabilitySnapshotResult.value);
+        setLastUpdatedAt(observabilitySnapshotResult.value.generatedAt);
+        startStream(accessToken);
+      } else {
+        const observabilityError =
+          observabilityPageResult.status === "rejected"
+            ? observabilityPageResult.reason
+            : observabilitySnapshotResult.status === "rejected"
+              ? observabilitySnapshotResult.reason
+              : new Error("Observability is unavailable.");
+
+        setObservabilityFeed([]);
+        setThroughput(null);
+        latestCursorRef.current = undefined;
+        setLastUpdatedAt(null);
+        setTransportState("error");
+        setTransportDetail(
+          observabilityError instanceof Error
+            ? observabilityError.message
+            : "Observability is unavailable."
+        );
+      }
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Failed to load customer dashboard");
+      setTransportState("error");
     } finally {
       setLoading(false);
     }
-  }, [requireAccessToken]);
+  }, [accessMode, requireAccessToken, selectedCategories, startStream, stopRealtime, windowHours]);
 
   useEffect(() => {
     void loadDashboard();
-  }, [loadDashboard]);
+    return () => stopRealtime();
+  }, [loadDashboard, stopRealtime]);
 
   const firstName = user?.name?.split(" ")[0] ?? user?.email?.split("@")[0] ?? "Operator";
 
@@ -166,6 +404,20 @@ export default function Dashboard() {
   const latestKpi = kpiSeries[kpiSeries.length - 1];
 
   const activityEvents = useMemo(() => buildActivityEvents(agentSnapshots), [agentSnapshots]);
+  const renderedBuckets = useMemo(() => {
+    const buckets = throughput?.buckets.slice(-8) ?? [];
+    const maxValue = Math.max(
+      1,
+      ...buckets.map((bucket) => bucket.createdCount + bucket.completedCount + bucket.blockedCount)
+    );
+
+    return buckets.map((bucket) => ({
+      ...bucket,
+      total: bucket.createdCount + bucket.completedCount + bucket.blockedCount,
+      heightPercent:
+        ((bucket.createdCount + bucket.completedCount + bucket.blockedCount) / maxValue) * 100,
+    }));
+  }, [throughput]);
   const recentArtifacts = useMemo(() => {
     const query = deferredArtifactQuery.trim().toLowerCase();
     return [...runs]
@@ -471,6 +723,202 @@ export default function Dashboard() {
                         </article>
                       ))
                     )}
+                  </div>
+                </Panel>
+
+                <Panel
+                  title="Observability Cockpit"
+                  eyebrow="Live activity"
+                  action={
+                    <button
+                      type="button"
+                      onClick={() => {
+                        void loadDashboard();
+                      }}
+                      className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-sm font-medium text-slate-700 transition hover:border-indigo-300 hover:text-indigo-700"
+                    >
+                      <RefreshCcw size={14} />
+                      Refresh data
+                    </button>
+                  }
+                >
+                  <div className="grid gap-5 lg:grid-cols-[0.95fr,1.05fr]">
+                    <section className="rounded-[24px] border border-slate-200 bg-slate-50/80 p-4">
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-400">
+                            Transport status
+                          </div>
+                          <h3 className="mt-2 text-lg font-semibold text-slate-950">
+                            {transportStateLabel(transportState)}
+                          </h3>
+                        </div>
+                        <TransportPill state={transportState} />
+                      </div>
+                      <p className="mt-3 text-sm leading-6 text-slate-500">
+                        {transportDetail ?? "Waiting for the stream handshake to complete."}
+                      </p>
+                      <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                        <ChartStat
+                          label="Last refresh"
+                          value={lastUpdatedAt ? formatRelative(lastUpdatedAt) : "waiting"}
+                        />
+                        <ChartStat
+                          label="Fallback mode"
+                          value={transportState === "polling" ? "15s poll" : "standby"}
+                        />
+                      </div>
+
+                      <div className="mt-4 flex flex-wrap gap-2">
+                        {FILTER_OPTIONS.map((option) => (
+                          <button
+                            key={option.value}
+                            type="button"
+                            aria-pressed={categoryFilter === option.value}
+                            onClick={() => setCategoryFilter(option.value)}
+                            className={`rounded-full border px-3 py-1.5 text-sm transition ${
+                              categoryFilter === option.value
+                                ? "border-indigo-300 bg-indigo-50 text-indigo-700"
+                                : "border-slate-200 bg-white text-slate-600 hover:border-indigo-200 hover:text-indigo-700"
+                            }`}
+                          >
+                            {option.label}
+                          </button>
+                        ))}
+                      </div>
+
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        {WINDOW_OPTIONS.map((option) => (
+                          <button
+                            key={option}
+                            type="button"
+                            aria-pressed={windowHours === option}
+                            onClick={() => setWindowHours(option)}
+                            className={`rounded-full border px-3 py-1.5 text-sm transition ${
+                              windowHours === option
+                                ? "border-teal-300 bg-teal-50 text-teal-700"
+                                : "border-slate-200 bg-white text-slate-600 hover:border-teal-200 hover:text-teal-700"
+                            }`}
+                          >
+                            {option}h
+                          </button>
+                        ))}
+                      </div>
+
+                      {transportState === "polling" ? (
+                        <div className="mt-4 rounded-[20px] border border-orange-200 bg-orange-50 px-4 py-3 text-sm text-orange-700">
+                          Live streaming is unavailable. Polling continuity is active.
+                        </div>
+                      ) : null}
+
+                      {transportState === "error" ? (
+                        <div className="mt-4 rounded-[20px] border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                          Live transport is degraded. Retry the dashboard refresh to re-establish the stream.
+                        </div>
+                      ) : null}
+                    </section>
+
+                    <section className="space-y-4">
+                      <div className="grid gap-3 sm:grid-cols-3">
+                        <MetricChip
+                          label="Created"
+                          value={throughput?.summary.createdCount ?? 0}
+                          tone="indigo"
+                        />
+                        <MetricChip
+                          label="Completed"
+                          value={throughput?.summary.completedCount ?? 0}
+                          tone="teal"
+                        />
+                        <MetricChip
+                          label="Blocked"
+                          value={throughput?.summary.blockedCount ?? 0}
+                          tone="orange"
+                        />
+                      </div>
+
+                      <section className="rounded-[24px] border border-slate-200 bg-white p-4">
+                        <div className="flex items-center justify-between gap-3">
+                          <div>
+                            <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-400">
+                              KPI prototype
+                            </div>
+                            <h3 className="mt-2 text-lg font-semibold text-slate-950">
+                              Throughput over the last {windowHours} hours
+                            </h3>
+                          </div>
+                          <span className="rounded-full bg-teal-50 px-3 py-1 text-sm font-medium text-teal-700">
+                            {Math.round((throughput?.summary.completionRate ?? 0) * 100)}% completion
+                          </span>
+                        </div>
+                        <div className="mt-4 grid grid-cols-8 items-end gap-2">
+                          {renderedBuckets.map((bucket) => (
+                            <div key={bucket.bucketStart} className="flex flex-col items-center gap-2">
+                              <div className="flex h-24 w-full items-end justify-center rounded-2xl bg-slate-50 px-2 py-2">
+                                <div
+                                  className="w-full rounded-full bg-gradient-to-t from-indigo-500 via-teal-400 to-orange-300"
+                                  style={{ height: `${Math.max(bucket.heightPercent, 12)}%` }}
+                                />
+                              </div>
+                              <span className="text-[11px] text-slate-500">
+                                {formatBucketLabel(bucket.bucketStart)}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      </section>
+
+                      <section className="rounded-[24px] border border-slate-200 bg-white p-4">
+                        <div className="flex items-start justify-between gap-3">
+                          <div>
+                            <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-400">
+                              Live feed
+                            </div>
+                            <h3 className="mt-2 text-lg font-semibold text-slate-950">
+                              Activity updates as they happen
+                            </h3>
+                          </div>
+                          <Link to="/history" className="text-sm font-medium text-indigo-600">
+                            Full history
+                          </Link>
+                        </div>
+                        <div className="mt-4 space-y-3">
+                          {observabilityFeed.length === 0 ? (
+                            <ZeroState
+                              title="No activity in this view"
+                              detail="Try a broader time range or switch the feed filter back to all activity."
+                            />
+                          ) : (
+                            observabilityFeed.map((event) => (
+                              <article
+                                key={event.id}
+                                className="rounded-[20px] border border-slate-200 bg-slate-50 px-4 py-3"
+                              >
+                                <div className="flex items-start gap-3">
+                                  <div>{eventCategoryIcon(event.category)}</div>
+                                  <div className="min-w-0 flex-1">
+                                    <div className="flex flex-wrap items-center gap-2">
+                                      <span className={eventCategoryBadge(event.category)}>
+                                        {event.category}
+                                      </span>
+                                      <span className="text-xs text-slate-400">
+                                        {formatObservabilityDateTime(event.occurredAt)}
+                                      </span>
+                                    </div>
+                                    <p className="mt-2 text-sm font-medium text-slate-900">{event.summary}</p>
+                                    <div className="mt-2 flex flex-wrap gap-x-4 gap-y-2 text-xs text-slate-500">
+                                      <span>{event.subject.label ?? event.subject.type}</span>
+                                      <span>{event.type}</span>
+                                      <span>{event.actor.label ?? event.actor.id}</span>
+                                    </div>
+                                  </div>
+                                </div>
+                              </article>
+                            ))
+                          )}
+                        </div>
+                      </section>
+                    </section>
                   </div>
                 </Panel>
 
@@ -862,6 +1310,62 @@ function HeroChip({
   );
 }
 
+function MetricChip({
+  label,
+  value,
+  tone,
+}: {
+  label: string;
+  value: number;
+  tone: "indigo" | "teal" | "orange";
+}) {
+  const classes =
+    tone === "teal"
+      ? "border-teal-100 bg-teal-50 text-teal-700"
+      : tone === "orange"
+        ? "border-orange-100 bg-orange-50 text-orange-700"
+        : "border-indigo-100 bg-indigo-50 text-indigo-700";
+
+  return (
+    <div className={`rounded-[20px] border px-4 py-4 ${classes}`}>
+      <p className="text-[11px] font-semibold uppercase tracking-[0.2em]">{label}</p>
+      <p className="mt-3 text-2xl font-semibold">{value}</p>
+    </div>
+  );
+}
+
+function TransportPill({ state }: { state: TransportState }) {
+  const config =
+    state === "live"
+      ? { label: "Streaming", className: "bg-teal-50 text-teal-700 border-teal-100", icon: <Wifi size={14} /> }
+      : state === "reconnecting"
+        ? {
+            label: "Recovering",
+            className: "bg-orange-50 text-orange-700 border-orange-100",
+            icon: <RefreshCcw size={14} className="animate-spin" />,
+          }
+        : state === "polling"
+          ? { label: "Polling", className: "bg-slate-100 text-slate-700 border-slate-200", icon: <WifiOff size={14} /> }
+          : state === "error"
+            ? {
+                label: "Attention",
+                className: "bg-red-50 text-red-700 border-red-100",
+                icon: <AlertTriangle size={14} />,
+              }
+            : {
+                label: "Connecting",
+                className: "bg-indigo-50 text-indigo-700 border-indigo-100",
+                icon: <Activity size={14} />,
+              };
+
+  return (
+    <span className={`inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-sm font-medium ${config.className}`}>
+      {config.icon}
+      {config.label}
+    </span>
+  );
+}
+
 function MetricCard({
   label,
   value,
@@ -1070,6 +1574,62 @@ function SpendBars({ snapshots }: { snapshots: AgentSnapshot[] }) {
       })}
     </div>
   );
+}
+
+function transportStateLabel(state: TransportState): string {
+  if (state === "live") return "Fresh events are flowing";
+  if (state === "reconnecting") return "Recovering live transport";
+  if (state === "polling") return "Polling fallback active";
+  if (state === "error") return "Operator attention required";
+  return "Connecting to live transport";
+}
+
+function eventCategoryBadge(category: ObservabilityEventCategory): string {
+  if (category === "run") {
+    return "rounded-full bg-indigo-50 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-indigo-700";
+  }
+  if (category === "alert") {
+    return "rounded-full bg-orange-50 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-orange-700";
+  }
+  if (category === "heartbeat") {
+    return "rounded-full bg-teal-50 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-teal-700";
+  }
+  if (category === "budget") {
+    return "rounded-full bg-cyan-50 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-cyan-700";
+  }
+  return "rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-700";
+}
+
+function eventCategoryIcon(category: ObservabilityEventCategory) {
+  if (category === "run") {
+    return <span className="flex h-9 w-9 items-center justify-center rounded-2xl bg-indigo-50 text-indigo-700"><Activity size={16} /></span>;
+  }
+  if (category === "alert") {
+    return <span className="flex h-9 w-9 items-center justify-center rounded-2xl bg-orange-50 text-orange-700"><AlertTriangle size={16} /></span>;
+  }
+  if (category === "heartbeat") {
+    return <span className="flex h-9 w-9 items-center justify-center rounded-2xl bg-teal-50 text-teal-700"><Wifi size={16} /></span>;
+  }
+  if (category === "budget") {
+    return <span className="flex h-9 w-9 items-center justify-center rounded-2xl bg-cyan-50 text-cyan-700"><DollarSign size={16} /></span>;
+  }
+  return <span className="flex h-9 w-9 items-center justify-center rounded-2xl bg-slate-100 text-slate-700"><Clock3 size={16} /></span>;
+}
+
+function formatObservabilityDateTime(value: string): string {
+  return new Date(value).toLocaleString([], {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
+
+function formatBucketLabel(value: string): string {
+  return new Date(value).toLocaleTimeString([], {
+    hour: "numeric",
+    minute: "2-digit",
+  });
 }
 
 function ZeroState({ title, detail }: { title: string; detail: string }) {

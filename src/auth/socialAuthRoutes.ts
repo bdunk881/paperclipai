@@ -111,7 +111,8 @@ function socialAuthNonceCookieOptions(provider: SocialAuthProvider): express.Coo
     httpOnly: true,
     maxAge: SOCIAL_AUTH_NONCE_MAX_AGE_MS,
     path: `/api/auth/social/${provider}/callback`,
-    sameSite: "strict",
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "lax",
   };
 }
 

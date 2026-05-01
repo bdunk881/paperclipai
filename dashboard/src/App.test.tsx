@@ -38,6 +38,7 @@ vi.mock("./context/AuthContext", () => ({
   AuthProvider: ({ children }: { children: ReactNode }) => <>{children}</>,
   useAuth: () => ({
     user: authState.user,
+    accessMode: authState.user ? "authenticated" : "anonymous",
     login: vi.fn(),
     signup: vi.fn(),
     logout: vi.fn(),
@@ -152,6 +153,16 @@ describe("App", () => {
 
     expect(await screen.findByText("Layout Shell")).toBeInTheDocument();
     expect(screen.getByText("Run Monitor Page")).toBeInTheDocument();
+  });
+
+  it("renders the staffing plan legacy route for authenticated users", async () => {
+    authState.user = { id: "user-1", email: "user@example.com", name: "User" };
+    window.history.replaceState({}, "", "/workspace/staffing-plan");
+
+    render(<App />);
+
+    expect(await screen.findByText("Layout Shell")).toBeInTheDocument();
+    expect(screen.getByText("Dashboard Page")).toBeInTheDocument();
   });
 
   it("renders the SLA dashboard route for authenticated users", async () => {

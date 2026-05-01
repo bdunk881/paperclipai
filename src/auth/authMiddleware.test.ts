@@ -17,11 +17,23 @@ function loadRequireAuth() {
   return requireAuth!;
 }
 
+function loadRequireAuthOrQaBypass() {
+  let requireAuthOrQaBypass: typeof import("./authMiddleware").requireAuthOrQaBypass;
+
+  jest.isolateModules(() => {
+    ({ requireAuthOrQaBypass } = require("./authMiddleware") as typeof import("./authMiddleware"));
+  });
+
+  return requireAuthOrQaBypass!;
+}
+
 describe("requireAuth", () => {
   const originalEnv = process.env;
   const verifyMock = jest.fn();
   const getSigningKeyMock = jest.fn();
   const jwksClientMock = jest.fn(() => ({ getSigningKey: getSigningKeyMock }));
+  const recordControlPlaneAuditMock = jest.fn().mockResolvedValue(undefined);
+  const resolveAuditWorkspaceIdForUserMock = jest.fn().mockResolvedValue("workspace-123");
   const warnMock = jest.spyOn(console, "warn").mockImplementation(() => undefined);
 
   beforeEach(() => {
@@ -42,6 +54,13 @@ describe("requireAuth", () => {
     jest.doMock("jwks-rsa", () => ({
       __esModule: true,
       default: jwksClientMock,
+    }));
+
+    jest.doMock("../auditing/controlPlaneAudit", () => ({
+      __esModule: true,
+      recordControlPlaneAudit: recordControlPlaneAuditMock,
+      recordControlPlaneAuditBatch: jest.fn().mockResolvedValue(undefined),
+      resolveAuditWorkspaceIdForUser: resolveAuditWorkspaceIdForUserMock,
     }));
   });
 
@@ -135,6 +154,49 @@ describe("requireAuth", () => {
     expect(next).toHaveBeenCalledTimes(1);
     expect(req.auth?.sub).toBe("preview-user");
     expect(res.status).not.toHaveBeenCalled();
+  });
+
+  it("does not allow QA bypass on protected routes through requireAuth", () => {
+    process.env.NODE_ENV = "test";
+    process.env.QA_AUTH_BYPASS_ENABLED = "true";
+    process.env.QA_AUTH_BYPASS_USER_IDS = "qa-smoke-user";
+
+    const requireAuth = loadRequireAuth();
+    const req = {
+      method: "GET",
+      headers: { "x-user-id": "qa-smoke-user" },
+      originalUrl: "/api/control-plane/teams",
+      path: "/api/control-plane/teams",
+    } as unknown as AuthenticatedRequest;
+    const res = createResponse();
+    const next = jest.fn();
+
+    requireAuth(req, res as never, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(req.auth).toBeUndefined();
+    expect(res.status).toHaveBeenCalledWith(401);
+  });
+
+  it("rejects non-allowlisted QA bypass users on protected routes", () => {
+    process.env.NODE_ENV = "test";
+    process.env.QA_AUTH_BYPASS_ENABLED = "true";
+    process.env.QA_AUTH_BYPASS_USER_IDS = "qa-smoke-user";
+
+    const requireAuth = loadRequireAuth();
+    const req = {
+      method: "GET",
+      headers: { "x-user-id": "not-allowed" },
+      originalUrl: "/api/control-plane/teams",
+      path: "/api/control-plane/teams",
+    } as unknown as AuthenticatedRequest;
+    const res = createResponse();
+    const next = jest.fn();
+
+    requireAuth(req, res as never, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(401);
   });
 
   it("still rejects non-allowlisted routes without Authorization", () => {
@@ -514,6 +576,77 @@ describe("requireAuth", () => {
       jwksUri: "https://autoflowciam.ciamlogin.com/tenant-guid/discovery/v2.0/keys",
     });
     expect(JSON.stringify(warnMock.mock.calls)).not.toContain(token);
+    expect(res.status).toHaveBeenCalledWith(401);
+  });
+
+  it("allows QA bypass for allowlisted users and records both bypass and auth audit events", async () => {
+    process.env.NODE_ENV = "test";
+    process.env.QA_AUTH_BYPASS_ENABLED = "true";
+    process.env.QA_AUTH_BYPASS_USER_IDS = "qa-user";
+
+    const requireAuthOrQaBypass = loadRequireAuthOrQaBypass();
+    const req = {
+      method: "POST",
+      headers: { "x-user-id": "qa-user", "x-workspace-id": "workspace-123" },
+      originalUrl: "/api/control-plane/teams",
+      path: "/api/control-plane/teams",
+    } as unknown as AuthenticatedRequest;
+    const res = createResponse();
+    const next = jest.fn();
+
+    requireAuthOrQaBypass(req, res as never, next);
+    await new Promise((resolve) => setImmediate(resolve));
+
+    expect(next).toHaveBeenCalledTimes(1);
+    expect(req.auth?.sub).toBe("qa-user");
+    expect(recordControlPlaneAuditMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        workspaceId: "workspace-123",
+        userId: "qa-user",
+        category: "bypass_attempt",
+        action: "qa_auth_bypass_attempt",
+      })
+    );
+    expect(recordControlPlaneAuditMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        workspaceId: "workspace-123",
+        userId: "qa-user",
+        category: "auth",
+        action: "qa_auth_bypass_authenticated",
+      })
+    );
+  });
+
+  it("records denied QA bypass attempts for non-allowlisted users", async () => {
+    process.env.NODE_ENV = "test";
+    process.env.QA_AUTH_BYPASS_ENABLED = "true";
+    process.env.QA_AUTH_BYPASS_USER_IDS = "qa-user";
+
+    const requireAuthOrQaBypass = loadRequireAuthOrQaBypass();
+    const req = {
+      method: "POST",
+      headers: { "x-user-id": "not-allowed", "x-workspace-id": "workspace-123" },
+      originalUrl: "/api/control-plane/teams",
+      path: "/api/control-plane/teams",
+    } as unknown as AuthenticatedRequest;
+    const res = createResponse();
+
+    requireAuthOrQaBypass(req, res as never, jest.fn());
+    await new Promise((resolve) => setImmediate(resolve));
+
+    expect(recordControlPlaneAuditMock).toHaveBeenCalledTimes(1);
+    expect(recordControlPlaneAuditMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        workspaceId: "workspace-123",
+        userId: "not-allowed",
+        category: "bypass_attempt",
+        action: "qa_auth_bypass_attempt",
+        metadata: expect.objectContaining({
+          outcome: "denied",
+          reason: "not_allowlisted",
+        }),
+      })
+    );
     expect(res.status).toHaveBeenCalledWith(401);
   });
 });

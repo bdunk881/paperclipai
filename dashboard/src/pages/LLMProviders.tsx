@@ -25,6 +25,7 @@ interface ProviderMeta {
 }
 
 const PROVIDERS: Record<ProviderName, ProviderMeta> = {
+<<<<<<< HEAD
   openai: { 
     name: "OpenAI", 
     color: "text-green-700", 
@@ -53,9 +54,44 @@ const PROVIDERS: Record<ProviderName, ProviderMeta> = {
     abbr: "MIS",
     logo: "mistral.svg"
   },
+=======
+  openai: { name: "OpenAI", color: "text-green-700", bg: "bg-green-100", abbr: "OAI" },
+  anthropic: { name: "Anthropic", color: "text-orange-700", bg: "bg-orange-100", abbr: "ANT" },
+  gemini: { name: "Google Gemini", color: "text-blue-700", bg: "bg-blue-100", abbr: "GEM" },
+  mistral: { name: "Mistral", color: "text-purple-700", bg: "bg-purple-100", abbr: "MIS" },
+  "azure-openai": { name: "Azure OpenAI", color: "text-sky-700", bg: "bg-sky-100", abbr: "AZR" },
+  groq: { name: "Groq", color: "text-emerald-700", bg: "bg-emerald-100", abbr: "GRQ" },
+  fireworks: { name: "Fireworks AI", color: "text-rose-700", bg: "bg-rose-100", abbr: "FWK" },
+  together: { name: "Together AI", color: "text-fuchsia-700", bg: "bg-fuchsia-100", abbr: "TGT" },
+  ollama: { name: "Ollama", color: "text-stone-700", bg: "bg-stone-100", abbr: "OLL" },
+  localai: { name: "LocalAI", color: "text-slate-700", bg: "bg-slate-100", abbr: "LCL" },
+  cohere: { name: "Cohere", color: "text-indigo-700", bg: "bg-indigo-100", abbr: "COH" },
+  perplexity: { name: "Perplexity", color: "text-cyan-700", bg: "bg-cyan-100", abbr: "PPL" },
+  xai: { name: "xAI", color: "text-zinc-700", bg: "bg-zinc-100", abbr: "XAI" },
+  deepseek: { name: "DeepSeek", color: "text-teal-700", bg: "bg-teal-100", abbr: "DSK" },
+  bedrock: { name: "AWS Bedrock", color: "text-amber-700", bg: "bg-amber-100", abbr: "AWS" },
+  "vertex-ai": { name: "Vertex AI", color: "text-lime-700", bg: "bg-lime-100", abbr: "VTX" },
+>>>>>>> origin/staging
 };
 
-const PROVIDER_ORDER: ProviderName[] = ["openai", "anthropic", "gemini", "mistral"];
+const PROVIDER_ORDER: ProviderName[] = [
+  "openai",
+  "anthropic",
+  "gemini",
+  "mistral",
+  "azure-openai",
+  "groq",
+  "fireworks",
+  "together",
+  "ollama",
+  "localai",
+  "cohere",
+  "perplexity",
+  "xai",
+  "deepseek",
+  "bedrock",
+  "vertex-ai",
+];
 
 // ---------------------------------------------------------------------------
 // Connect modal
@@ -70,7 +106,7 @@ interface ConnectModalProps {
 function ConnectModal({ provider, onClose, onSuccess }: ConnectModalProps) {
   const { requireAccessToken } = useAuth();
   const meta = PROVIDERS[provider];
-  const models = PROVIDER_MODELS[provider];
+  const models = PROVIDER_MODELS[provider] ?? [];
 
   const [label, setLabel] = useState("");
   const [apiKey, setApiKey] = useState("");
@@ -336,6 +372,10 @@ export default function LLMProviders() {
     return acc;
   }, {});
 
+  function getMaskedApiKey(config: LLMConfig): string {
+    return config.apiKeyMasked ?? "Hidden";
+  }
+
   return (
     <div className="p-8 max-w-4xl">
       <div className="mb-8">
@@ -351,6 +391,7 @@ export default function LLMProviders() {
           const meta = PROVIDERS[providerKey];
           const count = connectedByProvider[providerKey] ?? 0;
           const isConnected = count > 0;
+          const availableModels = PROVIDER_MODELS[providerKey] ?? [];
 
           return (
             <div
@@ -381,7 +422,7 @@ export default function LLMProviders() {
                   ) : null}
                 </div>
                 <p className="text-xs text-gray-400 mb-3">
-                  {PROVIDER_MODELS[providerKey].length} models available
+                  {availableModels.length} models available
                 </p>
                 {isConnected ? (
                   <button
@@ -465,7 +506,7 @@ export default function LLMProviders() {
                         </div>
                       </td>
                       <td className="px-5 py-3 text-gray-600 font-mono text-xs">{cfg.model}</td>
-                      <td className="px-5 py-3 text-gray-400 font-mono text-xs">{cfg.maskedApiKey}</td>
+                      <td className="px-5 py-3 text-gray-400 font-mono text-xs">{getMaskedApiKey(cfg)}</td>
                       <td className="px-5 py-3">
                         <button
                           onClick={() => !cfg.isDefault && handleSetDefault(cfg.id)}

@@ -57,11 +57,47 @@ describe("report routes", () => {
 
   it("generates, archives, lists, and fetches a board memo report", async () => {
     const userId = `report-user-${Date.now()}`;
-    const team = controlPlaneStore.createTeam({ userId, name: "Ops Team" });
-    const done = controlPlaneStore.createTask({ userId, teamId: team.id, title: "Ship API", actor: "tester" });
-    controlPlaneStore.updateTaskStatus({ taskId: done.id, userId, actor: "tester", status: "done" });
-    const blocked = controlPlaneStore.createTask({ userId, teamId: team.id, title: "Fix billing edge case", actor: "tester" });
-    controlPlaneStore.updateTaskStatus({ taskId: blocked.id, userId, actor: "tester", status: "blocked" });
+    const team = await controlPlaneStore.createTeam({ userId, name: "Ops Team" });
+    const done = await controlPlaneStore.createTask({
+      userId,
+      teamId: team.id,
+      title: "Ship API",
+      actor: "tester",
+    });
+    await controlPlaneStore.updateTaskStatus({
+      taskId: done.id,
+      userId,
+      actor: "tester",
+      status: "done",
+    });
+    const blocked = await controlPlaneStore.createTask({
+      userId,
+      teamId: team.id,
+      title: "Fix billing edge case",
+      actor: "tester",
+    });
+    await controlPlaneStore.updateTaskStatus({
+      taskId: blocked.id,
+      userId,
+      actor: "tester",
+      status: "blocked",
+    });
+    const periodStart = new Date(
+      Math.min(
+        new Date(done.createdAt).getTime(),
+        new Date(done.updatedAt).getTime(),
+        new Date(blocked.createdAt).getTime(),
+        new Date(blocked.updatedAt).getTime()
+      ) - 1_000
+    ).toISOString();
+    const periodEnd = new Date(
+      Math.max(
+        new Date(done.createdAt).getTime(),
+        new Date(done.updatedAt).getTime(),
+        new Date(blocked.createdAt).getTime(),
+        new Date(blocked.updatedAt).getTime()
+      ) + 1_000
+    ).toISOString();
 
     const createRes = await request(app)
       .post("/api/reporting/generate")
@@ -71,8 +107,8 @@ describe("report routes", () => {
       .send({
         kind: "board_memo",
         teamId: team.id,
-        periodStart: "2026-04-01T00:00:00.000Z",
-        periodEnd: "2026-04-30T23:59:59.000Z",
+        periodStart,
+        periodEnd,
         deliveryChannels: ["inbox"],
       });
 

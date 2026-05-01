@@ -1,13 +1,54 @@
 import express from "express";
 import { AuthenticatedRequest } from "../auth/authMiddleware";
+import { recordControlPlaneAuditBatch } from "../auditing/controlPlaneAudit";
+import { isPostgresPersistenceEnabled } from "../db/postgres";
+import { WorkspaceAwareRequest } from "../middleware/workspaceResolver";
 import { controlPlaneStore } from "../controlPlane/controlPlaneStore";
 import { CompanyProvisioningAgentInput } from "../controlPlane/types";
 
 const router = express.Router();
+const COMPANY_PROVISIONING_CONTRACT_VERSION = "2026-04-28";
+
+function buildProvisioningContract() {
+  return {
+    schemaVersion: COMPANY_PROVISIONING_CONTRACT_VERSION,
+    endpoint: "/api/companies",
+    requiredHeaders: ["X-Paperclip-Run-Id"],
+    companyFields: {
+      required: ["name", "idempotencyKey", "budgetMonthlyUsd", "secretBindings", "agents"],
+      optional: ["workspaceName", "externalCompanyId", "orchestrationEnabled"],
+    },
+    agentFields: {
+      identifierFields: ["roleTemplateId"],
+      requiredOneOf: ["roleTemplateId"],
+      optional: ["name", "budgetMonthlyUsd", "model", "instructions", "skills"],
+    },
+  };
+}
 
 function getUserId(req: AuthenticatedRequest): string | null {
   const userId = req.auth?.sub;
   return typeof userId === "string" && userId.trim() ? userId.trim() : null;
+}
+
+function resolveWorkspaceContext(req: WorkspaceAwareRequest, res: express.Response) {
+  const userId = getUserId(req);
+  if (!userId) {
+    res.status(401).json({ error: "Authenticated user required" });
+    return null;
+  }
+
+  const workspaceId = req.workspaceId?.trim();
+  if (workspaceId) {
+    return { workspaceId, userId };
+  }
+
+  if (!isPostgresPersistenceEnabled()) {
+    return { workspaceId: userId, userId };
+  }
+
+  res.status(500).json({ error: "Workspace context was not resolved for the request" });
+  return null;
 }
 
 function requirePaperclipRunId(
@@ -23,10 +64,18 @@ function requirePaperclipRunId(
   next();
 }
 
-router.post("/", requirePaperclipRunId, (req: AuthenticatedRequest, res) => {
-  const userId = getUserId(req);
-  if (!userId) {
-    res.status(401).json({ error: "Authenticated user required" });
+router.get("/role-templates", (_req, res) => {
+  const roleTemplates = controlPlaneStore.listRoleTemplates();
+  res.json({
+    roleTemplates,
+    total: roleTemplates.length,
+    provisioningContract: buildProvisioningContract(),
+  });
+});
+
+router.post("/", requirePaperclipRunId, async (req: WorkspaceAwareRequest, res) => {
+  const context = resolveWorkspaceContext(req, res);
+  if (!context) {
     return;
   }
 
@@ -156,8 +205,9 @@ router.post("/", requirePaperclipRunId, (req: AuthenticatedRequest, res) => {
   }
 
   try {
-    const result = controlPlaneStore.provisionCompanyWorkspace({
-      userId,
+    const result = await controlPlaneStore.provisionCompanyWorkspace({
+      workspaceId: context.workspaceId,
+      userId: context.userId,
       name: name.trim(),
       workspaceName: typeof workspaceName === "string" ? workspaceName.trim() : undefined,
       externalCompanyId: typeof externalCompanyId === "string" ? externalCompanyId.trim() : undefined,
@@ -167,6 +217,62 @@ router.post("/", requirePaperclipRunId, (req: AuthenticatedRequest, res) => {
       secretBindings: parsedSecretBindings,
       agents: parsedAgents,
     });
+
+    if (!result.idempotentReplay) {
+      await recordControlPlaneAuditBatch([
+        {
+          workspaceId: result.workspace.id,
+          userId: context.userId,
+          category: "provisioning",
+          action: "company_provisioned",
+          target: { type: "company", id: result.company.id },
+          metadata: {
+            runId: req.header("X-Paperclip-Run-Id"),
+            teamId: result.team.id,
+            workspaceId: result.workspace.id,
+            agentCount: result.agents.length,
+            externalCompanyId: result.company.externalCompanyId ?? null,
+          },
+        },
+        {
+          workspaceId: result.workspace.id,
+          userId: context.userId,
+          category: "team_lifecycle",
+          action: "team_created",
+          target: { type: "team", id: result.team.id },
+          metadata: {
+            runId: req.header("X-Paperclip-Run-Id"),
+            source: "company_provisioning",
+            companyId: result.company.id,
+          },
+        },
+        {
+          workspaceId: result.workspace.id,
+          userId: context.userId,
+          category: "secret",
+          action: "secret_bindings_configured",
+          target: { type: "company", id: result.company.id },
+          metadata: {
+            runId: req.header("X-Paperclip-Run-Id"),
+            keyCount: result.secretBindings.length,
+            keys: result.secretBindings.map((binding) => binding.key),
+          },
+        },
+        ...result.agents.map((agent) => ({
+          workspaceId: result.workspace.id,
+          userId: context.userId,
+          category: "agent_lifecycle" as const,
+          action: "agent_created",
+          target: { type: "agent", id: agent.id },
+          metadata: {
+            runId: req.header("X-Paperclip-Run-Id"),
+            teamId: result.team.id,
+            companyId: result.company.id,
+            roleKey: agent.roleKey,
+          },
+        })),
+      ]);
+    }
 
     res.status(result.idempotentReplay ? 200 : 201).json(result);
   } catch (error) {

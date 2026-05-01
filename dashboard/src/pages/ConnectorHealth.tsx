@@ -18,16 +18,18 @@ const STATE_STYLES: Record<ConnectorHealthState, string> = {
   healthy: "bg-emerald-100 text-emerald-800",
   degraded: "bg-amber-100 text-amber-800",
   rate_limited: "bg-orange-100 text-orange-800",
-  auth_failure: "bg-rose-100 text-rose-800",
-  down: "bg-red-100 text-red-800",
+  auth_failed: "bg-rose-100 text-rose-800",
+  provider_error: "bg-red-100 text-red-800",
+  disabled: "bg-slate-100 text-slate-800",
 };
 
 const STATE_LABELS: Record<ConnectorHealthState, string> = {
   healthy: "Healthy",
   degraded: "Degraded",
   rate_limited: "Rate limited",
-  auth_failure: "Auth failure",
-  down: "Down",
+  auth_failed: "Auth failed",
+  provider_error: "Provider error",
+  disabled: "Disabled",
 };
 
 export default function ConnectorHealth() {
@@ -53,8 +55,7 @@ export default function ConnectorHealth() {
           <h1 className="text-2xl font-bold text-gray-900">Connector Health</h1>
           <p className="mt-1 max-w-3xl text-sm text-gray-500">
             Operational view of Tier 1 connector state, recent failures, and alerting
-            thresholds. This scaffold is wired to mock telemetry until the connector
-            health-state model from `ALT-1945` is emitting live data.
+            thresholds across your connected providers.
           </p>
         </div>
         {summary ? (
@@ -66,7 +67,7 @@ export default function ConnectorHealth() {
       </section>
 
       {summary ? (
-        <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
+        <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-6">
           <SummaryCard
             label="Healthy"
             value={summary.states.healthy}
@@ -90,17 +91,24 @@ export default function ConnectorHealth() {
           />
           <SummaryCard
             label="Auth Failures"
-            value={summary.states.auth_failure}
+            value={summary.states.auth_failed}
             hint={`Threshold ${summary.alertPolicy.authFailureThreshold15m}/15m`}
             icon={<ShieldAlert className="text-rose-600" size={18} />}
             tone="bg-rose-50"
           />
           <SummaryCard
-            label="Down"
-            value={summary.states.down}
+            label="Provider Errors"
+            value={summary.states.provider_error}
             hint={`Alert after ${summary.alertPolicy.outageThresholdMinutes} minutes`}
             icon={<AlertTriangle className="text-red-600" size={18} />}
             tone="bg-red-50"
+          />
+          <SummaryCard
+            label="Disabled"
+            value={summary.states.disabled}
+            hint="Not connected or intentionally turned off"
+            icon={<Clock3 className="text-slate-600" size={18} />}
+            tone="bg-slate-50"
           />
         </section>
       ) : null}

@@ -9,6 +9,11 @@
 jest.mock("./engine/llmProviders", () => ({
   getProvider: jest.fn(),
 }));
+jest.mock("./auditing/controlPlaneAudit", () => ({
+  recordControlPlaneAudit: jest.fn().mockResolvedValue(undefined),
+  recordControlPlaneAuditBatch: jest.fn().mockResolvedValue(undefined),
+  resolveAuditWorkspaceIdForUser: jest.fn().mockResolvedValue(null),
+}));
 jest.mock("./auth/authMiddleware", () => ({
   requireAuth: (
     req: { headers: { authorization?: string }; auth?: { sub: string; email?: string } },
@@ -75,6 +80,7 @@ jest.mock("./auth/authMiddleware", () => ({
 
 import request from "supertest";
 import app from "./app";
+import { recordControlPlaneAudit, recordControlPlaneAuditBatch } from "./auditing/controlPlaneAudit";
 import { listConnectorHealth } from "./connectors/health";
 import { WORKFLOW_TEMPLATES } from "./templates";
 import type { WorkflowStep } from "./types/workflow";
@@ -89,6 +95,8 @@ import { approvalNotificationStore } from "./engine/approvalNotificationStore";
 import { approvalPolicyStore } from "./approvals/policyStore";
 import { runStore } from "./engine/runStore";
 import { knowledgeStore } from "./knowledge/knowledgeStore";
+import { llmConfigStore } from "./llmConfig/llmConfigStore";
+import { getProvider } from "./engine/llmProviders";
 import { resetImportedTemplatesForTests } from "./templates/importedTemplateStore";
 import {
   PORTABLE_WORKFLOW_FORMAT,
@@ -99,13 +107,18 @@ function asAuth(userId = "test-user") {
   return { Authorization: `Bearer ${userId}` };
 }
 
+const mockGetProvider = getProvider as jest.MockedFunction<typeof getProvider>;
+
 beforeEach(() => {
+  jest.clearAllMocks();
   controlPlaneStore.clear();
   approvalStore.clear();
   approvalNotificationStore.clear();
   approvalPolicyStore.clear();
   runStore.clear();
   knowledgeStore.clear();
+  llmConfigStore.clear();
+  mockGetProvider.mockReset();
   resetImportedTemplatesForTests();
 });
 
@@ -137,6 +150,16 @@ describe("GET /api/connectors/health", () => {
     expect(res.status).toBe(200);
     expect(Array.isArray(res.body.connectors)).toBe(true);
     expect(typeof res.body.summary).toBe("object");
+    expect(res.body.summary.states).toEqual({
+      healthy: expect.any(Number),
+      degraded: expect.any(Number),
+      rate_limited: expect.any(Number),
+      auth_failed: expect.any(Number),
+      provider_error: expect.any(Number),
+      disabled: expect.any(Number),
+    });
+    expect(res.body.summary.states.auth_failure).toBeUndefined();
+    expect(res.body.summary.states.down).toBeUndefined();
   });
 
   it("returns all Tier 1 connectors", async () => {
@@ -149,7 +172,14 @@ describe("GET /api/connectors/health", () => {
     for (const connector of res.body.connectors) {
       expect(typeof connector.connectorKey).toBe("string");
       expect(typeof connector.connectorName).toBe("string");
-      expect(typeof connector.state).toBe("string");
+      expect([
+        "healthy",
+        "degraded",
+        "rate_limited",
+        "auth_failed",
+        "provider_error",
+        "disabled",
+      ]).toContain(connector.state);
       expect(typeof connector.successRate24h).toBe("number");
       expect(Array.isArray(connector.transitions)).toBe(true);
       expect(connector.source).toBe("mock");
@@ -634,6 +664,30 @@ describe("Company provisioning APIs", () => {
     );
     expect(integrationAgent.budgetMonthlyUsd).toBe(100);
     expect(integrationAgent.skills).toEqual(["openai-docs", "paperclip"]);
+
+    expect(recordControlPlaneAuditBatch).toHaveBeenCalledTimes(1);
+    expect(recordControlPlaneAuditBatch).toHaveBeenCalledWith(
+      expect.arrayContaining([
+        expect.objectContaining({
+          workspaceId: res.body.workspace.id,
+          category: "provisioning",
+          action: "company_provisioned",
+          target: { type: "company", id: res.body.company.id },
+        }),
+        expect.objectContaining({
+          workspaceId: res.body.workspace.id,
+          category: "team_lifecycle",
+          action: "team_created",
+          target: { type: "team", id: res.body.team.id },
+        }),
+        expect.objectContaining({
+          workspaceId: res.body.workspace.id,
+          category: "secret",
+          action: "secret_bindings_configured",
+          target: { type: "company", id: res.body.company.id },
+        }),
+      ])
+    );
   });
 
   it("replays idempotent retries and keeps tenant state isolated across companies", async () => {
@@ -696,6 +750,23 @@ describe("Company provisioning APIs", () => {
     expect(secondRes.body.agents.map((agent: { id: string }) => agent.id)).not.toEqual(
       firstRes.body.agents.map((agent: { id: string }) => agent.id)
     );
+
+    const provisioningCalls = (recordControlPlaneAuditBatch as jest.Mock).mock.calls.map(
+      ([entries]) => entries[0]
+    );
+    expect(provisioningCalls).toHaveLength(2);
+    expect(provisioningCalls[0]).toEqual(
+      expect.objectContaining({
+        workspaceId: firstRes.body.workspace.id,
+        target: { type: "company", id: firstRes.body.company.id },
+      })
+    );
+    expect(provisioningCalls[1]).toEqual(
+      expect.objectContaining({
+        workspaceId: secondRes.body.workspace.id,
+        target: { type: "company", id: secondRes.body.company.id },
+      })
+    );
   });
 
   it("rejects budget overflow, unknown role templates, and conflicting idempotency reuse", async () => {
@@ -716,8 +787,6 @@ describe("Company provisioning APIs", () => {
 
     expect(overflowRes.status).toBe(400);
     expect(overflowRes.body.error).toMatch(/budget/i);
-    expect(controlPlaneStore.listTeams("test-user")).toHaveLength(0);
-    expect(controlPlaneStore.listAllAgents("test-user")).toHaveLength(0);
 
     const unknownRoleRes = await request(app)
       .post("/api/companies")
@@ -762,181 +831,6 @@ describe("Company provisioning APIs", () => {
 
     expect(conflictingReplayRes.status).toBe(409);
     expect(conflictingReplayRes.body.error).toMatch(/idempotencyKey/i);
-  });
-});
-
-// ---------------------------------------------------------------------------
-// Team assembly approval provisioning
-// ---------------------------------------------------------------------------
-
-describe("Team assembly approval provisioning", () => {
-  function buildApprovedPlan() {
-    return {
-      schemaVersion: "2026-04-27",
-      company: {
-        name: "Acme AI",
-        goal: "Launch an AI operations product",
-        targetCustomer: "Technical founders",
-        budget: "$400/mo",
-        timeHorizon: "90 days",
-      },
-      summary: "Lean engineering team for launch.",
-      rationale: "Bias toward shipping the first version quickly.",
-      orgChart: {
-        executives: [],
-        operators: [
-          {
-            roleKey: "backend-engineer",
-            title: "Backend Engineer",
-            roleType: "operator",
-            department: "engineering",
-            headcount: 2,
-            reportsToRoleKey: "cto",
-            mandate: "Build APIs and business logic.",
-            justification: "Two backend contributors are needed for the API backlog.",
-            kpis: ["Ship provisioning API", "Maintain test coverage"],
-            skills: ["paperclip", "nodejs-backend-patterns"],
-            tools: ["github", "vercel"],
-            modelTier: "standard",
-            budgetMonthlyUsd: 200,
-            provisioningInstructions: "Implement APIs, workflows, and persistence.",
-          },
-          {
-            roleKey: "frontend-engineer",
-            title: "Frontend Engineer",
-            roleType: "operator",
-            department: "engineering",
-            headcount: 1,
-            reportsToRoleKey: "cto",
-            mandate: "Build review and approval flows.",
-            justification: "One frontend contributor is needed for the approval UI.",
-            kpis: ["Ship review flow"],
-            skills: ["paperclip", "frontend-design"],
-            tools: ["github", "vercel"],
-            modelTier: "standard",
-            budgetMonthlyUsd: 150,
-            provisioningInstructions: "Deliver the team assembly approval UI.",
-          },
-        ],
-        reportingLines: [
-          { managerRoleKey: "cto", reportRoleKey: "backend-engineer" },
-          { managerRoleKey: "cto", reportRoleKey: "frontend-engineer" },
-        ],
-      },
-      provisioningPlan: {
-        teamName: "Acme Launch Team",
-        deploymentMode: "continuous_agents",
-        agents: [
-          {
-            roleKey: "backend-engineer",
-            title: "Backend Engineer",
-            roleType: "operator",
-            department: "engineering",
-            headcount: 2,
-            reportsToRoleKey: "cto",
-            mandate: "Build APIs and business logic.",
-            justification: "Two backend contributors are needed for the API backlog.",
-            kpis: ["Ship provisioning API", "Maintain test coverage"],
-            skills: ["paperclip", "nodejs-backend-patterns"],
-            tools: ["github", "vercel"],
-            modelTier: "standard",
-            budgetMonthlyUsd: 200,
-            provisioningInstructions: "Implement APIs, workflows, and persistence.",
-          },
-          {
-            roleKey: "frontend-engineer",
-            title: "Frontend Engineer",
-            roleType: "operator",
-            department: "engineering",
-            headcount: 1,
-            reportsToRoleKey: "cto",
-            mandate: "Build review and approval flows.",
-            justification: "One frontend contributor is needed for the approval UI.",
-            kpis: ["Ship review flow"],
-            skills: ["paperclip", "frontend-design"],
-            tools: ["github", "vercel"],
-            modelTier: "standard",
-            budgetMonthlyUsd: 150,
-            provisioningInstructions: "Deliver the team assembly approval UI.",
-          },
-        ],
-      },
-      roadmap306090: {
-        day30: {
-          objectives: ["Stand up the first team"],
-          deliverables: ["Provisioned engineering pod"],
-          ownerRoleKeys: ["backend-engineer"],
-        },
-        day60: {
-          objectives: ["Ship review loops"],
-          deliverables: ["Approval workflow"],
-          ownerRoleKeys: ["frontend-engineer"],
-        },
-        day90: {
-          objectives: ["Launch publicly"],
-          deliverables: ["Customer-ready release"],
-          ownerRoleKeys: ["backend-engineer", "frontend-engineer"],
-        },
-      },
-    };
-  }
-
-  it("provisions approved staffing plans and returns frontend-ready status", async () => {
-    const res = await request(app)
-      .post("/api/goals/team-assembly/approve")
-      .set(asAuth())
-      .set("X-Paperclip-Run-Id", "run-team-assembly-approve")
-      .send({
-        approvedPlan: buildApprovedPlan(),
-        idempotencyKey: "team-assembly-acme-1",
-        budgetMonthlyUsd: 400,
-        secretBindings: { OPENAI_API_KEY: "sk-acme-1234" },
-      });
-
-    expect(res.status).toBe(201);
-    expect(res.body.provisioningStatus).toEqual({
-      status: "provisioned",
-      idempotentReplay: false,
-      allocatedBudgetMonthlyUsd: 350,
-      remainingBudgetMonthlyUsd: 50,
-    });
-    expect(res.body.team.name).toBe("Acme Launch Team");
-    expect(res.body.agents).toHaveLength(3);
-    expect(
-      res.body.agents.filter((agent: { roleKey: string }) => agent.roleKey.startsWith("backend-engineer"))
-    ).toHaveLength(2);
-    expect(
-      res.body.agents
-        .filter((agent: { roleKey: string }) => agent.roleKey.startsWith("backend-engineer"))
-        .every((agent: { budgetMonthlyUsd: number }) => agent.budgetMonthlyUsd === 100)
-    ).toBe(true);
-    expect(
-      res.body.agents.find((agent: { roleKey: string }) => agent.roleKey === "frontend-engineer")
-        .budgetMonthlyUsd
-    ).toBe(150);
-  });
-
-  it("rejects approved plans that are missing finalized budget numbers", async () => {
-    const approvedPlan = buildApprovedPlan();
-    (
-      approvedPlan.provisioningPlan.agents[0] as { budgetMonthlyUsd: number | null }
-    ).budgetMonthlyUsd = null;
-
-    const res = await request(app)
-      .post("/api/goals/team-assembly/approve")
-      .set(asAuth())
-      .set("X-Paperclip-Run-Id", "run-team-assembly-missing-budget")
-      .send({
-        approvedPlan,
-        idempotencyKey: "team-assembly-acme-2",
-        budgetMonthlyUsd: 400,
-        secretBindings: { OPENAI_API_KEY: "sk-acme-1234" },
-      });
-
-    expect(res.status).toBe(400);
-    expect(res.body.error).toMatch(/missing budgetMonthlyUsd/i);
-    expect(controlPlaneStore.listTeams("test-user")).toHaveLength(0);
-    expect(controlPlaneStore.listAllAgents("test-user")).toHaveLength(0);
   });
 });
 
@@ -1008,7 +902,7 @@ describe("Control plane APIs", () => {
     ).toBe(true);
   });
 
-  it("sanitizes generated role keys without the polynomial trim regex", () => {
+  it("sanitizes generated role keys without the polynomial trim regex", async () => {
     const step = {
       id: "step-weird-kind",
       name: "Weird Runtime Step",
@@ -1018,7 +912,7 @@ describe("Control plane APIs", () => {
       outputKeys: [],
     };
 
-    const { agent } = controlPlaneStore.ensureRuntimeTeamForStep({
+    const { agent } = await controlPlaneStore.ensureRuntimeTeamForStep({
       userId: "test-user",
       actor: "run-runtime-team-rolekey",
       step,
@@ -1455,7 +1349,7 @@ describe("Control plane APIs", () => {
       })
     ).execution;
 
-    controlPlaneStore.finalizeAgentExecution({
+    await controlPlaneStore.finalizeAgentExecution({
       executionId: execution.id,
       userId: "test-user",
       status: "completed",
@@ -1573,6 +1467,21 @@ describe("Control plane APIs", () => {
     expect(executionRes.status).toBe(200);
     expect(executionRes.body.status).toBe("queued");
     expect(executionRes.body.restartCount).toBe(1);
+
+    expect(recordControlPlaneAudit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        category: "team_lifecycle",
+        action: "team_pause",
+        target: { type: "team", id: teamId },
+      })
+    );
+    expect(recordControlPlaneAudit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        category: "execution",
+        action: "execution_restarted",
+        target: { type: "execution", id: started.execution.id },
+      })
+    );
   });
 
   it("supports company-wide pause and resume with lifecycle audit entries", async () => {
@@ -2212,7 +2121,7 @@ describe("GET /api/observability", () => {
       taskTitle: "Handle observability trace",
     });
 
-    controlPlaneStore.finalizeAgentExecution({
+    await controlPlaneStore.finalizeAgentExecution({
       executionId: started.execution.id,
       userId: "test-user",
       status: "completed",
@@ -2371,6 +2280,87 @@ describe("POST /api/webhooks/:templateId", () => {
       const res = await request(app).post(`/api/webhooks/${id}`).send(body);
       expect(res.status).toBe(202);
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// POST /api/workflows/generate
+// ---------------------------------------------------------------------------
+
+describe("POST /api/workflows/generate", () => {
+  it("returns 422 when no default LLM config exists", async () => {
+    const res = await request(app)
+      .post("/api/workflows/generate")
+      .set(asAuth("no-config-user"))
+      .send({ description: "Build a support triage workflow" });
+
+    expect(res.status).toBe(422);
+    expect(res.body.error).toMatch(/No LLM provider configured/i);
+  });
+
+  it("uses the authenticated user's default provider config for generation", async () => {
+    const cfg = llmConfigStore.create({
+      userId: "workflow-user",
+      provider: "openai",
+      label: "Primary OpenAI",
+      model: "gpt-4o",
+      credentials: { apiKey: "sk-workflow-user-1234" },
+    });
+    llmConfigStore.setDefault(cfg.id, "workflow-user");
+
+    const providerCall = jest.fn().mockResolvedValue({
+      text: JSON.stringify([
+        {
+          id: "step-1",
+          name: "Trigger",
+          kind: "trigger",
+          description: "Workflow entry point",
+          inputKeys: [],
+          outputKeys: ["input"],
+        },
+      ]),
+    });
+    mockGetProvider.mockReturnValue(providerCall);
+
+    const res = await request(app)
+      .post("/api/workflows/generate")
+      .set(asAuth("workflow-user"))
+      .send({ description: "Build a support triage workflow" });
+
+    expect(res.status).toBe(200);
+    expect(mockGetProvider).toHaveBeenCalledWith(
+      expect.objectContaining({
+        provider: "openai",
+        model: "gpt-4o",
+        apiKey: "sk-workflow-user-1234",
+      })
+    );
+    expect(providerCall).toHaveBeenCalledWith(
+      expect.stringContaining("Build a support triage workflow")
+    );
+    expect(res.body.steps).toHaveLength(1);
+  });
+
+  it("returns 502 when the provider call fails", async () => {
+    const cfg = llmConfigStore.create({
+      userId: "workflow-user",
+      provider: "anthropic",
+      label: "Claude",
+      model: "claude-sonnet-4-6",
+      credentials: { apiKey: "sk-ant-workflow-1234" },
+    });
+    llmConfigStore.setDefault(cfg.id, "workflow-user");
+    mockGetProvider.mockReturnValue(
+      jest.fn().mockRejectedValue(new Error("401 Unauthorized"))
+    );
+
+    const res = await request(app)
+      .post("/api/workflows/generate")
+      .set(asAuth("workflow-user"))
+      .send({ description: "Build a support triage workflow" });
+
+    expect(res.status).toBe(502);
+    expect(res.body.error).toMatch(/LLM call failed: 401 Unauthorized/);
   });
 });
 

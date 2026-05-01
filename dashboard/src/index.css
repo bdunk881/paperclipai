@@ -8,6 +8,9 @@
     --color-bg-primary: 248 250 252;
     --color-bg-secondary: 255 255 255;
     --color-bg-tertiary: 241 245 249;
+    --surface-base: 255 255 255;
+    --surface-deep: 248 250 252;
+    --surface-elevated: 241 245 249;
     --color-text-primary: 15 23 42;
     --color-text-secondary: 71 85 105;
     --color-text-tertiary: 148 163 184;
@@ -23,6 +26,9 @@
     --color-bg-primary: 2 6 23;
     --color-bg-secondary: 15 23 42;
     --color-bg-tertiary: 30 41 59;
+    --surface-base: 15 23 42;
+    --surface-deep: 2 6 23;
+    --surface-elevated: 30 41 59;
     --color-text-primary: 241 245 249;
     --color-text-secondary: 148 163 184;
     --color-text-tertiary: 100 116 139;
@@ -156,6 +162,14 @@
 
   .animate-auth-shake {
     animation: auth-critical-shake 0.28s ease-in-out;
+  }
+
+  .animate-mission-reveal {
+    animation: mission-reveal 300ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+
+  .animate-mission-skeleton {
+    animation: mission-skeleton 1.5s ease-in-out infinite;
   }
 
   .auth-input {
@@ -330,6 +344,28 @@
     }
   }
 
+  @keyframes workflow-popout-fade {
+    from {
+      opacity: 0;
+      transform: translateY(8px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  @keyframes workflow-error-pulse {
+    0%, 100% {
+      box-shadow: 0 0 0 0 rgba(249, 115, 22, 0.12);
+      transform: scale(1);
+    }
+    50% {
+      box-shadow: 0 0 0 10px rgba(249, 115, 22, 0);
+      transform: scale(1.04);
+    }
+  }
+
   @keyframes auth-field-enter {
     from {
       opacity: 0;
@@ -356,6 +392,26 @@
     }
     80% {
       transform: translateX(3px);
+    }
+  }
+
+  @keyframes mission-reveal {
+    from {
+      opacity: 0;
+      transform: translateY(14px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  @keyframes mission-skeleton {
+    0%, 100% {
+      opacity: 0.42;
+    }
+    50% {
+      opacity: 0.9;
     }
   }
 

@@ -1,6 +1,8 @@
 import { parseJsonColumn } from "../db/json";
 import { getPostgresPool, isPostgresPersistenceEnabled } from "../db/postgres";
+import { withWorkspaceContext } from "../middleware/workspaceContext";
 import { TicketSlaSnapshot } from "./ticketSla";
+import { TicketWorkspaceStoreContext } from "./ticketSlaPolicyStore";
 
 interface SnapshotRow {
   ticket_id: string;
@@ -23,6 +25,13 @@ interface SnapshotRow {
 }
 
 const memorySnapshots = new Map<string, TicketSlaSnapshot>();
+
+function requireWorkspaceContext(context?: TicketWorkspaceStoreContext): TicketWorkspaceStoreContext {
+  if (!context) {
+    throw new Error("Workspace context is required for persisted SLA snapshot operations");
+  }
+  return context;
+}
 
 function cloneSnapshot(snapshot: TicketSlaSnapshot): TicketSlaSnapshot {
   return { ...snapshot };
@@ -54,90 +63,113 @@ function mapRow(row: SnapshotRow): TicketSlaSnapshot {
   };
 }
 
-async function persistSnapshot(snapshot: TicketSlaSnapshot): Promise<void> {
+async function persistSnapshot(
+  snapshot: TicketSlaSnapshot,
+  context?: TicketWorkspaceStoreContext,
+): Promise<void> {
   if (!isPostgresPersistenceEnabled()) {
     memorySnapshots.set(snapshot.ticketId, cloneSnapshot(snapshot));
     return;
   }
 
-  await getPostgresPool().query(
-    `
-      INSERT INTO ticket_sla_snapshots (
-        ticket_id, workspace_id, policy_id, priority, state, phase,
-        first_response_target_at, first_response_responded_at, resolution_target_at,
-        paused_at, total_paused_minutes, at_risk_notified_at, breached_at,
-        escalation_applied_at, last_evaluated_at, created_at, updated_at
-      )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
-      ON CONFLICT (ticket_id) DO UPDATE
-      SET workspace_id = EXCLUDED.workspace_id,
-          policy_id = EXCLUDED.policy_id,
-          priority = EXCLUDED.priority,
-          state = EXCLUDED.state,
-          phase = EXCLUDED.phase,
-          first_response_target_at = EXCLUDED.first_response_target_at,
-          first_response_responded_at = EXCLUDED.first_response_responded_at,
-          resolution_target_at = EXCLUDED.resolution_target_at,
-          paused_at = EXCLUDED.paused_at,
-          total_paused_minutes = EXCLUDED.total_paused_minutes,
-          at_risk_notified_at = EXCLUDED.at_risk_notified_at,
-          breached_at = EXCLUDED.breached_at,
-          escalation_applied_at = EXCLUDED.escalation_applied_at,
-          last_evaluated_at = EXCLUDED.last_evaluated_at,
-          updated_at = EXCLUDED.updated_at
-    `,
-    [
-      snapshot.ticketId,
-      snapshot.workspaceId,
-      snapshot.policyId,
-      snapshot.priority,
-      snapshot.state,
-      snapshot.phase,
-      snapshot.firstResponseTargetAt,
-      snapshot.firstResponseRespondedAt ?? null,
-      snapshot.resolutionTargetAt,
-      snapshot.pausedAt ?? null,
-      snapshot.totalPausedMinutes,
-      snapshot.atRiskNotifiedAt ?? null,
-      snapshot.breachedAt ?? null,
-      snapshot.escalationAppliedAt ?? null,
-      snapshot.lastEvaluatedAt ?? null,
-      snapshot.createdAt,
-      snapshot.updatedAt,
-    ],
-  );
+  await withWorkspaceContext(getPostgresPool(), requireWorkspaceContext(context), async (client) => {
+    await client.query(
+      `
+        INSERT INTO ticket_sla_snapshots (
+          ticket_id, workspace_id, policy_id, priority, state, phase,
+          first_response_target_at, first_response_responded_at, resolution_target_at,
+          paused_at, total_paused_minutes, at_risk_notified_at, breached_at,
+          escalation_applied_at, last_evaluated_at, created_at, updated_at
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
+        ON CONFLICT (ticket_id) DO UPDATE
+        SET workspace_id = EXCLUDED.workspace_id,
+            policy_id = EXCLUDED.policy_id,
+            priority = EXCLUDED.priority,
+            state = EXCLUDED.state,
+            phase = EXCLUDED.phase,
+            first_response_target_at = EXCLUDED.first_response_target_at,
+            first_response_responded_at = EXCLUDED.first_response_responded_at,
+            resolution_target_at = EXCLUDED.resolution_target_at,
+            paused_at = EXCLUDED.paused_at,
+            total_paused_minutes = EXCLUDED.total_paused_minutes,
+            at_risk_notified_at = EXCLUDED.at_risk_notified_at,
+            breached_at = EXCLUDED.breached_at,
+            escalation_applied_at = EXCLUDED.escalation_applied_at,
+            last_evaluated_at = EXCLUDED.last_evaluated_at,
+            updated_at = EXCLUDED.updated_at
+      `,
+      [
+        snapshot.ticketId,
+        snapshot.workspaceId,
+        snapshot.policyId,
+        snapshot.priority,
+        snapshot.state,
+        snapshot.phase,
+        snapshot.firstResponseTargetAt,
+        snapshot.firstResponseRespondedAt ?? null,
+        snapshot.resolutionTargetAt,
+        snapshot.pausedAt ?? null,
+        snapshot.totalPausedMinutes,
+        snapshot.atRiskNotifiedAt ?? null,
+        snapshot.breachedAt ?? null,
+        snapshot.escalationAppliedAt ?? null,
+        snapshot.lastEvaluatedAt ?? null,
+        snapshot.createdAt,
+        snapshot.updatedAt,
+      ],
+    );
+  });
 }
 
 export const ticketSlaStore = {
-  async save(snapshot: TicketSlaSnapshot): Promise<void> {
-    await persistSnapshot(snapshot);
+  async save(snapshot: TicketSlaSnapshot, context?: TicketWorkspaceStoreContext): Promise<void> {
+    await persistSnapshot(snapshot, context);
   },
 
-  async get(ticketId: string): Promise<TicketSlaSnapshot | undefined> {
+  async get(
+    ticketId: string,
+    context?: TicketWorkspaceStoreContext,
+  ): Promise<TicketSlaSnapshot | undefined> {
     if (!isPostgresPersistenceEnabled()) {
       const snapshot = memorySnapshots.get(ticketId);
       return snapshot ? cloneSnapshot(snapshot) : undefined;
     }
 
-    const result = await getPostgresPool().query<SnapshotRow>(
-      "SELECT * FROM ticket_sla_snapshots WHERE ticket_id = $1",
-      [ticketId],
+    return withWorkspaceContext(
+      getPostgresPool(),
+      requireWorkspaceContext(context),
+      async (client) => {
+        const result = await client.query<SnapshotRow>(
+          "SELECT * FROM ticket_sla_snapshots WHERE ticket_id = $1",
+          [ticketId],
+        );
+        return result.rows[0] ? mapRow(result.rows[0]) : undefined;
+      },
     );
-    return result.rows[0] ? mapRow(result.rows[0]) : undefined;
   },
 
-  async listByWorkspace(workspaceId: string): Promise<TicketSlaSnapshot[]> {
+  async listByWorkspace(
+    workspaceId: string,
+    context?: TicketWorkspaceStoreContext,
+  ): Promise<TicketSlaSnapshot[]> {
     if (!isPostgresPersistenceEnabled()) {
       return Array.from(memorySnapshots.values())
         .filter((snapshot) => snapshot.workspaceId === workspaceId)
         .map(cloneSnapshot);
     }
 
-    const result = await getPostgresPool().query<SnapshotRow>(
-      "SELECT * FROM ticket_sla_snapshots WHERE workspace_id = $1 ORDER BY updated_at DESC",
-      [workspaceId],
+    return withWorkspaceContext(
+      getPostgresPool(),
+      requireWorkspaceContext(context),
+      async (client) => {
+        const result = await client.query<SnapshotRow>(
+          "SELECT * FROM ticket_sla_snapshots WHERE workspace_id = $1 ORDER BY updated_at DESC",
+          [workspaceId],
+        );
+        return result.rows.map(mapRow);
+      },
     );
-    return result.rows.map(mapRow);
   },
 
   async clear(): Promise<void> {

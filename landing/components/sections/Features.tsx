@@ -57,7 +57,7 @@ export function Features({ features }: { features?: Feature[] }) {
   const items = features ?? FALLBACK_FEATURES;
 
   return (
-    <section id="features" className="bg-gray-50 py-24 sm:py-32">
+    <section id="features" className="bg-slate-950 py-24 sm:py-32">
       <div className="mx-auto max-w-7xl px-6 lg:px-8">
         <div className="mx-auto max-w-2xl text-center">
           <motion.div
@@ -66,10 +66,10 @@ export function Features({ features }: { features?: Feature[] }) {
             viewport={{ once: true }}
             transition={{ duration: 0.5 }}
           >
-            <h2 className="text-base font-semibold leading-7 text-indigo-600">
+            <h2 className="text-base font-semibold leading-7 text-brand-teal">
               Features
             </h2>
-            <p className="mt-2 text-3xl font-bold tracking-tight text-gray-900 sm:text-4xl">
+            <p className="mt-2 text-3xl font-bold tracking-tight text-white sm:text-4xl">
               Everything you need to run a business on autopilot
             </p>
           </motion.div>
@@ -84,13 +84,13 @@ export function Features({ features }: { features?: Feature[] }) {
                 whileInView={{ opacity: 1, y: 0 }}
                 viewport={{ once: true }}
                 transition={{ duration: 0.4, delay: i * 0.08 }}
-                className="flex flex-col"
+                className="flex flex-col group"
               >
-                <dt className="flex items-center gap-x-3 text-base font-semibold leading-7 text-gray-900">
-                  <span className="text-2xl">{feature.icon}</span>
+                <dt className="flex items-center gap-x-3 text-base font-semibold leading-7 text-white">
+                  <span className="text-2xl transition-transform group-hover:scale-110 duration-300">{feature.icon}</span>
                   {feature.title}
                 </dt>
-                <dd className="mt-4 flex flex-auto flex-col text-base leading-7 text-gray-600">
+                <dd className="mt-4 flex flex-auto flex-col text-base leading-7 text-slate-400">
                   <p className="flex-auto">{feature.description}</p>
                 </dd>
               </motion.div>

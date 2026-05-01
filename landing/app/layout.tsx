@@ -44,8 +44,17 @@ export default function RootLayout({
       <body className={`${inter.className} antialiased`}>
         <nav className="sticky top-0 z-50 bg-white/80 backdrop-blur-sm border-b border-gray-100">
           <div className="mx-auto max-w-7xl px-6 lg:px-8 flex h-16 items-center justify-between">
-            <Link href="/" className="text-xl font-bold text-indigo-600">
-              AutoFlow
+            <Link href="/" className="flex items-center gap-2 group">
+              <svg width="400" height="100" viewBox="0 0 400 100" fill="none" xmlns="http://www.w3.org/2000/svg" className="h-8 w-auto">
+                <g transform="translate(10, 10) scale(0.8)">
+                  <path d="M50 15L85 85H70L50 45L30 85H15L50 15Z" fill="#6366f1" />
+                  <circle cx="50" cy="45" r="8" fill="#14b8a6" />
+                  <path d="M50 45V15" stroke="#14b8a6" stroke-width="4" stroke-linecap="round" />
+                </g>
+                <text x="100" y="65" font-family="Inter, sans-serif" font-weight="900" font-size="48" fill="currentColor" className="text-gray-900">
+                  Auto<tspan fill="#6366f1">Flow</tspan>
+                </text>
+              </svg>
             </Link>
             <div className="hidden md:flex items-center gap-8">
               <a
@@ -96,7 +105,18 @@ export default function RootLayout({
         {children}
         <footer className="bg-gray-900 text-gray-400 py-12">
           <div className="mx-auto max-w-7xl px-6 lg:px-8 flex flex-col items-center gap-4 text-sm">
-            <p className="font-bold text-white text-lg">AutoFlow</p>
+            <div className="flex items-center gap-2">
+              <svg width="400" height="100" viewBox="0 0 400 100" fill="none" xmlns="http://www.w3.org/2000/svg" className="h-8 w-auto">
+                <g transform="translate(10, 10) scale(0.8)">
+                  <path d="M50 15L85 85H70L50 45L30 85H15L50 15Z" fill="#6366f1" />
+                  <circle cx="50" cy="45" r="8" fill="#14b8a6" />
+                  <path d="M50 45V15" stroke="#14b8a6" stroke-width="4" stroke-linecap="round" />
+                </g>
+                <text x="100" y="65" font-family="Inter, sans-serif" font-weight="900" font-size="48" fill="white">
+                  Auto<tspan fill="#6366f1">Flow</tspan>
+                </text>
+              </svg>
+            </div>
             <div className="flex gap-6">
               <Link href="/blog" className="hover:text-white transition-colors">
                 Blog

@@ -29,8 +29,14 @@ export function FinalCTA() {
   }
 
   return (
-    <section className="bg-indigo-600 py-24 sm:py-32">
-      <div className="mx-auto max-w-7xl px-6 lg:px-8">
+    <section className="bg-brand-teal py-24 sm:py-32 relative overflow-hidden">
+      {/* Decorative elements */}
+      <div className="absolute top-0 left-0 w-full h-full opacity-10 pointer-events-none">
+         <div className="absolute top-[10%] left-[5%] w-64 h-64 rounded-full bg-white blur-3xl" />
+         <div className="absolute bottom-[10%] right-[5%] w-64 h-64 rounded-full bg-white blur-3xl" />
+      </div>
+
+      <div className="mx-auto max-w-7xl px-6 lg:px-8 relative z-10">
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           whileInView={{ opacity: 1, y: 0 }}
@@ -38,16 +44,16 @@ export function FinalCTA() {
           transition={{ duration: 0.5 }}
           className="mx-auto max-w-2xl text-center"
         >
-          <h2 className="text-3xl font-bold tracking-tight text-white sm:text-4xl">
+          <h2 className="text-3xl font-bold tracking-tight text-obsidian-dark sm:text-4xl">
             Ready to build your autonomous business?
           </h2>
-          <p className="mx-auto mt-6 max-w-xl text-lg leading-8 text-indigo-200">
+          <p className="mx-auto mt-6 max-w-xl text-lg leading-8 text-obsidian-dark/70">
             Join the waitlist or start your free trial today. No credit card
             required.
           </p>
 
           {status === "success" ? (
-            <p className="mt-10 text-lg font-semibold text-white">
+            <p className="mt-10 text-lg font-semibold text-obsidian-dark">
               ✓ You&apos;re on the list! We&apos;ll be in touch soon.
             </p>
           ) : (
@@ -61,12 +67,12 @@ export function FinalCTA() {
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 placeholder="Enter your email"
-                className="min-w-0 flex-auto rounded-md border-0 bg-white/10 px-3.5 py-2 text-white shadow-sm ring-1 ring-inset ring-white/10 placeholder:text-indigo-300 focus:ring-2 focus:ring-inset focus:ring-white sm:text-sm sm:leading-6"
+                className="min-w-0 flex-auto rounded-md border-0 bg-obsidian-dark/10 px-3.5 py-2 text-obsidian-dark shadow-sm ring-1 ring-inset ring-obsidian-dark/20 placeholder:text-obsidian-dark/50 focus:ring-2 focus:ring-inset focus:ring-obsidian-dark sm:text-sm sm:leading-6"
               />
               <button
                 type="submit"
                 disabled={status === "loading"}
-                className="flex-none rounded-md bg-white px-3.5 py-2.5 text-sm font-semibold text-indigo-600 shadow-sm hover:bg-indigo-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white disabled:opacity-70 transition-all"
+                className="flex-none rounded-md bg-obsidian-dark px-3.5 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-slate-800 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-obsidian-dark disabled:opacity-70 transition-all"
               >
                 {status === "loading" ? "Joining…" : "Join waitlist"}
               </button>
@@ -74,7 +80,7 @@ export function FinalCTA() {
           )}
 
           {status === "error" && (
-            <p className="mt-3 text-sm text-indigo-300">
+            <p className="mt-3 text-sm text-red-700">
               Something went wrong. Please try again.
             </p>
           )}
@@ -82,7 +88,7 @@ export function FinalCTA() {
           <div className="mt-8">
             <Link
               href="#pricing"
-              className="text-sm font-semibold text-indigo-200 hover:text-white transition-colors"
+              className="text-sm font-semibold text-obsidian-dark/80 hover:text-obsidian-dark transition-colors"
             >
               Or start free trial →
             </Link>

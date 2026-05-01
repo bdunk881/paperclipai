@@ -20,7 +20,7 @@ export function ROICalculator() {
       : 0;
 
   return (
-    <section className="bg-gray-50 py-24 sm:py-32">
+    <section className="bg-obsidian-dark py-24 sm:py-32">
       <div className="mx-auto max-w-7xl px-6 lg:px-8">
         <div className="mx-auto max-w-2xl text-center">
           <motion.div
@@ -29,13 +29,13 @@ export function ROICalculator() {
             viewport={{ once: true }}
             transition={{ duration: 0.5 }}
           >
-            <h2 className="text-base font-semibold leading-7 text-indigo-600">
+            <h2 className="text-base font-semibold leading-7 text-brand-teal">
               ROI Calculator
             </h2>
-            <p className="mt-2 text-3xl font-bold tracking-tight text-gray-900 sm:text-4xl">
+            <p className="mt-2 text-3xl font-bold tracking-tight text-white sm:text-4xl">
               See how much you&apos;ll save
             </p>
-            <p className="mt-6 text-lg leading-8 text-gray-600">
+            <p className="mt-6 text-lg leading-8 text-slate-400">
               How many hours per week do you spend on repetitive tasks?
             </p>
           </motion.div>
@@ -48,17 +48,17 @@ export function ROICalculator() {
           transition={{ duration: 0.5, delay: 0.2 }}
           className="mx-auto mt-12 max-w-3xl"
         >
-          <div className="rounded-2xl bg-white p-8 shadow-sm ring-1 ring-gray-900/5 sm:p-10">
+          <div className="rounded-2xl bg-slate-900/50 p-8 shadow-xl ring-1 ring-white/10 sm:p-10 backdrop-blur-sm">
             {/* Slider */}
             <div className="text-center">
               <label
                 htmlFor="hours-slider"
-                className="text-sm font-medium text-gray-700"
+                className="text-sm font-medium text-slate-300"
               >
                 Hours spent on manual tasks per week
               </label>
               <div className="mt-4 flex items-center justify-center gap-4">
-                <span className="text-sm text-gray-500">1</span>
+                <span className="text-sm text-slate-500">1</span>
                 <input
                   id="hours-slider"
                   type="range"
@@ -66,61 +66,61 @@ export function ROICalculator() {
                   max={40}
                   value={hoursPerWeek}
                   onChange={(e) => setHoursPerWeek(Number(e.target.value))}
-                  className="h-2 w-full max-w-md cursor-pointer appearance-none rounded-lg bg-gray-200 accent-indigo-600"
+                  className="h-2 w-full max-w-md cursor-pointer appearance-none rounded-lg bg-slate-800 accent-brand-teal"
                 />
-                <span className="text-sm text-gray-500">40</span>
+                <span className="text-sm text-slate-500">40</span>
               </div>
-              <p className="mt-3 text-4xl font-bold text-indigo-600">
+              <p className="mt-3 text-4xl font-bold text-brand-teal">
                 {hoursPerWeek} hrs/week
               </p>
             </div>
 
             {/* Results */}
             <div className="mt-10 grid grid-cols-1 gap-6 sm:grid-cols-3">
-              <div className="rounded-xl bg-indigo-50 p-6 text-center">
+              <div className="rounded-xl bg-white/5 border border-white/10 p-6 text-center">
                 <TrendingUp
-                  className="mx-auto h-8 w-8 text-indigo-600"
+                  className="mx-auto h-8 w-8 text-brand-teal"
                   aria-hidden="true"
                 />
-                <p className="mt-3 text-3xl font-bold text-gray-900">
+                <p className="mt-3 text-3xl font-bold text-white">
                   ${monthlySavings > 0 ? monthlySavings.toLocaleString() : 0}
                 </p>
-                <p className="mt-1 text-sm text-gray-600">
+                <p className="mt-1 text-sm text-slate-400">
                   Monthly savings
                 </p>
               </div>
 
-              <div className="rounded-xl bg-indigo-50 p-6 text-center">
+              <div className="rounded-xl bg-white/5 border border-white/10 p-6 text-center">
                 <Clock
-                  className="mx-auto h-8 w-8 text-indigo-600"
+                  className="mx-auto h-8 w-8 text-brand-teal"
                   aria-hidden="true"
                 />
-                <p className="mt-3 text-3xl font-bold text-gray-900">
+                <p className="mt-3 text-3xl font-bold text-white">
                   {hoursSavedPerYear.toLocaleString()}
                 </p>
-                <p className="mt-1 text-sm text-gray-600">
+                <p className="mt-1 text-sm text-slate-400">
                   Hours saved per year
                 </p>
               </div>
 
-              <div className="rounded-xl bg-indigo-50 p-6 text-center">
+              <div className="rounded-xl bg-white/5 border border-white/10 p-6 text-center">
                 <Calculator
-                  className="mx-auto h-8 w-8 text-indigo-600"
+                  className="mx-auto h-8 w-8 text-brand-teal"
                   aria-hidden="true"
                 />
-                <p className="mt-3 text-3xl font-bold text-gray-900">
+                <p className="mt-3 text-3xl font-bold text-white">
                   ${annualSavings > 0 ? annualSavings.toLocaleString() : 0}
                 </p>
-                <p className="mt-1 text-sm text-gray-600">
+                <p className="mt-1 text-sm text-slate-400">
                   Annual savings
                 </p>
               </div>
             </div>
 
             {paybackMonths > 0 && (
-              <p className="mt-8 text-center text-sm text-gray-500">
+              <p className="mt-8 text-center text-sm text-slate-500">
                 AutoFlow pays for itself in{" "}
-                <span className="font-semibold text-indigo-600">
+                <span className="font-semibold text-brand-teal">
                   {paybackMonths} {paybackMonths === 1 ? "month" : "months"}
                 </span>
                 . Based on $25/hr average labor cost.
@@ -130,7 +130,7 @@ export function ROICalculator() {
             <div className="mt-8 text-center">
               <a
                 href="#pricing"
-                className="inline-flex items-center rounded-lg bg-indigo-600 px-6 py-3 text-sm font-semibold text-white shadow-sm hover:bg-indigo-700 transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600"
+                className="inline-flex items-center rounded-lg bg-brand-teal px-6 py-3 text-sm font-semibold text-obsidian-dark shadow-sm hover:bg-teal-400 transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-teal"
               >
                 Start your free trial
               </a>

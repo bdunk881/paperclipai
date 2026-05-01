@@ -20,13 +20,38 @@ interface ProviderMeta {
   color: string;
   bg: string;
   abbr: string;
+  logo?: string;
 }
 
 const PROVIDERS: Record<ProviderName, ProviderMeta> = {
-  openai: { name: "OpenAI", color: "text-green-700", bg: "bg-green-100", abbr: "OAI" },
-  anthropic: { name: "Anthropic", color: "text-orange-700", bg: "bg-orange-100", abbr: "ANT" },
-  gemini: { name: "Google Gemini", color: "text-blue-700", bg: "bg-blue-100", abbr: "GEM" },
-  mistral: { name: "Mistral", color: "text-purple-700", bg: "bg-purple-100", abbr: "MIS" },
+  openai: { 
+    name: "OpenAI", 
+    color: "text-green-700", 
+    bg: "bg-green-100", 
+    abbr: "OAI",
+    logo: "openai.svg"
+  },
+  anthropic: { 
+    name: "Anthropic", 
+    color: "text-orange-700", 
+    bg: "bg-orange-100", 
+    abbr: "ANT",
+    logo: "anthropic.svg"
+  },
+  gemini: { 
+    name: "Google Gemini", 
+    color: "text-blue-700", 
+    bg: "bg-blue-100", 
+    abbr: "GEM",
+    logo: "google.svg"
+  },
+  mistral: { 
+    name: "Mistral", 
+    color: "text-purple-700", 
+    bg: "bg-purple-100", 
+    abbr: "MIS",
+    logo: "mistral.svg"
+  },
 };
 
 const PROVIDER_ORDER: ProviderName[] = ["openai", "anthropic", "gemini", "mistral"];
@@ -85,9 +110,19 @@ function ConnectModal({ provider, onClose, onSuccess }: ConnectModalProps) {
       <div className="bg-white rounded-xl shadow-xl w-full max-w-md mx-4">
         <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
           <div className="flex items-center gap-3">
-            <div className={clsx("flex items-center justify-center w-9 h-9 rounded-lg font-bold text-sm", meta.bg, meta.color)}>
-              {meta.abbr}
-            </div>
+            {meta.logo ? (
+              <div className={clsx("flex items-center justify-center w-9 h-9 rounded-lg p-1.5", meta.bg)}>
+                <img
+                  src={new URL(`../assets/integrations/${meta.logo}`, import.meta.url).href}
+                  alt=""
+                  className="w-full h-full object-contain"
+                />
+              </div>
+            ) : (
+              <div className={clsx("flex items-center justify-center w-9 h-9 rounded-lg font-bold text-sm", meta.bg, meta.color)}>
+                {meta.abbr}
+              </div>
+            )}
             <h2 className="font-semibold text-gray-900">Connect {meta.name}</h2>
           </div>
           <button
@@ -311,9 +346,19 @@ export default function LLMProviders() {
               key={providerKey}
               className="bg-white rounded-xl border border-gray-200 p-5 flex items-start gap-4"
             >
-              <div className={clsx("flex items-center justify-center w-11 h-11 rounded-xl font-bold text-sm flex-shrink-0", meta.bg, meta.color)}>
-                {meta.abbr}
-              </div>
+              {meta.logo ? (
+                <div className={clsx("flex items-center justify-center w-11 h-11 rounded-xl p-2 flex-shrink-0", meta.bg)}>
+                  <img
+                    src={new URL(`../assets/integrations/${meta.logo}`, import.meta.url).href}
+                    alt=""
+                    className="w-full h-full object-contain"
+                  />
+                </div>
+              ) : (
+                <div className={clsx("flex items-center justify-center w-11 h-11 rounded-xl font-bold text-sm flex-shrink-0", meta.bg, meta.color)}>
+                  {meta.abbr}
+                </div>
+              )}
               <div className="flex-1 min-w-0">
                 <div className="flex items-center justify-between gap-2 mb-1">
                   <p className="font-semibold text-gray-900">{meta.name}</p>
@@ -389,9 +434,24 @@ export default function LLMProviders() {
                     <tr key={cfg.id} className="hover:bg-gray-50 transition-colors">
                       <td className="px-5 py-3 font-medium text-gray-900">{cfg.label}</td>
                       <td className="px-5 py-3">
-                        <span className={clsx("px-2 py-0.5 rounded-full text-xs font-medium", meta.bg, meta.color)}>
-                          {meta.name}
-                        </span>
+                        <div className="flex items-center gap-2">
+                          {meta.logo ? (
+                            <div className={clsx("flex items-center justify-center w-6 h-6 rounded p-0.5", meta.bg)}>
+                              <img
+                                src={new URL(`../assets/integrations/${meta.logo}`, import.meta.url).href}
+                                alt=""
+                                className="w-full h-full object-contain"
+                              />
+                            </div>
+                          ) : (
+                            <div className={clsx("flex items-center justify-center w-6 h-6 rounded font-bold text-[10px]", meta.bg, meta.color)}>
+                              {meta.abbr}
+                            </div>
+                          )}
+                          <span className={clsx("px-2 py-0.5 rounded-full text-xs font-medium", meta.bg, meta.color)}>
+                            {meta.name}
+                          </span>
+                        </div>
                       </td>
                       <td className="px-5 py-3 text-gray-600 font-mono text-xs">{cfg.model}</td>
                       <td className="px-5 py-3 text-gray-400 font-mono text-xs">{cfg.maskedApiKey}</td>

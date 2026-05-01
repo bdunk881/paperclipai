@@ -7,8 +7,20 @@ const config: Config = {
   ],
   theme: {
     extend: {
+      colors: {
+        brand: {
+          teal: 'var(--color-primary)',
+          indigo: 'var(--color-accent)',
+          orange: 'var(--color-trigger)',
+        },
+        obsidian: {
+          dark: 'var(--color-bg)',
+          slate: 'var(--color-bg-subtle)',
+        }
+      },
       fontFamily: {
-        sans: ["Inter", "ui-sans-serif", "system-ui"],
+        sans: ["var(--font-heading)", "Inter", "ui-sans-serif", "system-ui"],
+        mono: ["var(--font-mono)", "JetBrains Mono", "ui-monospace"],
       },
     },
   },

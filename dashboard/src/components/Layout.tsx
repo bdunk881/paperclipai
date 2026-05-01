@@ -6,7 +6,6 @@ import {
   Activity,
   History,
   LogOut,
-  Zap,
   Cpu,
   Settings,
   DollarSign,
@@ -24,6 +23,8 @@ import {
 import { useAuth } from "../context/AuthContext";
 import clsx from "clsx";
 import { useTheme } from "../hooks/useTheme";
+
+import logoLockup from "../assets/logo/lockup.svg";
 
 const NAV = [
   { to: "/", icon: LayoutDashboard, label: "Dashboard", end: true },
@@ -128,10 +129,7 @@ export default function Layout() {
           {mobileNavOpen ? <X size={18} /> : <Menu size={18} />}
         </button>
         <div className="flex items-center gap-2">
-          <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-brand-600">
-            <Zap size={14} className="text-white" />
-          </div>
-          <span className="text-sm font-bold tracking-tight text-gray-900 dark:text-gray-100">AutoFlow</span>
+          <img src={logoLockup} alt="AutoFlow" className="h-8 w-auto object-contain text-gray-900 dark:text-gray-100" />
         </div>
         <div className="flex items-center gap-2">
           <button
@@ -169,10 +167,7 @@ export default function Layout() {
       >
         {/* Logo */}
         <div className="flex items-center gap-2 border-b border-gray-200 px-5 py-5 dark:border-surface-800">
-          <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-brand-600">
-            <Zap size={16} className="text-white" />
-          </div>
-          <span className="font-bold text-lg tracking-tight">AutoFlow</span>
+          <img src={logoLockup} alt="AutoFlow" className="h-9 w-auto object-contain text-gray-900 dark:text-gray-100" />
         </div>
 
         {/* Nav links */}

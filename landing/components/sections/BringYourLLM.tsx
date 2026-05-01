@@ -52,7 +52,10 @@ const BENEFITS = [
 
 export function BringYourLLM() {
   return (
-    <section id="bring-your-llm" className="bg-gray-900 py-24 sm:py-32">
+    <section id="bring-your-llm" className="bg-obsidian-dark py-24 sm:py-32 relative overflow-hidden">
+      {/* Visual flair */}
+      <div className="absolute top-0 right-0 w-1/2 h-full bg-gradient-to-l from-brand-teal/5 to-transparent -z-10" />
+      
       <div className="mx-auto max-w-7xl px-6 lg:px-8">
         {/* Header */}
         <div className="mx-auto max-w-2xl text-center">
@@ -62,13 +65,13 @@ export function BringYourLLM() {
             viewport={{ once: true }}
             transition={{ duration: 0.5 }}
           >
-            <h2 className="text-base font-semibold leading-7 text-indigo-400">
+            <h2 className="text-base font-semibold leading-7 text-brand-teal">
               Bring Your LLM
             </h2>
             <p className="mt-2 text-3xl font-bold tracking-tight text-white sm:text-4xl">
               Your models. Your rules. Zero lock-in.
             </p>
-            <p className="mt-6 text-lg leading-8 text-gray-300">
+            <p className="mt-6 text-lg leading-8 text-slate-400">
               AutoFlow works with every major AI provider out of the box. Plug in your
               own API keys and keep full control over cost, performance, and data privacy.
             </p>
@@ -84,16 +87,16 @@ export function BringYourLLM() {
               whileInView={{ opacity: 1, y: 0 }}
               viewport={{ once: true }}
               transition={{ duration: 0.4, delay: i * 0.08 }}
-              className="flex flex-col rounded-2xl bg-white/5 ring-1 ring-white/10 p-6 hover:bg-white/10 transition-colors"
+              className="flex flex-col rounded-2xl bg-white/5 ring-1 ring-white/10 p-6 hover:bg-white/10 transition-colors border border-transparent hover:border-brand-teal/20 group"
             >
               <div className="flex items-center gap-3 mb-4">
                 <span className="text-2xl">{provider.logo}</span>
-                <span className="font-semibold text-white">{provider.name}</span>
+                <span className="font-semibold text-white group-hover:text-brand-teal transition-colors">{provider.name}</span>
               </div>
-              <p className="text-sm text-gray-400 mb-4 flex-auto">{provider.description}</p>
+              <p className="text-sm text-slate-400 mb-4 flex-auto">{provider.description}</p>
               <ul className="space-y-1">
                 {provider.models.map((model) => (
-                  <li key={model} className="text-xs text-indigo-300 font-mono">
+                  <li key={model} className="text-xs text-brand-teal/70 font-mono">
                     {model}
                   </li>
                 ))}
@@ -111,12 +114,12 @@ export function BringYourLLM() {
               whileInView={{ opacity: 1, y: 0 }}
               viewport={{ once: true }}
               transition={{ duration: 0.4, delay: i * 0.1 }}
-              className="flex gap-4"
+              className="flex gap-4 p-4 rounded-xl border border-transparent hover:bg-white/5 transition-all"
             >
               <span className="text-2xl shrink-0">{benefit.icon}</span>
               <div>
                 <h3 className="font-semibold text-white">{benefit.title}</h3>
-                <p className="mt-1 text-sm leading-6 text-gray-400">
+                <p className="mt-1 text-sm leading-6 text-slate-400">
                   {benefit.description}
                 </p>
               </div>

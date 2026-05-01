@@ -8,26 +8,27 @@
  */
 
 :root {
-  /* Brand colors */
-  --color-primary: #4f46e5;          /* indigo-600 */
-  --color-primary-hover: #4338ca;    /* indigo-700 */
-  --color-primary-light: #eef2ff;    /* indigo-50 */
-  --color-primary-text: #3730a3;     /* indigo-800 */
-  --color-accent: #7c3aed;           /* violet-600 */
+  /* Brand colors - The Electric Lab (Dark Theme) */
+  --color-primary: #14b8a6;          /* Electric Teal (Teal-500) */
+  --color-primary-hover: #0d9488;    /* Teal-600 */
+  --color-primary-light: rgba(20, 184, 166, 0.1);
+  --color-primary-text: #2dd4bf;     /* Teal-400 */
+  --color-accent: #6366f1;           /* Indigo-500 */
+  --color-trigger: #f97316;          /* Orange-500 */
 
-  /* Neutral palette */
-  --color-bg: #ffffff;
-  --color-bg-subtle: #f9fafb;        /* gray-50 */
-  --color-surface: #ffffff;
-  --color-border: #e5e7eb;           /* gray-200 */
-  --color-text-primary: #111827;     /* gray-900 */
-  --color-text-secondary: #6b7280;   /* gray-500 */
-  --color-text-muted: #9ca3af;       /* gray-400 */
+  /* Neutral palette - Obsidian Dark */
+  --color-bg: #0f172a;               /* Obsidian Dark (Slate-900) */
+  --color-bg-subtle: #1e293b;        /* Slate-800 */
+  --color-surface: #1e293b;          /* Slate-800 */
+  --color-border: #334155;           /* Slate-700 */
+  --color-text-primary: #f1f5f9;     /* Slate-100 */
+  --color-text-secondary: #94a3b8;   /* Slate-400 */
+  --color-text-muted: #64748b;       /* Slate-500 */
 
   /* Typography */
   --font-heading: "Inter", ui-sans-serif, system-ui, sans-serif;
   --font-body: "Inter", ui-sans-serif, system-ui, sans-serif;
-  --font-mono: ui-monospace, "Cascadia Code", "Source Code Pro", monospace;
+  --font-mono: "JetBrains Mono", ui-monospace, "Cascadia Code", monospace;
 
   /* Spacing scale */
   --section-padding-y: 6rem;         /* 96px */

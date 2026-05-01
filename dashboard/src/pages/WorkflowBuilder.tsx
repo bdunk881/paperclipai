@@ -69,11 +69,11 @@ const KIND_META: Record<
   trigger: {
     label: "Trigger",
     icon: <Zap size={14} />,
-    chipColor: "text-emerald-700 dark:text-emerald-400",
-    chipBg: "bg-emerald-50 border-emerald-200 dark:bg-emerald-500/10 dark:border-emerald-500/30",
-    categoryTint: "rgba(16,185,129,0.12)",
-    darkCategoryTint: "rgba(16,185,129,0.18)",
-    categoryBorder: "#10b981",
+    chipColor: "text-orange-700 dark:text-orange-400",
+    chipBg: "bg-orange-50 border-orange-200 dark:bg-orange-500/10 dark:border-orange-500/30",
+    categoryTint: "rgba(249,115,22,0.12)",
+    darkCategoryTint: "rgba(249,115,22,0.18)",
+    categoryBorder: "#f97316",
   },
   llm: {
     label: "LLM",
@@ -150,11 +150,11 @@ const KIND_META: Record<
   file_trigger: {
     label: "File Trigger",
     icon: <FileInput size={14} />,
-    chipColor: "text-emerald-700 dark:text-emerald-400",
-    chipBg: "bg-emerald-50 border-emerald-200 dark:bg-emerald-500/10 dark:border-emerald-500/30",
-    categoryTint: "rgba(16,185,129,0.12)",
-    darkCategoryTint: "rgba(16,185,129,0.18)",
-    categoryBorder: "#10b981",
+    chipColor: "text-orange-700 dark:text-orange-400",
+    chipBg: "bg-orange-50 border-orange-200 dark:bg-orange-500/10 dark:border-orange-500/30",
+    categoryTint: "rgba(249,115,22,0.12)",
+    darkCategoryTint: "rgba(249,115,22,0.18)",
+    categoryBorder: "#f97316",
   },
 };
 

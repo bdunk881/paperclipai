@@ -1,6 +1,7 @@
 import { useState } from "react";
-import { Zap, Loader2 } from "lucide-react";
+import { Loader2 } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
+import logoIcon from "../assets/logo/icon.svg";
 
 export default function Login() {
   const { login, signup } = useAuth();
@@ -37,8 +38,8 @@ export default function Login() {
       <div className="w-full max-w-md">
         {/* Logo */}
         <div className="flex flex-col items-center mb-8">
-          <div className="flex items-center justify-center w-12 h-12 rounded-xl bg-blue-600 mb-4">
-            <Zap size={24} className="text-white" />
+          <div className="flex items-center justify-center w-16 h-16 rounded-2xl bg-white border border-gray-200 shadow-sm mb-4">
+            <img src={logoIcon} alt="AutoFlow" className="w-10 h-10 object-contain" />
           </div>
           <h1 className="text-2xl font-bold text-gray-900">Sign in to AutoFlow</h1>
           <p className="text-gray-500 mt-1">AI-powered workflow automation</p>

@@ -10,6 +10,13 @@ import slackLogo from "../assets/integrations/slack.svg";
 import postgresLogo from "../assets/integrations/postgresql.svg";
 import notionLogo from "../assets/integrations/notion.svg";
 import stripeLogo from "../assets/integrations/stripe.svg";
+import hubspotLogo from "../assets/integrations/hubspot.svg";
+import googleLogo from "../assets/integrations/google.svg";
+import braveLogo from "../assets/integrations/brave-search.svg";
+import filesystemLogo from "../assets/integrations/filesystem.svg";
+import puppeteerLogo from "../assets/integrations/puppeteer.svg";
+import intercomLogo from "../assets/integrations/intercom.svg";
+import sanityLogo from "../assets/integrations/sanity.svg";
 
 interface IntegrationOption {
   id: string;
@@ -55,16 +62,6 @@ const INTEGRATION_OPTIONS: IntegrationOption[] = [
     logo: linearLogo,
   },
   {
-    id: "mcp-linear",
-    name: "Linear",
-    description: "Sync projects and issues with Linear to automate triage, assignment, and status updates.",
-    category: "Project Management",
-    tools: ["list_teams", "list_issues", "create_issue", "update_issue"],
-    rating: 4.8,
-    connected: false,
-    official: true,
-  },
-  {
     id: "mcp-slack",
     name: "Slack",
     description: "Send messages, read channels, and manage Slack workspaces.",
@@ -95,6 +92,7 @@ const INTEGRATION_OPTIONS: IntegrationOption[] = [
     rating: 4.6,
     connected: true,
     official: true,
+    logo: filesystemLogo,
   },
   {
     id: "mcp-brave",
@@ -105,6 +103,29 @@ const INTEGRATION_OPTIONS: IntegrationOption[] = [
     rating: 4.5,
     connected: false,
     official: false,
+    logo: braveLogo,
+  },
+  {
+    id: "mcp-hubspot",
+    name: "HubSpot",
+    description: "Sync contacts, companies, and deals with HubSpot CRM.",
+    category: "CRM",
+    tools: ["get_contact", "update_deal", "list_companies"],
+    rating: 4.7,
+    connected: false,
+    official: true,
+    logo: hubspotLogo,
+  },
+  {
+    id: "mcp-google",
+    name: "Google Workspace",
+    description: "Send emails via Gmail and manage files in Google Drive.",
+    category: "Productivity",
+    tools: ["send_email", "list_files", "create_doc"],
+    rating: 4.8,
+    connected: false,
+    official: true,
+    logo: googleLogo,
   },
   {
     id: "mcp-stripe",
@@ -137,6 +158,7 @@ const INTEGRATION_OPTIONS: IntegrationOption[] = [
     rating: 4.3,
     connected: false,
     official: false,
+    logo: puppeteerLogo,
   },
 ];
 

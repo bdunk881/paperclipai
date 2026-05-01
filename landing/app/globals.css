@@ -6,4 +6,19 @@
 
 body {
   font-family: var(--font-body);
+  background-color: var(--color-bg);
+  color: var(--color-text-primary);
+}
+
+@layer utilities {
+  .neon-trace {
+    background: linear-gradient(90deg, transparent, var(--color-primary), transparent);
+    background-size: 200% 100%;
+    animation: neon-trace 3s linear infinite;
+  }
+}
+
+@keyframes neon-trace {
+  0% { background-position: 100% 0; }
+  100% { background-position: -100% 0; }
 }

@@ -13,23 +13,23 @@ describe("dashboard vercel routing", () => {
     expect(rewrites).toContainEqual(
       expect.objectContaining({
         source:
-          "/api/:path((?!auth/native(?:/.*)?$|billing/checkout$|create-checkout-session$|qa-preview-access$|waitlist-signup$).*)",
+          "/api/:path((?!create-checkout-session$|qa-preview-access$|waitlist-signup$).*)",
         destination: "https://staging-api.helloautoflow.com/api/:path*",
         has: [{ type: "host", value: "staging.app.helloautoflow.com" }],
       })
     );
   });
 
-  it("preserves frontend-owned serverless endpoints from the backend rewrite", () => {
+  it("preserves only the frontend-owned serverless endpoints from the backend rewrite", () => {
     const apiRewrite = rewrites.find(
       (rule) => rule.destination === "https://api.helloautoflow.com/api/:path*"
     );
 
     expect(apiRewrite).toBeDefined();
-    expect(apiRewrite?.source).toContain("auth/native");
-    expect(apiRewrite?.source).toContain("billing/checkout");
     expect(apiRewrite?.source).toContain("create-checkout-session");
     expect(apiRewrite?.source).toContain("qa-preview-access");
     expect(apiRewrite?.source).toContain("waitlist-signup");
+    expect(apiRewrite?.source).not.toContain("auth/native");
+    expect(apiRewrite?.source).not.toContain("billing/checkout");
   });
 });

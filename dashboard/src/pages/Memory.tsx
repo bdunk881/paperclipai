@@ -278,7 +278,7 @@ export default function Memory() {
     progress.total > 0 ? Math.max(8, Math.round((progress.current / progress.total) * 100)) : 0;
 
   return (
-    <div className="min-h-full bg-slate-50 text-slate-900 dark:bg-[#0f172a] dark:text-slate-100">
+    <div className="min-h-full bg-slate-50 text-slate-900 dark:bg-surface-base dark:text-slate-100">
       <div className="mx-auto flex w-full max-w-7xl flex-col gap-8 px-4 py-6 md:px-8 md:py-8">
         <section className="glass-card noise-overlay overflow-hidden rounded-[28px] border border-slate-200 bg-white/90 dark:border-slate-800/80">
           <div className="relative border-b border-slate-200 px-8 py-7 dark:border-slate-800/80">
@@ -354,7 +354,7 @@ export default function Memory() {
                 onDrop={handleDrop}
                 onClick={openFilePicker}
                 className={clsx(
-                  "glass-card w-full rounded-2xl border-2 border-dashed px-6 py-10 text-left transition-all duration-200 ease-in-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-50 dark:focus-visible:ring-offset-[#0f172a]",
+                  "glass-card w-full rounded-2xl border-2 border-dashed px-6 py-10 text-left transition-all duration-200 ease-in-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-50 dark:focus-visible:ring-offset-surface-base",
                   dragOver
                     ? "border-indigo-500 bg-indigo-500/5 shadow-[0_0_15px_rgba(99,102,241,0.2)]"
                     : "border-slate-300 bg-white hover:border-indigo-500 hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-800/70",
@@ -413,7 +413,7 @@ export default function Memory() {
                 <button
                   type="button"
                   onClick={addRow}
-                  className="glow-border inline-flex items-center gap-2 rounded-xl border border-indigo-500/40 bg-transparent px-3 py-2 text-sm font-medium text-indigo-300 transition hover:bg-indigo-500/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400 focus-visible:ring-offset-2 focus-visible:ring-offset-[#0f172a]"
+                  className="glow-border inline-flex items-center gap-2 rounded-xl border border-indigo-500/40 bg-transparent px-3 py-2 text-sm font-medium text-indigo-300 transition hover:bg-indigo-500/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-50 dark:focus-visible:ring-offset-surface-base"
                 >
                   <Plus size={14} />
                   Add row
@@ -448,7 +448,7 @@ export default function Memory() {
                           value={row.question}
                           onChange={(event) => updateRow(row.id, "question", event.target.value)}
                           placeholder="What should the agent know?"
-                          className="min-h-[92px] w-full resize-y rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 transition focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-400 dark:border-slate-700/70 dark:bg-transparent dark:text-slate-100 dark:placeholder:text-slate-600 dark:focus:bg-[#0f172a]"
+                          className="min-h-[92px] w-full resize-y rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 transition focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-400 dark:border-slate-700/70 dark:bg-transparent dark:text-slate-100 dark:placeholder:text-slate-600 dark:focus:bg-surface-base"
                         />
                       </div>
 
@@ -461,7 +461,7 @@ export default function Memory() {
                           value={row.answer}
                           onChange={(event) => updateRow(row.id, "answer", event.target.value)}
                           placeholder="Provide the canonical answer or context."
-                          className="min-h-[92px] w-full resize-y rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 transition focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-400 dark:border-slate-700/70 dark:bg-transparent dark:text-slate-100 dark:placeholder:text-slate-600 dark:focus:bg-[#0f172a]"
+                          className="min-h-[92px] w-full resize-y rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 transition focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-400 dark:border-slate-700/70 dark:bg-transparent dark:text-slate-100 dark:placeholder:text-slate-600 dark:focus:bg-surface-base"
                         />
                       </div>
 

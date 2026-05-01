@@ -8,6 +8,9 @@
     --color-bg-primary: 248 250 252;
     --color-bg-secondary: 255 255 255;
     --color-bg-tertiary: 241 245 249;
+    --surface-base: 255 255 255;
+    --surface-deep: 248 250 252;
+    --surface-elevated: 241 245 249;
     --color-text-primary: 15 23 42;
     --color-text-secondary: 71 85 105;
     --color-text-tertiary: 148 163 184;
@@ -23,6 +26,9 @@
     --color-bg-primary: 2 6 23;
     --color-bg-secondary: 15 23 42;
     --color-bg-tertiary: 30 41 59;
+    --surface-base: 15 23 42;
+    --surface-deep: 2 6 23;
+    --surface-elevated: 30 41 59;
     --color-text-primary: 241 245 249;
     --color-text-secondary: 148 163 184;
     --color-text-tertiary: 100 116 139;

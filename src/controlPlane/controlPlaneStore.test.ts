@@ -6,8 +6,8 @@ describe("controlPlaneStore workspace-scoped reads", () => {
     controlPlaneStore.clear();
   });
 
-  it("binds provisioned companies to the resolved workspace id and exposes teams to a second identity in that workspace", () => {
-    const provisioned = controlPlaneStore.provisionCompanyWorkspace({
+  it("binds provisioned companies to the resolved workspace id and exposes teams to a second identity in that workspace", async () => {
+    const provisioned = await controlPlaneStore.provisionCompanyWorkspace({
       workspaceId: "workspace-shared",
       userId: "provisioning-user",
       name: "Acme",
@@ -29,7 +29,7 @@ describe("controlPlaneStore workspace-scoped reads", () => {
   });
 
   it("exposes agents, executions, tasks, heartbeats, and spend snapshots through shared workspace access", async () => {
-    const provisioned = controlPlaneStore.provisionCompanyWorkspace({
+    const provisioned = await controlPlaneStore.provisionCompanyWorkspace({
       workspaceId: "workspace-shared",
       userId: "provisioning-user",
       name: "Acme",

@@ -31,7 +31,7 @@ export default function TicketActorView() {
   const [tickets, setTickets] = useState<TicketRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [source, setSource] = useState<"api" | "mock">("mock");
+  const [source, setSource] = useState<"api" | "mock" | null>(null);
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [priorityFilter, setPriorityFilter] = useState<PriorityFilter>("all");
   const [slaFilter, setSlaFilter] = useState<SlaFilter>("all");

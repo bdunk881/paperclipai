@@ -276,10 +276,12 @@ export default function Dashboard() {
       }
 
       const accessToken = await requireAccessToken();
-      const [fetchedRuns, fetchedAgents, fetchedApprovals, observabilityPage, observabilitySnapshot] = await Promise.all([
+      const [fetchedRuns, fetchedAgents, fetchedApprovals] = await Promise.all([
         listRuns(undefined, accessToken),
         listAgents(accessToken).catch(() => []),
         listApprovals(accessToken).catch(() => []),
+      ]);
+      const [observabilityPageResult, observabilitySnapshotResult] = await Promise.allSettled([
         listObservabilityEvents(accessToken, {
           categories: selectedCategories,
           limit: MAX_FEED_ITEMS,
@@ -306,14 +308,38 @@ export default function Dashboard() {
       setRuns(fetchedRuns);
       setApprovals(fetchedApprovals);
       setAgentSnapshots(snapshots);
-      const sortedFeed = [...observabilityPage.events].sort(
-        (left, right) => Number(right.sequence) - Number(left.sequence)
-      );
-      setObservabilityFeed(sortedFeed.slice(0, MAX_FEED_ITEMS));
-      latestCursorRef.current = sortedFeed[0]?.sequence;
-      setThroughput(observabilitySnapshot);
-      setLastUpdatedAt(observabilitySnapshot.generatedAt);
-      startStream(accessToken);
+
+      if (
+        observabilityPageResult.status === "fulfilled" &&
+        observabilitySnapshotResult.status === "fulfilled"
+      ) {
+        const sortedFeed = [...observabilityPageResult.value.events].sort(
+          (left, right) => Number(right.sequence) - Number(left.sequence)
+        );
+        setObservabilityFeed(sortedFeed.slice(0, MAX_FEED_ITEMS));
+        latestCursorRef.current = sortedFeed[0]?.sequence;
+        setThroughput(observabilitySnapshotResult.value);
+        setLastUpdatedAt(observabilitySnapshotResult.value.generatedAt);
+        startStream(accessToken);
+      } else {
+        const observabilityError =
+          observabilityPageResult.status === "rejected"
+            ? observabilityPageResult.reason
+            : observabilitySnapshotResult.status === "rejected"
+              ? observabilitySnapshotResult.reason
+              : new Error("Observability is unavailable.");
+
+        setObservabilityFeed([]);
+        setThroughput(null);
+        latestCursorRef.current = undefined;
+        setLastUpdatedAt(null);
+        setTransportState("error");
+        setTransportDetail(
+          observabilityError instanceof Error
+            ? observabilityError.message
+            : "Observability is unavailable."
+        );
+      }
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Failed to load customer dashboard");
       setTransportState("error");

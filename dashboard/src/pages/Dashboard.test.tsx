@@ -401,6 +401,27 @@ describe("Dashboard", () => {
     expect(listRunsMock).toHaveBeenCalledTimes(2);
   });
 
+  it("keeps the dashboard available when observability endpoints fail", async () => {
+    listObservabilityEventsMock.mockRejectedValueOnce(
+      new Error("Failed to fetch observability events: 404")
+    );
+    getObservabilityThroughputMock.mockRejectedValueOnce(
+      new Error("Failed to fetch observability throughput: 404")
+    );
+
+    render(
+      <MemoryRouter>
+        <Dashboard />
+      </MemoryRouter>
+    );
+
+    expect(await screen.findByText(/Test, your company is live/i)).toBeInTheDocument();
+    expect(screen.queryByText("Customer dashboard unavailable")).not.toBeInTheDocument();
+    expect(screen.getByText("Operator attention required")).toBeInTheDocument();
+    expect(screen.getByText("Failed to fetch observability events: 404")).toBeInTheDocument();
+    expect(streamObservabilityEventsMock).not.toHaveBeenCalled();
+  });
+
   it("renders preview access without calling bearer-protected dashboard APIs", async () => {
     accessModeMock.mockReturnValue("preview");
 

@@ -561,17 +561,10 @@ function latestIso(...timestamps: Array<string | undefined>): string {
 
 function buildMissionState(
   team: ControlPlaneTeam,
-  userId: string,
-  workspaceId?: string
 ): ControlPlaneMissionState {
-  const teamAgents = listAgentsForTeam(team.id, userId);
-  const teamTasks = Array.from(tasks.values()).filter((task) => task.userId === userId && task.teamId === team.id);
-  const teamExecutions = Array.from(executions.values()).filter(
-    (execution) =>
-      execution.userId === userId &&
-      execution.teamId === team.id &&
-      matchesWorkspace(execution.teamId, workspaceId)
-  );
+  const teamAgents = Array.from(agents.values()).filter((agent) => agent.teamId === team.id);
+  const teamTasks = Array.from(tasks.values()).filter((task) => task.teamId === team.id);
+  const teamExecutions = Array.from(executions.values()).filter((execution) => execution.teamId === team.id);
   const spendSnapshot = buildTeamSpendSnapshot(team);
   const blockedTasks = teamTasks.filter((task) => task.status === "blocked");
   const failedExecutions = teamExecutions.filter((execution) => execution.status === "failed");
@@ -657,6 +650,55 @@ function buildMissionState(
       lastUpdated: true,
     },
   };
+}
+
+function listAccessibleTeamIds(userId: string, workspaceId?: string): Set<string> {
+  const accessibleTeamIds = new Set(
+    Array.from(teams.values())
+      .filter((team) => team.userId === userId && matchesWorkspace(team.id, workspaceId))
+      .map((team) => team.id)
+  );
+
+  const normalizedWorkspaceId = workspaceId?.trim();
+  if (!normalizedWorkspaceId) {
+    return accessibleTeamIds;
+  }
+
+  Array.from(companies.values())
+    .filter((company) => {
+      const tenantWorkspaceId = companyTenantWorkspaceIds.get(company.id);
+      return tenantWorkspaceId === normalizedWorkspaceId || company.workspaceId === normalizedWorkspaceId;
+    })
+    .forEach((company) => {
+      accessibleTeamIds.add(company.teamId);
+    });
+
+  return accessibleTeamIds;
+}
+
+function canAccessTeam(team: ControlPlaneTeam | undefined, userId: string, workspaceId?: string): team is ControlPlaneTeam {
+  if (!team) {
+    return false;
+  }
+  return listAccessibleTeamIds(userId, workspaceId).has(team.id);
+}
+
+function canAccessAgent(agent: ControlPlaneAgent | undefined, userId: string, workspaceId?: string): agent is ControlPlaneAgent {
+  if (!agent) {
+    return false;
+  }
+  return canAccessTeam(teams.get(agent.teamId), userId, workspaceId);
+}
+
+function canAccessExecution(
+  execution: ControlPlaneExecution | undefined,
+  userId: string,
+  workspaceId?: string
+): execution is ControlPlaneExecution {
+  if (!execution) {
+    return false;
+  }
+  return canAccessTeam(teams.get(execution.teamId), userId, workspaceId);
 }
 
 function getTeamOwnedByUser(teamId: string, userId: string): ControlPlaneTeam | undefined {
@@ -1627,11 +1669,13 @@ export const controlPlaneStore = {
     }
 
     const timestamp = nowIso();
+    const workspaceId = input.workspaceId?.trim() || randomUUID();
+    const existingWorkspace = companyWorkspaces.get(workspaceId);
     const workspace: ProvisionedCompanyWorkspace = {
-      id: randomUUID(),
+      id: workspaceId,
       name: normalizedWorkspaceName,
       slug: slugify(normalizedName),
-      createdAt: timestamp,
+      createdAt: existingWorkspace?.createdAt ?? timestamp,
       updatedAt: timestamp,
     };
     const company: ProvisionedCompanyRecord = {
@@ -1720,73 +1764,72 @@ export const controlPlaneStore = {
   },
 
   listTeams(userId: string, workspaceId?: string): ControlPlaneTeam[] {
+    const accessibleTeamIds = listAccessibleTeamIds(userId, workspaceId);
     return Array.from(teams.values())
-      .filter((team) => team.userId === userId && matchesWorkspace(team.id, workspaceId))
+      .filter((team) => accessibleTeamIds.has(team.id))
       .sort((left, right) => left.createdAt.localeCompare(right.createdAt));
   },
 
   getTeam(teamId: string, userId: string, workspaceId?: string): ControlPlaneTeam | undefined {
-    const team = getTeamOwnedByUser(teamId, userId);
-    if (!team || !matchesWorkspace(team.id, workspaceId)) {
-      return undefined;
-    }
-    return team;
+    const team = teams.get(teamId);
+    return canAccessTeam(team, userId, workspaceId) ? team : undefined;
   },
 
   getMissionState(teamId: string, userId: string, workspaceId?: string): ControlPlaneMissionState | undefined {
-    const team = getTeamOwnedByUser(teamId, userId);
-    if (!team || !matchesWorkspace(team.id, workspaceId)) {
+    const team = teams.get(teamId);
+    if (!canAccessTeam(team, userId, workspaceId)) {
       return undefined;
     }
 
-    return buildMissionState(team, userId, workspaceId);
+    return buildMissionState(team);
   },
 
   listAgents(teamId: string, userId: string, workspaceId?: string): ControlPlaneAgent[] {
-    if (!matchesWorkspace(teamId, workspaceId)) {
+    const team = teams.get(teamId);
+    if (!canAccessTeam(team, userId, workspaceId)) {
       return [];
     }
-    return listAgentsForTeam(teamId, userId);
+    return Array.from(agents.values())
+      .filter((agent) => agent.teamId === teamId)
+      .sort((left, right) => left.createdAt.localeCompare(right.createdAt));
   },
 
   listAllAgents(userId: string, workspaceId?: string): ControlPlaneAgent[] {
+    const accessibleTeamIds = listAccessibleTeamIds(userId, workspaceId);
     return Array.from(agents.values())
-      .filter((agent) => agent.userId === userId && matchesWorkspace(agent.teamId, workspaceId))
+      .filter((agent) => accessibleTeamIds.has(agent.teamId))
       .sort((left, right) => left.createdAt.localeCompare(right.createdAt));
   },
 
   getAgent(agentId: string, userId: string, workspaceId?: string): ControlPlaneAgent | undefined {
-    const agent = getAgentOwnedByUser(agentId, userId);
-    if (!agent || !matchesWorkspace(agent.teamId, workspaceId)) {
-      return undefined;
-    }
-    return agent;
+    const agent = agents.get(agentId);
+    return canAccessAgent(agent, userId, workspaceId) ? agent : undefined;
   },
 
   listExecutions(userId: string, teamId?: string, workspaceId?: string): ControlPlaneExecution[] {
+    const accessibleTeamIds = listAccessibleTeamIds(userId, workspaceId);
     return Array.from(executions.values())
-      .filter((execution) => {
-        if (execution.userId !== userId) return false;
-        if (teamId && execution.teamId !== teamId) return false;
-        return matchesWorkspace(execution.teamId, workspaceId);
-      })
+      .filter((execution) => accessibleTeamIds.has(execution.teamId) && (!teamId || execution.teamId === teamId))
       .sort((left, right) => left.requestedAt.localeCompare(right.requestedAt));
   },
 
   listAgentExecutions(agentId: string, userId: string, workspaceId?: string): ControlPlaneExecution[] {
+    const agent = agents.get(agentId);
+    if (!canAccessAgent(agent, userId, workspaceId)) {
+      return [];
+    }
     return Array.from(executions.values())
-      .filter(
-        (execution) =>
-          execution.userId === userId &&
-          execution.agentId === agentId &&
-          matchesWorkspace(execution.teamId, workspaceId)
-      )
+      .filter((execution) => execution.agentId === agentId)
       .sort((left, right) => left.requestedAt.localeCompare(right.requestedAt));
   },
 
-  listAgentHeartbeats(agentId: string, userId: string): AgentHeartbeatRecord[] {
+  listAgentHeartbeats(agentId: string, userId: string, workspaceId?: string): AgentHeartbeatRecord[] {
+    const agent = agents.get(agentId);
+    if (!canAccessAgent(agent, userId, workspaceId)) {
+      return [];
+    }
     return Array.from(heartbeats.values())
-      .filter((heartbeat) => heartbeat.userId === userId && heartbeat.agentId === agentId)
+      .filter((heartbeat) => heartbeat.agentId === agentId)
       .sort((left, right) => left.startedAt.localeCompare(right.startedAt));
   },
 
@@ -1815,11 +1858,8 @@ export const controlPlaneStore = {
   },
 
   getTeamSpendSnapshot(teamId: string, userId: string, workspaceId?: string): TeamSpendSnapshot | undefined {
-    if (!matchesWorkspace(teamId, workspaceId)) {
-      return undefined;
-    }
-    const team = getTeamOwnedByUser(teamId, userId);
-    if (!team) {
+    const team = teams.get(teamId);
+    if (!canAccessTeam(team, userId, workspaceId)) {
       return undefined;
     }
     return buildTeamSpendSnapshot(team);
@@ -2176,9 +2216,10 @@ export const controlPlaneStore = {
     return task;
   },
 
-  listTasks(userId: string, teamId?: string): ControlPlaneTask[] {
+  listTasks(userId: string, teamId?: string, workspaceId?: string): ControlPlaneTask[] {
+    const accessibleTeamIds = listAccessibleTeamIds(userId, workspaceId);
     return Array.from(tasks.values())
-      .filter((task) => task.userId === userId && (!teamId || task.teamId === teamId))
+      .filter((task) => accessibleTeamIds.has(task.teamId) && (!teamId || task.teamId === teamId))
       .sort((left, right) => left.createdAt.localeCompare(right.createdAt));
   },
 
@@ -2936,9 +2977,10 @@ export const controlPlaneStore = {
     return heartbeat;
   },
 
-  listHeartbeats(userId: string, teamId?: string): AgentHeartbeatRecord[] {
+  listHeartbeats(userId: string, teamId?: string, workspaceId?: string): AgentHeartbeatRecord[] {
+    const accessibleTeamIds = listAccessibleTeamIds(userId, workspaceId);
     return Array.from(heartbeats.values())
-      .filter((heartbeat) => heartbeat.userId === userId && (!teamId || heartbeat.teamId === teamId))
+      .filter((heartbeat) => accessibleTeamIds.has(heartbeat.teamId) && (!teamId || heartbeat.teamId === teamId))
       .sort((left, right) => left.startedAt.localeCompare(right.startedAt));
   },
 

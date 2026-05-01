@@ -62,6 +62,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setStoredUser(readStoredAuthUser());
     };
 
+    // Re-read storage on mount so sessions written during initial route
+    // handling are not missed before listeners are attached.
+    syncAuthState();
+
     window.addEventListener("storage", syncAuthState);
     window.addEventListener(AUTH_STORAGE_EVENT, syncAuthState);
 

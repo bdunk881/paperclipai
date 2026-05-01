@@ -83,6 +83,31 @@ describe("AuthContext", () => {
     });
   });
 
+  it("re-reads storage on mount so callback-written sessions are not missed", async () => {
+    const session = {
+      accessToken: "token-123",
+      expiresAt: Date.now() + 60_000,
+      user: {
+        id: "user-1",
+        email: "user@example.com",
+        name: "Example User",
+      },
+    };
+
+    readStoredAuthSessionMock.mockReturnValueOnce(null).mockReturnValue(session);
+    readStoredAuthUserMock.mockReturnValueOnce(null).mockReturnValue(session.user);
+
+    render(
+      <AuthProvider>
+        <CaptureAuth />
+      </AuthProvider>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText("user@example.com")).toBeInTheDocument();
+    });
+  });
+
   it("returns the stored access token when the session is still valid", async () => {
     readStoredAuthSessionMock.mockReturnValue({
       accessToken: "token-123",
@@ -104,27 +129,16 @@ describe("AuthContext", () => {
   });
 
   it("refreshes the session when the access token has expired", async () => {
-    readStoredAuthSessionMock
-      .mockReturnValueOnce({
-        accessToken: "expired-token",
-        refreshToken: "refresh-123",
-        expiresAt: Date.now() - 1_000,
-        user: {
-          id: "user-1",
-          email: "user@example.com",
-          name: "Example User",
-        },
-      })
-      .mockReturnValueOnce({
-        accessToken: "expired-token",
-        refreshToken: "refresh-123",
-        expiresAt: Date.now() - 1_000,
-        user: {
-          id: "user-1",
-          email: "user@example.com",
-          name: "Example User",
-        },
-      });
+    readStoredAuthSessionMock.mockReturnValue({
+      accessToken: "expired-token",
+      refreshToken: "refresh-123",
+      expiresAt: Date.now() - 1_000,
+      user: {
+        id: "user-1",
+        email: "user@example.com",
+        name: "Example User",
+      },
+    });
 
     refreshNativeAuthSessionMock.mockResolvedValue({
       access_token: "fresh-token",
@@ -153,27 +167,16 @@ describe("AuthContext", () => {
   });
 
   it("throws when a token is required but the session cannot be refreshed", async () => {
-    readStoredAuthSessionMock
-      .mockReturnValueOnce({
-        accessToken: "expired-token",
-        refreshToken: "refresh-123",
-        expiresAt: Date.now() - 1_000,
-        user: {
-          id: "user-1",
-          email: "user@example.com",
-          name: "Example User",
-        },
-      })
-      .mockReturnValueOnce({
-        accessToken: "expired-token",
-        refreshToken: "refresh-123",
-        expiresAt: Date.now() - 1_000,
-        user: {
-          id: "user-1",
-          email: "user@example.com",
-          name: "Example User",
-        },
-      });
+    readStoredAuthSessionMock.mockReturnValue({
+      accessToken: "expired-token",
+      refreshToken: "refresh-123",
+      expiresAt: Date.now() - 1_000,
+      user: {
+        id: "user-1",
+        email: "user@example.com",
+        name: "Example User",
+      },
+    });
 
     refreshNativeAuthSessionMock.mockRejectedValue(new Error("refresh failed"));
 

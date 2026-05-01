@@ -83,7 +83,7 @@ export function TicketActorChip({
   return (
     <span
       className={clsx(
-        "inline-flex items-center gap-2 rounded-full border border-slate-700 bg-slate-900/70 text-slate-200",
+        "inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white/90 text-slate-700 dark:border-slate-700 dark:bg-slate-900/70 dark:text-slate-200",
         compact ? "px-2.5 py-1 text-[11px]" : "px-3 py-1.5 text-xs"
       )}
     >
@@ -94,7 +94,7 @@ export function TicketActorChip({
           profile.tone === "teal" && "bg-teal-500/20 text-teal-200",
           profile.tone === "indigo" && "bg-indigo-500/20 text-indigo-200",
           profile.tone === "orange" && "bg-orange-500/20 text-orange-200",
-          profile.tone === "slate" && "bg-slate-700 text-slate-200"
+          profile.tone === "slate" && "bg-slate-200 text-slate-700 dark:bg-slate-700 dark:text-slate-200"
         )}
       >
         {profile.initials}
@@ -118,12 +118,12 @@ export function TicketEmptyState({
   action?: React.ReactNode;
 }) {
   return (
-    <div className="flex min-h-[260px] flex-col items-center justify-center rounded-[28px] border border-dashed border-slate-800 bg-slate-950/60 px-6 text-center">
-      <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-2xl border border-slate-800 bg-slate-900 text-slate-500">
+    <div className="flex min-h-[260px] flex-col items-center justify-center rounded-[28px] border border-dashed border-slate-200 bg-slate-50 px-6 text-center dark:border-slate-800 dark:bg-slate-950/60">
+      <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-2xl border border-slate-200 bg-white text-slate-500 dark:border-slate-800 dark:bg-slate-900">
         <Ticket size={26} />
       </div>
-      <h2 className="text-lg font-semibold text-slate-100">{title}</h2>
-      <p className="mt-2 max-w-md text-sm text-slate-400">{body}</p>
+      <h2 className="text-lg font-semibold text-slate-900 dark:text-slate-100">{title}</h2>
+      <p className="mt-2 max-w-md text-sm text-slate-500 dark:text-slate-400">{body}</p>
       {action ? <div className="mt-5">{action}</div> : null}
     </div>
   );
@@ -133,10 +133,10 @@ export function TicketSourceNotice({
   source,
   warnings = [],
 }: {
-  source: "api" | "mock";
+  source: "api" | "mock" | null;
   warnings?: string[];
 }) {
-  if (source === "api" && warnings.length === 0) return null;
+  if (!source || (source === "api" && warnings.length === 0)) return null;
 
   return (
     <div
@@ -144,7 +144,7 @@ export function TicketSourceNotice({
         "rounded-2xl border px-4 py-3 text-sm",
         source === "mock"
           ? "border-orange-500/30 bg-orange-500/10 text-orange-200"
-          : "border-slate-700 bg-slate-900/70 text-slate-300"
+          : "border-slate-200 bg-slate-50 text-slate-700 dark:border-slate-700 dark:bg-slate-900/70 dark:text-slate-300"
       )}
     >
       <div className="flex items-center gap-2 font-medium">
@@ -154,7 +154,7 @@ export function TicketSourceNotice({
           : "Live ticket API connected."}
       </div>
       {warnings.length > 0 ? (
-        <ul className="mt-2 space-y-1 text-xs text-slate-400">
+        <ul className="mt-2 space-y-1 text-xs text-slate-500 dark:text-slate-400">
           {warnings.map((warning) => (
             <li key={warning}>- {warning}</li>
           ))}
@@ -174,9 +174,9 @@ export function TicketKpiCard({
   helper: string;
 }) {
   return (
-    <div className="rounded-[24px] border border-slate-800 bg-slate-950/70 px-5 py-4">
+    <div className="rounded-[24px] border border-slate-200 bg-white/90 px-5 py-4 dark:border-slate-800 dark:bg-slate-950/70">
       <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">{label}</p>
-      <p className="mt-2 text-2xl font-semibold text-slate-100">{value}</p>
+      <p className="mt-2 text-2xl font-semibold text-slate-900 dark:text-slate-100">{value}</p>
       <p className="mt-2 text-xs text-slate-500">{helper}</p>
     </div>
   );
@@ -191,10 +191,10 @@ export function TicketRowMeta({
 
   return (
     <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
-      <span className="font-ticket-mono uppercase tracking-[0.16em] text-slate-400">{ticket.id}</span>
+      <span className="font-ticket-mono uppercase tracking-[0.16em] text-slate-500 dark:text-slate-400">{ticket.id}</span>
       {owner ? (
         <>
-          <span className="text-slate-700">&bull;</span>
+          <span className="text-slate-300 dark:text-slate-700">&bull;</span>
           <span className="inline-flex items-center gap-1">
             {owner.type === "agent" ? <Bot size={12} /> : <UserRound size={12} />}
             {getTicketActorProfile(owner).name}
@@ -203,7 +203,7 @@ export function TicketRowMeta({
       ) : null}
       {ticket.dueDate ? (
         <>
-          <span className="text-slate-700">&bull;</span>
+          <span className="text-slate-300 dark:text-slate-700">&bull;</span>
           <span>Due {formatTicketTimestamp(ticket.dueDate)}</span>
         </>
       ) : null}
@@ -216,7 +216,7 @@ export function TicketUpdateCard({ update }: { update: TicketUpdate }) {
   const Icon = ticketUpdateIcon(update);
 
   return (
-    <article className="rounded-[24px] border border-slate-800 bg-slate-950/75 p-4">
+    <article className="rounded-[24px] border border-slate-200 bg-white/95 p-4 dark:border-slate-800 dark:bg-slate-950/75">
       <div className="flex items-start gap-3">
         <div
           className={clsx(
@@ -228,23 +228,23 @@ export function TicketUpdateCard({ update }: { update: TicketUpdate }) {
         </div>
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
-            <span className="font-medium text-slate-100">{profile.name}</span>
+            <span className="font-medium text-slate-900 dark:text-slate-100">{profile.name}</span>
             <span className="text-[11px] uppercase tracking-[0.16em] text-slate-500">
               {update.type.replace("_", " ")}
             </span>
             <span className="text-xs text-slate-500">{relativeTicketTime(update.createdAt)}</span>
           </div>
-          <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-slate-300">{update.content}</p>
+          <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-slate-600 dark:text-slate-300">{update.content}</p>
           {Object.keys(update.metadata ?? {}).length > 0 ? (
-            <div className="mt-3 rounded-2xl border border-slate-800 bg-slate-900/70 p-3">
+            <div className="mt-3 rounded-2xl border border-slate-200 bg-slate-50 p-3 dark:border-slate-800 dark:bg-slate-900/70">
               <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
                 Metadata
               </p>
-              <div className="mt-2 flex flex-wrap gap-2 text-xs text-slate-400">
+              <div className="mt-2 flex flex-wrap gap-2 text-xs text-slate-500 dark:text-slate-400">
                 {Object.entries(update.metadata).map(([key, value]) => (
                   <span
                     key={key}
-                    className="inline-flex items-center gap-1 rounded-full border border-slate-700 px-2.5 py-1"
+                    className="inline-flex items-center gap-1 rounded-full border border-slate-200 px-2.5 py-1 dark:border-slate-700"
                   >
                     <ArrowUpRight size={11} />
                     {key}: {String(value)}

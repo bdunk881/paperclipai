@@ -36,6 +36,9 @@ export default {
           850: "#172033",
           900: "#0f172a",
           950: "#020617",
+          base: "#0f172a",
+          deep: "#020617",
+          elevated: "#1e293b",
         },
       },
       fontFamily: {

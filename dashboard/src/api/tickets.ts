@@ -148,6 +148,7 @@ export interface TicketQueueResponse {
 const BASE = getApiBasePath();
 const DEFAULT_WORKSPACE_ID =
   import.meta.env.VITE_DEFAULT_WORKSPACE_ID ?? "11111111-1111-4111-8111-111111111111";
+const USE_MOCK_TICKETING = import.meta.env.VITE_USE_MOCK === "true";
 
 const actorProfiles = new Map<
   string,
@@ -326,7 +327,16 @@ export function collectKnownActors(tickets: TicketRecord[]): TicketActorRef[] {
 }
 
 function withMockFallback<T>(factory: () => Promise<T>, fallback: () => T | Promise<T>): Promise<T> {
-  return factory().catch(() => Promise.resolve(fallback()));
+  return factory().catch((error) => {
+    if (!USE_MOCK_TICKETING) {
+      if (error instanceof Error && error.message === "fallback") {
+        throw new Error("Live ticketing data is unavailable and mock fallback is disabled.");
+      }
+      throw error;
+    }
+
+    return Promise.resolve(fallback());
+  });
 }
 
 function filterTickets(tickets: TicketRecord[], filters: TicketListFilters): TicketRecord[] {

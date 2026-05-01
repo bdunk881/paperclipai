@@ -55,8 +55,7 @@ export default function ConnectorHealth() {
           <h1 className="text-2xl font-bold text-gray-900">Connector Health</h1>
           <p className="mt-1 max-w-3xl text-sm text-gray-500">
             Operational view of Tier 1 connector state, recent failures, and alerting
-            thresholds. This scaffold is wired to mock telemetry until the connector
-            health-state model from `ALT-1945` is emitting live data.
+            thresholds across your connected providers.
           </p>
         </div>
         {summary ? (

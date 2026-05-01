@@ -29,5 +29,8 @@ describe("Tickets", () => {
       expect(globalThis.fetch).toHaveBeenCalled();
     });
     expect(screen.queryByText("Ship ticketing foundation for launch review")).not.toBeInTheDocument();
+    expect(
+      screen.queryByText(/showing local ticketing fallback data while the backend branch is still in review/i)
+    ).not.toBeInTheDocument();
   });
 });

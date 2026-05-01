@@ -38,6 +38,8 @@ interface IntegrationOption {
   official: boolean;
   logo?: string;
   liveProviderKey?: ProviderKey;
+  rating?: number;
+  connected?: boolean;
 }
 
 interface RegisteredIntegration {

@@ -25,40 +25,10 @@ interface ProviderMeta {
 }
 
 const PROVIDERS: Record<ProviderName, ProviderMeta> = {
-<<<<<<< HEAD
-  openai: { 
-    name: "OpenAI", 
-    color: "text-green-700", 
-    bg: "bg-green-100", 
-    abbr: "OAI",
-    logo: "openai.svg"
-  },
-  anthropic: { 
-    name: "Anthropic", 
-    color: "text-orange-700", 
-    bg: "bg-orange-100", 
-    abbr: "ANT",
-    logo: "anthropic.svg"
-  },
-  gemini: { 
-    name: "Google Gemini", 
-    color: "text-blue-700", 
-    bg: "bg-blue-100", 
-    abbr: "GEM",
-    logo: "google.svg"
-  },
-  mistral: { 
-    name: "Mistral", 
-    color: "text-purple-700", 
-    bg: "bg-purple-100", 
-    abbr: "MIS",
-    logo: "mistral.svg"
-  },
-=======
-  openai: { name: "OpenAI", color: "text-green-700", bg: "bg-green-100", abbr: "OAI" },
-  anthropic: { name: "Anthropic", color: "text-orange-700", bg: "bg-orange-100", abbr: "ANT" },
-  gemini: { name: "Google Gemini", color: "text-blue-700", bg: "bg-blue-100", abbr: "GEM" },
-  mistral: { name: "Mistral", color: "text-purple-700", bg: "bg-purple-100", abbr: "MIS" },
+  openai: { name: "OpenAI", color: "text-green-700", bg: "bg-green-100", abbr: "OAI", logo: "openai.svg" },
+  anthropic: { name: "Anthropic", color: "text-orange-700", bg: "bg-orange-100", abbr: "ANT", logo: "anthropic.svg" },
+  gemini: { name: "Google Gemini", color: "text-blue-700", bg: "bg-blue-100", abbr: "GEM", logo: "google.svg" },
+  mistral: { name: "Mistral", color: "text-purple-700", bg: "bg-purple-100", abbr: "MIS", logo: "mistral.svg" },
   "azure-openai": { name: "Azure OpenAI", color: "text-sky-700", bg: "bg-sky-100", abbr: "AZR" },
   groq: { name: "Groq", color: "text-emerald-700", bg: "bg-emerald-100", abbr: "GRQ" },
   fireworks: { name: "Fireworks AI", color: "text-rose-700", bg: "bg-rose-100", abbr: "FWK" },
@@ -71,7 +41,6 @@ const PROVIDERS: Record<ProviderName, ProviderMeta> = {
   deepseek: { name: "DeepSeek", color: "text-teal-700", bg: "bg-teal-100", abbr: "DSK" },
   bedrock: { name: "AWS Bedrock", color: "text-amber-700", bg: "bg-amber-100", abbr: "AWS" },
   "vertex-ai": { name: "Vertex AI", color: "text-lime-700", bg: "bg-lime-100", abbr: "VTX" },
->>>>>>> origin/staging
 };
 
 const PROVIDER_ORDER: ProviderName[] = [

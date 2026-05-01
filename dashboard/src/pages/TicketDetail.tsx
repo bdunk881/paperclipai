@@ -81,7 +81,7 @@ export default function TicketDetail() {
   const [aggregate, setAggregate] = useState<TicketAggregate | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [source, setSource] = useState<"api" | "mock">("mock");
+  const [source, setSource] = useState<"api" | "mock" | null>(null);
   const [updateDraft, setUpdateDraft] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [memoryState, setMemoryState] = useState<MemoryLoadState>({
@@ -158,14 +158,15 @@ export default function TicketDetail() {
         void loadAgentDirectory(accessToken, setAgentDirectory);
       } catch (loadError) {
         setError(loadError instanceof Error ? loadError.message : "Failed to load ticket");
-        setSource("mock");
         try {
           const fallback = await getTicket(ticketId);
           setAggregate(fallback);
+          setSource("mock");
           void loadMemoryEntries(fallback, undefined, setMemoryState);
           setAgentDirectory([]);
         } catch {
           setAggregate(null);
+          setSource(null);
         }
       } finally {
         if (!options.silent) {

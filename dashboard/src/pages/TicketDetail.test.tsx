@@ -233,4 +233,17 @@ describe("TicketDetail", () => {
       );
     });
   });
+
+  it("does not advertise mock ticket data when both live and fallback loads fail", async () => {
+    ticketsApiMocks.getTicket
+      .mockRejectedValueOnce(new Error("ticket detail unavailable"))
+      .mockRejectedValueOnce(new Error("mock fallback disabled"));
+
+    renderTicketDetail();
+
+    expect(await screen.findByText("ticket detail unavailable")).toBeInTheDocument();
+    expect(
+      screen.queryByText(/showing local ticketing fallback data while the backend branch is still in review/i)
+    ).not.toBeInTheDocument();
+  });
 });

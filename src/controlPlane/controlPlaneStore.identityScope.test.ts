@@ -9,12 +9,12 @@ describe("controlPlaneStore identity scoping", () => {
     resetControlPlaneStoreForTests();
   });
 
-  it("reproduces company workspace data remaining bound to the provisioning user", () => {
+  it("reproduces company workspace data remaining bound to the provisioning user", async () => {
     const provisioningUserId = "agent-user";
     const browserUserId = "ceo-browser-user";
     const workspaceId = "11111111-1111-4111-8111-111111111111";
 
-    const provisioned = controlPlaneStore.provisionCompanyWorkspace({
+    const provisioned = await controlPlaneStore.provisionCompanyWorkspace({
       workspaceId,
       userId: provisioningUserId,
       name: "AutoFlow",

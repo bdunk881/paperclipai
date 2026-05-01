@@ -33,10 +33,31 @@ describe("baseUrl host fallback", () => {
     expect(getApiBasePath()).toBe("https://staging-api.helloautoflow.com/api");
   });
 
-  it("prefers the explicit environment origin over host fallbacks", () => {
+  it("uses the staging backend origin on Vercel preview hosts", () => {
+    Object.defineProperty(window, "location", {
+      value: { hostname: "dashboard-r6ww4hpqu-brad-duncans-projects.vercel.app" },
+      configurable: true,
+    });
+
+    expect(getConfiguredApiOrigin()).toBe("https://staging-api.helloautoflow.com");
+    expect(getApiBasePath()).toBe("https://staging-api.helloautoflow.com/api");
+  });
+
+  it("prefers the hosted origin over an explicit environment origin", () => {
     vi.stubEnv("VITE_API_BASE_URL", "https://custom-api.example.com/api");
     Object.defineProperty(window, "location", {
       value: { hostname: "staging.app.helloautoflow.com" },
+      configurable: true,
+    });
+
+    expect(getConfiguredApiOrigin()).toBe("https://staging-api.helloautoflow.com");
+    expect(getApiBasePath()).toBe("https://staging-api.helloautoflow.com/api");
+  });
+
+  it("uses the explicit environment origin when the host is not recognized", () => {
+    vi.stubEnv("VITE_API_BASE_URL", "https://custom-api.example.com/api");
+    Object.defineProperty(window, "location", {
+      value: { hostname: "localhost" },
       configurable: true,
     });
 

@@ -7,7 +7,7 @@
       "headers": [
         {
           "key": "Content-Security-Policy",
-          "value": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data: https://cdn.helloautoflow.com; font-src 'self' https://fonts.gstatic.com; connect-src 'self' https://api.helloautoflow.com https://*.ciamlogin.com https://login.microsoftonline.com https://fonts.googleapis.com https://cdn.helloautoflow.com; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'; upgrade-insecure-requests"
+          "value": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data: https://cdn.helloautoflow.com; font-src 'self' https://fonts.gstatic.com; connect-src 'self' https://api.helloautoflow.com https://staging-api.helloautoflow.com https://*.ciamlogin.com https://login.microsoftonline.com https://fonts.googleapis.com https://cdn.helloautoflow.com; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'; upgrade-insecure-requests"
         },
         {
           "key": "X-Content-Type-Options",

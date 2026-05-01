@@ -19,15 +19,23 @@ function getHostedApiOrigin(): string {
   if (hostname === "staging.app.helloautoflow.com") {
     return "https://staging-api.helloautoflow.com";
   }
+  if (hostname.endsWith(".vercel.app")) {
+    return "https://staging-api.helloautoflow.com";
+  }
 
   return "";
 }
 
 export function getConfiguredApiOrigin(): string {
+  const hosted = getHostedApiOrigin();
+  if (hosted) {
+    return hosted;
+  }
+
   const configured = normalizeConfiguredOrigin(
     import.meta.env.VITE_API_BASE_URL ?? import.meta.env.VITE_API_URL
   );
-  return configured || getHostedApiOrigin();
+  return configured;
 }
 
 export function getApiBasePath(): string {

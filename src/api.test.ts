@@ -747,7 +747,7 @@ describe("Company provisioning APIs", () => {
 
     expect(secondRes.status).toBe(201);
     expect(secondRes.body.company.id).not.toBe(firstRes.body.company.id);
-    expect(secondRes.body.workspace.id).not.toBe(firstRes.body.workspace.id);
+    expect(secondRes.body.workspace.id).toBe(firstRes.body.workspace.id);
     expect(secondRes.body.team.id).not.toBe(firstRes.body.team.id);
     expect(secondRes.body.agents.map((agent: { id: string }) => agent.id)).not.toEqual(
       firstRes.body.agents.map((agent: { id: string }) => agent.id)

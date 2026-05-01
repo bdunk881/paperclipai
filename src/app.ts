@@ -322,7 +322,7 @@ app.use("/api/mcp/servers", requireAuth, mcpRoutes);
 // ---------------------------------------------------------------------------
 app.use("/api/memory", requireAuth, memoryRoutes);
 app.use("/api/agents/:agentId/memory", requireAuth, agentMemoryRoutes);
-app.use("/api/agents", requireAuth, agentRoutes);
+app.use("/api/agents", requireAuth, workspaceResolver, agentRoutes);
 
 // Routines stub — returns empty list until a full routines store is implemented.
 app.get("/api/routines", requireAuth, (_req, res) => {

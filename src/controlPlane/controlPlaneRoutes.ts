@@ -400,8 +400,8 @@ router.get("/teams/:id", (req: WorkspaceAwareRequest, res) => {
   }
 
   const agents = controlPlaneStore.listAgents(team.id, context.userId, context.workspaceId);
-  const tasks = controlPlaneStore.listTasks(context.userId, team.id);
-  const heartbeats = controlPlaneStore.listHeartbeats(context.userId, team.id);
+  const tasks = controlPlaneStore.listTasks(context.userId, team.id, context.workspaceId);
+  const heartbeats = controlPlaneStore.listHeartbeats(context.userId, team.id, context.workspaceId);
   const executions = controlPlaneStore.listExecutions(context.userId, team.id, context.workspaceId);
   const spend = controlPlaneStore.getTeamSpendSnapshot(team.id, context.userId, context.workspaceId);
   res.json({ team, agents, tasks, heartbeats, executions, spend });
@@ -573,14 +573,13 @@ router.post("/tasks", requirePaperclipRunId, async (req: AuthenticatedRequest, r
   }
 });
 
-router.get("/tasks", (req: AuthenticatedRequest, res) => {
-  const userId = getUserId(req);
-  if (!userId) {
-    res.status(401).json({ error: "Authenticated user required" });
+router.get("/tasks", (req: WorkspaceAwareRequest, res) => {
+  const context = resolveWorkspaceContext(req, res);
+  if (!context) {
     return;
   }
   const teamId = typeof req.query.teamId === "string" ? req.query.teamId : undefined;
-  const tasks = controlPlaneStore.listTasks(userId, teamId);
+  const tasks = controlPlaneStore.listTasks(context.userId, teamId, context.workspaceId);
   res.json({ tasks, total: tasks.length });
 });
 

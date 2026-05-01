@@ -109,7 +109,7 @@ export interface ConnectorHealthRecord {
   authFailures15m: number;
   rateLimitEvents15m: number;
   transitions: ConnectorHealthTransition[];
-  source: "mock";
+  source?: "mock" | "api";
 }
 
 export interface ConnectorHealthSummary {
@@ -122,7 +122,7 @@ export interface ConnectorHealthSummary {
     rateLimitThreshold15m: number;
     outageThresholdMinutes: number;
   };
-  source: "mock";
+  source?: "mock" | "api";
 }
 
 const USE_MOCK_API = import.meta.env.VITE_USE_MOCK === "true";
@@ -893,10 +893,16 @@ export async function getConnectorHealth(): Promise<{
 
   const res = await fetch(`${BASE}/connectors/health`);
   if (!res.ok) throw new Error(`Failed to fetch connector health: ${res.status}`);
-  return res.json() as Promise<{
+  const payload = (await res.json()) as {
     connectors: ConnectorHealthRecord[];
     summary: ConnectorHealthSummary;
-  }>;
+  };
+
+  if (payload.summary?.source === "mock") {
+    throw new Error("Connector health is still serving mock telemetry.");
+  }
+
+  return payload;
 }
 
 /** GET /api/runs/:id */

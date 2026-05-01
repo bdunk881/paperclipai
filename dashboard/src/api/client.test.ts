@@ -19,6 +19,7 @@ import {
   generateTeamAssemblyPlan,
   generateWorkflow,
   getControlPlaneTeam,
+  getConnectorHealth,
   listCompanyRoleTemplates,
   getProposalJobStatus,
   getObservabilityStreamPath,
@@ -396,6 +397,34 @@ describe("listRuns", () => {
     const result = await client.listRuns("tpl-support-bot");
     expect(result.every((run) => run.templateId === "tpl-support-bot")).toBe(true);
     expect(vi.mocked(fetch as unknown as ReturnType<typeof vi.fn>)).not.toHaveBeenCalled();
+  });
+});
+
+describe("getConnectorHealth", () => {
+  it("rejects backend mock telemetry in real environments", async () => {
+    mockFetch({
+      connectors: [],
+      summary: {
+        total: 0,
+        states: {
+          healthy: 0,
+          degraded: 0,
+          rate_limited: 0,
+          auth_failure: 0,
+          down: 0,
+        },
+        lastUpdatedAt: "2026-05-01T00:00:00.000Z",
+        alertPolicy: {
+          degradedWithinMinutes: 5,
+          authFailureThreshold15m: 5,
+          rateLimitThreshold15m: 5,
+          outageThresholdMinutes: 15,
+        },
+        source: "mock",
+      },
+    });
+
+    await expect(getConnectorHealth()).rejects.toThrow(/mock telemetry/i);
   });
 });
 

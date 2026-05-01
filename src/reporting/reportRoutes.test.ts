@@ -82,6 +82,22 @@ describe("report routes", () => {
       actor: "tester",
       status: "blocked",
     });
+    const periodStart = new Date(
+      Math.min(
+        new Date(done.createdAt).getTime(),
+        new Date(done.updatedAt).getTime(),
+        new Date(blocked.createdAt).getTime(),
+        new Date(blocked.updatedAt).getTime()
+      ) - 1_000
+    ).toISOString();
+    const periodEnd = new Date(
+      Math.max(
+        new Date(done.createdAt).getTime(),
+        new Date(done.updatedAt).getTime(),
+        new Date(blocked.createdAt).getTime(),
+        new Date(blocked.updatedAt).getTime()
+      ) + 1_000
+    ).toISOString();
 
     const createRes = await request(app)
       .post("/api/reporting/generate")
@@ -91,8 +107,8 @@ describe("report routes", () => {
       .send({
         kind: "board_memo",
         teamId: team.id,
-        periodStart: "2026-04-01T00:00:00.000Z",
-        periodEnd: "2026-04-30T23:59:59.000Z",
+        periodStart,
+        periodEnd,
         deliveryChannels: ["inbox"],
       });
 

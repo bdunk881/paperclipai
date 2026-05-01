@@ -60,6 +60,7 @@ export interface TicketSlaSettingsPayload {
 }
 
 const BASE = getApiBasePath();
+const USE_MOCK_TICKETING = import.meta.env.VITE_USE_MOCK === "true";
 
 let mockSettings: TicketSlaSettingsPayload = {
   policies: [
@@ -140,7 +141,16 @@ function isMockFallbackStatus(status: number): boolean {
 }
 
 function withMockFallback<T>(factory: () => Promise<T>, fallback: () => T | Promise<T>): Promise<T> {
-  return factory().catch(() => Promise.resolve(fallback()));
+  return factory().catch((error) => {
+    if (!USE_MOCK_TICKETING) {
+      if (error instanceof Error && error.message === "fallback") {
+        throw new Error("Live ticketing SLA data is unavailable and mock fallback is disabled.");
+      }
+      throw error;
+    }
+
+    return Promise.resolve(fallback());
+  });
 }
 
 export async function getTicketSlaDashboard(accessToken?: string): Promise<TicketSlaDashboard> {

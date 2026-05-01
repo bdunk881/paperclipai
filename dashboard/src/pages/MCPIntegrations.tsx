@@ -160,6 +160,28 @@ const INTEGRATION_OPTIONS: IntegrationOption[] = [
     official: false,
     logo: puppeteerLogo,
   },
+  {
+    id: "mcp-intercom",
+    name: "Intercom",
+    description: "Sync customer data and manage conversations via Intercom.",
+    category: "Support",
+    tools: ["get_contact", "list_conversations", "send_reply"],
+    rating: 4.7,
+    connected: false,
+    official: true,
+    logo: intercomLogo,
+  },
+  {
+    id: "mcp-sanity",
+    name: "Sanity",
+    description: "Query and mutate content in your Sanity CMS datasets.",
+    category: "Content",
+    tools: ["query_content", "create_document", "patch_document"],
+    rating: 4.6,
+    connected: false,
+    official: false,
+    logo: sanityLogo,
+  },
 ];
 
 const CATEGORIES = ["All", ...Array.from(new Set(INTEGRATION_OPTIONS.map((s) => s.category))).sort()];

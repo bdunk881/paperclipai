@@ -1,4 +1,5 @@
 import type { StoredAuthSession, StoredAuthUser } from "./authStorage";
+import { getConfiguredApiOrigin } from "../api/baseUrl";
 
 const DEFAULT_CIAM_CLIENT_ID = "2dfd3a08-277c-4893-b07d-eca5ae322310";
 const DEFAULT_API_SCOPE = `api://${DEFAULT_CIAM_CLIENT_ID}/access_as_user`;
@@ -14,16 +15,9 @@ const DEFAULT_SCOPE = `openid profile email offline_access ${DEFAULT_API_SCOPE}`
  * backend when running on the production dashboard domain.
  */
 function resolveNativeAuthProxyBase(): string {
-  const envBase = import.meta.env.VITE_API_BASE_URL;
-  if (typeof envBase === "string" && envBase.trim()) {
-    return `${envBase.replace(/\/+$/, "")}/api/auth/native`;
-  }
-
-  if (
-    typeof window !== "undefined" &&
-    window.location.hostname === "app.helloautoflow.com"
-  ) {
-    return "https://api.helloautoflow.com/api/auth/native";
+  const apiOrigin = getConfiguredApiOrigin();
+  if (apiOrigin) {
+    return `${apiOrigin}/api/auth/native`;
   }
 
   return "/api/auth/native";

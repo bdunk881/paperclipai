@@ -2260,7 +2260,11 @@ describe("GET /api/observability/events", () => {
     expect(res.body.events).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ type: "issue.created", category: "issue" }),
-        expect.objectContaining({ type: "issue.checked_out", category: "issue" }),
+        expect.objectContaining({
+          type: "issue.status_changed",
+          category: "issue",
+          payload: expect.objectContaining({ status: "in_progress" }),
+        }),
         expect.objectContaining({
           type: "issue.status_changed",
           category: "issue",

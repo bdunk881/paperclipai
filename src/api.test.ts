@@ -97,6 +97,7 @@ import { runStore } from "./engine/runStore";
 import { knowledgeStore } from "./knowledge/knowledgeStore";
 import { llmConfigStore } from "./llmConfig/llmConfigStore";
 import { getProvider } from "./engine/llmProviders";
+import { observabilityStore } from "./observability/store";
 import { resetImportedTemplatesForTests } from "./templates/importedTemplateStore";
 import {
   PORTABLE_WORKFLOW_FORMAT,
@@ -119,6 +120,7 @@ beforeEach(() => {
   knowledgeStore.clear();
   llmConfigStore.clear();
   mockGetProvider.mockReset();
+  observabilityStore.clear();
   resetImportedTemplatesForTests();
 });
 
@@ -2205,6 +2207,129 @@ describe("GET /api/observability", () => {
     expect(csvRes.headers["content-type"]).toMatch(/text\/csv/);
     expect(csvRes.text).toContain("crm.lookup");
     expect(csvRes.text).toContain("Handle observability trace");
+  });
+});
+
+describe("GET /api/observability/events", () => {
+  it("returns projected issue activity for dashboard observability feeds", async () => {
+    const deployRes = await request(app)
+      .post("/api/control-plane/deployments/workflow")
+      .set(asAuth())
+      .set("X-Paperclip-Run-Id", "run-deploy-observability-events")
+      .send({ templateId: "tpl-support-bot" });
+
+    const teamId = deployRes.body.team.id;
+    const workerAgent = deployRes.body.agents.find(
+      (agent: { roleKey: string }) => agent.roleKey !== "workflow-manager"
+    );
+    const step = WORKFLOW_TEMPLATES.find((template) => template.id === "tpl-support-bot")!.steps[0]!;
+
+    const started = await controlPlaneStore.startAgentExecution({
+      userId: "test-user",
+      actor: "run-observability-feed",
+      teamId,
+      step,
+      sourceRunId: "obs-feed-run-1",
+      requestedAgentId: workerAgent.id,
+      taskTitle: "Investigate observability feed",
+    });
+
+    expect(started.task).toBeDefined();
+
+    controlPlaneStore.checkoutTask({
+      taskId: started.task!.id,
+      userId: "test-user",
+      actor: workerAgent.id,
+    });
+
+    controlPlaneStore.updateTaskStatus({
+      taskId: started.task!.id,
+      userId: "test-user",
+      actor: workerAgent.id,
+      status: "blocked",
+    });
+
+    const res = await request(app)
+      .get("/api/observability/events?categories=issue&limit=10")
+      .set(asAuth());
+
+    expect(res.status).toBe(200);
+    expect(res.body.generatedAt).toEqual(expect.any(String));
+    expect(res.body.nextCursor).toEqual(expect.any(String));
+    expect(Array.isArray(res.body.events)).toBe(true);
+    expect(res.body.events).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ type: "issue.created", category: "issue" }),
+        expect.objectContaining({ type: "issue.checked_out", category: "issue" }),
+        expect.objectContaining({
+          type: "issue.status_changed",
+          category: "issue",
+          payload: expect.objectContaining({ status: "blocked" }),
+        }),
+      ])
+    );
+  });
+});
+
+describe("GET /api/observability/throughput", () => {
+  it("aggregates created, blocked, and completed issue activity", async () => {
+    const deployRes = await request(app)
+      .post("/api/control-plane/deployments/workflow")
+      .set(asAuth())
+      .set("X-Paperclip-Run-Id", "run-deploy-observability-throughput")
+      .send({ templateId: "tpl-support-bot" });
+
+    const teamId = deployRes.body.team.id;
+    const workerAgent = deployRes.body.agents.find(
+      (agent: { roleKey: string }) => agent.roleKey !== "workflow-manager"
+    );
+    const step = WORKFLOW_TEMPLATES.find((template) => template.id === "tpl-support-bot")!.steps[0]!;
+
+    const started = await controlPlaneStore.startAgentExecution({
+      userId: "test-user",
+      actor: "run-observability-throughput",
+      teamId,
+      step,
+      sourceRunId: "obs-throughput-run-1",
+      requestedAgentId: workerAgent.id,
+      taskTitle: "Measure throughput",
+    });
+
+    expect(started.task).toBeDefined();
+
+    controlPlaneStore.updateTaskStatus({
+      taskId: started.task!.id,
+      userId: "test-user",
+      actor: workerAgent.id,
+      status: "blocked",
+    });
+
+    controlPlaneStore.updateTaskStatus({
+      taskId: started.task!.id,
+      userId: "test-user",
+      actor: workerAgent.id,
+      status: "done",
+    });
+
+    const res = await request(app)
+      .get("/api/observability/throughput?windowHours=24")
+      .set(asAuth());
+
+    expect(res.status).toBe(200);
+    expect(res.body.windowHours).toBe(24);
+    expect(res.body.generatedAt).toEqual(expect.any(String));
+    expect(res.body.summary).toMatchObject({
+      createdCount: 1,
+      completedCount: 1,
+      blockedCount: 1,
+      completionRate: 1,
+    });
+    expect(res.body.buckets).toHaveLength(1);
+    expect(res.body.buckets[0]).toMatchObject({
+      createdCount: 1,
+      completedCount: 1,
+      blockedCount: 1,
+    });
   });
 });
 

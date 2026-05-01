@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { Link } from "react-router-dom";
 import {
   CheckCircle,
@@ -11,6 +11,7 @@ import {
   RefreshCw,
 } from "lucide-react";
 import { listApprovals, resolveApproval, type ApprovalRequest } from "../api/client";
+import { useAuth } from "../context/AuthContext";
 
 const POLL_INTERVAL_MS = 10_000;
 
@@ -26,15 +27,36 @@ function timeAgo(iso: string): string {
 
 const STATUS_CONFIG: Record<
   ApprovalRequest["status"],
-  { label: string; color: string; icon: React.ElementType }
+  { label: string; badge: string; card: string; icon: React.ElementType }
 > = {
-  pending: { label: "Pending", color: "bg-yellow-100 text-yellow-700", icon: Clock },
-  approved: { label: "Approved", color: "bg-green-100 text-green-700", icon: CheckCircle },
-  rejected: { label: "Rejected", color: "bg-red-100 text-red-700", icon: XCircle },
-  timed_out: { label: "Timed Out", color: "bg-gray-100 text-gray-500", icon: AlertCircle },
+  pending: {
+    label: "Awaiting Input",
+    badge: "bg-orange-100 text-orange-700",
+    card: "border-orange-300 border-dashed",
+    icon: Clock,
+  },
+  approved: {
+    label: "Approved",
+    badge: "bg-teal-100 text-teal-700",
+    card: "border-teal-300",
+    icon: CheckCircle,
+  },
+  rejected: {
+    label: "Rejected",
+    badge: "bg-red-100 text-red-700",
+    card: "border-red-300",
+    icon: XCircle,
+  },
+  timed_out: {
+    label: "Timed Out",
+    badge: "bg-gray-100 text-gray-500",
+    card: "border-slate-300",
+    icon: AlertCircle,
+  },
 };
 
 export default function Approvals() {
+  const { requireAccessToken } = useAuth();
   const [approvals, setApprovals] = useState<ApprovalRequest[]>([]);
   const [filter, setFilter] = useState<"all" | "pending" | "resolved">("all");
   const [loading, setLoading] = useState(true);
@@ -42,9 +64,10 @@ export default function Approvals() {
   const [lastRefreshed, setLastRefreshed] = useState(new Date());
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  async function fetchApprovals() {
+  const fetchApprovals = useCallback(async () => {
     try {
-      const data = await listApprovals();
+      const accessToken = await requireAccessToken();
+      const data = await listApprovals(accessToken);
       setApprovals(data);
       setLastRefreshed(new Date());
       setError(null);
@@ -53,7 +76,7 @@ export default function Approvals() {
     } finally {
       setLoading(false);
     }
-  }
+  }, [requireAccessToken]);
 
   useEffect(() => {
     fetchApprovals();
@@ -61,7 +84,7 @@ export default function Approvals() {
     return () => {
       if (intervalRef.current) clearInterval(intervalRef.current);
     };
-  }, []);
+  }, [fetchApprovals]);
 
   function handleResolved(id: string, decision: "approved" | "rejected") {
     setApprovals((prev) =>
@@ -86,7 +109,7 @@ export default function Approvals() {
             <div className="flex items-center gap-3">
               <h1 className="text-2xl font-bold text-gray-900">Approvals</h1>
               {pendingCount > 0 && (
-                <span className="px-2 py-0.5 rounded-full bg-yellow-100 text-yellow-700 text-xs font-semibold">
+                <span className="px-2 py-0.5 rounded-full bg-orange-100 text-orange-700 text-xs font-semibold">
                   {pendingCount} pending
                 </span>
               )}
@@ -191,6 +214,7 @@ function ApprovalCard({
   item: ApprovalRequest;
   onResolved: (id: string, decision: "approved" | "rejected") => void;
 }) {
+  const { requireAccessToken } = useAuth();
   const [comment, setComment] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
@@ -202,7 +226,8 @@ function ApprovalCard({
     setSubmitting(true);
     setSubmitError(null);
     try {
-      await resolveApproval(item.id, decision, comment.trim() || undefined);
+      const accessToken = await requireAccessToken();
+      await resolveApproval(item.id, decision, accessToken, comment.trim() || undefined);
       onResolved(item.id, decision);
     } catch (e) {
       setSubmitError(e instanceof Error ? e.message : "Failed to submit");
@@ -212,7 +237,7 @@ function ApprovalCard({
   }
 
   return (
-    <div className="bg-white rounded-xl border border-gray-200 p-6 shadow-sm">
+    <div className={`bg-white rounded-xl border p-6 shadow-sm ${cfg.card}`}>
       <div className="flex items-start justify-between gap-4">
         <div className="flex-1 min-w-0">
           {/* Workflow › Step header */}
@@ -221,7 +246,7 @@ function ApprovalCard({
             <span className="text-gray-300">›</span>
             <span className="text-gray-600 text-sm">{item.stepName}</span>
             <span
-              className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${cfg.color}`}
+              className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${cfg.badge}`}
             >
               <StatusIcon size={11} />
               {cfg.label}

@@ -13,6 +13,10 @@ import { getProvider } from "./llmProviders";
 import { getBus, releaseBus } from "./agentBus";
 import { classifyTierWithConfidence, resolveModelForTier, buildCostLog, LlmCostLog } from "./llmRouter";
 import { logClassificationDecision } from "./classificationLog";
+import { knowledgeStore } from "../knowledge/knowledgeStore";
+import { sanitizeContext } from "./crmFieldAllowlist";
+import { auditCrmApiCall } from "./crmAuditLog";
+import { controlPlaneStore } from "../controlPlane/controlPlaneStore";
 
 export type StepContext = Record<string, unknown>;
 
@@ -26,8 +30,49 @@ export interface StepHandlerResult {
   costLog?: LlmCostLog;
 }
 
+interface ToolAuditEntry {
+  timestamp: string;
+  toolType: string;
+  toolName: string;
+  serverUrl?: string;
+  input: Record<string, unknown>;
+  output: unknown;
+}
+
+interface StepObservabilityMetadata {
+  stepKind: string;
+  startedAt: string;
+  completedAt: string;
+  reasoningTrace?: string;
+  toolCalls?: ToolAuditEntry[];
+  agentExecution?: {
+    executionId: string;
+    teamId: string;
+    agentId: string;
+    taskId: string | null;
+    skills: string[];
+  };
+}
+
 function hashPrompt(prompt: string): string {
   return createHash("sha256").update(prompt).digest("hex");
+}
+
+function withObservability(
+  output: Record<string, unknown>,
+  metadata: StepObservabilityMetadata
+): Record<string, unknown> {
+  return {
+    ...output,
+    _observability: metadata,
+  };
+}
+
+function summarizeMessages(messages: AgentMessage[]): string | undefined {
+  const transcript = messages
+    .map((message) => `[${message.timestamp}] ${message.from} slot ${message.slotIndex}: ${message.content}`)
+    .join("\n");
+  return transcript || undefined;
 }
 
 /** Interpolate {{key}} placeholders in a template string using context values */
@@ -36,6 +81,52 @@ function interpolate(template: string, ctx: StepContext): string {
     const val = ctx[key];
     return val !== undefined ? String(val) : `{{${key}}}`;
   });
+}
+
+function getAgentBridgeConfig(step: WorkflowStep, ctx: StepContext): {
+  enabled: boolean;
+  teamId?: string;
+  autoProvision?: boolean;
+  teamName?: string;
+  agentId?: string;
+  taskTitle?: string;
+  taskDescription?: string;
+  metadata?: Record<string, unknown>;
+} {
+  const raw = step.config?.["controlPlane"];
+  const config =
+    raw && typeof raw === "object" && !Array.isArray(raw)
+      ? (raw as Record<string, unknown>)
+      : {};
+
+  return {
+    enabled:
+      Boolean(config["enabled"]) ||
+      typeof config["teamId"] === "string" ||
+      Boolean(config["autoProvision"]) ||
+      typeof ctx["controlPlaneTeamId"] === "string",
+    teamId:
+      typeof config["teamId"] === "string"
+        ? (config["teamId"] as string)
+        : typeof ctx["controlPlaneTeamId"] === "string"
+          ? (ctx["controlPlaneTeamId"] as string)
+          : undefined,
+    autoProvision: Boolean(config["autoProvision"]),
+    teamName:
+      typeof config["teamName"] === "string" ? (config["teamName"] as string) : undefined,
+    agentId:
+      typeof config["agentId"] === "string" ? (config["agentId"] as string) : undefined,
+    taskTitle:
+      typeof config["taskTitle"] === "string" ? interpolate(config["taskTitle"] as string, ctx) : undefined,
+    taskDescription:
+      typeof config["taskDescription"] === "string"
+        ? interpolate(config["taskDescription"] as string, ctx)
+        : undefined,
+    metadata:
+      config["metadata"] && typeof config["metadata"] === "object" && !Array.isArray(config["metadata"])
+        ? (config["metadata"] as Record<string, unknown>)
+        : undefined,
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -61,18 +152,30 @@ export async function handleTrigger(
 export async function handleLlm(
   step: WorkflowStep,
   ctx: StepContext,
-  userId: string
+  userId: string,
+  runId: string = "unknown"
 ): Promise<StepHandlerResult> {
+  const startedAt = new Date().toISOString();
   if (!step.promptTemplate) {
     throw new Error(`LLM step "${step.id}" is missing a promptTemplate`);
   }
 
-  const renderedPrompt = interpolate(step.promptTemplate, ctx);
+  const originalFieldCount = Object.keys(ctx).length;
+  // Data minimization: strip sensitive CRM fields before they reach the LLM
+  const { sanitized, blockedCategories, strippedCount } = sanitizeContext(ctx);
+  if (strippedCount > 0) {
+    console.info(
+      `[security] LLM step "${step.id}": stripped ${strippedCount} field(s) ` +
+        `(categories: ${blockedCategories.join(", ")})`
+    );
+  }
+
+  const renderedPrompt = interpolate(step.promptTemplate, sanitized);
 
   // Resolve config: step-level override or user's default
   const resolved = step.llmConfigId
-    ? llmConfigStore.getDecrypted(step.llmConfigId, userId)
-    : llmConfigStore.getDecryptedDefault(userId);
+    ? await llmConfigStore.getDecrypted(step.llmConfigId, userId)
+    : await llmConfigStore.getDecryptedDefault(userId);
 
   if (!resolved) {
     throw new Error(
@@ -95,6 +198,20 @@ export async function handleLlm(
     provider: resolved.config.provider,
     model: tieredModel,
     apiKey: resolved.apiKey,
+    credentials: resolved.credentials,
+    options: resolved.config.providerOptions,
+  });
+
+  auditCrmApiCall({
+    userId,
+    runId,
+    stepId: step.id,
+    stepKind: "llm",
+    apiEndpoint: `${resolved.config.provider}/${tieredModel}`,
+    originalFieldCount,
+    sanitizedCtx: sanitized,
+    blockedCategories,
+    strippedCount,
   });
 
   const response = await provider(renderedPrompt);
@@ -119,7 +236,80 @@ export async function handleLlm(
     response.usage?.completionTokens ?? 0
   );
 
-  return { output, costLog };
+  return {
+    output: withObservability(output, {
+      stepKind: step.kind,
+      startedAt,
+      completedAt: new Date().toISOString(),
+      reasoningTrace: response.text,
+    }),
+    costLog,
+  };
+}
+
+export async function handleKnowledge(
+  step: WorkflowStep,
+  ctx: StepContext,
+  userId: string
+): Promise<StepHandlerResult> {
+  const configuredBaseIds = Array.isArray(step.knowledgeBaseIds) ? step.knowledgeBaseIds : [];
+  const configBaseIds = Array.isArray(step.config?.["knowledgeBaseIds"])
+    ? (step.config["knowledgeBaseIds"] as string[])
+    : [];
+  const contextBaseIds = Array.isArray(ctx["knowledgeBaseIds"])
+    ? (ctx["knowledgeBaseIds"] as string[])
+    : [];
+  const knowledgeBaseIds = [...configuredBaseIds, ...configBaseIds, ...contextBaseIds].filter(
+    (value): value is string => typeof value === "string" && value.trim().length > 0
+  );
+
+  const queryKey =
+    (typeof step.config?.["queryKey"] === "string" && (step.config["queryKey"] as string)) ||
+    step.inputKeys[0] ||
+    "query";
+  const explicitQuery =
+    step.knowledgeQuery ??
+    (typeof step.config?.["knowledgeQuery"] === "string"
+      ? (step.config["knowledgeQuery"] as string)
+      : undefined);
+  const resolvedQuery =
+    explicitQuery ??
+    (typeof ctx[queryKey] === "string" ? (ctx[queryKey] as string) : String(ctx[queryKey] ?? ""));
+
+  const results = await knowledgeStore.search({
+    userId,
+    query: resolvedQuery,
+    knowledgeBaseIds: knowledgeBaseIds.length > 0 ? knowledgeBaseIds : undefined,
+    limit:
+      step.knowledgeLimit ??
+      (typeof step.config?.["knowledgeLimit"] === "number"
+        ? (step.config["knowledgeLimit"] as number)
+        : 5),
+    minScore:
+      step.knowledgeMinScore ??
+      (typeof step.config?.["knowledgeMinScore"] === "number"
+        ? (step.config["knowledgeMinScore"] as number)
+        : 0.15),
+  });
+
+  const knowledgePromptContext = results
+    .map((result, index) => {
+      return [
+        `[#${index + 1}] score=${result.score.toFixed(3)}`,
+        `knowledge_base=${result.knowledgeBase.name}`,
+        `document=${result.document.filename}`,
+        result.chunk.text.trim(),
+      ].join("\n");
+    })
+    .join("\n\n");
+
+  return {
+    output: {
+      knowledgeResults: results,
+      knowledgePromptContext,
+      knowledgeQuery: resolvedQuery,
+    },
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -320,6 +510,7 @@ export async function handleMcp(
   step: WorkflowStep,
   ctx: StepContext
 ): Promise<StepHandlerResult> {
+  const startedAt = new Date().toISOString();
   const serverUrl = step.mcpServerUrl;
   const toolName = step.mcpTool;
 
@@ -392,7 +583,23 @@ export async function handleMcp(
     }
   }
 
-  return { output: toolOutput };
+  return {
+    output: withObservability(toolOutput, {
+      stepKind: step.kind,
+      startedAt,
+      completedAt: new Date().toISOString(),
+      toolCalls: [
+        {
+          timestamp: new Date().toISOString(),
+          toolType: "mcp",
+          toolName,
+          serverUrl: resolvedUrl,
+          input: toolArgs,
+          output: toolOutput,
+        },
+      ],
+    }),
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -421,12 +628,23 @@ export async function handleAgent(
   runId: string,
   userId: string
 ): Promise<StepHandlerResult> {
+  const startedAt = new Date().toISOString();
   const slots = Math.max(1, step.subAgentSlots ?? 1);
   const instructions = step.agentInstructions ?? "Process the provided input and return a result.";
   const model = step.agentModel ?? "default";
+  const bridgeConfig = getAgentBridgeConfig(step, ctx);
+  let bridgedExecution:
+    | {
+        executionId: string;
+        teamId: string;
+        agentId: string;
+        taskId?: string;
+        skills: string[];
+      }
+    | undefined;
 
   // Resolve the LLM provider once (shared across slots)
-  const resolved = llmConfigStore.getDecryptedDefault(userId);
+  const resolved = await llmConfigStore.getDecryptedDefault(userId);
   if (!resolved) {
     throw new Error(
       `Agent step "${step.id}" failed: no LLM provider configured. ` +
@@ -437,9 +655,54 @@ export async function handleAgent(
     provider: resolved.config.provider,
     model: resolved.config.model,
     apiKey: resolved.apiKey,
+    credentials: resolved.credentials,
+    options: resolved.config.providerOptions,
   });
 
   const bus = getBus(runId, step.id);
+
+  if (bridgeConfig.enabled && userId) {
+    const bridgeTarget =
+      bridgeConfig.teamId
+        ? {
+            teamId: bridgeConfig.teamId,
+          }
+        : bridgeConfig.autoProvision
+          ? controlPlaneStore.ensureRuntimeTeamForStep({
+              userId,
+              step,
+              teamName: bridgeConfig.teamName,
+              actor: runId,
+            })
+          : undefined;
+
+    if (bridgeTarget) {
+      const teamId = "teamId" in bridgeTarget ? bridgeTarget.teamId : bridgeTarget.team.id;
+      const started = await controlPlaneStore.startAgentExecution({
+        userId,
+        actor: runId,
+        teamId,
+        step,
+        sourceRunId: runId,
+        requestedAgentId: bridgeConfig.agentId ?? ("agent" in bridgeTarget ? bridgeTarget.agent.id : undefined),
+        taskTitle: bridgeConfig.taskTitle ?? `${step.name} dispatch`,
+        taskDescription: bridgeConfig.taskDescription,
+        metadata: {
+          ...(bridgeConfig.metadata ?? {}),
+          runId,
+          model,
+          slots,
+        },
+      });
+      bridgedExecution = {
+        executionId: started.execution.id,
+        teamId: started.execution.teamId,
+        agentId: started.execution.agentId,
+        taskId: started.task?.id,
+        skills: started.execution.appliedSkills,
+      };
+    }
+  }
 
   // Manager dispatch: announce tasks to all slots
   for (let i = 0; i < slots; i++) {
@@ -451,13 +714,37 @@ export async function handleAgent(
     } satisfies AgentMessage);
   }
 
+  const agentOriginalFieldCount = Object.keys(ctx).length;
+  // Data minimization: strip sensitive CRM fields before they reach the LLM
+  const { sanitized: agentSanitized, blockedCategories: agentBlocked, strippedCount: agentStripped } = sanitizeContext(ctx);
+  if (agentStripped > 0) {
+    console.info(
+      `[security] Agent step "${step.id}": stripped ${agentStripped} field(s) ` +
+        `(categories: ${agentBlocked.join(", ")})`
+    );
+  }
+
+  // Audit log: record CRM field categories sent to agent API
+  auditCrmApiCall({
+    userId,
+    runId,
+    stepId: step.id,
+    stepKind: "agent",
+    apiEndpoint: `${resolved.config.provider}/${resolved.config.model}`,
+    originalFieldCount: agentOriginalFieldCount,
+    sanitizedCtx: agentSanitized,
+    blockedCategories: agentBlocked,
+    strippedCount: agentStripped,
+  });
   // Build context summary for the prompt
-  const contextSummary = Object.entries(ctx)
+  const contextSummary = Object.entries(agentSanitized)
     .filter(([, v]) => v !== undefined && v !== null)
     .map(([k, v]) => `${k}: ${typeof v === "object" ? JSON.stringify(v) : String(v)}`)
     .join("\n");
 
   // Spawn N worker slots in parallel
+  let totalPromptTokens = 0;
+  let totalCompletionTokens = 0;
   const slotResultPromises = Array.from({ length: slots }, async (_, i): Promise<AgentSlotResult> => {
     const slotStart = Date.now();
     const prompt = [
@@ -475,6 +762,8 @@ export async function handleAgent(
 
     try {
       const response = await provider(prompt);
+      totalPromptTokens += response.usage?.promptTokens ?? 0;
+      totalCompletionTokens += response.usage?.completionTokens ?? 0;
       let parsed: Record<string, unknown> = {};
       try {
         const raw = JSON.parse(response.text) as unknown;
@@ -554,12 +843,48 @@ export async function handleAgent(
 
   mergedOutput["_agentSlots"] = slots;
   mergedOutput["_agentSuccessCount"] = successSlots.length;
+  if (bridgedExecution) {
+    mergedOutput["_controlPlaneExecutionId"] = bridgedExecution.executionId;
+    mergedOutput["_controlPlaneTeamId"] = bridgedExecution.teamId;
+    mergedOutput["_controlPlaneAgentId"] = bridgedExecution.agentId;
+    mergedOutput["_controlPlaneTaskId"] = bridgedExecution.taskId ?? null;
+    mergedOutput["_controlPlaneSkills"] = bridgedExecution.skills;
+  }
 
   const anyFailure = slotResults.some((r) => r.status === "failure");
+  const reasoningTrace = summarizeMessages(allMessages);
+  const costLog = buildCostLog("power", resolved.config.model, totalPromptTokens, totalCompletionTokens);
+  if (bridgedExecution) {
+    controlPlaneStore.finalizeAgentExecution({
+      executionId: bridgedExecution.executionId,
+      userId,
+      status: successSlots.length > 0 ? "completed" : "failed",
+      summary:
+        successSlots.length > 0
+          ? `Completed ${successSlots.length}/${slots} slot(s) for workflow step ${step.name}`
+          : `All ${slots} slot(s) failed for workflow step ${step.name}`,
+      costUsd: costLog.estimatedCostUsd,
+    });
+  }
 
   return {
-    output: mergedOutput,
+    output: withObservability(mergedOutput, {
+      stepKind: step.kind,
+      startedAt,
+      completedAt: new Date().toISOString(),
+      reasoningTrace,
+      agentExecution: bridgedExecution
+        ? {
+            executionId: bridgedExecution.executionId,
+            teamId: bridgedExecution.teamId,
+            agentId: bridgedExecution.agentId,
+            taskId: bridgedExecution.taskId ?? null,
+            skills: bridgedExecution.skills,
+          }
+        : undefined,
+    }),
     agentSlotResults: slotResults,
+    costLog,
     ...(anyFailure && successSlots.length === 0
       ? {}
       : {}),

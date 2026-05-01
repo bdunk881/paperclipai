@@ -23,6 +23,11 @@ output "svc_subnet_id" {
   value       = azurerm_subnet.svc.id
 }
 
+output "func_subnet_id" {
+  description = "Resource ID of the functions / app-services subnet"
+  value       = azurerm_subnet.func.id
+}
+
 output "aks_route_table_id" {
   description = "Resource ID of the route table associated with the AKS subnet"
   value       = azurerm_route_table.aks.id
@@ -36,4 +41,9 @@ output "pe_route_table_id" {
 output "svc_route_table_id" {
   description = "Resource ID of the route table associated with the services subnet"
   value       = azurerm_route_table.svc.id
+}
+
+output "func_route_table_id" {
+  description = "Resource ID of the route table associated with the functions subnet"
+  value       = azurerm_route_table.func.id
 }

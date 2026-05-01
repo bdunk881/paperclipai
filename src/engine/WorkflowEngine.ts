@@ -6,7 +6,7 @@
  * llmProvider — wire in a real provider via setLlmProvider() (see TODO below).
  */
 
-import { v4 as uuidv4 } from "uuid";
+import { randomUUID } from "node:crypto";
 import {
   WorkflowTemplate,
   WorkflowRun,
@@ -16,7 +16,16 @@ import {
 } from "../types/workflow";
 import { runStore } from "./runStore";
 import { approvalStore } from "./approvalStore";
-import { handleLlm, handleMcp, handleFileTrigger, handleAgent } from "./stepHandlers";
+import { approvalPolicyStore } from "../approvals/policyStore";
+import {
+  ApprovalTierActionType,
+  ApprovalTierMode,
+  defaultApprovalTierPolicyForAction,
+  isApprovalTierActionType,
+  resolveApprovalTierActionType,
+  resolveSpendAmountCents,
+} from "../approvals/policyTypes";
+import { handleLlm, handleMcp, handleFileTrigger, handleAgent, handleKnowledge } from "./stepHandlers";
 import { memoryStore } from "./memoryStore";
 import { LlmCostLog } from "./llmRouter";
 
@@ -79,11 +88,11 @@ actionRegistry.set("events.emit", async (inputs) => {
 });
 
 actionRegistry.set("crm.upsertLead", async (inputs) => {
-  return { crmId: `CRM-${uuidv4().slice(0, 8).toUpperCase()}`, upserted: true, lead: inputs };
+  return { crmId: `CRM-${randomUUID().slice(0, 8).toUpperCase()}`, upserted: true, lead: inputs };
 });
 
 actionRegistry.set("content.publish", async (inputs) => {
-  return { published: true, contentId: `CONT-${uuidv4().slice(0, 8).toUpperCase()}`, content: inputs["draft"] };
+  return { published: true, contentId: `CONT-${randomUUID().slice(0, 8).toUpperCase()}`, content: inputs["draft"] };
 });
 
 export function registerAction(name: string, handler: ActionHandler): void {
@@ -116,6 +125,32 @@ function evalCondition(expression: string, context: Record<string, unknown>): bo
   } catch {
     return false;
   }
+}
+
+function makeRuntimeState(
+  config: Record<string, unknown>,
+  context: Record<string, unknown>,
+  currentStepIndex: number,
+  waitingApprovalId?: string
+): NonNullable<WorkflowRun["runtimeState"]> {
+  const serializableContext = JSON.parse(
+    JSON.stringify(context, (key, value) => {
+      if (key === "memory") {
+        return undefined;
+      }
+      if (typeof value === "function" || value === undefined) {
+        return undefined;
+      }
+      return value;
+    })
+  ) as Record<string, unknown>;
+
+  return {
+    config: JSON.parse(JSON.stringify(config)) as Record<string, unknown>,
+    context: serializableContext,
+    currentStepIndex,
+    waitingApprovalId,
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -227,27 +262,33 @@ export class WorkflowEngine {
    * Creates a new run record and starts execution asynchronously.
    * Returns immediately with the pending run — callers can poll GET /api/runs/:id.
    */
-  startRun(
+  async startRun(
     template: WorkflowTemplate,
     input: Record<string, unknown>,
     config?: Record<string, unknown>,
     userId?: string
-  ): WorkflowRun {
+  ): Promise<WorkflowRun> {
     const runConfig = { ...this._buildDefaultConfig(template), ...(config ?? {}) };
 
-    const run: WorkflowRun = runStore.create({
-      id: uuidv4(),
+    const run = await runStore.create({
+      id: randomUUID(),
       templateId: template.id,
       templateName: template.name,
       status: "pending",
       startedAt: new Date().toISOString(),
       input,
       stepResults: [],
+      runtimeState: {
+        config: { ...runConfig },
+        context: { ...runConfig, ...input },
+        currentStepIndex: 0,
+      },
+      ...(userId !== undefined ? { userId } : {}),
     });
 
     // Execute asynchronously so the HTTP response returns immediately
     this._executeRun(run.id, template, input, runConfig, userId).catch((err) => {
-      runStore.update(run.id, {
+      void runStore.update(run.id, {
         status: "failed",
         completedAt: new Date().toISOString(),
         error: String(err),
@@ -255,6 +296,50 @@ export class WorkflowEngine {
     });
 
     return run;
+  }
+
+  async resumeRun(
+    runId: string,
+    template: WorkflowTemplate,
+    userId?: string
+  ): Promise<WorkflowRun> {
+    const run = await runStore.get(runId);
+    if (!run) {
+      throw new Error(`Run not found: ${runId}`);
+    }
+
+    if (run.status !== "awaiting_approval") {
+      throw new Error(`Run is not awaiting approval: ${runId}`);
+    }
+
+    if (!run.runtimeState) {
+      throw new Error(`Run is missing runtime state: ${runId}`);
+    }
+
+    const approvalId =
+      run.runtimeState.waitingApprovalId ?? (await approvalStore.findByRunId(run.id))?.id;
+    if (!approvalId) {
+      throw new Error(`Run is missing waiting approval id: ${run.id}`);
+    }
+
+    const approval = await approvalStore.get(approvalId);
+    if (!approval) {
+      throw new Error(`Approval not found: ${approvalId}`);
+    }
+
+    if (approval.status === "pending") {
+      throw new Error(`Approval is still pending: ${approvalId}`);
+    }
+
+    this._resumePausedRun(run, template, userId).catch((err) => {
+      void runStore.update(run.id, {
+        status: "failed",
+        completedAt: new Date().toISOString(),
+        error: String(err),
+      });
+    });
+
+    return (await runStore.get(runId)) ?? run;
   }
 
   private _buildDefaultConfig(template: WorkflowTemplate): Record<string, unknown> {
@@ -265,31 +350,19 @@ export class WorkflowEngine {
     return config;
   }
 
-  private async _executeRun(
-    runId: string,
+  private _buildMemoryContext(
     template: WorkflowTemplate,
-    input: Record<string, unknown>,
-    config: Record<string, unknown>,
     userId?: string
-  ): Promise<void> {
-    runStore.update(runId, { status: "running" });
-
-    // Build memory helpers scoped to this run's userId + templateId
+  ): { read: (query: string) => Array<{ key: string; text: string }>; write: (key: string, value: unknown) => void } {
     const memoryUserId = userId ?? "anonymous";
-    const memoryContext = {
-      /**
-       * Read the most relevant memory entries for a query.
-       * Returns an array of { key, text } objects (top 5 by relevance).
-       */
+    return {
       read: (query: string): Array<{ key: string; text: string }> => {
-        const results = memoryStore.search(query, memoryUserId, undefined, 5);
-        return results.map((r) => ({ key: r.entry.key, text: r.entry.text }));
+        return memoryStore
+          .search(query, memoryUserId)
+          .map(({ entry }) => ({ key: entry.key, text: entry.text }));
       },
-      /**
-       * Persist a value under a named key, scoped to this workflow run.
-       */
       write: (key: string, value: unknown): void => {
-        memoryStore.write({
+        void memoryStore.write({
           userId: memoryUserId,
           workflowId: template.id,
           workflowName: template.name,
@@ -298,19 +371,426 @@ export class WorkflowEngine {
         });
       },
     };
+  }
+
+  private _resolveRequestChangesTarget(
+    template: WorkflowTemplate,
+    step: WorkflowStep,
+    stepIndex: number
+  ): { targetStepIndex?: number; error?: string } {
+    const targetStepId = step.approvalRequestChangesStepId;
+    const targetStepIndex = targetStepId
+      ? template.steps.findIndex((candidate) => candidate.id === targetStepId)
+      : -1;
+
+    if (!targetStepId) {
+      return { error: "Approval requested changes but no approvalRequestChangesStepId is configured" };
+    }
+
+    if (targetStepIndex === -1) {
+      return { error: `Approval requested changes but target step was not found: ${targetStepId}` };
+    }
+
+    if (targetStepIndex >= stepIndex) {
+      return { error: `Approval requested changes but target step must be earlier in the workflow: ${targetStepId}` };
+    }
+
+    return { targetStepIndex };
+  }
+
+  private _resolveWorkspaceId(
+    context: Record<string, unknown>,
+    config: Record<string, unknown>,
+  ): string | undefined {
+    const candidates = [
+      context["workspaceId"],
+      config["workspaceId"],
+      context["companyId"],
+      config["companyId"],
+    ];
+
+    for (const candidate of candidates) {
+      if (typeof candidate === "string" && candidate.trim()) {
+        return candidate.trim();
+      }
+    }
+
+    return undefined;
+  }
+
+  private _resolveApprovalAssignee(
+    step: WorkflowStep,
+    context: Record<string, unknown>,
+    config: Record<string, unknown>,
+    userId?: string,
+  ): string {
+    const governance =
+      step.config?.["governance"] &&
+      typeof step.config["governance"] === "object" &&
+      !Array.isArray(step.config["governance"])
+        ? (step.config["governance"] as Record<string, unknown>)
+        : {};
+
+    const candidates = [
+      governance["assignee"],
+      step.approvalAssignee,
+      context["approvalAssignee"],
+      config["approvalAssignee"],
+      userId,
+    ];
+
+    for (const candidate of candidates) {
+      if (typeof candidate === "string" && candidate.trim()) {
+        return candidate.trim();
+      }
+    }
+
+    return "unassigned";
+  }
+
+  private _resolveApprovalMessage(
+    step: WorkflowStep,
+    actionType: ApprovalTierActionType,
+    mode: ApprovalTierMode,
+    context: Record<string, unknown>,
+  ): string {
+    const governance =
+      step.config?.["governance"] &&
+      typeof step.config["governance"] === "object" &&
+      !Array.isArray(step.config["governance"])
+        ? (step.config["governance"] as Record<string, unknown>)
+        : {};
+
+    const configuredMessage =
+      typeof governance["message"] === "string"
+        ? (governance["message"] as string)
+        : step.approvalMessage;
+
+    if (configuredMessage?.trim()) {
+      return configuredMessage.trim();
+    }
+
+    if (mode === "notify_only") {
+      return `Notify-only governance event for ${actionType}: ${step.name}`;
+    }
+
+    return `Approval required for ${actionType}: ${step.name}`;
+  }
+
+  private async _createGovernanceApproval(params: {
+    runId: string;
+    template: WorkflowTemplate;
+    step: WorkflowStep;
+    currentStepIndex: number;
+    config: Record<string, unknown>;
+    context: Record<string, unknown>;
+    actionType: ApprovalTierActionType;
+    mode: ApprovalTierMode;
+    userId?: string;
+  }): Promise<{ decision: "approved" | "rejected" | "request_changes" | "timed_out"; comment?: string; approvalId: string }> {
+    const assignee = this._resolveApprovalAssignee(
+      params.step,
+      params.context,
+      params.config,
+      params.userId,
+    );
+    const message = this._resolveApprovalMessage(
+      params.step,
+      params.actionType,
+      params.mode,
+      params.context,
+    );
+    const timeoutMinutes = params.step.approvalTimeoutMinutes ?? 60;
+
+    await runStore.update(params.runId, { status: "awaiting_approval" });
+
+    const { id: approvalId } = await approvalStore.create({
+      runId: params.runId,
+      templateId: params.template.id,
+      templateName: params.template.name,
+      stepId: params.step.id,
+      stepName: params.step.name,
+      assignee,
+      message,
+      timeoutMinutes,
+      userId: params.userId,
+    });
+
+    await runStore.update(params.runId, {
+      runtimeState: makeRuntimeState(
+        params.config,
+        params.context,
+        params.currentStepIndex,
+        approvalId,
+      ),
+    });
+
+    if (params.mode === "notify_only") {
+      await approvalStore.resolve(
+        approvalId,
+        "approved",
+        "Auto-approved by notify-only governance policy.",
+      );
+    }
+
+    const { decision, comment } = await approvalStore.waitForDecision(approvalId, 50);
+    await runStore.update(params.runId, { status: "running" });
+    return { decision, comment, approvalId };
+  }
+
+  private async _evaluateActionGovernance(params: {
+    runId: string;
+    template: WorkflowTemplate;
+    step: WorkflowStep;
+    currentStepIndex: number;
+    config: Record<string, unknown>;
+    context: Record<string, unknown>;
+    userId?: string;
+  }): Promise<{
+    actionType?: ApprovalTierActionType;
+    mode?: ApprovalTierMode;
+    approvalId?: string;
+    comment?: string;
+    failure?: string;
+  }> {
+    const actionType = resolveApprovalTierActionType(params.step);
+    if (!actionType) {
+      return {};
+    }
+
+    const governance =
+      params.step.config?.["governance"] &&
+      typeof params.step.config["governance"] === "object" &&
+      !Array.isArray(params.step.config["governance"])
+        ? (params.step.config["governance"] as Record<string, unknown>)
+        : {};
+    const hasExplicitActionType = isApprovalTierActionType(governance["actionType"]);
+    const workspaceId = this._resolveWorkspaceId(params.context, params.config);
+    if (!workspaceId && !hasExplicitActionType) {
+      return {};
+    }
+
+    const policy = workspaceId
+      ? await approvalPolicyStore.get(workspaceId, actionType)
+      : defaultApprovalTierPolicyForAction("workspace-default", actionType);
+
+    if (!policy) {
+      return {};
+    }
+
+    if (actionType === "spend_above_threshold") {
+      const spendAmountCents = resolveSpendAmountCents(params.step, params.context);
+      if (
+        spendAmountCents !== undefined &&
+        policy.spendThresholdCents !== undefined &&
+        spendAmountCents < policy.spendThresholdCents
+      ) {
+        return {
+          actionType,
+          mode: "auto_approve",
+        };
+      }
+    }
+
+    if (policy.mode === "auto_approve") {
+      return {
+        actionType,
+        mode: policy.mode,
+      };
+    }
+
+    const { decision, comment, approvalId } = await this._createGovernanceApproval({
+      runId: params.runId,
+      template: params.template,
+      step: params.step,
+      currentStepIndex: params.currentStepIndex,
+      config: params.config,
+      context: params.context,
+      actionType,
+      mode: policy.mode,
+      userId: params.userId,
+    });
+
+    if (decision !== "approved") {
+      return {
+        actionType,
+        mode: policy.mode,
+        approvalId,
+        comment,
+        failure:
+          decision === "timed_out"
+            ? `Governance approval timed out${comment ? `: ${comment}` : ""}`
+            : decision === "request_changes"
+              ? `Governance requested changes${comment ? `: ${comment}` : ""}`
+              : `Governance approval rejected${comment ? `: ${comment}` : ""}`,
+      };
+    }
+
+    return {
+      actionType,
+      mode: policy.mode,
+      approvalId,
+      comment,
+    };
+  }
+
+  private async _executeRun(
+    runId: string,
+    template: WorkflowTemplate,
+    input: Record<string, unknown>,
+    config: Record<string, unknown>,
+    userId?: string
+  ): Promise<void> {
+    await runStore.update(runId, { status: "running" });
 
     // The execution context accumulates outputs from all steps + initial input + config
     // memory helpers are injected so LLM prompt templates can reference them.
-    const context: Record<string, unknown> = { ...config, ...input, memory: memoryContext };
+    const context: Record<string, unknown> = {
+      ...config,
+      ...input,
+      memory: this._buildMemoryContext(template, userId),
+    };
     const stepResults: StepResult[] = [];
 
-    for (const step of template.steps) {
+    await this._runSteps(runId, template, config, context, stepResults, 0, userId);
+  }
+
+  private async _resumePausedRun(
+    run: WorkflowRun,
+    template: WorkflowTemplate,
+    userId?: string
+  ): Promise<void> {
+    const runtimeState = run.runtimeState;
+    if (!runtimeState) {
+      throw new Error(`Run is missing runtime state: ${run.id}`);
+    }
+
+    const step = template.steps[runtimeState.currentStepIndex];
+    if (!step || step.kind !== "approval") {
+      throw new Error(`Run is not paused on an approval step: ${run.id}`);
+    }
+
+    const approvalId =
+      runtimeState.waitingApprovalId ?? (await approvalStore.findByRunId(run.id))?.id;
+    if (!approvalId) {
+      throw new Error(`Run is missing waiting approval id: ${run.id}`);
+    }
+
+    const approval = await approvalStore.get(approvalId);
+    if (!approval) {
+      throw new Error(`Approval not found: ${approvalId}`);
+    }
+
+    if (approval.status === "pending") {
+      throw new Error(`Approval is still pending: ${approvalId}`);
+    }
+
+    const context: Record<string, unknown> = {
+      ...runtimeState.context,
+      memory: this._buildMemoryContext(template, userId),
+    };
+    const config = runtimeState.config;
+    const stepResults = [...run.stepResults];
+
+    await runStore.update(run.id, {
+      status: "running",
+      runtimeState: makeRuntimeState(config, context, runtimeState.currentStepIndex),
+    });
+
+    let stepStatus: StepResult["status"] = "success";
+    let stepError: string | undefined;
+    let nextStepIndex = runtimeState.currentStepIndex + 1;
+
+    if (approval.status === "request_changes") {
+      const { targetStepIndex, error } = this._resolveRequestChangesTarget(
+        template,
+        step,
+        runtimeState.currentStepIndex
+      );
+      if (error) {
+        stepStatus = "failure";
+        stepError = error;
+      } else {
+        nextStepIndex = targetStepIndex!;
+      }
+    } else if (approval.status !== "approved") {
+      stepStatus = "failure";
+      stepError =
+        approval.status === "timed_out"
+          ? `Approval timed out${approval.comment ? `: ${approval.comment}` : ""}`
+          : `Approval rejected${approval.comment ? `: ${approval.comment}` : ""}`;
+    }
+
+    const stepOutput = {
+      approved: approval.status === "approved",
+      approvalDecision: approval.status,
+      approvalId,
+      approverComment: approval.comment ?? null,
+    };
+
+    Object.assign(context, stepOutput);
+
+    stepResults.push({
+      stepId: step.id,
+      stepName: step.name,
+      status: stepStatus,
+      output: stepOutput,
+      durationMs: 0,
+      ...(stepError ? { error: stepError } : {}),
+    });
+
+    await runStore.update(run.id, {
+      stepResults,
+      runtimeState: makeRuntimeState(config, context, runtimeState.currentStepIndex),
+    });
+
+    if (stepStatus === "failure") {
+      await runStore.update(run.id, {
+        status: "failed",
+        completedAt: new Date().toISOString(),
+        error: stepError,
+        stepResults,
+        runtimeState: makeRuntimeState(config, context, runtimeState.currentStepIndex),
+      });
+      return;
+    }
+
+    await this._runSteps(run.id, template, config, context, stepResults, nextStepIndex, userId);
+  }
+
+  private async _runSteps(
+    runId: string,
+    template: WorkflowTemplate,
+    config: Record<string, unknown>,
+    context: Record<string, unknown>,
+    stepResults: StepResult[],
+    startStepIndex: number,
+    userId?: string
+  ): Promise<void> {
+
+    for (let currentStepIndex = startStepIndex; currentStepIndex < template.steps.length; currentStepIndex += 1) {
+      const step = template.steps[currentStepIndex];
+      await runStore.update(runId, {
+        runtimeState: makeRuntimeState(config, context, currentStepIndex),
+      });
+
       const start = Date.now();
+      const resultIndex = stepResults.length;
+      stepResults.push({
+        stepId: step.id,
+        stepName: step.name,
+        status: "running",
+        output: {},
+        durationMs: 0,
+      });
+      runStore.update(runId, { stepResults: [...stepResults] });
+
       let stepOutput: Record<string, unknown> = {};
       let stepError: string | undefined;
       let stepStatus: StepResult["status"] = "success";
       let agentSlotResults: AgentSlotResult[] | undefined;
       let stepCostLog: LlmCostLog | undefined;
+      let jumpToStepIndex: number | undefined;
 
       try {
         switch (step.kind) {
@@ -323,6 +803,11 @@ export class WorkflowEngine {
             stepCostLog = llmResult.costLog;
             break;
           }
+          case "knowledge": {
+            const knowledgeResult = await handleKnowledge(step, context, userId ?? "");
+            stepOutput = knowledgeResult.output;
+            break;
+          }
           case "transform":
             stepOutput = await executeTransform(step, context);
             break;
@@ -330,8 +815,44 @@ export class WorkflowEngine {
             stepOutput = await executeCondition(step, context);
             break;
           case "action":
-            stepOutput = await executeAction(step, context, config);
+          {
+            const governance = await this._evaluateActionGovernance({
+              runId,
+              template,
+              step,
+              currentStepIndex,
+              config,
+              context,
+              userId,
+            });
+            if (governance.failure) {
+              stepStatus = "failure";
+              stepError = governance.failure;
+              stepOutput = {
+                approved: false,
+                approvalDecision:
+                  governance.mode === "notify_only" ? "approved" : "rejected",
+                approvalId: governance.approvalId ?? null,
+                approverComment: governance.comment ?? null,
+                governanceActionType: governance.actionType ?? null,
+                governanceMode: governance.mode ?? null,
+              };
+              break;
+            }
+
+            const actionOutput = await executeAction(step, context, config);
+            stepOutput = {
+              ...actionOutput,
+              ...(governance.actionType
+                ? {
+                    governanceActionType: governance.actionType,
+                    governanceMode: governance.mode ?? "auto_approve",
+                    governanceApprovalId: governance.approvalId ?? null,
+                  }
+                : {}),
+            };
             break;
+          }
           case "output":
             stepOutput = await executeOutput(step, context);
             break;
@@ -357,28 +878,54 @@ export class WorkflowEngine {
             const message = step.approvalMessage ?? "Approval required to continue.";
             const timeoutMinutes = step.approvalTimeoutMinutes ?? 60;
 
-            runStore.update(runId, { status: "awaiting_approval" });
+            await runStore.update(runId, { status: "awaiting_approval" });
 
-            const { id: approvalId, promise: approvalPromise } = approvalStore.create({
+            const { id: approvalId } = await approvalStore.create({
               runId,
+              templateId: template.id,
               templateName: template.name,
               stepId: step.id,
               stepName: step.name,
               assignee,
               message,
               timeoutMinutes,
+              userId,
             });
 
-            const { approved, comment } = await approvalPromise;
+            await runStore.update(runId, {
+              runtimeState: makeRuntimeState(config, context, currentStepIndex, approvalId),
+            });
 
-            runStore.update(runId, { status: "running" });
+            const { decision, comment } = await approvalStore.waitForDecision(approvalId, 50);
 
-            if (!approved) {
+            await runStore.update(runId, { status: "running" });
+
+            if (decision === "request_changes") {
+              const { targetStepIndex, error } = this._resolveRequestChangesTarget(
+                template,
+                step,
+                currentStepIndex
+              );
+              if (error) {
+                stepStatus = "failure";
+                stepError = error;
+              } else {
+                jumpToStepIndex = targetStepIndex;
+              }
+            } else if (decision !== "approved") {
               stepStatus = "failure";
-              stepError = `Approval rejected${comment ? `: ${comment}` : " (timed out or declined)"}`;
+              stepError =
+                decision === "timed_out"
+                  ? `Approval timed out${comment ? `: ${comment}` : ""}`
+                  : `Approval rejected${comment ? `: ${comment}` : ""}`;
             }
 
-            stepOutput = { approved, approvalId, approverComment: comment ?? null };
+            stepOutput = {
+              approved: decision === "approved",
+              approvalDecision: decision,
+              approvalId,
+              approverComment: comment ?? null,
+            };
             break;
           }
           default:
@@ -403,20 +950,25 @@ export class WorkflowEngine {
         ...(stepCostLog ? { costLog: stepCostLog } : {}),
       };
 
-      stepResults.push(result);
+      stepResults[resultIndex] = result;
 
       // Update run with latest step results so callers can see incremental progress
-      runStore.update(runId, { stepResults: [...stepResults] });
+      await runStore.update(runId, { stepResults: [...stepResults] });
 
       // If a step fails, abort the run
       if (stepStatus === "failure") {
-        runStore.update(runId, {
+        await runStore.update(runId, {
           status: "failed",
           completedAt: new Date().toISOString(),
           error: stepError,
           stepResults,
+          runtimeState: makeRuntimeState(config, context, currentStepIndex),
         });
         return;
+      }
+
+      if (jumpToStepIndex !== undefined) {
+        currentStepIndex = jumpToStepIndex - 1;
       }
     }
 
@@ -429,11 +981,12 @@ export class WorkflowEngine {
       }
     }
 
-    runStore.update(runId, {
+    await runStore.update(runId, {
       status: "completed",
       completedAt: new Date().toISOString(),
       output,
       stepResults,
+      runtimeState: makeRuntimeState(config, context, template.steps.length - 1),
     });
   }
 }

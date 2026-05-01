@@ -5,7 +5,10 @@
 
 export type StepKind =
   | "trigger"
+  | "cron_trigger"
+  | "interval_trigger"
   | "llm"
+  | "knowledge"
   | "transform"
   | "condition"
   | "action"
@@ -22,6 +25,16 @@ export type FieldType =
   | "object"
   | "string[]"
   | "object[]";
+
+export type WorkflowCategory =
+  | "support"
+  | "sales"
+  | "content"
+  | "operations"
+  | "marketing"
+  | "finance"
+  | "engineering"
+  | "custom";
 
 /** A single configurable field exposed in the dashboard UI */
 export interface ConfigField {
@@ -80,19 +93,35 @@ export interface WorkflowStep {
   action?: string;
   /** Step-level configuration overrides */
   config?: Record<string, unknown>;
+  // knowledge step
+  knowledgeBaseIds?: string[];
+  knowledgeQuery?: string;
+  knowledgeLimit?: number;
+  knowledgeMinScore?: number;
   // mcp step
   mcpServerUrl?: string;
   mcpTool?: string;
   // agent step
   agentModel?: string;
   agentInstructions?: string;
+  agentRoleKey?: string;
+  agentSkills?: string[];
+  agentBudgetMonthlyUsd?: number;
   subAgentSlots?: number;
+  agentScheduleType?: "manual" | "interval" | "cron";
+  agentScheduleValue?: string;
   // approval step
   approvalAssignee?: string;
   approvalMessage?: string;
   approvalTimeoutMinutes?: number;
+  approvalRequestChangesStepId?: string;
   // file_trigger step
   acceptedFileTypes?: string[];
+  // cron_trigger step
+  cronExpression?: string;
+  timezone?: string;
+  // interval_trigger step
+  intervalMinutes?: number;
 }
 
 /** A complete workflow definition */
@@ -101,7 +130,7 @@ export interface WorkflowTemplate {
   name: string;
   description: string;
   /** Category used for filtering in the dashboard */
-  category: "support" | "sales" | "content" | "custom";
+  category: WorkflowCategory;
   version: string;
   /** Fields surfaced in the dashboard configuration UI */
   configFields: ConfigField[];
@@ -124,7 +153,14 @@ export interface WorkflowRun {
   input: Record<string, unknown>;
   output?: Record<string, unknown>;
   stepResults: StepResult[];
+  runtimeState?: {
+    config: Record<string, unknown>;
+    context: Record<string, unknown>;
+    currentStepIndex: number;
+    waitingApprovalId?: string;
+  };
   error?: string;
+  userId?: string;
 }
 
 /** Result of one worker slot in a parallel agent step */

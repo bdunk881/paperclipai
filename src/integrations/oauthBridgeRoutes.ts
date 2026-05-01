@@ -31,6 +31,12 @@ type StatusProvider =
   | UnifiedProvider
   | "stripe";
 
+type ProviderStatus = {
+  connected: boolean;
+  connectedAt?: string;
+  scopes?: string[];
+};
+
 const PROVIDERS: Set<UnifiedProvider> = new Set([
   "slack",
   "linear",
@@ -74,6 +80,10 @@ function datadogAzureMonitorStatus(userId: string) {
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0];
 
   return isConnected(chosen?.createdAt, chosen?.scopes);
+}
+
+function connectionStatusForCredential(credential: { createdAt: string; scopes: string[] } | null | undefined): ProviderStatus {
+  return isConnected(credential?.createdAt, credential?.scopes);
 }
 
 const router = express.Router();
@@ -196,35 +206,22 @@ router.get("/status", requireAuth, (req: AuthenticatedRequest, res) => {
     return;
   }
 
-  const providers: Record<StatusProvider, { connected: boolean; connectedAt?: string; scopes?: string[] }> = {
-    slack: isConnected(
-      slackCredentialStore.getActiveByUser(userId)?.createdAt,
-      slackCredentialStore.getActiveByUser(userId)?.scopes
-    ),
-    linear: isConnected(
-      linearCredentialStore.getActiveByUser(userId)?.createdAt,
-      linearCredentialStore.getActiveByUser(userId)?.scopes
-    ),
-    shopify: isConnected(
-      shopifyCredentialStore.getActiveByUser(userId)?.createdAt,
-      shopifyCredentialStore.getActiveByUser(userId)?.scopes
-    ),
-    docusign: isConnected(
-      docuSignCredentialStore.getActiveByUser(userId)?.createdAt,
-      docuSignCredentialStore.getActiveByUser(userId)?.scopes
-    ),
-    teams: isConnected(
-      teamsCredentialStore.getActiveByUser(userId)?.createdAt,
-      teamsCredentialStore.getActiveByUser(userId)?.scopes
-    ),
-    posthog: isConnected(
-      posthogCredentialStore.getActiveByUser(userId)?.createdAt,
-      posthogCredentialStore.getActiveByUser(userId)?.scopes
-    ),
-    intercom: isConnected(
-      intercomCredentialStore.getActiveByUser(userId)?.createdAt,
-      intercomCredentialStore.getActiveByUser(userId)?.scopes
-    ),
+  const slackCredential = slackCredentialStore.getActiveByUser(userId);
+  const linearCredential = linearCredentialStore.getActiveByUser(userId);
+  const shopifyCredential = shopifyCredentialStore.getActiveByUser(userId);
+  const docusignCredential = docuSignCredentialStore.getActiveByUser(userId);
+  const teamsCredential = teamsCredentialStore.getActiveByUser(userId);
+  const posthogCredential = posthogCredentialStore.getActiveByUser(userId);
+  const intercomCredential = intercomCredentialStore.getActiveByUser(userId);
+
+  const providers: Record<StatusProvider, ProviderStatus> = {
+    slack: connectionStatusForCredential(slackCredential),
+    linear: connectionStatusForCredential(linearCredential),
+    shopify: connectionStatusForCredential(shopifyCredential),
+    docusign: connectionStatusForCredential(docusignCredential),
+    teams: connectionStatusForCredential(teamsCredential),
+    posthog: connectionStatusForCredential(posthogCredential),
+    intercom: connectionStatusForCredential(intercomCredential),
     "datadog-azure-monitor": datadogAzureMonitorStatus(userId),
     stripe: { connected: false },
   };

@@ -5,6 +5,8 @@
 
 export type StepKind =
   | "trigger"
+  | "cron_trigger"
+  | "interval_trigger"
   | "llm"
   | "transform"
   | "condition"
@@ -45,10 +47,20 @@ export interface WorkflowStep {
   condition?: string;
   action?: string;
   config?: Record<string, unknown>;
+  // cron_trigger step
+  cronExpression?: string;
+  timezone?: string;
+  // interval_trigger step
+  intervalMinutes?: number;
   // agent step
   agentModel?: string;
   agentInstructions?: string;
   subAgentSlots?: number;
+  agentRoleKey?: string;
+  agentSkills?: string[];
+  agentBudgetMonthlyUsd?: number;
+  agentScheduleType?: "manual" | "interval" | "cron";
+  agentScheduleValue?: string;
   // approval step
   approvalAssignee?: string;
   approvalMessage?: string;

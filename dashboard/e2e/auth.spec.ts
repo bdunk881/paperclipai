@@ -1,7 +1,7 @@
 /**
  * E2E: Authentication critical paths
  *
- * Covers: protected route redirect, Microsoft login CTA,
+ * Covers: protected route redirect, login CTA,
  * and redirecting-state UX on auth actions.
  */
 
@@ -25,19 +25,19 @@ test("unauthenticated user visiting /builder is redirected to /login", async ({ 
 // Login page
 // ---------------------------------------------------------------------------
 
-test("login page renders Microsoft sign-in CTA", async ({ page }) => {
+test("login page renders AutoFlow sign-in CTA", async ({ page }) => {
   await page.goto("/login");
-  await expect(page.getByRole("button", { name: /continue with microsoft/i })).toBeVisible();
+  await expect(page.locator("form").getByRole("button", { name: /^sign in$/i })).toBeVisible();
 });
 
-test("sign-in button transitions to redirecting state when clicked", async ({ page }) => {
+test("sign-in button validates required credentials when clicked empty", async ({ page }) => {
   await page.goto("/login");
 
-  const signInButton = page.getByRole("button", { name: /continue with microsoft/i });
+  const signInButton = page.locator("form").getByRole("button", { name: /^sign in$/i });
   await expect(signInButton).toBeVisible();
   await signInButton.click();
 
-  await expect(page.getByRole("button", { name: /redirecting/i })).toBeDisabled();
+  await expect(page.getByText(/enter both your email and password\./i)).toBeVisible();
 });
 
 // ---------------------------------------------------------------------------
@@ -56,5 +56,5 @@ test("signup route redirects to login", async ({ page }) => {
 test("waitlist page is accessible without authentication", async ({ page }) => {
   await page.goto("/waitlist");
   await expect(page).toHaveURL("/waitlist");
-  await expect(page.getByText(/AI Automation Platform/i)).toBeVisible();
+  await expect(page.getByText(/Runs Your Operations/i)).toBeVisible();
 });

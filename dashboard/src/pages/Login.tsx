@@ -1,90 +1,860 @@
-import { useState } from "react";
-import { Loader2 } from "lucide-react";
-import { useAuth } from "../context/AuthContext";
-import logoIcon from "../assets/logo/icon.svg";
+import { FormEvent, useMemo, useRef, useState } from "react";
+import type { AuthenticationResult } from "@azure/msal-browser";
+import { BrowserAuthError, BrowserAuthErrorCodes } from "@azure/msal-browser";
+import { Loader2, ArrowRight, CheckCircle2, KeyRound, Mail, ShieldCheck } from "lucide-react";
+import { useNavigate, useSearchParams } from "react-router-dom";
+import { getConfiguredApiOrigin } from "../api/baseUrl";
+import { navigateToSocialAuth } from "../auth/socialAuthNavigation";
+import { loginRequest, signupRequest } from "../auth/msalConfig";
+import { initializeMsalInstance, msalInstance } from "../auth/msalInstance";
+import {
+  NativeAuthError,
+  type SocialAuthProvider,
+  challengePasswordReset,
+  challengeSignUp,
+  continuePasswordReset,
+  continueSignUp,
+  exchangeContinuationToken,
+  isRedirectRequired,
+  pollPasswordResetCompletion,
+  sessionFromTokenResponse,
+  signInWithPassword,
+  startPasswordReset,
+  startSignUp,
+  submitPasswordReset,
+} from "../auth/nativeAuthClient";
+import { StoredAuthSession, writeStoredAuthSession } from "../auth/authStorage";
+
+type AuthMode = "signin" | "signup" | "reset";
+
+type PendingSignUp = {
+  continuationToken: string;
+  email: string;
+  password: string;
+  name: string;
+  challengeTargetLabel?: string;
+  codeLength?: number;
+};
+
+type PendingReset = {
+  continuationToken: string;
+  email: string;
+  newPassword: string;
+  challengeTargetLabel?: string;
+  codeLength?: number;
+};
+
+const lockupUrl = new URL("../../../infra/brand-assets/payload/logos/product/lockup.svg", import.meta.url).href;
+const noiseUrl = new URL("../../../infra/brand-assets/payload/textures/noise-overlay.svg", import.meta.url).href;
+const googleLogoUrl = new URL("../../../infra/brand-assets/payload/logos/integrations/google/logo.svg", import.meta.url).href;
+const facebookLogoUrl = new URL("../../../infra/brand-assets/payload/logos/integrations/facebook/logo.svg", import.meta.url).href;
+const appleLogoUrl = new URL("../../../infra/brand-assets/payload/logos/integrations/apple/logo.svg", import.meta.url).href;
+const socialProviders: Array<{ key: SocialAuthProvider; label: string }> = [
+  { key: "google", label: "Google" },
+  { key: "facebook", label: "Facebook" },
+  { key: "apple", label: "Apple" },
+];
+
+function resolveMode(value: string | null): AuthMode {
+  if (value === "signup") return "signup";
+  if (value === "reset") return "reset";
+  return "signin";
+}
+
+function prettyTarget(target: string | undefined, fallback: string): string {
+  if (!target?.trim()) return fallback;
+  return target.trim();
+}
+
+function mapNativeAuthError(error: unknown): string {
+  if (!(error instanceof NativeAuthError)) {
+    console.error("[NativeAuth] Non-auth error (possible CORS/network issue):", error);
+    if (error instanceof TypeError) {
+      return "Unable to reach the authentication server. This may be a network or CORS issue — check the browser console for details.";
+    }
+    return "Authentication failed. Check your details and try again.";
+  }
+
+  const normalized = `${error.code ?? ""} ${error.description ?? ""} ${error.message}`.toLowerCase();
+
+  if (normalized.includes("password") && normalized.includes("invalid")) {
+    return "The password you entered is incorrect.";
+  }
+
+  if (normalized.includes("verification")) {
+    return "The verification code is invalid or expired.";
+  }
+
+  if (normalized.includes("rate") || normalized.includes("throttle")) {
+    return "Too many attempts. Wait a moment before trying again.";
+  }
+
+  if (error.code === "user_not_found" || normalized.includes("user_not_found") || normalized.includes("user not found")) {
+    return "We couldn’t find an account for that email address.";
+  }
+
+  if (error.code === "unsupported_challenge_type") {
+    console.error("[NativeAuth] unsupported_challenge_type detail:", error.description ?? error.message);
+    return "This sign-in method is not supported. Contact your administrator.";
+  }
+
+  if (error.code === "redirect_required") {
+    return "This account uses Microsoft sign-in. Use the \"Sign in with Microsoft\" button below.";
+  }
+
+  if (normalized.includes("500222") || normalized.includes("does not support native credential recovery")) {
+    return "This account was created with Microsoft and cannot reset its password here. Sign in with the \"Sign in with Microsoft\" button instead, or reset your password at your email provider.";
+  }
+
+  if (normalized.includes("1003037") || normalized.includes("already have an account")) {
+    return "An account with this email already exists. Switch to \"Sign in\" and use the \"Sign in with Microsoft\" button.";
+  }
+
+  if (normalized.includes("aadsts1003037") || normalized.includes("already have an account")) {
+    return "An account with this email already exists. Switch to \"Sign in\" or use \"Sign in with Microsoft\" instead.";
+  }
+
+  if (normalized.includes("aadsts500222") || normalized.includes("does not support native credential recovery")) {
+    return "Password reset is not available for this account. Use \"Sign in with Microsoft\" on the Sign in tab instead.";
+  }
+
+  // Surface the actual Azure error for unrecognized codes so they can be diagnosed.
+  console.warn("[NativeAuth] Unhandled error:", error.code, error.description ?? error.message);
+  return error.description ?? error.message;
+}
+
+function firstString(value: unknown): string | undefined {
+  if (typeof value === "string" && value.trim()) return value;
+  if (!Array.isArray(value)) return undefined;
+
+  const candidate = value.find((entry) => typeof entry === "string" && entry.trim());
+  return typeof candidate === "string" ? candidate : undefined;
+}
+
+function sessionFromMicrosoftResult(result: AuthenticationResult): StoredAuthSession {
+  const claims = (result.idTokenClaims ?? {}) as Record<string, unknown>;
+  const email =
+    result.account?.username ??
+    firstString(claims.email) ??
+    firstString(claims.preferred_username) ??
+    firstString(claims.emails) ??
+    "unknown@autoflow.local";
+  const name =
+    result.account?.name ??
+    firstString(claims.name) ??
+    firstString(claims.given_name) ??
+    email;
+
+  return {
+    accessToken: result.accessToken || result.idToken,
+    idToken: result.idToken || undefined,
+    expiresAt: result.expiresOn?.getTime() ?? Date.now() + 60 * 60 * 1000,
+    scope: result.scopes.join(" "),
+    user: {
+      id: result.account?.homeAccountId ?? result.account?.localAccountId ?? email,
+      email,
+      name,
+      tenantId: result.account?.tenantId ?? firstString(claims.tid),
+    },
+  };
+}
+
+function mapMicrosoftAuthError(error: unknown): string {
+  if (!(error instanceof BrowserAuthError)) {
+    return "Microsoft sign-in failed. Try again in a new browser tab.";
+  }
+
+  switch (error.errorCode) {
+    case BrowserAuthErrorCodes.popupWindowError:
+    case BrowserAuthErrorCodes.emptyWindowError:
+    case BrowserAuthErrorCodes.timedOut:
+      return "Microsoft sign-in needs a popup window. Allow popups for AutoFlow and try again.";
+    case BrowserAuthErrorCodes.userCancelled:
+      return "Microsoft sign-in was canceled before completion.";
+    case "interaction_in_progress":
+      return "Microsoft sign-in is already in progress. Finish the open popup or close it before trying again.";
+    default:
+      return error.message || "Microsoft sign-in failed. Please try again.";
+  }
+}
+
+function cardTitle(mode: AuthMode, pendingSignUp: PendingSignUp | null, pendingReset: PendingReset | null): string {
+  if (mode === "signup" && pendingSignUp) return "Verify your email";
+  if (mode === "reset" && pendingReset) return "Confirm reset code";
+  if (mode === "signup") return "Create your AutoFlow account";
+  if (mode === "reset") return "Reset your password";
+  return "Sign in to AutoFlow";
+}
+
+function cardCopy(mode: AuthMode, pendingSignUp: PendingSignUp | null, pendingReset: PendingReset | null): string {
+  if (mode === "signup" && pendingSignUp) {
+    return `Enter the code we sent to ${prettyTarget(pendingSignUp.challengeTargetLabel, pendingSignUp.email)}.`;
+  }
+  if (mode === "reset" && pendingReset) {
+    return `Use the code sent to ${prettyTarget(pendingReset.challengeTargetLabel, pendingReset.email)} to finish resetting your password.`;
+  }
+  if (mode === "signup") return "Launch secure automation workspaces without leaving the dashboard shell.";
+  if (mode === "reset") return "Verify your identity, choose a new password, and get back into your command center.";
+  return "Native authentication keeps the entire sign-in journey inside AutoFlow.";
+}
 
 export default function Login() {
-  const { login, signup } = useAuth();
-  const [loading, setLoading] = useState(false);
-  const [signupLoading, setSignupLoading] = useState(false);
-  const [error, setError] = useState("");
+  const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const mode = resolveMode(searchParams.get("mode"));
+  const qaPreviewError = searchParams.get("qaPreviewError") === "invalid";
+  const socialAuthError = searchParams.get("socialAuthError");
 
-  async function handleSignIn() {
+  const [signinEmail, setSigninEmail] = useState("");
+  const [signinPassword, setSigninPassword] = useState("");
+  const [signupName, setSignupName] = useState("");
+  const [signupEmail, setSignupEmail] = useState("");
+  const [signupPassword, setSignupPassword] = useState("");
+  const [signupConfirmPassword, setSignupConfirmPassword] = useState("");
+  const [signupCode, setSignupCode] = useState("");
+  const [resetEmail, setResetEmail] = useState("");
+  const [resetPassword, setResetPassword] = useState("");
+  const [resetConfirmPassword, setResetConfirmPassword] = useState("");
+  const [resetCode, setResetCode] = useState("");
+  const [pendingSignUp, setPendingSignUp] = useState<PendingSignUp | null>(null);
+  const [pendingReset, setPendingReset] = useState<PendingReset | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [microsoftAction, setMicrosoftAction] = useState<"signin" | "signup" | null>(null);
+  const [socialProvider, setSocialProvider] = useState<SocialAuthProvider | null>(null);
+  const microsoftInteractionInFlightRef = useRef(false);
+  const [error, setError] = useState(
+    qaPreviewError
+      ? "Preview access link is invalid, expired, or not enabled for this deployment."
+      : socialAuthError
+        ? socialAuthError.replace(/\+/g, " ")
+        : ""
+  );
+  const [notice, setNotice] = useState("");
+  const [shakeKey, setShakeKey] = useState(0);
+  const isAnyBusy = busy || microsoftAction !== null || socialProvider !== null;
+  const hasSocialError = Boolean(socialAuthError);
+
+  const signals = useMemo(
+    () => [
+      { icon: ShieldCheck, label: "First-party CIAM session" },
+      { icon: KeyRound, label: "JWT access for dashboard APIs" },
+      { icon: Mail, label: "Email verification for account actions" },
+    ],
+    []
+  );
+
+  function triggerError(message: string) {
+    setError(message);
+    setNotice("");
+    setShakeKey((value) => value + 1);
+  }
+
+  function switchMode(nextMode: AuthMode) {
+    const nextParams = new URLSearchParams(searchParams);
+    if (nextMode === "signin") {
+      nextParams.delete("mode");
+    } else {
+      nextParams.set("mode", nextMode);
+    }
+    nextParams.delete("qaPreviewError");
+    nextParams.delete("socialAuthError");
+    setSearchParams(nextParams);
     setError("");
-    setLoading(true);
+    setNotice("");
+  }
+
+  function socialAuthRedirectUrl(provider: SocialAuthProvider): string {
+    const apiOrigin = getConfiguredApiOrigin();
+    const base = apiOrigin || window.location.origin;
+    const target = new URL(`/api/auth/social/${provider}`, base);
+    target.searchParams.set("redirect_uri", `${window.location.origin}/auth/social-callback`);
+    return target.toString();
+  }
+
+  function handleSocialAuth(provider: SocialAuthProvider) {
+    setSocialProvider(provider);
+    setError("");
+    setNotice("");
+
     try {
-      await login();
-      // login() triggers a redirect — execution does not continue past this point
-    } catch {
-      setError("Sign-in failed. Please try again.");
-      setLoading(false);
+      navigateToSocialAuth(socialAuthRedirectUrl(provider));
+    } catch (authError) {
+      setSocialProvider(null);
+      triggerError(authError instanceof Error ? authError.message : "Unable to start social sign-in.");
     }
   }
 
-  async function handleSignup() {
+  async function finalizeSession(tokenResponsePromise: Promise<ReturnType<typeof exchangeContinuationToken> extends Promise<infer T> ? T : never>) {
+    const tokens = await tokenResponsePromise;
+    writeStoredAuthSession(sessionFromTokenResponse(tokens));
+    navigate("/", { replace: true });
+  }
+
+  async function handleMicrosoftAuth(action: "signin" | "signup") {
+    if (microsoftInteractionInFlightRef.current) {
+      triggerError("Microsoft sign-in is already in progress. Finish the open popup or close it before trying again.");
+      return;
+    }
+
+    microsoftInteractionInFlightRef.current = true;
+    setMicrosoftAction(action);
     setError("");
-    setSignupLoading(true);
+    setNotice("");
+
     try {
-      await signup();
-      // signup() triggers a redirect — execution does not continue past this point
-    } catch {
-      setError("Signup failed. Please try again.");
-      setSignupLoading(false);
+      await initializeMsalInstance();
+      const result = await msalInstance.loginPopup(action === "signup" ? signupRequest : loginRequest);
+      if (result.account) {
+        msalInstance.setActiveAccount(result.account);
+      }
+      writeStoredAuthSession(sessionFromMicrosoftResult(result));
+      navigate("/", { replace: true });
+    } catch (authError) {
+      triggerError(mapMicrosoftAuthError(authError));
+    } finally {
+      microsoftInteractionInFlightRef.current = false;
+      setMicrosoftAction(null);
     }
   }
+
+  async function handleSignIn(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!signinEmail.trim() || !signinPassword.trim()) {
+      triggerError("Enter both your email and password.");
+      return;
+    }
+
+    setBusy(true);
+    setError("");
+    setNotice("");
+    try {
+      await finalizeSession(signInWithPassword(signinEmail.trim(), signinPassword));
+    } catch (authError) {
+      if (isRedirectRequired(authError)) {
+        setNotice("This account uses Microsoft sign-in. Redirecting\u2026");
+        setBusy(false);
+        handleMicrosoftAuth("signin");
+        return;
+      }
+      triggerError(mapNativeAuthError(authError));
+      setBusy(false);
+    }
+  }
+
+  async function handleSignUp(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    if (!pendingSignUp) {
+      if (!signupName.trim() || !signupEmail.trim() || !signupPassword.trim()) {
+        triggerError("Enter your name, email, and password to continue.");
+        return;
+      }
+      if (signupPassword !== signupConfirmPassword) {
+        triggerError("Password confirmation does not match.");
+        return;
+      }
+
+      setBusy(true);
+      setError("");
+      setNotice("");
+
+      try {
+        const started = await startSignUp(signupEmail.trim(), signupPassword, signupName.trim());
+        const continuationToken = started.continuation_token;
+        if (!continuationToken) {
+          throw new NativeAuthError("Sign-up did not provide a continuation token.", 500);
+        }
+
+        const challenged = await challengeSignUp(continuationToken);
+        setPendingSignUp({
+          continuationToken: challenged.continuation_token ?? continuationToken,
+          email: signupEmail.trim(),
+          password: signupPassword,
+          name: signupName.trim(),
+          challengeTargetLabel: typeof challenged.challenge_target_label === "string" ? challenged.challenge_target_label : undefined,
+          codeLength: typeof challenged.code_length === "number" ? challenged.code_length : undefined,
+        });
+        setNotice("Verification code sent. Enter it below to complete account creation.");
+      } catch (authError) {
+        triggerError(mapNativeAuthError(authError));
+      } finally {
+        setBusy(false);
+      }
+
+      return;
+    }
+
+    if (!signupCode.trim()) {
+      triggerError("Enter the verification code from your email.");
+      return;
+    }
+
+    setBusy(true);
+    setError("");
+    setNotice("");
+
+    try {
+      const continued = await continueSignUp(pendingSignUp.continuationToken, signupCode.trim());
+      const continuationToken = continued.continuation_token ?? pendingSignUp.continuationToken;
+      await finalizeSession(exchangeContinuationToken(continuationToken));
+    } catch (authError) {
+      triggerError(mapNativeAuthError(authError));
+      setBusy(false);
+    }
+  }
+
+  async function handlePasswordReset(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    if (!pendingReset) {
+      if (!resetEmail.trim() || !resetPassword.trim()) {
+        triggerError("Enter your account email and the new password you want to use.");
+        return;
+      }
+      if (resetPassword !== resetConfirmPassword) {
+        triggerError("New password confirmation does not match.");
+        return;
+      }
+
+      setBusy(true);
+      setError("");
+      setNotice("");
+
+      try {
+        let started: Awaited<ReturnType<typeof startPasswordReset>>;
+        try {
+          started = await startPasswordReset(resetEmail.trim());
+        } catch (startErr) {
+          console.error("[NativeAuth] resetpassword/start failed:", startErr instanceof NativeAuthError ? { code: startErr.code, description: startErr.description, status: startErr.status } : startErr);
+          throw startErr;
+        }
+        const continuationToken = started.continuation_token;
+        if (!continuationToken) {
+          throw new NativeAuthError("Password reset did not provide a continuation token.", 500);
+        }
+
+        let challenged: Awaited<ReturnType<typeof challengePasswordReset>>;
+        try {
+          challenged = await challengePasswordReset(continuationToken);
+        } catch (challengeErr) {
+          console.error("[NativeAuth] resetpassword/challenge failed:", challengeErr instanceof NativeAuthError ? { code: challengeErr.code, description: challengeErr.description, status: challengeErr.status } : challengeErr);
+          throw challengeErr;
+        }
+        setPendingReset({
+          continuationToken: challenged.continuation_token ?? continuationToken,
+          email: resetEmail.trim(),
+          newPassword: resetPassword,
+          challengeTargetLabel: typeof challenged.challenge_target_label === "string" ? challenged.challenge_target_label : undefined,
+          codeLength: typeof challenged.code_length === "number" ? challenged.code_length : undefined,
+        });
+        setNotice("Reset code sent. Enter the code to apply your new password.");
+      } catch (authError) {
+        triggerError(mapNativeAuthError(authError));
+      } finally {
+        setBusy(false);
+      }
+
+      return;
+    }
+
+    if (!resetCode.trim()) {
+      triggerError("Enter the password reset code from your email.");
+      return;
+    }
+
+    setBusy(true);
+    setError("");
+    setNotice("");
+
+    try {
+      const continued = await continuePasswordReset(pendingReset.continuationToken, resetCode.trim());
+      const submitted = await submitPasswordReset(continued.continuation_token ?? pendingReset.continuationToken, pendingReset.newPassword);
+      const completed = await pollPasswordResetCompletion(
+        submitted.continuation_token ?? continued.continuation_token ?? pendingReset.continuationToken
+      );
+      const continuationToken = completed.continuation_token ?? submitted.continuation_token;
+      if (!continuationToken) {
+        throw new NativeAuthError("Password reset completed without a continuation token.", 500);
+      }
+
+      await finalizeSession(exchangeContinuationToken(continuationToken));
+    } catch (authError) {
+      triggerError(mapNativeAuthError(authError));
+      setBusy(false);
+    }
+  }
+
+  const headerText = cardTitle(mode, pendingSignUp, pendingReset);
+  const helperText = cardCopy(mode, pendingSignUp, pendingReset);
+  const showSignupVerification = mode === "signup" && pendingSignUp;
+  const showResetVerification = mode === "reset" && pendingReset;
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-50">
-      <div className="w-full max-w-md">
-        {/* Logo */}
-        <div className="flex flex-col items-center mb-8">
-          <div className="flex items-center justify-center w-16 h-16 rounded-2xl bg-white border border-gray-200 shadow-sm mb-4">
-            <img src={logoIcon} alt="AutoFlow" className="w-10 h-10 object-contain" />
+    <div className="relative flex min-h-screen overflow-hidden bg-slate-950 text-slate-100">
+      <div className="pointer-events-none absolute inset-0">
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,_rgba(99,102,241,0.18),_transparent_42%),radial-gradient(circle_at_bottom_right,_rgba(20,184,166,0.16),_transparent_38%)]" />
+        <div className="absolute inset-0 opacity-[0.16]" style={{ backgroundImage: `url("${noiseUrl}")` }} />
+      </div>
+
+      <div className="relative z-10 mx-auto flex w-full max-w-6xl flex-col justify-center gap-10 px-6 py-10 lg:flex-row lg:items-center lg:gap-16">
+        <section className="max-w-xl space-y-8">
+          <div className="inline-flex items-center gap-2 rounded-full border border-slate-800 bg-slate-900/60 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.28em] text-slate-400">
+            Native Authentication
           </div>
-          <h1 className="text-2xl font-bold text-gray-900">Sign in to AutoFlow</h1>
-          <p className="text-gray-500 mt-1">AI-powered workflow automation</p>
-        </div>
+          <div className="space-y-5">
+            <img src={lockupUrl} alt="AutoFlow" className="h-auto w-40" />
+            <h1 className="max-w-lg text-4xl font-semibold tracking-[-0.04em] text-slate-50 sm:text-5xl">
+              Secure account access without leaving the dashboard shell.
+            </h1>
+            <p className="max-w-lg text-base leading-7 text-slate-300">
+              AutoFlow now runs sign-in, registration, and password recovery as first-party native flows with
+              CIAM-backed tokens that work directly against the dashboard API.
+            </p>
+          </div>
 
-        {/* Card */}
-        <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-8">
-          {error && (
-            <div className="mb-4 px-4 py-3 bg-red-50 border border-red-200 text-red-700 rounded-lg text-sm">
-              {error}
+          <div className="grid gap-3 sm:grid-cols-3">
+            {signals.map(({ icon: Icon, label }, index) => (
+              <article
+                key={label}
+                className="animate-auth-field-in rounded-2xl border border-slate-800 bg-slate-900/70 p-4 shadow-[0_20px_30px_-22px_rgba(0,0,0,0.9)]"
+                style={{ animationDelay: `${index * 50}ms` }}
+              >
+                <Icon size={18} className="mb-3 text-indigo-300" />
+                <p className="text-sm leading-6 text-slate-300">{label}</p>
+              </article>
+            ))}
+          </div>
+        </section>
+
+        <section
+          key={`${mode}-${shakeKey}`}
+          className={`animate-auth-card-in relative w-full max-w-xl overflow-hidden rounded-xl border border-slate-800 bg-slate-900/90 shadow-[0_20px_25px_-5px_rgba(0,0,0,0.5)] ${error ? "animate-auth-shake" : ""}`}
+        >
+          <div className="pointer-events-none absolute inset-0 opacity-[0.02]" style={{ backgroundImage: `url("${noiseUrl}")` }} />
+          <div className="relative p-6 sm:p-8">
+            <div className="mb-6 flex items-center justify-between gap-4">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-[0.28em] text-slate-500">Command Center Access</p>
+                <h2 className="mt-3 text-3xl font-semibold tracking-[-0.03em] text-slate-50">{headerText}</h2>
+                <p className="mt-3 max-w-md text-sm leading-6 text-slate-300">{helperText}</p>
+              </div>
             </div>
-          )}
 
-          <button
-            onClick={handleSignIn}
-            disabled={loading || signupLoading}
-            className="w-full flex items-center justify-center gap-3 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition disabled:opacity-60"
-          >
-            {loading ? (
-              <Loader2 size={18} className="animate-spin" />
-            ) : (
-              <MicrosoftIcon />
-            )}
-            {loading ? "Redirecting…" : "Continue with Microsoft"}
-          </button>
+            <div className="mb-6 inline-flex rounded-full border border-slate-800 bg-slate-950/70 p-1 text-sm">
+              <button
+                type="button"
+                onClick={() => switchMode("signin")}
+                className={`rounded-full px-4 py-2 transition ${mode === "signin" ? "bg-indigo-500 text-white" : "text-slate-400 hover:text-slate-200"}`}
+              >
+                Sign in
+              </button>
+              <button
+                type="button"
+                onClick={() => switchMode("signup")}
+                className={`rounded-full px-4 py-2 transition ${mode === "signup" ? "bg-indigo-500 text-white" : "text-slate-400 hover:text-slate-200"}`}
+              >
+                Sign up
+              </button>
+              <button
+                type="button"
+                onClick={() => switchMode("reset")}
+                className={`rounded-full px-4 py-2 transition ${mode === "reset" ? "bg-indigo-500 text-white" : "text-slate-400 hover:text-slate-200"}`}
+              >
+                Reset
+              </button>
+            </div>
 
-          <button
-            onClick={handleSignup}
-            disabled={loading || signupLoading}
-            className="w-full mt-3 flex items-center justify-center gap-3 py-2.5 border border-blue-600 text-blue-700 hover:bg-blue-50 font-medium rounded-lg transition disabled:opacity-60"
-          >
-            {signupLoading ? (
-              <Loader2 size={18} className="animate-spin" />
-            ) : (
-              <MicrosoftIcon />
-            )}
-            {signupLoading ? "Redirecting…" : "Create account with email"}
-          </button>
+            {error ? (
+              <div className="mb-4 rounded-2xl border border-red-500/50 bg-red-500/10 px-4 py-3 text-sm text-red-200">
+                {error}
+              </div>
+            ) : null}
+            {notice ? (
+              <div className="mb-4 rounded-2xl border border-teal-500/40 bg-teal-500/10 px-4 py-3 text-sm text-teal-100">
+                {notice}
+              </div>
+            ) : null}
+            {qaPreviewError ? (
+              <p className="mb-4 text-xs leading-5 text-orange-300">
+                Request a fresh QA preview-access link if you still need smoke-test access for this deployment.
+              </p>
+            ) : null}
 
-          <p className="text-xs text-center text-gray-400 mt-4">
-            New users are automatically registered on first sign-in.
-          </p>
-        </div>
+            {mode === "signin" ? (
+              <form onSubmit={handleSignIn} className="space-y-4 transition-all duration-300">
+                <p className="text-xs font-semibold uppercase tracking-[0.24em] text-slate-500">Or continue with</p>
+                <button
+                  type="button"
+                  disabled={isAnyBusy}
+                  onClick={() => void handleMicrosoftAuth("signin")}
+                  className="auth-microsoft-button"
+                >
+                  {microsoftAction === "signin" ? <Loader2 size={18} className="animate-spin" /> : <MicrosoftIcon />}
+                  {microsoftAction === "signin" ? "Redirecting..." : "Sign in with Microsoft"}
+                </button>
+                <SocialButtonRail
+                  mode="signin"
+                  activeProvider={socialProvider}
+                  disabled={isAnyBusy}
+                  showError={hasSocialError}
+                  onSelect={handleSocialAuth}
+                />
+                <SectionDivider label="Or sign in with email" />
+                <Field label="Work email" delay={0}>
+                  <input
+                    type="email"
+                    autoComplete="email"
+                    value={signinEmail}
+                    onChange={(event) => setSigninEmail(event.target.value)}
+                    disabled={isAnyBusy}
+                    className="auth-input"
+                    placeholder="operator@company.com"
+                  />
+                </Field>
+                <Field label="Password" delay={50}>
+                  <input
+                    type="password"
+                    autoComplete="current-password"
+                    value={signinPassword}
+                    onChange={(event) => setSigninPassword(event.target.value)}
+                    disabled={isAnyBusy}
+                    className="auth-input"
+                    placeholder="Enter your password"
+                  />
+                </Field>
+                <button type="submit" disabled={isAnyBusy} className="auth-primary-button mt-2">
+                  {busy ? <Loader2 size={18} className="animate-spin" /> : <ArrowRight size={18} />}
+                  {busy ? "Authorizing..." : "Sign in"}
+                </button>
+              </form>
+            ) : null}
+
+            {mode === "signup" ? (
+              <form onSubmit={handleSignUp} className="space-y-4 transition-all duration-300">
+                {!showSignupVerification ? (
+                  <>
+                    <p className="text-xs font-semibold uppercase tracking-[0.24em] text-slate-500">Or continue with</p>
+                    <button
+                      type="button"
+                      disabled={isAnyBusy}
+                      onClick={() => void handleMicrosoftAuth("signup")}
+                      className="auth-microsoft-button"
+                    >
+                      {microsoftAction === "signup" ? <Loader2 size={18} className="animate-spin" /> : <MicrosoftIcon />}
+                      {microsoftAction === "signup" ? "Redirecting..." : "Sign up with Microsoft"}
+                    </button>
+                    <SocialButtonRail
+                      mode="signup"
+                      activeProvider={socialProvider}
+                      disabled={isAnyBusy}
+                      showError={hasSocialError}
+                      onSelect={handleSocialAuth}
+                    />
+                    <SectionDivider label="Or sign up with email" />
+                    <Field label="Full name" delay={0}>
+                      <input
+                        type="text"
+                        autoComplete="name"
+                        value={signupName}
+                        onChange={(event) => setSignupName(event.target.value)}
+                        disabled={isAnyBusy}
+                        className="auth-input"
+                        placeholder="Avery Quinn"
+                      />
+                    </Field>
+                    <Field label="Work email" delay={50}>
+                      <input
+                        type="email"
+                        autoComplete="email"
+                        value={signupEmail}
+                        onChange={(event) => setSignupEmail(event.target.value)}
+                        disabled={isAnyBusy}
+                        className="auth-input"
+                        placeholder="avery@company.com"
+                      />
+                    </Field>
+                    <Field label="Password" delay={100}>
+                      <input
+                        type="password"
+                        autoComplete="new-password"
+                        value={signupPassword}
+                        onChange={(event) => setSignupPassword(event.target.value)}
+                        disabled={isAnyBusy}
+                        className="auth-input"
+                        placeholder="Choose a password"
+                      />
+                    </Field>
+                    <Field label="Confirm password" delay={150}>
+                      <input
+                        type="password"
+                        autoComplete="new-password"
+                        value={signupConfirmPassword}
+                        onChange={(event) => setSignupConfirmPassword(event.target.value)}
+                        disabled={isAnyBusy}
+                        className="auth-input"
+                        placeholder="Repeat your password"
+                      />
+                    </Field>
+                  </>
+                ) : (
+                  <Field label="Verification code" delay={0}>
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      autoComplete="one-time-code"
+                      value={signupCode}
+                      onChange={(event) => setSignupCode(event.target.value)}
+                      disabled={isAnyBusy}
+                      className="auth-input"
+                      placeholder={
+                        pendingSignUp?.codeLength ? `${pendingSignUp.codeLength}-digit code` : "Enter email code"
+                      }
+                    />
+                  </Field>
+                )}
+                <button type="submit" disabled={isAnyBusy} className="auth-primary-button mt-2">
+                  {busy ? <Loader2 size={18} className="animate-spin" /> : showSignupVerification ? <CheckCircle2 size={18} /> : <ArrowRight size={18} />}
+                  {busy ? "Processing..." : showSignupVerification ? "Verify and create account" : "Send verification code"}
+                </button>
+              </form>
+            ) : null}
+
+            {mode === "reset" ? (
+              <form onSubmit={handlePasswordReset} className="space-y-4 transition-all duration-300">
+                {!showResetVerification ? (
+                  <>
+                    <Field label="Account email" delay={0}>
+                      <input
+                        type="email"
+                        autoComplete="email"
+                        value={resetEmail}
+                        onChange={(event) => setResetEmail(event.target.value)}
+                        disabled={isAnyBusy}
+                        className="auth-input"
+                        placeholder="operator@company.com"
+                      />
+                    </Field>
+                    <Field label="New password" delay={50}>
+                      <input
+                        type="password"
+                        autoComplete="new-password"
+                        value={resetPassword}
+                        onChange={(event) => setResetPassword(event.target.value)}
+                        disabled={isAnyBusy}
+                        className="auth-input"
+                        placeholder="Choose a new password"
+                      />
+                    </Field>
+                    <Field label="Confirm new password" delay={100}>
+                      <input
+                        type="password"
+                        autoComplete="new-password"
+                        value={resetConfirmPassword}
+                        onChange={(event) => setResetConfirmPassword(event.target.value)}
+                        disabled={isAnyBusy}
+                        className="auth-input"
+                        placeholder="Repeat the new password"
+                      />
+                    </Field>
+                  </>
+                ) : (
+                  <Field label="Reset code" delay={0}>
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      autoComplete="one-time-code"
+                      value={resetCode}
+                      onChange={(event) => setResetCode(event.target.value)}
+                      disabled={isAnyBusy}
+                      className="auth-input"
+                      placeholder={pendingReset?.codeLength ? `${pendingReset.codeLength}-digit code` : "Enter email code"}
+                    />
+                  </Field>
+                )}
+                <button type="submit" disabled={isAnyBusy} className="auth-primary-button mt-2">
+                  {busy ? <Loader2 size={18} className="animate-spin" /> : showResetVerification ? <CheckCircle2 size={18} /> : <ArrowRight size={18} />}
+                  {busy ? "Processing..." : showResetVerification ? "Apply new password" : "Send reset code"}
+                </button>
+              </form>
+            ) : null}
+
+            <div className="mt-6 flex flex-wrap items-center gap-3 text-xs text-slate-500">
+              <span className="rounded-full border border-slate-800 px-3 py-1">Obsidian Secure Gateway</span>
+              <span className="rounded-full border border-slate-800 px-3 py-1">AutoFlow Indigo Actions</span>
+              <span className="rounded-full border border-slate-800 px-3 py-1">JWT-backed API session</span>
+            </div>
+          </div>
+        </section>
       </div>
     </div>
+  );
+}
+
+function SectionDivider({ label }: { label: string }) {
+  return (
+    <div className="auth-or-divider" aria-hidden="true">
+      <span>{label}</span>
+    </div>
+  );
+}
+
+function SocialButtonRail({
+  mode,
+  activeProvider,
+  disabled,
+  showError,
+  onSelect,
+}: {
+  mode: "signin" | "signup";
+  activeProvider: SocialAuthProvider | null;
+  disabled: boolean;
+  showError: boolean;
+  onSelect: (provider: SocialAuthProvider) => void;
+}) {
+  return (
+    <div className="space-y-3">
+      {socialProviders.map((provider) => {
+        const isActive = activeProvider === provider.key;
+        const actionLabel = mode === "signin" ? "Sign in" : "Sign up";
+        const borderClass = showError && !isActive ? "border-red-500 text-red-300" : "border-[#3f4655] text-[#e8eaee]";
+        const stateClass = isActive
+          ? "bg-[#1a1d23] text-[#8a8e99]"
+          : "bg-[#1a1d23] hover:bg-[#242932] hover:border-[#4f5769] hover:text-white active:bg-[#0f1117] active:border-[#5865f2] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#5865f2]";
+
+        return (
+          <button
+            key={provider.key}
+            type="button"
+            disabled={disabled}
+            onClick={() => onSelect(provider.key)}
+            className={`flex h-12 w-full items-center rounded-lg border px-4 text-sm font-medium transition duration-200 ease-out disabled:cursor-not-allowed disabled:border-[#2d3138] disabled:bg-[#0f1117] disabled:text-[#5a5f6b] ${borderClass} ${stateClass}`}
+            aria-label={`${actionLabel} with ${provider.label}`}
+          >
+            <span className="mr-4 flex h-6 w-6 items-center justify-center">
+              {isActive ? <Loader2 size={18} className="animate-spin text-[#8a8e99]" /> : <ProviderIcon provider={provider.key} disabled={disabled} />}
+            </span>
+            <span>{isActive ? "Redirecting..." : `${actionLabel} with ${provider.label}`}</span>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+function Field({
+  label,
+  delay,
+  children,
+}: {
+  label: string;
+  delay: number;
+  children: React.ReactNode;
+}) {
+  return (
+    <label className="block animate-auth-field-in" style={{ animationDelay: `${delay}ms` }}>
+      <span className="mb-2 block text-xs font-medium uppercase tracking-[0.2em] text-slate-400">{label}</span>
+      {children}
+    </label>
   );
 }
 
@@ -96,5 +866,23 @@ function MicrosoftIcon() {
       <rect x="1" y="11" width="9" height="9" fill="#00A4EF" />
       <rect x="11" y="11" width="9" height="9" fill="#FFB900" />
     </svg>
+  );
+}
+
+function ProviderIcon({ provider, disabled }: { provider: SocialAuthProvider; disabled: boolean }) {
+  const logoSrc =
+    provider === "google"
+      ? googleLogoUrl
+      : provider === "facebook"
+        ? facebookLogoUrl
+        : appleLogoUrl;
+
+  return (
+    <img
+      src={logoSrc}
+      alt=""
+      aria-hidden="true"
+      className={`h-6 w-6 object-contain ${disabled ? "grayscale opacity-60" : ""}`}
+    />
   );
 }

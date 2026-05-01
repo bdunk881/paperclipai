@@ -1,54 +1,52 @@
 name: Deploy Dashboard to Azure Static Web Apps
 
 on:
-  # Customer-facing dashboard production deploy source branch.
+  # Customer-facing dashboard deploy source branches.
   push:
-    branches: [master]
+    branches: [master, staging]
     paths:
       - "dashboard/**"
       - ".github/workflows/deploy-swa.yml"
-  pull_request:
-    branches: [master]
-    paths:
-      - "dashboard/**"
-      - ".github/workflows/deploy-swa.yml"
-    types: [opened, synchronize, reopened, closed]
   workflow_dispatch:
 
 permissions:
   contents: read
-  pull-requests: write
 
 jobs:
   deploy:
-    if: github.event_name != 'pull_request' || github.event.action != 'closed'
     runs-on: ubuntu-latest
+    env:
+      TARGET_ENV: ${{ github.ref == 'refs/heads/staging' && 'staging' || 'production' }}
+      SWA_DEPLOY_TOKEN: ${{ github.ref == 'refs/heads/staging' && secrets.AZURE_STATIC_WEB_APPS_STAGING_API_TOKEN || secrets.AZURE_STATIC_WEB_APPS_API_TOKEN }}
+      VITE_API_BASE_URL: ${{ github.ref == 'refs/heads/staging' && secrets.VITE_API_BASE_URL_STAGING || secrets.VITE_API_BASE_URL }}
+      VITE_AZURE_CLIENT_ID: ${{ github.ref == 'refs/heads/staging' && secrets.VITE_AZURE_CLIENT_ID_STAGING || secrets.VITE_AZURE_CLIENT_ID }}
+      VITE_AZURE_TENANT_SUBDOMAIN: ${{ github.ref == 'refs/heads/staging' && secrets.VITE_AZURE_TENANT_SUBDOMAIN_STAGING || secrets.VITE_AZURE_TENANT_SUBDOMAIN }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
+
+      - name: Validate branch-specific deploy secrets
+        run: |
+          set -euo pipefail
+          for key in SWA_DEPLOY_TOKEN VITE_API_BASE_URL VITE_AZURE_CLIENT_ID VITE_AZURE_TENANT_SUBDOMAIN; do
+            if [ -z "${!key:-}" ]; then
+              echo "::error::Missing required ${TARGET_ENV} deploy setting: ${key}"
+              exit 1
+            fi
+          done
 
       - name: Deploy to Azure Static Web Apps
         id: swa
         uses: Azure/static-web-apps-deploy@v1
         with:
-          azure_static_web_apps_api_token: ${{ secrets.AZURE_STATIC_WEB_APPS_API_TOKEN }}
+          azure_static_web_apps_api_token: ${{ env.SWA_DEPLOY_TOKEN }}
           repo_token: ${{ secrets.GITHUB_TOKEN }}
           action: upload
           app_location: dashboard
           output_location: dist
-          app_build_command: CI= npm run build
+          app_build_command: CI= npm run build:swa
         env:
-          VITE_API_BASE_URL: ${{ secrets.VITE_API_BASE_URL }}
-          VITE_AZURE_CLIENT_ID: ${{ secrets.VITE_AZURE_CLIENT_ID }}
-          VITE_AZURE_TENANT_SUBDOMAIN: ${{ secrets.VITE_AZURE_TENANT_SUBDOMAIN }}
-          VITE_AZURE_CIAM_CLIENT_ID: ${{ secrets.VITE_AZURE_CLIENT_ID }}
-          VITE_AZURE_CIAM_TENANT_SUBDOMAIN: ${{ secrets.VITE_AZURE_TENANT_SUBDOMAIN }}
-
-  close_pr_preview:
-    if: github.event_name == 'pull_request' && github.event.action == 'closed'
-    runs-on: ubuntu-latest
-    steps:
-      - name: Close PR preview environment
-        uses: Azure/static-web-apps-deploy@v1
-        with:
-          azure_static_web_apps_api_token: ${{ secrets.AZURE_STATIC_WEB_APPS_API_TOKEN }}
-          action: close
+          VITE_API_BASE_URL: ${{ env.VITE_API_BASE_URL }}
+          VITE_API_URL: ${{ env.VITE_API_BASE_URL }}
+          VITE_AZURE_CLIENT_ID: ${{ env.VITE_AZURE_CLIENT_ID }}
+          VITE_AZURE_TENANT_SUBDOMAIN: ${{ env.VITE_AZURE_TENANT_SUBDOMAIN }}
+          VITE_AZURE_CIAM_TENANT_SUBDOMAIN: ${{ env.VITE_AZURE_TENANT_SUBDOMAIN }}

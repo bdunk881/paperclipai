@@ -14,35 +14,186 @@
  * to the infrastructure service principal (Key Vault, Storage, etc.).
  */
 
-import { Request, Response, NextFunction } from "express";
+import { NextFunction, Request, Response } from "express";
 import jwt, { JwtPayload } from "jsonwebtoken";
 import jwksRsa from "jwks-rsa";
+import { resolveAppJwtConfig, verifyAppUserTokenWithDiagnostics } from "./appAuthTokens";
 
-const tenantSubdomain = process.env.AZURE_CIAM_TENANT_SUBDOMAIN;
-const tenantId = process.env.AZURE_CIAM_TENANT_ID;
-const clientId = process.env.AZURE_CIAM_CLIENT_ID;
+type AuthConfig = {
+  tenantId: string;
+  audiences: [string, ...string[]];
+  jwksUri: string;
+  issuers: [string, ...string[]];
+};
 
-if (!tenantSubdomain || !tenantId || !clientId) {
-  console.warn(
-    "[auth] AZURE_CIAM_TENANT_SUBDOMAIN, AZURE_CIAM_TENANT_ID, or AZURE_CIAM_CLIENT_ID is not set. " +
-      "JWT verification middleware will reject all requests."
-  );
+type JwtDiagnosticClaims = {
+  aud?: string | string[];
+  iss?: string;
+  exp?: number;
+  nbf?: number;
+};
+
+const jwksClientCache = new Map<string, jwksRsa.JwksClient>();
+let missingConfigWarningLogged = false;
+const CURRENT_DASHBOARD_CIAM_CLIENT_ID = "2dfd3a08-277c-4893-b07d-eca5ae322310";
+const CURRENT_DASHBOARD_CIAM_API_URI = `api://${CURRENT_DASHBOARD_CIAM_CLIENT_ID}`;
+const LEGACY_DASHBOARD_CIAM_CLIENT_ID = "d36ce552-1a3d-4cd3-b851-beff4e3bf440";
+const DEFAULT_CIAM_TENANT_SUBDOMAIN = "autoflowciam";
+const DEFAULT_CIAM_TENANT_ID = "5e4f1080-8afc-4005-b05e-32b21e69363a";
+
+function normalizeAuthority(value: string | undefined): string | null {
+  if (typeof value !== "string") {
+    return null;
+  }
+
+  const normalized = value.trim();
+  if (!normalized) {
+    return null;
+  }
+
+  try {
+    const parsed = new URL(normalized);
+    if (
+      parsed.protocol !== "https:" ||
+      parsed.username ||
+      parsed.password ||
+      parsed.search ||
+      parsed.hash ||
+      !parsed.hostname.toLowerCase().endsWith(".ciamlogin.com")
+    ) {
+      return null;
+    }
+
+    const pathname = parsed.pathname.replace(/\/+$/, "");
+    return pathname ? `${parsed.origin}${pathname}` : parsed.origin;
+  } catch {
+    return null;
+  }
 }
 
-// JWKS endpoint for Entra External ID CIAM tenants
-const jwksUri = tenantSubdomain && tenantId
-  ? `https://${tenantSubdomain}.ciamlogin.com/${tenantId}/discovery/v2.0/keys`
-  : "";
+function parseDelimitedEnv(value: string | undefined): string[] {
+  if (typeof value !== "string") {
+    return [];
+  }
 
-const jwksClient = jwksRsa({
-  jwksUri: jwksUri || "https://placeholder.ciamlogin.com/placeholder/discovery/v2.0/keys",
-  cache: true,
-  cacheMaxEntries: 5,
-  cacheMaxAge: 10 * 60 * 1000, // 10 minutes
-});
+  return value
+    .split(",")
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+}
 
-function getSigningKey(header: jwt.JwtHeader, callback: jwt.SigningKeyCallback) {
-  jwksClient.getSigningKey(header.kid, (err, key) => {
+function decodeJwtDiagnosticClaims(token: string): JwtDiagnosticClaims | null {
+  const [, rawPayload] = token.split(".");
+  if (!rawPayload) {
+    return null;
+  }
+
+  try {
+    const normalized = rawPayload.replace(/-/g, "+").replace(/_/g, "/");
+    const padded = normalized.padEnd(Math.ceil(normalized.length / 4) * 4, "=");
+    const parsed = JSON.parse(Buffer.from(padded, "base64").toString("utf8")) as Record<string, unknown>;
+
+    return {
+      aud:
+        typeof parsed.aud === "string" || Array.isArray(parsed.aud)
+          ? (parsed.aud as string | string[])
+          : undefined,
+      iss: typeof parsed.iss === "string" ? parsed.iss : undefined,
+      exp: typeof parsed.exp === "number" ? parsed.exp : undefined,
+      nbf: typeof parsed.nbf === "number" ? parsed.nbf : undefined,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function resolveAuthConfig(): AuthConfig | null {
+  const authority = normalizeAuthority(process.env.AZURE_CIAM_AUTHORITY);
+  const tenantSubdomain =
+    process.env.AZURE_CIAM_TENANT_SUBDOMAIN ??
+    process.env.AZURE_TENANT_SUBDOMAIN ??
+    DEFAULT_CIAM_TENANT_SUBDOMAIN;
+  const tenantId =
+    process.env.AZURE_CIAM_TENANT_ID ?? process.env.AZURE_TENANT_ID ?? DEFAULT_CIAM_TENANT_ID;
+  const configuredAudiences = parseDelimitedEnv(process.env.AZURE_CIAM_ALLOWED_AUDIENCES);
+  const clientId = process.env.AZURE_CIAM_CLIENT_ID ?? process.env.AZURE_CLIENT_ID;
+
+  if ((!authority && !tenantSubdomain) || !tenantId) {
+    if (!missingConfigWarningLogged) {
+      console.warn(
+        "[auth] CIAM auth env is incomplete. Expected AZURE_CIAM_AUTHORITY or AZURE_CIAM_TENANT_SUBDOMAIN, " +
+          "plus AZURE_CIAM_TENANT_ID, with fallback to repo CIAM defaults and " +
+          "legacy AZURE_TENANT_SUBDOMAIN/AZURE_TENANT_ID."
+      );
+      missingConfigWarningLogged = true;
+    }
+    return null;
+  }
+
+  const normalizedTenantId = tenantId.trim();
+  const normalizedAudiences = new Set([
+    ...configuredAudiences,
+    ...(clientId ? [clientId.trim()] : []),
+    CURRENT_DASHBOARD_CIAM_CLIENT_ID,
+    CURRENT_DASHBOARD_CIAM_API_URI,
+    LEGACY_DASHBOARD_CIAM_CLIENT_ID,
+  ]);
+  const audienceValues = Array.from(normalizedAudiences).filter(Boolean);
+  if (audienceValues.length === 0) {
+    return null;
+  }
+
+  const issuers = authority ? [`${authority}/v2.0`] : [];
+  const ciamAuthority = tenantSubdomain?.trim()
+    ? `https://${tenantSubdomain.trim()}.ciamlogin.com/${normalizedTenantId}`
+    : null;
+
+  if (ciamAuthority && !issuers.includes(`${ciamAuthority}/v2.0`)) {
+    issuers.push(`${ciamAuthority}/v2.0`);
+  }
+
+  // Azure Entra External ID (CIAM) tokens use the tenant GUID as the
+  // ciamlogin.com subdomain in the issuer claim, regardless of whether a
+  // branded custom domain or a friendly tenant subdomain is configured.
+  const guidCiamIssuer = `https://${normalizedTenantId}.ciamlogin.com/${normalizedTenantId}/v2.0`;
+  if (!issuers.includes(guidCiamIssuer)) {
+    issuers.push(guidCiamIssuer);
+  }
+
+  const jwksUri = authority
+    ? `${authority}/discovery/v2.0/keys`
+    : `${ciamAuthority}/discovery/v2.0/keys`;
+
+  if (issuers.length === 0) {
+    return null;
+  }
+
+  return {
+    tenantId: normalizedTenantId,
+    audiences: audienceValues as [string, ...string[]],
+    jwksUri,
+    issuers: issuers as [string, ...string[]],
+  };
+}
+
+function getJwksClient(jwksUri: string): jwksRsa.JwksClient {
+  const cached = jwksClientCache.get(jwksUri);
+  if (cached) {
+    return cached;
+  }
+
+  const client = jwksRsa({
+    jwksUri,
+    cache: true,
+    cacheMaxEntries: 5,
+    cacheMaxAge: 10 * 60 * 1000, // 10 minutes
+  });
+  jwksClientCache.set(jwksUri, client);
+  return client;
+}
+
+function getSigningKey(jwksUri: string, header: jwt.JwtHeader, callback: jwt.SigningKeyCallback) {
+  getJwksClient(jwksUri).getSigningKey(header.kid, (err, key) => {
     if (err || !key) return callback(err ?? new Error("Signing key not found"));
     callback(null, key.getPublicKey());
   });
@@ -55,6 +206,40 @@ export interface AuthenticatedRequest extends Request {
     name?: string;
     tenantId?: string;
     oid?: string;
+    provider?: "entra" | "google" | "facebook" | "apple";
+    issuer?: string;
+  };
+}
+
+const DEFAULT_QA_BYPASS_USER_IDS = ["qa-smoke-user"];
+
+function parseQaBypassUserIds(): Set<string> {
+  const configuredIds = (process.env.QA_AUTH_BYPASS_USER_IDS ?? "")
+    .split(",")
+    .map((value) => value.trim())
+    .filter(Boolean);
+  const userIds = configuredIds.length > 0 ? configuredIds : DEFAULT_QA_BYPASS_USER_IDS;
+  return new Set(userIds);
+}
+
+function resolveQaBypassUserId(req: Request): string | null {
+  if (process.env.QA_AUTH_BYPASS_ENABLED !== "true") {
+    return null;
+  }
+
+  const headerValue = req.headers["x-user-id"];
+  const userId = typeof headerValue === "string" ? headerValue.trim() : "";
+  if (!userId) {
+    return null;
+  }
+
+  return parseQaBypassUserIds().has(userId) ? userId : null;
+}
+
+function attachQaBypassAuth(req: AuthenticatedRequest, userId: string): void {
+  req.auth = {
+    sub: userId,
+    name: "QA bypass user",
   };
 }
 
@@ -69,9 +254,19 @@ export function requireAuth(
 ): void {
   const authHeader = req.headers.authorization;
   const headerUserId = req.headers["x-user-id"];
-  const isMemoryRoute = req.path === "/api/memory" || req.path.startsWith("/api/memory/");
+  const requestPath = (req.originalUrl || req.path).split("?")[0];
+  const isMemoryRoute = requestPath === "/api/memory" || requestPath.startsWith("/api/memory/");
+  const isKnowledgeRoute = requestPath === "/api/knowledge" || requestPath.startsWith("/api/knowledge/");
+  const isDashboardPreviewReadRoute =
+    req.method === "GET" &&
+    (
+      requestPath === "/api/runs" ||
+      requestPath.startsWith("/api/runs/") ||
+      requestPath === "/api/llm-configs"
+    );
+  const allowHeaderAuth = isMemoryRoute || isKnowledgeRoute || isDashboardPreviewReadRoute;
   if (!authHeader?.startsWith("Bearer ")) {
-    if (isMemoryRoute && typeof headerUserId === "string" && headerUserId.trim()) {
+    if (allowHeaderAuth && typeof headerUserId === "string" && headerUserId.trim()) {
       req.auth = { sub: headerUserId.trim() };
       next();
       return;
@@ -81,22 +276,72 @@ export function requireAuth(
   }
 
   const token = authHeader.slice(7);
+  const appAuthConfig = resolveAppJwtConfig();
+  const tokenClaims = decodeJwtDiagnosticClaims(token);
 
-  if (!jwksUri) {
+  if (appAuthConfig) {
+    const { claims: appClaims, errorMessage } = verifyAppUserTokenWithDiagnostics(token);
+    if (appClaims?.sub) {
+      req.auth = {
+        sub: appClaims.sub,
+        email: appClaims.email,
+        name: appClaims.name,
+        provider: appClaims.provider,
+        issuer: appClaims.iss,
+      };
+
+      next();
+      return;
+    }
+
+    const looksLikeAppToken =
+      tokenClaims?.iss === appAuthConfig.issuer ||
+      tokenClaims?.aud === appAuthConfig.audience ||
+      (Array.isArray(tokenClaims?.aud) && tokenClaims.aud.includes(appAuthConfig.audience));
+
+    if (looksLikeAppToken) {
+      console.warn("[auth] App JWT verification failed", {
+        errMessage: errorMessage,
+        tokenAud: tokenClaims?.aud,
+        tokenIss: tokenClaims?.iss,
+        tokenExp: tokenClaims?.exp,
+        tokenNbf: tokenClaims?.nbf,
+        expectedAudience: appAuthConfig.audience,
+        expectedIssuer: appAuthConfig.issuer,
+      });
+      res.status(401).json({ error: "Invalid or expired token." });
+      return;
+    }
+  }
+
+  const authConfig = resolveAuthConfig();
+
+  if (!authConfig) {
     res.status(503).json({ error: "Auth service not configured." });
     return;
   }
 
   jwt.verify(
     token,
-    getSigningKey,
+    (header, callback) => getSigningKey(authConfig.jwksUri, header, callback),
     {
-      audience: clientId,
-      issuer: `https://${tenantSubdomain}.ciamlogin.com/${tenantId}/v2.0`,
+      audience: authConfig.audiences,
+      issuer: authConfig.issuers,
       algorithms: ["RS256"],
     },
-    (err, decoded) => {
+    (err: jwt.VerifyErrors | null, decoded?: string | JwtPayload) => {
       if (err || !decoded) {
+        console.warn("[auth] JWT verification failed", {
+          errName: err?.name,
+          errMessage: err?.message,
+          tokenAud: tokenClaims?.aud,
+          tokenIss: tokenClaims?.iss,
+          tokenExp: tokenClaims?.exp,
+          tokenNbf: tokenClaims?.nbf,
+          expectedAudiences: authConfig.audiences,
+          expectedIssuers: authConfig.issuers,
+          jwksUri: authConfig.jwksUri,
+        });
         res.status(401).json({ error: "Invalid or expired token." });
         return;
       }
@@ -108,9 +353,30 @@ export function requireAuth(
         name: claims.name as string | undefined,
         tenantId: claims.tid as string | undefined,
         oid: claims.oid as string | undefined,
+        provider: "entra",
+        issuer: claims.iss as string | undefined,
       };
 
       next();
     }
   );
+}
+
+/**
+ * Allows staging QA verification to authenticate with X-User-Id when the
+ * bypass is explicitly enabled and the caller is on the allowlist.
+ */
+export function requireAuthOrQaBypass(
+  req: AuthenticatedRequest,
+  res: Response,
+  next: NextFunction
+): void {
+  const qaBypassUserId = resolveQaBypassUserId(req);
+  if (qaBypassUserId) {
+    attachQaBypassAuth(req, qaBypassUserId);
+    next();
+    return;
+  }
+
+  requireAuth(req, res, next);
 }

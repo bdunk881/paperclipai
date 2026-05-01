@@ -5,12 +5,12 @@ output "hub_vnet_id" {
 
 output "spoke_prod_vnet_id" {
   description = "Resource ID of the production spoke virtual network"
-  value       = module.spoke_prod.spoke_vnet_id
+  value       = try(module.spoke_prod[0].spoke_vnet_id, null)
 }
 
 output "spoke_staging_vnet_id" {
   description = "Resource ID of the staging spoke virtual network"
-  value       = module.spoke_staging.spoke_vnet_id
+  value       = try(module.spoke_staging[0].spoke_vnet_id, null)
 }
 
 output "hub_firewall_private_ip" {
@@ -80,4 +80,20 @@ output "ciam_tenant_subdomain" {
 output "ciam_spa_client_id" {
   description = "SPA app client ID (set as AZURE_CLIENT_ID / VITE_AZURE_CLIENT_ID for auth)"
   value       = module.entra_ciam.spa_client_id
+}
+
+output "ciam_msa_federation_client_id" {
+  description = "Microsoft-account OIDC federation client ID"
+  value       = module.entra_ciam.msa_federation_client_id
+}
+
+output "ciam_msa_federation_application_id" {
+  description = "Microsoft-account OIDC federation application object ID"
+  value       = module.entra_ciam.msa_federation_application_id
+}
+
+output "ciam_msa_federation_client_secret" {
+  description = "Microsoft-account OIDC federation client secret"
+  value       = module.entra_ciam.msa_federation_client_secret
+  sensitive   = true
 }

@@ -1,18 +1,16 @@
 import { ConnectorError, ConnectorErrorType } from "./types";
+import {
+  classifyStandardErrorType,
+  isStandardRetryable,
+  resolveRetryDelayMs,
+  sleep,
+} from "../shared/retryPolicy";
 
 const LINEAR_API_URL = "https://api.linear.app/graphql";
 const MAX_RETRIES = 4;
 
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
 function parseErrorType(status: number, text: string): ConnectorErrorType {
-  if (status === 401 || status === 403) return "auth";
-  if (status === 429 || /rate.?limit/i.test(text)) return "rate-limit";
-  if (status >= 500) return "upstream";
-  if (status >= 400) return "schema";
-  return "network";
+  return classifyStandardErrorType(status, text);
 }
 
 interface GraphQLErrorItem {
@@ -43,8 +41,7 @@ export class LinearClient {
           throw new ConnectorError("rate-limit", "Linear API rate limit exceeded", 429);
         }
 
-        const retryAfterSeconds = Number(response.headers.get("Retry-After") ?? "1");
-        await sleep(Math.max(1, retryAfterSeconds) * 1000);
+        await sleep(resolveRetryDelayMs({ attempt, headers: response.headers }));
         return this.request<T>(query, variables, attempt + 1);
       }
 
@@ -81,16 +78,15 @@ export class LinearClient {
       return json.data;
     } catch (error) {
       if (error instanceof ConnectorError) {
-        const retryable = error.type === "upstream" || error.type === "network";
-        if (retryable && attempt < MAX_RETRIES) {
-          await sleep(250 * Math.pow(2, attempt));
+        if (isStandardRetryable(error.type) && attempt < MAX_RETRIES) {
+          await sleep(resolveRetryDelayMs({ attempt }));
           return this.request<T>(query, variables, attempt + 1);
         }
         throw error;
       }
 
       if (attempt < MAX_RETRIES) {
-        await sleep(250 * Math.pow(2, attempt));
+        await sleep(resolveRetryDelayMs({ attempt }));
         return this.request<T>(query, variables, attempt + 1);
       }
 
@@ -313,6 +309,146 @@ export class LinearClient {
       id: String(data.issueUpdate.issue.id),
       identifier: String(data.issueUpdate.issue.identifier),
       title: String(data.issueUpdate.issue.title),
+    };
+  }
+
+  async listComments(issueId: string, limit = 100): Promise<Array<{
+    id: string;
+    body: string;
+    author?: string;
+    createdAt?: string;
+    updatedAt?: string;
+  }>> {
+    const results: Array<{
+      id: string;
+      body: string;
+      author?: string;
+      createdAt?: string;
+      updatedAt?: string;
+    }> = [];
+    let cursor: string | null = null;
+
+    do {
+      const pageData: {
+        issue: {
+          comments: {
+            nodes: Array<{
+              id: string;
+              body: string;
+              createdAt?: string;
+              updatedAt?: string;
+              user?: { name?: string };
+            }>;
+            pageInfo: { hasNextPage: boolean; endCursor?: string | null };
+          };
+        };
+      } = await this.request<{
+        issue: {
+          comments: {
+            nodes: Array<{
+              id: string;
+              body: string;
+              createdAt?: string;
+              updatedAt?: string;
+              user?: { name?: string };
+            }>;
+            pageInfo: { hasNextPage: boolean; endCursor?: string | null };
+          };
+        };
+      }>(`
+        query IssueComments($id: String!, $first: Int!, $after: String) {
+          issue(id: $id) {
+            comments(first: $first, after: $after) {
+              nodes {
+                id
+                body
+                createdAt
+                updatedAt
+                user {
+                  name
+                }
+              }
+              pageInfo {
+                hasNextPage
+                endCursor
+              }
+            }
+          }
+        }
+      `, {
+        id: issueId,
+        first: Math.min(100, Math.max(1, limit - results.length)),
+        after: cursor,
+      });
+
+      for (const node of pageData.issue.comments.nodes ?? []) {
+        results.push({
+          id: String(node.id),
+          body: String(node.body),
+          author: typeof node.user?.name === "string" ? node.user.name : undefined,
+          createdAt: typeof node.createdAt === "string" ? node.createdAt : undefined,
+          updatedAt: typeof node.updatedAt === "string" ? node.updatedAt : undefined,
+        });
+      }
+
+      cursor = pageData.issue.comments.pageInfo.hasNextPage
+        ? pageData.issue.comments.pageInfo.endCursor ?? null
+        : null;
+    } while (cursor && results.length < limit);
+
+    return results;
+  }
+
+  async createComment(issueId: string, body: string): Promise<{
+    id: string;
+    body: string;
+    author?: string;
+    createdAt?: string;
+  }> {
+    const data = await this.request<{
+      commentCreate: {
+        success: boolean;
+        comment?: {
+          id: string;
+          body: string;
+          createdAt?: string;
+          user?: { name?: string };
+        };
+      };
+    }>(`
+      mutation CommentCreate($input: CommentCreateInput!) {
+        commentCreate(input: $input) {
+          success
+          comment {
+            id
+            body
+            createdAt
+            user {
+              name
+            }
+          }
+        }
+      }
+    `, {
+      input: {
+        issueId,
+        body,
+      },
+    });
+
+    if (!data.commentCreate.success || !data.commentCreate.comment) {
+      throw new ConnectorError("upstream", "Linear comment creation failed", 502);
+    }
+
+    return {
+      id: String(data.commentCreate.comment.id),
+      body: String(data.commentCreate.comment.body),
+      author: typeof data.commentCreate.comment.user?.name === "string"
+        ? data.commentCreate.comment.user.name
+        : undefined,
+      createdAt: typeof data.commentCreate.comment.createdAt === "string"
+        ? data.commentCreate.comment.createdAt
+        : undefined,
     };
   }
 }

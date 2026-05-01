@@ -4,8 +4,8 @@ resource "azurerm_application_insights" "main" {
   resource_group_name = var.resource_group_name
   # Reuse the Log Analytics workspace created by the AKS module so all logs
   # (container insights + app traces) land in a single workspace.
-  workspace_id        = var.log_analytics_workspace_id
-  application_type    = "web"
+  workspace_id     = var.log_analytics_workspace_id
+  application_type = "web"
 
   tags = var.tags
 }

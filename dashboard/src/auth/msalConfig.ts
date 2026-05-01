@@ -1,9 +1,9 @@
 import { Configuration, PopupRequest } from "@azure/msal-browser";
 
-// Entra External ID (CIAM) uses the ciamlogin.com authority endpoint.
-// Tenant config can be overridden via env vars in .env.local (dev) or Vercel (prod):
-//   VITE_AZURE_CIAM_TENANT_SUBDOMAIN — e.g. "autoflowciam" → autoflowciam.ciamlogin.com
-//   VITE_AZURE_CIAM_TENANT_DOMAIN    — optional, e.g. "autoflowciam.onmicrosoft.com"
+// Entra External ID (CIAM) uses the tenant's ciamlogin.com authority endpoint.
+// Supported env vars in .env.local (dev) or Vercel (prod):
+//   VITE_AZURE_CIAM_TENANT_SUBDOMAIN — optional tenant subdomain, e.g. "autoflowciam"
+//   VITE_AZURE_CIAM_TENANT_DOMAIN    — optional tenant domain, e.g. "autoflowciam.onmicrosoft.com"
 
 // autoflow-dashboard app registration (recreated 2026-04-17, ALT-1257)
 const DEFAULT_CIAM_CLIENT_ID = "2dfd3a08-277c-4893-b07d-eca5ae322310";
@@ -57,23 +57,21 @@ const tenantDomain = readTenantDomain(import.meta.env.VITE_AZURE_CIAM_TENANT_DOM
 export const msalConfig: Configuration = {
   auth: {
     clientId,
-    // Entra External ID CIAM authority must include tenant domain path segment.
     authority: `https://${tenantSubdomain}.ciamlogin.com/${tenantDomain}`,
-    // Tell MSAL the external tenant is a valid authority (required for non-login.microsoftonline.com authorities)
+    // Tell MSAL the external tenant is a valid authority.
     knownAuthorities: [`${tenantSubdomain}.ciamlogin.com`],
-    redirectUri: window.location.origin,
+    redirectUri: `${window.location.origin}/auth/callback`,
     postLogoutRedirectUri: window.location.origin + "/login",
   },
   cache: {
-    cacheLocation: "localStorage",
+    cacheLocation: "sessionStorage",
   },
 };
 
 // Scopes requested on every sign-in.
-// "openid" and "profile" are always included by MSAL; list any additional
-// API scopes your backend requires here (e.g. api://<clientId>/access_as_user).
+// The API scope ensures the access_token has aud = our client ID (not Graph).
 export const loginRequest: PopupRequest = {
-  scopes: ["openid", "profile", "email"],
+  scopes: ["openid", "profile", "email", `api://${clientId}/access_as_user`],
 };
 
 // CIAM supports `prompt=create` to open account creation for external users.

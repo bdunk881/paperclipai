@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { Link } from "react-router-dom";
 import {
   RefreshCw,
@@ -15,7 +15,13 @@ import {
   MessageSquare,
   UserCheck,
 } from "lucide-react";
-import { listRuns, debugStep } from "../api/client";
+import {
+  debugStep,
+  getControlPlaneTeam,
+  listControlPlaneTeams,
+  listRuns,
+  type ControlPlaneTeamDetail,
+} from "../api/client";
 import { StatusBadge } from "../components/StatusBadge";
 import type { WorkflowRun, StepResult, AgentSlotResult } from "../types/workflow";
 import clsx from "clsx";
@@ -31,16 +37,28 @@ export default function RunMonitor() {
   const [lastRefreshed, setLastRefreshed] = useState(new Date());
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [teamDetails, setTeamDetails] = useState<ControlPlaneTeamDetail[]>([]);
 
-  async function fetchRuns(silent = false) {
+  const fetchRuns = useCallback(async (silent = false) => {
     if (!silent) setLoading(true);
     setLoadError(null);
     try {
-      const accessToken = await getAccessToken() ?? undefined;
-      const fetched = [...(await listRuns(undefined, accessToken))].sort(
+      const accessToken = (await getAccessToken()) ?? undefined;
+      const [runResults, teams] = await Promise.all([
+        listRuns(undefined, accessToken),
+        listControlPlaneTeams(accessToken),
+      ]);
+      const fetched = [...runResults].sort(
         (a, b) => new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime()
       );
+      const fetchedTeamDetails = await Promise.all(
+        [...teams]
+          .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+          .slice(0, 4)
+          .map(async (team) => getControlPlaneTeam(team.id, accessToken))
+      );
       setRuns(fetched);
+      setTeamDetails(fetchedTeamDetails);
       setLastRefreshed(new Date());
       // Auto-expand any newly running runs
       setExpandedIds((prev) => {
@@ -53,13 +71,13 @@ export default function RunMonitor() {
     } finally {
       if (!silent) setLoading(false);
     }
-  }
+  }, [getAccessToken]);
 
   useEffect(() => {
     void fetchRuns();
     const id = setInterval(() => { void fetchRuns(true); }, POLL_INTERVAL_MS);
     return () => clearInterval(id);
-  }, []);
+  }, [fetchRuns]);
 
   function toggleExpand(id: string) {
     setExpandedIds((prev) => {
@@ -118,6 +136,7 @@ export default function RunMonitor() {
           </span>
           <button
             onClick={handleRefresh}
+            aria-label="Refresh run monitor"
             className="flex items-center gap-2 px-3.5 py-2 text-sm font-medium border border-gray-300 rounded-lg hover:bg-gray-50 transition text-gray-700"
           >
             <RefreshCw size={14} />
@@ -127,6 +146,30 @@ export default function RunMonitor() {
       </div>
 
       {/* Active runs */}
+      <section className="mb-8">
+        <h2 className="text-sm font-semibold text-gray-500 dark:text-surface-400 uppercase tracking-wide mb-4">
+          Agent Teams ({teamDetails.length})
+        </h2>
+
+        {teamDetails.length === 0 ? (
+          <div className="bg-white dark:bg-surface-900 rounded-xl border border-gray-200 dark:border-surface-800 p-12 text-center">
+            <div className="w-12 h-12 rounded-full bg-brand-50 flex items-center justify-center mx-auto mb-3">
+              <Bot size={22} className="text-brand-500" />
+            </div>
+            <p className="text-gray-600 font-medium">No deployed teams yet</p>
+            <p className="text-gray-400 text-sm mt-1">
+              Deploy a workflow from the builder to start monitoring agent rosters here.
+            </p>
+          </div>
+        ) : (
+          <div className="grid gap-4 xl:grid-cols-2">
+            {teamDetails.map((detail) => (
+              <TeamMonitorCard key={detail.team.id} detail={detail} />
+            ))}
+          </div>
+        )}
+      </section>
+
       <section className="mb-8">
         <h2 className="text-sm font-semibold text-gray-500 dark:text-surface-400 uppercase tracking-wide mb-4">
           Active Runs ({activeRuns.length})
@@ -187,6 +230,134 @@ export default function RunMonitor() {
       </section>
     </div>
   );
+}
+
+function TeamMonitorCard({ detail }: { detail: ControlPlaneTeamDetail }) {
+  const openTasks = detail.tasks.filter((task) => task.status !== "done").length;
+  const latestHeartbeat = detail.heartbeats
+    .slice()
+    .sort((left, right) => new Date(right.startedAt).getTime() - new Date(left.startedAt).getTime())[0];
+
+  return (
+    <div className="overflow-hidden rounded-[24px] border border-gray-200 bg-white shadow-sm dark:border-surface-800 dark:bg-surface-900">
+      <div className="border-b border-gray-100 px-5 py-4 dark:border-surface-800">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <div className="flex items-center gap-2">
+              <h3 className="text-base font-semibold text-gray-900 dark:text-gray-100">{detail.team.name}</h3>
+              <span className="rounded-full bg-teal-50 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide text-teal-700 dark:bg-teal-500/10 dark:text-teal-300">
+                {detail.team.deploymentMode.replace("_", " ")}
+              </span>
+            </div>
+            <p className="mt-1 text-sm text-gray-500 dark:text-surface-400">
+              {detail.team.workflowTemplateName ?? "Custom workflow deployment"}
+            </p>
+          </div>
+          <Link
+            to={`/agents/team/${detail.team.id}`}
+            className="text-sm font-medium text-brand-600 transition hover:text-brand-700 dark:text-brand-300 dark:hover:text-brand-200"
+          >
+            Open team
+          </Link>
+        </div>
+      </div>
+
+      <div className="grid gap-4 px-5 py-4 md:grid-cols-3">
+        <MonitorMetric label="Agents" value={String(detail.agents.length)} />
+        <MonitorMetric label="Open tasks" value={String(openTasks)} />
+        <MonitorMetric
+          label="Latest heartbeat"
+          value={latestHeartbeat ? latestHeartbeat.status : "none"}
+          tone={latestHeartbeat ? heartbeatTone(latestHeartbeat.status) : "slate"}
+        />
+      </div>
+
+      <div className="border-t border-gray-100 px-5 py-4 dark:border-surface-800">
+        <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-gray-400 dark:text-surface-500">
+          Agent roster
+        </p>
+        <div className="space-y-2">
+          {detail.agents.slice(0, 4).map((agent) => {
+            const heartbeat = detail.heartbeats
+              .filter((entry) => entry.agentId === agent.id)
+              .sort((left, right) => new Date(right.startedAt).getTime() - new Date(left.startedAt).getTime())[0];
+
+            return (
+              <Link
+                key={agent.id}
+                to={`/agents/team/${detail.team.id}?agent=${encodeURIComponent(agent.id)}`}
+                className="flex items-center justify-between gap-3 rounded-2xl border border-gray-200 bg-gray-50 px-4 py-3 transition hover:border-brand-300 hover:bg-brand-50/40 dark:border-surface-800 dark:bg-surface-950/40 dark:hover:border-brand-500/40 dark:hover:bg-brand-500/5"
+              >
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2">
+                    <Bot size={14} className="text-brand-500" />
+                    <span className="truncate text-sm font-medium text-gray-900 dark:text-gray-100">
+                      {agent.name}
+                    </span>
+                  </div>
+                  <p className="mt-1 text-xs uppercase tracking-wide text-gray-400 dark:text-surface-500">
+                    {agent.roleKey}
+                  </p>
+                </div>
+                <span
+                  className={clsx(
+                    "rounded-full px-2.5 py-1 text-[11px] font-semibold capitalize",
+                    heartbeatToneClasses(heartbeatTone(heartbeat?.status))
+                  )}
+                >
+                  {heartbeat?.status ?? agent.status}
+                </span>
+              </Link>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function MonitorMetric({
+  label,
+  value,
+  tone = "slate",
+}: {
+  label: string;
+  value: string;
+  tone?: "teal" | "amber" | "rose" | "slate";
+}) {
+  return (
+    <div className="rounded-2xl border border-gray-200 bg-gray-50 px-4 py-3 dark:border-surface-800 dark:bg-surface-950/40">
+      <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-400 dark:text-surface-500">
+        {label}
+      </p>
+      <p className={clsx("mt-2 text-sm font-semibold capitalize", heartbeatTextTone(tone))}>{value}</p>
+    </div>
+  );
+}
+
+function heartbeatTone(status?: ControlPlaneTeamDetail["heartbeats"][number]["status"] | string) {
+  if (status === "completed" || status === "active") return "teal";
+  if (status === "running" || status === "queued" || status === "in_progress") return "amber";
+  if (status === "blocked" || status === "terminated" || status === "failed") return "rose";
+  return "slate";
+}
+
+function heartbeatToneClasses(tone: "teal" | "amber" | "rose" | "slate") {
+  return {
+    teal: "bg-teal-50 text-teal-700 dark:bg-teal-500/10 dark:text-teal-300",
+    amber: "bg-amber-50 text-amber-700 dark:bg-amber-500/10 dark:text-amber-300",
+    rose: "bg-rose-50 text-rose-700 dark:bg-rose-500/10 dark:text-rose-300",
+    slate: "bg-slate-100 text-slate-600 dark:bg-surface-800 dark:text-surface-300",
+  }[tone];
+}
+
+function heartbeatTextTone(tone: "teal" | "amber" | "rose" | "slate") {
+  return {
+    teal: "text-teal-700 dark:text-teal-300",
+    amber: "text-amber-700 dark:text-amber-300",
+    rose: "text-rose-700 dark:text-rose-300",
+    slate: "text-gray-900 dark:text-gray-100",
+  }[tone];
 }
 
 function RunCard({

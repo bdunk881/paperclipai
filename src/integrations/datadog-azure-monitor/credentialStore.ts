@@ -4,7 +4,7 @@ import {
   randomBytes,
   scryptSync,
 } from "crypto";
-import { v4 as uuidv4 } from "uuid";
+import { randomUUID } from "node:crypto";
 import {
   MonitoringCredential,
   MonitoringCredentialPublic,
@@ -92,7 +92,7 @@ export const monitoringCredentialStore = {
     metadata?: Record<string, string>;
   }): MonitoringCredentialPublic {
     const credential: MonitoringCredential = {
-      id: uuidv4(),
+      id: randomUUID(),
       userId: params.userId,
       provider: params.provider,
       authMethod: "oauth2_pkce",
@@ -122,7 +122,7 @@ export const monitoringCredentialStore = {
     metadata?: Record<string, string>;
   }): MonitoringCredentialPublic {
     const credential: MonitoringCredential = {
-      id: uuidv4(),
+      id: randomUUID(),
       userId: params.userId,
       provider: params.provider,
       authMethod: "api_key",

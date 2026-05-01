@@ -9,18 +9,23 @@ const config: Config = {
     extend: {
       colors: {
         brand: {
-          teal: 'var(--color-primary)',
-          indigo: 'var(--color-accent)',
-          orange: 'var(--color-trigger)',
+          teal: "#00D4B8",
+          indigo: "#4A3AFF",
+          coral: "#FF5F57",
+          yellow: "#FFD93D",
+          navy: "#0F1333",
+          slate: "#2D3748",
+          cloud: "#F7FAFC",
         },
-        obsidian: {
-          dark: 'var(--color-bg)',
-          slate: 'var(--color-bg-subtle)',
-        }
       },
       fontFamily: {
-        sans: ["var(--font-heading)", "Inter", "ui-sans-serif", "system-ui"],
-        mono: ["var(--font-mono)", "JetBrains Mono", "ui-monospace"],
+        sans: ["Inter", "ui-sans-serif", "system-ui"],
+        display: ["Poppins", "ui-sans-serif", "system-ui"],
+        mono: ["JetBrains Mono", "ui-monospace", "monospace"],
+      },
+      backgroundImage: {
+        "hero-gradient":
+          "linear-gradient(135deg, #4A3AFF 0%, #00D4B8 50%, #FFD93D 100%)",
       },
     },
   },

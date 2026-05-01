@@ -17,8 +17,8 @@ const DEFAULTS: Required<HeroProps> = {
   headline: "Hire AI. Deploy Fast. Earn More.",
   subheadline:
     "AutoFlow lets you spin up fully autonomous AI businesses in minutes — complete with agents, workflows, and revenue infrastructure.",
-  primaryCta: "Start free",
-  primaryCtaUrl: "#pricing",
+  primaryCta: "Apply for beta",
+  primaryCtaUrl: "#beta-signup",
   secondaryCta: "Book a demo",
   socialProofLine: "Trusted by 500+ teams. No credit card required.",
 };

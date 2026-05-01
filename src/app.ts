@@ -9,14 +9,36 @@ import rateLimit from "express-rate-limit";
 import multer from "multer";
 import cors from "cors";
 import helmet from "helmet";
-import { WORKFLOW_TEMPLATES, getTemplate, getTemplatesByCategory } from "./templates";
+import passport from "passport";
+import {
+  getTemplate,
+  getTemplatesByCategory,
+  listTemplates,
+} from "./templates";
 import { WorkflowTemplate, WorkflowStep } from "./types/workflow";
 import { workflowEngine } from "./engine/WorkflowEngine";
+import { startApprovalResumeCoordinator } from "./engine/approvalResumeCoordinator";
+import { startApprovalNotificationCoordinator } from "./engine/approvalNotificationCoordinator";
+import { startTicketNotificationCoordinator } from "./engine/ticketSlaCoordinator";
 import { runStore } from "./engine/runStore";
 import { approvalStore } from "./engine/approvalStore";
+import { approvalNotificationStore } from "./engine/approvalNotificationStore";
+import approvalPolicyRoutes from "./approvals/policyRoutes";
 import llmConfigRoutes from "./llmConfig/llmConfigRoutes";
 import mcpRoutes from "./mcp/mcpRoutes";
 import memoryRoutes from "./memory/memoryRoutes";
+import agentMemoryRoutes from "./agents/agentMemoryRoutes";
+import agentRoutes from "./agents/agentRoutes";
+import knowledgeRoutes from "./knowledge/routes";
+import controlPlaneRoutes from "./controlPlane/controlPlaneRoutes";
+import { controlPlaneStore } from "./controlPlane/controlPlaneStore";
+import companyRoutes from "./companies/companyRoutes";
+import hitlRoutes from "./hitl/hitlRoutes";
+import { buildObservabilityCsv, buildObservabilityResponse } from "./observability/service";
+import reportRoutes from "./reporting/reportRoutes";
+import ticketRoutes from "./tickets/ticketRoutes";
+import ticketSyncRoutes from "./ticketSync/routes";
+import ticketSyncWebhookRoutes from "./ticketSync/webhookRoutes";
 import { llmConfigStore } from "./llmConfig/llmConfigStore";
 import { getProvider } from "./engine/llmProviders";
 import { parseFile } from "./engine/fileParser";
@@ -25,13 +47,29 @@ import {
   getClassificationDecisionLogCapacity,
   listClassificationDecisions,
 } from "./engine/classificationLog";
-import { requireAuth, AuthenticatedRequest } from "./auth/authMiddleware";
+import { requireAuth, requireAuthOrQaBypass, AuthenticatedRequest } from "./auth/authMiddleware";
+import nativeAuthProxyRoutes from "./auth/nativeAuthProxyRoutes";
+import socialAuthRoutes from "./auth/socialAuthRoutes";
 import stripeWebhookRoutes from "./billing/stripeWebhook";
+import apolloWebhookRoutes from "./integrations/apollo-attio/webhookRoute";
 import checkoutRoutes from "./billing/checkoutRoutes";
+import { buildGoalIntakePrompt, goalIntakeRequestSchema, parseGoalIntakeResponse } from "./goals/goalIntake";
+import {
+  buildTeamAssemblyPrompt,
+  parseTeamAssemblyResponse,
+  teamAssemblyRequestSchema,
+  teamAssemblyResultSchema,
+} from "./goals/teamAssembly";
+import { CompanyProvisioningAgentInput } from "./controlPlane/types";
+import apolloRoutes from "./integrations/apollo/routes";
+import hubSpotRoutes, { hubSpotWebhookRouter } from "./integrations/hubspot/routes";
+import sentryRoutes, { sentryWebhookRouter } from "./integrations/sentry/routes";
 import subscriptionRoutes from "./billing/subscriptionRoutes";
 import slackRoutes, { slackWebhookRouter } from "./integrations/slack/routes";
+import stripeRoutes, { stripeConnectorWebhookRouter } from "./integrations/stripe/routes";
 import shopifyRoutes, { shopifyWebhookRouter } from "./integrations/shopify/routes";
 import docuSignRoutes, { docuSignWebhookRouter } from "./integrations/docusign/routes";
+import gmailRoutes, { gmailWebhookRouter } from "./integrations/gmail/routes";
 import linearRoutes, { linearWebhookRouter } from "./integrations/linear/routes";
 import teamsRoutes, { teamsWebhookRouter } from "./integrations/teams/routes";
 import posthogRoutes, { posthogWebhookRouter } from "./integrations/posthog/routes";
@@ -41,21 +79,44 @@ import datadogAzureMonitorRoutes, {
 } from "./integrations/datadog-azure-monitor/routes";
 import agentCatalogRoutes from "./integrations/agent-catalog/routes";
 import oauthBridgeRoutes from "./integrations/oauthBridgeRoutes";
+import integrationRoutes, {
+  catalogRouter as integrationCatalogRoutes,
+  oauthCallbackRouter as integrationOAuthCallbackRoutes,
+  webhookRelayRouter,
+} from "./integrations/integrationRoutes";
 import googleWorkspaceConnectorRoutes from "./connectors/google-workspace/routes";
 import googleWorkspaceWebhookRoutes from "./connectors/google-workspace/webhookRoutes";
+import notificationRoutes from "./notifications/routes";
+import {
+  createPortableWorkflowBundle,
+  getPortableWorkflowSchemaDescriptor,
+  parsePortableWorkflowBundle,
+} from "./workflows/portableSchema";
+
+import { saveImportedTemplate } from "./templates/importedTemplateStore";
+import { getConnectorHealthSummary, listConnectorHealth } from "./connectors/health";
 
 const app = express();
 
-function getAllowedOrigins(): string[] {
-  const raw = process.env.ALLOWED_ORIGINS;
-  if (!raw) {
+function parseAllowedOrigins(value: string | undefined): string[] {
+  if (!value) {
     return [];
   }
 
-  return raw
+  return value
     .split(",")
-    .map((origin) => origin.trim())
+    .map((origin) => origin.trim().replace(/\/+$/, ""))
     .filter((origin) => origin.length > 0 && origin !== "*");
+}
+
+function getAllowedOrigins(): string[] {
+  return Array.from(
+    new Set([
+      ...parseAllowedOrigins(process.env.ALLOWED_ORIGINS),
+      ...parseAllowedOrigins(process.env.AUTH_SOCIAL_ALLOWED_REDIRECT_ORIGINS),
+      ...parseAllowedOrigins(process.env.SOCIAL_AUTH_DASHBOARD_URL),
+    ])
+  );
 }
 
 const allowedOrigins = new Set(getAllowedOrigins());
@@ -79,13 +140,81 @@ function getAuthenticatedUserId(req: express.Request): string | null {
   return typeof userId === "string" && userId.trim() ? userId.trim() : null;
 }
 
+function requirePaperclipRunId(
+  req: express.Request,
+  res: express.Response,
+  next: express.NextFunction
+): void {
+  const runId = req.header("X-Paperclip-Run-Id");
+  if (!runId || !runId.trim()) {
+    res.status(400).json({ error: "X-Paperclip-Run-Id header is required for mutating goal requests" });
+    return;
+  }
+  next();
+}
+
+function resolveProvisioningModel(modelTier: "lite" | "standard" | "power"): string {
+  switch (modelTier) {
+    case "lite":
+      return "gpt-5.4-mini";
+    case "standard":
+      return "gpt-5.4";
+    case "power":
+      return "gpt-5.2";
+  }
+}
+
+function splitBudgetAcrossHeadcount(totalBudgetMonthlyUsd: number, headcount: number): number[] {
+  const totalCents = Math.round(totalBudgetMonthlyUsd * 100);
+  const baseCents = Math.floor(totalCents / headcount);
+  const remainder = totalCents - baseCents * headcount;
+  return Array.from({ length: headcount }, (_, index) => (baseCents + (index < remainder ? 1 : 0)) / 100);
+}
+
+function buildProvisioningAgentsFromApprovedPlan(
+  approvedPlan: ReturnType<typeof teamAssemblyResultSchema.parse>
+): CompanyProvisioningAgentInput[] {
+  return approvedPlan.provisioningPlan.agents.flatMap((agentRecommendation) => {
+    if (agentRecommendation.budgetMonthlyUsd === null) {
+      throw new Error(`missing_agent_budget:${agentRecommendation.roleKey}`);
+    }
+
+    const perAgentBudgets = splitBudgetAcrossHeadcount(
+      agentRecommendation.budgetMonthlyUsd,
+      agentRecommendation.headcount
+    );
+
+    return perAgentBudgets.map((budgetMonthlyUsd, index) => ({
+      roleTemplateId: agentRecommendation.roleKey,
+      name:
+        agentRecommendation.headcount > 1
+          ? `${agentRecommendation.title} ${index + 1}`
+          : agentRecommendation.title,
+      budgetMonthlyUsd,
+      model: resolveProvisioningModel(agentRecommendation.modelTier),
+      instructions: agentRecommendation.provisioningInstructions,
+    }));
+  });
+}
+
 function getHeaderUserId(req: express.Request): string | null {
   const userId = req.headers["x-user-id"];
   return typeof userId === "string" && userId.trim() ? userId.trim() : null;
 }
 
+function getBearerTokenSubject(req: express.Request): string | null {
+  const authHeader = req.headers.authorization;
+  if (!authHeader?.startsWith("Bearer ")) {
+    return null;
+  }
+
+  const token = authHeader.slice(7).trim();
+  return token || null;
+}
+
 function getRateLimitKey(req: express.Request): string {
-  const userId = getAuthenticatedUserId(req) ?? getHeaderUserId(req);
+  const userId =
+    getAuthenticatedUserId(req) ?? getHeaderUserId(req) ?? getBearerTokenSubject(req);
   if (userId) {
     return `user:${userId}`;
   }
@@ -100,6 +229,16 @@ function createRateLimitHandler(windowMs: number) {
     res.setHeader("Retry-After", String(retryAfterSeconds));
     res.status(429).json({ error: "Too Many Requests" });
   };
+}
+
+function parsePositiveIntegerEnv(name: string, fallback: number): number {
+  const raw = process.env[name];
+  if (!raw) {
+    return fallback;
+  }
+
+  const parsed = Number.parseInt(raw, 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
 }
 
 const generalApiRateLimiter = rateLimit({
@@ -129,6 +268,20 @@ const llmEndpointRateLimiter = rateLimit({
   handler: createRateLimitHandler(60 * 60 * 1000),
 });
 
+const nativeAuthProxyRateLimitWindowMs = parsePositiveIntegerEnv(
+  "AUTH_NATIVE_AUTH_PROXY_RATE_LIMIT_WINDOW_MS",
+  60 * 1000
+);
+
+const nativeAuthProxyRateLimiter = rateLimit({
+  windowMs: nativeAuthProxyRateLimitWindowMs,
+  limit: parsePositiveIntegerEnv("AUTH_NATIVE_AUTH_PROXY_RATE_LIMIT_MAX", 20),
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => `ip:${req.ip || req.socket.remoteAddress || "unknown"}`,
+  handler: createRateLimitHandler(nativeAuthProxyRateLimitWindowMs),
+});
+
 const billingMutationRateLimiter = rateLimit({
   windowMs: 24 * 60 * 60 * 1000,
   limit: 5,
@@ -140,6 +293,17 @@ const billingMutationRateLimiter = rateLimit({
   handler: createRateLimitHandler(24 * 60 * 60 * 1000),
 });
 
+const knowledgeMutationRateLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  limit: 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: getRateLimitKey,
+  skip: (req) => !["POST", "PUT", "PATCH", "DELETE"].includes(req.method),
+  skipFailedRequests: true,
+  handler: createRateLimitHandler(60 * 60 * 1000),
+});
+
 app.use("/api", generalApiRateLimiter);
 app.use("/api/webhooks", webhookRateLimiter);
 // ---------------------------------------------------------------------------
@@ -149,23 +313,37 @@ app.use("/api/webhooks", webhookRateLimiter);
 app.use("/api/webhooks/stripe", express.raw({ type: "application/json" }), stripeWebhookRoutes);
 // Slack webhook — mounted before express.json() for signature verification
 app.use("/api/webhooks/slack", slackWebhookRouter);
+// Stripe Connect webhook — mounted before express.json() for signature verification
+app.use("/api/webhooks/stripe-connect", stripeConnectorWebhookRouter);
 // Shopify webhook — mounted before express.json() for signature verification
 app.use("/api/webhooks/shopify", shopifyWebhookRouter);
 // DocuSign webhook — mounted before express.json() for signature verification
 app.use("/api/webhooks/docusign", docuSignWebhookRouter);
+// Gmail Pub/Sub webhook — mounted before express.json() to preserve provider payload
+app.use("/api/webhooks/gmail", gmailWebhookRouter);
 // Linear webhook — mounted before express.json() for signature verification
 app.use("/api/webhooks/linear", linearWebhookRouter);
+// Sentry webhook — mounted before express.json() for signature verification
+app.use("/api/webhooks/sentry", sentryWebhookRouter);
+// Gmail webhook — mounted before express.json() for Pub/Sub verification
+app.use("/api/webhooks/gmail", gmailWebhookRouter);
 // Microsoft Teams webhook — mounted before express.json() for signature verification
 app.use("/api/webhooks/teams", teamsWebhookRouter);
+// HubSpot webhook — mounted before express.json() for signature verification
+app.use("/api/webhooks/hubspot", hubSpotWebhookRouter);
+// Stripe connector webhook — mounted before express.json() for signature verification
+app.use("/api/webhooks/stripe/connect", stripeConnectorWebhookRouter);
 // PostHog webhook — mounted before express.json() for signature verification
 app.use("/api/webhooks/posthog", posthogWebhookRouter);
 // Intercom webhook — mounted before express.json() for signature verification
 app.use("/api/webhooks/intercom", intercomWebhookRouter);
 // Datadog + Azure Monitor webhook — mounted before express.json() for signature verification
 app.use("/api/webhooks/datadog-azure-monitor", datadogAzureMonitorWebhookRouter);
+app.use("/api/webhooks/ticket-sync", ticketSyncWebhookRoutes);
 app.use("/api/connectors/google-workspace", googleWorkspaceWebhookRoutes);
 
 app.use(express.json());
+app.use(passport.initialize());
 
 // Multer — in-memory storage for file uploads (max 50 MB)
 const upload = multer({
@@ -174,11 +352,14 @@ const upload = multer({
 });
 
 // ---------------------------------------------------------------------------
+// Apollo webhook — receives Apollo email reply events → syncs to Attio
+// ---------------------------------------------------------------------------
+app.use("/api/webhooks/apollo", apolloWebhookRoutes);
+
+// ---------------------------------------------------------------------------
 // Billing API — Stripe checkout sessions + subscription lifecycle
 // ---------------------------------------------------------------------------
-// Checkout is intentionally public so unauthenticated users can start paid signup from pricing pages.
-// Downstream webhook processing still reconciles subscription ownership via metadata/email.
-app.use("/api/billing/checkout", billingMutationRateLimiter, checkoutRoutes);
+app.use("/api/billing/checkout", requireAuth, billingMutationRateLimiter, checkoutRoutes);
 app.use("/api/billing/subscription", requireAuth, billingMutationRateLimiter, subscriptionRoutes);
 
 // ---------------------------------------------------------------------------
@@ -195,21 +376,56 @@ app.use("/api/mcp/servers", requireAuth, mcpRoutes);
 // Memory API — persistent context memory store for agents/workflows
 // ---------------------------------------------------------------------------
 app.use("/api/memory", requireAuth, memoryRoutes);
+app.use("/api/agents/:agentId/memory", requireAuth, agentMemoryRoutes);
+app.use("/api/agents", requireAuth, agentRoutes);
+
+// Routines stub — returns empty list until a full routines store is implemented.
+app.get("/api/routines", requireAuth, (_req, res) => {
+  res.json({ routines: [] });
+});
+app.use("/api/knowledge", requireAuth, knowledgeMutationRateLimiter, knowledgeRoutes);
+app.use("/api/integrations/catalog", integrationCatalogRoutes);
+app.use("/api/integrations/oauth2", integrationOAuthCallbackRoutes);
+app.use("/api/integrations", requireAuth, integrationRoutes);
+app.use("/api/webhooks/relay", webhookRelayRouter);
 app.use("/api/integrations", oauthBridgeRoutes);
+app.use("/api/integrations/gmail", gmailRoutes);
 app.use("/api/integrations/slack", slackRoutes);
+app.use("/api/integrations/stripe", stripeRoutes);
 app.use("/api/integrations/shopify", shopifyRoutes);
 app.use("/api/integrations/docusign", docuSignRoutes);
 app.use("/api/integrations/linear", linearRoutes);
+app.use("/api/integrations/sentry", sentryRoutes);
+app.use("/api/integrations/hubspot", hubSpotRoutes);
 app.use("/api/integrations/teams", teamsRoutes);
+app.use("/api/integrations/gmail", gmailRoutes);
+app.use("/api/integrations/stripe", stripeRoutes);
+app.use("/api/integrations/apollo", apolloRoutes);
 app.use("/api/integrations/posthog", posthogRoutes);
 app.use("/api/integrations/intercom", intercomRoutes);
 app.use("/api/integrations/datadog-azure-monitor", datadogAzureMonitorRoutes);
 app.use("/api/integrations/agent-catalog", agentCatalogRoutes);
 app.use("/api/connectors/google-workspace", googleWorkspaceConnectorRoutes);
+app.use("/api/companies", requireAuth, companyRoutes);
+app.use("/api/control-plane", requireAuth, controlPlaneRoutes);
+app.use("/api/hitl", requireAuth, hitlRoutes);
+app.use("/api/reporting", requireAuth, reportRoutes);
+app.use("/api/tickets", requireAuth, ticketRoutes);
+app.use("/api/ticket-sync", requireAuth, ticketSyncRoutes);
+app.use("/api/notifications", requireAuth, notificationRoutes);
+app.use("/api/approval-policies", requireAuth, approvalPolicyRoutes);
 
 // ---------------------------------------------------------------------------
 // Auth API — identity endpoint for authenticated callers
 // ---------------------------------------------------------------------------
+
+app.use(
+  "/api/auth/native",
+  express.urlencoded({ extended: false }),
+  nativeAuthProxyRateLimiter,
+  nativeAuthProxyRoutes
+);
+app.use("/api/auth/social", nativeAuthProxyRateLimiter, socialAuthRoutes);
 
 /** Returns the authenticated user's claims extracted from the Entra ID token. */
 app.get("/api/me", requireAuth, (req: AuthenticatedRequest, res) => {
@@ -228,7 +444,7 @@ app.get("/api/templates", (req, res) => {
   if (category && typeof category === "string") {
     templates = getTemplatesByCategory(category as WorkflowTemplate["category"]);
   } else {
-    templates = WORKFLOW_TEMPLATES;
+    templates = listTemplates();
   }
 
   res.json({
@@ -245,6 +461,11 @@ app.get("/api/templates", (req, res) => {
   });
 });
 
+/** Returns the current portable workflow schema contract */
+app.get("/api/workflows/schema", (_req, res) => {
+  res.json(getPortableWorkflowSchemaDescriptor());
+});
+
 /** Get a single template with full definition */
 app.get("/api/templates/:id", (req, res) => {
   try {
@@ -253,6 +474,43 @@ app.get("/api/templates/:id", (req, res) => {
   } catch {
     res.status(404).json({ error: `Template not found: ${req.params.id}` });
   }
+});
+
+/** Export a template in the portable AutoFlow workflow format */
+app.get("/api/templates/:id/export", (req, res) => {
+  try {
+    const template = getTemplate(req.params.id);
+    res.json(createPortableWorkflowBundle(template));
+  } catch {
+    res.status(404).json({ error: `Template not found: ${req.params.id}` });
+  }
+});
+
+/** Import a portable workflow template into the in-memory registry */
+app.post("/api/templates/import", requireAuth, async (req, res) => {
+  let bundle;
+  try {
+    bundle = parsePortableWorkflowBundle(req.body);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Invalid portable workflow payload";
+    res.status(400).json({ error: message });
+    return;
+  }
+
+  try {
+    getTemplate(bundle.template.id);
+    res.status(409).json({ error: `Template already exists: ${bundle.template.id}` });
+    return;
+  } catch {
+    // Template id is available; continue with import.
+  }
+
+  await saveImportedTemplate(bundle.template);
+  res.status(201).json({
+    imported: true,
+    template: bundle.template,
+    schemaVersion: bundle.schemaVersion,
+  });
 });
 
 /** Get sample data for a template (for dashboard preview) */
@@ -277,7 +535,7 @@ app.get("/api/templates/:id/sample", (req, res) => {
  * Body: { templateId, input, config? }
  * Returns the new run (status=pending) immediately; execution is async.
  */
-app.post("/api/runs", requireAuth, llmEndpointRateLimiter, (req: AuthenticatedRequest, res) => {
+app.post("/api/runs", requireAuthOrQaBypass, llmEndpointRateLimiter, async (req: AuthenticatedRequest, res) => {
   const { templateId, input, config } = req.body as {
     templateId?: string;
     input?: Record<string, unknown>;
@@ -298,25 +556,55 @@ app.post("/api/runs", requireAuth, llmEndpointRateLimiter, (req: AuthenticatedRe
   }
 
   const userId = req.auth?.sub;
-  const run = workflowEngine.startRun(template, input ?? {}, config, userId);
+  const run = await workflowEngine.startRun(template, input ?? {}, config, userId);
   res.status(202).json(run);
 });
 
 /** List all runs, optionally filtered by templateId */
-app.get("/api/runs", requireAuth, (req, res) => {
+app.get("/api/runs", requireAuthOrQaBypass, async (req: AuthenticatedRequest, res) => {
   const { templateId } = req.query;
-  const runs = runStore.list(typeof templateId === "string" ? templateId : undefined);
+  const runs = await runStore.list(
+    typeof templateId === "string" ? templateId : undefined,
+    req.auth?.sub
+  );
   res.json({ runs, total: runs.length });
 });
 
 /** Get a single run by ID */
-app.get("/api/runs/:id", requireAuth, (req, res) => {
-  const run = runStore.get(req.params.id);
-  if (!run) {
+app.get("/api/runs/:id", requireAuthOrQaBypass, async (req: AuthenticatedRequest, res) => {
+  const run = await runStore.get(req.params.id);
+  const userId = req.auth?.sub;
+  if (!run || (run.userId !== undefined && run.userId !== userId)) {
     res.status(404).json({ error: `Run not found: ${req.params.id}` });
     return;
   }
   res.json(run);
+});
+
+app.get("/api/observability", requireAuth, async (req: AuthenticatedRequest, res) => {
+  const userId = req.auth?.sub;
+  if (!userId) {
+    res.status(401).json({ error: "Authenticated user required" });
+    return;
+  }
+
+  const runs = await runStore.list(undefined, userId);
+  const response = buildObservabilityResponse(userId, runs, {
+    agentId: typeof req.query.agentId === "string" ? req.query.agentId : undefined,
+    taskId: typeof req.query.taskId === "string" ? req.query.taskId : undefined,
+    search: typeof req.query.search === "string" ? req.query.search : undefined,
+    from: typeof req.query.from === "string" ? req.query.from : undefined,
+    to: typeof req.query.to === "string" ? req.query.to : undefined,
+  });
+
+  if (req.query.format === "csv") {
+    res.setHeader("Content-Type", "text/csv; charset=utf-8");
+    res.setHeader("Content-Disposition", 'attachment; filename="observability-export.csv"');
+    res.send(buildObservabilityCsv(response.records));
+    return;
+  }
+
+  res.json(response);
 });
 
 // ---------------------------------------------------------------------------
@@ -339,13 +627,13 @@ app.get("/api/analytics/routing-decisions", requireAuth, (_req, res) => {
 /**
  * POST /api/runs/file
  * Multipart body: { templateId: string, file: <binary> }
- * Uses the authenticated JWT subject as the run user.
+ * Uses the authenticated user or staging QA bypass user ID as the run owner.
  *
  * Parses the uploaded file (PDF/image/audio/text) into text content, then
  * starts a workflow run with { content, mimeType, filename } injected as input.
  * Returns the created run (status=pending).
  */
-app.post("/api/runs/file", requireAuth, upload.single("file"), async (req: AuthenticatedRequest, res) => {
+app.post("/api/runs/file", requireAuthOrQaBypass, upload.single("file"), async (req: AuthenticatedRequest, res) => {
   const { templateId } = req.body as { templateId?: string };
 
   if (!templateId) {
@@ -370,7 +658,7 @@ app.post("/api/runs/file", requireAuth, upload.single("file"), async (req: Authe
   const userId = req.auth?.sub;
   let openaiApiKey: string | undefined;
   if (userId) {
-    const defaultConfig = llmConfigStore.getDecryptedDefault(userId);
+    const defaultConfig = await llmConfigStore.getDecryptedDefault(userId);
     if (defaultConfig?.config.provider === "openai") {
       openaiApiKey = defaultConfig.apiKey;
     }
@@ -396,7 +684,7 @@ app.post("/api/runs/file", requireAuth, upload.single("file"), async (req: Authe
     filename: parsed.filename,
   };
 
-  const run = workflowEngine.startRun(template, input, undefined, userId);
+  const run = await workflowEngine.startRun(template, input, undefined, userId);
   res.status(202).json(run);
 });
 
@@ -450,8 +738,8 @@ app.post("/api/workflows/generate", requireAuth, llmEndpointRateLimiter, async (
 
   const resolved =
     typeof llmConfigId === "string" && llmConfigId
-      ? llmConfigStore.getDecrypted(llmConfigId, userId)
-      : llmConfigStore.getDecryptedDefault(userId);
+      ? await llmConfigStore.getDecrypted(llmConfigId, userId)
+      : await llmConfigStore.getDecryptedDefault(userId);
 
   if (!resolved) {
     res.status(422).json({
@@ -499,6 +787,282 @@ app.post("/api/workflows/generate", requireAuth, llmEndpointRateLimiter, async (
 });
 
 // ---------------------------------------------------------------------------
+// POST /api/goals/intake
+// ---------------------------------------------------------------------------
+
+/**
+ * POST /api/goals/intake
+ * Body: {
+ *   goal: string,
+ *   answers?: Record<string, string>,
+ *   sourceDocument?: { sourceType: "notion" | "google-doc" | "markdown", content: string },
+ *   readinessThreshold?: number
+ * }
+ * Returns a structured clarification state or a PRD-ready goal document.
+ */
+app.post("/api/goals/intake", requireAuth, llmEndpointRateLimiter, async (req: AuthenticatedRequest, res) => {
+  const parsedRequest = goalIntakeRequestSchema.safeParse(req.body);
+  if (!parsedRequest.success) {
+    const issue = parsedRequest.error.issues[0];
+    const path = issue?.path?.[0];
+    const message =
+      issue?.message === "Required" && typeof path === "string"
+        ? `${path} is required`
+        : (issue?.message ?? "Invalid request body");
+    res.status(400).json({ error: message });
+    return;
+  }
+
+  const userId = req.auth?.sub;
+  if (!userId) {
+    res.status(401).json({ error: "Authenticated user is required to resolve LLM configuration" });
+    return;
+  }
+
+  const resolved = await llmConfigStore.getDecryptedDefault(userId);
+  if (!resolved) {
+    res.status(422).json({
+      error: "No LLM provider configured. Go to Settings > LLM Providers to connect one.",
+    });
+    return;
+  }
+
+  const provider = getProvider({
+    provider: resolved.config.provider,
+    model: resolveModelForTier(resolved.config.provider, "standard"),
+    apiKey: resolved.apiKey,
+  });
+
+  let rawText: string;
+  try {
+    rawText = (await provider(buildGoalIntakePrompt(parsedRequest.data))).text;
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    res.status(502).json({ error: `LLM call failed: ${msg}` });
+    return;
+  }
+
+  try {
+    const intakeResult = parseGoalIntakeResponse(rawText);
+    res.json(intakeResult);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    res.status(422).json({ error: `LLM returned invalid JSON: ${msg}`, raw: rawText });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// POST /api/goals/team-assembly
+// ---------------------------------------------------------------------------
+
+app.post("/api/goals/team-assembly", requireAuth, llmEndpointRateLimiter, async (req: AuthenticatedRequest, res) => {
+  const parsedRequest = teamAssemblyRequestSchema.safeParse(req.body);
+  if (!parsedRequest.success) {
+    const issue = parsedRequest.error.issues[0];
+    const path = issue?.path?.[0];
+    const message =
+      issue?.message === "Required" && typeof path === "string"
+        ? `${path} is required`
+        : (issue?.message ?? "Invalid request body");
+    res.status(400).json({ error: message });
+    return;
+  }
+
+  const userId = req.auth?.sub;
+  if (!userId) {
+    res.status(401).json({ error: "Authenticated user is required to resolve LLM configuration" });
+    return;
+  }
+
+  const resolved = await llmConfigStore.getDecryptedDefault(userId);
+  if (!resolved) {
+    res.status(422).json({
+      error: "No LLM provider configured. Go to Settings > LLM Providers to connect one.",
+    });
+    return;
+  }
+
+  const assemblyModel = resolveModelForTier(resolved.config.provider, "power");
+  const provider = getProvider({
+    provider: resolved.config.provider,
+    model: assemblyModel,
+    apiKey: resolved.apiKey,
+  });
+
+  let rawText: string;
+  try {
+    rawText = (await provider(buildTeamAssemblyPrompt(parsedRequest.data))).text;
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    res.status(502).json({ error: `LLM call failed: ${msg}` });
+    return;
+  }
+
+  try {
+    res.json(parseTeamAssemblyResponse(rawText));
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    res.status(422).json({ error: `LLM returned invalid JSON: ${msg}`, raw: rawText });
+  }
+});
+
+app.post(
+  "/api/goals/team-assembly/approve",
+  requireAuth,
+  requirePaperclipRunId,
+  (req: AuthenticatedRequest, res) => {
+    const parsedPlan = teamAssemblyResultSchema.safeParse(req.body?.approvedPlan);
+    if (!parsedPlan.success) {
+      const issue = parsedPlan.error.issues[0];
+      const path = issue?.path?.[0];
+      const message =
+        issue?.message === "Required" && typeof path === "string"
+          ? `approvedPlan.${path} is required`
+          : (issue?.message ?? "approvedPlan must match the team assembly schema");
+      res.status(400).json({ error: message });
+      return;
+    }
+
+    const userId = req.auth?.sub;
+    if (!userId) {
+      res.status(401).json({ error: "Authenticated user required" });
+      return;
+    }
+
+    const {
+      companyName,
+      workspaceName,
+      externalCompanyId,
+      idempotencyKey,
+      budgetMonthlyUsd,
+      orchestrationEnabled,
+      secretBindings,
+    } = req.body as {
+      companyName?: unknown;
+      workspaceName?: unknown;
+      externalCompanyId?: unknown;
+      idempotencyKey?: unknown;
+      budgetMonthlyUsd?: unknown;
+      orchestrationEnabled?: unknown;
+      secretBindings?: unknown;
+    };
+
+    const approvedPlan = parsedPlan.data;
+    const resolvedCompanyName =
+      typeof companyName === "string" && companyName.trim()
+        ? companyName.trim()
+        : approvedPlan.company.name?.trim() || undefined;
+
+    if (!resolvedCompanyName) {
+      res.status(400).json({ error: "companyName is required when approvedPlan.company.name is empty" });
+      return;
+    }
+    if (workspaceName !== undefined && (typeof workspaceName !== "string" || !workspaceName.trim())) {
+      res.status(400).json({ error: "workspaceName must be a non-empty string when provided" });
+      return;
+    }
+    if (
+      externalCompanyId !== undefined &&
+      (typeof externalCompanyId !== "string" || !externalCompanyId.trim())
+    ) {
+      res.status(400).json({ error: "externalCompanyId must be a non-empty string when provided" });
+      return;
+    }
+    if (typeof idempotencyKey !== "string" || !idempotencyKey.trim()) {
+      res.status(400).json({ error: "idempotencyKey is required and must be a non-empty string" });
+      return;
+    }
+    if (typeof budgetMonthlyUsd !== "number" || budgetMonthlyUsd < 0) {
+      res.status(400).json({ error: "budgetMonthlyUsd is required and must be a non-negative number" });
+      return;
+    }
+    if (orchestrationEnabled !== undefined && typeof orchestrationEnabled !== "boolean") {
+      res.status(400).json({ error: "orchestrationEnabled must be a boolean when provided" });
+      return;
+    }
+    if (!secretBindings || typeof secretBindings !== "object" || Array.isArray(secretBindings)) {
+      res.status(400).json({ error: "secretBindings is required and must be an object" });
+      return;
+    }
+
+    const parsedSecretBindings = Object.entries(secretBindings).reduce<Record<string, string>>((acc, [key, value]) => {
+      if (typeof value === "string" && value.trim()) {
+        acc[key] = value.trim();
+      }
+      return acc;
+    }, {});
+    if (Object.keys(parsedSecretBindings).length === 0) {
+      res.status(400).json({ error: "secretBindings must contain at least one non-empty secret value" });
+      return;
+    }
+
+    let agents: CompanyProvisioningAgentInput[];
+    try {
+      agents = buildProvisioningAgentsFromApprovedPlan(approvedPlan);
+    } catch (error) {
+      if (error instanceof Error && error.message.startsWith("missing_agent_budget:")) {
+        res.status(400).json({
+          error: `Approved plan is missing budgetMonthlyUsd for ${error.message.slice("missing_agent_budget:".length)}`,
+        });
+        return;
+      }
+      res.status(500).json({ error: "Unexpected approved plan transformation failure" });
+      return;
+    }
+
+    try {
+      const result = controlPlaneStore.provisionCompanyWorkspace({
+        userId,
+        name: resolvedCompanyName,
+        workspaceName:
+          typeof workspaceName === "string" ? workspaceName.trim() : approvedPlan.provisioningPlan.teamName,
+        externalCompanyId: typeof externalCompanyId === "string" ? externalCompanyId.trim() : undefined,
+        idempotencyKey: idempotencyKey.trim(),
+        budgetMonthlyUsd,
+        orchestrationEnabled: typeof orchestrationEnabled === "boolean" ? orchestrationEnabled : undefined,
+        secretBindings: parsedSecretBindings,
+        agents,
+      });
+
+      res.status(result.idempotentReplay ? 200 : 201).json({
+        provisioningStatus: {
+          status: "provisioned",
+          idempotentReplay: result.idempotentReplay,
+          allocatedBudgetMonthlyUsd: result.company.allocatedBudgetMonthlyUsd,
+          remainingBudgetMonthlyUsd: result.company.remainingBudgetMonthlyUsd,
+        },
+        ...result,
+      });
+    } catch (error) {
+      if (error instanceof Error && error.message === "budget_exceeded") {
+        res.status(400).json({
+          error: "Approved staffing plan exceeds the company budget cap",
+          provisioningStatus: { status: "failed", reason: "budget_exceeded" },
+        });
+        return;
+      }
+      if (error instanceof Error && error.message.startsWith("unknown_role_template:")) {
+        res.status(400).json({
+          error: `Approved staffing plan references unknown role template: ${error.message.slice("unknown_role_template:".length)}`,
+          provisioningStatus: { status: "failed", reason: "unknown_role_template" },
+        });
+        return;
+      }
+      if (error instanceof Error && error.message === "idempotency_conflict") {
+        res.status(409).json({
+          error: "idempotencyKey was already used with a different approved staffing plan",
+          provisioningStatus: { status: "failed", reason: "idempotency_conflict" },
+        });
+        return;
+      }
+      res.status(500).json({
+        error: "Unexpected approved plan provisioning failure",
+        provisioningStatus: { status: "failed", reason: "unexpected_error" },
+      });
+    }
+  }
+);
+// ---------------------------------------------------------------------------
 // Webhook trigger — activates a workflow from an external event
 // ---------------------------------------------------------------------------
 
@@ -507,7 +1071,7 @@ app.post("/api/workflows/generate", requireAuth, llmEndpointRateLimiter, async (
  * Trigger a workflow run from an inbound webhook.
  * The entire request body is forwarded as the run input.
  */
-app.post("/api/webhooks/:templateId", (req, res) => {
+app.post("/api/webhooks/:templateId", async (req, res) => {
   const { templateId } = req.params;
 
   let template: WorkflowTemplate;
@@ -525,7 +1089,12 @@ app.post("/api/webhooks/:templateId", (req, res) => {
   }
 
   const webhookUserId = req.headers["x-user-id"];
-  const run = workflowEngine.startRun(template, input, undefined, typeof webhookUserId === "string" ? webhookUserId : undefined);
+  const run = await workflowEngine.startRun(
+    template,
+    input,
+    undefined,
+    typeof webhookUserId === "string" ? webhookUserId : undefined
+  );
   res.status(202).json({ runId: run.id, status: run.status });
 });
 
@@ -538,68 +1107,218 @@ app.post("/api/webhooks/:templateId", (req, res) => {
  * Query params: status=pending|approved|rejected|timed_out
  * Returns all approval requests, optionally filtered by status.
  */
-app.get("/api/approvals", (req, res) => {
+app.get("/api/approvals", requireAuth, async (req: AuthenticatedRequest, res) => {
+  const userId = req.auth?.sub;
   const { status } = req.query;
-  const validStatuses = ["pending", "approved", "rejected", "timed_out"];
+  const validStatuses = ["pending", "approved", "rejected", "request_changes", "timed_out"];
   const filter =
     typeof status === "string" && validStatuses.includes(status)
-      ? (status as "pending" | "approved" | "rejected" | "timed_out")
+      ? (status as "pending" | "approved" | "rejected" | "request_changes" | "timed_out")
       : undefined;
-  const approvals = approvalStore.list(filter);
+  const approvals = (await approvalStore.list(filter)).filter((approval) => approval.assignee === userId);
   res.json({ approvals, total: approvals.length });
+});
+
+/**
+ * GET /api/approvals/notifications
+ * Returns in-app approval notifications for the authenticated approver.
+ */
+app.get("/api/approvals/notifications", requireAuth, (req: AuthenticatedRequest, res) => {
+  const notifications = approvalNotificationStore
+    .list({ assignee: req.auth?.sub, status: "pending" })
+    .filter((notification) => notification.channel === "inbox")
+    .map((notification) => ({
+      ...notification,
+      assignee: notification.recipient,
+    }));
+  res.json({ notifications, total: notifications.length });
 });
 
 /**
  * GET /api/approvals/:id
  * Returns a single approval request by ID.
  */
-app.get("/api/approvals/:id", (req, res) => {
-  const approval = approvalStore.get(req.params.id);
-  if (!approval) {
+app.get("/api/approvals/:id", requireAuth, async (req: AuthenticatedRequest, res) => {
+  const approval = await approvalStore.get(req.params.id);
+  const userId = req.auth?.sub;
+  if (!approval || (approval.userId !== undefined && approval.userId !== userId)) {
     res.status(404).json({ error: `Approval not found: ${req.params.id}` });
+    return;
+  }
+  if (approval.assignee !== req.auth?.sub) {
+    res.status(403).json({ error: "Forbidden" });
     return;
   }
   res.json(approval);
 });
 
 /**
- * POST /api/approvals/:id/resolve
- * Body: { decision: "approved" | "rejected", comment?: string }
- * Resolves the approval request, resuming or terminating the paused run.
+ * GET /api/approvals/:id/notifications
+ * Returns the durable notification outbox rows created for an approval request.
  */
-app.post("/api/approvals/:id/resolve", (req, res) => {
-  const { decision, comment } = req.body as { decision?: string; comment?: string };
-
-  if (decision !== "approved" && decision !== "rejected") {
-    res.status(400).json({ error: "decision must be 'approved' or 'rejected'" });
+app.get("/api/approvals/:id/notifications", requireAuth, async (req: AuthenticatedRequest, res) => {
+  const approval = await approvalStore.get(req.params.id);
+  const userId = req.auth?.sub;
+  if (!approval || (approval.userId !== undefined && approval.userId !== userId)) {
+    res.status(404).json({ error: `Approval request not found: ${req.params.id}` });
     return;
   }
 
-  const ok = approvalStore.resolve(req.params.id, decision, comment);
+  const notifications = await approvalNotificationStore.listByApprovalRequest(req.params.id);
+  res.json({ notifications, total: notifications.length });
+});
+
+/**
+ * POST /api/approvals/:id/resolve
+ * Body: { decision: "approved" | "rejected" | "request_changes", comment?: string }
+ * Resolves the approval request, resuming or terminating the paused run.
+ */
+app.post("/api/approvals/:id/resolve", requireAuth, async (req: AuthenticatedRequest, res) => {
+  const { decision, comment } = req.body as { decision?: string; comment?: string };
+
+  if (decision !== "approved" && decision !== "rejected" && decision !== "request_changes") {
+    res.status(400).json({ error: "decision must be 'approved', 'rejected', or 'request_changes'" });
+    return;
+  }
+
+  const approval = await approvalStore.get(req.params.id);
+  const userId = req.auth?.sub;
+  if (!approval || (approval.userId !== undefined && approval.userId !== userId)) {
+    res.status(404).json({ error: "Approval not found or already resolved" });
+    return;
+  }
+  if (approval.assignee !== req.auth?.sub) {
+    res.status(403).json({ error: "Forbidden" });
+    return;
+  }
+
+  const ok = await approvalStore.resolve(req.params.id, decision, comment);
   if (!ok) {
     res.status(404).json({ error: "Approval not found or already resolved" });
     return;
   }
-
   res.json({ success: true });
+});
+
+/**
+ * GET /api/executions/:id/state
+ * Returns the persisted paused execution state for an awaiting-approval run.
+ */
+app.get("/api/executions/:id/state", requireAuth, async (req, res) => {
+  const run = await runStore.get(req.params.id);
+  const userId = getAuthenticatedUserId(req);
+  if (!run || (run.userId !== undefined && run.userId !== userId)) {
+    res.status(404).json({ error: `Execution not found: ${req.params.id}` });
+    return;
+  }
+
+  if (run.status !== "awaiting_approval") {
+    res.status(409).json({ error: "Execution is not currently paused at an approval step" });
+    return;
+  }
+
+  const approval = await approvalStore.findByRunId(run.id, "pending");
+  if (!approval || (approval.userId !== undefined && approval.userId !== userId)) {
+    res.status(404).json({ error: `Pending approval not found for execution: ${req.params.id}` });
+    return;
+  }
+
+  res.json({
+    run,
+    approval,
+    pausedAtStepId: approval.stepId,
+    pausedAtStepName: approval.stepName,
+    runtimeState: run.runtimeState ?? null,
+  });
+});
+
+/**
+ * POST /api/executions/:id/resume
+ * Manually resumes a paused execution after its approval decision has already
+ * been persisted and the original live worker is gone.
+ */
+app.post("/api/executions/:id/resume", requireAuth, async (req: AuthenticatedRequest, res) => {
+  const run = await runStore.get(req.params.id);
+  if (!run || (run.userId !== undefined && run.userId !== req.auth?.sub)) {
+    res.status(404).json({ error: `Execution not found: ${req.params.id}` });
+    return;
+  }
+
+  if (run.status !== "awaiting_approval") {
+    res.status(409).json({ error: "Execution is not currently paused at an approval step" });
+    return;
+  }
+
+  let template;
+  try {
+    template = getTemplate(run.templateId);
+  } catch (error) {
+    res.status(404).json({ error: String(error) });
+    return;
+  }
+
+  try {
+    const resumed = await workflowEngine.resumeRun(run.id, template, req.auth?.sub);
+    res.status(202).json(resumed);
+  } catch (error) {
+    res.status(409).json({ error: String(error) });
+  }
 });
 
 // ---------------------------------------------------------------------------
 // Health check
 // ---------------------------------------------------------------------------
-app.get("/health", (_req, res) => {
-  const runs = runStore.list();
+app.get("/health", async (_req, res) => {
+  const { checkPostgresConnection, isPostgresConfigured: isPgConfigured } = await import("./db/postgres");
+  const pgConfigured = isPgConfigured();
+  const pgConnected = pgConfigured ? await checkPostgresConnection() : false;
+  let runs = [] as Awaited<ReturnType<typeof runStore.list>>;
+  let runStoreError: string | null = null;
+
+  try {
+    runs = await runStore.list();
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.warn("[health] Run stats unavailable:", message);
+    runStoreError = message;
+  }
+
   res.json({
-    status: "ok",
-    templates: WORKFLOW_TEMPLATES.length,
+    status: runStoreError ? "degraded" : "ok",
+    templates: listTemplates().length,
     runs: {
       total: runs.length,
       running: runs.filter((r) => r.status === "running").length,
       completed: runs.filter((r) => r.status === "completed").length,
       failed: runs.filter((r) => r.status === "failed").length,
+      error: runStoreError,
+    },
+    postgres: {
+      configured: pgConfigured,
+      connected: pgConnected,
     },
   });
 });
+
+app.get("/api/connectors/health", (_req, res) => {
+  const connectors = listConnectorHealth();
+  res.json({
+    connectors,
+    summary: getConnectorHealthSummary(connectors),
+  });
+});
+
+if (process.env.NODE_ENV !== "test" && process.env.AUTOFLOW_ENABLE_APPROVAL_RESUME_SWEEPER !== "false") {
+  startApprovalResumeCoordinator();
+}
+
+if (process.env.NODE_ENV !== "test" && process.env.AUTOFLOW_ENABLE_APPROVAL_NOTIFICATION_SWEEPER !== "false") {
+  startApprovalNotificationCoordinator();
+}
+
+if (process.env.NODE_ENV !== "test" && process.env.AUTOFLOW_ENABLE_TICKET_NOTIFICATION_SWEEPER !== "false") {
+  startTicketNotificationCoordinator();
+}
 
 // Handle JSON parse errors from express.json() middleware
 app.use((err: Error, _req: express.Request, res: express.Response, next: express.NextFunction) => {

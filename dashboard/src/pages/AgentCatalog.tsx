@@ -121,7 +121,15 @@ export default function AgentCatalog() {
           ))}
         </div>
 
-        {filtered.length === 0 ? (
+        {templates.length === 0 ? (
+          <div className="py-16 text-center text-gray-400">
+            <Bot size={40} className="mx-auto mb-3 opacity-30" />
+            <p className="text-sm font-medium text-gray-600">Agent Marketplace coming soon</p>
+            <p className="text-xs mt-2 max-w-md mx-auto">
+              Prebuilt agent templates will be available here once the catalog backend is connected.
+            </p>
+          </div>
+        ) : filtered.length === 0 ? (
           <div className="py-16 text-center text-gray-400">
             <Bot size={40} className="mx-auto mb-3 opacity-30" />
             <p className="text-sm">No agent templates match this filter.</p>

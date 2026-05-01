@@ -17,10 +17,17 @@ spec:
         app: backend
         environment: production
     spec:
+      securityContext:
+        runAsNonRoot: true
       containers:
         - name: backend
           # Image tag is overwritten by deploy-azure.yml via kubectl set image
-          image: autoflowacr.azurecr.io/autoflow-backend:latest
+          image: autoflowproductionacr.azurecr.io/autoflow-backend:latest
+          securityContext:
+            capabilities:
+              drop:
+                - NET_RAW
+            allowPrivilegeEscalation: false
           ports:
             - containerPort: 8000
           env:
@@ -56,10 +63,13 @@ kind: Service
 metadata:
   name: backend
   namespace: autoflow-production
+  annotations:
+    service.beta.kubernetes.io/azure-dns-label-name: autoflow-production-api
+    service.beta.kubernetes.io/azure-load-balancer-health-probe-request-path: /health
 spec:
   selector:
     app: backend
   ports:
     - port: 80
       targetPort: 8000
-  type: ClusterIP
+  type: LoadBalancer

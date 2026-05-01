@@ -15,7 +15,12 @@ export type EdgeValidationResult =
   | { valid: true }
   | { valid: false; reason: string };
 
-const TRIGGER_KINDS: ReadonlySet<StepKind> = new Set(["trigger", "file_trigger"]);
+const TRIGGER_KINDS: ReadonlySet<StepKind> = new Set([
+  "trigger",
+  "cron_trigger",
+  "interval_trigger",
+  "file_trigger",
+]);
 
 function getSerializedTargets(step: WorkflowStep): string[] | null {
   if (!step.config || typeof step.config !== "object") return null;
@@ -43,7 +48,7 @@ export function buildDefaultEdge(source: string, target: string): Edge {
     animated: false,
     className: "workflow-edge",
     markerEnd: { type: MarkerType.ArrowClosed, width: 18, height: 18 },
-    style: { stroke: "#9ca3af", strokeWidth: 2 },
+    style: { stroke: "#475569", strokeWidth: 2 },
   };
 }
 
@@ -208,7 +213,7 @@ export function validateGraphTopology(steps: WorkflowStep[], edges: Edge[]): str
 
   const triggerIds = steps.filter((step) => isTriggerKind(step.kind)).map((step) => step.id);
   if (triggerIds.length === 0) {
-    return "At least one Trigger or File Trigger step is required.";
+    return "At least one Trigger step is required.";
   }
 
   const visited = new Set<string>();
@@ -226,14 +231,14 @@ export function validateGraphTopology(steps: WorkflowStep[], edges: Edge[]): str
 
   const unreachable = steps.find((step) => !visited.has(step.id));
   if (unreachable) {
-    return `Step \"${unreachable.name}\" is not reachable from a trigger.`;
+    return `Step "${unreachable.name}" is not reachable from a trigger.`;
   }
 
   const disconnected = steps.find(
     (step) => !isTriggerKind(step.kind) && (incomingCount.get(step.id) ?? 0) === 0,
   );
   if (disconnected) {
-    return `Step \"${disconnected.name}\" needs an incoming edge.`;
+    return `Step "${disconnected.name}" needs an incoming edge.`;
   }
 
   return null;

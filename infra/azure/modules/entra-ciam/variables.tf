@@ -29,16 +29,51 @@ variable "ciam_display_name" {
   default     = ""
 }
 
+variable "existing_ciam_tenant_id" {
+  description = "Existing CIAM tenant ID when Terraform should reuse the already provisioned tenant."
+  type        = string
+}
+
 variable "spa_redirect_uris" {
-  description = "Redirect URIs for the SPA app registration (localhost for dev, Vercel URL for prod)"
+  description = "Redirect URIs for the SPA app registration (must include /auth/callback and /login for all deployed hosts)"
   type        = list(string)
-  default     = ["http://localhost:5173"]
+  default = [
+    "http://localhost:3000",
+    "http://localhost:3000/auth/callback",
+    "http://localhost:5173",
+    "http://localhost:5173/auth/callback",
+    "http://localhost:5173/login",
+    "https://staging.app.helloautoflow.com",
+    "https://staging.app.helloautoflow.com/auth/callback",
+    "https://staging.app.helloautoflow.com/login",
+    "https://app.helloautoflow.com",
+    "https://app.helloautoflow.com/auth/callback",
+    "https://app.helloautoflow.com/login",
+    "https://dashboard-beta-one-42.vercel.app",
+    "https://dashboard-beta-one-42.vercel.app/auth/callback",
+    "https://dashboard-brad-duncans-projects.vercel.app",
+    "https://dashboard-brad-duncans-projects.vercel.app/auth/callback",
+    "https://dashboard-git-master-brad-duncans-projects.vercel.app",
+    "https://dashboard-git-master-brad-duncans-projects.vercel.app/auth/callback",
+  ]
 }
 
 variable "spa_logout_uris" {
-  description = "Post-logout redirect URIs for the SPA"
+  description = "Legacy post-logout redirect URIs for the SPA. Keep in sync with spa_redirect_uris."
   type        = list(string)
-  default     = ["http://localhost:5173/login"]
+  default     = ["http://localhost:5173/login", "https://staging.app.helloautoflow.com/login", "https://app.helloautoflow.com/login"]
+}
+
+variable "msa_federation_display_name" {
+  description = "Display name for the Microsoft-account OIDC federation app registration."
+  type        = string
+  default     = "autoflow-msa-federation"
+}
+
+variable "msa_federation_redirect_uris" {
+  description = "Redirect URIs for the Microsoft-account federation app registration. When omitted, the CIAM OIDC federation callbacks are derived automatically."
+  type        = list(string)
+  default     = []
 }
 
 variable "tags" {

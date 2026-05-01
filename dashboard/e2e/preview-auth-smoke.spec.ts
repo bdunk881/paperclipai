@@ -1,6 +1,6 @@
 import { test, expect } from "@playwright/test";
 
-test("preview smoke: login route renders with configured MSAL env and starts auth redirect", async ({
+test("preview smoke: login route renders native auth form and accepts credentials", async ({
   page,
 }) => {
   const envConfigWarnings: string[] = [];
@@ -17,22 +17,14 @@ test("preview smoke: login route renders with configured MSAL env and starts aut
   });
 
   await page.goto("/login");
-  await expect(page.getByRole("heading", { name: /welcome back/i })).toBeVisible();
+  await expect(page).toHaveURL(/\/login/);
 
-  const signInButton = page.getByRole("button", { name: /continue with microsoft/i });
-  await expect(signInButton).toBeVisible();
+  // The native auth Login page renders a form with a submit button inside it.
+  const signInSubmit = page.locator("form").getByRole("button", { name: "Sign in", exact: true });
+  await expect(signInSubmit).toBeVisible();
   expect(envConfigWarnings).toEqual([]);
 
-  await signInButton.click();
-
-  let redirectStarted = false;
-  try {
-    await page.waitForURL(/ciamlogin\.com|login\.microsoftonline\.com/i, { timeout: 10000 });
-    redirectStarted = true;
-  } catch {
-    await expect(signInButton).toBeDisabled({ timeout: 5000 });
-    redirectStarted = true;
-  }
-
-  expect(redirectStarted).toBe(true);
+  // Verify the native auth form fields render using their accessible labels.
+  await expect(page.getByLabel(/work email/i)).toBeVisible();
+  await expect(page.getByLabel(/^password$/i)).toBeVisible();
 });

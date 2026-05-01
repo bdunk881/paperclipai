@@ -94,6 +94,9 @@ Full API docs at [docs.helloautoflow.com/api-reference](https://docs.helloautofl
 | `GET` | `/api/templates` | List all workflow templates |
 | `GET` | `/api/templates/:id` | Get a single template definition |
 | `GET` | `/api/templates/:id/sample` | Get sample input/output for a template |
+| `GET` | `/api/workflows/schema` | Get the current portable workflow JSON schema descriptor |
+| `GET` | `/api/templates/:id/export` | Export a template in portable workflow JSON format |
+| `POST` | `/api/templates/import` | Import a portable workflow template |
 | `POST` | `/api/runs` | Start a new workflow run |
 | `GET` | `/api/runs` | List all runs |
 | `GET` | `/api/runs/:id` | Get a specific run + logs |
@@ -135,7 +138,12 @@ AutoFlow backend is deployed on Azure; the dashboard is hosted on Vercel. See [`
 
 ### CI/CD
 
-Push to `main` → GitHub Actions builds Docker images → pushes to GHCR → deploys to Azure (backend) and Vercel (dashboard).
+AutoFlow now uses a staging-first promotion flow:
+
+- Feature branches open PRs into `staging`.
+- `staging` deploys first and carries the validation checks.
+- Only the `staging` branch may open a PR into `master`.
+- PRs into `master` require one code-owner approval from `@bdunk881` plus the `Staging-First Promotion Gate` check before production deploys can proceed.
 
 Required GitHub Actions secret for backend test job:
 - `CI_POSTGRES_PASSWORD`
@@ -148,7 +156,8 @@ Required GitHub Actions secret for backend test job:
 2. Create a branch: `git checkout -b feat/my-feature`
 3. Make your changes and add tests
 4. Run `npm test` to verify everything passes
-5. Open a PR
+5. Open your PR against `staging`, not `master`
+6. After staging validation, promote `staging` to `master` with a dedicated PR reviewed by the production code owner
 
 ### Running tests
 
@@ -158,6 +167,20 @@ npm run test:engine   # Workflow engine
 npm run test:api      # API endpoints
 npm run test:templates # Template definitions
 npm run test:coverage  # Coverage report (80% threshold)
+```
+
+### Portable workflow bundle example
+
+```json
+{
+  "format": "autoflow.workflow-template",
+  "schemaVersion": "2026-04-19",
+  "exportedAt": "2026-04-20T00:00:00.000Z",
+  "template": {
+    "id": "tpl-support-bot",
+    "name": "Customer Support Bot"
+  }
+}
 ```
 
 ---

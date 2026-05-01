@@ -16,11 +16,15 @@ import {
   handleCondition,
   handleAction,
   handleOutput,
+  handleFileTrigger,
+  handleMcp,
+  handleAgent,
   StepContext,
 } from "./stepHandlers";
 import { WorkflowStep } from "../types/workflow";
 import { llmConfigStore } from "../llmConfig/llmConfigStore";
 import { getProvider } from "./llmProviders";
+import { controlPlaneStore } from "../controlPlane/controlPlaneStore";
 import {
   clearClassificationDecisionsForTests,
   listClassificationDecisions,
@@ -94,7 +98,7 @@ describe("handleLlm", () => {
       provider: "openai",
       label: "Test",
       model: "gpt-4o",
-      apiKey: "sk-test-1234-5678",
+      credentials: { apiKey: "sk-test-1234-5678" },
     });
     llmConfigStore.setDefault(cfg.id, TEST_USER);
   });
@@ -163,13 +167,26 @@ describe("handleLlm", () => {
     expect(result.output["reply"]).toBe("Plain text response");
   });
 
+  it("maps scalar JSON responses to the first output key", async () => {
+    mockProviderFn.mockResolvedValue({ text: "7" });
+    const step = makeStep({
+      kind: "llm",
+      outputKeys: ["score"],
+      promptTemplate: "Score: {{prompt}}",
+    });
+
+    const result = await handleLlm(step, { prompt: "hello" }, TEST_USER);
+
+    expect(result.output["score"]).toBe("7");
+  });
+
   it("uses step-level llmConfigId when provided", async () => {
     const specific = llmConfigStore.create({
       userId: TEST_USER,
       provider: "anthropic",
       label: "Specific",
       model: "claude-sonnet-4-6",
-      apiKey: "sk-ant-specific",
+      credentials: { apiKey: "sk-ant-specific" },
     });
 
     const step = makeStep({
@@ -182,7 +199,12 @@ describe("handleLlm", () => {
     await handleLlm(step, {}, TEST_USER);
 
     expect(getProvider).toHaveBeenCalledWith(
-      expect.objectContaining({ provider: "anthropic", model: "claude-sonnet-4-6" })
+      expect.objectContaining({
+        provider: "anthropic",
+        model: "claude-sonnet-4-6",
+        apiKey: "sk-ant-specific",
+        credentials: { apiKey: "sk-ant-specific" },
+      })
     );
   });
 
@@ -452,5 +474,296 @@ describe("handleOutput", () => {
     expect(result.output["resolution"]).toBe("auto_responded");
     expect(result.output["escalated"]).toBe(false);
     expect(result.output["extra"]).toBeUndefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// handleFileTrigger
+// ---------------------------------------------------------------------------
+
+describe("handleFileTrigger", () => {
+  it("throws when no content in context", async () => {
+    const step = makeStep({ kind: "file_trigger", outputKeys: [] });
+    await expect(handleFileTrigger(step, {})).rejects.toThrow("no parsed file content");
+  });
+
+  it("returns content, mimeType, filename from context", async () => {
+    const step = makeStep({ kind: "file_trigger", outputKeys: [] });
+    const ctx: StepContext = { content: "hello", mimeType: "text/plain", filename: "f.txt" };
+    const result = await handleFileTrigger(step, ctx);
+    expect(result.output["content"]).toBe("hello");
+    expect(result.output["mimeType"]).toBe("text/plain");
+    expect(result.output["filename"]).toBe("f.txt");
+  });
+
+  it("maps declared outputKeys from context into output", async () => {
+    const step = makeStep({ kind: "file_trigger", outputKeys: ["userId"] });
+    const ctx: StepContext = { content: "data", userId: "u-1" };
+    const result = await handleFileTrigger(step, ctx);
+    expect(result.output["userId"]).toBe("u-1");
+  });
+
+  it("does not overwrite content with outputKeys mapping", async () => {
+    const step = makeStep({ kind: "file_trigger", outputKeys: ["content"] });
+    const ctx: StepContext = { content: "original" };
+    const result = await handleFileTrigger(step, ctx);
+    expect(result.output["content"]).toBe("original");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// handleMcp
+// ---------------------------------------------------------------------------
+
+describe("handleMcp", () => {
+  beforeEach(() => {
+    jest.restoreAllMocks();
+  });
+
+  it("throws when mcpServerUrl is missing", async () => {
+    const step = makeStep({ kind: "mcp", mcpTool: "search" });
+    await expect(handleMcp(step, {})).rejects.toThrow("missing mcpServerUrl");
+  });
+
+  it("throws when mcpTool is missing", async () => {
+    const step = makeStep({ kind: "mcp", mcpServerUrl: "https://mcp.example.com" });
+    await expect(handleMcp(step, {})).rejects.toThrow("missing mcpTool");
+  });
+
+  it("throws on HTTP error from MCP server", async () => {
+    const step = makeStep({
+      kind: "mcp",
+      mcpServerUrl: "https://mcp.example.com",
+      mcpTool: "search",
+      inputKeys: [],
+      outputKeys: ["result"],
+    });
+    global.fetch = jest.fn().mockResolvedValueOnce({
+      ok: false,
+      status: 503,
+      statusText: "Service Unavailable",
+    }) as unknown as typeof fetch;
+
+    await expect(handleMcp(step, {})).rejects.toThrow("HTTP 503");
+  });
+
+  it("throws on JSON-RPC error response", async () => {
+    const step = makeStep({
+      kind: "mcp",
+      mcpServerUrl: "https://mcp.example.com",
+      mcpTool: "search",
+      inputKeys: [],
+      outputKeys: ["result"],
+    });
+    global.fetch = jest.fn().mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ jsonrpc: "2.0", id: 1, error: { code: -32601, message: "Method not found" } }),
+    }) as unknown as typeof fetch;
+
+    await expect(handleMcp(step, {})).rejects.toThrow("RPC error -32601");
+  });
+
+  it("returns text content from content array", async () => {
+    const step = makeStep({
+      kind: "mcp",
+      mcpServerUrl: "https://mcp.example.com",
+      mcpTool: "search",
+      inputKeys: ["query"],
+      outputKeys: ["searchResult"],
+    });
+    global.fetch = jest.fn().mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        jsonrpc: "2.0",
+        id: 1,
+        result: { content: [{ type: "text", text: "Found 3 results" }] },
+      }),
+    }) as unknown as typeof fetch;
+
+    const result = await handleMcp(step, { query: "test" });
+    expect(result.output["searchResult"]).toBe("Found 3 results");
+    expect(result.output["content"]).toBeDefined();
+  });
+
+  it("returns raw result when no content array", async () => {
+    const step = makeStep({
+      kind: "mcp",
+      mcpServerUrl: "https://mcp.example.com",
+      mcpTool: "getData",
+      inputKeys: [],
+      outputKeys: ["data"],
+    });
+    global.fetch = jest.fn().mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        jsonrpc: "2.0",
+        id: 1,
+        result: { data: { count: 5 } },
+      }),
+    }) as unknown as typeof fetch;
+
+    const result = await handleMcp(step, {});
+    expect(result.output["data"]).toEqual({ count: 5 });
+  });
+
+  it("maps scalar MCP results to the declared output key", async () => {
+    const step = makeStep({
+      kind: "mcp",
+      mcpServerUrl: "https://mcp.example.com",
+      mcpTool: "getScalar",
+      inputKeys: [],
+      outputKeys: ["value"],
+    });
+    global.fetch = jest.fn().mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        jsonrpc: "2.0",
+        id: 1,
+        result: 42,
+      }),
+    }) as unknown as typeof fetch;
+
+    const result = await handleMcp(step, {});
+    expect(result.output["value"]).toBe(42);
+  });
+
+  it("passes inputKeys from context as tool arguments", async () => {
+    const step = makeStep({
+      kind: "mcp",
+      mcpServerUrl: "https://mcp.example.com",
+      mcpTool: "lookup",
+      inputKeys: ["id", "region"],
+      outputKeys: ["info"],
+    });
+    let capturedBody: unknown;
+    global.fetch = jest.fn().mockImplementationOnce(async (_url: unknown, opts: { body: string }) => {
+      capturedBody = JSON.parse(opts.body);
+      return {
+        ok: true,
+        json: async () => ({ jsonrpc: "2.0", id: 1, result: { info: "ok" } }),
+      };
+    }) as unknown as typeof fetch;
+
+    await handleMcp(step, { id: "abc", region: "us-east", extra: "ignored" });
+    expect((capturedBody as { params: { arguments: Record<string, unknown> } }).params.arguments).toEqual({ id: "abc", region: "us-east" });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// handleAgent
+// ---------------------------------------------------------------------------
+
+describe("handleAgent", () => {
+  const mockGetProvider = getProvider as jest.Mock;
+
+  beforeEach(() => {
+    jest.restoreAllMocks();
+    mockGetProvider.mockReset();
+    controlPlaneStore.clear();
+  });
+
+  it("throws when no LLM provider is configured", async () => {
+    jest.spyOn(llmConfigStore, "getDecryptedDefault").mockReturnValue(undefined);
+    const step = makeStep({ kind: "agent", subAgentSlots: 1 });
+    await expect(handleAgent(step, {}, "run-1", "user-1")).rejects.toThrow("no LLM provider configured");
+  });
+
+  it("returns merged slot output on success", async () => {
+    jest.spyOn(llmConfigStore, "getDecryptedDefault").mockReturnValue({
+      config: { provider: "openai", model: "gpt-4" },
+      apiKey: "sk-test",
+    } as ReturnType<typeof llmConfigStore.getDecryptedDefault>);
+    mockGetProvider.mockReturnValue(async () => ({ text: JSON.stringify({ answer: "42" }) }));
+
+    const step = makeStep({ kind: "agent", subAgentSlots: 2, outputKeys: [] });
+    const result = await handleAgent(step, { input: "question" }, "run-2", "user-1");
+
+    expect(result.output["_agentSlots"]).toBe(2);
+    expect(result.output["_agentSuccessCount"]).toBe(2);
+    expect(result.output["slot_0"]).toBeDefined();
+    expect(result.output["slot_1"]).toBeDefined();
+    expect(result.agentSlotResults).toHaveLength(2);
+  });
+
+  it("records slot failure when provider throws", async () => {
+    jest.spyOn(llmConfigStore, "getDecryptedDefault").mockReturnValue({
+      config: { provider: "openai", model: "gpt-4" },
+      apiKey: "sk-test",
+    } as ReturnType<typeof llmConfigStore.getDecryptedDefault>);
+    mockGetProvider.mockReturnValue(async () => { throw new Error("API timeout"); });
+
+    const step = makeStep({ kind: "agent", subAgentSlots: 1 });
+    const result = await handleAgent(step, {}, "run-3", "user-1");
+
+    expect(result.output["_agentSuccessCount"]).toBe(0);
+    expect(result.agentSlotResults![0].status).toBe("failure");
+    expect(result.agentSlotResults![0].error).toContain("API timeout");
+  });
+
+  it("uses default 1 slot when subAgentSlots is undefined", async () => {
+    jest.spyOn(llmConfigStore, "getDecryptedDefault").mockReturnValue({
+      config: { provider: "openai", model: "gpt-4" },
+      apiKey: "sk-test",
+    } as ReturnType<typeof llmConfigStore.getDecryptedDefault>);
+    mockGetProvider.mockReturnValue(async () => ({ text: '{"ok":true}' }));
+
+    const step = makeStep({ kind: "agent" });
+    const result = await handleAgent(step, {}, "run-4", "user-1");
+
+    expect(result.output["_agentSlots"]).toBe(1);
+  });
+
+  it("handles non-JSON LLM response gracefully", async () => {
+    jest.spyOn(llmConfigStore, "getDecryptedDefault").mockReturnValue({
+      config: { provider: "openai", model: "gpt-4" },
+      apiKey: "sk-test",
+    } as ReturnType<typeof llmConfigStore.getDecryptedDefault>);
+    mockGetProvider.mockReturnValue(async () => ({ text: "plain text answer" }));
+
+    const step = makeStep({ kind: "agent", subAgentSlots: 1 });
+    const result = await handleAgent(step, {}, "run-5", "user-1");
+
+    expect(result.output["_agentSuccessCount"]).toBe(1);
+    const slotOutput = result.output["slot_0"] as Record<string, unknown>;
+    expect(slotOutput["result"]).toBe("plain text answer");
+  });
+
+  it("bridges agent execution into the control plane when configured", async () => {
+    jest.spyOn(llmConfigStore, "getDecryptedDefault").mockReturnValue({
+      config: { provider: "openai", model: "gpt-4" },
+      apiKey: "sk-test",
+    } as ReturnType<typeof llmConfigStore.getDecryptedDefault>);
+    mockGetProvider.mockReturnValue(async () => ({ text: '{"ok":true,"answer":"done"}' }));
+
+    const step = makeStep({
+      id: "step_agent_bridge",
+      kind: "agent",
+      agentSkills: ["paperclip"],
+      config: {
+        controlPlane: {
+          enabled: true,
+          autoProvision: true,
+          teamName: "Escalation Bridge Team",
+          taskTitle: "Work {{ticketId}}",
+        },
+      },
+    });
+
+    const result = await handleAgent(step, { ticketId: "TKT-42" }, "run-bridge", "user-1");
+
+    expect(result.output["_controlPlaneTeamId"]).toBeDefined();
+    expect(result.output["_controlPlaneExecutionId"]).toBeDefined();
+    expect(result.output["_controlPlaneTaskId"]).toBeDefined();
+
+    const teams = controlPlaneStore.listTeams("user-1");
+    expect(teams).toHaveLength(1);
+    const team = teams[0];
+    const executions = controlPlaneStore.listExecutions("user-1", team.id);
+    expect(executions).toHaveLength(1);
+    expect(executions[0].status).toBe("completed");
+
+    const tasks = controlPlaneStore.listTasks("user-1", team.id);
+    expect(tasks).toHaveLength(1);
+    expect(tasks[0].title).toBe("Work TKT-42");
   });
 });

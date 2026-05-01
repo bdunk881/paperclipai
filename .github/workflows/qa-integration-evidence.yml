@@ -13,16 +13,36 @@ jobs:
   qa-integration-evidence:
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    env:
+      QA_API_BASE_URL: ${{ secrets.QA_API_BASE_URL }}
+      QA_E2E_BEARER_TOKEN: ${{ secrets.QA_E2E_BEARER_TOKEN }}
+      QA_E2E_USER_ID: ${{ secrets.QA_E2E_USER_ID }}
+      QA_JIRA_TICKET_SYNC_CONNECTION_ID: ${{ secrets.QA_JIRA_TICKET_SYNC_CONNECTION_ID }}
+      STRIPE_WEBHOOK_SECRET: ${{ secrets.STRIPE_WEBHOOK_SECRET }}
+      VITE_USE_MOCK: "true"
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
+
+      - name: Detect probe availability
+        id: probe-gate
+        run: |
+          mkdir -p artifacts/qa-integration
+
+          if [ -n "${QA_API_BASE_URL}" ] && [ -n "${QA_E2E_BEARER_TOKEN}" ]; then
+            echo "can_run=true" >> "$GITHUB_OUTPUT"
+            echo "QA probe prerequisites present." > artifacts/qa-integration/summary.txt
+            exit 0
+          fi
+
+          echo "can_run=false" >> "$GITHUB_OUTPUT"
+          cat <<'EOF' > artifacts/qa-integration/summary.txt
+          QA smoke probes were skipped because the required secret-backed environment
+          variables are not available for this workflow run.
+          EOF
 
       - name: Run QA smoke evidence probes
-        env:
-          QA_API_BASE_URL: ${{ secrets.QA_API_BASE_URL }}
-          QA_E2E_BEARER_TOKEN: ${{ secrets.QA_E2E_BEARER_TOKEN }}
-          STRIPE_WEBHOOK_SECRET: ${{ secrets.STRIPE_WEBHOOK_SECRET }}
-          VITE_USE_MOCK: "true"
+        if: steps.probe-gate.outputs.can_run == 'true'
         run: bash infra/scripts/qa_integration_smoke.sh
 
       - name: Upload QA evidence artifact

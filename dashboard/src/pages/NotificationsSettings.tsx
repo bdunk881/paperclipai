@@ -1,187 +1,502 @@
 import { useEffect, useMemo, useState } from "react";
-import { Loader2 } from "lucide-react";
+import { Loader2, MessageSquareWarning, Send, ShieldAlert } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
-import { ApiError, apiGet, apiPatch } from "../api/settingsClient";
-import Toast from "../components/Toast";
+import {
+  ConnectionOption,
+  fetchNotificationConnectionOptions,
+  fetchNotificationPreferences,
+  fetchNotificationTransports,
+  NotificationCadence,
+  NotificationChannel,
+  NotificationKind,
+  NotificationPreference,
+  NotificationTransport,
+  sendNotificationTest,
+  updateNotificationPreference,
+  updateNotificationTransport,
+} from "../api/notifications";
 
-interface NotificationToggle {
-  id: string;
-  label: string;
-  description: string;
-}
+const DEFAULT_WORKSPACE_ID =
+  import.meta.env.VITE_DEFAULT_WORKSPACE_ID ?? "11111111-1111-4111-8111-111111111111";
 
-const NOTIFICATION_OPTIONS: NotificationToggle[] = [
-  {
-    id: "run_completed",
-    label: "Workflow run completed",
-    description: "Receive an email when a workflow run finishes successfully.",
-  },
-  {
-    id: "run_failed",
-    label: "Workflow run failed",
-    description: "Receive an email when a workflow run encounters an error.",
-  },
-  {
-    id: "weekly_digest",
-    label: "Weekly activity digest",
-    description: "A summary of your workflow activity every week.",
-  },
-  {
-    id: "product_updates",
-    label: "Product updates & announcements",
-    description: "News about new features and platform improvements.",
-  },
+const KIND_META: Array<{ kind: NotificationKind; label: string; description: string }> = [
+  { kind: "approvals", label: "Approvals", description: "Approval requests and review escalations." },
+  { kind: "milestones", label: "Milestones", description: "Shipped milestones and completion updates." },
+  { kind: "kpi_alerts", label: "KPI alerts", description: "Performance drops and threshold crossings." },
+  { kind: "budget_alerts", label: "Budget alerts", description: "Budget spikes and spend thresholds." },
+  { kind: "kill_switch", label: "Kill switch", description: "Critical safety stops and emergency pauses." },
 ];
 
-export default function NotificationsSettings() {
-  const { user } = useAuth();
-  const [toggles, setToggles] = useState<Record<string, boolean>>({
-    run_completed: true,
-    run_failed: true,
-    weekly_digest: false,
-    product_updates: false,
-  });
-  const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [toast, setToast] = useState<{ variant: "success" | "error"; message: string } | null>(null);
+const CHANNEL_META: Array<{ channel: NotificationChannel; label: string; helper: string }> = [
+  { channel: "slack", label: "Slack", helper: "Route alerts into a team channel using the Slack connector." },
+  { channel: "email", label: "Email", helper: "Send digest summaries and transactional alerts via SendGrid." },
+  { channel: "sms", label: "SMS", helper: "Reserve SMS for urgent budget and kill switch alerts." },
+];
 
-  const fallbackStorageKey = useMemo(
-    () => `autoflow.notification-settings:${user?.id ?? "anonymous"}`,
-    [user?.id]
-  );
+const CADENCE_OPTIONS: Array<{ value: NotificationCadence; label: string }> = [
+  { value: "off", label: "Off" },
+  { value: "immediate", label: "Immediate" },
+  { value: "daily", label: "Daily digest" },
+  { value: "weekly", label: "Weekly digest" },
+];
+
+function preferenceKey(channel: NotificationChannel, kind: NotificationKind) {
+  return `${channel}:${kind}`;
+}
+
+function transportMap(transports: NotificationTransport[]): Record<NotificationChannel, NotificationTransport | undefined> {
+  return {
+    slack: transports.find((item) => item.channel === "slack"),
+    email: transports.find((item) => item.channel === "email"),
+    sms: transports.find((item) => item.channel === "sms"),
+  };
+}
+
+export default function NotificationsSettings() {
+  const { user, requireAccessToken } = useAuth();
+  const [loading, setLoading] = useState(true);
+  const [savingKey, setSavingKey] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [preferences, setPreferences] = useState<NotificationPreference[]>([]);
+  const [transports, setTransports] = useState<NotificationTransport[]>([]);
+  const [connectionOptions, setConnectionOptions] = useState<Record<NotificationChannel, ConnectionOption[]>>({
+    slack: [],
+    email: [],
+    sms: [],
+  });
+  const [transportDrafts, setTransportDrafts] = useState<Record<NotificationChannel, NotificationTransport["config"]>>({
+    slack: {},
+    email: {},
+    sms: {},
+  });
 
   useEffect(() => {
-    let cancelled = false;
+    let active = true;
 
-    async function loadSettings() {
+    async function load() {
       setLoading(true);
       setError(null);
       try {
-        const data = await apiGet<{ notifications?: Record<string, boolean> }>(
-          "/api/user/notifications",
-          user
-        );
-        if (cancelled) return;
-        if (data.notifications) setToggles((prev) => ({ ...prev, ...data.notifications }));
-      } catch (e) {
-        if (cancelled) return;
-        if (e instanceof ApiError && (e.status === 404 || e.status === 501)) {
-          const raw = localStorage.getItem(fallbackStorageKey);
-          const fallback = raw ? (JSON.parse(raw) as Record<string, boolean>) : null;
-          if (fallback) setToggles((prev) => ({ ...prev, ...fallback }));
+        const accessToken = await requireAccessToken();
+        const [prefs, transportList, options] = await Promise.all([
+          fetchNotificationPreferences(DEFAULT_WORKSPACE_ID, user, accessToken),
+          fetchNotificationTransports(DEFAULT_WORKSPACE_ID, user, accessToken),
+          fetchNotificationConnectionOptions(user, accessToken),
+        ]);
+        if (!active) {
           return;
         }
-        setError(e instanceof Error ? e.message : "Failed to load notification preferences.");
+        setPreferences(prefs);
+        setTransports(transportList);
+        setConnectionOptions(options);
+        setTransportDrafts({
+          slack: transportList.find((item) => item.channel === "slack")?.config ?? {},
+          email: transportList.find((item) => item.channel === "email")?.config ?? {},
+          sms: transportList.find((item) => item.channel === "sms")?.config ?? {},
+        });
+      } catch (loadError) {
+        if (!active) {
+          return;
+        }
+        setError(loadError instanceof Error ? loadError.message : "Failed to load notification settings");
       } finally {
-        if (!cancelled) setLoading(false);
+        if (active) {
+          setLoading(false);
+        }
       }
     }
 
-    void loadSettings();
+    void load();
     return () => {
-      cancelled = true;
+      active = false;
     };
-  }, [fallbackStorageKey, user]);
+  }, [requireAccessToken, user]);
 
-  useEffect(() => {
-    if (!toast) return;
-    const timer = window.setTimeout(() => setToast(null), 3000);
-    return () => window.clearTimeout(timer);
-  }, [toast]);
+  const preferencesByKey = useMemo(() => {
+    const next = new Map<string, NotificationPreference>();
+    for (const item of preferences) {
+      next.set(preferenceKey(item.channel, item.kind), item);
+    }
+    return next;
+  }, [preferences]);
 
-  function handleToggle(id: string) {
-    setToggles((prev) => ({ ...prev, [id]: !prev[id] }));
-  }
+  const transportsByChannel = useMemo(() => transportMap(transports), [transports]);
 
-  async function handleSave() {
-    setSaving(true);
+  async function handleCadenceChange(channel: NotificationChannel, kind: NotificationKind, cadence: NotificationCadence) {
+    setSavingKey(`${channel}:${kind}`);
+    setNotice(null);
     setError(null);
     try {
-      await apiPatch("/api/user/notifications", { notifications: toggles }, user);
-      setToast({ variant: "success", message: "Preferences saved." });
-    } catch (e) {
-      if (e instanceof ApiError && (e.status === 404 || e.status === 501)) {
-        localStorage.setItem(fallbackStorageKey, JSON.stringify(toggles));
-        setToast({
-          variant: "success",
-          message: "Preferences saved locally while the backend endpoint is pending.",
-        });
-      } else {
-        setError("Failed to save preferences. Please try again.");
-        setToast({
-          variant: "error",
-          message: e instanceof Error ? e.message : "Failed to save preferences.",
-        });
-      }
+      const accessToken = await requireAccessToken();
+      const updated = await updateNotificationPreference(
+        {
+          workspaceId: DEFAULT_WORKSPACE_ID,
+          channel,
+          kind,
+          cadence,
+          enabled: cadence !== "off",
+        },
+        user,
+        accessToken,
+      );
+      setPreferences((current) => current.map((item) => (item.id === updated.id ? updated : item)));
+    } catch (saveError) {
+      setError(saveError instanceof Error ? saveError.message : "Failed to update cadence");
     } finally {
-      setSaving(false);
+      setSavingKey(null);
     }
   }
 
-  if (loading) {
-    return (
-      <div className="p-8 max-w-4xl">
-        <div className="flex items-center gap-2 text-sm text-gray-500">
-          <Loader2 size={16} className="animate-spin" />
-          Loading notification settings...
-        </div>
-      </div>
-    );
+  async function handleMute(channel: NotificationChannel, kind: NotificationKind) {
+    const existing = preferencesByKey.get(preferenceKey(channel, kind));
+    if (!existing) {
+      return;
+    }
+    setSavingKey(`mute:${channel}:${kind}`);
+    setNotice(null);
+    setError(null);
+    try {
+      const accessToken = await requireAccessToken();
+      const mutedUntil = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+      const updated = await updateNotificationPreference(
+        {
+          workspaceId: DEFAULT_WORKSPACE_ID,
+          channel,
+          kind,
+          cadence: existing.cadence,
+          enabled: existing.enabled,
+          mutedUntil,
+        },
+        user,
+        accessToken,
+      );
+      setPreferences((current) => current.map((item) => (item.id === updated.id ? updated : item)));
+      setNotice(`${channel.toUpperCase()} ${kind.replace(/_/g, " ")} muted for 24 hours.`);
+    } catch (muteError) {
+      setError(muteError instanceof Error ? muteError.message : "Failed to mute notification");
+    } finally {
+      setSavingKey(null);
+    }
+  }
+
+  async function handleTransportSave(channel: NotificationChannel) {
+    setSavingKey(`transport:${channel}`);
+    setNotice(null);
+    setError(null);
+    try {
+      const accessToken = await requireAccessToken();
+      const existing = transportsByChannel[channel];
+      const updated = await updateNotificationTransport(
+        channel,
+        {
+          workspaceId: DEFAULT_WORKSPACE_ID,
+          connectionId: existing?.connectionId,
+          enabled: existing?.enabled ?? true,
+          config: Object.fromEntries(
+            Object.entries(transportDrafts[channel]).filter(([, value]) => Boolean(value)),
+          ) as Record<string, string>,
+        },
+        user,
+        accessToken,
+      );
+      setTransports((current) => {
+        const next = current.filter((item) => item.channel !== channel);
+        next.push(updated);
+        return next;
+      });
+      setNotice(`${channel.toUpperCase()} transport saved.`);
+    } catch (transportError) {
+      setError(transportError instanceof Error ? transportError.message : "Failed to save transport");
+    } finally {
+      setSavingKey(null);
+    }
+  }
+
+  async function handleConnectionSelect(channel: NotificationChannel, connectionId: string) {
+    setSavingKey(`connection:${channel}`);
+    setNotice(null);
+    setError(null);
+    try {
+      const accessToken = await requireAccessToken();
+      const existing = transportsByChannel[channel];
+      const updated = await updateNotificationTransport(
+        channel,
+        {
+          workspaceId: DEFAULT_WORKSPACE_ID,
+          connectionId,
+          enabled: existing?.enabled ?? true,
+          config: existing?.config ?? {},
+        },
+        user,
+        accessToken,
+      );
+      setTransports((current) => {
+        const next = current.filter((item) => item.channel !== channel);
+        next.push(updated);
+        return next;
+      });
+      setTransportDrafts((current) => ({ ...current, [channel]: updated.config }));
+      setNotice(`${channel.toUpperCase()} connection updated.`);
+    } catch (selectError) {
+      setError(selectError instanceof Error ? selectError.message : "Failed to update connection");
+    } finally {
+      setSavingKey(null);
+    }
+  }
+
+  async function handleTestSend(kind: NotificationKind) {
+    setSavingKey(`test:${kind}`);
+    setNotice(null);
+    setError(null);
+    try {
+      const accessToken = await requireAccessToken();
+      await sendNotificationTest(DEFAULT_WORKSPACE_ID, kind, user, accessToken);
+      setNotice(`Queued test notification for ${kind.replace(/_/g, " ")}.`);
+    } catch (testError) {
+      setError(testError instanceof Error ? testError.message : "Failed to queue test notification");
+    } finally {
+      setSavingKey(null);
+    }
   }
 
   return (
-    <div className="p-8 max-w-4xl">
-      {toast && <Toast variant={toast.variant} message={toast.message} />}
+    <div className="max-w-6xl p-8">
       <div className="mb-8">
         <h1 className="text-2xl font-bold text-gray-900">Notifications</h1>
-        <p className="text-gray-500 mt-1">Choose when and how you get notified.</p>
+        <p className="mt-1 text-gray-500">Slack, email, and SMS digests with workspace-level cadence controls.</p>
       </div>
 
-      <div className="bg-white rounded-xl border border-gray-200 p-6">
-        <h2 className="text-base font-semibold text-gray-900 mb-1">Email Notifications</h2>
-        <p className="text-sm text-gray-400 mb-5">Notifications are sent to your account email address.</p>
+      {error ? (
+        <div className="mb-4 rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+          {error}
+        </div>
+      ) : null}
+      {notice ? (
+        <div className="mb-4 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
+          {notice}
+        </div>
+      ) : null}
 
-        {error && (
-          <div className="mb-4 px-3 py-2 rounded-lg bg-red-50 border border-red-200 text-sm text-red-700">
-            {error}
-          </div>
-        )}
-        <div className="divide-y divide-gray-100">
-          {NOTIFICATION_OPTIONS.map((option) => (
-            <div key={option.id} className="flex items-center justify-between py-4 first:pt-0">
+      {loading ? (
+        <div className="flex items-center gap-3 rounded-xl border border-gray-200 bg-white px-5 py-6 text-sm text-gray-500">
+          <Loader2 className="h-4 w-4 animate-spin" />
+          Loading notification settings…
+        </div>
+      ) : (
+        <div className="space-y-6">
+          <section className="rounded-2xl border border-gray-200 bg-white p-6">
+            <div className="mb-5 flex items-center gap-3">
+              <ShieldAlert className="h-5 w-5 text-gray-500" />
               <div>
-                <p className="text-sm font-medium text-gray-900">{option.label}</p>
-                <p className="text-xs text-gray-400 mt-0.5">{option.description}</p>
+                <h2 className="text-base font-semibold text-gray-900">Channel transports</h2>
+                <p className="text-sm text-gray-500">Attach one connected provider per channel and set delivery targets.</p>
               </div>
-              <button
-                role="switch"
-                aria-checked={toggles[option.id]}
-                onClick={() => handleToggle(option.id)}
-                className={`relative inline-flex h-5 w-9 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-1 ${
-                  toggles[option.id] ? "bg-blue-600" : "bg-gray-200"
-                }`}
-              >
-                <span
-                  className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition duration-200 ${
-                    toggles[option.id] ? "translate-x-4" : "translate-x-0"
-                  }`}
-                />
-              </button>
             </div>
-          ))}
-        </div>
 
-        <div className="mt-5 pt-4 border-t border-gray-100">
-          <button
-            onClick={handleSave}
-            disabled={saving}
-            className="px-5 py-2 rounded-lg bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 disabled:opacity-60 transition-colors"
-          >
-            {saving ? "Saving…" : "Save preferences"}
-          </button>
+            <div className="grid gap-4 lg:grid-cols-3">
+              {CHANNEL_META.map((meta) => {
+                const transport = transportsByChannel[meta.channel];
+                const options = connectionOptions[meta.channel];
+                return (
+                  <div key={meta.channel} className="rounded-xl border border-gray-200 p-4">
+                    <div className="mb-3">
+                      <h3 className="text-sm font-semibold text-gray-900">{meta.label}</h3>
+                      <p className="mt-1 text-xs text-gray-500">{meta.helper}</p>
+                    </div>
+
+                    <label className="mb-3 block text-xs font-medium uppercase tracking-wide text-gray-500">
+                      Connected provider
+                      <select
+                        className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+                        value={transport?.connectionId ?? ""}
+                        onChange={(event) => void handleConnectionSelect(meta.channel, event.target.value)}
+                      >
+                        <option value="">Select a connected provider</option>
+                        {options.map((option) => (
+                          <option key={option.id} value={option.id}>
+                            {option.label}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+
+                    {meta.channel === "slack" ? (
+                      <>
+                        <input
+                          className="mb-2 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+                          placeholder="Slack channel ID"
+                          value={transportDrafts.slack.slackChannelId ?? ""}
+                          onChange={(event) =>
+                            setTransportDrafts((current) => ({
+                              ...current,
+                              slack: { ...current.slack, slackChannelId: event.target.value },
+                            }))
+                          }
+                        />
+                        <input
+                          className="mb-3 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+                          placeholder="Channel label"
+                          value={transportDrafts.slack.slackChannelName ?? ""}
+                          onChange={(event) =>
+                            setTransportDrafts((current) => ({
+                              ...current,
+                              slack: { ...current.slack, slackChannelName: event.target.value },
+                            }))
+                          }
+                        />
+                      </>
+                    ) : null}
+
+                    {meta.channel === "email" ? (
+                      <>
+                        <input
+                          className="mb-2 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+                          placeholder="Recipient email"
+                          value={transportDrafts.email.recipientEmail ?? ""}
+                          onChange={(event) =>
+                            setTransportDrafts((current) => ({
+                              ...current,
+                              email: { ...current.email, recipientEmail: event.target.value },
+                            }))
+                          }
+                        />
+                        <input
+                          className="mb-2 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+                          placeholder="From email"
+                          value={transportDrafts.email.fromEmail ?? ""}
+                          onChange={(event) =>
+                            setTransportDrafts((current) => ({
+                              ...current,
+                              email: { ...current.email, fromEmail: event.target.value },
+                            }))
+                          }
+                        />
+                        <input
+                          className="mb-3 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+                          placeholder="From name"
+                          value={transportDrafts.email.fromName ?? ""}
+                          onChange={(event) =>
+                            setTransportDrafts((current) => ({
+                              ...current,
+                              email: { ...current.email, fromName: event.target.value },
+                            }))
+                          }
+                        />
+                      </>
+                    ) : null}
+
+                    {meta.channel === "sms" ? (
+                      <>
+                        <input
+                          className="mb-2 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+                          placeholder="To phone"
+                          value={transportDrafts.sms.toPhone ?? ""}
+                          onChange={(event) =>
+                            setTransportDrafts((current) => ({
+                              ...current,
+                              sms: { ...current.sms, toPhone: event.target.value },
+                            }))
+                          }
+                        />
+                        <input
+                          className="mb-3 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+                          placeholder="From phone"
+                          value={transportDrafts.sms.fromPhone ?? ""}
+                          onChange={(event) =>
+                            setTransportDrafts((current) => ({
+                              ...current,
+                              sms: { ...current.sms, fromPhone: event.target.value },
+                            }))
+                          }
+                        />
+                      </>
+                    ) : null}
+
+                    <button
+                      className="inline-flex items-center rounded-lg bg-gray-900 px-3 py-2 text-sm font-medium text-white"
+                      onClick={() => void handleTransportSave(meta.channel)}
+                      disabled={savingKey === `transport:${meta.channel}`}
+                    >
+                      {savingKey === `transport:${meta.channel}` ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                      Save {meta.label}
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          </section>
+
+          <section className="rounded-2xl border border-gray-200 bg-white p-6">
+            <div className="mb-5 flex items-center gap-3">
+              <MessageSquareWarning className="h-5 w-5 text-gray-500" />
+              <div>
+                <h2 className="text-base font-semibold text-gray-900">Cadence by notification type</h2>
+                <p className="text-sm text-gray-500">Set independent digests per channel and mute noisy streams temporarily.</p>
+              </div>
+            </div>
+
+            <div className="space-y-4">
+              {KIND_META.map((meta) => (
+                <div key={meta.kind} className="rounded-xl border border-gray-200">
+                  <div className="flex items-start justify-between gap-4 border-b border-gray-100 px-4 py-4">
+                    <div>
+                      <h3 className="text-sm font-semibold text-gray-900">{meta.label}</h3>
+                      <p className="mt-1 text-xs text-gray-500">{meta.description}</p>
+                    </div>
+                    <button
+                      className="inline-flex items-center rounded-lg border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700"
+                      onClick={() => void handleTestSend(meta.kind)}
+                      disabled={savingKey === `test:${meta.kind}`}
+                    >
+                      {savingKey === `test:${meta.kind}` ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Send className="mr-2 h-4 w-4" />}
+                      Send test
+                    </button>
+                  </div>
+
+                  <div className="grid gap-3 p-4 lg:grid-cols-3">
+                    {CHANNEL_META.map((channel) => {
+                      const preference = preferencesByKey.get(preferenceKey(channel.channel, meta.kind));
+                      return (
+                        <div key={channel.channel} className="rounded-lg border border-gray-200 p-3">
+                          <div className="mb-2 flex items-center justify-between">
+                            <span className="text-sm font-medium text-gray-900">{channel.label}</span>
+                            {preference?.mutedUntil ? (
+                              <span className="rounded-full bg-amber-100 px-2 py-1 text-[11px] font-medium text-amber-700">
+                                Muted
+                              </span>
+                            ) : null}
+                          </div>
+                          <select
+                            className="mb-2 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+                            value={preference?.cadence ?? "off"}
+                            onChange={(event) =>
+                              void handleCadenceChange(channel.channel, meta.kind, event.target.value as NotificationCadence)
+                            }
+                          >
+                            {CADENCE_OPTIONS.map((option) => (
+                              <option key={option.value} value={option.value}>
+                                {option.label}
+                              </option>
+                            ))}
+                          </select>
+                          <button
+                            className="text-xs font-medium text-gray-600 underline"
+                            onClick={() => void handleMute(channel.channel, meta.kind)}
+                            disabled={savingKey === `mute:${channel.channel}:${meta.kind}`}
+                          >
+                            Mute 24h
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </section>
         </div>
-      </div>
+      )}
     </div>
   );
 }

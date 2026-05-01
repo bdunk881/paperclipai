@@ -1,18 +1,16 @@
 import { ConnectorError, ConnectorErrorType } from "./types";
+import {
+  classifyStandardErrorType,
+  isStandardRetryable,
+  resolveRetryDelayMs,
+  sleep,
+} from "../shared/retryPolicy";
 
 const SLACK_API_BASE = "https://slack.com/api";
 const MAX_RETRIES = 3;
 
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
 function parseErrorType(status: number, bodyText: string): ConnectorErrorType {
-  if (status === 401 || status === 403) return "auth";
-  if (status === 429 || bodyText.includes("rate_limited")) return "rate-limit";
-  if (status >= 500) return "upstream";
-  if (status >= 400) return "schema";
-  return "network";
+  return classifyStandardErrorType(status, bodyText, /rate_limited|rate.?limit/i);
 }
 
 export class SlackClient {
@@ -43,8 +41,7 @@ export class SlackClient {
         if (attempt >= MAX_RETRIES) {
           throw new ConnectorError("rate-limit", "Slack API rate limit exceeded", 429);
         }
-        const retryAfterSeconds = Number(response.headers.get("Retry-After") ?? "1");
-        await sleep(Math.max(1, retryAfterSeconds) * 1000);
+        await sleep(resolveRetryDelayMs({ attempt, headers: response.headers }));
         return this.request(path, init, attempt + 1);
       }
 
@@ -61,11 +58,16 @@ export class SlackClient {
 
       if (!data.ok) {
         const errorText = String(data.error ?? "unknown_error");
-        const type = errorText === "invalid_auth" ? "auth" : "upstream";
+        const type =
+          errorText === "invalid_auth"
+            ? "auth"
+            : errorText === "rate_limited"
+              ? "rate-limit"
+              : "upstream";
         const statusCode = type === "auth" ? 401 : 502;
 
-        if (type === "upstream" && attempt < MAX_RETRIES) {
-          await sleep(250 * Math.pow(2, attempt));
+        if (isStandardRetryable(type) && attempt < MAX_RETRIES) {
+          await sleep(resolveRetryDelayMs({ attempt }));
           return this.request(path, init, attempt + 1);
         }
 
@@ -74,10 +76,16 @@ export class SlackClient {
 
       return data;
     } catch (error) {
-      if (error instanceof ConnectorError) throw error;
+      if (error instanceof ConnectorError) {
+        if (isStandardRetryable(error.type) && attempt < MAX_RETRIES) {
+          await sleep(resolveRetryDelayMs({ attempt }));
+          return this.request(path, init, attempt + 1);
+        }
+        throw error;
+      }
 
       if (attempt < MAX_RETRIES) {
-        await sleep(250 * Math.pow(2, attempt));
+        await sleep(resolveRetryDelayMs({ attempt }));
         return this.request(path, init, attempt + 1);
       }
 

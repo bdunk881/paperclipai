@@ -8,25 +8,38 @@
  */
 
 :root {
-  /* Brand colors - The Electric Lab (Dark Theme) */
-  --color-primary: #14b8a6;          /* Electric Teal (Teal-500) */
-  --color-primary-hover: #0d9488;    /* Teal-600 */
-  --color-primary-light: rgba(20, 184, 166, 0.1);
-  --color-primary-text: #2dd4bf;     /* Teal-400 */
-  --color-accent: #6366f1;           /* Indigo-500 */
-  --color-trigger: #f97316;          /* Orange-500 */
+  /* AutoFlow brand palette */
+  --color-teal: #00D4B8;
+  --color-indigo: #4A3AFF;
+  --color-coral: #FF5F57;
+  --color-yellow: #FFD93D;
+  --color-navy: #0F1333;
+  --color-slate: #2D3748;
+  --color-cloud: #F7FAFC;
 
-  /* Neutral palette - Obsidian Dark */
-  --color-bg: #0f172a;               /* Obsidian Dark (Slate-900) */
-  --color-bg-subtle: #1e293b;        /* Slate-800 */
-  --color-surface: #1e293b;          /* Slate-800 */
-  --color-border: #334155;           /* Slate-700 */
-  --color-text-primary: #f1f5f9;     /* Slate-100 */
-  --color-text-secondary: #94a3b8;   /* Slate-400 */
-  --color-text-muted: #64748b;       /* Slate-500 */
+  /* Semantic brand colors (mapped to palette) */
+  --color-primary: var(--color-indigo);
+  --color-primary-hover: #3b2ce0;
+  --color-primary-light: #ede8ff;
+  --color-primary-text: #2a1dbf;
+  --color-accent: var(--color-teal);
+  --color-accent-hover: #00b89f;
+  --color-cta: var(--color-coral);
+  --color-cta-hover: #e54e46;
+  --color-highlight: var(--color-yellow);
+
+  /* Neutral palette */
+  --color-bg: #ffffff;
+  --color-bg-subtle: var(--color-cloud);
+  --color-surface: #ffffff;
+  --color-border: #e5e7eb;           /* gray-200 */
+  --color-text-primary: var(--color-navy);
+  --color-text-secondary: var(--color-slate);
+  --color-text-muted: #9ca3af;       /* gray-400 */
 
   /* Typography */
-  --font-heading: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Poppins", ui-sans-serif, system-ui, sans-serif;
+  --font-heading: "Poppins", ui-sans-serif, system-ui, sans-serif;
   --font-body: "Inter", ui-sans-serif, system-ui, sans-serif;
   --font-mono: "JetBrains Mono", ui-monospace, "Cascadia Code", monospace;
 
@@ -48,8 +61,18 @@
   --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
 
   /* CTA button */
-  --cta-bg: var(--color-primary);
-  --cta-bg-hover: var(--color-primary-hover);
+  --cta-bg: var(--color-cta);
+  --cta-bg-hover: var(--color-cta-hover);
   --cta-text: #ffffff;
   --cta-radius: var(--radius-lg);
+
+  /* Hero gradient */
+  --gradient-hero: linear-gradient(135deg, var(--color-indigo) 0%, var(--color-teal) 50%, var(--color-yellow) 100%);
+
+  /* Flow builder node status colors */
+  --flow-edge: var(--color-teal);
+  --flow-selected: var(--color-indigo);
+  --flow-error: var(--color-coral);
+  --flow-warning: var(--color-yellow);
+  --flow-success: var(--color-teal);
 }

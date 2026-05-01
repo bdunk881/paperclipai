@@ -10,19 +10,14 @@ test("auth regression: protected routes redirect to /login when unauthenticated"
   await expect(page).toHaveURL(/\/login/);
 });
 
-test("auth regression: login CTA renders and starts Microsoft redirect flow", async ({
+test("auth regression: login CTA renders and validates the native auth form", async ({
   page,
 }) => {
   await page.goto("/login");
 
-  const signInButton = page.getByRole("button", { name: /continue with microsoft/i });
+  const signInButton = page.locator("form").getByRole("button", { name: /^sign in$/i });
   await expect(signInButton).toBeVisible();
 
   await signInButton.click();
-
-  try {
-    await page.waitForURL(/ciamlogin\.com|login\.microsoftonline\.com/i, { timeout: 10_000 });
-  } catch {
-    await expect(signInButton).toBeDisabled({ timeout: 5_000 });
-  }
+  await expect(page.getByText(/enter both your email and password\./i)).toBeVisible();
 });

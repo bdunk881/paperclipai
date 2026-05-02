@@ -11,6 +11,7 @@ export interface TicketSlaTarget {
 
 export interface TicketSlaEscalationPolicy {
   notify: boolean;
+  notifyTargets?: string[];
   autoBumpPriority: boolean;
   autoReassign: boolean;
   fallbackAssignee?: TicketActorRef;

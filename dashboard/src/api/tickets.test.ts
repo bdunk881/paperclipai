@@ -24,23 +24,12 @@ function lastFetchOptions(): RequestInit {
 }
 
 describe("tickets api mock fallback", () => {
-  it("throws instead of silently returning mock tickets when the backend 404s", async () => {
+  it("throws instead of silently returning fabricated tickets when the backend 404s", async () => {
     mockFetch(404, { error: "Not found" });
 
     const { listTickets } = await import("./tickets");
 
-    await expect(listTickets()).rejects.toThrow(/mock fallback is disabled/i);
-  });
-
-  it("still allows mock ticketing when VITE_USE_MOCK is enabled", async () => {
-    vi.stubEnv("VITE_USE_MOCK", "true");
-    mockFetch(404, { error: "Not found" });
-
-    const { listTickets } = await import("./tickets");
-    const result = await listTickets();
-
-    expect(result.source).toBe("mock");
-    expect(result.tickets.length).toBeGreaterThan(0);
+    await expect(listTickets()).rejects.toThrow(/Failed to load tickets: 404/i);
   });
 });
 

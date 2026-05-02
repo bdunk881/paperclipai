@@ -329,19 +329,6 @@ export function collectKnownActors(
   });
 }
 
-function withMockFallback<T>(factory: () => Promise<T>, fallback: () => T | Promise<T>): Promise<T> {
-  return factory().catch((error) => {
-    if (!USE_MOCK_TICKETING) {
-      if (error instanceof Error && error.message === "fallback") {
-        throw new Error("Live ticketing data is unavailable and mock fallback is disabled.");
-      }
-      throw error;
-    }
-
-    return Promise.resolve(fallback());
-  });
-}
-
 function filterTickets(tickets: TicketRecord[], filters: TicketListFilters): TicketRecord[] {
   return tickets.filter((ticket) => {
     if (filters.workspaceId && ticket.workspaceId !== filters.workspaceId) return false;
@@ -588,54 +575,35 @@ export async function listTickets(
   filters: TicketListFilters = {},
   accessToken?: string
 ): Promise<{ tickets: TicketRecord[]; total: number; source: "api" | "mock" }> {
-  return withMockFallback<{ tickets: TicketRecord[]; total: number; source: "api" | "mock" }>(
-    async () => {
-      const params = new URLSearchParams();
-      if (filters.workspaceId) params.set("workspaceId", filters.workspaceId);
-      if (filters.actorType) params.set("actorType", filters.actorType);
-      if (filters.actorId) params.set("actorId", filters.actorId);
-      if (filters.status) params.set("status", filters.status);
-      if (filters.priority) params.set("priority", filters.priority);
-      if (filters.slaState) params.set("slaState", filters.slaState);
+  const params = new URLSearchParams();
+  if (filters.workspaceId) params.set("workspaceId", filters.workspaceId);
+  if (filters.actorType) params.set("actorType", filters.actorType);
+  if (filters.actorId) params.set("actorId", filters.actorId);
+  if (filters.status) params.set("status", filters.status);
+  if (filters.priority) params.set("priority", filters.priority);
+  if (filters.slaState) params.set("slaState", filters.slaState);
 
-      const suffix = params.toString() ? `?${params.toString()}` : "";
-      const res = await fetch(`${BASE}/tickets${suffix}`, {
-        headers: buildAuthHeaders(accessToken),
-      });
+  const suffix = params.toString() ? `?${params.toString()}` : "";
+  const res = await fetch(`${BASE}/tickets${suffix}`, {
+    headers: buildAuthHeaders(accessToken),
+  });
 
-      if (!res.ok) {
-        if (isMockFallbackStatus(res.status)) {
-          throw new Error("fallback");
-        }
-        throw new Error(`Failed to load tickets: ${res.status}`);
-      }
+  if (!res.ok) {
+    throw new Error(`Failed to load tickets: ${res.status}`);
+  }
 
-      const data = (await res.json()) as { tickets: TicketRecord[]; total: number };
-      return { tickets: data.tickets, total: data.total, source: "api" as const };
-    },
-    () => {
-      const tickets = listMockTickets(filters);
-      return { tickets, total: tickets.length, source: "mock" as const };
-    }
-  );
+  const data = (await res.json()) as { tickets: TicketRecord[]; total: number };
+  return { tickets: data.tickets, total: data.total, source: "api" as const };
 }
 
 export async function getTicket(ticketId: string, accessToken?: string): Promise<TicketAggregate> {
-  return withMockFallback(
-    async () => {
-      const res = await fetch(`${BASE}/tickets/${encodeURIComponent(ticketId)}`, {
-        headers: buildAuthHeaders(accessToken),
-      });
-      if (!res.ok) {
-        if (isMockFallbackStatus(res.status)) {
-          throw new Error("fallback");
-        }
-        throw new Error(`Failed to load ticket: ${res.status}`);
-      }
-      return (await res.json()) as TicketAggregate;
-    },
-    () => getMockAggregate(ticketId)
-  );
+  const res = await fetch(`${BASE}/tickets/${encodeURIComponent(ticketId)}`, {
+    headers: buildAuthHeaders(accessToken),
+  });
+  if (!res.ok) {
+    throw new Error(`Failed to load ticket: ${res.status}`);
+  }
+  return (await res.json()) as TicketAggregate;
 }
 
 export async function searchTicketMemories(
@@ -643,76 +611,35 @@ export async function searchTicketMemories(
   accessToken?: string,
   options: { agentId?: string; limit?: number } = {}
 ): Promise<{ results: TicketMemoryEntry[]; total: number; source: "api" | "mock" }> {
-  return withMockFallback<{ results: TicketMemoryEntry[]; total: number; source: "api" | "mock" }>(
-    async () => {
-      const params = new URLSearchParams();
-      params.set("q", query);
-      if (options.agentId) params.set("agentId", options.agentId);
-      if (options.limit) params.set("limit", String(options.limit));
+  const params = new URLSearchParams();
+  params.set("q", query);
+  if (options.agentId) params.set("agentId", options.agentId);
+  if (options.limit) params.set("limit", String(options.limit));
 
-      const res = await fetch(`${BASE}/memory/search?${params.toString()}`, {
-        headers: buildAuthHeaders(accessToken),
-      });
+  const res = await fetch(`${BASE}/memory/search?${params.toString()}`, {
+    headers: buildAuthHeaders(accessToken),
+  });
 
-      if (!res.ok) {
-        if (isMockFallbackStatus(res.status)) {
-          throw new Error("fallback");
-        }
-        throw new Error(`Failed to search memories: ${res.status}`);
-      }
+  if (!res.ok) {
+    throw new Error(`Failed to search memories: ${res.status}`);
+  }
 
-      const data = (await res.json()) as { results: TicketMemoryEntry[]; total: number };
-      return { ...data, source: "api" as const };
-    },
-    () => {
-      const normalized = query.trim().toLowerCase();
-      const limit = options.limit ?? 6;
-      const results = mockAggregates
-        .flatMap((aggregate) => aggregate.relevantMemories ?? [])
-        .filter((entry) => {
-          if (options.agentId && entry.agentId !== options.agentId) return false;
-          if (!normalized) return true;
-          return (
-            entry.key.toLowerCase().includes(normalized) ||
-            entry.text.toLowerCase().includes(normalized) ||
-            entry.workflowName?.toLowerCase().includes(normalized)
-          );
-        })
-        .slice(0, limit)
-        .map(cloneMemoryEntry);
-
-      return { results, total: results.length, source: "mock" as const };
-    }
-  );
+  const data = (await res.json()) as { results: TicketMemoryEntry[]; total: number };
+  return { ...data, source: "api" as const };
 }
 
 export async function getTicketActivity(
   ticketId: string,
   accessToken?: string
 ): Promise<{ updates: TicketUpdate[]; total: number; source: "api" | "mock" }> {
-  return withMockFallback<{ updates: TicketUpdate[]; total: number; source: "api" | "mock" }>(
-    async () => {
-      const res = await fetch(`${BASE}/tickets/${encodeURIComponent(ticketId)}/activity`, {
-        headers: buildAuthHeaders(accessToken),
-      });
-      if (!res.ok) {
-        if (isMockFallbackStatus(res.status)) {
-          throw new Error("fallback");
-        }
-        throw new Error(`Failed to load ticket activity: ${res.status}`);
-      }
-      const data = (await res.json()) as { updates: TicketUpdate[]; total: number };
-      return { ...data, source: "api" as const };
-    },
-    () => {
-      const aggregate = getMockAggregate(ticketId);
-      return {
-        updates: aggregate.updates,
-        total: aggregate.updates.length,
-        source: "mock" as const,
-      };
-    }
-  );
+  const res = await fetch(`${BASE}/tickets/${encodeURIComponent(ticketId)}/activity`, {
+    headers: buildAuthHeaders(accessToken),
+  });
+  if (!res.ok) {
+    throw new Error(`Failed to load ticket activity: ${res.status}`);
+  }
+  const data = (await res.json()) as { updates: TicketUpdate[]; total: number };
+  return { ...data, source: "api" as const };
 }
 
 export async function listTicketQueue(
@@ -720,37 +647,22 @@ export async function listTicketQueue(
   accessToken?: string,
   filters: Omit<TicketListFilters, "actorType" | "actorId"> = {}
 ): Promise<TicketQueueResponse & { source: "api" | "mock" }> {
-  return withMockFallback<TicketQueueResponse & { source: "api" | "mock" }>(
-    async () => {
-      const params = new URLSearchParams();
-      if (filters.workspaceId) params.set("workspaceId", filters.workspaceId);
-      if (filters.status) params.set("status", filters.status);
-      if (filters.priority) params.set("priority", filters.priority);
-      if (filters.slaState) params.set("slaState", filters.slaState);
-      const suffix = params.toString() ? `?${params.toString()}` : "";
+  const params = new URLSearchParams();
+  if (filters.workspaceId) params.set("workspaceId", filters.workspaceId);
+  if (filters.status) params.set("status", filters.status);
+  if (filters.priority) params.set("priority", filters.priority);
+  if (filters.slaState) params.set("slaState", filters.slaState);
+  const suffix = params.toString() ? `?${params.toString()}` : "";
 
-      const res = await fetch(
-        `${BASE}/tickets/queue/${encodeURIComponent(actor.type)}/${encodeURIComponent(actor.id)}${suffix}`,
-        { headers: buildAuthHeaders(accessToken) }
-      );
-      if (!res.ok) {
-        if (isMockFallbackStatus(res.status)) {
-          throw new Error("fallback");
-        }
-        throw new Error(`Failed to load ticket queue: ${res.status}`);
-      }
-      const data = (await res.json()) as TicketQueueResponse;
-      return { ...data, source: "api" as const };
-    },
-    () => {
-      const tickets = listMockTickets({
-        ...filters,
-        actorType: actor.type,
-        actorId: actor.id,
-      });
-      return { actor, tickets, total: tickets.length, source: "mock" as const };
-    }
+  const res = await fetch(
+    `${BASE}/tickets/queue/${encodeURIComponent(actor.type)}/${encodeURIComponent(actor.id)}${suffix}`,
+    { headers: buildAuthHeaders(accessToken) }
   );
+  if (!res.ok) {
+    throw new Error(`Failed to load ticket queue: ${res.status}`);
+  }
+  const data = (await res.json()) as TicketQueueResponse;
+  return { ...data, source: "api" as const };
 }
 
 export async function createTicket(
@@ -769,65 +681,19 @@ export async function createTicket(
 
   const integrationWarnings = buildCreateWarnings(input);
 
-  return withMockFallback<TicketAggregate & { source: "api" | "mock"; integrationWarnings: string[] }>(
-    async () => {
-      const res = await fetch(`${BASE}/tickets`, {
-        method: "POST",
-        headers: buildMutationHeaders(accessToken),
-        body: JSON.stringify(payload),
-      });
+  const res = await fetch(`${BASE}/tickets`, {
+    method: "POST",
+    headers: buildMutationHeaders(accessToken),
+    body: JSON.stringify(payload),
+  });
 
-      if (!res.ok) {
-        if (isMockFallbackStatus(res.status)) {
-          throw new Error("fallback");
-        }
+  if (!res.ok) {
+    const message = await readErrorMessage(res, "Failed to create ticket");
+    throw new Error(message);
+  }
 
-        const message = await readErrorMessage(res, "Failed to create ticket");
-        throw new Error(message);
-      }
-
-      const aggregate = (await res.json()) as TicketAggregate;
-      return { ...aggregate, source: "api" as const, integrationWarnings };
-    },
-    () => {
-      const createdAt = nowIso();
-      const ticketId = createId("ticket");
-      const aggregate: TicketAggregate = {
-        ticket: {
-          id: ticketId,
-          workspaceId: payload.workspaceId ?? DEFAULT_WORKSPACE_ID,
-          title: payload.title,
-          description: payload.description ?? "",
-          creatorId: "current-user",
-          status: "open",
-          priority: payload.priority ?? "medium",
-          slaState: "on_track",
-          dueDate: payload.dueDate,
-          tags: normalizeTags(payload.tags),
-          assignees: payload.assignees.map(cloneAssignee),
-          createdAt,
-          updatedAt: createdAt,
-        },
-        updates: [
-          {
-            id: createId("update"),
-            ticketId,
-            actor: { type: "user", id: "current-user" },
-            type: "structured_update",
-            content: "Ticket created from the ticketing create modal.",
-            metadata: {
-              attachmentNames: input.attachmentNames ?? [],
-              externalSyncRequested: Boolean(input.externalSyncRequested),
-            },
-            createdAt,
-          },
-        ],
-      };
-
-      appendMockAggregate(aggregate);
-      return { ...aggregate, source: "mock" as const, integrationWarnings };
-    }
-  );
+  const aggregate = (await res.json()) as TicketAggregate;
+  return { ...aggregate, source: "api" as const, integrationWarnings };
 }
 
 export async function addTicketUpdate(
@@ -835,43 +701,19 @@ export async function addTicketUpdate(
   input: CreateTicketUpdateInput,
   accessToken?: string
 ): Promise<{ update: TicketUpdate; source: "api" | "mock" }> {
-  return withMockFallback<{ update: TicketUpdate; source: "api" | "mock" }>(
-    async () => {
-      const res = await fetch(`${BASE}/tickets/${encodeURIComponent(ticketId)}/updates`, {
-        method: "POST",
-        headers: buildMutationHeaders(accessToken),
-        body: JSON.stringify(input),
-      });
+  const res = await fetch(`${BASE}/tickets/${encodeURIComponent(ticketId)}/updates`, {
+    method: "POST",
+    headers: buildMutationHeaders(accessToken),
+    body: JSON.stringify(input),
+  });
 
-      if (!res.ok) {
-        if (isMockFallbackStatus(res.status)) {
-          throw new Error("fallback");
-        }
-        const message = await readErrorMessage(res, "Failed to add ticket update");
-        throw new Error(message);
-      }
+  if (!res.ok) {
+    const message = await readErrorMessage(res, "Failed to add ticket update");
+    throw new Error(message);
+  }
 
-      const data = (await res.json()) as { update: TicketUpdate };
-      return { update: data.update, source: "api" as const };
-    },
-    () => {
-      const aggregate = getMockAggregate(ticketId);
-      const update: TicketUpdate = {
-        id: createId("update"),
-        ticketId,
-        actor: { type: input.actorType ?? "user", id: "current-user" },
-        type: input.type ?? "comment",
-        content: input.content.trim(),
-        metadata: { ...(input.metadata ?? {}) },
-        createdAt: nowIso(),
-      };
-
-      aggregate.updates.push(update);
-      aggregate.ticket.updatedAt = update.createdAt;
-      replaceMockAggregate(aggregate);
-      return { update, source: "mock" as const };
-    }
-  );
+  const data = (await res.json()) as { update: TicketUpdate };
+  return { update: data.update, source: "api" as const };
 }
 
 export async function transitionTicket(
@@ -879,47 +721,16 @@ export async function transitionTicket(
   input: TransitionTicketInput,
   accessToken?: string
 ): Promise<TicketAggregate & { source: "api" | "mock" }> {
-  return withMockFallback<TicketAggregate & { source: "api" | "mock" }>(
-    async () => {
-      const res = await fetch(`${BASE}/tickets/${encodeURIComponent(ticketId)}/transitions`, {
-        method: "POST",
-        headers: buildMutationHeaders(accessToken),
-        body: JSON.stringify(input),
-      });
-      if (!res.ok) {
-        if (isMockFallbackStatus(res.status)) {
-          throw new Error("fallback");
-        }
-        const message = await readErrorMessage(res, "Failed to transition ticket");
-        throw new Error(message);
-      }
-      return { ...(await res.json() as TicketAggregate), source: "api" as const };
-    },
-    () => {
-      const aggregate = getMockAggregate(ticketId);
-      const timestamp = nowIso();
-      const previousStatus = aggregate.ticket.status;
-      aggregate.ticket.status = input.status;
-      aggregate.ticket.updatedAt = timestamp;
-      aggregate.ticket.resolvedAt = input.status === "resolved" ? timestamp : undefined;
-      aggregate.updates.push({
-        id: createId("update"),
-        ticketId,
-        actor: { type: input.actorType ?? "user", id: "current-user" },
-        type: "status_change",
-        content:
-          input.reason?.trim() ||
-          `Ticket status changed from ${previousStatus} to ${input.status}.`,
-        metadata: {
-          fromStatus: previousStatus,
-          toStatus: input.status,
-        },
-        createdAt: timestamp,
-      });
-      replaceMockAggregate(aggregate);
-      return { ...aggregate, source: "mock" as const };
-    }
-  );
+  const res = await fetch(`${BASE}/tickets/${encodeURIComponent(ticketId)}/transitions`, {
+    method: "POST",
+    headers: buildMutationHeaders(accessToken),
+    body: JSON.stringify(input),
+  });
+  if (!res.ok) {
+    const message = await readErrorMessage(res, "Failed to transition ticket");
+    throw new Error(message);
+  }
+  return { ...(await res.json() as TicketAggregate), source: "api" as const };
 }
 
 function buildCreateWarnings(input: CreateTicketUiPayload): string[] {

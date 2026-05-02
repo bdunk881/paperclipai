@@ -67,6 +67,28 @@ const STATS = [
   { value: "6 days", label: "to first live agent system" },
 ];
 
+const FEATURES = [
+  {
+    title: "Bring Your Own LLM — No Lock-In",
+    description: "Connect any LLM provider. Switch models without rebuilding. You own the AI layer.",
+  },
+  {
+    title: "22 Agent Skills. One Marketplace.",
+    description:
+      "Slack, GitHub, Linear, Notion, Stripe, PostgreSQL, and 16 more. Skill marketplace expanding weekly.",
+  },
+  {
+    title: "See Everything, Control Anything",
+    description:
+      "Human-in-the-loop controls on every agent action. Describe outcomes, not steps — review before anything ships.",
+  },
+  {
+    title: "Agent Memory — Persistent Context",
+    description:
+      "Agents remember past runs, decisions, and outcomes. No re-briefing, no lost context. Unlike Zapier or Make.",
+  },
+];
+
 const WORKFLOW_NODES = [
   {
     title: "Trigger",
@@ -217,10 +239,10 @@ export default function Home() {
               Now in public beta
             </div>
             <p className="eyebrow">The Electric Lab for operational teams</p>
-            <h1>Hire AI. Deploy Fast. Earn More.</h1>
+            <h1>The AI-Native Operating Layer for SMB Operators and Developer Teams</h1>
             <p className="hero-copy__lede">
-              The intelligent nervous system for modern teams. AI-native, MCP-standard, and
-              BYOLLM-ready.
+              The intelligent operating layer for lean operators and dev teams who can&#39;t afford
+              brittle automations. AI-native, MCP-standard, and BYOLLM-ready.
             </p>
             <div id="waitlist">
               <WaitlistForm className="hero-copy__form" buttonLabel="Join waitlist" />
@@ -262,6 +284,28 @@ export default function Home() {
                 </div>
               </div>
             </div>
+          </div>
+        </div>
+      </section>
+
+      <section className="section section--features">
+        <div className="shell">
+          <div className="section-heading">
+            <p className="eyebrow">Core Capabilities</p>
+            <h2>Built for the next generation of operations.</h2>
+          </div>
+
+          <div className="feature-grid">
+            {FEATURES.map((feature, index) => (
+              <article
+                key={feature.title}
+                className="feature-card"
+                style={{ "--feature-delay": `${index * 50}ms` } as React.CSSProperties}
+              >
+                <h3>{feature.title}</h3>
+                <p>{feature.description}</p>
+              </article>
+            ))}
           </div>
         </div>
       </section>

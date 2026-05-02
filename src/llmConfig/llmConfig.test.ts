@@ -71,6 +71,25 @@ describe("POST /api/llm-configs", () => {
     expect(JSON.stringify(res.body)).not.toContain("abc1234");
   });
 
+  it("auto-promotes the first provider config to default", async () => {
+    const res = await request(app)
+      .post("/api/llm-configs")
+      .set(asAuth(USER_A))
+      .send({
+        provider: "mistral",
+        label: "Mistral Key",
+        model: "mistral-large-latest",
+        apiKey: "mistral-secret-1234",
+      });
+
+    expect(res.status).toBe(201);
+    expect(res.body.isDefault).toBe(true);
+
+    const listRes = await request(app).get("/api/llm-configs").set(asAuth(USER_A));
+    expect(listRes.status).toBe(200);
+    expect(listRes.body.configs[0].isDefault).toBe(true);
+  });
+
   it("accepts azure-openai config with provider options", async () => {
     const res = await request(app)
       .post("/api/llm-configs")
@@ -377,4 +396,5 @@ describe("PATCH /api/llm-configs/:id/default", () => {
     expect(firstCfg.isDefault).toBe(false);
     expect(secondCfg.isDefault).toBe(true);
   });
+
 });

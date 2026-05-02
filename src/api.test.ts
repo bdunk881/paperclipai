@@ -2520,7 +2520,7 @@ describe("POST /api/webhooks/:templateId", () => {
 
   it("accepts integration-backed webhook starts when the provider is connected", async () => {
     integrationCredentialStore.create({
-      userId: "test-user",
+      userId: "webhook-connected-user",
       integrationSlug: "github",
       label: "GitHub",
       credentials: { token: "ghp_test" },
@@ -2528,7 +2528,7 @@ describe("POST /api/webhooks/:templateId", () => {
 
     const res = await request(app)
       .post("/api/webhooks/tpl-github-triage")
-      .set("X-User-Id", "test-user")
+      .set("X-User-Id", "webhook-connected-user")
       .send({
         issuePayload: {
           action: "opened",
@@ -2545,11 +2545,14 @@ describe("POST /api/webhooks/:templateId", () => {
   it("run created by webhook is retrievable via GET /api/runs/:id", async () => {
     const webhookRes = await request(app)
       .post("/api/webhooks/tpl-support-bot")
+      .set("X-User-Id", "webhook-run-create-user")
       .send({ ticketId: "WH-003", subject: "Test" });
     expect(webhookRes.status).toBe(202);
 
     const runId = webhookRes.body.runId;
-    const getRes = await request(app).get(`/api/runs/${runId}`).set(asAuth());
+    const getRes = await request(app)
+      .get(`/api/runs/${runId}`)
+      .set(asAuth("webhook-run-create-user"));
     expect(getRes.status).toBe(200);
     expect(getRes.body.id).toBe(runId);
   });

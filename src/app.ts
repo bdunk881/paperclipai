@@ -4,6 +4,7 @@
  * in tests without starting a live TCP listener.
  */
 
+import * as Sentry from "@sentry/node";
 import express from "express";
 import rateLimit from "express-rate-limit";
 import multer from "multer";
@@ -117,6 +118,7 @@ function getAllowedOrigins(): string[] {
   return Array.from(
     new Set([
       ...parseAllowedOrigins(process.env.ALLOWED_ORIGINS),
+      ...parseAllowedOrigins(process.env.AUTH_NATIVE_AUTH_PROXY_ALLOWED_ORIGINS),
       ...parseAllowedOrigins(process.env.AUTH_SOCIAL_ALLOWED_REDIRECT_ORIGINS),
       ...parseAllowedOrigins(process.env.SOCIAL_AUTH_DASHBOARD_URL),
     ])
@@ -1105,6 +1107,9 @@ if (process.env.NODE_ENV !== "test" && process.env.AUTOFLOW_ENABLE_APPROVAL_NOTI
 if (process.env.NODE_ENV !== "test" && process.env.AUTOFLOW_ENABLE_TICKET_NOTIFICATION_SWEEPER !== "false") {
   startTicketNotificationCoordinator();
 }
+
+// Sentry error handler must come before other error handlers
+Sentry.setupExpressErrorHandler(app);
 
 // Handle JSON parse errors from express.json() middleware
 app.use((err: Error, _req: express.Request, res: express.Response, next: express.NextFunction) => {

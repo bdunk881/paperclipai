@@ -1,5 +1,5 @@
 import type { NextFunction, Response } from "express";
-import type { Pool, QueryResult } from "pg";
+import type { Pool, PoolClient, QueryResult } from "pg";
 import type { WorkspaceAwareRequest } from "./workspaceResolver";
 import { createWorkspaceResolver } from "./workspaceResolver";
 
@@ -25,6 +25,13 @@ function createQueryResult(rows: Array<Record<string, unknown>>, rowCount: numbe
     fields: [],
     rows,
   };
+}
+
+function createClient(overrides: { query: jest.Mock; release?: jest.Mock }) {
+  return {
+    query: overrides.query,
+    release: overrides.release ?? jest.fn(),
+  } as unknown as PoolClient;
 }
 
 describe("createWorkspaceResolver", () => {
@@ -62,5 +69,40 @@ describe("createWorkspaceResolver", () => {
 
     expect(next).not.toHaveBeenCalled();
     expect(res.status).toHaveBeenCalledWith(400);
+  });
+
+  it("bootstraps a default owner workspace for first-session users", async () => {
+    const query = jest
+      .fn<Promise<QueryResult>, [string, unknown[]]>()
+      .mockResolvedValueOnce(createQueryResult([], null))
+      .mockResolvedValueOnce(createQueryResult([], null));
+    const clientQuery = jest
+      .fn<Promise<QueryResult>, [string, unknown[]?]>()
+      .mockResolvedValueOnce(createQueryResult([], null))
+      .mockResolvedValueOnce(createQueryResult([], null))
+      .mockResolvedValueOnce(createQueryResult([], null))
+      .mockResolvedValueOnce(createQueryResult([], null))
+      .mockResolvedValueOnce(createQueryResult([{ id: "workspace-bootstrap" }], 1))
+      .mockResolvedValueOnce(createQueryResult([], 1))
+      .mockResolvedValueOnce(createQueryResult([], null));
+    const client = createClient({ query: clientQuery });
+    const connect = jest.fn().mockResolvedValue(client);
+    const pool = { query, connect } as unknown as Pool;
+    const middleware = createWorkspaceResolver(pool);
+    const req = createRequest();
+    const res = createResponse();
+    const next = jest.fn() as NextFunction;
+
+    await middleware(req, res, next);
+
+    expect(connect).toHaveBeenCalledTimes(1);
+    expect(req.workspaceId).toBe("workspace-bootstrap");
+    expect(next).toHaveBeenCalledTimes(1);
+    expect(clientQuery).toHaveBeenCalledWith(
+      expect.stringContaining("INSERT INTO workspaces"),
+      ["Personal Workspace", "user-123"],
+    );
+    expect(client.release).toHaveBeenCalledTimes(1);
+    expect(res.status).not.toHaveBeenCalled();
   });
 });

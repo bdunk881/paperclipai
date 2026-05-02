@@ -9,7 +9,7 @@ describe("controlPlaneStore identity scoping", () => {
     resetControlPlaneStoreForTests();
   });
 
-  it("reproduces company workspace data remaining bound to the provisioning user", async () => {
+  it("exposes company workspace data to a second identity in the same workspace", async () => {
     const provisioningUserId = "agent-user";
     const browserUserId = "ceo-browser-user";
     const workspaceId = "11111111-1111-4111-8111-111111111111";
@@ -28,11 +28,14 @@ describe("controlPlaneStore identity scoping", () => {
     expect(controlPlaneStore.listTeams(provisioningUserId, workspaceId)).toHaveLength(1);
     expect(controlPlaneStore.listAgents(provisioned.team.id, provisioningUserId, workspaceId)).toHaveLength(1);
 
-    // ALT-2090 reproduction: a second authenticated identity using the same
-    // workspace context cannot see the company-scoped team or agents because
-    // the control-plane store still filters by the provisioning userId.
-    expect(controlPlaneStore.listTeams(browserUserId, workspaceId)).toEqual([]);
-    expect(controlPlaneStore.getTeam(provisioned.team.id, browserUserId, workspaceId)).toBeUndefined();
-    expect(controlPlaneStore.listAgents(provisioned.team.id, browserUserId, workspaceId)).toEqual([]);
+    expect(controlPlaneStore.listTeams(browserUserId, workspaceId)).toEqual([
+      expect.objectContaining({ id: provisioned.team.id }),
+    ]);
+    expect(controlPlaneStore.getTeam(provisioned.team.id, browserUserId, workspaceId)).toEqual(
+      expect.objectContaining({ id: provisioned.team.id })
+    );
+    expect(controlPlaneStore.listAgents(provisioned.team.id, browserUserId, workspaceId)).toEqual([
+      expect.objectContaining({ id: provisioned.agents[0].id }),
+    ]);
   });
 });

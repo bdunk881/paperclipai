@@ -17,6 +17,7 @@ import {
   getTicketActorProfile,
   listTickets,
   normalizeTicketSlaState,
+  registerTicketActorProfile,
   type CreateTicketUiPayload,
   type TicketActorRef,
   type TicketPriority,
@@ -24,6 +25,7 @@ import {
   type TicketSlaStateLike,
   type TicketStatus,
 } from "../api/tickets";
+import { listAgents } from "../api/agentApi";
 import { useAuth } from "../context/AuthContext";
 import {
   TicketActorChip,
@@ -53,19 +55,18 @@ const EMPTY_FORM = {
   collaboratorKeys: [] as string[],
   dueDate: "",
   tags: "",
-  attachmentNames: [] as string[],
-  externalSyncRequested: false,
 };
 
 export default function Tickets() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const { getAccessToken } = useAuth();
+  const { getAccessToken, user } = useAuth();
   const [tickets, setTickets] = useState<TicketRecord[]>([]);
+  const [availableActors, setAvailableActors] = useState<TicketActorRef[]>([]);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [source, setSource] = useState<"api" | "mock">("mock");
+  const [source, setSource] = useState<"api" | "mock" | null>(null);
   const [integrationWarnings, setIntegrationWarnings] = useState<string[]>([]);
   const [statusFilter, setStatusFilter] = useState<StatusFilter>(() => {
     const value = searchParams.get("status");
@@ -89,15 +90,59 @@ export default function Tickets() {
     setError(null);
     try {
       const accessToken = (await getAccessToken()) ?? undefined;
-      const response = await listTickets({}, accessToken);
+      const [response, agents] = await Promise.all([
+        listTickets({}, accessToken),
+        accessToken ? listAgents(accessToken).catch(() => []) : Promise.resolve([]),
+      ]);
+
+      const actorSeed: TicketActorRef[] = [];
+      if (user) {
+        const initials =
+          user.name
+            .split(/\s+/)
+            .map((part) => part[0] ?? "")
+            .join("")
+            .slice(0, 3)
+            .toUpperCase() || "U";
+        registerTicketActorProfile(
+          { type: "user", id: user.id },
+          { name: user.name, initials, title: "Workspace member", tone: "slate" }
+        );
+        actorSeed.push({ type: "user", id: user.id });
+      }
+
+      for (const agent of agents) {
+        const initials =
+          agent.name
+            .split(/\s+/)
+            .map((part) => part[0] ?? "")
+            .join("")
+            .slice(0, 3)
+            .toUpperCase() || "AG";
+        registerTicketActorProfile(
+          { type: "agent", id: agent.id },
+          {
+            name: agent.name,
+            initials,
+            title:
+              typeof agent.metadata?.teamName === "string"
+                ? agent.metadata.teamName
+                : agent.roleKey ?? "Agent",
+            tone: "indigo",
+          }
+        );
+        actorSeed.push({ type: "agent", id: agent.id });
+      }
+
       setTickets(response.tickets);
+      setAvailableActors(collectKnownActors(response.tickets, actorSeed));
       setSource(response.source);
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : "Failed to load tickets");
     } finally {
       setLoading(false);
     }
-  }, [getAccessToken]);
+  }, [getAccessToken, user]);
 
   useEffect(() => {
     void loadTickets();
@@ -114,7 +159,7 @@ export default function Tickets() {
     setSlaFilter(SLA_OPTIONS.includes(sla as SlaFilter) ? (sla as SlaFilter) : "all");
   }, [searchParams]);
 
-  const actorOptions = useMemo(() => collectKnownActors(tickets), [tickets]);
+  const actorOptions = useMemo(() => collectKnownActors(tickets, availableActors), [availableActors, tickets]);
 
   const filteredTickets = useMemo(() => {
     return tickets.filter((ticket) => {
@@ -168,8 +213,6 @@ export default function Tickets() {
         .map((tag) => tag.trim())
         .filter(Boolean),
       assignees,
-      attachmentNames: formState.attachmentNames,
-      externalSyncRequested: formState.externalSyncRequested,
     };
 
     setSubmitting(true);
@@ -412,9 +455,9 @@ export default function Tickets() {
                 <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-teal-300">
                   Create Ticket
                 </p>
-                <h2 className="mt-2 text-2xl font-semibold text-slate-100">Capture work with full operating context</h2>
-                <p className="mt-2 text-sm text-slate-400">
-                  The M1 backend supports core ticket creation, assignment, and activity. Attachments and external sync stay staged in the UI until later milestones land.
+                <h2 className="mt-2 text-2xl font-semibold text-slate-900 dark:text-slate-100">Capture work with full operating context</h2>
+                <p className="mt-2 text-sm text-slate-600 dark:text-slate-400">
+                  Create a workspace ticket with real assignees, priority, due date, and execution context.
                 </p>
               </div>
               <button
@@ -471,7 +514,7 @@ export default function Tickets() {
                     value: `${actor.type}:${actor.id}`,
                     label: `${getTicketActorProfile(actor).name} (${actor.type})`,
                   }))}
-                  placeholder="Choose an owner"
+                  placeholder={actorOptions.length > 0 ? "Choose an owner" : "No live assignees available"}
                 />
                 <SelectField
                   label="Priority"
@@ -539,54 +582,6 @@ export default function Tickets() {
                 </span>
               </label>
 
-              <div className="grid gap-4 md:grid-cols-[1fr_auto]">
-                <label className="grid gap-2">
-                  <span className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">Attachments</span>
-                  <input
-                    type="file"
-                    aria-label="Ticket attachments"
-                    multiple
-                    onChange={(event) =>
-                      setFormState((current) => ({
-                        ...current,
-                        attachmentNames: Array.from(event.target.files ?? []).map((file) => file.name),
-                      }))
-                    }
-                    className="rounded-2xl border border-dashed border-slate-700 bg-slate-950/80 px-4 py-3 text-sm text-slate-400 file:mr-3 file:rounded-full file:border-0 file:bg-slate-800 file:px-3 file:py-1.5 file:text-xs file:font-medium file:text-slate-100 hover:border-slate-600"
-                  />
-                  {formState.attachmentNames.length > 0 ? (
-                    <div className="flex flex-wrap gap-2">
-                      {formState.attachmentNames.map((name) => (
-                        <span
-                          key={name}
-                          className="rounded-full border border-slate-700 bg-slate-900/70 px-3 py-1 text-xs text-slate-300"
-                        >
-                          {name}
-                        </span>
-                      ))}
-                    </div>
-                  ) : null}
-                </label>
-
-                <label className="flex items-center gap-3 rounded-[24px] border border-slate-800 bg-slate-950/60 px-4 py-4">
-                  <input
-                    type="checkbox"
-                    aria-label="Request external sync"
-                    checked={formState.externalSyncRequested}
-                    onChange={(event) =>
-                      setFormState((current) => ({
-                        ...current,
-                        externalSyncRequested: event.target.checked,
-                      }))
-                    }
-                    className="h-4 w-4 rounded border-slate-600 bg-slate-900 text-teal-400 focus:ring-teal-400"
-                  />
-                  <div>
-                    <p className="text-sm font-medium text-slate-200">Request external sync</p>
-                    <p className="text-xs text-slate-500">UI ready now, integration wiring in M4.</p>
-                  </div>
-                </label>
-              </div>
             </div>
 
             {validationError ? (
@@ -597,7 +592,7 @@ export default function Tickets() {
 
             <div className="mt-6 flex flex-col gap-3 border-t border-slate-800 pt-5 sm:flex-row sm:items-center sm:justify-between">
               <p className="text-xs text-slate-500">
-                Ticket IDs, assignees, and activity stream map to the live backend contract. Attachments and sync preferences are preserved for later milestones.
+                Ticket IDs, assignees, and activity stream map to the live backend contract.
               </p>
               <div className="flex items-center gap-3">
                 <button

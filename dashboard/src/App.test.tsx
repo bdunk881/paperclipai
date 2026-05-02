@@ -58,10 +58,12 @@ vi.mock("./pages/Login", () => ({ default: () => <div>Login Page</div> }));
 vi.mock("./pages/Signup", () => ({ default: () => <div>Signup Page</div> }));
 vi.mock("./pages/Dashboard", () => ({ default: () => <div>Dashboard Page</div> }));
 vi.mock("./pages/WorkflowBuilder", () => ({ default: () => <div>Workflow Builder Page</div> }));
+vi.mock("./pages/Templates", () => ({ default: () => <div>Templates Page</div> }));
 vi.mock("./pages/RunMonitor", () => ({ default: () => <div>Run Monitor Page</div> }));
 vi.mock("./pages/RunHistory", () => ({ default: () => <div>Run History Page</div> }));
 vi.mock("./pages/LandingPage", () => ({ default: () => <div>Landing Page</div> }));
 vi.mock("./pages/LLMProviders", () => ({ default: () => <div>LLM Providers Page</div> }));
+vi.mock("./pages/MissionState", () => ({ default: () => <div>Mission State Page</div> }));
 vi.mock("./pages/Settings", () => ({ default: () => <div>Settings Page</div> }));
 vi.mock("./pages/ProfileSettings", () => ({ default: () => <div>Profile Settings Page</div> }));
 vi.mock("./pages/SecuritySettings", () => ({ default: () => <div>Security Settings Page</div> }));
@@ -77,6 +79,7 @@ vi.mock("./pages/Memory", () => ({ default: () => <div>Memory Page</div> }));
 vi.mock("./pages/Integrations", () => ({ default: () => <div>Integrations Page</div> }));
 vi.mock("./pages/MCPIntegrations", () => ({ default: () => <div>MCP Integrations Page</div> }));
 vi.mock("./pages/McpServers", () => ({ default: () => <div>MCP Servers Page</div> }));
+vi.mock("./pages/StaffingPlanReview", () => ({ default: () => <div>Staffing Plan Review Page</div> }));
 vi.mock("./pages/ExecutionLogs", () => ({ default: () => <div>Execution Logs Page</div> }));
 vi.mock("./pages/CheckoutSuccess", () => ({ default: () => <div>Checkout Success Page</div> }));
 vi.mock("./pages/AuthCallback", () => ({ default: () => <div>Auth Callback Page</div> }));
@@ -152,6 +155,36 @@ describe("App", () => {
 
     expect(await screen.findByText("Layout Shell")).toBeInTheDocument();
     expect(screen.getByText("Run Monitor Page")).toBeInTheDocument();
+  });
+
+  it("renders the templates route for authenticated users", async () => {
+    authState.user = { id: "user-1", email: "user@example.com", name: "User" };
+    window.history.replaceState({}, "", "/templates");
+
+    render(<App />);
+
+    expect(await screen.findByText("Layout Shell")).toBeInTheDocument();
+    expect(screen.getByText("Templates Page")).toBeInTheDocument();
+  });
+
+  it("renders the staffing plan route for authenticated users", async () => {
+    authState.user = { id: "user-1", email: "user@example.com", name: "User" };
+    window.history.replaceState({}, "", "/workspace/staffing-plan");
+
+    render(<App />);
+
+    expect(await screen.findByText("Layout Shell")).toBeInTheDocument();
+    expect(screen.getByText("Staffing Plan Review Page")).toBeInTheDocument();
+  });
+
+  it("renders the mission state route for authenticated users", async () => {
+    authState.user = { id: "user-1", email: "user@example.com", name: "User" };
+    window.history.replaceState({}, "", "/mission-state");
+
+    render(<App />);
+
+    expect(await screen.findByText("Layout Shell")).toBeInTheDocument();
+    expect(screen.getByText("Mission State Page")).toBeInTheDocument();
   });
 
   it("renders the SLA dashboard route for authenticated users", async () => {

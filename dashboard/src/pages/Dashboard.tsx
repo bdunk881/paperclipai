@@ -18,7 +18,6 @@ import {
   Gauge,
   MessageSquare,
   ShieldAlert,
-  Sparkles,
   TrendingUp,
 } from "lucide-react";
 import { listApprovals, listRuns, type ApprovalRequest } from "../api/client";
@@ -178,13 +177,6 @@ export default function Dashboard() {
       .slice(0, 6);
   }, [deferredArtifactQuery, runs]);
 
-  const designerSpecSummary = [
-    "240px command rail with a 12-column content grid",
-    "Indigo for orchestration, teal for health and goals, orange for approval actions",
-    "Inter hierarchy with JetBrains Mono for metrics, traces, and timestamps",
-    "Approval moments should feel urgent; charts and telemetry should stay calm and legible",
-  ];
-
   const submitArtifactFeedback = useCallback(
     async (run: WorkflowRun) => {
       const draft = feedbackDrafts[run.id]?.trim();
@@ -290,11 +282,11 @@ export default function Dashboard() {
                     Customer command center
                   </div>
                   <h1 className="mt-4 text-3xl font-semibold tracking-[-0.04em]">
-                    {firstName}, your company is live.
+                    {firstName}, here is your live workspace summary.
                   </h1>
                   <p className="mt-3 max-w-2xl text-sm leading-6 text-indigo-100/90">
-                    A single surface for org status, spend discipline, approval pressure, artifact review, and
-                    reasoning-aware activity across the active agent fleet.
+                    This view reflects current agent activity, budget usage, approvals, and recent runs for your
+                    workspace. Empty sections stay empty until the backend has real state to show.
                   </p>
                 </div>
                 <div className="grid gap-3 sm:grid-cols-3">
@@ -321,25 +313,11 @@ export default function Dashboard() {
             </div>
 
             <div className="border-b border-slate-200 bg-slate-50 px-6 py-4 md:px-8">
-              <div className="grid gap-3 lg:grid-cols-[1.2fr,1fr]">
-                <div className="rounded-[24px] border border-indigo-100 bg-white px-4 py-4">
-                  <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.22em] text-indigo-700">
-                    <Sparkles size={13} />
-                    Approved visual system
-                  </div>
-                  <ul className="mt-3 grid gap-2 text-sm text-slate-600 md:grid-cols-2">
-                    {designerSpecSummary.map((item) => (
-                      <li key={item} className="rounded-2xl bg-indigo-50 px-3 py-2">
-                        {item}
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-
+              <div className="grid gap-3">
                 <div className="rounded-[24px] border border-slate-200 bg-white px-4 py-4">
                   <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-500">
                     <Gauge size={13} />
-                    Operator shortcuts
+                    Workspace actions
                   </div>
                   <div className="mt-3 grid gap-3 sm:grid-cols-3">
                     <ShortcutCard to="/approvals" title="Review approvals" detail="Act on pending decisions" />

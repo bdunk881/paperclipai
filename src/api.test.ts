@@ -314,6 +314,45 @@ describe("GET /api/templates/:id", () => {
   });
 });
 
+describe("POST /api/templates", () => {
+  it("creates a custom template and exposes it via the list/detail APIs", async () => {
+    const payload = {
+      id: "tpl-custom-qa",
+      name: "Custom QA Workflow",
+      description: "User-authored workflow template",
+      category: "custom",
+      version: "1.0.0",
+      configFields: [],
+      steps: [
+        {
+          id: "step-1",
+          name: "Draft response",
+          kind: "llm",
+          description: "Draft a response for review.",
+          inputKeys: ["prompt"],
+          outputKeys: ["response"],
+          promptTemplate: "Respond to {{prompt}}",
+        },
+      ],
+      sampleInput: { prompt: "Hello" },
+      expectedOutput: { response: "Hi" },
+    };
+
+    const createRes = await request(app).post("/api/templates").send(payload);
+    expect(createRes.status).toBe(201);
+    expect(createRes.body.id).toBe("tpl-custom-qa");
+    expect(createRes.body.name).toBe("Custom QA Workflow");
+
+    const listRes = await request(app).get("/api/templates");
+    expect(listRes.status).toBe(200);
+    expect(listRes.body.templates.some((template: { id: string }) => template.id === "tpl-custom-qa")).toBe(true);
+
+    const getRes = await request(app).get("/api/templates/tpl-custom-qa");
+    expect(getRes.status).toBe(200);
+    expect(getRes.body.description).toBe("User-authored workflow template");
+  });
+});
+
 describe("Approval tier policy API", () => {
   const workspaceId = "11111111-1111-4111-8111-111111111111";
 

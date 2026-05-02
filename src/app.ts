@@ -14,6 +14,7 @@ import {
   getTemplate,
   getTemplatesByCategory,
   listTemplates,
+  TEMPLATE_MAP,
 } from "./templates";
 import { WorkflowTemplate, WorkflowStep } from "./types/workflow";
 import { workflowEngine } from "./engine/WorkflowEngine";
@@ -93,7 +94,7 @@ import {
   parsePortableWorkflowBundle,
 } from "./workflows/portableSchema";
 
-import { saveImportedTemplate } from "./templates/importedTemplateStore";
+import { getImportedTemplate, saveImportedTemplate } from "./templates/importedTemplateStore";
 import { getConnectorHealthSummary, listConnectorHealth } from "./connectors/health";
 
 const app = express();
@@ -404,6 +405,61 @@ app.get("/api/templates", (req, res) => {
     })),
     total: templates.length,
   });
+});
+
+/** Create or update a user-managed template */
+app.post("/api/templates", async (req, res) => {
+  const payload = req.body as Partial<WorkflowTemplate> | null;
+  if (!payload || typeof payload !== "object") {
+    res.status(400).json({ error: "Template payload is required" });
+    return;
+  }
+
+  const name = typeof payload.name === "string" ? payload.name.trim() : "";
+  const description = typeof payload.description === "string" ? payload.description : "";
+  const category = typeof payload.category === "string" ? payload.category : "custom";
+  const version = typeof payload.version === "string" && payload.version.trim() ? payload.version : "1.0.0";
+  const steps = Array.isArray(payload.steps) ? payload.steps : [];
+  const configFields = Array.isArray(payload.configFields) ? payload.configFields : [];
+  const sampleInput =
+    payload.sampleInput && typeof payload.sampleInput === "object" && !Array.isArray(payload.sampleInput)
+      ? (payload.sampleInput as Record<string, unknown>)
+      : {};
+  const expectedOutput =
+    payload.expectedOutput && typeof payload.expectedOutput === "object" && !Array.isArray(payload.expectedOutput)
+      ? (payload.expectedOutput as Record<string, unknown>)
+      : {};
+
+  if (!name) {
+    res.status(400).json({ error: "Template name is required" });
+    return;
+  }
+
+  let nextId =
+    typeof payload.id === "string" && payload.id.trim()
+      ? payload.id.trim()
+      : `tpl-custom-${Date.now()}`;
+
+  const importedTemplate = getImportedTemplate(nextId);
+  const builtInTemplateExists = Boolean(TEMPLATE_MAP[nextId]);
+  if (builtInTemplateExists && !importedTemplate) {
+    nextId = `${nextId}-custom-${Date.now()}`;
+  }
+
+  const template: WorkflowTemplate = {
+    id: nextId,
+    name,
+    description,
+    category: category as WorkflowTemplate["category"],
+    version,
+    configFields,
+    steps,
+    sampleInput,
+    expectedOutput,
+  };
+
+  await saveImportedTemplate(template);
+  res.status(importedTemplate ? 200 : 201).json(template);
 });
 
 /** Returns the current portable workflow schema contract */

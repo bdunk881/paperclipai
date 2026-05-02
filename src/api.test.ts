@@ -103,6 +103,7 @@ import { knowledgeStore } from "./knowledge/knowledgeStore";
 import { llmConfigStore } from "./llmConfig/llmConfigStore";
 import { getProvider } from "./engine/llmProviders";
 import { observabilityStore } from "./observability/store";
+import { integrationCredentialStore } from "./integrations/integrationCredentialStore";
 import { resetImportedTemplatesForTests } from "./templates/importedTemplateStore";
 import {
   PORTABLE_WORKFLOW_FORMAT,
@@ -126,7 +127,9 @@ beforeEach(() => {
   llmConfigStore.clear();
   mockGetProvider.mockReset();
   observabilityStore.clear();
+  integrationCredentialStore.clear();
   resetImportedTemplatesForTests();
+  delete process.env.AUTOFLOW_ALLOW_DEV_TRIGGER_RUNS;
 });
 
 function withQaBypass(userIds = "qa-smoke-user") {
@@ -1963,6 +1966,7 @@ describe("POST /api/runs", () => {
   afterEach(() => {
     delete process.env.QA_AUTH_BYPASS_ENABLED;
     delete process.env.QA_AUTH_BYPASS_USER_IDS;
+    delete process.env.AUTOFLOW_ALLOW_DEV_TRIGGER_RUNS;
   });
 
   it("returns 401 when Authorization header is missing", async () => {
@@ -2032,6 +2036,49 @@ describe("POST /api/runs", () => {
     expect(res.status).toBe(202);
     expect(typeof res.body.startedAt).toBe("string");
     expect(new Date(res.body.startedAt).getTime()).not.toBeNaN();
+  });
+
+  it("rejects manual sample runs for external-event templates by default", async () => {
+    const res = await request(app)
+      .post("/api/runs")
+      .set(asAuth())
+      .send({
+        templateId: "tpl-github-triage",
+        input: {
+          issuePayload: "GitHub Issue payload for GitHub Issue Triage",
+          accountId: "acct_sample_001",
+          source: "demo",
+        },
+      });
+
+    expect(res.status).toBe(409);
+    expect(res.body.error).toMatch(/Manual sample runs are disabled/i);
+  });
+
+  it("allows dev mock runs only when the explicit flag and input marker are both set", async () => {
+    process.env.AUTOFLOW_ALLOW_DEV_TRIGGER_RUNS = "true";
+    integrationCredentialStore.create({
+      userId: "test-user",
+      integrationSlug: "github",
+      label: "GitHub",
+      credentials: { token: "ghp_test" },
+    });
+
+    const res = await request(app)
+      .post("/api/runs")
+      .set(asAuth())
+      .send({
+        templateId: "tpl-github-triage",
+        input: {
+          issuePayload: "GitHub Issue payload for GitHub Issue Triage",
+          accountId: "acct_sample_001",
+          source: "demo",
+          __autoflowAllowMockTrigger: true,
+        },
+      });
+
+    expect(res.status).toBe(202);
+    expect(res.body.templateId).toBe("tpl-github-triage");
   });
 });
 
@@ -2450,6 +2497,49 @@ describe("POST /api/webhooks/:templateId", () => {
     // Should NOT return the full run body
     expect(res.body.templateId).toBeUndefined();
     expect(res.body.stepResults).toBeUndefined();
+  });
+
+  it("rejects integration-backed webhook starts without a bound user", async () => {
+    const res = await request(app)
+      .post("/api/webhooks/tpl-github-triage")
+      .send({ issuePayload: { title: "Bug report" }, source: "github" });
+
+    expect(res.status).toBe(409);
+    expect(res.body.error).toMatch(/requires X-User-Id/i);
+  });
+
+  it("rejects integration-backed webhook starts when the provider is disconnected", async () => {
+    const res = await request(app)
+      .post("/api/webhooks/tpl-github-triage")
+      .set("X-User-Id", "test-user")
+      .send({ issuePayload: { title: "Bug report" }, source: "github" });
+
+    expect(res.status).toBe(409);
+    expect(res.body.error).toMatch(/requires a connected github integration/i);
+  });
+
+  it("accepts integration-backed webhook starts when the provider is connected", async () => {
+    integrationCredentialStore.create({
+      userId: "test-user",
+      integrationSlug: "github",
+      label: "GitHub",
+      credentials: { token: "ghp_test" },
+    });
+
+    const res = await request(app)
+      .post("/api/webhooks/tpl-github-triage")
+      .set("X-User-Id", "test-user")
+      .send({
+        issuePayload: {
+          action: "opened",
+          repository: "autoflow/paperclipai",
+          title: "Bug report",
+        },
+        source: "github",
+      });
+
+    expect(res.status).toBe(202);
+    expect(typeof res.body.runId).toBe("string");
   });
 
   it("run created by webhook is retrievable via GET /api/runs/:id", async () => {

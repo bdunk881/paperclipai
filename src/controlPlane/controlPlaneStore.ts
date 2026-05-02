@@ -1597,6 +1597,7 @@ export const controlPlaneStore = {
   },
 
   async recordHeartbeat(input: {
+    workspaceId?: string;
     userId: string;
     teamId: string;
     agentId: string;

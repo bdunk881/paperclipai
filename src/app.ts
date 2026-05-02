@@ -356,7 +356,7 @@ app.use("/api/control-plane", requireAuth, controlPlaneRoutes);
 app.use("/api/hitl", requireAuth, hitlRoutes);
 app.use("/api/observability", requireAuth, observabilityRoutes);
 app.use("/api/reporting", requireAuth, reportRoutes);
-app.use("/api/tickets", requireAuth, workspaceResolver, ticketRoutes);
+app.use("/api/tickets", requireAuthOrQaBypass, workspaceResolver, ticketRoutes);
 app.use("/api/ticket-sync", requireAuth, ticketSyncRoutes);
 app.use("/api/notifications", requireAuth, notificationRoutes);
 app.use("/api/approval-policies", requireAuth, approvalPolicyRoutes);
@@ -1080,8 +1080,14 @@ app.get("/health", async (_req, res) => {
   });
 });
 
-app.get("/api/connectors/health", (_req, res) => {
-  const connectors = listConnectorHealth();
+app.get("/api/connectors/health", requireAuthOrQaBypass, async (req: AuthenticatedRequest, res) => {
+  const userId = req.auth?.sub?.trim();
+  if (!userId) {
+    res.status(401).json({ error: "Authenticated user required" });
+    return;
+  }
+
+  const connectors = await listConnectorHealth(userId);
   res.json({
     connectors,
     summary: getConnectorHealthSummary(connectors),

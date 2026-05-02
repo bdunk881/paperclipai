@@ -36,6 +36,7 @@ import companyRoutes from "./companies/companyRoutes";
 import hitlRoutes from "./hitl/hitlRoutes";
 import { buildObservabilityCsv, buildObservabilityResponse } from "./observability/service";
 import observabilityRoutes from "./observability/routes";
+import { assertTriggerCanStart } from "./workflows/triggerPolicy";
 import reportRoutes from "./reporting/reportRoutes";
 import ticketRoutes from "./tickets/ticketRoutes";
 import ticketSyncRoutes from "./ticketSync/routes";
@@ -558,6 +559,19 @@ app.post("/api/runs", requireAuthOrQaBypass, llmEndpointRateLimiter, async (req:
   }
 
   const userId = req.auth?.sub;
+  try {
+    assertTriggerCanStart({
+      template,
+      entrypoint: "manual_run",
+      userId,
+      input: input ?? {},
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Workflow trigger is not allowed";
+    res.status(409).json({ error: message });
+    return;
+  }
+
   const run = await workflowEngine.startRun(template, input ?? {}, config, userId);
   res.status(202).json(run);
 });
@@ -870,11 +884,25 @@ app.post("/api/webhooks/:templateId", async (req, res) => {
   }
 
   const webhookUserId = req.headers["x-user-id"];
+  const resolvedWebhookUserId = typeof webhookUserId === "string" ? webhookUserId : undefined;
+  try {
+    assertTriggerCanStart({
+      template,
+      entrypoint: "generic_webhook",
+      userId: resolvedWebhookUserId,
+      input,
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Workflow trigger is not allowed";
+    res.status(409).json({ error: message });
+    return;
+  }
+
   const run = await workflowEngine.startRun(
     template,
     input,
     undefined,
-    typeof webhookUserId === "string" ? webhookUserId : undefined
+    resolvedWebhookUserId
   );
   res.status(202).json({ runId: run.id, status: run.status });
 });

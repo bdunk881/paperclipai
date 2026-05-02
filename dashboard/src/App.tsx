@@ -41,7 +41,6 @@ import Routines from "./pages/Routines";
 import OrgStructure from "./pages/OrgStructure";
 import BudgetDashboard from "./pages/BudgetDashboard";
 import MissionState from "./pages/MissionState";
-import StaffingPlanReview from "./pages/StaffingPlanReview";
 import Tickets from "./pages/Tickets";
 import TicketDetail from "./pages/TicketDetail";
 import TicketTeamView from "./pages/TicketTeamView";
@@ -156,7 +155,6 @@ export default function App() {
             <Route path="agents/activity" element={<AgentActivity />} />
             <Route path="agents/routines" element={<Routines />} />
             <Route path="mission-state" element={<MissionState />} />
-            <Route path="workspace/staffing-plan" element={<StaffingPlanReview />} />
             <Route path="workspace/org-structure" element={<OrgStructure />} />
             <Route path="workspace/budget-dashboard" element={<BudgetDashboard />} />
             <Route path="tickets" element={<Tickets />} />

@@ -1,4 +1,5 @@
 import { getApiBasePath } from "./baseUrl";
+import { readStoredAuthUser } from "../auth/authStorage";
 
 export type TicketActorType = "agent" | "user";
 export type TicketAssignmentRole = "primary" | "collaborator";
@@ -148,7 +149,7 @@ export interface TicketQueueResponse {
 const BASE = getApiBasePath();
 const DEFAULT_WORKSPACE_ID =
   import.meta.env.VITE_DEFAULT_WORKSPACE_ID ?? "11111111-1111-4111-8111-111111111111";
-const USE_MOCK_TICKETING = import.meta.env.VITE_USE_MOCK === "true";
+const USE_MOCK_TICKETING = import.meta.env.DEV && import.meta.env.VITE_USE_MOCK === "true";
 
 const actorProfiles = new Map<
   string,
@@ -180,11 +181,24 @@ const actorProfiles = new Map<
   ],
 ]);
 
+export function registerTicketActorProfile(
+  actor: TicketActorRef,
+  profile: { name: string; initials: string; title: string; tone: "indigo" | "teal" | "orange" | "slate" }
+): void {
+  actorProfiles.set(actorKey(actor), profile);
+}
+
 let mockAggregates: TicketAggregate[] = buildMockAggregates();
 
 function buildAuthHeaders(accessToken?: string, extras?: Record<string, string>): HeadersInit {
   const headers: Record<string, string> = {};
   if (accessToken) headers.Authorization = `Bearer ${accessToken}`;
+  if (!accessToken) {
+    const storedUser = readStoredAuthUser();
+    if (storedUser?.id) {
+      headers["X-User-Id"] = storedUser.id;
+    }
+  }
   if (extras) {
     for (const [key, value] of Object.entries(extras)) {
       headers[key] = value;
@@ -305,8 +319,15 @@ export function getTicketActorProfile(actor: TicketActorRef): {
   };
 }
 
-export function collectKnownActors(tickets: TicketRecord[]): TicketActorRef[] {
+export function collectKnownActors(
+  tickets: TicketRecord[],
+  seedActors: TicketActorRef[] = []
+): TicketActorRef[] {
   const known = new Map<string, TicketActorRef>();
+
+  for (const actor of seedActors) {
+    known.set(actorKey(actor), actor);
+  }
 
   for (const aggregate of mockAggregates) {
     for (const assignee of aggregate.ticket.assignees) {

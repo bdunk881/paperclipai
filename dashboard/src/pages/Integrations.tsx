@@ -160,7 +160,7 @@ export default function Integrations() {
     setBusyProvider(provider.key);
     setError(null);
     try {
-      const response = await authorizedFetch(`${providerBasePath(provider.key)}/oauth/start`, {
+      const response = await authorizedFetch(`${providerBasePath(provider.key)}/connect`, {
         method: "POST",
       });
       const payload = (await response.json()) as { authUrl?: string; redirectUrl?: string };

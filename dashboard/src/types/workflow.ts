@@ -76,7 +76,7 @@ export interface WorkflowTemplate {
   id: string;
   name: string;
   description: string;
-  category: "support" | "sales" | "content" | "custom";
+  category: "support" | "sales" | "content" | "operations" | "marketing" | "engineering" | "custom";
   version: string;
   configFields: ConfigField[];
   steps: WorkflowStep[];

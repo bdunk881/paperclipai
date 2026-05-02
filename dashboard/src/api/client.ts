@@ -809,7 +809,8 @@ export interface ControlPlaneTeamDetail {
 }
 
 export interface DeployWorkflowAsTeamInput {
-  templateId: string;
+  templateId?: string;
+  template?: WorkflowTemplate;
   teamName?: string;
   budgetMonthlyUsd?: number;
   defaultIntervalMinutes?: number;

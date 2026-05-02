@@ -95,6 +95,19 @@ function toHeartbeatStatus(status: ControlPlaneExecutionStatus): HeartbeatStatus
   }
 }
 
+function shouldResetLegacyAgentErrorStatus(heartbeatStatus: HeartbeatStatus): boolean {
+  return heartbeatStatus === "running" || heartbeatStatus === "completed";
+}
+
+function normalizeAgentStatusForSuccessfulHeartbeat(
+  agent: ControlPlaneAgent,
+  heartbeatStatus: HeartbeatStatus
+): void {
+  if (shouldResetLegacyAgentErrorStatus(heartbeatStatus) && (agent.status as string) === "error") {
+    agent.status = "active";
+  }
+}
+
 function thresholdStateForPercent(percentUsed: number): BudgetStatusSnapshot["thresholdState"] {
   if (percentUsed >= 1) {
     return "limit_reached";
@@ -1428,6 +1441,7 @@ export const controlPlaneStore = {
     agent.currentExecutionId = execution.id;
     agent.lastHeartbeatAt = requestedAt;
     agent.lastHeartbeatStatus = "running";
+    normalizeAgentStatusForSuccessfulHeartbeat(agent, "running");
     agent.updatedAt = requestedAt;
 
     team.lastHeartbeatAt = requestedAt;
@@ -1479,6 +1493,7 @@ export const controlPlaneStore = {
       agent.currentExecutionId = undefined;
       agent.lastHeartbeatAt = timestamp;
       agent.lastHeartbeatStatus = toHeartbeatStatus(input.status);
+      normalizeAgentStatusForSuccessfulHeartbeat(agent, agent.lastHeartbeatStatus);
       agent.updatedAt = timestamp;
     }
 
@@ -1608,6 +1623,7 @@ export const controlPlaneStore = {
     team.updatedAt = timestamp;
     agent.lastHeartbeatAt = timestamp;
     agent.lastHeartbeatStatus = input.status;
+    normalizeAgentStatusForSuccessfulHeartbeat(agent, input.status);
     agent.updatedAt = timestamp;
 
     const heartbeat: AgentHeartbeatRecord = {

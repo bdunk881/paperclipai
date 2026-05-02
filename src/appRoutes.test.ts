@@ -31,6 +31,7 @@ import { approvalStore } from "./engine/approvalStore";
 import { approvalNotificationStore } from "./engine/approvalNotificationStore";
 import { runStore } from "./engine/runStore";
 import { getProvider } from "./engine/llmProviders";
+import { llmConfigStore } from "./llmConfig/llmConfigStore";
 
 const mockGetProvider = getProvider as jest.Mock;
 
@@ -38,6 +39,7 @@ beforeEach(async () => {
   await approvalStore.clear();
   await approvalNotificationStore.clear();
   await runStore.clear();
+  llmConfigStore.clear();
   mockGetProvider.mockReset();
   jest.restoreAllMocks();
 });
@@ -472,6 +474,35 @@ describe("POST /api/workflows/generate", () => {
       .send({ description: "Build a support bot" });
     expect(res.status).toBe(422);
     expect(res.body.error).toMatch(/No LLM provider/);
+  });
+
+  it("uses the first provider config even before an explicit default is manually chosen", async () => {
+    llmConfigStore.create({
+      userId: "user-mistral",
+      provider: "mistral",
+      label: "Mistral Key",
+      model: "mistral-large-latest",
+      credentials: { apiKey: "mistral-key-1234" },
+    });
+    mockGetProvider.mockReturnValue(async () => ({
+      text: JSON.stringify([
+        { id: "step-1", name: "Trigger", kind: "trigger", description: "d", inputKeys: [], outputKeys: [] },
+      ]),
+    }));
+
+    const res = await request(app)
+      .post("/api/workflows/generate")
+      .set("X-User-Id", "user-mistral")
+      .send({ description: "Build a support bot" });
+
+    expect(res.status).toBe(200);
+    expect(mockGetProvider).toHaveBeenCalledWith(
+      expect.objectContaining({
+        provider: "mistral",
+        model: "mistral-large-latest",
+        apiKey: "mistral-key-1234",
+      })
+    );
   });
 
   it("returns 502 when LLM call fails", async () => {

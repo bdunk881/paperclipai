@@ -112,6 +112,65 @@ const store = new CentralCredentialStore<LLMConfigMetadata, LLMProviderCredentia
   service: "llm-config",
 });
 
+function findExplicitDefaultRecord(userId: string) {
+  return store.findLatest(
+    (existing) => existing.userId === userId && existing.metadata.isDefault && !existing.revokedAt,
+  );
+}
+
+function ensureDefaultRecord(userId: string) {
+  const explicitDefault = findExplicitDefaultRecord(userId);
+  if (explicitDefault) {
+    return explicitDefault;
+  }
+
+  const fallback = store.findLatest(
+    (existing) => existing.userId === userId && !existing.revokedAt,
+  );
+  if (!fallback) {
+    return null;
+  }
+
+  return store.update(fallback.id, (existing, secrets) => ({
+    record: {
+      ...existing,
+      updatedAt: new Date().toISOString(),
+      metadata: {
+        ...existing.metadata,
+        isDefault: true,
+      },
+    },
+    secrets,
+  }));
+}
+
+async function ensureDefaultRecordAsync(userId: string) {
+  const explicitDefault = await store.findLatestAsync(
+    (existing) => existing.userId === userId && existing.metadata.isDefault && !existing.revokedAt,
+  );
+  if (explicitDefault) {
+    return explicitDefault;
+  }
+
+  const records = await store.listByUserAsync(userId, false);
+  const fallback = records[0];
+  if (!fallback) {
+    return null;
+  }
+
+  return store.update(fallback.id, (existing, secrets) => ({
+    record: {
+      ...existing,
+      updatedAt: new Date().toISOString(),
+      metadata: {
+        ...existing.metadata,
+        isDefault: true,
+      },
+    },
+    secrets,
+  }));
+}
+
 export const llmConfigStore = {
   create(params: {
     userId: string;
@@ -123,6 +182,7 @@ export const llmConfigStore = {
   }): LLMConfigPublic {
     const normalizedCredentials = normalizeCredentials(params.credentials);
     const credentialSummary = summarizeCredentials(normalizedCredentials);
+    const shouldBecomeDefault = !findExplicitDefaultRecord(params.userId);
 
     const record = store.create({
       userId: params.userId,
@@ -134,7 +194,7 @@ export const llmConfigStore = {
         credentialSummary,
         apiKeyMasked: credentialSummary.apiKeyMasked,
         providerOptions: params.providerOptions,
-        isDefault: false,
+        isDefault: shouldBecomeDefault,
       },
       secrets: normalizedCredentials,
     });
@@ -143,10 +203,12 @@ export const llmConfigStore = {
   },
 
   list(userId: string): LLMConfigPublic[] {
+    ensureDefaultRecord(userId);
     return store.listByUser(userId, false).map(toPublic);
   },
 
   async listAsync(userId: string): Promise<LLMConfigPublic[]> {
+    await ensureDefaultRecordAsync(userId);
     return (await store.listByUserAsync(userId, false)).map(toPublic);
   },
 
@@ -258,9 +320,7 @@ export const llmConfigStore = {
   },
 
   getDecryptedDefault(userId: string): DecryptedLLMConfig | undefined {
-    const record = store.findLatest(
-      (existing) => existing.userId === userId && existing.metadata.isDefault && !existing.revokedAt,
-    );
+    const record = ensureDefaultRecord(userId);
     if (!record) {
       return undefined;
     }
@@ -278,9 +338,7 @@ export const llmConfigStore = {
   },
 
   async getDecryptedDefaultAsync(userId: string): Promise<DecryptedLLMConfig | undefined> {
-    const record = await store.findLatestAsync(
-      (existing) => existing.userId === userId && existing.metadata.isDefault && !existing.revokedAt,
-    );
+    const record = await ensureDefaultRecordAsync(userId);
     if (!record) {
       return undefined;
     }

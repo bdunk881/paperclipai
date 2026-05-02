@@ -137,6 +137,70 @@ describe("llmConfigStore async persistence", () => {
     );
   });
 
+  it("promotes the latest persisted config when a legacy record has no default", async () => {
+    mockIsPostgresConfigured.mockReturnValue(true);
+    const createdAt = "2026-04-20T00:00:00.000Z";
+    const updatedAt = "2026-04-20T00:00:00.000Z";
+    const created = await createConfig({
+      userId: "user-a",
+      provider: "anthropic",
+      label: "Claude",
+      model: "claude-3-5-sonnet-20241022",
+      apiKey: "sk-ant-legacy1234",
+    });
+    const persistedRecordJson = mockQueryPostgres.mock.calls[0]?.[1]?.[5] as string | undefined;
+    const persistedRecord = persistedRecordJson
+      ? (JSON.parse(persistedRecordJson) as Record<string, unknown>)
+      : undefined;
+
+    llmConfigStore.clear();
+    mockQueryPostgres.mockReset();
+    mockQueryPostgres.mockResolvedValue({
+      rows: [
+        {
+          id: created.id,
+          user_id: "user-a",
+          record_data: {
+            ...(persistedRecord ?? {}),
+            id: created.id,
+            userId: "user-a",
+            authMethod: "anthropic",
+            label: "Claude",
+            createdAt,
+            updatedAt,
+            metadata: {
+              provider: "anthropic",
+              model: "claude-3-5-sonnet-20241022",
+              credentialSummary: { apiKeyMasked: "****1234" },
+              apiKeyMasked: "****1234",
+              isDefault: false,
+            },
+          },
+        },
+      ],
+      rowCount: 1,
+      command: "SELECT",
+      oid: 0,
+      fields: [],
+    });
+
+    const resolved = await llmConfigStore.getDecryptedDefaultAsync("user-a");
+
+    expect(resolved).toEqual(
+      expect.objectContaining({
+        apiKey: "sk-ant-legacy1234",
+        config: expect.objectContaining({
+          id: created.id,
+          isDefault: true,
+        }),
+      })
+    );
+    expect(mockQueryPostgres).toHaveBeenCalledWith(
+      expect.stringContaining("INSERT INTO connector_credentials"),
+      expect.arrayContaining(["llm-config", created.id, "user-a"])
+    );
+  });
+
   it("merges persisted configs into a warm cache during async list", async () => {
     mockIsPostgresConfigured.mockReturnValue(true);
     mockQueryPostgres.mockResolvedValue({

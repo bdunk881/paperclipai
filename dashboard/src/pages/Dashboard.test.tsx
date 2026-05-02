@@ -276,7 +276,7 @@ describe("Dashboard", () => {
       </MemoryRouter>
     );
 
-    await screen.findByText(/Test, your company is live/i);
+    await screen.findByText(/Test, here is your live workspace summary/i);
     expect(await screen.findByText("Critical alert raised for execution latency.")).toBeInTheDocument();
 
     expect(requireAccessTokenMock).toHaveBeenCalledTimes(1);
@@ -397,7 +397,7 @@ describe("Dashboard", () => {
 
     expect(await screen.findByText("Customer dashboard unavailable")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: /retry/i }));
-    expect(await screen.findByText(/Test, your company is live/i)).toBeInTheDocument();
+    expect(await screen.findByText(/Test, here is your live workspace summary/i)).toBeInTheDocument();
     expect(listRunsMock).toHaveBeenCalledTimes(2);
   });
 
@@ -415,7 +415,7 @@ describe("Dashboard", () => {
       </MemoryRouter>
     );
 
-    expect(await screen.findByText(/Test, your company is live/i)).toBeInTheDocument();
+    expect(await screen.findByText(/Test, here is your live workspace summary/i)).toBeInTheDocument();
     expect(screen.queryByText("Customer dashboard unavailable")).not.toBeInTheDocument();
     expect(screen.getByText("Operator attention required")).toBeInTheDocument();
     expect(screen.getByText("Failed to fetch observability events: 404")).toBeInTheDocument();
@@ -431,7 +431,7 @@ describe("Dashboard", () => {
       </MemoryRouter>
     );
 
-    expect(await screen.findByText(/Test, your company is live/i)).toBeInTheDocument();
+    expect(await screen.findByText(/Test, here is your live workspace summary/i)).toBeInTheDocument();
     expect(screen.getByText("Artifact Review")).toBeInTheDocument();
     expect(requireAccessTokenMock).not.toHaveBeenCalled();
     expect(listRunsMock).not.toHaveBeenCalled();

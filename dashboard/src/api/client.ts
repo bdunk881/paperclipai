@@ -892,7 +892,9 @@ export async function getConnectorHealth(): Promise<{
     };
   }
 
-  const res = await fetch(`${BASE}/connectors/health`);
+  const res = await fetch(`${BASE}/connectors/health`, {
+    headers: buildAuthHeaders(),
+  });
   if (!res.ok) throw new Error(`Failed to fetch connector health: ${res.status}`);
   const payload = (await res.json()) as {
     connectors: ConnectorHealthRecord[];

@@ -67,8 +67,8 @@ function installFetchMock(options?: {
       return new Response(JSON.stringify({ connections: connections[provider] ?? [], total: (connections[provider] ?? []).length }), { status: 200 });
     }
 
-    if (method === "POST" && url.endsWith("/oauth/start")) {
-      return new Response(JSON.stringify({ authUrl: options?.oauthUrl ?? "https://oauth.example.com/auth" }), { status: 201 });
+    if (method === "POST" && url.endsWith("/connect")) {
+      return new Response(JSON.stringify({ redirectUrl: options?.oauthUrl ?? "https://oauth.example.com/auth" }), { status: 201 });
     }
 
     if (method === "POST" && url.endsWith("/connect-api-key")) {
@@ -167,7 +167,7 @@ describe("Integrations", () => {
     expect(linearCard).not.toHaveTextContent("Connection typeNot connected");
   });
 
-  it("starts OAuth from the provider-specific route", async () => {
+  it("starts OAuth from the unified connector route", async () => {
     const fetchMock = installFetchMock();
     const assignMock = vi.fn();
     Object.defineProperty(window, "location", {
@@ -185,7 +185,7 @@ describe("Integrations", () => {
     await waitFor(() => {
       expect(assignMock).toHaveBeenCalledWith("https://oauth.example.com/auth");
     });
-    expect(fetchMock).toHaveBeenCalledWith(expect.stringContaining("/api/integrations/gmail/oauth/start"), expect.objectContaining({ method: "POST" }));
+    expect(fetchMock).toHaveBeenCalledWith(expect.stringContaining("/api/integrations/gmail/connect"), expect.objectContaining({ method: "POST" }));
   });
 
   it("saves an API key through the provider-specific fallback route", async () => {

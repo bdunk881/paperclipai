@@ -355,12 +355,6 @@ function getMockAggregate(ticketId: string): TicketAggregate {
   return cloneAggregate(aggregate);
 }
 
-function replaceMockAggregate(nextAggregate: TicketAggregate): void {
-  mockAggregates = mockAggregates.map((aggregate) =>
-    aggregate.ticket.id === nextAggregate.ticket.id ? cloneAggregate(nextAggregate) : aggregate
-  );
-}
-
 function appendMockAggregate(aggregate: TicketAggregate): void {
   mockAggregates = [cloneAggregate(aggregate), ...mockAggregates];
 }

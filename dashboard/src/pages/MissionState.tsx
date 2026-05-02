@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { AlertTriangle, ArrowRight, CheckCircle2, Clock3, Flag, Layers3, ShieldAlert, Users } from "lucide-react";
+import { AlertTriangle, ArrowRight, CheckCircle2, Flag, Layers3, ShieldAlert, Users } from "lucide-react";
 import { Link, useLocation } from "react-router-dom";
 import { ErrorState, EmptyState } from "../components/UiStates";
 import { StatusBadge } from "../components/StatusBadge";
@@ -82,56 +82,6 @@ interface MissionStateRecord {
 }
 
 type MissionCardStates = Partial<Record<CardKey, CardState>>;
-
-// Placeholder data until ALT-2102 confirms the canonical mission-state API contract.
-const MISSION_STATE_FALLBACK: MissionStateRecord = {
-  title: "Launch AutoFlow Beta",
-  objective: "Open the beta to 25 design partners while keeping onboarding, staffing, and dependency response inside the June launch window.",
-  overallStatus: "At Risk",
-  phase: "Execution",
-  phaseAvailable: true,
-  ownerTeam: "CTO + Frontend + QA",
-  lastUpdated: "April 30, 2026 at 3:16 AM ET",
-  confidence: "71% confidence",
-  atRiskIndicator: "Backend contract for mission-state staffing data is still being finalized.",
-  statusSummary: "Frontend implementation is moving, but the staffing drill-down and final readiness numbers are still waiting on the canonical mission-state response.",
-  staffingReadiness: "82% staffed",
-  dependencyCountLabel: "4",
-  blockerCount: 2,
-  activeWorkstreamsLabel: "3",
-  nextMilestone: "Preview-ready Mission State route by end of day",
-  nextMilestoneAvailable: true,
-  topBlockers: [
-    "Mission-state API coverage for staffing readiness is pending backend audit.",
-    "Staffing Plan surface is not yet a standalone dashboard route in this repo.",
-  ],
-  recommendedActions: [
-    {
-      label: "Drill into Staffing Plan",
-      detail: "Open the staffing-plan alias and land on the readiness summary.",
-      to: "/staffing-plan",
-      kind: "primary",
-    },
-    {
-      label: "Review top blockers",
-      detail: "Jump to the blockers card and align owners on the two open dependencies.",
-      to: "#blockers-risks",
-      kind: "secondary",
-    },
-    {
-      label: "Inspect milestone timeline",
-      detail: "Use the execution timeline to sequence the remaining ship gates.",
-      to: "#mission-timeline",
-      kind: "secondary",
-    },
-  ],
-  timeline: [
-    { label: "Wireframe + production visual spec signed off", owner: "Graphic Designer", due: "Apr 30", status: "Complete" },
-    { label: "Canonical Mission State route wired into nav", owner: "Frontend", due: "Apr 30", status: "Current" },
-    { label: "Mission-state data contract confirmed", owner: "Backend", due: "Apr 30", status: "Current" },
-    { label: "QA route/state regression sweep", owner: "QA", due: "May 1", status: "Upcoming" },
-  ],
-};
 
 function getCardState(states: MissionCardStates, key: CardKey): CardState {
   return states[key] ?? "ready";
@@ -217,8 +167,8 @@ function buildMissionRecordFromBackend(missionState: BackendMissionState): Missi
     recommendedActions: [
       {
         label: "Drill into Staffing Plan",
-        detail: "Use the staffing-plan entry alias to reopen this mission route from staffing context.",
-        to: "/staffing-plan",
+        detail: "Open the staffing plan workspace view for current headcount coverage.",
+        to: "/workspace/staffing-plan",
         kind: "primary",
       },
       {
@@ -229,17 +179,12 @@ function buildMissionRecordFromBackend(missionState: BackendMissionState): Missi
       },
       {
         label: "Inspect mission timeline",
-        detail: "Use the timeline card to track the remaining frontend and backend ship gates.",
+        detail: "Timeline coverage is not yet exposed on this backend contract.",
         to: "#mission-timeline",
         kind: "secondary",
       },
     ],
-    timeline: [
-      { label: "Mission State route wired into primary nav", owner: "Frontend", due: "Apr 30", status: "Complete" },
-      { label: "Canonical mission-state contract merged", owner: "Backend", due: "Apr 30", status: "Current" },
-      { label: "Preview deployment path repaired", owner: "DevOps", due: "Apr 30", status: "Current" },
-      { label: "Final QA route and state sweep", owner: "QA", due: "May 1", status: "Upcoming" },
-    ],
+    timeline: [],
   };
 }
 
@@ -316,7 +261,7 @@ function CardShell({
 }
 
 export function MissionStateView({
-  data = MISSION_STATE_FALLBACK,
+  data,
   states = {},
   entryPoint,
 }: {
@@ -324,7 +269,6 @@ export function MissionStateView({
   states?: MissionCardStates;
   entryPoint?: string | null;
 }) {
-  const safeData = data ?? MISSION_STATE_FALLBACK;
   const animationDelays = {
     breadcrumb: "0ms",
     header: "60ms",
@@ -383,35 +327,35 @@ export function MissionStateView({
                         <Flag size={14} />
                         Mission Summary
                       </span>
-                      <StatusBadge status={safeData.overallStatus} />
+                      <StatusBadge status={data?.overallStatus ?? "Not Started"} />
                     </div>
                     <h1 className="text-3xl font-semibold tracking-tight text-slate-950 dark:text-white sm:text-4xl">
-                      {safeData.title}
+                      {data?.title}
                     </h1>
                     <p className="mt-4 max-w-2xl text-base leading-7 text-slate-600 dark:text-slate-300">
-                      {safeData.objective}
+                      {data?.objective}
                     </p>
                   </div>
                   <div className="grid min-w-[280px] grid-cols-2 gap-3 sm:grid-cols-4 lg:w-[420px] lg:grid-cols-2">
                     <div className="rounded-2xl border border-slate-200/80 bg-white/80 p-4 dark:border-slate-800 dark:bg-slate-950/70">
                       <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">Owner / Team</p>
-                      <p className="mt-2 text-sm font-medium text-slate-900 dark:text-slate-100">{safeData.ownerTeam}</p>
+                      <p className="mt-2 text-sm font-medium text-slate-900 dark:text-slate-100">{data?.ownerTeam}</p>
                     </div>
                     <div className="rounded-2xl border border-slate-200/80 bg-white/80 p-4 dark:border-slate-800 dark:bg-slate-950/70">
                       <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">Current Phase</p>
-                      <p className="mt-2 text-sm font-medium text-slate-900 dark:text-slate-100">{safeData.phase}</p>
-                      {!safeData.phaseAvailable && (
+                      <p className="mt-2 text-sm font-medium text-slate-900 dark:text-slate-100">{data?.phase}</p>
+                      {!data?.phaseAvailable && (
                         <p className="mt-1 text-xs text-slate-400 dark:text-slate-500">Current phase is unavailable on the v1 backend contract.</p>
                       )}
                     </div>
                     <div className="rounded-2xl border border-slate-200/80 bg-white/80 p-4 dark:border-slate-800 dark:bg-slate-950/70">
                       <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">Last Updated</p>
-                      <p className="mt-2 text-sm font-medium text-slate-900 dark:text-slate-100">{safeData.lastUpdated}</p>
+                      <p className="mt-2 text-sm font-medium text-slate-900 dark:text-slate-100">{data?.lastUpdated}</p>
                     </div>
                     <div className="rounded-2xl border border-slate-200/80 bg-white/80 p-4 dark:border-slate-800 dark:bg-slate-950/70">
                       <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">Next Milestone</p>
-                      <p className="mt-2 text-sm font-medium text-slate-900 dark:text-slate-100">{safeData.nextMilestone}</p>
-                      {!safeData.nextMilestoneAvailable && (
+                      <p className="mt-2 text-sm font-medium text-slate-900 dark:text-slate-100">{data?.nextMilestone}</p>
+                      {!data?.nextMilestoneAvailable && (
                         <p className="mt-1 text-xs text-slate-400 dark:text-slate-500">Next milestone is intentionally `null` on the current backend surface.</p>
                       )}
                     </div>
@@ -434,16 +378,16 @@ export function MissionStateView({
               <div className="space-y-4">
                 <div className="rounded-2xl bg-teal-50 p-4 dark:bg-teal-500/10">
                   <p className="text-xs font-semibold uppercase tracking-[0.16em] text-teal-700 dark:text-teal-200">Overall Confidence</p>
-                  <p className="mt-2 text-2xl font-semibold text-slate-950 dark:text-white">{safeData.confidence}</p>
+                  <p className="mt-2 text-2xl font-semibold text-slate-950 dark:text-white">{data?.confidence}</p>
                 </div>
                 <div className="rounded-2xl bg-orange-50 p-4 dark:bg-orange-500/10">
                   <div className="flex items-center gap-2 text-sm font-semibold text-orange-700 dark:text-orange-200">
                     <AlertTriangle size={16} />
                     At-risk indicator
                   </div>
-                  <p className="mt-2 text-sm leading-6 text-slate-700 dark:text-slate-300">{safeData.atRiskIndicator}</p>
+                  <p className="mt-2 text-sm leading-6 text-slate-700 dark:text-slate-300">{data?.atRiskIndicator}</p>
                 </div>
-                <p className="text-sm leading-6 text-slate-600 dark:text-slate-300">{safeData.statusSummary}</p>
+                <p className="text-sm leading-6 text-slate-600 dark:text-slate-300">{data?.statusSummary}</p>
               </div>
             </CardShell>
           </div>
@@ -461,26 +405,26 @@ export function MissionStateView({
               <div className="space-y-4 text-sm text-slate-600 dark:text-slate-300">
                 <div className="flex items-center justify-between rounded-2xl border border-slate-200/80 bg-slate-50 px-4 py-3 dark:border-slate-800 dark:bg-slate-950/60">
                   <span className="flex items-center gap-2 font-medium"><Users size={15} /> Staffing readiness</span>
-                  <span className="font-semibold text-slate-950 dark:text-white">{safeData.staffingReadiness}</span>
+                  <span className="font-semibold text-slate-950 dark:text-white">{data?.staffingReadiness}</span>
                 </div>
                 <div className="grid grid-cols-2 gap-3">
                   <div className="rounded-2xl border border-slate-200/80 p-4 dark:border-slate-800">
                     <p className="text-xs uppercase tracking-[0.14em] text-slate-400">Blockers</p>
-                    <p className="mt-2 text-2xl font-semibold text-slate-950 dark:text-white">{safeData.blockerCount}</p>
+                    <p className="mt-2 text-2xl font-semibold text-slate-950 dark:text-white">{data?.blockerCount}</p>
                   </div>
                   <div className="rounded-2xl border border-slate-200/80 p-4 dark:border-slate-800">
                     <p className="text-xs uppercase tracking-[0.14em] text-slate-400">Dependencies</p>
-                    <p className="mt-2 text-2xl font-semibold text-slate-950 dark:text-white">{safeData.dependencyCountLabel}</p>
+                    <p className="mt-2 text-2xl font-semibold text-slate-950 dark:text-white">{data?.dependencyCountLabel}</p>
                     <p className="mt-1 text-xs text-slate-400 dark:text-slate-500">Dependency count is not exposed by the current mission-state contract.</p>
                   </div>
                 </div>
                 <div className="flex items-center justify-between rounded-2xl border border-slate-200/80 p-4 dark:border-slate-800">
                   <span className="flex items-center gap-2 font-medium"><Layers3 size={15} /> Active workstreams</span>
-                  <span className="font-semibold text-slate-950 dark:text-white">{safeData.activeWorkstreamsLabel}</span>
+                  <span className="font-semibold text-slate-950 dark:text-white">{data?.activeWorkstreamsLabel}</span>
                 </div>
                 <div className="rounded-2xl border border-slate-200/80 p-4 dark:border-slate-800">
                   <p className="text-xs uppercase tracking-[0.14em] text-slate-400">Next milestone</p>
-                  <p className="mt-2 font-medium text-slate-950 dark:text-white">{safeData.nextMilestone}</p>
+                  <p className="mt-2 font-medium text-slate-950 dark:text-white">{data?.nextMilestone}</p>
                 </div>
               </div>
             </CardShell>
@@ -497,8 +441,8 @@ export function MissionStateView({
               errorMessage="Blockers and risks could not be loaded."
             >
               <div className="space-y-3">
-                {safeData.topBlockers.length > 0 ? (
-                  safeData.topBlockers.map((blocker) => (
+                {data && data.topBlockers.length > 0 ? (
+                  data.topBlockers.map((blocker) => (
                     <div key={blocker} className="rounded-2xl border border-slate-200/80 p-4 dark:border-slate-800">
                       <div className="flex items-start gap-3">
                         <ShieldAlert size={16} className="mt-0.5 text-orange-600 dark:text-orange-300" />
@@ -529,7 +473,7 @@ export function MissionStateView({
               errorMessage="Recommended actions are unavailable."
             >
               <div className="space-y-3">
-                {safeData.recommendedActions.map((action) => {
+                {(data?.recommendedActions ?? []).map((action) => {
                   const actionClass =
                     action.kind === "primary"
                       ? "border-brand-200 bg-brand-50 text-brand-700 dark:border-brand-500/30 dark:bg-brand-500/10 dark:text-brand-100"
@@ -576,21 +520,10 @@ export function MissionStateView({
               emptyDescription="Milestone sequencing and dependency timing will appear here once the mission-state timeline is available."
               errorMessage="Timeline data could not be loaded."
             >
-              <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-                {safeData.timeline.map((item) => (
-                  <div key={item.label} className="rounded-2xl border border-slate-200/80 bg-slate-50/70 p-4 dark:border-slate-800 dark:bg-slate-950/60">
-                    <div className="flex items-center justify-between gap-3">
-                      <span className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">{item.due}</span>
-                      <span className="inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs font-semibold text-slate-700 dark:text-slate-200">
-                        {item.status === "Complete" ? <CheckCircle2 size={14} className="text-teal-500" /> : <Clock3 size={14} className="text-orange-500" />}
-                        {item.status}
-                      </span>
-                    </div>
-                    <p className="mt-4 text-sm font-semibold text-slate-950 dark:text-white">{item.label}</p>
-                    <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">{item.owner}</p>
-                  </div>
-                ))}
-              </div>
+              <EmptyState
+                title="Timeline not populated yet"
+                description="Mission-state timeline details are not available from the current backend contract."
+              />
             </CardShell>
           </div>
         </div>
@@ -632,7 +565,7 @@ export default function MissionState() {
   useEffect(() => {
     if (simulatedState === "loading" || simulatedState === "empty" || simulatedState === "error") {
       setLoadState(simulatedState);
-      setMissionRecord(MISSION_STATE_FALLBACK);
+      setMissionRecord(null);
       return;
     }
 
@@ -648,7 +581,7 @@ export default function MissionState() {
 
         if (!resolvedTeamId) {
           if (!cancelled) {
-            setMissionRecord(MISSION_STATE_FALLBACK);
+            setMissionRecord(null);
             setLoadState("empty");
           }
           return;
@@ -666,7 +599,7 @@ export default function MissionState() {
         }
       } catch {
         if (!cancelled) {
-          setMissionRecord(MISSION_STATE_FALLBACK);
+          setMissionRecord(null);
           setLoadState("error");
         }
       }
@@ -687,7 +620,7 @@ export default function MissionState() {
 
   return (
     <MissionStateView
-      data={missionRecord ?? MISSION_STATE_FALLBACK}
+      data={missionRecord}
       states={buildStates(loadState)}
       entryPoint={entryPoint}
     />

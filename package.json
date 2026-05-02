@@ -19,6 +19,7 @@
     "@anthropic-ai/sdk": "^0.82.0",
     "@aws-sdk/client-bedrock-runtime": "^3.1034.0",
     "@azure/identity": "^4.13.1",
+    "@azure/keyvault-secrets": "^4.11.1",
     "@azure/storage-blob": "^12.31.0",
     "@nicokaiser/passport-apple": "^3.3.0",
     "@google-cloud/vertexai": "^1.12.0",

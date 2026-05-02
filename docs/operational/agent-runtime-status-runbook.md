@@ -1,20 +1,12 @@
 # Agent Runtime Status Runbook
 
-> Written after incident ALT-2209 (2026-05-02). Corrected after CEO re-open on 2026-05-02 — original version mis-described `agents.status` as derived; it is stored.
+> Written after incident ALT-2209 (2026-05-02). Updates the understanding established in ALT-2194 / ALT-2205.
 
-## Two separate status systems — do not confuse them
+## How `agents.status` is computed
 
-### 1. Paperclip platform `agents.status` (stored)
+The dashboard `status` field returned by `GET /api/agents/{id}` and `GET /api/companies/{id}/agents` is **not stored** — it is derived at read time by `toDashboardAgentStatus()` in `src/agents/agentRoutes.ts`:
 
-`GET /api/agents/{id}` returns `status` as a **raw stored column** in the Paperclip platform database. Valid values: `"active"`, `"error"`, `"paused"`, `"terminated"`.
-
-This field is set by the platform on run failures / server restarts. It does **not** auto-clear when subsequent runs succeed — that is the bug tracked in [ALT-2224](/ALT/issues/ALT-2224).
-
-### 2. AutoFlow app dashboard status (derived)
-
-The AutoFlow app's `GET /api/agents/` list route derives a display status via `toDashboardAgentStatus()` in `src/agents/agentRoutes.ts`:
-
-| Condition | Display `status` |
+| Condition | Dashboard `status` |
 |---|---|
 | `agent.status === "paused"` | `"paused"` |
 | `agent.status === "terminated"` | `"idle"` |
@@ -22,33 +14,23 @@ The AutoFlow app's `GET /api/agents/` list route derives a display status via `t
 | `agent.lastHeartbeatStatus === "running"` | `"running"` |
 | anything else | `"idle"` |
 
-`lastHeartbeatStatus` is updated by `recordHeartbeat()` in `src/controlPlane/controlPlaneStore.ts`.
+`lastHeartbeatStatus` is updated by `recordHeartbeat()` in `src/controlPlane/controlPlaneStore.ts` each time the control-plane heartbeat endpoint is called. Valid values: `"queued"`, `"running"`, `"completed"`, `"blocked"`.
 
-## What causes `agents.status: error` (Paperclip API)
+## What causes `status: error`
 
-1. **Server restart** — platform sets `status = "error"` for agents that were mid-run when the process died.
-2. **Run hard failure** — a heartbeat run exits abnormally and the platform records the error.
-3. **Budget block** — `applyBudgetPolicies()` may set status when spend limits are exceeded.
+Two sources, with very different meanings:
 
-**None of these auto-clear today.** ALT-2224 tracks the platform fix.
+### Real error — budget enforcement
+`applyBudgetPolicies()` (controlPlaneStore.ts ~line 1342) sets `lastHeartbeatStatus = "blocked"` when an agent exceeds its spend budget. This is a genuine signal: the agent is paused and will not run until the budget is reset or the policy is changed.
 
-## How to tell cosmetic vs real error
+### Cosmetic error — server restart stale state
+After a server restart, the runtime may set `lastHeartbeatStatus = "blocked"` for agents that were mid-run. If the agent's next successful heartbeat run does not correctly reach `recordHeartbeat()`, the stored value stays `"blocked"` indefinitely even though the agent is functionally healthy.
 
-1. Check `lastHeartbeatAt`. If it is within `2 × intervalSec` (default 30 min), the agent is firing successfully — the `status: error` is cosmetic/stale.
+**How to tell the difference:**
+
+1. Check `lastHeartbeatAt`. If it is within the last `2 × intervalSec` (default 30 min), the agent is firing heartbeats — `status: error` is cosmetic.
 2. Check `runtimeConfig.heartbeat.enabled`. If `true` and heartbeats are landing, the agent is healthy.
-3. Check `lifecycleStatus`. If `null`, no lifecycle issue is active.
-
-## Immediate remediation (manual, until ALT-2224 ships)
-
-```bash
-# Clear a stuck agent — safe when lastHeartbeatAt is fresh
-curl -X PATCH "$PAPERCLIP_API_URL/api/agents/{agentId}" \
-  -H "Authorization: Bearer $PAPERCLIP_API_KEY" \
-  -H "Content-Type: application/json" \
-  -d '{"status": "active"}'
-```
-
-Do this for each agent with `status: error` and fresh `lastHeartbeatAt`. Confirm with a follow-up GET.
+3. Check `lifecycleStatus`. If `null`, no lifecycle issue is recorded.
 
 ## Sweep routine guard (ALT-2202)
 
@@ -59,41 +41,39 @@ threshold = now - (2 × intervalSec)   # defaults to 900s when intervalSec is mi
 SKIP agent if lastHeartbeatAt > threshold
 ```
 
-Agents with a recent heartbeat are **not** touched regardless of `status`. This prevents phantom recovery work until ALT-2224 ships.
+Agents that fired a heartbeat within two intervals are treated as healthy and are **not** touched, regardless of `status`. Only genuinely stale agents (no recent heartbeat) proceed to recovery.
 
-## Platform fix pending (ALT-2224)
+## Platform fix (ALT-2210)
 
-[ALT-2224](/ALT/issues/ALT-2224) — platform auto-reset of `agents.status` from `"error"` to `"active"` on successful heartbeat run. Once this ships, the manual PATCH workaround is no longer needed.
+Shipped on 2026-05-02 via PR #451 (`feat/ALT-2210-heartbeat-workspace-fix`):
 
-## AutoFlow control-plane fix (ALT-2210)
+- `src/controlPlane/controlPlaneRoutes.ts`: heartbeat POST endpoint now resolves and forwards `workspaceId` + `userId` to `recordHeartbeat()`.
+- `src/controlPlane/controlPlaneStore.ts`: `recordHeartbeat()` accepts the workspace context so that `lastHeartbeatStatus` is correctly updated to `"completed"` on successful runs, clearing any stale `"blocked"` value.
 
-PR #451 (`feat/ALT-2210-heartbeat-workspace-fix`) fixed workspace context forwarding in `recordHeartbeat()`. This addressed a scoping bug in the AutoFlow control plane but does **not** affect the Paperclip platform's stored `agents.status`. Both fixes are needed; ALT-2210 is complete, ALT-2224 is pending.
+After this fix, a server-restart-induced `status: error` self-corrects on the next successful heartbeat run. No manual SQL reset is needed.
 
 ## Incident response decision tree
 
 ```
-Agent shows status: error (Paperclip API)
+Agent shows status: error
          │
          ├─► lastHeartbeatAt fresh (< 2× intervalSec)?
-         │       YES → cosmetic stale state
-         │             → PATCH /api/agents/{id} { status: "active" } to clear now
-         │             → ALT-2224 will make this self-healing; track there
+         │       YES → cosmetic; no action needed; will auto-clear next run
          │       NO  → continue ↓
          │
          ├─► runtimeConfig.heartbeat.enabled = false?
          │       YES → agent intentionally paused; re-enable if warranted
          │       NO  → continue ↓
          │
-         ├─► budget exhausted?
-         │       YES → reset budget or adjust policy
+         ├─► budget exhausted (check agent budget dashboard)?
+         │       YES → reset budget or adjust policy via controlPlane
          │       NO  → continue ↓
          │
          └─► runtime crash / stuck process?
-                 YES → restart adapter; manually PATCH status after next successful run
+                 YES → restart adapter; lastHeartbeatStatus will self-correct
 ```
 
 ## Do NOT do this
 
-- **Do not** assume `status: error` means the agent is broken without first checking `lastHeartbeatAt`. Fresh heartbeat = cosmetic error.
-- **Do not** run the ALT-2202 sweep manually on agents with fresh heartbeats — the guard blocks it on the scheduled run but a manual trigger bypasses it.
-- **Do not** close a bug fix for this class of issue without live verification: query `GET /api/agents/{id}` and confirm `status` is no longer `"error"` after the fix is deployed.
+- **Do not** run a manual SQL `UPDATE agents SET lastHeartbeatStatus = 'completed'` without first confirming the agent is genuinely healthy via `lastHeartbeatAt` freshness. That was the pre-fix workaround. The platform fix (ALT-2210) eliminates the need.
+- **Do not** trigger ALT-2202 recovery manually for agents with fresh heartbeats. The sweep guard blocks this automatically, but a manual run bypasses it.

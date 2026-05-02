@@ -12,7 +12,7 @@
  */
 
 import { Request, Response, NextFunction } from "express";
-import { Pool } from "pg";
+import { Pool, PoolClient } from "pg";
 import { AuthenticatedRequest } from "../auth/authMiddleware";
 
 export interface WorkspaceAwareRequest extends AuthenticatedRequest {
@@ -21,6 +21,81 @@ export interface WorkspaceAwareRequest extends AuthenticatedRequest {
 
 function getResultCount<T extends { rowCount: number | null; rows: unknown[] }>(result: T): number {
   return result.rowCount ?? result.rows.length;
+}
+
+async function ensureDefaultWorkspaceForUser(
+  pool: Pool,
+  userId: string,
+): Promise<{ workspaceId: string; created: boolean } | null> {
+  const client = await pool.connect();
+
+  try {
+    await client.query("BEGIN");
+    await client.query("SELECT pg_advisory_xact_lock(hashtext($1))", [userId]);
+
+    const ownedWorkspaces = await client.query<{ id: string }>(
+      `SELECT id FROM workspaces WHERE owner_user_id = $1 ORDER BY created_at ASC LIMIT 2`,
+      [userId],
+    );
+    const ownedWorkspaceCount = getResultCount(ownedWorkspaces);
+    if (ownedWorkspaceCount > 1) {
+      await client.query("COMMIT");
+      return null;
+    }
+    if (ownedWorkspaceCount === 1) {
+      await client.query("COMMIT");
+      return { workspaceId: ownedWorkspaces.rows[0].id, created: false };
+    }
+
+    const memberWorkspaces = await client.query<{ id: string }>(
+      `SELECT wm.workspace_id AS id FROM workspace_members wm
+       WHERE wm.user_id = $1
+       ORDER BY wm.created_at ASC LIMIT 2`,
+      [userId],
+    );
+    const memberWorkspaceCount = getResultCount(memberWorkspaces);
+    if (memberWorkspaceCount > 1) {
+      await client.query("COMMIT");
+      return null;
+    }
+    if (memberWorkspaceCount === 1) {
+      await client.query("COMMIT");
+      return { workspaceId: memberWorkspaces.rows[0].id, created: false };
+    }
+
+    const insertedWorkspace = await client.query<{ id: string }>(
+      `INSERT INTO workspaces (name, owner_user_id)
+       VALUES ($1, $2)
+       RETURNING id`,
+      ["Personal Workspace", userId],
+    );
+    const workspaceId = insertedWorkspace.rows[0]?.id;
+    if (!workspaceId) {
+      throw new Error("workspace_bootstrap_insert_failed");
+    }
+
+    await client.query(
+      `INSERT INTO workspace_members (workspace_id, user_id, role)
+       VALUES ($1, $2, 'owner')
+       ON CONFLICT (workspace_id, user_id) DO NOTHING`,
+      [workspaceId, userId],
+    );
+    await client.query("COMMIT");
+    return { workspaceId, created: true };
+  } catch (error) {
+    await rollbackQuietly(client);
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+async function rollbackQuietly(client: PoolClient): Promise<void> {
+  try {
+    await client.query("ROLLBACK");
+  } catch {
+    // Ignore rollback failures so the original error is preserved.
+  }
 }
 
 /**
@@ -95,7 +170,16 @@ export function createWorkspaceResolver(pool: Pool) {
         const memberWorkspaceCount = getResultCount(memberWorkspaces);
 
         if (memberWorkspaceCount === 0) {
-          res.status(404).json({ error: "No workspace found for user." });
+          const bootstrapResult = await ensureDefaultWorkspaceForUser(pool, userId);
+          if (!bootstrapResult) {
+            res.status(400).json({
+              error: "Multiple workspaces available. Specify X-Workspace-Id header.",
+            });
+            return;
+          }
+
+          req.workspaceId = bootstrapResult.workspaceId;
+          next();
           return;
         }
 

@@ -149,7 +149,7 @@ export interface TicketQueueResponse {
 const BASE = getApiBasePath();
 const DEFAULT_WORKSPACE_ID =
   import.meta.env.VITE_DEFAULT_WORKSPACE_ID ?? "11111111-1111-4111-8111-111111111111";
-const USE_MOCK_API = import.meta.env.VITE_USE_MOCK === "true";
+const USE_MOCK_TICKETING = import.meta.env.DEV && import.meta.env.VITE_USE_MOCK === "true";
 
 const actorProfiles = new Map<
   string,
@@ -311,12 +311,6 @@ export function collectKnownActors(
 
   for (const actor of seedActors) {
     known.set(actorKey(actor), actor);
-  }
-
-  for (const aggregate of mockAggregates) {
-    for (const assignee of aggregate.ticket.assignees) {
-      known.set(actorKey(assignee), { type: assignee.type, id: assignee.id });
-    }
   }
 
   for (const ticket of tickets) {
@@ -577,7 +571,7 @@ export async function listTickets(
   filters: TicketListFilters = {},
   accessToken?: string
 ): Promise<{ tickets: TicketRecord[]; total: number; source: "api" | "mock" }> {
-  if (USE_MOCK_API) {
+  if (USE_MOCK_TICKETING) {
     const tickets = listMockTickets(filters);
     return { tickets, total: tickets.length, source: "mock" as const };
   }
@@ -604,7 +598,7 @@ export async function listTickets(
 }
 
 export async function getTicket(ticketId: string, accessToken?: string): Promise<TicketAggregate> {
-  if (USE_MOCK_API) {
+  if (USE_MOCK_TICKETING) {
     return getMockAggregate(ticketId);
   }
 
@@ -658,7 +652,7 @@ export async function listTicketQueue(
   accessToken?: string,
   filters: Omit<TicketListFilters, "actorType" | "actorId"> = {}
 ): Promise<TicketQueueResponse & { source: "api" | "mock" }> {
-  if (USE_MOCK_API) {
+  if (USE_MOCK_TICKETING) {
     const tickets = listMockTickets({
       ...filters,
       actorType: actor.type,
@@ -701,7 +695,7 @@ export async function createTicket(
 
   const integrationWarnings = buildCreateWarnings(input);
 
-  if (USE_MOCK_API) {
+  if (USE_MOCK_TICKETING) {
     const createdAt = nowIso();
     const ticketId = createId("ticket");
     const creatorId = readStoredAuthUser()?.id ?? "current-user";
@@ -765,7 +759,7 @@ export async function addTicketUpdate(
   input: CreateTicketUpdateInput,
   accessToken?: string
 ): Promise<{ update: TicketUpdate; source: "api" | "mock" }> {
-  if (USE_MOCK_API) {
+  if (USE_MOCK_TICKETING) {
     const aggregate = getMockAggregate(ticketId);
     const actorId = readStoredAuthUser()?.id ?? "current-user";
     const update: TicketUpdate = {
@@ -804,7 +798,7 @@ export async function transitionTicket(
   input: TransitionTicketInput,
   accessToken?: string
 ): Promise<TicketAggregate & { source: "api" | "mock" }> {
-  if (USE_MOCK_API) {
+  if (USE_MOCK_TICKETING) {
     const aggregate = getMockAggregate(ticketId);
     const actorId = readStoredAuthUser()?.id ?? "current-user";
     const timestamp = nowIso();

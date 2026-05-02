@@ -293,7 +293,7 @@ export default function Tickets() {
           </div>
 
           <div className="space-y-5 px-6 py-6 md:px-8">
-            <TicketSourceNotice source={source} warnings={integrationWarnings} />
+            <TicketSourceNotice source={source ?? "api"} warnings={integrationWarnings} />
 
             <div className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_repeat(3,180px)_auto]">
               <label className="relative block">

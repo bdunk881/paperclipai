@@ -225,9 +225,11 @@ jobs:
 
       - name: Validate staging social auth env secret
         env:
+          BACKEND_ENV_STAGING: ${{ secrets.AZURE_BACKEND_ENV_STAGING }}
           BACKEND_ENV_STAGING_SOCIAL_AUTH: ${{ secrets.AZURE_BACKEND_ENV_STAGING_SOCIAL_AUTH }}
           GOOGLE_CLIENT_ID: ${{ vars.GOOGLE_CLIENT_ID }}
           STAGING_SOCIAL_AUTH_CLIENT_ID: ${{ vars.AZURE_BACKEND_ENV_STAGING_SOCIAL_AUTH_CLIENTID }}
+          STAGING_KEY_VAULT_URI: ${{ vars.AZURE_STAGING_KEY_VAULT_URI }}
         run: |
           set -euo pipefail
 
@@ -238,11 +240,21 @@ jobs:
 
           tmpfile="$(mktemp)"
           trap 'rm -f "$tmpfile"' EXIT
-          printf '%s\n' "$BACKEND_ENV_STAGING_SOCIAL_AUTH" > "$tmpfile"
+          if [ -n "${BACKEND_ENV_STAGING:-}" ]; then
+            printf '%s\n' "$BACKEND_ENV_STAGING" > "$tmpfile"
+          else
+            : > "$tmpfile"
+          fi
+          printf '\n%s\n' "$BACKEND_ENV_STAGING_SOCIAL_AUTH" >> "$tmpfile"
 
           client_id="${GOOGLE_CLIENT_ID:-}"
           if [ -z "$client_id" ]; then
             client_id="${STAGING_SOCIAL_AUTH_CLIENT_ID:-}"
+          fi
+
+          key_vault_uri="${STAGING_KEY_VAULT_URI:-https://autoflow-staging-hub-kv.vault.azure.net/}"
+          if ! grep -Eq '^AZURE_KEY_VAULT_URI=.+' "$tmpfile"; then
+            printf '\nAZURE_KEY_VAULT_URI=%s\n' "$key_vault_uri" >> "$tmpfile"
           fi
 
           if [ -n "$client_id" ] && ! grep -Eq '^GOOGLE_CLIENT_ID=.+' "$tmpfile"; then
@@ -306,6 +318,7 @@ jobs:
           require_env_key "GOOGLE_CLIENT_ID"
           require_env_key "GOOGLE_CLIENT_SECRET"
           require_env_key "APP_JWT_SECRET"
+          require_env_key "AZURE_KEY_VAULT_URI"
           require_env_key "SOCIAL_AUTH_CALLBACK_BASE_URL"
           require_env_key "SOCIAL_AUTH_DASHBOARD_URL"
           require_exact_https_url "SOCIAL_AUTH_CALLBACK_BASE_URL" "https://${{ steps.target.outputs.api_host }}/api/auth/social"
@@ -314,19 +327,31 @@ jobs:
 
       - name: Deploy backend to Azure Container Apps
         env:
+          BACKEND_ENV_STAGING: ${{ secrets.AZURE_BACKEND_ENV_STAGING }}
           BACKEND_ENV_STAGING_SOCIAL_AUTH: ${{ secrets.AZURE_BACKEND_ENV_STAGING_SOCIAL_AUTH }}
           GOOGLE_CLIENT_ID: ${{ vars.GOOGLE_CLIENT_ID }}
           STAGING_SOCIAL_AUTH_CLIENT_ID: ${{ vars.AZURE_BACKEND_ENV_STAGING_SOCIAL_AUTH_CLIENTID }}
+          STAGING_KEY_VAULT_URI: ${{ vars.AZURE_STAGING_KEY_VAULT_URI }}
         run: |
           set -euo pipefail
 
           tmpfile="$(mktemp)"
           trap 'rm -f "$tmpfile"' EXIT
-          printf '%s\n' "$BACKEND_ENV_STAGING_SOCIAL_AUTH" > "$tmpfile"
+          if [ -n "${BACKEND_ENV_STAGING:-}" ]; then
+            printf '%s\n' "$BACKEND_ENV_STAGING" > "$tmpfile"
+          else
+            : > "$tmpfile"
+          fi
+          printf '\n%s\n' "$BACKEND_ENV_STAGING_SOCIAL_AUTH" >> "$tmpfile"
 
           client_id="${GOOGLE_CLIENT_ID:-}"
           if [ -z "$client_id" ]; then
             client_id="${STAGING_SOCIAL_AUTH_CLIENT_ID:-}"
+          fi
+
+          key_vault_uri="${STAGING_KEY_VAULT_URI:-https://autoflow-staging-hub-kv.vault.azure.net/}"
+          if ! grep -Eq '^AZURE_KEY_VAULT_URI=.+' "$tmpfile"; then
+            printf '\nAZURE_KEY_VAULT_URI=%s\n' "$key_vault_uri" >> "$tmpfile"
           fi
 
           if [ -n "$client_id" ] && ! grep -Eq '^GOOGLE_CLIENT_ID=.+' "$tmpfile"; then
@@ -423,6 +448,16 @@ jobs:
                 if [ "$LLM_CONFIGS_STATUS" != "200" ]; then
                   echo "::error::Expected staging QA bypass to return 200 on /api/llm-configs, got $LLM_CONFIGS_STATUS"
                   cat /tmp/llm-configs.json || true
+                  exit 1
+                fi
+
+                APOLLO_OAUTH_STATUS=$(curl -s -o /tmp/apollo-oauth-start.json -w "%{http_code}" \
+                  -X POST \
+                  -H "X-User-Id: qa-smoke-user" \
+                  "https://${REVISION_FQDN}/api/integrations/apollo/oauth/start")
+                if [ "$APOLLO_OAUTH_STATUS" != "201" ]; then
+                  echo "::error::Expected Apollo OAuth start to return 201 on staging, got $APOLLO_OAUTH_STATUS"
+                  cat /tmp/apollo-oauth-start.json || true
                   exit 1
                 fi
 

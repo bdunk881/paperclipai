@@ -1,3 +1,4 @@
+import "./instrument";
 import { initializePersistence } from "./bootstrap";
 import { WORKFLOW_TEMPLATES } from "./templates";
 

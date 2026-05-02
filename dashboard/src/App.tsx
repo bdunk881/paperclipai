@@ -11,6 +11,7 @@ import Layout from "./components/Layout";
 import Login from "./pages/Login";
 import Dashboard from "./pages/Dashboard";
 import WorkflowBuilder from "./pages/WorkflowBuilder";
+import Templates from "./pages/Templates";
 import RunMonitor from "./pages/RunMonitor";
 import RunHistory from "./pages/RunHistory";
 import AgentTeamDetail from "./pages/AgentTeamDetail";
@@ -39,6 +40,8 @@ import AgentActivity from "./pages/AgentActivity";
 import Routines from "./pages/Routines";
 import OrgStructure from "./pages/OrgStructure";
 import BudgetDashboard from "./pages/BudgetDashboard";
+import MissionState from "./pages/MissionState";
+import StaffingPlanReview from "./pages/StaffingPlanReview";
 import Tickets from "./pages/Tickets";
 import TicketDetail from "./pages/TicketDetail";
 import TicketTeamView from "./pages/TicketTeamView";
@@ -141,6 +144,8 @@ export default function App() {
             <Route index element={<Dashboard />} />
             <Route path="builder" element={<WorkflowBuilder />} />
             <Route path="builder/:templateId" element={<WorkflowBuilder />} />
+            <Route path="templates" element={<Templates />} />
+            <Route path="templates/:templateId" element={<WorkflowBuilder />} />
             <Route path="agents/team/:teamId" element={<AgentTeamDetail />} />
             <Route path="monitor" element={<RunMonitor />} />
             <Route path="history" element={<RunHistory />} />
@@ -150,7 +155,8 @@ export default function App() {
             <Route path="agents/my" element={<MyAgents />} />
             <Route path="agents/activity" element={<AgentActivity />} />
             <Route path="agents/routines" element={<Routines />} />
-            <Route path="workspace/staffing-plan" element={<Dashboard />} />
+            <Route path="mission-state" element={<MissionState />} />
+            <Route path="workspace/staffing-plan" element={<StaffingPlanReview />} />
             <Route path="workspace/org-structure" element={<OrgStructure />} />
             <Route path="workspace/budget-dashboard" element={<BudgetDashboard />} />
             <Route path="tickets" element={<Tickets />} />

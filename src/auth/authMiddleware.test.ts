@@ -156,6 +156,86 @@ describe("requireAuth", () => {
     expect(res.status).not.toHaveBeenCalled();
   });
 
+  it("does not allow QA bypass on protected routes through requireAuth", () => {
+    process.env.NODE_ENV = "test";
+    process.env.QA_AUTH_BYPASS_ENABLED = "true";
+    process.env.QA_AUTH_BYPASS_USER_IDS = "qa-smoke-user";
+
+    const requireAuth = loadRequireAuth();
+    const req = {
+      method: "GET",
+      headers: { "x-user-id": "qa-smoke-user" },
+      originalUrl: "/api/control-plane/teams",
+      path: "/api/control-plane/teams",
+    } as unknown as AuthenticatedRequest;
+    const res = createResponse();
+    const next = jest.fn();
+
+    requireAuth(req, res as never, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(req.auth).toBeUndefined();
+    expect(res.status).toHaveBeenCalledWith(401);
+  });
+
+  it("allows QA bypass on integrations routes through requireAuth", async () => {
+    process.env.NODE_ENV = "test";
+    process.env.QA_AUTH_BYPASS_ENABLED = "true";
+    process.env.QA_AUTH_BYPASS_USER_IDS = "qa-smoke-user";
+
+    const requireAuth = loadRequireAuth();
+    const req = {
+      method: "POST",
+      headers: { "x-user-id": "qa-smoke-user", "x-workspace-id": "workspace-123" },
+      originalUrl: "/api/integrations/apollo/oauth/start",
+      path: "/api/integrations/apollo/oauth/start",
+    } as unknown as AuthenticatedRequest;
+    const res = createResponse();
+    const next = jest.fn();
+
+    requireAuth(req, res as never, next);
+    await new Promise((resolve) => setImmediate(resolve));
+
+    expect(next).toHaveBeenCalledTimes(1);
+    expect(req.auth?.sub).toBe("qa-smoke-user");
+    expect(recordControlPlaneAuditMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        workspaceId: "workspace-123",
+        userId: "qa-smoke-user",
+        category: "bypass_attempt",
+        action: "qa_auth_bypass_attempt",
+      })
+    );
+    expect(recordControlPlaneAuditMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        workspaceId: "workspace-123",
+        userId: "qa-smoke-user",
+        category: "auth",
+        action: "qa_auth_bypass_authenticated",
+      })
+    );
+  });
+
+  it("rejects non-allowlisted QA bypass users on protected routes", () => {
+    process.env.NODE_ENV = "test";
+    process.env.QA_AUTH_BYPASS_ENABLED = "true";
+    process.env.QA_AUTH_BYPASS_USER_IDS = "qa-smoke-user";
+
+    const requireAuth = loadRequireAuth();
+    const req = {
+      method: "GET",
+      headers: { "x-user-id": "not-allowed" },
+      originalUrl: "/api/control-plane/teams",
+      path: "/api/control-plane/teams",
+    } as unknown as AuthenticatedRequest;
+    const res = createResponse();
+    const next = jest.fn();
+
+    requireAuth(req, res as never, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(401);
+  });
   it("still rejects non-allowlisted routes without Authorization", () => {
     const requireAuth = loadRequireAuth();
     const req = {

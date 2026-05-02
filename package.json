@@ -16,7 +16,7 @@
     "health-report": "ts-node src/integrations/apollo-attio/health-metrics.ts"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.82.0",
+    "@anthropic-ai/sdk": "^0.91.1",
     "@aws-sdk/client-bedrock-runtime": "^3.1034.0",
     "@azure/identity": "^4.13.1",
     "@azure/keyvault-secrets": "^4.11.1",

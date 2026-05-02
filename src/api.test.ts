@@ -78,10 +78,15 @@ jest.mock("./auth/authMiddleware", () => ({
   },
 }));
 
+jest.mock("./middleware/workspaceResolver", () => ({
+  createWorkspaceResolver: () =>
+    (_req: unknown, _res: unknown, next: () => void) => next(),
+}));
+
 import request from "supertest";
 import app from "./app";
 import { recordControlPlaneAudit, recordControlPlaneAuditBatch } from "./auditing/controlPlaneAudit";
-import { listConnectorHealth } from "./connectors/health";
+import { CONNECTOR_HEALTH_KEYS } from "./connectors/health";
 import { WORKFLOW_TEMPLATES } from "./templates";
 import type { WorkflowStep } from "./types/workflow";
 import {
@@ -148,7 +153,10 @@ describe("GET /health", () => {
 
 describe("GET /api/connectors/health", () => {
   it("returns connector health records and summary", async () => {
-    const res = await request(app).get("/api/connectors/health");
+    withQaBypass();
+    const res = await request(app)
+      .get("/api/connectors/health")
+      .set("X-User-Id", "qa-smoke-user");
     expect(res.status).toBe(200);
     expect(Array.isArray(res.body.connectors)).toBe(true);
     expect(typeof res.body.summary).toBe("object");
@@ -164,13 +172,19 @@ describe("GET /api/connectors/health", () => {
     expect(res.body.summary.states.down).toBeUndefined();
   });
 
-  it("returns all Tier 1 connectors", async () => {
-    const res = await request(app).get("/api/connectors/health");
-    expect(res.body.connectors).toHaveLength(listConnectorHealth().length);
+  it("returns all live connector health probes", async () => {
+    withQaBypass();
+    const res = await request(app)
+      .get("/api/connectors/health")
+      .set("X-User-Id", "qa-smoke-user");
+    expect(res.body.connectors).toHaveLength(CONNECTOR_HEALTH_KEYS.length);
   });
 
   it("includes required fields on each connector", async () => {
-    const res = await request(app).get("/api/connectors/health");
+    withQaBypass();
+    const res = await request(app)
+      .get("/api/connectors/health")
+      .set("X-User-Id", "qa-smoke-user");
     for (const connector of res.body.connectors) {
       expect(typeof connector.connectorKey).toBe("string");
       expect(typeof connector.connectorName).toBe("string");
@@ -184,8 +198,20 @@ describe("GET /api/connectors/health", () => {
       ]).toContain(connector.state);
       expect(typeof connector.successRate24h).toBe("number");
       expect(Array.isArray(connector.transitions)).toBe(true);
-      expect(connector.source).toBe("mock");
+      expect(connector.source).toBe("api");
     }
+  });
+});
+
+describe("GET /api/tickets", () => {
+  it("allows the staging QA bypass user past the auth gate without a bearer token", async () => {
+    withQaBypass();
+    const res = await request(app)
+      .get("/api/tickets")
+      .set("X-User-Id", "qa-smoke-user");
+
+    expect(res.status).not.toBe(401);
+    expect(res.body.error).not.toBe("Missing or malformed Authorization header.");
   });
 });
 

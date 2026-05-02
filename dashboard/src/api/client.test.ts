@@ -401,6 +401,35 @@ describe("listRuns", () => {
 });
 
 describe("getConnectorHealth", () => {
+  it("adds Authorization header when access token is provided", async () => {
+    mockFetch({
+      connectors: [],
+      summary: {
+        total: 0,
+        states: {
+          healthy: 0,
+          degraded: 0,
+          rate_limited: 0,
+          auth_failed: 0,
+          provider_error: 0,
+          disabled: 0,
+        },
+        lastUpdatedAt: "2026-05-01T00:00:00.000Z",
+        alertPolicy: {
+          degradedWithinMinutes: 5,
+          authFailureThreshold15m: 5,
+          rateLimitThreshold15m: 5,
+          outageThresholdMinutes: 15,
+        },
+        source: "api",
+      },
+    });
+
+    await getConnectorHealth("token-123");
+    const headers = lastFetchOptions().headers as Record<string, string>;
+    expect(headers.Authorization).toBe("Bearer token-123");
+  });
+
   it("sends stored auth context when no access token is provided", async () => {
     vi.spyOn(authStorage, "readStoredAuthUser").mockReturnValue({
       id: "usr-qa-preview",
@@ -444,8 +473,9 @@ describe("getConnectorHealth", () => {
           healthy: 0,
           degraded: 0,
           rate_limited: 0,
-          auth_failure: 0,
-          down: 0,
+          auth_failed: 0,
+          provider_error: 0,
+          disabled: 0,
         },
         lastUpdatedAt: "2026-05-01T00:00:00.000Z",
         alertPolicy: {
@@ -483,6 +513,7 @@ describe("getConnectorHealth", () => {
           rateLimitThreshold15m: 5,
           outageThresholdMinutes: 15,
         },
+        source: "api",
       },
     });
 

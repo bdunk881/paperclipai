@@ -361,7 +361,7 @@ app.use("/api/observability", requireAuth, observabilityRoutes);
 app.use("/api/reporting", requireAuth, reportRoutes);
 app.use("/api/tickets", requireAuthOrQaBypass, workspaceResolver, ticketRoutes);
 app.use("/api/ticket-sync", requireAuth, ticketSyncRoutes);
-app.use("/api/notifications", requireAuth, notificationRoutes);
+app.use("/api/notifications", requireAuth, workspaceResolver, notificationRoutes);
 app.use("/api/approval-policies", requireAuth, approvalPolicyRoutes);
 app.use("/api/user", requireAuth, userProfileRoutes);
 

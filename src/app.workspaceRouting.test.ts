@@ -74,4 +74,14 @@ describe("workspace resolver route mounting", () => {
     expect(res.body.error).toBe("workspace resolver invoked");
     expect(workspaceResolverSpy).toHaveBeenCalledTimes(1);
   });
+
+  it("keeps notification routes behind the workspace resolver", async () => {
+    const res = await request(app)
+      .get("/api/notifications/preferences")
+      .set("Authorization", "Bearer test-user-id");
+
+    expect(res.status).toBe(418);
+    expect(res.body.error).toBe("workspace resolver invoked");
+    expect(workspaceResolverSpy).toHaveBeenCalledTimes(1);
+  });
 });

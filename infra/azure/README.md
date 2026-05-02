@@ -132,6 +132,7 @@ GitHub larger runners with static IPs, or a dedicated VPN/NAT path.
 | `staging` | `AZURE_CONTAINER_APP_STAGING_RESOURCE_GROUP` | Resource group for the staging backend app |
 | `staging` | `AZURE_STAGING_API_HOST` | Public staging API hostname used for DNS-based discovery |
 | `staging` | `AZURE_BACKEND_ENV_STAGING_SOCIAL_AUTH_CLIENTID` | Optional non-secret staging Google OAuth client ID; the deploy workflow injects it if the multiline secret does not include `GOOGLE_CLIENT_ID` |
+| `staging` | `AZURE_STAGING_KEY_VAULT_URI` | Optional staging Key Vault URI override; defaults to `https://autoflow-staging-hub-kv.vault.azure.net/` when unset |
 | `production` | `AZURE_AKS_PRODUCTION_CLUSTER_NAME` | Production AKS cluster name |
 | `production` | `AZURE_AKS_PRODUCTION_RESOURCE_GROUP` | Resource group containing the production AKS cluster |
 | `production` | `AZURE_PRODUCTION_API_HOST` | Public production API hostname used for DNS and cutover tracking |
@@ -141,6 +142,7 @@ GitHub larger runners with static IPs, or a dedicated VPN/NAT path.
 
 | Environment | Secret | Description |
 |---|---|---|
+| `staging` | `AZURE_BACKEND_ENV_STAGING` | Optional newline-delimited general backend env file for the staging Container App; use it for shared runtime env such as `AZURE_KEY_VAULT_URI`, connector callback URLs, and other non-social-auth settings |
 | `staging` | `AZURE_BACKEND_ENV_STAGING_SOCIAL_AUTH` | Newline-delimited env file containing `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `APP_JWT_SECRET`, and `SOCIAL_AUTH_CALLBACK_BASE_URL` for the staging Container App |
 | `production` | `AZURE_BACKEND_ENV_PRODUCTION` | Newline-delimited env file materialized into the `autoflow-backend-secrets` Kubernetes secret |
 
@@ -159,7 +161,15 @@ GitHub larger runners with static IPs, or a dedicated VPN/NAT path.
    - `staging` — no approvals
    - `production` — add required reviewers for the production deployment gate
 4. Add the environment-scoped backend target variables for each environment.
-5. Add `AZURE_BACKEND_ENV_STAGING_SOCIAL_AUTH` to the `staging` environment with:
+5. Add `AZURE_BACKEND_ENV_STAGING` to the `staging` environment when the backend needs shared runtime settings beyond social auth. At minimum, connector OAuth flows that load secrets from Key Vault need:
+
+   ```env
+   AZURE_KEY_VAULT_URI=https://autoflow-staging-hub-kv.vault.azure.net/
+   ```
+
+   You may also place other staging-only backend env values here. The deploy workflow merges this file with the social-auth env file on every staging rollout.
+
+6. Add `AZURE_BACKEND_ENV_STAGING_SOCIAL_AUTH` to the `staging` environment with:
 
    ```env
    GOOGLE_CLIENT_SECRET=<google-oauth-client-secret>
@@ -186,15 +196,15 @@ GitHub larger runners with static IPs, or a dedicated VPN/NAT path.
 
    If `AZURE_STAGING_API_HOST` changes, the redirect URI must change with it to
    keep the Passport callback route aligned with the deployed backend host.
-6. Add `AZURE_BACKEND_ENV_PRODUCTION` to the `production` environment so the
+7. Add `AZURE_BACKEND_ENV_PRODUCTION` to the `production` environment so the
    AKS rollout can create `autoflow-backend-secrets` before the deployment starts.
-7. Verify production-specific values do not reference `staging` or `nonprod`
+8. Verify production-specific values do not reference `staging` or `nonprod`
    resource names; the workflow now hard-fails on cross-environment targets.
-8. Ensure `AZURE_BACKEND_ENV_PRODUCTION` includes CIAM auth fallback inputs
+9. Ensure `AZURE_BACKEND_ENV_PRODUCTION` includes CIAM auth fallback inputs
    (`AZURE_CIAM_TENANT_ID`/`AZURE_TENANT_ID`, `AZURE_CIAM_TENANT_SUBDOMAIN`/`AZURE_TENANT_SUBDOMAIN`,
    and a CIAM audience/client setting) plus `ALLOWED_ORIGINS` containing
    `https://app.helloautoflow.com`.
-9. Set both `AZURE_CIAM_AUTHORITY` and `AUTH_NATIVE_AUTH_PROXY_BASE_URL` in
+10. Set both `AZURE_CIAM_AUTHORITY` and `AUTH_NATIVE_AUTH_PROXY_BASE_URL` in
    `AZURE_BACKEND_ENV_PRODUCTION` to the direct tenant authority:
 
    `https://<tenant-subdomain>.ciamlogin.com/<tenant-guid>`

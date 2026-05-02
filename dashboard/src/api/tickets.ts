@@ -167,6 +167,18 @@ const actorProfiles = new Map<
     "agent:cto",
     { name: "CTO", initials: "CTO", title: "Agent", tone: "orange" },
   ],
+  [
+    "user:alex.pm",
+    { name: "Alex Mercer", initials: "AM", title: "Product Manager", tone: "slate" },
+  ],
+  [
+    "user:sam.support",
+    { name: "Sam Rivera", initials: "SR", title: "Support Lead", tone: "slate" },
+  ],
+  [
+    "user:jordan.ops",
+    { name: "Jordan Lee", initials: "JL", title: "Operations", tone: "slate" },
+  ],
 ]);
 
 export function registerTicketActorProfile(
@@ -315,6 +327,12 @@ export function collectKnownActors(
 
   for (const actor of seedActors) {
     known.set(actorKey(actor), actor);
+  }
+
+  for (const aggregate of mockAggregates) {
+    for (const assignee of aggregate.ticket.assignees) {
+      known.set(actorKey(assignee), { type: assignee.type, id: assignee.id });
+    }
   }
 
   for (const ticket of tickets) {

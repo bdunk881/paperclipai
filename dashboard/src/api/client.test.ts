@@ -401,6 +401,40 @@ describe("listRuns", () => {
 });
 
 describe("getConnectorHealth", () => {
+  it("sends stored auth context when no access token is provided", async () => {
+    vi.spyOn(authStorage, "readStoredAuthUser").mockReturnValue({
+      id: "usr-qa-preview",
+      email: "qa@example.com",
+      name: "QA Preview User",
+    });
+    mockFetch({
+      connectors: [],
+      summary: {
+        total: 0,
+        states: {
+          healthy: 0,
+          degraded: 0,
+          rate_limited: 0,
+          auth_failed: 0,
+          provider_error: 0,
+          disabled: 0,
+        },
+        lastUpdatedAt: "2026-05-01T00:00:00.000Z",
+        alertPolicy: {
+          degradedWithinMinutes: 5,
+          authFailureThreshold15m: 5,
+          rateLimitThreshold15m: 5,
+          outageThresholdMinutes: 15,
+        },
+        source: "api",
+      },
+    });
+
+    await getConnectorHealth();
+    const headers = lastFetchOptions().headers as Record<string, string>;
+    expect(headers["X-User-Id"]).toBe("usr-qa-preview");
+  });
+
   it("rejects backend mock telemetry in real environments", async () => {
     mockFetch({
       connectors: [],

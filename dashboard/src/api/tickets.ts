@@ -181,6 +181,13 @@ const actorProfiles = new Map<
   ],
 ]);
 
+export function registerTicketActorProfile(
+  actor: TicketActorRef,
+  profile: { name: string; initials: string; title: string; tone: "indigo" | "teal" | "orange" | "slate" }
+): void {
+  actorProfiles.set(actorKey(actor), profile);
+}
+
 let mockAggregates: TicketAggregate[] = buildMockAggregates();
 
 function buildAuthHeaders(accessToken?: string, extras?: Record<string, string>): HeadersInit {
@@ -312,8 +319,15 @@ export function getTicketActorProfile(actor: TicketActorRef): {
   };
 }
 
-export function collectKnownActors(tickets: TicketRecord[]): TicketActorRef[] {
+export function collectKnownActors(
+  tickets: TicketRecord[],
+  seedActors: TicketActorRef[] = []
+): TicketActorRef[] {
   const known = new Map<string, TicketActorRef>();
+
+  for (const actor of seedActors) {
+    known.set(actorKey(actor), actor);
+  }
 
   for (const aggregate of mockAggregates) {
     for (const assignee of aggregate.ticket.assignees) {

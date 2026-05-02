@@ -881,7 +881,7 @@ export async function listRuns(templateId?: string, accessToken?: string): Promi
   );
 }
 
-export async function getConnectorHealth(): Promise<{
+export async function getConnectorHealth(accessToken?: string): Promise<{
   connectors: ConnectorHealthRecord[];
   summary: ConnectorHealthSummary;
 }> {
@@ -893,7 +893,7 @@ export async function getConnectorHealth(): Promise<{
   }
 
   const res = await fetch(`${BASE}/connectors/health`, {
-    headers: buildAuthHeaders(),
+    headers: buildAuthHeaders(accessToken),
   });
   if (!res.ok) throw new Error(`Failed to fetch connector health: ${res.status}`);
   const payload = (await res.json()) as {

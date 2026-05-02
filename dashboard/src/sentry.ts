@@ -1,0 +1,52 @@
+import React from "react";
+import * as Sentry from "@sentry/react";
+import {
+  createRoutesFromChildren,
+  matchRoutes,
+  useLocation,
+  useNavigationType,
+} from "react-router-dom";
+
+export function initSentry() {
+  const dsn = import.meta.env.VITE_SENTRY_DSN;
+  if (!dsn) return;
+
+  Sentry.init({
+    dsn,
+    environment: import.meta.env.VITE_SENTRY_ENVIRONMENT ?? import.meta.env.MODE,
+    sendDefaultPii: true,
+    integrations: [
+      Sentry.reactRouterV6BrowserTracingIntegration({
+        useEffect: React.useEffect,
+        useLocation,
+        useNavigationType,
+        createRoutesFromChildren,
+        matchRoutes,
+      }),
+      Sentry.browserProfilingIntegration(),
+      Sentry.replayIntegration({
+        maskAllText: false,
+        blockAllMedia: false,
+      }),
+      Sentry.consoleLoggingIntegration({ levels: ["log", "warn", "error"] }),
+      Sentry.feedbackIntegration({
+        colorScheme: "system",
+        buttonLabel: "Report a Bug",
+        submitButtonLabel: "Send Report",
+        formTitle: "Report a Bug",
+      }),
+    ],
+    enableLogs: true,
+    tracesSampleRate: 1.0,
+    tracePropagationTargets: [
+      "localhost",
+      /^https:\/\/api\.helloautoflow\.com\/api/,
+      /^https:\/\/staging-api\.helloautoflow\.com\/api/,
+    ],
+    profileSessionSampleRate: 1.0,
+    replaysSessionSampleRate: import.meta.env.PROD ? 0.1 : 1.0,
+    replaysOnErrorSampleRate: 1.0,
+  });
+}
+
+export { Sentry };

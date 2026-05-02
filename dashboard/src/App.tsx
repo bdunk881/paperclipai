@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import * as Sentry from "@sentry/react";
 import { AuthProvider, useAuth } from "./context/AuthContext";
 import {
   readQaPreviewToken,
@@ -49,6 +50,8 @@ import TicketActorView from "./pages/TicketActorView";
 import TicketSlaDashboard from "./pages/TicketSlaDashboard";
 import TicketSlaSettings from "./pages/TicketSlaSettings";
 import ConnectorHealth from "./pages/ConnectorHealth";
+
+const SentryRoutes = Sentry.withSentryReactRouterV6Routing(Routes);
 
 function PrivateRoute({ children }: { children: React.ReactNode }) {
   const { user } = useAuth();
@@ -110,9 +113,10 @@ export default function App() {
 
   if (!authReady) return null;
   return (
-    <AuthProvider>
-      <BrowserRouter>
-        <Routes>
+    <Sentry.ErrorBoundary fallback={<p>An unexpected error occurred. Please refresh the page.</p>} showDialog>
+      <AuthProvider>
+        <BrowserRouter>
+          <SentryRoutes>
           <Route path="/waitlist" element={<LandingPage />} />
           <Route path="/checkout/success" element={<CheckoutSuccess />} />
           <Route path="/auth/callback" element={<AuthCallback />} />
@@ -181,9 +185,10 @@ export default function App() {
             <Route path="integrations/mcp" element={<MCPIntegrations />} />
             <Route path="logs" element={<ExecutionLogs />} />
           </Route>
-          <Route path="*" element={<Navigate to="/" replace />} />
-        </Routes>
-      </BrowserRouter>
-    </AuthProvider>
+            <Route path="*" element={<Navigate to="/" replace />} />
+          </SentryRoutes>
+        </BrowserRouter>
+      </AuthProvider>
+    </Sentry.ErrorBoundary>
   );
 }

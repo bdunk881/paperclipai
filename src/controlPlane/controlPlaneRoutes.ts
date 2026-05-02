@@ -696,9 +696,8 @@ router.patch("/tasks/:id/status", requirePaperclipRunId, (req: AuthenticatedRequ
 });
 
 router.post("/heartbeats", requirePaperclipRunId, async (req: AuthenticatedRequest, res) => {
-  const userId = getUserId(req);
-  if (!userId) {
-    res.status(401).json({ error: "Authenticated user required" });
+  const context = resolveWorkspaceContext(req as WorkspaceAwareRequest, res);
+  if (!context) {
     return;
   }
 
@@ -742,7 +741,8 @@ router.post("/heartbeats", requirePaperclipRunId, async (req: AuthenticatedReque
 
   try {
     const heartbeat = await controlPlaneStore.recordHeartbeat({
-      userId,
+      workspaceId: context.workspaceId,
+      userId: context.userId,
       teamId,
       agentId,
       executionId: typeof executionId === "string" ? executionId : undefined,

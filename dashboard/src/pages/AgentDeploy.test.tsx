@@ -1,9 +1,11 @@
-import { render, screen, waitFor } from "@testing-library/react";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { render, screen } from "@testing-library/react";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import AgentDeploy from "./AgentDeploy";
 
+const getAccessTokenMock = vi.fn().mockResolvedValue("mock-token");
 const getAgentCatalogTemplateMock = vi.fn();
+const fetchMock = vi.fn();
 
 vi.mock("../context/AuthContext", () => ({
   useAuth: () => ({
@@ -11,33 +13,28 @@ vi.mock("../context/AuthContext", () => ({
     login: vi.fn(),
     signup: vi.fn(),
     logout: vi.fn(),
-    getAccessToken: vi.fn().mockResolvedValue("mock-token"),
+    getAccessToken: getAccessTokenMock,
   }),
 }));
 
 vi.mock("../api/agentCatalog", () => ({
-  getAgentCatalogTemplate: (templateId: string, accessToken: string) =>
-    getAgentCatalogTemplateMock(templateId, accessToken),
+  getAgentCatalogTemplate: (...args: unknown[]) => getAgentCatalogTemplateMock(...args),
 }));
 
 describe("AgentDeploy", () => {
-  afterEach(() => {
-    vi.useRealTimers();
-    vi.restoreAllMocks();
-  });
-
   beforeEach(() => {
-    vi.spyOn(global, "fetch").mockImplementation(async () =>
+    getAccessTokenMock.mockResolvedValue("mock-token");
+    getAgentCatalogTemplateMock.mockResolvedValue(null);
+    fetchMock.mockResolvedValue(
       new Response(JSON.stringify({ connections: [], total: 0 }), {
         status: 200,
         headers: { "content-type": "application/json" },
       })
     );
+    vi.stubGlobal("fetch", fetchMock);
   });
 
   it("shows not-found state for missing template", async () => {
-    getAgentCatalogTemplateMock.mockResolvedValue(null);
-
     render(
       <MemoryRouter initialEntries={["/agents/deploy/nonexistent-template"]}>
         <Routes>
@@ -46,8 +43,6 @@ describe("AgentDeploy", () => {
       </MemoryRouter>
     );
 
-    await waitFor(() => {
-      expect(screen.getByText(/agent template not found/i)).toBeInTheDocument();
-    });
+    expect(await screen.findByText(/agent template not found/i)).toBeInTheDocument();
   });
 });

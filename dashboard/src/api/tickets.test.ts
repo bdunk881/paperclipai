@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { AUTH_STORAGE_KEY } from "../auth/authStorage";
 
 beforeEach(() => {
   vi.resetModules();
@@ -15,6 +16,11 @@ function mockFetch(status: number, body: unknown): void {
       json: async () => body,
     })
   );
+}
+
+function lastFetchOptions(): RequestInit {
+  const mock = vi.mocked(fetch as unknown as ReturnType<typeof vi.fn>);
+  return (mock.mock.calls[0]?.[1] as RequestInit | undefined) ?? {};
 }
 
 describe("tickets api mock fallback", () => {
@@ -35,5 +41,19 @@ describe("tickets api mock fallback", () => {
 
     expect(result.source).toBe("mock");
     expect(result.tickets.length).toBeGreaterThan(0);
+  });
+});
+
+describe("tickets api", () => {
+  it("forwards the QA bypass user id from preview storage", async () => {
+    window.sessionStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify({ id: "qa-smoke-user" }));
+    mockFetch(200, { tickets: [], total: 0 });
+
+    const { listTickets } = await import("./tickets");
+
+    await listTickets();
+
+    const headers = lastFetchOptions().headers as Record<string, string>;
+    expect(headers["X-User-Id"]).toBe("qa-smoke-user");
   });
 });

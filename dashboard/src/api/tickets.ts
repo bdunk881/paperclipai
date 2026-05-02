@@ -1,4 +1,5 @@
 import { getApiBasePath } from "./baseUrl";
+import { readStoredAuthUser } from "../auth/authStorage";
 
 export type TicketActorType = "agent" | "user";
 export type TicketAssignmentRole = "primary" | "collaborator";
@@ -180,6 +181,12 @@ let mockAggregates: TicketAggregate[] = buildMockAggregates();
 function buildAuthHeaders(accessToken?: string, extras?: Record<string, string>): HeadersInit {
   const headers: Record<string, string> = {};
   if (accessToken) headers.Authorization = `Bearer ${accessToken}`;
+  if (!accessToken) {
+    const storedUser = readStoredAuthUser();
+    if (storedUser?.id) {
+      headers["X-User-Id"] = storedUser.id;
+    }
+  }
   if (extras) {
     for (const [key, value] of Object.entries(extras)) {
       headers[key] = value;

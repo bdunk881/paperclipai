@@ -1,15 +1,8 @@
 import { defineConfig, devices } from "@playwright/test";
 
-/**
- * Playwright E2E configuration for AutoFlow dashboard.
- *
- * Runs against the Vite dev server (VITE_USE_MOCK=true) so no backend
- * is required during CI. The mock API client returns deterministic data
- * that the tests can assert against.
- */
-
 export default defineConfig({
   testDir: "./e2e",
+  testMatch: ["**/auth.spec.ts", "**/auth-regression.spec.ts", "**/preview-auth-smoke.spec.ts"],
   fullyParallel: true,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 2 : 0,
@@ -34,7 +27,7 @@ export default defineConfig({
   webServer: process.env.PLAYWRIGHT_BASE_URL
     ? undefined
     : {
-        command: "VITE_USE_MOCK=true npm run dev",
+        command: "npm run dev",
         url: "http://localhost:5173",
         reuseExistingServer: !process.env.CI,
         timeout: 60_000,

@@ -53,7 +53,6 @@ export interface TicketEscalationRuleRow {
 }
 
 export interface TicketSlaSettingsPayload {
-  workspaceId: string;
   policies: TicketSlaPolicyRow[];
   escalationRules: TicketEscalationRuleRow[];
   fallbackCandidates: TicketActorRef[];
@@ -62,10 +61,7 @@ export interface TicketSlaSettingsPayload {
 
 const BASE = getApiBasePath();
 const USE_MOCK_API = import.meta.env.VITE_USE_MOCK === "true";
-const DEFAULT_WORKSPACE_ID =
-  import.meta.env.VITE_DEFAULT_WORKSPACE_ID ?? "11111111-1111-4111-8111-111111111111";
 let mockTicketSlaSettings: TicketSlaSettingsPayload = {
-  workspaceId: DEFAULT_WORKSPACE_ID,
   policies: [
     { priority: "urgent", firstResponseMinutes: 15, resolutionMinutes: 120 },
     { priority: "high", firstResponseMinutes: 30, resolutionMinutes: 240 },
@@ -169,7 +165,7 @@ export async function getTicketSlaDashboard(accessToken?: string): Promise<Ticke
     return structuredClone(mockTicketSlaDashboard);
   }
 
-  const res = await fetch(`${BASE}/tickets/sla/dashboard?workspaceId=${encodeURIComponent(DEFAULT_WORKSPACE_ID)}`, {
+  const res = await fetch(`${BASE}/tickets/sla/dashboard`, {
     headers: buildAuthHeaders(accessToken),
   });
   if (!res.ok) {
@@ -183,17 +179,13 @@ export async function getTicketSlaSettings(accessToken?: string): Promise<Ticket
     return structuredClone(mockTicketSlaSettings);
   }
 
-  const res = await fetch(`${BASE}/tickets/sla/settings?workspaceId=${encodeURIComponent(DEFAULT_WORKSPACE_ID)}`, {
+  const res = await fetch(`${BASE}/tickets/sla/settings`, {
     headers: buildAuthHeaders(accessToken),
   });
   if (!res.ok) {
     throw new Error(`Failed to load SLA settings: ${res.status}`);
   }
-  const data = (await res.json()) as TicketSlaSettingsPayload;
-  return {
-    ...data,
-    workspaceId: data.workspaceId ?? DEFAULT_WORKSPACE_ID,
-  };
+  return (await res.json()) as TicketSlaSettingsPayload;
 }
 
 export async function updateTicketSlaSettings(
@@ -211,10 +203,7 @@ export async function updateTicketSlaSettings(
   const res = await fetch(`${BASE}/tickets/sla/settings`, {
     method: "PATCH",
     headers: buildMutationHeaders(accessToken),
-    body: JSON.stringify({
-      ...input,
-      workspaceId: input.workspaceId || DEFAULT_WORKSPACE_ID,
-    }),
+    body: JSON.stringify(input),
   });
   if (!res.ok) {
     throw new Error(`Failed to save SLA settings: ${res.status}`);

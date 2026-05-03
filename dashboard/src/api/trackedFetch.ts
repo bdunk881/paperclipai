@@ -42,7 +42,6 @@ export async function trackedFetch(
   } finally {
     const duration = Math.round(performance.now() - start);
 
-    // Emit metrics
     Sentry.metrics.distribution("api.response_time_ms", duration, {
       unit: "millisecond",
       attributes: { endpoint, method, status: String(statusCode) },
@@ -54,8 +53,6 @@ export async function trackedFetch(
       });
     }
 
-    // Emit logs — these route directly to the Sentry Logs endpoint
-    // (Sentry.logger bypasses console interception entirely)
     if (statusCode >= 500) {
       Sentry.logger.error(`${method} ${endpoint} → ${statusCode} (${duration}ms)`, {
         endpoint,

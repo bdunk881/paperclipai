@@ -284,7 +284,9 @@ describe("requireAuth", () => {
       iss: "autoflow-app",
     });
 
-    const payload = Buffer.from(JSON.stringify({ iss: "autoflow-app" })).toString("base64url");
+    const payload = Buffer.from(
+      JSON.stringify({ iss: "autoflow-app", exp: 1_900_000_000 })
+    ).toString("base64url");
     const requireAuth = loadRequireAuth();
     const req = {
       headers: { authorization: `Bearer header.${payload}.signature` },
@@ -327,7 +329,9 @@ describe("requireAuth", () => {
       iss: "autoflow-app-current",
     });
 
-    const payload = Buffer.from(JSON.stringify({ iss: "autoflow-app-previous" })).toString("base64url");
+    const payload = Buffer.from(
+      JSON.stringify({ iss: "autoflow-app-previous", exp: 1_900_000_000 })
+    ).toString("base64url");
     const requireAuth = loadRequireAuth();
     const req = {
       headers: { authorization: `Bearer header.${payload}.signature` },
@@ -383,8 +387,8 @@ describe("requireAuth", () => {
     expect(res.status).toHaveBeenCalledWith(401);
     expect(warnMock).toHaveBeenCalledWith(
       "[auth] App JWT verification failed",
+      "jwt audience invalid. expected: autoflow-api",
       expect.objectContaining({
-        errMessage: "jwt audience invalid. expected: autoflow-api",
         tokenAud: "autoflow-api",
         tokenIss: "autoflow-app",
         expectedAudience: "autoflow-api",
@@ -392,6 +396,37 @@ describe("requireAuth", () => {
       })
     );
     expect(jwksClientMock).not.toHaveBeenCalled();
+  });
+
+  it("rejects app-token-like JWTs before verification when exp is missing or invalid", () => {
+    process.env.APP_JWT_SECRET = "test-app-jwt-secret-with-sufficient-length";
+
+    const payload = Buffer.from(
+      JSON.stringify({ iss: "autoflow-app", aud: "autoflow-api", exp: null })
+    ).toString("base64url");
+    const requireAuth = loadRequireAuth();
+    const req = {
+      headers: { authorization: `Bearer header.${payload}.signature` },
+      originalUrl: "/api/agents",
+      path: "/api/agents",
+    } as unknown as AuthenticatedRequest;
+    const res = createResponse();
+
+    requireAuth(req, res as never, jest.fn());
+
+    expect(verifyMock).not.toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(401);
+    expect(warnMock).toHaveBeenCalledWith(
+      "[auth] App JWT verification failed",
+      "App token is missing a numeric exp claim.",
+      expect.objectContaining({
+        tokenAud: "autoflow-api",
+        tokenIss: "autoflow-app",
+        tokenExp: null,
+        expectedAudience: "autoflow-api",
+        expectedIssuer: "autoflow-app",
+      })
+    );
   });
 
   it("uses legacy AZURE_* auth env vars when AZURE_CIAM_* vars are absent", () => {

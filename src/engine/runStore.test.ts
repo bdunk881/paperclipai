@@ -156,10 +156,15 @@ describe("runStore.clear", () => {
 describe("runStore postgres persistence", () => {
   it("writes run rows and step results when persistence is enabled", async () => {
     const query = jest.fn().mockResolvedValue({ rows: [] });
+    const clientQuery = jest.fn().mockResolvedValue({ rows: [] });
+    const release = jest.fn();
     jest.spyOn(postgres, "isPostgresPersistenceEnabled").mockReturnValue(true);
     jest
       .spyOn(postgres, "getPostgresPool")
-      .mockReturnValue({ query } as unknown as ReturnType<typeof postgres.getPostgresPool>);
+      .mockReturnValue({
+        query,
+        connect: jest.fn().mockResolvedValue({ query: clientQuery, release }),
+      } as unknown as ReturnType<typeof postgres.getPostgresPool>);
 
     const created = await runStore.create(
       makeRun({
@@ -185,10 +190,14 @@ describe("runStore postgres persistence", () => {
     );
 
     expect(created.input).toEqual({ customerId: "cust-1" });
-    expect(query).toHaveBeenCalledTimes(3);
     expect(query.mock.calls[0]?.[0]).toContain("INSERT INTO workflow_runs");
-    expect(query.mock.calls[1]?.[0]).toContain("DELETE FROM workflow_step_results");
-    expect(query.mock.calls[2]?.[0]).toContain("INSERT INTO workflow_step_results");
+    expect(clientQuery.mock.calls[0]?.[0]).toBe("BEGIN");
+    expect(clientQuery.mock.calls[1]?.[0]).toContain("SELECT id FROM workflow_runs");
+    expect(clientQuery.mock.calls[2]?.[0]).toContain("DELETE FROM workflow_step_results");
+    expect(clientQuery.mock.calls[3]?.[0]).toContain("INSERT INTO workflow_step_results");
+    expect(clientQuery.mock.calls[3]?.[0]).toContain("ON CONFLICT (run_id, step_id, ordinal) DO UPDATE");
+    expect(clientQuery.mock.calls[4]?.[0]).toBe("COMMIT");
+    expect(release).toHaveBeenCalled();
   });
 
   it("loads persisted runs and step results", async () => {
@@ -372,12 +381,16 @@ describe("runStore postgres persistence", () => {
       })
       .mockResolvedValueOnce({ rows: [] })
       .mockResolvedValueOnce({ rows: [] })
-      .mockResolvedValueOnce({ rows: [] })
       .mockResolvedValueOnce({ rows: [] });
+    const clientQuery = jest.fn().mockResolvedValue({ rows: [] });
+    const release = jest.fn();
     jest.spyOn(postgres, "isPostgresPersistenceEnabled").mockReturnValue(true);
     jest
       .spyOn(postgres, "getPostgresPool")
-      .mockReturnValue({ query } as unknown as ReturnType<typeof postgres.getPostgresPool>);
+      .mockReturnValue({
+        query,
+        connect: jest.fn().mockResolvedValue({ query: clientQuery, release }),
+      } as unknown as ReturnType<typeof postgres.getPostgresPool>);
 
     const updated = await runStore.update("run-pg", {
       status: "completed",
@@ -400,8 +413,13 @@ describe("runStore postgres persistence", () => {
       stepResults: [expect.objectContaining({ stepId: "step-1" })],
     });
     expect(query.mock.calls[2]?.[0]).toContain("UPDATE workflow_runs");
-    expect(query.mock.calls[3]?.[0]).toContain("DELETE FROM workflow_step_results");
-    expect(query.mock.calls[4]?.[0]).toContain("INSERT INTO workflow_step_results");
+    expect(clientQuery.mock.calls[0]?.[0]).toBe("BEGIN");
+    expect(clientQuery.mock.calls[1]?.[0]).toContain("SELECT id FROM workflow_runs");
+    expect(clientQuery.mock.calls[2]?.[0]).toContain("DELETE FROM workflow_step_results");
+    expect(clientQuery.mock.calls[3]?.[0]).toContain("INSERT INTO workflow_step_results");
+    expect(clientQuery.mock.calls[3]?.[0]).toContain("ON CONFLICT (run_id, step_id, ordinal) DO UPDATE");
+    expect(clientQuery.mock.calls[4]?.[0]).toBe("COMMIT");
+    expect(release).toHaveBeenCalled();
   });
 
   it("clears persisted runs when persistence is enabled", async () => {

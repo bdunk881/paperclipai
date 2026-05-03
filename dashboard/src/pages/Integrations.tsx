@@ -2,6 +2,7 @@ import { FormEvent, useCallback, useEffect, useState } from "react";
 import { CheckCircle2, ExternalLink, KeyRound, Loader2, PlugZap, RefreshCw, Unplug, XCircle } from "lucide-react";
 import { useSearchParams } from "react-router-dom";
 import { getConfiguredApiOrigin } from "../api/baseUrl";
+import { readStoredAuthUser } from "../auth/authStorage";
 import { useAuth } from "../context/AuthContext";
 import {
   LIVE_CONNECTOR_PROVIDERS,
@@ -83,8 +84,13 @@ export default function Integrations() {
     const headers = new Headers(init?.headers);
     if (accessToken) {
       headers.set("Authorization", `Bearer ${accessToken}`);
-    } else if (user?.id) {
-      headers.set("X-User-Id", user.id);
+    } else {
+      const storedUser = readStoredAuthUser();
+      if (storedUser?.id) {
+        headers.set("X-User-Id", storedUser.id);
+      } else if (user?.id) {
+        headers.set("X-User-Id", user.id);
+      }
     }
     if (init?.body && !headers.has("Content-Type")) {
       headers.set("Content-Type", "application/json");

@@ -2,6 +2,7 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter } from "react-router-dom";
 import Integrations from "./Integrations";
+import { AUTH_STORAGE_KEY } from "../auth/authStorage";
 
 const getAccessTokenMock = vi.fn().mockResolvedValue("mock-token");
 
@@ -85,6 +86,8 @@ function installFetchMock(options?: {
 describe("Integrations", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    window.sessionStorage.clear();
+    getAccessTokenMock.mockResolvedValue("mock-token");
   });
 
   afterEach(() => {
@@ -252,19 +255,30 @@ describe("Integrations", () => {
     });
   });
 
-  it("falls back to X-User-Id for preview-mode integrations requests", async () => {
-    getAccessTokenMock.mockResolvedValueOnce(null);
+  it("falls back to X-User-Id for staging QA preview requests when no access token exists", async () => {
     const fetchMock = installFetchMock();
+    getAccessTokenMock.mockResolvedValueOnce(null);
+    window.sessionStorage.setItem(
+      AUTH_STORAGE_KEY,
+      JSON.stringify({ id: "qa-smoke-user", email: "qa@example.com", name: "QA Smoke" })
+    );
 
     renderWithRouter();
-
     await waitFor(() => {
-      expect(fetchMock).toHaveBeenCalled();
+      expect(screen.getByText("Apollo")).toBeInTheDocument();
     });
 
-    const [, init] = fetchMock.mock.calls[0] ?? [];
-    const headers = new Headers((init as RequestInit | undefined)?.headers);
+    const firstConnectionsCall = fetchMock.mock.calls.find(([url]) =>
+      String(url).includes("/api/integrations/apollo/connections")
+    );
+
+    expect(firstConnectionsCall?.[1]).toEqual(
+      expect.objectContaining({
+        headers: expect.any(Headers),
+      })
+    );
+    const headers = firstConnectionsCall?.[1]?.headers as Headers;
+    expect(headers.get("X-User-Id")).toBe("qa-smoke-user");
     expect(headers.get("Authorization")).toBeNull();
-    expect(headers.get("X-User-Id")).toBe("u1");
   });
 });

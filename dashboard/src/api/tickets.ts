@@ -313,6 +313,12 @@ export function collectKnownActors(
     known.set(actorKey(actor), actor);
   }
 
+  for (const aggregate of mockAggregates) {
+    for (const assignee of aggregate.ticket.assignees) {
+      known.set(actorKey(assignee), { type: assignee.type, id: assignee.id });
+    }
+  }
+
   for (const ticket of tickets) {
     for (const assignee of ticket.assignees) {
       known.set(actorKey(assignee), { type: assignee.type, id: assignee.id });

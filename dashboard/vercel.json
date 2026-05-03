@@ -42,7 +42,7 @@
   ],
   "rewrites": [
     {
-      "source": "/api/:path((?!create-checkout-session$|qa-preview-access$|waitlist-signup$).*)",
+      "source": "/api/:path((?!billing/checkout$|create-checkout-session$|qa-preview-access$|waitlist-signup$).*)",
       "has": [
         {
           "type": "host",
@@ -52,7 +52,7 @@
       "destination": "https://staging-api.helloautoflow.com/api/:path*"
     },
     {
-      "source": "/api/:path((?!create-checkout-session$|qa-preview-access$|waitlist-signup$).*)",
+      "source": "/api/:path((?!billing/checkout$|create-checkout-session$|qa-preview-access$|waitlist-signup$).*)",
       "destination": "https://api.helloautoflow.com/api/:path*"
     },
     {

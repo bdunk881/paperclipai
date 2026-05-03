@@ -308,7 +308,7 @@ export function requireAuth(
   const requestPath = (req.originalUrl || req.path).split("?")[0];
   const isMemoryRoute = requestPath === "/api/memory" || requestPath.startsWith("/api/memory/");
   const isKnowledgeRoute = requestPath === "/api/knowledge" || requestPath.startsWith("/api/knowledge/");
-  const isIntegrationRoute =
+  const isIntegrationsRoute =
     requestPath === "/api/integrations" || requestPath.startsWith("/api/integrations/");
   const isDashboardPreviewReadRoute =
     req.method === "GET" &&
@@ -319,7 +319,7 @@ export function requireAuth(
     );
   const allowHeaderAuth = isMemoryRoute || isKnowledgeRoute || isDashboardPreviewReadRoute;
   if (!authHeader?.startsWith("Bearer ")) {
-    const qaBypassUserId = isIntegrationRoute ? resolveQaBypassUserId(req) : null;
+    const qaBypassUserId = isIntegrationsRoute ? resolveQaBypassUserId(req) : null;
     if (qaBypassUserId) {
       queueQaBypassAudit(req, qaBypassUserId, "allowed", "allowlisted");
       attachQaBypassAuth(req, qaBypassUserId);
@@ -327,8 +327,8 @@ export function requireAuth(
       return;
     }
 
-    const attemptedUserId = isIntegrationRoute && typeof headerUserId === "string" ? headerUserId.trim() : "";
-    if (attemptedUserId) {
+    const attemptedUserId = typeof headerUserId === "string" ? headerUserId.trim() : "";
+    if (isIntegrationsRoute && attemptedUserId) {
       queueQaBypassAudit(
         req,
         attemptedUserId,

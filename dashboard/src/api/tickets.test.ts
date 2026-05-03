@@ -100,3 +100,17 @@ describe("tickets api mock fallback", () => {
     expect(fetch).not.toHaveBeenCalled();
   });
 });
+
+describe("tickets api", () => {
+  it("forwards the QA bypass user id from preview storage", async () => {
+    window.sessionStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify({ id: "qa-smoke-user" }));
+    mockFetch(200, { tickets: [], total: 0 });
+
+    const { listTickets } = await import("./tickets");
+
+    await listTickets();
+
+    const headers = lastFetchOptions().headers as Record<string, string>;
+    expect(headers["X-User-Id"]).toBe("qa-smoke-user");
+  });
+});

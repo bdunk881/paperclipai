@@ -2,7 +2,6 @@ import { useEffect, useMemo, useState } from "react";
 import { AlertTriangle, ArrowRight, CheckCircle2, Flag, Layers3, ShieldAlert, Users } from "lucide-react";
 import { Link, useLocation } from "react-router-dom";
 import { ErrorState, EmptyState } from "../components/UiStates";
-import { StatusBadge } from "../components/StatusBadge";
 import { useAuth } from "../context/AuthContext";
 import { apiGet } from "../api/settingsClient";
 
@@ -188,6 +187,22 @@ function buildMissionRecordFromBackend(missionState: BackendMissionState): Missi
   };
 }
 
+function MissionStatusBadge({ status }: { status: MissionStatus }) {
+  const tone = {
+    "On Track": "bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-200",
+    "At Risk": "bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-200",
+    Blocked: "bg-rose-100 text-rose-700 dark:bg-rose-500/15 dark:text-rose-200",
+    "Off Track": "bg-slate-200 text-slate-700 dark:bg-slate-700 dark:text-slate-100",
+    "Not Started": "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-200",
+  }[status];
+
+  return (
+    <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${tone}`}>
+      {status}
+    </span>
+  );
+}
+
 function extractTeams(payload: unknown): ControlPlaneTeamSummary[] {
   if (Array.isArray(payload)) {
     return payload as ControlPlaneTeamSummary[];
@@ -327,7 +342,7 @@ export function MissionStateView({
                         <Flag size={14} />
                         Mission Summary
                       </span>
-                      <StatusBadge status={data?.overallStatus ?? "Not Started"} />
+                      <MissionStatusBadge status={data?.overallStatus ?? "Not Started"} />
                     </div>
                     <h1 className="text-3xl font-semibold tracking-tight text-slate-950 dark:text-white sm:text-4xl">
                       {data?.title}

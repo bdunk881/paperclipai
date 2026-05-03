@@ -159,7 +159,7 @@ export async function listConnectorHealth(userId: string): Promise<ConnectorHeal
         return mapHealthRecord(connector, normalizeHealth(await connector.probe(userId)));
       } catch (error) {
         const checkedAt = new Date().toISOString();
-        const fallback: ConnectorHealthRecord = {
+        return {
           connectorKey: connector.key,
           connectorName: connector.name,
           state: "provider_error",
@@ -171,8 +171,7 @@ export async function listConnectorHealth(userId: string): Promise<ConnectorHeal
           rateLimitEvents15m: 0,
           transitions: [],
           source: "api",
-        };
-        return fallback;
+        } satisfies ConnectorHealthRecord;
       }
     }),
   );

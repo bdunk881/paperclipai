@@ -254,6 +254,8 @@ describe("runStore postgres persistence", () => {
         }),
       ],
     });
+    expect(query.mock.calls[0]?.[0]).toContain("WHERE id = $1::uuid");
+    expect(query.mock.calls[1]?.[0]).toContain("WHERE run_id = $1::uuid");
   });
 
   it("lists persisted runs with template and user filters", async () => {

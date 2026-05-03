@@ -51,7 +51,7 @@ async function loadStepResults(runId: string) {
     `
       SELECT step_id, step_name, status, output_json, duration_ms, error, agent_slot_results_json, cost_log_json
       FROM workflow_step_results
-      WHERE run_id = $1
+      WHERE run_id = $1::uuid
       ORDER BY ordinal ASC
     `,
     [runId]
@@ -71,7 +71,7 @@ async function loadStepResults(runId: string) {
 
 async function writeStepResults(runId: string, stepResults: WorkflowRun["stepResults"]): Promise<void> {
   const pool = getPostgresPool();
-  await pool.query("DELETE FROM workflow_step_results WHERE run_id = $1", [runId]);
+  await pool.query("DELETE FROM workflow_step_results WHERE run_id = $1::uuid", [runId]);
 
   if (stepResults.length === 0) {
     return;
@@ -157,7 +157,7 @@ export const runStore = {
         `
           SELECT id, template_id, template_name, status, started_at, completed_at, input_json, output_json, runtime_state_json, error, user_id
           FROM workflow_runs
-          WHERE id = $1
+          WHERE id = $1::uuid
         `,
         [id]
       );

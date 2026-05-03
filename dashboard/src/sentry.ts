@@ -28,7 +28,14 @@ export function initSentry() {
         maskAllText: false,
         blockAllMedia: false,
       }),
-      Sentry.consoleLoggingIntegration({ levels: ["log", "warn", "error"] }),
+      // Forward console.log/info/warn/error as Sentry Logs
+      Sentry.consoleLoggingIntegration({ levels: ["log", "info", "warn", "error"] }),
+      // Also capture console.warn/error as Sentry breadcrumbs + events
+      Sentry.captureConsoleIntegration({ levels: ["warn", "error"] }),
+      // Attach extra data from Error objects (.data, .cause, etc.)
+      Sentry.extraErrorDataIntegration({ depth: 5 }),
+      // Capture failed HTTP requests (4xx/5xx) as Sentry errors
+      Sentry.httpClientIntegration(),
       Sentry.feedbackIntegration({
         colorScheme: "system",
         buttonLabel: "Report a Bug",

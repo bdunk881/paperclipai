@@ -293,6 +293,16 @@ app.use("/api/connectors/google-workspace", googleWorkspaceWebhookRoutes);
 app.use(express.json());
 app.use(passport.initialize());
 
+// Propagate authenticated user identity into Sentry scope so all errors
+// and logs captured after auth are attributed to the correct user.
+app.use((req: Request, _res, next) => {
+  const authReq = req as import("./auth/authMiddleware").AuthenticatedRequest;
+  if (authReq.auth?.sub) {
+    Sentry.setUser({ id: authReq.auth.sub, email: authReq.auth.email });
+  }
+  next();
+});
+
 // Multer — in-memory storage for file uploads (max 50 MB)
 const upload = multer({
   storage: multer.memoryStorage(),

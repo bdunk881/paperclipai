@@ -267,6 +267,20 @@ describe("ticket routes", () => {
       notifyTargets: ["@CTO", "#incident-room"],
       fallbackActor: { type: "agent", id: "cto-agent" },
     });
+
+    const policies = await request(app)
+      .get("/api/tickets/sla/policies?workspaceId=11111111-1111-4111-8111-111111111111")
+      .set(auth("creator-1"));
+
+    expect(policies.status).toBe(200);
+    expect(policies.body.policies.find((row: { priority: string }) => row.priority === "high")).toMatchObject({
+      firstResponseTarget: { kind: "minutes", value: 45 },
+      resolutionTarget: { kind: "minutes", value: 1440 },
+    });
+    expect(policies.body.policies.find((row: { priority: string }) => row.priority === "low")).toMatchObject({
+      firstResponseTarget: { kind: "minutes", value: 1440 },
+      resolutionTarget: { kind: "minutes", value: 10080 },
+    });
   });
 
   it("allows the primary assignee to transition the ticket and logs activity", async () => {

@@ -176,10 +176,7 @@ function targetToMinutes(target: { kind: "minutes" | "business_days"; value: num
   return target.kind === "business_days" ? target.value * 1440 : target.value;
 }
 
-function minutesToTarget(minutes: number): { kind: "minutes" | "business_days"; value: number } {
-  if (minutes % 1440 === 0) {
-    return { kind: "business_days", value: Math.max(1, minutes / 1440) };
-  }
+function minutesToTarget(minutes: number): { kind: "minutes"; value: number } {
   return { kind: "minutes", value: minutes };
 }
 

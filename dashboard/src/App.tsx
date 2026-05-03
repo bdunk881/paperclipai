@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import * as Sentry from "@sentry/react";
 import { AuthProvider, useAuth } from "./context/AuthContext";
 import {
   readQaPreviewToken,
@@ -41,6 +42,7 @@ import Routines from "./pages/Routines";
 import OrgStructure from "./pages/OrgStructure";
 import BudgetDashboard from "./pages/BudgetDashboard";
 import MissionState from "./pages/MissionState";
+import StaffingPlanReview from "./pages/StaffingPlanReview";
 import Tickets from "./pages/Tickets";
 import TicketDetail from "./pages/TicketDetail";
 import TicketTeamView from "./pages/TicketTeamView";
@@ -48,6 +50,8 @@ import TicketActorView from "./pages/TicketActorView";
 import TicketSlaDashboard from "./pages/TicketSlaDashboard";
 import TicketSlaSettings from "./pages/TicketSlaSettings";
 import ConnectorHealth from "./pages/ConnectorHealth";
+
+const SentryRoutes = Sentry.withSentryReactRouterV6Routing(Routes);
 
 function PrivateRoute({ children }: { children: React.ReactNode }) {
   const { user } = useAuth();
@@ -109,9 +113,10 @@ export default function App() {
 
   if (!authReady) return null;
   return (
-    <AuthProvider>
-      <BrowserRouter>
-        <Routes>
+    <Sentry.ErrorBoundary fallback={<p>An unexpected error occurred. Please refresh the page.</p>} showDialog>
+      <AuthProvider>
+        <BrowserRouter>
+          <SentryRoutes>
           <Route path="/waitlist" element={<LandingPage />} />
           <Route path="/checkout/success" element={<CheckoutSuccess />} />
           <Route path="/auth/callback" element={<AuthCallback />} />
@@ -155,6 +160,7 @@ export default function App() {
             <Route path="agents/activity" element={<AgentActivity />} />
             <Route path="agents/routines" element={<Routines />} />
             <Route path="mission-state" element={<MissionState />} />
+            <Route path="workspace/staffing-plan" element={<StaffingPlanReview />} />
             <Route path="workspace/org-structure" element={<OrgStructure />} />
             <Route path="workspace/budget-dashboard" element={<BudgetDashboard />} />
             <Route path="tickets" element={<Tickets />} />
@@ -179,9 +185,10 @@ export default function App() {
             <Route path="integrations/mcp" element={<MCPIntegrations />} />
             <Route path="logs" element={<ExecutionLogs />} />
           </Route>
-          <Route path="*" element={<Navigate to="/" replace />} />
-        </Routes>
-      </BrowserRouter>
-    </AuthProvider>
+            <Route path="*" element={<Navigate to="/" replace />} />
+          </SentryRoutes>
+        </BrowserRouter>
+      </AuthProvider>
+    </Sentry.ErrorBoundary>
   );
 }

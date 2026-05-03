@@ -1,4 +1,5 @@
 import React, { createContext, useContext } from "react";
+import { Sentry } from "../sentry";
 import {
   AUTH_STORAGE_EVENT,
   StoredAuthSession,
@@ -76,6 +77,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const user = sessionUser(storedSession, storedUser);
+
+  React.useEffect(() => {
+    if (user) {
+      Sentry.setUser({ id: user.id, email: user.email, username: user.name });
+    } else {
+      Sentry.setUser(null);
+    }
+  }, [user]);
+
   const accessMode: AuthAccessMode = storedSession
     ? "authenticated"
     : storedUser

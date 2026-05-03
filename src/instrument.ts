@@ -18,9 +18,9 @@ if (dsn) {
       Sentry.expressIntegration(),
       // PostgreSQL query tracing
       Sentry.postgresIntegration(),
-      // Console → Sentry Logs (backend console.log/warn/error)
-      Sentry.consoleIntegration(),
-      // Capture console calls as Sentry breadcrumbs + events
+      // Route console.* calls to Sentry Logs endpoint (requires enableLogs: true)
+      Sentry.consoleLoggingIntegration({ levels: ["log", "info", "warn", "error"] }),
+      // Capture console.warn/error as Sentry breadcrumbs + events
       Sentry.captureConsoleIntegration({ levels: ["warn", "error"] }),
       // Attach extra data from Error objects (.data, .cause, etc.)
       Sentry.extraErrorDataIntegration({ depth: 5 }),

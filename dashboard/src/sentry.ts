@@ -50,7 +50,7 @@ export function initSentry() {
       /^https:\/\/api\.helloautoflow\.com\/api/,
       /^https:\/\/staging-api\.helloautoflow\.com\/api/,
     ],
-    profileSessionSampleRate: 1.0,
+    profilesSampleRate: 1.0,
     replaysSessionSampleRate: import.meta.env.PROD ? 0.1 : 1.0,
     replaysOnErrorSampleRate: 1.0,
   });

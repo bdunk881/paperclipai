@@ -9,6 +9,11 @@ if (dsn) {
     environment: process.env.SENTRY_ENVIRONMENT ?? process.env.NODE_ENV ?? "development",
     tracesSampleRate: 1.0,
     profilesSampleRate: 1.0,
+    tracePropagationTargets: [
+      "localhost",
+      /^https:\/\/api\.helloautoflow\.com/,
+      /^https:\/\/staging-api\.helloautoflow\.com/,
+    ],
     sendDefaultPii: true,
     enableLogs: true,
     enableMetrics: true,

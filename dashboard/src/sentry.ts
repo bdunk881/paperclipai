@@ -44,6 +44,7 @@ export function initSentry() {
       }),
     ],
     enableLogs: true,
+    enableMetrics: true,
     tracesSampleRate: 1.0,
     tracePropagationTargets: [
       "localhost",

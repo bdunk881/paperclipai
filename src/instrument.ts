@@ -10,6 +10,7 @@ if (dsn) {
     profileSessionSampleRate: 1.0,
     sendDefaultPii: true,
     enableLogs: true,
+    enableMetrics: true,
     integrations: [
       // HTTP/network tracing
       Sentry.httpIntegration(),

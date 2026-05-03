@@ -307,9 +307,23 @@ app.use((req, res, next) => {
       attributes: { ...attributes, status: String(res.statusCode) },
     });
     Sentry.metrics.count("http.request", 1, { attributes });
-    if (res.statusCode >= 400) {
+    if (res.statusCode >= 500) {
       Sentry.metrics.count("http.error", 1, {
         attributes: { ...attributes, status: String(res.statusCode) },
+      });
+      Sentry.logger.error(`${req.method} ${endpoint} → ${res.statusCode} (${duration}ms)`, {
+        method: req.method, endpoint, status: res.statusCode, duration,
+      });
+    } else if (res.statusCode >= 400) {
+      Sentry.metrics.count("http.error", 1, {
+        attributes: { ...attributes, status: String(res.statusCode) },
+      });
+      Sentry.logger.warn(`${req.method} ${endpoint} → ${res.statusCode} (${duration}ms)`, {
+        method: req.method, endpoint, status: res.statusCode, duration,
+      });
+    } else {
+      Sentry.logger.info(`${req.method} ${endpoint} → ${res.statusCode} (${duration}ms)`, {
+        method: req.method, endpoint, status: res.statusCode, duration,
       });
     }
   });

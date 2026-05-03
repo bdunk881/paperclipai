@@ -1036,8 +1036,8 @@ async function upsertAgentRow(agent: ControlPlaneAgent, workspaceId: string, cli
            status = EXCLUDED.status,
            paused_by_company_lifecycle = EXCLUDED.paused_by_company_lifecycle,
            current_execution_id = EXCLUDED.current_execution_id,
-           last_heartbeat_at = EXCLUDED.last_heartbeat_at,
-           last_heartbeat_status = EXCLUDED.last_heartbeat_status,
+           last_heartbeat_at = COALESCE(EXCLUDED.last_heartbeat_at, control_plane_agents.last_heartbeat_at),
+           last_heartbeat_status = COALESCE(EXCLUDED.last_heartbeat_status, control_plane_agents.last_heartbeat_status),
            updated_at = EXCLUDED.updated_at`,
     [
       agent.id,

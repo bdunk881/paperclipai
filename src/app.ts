@@ -37,7 +37,6 @@ import companyRoutes from "./companies/companyRoutes";
 import hitlRoutes from "./hitl/hitlRoutes";
 import { buildObservabilityCsv, buildObservabilityResponse } from "./observability/service";
 import observabilityRoutes from "./observability/routes";
-import { assertTriggerCanStart } from "./workflows/triggerPolicy";
 import reportRoutes from "./reporting/reportRoutes";
 import ticketRoutes from "./tickets/ticketRoutes";
 import ticketSyncRoutes from "./ticketSync/routes";
@@ -90,7 +89,6 @@ import googleWorkspaceWebhookRoutes from "./connectors/google-workspace/webhookR
 import notificationRoutes from "./notifications/routes";
 import { getPostgresPool, isPostgresPersistenceEnabled } from "./db/postgres";
 import { createWorkspaceResolver } from "./middleware/workspaceResolver";
-import userProfileRoutes from "./user/profileRoutes";
 import {
   createPortableWorkflowBundle,
   getPortableWorkflowSchemaDescriptor,
@@ -309,7 +307,7 @@ app.use("/api/webhooks/apollo", apolloWebhookRoutes);
 // ---------------------------------------------------------------------------
 // Billing API — Stripe checkout sessions + subscription lifecycle
 // ---------------------------------------------------------------------------
-app.use("/api/billing/checkout", billingMutationRateLimiter, checkoutRoutes);
+app.use("/api/billing/checkout", requireAuth, billingMutationRateLimiter, checkoutRoutes);
 app.use("/api/billing/subscription", requireAuth, billingMutationRateLimiter, subscriptionRoutes);
 
 // ---------------------------------------------------------------------------
@@ -356,15 +354,14 @@ app.use("/api/integrations/datadog-azure-monitor", datadogAzureMonitorRoutes);
 app.use("/api/integrations/agent-catalog", agentCatalogRoutes);
 app.use("/api/connectors/google-workspace", googleWorkspaceConnectorRoutes);
 app.use("/api/companies", requireAuth, workspaceResolver, companyRoutes);
-app.use("/api/control-plane", requireAuth, controlPlaneRoutes);
+app.use("/api/control-plane", requireAuth, workspaceResolver, controlPlaneRoutes);
 app.use("/api/hitl", requireAuth, hitlRoutes);
 app.use("/api/observability", requireAuth, observabilityRoutes);
 app.use("/api/reporting", requireAuth, reportRoutes);
-app.use("/api/tickets", requireAuthOrQaBypass, workspaceResolver, ticketRoutes);
+app.use("/api/tickets", requireAuth, workspaceResolver, ticketRoutes);
 app.use("/api/ticket-sync", requireAuth, ticketSyncRoutes);
-app.use("/api/notifications", requireAuth, workspaceResolver, notificationRoutes);
+app.use("/api/notifications", requireAuth, notificationRoutes);
 app.use("/api/approval-policies", requireAuth, approvalPolicyRoutes);
-app.use("/api/user", requireAuth, userProfileRoutes);
 
 // ---------------------------------------------------------------------------
 // Auth API — identity endpoint for authenticated callers
@@ -413,7 +410,7 @@ app.get("/api/templates", (req, res) => {
 });
 
 /** Create or update a user-managed template */
-app.post("/api/templates", async (req, res) => {
+app.post("/api/templates", requireAuth, async (req, res) => {
   const payload = req.body as Partial<WorkflowTemplate> | null;
   if (!payload || typeof payload !== "object") {
     res.status(400).json({ error: "Template payload is required" });
@@ -562,19 +559,6 @@ app.post("/api/runs", requireAuthOrQaBypass, llmEndpointRateLimiter, async (req:
   }
 
   const userId = req.auth?.sub;
-  try {
-    assertTriggerCanStart({
-      template,
-      entrypoint: "manual_run",
-      userId,
-      input: input ?? {},
-    });
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "Workflow trigger is not allowed";
-    res.status(409).json({ error: message });
-    return;
-  }
-
   const run = await workflowEngine.startRun(template, input ?? {}, config, userId);
   res.status(202).json(run);
 });
@@ -887,25 +871,11 @@ app.post("/api/webhooks/:templateId", async (req, res) => {
   }
 
   const webhookUserId = req.headers["x-user-id"];
-  const resolvedWebhookUserId = typeof webhookUserId === "string" ? webhookUserId : undefined;
-  try {
-    assertTriggerCanStart({
-      template,
-      entrypoint: "generic_webhook",
-      userId: resolvedWebhookUserId,
-      input,
-    });
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "Workflow trigger is not allowed";
-    res.status(409).json({ error: message });
-    return;
-  }
-
   const run = await workflowEngine.startRun(
     template,
     input,
     undefined,
-    resolvedWebhookUserId
+    typeof webhookUserId === "string" ? webhookUserId : undefined
   );
   res.status(202).json({ runId: run.id, status: run.status });
 });

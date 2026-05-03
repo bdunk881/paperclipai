@@ -95,6 +95,7 @@ export default function TicketSlaSettings() {
     try {
       const accessToken = (await getAccessToken()) ?? undefined;
       const payload: TicketSlaSettingsPayload = {
+        workspaceId: settings.workspaceId,
         policies: policyRows.map(fromEditablePolicy),
         escalationRules: ruleRows.map((row) => fromEditableRule(row, settings.fallbackCandidates)),
         fallbackCandidates: settings.fallbackCandidates,

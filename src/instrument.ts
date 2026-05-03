@@ -1,4 +1,5 @@
 import * as Sentry from "@sentry/node";
+import { nodeProfilingIntegration } from "@sentry/profiling-node";
 
 const dsn = process.env.SENTRY_DSN;
 
@@ -12,6 +13,8 @@ if (dsn) {
     enableLogs: true,
     enableMetrics: true,
     integrations: [
+      // Native Node.js CPU profiling (requires @sentry/profiling-node)
+      nodeProfilingIntegration(),
       // HTTP/network tracing
       Sentry.httpIntegration(),
       Sentry.nativeNodeFetchIntegration({ breadcrumbs: true }),

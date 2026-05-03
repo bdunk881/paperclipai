@@ -37,9 +37,11 @@ export async function trackedFetch(
     return res;
   } catch (err) {
     Sentry.metrics.count("api.network_error", 1, { attributes: { endpoint, method } });
+    Sentry.logger.error(`Network error: ${method} ${endpoint}`, { endpoint, method });
     throw err;
   } finally {
-    const duration = performance.now() - start;
+    const duration = Math.round(performance.now() - start);
+
     Sentry.metrics.distribution("api.response_time_ms", duration, {
       unit: "millisecond",
       attributes: { endpoint, method, status: String(statusCode) },
@@ -48,6 +50,29 @@ export async function trackedFetch(
     if (statusCode >= 400) {
       Sentry.metrics.count("api.error", 1, {
         attributes: { endpoint, method, status: String(statusCode) },
+      });
+    }
+
+    if (statusCode >= 500) {
+      Sentry.logger.error(`${method} ${endpoint} → ${statusCode} (${duration}ms)`, {
+        endpoint,
+        method,
+        status: statusCode,
+        duration,
+      });
+    } else if (statusCode >= 400) {
+      Sentry.logger.warn(`${method} ${endpoint} → ${statusCode} (${duration}ms)`, {
+        endpoint,
+        method,
+        status: statusCode,
+        duration,
+      });
+    } else if (statusCode > 0) {
+      Sentry.logger.info(`${method} ${endpoint} → ${statusCode} (${duration}ms)`, {
+        endpoint,
+        method,
+        status: statusCode,
+        duration,
       });
     }
   }

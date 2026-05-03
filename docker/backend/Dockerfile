@@ -39,4 +39,4 @@ EXPOSE 3000
 RUN chown -R 1000:1000 /app
 USER 1000
 
-CMD ["node", "dist/index.js"]
+CMD ["node", "--require", "./dist/instrument.js", "dist/index.js"]

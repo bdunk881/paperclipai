@@ -80,6 +80,8 @@ vi.mock("./pages/Memory", () => ({ default: () => <div>Memory Page</div> }));
 vi.mock("./pages/Integrations", () => ({ default: () => <div>Integrations Page</div> }));
 vi.mock("./pages/MCPIntegrations", () => ({ default: () => <div>MCP Integrations Page</div> }));
 vi.mock("./pages/McpServers", () => ({ default: () => <div>MCP Servers Page</div> }));
+vi.mock("./pages/StaffingPlanReview", () => ({ default: () => <div>Staffing Plan Review Page</div> }));
+vi.mock("./pages/BudgetDashboard", () => ({ default: () => <div>Budget Dashboard Page</div> }));
 vi.mock("./pages/ExecutionLogs", () => ({ default: () => <div>Execution Logs Page</div> }));
 vi.mock("./pages/CheckoutSuccess", () => ({ default: () => <div>Checkout Success Page</div> }));
 vi.mock("./pages/AuthCallback", () => ({ default: () => <div>Auth Callback Page</div> }));
@@ -165,6 +167,26 @@ describe("App", () => {
 
     expect(await screen.findByText("Layout Shell")).toBeInTheDocument();
     expect(screen.getByText("Templates Page")).toBeInTheDocument();
+  });
+
+  it("renders the staffing plan route for authenticated users", async () => {
+    authState.user = { id: "user-1", email: "user@example.com", name: "User" };
+    window.history.replaceState({}, "", "/workspace/staffing-plan");
+
+    render(<App />);
+
+    expect(await screen.findByText("Layout Shell")).toBeInTheDocument();
+    expect(screen.getByText("Staffing Plan Review Page")).toBeInTheDocument();
+  });
+
+  it("renders the budget dashboard route for authenticated users", async () => {
+    authState.user = { id: "user-1", email: "user@example.com", name: "User" };
+    window.history.replaceState({}, "", "/workspace/budget-dashboard");
+
+    render(<App />);
+
+    expect(await screen.findByText("Layout Shell")).toBeInTheDocument();
+    expect(screen.getByText("Budget Dashboard Page")).toBeInTheDocument();
   });
 
   it("renders the mission state route for authenticated users", async () => {

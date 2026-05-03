@@ -66,7 +66,7 @@ async function loadStepResultsByRunIds(runIds: string[]) {
     `
       SELECT run_id, step_id, step_name, status, output_json, duration_ms, error, agent_slot_results_json, cost_log_json
       FROM workflow_step_results
-      WHERE run_id = ANY($1::text[])
+      WHERE run_id = ANY($1::uuid[])
       ORDER BY run_id ASC, ordinal ASC
     `,
     [runIds]
@@ -100,8 +100,8 @@ async function writeStepResults(runId: string, stepResults: WorkflowRun["stepRes
 
   try {
     await client.query("BEGIN");
-    await client.query("SELECT id FROM workflow_runs WHERE id = $1 FOR UPDATE", [runId]);
-    await client.query("DELETE FROM workflow_step_results WHERE run_id = $1", [runId]);
+    await client.query("SELECT id FROM workflow_runs WHERE id = $1::uuid FOR UPDATE", [runId]);
+    await client.query("DELETE FROM workflow_step_results WHERE run_id = $1::uuid", [runId]);
 
     for (const [index, result] of stepResults.entries()) {
       await client.query(
@@ -207,7 +207,7 @@ export const runStore = {
         `
           SELECT id, template_id, template_name, status, started_at, completed_at, input_json, output_json, runtime_state_json, error, user_id
           FROM workflow_runs
-          WHERE id = $1
+          WHERE id = $1::uuid
         `,
         [id]
       );
@@ -270,7 +270,7 @@ export const runStore = {
               error = $10,
               user_id = $11,
               updated_at = now()
-          WHERE id = $1
+          WHERE id = $1::uuid
         `,
         [
           id,

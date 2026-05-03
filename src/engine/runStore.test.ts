@@ -192,8 +192,8 @@ describe("runStore postgres persistence", () => {
     expect(created.input).toEqual({ customerId: "cust-1" });
     expect(query.mock.calls[0]?.[0]).toContain("INSERT INTO workflow_runs");
     expect(clientQuery.mock.calls[0]?.[0]).toBe("BEGIN");
-    expect(clientQuery.mock.calls[1]?.[0]).toContain("SELECT id FROM workflow_runs");
-    expect(clientQuery.mock.calls[2]?.[0]).toContain("DELETE FROM workflow_step_results");
+    expect(clientQuery.mock.calls[1]?.[0]).toContain("SELECT id FROM workflow_runs WHERE id = $1::uuid FOR UPDATE");
+    expect(clientQuery.mock.calls[2]?.[0]).toContain("DELETE FROM workflow_step_results WHERE run_id = $1::uuid");
     expect(clientQuery.mock.calls[3]?.[0]).toContain("INSERT INTO workflow_step_results");
     expect(clientQuery.mock.calls[3]?.[0]).toContain("ON CONFLICT (run_id, step_id, ordinal) DO UPDATE");
     expect(clientQuery.mock.calls[4]?.[0]).toBe("COMMIT");
@@ -264,6 +264,8 @@ describe("runStore postgres persistence", () => {
         }),
       ],
     });
+    expect(query.mock.calls[0]?.[0]).toContain("WHERE id = $1::uuid");
+    expect(query.mock.calls[1]?.[0]).toContain("WHERE run_id = ANY($1::uuid[])");
   });
 
   it("lists persisted runs with template and user filters", async () => {
@@ -356,6 +358,7 @@ describe("runStore postgres persistence", () => {
     });
     expect(query.mock.calls[0]?.[1]).toEqual(["tpl-support-bot", "user-1"]);
     expect(query).toHaveBeenCalledTimes(2);
+    expect(query.mock.calls[1]?.[0]).toContain("WHERE run_id = ANY($1::uuid[])");
     expect(query.mock.calls[1]?.[1]).toEqual([["run-pg-1", "run-pg-2"]]);
   });
 
@@ -413,9 +416,10 @@ describe("runStore postgres persistence", () => {
       stepResults: [expect.objectContaining({ stepId: "step-1" })],
     });
     expect(query.mock.calls[2]?.[0]).toContain("UPDATE workflow_runs");
+    expect(query.mock.calls[2]?.[0]).toContain("WHERE id = $1::uuid");
     expect(clientQuery.mock.calls[0]?.[0]).toBe("BEGIN");
-    expect(clientQuery.mock.calls[1]?.[0]).toContain("SELECT id FROM workflow_runs");
-    expect(clientQuery.mock.calls[2]?.[0]).toContain("DELETE FROM workflow_step_results");
+    expect(clientQuery.mock.calls[1]?.[0]).toContain("SELECT id FROM workflow_runs WHERE id = $1::uuid FOR UPDATE");
+    expect(clientQuery.mock.calls[2]?.[0]).toContain("DELETE FROM workflow_step_results WHERE run_id = $1::uuid");
     expect(clientQuery.mock.calls[3]?.[0]).toContain("INSERT INTO workflow_step_results");
     expect(clientQuery.mock.calls[3]?.[0]).toContain("ON CONFLICT (run_id, step_id, ordinal) DO UPDATE");
     expect(clientQuery.mock.calls[4]?.[0]).toBe("COMMIT");

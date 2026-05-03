@@ -332,6 +332,7 @@ jobs:
           GOOGLE_CLIENT_ID: ${{ vars.GOOGLE_CLIENT_ID }}
           STAGING_SOCIAL_AUTH_CLIENT_ID: ${{ vars.AZURE_BACKEND_ENV_STAGING_SOCIAL_AUTH_CLIENTID }}
           STAGING_KEY_VAULT_URI: ${{ vars.AZURE_STAGING_KEY_VAULT_URI }}
+          SENTRY_BACKEND_DSN: ${{ vars.SENTRY_BACKEND_DSN }}
         run: |
           set -euo pipefail
 
@@ -356,6 +357,13 @@ jobs:
 
           if [ -n "$client_id" ] && ! grep -Eq '^GOOGLE_CLIENT_ID=.+' "$tmpfile"; then
             printf '\nGOOGLE_CLIENT_ID=%s\n' "$client_id" >> "$tmpfile"
+          fi
+
+          if [ -n "${SENTRY_BACKEND_DSN:-}" ] && ! grep -Eq '^SENTRY_DSN=.+' "$tmpfile"; then
+            printf '\nSENTRY_DSN=%s\n' "$SENTRY_BACKEND_DSN" >> "$tmpfile"
+          fi
+          if ! grep -Eq '^SENTRY_ENVIRONMENT=.+' "$tmpfile"; then
+            printf '\nSENTRY_ENVIRONMENT=staging\n' >> "$tmpfile"
           fi
 
           env_args=()
@@ -647,6 +655,7 @@ jobs:
       - name: Bootstrap production backend secret
         env:
           BACKEND_ENV_PRODUCTION: ${{ secrets.AZURE_BACKEND_ENV_PRODUCTION }}
+          SENTRY_BACKEND_DSN: ${{ vars.SENTRY_BACKEND_DSN }}
         run: |
           set -euo pipefail
 
@@ -658,6 +667,13 @@ jobs:
           tmpfile=$(mktemp)
           trap 'rm -f "$tmpfile"' EXIT
           printf '%s\n' "${BACKEND_ENV_PRODUCTION}" > "$tmpfile"
+
+          if [ -n "${SENTRY_BACKEND_DSN:-}" ] && ! grep -Eq '^SENTRY_DSN=.+' "$tmpfile"; then
+            printf '\nSENTRY_DSN=%s\n' "$SENTRY_BACKEND_DSN" >> "$tmpfile"
+          fi
+          if ! grep -Eq '^SENTRY_ENVIRONMENT=.+' "$tmpfile"; then
+            printf '\nSENTRY_ENVIRONMENT=production\n' >> "$tmpfile"
+          fi
 
           require_env_key() {
             local key="$1"

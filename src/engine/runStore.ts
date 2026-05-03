@@ -47,27 +47,51 @@ function mapRowToRun(row: Record<string, unknown>): WorkflowRun {
 }
 
 async function loadStepResults(runId: string) {
+  const grouped = await loadStepResultsByRunIds([runId]);
+  return grouped.get(runId) ?? [];
+}
+
+async function loadStepResultsByRunIds(runIds: string[]) {
+  const grouped = new Map<string, WorkflowRun["stepResults"]>();
+  for (const runId of runIds) {
+    grouped.set(runId, []);
+  }
+
+  if (runIds.length === 0) {
+    return grouped;
+  }
+
   const pool = getPostgresPool();
   const result = await pool.query(
     `
-      SELECT step_id, step_name, status, output_json, duration_ms, error, agent_slot_results_json, cost_log_json
+      SELECT run_id, step_id, step_name, status, output_json, duration_ms, error, agent_slot_results_json, cost_log_json
       FROM workflow_step_results
-      WHERE run_id = $1
-      ORDER BY ordinal ASC
+      WHERE run_id = ANY($1::text[])
+      ORDER BY run_id ASC, ordinal ASC
     `,
-    [runId]
+    [runIds]
   );
 
-  return result.rows.map((row) => ({
-    stepId: String(row.step_id),
-    stepName: String(row.step_name),
-    status: row.status,
-    output: parseJsonValue<Record<string, unknown>>(row.output_json, {}),
-    durationMs: Number(row.duration_ms),
-    error: typeof row.error === "string" ? row.error : undefined,
-    agentSlotResults: parseJsonValue(row.agent_slot_results_json, undefined),
-    costLog: parseJsonValue(row.cost_log_json, undefined),
-  }));
+  for (const row of result.rows) {
+    const runId = String(row.run_id);
+    const stepResults = grouped.get(runId);
+    if (!stepResults) {
+      continue;
+    }
+
+    stepResults.push({
+      stepId: String(row.step_id),
+      stepName: String(row.step_name),
+      status: row.status,
+      output: parseJsonValue<Record<string, unknown>>(row.output_json, {}),
+      durationMs: Number(row.duration_ms),
+      error: typeof row.error === "string" ? row.error : undefined,
+      agentSlotResults: parseJsonValue(row.agent_slot_results_json, undefined),
+      costLog: parseJsonValue(row.cost_log_json, undefined),
+    });
+  }
+
+  return grouped;
 }
 
 async function writeStepResults(runId: string, stepResults: WorkflowRun["stepResults"]): Promise<void> {
@@ -295,13 +319,11 @@ export const runStore = {
         [templateId ?? null, userId ?? null]
       );
 
-      const runs = await Promise.all(
-        result.rows.map(async (row) => {
-          const run = mapRowToRun(row);
-          run.stepResults = await loadStepResults(run.id);
-          return run;
-        })
-      );
+      const runs = result.rows.map((row) => mapRowToRun(row));
+      const stepResultsByRunId = await loadStepResultsByRunIds(runs.map((run) => run.id));
+      for (const run of runs) {
+        run.stepResults = stepResultsByRunId.get(run.id) ?? [];
+      }
 
       return runs;
     } catch (err) {

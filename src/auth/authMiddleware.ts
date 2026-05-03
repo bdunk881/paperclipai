@@ -29,8 +29,8 @@ type AuthConfig = {
 type JwtDiagnosticClaims = {
   aud?: string | string[];
   iss?: string;
-  exp?: number;
-  nbf?: number;
+  exp?: number | null;
+  nbf?: number | null;
 };
 
 const jwksClientCache = new Map<string, jwksRsa.JwksClient>();
@@ -99,12 +99,40 @@ function decodeJwtDiagnosticClaims(token: string): JwtDiagnosticClaims | null {
           ? (parsed.aud as string | string[])
           : undefined,
       iss: typeof parsed.iss === "string" ? parsed.iss : undefined,
-      exp: typeof parsed.exp === "number" ? parsed.exp : undefined,
-      nbf: typeof parsed.nbf === "number" ? parsed.nbf : undefined,
+      exp: Object.prototype.hasOwnProperty.call(parsed, "exp")
+        ? typeof parsed.exp === "number"
+          ? parsed.exp
+          : null
+        : undefined,
+      nbf: Object.prototype.hasOwnProperty.call(parsed, "nbf")
+        ? typeof parsed.nbf === "number"
+          ? parsed.nbf
+          : null
+        : undefined,
     };
   } catch {
     return null;
   }
+}
+
+function logAppJwtVerificationFailure(
+  errorMessage: string,
+  tokenClaims: JwtDiagnosticClaims | null,
+  expectedAudience: string,
+  expectedIssuer: string,
+): void {
+  console.warn(
+    "[auth] App JWT verification failed",
+    errorMessage,
+    {
+      tokenAud: tokenClaims?.aud,
+      tokenIss: tokenClaims?.iss,
+      tokenExp: tokenClaims?.exp,
+      tokenNbf: tokenClaims?.nbf,
+      expectedAudience,
+      expectedIssuer,
+    }
+  );
 }
 
 function resolveAuthConfig(): AuthConfig | null {
@@ -280,6 +308,22 @@ export function requireAuth(
   const tokenClaims = decodeJwtDiagnosticClaims(token);
 
   if (appAuthConfig) {
+    const looksLikeAppToken =
+      tokenClaims?.iss === appAuthConfig.issuer ||
+      tokenClaims?.aud === appAuthConfig.audience ||
+      (Array.isArray(tokenClaims?.aud) && tokenClaims.aud.includes(appAuthConfig.audience));
+
+    if (looksLikeAppToken && typeof tokenClaims?.exp !== "number") {
+      logAppJwtVerificationFailure(
+        "App token is missing a numeric exp claim.",
+        tokenClaims,
+        appAuthConfig.audience,
+        appAuthConfig.issuer,
+      );
+      res.status(401).json({ error: "Invalid or expired token." });
+      return;
+    }
+
     const { claims: appClaims, errorMessage } = verifyAppUserTokenWithDiagnostics(token);
     if (appClaims?.sub) {
       req.auth = {
@@ -294,21 +338,13 @@ export function requireAuth(
       return;
     }
 
-    const looksLikeAppToken =
-      tokenClaims?.iss === appAuthConfig.issuer ||
-      tokenClaims?.aud === appAuthConfig.audience ||
-      (Array.isArray(tokenClaims?.aud) && tokenClaims.aud.includes(appAuthConfig.audience));
-
     if (looksLikeAppToken) {
-      console.warn("[auth] App JWT verification failed", {
-        errMessage: errorMessage,
-        tokenAud: tokenClaims?.aud,
-        tokenIss: tokenClaims?.iss,
-        tokenExp: tokenClaims?.exp,
-        tokenNbf: tokenClaims?.nbf,
-        expectedAudience: appAuthConfig.audience,
-        expectedIssuer: appAuthConfig.issuer,
-      });
+      logAppJwtVerificationFailure(
+        errorMessage ?? "Unknown token verification error.",
+        tokenClaims,
+        appAuthConfig.audience,
+        appAuthConfig.issuer,
+      );
       res.status(401).json({ error: "Invalid or expired token." });
       return;
     }

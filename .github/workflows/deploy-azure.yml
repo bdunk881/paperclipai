@@ -223,6 +223,98 @@ jobs:
           echo "container_app=$APP_NAME" >> "$GITHUB_OUTPUT"
           echo "resource_group=$RESOURCE_GROUP" >> "$GITHUB_OUTPUT"
 
+      - name: Resolve staging Key Vault target
+        id: keyvault
+        env:
+          OVERRIDE_KEY_VAULT_NAME: ${{ vars.AZURE_STAGING_KEY_VAULT_NAME }}
+          OVERRIDE_KEY_VAULT_RESOURCE_GROUP: ${{ vars.AZURE_STAGING_KEY_VAULT_RESOURCE_GROUP }}
+          OVERRIDE_KEY_VAULT_URI: ${{ vars.AZURE_STAGING_KEY_VAULT_URI }}
+        run: |
+          set -euo pipefail
+
+          APP_RESOURCE_GROUP="${{ steps.discover.outputs.resource_group }}"
+          KEY_VAULT_NAME=""
+          KEY_VAULT_RESOURCE_GROUP=""
+          KEY_VAULT_URI=""
+
+          trim_trailing_slash() {
+            printf '%s' "${1%/}"
+          }
+
+          reject_cross_environment_target() {
+            local value="$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')"
+            local label="$2"
+
+            if printf '%s' "$value" | grep -Eq 'prod(uction)?' \
+              && ! printf '%s' "$value" | grep -Eq 'staging'; then
+              echo "::error::$label points at a production target: $1"
+              exit 1
+            fi
+          }
+
+          if [ -n "${OVERRIDE_KEY_VAULT_URI}" ]; then
+            KEY_VAULT_URI="$(trim_trailing_slash "$OVERRIDE_KEY_VAULT_URI")"
+          fi
+
+          if [ -n "${OVERRIDE_KEY_VAULT_NAME}" ]; then
+            KEY_VAULT_NAME="$OVERRIDE_KEY_VAULT_NAME"
+            KEY_VAULT_RESOURCE_GROUP="${OVERRIDE_KEY_VAULT_RESOURCE_GROUP:-$APP_RESOURCE_GROUP}"
+          fi
+
+          if [ -z "$KEY_VAULT_NAME" ] && [ -n "$KEY_VAULT_URI" ]; then
+            KEY_VAULT_NAME="$(printf '%s' "$KEY_VAULT_URI" | sed -E 's#^https://([^./]+)\..*$#\1#')"
+            KEY_VAULT_RESOURCE_GROUP="${OVERRIDE_KEY_VAULT_RESOURCE_GROUP:-$APP_RESOURCE_GROUP}"
+          fi
+
+          if [ -n "$KEY_VAULT_NAME" ] && [ -z "$KEY_VAULT_URI" ]; then
+            KEY_VAULT_URI="$(
+              az keyvault show \
+                --name "$KEY_VAULT_NAME" \
+                --resource-group "$KEY_VAULT_RESOURCE_GROUP" \
+                --query properties.vaultUri \
+                -o tsv
+            )"
+          fi
+
+          if [ -z "$KEY_VAULT_URI" ]; then
+            MATCH_COUNT="$(
+              az keyvault list \
+                --resource-group "$APP_RESOURCE_GROUP" \
+                --query "[?contains(name, 'staging')] | length(@)" \
+                -o tsv
+            )"
+
+            if [ "$MATCH_COUNT" = "1" ]; then
+              KEY_VAULT_NAME="$(
+                az keyvault list \
+                  --resource-group "$APP_RESOURCE_GROUP" \
+                  --query "[?contains(name, 'staging')].name | [0]" \
+                  -o tsv
+              )"
+              KEY_VAULT_RESOURCE_GROUP="$APP_RESOURCE_GROUP"
+              KEY_VAULT_URI="$(
+                az keyvault show \
+                  --name "$KEY_VAULT_NAME" \
+                  --resource-group "$KEY_VAULT_RESOURCE_GROUP" \
+                  --query properties.vaultUri \
+                  -o tsv
+              )"
+            fi
+          fi
+
+          if [ -z "$KEY_VAULT_URI" ]; then
+            echo "::error::Unable to resolve the staging Key Vault target. Set AZURE_STAGING_KEY_VAULT_URI or AZURE_STAGING_KEY_VAULT_NAME."
+            az keyvault list \
+              --query "[].{name:name,resourceGroup:resourceGroup,vaultUri:properties.vaultUri}" \
+              -o table
+            exit 1
+          fi
+
+          KEY_VAULT_URI="$(trim_trailing_slash "$KEY_VAULT_URI")"
+          reject_cross_environment_target "$KEY_VAULT_URI" "AZURE_STAGING_KEY_VAULT_URI"
+
+          echo "key_vault_uri=$KEY_VAULT_URI" >> "$GITHUB_OUTPUT"
+
       - name: Validate staging social auth env secret
         env:
           BACKEND_ENV_STAGING_SOCIAL_AUTH: ${{ secrets.AZURE_BACKEND_ENV_STAGING_SOCIAL_AUTH }}
@@ -315,6 +407,7 @@ jobs:
       - name: Deploy backend to Azure Container Apps
         env:
           BACKEND_ENV_STAGING_SOCIAL_AUTH: ${{ secrets.AZURE_BACKEND_ENV_STAGING_SOCIAL_AUTH }}
+          BACKEND_ENV_STAGING_RUNTIME: ${{ secrets.AZURE_BACKEND_ENV_STAGING_RUNTIME }}
           GOOGLE_CLIENT_ID: ${{ vars.GOOGLE_CLIENT_ID }}
           STAGING_SOCIAL_AUTH_CLIENT_ID: ${{ vars.AZURE_BACKEND_ENV_STAGING_SOCIAL_AUTH_CLIENTID }}
         run: |
@@ -331,6 +424,10 @@ jobs:
 
           if [ -n "$client_id" ] && ! grep -Eq '^GOOGLE_CLIENT_ID=.+' "$tmpfile"; then
             printf '\nGOOGLE_CLIENT_ID=%s\n' "$client_id" >> "$tmpfile"
+          fi
+
+          if [ -n "${BACKEND_ENV_STAGING_RUNTIME}" ]; then
+            printf '\n%s\n' "$BACKEND_ENV_STAGING_RUNTIME" >> "$tmpfile"
           fi
 
           env_args=()
@@ -354,6 +451,7 @@ jobs:
             --image "${{ steps.target.outputs.image_tag }}" \
             --set-env-vars \
               "${env_args[@]}" \
+              AZURE_KEY_VAULT_URI="${{ steps.keyvault.outputs.key_vault_uri }}" \
               NODE_ENV=staging \
               QA_AUTH_BYPASS_ENABLED="${{ steps.target.outputs.qa_bypass_enabled }}" \
               QA_AUTH_BYPASS_USER_IDS="${{ steps.target.outputs.qa_bypass_users }}"

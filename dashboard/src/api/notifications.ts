@@ -1,4 +1,5 @@
 import { getConfiguredApiOrigin } from "./baseUrl";
+import { trackedFetch } from "./trackedFetch";
 import { User } from "../context/AuthContext";
 
 const API_BASE = getConfiguredApiOrigin();
@@ -58,11 +59,10 @@ async function parseJson<T>(response: Response): Promise<T> {
 }
 
 export async function fetchNotificationPreferences(
-  workspaceId: string,
   user: User | null,
   accessToken: string,
 ): Promise<NotificationPreference[]> {
-  const response = await fetch(`${API_BASE}/api/notifications/preferences?workspaceId=${encodeURIComponent(workspaceId)}`, {
+  const response = await trackedFetch(`${API_BASE}/api/notifications/preferences`, {
     headers: headers(user, accessToken),
   });
   const payload = await parseJson<{ preferences: NotificationPreference[] }>(response);
@@ -71,7 +71,6 @@ export async function fetchNotificationPreferences(
 
 export async function updateNotificationPreference(
   body: {
-    workspaceId: string;
     channel: NotificationChannel;
     kind: NotificationKind;
     cadence: NotificationCadence;
@@ -81,7 +80,7 @@ export async function updateNotificationPreference(
   user: User | null,
   accessToken: string,
 ): Promise<NotificationPreference> {
-  const response = await fetch(`${API_BASE}/api/notifications/preferences`, {
+  const response = await trackedFetch(`${API_BASE}/api/notifications/preferences`, {
     method: "PUT",
     headers: headers(user, accessToken, true),
     body: JSON.stringify(body),
@@ -91,11 +90,10 @@ export async function updateNotificationPreference(
 }
 
 export async function fetchNotificationTransports(
-  workspaceId: string,
   user: User | null,
   accessToken: string,
 ): Promise<NotificationTransport[]> {
-  const response = await fetch(`${API_BASE}/api/notifications/transports?workspaceId=${encodeURIComponent(workspaceId)}`, {
+  const response = await trackedFetch(`${API_BASE}/api/notifications/transports`, {
     headers: headers(user, accessToken),
   });
   const payload = await parseJson<{ transports: NotificationTransport[] }>(response);
@@ -105,7 +103,6 @@ export async function fetchNotificationTransports(
 export async function updateNotificationTransport(
   channel: NotificationChannel,
   body: {
-    workspaceId: string;
     connectionId?: string;
     enabled: boolean;
     config: Record<string, string>;
@@ -113,7 +110,7 @@ export async function updateNotificationTransport(
   user: User | null,
   accessToken: string,
 ): Promise<NotificationTransport> {
-  const response = await fetch(`${API_BASE}/api/notifications/transports/${channel}`, {
+  const response = await trackedFetch(`${API_BASE}/api/notifications/transports/${channel}`, {
     method: "PUT",
     headers: headers(user, accessToken, true),
     body: JSON.stringify(body),
@@ -123,15 +120,14 @@ export async function updateNotificationTransport(
 }
 
 export async function sendNotificationTest(
-  workspaceId: string,
   kind: NotificationKind,
   user: User | null,
   accessToken: string,
 ): Promise<void> {
-  const response = await fetch(`${API_BASE}/api/notifications/test-send`, {
+  const response = await trackedFetch(`${API_BASE}/api/notifications/test-send`, {
     method: "POST",
     headers: headers(user, accessToken, true),
-    body: JSON.stringify({ workspaceId, kind }),
+    body: JSON.stringify({ kind }),
   });
   await parseJson(response);
 }

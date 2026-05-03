@@ -1065,11 +1065,6 @@ export default function WorkflowBuilder() {
                   size={2}
                   color={theme === "dark" ? "rgb(var(--surface-elevated))" : "#cbd5e1"}
                 />
-                <Controls
-                  position="bottom-right"
-                  showInteractive={false}
-                  className="workflow-controls-pill"
-                />
               </ReactFlow>
               <div className="pointer-events-none absolute bottom-6 left-1/2 z-10 -translate-x-1/2">
                 <div className="pointer-events-auto rounded-full border border-slate-200 dark:border-surface-700 bg-white/95 dark:bg-surface-800/95 px-2 py-1.5 shadow-md backdrop-blur">

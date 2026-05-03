@@ -337,10 +337,6 @@ export function MissionStateView({
 
   return (
     <div className="min-h-full bg-surface-50 px-4 py-6 dark:bg-surface-deep sm:px-6 lg:px-8">
-      <div className="mx-auto max-w-7xl">
-        <div className="animate-mission-reveal" style={{ animationDelay: animationDelays.breadcrumb }}>
-          <div className="mb-4 flex flex-wrap items-center gap-2 text-sm text-slate-500 dark:text-slate-400">
-            <Link to="/" className="font-medium text-slate-600 underline decoration-slate-300 underline-offset-4 transition-colors hover:text-brand-600 dark:text-slate-300 dark:decoration-slate-600">
               Dashboard
             </Link>
             <ArrowRight size={14} />

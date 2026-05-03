@@ -192,19 +192,11 @@ export default function Tickets() {
   }
 
   return (
-<<<<<<< HEAD
-    <div className="min-h-full bg-slate-50 text-slate-900 dark:bg-[#0b1120] dark:text-slate-100">
-      <div className="mx-auto flex w-full max-w-7xl flex-col gap-6 px-4 py-6 md:px-8 md:py-8">
-        <section className="glass-card noise-overlay overflow-hidden rounded-[30px] border border-slate-200 bg-white/90 dark:border-slate-800/80 dark:bg-slate-950/80">
-          <div className="relative border-b border-slate-200 px-6 py-6 dark:border-slate-800/80 md:px-8">
-            <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(99,102,241,0.18),transparent_35%),radial-gradient(circle_at_bottom_left,rgba(20,184,166,0.14),transparent_30%)]" />
-=======
     <div className="min-h-full bg-surface-100 text-slate-900 dark:bg-surface-950 dark:text-slate-100">
       <div className="mx-auto flex w-full max-w-7xl flex-col gap-6 px-4 py-6 md:px-8 md:py-8">
         <section className="glass-card noise-overlay overflow-hidden rounded-[30px] border border-slate-200 bg-white shadow-sm dark:border-slate-800/80 dark:bg-slate-950/80">
           <div className="relative border-b border-slate-100 px-6 py-6 md:px-8 dark:border-slate-800/80">
             <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(99,102,241,0.08),transparent_35%),radial-gradient(circle_at_bottom_left,rgba(20,184,166,0.06),transparent_30%)]" />
->>>>>>> 977e99e (feat(branding): finalize mockup-to-product transition)
             <div className="relative flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
               <div className="max-w-2xl">
                 <div className="inline-flex items-center gap-2 rounded-full border border-indigo-500/30 bg-indigo-500/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.2em] text-indigo-700 dark:text-indigo-200">
@@ -271,7 +263,7 @@ export default function Tickets() {
                   value={query}
                   onChange={(event) => setQuery(event.target.value)}
                   placeholder="Search by title, ID, tag, or owner"
-                  className="w-full rounded-2xl border border-slate-200 bg-white py-3 pl-10 pr-4 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-teal-400 dark:border-slate-800 dark:bg-slate-950/70 dark:text-slate-100 dark:placeholder:text-slate-500"
+                  className="w-full rounded-2xl border border-slate-200 bg-white py-3 pl-10 pr-4 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-teal-400 dark:border-slate-700 dark:bg-slate-950/80 dark:text-slate-100 dark:placeholder:text-slate-500"
                 />
               </label>
 
@@ -421,8 +413,8 @@ export default function Tickets() {
                 <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-teal-300">
                   Create Ticket
                 </p>
-                <h2 className="mt-2 text-2xl font-semibold text-slate-100">Capture work with full operating context</h2>
-                <p className="mt-2 text-sm text-slate-400">
+                <h2 className="mt-2 text-2xl font-semibold text-slate-900 dark:text-slate-100">Capture work with full operating context</h2>
+                <p className="mt-2 text-sm text-slate-600 dark:text-slate-400">
                   Document the task outcome, assign ownership to humans or agents, and track execution traces in real time.
                 </p>
               </div>
@@ -592,14 +584,13 @@ export default function Tickets() {
                     className="h-4 w-4 rounded border-slate-300 bg-white text-teal-500 focus:ring-teal-400 dark:border-slate-600 dark:bg-slate-900 dark:text-teal-400"
                   />
                   <div>
-<<<<<<< HEAD
                     <p className="text-sm font-medium text-slate-800 dark:text-slate-200">Request external sync</p>
-                    <p className="text-xs text-slate-500">UI ready now, integration wiring in M4.</p>
-=======
-                    <p className="text-sm font-medium text-slate-200">Request external sync</p>
                     <p className="text-xs text-slate-500">Automatically sync updates to your connected project tracker.</p>
-                    <p className="text-sm font-medium text-slate-200">Request external sync</p>
-                    <p className="text-xs text-slate-500">Automatically sync updates to your connected project tracker.</p>
+                  </div>
+                </label>
+              </div>
+            </div>
+
             {validationError ? (
               <div className="mt-5 rounded-2xl border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-200">
                 {validationError}

@@ -118,6 +118,7 @@ function getAllowedOrigins(): string[] {
   return Array.from(
     new Set([
       ...parseAllowedOrigins(process.env.ALLOWED_ORIGINS),
+      ...parseAllowedOrigins(process.env.AUTH_NATIVE_AUTH_PROXY_ALLOWED_ORIGINS),
       ...parseAllowedOrigins(process.env.AUTH_SOCIAL_ALLOWED_REDIRECT_ORIGINS),
       ...parseAllowedOrigins(process.env.SOCIAL_AUTH_DASHBOARD_URL),
     ])

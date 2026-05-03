@@ -331,7 +331,7 @@ export default function Tickets() {
                     <Link
                       key={ticket.id}
                       to={`/tickets/${ticket.id}`}
-                      className="group grid gap-4 border-l-[2px] border-transparent bg-white px-5 py-4 transition hover:border-indigo-500 hover:bg-slate-50 dark:bg-[#0f172a] dark:hover:bg-slate-800/50 lg:grid-cols-[120px_minmax(0,1.4fr)_180px_170px_150px_110px]"
+                      className="group grid gap-4 border-l-[2px] border-transparent bg-surface-base px-5 py-4 transition hover:border-indigo-500 hover:bg-surface-elevated/50 lg:grid-cols-[120px_minmax(0,1.4fr)_180px_170px_150px_110px]"
                     >
                       <div className="space-y-2">
                         <p className="font-ticket-mono text-xs font-medium uppercase tracking-[0.18em] text-slate-600 dark:text-slate-300">

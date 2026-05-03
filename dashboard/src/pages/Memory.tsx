@@ -98,7 +98,7 @@ async function extractPdfText(file: File): Promise<string> {
       const page = await pdf.getPage(index + 1);
       const content = await page.getTextContent();
       return content.items
-        .map((item) => ("str" in item ? item.str : ""))
+        .map( (item: any) => ("str" in item ? item.str : ""))
         .join(" ")
         .replace(/\s+/g, " ")
         .trim();

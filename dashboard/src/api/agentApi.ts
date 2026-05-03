@@ -1,4 +1,5 @@
 import { getApiBasePath } from "./baseUrl";
+import { trackedFetch } from "./trackedFetch";
 
 const BASE = getApiBasePath();
 const USE_MOCK_API = import.meta.env.VITE_USE_MOCK === "true";
@@ -158,7 +159,7 @@ async function withMockApi<T>(remote: () => Promise<T>, local: () => T | Promise
 export async function listAgents(accessToken: string): Promise<Agent[]> {
   return withMockApi(
     async () => {
-      const response = await fetch(`${BASE}/agents`, {
+      const response = await trackedFetch(`${BASE}/agents`, {
         headers: buildAuthHeaders(accessToken),
       });
       const payload = await parseJsonOrError<{ agents: Agent[] }>(response, `Failed to fetch agents: ${response.status}`);
@@ -169,7 +170,7 @@ export async function listAgents(accessToken: string): Promise<Agent[]> {
 }
 
 export async function createAgent(input: AgentCreateInput, accessToken: string): Promise<Agent> {
-  const response = await fetch(`${BASE}/agents`, {
+  const response = await trackedFetch(`${BASE}/agents`, {
     method: "POST",
     headers: buildAuthHeaders(accessToken, {
       "Content-Type": "application/json",
@@ -183,7 +184,7 @@ export async function createAgent(input: AgentCreateInput, accessToken: string):
 export async function getAgentHeartbeat(agentId: string, accessToken: string): Promise<AgentHeartbeat | null> {
   return withMockApi(
     async () => {
-      const response = await fetch(`${BASE}/agents/${encodeURIComponent(agentId)}/heartbeat`, {
+      const response = await trackedFetch(`${BASE}/agents/${encodeURIComponent(agentId)}/heartbeat`, {
         headers: buildAuthHeaders(accessToken),
       });
       if (response.status === 404) return null;
@@ -196,7 +197,7 @@ export async function getAgentHeartbeat(agentId: string, accessToken: string): P
 export async function listAgentRuns(agentId: string, accessToken: string): Promise<AgentRun[]> {
   return withMockApi(
     async () => {
-      const response = await fetch(`${BASE}/agents/${encodeURIComponent(agentId)}/runs`, {
+      const response = await trackedFetch(`${BASE}/agents/${encodeURIComponent(agentId)}/runs`, {
         headers: buildAuthHeaders(accessToken),
       });
       const payload = await parseJsonOrError<{ runs: AgentRun[] }>(response, `Failed to fetch agent runs: ${response.status}`);
@@ -209,7 +210,7 @@ export async function listAgentRuns(agentId: string, accessToken: string): Promi
 export async function getAgentBudget(agentId: string, accessToken: string): Promise<AgentBudgetSnapshot | null> {
   return withMockApi(
     async () => {
-      const response = await fetch(`${BASE}/agents/${encodeURIComponent(agentId)}/budget`, {
+      const response = await trackedFetch(`${BASE}/agents/${encodeURIComponent(agentId)}/budget`, {
         headers: buildAuthHeaders(accessToken),
       });
       if (response.status === 404) return null;
@@ -222,7 +223,7 @@ export async function getAgentBudget(agentId: string, accessToken: string): Prom
 export async function getAgentTokenUsage(agentId: string, accessToken: string, days = 30): Promise<TokenUsageReport | null> {
   return withMockApi(
     async () => {
-      const response = await fetch(`${BASE}/agents/${encodeURIComponent(agentId)}/token-usage?days=${days}`, {
+      const response = await trackedFetch(`${BASE}/agents/${encodeURIComponent(agentId)}/token-usage?days=${days}`, {
         headers: buildAuthHeaders(accessToken),
       });
       if (response.status === 404) return null;
@@ -235,7 +236,7 @@ export async function getAgentTokenUsage(agentId: string, accessToken: string, d
 export async function listRoutines(accessToken: string): Promise<Routine[]> {
   return withMockApi(
     async () => {
-      const response = await fetch(`${BASE}/routines`, {
+      const response = await trackedFetch(`${BASE}/routines`, {
         headers: buildAuthHeaders(accessToken),
       });
       const payload = await parseJsonOrError<{ routines: Routine[] }>(response, `Failed to fetch routines: ${response.status}`);
@@ -246,7 +247,7 @@ export async function listRoutines(accessToken: string): Promise<Routine[]> {
 }
 
 export async function createRoutine(input: RoutineCreateInput, accessToken: string): Promise<Routine> {
-  const response = await fetch(`${BASE}/routines`, {
+  const response = await trackedFetch(`${BASE}/routines`, {
     method: "POST",
     headers: buildAuthHeaders(accessToken, {
       "Content-Type": "application/json",

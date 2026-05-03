@@ -16,9 +16,6 @@ import {
   updateNotificationTransport,
 } from "../api/notifications";
 
-const DEFAULT_WORKSPACE_ID =
-  import.meta.env.VITE_DEFAULT_WORKSPACE_ID ?? "11111111-1111-4111-8111-111111111111";
-
 const KIND_META: Array<{ kind: NotificationKind; label: string; description: string }> = [
   { kind: "approvals", label: "Approvals", description: "Approval requests and review escalations." },
   { kind: "milestones", label: "Milestones", description: "Shipped milestones and completion updates." },
@@ -80,8 +77,8 @@ export default function NotificationsSettings() {
       try {
         const accessToken = await requireAccessToken();
         const [prefs, transportList, options] = await Promise.all([
-          fetchNotificationPreferences(DEFAULT_WORKSPACE_ID, user, accessToken),
-          fetchNotificationTransports(DEFAULT_WORKSPACE_ID, user, accessToken),
+          fetchNotificationPreferences(user, accessToken),
+          fetchNotificationTransports(user, accessToken),
           fetchNotificationConnectionOptions(user, accessToken),
         ]);
         if (!active) {
@@ -131,7 +128,6 @@ export default function NotificationsSettings() {
       const accessToken = await requireAccessToken();
       const updated = await updateNotificationPreference(
         {
-          workspaceId: DEFAULT_WORKSPACE_ID,
           channel,
           kind,
           cadence,
@@ -161,7 +157,6 @@ export default function NotificationsSettings() {
       const mutedUntil = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
       const updated = await updateNotificationPreference(
         {
-          workspaceId: DEFAULT_WORKSPACE_ID,
           channel,
           kind,
           cadence: existing.cadence,
@@ -190,7 +185,6 @@ export default function NotificationsSettings() {
       const updated = await updateNotificationTransport(
         channel,
         {
-          workspaceId: DEFAULT_WORKSPACE_ID,
           connectionId: existing?.connectionId,
           enabled: existing?.enabled ?? true,
           config: Object.fromEntries(
@@ -223,7 +217,6 @@ export default function NotificationsSettings() {
       const updated = await updateNotificationTransport(
         channel,
         {
-          workspaceId: DEFAULT_WORKSPACE_ID,
           connectionId,
           enabled: existing?.enabled ?? true,
           config: existing?.config ?? {},
@@ -251,7 +244,7 @@ export default function NotificationsSettings() {
     setError(null);
     try {
       const accessToken = await requireAccessToken();
-      await sendNotificationTest(DEFAULT_WORKSPACE_ID, kind, user, accessToken);
+      await sendNotificationTest(kind, user, accessToken);
       setNotice(`Queued test notification for ${kind.replace(/_/g, " ")}.`);
     } catch (testError) {
       setError(testError instanceof Error ? testError.message : "Failed to queue test notification");

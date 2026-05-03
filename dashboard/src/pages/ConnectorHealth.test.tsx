@@ -34,8 +34,9 @@ describe("ConnectorHealth", () => {
           healthy: 0,
           degraded: 0,
           rate_limited: 0,
-          auth_failure: 0,
-          down: 0,
+          auth_failed: 0,
+          provider_error: 0,
+          disabled: 0,
         },
         lastUpdatedAt: "2026-05-01T00:00:00.000Z",
         alertPolicy: {

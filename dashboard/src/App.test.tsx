@@ -178,18 +178,6 @@ describe("App", () => {
     expect(screen.getByText("Staffing Plan Review Page")).toBeInTheDocument();
   });
 
-<<<<<<< HEAD
-  it("renders the budget dashboard route for authenticated users", async () => {
-    authState.user = { id: "user-1", email: "user@example.com", name: "User" };
-    window.history.replaceState({}, "", "/workspace/budget-dashboard");
-
-    render(<App />);
-
-    expect(await screen.findByText("Layout Shell")).toBeInTheDocument();
-    expect(screen.getByText("Budget Dashboard Page")).toBeInTheDocument();
-  });
-=======
->>>>>>> 3ca1bb6 (fix(ALT-2168): remove fabricated dashboard and ticket copy)
   it("renders the mission state route for authenticated users", async () => {
     authState.user = { id: "user-1", email: "user@example.com", name: "User" };
     window.history.replaceState({}, "", "/mission-state");

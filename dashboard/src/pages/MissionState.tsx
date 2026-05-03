@@ -342,7 +342,7 @@ export function MissionStateView({
                         <Flag size={14} />
                         Mission Summary
                       </span>
-                      <StatusBadge status={data?.overallStatus ?? "Not Started"} />
+                      <MissionStatusBadge status={data?.overallStatus ?? "Not Started"} />
                     </div>
                     <h1 className="text-3xl font-semibold tracking-tight text-slate-950 dark:text-white sm:text-4xl">
                       {data?.title}

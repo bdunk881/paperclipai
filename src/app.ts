@@ -295,8 +295,8 @@ app.use(passport.initialize());
 
 // Propagate authenticated user identity into Sentry scope so all errors
 // and logs captured after auth are attributed to the correct user.
-app.use((req: Request, _res, next) => {
-  const authReq = req as import("./auth/authMiddleware").AuthenticatedRequest;
+app.use((req, _res, next) => {
+  const authReq = req as unknown as AuthenticatedRequest;
   if (authReq.auth?.sub) {
     Sentry.setUser({ id: authReq.auth.sub, email: authReq.auth.email });
   }

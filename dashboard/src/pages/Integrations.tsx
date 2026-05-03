@@ -69,7 +69,7 @@ function connectionTypeLabel(authMethod?: ConnectorConnection["authMethod"]): st
 }
 
 export default function Integrations() {
-  const { getAccessToken } = useAuth();
+  const { getAccessToken, user } = useAuth();
   const [searchParams] = useSearchParams();
   const [providers, setProviders] = useState<Record<ProviderKey, ProviderStatus> | null>(null);
   const [loading, setLoading] = useState(true);
@@ -83,6 +83,8 @@ export default function Integrations() {
     const headers = new Headers(init?.headers);
     if (accessToken) {
       headers.set("Authorization", `Bearer ${accessToken}`);
+    } else if (user?.id) {
+      headers.set("X-User-Id", user.id);
     }
     if (init?.body && !headers.has("Content-Type")) {
       headers.set("Content-Type", "application/json");
@@ -99,7 +101,7 @@ export default function Integrations() {
     }
 
     return response;
-  }, [getAccessToken]);
+  }, [getAccessToken, user?.id]);
 
   const loadStatuses = useCallback(async () => {
     setLoading(true);

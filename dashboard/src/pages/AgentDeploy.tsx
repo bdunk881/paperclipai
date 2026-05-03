@@ -1,4 +1,4 @@
-import { FormEvent, useCallback, useEffect, useState } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import {
   ArrowLeft,
@@ -10,9 +10,10 @@ import {
   TimerReset,
 } from "lucide-react";
 import { getConfiguredApiOrigin } from "../api/baseUrl";
+import { deployWorkflowAsTeam, type ControlPlaneDeployment } from "../api/client";
 import { getAgentCatalogTemplate, type AgentCatalogTemplate } from "../api/agentCatalog";
-import { createAgent, createRoutine } from "../api/agentApi";
 import { useAuth } from "../context/AuthContext";
+import type { WorkflowTemplate } from "../types/workflow";
 
 const API_BASE = getConfiguredApiOrigin();
 const PROVIDER_ORDER = ["google", "github", "notion"] as const;
@@ -34,6 +35,67 @@ function defaultProviderStates(): Record<OAuthProvider, ProviderConnectionState>
     google: { status: "disconnected" },
     github: { status: "disconnected" },
     notion: { status: "disconnected" },
+  };
+}
+
+function toWorkflowCategory(category: AgentCatalogTemplate["category"]): WorkflowTemplate["category"] {
+  const normalized = category.toLowerCase();
+  if (normalized === "sales") return "sales";
+  if (normalized === "support") return "support";
+  if (normalized === "marketing") return "marketing";
+  if (normalized === "engineering") return "engineering";
+  return "operations";
+}
+
+function buildTemplateDeploymentBlueprint(
+  template: AgentCatalogTemplate,
+  budgetMonthlyUsd: number,
+  defaultIntervalMinutes: number
+): WorkflowTemplate {
+  const scheduleType = defaultIntervalMinutes > 0 ? "interval" : "manual";
+
+  return {
+    id: `tpl-agent-catalog-${template.id}-${Date.now()}`,
+    name: template.name,
+    description: template.description,
+    category: toWorkflowCategory(template.category),
+    version: "1.0.0",
+    configFields: [],
+    sampleInput: {},
+    expectedOutput: {},
+    steps: [
+      {
+        id: "step-agent-catalog-trigger",
+        name: "Start",
+        kind: "trigger",
+        description: "Bootstrap the deployed agent workflow.",
+        inputKeys: [],
+        outputKeys: ["request"],
+      },
+      {
+        id: "step-agent-catalog-worker",
+        name: template.name,
+        kind: "agent",
+        description: template.description,
+        inputKeys: ["request"],
+        outputKeys: ["result"],
+        agentRoleKey: template.id,
+        agentModel: template.defaultModel,
+        agentInstructions: template.defaultInstructions,
+        agentSkills: template.skills,
+        agentBudgetMonthlyUsd: budgetMonthlyUsd,
+        agentScheduleType: scheduleType,
+        agentScheduleValue: scheduleType === "interval" ? String(defaultIntervalMinutes) : undefined,
+      },
+      {
+        id: "step-agent-catalog-output",
+        name: "Complete",
+        kind: "output",
+        description: "Finalize the deployed agent result.",
+        inputKeys: ["result"],
+        outputKeys: [],
+      },
+    ],
   };
 }
 
@@ -67,6 +129,14 @@ export default function AgentDeploy() {
       }
     })();
   }, [getAccessToken, params.templateId]);
+
+  const deploymentBlueprint = useMemo(
+    () =>
+      template
+        ? buildTemplateDeploymentBlueprint(template, budgetMonthlyUsd, defaultIntervalMinutes)
+        : null,
+    [budgetMonthlyUsd, defaultIntervalMinutes, template]
+  );
 
   const authorizedFetch = useCallback(
     async (path: string): Promise<Response> => {
@@ -118,7 +188,7 @@ export default function AgentDeploy() {
 
   async function handleDeploy(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!template) return;
+    if (!template || !deploymentBlueprint) return;
 
     setIsDeploying(true);
     setDeployError(null);
@@ -129,48 +199,24 @@ export default function AgentDeploy() {
         throw new Error("Authentication session expired. Sign in again to continue.");
       }
 
-      const agent = await createAgent(
+      const deployment: ControlPlaneDeployment = await deployWorkflowAsTeam(
         {
-          name: teamName.trim() || template.name,
-          description: template.description,
-          roleKey: template.id,
-          instructions: template.defaultInstructions,
+          template: deploymentBlueprint,
+          teamName: teamName.trim() || template.name,
           budgetMonthlyUsd,
-          status: "idle",
-          metadata: {
-            templateId: template.id,
-            templateName: template.name,
-            category: template.category,
-            skills: template.skills,
-          },
+          defaultIntervalMinutes: defaultIntervalMinutes > 0 ? defaultIntervalMinutes : undefined,
         },
         token
       );
 
-      let routineMessage = "Manual only.";
-      if (defaultIntervalMinutes > 0) {
-        await createRoutine(
-          {
-            agentId: agent.id,
-            name: `${agent.name} cadence`,
-            scheduleType: "interval",
-            intervalMinutes: defaultIntervalMinutes,
-            status: "active",
-            prompt: `Run the ${template.name} agent routine.`,
-            metadata: {
-              source: "dashboard-agent-deploy",
-              templateId: template.id,
-            },
-          },
-          token
-        );
-        routineMessage = `Routine scheduled every ${defaultIntervalMinutes} minutes.`;
-      }
+      const deployedAgent = deployment.agents.find(
+        (agent) => agent.workflowStepId === "step-agent-catalog-worker"
+      );
+      const search = deployedAgent ? `?agent=${encodeURIComponent(deployedAgent.id)}` : "";
 
-      navigate("/agents/my", {
+      navigate(`/agents/team/${deployment.team.id}${search}`, {
         state: {
-          agentId: agent.id,
-          message: `${agent.name} deployed successfully. ${routineMessage}`,
+          message: `${template.name} deployed successfully.`,
         },
       });
     } catch (error) {
@@ -211,7 +257,7 @@ export default function AgentDeploy() {
               </div>
               <div>
                 <h1 className="text-2xl font-bold text-gray-900">Deploy {template.name}</h1>
-                <p className="text-sm text-gray-500">Create a real agent from this role-backed template.</p>
+                <p className="text-sm text-gray-500">Create a real agent team from this role-backed template.</p>
               </div>
             </div>
 
@@ -281,7 +327,7 @@ export default function AgentDeploy() {
                 className="inline-flex items-center gap-2 rounded-2xl bg-indigo-600 px-5 py-3 text-sm font-semibold text-white transition hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-70"
               >
                 {isDeploying ? <LoaderCircle size={16} className="animate-spin" /> : <Rocket size={16} />}
-                {isDeploying ? "Provisioning Agent" : "Create Agent"}
+                {isDeploying ? "Provisioning Agent Team" : "Create Agent"}
               </button>
               <Link
                 to="/agents/my"
@@ -319,21 +365,25 @@ export default function AgentDeploy() {
                             : "bg-slate-100 text-slate-600"
                         }`}
                       >
-                        {state.status}
+                        {state.status === "connected" ? "Connected" : "Disconnected"}
                       </span>
                     </div>
                     {state.accountLabel ? (
-                      <p className="mt-2 text-sm text-gray-600">Connected as {state.accountLabel}</p>
-                    ) : null}
-                    {state.status === "connected" ? (
-                      <div className="mt-3 inline-flex items-center gap-1.5 text-xs font-medium text-teal-700">
-                        <CheckCircle2 size={13} />
-                        Ready for deployment
-                      </div>
+                      <p className="mt-2 text-xs text-gray-500">{state.accountLabel}</p>
                     ) : null}
                   </div>
                 );
               })}
+            </div>
+
+            <div className="mt-6 rounded-2xl border border-teal-200 bg-teal-50 p-4 text-sm text-teal-700">
+              <div className="flex items-center gap-2 font-semibold">
+                <CheckCircle2 size={16} />
+                Deployment path
+              </div>
+              <p className="mt-2 leading-relaxed">
+                This flow provisions a control-plane agent team from the selected role template, so the created worker appears in the live team monitor immediately after deploy.
+              </p>
             </div>
           </aside>
         </form>

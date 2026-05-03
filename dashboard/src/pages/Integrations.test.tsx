@@ -251,4 +251,20 @@ describe("Integrations", () => {
       expect(fetchMock.mock.calls.length).toBeGreaterThan(initialCalls);
     });
   });
+
+  it("falls back to X-User-Id for preview-mode integrations requests", async () => {
+    getAccessTokenMock.mockResolvedValueOnce(null);
+    const fetchMock = installFetchMock();
+
+    renderWithRouter();
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalled();
+    });
+
+    const [, init] = fetchMock.mock.calls[0] ?? [];
+    const headers = new Headers((init as RequestInit | undefined)?.headers);
+    expect(headers.get("Authorization")).toBeNull();
+    expect(headers.get("X-User-Id")).toBe("u1");
+  });
 });

@@ -809,7 +809,8 @@ export interface ControlPlaneTeamDetail {
 }
 
 export interface DeployWorkflowAsTeamInput {
-  templateId: string;
+  templateId?: string;
+  template?: WorkflowTemplate;
   teamName?: string;
   budgetMonthlyUsd?: number;
   defaultIntervalMinutes?: number;
@@ -880,7 +881,7 @@ export async function listRuns(templateId?: string, accessToken?: string): Promi
   );
 }
 
-export async function getConnectorHealth(): Promise<{
+export async function getConnectorHealth(accessToken?: string): Promise<{
   connectors: ConnectorHealthRecord[];
   summary: ConnectorHealthSummary;
 }> {
@@ -891,7 +892,9 @@ export async function getConnectorHealth(): Promise<{
     };
   }
 
-  const res = await fetch(`${BASE}/connectors/health`);
+  const res = await fetch(`${BASE}/connectors/health`, {
+    headers: buildAuthHeaders(accessToken),
+  });
   if (!res.ok) throw new Error(`Failed to fetch connector health: ${res.status}`);
   const payload = (await res.json()) as {
     connectors: ConnectorHealthRecord[];

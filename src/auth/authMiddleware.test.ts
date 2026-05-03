@@ -120,6 +120,27 @@ describe("requireAuth", () => {
     expect(res.status).not.toHaveBeenCalled();
   });
 
+  it("accepts allowlisted QA bypass users for /api/integrations routes when bearer auth is missing", () => {
+    process.env.QA_AUTH_BYPASS_ENABLED = "true";
+    process.env.QA_AUTH_BYPASS_USER_IDS = "qa-user";
+
+    const requireAuth = loadRequireAuth();
+    const req = {
+      headers: { "x-user-id": "qa-user" },
+      originalUrl: "/api/integrations/apollo/connections",
+      path: "/api/integrations/apollo/connections",
+      method: "GET",
+    } as unknown as AuthenticatedRequest;
+    const res = createResponse();
+    const next = jest.fn();
+
+    requireAuth(req, res as never, next);
+
+    expect(next).toHaveBeenCalledTimes(1);
+    expect(req.auth?.sub).toBe("qa-user");
+    expect(res.status).not.toHaveBeenCalled();
+  });
+
   it("accepts X-User-Id for GET /api/runs when Authorization is missing", () => {
     const requireAuth = loadRequireAuth();
     const req = {

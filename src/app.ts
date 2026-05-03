@@ -89,6 +89,7 @@ import googleWorkspaceWebhookRoutes from "./connectors/google-workspace/webhookR
 import notificationRoutes from "./notifications/routes";
 import { getPostgresPool, isPostgresPersistenceEnabled } from "./db/postgres";
 import { createWorkspaceResolver } from "./middleware/workspaceResolver";
+import userProfileRoutes from "./user/profileRoutes";
 import {
   createPortableWorkflowBundle,
   getPortableWorkflowSchemaDescriptor,
@@ -362,6 +363,7 @@ app.use("/api/tickets", requireAuthOrQaBypass, workspaceResolver, ticketRoutes);
 app.use("/api/ticket-sync", requireAuth, ticketSyncRoutes);
 app.use("/api/notifications", requireAuth, notificationRoutes);
 app.use("/api/approval-policies", requireAuth, approvalPolicyRoutes);
+app.use("/api/user", requireAuth, userProfileRoutes);
 
 // ---------------------------------------------------------------------------
 // Auth API — identity endpoint for authenticated callers

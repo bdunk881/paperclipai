@@ -410,7 +410,7 @@ app.get("/api/templates", (req, res) => {
 });
 
 /** Create or update a user-managed template */
-app.post("/api/templates", async (req, res) => {
+app.post("/api/templates", requireAuth, async (req, res) => {
   const payload = req.body as Partial<WorkflowTemplate> | null;
   if (!payload || typeof payload !== "object") {
     res.status(400).json({ error: "Template payload is required" });

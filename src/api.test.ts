@@ -324,6 +324,18 @@ describe("GET /api/templates/:id", () => {
 });
 
 describe("POST /api/templates", () => {
+  it("requires authentication", async () => {
+    const res = await request(app).post("/api/templates").send({
+      id: "tpl-custom-qa",
+      name: "Custom QA Workflow",
+      steps: [],
+      configFields: [],
+    });
+
+    expect(res.status).toBe(401);
+    expect(res.body.error).toMatch(/authorization/i);
+  });
+
   it("creates a custom template and exposes it via the list/detail APIs", async () => {
     const payload = {
       id: "tpl-custom-qa",
@@ -347,7 +359,7 @@ describe("POST /api/templates", () => {
       expectedOutput: { response: "Hi" },
     };
 
-    const createRes = await request(app).post("/api/templates").send(payload);
+    const createRes = await request(app).post("/api/templates").set(asAuth()).send(payload);
     expect(createRes.status).toBe(201);
     expect(createRes.body.id).toBe("tpl-custom-qa");
     expect(createRes.body.name).toBe("Custom QA Workflow");

@@ -5,6 +5,7 @@
  * in-memory map for tests and local development without a database.
  */
 
+import { PoolClient } from "pg";
 import { WorkflowRun } from "../types/workflow";
 import { parseJsonValue, serializeJson } from "../db/json";
 import { getPostgresPool, isPostgresPersistenceEnabled } from "../db/postgres";
@@ -71,34 +72,59 @@ async function loadStepResults(runId: string) {
 
 async function writeStepResults(runId: string, stepResults: WorkflowRun["stepResults"]): Promise<void> {
   const pool = getPostgresPool();
-  await pool.query("DELETE FROM workflow_step_results WHERE run_id = $1", [runId]);
+  const client = await pool.connect();
 
-  if (stepResults.length === 0) {
-    return;
+  try {
+    await client.query("BEGIN");
+    await client.query("SELECT id FROM workflow_runs WHERE id = $1 FOR UPDATE", [runId]);
+    await client.query("DELETE FROM workflow_step_results WHERE run_id = $1", [runId]);
+
+    for (const [index, result] of stepResults.entries()) {
+      await client.query(
+        `
+          INSERT INTO workflow_step_results (
+            run_id, step_id, step_name, status, output_json, duration_ms, error,
+            agent_slot_results_json, cost_log_json, ordinal
+          )
+          VALUES ($1, $2, $3, $4, $5::jsonb, $6, $7, $8::jsonb, $9::jsonb, $10)
+          ON CONFLICT (run_id, step_id, ordinal) DO UPDATE
+          SET step_name = EXCLUDED.step_name,
+              status = EXCLUDED.status,
+              output_json = EXCLUDED.output_json,
+              duration_ms = EXCLUDED.duration_ms,
+              error = EXCLUDED.error,
+              agent_slot_results_json = EXCLUDED.agent_slot_results_json,
+              cost_log_json = EXCLUDED.cost_log_json
+        `,
+        [
+          runId,
+          result.stepId,
+          result.stepName,
+          result.status,
+          serializeJson(result.output),
+          result.durationMs,
+          result.error ?? null,
+          serializeJson(result.agentSlotResults),
+          serializeJson(result.costLog),
+          index,
+        ]
+      );
+    }
+
+    await client.query("COMMIT");
+  } catch (error) {
+    await rollbackQuietly(client);
+    throw error;
+  } finally {
+    client.release();
   }
+}
 
-  for (const [index, result] of stepResults.entries()) {
-    await pool.query(
-      `
-        INSERT INTO workflow_step_results (
-          run_id, step_id, step_name, status, output_json, duration_ms, error,
-          agent_slot_results_json, cost_log_json, ordinal
-        )
-        VALUES ($1, $2, $3, $4, $5::jsonb, $6, $7, $8::jsonb, $9::jsonb, $10)
-      `,
-      [
-        runId,
-        result.stepId,
-        result.stepName,
-        result.status,
-        serializeJson(result.output),
-        result.durationMs,
-        result.error ?? null,
-        serializeJson(result.agentSlotResults),
-        serializeJson(result.costLog),
-        index,
-      ]
-    );
+async function rollbackQuietly(client: PoolClient): Promise<void> {
+  try {
+    await client.query("ROLLBACK");
+  } catch {
+    // Preserve the original persistence error if rollback also fails.
   }
 }
 

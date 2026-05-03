@@ -135,6 +135,9 @@ const corsOptions: cors.CorsOptions = {
     }
     callback(null, allowedOrigins.has(origin));
   },
+  // Allow the browser to read Sentry distributed-trace headers so frontend
+  // replays can be correlated with backend traces
+  exposedHeaders: ["sentry-trace", "baggage"],
 };
 
 app.use(helmet());

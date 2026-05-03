@@ -60,6 +60,16 @@ test("'Inspect spend' shortcut navigates to the budget dashboard", async ({ page
   await expect(page).toHaveURL(/\/workspace\/budget-dashboard/);
 });
 
+test("sidebar nav link 'Staffing Plan' navigates to /workspace/staffing-plan", async ({ page }) => {
+  await page.getByRole("link", { name: /^staffing plan$/i }).click();
+  await expect(page).toHaveURL(/\/workspace\/staffing-plan/);
+});
+
+test("sidebar nav link 'Budget Dashboard' navigates to /workspace/budget-dashboard", async ({ page }) => {
+  await page.getByRole("link", { name: /^budget dashboard$/i }).click();
+  await expect(page).toHaveURL(/\/workspace\/budget-dashboard/);
+});
+
 test("'Full history' link navigates to /history", async ({ page }) => {
   await page.getByRole("link", { name: /full history/i }).click();
   await expect(page).toHaveURL(/\/history/);

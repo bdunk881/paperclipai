@@ -1,6 +1,7 @@
 import type { WorkflowTemplate, WorkflowRun, WorkflowStep } from "../types/workflow";
 import { getApiBasePath } from "./baseUrl";
 import { readStoredAuthUser } from "../auth/authStorage";
+import { trackedFetch } from "./trackedFetch";
 import {
   createMockTemplate,
   getMockRun,
@@ -244,7 +245,7 @@ export interface ObservabilityThroughputSnapshot {
 export async function listLLMConfigs(accessToken: string): Promise<LLMConfig[]> {
   return withMockApi(
     async () => {
-      const res = await fetch(`${BASE}/llm-configs`, {
+      const res = await trackedFetch(`${BASE}/llm-configs`, {
         headers: buildAuthHeaders(accessToken),
       });
       if (!res.ok) throw new Error(`Failed to fetch LLM configs: ${res.status}`);
@@ -260,7 +261,7 @@ export async function createLLMConfig(
   input: CreateLLMConfigInput,
   accessToken?: string
 ): Promise<LLMConfig> {
-  const res = await fetch(`${BASE}/llm-configs`, {
+  const res = await trackedFetch(`${BASE}/llm-configs`, {
     method: "POST",
     headers: buildJsonHeaders(accessToken),
     body: JSON.stringify(input),
@@ -274,7 +275,7 @@ export async function createLLMConfig(
 
 /** PATCH /api/llm-configs/:id/default */
 export async function setDefaultLLMConfig(id: string, accessToken?: string): Promise<LLMConfig> {
-  const res = await fetch(`${BASE}/llm-configs/${encodeURIComponent(id)}/default`, {
+  const res = await trackedFetch(`${BASE}/llm-configs/${encodeURIComponent(id)}/default`, {
     method: "PATCH",
     headers: buildAuthHeaders(accessToken),
   });
@@ -284,7 +285,7 @@ export async function setDefaultLLMConfig(id: string, accessToken?: string): Pro
 
 /** DELETE /api/llm-configs/:id */
 export async function deleteLLMConfig(id: string, accessToken?: string): Promise<void> {
-  const res = await fetch(`${BASE}/llm-configs/${encodeURIComponent(id)}`, {
+  const res = await trackedFetch(`${BASE}/llm-configs/${encodeURIComponent(id)}`, {
     method: "DELETE",
     headers: buildAuthHeaders(accessToken),
   });
@@ -475,7 +476,7 @@ export async function listObservabilityEvents(
     search.set("limit", String(input.limit));
   }
 
-  const response = await fetch(
+  const response = await trackedFetch(
     `${BASE}/observability/events${search.toString() ? `?${search.toString()}` : ""}`,
     {
       headers: buildAuthHeaders(accessToken),
@@ -491,7 +492,7 @@ export async function getObservabilityThroughput(
   windowHours = 24,
   accessToken?: string
 ): Promise<ObservabilityThroughputSnapshot> {
-  const response = await fetch(`${BASE}/observability/throughput?windowHours=${windowHours}`, {
+  const response = await trackedFetch(`${BASE}/observability/throughput?windowHours=${windowHours}`, {
     headers: buildAuthHeaders(accessToken),
   });
   return parseJsonOrError<ObservabilityThroughputSnapshot>(
@@ -823,7 +824,7 @@ export async function listTemplates(category?: string): Promise<TemplateSummary[
   return withMockApi(
     async () => {
       const url = category ? `${BASE}/templates?category=${encodeURIComponent(category)}` : `${BASE}/templates`;
-      const res = await fetch(url);
+      const res = await trackedFetch(url);
       if (!res.ok) throw new Error(`Failed to fetch templates: ${res.status}`);
       const data = await res.json();
       return data.templates as TemplateSummary[];
@@ -836,7 +837,7 @@ export async function listTemplates(category?: string): Promise<TemplateSummary[
 export async function createTemplate(input: CreateTemplateInput): Promise<WorkflowTemplate> {
   return withMockApi(
     async () => {
-      const res = await fetch(`${BASE}/templates`, {
+      const res = await trackedFetch(`${BASE}/templates`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(input),
@@ -855,7 +856,7 @@ export async function createTemplate(input: CreateTemplateInput): Promise<Workfl
 export async function getTemplate(id: string): Promise<WorkflowTemplate> {
   return withMockApi(
     async () => {
-      const res = await fetch(`${BASE}/templates/${encodeURIComponent(id)}`);
+      const res = await trackedFetch(`${BASE}/templates/${encodeURIComponent(id)}`);
       if (!res.ok) throw new Error(`Template not found: ${id}`);
       return res.json() as Promise<WorkflowTemplate>;
     },
@@ -870,7 +871,7 @@ export async function listRuns(templateId?: string, accessToken?: string): Promi
       const url = templateId
         ? `${BASE}/runs?templateId=${encodeURIComponent(templateId)}`
         : `${BASE}/runs`;
-      const res = await fetch(url, {
+      const res = await trackedFetch(url, {
         headers: buildAuthHeaders(accessToken),
       });
       if (!res.ok) throw new Error(await readApiError(res, `Failed to fetch runs: ${res.status}`));
@@ -881,7 +882,7 @@ export async function listRuns(templateId?: string, accessToken?: string): Promi
   );
 }
 
-export async function getConnectorHealth(): Promise<{
+export async function getConnectorHealth(accessToken?: string): Promise<{
   connectors: ConnectorHealthRecord[];
   summary: ConnectorHealthSummary;
 }> {
@@ -892,7 +893,9 @@ export async function getConnectorHealth(): Promise<{
     };
   }
 
-  const res = await fetch(`${BASE}/connectors/health`);
+  const res = await trackedFetch(`${BASE}/connectors/health`, {
+    headers: buildAuthHeaders(accessToken),
+  });
   if (!res.ok) throw new Error(`Failed to fetch connector health: ${res.status}`);
   const payload = (await res.json()) as {
     connectors: ConnectorHealthRecord[];
@@ -910,7 +913,7 @@ export async function getConnectorHealth(): Promise<{
 export async function getRun(id: string, accessToken?: string): Promise<WorkflowRun> {
   return withMockApi(
     async () => {
-      const res = await fetch(`${BASE}/runs/${encodeURIComponent(id)}`, {
+      const res = await trackedFetch(`${BASE}/runs/${encodeURIComponent(id)}`, {
         headers: buildAuthHeaders(accessToken),
       });
       if (!res.ok) throw new Error(`Run not found: ${id}`);
@@ -924,7 +927,7 @@ export async function getRun(id: string, accessToken?: string): Promise<Workflow
 export async function listControlPlaneTeams(accessToken?: string): Promise<ControlPlaneTeam[]> {
   return withMockApi(
     async () => {
-      const res = await fetch(`${BASE}/control-plane/teams`, {
+      const res = await trackedFetch(`${BASE}/control-plane/teams`, {
         headers: buildAuthHeaders(accessToken),
       });
       if (!res.ok) throw new Error(await readApiError(res, `Failed to fetch deployed teams: ${res.status}`));
@@ -942,7 +945,7 @@ export async function getControlPlaneTeam(
 ): Promise<ControlPlaneTeamDetail> {
   return withMockApi(
     async () => {
-      const res = await fetch(`${BASE}/control-plane/teams/${encodeURIComponent(teamId)}`, {
+      const res = await trackedFetch(`${BASE}/control-plane/teams/${encodeURIComponent(teamId)}`, {
         headers: buildAuthHeaders(accessToken),
       });
       if (!res.ok) throw new Error(await readApiError(res, `Failed to fetch deployed team: ${res.status}`));
@@ -960,7 +963,7 @@ export async function deployWorkflowAsTeam(
   accessToken?: string,
   runId = globalThis.crypto?.randomUUID?.() ?? `control-plane-${Date.now()}`
 ): Promise<ControlPlaneDeployment> {
-  const res = await fetch(`${BASE}/control-plane/deployments/workflow`, {
+  const res = await trackedFetch(`${BASE}/control-plane/deployments/workflow`, {
     method: "POST",
     headers: buildJsonHeaders(accessToken, {
       "X-Paperclip-Run-Id": runId,
@@ -978,7 +981,7 @@ export async function generateTeamAssemblyPlan(
   input: TeamAssemblyRequestInput,
   accessToken?: string
 ): Promise<TeamAssemblyResult> {
-  const res = await fetch(`${BASE}/goals/team-assembly`, {
+  const res = await trackedFetch(`${BASE}/goals/team-assembly`, {
     method: "POST",
     headers: buildJsonHeaders(accessToken),
     body: JSON.stringify(input),
@@ -993,7 +996,7 @@ export async function generateTeamAssemblyPlan(
 export async function listCompanyRoleTemplates(
   accessToken?: string
 ): Promise<CompanyRoleTemplateCatalogResponse> {
-  const res = await fetch(`${BASE}/companies/role-templates`, {
+  const res = await trackedFetch(`${BASE}/companies/role-templates`, {
     headers: buildAuthHeaders(accessToken),
   });
   return parseJsonOrError<CompanyRoleTemplateCatalogResponse>(
@@ -1007,7 +1010,7 @@ export async function provisionCompanyWorkspace(
   accessToken?: string,
   runId = globalThis.crypto?.randomUUID?.() ?? `company-provision-${Date.now()}`
 ): Promise<CompanyProvisioningResult> {
-  const res = await fetch(`${BASE}/companies`, {
+  const res = await trackedFetch(`${BASE}/companies`, {
     method: "POST",
     headers: buildJsonHeaders(accessToken, {
       "X-Paperclip-Run-Id": runId,
@@ -1030,7 +1033,7 @@ export async function startRun(
 ): Promise<WorkflowRun> {
   return withMockApi(
     async () => {
-      const res = await fetch(`${BASE}/runs`, {
+      const res = await trackedFetch(`${BASE}/runs`, {
         method: "POST",
         headers: buildJsonHeaders(accessToken),
         body: JSON.stringify({ templateId, input, config }),
@@ -1051,7 +1054,7 @@ export async function generateWorkflow(
   llmConfigId?: string,
   accessToken?: string
 ): Promise<WorkflowStep[]> {
-  const res = await fetch(`${BASE}/workflows/generate`, {
+  const res = await trackedFetch(`${BASE}/workflows/generate`, {
     method: "POST",
     headers: buildJsonHeaders(accessToken),
     body: JSON.stringify({ description, llmConfigId }),
@@ -1086,7 +1089,7 @@ export async function startRunWithFile(
 
   return withMockApi(
     async () => {
-      const res = await fetch(`${BASE}/runs/file`, { method: "POST", headers, body: form });
+      const res = await trackedFetch(`${BASE}/runs/file`, { method: "POST", headers, body: form });
       if (!res.ok) {
         const err = await res.json().catch(() => null);
         throw new Error(err?.error ?? `Failed to start file run: ${res.status}`);
@@ -1103,7 +1106,7 @@ export async function debugStep(
   error: string,
   output: Record<string, unknown>
 ): Promise<{ explanation: string; suggestion: string }> {
-  const res = await fetch(`${BASE}/debug/step`, {
+  const res = await trackedFetch(`${BASE}/debug/step`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ stepId, error, output }),
@@ -1280,7 +1283,7 @@ const PROPOSAL_JOB_FALLBACK: ProposalJobStatusResponse = {
 };
 
 export async function listProposalContext(accessToken?: string): Promise<ProposalContextResponse> {
-  const res = await fetch(`${BASE}/proposals/context`, {
+  const res = await trackedFetch(`${BASE}/proposals/context`, {
     headers: buildAuthHeaders(accessToken),
   });
   if (res.status === 404) {
@@ -1300,7 +1303,7 @@ export async function createProposalDraft(
   input: CreateProposalRequest,
   accessToken: string
 ): Promise<CreateProposalResponse> {
-  const res = await fetch(`${BASE}/proposals`, {
+  const res = await trackedFetch(`${BASE}/proposals`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -1322,7 +1325,7 @@ export async function getProposalJobStatus(
   jobId: string,
   accessToken: string
 ): Promise<ProposalJobStatusResponse> {
-  const res = await fetch(`${BASE}/proposals/${encodeURIComponent(jobId)}`, {
+  const res = await trackedFetch(`${BASE}/proposals/${encodeURIComponent(jobId)}`, {
     headers: buildAuthHeaders(accessToken),
   });
   if (res.status === 404) {
@@ -1391,7 +1394,7 @@ export async function listMemoryEntries(
   const url = workflowId
     ? `${BASE}/memory?workflowId=${encodeURIComponent(workflowId)}`
     : `${BASE}/memory`;
-  const res = await fetch(url, { headers: getMemoryHeaders(accessToken, userId) });
+  const res = await trackedFetch(url, { headers: getMemoryHeaders(accessToken, userId) });
   if (!res.ok) throw new Error(`Failed to fetch memory entries: ${res.status}`);
   const data = await res.json();
   return data.entries as MemoryEntry[];
@@ -1406,7 +1409,7 @@ export async function searchMemory(
 ): Promise<MemorySearchResult[]> {
   const params = new URLSearchParams({ q: query });
   if (agentId) params.set("agentId", agentId);
-  const res = await fetch(`${BASE}/memory/search?${params.toString()}`, {
+  const res = await trackedFetch(`${BASE}/memory/search?${params.toString()}`, {
     headers: getMemoryHeaders(accessToken, userId),
   });
   if (!res.ok) throw new Error(`Memory search failed: ${res.status}`);
@@ -1420,7 +1423,7 @@ export async function writeMemoryEntry(
   accessToken: string,
   userId?: string
 ): Promise<MemoryEntry> {
-  const res = await fetch(`${BASE}/memory`, {
+  const res = await trackedFetch(`${BASE}/memory`, {
     method: "POST",
     headers: getMemoryHeaders(accessToken, userId),
     body: JSON.stringify(input),
@@ -1434,7 +1437,7 @@ export async function writeMemoryEntry(
 
 /** DELETE /api/memory/:id — delete a single entry */
 export async function deleteMemoryEntry(id: string, accessToken: string, userId?: string): Promise<void> {
-  const res = await fetch(`${BASE}/memory/${encodeURIComponent(id)}`, {
+  const res = await trackedFetch(`${BASE}/memory/${encodeURIComponent(id)}`, {
     method: "DELETE",
     headers: getMemoryHeaders(accessToken, userId),
   });
@@ -1443,7 +1446,7 @@ export async function deleteMemoryEntry(id: string, accessToken: string, userId?
 
 /** GET /api/memory/stats — usage stats */
 export async function getMemoryStats(accessToken: string, userId?: string): Promise<MemoryStats> {
-  const res = await fetch(`${BASE}/memory/stats`, { headers: getMemoryHeaders(accessToken, userId) });
+  const res = await trackedFetch(`${BASE}/memory/stats`, { headers: getMemoryHeaders(accessToken, userId) });
   if (!res.ok) throw new Error(`Failed to fetch memory stats: ${res.status}`);
   return res.json() as Promise<MemoryStats>;
 }
@@ -1477,7 +1480,7 @@ export async function listApprovals(
       const url = status
         ? `${BASE}/approvals?status=${encodeURIComponent(status)}`
         : `${BASE}/approvals`;
-      const res = await fetch(url, { headers: buildAuthHeaders(accessToken) });
+      const res = await trackedFetch(url, { headers: buildAuthHeaders(accessToken) });
       if (!res.ok) throw new Error(`Failed to fetch approvals: ${res.status}`);
       const data = await res.json();
       return data.approvals as ApprovalRequest[];
@@ -1493,7 +1496,7 @@ export async function resolveApproval(
   accessToken: string,
   comment?: string
 ): Promise<void> {
-  const res = await fetch(`${BASE}/approvals/${encodeURIComponent(id)}/resolve`, {
+  const res = await trackedFetch(`${BASE}/approvals/${encodeURIComponent(id)}/resolve`, {
     method: "POST",
     headers: { "Content-Type": "application/json", ...buildAuthHeaders(accessToken) },
     body: JSON.stringify({ decision, comment }),
@@ -1707,7 +1710,7 @@ export async function getHitlCompanyState(
   companyId: string,
   accessToken?: string
 ): Promise<HitlCompanyState> {
-  const res = await fetch(`${BASE}/hitl/companies/${encodeURIComponent(companyId)}/state`, {
+  const res = await trackedFetch(`${BASE}/hitl/companies/${encodeURIComponent(companyId)}/state`, {
     headers: buildAuthHeaders(accessToken),
   });
   if (!res.ok) {
@@ -1721,7 +1724,7 @@ export async function listHitlNotifications(
   companyId: string,
   accessToken?: string
 ): Promise<HitlNotification[]> {
-  const res = await fetch(`${BASE}/hitl/companies/${encodeURIComponent(companyId)}/notifications`, {
+  const res = await trackedFetch(`${BASE}/hitl/companies/${encodeURIComponent(companyId)}/notifications`, {
     headers: buildAuthHeaders(accessToken),
   });
   if (!res.ok) {
@@ -1738,7 +1741,7 @@ export async function updateHitlCheckpointSchedule(
   accessToken?: string,
   runId = createPaperclipRunId()
 ): Promise<HitlCheckpointSchedule> {
-  const res = await fetch(`${BASE}/hitl/companies/${encodeURIComponent(companyId)}/checkpoint-schedule`, {
+  const res = await trackedFetch(`${BASE}/hitl/companies/${encodeURIComponent(companyId)}/checkpoint-schedule`, {
     method: "PUT",
     headers: buildJsonHeaders(accessToken, {
       "X-Paperclip-Run-Id": runId,
@@ -1759,7 +1762,7 @@ export async function createHitlCheckpoint(
   accessToken?: string,
   runId = createPaperclipRunId()
 ): Promise<HitlCheckpoint> {
-  const res = await fetch(`${BASE}/hitl/companies/${encodeURIComponent(companyId)}/checkpoints`, {
+  const res = await trackedFetch(`${BASE}/hitl/companies/${encodeURIComponent(companyId)}/checkpoints`, {
     method: "POST",
     headers: buildJsonHeaders(accessToken, {
       "X-Paperclip-Run-Id": runId,
@@ -1780,7 +1783,7 @@ export async function createHitlArtifactComment(
   accessToken?: string,
   runId = createPaperclipRunId()
 ): Promise<HitlArtifactComment> {
-  const res = await fetch(`${BASE}/hitl/companies/${encodeURIComponent(companyId)}/artifact-comments`, {
+  const res = await trackedFetch(`${BASE}/hitl/companies/${encodeURIComponent(companyId)}/artifact-comments`, {
     method: "POST",
     headers: buildJsonHeaders(accessToken, {
       "X-Paperclip-Run-Id": runId,
@@ -1801,7 +1804,7 @@ export async function createHitlAskCeoRequest(
   accessToken?: string,
   runId = createPaperclipRunId()
 ): Promise<HitlAskCeoRequest> {
-  const res = await fetch(`${BASE}/hitl/companies/${encodeURIComponent(companyId)}/ask-ceo/requests`, {
+  const res = await trackedFetch(`${BASE}/hitl/companies/${encodeURIComponent(companyId)}/ask-ceo/requests`, {
     method: "POST",
     headers: buildJsonHeaders(accessToken, {
       "X-Paperclip-Run-Id": runId,

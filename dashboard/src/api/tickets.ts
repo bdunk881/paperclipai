@@ -355,6 +355,12 @@ function getMockAggregate(ticketId: string): TicketAggregate {
   return cloneAggregate(aggregate);
 }
 
+function replaceMockAggregate(nextAggregate: TicketAggregate): void {
+  mockAggregates = mockAggregates.map((aggregate) =>
+    aggregate.ticket.id === nextAggregate.ticket.id ? cloneAggregate(nextAggregate) : aggregate
+  );
+}
+
 function appendMockAggregate(aggregate: TicketAggregate): void {
   mockAggregates = [cloneAggregate(aggregate), ...mockAggregates];
 }
@@ -753,6 +759,25 @@ export async function addTicketUpdate(
   input: CreateTicketUpdateInput,
   accessToken?: string
 ): Promise<{ update: TicketUpdate; source: "api" | "mock" }> {
+  if (USE_MOCK_API) {
+    const aggregate = getMockAggregate(ticketId);
+    const actorId = readStoredAuthUser()?.id ?? "current-user";
+    const update: TicketUpdate = {
+      id: createId("update"),
+      ticketId,
+      actor: { type: input.actorType ?? "user", id: actorId },
+      type: input.type ?? "comment",
+      content: input.content.trim(),
+      metadata: { ...(input.metadata ?? {}) },
+      createdAt: nowIso(),
+    };
+
+    aggregate.updates.push(update);
+    aggregate.ticket.updatedAt = update.createdAt;
+    replaceMockAggregate(aggregate);
+    return { update, source: "mock" as const };
+  }
+
   const res = await fetch(`${BASE}/tickets/${encodeURIComponent(ticketId)}/updates`, {
     method: "POST",
     headers: buildMutationHeaders(accessToken),
@@ -773,6 +798,32 @@ export async function transitionTicket(
   input: TransitionTicketInput,
   accessToken?: string
 ): Promise<TicketAggregate & { source: "api" | "mock" }> {
+  if (USE_MOCK_API) {
+    const aggregate = getMockAggregate(ticketId);
+    const actorId = readStoredAuthUser()?.id ?? "current-user";
+    const timestamp = nowIso();
+    const previousStatus = aggregate.ticket.status;
+    aggregate.ticket.status = input.status;
+    aggregate.ticket.updatedAt = timestamp;
+    aggregate.ticket.resolvedAt = input.status === "resolved" ? timestamp : undefined;
+    aggregate.updates.push({
+      id: createId("update"),
+      ticketId,
+      actor: { type: input.actorType ?? "user", id: actorId },
+      type: "status_change",
+      content:
+        input.reason?.trim() ||
+        `Ticket status changed from ${previousStatus} to ${input.status}.`,
+      metadata: {
+        fromStatus: previousStatus,
+        toStatus: input.status,
+      },
+      createdAt: timestamp,
+    });
+    replaceMockAggregate(aggregate);
+    return { ...aggregate, source: "mock" as const };
+  }
+
   const res = await fetch(`${BASE}/tickets/${encodeURIComponent(ticketId)}/transitions`, {
     method: "POST",
     headers: buildMutationHeaders(accessToken),

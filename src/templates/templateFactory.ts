@@ -14,6 +14,8 @@ type TemplateBlueprint = {
   action: string;
   scoreLabel?: string;
   scoreKey?: string;
+  triggerIntegrationSlug?: string;
+  allowGenericWebhook?: boolean;
 };
 
 export function createPipelineTemplate(blueprint: TemplateBlueprint): WorkflowTemplate {
@@ -118,11 +120,17 @@ export function createPipelineTemplate(blueprint: TemplateBlueprint): WorkflowTe
         outputKeys: ["event"],
       },
     ],
+    triggerPolicy: {
+      mode: "external_event",
+      integrationSlug: blueprint.triggerIntegrationSlug,
+      allowGenericWebhook: blueprint.allowGenericWebhook ?? false,
+    },
     sampleInput: {
       [blueprint.inputKey]: `${blueprint.inputLabel} payload for ${blueprint.name}`,
-      accountId: "acct_demo_001",
-      source: "api",
+      accountId: "acct_sample_001",
+      source: "demo",
       submittedAt: "2026-04-19T16:00:00.000Z",
+      __autoflowAllowMockTrigger: true,
     },
     expectedOutput: {
       recordId: `${blueprint.id}-record-001`,

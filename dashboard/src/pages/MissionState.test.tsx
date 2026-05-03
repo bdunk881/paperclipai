@@ -29,12 +29,34 @@ describe("MissionStateView", () => {
   it("renders the canonical Mission State breadcrumb and title", () => {
     render(
       <MemoryRouter>
-        <MissionStateView />
+        <MissionStateView
+          data={{
+            title: "Revenue Automation",
+            objective: "Launch an AI operations product",
+            overallStatus: "At Risk",
+            phase: "Execution",
+            phaseAvailable: true,
+            ownerTeam: "Revenue Automation",
+            lastUpdated: "April 30, 2026 at 3:16 AM ET",
+            confidence: "Watch required",
+            atRiskIndicator: "Billing import blocker is still open.",
+            statusSummary: "The current mission-state contract reports active delivery risk.",
+            staffingReadiness: "2/3 staffed",
+            dependencyCountLabel: "Coverage pending",
+            blockerCount: 1,
+            activeWorkstreamsLabel: "Live",
+            nextMilestone: "Coverage pending",
+            nextMilestoneAvailable: false,
+            topBlockers: ["Resolve billing import blocker"],
+            recommendedActions: [],
+            timeline: [],
+          }}
+        />
       </MemoryRouter>
     );
 
     expect(screen.getByText("Mission State")).toBeInTheDocument();
-    expect(screen.getByText("Launch AutoFlow Beta")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { level: 1, name: "Revenue Automation" })).toBeInTheDocument();
   });
 
   it("renders loading states for cards when requested", () => {

@@ -547,7 +547,12 @@ img {
   padding: 0 0 2rem;
 }
 
+.section--features {
+  padding-bottom: 3rem;
+}
+
 .metrics-band__grid,
+.feature-grid,
 .marketplace-grid,
 .testimonial-grid {
   display: grid;
@@ -592,6 +597,50 @@ img {
 .section-heading p {
   margin-top: 1rem;
   font-size: 1.02rem;
+}
+
+.feature-grid {
+  margin-top: 2rem;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 2rem;
+}
+
+.feature-card {
+  position: relative;
+  min-height: 14.5rem;
+  padding: 2rem;
+  border-radius: 1.2rem;
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  border-top: 2px solid var(--teal-electric);
+  background: linear-gradient(180deg, rgba(15, 23, 42, 0.92), rgba(2, 6, 23, 0.9));
+  backdrop-filter: blur(12px);
+  box-shadow: 0 26px 80px rgba(2, 6, 23, 0.45);
+  animation: rise-in 700ms var(--feature-delay, 0ms) ease-out both;
+  transition:
+    transform 220ms ease-in-out,
+    border-color 220ms ease-in-out,
+    box-shadow 220ms ease-in-out;
+}
+
+.feature-card:hover {
+  transform: translateY(-4px);
+  border-color: rgba(99, 102, 241, 0.4);
+  box-shadow:
+    0 20px 40px rgba(2, 6, 23, 0.4),
+    0 0 20px rgba(99, 102, 241, 0.1);
+}
+
+.feature-card h3 {
+  font-size: 1.5rem;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+}
+
+.feature-card p {
+  margin-top: 1rem;
+  color: var(--slate-copy);
+  font-size: 1.02rem;
+  line-height: 1.7;
 }
 
 .marketplace-grid {

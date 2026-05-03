@@ -121,4 +121,25 @@ describe("dashboard/api/billing/checkout", () => {
     expect(res.statusCode).toBe(200);
     expect(res.payload).toEqual({ url: "https://checkout.stripe.test/sess_456" });
   });
+
+  it("falls back to the staging backend for the staging dashboard host", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({ error: "Stripe pricing not configured for this tier" }), {
+        status: 503,
+        headers: { "content-type": "application/json" },
+      }),
+    );
+
+    const req = makeReq({ headers: { host: "staging.app.helloautoflow.com" } });
+    const res = makeRes();
+
+    await handler(req as never, res as never);
+
+    expect(fetch).toHaveBeenCalledWith(
+      "https://staging-api.helloautoflow.com/api/billing/checkout",
+      expect.any(Object),
+    );
+    expect(res.statusCode).toBe(503);
+    expect(res.payload).toEqual({ error: "Stripe pricing not configured for this tier" });
+  });
 });

@@ -135,6 +135,7 @@ GitHub larger runners with static IPs, or a dedicated VPN/NAT path.
 | `staging` | `AZURE_STAGING_KEY_VAULT_RESOURCE_GROUP` | Optional resource group override paired with `AZURE_STAGING_KEY_VAULT_NAME` |
 | `staging` | `AZURE_STAGING_KEY_VAULT_URI` | Optional explicit staging Key Vault URI; the deploy workflow writes this to `AZURE_KEY_VAULT_URI` on every staging deploy |
 | `staging` | `AZURE_BACKEND_ENV_STAGING_SOCIAL_AUTH_CLIENTID` | Optional non-secret staging Google OAuth client ID; the deploy workflow injects it if the multiline secret does not include `GOOGLE_CLIENT_ID` |
+| `staging` | `AZURE_STAGING_KEY_VAULT_URI` | Optional staging Key Vault URI override; defaults to `https://autoflow-staging-hub-kv.vault.azure.net/` when unset |
 | `production` | `AZURE_AKS_PRODUCTION_CLUSTER_NAME` | Production AKS cluster name |
 | `production` | `AZURE_AKS_PRODUCTION_RESOURCE_GROUP` | Resource group containing the production AKS cluster |
 | `production` | `AZURE_PRODUCTION_API_HOST` | Public production API hostname used for DNS and cutover tracking |
@@ -144,6 +145,7 @@ GitHub larger runners with static IPs, or a dedicated VPN/NAT path.
 
 | Environment | Secret | Description |
 |---|---|---|
+| `staging` | `AZURE_BACKEND_ENV_STAGING` | Optional newline-delimited general backend env file for the staging Container App; use it for shared runtime env such as `AZURE_KEY_VAULT_URI`, connector callback URLs, and other non-social-auth settings |
 | `staging` | `AZURE_BACKEND_ENV_STAGING_SOCIAL_AUTH` | Newline-delimited env file containing `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `APP_JWT_SECRET`, and `SOCIAL_AUTH_CALLBACK_BASE_URL` for the staging Container App |
 | `staging` | `AZURE_BACKEND_ENV_STAGING_RUNTIME` | Optional newline-delimited env file for direct staging runtime overrides such as `DATABASE_URL`, `REDIS_URL`, `CONNECTOR_CREDENTIAL_ENCRYPTION_KEY`, or other Key Vault-backed values during recovery |
 | `production` | `AZURE_BACKEND_ENV_PRODUCTION` | Newline-delimited env file materialized into the `autoflow-backend-secrets` Kubernetes secret |
@@ -163,7 +165,15 @@ GitHub larger runners with static IPs, or a dedicated VPN/NAT path.
    - `staging` — no approvals
    - `production` — add required reviewers for the production deployment gate
 4. Add the environment-scoped backend target variables for each environment.
-5. Add `AZURE_BACKEND_ENV_STAGING_SOCIAL_AUTH` to the `staging` environment with:
+5. Add `AZURE_BACKEND_ENV_STAGING` to the `staging` environment when the backend needs shared runtime settings beyond social auth. At minimum, connector OAuth flows that load secrets from Key Vault need:
+
+   ```env
+   AZURE_KEY_VAULT_URI=https://autoflow-staging-hub-kv.vault.azure.net/
+   ```
+
+   You may also place other staging-only backend env values here. The deploy workflow merges this file with the social-auth env file on every staging rollout.
+
+6. Add `AZURE_BACKEND_ENV_STAGING_SOCIAL_AUTH` to the `staging` environment with:
 
    ```env
    GOOGLE_CLIENT_SECRET=<google-oauth-client-secret>

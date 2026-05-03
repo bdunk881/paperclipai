@@ -7,14 +7,9 @@ import { sentryConnectorService } from "../integrations/sentry/service";
 import { slackConnectorService } from "../integrations/slack/service";
 import { stripeConnectorService } from "../integrations/stripe/service";
 import { teamsConnectorService } from "../integrations/teams/service";
+import { Tier1ConnectionHealth, Tier1HealthStatus } from "../integrations/shared/tier1Contract";
 
-export type ConnectorHealthState =
-  | "healthy"
-  | "degraded"
-  | "rate_limited"
-  | "auth_failed"
-  | "provider_error"
-  | "disabled";
+export type ConnectorHealthState = Tier1HealthStatus;
 
 export interface ConnectorHealthTransition {
   at: string;

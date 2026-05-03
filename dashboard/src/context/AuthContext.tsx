@@ -84,7 +84,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     } else {
       Sentry.setUser(null);
     }
-  }, [user?.id]);
+  }, [user]);
 
   const accessMode: AuthAccessMode = storedSession
     ? "authenticated"

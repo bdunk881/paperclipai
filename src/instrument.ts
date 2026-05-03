@@ -12,7 +12,7 @@ if (dsn) {
     enableLogs: true,
     integrations: [
       // HTTP/network tracing
-      Sentry.httpIntegration({ tracing: true }),
+      Sentry.httpIntegration(),
       Sentry.nativeNodeFetchIntegration({ breadcrumbs: true }),
       // Express route + error tracing
       Sentry.expressIntegration(),

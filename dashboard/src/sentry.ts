@@ -28,10 +28,10 @@ export function initSentry() {
         maskAllText: false,
         blockAllMedia: false,
       }),
-      // Forward console.log/info/warn/error as Sentry Logs
+      // Forward console.log/info/warn/error to Sentry Logs endpoint
+      // Note: do NOT add captureConsoleIntegration alongside this — both wrap
+      // console.* methods and the conflict silently breaks log forwarding
       Sentry.consoleLoggingIntegration({ levels: ["log", "info", "warn", "error"] }),
-      // Also capture console.warn/error as Sentry breadcrumbs + events
-      Sentry.captureConsoleIntegration({ levels: ["warn", "error"] }),
       // Attach extra data from Error objects (.data, .cause, etc.)
       Sentry.extraErrorDataIntegration({ depth: 5 }),
       // Capture failed HTTP requests (4xx/5xx) as Sentry errors

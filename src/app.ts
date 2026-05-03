@@ -293,6 +293,29 @@ app.use("/api/connectors/google-workspace", googleWorkspaceWebhookRoutes);
 app.use(express.json());
 app.use(passport.initialize());
 
+// Track HTTP request duration, counts, and errors as Sentry custom metrics.
+app.use((req, res, next) => {
+  const start = Date.now();
+  res.on("finish", () => {
+    const duration = Date.now() - start;
+    const endpoint = req.path
+      .replace(/\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi, "/:id")
+      .replace(/\/\d{4,}/g, "/:id");
+    const attributes = { method: req.method, endpoint };
+    Sentry.metrics.distribution("http.request_duration_ms", duration, {
+      unit: "millisecond",
+      attributes: { ...attributes, status: String(res.statusCode) },
+    });
+    Sentry.metrics.count("http.request", 1, { attributes });
+    if (res.statusCode >= 400) {
+      Sentry.metrics.count("http.error", 1, {
+        attributes: { ...attributes, status: String(res.statusCode) },
+      });
+    }
+  });
+  next();
+});
+
 // Propagate authenticated user identity into Sentry scope so all errors
 // and logs captured after auth are attributed to the correct user.
 app.use((req, _res, next) => {

@@ -39,6 +39,24 @@ function isStoredAuthUser(value: unknown): value is StoredAuthUser {
   );
 }
 
+function parseStoredAuthUser(value: unknown): StoredAuthUser | null {
+  if (!value || typeof value !== "object") return null;
+  const candidate = value as Record<string, unknown>;
+  if (typeof candidate.id !== "string" || candidate.id.trim() === "") {
+    return null;
+  }
+
+  const id = candidate.id.trim();
+  const email = typeof candidate.email === "string" ? candidate.email : "";
+  const name =
+    typeof candidate.name === "string" && candidate.name.trim() !== ""
+      ? candidate.name
+      : email || id;
+  const tenantId = typeof candidate.tenantId === "string" ? candidate.tenantId : undefined;
+
+  return { id, email, name, tenantId };
+}
+
 function dispatchAuthStorageEvent() {
   if (typeof window === "undefined") return;
   window.dispatchEvent(new Event(AUTH_STORAGE_EVENT));
@@ -78,7 +96,7 @@ export function readStoredAuthUser(): StoredAuthUser | null {
 
   try {
     const parsed = JSON.parse(raw);
-    return isStoredAuthUser(parsed) ? parsed : null;
+    return parseStoredAuthUser(parsed);
   } catch {
     return null;
   }

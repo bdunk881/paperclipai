@@ -124,6 +124,12 @@ export interface WorkflowStep {
   intervalMinutes?: number;
 }
 
+export interface TriggerPolicy {
+  mode: "external_event";
+  integrationSlug?: string;
+  allowGenericWebhook?: boolean;
+}
+
 /** A complete workflow definition */
 export interface WorkflowTemplate {
   id: string;
@@ -140,6 +146,8 @@ export interface WorkflowTemplate {
   sampleInput: Record<string, unknown>;
   /** Expected output shape for test assertions */
   expectedOutput: Record<string, unknown>;
+  /** Optional policy that constrains how trigger steps may be started */
+  triggerPolicy?: TriggerPolicy;
 }
 
 /** A runtime workflow instance (one execution of a template) */

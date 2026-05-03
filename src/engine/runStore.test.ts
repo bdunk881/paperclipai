@@ -156,10 +156,15 @@ describe("runStore.clear", () => {
 describe("runStore postgres persistence", () => {
   it("writes run rows and step results when persistence is enabled", async () => {
     const query = jest.fn().mockResolvedValue({ rows: [] });
+    const clientQuery = jest.fn().mockResolvedValue({ rows: [] });
+    const release = jest.fn();
     jest.spyOn(postgres, "isPostgresPersistenceEnabled").mockReturnValue(true);
     jest
       .spyOn(postgres, "getPostgresPool")
-      .mockReturnValue({ query } as unknown as ReturnType<typeof postgres.getPostgresPool>);
+      .mockReturnValue({
+        query,
+        connect: jest.fn().mockResolvedValue({ query: clientQuery, release }),
+      } as unknown as ReturnType<typeof postgres.getPostgresPool>);
 
     const created = await runStore.create(
       makeRun({
@@ -185,10 +190,14 @@ describe("runStore postgres persistence", () => {
     );
 
     expect(created.input).toEqual({ customerId: "cust-1" });
-    expect(query).toHaveBeenCalledTimes(3);
     expect(query.mock.calls[0]?.[0]).toContain("INSERT INTO workflow_runs");
-    expect(query.mock.calls[1]?.[0]).toContain("DELETE FROM workflow_step_results");
-    expect(query.mock.calls[2]?.[0]).toContain("INSERT INTO workflow_step_results");
+    expect(clientQuery.mock.calls[0]?.[0]).toBe("BEGIN");
+    expect(clientQuery.mock.calls[1]?.[0]).toContain("SELECT id FROM workflow_runs WHERE id = $1::uuid FOR UPDATE");
+    expect(clientQuery.mock.calls[2]?.[0]).toContain("DELETE FROM workflow_step_results WHERE run_id = $1::uuid");
+    expect(clientQuery.mock.calls[3]?.[0]).toContain("INSERT INTO workflow_step_results");
+    expect(clientQuery.mock.calls[3]?.[0]).toContain("ON CONFLICT (run_id, step_id, ordinal) DO UPDATE");
+    expect(clientQuery.mock.calls[4]?.[0]).toBe("COMMIT");
+    expect(release).toHaveBeenCalled();
   });
 
   it("loads persisted runs and step results", async () => {
@@ -219,6 +228,7 @@ describe("runStore postgres persistence", () => {
       .mockResolvedValueOnce({
         rows: [
         {
+          run_id: "run-pg",
           step_id: "step-1",
           step_name: "Approve",
           status: "success",
@@ -255,7 +265,7 @@ describe("runStore postgres persistence", () => {
       ],
     });
     expect(query.mock.calls[0]?.[0]).toContain("WHERE id = $1::uuid");
-    expect(query.mock.calls[1]?.[0]).toContain("WHERE run_id = $1::uuid");
+    expect(query.mock.calls[1]?.[0]).toContain("WHERE run_id = ANY($1::uuid[])");
   });
 
   it("lists persisted runs with template and user filters", async () => {
@@ -276,18 +286,80 @@ describe("runStore postgres persistence", () => {
             error: null,
             user_id: "user-1",
           },
+          {
+            id: "run-pg-2",
+            template_id: "tpl-support-bot",
+            template_name: "Customer Support Bot",
+            status: "failed",
+            started_at: "2026-04-21T00:00:00.000Z",
+            completed_at: "2026-04-21T00:03:00.000Z",
+            input_json: JSON.stringify({ customerId: "cust-2" }),
+            output_json: JSON.stringify({ ok: false }),
+            runtime_state_json: null,
+            error: "Step failed",
+            user_id: "user-1",
+          },
         ],
       })
-      .mockResolvedValueOnce({ rows: [] });
+      .mockResolvedValueOnce({
+        rows: [
+          {
+            run_id: "run-pg-1",
+            step_id: "step-1",
+            step_name: "Approve",
+            status: "success",
+            output_json: JSON.stringify({ approved: true }),
+            duration_ms: 15,
+            error: null,
+            agent_slot_results_json: null,
+            cost_log_json: null,
+          },
+          {
+            run_id: "run-pg-2",
+            step_id: "step-2",
+            step_name: "Notify",
+            status: "error",
+            output_json: JSON.stringify({ delivered: false }),
+            duration_ms: 7,
+            error: "notify failed",
+            agent_slot_results_json: null,
+            cost_log_json: null,
+          },
+        ],
+      });
     jest.spyOn(postgres, "isPostgresPersistenceEnabled").mockReturnValue(true);
     jest
       .spyOn(postgres, "getPostgresPool")
       .mockReturnValue({ query } as unknown as ReturnType<typeof postgres.getPostgresPool>);
 
     const runs = await runStore.list("tpl-support-bot", "user-1");
-    expect(runs).toHaveLength(1);
-    expect(runs[0]).toMatchObject({ id: "run-pg-1", userId: "user-1" });
+    expect(runs).toHaveLength(2);
+    expect(runs[0]).toMatchObject({
+      id: "run-pg-1",
+      userId: "user-1",
+      stepResults: [
+        expect.objectContaining({
+          stepId: "step-1",
+          output: { approved: true },
+        }),
+      ],
+    });
+    expect(runs[1]).toMatchObject({
+      id: "run-pg-2",
+      userId: "user-1",
+      error: "Step failed",
+      stepResults: [
+        expect.objectContaining({
+          stepId: "step-2",
+          error: "notify failed",
+          output: { delivered: false },
+        }),
+      ],
+    });
     expect(query.mock.calls[0]?.[1]).toEqual(["tpl-support-bot", "user-1"]);
+    expect(query).toHaveBeenCalledTimes(2);
+    expect(query.mock.calls[1]?.[0]).toContain("WHERE run_id = ANY($1::uuid[])");
+    expect(query.mock.calls[1]?.[1]).toEqual([["run-pg-1", "run-pg-2"]]);
   });
 
   it("updates persisted runs and rewrites step results", async () => {
@@ -312,12 +384,16 @@ describe("runStore postgres persistence", () => {
       })
       .mockResolvedValueOnce({ rows: [] })
       .mockResolvedValueOnce({ rows: [] })
-      .mockResolvedValueOnce({ rows: [] })
       .mockResolvedValueOnce({ rows: [] });
+    const clientQuery = jest.fn().mockResolvedValue({ rows: [] });
+    const release = jest.fn();
     jest.spyOn(postgres, "isPostgresPersistenceEnabled").mockReturnValue(true);
     jest
       .spyOn(postgres, "getPostgresPool")
-      .mockReturnValue({ query } as unknown as ReturnType<typeof postgres.getPostgresPool>);
+      .mockReturnValue({
+        query,
+        connect: jest.fn().mockResolvedValue({ query: clientQuery, release }),
+      } as unknown as ReturnType<typeof postgres.getPostgresPool>);
 
     const updated = await runStore.update("run-pg", {
       status: "completed",
@@ -341,8 +417,13 @@ describe("runStore postgres persistence", () => {
     });
     expect(query.mock.calls[2]?.[0]).toContain("UPDATE workflow_runs");
     expect(query.mock.calls[2]?.[0]).toContain("WHERE id = $1::uuid");
-    expect(query.mock.calls[3]?.[0]).toContain("DELETE FROM workflow_step_results");
-    expect(query.mock.calls[4]?.[0]).toContain("INSERT INTO workflow_step_results");
+    expect(clientQuery.mock.calls[0]?.[0]).toBe("BEGIN");
+    expect(clientQuery.mock.calls[1]?.[0]).toContain("SELECT id FROM workflow_runs WHERE id = $1::uuid FOR UPDATE");
+    expect(clientQuery.mock.calls[2]?.[0]).toContain("DELETE FROM workflow_step_results WHERE run_id = $1::uuid");
+    expect(clientQuery.mock.calls[3]?.[0]).toContain("INSERT INTO workflow_step_results");
+    expect(clientQuery.mock.calls[3]?.[0]).toContain("ON CONFLICT (run_id, step_id, ordinal) DO UPDATE");
+    expect(clientQuery.mock.calls[4]?.[0]).toBe("COMMIT");
+    expect(release).toHaveBeenCalled();
   });
 
   it("clears persisted runs when persistence is enabled", async () => {

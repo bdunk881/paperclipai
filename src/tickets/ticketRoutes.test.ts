@@ -190,6 +190,99 @@ describe("ticket routes", () => {
     expect(updated.body.policy.escalation.autoReassign).toBe(true);
   });
 
+  it("returns live SLA settings payload and persists dashboard edits", async () => {
+    const app = buildTestApp();
+
+    const initial = await request(app)
+      .get("/api/tickets/sla/settings?workspaceId=11111111-1111-4111-8111-111111111111")
+      .set(auth("creator-1"));
+
+    expect(initial.status).toBe(200);
+    expect(initial.body.policies).toHaveLength(4);
+    expect(initial.body.escalationRules).toHaveLength(4);
+    expect(Array.isArray(initial.body.fallbackCandidates)).toBe(true);
+
+    const updated = await request(app)
+      .patch("/api/tickets/sla/settings")
+      .set(auth("creator-1"))
+      .set("X-Paperclip-Run-Id", "run-ticket-sla-settings")
+      .send({
+        workspaceId: "11111111-1111-4111-8111-111111111111",
+        policies: [
+          { priority: "urgent", firstResponseMinutes: 15, resolutionMinutes: 240 },
+          { priority: "high", firstResponseMinutes: 45, resolutionMinutes: 1440 },
+          { priority: "medium", firstResponseMinutes: 240, resolutionMinutes: 4320 },
+          { priority: "low", firstResponseMinutes: 1440, resolutionMinutes: 10080 },
+        ],
+        escalationRules: [
+          {
+            priority: "urgent",
+            notifyTargets: ["@CTO", "#incident-room"],
+            autoBumpPriority: false,
+            autoReassign: true,
+            fallbackActor: { type: "agent", id: "cto-agent" },
+          },
+          {
+            priority: "high",
+            notifyTargets: ["ops@autoflow.ai"],
+            autoBumpPriority: true,
+            autoReassign: false,
+          },
+          {
+            priority: "medium",
+            notifyTargets: [],
+            autoBumpPriority: false,
+            autoReassign: false,
+          },
+          {
+            priority: "low",
+            notifyTargets: [],
+            autoBumpPriority: false,
+            autoReassign: false,
+          },
+        ],
+      });
+
+    expect(updated.status).toBe(200);
+    expect(updated.body.policies.find((row: { priority: string }) => row.priority === "high")).toMatchObject({
+      firstResponseMinutes: 45,
+      resolutionMinutes: 1440,
+    });
+    expect(
+      updated.body.escalationRules.find((row: { priority: string }) => row.priority === "urgent")
+    ).toMatchObject({
+      notifyTargets: ["@CTO", "#incident-room"],
+      autoReassign: true,
+      fallbackActor: { type: "agent", id: "cto-agent" },
+    });
+
+    const persisted = await request(app)
+      .get("/api/tickets/sla/settings?workspaceId=11111111-1111-4111-8111-111111111111")
+      .set(auth("creator-1"));
+
+    expect(persisted.status).toBe(200);
+    expect(
+      persisted.body.escalationRules.find((row: { priority: string }) => row.priority === "urgent")
+    ).toMatchObject({
+      notifyTargets: ["@CTO", "#incident-room"],
+      fallbackActor: { type: "agent", id: "cto-agent" },
+    });
+
+    const policies = await request(app)
+      .get("/api/tickets/sla/policies?workspaceId=11111111-1111-4111-8111-111111111111")
+      .set(auth("creator-1"));
+
+    expect(policies.status).toBe(200);
+    expect(policies.body.policies.find((row: { priority: string }) => row.priority === "high")).toMatchObject({
+      firstResponseTarget: { kind: "minutes", value: 45 },
+      resolutionTarget: { kind: "minutes", value: 1440 },
+    });
+    expect(policies.body.policies.find((row: { priority: string }) => row.priority === "low")).toMatchObject({
+      firstResponseTarget: { kind: "minutes", value: 1440 },
+      resolutionTarget: { kind: "minutes", value: 10080 },
+    });
+  });
+
   it("allows the primary assignee to transition the ticket and logs activity", async () => {
     const app = buildTestApp();
     const created = await request(app)

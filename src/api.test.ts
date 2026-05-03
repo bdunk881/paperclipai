@@ -78,11 +78,6 @@ jest.mock("./auth/authMiddleware", () => ({
   },
 }));
 
-jest.mock("./middleware/workspaceResolver", () => ({
-  createWorkspaceResolver: () =>
-    (_req: unknown, _res: unknown, next: () => void) => next(),
-}));
-
 import request from "supertest";
 import app from "./app";
 import { recordControlPlaneAudit, recordControlPlaneAuditBatch } from "./auditing/controlPlaneAudit";
@@ -200,18 +195,6 @@ describe("GET /api/connectors/health", () => {
       expect(Array.isArray(connector.transitions)).toBe(true);
       expect(connector.source).toBe("api");
     }
-  });
-});
-
-describe("GET /api/tickets", () => {
-  it("allows the staging QA bypass user past the auth gate without a bearer token", async () => {
-    withQaBypass();
-    const res = await request(app)
-      .get("/api/tickets")
-      .set("X-User-Id", "qa-smoke-user");
-
-    expect(res.status).not.toBe(401);
-    expect(res.body.error).not.toBe("Missing or malformed Authorization header.");
   });
 });
 
@@ -341,6 +324,18 @@ describe("GET /api/templates/:id", () => {
 });
 
 describe("POST /api/templates", () => {
+  it("requires authentication", async () => {
+    const res = await request(app).post("/api/templates").send({
+      id: "tpl-custom-qa",
+      name: "Custom QA Workflow",
+      steps: [],
+      configFields: [],
+    });
+
+    expect(res.status).toBe(401);
+    expect(res.body.error).toMatch(/authorization/i);
+  });
+
   it("creates a custom template and exposes it via the list/detail APIs", async () => {
     const payload = {
       id: "tpl-custom-qa",
@@ -364,7 +359,7 @@ describe("POST /api/templates", () => {
       expectedOutput: { response: "Hi" },
     };
 
-    const createRes = await request(app).post("/api/templates").send(payload);
+    const createRes = await request(app).post("/api/templates").set(asAuth()).send(payload);
     expect(createRes.status).toBe(201);
     expect(createRes.body.id).toBe("tpl-custom-qa");
     expect(createRes.body.name).toBe("Custom QA Workflow");

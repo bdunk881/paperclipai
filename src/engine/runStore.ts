@@ -5,6 +5,7 @@
  * in-memory map for tests and local development without a database.
  */
 
+import { PoolClient } from "pg";
 import { WorkflowRun } from "../types/workflow";
 import { parseJsonValue, serializeJson } from "../db/json";
 import { getPostgresPool, isPostgresPersistenceEnabled } from "../db/postgres";
@@ -46,59 +47,108 @@ function mapRowToRun(row: Record<string, unknown>): WorkflowRun {
 }
 
 async function loadStepResults(runId: string) {
+  const grouped = await loadStepResultsByRunIds([runId]);
+  return grouped.get(runId) ?? [];
+}
+
+async function loadStepResultsByRunIds(runIds: string[]) {
+  const grouped = new Map<string, WorkflowRun["stepResults"]>();
+  for (const runId of runIds) {
+    grouped.set(runId, []);
+  }
+
+  if (runIds.length === 0) {
+    return grouped;
+  }
+
   const pool = getPostgresPool();
   const result = await pool.query(
     `
-      SELECT step_id, step_name, status, output_json, duration_ms, error, agent_slot_results_json, cost_log_json
+      SELECT run_id, step_id, step_name, status, output_json, duration_ms, error, agent_slot_results_json, cost_log_json
       FROM workflow_step_results
-      WHERE run_id = $1::uuid
-      ORDER BY ordinal ASC
+      WHERE run_id = ANY($1::uuid[])
+      ORDER BY run_id ASC, ordinal ASC
     `,
-    [runId]
+    [runIds]
   );
 
-  return result.rows.map((row) => ({
-    stepId: String(row.step_id),
-    stepName: String(row.step_name),
-    status: row.status,
-    output: parseJsonValue<Record<string, unknown>>(row.output_json, {}),
-    durationMs: Number(row.duration_ms),
-    error: typeof row.error === "string" ? row.error : undefined,
-    agentSlotResults: parseJsonValue(row.agent_slot_results_json, undefined),
-    costLog: parseJsonValue(row.cost_log_json, undefined),
-  }));
+  for (const row of result.rows) {
+    const runId = String(row.run_id);
+    const stepResults = grouped.get(runId);
+    if (!stepResults) {
+      continue;
+    }
+
+    stepResults.push({
+      stepId: String(row.step_id),
+      stepName: String(row.step_name),
+      status: row.status,
+      output: parseJsonValue<Record<string, unknown>>(row.output_json, {}),
+      durationMs: Number(row.duration_ms),
+      error: typeof row.error === "string" ? row.error : undefined,
+      agentSlotResults: parseJsonValue(row.agent_slot_results_json, undefined),
+      costLog: parseJsonValue(row.cost_log_json, undefined),
+    });
+  }
+
+  return grouped;
 }
 
 async function writeStepResults(runId: string, stepResults: WorkflowRun["stepResults"]): Promise<void> {
   const pool = getPostgresPool();
-  await pool.query("DELETE FROM workflow_step_results WHERE run_id = $1::uuid", [runId]);
+  const client = await pool.connect();
 
-  if (stepResults.length === 0) {
-    return;
+  try {
+    await client.query("BEGIN");
+    await client.query("SELECT id FROM workflow_runs WHERE id = $1::uuid FOR UPDATE", [runId]);
+    await client.query("DELETE FROM workflow_step_results WHERE run_id = $1::uuid", [runId]);
+
+    for (const [index, result] of stepResults.entries()) {
+      await client.query(
+        `
+          INSERT INTO workflow_step_results (
+            run_id, step_id, step_name, status, output_json, duration_ms, error,
+            agent_slot_results_json, cost_log_json, ordinal
+          )
+          VALUES ($1, $2, $3, $4, $5::jsonb, $6, $7, $8::jsonb, $9::jsonb, $10)
+          ON CONFLICT (run_id, step_id, ordinal) DO UPDATE
+          SET step_name = EXCLUDED.step_name,
+              status = EXCLUDED.status,
+              output_json = EXCLUDED.output_json,
+              duration_ms = EXCLUDED.duration_ms,
+              error = EXCLUDED.error,
+              agent_slot_results_json = EXCLUDED.agent_slot_results_json,
+              cost_log_json = EXCLUDED.cost_log_json
+        `,
+        [
+          runId,
+          result.stepId,
+          result.stepName,
+          result.status,
+          serializeJson(result.output),
+          result.durationMs,
+          result.error ?? null,
+          serializeJson(result.agentSlotResults),
+          serializeJson(result.costLog),
+          index,
+        ]
+      );
+    }
+
+    await client.query("COMMIT");
+  } catch (error) {
+    await rollbackQuietly(client);
+    throw error;
+  } finally {
+    client.release();
   }
+}
 
-  for (const [index, result] of stepResults.entries()) {
-    await pool.query(
-      `
-        INSERT INTO workflow_step_results (
-          run_id, step_id, step_name, status, output_json, duration_ms, error,
-          agent_slot_results_json, cost_log_json, ordinal
-        )
-        VALUES ($1, $2, $3, $4, $5::jsonb, $6, $7, $8::jsonb, $9::jsonb, $10)
-      `,
-      [
-        runId,
-        result.stepId,
-        result.stepName,
-        result.status,
-        serializeJson(result.output),
-        result.durationMs,
-        result.error ?? null,
-        serializeJson(result.agentSlotResults),
-        serializeJson(result.costLog),
-        index,
-      ]
-    );
+async function rollbackQuietly(client: PoolClient): Promise<void> {
+  try {
+    await client.query("ROLLBACK");
+  } catch {
+    // Preserve the original persistence error if rollback also fails.
   }
 }
 
@@ -269,13 +319,11 @@ export const runStore = {
         [templateId ?? null, userId ?? null]
       );
 
-      const runs = await Promise.all(
-        result.rows.map(async (row) => {
-          const run = mapRowToRun(row);
-          run.stepResults = await loadStepResults(run.id);
-          return run;
-        })
-      );
+      const runs = result.rows.map((row) => mapRowToRun(row));
+      const stepResultsByRunId = await loadStepResultsByRunIds(runs.map((run) => run.id));
+      for (const run of runs) {
+        run.stepResults = stepResultsByRunId.get(run.id) ?? [];
+      }
 
       return runs;
     } catch (err) {

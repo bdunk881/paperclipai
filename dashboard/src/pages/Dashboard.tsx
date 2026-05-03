@@ -22,7 +22,6 @@ import {
   MessageSquare,
   RefreshCcw,
   ShieldAlert,
-  Sparkles,
   TrendingUp,
   Wifi,
   WifiOff,
@@ -430,13 +429,6 @@ export default function Dashboard() {
       .slice(0, 6);
   }, [deferredArtifactQuery, runs]);
 
-  const designerSpecSummary = [
-    "240px command rail with a 12-column content grid",
-    "Indigo for orchestration, teal for health and goals, orange for approval actions",
-    "Inter hierarchy with JetBrains Mono for metrics, traces, and timestamps",
-    "Approval moments should feel urgent; charts and telemetry should stay calm and legible",
-  ];
-
   const submitArtifactFeedback = useCallback(
     async (run: WorkflowRun) => {
       const draft = feedbackDrafts[run.id]?.trim();
@@ -531,10 +523,10 @@ export default function Dashboard() {
 
   return (
     <>
-      <div className="min-h-full bg-[#eef1f7] p-5 text-slate-950 md:p-8">
+      <div className="min-h-full bg-surface-100 p-5 text-slate-950 md:p-8 dark:bg-surface-950 dark:text-slate-100">
         <div className="mx-auto max-w-7xl">
-          <section className="overflow-hidden rounded-[32px] border border-slate-200 bg-white shadow-[0_24px_80px_rgba(15,23,42,0.08)]">
-            <div className="border-b border-slate-200 bg-[linear-gradient(135deg,#1e1b4b_0%,#312e81_38%,#0f766e_100%)] px-6 py-6 text-white md:px-8">
+          <section className="overflow-hidden rounded-[32px] border border-slate-200 bg-white shadow-[0_24px_80px_rgba(15,23,42,0.08)] dark:border-surface-800 dark:bg-surface-900">
+            <div className="border-b border-slate-200 bg-[linear-gradient(135deg,theme(colors.brand.950)_0%,theme(colors.brand.900)_38%,theme(colors.accent.teal)_100%)] px-6 py-6 text-white md:px-8 dark:border-surface-800">
               <div className="flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
                 <div className="max-w-3xl">
                   <div className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.24em] text-teal-100">
@@ -573,27 +565,13 @@ export default function Dashboard() {
             </div>
 
             <div className="border-b border-slate-200 bg-slate-50 px-6 py-4 md:px-8">
-              <div className="grid gap-3 lg:grid-cols-[1.2fr,1fr]">
-                <div className="rounded-[24px] border border-indigo-100 bg-white px-4 py-4">
-                  <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.22em] text-indigo-700">
-                    <Sparkles size={13} />
-                    Approved visual system
-                  </div>
-                  <ul className="mt-3 grid gap-2 text-sm text-slate-600 md:grid-cols-2">
-                    {designerSpecSummary.map((item) => (
-                      <li key={item} className="rounded-2xl bg-indigo-50 px-3 py-2">
-                        {item}
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-
+              <div className="grid gap-3">
                 <div className="rounded-[24px] border border-slate-200 bg-white px-4 py-4">
                   <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-500">
                     <Gauge size={13} />
                     Operator shortcuts
                   </div>
-                  <div className="mt-3 grid gap-3 sm:grid-cols-3">
+                  <div className="mt-3 grid gap-3 sm:grid-cols-3 lg:grid-cols-4">
                     <ShortcutCard to="/approvals" title="Review approvals" detail="Act on pending decisions" />
                     <ShortcutCard
                       to="/workspace/budget-dashboard"
@@ -601,6 +579,7 @@ export default function Dashboard() {
                       detail="Open agent-level budget telemetry"
                     />
                     <ShortcutCard to="/agents/activity" title="Trace activity" detail="Jump into agent activity feed" />
+                    <ShortcutCard to="/tickets" title="Manage tickets" detail="Triage and assign work" />
                   </div>
                 </div>
               </div>

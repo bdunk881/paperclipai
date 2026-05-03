@@ -79,7 +79,7 @@ let mockSettings: TicketSlaSettingsPayload = {
     },
     {
       priority: "high",
-      notifyTargets: ["@Frontend Engineer", "@Alex Mercer"],
+      notifyTargets: ["@Frontend Engineer", "@Product Manager"],
       autoBumpPriority: true,
       autoReassign: false,
     },

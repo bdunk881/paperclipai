@@ -168,15 +168,15 @@ const actorProfiles = new Map<
   ],
   [
     "user:alex.pm",
-    { name: "Alex Mercer", initials: "AM", title: "Product Manager", tone: "slate" },
+    { name: "Product Manager", initials: "PM", title: "Product Lead", tone: "slate" },
   ],
   [
     "user:sam.support",
-    { name: "Sam Rivera", initials: "SR", title: "Support Lead", tone: "slate" },
+    { name: "Support Lead", initials: "SL", title: "Customer Success", tone: "slate" },
   ],
   [
     "user:jordan.ops",
-    { name: "Jordan Lee", initials: "JL", title: "Operations", tone: "slate" },
+    { name: "Operations Lead", initials: "OL", title: "Technical Ops", tone: "slate" },
   ],
 ]);
 

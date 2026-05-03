@@ -220,7 +220,7 @@ export const runStore = {
               error = $10,
               user_id = $11,
               updated_at = now()
-          WHERE id = $1
+          WHERE id = $1::uuid
         `,
         [
           id,

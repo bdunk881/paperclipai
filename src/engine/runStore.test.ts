@@ -340,6 +340,7 @@ describe("runStore postgres persistence", () => {
       stepResults: [expect.objectContaining({ stepId: "step-1" })],
     });
     expect(query.mock.calls[2]?.[0]).toContain("UPDATE workflow_runs");
+    expect(query.mock.calls[2]?.[0]).toContain("WHERE id = $1::uuid");
     expect(query.mock.calls[3]?.[0]).toContain("DELETE FROM workflow_step_results");
     expect(query.mock.calls[4]?.[0]).toContain("INSERT INTO workflow_step_results");
   });

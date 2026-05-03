@@ -37,7 +37,6 @@ import companyRoutes from "./companies/companyRoutes";
 import hitlRoutes from "./hitl/hitlRoutes";
 import { buildObservabilityCsv, buildObservabilityResponse } from "./observability/service";
 import observabilityRoutes from "./observability/routes";
-import { assertTriggerCanStart } from "./workflows/triggerPolicy";
 import reportRoutes from "./reporting/reportRoutes";
 import ticketRoutes from "./tickets/ticketRoutes";
 import ticketSyncRoutes from "./ticketSync/routes";
@@ -90,7 +89,6 @@ import googleWorkspaceWebhookRoutes from "./connectors/google-workspace/webhookR
 import notificationRoutes from "./notifications/routes";
 import { getPostgresPool, isPostgresPersistenceEnabled } from "./db/postgres";
 import { createWorkspaceResolver } from "./middleware/workspaceResolver";
-import userProfileRoutes from "./user/profileRoutes";
 import {
   createPortableWorkflowBundle,
   getPortableWorkflowSchemaDescriptor,
@@ -137,6 +135,9 @@ const corsOptions: cors.CorsOptions = {
     }
     callback(null, allowedOrigins.has(origin));
   },
+  // Allow the browser to read Sentry distributed-trace headers so frontend
+  // replays can be correlated with backend traces
+  exposedHeaders: ["sentry-trace", "baggage"],
 };
 
 app.use(helmet());
@@ -295,6 +296,53 @@ app.use("/api/connectors/google-workspace", googleWorkspaceWebhookRoutes);
 app.use(express.json());
 app.use(passport.initialize());
 
+// Track HTTP request duration, counts, and errors as Sentry custom metrics.
+app.use((req, res, next) => {
+  const start = Date.now();
+  res.on("finish", () => {
+    const duration = Date.now() - start;
+    const endpoint = req.path
+      .replace(/\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi, "/:id")
+      .replace(/\/\d{4,}/g, "/:id");
+    const attributes = { method: req.method, endpoint };
+    Sentry.metrics.distribution("http.request_duration_ms", duration, {
+      unit: "millisecond",
+      attributes: { ...attributes, status: String(res.statusCode) },
+    });
+    Sentry.metrics.count("http.request", 1, { attributes });
+    if (res.statusCode >= 500) {
+      Sentry.metrics.count("http.error", 1, {
+        attributes: { ...attributes, status: String(res.statusCode) },
+      });
+      Sentry.logger.error(`${req.method} ${endpoint} → ${res.statusCode} (${duration}ms)`, {
+        method: req.method, endpoint, status: res.statusCode, duration,
+      });
+    } else if (res.statusCode >= 400) {
+      Sentry.metrics.count("http.error", 1, {
+        attributes: { ...attributes, status: String(res.statusCode) },
+      });
+      Sentry.logger.warn(`${req.method} ${endpoint} → ${res.statusCode} (${duration}ms)`, {
+        method: req.method, endpoint, status: res.statusCode, duration,
+      });
+    } else {
+      Sentry.logger.info(`${req.method} ${endpoint} → ${res.statusCode} (${duration}ms)`, {
+        method: req.method, endpoint, status: res.statusCode, duration,
+      });
+    }
+  });
+  next();
+});
+
+// Propagate authenticated user identity into Sentry scope so all errors
+// and logs captured after auth are attributed to the correct user.
+app.use((req, _res, next) => {
+  const authReq = req as unknown as AuthenticatedRequest;
+  if (authReq.auth?.sub) {
+    Sentry.setUser({ id: authReq.auth.sub, email: authReq.auth.email });
+  }
+  next();
+});
+
 // Multer — in-memory storage for file uploads (max 50 MB)
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -356,15 +404,14 @@ app.use("/api/integrations/datadog-azure-monitor", datadogAzureMonitorRoutes);
 app.use("/api/integrations/agent-catalog", agentCatalogRoutes);
 app.use("/api/connectors/google-workspace", googleWorkspaceConnectorRoutes);
 app.use("/api/companies", requireAuth, workspaceResolver, companyRoutes);
-app.use("/api/control-plane", requireAuth, controlPlaneRoutes);
+app.use("/api/control-plane", requireAuth, workspaceResolver, controlPlaneRoutes);
 app.use("/api/hitl", requireAuth, hitlRoutes);
 app.use("/api/observability", requireAuth, observabilityRoutes);
 app.use("/api/reporting", requireAuth, reportRoutes);
-app.use("/api/tickets", requireAuthOrQaBypass, workspaceResolver, ticketRoutes);
+app.use("/api/tickets", requireAuth, workspaceResolver, ticketRoutes);
 app.use("/api/ticket-sync", requireAuth, ticketSyncRoutes);
 app.use("/api/notifications", requireAuth, workspaceResolver, notificationRoutes);
 app.use("/api/approval-policies", requireAuth, approvalPolicyRoutes);
-app.use("/api/user", requireAuth, userProfileRoutes);
 
 // ---------------------------------------------------------------------------
 // Auth API — identity endpoint for authenticated callers
@@ -413,7 +460,7 @@ app.get("/api/templates", (req, res) => {
 });
 
 /** Create or update a user-managed template */
-app.post("/api/templates", async (req, res) => {
+app.post("/api/templates", requireAuth, async (req, res) => {
   const payload = req.body as Partial<WorkflowTemplate> | null;
   if (!payload || typeof payload !== "object") {
     res.status(400).json({ error: "Template payload is required" });
@@ -562,19 +609,6 @@ app.post("/api/runs", requireAuthOrQaBypass, llmEndpointRateLimiter, async (req:
   }
 
   const userId = req.auth?.sub;
-  try {
-    assertTriggerCanStart({
-      template,
-      entrypoint: "manual_run",
-      userId,
-      input: input ?? {},
-    });
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "Workflow trigger is not allowed";
-    res.status(409).json({ error: message });
-    return;
-  }
-
   const run = await workflowEngine.startRun(template, input ?? {}, config, userId);
   res.status(202).json(run);
 });
@@ -887,25 +921,11 @@ app.post("/api/webhooks/:templateId", async (req, res) => {
   }
 
   const webhookUserId = req.headers["x-user-id"];
-  const resolvedWebhookUserId = typeof webhookUserId === "string" ? webhookUserId : undefined;
-  try {
-    assertTriggerCanStart({
-      template,
-      entrypoint: "generic_webhook",
-      userId: resolvedWebhookUserId,
-      input,
-    });
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "Workflow trigger is not allowed";
-    res.status(409).json({ error: message });
-    return;
-  }
-
   const run = await workflowEngine.startRun(
     template,
     input,
     undefined,
-    resolvedWebhookUserId
+    typeof webhookUserId === "string" ? webhookUserId : undefined
   );
   res.status(202).json({ runId: run.id, status: run.status });
 });

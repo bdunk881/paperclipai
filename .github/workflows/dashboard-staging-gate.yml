@@ -25,6 +25,7 @@ env:
   VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
   VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
   VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+  STAGING_DASHBOARD_DOMAIN: staging.app.helloautoflow.com
 
 jobs:
   preview-deploy:
@@ -113,6 +114,19 @@ jobs:
           fi
           echo "preview_url=$PREVIEW_URL" >> "$GITHUB_OUTPUT"
           echo "Preview URL: $PREVIEW_URL"
+
+      - name: Alias staging branch to staging dashboard domain
+        if: github.ref == 'refs/heads/staging'
+        run: |
+          set -euo pipefail
+          INSPECT_OUTPUT="$(npx vercel domains inspect "$STAGING_DASHBOARD_DOMAIN" --token="$VERCEL_TOKEN" 2>&1)"
+          printf '%s\n' "$INSPECT_OUTPUT"
+          if printf '%s\n' "$INSPECT_OUTPUT" | grep -q "WARNING! This Domain is not configured properly"; then
+            echo "::error::${STAGING_DASHBOARD_DOMAIN} is still pointed away from Vercel. Repoint DNS to Vercel before using the staging host."
+            exit 1
+          fi
+
+          npx vercel alias set "${{ steps.deploy.outputs.preview_url }}" "$STAGING_DASHBOARD_DOMAIN" --token="$VERCEL_TOKEN"
 
   smoke-auth-preview:
     name: Smoke Test Preview Auth

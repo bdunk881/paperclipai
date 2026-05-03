@@ -78,11 +78,6 @@ jest.mock("./auth/authMiddleware", () => ({
   },
 }));
 
-jest.mock("./middleware/workspaceResolver", () => ({
-  createWorkspaceResolver: () =>
-    (_req: unknown, _res: unknown, next: () => void) => next(),
-}));
-
 import request from "supertest";
 import app from "./app";
 import { recordControlPlaneAudit, recordControlPlaneAuditBatch } from "./auditing/controlPlaneAudit";
@@ -103,7 +98,6 @@ import { knowledgeStore } from "./knowledge/knowledgeStore";
 import { llmConfigStore } from "./llmConfig/llmConfigStore";
 import { getProvider } from "./engine/llmProviders";
 import { observabilityStore } from "./observability/store";
-import { integrationCredentialStore } from "./integrations/integrationCredentialStore";
 import { resetImportedTemplatesForTests } from "./templates/importedTemplateStore";
 import {
   PORTABLE_WORKFLOW_FORMAT,
@@ -127,9 +121,7 @@ beforeEach(() => {
   llmConfigStore.clear();
   mockGetProvider.mockReset();
   observabilityStore.clear();
-  integrationCredentialStore.clear();
   resetImportedTemplatesForTests();
-  delete process.env.AUTOFLOW_ALLOW_DEV_TRIGGER_RUNS;
 });
 
 function withQaBypass(userIds = "qa-smoke-user") {
@@ -203,18 +195,6 @@ describe("GET /api/connectors/health", () => {
       expect(Array.isArray(connector.transitions)).toBe(true);
       expect(connector.source).toBe("api");
     }
-  });
-});
-
-describe("GET /api/tickets", () => {
-  it("allows the staging QA bypass user past the auth gate without a bearer token", async () => {
-    withQaBypass();
-    const res = await request(app)
-      .get("/api/tickets")
-      .set("X-User-Id", "qa-smoke-user");
-
-    expect(res.status).not.toBe(401);
-    expect(res.body.error).not.toBe("Missing or malformed Authorization header.");
   });
 });
 
@@ -344,6 +324,18 @@ describe("GET /api/templates/:id", () => {
 });
 
 describe("POST /api/templates", () => {
+  it("requires authentication", async () => {
+    const res = await request(app).post("/api/templates").send({
+      id: "tpl-custom-qa",
+      name: "Custom QA Workflow",
+      steps: [],
+      configFields: [],
+    });
+
+    expect(res.status).toBe(401);
+    expect(res.body.error).toMatch(/authorization/i);
+  });
+
   it("creates a custom template and exposes it via the list/detail APIs", async () => {
     const payload = {
       id: "tpl-custom-qa",
@@ -367,7 +359,7 @@ describe("POST /api/templates", () => {
       expectedOutput: { response: "Hi" },
     };
 
-    const createRes = await request(app).post("/api/templates").send(payload);
+    const createRes = await request(app).post("/api/templates").set(asAuth()).send(payload);
     expect(createRes.status).toBe(201);
     expect(createRes.body.id).toBe("tpl-custom-qa");
     expect(createRes.body.name).toBe("Custom QA Workflow");
@@ -1966,7 +1958,6 @@ describe("POST /api/runs", () => {
   afterEach(() => {
     delete process.env.QA_AUTH_BYPASS_ENABLED;
     delete process.env.QA_AUTH_BYPASS_USER_IDS;
-    delete process.env.AUTOFLOW_ALLOW_DEV_TRIGGER_RUNS;
   });
 
   it("returns 401 when Authorization header is missing", async () => {
@@ -2036,49 +2027,6 @@ describe("POST /api/runs", () => {
     expect(res.status).toBe(202);
     expect(typeof res.body.startedAt).toBe("string");
     expect(new Date(res.body.startedAt).getTime()).not.toBeNaN();
-  });
-
-  it("rejects manual sample runs for external-event templates by default", async () => {
-    const res = await request(app)
-      .post("/api/runs")
-      .set(asAuth())
-      .send({
-        templateId: "tpl-github-triage",
-        input: {
-          issuePayload: "GitHub Issue payload for GitHub Issue Triage",
-          accountId: "acct_sample_001",
-          source: "demo",
-        },
-      });
-
-    expect(res.status).toBe(409);
-    expect(res.body.error).toMatch(/Manual sample runs are disabled/i);
-  });
-
-  it("allows dev mock runs only when the explicit flag and input marker are both set", async () => {
-    process.env.AUTOFLOW_ALLOW_DEV_TRIGGER_RUNS = "true";
-    integrationCredentialStore.create({
-      userId: "test-user",
-      integrationSlug: "github",
-      label: "GitHub",
-      credentials: { token: "ghp_test" },
-    });
-
-    const res = await request(app)
-      .post("/api/runs")
-      .set(asAuth())
-      .send({
-        templateId: "tpl-github-triage",
-        input: {
-          issuePayload: "GitHub Issue payload for GitHub Issue Triage",
-          accountId: "acct_sample_001",
-          source: "demo",
-          __autoflowAllowMockTrigger: true,
-        },
-      });
-
-    expect(res.status).toBe(202);
-    expect(res.body.templateId).toBe("tpl-github-triage");
   });
 });
 
@@ -2499,60 +2447,14 @@ describe("POST /api/webhooks/:templateId", () => {
     expect(res.body.stepResults).toBeUndefined();
   });
 
-  it("rejects integration-backed webhook starts without a bound user", async () => {
-    const res = await request(app)
-      .post("/api/webhooks/tpl-github-triage")
-      .send({ issuePayload: { title: "Bug report" }, source: "github" });
-
-    expect(res.status).toBe(409);
-    expect(res.body.error).toMatch(/requires X-User-Id/i);
-  });
-
-  it("rejects integration-backed webhook starts when the provider is disconnected", async () => {
-    const res = await request(app)
-      .post("/api/webhooks/tpl-github-triage")
-      .set("X-User-Id", "test-user")
-      .send({ issuePayload: { title: "Bug report" }, source: "github" });
-
-    expect(res.status).toBe(409);
-    expect(res.body.error).toMatch(/requires a connected github integration/i);
-  });
-
-  it("accepts integration-backed webhook starts when the provider is connected", async () => {
-    integrationCredentialStore.create({
-      userId: "webhook-connected-user",
-      integrationSlug: "github",
-      label: "GitHub",
-      credentials: { token: "ghp_test" },
-    });
-
-    const res = await request(app)
-      .post("/api/webhooks/tpl-github-triage")
-      .set("X-User-Id", "webhook-connected-user")
-      .send({
-        issuePayload: {
-          action: "opened",
-          repository: "autoflow/paperclipai",
-          title: "Bug report",
-        },
-        source: "github",
-      });
-
-    expect(res.status).toBe(202);
-    expect(typeof res.body.runId).toBe("string");
-  });
-
   it("run created by webhook is retrievable via GET /api/runs/:id", async () => {
     const webhookRes = await request(app)
       .post("/api/webhooks/tpl-support-bot")
-      .set("X-User-Id", "webhook-run-create-user")
       .send({ ticketId: "WH-003", subject: "Test" });
     expect(webhookRes.status).toBe(202);
 
     const runId = webhookRes.body.runId;
-    const getRes = await request(app)
-      .get(`/api/runs/${runId}`)
-      .set(asAuth("webhook-run-create-user"));
+    const getRes = await request(app).get(`/api/runs/${runId}`).set(asAuth());
     expect(getRes.status).toBe(200);
     expect(getRes.body.id).toBe(runId);
   });

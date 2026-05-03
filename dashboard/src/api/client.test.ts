@@ -430,6 +430,36 @@ describe("getConnectorHealth", () => {
     expect(headers.Authorization).toBe("Bearer token-123");
   });
 
+  it("accepts an id-only QA preview user from session storage", async () => {
+    vi.restoreAllMocks();
+    window.sessionStorage.setItem("autoflow_user", JSON.stringify({ id: "qa-smoke-user" }));
+    mockFetch({
+      connectors: [],
+      summary: {
+        total: 0,
+        states: {
+          healthy: 0,
+          degraded: 0,
+          rate_limited: 0,
+          auth_failed: 0,
+          provider_error: 0,
+          disabled: 0,
+        },
+        lastUpdatedAt: "2026-05-01T00:00:00.000Z",
+        alertPolicy: {
+          degradedWithinMinutes: 5,
+          authFailureThreshold15m: 5,
+          rateLimitThreshold15m: 5,
+          outageThresholdMinutes: 15,
+        },
+        source: "api",
+      },
+    });
+
+    await getConnectorHealth();
+    const headers = lastFetchOptions().headers as Record<string, string>;
+    expect(headers["X-User-Id"]).toBe("qa-smoke-user");
+  });
   it("sends stored auth context when no access token is provided", async () => {
     vi.spyOn(authStorage, "readStoredAuthUser").mockReturnValue({
       id: "usr-qa-preview",

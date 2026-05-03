@@ -55,6 +55,7 @@ const EMPTY_FORM = {
   collaboratorKeys: [] as string[],
   dueDate: "",
   tags: "",
+  externalSyncRequested: false,
 };
 
 export default function Tickets() {
@@ -213,6 +214,7 @@ export default function Tickets() {
         .map((tag) => tag.trim())
         .filter(Boolean),
       assignees,
+      externalSyncRequested: formState.externalSyncRequested,
     };
 
     setSubmitting(true);
@@ -293,7 +295,7 @@ export default function Tickets() {
           </div>
 
           <div className="space-y-5 px-6 py-6 md:px-8">
-            <TicketSourceNotice source={source ?? "api"} warnings={integrationWarnings} />
+            <TicketSourceNotice source={source} warnings={integrationWarnings} />
 
             <div className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_repeat(3,180px)_auto]">
               <label className="relative block">
@@ -579,6 +581,29 @@ export default function Tickets() {
                 </select>
                 <span className="text-xs text-slate-500">
                   Hold Cmd/Ctrl to select multiple collaborators.
+                </span>
+              </label>
+
+              <label className="flex items-start gap-3 rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-700 dark:border-slate-700 dark:bg-slate-950/80 dark:text-slate-200">
+                <input
+                  type="checkbox"
+                  aria-label="Request external sync"
+                  checked={formState.externalSyncRequested}
+                  onChange={(event) =>
+                    setFormState((current) => ({
+                      ...current,
+                      externalSyncRequested: event.target.checked,
+                    }))
+                  }
+                  className="mt-1 h-4 w-4 rounded border-slate-300 text-teal-500 focus:ring-2 focus:ring-teal-400 dark:border-slate-600"
+                />
+                <span className="grid gap-1">
+                  <span className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
+                    Request external sync
+                  </span>
+                  <span className="text-xs text-slate-500 dark:text-slate-400">
+                    Include this ticket in the follow-up integration sync queue after it is created.
+                  </span>
                 </span>
               </label>
 

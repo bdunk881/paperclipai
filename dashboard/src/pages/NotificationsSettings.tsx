@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
 import { Loader2, MessageSquareWarning, Send, ShieldAlert } from "lucide-react";
-import { getWorkspaceClaimFromAccessToken } from "../auth/workspaceClaim";
 import { useAuth } from "../context/AuthContext";
 import {
   ConnectionOption,
@@ -77,13 +76,9 @@ export default function NotificationsSettings() {
       setError(null);
       try {
         const accessToken = await requireAccessToken();
-        const workspaceId = getWorkspaceClaimFromAccessToken(accessToken);
-        if (!workspaceId) {
-          throw new Error("Workspace claim missing from the current session.");
-        }
         const [prefs, transportList, options] = await Promise.all([
-          fetchNotificationPreferences(workspaceId, user, accessToken),
-          fetchNotificationTransports(workspaceId, user, accessToken),
+          fetchNotificationPreferences(user, accessToken),
+          fetchNotificationTransports(user, accessToken),
           fetchNotificationConnectionOptions(user, accessToken),
         ]);
         if (!active) {
@@ -131,13 +126,8 @@ export default function NotificationsSettings() {
     setError(null);
     try {
       const accessToken = await requireAccessToken();
-      const workspaceId = getWorkspaceClaimFromAccessToken(accessToken);
-      if (!workspaceId) {
-        throw new Error("Workspace claim missing from the current session.");
-      }
       const updated = await updateNotificationPreference(
         {
-          workspaceId,
           channel,
           kind,
           cadence,
@@ -164,14 +154,9 @@ export default function NotificationsSettings() {
     setError(null);
     try {
       const accessToken = await requireAccessToken();
-      const workspaceId = getWorkspaceClaimFromAccessToken(accessToken);
-      if (!workspaceId) {
-        throw new Error("Workspace claim missing from the current session.");
-      }
       const mutedUntil = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
       const updated = await updateNotificationPreference(
         {
-          workspaceId,
           channel,
           kind,
           cadence: existing.cadence,
@@ -196,15 +181,10 @@ export default function NotificationsSettings() {
     setError(null);
     try {
       const accessToken = await requireAccessToken();
-      const workspaceId = getWorkspaceClaimFromAccessToken(accessToken);
-      if (!workspaceId) {
-        throw new Error("Workspace claim missing from the current session.");
-      }
       const existing = transportsByChannel[channel];
       const updated = await updateNotificationTransport(
         channel,
         {
-          workspaceId,
           connectionId: existing?.connectionId,
           enabled: existing?.enabled ?? true,
           config: Object.fromEntries(
@@ -233,15 +213,10 @@ export default function NotificationsSettings() {
     setError(null);
     try {
       const accessToken = await requireAccessToken();
-      const workspaceId = getWorkspaceClaimFromAccessToken(accessToken);
-      if (!workspaceId) {
-        throw new Error("Workspace claim missing from the current session.");
-      }
       const existing = transportsByChannel[channel];
       const updated = await updateNotificationTransport(
         channel,
         {
-          workspaceId,
           connectionId,
           enabled: existing?.enabled ?? true,
           config: existing?.config ?? {},
@@ -269,11 +244,7 @@ export default function NotificationsSettings() {
     setError(null);
     try {
       const accessToken = await requireAccessToken();
-      const workspaceId = getWorkspaceClaimFromAccessToken(accessToken);
-      if (!workspaceId) {
-        throw new Error("Workspace claim missing from the current session.");
-      }
-      await sendNotificationTest(workspaceId, kind, user, accessToken);
+      await sendNotificationTest(kind, user, accessToken);
       setNotice(`Queued test notification for ${kind.replace(/_/g, " ")}.`);
     } catch (testError) {
       setError(testError instanceof Error ? testError.message : "Failed to queue test notification");

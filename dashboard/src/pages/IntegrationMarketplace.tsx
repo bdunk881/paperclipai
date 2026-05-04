@@ -76,23 +76,23 @@ const CATEGORIES: Category[] = [
 
 const INTEGRATIONS: Integration[] = [
   // ── CRM (14) ──
-  { id: "salesforce", name: "Salesforce", description: "CRM platform for sales, service, and marketing automation.", category: "CRM", connected: true, premium: false, official: true, actions: ["create_lead", "update_opportunity", "sync_contacts"] },
-  { id: "hubspot", name: "HubSpot", description: "Inbound marketing, sales, and CRM platform.", category: "CRM", connected: true, premium: false, official: true, actions: ["create_contact", "update_deal", "send_email"] },
+  { id: "salesforce", name: "Salesforce", description: "CRM platform for sales, service, and marketing automation.", category: "CRM", connected: false, premium: false, official: true, actions: ["create_lead", "update_opportunity", "sync_contacts"] },
+  { id: "hubspot", name: "HubSpot", description: "Inbound marketing, sales, and CRM platform.", category: "CRM", connected: false, premium: false, official: true, actions: ["create_contact", "update_deal", "send_email"] },
   { id: "pipedrive", name: "Pipedrive", description: "Sales CRM and pipeline management tool.", category: "CRM", connected: false, premium: false, official: true, actions: ["add_deal", "move_stage", "log_activity"] },
   { id: "zoho-crm", name: "Zoho CRM", description: "Cloud-based CRM for managing sales, marketing, and support.", category: "CRM", connected: false, premium: false, official: true, actions: ["create_record", "update_field", "search_contacts"] },
   { id: "freshsales", name: "Freshsales", description: "AI-powered CRM for high-velocity sales teams.", category: "CRM", connected: false, premium: false, official: false, actions: ["create_lead", "score_lead", "schedule_call"] },
   { id: "close-crm", name: "Close", description: "CRM built for inside sales teams with calling and email.", category: "CRM", connected: false, premium: false, official: false, actions: ["log_call", "send_sequence", "create_lead"] },
   { id: "copper", name: "Copper", description: "Google Workspace-native CRM for relationship management.", category: "CRM", connected: false, premium: true, official: false, actions: ["sync_gmail", "create_opportunity", "log_activity"] },
   { id: "insightly", name: "Insightly", description: "CRM and project management for growing businesses.", category: "CRM", connected: false, premium: false, official: false, actions: ["create_project", "link_contact", "track_milestone"] },
-  { id: "attio", name: "Attio", description: "Next-gen CRM with real-time data enrichment.", category: "CRM", connected: true, premium: false, official: true, actions: ["enrich_contact", "create_list", "update_record"] },
-  { id: "apollo", name: "Apollo.io", description: "Sales intelligence and engagement platform.", category: "CRM", connected: true, premium: true, official: true, actions: ["find_leads", "enrich_company", "send_sequence"] },
+  { id: "attio", name: "Attio", description: "Next-gen CRM with real-time data enrichment.", category: "CRM", connected: false, premium: false, official: true, actions: ["enrich_contact", "create_list", "update_record"] },
+  { id: "apollo", name: "Apollo.io", description: "Sales intelligence and engagement platform.", category: "CRM", connected: false, premium: true, official: true, actions: ["find_leads", "enrich_company", "send_sequence"] },
   { id: "monday-crm", name: "monday CRM", description: "Customizable CRM built on monday.com Work OS.", category: "CRM", connected: false, premium: false, official: false, actions: ["create_item", "update_status", "assign_owner"] },
   { id: "capsule", name: "Capsule CRM", description: "Simple yet powerful CRM for small businesses.", category: "CRM", connected: false, premium: false, official: false, actions: ["add_contact", "log_note", "create_task"] },
   { id: "nimble", name: "Nimble", description: "Social CRM with contact enrichment from social profiles.", category: "CRM", connected: false, premium: true, official: false, actions: ["enrich_profile", "tag_contact", "send_message"] },
   { id: "sugarcrm", name: "SugarCRM", description: "Enterprise CRM with AI-driven insights.", category: "CRM", connected: false, premium: true, official: false, actions: ["predict_churn", "create_case", "sync_data"] },
 
   // ── Marketing (14) ──
-  { id: "mailchimp", name: "Mailchimp", description: "Email marketing and audience management platform.", category: "Marketing", connected: true, premium: false, official: true, actions: ["send_campaign", "add_subscriber", "create_segment"] },
+  { id: "mailchimp", name: "Mailchimp", description: "Email marketing and audience management platform.", category: "Marketing", connected: false, premium: false, official: true, actions: ["send_campaign", "add_subscriber", "create_segment"] },
   { id: "sendgrid", name: "SendGrid", description: "Cloud-based email delivery and marketing service.", category: "Marketing", connected: false, premium: false, official: true, actions: ["send_email", "create_template", "track_opens"] },
   { id: "marketo", name: "Marketo", description: "Marketing automation for enterprise B2B marketers.", category: "Marketing", connected: false, premium: true, official: true, actions: ["nurture_lead", "score_engagement", "trigger_campaign"] },
   { id: "klaviyo", name: "Klaviyo", description: "Email and SMS marketing for e-commerce brands.", category: "Marketing", connected: false, premium: false, official: true, actions: ["send_flow", "segment_audience", "track_revenue"] },
@@ -108,7 +108,7 @@ const INTEGRATIONS: Integration[] = [
   { id: "ahrefs", name: "Ahrefs", description: "SEO toolset for backlinks, keywords, and site audits.", category: "Marketing", connected: false, premium: true, official: false, actions: ["check_backlinks", "research_keywords", "audit_site"] },
 
   // ── Finance (12) ──
-  { id: "stripe", name: "Stripe", description: "Payment processing and financial infrastructure.", category: "Finance", connected: true, premium: false, official: true, actions: ["create_charge", "manage_subscription", "issue_refund"] },
+  { id: "stripe", name: "Stripe", description: "Payment processing and financial infrastructure.", category: "Finance", connected: false, premium: false, official: true, actions: ["create_charge", "manage_subscription", "issue_refund"] },
   { id: "quickbooks", name: "QuickBooks", description: "Accounting and bookkeeping for small business.", category: "Finance", connected: false, premium: false, official: true, actions: ["create_invoice", "record_expense", "run_report"] },
   { id: "xero", name: "Xero", description: "Cloud-based accounting software.", category: "Finance", connected: false, premium: false, official: true, actions: ["send_invoice", "reconcile_bank", "track_expense"] },
   { id: "plaid", name: "Plaid", description: "Connect apps to bank accounts securely.", category: "Finance", connected: false, premium: true, official: true, actions: ["link_account", "get_transactions", "verify_identity"] },
@@ -122,9 +122,9 @@ const INTEGRATIONS: Integration[] = [
   { id: "recurly", name: "Recurly", description: "Subscription management and recurring billing.", category: "Finance", connected: false, premium: true, official: false, actions: ["create_plan", "update_subscription", "retry_payment"] },
 
   // ── Communication (12) ──
-  { id: "slack", name: "Slack", description: "Team messaging and collaboration platform.", category: "Communication", connected: true, premium: false, official: true, actions: ["send_message", "create_channel", "add_reaction"] },
+  { id: "slack", name: "Slack", description: "Team messaging and collaboration platform.", category: "Communication", connected: false, premium: false, official: true, actions: ["send_message", "create_channel", "add_reaction"] },
   { id: "discord", name: "Discord", description: "Voice, video, and text communication platform.", category: "Communication", connected: false, premium: false, official: true, actions: ["send_message", "create_thread", "manage_roles"] },
-  { id: "teams", name: "Microsoft Teams", description: "Chat, meetings, and collaboration by Microsoft.", category: "Communication", connected: true, premium: false, official: true, actions: ["send_message", "schedule_meeting", "share_file"] },
+  { id: "teams", name: "Microsoft Teams", description: "Chat, meetings, and collaboration by Microsoft.", category: "Communication", connected: false, premium: false, official: true, actions: ["send_message", "schedule_meeting", "share_file"] },
   { id: "zoom", name: "Zoom", description: "Video conferencing and online meeting platform.", category: "Communication", connected: false, premium: false, official: true, actions: ["create_meeting", "get_recording", "list_participants"] },
   { id: "twilio", name: "Twilio", description: "Cloud communications platform for SMS, voice, and video.", category: "Communication", connected: false, premium: true, official: true, actions: ["send_sms", "make_call", "send_whatsapp"] },
   { id: "sendbird", name: "Sendbird", description: "Chat and messaging API for apps.", category: "Communication", connected: false, premium: true, official: false, actions: ["send_message", "create_group", "moderate_channel"] },
@@ -136,14 +136,14 @@ const INTEGRATIONS: Integration[] = [
   { id: "vonage", name: "Vonage", description: "Communication APIs for messaging, voice, and video.", category: "Communication", connected: false, premium: false, official: false, actions: ["send_sms", "make_call", "verify_number"] },
 
   // ── Developer Tools (14) ──
-  { id: "github", name: "GitHub", description: "Code hosting and version control with CI/CD.", category: "Developer Tools", connected: true, premium: false, official: true, actions: ["create_issue", "open_pr", "trigger_workflow"] },
+  { id: "github", name: "GitHub", description: "Code hosting and version control with CI/CD.", category: "Developer Tools", connected: false, premium: false, official: true, actions: ["create_issue", "open_pr", "trigger_workflow"] },
   { id: "gitlab", name: "GitLab", description: "DevOps lifecycle platform with CI/CD.", category: "Developer Tools", connected: false, premium: false, official: true, actions: ["create_mr", "run_pipeline", "manage_issues"] },
   { id: "bitbucket", name: "Bitbucket", description: "Git repository hosting by Atlassian.", category: "Developer Tools", connected: false, premium: false, official: true, actions: ["create_pr", "run_pipeline", "manage_repos"] },
-  { id: "vercel", name: "Vercel", description: "Frontend deployment and serverless functions.", category: "Developer Tools", connected: true, premium: false, official: true, actions: ["deploy", "check_status", "manage_domains"] },
+  { id: "vercel", name: "Vercel", description: "Frontend deployment and serverless functions.", category: "Developer Tools", connected: false, premium: false, official: true, actions: ["deploy", "check_status", "manage_domains"] },
   { id: "netlify", name: "Netlify", description: "Web hosting and continuous deployment.", category: "Developer Tools", connected: false, premium: false, official: false, actions: ["deploy_site", "manage_forms", "set_env"] },
   { id: "docker-hub", name: "Docker Hub", description: "Container image registry and distribution.", category: "Developer Tools", connected: false, premium: false, official: true, actions: ["push_image", "pull_image", "scan_image"] },
   { id: "npm", name: "npm", description: "JavaScript package registry and manager.", category: "Developer Tools", connected: false, premium: false, official: false, actions: ["publish_package", "check_version", "audit_deps"] },
-  { id: "sentry", name: "Sentry", description: "Application monitoring and error tracking.", category: "Developer Tools", connected: true, premium: false, official: true, actions: ["capture_error", "create_alert", "resolve_issue"] },
+  { id: "sentry", name: "Sentry", description: "Application monitoring and error tracking.", category: "Developer Tools", connected: false, premium: false, official: true, actions: ["capture_error", "create_alert", "resolve_issue"] },
   { id: "datadog", name: "Datadog", description: "Infrastructure and application monitoring.", category: "Developer Tools", connected: false, premium: true, official: true, actions: ["send_metric", "create_monitor", "query_logs"] },
   { id: "pagerduty", name: "PagerDuty", description: "Incident management and on-call scheduling.", category: "Developer Tools", connected: false, premium: true, official: true, actions: ["trigger_incident", "acknowledge", "resolve"] },
   { id: "circleci", name: "CircleCI", description: "Continuous integration and delivery platform.", category: "Developer Tools", connected: false, premium: false, official: false, actions: ["trigger_build", "get_status", "list_artifacts"] },
@@ -152,9 +152,9 @@ const INTEGRATIONS: Integration[] = [
   { id: "sonarqube", name: "SonarQube", description: "Code quality and security analysis.", category: "Developer Tools", connected: false, premium: true, official: false, actions: ["analyze_project", "get_issues", "check_quality_gate"] },
 
   // ── Database (10) ──
-  { id: "postgres", name: "PostgreSQL", description: "Open-source relational database system.", category: "Database", connected: true, premium: false, official: true, actions: ["query", "execute", "list_tables"] },
+  { id: "postgres", name: "PostgreSQL", description: "Open-source relational database system.", category: "Database", connected: false, premium: false, official: true, actions: ["query", "execute", "list_tables"] },
   { id: "mongodb", name: "MongoDB", description: "NoSQL document database for modern apps.", category: "Database", connected: false, premium: false, official: true, actions: ["find", "insert", "aggregate"] },
-  { id: "redis", name: "Redis", description: "In-memory data store for caching and messaging.", category: "Database", connected: true, premium: false, official: true, actions: ["get", "set", "publish"] },
+  { id: "redis", name: "Redis", description: "In-memory data store for caching and messaging.", category: "Database", connected: false, premium: false, official: true, actions: ["get", "set", "publish"] },
   { id: "mysql", name: "MySQL", description: "Popular open-source relational database.", category: "Database", connected: false, premium: false, official: true, actions: ["query", "execute", "describe_table"] },
   { id: "supabase", name: "Supabase", description: "Open-source Firebase alternative with Postgres.", category: "Database", connected: false, premium: false, official: true, actions: ["query", "insert", "subscribe_realtime"] },
   { id: "firebase", name: "Firebase", description: "Google's app development platform with Firestore.", category: "Database", connected: false, premium: false, official: true, actions: ["get_document", "set_document", "query_collection"] },
@@ -164,7 +164,7 @@ const INTEGRATIONS: Integration[] = [
   { id: "elasticsearch", name: "Elasticsearch", description: "Distributed search and analytics engine.", category: "Database", connected: false, premium: true, official: false, actions: ["search", "index_document", "create_index"] },
 
   // ── Analytics (10) ──
-  { id: "google-analytics", name: "Google Analytics", description: "Web analytics and audience insights.", category: "Analytics", connected: true, premium: false, official: true, actions: ["get_report", "track_event", "list_audiences"] },
+  { id: "google-analytics", name: "Google Analytics", description: "Web analytics and audience insights.", category: "Analytics", connected: false, premium: false, official: true, actions: ["get_report", "track_event", "list_audiences"] },
   { id: "mixpanel", name: "Mixpanel", description: "Product analytics for user behavior tracking.", category: "Analytics", connected: false, premium: true, official: true, actions: ["track_event", "create_funnel", "get_retention"] },
   { id: "amplitude", name: "Amplitude", description: "Digital analytics platform for product teams.", category: "Analytics", connected: false, premium: true, official: true, actions: ["track_event", "query_chart", "create_cohort"] },
   { id: "segment", name: "Segment", description: "Customer data platform for data collection and routing.", category: "Analytics", connected: false, premium: true, official: true, actions: ["track", "identify", "route_data"] },
@@ -176,7 +176,7 @@ const INTEGRATIONS: Integration[] = [
   { id: "plausible", name: "Plausible", description: "Privacy-friendly, open-source web analytics.", category: "Analytics", connected: false, premium: false, official: false, actions: ["get_stats", "list_pages", "track_goal"] },
 
   // ── E-Commerce (12) ──
-  { id: "shopify", name: "Shopify", description: "E-commerce platform for online stores.", category: "E-Commerce", connected: true, premium: false, official: true, actions: ["create_product", "update_inventory", "process_order"] },
+  { id: "shopify", name: "Shopify", description: "E-commerce platform for online stores.", category: "E-Commerce", connected: false, premium: false, official: true, actions: ["create_product", "update_inventory", "process_order"] },
   { id: "woocommerce", name: "WooCommerce", description: "WordPress e-commerce plugin.", category: "E-Commerce", connected: false, premium: false, official: true, actions: ["create_product", "update_order", "manage_coupons"] },
   { id: "bigcommerce", name: "BigCommerce", description: "E-commerce platform for growing businesses.", category: "E-Commerce", connected: false, premium: false, official: false, actions: ["add_product", "fulfill_order", "update_price"] },
   { id: "magento", name: "Magento", description: "Open-source e-commerce by Adobe.", category: "E-Commerce", connected: false, premium: true, official: false, actions: ["manage_catalog", "process_order", "configure_shipping"] },
@@ -202,11 +202,11 @@ const INTEGRATIONS: Integration[] = [
   { id: "personio", name: "Personio", description: "HR software for SMBs in Europe.", category: "HR & Recruiting", connected: false, premium: false, official: false, actions: ["manage_absence", "track_time", "onboard_hire"] },
 
   // ── Project Management (12) ──
-  { id: "jira", name: "Jira", description: "Issue tracking and agile project management.", category: "Project Management", connected: true, premium: false, official: true, actions: ["create_issue", "update_status", "add_comment"] },
+  { id: "jira", name: "Jira", description: "Issue tracking and agile project management.", category: "Project Management", connected: false, premium: false, official: true, actions: ["create_issue", "update_status", "add_comment"] },
   { id: "asana", name: "Asana", description: "Work management platform for teams.", category: "Project Management", connected: false, premium: false, official: true, actions: ["create_task", "assign_user", "set_due_date"] },
-  { id: "linear", name: "Linear", description: "Issue tracking for high-performance teams.", category: "Project Management", connected: true, premium: false, official: true, actions: ["create_issue", "move_state", "set_priority"] },
+  { id: "linear", name: "Linear", description: "Issue tracking for high-performance teams.", category: "Project Management", connected: false, premium: false, official: true, actions: ["create_issue", "move_state", "set_priority"] },
   { id: "trello", name: "Trello", description: "Visual boards for task and project management.", category: "Project Management", connected: false, premium: false, official: true, actions: ["create_card", "move_card", "add_checklist"] },
-  { id: "notion", name: "Notion", description: "All-in-one workspace for notes, docs, and databases.", category: "Project Management", connected: true, premium: false, official: true, actions: ["create_page", "update_database", "query_table"] },
+  { id: "notion", name: "Notion", description: "All-in-one workspace for notes, docs, and databases.", category: "Project Management", connected: false, premium: false, official: true, actions: ["create_page", "update_database", "query_table"] },
   { id: "monday", name: "monday.com", description: "Work operating system for team collaboration.", category: "Project Management", connected: false, premium: false, official: true, actions: ["create_item", "update_column", "move_group"] },
   { id: "clickup", name: "ClickUp", description: "All-in-one productivity and project management.", category: "Project Management", connected: false, premium: false, official: false, actions: ["create_task", "set_status", "log_time"] },
   { id: "basecamp", name: "Basecamp", description: "Project management and team communication.", category: "Project Management", connected: false, premium: false, official: false, actions: ["create_todo", "post_message", "upload_file"] },
@@ -216,8 +216,8 @@ const INTEGRATIONS: Integration[] = [
   { id: "smartsheet", name: "Smartsheet", description: "Enterprise work management and automation.", category: "Project Management", connected: false, premium: true, official: false, actions: ["add_row", "update_cell", "attach_file"] },
 
   // ── Storage & Files (10) ──
-  { id: "s3", name: "Amazon S3", description: "Object storage for any amount of data.", category: "Storage & Files", connected: true, premium: false, official: true, actions: ["upload_file", "download_file", "list_objects"] },
-  { id: "google-drive", name: "Google Drive", description: "Cloud file storage and collaboration.", category: "Storage & Files", connected: true, premium: false, official: true, actions: ["upload_file", "share_file", "create_folder"] },
+  { id: "s3", name: "Amazon S3", description: "Object storage for any amount of data.", category: "Storage & Files", connected: false, premium: false, official: true, actions: ["upload_file", "download_file", "list_objects"] },
+  { id: "google-drive", name: "Google Drive", description: "Cloud file storage and collaboration.", category: "Storage & Files", connected: false, premium: false, official: true, actions: ["upload_file", "share_file", "create_folder"] },
   { id: "dropbox", name: "Dropbox", description: "Cloud storage and file synchronization.", category: "Storage & Files", connected: false, premium: false, official: true, actions: ["upload_file", "share_link", "list_folder"] },
   { id: "onedrive", name: "OneDrive", description: "Microsoft cloud storage and file sharing.", category: "Storage & Files", connected: false, premium: false, official: true, actions: ["upload_file", "create_link", "sync_folder"] },
   { id: "box", name: "Box", description: "Secure content management and collaboration.", category: "Storage & Files", connected: false, premium: true, official: true, actions: ["upload_file", "create_collaboration", "apply_policy"] },
@@ -225,7 +225,7 @@ const INTEGRATIONS: Integration[] = [
   { id: "minio", name: "MinIO", description: "High-performance S3-compatible object storage.", category: "Storage & Files", connected: false, premium: false, official: false, actions: ["put_object", "get_object", "list_buckets"] },
   { id: "backblaze", name: "Backblaze B2", description: "Affordable cloud storage and backup.", category: "Storage & Files", connected: false, premium: false, official: false, actions: ["upload_file", "download_file", "list_files"] },
   { id: "wasabi", name: "Wasabi", description: "Hot cloud storage with no egress fees.", category: "Storage & Files", connected: false, premium: false, official: false, actions: ["put_object", "get_object", "manage_bucket"] },
-  { id: "google-sheets", name: "Google Sheets", description: "Cloud spreadsheets with API access.", category: "Storage & Files", connected: true, premium: false, official: true, actions: ["read_range", "write_range", "create_sheet"] },
+  { id: "google-sheets", name: "Google Sheets", description: "Cloud spreadsheets with API access.", category: "Storage & Files", connected: false, premium: false, official: true, actions: ["read_range", "write_range", "create_sheet"] },
 
   // ── Security (10) ──
   { id: "auth0", name: "Auth0", description: "Identity platform for authentication and authorization.", category: "Security", connected: false, premium: true, official: true, actions: ["create_user", "assign_role", "generate_token"] },
@@ -235,13 +235,13 @@ const INTEGRATIONS: Integration[] = [
   { id: "1password", name: "1Password", description: "Password management for teams and businesses.", category: "Security", connected: false, premium: true, official: false, actions: ["get_item", "create_vault", "share_secret"] },
   { id: "crowdstrike", name: "CrowdStrike", description: "Endpoint security and threat intelligence.", category: "Security", connected: false, premium: true, official: false, actions: ["scan_endpoint", "get_detections", "isolate_host"] },
   { id: "snyk", name: "Snyk", description: "Developer security for code, dependencies, and containers.", category: "Security", connected: false, premium: false, official: false, actions: ["test_project", "list_vulns", "monitor_deps"] },
-  { id: "cloudflare", name: "Cloudflare", description: "CDN, DNS, DDoS protection, and edge computing.", category: "Security", connected: true, premium: false, official: true, actions: ["purge_cache", "create_rule", "manage_dns"] },
+  { id: "cloudflare", name: "Cloudflare", description: "CDN, DNS, DDoS protection, and edge computing.", category: "Security", connected: false, premium: false, official: true, actions: ["purge_cache", "create_rule", "manage_dns"] },
   { id: "letsencrypt", name: "Let's Encrypt", description: "Free TLS/SSL certificate authority.", category: "Security", connected: false, premium: false, official: false, actions: ["issue_cert", "renew_cert", "revoke_cert"] },
   { id: "doppler", name: "Doppler", description: "Universal secrets manager for teams.", category: "Security", connected: false, premium: false, official: false, actions: ["get_secrets", "set_secret", "sync_env"] },
 
   // ── AI & ML (12) ──
-  { id: "openai", name: "OpenAI", description: "GPT models, DALL-E, and Whisper APIs.", category: "AI & ML", connected: true, premium: false, official: true, actions: ["chat_completion", "generate_image", "transcribe_audio"] },
-  { id: "anthropic", name: "Anthropic", description: "Claude AI models for safe, helpful assistance.", category: "AI & ML", connected: true, premium: false, official: true, actions: ["chat_completion", "analyze_document", "generate_code"] },
+  { id: "openai", name: "OpenAI", description: "GPT models, DALL-E, and Whisper APIs.", category: "AI & ML", connected: false, premium: false, official: true, actions: ["chat_completion", "generate_image", "transcribe_audio"] },
+  { id: "anthropic", name: "Anthropic", description: "Claude AI models for safe, helpful assistance.", category: "AI & ML", connected: false, premium: false, official: true, actions: ["chat_completion", "analyze_document", "generate_code"] },
   { id: "google-ai", name: "Google AI (Gemini)", description: "Multimodal AI models by Google.", category: "AI & ML", connected: false, premium: false, official: true, actions: ["generate_content", "embed_text", "analyze_image"] },
   { id: "mistral", name: "Mistral AI", description: "Open and efficient large language models.", category: "AI & ML", connected: false, premium: false, official: true, actions: ["chat_completion", "embed_text", "classify"] },
   { id: "huggingface", name: "Hugging Face", description: "Open-source ML model hub and inference API.", category: "AI & ML", connected: false, premium: false, official: true, actions: ["run_inference", "search_models", "deploy_endpoint"] },
@@ -254,7 +254,7 @@ const INTEGRATIONS: Integration[] = [
   { id: "elevenlabs", name: "ElevenLabs", description: "AI voice synthesis and text-to-speech.", category: "AI & ML", connected: false, premium: true, official: false, actions: ["generate_speech", "clone_voice", "stream_audio"] },
 
   // ── Customer Support (10) ──
-  { id: "zendesk", name: "Zendesk", description: "Customer service and support ticketing platform.", category: "Customer Support", connected: true, premium: false, official: true, actions: ["create_ticket", "update_status", "add_comment"] },
+  { id: "zendesk", name: "Zendesk", description: "Customer service and support ticketing platform.", category: "Customer Support", connected: false, premium: false, official: true, actions: ["create_ticket", "update_status", "add_comment"] },
   { id: "intercom", name: "Intercom", description: "Customer messaging and support platform.", category: "Customer Support", connected: false, premium: true, official: true, actions: ["create_conversation", "send_message", "tag_user"] },
   { id: "freshdesk", name: "Freshdesk", description: "Cloud-based customer support software.", category: "Customer Support", connected: false, premium: false, official: true, actions: ["create_ticket", "assign_agent", "send_reply"] },
   { id: "helpscout", name: "Help Scout", description: "Help desk and customer support platform.", category: "Customer Support", connected: false, premium: false, official: false, actions: ["create_conversation", "assign_mailbox", "add_note"] },

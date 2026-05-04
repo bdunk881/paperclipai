@@ -1,4 +1,5 @@
 import * as Sentry from "@sentry/react";
+import { withActiveWorkspaceHeader } from "../workspaces/workspaceStorage";
 
 function normalizeEndpoint(url: string): string {
   return (
@@ -16,6 +17,10 @@ export async function trackedFetch(
   input: RequestInfo | URL,
   init?: RequestInit,
 ): Promise<Response> {
+  const nextInit: RequestInit = {
+    ...init,
+    headers: withActiveWorkspaceHeader(init?.headers),
+  };
   const url =
     typeof input === "string"
       ? input
@@ -23,7 +28,7 @@ export async function trackedFetch(
         ? input.href
         : (input as Request).url;
   const method = (
-    init?.method ??
+    nextInit.method ??
     (input instanceof Request ? input.method : "GET")
   ).toUpperCase();
   const endpoint = normalizeEndpoint(url);
@@ -32,7 +37,7 @@ export async function trackedFetch(
   let statusCode = 0;
 
   try {
-    const res = await fetch(input, init);
+    const res = await fetch(input, nextInit);
     statusCode = res.status;
     return res;
   } catch (err) {

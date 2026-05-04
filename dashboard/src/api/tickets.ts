@@ -1,6 +1,8 @@
 import { getApiBasePath } from "./baseUrl";
 import { getWorkspaceClaimFromAccessToken } from "../auth/workspaceClaim";
 import { readStoredAuthUser } from "../auth/authStorage";
+import { trackedFetch } from "./trackedFetch";
+import { readStoredActiveWorkspaceId } from "../workspaces/workspaceStorage";
 
 export type TicketActorType = "agent" | "user";
 export type TicketAssignmentRole = "primary" | "collaborator";
@@ -148,7 +150,7 @@ export interface TicketQueueResponse {
 }
 
 const BASE = getApiBasePath();
-const MOCK_WORKSPACE_ID = "workspace-demo";
+const MOCK_WORKSPACE_ID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 const USE_MOCK_API = import.meta.env.VITE_USE_MOCK === "true";
 
 const actorProfiles = new Map<
@@ -585,7 +587,7 @@ export async function listTickets(
   if (filters.slaState) params.set("slaState", filters.slaState);
 
   const suffix = params.toString() ? `?${params.toString()}` : "";
-  const res = await fetch(`${BASE}/tickets${suffix}`, {
+  const res = await trackedFetch(`${BASE}/tickets${suffix}`, {
     headers: buildAuthHeaders(accessToken),
   });
 
@@ -602,7 +604,7 @@ export async function getTicket(ticketId: string, accessToken?: string): Promise
     return getMockAggregate(ticketId);
   }
 
-  const res = await fetch(`${BASE}/tickets/${encodeURIComponent(ticketId)}`, {
+  const res = await trackedFetch(`${BASE}/tickets/${encodeURIComponent(ticketId)}`, {
     headers: buildAuthHeaders(accessToken),
   });
   if (!res.ok) {
@@ -621,7 +623,7 @@ export async function searchTicketMemories(
   if (options.agentId) params.set("agentId", options.agentId);
   if (options.limit) params.set("limit", String(options.limit));
 
-  const res = await fetch(`${BASE}/memory/search?${params.toString()}`, {
+  const res = await trackedFetch(`${BASE}/memory/search?${params.toString()}`, {
     headers: buildAuthHeaders(accessToken),
   });
 
@@ -637,7 +639,7 @@ export async function getTicketActivity(
   ticketId: string,
   accessToken?: string
 ): Promise<{ updates: TicketUpdate[]; total: number; source: "api" | "mock" }> {
-  const res = await fetch(`${BASE}/tickets/${encodeURIComponent(ticketId)}/activity`, {
+  const res = await trackedFetch(`${BASE}/tickets/${encodeURIComponent(ticketId)}/activity`, {
     headers: buildAuthHeaders(accessToken),
   });
   if (!res.ok) {
@@ -668,7 +670,7 @@ export async function listTicketQueue(
   if (filters.slaState) params.set("slaState", filters.slaState);
   const suffix = params.toString() ? `?${params.toString()}` : "";
 
-  const res = await fetch(
+  const res = await trackedFetch(
     `${BASE}/tickets/queue/${encodeURIComponent(actor.type)}/${encodeURIComponent(actor.id)}${suffix}`,
     { headers: buildAuthHeaders(accessToken) }
   );
@@ -683,7 +685,11 @@ export async function createTicket(
   input: CreateTicketUiPayload,
   accessToken?: string
 ): Promise<TicketAggregate & { source: "api" | "mock"; integrationWarnings: string[] }> {
-  const resolvedWorkspaceId = input.workspaceId ?? getWorkspaceClaimFromAccessToken(accessToken) ?? undefined;
+  const resolvedWorkspaceId =
+    input.workspaceId ??
+    readStoredActiveWorkspaceId() ??
+    getWorkspaceClaimFromAccessToken(accessToken) ??
+    undefined;
   const payload: CreateTicketInput = {
     workspaceId: resolvedWorkspaceId,
     title: input.title,
@@ -740,7 +746,7 @@ export async function createTicket(
     return { ...aggregate, source: "mock" as const, integrationWarnings };
   }
 
-  const res = await fetch(`${BASE}/tickets`, {
+  const res = await trackedFetch(`${BASE}/tickets`, {
     method: "POST",
     headers: buildMutationHeaders(accessToken),
     body: JSON.stringify(payload),
@@ -779,7 +785,7 @@ export async function addTicketUpdate(
     return { update, source: "mock" as const };
   }
 
-  const res = await fetch(`${BASE}/tickets/${encodeURIComponent(ticketId)}/updates`, {
+  const res = await trackedFetch(`${BASE}/tickets/${encodeURIComponent(ticketId)}/updates`, {
     method: "POST",
     headers: buildMutationHeaders(accessToken),
     body: JSON.stringify(input),
@@ -825,7 +831,7 @@ export async function transitionTicket(
     return { ...aggregate, source: "mock" as const };
   }
 
-  const res = await fetch(`${BASE}/tickets/${encodeURIComponent(ticketId)}/transitions`, {
+  const res = await trackedFetch(`${BASE}/tickets/${encodeURIComponent(ticketId)}/transitions`, {
     method: "POST",
     headers: buildMutationHeaders(accessToken),
     body: JSON.stringify(input),

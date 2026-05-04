@@ -4,6 +4,7 @@ beforeEach(() => {
   vi.resetModules();
   vi.unstubAllEnvs();
   vi.restoreAllMocks();
+  window.localStorage.clear();
 });
 
 function mockFetch(status: number, body: unknown): void {
@@ -38,16 +39,18 @@ describe("ticketing SLA api", () => {
 
   it("includes workspaceId when saving SLA settings", async () => {
     mockFetch(200, {
-      workspaceId: "11111111-1111-4111-8111-111111111111",
+      workspaceId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
       policies: [],
       escalationRules: [],
       fallbackCandidates: [],
       updatedAt: "2026-05-03T00:00:00.000Z",
     });
 
+    window.localStorage.setItem("autoflow_active_workspace_id", "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb");
+
     const { updateTicketSlaSettings } = await import("./ticketingSla");
     await updateTicketSlaSettings({
-      workspaceId: "11111111-1111-4111-8111-111111111111",
+      workspaceId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
       policies: [],
       escalationRules: [],
       fallbackCandidates: [],
@@ -56,6 +59,9 @@ describe("ticketing SLA api", () => {
 
     const [, init] = lastFetchCall();
     const body = JSON.parse(String(init?.body ?? "{}")) as { workspaceId?: string };
-    expect(body.workspaceId).toBe("11111111-1111-4111-8111-111111111111");
+    expect(body.workspaceId).toBe("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa");
+    expect(new Headers(init?.headers).get("X-Workspace-Id")).toBe(
+      "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
+    );
   });
 });

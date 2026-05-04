@@ -49,6 +49,7 @@ import { createTicket, type TicketAssignee } from "../api/tickets";
 import { RunAuditSidebar } from "../components/RunAuditSidebar";
 import { ErrorState, LoadingState } from "../components/UiStates";
 import { useAuth } from "../context/AuthContext";
+import { useWorkspace } from "../context/WorkspaceContext";
 import type { WorkflowRun } from "../types/workflow";
 
 type AgentSnapshot = {
@@ -89,6 +90,7 @@ const MAX_RECONNECT_ATTEMPTS = 2;
 
 export default function Dashboard() {
   const { accessMode, user, requireAccessToken } = useAuth();
+  const { activeWorkspaceId } = useWorkspace();
   const [runs, setRuns] = useState<WorkflowRun[]>([]);
   const [approvals, setApprovals] = useState<ApprovalRequest[]>([]);
   const [agentSnapshots, setAgentSnapshots] = useState<AgentSnapshot[]>([]);
@@ -345,7 +347,15 @@ export default function Dashboard() {
     } finally {
       setLoading(false);
     }
-  }, [accessMode, requireAccessToken, selectedCategories, startStream, stopRealtime, windowHours]);
+  }, [
+    accessMode,
+    activeWorkspaceId,
+    requireAccessToken,
+    selectedCategories,
+    startStream,
+    stopRealtime,
+    windowHours,
+  ]);
 
   useEffect(() => {
     void loadDashboard();

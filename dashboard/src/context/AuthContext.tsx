@@ -12,6 +12,7 @@ import {
   writeStoredAuthSession,
 } from "../auth/authStorage";
 import { isSessionExpiring, refreshNativeAuthSession, sessionFromTokenResponse } from "../auth/nativeAuthClient";
+import { clearStoredActiveWorkspaceId } from "../workspaces/workspaceStorage";
 
 export interface User {
   id: string;
@@ -94,6 +95,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const logout = React.useCallback(() => {
     clearStoredAuthSession();
+    clearStoredActiveWorkspaceId();
     setStoredSession(null);
     setStoredUser(null);
   }, []);

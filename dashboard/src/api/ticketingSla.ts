@@ -1,5 +1,6 @@
 import { getApiBasePath } from "./baseUrl";
 import { getTicketActorProfile, type TicketActorRef, type TicketPriority } from "./tickets";
+import { trackedFetch } from "./trackedFetch";
 
 export interface SlaSummaryCard {
   key: "breach_rate" | "avg_first_response" | "active_breaches";
@@ -62,10 +63,9 @@ export interface TicketSlaSettingsPayload {
 
 const BASE = getApiBasePath();
 const USE_MOCK_API = import.meta.env.VITE_USE_MOCK === "true";
-const DEFAULT_WORKSPACE_ID =
-  import.meta.env.VITE_DEFAULT_WORKSPACE_ID ?? "11111111-1111-4111-8111-111111111111";
+const MOCK_WORKSPACE_ID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 let mockTicketSlaSettings: TicketSlaSettingsPayload = {
-  workspaceId: DEFAULT_WORKSPACE_ID,
+  workspaceId: MOCK_WORKSPACE_ID,
   policies: [
     { priority: "urgent", firstResponseMinutes: 15, resolutionMinutes: 120 },
     { priority: "high", firstResponseMinutes: 30, resolutionMinutes: 240 },
@@ -169,7 +169,7 @@ export async function getTicketSlaDashboard(accessToken?: string): Promise<Ticke
     return structuredClone(mockTicketSlaDashboard);
   }
 
-  const res = await fetch(`${BASE}/tickets/sla/dashboard?workspaceId=${encodeURIComponent(DEFAULT_WORKSPACE_ID)}`, {
+  const res = await trackedFetch(`${BASE}/tickets/sla/dashboard`, {
     headers: buildAuthHeaders(accessToken),
   });
   if (!res.ok) {
@@ -183,7 +183,7 @@ export async function getTicketSlaSettings(accessToken?: string): Promise<Ticket
     return structuredClone(mockTicketSlaSettings);
   }
 
-  const res = await fetch(`${BASE}/tickets/sla/settings?workspaceId=${encodeURIComponent(DEFAULT_WORKSPACE_ID)}`, {
+  const res = await trackedFetch(`${BASE}/tickets/sla/settings`, {
     headers: buildAuthHeaders(accessToken),
   });
   if (!res.ok) {
@@ -192,7 +192,7 @@ export async function getTicketSlaSettings(accessToken?: string): Promise<Ticket
   const data = (await res.json()) as TicketSlaSettingsPayload;
   return {
     ...data,
-    workspaceId: data.workspaceId ?? DEFAULT_WORKSPACE_ID,
+    workspaceId: data.workspaceId ?? MOCK_WORKSPACE_ID,
   };
 }
 
@@ -208,12 +208,12 @@ export async function updateTicketSlaSettings(
     return structuredClone(mockTicketSlaSettings);
   }
 
-  const res = await fetch(`${BASE}/tickets/sla/settings`, {
+  const res = await trackedFetch(`${BASE}/tickets/sla/settings`, {
     method: "PATCH",
     headers: buildMutationHeaders(accessToken),
     body: JSON.stringify({
       ...input,
-      workspaceId: input.workspaceId || DEFAULT_WORKSPACE_ID,
+      workspaceId: input.workspaceId || MOCK_WORKSPACE_ID,
     }),
   });
   if (!res.ok) {

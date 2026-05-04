@@ -11,6 +11,7 @@ import {
 } from "../api/ticketingSla";
 import { getTicketActorProfile, type TicketActorRef, type TicketPriority } from "../api/tickets";
 import { useAuth } from "../context/AuthContext";
+import { useWorkspace } from "../context/WorkspaceContext";
 
 type Unit = "m" | "h" | "d";
 
@@ -32,6 +33,7 @@ type EditableEscalationRule = {
 
 export default function TicketSlaSettings() {
   const { getAccessToken } = useAuth();
+  const { activeWorkspaceId } = useWorkspace();
   const [settings, setSettings] = useState<TicketSlaSettingsPayload | null>(null);
   const [policyRows, setPolicyRows] = useState<EditablePolicyRow[]>([]);
   const [ruleRows, setRuleRows] = useState<EditableEscalationRule[]>([]);
@@ -54,7 +56,7 @@ export default function TicketSlaSettings() {
     } finally {
       setLoading(false);
     }
-  }, [getAccessToken]);
+  }, [activeWorkspaceId, getAccessToken]);
 
   useEffect(() => {
     void loadSettings();
@@ -95,7 +97,7 @@ export default function TicketSlaSettings() {
     try {
       const accessToken = (await getAccessToken()) ?? undefined;
       const payload: TicketSlaSettingsPayload = {
-        workspaceId: settings.workspaceId,
+        workspaceId: activeWorkspaceId ?? settings.workspaceId,
         policies: policyRows.map(fromEditablePolicy),
         escalationRules: ruleRows.map((row) => fromEditableRule(row, settings.fallbackCandidates)),
         fallbackCandidates: settings.fallbackCandidates,

@@ -5,9 +5,11 @@ import clsx from "clsx";
 import { getTicketActorProfile } from "../api/tickets";
 import { getTicketSlaDashboard, type TicketSlaDashboard } from "../api/ticketingSla";
 import { useAuth } from "../context/AuthContext";
+import { useWorkspace } from "../context/WorkspaceContext";
 
 export default function TicketSlaDashboard() {
   const { getAccessToken } = useAuth();
+  const { activeWorkspaceId } = useWorkspace();
   const [dashboard, setDashboard] = useState<TicketSlaDashboard | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -24,7 +26,7 @@ export default function TicketSlaDashboard() {
     } finally {
       setLoading(false);
     }
-  }, [getAccessToken]);
+  }, [activeWorkspaceId, getAccessToken]);
 
   useEffect(() => {
     void loadDashboard();

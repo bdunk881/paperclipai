@@ -19,6 +19,16 @@ export interface WorkspaceAwareRequest extends AuthenticatedRequest {
   workspaceId?: string;
 }
 
+function readExplicitWorkspaceHeader(req: Request): string | null {
+  const headerValue = req.headers["x-workspace-id"];
+  if (typeof headerValue !== "string") {
+    return null;
+  }
+
+  const trimmed = headerValue.trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
+
 function getResultCount<T extends { rowCount: number | null; rows: unknown[] }>(result: T): number {
   return result.rowCount ?? result.rows.length;
 }
@@ -115,10 +125,7 @@ export function createWorkspaceResolver(pool: Pool) {
       return;
     }
 
-    const explicitWorkspaceId =
-      typeof req.headers["x-workspace-id"] === "string"
-        ? req.headers["x-workspace-id"].trim()
-        : null;
+    const explicitWorkspaceId = readExplicitWorkspaceHeader(req);
 
     try {
       if (explicitWorkspaceId) {
@@ -208,5 +215,19 @@ export function createWorkspaceResolver(pool: Pool) {
       console.error("[workspaceResolver] Failed to resolve workspace:", (err as Error).message);
       res.status(500).json({ error: "Failed to resolve workspace context." });
     }
+  };
+}
+
+export function createExplicitWorkspaceHeaderResolver() {
+  return function resolveExplicitWorkspaceHeader(
+    req: WorkspaceAwareRequest,
+    _res: Response,
+    next: NextFunction,
+  ): void {
+    const explicitWorkspaceId = readExplicitWorkspaceHeader(req);
+    if (explicitWorkspaceId) {
+      req.workspaceId = explicitWorkspaceId;
+    }
+    next();
   };
 }

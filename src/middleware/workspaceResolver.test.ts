@@ -1,7 +1,10 @@
 import type { NextFunction, Response } from "express";
 import type { Pool, PoolClient, QueryResult } from "pg";
 import type { WorkspaceAwareRequest } from "./workspaceResolver";
-import { createWorkspaceResolver } from "./workspaceResolver";
+import {
+  createExplicitWorkspaceHeaderResolver,
+  createWorkspaceResolver,
+} from "./workspaceResolver";
 
 function createResponse() {
   const json = jest.fn();
@@ -103,6 +106,38 @@ describe("createWorkspaceResolver", () => {
       ["Personal Workspace", "user-123"],
     );
     expect(client.release).toHaveBeenCalledTimes(1);
+    expect(res.status).not.toHaveBeenCalled();
+  });
+});
+
+describe("createExplicitWorkspaceHeaderResolver", () => {
+  it("preserves a trimmed X-Workspace-Id header without postgres membership lookups", () => {
+    const middleware = createExplicitWorkspaceHeaderResolver();
+    const req = createRequest({
+      headers: { "x-workspace-id": "  workspace-shared  " },
+    });
+    const res = createResponse();
+    const next = jest.fn() as NextFunction;
+
+    middleware(req, res, next);
+
+    expect(req.workspaceId).toBe("workspace-shared");
+    expect(next).toHaveBeenCalledTimes(1);
+    expect(res.status).not.toHaveBeenCalled();
+  });
+
+  it("ignores empty explicit workspace headers", () => {
+    const middleware = createExplicitWorkspaceHeaderResolver();
+    const req = createRequest({
+      headers: { "x-workspace-id": "   " },
+    });
+    const res = createResponse();
+    const next = jest.fn() as NextFunction;
+
+    middleware(req, res, next);
+
+    expect(req.workspaceId).toBeUndefined();
+    expect(next).toHaveBeenCalledTimes(1);
     expect(res.status).not.toHaveBeenCalled();
   });
 });

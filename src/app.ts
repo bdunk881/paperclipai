@@ -87,7 +87,10 @@ import googleWorkspaceConnectorRoutes from "./connectors/google-workspace/routes
 import googleWorkspaceWebhookRoutes from "./connectors/google-workspace/webhookRoutes";
 import notificationRoutes from "./notifications/routes";
 import { getPostgresPool, isPostgresPersistenceEnabled } from "./db/postgres";
-import { createWorkspaceResolver } from "./middleware/workspaceResolver";
+import {
+  createExplicitWorkspaceHeaderResolver,
+  createWorkspaceResolver,
+} from "./middleware/workspaceResolver";
 import {
   createPortableWorkflowBundle,
   getPortableWorkflowSchemaDescriptor,
@@ -100,7 +103,7 @@ import { getConnectorHealthSummary, listConnectorHealth } from "./connectors/hea
 const app = express();
 const workspaceResolver = isPostgresPersistenceEnabled()
   ? createWorkspaceResolver(getPostgresPool())
-  : (_req: express.Request, _res: express.Response, next: express.NextFunction) => next();
+  : createExplicitWorkspaceHeaderResolver();
 
 function parseAllowedOrigins(value: string | undefined): string[] {
   if (!value) {
@@ -352,9 +355,9 @@ app.use("/api/integrations/datadog-azure-monitor", datadogAzureMonitorRoutes);
 app.use("/api/integrations/agent-catalog", agentCatalogRoutes);
 app.use("/api/connectors/google-workspace", googleWorkspaceConnectorRoutes);
 app.use("/api/companies", requireAuth, workspaceResolver, companyRoutes);
-app.use("/api/control-plane", requireAuth, controlPlaneRoutes);
+app.use("/api/control-plane", requireAuth, workspaceResolver, controlPlaneRoutes);
 app.use("/api/hitl", requireAuth, hitlRoutes);
-app.use("/api/observability", requireAuth, observabilityRoutes);
+app.use("/api/observability", requireAuth, workspaceResolver, observabilityRoutes);
 app.use("/api/reporting", requireAuth, reportRoutes);
 app.use("/api/tickets", requireAuthOrQaBypass, workspaceResolver, ticketRoutes);
 app.use("/api/ticket-sync", requireAuth, ticketSyncRoutes);

@@ -88,7 +88,11 @@ import googleWorkspaceConnectorRoutes from "./connectors/google-workspace/routes
 import googleWorkspaceWebhookRoutes from "./connectors/google-workspace/webhookRoutes";
 import notificationRoutes from "./notifications/routes";
 import { getPostgresPool, isPostgresPersistenceEnabled } from "./db/postgres";
-import { createWorkspaceResolver, WorkspaceAwareRequest } from "./middleware/workspaceResolver";
+import {
+  createExplicitWorkspaceHeaderResolver,
+  createWorkspaceResolver,
+  WorkspaceAwareRequest,
+} from "./middleware/workspaceResolver";
 import { createWorkspaceRoutes } from "./workspaces/workspaceRoutes";
 import {
   createPortableWorkflowBundle,
@@ -102,12 +106,16 @@ import { getConnectorHealthSummary, listConnectorHealth } from "./connectors/hea
 const app = express();
 const workspaceResolver = isPostgresPersistenceEnabled()
   ? createWorkspaceResolver(getPostgresPool())
-  : (_req: express.Request, _res: express.Response, next: express.NextFunction) => next();
+  : createExplicitWorkspaceHeaderResolver();
 const workspaceRoutes = isPostgresPersistenceEnabled()
   ? createWorkspaceRoutes(getPostgresPool())
-  : express.Router().get("/", (_req, res) => {
-      res.json({ workspaces: [], total: 0 });
-    });
+  : express.Router()
+      .get("/", (_req, res) => {
+        res.json([]);
+      })
+      .post("/", (_req, res) => {
+        res.status(501).json({ error: "Workspace creation requires PostgreSQL persistence." });
+      });
 
 function parseAllowedOrigins(value: string | undefined): string[] {
   if (!value) {
@@ -413,7 +421,7 @@ app.use("/api/workspaces", requireAuth, workspaceRoutes);
 app.use("/api/companies", requireAuth, workspaceResolver, companyRoutes);
 app.use("/api/control-plane", requireAuth, workspaceResolver, controlPlaneRoutes);
 app.use("/api/hitl", requireAuth, hitlRoutes);
-app.use("/api/observability", requireAuth, observabilityRoutes);
+app.use("/api/observability", requireAuth, workspaceResolver, observabilityRoutes);
 app.use("/api/reporting", requireAuth, reportRoutes);
 app.use("/api/tickets", requireAuth, workspaceResolver, ticketRoutes);
 app.use("/api/ticket-sync", requireAuth, ticketSyncRoutes);

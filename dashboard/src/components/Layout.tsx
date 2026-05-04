@@ -31,6 +31,7 @@ import clsx from "clsx";
 import logoLockup from "../assets/logo/lockup.svg";
 import { useAuth } from "../context/AuthContext";
 import { useTheme } from "../hooks/useTheme";
+import { WorkspaceSwitcher } from "./WorkspaceSwitcher";
 
 type NavItem = {
   to: string;
@@ -226,9 +227,11 @@ export default function Layout() {
             mobileNavOpen ? "translate-x-0" : "-translate-x-full"
           )}
         >
-          <div className="flex items-center gap-2 border-b border-gray-200 px-5 py-5 dark:border-surface-800">
+          <div className="flex items-center gap-2 px-5 py-5">
             <img src={logoLockup} alt="AutoFlow" className="h-9 w-auto object-contain text-gray-900 dark:text-gray-100" />
           </div>
+
+          <WorkspaceSwitcher />
 
           <nav className="flex-1 space-y-1 px-3 py-4">
             <NavItems nested />

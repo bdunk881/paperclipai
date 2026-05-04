@@ -50,6 +50,7 @@ import TicketActorView from "./pages/TicketActorView";
 import TicketSlaDashboard from "./pages/TicketSlaDashboard";
 import TicketSlaSettings from "./pages/TicketSlaSettings";
 import ConnectorHealth from "./pages/ConnectorHealth";
+import { WorkspaceProvider } from "./context/WorkspaceContext";
 
 const SentryRoutes = Sentry.withSentryReactRouterV6Routing(Routes);
 
@@ -115,79 +116,81 @@ export default function App() {
   return (
     <Sentry.ErrorBoundary fallback={<p>An unexpected error occurred. Please refresh the page.</p>} showDialog>
       <AuthProvider>
-        <BrowserRouter>
-          <SentryRoutes>
-          <Route path="/waitlist" element={<LandingPage />} />
-          <Route path="/checkout/success" element={<CheckoutSuccess />} />
-          <Route path="/auth/callback" element={<AuthCallback />} />
-          <Route path="/auth/social-callback" element={<SocialAuthCallback />} />
-          <Route
-            path="/login"
-            element={
-              <PublicRoute>
-                <Login />
-              </PublicRoute>
-            }
-          />
-          <Route
-            path="/signup"
-            element={<Navigate to="/login?mode=signup" replace />}
-          />
-          <Route
-            path="/reset-password"
-            element={<Navigate to="/login?mode=reset" replace />}
-          />
-          <Route
-            path="/"
-            element={
-              <PrivateRoute>
-                <Layout />
-              </PrivateRoute>
-            }
-          >
-            <Route index element={<Dashboard />} />
-            <Route path="builder" element={<WorkflowBuilder />} />
-            <Route path="builder/:templateId" element={<WorkflowBuilder />} />
-            <Route path="templates" element={<Templates />} />
-            <Route path="templates/:templateId" element={<WorkflowBuilder />} />
-            <Route path="agents/team/:teamId" element={<AgentTeamDetail />} />
-            <Route path="monitor" element={<RunMonitor />} />
-            <Route path="history" element={<RunHistory />} />
-            <Route path="agents" element={<AgentCatalog />} />
-            <Route path="agents/:templateId" element={<AgentDetail />} />
-            <Route path="agents/deploy/:templateId" element={<AgentDeploy />} />
-            <Route path="agents/my" element={<MyAgents />} />
-            <Route path="agents/activity" element={<AgentActivity />} />
-            <Route path="agents/routines" element={<Routines />} />
-            <Route path="mission-state" element={<MissionState />} />
-            <Route path="workspace/staffing-plan" element={<StaffingPlanReview />} />
-            <Route path="workspace/org-structure" element={<OrgStructure />} />
-            <Route path="workspace/budget-dashboard" element={<BudgetDashboard />} />
-            <Route path="tickets" element={<Tickets />} />
-            <Route path="tickets/sla" element={<TicketSlaDashboard />} />
-            <Route path="tickets/team" element={<TicketTeamView />} />
-            <Route path="tickets/actors/:actorType/:actorId" element={<TicketActorView />} />
-            <Route path="tickets/:ticketId" element={<TicketDetail />} />
-            <Route path="settings" element={<Settings />} />
-            <Route path="settings/ticketing-sla" element={<TicketSlaSettings />} />
-            <Route path="settings/integrations" element={<Integrations />} />
-            <Route path="settings/llm-providers" element={<LLMProviders />} />
-            <Route path="settings/profile" element={<ProfileSettings />} />
-            <Route path="settings/security" element={<SecuritySettings />} />
-            <Route path="settings/notifications" element={<NotificationsSettings />} />
-            <Route path="settings/api-keys" element={<ApiKeys />} />
-            <Route path="settings/mcp-servers" element={<McpServers />} />
-            <Route path="pricing" element={<Pricing />} />
-            <Route path="approvals" element={<Approvals />} />
-            <Route path="memory" element={<Memory />} />
-            <Route path="integrations" element={<Integrations />} />
-            <Route path="integrations/health" element={<ConnectorHealth />} />
-            <Route path="integrations/mcp" element={<MCPIntegrations />} />
-            <Route path="logs" element={<ExecutionLogs />} />
-          </Route>
-            <Route path="*" element={<Navigate to="/" replace />} />
-          </SentryRoutes>
-        </BrowserRouter>
+        <WorkspaceProvider>
+          <BrowserRouter>
+            <SentryRoutes>
+              <Route path="/waitlist" element={<LandingPage />} />
+              <Route path="/checkout/success" element={<CheckoutSuccess />} />
+              <Route path="/auth/callback" element={<AuthCallback />} />
+              <Route path="/auth/social-callback" element={<SocialAuthCallback />} />
+              <Route
+                path="/login"
+                element={
+                  <PublicRoute>
+                    <Login />
+                  </PublicRoute>
+                }
+              />
+              <Route
+                path="/signup"
+                element={<Navigate to="/login?mode=signup" replace />}
+              />
+              <Route
+                path="/reset-password"
+                element={<Navigate to="/login?mode=reset" replace />}
+              />
+              <Route
+                path="/"
+                element={
+                  <PrivateRoute>
+                    <Layout />
+                  </PrivateRoute>
+                }
+              >
+                <Route index element={<Dashboard />} />
+                <Route path="builder" element={<WorkflowBuilder />} />
+                <Route path="builder/:templateId" element={<WorkflowBuilder />} />
+                <Route path="templates" element={<Templates />} />
+                <Route path="templates/:templateId" element={<WorkflowBuilder />} />
+                <Route path="agents/team/:teamId" element={<AgentTeamDetail />} />
+                <Route path="monitor" element={<RunMonitor />} />
+                <Route path="history" element={<RunHistory />} />
+                <Route path="agents" element={<AgentCatalog />} />
+                <Route path="agents/:templateId" element={<AgentDetail />} />
+                <Route path="agents/deploy/:templateId" element={<AgentDeploy />} />
+                <Route path="agents/my" element={<MyAgents />} />
+                <Route path="agents/activity" element={<AgentActivity />} />
+                <Route path="agents/routines" element={<Routines />} />
+                <Route path="mission-state" element={<MissionState />} />
+                <Route path="workspace/staffing-plan" element={<StaffingPlanReview />} />
+                <Route path="workspace/org-structure" element={<OrgStructure />} />
+                <Route path="workspace/budget-dashboard" element={<BudgetDashboard />} />
+                <Route path="tickets" element={<Tickets />} />
+                <Route path="tickets/sla" element={<TicketSlaDashboard />} />
+                <Route path="tickets/team" element={<TicketTeamView />} />
+                <Route path="tickets/actors/:actorType/:actorId" element={<TicketActorView />} />
+                <Route path="tickets/:ticketId" element={<TicketDetail />} />
+                <Route path="settings" element={<Settings />} />
+                <Route path="settings/ticketing-sla" element={<TicketSlaSettings />} />
+                <Route path="settings/integrations" element={<Integrations />} />
+                <Route path="settings/llm-providers" element={<LLMProviders />} />
+                <Route path="settings/profile" element={<ProfileSettings />} />
+                <Route path="settings/security" element={<SecuritySettings />} />
+                <Route path="settings/notifications" element={<NotificationsSettings />} />
+                <Route path="settings/api-keys" element={<ApiKeys />} />
+                <Route path="settings/mcp-servers" element={<McpServers />} />
+                <Route path="pricing" element={<Pricing />} />
+                <Route path="approvals" element={<Approvals />} />
+                <Route path="memory" element={<Memory />} />
+                <Route path="integrations" element={<Integrations />} />
+                <Route path="integrations/health" element={<ConnectorHealth />} />
+                <Route path="integrations/mcp" element={<MCPIntegrations />} />
+                <Route path="logs" element={<ExecutionLogs />} />
+              </Route>
+              <Route path="*" element={<Navigate to="/" replace />} />
+            </SentryRoutes>
+          </BrowserRouter>
+        </WorkspaceProvider>
       </AuthProvider>
     </Sentry.ErrorBoundary>
   );

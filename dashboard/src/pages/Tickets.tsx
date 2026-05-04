@@ -27,6 +27,7 @@ import {
 } from "../api/tickets";
 import { listAgents } from "../api/agentApi";
 import { useAuth } from "../context/AuthContext";
+import { useWorkspace } from "../context/useWorkspace";
 import {
   TicketActorChip,
   TicketEmptyState,
@@ -62,6 +63,7 @@ export default function Tickets() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const { getAccessToken, user } = useAuth();
+  const { activeWorkspaceId } = useWorkspace();
   const [tickets, setTickets] = useState<TicketRecord[]>([]);
   const [availableActors, setAvailableActors] = useState<TicketActorRef[]>([]);
   const [loading, setLoading] = useState(true);
@@ -92,7 +94,7 @@ export default function Tickets() {
     try {
       const accessToken = (await getAccessToken()) ?? undefined;
       const [response, agents] = await Promise.all([
-        listTickets({}, accessToken),
+        listTickets({ workspaceId: activeWorkspaceId ?? undefined }, accessToken),
         accessToken ? listAgents(accessToken).catch(() => []) : Promise.resolve([]),
       ]);
 
@@ -143,7 +145,7 @@ export default function Tickets() {
     } finally {
       setLoading(false);
     }
-  }, [getAccessToken, user]);
+  }, [activeWorkspaceId, getAccessToken, user]);
 
   useEffect(() => {
     void loadTickets();
@@ -205,6 +207,7 @@ export default function Tickets() {
 
     const assignees = buildAssignees(formState.primaryActorKey, formState.collaboratorKeys);
     const payload: CreateTicketUiPayload = {
+      workspaceId: activeWorkspaceId ?? undefined,
       title: formState.title.trim(),
       description: formState.description.trim(),
       priority: formState.priority,

@@ -3,10 +3,12 @@ import { Link } from "react-router-dom";
 import { ArrowRight, Layers3, Search } from "lucide-react";
 import { listTemplates, type TemplateSummary } from "../api/client";
 import { ErrorState, LoadingState } from "../components/UiStates";
+import { useWorkspace } from "../context/useWorkspace";
 
 const ALL_CATEGORY = "All";
 
 export default function Templates() {
+  const { activeWorkspaceId } = useWorkspace();
   const [templates, setTemplates] = useState<TemplateSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -38,7 +40,7 @@ export default function Templates() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [activeWorkspaceId]);
 
   const categories = useMemo(
     () => [ALL_CATEGORY, ...Array.from(new Set(templates.map((template) => template.category))).sort()],

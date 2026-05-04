@@ -27,11 +27,13 @@ import type { WorkflowRun, StepResult, AgentSlotResult } from "../types/workflow
 import clsx from "clsx";
 import { EmptyState, ErrorState, LoadingState } from "../components/UiStates";
 import { useAuth } from "../context/AuthContext";
+import { useWorkspace } from "../context/useWorkspace";
 
 const POLL_INTERVAL_MS = 3000;
 
 export default function RunMonitor() {
   const { accessMode, getAccessToken } = useAuth();
+  const { activeWorkspaceId } = useWorkspace();
   const [runs, setRuns] = useState<WorkflowRun[]>([]);
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
   const [lastRefreshed, setLastRefreshed] = useState(new Date());
@@ -80,7 +82,7 @@ export default function RunMonitor() {
     void fetchRuns();
     const id = setInterval(() => { void fetchRuns(true); }, POLL_INTERVAL_MS);
     return () => clearInterval(id);
-  }, [fetchRuns]);
+  }, [activeWorkspaceId, fetchRuns]);
 
   function toggleExpand(id: string) {
     setExpandedIds((prev) => {

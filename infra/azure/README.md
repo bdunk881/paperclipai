@@ -141,7 +141,7 @@ GitHub larger runners with static IPs, or a dedicated VPN/NAT path.
 
 | Environment | Secret | Description |
 |---|---|---|
-| `staging` | `AZURE_BACKEND_ENV_STAGING_SOCIAL_AUTH` | Newline-delimited env file containing `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `APP_JWT_SECRET`, and `SOCIAL_AUTH_CALLBACK_BASE_URL` for the staging Container App |
+| `staging` | `AZURE_BACKEND_ENV_STAGING_SOCIAL_AUTH` | Newline-delimited env file containing `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `APP_JWT_SECRET`, `APP_JWT_EXPIRES_IN=8h`, and `SOCIAL_AUTH_CALLBACK_BASE_URL` for the staging Container App |
 | `production` | `AZURE_BACKEND_ENV_PRODUCTION` | Newline-delimited env file materialized into the `autoflow-backend-secrets` Kubernetes secret |
 
 **Required Terraform variables for CIAM app-registration management:**
@@ -164,6 +164,7 @@ GitHub larger runners with static IPs, or a dedicated VPN/NAT path.
    ```env
    GOOGLE_CLIENT_SECRET=<google-oauth-client-secret>
    APP_JWT_SECRET=<32+ char random secret>
+   APP_JWT_EXPIRES_IN=8h
    SOCIAL_AUTH_CALLBACK_BASE_URL=https://staging-api.helloautoflow.com/api/auth/social
    SOCIAL_AUTH_DASHBOARD_URL=https://staging.app.helloautoflow.com
    AUTH_SOCIAL_ALLOWED_REDIRECT_ORIGINS=https://staging.app.helloautoflow.com
@@ -188,6 +189,7 @@ GitHub larger runners with static IPs, or a dedicated VPN/NAT path.
    keep the Passport callback route aligned with the deployed backend host.
 6. Add `AZURE_BACKEND_ENV_PRODUCTION` to the `production` environment so the
    AKS rollout can create `autoflow-backend-secrets` before the deployment starts.
+   That env file must include both `APP_JWT_SECRET` and `APP_JWT_EXPIRES_IN=8h`.
 7. Verify production-specific values do not reference `staging` or `nonprod`
    resource names; the workflow now hard-fails on cross-environment targets.
 8. Ensure `AZURE_BACKEND_ENV_PRODUCTION` includes CIAM auth fallback inputs

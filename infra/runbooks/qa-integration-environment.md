@@ -11,6 +11,25 @@ plus release-gate validation for analytics, performance, and browser coverage.
 - Landing pre-release/performance target: `https://staging.helloautoflow.com`
 - Landing production reference: `https://helloautoflow.com`
 
+## Production Onboarding Audit Path
+
+Use this path for production onboarding audits such as [ALT-2174](/ALT/issues/ALT-2174):
+
+- Start at `https://app.helloautoflow.com/login?mode=signup` or `https://app.helloautoflow.com/signup`.
+- Do not use `https://helloautoflow.com` as the signup entry point. The landing host is intentionally waitlist-first and its `/signup` route is a pricing/demo gateway, not the production account-creation surface.
+- Do not use `/api/qa-preview-access` on production. That endpoint is intentionally preview-only and must stay disabled on `app.helloautoflow.com`.
+- Use a fresh QA-controlled mailbox for the run so the email OOB verification step is observable without sharing production credentials.
+- Use a strong password on the first attempt. Microsoft Entra native auth rejects common passwords with `AADSTS399249 password_banned`.
+
+## Sequence B Verification
+
+Current sanctioned verification path for the post-signup Loops Sequence B check:
+
+- Primary check: open the contact in Loops Audience and review the contact activity timeline for the exact signup email.
+- Expected timeline evidence: `Sent`, and when applicable `Opened`, `Clicked`, plus any `Event fired` entries associated with the onboarding flow.
+- API spot-check: DevOps can confirm the contact exists with `GET https://app.loops.so/api/v1/contacts/find?email=<uri-encoded-email>`.
+- Current limitation: the repo does not expose an AutoFlow-owned Loops audit endpoint today, so Sequence B verification remains a manual Loops check during launch-readiness audits.
+
 ## API Health Probe Contract
 
 Use the dashboard QA base URL plus any of the following equivalent endpoints:

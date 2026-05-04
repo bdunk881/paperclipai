@@ -241,8 +241,8 @@ export default function Home() {
             <p className="eyebrow">The Electric Lab for operational teams</p>
             <h1>The AI-Native Operating Layer for SMB Operators and Developer Teams</h1>
             <p className="hero-copy__lede">
-              The intelligent operating layer for lean operators and dev teams who can&#39;t afford
-              brittle automations. AI-native, MCP-standard, and BYOLLM-ready.
+              Agent-native automation for lean operators and dev teams who can&#39;t afford brittle
+              automations. MCP-standard, BYOLLM-ready, and built by Altitude Media.
             </p>
             <div id="waitlist">
               <WaitlistForm className="hero-copy__form" buttonLabel="Join waitlist" />
@@ -442,7 +442,7 @@ export default function Home() {
           <div>
             <p className="site-footer__brand">AutoFlow</p>
             <p className="site-footer__copy">
-              The AI-native operating layer for teams shipping on live systems.
+              Agent-native automation by Altitude Media — for teams shipping on live systems.
             </p>
           </div>
           <div className="site-footer__links">

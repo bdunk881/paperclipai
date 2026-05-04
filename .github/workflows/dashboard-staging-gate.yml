@@ -115,18 +115,24 @@ jobs:
           echo "preview_url=$PREVIEW_URL" >> "$GITHUB_OUTPUT"
           echo "Preview URL: $PREVIEW_URL"
 
-      - name: Alias staging branch to staging dashboard domain
+      - name: Verify staging dashboard domain is live
         if: github.ref == 'refs/heads/staging'
         run: |
           set -euo pipefail
-          INSPECT_OUTPUT="$(npx vercel domains inspect "$STAGING_DASHBOARD_DOMAIN" --token="$VERCEL_TOKEN" 2>&1)" || true
-          printf '%s\n' "$INSPECT_OUTPUT"
-          if printf '%s\n' "$INSPECT_OUTPUT" | grep -q "WARNING! This Domain is not configured properly"; then
-            echo "::error::${STAGING_DASHBOARD_DOMAIN} is still pointed away from Vercel. Repoint DNS to Vercel before using the staging host."
-            exit 1
-          fi
-
-          npx vercel alias set "${{ steps.deploy.outputs.preview_url }}" "$STAGING_DASHBOARD_DOMAIN" --token="$VERCEL_TOKEN"
+          # staging.app.helloautoflow.com is a project domain with gitBranch=staging;
+          # Vercel automatically routes the latest staging deployment to it, so
+          # vercel alias set is not needed. Just confirm the domain is reachable.
+          for attempt in $(seq 1 12); do
+            HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 "https://$STAGING_DASHBOARD_DOMAIN" || echo "000")
+            echo "Attempt $attempt: https://$STAGING_DASHBOARD_DOMAIN → HTTP $HTTP_STATUS"
+            if [ "$HTTP_STATUS" -ge 200 ] && [ "$HTTP_STATUS" -lt 400 ]; then
+              echo "Staging domain is live."
+              exit 0
+            fi
+            if [ "$attempt" -lt 12 ]; then sleep 10; fi
+          done
+          echo "::error::${STAGING_DASHBOARD_DOMAIN} did not return a successful HTTP status after 2 minutes."
+          exit 1
 
   smoke-auth-preview:
     name: Smoke Test Preview Auth

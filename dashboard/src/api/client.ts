@@ -834,12 +834,12 @@ export async function listTemplates(category?: string): Promise<TemplateSummary[
 }
 
 /** POST /api/templates */
-export async function createTemplate(input: CreateTemplateInput): Promise<WorkflowTemplate> {
+export async function createTemplate(input: CreateTemplateInput, accessToken?: string): Promise<WorkflowTemplate> {
   return withMockApi(
     async () => {
       const res = await trackedFetch(`${BASE}/templates`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: buildJsonHeaders(accessToken),
         body: JSON.stringify(input),
       });
       if (!res.ok) {

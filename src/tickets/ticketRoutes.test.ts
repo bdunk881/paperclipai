@@ -22,18 +22,18 @@ function buildTestApp() {
       res.status(401).json({ error: "Missing or malformed Authorization header." });
       return;
     }
-    req.auth = { sub: authHeader.slice(7), email: "test@example.com" };
+    req.auth = {
+      sub: authHeader.slice(7),
+      email: "test@example.com",
+      workspaceId: "11111111-1111-4111-8111-111111111111",
+    };
     next();
   });
   app.use((req: WorkspaceAwareRequest, _res, next) => {
     const headerWorkspaceId =
       typeof req.headers["x-workspace-id"] === "string" ? req.headers["x-workspace-id"].trim() : "";
-    const bodyWorkspaceId =
-      typeof (req.body as { workspaceId?: unknown } | undefined)?.workspaceId === "string"
-        ? String((req.body as { workspaceId?: string }).workspaceId).trim()
-        : "";
     const queryWorkspaceId = typeof req.query.workspaceId === "string" ? req.query.workspaceId.trim() : "";
-    req.workspaceId = headerWorkspaceId || bodyWorkspaceId || queryWorkspaceId || "11111111-1111-4111-8111-111111111111";
+    req.workspaceId = headerWorkspaceId || req.auth?.workspaceId || queryWorkspaceId || "";
     next();
   });
   app.use("/api/tickets", ticketRoutes);

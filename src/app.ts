@@ -87,7 +87,8 @@ import googleWorkspaceConnectorRoutes from "./connectors/google-workspace/routes
 import googleWorkspaceWebhookRoutes from "./connectors/google-workspace/webhookRoutes";
 import notificationRoutes from "./notifications/routes";
 import { getPostgresPool, isPostgresPersistenceEnabled } from "./db/postgres";
-import { createWorkspaceResolver } from "./middleware/workspaceResolver";
+import { createWorkspaceResolver, WorkspaceAwareRequest } from "./middleware/workspaceResolver";
+import { createWorkspaceRoutes } from "./workspaces/workspaceRoutes";
 import {
   createPortableWorkflowBundle,
   getPortableWorkflowSchemaDescriptor,
@@ -101,6 +102,11 @@ const app = express();
 const workspaceResolver = isPostgresPersistenceEnabled()
   ? createWorkspaceResolver(getPostgresPool())
   : (_req: express.Request, _res: express.Response, next: express.NextFunction) => next();
+const workspaceRoutes = isPostgresPersistenceEnabled()
+  ? createWorkspaceRoutes(getPostgresPool())
+  : express.Router().get("/", (_req, res) => {
+      res.json({ workspaces: [], total: 0 });
+    });
 
 function parseAllowedOrigins(value: string | undefined): string[] {
   if (!value) {
@@ -351,6 +357,7 @@ app.use("/api/integrations/intercom", intercomRoutes);
 app.use("/api/integrations/datadog-azure-monitor", datadogAzureMonitorRoutes);
 app.use("/api/integrations/agent-catalog", agentCatalogRoutes);
 app.use("/api/connectors/google-workspace", googleWorkspaceConnectorRoutes);
+app.use("/api/workspaces", requireAuth, workspaceRoutes);
 app.use("/api/companies", requireAuth, workspaceResolver, companyRoutes);
 app.use("/api/control-plane", requireAuth, controlPlaneRoutes);
 app.use("/api/hitl", requireAuth, hitlRoutes);
@@ -536,7 +543,7 @@ app.get("/api/templates/:id/sample", (req, res) => {
  * Body: { templateId, input, config? }
  * Returns the new run (status=pending) immediately; execution is async.
  */
-app.post("/api/runs", requireAuthOrQaBypass, llmEndpointRateLimiter, async (req: AuthenticatedRequest, res) => {
+app.post("/api/runs", requireAuthOrQaBypass, workspaceResolver, llmEndpointRateLimiter, async (req: WorkspaceAwareRequest, res) => {
   const { templateId, input, config } = req.body as {
     templateId?: string;
     input?: Record<string, unknown>;
@@ -557,12 +564,17 @@ app.post("/api/runs", requireAuthOrQaBypass, llmEndpointRateLimiter, async (req:
   }
 
   const userId = req.auth?.sub;
-  const run = await workflowEngine.startRun(template, input ?? {}, config, userId);
+  const resolvedInput = { ...(input ?? {}) };
+  if (req.workspaceId) {
+    resolvedInput.workspaceId = req.workspaceId;
+  }
+  const resolvedConfig = req.workspaceId ? { ...(config ?? {}), workspaceId: req.workspaceId } : config;
+  const run = await workflowEngine.startRun(template, resolvedInput, resolvedConfig, userId);
   res.status(202).json(run);
 });
 
 /** List all runs, optionally filtered by templateId */
-app.get("/api/runs", requireAuthOrQaBypass, async (req: AuthenticatedRequest, res) => {
+app.get("/api/runs", requireAuthOrQaBypass, workspaceResolver, async (req: WorkspaceAwareRequest, res) => {
   const { templateId } = req.query;
   const runs = await runStore.list(
     typeof templateId === "string" ? templateId : undefined,
@@ -572,7 +584,7 @@ app.get("/api/runs", requireAuthOrQaBypass, async (req: AuthenticatedRequest, re
 });
 
 /** Get a single run by ID */
-app.get("/api/runs/:id", requireAuthOrQaBypass, async (req: AuthenticatedRequest, res) => {
+app.get("/api/runs/:id", requireAuthOrQaBypass, workspaceResolver, async (req: WorkspaceAwareRequest, res) => {
   const run = await runStore.get(req.params.id);
   const userId = req.auth?.sub;
   if (!run || (run.userId !== undefined && run.userId !== userId)) {
@@ -634,7 +646,7 @@ app.get("/api/analytics/routing-decisions", requireAuth, (_req, res) => {
  * starts a workflow run with { content, mimeType, filename } injected as input.
  * Returns the created run (status=pending).
  */
-app.post("/api/runs/file", requireAuthOrQaBypass, upload.single("file"), async (req: AuthenticatedRequest, res) => {
+app.post("/api/runs/file", requireAuthOrQaBypass, workspaceResolver, upload.single("file"), async (req: WorkspaceAwareRequest, res) => {
   const { templateId } = req.body as { templateId?: string };
 
   if (!templateId) {
@@ -684,6 +696,9 @@ app.post("/api/runs/file", requireAuthOrQaBypass, upload.single("file"), async (
     mimeType: parsed.mimeType,
     filename: parsed.filename,
   };
+  if (req.workspaceId) {
+    input.workspaceId = req.workspaceId;
+  }
 
   const run = await workflowEngine.startRun(template, input, undefined, userId);
   res.status(202).json(run);
@@ -720,7 +735,7 @@ Rules:
  * Uses the authenticated JWT subject to resolve the user's LLM config.
  * Returns: { steps: WorkflowStep[] }
  */
-app.post("/api/workflows/generate", requireAuth, llmEndpointRateLimiter, async (req: AuthenticatedRequest, res) => {
+app.post("/api/workflows/generate", requireAuth, workspaceResolver, llmEndpointRateLimiter, async (req: WorkspaceAwareRequest, res) => {
   const { description, llmConfigId } = req.body as {
     description?: unknown;
     llmConfigId?: unknown;

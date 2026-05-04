@@ -3,8 +3,9 @@
  *
  * Resolves the workspace ID for an authenticated request by:
  * 1. Checking for an explicit X-Workspace-Id header
- * 2. Falling back to the user's default (sole-owner) workspace
- * 3. Validating workspace membership before allowing access
+ * 2. Falling back to an authenticated workspace claim when present
+ * 3. Falling back to the user's default (sole-owner/member) workspace
+ * 4. Validating workspace membership before allowing access
  *
  * Attaches `req.workspaceId` for downstream handlers.
  *
@@ -119,11 +120,13 @@ export function createWorkspaceResolver(pool: Pool) {
       typeof req.headers["x-workspace-id"] === "string"
         ? req.headers["x-workspace-id"].trim()
         : null;
+    const claimedWorkspaceId = req.auth?.workspaceId?.trim() || null;
+    const requestedWorkspaceId = explicitWorkspaceId || claimedWorkspaceId;
 
     try {
-      if (explicitWorkspaceId) {
+      if (requestedWorkspaceId) {
         // Validate UUID format to prevent injection
-        if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(explicitWorkspaceId)) {
+        if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(requestedWorkspaceId)) {
           res.status(400).json({ error: "Invalid workspace ID format." });
           return;
         }
@@ -139,7 +142,7 @@ export function createWorkspaceResolver(pool: Pool) {
                  WHERE wm.workspace_id = w.id AND wm.user_id = $2
                )
              )`,
-          [explicitWorkspaceId, userId],
+          [requestedWorkspaceId, userId],
         );
 
         if (getResultCount(membershipCheck) === 0) {
@@ -147,7 +150,7 @@ export function createWorkspaceResolver(pool: Pool) {
           return;
         }
 
-        req.workspaceId = explicitWorkspaceId;
+        req.workspaceId = requestedWorkspaceId;
         next();
         return;
       }

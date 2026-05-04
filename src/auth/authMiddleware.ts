@@ -210,7 +210,36 @@ export interface AuthenticatedRequest extends Request {
     oid?: string;
     provider?: "entra" | "google" | "facebook" | "apple";
     issuer?: string;
+    workspaceId?: string;
   };
+}
+
+function resolveWorkspaceClaim(payload: JwtPayload): string | undefined {
+  const directCandidates = [
+    payload["workspaceId"],
+    payload["workspace_id"],
+    payload["extension_workspaceId"],
+    payload["extension_workspace_id"],
+    payload["https://autoflow.ai/workspaceId"],
+    payload["https://autoflow.ai/workspace_id"],
+  ];
+
+  for (const candidate of directCandidates) {
+    if (typeof candidate === "string" && candidate.trim()) {
+      return candidate.trim();
+    }
+  }
+
+  for (const [key, value] of Object.entries(payload)) {
+    if (!/workspace(_id|Id)$/i.test(key)) {
+      continue;
+    }
+    if (typeof value === "string" && value.trim()) {
+      return value.trim();
+    }
+  }
+
+  return undefined;
 }
 
 const DEFAULT_QA_BYPASS_USER_IDS = ["qa-smoke-user"];
@@ -359,6 +388,7 @@ export function requireAuth(
         name: appClaims.name,
         provider: appClaims.provider,
         issuer: appClaims.iss,
+        workspaceId: appClaims.workspaceId,
       };
 
       next();
@@ -426,6 +456,7 @@ export function requireAuth(
         oid: claims.oid as string | undefined,
         provider: "entra",
         issuer: claims.iss as string | undefined,
+        workspaceId: resolveWorkspaceClaim(claims),
       };
 
       next();

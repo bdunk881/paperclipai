@@ -15,21 +15,21 @@ const jetbrainsMono = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "AutoFlow | Hire AI. Deploy Fast. Earn More.",
+  title: "AutoFlow | The AI-Native Operating Layer for SMB Operators and Developer Teams",
   description:
-    "AutoFlow is the intelligent nervous system for modern teams: AI-native, MCP-standard, and BYOLLM-ready.",
+    "The AI-native operating layer for lean SMB operators and developer teams. BYOLLM, MCP-standard, 22-skill marketplace.",
   openGraph: {
-    title: "AutoFlow | Hire AI. Deploy Fast. Earn More.",
+    title: "AutoFlow | The AI-Native Operating Layer for SMB Operators and Developer Teams",
     description:
-      "AutoFlow is the intelligent nervous system for modern teams: AI-native, MCP-standard, and BYOLLM-ready.",
+      "The AI-native operating layer for lean SMB operators and developer teams. BYOLLM, MCP-standard, 22-skill marketplace.",
     type: "website",
     siteName: "AutoFlow",
   },
   twitter: {
     card: "summary_large_image",
-    title: "AutoFlow | Hire AI. Deploy Fast. Earn More.",
+    title: "AutoFlow | The AI-Native Operating Layer for SMB Operators and Developer Teams",
     description:
-      "AutoFlow is the intelligent nervous system for modern teams: AI-native, MCP-standard, and BYOLLM-ready.",
+      "The AI-native operating layer for lean SMB operators and developer teams. BYOLLM, MCP-standard, 22-skill marketplace.",
   },
 };
 

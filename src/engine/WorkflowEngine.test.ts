@@ -640,7 +640,7 @@ describe("WorkflowEngine — approval tier governance", () => {
     registerAction("content.publish", async () => ({ published: true, contentId: "post-1" }));
 
     await approvalPolicyStore.upsert({
-      workspaceId: "11111111-1111-4111-8111-111111111111",
+      workspaceId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
       actionType: "public_posts",
       mode: "require_approval",
     });
@@ -656,7 +656,7 @@ describe("WorkflowEngine — approval tier governance", () => {
     });
 
     const run = await engine.startRun(tpl, {
-      workspaceId: "11111111-1111-4111-8111-111111111111",
+      workspaceId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
       draft: "Ship it",
     });
 
@@ -676,7 +676,7 @@ describe("WorkflowEngine — approval tier governance", () => {
     registerAction("content.publish", async () => ({ published: true, contentId: "post-2" }));
 
     await approvalPolicyStore.upsert({
-      workspaceId: "11111111-1111-4111-8111-111111111111",
+      workspaceId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
       actionType: "public_posts",
       mode: "notify_only",
     });
@@ -692,7 +692,7 @@ describe("WorkflowEngine — approval tier governance", () => {
     });
 
     const run = await engine.startRun(tpl, {
-      workspaceId: "11111111-1111-4111-8111-111111111111",
+      workspaceId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
       draft: "Publish without blocking",
     });
 

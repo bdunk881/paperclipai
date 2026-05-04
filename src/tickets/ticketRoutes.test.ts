@@ -22,18 +22,18 @@ function buildTestApp() {
       res.status(401).json({ error: "Missing or malformed Authorization header." });
       return;
     }
-    req.auth = { sub: authHeader.slice(7), email: "test@example.com" };
+    req.auth = {
+      sub: authHeader.slice(7),
+      email: "test@example.com",
+      workspaceId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+    };
     next();
   });
   app.use((req: WorkspaceAwareRequest, _res, next) => {
     const headerWorkspaceId =
       typeof req.headers["x-workspace-id"] === "string" ? req.headers["x-workspace-id"].trim() : "";
-    const bodyWorkspaceId =
-      typeof (req.body as { workspaceId?: unknown } | undefined)?.workspaceId === "string"
-        ? String((req.body as { workspaceId?: string }).workspaceId).trim()
-        : "";
     const queryWorkspaceId = typeof req.query.workspaceId === "string" ? req.query.workspaceId.trim() : "";
-    req.workspaceId = headerWorkspaceId || bodyWorkspaceId || queryWorkspaceId || "11111111-1111-4111-8111-111111111111";
+    req.workspaceId = headerWorkspaceId || req.auth?.workspaceId || queryWorkspaceId || "";
     next();
   });
   app.use("/api/tickets", ticketRoutes);
@@ -75,7 +75,7 @@ describe("ticket routes", () => {
       .set(auth("creator-1"))
       .set("X-Paperclip-Run-Id", "run-ticket-create")
       .send({
-        workspaceId: "11111111-1111-4111-8111-111111111111",
+        workspaceId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
         title: "Investigate agent handoff regression",
         description: "Need durable ticketing backend support.",
         priority: "high",
@@ -95,7 +95,7 @@ describe("ticket routes", () => {
   it("requires X-Paperclip-Run-Id on ticket mutations", async () => {
     const app = buildTestApp();
     const res = await request(app).post("/api/tickets").set(auth("creator-1")).send({
-      workspaceId: "11111111-1111-4111-8111-111111111111",
+      workspaceId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
       title: "Missing header",
       assignees: [{ type: "user", id: "creator-1", role: "primary" }],
     });
@@ -112,7 +112,7 @@ describe("ticket routes", () => {
       .set("X-Paperclip-Run-Id", "run-ticket-workspace-mismatch")
       .set("X-Workspace-Id", "22222222-2222-4222-8222-222222222222")
       .send({
-        workspaceId: "11111111-1111-4111-8111-111111111111",
+        workspaceId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
         title: "Workspace mismatch",
         assignees: [{ type: "user", id: "creator-1", role: "primary" }],
       });
@@ -128,7 +128,7 @@ describe("ticket routes", () => {
       .set(auth("creator-1"))
       .set("X-Paperclip-Run-Id", "run-ticket-queue-1")
       .send({
-        workspaceId: "11111111-1111-4111-8111-111111111111",
+        workspaceId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
         title: "Primary backend task",
         priority: "high",
         assignees: [{ type: "agent", id: "backend-engineer", role: "primary" }],
@@ -139,7 +139,7 @@ describe("ticket routes", () => {
       .set(auth("creator-1"))
       .set("X-Paperclip-Run-Id", "run-ticket-queue-2")
       .send({
-        workspaceId: "11111111-1111-4111-8111-111111111111",
+        workspaceId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
         title: "Other queue item",
         priority: "low",
         assignees: [{ type: "agent", id: "frontend-engineer", role: "primary" }],
@@ -149,7 +149,7 @@ describe("ticket routes", () => {
 
     const res = await request(app)
       .get(
-        "/api/tickets/queue/agent/backend-engineer?workspaceId=11111111-1111-4111-8111-111111111111&priority=high"
+        "/api/tickets/queue/agent/backend-engineer?workspaceId=aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa&priority=high"
       )
       .set(auth("creator-1"));
 
@@ -162,7 +162,7 @@ describe("ticket routes", () => {
     const app = buildTestApp();
 
     const list = await request(app)
-      .get("/api/tickets/sla/policies?workspaceId=11111111-1111-4111-8111-111111111111")
+      .get("/api/tickets/sla/policies?workspaceId=aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa")
       .set(auth("creator-1"));
 
     expect(list.status).toBe(200);
@@ -174,7 +174,7 @@ describe("ticket routes", () => {
       .set(auth("creator-1"))
       .set("X-Paperclip-Run-Id", "run-ticket-policy-update")
       .send({
-        workspaceId: "11111111-1111-4111-8111-111111111111",
+        workspaceId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
         firstResponseTarget: { kind: "minutes", value: 45 },
         resolutionTarget: { kind: "business_days", value: 2 },
         escalation: {
@@ -190,6 +190,99 @@ describe("ticket routes", () => {
     expect(updated.body.policy.escalation.autoReassign).toBe(true);
   });
 
+  it("returns live SLA settings payload and persists dashboard edits", async () => {
+    const app = buildTestApp();
+
+    const initial = await request(app)
+      .get("/api/tickets/sla/settings?workspaceId=aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa")
+      .set(auth("creator-1"));
+
+    expect(initial.status).toBe(200);
+    expect(initial.body.policies).toHaveLength(4);
+    expect(initial.body.escalationRules).toHaveLength(4);
+    expect(Array.isArray(initial.body.fallbackCandidates)).toBe(true);
+
+    const updated = await request(app)
+      .patch("/api/tickets/sla/settings")
+      .set(auth("creator-1"))
+      .set("X-Paperclip-Run-Id", "run-ticket-sla-settings")
+      .send({
+        workspaceId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+        policies: [
+          { priority: "urgent", firstResponseMinutes: 15, resolutionMinutes: 240 },
+          { priority: "high", firstResponseMinutes: 45, resolutionMinutes: 1440 },
+          { priority: "medium", firstResponseMinutes: 240, resolutionMinutes: 4320 },
+          { priority: "low", firstResponseMinutes: 1440, resolutionMinutes: 10080 },
+        ],
+        escalationRules: [
+          {
+            priority: "urgent",
+            notifyTargets: ["@CTO", "#incident-room"],
+            autoBumpPriority: false,
+            autoReassign: true,
+            fallbackActor: { type: "agent", id: "cto-agent" },
+          },
+          {
+            priority: "high",
+            notifyTargets: ["ops@autoflow.ai"],
+            autoBumpPriority: true,
+            autoReassign: false,
+          },
+          {
+            priority: "medium",
+            notifyTargets: [],
+            autoBumpPriority: false,
+            autoReassign: false,
+          },
+          {
+            priority: "low",
+            notifyTargets: [],
+            autoBumpPriority: false,
+            autoReassign: false,
+          },
+        ],
+      });
+
+    expect(updated.status).toBe(200);
+    expect(updated.body.policies.find((row: { priority: string }) => row.priority === "high")).toMatchObject({
+      firstResponseMinutes: 45,
+      resolutionMinutes: 1440,
+    });
+    expect(
+      updated.body.escalationRules.find((row: { priority: string }) => row.priority === "urgent")
+    ).toMatchObject({
+      notifyTargets: ["@CTO", "#incident-room"],
+      autoReassign: true,
+      fallbackActor: { type: "agent", id: "cto-agent" },
+    });
+
+    const persisted = await request(app)
+      .get("/api/tickets/sla/settings?workspaceId=aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa")
+      .set(auth("creator-1"));
+
+    expect(persisted.status).toBe(200);
+    expect(
+      persisted.body.escalationRules.find((row: { priority: string }) => row.priority === "urgent")
+    ).toMatchObject({
+      notifyTargets: ["@CTO", "#incident-room"],
+      fallbackActor: { type: "agent", id: "cto-agent" },
+    });
+
+    const policies = await request(app)
+      .get("/api/tickets/sla/policies?workspaceId=aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa")
+      .set(auth("creator-1"));
+
+    expect(policies.status).toBe(200);
+    expect(policies.body.policies.find((row: { priority: string }) => row.priority === "high")).toMatchObject({
+      firstResponseTarget: { kind: "minutes", value: 45 },
+      resolutionTarget: { kind: "minutes", value: 1440 },
+    });
+    expect(policies.body.policies.find((row: { priority: string }) => row.priority === "low")).toMatchObject({
+      firstResponseTarget: { kind: "minutes", value: 1440 },
+      resolutionTarget: { kind: "minutes", value: 10080 },
+    });
+  });
+
   it("allows the primary assignee to transition the ticket and logs activity", async () => {
     const app = buildTestApp();
     const created = await request(app)
@@ -197,7 +290,7 @@ describe("ticket routes", () => {
       .set(auth("creator-1"))
       .set("X-Paperclip-Run-Id", "run-ticket-transition-create")
       .send({
-        workspaceId: "11111111-1111-4111-8111-111111111111",
+        workspaceId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
         title: "Status transition coverage",
         assignees: [{ type: "user", id: "creator-1", role: "primary" }],
       });
@@ -236,7 +329,7 @@ describe("ticket routes", () => {
       .set(auth("creator-1"))
       .set("X-Paperclip-Run-Id", "run-ticket-forbidden-create")
       .send({
-        workspaceId: "11111111-1111-4111-8111-111111111111",
+        workspaceId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
         title: "Forbidden transition",
         assignees: [
           { type: "user", id: "owner-1", role: "primary" },
@@ -261,7 +354,7 @@ describe("ticket routes", () => {
       .set(auth("owner-1"))
       .set("X-Paperclip-Run-Id", "run-ticket-invalid-create")
       .send({
-        workspaceId: "11111111-1111-4111-8111-111111111111",
+        workspaceId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
         title: "Invalid transition",
         assignees: [{ type: "user", id: "owner-1", role: "primary" }],
       });
@@ -283,7 +376,7 @@ describe("ticket routes", () => {
       .set(auth("owner-1"))
       .set("X-Paperclip-Run-Id", "run-ticket-update-create")
       .send({
-        workspaceId: "11111111-1111-4111-8111-111111111111",
+        workspaceId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
         title: "Activity stream",
         assignees: [{ type: "user", id: "owner-1", role: "primary" }],
       });
@@ -310,7 +403,7 @@ describe("ticket routes", () => {
       .set(auth("creator-1"))
       .set("X-Paperclip-Run-Id", "run-ticket-notify-create")
       .send({
-        workspaceId: "11111111-1111-4111-8111-111111111111",
+        workspaceId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
         title: "Notification fanout",
         assignees: [
           { type: "agent", id: "backend-agent", role: "primary" },
@@ -353,7 +446,7 @@ describe("ticket routes", () => {
       .set(auth("creator-1"))
       .set("X-Paperclip-Run-Id", "run-ticket-parent-create")
       .send({
-        workspaceId: "11111111-1111-4111-8111-111111111111",
+        workspaceId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
         title: "Parent ticket",
         assignees: [{ type: "agent", id: "backend-agent", role: "primary" }],
       });
@@ -363,7 +456,7 @@ describe("ticket routes", () => {
       .set(auth("creator-1"))
       .set("X-Paperclip-Run-Id", "run-ticket-child-create")
       .send({
-        workspaceId: "11111111-1111-4111-8111-111111111111",
+        workspaceId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
         parentId: parent.body.ticket.id,
         title: "Child ticket",
         assignees: [{ type: "agent", id: "backend-agent", role: "primary" }],
@@ -409,7 +502,7 @@ describe("ticket routes", () => {
       .set(auth("creator-1"))
       .set("X-Paperclip-Run-Id", "run-ticket-ready-create")
       .send({
-        workspaceId: "11111111-1111-4111-8111-111111111111",
+        workspaceId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
         title: "Ready to close coverage",
         assignees: [
           { type: "agent", id: "backend-agent", role: "primary" },
@@ -465,7 +558,7 @@ describe("ticket routes", () => {
       .set(auth("creator-1"))
       .set("X-Paperclip-Run-Id", "run-ticket-sla-policy")
       .send({
-        workspaceId: "11111111-1111-4111-8111-111111111111",
+        workspaceId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
         firstResponseTarget: { kind: "minutes", value: 1 },
         resolutionTarget: { kind: "minutes", value: 1 },
         escalation: {
@@ -481,7 +574,7 @@ describe("ticket routes", () => {
       .set(auth("creator-1"))
       .set("X-Paperclip-Run-Id", "run-ticket-sla-create")
       .send({
-        workspaceId: "11111111-1111-4111-8111-111111111111",
+        workspaceId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
         title: "SLA breach coverage",
         priority: "medium",
         assignees: [{ type: "agent", id: "backend-agent", role: "primary" }],
@@ -492,7 +585,7 @@ describe("ticket routes", () => {
       .set(auth("creator-1"))
       .set("X-Paperclip-Run-Id", "run-ticket-sla-evaluate")
       .send({
-        workspaceId: "11111111-1111-4111-8111-111111111111",
+        workspaceId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
         now: "2030-01-01T00:10:00.000Z",
       });
 
@@ -515,7 +608,7 @@ describe("ticket routes", () => {
 
     await agentMemoryStore.createTicketCloseEntry({
       userId: "creator-1",
-      workspaceId: "11111111-1111-4111-8111-111111111111",
+      workspaceId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
       agentId: "backend-agent",
       runId: "run-memory-seed",
       ticketId: "ALT-42",
@@ -534,7 +627,7 @@ describe("ticket routes", () => {
       .set(auth("creator-1"))
       .set("X-Paperclip-Run-Id", "run-ticket-memory-create")
       .send({
-        workspaceId: "11111111-1111-4111-8111-111111111111",
+        workspaceId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
         title: "Investigate billing queue mismatch",
         description: "The billing queue shows duplicate reconciliation rows.",
         tags: ["billing", "queue"],
@@ -563,7 +656,7 @@ describe("ticket routes", () => {
       .set(auth("creator-1"))
       .set("X-Paperclip-Run-Id", "run-ticket-close-create")
       .send({
-        workspaceId: "11111111-1111-4111-8111-111111111111",
+        workspaceId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
         title: "Close hook coverage",
         description: "Need per-agent memory writes on resolve.",
         tags: ["memory", "close-hook"],
@@ -652,7 +745,7 @@ describe("ticket routes", () => {
 
     const backendMemories = await agentMemoryStore.searchEntries({
       userId: "creator-1",
-      workspaceId: "11111111-1111-4111-8111-111111111111",
+      workspaceId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
       agentId: "backend-agent",
       query: "close hook",
       entryType: "ticket_close",
@@ -660,7 +753,7 @@ describe("ticket routes", () => {
     });
     const qaMemories = await agentMemoryStore.searchEntries({
       userId: "creator-1",
-      workspaceId: "11111111-1111-4111-8111-111111111111",
+      workspaceId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
       agentId: "qa-agent",
       query: "multi-agent",
       entryType: "ticket_close",
@@ -682,7 +775,7 @@ describe("ticket routes", () => {
       .set(auth("creator-1"))
       .set("X-Paperclip-Run-Id", "run-ticket-retry-create")
       .send({
-        workspaceId: "11111111-1111-4111-8111-111111111111",
+        workspaceId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
         title: "Retry queue coverage",
         assignees: [{ type: "agent", id: "backend-agent", role: "primary" }],
       });
@@ -743,7 +836,7 @@ describe("ticket routes", () => {
     expect(ticketStore.pendingTicketCloseMemoryWriteCountForTests()).toBe(0);
     const memories = await agentMemoryStore.searchEntries({
       userId: "creator-1",
-      workspaceId: "11111111-1111-4111-8111-111111111111",
+      workspaceId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
       agentId: "backend-agent",
       query: "transient embedding failures",
       entryType: "ticket_close",
@@ -761,7 +854,7 @@ describe("ticket routes", () => {
       .set(auth("creator-1"))
       .set("X-Paperclip-Run-Id", "run-ticket-derived-create")
       .send({
-        workspaceId: "11111111-1111-4111-8111-111111111111",
+        workspaceId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
         title: "Derived memory coverage",
         description: "Ensure resolved tickets can infer memory payloads from ticket context.",
         tags: ["memory", "derived"],
@@ -816,7 +909,7 @@ describe("ticket routes", () => {
 
     const memories = await agentMemoryStore.searchEntries({
       userId: "creator-1",
-      workspaceId: "11111111-1111-4111-8111-111111111111",
+      workspaceId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
       agentId: "backend-agent",
       query: "inferred ticket-close memory path",
       entryType: "ticket_close",

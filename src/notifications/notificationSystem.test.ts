@@ -12,11 +12,11 @@ describe("notification system", () => {
   });
 
   it("lists default workspace preferences and persists updates", async () => {
-    const initial = await notificationService.listPreferences("11111111-1111-4111-8111-111111111111");
+    const initial = await notificationService.listPreferences("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa");
     expect(initial).toHaveLength(15);
 
     const updated = await notificationService.updatePreference({
-      workspaceId: "11111111-1111-4111-8111-111111111111",
+      workspaceId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
       channel: "email",
       kind: "milestones",
       cadence: "daily",
@@ -36,7 +36,7 @@ describe("notification system", () => {
 
     const [slackConnection] = slackCredentialStore.getPublicByUser("user-1");
     await notificationService.upsertTransportConfig({
-      workspaceId: "11111111-1111-4111-8111-111111111111",
+      workspaceId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
       channel: "slack",
       ownerUserId: "user-1",
       connectionId: slackConnection?.id,
@@ -44,7 +44,7 @@ describe("notification system", () => {
       config: { slackChannelId: "C-alerts", slackChannelName: "alerts" },
     });
     await notificationService.updatePreference({
-      workspaceId: "11111111-1111-4111-8111-111111111111",
+      workspaceId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
       channel: "slack",
       kind: "kill_switch",
       cadence: "immediate",
@@ -59,13 +59,13 @@ describe("notification system", () => {
     );
 
     await notificationService.recordEvent({
-      workspaceId: "11111111-1111-4111-8111-111111111111",
+      workspaceId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
       kind: "kill_switch",
       title: "Kill switch triggered",
       summary: "All outbound runs paused.",
       severity: "critical",
     });
-    const result = await notificationService.runSweepForWorkspace("11111111-1111-4111-8111-111111111111");
+    const result = await notificationService.runSweepForWorkspace("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa");
 
     expect(result.delivered).toBe(1);
     expect(fetchMock).toHaveBeenCalled();

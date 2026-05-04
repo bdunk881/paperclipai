@@ -49,7 +49,7 @@ import { createTicket, type TicketAssignee } from "../api/tickets";
 import { RunAuditSidebar } from "../components/RunAuditSidebar";
 import { ErrorState, LoadingState } from "../components/UiStates";
 import { useAuth } from "../context/AuthContext";
-import { useWorkspace } from "../context/WorkspaceContext";
+import { useWorkspace } from "../context/useWorkspace";
 import type { WorkflowRun } from "../types/workflow";
 
 type AgentSnapshot = {
@@ -347,20 +347,12 @@ export default function Dashboard() {
     } finally {
       setLoading(false);
     }
-  }, [
-    accessMode,
-    activeWorkspaceId,
-    requireAccessToken,
-    selectedCategories,
-    startStream,
-    stopRealtime,
-    windowHours,
-  ]);
+  }, [accessMode, requireAccessToken, selectedCategories, startStream, stopRealtime, windowHours]);
 
   useEffect(() => {
     void loadDashboard();
     return () => stopRealtime();
-  }, [loadDashboard, stopRealtime]);
+  }, [activeWorkspaceId, loadDashboard, stopRealtime]);
 
   const firstName = user?.name?.split(" ")[0] ?? user?.email?.split("@")[0] ?? "Operator";
 

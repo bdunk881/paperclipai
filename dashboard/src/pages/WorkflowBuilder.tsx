@@ -74,7 +74,7 @@ import {
 } from "./workflowGraph";
 import { useTheme } from "../hooks/useTheme";
 import { useAuth } from "../context/AuthContext";
-import { useWorkspace } from "../context/WorkspaceContext";
+import { useWorkspace } from "../context/useWorkspace";
 
 const KIND_META: Record<
   StepKind,

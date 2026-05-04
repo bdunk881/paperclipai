@@ -6,7 +6,7 @@ import type { WorkflowRun } from "../types/workflow";
 import clsx from "clsx";
 import { EmptyState, ErrorState, LoadingState } from "../components/UiStates";
 import { useAuth } from "../context/AuthContext";
-import { useWorkspace } from "../context/WorkspaceContext";
+import { useWorkspace } from "../context/useWorkspace";
 import { RunAuditSidebar } from "../components/RunAuditSidebar";
 
 const PAGE_SIZE = 5;
@@ -42,11 +42,11 @@ export default function RunHistory() {
     } finally {
       setLoading(false);
     }
-  }, [activeWorkspaceId, requireAccessToken]);
+  }, [requireAccessToken]);
 
   useEffect(() => {
     void loadData();
-  }, [loadData]);
+  }, [activeWorkspaceId, loadData]);
   const [sort, setSort] = useState<{ field: SortField; dir: SortDir }>({
     field: "startedAt",
     dir: "desc",

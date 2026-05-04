@@ -27,7 +27,7 @@ import {
 } from "../api/tickets";
 import { listAgents } from "../api/agentApi";
 import { useAuth } from "../context/AuthContext";
-import { useWorkspace } from "../context/WorkspaceContext";
+import { useWorkspace } from "../context/useWorkspace";
 import {
   TicketActorChip,
   TicketEmptyState,

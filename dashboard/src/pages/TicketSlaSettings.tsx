@@ -11,7 +11,7 @@ import {
 } from "../api/ticketingSla";
 import { getTicketActorProfile, type TicketActorRef, type TicketPriority } from "../api/tickets";
 import { useAuth } from "../context/AuthContext";
-import { useWorkspace } from "../context/WorkspaceContext";
+import { useWorkspace } from "../context/useWorkspace";
 
 type Unit = "m" | "h" | "d";
 
@@ -56,11 +56,11 @@ export default function TicketSlaSettings() {
     } finally {
       setLoading(false);
     }
-  }, [activeWorkspaceId, getAccessToken]);
+  }, [getAccessToken]);
 
   useEffect(() => {
     void loadSettings();
-  }, [loadSettings]);
+  }, [activeWorkspaceId, loadSettings]);
 
   useEffect(() => {
     if (saveState !== "saved") return undefined;

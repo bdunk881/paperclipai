@@ -3,7 +3,7 @@ import { Link } from "react-router-dom";
 import { ArrowRight, Layers3, Search } from "lucide-react";
 import { listTemplates, type TemplateSummary } from "../api/client";
 import { ErrorState, LoadingState } from "../components/UiStates";
-import { useWorkspace } from "../context/WorkspaceContext";
+import { useWorkspace } from "../context/useWorkspace";
 
 const ALL_CATEGORY = "All";
 

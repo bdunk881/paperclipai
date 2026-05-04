@@ -1,4 +1,4 @@
-import React, { createContext, useContext } from "react";
+import React from "react";
 import { createWorkspace, listWorkspaces, type WorkspaceSummary } from "../api/workspaces";
 import { useAuth } from "./AuthContext";
 import {
@@ -7,36 +7,10 @@ import {
   readStoredActiveWorkspaceId,
   writeStoredActiveWorkspaceId,
 } from "../workspaces/workspaceStorage";
-
-interface WorkspaceContextValue {
-  workspaces: WorkspaceSummary[];
-  activeWorkspace: WorkspaceSummary | null;
-  activeWorkspaceId: string | null;
-  loading: boolean;
-  creating: boolean;
-  error: string | null;
-  setActiveWorkspaceId: (workspaceId: string) => void;
-  refreshWorkspaces: (preferredWorkspaceId?: string) => Promise<void>;
-  createWorkspace: (name: string) => Promise<WorkspaceSummary>;
-}
-
-const defaultWorkspaceContextValue: WorkspaceContextValue = {
-  workspaces: [],
-  activeWorkspace: null,
-  activeWorkspaceId: readStoredActiveWorkspaceId(),
-  loading: false,
-  creating: false,
-  error: null,
-  setActiveWorkspaceId: (workspaceId: string) => {
-    writeStoredActiveWorkspaceId(workspaceId);
-  },
-  refreshWorkspaces: async () => {},
-  createWorkspace: async () => {
-    throw new Error("Workspace provider is unavailable.");
-  },
-};
-
-const WorkspaceContext = createContext<WorkspaceContextValue>(defaultWorkspaceContextValue);
+import {
+  WorkspaceContext,
+  type WorkspaceContextValue,
+} from "./workspaceContext.shared";
 
 function sortWorkspaces(workspaces: WorkspaceSummary[]): WorkspaceSummary[] {
   return [...workspaces].sort(
@@ -202,8 +176,4 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
   );
 
   return <WorkspaceContext.Provider value={value}>{children}</WorkspaceContext.Provider>;
-}
-
-export function useWorkspace(): WorkspaceContextValue {
-  return useContext(WorkspaceContext);
 }

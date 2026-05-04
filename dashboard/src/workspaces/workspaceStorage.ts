@@ -36,13 +36,25 @@ export function clearStoredActiveWorkspaceId(): void {
   dispatchWorkspaceStorageEvent();
 }
 
-export function withActiveWorkspaceHeader(headers?: HeadersInit): Headers {
-  const nextHeaders = new Headers(headers ?? {});
+export function withActiveWorkspaceHeader(headers?: HeadersInit): HeadersInit | undefined {
   const workspaceId = readStoredActiveWorkspaceId();
 
-  if (workspaceId) {
-    nextHeaders.set("X-Workspace-Id", workspaceId);
+  if (!workspaceId) {
+    return headers;
   }
 
-  return nextHeaders;
+  if (headers instanceof Headers) {
+    const nextHeaders = new Headers(headers);
+    nextHeaders.set("X-Workspace-Id", workspaceId);
+    return nextHeaders;
+  }
+
+  if (Array.isArray(headers)) {
+    return [...headers, ["X-Workspace-Id", workspaceId]];
+  }
+
+  return {
+    ...(headers ?? {}),
+    "X-Workspace-Id": workspaceId,
+  };
 }

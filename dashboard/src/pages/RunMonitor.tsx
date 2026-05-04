@@ -27,7 +27,7 @@ import type { WorkflowRun, StepResult, AgentSlotResult } from "../types/workflow
 import clsx from "clsx";
 import { EmptyState, ErrorState, LoadingState } from "../components/UiStates";
 import { useAuth } from "../context/AuthContext";
-import { useWorkspace } from "../context/WorkspaceContext";
+import { useWorkspace } from "../context/useWorkspace";
 
 const POLL_INTERVAL_MS = 3000;
 
@@ -76,13 +76,13 @@ export default function RunMonitor() {
     } finally {
       if (!silent) setLoading(false);
     }
-  }, [accessMode, activeWorkspaceId, getAccessToken]);
+  }, [accessMode, getAccessToken]);
 
   useEffect(() => {
     void fetchRuns();
     const id = setInterval(() => { void fetchRuns(true); }, POLL_INTERVAL_MS);
     return () => clearInterval(id);
-  }, [fetchRuns]);
+  }, [activeWorkspaceId, fetchRuns]);
 
   function toggleExpand(id: string) {
     setExpandedIds((prev) => {

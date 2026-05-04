@@ -21,6 +21,7 @@ export type AppUserTokenClaims = JwtPayload & {
   email?: string;
   name?: string;
   provider?: SocialAuthProvider;
+  workspaceId?: string;
 };
 
 const DEFAULT_APP_JWT_AUDIENCE = "autoflow-api";
@@ -72,6 +73,7 @@ export function signAppUserToken(user: {
   email?: string | null;
   displayName?: string | null;
   provider?: SocialAuthProvider;
+  workspaceId?: string | null;
 }): string {
   const config = resolveAppJwtConfig();
   if (!config) {
@@ -84,6 +86,7 @@ export function signAppUserToken(user: {
       email: user.email ?? undefined,
       name: user.displayName ?? undefined,
       provider: user.provider,
+      workspaceId: user.workspaceId ?? undefined,
     },
     config.secret,
     {

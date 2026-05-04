@@ -283,6 +283,77 @@ describe("ticket routes", () => {
     });
   });
 
+  it("bulk patches SLA policies and returns settings payload shape", async () => {
+    const app = buildTestApp();
+
+    const updated = await request(app)
+      .patch("/api/tickets/sla/policies")
+      .set(auth("creator-1"))
+      .set("X-Paperclip-Run-Id", "run-ticket-policy-bulk-patch")
+      .send({
+        workspaceId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+        policies: [
+          { priority: "urgent", firstResponseMinutes: 10, resolutionMinutes: 120 },
+          { priority: "high", firstResponseMinutes: 45, resolutionMinutes: 1440 },
+          { priority: "medium", firstResponseMinutes: 180, resolutionMinutes: 4320 },
+          { priority: "low", firstResponseMinutes: 1440, resolutionMinutes: 10080 },
+        ],
+        escalationRules: [
+          { priority: "urgent", notifyTargets: ["@cto"], autoBumpPriority: true, autoReassign: true },
+        ],
+      });
+
+    expect(updated.status).toBe(200);
+    expect(updated.body.policies).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ priority: "high", firstResponseMinutes: 45, resolutionMinutes: 1440 }),
+      ])
+    );
+    expect(updated.body.escalationRules).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ priority: "urgent", notifyTargets: [] }),
+      ])
+    );
+    expect(Array.isArray(updated.body.fallbackCandidates)).toBe(true);
+    expect(typeof updated.body.updatedAt).toBe("string");
+
+    const persisted = await request(app)
+      .get("/api/tickets/sla/policies?workspaceId=aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa")
+      .set(auth("creator-1"));
+
+    expect(persisted.status).toBe(200);
+    expect(persisted.body.policies).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          priority: "urgent",
+          firstResponseTarget: { kind: "minutes", value: 10 },
+          resolutionTarget: { kind: "minutes", value: 120 },
+        }),
+        expect.objectContaining({
+          priority: "low",
+          firstResponseTarget: { kind: "minutes", value: 1440 },
+          resolutionTarget: { kind: "minutes", value: 10080 },
+        }),
+      ])
+    );
+  });
+
+  it("rejects bulk SLA patch requests when policies is not an array", async () => {
+    const app = buildTestApp();
+
+    const res = await request(app)
+      .patch("/api/tickets/sla/policies")
+      .set(auth("creator-1"))
+      .set("X-Paperclip-Run-Id", "run-ticket-policy-bulk-invalid")
+      .send({
+        workspaceId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+        policies: { priority: "urgent", firstResponseMinutes: 10, resolutionMinutes: 120 },
+      });
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/array/i);
+  });
+
   it("allows the primary assignee to transition the ticket and logs activity", async () => {
     const app = buildTestApp();
     const created = await request(app)

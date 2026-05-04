@@ -119,6 +119,20 @@ jobs:
         if: github.ref == 'refs/heads/staging'
         run: |
           set -euo pipefail
+
+          # Ensure domain is registered in the Vercel project (idempotent; 409 = already exists)
+          ADD_HTTP=$(curl -s -o /tmp/domain_add.json -w "%{http_code}" -X POST \
+            "https://api.vercel.com/v10/projects/$VERCEL_PROJECT_ID/domains?teamId=$VERCEL_ORG_ID" \
+            -H "Authorization: Bearer $VERCEL_TOKEN" \
+            -H "Content-Type: application/json" \
+            -d "{\"name\":\"$STAGING_DASHBOARD_DOMAIN\",\"gitBranch\":\"staging\"}")
+          echo "Domain registration response (HTTP $ADD_HTTP):"
+          cat /tmp/domain_add.json
+          if [ "$ADD_HTTP" -ne 200 ] && [ "$ADD_HTTP" -ne 201 ] && [ "$ADD_HTTP" -ne 409 ]; then
+            echo "::error::Failed to register $STAGING_DASHBOARD_DOMAIN in Vercel project (HTTP $ADD_HTTP). Check VERCEL_TOKEN and VERCEL_PROJECT_ID secrets."
+            exit 1
+          fi
+
           INSPECT_OUTPUT="$(npx vercel domains inspect "$STAGING_DASHBOARD_DOMAIN" --token="$VERCEL_TOKEN" 2>&1)" || true
           printf '%s\n' "$INSPECT_OUTPUT"
           if printf '%s\n' "$INSPECT_OUTPUT" | grep -q "WARNING! This Domain is not configured properly"; then

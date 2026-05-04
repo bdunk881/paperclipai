@@ -2,7 +2,7 @@ describe("controlPlaneStore RLS integration", () => {
   const originalDatabaseUrl = process.env.DATABASE_URL;
   const originalJestWorkerId = process.env.JEST_WORKER_ID;
   const userId = "control-plane-rls-user";
-  const workspaceOne = "11111111-1111-4111-8111-111111111111";
+  const workspaceOne = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
   const workspaceTwo = "22222222-2222-4222-8222-222222222222";
   let canRunIntegration = false;
 

@@ -380,7 +380,7 @@ describe("POST /api/templates", () => {
 });
 
 describe("Approval tier policy API", () => {
-  const workspaceId = "11111111-1111-4111-8111-111111111111";
+  const workspaceId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 
   it("lists default approval tier policies for a workspace", async () => {
     const res = await request(app)

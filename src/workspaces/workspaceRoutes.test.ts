@@ -28,21 +28,18 @@ describe("workspaceRoutes", () => {
       .set("Authorization", "Bearer user-123");
 
     expect(res.status).toBe(200);
-    expect(res.body).toEqual({
-      workspaces: [
-        {
-          id: "22222222-2222-4222-8222-222222222222",
-          name: "Acme AI",
-          slug: "acme-ai",
-        },
-        {
-          id: "33333333-3333-4333-8333-333333333333",
-          name: "Ops / North America",
-          slug: "ops-north-america",
-        },
-      ],
-      total: 2,
-    });
+    expect(res.body).toEqual([
+      {
+        id: "22222222-2222-4222-8222-222222222222",
+        name: "Acme AI",
+        slug: "acme-ai",
+      },
+      {
+        id: "33333333-3333-4333-8333-333333333333",
+        name: "Ops / North America",
+        slug: "ops-north-america",
+      },
+    ]);
     expect(query).toHaveBeenCalledWith(expect.stringContaining("FROM workspaces"), ["user-123"]);
   });
 });

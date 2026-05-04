@@ -1,4 +1,5 @@
 import { getApiBasePath } from "./baseUrl";
+import { getWorkspaceClaimFromAccessToken } from "../auth/workspaceClaim";
 
 export type TicketActorType = "agent" | "user";
 export type TicketAssignmentRole = "primary" | "collaborator";
@@ -146,8 +147,7 @@ export interface TicketQueueResponse {
 }
 
 const BASE = getApiBasePath();
-const DEFAULT_WORKSPACE_ID =
-  import.meta.env.VITE_DEFAULT_WORKSPACE_ID ?? "11111111-1111-4111-8111-111111111111";
+const MOCK_WORKSPACE_ID = "workspace-demo";
 const USE_MOCK_TICKETING = import.meta.env.VITE_USE_MOCK === "true";
 
 const actorProfiles = new Map<
@@ -387,7 +387,7 @@ function buildMockAggregates(): TicketAggregate[] {
     {
       ticket: {
         id: "ticket-alt1696",
-        workspaceId: DEFAULT_WORKSPACE_ID,
+        workspaceId: MOCK_WORKSPACE_ID,
         title: "Ship ticketing foundation for launch review",
         description:
           "Implement the first ticketing surface for AutoFlow with queue visibility, detailed execution context, and human-plus-agent assignments.",
@@ -478,7 +478,7 @@ function buildMockAggregates(): TicketAggregate[] {
     {
       ticket: {
         id: "ticket-breach",
-        workspaceId: DEFAULT_WORKSPACE_ID,
+        workspaceId: MOCK_WORKSPACE_ID,
         title: "Investigate billing sync regression on enterprise workspace",
         description:
           "Priority customers are seeing stale sync badges after reconnecting Stripe. Need triage, owner, and mitigation steps.",
@@ -520,7 +520,7 @@ function buildMockAggregates(): TicketAggregate[] {
     {
       ticket: {
         id: "ticket-ops",
-        workspaceId: DEFAULT_WORKSPACE_ID,
+        workspaceId: MOCK_WORKSPACE_ID,
         title: "Document human handoff flow for support queue",
         description: "Clarify when agents escalate tickets to humans and what context must be preserved in the ticket history.",
         creatorId: "jordan.ops",
@@ -552,7 +552,7 @@ function buildMockAggregates(): TicketAggregate[] {
     {
       ticket: {
         id: "ticket-resolved",
-        workspaceId: DEFAULT_WORKSPACE_ID,
+        workspaceId: MOCK_WORKSPACE_ID,
         title: "Reconcile duplicate assignee avatars in queue cards",
         description: "Visual cleanup ticket from design review.",
         creatorId: "alex.pm",
@@ -754,8 +754,9 @@ export async function createTicket(
   input: CreateTicketUiPayload,
   accessToken?: string
 ): Promise<TicketAggregate & { source: "api" | "mock"; integrationWarnings: string[] }> {
+  const resolvedWorkspaceId = input.workspaceId ?? getWorkspaceClaimFromAccessToken(accessToken) ?? undefined;
   const payload: CreateTicketInput = {
-    workspaceId: input.workspaceId ?? DEFAULT_WORKSPACE_ID,
+    workspaceId: resolvedWorkspaceId,
     title: input.title,
     description: input.description,
     priority: input.priority,
@@ -792,7 +793,7 @@ export async function createTicket(
       const aggregate: TicketAggregate = {
         ticket: {
           id: ticketId,
-          workspaceId: payload.workspaceId ?? DEFAULT_WORKSPACE_ID,
+          workspaceId: payload.workspaceId ?? MOCK_WORKSPACE_ID,
           title: payload.title,
           description: payload.description ?? "",
           creatorId: "current-user",

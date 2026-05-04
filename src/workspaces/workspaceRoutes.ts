@@ -44,7 +44,7 @@ export function createWorkspaceRoutes(pool: Pool) {
       slug: slugifyWorkspaceName(workspace.name, workspace.id),
     }));
 
-    res.json({ workspaces, total: workspaces.length });
+    res.json(workspaces);
   });
 
   return router;

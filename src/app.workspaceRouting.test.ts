@@ -75,6 +75,16 @@ describe("workspace resolver route mounting", () => {
     expect(workspaceResolverSpy).toHaveBeenCalledTimes(1);
   });
 
+  it("keeps ticket SLA routes behind the workspace resolver", async () => {
+    const res = await request(app)
+      .get("/api/tickets/sla/policies")
+      .set("Authorization", "Bearer test-user-id");
+
+    expect(res.status).toBe(418);
+    expect(res.body.error).toBe("workspace resolver invoked");
+    expect(workspaceResolverSpy).toHaveBeenCalledTimes(1);
+  });
+
   it("keeps run routes behind the workspace resolver", async () => {
     const res = await request(app)
       .get("/api/runs")

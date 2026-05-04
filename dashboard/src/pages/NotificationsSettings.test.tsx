@@ -2,7 +2,14 @@ import { render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import NotificationsSettings from "./NotificationsSettings";
 
-const requireAccessToken = vi.fn(async () => "token-123");
+const WORKSPACE_ID = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
+const requireAccessToken = vi.fn(
+  async () =>
+    `header.${btoa(JSON.stringify({ workspaceId: WORKSPACE_ID }))
+      .replace(/\+/g, "-")
+      .replace(/\//g, "_")
+      .replace(/=+$/g, "")}.signature`,
+);
 const authValue = {
   user: { id: "user-1", email: "user@example.com", name: "User One" },
   requireAccessToken,
@@ -25,7 +32,7 @@ describe("NotificationsSettings", () => {
                 preferences: [
                   {
                     id: "pref-1",
-                    workspaceId: "11111111-1111-4111-8111-111111111111",
+                    workspaceId: WORKSPACE_ID,
                     channel: "slack",
                     kind: "approvals",
                     cadence: "daily",
@@ -33,7 +40,7 @@ describe("NotificationsSettings", () => {
                   },
                   {
                     id: "pref-2",
-                    workspaceId: "11111111-1111-4111-8111-111111111111",
+                    workspaceId: WORKSPACE_ID,
                     channel: "email",
                     kind: "kill_switch",
                     cadence: "immediate",
@@ -52,7 +59,7 @@ describe("NotificationsSettings", () => {
                 transports: [
                   {
                     id: "transport-1",
-                    workspaceId: "11111111-1111-4111-8111-111111111111",
+                    workspaceId: WORKSPACE_ID,
                     channel: "slack",
                     ownerUserId: "user-1",
                     connectionId: "slack-1",

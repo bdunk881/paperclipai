@@ -410,9 +410,11 @@ jobs:
           require_env_key "GOOGLE_CLIENT_ID"
           require_env_key "GOOGLE_CLIENT_SECRET"
           require_env_key "APP_JWT_SECRET"
+          require_env_key "APP_JWT_EXPIRES_IN"
           require_env_key "AZURE_KEY_VAULT_URI"
           require_env_key "SOCIAL_AUTH_CALLBACK_BASE_URL"
           require_env_key "SOCIAL_AUTH_DASHBOARD_URL"
+          require_exact_https_url "APP_JWT_EXPIRES_IN" "8h"
           require_exact_https_url "SOCIAL_AUTH_CALLBACK_BASE_URL" "https://${{ steps.target.outputs.api_host }}/api/auth/social"
           require_exact_https_url "SOCIAL_AUTH_DASHBOARD_URL" "https://staging.app.helloautoflow.com"
           require_origin_in_allowlist "https://staging.app.helloautoflow.com"
@@ -821,6 +823,8 @@ jobs:
           }
 
           require_env_key "ALLOWED_ORIGINS"
+          require_env_key "APP_JWT_SECRET"
+          require_env_key "APP_JWT_EXPIRES_IN"
           require_any_env_key "AZURE_CIAM_TENANT_ID" "AZURE_TENANT_ID"
           require_any_env_key "AZURE_CIAM_TENANT_SUBDOMAIN" "AZURE_TENANT_SUBDOMAIN"
           require_any_env_key "AZURE_CIAM_CLIENT_ID" "AZURE_CIAM_ALLOWED_AUDIENCES" "AZURE_CLIENT_ID"
@@ -859,6 +863,11 @@ jobs:
           TENANT_ID_VALUE="$(printf '%s' "$TENANT_ID_VALUE" | tr -d '\r' | xargs)"
           TENANT_SUBDOMAIN_VALUE="$(printf '%s' "$TENANT_SUBDOMAIN_VALUE" | tr -d '\r' | xargs)"
           EXPECTED_CIAM_AUTHORITY="https://${TENANT_SUBDOMAIN_VALUE}.ciamlogin.com/${TENANT_ID_VALUE}"
+
+          if [ "$(normalize_https_url "$(read_env_value "APP_JWT_EXPIRES_IN")")" != "8h" ]; then
+            echo "::error::AZURE_BACKEND_ENV_PRODUCTION must set APP_JWT_EXPIRES_IN=8h"
+            exit 1
+          fi
 
           require_exact_env_value "AZURE_CIAM_AUTHORITY" "$EXPECTED_CIAM_AUTHORITY"
           require_exact_env_value "AUTH_NATIVE_AUTH_PROXY_BASE_URL" "$EXPECTED_CIAM_AUTHORITY"

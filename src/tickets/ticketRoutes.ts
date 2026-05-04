@@ -95,6 +95,7 @@ const upsertPolicySchema = z.object({
   escalation: z
     .object({
       notify: z.boolean().optional(),
+      notifyTargets: z.array(z.string().trim().min(1).max(200)).max(25).optional(),
       autoBumpPriority: z.boolean().optional(),
       autoReassign: z.boolean().optional(),
       fallbackAssignee: z
@@ -107,9 +108,36 @@ const upsertPolicySchema = z.object({
     .optional(),
 });
 
+const slaSettingsSchema = z.object({
+  workspaceId: z.string().uuid(),
+  policies: z.array(
+    z.object({
+      priority: ticketPrioritySchema,
+      firstResponseMinutes: z.number().int().positive(),
+      resolutionMinutes: z.number().int().positive(),
+    })
+  ).length(4),
+  escalationRules: z.array(
+    z.object({
+      priority: ticketPrioritySchema,
+      notifyTargets: z.array(z.string().trim().min(1).max(200)).max(25),
+      autoBumpPriority: z.boolean(),
+      autoReassign: z.boolean(),
+      fallbackActor: z
+        .object({
+          type: actorTypeSchema,
+          id: z.string().trim().min(1),
+        })
+        .optional(),
+    })
+  ).length(4),
+});
+
 const evaluateSlaSchema = z.object({
   now: z.string().datetime().optional(),
 });
+
+const PRIORITY_ORDER: TicketPriority[] = ["urgent", "high", "medium", "low"];
 
 function parseBody<T>(
   schema: z.ZodSchema<T>,
@@ -141,6 +169,80 @@ function resolveActor(req: AuthenticatedRequest, actorType?: TicketActorType) {
   return {
     type: actorType ?? "user",
     id: actorId,
+  };
+}
+
+function targetToMinutes(target: { kind: "minutes" | "business_days"; value: number }): number {
+  return target.kind === "business_days" ? target.value * 1440 : target.value;
+}
+
+function minutesToTarget(minutes: number): { kind: "minutes"; value: number } {
+  return { kind: "minutes", value: minutes };
+}
+
+function collectFallbackCandidates(
+  tickets: Array<{ assignees: Array<{ type: TicketActorType; id: string }> }>,
+  policies: Array<{ escalation: { fallbackAssignee?: { type: TicketActorType; id: string } } }>,
+) {
+  const candidates = new Map<string, { type: TicketActorType; id: string }>();
+
+  for (const ticket of tickets) {
+    for (const assignee of ticket.assignees) {
+      candidates.set(`${assignee.type}:${assignee.id}`, { type: assignee.type, id: assignee.id });
+    }
+  }
+
+  for (const policy of policies) {
+    const fallback = policy.escalation.fallbackAssignee;
+    if (fallback) {
+      candidates.set(`${fallback.type}:${fallback.id}`, { type: fallback.type, id: fallback.id });
+    }
+  }
+
+  return Array.from(candidates.values()).sort(
+    (left, right) => left.type.localeCompare(right.type) || left.id.localeCompare(right.id),
+  );
+}
+
+async function buildSlaSettingsPayload(context: { workspaceId: string; userId: string }) {
+  const [policies, tickets] = await Promise.all([
+    ticketStore.listPolicies(context.workspaceId, context),
+    ticketStore.list({ workspaceId: context.workspaceId }, context),
+  ]);
+  const fallbackCandidates = collectFallbackCandidates(tickets, policies);
+
+  return {
+    policies: PRIORITY_ORDER.map((priority) => {
+      const policy = policies.find((candidate) => candidate.priority === priority);
+      if (!policy) {
+        throw new Error(`Missing SLA policy for priority ${priority}`);
+      }
+      return {
+        priority,
+        firstResponseMinutes: targetToMinutes(policy.firstResponseTarget),
+        resolutionMinutes: targetToMinutes(policy.resolutionTarget),
+      };
+    }),
+    escalationRules: PRIORITY_ORDER.map((priority) => {
+      const policy = policies.find((candidate) => candidate.priority === priority);
+      if (!policy) {
+        throw new Error(`Missing SLA policy for priority ${priority}`);
+      }
+      return {
+        priority,
+        notifyTargets: [...(policy.escalation.notifyTargets ?? [])],
+        autoBumpPriority: policy.escalation.autoBumpPriority,
+        autoReassign: policy.escalation.autoReassign,
+        fallbackActor: policy.escalation.fallbackAssignee
+          ? { ...policy.escalation.fallbackAssignee }
+          : undefined,
+      };
+    }),
+    fallbackCandidates,
+    updatedAt: policies.reduce(
+      (latest, policy) => (policy.updatedAt > latest ? policy.updatedAt : latest),
+      policies[0]?.updatedAt ?? new Date().toISOString(),
+    ),
   };
 }
 
@@ -287,6 +389,16 @@ router.get("/sla/policies", async (req: WorkspaceAwareRequest, res) => {
   }
   const policies = await ticketStore.listPolicies(context.workspaceId, context);
   res.json({ policies, total: policies.length });
+});
+
+router.get("/sla/settings", async (req: WorkspaceAwareRequest, res) => {
+  const workspaceId = typeof req.query.workspaceId === "string" ? req.query.workspaceId : undefined;
+  const context = resolveWorkspaceContext(req, res, workspaceId);
+  if (!context) {
+    return;
+  }
+
+  res.json(await buildSlaSettingsPayload(context));
 });
 
 router.get("/sla/dashboard", async (req: WorkspaceAwareRequest, res) => {
@@ -510,6 +622,44 @@ router.put("/sla/policies/:priority", requireRunId, async (req: WorkspaceAwareRe
     context,
   });
   res.json({ policy });
+});
+
+router.patch("/sla/settings", requireRunId, async (req: WorkspaceAwareRequest, res) => {
+  const parsed = parseBody(slaSettingsSchema, req, res);
+  if (!parsed) {
+    return;
+  }
+  const context = resolveWorkspaceContext(req, res, parsed.workspaceId);
+  if (!context) {
+    return;
+  }
+
+  const escalationByPriority = new Map(parsed.escalationRules.map((rule) => [rule.priority, rule]));
+
+  for (const policyRow of parsed.policies) {
+    const escalationRule = escalationByPriority.get(policyRow.priority);
+    if (!escalationRule) {
+      res.status(400).json({ error: `Missing escalation rule for priority ${policyRow.priority}` });
+      return;
+    }
+
+    await ticketStore.upsertPolicy({
+      workspaceId: context.workspaceId,
+      priority: policyRow.priority,
+      firstResponseTarget: minutesToTarget(policyRow.firstResponseMinutes),
+      resolutionTarget: minutesToTarget(policyRow.resolutionMinutes),
+      escalation: {
+        notify: escalationRule.notifyTargets.length > 0,
+        notifyTargets: escalationRule.notifyTargets,
+        autoBumpPriority: escalationRule.autoBumpPriority,
+        autoReassign: escalationRule.autoReassign,
+        fallbackAssignee: escalationRule.fallbackActor,
+      },
+      context,
+    });
+  }
+
+  res.json(await buildSlaSettingsPayload(context));
 });
 
 router.post("/sla/evaluate", requireRunId, async (req: WorkspaceAwareRequest, res) => {

@@ -825,6 +825,7 @@ export default function WorkflowBuilder() {
     setSaving(true);
     setSaved(false);
     try {
+      const accessToken = (await getAccessToken()) ?? undefined;
       const nextTemplate = await createTemplate({
         ...template,
         name: template.name.trim() || "Untitled Workflow",
@@ -835,7 +836,7 @@ export default function WorkflowBuilder() {
         steps: template.steps ?? [],
         sampleInput: template.sampleInput ?? {},
         expectedOutput: template.expectedOutput ?? {},
-      });
+      }, accessToken);
       setTemplate(nextTemplate);
       setSaved(true);
       setTimeout(() => setSaved(false), 2000);

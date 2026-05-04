@@ -131,6 +131,9 @@ GitHub larger runners with static IPs, or a dedicated VPN/NAT path.
 | `staging` | `AZURE_CONTAINER_APP_STAGING_NAME` | Expected staging backend Container App name |
 | `staging` | `AZURE_CONTAINER_APP_STAGING_RESOURCE_GROUP` | Resource group for the staging backend app |
 | `staging` | `AZURE_STAGING_API_HOST` | Public staging API hostname used for DNS-based discovery |
+| `staging` | `AZURE_STAGING_KEY_VAULT_NAME` | Optional explicit staging Key Vault name; use when auto-discovery from the app resource group is not sufficient |
+| `staging` | `AZURE_STAGING_KEY_VAULT_RESOURCE_GROUP` | Optional resource group override paired with `AZURE_STAGING_KEY_VAULT_NAME` |
+| `staging` | `AZURE_STAGING_KEY_VAULT_URI` | Optional explicit staging Key Vault URI; the deploy workflow writes this to `AZURE_KEY_VAULT_URI` on every staging deploy |
 | `staging` | `AZURE_BACKEND_ENV_STAGING_SOCIAL_AUTH_CLIENTID` | Optional non-secret staging Google OAuth client ID; the deploy workflow injects it if the multiline secret does not include `GOOGLE_CLIENT_ID` |
 | `staging` | `AZURE_STAGING_KEY_VAULT_URI` | Optional staging Key Vault URI override; defaults to `https://autoflow-staging-hub-kv.vault.azure.net/` when unset |
 | `production` | `AZURE_AKS_PRODUCTION_CLUSTER_NAME` | Production AKS cluster name |
@@ -144,6 +147,7 @@ GitHub larger runners with static IPs, or a dedicated VPN/NAT path.
 |---|---|---|
 | `staging` | `AZURE_BACKEND_ENV_STAGING` | Optional newline-delimited general backend env file for the staging Container App; use it for shared runtime env such as `AZURE_KEY_VAULT_URI`, connector callback URLs, and other non-social-auth settings |
 | `staging` | `AZURE_BACKEND_ENV_STAGING_SOCIAL_AUTH` | Newline-delimited env file containing `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `APP_JWT_SECRET`, and `SOCIAL_AUTH_CALLBACK_BASE_URL` for the staging Container App |
+| `staging` | `AZURE_BACKEND_ENV_STAGING_RUNTIME` | Optional newline-delimited env file for direct staging runtime overrides such as `DATABASE_URL`, `REDIS_URL`, `CONNECTOR_CREDENTIAL_ENCRYPTION_KEY`, or other Key Vault-backed values during recovery |
 | `production` | `AZURE_BACKEND_ENV_PRODUCTION` | Newline-delimited env file materialized into the `autoflow-backend-secrets` Kubernetes secret |
 
 **Required Terraform variables for CIAM app-registration management:**
@@ -196,15 +200,18 @@ GitHub larger runners with static IPs, or a dedicated VPN/NAT path.
 
    If `AZURE_STAGING_API_HOST` changes, the redirect URI must change with it to
    keep the Passport callback route aligned with the deployed backend host.
-7. Add `AZURE_BACKEND_ENV_PRODUCTION` to the `production` environment so the
+6. Set either `AZURE_STAGING_KEY_VAULT_URI` directly or `AZURE_STAGING_KEY_VAULT_NAME` and `AZURE_STAGING_KEY_VAULT_RESOURCE_GROUP` so every staging deploy rewrites `AZURE_KEY_VAULT_URI` on the Container App to the live vault. If these overrides are unset, the workflow auto-discovers a single staging Key Vault in the Container App resource group.
+7. When Key Vault access is degraded, populate `AZURE_BACKEND_ENV_STAGING_RUNTIME` with the minimum direct runtime values needed to boot the backend, then re-run the staging deploy workflow. Typical emergency keys are `DATABASE_URL`, `REDIS_URL`, `CONNECTOR_CREDENTIAL_ENCRYPTION_KEY`, `AZURE_CIAM_CLIENT_SECRET`, and Stripe secrets.
+8. Use [`infra/runbooks/staging-key-vault-container-apps.md`](../runbooks/staging-key-vault-container-apps.md) for the operational recovery procedure.
+9. Add `AZURE_BACKEND_ENV_PRODUCTION` to the `production` environment so the
    AKS rollout can create `autoflow-backend-secrets` before the deployment starts.
-8. Verify production-specific values do not reference `staging` or `nonprod`
+10. Verify production-specific values do not reference `staging` or `nonprod`
    resource names; the workflow now hard-fails on cross-environment targets.
-9. Ensure `AZURE_BACKEND_ENV_PRODUCTION` includes CIAM auth fallback inputs
+11. Ensure `AZURE_BACKEND_ENV_PRODUCTION` includes CIAM auth fallback inputs
    (`AZURE_CIAM_TENANT_ID`/`AZURE_TENANT_ID`, `AZURE_CIAM_TENANT_SUBDOMAIN`/`AZURE_TENANT_SUBDOMAIN`,
    and a CIAM audience/client setting) plus `ALLOWED_ORIGINS` containing
    `https://app.helloautoflow.com`.
-10. Set both `AZURE_CIAM_AUTHORITY` and `AUTH_NATIVE_AUTH_PROXY_BASE_URL` in
+12. Set both `AZURE_CIAM_AUTHORITY` and `AUTH_NATIVE_AUTH_PROXY_BASE_URL` in
    `AZURE_BACKEND_ENV_PRODUCTION` to the direct tenant authority:
 
    `https://<tenant-subdomain>.ciamlogin.com/<tenant-guid>`

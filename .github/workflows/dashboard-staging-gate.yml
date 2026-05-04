@@ -119,7 +119,7 @@ jobs:
         if: github.ref == 'refs/heads/staging'
         run: |
           set -euo pipefail
-          INSPECT_OUTPUT="$(npx vercel domains inspect "$STAGING_DASHBOARD_DOMAIN" --token="$VERCEL_TOKEN" 2>&1)"
+          INSPECT_OUTPUT="$(npx vercel domains inspect "$STAGING_DASHBOARD_DOMAIN" --token="$VERCEL_TOKEN" 2>&1)" || true
           printf '%s\n' "$INSPECT_OUTPUT"
           if printf '%s\n' "$INSPECT_OUTPUT" | grep -q "WARNING! This Domain is not configured properly"; then
             echo "::error::${STAGING_DASHBOARD_DOMAIN} is still pointed away from Vercel. Repoint DNS to Vercel before using the staging host."

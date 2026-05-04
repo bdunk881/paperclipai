@@ -28,22 +28,6 @@ jest.mock("./auth/authMiddleware", () => ({
     req.auth = { sub: auth.slice(7), email: "test@example.com" };
     next();
   },
-}));
-
-jest.mock("./auth/authMiddleware", () => ({
-  requireAuth: (
-    req: { headers: { authorization?: string }; auth?: { sub: string; email?: string } },
-    res: { status: (code: number) => { json: (body: unknown) => void } },
-    next: () => void
-  ) => {
-    const auth = req.headers.authorization;
-    if (!auth?.startsWith("Bearer ")) {
-      res.status(401).json({ error: "Missing or malformed Authorization header." });
-      return;
-    }
-    req.auth = { sub: auth.slice(7), email: "test@example.com" };
-    next();
-  },
   requireAuthOrQaBypass: (
     req: {
       headers: { authorization?: string; "x-user-id"?: string };
@@ -77,7 +61,18 @@ jest.mock("./auth/authMiddleware", () => ({
     res.status(401).json({ error: "Missing or malformed Authorization header." });
   },
 }));
-
+jest.mock("./middleware/workspaceResolver", () => ({
+  createWorkspaceResolver: () =>
+    (_req: unknown, _res: unknown, next: () => void) => next(),
+  createExplicitWorkspaceHeaderResolver: () =>
+    (req: { headers?: Record<string, string | undefined>; workspaceId?: string }, _res: unknown, next: () => void) => {
+      const explicitWorkspaceId = req.headers?.["x-workspace-id"]?.trim();
+      if (explicitWorkspaceId) {
+        req.workspaceId = explicitWorkspaceId;
+      }
+      next();
+    },
+}));
 import request from "supertest";
 import app from "./app";
 import { recordControlPlaneAudit, recordControlPlaneAuditBatch } from "./auditing/controlPlaneAudit";
@@ -933,6 +928,42 @@ describe("Control plane APIs", () => {
     expect(listRes.status).toBe(200);
     expect(listRes.body.total).toBe(1);
     expect(listRes.body.teams[0].id).toBe(createRes.body.id);
+  });
+
+  it("honors X-Workspace-Id for active workspace switching in non-Postgres mode", async () => {
+    const workspaceId = "workspace-shared";
+
+    const provisionRes = await request(app)
+      .post("/api/companies")
+      .set(asAuth("workspace-owner"))
+      .set("X-Workspace-Id", workspaceId)
+      .set("X-Paperclip-Run-Id", "run-provision-shared-workspace")
+      .send({
+        name: "Acme",
+        idempotencyKey: "shared-workspace-acme-1",
+        budgetMonthlyUsd: 300,
+        secretBindings: { OPENAI_API_KEY: "sk-acme-1234" },
+        agents: [{ roleTemplateId: "backend-engineer" }],
+      });
+
+    expect(provisionRes.status).toBe(201);
+    expect(provisionRes.body.company.workspaceId).toBe(workspaceId);
+
+    const sharedTeamsRes = await request(app)
+      .get("/api/control-plane/teams")
+      .set(asAuth("ceo-user"))
+      .set("X-Workspace-Id", workspaceId);
+
+    expect(sharedTeamsRes.status).toBe(200);
+    expect(sharedTeamsRes.body.total).toBe(1);
+    expect(sharedTeamsRes.body.teams[0].id).toBe(provisionRes.body.team.id);
+
+    const defaultWorkspaceTeamsRes = await request(app)
+      .get("/api/control-plane/teams")
+      .set(asAuth("ceo-user"));
+
+    expect(defaultWorkspaceTeamsRes.status).toBe(200);
+    expect(defaultWorkspaceTeamsRes.body.total).toBe(0);
   });
 
   it("deploys a workflow template as an agent team", async () => {

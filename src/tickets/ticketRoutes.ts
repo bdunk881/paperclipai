@@ -133,6 +133,18 @@ const slaSettingsSchema = z.object({
   ).length(4),
 });
 
+const bulkPolicyPatchSchema = z.object({
+  workspaceId: z.string().uuid(),
+  policies: z.array(
+    z.object({
+      priority: ticketPrioritySchema,
+      firstResponseMinutes: z.number().int().positive(),
+      resolutionMinutes: z.number().int().positive(),
+    })
+  ),
+  escalationRules: z.array(z.unknown()).optional(),
+});
+
 const evaluateSlaSchema = z.object({
   now: z.string().datetime().optional(),
 });
@@ -622,6 +634,29 @@ router.put("/sla/policies/:priority", requireRunId, async (req: WorkspaceAwareRe
     context,
   });
   res.json({ policy });
+});
+
+router.patch("/sla/policies", requireRunId, async (req: WorkspaceAwareRequest, res) => {
+  const parsed = parseBody(bulkPolicyPatchSchema, req, res);
+  if (!parsed) {
+    return;
+  }
+  const context = resolveWorkspaceContext(req, res, parsed.workspaceId);
+  if (!context) {
+    return;
+  }
+
+  for (const policyRow of parsed.policies) {
+    await ticketStore.upsertPolicy({
+      workspaceId: context.workspaceId,
+      priority: policyRow.priority,
+      firstResponseTarget: minutesToTarget(policyRow.firstResponseMinutes),
+      resolutionTarget: minutesToTarget(policyRow.resolutionMinutes),
+      context,
+    });
+  }
+
+  res.json(await buildSlaSettingsPayload(context));
 });
 
 router.patch("/sla/settings", requireRunId, async (req: WorkspaceAwareRequest, res) => {

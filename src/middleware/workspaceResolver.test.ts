@@ -1,7 +1,10 @@
 import type { NextFunction, Response } from "express";
 import type { Pool, QueryResult } from "pg";
 import type { WorkspaceAwareRequest } from "./workspaceResolver";
-import { createWorkspaceResolver } from "./workspaceResolver";
+import {
+  createExplicitWorkspaceHeaderResolver,
+  createWorkspaceResolver,
+} from "./workspaceResolver";
 
 function createResponse() {
   const json = jest.fn();
@@ -28,8 +31,10 @@ function createQueryResult(rows: Array<Record<string, unknown>>, rowCount: numbe
 }
 
 describe("createWorkspaceResolver", () => {
-  it("requires a workspace claim in the authenticated token", async () => {
-    const query = jest.fn();
+  it("falls back to a single owned workspace when no explicit override or JWT claim is present", async () => {
+    const query = jest
+      .fn<Promise<QueryResult>, [string, unknown[]]>()
+      .mockResolvedValueOnce(createQueryResult([{ id: "22222222-2222-4222-8222-222222222222" }], null));
     const pool = { query } as unknown as Pool;
     const middleware = createWorkspaceResolver(pool);
     const req = createRequest({ auth: { sub: "user-123" } });
@@ -38,17 +43,19 @@ describe("createWorkspaceResolver", () => {
 
     await middleware(req, res, next);
 
-    expect(next).not.toHaveBeenCalled();
-    expect(query).not.toHaveBeenCalled();
-    expect(res.status).toHaveBeenCalledWith(401);
-    expect(res.json).toHaveBeenCalledWith({ error: "Workspace claim required." });
+    expect(req.workspaceId).toBe("22222222-2222-4222-8222-222222222222");
+    expect(next).toHaveBeenCalledTimes(1);
+    expect(res.status).not.toHaveBeenCalled();
   });
 
-  it("rejects invalid workspace claim formats", async () => {
+  it("rejects invalid explicit workspace header formats before any lookup", async () => {
     const query = jest.fn();
     const pool = { query } as unknown as Pool;
     const middleware = createWorkspaceResolver(pool);
-    const req = createRequest({ auth: { sub: "user-123", workspaceId: "not-a-uuid" } });
+    const req = createRequest({
+      auth: { sub: "user-123", workspaceId: "22222222-2222-4222-8222-222222222222" },
+      headers: { "x-workspace-id": "not-a-uuid" },
+    });
     const res = createResponse();
     const next = jest.fn() as NextFunction;
 
@@ -59,7 +66,7 @@ describe("createWorkspaceResolver", () => {
     expect(res.status).toHaveBeenCalledWith(400);
   });
 
-  it("rejects workspace claims for non-members", async () => {
+  it("rejects explicit workspace overrides for non-members", async () => {
     const query = jest
       .fn<Promise<QueryResult>, [string, unknown[]]>()
       .mockResolvedValueOnce(createQueryResult([], null));
@@ -67,6 +74,7 @@ describe("createWorkspaceResolver", () => {
     const middleware = createWorkspaceResolver(pool);
     const req = createRequest({
       auth: { sub: "user-123", workspaceId: "22222222-2222-4222-8222-222222222222" },
+      headers: { "x-workspace-id": "33333333-3333-4333-8333-333333333333" },
     });
     const res = createResponse();
     const next = jest.fn() as NextFunction;
@@ -75,6 +83,30 @@ describe("createWorkspaceResolver", () => {
 
     expect(next).not.toHaveBeenCalled();
     expect(res.status).toHaveBeenCalledWith(403);
+  });
+
+  it("prefers an explicit workspace override over the JWT workspace claim", async () => {
+    const query = jest
+      .fn<Promise<QueryResult>, [string, unknown[]]>()
+      .mockResolvedValueOnce(createQueryResult([{ "?column?": 1 }], null));
+    const pool = { query } as unknown as Pool;
+    const middleware = createWorkspaceResolver(pool);
+    const req = createRequest({
+      auth: { sub: "user-123", workspaceId: "22222222-2222-4222-8222-222222222222" },
+      headers: { "x-workspace-id": "33333333-3333-4333-8333-333333333333" },
+    });
+    const res = createResponse();
+    const next = jest.fn() as NextFunction;
+
+    await middleware(req, res, next);
+
+    expect(req.workspaceId).toBe("33333333-3333-4333-8333-333333333333");
+    expect(query).toHaveBeenCalledWith(expect.stringContaining("SELECT 1 FROM workspaces"), [
+      "33333333-3333-4333-8333-333333333333",
+      "user-123",
+    ]);
+    expect(next).toHaveBeenCalledTimes(1);
+    expect(res.status).not.toHaveBeenCalled();
   });
 
   it("uses the JWT workspace claim when membership is valid", async () => {
@@ -96,6 +128,39 @@ describe("createWorkspaceResolver", () => {
       "22222222-2222-4222-8222-222222222222",
       "user-123",
     ]);
+    expect(next).toHaveBeenCalledTimes(1);
+    expect(res.status).not.toHaveBeenCalled();
+  });
+});
+
+describe("createExplicitWorkspaceHeaderResolver", () => {
+  it("preserves a trimmed X-Workspace-Id header without postgres membership lookups", () => {
+    const middleware = createExplicitWorkspaceHeaderResolver();
+    const req = createRequest({
+      headers: { "x-workspace-id": "  workspace-shared  " },
+    });
+    const res = createResponse();
+    const next = jest.fn() as NextFunction;
+
+    middleware(req, res, next);
+
+    expect(req.workspaceId).toBe("workspace-shared");
+    expect(next).toHaveBeenCalledTimes(1);
+    expect(res.status).not.toHaveBeenCalled();
+  });
+
+  it("ignores empty explicit workspace headers", () => {
+    const middleware = createExplicitWorkspaceHeaderResolver();
+    const req = createRequest({
+      headers: { "x-workspace-id": "   " },
+      auth: { sub: "user-123", workspaceId: "22222222-2222-4222-8222-222222222222" },
+    });
+    const res = createResponse();
+    const next = jest.fn() as NextFunction;
+
+    middleware(req, res, next);
+
+    expect(req.workspaceId).toBe("22222222-2222-4222-8222-222222222222");
     expect(next).toHaveBeenCalledTimes(1);
     expect(res.status).not.toHaveBeenCalled();
   });

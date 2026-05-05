@@ -11,6 +11,7 @@ USER_ID="${FASTAPI_SMOKE_USER_ID:-qa-smoke-user}"
 OUT_DIR="${FASTAPI_SMOKE_OUTPUT_DIR:-artifacts/fly-fastapi-smoke}"
 SUMMARY="$OUT_DIR/summary.md"
 REQUEST_LOG="$OUT_DIR/requests.tsv"
+ORIGIN="${FASTAPI_SMOKE_ORIGIN:-https://app.helloautoflow.com}"
 
 mkdir -p "$OUT_DIR"
 printf "step\tstatus\tpath\n" > "$REQUEST_LOG"
@@ -21,14 +22,16 @@ request() {
   local path="$3"
   local body_file="$4"
   local payload_file="${5:-}"
+  local content_type="${6:-application/json}"
   local status
 
   if [[ -n "$payload_file" ]]; then
     status=$(
       curl -sS -o "$body_file" -w "%{http_code}" \
         -X "$method" \
-        -H "Content-Type: application/json" \
+        -H "Content-Type: $content_type" \
         -H "X-User-Id: $USER_ID" \
+        -H "Origin: $ORIGIN" \
         --data @"$payload_file" \
         "${BASE_URL}${path}"
     )
@@ -37,6 +40,7 @@ request() {
       curl -sS -o "$body_file" -w "%{http_code}" \
         -X "$method" \
         -H "X-User-Id: $USER_ID" \
+        -H "Origin: $ORIGIN" \
         "${BASE_URL}${path}"
     )
   fi
@@ -117,13 +121,50 @@ search_status=$(request "search" "POST" "/api/knowledge/search" "$OUT_DIR/search
 require_status "$search_status" "200" "search"
 jq -e --arg base_id "$BASE_ID" '.total >= 1 and (.results[0].knowledgeBase.id == $base_id)' "$OUT_DIR/search.json" >/dev/null
 
+cat > "$tmp_dir/auth-initiate.json" <<'JSON'
+{
+  "client_id": "smoke-client",
+  "scope": "openid profile offline_access",
+  "response_type": "code",
+  "redirect_uri": "https://app.helloautoflow.com/auth/callback"
+}
+JSON
+auth_status=$(request "native_auth_initiate" "POST" "/api/auth/native/oauth2/v2.0/initiate" "$OUT_DIR/native-auth-initiate.json" "$tmp_dir/auth-initiate.json")
+if [[ "$auth_status" != "200" && "$auth_status" != "400" ]]; then
+  echo "Smoke step 'native_auth_initiate' failed: expected HTTP 200 or 400, got $auth_status" >&2
+  exit 1
+fi
+
+callback_status=$(request "slack_oauth_callback_surface" "GET" "/api/integrations/slack/oauth/callback?error=access_denied&error_description=fly_cutover_probe" "$OUT_DIR/slack-oauth-callback.json")
+if [[ "$callback_status" != "200" && "$callback_status" != "302" && "$callback_status" != "307" ]]; then
+  echo "Smoke step 'slack_oauth_callback_surface' failed: expected HTTP 200, 302, or 307, got $callback_status" >&2
+  exit 1
+fi
+
+cat > "$tmp_dir/stripe-webhook.json" <<'JSON'
+{}
+JSON
+stripe_status=$(request "stripe_webhook_surface" "POST" "/api/webhooks/stripe" "$OUT_DIR/stripe-webhook.json" "$tmp_dir/stripe-webhook.json")
+if [[ "$stripe_status" != "400" && "$stripe_status" != "401" ]]; then
+  echo "Smoke step 'stripe_webhook_surface' failed: expected HTTP 400 or 401, got $stripe_status" >&2
+  exit 1
+fi
+
 {
   echo "# FastAPI Fly.io Staging Smoke Evidence"
   echo
   echo "- Timestamp (UTC): $(date -u +"%Y-%m-%dT%H:%M:%SZ")"
   echo "- Base URL: $BASE_URL"
   echo "- Smoke user id: $USER_ID"
+  echo "- Browser origin: $ORIGIN"
   echo "- Knowledge base id: $BASE_ID"
+  echo
+  echo "## Probe Matrix"
+  echo
+  echo "- \`GET /health\` => expect \`200\`"
+  echo "- \`POST /api/auth/native/oauth2/v2.0/initiate\` => expect \`200\` or provider validation \`400\`"
+  echo "- \`GET /api/integrations/slack/oauth/callback?error=...\` => expect callback relay response \`200\`, \`302\`, or \`307\`"
+  echo "- \`POST /api/webhooks/stripe\` with unsigned payload => expect upstream auth failure \`400\` or \`401\`"
   echo
   echo "## Requests"
   echo

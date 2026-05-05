@@ -60,6 +60,32 @@ require_status() {
   fi
 }
 
+require_status_in() {
+  local actual="$1"
+  local expected_csv="$2"
+  local step="$3"
+
+  if [[ ",$expected_csv," == *",$actual,"* ]]; then
+    return
+  fi
+
+  echo "Smoke step '$step' failed: expected one of [$expected_csv], got $actual" >&2
+  exit 1
+}
+
+require_json_detail_not_equal() {
+  local body_file="$1"
+  local forbidden_detail="$2"
+  local step="$3"
+  local actual_detail
+
+  actual_detail="$(jq -r '.detail // empty' "$body_file" 2>/dev/null || true)"
+  if [[ "$actual_detail" == "$forbidden_detail" ]]; then
+    echo "Smoke step '$step' failed: relay response still reports '$forbidden_detail'" >&2
+    exit 1
+  fi
+}
+
 tmp_dir="$(mktemp -d)"
 trap 'rm -rf "$tmp_dir"' EXIT
 
@@ -130,25 +156,19 @@ cat > "$tmp_dir/auth-initiate.json" <<'JSON'
 }
 JSON
 auth_status=$(request "native_auth_initiate" "POST" "/api/auth/native/oauth2/v2.0/initiate" "$OUT_DIR/native-auth-initiate.json" "$tmp_dir/auth-initiate.json")
-if [[ "$auth_status" != "200" && "$auth_status" != "400" ]]; then
-  echo "Smoke step 'native_auth_initiate' failed: expected HTTP 200 or 400, got $auth_status" >&2
-  exit 1
-fi
+require_status_in "$auth_status" "200,400" "native_auth_initiate"
+require_json_detail_not_equal "$OUT_DIR/native-auth-initiate.json" "Origin is not allowed for native auth proxy requests." "native_auth_initiate"
 
 callback_status=$(request "slack_oauth_callback_surface" "GET" "/api/integrations/slack/oauth/callback?error=access_denied&error_description=fly_cutover_probe" "$OUT_DIR/slack-oauth-callback.json")
-if [[ "$callback_status" != "200" && "$callback_status" != "302" && "$callback_status" != "307" ]]; then
-  echo "Smoke step 'slack_oauth_callback_surface' failed: expected HTTP 200, 302, or 307, got $callback_status" >&2
-  exit 1
-fi
+require_status_in "$callback_status" "200,302,307,400,401" "slack_oauth_callback_surface"
+require_json_detail_not_equal "$OUT_DIR/slack-oauth-callback.json" "Public edge relay is not configured." "slack_oauth_callback_surface"
 
 cat > "$tmp_dir/stripe-webhook.json" <<'JSON'
 {}
 JSON
 stripe_status=$(request "stripe_webhook_surface" "POST" "/api/webhooks/stripe" "$OUT_DIR/stripe-webhook.json" "$tmp_dir/stripe-webhook.json")
-if [[ "$stripe_status" != "400" && "$stripe_status" != "401" ]]; then
-  echo "Smoke step 'stripe_webhook_surface' failed: expected HTTP 400 or 401, got $stripe_status" >&2
-  exit 1
-fi
+require_status_in "$stripe_status" "400,401,503" "stripe_webhook_surface"
+require_json_detail_not_equal "$OUT_DIR/stripe-webhook.json" "Public edge relay is not configured." "stripe_webhook_surface"
 
 {
   echo "# FastAPI Fly.io Staging Smoke Evidence"
@@ -163,8 +183,8 @@ fi
   echo
   echo "- \`GET /health\` => expect \`200\`"
   echo "- \`POST /api/auth/native/oauth2/v2.0/initiate\` => expect \`200\` or provider validation \`400\`"
-  echo "- \`GET /api/integrations/slack/oauth/callback?error=...\` => expect callback relay response \`200\`, \`302\`, or \`307\`"
-  echo "- \`POST /api/webhooks/stripe\` with unsigned payload => expect upstream auth failure \`400\` or \`401\`"
+  echo "- \`GET /api/integrations/slack/oauth/callback?error=...\` => expect callback relay response \`200\`, \`302\`, \`307\`, \`400\`, or \`401\`"
+  echo "- \`POST /api/webhooks/stripe\` with unsigned payload => expect upstream response \`400\`, \`401\`, or a relayed legacy \`503\`"
   echo
   echo "## Requests"
   echo

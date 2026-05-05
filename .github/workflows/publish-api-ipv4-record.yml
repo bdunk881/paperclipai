@@ -120,7 +120,8 @@ jobs:
           grep -qx "$IPV4_ADDRESS" "$OUT_DIR/dig-a-1.1.1.1.txt"
           grep -qx "$IPV4_ADDRESS" "$OUT_DIR/dig-a-8.8.8.8.txt"
 
-          curl -4 -fsS "https://$RECORD_NAME/health" >"$OUT_DIR/curl-ipv4-health.json"
+          curl -4 -fsS --resolve "$RECORD_NAME:443:$IPV4_ADDRESS" \
+            "https://$RECORD_NAME/health" >"$OUT_DIR/curl-ipv4-health.json"
 
       - name: Upload Cloudflare DNS evidence
         if: always()

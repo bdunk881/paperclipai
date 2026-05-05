@@ -566,7 +566,7 @@ function buildStates(stateParam: string | null): MissionCardStates {
 export default function MissionState({
   initialData,
 }: {
-  initialData?: { record: MissionStateRecord; loadState: CardState };
+  initialData?: { record: MissionStateRecord | null; loadState: CardState };
 } = {}) {
   const location = useLocation();
   const { user, requireAccessToken } = useAuth();

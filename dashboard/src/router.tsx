@@ -97,7 +97,7 @@ async function missionStateLoader({
   request,
 }: {
   request: Request;
-}): Promise<{ record: MissionStateRecord; loadState: CardState }> {
+}): Promise<{ record: MissionStateRecord | null; loadState: CardState }> {
   const url = new URL(request.url);
   const simulatedState = url.searchParams.get("state");
   const selectedTeamId = url.searchParams.get("teamId");

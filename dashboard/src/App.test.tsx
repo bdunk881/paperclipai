@@ -11,6 +11,10 @@ const {
   addEventCallbackMock,
   getAllAccountsMock,
   setActiveAccountMock,
+  loginMock,
+  signupMock,
+  logoutMock,
+  getAccessTokenMock,
 } = vi.hoisted(() => ({
   authState: { user: null as null | { id: string; email: string; name: string } },
   initializeMock: vi.fn(() => Promise.resolve()),
@@ -18,6 +22,10 @@ const {
   addEventCallbackMock: vi.fn(),
   getAllAccountsMock: vi.fn(() => []),
   setActiveAccountMock: vi.fn(),
+  loginMock: vi.fn(),
+  signupMock: vi.fn(),
+  logoutMock: vi.fn(),
+  getAccessTokenMock: vi.fn(() => Promise.resolve("test-access-token")),
 }));
 
 vi.mock("@azure/msal-browser", () => ({
@@ -40,10 +48,10 @@ vi.mock("./context/AuthContext", () => ({
   useAuth: () => ({
     user: authState.user,
     accessMode: authState.user ? "authenticated" : "anonymous",
-    login: vi.fn(),
-    signup: vi.fn(),
-    logout: vi.fn(),
-    getAccessToken: vi.fn(),
+    login: loginMock,
+    signup: signupMock,
+    logout: logoutMock,
+    getAccessToken: getAccessTokenMock,
   }),
 }));
 
@@ -125,6 +133,10 @@ describe("App", () => {
     addEventCallbackMock.mockClear();
     getAllAccountsMock.mockClear();
     setActiveAccountMock.mockClear();
+    loginMock.mockClear();
+    signupMock.mockClear();
+    logoutMock.mockClear();
+    getAccessTokenMock.mockClear();
     window.history.replaceState({}, "", "/");
   });
 

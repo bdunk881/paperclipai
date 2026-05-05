@@ -1,9 +1,8 @@
-import type { Metadata } from "next";
-import Link from "next/link";
+import { Link } from "react-router";
 
-export const metadata: Metadata = {
-  title: "Introduction",
-};
+export function meta() {
+  return [{ title: "Introduction — AutoFlow Docs" }];
+}
 
 export default function DocsHomePage() {
   return (
@@ -15,7 +14,7 @@ export default function DocsHomePage() {
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 mb-12">
         <Link
-          href="/getting-started"
+          to="/getting-started"
           className="group rounded-xl border border-gray-200 p-5 hover:border-indigo-300 hover:bg-indigo-50/50 transition-all"
         >
           <div className="text-2xl mb-2">⚡</div>
@@ -28,7 +27,7 @@ export default function DocsHomePage() {
         </Link>
 
         <Link
-          href="/api-reference"
+          to="/api-reference"
           className="group rounded-xl border border-gray-200 p-5 hover:border-indigo-300 hover:bg-indigo-50/50 transition-all"
         >
           <div className="text-2xl mb-2">📖</div>

@@ -1,8 +1,6 @@
-import type { Metadata } from "next";
-
-export const metadata: Metadata = {
-  title: "Quick Start",
-};
+export function meta() {
+  return [{ title: "Quick Start — AutoFlow Docs" }];
+}
 
 export default function GettingStartedPage() {
   return (

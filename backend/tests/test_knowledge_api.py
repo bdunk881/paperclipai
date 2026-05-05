@@ -16,6 +16,12 @@ def setup_function() -> None:
     knowledge_store.clear()
 
 
+def test_healthcheck() -> None:
+    response = client.get("/health")
+    assert response.status_code == 200
+    assert response.json() == {"status": "ok"}
+
+
 def test_create_base_ingest_document_and_search() -> None:
     create_res = client.post(
         "/api/knowledge/bases",
@@ -96,3 +102,14 @@ def test_requires_user_identity_header() -> None:
     response = client.post("/api/knowledge/bases", json={"name": "No Auth"})
     assert response.status_code == 401
     assert "header is required" in response.json()["detail"]
+
+
+def test_accepts_bearer_token_as_user_identity() -> None:
+    response = client.post(
+        "/api/knowledge/bases",
+        headers={"Authorization": "Bearer bearer-user"},
+        json={"name": "Bearer Auth KB"},
+    )
+
+    assert response.status_code == 201
+    assert response.json()["userId"] == "bearer-user"

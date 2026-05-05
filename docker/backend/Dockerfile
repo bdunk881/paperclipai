@@ -1,42 +1,25 @@
 # syntax=docker/dockerfile:1
 
-FROM node:20-alpine AS deps
-WORKDIR /app
-COPY package.json package-lock.json ./
-RUN npm ci
+FROM python:3.12-slim AS runtime
 
-FROM node:20-alpine AS builder
-WORKDIR /app
-COPY --from=deps /app/node_modules ./node_modules
-COPY package.json package-lock.json tsconfig.json ./
-COPY src ./src
-
-ARG BUILD_SHA=unknown
-ARG BUILD_DATE=unknown
-ENV BUILD_SHA=${BUILD_SHA} \
-    BUILD_DATE=${BUILD_DATE}
-
-RUN npm run build
-
-FROM node:20-alpine AS runtime
-LABEL org.opencontainers.image.source="https://github.com/bdunk881/paperclipai"
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PORT=8080
 
 WORKDIR /app
-ENV NODE_ENV=production \
-    PORT=3000
 
-COPY package.json package-lock.json ./
-RUN npm ci --omit=dev && npm cache clean --force
+COPY backend/requirements.txt ./requirements.txt
 
-COPY --from=builder /app/dist ./dist
-COPY migrations ./migrations
+RUN pip install --no-cache-dir --upgrade pip \
+    && pip install --no-cache-dir -r requirements.txt
+
+COPY backend /app/backend
+
+WORKDIR /app/backend
 
 HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
-    CMD wget -qO- "http://127.0.0.1:${PORT}/health" >/dev/null || exit 1
+    CMD python -c "import os, urllib.request; urllib.request.urlopen(f'http://127.0.0.1:{os.environ.get(\"PORT\", \"8080\")}/health', timeout=5)"
 
-EXPOSE 3000
+EXPOSE 8080
 
-RUN chown -R 1000:1000 /app
-USER 1000
-
-CMD ["node", "--require", "./dist/instrument.js", "dist/index.js"]
+CMD ["sh", "-c", "uvicorn main:app --host 0.0.0.0 --port ${PORT:-8080}"]

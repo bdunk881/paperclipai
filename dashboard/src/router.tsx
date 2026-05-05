@@ -14,8 +14,8 @@ import {
   listTickets,
   type TicketPriority,
 } from "./api/tickets";
-import { readStoredAuthSession } from "./auth/authStorage";
 import { listCompanyRoleTemplates, listTemplates, type CompanyRoleTemplate } from "./api/client";
+import { getSupabaseStoredSession } from "./auth/supabaseAuth";
 import { apiGet } from "./api/settingsClient";
 import Layout from "./components/Layout";
 import { useAuth } from "./context/AuthContext";
@@ -85,8 +85,17 @@ function PublicRoute({ children }: { children: React.ReactNode }) {
   return user ? <Navigate to="/" replace /> : <>{children}</>;
 }
 
+async function readCurrentAccessSession() {
+  try {
+    return await getSupabaseStoredSession();
+  } catch {
+    return null;
+  }
+}
+
 async function ticketsLoader(): Promise<TicketsRouteData> {
-  return listTickets({}, readStoredAuthSession()?.accessToken);
+  const session = await readCurrentAccessSession();
+  return listTickets({}, session?.accessToken);
 }
 
 async function templatesLoader() {
@@ -101,7 +110,7 @@ async function missionStateLoader({
   const url = new URL(request.url);
   const simulatedState = url.searchParams.get("state");
   const selectedTeamId = url.searchParams.get("teamId");
-  const session = readStoredAuthSession();
+  const session = await readCurrentAccessSession();
 
   if (simulatedState === "loading" || simulatedState === "empty" || simulatedState === "error") {
     return { record: null, loadState: simulatedState };
@@ -143,7 +152,7 @@ async function staffingPlanLoader(): Promise<{
   roleTemplates: CompanyRoleTemplate[];
   pageError: string | null;
 }> {
-  const session = readStoredAuthSession();
+  const session = await readCurrentAccessSession();
   if (!session?.accessToken) {
     return {
       roleTemplates: [],
@@ -171,7 +180,8 @@ async function ticketDetailLoader({
     throw new Error("Ticket ID is required.");
   }
 
-  return getTicket(params.ticketId, readStoredAuthSession()?.accessToken);
+  const session = await readCurrentAccessSession();
+  return getTicket(params.ticketId, session?.accessToken);
 }
 
 async function ticketsAction({ request }: ActionFunctionArgs): Promise<CreateTicketRouteActionData> {
@@ -187,9 +197,10 @@ async function ticketsAction({ request }: ActionFunctionArgs): Promise<CreateTic
   }
 
   try {
+    const session = await readCurrentAccessSession();
     const created = await createTicket(
       buildCreateTicketPayload(payload),
-      readStoredAuthSession()?.accessToken
+      session?.accessToken
     );
     return {
       ok: true,

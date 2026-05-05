@@ -23,6 +23,10 @@ on:
         description: Optional pre-cutover relay override for production dispatches
         required: false
         type: string
+      production_relay_host_header:
+        description: Optional Host header override for production relay requests
+        required: false
+        type: string
 
 concurrency:
   group: deploy-fly-fastapi-${{ github.event_name == 'workflow_dispatch' && github.event.inputs.environment || 'staging' }}
@@ -60,6 +64,7 @@ jobs:
       FLY_PRODUCTION_APP_FALLBACK: autoflow-fastapi-production
       FLY_PRODUCTION_BASE_URL_FALLBACK: https://autoflow-fastapi-production.fly.dev
       FLY_PRODUCTION_RELAY_BASE_URL_FALLBACK: https://api.helloautoflow.com
+      FLY_PRODUCTION_RELAY_HOST_HEADER_FALLBACK: ""
       FLY_STAGING_APP_FALLBACK: autoflow-fastapi-staging
       FLY_STAGING_BASE_URL_FALLBACK: https://autoflow-fastapi-staging.fly.dev
       FLY_SHARED_SMOKE_USER_FALLBACK: qa-smoke-user
@@ -97,6 +102,19 @@ jobs:
               relay_base_url="${FLY_PRODUCTION_RELAY_BASE_URL_FALLBACK}"
             fi
 
+            relay_host_header="${{ github.event.inputs.production_relay_host_header }}"
+            if [[ -z "$relay_host_header" ]]; then
+              relay_host_header="${{ vars.FLY_PRODUCTION_RELAY_HOST_HEADER }}"
+            fi
+            if [[ -z "$relay_host_header" ]]; then
+              relay_host_header="${FLY_PRODUCTION_RELAY_HOST_HEADER_FALLBACK}"
+            fi
+
+            relay_insecure_tls="false"
+            if [[ -n "$relay_host_header" ]]; then
+              relay_insecure_tls="true"
+            fi
+
             config_path="fly.production.toml"
             artifact_prefix="fastapi-fly-production"
             stateful_kb_checks="false"
@@ -117,6 +135,8 @@ jobs:
             fi
 
             relay_base_url="https://staging-api.helloautoflow.com"
+            relay_host_header=""
+            relay_insecure_tls="false"
             config_path="fly.toml"
             artifact_prefix="fastapi-fly-staging"
             stateful_kb_checks="true"
@@ -126,6 +146,8 @@ jobs:
           echo "base_url=$base_url" >> "$GITHUB_OUTPUT"
           echo "smoke_user_id=$smoke_user_id" >> "$GITHUB_OUTPUT"
           echo "relay_base_url=$relay_base_url" >> "$GITHUB_OUTPUT"
+          echo "relay_host_header=$relay_host_header" >> "$GITHUB_OUTPUT"
+          echo "relay_insecure_tls=$relay_insecure_tls" >> "$GITHUB_OUTPUT"
           echo "config_path=$config_path" >> "$GITHUB_OUTPUT"
           echo "artifact_prefix=$artifact_prefix" >> "$GITHUB_OUTPUT"
           echo "stateful_kb_checks=$stateful_kb_checks" >> "$GITHUB_OUTPUT"
@@ -148,6 +170,8 @@ jobs:
           set -euo pipefail
           flyctl secrets set \
             FASTAPI_EDGE_RELAY_BASE_URL="${{ steps.settings.outputs.relay_base_url }}" \
+            FASTAPI_EDGE_RELAY_HOST_HEADER="${{ steps.settings.outputs.relay_host_header }}" \
+            FASTAPI_EDGE_RELAY_INSECURE_TLS="${{ steps.settings.outputs.relay_insecure_tls }}" \
             AUTH_NATIVE_AUTH_PROXY_BASE_URL="https://${{ vars.AZURE_CIAM_TENANT_SUBDOMAIN }}.ciamlogin.com/${{ vars.AZURE_CIAM_TENANT_ID }}" \
             AZURE_CIAM_AUTHORITY="https://${{ vars.AZURE_CIAM_TENANT_SUBDOMAIN }}.ciamlogin.com/${{ vars.AZURE_CIAM_TENANT_ID }}" \
             AZURE_CIAM_TENANT_SUBDOMAIN="${{ vars.AZURE_CIAM_TENANT_SUBDOMAIN }}" \
@@ -181,6 +205,8 @@ jobs:
             echo "- Stable Fly hostname: ${{ steps.settings.outputs.base_url }}"
             echo "- Current cutover host: ${FLY_CUTOVER_HOST}"
             echo "- Relay base URL used for this deploy: ${{ steps.settings.outputs.relay_base_url }}"
+            echo "- Relay Host header override: ${{ steps.settings.outputs.relay_host_header }}"
+            echo "- Relay insecure TLS: ${{ steps.settings.outputs.relay_insecure_tls }}"
             echo
             echo "## Notes"
             echo
@@ -190,6 +216,9 @@ jobs:
                 echo "- Before Phase 5a DNS cutover, replace that relay with the direct legacy Azure ingress hostname so callback/webhook traffic does not loop back into Fly after api.helloautoflow.com moves."
               else
                 echo "- Production relay base URL already points at an explicit legacy upstream target."
+              fi
+              if [[ -n "${{ steps.settings.outputs.relay_host_header }}" ]]; then
+                echo "- The relay path uses an explicit Host header override for legacy Azure ingress routing."
               fi
             else
               echo "- Staging relay remains pinned to the legacy staging API host."

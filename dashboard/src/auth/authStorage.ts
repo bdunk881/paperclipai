@@ -18,16 +18,6 @@ export interface StoredAuthSession {
 export const AUTH_STORAGE_KEY = "autoflow_user";
 export const AUTH_STORAGE_EVENT = "autoflow-auth-user-changed";
 
-function isStoredAuthUser(value: unknown): value is StoredAuthUser {
-  if (!value || typeof value !== "object") return false;
-  const candidate = value as Record<string, unknown>;
-  return (
-    typeof candidate.id === "string" &&
-    typeof candidate.email === "string" &&
-    typeof candidate.name === "string"
-  );
-}
-
 function parseStoredAuthUser(value: unknown): StoredAuthUser | null {
   if (!value || typeof value !== "object") return null;
   const candidate = value as Record<string, unknown>;

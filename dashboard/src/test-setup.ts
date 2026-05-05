@@ -34,7 +34,6 @@ if (typeof globalThis.Request !== "undefined") {
   Object.setPrototypeOf(TestRequest, OriginalRequest);
   Object.setPrototypeOf(TestRequest.prototype, OriginalRequest.prototype);
   Object.defineProperty(TestRequest, "name", { value: "Request" });
-  // @ts-expect-error intentional global patch for test environment
   globalThis.Request = TestRequest;
 }
 

@@ -7,11 +7,13 @@ What landed:
 - app shell route tree now lives in `dashboard/src/router.tsx`
 - `/tickets` hydrates from a route loader and submits create-ticket mutations through a route action
 - `/tickets/:ticketId` hydrates from a route loader so direct entry has data-router parity
+- `/templates`, `/mission-state`, and `/workspace/staffing-plan` now hydrate through RR loaders instead of route-local bootstrap effects
 - existing UI surfaces stay visually unchanged; this is a routing/runtime migration only
 
 What remains for full Phase 4a closure:
 
 - migrate the remaining high-value mutation flows from component-local fetch calls to route actions, starting with `TicketDetail`
+- move the remaining data-heavy routes that still bootstrap inside components onto RR loaders, especially dashboard, run-history, and agent catalog/detail flows
 - convert the dashboard from Vite SPA hosting to React Router framework SPA mode (`ssr: false`) once the deployment target is aligned
 - update hosting config for the framework build output instead of the current Vite `dist` conventions
 

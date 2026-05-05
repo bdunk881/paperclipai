@@ -98,6 +98,11 @@ Recommended dashboard host split:
 - `app.helloautoflow.com` -> production SWA
 - `staging.app.helloautoflow.com` -> staging SWA
 
+## Cloudflare Pages migration
+
+- Phase 4 cutover runbook: `infra/runbooks/cloudflare-pages-phase4-cutover.md`
+- Scope: Pages project validation, env/secret requirements, DNS cutover order, and Vercel retirement sequence for `app.helloautoflow.com`, `docs.helloautoflow.com`, `helloautoflow.com`, and `www.helloautoflow.com`
+
 ## QA Integration Evidence
 
 - Workflow: `.github/workflows/qa-integration-evidence.yml`

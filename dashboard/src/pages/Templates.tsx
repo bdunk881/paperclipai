@@ -3,19 +3,25 @@ import { Link } from "react-router-dom";
 import { ArrowRight, Layers3, Search } from "lucide-react";
 import { listTemplates, type TemplateSummary } from "../api/client";
 import { ErrorState, LoadingState } from "../components/UiStates";
-import { useWorkspace } from "../context/useWorkspace";
 
 const ALL_CATEGORY = "All";
 
-export default function Templates() {
-  const { activeWorkspaceId } = useWorkspace();
-  const [templates, setTemplates] = useState<TemplateSummary[]>([]);
-  const [loading, setLoading] = useState(true);
+export default function Templates({
+  initialTemplates,
+}: {
+  initialTemplates?: TemplateSummary[];
+} = {}) {
+  const [templates, setTemplates] = useState<TemplateSummary[]>(() => initialTemplates ?? []);
+  const [loading, setLoading] = useState(() => initialTemplates == null);
   const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState(ALL_CATEGORY);
 
   useEffect(() => {
+    if (initialTemplates) {
+      return;
+    }
+
     let cancelled = false;
 
     void (async () => {
@@ -40,7 +46,7 @@ export default function Templates() {
     return () => {
       cancelled = true;
     };
-  }, [activeWorkspaceId]);
+  }, [initialTemplates]);
 
   const categories = useMemo(
     () => [ALL_CATEGORY, ...Array.from(new Set(templates.map((template) => template.category))).sort()],
@@ -104,7 +110,7 @@ export default function Templates() {
               <input
                 value={query}
                 onChange={(event) => setQuery(event.target.value)}
-                className="w-full rounded-2xl border border-gray-200 pl-9 pr-3 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/20"
+                className="w-full rounded-2xl border border-gray-200 px-3 py-3 pl-9 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/20"
                 placeholder="Search templates..."
               />
             </div>
@@ -172,7 +178,9 @@ export default function Templates() {
         {filtered.length === 0 ? (
           <div className="mt-8 rounded-3xl border border-dashed border-gray-300 bg-white px-6 py-12 text-center">
             <p className="text-sm font-medium text-gray-600">No templates match this filter.</p>
-            <p className="mt-2 text-xs text-gray-400">Try a different category or open the builder to create a new workflow.</p>
+            <p className="mt-2 text-xs text-gray-400">
+              Try a different category or open the builder to create a new workflow.
+            </p>
           </div>
         ) : null}
       </div>

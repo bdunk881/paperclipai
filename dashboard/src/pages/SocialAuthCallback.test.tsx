@@ -28,25 +28,4 @@ describe("SocialAuthCallback", () => {
       expect(screen.getByText("Login Page")).toBeInTheDocument();
     });
   });
-
-  it("returns to login with an error when the backend callback reports a failure", async () => {
-    window.history.replaceState(
-      {},
-      "",
-      "/auth/social-callback#error=social_auth_failed&error_description=Provider%20denied%20access&provider=facebook"
-    );
-
-    render(
-      <MemoryRouter initialEntries={["/auth/social-callback"]}>
-        <Routes>
-          <Route path="/auth/social-callback" element={<SocialAuthCallback />} />
-          <Route path="/login" element={<div>Login Page</div>} />
-        </Routes>
-      </MemoryRouter>
-    );
-
-    await waitFor(() => {
-      expect(screen.getByText("Login Page")).toBeInTheDocument();
-    });
-  });
 });

@@ -138,7 +138,6 @@ describe("AuthContext", () => {
 
   it("throws when a token is required but the Supabase session cannot be refreshed", async () => {
     getSupabaseStoredSessionMock.mockResolvedValue(null);
-
     render(
       <AuthProvider>
         <CaptureAuth />
@@ -167,6 +166,12 @@ describe("AuthContext", () => {
         <CaptureAuth />
       </AuthProvider>
     );
+
+    await waitFor(() => {
+      expect(writeStoredAuthUserMock).toHaveBeenCalledWith(
+        expect.objectContaining({ email: "user@example.com" })
+      );
+    });
 
     latestAuth?.logout();
 

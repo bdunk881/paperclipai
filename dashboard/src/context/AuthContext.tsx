@@ -61,21 +61,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [storedSession, setStoredSession] = React.useState<StoredAuthSession | null>(null);
   const [storedUser, setStoredUser] = React.useState<StoredAuthUser | null>(() => readStoredAuthUser());
 
-  const syncAuthState = React.useCallback(() => {
+  const syncStoredUser = React.useCallback(() => {
     setStoredUser(readStoredAuthUser());
   }, []);
 
   React.useEffect(() => {
-    syncAuthState();
+    syncStoredUser();
 
-    window.addEventListener("storage", syncAuthState);
-    window.addEventListener(AUTH_STORAGE_EVENT, syncAuthState);
+    window.addEventListener("storage", syncStoredUser);
+    window.addEventListener(AUTH_STORAGE_EVENT, syncStoredUser);
 
     return () => {
-      window.removeEventListener("storage", syncAuthState);
-      window.removeEventListener(AUTH_STORAGE_EVENT, syncAuthState);
+      window.removeEventListener("storage", syncStoredUser);
+      window.removeEventListener(AUTH_STORAGE_EVENT, syncStoredUser);
     };
-  }, [syncAuthState]);
+  }, [syncStoredUser]);
 
   const user = sessionUser(storedSession, storedUser);
 
@@ -97,15 +97,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     void getSupabaseStoredSession()
       .then((session) => {
-        if (!active || !session) {
+        if (!active) {
           return;
         }
 
         setStoredSession(session);
-        writeStoredAuthUser(session.user);
+        if (session?.user) {
+          writeStoredAuthUser(session.user);
+        }
       })
       .catch(() => {
-        // Preserve non-Supabase users such as QA preview access.
+        // Preserve preview-mode user state when Supabase is unavailable.
       });
 
     const { data } = supabase.auth.onAuthStateChange((_event: AuthChangeEvent, session: Session | null) => {
@@ -113,12 +115,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         return;
       }
 
-      if (session) {
-        const mappedSession = sessionFromSupabaseSession(session);
-        setStoredSession(mappedSession);
-        writeStoredAuthUser(mappedSession.user);
+      const nextSession = session ? sessionFromSupabaseSession(session) : null;
+      setStoredSession(nextSession);
+
+      if (nextSession?.user) {
+        writeStoredAuthUser(nextSession.user);
       } else {
-        setStoredSession(null);
         clearStoredAuthUser();
       }
     });
@@ -127,7 +129,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       active = false;
       data.subscription.unsubscribe();
     };
-  }, [syncAuthState]);
+  }, []);
 
   const accessMode: AuthAccessMode = storedSession
     ? "authenticated"
@@ -149,20 +151,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [storedSession]);
 
   const getAccessToken = React.useCallback(async (): Promise<string | null> => {
-    try {
-      const refreshed = await getSupabaseStoredSession();
-      if (!refreshed) {
-        setStoredSession(null);
-        return null;
-      }
+    const refreshed = await getSupabaseStoredSession().catch(() => null);
+    setStoredSession(refreshed);
 
-      setStoredSession(refreshed);
+    if (refreshed?.user) {
       writeStoredAuthUser(refreshed.user);
       return refreshed.accessToken;
-    } catch {
-      setStoredSession(null);
-      return null;
     }
+
+    return null;
   }, []);
 
   const requireAccessToken = React.useCallback(async (): Promise<string> => {

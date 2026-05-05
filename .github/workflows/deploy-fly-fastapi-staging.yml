@@ -27,6 +27,10 @@ on:
         description: Optional Host header override for production relay requests
         required: false
         type: string
+      production_custom_domain:
+        description: Optional production custom domain to register on the Fly app
+        required: false
+        type: string
 
 concurrency:
   group: deploy-fly-fastapi-${{ github.event_name == 'workflow_dispatch' && github.event.inputs.environment || 'staging' }}
@@ -63,6 +67,7 @@ jobs:
       FLY_DEPLOY_ENV: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.environment || 'staging' }}
       FLY_PRODUCTION_APP_FALLBACK: autoflow-fastapi-production
       FLY_PRODUCTION_BASE_URL_FALLBACK: https://autoflow-fastapi-production.fly.dev
+      FLY_PRODUCTION_CUSTOM_DOMAIN_FALLBACK: api.helloautoflow.com
       FLY_PRODUCTION_RELAY_BASE_URL_FALLBACK: https://api.helloautoflow.com
       FLY_PRODUCTION_RELAY_HOST_HEADER_FALLBACK: ""
       FLY_STAGING_APP_FALLBACK: autoflow-fastapi-staging
@@ -115,6 +120,14 @@ jobs:
               relay_insecure_tls="true"
             fi
 
+            custom_domain="${{ github.event.inputs.production_custom_domain }}"
+            if [[ -z "$custom_domain" ]]; then
+              custom_domain="${{ vars.FLY_PRODUCTION_CUSTOM_DOMAIN }}"
+            fi
+            if [[ -z "$custom_domain" ]]; then
+              custom_domain="${FLY_PRODUCTION_CUSTOM_DOMAIN_FALLBACK}"
+            fi
+
             config_path="fly.production.toml"
             artifact_prefix="fastapi-fly-production"
             stateful_kb_checks="false"
@@ -137,6 +150,7 @@ jobs:
             relay_base_url="https://staging-api.helloautoflow.com"
             relay_host_header=""
             relay_insecure_tls="false"
+            custom_domain=""
             config_path="fly.toml"
             artifact_prefix="fastapi-fly-staging"
             stateful_kb_checks="true"
@@ -148,6 +162,7 @@ jobs:
           echo "relay_base_url=$relay_base_url" >> "$GITHUB_OUTPUT"
           echo "relay_host_header=$relay_host_header" >> "$GITHUB_OUTPUT"
           echo "relay_insecure_tls=$relay_insecure_tls" >> "$GITHUB_OUTPUT"
+          echo "custom_domain=$custom_domain" >> "$GITHUB_OUTPUT"
           echo "config_path=$config_path" >> "$GITHUB_OUTPUT"
           echo "artifact_prefix=$artifact_prefix" >> "$GITHUB_OUTPUT"
           echo "stateful_kb_checks=$stateful_kb_checks" >> "$GITHUB_OUTPUT"
@@ -162,6 +177,24 @@ jobs:
             exit 0
           fi
           flyctl apps create "${{ steps.settings.outputs.app_name }}"
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+
+      - name: Ensure Fly production custom domain
+        if: ${{ env.FLY_DEPLOY_ENV == 'production' && steps.settings.outputs.custom_domain != '' }}
+        run: |
+          set -euo pipefail
+          OUT_DIR="artifacts/fly-fastapi-smoke"
+          mkdir -p "$OUT_DIR"
+          domain="${{ steps.settings.outputs.custom_domain }}"
+          app="${{ steps.settings.outputs.app_name }}"
+
+          if flyctl certs show "$domain" --app "$app" > "$OUT_DIR/fly-cert-show.txt" 2>&1; then
+            echo "Fly custom domain already registered: $domain"
+          else
+            flyctl certs add "$domain" --app "$app" | tee "$OUT_DIR/fly-cert-add.txt"
+            flyctl certs show "$domain" --app "$app" | tee "$OUT_DIR/fly-cert-show.txt"
+          fi
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
 
@@ -207,6 +240,7 @@ jobs:
             echo "- Relay base URL used for this deploy: ${{ steps.settings.outputs.relay_base_url }}"
             echo "- Relay Host header override: ${{ steps.settings.outputs.relay_host_header }}"
             echo "- Relay insecure TLS: ${{ steps.settings.outputs.relay_insecure_tls }}"
+            echo "- Custom domain: ${{ steps.settings.outputs.custom_domain }}"
             echo
             echo "## Notes"
             echo
@@ -219,6 +253,9 @@ jobs:
               fi
               if [[ -n "${{ steps.settings.outputs.relay_host_header }}" ]]; then
                 echo "- The relay path uses an explicit Host header override for legacy Azure ingress routing."
+              fi
+              if [[ -n "${{ steps.settings.outputs.custom_domain }}" ]]; then
+                echo "- The workflow attempted to ensure the Fly custom domain is registered before DNS cutover."
               fi
             else
               echo "- Staging relay remains pinned to the legacy staging API host."

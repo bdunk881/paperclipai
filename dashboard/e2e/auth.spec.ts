@@ -30,14 +30,16 @@ test("login page renders AutoFlow sign-in CTA", async ({ page }) => {
   await expect(page.locator("form").getByRole("button", { name: /^sign in$/i })).toBeVisible();
 });
 
-test("sign-in button validates required credentials when clicked empty", async ({ page }) => {
+test("sign-in form shows the current Supabase setup state", async ({ page }) => {
   await page.goto("/login");
 
+  const emailInput = page.locator('input[type="email"]').first();
   const signInButton = page.locator("form").getByRole("button", { name: /^sign in$/i });
-  await expect(signInButton).toBeVisible();
-  await signInButton.click();
 
-  await expect(page.getByText(/enter both your email and password\./i)).toBeVisible();
+  await expect(emailInput).toBeVisible();
+  await expect(signInButton).toBeVisible();
+  await expect(signInButton).toBeDisabled();
+  await expect(page.getByText(/supabase auth is not configured yet/i)).toBeVisible();
 });
 
 // ---------------------------------------------------------------------------

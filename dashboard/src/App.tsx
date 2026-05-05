@@ -3,7 +3,7 @@ import * as Sentry from "@sentry/react";
 import {
   readQaPreviewToken,
   sanitizeQaPreviewRedirect,
-  writeStoredAuthSession,
+  writeStoredAuthUser,
 } from "./auth/authStorage";
 import { sessionFromAppToken } from "./auth/nativeAuthClient";
 import { AuthProvider } from "./context/AuthContext";
@@ -41,7 +41,7 @@ async function maybeActivateQaPreviewAccess(): Promise<void> {
     return;
   }
 
-  writeStoredAuthSession(sessionFromAppToken(data.accessToken));
+  writeStoredAuthUser(sessionFromAppToken(data.accessToken).user);
 
   const nextPath = redirectTarget ?? `${window.location.pathname}${window.location.hash}`;
   window.history.replaceState({}, "", nextPath);

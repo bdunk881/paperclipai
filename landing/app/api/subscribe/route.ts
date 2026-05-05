@@ -1,16 +1,13 @@
-import { NextRequest, NextResponse } from "next/server";
-
-export async function POST(req: NextRequest) {
-  const { email } = (await req.json()) as { email?: string };
+export async function action({ request }: { request: Request }) {
+  const { email } = (await request.json()) as { email?: string };
 
   if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-    return NextResponse.json({ error: "Invalid email" }, { status: 400 });
+    return Response.json({ error: "Invalid email" }, { status: 400 });
   }
 
   const webhookUrl = process.env.ZAPIER_WEBHOOK_URL;
   if (!webhookUrl) {
-    // Silently succeed if webhook is not configured (dev mode)
-    return NextResponse.json({ ok: true });
+    return Response.json({ ok: true });
   }
 
   try {
@@ -24,9 +21,9 @@ export async function POST(req: NextRequest) {
       throw new Error(`Zapier webhook returned ${res.status}`);
     }
 
-    return NextResponse.json({ ok: true });
+    return Response.json({ ok: true });
   } catch (err) {
     console.error("Zapier webhook error:", err);
-    return NextResponse.json({ error: "Failed to subscribe" }, { status: 500 });
+    return Response.json({ error: "Failed to subscribe" }, { status: 500 });
   }
 }

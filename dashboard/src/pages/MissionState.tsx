@@ -97,6 +97,7 @@ function toDisplayStatus(status: BackendMissionState["overallStatus"]): MissionS
   return statusMap[status];
 }
 
+// eslint-disable-next-line react-refresh/only-export-components
 export function buildMissionRecordFromBackend(
   missionState: BackendMissionState
 ): MissionStateRecord {
@@ -204,6 +205,7 @@ function MissionStatusBadge({ status }: { status: MissionStatus }) {
   );
 }
 
+// eslint-disable-next-line react-refresh/only-export-components
 export function extractTeams(payload: unknown): ControlPlaneTeamSummary[] {
   if (Array.isArray(payload)) {
     return payload as ControlPlaneTeamSummary[];

@@ -12,6 +12,7 @@ export interface StoredAuthSession {
   expiresAt: number;
   scope?: string;
   user: StoredAuthUser;
+  authProvider?: "supabase" | "preview" | "native" | "social" | "microsoft";
 }
 
 export const AUTH_STORAGE_KEY = "autoflow_user";

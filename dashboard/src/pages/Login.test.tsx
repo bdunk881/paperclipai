@@ -4,107 +4,41 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import Login from "./Login";
 
 const {
-  signInWithPasswordMock,
-  startSignUpMock,
-  challengeSignUpMock,
-  continueSignUpMock,
-  exchangeContinuationTokenMock,
-  initializeMsalInstanceMock,
-  loginPopupMock,
-  setActiveAccountMock,
-  sessionFromTokenResponseMock,
-  navigateToSocialAuthMock,
+  signInWithSupabasePasswordMock,
+  signUpWithSupabasePasswordMock,
+  sendSupabaseMagicLinkMock,
+  signInWithSupabaseOAuthMock,
+  isSupabaseAuthConfiguredMock,
   writeStoredAuthSessionMock,
 } = vi.hoisted(() => ({
-  signInWithPasswordMock: vi.fn(),
-  startSignUpMock: vi.fn(),
-  challengeSignUpMock: vi.fn(),
-  continueSignUpMock: vi.fn(),
-  exchangeContinuationTokenMock: vi.fn(),
-  initializeMsalInstanceMock: vi.fn(),
-  loginPopupMock: vi.fn(),
-  setActiveAccountMock: vi.fn(),
-  sessionFromTokenResponseMock: vi.fn(),
-  navigateToSocialAuthMock: vi.fn(),
+  signInWithSupabasePasswordMock: vi.fn(),
+  signUpWithSupabasePasswordMock: vi.fn(),
+  sendSupabaseMagicLinkMock: vi.fn(),
+  signInWithSupabaseOAuthMock: vi.fn(),
+  isSupabaseAuthConfiguredMock: vi.fn(() => true),
   writeStoredAuthSessionMock: vi.fn(),
 }));
 
-vi.mock("@azure/msal-browser", () => ({
-  BrowserAuthError: class BrowserAuthError extends Error {
-    errorCode: string;
-    constructor(message: string, errorCode: string) {
-      super(message);
-      this.errorCode = errorCode;
-    }
-  },
-  BrowserAuthErrorCodes: {
-    popupWindowError: "popup_window_error",
-    emptyWindowError: "empty_window_error",
-    timedOut: "timed_out",
-    userCancelled: "user_cancelled",
-    interactionInProgress: "interaction_in_progress",
-  },
-}));
-
-vi.mock("../auth/nativeAuthClient", () => ({
-  NativeAuthError: class NativeAuthError extends Error {
-    code?: string;
-    description?: string;
-    status: number;
-    constructor(message: string, status = 400, code?: string, description?: string) {
-      super(message);
-      this.status = status;
-      this.code = code;
-      this.description = description;
-    }
-  },
-  signInWithPassword: signInWithPasswordMock,
-  startSignUp: startSignUpMock,
-  challengeSignUp: challengeSignUpMock,
-  continueSignUp: continueSignUpMock,
-  exchangeContinuationToken: exchangeContinuationTokenMock,
-  startPasswordReset: vi.fn(),
-  challengePasswordReset: vi.fn(),
-  continuePasswordReset: vi.fn(),
-  submitPasswordReset: vi.fn(),
-  pollPasswordResetCompletion: vi.fn(),
-  sessionFromTokenResponse: sessionFromTokenResponseMock,
-  isRedirectRequired: vi.fn().mockReturnValue(false),
+vi.mock("../auth/supabaseAuth", () => ({
+  signInWithSupabasePassword: signInWithSupabasePasswordMock,
+  signUpWithSupabasePassword: signUpWithSupabasePasswordMock,
+  sendSupabaseMagicLink: sendSupabaseMagicLinkMock,
+  signInWithSupabaseOAuth: signInWithSupabaseOAuthMock,
+  isSupabaseAuthConfigured: isSupabaseAuthConfiguredMock,
 }));
 
 vi.mock("../auth/authStorage", () => ({
   writeStoredAuthSession: writeStoredAuthSessionMock,
 }));
 
-vi.mock("../auth/msalInstance", () => ({
-  initializeMsalInstance: initializeMsalInstanceMock,
-  msalInstance: {
-    loginPopup: loginPopupMock,
-    setActiveAccount: setActiveAccountMock,
-  },
-}));
-
-vi.mock("../api/baseUrl", () => ({
-  getConfiguredApiOrigin: vi.fn(() => ""),
-}));
-
-vi.mock("../auth/socialAuthNavigation", () => ({
-  navigateToSocialAuth: navigateToSocialAuthMock,
-}));
-
 describe("Login", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    initializeMsalInstanceMock.mockResolvedValue(undefined);
-    sessionFromTokenResponseMock.mockReturnValue({
-      accessToken: "token-123",
-      expiresAt: Date.now() + 60_000,
-      user: { id: "user-1", email: "user@example.com", name: "Example User" },
-    });
+    isSupabaseAuthConfiguredMock.mockReturnValue(true);
     window.history.replaceState({}, "", "/login");
   });
 
-  it("renders the native sign-in surface by default", () => {
+  it("renders the Supabase sign-in surface by default", () => {
     render(
       <MemoryRouter initialEntries={["/login"]}>
         <Routes>
@@ -116,14 +50,17 @@ describe("Login", () => {
     expect(screen.getByText("Sign in to AutoFlow")).toBeInTheDocument();
     expect(screen.getAllByRole("button", { name: "Sign in" })).toHaveLength(2);
     expect(screen.getByRole("button", { name: "Sign up" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Reset" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Magic link" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Sign in with Google" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Sign in with GitHub" })).toBeInTheDocument();
   });
 
-  it("stores the returned native auth session after sign-in", async () => {
-    signInWithPasswordMock.mockResolvedValueOnce({
-      access_token: "token-123",
-      expires_in: 3600,
-      token_type: "Bearer",
+  it("stores the returned Supabase session after password sign-in", async () => {
+    signInWithSupabasePasswordMock.mockResolvedValueOnce({
+      accessToken: "token-123",
+      expiresAt: Date.now() + 60_000,
+      user: { id: "user-1", email: "user@example.com", name: "Example User" },
+      authProvider: "supabase",
     });
 
     render(
@@ -144,63 +81,13 @@ describe("Login", () => {
     fireEvent.click(screen.getAllByRole("button", { name: "Sign in" })[1]);
 
     await waitFor(() => {
-      expect(signInWithPasswordMock).toHaveBeenCalledWith("user@example.com", "secret-pass");
+      expect(signInWithSupabasePasswordMock).toHaveBeenCalledWith("user@example.com", "secret-pass");
       expect(writeStoredAuthSessionMock).toHaveBeenCalledTimes(1);
       expect(screen.getByText("Dashboard Home")).toBeInTheDocument();
     });
   });
 
-  it("stores the returned Microsoft session after popup sign-in", async () => {
-    loginPopupMock.mockResolvedValueOnce({
-      accessToken: "msal-token-123",
-      idToken: "msal-id-token",
-      expiresOn: new Date("2026-04-26T22:30:00.000Z"),
-      scopes: ["openid", "profile", "email"],
-      account: {
-        homeAccountId: "home-account-1",
-        localAccountId: "local-account-1",
-        tenantId: "tenant-1",
-        username: "user@example.com",
-        name: "Example User",
-      },
-      idTokenClaims: { tid: "tenant-1" },
-    });
-
-    render(
-      <MemoryRouter initialEntries={["/login"]}>
-        <Routes>
-          <Route path="/login" element={<Login />} />
-          <Route path="/" element={<div>Dashboard Home</div>} />
-        </Routes>
-      </MemoryRouter>
-    );
-
-    fireEvent.click(screen.getByRole("button", { name: "Sign in with Microsoft" }));
-
-    await waitFor(() => {
-      expect(initializeMsalInstanceMock).toHaveBeenCalledTimes(1);
-      expect(loginPopupMock).toHaveBeenCalledTimes(1);
-      expect(setActiveAccountMock).toHaveBeenCalledWith(
-        expect.objectContaining({ username: "user@example.com" })
-      );
-      expect(writeStoredAuthSessionMock).toHaveBeenCalledWith(
-        expect.objectContaining({
-          accessToken: "msal-token-123",
-          idToken: "msal-id-token",
-          scope: "openid profile email",
-          user: expect.objectContaining({
-            id: "home-account-1",
-            email: "user@example.com",
-            name: "Example User",
-            tenantId: "tenant-1",
-          }),
-        })
-      );
-      expect(screen.getByText("Dashboard Home")).toBeInTheDocument();
-    });
-  });
-
-  it("starts Google social sign-in from the login surface", async () => {
+  it("starts Google OAuth from the login surface", async () => {
     render(
       <MemoryRouter initialEntries={["/login"]}>
         <Routes>
@@ -212,130 +99,12 @@ describe("Login", () => {
     fireEvent.click(screen.getByRole("button", { name: "Sign in with Google" }));
 
     await waitFor(() => {
-      expect(navigateToSocialAuthMock).toHaveBeenCalledWith(
-        "http://localhost:3000/api/auth/social/google?redirect_uri=http%3A%2F%2Flocalhost%3A3000%2Fauth%2Fsocial-callback"
-      );
+      expect(signInWithSupabaseOAuthMock).toHaveBeenCalledWith("google");
     });
   });
 
-  it("shows the mapped error when sign-in fails", async () => {
-    signInWithPasswordMock.mockRejectedValueOnce(new Error("invalid password"));
-
-    render(
-      <MemoryRouter initialEntries={["/login"]}>
-        <Routes>
-          <Route path="/login" element={<Login />} />
-        </Routes>
-      </MemoryRouter>
-    );
-
-    fireEvent.change(screen.getByLabelText("Work email"), {
-      target: { value: "user@example.com" },
-    });
-    fireEvent.change(screen.getByLabelText("Password"), {
-      target: { value: "wrong-pass" },
-    });
-    fireEvent.click(screen.getAllByRole("button", { name: "Sign in" })[1]);
-
-    expect(await screen.findByText(/authentication failed/i)).toBeInTheDocument();
-  });
-
-  it("shows a popup guidance message when Microsoft sign-in is blocked", async () => {
-    const { BrowserAuthError } = await import("@azure/msal-browser");
-    loginPopupMock.mockRejectedValueOnce(
-      new BrowserAuthError("Popup blocked", "popup_window_error")
-    );
-
-    render(
-      <MemoryRouter initialEntries={["/login"]}>
-        <Routes>
-          <Route path="/login" element={<Login />} />
-        </Routes>
-      </MemoryRouter>
-    );
-
-    fireEvent.click(screen.getByRole("button", { name: "Sign in with Microsoft" }));
-
-    expect(
-      await screen.findByText(/allow popups for autoflow and try again/i)
-    ).toBeInTheDocument();
-  });
-
-  it("blocks a second Microsoft popup interaction while the first one is still in flight", async () => {
-    let resolveLogin: ((value: unknown) => void) | null = null;
-    loginPopupMock.mockImplementationOnce(
-      () =>
-        new Promise((resolve) => {
-          resolveLogin = resolve;
-        })
-    );
-
-    render(
-      <MemoryRouter initialEntries={["/login"]}>
-        <Routes>
-          <Route path="/login" element={<Login />} />
-          <Route path="/" element={<div>Dashboard Home</div>} />
-        </Routes>
-      </MemoryRouter>
-    );
-
-    const button = screen.getByRole("button", { name: "Sign in with Microsoft" });
-    fireEvent.click(button);
-    fireEvent.click(button);
-
-    await waitFor(() => {
-      expect(loginPopupMock).toHaveBeenCalledTimes(1);
-    });
-    expect(button).toBeDisabled();
-
-    resolveLogin?.({
-      accessToken: "msal-token-123",
-      idToken: "msal-id-token",
-      expiresOn: new Date("2026-04-26T22:30:00.000Z"),
-      scopes: ["openid", "profile", "email"],
-      account: {
-        homeAccountId: "home-account-1",
-        localAccountId: "local-account-1",
-        tenantId: "tenant-1",
-        username: "user@example.com",
-        name: "Example User",
-      },
-      idTokenClaims: { tid: "tenant-1" },
-    });
-
-    await waitFor(() => {
-      expect(screen.getByText("Dashboard Home")).toBeInTheDocument();
-    });
-  });
-
-  it("shows a friendly message when MSAL reports an interaction is already in progress", async () => {
-    const { BrowserAuthError } = await import("@azure/msal-browser");
-    loginPopupMock.mockRejectedValueOnce(
-      new BrowserAuthError("Interaction already in progress", "interaction_in_progress")
-    );
-
-    render(
-      <MemoryRouter initialEntries={["/login"]}>
-        <Routes>
-          <Route path="/login" element={<Login />} />
-        </Routes>
-      </MemoryRouter>
-    );
-
-    fireEvent.click(screen.getByRole("button", { name: "Sign in with Microsoft" }));
-
-    expect(
-      await screen.findByText(/microsoft sign-in is already in progress/i)
-    ).toBeInTheDocument();
-  });
-
-  it("moves sign-up into the verification step after sending the code", async () => {
-    startSignUpMock.mockResolvedValueOnce({ continuation_token: "signup-ct" });
-    challengeSignUpMock.mockResolvedValueOnce({
-      continuation_token: "signup-verify-ct",
-      challenge_target_label: "user@example.com",
-      code_length: 6,
-    });
+  it("shows the post-signup notice when Supabase requires email confirmation", async () => {
+    signUpWithSupabasePasswordMock.mockResolvedValueOnce(null);
 
     render(
       <MemoryRouter initialEntries={["/login?mode=signup"]}>
@@ -351,33 +120,41 @@ describe("Login", () => {
     fireEvent.change(screen.getByLabelText("Work email"), {
       target: { value: "user@example.com" },
     });
-    fireEvent.change(screen.getByLabelText("Password"), {
+    fireEvent.change(screen.getAllByLabelText("Password")[0], {
       target: { value: "secret-pass" },
     });
     fireEvent.change(screen.getByLabelText("Confirm password"), {
       target: { value: "secret-pass" },
     });
-    fireEvent.click(screen.getByRole("button", { name: "Send verification code" }));
+    fireEvent.click(screen.getByRole("button", { name: "Create account" }));
 
     await waitFor(() => {
-      expect(startSignUpMock).toHaveBeenCalledWith("user@example.com", "secret-pass", "Example User");
-      expect(challengeSignUpMock).toHaveBeenCalledWith("signup-ct");
-      expect(screen.getByLabelText("Verification code")).toBeInTheDocument();
+      expect(signUpWithSupabasePasswordMock).toHaveBeenCalledWith({
+        email: "user@example.com",
+        password: "secret-pass",
+        fullName: "Example User",
+      });
+      expect(screen.getByText(/check your inbox to confirm your email/i)).toBeInTheDocument();
     });
   });
 
-  it("renders Microsoft sign-up alongside native sign-up", () => {
+  it("sends a magic link from the dedicated mode", async () => {
     render(
-      <MemoryRouter initialEntries={["/login?mode=signup"]}>
+      <MemoryRouter initialEntries={["/login?mode=magic-link"]}>
         <Routes>
           <Route path="/login" element={<Login />} />
         </Routes>
       </MemoryRouter>
     );
 
-    expect(screen.getByRole("button", { name: "Sign up with Microsoft" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Sign up with Google" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Sign up with Facebook" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Sign up with Apple" })).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText("Work email"), {
+      target: { value: "user@example.com" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Send magic link" }));
+
+    await waitFor(() => {
+      expect(sendSupabaseMagicLinkMock).toHaveBeenCalledWith("user@example.com");
+      expect(screen.getByText(/magic link sent/i)).toBeInTheDocument();
+    });
   });
 });

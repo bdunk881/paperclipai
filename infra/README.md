@@ -1,12 +1,12 @@
 # AutoFlow Infrastructure
 
-Azure deployment with GitHub Actions CI/CD.
+Azure and Fly.io deployment with GitHub Actions CI/CD.
 
 ## Stack
 
 | Layer | Tool |
 |---|---|
-| Backend hosting | Azure (AKS / App Service) |
+| Backend hosting | Azure (primary API) + Fly.io (FastAPI staging service) |
 | Dashboard hosting | Azure Static Web Apps |
 | Container registry | GitHub Container Registry (ghcr.io) |
 | TLS | Managed by Azure |
@@ -17,6 +17,7 @@ Azure deployment with GitHub Actions CI/CD.
 | App | Platform | Workflow |
 |---|---|---|
 | `backend` | Azure | `.github/workflows/deploy.yml` |
+| `fastapi-staging` | Fly.io | `.github/workflows/deploy-fly-fastapi-staging.yml` |
 | `dashboard` | Azure Static Web Apps | `.github/workflows/deploy-swa.yml` |
 | `dashboard` branch protection | GitHub Branch API | `.github/workflows/enforce-branch-protection.yml` |
 | `landing` | Vercel | `.github/workflows/vercel.yml` |
@@ -66,9 +67,19 @@ Runtime environment variables required in the Vercel dashboard project:
 | `VITE_AZURE_CIAM_TENANT_DOMAIN` | Optional Entra External ID tenant domain path segment (for example `autoflowciam.onmicrosoft.com`) |
 | `QA_PREVIEW_ACCESS_TOKEN` | Preview-only shared secret used by `/api/qa-preview-access` to unlock smoke-test access for protected dashboard routes |
 
+### FastAPI staging (Fly.io)
+
+| Secret / Variable | Description |
+|---|---|
+| `FLY_API_TOKEN` | App-scoped Fly.io deploy token for `autoflow-fastapi-staging` |
+| `FLY_STAGING_APP_NAME` | Optional override for the Fly app name |
+| `FLY_STAGING_BASE_URL` | Optional override for the public Fly hostname used by smoke checks |
+| `FLY_STAGING_SMOKE_USER_ID` | Optional user id sent through the staging smoke requests |
+
 ## Daily operations
 
 - **Deploy backend staging:** push to `staging` — `.github/workflows/deploy-azure.yml` builds the backend image, deploys the staging Container App, and runs the staging smoke checks.
+- **Deploy FastAPI staging service:** push to `staging` with `backend/**`, `docker/backend/Dockerfile`, `fly.toml`, or `infra/scripts/fly_fastapi_smoke.sh` changes — `.github/workflows/deploy-fly-fastapi-staging.yml` deploys `autoflow-fastapi-staging` on Fly.io and runs live knowledge-API smoke checks.
 - **Deploy backend production:** merge to `master` — `.github/workflows/deploy-azure.yml` builds the backend image, deploys AKS, and runs the production smoke checks.
 - **Promotion flow:** agents open feature-branch PRs into `staging`; production promotion happens through a dedicated `staging` -> `master` PR after staging validation passes.
 - **Preview dashboard:** non-production dashboard branches use `.github/workflows/dashboard-staging-gate.yml` to create Vercel preview deployments.
@@ -104,6 +115,12 @@ Recommended dashboard host split:
 - Smoke script: `infra/scripts/qa_integration_smoke.sh`
 - Runbook: `infra/runbooks/qa-integration-environment.md`
 - Tier 1 release path: `infra/runbooks/tier1-connector-release.md`
+
+## FastAPI Fly.io staging
+
+- Workflow: `.github/workflows/deploy-fly-fastapi-staging.yml`
+- Smoke script: `infra/scripts/fly_fastapi_smoke.sh`
+- Runbook: `infra/runbooks/fly-fastapi-staging.md`
 
 ## Observability Rollups
 

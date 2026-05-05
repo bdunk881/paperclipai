@@ -1,6 +1,6 @@
 # ALT-2303 Azure Resource Inventory
 
-Last updated: 2026-05-04
+Last updated: 2026-05-05
 
 ## Scope and method
 
@@ -53,34 +53,42 @@ These are the resources most likely driving spend. Estimates are rough East US 2
 
 ## Drift findings from refresh-only plan
 
-The refresh-only plan surfaced meaningful drift/state mismatch even before the CIAM auth failure stopped the run:
+The refresh-only plan completed successfully on 2026-05-05 once the CIAM-specific environment variables were supplied to the aliased `azuread.ciam` provider:
 
-1. `module.spoke_prod.azurerm_route_table.{aks,pe,svc}` and `module.spoke_staging.azurerm_route_table.{aks,pe,svc}`
+- `CIAM_CLIENT_ID`
+- `CIAM_CLIENT_SECRET`
+- `CIAM_TENANT_ID`
+
+That removed the auth blocker from the previous run. The remaining issue is real drift and state/config mismatch.
+
+### Confirmed drift and state mismatches
+
+1. `module.hub.azurerm_bastion_host.hub[0]`, `module.hub.azurerm_firewall.hub[0]`, `module.hub.azurerm_firewall_policy.hub[0]`, and the two firewall rule collection groups all show as deleted/moved in refresh-only state.
+   This is the strongest signal of manual portal deletion or a count/index mismatch between the current configuration and the recorded state.
+2. `module.spoke_prod.azurerm_route_table.{aks,pe,svc}` and `module.spoke_staging.azurerm_route_table.{aks,pe,svc}`
    show routes changing from `default-via-firewall` to `default-to-internet`.
-2. `module.spoke_prod.azurerm_virtual_network.spoke` and `module.spoke_staging.azurerm_virtual_network.spoke`
-   show `dns_servers = ["10.1.0.4"]` disappearing.
-3. `module.hub.azurerm_virtual_network.hub`
-   shows Firewall/Bastion subnet representation shifting in state.
+3. `module.spoke_prod.azurerm_virtual_network.spoke` and `module.spoke_staging.azurerm_virtual_network.spoke`
+   show `dns_servers = ["10.1.0.4"]` disappearing, which is consistent with the firewall path no longer being present.
 4. `module.security.azurerm_security_center_workspace.main`
    wants to move from the shared hub Log Analytics workspace to `autoflow-production-aks-logs`.
 5. `module.monitoring.azurerm_monitor_metric_alert.{aks_cpu,aks_memory}`
-   show action-block normalization changes.
-6. Output values indicate inconsistent expectations between production and staging objects:
+   show action-block normalization only: `webhook_properties = {}` is being added back during refresh.
+6. `module.acr.azurerm_private_endpoint.acr[0]`
+   shows as moved to `module.acr.azurerm_private_endpoint.acr`, which looks like an address-shape/state normalization rather than a live infrastructure change.
+7. Output values still indicate inconsistent production/staging expectations:
    - `hub_firewall_private_ip` drops to `null`
    - `spoke_staging_vnet_id` drops to `null`
    - `spoke_prod_vnet_id` becomes recomputed
 
-## Blocker on final drift validation
+## Current blocker
 
-The refresh-only plan could not complete because the aliased `azuread.ciam` provider is configured against CIAM tenant `5e4f1080-8afc-4005-b05e-32b21e69363a`, but the current service principal (`paperclip-cost-reader`, app ID `98480fb7-9347-4b9f-9b09-f7a9c031d53f`) does not exist in that tenant.
+The credential blocker is resolved, but the Phase 0 instruction to "resolve drift before relying on inventory" is still open. The remaining blocker is infrastructure/state reconciliation:
 
-Observed error:
+- determine whether hub Firewall/Bastion resources were intentionally removed in Azure and Terraform was not updated
+- determine whether the spoke route-table and DNS changes are intended fallout from that removal or accidental portal drift
+- determine whether Defender should point to the shared hub Log Analytics workspace or the production AKS workspace
 
-```text
-AADSTS700016: Application with identifier '98480fb7-9347-4b9f-9b09-f7a9c031d53f' was not found in the directory 'Autoflow CIAM'.
-```
-
-That means the inventory below is valid as a state-backed resource census, but the Phase 0 instruction to "run terraform plan and resolve drift before relying on inventory" is not yet fully satisfied. The next unblock action is to provide CIAM-tenant-capable credentials for the `azuread.ciam` provider or adjust the provider strategy for drift-only reads.
+The inventory below is now backed by both `terraform state` and a completed `terraform plan -refresh-only`, but it should still be treated as an inventory plus drift report until those discrepancies are reconciled.
 
 ## Managed-resource inventory
 

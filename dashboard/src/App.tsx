@@ -38,7 +38,6 @@ import AgentDetail from "./pages/AgentDetail";
 import AgentDeploy from "./pages/AgentDeploy";
 import MyAgents from "./pages/MyAgents";
 import AgentActivity from "./pages/AgentActivity";
-import Routines from "./pages/Routines";
 import OrgStructure from "./pages/OrgStructure";
 import BudgetDashboard from "./pages/BudgetDashboard";
 import MissionState from "./pages/MissionState";
@@ -160,7 +159,6 @@ export default function App() {
                 <Route path="agents/deploy/:templateId" element={<AgentDeploy />} />
                 <Route path="agents/my" element={<MyAgents />} />
                 <Route path="agents/activity" element={<AgentActivity />} />
-                <Route path="agents/routines" element={<Routines />} />
                 <Route path="mission-state" element={<MissionState />} />
                 <Route path="workspace/staffing-plan" element={<StaffingPlanReview />} />
                 <Route path="workspace/org-structure" element={<OrgStructure />} />

@@ -1,4 +1,3 @@
-import type { JwtPayload } from "jsonwebtoken";
 import type { AuthenticatedRequest } from "./authMiddleware";
 
 function createResponse() {
@@ -27,11 +26,14 @@ function loadRequireAuthOrQaBypass() {
   return requireAuthOrQaBypass!;
 }
 
+async function flushMicrotasks(): Promise<void> {
+  await Promise.resolve();
+}
+
 describe("requireAuth", () => {
   const originalEnv = process.env;
   const verifyMock = jest.fn();
-  const getSigningKeyMock = jest.fn();
-  const jwksClientMock = jest.fn(() => ({ getSigningKey: getSigningKeyMock }));
+  const jwtVerifyMock = jest.fn();
   const recordControlPlaneAuditMock = jest.fn().mockResolvedValue(undefined);
   const resolveAuditWorkspaceIdForUserMock = jest.fn().mockResolvedValue("workspace-123");
   const warnMock = jest.spyOn(console, "warn").mockImplementation(() => undefined);
@@ -40,8 +42,7 @@ describe("requireAuth", () => {
     jest.resetModules();
     jest.clearAllMocks();
     verifyMock.mockReset();
-    getSigningKeyMock.mockReset();
-    jwksClientMock.mockClear();
+    jwtVerifyMock.mockReset();
     process.env = { ...originalEnv };
 
     jest.doMock("jsonwebtoken", () => ({
@@ -51,9 +52,10 @@ describe("requireAuth", () => {
       },
     }));
 
-    jest.doMock("jwks-rsa", () => ({
+    jest.doMock("jose", () => ({
       __esModule: true,
-      default: jwksClientMock,
+      createRemoteJWKSet: jest.fn(() => "remote-jwks"),
+      jwtVerify: jwtVerifyMock,
     }));
 
     jest.doMock("../auditing/controlPlaneAudit", () => ({
@@ -92,23 +94,6 @@ describe("requireAuth", () => {
       headers: { "x-user-id": "qa-test-user" },
       originalUrl: "/api/knowledge/bases",
       path: "/api/knowledge/bases",
-    } as unknown as AuthenticatedRequest;
-    const res = createResponse();
-    const next = jest.fn();
-
-    requireAuth(req, res as never, next);
-
-    expect(next).toHaveBeenCalledTimes(1);
-    expect(req.auth?.sub).toBe("qa-test-user");
-    expect(res.status).not.toHaveBeenCalled();
-  });
-
-  it("accepts X-User-Id for /api/knowledge/search when Authorization is missing", () => {
-    const requireAuth = loadRequireAuth();
-    const req = {
-      headers: { "x-user-id": "qa-test-user" },
-      originalUrl: "/api/knowledge/search",
-      path: "/api/knowledge/search",
     } as unknown as AuthenticatedRequest;
     const res = createResponse();
     const next = jest.fn();
@@ -215,6 +200,7 @@ describe("requireAuth", () => {
       })
     );
   });
+
   it("rejects non-allowlisted QA bypass users on protected routes", () => {
     process.env.NODE_ENV = "test";
     process.env.QA_AUTH_BYPASS_ENABLED = "true";
@@ -235,6 +221,7 @@ describe("requireAuth", () => {
     expect(next).not.toHaveBeenCalled();
     expect(res.status).toHaveBeenCalledWith(401);
   });
+
   it("still rejects non-allowlisted routes without Authorization", () => {
     const requireAuth = loadRequireAuth();
     const req = {
@@ -292,51 +279,7 @@ describe("requireAuth", () => {
         issuer: "autoflow-app",
       })
     );
-  });
-
-  it("accepts app-issued JWTs even when decoded issuer metadata does not match the current env", () => {
-    process.env.APP_JWT_SECRET = "test-app-jwt-secret-with-sufficient-length";
-    process.env.APP_JWT_ISSUER = "autoflow-app-current";
-
-    verifyMock.mockReturnValue({
-      sub: "local-user-456",
-      email: "oauth@example.com",
-      name: "OAuth User",
-      provider: "google",
-      iss: "autoflow-app-current",
-    });
-
-    const payload = Buffer.from(JSON.stringify({ iss: "autoflow-app-previous" })).toString("base64url");
-    const requireAuth = loadRequireAuth();
-    const req = {
-      headers: { authorization: `Bearer header.${payload}.signature` },
-      originalUrl: "/api/agents",
-      path: "/api/agents",
-    } as unknown as AuthenticatedRequest;
-    const res = createResponse();
-    const next = jest.fn();
-
-    requireAuth(req, res as never, next);
-
-    expect(next).toHaveBeenCalledTimes(1);
-    expect(req.auth).toMatchObject({
-      sub: "local-user-456",
-      email: "oauth@example.com",
-      name: "OAuth User",
-      provider: "google",
-      issuer: "autoflow-app-current",
-    });
-    expect(verifyMock).toHaveBeenCalledTimes(1);
-    expect(verifyMock).toHaveBeenCalledWith(
-      expect.any(String),
-      "test-app-jwt-secret-with-sufficient-length",
-      expect.objectContaining({
-        algorithms: ["HS256"],
-        audience: "autoflow-api",
-        issuer: "autoflow-app-current",
-      })
-    );
-    expect(jwksClientMock).not.toHaveBeenCalled();
+    expect(jwtVerifyMock).not.toHaveBeenCalled();
   });
 
   it("logs and rejects app-token-like JWTs when local app verification fails", () => {
@@ -370,20 +313,31 @@ describe("requireAuth", () => {
         expectedIssuer: "autoflow-app",
       })
     );
-    expect(jwksClientMock).not.toHaveBeenCalled();
+    expect(jwtVerifyMock).not.toHaveBeenCalled();
   });
 
-  it("uses legacy AZURE_* auth env vars when AZURE_CIAM_* vars are absent", () => {
-    process.env.AZURE_TENANT_SUBDOMAIN = "legacyciam";
-    process.env.AZURE_TENANT_ID = "legacy-tenant";
-    process.env.AZURE_CLIENT_ID = "legacy-client";
-    delete process.env.AZURE_CIAM_TENANT_SUBDOMAIN;
-    delete process.env.AZURE_CIAM_TENANT_ID;
-    delete process.env.AZURE_CIAM_CLIENT_ID;
+  it("accepts Supabase JWTs using SUPABASE_URL and default authenticated audience", async () => {
+    process.env.SUPABASE_URL = "https://autoflow.supabase.co";
 
+    jwtVerifyMock.mockResolvedValue({
+      payload: {
+        sub: "user-123",
+        email: "user@example.com",
+        iss: "https://autoflow.supabase.co/auth/v1",
+        app_metadata: { provider: "google" },
+        user_metadata: { full_name: "Supabase User" },
+      },
+    });
+
+    const payload = Buffer.from(
+      JSON.stringify({
+        iss: "https://autoflow.supabase.co/auth/v1",
+        aud: "authenticated",
+      })
+    ).toString("base64url");
     const requireAuth = loadRequireAuth();
     const req = {
-      headers: { authorization: "Bearer legacy-token" },
+      headers: { authorization: `Bearer header.${payload}.signature` },
       originalUrl: "/api/me",
       path: "/api/me",
     } as unknown as AuthenticatedRequest;
@@ -391,45 +345,65 @@ describe("requireAuth", () => {
     const next = jest.fn();
 
     requireAuth(req, res as never, next);
+    await flushMicrotasks();
 
-    expect(res.status).not.toHaveBeenCalledWith(503);
-    expect(verifyMock).toHaveBeenCalledTimes(1);
-    const [, keyResolver, options] = verifyMock.mock.calls[0];
-    expect(typeof keyResolver).toBe("function");
-    expect(options).toMatchObject({
-      audience: expect.arrayContaining([
-        "legacy-client",
-        "2dfd3a08-277c-4893-b07d-eca5ae322310",
-        "d36ce552-1a3d-4cd3-b851-beff4e3bf440",
-      ]),
-      issuer: expect.arrayContaining([
-        "https://legacyciam.ciamlogin.com/legacy-tenant/v2.0",
-        "https://legacy-tenant.ciamlogin.com/legacy-tenant/v2.0",
-      ]),
-      algorithms: ["RS256"],
+    expect(next).toHaveBeenCalledTimes(1);
+    expect(req.auth).toMatchObject({
+      sub: "user-123",
+      email: "user@example.com",
+      name: "Supabase User",
+      provider: "google",
+      issuer: "https://autoflow.supabase.co/auth/v1",
     });
-    keyResolver({ kid: "legacy-kid" }, jest.fn());
-    expect(jwksClientMock).toHaveBeenCalledWith(
+    expect(jwtVerifyMock).toHaveBeenCalledWith(
+      expect.any(String),
+      "remote-jwks",
       expect.objectContaining({
-        jwksUri: "https://legacyciam.ciamlogin.com/legacy-tenant/discovery/v2.0/keys",
+        issuer: "https://autoflow.supabase.co/auth/v1",
+        audience: ["authenticated"],
       })
     );
-    expect(next).not.toHaveBeenCalled();
   });
 
-  it("falls back to the repo CIAM defaults when no auth env vars are configured", () => {
-    delete process.env.AZURE_CIAM_AUTHORITY;
-    delete process.env.AZURE_CIAM_TENANT_SUBDOMAIN;
-    delete process.env.AZURE_CIAM_TENANT_ID;
-    delete process.env.AZURE_CIAM_CLIENT_ID;
-    delete process.env.AZURE_CIAM_ALLOWED_AUDIENCES;
-    delete process.env.AZURE_TENANT_SUBDOMAIN;
-    delete process.env.AZURE_TENANT_ID;
-    delete process.env.AZURE_CLIENT_ID;
+  it("accepts explicit Supabase audience allowlists", async () => {
+    process.env.SUPABASE_URL = "https://autoflow.supabase.co";
+    process.env.SUPABASE_JWT_AUDIENCES = "authenticated,custom-audience";
+
+    jwtVerifyMock.mockResolvedValue({
+      payload: {
+        sub: "user-456",
+        email: "oauth@example.com",
+        iss: "https://autoflow.supabase.co/auth/v1",
+      },
+    });
 
     const requireAuth = loadRequireAuth();
     const req = {
-      headers: { authorization: "Bearer default-token" },
+      headers: { authorization: "Bearer supabase-token" },
+      originalUrl: "/api/agents",
+      path: "/api/agents",
+    } as unknown as AuthenticatedRequest;
+
+    requireAuth(req, createResponse() as never, jest.fn());
+    await flushMicrotasks();
+
+    expect(jwtVerifyMock).toHaveBeenCalledWith(
+      expect.any(String),
+      "remote-jwks",
+      expect.objectContaining({
+        audience: ["authenticated", "custom-audience"],
+      })
+    );
+  });
+
+  it("returns 503 when neither app JWT nor Supabase auth is configured", () => {
+    delete process.env.APP_JWT_SECRET;
+    delete process.env.SUPABASE_URL;
+    delete process.env.NEXT_PUBLIC_SUPABASE_URL;
+
+    const requireAuth = loadRequireAuth();
+    const req = {
+      headers: { authorization: "Bearer unconfigured-token" },
       originalUrl: "/api/me",
       path: "/api/me",
     } as unknown as AuthenticatedRequest;
@@ -437,153 +411,25 @@ describe("requireAuth", () => {
 
     requireAuth(req, res as never, jest.fn());
 
-    expect(res.status).not.toHaveBeenCalledWith(503);
-    expect(verifyMock).toHaveBeenCalledTimes(1);
-    const [, keyResolver, options] = verifyMock.mock.calls[0];
-    expect(options).toMatchObject({
-      audience: expect.arrayContaining([
-        "2dfd3a08-277c-4893-b07d-eca5ae322310",
-        "d36ce552-1a3d-4cd3-b851-beff4e3bf440",
-      ]),
-      issuer: expect.arrayContaining([
-        "https://autoflowciam.ciamlogin.com/5e4f1080-8afc-4005-b05e-32b21e69363a/v2.0",
-        "https://5e4f1080-8afc-4005-b05e-32b21e69363a.ciamlogin.com/5e4f1080-8afc-4005-b05e-32b21e69363a/v2.0",
-      ]),
-      algorithms: ["RS256"],
-    });
-    keyResolver({ kid: "default-kid" }, jest.fn());
-    expect(jwksClientMock).toHaveBeenCalledWith(
-      expect.objectContaining({
-        jwksUri:
-          "https://autoflowciam.ciamlogin.com/5e4f1080-8afc-4005-b05e-32b21e69363a/discovery/v2.0/keys",
-      })
-    );
+    expect(res.status).toHaveBeenCalledWith(503);
+    expect(jwtVerifyMock).not.toHaveBeenCalled();
   });
 
-  it("prefers AZURE_CIAM_* auth env vars over legacy AZURE_* fallbacks", () => {
-    process.env.AZURE_CIAM_TENANT_SUBDOMAIN = "newciam";
-    process.env.AZURE_CIAM_TENANT_ID = "new-tenant";
-    process.env.AZURE_CIAM_CLIENT_ID = "new-client";
-    process.env.AZURE_TENANT_SUBDOMAIN = "legacyciam";
-    process.env.AZURE_TENANT_ID = "legacy-tenant";
-    process.env.AZURE_CLIENT_ID = "legacy-client";
+  it("logs Supabase JWT verification diagnostics without logging the raw token", async () => {
+    process.env.SUPABASE_URL = "https://autoflow.supabase.co";
 
-    const requireAuth = loadRequireAuth();
-    const req = {
-      headers: { authorization: "Bearer priority-token" },
-      originalUrl: "/api/me",
-      path: "/api/me",
-    } as unknown as AuthenticatedRequest;
-    const res = createResponse();
+    jwtVerifyMock.mockRejectedValue(new Error("unexpected \"aud\" claim value"));
 
-    requireAuth(req, res as never, jest.fn());
-
-    const [, , options] = verifyMock.mock.calls[0];
-    expect(options).toMatchObject({
-      audience: expect.arrayContaining(["new-client"]),
-      issuer: expect.arrayContaining([
-        "https://newciam.ciamlogin.com/new-tenant/v2.0",
-        "https://new-tenant.ciamlogin.com/new-tenant/v2.0",
-      ]),
-    });
-    const [, keyResolver] = verifyMock.mock.calls[0];
-    keyResolver({ kid: "new-kid" }, jest.fn());
-    expect(jwksClientMock).toHaveBeenCalledWith(
-      expect.objectContaining({
-        jwksUri: "https://newciam.ciamlogin.com/new-tenant/discovery/v2.0/keys",
-      })
-    );
-  });
-
-  it("ignores retired non-ciam authorities and keeps tenant subdomain issuer fallback", () => {
-    process.env.AZURE_CIAM_AUTHORITY = "https://legacy-auth.example.com/tenant-guid";
-    process.env.AZURE_CIAM_TENANT_SUBDOMAIN = "autoflowciam";
-    process.env.AZURE_CIAM_TENANT_ID = "tenant-guid";
-    process.env.AZURE_CIAM_CLIENT_ID = "custom-client";
-
-    const requireAuth = loadRequireAuth();
-    const req = {
-      headers: { authorization: "Bearer branded-token" },
-      originalUrl: "/api/me",
-      path: "/api/me",
-    } as unknown as AuthenticatedRequest;
-    const res = createResponse();
-
-    requireAuth(req, res as never, jest.fn());
-
-    const [, keyResolver, options] = verifyMock.mock.calls[0];
-    expect(options).toMatchObject({
-      audience: expect.arrayContaining(["custom-client"]),
-      issuer: expect.arrayContaining([
-        "https://autoflowciam.ciamlogin.com/tenant-guid/v2.0",
-        "https://tenant-guid.ciamlogin.com/tenant-guid/v2.0",
-      ]),
-      algorithms: ["RS256"],
-    });
-    keyResolver({ kid: "brand-kid" }, jest.fn());
-    expect(jwksClientMock).toHaveBeenCalledWith(
-      expect.objectContaining({
-        jwksUri: "https://autoflowciam.ciamlogin.com/tenant-guid/discovery/v2.0/keys",
-      })
-    );
-  });
-
-  it("accepts explicit audience allowlists for rotated app registrations", () => {
-    process.env.AZURE_CIAM_TENANT_SUBDOMAIN = "newciam";
-    process.env.AZURE_CIAM_TENANT_ID = "tenant-guid";
-    process.env.AZURE_CIAM_ALLOWED_AUDIENCES = "new-client,legacy-client";
-    delete process.env.AZURE_CIAM_CLIENT_ID;
-    delete process.env.AZURE_CLIENT_ID;
-
-    const requireAuth = loadRequireAuth();
-    const req = {
-      headers: { authorization: "Bearer rotated-token" },
-      originalUrl: "/api/me",
-      path: "/api/me",
-    } as unknown as AuthenticatedRequest;
-    const res = createResponse();
-
-    requireAuth(req, res as never, jest.fn());
-
-    const [, , options] = verifyMock.mock.calls[0];
-    expect(options).toMatchObject({
-      audience: expect.arrayContaining([
-        "new-client",
-        "legacy-client",
-      ]),
-      issuer: expect.arrayContaining([
-        "https://newciam.ciamlogin.com/tenant-guid/v2.0",
-        "https://tenant-guid.ciamlogin.com/tenant-guid/v2.0",
-      ]),
-    });
-  });
-
-  it("logs JWT verification diagnostics without logging the raw token", () => {
-    process.env.AZURE_CIAM_TENANT_SUBDOMAIN = "autoflowciam";
-    process.env.AZURE_CIAM_TENANT_ID = "tenant-guid";
-    process.env.AZURE_CIAM_CLIENT_ID = "custom-client";
-
-    verifyMock.mockImplementation(
-      (
-        _token: string,
-        _resolver: unknown,
-        _options: unknown,
-        callback: (err: Error | null, decoded?: string | JwtPayload) => void
-      ) => {
-        callback(new Error("jwt audience invalid. expected: custom-client"));
-      }
-    );
-
-    const requireAuth = loadRequireAuth();
     const payload = Buffer.from(
       JSON.stringify({
-        aud: "00000003-0000-0000-c000-000000000000",
-        iss: "https://tenant-guid.ciamlogin.com/tenant-guid/v2.0",
+        aud: "anon",
+        iss: "https://autoflow.supabase.co/auth/v1",
         exp: 1234567890,
         nbf: 1234567000,
       })
     ).toString("base64url");
     const token = `header.${payload}.signature`;
+    const requireAuth = loadRequireAuth();
     const req = {
       headers: { authorization: `Bearer ${token}` },
       originalUrl: "/api/me",
@@ -592,24 +438,18 @@ describe("requireAuth", () => {
     const res = createResponse();
 
     requireAuth(req, res as never, jest.fn());
+    await flushMicrotasks();
 
-    expect(warnMock).toHaveBeenCalledWith("[auth] JWT verification failed", {
+    expect(warnMock).toHaveBeenCalledWith("[auth] Supabase JWT verification failed", {
       errName: "Error",
-      errMessage: "jwt audience invalid. expected: custom-client",
-      tokenAud: "00000003-0000-0000-c000-000000000000",
-      tokenIss: "https://tenant-guid.ciamlogin.com/tenant-guid/v2.0",
+      errMessage: "unexpected \"aud\" claim value",
+      tokenAud: "anon",
+      tokenIss: "https://autoflow.supabase.co/auth/v1",
       tokenExp: 1234567890,
       tokenNbf: 1234567000,
-      expectedAudiences: expect.arrayContaining([
-        "custom-client",
-        "2dfd3a08-277c-4893-b07d-eca5ae322310",
-        "d36ce552-1a3d-4cd3-b851-beff4e3bf440",
-      ]),
-      expectedIssuers: expect.arrayContaining([
-        "https://autoflowciam.ciamlogin.com/tenant-guid/v2.0",
-        "https://tenant-guid.ciamlogin.com/tenant-guid/v2.0",
-      ]),
-      jwksUri: "https://autoflowciam.ciamlogin.com/tenant-guid/discovery/v2.0/keys",
+      expectedAudiences: ["authenticated"],
+      expectedIssuer: "https://autoflow.supabase.co/auth/v1",
+      jwksUri: "https://autoflow.supabase.co/auth/v1/.well-known/jwks.json",
     });
     expect(JSON.stringify(warnMock.mock.calls)).not.toContain(token);
     expect(res.status).toHaveBeenCalledWith(401);

@@ -17,14 +17,18 @@ import {
   getTicketActorProfile,
   listTickets,
   normalizeTicketSlaState,
-  type CreateTicketUiPayload,
-  type TicketActorRef,
   type TicketPriority,
   type TicketRecord,
   type TicketSlaStateLike,
   type TicketStatus,
 } from "../api/tickets";
 import { useAuth } from "../context/AuthContext";
+import {
+  buildCreateTicketPayload,
+  type CreateTicketRouteActionData,
+  type CreateTicketRouteActionPayload,
+  type TicketsRouteData,
+} from "../routes/ticketRouteData";
 import {
   TicketActorChip,
   TicketEmptyState,
@@ -57,15 +61,23 @@ const EMPTY_FORM = {
   externalSyncRequested: false,
 };
 
-export default function Tickets() {
+type TicketsProps = {
+  initialData?: TicketsRouteData;
+  routeAction?: {
+    data?: CreateTicketRouteActionData;
+    state: "idle" | "submitting" | "loading";
+    submit: (payload: CreateTicketRouteActionPayload) => void;
+  };
+};
+
+export default function Tickets({ initialData, routeAction }: TicketsProps = {}) {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const { getAccessToken } = useAuth();
-  const [tickets, setTickets] = useState<TicketRecord[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [submitting, setSubmitting] = useState(false);
+  const [tickets, setTickets] = useState<TicketRecord[]>(() => initialData?.tickets ?? []);
+  const [loading, setLoading] = useState(() => initialData == null);
   const [error, setError] = useState<string | null>(null);
-  const [source, setSource] = useState<"api" | "mock" | null>(null);
+  const [source, setSource] = useState<"api" | "mock" | null>(() => initialData?.source ?? null);
   const [integrationWarnings, setIntegrationWarnings] = useState<string[]>([]);
   const [statusFilter, setStatusFilter] = useState<StatusFilter>(() => {
     const value = searchParams.get("status");
@@ -83,6 +95,7 @@ export default function Tickets() {
   const [createOpen, setCreateOpen] = useState(false);
   const [formState, setFormState] = useState(EMPTY_FORM);
   const [validationError, setValidationError] = useState<string | null>(null);
+  const submitting = routeAction ? routeAction.state !== "idle" : false;
 
   const loadTickets = useCallback(async () => {
     setLoading(true);
@@ -100,8 +113,28 @@ export default function Tickets() {
   }, [getAccessToken]);
 
   useEffect(() => {
-    void loadTickets();
-  }, [loadTickets]);
+    if (!initialData) {
+      void loadTickets();
+    }
+  }, [initialData, loadTickets]);
+
+  useEffect(() => {
+    const actionData = routeAction?.data;
+    if (!actionData) return;
+
+    if (!actionData.ok) {
+      setValidationError(actionData.error);
+      return;
+    }
+
+    setIntegrationWarnings(actionData.integrationWarnings);
+    setSource(actionData.source);
+    setTickets((current) => [actionData.aggregate.ticket, ...current]);
+    setCreateOpen(false);
+    setFormState(EMPTY_FORM);
+    setValidationError(null);
+    navigate(`/tickets/${actionData.aggregate.ticket.id}`);
+  }, [navigate, routeAction?.data]);
 
   useEffect(() => {
     const status = searchParams.get("status");
@@ -157,25 +190,24 @@ export default function Tickets() {
       return;
     }
 
-    const assignees = buildAssignees(formState.primaryActorKey, formState.collaboratorKeys);
-    const payload: CreateTicketUiPayload = {
-      title: formState.title.trim(),
-      description: formState.description.trim(),
-      priority: formState.priority,
-      dueDate: formState.dueDate ? new Date(formState.dueDate).toISOString() : undefined,
-      tags: formState.tags
-        .split(",")
-        .map((tag) => tag.trim())
-        .filter(Boolean),
-      assignees,
-      attachmentNames: formState.attachmentNames,
-      externalSyncRequested: formState.externalSyncRequested,
-    };
+    if (routeAction) {
+      routeAction.submit({
+        title: formState.title,
+        description: formState.description,
+        priority: formState.priority,
+        primaryActorKey: formState.primaryActorKey,
+        collaboratorKeys: formState.collaboratorKeys,
+        dueDate: formState.dueDate,
+        tags: formState.tags,
+        attachmentNames: formState.attachmentNames,
+        externalSyncRequested: formState.externalSyncRequested,
+      });
+      return;
+    }
 
-    setSubmitting(true);
     try {
       const accessToken = (await getAccessToken()) ?? undefined;
-      const created = await createTicket(payload, accessToken);
+      const created = await createTicket(buildCreateTicketPayload(formState), accessToken);
       setIntegrationWarnings(created.integrationWarnings);
       setSource(created.source);
       setTickets((current) => [created.ticket, ...current]);
@@ -186,8 +218,6 @@ export default function Tickets() {
       setValidationError(
         submitError instanceof Error ? submitError.message : "Unable to create ticket."
       );
-    } finally {
-      setSubmitting(false);
     }
   }
 
@@ -627,21 +657,6 @@ export default function Tickets() {
       ) : null}
     </div>
   );
-}
-
-function buildAssignees(
-  primaryActorKey: string,
-  collaboratorKeys: string[]
-): CreateTicketUiPayload["assignees"] {
-  const deduped = [primaryActorKey, ...collaboratorKeys.filter((entry) => entry !== primaryActorKey)];
-  return deduped.map((key, index) => {
-    const [type, ...idParts] = key.split(":");
-    return {
-      type: type as TicketActorRef["type"],
-      id: idParts.join(":"),
-      role: index === 0 ? "primary" : "collaborator",
-    };
-  });
 }
 
 function FilterSelect({

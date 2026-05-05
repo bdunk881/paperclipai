@@ -29,6 +29,7 @@ import {
   type TicketStatus,
 } from "../api/tickets";
 import { useAuth } from "../context/AuthContext";
+import type { TicketDetailRouteData } from "../routes/ticketRouteData";
 import {
   TicketActorChip,
   TicketEmptyState,
@@ -71,17 +72,21 @@ type MemoryLoadState =
   | { status: "ready"; entries: TicketMemoryEntry[]; error: null }
   | { status: "error"; entries: TicketMemoryEntry[]; error: string };
 
-export default function TicketDetail() {
+export default function TicketDetail({
+  initialData,
+}: {
+  initialData?: TicketDetailRouteData;
+} = {}) {
   const { ticketId } = useParams<{ ticketId: string }>();
   const { user, getAccessToken } = useAuth();
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const holdTimeoutRef = useRef<number | null>(null);
   const holdIntervalRef = useRef<number | null>(null);
 
-  const [aggregate, setAggregate] = useState<TicketAggregate | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [aggregate, setAggregate] = useState<TicketAggregate | null>(() => initialData ?? null);
+  const [loading, setLoading] = useState(() => initialData == null);
   const [error, setError] = useState<string | null>(null);
-  const [source, setSource] = useState<"api" | "mock" | null>(null);
+  const [source, setSource] = useState<"api" | "mock" | null>(initialData ? "api" : null);
   const [updateDraft, setUpdateDraft] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [memoryState, setMemoryState] = useState<MemoryLoadState>({
@@ -178,8 +183,10 @@ export default function TicketDetail() {
   );
 
   useEffect(() => {
-    void loadTicket();
-  }, [loadTicket]);
+    if (!initialData) {
+      void loadTicket();
+    }
+  }, [initialData, loadTicket]);
 
   useEffect(() => {
     if (!ticketId) return undefined;

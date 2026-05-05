@@ -1,8 +1,21 @@
 "use client";
 
-import Image from "next/image";
-import Link from "next/link";
+import { Link } from "react-router";
 import { useId, useState } from "react";
+
+export function meta() {
+  return [
+    {
+      title:
+        "AutoFlow — Agent-Native Automation | Operating Layer for SMB Operators and Dev Teams",
+    },
+    {
+      name: "description",
+      content:
+        "AutoFlow is the agent-native automation platform for lean SMB operators and dev teams. BYOLLM, MCP-standard, 22-skill marketplace. Built by Altitude Media.",
+    },
+  ];
+}
 
 const MARKETPLACE_TILES = [
   {
@@ -205,7 +218,7 @@ export default function Home() {
     <main className="landing-page">
       <header className="site-header">
         <div className="shell site-header__inner">
-          <Link className="brand-lockup" href="/" aria-label="AutoFlow home">
+          <Link className="brand-lockup" to="/" aria-label="AutoFlow home">
             <span className="brand-lockup__mark" aria-hidden="true">
               <span className="brand-lockup__core" />
             </span>
@@ -219,7 +232,7 @@ export default function Home() {
           </nav>
 
           <div className="site-header__actions">
-            <Link className="site-header__signin" href="/signup">
+            <Link className="site-header__signin" to="/signup">
               Sign in
             </Link>
             <a className="site-header__cta" href="#waitlist">
@@ -335,7 +348,7 @@ export default function Home() {
           {MARKETPLACE_TILES.map((tile) => (
             <article key={tile.name} className="marketplace-tile">
               <div className="marketplace-tile__logo">
-                <Image alt={`${tile.name} logo`} src={tile.logo} width={48} height={48} />
+                <img alt={`${tile.name} logo`} src={tile.logo} width={48} height={48} />
               </div>
               <div className="marketplace-tile__badge">MCP verified</div>
               <h3>{tile.name}</h3>

@@ -19,10 +19,11 @@ Configure these values before running the workflow:
 | Type | Name | Required | Notes |
 |---|---|---|---|
 | Secret | `FLY_API_TOKEN` | Yes | Prefer a deploy token that can manage both Fly apps. |
-| Secret | `DEV_DATABASE_URL` | Dev only | PostgreSQL connection string for `autoflow-dev`. |
+| Secret | `DEV_DATABASE_URL` | Dev only | PostgreSQL connection string for `autoflow-dev`; for Supabase direct Postgres use `...?uselibpqcompat=true&sslmode=require`. |
 | Secret | `DEV_SUPABASE_URL` | Dev only | Supabase URL for `autoflow-dev`. |
 | Secret | `DEV_SUPABASE_ANON_KEY` | Dev only | Public anon key for `autoflow-dev`. |
 | Secret | `DEV_SUPABASE_SERVICE_ROLE_KEY` | Dev only | Service-role key for `autoflow-dev`. |
+| Secret | `DEV_CONNECTOR_CREDENTIAL_ENCRYPTION_KEY` | Dev only | Required backend runtime key for connector credential encryption in the isolated dev environment. |
 | Secret | `PRODUCTION_SUPABASE_URL` | Staging only | Shared Supabase URL used by staging and master. |
 | Secret | `PRODUCTION_SUPABASE_ANON_KEY` | Staging only | Shared anon key used by staging and master. |
 | Secret | `PRODUCTION_SUPABASE_SERVICE_ROLE_KEY` | Staging only | Shared service-role key used by staging and master. |

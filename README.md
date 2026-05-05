@@ -126,7 +126,7 @@ autoflow/
 ├── landing/              # Marketing site (Next.js)
 ├── docs/                 # Documentation site (Next.js)
 ├── docker/               # Dockerfiles
-├── infra/                # Deployment config (Azure + Vercel)
+├── infra/                # Deployment config (active platform + Azure teardown docs)
 └── docker-compose.yml
 ```
 
@@ -134,7 +134,11 @@ autoflow/
 
 ## Deployment
 
-AutoFlow backend is deployed on Azure; the dashboard is hosted on Vercel. See [`infra/README.md`](infra/README.md) for full setup instructions.
+AutoFlow deployment docs are in transition during the Azure exit tracked by
+[ALT-2325](/ALT/issues/ALT-2325). See [`infra/README.md`](infra/README.md) for
+the current platform overview and
+[`infra/runbooks/azure-cutover-decommission.md`](infra/runbooks/azure-cutover-decommission.md)
+for the final Azure cutover and teardown sequence.
 
 ### CI/CD
 
@@ -158,9 +162,6 @@ Required GitHub Actions secret for backend test job:
 4. Run `npm test` to verify everything passes
 5. Open your PR against `staging`, not `master`
 6. After staging validation, promote `staging` to `master` with a dedicated PR reviewed by the production code owner
-
-Operational routine note:
-- The CTO stale-PR pinger lives at `scripts/stale-pr-pinger.sh`. Run it from the repo root with `PAPERCLIP_API_URL`, `PAPERCLIP_COMPANY_ID`, and either `PAPERCLIP_API_KEY` or agent JWT env vars present. Use `DRY_RUN=1` to preview mentions without posting comments.
 
 ### Running tests
 

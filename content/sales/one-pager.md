@@ -14,10 +14,12 @@ AutoFlow replaces rigid IF/THEN automations with natural-language-driven AI work
 
 ## Key Capabilities
 
+- **MCP-Native Runtime** — First-class Model Context Protocol execution. Every skill is an MCP server. Plug in any MCP-compatible tool as a first-class agent capability — no adapter shim required.
+- **BYOLLM + Persistent Memory + MCP-Native** — The only platform that packages all three. Model choice, cross-run agent memory, and MCP-native execution in one stack.
 - **Natural Language Workflows** — Build automations by describing them, not coding them
 - **Intelligent Decision-Making** — AI routes, classifies, and acts on data contextually
 - **Multi-Step Orchestration** — Chain complex workflows across apps without manual triggers
-- **Built-In Integrations** — Connect to your existing tools (CRM, email, docs, billing)
+- **22-Skill Marketplace** — A skill is a managed, memory-aware multi-step automation (not a trigger or raw connector). Slack, GitHub, Linear, Notion, Stripe, PostgreSQL, and 16 more.
 - **Self-Healing Workflows** — Automatically handle edge cases and adapt to changes
 
 ## Pricing
@@ -26,7 +28,7 @@ AutoFlow replaces rigid IF/THEN automations with natural-language-driven AI work
 |------|-------|----------|
 | **Explore** | Free | Individuals testing automation |
 | **Flow** | $19/mo | Small teams with basic workflows |
-| **Automate** | $49/mo | Growing teams with complex multi-step automations |
+| **Automate** | $49/mo | Dev teams and technical operators — BYOLLM model choice, MCP server plug-in, persistent agent memory across runs |
 | **Scale** | $99/mo | Organizations needing advanced orchestration and priority support |
 
 ## Why AutoFlow Over Alternatives?

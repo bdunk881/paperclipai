@@ -9,6 +9,8 @@ Phase 1a asks for a first-pass Supabase bootstrap from the committed Postgres du
 This heartbeat produced:
 
 - `supabase/migrations/20260505043000_alt_2321_initial_schema.sql`
+- `supabase/migrations/20260505054500_alt_2321_phase1b_rls_draft.sql`
+- `docs/alt-2321-rls-review-matrix.md`
 - this review document
 
 ## Source Inventory
@@ -245,7 +247,7 @@ Validation limits still outstanding:
 
 ## Recommended Next Steps
 
-1. Review the generated bootstrap SQL against Supabase project conventions, especially extension schema placement and privileged function execution.
-2. Decide whether user identity remains `text` or gets normalized toward `auth.users.id` in a follow-up migration.
-3. Write the Phase 1b RLS migration for the missing tables above, grouped by workspace-scoped, user-scoped, and parent-inherited access patterns.
-4. Validate the bootstrap SQL on an empty Supabase project before wiring it into any automated rollout path.
+1. Review `docs/alt-2321-rls-review-matrix.md` and `supabase/migrations/20260505054500_alt_2321_phase1b_rls_draft.sql` with Brad before promoting any new policy set.
+2. Review the generated bootstrap SQL against Supabase project conventions, especially extension schema placement and privileged function execution.
+3. Decide whether user identity remains `text` or gets normalized toward `auth.users.id` in a follow-up migration.
+4. Validate both draft migrations on an empty Supabase project before wiring them into any automated rollout path.

@@ -50,10 +50,11 @@ Add these in the repo settings -> Secrets and variables -> Actions:
 | Secret | Description |
 |---|---|
 | `FLY_API_TOKEN` | Fly deploy token used by both backend workflows |
-| `DEV_DATABASE_URL` | PostgreSQL URL for the isolated `autoflow-dev` project |
+| `DEV_DATABASE_URL` | PostgreSQL URL for the isolated `autoflow-dev` project; use the Supabase-compatible form ending in `?uselibpqcompat=true&sslmode=require` |
 | `DEV_SUPABASE_URL` | Dev Supabase project URL |
 | `DEV_SUPABASE_ANON_KEY` | Dev Supabase anon key |
 | `DEV_SUPABASE_SERVICE_ROLE_KEY` | Dev Supabase service-role key |
+| `DEV_CONNECTOR_CREDENTIAL_ENCRYPTION_KEY` | Dev-only connector credential encryption key synced into the Fly runtime |
 | `PRODUCTION_SUPABASE_URL` | Shared staging/master Supabase project URL |
 | `PRODUCTION_SUPABASE_ANON_KEY` | Shared staging/master anon key |
 | `PRODUCTION_SUPABASE_SERVICE_ROLE_KEY` | Shared staging/master service-role key |

@@ -205,6 +205,44 @@ It intentionally does not yet:
 - redesign the full missing-policy set above
 - separate privileged observability maintenance from user-facing access paths
 
+## 2026-05-05 Supabase Apply Validation
+
+Applied the generated bootstrap draft to the provisioned Supabase project:
+
+- Project ref: `undvoetvdjkhiyqhtypt`
+- Region: `us-east-1`
+- Apply path: Supabase Management API `POST /v1/projects/{ref}/database/query`
+
+Observed post-apply object counts:
+
+- `public` tables: 47
+- `observability` tables: 19
+- `public` policies: 24
+- `email_sends` trigger count: 1
+- `observability` maintenance functions present:
+  - `apply_retention`
+  - `ensure_event_partitions`
+  - `refresh_rollups`
+
+RLS validation completed:
+
+- With `SET LOCAL ROLE authenticated` and no injected JWT claims:
+  - `app_current_user_id()` returned `NULL`
+  - `app_current_workspace_id()` returned `NULL`
+  - `SELECT count(*) FROM public.workspaces` returned `0`
+- With rollback-only fixture data plus injected `request.jwt.claims`:
+  - `app_current_user_id()` resolved the synthetic `sub`
+  - `app_current_workspace_id()` resolved the synthetic `workspaceId`
+  - `workspaces` policy admitted the expected row
+  - `workspace_members` policy admitted the expected row
+  - `campaigns` tenant-isolation policy admitted the expected row
+
+Validation limits still outstanding:
+
+- The schema apply ran through the Management API as `postgres`, so DDL privilege compatibility for lower-privilege direct DB roles is not yet proven.
+- Historical `migrations/` replay was not run against this same project after the bootstrap apply, because the bootstrap already materialized the target schema and replaying the existing migrations here would only test duplicate-object behavior.
+- The highest-risk remaining work is still Phase 1b: explicit review and design for the tables listed above that do not yet have vetted Supabase-era RLS coverage.
+
 ## Recommended Next Steps
 
 1. Review the generated bootstrap SQL against Supabase project conventions, especially extension schema placement and privileged function execution.

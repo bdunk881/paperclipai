@@ -228,6 +228,106 @@ User feedback on the review packet changed several design conclusions:
    - This is not cosmetic. It is required because the source dump's owner role (`paperclip`) does not exist in Supabase.
    - Reintroducing deliberate ownership later is allowed, but only after we choose the actual Supabase execution roles and decide whether any functions should be `SECURITY DEFINER`.
 
+3. Accepted follow-up schema additions
+   - `notification_preferences` should remain the workspace-default table because the current schema only keys by `workspace_id`, `channel`, and `kind`.
+   - Per-user notification settings should be added as a separate override table rather than changing the meaning of the existing workspace-default rows.
+   - External login linking should move to a provider-agnostic identity bridge plus an explicit merge-request audit trail.
+   - Agent memory must isolate by workspace and team unless a user explicitly enables cross-workspace recall.
+
+### Follow-up schema sketches accepted in review
+
+These are not part of the already-merged Phase 1 bootstrap SQL. They are the accepted direction for the next schema pass.
+
+#### User-level notification overrides
+
+Keep `notification_preferences` as workspace defaults, then add a per-user override layer:
+
+```sql
+user_notification_preferences(
+  id uuid primary key,
+  workspace_id uuid not null references workspaces(id) on delete cascade,
+  user_id text not null,
+  channel text not null,
+  kind text not null,
+  cadence text not null,
+  muted_until timestamptz,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  unique (workspace_id, user_id, channel, kind)
+)
+```
+
+This preserves the current workspace-level behavior while allowing user-specific opt-out or cadence changes.
+
+#### Provider-agnostic auth linking
+
+The current `social_auth_users` table is not enough for "existing local account, prompt to merge, link on consent" behavior. The follow-up schema should introduce:
+
+```sql
+user_auth_identities(
+  id uuid primary key,
+  local_user_id text not null,
+  provider text not null,
+  provider_subject text not null,
+  email text,
+  email_verified_at timestamptz,
+  linked_at timestamptz not null default now(),
+  last_login_at timestamptz,
+  unique (provider, provider_subject)
+)
+```
+
+```sql
+user_auth_merge_requests(
+  id uuid primary key,
+  local_user_id text not null,
+  provider text not null,
+  provider_subject text not null,
+  provider_email text,
+  requested_by_user_id text,
+  requested_at timestamptz not null default now(),
+  resolved_at timestamptz,
+  resolution text not null,
+  resolved_by_user_id text,
+  audit_note text
+)
+```
+
+That split keeps the long-lived identity link separate from the merge/consent audit record.
+
+#### Cross-workspace memory must be explicit
+
+The four agent-memory tables are backend-shared infrastructure, but they still need strict tenancy boundaries:
+
+- isolate by `workspace_id` by default
+- further isolate by `team_id` where present
+- never allow ambient cross-workspace reads
+- only allow cross-workspace recall through an explicit user-controlled sharing record
+
+One acceptable follow-up shape would be:
+
+```sql
+agent_memory_sharing_preferences(
+  id uuid primary key,
+  owner_user_id text not null,
+  source_workspace_id uuid not null references workspaces(id) on delete cascade,
+  target_workspace_id uuid not null references workspaces(id) on delete cascade,
+  scope text not null,
+  enabled boolean not null default false,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  unique (owner_user_id, source_workspace_id, target_workspace_id, scope)
+)
+```
+
+If agent-memory RLS ever moves beyond service-role-only access, it should consult:
+
+- `workspace_id`
+- `team_id`
+- `memory_layer`
+- `scope`
+- an explicit sharing preference such as the table above
+
 3. External auth identity mapping
    - The real missing piece is not "a foreign key to `auth.users`".
    - The real missing piece is a provider-agnostic identity-link table that maps external identities to existing local users and supports explicit merge consent.

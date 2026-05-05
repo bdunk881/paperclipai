@@ -101,7 +101,7 @@ jobs:
           echo "deploy_url=$deploy_url" >> "$GITHUB_OUTPUT"
 
       - name: Smoke test deployment
-        run: ./infra/scripts/cloudflare_pages_smoke.sh "${{ matrix.label }}" "${{ steps.deploy.outputs.deploy_url }}"
+        run: bash ./infra/scripts/cloudflare_pages_smoke.sh "${{ matrix.label }}" "${{ steps.deploy.outputs.deploy_url }}"
 
       - name: Summarize deployment
         run: |

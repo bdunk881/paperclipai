@@ -23,6 +23,7 @@ if (typeof globalThis.Request !== "undefined") {
         return new OriginalRequest(input, init);
       } catch (e) {
         if (e instanceof TypeError && String(e.message).includes("AbortSignal")) {
+          // eslint-disable-next-line @typescript-eslint/no-unused-vars
           const { signal: _s, ...rest } = init;
           return new OriginalRequest(input, rest);
         }

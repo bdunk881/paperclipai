@@ -238,8 +238,6 @@ CREATE FUNCTION public.app_current_workspace_id() RETURNS uuid
     UNION ALL SELECT NULLIF((SELECT payload ->> 'workspaceId' FROM claims), '')
     UNION ALL SELECT NULLIF((SELECT payload ->> 'extension_workspace_id' FROM claims), '')
     UNION ALL SELECT NULLIF((SELECT payload ->> 'extension_workspaceId' FROM claims), '')
-    UNION ALL SELECT NULLIF((SELECT payload ->> 'https://autoflow.ai/workspace_id' FROM claims), '')
-    UNION ALL SELECT NULLIF((SELECT payload ->> 'https://autoflow.ai/workspaceId' FROM claims), '')
   )
   SELECT raw_value::uuid
   FROM candidates

@@ -24,11 +24,15 @@ Highest-risk review points:
 1. `approval_requests`
    The draft exposes records to both `user_id` and `assignee`. Brad should confirm that mixed user/agent identity text values are acceptable for this phase.
 2. `notification_preferences`
-   The current schema is workspace-level. Brad should confirm that workspace-scoped visibility is correct until a user-level schema exists.
+   The current schema is workspace-level by construction: only `workspace_id` exists, and uniqueness is `(workspace_id, channel, kind)`. Brad should confirm that workspace-scoped visibility is correct until a user-level schema exists.
 3. `workflow_runs`
    The draft hides rows where `user_id IS NULL`. Brad should confirm that backend/system runs should stay invisible to client roles.
 4. `generated_reports`
    The draft keeps reports user-private even when `team_id` is present. Brad should confirm that team-level sharing is intentionally deferred.
+5. Agent memory tables
+   The current Phase 1 posture keeps `agent_memory_*` and `agent_heartbeat_logs` out of client JWT sessions, but backend agents still need cross-agent reads. Brad should review that as a backend-shared design, not a per-user privacy model.
+6. External auth linking
+   `social_auth_users` is not a true account-link table. Brad should review the follow-up recommendation for a provider-agnostic identity-link table so existing local accounts can be merged only after explicit user consent.
 
 Validation already completed:
 

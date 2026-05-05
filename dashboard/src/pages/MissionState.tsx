@@ -7,7 +7,7 @@ import { useAuth } from "../context/AuthContext";
 import { apiGet } from "../api/settingsClient";
 
 type MissionStatus = "On Track" | "At Risk" | "Blocked" | "Off Track" | "Not Started";
-type CardState = "ready" | "loading" | "empty" | "error";
+export type CardState = "ready" | "loading" | "empty" | "error";
 type CardKey = "header" | "health" | "readiness" | "blockers" | "actions" | "timeline";
 
 interface MissionAction {
@@ -29,7 +29,7 @@ interface ControlPlaneTeamSummary {
   name: string;
 }
 
-interface BackendMissionState {
+export interface BackendMissionState {
   teamId: string;
   title: string;
   objective: string | null;
@@ -59,7 +59,7 @@ interface BackendMissionState {
   };
 }
 
-interface MissionStateRecord {
+export interface MissionStateRecord {
   title: string;
   objective: string;
   overallStatus: MissionStatus;
@@ -84,7 +84,7 @@ interface MissionStateRecord {
 type MissionCardStates = Partial<Record<CardKey, CardState>>;
 
 // Placeholder data until ALT-2102 confirms the canonical mission-state API contract.
-const MISSION_STATE_FALLBACK: MissionStateRecord = {
+export const MISSION_STATE_FALLBACK: MissionStateRecord = {
   title: "Launch AutoFlow Beta",
   objective: "Open the beta to 25 design partners while keeping onboarding, staffing, and dependency response inside the June launch window.",
   overallStatus: "At Risk",
@@ -149,7 +149,9 @@ function toDisplayStatus(status: BackendMissionState["overallStatus"]): MissionS
   return statusMap[status];
 }
 
-function buildMissionRecordFromBackend(missionState: BackendMissionState): MissionStateRecord {
+export function buildMissionRecordFromBackend(
+  missionState: BackendMissionState
+): MissionStateRecord {
   const blockersAndRisks = Array.from(new Set([...missionState.topBlockers, ...missionState.risks]));
   const overallStatus = toDisplayStatus(missionState.overallStatus);
   const confidence =
@@ -243,7 +245,7 @@ function buildMissionRecordFromBackend(missionState: BackendMissionState): Missi
   };
 }
 
-function extractTeams(payload: unknown): ControlPlaneTeamSummary[] {
+export function extractTeams(payload: unknown): ControlPlaneTeamSummary[] {
   if (Array.isArray(payload)) {
     return payload as ControlPlaneTeamSummary[];
   }
@@ -614,7 +616,11 @@ function buildStates(stateParam: string | null): MissionCardStates {
   return {};
 }
 
-export default function MissionState() {
+export default function MissionState({
+  initialData,
+}: {
+  initialData?: { record: MissionStateRecord; loadState: CardState };
+} = {}) {
   const location = useLocation();
   const { user, requireAccessToken } = useAuth();
   const searchParams = useMemo(() => new URLSearchParams(location.search), [location.search]);
@@ -622,8 +628,10 @@ export default function MissionState() {
   const focus = searchParams.get("focus");
   const simulatedState = searchParams.get("state");
   const selectedTeamId = searchParams.get("teamId");
-  const [missionRecord, setMissionRecord] = useState<MissionStateRecord | null>(null);
-  const [loadState, setLoadState] = useState<CardState>("loading");
+  const [missionRecord, setMissionRecord] = useState<MissionStateRecord | null>(
+    () => initialData?.record ?? null
+  );
+  const [loadState, setLoadState] = useState<CardState>(() => initialData?.loadState ?? "loading");
 
   useEffect(() => {
     document.title = "Mission State | AutoFlow";
@@ -633,6 +641,10 @@ export default function MissionState() {
     if (simulatedState === "loading" || simulatedState === "empty" || simulatedState === "error") {
       setLoadState(simulatedState);
       setMissionRecord(MISSION_STATE_FALLBACK);
+      return;
+    }
+
+    if (initialData) {
       return;
     }
 
@@ -677,7 +689,7 @@ export default function MissionState() {
     return () => {
       cancelled = true;
     };
-  }, [requireAccessToken, selectedTeamId, simulatedState, user]);
+  }, [initialData, requireAccessToken, selectedTeamId, simulatedState, user]);
 
   useEffect(() => {
     if (!focus) return;

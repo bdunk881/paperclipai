@@ -15,6 +15,8 @@ import {
   type TicketPriority,
 } from "./api/tickets";
 import { readStoredAuthSession } from "./auth/authStorage";
+import { listCompanyRoleTemplates, listTemplates, type CompanyRoleTemplate } from "./api/client";
+import { apiGet } from "./api/settingsClient";
 import Layout from "./components/Layout";
 import { useAuth } from "./context/AuthContext";
 import AgentActivity from "./pages/AgentActivity";
@@ -65,6 +67,14 @@ import {
   type TicketDetailRouteData,
   type TicketsRouteData,
 } from "./routes/ticketRouteData";
+import {
+  MISSION_STATE_FALLBACK,
+  buildMissionRecordFromBackend,
+  extractTeams,
+  type BackendMissionState,
+  type CardState,
+  type MissionStateRecord,
+} from "./pages/MissionState";
 
 function PrivateRoute({ children }: { children: React.ReactNode }) {
   const { user } = useAuth();
@@ -78,6 +88,79 @@ function PublicRoute({ children }: { children: React.ReactNode }) {
 
 async function ticketsLoader(): Promise<TicketsRouteData> {
   return listTickets({}, readStoredAuthSession()?.accessToken);
+}
+
+async function templatesLoader() {
+  return { templates: await listTemplates() };
+}
+
+async function missionStateLoader({
+  request,
+}: {
+  request: Request;
+}): Promise<{ record: MissionStateRecord; loadState: CardState }> {
+  const url = new URL(request.url);
+  const simulatedState = url.searchParams.get("state");
+  const selectedTeamId = url.searchParams.get("teamId");
+  const session = readStoredAuthSession();
+
+  if (simulatedState === "loading" || simulatedState === "empty" || simulatedState === "error") {
+    return { record: MISSION_STATE_FALLBACK, loadState: simulatedState };
+  }
+
+  if (!session?.accessToken) {
+    return { record: MISSION_STATE_FALLBACK, loadState: "error" };
+  }
+
+  try {
+    const teamPayload = await apiGet<unknown>(
+      "/api/control-plane/teams",
+      session.user,
+      session.accessToken
+    );
+    const teams = extractTeams(teamPayload);
+    const resolvedTeamId = selectedTeamId ?? teams[0]?.id;
+
+    if (!resolvedTeamId) {
+      return { record: MISSION_STATE_FALLBACK, loadState: "empty" };
+    }
+
+    const missionPayload = await apiGet<{ missionState: BackendMissionState }>(
+      `/api/control-plane/teams/${encodeURIComponent(resolvedTeamId)}/mission-state`,
+      session.user,
+      session.accessToken
+    );
+
+    return {
+      record: buildMissionRecordFromBackend(missionPayload.missionState),
+      loadState: "ready",
+    };
+  } catch {
+    return { record: MISSION_STATE_FALLBACK, loadState: "error" };
+  }
+}
+
+async function staffingPlanLoader(): Promise<{
+  roleTemplates: CompanyRoleTemplate[];
+  pageError: string | null;
+}> {
+  const session = readStoredAuthSession();
+  if (!session?.accessToken) {
+    return {
+      roleTemplates: [],
+      pageError: "Authentication session expired. Sign in again to continue.",
+    };
+  }
+
+  try {
+    const response = await listCompanyRoleTemplates(session.accessToken);
+    return { roleTemplates: response.roleTemplates, pageError: null };
+  } catch (error) {
+    return {
+      roleTemplates: [],
+      pageError: error instanceof Error ? error.message : "Failed to load role templates",
+    };
+  }
 }
 
 async function ticketDetailLoader({
@@ -161,6 +244,24 @@ function TicketDetailRoute() {
   return <TicketDetail initialData={initialData} />;
 }
 
+function TemplatesRoute() {
+  const data = useLoaderData() as { templates: Awaited<ReturnType<typeof listTemplates>> };
+  return <Templates initialTemplates={data.templates} />;
+}
+
+function MissionStateRoute() {
+  const data = useLoaderData() as { record: MissionStateRecord; loadState: CardState };
+  return <MissionState initialData={data} />;
+}
+
+function StaffingPlanRoute() {
+  const data = useLoaderData() as {
+    roleTemplates: CompanyRoleTemplate[];
+    pageError: string | null;
+  };
+  return <StaffingPlanReview initialRouteData={data} />;
+}
+
 const routes: RouteObject[] = [
   { path: "/waitlist", element: <LandingPage /> },
   { path: "/checkout/success", element: <CheckoutSuccess /> },
@@ -187,7 +288,7 @@ const routes: RouteObject[] = [
       { index: true, element: <Dashboard /> },
       { path: "builder", element: <WorkflowBuilder /> },
       { path: "builder/:templateId", element: <WorkflowBuilder /> },
-      { path: "templates", element: <Templates /> },
+      { path: "templates", loader: templatesLoader, element: <TemplatesRoute /> },
       { path: "templates/:templateId", element: <WorkflowBuilder /> },
       { path: "agents", element: <AgentCatalog /> },
       { path: "agents/:templateId", element: <AgentDetail /> },
@@ -202,7 +303,7 @@ const routes: RouteObject[] = [
       { path: "integrations/mcp", element: <MCPIntegrations /> },
       { path: "logs", element: <ExecutionLogs /> },
       { path: "memory", element: <Memory /> },
-      { path: "mission-state", element: <MissionState /> },
+      { path: "mission-state", loader: missionStateLoader, element: <MissionStateRoute /> },
       { path: "monitor", element: <RunMonitor /> },
       { path: "history", element: <RunHistory /> },
       { path: "pricing", element: <Pricing /> },
@@ -222,7 +323,7 @@ const routes: RouteObject[] = [
       { path: "tickets/team", element: <TicketTeamView /> },
       { path: "workspace/budget-dashboard", element: <BudgetDashboard /> },
       { path: "workspace/org-structure", element: <OrgStructure /> },
-      { path: "workspace/staffing-plan", element: <StaffingPlanReview /> },
+      { path: "workspace/staffing-plan", loader: staffingPlanLoader, element: <StaffingPlanRoute /> },
     ],
   },
   { path: "*", element: <Navigate to="/" replace /> },

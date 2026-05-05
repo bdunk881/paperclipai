@@ -6,14 +6,22 @@ import { ErrorState, LoadingState } from "../components/UiStates";
 
 const ALL_CATEGORY = "All";
 
-export default function Templates() {
-  const [templates, setTemplates] = useState<TemplateSummary[]>([]);
-  const [loading, setLoading] = useState(true);
+export default function Templates({
+  initialTemplates,
+}: {
+  initialTemplates?: TemplateSummary[];
+} = {}) {
+  const [templates, setTemplates] = useState<TemplateSummary[]>(() => initialTemplates ?? []);
+  const [loading, setLoading] = useState(() => initialTemplates == null);
   const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState(ALL_CATEGORY);
 
   useEffect(() => {
+    if (initialTemplates) {
+      return;
+    }
+
     let cancelled = false;
 
     void (async () => {
@@ -38,7 +46,7 @@ export default function Templates() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [initialTemplates]);
 
   const categories = useMemo(
     () => [ALL_CATEGORY, ...Array.from(new Set(templates.map((template) => template.category))).sort()],

@@ -65,7 +65,13 @@ vi.mock("./pages/RunMonitor", () => ({ default: () => <div>Run Monitor Page</div
 vi.mock("./pages/RunHistory", () => ({ default: () => <div>Run History Page</div> }));
 vi.mock("./pages/LandingPage", () => ({ default: () => <div>Landing Page</div> }));
 vi.mock("./pages/LLMProviders", () => ({ default: () => <div>LLM Providers Page</div> }));
-vi.mock("./pages/MissionState", () => ({ default: () => <div>Mission State Page</div> }));
+vi.mock("./pages/MissionState", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./pages/MissionState")>();
+  return {
+    ...actual,
+    default: () => <div>Mission State Page</div>,
+  };
+});
 vi.mock("./pages/Settings", () => ({ default: () => <div>Settings Page</div> }));
 vi.mock("./pages/ProfileSettings", () => ({ default: () => <div>Profile Settings Page</div> }));
 vi.mock("./pages/SecuritySettings", () => ({ default: () => <div>Security Settings Page</div> }));
@@ -99,6 +105,15 @@ vi.mock("./api/tickets", () => ({
   getTicket: vi.fn().mockResolvedValue(null),
   createTicket: vi.fn().mockResolvedValue({}),
 }));
+
+vi.mock("./api/client", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./api/client")>();
+  return {
+    ...actual,
+    listTemplates: vi.fn().mockResolvedValue([]),
+    listCompanyRoleTemplates: vi.fn().mockResolvedValue({ roleTemplates: [] }),
+  };
+});
 
 import App from "./App";
 

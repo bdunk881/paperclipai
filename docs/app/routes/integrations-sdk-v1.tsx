@@ -1,8 +1,6 @@
-import type { Metadata } from "next";
-
-export const metadata: Metadata = {
-  title: "Integration SDK v1",
-};
+export function meta() {
+  return [{ title: "Integration SDK v1 — AutoFlow Docs" }];
+}
 
 export default function IntegrationSdkV1Page() {
   return (

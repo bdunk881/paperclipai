@@ -245,9 +245,48 @@ Validation limits still outstanding:
 - Historical `migrations/` replay was not run against this same project after the bootstrap apply, because the bootstrap already materialized the target schema and replaying the existing migrations here would only test duplicate-object behavior.
 - The highest-risk remaining work is still Phase 1b: explicit review and design for the tables listed above that do not yet have vetted Supabase-era RLS coverage.
 
+## 2026-05-05 Phase 1d Validation
+
+Validation was run from `origin/migration` at merge commit `4d82c5f` after the Upstash queue change landed.
+
+Node / TypeScript validation:
+
+- `npm run build` completed successfully.
+- Jest required an override because the repo config ignores `/.worktrees/` paths by default. Running
+  `npx jest --config jest.config.cjs --runInBand --testPathIgnorePatterns='/node_modules/' --testPathIgnorePatterns='/dashboard/'`
+  produced:
+  - test suites: `101 passed`, `1 skipped`
+  - tests: `1253 passed`, `30 skipped`, `1 todo`
+- `src/engine/queue.test.ts` passed with the Upstash-backed queue mode enabled in tests.
+- Jest still force-exits because background coordinators keep logging after teardown:
+  - `src/engine/approvalResumeCoordinator.ts`
+  - `src/engine/ticketSlaCoordinator.ts`
+  This is a pre-existing test-harness issue, not a queue regression.
+
+Python / FastAPI validation:
+
+- `python3 -m pytest backend/tests -q` passed: `134 passed` in `0.38s`.
+- The FastAPI backend in `backend/main.py` remains an in-memory knowledge service and does not currently bind to Supabase Postgres or Upstash Redis, so its validation surface is limited to route and contract coverage rather than live infrastructure wiring.
+
+Runtime and infrastructure probes:
+
+- Local Postgres smoke check passed with the current shell `DATABASE_URL`:
+  - `psql "$DATABASE_URL" -c 'select 1 as ok'`
+- Live Supabase control-plane query succeeded against project `undvoetvdjkhiyqhtypt`:
+  - `select current_database() as db, current_user as role, now() as ts`
+  - returned `postgres / postgres`
+- Live Upstash REST probe succeeded:
+  - `RPUSH`, `LLEN`, and `LPOP` on a temporary queue key preserved FIFO order for `phase1d-a` then `phase1d-b`
+
+Remaining limitation:
+
+- This heartbeat did not include a direct Supabase Postgres connection string, so the Node API could not be started against `DATABASE_URL=<Supabase DSN>` in-process.
+- `npm run dev` is also not runnable in this environment because `ts-node` is not installed in the current toolchain, although the compiled build path succeeded.
+
 ## Recommended Next Steps
 
 1. Review `docs/alt-2321-rls-review-matrix.md` and `supabase/migrations/20260505054500_alt_2321_phase1b_rls_draft.sql` with Brad before promoting any new policy set.
 2. Review the generated bootstrap SQL against Supabase project conventions, especially extension schema placement and privileged function execution.
-3. Decide whether user identity remains `text` or gets normalized toward `auth.users.id` in a follow-up migration.
-4. Validate both draft migrations on an empty Supabase project before wiring them into any automated rollout path.
+3. Provide a direct Supabase Postgres DSN for a true app-level `DATABASE_URL` smoke test if Phase 1d requires runtime proof beyond the control-plane query path above.
+4. Decide whether user identity remains `text` or gets normalized toward `auth.users.id` in a follow-up migration.
+5. Validate both draft migrations on an empty Supabase project before wiring them into any automated rollout path.

@@ -4,6 +4,8 @@ Contract tests for the staging FastAPI knowledge routes.
 
 from __future__ import annotations
 
+from typing import Any
+
 import httpx
 from fastapi.testclient import TestClient
 import pytest
@@ -137,7 +139,7 @@ def test_native_auth_proxy_forwards_json_payload_as_form(monkeypatch: pytest.Mon
     monkeypatch.setenv("AUTH_NATIVE_AUTH_PROXY_BASE_URL", "https://ciam.example.com/tenant-guid")
     monkeypatch.setenv("AUTH_NATIVE_AUTH_PROXY_ALLOWED_ORIGINS", "https://app.helloautoflow.com")
 
-    captured: dict[str, object] = {}
+    captured: dict[str, Any] = {}
 
     async def fake_send(method: str, url: str, headers: dict[str, str], body: bytes | None) -> httpx.Response:
         captured["method"] = method
@@ -170,7 +172,7 @@ def test_native_auth_proxy_forwards_json_payload_as_form(monkeypatch: pytest.Mon
 def test_public_callback_relay_forwards_redirect_response(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("FASTAPI_EDGE_RELAY_BASE_URL", "https://legacy-api.example.com")
 
-    captured: dict[str, object] = {}
+    captured: dict[str, Any] = {}
 
     async def fake_send(method: str, url: str, headers: dict[str, str], body: bytes | None) -> httpx.Response:
         captured["method"] = method
@@ -195,7 +197,7 @@ def test_public_callback_relay_forwards_redirect_response(monkeypatch: pytest.Mo
 def test_webhook_relay_preserves_signature_headers(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("FASTAPI_EDGE_RELAY_BASE_URL", "https://legacy-api.example.com")
 
-    captured: dict[str, object] = {}
+    captured: dict[str, Any] = {}
 
     async def fake_send(method: str, url: str, headers: dict[str, str], body: bytes | None) -> httpx.Response:
         captured["method"] = method

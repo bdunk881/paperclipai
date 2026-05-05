@@ -99,6 +99,7 @@ jobs:
 
             config_path="fly.production.toml"
             artifact_prefix="fastapi-fly-production"
+            stateful_kb_checks="false"
           else
             app_name="${{ vars.FLY_STAGING_APP_NAME }}"
             if [[ -z "$app_name" ]]; then
@@ -118,6 +119,7 @@ jobs:
             relay_base_url="https://staging-api.helloautoflow.com"
             config_path="fly.toml"
             artifact_prefix="fastapi-fly-staging"
+            stateful_kb_checks="true"
           fi
 
           echo "app_name=$app_name" >> "$GITHUB_OUTPUT"
@@ -126,6 +128,7 @@ jobs:
           echo "relay_base_url=$relay_base_url" >> "$GITHUB_OUTPUT"
           echo "config_path=$config_path" >> "$GITHUB_OUTPUT"
           echo "artifact_prefix=$artifact_prefix" >> "$GITHUB_OUTPUT"
+          echo "stateful_kb_checks=$stateful_kb_checks" >> "$GITHUB_OUTPUT"
 
       - name: Set up flyctl
         uses: superfly/flyctl-actions/setup-flyctl@master
@@ -184,7 +187,7 @@ jobs:
             if [[ "${FLY_DEPLOY_ENV}" == "production" ]]; then
               if [[ "${{ steps.settings.outputs.relay_base_url }}" == "${FLY_PRODUCTION_RELAY_BASE_URL_FALLBACK}" ]]; then
                 echo "- This production pre-cutover deploy used \`${FLY_PRODUCTION_RELAY_BASE_URL_FALLBACK}\` as the relay base URL."
-                echo "- Before Phase 5a DNS cutover, replace that relay with the direct legacy Azure ingress hostname so callback/webhook traffic does not loop back into Fly after `api.helloautoflow.com` moves."
+                echo "- Before Phase 5a DNS cutover, replace that relay with the direct legacy Azure ingress hostname so callback/webhook traffic does not loop back into Fly after api.helloautoflow.com moves."
               else
                 echo "- Production relay base URL already points at an explicit legacy upstream target."
               fi
@@ -216,6 +219,7 @@ jobs:
         env:
           FASTAPI_SMOKE_BASE_URL: ${{ steps.settings.outputs.base_url }}
           FASTAPI_SMOKE_USER_ID: ${{ steps.settings.outputs.smoke_user_id }}
+          FASTAPI_SMOKE_ENABLE_STATEFUL_KB_CHECKS: ${{ steps.settings.outputs.stateful_kb_checks }}
 
       - name: Upload FastAPI evidence
         if: always()

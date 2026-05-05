@@ -135,7 +135,7 @@ cat > "$tmp_dir/ingest-document.json" <<'JSON'
 JSON
 ingest_status=$(request "ingest_document" "POST" "/api/knowledge/bases/${BASE_ID}/documents" "$OUT_DIR/ingest-document.json" "$tmp_dir/ingest-document.json")
 require_status "$ingest_status" "201" "ingest_document"
-jq -e '.document.status == "ready" and .total >= 1' "$OUT_DIR/ingest-document.json" >/dev/null
+jq -e '.document.status == "ready" and ((.chunks | length) >= 1 or (.document.chunkCount // 0) >= 1)' "$OUT_DIR/ingest-document.json" >/dev/null
 
 cat > "$tmp_dir/search.json" <<JSON
 {

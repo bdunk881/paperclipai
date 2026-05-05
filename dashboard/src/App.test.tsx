@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 import { Outlet } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+
 const {
   authState,
   initializeMock,
@@ -91,6 +92,13 @@ vi.mock("./pages/TicketTeamView", () => ({ default: () => <div>Ticket Team Page<
 vi.mock("./pages/TicketActorView", () => ({ default: () => <div>Ticket Actor Page</div> }));
 vi.mock("./pages/TicketSlaDashboard", () => ({ default: () => <div>Ticket SLA Dashboard Page</div> }));
 vi.mock("./pages/TicketSlaSettings", () => ({ default: () => <div>Ticket SLA Settings Page</div> }));
+
+// Stub ticket API loaders so routes with loaders resolve immediately in tests
+vi.mock("./api/tickets", () => ({
+  listTickets: vi.fn().mockResolvedValue([]),
+  getTicket: vi.fn().mockResolvedValue(null),
+  createTicket: vi.fn().mockResolvedValue({}),
+}));
 
 import App from "./App";
 

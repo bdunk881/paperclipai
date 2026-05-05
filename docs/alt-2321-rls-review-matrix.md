@@ -90,6 +90,21 @@ Enable RLS but define no permissive client policies. In Supabase that denies acc
    - Draft keeps access user-private even when `team_id` is present.
    - If team reports should be visible to team members, we need a team-membership policy source of truth first.
 
+## 2026-05-05 Validation Notes
+
+Applied `supabase/migrations/20260505054500_alt_2321_phase1b_rls_draft.sql` to Supabase project `undvoetvdjkhiyqhtypt` after the Phase 1a bootstrap schema load.
+
+Validated under `SET LOCAL ROLE authenticated` with rollback-only fixture data:
+
+- User-scoped family:
+  - `user_profiles` returned 1 row when `request.jwt.claims.sub = 'phase1-user'`
+- Parent-inherited family:
+  - `ticket_updates` returned 1 row when the parent ticket belonged to the injected `workspaceId`
+- Service-role-only family:
+  - `agent_heartbeat_logs` returned 0 rows even when claims were present
+
+This does not finish Brad's review. It only proves that the draft policy families behave as intended for representative tables.
+
 ## Intentional Non-Goals In This Draft
 
 - No `auth.users` foreign-key conversion yet.

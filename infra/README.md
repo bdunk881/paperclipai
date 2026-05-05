@@ -116,6 +116,11 @@ DNS should reflect the active non-Azure production targets. Use
 [`infra/runbooks/azure-cutover-decommission.md`](runbooks/azure-cutover-decommission.md)
 to verify and remove any remaining Azure-bound records during Phase 5.
 
+## Cloudflare Pages migration
+
+- Phase 4 cutover runbook: `infra/runbooks/cloudflare-pages-phase4-cutover.md`
+- Scope: Pages project validation, env/secret requirements, DNS cutover order, and Vercel retirement sequence for `app.helloautoflow.com`, `docs.helloautoflow.com`, `helloautoflow.com`, and `www.helloautoflow.com`
+
 ## QA Integration Evidence
 
 - Workflow: `.github/workflows/qa-integration-evidence.yml`

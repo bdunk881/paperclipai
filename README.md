@@ -134,7 +134,7 @@ autoflow/
 
 ## Deployment
 
-AutoFlow backend is deployed on Azure; the dashboard is hosted on Vercel. See [`infra/README.md`](infra/README.md) for full setup instructions.
+AutoFlow's primary backend is deployed on Azure, the dashboard is hosted on Vercel, and the standalone FastAPI knowledge-service staging app deploys on Fly.io. See [`infra/README.md`](infra/README.md) for full setup instructions.
 
 ### CI/CD
 

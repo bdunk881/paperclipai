@@ -76,6 +76,11 @@ The smoke script verifies:
 - `GET /api/integrations/slack/oauth/callback?error=...`
 - `POST /api/webhooks/stripe`
 
+Production pre-cutover runs intentionally skip the stateful knowledge
+follow-up checks after `create_base` because the production Fly app runs
+multiple machines with in-memory storage during pre-cutover validation. The
+production gate is `/health` plus the auth/callback/webhook relay matrix.
+
 Artifacts are uploaded to `fastapi-fly-<environment>-evidence-<run_id>` and include:
 
 - `summary.md`

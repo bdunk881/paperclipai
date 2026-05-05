@@ -1,6 +1,11 @@
 name: Attach Fly Production Domain
 
 on:
+  push:
+    branches:
+      - feat/ALT-2361-fly-prod-domain
+    paths:
+      - ".github/workflows/attach-fly-production-domain.yml"
   workflow_dispatch:
     inputs:
       app_name:

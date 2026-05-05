@@ -1,4 +1,4 @@
-app = "autoflow-fastapi-staging"
+app = "autoflow-fastapi-production"
 primary_region = "ord"
 
 [build]
@@ -7,7 +7,6 @@ primary_region = "ord"
 [env]
   ALLOWED_ORIGINS = "https://app.helloautoflow.com,https://staging.app.helloautoflow.com"
   AUTH_NATIVE_AUTH_PROXY_ALLOWED_ORIGINS = "https://app.helloautoflow.com,https://staging.app.helloautoflow.com"
-  FASTAPI_EDGE_RELAY_BASE_URL = "https://staging-api.helloautoflow.com"
   PORT = "8080"
 
 [http_service]

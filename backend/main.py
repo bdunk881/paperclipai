@@ -19,6 +19,7 @@ from edge_proxy import (
     relay_request_headers,
     resolve_native_auth_proxy_base_urls,
     resolve_relay_base_url,
+    resolve_relay_insecure_tls,
     send_upstream_request,
 )
 
@@ -116,6 +117,7 @@ async def relay_public_edge_request(request: Request) -> Response:
             target_url,
             relay_request_headers(request),
             await request.body(),
+            verify_ssl=not resolve_relay_insecure_tls(),
         )
     except httpx.HTTPError as exc:
         raise HTTPException(

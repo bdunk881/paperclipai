@@ -1,5 +1,3 @@
-import { NextRequest, NextResponse } from "next/server";
-
 interface BetaSignupBody {
   name?: string;
   email?: string;
@@ -9,8 +7,8 @@ interface BetaSignupBody {
   caseStudyInterest?: boolean;
 }
 
-export async function POST(req: NextRequest) {
-  const body = (await req.json()) as BetaSignupBody;
+export async function action({ request }: { request: Request }) {
+  const body = (await request.json()) as BetaSignupBody;
 
   const { name, email, company, currentTools, useCase, caseStudyInterest } =
     body;
@@ -22,20 +20,19 @@ export async function POST(req: NextRequest) {
     !currentTools?.trim() ||
     !useCase?.trim()
   ) {
-    return NextResponse.json(
+    return Response.json(
       { error: "All fields are required" },
       { status: 400 }
     );
   }
 
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-    return NextResponse.json({ error: "Invalid email" }, { status: 400 });
+    return Response.json({ error: "Invalid email" }, { status: 400 });
   }
 
   const webhookUrl = process.env.ZAPIER_BETA_SIGNUP_WEBHOOK_URL;
   if (!webhookUrl) {
-    // Silently succeed if webhook is not configured (dev mode)
-    return NextResponse.json({ ok: true });
+    return Response.json({ ok: true });
   }
 
   try {
@@ -58,10 +55,10 @@ export async function POST(req: NextRequest) {
       throw new Error(`Webhook returned ${res.status}`);
     }
 
-    return NextResponse.json({ ok: true });
+    return Response.json({ ok: true });
   } catch (err) {
     console.error("Beta signup webhook error:", err);
-    return NextResponse.json(
+    return Response.json(
       { error: "Failed to submit application" },
       { status: 500 }
     );

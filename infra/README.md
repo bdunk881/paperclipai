@@ -1,27 +1,38 @@
 # AutoFlow Infrastructure
 
-Azure deployment with GitHub Actions CI/CD.
+Infrastructure docs for the current deployment stack plus the legacy Azure
+estate being retired under [ALT-2325](/ALT/issues/ALT-2325), including the
+standalone FastAPI staging service on Fly.io.
 
 ## Stack
 
 | Layer | Tool |
 |---|---|
-| Backend hosting | Azure (AKS / App Service) |
-| Dashboard hosting | Azure Static Web Apps |
+| Backend hosting | Fly.io FastAPI cutover path plus legacy Azure teardown track |
+| Dashboard hosting | Vercel (production) |
 | Container registry | GitHub Container Registry (ghcr.io) |
-| TLS | Managed by Azure |
+| TLS | Platform-managed by active hosts |
 | CI/CD | GitHub Actions |
 
 ## Services
 
 | App | Platform | Workflow |
 |---|---|---|
-| `backend` | Azure | `.github/workflows/deploy.yml` |
-| `dashboard` | Azure Static Web Apps | `.github/workflows/deploy-swa.yml` |
+| `backend` | Legacy Azure path pending retirement | `.github/workflows/deploy.yml` |
+| `fastapi-staging` | Fly.io | `.github/workflows/deploy-fly-fastapi-staging.yml` |
+| `fastapi-production` | Fly.io pre-cutover target | `.github/workflows/deploy-fly-fastapi-staging.yml` |
+| `dashboard` | Vercel | `.github/workflows/vercel.yml` |
 | `dashboard` branch protection | GitHub Branch API | `.github/workflows/enforce-branch-protection.yml` |
 | `landing` | Vercel | `.github/workflows/vercel.yml` |
 | `observability rollups` | GitHub Actions + PostgreSQL | `.github/workflows/observability-rollups.yml` |
 | `autoflow-brand` (planned) | GitHub + Cloudflare R2 + MemPalace | `infra/brand-assets/*` |
+
+## Phase 5 decommission
+
+Use [`infra/runbooks/azure-cutover-decommission.md`](runbooks/azure-cutover-decommission.md)
+as the source of truth for the final DNS cutover, Azure destroy sequence, CIAM
+cleanup, and subscription shutdown. Azure-specific docs in this directory should
+be treated as legacy references unless that runbook explicitly points to them.
 
 ## Authentication
 
@@ -66,16 +77,31 @@ Runtime environment variables required in the Vercel dashboard project:
 | `VITE_AZURE_CIAM_TENANT_DOMAIN` | Optional Entra External ID tenant domain path segment (for example `autoflowciam.onmicrosoft.com`) |
 | `QA_PREVIEW_ACCESS_TOKEN` | Preview-only shared secret used by `/api/qa-preview-access` to unlock smoke-test access for protected dashboard routes |
 
+### FastAPI Fly.io
+
+| Secret / Variable | Description |
+|---|---|
+| `FLY_API_TOKEN` | Fly.io deploy token with access to the staging and production FastAPI apps |
+| `FLY_STAGING_APP_NAME` | Optional override for the Fly app name |
+| `FLY_STAGING_BASE_URL` | Optional override for the public Fly hostname used by smoke checks |
+| `FLY_STAGING_SMOKE_USER_ID` | Optional user id sent through the staging smoke requests |
+| `FLY_PRODUCTION_APP_NAME` | Optional override for the production Fly app name |
+| `FLY_PRODUCTION_BASE_URL` | Optional override for the production Fly hostname used by smoke checks |
+| `FLY_PRODUCTION_SMOKE_USER_ID` | Optional user id sent through production smoke requests |
+| `FLY_PRODUCTION_RELAY_BASE_URL` | Optional direct legacy backend host to relay callbacks/webhooks during the pre-cutover window; if omitted, the workflow uses `https://api.helloautoflow.com` and the cutover operator must replace it with the direct Azure ingress target before DNS flips |
+
 ## Daily operations
 
-- **Deploy backend staging:** push to `staging` — `.github/workflows/deploy-azure.yml` builds the backend image, deploys the staging Container App, and runs the staging smoke checks.
-- **Deploy backend production:** merge to `master` — `.github/workflows/deploy-azure.yml` builds the backend image, deploys AKS, and runs the production smoke checks.
+- **Deploy backend staging:** legacy Azure path only while teardown remains incomplete — `.github/workflows/deploy-azure.yml` builds the backend image, deploys the staging Container App, and runs the staging smoke checks.
+- **Deploy backend production:** treat `.github/workflows/deploy-azure.yml` as a legacy path during the ALT-2325 cutover window; do not use it as the default production source of truth after the non-Azure API cutover completes.
+- **Deploy FastAPI staging service:** push to `staging` with `backend/**`, `docker/backend/Dockerfile`, `fly.toml`, or `infra/scripts/fly_fastapi_smoke.sh` changes — `.github/workflows/deploy-fly-fastapi-staging.yml` deploys `autoflow-fastapi-staging` on Fly.io and runs live knowledge/API relay smoke checks.
+- **Deploy FastAPI production pre-cutover target:** manually dispatch `.github/workflows/deploy-fly-fastapi-staging.yml` with `environment=production` from the `migration` line to deploy `autoflow-fastapi-production`, capture the stable Fly hostname, and upload the DNS-ready evidence bundle.
 - **Promotion flow:** agents open feature-branch PRs into `staging`; production promotion happens through a dedicated `staging` -> `master` PR after staging validation passes.
 - **Preview dashboard:** non-production dashboard branches use `.github/workflows/dashboard-staging-gate.yml` to create Vercel preview deployments.
-- **Deploy dashboard production:** push to `master` with `dashboard/` changes — GitHub Actions deploys to the production SWA host.
-- **Deploy dashboard staging:** push to `staging` with `dashboard/` changes — GitHub Actions deploys to the staging SWA host.
+- **Deploy dashboard production:** push to `master` with `dashboard/` changes — GitHub Actions deploys the Vercel production path.
+- **Deploy dashboard staging:** push to `staging` with `dashboard/` changes — use the preview/staging workflow that matches the current non-Azure frontend target.
 - **Enforce branch protection:** run `enforce-branch-protection.yml` to require CI on both protected branches, plus an extra `Staging-First Promotion Gate` and code-owner approval on `master`. Both branches disallow direct pushes, and `master` promotions must come from a PR whose head branch is exactly `staging`.
-- **Rollback:** redeploy a previous image tag (backend) or follow `infra/runbooks/swa-dashboard-deploy.md` for dashboard DNS/rollback.
+- **Rollback:** use the active platform rollback flow for the current host; Azure Static Web Apps rollback steps in `infra/runbooks/swa-dashboard-deploy.md` are historical only.
 
 ## Infrastructure as Code
 
@@ -92,11 +118,9 @@ Runtime environment variables required in the Vercel dashboard project:
 
 ## DNS
 
-Configure DNS records to point to Azure per environment (dashboard uses SWA; landing uses Vercel).
-Recommended dashboard host split:
-
-- `app.helloautoflow.com` -> production SWA
-- `staging.app.helloautoflow.com` -> staging SWA
+DNS should reflect the active non-Azure production targets. Use
+[`infra/runbooks/azure-cutover-decommission.md`](runbooks/azure-cutover-decommission.md)
+to verify and remove any remaining Azure-bound records during Phase 5.
 
 ## QA Integration Evidence
 
@@ -104,6 +128,12 @@ Recommended dashboard host split:
 - Smoke script: `infra/scripts/qa_integration_smoke.sh`
 - Runbook: `infra/runbooks/qa-integration-environment.md`
 - Tier 1 release path: `infra/runbooks/tier1-connector-release.md`
+
+## FastAPI Fly.io
+
+- Workflow: `.github/workflows/deploy-fly-fastapi-staging.yml`
+- Smoke script: `infra/scripts/fly_fastapi_smoke.sh`
+- Runbook: `infra/runbooks/fly-fastapi-staging.md`
 
 ## Observability Rollups
 

@@ -31,6 +31,8 @@ The production env secret must pin native auth to the direct CIAM authority.
 The retired branded auth hostname is no longer a valid fallback:
 
 ```env
+APP_JWT_SECRET=<32+ char random secret>
+APP_JWT_EXPIRES_IN=8h
 AZURE_CIAM_TENANT_SUBDOMAIN=<tenant-subdomain>
 AZURE_CIAM_TENANT_ID=<tenant-guid>
 AZURE_CIAM_AUTHORITY=https://<tenant-subdomain>.ciamlogin.com/<tenant-guid>

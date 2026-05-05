@@ -10,14 +10,16 @@ test("auth regression: protected routes redirect to /login when unauthenticated"
   await expect(page).toHaveURL(/\/login/);
 });
 
-test("auth regression: login CTA renders and validates the native auth form", async ({
+test("auth regression: login form renders the current Supabase auth contract", async ({
   page,
 }) => {
   await page.goto("/login");
 
+  const emailInput = page.locator('input[type="email"]').first();
   const signInButton = page.locator("form").getByRole("button", { name: /^sign in$/i });
-  await expect(signInButton).toBeVisible();
 
-  await signInButton.click();
-  await expect(page.getByText(/enter both your email and password\./i)).toBeVisible();
+  await expect(emailInput).toBeVisible();
+  await expect(signInButton).toBeVisible();
+  await expect(signInButton).toBeDisabled();
+  await expect(page.getByText(/supabase auth is not configured yet/i)).toBeVisible();
 });

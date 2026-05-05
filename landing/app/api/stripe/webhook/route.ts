@@ -1,9 +1,5 @@
-import { NextRequest, NextResponse } from "next/server";
 import Stripe from "stripe";
 import { getStripe } from "@/lib/stripe";
-
-// Next.js App Router: disable body parsing so we can verify the raw signature
-export const config = { api: { bodyParser: false } };
 
 async function notifyCSM(params: {
   email: string;
@@ -68,20 +64,19 @@ async function notifyCSM(params: {
   }
 }
 
-export async function POST(req: NextRequest): Promise<NextResponse> {
+export async function action({ request }: { request: Request }) {
   const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
   if (!webhookSecret) {
     console.error("[stripe/webhook] STRIPE_WEBHOOK_SECRET not set");
-    return NextResponse.json({ error: "Webhook not configured" }, { status: 503 });
+    return Response.json({ error: "Webhook not configured" }, { status: 503 });
   }
 
-  const sig = req.headers.get("stripe-signature");
+  const sig = request.headers.get("stripe-signature");
   if (!sig) {
-    return NextResponse.json({ error: "Missing stripe-signature header" }, { status: 400 });
+    return Response.json({ error: "Missing stripe-signature header" }, { status: 400 });
   }
 
-  // Read raw body — required for signature verification
-  const rawBody = await req.text();
+  const rawBody = await request.text();
 
   let event: Stripe.Event;
   try {
@@ -90,15 +85,14 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     console.error(`[stripe/webhook] Signature verification failed: ${msg}`);
-    return NextResponse.json({ error: `Webhook error: ${msg}` }, { status: 400 });
+    return Response.json({ error: `Webhook error: ${msg}` }, { status: 400 });
   }
 
   if (event.type === "checkout.session.completed") {
     const session = event.data.object as Stripe.Checkout.Session;
 
-    // Only process paid subscriptions
     if (session.mode !== "subscription" || session.payment_status !== "paid") {
-      return NextResponse.json({ received: true });
+      return Response.json({ received: true });
     }
 
     const meta = session.metadata ?? {};
@@ -112,19 +106,18 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 
     if (!email) {
       console.warn("[stripe/webhook] checkout.session.completed missing email — skipping");
-      return NextResponse.json({ received: true });
+      return Response.json({ received: true });
     }
 
     console.log(`[stripe/webhook] checkout.session.completed for ${email} (tier=${tier})`);
 
     // CSM notification for automate / scale tiers
     if (tier === "automate" || tier === "scale") {
-      // Non-blocking — don't fail the webhook if CSM task creation fails
       notifyCSM({ email, firstName, companyName, tier, signupDate, userId }).catch(
         (err) => console.error("[paperclip] notifyCSM error:", err)
       );
     }
   }
 
-  return NextResponse.json({ received: true });
+  return Response.json({ received: true });
 }

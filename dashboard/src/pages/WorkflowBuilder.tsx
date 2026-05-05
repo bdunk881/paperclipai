@@ -74,6 +74,7 @@ import {
 } from "./workflowGraph";
 import { useTheme } from "../hooks/useTheme";
 import { useAuth } from "../context/AuthContext";
+import { useWorkspace } from "../context/useWorkspace";
 
 const KIND_META: Record<
   StepKind,
@@ -429,6 +430,7 @@ export default function WorkflowBuilder() {
   const location = useLocation();
   const { theme } = useTheme();
   const { requireAccessToken, getAccessToken } = useAuth();
+  const { activeWorkspaceId } = useWorkspace();
   const incomingState = location.state as BuilderLocationState;
 
   const [template, setTemplate] = useState<WorkflowTemplate>(BLANK_TEMPLATE);
@@ -469,7 +471,7 @@ export default function WorkflowBuilder() {
     listTemplates()
       .then(setAllTemplates)
       .catch((e) => setTemplatesError(e instanceof Error ? e.message : "Failed to load templates"));
-  }, []);
+  }, [activeWorkspaceId]);
 
   useEffect(() => {
     if (!templateId) return;
@@ -483,7 +485,7 @@ export default function WorkflowBuilder() {
         );
       })
       .finally(() => setLoading(false));
-  }, [templateId]);
+  }, [activeWorkspaceId, templateId]);
 
   const selectedStep = template.steps.find((s) => s.id === selectedStepId) ?? null;
   const isLlmStep = selectedStep?.kind === "llm";
@@ -823,6 +825,7 @@ export default function WorkflowBuilder() {
     setSaving(true);
     setSaved(false);
     try {
+      const accessToken = (await getAccessToken()) ?? undefined;
       const nextTemplate = await createTemplate({
         ...template,
         name: template.name.trim() || "Untitled Workflow",
@@ -833,7 +836,7 @@ export default function WorkflowBuilder() {
         steps: template.steps ?? [],
         sampleInput: template.sampleInput ?? {},
         expectedOutput: template.expectedOutput ?? {},
-      });
+      }, accessToken);
       setTemplate(nextTemplate);
       setSaved(true);
       setTimeout(() => setSaved(false), 2000);

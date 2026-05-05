@@ -12,9 +12,13 @@ type SecretNames =
   | "llm-config-encryption-key"
   | "database-url"
   | "redis-url"
-  | "entra-client-secret";
+  | "entra-client-secret"
+  | "apollo-client-id"
+  | "apollo-client-secret"
+  | "apollo-redirect-uri"
+  | "apollo-webhook-secret";
 
-const SECRET_MAP: Record<SecretNames, string> = {
+export const KEY_VAULT_SECRET_MAP: Record<SecretNames, string> = {
   "stripe-secret-key": "STRIPE_SECRET_KEY",
   "stripe-webhook-secret": "STRIPE_WEBHOOK_SECRET",
   "stripe-flow-price-id": "STRIPE_FLOW_PRICE_ID",
@@ -24,6 +28,10 @@ const SECRET_MAP: Record<SecretNames, string> = {
   "database-url": "DATABASE_URL",
   "redis-url": "REDIS_URL",
   "entra-client-secret": "AZURE_CIAM_CLIENT_SECRET",
+  "apollo-client-id": "APOLLO_CLIENT_ID",
+  "apollo-client-secret": "APOLLO_CLIENT_SECRET",
+  "apollo-redirect-uri": "APOLLO_REDIRECT_URI",
+  "apollo-webhook-secret": "APOLLO_WEBHOOK_SECRET",
 };
 
 let secretsLoaded = false;
@@ -41,20 +49,20 @@ export async function loadSecretsFromKeyVault(): Promise<void> {
     const credential = new DefaultAzureCredential();
     const client = new SecretClient(KV_URI, credential);
 
-    const secrets = Object.keys(SECRET_MAP) as SecretNames[];
+    const secrets = Object.keys(KEY_VAULT_SECRET_MAP) as SecretNames[];
 
     for (const secretName of secrets) {
       try {
         const secret = await client.getSecret(secretName);
         if (secret.value) {
-          process.env[SECRET_MAP[secretName]] = secret.value;
+          process.env[KEY_VAULT_SECRET_MAP[secretName]] = secret.value;
         }
       } catch (err) {
         console.warn(`[keyvault] Failed to load secret "${secretName}": ${(err as Error).message}`);
       }
     }
 
-    console.log(`[keyvault] Loaded ${Object.keys(SECRET_MAP).length} secrets from ${KV_URI}`);
+    console.log(`[keyvault] Loaded ${Object.keys(KEY_VAULT_SECRET_MAP).length} secrets from ${KV_URI}`);
     secretsLoaded = true;
   } catch (err) {
     console.error(`[keyvault] Fatal: cannot reach Key Vault at ${KV_URI}: ${(err as Error).message}`);

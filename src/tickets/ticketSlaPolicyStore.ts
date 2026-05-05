@@ -33,6 +33,7 @@ function cloneTarget(target: TicketSlaTarget): TicketSlaTarget {
 function cloneEscalation(policy: TicketSlaEscalationPolicy): TicketSlaEscalationPolicy {
   return {
     ...policy,
+    notifyTargets: policy.notifyTargets ? [...policy.notifyTargets] : undefined,
     fallbackAssignee: policy.fallbackAssignee ? { ...policy.fallbackAssignee } : undefined,
   };
 }

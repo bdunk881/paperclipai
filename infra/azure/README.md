@@ -1,9 +1,14 @@
-# AutoFlow — Azure Infrastructure (Primary Deploy Track)
+# AutoFlow — Azure Infrastructure (Legacy Decommission Track)
 
 Terraform IaC for the Azure-native deployment of AutoFlow.
 
-> **Status:** Primary deployment path — AutoFlow runs on AKS (Azure Kubernetes Service) with ACR, Key Vault, Hub/Spoke VNets, and Azure Policy following the Cloud Adoption Framework.
-> CI/CD is handled by `.github/workflows/deploy-azure.yml`.
+> **Status:** Legacy estate pending teardown under [ALT-2325](/ALT/issues/ALT-2325).
+> Treat this directory as the source of truth for inventory, destroy ordering,
+> and audit history for the Azure shutdown, not as the default production deploy
+> path.
+>
+> Phase 5 execution lives in
+> [`infra/runbooks/azure-cutover-decommission.md`](../runbooks/azure-cutover-decommission.md).
 >
 > See `COMPARISON.md` for historical context on the Hetzner → Azure migration decision.
 

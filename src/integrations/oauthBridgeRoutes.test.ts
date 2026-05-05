@@ -27,6 +27,15 @@ const linearDisconnect = jest.fn();
 const apolloBeginOAuth = jest.fn();
 const apolloCompleteOAuth = jest.fn();
 const apolloDisconnect = jest.fn();
+const gmailBeginOAuth = jest.fn();
+const gmailCompleteOAuth = jest.fn();
+const gmailDisconnect = jest.fn();
+const hubspotBeginOAuth = jest.fn();
+const hubspotCompleteOAuth = jest.fn();
+const hubspotDisconnect = jest.fn();
+const sentryBeginOAuth = jest.fn();
+const sentryCompleteOAuth = jest.fn();
+const sentryDisconnect = jest.fn();
 const shopifyBeginOAuth = jest.fn();
 const shopifyCompleteOAuth = jest.fn();
 const shopifyDisconnect = jest.fn();
@@ -45,16 +54,23 @@ const intercomDisconnect = jest.fn();
 const datadogBeginOAuth = jest.fn();
 const datadogCompleteOAuth = jest.fn();
 const datadogDisconnect = jest.fn();
+const stripeBeginOAuth = jest.fn();
+const stripeCompleteOAuth = jest.fn();
+const stripeDisconnect = jest.fn();
 
 const slackGetActiveByUser = jest.fn();
 const linearGetActiveByUser = jest.fn();
 const apolloGetActiveByUser = jest.fn();
+const gmailGetActiveByUser = jest.fn();
+const hubspotGetActiveByUser = jest.fn();
+const sentryGetActiveByUser = jest.fn();
 const shopifyGetActiveByUser = jest.fn();
 const docusignGetActiveByUser = jest.fn();
 const teamsGetActiveByUser = jest.fn();
 const posthogGetActiveByUser = jest.fn();
 const intercomGetActiveByUser = jest.fn();
 const monitoringGetActiveByUserAndProvider = jest.fn();
+const stripeGetActiveByUser = jest.fn();
 
 jest.mock("./slack/service", () => ({
   slackConnectorService: {
@@ -77,6 +93,30 @@ jest.mock("./apollo/service", () => ({
     beginOAuth: (...args: unknown[]) => apolloBeginOAuth(...args),
     completeOAuth: (...args: unknown[]) => apolloCompleteOAuth(...args),
     disconnect: (...args: unknown[]) => apolloDisconnect(...args),
+  },
+}));
+
+jest.mock("./gmail/service", () => ({
+  gmailConnectorService: {
+    beginOAuth: (...args: unknown[]) => gmailBeginOAuth(...args),
+    completeOAuth: (...args: unknown[]) => gmailCompleteOAuth(...args),
+    disconnect: (...args: unknown[]) => gmailDisconnect(...args),
+  },
+}));
+
+jest.mock("./hubspot/service", () => ({
+  hubSpotConnectorService: {
+    beginOAuth: (...args: unknown[]) => hubspotBeginOAuth(...args),
+    completeOAuth: (...args: unknown[]) => hubspotCompleteOAuth(...args),
+    disconnect: (...args: unknown[]) => hubspotDisconnect(...args),
+  },
+}));
+
+jest.mock("./sentry/service", () => ({
+  sentryConnectorService: {
+    beginOAuth: (...args: unknown[]) => sentryBeginOAuth(...args),
+    completeOAuth: (...args: unknown[]) => sentryCompleteOAuth(...args),
+    disconnect: (...args: unknown[]) => sentryDisconnect(...args),
   },
 }));
 
@@ -128,6 +168,14 @@ jest.mock("./datadog-azure-monitor/service", () => ({
   },
 }));
 
+jest.mock("./stripe/service", () => ({
+  stripeConnectorService: {
+    beginOAuth: (...args: unknown[]) => stripeBeginOAuth(...args),
+    completeOAuth: (...args: unknown[]) => stripeCompleteOAuth(...args),
+    disconnect: (...args: unknown[]) => stripeDisconnect(...args),
+  },
+}));
+
 jest.mock("./slack/credentialStore", () => ({
   slackCredentialStore: {
     getActiveByUser: (...args: unknown[]) => slackGetActiveByUser(...args),
@@ -143,6 +191,24 @@ jest.mock("./linear/credentialStore", () => ({
 jest.mock("./apollo/credentialStore", () => ({
   apolloCredentialStore: {
     getActiveByUser: (...args: unknown[]) => apolloGetActiveByUser(...args),
+  },
+}));
+
+jest.mock("./gmail/credentialStore", () => ({
+  gmailCredentialStore: {
+    getActiveByUser: (...args: unknown[]) => gmailGetActiveByUser(...args),
+  },
+}));
+
+jest.mock("./hubspot/credentialStore", () => ({
+  hubSpotCredentialStore: {
+    getActiveByUser: (...args: unknown[]) => hubspotGetActiveByUser(...args),
+  },
+}));
+
+jest.mock("./sentry/credentialStore", () => ({
+  sentryCredentialStore: {
+    getActiveByUser: (...args: unknown[]) => sentryGetActiveByUser(...args),
   },
 }));
 
@@ -182,6 +248,12 @@ jest.mock("./datadog-azure-monitor/credentialStore", () => ({
   },
 }));
 
+jest.mock("./stripe/credentialStore", () => ({
+  stripeCredentialStore: {
+    getActiveByUser: (...args: unknown[]) => stripeGetActiveByUser(...args),
+  },
+}));
+
 describe("unified oauth bridge routes", () => {
   const app = express();
   app.use(express.json());
@@ -195,39 +267,55 @@ describe("unified oauth bridge routes", () => {
     slackBeginOAuth.mockReturnValue({ authUrl: "https://slack.example/oauth" });
     linearBeginOAuth.mockReturnValue({ authUrl: "https://linear.example/oauth" });
     apolloBeginOAuth.mockReturnValue({ authUrl: "https://apollo.example/oauth" });
+    gmailBeginOAuth.mockReturnValue({ authUrl: "https://gmail.example/oauth" });
+    hubspotBeginOAuth.mockReturnValue({ authUrl: "https://hubspot.example/oauth" });
+    sentryBeginOAuth.mockReturnValue({ authUrl: "https://sentry.example/oauth" });
     shopifyBeginOAuth.mockReturnValue({ authUrl: "https://shopify.example/oauth" });
     docusignBeginOAuth.mockReturnValue({ authUrl: "https://docusign.example/oauth" });
     teamsBeginOAuth.mockReturnValue({ authUrl: "https://teams.example/oauth" });
     posthogBeginOAuth.mockReturnValue({ authUrl: "https://posthog.example/oauth" });
     intercomBeginOAuth.mockReturnValue({ authUrl: "https://intercom.example/oauth" });
     datadogBeginOAuth.mockReturnValue({ authUrl: "https://azure.example/oauth" });
+    stripeBeginOAuth.mockReturnValue({ authUrl: "https://stripe.example/oauth" });
     slackCompleteOAuth.mockResolvedValue({ id: "conn-1" });
     linearCompleteOAuth.mockResolvedValue({ id: "conn-1" });
     apolloCompleteOAuth.mockResolvedValue({ id: "conn-1" });
+    gmailCompleteOAuth.mockResolvedValue({ id: "conn-1" });
+    hubspotCompleteOAuth.mockResolvedValue({ id: "conn-1" });
+    sentryCompleteOAuth.mockResolvedValue({ id: "conn-1" });
     shopifyCompleteOAuth.mockResolvedValue({ id: "conn-1" });
     docusignCompleteOAuth.mockResolvedValue({ id: "conn-1" });
     teamsCompleteOAuth.mockResolvedValue({ id: "conn-1" });
     posthogCompleteOAuth.mockResolvedValue({ id: "conn-1" });
     intercomCompleteOAuth.mockResolvedValue({ id: "conn-1" });
     datadogCompleteOAuth.mockResolvedValue({ id: "conn-1" });
+    stripeCompleteOAuth.mockResolvedValue({ id: "conn-1" });
     slackDisconnect.mockReturnValue(true);
     linearDisconnect.mockReturnValue(true);
     apolloDisconnect.mockReturnValue(true);
+    gmailDisconnect.mockReturnValue(true);
+    hubspotDisconnect.mockReturnValue(true);
+    sentryDisconnect.mockReturnValue(true);
     shopifyDisconnect.mockReturnValue(true);
     docusignDisconnect.mockReturnValue(true);
     teamsDisconnect.mockReturnValue(true);
     posthogDisconnect.mockReturnValue(true);
     intercomDisconnect.mockReturnValue(true);
     datadogDisconnect.mockReturnValue(true);
+    stripeDisconnect.mockReturnValue(true);
     slackGetActiveByUser.mockReturnValue(null);
     linearGetActiveByUser.mockReturnValue(null);
     apolloGetActiveByUser.mockReturnValue(null);
+    gmailGetActiveByUser.mockReturnValue(null);
+    hubspotGetActiveByUser.mockReturnValue(null);
+    sentryGetActiveByUser.mockReturnValue(null);
     shopifyGetActiveByUser.mockReturnValue(null);
     docusignGetActiveByUser.mockReturnValue(null);
     teamsGetActiveByUser.mockReturnValue(null);
     posthogGetActiveByUser.mockReturnValue(null);
     intercomGetActiveByUser.mockReturnValue(null);
     monitoringGetActiveByUserAndProvider.mockReturnValue(null);
+    stripeGetActiveByUser.mockReturnValue(null);
   });
 
   afterAll(() => {

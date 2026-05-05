@@ -54,14 +54,23 @@ That is not enough for Supabase. The generated draft rewrites both helpers to:
   - `workspace_id`
   - `extension_workspaceId`
   - `extension_workspace_id`
-  - `https://autoflow.ai/workspaceId`
-  - `https://autoflow.ai/workspace_id`
 
 This keeps the current RLS predicates usable without rewriting every policy in the first draft.
+
+The earlier draft also mentioned two `https://autoflow.ai/...` namespaced claim keys. Those were speculative and used the wrong domain. They have been removed from both the runtime middleware and the generated Supabase helper. If we standardize on a namespaced custom claim later, it should be added back only with the real issuer-controlled namespace.
 
 ### 2. Ownership statements must be removed
 
 `schema.sql` contains `ALTER ... OWNER TO paperclip` statements throughout. Those do not map cleanly onto Supabase roles, so the generated draft strips them.
+
+More concretely:
+
+- In PostgreSQL, the owner of a table/function/schema is the principal that can `ALTER`, `DROP`, `GRANT`, and otherwise administer that object.
+- Ownership also affects operational behavior such as who can redefine functions and whether a table owner can bypass RLS unless `FORCE ROW LEVEL SECURITY` is enabled.
+- The dump was taken from an environment where the owning role was literally `paperclip`.
+- In Supabase, that role does not exist. Replaying `ALTER ... OWNER TO paperclip` would either fail outright or create a misleading ownership model that does not match Supabase's managed roles.
+
+So the bootstrap draft keeps the schema objects, policies, triggers, and functions, but lets ownership fall to the role executing the migration in Supabase. That is the only portable baseline. Any deliberate ownership or `SECURITY DEFINER` strategy has to be reintroduced intentionally against the actual Supabase role model, not copied from the source dump blindly.
 
 ### 3. Observability maintenance stays privileged
 
@@ -72,9 +81,15 @@ These functions still assume a privileged migration or service-role path:
 
 They create or drop partitions dynamically and should not be callable by normal client roles.
 
-### 4. `auth.users` foreign keys are not present yet
+### 4. A real auth identity bridge is not present yet
 
-There are no direct `REFERENCES auth.users(id)` constraints in the dump.
+There are no direct `REFERENCES auth.users(id)` constraints in the dump, but the deeper issue is broader than Supabase's `auth.users`.
+
+The current product does not treat Supabase Auth as the source of truth. Auth is already brokered externally through systems like Azure External ID and social OAuth. The schema reflects that history:
+
+- `user_profiles` is just a local profile row keyed by `user_id text`
+- `workspace_members.user_id` and `workspaces.owner_user_id` are also local text identifiers
+- `social_auth_users` is not a link table; it currently creates the local user row keyed by provider identity rather than linking an external identity to an existing local account
 
 Current identity columns are mostly modeled as `text`, for example:
 
@@ -89,7 +104,7 @@ That means the lowest-risk Phase 1 draft is:
 
 - keep the current text-based identity columns
 - let Supabase JWT `sub` drive RLS/user scoping
-- defer any hard FK bridge to `auth.users(id)` until the auth migration decides whether user identifiers stay text or become UUID-typed columns
+- defer any hard FK bridge until the auth migration defines a provider-agnostic identity-link table
 
 ## UUID vs. Serial Review
 
@@ -99,7 +114,7 @@ The dump is already aligned with Supabase on identifiers:
 - natural text keys remain for template/import metadata
 - no serial or bigserial PK rewrite is required in Phase 1a
 
-The main identity mismatch is not PK generation. It is the lack of a committed `auth.users` relationship strategy for existing `text` user identifiers.
+The main identity mismatch is not PK generation. It is the lack of a committed external-identity-to-local-user relationship strategy for existing `text` user identifiers.
 
 ## Existing RLS Preserved In The Draft
 
@@ -151,10 +166,6 @@ These are the clearest candidates for direct tenant-isolation policies.
 
 ### User-scoped tables with no RLS yet
 
-- `agent_heartbeat_logs`
-- `agent_memory_entries`
-- `agent_memory_events`
-- `agent_memory_kg_facts`
 - `approval_requests`
 - `connector_credentials`
 - `control_plane_company_lifecycle`
@@ -170,6 +181,21 @@ These need either:
 
 - user-owned policies keyed off `app_current_user_id()`, or
 - service-role-only access if they remain backend-managed tables
+
+The four agent-memory tables need a separate note because they are not actually good candidates for simple per-user isolation:
+
+- `agent_heartbeat_logs`
+- `agent_memory_entries`
+- `agent_memory_events`
+- `agent_memory_kg_facts`
+
+Those tables back agent collaboration and cross-agent memory recall. They already carry `workspace_id`, `agent_id`, `memory_layer`, and in some cases `scope`. The key design point is:
+
+- they should not be exposed to arbitrary client sessions
+- but they also should not be modeled as "current human user can only see their own rows"
+- cross-agent reads inside the same workspace must remain possible for backend agents and orchestrators
+
+So "service-role-only" in the current matrix should be read as an operational posture for Phase 1 client exposure, not as a claim that the underlying data model is per-user. If these tables ever get non-service-role RLS policies, they should be workspace-scoped and memory-layer-aware, not simply `user_id = app_current_user_id()`.
 
 ### Relationship-scoped tables that should inherit access from a parent record
 
@@ -189,6 +215,37 @@ These likely need join-backed policies through `approval_requests`, `tickets`, o
 - `social_auth_users`
 
 These should probably not be exposed to client roles at all in the first Supabase rollout.
+
+## 2026-05-05 Design Follow-Up
+
+User feedback on the review packet changed several design conclusions:
+
+1. Workspace claim namespace
+   - The hardcoded `https://autoflow.ai/...` claim keys were wrong and have been removed.
+   - Phase 1 should rely on the un-namespaced keys already accepted in runtime auth (`workspaceId`, `workspace_id`, `extension_workspaceId`, `extension_workspace_id`) plus the legacy session variables.
+
+2. Ownership stripping
+   - This is not cosmetic. It is required because the source dump's owner role (`paperclip`) does not exist in Supabase.
+   - Reintroducing deliberate ownership later is allowed, but only after we choose the actual Supabase execution roles and decide whether any functions should be `SECURITY DEFINER`.
+
+3. External auth identity mapping
+   - The real missing piece is not "a foreign key to `auth.users`".
+   - The real missing piece is a provider-agnostic identity-link table that maps external identities to existing local users and supports explicit merge consent.
+   - A follow-up schema should look more like:
+     - `user_auth_identities(local_user_id, provider, provider_subject, email, email_verified_at, linked_at, last_login_at)`
+     - optionally `user_auth_merge_requests(...)` if we want a durable approval/audit trail around account-link prompts
+
+4. Social auth merge behavior
+   - The current `social_auth_users` table is insufficient for merge approval because it conflates the local account row with the external identity row.
+   - It can upsert "the user for this provider subject", but it cannot represent "this external login matches an existing local account and needs explicit user consent before linking."
+
+5. Notification preferences
+   - `notification_preferences` is workspace-scoped today because the actual schema only has `workspace_id`, and the uniqueness rule is `UNIQUE (workspace_id, channel, kind)`.
+   - There is no `user_id`, `recipient_id`, or membership target on the table today, so calling it per-user would be factually wrong.
+
+6. `user_profiles`
+   - `user_profiles` is still correctly modeled as per-local-user profile data.
+   - What needs to change is not the profile row itself, but the identity-link layer sitting beside it so multiple external providers can resolve to the same local user after an explicit merge flow.
 
 ## Initial Migration Draft Strategy
 

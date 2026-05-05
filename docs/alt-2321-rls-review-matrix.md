@@ -50,8 +50,8 @@ Enable RLS but define no permissive client policies. In Supabase that denies acc
 | `notification_channel_configs` | `workspace_id`, `owner_user_id` | Workspace-scoped | Included | Owner is metadata; workspace should govern visibility |
 | `notification_deliveries` | `workspace_id`, `event_id` | Workspace-scoped | Included | Delivery records follow the workspace event stream |
 | `notification_events` | `workspace_id` | Workspace-scoped | Included | Direct tenant event feed |
-| `notification_preferences` | `workspace_id` | Workspace-scoped | Included | Current schema is workspace-level, not per-user |
-| `user_profiles` | `user_id` | User-scoped | Included | One profile per current user |
+| `notification_preferences` | `workspace_id` | Workspace-scoped | Included | Schema only has `workspace_id`; uniqueness is `(workspace_id, channel, kind)`, so this is a workspace default table today |
+| `user_profiles` | `user_id` | User-scoped | Included | Profile row is per local user; external-provider linking should move to a separate identity-link table |
 | `llm_configs` | `user_id` | User-scoped | Included | Secrets/config must stay private per user |
 | `connector_credentials` | `user_id` | User-scoped | Included | Sensitive integration credentials |
 | `generated_reports` | `user_id`, `team_id` | User-scoped | Included | Team sharing can be a later expansion |
@@ -64,13 +64,13 @@ Enable RLS but define no permissive client policies. In Supabase that denies acc
 | `workflow_step_results` | `run_id` | Parent-inherited from `workflow_runs` | Included | Client sees only step results for owned runs |
 | `approval_requests` | `user_id`, `assignee` | Hybrid user/assignee model | Included | Draft exposes records to requestor and current assignee text id |
 | `approval_notifications` | `approval_request_id`, `recipient` | Parent-inherited from `approval_requests` | Included | Follows approval request access; recipient match retained |
-| `agent_heartbeat_logs` | `workspace_id`, `user_id`, `agent_id` | Service-role-only | Included | Heartbeat audit is backend/internal |
-| `agent_memory_entries` | `workspace_id`, `user_id`, `agent_id` | Service-role-only | Included | MemPalace backing store should stay backend-only |
-| `agent_memory_events` | `workspace_id`, `user_id`, `agent_id` | Service-role-only | Included | Same rationale |
-| `agent_memory_kg_facts` | `workspace_id`, `user_id`, `agent_id` | Service-role-only | Included | Same rationale |
+| `agent_heartbeat_logs` | `workspace_id`, `user_id`, `agent_id`, `memory_layer` | Backend-shared, not client-exposed | Included | Current Phase 1 stance is service-role access for backend agents; do not reinterpret this table as human-user-private |
+| `agent_memory_entries` | `workspace_id`, `user_id`, `agent_id`, `scope`, `memory_layer` | Backend-shared, not client-exposed | Included | Cross-agent recall must survive; if RLS is expanded later it should be workspace/scope-aware, not per-user-only |
+| `agent_memory_events` | `workspace_id`, `user_id`, `agent_id`, `memory_layer` | Backend-shared, not client-exposed | Included | Same rationale |
+| `agent_memory_kg_facts` | `workspace_id`, `user_id`, `agent_id`, `scope`, `memory_layer` | Backend-shared, not client-exposed | Included | Same rationale |
 | `control_plane_company_lifecycle` | `user_id` | Service-role-only | Included | Kill-switch lifecycle state is operator-only |
 | `control_plane_company_lifecycle_audit` | `user_id`, `run_id` | Service-role-only | Included | Audit trail must remain privileged |
-| `social_auth_users` | `email`, `provider_user_id` | Service-role-only | Included | Auth bridge table should not be client-queryable |
+| `social_auth_users` | `email`, `provider_user_id` | Service-role-only | Included | Current table is not a true account-link model; it should evolve into an external-identity bridge, not be client-queryable |
 
 ## Open Decisions Brad Should Review
 
@@ -80,7 +80,8 @@ Enable RLS but define no permissive client policies. In Supabase that denies acc
 
 2. `notification_preferences`
    - Current table is workspace-level only.
-   - If notifications become user-specific later, the schema likely needs `user_id` or membership-role targeting before policy granularity can improve.
+   - That is not a policy assumption; it is the literal schema shape (`workspace_id` only).
+   - If notifications become user-specific later, the schema needs `user_id` or membership-role targeting before policy granularity can improve.
 
 3. `workflow_runs`
    - Rows with `user_id IS NULL` are treated as backend/system-owned and denied to clients.
@@ -89,6 +90,15 @@ Enable RLS but define no permissive client policies. In Supabase that denies acc
 4. `generated_reports`
    - Draft keeps access user-private even when `team_id` is present.
    - If team reports should be visible to team members, we need a team-membership policy source of truth first.
+
+5. Agent memory tables
+   - The current Phase 1 SQL keeps these backend-only from the perspective of client JWT roles.
+   - That does not mean the data model should become per-user. Backend agents still need cross-agent reads inside a workspace.
+   - If we ever move these reads onto non-service-role sessions, the policy must use `workspace_id`, `memory_layer`, and `scope` rather than `user_id` alone.
+
+6. External auth linking
+   - `social_auth_users` is not sufficient for merge-consent flows because it conflates the local account record and the external identity record.
+   - We need a separate identity-link table if we want to detect "existing local account, prompt to merge, link on consent" cleanly.
 
 ## 2026-05-05 Validation Notes
 
@@ -107,7 +117,7 @@ This does not finish Brad's review. It only proves that the draft policy familie
 
 ## Intentional Non-Goals In This Draft
 
-- No `auth.users` foreign-key conversion yet.
+- No provider-agnostic identity-link migration yet.
 - No attempt to expose observability partitions or control-plane tables to client roles.
 - No grants/role DDL; the draft only handles RLS posture inside `public`.
 

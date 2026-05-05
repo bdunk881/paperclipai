@@ -101,8 +101,6 @@ function resolveWorkspaceClaim(payload: JwtPayload): string | undefined {
     payload["workspace_id"],
     payload["extension_workspaceId"],
     payload["extension_workspace_id"],
-    payload["https://autoflow.ai/workspaceId"],
-    payload["https://autoflow.ai/workspace_id"],
   ];
 
   for (const candidate of directCandidates) {

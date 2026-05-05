@@ -23,6 +23,7 @@ Configure these values before running the workflow:
 | Variable | `FLY_PRODUCTION_APP_NAME` | Optional | Defaults to `autoflow-fastapi-production`. |
 | Variable | `FLY_PRODUCTION_BASE_URL` | Optional | Defaults to `https://autoflow-fastapi-production.fly.dev`. |
 | Variable | `FLY_PRODUCTION_SMOKE_USER_ID` | Optional | Defaults to `qa-smoke-user`. |
+| Variable | `FLY_PRODUCTION_CUSTOM_DOMAIN` | Optional | Defaults to `api.helloautoflow.com` and is used to register the Fly custom domain during production pre-cutover runs. |
 | Variable | `FLY_PRODUCTION_RELAY_BASE_URL` | Optional | Direct legacy backend host for production relay checks. If omitted, the workflow temporarily relays to `https://api.helloautoflow.com` for pre-cutover smoke only. |
 | Variable | `FLY_PRODUCTION_RELAY_HOST_HEADER` | Optional | Host header override for direct Azure ingress relay targets such as `api.helloautoflow.com`. |
 
@@ -55,7 +56,8 @@ Manual production pre-cutover deploy:
 3. Choose `environment=production`.
 4. Optionally set `production_relay_base_url` to the direct legacy Azure ingress hostname if that value has already been captured.
 5. Optionally set `production_relay_host_header` when the relay target is a raw Azure ingress IP and still requires host-based routing/TLS bypass.
-6. Confirm the `Validate FastAPI backend` job passes before the deploy job starts.
+6. Optionally set `production_custom_domain` if the production hostname differs from `api.helloautoflow.com`.
+7. Confirm the `Validate FastAPI backend` job passes before the deploy job starts.
 
 If `production_relay_base_url` is omitted, the workflow relays to
 `https://api.helloautoflow.com` for pre-cutover smoke against the Fly hostname
@@ -68,6 +70,11 @@ and `production_relay_host_header=api.helloautoflow.com`. The workflow will
 then sync `FASTAPI_EDGE_RELAY_HOST_HEADER` and enable insecure TLS for that
 relay path so the Fly pre-cutover app can reach the Azure ingress without
 depending on public DNS.
+
+Production runs also attempt to register the Fly custom domain before the DNS
+flip. Review `fly-cert-show.txt` and, when present, `fly-cert-add.txt` in the
+workflow artifact to capture any Fly-managed certificate validation records
+that must exist before `api.helloautoflow.com` can safely point at Fly.
 
 ## Smoke verification
 

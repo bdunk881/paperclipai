@@ -34,8 +34,8 @@ jobs:
 
       - name: Attach certificate and capture evidence
         env:
-          APP_NAME: ${{ github.event.inputs.app_name }}
-          DOMAIN: ${{ github.event.inputs.domain }}
+          APP_NAME: ${{ github.event.inputs.app_name || 'autoflow-fastapi-production' }}
+          DOMAIN: ${{ github.event.inputs.domain || 'api.helloautoflow.com' }}
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
         run: |
           set -euo pipefail

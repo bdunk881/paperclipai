@@ -4,13 +4,16 @@ import {
   StoredAuthSession,
   StoredAuthUser,
   clearStoredAuthSession,
-  getInMemoryRefreshToken,
   readStoredAuthSession,
   readStoredAuthUser,
-  setInMemoryRefreshToken,
   writeStoredAuthSession,
 } from "../auth/authStorage";
-import { isSessionExpiring, refreshNativeAuthSession, sessionFromTokenResponse } from "../auth/nativeAuthClient";
+import {
+  getSupabaseClient,
+  getSupabaseStoredSession,
+  sessionFromSupabaseSession,
+  signOutSupabase,
+} from "../auth/supabaseAuth";
 
 export interface User {
   id: string;
@@ -56,14 +59,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [storedSession, setStoredSession] = React.useState<StoredAuthSession | null>(() => readStoredAuthSession());
   const [storedUser, setStoredUser] = React.useState<StoredAuthUser | null>(() => readStoredAuthUser());
 
-  React.useEffect(() => {
-    const syncAuthState = () => {
-      setStoredSession(readStoredAuthSession());
-      setStoredUser(readStoredAuthUser());
-    };
+  const syncAuthState = React.useCallback(() => {
+    setStoredSession(readStoredAuthSession());
+    setStoredUser(readStoredAuthUser());
+  }, []);
 
-    // Re-read storage on mount so sessions written during initial route
-    // handling are not missed before listeners are attached.
+  React.useEffect(() => {
     syncAuthState();
 
     window.addEventListener("storage", syncAuthState);
@@ -73,7 +74,44 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       window.removeEventListener("storage", syncAuthState);
       window.removeEventListener(AUTH_STORAGE_EVENT, syncAuthState);
     };
-  }, []);
+  }, [syncAuthState]);
+
+  React.useEffect(() => {
+    const supabase = getSupabaseClient();
+    if (!supabase) {
+      return;
+    }
+
+    let active = true;
+
+    void getSupabaseStoredSession()
+      .then((session) => {
+        if (!active || !session) {
+          return;
+        }
+
+        writeStoredAuthSession(session);
+        syncAuthState();
+      })
+      .catch(() => {
+        // Preserve non-Supabase sessions such as QA preview access.
+      });
+
+    const { data } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (session) {
+        writeStoredAuthSession(sessionFromSupabaseSession(session));
+      } else if (readStoredAuthSession()?.authProvider === "supabase") {
+        clearStoredAuthSession();
+      }
+
+      syncAuthState();
+    });
+
+    return () => {
+      active = false;
+      data.subscription.unsubscribe();
+    };
+  }, [syncAuthState]);
 
   const user = sessionUser(storedSession, storedUser);
   const accessMode: AuthAccessMode = storedSession
@@ -83,6 +121,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       : "anonymous";
 
   const logout = React.useCallback(() => {
+    if (readStoredAuthSession()?.authProvider === "supabase") {
+      void signOutSupabase().catch(() => {
+        // Local cleanup still runs below.
+      });
+    }
+
     clearStoredAuthSession();
     setStoredSession(null);
     setStoredUser(null);
@@ -90,26 +134,30 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const getAccessToken = React.useCallback(async (): Promise<string | null> => {
     const latestSession = readStoredAuthSession();
-
     if (!latestSession) {
       return null;
     }
 
-    if (!isSessionExpiring(latestSession)) {
-      return latestSession.accessToken;
-    }
+    if (latestSession.authProvider !== "supabase") {
+      if (latestSession.expiresAt > Date.now() + 60_000) {
+        return latestSession.accessToken;
+      }
 
-    const refreshToken = latestSession.refreshToken ?? getInMemoryRefreshToken();
-    if (!refreshToken) {
       clearStoredAuthSession();
-      setInMemoryRefreshToken(undefined);
       setStoredSession(null);
       setStoredUser(null);
       return null;
     }
 
     try {
-      const refreshed = sessionFromTokenResponse(await refreshNativeAuthSession(refreshToken));
+      const refreshed = await getSupabaseStoredSession();
+      if (!refreshed) {
+        clearStoredAuthSession();
+        setStoredSession(null);
+        setStoredUser(null);
+        return null;
+      }
+
       writeStoredAuthSession(refreshed);
       setStoredSession(refreshed);
       setStoredUser(refreshed.user);

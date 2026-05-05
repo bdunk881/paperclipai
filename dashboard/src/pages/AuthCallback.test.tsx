@@ -1,15 +1,54 @@
 import { render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import AuthCallback from "./AuthCallback";
 
+const { getSupabaseStoredSessionMock, writeStoredAuthSessionMock } = vi.hoisted(() => ({
+  getSupabaseStoredSessionMock: vi.fn(),
+  writeStoredAuthSessionMock: vi.fn(),
+}));
+
+vi.mock("../auth/supabaseAuth", () => ({
+  getSupabaseStoredSession: getSupabaseStoredSessionMock,
+}));
+
+vi.mock("../auth/authStorage", () => ({
+  writeStoredAuthSession: writeStoredAuthSessionMock,
+}));
+
 describe("AuthCallback", () => {
-  afterEach(() => {
-    vi.restoreAllMocks();
-    Reflect.deleteProperty(window, "opener");
+  beforeEach(() => {
+    vi.clearAllMocks();
   });
 
-  it("renders the auth callback message and redirects back to login outside a popup", async () => {
+  it("stores the Supabase session and redirects home", async () => {
+    getSupabaseStoredSessionMock.mockResolvedValueOnce({
+      accessToken: "token-123",
+      expiresAt: Date.now() + 60_000,
+      user: { id: "user-1", email: "user@example.com", name: "Example User" },
+      authProvider: "supabase",
+    });
+
+    render(
+      <MemoryRouter initialEntries={["/auth/callback"]}>
+        <Routes>
+          <Route path="/auth/callback" element={<AuthCallback />} />
+          <Route path="/" element={<div>Dashboard Home</div>} />
+        </Routes>
+      </MemoryRouter>
+    );
+
+    expect(screen.getByText(/completing supabase sign-in/i)).toBeInTheDocument();
+
+    await waitFor(() => {
+      expect(writeStoredAuthSessionMock).toHaveBeenCalledTimes(1);
+      expect(screen.getByText("Dashboard Home")).toBeInTheDocument();
+    });
+  });
+
+  it("returns to login with an auth error when no session is available", async () => {
+    getSupabaseStoredSessionMock.mockResolvedValueOnce(null);
+
     render(
       <MemoryRouter initialEntries={["/auth/callback"]}>
         <Routes>
@@ -18,34 +57,9 @@ describe("AuthCallback", () => {
         </Routes>
       </MemoryRouter>
     );
-
-    expect(screen.getByText(/completing microsoft sign-in/i)).toBeInTheDocument();
 
     await waitFor(() => {
       expect(screen.getByText("Login Page")).toBeInTheDocument();
     });
-  });
-
-  it("closes the popup instead of redirecting when the callback is running in a popup window", async () => {
-    const closeSpy = vi.spyOn(window, "close").mockImplementation(() => undefined);
-    Object.defineProperty(window, "opener", {
-      configurable: true,
-      value: {},
-    });
-
-    render(
-      <MemoryRouter initialEntries={["/auth/callback"]}>
-        <Routes>
-          <Route path="/auth/callback" element={<AuthCallback />} />
-          <Route path="/login" element={<div>Login Page</div>} />
-        </Routes>
-      </MemoryRouter>
-    );
-
-    await waitFor(() => {
-      expect(closeSpy).toHaveBeenCalledTimes(1);
-    });
-
-    expect(screen.queryByText("Login Page")).not.toBeInTheDocument();
   });
 });

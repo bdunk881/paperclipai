@@ -11,6 +11,7 @@ import {
   enqueue,
   registerJobHandler,
   activeChainCount,
+  resetQueueForTests,
   RunJob,
 } from "./queue";
 
@@ -27,19 +28,37 @@ async function flushAndAdvance(advanceMs = 0): Promise<void> {
   }
 }
 
+async function waitForQueueIdle(maxIterations = 25, advanceMs = 250): Promise<void> {
+  for (let i = 0; i < maxIterations; i++) {
+    await flushAndAdvance(advanceMs);
+    if (activeChainCount() === 0) {
+      return;
+    }
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Setup
 // ---------------------------------------------------------------------------
 
 beforeEach(() => {
   jest.useFakeTimers();
+  resetQueueForTests();
+  delete process.env.UPSTASH_REDIS_REST_URL;
+  delete process.env.UPSTASH_REDIS_REST_TOKEN;
+  delete (globalThis as { fetch?: typeof fetch }).fetch;
   // Re-register a no-op handler before each test; individual tests override it.
   registerJobHandler(async () => {});
 });
 
-afterEach(() => {
+afterEach(async () => {
+  await waitForQueueIdle();
   jest.useRealTimers();
   jest.clearAllMocks();
+  resetQueueForTests();
+  delete process.env.UPSTASH_REDIS_REST_URL;
+  delete process.env.UPSTASH_REDIS_REST_TOKEN;
+  delete (globalThis as { fetch?: typeof fetch }).fetch;
 });
 
 // ---------------------------------------------------------------------------
@@ -188,5 +207,154 @@ describe("queue — activeChainCount", () => {
     const before = activeChainCount();
     enqueue({ runId: "run-count", templateId: `tpl-unique-${Date.now()}` });
     expect(activeChainCount()).toBeGreaterThan(before);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Upstash-backed mode
+// ---------------------------------------------------------------------------
+
+type MockRedisState = {
+  lists: Map<string, string[]>;
+  sets: Map<string, Set<string>>;
+};
+
+function installMockUpstash(state?: MockRedisState) {
+  const redis: MockRedisState = state ?? {
+    lists: new Map<string, string[]>(),
+    sets: new Map<string, Set<string>>(),
+  };
+
+  process.env.UPSTASH_REDIS_REST_URL = "https://upstash.test";
+  process.env.UPSTASH_REDIS_REST_TOKEN = "test-token";
+
+  const fetchMock = jest.fn(async (_input: string, init?: RequestInit) => {
+    const command = JSON.parse(String(init?.body ?? "[]")) as Array<string | number>;
+    const [name, ...args] = command;
+    const op = String(name).toUpperCase();
+
+    const list = (key: string) => {
+      const current = redis.lists.get(key) ?? [];
+      redis.lists.set(key, current);
+      return current;
+    };
+
+    const set = (key: string) => {
+      const current = redis.sets.get(key) ?? new Set<string>();
+      redis.sets.set(key, current);
+      return current;
+    };
+
+    let result: unknown = null;
+    switch (op) {
+      case "RPUSH": {
+        const key = String(args[0]);
+        const values = args.slice(1).map(String);
+        result = list(key).push(...values);
+        break;
+      }
+      case "LPUSH": {
+        const key = String(args[0]);
+        const values = args.slice(1).map(String);
+        result = list(key).unshift(...values);
+        break;
+      }
+      case "LPOP": {
+        const key = String(args[0]);
+        result = list(key).shift() ?? null;
+        break;
+      }
+      case "LLEN": {
+        result = list(String(args[0])).length;
+        break;
+      }
+      case "SADD": {
+        const key = String(args[0]);
+        const values = args.slice(1).map(String);
+        const current = set(key);
+        let added = 0;
+        for (const value of values) {
+          if (!current.has(value)) {
+            current.add(value);
+            added += 1;
+          }
+        }
+        result = added;
+        break;
+      }
+      case "SMEMBERS": {
+        result = [...set(String(args[0]))];
+        break;
+      }
+      case "SREM": {
+        const current = set(String(args[0]));
+        let removed = 0;
+        for (const value of args.slice(1).map(String)) {
+          if (current.delete(value)) {
+            removed += 1;
+          }
+        }
+        result = removed;
+        break;
+      }
+      default:
+        throw new Error(`Unsupported mock Redis command: ${op}`);
+    }
+
+    return {
+      ok: true,
+      json: async () => ({ result }),
+    } as Response;
+  });
+
+  (globalThis as { fetch?: typeof fetch }).fetch = fetchMock as unknown as typeof fetch;
+  return { redis, fetchMock };
+}
+
+describe("queue — Upstash mode", () => {
+  it("persists jobs in Redis and still processes them in FIFO order per template", async () => {
+    installMockUpstash();
+
+    const order: string[] = [];
+    registerJobHandler(async (job) => {
+      order.push(job.runId);
+    });
+
+    enqueue({ runId: "run-a", templateId: "tpl-support-bot" });
+    enqueue({ runId: "run-b", templateId: "tpl-support-bot" });
+    enqueue({ runId: "run-c", templateId: "tpl-support-bot" });
+
+    await waitForQueueIdle();
+
+    expect(order).toEqual(["run-a", "run-b", "run-c"]);
+  });
+
+  it("retries by requeueing to the front and dead-letters after the final failure", async () => {
+    const { redis } = installMockUpstash();
+    const consoleErrorSpy = jest.spyOn(console, "error").mockImplementation(() => {});
+
+    const attempts: number[] = [];
+    registerJobHandler(async (job) => {
+      attempts.push(job.attempt);
+      throw new Error("always fails");
+    });
+
+    enqueue({ runId: "run-dead", templateId: "tpl-dead" });
+
+    await flushAndAdvance(0);
+    await flushAndAdvance(1100);
+    await flushAndAdvance(2200);
+    await flushAndAdvance(100);
+    await waitForQueueIdle();
+
+    expect(attempts).toEqual([1, 2, 3]);
+
+    const deadLetterKey = "autoflow:workflow-queue:template:tpl-dead:dead";
+    const deadLetters = redis.lists.get(deadLetterKey) ?? [];
+    expect(deadLetters).toHaveLength(1);
+    expect(deadLetters[0]).toContain("\"runId\":\"run-dead\"");
+    expect(deadLetters[0]).toContain("\"attempt\":3");
+
+    consoleErrorSpy.mockRestore();
   });
 });

@@ -1,13 +1,14 @@
 # AutoFlow Infrastructure
 
 Infrastructure docs for the current deployment stack plus the legacy Azure
-estate being retired under [ALT-2325](/ALT/issues/ALT-2325).
+estate being retired under [ALT-2325](/ALT/issues/ALT-2325), including the
+standalone FastAPI staging service on Fly.io.
 
 ## Stack
 
 | Layer | Tool |
 |---|---|
-| Backend hosting | Active non-Azure target plus legacy Azure teardown track |
+| Backend hosting | Active non-Azure target plus Fly.io FastAPI staging and legacy Azure teardown track |
 | Dashboard hosting | Vercel (production) |
 | Container registry | GitHub Container Registry (ghcr.io) |
 | TLS | Platform-managed by active hosts |
@@ -18,6 +19,7 @@ estate being retired under [ALT-2325](/ALT/issues/ALT-2325).
 | App | Platform | Workflow |
 |---|---|---|
 | `backend` | Legacy Azure path pending retirement | `.github/workflows/deploy.yml` |
+| `fastapi-staging` | Fly.io | `.github/workflows/deploy-fly-fastapi-staging.yml` |
 | `dashboard` | Vercel | `.github/workflows/vercel.yml` |
 | `dashboard` branch protection | GitHub Branch API | `.github/workflows/enforce-branch-protection.yml` |
 | `landing` | Vercel | `.github/workflows/vercel.yml` |
@@ -74,10 +76,20 @@ Runtime environment variables required in the Vercel dashboard project:
 | `VITE_AZURE_CIAM_TENANT_DOMAIN` | Optional Entra External ID tenant domain path segment (for example `autoflowciam.onmicrosoft.com`) |
 | `QA_PREVIEW_ACCESS_TOKEN` | Preview-only shared secret used by `/api/qa-preview-access` to unlock smoke-test access for protected dashboard routes |
 
+### FastAPI staging (Fly.io)
+
+| Secret / Variable | Description |
+|---|---|
+| `FLY_API_TOKEN` | App-scoped Fly.io deploy token for `autoflow-fastapi-staging` |
+| `FLY_STAGING_APP_NAME` | Optional override for the Fly app name |
+| `FLY_STAGING_BASE_URL` | Optional override for the public Fly hostname used by smoke checks |
+| `FLY_STAGING_SMOKE_USER_ID` | Optional user id sent through the staging smoke requests |
+
 ## Daily operations
 
 - **Deploy backend staging:** legacy Azure path only while teardown remains incomplete — `.github/workflows/deploy-azure.yml` builds the backend image, deploys the staging Container App, and runs the staging smoke checks.
 - **Deploy backend production:** treat `.github/workflows/deploy-azure.yml` as a legacy path during the ALT-2325 cutover window; do not use it as the default production source of truth after the non-Azure API cutover completes.
+- **Deploy FastAPI staging service:** push to `staging` with `backend/**`, `docker/backend/Dockerfile`, `fly.toml`, or `infra/scripts/fly_fastapi_smoke.sh` changes — `.github/workflows/deploy-fly-fastapi-staging.yml` deploys `autoflow-fastapi-staging` on Fly.io and runs live knowledge-API smoke checks.
 - **Promotion flow:** agents open feature-branch PRs into `staging`; production promotion happens through a dedicated `staging` -> `master` PR after staging validation passes.
 - **Preview dashboard:** non-production dashboard branches use `.github/workflows/dashboard-staging-gate.yml` to create Vercel preview deployments.
 - **Deploy dashboard production:** push to `master` with `dashboard/` changes — GitHub Actions deploys the Vercel production path.
@@ -115,6 +127,12 @@ to verify and remove any remaining Azure-bound records during Phase 5.
 - Smoke script: `infra/scripts/qa_integration_smoke.sh`
 - Runbook: `infra/runbooks/qa-integration-environment.md`
 - Tier 1 release path: `infra/runbooks/tier1-connector-release.md`
+
+## FastAPI Fly.io staging
+
+- Workflow: `.github/workflows/deploy-fly-fastapi-staging.yml`
+- Smoke script: `infra/scripts/fly_fastapi_smoke.sh`
+- Runbook: `infra/runbooks/fly-fastapi-staging.md`
 
 ## Observability Rollups
 

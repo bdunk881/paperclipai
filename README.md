@@ -135,8 +135,9 @@ autoflow/
 ## Deployment
 
 AutoFlow deployment docs are in transition during the Azure exit tracked by
-[ALT-2325](/ALT/issues/ALT-2325). See [`infra/README.md`](infra/README.md) for
-the current platform overview and
+[ALT-2325](/ALT/issues/ALT-2325). The standalone FastAPI knowledge-service
+staging app deploys on Fly.io. See [`infra/README.md`](infra/README.md) for the
+current platform overview and
 [`infra/runbooks/azure-cutover-decommission.md`](infra/runbooks/azure-cutover-decommission.md)
 for the final Azure cutover and teardown sequence.
 

@@ -84,9 +84,16 @@ jobs:
         run: |
           set -euo pipefail
 
-          extra_args=()
+          branch_name=""
           if [ "${{ github.event_name }}" = "pull_request" ]; then
-            extra_args+=("--branch=${{ github.head_ref }}")
+            branch_name="${{ github.head_ref }}"
+          elif [ "${{ github.ref_name }}" != "migration" ]; then
+            branch_name="${{ github.ref_name }}"
+          fi
+
+          extra_args=()
+          if [ -n "$branch_name" ]; then
+            extra_args+=("--branch=$branch_name")
           fi
 
           deploy_output="$(npx wrangler@4 pages deploy "${{ matrix.output_directory }}" --project-name="${{ matrix.project_name }}" "${extra_args[@]}" 2>&1)"
@@ -101,7 +108,7 @@ jobs:
           echo "deploy_url=$deploy_url" >> "$GITHUB_OUTPUT"
 
       - name: Smoke test deployment
-        run: ./infra/scripts/cloudflare_pages_smoke.sh "${{ matrix.label }}" "${{ steps.deploy.outputs.deploy_url }}"
+        run: bash ./infra/scripts/cloudflare_pages_smoke.sh "${{ matrix.label }}" "${{ steps.deploy.outputs.deploy_url }}"
 
       - name: Summarize deployment
         run: |

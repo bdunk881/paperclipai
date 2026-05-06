@@ -102,7 +102,7 @@ main.tf
   ├── module.aks         (AKS cluster + Log Analytics)
   │       └── depends on: spoke (aks_subnet_id), acr (acr_id)
   ├── module.management  (Management Groups, RBAC, Key Vault policies)
-  │       └── depends on: hub (key_vault_id), aks (kubelet_identity_object_id)
+  │       └── depends on: hub (key_vault_id), explicit workload principal IDs
   ├── module.monitoring  (App Insights, metric alerts)
   │       └── depends on: aks (cluster_id, log_analytics_workspace_id)
   ├── module.policy      (Azure Policy, initiative assignments)

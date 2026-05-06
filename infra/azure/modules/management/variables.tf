@@ -23,15 +23,16 @@ variable "monitoring_principal_ids" {
   default     = []
 }
 
-# ── AKS Workload Identity ─────────────────────────────────────────────────────
+# ── Workload Key Vault Access ─────────────────────────────────────────────────
 
-variable "aks_workload_identity_principal_id" {
-  description = "Object ID of the AKS workload identity (user-assigned managed identity or federated SA) needing Key Vault Secrets User"
-  type        = string
+variable "key_vault_secrets_user_principal_ids" {
+  description = "Object IDs for workload managed identities that need Key Vault Secrets User on the hub Key Vault"
+  type        = list(string)
+  default     = []
 }
 
 variable "key_vault_id" {
-  description = "Resource ID of the hub Key Vault for AKS workload identity RBAC assignment"
+  description = "Resource ID of the hub Key Vault for workload RBAC assignments"
   type        = string
 }
 

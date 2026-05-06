@@ -86,6 +86,7 @@ require_json_detail_not_equal() {
     exit 1
   fi
 }
+
 tmp_dir="$(mktemp -d)"
 trap 'rm -rf "$tmp_dir"' EXIT
 

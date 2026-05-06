@@ -17,11 +17,11 @@ const jetbrainsMono = JetBrains_Mono({
 export const metadata: Metadata = {
   title: "AutoFlow — Agent-Native Automation | Operating Layer for SMB Operators and Dev Teams",
   description:
-    "AutoFlow is the agent-native automation platform for SMB operators and dev teams. BYOLLM + persistent multi-agent memory + MCP-native runtime — the only stack that gives agents all three. 22-skill marketplace. Built by Altitude Media.",
+    "AutoFlow is the agent-native automation platform for lean SMB operators and dev teams. BYOLLM, MCP-standard, 22-skill marketplace. Built by Altitude Media.",
   openGraph: {
     title: "AutoFlow — Agent-Native Automation | Operating Layer for SMB Operators and Dev Teams",
     description:
-      "AutoFlow is the agent-native automation platform for SMB operators and dev teams. BYOLLM + persistent multi-agent memory + MCP-native runtime — the only stack that gives agents all three. 22-skill marketplace. Built by Altitude Media.",
+      "AutoFlow is the agent-native automation platform for lean SMB operators and dev teams. BYOLLM, MCP-standard, 22-skill marketplace. Built by Altitude Media.",
     type: "website",
     siteName: "AutoFlow — Agent-Native Automation",
   },
@@ -29,7 +29,7 @@ export const metadata: Metadata = {
     card: "summary_large_image",
     title: "AutoFlow — Agent-Native Automation | Operating Layer for SMB Operators and Dev Teams",
     description:
-      "AutoFlow is the agent-native automation platform for SMB operators and dev teams. BYOLLM + persistent multi-agent memory + MCP-native runtime — the only stack that gives agents all three. 22-skill marketplace. Built by Altitude Media.",
+      "AutoFlow is the agent-native automation platform for lean SMB operators and dev teams. BYOLLM, MCP-standard, 22-skill marketplace. Built by Altitude Media.",
   },
 };
 

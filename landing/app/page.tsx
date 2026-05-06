@@ -82,19 +82,13 @@ const STATS = [
 
 const FEATURES = [
   {
-    title: "First-Class MCP Runtime — Not a Side Panel",
-    description:
-      "AutoFlow is built on the Model Context Protocol from the ground up. Every skill is an MCP server. Plug in any MCP-compatible tool as a first-class agent capability — no adapter shim, no side integration.",
-  },
-  {
-    title: "BYOLLM + Persistent Memory + MCP-Native — All Three",
-    description:
-      "Model choice, cross-run agent memory, and MCP-native execution in one stack. BYOLLM alone is now table-stakes — AutoFlow is the only platform that packages all three together.",
+    title: "Bring Your Own LLM — No Lock-In",
+    description: "Connect any LLM provider. Switch models without rebuilding. You own the AI layer.",
   },
   {
     title: "22 Agent Skills. One Marketplace.",
     description:
-      "A skill is a managed, memory-aware, multi-step automation — not a raw trigger or connector. Slack, GitHub, Linear, Notion, Stripe, PostgreSQL, and 16 more. Expanding weekly.",
+      "Slack, GitHub, Linear, Notion, Stripe, PostgreSQL, and 16 more. Skill marketplace expanding weekly.",
   },
   {
     title: "See Everything, Control Anything",
@@ -260,16 +254,16 @@ export default function Home() {
             <p className="eyebrow">The Electric Lab for operational teams</p>
             <h1>The AI-Native Operating Layer for SMB Operators and Developer Teams</h1>
             <p className="hero-copy__lede">
-              BYOLLM, MCP-native runtime, and persistent multi-agent memory — the only stack that
-              gives agents all three. Built for lean operators and dev teams who ship on live systems.
+              Agent-native automation for lean operators and dev teams who can&#39;t afford brittle
+              automations. MCP-standard, BYOLLM-ready, and built by Altitude Media.
             </p>
             <div id="waitlist">
               <WaitlistForm className="hero-copy__form" buttonLabel="Join waitlist" />
             </div>
             <div className="hero-copy__signals" aria-label="Platform signals">
               <span>AI-native execution</span>
-              <span>MCP-native runtime</span>
-              <span>BYOLLM + persistent memory</span>
+              <span>MCP-standard integrations</span>
+              <span>Bring your own LLM</span>
             </div>
           </div>
 
@@ -349,12 +343,6 @@ export default function Home() {
             every workflow legible as you scale.
           </p>
         </div>
-
-        <p className="marketplace-skill-note">
-          A <strong>skill</strong> is a managed, memory-aware multi-step automation owned by AutoFlow
-          — not a trigger or a raw connector. There is a meaningful difference between 22 skills
-          and 8,000 webhooks.
-        </p>
 
         <div className="marketplace-grid">
           {MARKETPLACE_TILES.map((tile) => (

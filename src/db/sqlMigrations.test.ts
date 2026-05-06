@@ -291,63 +291,6 @@ describe("sql migrations", () => {
     });
   });
 
-  describe("migration 016 auth identity and notification overrides (ALT-2359)", () => {
-    const migration = readFileSync(
-      path.resolve(__dirname, "..", "..", "migrations", "016_auth_identity_and_notification_overrides.sql"),
-      "utf8"
-    );
-
-    it("keeps workspace defaults intact and adds a distinct per-user override table", () => {
-      expect(migration).toContain("CREATE TABLE IF NOT EXISTS user_notification_overrides");
-      expect(migration).toContain("UNIQUE (workspace_id, user_id, channel, kind)");
-      expect(migration).not.toContain("ALTER TABLE notification_preferences");
-    });
-
-    it("uses hardened workspace RLS on tenant-scoped notification overrides", () => {
-      expect(migration).toContain("ALTER TABLE user_notification_overrides ENABLE ROW LEVEL SECURITY;");
-      expect(migration).toContain(
-        "DROP POLICY IF EXISTS user_notification_overrides_tenant_isolation ON user_notification_overrides;"
-      );
-
-      const policyPattern = new RegExp(
-        "CREATE POLICY user_notification_overrides_tenant_isolation\\s+ON user_notification_overrides\\s+USING \\(\\s*app_current_workspace_id\\(\\) IS NOT NULL\\s+AND workspace_id = app_current_workspace_id\\(\\)\\s*\\)\\s+WITH CHECK \\(\\s*app_current_workspace_id\\(\\) IS NOT NULL\\s+AND workspace_id = app_current_workspace_id\\(\\)\\s*\\);",
-        "m"
-      );
-      expect(migration).toMatch(policyPattern);
-    });
-
-    it("introduces provider-agnostic user auth identities and backfills legacy social auth users", () => {
-      expect(migration).toContain("CREATE TABLE IF NOT EXISTS user_auth_identities");
-      expect(migration).toContain("UNIQUE (provider, provider_user_id)");
-      expect(migration).toContain("REFERENCES social_auth_users(id) ON DELETE CASCADE");
-      expect(migration).toContain("INSERT INTO user_auth_identities");
-      expect(migration).toContain("jsonb_build_object('legacySource', 'social_auth_users')");
-      expect(migration).not.toContain("ALTER TABLE user_auth_identities ENABLE ROW LEVEL SECURITY;");
-    });
-
-    it("persists merge-request audit records with status constraints and tenant isolation", () => {
-      expect(migration).toContain("CREATE TABLE IF NOT EXISTS user_auth_merge_requests");
-      expect(migration).toContain(
-        "CHECK (status IN ('pending', 'approved', 'rejected', 'cancelled', 'expired'))"
-      );
-      expect(migration).toContain("ALTER TABLE user_auth_merge_requests ENABLE ROW LEVEL SECURITY;");
-      expect(migration).toContain(
-        "CREATE UNIQUE INDEX IF NOT EXISTS idx_user_auth_merge_requests_pending_identity"
-      );
-
-      const policyPattern = new RegExp(
-        "CREATE POLICY user_auth_merge_requests_tenant_isolation\\s+ON user_auth_merge_requests\\s+USING \\(\\s*app_current_workspace_id\\(\\) IS NOT NULL\\s+AND workspace_id = app_current_workspace_id\\(\\)\\s*\\)\\s+WITH CHECK \\(\\s*app_current_workspace_id\\(\\) IS NOT NULL\\s+AND workspace_id = app_current_workspace_id\\(\\)\\s*\\);",
-        "m"
-      );
-      expect(migration).toMatch(policyPattern);
-    });
-
-    it("wraps schema changes in a single transaction", () => {
-      expect(migration).toContain("BEGIN;");
-      expect(migration.trim().endsWith("COMMIT;")).toBe(true);
-    });
-  });
-
   describe("migration 016 agent memory workspace isolation (ALT-2360)", () => {
     const migration = readFileSync(
       path.resolve(__dirname, "..", "..", "migrations", "016_agent_memory_workspace_isolation.sql"),

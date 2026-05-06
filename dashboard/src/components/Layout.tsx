@@ -16,6 +16,7 @@ import {
   ScrollText,
   Bot,
   BotMessageSquare,
+  Repeat,
   Network,
   BarChart3,
   BriefcaseBusiness,
@@ -57,6 +58,7 @@ const NAV_SECTIONS: Array<{ title: string; items: NavItem[] }> = [
       { to: "/agents", icon: Bot, label: "Agent Catalog" },
       { to: "/agents/my", icon: Bot, label: "My Agents" },
       { to: "/agents/activity", icon: BotMessageSquare, label: "Agent Activity" },
+      { to: "/agents/routines", icon: Repeat, label: "Routines" },
     ],
   },
   {

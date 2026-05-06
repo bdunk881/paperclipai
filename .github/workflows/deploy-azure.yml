@@ -825,11 +825,9 @@ jobs:
           require_env_key "ALLOWED_ORIGINS"
           require_env_key "APP_JWT_SECRET"
           require_env_key "APP_JWT_EXPIRES_IN"
-          require_any_env_key "AZURE_CIAM_TENANT_ID" "AZURE_TENANT_ID"
-          require_any_env_key "AZURE_CIAM_TENANT_SUBDOMAIN" "AZURE_TENANT_SUBDOMAIN"
-          require_any_env_key "AZURE_CIAM_CLIENT_ID" "AZURE_CIAM_ALLOWED_AUDIENCES" "AZURE_CLIENT_ID"
-          require_env_key "AZURE_CIAM_AUTHORITY"
-          require_env_key "AUTH_NATIVE_AUTH_PROXY_BASE_URL"
+          require_env_key "AZURE_TENANT_ID"
+          require_env_key "AZURE_TENANT_SUBDOMAIN"
+          require_env_key "AZURE_CLIENT_ID"
 
           require_origin_in_allowlist() {
             local key="$1"
@@ -850,27 +848,10 @@ jobs:
             require_origin_in_allowlist "AUTH_NATIVE_AUTH_PROXY_ALLOWED_ORIGINS" "https://staging.app.helloautoflow.com"
           fi
 
-          TENANT_ID_VALUE="$(read_env_value "AZURE_CIAM_TENANT_ID")"
-          if [ -z "$TENANT_ID_VALUE" ]; then
-            TENANT_ID_VALUE="$(read_env_value "AZURE_TENANT_ID")"
-          fi
-
-          TENANT_SUBDOMAIN_VALUE="$(read_env_value "AZURE_CIAM_TENANT_SUBDOMAIN")"
-          if [ -z "$TENANT_SUBDOMAIN_VALUE" ]; then
-            TENANT_SUBDOMAIN_VALUE="$(read_env_value "AZURE_TENANT_SUBDOMAIN")"
-          fi
-
-          TENANT_ID_VALUE="$(printf '%s' "$TENANT_ID_VALUE" | tr -d '\r' | xargs)"
-          TENANT_SUBDOMAIN_VALUE="$(printf '%s' "$TENANT_SUBDOMAIN_VALUE" | tr -d '\r' | xargs)"
-          EXPECTED_CIAM_AUTHORITY="https://${TENANT_SUBDOMAIN_VALUE}.ciamlogin.com/${TENANT_ID_VALUE}"
-
           if [ "$(normalize_https_url "$(read_env_value "APP_JWT_EXPIRES_IN")")" != "8h" ]; then
             echo "::error::AZURE_BACKEND_ENV_PRODUCTION must set APP_JWT_EXPIRES_IN=8h"
             exit 1
           fi
-
-          require_exact_env_value "AZURE_CIAM_AUTHORITY" "$EXPECTED_CIAM_AUTHORITY"
-          require_exact_env_value "AUTH_NATIVE_AUTH_PROXY_BASE_URL" "$EXPECTED_CIAM_AUTHORITY"
 
           kubectl apply -f k8s/production/namespace.yaml
           kubectl create secret generic "${{ steps.target.outputs.k8s_secret_name }}" \
@@ -1004,52 +985,6 @@ jobs:
           if [ "$TLS_RUNS_STATUS" != "401" ]; then
             echo "::error::Expected HTTPS /api/runs through ingress to require auth with 401, got $TLS_RUNS_STATUS"
             cat /tmp/tls-runs.json || true
-            exit 1
-          fi
-
-          NATIVE_AUTH_STATUS=""
-          for i in $(seq 1 10); do
-            NATIVE_AUTH_STATUS=$(curl -sS --connect-timeout 10 \
-              --resolve "${{ steps.target.outputs.api_host }}:443:${INGRESS_TARGET}" \
-              -H "Origin: https://app.helloautoflow.com" \
-              -H "Content-Type: application/x-www-form-urlencoded" \
-              -H "Accept: application/json" \
-              --data "client_id=smoke-client&scope=openid%20profile%20email&username=smoke%40helloautoflow.test&challenge_type=oob%20password%20redirect" \
-              -o /tmp/native-auth-initiate.json -w "%{http_code}" \
-              "https://${{ steps.target.outputs.api_host }}/api/auth/native/oauth2/v2.0/initiate" || true)
-            echo "Attempt $i: native auth initiate => $NATIVE_AUTH_STATUS"
-            if [ "$NATIVE_AUTH_STATUS" = "200" ] || [ "$NATIVE_AUTH_STATUS" = "400" ]; then
-              break
-            fi
-            sleep 5
-          done
-
-          if [ "$NATIVE_AUTH_STATUS" != "200" ] && [ "$NATIVE_AUTH_STATUS" != "400" ]; then
-            echo "::error::Expected native auth initiate smoke check to return 200/400 through ingress, got $NATIVE_AUTH_STATUS"
-            cat /tmp/native-auth-initiate.json || true
-            exit 1
-          fi
-
-          STAGING_NATIVE_AUTH_STATUS=""
-          for i in $(seq 1 10); do
-            STAGING_NATIVE_AUTH_STATUS=$(curl -sS --connect-timeout 10 \
-              --resolve "${{ steps.target.outputs.api_host }}:443:${INGRESS_TARGET}" \
-              -H "Origin: https://staging.app.helloautoflow.com" \
-              -H "Content-Type: application/x-www-form-urlencoded" \
-              -H "Accept: application/json" \
-              --data "client_id=smoke-client&scope=openid%20profile%20email&username=smoke%40helloautoflow.test&challenge_type=oob%20password%20redirect" \
-              -o /tmp/native-auth-initiate-staging.json -w "%{http_code}" \
-              "https://${{ steps.target.outputs.api_host }}/api/auth/native/oauth2/v2.0/initiate" || true)
-            echo "Attempt $i: staging native auth initiate => $STAGING_NATIVE_AUTH_STATUS"
-            if [ "$STAGING_NATIVE_AUTH_STATUS" = "200" ] || [ "$STAGING_NATIVE_AUTH_STATUS" = "400" ]; then
-              break
-            fi
-            sleep 5
-          done
-
-          if [ "$STAGING_NATIVE_AUTH_STATUS" != "200" ] && [ "$STAGING_NATIVE_AUTH_STATUS" != "400" ]; then
-            echo "::error::Expected staging native auth initiate smoke check to return 200/400 through ingress, got $STAGING_NATIVE_AUTH_STATUS"
-            cat /tmp/native-auth-initiate-staging.json || true
             exit 1
           fi
 

@@ -205,10 +205,6 @@ jobs:
             FASTAPI_EDGE_RELAY_BASE_URL="${{ steps.settings.outputs.relay_base_url }}" \
             FASTAPI_EDGE_RELAY_HOST_HEADER="${{ steps.settings.outputs.relay_host_header }}" \
             FASTAPI_EDGE_RELAY_INSECURE_TLS="${{ steps.settings.outputs.relay_insecure_tls }}" \
-            AUTH_NATIVE_AUTH_PROXY_BASE_URL="https://${{ vars.AZURE_CIAM_TENANT_SUBDOMAIN }}.ciamlogin.com/${{ vars.AZURE_CIAM_TENANT_ID }}" \
-            AZURE_CIAM_AUTHORITY="https://${{ vars.AZURE_CIAM_TENANT_SUBDOMAIN }}.ciamlogin.com/${{ vars.AZURE_CIAM_TENANT_ID }}" \
-            AZURE_CIAM_TENANT_SUBDOMAIN="${{ vars.AZURE_CIAM_TENANT_SUBDOMAIN }}" \
-            AZURE_CIAM_TENANT_ID="${{ vars.AZURE_CIAM_TENANT_ID }}" \
             --app "${{ steps.settings.outputs.app_name }}"
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}

@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { motion } from "framer-motion";
 import Link from "next/link";
+import { buildLandingApiUrl } from "@/lib/publicApi";
 
 export function FinalCTA() {
   const [email, setEmail] = useState("");
@@ -12,7 +13,7 @@ export function FinalCTA() {
     e.preventDefault();
     setStatus("loading");
     try {
-      const res = await fetch("/api/subscribe", {  // POST → Zapier webhook → Attio
+      const res = await fetch(buildLandingApiUrl("/api/public/landing/subscribe"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email }),

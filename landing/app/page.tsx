@@ -3,6 +3,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { useId, useState } from "react";
+import { buildLandingApiUrl } from "@/lib/publicApi";
 
 const MARKETPLACE_TILES = [
   {
@@ -117,7 +118,7 @@ function WaitlistForm({
     setError("");
 
     try {
-      const response = await fetch("/api/waitlist-signup", {
+      const response = await fetch(buildLandingApiUrl("/api/public/landing/waitlist-signup"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email: normalizedEmail }),

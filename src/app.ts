@@ -93,6 +93,7 @@ import {
   getPortableWorkflowSchemaDescriptor,
   parsePortableWorkflowBundle,
 } from "./workflows/portableSchema";
+import landingPublicApiRoutes from "./landing/publicApiRoutes";
 
 import { getImportedTemplate, saveImportedTemplate } from "./templates/importedTemplateStore";
 import { getConnectorHealthSummary, listConnectorHealth } from "./connectors/health";
@@ -307,6 +308,7 @@ app.use("/api/webhooks/apollo", apolloWebhookRoutes);
 // ---------------------------------------------------------------------------
 app.use("/api/billing/checkout", requireAuth, billingMutationRateLimiter, checkoutRoutes);
 app.use("/api/billing/subscription", requireAuth, billingMutationRateLimiter, subscriptionRoutes);
+app.use("/api/public/landing", landingPublicApiRoutes);
 
 // ---------------------------------------------------------------------------
 // LLM Config API — BYOLLM provider credentials

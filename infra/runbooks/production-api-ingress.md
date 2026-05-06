@@ -100,6 +100,13 @@ It also is not considered healthy until a native-auth initiate probe to
 `/api/auth/native/oauth2/v2.0/initiate` reaches the upstream over TLS and
 returns an application response (`200` or `400`) instead of a proxy failure.
 
+For the actual public cutover, use the repo-managed GitHub Actions workflow
+`.github/workflows/cutover-production-api-dns.yml`. It resolves the live AKS
+ingress endpoint from Azure, re-verifies `/health` and the Apollo OAuth route
+through the ingress with `curl --resolve`, updates the Cloudflare `api` record,
+and then verifies both the public API host and `app.helloautoflow.com`'s
+same-origin rewrite against the corrected backend.
+
 ## Current Gap
 
 As of 2026-04-25 with cert-manager automation prepared in-repo:

@@ -54,6 +54,8 @@ EXCLUDED_RELAY_REQUEST_HEADERS = {
 DEFAULT_CIAM_TENANT_SUBDOMAIN = "autoflowciam"
 DEFAULT_CIAM_TENANT_ID = "5e4f1080-8afc-4005-b05e-32b21e69363a"
 RELAY_BASE_URL_ENV = "FASTAPI_EDGE_RELAY_BASE_URL"
+RELAY_HOST_HEADER_ENV = "FASTAPI_EDGE_RELAY_HOST_HEADER"
+RELAY_INSECURE_TLS_ENV = "FASTAPI_EDGE_RELAY_INSECURE_TLS"
 
 
 def normalize_https_url(value: str | None) -> str | None:
@@ -147,6 +149,21 @@ def correlation_id(request: Request) -> str:
     return str(uuid4())
 
 
+def resolve_relay_host_header() -> str | None:
+    value = os.getenv(RELAY_HOST_HEADER_ENV)
+    if not value:
+        return None
+    normalized = value.strip()
+    return normalized or None
+
+
+def resolve_relay_insecure_tls() -> bool:
+    value = os.getenv(RELAY_INSECURE_TLS_ENV)
+    if not value:
+        return False
+    return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
 def copy_response_headers(headers: httpx.Headers) -> dict[str, str]:
     copied: dict[str, str] = {}
     for header_name in FORWARDED_RESPONSE_HEADERS:
@@ -168,11 +185,15 @@ def native_auth_request_headers(request: Request, correlation: str) -> dict[str,
 
 
 def relay_request_headers(request: Request) -> dict[str, str]:
-    return {
+    headers = {
         name: value
         for name, value in request.headers.items()
         if name.lower() not in EXCLUDED_RELAY_REQUEST_HEADERS
     }
+    relay_host_header = resolve_relay_host_header()
+    if relay_host_header:
+        headers["host"] = relay_host_header
+    return headers
 
 
 def serialize_form_body(data: dict[str, object]) -> str:
@@ -223,6 +244,8 @@ async def send_upstream_request(
     url: str,
     headers: dict[str, str],
     body: bytes | None,
+    *,
+    verify_ssl: bool = True,
 ) -> httpx.Response:
-    async with httpx.AsyncClient(follow_redirects=False, timeout=20.0) as client:
+    async with httpx.AsyncClient(follow_redirects=False, timeout=20.0, verify=verify_ssl) as client:
         return await client.request(method, url, headers=headers, content=body)

@@ -1,4 +1,3 @@
-import { NextRequest, NextResponse } from "next/server";
 import { getStripe, PRICING_TIERS } from "@/lib/stripe";
 
 interface CheckoutBody {
@@ -9,25 +8,25 @@ interface CheckoutBody {
   userId?: string;
 }
 
-export async function POST(req: NextRequest) {
+export async function action({ request }: { request: Request }) {
   const { tier, email, firstName, companyName, userId } =
-    (await req.json()) as CheckoutBody;
+    (await request.json()) as CheckoutBody;
 
   if (!tier || !(tier in PRICING_TIERS)) {
-    return NextResponse.json({ error: "Invalid tier" }, { status: 400 });
+    return Response.json({ error: "Invalid tier" }, { status: 400 });
   }
 
   const pricingTier = PRICING_TIERS[tier as keyof typeof PRICING_TIERS];
 
   if (!pricingTier.priceId) {
-    return NextResponse.json(
+    return Response.json(
       { error: "This tier does not require checkout" },
       { status: 400 }
     );
   }
 
   if (!process.env.STRIPE_SECRET_KEY || pricingTier.priceId.includes("placeholder")) {
-    return NextResponse.json(
+    return Response.json(
       { error: "Stripe checkout not yet configured." },
       { status: 503 }
     );
@@ -39,12 +38,10 @@ export async function POST(req: NextRequest) {
       mode: "subscription",
       payment_method_types: ["card"],
       line_items: [{ price: pricingTier.priceId, quantity: 1 }],
-      success_url: `${process.env.NEXT_PUBLIC_BASE_URL ?? ""}/success?session_id={CHECKOUT_SESSION_ID}`,
-      cancel_url: `${process.env.NEXT_PUBLIC_BASE_URL ?? ""}/#pricing`,
+      success_url: `${process.env.NEXT_PUBLIC_BASE_URL ?? process.env.BASE_URL ?? ""}/success?session_id={CHECKOUT_SESSION_ID}`,
+      cancel_url: `${process.env.NEXT_PUBLIC_BASE_URL ?? process.env.BASE_URL ?? ""}/#pricing`,
       allow_promotion_codes: true,
-      // Pre-fill email if provided by authenticated user
       ...(email ? { customer_email: email } : {}),
-      // Store user context for webhook processing
       metadata: {
         tier,
         ...(email ? { email } : {}),
@@ -54,9 +51,9 @@ export async function POST(req: NextRequest) {
       },
     });
 
-    return NextResponse.json({ url: session.url });
+    return Response.json({ url: session.url });
   } catch (err) {
     console.error("Stripe checkout error:", err);
-    return NextResponse.json({ error: "Failed to create checkout session" }, { status: 500 });
+    return Response.json({ error: "Failed to create checkout session" }, { status: 500 });
   }
 }

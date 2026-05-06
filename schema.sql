@@ -34,10 +34,8 @@ ALTER SCHEMA observability OWNER TO paperclip;
 CREATE EXTENSION IF NOT EXISTS pgcrypto WITH SCHEMA public;
 
 
+-- Name: EXTENSION pgcrypto; Type: COMMENT; Schema: -; Owner:
 --
--- Name: EXTENSION pgcrypto; Type: COMMENT; Schema: -; Owner: 
---
-
 COMMENT ON EXTENSION pgcrypto IS 'cryptographic functions';
 
 
@@ -4833,4 +4831,3 @@ CREATE POLICY workspaces_tenant_isolation ON public.workspaces USING (((public.a
 --
 
 \unrestrict N89ikM41IW4kkK9CYCd8bPa0YMtCkgSp7PToBFnRx6dXRsjY1tGa3h5eosuergY
-

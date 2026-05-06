@@ -6,7 +6,7 @@ import { useAuth } from "../context/AuthContext";
 import { apiGet } from "../api/settingsClient";
 
 type MissionStatus = "On Track" | "At Risk" | "Blocked" | "Off Track" | "Not Started";
-type CardState = "ready" | "loading" | "empty" | "error";
+export type CardState = "ready" | "loading" | "empty" | "error";
 type CardKey = "header" | "health" | "readiness" | "blockers" | "actions" | "timeline";
 
 interface MissionAction {
@@ -28,7 +28,7 @@ interface ControlPlaneTeamSummary {
   name: string;
 }
 
-interface BackendMissionState {
+export interface BackendMissionState {
   teamId: string;
   title: string;
   objective: string | null;
@@ -58,7 +58,7 @@ interface BackendMissionState {
   };
 }
 
-interface MissionStateRecord {
+export interface MissionStateRecord {
   title: string;
   objective: string;
   overallStatus: MissionStatus;
@@ -81,7 +81,6 @@ interface MissionStateRecord {
 }
 
 type MissionCardStates = Partial<Record<CardKey, CardState>>;
-
 function getCardState(states: MissionCardStates, key: CardKey): CardState {
   return states[key] ?? "ready";
 }
@@ -98,7 +97,10 @@ function toDisplayStatus(status: BackendMissionState["overallStatus"]): MissionS
   return statusMap[status];
 }
 
-function buildMissionRecordFromBackend(missionState: BackendMissionState): MissionStateRecord {
+// eslint-disable-next-line react-refresh/only-export-components
+export function buildMissionRecordFromBackend(
+  missionState: BackendMissionState
+): MissionStateRecord {
   const blockersAndRisks = Array.from(new Set([...missionState.topBlockers, ...missionState.risks]));
   const overallStatus = toDisplayStatus(missionState.overallStatus);
   const confidence =
@@ -203,7 +205,8 @@ function MissionStatusBadge({ status }: { status: MissionStatus }) {
   );
 }
 
-function extractTeams(payload: unknown): ControlPlaneTeamSummary[] {
+// eslint-disable-next-line react-refresh/only-export-components
+export function extractTeams(payload: unknown): ControlPlaneTeamSummary[] {
   if (Array.isArray(payload)) {
     return payload as ControlPlaneTeamSummary[];
   }
@@ -562,7 +565,11 @@ function buildStates(stateParam: string | null): MissionCardStates {
   return {};
 }
 
-export default function MissionState() {
+export default function MissionState({
+  initialData,
+}: {
+  initialData?: { record: MissionStateRecord | null; loadState: CardState };
+} = {}) {
   const location = useLocation();
   const { user, requireAccessToken } = useAuth();
   const searchParams = useMemo(() => new URLSearchParams(location.search), [location.search]);
@@ -570,8 +577,10 @@ export default function MissionState() {
   const focus = searchParams.get("focus");
   const simulatedState = searchParams.get("state");
   const selectedTeamId = searchParams.get("teamId");
-  const [missionRecord, setMissionRecord] = useState<MissionStateRecord | null>(null);
-  const [loadState, setLoadState] = useState<CardState>("loading");
+  const [missionRecord, setMissionRecord] = useState<MissionStateRecord | null>(
+    () => initialData?.record ?? null
+  );
+  const [loadState, setLoadState] = useState<CardState>(() => initialData?.loadState ?? "loading");
 
   useEffect(() => {
     document.title = "Mission State | AutoFlow";
@@ -581,6 +590,10 @@ export default function MissionState() {
     if (simulatedState === "loading" || simulatedState === "empty" || simulatedState === "error") {
       setLoadState(simulatedState);
       setMissionRecord(null);
+      return;
+    }
+
+    if (initialData) {
       return;
     }
 
@@ -625,7 +638,7 @@ export default function MissionState() {
     return () => {
       cancelled = true;
     };
-  }, [requireAccessToken, selectedTeamId, simulatedState, user]);
+  }, [initialData, requireAccessToken, selectedTeamId, simulatedState, user]);
 
   useEffect(() => {
     if (!focus) return;

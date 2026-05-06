@@ -38,40 +38,142 @@ jobs:
       - run: pytest tests/test_knowledge_api.py -q
 
   deploy:
-    name: Deploy Fly.io staging app
+    name: Deploy staging Fly.io app
     runs-on: ubuntu-latest
     needs: validate-backend
     environment: staging
     env:
-      FASTAPI_FLY_APP: ${{ vars.FLY_STAGING_APP_NAME != '' && vars.FLY_STAGING_APP_NAME || 'autoflow-fastapi-staging' }}
-      FASTAPI_FLY_BASE_URL: ${{ vars.FLY_STAGING_BASE_URL != '' && vars.FLY_STAGING_BASE_URL || 'https://autoflow-fastapi-staging.fly.dev' }}
-      FASTAPI_SMOKE_USER_ID: ${{ vars.FLY_STAGING_SMOKE_USER_ID != '' && vars.FLY_STAGING_SMOKE_USER_ID || 'qa-smoke-user' }}
+      FLY_DEPLOY_ENV: staging
+      FLY_STAGING_APP_FALLBACK: autoflow-fastapi-staging
+      FLY_STAGING_BASE_URL_FALLBACK: https://autoflow-fastapi-staging.fly.dev
+      FLY_SHARED_SMOKE_USER_FALLBACK: qa-smoke-user
+      FLY_STAGING_ALLOWED_ORIGINS: https://staging.helloautoflow.com,https://staging.app.helloautoflow.com,https://app.helloautoflow.com
     steps:
       - uses: actions/checkout@v5
+
+      - name: Resolve Fly deployment settings
+        id: settings
+        run: |
+          set -euo pipefail
+          app_name="${{ vars.FLY_STAGING_APP_NAME }}"
+          if [[ -z "$app_name" ]]; then
+            app_name="${FLY_STAGING_APP_FALLBACK}"
+          fi
+
+          base_url="${{ vars.FLY_STAGING_BASE_URL }}"
+          if [[ -z "$base_url" ]]; then
+            base_url="${FLY_STAGING_BASE_URL_FALLBACK}"
+          fi
+
+          smoke_user_id="${{ vars.FLY_STAGING_SMOKE_USER_ID }}"
+          if [[ -z "$smoke_user_id" ]]; then
+            smoke_user_id="${FLY_SHARED_SMOKE_USER_FALLBACK}"
+          fi
+
+          config_path="fly.toml"
+          artifact_prefix="fastapi-fly-staging"
+
+          echo "app_name=$app_name" >> "$GITHUB_OUTPUT"
+          echo "base_url=$base_url" >> "$GITHUB_OUTPUT"
+          echo "smoke_user_id=$smoke_user_id" >> "$GITHUB_OUTPUT"
+          echo "config_path=$config_path" >> "$GITHUB_OUTPUT"
+          echo "artifact_prefix=$artifact_prefix" >> "$GITHUB_OUTPUT"
 
       - name: Set up flyctl
         uses: superfly/flyctl-actions/setup-flyctl@master
 
-      - name: Deploy FastAPI staging service
-        run: flyctl deploy --remote-only --config fly.toml --app "$FASTAPI_FLY_APP"
+      - name: Ensure Fly app exists
+        run: |
+          set -euo pipefail
+          if flyctl status --app "${{ steps.settings.outputs.app_name }}" >/dev/null 2>&1; then
+            exit 0
+          fi
+          flyctl apps create "${{ steps.settings.outputs.app_name }}"
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
 
-      - name: Verify Fly app status
-        run: flyctl status --app "$FASTAPI_FLY_APP"
+      - name: Sync staging Fly secrets
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+          PRODUCTION_SUPABASE_URL: ${{ secrets.PRODUCTION_SUPABASE_URL }}
+          PRODUCTION_SUPABASE_ANON_KEY: ${{ secrets.PRODUCTION_SUPABASE_ANON_KEY }}
+          PRODUCTION_SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.PRODUCTION_SUPABASE_SERVICE_ROLE_KEY }}
+          PRODUCTION_CONNECTOR_CREDENTIAL_ENCRYPTION_KEY: ${{ secrets.PRODUCTION_CONNECTOR_CREDENTIAL_ENCRYPTION_KEY }}
+          PRODUCTION_LLM_CONFIG_ENCRYPTION_KEY: ${{ secrets.PRODUCTION_LLM_CONFIG_ENCRYPTION_KEY }}
+        run: |
+          set -euo pipefail
+
+          required_vars=(
+            PRODUCTION_SUPABASE_URL
+            PRODUCTION_SUPABASE_ANON_KEY
+            PRODUCTION_SUPABASE_SERVICE_ROLE_KEY
+            PRODUCTION_CONNECTOR_CREDENTIAL_ENCRYPTION_KEY
+            PRODUCTION_LLM_CONFIG_ENCRYPTION_KEY
+          )
+
+          for name in "${required_vars[@]}"; do
+            if [[ -z "${!name:-}" ]]; then
+              echo "::error::Missing required secret ${name}"
+              exit 1
+            fi
+          done
+
+          secrets_args=(
+            "APP_ENV=staging"
+            "ALLOWED_ORIGINS=${FLY_STAGING_ALLOWED_ORIGINS}"
+            "AUTH_NATIVE_AUTH_PROXY_ALLOWED_ORIGINS=${FLY_STAGING_ALLOWED_ORIGINS}"
+            "SUPABASE_URL=${PRODUCTION_SUPABASE_URL}"
+            "SUPABASE_ANON_KEY=${PRODUCTION_SUPABASE_ANON_KEY}"
+            "SUPABASE_SERVICE_ROLE_KEY=${PRODUCTION_SUPABASE_SERVICE_ROLE_KEY}"
+            "CONNECTOR_CREDENTIAL_ENCRYPTION_KEY=${PRODUCTION_CONNECTOR_CREDENTIAL_ENCRYPTION_KEY}"
+            "LLM_CONFIG_ENCRYPTION_KEY=${PRODUCTION_LLM_CONFIG_ENCRYPTION_KEY}"
+          )
+
+          flyctl secrets set "${secrets_args[@]}" --app "${{ steps.settings.outputs.app_name }}"
+
+      - name: Deploy FastAPI Fly.io service
+        run: |
+          flyctl deploy \
+            --remote-only \
+            --config "${{ steps.settings.outputs.config_path }}" \
+            --app "${{ steps.settings.outputs.app_name }}"
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
 
-      - name: Run FastAPI staging smoke checks
+      - name: Capture Fly target evidence
+        run: |
+          set -euo pipefail
+          OUT_DIR="artifacts/fly-fastapi-smoke"
+          mkdir -p "$OUT_DIR"
+          flyctl status --app "${{ steps.settings.outputs.app_name }}" | tee "$OUT_DIR/fly-status.txt"
+          flyctl ips list --app "${{ steps.settings.outputs.app_name }}" | tee "$OUT_DIR/fly-ips.txt"
+          {
+            echo "# FastAPI Fly.io DNS-Ready Evidence"
+            echo
+            echo "- Timestamp (UTC): $(date -u +"%Y-%m-%dT%H:%M:%SZ")"
+            echo "- Environment: ${FLY_DEPLOY_ENV}"
+            echo "- Fly app: ${{ steps.settings.outputs.app_name }}"
+            echo "- Stable Fly hostname: ${{ steps.settings.outputs.base_url }}"
+            echo "- Shared Supabase URL secret: configured from PRODUCTION_SUPABASE_URL"
+            echo "- Allowed origins: ${FLY_STAGING_ALLOWED_ORIGINS}"
+            echo
+            echo "## Notes"
+            echo
+            echo "- Staging uses production Supabase API credentials so invited beta accounts survive promotion to master."
+          } > "$OUT_DIR/dns-ready-cutover.md"
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+ 
+      - name: Run FastAPI smoke checks
         run: bash infra/scripts/fly_fastapi_smoke.sh
         env:
-          FASTAPI_SMOKE_BASE_URL: ${{ env.FASTAPI_FLY_BASE_URL }}
-          FASTAPI_SMOKE_USER_ID: ${{ env.FASTAPI_SMOKE_USER_ID }}
+          FASTAPI_SMOKE_BASE_URL: ${{ steps.settings.outputs.base_url }}
+          FASTAPI_SMOKE_USER_ID: ${{ steps.settings.outputs.smoke_user_id }}
 
-      - name: Upload FastAPI smoke evidence
+      - name: Upload FastAPI evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: fastapi-fly-staging-evidence-${{ github.run_id }}
+          name: ${{ steps.settings.outputs.artifact_prefix }}-evidence-${{ github.run_id }}
           path: artifacts/fly-fastapi-smoke/
           retention-days: 14

@@ -1,8 +1,6 @@
-import type { Metadata } from "next";
-
-export const metadata: Metadata = {
-  title: "API Reference",
-};
+export function meta() {
+  return [{ title: "API Reference — AutoFlow Docs" }];
+}
 
 function EndpointBadge({ method }: { method: string }) {
   const colors: Record<string, string> = {

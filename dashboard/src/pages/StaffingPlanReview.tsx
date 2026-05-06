@@ -169,16 +169,22 @@ function duplicateAgentsForProvisioning(agents: DraftAgent[]): CompanyProvisioni
   );
 }
 
-export default function StaffingPlanReview() {
+export default function StaffingPlanReview({
+  initialRouteData,
+}: {
+  initialRouteData?: { roleTemplates: CompanyRoleTemplate[]; pageError: string | null };
+} = {}) {
   const { requireAccessToken } = useAuth();
   const [requestForm, setRequestForm] = useState<FormState>(INITIAL_FORM);
   const [provisioningForm, setProvisioningForm] = useState<ProvisioningFormState>(
     createInitialProvisioningForm()
   );
   const [secretRows, setSecretRows] = useState<SecretBindingDraft[]>([createSecretDraft()]);
-  const [roleTemplates, setRoleTemplates] = useState<CompanyRoleTemplate[]>([]);
-  const [loadingTemplates, setLoadingTemplates] = useState(true);
-  const [pageError, setPageError] = useState<string | null>(null);
+  const [roleTemplates, setRoleTemplates] = useState<CompanyRoleTemplate[]>(
+    () => initialRouteData?.roleTemplates ?? []
+  );
+  const [loadingTemplates, setLoadingTemplates] = useState(() => initialRouteData == null);
+  const [pageError, setPageError] = useState<string | null>(() => initialRouteData?.pageError ?? null);
   const [generationError, setGenerationError] = useState<string | null>(null);
   const [approvalError, setApprovalError] = useState<string | null>(null);
   const [loadingPlan, setLoadingPlan] = useState(false);
@@ -192,6 +198,10 @@ export default function StaffingPlanReview() {
   > | null>(null);
 
   useEffect(() => {
+    if (initialRouteData) {
+      return;
+    }
+
     let active = true;
 
     async function loadRoleTemplates() {
@@ -217,7 +227,7 @@ export default function StaffingPlanReview() {
     return () => {
       active = false;
     };
-  }, [requireAccessToken]);
+  }, [initialRouteData, requireAccessToken]);
 
   const roleTemplateById = useMemo(
     () => new Map(roleTemplates.map((template) => [template.id, template])),

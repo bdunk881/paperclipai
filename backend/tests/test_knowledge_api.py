@@ -141,11 +141,19 @@ def test_native_auth_proxy_forwards_json_payload_as_form(monkeypatch: pytest.Mon
 
     captured: dict[str, Any] = {}
 
-    async def fake_send(method: str, url: str, headers: dict[str, str], body: bytes | None) -> httpx.Response:
+    async def fake_send(
+        method: str,
+        url: str,
+        headers: dict[str, str],
+        body: bytes | None,
+        *,
+        verify_ssl: bool = True,
+    ) -> httpx.Response:
         captured["method"] = method
         captured["url"] = url
         captured["headers"] = headers
         captured["body"] = body.decode("utf-8") if body else None
+        captured["verify_ssl"] = verify_ssl
         return httpx.Response(
             400,
             headers={"content-type": "application/json", "x-ms-request-id": "req-123"},
@@ -167,6 +175,7 @@ def test_native_auth_proxy_forwards_json_payload_as_form(monkeypatch: pytest.Mon
     assert captured["url"] == "https://ciam.example.com/tenant-guid/oauth2/v2.0/initiate?dc=test-dc"
     assert captured["body"] == "client_id=client-123&scope=openid+profile"
     assert captured["headers"]["content-type"] == "application/x-www-form-urlencoded"
+    assert captured["verify_ssl"] is True
 
 
 def test_public_callback_relay_forwards_redirect_response(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -174,11 +183,19 @@ def test_public_callback_relay_forwards_redirect_response(monkeypatch: pytest.Mo
 
     captured: dict[str, Any] = {}
 
-    async def fake_send(method: str, url: str, headers: dict[str, str], body: bytes | None) -> httpx.Response:
+    async def fake_send(
+        method: str,
+        url: str,
+        headers: dict[str, str],
+        body: bytes | None,
+        *,
+        verify_ssl: bool = True,
+    ) -> httpx.Response:
         captured["method"] = method
         captured["url"] = url
         captured["headers"] = headers
         captured["body"] = body
+        captured["verify_ssl"] = verify_ssl
         return httpx.Response(
             302,
             headers={"location": "https://dashboard.example.com/integrations?status=error", "cache-control": "no-store"},
@@ -192,6 +209,7 @@ def test_public_callback_relay_forwards_redirect_response(monkeypatch: pytest.Mo
     assert response.status_code == 302
     assert response.headers["location"] == "https://dashboard.example.com/integrations?status=error"
     assert captured["url"] == "https://legacy-api.example.com/api/integrations/slack/oauth/callback?error=access_denied"
+    assert captured["verify_ssl"] is True
 
 
 def test_webhook_relay_preserves_signature_headers(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -199,11 +217,19 @@ def test_webhook_relay_preserves_signature_headers(monkeypatch: pytest.MonkeyPat
 
     captured: dict[str, Any] = {}
 
-    async def fake_send(method: str, url: str, headers: dict[str, str], body: bytes | None) -> httpx.Response:
+    async def fake_send(
+        method: str,
+        url: str,
+        headers: dict[str, str],
+        body: bytes | None,
+        *,
+        verify_ssl: bool = True,
+    ) -> httpx.Response:
         captured["method"] = method
         captured["url"] = url
         captured["headers"] = headers
         captured["body"] = body.decode("utf-8") if body else None
+        captured["verify_ssl"] = verify_ssl
         return httpx.Response(
             400,
             headers={"content-type": "application/json"},
@@ -224,3 +250,42 @@ def test_webhook_relay_preserves_signature_headers(monkeypatch: pytest.MonkeyPat
     assert captured["url"] == "https://legacy-api.example.com/api/webhooks/stripe"
     assert captured["headers"]["stripe-signature"] == "t=12345,v1=abcdef"
     assert captured["body"] == '{"id":"evt_123"}'
+    assert captured["verify_ssl"] is True
+
+
+def test_public_callback_relay_supports_host_header_override_and_insecure_tls(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("FASTAPI_EDGE_RELAY_BASE_URL", "https://20.75.59.207")
+    monkeypatch.setenv("FASTAPI_EDGE_RELAY_HOST_HEADER", "api.helloautoflow.com")
+    monkeypatch.setenv("FASTAPI_EDGE_RELAY_INSECURE_TLS", "true")
+
+    captured: dict[str, Any] = {}
+
+    async def fake_send(
+        method: str,
+        url: str,
+        headers: dict[str, str],
+        body: bytes | None,
+        *,
+        verify_ssl: bool = True,
+    ) -> httpx.Response:
+        captured["method"] = method
+        captured["url"] = url
+        captured["headers"] = headers
+        captured["body"] = body
+        captured["verify_ssl"] = verify_ssl
+        return httpx.Response(
+            302,
+            headers={"location": "https://dashboard.example.com/integrations?status=error"},
+            request=httpx.Request(method, url),
+        )
+
+    monkeypatch.setattr(main, "send_upstream_request", fake_send)
+
+    response = client.get("/api/integrations/slack/oauth/callback?error=access_denied", follow_redirects=False)
+
+    assert response.status_code == 302
+    assert captured["url"] == "https://20.75.59.207/api/integrations/slack/oauth/callback?error=access_denied"
+    assert captured["headers"]["host"] == "api.helloautoflow.com"
+    assert captured["verify_ssl"] is False

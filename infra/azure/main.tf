@@ -161,6 +161,20 @@ module "aks" {
   tags                      = local.common_tags
 }
 
+module "backend_workload_identity" {
+  count  = var.environment == "production" ? 1 : 0
+  source = "./modules/backend-workload-identity"
+
+  prefix               = var.prefix
+  environment          = var.environment
+  location             = var.location
+  resource_group_name  = azurerm_resource_group.main.name
+  oidc_issuer_url      = module.aks.oidc_issuer_url
+  namespace            = "autoflow-production"
+  service_account_name = "backend"
+  tags                 = local.common_tags
+}
+
 module "management" {
   source = "./modules/management"
 
@@ -168,7 +182,7 @@ module "management" {
   autoflow_management_group_name       = var.autoflow_management_group_name
   devops_sp_object_id                  = var.devops_sp_object_id
   monitoring_principal_ids             = var.monitoring_principal_ids
-  key_vault_secrets_user_principal_ids = var.key_vault_secrets_user_principal_ids
+  key_vault_secrets_user_principal_ids = var.environment == "production" ? [module.backend_workload_identity[0].principal_id] : [module.aks.kubelet_identity_object_id]
   key_vault_id                         = module.hub.key_vault_id
   tags                                 = local.common_tags
 }

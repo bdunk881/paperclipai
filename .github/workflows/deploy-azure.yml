@@ -757,108 +757,25 @@ jobs:
           cluster-name: ${{ steps.target.outputs.aks_cluster_name }}
           subscription: ${{ env.ARM_SUBSCRIPTION_ID }}
 
-      - name: Bootstrap production backend secret
-        env:
-          BACKEND_ENV_PRODUCTION: ${{ secrets.AZURE_BACKEND_ENV_PRODUCTION }}
-          SENTRY_BACKEND_DSN: ${{ vars.SENTRY_BACKEND_DSN }}
+      - name: Apply production workload identity service account
         run: |
           set -euo pipefail
-
-          if [ -z "${BACKEND_ENV_PRODUCTION}" ]; then
-            echo "::error::Missing required production environment secret: AZURE_BACKEND_ENV_PRODUCTION"
-            exit 1
-          fi
-
-          tmpfile=$(mktemp)
-          trap 'rm -f "$tmpfile"' EXIT
-          printf '%s\n' "${BACKEND_ENV_PRODUCTION}" > "$tmpfile"
-
-          if [ -n "${SENTRY_BACKEND_DSN:-}" ] && ! grep -Eq '^SENTRY_DSN=.+' "$tmpfile"; then
-            printf '\nSENTRY_DSN=%s\n' "$SENTRY_BACKEND_DSN" >> "$tmpfile"
-          fi
-          if ! grep -Eq '^SENTRY_ENVIRONMENT=.+' "$tmpfile"; then
-            printf '\nSENTRY_ENVIRONMENT=production\n' >> "$tmpfile"
-          fi
-
-          require_env_key() {
-            local key="$1"
-            if ! grep -Eq "^${key}=.+" "$tmpfile"; then
-              echo "::error::AZURE_BACKEND_ENV_PRODUCTION is missing required key ${key}"
-              exit 1
-            fi
-          }
-
-          read_env_value() {
-            local key="$1"
-            sed -n "s/^${key}=//p" "$tmpfile" | tail -n 1
-          }
-
-          normalize_https_url() {
-            local value="$1"
-            value="${value%%#*}"
-            value="$(printf '%s' "$value" | tr -d '\r' | sed -E 's/[[:space:]]+$//')"
-            value="${value%/}"
-            printf '%s' "$value"
-          }
-
-          require_exact_env_value() {
-            local key="$1"
-            local expected="$2"
-            local actual
-            actual="$(normalize_https_url "$(read_env_value "$key")")"
-            if [ "$actual" != "$expected" ]; then
-              echo "::error::AZURE_BACKEND_ENV_PRODUCTION must set ${key}=${expected}; found ${actual:-<empty>}"
-              exit 1
-            fi
-          }
-
-          require_any_env_key() {
-            for key in "$@"; do
-              if grep -Eq "^${key}=.+" "$tmpfile"; then
-                return 0
-              fi
-            done
-            echo "::error::AZURE_BACKEND_ENV_PRODUCTION must include one of: $*"
-            exit 1
-          }
-
-          require_env_key "ALLOWED_ORIGINS"
-          require_env_key "APP_JWT_SECRET"
-          require_env_key "APP_JWT_EXPIRES_IN"
-          require_env_key "AZURE_TENANT_ID"
-          require_env_key "AZURE_TENANT_SUBDOMAIN"
-          require_env_key "AZURE_CLIENT_ID"
-
-          require_origin_in_allowlist() {
-            local key="$1"
-            local origin="$2"
-            local actual
-            actual="$(read_env_value "$key")"
-            if ! printf '%s' "$actual" | tr ',' '\n' | sed -E 's/^[[:space:]]+|[[:space:]]+$//g' | grep -Fxq "$origin"; then
-              echo "::error::AZURE_BACKEND_ENV_PRODUCTION must allow ${origin} in ${key}"
-              exit 1
-            fi
-          }
-
-          require_origin_in_allowlist "ALLOWED_ORIGINS" "https://app.helloautoflow.com"
-          require_origin_in_allowlist "ALLOWED_ORIGINS" "https://staging.app.helloautoflow.com"
-
-          if grep -Eq '^AUTH_NATIVE_AUTH_PROXY_ALLOWED_ORIGINS=.+' "$tmpfile"; then
-            require_origin_in_allowlist "AUTH_NATIVE_AUTH_PROXY_ALLOWED_ORIGINS" "https://app.helloautoflow.com"
-            require_origin_in_allowlist "AUTH_NATIVE_AUTH_PROXY_ALLOWED_ORIGINS" "https://staging.app.helloautoflow.com"
-          fi
-
-          if [ "$(normalize_https_url "$(read_env_value "APP_JWT_EXPIRES_IN")")" != "8h" ]; then
-            echo "::error::AZURE_BACKEND_ENV_PRODUCTION must set APP_JWT_EXPIRES_IN=8h"
-            exit 1
-          fi
-
           kubectl apply -f k8s/production/namespace.yaml
-          kubectl create secret generic "${{ steps.target.outputs.k8s_secret_name }}" \
-            --from-env-file="$tmpfile" \
-            --namespace "${{ steps.target.outputs.k8s_namespace }}" \
-            --dry-run=client \
-            -o yaml \
+
+          WORKLOAD_IDENTITY_NAME="id-autoflow-prod-app"
+          CLIENT_ID="$(az identity show \
+            --resource-group "${{ steps.target.outputs.aks_resource_group }}" \
+            --name "$WORKLOAD_IDENTITY_NAME" \
+            --query clientId \
+            -o tsv)"
+
+          if [ -z "$CLIENT_ID" ]; then
+            echo "::error::Unable to resolve clientId for $WORKLOAD_IDENTITY_NAME."
+            exit 1
+          fi
+
+          sed "s|__AZURE_WORKLOAD_IDENTITY_CLIENT_ID__|${CLIENT_ID}|g" \
+            k8s/production/backend-serviceaccount.yaml \
             | kubectl apply -f -
 
       - name: Install cert-manager

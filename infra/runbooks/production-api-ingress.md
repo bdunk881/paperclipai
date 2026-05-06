@@ -11,6 +11,7 @@ Container Apps until the staging runtime is migrated separately.
 - Cluster infra bootstrap: `.github/workflows/infra-deploy.yml`
 - Production backend rollout: `.github/workflows/deploy-azure.yml`
 - Production backend manifest: `k8s/production/backend.yaml`
+- Production backend ServiceAccount: `k8s/production/backend-serviceaccount.yaml`
 - Production backend workload namespace: `autoflow-production`
 - GitHub environment: `production`
 
@@ -79,21 +80,23 @@ HTTPS entrypoint that should serve `api.helloautoflow.com`.
 1. `autoflow-production` namespace exists in the production cluster.
 2. `backend` deployment is rolled out successfully.
 3. `autoflow-backend-secrets` exists in the namespace with the required runtime env vars.
-4. `/health` returns `200` through the public load balancer target.
-5. TLS termination for `api.helloautoflow.com` is configured and verified.
+4. The `backend` ServiceAccount is annotated with the production workload identity client ID.
+5. `/health` returns `200` through the public load balancer target.
+6. TLS termination for `api.helloautoflow.com` is configured and verified.
 
-Do not update `api.helloautoflow.com` DNS until all five conditions are true.
+Do not update `api.helloautoflow.com` DNS until all six conditions are true.
 
 ## Deployment Flow
 
-The production deploy workflow now performs five API-specific steps after the
+The production deploy workflow now performs six API-specific steps after the
 backend image is available in AKS:
 
 1. Sync `autoflow-backend-secrets`
-2. Install or update `cert-manager`
-3. Render and apply `k8s/production/cert-manager-clusterissuer.yaml`
-4. Install or update `ingress-nginx`
-5. Apply `k8s/production/api-ingress.yaml`, wait for `autoflow-production-api-tls` to be issued, and verify HTTPS with `curl --resolve`
+2. Resolve the `id-autoflow-prod-app` client ID and apply `k8s/production/backend-serviceaccount.yaml`
+3. Install or update `cert-manager`
+4. Render and apply `k8s/production/cert-manager-clusterissuer.yaml`
+5. Install or update `ingress-nginx`
+6. Apply `k8s/production/api-ingress.yaml`, wait for `autoflow-production-api-tls` to be issued, and verify HTTPS with `curl --resolve`
 
 The deploy is not ready for DNS cutover until the HTTPS verification succeeds.
 It also is not considered healthy until a native-auth initiate probe to
@@ -123,3 +126,9 @@ This means the repo can now install cert-manager, create the production
 `ClusterIssuer`, and request the certificate automatically, but final issuance
 cannot succeed until the DNS cutover sequence routes `api.helloautoflow.com` to
 the production ingress endpoint that serves the ACME challenge.
+
+Separately, the production backend still consumes `autoflow-backend-secrets`
+from Kubernetes. The workload identity binding in this repo removes the broad
+node-level Key Vault grant and prepares a dedicated pod identity, but a future
+follow-up is still required to move runtime secret hydration from the GitHub
+environment bootstrap into Key Vault-backed retrieval.

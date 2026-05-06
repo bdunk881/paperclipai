@@ -82,6 +82,7 @@ terraform apply \
 | `spoke` | `modules/spoke` | Spoke VNet, subnets, route table (UDR → Firewall), VNet peering |
 | `acr` | `modules/acr` | Azure Container Registry (Premium), private endpoint |
 | `aks` | `modules/aks` | AKS cluster, node pools, Log Analytics workspace, kubelet identity |
+| `backend-workload-identity` | `modules/backend-workload-identity` | Production backend user-assigned identity plus AKS federated credential |
 | `management` | `modules/management` | Management Group hierarchy, RBAC, Key Vault role assignments |
 | `monitoring` | `modules/monitoring` | Application Insights, Log Analytics, metric alert rules |
 | `policy` | `modules/policy` | Azure Policy initiative, MG-scoped assignment, location guardrails |

@@ -1,12 +1,16 @@
-# Fly.io FastAPI staging service
+# Fly.io FastAPI dev and staging service
 
-Use this runbook for the standalone FastAPI staging service deployed to Fly.io for [ALT-2335](/ALT/issues/ALT-2335).
+Use this runbook for the standalone FastAPI Fly.io services used by the
+`dev` and `staging` branches.
 
 ## Purpose
 
-- Deploy the Python FastAPI knowledge-service staging app on Fly.io.
-- Verify the live service with CRUD, ingest, and search smoke checks.
-- Keep the staging rollout reproducible through GitHub Actions instead of ad hoc console changes.
+- Deploy the Python FastAPI dev app backed by the isolated `autoflow-dev`
+  Supabase project.
+- Deploy the Python FastAPI staging app backed by production Supabase API
+  credentials.
+- Verify the live service with health, knowledge, native auth, callback, and webhook smoke checks.
+- Keep both rollout paths reproducible through GitHub Actions instead of ad hoc console changes.
 
 ## GitHub Actions configuration
 
@@ -14,27 +18,59 @@ Configure these values before running the workflow:
 
 | Type | Name | Required | Notes |
 |---|---|---|---|
-| Secret | `FLY_API_TOKEN` | Yes | Prefer an app-scoped deploy token for `autoflow-fastapi-staging`. |
+| Secret | `FLY_API_TOKEN` | Yes | Prefer a deploy token that can manage both Fly apps. |
+| Secret | `DEV_DATABASE_URL` | Dev only | PostgreSQL connection string for `autoflow-dev`; for Supabase direct Postgres use `...?uselibpqcompat=true&sslmode=require`. |
+| Secret | `DEV_SUPABASE_URL` | Dev only | Supabase URL for `autoflow-dev`. |
+| Secret | `DEV_SUPABASE_ANON_KEY` | Dev only | Public anon key for `autoflow-dev`. |
+| Secret | `DEV_SUPABASE_SERVICE_ROLE_KEY` | Dev only | Service-role key for `autoflow-dev`. |
+| Secret | `DEV_CONNECTOR_CREDENTIAL_ENCRYPTION_KEY` | Dev only | Required backend runtime key for connector credential encryption in the isolated dev environment. |
+| Secret | `PRODUCTION_SUPABASE_URL` | Staging only | Shared Supabase URL used by staging and master. |
+| Secret | `PRODUCTION_SUPABASE_ANON_KEY` | Staging only | Shared anon key used by staging and master. |
+| Secret | `PRODUCTION_SUPABASE_SERVICE_ROLE_KEY` | Staging only | Shared service-role key used by staging and master. |
+| Secret | `PRODUCTION_CONNECTOR_CREDENTIAL_ENCRYPTION_KEY` | Staging only | Current production/staging connector credential key copied into the Fly staging runtime. |
+| Secret | `PRODUCTION_LLM_CONFIG_ENCRYPTION_KEY` | Staging only | Current production/staging LLM config key copied into the Fly staging runtime. |
+| Variable | `FLY_DEV_APP_NAME` | Optional | Defaults to `autoflow-fastapi-dev`. |
+| Variable | `FLY_DEV_BASE_URL` | Optional | Defaults to `https://autoflow-fastapi-dev.fly.dev`. |
 | Variable | `FLY_STAGING_APP_NAME` | Optional | Defaults to `autoflow-fastapi-staging`. |
 | Variable | `FLY_STAGING_BASE_URL` | Optional | Defaults to `https://autoflow-fastapi-staging.fly.dev`. |
 | Variable | `FLY_STAGING_SMOKE_USER_ID` | Optional | Defaults to `qa-smoke-user`. |
-
-Fly.io recommends deploy tokens rather than broad auth tokens for CI/CD. Create the narrowest app-scoped token that can deploy this single app.
+| Variable | `FLY_PRODUCTION_APP_NAME` | Optional | Reserved for the later production Fly cutover target. |
+| Variable | `FLY_PRODUCTION_BASE_URL` | Optional | Reserved for the later production Fly cutover target. |
+| Variable | `FLY_PRODUCTION_SMOKE_USER_ID` | Optional | Reserved for the later production Fly cutover target. |
+| Variable | `FLY_PRODUCTION_CUSTOM_DOMAIN` | Optional | Reserved for the later production Fly cutover target. |
+| Variable | `FLY_PRODUCTION_RELAY_BASE_URL` | Optional | Reserved for the later production Fly cutover target. |
+| Variable | `FLY_PRODUCTION_RELAY_HOST_HEADER` | Optional | Reserved for the later production Fly cutover target. |
+Fly.io recommends deploy tokens rather than broad auth tokens for CI/CD.
 
 ## Deploy
 
-Automatic deploys run from `.github/workflows/deploy-fly-fastapi-staging.yml` when `staging` receives changes to:
+Automatic dev deploys run from `.github/workflows/deploy-fly-fastapi-dev.yml`
+when `dev` receives changes to:
+
+- `backend/**`
+- `docker/backend/Dockerfile`
+- `fly.dev.toml`
+- `infra/scripts/fly_fastapi_smoke.sh`
+Automatic staging deploys run from `.github/workflows/deploy-fly-fastapi-staging.yml`
+when `staging` receives changes to:
 
 - `backend/**`
 - `docker/backend/Dockerfile`
 - `fly.toml`
 - `infra/scripts/fly_fastapi_smoke.sh`
+- `backend/fly-cutover-probe-matrix.md`
 
-Manual deploy:
+Manual dev deploy:
+
+1. Open the `Deploy FastAPI Fly.io Dev` workflow in GitHub Actions.
+2. Run `workflow_dispatch`.
+3. Confirm the validation job passes before the deploy job starts.
+
+Manual staging deploy:
 
 1. Open the `Deploy FastAPI Fly.io Staging` workflow in GitHub Actions.
 2. Run `workflow_dispatch`.
-3. Confirm the `Validate FastAPI backend` job passes before the deploy job starts.
+3. Confirm the validation job passes before the deploy job starts.
 
 ## Smoke verification
 
@@ -48,10 +84,16 @@ The smoke script verifies:
 - `PATCH /api/knowledge/bases/{id}`
 - `POST /api/knowledge/bases/{id}/documents`
 - `POST /api/knowledge/search`
-
-Artifacts are uploaded to `fastapi-fly-staging-evidence-<run_id>` and include:
+- `POST /api/auth/native/oauth2/v2.0/initiate`
+- `GET /api/integrations/slack/oauth/callback?error=...`
+- `POST /api/webhooks/stripe`
+Artifacts are uploaded to `fastapi-fly-<environment>-evidence-<run_id>` and include:
 
 - `summary.md`
+- `dns-ready-cutover.md`
+- `dns-current.md`
+- `fly-status.txt`
+- `fly-ips.txt`
 - response bodies for each smoke step
 - `requests.tsv`
 

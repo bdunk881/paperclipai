@@ -2,6 +2,16 @@
 
 import { useState } from "react";
 
+export function meta() {
+  return [
+    { title: "Interactive Demo | AutoFlow" },
+    {
+      name: "description",
+      content: "Try the AutoFlow workflow simulator and watch a pipeline execute step by step.",
+    },
+  ];
+}
+
 // Simulated workflow templates matching the real backend
 const TEMPLATES = [
   {

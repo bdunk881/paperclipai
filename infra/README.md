@@ -58,6 +58,8 @@ Add these in the repo settings -> Secrets and variables -> Actions:
 | `PRODUCTION_SUPABASE_URL` | Shared staging/master Supabase project URL |
 | `PRODUCTION_SUPABASE_ANON_KEY` | Shared staging/master anon key |
 | `PRODUCTION_SUPABASE_SERVICE_ROLE_KEY` | Shared staging/master service-role key |
+| `PRODUCTION_CONNECTOR_CREDENTIAL_ENCRYPTION_KEY` | Shared staging/master connector credential encryption key for the Fly staging runtime |
+| `PRODUCTION_LLM_CONFIG_ENCRYPTION_KEY` | Shared staging/master LLM config encryption key for the Fly staging runtime |
 
 ### Cloudflare Pages
 

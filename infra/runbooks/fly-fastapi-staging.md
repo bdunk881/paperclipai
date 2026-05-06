@@ -27,6 +27,8 @@ Configure these values before running the workflow:
 | Secret | `PRODUCTION_SUPABASE_URL` | Staging only | Shared Supabase URL used by staging and master. |
 | Secret | `PRODUCTION_SUPABASE_ANON_KEY` | Staging only | Shared anon key used by staging and master. |
 | Secret | `PRODUCTION_SUPABASE_SERVICE_ROLE_KEY` | Staging only | Shared service-role key used by staging and master. |
+| Secret | `PRODUCTION_CONNECTOR_CREDENTIAL_ENCRYPTION_KEY` | Staging only | Current production/staging connector credential key copied into the Fly staging runtime. |
+| Secret | `PRODUCTION_LLM_CONFIG_ENCRYPTION_KEY` | Staging only | Current production/staging LLM config key copied into the Fly staging runtime. |
 | Variable | `FLY_DEV_APP_NAME` | Optional | Defaults to `autoflow-fastapi-dev`. |
 | Variable | `FLY_DEV_BASE_URL` | Optional | Defaults to `https://autoflow-fastapi-dev.fly.dev`. |
 | Variable | `FLY_STAGING_APP_NAME` | Optional | Defaults to `autoflow-fastapi-staging`. |

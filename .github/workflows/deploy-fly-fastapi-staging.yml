@@ -98,8 +98,25 @@ jobs:
           PRODUCTION_SUPABASE_URL: ${{ secrets.PRODUCTION_SUPABASE_URL }}
           PRODUCTION_SUPABASE_ANON_KEY: ${{ secrets.PRODUCTION_SUPABASE_ANON_KEY }}
           PRODUCTION_SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.PRODUCTION_SUPABASE_SERVICE_ROLE_KEY }}
+          PRODUCTION_CONNECTOR_CREDENTIAL_ENCRYPTION_KEY: ${{ secrets.PRODUCTION_CONNECTOR_CREDENTIAL_ENCRYPTION_KEY }}
+          PRODUCTION_LLM_CONFIG_ENCRYPTION_KEY: ${{ secrets.PRODUCTION_LLM_CONFIG_ENCRYPTION_KEY }}
         run: |
           set -euo pipefail
+
+          required_vars=(
+            PRODUCTION_SUPABASE_URL
+            PRODUCTION_SUPABASE_ANON_KEY
+            PRODUCTION_SUPABASE_SERVICE_ROLE_KEY
+            PRODUCTION_CONNECTOR_CREDENTIAL_ENCRYPTION_KEY
+            PRODUCTION_LLM_CONFIG_ENCRYPTION_KEY
+          )
+
+          for name in "${required_vars[@]}"; do
+            if [[ -z "${!name:-}" ]]; then
+              echo "::error::Missing required secret ${name}"
+              exit 1
+            fi
+          done
 
           secrets_args=(
             "APP_ENV=staging"
@@ -108,6 +125,8 @@ jobs:
             "SUPABASE_URL=${PRODUCTION_SUPABASE_URL}"
             "SUPABASE_ANON_KEY=${PRODUCTION_SUPABASE_ANON_KEY}"
             "SUPABASE_SERVICE_ROLE_KEY=${PRODUCTION_SUPABASE_SERVICE_ROLE_KEY}"
+            "CONNECTOR_CREDENTIAL_ENCRYPTION_KEY=${PRODUCTION_CONNECTOR_CREDENTIAL_ENCRYPTION_KEY}"
+            "LLM_CONFIG_ENCRYPTION_KEY=${PRODUCTION_LLM_CONFIG_ENCRYPTION_KEY}"
           )
 
           flyctl secrets set "${secrets_args[@]}" --app "${{ steps.settings.outputs.app_name }}"

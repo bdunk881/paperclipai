@@ -157,6 +157,22 @@ describe("GET /api/connectors/health", () => {
   });
 });
 
+describe("Apollo OAuth callback routing", () => {
+  it("keeps the OAuth callback public", async () => {
+    const res = await request(app).get("/api/integrations/apollo/oauth/callback");
+
+    expect(res.status).toBe(400);
+    expect(res.body).toEqual({ error: "code and state are required" });
+  });
+
+  it("still protects Apollo management endpoints", async () => {
+    const res = await request(app).get("/api/integrations/apollo/connections");
+
+    expect(res.status).toBe(401);
+    expect(res.body).toEqual({ error: "Missing or malformed Authorization header." });
+  });
+});
+
 // ---------------------------------------------------------------------------
 // GET /api/templates
 // ---------------------------------------------------------------------------

@@ -16,7 +16,9 @@ spec:
       labels:
         app: backend
         environment: production
+        azure.workload.identity/use: "true"
     spec:
+      serviceAccountName: backend
       securityContext:
         runAsNonRoot: true
       containers:

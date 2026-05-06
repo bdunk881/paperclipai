@@ -390,6 +390,7 @@ app.use("/api/mcp/servers", requireAuth, mcpRoutes);
 app.use("/api/memory", requireAuth, memoryRoutes);
 app.use("/api/agents/:agentId/memory", requireAuth, agentMemoryRoutes);
 app.use("/api/agents", requireAuth, workspaceResolver, agentRoutes);
+app.use("/api/integrations/apollo", apolloRoutes);
 
 // Routines stub — returns empty list until a full routines store is implemented.
 app.get("/api/routines", requireAuth, (_req, res) => {
@@ -410,7 +411,6 @@ app.use("/api/integrations/hubspot", hubSpotRoutes);
 app.use("/api/integrations/teams", teamsRoutes);
 app.use("/api/integrations/gmail", gmailRoutes);
 app.use("/api/integrations/stripe", stripeRoutes);
-app.use("/api/integrations/apollo", apolloRoutes);
 app.use("/api/integrations/composio", composioRoutes);
 app.use("/api/integrations/posthog", posthogRoutes);
 app.use("/api/integrations/intercom", intercomRoutes);

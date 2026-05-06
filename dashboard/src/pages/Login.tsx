@@ -251,8 +251,7 @@ export default function Login() {
               Secure dashboard access with a Supabase-backed session.
             </h1>
             <p className="max-w-lg text-base leading-7 text-slate-300">
-              This Phase 2c surface removes native CIAM form posts from the dashboard and switches login flows over to
-              Supabase email/password, magic link, and approved provider sign-in.
+              Use Supabase email/password, magic link, or an approved provider to access the dashboard.
             </p>
           </div>
 

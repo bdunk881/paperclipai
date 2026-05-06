@@ -3,44 +3,18 @@ import type { ReactNode } from "react";
 import { Outlet } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-
 const {
   authState,
-  initializeMock,
-  handleRedirectPromiseMock,
-  addEventCallbackMock,
-  getAllAccountsMock,
-  setActiveAccountMock,
   loginMock,
   signupMock,
   logoutMock,
   getAccessTokenMock,
 } = vi.hoisted(() => ({
   authState: { user: null as null | { id: string; email: string; name: string } },
-  initializeMock: vi.fn(() => Promise.resolve()),
-  handleRedirectPromiseMock: vi.fn(() => Promise.resolve(null)),
-  addEventCallbackMock: vi.fn(),
-  getAllAccountsMock: vi.fn(() => []),
-  setActiveAccountMock: vi.fn(),
   loginMock: vi.fn(),
   signupMock: vi.fn(),
   logoutMock: vi.fn(),
   getAccessTokenMock: vi.fn(() => Promise.resolve("test-access-token")),
-}));
-
-vi.mock("@azure/msal-browser", () => ({
-  PublicClientApplication: vi.fn(() => ({
-    initialize: initializeMock,
-    handleRedirectPromise: handleRedirectPromiseMock,
-    addEventCallback: addEventCallbackMock,
-    getAllAccounts: getAllAccountsMock,
-    setActiveAccount: setActiveAccountMock,
-  })),
-  EventType: { LOGIN_SUCCESS: "LOGIN_SUCCESS" },
-}));
-
-vi.mock("@azure/msal-react", () => ({
-  MsalProvider: ({ children }: { children: ReactNode }) => <>{children}</>,
 }));
 
 vi.mock("./context/AuthContext", () => ({
@@ -128,11 +102,6 @@ import App from "./App";
 describe("App", () => {
   beforeEach(() => {
     authState.user = null;
-    initializeMock.mockClear();
-    handleRedirectPromiseMock.mockClear();
-    addEventCallbackMock.mockClear();
-    getAllAccountsMock.mockClear();
-    setActiveAccountMock.mockClear();
     loginMock.mockClear();
     signupMock.mockClear();
     logoutMock.mockClear();

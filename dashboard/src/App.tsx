@@ -5,7 +5,7 @@ import {
   sanitizeQaPreviewRedirect,
   writeStoredAuthUser,
 } from "./auth/authStorage";
-import { sessionFromAppToken } from "./auth/nativeAuthClient";
+import { sessionFromAccessToken } from "./auth/tokenSession";
 import { AuthProvider } from "./context/AuthContext";
 import { WorkspaceProvider } from "./context/WorkspaceContext";
 import { AppRouter } from "./router";
@@ -41,7 +41,7 @@ async function maybeActivateQaPreviewAccess(): Promise<void> {
     return;
   }
 
-  writeStoredAuthUser(sessionFromAppToken(data.accessToken).user);
+  writeStoredAuthUser(sessionFromAccessToken(data.accessToken, "preview").user);
 
   const nextPath = redirectTarget ?? `${window.location.pathname}${window.location.hash}`;
   window.history.replaceState({}, "", nextPath);

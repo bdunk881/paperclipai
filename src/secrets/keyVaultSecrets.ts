@@ -12,7 +12,6 @@ type SecretNames =
   | "llm-config-encryption-key"
   | "database-url"
   | "redis-url"
-  | "entra-client-secret"
   | "apollo-client-id"
   | "apollo-client-secret"
   | "apollo-redirect-uri"
@@ -27,7 +26,6 @@ export const KEY_VAULT_SECRET_MAP: Record<SecretNames, string> = {
   "llm-config-encryption-key": "CONNECTOR_CREDENTIAL_ENCRYPTION_KEY",
   "database-url": "DATABASE_URL",
   "redis-url": "REDIS_URL",
-  "entra-client-secret": "AZURE_CIAM_CLIENT_SECRET",
   "apollo-client-id": "APOLLO_CLIENT_ID",
   "apollo-client-secret": "APOLLO_CLIENT_SECRET",
   "apollo-redirect-uri": "APOLLO_REDIRECT_URI",

@@ -50,7 +50,6 @@ import {
   listClassificationDecisions,
 } from "./engine/classificationLog";
 import { requireAuth, requireAuthOrQaBypass, AuthenticatedRequest } from "./auth/authMiddleware";
-import nativeAuthProxyRoutes from "./auth/nativeAuthProxyRoutes";
 import socialAuthRoutes from "./auth/socialAuthRoutes";
 import stripeWebhookRoutes from "./billing/stripeWebhook";
 import apolloWebhookRoutes from "./integrations/apollo-attio/webhookRoute";
@@ -234,18 +233,18 @@ const llmEndpointRateLimiter = rateLimit({
   handler: createRateLimitHandler(60 * 60 * 1000),
 });
 
-const nativeAuthProxyRateLimitWindowMs = parsePositiveIntegerEnv(
-  "AUTH_NATIVE_AUTH_PROXY_RATE_LIMIT_WINDOW_MS",
+const authRouteRateLimitWindowMs = parsePositiveIntegerEnv(
+  "AUTH_ROUTE_RATE_LIMIT_WINDOW_MS",
   60 * 1000
 );
 
-const nativeAuthProxyRateLimiter = rateLimit({
-  windowMs: nativeAuthProxyRateLimitWindowMs,
-  limit: parsePositiveIntegerEnv("AUTH_NATIVE_AUTH_PROXY_RATE_LIMIT_MAX", 20),
+const authRouteRateLimiter = rateLimit({
+  windowMs: authRouteRateLimitWindowMs,
+  limit: parsePositiveIntegerEnv("AUTH_ROUTE_RATE_LIMIT_MAX", 20),
   standardHeaders: true,
   legacyHeaders: false,
   keyGenerator: (req) => `ip:${req.ip || req.socket.remoteAddress || "unknown"}`,
-  handler: createRateLimitHandler(nativeAuthProxyRateLimitWindowMs),
+  handler: createRateLimitHandler(authRouteRateLimitWindowMs),
 });
 
 const billingMutationRateLimiter = rateLimit({
@@ -429,16 +428,10 @@ app.use("/api/notifications", requireAuth, workspaceResolver, notificationRoutes
 app.use("/api/approval-policies", requireAuth, approvalPolicyRoutes);
 
 // ---------------------------------------------------------------------------
-// Auth API — identity endpoint for authenticated callers
+// Auth API — identity and social callback endpoints
 // ---------------------------------------------------------------------------
 
-app.use(
-  "/api/auth/native",
-  express.urlencoded({ extended: false }),
-  nativeAuthProxyRateLimiter,
-  nativeAuthProxyRoutes
-);
-app.use("/api/auth/social", nativeAuthProxyRateLimiter, socialAuthRoutes);
+app.use("/api/auth/social", authRouteRateLimiter, socialAuthRoutes);
 
 /** Returns the authenticated user's claims extracted from the auth token. */
 app.get("/api/me", requireAuth, (req: AuthenticatedRequest, res) => {

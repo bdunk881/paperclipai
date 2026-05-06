@@ -65,6 +65,42 @@ jobs:
           echo "devops_sp_object_id=$SP_OID" >> "$GITHUB_OUTPUT"
           echo "DevOps SP Object ID: $SP_OID"
 
+      - name: Discover production backend Container App principal ID
+        id: prod_backend
+        if: ${{ inputs.environment == 'production' }}
+        env:
+          CONTAINER_APP_NAME_OVERRIDE: ${{ vars.AZURE_CONTAINER_APP_PRODUCTION_NAME }}
+          CONTAINER_APP_RG_OVERRIDE: ${{ vars.AZURE_CONTAINER_APP_PRODUCTION_RESOURCE_GROUP }}
+        run: |
+          set -euo pipefail
+
+          APP_NAME="${CONTAINER_APP_NAME_OVERRIDE:-}"
+          APP_RG="${CONTAINER_APP_RG_OVERRIDE:-}"
+          PRINCIPAL_ID=""
+
+          if [ -n "$APP_NAME" ] && [ -n "$APP_RG" ]; then
+            PRINCIPAL_ID=$(az containerapp show \
+              --name "$APP_NAME" \
+              --resource-group "$APP_RG" \
+              --query 'identity.principalId' \
+              -o tsv 2>/dev/null || true)
+          else
+            APP_JSON=$(az containerapp list \
+              --query "[?contains(name, 'production')].{name:name,resourceGroup:resourceGroup,principalId:identity.principalId} | [0]" \
+              -o json)
+            APP_NAME=$(echo "$APP_JSON" | jq -r '.name // empty')
+            APP_RG=$(echo "$APP_JSON" | jq -r '.resourceGroup // empty')
+            PRINCIPAL_ID=$(echo "$APP_JSON" | jq -r '.principalId // empty')
+          fi
+
+          if [ -z "$PRINCIPAL_ID" ]; then
+            echo "::warning::No production Container App managed identity was discovered. Terraform will remove stale Key Vault grants but cannot add a replacement grant until the production Container App exists with managed identity enabled."
+          else
+            echo "Resolved production Container App principal ID: $PRINCIPAL_ID"
+          fi
+
+          echo "principal_id=$PRINCIPAL_ID" >> "$GITHUB_OUTPUT"
+
       - name: Ensure management group Reader for Terraform SP
         run: |
           set -euo pipefail
@@ -105,8 +141,15 @@ jobs:
 
       - name: Terraform plan
         run: |
+          set -euo pipefail
+          EXTRA_ARGS=()
+          if [ -n "${{ steps.prod_backend.outputs.principal_id }}" ]; then
+            EXTRA_ARGS+=("-var=key_vault_secrets_user_principal_ids=[\"${{ steps.prod_backend.outputs.principal_id }}\"]")
+          fi
+
           terraform plan \
             -var="devops_sp_object_id=${{ steps.sp.outputs.devops_sp_object_id }}" \
+            "${EXTRA_ARGS[@]}" \
             -out=tfplan
 
       - name: Terraform apply

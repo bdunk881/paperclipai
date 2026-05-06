@@ -164,13 +164,13 @@ module "aks" {
 module "management" {
   source = "./modules/management"
 
-  prefix                             = var.prefix
-  autoflow_management_group_name     = var.autoflow_management_group_name
-  devops_sp_object_id                = var.devops_sp_object_id
-  monitoring_principal_ids           = var.monitoring_principal_ids
-  aks_workload_identity_principal_id = module.aks.kubelet_identity_object_id
-  key_vault_id                       = module.hub.key_vault_id
-  tags                               = local.common_tags
+  prefix                               = var.prefix
+  autoflow_management_group_name       = var.autoflow_management_group_name
+  devops_sp_object_id                  = var.devops_sp_object_id
+  monitoring_principal_ids             = var.monitoring_principal_ids
+  key_vault_secrets_user_principal_ids = var.key_vault_secrets_user_principal_ids
+  key_vault_id                         = module.hub.key_vault_id
+  tags                                 = local.common_tags
 }
 
 module "monitoring" {

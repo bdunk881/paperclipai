@@ -60,7 +60,7 @@ jobs:
           set -euo pipefail
           mkdir -p dashboard/.vercel
           npx vercel env pull dashboard/.vercel/.env.preview --environment=preview --yes --token="$VERCEL_TOKEN" >/dev/null
-          for required in VITE_AZURE_CLIENT_ID VITE_AZURE_TENANT_SUBDOMAIN; do
+          for required in VITE_SUPABASE_URL VITE_SUPABASE_ANON_KEY; do
             if ! grep -q "^${required}=" dashboard/.vercel/.env.preview; then
               echo "::error::Missing ${required} in Vercel preview environment"
               exit 1
@@ -156,11 +156,11 @@ jobs:
         working-directory: dashboard
         run: npx playwright install --with-deps chromium webkit
 
-      - name: Run preview auth smoke test
+      - name: Run preview auth regression test
         working-directory: dashboard
         env:
           PLAYWRIGHT_BASE_URL: ${{ needs.preview-deploy.outputs.preview_url }}
-        run: npm run e2e -- e2e/preview-auth-smoke.spec.ts
+        run: npm run e2e -- e2e/auth-regression.spec.ts
 
   qa-gate:
     name: QA Gate (Manual Approval via Environment)
@@ -204,7 +204,7 @@ jobs:
           set -euo pipefail
           mkdir -p dashboard/.vercel
           npx vercel env pull dashboard/.vercel/.env.production --environment=production --yes --token="$VERCEL_TOKEN" >/dev/null
-          for required in VITE_AZURE_CLIENT_ID VITE_AZURE_TENANT_SUBDOMAIN; do
+          for required in VITE_SUPABASE_URL VITE_SUPABASE_ANON_KEY; do
             if ! grep -q "^${required}=" dashboard/.vercel/.env.production; then
               echo "::error::Missing ${required} in Vercel production environment"
               exit 1

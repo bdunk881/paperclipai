@@ -1162,6 +1162,63 @@ describe("Control plane APIs", () => {
     expect(budgetRes.body.remainingUsd).toBeCloseTo(workerAgent.budgetMonthlyUsd - 1.42, 2);
   });
 
+  it("exposes scheduled agents as real dashboard routines", async () => {
+    const deployRes = await request(app)
+      .post("/api/control-plane/deployments/workflow")
+      .set(asAuth())
+      .set("X-Paperclip-Run-Id", "run-deploy-routines")
+      .send({ templateId: "tpl-support-bot", defaultIntervalMinutes: 30 });
+
+    const teamId = deployRes.body.team.id;
+    const managerAgent = deployRes.body.agents.find(
+      (agent: { roleKey: string }) => agent.roleKey === "workflow-manager"
+    );
+    const workerAgent = deployRes.body.agents.find(
+      (agent: { roleKey: string }) => agent.roleKey !== "workflow-manager"
+    );
+
+    await request(app)
+      .post("/api/control-plane/heartbeats")
+      .set(asAuth())
+      .set("X-Paperclip-Run-Id", "run-routines-heartbeat")
+      .send({
+        teamId,
+        agentId: workerAgent.id,
+        status: "completed",
+        summary: "Completed scheduled routine",
+        costUsd: 0.75,
+      });
+
+    const routinesRes = await request(app)
+      .get("/api/routines")
+      .set(asAuth());
+
+    expect(routinesRes.status).toBe(200);
+    expect(routinesRes.body.total).toBe(routinesRes.body.routines.length);
+    expect(routinesRes.body.total).toBeGreaterThan(0);
+    expect(routinesRes.body.routines).toEqual(
+      expect.not.arrayContaining([expect.objectContaining({ agentId: managerAgent.id })])
+    );
+
+    const workerRoutine = routinesRes.body.routines.find(
+      (routine: { agentId: string }) => routine.agentId === workerAgent.id
+    );
+
+    expect(workerRoutine).toMatchObject({
+      id: `routine-${workerAgent.id}`,
+      agentId: workerAgent.id,
+      name: workerAgent.name,
+      scheduleType: "interval",
+      intervalMinutes: 30,
+      status: "active",
+    });
+    expect(workerRoutine.lastRunAt).toBeTruthy();
+    expect(workerRoutine.nextRunAt).toBeTruthy();
+    expect(new Date(workerRoutine.nextRunAt).getTime()).toBeGreaterThan(
+      new Date(workerRoutine.lastRunAt).getTime()
+    );
+  });
+
   it("records real-time spend events and exposes threshold alerts in team spend snapshots", async () => {
     const deployRes = await request(app)
       .post("/api/control-plane/deployments/workflow")

@@ -38,6 +38,9 @@ jobs:
 
       - name: Build dashboard
         working-directory: dashboard
+        env:
+          VITE_SUPABASE_URL: ${{ github.ref_name == 'dev' && secrets.DEV_SUPABASE_URL || secrets.PRODUCTION_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ github.ref_name == 'dev' && secrets.DEV_SUPABASE_ANON_KEY || secrets.PRODUCTION_SUPABASE_ANON_KEY }}
         run: npm run build
 
       - name: Deploy to Cloudflare Pages

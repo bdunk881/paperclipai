@@ -599,6 +599,26 @@ jobs:
           cluster-name: ${{ steps.target.outputs.aks_cluster_name }}
           subscription: ${{ env.ARM_SUBSCRIPTION_ID }}
 
+      - name: Apply production workload identity service account
+        run: |
+          set -euo pipefail
+
+          WORKLOAD_IDENTITY_NAME="id-autoflow-prod-app"
+          CLIENT_ID="$(az identity show \
+            --resource-group "${{ steps.target.outputs.aks_resource_group }}" \
+            --name "$WORKLOAD_IDENTITY_NAME" \
+            --query clientId \
+            -o tsv)"
+
+          if [ -z "$CLIENT_ID" ]; then
+            echo "::error::Unable to resolve clientId for $WORKLOAD_IDENTITY_NAME."
+            exit 1
+          fi
+
+          sed "s|__AZURE_WORKLOAD_IDENTITY_CLIENT_ID__|${CLIENT_ID}|g" \
+            k8s/production/backend-serviceaccount.yaml \
+            | kubectl apply -f -
+
       - name: Bootstrap production backend secret
         env:
           BACKEND_ENV_PRODUCTION: ${{ secrets.AZURE_BACKEND_ENV_PRODUCTION }}

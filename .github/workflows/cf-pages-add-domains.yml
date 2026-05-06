@@ -13,6 +13,18 @@ jobs:
     name: Add custom domains to CF Pages projects
     runs-on: ubuntu-latest
     steps:
+      - name: Pre-flight - verify token and list Pages projects
+        run: |
+          echo "=== Listing CF Pages projects (verifies token + account ID) ==="
+          RESP=$(curl -s -X GET \
+            -H "Authorization: Bearer ${{ secrets.CLOUDFLARE_API_TOKEN }}" \
+            "https://api.cloudflare.com/client/v4/accounts/${{ secrets.CLOUDFLARE_ACCOUNT_ID }}/pages/projects?per_page=50")
+          echo "$RESP" | jq '{success, errors, project_names: [.result[]?.name]}'
+          if [ "$(echo "$RESP" | jq -r '.success')" != "true" ]; then
+            echo "FATAL: Cannot list projects. Check CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID secrets."
+            exit 1
+          fi
+
       - name: Add app.helloautoflow.com to autoflow-dashboard
         run: |
           if [ "${{ inputs.dry_run }}" = "true" ]; then
@@ -24,8 +36,13 @@ jobs:
             -H "Content-Type: application/json" \
             -d '{"name":"app.helloautoflow.com"}' \
             "https://api.cloudflare.com/client/v4/accounts/${{ secrets.CLOUDFLARE_ACCOUNT_ID }}/pages/projects/autoflow-dashboard/domains")
-          echo "$RESP" | jq '{success, result: {name: .result.name, status: .result.status}}'
-          echo "$RESP" | jq -e '.success' || (echo "FAILED" && exit 1)
+          echo "=== Full response ===" && echo "$RESP" | jq .
+          SUCCESS=$(echo "$RESP" | jq -r '.success')
+          if [ "$SUCCESS" != "true" ]; then
+            echo "FAILED:" && echo "$RESP" | jq '.errors'
+            exit 1
+          fi
+          echo "OK: $(echo "$RESP" | jq -r '.result.name') status=$(echo "$RESP" | jq -r '.result.status')"
 
       - name: Add docs.helloautoflow.com to autoflow-docs
         run: |
@@ -38,8 +55,13 @@ jobs:
             -H "Content-Type: application/json" \
             -d '{"name":"docs.helloautoflow.com"}' \
             "https://api.cloudflare.com/client/v4/accounts/${{ secrets.CLOUDFLARE_ACCOUNT_ID }}/pages/projects/autoflow-docs/domains")
-          echo "$RESP" | jq '{success, result: {name: .result.name, status: .result.status}}'
-          echo "$RESP" | jq -e '.success' || (echo "FAILED" && exit 1)
+          echo "=== Full response ===" && echo "$RESP" | jq .
+          SUCCESS=$(echo "$RESP" | jq -r '.success')
+          if [ "$SUCCESS" != "true" ]; then
+            echo "FAILED:" && echo "$RESP" | jq '.errors'
+            exit 1
+          fi
+          echo "OK: $(echo "$RESP" | jq -r '.result.name') status=$(echo "$RESP" | jq -r '.result.status')"
 
       - name: Add helloautoflow.com to autoflow-landing
         run: |
@@ -52,8 +74,13 @@ jobs:
             -H "Content-Type: application/json" \
             -d '{"name":"helloautoflow.com"}' \
             "https://api.cloudflare.com/client/v4/accounts/${{ secrets.CLOUDFLARE_ACCOUNT_ID }}/pages/projects/autoflow-landing/domains")
-          echo "$RESP" | jq '{success, result: {name: .result.name, status: .result.status}}'
-          echo "$RESP" | jq -e '.success' || (echo "FAILED" && exit 1)
+          echo "=== Full response ===" && echo "$RESP" | jq .
+          SUCCESS=$(echo "$RESP" | jq -r '.success')
+          if [ "$SUCCESS" != "true" ]; then
+            echo "FAILED:" && echo "$RESP" | jq '.errors'
+            exit 1
+          fi
+          echo "OK: $(echo "$RESP" | jq -r '.result.name') status=$(echo "$RESP" | jq -r '.result.status')"
 
       - name: Add www.helloautoflow.com to autoflow-landing
         run: |
@@ -66,8 +93,13 @@ jobs:
             -H "Content-Type: application/json" \
             -d '{"name":"www.helloautoflow.com"}' \
             "https://api.cloudflare.com/client/v4/accounts/${{ secrets.CLOUDFLARE_ACCOUNT_ID }}/pages/projects/autoflow-landing/domains")
-          echo "$RESP" | jq '{success, result: {name: .result.name, status: .result.status}}'
-          echo "$RESP" | jq -e '.success' || (echo "FAILED" && exit 1)
+          echo "=== Full response ===" && echo "$RESP" | jq .
+          SUCCESS=$(echo "$RESP" | jq -r '.success')
+          if [ "$SUCCESS" != "true" ]; then
+            echo "FAILED:" && echo "$RESP" | jq '.errors'
+            exit 1
+          fi
+          echo "OK: $(echo "$RESP" | jq -r '.result.name') status=$(echo "$RESP" | jq -r '.result.status')"
 
       - name: Summary
         run: |

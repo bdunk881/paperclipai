@@ -1,10 +1,14 @@
-import type { Metadata } from "next";
-import Link from "next/link";
+import { Link } from "react-router";
 
-export const metadata: Metadata = {
-  title: "Sign Up | AutoFlow",
-  description: "Create your AutoFlow account and launch your first workflow.",
-};
+export function meta() {
+  return [
+    { title: "Sign Up | AutoFlow" },
+    {
+      name: "description",
+      content: "Create your AutoFlow account and launch your first workflow.",
+    },
+  ];
+}
 
 export default function SignupPage() {
   return (
@@ -19,13 +23,13 @@ export default function SignupPage() {
 
           <div className="mt-8 flex flex-col gap-3 sm:flex-row">
             <Link
-              href="/#pricing"
+              to="/#pricing"
               className="inline-flex items-center justify-center rounded-lg bg-indigo-600 px-5 py-3 text-sm font-semibold text-white hover:bg-indigo-700"
             >
               View pricing and start trial
             </Link>
             <Link
-              href="/demo"
+              to="/demo"
               className="inline-flex items-center justify-center rounded-lg border border-gray-300 px-5 py-3 text-sm font-semibold text-gray-700 hover:bg-gray-50"
             >
               Try interactive demo

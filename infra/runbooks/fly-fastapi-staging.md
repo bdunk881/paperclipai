@@ -34,6 +34,12 @@ Configure these values before running the workflow:
 | Variable | `FLY_STAGING_APP_NAME` | Optional | Defaults to `autoflow-fastapi-staging`. |
 | Variable | `FLY_STAGING_BASE_URL` | Optional | Defaults to `https://autoflow-fastapi-staging.fly.dev`. |
 | Variable | `FLY_STAGING_SMOKE_USER_ID` | Optional | Defaults to `qa-smoke-user`. |
+| Variable | `FLY_PRODUCTION_APP_NAME` | Optional | Reserved for the later production Fly cutover target. |
+| Variable | `FLY_PRODUCTION_BASE_URL` | Optional | Reserved for the later production Fly cutover target. |
+| Variable | `FLY_PRODUCTION_SMOKE_USER_ID` | Optional | Reserved for the later production Fly cutover target. |
+| Variable | `FLY_PRODUCTION_CUSTOM_DOMAIN` | Optional | Reserved for the later production Fly cutover target. |
+| Variable | `FLY_PRODUCTION_RELAY_BASE_URL` | Optional | Reserved for the later production Fly cutover target. |
+| Variable | `FLY_PRODUCTION_RELAY_HOST_HEADER` | Optional | Reserved for the later production Fly cutover target. |
 Fly.io recommends deploy tokens rather than broad auth tokens for CI/CD.
 
 ## Deploy
@@ -45,7 +51,6 @@ when `dev` receives changes to:
 - `docker/backend/Dockerfile`
 - `fly.dev.toml`
 - `infra/scripts/fly_fastapi_smoke.sh`
-
 Automatic staging deploys run from `.github/workflows/deploy-fly-fastapi-staging.yml`
 when `staging` receives changes to:
 
@@ -53,6 +58,7 @@ when `staging` receives changes to:
 - `docker/backend/Dockerfile`
 - `fly.toml`
 - `infra/scripts/fly_fastapi_smoke.sh`
+- `backend/fly-cutover-probe-matrix.md`
 
 Manual dev deploy:
 
@@ -81,7 +87,6 @@ The smoke script verifies:
 - `POST /api/auth/native/oauth2/v2.0/initiate`
 - `GET /api/integrations/slack/oauth/callback?error=...`
 - `POST /api/webhooks/stripe`
-
 Artifacts are uploaded to `fastapi-fly-<environment>-evidence-<run_id>` and include:
 
 - `summary.md`

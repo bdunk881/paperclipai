@@ -17,14 +17,22 @@ import {
   getTicketActorProfile,
   listTickets,
   normalizeTicketSlaState,
-  type CreateTicketUiPayload,
+  registerTicketActorProfile,
   type TicketActorRef,
   type TicketPriority,
   type TicketRecord,
   type TicketSlaStateLike,
   type TicketStatus,
 } from "../api/tickets";
+import { listAgents } from "../api/agentApi";
 import { useAuth } from "../context/AuthContext";
+import { useWorkspace } from "../context/useWorkspace";
+import {
+  buildCreateTicketPayload,
+  type CreateTicketRouteActionData,
+  type CreateTicketRouteActionPayload,
+  type TicketsRouteData,
+} from "../routes/ticketRouteData";
 import {
   TicketActorChip,
   TicketEmptyState,
@@ -53,19 +61,30 @@ const EMPTY_FORM = {
   collaboratorKeys: [] as string[],
   dueDate: "",
   tags: "",
-  attachmentNames: [] as string[],
   externalSyncRequested: false,
 };
 
-export default function Tickets() {
+type TicketsProps = {
+  initialData?: TicketsRouteData;
+  routeAction?: {
+    data?: CreateTicketRouteActionData;
+    state: "idle" | "submitting" | "loading";
+    submit: (payload: CreateTicketRouteActionPayload) => void;
+  };
+};
+
+export default function Tickets({ initialData, routeAction }: TicketsProps = {}) {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const { getAccessToken } = useAuth();
-  const [tickets, setTickets] = useState<TicketRecord[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [submitting, setSubmitting] = useState(false);
+  const { getAccessToken, user } = useAuth();
+  const { activeWorkspaceId } = useWorkspace();
+  const [tickets, setTickets] = useState<TicketRecord[]>(() => initialData?.tickets ?? []);
+  const [availableActors, setAvailableActors] = useState<TicketActorRef[]>(() =>
+    initialData ? collectKnownActors(initialData.tickets) : []
+  );
+  const [loading, setLoading] = useState(() => initialData == null);
   const [error, setError] = useState<string | null>(null);
-  const [source, setSource] = useState<"api" | "mock" | null>(null);
+  const [source, setSource] = useState<"api" | "mock" | null>(() => initialData?.source ?? null);
   const [integrationWarnings, setIntegrationWarnings] = useState<string[]>([]);
   const [statusFilter, setStatusFilter] = useState<StatusFilter>(() => {
     const value = searchParams.get("status");
@@ -83,25 +102,90 @@ export default function Tickets() {
   const [createOpen, setCreateOpen] = useState(false);
   const [formState, setFormState] = useState(EMPTY_FORM);
   const [validationError, setValidationError] = useState<string | null>(null);
+  const submitting = routeAction ? routeAction.state !== "idle" : false;
 
   const loadTickets = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
       const accessToken = (await getAccessToken()) ?? undefined;
-      const response = await listTickets({}, accessToken);
+      const [response, agents] = await Promise.all([
+        listTickets({ workspaceId: activeWorkspaceId ?? undefined }, accessToken),
+        accessToken ? listAgents(accessToken).catch(() => []) : Promise.resolve([]),
+      ]);
+
+      const actorSeed: TicketActorRef[] = [];
+      if (user) {
+        const initials =
+          user.name
+            .split(/\s+/)
+            .map((part) => part[0] ?? "")
+            .join("")
+            .slice(0, 3)
+            .toUpperCase() || "U";
+        registerTicketActorProfile(
+          { type: "user", id: user.id },
+          { name: user.name, initials, title: "Workspace member", tone: "slate" }
+        );
+        actorSeed.push({ type: "user", id: user.id });
+      }
+
+      for (const agent of agents) {
+        const initials =
+          agent.name
+            .split(/\s+/)
+            .map((part) => part[0] ?? "")
+            .join("")
+            .slice(0, 3)
+            .toUpperCase() || "AG";
+        registerTicketActorProfile(
+          { type: "agent", id: agent.id },
+          {
+            name: agent.name,
+            initials,
+            title:
+              typeof agent.metadata?.teamName === "string"
+                ? agent.metadata.teamName
+                : agent.roleKey ?? "Agent",
+            tone: "indigo",
+          }
+        );
+        actorSeed.push({ type: "agent", id: agent.id });
+      }
+
       setTickets(response.tickets);
+      setAvailableActors(collectKnownActors(response.tickets, actorSeed));
       setSource(response.source);
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : "Failed to load tickets");
     } finally {
       setLoading(false);
     }
-  }, [getAccessToken]);
+  }, [activeWorkspaceId, getAccessToken, user]);
 
   useEffect(() => {
-    void loadTickets();
-  }, [loadTickets]);
+    if (!initialData) {
+      void loadTickets();
+    }
+  }, [initialData, loadTickets]);
+
+  useEffect(() => {
+    const actionData = routeAction?.data;
+    if (!actionData) return;
+
+    if (!actionData.ok) {
+      setValidationError(actionData.error);
+      return;
+    }
+
+    setIntegrationWarnings(actionData.integrationWarnings);
+    setSource(actionData.source);
+    setTickets((current) => [actionData.aggregate.ticket, ...current]);
+    setCreateOpen(false);
+    setFormState(EMPTY_FORM);
+    setValidationError(null);
+    navigate(`/tickets/${actionData.aggregate.ticket.id}`);
+  }, [navigate, routeAction?.data]);
 
   useEffect(() => {
     const status = searchParams.get("status");
@@ -114,7 +198,7 @@ export default function Tickets() {
     setSlaFilter(SLA_OPTIONS.includes(sla as SlaFilter) ? (sla as SlaFilter) : "all");
   }, [searchParams]);
 
-  const actorOptions = useMemo(() => collectKnownActors(tickets), [tickets]);
+  const actorOptions = useMemo(() => collectKnownActors(tickets, availableActors), [availableActors, tickets]);
 
   const filteredTickets = useMemo(() => {
     return tickets.filter((ticket) => {
@@ -157,25 +241,30 @@ export default function Tickets() {
       return;
     }
 
-    const assignees = buildAssignees(formState.primaryActorKey, formState.collaboratorKeys);
-    const payload: CreateTicketUiPayload = {
-      title: formState.title.trim(),
-      description: formState.description.trim(),
-      priority: formState.priority,
-      dueDate: formState.dueDate ? new Date(formState.dueDate).toISOString() : undefined,
-      tags: formState.tags
-        .split(",")
-        .map((tag) => tag.trim())
-        .filter(Boolean),
-      assignees,
-      attachmentNames: formState.attachmentNames,
-      externalSyncRequested: formState.externalSyncRequested,
-    };
+    if (routeAction) {
+      routeAction.submit({
+        title: formState.title,
+        description: formState.description,
+        priority: formState.priority,
+        primaryActorKey: formState.primaryActorKey,
+        collaboratorKeys: formState.collaboratorKeys,
+        dueDate: formState.dueDate,
+        tags: formState.tags,
+        workspaceId: activeWorkspaceId ?? undefined,
+        externalSyncRequested: formState.externalSyncRequested,
+      });
+      return;
+    }
 
-    setSubmitting(true);
     try {
       const accessToken = (await getAccessToken()) ?? undefined;
-      const created = await createTicket(payload, accessToken);
+      const created = await createTicket(
+        buildCreateTicketPayload({
+          ...formState,
+          workspaceId: activeWorkspaceId ?? undefined,
+        }),
+        accessToken
+      );
       setIntegrationWarnings(created.integrationWarnings);
       setSource(created.source);
       setTickets((current) => [created.ticket, ...current]);
@@ -186,8 +275,6 @@ export default function Tickets() {
       setValidationError(
         submitError instanceof Error ? submitError.message : "Unable to create ticket."
       );
-    } finally {
-      setSubmitting(false);
     }
   }
 
@@ -414,7 +501,7 @@ export default function Tickets() {
                 </p>
                 <h2 className="mt-2 text-2xl font-semibold text-slate-900 dark:text-slate-100">Capture work with full operating context</h2>
                 <p className="mt-2 text-sm text-slate-600 dark:text-slate-400">
-                  The M1 backend supports core ticket creation, assignment, and activity. Attachments and external sync stay staged in the UI until later milestones land.
+                  Create a workspace ticket with real assignees, priority, due date, and execution context.
                 </p>
               </div>
               <button
@@ -471,7 +558,7 @@ export default function Tickets() {
                     value: `${actor.type}:${actor.id}`,
                     label: `${getTicketActorProfile(actor).name} (${actor.type})`,
                   }))}
-                  placeholder="Choose an owner"
+                  placeholder={actorOptions.length > 0 ? "Choose an owner" : "No live assignees available"}
                 />
                 <SelectField
                   label="Priority"
@@ -539,54 +626,29 @@ export default function Tickets() {
                 </span>
               </label>
 
-              <div className="grid gap-4 md:grid-cols-[1fr_auto]">
-                <label className="grid gap-2">
-                  <span className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">Attachments</span>
-                  <input
-                    type="file"
-                    aria-label="Ticket attachments"
-                    multiple
-                    onChange={(event) =>
-                      setFormState((current) => ({
-                        ...current,
-                        attachmentNames: Array.from(event.target.files ?? []).map((file) => file.name),
-                      }))
-                    }
-                    className="rounded-2xl border border-dashed border-slate-300 bg-white px-4 py-3 text-sm text-slate-500 file:mr-3 file:rounded-full file:border-0 file:bg-slate-200 file:px-3 file:py-1.5 file:text-xs file:font-medium file:text-slate-700 hover:border-slate-400 dark:border-slate-700 dark:bg-slate-950/80 dark:text-slate-400 dark:file:bg-slate-800 dark:file:text-slate-100 dark:hover:border-slate-600"
-                  />
-                  {formState.attachmentNames.length > 0 ? (
-                    <div className="flex flex-wrap gap-2">
-                      {formState.attachmentNames.map((name) => (
-                        <span
-                          key={name}
-                          className="rounded-full border border-slate-200 bg-slate-100 px-3 py-1 text-xs text-slate-700 dark:border-slate-700 dark:bg-slate-900/70 dark:text-slate-300"
-                        >
-                          {name}
-                        </span>
-                      ))}
-                    </div>
-                  ) : null}
-                </label>
+              <label className="flex items-start gap-3 rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-700 dark:border-slate-700 dark:bg-slate-950/80 dark:text-slate-200">
+                <input
+                  type="checkbox"
+                  aria-label="Request external sync"
+                  checked={formState.externalSyncRequested}
+                  onChange={(event) =>
+                    setFormState((current) => ({
+                      ...current,
+                      externalSyncRequested: event.target.checked,
+                    }))
+                  }
+                  className="mt-1 h-4 w-4 rounded border-slate-300 text-teal-500 focus:ring-2 focus:ring-teal-400 dark:border-slate-600"
+                />
+                <span className="grid gap-1">
+                  <span className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
+                    Request external sync
+                  </span>
+                  <span className="text-xs text-slate-500 dark:text-slate-400">
+                    Include this ticket in the follow-up integration sync queue after it is created.
+                  </span>
+                </span>
+              </label>
 
-                <label className="flex items-center gap-3 rounded-[24px] border border-slate-200 bg-slate-50 px-4 py-4 dark:border-slate-800 dark:bg-slate-950/60">
-                  <input
-                    type="checkbox"
-                    aria-label="Request external sync"
-                    checked={formState.externalSyncRequested}
-                    onChange={(event) =>
-                      setFormState((current) => ({
-                        ...current,
-                        externalSyncRequested: event.target.checked,
-                      }))
-                    }
-                    className="h-4 w-4 rounded border-slate-300 bg-white text-teal-500 focus:ring-teal-400 dark:border-slate-600 dark:bg-slate-900 dark:text-teal-400"
-                  />
-                  <div>
-                    <p className="text-sm font-medium text-slate-800 dark:text-slate-200">Request external sync</p>
-                    <p className="text-xs text-slate-500">UI ready now, integration wiring in M4.</p>
-                  </div>
-                </label>
-              </div>
             </div>
 
             {validationError ? (
@@ -597,7 +659,7 @@ export default function Tickets() {
 
             <div className="mt-6 flex flex-col gap-3 border-t border-slate-200 pt-5 dark:border-slate-800 sm:flex-row sm:items-center sm:justify-between">
               <p className="text-xs text-slate-500">
-                Ticket IDs, assignees, and activity stream map to the live backend contract. Attachments and sync preferences are preserved for later milestones.
+                Ticket IDs, assignees, and activity stream map to the live backend contract.
               </p>
               <div className="flex items-center gap-3">
                 <button
@@ -627,21 +689,6 @@ export default function Tickets() {
       ) : null}
     </div>
   );
-}
-
-function buildAssignees(
-  primaryActorKey: string,
-  collaboratorKeys: string[]
-): CreateTicketUiPayload["assignees"] {
-  const deduped = [primaryActorKey, ...collaboratorKeys.filter((entry) => entry !== primaryActorKey)];
-  return deduped.map((key, index) => {
-    const [type, ...idParts] = key.split(":");
-    return {
-      type: type as TicketActorRef["type"],
-      id: idParts.join(":"),
-      role: index === 0 ? "primary" : "collaborator",
-    };
-  });
 }
 
 function FilterSelect({

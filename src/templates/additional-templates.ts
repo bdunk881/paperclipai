@@ -33,6 +33,7 @@ export const emailCampaignTemplate: WorkflowTemplate = createPipelineTemplate({
   action: "email.scheduleCampaign",
   scoreLabel: "Send Readiness Threshold",
   scoreKey: "sendReadinessScore",
+  allowGenericWebhook: true,
 });
 
 export const slackNotificationTemplate: WorkflowTemplate = createPipelineTemplate({
@@ -50,6 +51,8 @@ export const slackNotificationTemplate: WorkflowTemplate = createPipelineTemplat
   action: "slack.dispatchNotification",
   scoreLabel: "Escalation Threshold",
   scoreKey: "escalationScore",
+  triggerIntegrationSlug: "slack",
+  allowGenericWebhook: true,
 });
 
 export const githubIssueTriageTemplate: WorkflowTemplate = createPipelineTemplate({
@@ -67,6 +70,8 @@ export const githubIssueTriageTemplate: WorkflowTemplate = createPipelineTemplat
   action: "github.triageIssue",
   scoreLabel: "Severity Threshold",
   scoreKey: "severityScore",
+  triggerIntegrationSlug: "github",
+  allowGenericWebhook: true,
 });
 
 export const invoiceProcessingTemplate: WorkflowTemplate = createPipelineTemplate({

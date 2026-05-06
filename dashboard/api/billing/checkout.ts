@@ -1,6 +1,9 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 
 type ErrorPayload = { error: string };
+const STAGING_DASHBOARD_HOST = "staging.app.helloautoflow.com";
+const STAGING_BACKEND_BASE = "https://staging-api.helloautoflow.com";
+const PRODUCTION_BACKEND_BASE = "https://api.helloautoflow.com";
 
 function normalizeBackendBase(value?: string): string {
   if (!value) return "";
@@ -11,13 +14,12 @@ function normalizeBackendBase(value?: string): string {
   return trimmed.endsWith("/api") ? trimmed.slice(0, -4) : trimmed;
 }
 
-function resolveBackendApiBase(): string {
+function resolveBackendApiBase(req: VercelRequest): string {
   const candidates = [
     process.env.BILLING_API_BASE_URL,
     process.env.BACKEND_API_BASE_URL,
     process.env.VITE_API_BASE_URL,
     process.env.VITE_API_URL,
-    "https://api.helloautoflow.com",
   ];
 
   for (const value of candidates) {
@@ -26,7 +28,12 @@ function resolveBackendApiBase(): string {
     return trimmed;
   }
 
-  return "https://api.helloautoflow.com";
+  const host = req.headers.host?.toString().trim().toLowerCase() ?? "";
+  if (host === STAGING_DASHBOARD_HOST) {
+    return STAGING_BACKEND_BASE;
+  }
+
+  return PRODUCTION_BACKEND_BASE;
 }
 
 function sendError(res: VercelResponse, status: number, message: string): void {
@@ -39,7 +46,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return;
   }
 
-  const backendBase = resolveBackendApiBase();
+  const backendBase = resolveBackendApiBase(req);
   const upstreamUrl = `${backendBase}/api/billing/checkout`;
 
   try {

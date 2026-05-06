@@ -90,4 +90,17 @@ describe("app security middleware", () => {
     expect(res.headers["access-control-allow-origin"]).toBe("https://staging.app.helloautoflow.com");
     expect(res.headers["access-control-allow-credentials"]).toBe("true");
   });
+
+  it("allows origins declared through the native auth proxy allowlist", async () => {
+    const app = loadAppWithAllowedOrigins("https://app.helloautoflow.com", {
+      AUTH_NATIVE_AUTH_PROXY_ALLOWED_ORIGINS: "https://staging.app.helloautoflow.com",
+    });
+    const res = await request(app)
+      .get("/api/tickets/sla/settings?workspaceId=11111111-1111-4111-8111-111111111111")
+      .set("Origin", "https://staging.app.helloautoflow.com");
+
+    expect(res.status).toBe(401);
+    expect(res.headers["access-control-allow-origin"]).toBe("https://staging.app.helloautoflow.com");
+    expect(res.headers["access-control-allow-credentials"]).toBe("true");
+  });
 });

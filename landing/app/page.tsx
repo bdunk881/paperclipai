@@ -1,8 +1,21 @@
 "use client";
 
-import Image from "next/image";
-import Link from "next/link";
+import { Link } from "react-router";
 import { useId, useState } from "react";
+
+export function meta() {
+  return [
+    {
+      title:
+        "AutoFlow — Agent-Native Automation | Operating Layer for SMB Operators and Dev Teams",
+    },
+    {
+      name: "description",
+      content:
+        "AutoFlow is the agent-native automation platform for lean SMB operators and dev teams. BYOLLM, MCP-standard, 22-skill marketplace. Built by Altitude Media.",
+    },
+  ];
+}
 
 const MARKETPLACE_TILES = [
   {
@@ -65,6 +78,28 @@ const STATS = [
   { value: "42%", label: "faster execution cycles" },
   { value: "18h", label: "weekly manual work removed" },
   { value: "6 days", label: "to first live agent system" },
+];
+
+const FEATURES = [
+  {
+    title: "Bring Your Own LLM — No Lock-In",
+    description: "Connect any LLM provider. Switch models without rebuilding. You own the AI layer.",
+  },
+  {
+    title: "22 Agent Skills. One Marketplace.",
+    description:
+      "Slack, GitHub, Linear, Notion, Stripe, PostgreSQL, and 16 more. Skill marketplace expanding weekly.",
+  },
+  {
+    title: "See Everything, Control Anything",
+    description:
+      "Human-in-the-loop controls on every agent action. Describe outcomes, not steps — review before anything ships.",
+  },
+  {
+    title: "Agent Memory — Persistent Context",
+    description:
+      "Agents remember past runs, decisions, and outcomes. No re-briefing, no lost context. Unlike Zapier or Make.",
+  },
 ];
 
 const WORKFLOW_NODES = [
@@ -183,7 +218,7 @@ export default function Home() {
     <main className="landing-page">
       <header className="site-header">
         <div className="shell site-header__inner">
-          <Link className="brand-lockup" href="/" aria-label="AutoFlow home">
+          <Link className="brand-lockup" to="/" aria-label="AutoFlow home">
             <span className="brand-lockup__mark" aria-hidden="true">
               <span className="brand-lockup__core" />
             </span>
@@ -197,7 +232,7 @@ export default function Home() {
           </nav>
 
           <div className="site-header__actions">
-            <Link className="site-header__signin" href="/signup">
+            <Link className="site-header__signin" to="/signup">
               Sign in
             </Link>
             <a className="site-header__cta" href="#waitlist">
@@ -217,10 +252,10 @@ export default function Home() {
               Now in public beta
             </div>
             <p className="eyebrow">The Electric Lab for operational teams</p>
-            <h1>Hire AI. Deploy Fast. Earn More.</h1>
+            <h1>The AI-Native Operating Layer for SMB Operators and Developer Teams</h1>
             <p className="hero-copy__lede">
-              The intelligent nervous system for modern teams. AI-native, MCP-standard, and
-              BYOLLM-ready.
+              Agent-native automation for lean operators and dev teams who can&#39;t afford brittle
+              automations. MCP-standard, BYOLLM-ready, and built by Altitude Media.
             </p>
             <div id="waitlist">
               <WaitlistForm className="hero-copy__form" buttonLabel="Join waitlist" />
@@ -266,6 +301,28 @@ export default function Home() {
         </div>
       </section>
 
+      <section className="section section--features">
+        <div className="shell">
+          <div className="section-heading">
+            <p className="eyebrow">Core Capabilities</p>
+            <h2>Built for the next generation of operations.</h2>
+          </div>
+
+          <div className="feature-grid">
+            {FEATURES.map((feature, index) => (
+              <article
+                key={feature.title}
+                className="feature-card"
+                style={{ "--feature-delay": `${index * 50}ms` } as React.CSSProperties}
+              >
+                <h3>{feature.title}</h3>
+                <p>{feature.description}</p>
+              </article>
+            ))}
+          </div>
+        </div>
+      </section>
+
       <section className="metrics-band">
         <div className="shell metrics-band__grid">
           {STATS.map((stat) => (
@@ -291,7 +348,7 @@ export default function Home() {
           {MARKETPLACE_TILES.map((tile) => (
             <article key={tile.name} className="marketplace-tile">
               <div className="marketplace-tile__logo">
-                <Image alt={`${tile.name} logo`} src={tile.logo} width={48} height={48} />
+                <img alt={`${tile.name} logo`} src={tile.logo} width={48} height={48} />
               </div>
               <div className="marketplace-tile__badge">MCP verified</div>
               <h3>{tile.name}</h3>
@@ -398,7 +455,7 @@ export default function Home() {
           <div>
             <p className="site-footer__brand">AutoFlow</p>
             <p className="site-footer__copy">
-              The AI-native operating layer for teams shipping on live systems.
+              Agent-native automation by Altitude Media — for teams shipping on live systems.
             </p>
           </div>
           <div className="site-footer__links">

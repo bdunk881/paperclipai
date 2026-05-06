@@ -37,9 +37,17 @@ spec:
               value: production
             - name: PORT
               value: "8000"
-          envFrom:
-            - secretRef:
-                name: autoflow-backend-secrets
+            - name: KEY_VAULT_URL
+              value: https://autoflow-prod-hub-kv.vault.azure.net/
+            - name: KEY_VAULT_REQUIRED_SECRETS
+              value: >-
+                ALLOWED_ORIGINS,APOLLO_REDIRECT_URI,APP_BASE_URL,
+                AUTH_NATIVE_AUTH_PROXY_ALLOWED_ORIGINS,AUTH_NATIVE_AUTH_PROXY_BASE_URL,
+                AZURE_CIAM_ALLOWED_AUDIENCES,AZURE_CIAM_AUTHORITY,AZURE_CIAM_CLIENT_ID,
+                AZURE_CIAM_TENANT_ID,AZURE_CIAM_TENANT_SUBDOMAIN,
+                CONNECTOR_CREDENTIAL_ENCRYPTION_KEY,CONTROL_PLANE_SECRET_KEY,
+                DASHBOARD_APP_URL,LLM_CONFIG_ENCRYPTION_KEY,NODE_ENV,
+                WORKFLOW_RUNTIME_PERSISTENCE_ENABLED
           resources:
             requests:
               cpu: "200m"

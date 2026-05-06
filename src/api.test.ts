@@ -119,6 +119,22 @@ beforeEach(() => {
   resetImportedTemplatesForTests();
 });
 
+describe("user routes", () => {
+  it("mounts the authenticated user profile API", async () => {
+    const res = await request(app)
+      .get("/api/user/profile")
+      .set(asAuth());
+
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({
+      profile: {
+        displayName: null,
+        timezone: "UTC",
+      },
+    });
+  });
+});
+
 function withQaBypass(userIds = "qa-smoke-user") {
   process.env.QA_AUTH_BYPASS_ENABLED = "true";
   process.env.QA_AUTH_BYPASS_USER_IDS = userIds;

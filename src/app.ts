@@ -92,6 +92,7 @@ import {
   createWorkspaceResolver,
   WorkspaceAwareRequest,
 } from "./middleware/workspaceResolver";
+import profileRoutes from "./user/profileRoutes";
 import { createWorkspaceRoutes } from "./workspaces/workspaceRoutes";
 import {
   createPortableWorkflowBundle,
@@ -417,6 +418,7 @@ app.use("/api/integrations/datadog-azure-monitor", datadogAzureMonitorRoutes);
 app.use("/api/integrations/agent-catalog", agentCatalogRoutes);
 app.use("/api/connectors/google-workspace", googleWorkspaceConnectorRoutes);
 app.use("/api/workspaces", requireAuth, workspaceRoutes);
+app.use("/api/user", requireAuth, profileRoutes);
 app.use("/api/companies", requireAuth, workspaceResolver, companyRoutes);
 app.use("/api/control-plane", requireAuth, workspaceResolver, controlPlaneRoutes);
 app.use("/api/hitl", requireAuth, hitlRoutes);

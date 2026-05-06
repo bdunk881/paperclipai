@@ -10,14 +10,8 @@ import httpx
 from fastapi import Depends, FastAPI, Header, HTTPException, Request, Response, status
 
 from edge_proxy import (
-    ALLOWED_NATIVE_AUTH_PATHS,
     copy_response_headers,
-    correlation_id,
-    is_allowed_origin,
-    native_auth_body,
-    native_auth_request_headers,
     relay_request_headers,
-    resolve_native_auth_proxy_base_urls,
     resolve_relay_base_url,
     resolve_relay_insecure_tls,
     send_upstream_request,
@@ -58,47 +52,6 @@ def resolve_user_id(
 @app.get("/health")
 def healthcheck() -> dict[str, str]:
     return {"status": "ok"}
-
-
-@app.post("/api/auth/native/{proxy_path:path}")
-async def native_auth_proxy(proxy_path: str, request: Request) -> Response:
-    if proxy_path not in ALLOWED_NATIVE_AUTH_PATHS:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Native auth proxy path is not allowed")
-
-    if not is_allowed_origin(request.headers.get("origin")):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Origin is not allowed for native auth proxy requests.",
-        )
-
-    upstream_base_urls = resolve_native_auth_proxy_base_urls()
-    if not upstream_base_urls:
-        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Native auth proxy is not configured.")
-
-    body = await native_auth_body(request)
-    correlation = correlation_id(request)
-    headers = native_auth_request_headers(request, correlation)
-    query = f"?{request.url.query}" if request.url.query else ""
-
-    last_error: httpx.HTTPError | None = None
-    for base_url in upstream_base_urls:
-        target_url = f"{base_url}/{proxy_path}{query}"
-        try:
-            upstream_response = await send_upstream_request("POST", target_url, headers, body)
-        except httpx.HTTPError as exc:
-            last_error = exc
-            continue
-
-        return Response(
-            content=upstream_response.content,
-            status_code=upstream_response.status_code,
-            headers=copy_response_headers(upstream_response.headers),
-        )
-
-    detail = "Native auth upstream request failed."
-    if last_error is not None:
-        detail = f"{detail} {last_error}"
-    raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=detail)
 
 
 async def relay_public_edge_request(request: Request) -> Response:

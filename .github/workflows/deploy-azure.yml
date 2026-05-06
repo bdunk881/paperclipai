@@ -825,11 +825,9 @@ jobs:
           require_env_key "ALLOWED_ORIGINS"
           require_env_key "APP_JWT_SECRET"
           require_env_key "APP_JWT_EXPIRES_IN"
-          require_any_env_key "AZURE_CIAM_TENANT_ID" "AZURE_TENANT_ID"
-          require_any_env_key "AZURE_CIAM_TENANT_SUBDOMAIN" "AZURE_TENANT_SUBDOMAIN"
-          require_any_env_key "AZURE_CIAM_CLIENT_ID" "AZURE_CIAM_ALLOWED_AUDIENCES" "AZURE_CLIENT_ID"
-          require_env_key "AZURE_CIAM_AUTHORITY"
-          require_env_key "AUTH_NATIVE_AUTH_PROXY_BASE_URL"
+          require_env_key "AZURE_TENANT_ID"
+          require_env_key "AZURE_TENANT_SUBDOMAIN"
+          require_env_key "AZURE_CLIENT_ID"
 
           require_origin_in_allowlist() {
             local key="$1"
@@ -855,22 +853,6 @@ jobs:
             exit 1
           fi
 
-          TENANT_ID_VALUE="$(read_env_value "AZURE_CIAM_TENANT_ID")"
-          if [ -z "$TENANT_ID_VALUE" ]; then
-            TENANT_ID_VALUE="$(read_env_value "AZURE_TENANT_ID")"
-          fi
-
-          TENANT_SUBDOMAIN_VALUE="$(read_env_value "AZURE_CIAM_TENANT_SUBDOMAIN")"
-          if [ -z "$TENANT_SUBDOMAIN_VALUE" ]; then
-            TENANT_SUBDOMAIN_VALUE="$(read_env_value "AZURE_TENANT_SUBDOMAIN")"
-          fi
-
-          TENANT_ID_VALUE="$(printf '%s' "$TENANT_ID_VALUE" | tr -d '\r' | xargs)"
-          TENANT_SUBDOMAIN_VALUE="$(printf '%s' "$TENANT_SUBDOMAIN_VALUE" | tr -d '\r' | xargs)"
-          EXPECTED_CIAM_AUTHORITY="https://${TENANT_SUBDOMAIN_VALUE}.ciamlogin.com/${TENANT_ID_VALUE}"
-
-          require_exact_env_value "AZURE_CIAM_AUTHORITY" "$EXPECTED_CIAM_AUTHORITY"
-          require_exact_env_value "AUTH_NATIVE_AUTH_PROXY_BASE_URL" "$EXPECTED_CIAM_AUTHORITY"
           kubectl apply -f k8s/production/namespace.yaml
           kubectl create secret generic "${{ steps.target.outputs.k8s_secret_name }}" \
             --from-env-file="$tmpfile" \

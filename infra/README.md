@@ -9,7 +9,7 @@ Legacy Azure teardown and DNS cutover steps remain documented under
 
 | Layer | Tool |
 |---|---|
-| Backend hosting | Fly.io for `dev` and `staging`; Azure references remain only for Phase 5 teardown |
+| Backend hosting | Fly.io |
 | Database + Auth | Supabase |
 | Frontend hosting | Cloudflare Pages |
 | Container registry | GitHub Container Registry (ghcr.io) |
@@ -20,7 +20,6 @@ Legacy Azure teardown and DNS cutover steps remain documented under
 
 | App | Platform | Workflow |
 |---|---|---|
-| `backend` legacy production | Azure Container Apps | `.github/workflows/deploy-azure.yml` |
 | `backend` dev | Fly.io | `.github/workflows/deploy-fly-fastapi-dev.yml` |
 | `backend` staging | Fly.io | `.github/workflows/deploy-fly-fastapi-staging.yml` |
 | `dashboard` | Cloudflare Pages | `.github/workflows/dashboard-cloudflare-pages.yml` |
@@ -95,7 +94,6 @@ Add these in the repo settings -> Secrets and variables -> Actions:
 
 - **Deploy backend dev:** push to `dev` — `.github/workflows/deploy-fly-fastapi-dev.yml` deploys `autoflow-fastapi-dev`.
 - **Deploy backend staging:** push to `staging` — `.github/workflows/deploy-fly-fastapi-staging.yml` deploys `autoflow-fastapi-staging`.
-- **Legacy backend production:** use `.github/workflows/deploy-azure.yml` only during the ALT-2325 teardown window or when validating legacy Azure state before final retirement.
 - **Promotion flow:** all feature work lands through PRs into `dev`, then `dev` promotes to `staging`, then `staging` promotes to `master`.
 - **Deploy dashboard:** pushes and PRs with `dashboard/**` changes run `.github/workflows/dashboard-cloudflare-pages.yml`.
 - **Deploy docs:** pushes and PRs with `docs/**` changes run `.github/workflows/docs-cloudflare-pages.yml`.
@@ -128,9 +126,6 @@ Recommended host split for the three-environment pipeline:
 
 Use [`infra/runbooks/azure-cutover-decommission.md`](runbooks/azure-cutover-decommission.md)
 to verify and remove any remaining Azure-bound records during Phase 5.
-
-Cloudflare Pages cutover details remain in
-`infra/runbooks/cloudflare-pages-phase4-cutover.md`.
 
 ## QA Integration Evidence
 

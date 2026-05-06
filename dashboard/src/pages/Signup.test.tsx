@@ -9,7 +9,7 @@ function LocationProbe() {
 }
 
 describe("Signup", () => {
-  it("redirects to the native auth signup mode", async () => {
+  it("redirects to the login signup mode", async () => {
     render(
       <MemoryRouter initialEntries={["/signup"]}>
         <Routes>

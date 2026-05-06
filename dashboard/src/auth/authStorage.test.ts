@@ -33,6 +33,17 @@ describe("authStorage", () => {
     expect(readStoredAuthUser()).toBeNull();
   });
 
+  it("accepts a QA preview user seeded with only an id", () => {
+    window.sessionStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify({ id: "qa-smoke-user" }));
+
+    expect(readStoredAuthUser()).toEqual({
+      id: "qa-smoke-user",
+      email: "",
+      name: "qa-smoke-user",
+      tenantId: undefined,
+    });
+  });
+
   it("clears the stored auth user", () => {
     writeStoredAuthUser({
       id: "usr-qa-preview",

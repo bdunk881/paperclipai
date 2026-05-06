@@ -1,10 +1,11 @@
-import type { Metadata } from "next";
-import Link from "next/link";
+import { Link } from "react-router";
 
-export const metadata: Metadata = {
-  title: "Terms of Service | AutoFlow",
-  description: "Terms that govern use of AutoFlow services.",
-};
+export function meta() {
+  return [
+    { title: "Terms of Service | AutoFlow" },
+    { name: "description", content: "Terms that govern use of AutoFlow services." },
+  ];
+}
 
 export default function TermsPage() {
   return (
@@ -60,7 +61,7 @@ export default function TermsPage() {
         </div>
 
         <div className="mt-12 border-t border-gray-200 pt-6">
-          <Link href="/" className="text-sm font-medium text-indigo-600 hover:text-indigo-700">
+          <Link to="/" className="text-sm font-medium text-indigo-600 hover:text-indigo-700">
             Back to homepage
           </Link>
         </div>

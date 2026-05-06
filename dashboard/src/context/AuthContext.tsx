@@ -1,16 +1,21 @@
 import React, { createContext, useContext } from "react";
+import { type AuthChangeEvent, type Session } from "@supabase/supabase-js";
+import { Sentry } from "../sentry";
 import {
   AUTH_STORAGE_EVENT,
   StoredAuthSession,
   StoredAuthUser,
-  clearStoredAuthSession,
-  getInMemoryRefreshToken,
-  readStoredAuthSession,
+  clearStoredAuthUser,
   readStoredAuthUser,
-  setInMemoryRefreshToken,
-  writeStoredAuthSession,
+  writeStoredAuthUser,
 } from "../auth/authStorage";
-import { isSessionExpiring, refreshNativeAuthSession, sessionFromTokenResponse } from "../auth/nativeAuthClient";
+import {
+  getSupabaseClient,
+  getSupabaseStoredSession,
+  sessionFromSupabaseSession,
+  signOutSupabase,
+} from "../auth/supabaseAuth";
+import { clearStoredActiveWorkspaceId } from "../workspaces/workspaceStorage";
 
 export interface User {
   id: string;
@@ -53,29 +58,79 @@ function sessionUser(session: StoredAuthSession | null, storedUser: StoredAuthUs
 }
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const [storedSession, setStoredSession] = React.useState<StoredAuthSession | null>(() => readStoredAuthSession());
+  const [storedSession, setStoredSession] = React.useState<StoredAuthSession | null>(null);
   const [storedUser, setStoredUser] = React.useState<StoredAuthUser | null>(() => readStoredAuthUser());
 
+  const syncStoredUser = React.useCallback(() => {
+    setStoredUser(readStoredAuthUser());
+  }, []);
+
   React.useEffect(() => {
-    const syncAuthState = () => {
-      setStoredSession(readStoredAuthSession());
-      setStoredUser(readStoredAuthUser());
-    };
+    syncStoredUser();
 
-    // Re-read storage on mount so sessions written during initial route
-    // handling are not missed before listeners are attached.
-    syncAuthState();
-
-    window.addEventListener("storage", syncAuthState);
-    window.addEventListener(AUTH_STORAGE_EVENT, syncAuthState);
+    window.addEventListener("storage", syncStoredUser);
+    window.addEventListener(AUTH_STORAGE_EVENT, syncStoredUser);
 
     return () => {
-      window.removeEventListener("storage", syncAuthState);
-      window.removeEventListener(AUTH_STORAGE_EVENT, syncAuthState);
+      window.removeEventListener("storage", syncStoredUser);
+      window.removeEventListener(AUTH_STORAGE_EVENT, syncStoredUser);
+    };
+  }, [syncStoredUser]);
+
+  const user = sessionUser(storedSession, storedUser);
+
+  React.useEffect(() => {
+    if (user) {
+      Sentry.setUser({ id: user.id, email: user.email, username: user.name });
+    } else {
+      Sentry.setUser(null);
+    }
+  }, [user]);
+
+  React.useEffect(() => {
+    const supabase = getSupabaseClient();
+    if (!supabase) {
+      return;
+    }
+
+    let active = true;
+
+    void getSupabaseStoredSession()
+      .then((session) => {
+        if (!active) {
+          return;
+        }
+
+        setStoredSession(session);
+        if (session?.user) {
+          writeStoredAuthUser(session.user);
+        }
+      })
+      .catch(() => {
+        // Preserve preview-mode user state when Supabase is unavailable.
+      });
+
+    const { data } = supabase.auth.onAuthStateChange((_event: AuthChangeEvent, session: Session | null) => {
+      if (!active) {
+        return;
+      }
+
+      const nextSession = session ? sessionFromSupabaseSession(session) : null;
+      setStoredSession(nextSession);
+
+      if (nextSession?.user) {
+        writeStoredAuthUser(nextSession.user);
+      } else {
+        clearStoredAuthUser();
+      }
+    });
+
+    return () => {
+      active = false;
+      data.subscription.unsubscribe();
     };
   }, []);
 
-  const user = sessionUser(storedSession, storedUser);
   const accessMode: AuthAccessMode = storedSession
     ? "authenticated"
     : storedUser
@@ -83,43 +138,28 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       : "anonymous";
 
   const logout = React.useCallback(() => {
-    clearStoredAuthSession();
+    if (storedSession?.authProvider === "supabase") {
+      void signOutSupabase().catch(() => {
+        // Local cleanup still runs below.
+      });
+    }
+
+    clearStoredAuthUser();
+    clearStoredActiveWorkspaceId();
     setStoredSession(null);
     setStoredUser(null);
-  }, []);
+  }, [storedSession]);
 
   const getAccessToken = React.useCallback(async (): Promise<string | null> => {
-    const latestSession = readStoredAuthSession();
+    const refreshed = await getSupabaseStoredSession().catch(() => null);
+    setStoredSession(refreshed);
 
-    if (!latestSession) {
-      return null;
-    }
-
-    if (!isSessionExpiring(latestSession)) {
-      return latestSession.accessToken;
-    }
-
-    const refreshToken = latestSession.refreshToken ?? getInMemoryRefreshToken();
-    if (!refreshToken) {
-      clearStoredAuthSession();
-      setInMemoryRefreshToken(undefined);
-      setStoredSession(null);
-      setStoredUser(null);
-      return null;
-    }
-
-    try {
-      const refreshed = sessionFromTokenResponse(await refreshNativeAuthSession(refreshToken));
-      writeStoredAuthSession(refreshed);
-      setStoredSession(refreshed);
-      setStoredUser(refreshed.user);
+    if (refreshed?.user) {
+      writeStoredAuthUser(refreshed.user);
       return refreshed.accessToken;
-    } catch {
-      clearStoredAuthSession();
-      setStoredSession(null);
-      setStoredUser(null);
-      return null;
     }
+
+    return null;
   }, []);
 
   const requireAccessToken = React.useCallback(async (): Promise<string> => {

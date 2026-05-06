@@ -5,33 +5,16 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const {
   authState,
-  initializeMock,
-  handleRedirectPromiseMock,
-  addEventCallbackMock,
-  getAllAccountsMock,
-  setActiveAccountMock,
+  loginMock,
+  signupMock,
+  logoutMock,
+  getAccessTokenMock,
 } = vi.hoisted(() => ({
   authState: { user: null as null | { id: string; email: string; name: string } },
-  initializeMock: vi.fn(() => Promise.resolve()),
-  handleRedirectPromiseMock: vi.fn(() => Promise.resolve(null)),
-  addEventCallbackMock: vi.fn(),
-  getAllAccountsMock: vi.fn(() => []),
-  setActiveAccountMock: vi.fn(),
-}));
-
-vi.mock("@azure/msal-browser", () => ({
-  PublicClientApplication: vi.fn(() => ({
-    initialize: initializeMock,
-    handleRedirectPromise: handleRedirectPromiseMock,
-    addEventCallback: addEventCallbackMock,
-    getAllAccounts: getAllAccountsMock,
-    setActiveAccount: setActiveAccountMock,
-  })),
-  EventType: { LOGIN_SUCCESS: "LOGIN_SUCCESS" },
-}));
-
-vi.mock("@azure/msal-react", () => ({
-  MsalProvider: ({ children }: { children: ReactNode }) => <>{children}</>,
+  loginMock: vi.fn(),
+  signupMock: vi.fn(),
+  logoutMock: vi.fn(),
+  getAccessTokenMock: vi.fn(() => Promise.resolve("test-access-token")),
 }));
 
 vi.mock("./context/AuthContext", () => ({
@@ -39,10 +22,10 @@ vi.mock("./context/AuthContext", () => ({
   useAuth: () => ({
     user: authState.user,
     accessMode: authState.user ? "authenticated" : "anonymous",
-    login: vi.fn(),
-    signup: vi.fn(),
-    logout: vi.fn(),
-    getAccessToken: vi.fn(),
+    login: loginMock,
+    signup: signupMock,
+    logout: logoutMock,
+    getAccessToken: getAccessTokenMock,
   }),
 }));
 
@@ -64,7 +47,13 @@ vi.mock("./pages/RunMonitor", () => ({ default: () => <div>Run Monitor Page</div
 vi.mock("./pages/RunHistory", () => ({ default: () => <div>Run History Page</div> }));
 vi.mock("./pages/LandingPage", () => ({ default: () => <div>Landing Page</div> }));
 vi.mock("./pages/LLMProviders", () => ({ default: () => <div>LLM Providers Page</div> }));
-vi.mock("./pages/MissionState", () => ({ default: () => <div>Mission State Page</div> }));
+vi.mock("./pages/MissionState", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./pages/MissionState")>();
+  return {
+    ...actual,
+    default: () => <div>Mission State Page</div>,
+  };
+});
 vi.mock("./pages/Settings", () => ({ default: () => <div>Settings Page</div> }));
 vi.mock("./pages/ProfileSettings", () => ({ default: () => <div>Profile Settings Page</div> }));
 vi.mock("./pages/SecuritySettings", () => ({ default: () => <div>Security Settings Page</div> }));
@@ -92,16 +81,31 @@ vi.mock("./pages/TicketActorView", () => ({ default: () => <div>Ticket Actor Pag
 vi.mock("./pages/TicketSlaDashboard", () => ({ default: () => <div>Ticket SLA Dashboard Page</div> }));
 vi.mock("./pages/TicketSlaSettings", () => ({ default: () => <div>Ticket SLA Settings Page</div> }));
 
+// Stub ticket API loaders so routes with loaders resolve immediately in tests
+vi.mock("./api/tickets", () => ({
+  listTickets: vi.fn().mockResolvedValue([]),
+  getTicket: vi.fn().mockResolvedValue(null),
+  createTicket: vi.fn().mockResolvedValue({}),
+}));
+
+vi.mock("./api/client", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./api/client")>();
+  return {
+    ...actual,
+    listTemplates: vi.fn().mockResolvedValue([]),
+    listCompanyRoleTemplates: vi.fn().mockResolvedValue({ roleTemplates: [] }),
+  };
+});
+
 import App from "./App";
 
 describe("App", () => {
   beforeEach(() => {
     authState.user = null;
-    initializeMock.mockClear();
-    handleRedirectPromiseMock.mockClear();
-    addEventCallbackMock.mockClear();
-    getAllAccountsMock.mockClear();
-    setActiveAccountMock.mockClear();
+    loginMock.mockClear();
+    signupMock.mockClear();
+    logoutMock.mockClear();
+    getAccessTokenMock.mockClear();
     window.history.replaceState({}, "", "/");
   });
 

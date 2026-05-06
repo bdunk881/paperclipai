@@ -13,6 +13,7 @@ import {
   type ConnectorHealthState,
   type ConnectorHealthSummary,
 } from "../api/client";
+import { useAuth } from "../context/AuthContext";
 
 const STATE_STYLES: Record<ConnectorHealthState, string> = {
   healthy: "bg-emerald-100 text-emerald-800",
@@ -33,20 +34,35 @@ const STATE_LABELS: Record<ConnectorHealthState, string> = {
 };
 
 export default function ConnectorHealth() {
+  const { getAccessToken } = useAuth();
   const [connectors, setConnectors] = useState<ConnectorHealthRecord[]>([]);
   const [summary, setSummary] = useState<ConnectorHealthSummary | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    getConnectorHealth()
-      .then((data) => {
+    let cancelled = false;
+
+    void (async () => {
+      try {
+        const accessToken = (await getAccessToken()) ?? undefined;
+        const data = await getConnectorHealth(accessToken);
+        if (cancelled) {
+          return;
+        }
         setConnectors(data.connectors);
         setSummary(data.summary);
-      })
-      .catch((err) => {
+      } catch (err) {
+        if (cancelled) {
+          return;
+        }
         setError(err instanceof Error ? err.message : "Failed to load connector health");
-      });
-  }, []);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [getAccessToken]);
 
   return (
     <div className="space-y-8 p-8">

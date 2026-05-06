@@ -158,6 +158,19 @@ function toHeartbeatStatus(status: ControlPlaneExecutionStatus): HeartbeatStatus
   }
 }
 
+function shouldResetLegacyAgentErrorStatus(heartbeatStatus: HeartbeatStatus): boolean {
+  return heartbeatStatus === "running" || heartbeatStatus === "completed";
+}
+
+function normalizeAgentStatusForSuccessfulHeartbeat(
+  agent: ControlPlaneAgent,
+  heartbeatStatus: HeartbeatStatus
+): void {
+  if (shouldResetLegacyAgentErrorStatus(heartbeatStatus) && (agent.status as string) === "error") {
+    agent.status = "active";
+  }
+}
+
 function modelForTier(tier: "lite" | "standard" | "power"): string {
   switch (tier) {
     case "lite":
@@ -1023,8 +1036,8 @@ async function upsertAgentRow(agent: ControlPlaneAgent, workspaceId: string, cli
            status = EXCLUDED.status,
            paused_by_company_lifecycle = EXCLUDED.paused_by_company_lifecycle,
            current_execution_id = EXCLUDED.current_execution_id,
-           last_heartbeat_at = EXCLUDED.last_heartbeat_at,
-           last_heartbeat_status = EXCLUDED.last_heartbeat_status,
+           last_heartbeat_at = COALESCE(EXCLUDED.last_heartbeat_at, control_plane_agents.last_heartbeat_at),
+           last_heartbeat_status = COALESCE(EXCLUDED.last_heartbeat_status, control_plane_agents.last_heartbeat_status),
            updated_at = EXCLUDED.updated_at`,
     [
       agent.id,
@@ -2554,6 +2567,7 @@ export const controlPlaneStore = {
     agent.currentExecutionId = execution.id;
     agent.lastHeartbeatAt = requestedAt;
     agent.lastHeartbeatStatus = "running";
+    normalizeAgentStatusForSuccessfulHeartbeat(agent, "running");
     agent.updatedAt = requestedAt;
 
     team.lastHeartbeatAt = requestedAt;
@@ -2642,6 +2656,7 @@ export const controlPlaneStore = {
       agent.currentExecutionId = undefined;
       agent.lastHeartbeatAt = timestamp;
       agent.lastHeartbeatStatus = toHeartbeatStatus(input.status);
+      normalizeAgentStatusForSuccessfulHeartbeat(agent, agent.lastHeartbeatStatus);
       agent.updatedAt = timestamp;
     }
 
@@ -2847,6 +2862,7 @@ export const controlPlaneStore = {
     team.updatedAt = timestamp;
     agent.lastHeartbeatAt = timestamp;
     agent.lastHeartbeatStatus = input.status;
+    normalizeAgentStatusForSuccessfulHeartbeat(agent, input.status);
     agent.updatedAt = timestamp;
 
     const heartbeat: AgentHeartbeatRecord = {

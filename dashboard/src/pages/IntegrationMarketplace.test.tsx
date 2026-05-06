@@ -128,6 +128,7 @@ describe("IntegrationMarketplace", () => {
       );
     });
     expect(screen.getByText(/click connect below to launch the live oauth flow/i)).toBeInTheDocument();
+    expect(screen.getByText(/not connected/i)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /^connect$/i })).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: /^connect$/i }));
@@ -139,6 +140,12 @@ describe("IntegrationMarketplace", () => {
       );
       expect(assignMock).toHaveBeenCalledWith("https://oauth.example.com/slack");
     });
+    expect(screen.getByText(/this integration is authenticated and ready to use/i)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^disconnect$/i })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /^disconnect$/i }));
+    expect(screen.getByText(/not connected/i)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^connect$/i })).toBeInTheDocument();
 
     const closeButton = screen.getAllByRole("button").find((button) => button.querySelector("svg.lucide-x"));
     if (!closeButton) throw new Error("Drawer close button not found");

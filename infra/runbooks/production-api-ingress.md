@@ -31,6 +31,8 @@ The production env secret must pin native auth to the direct CIAM authority.
 The retired branded auth hostname is no longer a valid fallback:
 
 ```env
+APP_JWT_SECRET=<32+ char random secret>
+APP_JWT_EXPIRES_IN=8h
 AZURE_CIAM_TENANT_SUBDOMAIN=<tenant-subdomain>
 AZURE_CIAM_TENANT_ID=<tenant-guid>
 AZURE_CIAM_AUTHORITY=https://<tenant-subdomain>.ciamlogin.com/<tenant-guid>
@@ -97,6 +99,13 @@ The deploy is not ready for DNS cutover until the HTTPS verification succeeds.
 It also is not considered healthy until a native-auth initiate probe to
 `/api/auth/native/oauth2/v2.0/initiate` reaches the upstream over TLS and
 returns an application response (`200` or `400`) instead of a proxy failure.
+
+For the actual public cutover, use the repo-managed GitHub Actions workflow
+`.github/workflows/cutover-production-api-dns.yml`. It resolves the live AKS
+ingress endpoint from Azure, re-verifies `/health` and the Apollo OAuth route
+through the ingress with `curl --resolve`, updates the Cloudflare `api` record,
+and then verifies both the public API host and `app.helloautoflow.com`'s
+same-origin rewrite against the corrected backend.
 
 ## Current Gap
 

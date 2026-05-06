@@ -2,15 +2,14 @@ import React from "react";
 import ReactDOM from "react-dom/client";
 import "@xyflow/react/dist/style.css";
 import App from "./App";
-import { initializeMsalInstance } from "./auth/msalInstance";
 import "./index.css";
 import { initializeTheme } from "./hooks/useTheme";
+import { initSentry } from "./sentry";
 
+initSentry();
 initializeTheme();
 
-async function bootstrap() {
-  await initializeMsalInstance();
-
+function bootstrap() {
   ReactDOM.createRoot(document.getElementById("root")!).render(
     <React.StrictMode>
       <App />
@@ -18,4 +17,4 @@ async function bootstrap() {
   );
 }
 
-void bootstrap();
+bootstrap();

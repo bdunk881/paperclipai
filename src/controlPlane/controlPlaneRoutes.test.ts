@@ -17,7 +17,7 @@ describe("controlPlaneRoutes", () => {
     app.use((req, _res, next) => {
       (req as express.Request & { auth?: { sub: string }; workspaceId?: string }).auth = { sub: "test-user" };
       (req as express.Request & { workspaceId?: string }).workspaceId =
-        "11111111-1111-4111-8111-111111111111";
+        "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
       next();
     });
     app.use("/api/control-plane", controlPlaneRoutes);
@@ -56,7 +56,7 @@ describe("controlPlaneRoutes", () => {
     expect(response.status).toBe(201);
     expect(recordHeartbeat).toHaveBeenCalledWith(
       expect.objectContaining({
-        workspaceId: "11111111-1111-4111-8111-111111111111",
+        workspaceId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
         userId: "test-user",
         teamId: "team-1",
         agentId: "agent-1",

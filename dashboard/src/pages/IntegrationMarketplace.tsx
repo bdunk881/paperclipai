@@ -17,6 +17,7 @@ import { getConfiguredApiOrigin } from "../api/baseUrl";
 import { readStoredAuthUser } from "../auth/authStorage";
 import { useAuth } from "../context/AuthContext";
 import { LIVE_CONNECTOR_PROVIDER_BY_KEY, type ProviderKey } from "../integrations/liveConnectorCatalog";
+import { redirectTo } from "../utils/browserNavigation";
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
@@ -465,12 +466,12 @@ export default function IntegrationMarketplace() {
         if (!redirectUrl) {
           throw new Error(`No OAuth redirect URL returned for ${integration.name}`);
         }
-        window.location.assign(redirectUrl);
+        redirectTo(redirectUrl);
         return;
       }
 
       if (provider.supportsApiKey) {
-        window.location.assign("/integrations");
+        redirectTo("/integrations");
         return;
       }
 

@@ -38,11 +38,12 @@ jobs:
             "https://api.cloudflare.com/client/v4/accounts/${{ secrets.CLOUDFLARE_ACCOUNT_ID }}/pages/projects/autoflow-dashboard/domains")
           echo "=== Full response ===" && echo "$RESP" | jq .
           SUCCESS=$(echo "$RESP" | jq -r '.success')
-          if [ "$SUCCESS" != "true" ]; then
+          ERR_CODE=$(echo "$RESP" | jq -r '.errors[0].code // empty')
+          if [ "$SUCCESS" != "true" ] && [ "$ERR_CODE" != "8000018" ]; then
             echo "FAILED:" && echo "$RESP" | jq '.errors'
             exit 1
           fi
-          echo "OK: $(echo "$RESP" | jq -r '.result.name') status=$(echo "$RESP" | jq -r '.result.status')"
+          [ "$ERR_CODE" = "8000018" ] && echo "ALREADY_REGISTERED (idempotent OK)" || echo "OK: $(echo "$RESP" | jq -r '.result.name') status=$(echo "$RESP" | jq -r '.result.status')"
 
       - name: Add docs.helloautoflow.com to autoflow-docs
         run: |
@@ -57,11 +58,12 @@ jobs:
             "https://api.cloudflare.com/client/v4/accounts/${{ secrets.CLOUDFLARE_ACCOUNT_ID }}/pages/projects/autoflow-docs/domains")
           echo "=== Full response ===" && echo "$RESP" | jq .
           SUCCESS=$(echo "$RESP" | jq -r '.success')
-          if [ "$SUCCESS" != "true" ]; then
+          ERR_CODE=$(echo "$RESP" | jq -r '.errors[0].code // empty')
+          if [ "$SUCCESS" != "true" ] && [ "$ERR_CODE" != "8000018" ]; then
             echo "FAILED:" && echo "$RESP" | jq '.errors'
             exit 1
           fi
-          echo "OK: $(echo "$RESP" | jq -r '.result.name') status=$(echo "$RESP" | jq -r '.result.status')"
+          [ "$ERR_CODE" = "8000018" ] && echo "ALREADY_REGISTERED (idempotent OK)" || echo "OK: $(echo "$RESP" | jq -r '.result.name') status=$(echo "$RESP" | jq -r '.result.status')"
 
       - name: Add helloautoflow.com to autoflow-landing
         run: |
@@ -76,11 +78,12 @@ jobs:
             "https://api.cloudflare.com/client/v4/accounts/${{ secrets.CLOUDFLARE_ACCOUNT_ID }}/pages/projects/autoflow-landing/domains")
           echo "=== Full response ===" && echo "$RESP" | jq .
           SUCCESS=$(echo "$RESP" | jq -r '.success')
-          if [ "$SUCCESS" != "true" ]; then
+          ERR_CODE=$(echo "$RESP" | jq -r '.errors[0].code // empty')
+          if [ "$SUCCESS" != "true" ] && [ "$ERR_CODE" != "8000018" ]; then
             echo "FAILED:" && echo "$RESP" | jq '.errors'
             exit 1
           fi
-          echo "OK: $(echo "$RESP" | jq -r '.result.name') status=$(echo "$RESP" | jq -r '.result.status')"
+          [ "$ERR_CODE" = "8000018" ] && echo "ALREADY_REGISTERED (idempotent OK)" || echo "OK: $(echo "$RESP" | jq -r '.result.name') status=$(echo "$RESP" | jq -r '.result.status')"
 
       - name: Add www.helloautoflow.com to autoflow-landing
         run: |
@@ -95,11 +98,12 @@ jobs:
             "https://api.cloudflare.com/client/v4/accounts/${{ secrets.CLOUDFLARE_ACCOUNT_ID }}/pages/projects/autoflow-landing/domains")
           echo "=== Full response ===" && echo "$RESP" | jq .
           SUCCESS=$(echo "$RESP" | jq -r '.success')
-          if [ "$SUCCESS" != "true" ]; then
+          ERR_CODE=$(echo "$RESP" | jq -r '.errors[0].code // empty')
+          if [ "$SUCCESS" != "true" ] && [ "$ERR_CODE" != "8000018" ]; then
             echo "FAILED:" && echo "$RESP" | jq '.errors'
             exit 1
           fi
-          echo "OK: $(echo "$RESP" | jq -r '.result.name') status=$(echo "$RESP" | jq -r '.result.status')"
+          [ "$ERR_CODE" = "8000018" ] && echo "ALREADY_REGISTERED (idempotent OK)" || echo "OK: $(echo "$RESP" | jq -r '.result.name') status=$(echo "$RESP" | jq -r '.result.status')"
 
       - name: Summary
         run: |

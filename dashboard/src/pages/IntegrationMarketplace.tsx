@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Search,
   Grid3X3,
@@ -13,6 +13,10 @@ import {
   X,
 } from "lucide-react";
 import clsx from "clsx";
+import { getConfiguredApiOrigin } from "../api/baseUrl";
+import { readStoredAuthUser } from "../auth/authStorage";
+import { useAuth } from "../context/AuthContext";
+import { LIVE_CONNECTOR_PROVIDER_BY_KEY, type ProviderKey } from "../integrations/liveConnectorCatalog";
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
@@ -52,6 +56,10 @@ interface WorkflowTemplate {
   integrations: string[];
   category: string;
 }
+
+type IntegrationStatusesResponse = {
+  providers?: Partial<Record<ProviderKey, { connected?: boolean }>>;
+};
 
 /* ------------------------------------------------------------------ */
 /*  Data: 14 categories, 160+ integrations                            */
@@ -291,17 +299,98 @@ function fuzzyMatch(text: string, query: string): boolean {
   return terms.every((term) => lower.includes(term));
 }
 
+const API_BASE = getConfiguredApiOrigin();
+
+function providerKeyForIntegration(id: string): ProviderKey | null {
+  return id in LIVE_CONNECTOR_PROVIDER_BY_KEY ? (id as ProviderKey) : null;
+}
+
+function buildInitialIntegrations(): Integration[] {
+  return INTEGRATIONS.map((integration) => ({
+    ...integration,
+    connected: false,
+  }));
+}
+
 /* ------------------------------------------------------------------ */
 /*  Component                                                          */
 /* ------------------------------------------------------------------ */
 
 export default function IntegrationMarketplace() {
+  const { getAccessToken, user } = useAuth();
   const [search, setSearch] = useState("");
   const [selectedCategory, setSelectedCategory] = useState<Category | "All">("All");
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
   const [showTemplates, setShowTemplates] = useState(true);
   const [detailId, setDetailId] = useState<string | null>(null);
-  const [integrations, setIntegrations] = useState(INTEGRATIONS);
+  const [integrations, setIntegrations] = useState<Integration[]>(() => buildInitialIntegrations());
+  const [busyIntegrationId, setBusyIntegrationId] = useState<string | null>(null);
+  const [connectionError, setConnectionError] = useState<string | null>(null);
+
+  const authorizedFetch = useCallback(async (path: string, init?: RequestInit) => {
+    const accessToken = await getAccessToken();
+    const headers = new Headers(init?.headers);
+
+    if (accessToken) {
+      headers.set("Authorization", `Bearer ${accessToken}`);
+    } else {
+      const storedUser = readStoredAuthUser();
+      if (storedUser?.id) {
+        headers.set("X-User-Id", storedUser.id);
+      } else if (user?.id) {
+        headers.set("X-User-Id", user.id);
+      }
+    }
+
+    if (init?.body && !headers.has("Content-Type")) {
+      headers.set("Content-Type", "application/json");
+    }
+
+    const response = await fetch(`${API_BASE}${path}`, {
+      ...init,
+      headers,
+    });
+
+    if (!response.ok && response.status !== 204) {
+      const payload = (await response.json().catch(() => null)) as { error?: string } | null;
+      throw new Error(payload?.error ?? `${response.status} ${response.statusText}`);
+    }
+
+    return response;
+  }, [getAccessToken, user?.id]);
+
+  const applyProviderStatuses = useCallback((providers: IntegrationStatusesResponse["providers"]) => {
+    setIntegrations((current) =>
+      current.map((integration) => {
+        const providerKey = providerKeyForIntegration(integration.id);
+        if (!providerKey) {
+          return { ...integration, connected: false };
+        }
+
+        return {
+          ...integration,
+          connected: Boolean(providers?.[providerKey]?.connected),
+        };
+      })
+    );
+  }, []);
+
+  const loadStatuses = useCallback(async () => {
+    try {
+      const response = await authorizedFetch("/api/integrations/status");
+      const payload = (await response.json()) as IntegrationStatusesResponse;
+      applyProviderStatuses(payload.providers);
+    } catch (error) {
+      applyProviderStatuses(undefined);
+      setConnectionError(
+        error instanceof Error ? error.message : "Failed to load live integration statuses"
+      );
+    }
+  }, [applyProviderStatuses, authorizedFetch]);
+
+  useEffect(() => {
+    void loadStatuses();
+  }, [loadStatuses]);
 
   // Derived counts
   const categoryCounts = useMemo(() => {
@@ -341,11 +430,58 @@ export default function IntegrationMarketplace() {
   const connectedCount = integrations.filter((i) => i.connected).length;
   const premiumCount = integrations.filter((i) => i.premium).length;
   const detail = detailId ? integrations.find((i) => i.id === detailId) ?? null : null;
+  const detailProviderKey = detail ? providerKeyForIntegration(detail.id) : null;
+  const detailProvider = detailProviderKey ? LIVE_CONNECTOR_PROVIDER_BY_KEY[detailProviderKey] : null;
+  const detailActionDisabled = Boolean(
+    detail &&
+    ((detail.premium && !detail.connected) || !detailProvider || busyIntegrationId === detail.id)
+  );
 
-  function toggleConnect(id: string) {
-    setIntegrations((prev) =>
-      prev.map((i) => (i.id === id ? { ...i, connected: !i.connected } : i))
-    );
+  async function handleConnectAction(integration: Integration) {
+    const providerKey = providerKeyForIntegration(integration.id);
+    if ((integration.premium && !integration.connected) || !providerKey) {
+      return;
+    }
+
+    const provider = LIVE_CONNECTOR_PROVIDER_BY_KEY[providerKey];
+    setBusyIntegrationId(integration.id);
+    setConnectionError(null);
+
+    try {
+      if (integration.connected) {
+        await authorizedFetch(`/api/integrations/${providerKey}/disconnect`, {
+          method: "DELETE",
+        });
+        await loadStatuses();
+        return;
+      }
+
+      if (provider.supportsOAuth) {
+        const response = await authorizedFetch(`/api/integrations/${providerKey}/connect`, {
+          method: "POST",
+        });
+        const payload = (await response.json()) as { authUrl?: string; redirectUrl?: string };
+        const redirectUrl = payload.redirectUrl ?? payload.authUrl;
+        if (!redirectUrl) {
+          throw new Error(`No OAuth redirect URL returned for ${integration.name}`);
+        }
+        window.location.assign(redirectUrl);
+        return;
+      }
+
+      if (provider.supportsApiKey) {
+        window.location.assign("/integrations");
+        return;
+      }
+
+      throw new Error(`${integration.name} does not support a live connection flow yet`);
+    } catch (error) {
+      setConnectionError(
+        error instanceof Error ? error.message : `Failed to update ${integration.name} connection`
+      );
+    } finally {
+      setBusyIntegrationId(null);
+    }
   }
 
   return (
@@ -430,6 +566,12 @@ export default function IntegrationMarketplace() {
       </div>
 
       <div className="max-w-7xl mx-auto px-8 py-6">
+        {connectionError ? (
+          <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+            {connectionError}
+          </div>
+        ) : null}
+
         {/* ── Template Showcase ── */}
         {showTemplates && filteredTemplates.length > 0 && (
           <div className="mb-8">
@@ -721,7 +863,9 @@ export default function IntegrationMarketplace() {
                       ? "This integration is authenticated and ready to use in your workflows."
                       : detail.premium
                         ? "Upgrade to Premium to configure authentication for this integration."
-                        : "Click Connect below to set up API key or OAuth authentication."}
+                        : detailProvider
+                          ? "Click Connect below to launch the live OAuth flow for this integration."
+                          : "Live connector setup is not available for this integration yet."}
                   </p>
                 </div>
               </div>
@@ -729,18 +873,32 @@ export default function IntegrationMarketplace() {
               {/* Action buttons */}
               <div className="flex gap-2 pt-2">
                 <button
-                  onClick={() => toggleConnect(detail.id)}
-                  disabled={detail.premium && !detail.connected}
+                  onClick={() => {
+                    void handleConnectAction(detail);
+                  }}
+                  disabled={detailActionDisabled}
                   className={clsx(
                     "flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-lg text-sm font-medium transition",
-                    detail.connected
+                    busyIntegrationId === detail.id
+                      ? "bg-blue-100 text-blue-500 border border-blue-200 cursor-wait"
+                      : detail.connected
                       ? "bg-red-50 text-red-600 hover:bg-red-100 border border-red-200"
                       : detail.premium
                         ? "bg-gray-100 text-gray-400 cursor-not-allowed border border-gray-200"
+                        : !detailProvider
+                          ? "bg-gray-100 text-gray-400 cursor-not-allowed border border-gray-200"
                         : "bg-blue-600 text-white hover:bg-blue-700"
                   )}
                 >
-                  {detail.connected ? "Disconnect" : detail.premium ? "Upgrade Required" : "Connect"}
+                  {busyIntegrationId === detail.id
+                    ? detail.connected ? "Disconnecting..." : "Connecting..."
+                    : detail.connected
+                      ? "Disconnect"
+                      : detail.premium
+                        ? "Upgrade Required"
+                        : detailProvider
+                          ? "Connect"
+                          : "Coming Soon"}
                 </button>
                 <button className="px-3 py-2.5 rounded-lg border border-gray-200 text-gray-400 hover:text-gray-600 hover:border-gray-300 transition">
                   <ExternalLink size={14} />

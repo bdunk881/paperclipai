@@ -31,6 +31,7 @@ import mcpRoutes from "./mcp/mcpRoutes";
 import memoryRoutes from "./memory/memoryRoutes";
 import agentMemoryRoutes from "./agents/agentMemoryRoutes";
 import agentRoutes from "./agents/agentRoutes";
+import routineRoutes from "./routines/routineRoutes";
 import knowledgeRoutes from "./knowledge/routes";
 import controlPlaneRoutes from "./controlPlane/controlPlaneRoutes";
 import companyRoutes from "./companies/companyRoutes";
@@ -389,12 +390,8 @@ app.use("/api/mcp/servers", requireAuth, mcpRoutes);
 app.use("/api/memory", requireAuth, memoryRoutes);
 app.use("/api/agents/:agentId/memory", requireAuth, agentMemoryRoutes);
 app.use("/api/agents", requireAuth, workspaceResolver, agentRoutes);
+app.use("/api/routines", requireAuth, workspaceResolver, routineRoutes);
 app.use("/api/integrations/apollo", apolloRoutes);
-
-// Routines stub — returns empty list until a full routines store is implemented.
-app.get("/api/routines", requireAuth, (_req, res) => {
-  res.json({ routines: [] });
-});
 app.use("/api/knowledge", requireAuth, knowledgeMutationRateLimiter, knowledgeRoutes);
 app.use("/api/integrations/catalog", integrationCatalogRoutes);
 app.use("/api/integrations/oauth2", integrationOAuthCallbackRoutes);

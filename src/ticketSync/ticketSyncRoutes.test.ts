@@ -102,7 +102,7 @@ function buildApp() {
         ? String((req.body as { workspaceId?: string }).workspaceId).trim()
         : "";
     const queryWorkspaceId = typeof req.query.workspaceId === "string" ? req.query.workspaceId.trim() : "";
-    req.workspaceId = headerWorkspaceId || bodyWorkspaceId || queryWorkspaceId || "11111111-1111-4111-8111-111111111111";
+    req.workspaceId = headerWorkspaceId || bodyWorkspaceId || queryWorkspaceId || "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
     next();
   });
   app.use("/api/ticket-sync", ticketSyncRoutes);
@@ -136,7 +136,7 @@ describe("ticket sync routes", () => {
       .post("/api/ticket-sync/connections")
       .set(auth("user-1"))
       .send({
-        workspaceId: "11111111-1111-4111-8111-111111111111",
+        workspaceId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
         provider: "github",
         authMethod: "api_key",
         label: "GitHub board",
@@ -162,7 +162,7 @@ describe("ticket sync routes", () => {
       .post("/api/ticket-sync/connections")
       .set(auth("user-1"))
       .send({
-        workspaceId: "11111111-1111-4111-8111-111111111111",
+        workspaceId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
         provider: "linear",
         authMethod: "api_key",
         label: "Linear workspace",
@@ -190,7 +190,7 @@ describe("ticket sync routes", () => {
     expect(updated.body.config.hasWebhookSecret).toBe(true);
 
     const listed = await request(app)
-      .get("/api/ticket-sync/connections?workspaceId=11111111-1111-4111-8111-111111111111")
+      .get("/api/ticket-sync/connections?workspaceId=aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa")
       .set(auth("user-1"));
 
     expect(listed.status).toBe(200);
@@ -209,7 +209,7 @@ describe("ticket sync routes", () => {
     expect(missing.status).toBe(404);
 
     const listedAfterRevoke = await request(app)
-      .get("/api/ticket-sync/connections?workspaceId=11111111-1111-4111-8111-111111111111")
+      .get("/api/ticket-sync/connections?workspaceId=aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa")
       .set(auth("user-1"));
 
     expect(listedAfterRevoke.status).toBe(200);
@@ -222,7 +222,7 @@ describe("ticket sync routes", () => {
       .post("/api/ticket-sync/connections")
       .set(auth("user-1"))
       .send({
-        workspaceId: "11111111-1111-4111-8111-111111111111",
+        workspaceId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
         provider: "github",
         authMethod: "api_key",
         label: "Private GitHub board",
@@ -233,7 +233,7 @@ describe("ticket sync routes", () => {
     expect(created.status).toBe(201);
 
     const foreignList = await request(app)
-      .get("/api/ticket-sync/connections?workspaceId=11111111-1111-4111-8111-111111111111")
+      .get("/api/ticket-sync/connections?workspaceId=aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa")
       .set(auth("user-2"));
 
     expect(foreignList.status).toBe(200);
@@ -265,7 +265,7 @@ describe("ticket sync routes", () => {
       .post("/api/ticket-sync/connections/bootstrap")
       .set(auth("user-1"))
       .send({
-        workspaceId: "11111111-1111-4111-8111-111111111111",
+        workspaceId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
         provider: "github",
         label: "GitHub bootstrap",
         config: { owner: "autoflow", repo: "paperclipai" },
@@ -295,7 +295,7 @@ describe("ticket sync routes", () => {
       .post("/api/ticket-sync/connections/bootstrap")
       .set(auth("user-1"))
       .send({
-        workspaceId: "11111111-1111-4111-8111-111111111111",
+        workspaceId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
         provider: "linear",
         label: "Linear bootstrap",
         config: { defaultTeamId: "team-1" },
@@ -312,7 +312,7 @@ describe("ticket sync routes", () => {
       .set(auth("user-1"))
       .set("X-Paperclip-Run-Id", "run-linear-bootstrap-ticket")
       .send({
-        workspaceId: "11111111-1111-4111-8111-111111111111",
+        workspaceId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
         title: "Bootstrapped Linear sync target",
         assignees: [{ type: "user", id: "user-1", role: "primary" }],
       });
@@ -334,7 +334,7 @@ describe("ticket sync routes", () => {
       .post("/api/ticket-sync/connections")
       .set(auth("user-1"))
       .send({
-        workspaceId: "11111111-1111-4111-8111-111111111111",
+        workspaceId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
         provider: "github",
         authMethod: "api_key",
         label: "GitHub board",
@@ -347,7 +347,7 @@ describe("ticket sync routes", () => {
       .set(auth("user-1"))
       .set("X-Paperclip-Run-Id", "run-sync-create")
       .send({
-        workspaceId: "11111111-1111-4111-8111-111111111111",
+        workspaceId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
         title: "External sync",
         description: "Ship provider sync",
         tags: ["autoflow"],
@@ -383,7 +383,7 @@ describe("ticket sync routes", () => {
       .post("/api/ticket-sync/connections")
       .set(auth("user-1"))
       .send({
-        workspaceId: "11111111-1111-4111-8111-111111111111",
+        workspaceId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
         provider: "github",
         authMethod: "api_key",
         label: "GitHub board",
@@ -396,7 +396,7 @@ describe("ticket sync routes", () => {
       .set(auth("user-1"))
       .set("X-Paperclip-Run-Id", "run-sync-ticket")
       .send({
-        workspaceId: "11111111-1111-4111-8111-111111111111",
+        workspaceId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
         title: "Mirror comments",
         assignees: [{ type: "user", id: "user-1", role: "primary" }],
       });
@@ -426,7 +426,7 @@ describe("ticket sync routes", () => {
       .post("/api/ticket-sync/connections")
       .set(auth("user-1"))
       .send({
-        workspaceId: "11111111-1111-4111-8111-111111111111",
+        workspaceId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
         provider: "github",
         authMethod: "api_key",
         label: "GitHub board",
@@ -506,7 +506,7 @@ describe("ticket sync routes", () => {
       .post("/api/ticket-sync/connections")
       .set(auth("user-1"))
       .send({
-        workspaceId: "11111111-1111-4111-8111-111111111111",
+        workspaceId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
         provider: "jira",
         authMethod: "basic",
         label: "Jira project",
@@ -579,7 +579,7 @@ describe("ticket sync routes", () => {
       .post("/api/ticket-sync/connections")
       .set(auth("user-1"))
       .send({
-        workspaceId: "11111111-1111-4111-8111-111111111111",
+        workspaceId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
         provider: "linear",
         authMethod: "api_key",
         label: "Linear workspace",
@@ -600,7 +600,7 @@ describe("ticket sync routes", () => {
       .set(auth("user-1"))
       .set("X-Paperclip-Run-Id", "run-linear-ticket")
       .send({
-        workspaceId: "11111111-1111-4111-8111-111111111111",
+        workspaceId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
         title: "Linear sync target",
         assignees: [{ type: "user", id: "user-1", role: "primary" }],
       });

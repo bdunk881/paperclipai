@@ -9,7 +9,7 @@ const QA_PREVIEW_USER = {
 
 const DEFAULT_APP_JWT_AUDIENCE = "autoflow-api";
 const DEFAULT_APP_JWT_ISSUER = "autoflow-app";
-const DEFAULT_APP_JWT_EXPIRES_IN_SECONDS = 60 * 60;
+const DEFAULT_APP_JWT_EXPIRES_IN_SECONDS = 8 * 60 * 60;
 
 function normalizeSecret(value: string | undefined): string | null {
   if (typeof value !== "string") return null;

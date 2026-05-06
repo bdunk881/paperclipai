@@ -2,6 +2,8 @@
 
 Primary deployment path is now branch-driven GitHub Actions targeting Fly.io,
 Supabase, and Cloudflare Pages.
+Legacy Azure teardown and DNS cutover steps remain documented under
+[ALT-2325](/ALT/issues/ALT-2325) for Phase 5 retirement work.
 
 ## Stack
 
@@ -26,6 +28,13 @@ Supabase, and Cloudflare Pages.
 | branch protection | GitHub Branch API | `.github/workflows/enforce-branch-protection.yml` |
 | `observability rollups` | GitHub Actions + PostgreSQL | `.github/workflows/observability-rollups.yml` |
 | `autoflow-brand` (planned) | GitHub + Cloudflare R2 + MemPalace | `infra/brand-assets/*` |
+
+## Phase 5 decommission
+
+Use [`infra/runbooks/azure-cutover-decommission.md`](runbooks/azure-cutover-decommission.md)
+as the source of truth for the final DNS cutover, Azure destroy sequence, CIAM
+cleanup, and subscription shutdown. Azure-specific docs in this directory should
+be treated as legacy references unless that runbook explicitly points to them.
 
 ## Authentication
 
@@ -68,6 +77,19 @@ Add these in the repo settings -> Secrets and variables -> Actions:
 | `CLOUDFLARE_API_TOKEN` | Token used by the Pages workflows |
 | `CLOUDFLARE_ACCOUNT_ID` | Cloudflare account id used by the Pages workflows |
 
+### FastAPI Fly.io
+
+| Secret / Variable | Description |
+|---|---|
+| `FLY_API_TOKEN` | Fly.io deploy token with access to the staging and production FastAPI apps |
+| `FLY_STAGING_APP_NAME` | Optional override for the Fly app name |
+| `FLY_STAGING_BASE_URL` | Optional override for the public Fly hostname used by smoke checks |
+| `FLY_STAGING_SMOKE_USER_ID` | Optional user id sent through the staging smoke requests |
+| `FLY_PRODUCTION_APP_NAME` | Optional override for the production Fly app name |
+| `FLY_PRODUCTION_BASE_URL` | Optional override for the production Fly hostname used by smoke checks |
+| `FLY_PRODUCTION_SMOKE_USER_ID` | Optional user id sent through production smoke requests |
+| `FLY_PRODUCTION_RELAY_BASE_URL` | Optional direct legacy backend host to relay callbacks/webhooks during the pre-cutover window; if omitted, the workflow uses `https://api.helloautoflow.com` and the cutover operator must replace it with the direct Azure ingress target before DNS flips |
+
 ## Daily operations
 
 - **Deploy backend dev:** push to `dev` — `.github/workflows/deploy-fly-fastapi-dev.yml` deploys `autoflow-fastapi-dev`.
@@ -78,6 +100,7 @@ Add these in the repo settings -> Secrets and variables -> Actions:
 - **Deploy landing:** pushes and PRs with `landing/**` changes run `.github/workflows/landing-cloudflare-pages.yml`.
 - **Enforce branch protection:** run `enforce-branch-protection.yml` to require CI on both protected branches, plus an extra `Staging-First Promotion Gate` and code-owner approval on `master`. Both branches disallow direct pushes, and `master` promotions must come from a PR whose head branch is exactly `staging`.
 - **Rollback:** redeploy the last healthy Fly release for backend or re-run the previous Pages deployment for the affected frontend app.
+- **Legacy Azure teardown:** follow `infra/runbooks/azure-cutover-decommission.md` for the remaining Phase 5 retirement work and any temporary cutover verification still tied to Azure.
 
 ## Infrastructure as Code
 
@@ -101,12 +124,21 @@ Recommended host split for the three-environment pipeline:
 - `helloautoflow.com` -> production frontend target
 - `api.helloautoflow.com` -> production backend target
 
+Use [`infra/runbooks/azure-cutover-decommission.md`](runbooks/azure-cutover-decommission.md)
+to verify and remove any remaining Azure-bound records during Phase 5.
+
 ## QA Integration Evidence
 
 - Workflow: `.github/workflows/qa-integration-evidence.yml`
 - Smoke script: `infra/scripts/qa_integration_smoke.sh`
 - Runbook: `infra/runbooks/qa-integration-environment.md`
 - Tier 1 release path: `infra/runbooks/tier1-connector-release.md`
+
+## FastAPI Fly.io
+
+- Workflow: `.github/workflows/deploy-fly-fastapi-staging.yml`
+- Smoke script: `infra/scripts/fly_fastapi_smoke.sh`
+- Runbook: `infra/runbooks/fly-fastapi-staging.md`
 
 ## Observability Rollups
 

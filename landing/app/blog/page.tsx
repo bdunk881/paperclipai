@@ -1,13 +1,6 @@
-import type { Metadata } from "next";
-import Link from "next/link";
+import { Link, useLoaderData } from "react-router";
 import { getBlogPosts } from "@/lib/sanity";
 import { getAllArticles } from "@/lib/articles";
-
-export const metadata: Metadata = {
-  title: "Blog | AutoFlow",
-  description:
-    "Guides, comparisons, and tutorials on workflow automation, AI agents, and building autonomous businesses with AutoFlow.",
-};
 
 interface BlogItem {
   title: string;
@@ -17,12 +10,29 @@ interface BlogItem {
   excerpt: string;
 }
 
-export default async function BlogPage() {
+export function meta() {
+  return [
+    { title: "Blog | AutoFlow" },
+    {
+      name: "description",
+      content:
+        "Guides, comparisons, and tutorials on workflow automation, AI agents, and building autonomous businesses with AutoFlow.",
+    },
+  ];
+}
+
+export async function loader() {
   const cmsPosts = await getBlogPosts();
   const posts: BlogItem[] =
     cmsPosts && cmsPosts.length > 0
       ? cmsPosts
       : getAllArticles();
+
+  return { posts };
+}
+
+export default function BlogPage() {
+  const { posts } = useLoaderData() as { posts: BlogItem[] };
 
   return (
     <main className="mx-auto max-w-4xl px-6 py-24 lg:px-8">
@@ -37,7 +47,7 @@ export default async function BlogPage() {
             key={post.slug}
             className="group rounded-2xl border border-gray-200 p-6 transition-shadow hover:shadow-md"
           >
-            <Link href={`/blog/${post.slug}`} className="block">
+            <Link to={`/blog/${post.slug}`} className="block">
               <time
                 dateTime={post.publishedAt}
                 className="text-sm text-gray-500"

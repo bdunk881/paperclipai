@@ -6,7 +6,16 @@ from __future__ import annotations
 
 from typing import Annotated
 
-from fastapi import Depends, FastAPI, Header, HTTPException, status
+import httpx
+from fastapi import Depends, FastAPI, Header, HTTPException, Request, Response, status
+
+from edge_proxy import (
+    copy_response_headers,
+    relay_request_headers,
+    resolve_relay_base_url,
+    resolve_relay_insecure_tls,
+    send_upstream_request,
+)
 
 from knowledge import (
     CreateKnowledgeBaseInput,
@@ -43,6 +52,62 @@ def resolve_user_id(
 @app.get("/health")
 def healthcheck() -> dict[str, str]:
     return {"status": "ok"}
+
+
+async def relay_public_edge_request(request: Request) -> Response:
+    relay_base_url = resolve_relay_base_url()
+    if not relay_base_url:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Public edge relay is not configured.",
+        )
+
+    query = f"?{request.url.query}" if request.url.query else ""
+    target_url = f"{relay_base_url}{request.url.path}{query}"
+    try:
+        upstream_response = await send_upstream_request(
+            request.method,
+            target_url,
+            relay_request_headers(request),
+            await request.body(),
+            verify_ssl=not resolve_relay_insecure_tls(),
+        )
+    except httpx.HTTPError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"Public edge relay request failed: {exc}",
+        ) from exc
+
+    return Response(
+        content=upstream_response.content,
+        status_code=upstream_response.status_code,
+        headers=copy_response_headers(upstream_response.headers),
+    )
+
+
+@app.api_route("/api/auth/social/{provider}/callback", methods=["GET", "POST"])
+async def social_auth_callback_relay(provider: str, request: Request) -> Response:
+    return await relay_public_edge_request(request)
+
+
+@app.get("/api/integrations/callback")
+async def unified_oauth_callback_relay(request: Request) -> Response:
+    return await relay_public_edge_request(request)
+
+
+@app.get("/api/integrations/oauth2/{slug}/callback")
+async def oauth2_callback_relay(slug: str, request: Request) -> Response:
+    return await relay_public_edge_request(request)
+
+
+@app.get("/api/integrations/{provider}/oauth/callback")
+async def integration_oauth_callback_relay(provider: str, request: Request) -> Response:
+    return await relay_public_edge_request(request)
+
+
+@app.api_route("/api/webhooks/{webhook_path:path}", methods=["GET", "POST", "PUT", "PATCH", "DELETE"])
+async def webhook_relay(webhook_path: str, request: Request) -> Response:
+    return await relay_public_edge_request(request)
 
 
 @app.post("/api/knowledge/bases", status_code=status.HTTP_201_CREATED)

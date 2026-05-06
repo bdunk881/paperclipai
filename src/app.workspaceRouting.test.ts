@@ -55,20 +55,61 @@ describe("workspace resolver route mounting", () => {
     workspaceResolverSpy.mockClear();
   });
 
-  it("does not gate control-plane routes behind the workspace resolver", async () => {
+  it("gates control-plane routes behind the workspace resolver", async () => {
     const res = await request(app)
       .get("/api/control-plane/teams")
       .set("Authorization", "Bearer test-user-id");
 
-    expect(res.status).toBe(200);
-    expect(res.body).toEqual({ teams: [], total: 0 });
-    expect(workspaceResolverSpy).not.toHaveBeenCalled();
+    expect(res.status).toBe(418);
+    expect(res.body.error).toBe("workspace resolver invoked");
+    expect(workspaceResolverSpy).toHaveBeenCalledTimes(1);
   });
 
   it("keeps ticket routes behind the workspace resolver", async () => {
     const res = await request(app)
       .get("/api/tickets")
       .set("Authorization", "Bearer test-user-id");
+
+    expect(res.status).toBe(418);
+    expect(res.body.error).toBe("workspace resolver invoked");
+    expect(workspaceResolverSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps ticket SLA routes behind the workspace resolver", async () => {
+    const res = await request(app)
+      .get("/api/tickets/sla/policies")
+      .set("Authorization", "Bearer test-user-id");
+
+    expect(res.status).toBe(418);
+    expect(res.body.error).toBe("workspace resolver invoked");
+    expect(workspaceResolverSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps notification routes behind the workspace resolver", async () => {
+    const res = await request(app)
+      .get("/api/notifications/preferences")
+      .set("Authorization", "Bearer test-user-id");
+
+    expect(res.status).toBe(418);
+    expect(res.body.error).toBe("workspace resolver invoked");
+    expect(workspaceResolverSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps run routes behind the workspace resolver", async () => {
+    const res = await request(app)
+      .get("/api/runs")
+      .set("Authorization", "Bearer test-user-id");
+
+    expect(res.status).toBe(418);
+    expect(res.body.error).toBe("workspace resolver invoked");
+    expect(workspaceResolverSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps workflow generation behind the workspace resolver", async () => {
+    const res = await request(app)
+      .post("/api/workflows/generate")
+      .set("Authorization", "Bearer test-user-id")
+      .send({ description: "Generate a workflow" });
 
     expect(res.status).toBe(418);
     expect(res.body.error).toBe("workspace resolver invoked");

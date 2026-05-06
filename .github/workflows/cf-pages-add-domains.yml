@@ -18,7 +18,7 @@ jobs:
           echo "=== Listing CF Pages projects (verifies token + account ID) ==="
           RESP=$(curl -s -X GET \
             -H "Authorization: Bearer ${{ secrets.CLOUDFLARE_API_TOKEN }}" \
-            "https://api.cloudflare.com/client/v4/accounts/${{ secrets.CLOUDFLARE_ACCOUNT_ID }}/pages/projects?per_page=50")
+            "https://api.cloudflare.com/client/v4/accounts/${{ secrets.CLOUDFLARE_ACCOUNT_ID }}/pages/projects")
           echo "$RESP" | jq '{success, errors, project_names: [.result[]?.name]}'
           if [ "$(echo "$RESP" | jq -r '.success')" != "true" ]; then
             echo "FATAL: Cannot list projects. Check CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID secrets."

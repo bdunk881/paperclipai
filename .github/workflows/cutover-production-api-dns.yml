@@ -2,6 +2,12 @@ name: Cut Over Production API DNS
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - feat/ALT-2395-prod-api-ingress-drift
+    paths:
+      - .github/workflows/cutover-production-api-dns.yml
+      - infra/runbooks/production-api-ingress.md
 
 permissions:
   contents: read

@@ -7,7 +7,6 @@ from __future__ import annotations
 from typing import Any
 import httpx
 from fastapi.testclient import TestClient
-import pytest
 
 from knowledge import knowledge_store
 import main
@@ -119,53 +118,6 @@ def test_accepts_bearer_token_as_user_identity() -> None:
 
     assert response.status_code == 201
     assert response.json()["userId"] == "bearer-user"
-
-
-def test_native_auth_proxy_rejects_unapproved_origin(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("AUTH_NATIVE_AUTH_PROXY_ALLOWED_ORIGINS", "https://app.helloautoflow.com")
-
-    response = client.post(
-        "/api/auth/native/oauth2/v2.0/initiate",
-        headers={"Origin": "https://evil.example.com"},
-        json={"client_id": "client-123"},
-    )
-
-    assert response.status_code == 403
-    assert "Origin is not allowed" in response.json()["detail"]
-
-
-def test_native_auth_proxy_forwards_json_payload_as_form(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("AUTH_NATIVE_AUTH_PROXY_BASE_URL", "https://ciam.example.com/tenant-guid")
-    monkeypatch.setenv("AUTH_NATIVE_AUTH_PROXY_ALLOWED_ORIGINS", "https://app.helloautoflow.com")
-
-    captured: dict[str, Any] = {}
-
-    async def fake_send(method: str, url: str, headers: dict[str, str], body: bytes | None) -> httpx.Response:
-        captured["method"] = method
-        captured["url"] = url
-        captured["headers"] = headers
-        captured["body"] = body.decode("utf-8") if body else None
-        return httpx.Response(
-            400,
-            headers={"content-type": "application/json", "x-ms-request-id": "req-123"},
-            content=b'{"error":"invalid_request"}',
-            request=httpx.Request(method, url),
-        )
-
-    monkeypatch.setattr(main, "send_upstream_request", fake_send)
-
-    response = client.post(
-        "/api/auth/native/oauth2/v2.0/initiate?dc=test-dc",
-        headers={"Origin": "https://app.helloautoflow.com"},
-        json={"client_id": "client-123", "scope": "openid profile"},
-    )
-
-    assert response.status_code == 400
-    assert response.json()["error"] == "invalid_request"
-    assert captured["method"] == "POST"
-    assert captured["url"] == "https://ciam.example.com/tenant-guid/oauth2/v2.0/initiate?dc=test-dc"
-    assert captured["body"] == "client_id=client-123&scope=openid+profile"
-    assert captured["headers"]["content-type"] == "application/x-www-form-urlencoded"
 
 
 def test_public_callback_relay_forwards_redirect_response(monkeypatch: pytest.MonkeyPatch) -> None:

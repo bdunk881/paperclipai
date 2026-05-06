@@ -1,0 +1,82 @@
+name: Register CF Pages custom domains (ALT-2368)
+
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Dry run (echo only, no API calls)"
+        required: false
+        default: "false"
+
+jobs:
+  add-domains:
+    name: Add custom domains to CF Pages projects
+    runs-on: ubuntu-latest
+    steps:
+      - name: Add app.helloautoflow.com to autoflow-dashboard
+        run: |
+          if [ "${{ inputs.dry_run }}" = "true" ]; then
+            echo "[DRY RUN] Would add app.helloautoflow.com to autoflow-dashboard"
+            exit 0
+          fi
+          RESP=$(curl -s -X POST \
+            -H "Authorization: Bearer ${{ secrets.CLOUDFLARE_API_TOKEN }}" \
+            -H "Content-Type: application/json" \
+            -d '{"name":"app.helloautoflow.com"}' \
+            "https://api.cloudflare.com/client/v4/accounts/${{ secrets.CLOUDFLARE_ACCOUNT_ID }}/pages/projects/autoflow-dashboard/domains")
+          echo "$RESP" | jq '{success, result: {name: .result.name, status: .result.status}}'
+          echo "$RESP" | jq -e '.success' || (echo "FAILED" && exit 1)
+
+      - name: Add docs.helloautoflow.com to autoflow-docs
+        run: |
+          if [ "${{ inputs.dry_run }}" = "true" ]; then
+            echo "[DRY RUN] Would add docs.helloautoflow.com to autoflow-docs"
+            exit 0
+          fi
+          RESP=$(curl -s -X POST \
+            -H "Authorization: Bearer ${{ secrets.CLOUDFLARE_API_TOKEN }}" \
+            -H "Content-Type: application/json" \
+            -d '{"name":"docs.helloautoflow.com"}' \
+            "https://api.cloudflare.com/client/v4/accounts/${{ secrets.CLOUDFLARE_ACCOUNT_ID }}/pages/projects/autoflow-docs/domains")
+          echo "$RESP" | jq '{success, result: {name: .result.name, status: .result.status}}'
+          echo "$RESP" | jq -e '.success' || (echo "FAILED" && exit 1)
+
+      - name: Add helloautoflow.com to autoflow-landing
+        run: |
+          if [ "${{ inputs.dry_run }}" = "true" ]; then
+            echo "[DRY RUN] Would add helloautoflow.com to autoflow-landing"
+            exit 0
+          fi
+          RESP=$(curl -s -X POST \
+            -H "Authorization: Bearer ${{ secrets.CLOUDFLARE_API_TOKEN }}" \
+            -H "Content-Type: application/json" \
+            -d '{"name":"helloautoflow.com"}' \
+            "https://api.cloudflare.com/client/v4/accounts/${{ secrets.CLOUDFLARE_ACCOUNT_ID }}/pages/projects/autoflow-landing/domains")
+          echo "$RESP" | jq '{success, result: {name: .result.name, status: .result.status}}'
+          echo "$RESP" | jq -e '.success' || (echo "FAILED" && exit 1)
+
+      - name: Add www.helloautoflow.com to autoflow-landing
+        run: |
+          if [ "${{ inputs.dry_run }}" = "true" ]; then
+            echo "[DRY RUN] Would add www.helloautoflow.com to autoflow-landing"
+            exit 0
+          fi
+          RESP=$(curl -s -X POST \
+            -H "Authorization: Bearer ${{ secrets.CLOUDFLARE_API_TOKEN }}" \
+            -H "Content-Type: application/json" \
+            -d '{"name":"www.helloautoflow.com"}' \
+            "https://api.cloudflare.com/client/v4/accounts/${{ secrets.CLOUDFLARE_ACCOUNT_ID }}/pages/projects/autoflow-landing/domains")
+          echo "$RESP" | jq '{success, result: {name: .result.name, status: .result.status}}'
+          echo "$RESP" | jq -e '.success' || (echo "FAILED" && exit 1)
+
+      - name: Summary
+        run: |
+          echo "Custom domain registration complete."
+          echo "DNS records already configured:"
+          echo "  app.helloautoflow.com   -> autoflow-dashboard.pages.dev"
+          echo "  docs.helloautoflow.com  -> autoflow-docs.pages.dev"
+          echo "  www.helloautoflow.com   -> autoflow-landing.pages.dev"
+          echo "  api.dev.helloautoflow.com -> autoflow-fastapi-dev.fly.dev"
+          echo ""
+          echo "Note: helloautoflow.com root domain DNS update (A->CNAME) requires"
+          echo "manual step or separate workflow once Pages domain is verified."

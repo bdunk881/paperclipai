@@ -2,7 +2,7 @@
 
 Terraform IaC for the Azure-native deployment of AutoFlow.
 
-> **Status:** Primary deployment path — AutoFlow runs on AKS (Azure Kubernetes Service) with ACR, Key Vault, Hub/Spoke VNets, and Azure Policy following the Cloud Adoption Framework.
+> **Status:** The shared Azure estate is provisioned with Terraform, while the backend currently runs on Azure Container Apps. AKS resources still exist in Azure for follow-up infrastructure work, but backend Key Vault access must target workload managed identities rather than the kubelet identity.
 > CI/CD is handled by `.github/workflows/deploy-azure.yml`.
 >
 > See `COMPARISON.md` for historical context on the Hetzner → Azure migration decision.
@@ -77,7 +77,8 @@ terraform apply \
 | `spoke` | `modules/spoke` | Spoke VNet, subnets, route table (UDR → Firewall), VNet peering |
 | `acr` | `modules/acr` | Azure Container Registry (Premium), private endpoint |
 | `aks` | `modules/aks` | AKS cluster, node pools, Log Analytics workspace, kubelet identity |
-| `management` | `modules/management` | Management Group hierarchy, RBAC, Key Vault access policies |
+| `backend-workload-identity` | `modules/backend-workload-identity` | Production backend user-assigned identity plus AKS federated credential |
+| `management` | `modules/management` | Management Group hierarchy, RBAC, Key Vault role assignments |
 | `monitoring` | `modules/monitoring` | Application Insights, Log Analytics, metric alert rules |
 | `policy` | `modules/policy` | Azure Policy initiative, MG-scoped assignment, location guardrails |
 | `security` | `modules/security` | Defender for Containers/KeyVaults, security contact, auto-provisioning, diagnostic export |
@@ -101,13 +102,18 @@ The pipeline lives at `.github/workflows/deploy-azure.yml`.
 
 The GitHub deploy paths are split by environment:
 
-- `staging` stays on **Azure Container Apps**
-- `production` rolls the backend workload onto **AKS**
+- `staging` deploys the backend to **Azure Container Apps**
+- `production` deploys the backend to **AKS**
 
-Terraform still provisions the broader Azure estate. The production deploy path
-imports the built backend image into the production ACR, bootstraps
-`autoflow-backend-secrets`, applies the AKS backend manifest, and updates the
-`backend` deployment image in `autoflow-production`.
+Terraform still provisions the broader Azure estate. For production, it also
+creates `id-autoflow-prod-app` and federates it to the `backend` ServiceAccount
+in `autoflow-production`. The production deploy path imports the built backend
+image into the production ACR, renders the workload-identity ServiceAccount
+annotation, applies the AKS backend manifest, and updates the `backend`
+deployment image in `autoflow-production`.
+
+The AKS kubelet identity must keep `AcrPull` only. Key Vault access belongs to
+the federated workload identity, not the node pool.
 
 Because GitHub-hosted runner IPs are highly dynamic, production Terraform does
 not enforce AKS API authorized IP ranges by default. As of 2026-04-25, GitHub's

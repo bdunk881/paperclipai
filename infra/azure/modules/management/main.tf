@@ -103,10 +103,12 @@ resource "azurerm_role_assignment" "monitoring_reader" {
   principal_id         = each.value
 }
 
-# ── RBAC: AKS workload identity → Key Vault ───────────────────────────────────
+# ── RBAC: workload managed identities → Key Vault ─────────────────────────────
 #
 # Key Vault Secrets User scoped directly to the hub Key Vault resource (not MG).
-# Narrowest possible scope — pods only read secrets, cannot manage vault config.
+# Narrowest possible scope — workloads only read secrets, cannot manage vault
+# config. The list is explicit so stale node-level identities are removed from
+# Terraform state instead of lingering as implicit defaults.
 
 resource "azurerm_role_assignment" "aks_kv_secrets_user" {
   scope                = var.key_vault_id

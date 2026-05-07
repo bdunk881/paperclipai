@@ -137,7 +137,11 @@ const configs = [
       destination_dir: "build/client",
       root_dir: "landing",
     },
-    customDomains: ["staging.helloautoflow.com"],
+    customDomains: [
+      "staging.helloautoflow.com",
+      "helloautoflow.com",
+      "www.helloautoflow.com",
+    ],
     sourceConfig: {
       path_includes: [
         "landing/**",
@@ -153,9 +157,9 @@ const configs = [
       NEXT_PUBLIC_BASE_URL: plain("https://staging.helloautoflow.com"),
     },
     productionEnv: {
-      BASE_URL: plain("https://staging.helloautoflow.com"),
-      NEXT_PUBLIC_API_URL: plain("https://staging-api.helloautoflow.com"),
-      NEXT_PUBLIC_BASE_URL: plain("https://staging.helloautoflow.com"),
+      BASE_URL: plain("https://helloautoflow.com"),
+      NEXT_PUBLIC_API_URL: plain("https://api.helloautoflow.com"),
+      NEXT_PUBLIC_BASE_URL: plain("https://helloautoflow.com"),
     },
   },
 ];

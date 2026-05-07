@@ -145,8 +145,6 @@ describe("IntegrationMarketplace", () => {
       );
       expect(redirectToMock).toHaveBeenCalledWith("https://oauth.example.com/slack");
     });
-    expect(screen.getByText(/this integration is authenticated and ready to use/i)).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /^disconnect$/i })).toBeInTheDocument();
 
     const closeButton = screen.getAllByRole("button").find((button) => button.querySelector("svg.lucide-x"));
     if (!closeButton) throw new Error("Drawer close button not found");

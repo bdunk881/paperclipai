@@ -1,0 +1,133 @@
+name: Deploy Dashboard to Cloudflare Pages
+
+on:
+  pull_request:
+    paths:
+      - "dashboard/**"
+      - ".github/workflows/dashboard-cloudflare-pages.yml"
+  push:
+    paths:
+      - "dashboard/**"
+      - ".github/workflows/dashboard-cloudflare-pages.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  deployments: write
+
+concurrency:
+  group: dashboard-cloudflare-pages-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    name: Deploy dashboard
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Derive Cloudflare Pages target
+        id: target
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          deploy_branch="${{ github.event_name == 'pull_request' && github.head_ref || github.ref_name }}"
+          target_branch="${{ github.event_name == 'pull_request' && github.base_ref || github.ref_name }}"
+          project_name="autoflow-dashboard-git"
+          custom_domain="app.helloautoflow.com"
+
+          case "$target_branch" in
+            dev)
+              project_name="autoflow-dashboard-dev-git"
+              custom_domain="dev.app.helloautoflow.com"
+              ;;
+            staging)
+              project_name="autoflow-dashboard-staging-git"
+              custom_domain=""
+              ;;
+          esac
+
+          echo "deploy_branch=$deploy_branch" >> "$GITHUB_OUTPUT"
+          echo "target_branch=$target_branch" >> "$GITHUB_OUTPUT"
+          echo "project_name=$project_name" >> "$GITHUB_OUTPUT"
+          echo "custom_domain=$custom_domain" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: dashboard/package-lock.json
+
+      - name: Install dependencies
+        working-directory: dashboard
+        run: npm ci
+
+      - name: Build dashboard
+        working-directory: dashboard
+        env:
+          VITE_SUPABASE_URL: ${{ steps.target.outputs.target_branch == 'dev' && secrets.DEV_SUPABASE_URL || secrets.PRODUCTION_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ steps.target.outputs.target_branch == 'dev' && secrets.DEV_SUPABASE_ANON_KEY || secrets.PRODUCTION_SUPABASE_ANON_KEY }}
+        run: npm run build
+
+      - name: Deploy to Cloudflare Pages
+        id: deploy
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          gitHubToken: ${{ secrets.GITHUB_TOKEN }}
+          workingDirectory: dashboard
+          packageManager: npm
+          command: >-
+            pages deploy dist
+            --project-name=${{ steps.target.outputs.project_name }}
+            --branch=${{ steps.target.outputs.deploy_branch }}
+
+      - name: Smoke Pages deployment URL
+        run: bash ./infra/scripts/cloudflare_pages_smoke.sh dashboard "${{ steps.deploy.outputs.deployment-url }}"
+
+      - name: Smoke dashboard custom domain
+        if: ${{ github.event_name != 'pull_request' && steps.target.outputs.custom_domain != '' }}
+        env:
+          CUSTOM_DOMAIN: ${{ steps.target.outputs.custom_domain }}
+        run: |
+          set -euo pipefail
+
+          for attempt in $(seq 1 12); do
+            if bash ./infra/scripts/cloudflare_pages_smoke.sh dashboard "https://${CUSTOM_DOMAIN}"; then
+              exit 0
+            fi
+
+            if [ "$attempt" -lt 12 ]; then
+              echo "Custom domain not ready yet; retrying in 10 seconds..."
+              sleep 10
+            fi
+          done
+
+          echo "::error::Custom domain smoke test failed for https://${CUSTOM_DOMAIN}"
+          exit 1
+
+      - name: Summarize deployment
+        env:
+          DEPLOYMENT_URL: ${{ steps.deploy.outputs.deployment-url }}
+          DEPLOYMENT_ALIAS_URL: ${{ steps.deploy.outputs.pages-deployment-alias-url }}
+          DEPLOYMENT_ID: ${{ steps.deploy.outputs.pages-deployment-id }}
+          DEPLOYMENT_ENVIRONMENT: ${{ steps.deploy.outputs.pages-environment }}
+          DEPLOY_BRANCH: ${{ steps.target.outputs.deploy_branch }}
+          TARGET_BRANCH: ${{ steps.target.outputs.target_branch }}
+          PROJECT_NAME: ${{ steps.target.outputs.project_name }}
+          CUSTOM_DOMAIN: ${{ steps.target.outputs.custom_domain }}
+        run: |
+          {
+            echo "## Cloudflare Pages deployment"
+            echo
+            echo "- Target branch: ${TARGET_BRANCH:-unknown}"
+            echo "- Deploy branch: ${DEPLOY_BRANCH:-unknown}"
+            echo "- Project: ${PROJECT_NAME:-unknown}"
+            echo "- Environment: ${DEPLOYMENT_ENVIRONMENT:-unknown}"
+            echo "- Deployment ID: ${DEPLOYMENT_ID:-unknown}"
+            echo "- Deployment URL: ${DEPLOYMENT_URL:-unavailable}"
+            echo "- Alias URL: ${DEPLOYMENT_ALIAS_URL:-unavailable}"
+            echo "- Custom domain: ${CUSTOM_DOMAIN:+https://${CUSTOM_DOMAIN}}"
+          } >> "$GITHUB_STEP_SUMMARY"

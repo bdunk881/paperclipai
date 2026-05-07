@@ -1,0 +1,140 @@
+name: Register CF Pages custom domains (ALT-2368)
+
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Dry run (echo only, no API calls)"
+        required: false
+        default: "false"
+
+jobs:
+  add-domains:
+    name: Add custom domains to CF Pages projects
+    runs-on: ubuntu-latest
+    steps:
+      - name: Pre-flight - verify token and list Pages projects
+        run: |
+          echo "=== Listing CF Pages projects (verifies token + account ID) ==="
+          RESP=$(curl -s -X GET \
+            -H "Authorization: Bearer ${{ secrets.CLOUDFLARE_API_TOKEN }}" \
+            "https://api.cloudflare.com/client/v4/accounts/${{ secrets.CLOUDFLARE_ACCOUNT_ID }}/pages/projects")
+          echo "$RESP" | jq '{success, errors, project_names: [.result[]?.name]}'
+          if [ "$(echo "$RESP" | jq -r '.success')" != "true" ]; then
+            echo "FATAL: Cannot list projects. Check CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID secrets."
+            exit 1
+          fi
+
+      - name: Add app.helloautoflow.com to autoflow-dashboard-git
+        run: |
+          if [ "${{ inputs.dry_run }}" = "true" ]; then
+            echo "[DRY RUN] Would add app.helloautoflow.com to autoflow-dashboard-git"
+            exit 0
+          fi
+          RESP=$(curl -s -X POST \
+            -H "Authorization: Bearer ${{ secrets.CLOUDFLARE_API_TOKEN }}" \
+            -H "Content-Type: application/json" \
+            -d '{"name":"app.helloautoflow.com"}' \
+            "https://api.cloudflare.com/client/v4/accounts/${{ secrets.CLOUDFLARE_ACCOUNT_ID }}/pages/projects/autoflow-dashboard-git/domains")
+          echo "=== Full response ===" && echo "$RESP" | jq .
+          SUCCESS=$(echo "$RESP" | jq -r '.success')
+          ERR_CODE=$(echo "$RESP" | jq -r '.errors[0].code // empty')
+          if [ "$SUCCESS" != "true" ] && [ "$ERR_CODE" != "8000018" ]; then
+            echo "FAILED:" && echo "$RESP" | jq '.errors'
+            exit 1
+          fi
+          [ "$ERR_CODE" = "8000018" ] && echo "ALREADY_REGISTERED (idempotent OK)" || echo "OK: $(echo "$RESP" | jq -r '.result.name') status=$(echo "$RESP" | jq -r '.result.status')"
+
+      - name: Add dev.app.helloautoflow.com to autoflow-dashboard-dev-git
+        run: |
+          if [ "${{ inputs.dry_run }}" = "true" ]; then
+            echo "[DRY RUN] Would add dev.app.helloautoflow.com to autoflow-dashboard-dev-git"
+            exit 0
+          fi
+          RESP=$(curl -s -X POST \
+            -H "Authorization: Bearer ${{ secrets.CLOUDFLARE_API_TOKEN }}" \
+            -H "Content-Type: application/json" \
+            -d '{"name":"dev.app.helloautoflow.com"}' \
+            "https://api.cloudflare.com/client/v4/accounts/${{ secrets.CLOUDFLARE_ACCOUNT_ID }}/pages/projects/autoflow-dashboard-dev-git/domains")
+          echo "=== Full response ===" && echo "$RESP" | jq .
+          SUCCESS=$(echo "$RESP" | jq -r '.success')
+          ERR_CODE=$(echo "$RESP" | jq -r '.errors[0].code // empty')
+          if [ "$SUCCESS" != "true" ] && [ "$ERR_CODE" != "8000018" ]; then
+            echo "FAILED:" && echo "$RESP" | jq '.errors'
+            exit 1
+          fi
+          [ "$ERR_CODE" = "8000018" ] && echo "ALREADY_REGISTERED (idempotent OK)" || echo "OK: $(echo "$RESP" | jq -r '.result.name') status=$(echo "$RESP" | jq -r '.result.status')"
+
+      - name: Add docs.helloautoflow.com to autoflow-docs
+        continue-on-error: true
+        run: |
+          if [ "${{ inputs.dry_run }}" = "true" ]; then
+            echo "[DRY RUN] Would add docs.helloautoflow.com to autoflow-docs"
+            exit 0
+          fi
+          RESP=$(curl -s -X POST \
+            -H "Authorization: Bearer ${{ secrets.CLOUDFLARE_API_TOKEN }}" \
+            -H "Content-Type: application/json" \
+            -d '{"name":"docs.helloautoflow.com"}' \
+            "https://api.cloudflare.com/client/v4/accounts/${{ secrets.CLOUDFLARE_ACCOUNT_ID }}/pages/projects/autoflow-docs/domains")
+          echo "=== Full response ===" && echo "$RESP" | jq .
+          SUCCESS=$(echo "$RESP" | jq -r '.success')
+          ERR_CODE=$(echo "$RESP" | jq -r '.errors[0].code // empty')
+          if [ "$SUCCESS" != "true" ] && [ "$ERR_CODE" != "8000018" ]; then
+            echo "FAILED:" && echo "$RESP" | jq '.errors'
+            exit 1
+          fi
+          [ "$ERR_CODE" = "8000018" ] && echo "ALREADY_REGISTERED (idempotent OK)" || echo "OK: $(echo "$RESP" | jq -r '.result.name') status=$(echo "$RESP" | jq -r '.result.status')"
+
+      - name: Add helloautoflow.com to autoflow-landing
+        continue-on-error: true
+        run: |
+          if [ "${{ inputs.dry_run }}" = "true" ]; then
+            echo "[DRY RUN] Would add helloautoflow.com to autoflow-landing"
+            exit 0
+          fi
+          RESP=$(curl -s -X POST \
+            -H "Authorization: Bearer ${{ secrets.CLOUDFLARE_API_TOKEN }}" \
+            -H "Content-Type: application/json" \
+            -d '{"name":"helloautoflow.com"}' \
+            "https://api.cloudflare.com/client/v4/accounts/${{ secrets.CLOUDFLARE_ACCOUNT_ID }}/pages/projects/autoflow-landing/domains")
+          echo "=== Full response ===" && echo "$RESP" | jq .
+          SUCCESS=$(echo "$RESP" | jq -r '.success')
+          ERR_CODE=$(echo "$RESP" | jq -r '.errors[0].code // empty')
+          if [ "$SUCCESS" != "true" ] && [ "$ERR_CODE" != "8000018" ]; then
+            echo "FAILED:" && echo "$RESP" | jq '.errors'
+            exit 1
+          fi
+          [ "$ERR_CODE" = "8000018" ] && echo "ALREADY_REGISTERED (idempotent OK)" || echo "OK: $(echo "$RESP" | jq -r '.result.name') status=$(echo "$RESP" | jq -r '.result.status')"
+
+      - name: Add www.helloautoflow.com to autoflow-landing
+        continue-on-error: true
+        run: |
+          if [ "${{ inputs.dry_run }}" = "true" ]; then
+            echo "[DRY RUN] Would add www.helloautoflow.com to autoflow-landing"
+            exit 0
+          fi
+          RESP=$(curl -s -X POST \
+            -H "Authorization: Bearer ${{ secrets.CLOUDFLARE_API_TOKEN }}" \
+            -H "Content-Type: application/json" \
+            -d '{"name":"www.helloautoflow.com"}' \
+            "https://api.cloudflare.com/client/v4/accounts/${{ secrets.CLOUDFLARE_ACCOUNT_ID }}/pages/projects/autoflow-landing/domains")
+          echo "=== Full response ===" && echo "$RESP" | jq .
+          SUCCESS=$(echo "$RESP" | jq -r '.success')
+          ERR_CODE=$(echo "$RESP" | jq -r '.errors[0].code // empty')
+          if [ "$SUCCESS" != "true" ] && [ "$ERR_CODE" != "8000018" ]; then
+            echo "FAILED:" && echo "$RESP" | jq '.errors'
+            exit 1
+          fi
+          [ "$ERR_CODE" = "8000018" ] && echo "ALREADY_REGISTERED (idempotent OK)" || echo "OK: $(echo "$RESP" | jq -r '.result.name') status=$(echo "$RESP" | jq -r '.result.status')"
+
+      - name: Summary
+        run: |
+          echo "Custom domain registration complete."
+          echo "DNS records configured:"
+          echo "  app.helloautoflow.com      -> autoflow-dashboard-git.pages.dev"
+          echo "  dev.app.helloautoflow.com  -> autoflow-dashboard-dev-git.pages.dev"
+          echo "  docs.helloautoflow.com     -> autoflow-docs.pages.dev"
+          echo "  www.helloautoflow.com      -> autoflow-landing.pages.dev"
+          echo ""
+          echo "Note: staging.app.helloautoflow.com remains on Azure SWA until staging cutover is planned."

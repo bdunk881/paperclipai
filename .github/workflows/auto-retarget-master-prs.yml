@@ -8,6 +8,8 @@ on:
       - opened
       - reopened
       - edited
+      - labeled
+      - unlabeled
       - ready_for_review
 
 permissions:
@@ -20,13 +22,48 @@ jobs:
     if: ${{ github.event.pull_request.head.ref != 'staging' }}
     runs-on: ubuntu-latest
     steps:
-      - name: Retarget PR base to staging
+      - name: Retarget PR base to staging unless an approved hotfix override applies
         uses: actions/github-script@v7
         with:
           script: |
             const pull_number = context.payload.pull_request.number;
             const owner = context.repo.owner;
             const repo = context.repo.repo;
+            const labels = (context.payload.pull_request.labels || []).map((label) => label.name);
+            const headRef = context.payload.pull_request.head.ref;
+            const overrideLabel = "approved-master-hotfix";
+            const overrideMarker = "<!-- approved-master-hotfix-override -->";
+            const hasApprovedOverride = labels.includes(overrideLabel) && headRef.startsWith("hotfix/");
+
+            if (hasApprovedOverride) {
+              const { data: comments } = await github.rest.issues.listComments({
+                owner,
+                repo,
+                issue_number: pull_number,
+                per_page: 100
+              });
+
+              if (!comments.some((comment) => comment.body && comment.body.includes(overrideMarker))) {
+                await github.rest.issues.createComment({
+                  owner,
+                  repo,
+                  issue_number: pull_number,
+                  body: [
+                    overrideMarker,
+                    "Approved emergency override detected. This PR is allowed to keep targeting `master`.",
+                    "",
+                    "Override requirements satisfied:",
+                    `- Label: \`${overrideLabel}\``,
+                    `- Head branch: \`${headRef}\``,
+                    "",
+                    "Normal master-target PRs continue to be auto-retargeted to `staging`."
+                  ].join("\\n")
+                });
+              }
+
+              core.info(`Skipping auto-retarget for approved hotfix override on ${headRef}.`);
+              return;
+            }
 
             await github.rest.pulls.update({
               owner,
@@ -45,6 +82,7 @@ jobs:
                 "AutoFlow uses a staging-first promotion flow:",
                 "- Feature and Dependabot PRs merge into `staging`.",
                 "- Only the dedicated `staging` -> `master` promotion PR should target `master`.",
+                `- Emergency master hotfixes must use the \`${overrideLabel}\` label on a \`hotfix/*\` branch.`,
                 "",
                 "Reference: `CONTRIBUTING.md` -> `Branch And PR Flow`."
               ].join("\\n")

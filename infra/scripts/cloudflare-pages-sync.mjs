@@ -177,7 +177,8 @@ for (const config of selectedConfigs) {
     console.log(`Created project ${config.projectName}`);
   }
 
-  await waitForSuccessfulDeployment(config.projectName);
+  const deployment = await ensureDeploymentStarted(config.projectName, config.productionBranch);
+  await waitForSuccessfulDeployment(config.projectName, deployment?.id ?? null);
 
   if (applyDomains) {
     await syncDomains(config);
@@ -235,13 +236,42 @@ async function syncDomains(config) {
   }
 }
 
-async function waitForSuccessfulDeployment(projectName) {
-  for (let attempt = 1; attempt <= 30; attempt += 1) {
-    const result = await cfApi(
-      `/accounts/${accountId}/pages/projects/${projectName}/deployments?per_page=1`,
-      { method: "GET" }
+async function ensureDeploymentStarted(projectName, branch) {
+  const deployment = await getLatestDeployment(projectName);
+  if (deployment) {
+    console.log(
+      `Found existing deployment for ${projectName}: ${deployment.id ?? deployment.url ?? "unknown id"}`
     );
-    const deployment = Array.isArray(result.result) ? result.result[0] : null;
+    return deployment;
+  }
+
+  console.log(`No deployments found for ${projectName}; triggering initial deployment from ${branch}`);
+  return await triggerDeployment(projectName, branch);
+}
+
+async function triggerDeployment(projectName, branch) {
+  const body = new FormData();
+  body.set("branch", branch);
+
+  const result = await cfApi(`/accounts/${accountId}/pages/projects/${projectName}/deployments`, {
+    body,
+    method: "POST",
+  });
+  return result?.result ?? null;
+}
+
+async function waitForSuccessfulDeployment(projectName, expectedDeploymentId = null) {
+  for (let attempt = 1; attempt <= 30; attempt += 1) {
+    const deployment = await getLatestDeployment(projectName);
+
+    if (expectedDeploymentId && deployment?.id && deployment.id !== expectedDeploymentId) {
+      console.log(
+        `Latest deployment for ${projectName} is ${deployment.id}; waiting for ${expectedDeploymentId}... (${attempt}/30)`
+      );
+      await sleep(10000);
+      continue;
+    }
+
     const status = deploymentStatus(deployment);
     if (status === "success") {
       console.log(
@@ -250,7 +280,9 @@ async function waitForSuccessfulDeployment(projectName) {
       return;
     }
     if (status === "failure") {
-      throw new Error(`Latest deployment for ${projectName} failed.`);
+      throw new Error(
+        `Latest deployment for ${projectName} failed: ${JSON.stringify(deployment?.latest_stage ?? deployment?.stages ?? deployment)}`
+      );
     }
 
     console.log(`Deployment for ${projectName} is ${status ?? "pending"}; waiting... (${attempt}/30)`);
@@ -275,6 +307,14 @@ async function listDomains(projectName) {
   return Array.isArray(result.result) ? result.result : [];
 }
 
+async function getLatestDeployment(projectName) {
+  const result = await cfApi(
+    `/accounts/${accountId}/pages/projects/${projectName}/deployments?per_page=1`,
+    { method: "GET" }
+  );
+  return Array.isArray(result.result) ? result.result[0] ?? null : null;
+}
+
 async function getProject(projectName) {
   const result = await cfApi(`/accounts/${accountId}/pages/projects/${projectName}`, {
     allow404: true,
@@ -284,12 +324,17 @@ async function getProject(projectName) {
 }
 
 async function cfApi(path, options) {
+  const headers = {
+    Authorization: `Bearer ${apiToken}`,
+  };
+
+  if (!(options.body instanceof FormData)) {
+    headers["Content-Type"] = "application/json";
+  }
+
   const response = await fetch(`https://api.cloudflare.com/client/v4${path}`, {
     method: options.method,
-    headers: {
-      Authorization: `Bearer ${apiToken}`,
-      "Content-Type": "application/json",
-    },
+    headers,
     body: options.body,
   });
 

@@ -496,6 +496,11 @@ jobs:
               QA_AUTH_BYPASS_ENABLED="${{ steps.target.outputs.qa_bypass_enabled }}" \
               QA_AUTH_BYPASS_USER_IDS="${{ steps.target.outputs.qa_bypass_users }}"
 
+          az containerapp ingress update \
+            --name "${{ steps.discover.outputs.container_app }}" \
+            --resource-group "${{ steps.discover.outputs.resource_group }}" \
+            --target-port 8080
+
       - name: Smoke test staging backend
         run: |
           set -euo pipefail

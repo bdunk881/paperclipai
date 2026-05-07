@@ -1,25 +1,37 @@
 # AutoFlow Infrastructure
 
+<<<<<<< HEAD
 Primary deployment path is now branch-driven GitHub Actions targeting Fly.io,
 Supabase, and Cloudflare Pages.
 Legacy Azure teardown and DNS cutover steps remain documented under
 [ALT-2325](/ALT/issues/ALT-2325) for Phase 5 retirement work.
+=======
+Azure (backend) + Vercel/Cloudflare Pages (frontend surfaces) deployment with GitHub Actions CI/CD.
+>>>>>>> 4c1772e (feat(ALT-2437): add landing cloudflare pages git migration)
 
 ## Stack
 
 | Layer | Tool |
 |---|---|
+<<<<<<< HEAD
 | Backend hosting | Fly.io |
 | Database + Auth | Supabase |
 | Frontend hosting | Cloudflare Pages |
 | Container registry | GitHub Container Registry (ghcr.io) |
 | TLS | Managed by Fly.io and Cloudflare |
+=======
+| Backend hosting | Azure (AKS / App Service) |
+| Dashboard hosting | Vercel / Cloudflare Pages migration |
+| Container registry | GitHub Container Registry (ghcr.io) |
+| TLS | Managed by Azure / Vercel / Cloudflare |
+>>>>>>> 4c1772e (feat(ALT-2437): add landing cloudflare pages git migration)
 | CI/CD | GitHub Actions |
 
 ## Services
 
 | App | Platform | Workflow |
 |---|---|---|
+<<<<<<< HEAD
 | `backend` dev | Fly.io | `.github/workflows/deploy-fly-fastapi-dev.yml` |
 | `backend` staging | Fly.io | `.github/workflows/deploy-fly-fastapi-staging.yml` |
 | `dashboard` | Cloudflare Pages | `.github/workflows/dashboard-cloudflare-pages.yml` |
@@ -41,11 +53,14 @@ Current supported cutover targets in this repo:
 
 - `autoflow-dashboard-git` -> `app.helloautoflow.com`
 - `autoflow-staging-git` -> `staging.app.helloautoflow.com`
+- `autoflow-docs-git` -> `docs.helloautoflow.com`
+- `autoflow-landing-git` -> `staging.helloautoflow.com`
 
-Current blocker:
+Current status:
 
-- `docs/` is not static-export clean yet; its generated error-page prerender fails under a Pages-style export and needs an app-level Next.js fix before cutover.
-- `landing/` still depends on live Next.js server routes under `landing/app/api/*`, so `helloautoflow.com` and `www.helloautoflow.com` remain blocked on an app migration before they can move to Git-backed Cloudflare Pages.
+- `docs/` now targets the RR7 `staging` branch until the validated build shape is promoted to `master`.
+- `landing/` now supports a staging-first Git-backed cutover on `staging.helloautoflow.com`.
+- `helloautoflow.com` and `www.helloautoflow.com` remain on the legacy direct-upload landing project until the production apex cutover is approved with the final API/base-url env plan.
 
 ## Phase 5 decommission
 
@@ -67,6 +82,11 @@ GitHub Actions authenticates to Azure via **OIDC workload identity federation** 
 | Auth method | `azure/login@v2` with `id-token: write` permission |
 
 The federated credential is configured in the app registration under Certificates & secrets → Federated credentials. No `AZURE_CREDENTIALS` secret is needed.
+=======
+| `backend` | Azure | `.github/workflows/deploy.yml` |
+| `dashboard` | Vercel | `.github/workflows/vercel.yml` |
+| `landing` Git-backed Pages cutover | Cloudflare Pages | `.github/workflows/cloudflare-pages-migrate.yml` |
+>>>>>>> 4c1772e (feat(ALT-2437): add landing cloudflare pages git migration)
 
 ## GitHub Actions secrets required
 
@@ -108,8 +128,16 @@ Add these in the repo settings -> Secrets and variables -> Actions:
 | `FLY_PRODUCTION_SMOKE_USER_ID` | Optional user id sent through production smoke requests |
 | `FLY_PRODUCTION_RELAY_BASE_URL` | Optional direct legacy backend host to relay callbacks/webhooks during the pre-cutover window; if omitted, the workflow uses `https://api.helloautoflow.com` and the cutover operator must replace it with the direct Azure ingress target before DNS flips |
 
+### Cloudflare Pages
+
+| Secret | Description |
+|---|---|
+| `CLOUDFLARE_ACCOUNT_ID` | Cloudflare account ID for Pages project management |
+| `CLOUDFLARE_API_TOKEN` | Cloudflare API token with Pages project/domain permissions |
+
 ## Daily operations
 
+<<<<<<< HEAD
 - **Deploy backend dev:** push to `dev` — `.github/workflows/deploy-fly-fastapi-dev.yml` deploys `autoflow-fastapi-dev`.
 - **Deploy backend staging:** push to `staging` — `.github/workflows/deploy-fly-fastapi-staging.yml` deploys `autoflow-fastapi-staging`.
 - **Promotion flow:** all feature work lands through PRs into `dev`, then `dev` promotes to `staging`, then `staging` promotes to `master`.
@@ -180,3 +208,13 @@ to verify and remove any remaining Azure-bound records during Phase 5.
 - MemPalace sync: `infra/brand-assets/scripts/sync_brand_mempalace.sh`
 - Workflow templates: `infra/brand-assets/workflows/`
 - Operations runbook: `infra/runbooks/brand-assets-cdn-operations.md`
+=======
+- **Deploy backend:** merge to `main` — GitHub Actions builds Docker images, pushes to ghcr.io, deploys to Azure.
+- **Deploy dashboard:** merge to `main` with changes under `dashboard/` — GitHub Actions deploys to Vercel.
+- **Migrate landing to Git-backed Pages:** run `.github/workflows/cloudflare-pages-migrate.yml` with `projects=landing`.
+- **Rollback:** redeploy a previous image tag (backend) or use Vercel's instant rollback (dashboard).
+
+## DNS
+
+Configure DNS records to point to Azure, Vercel, and Cloudflare Pages per environment.
+>>>>>>> 4c1772e (feat(ALT-2437): add landing cloudflare pages git migration)

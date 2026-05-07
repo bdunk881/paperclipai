@@ -216,7 +216,7 @@ const generalApiRateLimiter = rateLimit({
   legacyHeaders: false,
   keyGenerator: getRateLimitKey,
   handler: createRateLimitHandler(60 * 1000),
-  skip: () => isTestEnv,
+  skip: (req) => isTestEnv && !getRateLimitKey(req).startsWith("user:rate-limit"),
 });
 
 const webhookRateLimiter = rateLimit({

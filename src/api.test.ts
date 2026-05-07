@@ -28,22 +28,6 @@ jest.mock("./auth/authMiddleware", () => ({
     req.auth = { sub: auth.slice(7), email: "test@example.com" };
     next();
   },
-}));
-
-jest.mock("./auth/authMiddleware", () => ({
-  requireAuth: (
-    req: { headers: { authorization?: string }; auth?: { sub: string; email?: string } },
-    res: { status: (code: number) => { json: (body: unknown) => void } },
-    next: () => void
-  ) => {
-    const auth = req.headers.authorization;
-    if (!auth?.startsWith("Bearer ")) {
-      res.status(401).json({ error: "Missing or malformed Authorization header." });
-      return;
-    }
-    req.auth = { sub: auth.slice(7), email: "test@example.com" };
-    next();
-  },
   requireAuthOrQaBypass: (
     req: {
       headers: { authorization?: string; "x-user-id"?: string };
@@ -77,12 +61,18 @@ jest.mock("./auth/authMiddleware", () => ({
     res.status(401).json({ error: "Missing or malformed Authorization header." });
   },
 }));
-
 jest.mock("./middleware/workspaceResolver", () => ({
   createWorkspaceResolver: () =>
     (_req: unknown, _res: unknown, next: () => void) => next(),
+  createExplicitWorkspaceHeaderResolver: () =>
+    (req: { headers?: Record<string, string | undefined>; workspaceId?: string }, _res: unknown, next: () => void) => {
+      const explicitWorkspaceId = req.headers?.["x-workspace-id"]?.trim();
+      if (explicitWorkspaceId) {
+        req.workspaceId = explicitWorkspaceId;
+      }
+      next();
+    },
 }));
-
 import request from "supertest";
 import app from "./app";
 import { recordControlPlaneAudit, recordControlPlaneAuditBatch } from "./auditing/controlPlaneAudit";
@@ -203,15 +193,19 @@ describe("GET /api/connectors/health", () => {
   });
 });
 
-describe("GET /api/tickets", () => {
-  it("allows the staging QA bypass user past the auth gate without a bearer token", async () => {
-    withQaBypass();
-    const res = await request(app)
-      .get("/api/tickets")
-      .set("X-User-Id", "qa-smoke-user");
+describe("Apollo OAuth callback routing", () => {
+  it("keeps the OAuth callback public", async () => {
+    const res = await request(app).get("/api/integrations/apollo/oauth/callback");
 
-    expect(res.status).not.toBe(401);
-    expect(res.body.error).not.toBe("Missing or malformed Authorization header.");
+    expect(res.status).toBe(400);
+    expect(res.body).toEqual({ error: "code and state are required" });
+  });
+
+  it("still protects Apollo management endpoints", async () => {
+    const res = await request(app).get("/api/integrations/apollo/connections");
+
+    expect(res.status).toBe(401);
+    expect(res.body).toEqual({ error: "Missing or malformed Authorization header." });
   });
 });
 
@@ -341,6 +335,18 @@ describe("GET /api/templates/:id", () => {
 });
 
 describe("POST /api/templates", () => {
+  it("requires authentication", async () => {
+    const res = await request(app).post("/api/templates").send({
+      id: "tpl-custom-qa",
+      name: "Custom QA Workflow",
+      steps: [],
+      configFields: [],
+    });
+
+    expect(res.status).toBe(401);
+    expect(res.body.error).toMatch(/authorization/i);
+  });
+
   it("creates a custom template and exposes it via the list/detail APIs", async () => {
     const payload = {
       id: "tpl-custom-qa",
@@ -364,7 +370,7 @@ describe("POST /api/templates", () => {
       expectedOutput: { response: "Hi" },
     };
 
-    const createRes = await request(app).post("/api/templates").send(payload);
+    const createRes = await request(app).post("/api/templates").set(asAuth()).send(payload);
     expect(createRes.status).toBe(201);
     expect(createRes.body.id).toBe("tpl-custom-qa");
     expect(createRes.body.name).toBe("Custom QA Workflow");
@@ -380,7 +386,7 @@ describe("POST /api/templates", () => {
 });
 
 describe("Approval tier policy API", () => {
-  const workspaceId = "11111111-1111-4111-8111-111111111111";
+  const workspaceId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 
   it("lists default approval tier policies for a workspace", async () => {
     const res = await request(app)
@@ -940,6 +946,42 @@ describe("Control plane APIs", () => {
     expect(listRes.body.teams[0].id).toBe(createRes.body.id);
   });
 
+  it("honors X-Workspace-Id for active workspace switching in non-Postgres mode", async () => {
+    const workspaceId = "workspace-shared";
+
+    const provisionRes = await request(app)
+      .post("/api/companies")
+      .set(asAuth("workspace-owner"))
+      .set("X-Workspace-Id", workspaceId)
+      .set("X-Paperclip-Run-Id", "run-provision-shared-workspace")
+      .send({
+        name: "Acme",
+        idempotencyKey: "shared-workspace-acme-1",
+        budgetMonthlyUsd: 300,
+        secretBindings: { OPENAI_API_KEY: "sk-acme-1234" },
+        agents: [{ roleTemplateId: "backend-engineer" }],
+      });
+
+    expect(provisionRes.status).toBe(201);
+    expect(provisionRes.body.company.workspaceId).toBe(workspaceId);
+
+    const sharedTeamsRes = await request(app)
+      .get("/api/control-plane/teams")
+      .set(asAuth("ceo-user"))
+      .set("X-Workspace-Id", workspaceId);
+
+    expect(sharedTeamsRes.status).toBe(200);
+    expect(sharedTeamsRes.body.total).toBe(1);
+    expect(sharedTeamsRes.body.teams[0].id).toBe(provisionRes.body.team.id);
+
+    const defaultWorkspaceTeamsRes = await request(app)
+      .get("/api/control-plane/teams")
+      .set(asAuth("ceo-user"));
+
+    expect(defaultWorkspaceTeamsRes.status).toBe(200);
+    expect(defaultWorkspaceTeamsRes.body.total).toBe(0);
+  });
+
   it("deploys a workflow template as an agent team", async () => {
     const res = await request(app)
       .post("/api/control-plane/deployments/workflow")
@@ -1118,6 +1160,63 @@ describe("Control plane APIs", () => {
     expect(budgetRes.body.monthlyUsd).toBe(workerAgent.budgetMonthlyUsd);
     expect(budgetRes.body.spentUsd).toBe(1.42);
     expect(budgetRes.body.remainingUsd).toBeCloseTo(workerAgent.budgetMonthlyUsd - 1.42, 2);
+  });
+
+  it("exposes scheduled agents as real dashboard routines", async () => {
+    const deployRes = await request(app)
+      .post("/api/control-plane/deployments/workflow")
+      .set(asAuth())
+      .set("X-Paperclip-Run-Id", "run-deploy-routines")
+      .send({ templateId: "tpl-support-bot", defaultIntervalMinutes: 30 });
+
+    const teamId = deployRes.body.team.id;
+    const managerAgent = deployRes.body.agents.find(
+      (agent: { roleKey: string }) => agent.roleKey === "workflow-manager"
+    );
+    const workerAgent = deployRes.body.agents.find(
+      (agent: { roleKey: string }) => agent.roleKey !== "workflow-manager"
+    );
+
+    await request(app)
+      .post("/api/control-plane/heartbeats")
+      .set(asAuth())
+      .set("X-Paperclip-Run-Id", "run-routines-heartbeat")
+      .send({
+        teamId,
+        agentId: workerAgent.id,
+        status: "completed",
+        summary: "Completed scheduled routine",
+        costUsd: 0.75,
+      });
+
+    const routinesRes = await request(app)
+      .get("/api/routines")
+      .set(asAuth());
+
+    expect(routinesRes.status).toBe(200);
+    expect(routinesRes.body.total).toBe(routinesRes.body.routines.length);
+    expect(routinesRes.body.total).toBeGreaterThan(0);
+    expect(routinesRes.body.routines).toEqual(
+      expect.not.arrayContaining([expect.objectContaining({ agentId: managerAgent.id })])
+    );
+
+    const workerRoutine = routinesRes.body.routines.find(
+      (routine: { agentId: string }) => routine.agentId === workerAgent.id
+    );
+
+    expect(workerRoutine).toMatchObject({
+      id: `routine-${workerAgent.id}`,
+      agentId: workerAgent.id,
+      name: workerAgent.name,
+      scheduleType: "interval",
+      intervalMinutes: 30,
+      status: "active",
+    });
+    expect(workerRoutine.lastRunAt).toBeTruthy();
+    expect(workerRoutine.nextRunAt).toBeTruthy();
+    expect(new Date(workerRoutine.nextRunAt).getTime()).toBeGreaterThan(
+      new Date(workerRoutine.lastRunAt).getTime()
+    );
   });
 
   it("records real-time spend events and exposes threshold alerts in team spend snapshots", async () => {

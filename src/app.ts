@@ -4,6 +4,7 @@
  * in tests without starting a live TCP listener.
  */
 
+import * as Sentry from "@sentry/node";
 import express from "express";
 import rateLimit from "express-rate-limit";
 import multer from "multer";
@@ -30,6 +31,7 @@ import mcpRoutes from "./mcp/mcpRoutes";
 import memoryRoutes from "./memory/memoryRoutes";
 import agentMemoryRoutes from "./agents/agentMemoryRoutes";
 import agentRoutes from "./agents/agentRoutes";
+import routineRoutes from "./routines/routineRoutes";
 import knowledgeRoutes from "./knowledge/routes";
 import controlPlaneRoutes from "./controlPlane/controlPlaneRoutes";
 import companyRoutes from "./companies/companyRoutes";
@@ -49,7 +51,6 @@ import {
   listClassificationDecisions,
 } from "./engine/classificationLog";
 import { requireAuth, requireAuthOrQaBypass, AuthenticatedRequest } from "./auth/authMiddleware";
-import nativeAuthProxyRoutes from "./auth/nativeAuthProxyRoutes";
 import socialAuthRoutes from "./auth/socialAuthRoutes";
 import stripeWebhookRoutes from "./billing/stripeWebhook";
 import apolloWebhookRoutes from "./integrations/apollo-attio/webhookRoute";
@@ -87,7 +88,12 @@ import googleWorkspaceConnectorRoutes from "./connectors/google-workspace/routes
 import googleWorkspaceWebhookRoutes from "./connectors/google-workspace/webhookRoutes";
 import notificationRoutes from "./notifications/routes";
 import { getPostgresPool, isPostgresPersistenceEnabled } from "./db/postgres";
-import { createWorkspaceResolver } from "./middleware/workspaceResolver";
+import {
+  createExplicitWorkspaceHeaderResolver,
+  createWorkspaceResolver,
+  WorkspaceAwareRequest,
+} from "./middleware/workspaceResolver";
+import { createWorkspaceRoutes } from "./workspaces/workspaceRoutes";
 import {
   createPortableWorkflowBundle,
   getPortableWorkflowSchemaDescriptor,
@@ -100,7 +106,16 @@ import { getConnectorHealthSummary, listConnectorHealth } from "./connectors/hea
 const app = express();
 const workspaceResolver = isPostgresPersistenceEnabled()
   ? createWorkspaceResolver(getPostgresPool())
-  : (_req: express.Request, _res: express.Response, next: express.NextFunction) => next();
+  : createExplicitWorkspaceHeaderResolver();
+const workspaceRoutes = isPostgresPersistenceEnabled()
+  ? createWorkspaceRoutes(getPostgresPool())
+  : express.Router()
+      .get("/", (_req, res) => {
+        res.json([]);
+      })
+      .post("/", (_req, res) => {
+        res.status(501).json({ error: "Workspace creation requires PostgreSQL persistence." });
+      });
 
 function parseAllowedOrigins(value: string | undefined): string[] {
   if (!value) {
@@ -117,6 +132,7 @@ function getAllowedOrigins(): string[] {
   return Array.from(
     new Set([
       ...parseAllowedOrigins(process.env.ALLOWED_ORIGINS),
+      ...parseAllowedOrigins(process.env.AUTH_NATIVE_AUTH_PROXY_ALLOWED_ORIGINS),
       ...parseAllowedOrigins(process.env.AUTH_SOCIAL_ALLOWED_REDIRECT_ORIGINS),
       ...parseAllowedOrigins(process.env.SOCIAL_AUTH_DASHBOARD_URL),
     ])
@@ -133,6 +149,9 @@ const corsOptions: cors.CorsOptions = {
     }
     callback(null, allowedOrigins.has(origin));
   },
+  // Allow the browser to read Sentry distributed-trace headers so frontend
+  // replays can be correlated with backend traces
+  exposedHeaders: ["sentry-trace", "baggage"],
 };
 
 app.use(helmet());
@@ -215,18 +234,18 @@ const llmEndpointRateLimiter = rateLimit({
   handler: createRateLimitHandler(60 * 60 * 1000),
 });
 
-const nativeAuthProxyRateLimitWindowMs = parsePositiveIntegerEnv(
-  "AUTH_NATIVE_AUTH_PROXY_RATE_LIMIT_WINDOW_MS",
+const authRouteRateLimitWindowMs = parsePositiveIntegerEnv(
+  "AUTH_ROUTE_RATE_LIMIT_WINDOW_MS",
   60 * 1000
 );
 
-const nativeAuthProxyRateLimiter = rateLimit({
-  windowMs: nativeAuthProxyRateLimitWindowMs,
-  limit: parsePositiveIntegerEnv("AUTH_NATIVE_AUTH_PROXY_RATE_LIMIT_MAX", 20),
+const authRouteRateLimiter = rateLimit({
+  windowMs: authRouteRateLimitWindowMs,
+  limit: parsePositiveIntegerEnv("AUTH_ROUTE_RATE_LIMIT_MAX", 20),
   standardHeaders: true,
   legacyHeaders: false,
   keyGenerator: (req) => `ip:${req.ip || req.socket.remoteAddress || "unknown"}`,
-  handler: createRateLimitHandler(nativeAuthProxyRateLimitWindowMs),
+  handler: createRateLimitHandler(authRouteRateLimitWindowMs),
 });
 
 const billingMutationRateLimiter = rateLimit({
@@ -291,6 +310,53 @@ app.use("/api/connectors/google-workspace", googleWorkspaceWebhookRoutes);
 app.use(express.json());
 app.use(passport.initialize());
 
+// Track HTTP request duration, counts, and errors as Sentry custom metrics.
+app.use((req, res, next) => {
+  const start = Date.now();
+  res.on("finish", () => {
+    const duration = Date.now() - start;
+    const endpoint = req.path
+      .replace(/\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi, "/:id")
+      .replace(/\/\d{4,}/g, "/:id");
+    const attributes = { method: req.method, endpoint };
+    Sentry.metrics.distribution("http.request_duration_ms", duration, {
+      unit: "millisecond",
+      attributes: { ...attributes, status: String(res.statusCode) },
+    });
+    Sentry.metrics.count("http.request", 1, { attributes });
+    if (res.statusCode >= 500) {
+      Sentry.metrics.count("http.error", 1, {
+        attributes: { ...attributes, status: String(res.statusCode) },
+      });
+      Sentry.logger.error(`${req.method} ${endpoint} → ${res.statusCode} (${duration}ms)`, {
+        method: req.method, endpoint, status: res.statusCode, duration,
+      });
+    } else if (res.statusCode >= 400) {
+      Sentry.metrics.count("http.error", 1, {
+        attributes: { ...attributes, status: String(res.statusCode) },
+      });
+      Sentry.logger.warn(`${req.method} ${endpoint} → ${res.statusCode} (${duration}ms)`, {
+        method: req.method, endpoint, status: res.statusCode, duration,
+      });
+    } else {
+      Sentry.logger.info(`${req.method} ${endpoint} → ${res.statusCode} (${duration}ms)`, {
+        method: req.method, endpoint, status: res.statusCode, duration,
+      });
+    }
+  });
+  next();
+});
+
+// Propagate authenticated user identity into Sentry scope so all errors
+// and logs captured after auth are attributed to the correct user.
+app.use((req, _res, next) => {
+  const authReq = req as unknown as AuthenticatedRequest;
+  if (authReq.auth?.sub) {
+    Sentry.setUser({ id: authReq.auth.sub, email: authReq.auth.email });
+  }
+  next();
+});
+
 // Multer — in-memory storage for file uploads (max 50 MB)
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -305,7 +371,7 @@ app.use("/api/webhooks/apollo", apolloWebhookRoutes);
 // ---------------------------------------------------------------------------
 // Billing API — Stripe checkout sessions + subscription lifecycle
 // ---------------------------------------------------------------------------
-app.use("/api/billing/checkout", requireAuth, billingMutationRateLimiter, checkoutRoutes);
+app.use("/api/billing/checkout", billingMutationRateLimiter, checkoutRoutes);
 app.use("/api/billing/subscription", requireAuth, billingMutationRateLimiter, subscriptionRoutes);
 
 // ---------------------------------------------------------------------------
@@ -324,11 +390,8 @@ app.use("/api/mcp/servers", requireAuth, mcpRoutes);
 app.use("/api/memory", requireAuth, memoryRoutes);
 app.use("/api/agents/:agentId/memory", requireAuth, agentMemoryRoutes);
 app.use("/api/agents", requireAuth, workspaceResolver, agentRoutes);
-
-// Routines stub — returns empty list until a full routines store is implemented.
-app.get("/api/routines", requireAuth, (_req, res) => {
-  res.json({ routines: [] });
-});
+app.use("/api/routines", requireAuth, workspaceResolver, routineRoutes);
+app.use("/api/integrations/apollo", apolloRoutes);
 app.use("/api/knowledge", requireAuth, knowledgeMutationRateLimiter, knowledgeRoutes);
 app.use("/api/integrations/catalog", integrationCatalogRoutes);
 app.use("/api/integrations/oauth2", integrationOAuthCallbackRoutes);
@@ -344,36 +407,30 @@ app.use("/api/integrations/hubspot", hubSpotRoutes);
 app.use("/api/integrations/teams", teamsRoutes);
 app.use("/api/integrations/gmail", gmailRoutes);
 app.use("/api/integrations/stripe", stripeRoutes);
-app.use("/api/integrations/apollo", apolloRoutes);
 app.use("/api/integrations/composio", composioRoutes);
 app.use("/api/integrations/posthog", posthogRoutes);
 app.use("/api/integrations/intercom", intercomRoutes);
 app.use("/api/integrations/datadog-azure-monitor", datadogAzureMonitorRoutes);
 app.use("/api/integrations/agent-catalog", agentCatalogRoutes);
 app.use("/api/connectors/google-workspace", googleWorkspaceConnectorRoutes);
+app.use("/api/workspaces", requireAuth, workspaceRoutes);
 app.use("/api/companies", requireAuth, workspaceResolver, companyRoutes);
-app.use("/api/control-plane", requireAuth, controlPlaneRoutes);
+app.use("/api/control-plane", requireAuth, workspaceResolver, controlPlaneRoutes);
 app.use("/api/hitl", requireAuth, hitlRoutes);
-app.use("/api/observability", requireAuth, observabilityRoutes);
+app.use("/api/observability", requireAuth, workspaceResolver, observabilityRoutes);
 app.use("/api/reporting", requireAuth, reportRoutes);
-app.use("/api/tickets", requireAuthOrQaBypass, workspaceResolver, ticketRoutes);
+app.use("/api/tickets", requireAuth, workspaceResolver, ticketRoutes);
 app.use("/api/ticket-sync", requireAuth, ticketSyncRoutes);
-app.use("/api/notifications", requireAuth, notificationRoutes);
+app.use("/api/notifications", requireAuth, workspaceResolver, notificationRoutes);
 app.use("/api/approval-policies", requireAuth, approvalPolicyRoutes);
 
 // ---------------------------------------------------------------------------
-// Auth API — identity endpoint for authenticated callers
+// Auth API — identity and social callback endpoints
 // ---------------------------------------------------------------------------
 
-app.use(
-  "/api/auth/native",
-  express.urlencoded({ extended: false }),
-  nativeAuthProxyRateLimiter,
-  nativeAuthProxyRoutes
-);
-app.use("/api/auth/social", nativeAuthProxyRateLimiter, socialAuthRoutes);
+app.use("/api/auth/social", authRouteRateLimiter, socialAuthRoutes);
 
-/** Returns the authenticated user's claims extracted from the Entra ID token. */
+/** Returns the authenticated user's claims extracted from the auth token. */
 app.get("/api/me", requireAuth, (req: AuthenticatedRequest, res) => {
   res.json({ user: req.auth });
 });
@@ -408,7 +465,7 @@ app.get("/api/templates", (req, res) => {
 });
 
 /** Create or update a user-managed template */
-app.post("/api/templates", async (req, res) => {
+app.post("/api/templates", requireAuth, async (req, res) => {
   const payload = req.body as Partial<WorkflowTemplate> | null;
   if (!payload || typeof payload !== "object") {
     res.status(400).json({ error: "Template payload is required" });
@@ -536,7 +593,7 @@ app.get("/api/templates/:id/sample", (req, res) => {
  * Body: { templateId, input, config? }
  * Returns the new run (status=pending) immediately; execution is async.
  */
-app.post("/api/runs", requireAuthOrQaBypass, llmEndpointRateLimiter, async (req: AuthenticatedRequest, res) => {
+app.post("/api/runs", requireAuthOrQaBypass, workspaceResolver, llmEndpointRateLimiter, async (req: WorkspaceAwareRequest, res) => {
   const { templateId, input, config } = req.body as {
     templateId?: string;
     input?: Record<string, unknown>;
@@ -557,12 +614,17 @@ app.post("/api/runs", requireAuthOrQaBypass, llmEndpointRateLimiter, async (req:
   }
 
   const userId = req.auth?.sub;
-  const run = await workflowEngine.startRun(template, input ?? {}, config, userId);
+  const resolvedInput = { ...(input ?? {}) };
+  if (req.workspaceId) {
+    resolvedInput.workspaceId = req.workspaceId;
+  }
+  const resolvedConfig = req.workspaceId ? { ...(config ?? {}), workspaceId: req.workspaceId } : config;
+  const run = await workflowEngine.startRun(template, resolvedInput, resolvedConfig, userId);
   res.status(202).json(run);
 });
 
 /** List all runs, optionally filtered by templateId */
-app.get("/api/runs", requireAuthOrQaBypass, async (req: AuthenticatedRequest, res) => {
+app.get("/api/runs", requireAuthOrQaBypass, workspaceResolver, async (req: WorkspaceAwareRequest, res) => {
   const { templateId } = req.query;
   const runs = await runStore.list(
     typeof templateId === "string" ? templateId : undefined,
@@ -572,7 +634,7 @@ app.get("/api/runs", requireAuthOrQaBypass, async (req: AuthenticatedRequest, re
 });
 
 /** Get a single run by ID */
-app.get("/api/runs/:id", requireAuthOrQaBypass, async (req: AuthenticatedRequest, res) => {
+app.get("/api/runs/:id", requireAuthOrQaBypass, workspaceResolver, async (req: WorkspaceAwareRequest, res) => {
   const run = await runStore.get(req.params.id);
   const userId = req.auth?.sub;
   if (!run || (run.userId !== undefined && run.userId !== userId)) {
@@ -634,7 +696,7 @@ app.get("/api/analytics/routing-decisions", requireAuth, (_req, res) => {
  * starts a workflow run with { content, mimeType, filename } injected as input.
  * Returns the created run (status=pending).
  */
-app.post("/api/runs/file", requireAuthOrQaBypass, upload.single("file"), async (req: AuthenticatedRequest, res) => {
+app.post("/api/runs/file", requireAuthOrQaBypass, workspaceResolver, upload.single("file"), async (req: WorkspaceAwareRequest, res) => {
   const { templateId } = req.body as { templateId?: string };
 
   if (!templateId) {
@@ -684,6 +746,9 @@ app.post("/api/runs/file", requireAuthOrQaBypass, upload.single("file"), async (
     mimeType: parsed.mimeType,
     filename: parsed.filename,
   };
+  if (req.workspaceId) {
+    input.workspaceId = req.workspaceId;
+  }
 
   const run = await workflowEngine.startRun(template, input, undefined, userId);
   res.status(202).json(run);
@@ -720,7 +785,7 @@ Rules:
  * Uses the authenticated JWT subject to resolve the user's LLM config.
  * Returns: { steps: WorkflowStep[] }
  */
-app.post("/api/workflows/generate", requireAuth, llmEndpointRateLimiter, async (req: AuthenticatedRequest, res) => {
+app.post("/api/workflows/generate", requireAuth, workspaceResolver, llmEndpointRateLimiter, async (req: WorkspaceAwareRequest, res) => {
   const { description, llmConfigId } = req.body as {
     description?: unknown;
     llmConfigId?: unknown;
@@ -1105,6 +1170,9 @@ if (process.env.NODE_ENV !== "test" && process.env.AUTOFLOW_ENABLE_APPROVAL_NOTI
 if (process.env.NODE_ENV !== "test" && process.env.AUTOFLOW_ENABLE_TICKET_NOTIFICATION_SWEEPER !== "false") {
   startTicketNotificationCoordinator();
 }
+
+// Sentry error handler must come before other error handlers
+Sentry.setupExpressErrorHandler(app);
 
 // Handle JSON parse errors from express.json() middleware
 app.use((err: Error, _req: express.Request, res: express.Response, next: express.NextFunction) => {

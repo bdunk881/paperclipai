@@ -1,3 +1,4 @@
+import { randomUUID } from "crypto";
 import { TicketActorRef, TicketAssignee, TicketPriority, TicketRecord } from "./ticketStore";
 
 export type TicketSlaState = "untracked" | "on_track" | "at_risk" | "breached" | "paused";
@@ -11,6 +12,7 @@ export interface TicketSlaTarget {
 
 export interface TicketSlaEscalationPolicy {
   notify: boolean;
+  notifyTargets?: string[];
   autoBumpPriority: boolean;
   autoReassign: boolean;
   fallbackAssignee?: TicketActorRef;
@@ -83,7 +85,7 @@ export function defaultPoliciesForWorkspace(workspaceId: string): TicketSlaPolic
     firstResponseTarget: TicketSlaTarget,
     resolutionTarget: TicketSlaTarget,
   ): TicketSlaPolicy => ({
-    id: `${workspaceId}:${priority}`,
+    id: randomUUID(),
     workspaceId,
     priority,
     firstResponseTarget,

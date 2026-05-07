@@ -7,6 +7,7 @@ This runbook provisions the AutoFlow tenant schema on Azure PostgreSQL Flexible 
 - Reachable Azure PostgreSQL Flexible Server instance
 - `psql` client installed on the executor host
 - `DATABASE_URL` credential with permission to create extensions, tables, functions, policies, and triggers
+- For Azure Flexible Server, `azure.extensions` must already allow-list `vector` before running the schema init. If schema init fails with `extension "vector" is not allow-listed`, use [`infra/runbooks/staging-pgvector-extension.md`](../infra/runbooks/staging-pgvector-extension.md).
 
 ## Required Environment
 

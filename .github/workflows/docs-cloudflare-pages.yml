@@ -1,0 +1,93 @@
+name: Deploy Docs to Cloudflare Pages
+
+on:
+  pull_request:
+    paths:
+      - "docs/**"
+      - ".github/workflows/docs-cloudflare-pages.yml"
+  push:
+    paths:
+      - "docs/**"
+      - ".github/workflows/docs-cloudflare-pages.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  deployments: write
+
+concurrency:
+  group: docs-cloudflare-pages-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    name: Deploy docs
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+
+      - name: Install dependencies
+        working-directory: docs
+        run: |
+          if [[ -f package-lock.json ]]; then
+            npm ci
+          else
+            npm install --no-package-lock
+          fi
+
+      - name: Build docs
+        working-directory: docs
+        run: npm run build
+
+      - name: Resolve deploy artifact
+        id: artifact
+        working-directory: docs
+        run: |
+          set -euo pipefail
+          if [[ -d build/client ]]; then
+            echo "deploy=true" >> "$GITHUB_OUTPUT"
+            echo "path=build/client" >> "$GITHUB_OUTPUT"
+          else
+            echo "deploy=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Deploy to Cloudflare Pages
+        if: steps.artifact.outputs.deploy == 'true'
+        id: deploy
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          gitHubToken: ${{ secrets.GITHUB_TOKEN }}
+          workingDirectory: docs
+          packageManager: npm
+          command: >-
+            pages deploy ${{ steps.artifact.outputs.path }}
+            --project-name=autoflow-docs
+            --branch=${{ github.event_name == 'pull_request' && github.head_ref || github.ref_name }}
+
+      - name: Summarize deployment
+        env:
+          DEPLOY_ENABLED: ${{ steps.artifact.outputs.deploy }}
+          DEPLOYMENT_URL: ${{ steps.deploy.outputs.deployment-url }}
+          DEPLOYMENT_ALIAS_URL: ${{ steps.deploy.outputs.pages-deployment-alias-url }}
+          DEPLOYMENT_ID: ${{ steps.deploy.outputs.pages-deployment-id }}
+          DEPLOYMENT_ENVIRONMENT: ${{ steps.deploy.outputs.pages-environment }}
+        run: |
+          {
+            echo "## Cloudflare Pages deployment"
+            echo
+            if [[ "${DEPLOY_ENABLED}" == "true" ]]; then
+              echo "- Environment: ${DEPLOYMENT_ENVIRONMENT:-unknown}"
+              echo "- Deployment ID: ${DEPLOYMENT_ID:-unknown}"
+              echo "- Deployment URL: ${DEPLOYMENT_URL:-unavailable}"
+              echo "- Alias URL: ${DEPLOYMENT_ALIAS_URL:-unavailable}"
+            else
+              echo "- Skipped direct Pages deploy because \`docs/build/client\` does not exist on this branch yet."
+              echo "- This workflow will start deploying automatically once the RR7 docs build output lands on \`${GITHUB_REF_NAME}\`."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"

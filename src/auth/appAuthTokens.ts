@@ -21,11 +21,12 @@ export type AppUserTokenClaims = JwtPayload & {
   email?: string;
   name?: string;
   provider?: SocialAuthProvider;
+  workspaceId?: string;
 };
 
 const DEFAULT_APP_JWT_AUDIENCE = "autoflow-api";
 const DEFAULT_APP_JWT_ISSUER = "autoflow-app";
-const DEFAULT_APP_JWT_EXPIRES_IN = "1h";
+const DEFAULT_APP_JWT_EXPIRES_IN = "8h";
 export const SOCIAL_AUTH_NONCE_COOKIE_NAME = "autoflow_social_auth_nonce";
 export const SOCIAL_AUTH_NONCE_MAX_AGE_MS = 10 * 60 * 1000;
 
@@ -72,6 +73,7 @@ export function signAppUserToken(user: {
   email?: string | null;
   displayName?: string | null;
   provider?: SocialAuthProvider;
+  workspaceId?: string | null;
 }): string {
   const config = resolveAppJwtConfig();
   if (!config) {
@@ -84,6 +86,7 @@ export function signAppUserToken(user: {
       email: user.email ?? undefined,
       name: user.displayName ?? undefined,
       provider: user.provider,
+      workspaceId: user.workspaceId ?? undefined,
     },
     config.secret,
     {

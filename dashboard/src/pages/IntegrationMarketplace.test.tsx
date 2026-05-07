@@ -1,10 +1,89 @@
-import { fireEvent, render, screen } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { MemoryRouter } from "react-router-dom";
 import IntegrationMarketplace from "./IntegrationMarketplace";
 
+const getAccessTokenMock = vi.fn().mockResolvedValue("marketplace-token");
+const redirectToMock = vi.fn();
+
+vi.mock("../context/AuthContext", () => ({
+  useAuth: () => ({
+    user: { id: "u1", email: "u1@example.com", name: "User One" },
+    logout: vi.fn(),
+    getAccessToken: getAccessTokenMock,
+    requireAccessToken: vi.fn().mockResolvedValue("marketplace-token"),
+  }),
+}));
+
+vi.mock("../utils/browserNavigation", () => ({
+  redirectTo: (...args: unknown[]) => redirectToMock(...args),
+}));
+
+function renderMarketplace() {
+  return render(
+    <MemoryRouter>
+      <IntegrationMarketplace />
+    </MemoryRouter>
+  );
+}
+
+function installFetchMock(options?: {
+  connectedProviders?: string[];
+  connectRedirectUrl?: string;
+}) {
+  const connectedProviders = new Set(
+    options?.connectedProviders ?? ["slack", "hubspot", "stripe", "linear", "sentry", "teams"]
+  );
+
+  return vi.spyOn(global, "fetch").mockImplementation(async (input, init) => {
+    const url = String(input);
+    const method = init?.method ?? "GET";
+
+    if (method === "GET" && url.endsWith("/api/integrations/status")) {
+      return new Response(
+        JSON.stringify({
+          providers: Object.fromEntries(
+            ["apollo", "gmail", "hubspot", "linear", "sentry", "slack", "stripe", "teams"].map((provider) => [
+              provider,
+              { connected: connectedProviders.has(provider) },
+            ])
+          ),
+        }),
+        { status: 200 }
+      );
+    }
+
+    if (method === "POST" && url.endsWith("/api/integrations/slack/connect")) {
+      return new Response(
+        JSON.stringify({ redirectUrl: options?.connectRedirectUrl ?? "https://oauth.example.com/slack" }),
+        { status: 201 }
+      );
+    }
+
+    if (method === "DELETE" && url.endsWith("/api/integrations/slack/disconnect")) {
+      connectedProviders.delete("slack");
+      return new Response(null, { status: 204 });
+    }
+
+    return new Response(JSON.stringify({ error: `Unhandled ${method} ${url}` }), { status: 500 });
+  });
+}
+
 describe("IntegrationMarketplace", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    window.sessionStorage.clear();
+    getAccessTokenMock.mockResolvedValue("marketplace-token");
+    redirectToMock.mockReset();
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
   it("filters integrations by search and category, then clears the empty state", () => {
-    render(<IntegrationMarketplace />);
+    installFetchMock();
+    renderMarketplace();
 
     expect(screen.getByText(/browse and connect/i)).toBeInTheDocument();
     expect(screen.getByText(/workflow templates/i)).toBeInTheDocument();
@@ -26,36 +105,59 @@ describe("IntegrationMarketplace", () => {
     expect(screen.getAllByText("Salesforce").length).toBeGreaterThan(0);
   });
 
-  it("switches list mode, opens the detail drawer, toggles connection state, and closes it", () => {
-    render(<IntegrationMarketplace />);
+  it("loads live status and uses the real OAuth/disconnect routes for supported providers", async () => {
+    const fetchMock = installFetchMock();
+
+    renderMarketplace();
 
     const listButton = screen.getAllByRole("button").find((button) => button.querySelector("svg.lucide-list"));
     if (!listButton) throw new Error("List mode button not found");
     fireEvent.click(listButton);
 
-    fireEvent.click(screen.getAllByText("Salesforce").at(-1) as HTMLElement);
+    fireEvent.click(screen.getAllByText("Slack").at(-1) as HTMLElement);
 
-    expect(screen.getByRole("heading", { name: "Salesforce" })).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.getByRole("heading", { name: "Slack" })).toBeInTheDocument();
+    });
+
     expect(screen.getAllByText(/lead capture to crm/i).length).toBeGreaterThan(0);
     expect(screen.getByText(/this integration is authenticated and ready to use/i)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^disconnect$/i })).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: /^disconnect$/i }));
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith(
+        expect.stringContaining("/api/integrations/slack/disconnect"),
+        expect.objectContaining({ method: "DELETE" })
+      );
+    });
+    expect(screen.getByText(/click connect below to launch the live oauth flow/i)).toBeInTheDocument();
     expect(screen.getByText(/not connected/i)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /^connect$/i })).toBeInTheDocument();
-    expect(screen.getByText(/click connect below to set up api key or oauth authentication/i)).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: /^connect$/i }));
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith(
+        expect.stringContaining("/api/integrations/slack/connect"),
+        expect.objectContaining({ method: "POST" })
+      );
+      expect(redirectToMock).toHaveBeenCalledWith("https://oauth.example.com/slack");
+    });
+    expect(screen.getByText(/this integration is authenticated and ready to use/i)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /^disconnect$/i })).toBeInTheDocument();
 
     const closeButton = screen.getAllByRole("button").find((button) => button.querySelector("svg.lucide-x"));
     if (!closeButton) throw new Error("Drawer close button not found");
     fireEvent.click(closeButton);
 
-    expect(screen.queryByRole("heading", { name: "Salesforce" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Slack" })).not.toBeInTheDocument();
   });
 
-  it("hides templates, supports search by action, and shows premium upgrade messaging", () => {
-    render(<IntegrationMarketplace />);
+  it("hides templates, supports search by action, and blocks unsupported connectors from faking a live flow", async () => {
+    installFetchMock();
+    renderMarketplace();
 
     fireEvent.click(screen.getByRole("button", { name: /templates/i }));
     expect(screen.queryByText(/workflow templates/i)).not.toBeInTheDocument();
@@ -69,15 +171,17 @@ describe("IntegrationMarketplace", () => {
     expect(screen.queryByText("Salesforce")).not.toBeInTheDocument();
 
     fireEvent.change(screen.getByPlaceholderText(/search integrations, categories, or actions/i), {
-      target: { value: "copper" },
+      target: { value: "salesforce" },
     });
 
-    fireEvent.click(screen.getAllByText("Copper").at(-1) as HTMLElement);
+    fireEvent.click(screen.getAllByText("Salesforce").at(-1) as HTMLElement);
 
-    expect(screen.getByText(/this is a premium integration\. upgrade your plan to connect/i)).toBeInTheDocument();
-    expect(screen.getByText(/upgrade to premium to configure authentication/i)).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.getByRole("heading", { name: "Salesforce" })).toBeInTheDocument();
+    });
+    expect(screen.getByText(/live connector setup is not available for this integration yet/i)).toBeInTheDocument();
 
-    const upgradeButton = screen.getByRole("button", { name: /upgrade required/i });
-    expect(upgradeButton).toBeDisabled();
+    const unavailableButton = screen.getByRole("button", { name: /coming soon/i });
+    expect(unavailableButton).toBeDisabled();
   });
 });

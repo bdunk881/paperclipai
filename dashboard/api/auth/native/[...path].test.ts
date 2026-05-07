@@ -42,6 +42,7 @@ describe("dashboard native auth proxy", () => {
       ...originalEnv,
       AZURE_CIAM_TENANT_SUBDOMAIN: "autoflowciam",
       AZURE_CIAM_TENANT_ID: "tenant-guid",
+      AUTH_NATIVE_AUTH_PROXY_ALLOWED_ORIGINS: "https://app.helloautoflow.com",
     };
     global.fetch = vi.fn() as unknown as typeof fetch;
     vi.spyOn(console, "log").mockImplementation(() => undefined);
@@ -71,7 +72,7 @@ describe("dashboard native auth proxy", () => {
       method: "POST",
       query: { path: ["signin", "v1.0", "start"] },
       headers: {
-        origin: "https://dashboard.autoflow.test",
+        origin: "https://app.helloautoflow.com",
         "x-correlation-id": "corr-456",
       },
       body: {
@@ -110,7 +111,7 @@ describe("dashboard native auth proxy", () => {
       method: "POST",
       query: { path: ["oauth2", "v2.0", "challenge"] },
       headers: {
-        origin: "https://dashboard.autoflow.test",
+        origin: "https://app.helloautoflow.com",
       },
       body: {
         username: "alex@example.com",
@@ -125,5 +126,89 @@ describe("dashboard native auth proxy", () => {
     expect((init.headers as Record<string, string>)["x-correlation-id"]).toMatch(
       /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
     );
+  });
+
+  it("answers signup-start CORS preflight for the production app origin", async () => {
+    const req = {
+      method: "OPTIONS",
+      query: { path: ["signup", "v1.0", "start"] },
+      headers: {
+        origin: "https://app.helloautoflow.com",
+        "access-control-request-method": "POST",
+        "access-control-request-headers": "content-type",
+      },
+    };
+    const res = createResponse();
+
+    await handler(req as never, res as never);
+
+    expect(res.statusCode).toBe(204);
+    expect(res.body).toBe("");
+    expect(res.headers["Access-Control-Allow-Origin"]).toBe("https://app.helloautoflow.com");
+    expect(res.headers["Access-Control-Allow-Methods"]).toBe("POST, OPTIONS");
+    expect(res.headers["Access-Control-Allow-Headers"]).toBe("content-type");
+    expect(res.headers["Access-Control-Allow-Credentials"]).toBe("true");
+    expect(global.fetch).not.toHaveBeenCalled();
+  });
+
+  it("returns CORS headers on proxied POST responses for allowed origins", async () => {
+    vi.mocked(global.fetch).mockResolvedValueOnce({
+      status: 200,
+      headers: new Headers({
+        "content-type": "application/json",
+        "cache-control": "no-store",
+      }),
+      text: vi.fn().mockResolvedValue(JSON.stringify({ continuation_token: "signup-123" })),
+    } as unknown as Response);
+
+    const req = {
+      method: "POST",
+      query: { path: ["signup", "v1.0", "start"] },
+      headers: {
+        origin: "https://app.helloautoflow.com",
+        "content-type": "application/json",
+      },
+      body: {
+        username: "alex@example.com",
+        challenge_type: "oob password redirect",
+      },
+    };
+    const res = createResponse();
+
+    await handler(req as never, res as never);
+
+    expect(res.statusCode).toBe(200);
+    expect(res.body).toBe(JSON.stringify({ continuation_token: "signup-123" }));
+    expect(res.headers["Access-Control-Allow-Origin"]).toBe("https://app.helloautoflow.com");
+    expect(res.headers["Access-Control-Allow-Methods"]).toBe("POST, OPTIONS");
+    expect(res.headers["Access-Control-Allow-Credentials"]).toBe("true");
+    expect(global.fetch).toHaveBeenCalledWith(
+      "https://autoflowciam.ciamlogin.com/tenant-guid/signup/v1.0/start",
+      expect.objectContaining({
+        method: "POST",
+        body: "username=alex%40example.com&challenge_type=oob+password+redirect",
+      })
+    );
+  });
+
+  it("rejects browser POST requests from origins outside the native auth allowlist", async () => {
+    const req = {
+      method: "POST",
+      query: { path: ["signup", "v1.0", "start"] },
+      headers: {
+        origin: "https://evil.example",
+        "content-type": "application/json",
+      },
+      body: { username: "alex@example.com" },
+    };
+    const res = createResponse();
+
+    await handler(req as never, res as never);
+
+    expect(res.statusCode).toBe(403);
+    expect(res.body).toEqual({
+      error: "Origin is not allowed for native auth proxy requests.",
+    });
+    expect(global.fetch).not.toHaveBeenCalled();
   });
 });

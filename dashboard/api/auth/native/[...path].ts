@@ -4,6 +4,10 @@ import { randomUUID } from "node:crypto";
 const DEFAULT_CIAM_TENANT_SUBDOMAIN = "autoflowciam";
 const NATIVE_AUTH_LOG_PREFIX = "[native-auth]";
 const REDACTED_VALUE = "[REDACTED]";
+const DEFAULT_ALLOWED_ORIGINS = [
+  "https://app.helloautoflow.com",
+  "https://staging.app.helloautoflow.com",
+];
 const SENSITIVE_BODY_KEYS = new Set([
   "password",
   "new_password",
@@ -35,6 +39,55 @@ const ALLOWED_PATHS = new Set([
   "resetpassword/v1.0/submit",
   "resetpassword/v1.0/poll_completion",
 ]);
+
+function normalizeHeaderValue(value: string | string[] | undefined): string | null {
+  if (Array.isArray(value)) {
+    return value[0]?.trim() || null;
+  }
+
+  return value?.trim() || null;
+}
+
+function parseAllowedOrigins(value: string | undefined): Set<string> {
+  const configured = typeof value === "string"
+    ? value
+        .split(",")
+        .map((origin) => origin.trim())
+        .filter((origin) => origin.length > 0 && origin !== "*")
+    : [];
+
+  return new Set(configured.length > 0 ? configured : DEFAULT_ALLOWED_ORIGINS);
+}
+
+function getAllowedOrigin(originHeader: string | null): string | null {
+  if (!originHeader) {
+    return null;
+  }
+
+  return parseAllowedOrigins(process.env.AUTH_NATIVE_AUTH_PROXY_ALLOWED_ORIGINS).has(originHeader)
+    ? originHeader
+    : null;
+}
+
+function isRejectedBrowserOrigin(originHeader: string | null): boolean {
+  return Boolean(originHeader) && !getAllowedOrigin(originHeader);
+}
+
+function setCorsHeaders(
+  res: VercelResponse,
+  origin: string,
+  requestHeaders: string | null
+): void {
+  res.setHeader("Access-Control-Allow-Origin", origin);
+  res.setHeader("Access-Control-Allow-Credentials", "true");
+  res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
+  res.setHeader(
+    "Access-Control-Allow-Headers",
+    requestHeaders || "Content-Type, Accept, X-Correlation-Id, X-Ms-Correlation-Id"
+  );
+  res.setHeader("Access-Control-Max-Age", "600");
+  res.setHeader("Vary", "Origin, Access-Control-Request-Headers");
+}
 
 function getCiamAuthority(): string {
   const subdomain =
@@ -98,12 +151,7 @@ function logNativeAuth(
 }
 
 function getCorrelationId(req: VercelRequest): string {
-  const headerValue = req.headers["x-correlation-id"] ?? req.headers["x-ms-correlation-id"];
-  if (Array.isArray(headerValue)) {
-    return headerValue[0]?.trim() || randomUUID();
-  }
-
-  return headerValue?.trim() || randomUUID();
+  return normalizeHeaderValue(req.headers["x-correlation-id"] ?? req.headers["x-ms-correlation-id"]) || randomUUID();
 }
 
 function parseUpstreamErrorDetails(body: string): { error?: string; errorDescription?: string } {
@@ -125,12 +173,7 @@ function parseUpstreamErrorDetails(body: string): { error?: string; errorDescrip
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   const correlationId = getCorrelationId(req);
-  const origin = Array.isArray(req.headers.origin) ? req.headers.origin[0] : req.headers.origin;
-
-  if (req.method !== "POST") {
-    logNativeAuth("REJECTED", { correlationId, origin, reason: "method_not_allowed", method: req.method }, "warn");
-    return res.status(405).json({ error: "Only POST is allowed." });
-  }
+  const origin = normalizeHeaderValue(req.headers.origin);
 
   const pathSegments = req.query.path;
   const proxyPath = Array.isArray(pathSegments) ? pathSegments.join("/") : pathSegments;
@@ -138,6 +181,22 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (!proxyPath || !ALLOWED_PATHS.has(proxyPath)) {
     logNativeAuth("REJECTED", { correlationId, origin, path: proxyPath, reason: "path_not_allowed" }, "warn");
     return res.status(400).json({ error: "Native auth proxy path is not allowed." });
+  }
+
+  const allowedOrigin = getAllowedOrigin(origin);
+  if (req.method === "OPTIONS") {
+    if (!allowedOrigin) {
+      logNativeAuth("REJECTED", { correlationId, origin, path: proxyPath, reason: "origin_not_allowed" }, "warn");
+      return res.status(403).json({ error: "Origin is not allowed for native auth proxy requests." });
+    }
+
+    setCorsHeaders(res, allowedOrigin, normalizeHeaderValue(req.headers["access-control-request-headers"]));
+    return res.status(204).send("");
+  }
+
+  if (req.method !== "POST") {
+    logNativeAuth("REJECTED", { correlationId, origin, reason: "method_not_allowed", method: req.method }, "warn");
+    return res.status(405).json({ error: "Only POST and OPTIONS are allowed." });
   }
 
   const authority = getCiamAuthority();
@@ -148,6 +207,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (!body || typeof body !== "object" || Object.keys(body).length === 0) {
     logNativeAuth("REJECTED", { correlationId, origin, path: proxyPath, reason: "missing_body" }, "warn");
     return res.status(400).json({ error: "Request body is required." });
+  }
+
+  if (isRejectedBrowserOrigin(origin)) {
+    logNativeAuth("REJECTED", { correlationId, origin, path: proxyPath, reason: "origin_not_allowed" }, "warn");
+    return res.status(403).json({ error: "Origin is not allowed for native auth proxy requests." });
   }
 
   const formBody = serializeFormBody(body);
@@ -198,6 +262,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       res.setHeader("Cache-Control", cacheControl);
     }
 
+    if (allowedOrigin) {
+      setCorsHeaders(res, allowedOrigin, normalizeHeaderValue(req.headers["access-control-request-headers"]));
+    }
+
     return res.status(upstreamResponse.status).send(responseText);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown error";
@@ -206,6 +274,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       { path: proxyPath, upstreamUrl, correlationId, error: message },
       "warn"
     );
+    if (allowedOrigin) {
+      setCorsHeaders(res, allowedOrigin, normalizeHeaderValue(req.headers["access-control-request-headers"]));
+    }
     return res.status(502).json({ error: `CIAM upstream request failed: ${message}` });
   }
 }

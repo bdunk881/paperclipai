@@ -11,6 +11,33 @@ plus release-gate validation for analytics, performance, and browser coverage.
 - Landing pre-release/performance target: `https://staging.helloautoflow.com`
 - Landing production reference: `https://helloautoflow.com`
 
+## Production Auth Mailbox
+
+For production onboarding audits that rely on Microsoft Entra External ID email
+OTP, QA must use a first-party mailbox that can be read directly by the audit
+operator during the test window.
+
+Do not use public Mailsac inboxes for production verification codes. On
+2026-05-07 America/New_York, AutoFlow confirmed that:
+
+- `signup/v1.0/start` in the production CIAM tenant still returned a
+  continuation token for `autoflow-qa-test@mailsac.com`
+- `https://mailsac.com/inbox/autoflow-qa-test@mailsac.com` showed `0 messages`
+  plus the warning `We detected that messages to this inbox were recently
+  blocked or deferred.`
+- `GET /api/addresses/<inbox>/messages` on Mailsac returned `401 Not
+  authorized`, so the old no-login retrieval assumption is no longer safe
+
+Operational rule:
+
+- treat Mailsac as unsupported for production AutoFlow auth verification until a
+  future validation proves otherwise
+- provision a sanctioned mailbox with a documented read path before scheduling
+  the production onboarding audit
+- record the mailbox owner, retrieval steps, and audit window in the active
+  issue comment so QA can retrieve the 8-digit code without relying on shared
+  staff credentials
+
 ## API Health Probe Contract
 
 Use the dashboard QA base URL plus any of the following equivalent endpoints:
@@ -139,3 +166,7 @@ For `ALT-1943`, capture evidence for each connector in this order:
 - If all probe statuses are `000`, verify `QA_API_BASE_URL` and Vercel domain accessibility.
 - If probe statuses are `401/403`, provide `QA_E2E_BEARER_TOKEN` or run with auth bypass where allowed.
 - If webhook checks fail, confirm `STRIPE_WEBHOOK_SECRET` is available from Stripe/Vercel integration.
+- If production signup reaches `Verify your email` but no verification code
+  arrives, validate the mailbox provider first before filing an app bug. A
+  successful CIAM `signup/v1.0/start` response plus an empty or deferred inbox
+  indicates a mailbox deliverability problem, not a frontend regression.

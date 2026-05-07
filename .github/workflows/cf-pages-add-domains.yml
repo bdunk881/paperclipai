@@ -45,17 +45,17 @@ jobs:
           fi
           [ "$ERR_CODE" = "8000018" ] && echo "ALREADY_REGISTERED (idempotent OK)" || echo "OK: $(echo "$RESP" | jq -r '.result.name') status=$(echo "$RESP" | jq -r '.result.status')"
 
-      - name: Add docs.helloautoflow.com to autoflow-docs
+      - name: Add docs.helloautoflow.com to autoflow-docs-git
         run: |
           if [ "${{ inputs.dry_run }}" = "true" ]; then
-            echo "[DRY RUN] Would add docs.helloautoflow.com to autoflow-docs"
+            echo "[DRY RUN] Would add docs.helloautoflow.com to autoflow-docs-git"
             exit 0
           fi
           RESP=$(curl -s -X POST \
             -H "Authorization: Bearer ${{ secrets.CLOUDFLARE_API_TOKEN }}" \
             -H "Content-Type: application/json" \
             -d '{"name":"docs.helloautoflow.com"}' \
-            "https://api.cloudflare.com/client/v4/accounts/${{ secrets.CLOUDFLARE_ACCOUNT_ID }}/pages/projects/autoflow-docs/domains")
+            "https://api.cloudflare.com/client/v4/accounts/${{ secrets.CLOUDFLARE_ACCOUNT_ID }}/pages/projects/autoflow-docs-git/domains")
           echo "=== Full response ===" && echo "$RESP" | jq .
           SUCCESS=$(echo "$RESP" | jq -r '.success')
           ERR_CODE=$(echo "$RESP" | jq -r '.errors[0].code // empty')
@@ -110,7 +110,7 @@ jobs:
           echo "Custom domain registration complete."
           echo "DNS records already configured:"
           echo "  app.helloautoflow.com   -> autoflow-dashboard.pages.dev"
-          echo "  docs.helloautoflow.com  -> autoflow-docs.pages.dev"
+          echo "  docs.helloautoflow.com  -> autoflow-docs-git.pages.dev"
           echo "  www.helloautoflow.com   -> autoflow-landing.pages.dev"
           echo "  api.dev.helloautoflow.com -> autoflow-fastapi-dev.fly.dev"
           echo ""

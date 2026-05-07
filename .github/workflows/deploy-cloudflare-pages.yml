@@ -38,7 +38,7 @@ jobs:
           - label: docs
             working_directory: docs
             output_directory: build/client
-            project_name: autoflow-docs
+            project_name: autoflow-docs-git
             lockfile: docs/package-lock.json
           - label: landing
             working_directory: landing

@@ -129,8 +129,34 @@ const configs = [
   },
   {
     key: "landing",
-    unsupportedReason:
-      "landing/ contains live Next.js server routes under app/api and cannot be migrated to a static Cloudflare Pages Git build without app replatforming.",
+    projectName: "autoflow-landing-git",
+    legacyProjectName: "autoflow-landing",
+    productionBranch: "staging",
+    buildConfig: {
+      build_command: "npm ci && npm run build",
+      destination_dir: "build/client",
+      root_dir: "landing",
+    },
+    customDomains: ["staging.helloautoflow.com"],
+    sourceConfig: {
+      path_includes: [
+        "landing/**",
+        "infra/scripts/cloudflare-pages-sync.mjs",
+        ".github/workflows/cloudflare-pages-migrate.yml",
+      ],
+      preview_deployment_setting: "all",
+      production_deployments_enabled: true,
+    },
+    previewEnv: {
+      BASE_URL: plain("https://staging.helloautoflow.com"),
+      NEXT_PUBLIC_API_URL: plain("https://staging-api.helloautoflow.com"),
+      NEXT_PUBLIC_BASE_URL: plain("https://staging.helloautoflow.com"),
+    },
+    productionEnv: {
+      BASE_URL: plain("https://staging.helloautoflow.com"),
+      NEXT_PUBLIC_API_URL: plain("https://staging-api.helloautoflow.com"),
+      NEXT_PUBLIC_BASE_URL: plain("https://staging.helloautoflow.com"),
+    },
   },
 ];
 
@@ -139,19 +165,15 @@ const selectedConfigs = configs.filter((config) => {
   return projectFilter.includes(config.key);
 });
 
+if (selectedConfigs.length === 0) {
+  throw new Error(`No Cloudflare Pages project config matched: ${projectFilter.join(", ")}`);
+}
+
 const summary = {
   applied: [],
-  skipped: [],
-  unsupported: [],
 };
 
 for (const config of selectedConfigs) {
-  if (config.unsupportedReason) {
-    summary.unsupported.push(`${config.key}: ${config.unsupportedReason}`);
-    console.log(`::warning::Skipping ${config.key}: ${config.unsupportedReason}`);
-    continue;
-  }
-
   console.log(`\n=== Syncing ${config.key} (${config.projectName}) ===`);
 
   const payload = {

@@ -3,11 +3,16 @@ type Env = {
   AZURE_TENANT_SUBDOMAIN?: string;
   AZURE_CIAM_TENANT_ID?: string;
   AZURE_TENANT_ID?: string;
+  AUTH_NATIVE_AUTH_PROXY_ALLOWED_ORIGINS?: string;
 };
 
 const DEFAULT_CIAM_TENANT_SUBDOMAIN = "autoflowciam";
 const NATIVE_AUTH_LOG_PREFIX = "[native-auth]";
 const REDACTED_VALUE = "[REDACTED]";
+const DEFAULT_ALLOWED_ORIGINS = [
+  "https://app.helloautoflow.com",
+  "https://staging.app.helloautoflow.com",
+];
 const SENSITIVE_BODY_KEYS = new Set([
   "password",
   "new_password",
@@ -40,6 +45,97 @@ const ALLOWED_PATHS = new Set([
   "resetpassword/v1.0/poll_completion",
 ]);
 
+function parseAllowedOrigins(value: string | undefined): Set<string> {
+  const configured = typeof value === "string"
+    ? value
+        .split(",")
+        .map((origin) => origin.trim())
+        .filter((origin) => origin.length > 0 && origin !== "*")
+    : [];
+
+  return new Set(configured.length > 0 ? configured : DEFAULT_ALLOWED_ORIGINS);
+}
+
+function getAllowedOrigin(originHeader: string | null, env: Env): string | null {
+  if (typeof originHeader !== "string") {
+    return null;
+  }
+
+  const origin = originHeader.trim();
+  if (!origin) {
+    return null;
+  }
+
+  return parseAllowedOrigins(env.AUTH_NATIVE_AUTH_PROXY_ALLOWED_ORIGINS).has(origin) ? origin : null;
+}
+
+function isRejectedBrowserOrigin(originHeader: string | null, env: Env): boolean {
+  return typeof originHeader === "string" && originHeader.trim().length > 0 && !getAllowedOrigin(originHeader, env);
+}
+
+function buildCorsHeaders(
+  origin: string,
+  requestHeaders: string | null,
+  base?: HeadersInit
+): Headers {
+  const headers = new Headers(base);
+  headers.set("Access-Control-Allow-Origin", origin);
+  headers.set("Access-Control-Allow-Credentials", "true");
+  headers.set("Access-Control-Allow-Methods", "POST, OPTIONS");
+  headers.set(
+    "Access-Control-Allow-Headers",
+    requestHeaders?.trim() || "Content-Type, Accept, X-Correlation-Id, X-Ms-Correlation-Id"
+  );
+  headers.set("Access-Control-Max-Age", "600");
+  headers.set("Vary", "Origin, Access-Control-Request-Headers");
+  return headers;
+}
+
+function withCors(
+  origin: string | null,
+  requestHeaders: string | null,
+  base?: HeadersInit
+): Headers {
+  if (!origin) {
+    return new Headers(base);
+  }
+
+  return buildCorsHeaders(origin, requestHeaders, base);
+}
+
+export const onRequestOptions = async (context: {
+  env: Env;
+  params: { path?: string[] | string };
+  request: Request;
+}): Promise<Response> => {
+  const correlationId =
+    context.request.headers.get("x-correlation-id") ??
+    context.request.headers.get("x-ms-correlation-id") ??
+    crypto.randomUUID();
+  const origin = context.request.headers.get("origin");
+  const allowedOrigin = getAllowedOrigin(origin, context.env);
+  const rawPath = context.params.path;
+  const proxyPath = Array.isArray(rawPath) ? rawPath.join("/") : rawPath;
+
+  if (!proxyPath || !ALLOWED_PATHS.has(proxyPath)) {
+    logNativeAuth("REJECTED", { correlationId, origin, path: proxyPath, reason: "path_not_allowed" }, "warn");
+    return json({ error: "Native auth proxy path is not allowed." }, 400);
+  }
+
+  if (!allowedOrigin) {
+    logNativeAuth("REJECTED", { correlationId, origin, path: proxyPath, reason: "origin_not_allowed" }, "warn");
+    return json({ error: "Origin is not allowed for native auth proxy requests." }, 403);
+  }
+
+  return new Response(null, {
+    status: 204,
+    headers: buildCorsHeaders(
+      allowedOrigin,
+      context.request.headers.get("access-control-request-headers")
+    ),
+  });
+};
+
 export const onRequestPost = async (context: {
   env: Env;
   params: { path?: string[] | string };
@@ -50,6 +146,7 @@ export const onRequestPost = async (context: {
     context.request.headers.get("x-ms-correlation-id") ??
     crypto.randomUUID();
   const origin = context.request.headers.get("origin") ?? undefined;
+  const allowedOrigin = getAllowedOrigin(origin ?? null, context.env);
   const rawPath = context.params.path;
   const proxyPath = Array.isArray(rawPath) ? rawPath.join("/") : rawPath;
 
@@ -62,6 +159,11 @@ export const onRequestPost = async (context: {
   if (!body || typeof body !== "object" || Object.keys(body).length === 0) {
     logNativeAuth("REJECTED", { correlationId, origin, path: proxyPath, reason: "missing_body" }, "warn");
     return json({ error: "Request body is required." }, 400);
+  }
+
+  if (isRejectedBrowserOrigin(origin ?? null, context.env)) {
+    logNativeAuth("REJECTED", { correlationId, origin, path: proxyPath, reason: "origin_not_allowed" }, "warn");
+    return json({ error: "Origin is not allowed for native auth proxy requests." }, 403);
   }
 
   const authority = getCiamAuthority(context.env);
@@ -108,15 +210,30 @@ export const onRequestPost = async (context: {
     });
     const cacheControl = upstreamRes.headers.get("Cache-Control");
     if (cacheControl) headers.set("Cache-Control", cacheControl);
+    const corsHeaders = withCors(
+      allowedOrigin,
+      context.request.headers.get("access-control-request-headers"),
+      headers
+    );
 
     return new Response(responseText, {
       status: upstreamRes.status,
-      headers,
+      headers: corsHeaders,
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown error";
     logNativeAuth("UPSTREAM_ERROR", { correlationId, error: message, path: proxyPath, upstreamUrl }, "warn");
-    return json({ error: `CIAM upstream request failed: ${message}` }, 502);
+    return new Response(JSON.stringify({ error: `CIAM upstream request failed: ${message}` }), {
+      status: 502,
+      headers: withCors(
+        allowedOrigin,
+        context.request.headers.get("access-control-request-headers"),
+        {
+          "Content-Type": "application/json",
+          "Cache-Control": "no-store",
+        }
+      ),
+    });
   }
 };
 

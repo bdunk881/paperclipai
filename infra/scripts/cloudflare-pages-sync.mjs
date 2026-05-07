@@ -138,6 +138,15 @@ const configs = [
       root_dir: "landing",
     },
     customDomains: ["staging.helloautoflow.com"],
+    dnsRecords: [
+      {
+        content: "autoflow-landing-git.pages.dev",
+        name: "staging.helloautoflow.com",
+        proxied: true,
+        type: "CNAME",
+        zoneName: "helloautoflow.com",
+      },
+    ],
     sourceConfig: {
       path_includes: [
         "landing/**",
@@ -222,6 +231,7 @@ for (const config of selectedConfigs) {
 
   if (applyDomains) {
     await syncDomains(config);
+    await syncDnsRecords(config);
   }
 
   summary.applied.push(config.key);
@@ -273,6 +283,45 @@ async function syncDomains(config) {
       });
       console.log(`Retired legacy project ${config.legacyProjectName}`);
     }
+  }
+}
+
+async function syncDnsRecords(config) {
+  for (const record of config.dnsRecords ?? []) {
+    const zoneId = await getZoneId(record.zoneName);
+    const existing = await getDnsRecord(zoneId, record.name, record.type);
+
+    const payload = {
+      content: record.content,
+      name: record.name,
+      proxied: record.proxied,
+      ttl: 1,
+      type: record.type,
+    };
+
+    if (existing) {
+      if (
+        existing.content === record.content &&
+        existing.proxied === record.proxied &&
+        existing.type === record.type
+      ) {
+        console.log(`DNS ${record.name} already points to ${record.content}`);
+        continue;
+      }
+
+      await cfApi(`/zones/${zoneId}/dns_records/${existing.id}`, {
+        body: JSON.stringify(payload),
+        method: "PUT",
+      });
+      console.log(`Updated DNS ${record.name} -> ${record.content}`);
+      continue;
+    }
+
+    await cfApi(`/zones/${zoneId}/dns_records`, {
+      body: JSON.stringify(payload),
+      method: "POST",
+    });
+    console.log(`Created DNS ${record.name} -> ${record.content}`);
   }
 }
 
@@ -361,6 +410,25 @@ async function getProject(projectName) {
     method: "GET",
   });
   return result?.result ?? null;
+}
+
+async function getZoneId(zoneName) {
+  const result = await cfApi(`/zones?name=${encodeURIComponent(zoneName)}`, {
+    method: "GET",
+  });
+  const zone = Array.isArray(result.result) ? result.result[0] ?? null : null;
+  if (!zone?.id) {
+    throw new Error(`Cloudflare zone not found: ${zoneName}`);
+  }
+  return zone.id;
+}
+
+async function getDnsRecord(zoneId, name, type) {
+  const result = await cfApi(
+    `/zones/${zoneId}/dns_records?type=${encodeURIComponent(type)}&name=${encodeURIComponent(name)}`,
+    { method: "GET" }
+  );
+  return Array.isArray(result.result) ? result.result[0] ?? null : null;
 }
 
 async function cfApi(path, options) {

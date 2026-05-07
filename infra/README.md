@@ -60,6 +60,7 @@ Current status:
 
 - `docs/` now targets the RR7 `staging` branch until the validated build shape is promoted to `master`.
 - `landing/` now supports a staging-first Git-backed cutover on `staging.helloautoflow.com`.
+- The landing migration workflow also reconciles the `staging.helloautoflow.com` DNS record to the new Pages project target so domain attachment and traffic routing stay aligned.
 - `helloautoflow.com` and `www.helloautoflow.com` remain on the legacy direct-upload landing project until the production apex cutover is approved with the final API/base-url env plan.
 
 ## Phase 5 decommission

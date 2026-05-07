@@ -46,7 +46,8 @@ Inputs:
 4. Waits for the latest deployment on each target project to succeed
 5. Detaches configured domains from the legacy direct-upload project when needed
 6. Attaches the domains to the Git-backed replacement project
-7. Optionally deletes the legacy direct-upload project
+7. Reconciles the Cloudflare DNS record for `staging.helloautoflow.com` to the new `*.pages.dev` target
+8. Optionally deletes the legacy direct-upload project
 
 ## Project mapping
 

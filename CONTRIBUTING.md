@@ -13,6 +13,15 @@ Do not open direct feature PRs to `master`. Production only accepts the promoted
 
 If a feature or Dependabot PR is opened against `master` by mistake, `.github/workflows/auto-retarget-master-prs.yml` automatically retargets it to `staging`. The only PRs that should remain on `master` are dedicated `staging` -> `master` promotion PRs.
 
+Emergency production hotfix exception:
+
+1. Create the PR from a `hotfix/<ticket-or-incident>` branch.
+2. Keep the PR targeted at `master`.
+3. Have the CTO or another authorized approver apply the `approved-master-hotfix` label.
+4. Include the approval context in the PR description so the exception is self-documenting.
+
+The auto-retarget workflow and the `Staging-First Promotion Gate` only allow this exception when both the `approved-master-hotfix` label and the `hotfix/*` branch naming convention are present. That leaves a visible audit trail in the PR timeline while preserving the default staging-first rule for normal work.
+
 ## Dependabot Policy
 
 Dependabot PRs must also target `staging`. The repository config in `.github/dependabot.yml` sets `target-branch: staging` for every package ecosystem so dependency updates follow the same gate as human-authored changes.

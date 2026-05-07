@@ -9,6 +9,8 @@ on:
       - reopened
       - synchronize
       - edited
+      - labeled
+      - unlabeled
       - ready_for_review
 
 permissions:
@@ -18,13 +20,35 @@ jobs:
   verify-source-branch:
     name: Staging-First Promotion Gate
     runs-on: ubuntu-latest
+    env:
+      OVERRIDE_LABEL: approved-master-hotfix
     steps:
       - name: Require staging as the PR head branch
         run: |
           echo "Base branch: ${{ github.base_ref }}"
           echo "Head branch: ${{ github.head_ref }}"
 
+          LABELS='${{ join(github.event.pull_request.labels.*.name, ',') }}'
+          HAS_OVERRIDE=false
+
+          if [[ ",$LABELS," == *",$OVERRIDE_LABEL,"* ]] && [[ "${{ github.head_ref }}" == hotfix/* ]]; then
+            HAS_OVERRIDE=true
+          fi
+
+          if [ "${{ github.head_ref }}" = "staging" ] || [ "$HAS_OVERRIDE" = "true" ]; then
+            echo "Staging-first gate passed."
+            if [ "$HAS_OVERRIDE" = "true" ]; then
+              echo "Approved emergency override detected via label '$OVERRIDE_LABEL' on branch '${{ github.head_ref }}'."
+            fi
+            exit 0
+          fi
+
+          if [[ ",$LABELS," == *",$OVERRIDE_LABEL,"* ]]; then
+            echo "::error title=Approved hotfix override is misconfigured::The '$OVERRIDE_LABEL' override only applies to PRs opened from a 'hotfix/*' branch. Current head branch: '${{ github.head_ref }}'."
+            exit 1
+          fi
+
           if [ "${{ github.head_ref }}" != "staging" ]; then
-            echo "::error title=Master promotions must come from staging::Feature and Dependabot PRs must target staging. Only the dedicated staging -> master promotion PR may target master. If this PR was opened against master by mistake, retarget it with 'gh pr edit ${{ github.event.pull_request.number }} --base staging' or let the Auto-Retarget workflow fix it."
+            echo "::error title=Master promotions must come from staging::Feature and Dependabot PRs must target staging. Only the dedicated staging -> master promotion PR may target master. Approved emergency hotfixes must use the '$OVERRIDE_LABEL' label on a 'hotfix/*' branch. If this PR was opened against master by mistake, retarget it with 'gh pr edit ${{ github.event.pull_request.number }} --base staging' or let the Auto-Retarget workflow fix it."
             exit 1
           fi

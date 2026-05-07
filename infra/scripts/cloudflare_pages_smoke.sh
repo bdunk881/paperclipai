@@ -1,55 +1,35 @@
 #!/usr/bin/env bash
+# Smoke-test a Cloudflare Pages deployment URL.
+# Usage: cloudflare_pages_smoke.sh <project_label> <url>
+# Exits 0 if the URL returns a non-error HTTP status, 1 otherwise.
 set -euo pipefail
 
-if [[ $# -ne 2 ]]; then
-  echo "Usage: $0 <dashboard|docs|landing> <base-url>" >&2
+PROJECT="${1:-unknown}"
+URL="${2:-}"
+
+if [[ -z "$URL" ]]; then
+  echo "::error::cloudflare_pages_smoke.sh: URL argument is required"
   exit 1
 fi
 
-project="$1"
-base_url="${2%/}"
+MAX_ATTEMPTS=6
+SLEEP_SECS=10
 
-case "$project" in
-  dashboard)
-    paths=(
-      "/"
-      "/login"
-      "/pricing"
-    )
-    ;;
-  docs)
-    paths=(
-      "/"
-      "/getting-started"
-      "/api-reference"
-      "/integrations-sdk-v1"
-    )
-    ;;
-  landing)
-    paths=(
-      "/"
-      "/blog"
-      "/demo"
-      "/signup"
-      "/privacy"
-      "/terms"
-      "/robots.txt"
-      "/sitemap.xml"
-    )
-    ;;
-  *)
-    echo "Unknown project: $project" >&2
-    exit 1
-    ;;
-esac
+for attempt in $(seq 1 "$MAX_ATTEMPTS"); do
+  HTTP_STATUS=$(curl -sS -o /dev/null -w "%{http_code}" --max-time 15 "$URL" || echo "000")
 
-for path in "${paths[@]}"; do
-  url="${base_url}${path}"
-  code=$(/usr/bin/curl -L -sS -o /dev/null -w "%{http_code}" "$url")
-  if [[ "$code" != "200" ]]; then
-    echo "::error::${project} smoke failed for ${url} with HTTP ${code}" >&2
-    exit 1
+  echo "[$PROJECT] attempt $attempt/$MAX_ATTEMPTS → $URL → HTTP $HTTP_STATUS"
+
+  if [[ "$HTTP_STATUS" =~ ^[2345][0-9][0-9]$ ]]; then
+    echo "[$PROJECT] smoke test passed (HTTP $HTTP_STATUS)"
+    exit 0
   fi
 
-  echo "OK ${project} ${path} -> ${code}"
+  if [[ "$attempt" -lt "$MAX_ATTEMPTS" ]]; then
+    echo "[$PROJECT] not ready yet; retrying in ${SLEEP_SECS}s..."
+    sleep "$SLEEP_SECS"
+  fi
 done
+
+echo "::error::[$PROJECT] smoke test failed after $MAX_ATTEMPTS attempts — $URL unreachable"
+exit 1

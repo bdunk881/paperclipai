@@ -35,9 +35,12 @@ jobs:
           deploy_branch="${{ github.event_name == 'pull_request' && github.head_ref || github.ref_name }}"
           target_branch="${{ github.event_name == 'pull_request' && github.base_ref || github.ref_name }}"
           project_name="autoflow-dashboard-git"
-          custom_domain="app.helloautoflow.com"
+          custom_domain=""
 
           case "$target_branch" in
+            master)
+              custom_domain="app.helloautoflow.com"
+              ;;
             dev)
               project_name="autoflow-dashboard-dev-git"
               custom_domain="dev.app.helloautoflow.com"

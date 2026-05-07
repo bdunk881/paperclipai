@@ -29,6 +29,24 @@ Legacy Azure teardown and DNS cutover steps remain documented under
 | `observability rollups` | GitHub Actions + PostgreSQL | `.github/workflows/observability-rollups.yml` |
 | `autoflow-brand` (planned) | GitHub + Cloudflare R2 + MemPalace | `infra/brand-assets/*` |
 
+## Cloudflare Pages migration (ALT-2404)
+
+Legacy direct-upload Pages projects cannot be converted in place to Git-backed projects. The migration workflow for the remaining Pages estate lives here:
+
+- Workflow: `.github/workflows/cloudflare-pages-migrate.yml`
+- Script: `infra/scripts/cloudflare-pages-sync.mjs`
+- Runbook: `infra/runbooks/cloudflare-pages-git-migration.md`
+
+Current supported cutover targets in this repo:
+
+- `autoflow-dashboard-git` -> `app.helloautoflow.com`
+- `autoflow-staging-git` -> `staging.app.helloautoflow.com`
+
+Current blocker:
+
+- `docs/` is not static-export clean yet; its generated error-page prerender fails under a Pages-style export and needs an app-level Next.js fix before cutover.
+- `landing/` still depends on live Next.js server routes under `landing/app/api/*`, so `helloautoflow.com` and `www.helloautoflow.com` remain blocked on an app migration before they can move to Git-backed Cloudflare Pages.
+
 ## Phase 5 decommission
 
 Use [`infra/runbooks/azure-cutover-decommission.md`](runbooks/azure-cutover-decommission.md)

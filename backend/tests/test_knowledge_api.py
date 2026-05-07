@@ -6,6 +6,7 @@ from __future__ import annotations
 
 from typing import Any
 import httpx
+import pytest
 from fastapi.testclient import TestClient
 
 from knowledge import knowledge_store

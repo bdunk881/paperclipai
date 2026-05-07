@@ -118,10 +118,10 @@ describe("IntegrationMarketplace", () => {
 
     await waitFor(() => {
       expect(screen.getByRole("heading", { name: "Slack" })).toBeInTheDocument();
+      expect(screen.getByText(/this integration is authenticated and ready to use/i)).toBeInTheDocument();
     });
 
     expect(screen.getAllByText(/lead capture to crm/i).length).toBeGreaterThan(0);
-    expect(screen.getByText(/this integration is authenticated and ready to use/i)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /^disconnect$/i })).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: /^disconnect$/i }));
@@ -131,9 +131,9 @@ describe("IntegrationMarketplace", () => {
         expect.stringContaining("/api/integrations/slack/disconnect"),
         expect.objectContaining({ method: "DELETE" })
       );
+      expect(screen.getByText(/click connect below to launch the live oauth flow/i)).toBeInTheDocument();
+      expect(screen.getByText(/not connected/i)).toBeInTheDocument();
     });
-    expect(screen.getByText(/click connect below to launch the live oauth flow/i)).toBeInTheDocument();
-    expect(screen.getByText(/not connected/i)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /^connect$/i })).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: /^connect$/i }));

@@ -16,6 +16,69 @@ import {
 
 const router = Router();
 
+async function notifyCSM(params: {
+  email: string;
+  firstName: string;
+  companyName: string;
+  tier: string;
+  signupDate: string;
+  userId: string;
+}): Promise<void> {
+  const apiUrl = process.env.PAPERCLIP_API_URL;
+  const apiKey = process.env.PAPERCLIP_WEBHOOK_API_KEY;
+  const companyId = process.env.PAPERCLIP_COMPANY_ID;
+  const csmAgentId = process.env.PAPERCLIP_CSM_AGENT_ID ?? "0cc5e90d-8514-40ea-b502-da0a585cd1df";
+  const goalId = process.env.PAPERCLIP_ONBOARDING_GOAL_ID ?? "aa40b2bf-bf64-48a5-991d-0fcadd431a34";
+
+  if (!apiUrl || !apiKey || !companyId) {
+    console.warn("[paperclip] PAPERCLIP_WEBHOOK_API_KEY / PAPERCLIP_API_URL / PAPERCLIP_COMPANY_ID not set - skipping CSM task creation");
+    return;
+  }
+
+  const title = `New ${params.tier} signup - ${params.email} · personal outreach within 24h`;
+  const description = [
+    "## New Paid User - CSM Outreach Required",
+    "",
+    `A new **${params.tier}** subscriber just completed checkout and needs a personal touch within **24 hours**.`,
+    "",
+    "| Field | Value |",
+    "|-------|-------|",
+    `| Email | ${params.email} |`,
+    `| Name | ${params.firstName} |`,
+    `| Company | ${params.companyName || "-"} |`,
+    `| Tier | ${params.tier} |`,
+    `| Signup date | ${params.signupDate} |`,
+    `| User ID | ${params.userId || "-"} |`,
+    "",
+    "**Action:** Send a personal welcome email within 24h. Offer an onboarding call, ask about use-case goals, and flag any enterprise requirements.",
+  ].join("\n");
+
+  const response = await fetch(`${apiUrl}/api/companies/${companyId}/issues`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      title,
+      description,
+      status: "todo",
+      priority: "high",
+      assigneeAgentId: csmAgentId,
+      goalId,
+    }),
+  });
+
+  if (!response.ok) {
+    const body = await response.text();
+    console.error(`[paperclip] CSM task creation failed ${response.status}: ${body}`);
+    return;
+  }
+
+  const task = await response.json() as { identifier?: string };
+  console.log(`[paperclip] CSM task created: ${task.identifier}`);
+}
+
 // ---------------------------------------------------------------------------
 // Webhook endpoint — receives raw body for signature verification
 // ---------------------------------------------------------------------------
@@ -148,6 +211,15 @@ async function handleCheckoutSessionCompleted(session: Stripe.Checkout.Session):
 
   subscriptionStore.upsert(sub);
   console.log(`[stripe/webhook] checkout.session.completed — provisioned ${tier} subscription for ${email}`);
+
+  if ((tier === "automate" || tier === "scale") && email) {
+    const firstName = meta.firstName ?? session.customer_details?.name?.split(" ")[0] ?? "";
+    const companyName = meta.companyName ?? "";
+    const signupDate = new Date().toISOString();
+    notifyCSM({ email, firstName, companyName, tier, signupDate, userId }).catch((error) => {
+      console.error("[paperclip] notifyCSM error:", error);
+    });
+  }
 }
 
 /**

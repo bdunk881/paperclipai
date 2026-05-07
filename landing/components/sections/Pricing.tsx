@@ -4,6 +4,7 @@ import { motion } from "framer-motion";
 import { useState } from "react";
 import { Check, Shield, Clock, X } from "lucide-react";
 import { PRICING_TIERS } from "@/lib/stripe";
+import { buildLandingApiUrl } from "@/lib/publicApi";
 
 const ANNUAL_DISCOUNT = 0.3; // 30% off
 
@@ -39,7 +40,7 @@ export function Pricing() {
   async function handleCheckout(tier: keyof typeof PRICING_TIERS) {
     setLoading(tier);
     try {
-      const res = await fetch("/api/checkout", {
+      const res = await fetch(buildLandingApiUrl("/api/public/landing/checkout"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ tier, billingPeriod }),

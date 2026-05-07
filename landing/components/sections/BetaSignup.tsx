@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { motion } from "framer-motion";
+import { buildLandingApiUrl } from "@/lib/publicApi";
 
 interface FormData {
   name: string;
@@ -35,7 +36,7 @@ export function BetaSignup() {
     e.preventDefault();
     setStatus("loading");
     try {
-      const res = await fetch("/api/beta-signup", {
+      const res = await fetch(buildLandingApiUrl("/api/public/landing/beta-signup"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(form),

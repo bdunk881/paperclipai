@@ -207,6 +207,8 @@ function parsePositiveIntegerEnv(name: string, fallback: number): number {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
 }
 
+const isTestEnv = process.env.NODE_ENV === "test";
+
 const generalApiRateLimiter = rateLimit({
   windowMs: 60 * 1000,
   limit: 100,
@@ -214,6 +216,7 @@ const generalApiRateLimiter = rateLimit({
   legacyHeaders: false,
   keyGenerator: getRateLimitKey,
   handler: createRateLimitHandler(60 * 1000),
+  skip: () => isTestEnv,
 });
 
 const webhookRateLimiter = rateLimit({
@@ -223,6 +226,7 @@ const webhookRateLimiter = rateLimit({
   legacyHeaders: false,
   keyGenerator: (req) => `ip:${req.ip || req.socket.remoteAddress || "unknown"}`,
   handler: createRateLimitHandler(60 * 1000),
+  skip: () => isTestEnv,
 });
 
 const llmEndpointRateLimiter = rateLimit({

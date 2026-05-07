@@ -46,4 +46,6 @@ jobs:
           CF_PAGES_AZURE_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
           CF_PAGES_APP_JWT_SECRET: ${{ secrets.APP_JWT_SECRET }}
           CF_PAGES_QA_PREVIEW_ACCESS_TOKEN: ${{ secrets.QA_PREVIEW_ACCESS_TOKEN }}
+          CF_PAGES_SUPABASE_URL: ${{ secrets.PRODUCTION_SUPABASE_URL }}
+          CF_PAGES_SUPABASE_ANON_KEY: ${{ secrets.PRODUCTION_SUPABASE_ANON_KEY }}
         run: node infra/scripts/cloudflare-pages-sync.mjs

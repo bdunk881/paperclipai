@@ -43,6 +43,8 @@ const configs = [
       AZURE_TENANT_ID: plain(envOrEmpty("CF_PAGES_AZURE_TENANT_ID")),
       APP_JWT_SECRET: secret(envOrEmpty("CF_PAGES_APP_JWT_SECRET")),
       QA_PREVIEW_ACCESS_TOKEN: secret(envOrEmpty("CF_PAGES_QA_PREVIEW_ACCESS_TOKEN")),
+      VITE_SUPABASE_URL: secret(envOrEmpty("CF_PAGES_SUPABASE_URL")),
+      VITE_SUPABASE_ANON_KEY: secret(envOrEmpty("CF_PAGES_SUPABASE_ANON_KEY")),
     },
     productionEnv: {
       BACKEND_API_BASE_URL: plain("https://api.helloautoflow.com"),
@@ -55,6 +57,8 @@ const configs = [
       AZURE_TENANT_SUBDOMAIN: secret(envOrEmpty("CF_PAGES_AZURE_TENANT_SUBDOMAIN")),
       AZURE_CIAM_TENANT_ID: plain(envOrEmpty("CF_PAGES_AZURE_TENANT_ID")),
       AZURE_TENANT_ID: plain(envOrEmpty("CF_PAGES_AZURE_TENANT_ID")),
+      VITE_SUPABASE_URL: secret(envOrEmpty("CF_PAGES_SUPABASE_URL")),
+      VITE_SUPABASE_ANON_KEY: secret(envOrEmpty("CF_PAGES_SUPABASE_ANON_KEY")),
     },
   },
   {
@@ -90,6 +94,8 @@ const configs = [
       AZURE_TENANT_ID: plain(envOrEmpty("CF_PAGES_AZURE_TENANT_ID")),
       APP_JWT_SECRET: secret(envOrEmpty("CF_PAGES_APP_JWT_SECRET")),
       QA_PREVIEW_ACCESS_TOKEN: secret(envOrEmpty("CF_PAGES_QA_PREVIEW_ACCESS_TOKEN")),
+      VITE_SUPABASE_URL: secret(envOrEmpty("CF_PAGES_SUPABASE_URL")),
+      VITE_SUPABASE_ANON_KEY: secret(envOrEmpty("CF_PAGES_SUPABASE_ANON_KEY")),
     },
     productionEnv: {
       BACKEND_API_BASE_URL: plain("https://staging-api.helloautoflow.com"),
@@ -102,6 +108,8 @@ const configs = [
       AZURE_TENANT_SUBDOMAIN: secret(envOrEmpty("CF_PAGES_AZURE_TENANT_SUBDOMAIN")),
       AZURE_CIAM_TENANT_ID: plain(envOrEmpty("CF_PAGES_AZURE_TENANT_ID")),
       AZURE_TENANT_ID: plain(envOrEmpty("CF_PAGES_AZURE_TENANT_ID")),
+      VITE_SUPABASE_URL: secret(envOrEmpty("CF_PAGES_SUPABASE_URL")),
+      VITE_SUPABASE_ANON_KEY: secret(envOrEmpty("CF_PAGES_SUPABASE_ANON_KEY")),
     },
   },
   {
@@ -306,14 +314,11 @@ async function triggerDeployment(projectName, branch) {
 
 async function waitForSuccessfulDeployment(projectName, expectedDeploymentId = null) {
   for (let attempt = 1; attempt <= 30; attempt += 1) {
-    const deployment = expectedDeploymentId
-      ? await getDeployment(projectName, expectedDeploymentId)
-      : await getLatestDeployment(projectName);
+    const deployment = await getLatestDeployment(projectName);
 
-    if (expectedDeploymentId && !deployment) {
-      const latestDeployment = await getLatestDeployment(projectName);
+    if (expectedDeploymentId && deployment?.id && deployment.id !== expectedDeploymentId) {
       console.log(
-        `Deployment ${expectedDeploymentId} is not visible yet for ${projectName}. Latest seen is ${latestDeployment?.id ?? "none"}... (${attempt}/30)`
+        `Latest deployment for ${projectName} is ${deployment.id}; waiting for ${expectedDeploymentId}... (${attempt}/30)`
       );
       await sleep(10000);
       continue;
@@ -322,25 +327,21 @@ async function waitForSuccessfulDeployment(projectName, expectedDeploymentId = n
     const status = deploymentStatus(deployment);
     if (status === "success") {
       console.log(
-        `Deployment ${deployment?.id ?? expectedDeploymentId ?? projectName} for ${projectName} succeeded: ${deployment?.url ?? "no deployment url"}`
+        `Latest deployment for ${projectName} succeeded: ${deployment?.url ?? "no deployment url"}`
       );
       return;
     }
     if (status === "failure") {
       throw new Error(
-        `Deployment ${deployment?.id ?? expectedDeploymentId ?? projectName} for ${projectName} failed: ${JSON.stringify(deployment?.latest_stage ?? deployment?.stages ?? deployment)}`
+        `Latest deployment for ${projectName} failed: ${JSON.stringify(deployment?.latest_stage ?? deployment?.stages ?? deployment)}`
       );
     }
 
-    console.log(
-      `Deployment ${deployment?.id ?? expectedDeploymentId ?? projectName} for ${projectName} is ${status ?? "pending"}; waiting... (${attempt}/30)`
-    );
+    console.log(`Deployment for ${projectName} is ${status ?? "pending"}; waiting... (${attempt}/30)`);
     await sleep(10000);
   }
 
-  throw new Error(
-    `Timed out waiting for ${projectName} deployment ${expectedDeploymentId ?? "(latest)"} to succeed.`
-  );
+  throw new Error(`Timed out waiting for ${projectName} deployment to succeed.`);
 }
 
 function deploymentStatus(deployment) {
@@ -364,14 +365,6 @@ async function getLatestDeployment(projectName) {
     { method: "GET" }
   );
   return Array.isArray(result.result) ? result.result[0] ?? null : null;
-}
-
-async function getDeployment(projectName, deploymentId) {
-  const result = await cfApi(
-    `/accounts/${accountId}/pages/projects/${projectName}/deployments/${deploymentId}`,
-    { allow404: true, method: "GET" }
-  );
-  return result?.result ?? null;
 }
 
 async function getProject(projectName) {

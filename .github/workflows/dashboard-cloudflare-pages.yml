@@ -26,6 +26,30 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
+      - name: Derive Cloudflare Pages target
+        id: target
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          deploy_branch="${{ github.event_name == 'pull_request' && github.head_ref || github.ref_name }}"
+          target_branch="${{ github.event_name == 'pull_request' && github.base_ref || github.ref_name }}"
+          project_name="autoflow-dashboard-git"
+          custom_domain="app.helloautoflow.com"
+
+          if [ "$target_branch" = "dev" ]; then
+            project_name="autoflow-dashboard-dev-git"
+            custom_domain="dev.helloautoflow.com"
+          elif [ "$target_branch" = "staging" ]; then
+            project_name="autoflow-staging-git"
+            custom_domain="staging.app.helloautoflow.com"
+          fi
+
+          echo "deploy_branch=$deploy_branch" >> "$GITHUB_OUTPUT"
+          echo "target_branch=$target_branch" >> "$GITHUB_OUTPUT"
+          echo "project_name=$project_name" >> "$GITHUB_OUTPUT"
+          echo "custom_domain=$custom_domain" >> "$GITHUB_OUTPUT"
+
       - uses: actions/setup-node@v5
         with:
           node-version: 22
@@ -39,8 +63,8 @@ jobs:
       - name: Build dashboard
         working-directory: dashboard
         env:
-          VITE_SUPABASE_URL: ${{ github.ref_name == 'dev' && secrets.DEV_SUPABASE_URL || secrets.PRODUCTION_SUPABASE_URL }}
-          VITE_SUPABASE_ANON_KEY: ${{ github.ref_name == 'dev' && secrets.DEV_SUPABASE_ANON_KEY || secrets.PRODUCTION_SUPABASE_ANON_KEY }}
+          VITE_SUPABASE_URL: ${{ steps.target.outputs.target_branch == 'dev' && secrets.DEV_SUPABASE_URL || secrets.PRODUCTION_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ steps.target.outputs.target_branch == 'dev' && secrets.DEV_SUPABASE_ANON_KEY || secrets.PRODUCTION_SUPABASE_ANON_KEY }}
         run: npm run build
 
       - name: Deploy to Cloudflare Pages
@@ -54,8 +78,32 @@ jobs:
           packageManager: npm
           command: >-
             pages deploy dist
-            --project-name=autoflow-dashboard
-            --branch=${{ github.event_name == 'pull_request' && github.head_ref || github.ref_name }}
+            --project-name=${{ steps.target.outputs.project_name }}
+            --branch=${{ steps.target.outputs.deploy_branch }}
+
+      - name: Smoke Pages deployment URL
+        run: |
+          bash ./infra/scripts/cloudflare_pages_smoke.sh dashboard "${{ steps.deploy.outputs.deployment-url }}"
+
+      - name: Smoke dashboard custom domain
+        env:
+          CUSTOM_DOMAIN: ${{ steps.target.outputs.custom_domain }}
+        run: |
+          set -euo pipefail
+
+          for attempt in $(seq 1 12); do
+            if bash ./infra/scripts/cloudflare_pages_smoke.sh dashboard "https://${CUSTOM_DOMAIN}"; then
+              exit 0
+            fi
+
+            if [ "$attempt" -lt 12 ]; then
+              echo "Custom domain not ready yet; retrying in 10 seconds..."
+              sleep 10
+            fi
+          done
+
+          echo "::error::Custom domain smoke test failed for https://${CUSTOM_DOMAIN}"
+          exit 1
 
       - name: Summarize deployment
         env:
@@ -63,10 +111,16 @@ jobs:
           DEPLOYMENT_ALIAS_URL: ${{ steps.deploy.outputs.pages-deployment-alias-url }}
           DEPLOYMENT_ID: ${{ steps.deploy.outputs.pages-deployment-id }}
           DEPLOYMENT_ENVIRONMENT: ${{ steps.deploy.outputs.pages-environment }}
+          TARGET_BRANCH: ${{ steps.target.outputs.target_branch }}
+          PROJECT_NAME: ${{ steps.target.outputs.project_name }}
+          CUSTOM_DOMAIN: ${{ steps.target.outputs.custom_domain }}
         run: |
           {
             echo "## Cloudflare Pages deployment"
             echo
+            echo "- Target branch: ${TARGET_BRANCH:-unknown}"
+            echo "- Project: ${PROJECT_NAME:-unknown}"
+            echo "- Custom domain: ${CUSTOM_DOMAIN:-unknown}"
             echo "- Environment: ${DEPLOYMENT_ENVIRONMENT:-unknown}"
             echo "- Deployment ID: ${DEPLOYMENT_ID:-unknown}"
             echo "- Deployment URL: ${DEPLOYMENT_URL:-unavailable}"

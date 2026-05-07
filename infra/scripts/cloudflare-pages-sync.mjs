@@ -302,11 +302,14 @@ async function triggerDeployment(projectName, branch) {
 
 async function waitForSuccessfulDeployment(projectName, expectedDeploymentId = null) {
   for (let attempt = 1; attempt <= 30; attempt += 1) {
-    const deployment = await getLatestDeployment(projectName);
+    const deployment = expectedDeploymentId
+      ? await getDeployment(projectName, expectedDeploymentId)
+      : await getLatestDeployment(projectName);
 
-    if (expectedDeploymentId && deployment?.id && deployment.id !== expectedDeploymentId) {
+    if (expectedDeploymentId && !deployment) {
+      const latestDeployment = await getLatestDeployment(projectName);
       console.log(
-        `Latest deployment for ${projectName} is ${deployment.id}; waiting for ${expectedDeploymentId}... (${attempt}/30)`
+        `Deployment ${expectedDeploymentId} is not visible yet for ${projectName}. Latest seen is ${latestDeployment?.id ?? "none"}... (${attempt}/30)`
       );
       await sleep(10000);
       continue;
@@ -315,21 +318,25 @@ async function waitForSuccessfulDeployment(projectName, expectedDeploymentId = n
     const status = deploymentStatus(deployment);
     if (status === "success") {
       console.log(
-        `Latest deployment for ${projectName} succeeded: ${deployment?.url ?? "no deployment url"}`
+        `Deployment ${deployment?.id ?? expectedDeploymentId ?? projectName} for ${projectName} succeeded: ${deployment?.url ?? "no deployment url"}`
       );
       return;
     }
     if (status === "failure") {
       throw new Error(
-        `Latest deployment for ${projectName} failed: ${JSON.stringify(deployment?.latest_stage ?? deployment?.stages ?? deployment)}`
+        `Deployment ${deployment?.id ?? expectedDeploymentId ?? projectName} for ${projectName} failed: ${JSON.stringify(deployment?.latest_stage ?? deployment?.stages ?? deployment)}`
       );
     }
 
-    console.log(`Deployment for ${projectName} is ${status ?? "pending"}; waiting... (${attempt}/30)`);
+    console.log(
+      `Deployment ${deployment?.id ?? expectedDeploymentId ?? projectName} for ${projectName} is ${status ?? "pending"}; waiting... (${attempt}/30)`
+    );
     await sleep(10000);
   }
 
-  throw new Error(`Timed out waiting for ${projectName} deployment to succeed.`);
+  throw new Error(
+    `Timed out waiting for ${projectName} deployment ${expectedDeploymentId ?? "(latest)"} to succeed.`
+  );
 }
 
 function deploymentStatus(deployment) {
@@ -353,6 +360,14 @@ async function getLatestDeployment(projectName) {
     { method: "GET" }
   );
   return Array.isArray(result.result) ? result.result[0] ?? null : null;
+}
+
+async function getDeployment(projectName, deploymentId) {
+  const result = await cfApi(
+    `/accounts/${accountId}/pages/projects/${projectName}/deployments/${deploymentId}`,
+    { allow404: true, method: "GET" }
+  );
+  return result?.result ?? null;
 }
 
 async function getProject(projectName) {

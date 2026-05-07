@@ -1,0 +1,30 @@
+name: Inspect Cloudflare Pages Project
+
+on:
+  workflow_dispatch:
+    inputs:
+      project:
+        description: Cloudflare Pages project name to inspect
+        required: true
+        default: autoflow-dashboard-git
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    name: Inspect Pages project
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Inspect Cloudflare Pages project state
+        env:
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CF_PAGES_INSPECT_PROJECT: ${{ inputs.project }}
+        run: node infra/scripts/cloudflare-pages-inspect.mjs

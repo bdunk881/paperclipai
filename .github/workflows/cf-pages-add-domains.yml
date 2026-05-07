@@ -105,13 +105,34 @@ jobs:
           fi
           [ "$ERR_CODE" = "8000018" ] && echo "ALREADY_REGISTERED (idempotent OK)" || echo "OK: $(echo "$RESP" | jq -r '.result.name') status=$(echo "$RESP" | jq -r '.result.status')"
 
+      - name: Add dev.helloautoflow.com to autoflow-dashboard-dev-git
+        run: |
+          if [ "${{ inputs.dry_run }}" = "true" ]; then
+            echo "[DRY RUN] Would add dev.helloautoflow.com to autoflow-dashboard-dev-git"
+            exit 0
+          fi
+          RESP=$(curl -s -X POST \
+            -H "Authorization: Bearer ${{ secrets.CLOUDFLARE_API_TOKEN }}" \
+            -H "Content-Type: application/json" \
+            -d '{"name":"dev.helloautoflow.com"}' \
+            "https://api.cloudflare.com/client/v4/accounts/${{ secrets.CLOUDFLARE_ACCOUNT_ID }}/pages/projects/autoflow-dashboard-dev-git/domains")
+          echo "=== Full response ===" && echo "$RESP" | jq .
+          SUCCESS=$(echo "$RESP" | jq -r '.success')
+          ERR_CODE=$(echo "$RESP" | jq -r '.errors[0].code // empty')
+          if [ "$SUCCESS" != "true" ] && [ "$ERR_CODE" != "8000018" ]; then
+            echo "FAILED:" && echo "$RESP" | jq '.errors'
+            exit 1
+          fi
+          [ "$ERR_CODE" = "8000018" ] && echo "ALREADY_REGISTERED (idempotent OK)" || echo "OK: $(echo "$RESP" | jq -r '.result.name') status=$(echo "$RESP" | jq -r '.result.status')"
+
       - name: Summary
         run: |
           echo "Custom domain registration complete."
-          echo "DNS records already configured:"
-          echo "  app.helloautoflow.com   -> autoflow-dashboard.pages.dev"
-          echo "  docs.helloautoflow.com  -> autoflow-docs.pages.dev"
-          echo "  www.helloautoflow.com   -> autoflow-landing.pages.dev"
+          echo "DNS records configured:"
+          echo "  app.helloautoflow.com     -> autoflow-dashboard.pages.dev"
+          echo "  dev.helloautoflow.com     -> autoflow-dashboard-dev-git.pages.dev"
+          echo "  docs.helloautoflow.com    -> autoflow-docs.pages.dev"
+          echo "  www.helloautoflow.com     -> autoflow-landing.pages.dev"
           echo "  api.dev.helloautoflow.com -> autoflow-fastapi-dev.fly.dev"
           echo ""
           echo "Note: helloautoflow.com root domain DNS update (A->CNAME) requires"

@@ -18,6 +18,7 @@ jobs:
     env:
       PROJECT_NAME: autoflow-dashboard
       DEPLOY_REF: ${{ github.event.inputs.deploy_ref }}
+      PAGES_BRANCH: master
       VITE_API_BASE_URL: ${{ secrets.VITE_API_BASE_URL }}
       VITE_API_URL: ${{ secrets.VITE_API_BASE_URL }}
       VITE_AZURE_CIAM_CLIENT_ID: ${{ secrets.VITE_AZURE_CLIENT_ID }}
@@ -65,5 +66,6 @@ jobs:
           set -euo pipefail
           npx wrangler pages deploy dist \
             --project-name "$PROJECT_NAME" \
+            --branch "$PAGES_BRANCH" \
             --commit-hash "$GITHUB_SHA" \
             --commit-message "Deploy ${DEPLOY_REF} via GitHub Actions"

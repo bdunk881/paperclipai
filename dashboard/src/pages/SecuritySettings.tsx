@@ -1,5 +1,7 @@
 import { useState } from "react";
 import { AlertCircle, Monitor, Smartphone, Globe } from "lucide-react";
+import { ApiError, apiPatch } from "../api/settingsClient";
+import { useAuth } from "../context/AuthContext";
 
 interface Session {
   id: string;
@@ -18,6 +20,7 @@ function DeviceIcon({ type }: { type: Session["deviceType"] }) {
 }
 
 export default function SecuritySettings() {
+  const { user, requireAccessToken } = useAuth();
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -31,9 +34,39 @@ export default function SecuritySettings() {
     e.preventDefault();
     setPwError(null);
     setSaved(false);
+
+    if (newPassword !== confirmPassword) {
+      setPwError("New password and confirmation must match.");
+      return;
+    }
+
+    if (currentPassword === newPassword) {
+      setPwError("New password must be different from the current password.");
+      return;
+    }
+
     setSaving(true);
-    setPwError("Password updates are not available yet because no backend security endpoint is configured.");
-    setSaving(false);
+    try {
+      const accessToken = await requireAccessToken();
+      await apiPatch(
+        "/api/user/password",
+        { currentPassword, newPassword, confirmPassword },
+        user,
+        accessToken
+      );
+      setCurrentPassword("");
+      setNewPassword("");
+      setConfirmPassword("");
+      setSaved(true);
+    } catch (error) {
+      if (error instanceof ApiError && (error.status === 404 || error.status === 503)) {
+        setPwError("Password updates are not available in this environment yet.");
+      } else {
+        setPwError(error instanceof Error ? error.message : "Failed to update password.");
+      }
+    } finally {
+      setSaving(false);
+    }
   }
 
   return (
@@ -57,42 +90,52 @@ export default function SecuritySettings() {
               Password updated successfully.
             </div>
           ) : null}
-
-          <div className="px-3 py-2 rounded-lg bg-amber-50 border border-amber-200 text-sm text-amber-800">
-            Password management is not connected to a backend endpoint in this environment yet.
-          </div>
-
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Current Password</label>
+            <label htmlFor="security-current-password" className="block text-sm font-medium text-gray-700 mb-1">
+              Current Password
+            </label>
             <input
+              id="security-current-password"
               type="password"
               value={currentPassword}
               onChange={(e) => setCurrentPassword(e.target.value)}
               autoComplete="current-password"
+              disabled={saving}
               className="w-full px-3 py-2 rounded-lg border border-gray-300 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">New Password</label>
+            <label htmlFor="security-new-password" className="block text-sm font-medium text-gray-700 mb-1">
+              New Password
+            </label>
             <input
+              id="security-new-password"
               type="password"
               value={newPassword}
               onChange={(e) => setNewPassword(e.target.value)}
               autoComplete="new-password"
+              disabled={saving}
               className="w-full px-3 py-2 rounded-lg border border-gray-300 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Confirm New Password</label>
+            <label htmlFor="security-confirm-password" className="block text-sm font-medium text-gray-700 mb-1">
+              Confirm New Password
+            </label>
             <input
+              id="security-confirm-password"
               type="password"
               value={confirmPassword}
               onChange={(e) => setConfirmPassword(e.target.value)}
               autoComplete="new-password"
+              disabled={saving}
               className="w-full px-3 py-2 rounded-lg border border-gray-300 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
+            <p className="mt-1 text-xs text-gray-500">
+              Use a new password with at least 8 characters.
+            </p>
           </div>
 
           <div className="pt-1">

@@ -4,6 +4,10 @@ import { randomUUID } from "node:crypto";
 const DEFAULT_CIAM_TENANT_SUBDOMAIN = "autoflowciam";
 const NATIVE_AUTH_LOG_PREFIX = "[native-auth]";
 const REDACTED_VALUE = "[REDACTED]";
+const DEFAULT_ALLOWED_ORIGINS = [
+  "https://app.helloautoflow.com",
+  "https://staging.app.helloautoflow.com",
+];
 const SENSITIVE_BODY_KEYS = new Set([
   "password",
   "new_password",
@@ -123,9 +127,70 @@ function parseUpstreamErrorDetails(body: string): { error?: string; errorDescrip
   }
 }
 
+function parseAllowedOrigins(value: string | undefined): Set<string> {
+  const configured = typeof value === "string"
+    ? value
+        .split(",")
+        .map((origin) => origin.trim())
+        .filter((origin) => origin.length > 0 && origin !== "*")
+    : [];
+
+  return new Set(configured.length > 0 ? configured : DEFAULT_ALLOWED_ORIGINS);
+}
+
+function getAllowedOrigin(originHeader: string | undefined): string | null {
+  if (typeof originHeader !== "string") {
+    return null;
+  }
+
+  const origin = originHeader.trim();
+  if (!origin) {
+    return null;
+  }
+
+  return parseAllowedOrigins(process.env.AUTH_NATIVE_AUTH_PROXY_ALLOWED_ORIGINS).has(origin) ? origin : null;
+}
+
+function isRejectedBrowserOrigin(originHeader: string | undefined): boolean {
+  return typeof originHeader === "string" && originHeader.trim().length > 0 && !getAllowedOrigin(originHeader);
+}
+
+function applyCorsHeaders(
+  res: VercelResponse,
+  origin: string,
+  requestHeaders?: string | string[]
+): void {
+  const allowHeaders = Array.isArray(requestHeaders) ? requestHeaders.join(", ") : requestHeaders;
+  res.setHeader("Access-Control-Allow-Origin", origin);
+  res.setHeader("Access-Control-Allow-Credentials", "true");
+  res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
+  res.setHeader("Access-Control-Allow-Headers", allowHeaders?.trim() || "content-type");
+  res.setHeader("Vary", "Origin, Access-Control-Request-Headers");
+}
+
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   const correlationId = getCorrelationId(req);
   const origin = Array.isArray(req.headers.origin) ? req.headers.origin[0] : req.headers.origin;
+  const allowedOrigin = getAllowedOrigin(origin);
+
+  if (req.method === "OPTIONS") {
+    if (!allowedOrigin) {
+      logNativeAuth(
+        "REJECTED",
+        { correlationId, origin, reason: "origin_not_allowed", method: req.method },
+        "warn"
+      );
+      return res.status(403).json({ error: "Origin is not allowed for native auth proxy requests." });
+    }
+
+    applyCorsHeaders(res, allowedOrigin, req.headers["access-control-request-headers"]);
+    return res.status(204).send("");
+  }
+
+  if (isRejectedBrowserOrigin(origin)) {
+    logNativeAuth("REJECTED", { correlationId, origin, reason: "origin_not_allowed", method: req.method }, "warn");
+    return res.status(403).json({ error: "Origin is not allowed for native auth proxy requests." });
+  }
 
   if (req.method !== "POST") {
     logNativeAuth("REJECTED", { correlationId, origin, reason: "method_not_allowed", method: req.method }, "warn");
@@ -196,6 +261,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const cacheControl = upstreamResponse.headers.get("cache-control");
     if (cacheControl) {
       res.setHeader("Cache-Control", cacheControl);
+    }
+
+    if (allowedOrigin) {
+      applyCorsHeaders(res, allowedOrigin);
     }
 
     return res.status(upstreamResponse.status).send(responseText);

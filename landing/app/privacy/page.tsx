@@ -1,10 +1,11 @@
-import type { Metadata } from "next";
-import Link from "next/link";
+import { Link } from "react-router";
 
-export const metadata: Metadata = {
-  title: "Privacy Policy | AutoFlow",
-  description: "How AutoFlow collects, uses, and protects your data.",
-};
+export function meta() {
+  return [
+    { title: "Privacy Policy | AutoFlow" },
+    { name: "description", content: "How AutoFlow collects, uses, and protects your data." },
+  ];
+}
 
 export default function PrivacyPage() {
   return (
@@ -61,7 +62,7 @@ export default function PrivacyPage() {
         </div>
 
         <div className="mt-12 border-t border-gray-200 pt-6">
-          <Link href="/" className="text-sm font-medium text-indigo-600 hover:text-indigo-700">
+          <Link to="/" className="text-sm font-medium text-indigo-600 hover:text-indigo-700">
             Back to homepage
           </Link>
         </div>

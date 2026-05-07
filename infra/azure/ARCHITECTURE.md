@@ -81,7 +81,8 @@ Cross-spoke:
   Prod Pod → Hub Firewall → Staging Pod  (firewall policy controls inter-spoke)
 
 Key Vault access:
-  Pod → private endpoint (hub pe-subnet) → Key Vault (no public internet)
+  Pod (federated ServiceAccount / user-assigned identity) → private endpoint
+  (hub pe-subnet) → Key Vault (no public internet)
 
 ACR pull:
   AKS kubelet → private endpoint (spoke pe-subnet) → ACR (no public internet)
@@ -101,8 +102,10 @@ main.tf
   │       └── depends on: spoke (pe_subnet_id, vnet_id)
   ├── module.aks         (AKS cluster + Log Analytics)
   │       └── depends on: spoke (aks_subnet_id), acr (acr_id)
+  ├── module.backend_workload_identity (prod backend managed identity + federated credential)
+  │       └── depends on: aks (oidc_issuer_url)
   ├── module.management  (Management Groups, RBAC, Key Vault policies)
-  │       └── depends on: hub (key_vault_id), aks (kubelet_identity_object_id)
+  │       └── depends on: hub (key_vault_id), explicit workload principal IDs
   ├── module.monitoring  (App Insights, metric alerts)
   │       └── depends on: aks (cluster_id, log_analytics_workspace_id)
   ├── module.policy      (Azure Policy, initiative assignments)
@@ -119,6 +122,7 @@ main.tf
 | `spoke` | `modules/spoke` | Spoke VNet, subnets, route table (UDR → Firewall), VNet peering (bidirectional) |
 | `acr` | `modules/acr` | Azure Container Registry (Premium), private endpoint, diagnostic settings |
 | `aks` | `modules/aks` | AKS cluster, system/user node pools, Log Analytics workspace, kubelet identity |
+| `backend-workload-identity` | `modules/backend-workload-identity` | Production backend managed identity and AKS federated credential |
 | `management` | `modules/management` | Management Group hierarchy, RBAC role assignments, Key Vault access policies |
 | `monitoring` | `modules/monitoring` | Application Insights, Log Analytics workspace linkage, metric alert rules |
 | `policy` | `modules/policy` | Azure Policy initiative, assignment at MG scope, allowed-locations guardrails |

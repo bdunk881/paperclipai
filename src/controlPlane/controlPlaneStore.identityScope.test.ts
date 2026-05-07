@@ -12,7 +12,7 @@ describe("controlPlaneStore identity scoping", () => {
   it("exposes company workspace data to a second identity in the same workspace", async () => {
     const provisioningUserId = "agent-user";
     const browserUserId = "ceo-browser-user";
-    const workspaceId = "11111111-1111-4111-8111-111111111111";
+    const workspaceId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 
     const provisioned = await controlPlaneStore.provisionCompanyWorkspace({
       workspaceId,

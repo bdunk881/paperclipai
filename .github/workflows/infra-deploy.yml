@@ -105,6 +105,8 @@ jobs:
 
       - name: Terraform plan
         run: |
+          set -euo pipefail
+
           terraform plan \
             -var="devops_sp_object_id=${{ steps.sp.outputs.devops_sp_object_id }}" \
             -out=tfplan

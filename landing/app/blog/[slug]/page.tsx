@@ -1,29 +1,37 @@
-import type { Metadata } from "next";
-import Link from "next/link";
-import Image from "next/image";
-import { notFound } from "next/navigation";
 import { PortableText } from "@portabletext/react";
+import type { MetaFunction } from "react-router";
+import { Link, useLoaderData } from "react-router";
 import { getBlogPost, urlFor } from "@/lib/sanity";
-import { getArticle, getAllArticles } from "@/lib/articles";
+import { getArticle } from "@/lib/articles";
 
-interface Props {
-  params: Promise<{ slug: string }>;
+interface LoaderData {
+  article: ReturnType<typeof getArticle>;
+  cmsPost: Awaited<ReturnType<typeof getBlogPost>>;
 }
 
-export async function generateMetadata({ params }: Props): Promise<Metadata> {
-  const { slug } = await params;
+export const meta: MetaFunction<typeof loader> = ({ data }) => {
+  const title = data?.cmsPost?.title ?? data?.article?.title ?? "Blog Post";
+  const description = data?.cmsPost?.excerpt ?? data?.article?.excerpt ?? "";
+  return [
+    { title: `${title} | AutoFlow Blog` },
+    { name: "description", content: description },
+  ];
+};
+
+export async function loader({ params }: { params: { slug?: string } }) {
+  const slug = params.slug;
+  if (!slug) {
+    throw new Response("Not Found", { status: 404 });
+  }
+
   const cmsPost = await getBlogPost(slug);
   const article = cmsPost ? null : getArticle(slug);
-  const title = cmsPost?.title ?? article?.title ?? "Blog Post";
-  const description = cmsPost?.excerpt ?? article?.excerpt ?? "";
-  return {
-    title: `${title} | AutoFlow Blog`,
-    description,
-  };
-}
 
-export async function generateStaticParams() {
-  return getAllArticles().map((a) => ({ slug: a.slug }));
+  if (!cmsPost && !article) {
+    throw new Response("Not Found", { status: 404 });
+  }
+
+  return { cmsPost, article };
 }
 
 const portableTextComponents = {
@@ -32,7 +40,7 @@ const portableTextComponents = {
       const url = urlFor(value).width(800).url();
       return (
         <figure className="my-8">
-          <Image
+          <img
             src={url}
             alt={value.alt ?? ""}
             width={800}
@@ -90,12 +98,8 @@ const portableTextComponents = {
   },
 };
 
-export default async function BlogPostPage({ params }: Props) {
-  const { slug } = await params;
-  const cmsPost = await getBlogPost(slug);
-  const article = cmsPost ? null : getArticle(slug);
-
-  if (!cmsPost && !article) notFound();
+export default function BlogPostPage() {
+  const { cmsPost, article } = useLoaderData() as LoaderData;
 
   const title = cmsPost?.title ?? article!.title;
   const author = cmsPost?.author ?? article!.author;
@@ -104,7 +108,7 @@ export default async function BlogPostPage({ params }: Props) {
   return (
     <main className="mx-auto max-w-3xl px-6 py-24 lg:px-8">
       <Link
-        href="/blog"
+        to="/blog"
         className="text-sm font-medium text-indigo-600 hover:text-indigo-700 transition-colors"
       >
         &larr; Back to Blog

@@ -290,4 +290,45 @@ describe("sql migrations", () => {
       expect(migration.trim().endsWith("COMMIT;")).toBe(true);
     });
   });
+
+  describe("migration 016 agent memory workspace isolation (ALT-2360)", () => {
+    const migration = readFileSync(
+      path.resolve(__dirname, "..", "..", "migrations", "016_agent_memory_workspace_isolation.sql"),
+      "utf8"
+    );
+
+    it("restores missing scope columns for committed schema parity", () => {
+      expect(migration).toContain("ALTER TABLE agent_memory_entries");
+      expect(migration).toContain("ADD COLUMN IF NOT EXISTS scope text NOT NULL DEFAULT 'private'");
+      expect(migration).toContain("ALTER TABLE agent_memory_kg_facts");
+      expect(migration).toContain("ADD COLUMN IF NOT EXISTS scope text NOT NULL DEFAULT 'private'");
+    });
+
+    it("enforces team_id for team-layer rows across memory tables and events", () => {
+      expect(migration).toContain("agent_memory_entries_team_layer_check");
+      expect(migration).toContain("agent_memory_kg_facts_team_layer_check");
+      expect(migration).toContain("agent_heartbeat_logs_team_layer_check");
+      expect(migration).toContain("agent_memory_events_team_layer_check");
+      expect(migration).toContain("(memory_layer = 'team' AND team_id IS NOT NULL)");
+    });
+
+    it("creates an explicit opt-in policy table for cross-workspace sharing", () => {
+      expect(migration).toContain("CREATE TABLE IF NOT EXISTS agent_memory_sharing_policies");
+      expect(migration).toContain("cross_workspace_enabled boolean NOT NULL DEFAULT false");
+      expect(migration).toContain("require_shared_scope boolean NOT NULL DEFAULT true");
+      expect(migration).toContain("allow_heartbeat_logs boolean NOT NULL DEFAULT false");
+    });
+
+    it("creates an allowlist share table that denies source=target and empty grants", () => {
+      expect(migration).toContain("CREATE TABLE IF NOT EXISTS agent_memory_workspace_shares");
+      expect(migration).toContain("CHECK (source_workspace_id <> target_workspace_id)");
+      expect(migration).toContain("CHECK (share_entries OR share_knowledge_facts OR share_heartbeat_logs)");
+      expect(migration).toContain("WHERE revoked_at IS NULL");
+    });
+
+    it("wraps schema changes in a single transaction", () => {
+      expect(migration).toContain("BEGIN;");
+      expect(migration.trim().endsWith("COMMIT;")).toBe(true);
+    });
+  });
 });

@@ -2,9 +2,14 @@
 Contract tests for the staging FastAPI knowledge routes.
 """
 
+from __future__ import annotations
+
+from typing import Any
+import httpx
 from fastapi.testclient import TestClient
 
 from knowledge import knowledge_store
+import main
 from main import app
 
 
@@ -14,6 +19,12 @@ AUTH_HEADERS = {"X-User-Id": "test-user"}
 
 def setup_function() -> None:
     knowledge_store.clear()
+
+
+def test_healthcheck() -> None:
+    response = client.get("/health")
+    assert response.status_code == 200
+    assert response.json() == {"status": "ok"}
 
 
 def test_create_base_ingest_document_and_search() -> None:
@@ -96,3 +107,127 @@ def test_requires_user_identity_header() -> None:
     response = client.post("/api/knowledge/bases", json={"name": "No Auth"})
     assert response.status_code == 401
     assert "header is required" in response.json()["detail"]
+
+
+def test_accepts_bearer_token_as_user_identity() -> None:
+    response = client.post(
+        "/api/knowledge/bases",
+        headers={"Authorization": "Bearer bearer-user"},
+        json={"name": "Bearer Auth KB"},
+    )
+
+    assert response.status_code == 201
+    assert response.json()["userId"] == "bearer-user"
+
+
+def test_public_callback_relay_forwards_redirect_response(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("FASTAPI_EDGE_RELAY_BASE_URL", "https://legacy-api.example.com")
+
+    captured: dict[str, Any] = {}
+
+    async def fake_send(
+        method: str,
+        url: str,
+        headers: dict[str, str],
+        body: bytes | None,
+        *,
+        verify_ssl: bool = True,
+    ) -> httpx.Response:
+        captured["method"] = method
+        captured["url"] = url
+        captured["headers"] = headers
+        captured["body"] = body
+        captured["verify_ssl"] = verify_ssl
+        return httpx.Response(
+            302,
+            headers={"location": "https://dashboard.example.com/integrations?status=error", "cache-control": "no-store"},
+            request=httpx.Request(method, url),
+        )
+
+    monkeypatch.setattr(main, "send_upstream_request", fake_send)
+
+    response = client.get("/api/integrations/slack/oauth/callback?error=access_denied", follow_redirects=False)
+
+    assert response.status_code == 302
+    assert response.headers["location"] == "https://dashboard.example.com/integrations?status=error"
+    assert captured["url"] == "https://legacy-api.example.com/api/integrations/slack/oauth/callback?error=access_denied"
+    assert captured["verify_ssl"] is True
+
+
+def test_webhook_relay_preserves_signature_headers(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("FASTAPI_EDGE_RELAY_BASE_URL", "https://legacy-api.example.com")
+
+    captured: dict[str, Any] = {}
+
+    async def fake_send(
+        method: str,
+        url: str,
+        headers: dict[str, str],
+        body: bytes | None,
+        *,
+        verify_ssl: bool = True,
+    ) -> httpx.Response:
+        captured["method"] = method
+        captured["url"] = url
+        captured["headers"] = headers
+        captured["body"] = body.decode("utf-8") if body else None
+        captured["verify_ssl"] = verify_ssl
+        return httpx.Response(
+            400,
+            headers={"content-type": "application/json"},
+            content=b'{"error":"signature verification failed"}',
+            request=httpx.Request(method, url),
+        )
+
+    monkeypatch.setattr(main, "send_upstream_request", fake_send)
+
+    response = client.post(
+        "/api/webhooks/stripe",
+        headers={"Stripe-Signature": "t=12345,v1=abcdef"},
+        content='{"id":"evt_123"}',
+    )
+
+    assert response.status_code == 400
+    assert response.json()["error"] == "signature verification failed"
+    assert captured["url"] == "https://legacy-api.example.com/api/webhooks/stripe"
+    assert captured["headers"]["stripe-signature"] == "t=12345,v1=abcdef"
+    assert captured["body"] == '{"id":"evt_123"}'
+    assert captured["verify_ssl"] is True
+
+
+def test_public_callback_relay_supports_host_header_override_and_insecure_tls(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("FASTAPI_EDGE_RELAY_BASE_URL", "https://20.75.59.207")
+    monkeypatch.setenv("FASTAPI_EDGE_RELAY_HOST_HEADER", "api.helloautoflow.com")
+    monkeypatch.setenv("FASTAPI_EDGE_RELAY_INSECURE_TLS", "true")
+
+    captured: dict[str, Any] = {}
+
+    async def fake_send(
+        method: str,
+        url: str,
+        headers: dict[str, str],
+        body: bytes | None,
+        *,
+        verify_ssl: bool = True,
+    ) -> httpx.Response:
+        captured["method"] = method
+        captured["url"] = url
+        captured["headers"] = headers
+        captured["body"] = body
+        captured["verify_ssl"] = verify_ssl
+        return httpx.Response(
+            302,
+            headers={"location": "https://dashboard.example.com/integrations?status=error"},
+            request=httpx.Request(method, url),
+        )
+
+    monkeypatch.setattr(main, "send_upstream_request", fake_send)
+
+    response = client.get("/api/integrations/slack/oauth/callback?error=access_denied", follow_redirects=False)
+
+    assert response.status_code == 302
+    assert captured["url"] == "https://20.75.59.207/api/integrations/slack/oauth/callback?error=access_denied"
+    assert captured["headers"]["host"] == "api.helloautoflow.com"
+    assert captured["verify_ssl"] is False

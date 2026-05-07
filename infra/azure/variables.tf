@@ -57,6 +57,12 @@ variable "monitoring_principal_ids" {
   default     = []
 }
 
+variable "key_vault_secrets_user_principal_ids" {
+  description = "Managed identity object IDs that should hold Key Vault Secrets User on the hub Key Vault"
+  type        = list(string)
+  default     = []
+}
+
 # ── AKS ───────────────────────────────────────────────────────────────────────
 
 variable "kubernetes_version" {

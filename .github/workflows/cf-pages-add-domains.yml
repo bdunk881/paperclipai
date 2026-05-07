@@ -26,6 +26,7 @@ jobs:
           fi
 
       - name: Add app.helloautoflow.com to autoflow-dashboard
+        continue-on-error: true
         run: |
           if [ "${{ inputs.dry_run }}" = "true" ]; then
             echo "[DRY RUN] Would add app.helloautoflow.com to autoflow-dashboard"
@@ -46,6 +47,7 @@ jobs:
           [ "$ERR_CODE" = "8000018" ] && echo "ALREADY_REGISTERED (idempotent OK)" || echo "OK: $(echo "$RESP" | jq -r '.result.name') status=$(echo "$RESP" | jq -r '.result.status')"
 
       - name: Add docs.helloautoflow.com to autoflow-docs
+        continue-on-error: true
         run: |
           if [ "${{ inputs.dry_run }}" = "true" ]; then
             echo "[DRY RUN] Would add docs.helloautoflow.com to autoflow-docs"
@@ -66,6 +68,7 @@ jobs:
           [ "$ERR_CODE" = "8000018" ] && echo "ALREADY_REGISTERED (idempotent OK)" || echo "OK: $(echo "$RESP" | jq -r '.result.name') status=$(echo "$RESP" | jq -r '.result.status')"
 
       - name: Add helloautoflow.com to autoflow-landing
+        continue-on-error: true
         run: |
           if [ "${{ inputs.dry_run }}" = "true" ]; then
             echo "[DRY RUN] Would add helloautoflow.com to autoflow-landing"
@@ -86,6 +89,7 @@ jobs:
           [ "$ERR_CODE" = "8000018" ] && echo "ALREADY_REGISTERED (idempotent OK)" || echo "OK: $(echo "$RESP" | jq -r '.result.name') status=$(echo "$RESP" | jq -r '.result.status')"
 
       - name: Add www.helloautoflow.com to autoflow-landing
+        continue-on-error: true
         run: |
           if [ "${{ inputs.dry_run }}" = "true" ]; then
             echo "[DRY RUN] Would add www.helloautoflow.com to autoflow-landing"

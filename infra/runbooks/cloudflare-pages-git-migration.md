@@ -6,6 +6,7 @@ This runbook covers the `ALT-2404` migration path for the remaining Cloudflare P
 
 - `dashboard` -> `autoflow-dashboard-git`
 - `staging` -> `autoflow-staging-git`
+- `docs` -> `autoflow-docs-git`
 
 ## Current blocker
 
@@ -13,7 +14,7 @@ This runbook covers the `ALT-2404` migration path for the remaining Cloudflare P
 
 Do not cut `helloautoflow.com` or `www.helloautoflow.com` to a Pages project until that app-level migration is completed.
 
-`docs/` is also blocked for now. Its Pages-style static export currently fails during generated error-page prerendering, so it needs a small app-level Next.js fix before moving off the legacy direct-upload Pages project.
+`docs/` now builds to a Pages-ready `build/client` artifact on `staging`. Use `staging` as the Git-backed production branch for the replacement docs project until the RR7 docs app is promoted to `master`; pointing the replacement project at `master` today would target a different app shape than the validated docs build.
 
 ## Prerequisites
 
@@ -50,6 +51,7 @@ Inputs:
 |---|---|---|---|---|---|
 | `dashboard` | `autoflow-dashboard-git` | `master` | `dashboard` | `dist` | `app.helloautoflow.com` |
 | `staging` | `autoflow-staging-git` | `staging` | `dashboard` | `dist` | `staging.app.helloautoflow.com` |
+| `docs` | `autoflow-docs-git` | `staging` | `docs` | `build/client` | `docs.helloautoflow.com` |
 
 ## Verification
 
@@ -60,6 +62,8 @@ Inputs:
 - Smoke-test:
   - `https://app.helloautoflow.com/login`
   - `https://staging.app.helloautoflow.com/login`
+  - `https://docs.helloautoflow.com/`
+  - `https://docs.helloautoflow.com/api-reference`
 
 ## Rollback
 

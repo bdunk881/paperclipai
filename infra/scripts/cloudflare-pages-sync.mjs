@@ -106,8 +106,26 @@ const configs = [
   },
   {
     key: "docs",
-    unsupportedReason:
-      "docs/ is not static-export clean yet. `next build` with Pages-style static export currently fails during generated error-page prerendering and needs app-level Next.js remediation before Git-backed Cloudflare Pages cutover.",
+    projectName: "autoflow-docs-git",
+    legacyProjectName: "autoflow-docs",
+    productionBranch: "staging",
+    buildConfig: {
+      build_command: "npm ci && npm run build",
+      destination_dir: "build/client",
+      root_dir: "docs",
+    },
+    customDomains: ["docs.helloautoflow.com"],
+    sourceConfig: {
+      path_includes: [
+        "docs/**",
+        "infra/scripts/cloudflare-pages-sync.mjs",
+        ".github/workflows/cloudflare-pages-migrate.yml",
+      ],
+      preview_deployment_setting: "all",
+      production_deployments_enabled: true,
+    },
+    previewEnv: {},
+    productionEnv: {},
   },
   {
     key: "landing",

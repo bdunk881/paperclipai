@@ -25,12 +25,12 @@ npm run build
 - The old `vercel.json`/Next runtime config has been removed as part of the RR7 port.
 - The current public RR7 docs surface is fully pre-rendered, so Cloudflare Pages can publish `build/client` directly without a custom Worker for this phase.
 - GitHub Actions workflow: `.github/workflows/docs-cloudflare-pages.yml`
-- Expected Cloudflare Pages project name: `autoflow-docs`
+- Expected Cloudflare Pages project name: `autoflow-docs-git`
 - Required GitHub repository secrets:
   - `CLOUDFLARE_ACCOUNT_ID`
   - `CLOUDFLARE_API_TOKEN`
-- Preview deployments are available from pull requests or manual dispatches on non-`migration` branches.
-- Production deployment should run from the `migration` branch once the Pages project production branch is configured accordingly.
+- Preview deployments are available from pull requests or manual dispatches on non-`staging` branches.
+- Production deployment currently runs from `staging`, which is the branch that contains the RR7 docs app and `build/client` output used for the Git-backed cutover.
 
 ## Known follow-up
 

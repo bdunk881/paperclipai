@@ -67,7 +67,7 @@ jobs:
           packageManager: npm
           command: >-
             pages deploy ${{ steps.artifact.outputs.path }}
-            --project-name=autoflow-docs
+            --project-name=autoflow-docs-git
             --branch=${{ github.event_name == 'pull_request' && github.head_ref || github.ref_name }}
 
       - name: Summarize deployment

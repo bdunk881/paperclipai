@@ -35,9 +35,25 @@ jobs:
       ZONE_NAME: ${{ github.event.inputs.zone_name || 'helloautoflow.com' }}
       RECORD_NAME: ${{ github.event.inputs.record_name || 'api.helloautoflow.com' }}
       IPV4_ADDRESS: ${{ github.event.inputs.ipv4_address || '66.241.125.85' }}
-      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
     steps:
       - uses: actions/checkout@v5
+
+      - name: Pull Cloudflare secrets from Infisical
+        uses: Infisical/secrets-action@v1.0.9
+        with:
+          method: universal
+          client-id: ${{ secrets.INFISICAL_CLIENT_ID }}
+          client-secret: ${{ secrets.INFISICAL_CLIENT_SECRET }}
+          project-slug: autoflow
+          env-slug: production
+
+      - name: Validate Cloudflare secrets
+        run: |
+          set -euo pipefail
+          if [[ -z "${CLOUDFLARE_API_TOKEN:-}" ]]; then
+            echo "::error::Missing required Infisical secret CLOUDFLARE_API_TOKEN"
+            exit 1
+          fi
 
       - name: Upsert Cloudflare DNS record
         run: |

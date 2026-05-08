@@ -1,0 +1,615 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<title>AutoFlow — Hire your first team of agents</title>
+<meta name="viewport" content="width=1280"/>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,300;9..144,400;9..144,500;9..144,600&family=Geist:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet"/>
+<link rel="stylesheet" href="styles.css"/>
+<style>
+  body { background: var(--af2-paper); }
+  .lp-nav { position: sticky; top: 0; z-index: 50; background: rgba(246,241,231,0.85); backdrop-filter: saturate(180%) blur(8px); border-bottom: 1px solid var(--af2-line); }
+  .lp-nav-inner { max-width: 1280px; margin: 0 auto; padding: 14px 32px; display: flex; align-items: center; gap: 28px; }
+  .lp-nav a { color: var(--af2-ink-2); text-decoration: none; font-size: 13.5px; font-weight: 500; }
+  .lp-nav a:hover { color: var(--af2-ink); }
+
+  .lp-section { max-width: 1280px; margin: 0 auto; padding: 0 32px; }
+
+  /* Hero */
+  .lp-hero { padding: 80px 32px 60px; max-width: 1280px; margin: 0 auto; position: relative; }
+  .lp-hero h1 { font: 350 clamp(52px,6.4vw,104px)/0.98 var(--af2-serif); letter-spacing: -0.03em; margin: 0; }
+  .lp-hero h1 em { font-style: italic; font-weight: 400; color: var(--af2-clay); }
+  .lp-hero-sub { max-width: 640px; font-size: 19px; line-height: 1.5; color: var(--af2-ink-2); margin-top: 26px; }
+  .lp-hero-cta { margin-top: 32px; display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+  .lp-hero-meta { display: flex; align-items: center; gap: 18px; margin-top: 28px; font-size: 12.5px; color: var(--af2-ink-3); }
+  .lp-hero-meta strong { color: var(--af2-ink-2); }
+
+  /* Underline trails through the headline */
+  .lp-headline-underline { position: relative; display: inline-block; }
+  .lp-headline-underline::after {
+    content: ""; position: absolute; left: 0; right: 0; bottom: 6%;
+    height: 14px; background: var(--af2-clay-soft);
+    z-index: -1; transform: skewX(-3deg);
+  }
+
+  /* Logo strip */
+  .lp-logos { padding: 28px 0; border-top: 1px solid var(--af2-line); border-bottom: 1px solid var(--af2-line); }
+  .lp-logos-inner { max-width: 1280px; margin: 0 auto; padding: 0 32px; display: flex; align-items: center; gap: 36px; flex-wrap: wrap; }
+  .lp-logos-label { font: 500 11px/1 var(--af2-sans); letter-spacing: 0.16em; text-transform: uppercase; color: var(--af2-ink-3); }
+
+  /* Big editorial type block */
+  .lp-pitch { padding: 100px 32px; max-width: 1280px; margin: 0 auto; }
+  .lp-pitch p { font: 400 clamp(28px,3.8vw,52px)/1.18 var(--af2-serif); letter-spacing: -0.018em; max-width: 1100px; margin: 0; }
+  .lp-pitch p span { color: var(--af2-ink-3); }
+
+  /* Card-grid feature */
+  .lp-features { padding: 80px 32px 40px; max-width: 1280px; margin: 0 auto; }
+  .lp-feature-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; margin-top: 36px; }
+  .lp-feature { background: var(--af2-card); border: 1px solid var(--af2-line); border-radius: 14px; padding: 28px; min-height: 280px; display: flex; flex-direction: column; }
+  .lp-feature h3 { font: 500 24px/1.15 var(--af2-serif); letter-spacing: -0.015em; margin: 14px 0 10px; }
+  .lp-feature p { font-size: 14px; line-height: 1.55; color: var(--af2-ink-2); margin: 0; }
+  .lp-feature-art { height: 110px; display: flex; align-items: center; justify-content: center; }
+
+  /* Mock stack */
+  .lp-mock-section { padding: 80px 32px 40px; max-width: 1280px; margin: 0 auto; }
+  .lp-mock { background: var(--af2-ink); color: var(--af2-paper); border-radius: 16px; padding: 22px; box-shadow: 0 30px 80px rgba(26,20,16,0.18); position: relative; overflow: hidden; }
+  .lp-mock-inner { background: var(--af2-paper); color: var(--af2-ink); border-radius: 10px; min-height: 480px; display: grid; grid-template-columns: 200px 1fr; overflow: hidden; }
+
+  /* Pricing */
+  .lp-pricing { padding: 80px 32px; max-width: 1280px; margin: 0 auto; }
+  .lp-tiers { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; margin-top: 36px; }
+  .lp-tier { background: var(--af2-card); border: 1px solid var(--af2-line); border-radius: 14px; padding: 28px; }
+  .lp-tier.featured { background: var(--af2-ink); color: var(--af2-paper); border-color: var(--af2-ink); }
+  .lp-tier.featured .af2-eyebrow, .lp-tier.featured .af2-muted { color: rgba(246,241,231,0.7); }
+  .lp-tier h3 { font: 500 26px/1.1 var(--af2-serif); margin: 8px 0 6px; }
+  .lp-price { font: 350 56px/1 var(--af2-serif); letter-spacing: -0.02em; }
+  .lp-price small { font: 400 14px/1 var(--af2-sans); color: var(--af2-ink-3); margin-left: 6px; }
+  .lp-tier.featured .lp-price small { color: rgba(246,241,231,0.6); }
+  .lp-tier ul { list-style: none; padding: 0; margin: 22px 0 24px; font-size: 13.5px; }
+  .lp-tier ul li { padding: 7px 0; border-bottom: 1px solid var(--af2-line); display: flex; gap: 8px; }
+  .lp-tier.featured ul li { border-color: rgba(246,241,231,0.12); }
+  .lp-tier ul li::before { content: "✓"; color: var(--af2-clay); font-weight: 700; }
+  .lp-tier.featured ul li::before { color: var(--af2-clay-2); }
+
+  /* CTA */
+  .lp-cta { padding: 100px 32px; max-width: 1280px; margin: 0 auto; text-align: center; }
+  .lp-cta h2 { font: 350 clamp(48px,6.5vw,96px)/1 var(--af2-serif); letter-spacing: -0.025em; margin: 0; }
+  .lp-cta h2 em { color: var(--af2-clay); font-style: italic; font-weight: 400; }
+
+  /* Footer */
+  .lp-foot { border-top: 1px solid var(--af2-line); padding: 36px 32px; max-width: 1280px; margin: 0 auto; display: flex; align-items: center; gap: 18px; font-size: 12.5px; color: var(--af2-ink-3); }
+  .lp-foot a { color: inherit; text-decoration: none; margin-right: 18px; }
+  .lp-foot a:hover { color: var(--af2-ink); }
+
+  /* Org chart art */
+  .org-art { padding: 18px; }
+  .org-art-node { background: var(--af2-card); border: 1px solid var(--af2-line); border-radius: 8px; padding: 6px 10px; font-size: 12px; display: inline-flex; align-items: center; gap: 6px; }
+
+  .lp-mock-side { background: var(--af2-paper); border-right: 1px solid var(--af2-line); padding: 16px 12px; }
+  .lp-mock-body { padding: 22px; }
+
+  .lp-prompt {
+    background: var(--af2-card); border: 1px solid var(--af2-line); border-radius: 12px;
+    padding: 14px 16px;
+  }
+  .lp-prompt-input { font: 350 22px/1.35 var(--af2-serif); color: var(--af2-ink); }
+  .lp-prompt-cursor { display: inline-block; width: 2px; height: 22px; background: var(--af2-clay); vertical-align: -3px; animation: blink 1.1s steps(1,end) infinite; margin-left: 1px; }
+  @keyframes blink { 50% { opacity: 0; } }
+
+  @page { size: A4 portrait; margin: 0.5cm; }
+  @media print {
+    html, body { background: var(--af2-paper) !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    .lp-nav, #tweaks-root, .twk-panel { display: none !important; }
+    .lp-hero, .lp-pitch, .lp-features, .lp-mock-section, .lp-pricing, .lp-cta, .lp-logos, .lp-foot { padding-top: 28px !important; padding-bottom: 28px !important; break-inside: avoid; }
+    .lp-hero { break-after: page; }
+    .lp-logos { break-after: page; }
+    .lp-pitch { break-after: page; }
+    .lp-features { break-after: page; }
+    .lp-mock-section { break-after: page; }
+    .lp-pricing { break-after: page; }
+    .lp-cta { break-after: page; }
+    .lp-feature, .lp-tier, .lp-mock { break-inside: avoid; }
+    .lp-prompt-cursor { animation: none !important; opacity: 0; }
+    a { color: inherit !important; text-decoration: none !important; }
+    .lp-hero h1 { font-size: 64px !important; line-height: 1 !important; }
+    .lp-pitch p { font-size: 32px !important; }
+    .lp-cta h2 { font-size: 56px !important; }
+  }
+</style>
+</head>
+<body>
+
+<header class="lp-nav">
+  <div class="lp-nav-inner">
+    <a href="#top" style="text-decoration:none;color:inherit;display:flex;align-items:center;gap:8px;">
+      <svg width="26" height="26" viewBox="0 0 32 32"><rect width="32" height="32" rx="7" fill="var(--af2-ink)"/><path d="M9 11.5a4.5 4.5 0 0 1 9 0v9a4.5 4.5 0 0 1-9 0M14 11.5a4.5 4.5 0 0 1 9 0v9" fill="none" stroke="var(--af2-paper)" stroke-width="2.2" stroke-linecap="round"/></svg>
+      <span style="font-family:var(--af2-serif);font-size:19px;font-weight:500;letter-spacing:-0.02em;">AutoFlow</span>
+    </a>
+    <a href="#product">Product</a>
+    <a href="#workforce">Workforce</a>
+    <a href="#integrations">Integrations</a>
+    <a href="#pricing">Pricing</a>
+    <a href="#docs">Docs</a>
+    <span class="af2-spacer" style="flex:1;"></span>
+    <a href="#" style="font-size:13.5px;">Sign in</a>
+    <a href="AutoFlow App.html" class="af2-btn af2-btn-primary af2-btn-sm">Start free</a>
+  </div>
+</header>
+
+<!-- HERO -->
+<section class="lp-hero" id="top">
+  <div style="display:grid;grid-template-columns:1.3fr 1fr;gap:60px;align-items:center;">
+    <div>
+      <span class="af2-eyebrow">Workforce automation, by the role · not by the node.</span>
+      <h1 id="lp-h1" style="margin-top:18px;">
+        <span data-tk="line1">Hire a team</span><br/>
+        <span data-tk="line2">of agents that</span><br/>
+        <em data-tk="line3">actually ship.</em>
+      </h1>
+      <p class="lp-hero-sub">
+        Write a mission. AutoFlow drafts a hiring plan, an org, a budget, and the first week of work. Approve what matters. Watch the rest run.
+      </p>
+      <div class="lp-hero-cta">
+        <a href="AutoFlow App.html" class="af2-btn af2-btn-clay" style="padding:14px 22px;font-size:14.5px;">Hire your first agent →</a>
+        <a href="#product" class="af2-btn" style="padding:14px 22px;font-size:14.5px;">See how it works</a>
+      </div>
+      <div class="lp-hero-meta">
+        <span><strong>14-day free</strong> · no card</span>
+        <span style="color:var(--af2-line-2);">·</span>
+        <span>Bring <strong>your own keys</strong></span>
+        <span style="color:var(--af2-line-2);">·</span>
+        <span><strong>SOC 2</strong> in progress</span>
+      </div>
+    </div>
+
+    <!-- Hero illustration: a "team roster" card -->
+    <div style="position:relative;">
+      <div class="af2-card" style="padding:0;background:var(--af2-card);box-shadow:var(--af2-shadow-lg);transform:rotate(1.2deg);">
+        <div style="padding:18px 20px;border-bottom:1px solid var(--af2-line);">
+          <span class="af2-eyebrow">Acme Robotics · hiring plan v3</span>
+          <div style="font-family:var(--af2-serif);font-size:24px;letter-spacing:-0.015em;margin-top:4px;">Launch the R-7 to N. America</div>
+        </div>
+        <div style="padding:8px 0;">
+          <!-- 5 hires -->
+          <!-- We'll generate via vanilla because no React on landing -->
+        </div>
+        <div id="hero-roster" style="padding:8px 0 12px;"></div>
+        <div style="padding:14px 20px;background:var(--af2-paper-2);border-top:1px solid var(--af2-line);display:flex;align-items:center;gap:10px;">
+          <span style="font-size:12px;">3 leads · 5 reports</span>
+          <span style="font-family:var(--af2-mono);font-size:12px;color:var(--af2-ink-3);">est. $1,580/mo</span>
+          <span style="flex:1;"></span>
+          <button class="af2-btn af2-btn-sm af2-btn-clay">Confirm & onboard</button>
+        </div>
+      </div>
+      <!-- ribbon -->
+      <div style="position:absolute;top:-14px;left:-22px;background:var(--af2-clay);color:#fff;padding:6px 12px;border-radius:4px;font:500 11px var(--af2-sans);letter-spacing:0.08em;text-transform:uppercase;transform:rotate(-3deg);box-shadow:0 6px 14px rgba(194,80,43,0.3);">Drafted in 14 seconds</div>
+    </div>
+  </div>
+</section>
+
+<!-- LOGO STRIP -->
+<section class="lp-logos">
+  <div class="lp-logos-inner">
+    <span class="lp-logos-label">Connects to</span>
+    <span id="logos-strip" style="display:flex;align-items:center;gap:32px;flex:1;flex-wrap:wrap;opacity:0.85;"></span>
+  </div>
+</section>
+
+<!-- PITCH -->
+<section class="lp-pitch">
+  <p>
+    n8n gave you nodes.<br/>
+    Zapier gave you triggers.<br/>
+    <span>AutoFlow gives you</span> <span class="lp-headline-underline" style="color:var(--af2-ink);">people</span>
+    <span>— a team you can brief, budget, and trust with a paper trail.</span>
+  </p>
+</section>
+
+<!-- 3-UP FEATURES -->
+<section class="lp-features" id="product">
+  <span class="af2-eyebrow">How it works</span>
+  <h2 style="font:400 44px/1.05 var(--af2-serif);letter-spacing:-0.02em;margin:8px 0 0;max-width:760px;">
+    Three things, one workflow: brief a mission, let your team plan, ship with a stamp.
+  </h2>
+
+  <div class="lp-feature-grid">
+    <!-- 1: mission → plan -->
+    <div class="lp-feature">
+      <div class="lp-feature-art">
+        <svg width="160" height="100" viewBox="0 0 160 100">
+          <rect x="6" y="14" width="80" height="72" rx="6" fill="var(--af2-paper-2)" stroke="var(--af2-line)"/>
+          <line x1="14" y1="28" x2="74" y2="28" stroke="var(--af2-ink-3)" stroke-width="1.4"/>
+          <line x1="14" y1="38" x2="62" y2="38" stroke="var(--af2-ink-4)" stroke-width="1.2"/>
+          <line x1="14" y1="48" x2="70" y2="48" stroke="var(--af2-ink-4)" stroke-width="1.2"/>
+          <line x1="14" y1="58" x2="46" y2="58" stroke="var(--af2-ink-4)" stroke-width="1.2"/>
+          <path d="M86 50 Q100 50 110 38" fill="none" stroke="var(--af2-clay)" stroke-width="1.6" stroke-dasharray="3 3"/>
+          <circle cx="116" cy="35" r="14" fill="var(--af2-clay)"/>
+          <circle cx="138" cy="55" r="11" fill="var(--af2-sage)"/>
+          <circle cx="118" cy="75" r="9"  fill="var(--af2-mustard)"/>
+          <circle cx="143" cy="32" r="6"  fill="var(--af2-plum)"/>
+        </svg>
+      </div>
+      <span class="af2-eyebrow">01 · Mission</span>
+      <h3>Write a mission, get an org.</h3>
+      <p>Type the work that needs doing. AutoFlow drafts a PRD, picks the right roles, sets budgets, and proposes who reports to whom — in one shot.</p>
+    </div>
+
+    <!-- 2: agents do work, you approve -->
+    <div class="lp-feature">
+      <div class="lp-feature-art">
+        <svg width="200" height="100" viewBox="0 0 200 100">
+          <rect x="10" y="22" width="180" height="56" rx="8" fill="var(--af2-paper-2)" stroke="var(--af2-line)"/>
+          <circle cx="34" cy="50" r="14" fill="var(--af2-clay)"/>
+          <text x="34" y="54" text-anchor="middle" fill="white" font-size="11" font-weight="600" font-family="Geist,sans-serif">MC</text>
+          <line x1="56" y1="44" x2="140" y2="44" stroke="var(--af2-ink-3)" stroke-width="1.4"/>
+          <line x1="56" y1="54" x2="120" y2="54" stroke="var(--af2-ink-4)" stroke-width="1.2"/>
+          <rect x="148" y="36" width="38" height="28" rx="4" fill="var(--af2-ink)"/>
+          <text x="167" y="55" text-anchor="middle" fill="var(--af2-paper)" font-size="11" font-weight="600" font-family="Geist,sans-serif">✓</text>
+        </svg>
+      </div>
+      <span class="af2-eyebrow">02 · Tickets</span>
+      <h3>Approve what matters. Skip the rest.</h3>
+      <p>Agents file tickets when a step crosses your policy line — spend, scope, risk. Stamp it from email, Slack, or your phone. Everything else just runs.</p>
+    </div>
+
+    <!-- 3: receipts -->
+    <div class="lp-feature">
+      <div class="lp-feature-art">
+        <svg width="220" height="100" viewBox="0 0 220 100">
+          <rect x="6" y="20" width="208" height="60" rx="6" fill="var(--af2-paper-2)" stroke="var(--af2-line)"/>
+          <line x1="14" y1="34" x2="206" y2="34" stroke="var(--af2-line-2)"/>
+          <rect x="14"  y="42" width="40" height="22" rx="3" fill="var(--af2-sage)" opacity="0.85"/>
+          <rect x="58"  y="42" width="64" height="22" rx="3" fill="var(--af2-clay)" opacity="0.85"/>
+          <rect x="126" y="42" width="22" height="22" rx="3" fill="var(--af2-mustard)" opacity="0.85"/>
+          <rect x="152" y="42" width="50" height="22" rx="3" fill="var(--af2-plum)" opacity="0.85"/>
+          <line x1="14" y1="68" x2="206" y2="68" stroke="var(--af2-line-2)"/>
+        </svg>
+      </div>
+      <span class="af2-eyebrow">03 · Receipts</span>
+      <h3>A paper trail your CFO will love.</h3>
+      <p>Every step, every dollar, every model call — recorded, attributable, exportable. Set per-agent caps so a runaway loop never becomes a runaway invoice.</p>
+    </div>
+  </div>
+</section>
+
+<!-- BIG MOCK -->
+<section class="lp-mock-section" id="workforce">
+  <span class="af2-eyebrow">The workplace, not the workflow</span>
+  <h2 style="font:400 44px/1.05 var(--af2-serif);letter-spacing:-0.02em;margin:8px 0 36px;max-width:760px;">
+    Workspaces for each company. Pods for each function. Receipts for each move.
+  </h2>
+
+  <div class="lp-mock">
+    <div class="lp-mock-inner">
+      <div class="lp-mock-side">
+        <div style="display:flex;align-items:center;gap:8px;padding:8px 6px;background:var(--af2-card);border:1px solid var(--af2-line);border-radius:6px;">
+          <div style="width:24px;height:24px;border-radius:5px;background:linear-gradient(140deg,var(--af2-clay),#8e3a1f);color:white;display:grid;place-items:center;font:600 11px var(--af2-sans);">AR</div>
+          <div style="line-height:1.1;">
+            <div style="font-size:12.5px;font-weight:600;">Acme Robotics</div>
+            <div style="font-size:10px;color:var(--af2-ink-3);">Studio · 12 seats</div>
+          </div>
+        </div>
+
+        <div style="font:500 10px/1 var(--af2-sans);letter-spacing:0.12em;text-transform:uppercase;color:var(--af2-ink-4);padding:14px 10px 4px;">Run</div>
+        <div style="padding:6px 10px;border-radius:5px;font-size:13px;background:var(--af2-ink);color:var(--af2-paper);">Home</div>
+        <div style="padding:6px 10px;font-size:13px;color:var(--af2-ink-2);">Missions <span style="float:right;font-size:11px;color:var(--af2-ink-3);">6</span></div>
+        <div style="padding:6px 10px;font-size:13px;color:var(--af2-ink-2);">Approvals <span style="float:right;font-size:11px;background:var(--af2-clay);color:#fff;padding:1px 5px;border-radius:999px;">5</span></div>
+        <div style="padding:6px 10px;font-size:13px;color:var(--af2-ink-2);">Activity</div>
+
+        <div style="font:500 10px/1 var(--af2-sans);letter-spacing:0.12em;text-transform:uppercase;color:var(--af2-ink-4);padding:14px 10px 4px;">Workforce</div>
+        <div style="padding:6px 10px;font-size:13px;color:var(--af2-ink-2);">Team</div>
+        <div style="padding:6px 10px;font-size:13px;color:var(--af2-ink-2);">Hire</div>
+        <div style="padding:6px 10px;font-size:13px;color:var(--af2-ink-2);">Budget</div>
+
+        <div style="font:500 10px/1 var(--af2-sans);letter-spacing:0.12em;text-transform:uppercase;color:var(--af2-ink-4);padding:14px 10px 4px;">Build</div>
+        <div style="padding:6px 10px;font-size:13px;color:var(--af2-ink-2);">Studio</div>
+        <div style="padding:6px 10px;font-size:13px;color:var(--af2-ink-2);">Library</div>
+      </div>
+
+      <div class="lp-mock-body">
+        <div style="display:flex;align-items:flex-end;gap:24px;padding-bottom:16px;border-bottom:1px solid var(--af2-line);">
+          <div>
+            <span class="af2-eyebrow">Tuesday · May 4</span>
+            <div style="font:400 32px/1.05 var(--af2-serif);letter-spacing:-0.02em;margin-top:4px;">Good afternoon, Jordan.</div>
+          </div>
+          <span style="flex:1;"></span>
+          <button class="af2-btn af2-btn-clay af2-btn-sm">＋ New mission</button>
+        </div>
+
+        <!-- Stats strip -->
+        <div style="display:grid;grid-template-columns:repeat(4,1fr);border:1px solid var(--af2-line);border-radius:10px;background:var(--af2-card);margin-top:16px;overflow:hidden;">
+          <div style="padding:14px 16px;border-right:1px solid var(--af2-line);">
+            <div class="af2-eyebrow">Missions</div>
+            <div style="font:400 28px/1 var(--af2-serif);margin-top:4px;">6</div>
+          </div>
+          <div style="padding:14px 16px;border-right:1px solid var(--af2-line);">
+            <div class="af2-eyebrow">Hours saved · 7d</div>
+            <div style="font:400 28px/1 var(--af2-serif);margin-top:4px;">142</div>
+          </div>
+          <div style="padding:14px 16px;border-right:1px solid var(--af2-line);">
+            <div class="af2-eyebrow">Spend · month</div>
+            <div style="font:400 28px/1 var(--af2-serif);margin-top:4px;">$1,207</div>
+          </div>
+          <div style="padding:14px 16px;">
+            <div class="af2-eyebrow">Approval p50</div>
+            <div style="font:400 28px/1 var(--af2-serif);margin-top:4px;">3m 12s</div>
+          </div>
+        </div>
+
+        <!-- Active missions list snippet -->
+        <div style="margin-top:18px;background:var(--af2-card);border:1px solid var(--af2-line);border-radius:10px;overflow:hidden;">
+          <div id="mock-missions"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- INTEGRATIONS -->
+<section class="lp-features" id="integrations">
+  <span class="af2-eyebrow">Connect everything · BYOK everywhere</span>
+  <h2 style="font:400 44px/1.05 var(--af2-serif);letter-spacing:-0.02em;margin:8px 0 0;max-width:760px;">
+    16 integrations live. Five model providers. One MCP-friendly contract for the rest.
+  </h2>
+
+  <div id="lp-integrations" style="display:grid;grid-template-columns:repeat(8,1fr);gap:12px;margin-top:32px;"></div>
+</section>
+
+<!-- PRICING -->
+<section class="lp-pricing" id="pricing">
+  <span class="af2-eyebrow">Pricing</span>
+  <h2 style="font:400 44px/1.05 var(--af2-serif);letter-spacing:-0.02em;margin:8px 0 0;max-width:760px;">
+    Pay for outcomes, not seats. Bring your own model spend.
+  </h2>
+  <p style="font-size:15px;color:var(--af2-ink-2);margin-top:14px;max-width:680px;">
+    Plans cover the platform — workspaces, agents, governance, audit. Model usage is billed to your provider keys at cost.
+  </p>
+
+  <div class="lp-tiers">
+    <div class="lp-tier">
+      <span class="af2-eyebrow">Solo</span>
+      <h3>Tinker</h3>
+      <div class="lp-price">$0<small>/mo</small></div>
+      <ul>
+        <li>1 workspace, 3 agents</li>
+        <li>500 runs / mo</li>
+        <li>Community integrations</li>
+        <li>Bring your own keys</li>
+      </ul>
+      <a href="AutoFlow App.html" class="af2-btn" style="width:100%;text-align:center;">Start free</a>
+    </div>
+    <div class="lp-tier featured">
+      <span class="af2-eyebrow" style="color:var(--af2-clay-2);">Most teams</span>
+      <h3>Team</h3>
+      <div class="lp-price">$49<small>/seat/mo</small></div>
+      <ul>
+        <li>3 workspaces, 25 agents</li>
+        <li>10k runs / mo</li>
+        <li>All integrations + custom MCP</li>
+        <li>Approvals, audit log, SSO</li>
+        <li>Per-agent budgets</li>
+      </ul>
+      <a href="AutoFlow App.html" class="af2-btn af2-btn-clay" style="width:100%;text-align:center;">Try Team</a>
+    </div>
+    <div class="lp-tier">
+      <span class="af2-eyebrow">SMB & Enterprise</span>
+      <h3>Studio</h3>
+      <div class="lp-price">Talk<small> to us</small></div>
+      <ul>
+        <li>Unlimited workspaces & agents</li>
+        <li>SSO/SAML, SCIM, RBAC</li>
+        <li>Self-hosted runners</li>
+        <li>Custom MCP servers, on-prem</li>
+        <li>Dedicated solutions engineer</li>
+      </ul>
+      <a href="#" class="af2-btn" style="width:100%;text-align:center;">Book a demo</a>
+    </div>
+  </div>
+</section>
+
+<!-- CTA -->
+<section class="lp-cta">
+  <h2>Hire your<br/>first agent <em>today.</em></h2>
+  <p style="font-size:18px;color:var(--af2-ink-2);max-width:600px;margin:24px auto 0;">14 days free, no card. Cancel by deleting the workspace.</p>
+  <div style="margin-top:30px;display:flex;gap:12px;justify-content:center;">
+    <a href="AutoFlow App.html" class="af2-btn af2-btn-clay" style="padding:14px 24px;font-size:14.5px;">Start free →</a>
+    <a href="#" class="af2-btn" style="padding:14px 24px;font-size:14.5px;">Watch a 90s demo</a>
+  </div>
+</section>
+
+<footer class="lp-foot">
+  <span style="display:flex;align-items:center;gap:8px;">
+    <svg width="20" height="20" viewBox="0 0 32 32"><rect width="32" height="32" rx="7" fill="var(--af2-ink)"/><path d="M9 11.5a4.5 4.5 0 0 1 9 0v9a4.5 4.5 0 0 1-9 0M14 11.5a4.5 4.5 0 0 1 9 0v9" fill="none" stroke="var(--af2-paper)" stroke-width="2.2" stroke-linecap="round"/></svg>
+    <strong style="color:var(--af2-ink);">AutoFlow</strong> · workforce automation
+  </span>
+  <span style="flex:1;"></span>
+  <a href="#">Docs</a><a href="#">Status</a><a href="#">Security</a><a href="#">Terms</a><a href="#">Careers</a>
+  <span>© 2026</span>
+</footer>
+
+<!-- Render dynamic bits with vanilla DOM -->
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<script type="text/babel" src="data.jsx"></script>
+<script type="text/babel" src="tweaks-panel.jsx"></script>
+<script type="text/babel">
+// Hero roster
+const roster = [
+  { name: "Maya Chen",  role: "Head of Growth",   tier: "Power · Opus",     tone: "clay",    budget: 480 },
+  { name: "Devon Park", role: "Head of Product",  tier: "Power · Opus",     tone: "blue",    budget: 400 },
+  { name: "Iris Vega",  role: "Operations Lead",  tier: "Standard · Sonnet",tone: "plum",    budget: 240 },
+  { name: "Theo Brand", role: "Content Strategist",tier: "Standard · Sonnet",tone: "mustard", budget: 120, indent: true },
+  { name: "Sana Reyes", role: "SDR",              tier: "Lite · Haiku",     tone: "sage",    budget: 90,  indent: true },
+];
+const hr = document.getElementById("hero-roster");
+roster.forEach(r => {
+  const el = document.createElement("div");
+  el.style.cssText = `display:flex;align-items:center;gap:10px;padding:8px ${r.indent?34:20}px;`;
+  el.innerHTML = `
+    <div class="af2-avatar af2-tone-${r.tone}" style="width:32px;height:32px;font-size:11px;">
+      ${r.name.split(" ").map(n => n[0]).join("")}
+    </div>
+    <div style="flex:1;min-width:0;">
+      <div style="font-size:13px;font-weight:600;">${r.name}</div>
+      <div style="font-size:11.5px;color:var(--af2-ink-3);">${r.role} · ${r.tier}</div>
+    </div>
+    <span style="font-family:var(--af2-mono);font-size:11.5px;color:var(--af2-ink-3);">$${r.budget}</span>
+  `;
+  hr.appendChild(el);
+});
+
+// Logos strip
+const stripNames = ["Slack","GitHub","Linear","HubSpot","Stripe","Notion","Gmail","Sentry","Anthropic","OpenAI"];
+const strip = document.getElementById("logos-strip");
+stripNames.forEach(n => {
+  const w = document.createElement("span");
+  w.style.cssText = "display:inline-flex;align-items:center;gap:6px;font-size:13px;color:var(--af2-ink-2);";
+  const root = document.createElement("span");
+  ReactDOM.createRoot(root).render(window.AF2_LOGOS[n] || null);
+  w.appendChild(root);
+  const lbl = document.createElement("span"); lbl.textContent = n;
+  w.appendChild(lbl);
+  strip.appendChild(w);
+});
+
+// Mock missions
+const D = window.AF2_DATA;
+const mm = document.getElementById("mock-missions");
+D.missions.slice(0,4).forEach((m,i) => {
+  const owner = D.agents.find(a => a.id === m.owner);
+  const pillCls = m.state === "blocked" ? "af2-pill-clay" : m.state === "review" ? "af2-pill-pending" : "af2-pill-live";
+  const row = document.createElement("div");
+  row.style.cssText = `display:grid;grid-template-columns:1fr 110px 90px 80px;gap:14px;padding:11px 16px;align-items:center;font-size:13px;${i<3?"border-bottom:1px solid var(--af2-line);":""}`;
+  row.innerHTML = `
+    <div>
+      <div style="font-weight:500;">${m.title}</div>
+      <div style="height:3px;background:var(--af2-paper-2);border-radius:3px;margin-top:5px;overflow:hidden;">
+        <div style="width:${m.progress*100}%;height:100%;background:${m.state==='blocked'?'var(--af2-clay)':'var(--af2-sage)'};"></div>
+      </div>
+    </div>
+    <div style="display:flex;align-items:center;gap:8px;">
+      <div class="af2-avatar sm af2-tone-${owner.tone}">${owner.name.split(" ").map(n=>n[0]).join("")}</div>
+      <span style="font-size:12.5px;">${owner.name.split(" ")[0]}</span>
+    </div>
+    <span class="af2-pill ${pillCls}"><span class="af2-dot"></span>${m.state}</span>
+    <span style="font-family:var(--af2-mono);font-size:11.5px;color:${m.due.includes('overdue')?'var(--af2-clay)':'var(--af2-ink-3)'};">${m.due}</span>
+  `;
+  mm.appendChild(row);
+});
+
+// Integrations grid
+const ig = document.getElementById("lp-integrations");
+[...D.integrations, { name: "Anthropic", cat: "Models" }, { name: "OpenAI", cat: "Models" }, { name: "Google", cat: "Models" }, { name: "Bedrock", cat: "Models" }].forEach(it => {
+  const c = document.createElement("div");
+  c.className = "af2-card";
+  c.style.cssText = "padding:14px;text-align:center;";
+  const lr = document.createElement("div");
+  lr.style.cssText = "height:36px;display:grid;place-items:center;";
+  ReactDOM.createRoot(lr).render(window.AF2_LOGOS[it.name] || React.createElement("span", { className: "af2-mark" }, it.name[0]));
+  c.appendChild(lr);
+  const n = document.createElement("div"); n.style.cssText = "font-size:12px;font-weight:500;margin-top:8px;"; n.textContent = it.name;
+  c.appendChild(n);
+  const cat = document.createElement("div"); cat.style.cssText = "font-size:10.5px;color:var(--af2-ink-3);margin-top:1px;"; cat.textContent = it.cat;
+  c.appendChild(cat);
+  ig.appendChild(c);
+});
+</script>
+
+<!-- Tweaks panel -->
+<div id="tweaks-root"></div>
+<script type="text/babel">
+const LP_DEFAULTS = /*EDITMODE-BEGIN*/{
+  "accent": "#C8553D",
+  "line1": "Hire a team",
+  "line2": "of agents that",
+  "line3": "actually ship.",
+  "density": "regular",
+  "showLogos": true
+}/*EDITMODE-END*/;
+
+const ACCENT_PRESETS = {
+  "Clay":    "#C8553D",
+  "Plum":    "#6B3A52",
+  "Forest":  "#3F5D45",
+  "Cobalt":  "#2E4F8E",
+  "Mustard": "#B8862E",
+  "Ink":     "#1A1410"
+};
+
+function LandingTweaks() {
+  const [t, setTweak] = useTweaks(LP_DEFAULTS);
+
+  // Apply effects
+  React.useEffect(() => {
+    document.documentElement.style.setProperty("--af2-clay", t.accent);
+    // soft variant ~ accent at 18% alpha
+    const m = t.accent.match(/^#([0-9a-f]{6})$/i);
+    if (m) {
+      const r = parseInt(m[1].slice(0,2),16), g = parseInt(m[1].slice(2,4),16), b = parseInt(m[1].slice(4,6),16);
+      document.documentElement.style.setProperty("--af2-clay-soft", `rgba(${r},${g},${b},0.16)`);
+    }
+  }, [t.accent]);
+
+  React.useEffect(() => {
+    const set = (sel, val) => { const el = document.querySelector(sel); if (el) el.textContent = val; };
+    set('[data-tk="line1"]', t.line1);
+    set('[data-tk="line2"]', t.line2);
+    set('[data-tk="line3"]', t.line3);
+  }, [t.line1, t.line2, t.line3]);
+
+  React.useEffect(() => {
+    const map = { compact: 0.86, regular: 1, comfy: 1.14 };
+    const k = map[t.density] || 1;
+    document.querySelectorAll(".lp-section, .lp-hero, .lp-pitch, .lp-features, .lp-mock-section").forEach(el => {
+      el.style.paddingTop = (parseFloat(getComputedStyle(el).paddingTop) * k / (el.dataset.kPrev || 1)) + "px";
+      el.style.paddingBottom = (parseFloat(getComputedStyle(el).paddingBottom) * k / (el.dataset.kPrev || 1)) + "px";
+      el.dataset.kPrev = k;
+    });
+  }, [t.density]);
+
+  React.useEffect(() => {
+    const ls = document.querySelector(".lp-logos");
+    if (ls) ls.style.display = t.showLogos ? "" : "none";
+  }, [t.showLogos]);
+
+  return (
+    <TweaksPanel title="Tweaks">
+      <TweakSection label="Headline copy"/>
+      <TweakText label="Line 1" value={t.line1} onChange={(v)=>setTweak('line1', v)}/>
+      <TweakText label="Line 2" value={t.line2} onChange={(v)=>setTweak('line2', v)}/>
+      <TweakText label="Line 3 (italic)" value={t.line3} onChange={(v)=>setTweak('line3', v)}/>
+
+      <TweakSection label="Accent"/>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(6, 1fr)", gap: 6, padding: "0 4px 8px" }}>
+        {Object.entries(ACCENT_PRESETS).map(([name, hex]) => (
+          <button key={name} title={name} onClick={() => setTweak('accent', hex)}
+            style={{
+              width: "100%", aspectRatio: "1", borderRadius: 6, border: t.accent === hex ? "2px solid #fff" : "1px solid rgba(0,0,0,0.1)",
+              background: hex, cursor: "pointer", outline: t.accent === hex ? `2px solid ${hex}` : "none", padding: 0
+            }}/>
+        ))}
+      </div>
+      <TweakColor label="Custom" value={t.accent} onChange={(v)=>setTweak('accent', v)}/>
+
+      <TweakSection label="Layout"/>
+      <TweakRadio label="Density" value={t.density} options={["compact","regular","comfy"]} onChange={(v)=>setTweak('density', v)}/>
+      <TweakToggle label="Customer logo strip" value={t.showLogos} onChange={(v)=>setTweak('showLogos', v)}/>
+    </TweaksPanel>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("tweaks-root")).render(<LandingTweaks/>);
+
+// Auto-print after fonts + JSX ready
+(async () => {
+  try { if (document.fonts && document.fonts.ready) await document.fonts.ready; } catch (e) {}
+  await new Promise(r => setTimeout(r, 700));
+  window.print();
+})();
+</script>
+
+</body>
+</html>

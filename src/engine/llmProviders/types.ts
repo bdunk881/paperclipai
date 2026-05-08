@@ -7,7 +7,6 @@ export const PROVIDER_NAMES = [
   "anthropic",
   "gemini",
   "mistral",
-  "azure-openai",
   "bedrock",
   "vertex-ai",
   "groq",
@@ -92,11 +91,6 @@ export const PROVIDER_MODELS: Record<ProviderName, string[]> = {
     "mistral-large-latest",
     "mistral-small-latest",
     "open-mistral-7b",
-  ],
-  "azure-openai": [
-    "gpt-4o",
-    "gpt-4o-mini",
-    "gpt-4.1",
   ],
   bedrock: [
     "amazon.nova-micro-v1:0",

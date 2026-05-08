@@ -85,7 +85,7 @@ They create or drop partitions dynamically and should not be callable by normal 
 
 There are no direct `REFERENCES auth.users(id)` constraints in the dump, but the deeper issue is broader than Supabase's `auth.users`.
 
-The current product does not treat Supabase Auth as the source of truth. Auth is already brokered externally through systems like Azure External ID and social OAuth. The schema reflects that history:
+The current product does not treat Supabase Auth as the source of truth. Auth is already brokered externally through systems like social OAuth. The schema reflects that history:
 
 - `user_profiles` is just a local profile row keyed by `user_id text`
 - `workspace_members.user_id` and `workspaces.owner_user_id` are also local text identifiers

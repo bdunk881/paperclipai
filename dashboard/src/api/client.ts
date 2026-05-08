@@ -21,7 +21,6 @@ export type ProviderName =
   | "anthropic"
   | "gemini"
   | "mistral"
-  | "azure-openai"
   | "groq"
   | "fireworks"
   | "together"
@@ -40,7 +39,6 @@ export const PROVIDER_MODELS: Record<ProviderName, string[]> = {
   anthropic: ["claude-opus-4-6", "claude-sonnet-4-6", "claude-haiku-4-5-20251001"],
   gemini: ["gemini-2.0-flash", "gemini-1.5-pro", "gemini-1.5-flash"],
   mistral: ["mistral-large-latest", "mistral-small-latest", "open-mistral-7b"],
-  "azure-openai": ["gpt-4o", "gpt-4o-mini", "gpt-4.1"],
   groq: ["llama-3.3-70b-versatile", "llama-3.1-8b-instant", "mixtral-8x7b-32768"],
   fireworks: [
     "accounts/fireworks/models/llama-v3p1-8b-instruct",

@@ -1,5 +1,5 @@
 /**
- * Centralized cross-phase audit log service (ALT-2078 / ALT-1915 Phase 5).
+ * Shared cross-phase audit log service (ALT-2078 / ALT-1915 Phase 5).
  *
  * Single emit surface for tenant-mutating actions across every phase of the
  * multi-tenant isolation programme. Persists to `control_plane_audit_log`,

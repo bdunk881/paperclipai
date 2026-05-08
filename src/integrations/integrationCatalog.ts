@@ -1669,12 +1669,12 @@ const microsoftTeams: IntegrationManifest = {
       "https://graph.microsoft.com/Team.ReadBasic.All",
       "https://graph.microsoft.com/User.Read",
     ],
-    clientIdHint: "Azure AD App (client) ID",
-    clientSecretHint: "Azure AD App client secret",
+    clientIdHint: "Microsoft app client ID",
+    clientSecretHint: "Microsoft app client secret",
   },
   baseUrl: "https://graph.microsoft.com",
   setupInstructions:
-    "1. Register an application in Azure Active Directory → App registrations.\n" +
+    "1. Register an application in the Microsoft identity platform app portal.\n" +
     "2. Add the AutoFlow redirect URL under Authentication.\n" +
     "3. Under API Permissions, add Microsoft Graph delegated permissions: Chat.ReadWrite, ChannelMessage.Send, Team.ReadBasic.All.\n" +
     "4. Copy the Application (client) ID and create a Client Secret.",

@@ -162,14 +162,14 @@ describe("Agent memory routes", () => {
       .send({
         subject: "AutoFlow",
         predicate: "auth_provider",
-        object: "Microsoft Entra External ID",
+        object: "Okta Workforce Identity",
       });
 
     expect(createRes.status).toBe(201);
     expect(createRes.body.fact.subject).toBe("AutoFlow");
 
     const queryRes = await request(app)
-      .get("/api/agents/agent-1/memory/kg/query?q=entra")
+      .get("/api/agents/agent-1/memory/kg/query?q=okta")
       .set(asAuth("flow-user"));
 
     expect(queryRes.status).toBe(200);

@@ -51,11 +51,6 @@ export const TIER_MODELS: Record<ProviderName, Record<LlmTier, string>> = {
     standard: "mistral-large-latest",
     power: "mistral-large-latest",
   },
-  "azure-openai": {
-    lite: "gpt-4o-mini",
-    standard: "gpt-4o",
-    power: "gpt-4.1",
-  },
   bedrock: {
     lite: "amazon.nova-micro-v1:0",
     standard: "amazon.nova-lite-v1:0",

@@ -4,7 +4,6 @@ import { createGeminiProvider } from "./gemini";
 import { createMistralProvider } from "./mistral";
 import { createCohereProvider } from "./cohere";
 import {
-  createAzureOpenAIProvider,
   createBedrockProvider,
   createDeepSeekProvider,
   createFireworksProvider,
@@ -36,8 +35,6 @@ export function getProvider(config: LLMProviderConfig): LLMProvider {
       return createMistralProvider(config);
     case "cohere":
       return createCohereProvider(config);
-    case "azure-openai":
-      return createAzureOpenAIProvider(config);
     case "bedrock":
       return createBedrockProvider(config);
     case "vertex-ai":

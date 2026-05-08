@@ -58,8 +58,7 @@ jobs:
       - name: Forbid control_plane_* in customer surfaces
         run: |
           if git grep -lnE 'control_plane_(agent|team|task|execution|heartbeat|spend|budget|audit|company)' \
-             -- 'dashboard/' 'landing/' 'docs/' \
-             ':(exclude)docs/glossary.md'; then
+             -- 'dashboard/' 'landing/'; then
             echo "Customer-facing surface leaked an internal noun — see docs/glossary.md"
             exit 1
           fi

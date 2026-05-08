@@ -14,7 +14,7 @@ import type { ProvisionedCompanySecretBinding } from "./types";
 // must not be able to spoof another principal in the audit ledger, so the
 // repository never accepts a single opaque actor field. At least one of
 // actorUserId / actorAgentId must be present (matched by the
-// control_plane_secret_audit_actor_present CHECK constraint in migration 018).
+// control_plane_audit_log_actor_present CHECK constraint in audit_log).
 export interface SecretsContext {
   workspaceId: string;
   userId: string;
@@ -94,19 +94,23 @@ async function recordAudit(
   }
 ): Promise<void> {
   await client.query(
-    `INSERT INTO control_plane_secret_audit (
-       workspace_id, company_id, key, action,
-       actor_user_id, actor_agent_id, key_version, metadata
+    `INSERT INTO audit_log (
+       workspace_id, actor_user_id, actor_agent_id,
+       category, action, target_type, target_id, metadata
      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
     [
       params.workspaceId,
-      params.companyId,
-      params.key,
-      params.action,
       params.actorUserId,
       params.actorAgentId,
-      params.keyVersion,
-      params.metadata ? JSON.stringify(params.metadata) : null,
+      'secret',
+      params.action,
+      'company',
+      params.companyId,
+      JSON.stringify({
+        key: params.key,
+        key_version: params.keyVersion,
+        ...(params.metadata ?? {}),
+      }),
     ]
   );
 }

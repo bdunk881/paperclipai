@@ -4,10 +4,10 @@ import type { Pool } from "pg";
 /**
  * Phase 4 (ALT-2042) RLS integration tests for the new execution-state tables
  * created by migration 019:
- *   - control_plane_tasks
- *   - control_plane_heartbeats
- *   - control_plane_spend_entries
- *   - control_plane_budget_alerts
+ *   - agent_tasks
+ *   - agent_heartbeats
+ *   - spend_entries
+ *   - budget_alerts
  *
  * The contract these tests pin down (matches migrations 014/015/017):
  *
@@ -52,12 +52,12 @@ describe("controlPlaneRepository (Phase 4) RLS integration", () => {
     const agentId = randomUUID();
     await withWorkspaceContext(pool, { workspaceId, userId }, async (client) => {
       await client.query(
-        `INSERT INTO control_plane_teams (id, workspace_id, user_id, name)
+        `INSERT INTO agent_teams (id, workspace_id, user_id, name)
          VALUES ($1, $2, $3, $4)`,
         [teamId, workspaceId, userId, `${label} Team`]
       );
       await client.query(
-        `INSERT INTO control_plane_agents (
+        `INSERT INTO agents (
            id, workspace_id, user_id, team_id, name, role_key,
            workflow_step_id, workflow_step_kind, model, instructions,
            budget_monthly_usd, skills, schedule, status,
@@ -100,20 +100,20 @@ describe("controlPlaneRepository (Phase 4) RLS integration", () => {
     }
     const { postgres } = await loadModules();
     await postgres.queryPostgres(
-      "DELETE FROM control_plane_budget_alerts WHERE user_id = $1",
+      "DELETE FROM budget_alerts WHERE user_id = $1",
       [userId]
     );
     await postgres.queryPostgres(
-      "DELETE FROM control_plane_spend_entries WHERE user_id = $1",
+      "DELETE FROM spend_entries WHERE user_id = $1",
       [userId]
     );
     await postgres.queryPostgres(
-      "DELETE FROM control_plane_heartbeats WHERE user_id = $1",
+      "DELETE FROM agent_heartbeats WHERE user_id = $1",
       [userId]
     );
-    await postgres.queryPostgres("DELETE FROM control_plane_tasks WHERE user_id = $1", [userId]);
-    await postgres.queryPostgres("DELETE FROM control_plane_agents WHERE user_id = $1", [userId]);
-    await postgres.queryPostgres("DELETE FROM control_plane_teams WHERE user_id = $1", [userId]);
+    await postgres.queryPostgres("DELETE FROM agent_tasks WHERE user_id = $1", [userId]);
+    await postgres.queryPostgres("DELETE FROM agents WHERE user_id = $1", [userId]);
+    await postgres.queryPostgres("DELETE FROM agent_teams WHERE user_id = $1", [userId]);
     await postgres.queryPostgres("DELETE FROM workspace_members WHERE user_id = $1", [userId]);
     await postgres.queryPostgres("DELETE FROM workspaces WHERE owner_user_id = $1", [userId]);
     await postgres.closePostgresPoolForTests();
@@ -180,7 +180,7 @@ describe("controlPlaneRepository (Phase 4) RLS integration", () => {
 
     // Direct SQL with the wrong session var must still hide tenant A's row.
     await workspaceContext.withWorkspaceContext(pool, ctxB, async (client) => {
-      const r = await client.query(`SELECT id FROM control_plane_tasks WHERE id = $1`, [taskA.id]);
+      const r = await client.query(`SELECT id FROM agent_tasks WHERE id = $1`, [taskA.id]);
       expect(r.rowCount ?? r.rows.length).toBe(0);
     });
 
@@ -188,7 +188,7 @@ describe("controlPlaneRepository (Phase 4) RLS integration", () => {
     const nullCtxClient = await pool.connect();
     try {
       await nullCtxClient.query("RESET app.current_workspace_id");
-      const r = await nullCtxClient.query("SELECT id FROM control_plane_tasks");
+      const r = await nullCtxClient.query("SELECT id FROM agent_tasks");
       expect(r.rowCount ?? r.rows.length).toBe(0);
     } finally {
       nullCtxClient.release();
@@ -198,7 +198,7 @@ describe("controlPlaneRepository (Phase 4) RLS integration", () => {
     await expect(
       workspaceContext.withWorkspaceContext(pool, ctxA, async (client) => {
         await client.query(
-          `INSERT INTO control_plane_tasks (
+          `INSERT INTO agent_tasks (
              id, workspace_id, user_id, team_id, title, status, audit_trail
            ) VALUES ($1, $2, $3, $4, $5, 'todo', '[]'::jsonb)`,
           [randomUUID(), workspaceB, userId, teamA, "Should Fail"]

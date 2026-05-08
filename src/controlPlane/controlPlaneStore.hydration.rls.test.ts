@@ -58,7 +58,7 @@ describe("controlPlaneStore (Phase 4.2b) hydration round-trip", () => {
       { workspaceId: input.workspaceId, userId },
       async (client) => {
         await client.query(
-          `INSERT INTO control_plane_teams (
+          `INSERT INTO agent_teams (
              id, workspace_id, user_id, name, deployment_mode, status,
              paused_by_company_lifecycle, restart_count, budget_monthly_usd,
              tool_budget_ceilings, alert_thresholds, orchestration_enabled,
@@ -79,7 +79,7 @@ describe("controlPlaneStore (Phase 4.2b) hydration round-trip", () => {
           ]
         );
         await client.query(
-          `INSERT INTO control_plane_agents (
+          `INSERT INTO agents (
              id, workspace_id, user_id, team_id, name, role_key,
              workflow_step_id, workflow_step_kind, model, instructions,
              budget_monthly_usd, skills, schedule, status,
@@ -132,27 +132,27 @@ describe("controlPlaneStore (Phase 4.2b) hydration round-trip", () => {
     }
     const { postgres, controlPlane } = await loadModules();
     await postgres.queryPostgres(
-      "DELETE FROM control_plane_budget_alerts WHERE user_id = $1",
+      "DELETE FROM budget_alerts WHERE user_id = $1",
       [userId]
     );
     await postgres.queryPostgres(
-      "DELETE FROM control_plane_spend_entries WHERE user_id = $1",
+      "DELETE FROM spend_entries WHERE user_id = $1",
       [userId]
     );
     await postgres.queryPostgres(
-      "DELETE FROM control_plane_heartbeats WHERE user_id = $1",
+      "DELETE FROM agent_heartbeats WHERE user_id = $1",
       [userId]
     );
     await postgres.queryPostgres(
-      "DELETE FROM control_plane_tasks WHERE user_id = $1",
+      "DELETE FROM agent_tasks WHERE user_id = $1",
       [userId]
     );
     await postgres.queryPostgres(
-      "DELETE FROM control_plane_agents WHERE user_id = $1",
+      "DELETE FROM agents WHERE user_id = $1",
       [userId]
     );
     await postgres.queryPostgres(
-      "DELETE FROM control_plane_teams WHERE user_id = $1",
+      "DELETE FROM agent_teams WHERE user_id = $1",
       [userId]
     );
     await postgres.queryPostgres(
@@ -373,7 +373,7 @@ describe("controlPlaneStore (Phase 4.2b) hydration round-trip", () => {
         { workspaceId, userId },
         async (client) => {
           const pg = await client.query<{ count: string }>(
-            "SELECT COUNT(*)::text AS count FROM control_plane_budget_alerts WHERE team_id = $1 AND scope = 'team'",
+            "SELECT COUNT(*)::text AS count FROM budget_alerts WHERE team_id = $1 AND scope = 'team'",
             [teamId]
           );
           expect(Number(pg.rows[0].count)).toBe(1);

@@ -117,11 +117,11 @@ async function preloadFromPostgres(): Promise<void> {
   const [stateResult, auditResult] = await Promise.all([
     queryPostgres<PersistedStateRow>(
       `SELECT user_id, status, pause_reason, paused_at, updated_at, updated_by_run_id
-         FROM control_plane_company_lifecycle`
+         FROM company_lifecycle`
     ),
     queryPostgres<PersistedAuditRow>(
       `SELECT id, user_id, action, reason, run_id, created_at, affected_team_ids, affected_agent_ids
-         FROM control_plane_company_lifecycle_audit
+         FROM company_lifecycle_audit
          ORDER BY created_at ASC`
     ),
   ]);
@@ -156,7 +156,7 @@ async function persistState(state: ControlPlaneCompanyLifecycleState): Promise<v
   }
 
   await queryPostgres(
-    `INSERT INTO control_plane_company_lifecycle (
+    `INSERT INTO company_lifecycle (
        user_id, status, pause_reason, paused_at, updated_at, updated_by_run_id
      ) VALUES ($1, $2, $3, $4, $5, $6)
      ON CONFLICT (user_id) DO UPDATE
@@ -182,7 +182,7 @@ async function persistAuditEntry(entry: ControlPlaneCompanyLifecycleAuditEntry):
   }
 
   await queryPostgres(
-    `INSERT INTO control_plane_company_lifecycle_audit (
+    `INSERT INTO company_lifecycle_audit (
        id, user_id, action, reason, run_id, created_at, affected_team_ids, affected_agent_ids
      ) VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8::jsonb)`,
     [

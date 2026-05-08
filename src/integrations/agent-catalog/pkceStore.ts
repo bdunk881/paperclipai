@@ -11,6 +11,7 @@ interface PkceStateEntry {
 }
 
 const EXPIRY_MS = 10 * 60 * 1000;
+// HEL-44: process-local OAuth handshake state; promote to Redis in P3.
 const store = new Map<string, PkceStateEntry>();
 
 function base64Url(bytes: Buffer): string {

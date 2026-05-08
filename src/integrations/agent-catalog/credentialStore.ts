@@ -33,6 +33,7 @@ interface StoredConnection extends AgentCatalogConnection {
   refreshTokenEncrypted?: string;
 }
 
+// HEL-44: process-local agent catalog credential cache; promote to Redis in P3.
 const store = new Map<string, StoredConnection>();
 
 function maskToken(value: string): string {

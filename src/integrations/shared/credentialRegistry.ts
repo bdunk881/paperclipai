@@ -1,6 +1,6 @@
 import { createCipheriv, createDecipheriv, randomBytes, scryptSync } from "crypto";
 import { parseJsonColumn } from "../../db/json";
-import { isPostgresConfigured, queryPostgres } from "../../db/postgres";
+import { inMemoryAllowed, isPostgresConfigured, queryPostgres } from "../../db/postgres";
 
 export interface CredentialRegistryRecord {
   id: string;
@@ -200,11 +200,24 @@ export class CredentialRegistry<TStored extends CredentialRegistryRecord, TPubli
     this.secretVault = options.secretVault ?? connectorSecretVault;
   }
 
+  private postgresPersistenceAvailable(): boolean {
+    if (isPostgresConfigured()) {
+      return true;
+    }
+    if (inMemoryAllowed()) {
+      return false;
+    }
+    throw new Error(`credentialRegistry:${this.service} requires DATABASE_URL outside development/test.`);
+  }
+
   save(record: TStored): TStored {
+    const usePostgres = this.postgresPersistenceAvailable();
     this.bucket.set(record.id, record);
-    void this.persistRecord(record).catch((error) => {
-      console.error(`[credentialRegistry:${this.service}] Failed to persist credential`, error);
-    });
+    if (usePostgres) {
+      void this.persistRecord(record).catch((error) => {
+        console.error(`[credentialRegistry:${this.service}] Failed to persist credential`, error);
+      });
+    }
     return record;
   }
 
@@ -231,7 +244,7 @@ export class CredentialRegistry<TStored extends CredentialRegistryRecord, TPubli
 
   async getByIdAsync(id: string): Promise<TStored | null> {
     const local = this.getById(id);
-    if (local || !isPostgresConfigured()) {
+    if (local || !this.postgresPersistenceAvailable()) {
       return local;
     }
 
@@ -261,6 +274,7 @@ export class CredentialRegistry<TStored extends CredentialRegistryRecord, TPubli
   }
 
   update(id: string, mutate: (record: TStored) => TStored): TStored | null {
+    const usePostgres = this.postgresPersistenceAvailable();
     const existing = this.bucket.get(id);
     if (!existing) {
       return null;
@@ -268,13 +282,16 @@ export class CredentialRegistry<TStored extends CredentialRegistryRecord, TPubli
 
     const updated = mutate(existing);
     this.bucket.set(id, updated);
-    void this.persistRecord(updated).catch((error) => {
-      console.error(`[credentialRegistry:${this.service}] Failed to persist credential update`, error);
-    });
+    if (usePostgres) {
+      void this.persistRecord(updated).catch((error) => {
+        console.error(`[credentialRegistry:${this.service}] Failed to persist credential update`, error);
+      });
+    }
     return updated;
   }
 
   purge(predicate: (record: TStored) => boolean): void {
+    const usePostgres = this.postgresPersistenceAvailable();
     const deletedIds: string[] = [];
     for (const [id, record] of this.bucket.entries()) {
       if (predicate(record)) {
@@ -283,7 +300,7 @@ export class CredentialRegistry<TStored extends CredentialRegistryRecord, TPubli
       }
     }
 
-    if (deletedIds.length > 0) {
+    if (usePostgres && deletedIds.length > 0) {
       void this.deletePersistedRecords(deletedIds).catch((error) => {
         console.error(`[credentialRegistry:${this.service}] Failed to delete persisted credentials`, error);
       });
@@ -308,7 +325,7 @@ export class CredentialRegistry<TStored extends CredentialRegistryRecord, TPubli
     const local = Array.from(this.bucket.values()).filter((record) =>
       includeRevoked ? true : !record.revokedAt
     );
-    if (!isPostgresConfigured()) {
+    if (!this.postgresPersistenceAvailable()) {
       return local.sort((a, b) => this.sortValue(b).localeCompare(this.sortValue(a)));
     }
 
@@ -345,7 +362,7 @@ export class CredentialRegistry<TStored extends CredentialRegistryRecord, TPubli
   }
 
   private async persistRecord(record: TStored): Promise<void> {
-    if (!isPostgresConfigured()) {
+    if (!this.postgresPersistenceAvailable()) {
       return;
     }
 
@@ -375,7 +392,7 @@ export class CredentialRegistry<TStored extends CredentialRegistryRecord, TPubli
   }
 
   private async deletePersistedRecords(ids: string[]): Promise<void> {
-    if (!isPostgresConfigured() || ids.length === 0) {
+    if (ids.length === 0 || !this.postgresPersistenceAvailable()) {
       return;
     }
 

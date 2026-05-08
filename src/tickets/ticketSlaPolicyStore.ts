@@ -1,6 +1,6 @@
 import { randomUUID } from "crypto";
 import { parseJsonColumn, serializeJson } from "../db/json";
-import { getPostgresPool, isPostgresPersistenceEnabled } from "../db/postgres";
+import { getPostgresPool, inMemoryAllowed, isPostgresPersistenceEnabled } from "../db/postgres";
 import { withWorkspaceContext, WorkspaceContext } from "../middleware/workspaceContext";
 import { TicketPriority } from "./ticketStore";
 import {
@@ -23,6 +23,16 @@ interface PolicyRow {
 }
 
 const memoryPolicies = new Map<string, TicketSlaPolicy>();
+
+function postgresPersistenceAvailable(): boolean {
+  if (isPostgresPersistenceEnabled()) {
+    return true;
+  }
+  if (inMemoryAllowed()) {
+    return false;
+  }
+  throw new Error("ticketSlaPolicyStore requires DATABASE_URL outside development/test.");
+}
 
 export interface TicketWorkspaceStoreContext extends WorkspaceContext {}
 
@@ -82,7 +92,7 @@ async function persistPolicy(
   policy: TicketSlaPolicy,
   context?: TicketWorkspaceStoreContext,
 ): Promise<void> {
-  if (!isPostgresPersistenceEnabled()) {
+  if (!postgresPersistenceAvailable()) {
     memoryPolicies.set(policy.id, clonePolicy(policy));
     return;
   }
@@ -140,7 +150,7 @@ export const ticketSlaPolicyStore = {
     workspaceId: string,
     context?: TicketWorkspaceStoreContext,
   ): Promise<TicketSlaPolicy[]> {
-    if (!isPostgresPersistenceEnabled()) {
+    if (!postgresPersistenceAvailable()) {
       return Array.from(memoryPolicies.values())
         .filter((policy) => policy.workspaceId === workspaceId)
         .sort((left, right) => left.priority.localeCompare(right.priority))
@@ -208,7 +218,7 @@ export const ticketSlaPolicyStore = {
 
   async clear(): Promise<void> {
     memoryPolicies.clear();
-    if (!isPostgresPersistenceEnabled()) {
+    if (!postgresPersistenceAvailable()) {
       return;
     }
     await getPostgresPool().query("DELETE FROM ticket_sla_policies");

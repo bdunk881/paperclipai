@@ -8,9 +8,19 @@
 import { PoolClient } from "pg";
 import { WorkflowRun } from "../types/workflow";
 import { parseJsonValue, serializeJson } from "../db/json";
-import { getPostgresPool, isPostgresPersistenceEnabled } from "../db/postgres";
+import { getPostgresPool, inMemoryAllowed, isPostgresPersistenceEnabled } from "../db/postgres";
 
 const memoryStore = new Map<string, WorkflowRun>();
+
+function postgresPersistenceAvailable(): boolean {
+  if (isPostgresPersistenceEnabled()) {
+    return true;
+  }
+  if (inMemoryAllowed()) {
+    return false;
+  }
+  throw new Error("runStore requires DATABASE_URL outside development/test.");
+}
 
 function cloneRun(run: WorkflowRun): WorkflowRun {
   return {
@@ -157,7 +167,7 @@ export const runStore = {
     const cloned = cloneRun(run);
     memoryStore.set(cloned.id, cloned);
 
-    if (!isPostgresPersistenceEnabled()) {
+    if (!postgresPersistenceAvailable()) {
       return cloneRun(cloned);
     }
 
@@ -197,7 +207,7 @@ export const runStore = {
     if (local) {
       return cloneRun(local);
     }
-    if (!isPostgresPersistenceEnabled()) {
+    if (!postgresPersistenceAvailable()) {
       return undefined;
     }
 
@@ -250,7 +260,7 @@ export const runStore = {
 
     memoryStore.set(id, updated);
 
-    if (!isPostgresPersistenceEnabled()) {
+    if (!postgresPersistenceAvailable()) {
       return cloneRun(updated);
     }
 
@@ -302,7 +312,7 @@ export const runStore = {
         .map((run) => cloneRun(run));
     };
 
-    if (!isPostgresPersistenceEnabled()) {
+    if (!postgresPersistenceAvailable()) {
       return localRuns();
     }
 
@@ -335,7 +345,7 @@ export const runStore = {
   async clear(): Promise<void> {
     memoryStore.clear();
 
-    if (!isPostgresPersistenceEnabled()) {
+    if (!postgresPersistenceAvailable()) {
       return;
     }
 

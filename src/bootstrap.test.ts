@@ -5,6 +5,7 @@ const mockEnsureKnowledgeSchema = jest.fn();
 
 jest.mock("./db/postgres", () => ({
   checkPostgresConnection: () => mockCheckPostgresConnection(),
+  inMemoryAllowed: () => ["development", "test"].includes((process.env.NODE_ENV ?? "development").trim().toLowerCase()),
   isPostgresConfigured: () => mockIsPostgresConfigured(),
 }));
 
@@ -16,7 +17,7 @@ jest.mock("./knowledge/knowledgeStore", () => ({
   ensureKnowledgeSchema: () => mockEnsureKnowledgeSchema(),
 }));
 
-import { initializePersistence } from "./bootstrap";
+import { PERSISTENCE_REQUIRED_ERROR, initializePersistence, requirePersistence } from "./bootstrap";
 
 describe("initializePersistence", () => {
   const logger = {
@@ -90,5 +91,35 @@ describe("initializePersistence", () => {
     await initializePersistence(logger);
 
     expect(logger.error).toHaveBeenCalledWith("[knowledge] Schema init failed:", "schema failure");
+  });
+});
+
+describe("requirePersistence", () => {
+  const originalNodeEnv = process.env.NODE_ENV;
+
+  afterEach(() => {
+    if (originalNodeEnv === undefined) {
+      delete process.env.NODE_ENV;
+    } else {
+      process.env.NODE_ENV = originalNodeEnv;
+    }
+    mockIsPostgresConfigured.mockReset();
+  });
+
+  it("throws a clear error for production boot without DATABASE_URL", () => {
+    process.env.NODE_ENV = "production";
+    mockIsPostgresConfigured.mockReturnValue(false);
+
+    expect(() => requirePersistence()).toThrow(PERSISTENCE_REQUIRED_ERROR);
+  });
+
+  it("allows process-local persistence in development and test", () => {
+    mockIsPostgresConfigured.mockReturnValue(false);
+
+    process.env.NODE_ENV = "development";
+    expect(() => requirePersistence()).not.toThrow();
+
+    process.env.NODE_ENV = "test";
+    expect(() => requirePersistence()).not.toThrow();
   });
 });

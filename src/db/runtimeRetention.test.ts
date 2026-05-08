@@ -1,4 +1,5 @@
 jest.mock("./postgres", () => ({
+  inMemoryAllowed: jest.fn(() => true),
   isPostgresConfigured: jest.fn(),
   queryPostgres: jest.fn(),
 }));

@@ -1,7 +1,7 @@
 import express from "express";
 import { AuthenticatedRequest } from "../auth/authMiddleware";
 import { recordControlPlaneAuditBatch } from "../auditing/controlPlaneAudit";
-import { isPostgresPersistenceEnabled } from "../db/postgres";
+import { inMemoryAllowed, isPostgresPersistenceEnabled } from "../db/postgres";
 import { WorkspaceAwareRequest } from "../middleware/workspaceResolver";
 import { controlPlaneStore } from "../controlPlane/controlPlaneStore";
 import { CompanyProvisioningAgentInput } from "../controlPlane/types";
@@ -43,7 +43,11 @@ function resolveWorkspaceContext(req: WorkspaceAwareRequest, res: express.Respon
     return { workspaceId, userId };
   }
 
-  if (!isPostgresPersistenceEnabled()) {
+  if (isPostgresPersistenceEnabled()) {
+    res.status(500).json({ error: "Workspace context was not resolved for the request" });
+    return null;
+  }
+  if (inMemoryAllowed()) {
     return { workspaceId: userId, userId };
   }
 

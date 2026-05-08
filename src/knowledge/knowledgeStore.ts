@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { parseJsonColumn } from "../db/json";
-import { isPostgresConfigured, queryPostgres } from "../db/postgres";
+import { inMemoryAllowed, isPostgresConfigured, queryPostgres } from "../db/postgres";
 import { chunkDocument, ChunkingConfig, DEFAULT_CHUNKING_CONFIG } from "./chunking";
 import {
   cosineSimilarity,
@@ -145,6 +145,16 @@ const chunkEmbeddings = new Map<string, number[]>();
 
 let schemaEnsured = false;
 
+function postgresPersistenceAvailable(): boolean {
+  if (isPostgresConfigured()) {
+    return true;
+  }
+  if (inMemoryAllowed()) {
+    return false;
+  }
+  throw new Error("knowledgeStore requires DATABASE_URL outside development/test.");
+}
+
 function sanitizeTags(tags: unknown): string[] {
   if (!Array.isArray(tags)) {
     return [];
@@ -250,7 +260,7 @@ function mapKnowledgeChunk(row: PersistedKnowledgeChunkRow): KnowledgeChunk {
 }
 
 export async function ensureKnowledgeSchema(): Promise<void> {
-  if (!isPostgresConfigured() || schemaEnsured) {
+  if (!postgresPersistenceAvailable() || schemaEnsured) {
     return;
   }
 
@@ -324,7 +334,7 @@ export async function ensureKnowledgeSchema(): Promise<void> {
 }
 
 async function persistKnowledgeBase(base: KnowledgeBase): Promise<void> {
-  if (!isPostgresConfigured()) {
+  if (!postgresPersistenceAvailable()) {
     return;
   }
   try {
@@ -358,7 +368,7 @@ async function persistKnowledgeBase(base: KnowledgeBase): Promise<void> {
 }
 
 async function persistKnowledgeDocument(document: KnowledgeDocument): Promise<void> {
-  if (!isPostgresConfigured()) {
+  if (!postgresPersistenceAvailable()) {
     return;
   }
   try {
@@ -403,7 +413,7 @@ async function persistKnowledgeDocument(document: KnowledgeDocument): Promise<vo
 }
 
 async function persistKnowledgeChunk(chunk: KnowledgeChunk, embedding: number[]): Promise<void> {
-  if (!isPostgresConfigured()) {
+  if (!postgresPersistenceAvailable()) {
     return;
   }
   try {
@@ -672,7 +682,7 @@ export const knowledgeStore = {
 
   async listKnowledgeBases(userId: string): Promise<KnowledgeBase[]> {
     const local = Array.from(knowledgeBases.values()).filter((base) => base.userId === userId);
-    if (local.length > 0 || !isPostgresConfigured()) {
+    if (local.length > 0 || !postgresPersistenceAvailable()) {
       return local.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
     }
     try {
@@ -688,7 +698,7 @@ export const knowledgeStore = {
     if (local?.userId === userId) {
       return local;
     }
-    if (!isPostgresConfigured()) {
+    if (!postgresPersistenceAvailable()) {
       return undefined;
     }
     try {
@@ -802,7 +812,7 @@ export const knowledgeStore = {
     const local = Array.from(knowledgeDocuments.values()).filter(
       (document) => document.userId === userId && document.knowledgeBaseId === knowledgeBaseId
     );
-    if (local.length > 0 || !isPostgresConfigured()) {
+    if (local.length > 0 || !postgresPersistenceAvailable()) {
       return local.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
     }
     try {
@@ -818,7 +828,7 @@ export const knowledgeStore = {
     if (local?.userId === userId) {
       return local;
     }
-    if (!isPostgresConfigured()) {
+    if (!postgresPersistenceAvailable()) {
       return undefined;
     }
     try {
@@ -839,7 +849,7 @@ export const knowledgeStore = {
     const local = Array.from(knowledgeChunks.values()).filter(
       (chunk) => chunk.userId === userId && chunk.documentId === documentId
     );
-    if (local.length > 0 || !isPostgresConfigured()) {
+    if (local.length > 0 || !postgresPersistenceAvailable()) {
       return local.sort((a, b) => a.index - b.index);
     }
     try {
@@ -991,7 +1001,7 @@ export const knowledgeStore = {
       return true;
     });
 
-    if (localChunks.length === 0 && isPostgresConfigured()) {
+    if (localChunks.length === 0 && postgresPersistenceAvailable()) {
       try {
         return await searchPostgres(input);
       } catch (err) {

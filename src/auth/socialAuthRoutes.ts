@@ -54,26 +54,26 @@ function ensureSocialAuthReady(res: Response, provider: SocialAuthProvider): boo
     return false;
   }
 
-  if (!isPostgresConfigured()) {
-    res.status(503).json({ error: "Social auth requires PostgreSQL persistence." });
-    return false;
+  if (isPostgresConfigured()) {
+    const configurationError = getSocialAuthConfigurationError(provider);
+    if (configurationError) {
+      res.status(503).json({
+        error: `Social auth provider is unavailable: ${provider}`,
+        details: configurationError,
+      });
+      return false;
+    }
+
+    if (!isSocialAuthProviderEnabled(provider)) {
+      res.status(404).json({ error: `Social auth provider is not enabled: ${provider}` });
+      return false;
+    }
+
+    return true;
   }
 
-  const configurationError = getSocialAuthConfigurationError(provider);
-  if (configurationError) {
-    res.status(503).json({
-      error: `Social auth provider is unavailable: ${provider}`,
-      details: configurationError,
-    });
-    return false;
-  }
-
-  if (!isSocialAuthProviderEnabled(provider)) {
-    res.status(404).json({ error: `Social auth provider is not enabled: ${provider}` });
-    return false;
-  }
-
-  return true;
+  res.status(503).json({ error: "Social auth requires PostgreSQL persistence." });
+  return false;
 }
 
 function getRequestedRedirectUri(req: Request): string | undefined {

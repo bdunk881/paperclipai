@@ -41,10 +41,6 @@ function mapLocalAuthUser(row: LocalAuthUserRow): LocalAuthUser {
 export async function upsertLocalUserFromSocialProfile(
   profile: SocialAuthProfileInput
 ): Promise<LocalAuthUser> {
-  if (!isPostgresConfigured()) {
-    throw new Error("Social auth requires PostgreSQL persistence");
-  }
-
   const providerUserId = profile.providerSubject.trim();
   if (!providerUserId) {
     throw new Error("Social auth profile is missing a provider subject");
@@ -55,20 +51,24 @@ export async function upsertLocalUserFromSocialProfile(
     throw new Error("Social auth profile is missing an email address");
   }
 
-  const result = await queryPostgres<LocalAuthUserRow>(
-    `INSERT INTO social_auth_users (
-        email,
-        display_name,
-        provider,
-        provider_user_id
-      ) VALUES ($1, $2, $3, $4)
-      ON CONFLICT (provider, provider_user_id) DO UPDATE SET
-        email = EXCLUDED.email,
-        display_name = COALESCE(EXCLUDED.display_name, social_auth_users.display_name),
-        last_login_at = now()
-      RETURNING id, email, display_name, last_login_at`,
-    [email, profile.displayName?.trim() || null, profile.provider, providerUserId]
-  );
+  if (isPostgresConfigured()) {
+    const result = await queryPostgres<LocalAuthUserRow>(
+      `INSERT INTO social_auth_users (
+          email,
+          display_name,
+          provider,
+          provider_user_id
+        ) VALUES ($1, $2, $3, $4)
+        ON CONFLICT (provider, provider_user_id) DO UPDATE SET
+          email = EXCLUDED.email,
+          display_name = COALESCE(EXCLUDED.display_name, social_auth_users.display_name),
+          last_login_at = now()
+        RETURNING id, email, display_name, last_login_at`,
+      [email, profile.displayName?.trim() || null, profile.provider, providerUserId]
+    );
 
-  return mapLocalAuthUser(result.rows[0]);
+    return mapLocalAuthUser(result.rows[0]);
+  }
+
+  throw new Error("Social auth requires PostgreSQL persistence");
 }

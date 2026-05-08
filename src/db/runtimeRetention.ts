@@ -1,4 +1,4 @@
-import { isPostgresConfigured, queryPostgres } from "./postgres";
+import { inMemoryAllowed, isPostgresConfigured, queryPostgres } from "./postgres";
 
 const CLEANUP_INTERVAL_MS = 5 * 60 * 1000;
 
@@ -21,54 +21,69 @@ export function getRuntimeRetentionDays(): number | null {
 
 export async function cleanupRuntimePersistenceHistory(now = new Date()): Promise<void> {
   const retentionDays = getRuntimeRetentionDays();
-  if (!isPostgresConfigured() || retentionDays === null) {
+  if (retentionDays === null) {
+    return;
+  }
+  if (isPostgresConfigured()) {
+    const cutoff = new Date(now.getTime() - retentionDays * 24 * 60 * 60 * 1000).toISOString();
+
+    await queryPostgres(
+      `DELETE FROM workflow_queue_jobs
+       WHERE COALESCE(completed_at, updated_at) < $1::timestamptz`,
+      [cutoff]
+    );
+    await queryPostgres(
+      `DELETE FROM workflow_approval_requests
+       WHERE COALESCE(resolved_at, expires_at, requested_at) < $1::timestamptz`,
+      [cutoff]
+    );
+    await queryPostgres(
+      `DELETE FROM workflow_runs
+       WHERE COALESCE(completed_at, started_at) < $1::timestamptz`,
+      [cutoff]
+    );
+    await queryPostgres(
+      `DELETE FROM memory_entries
+       WHERE (expires_at IS NOT NULL AND expires_at < NOW())
+          OR updated_at < $1::timestamptz`,
+      [cutoff]
+    );
     return;
   }
 
-  const cutoff = new Date(now.getTime() - retentionDays * 24 * 60 * 60 * 1000).toISOString();
+  if (inMemoryAllowed()) {
+    return;
+  }
 
-  await queryPostgres(
-    `DELETE FROM workflow_queue_jobs
-     WHERE COALESCE(completed_at, updated_at) < $1::timestamptz`,
-    [cutoff]
-  );
-  await queryPostgres(
-    `DELETE FROM workflow_approval_requests
-     WHERE COALESCE(resolved_at, expires_at, requested_at) < $1::timestamptz`,
-    [cutoff]
-  );
-  await queryPostgres(
-    `DELETE FROM workflow_runs
-     WHERE COALESCE(completed_at, started_at) < $1::timestamptz`,
-    [cutoff]
-  );
-  await queryPostgres(
-    `DELETE FROM memory_entries
-     WHERE (expires_at IS NOT NULL AND expires_at < NOW())
-        OR updated_at < $1::timestamptz`,
-    [cutoff]
-  );
+  throw new Error("Runtime retention cleanup requires DATABASE_URL outside development/test.");
 }
 
 export function scheduleRuntimePersistenceCleanup(now = Date.now()): Promise<void> | null {
   const retentionDays = getRuntimeRetentionDays();
-  if (!isPostgresConfigured() || retentionDays === null) {
+  if (retentionDays === null) {
     return null;
   }
+  if (isPostgresConfigured()) {
+    if (cleanupPromise) {
+      return cleanupPromise;
+    }
 
-  if (cleanupPromise) {
+    if (now - lastCleanupAt < CLEANUP_INTERVAL_MS) {
+      return null;
+    }
+
+    lastCleanupAt = now;
+    cleanupPromise = cleanupRuntimePersistenceHistory(new Date(now)).finally(() => {
+      cleanupPromise = null;
+    });
     return cleanupPromise;
   }
 
-  if (now - lastCleanupAt < CLEANUP_INTERVAL_MS) {
+  if (inMemoryAllowed()) {
     return null;
   }
 
-  lastCleanupAt = now;
-  cleanupPromise = cleanupRuntimePersistenceHistory(new Date(now)).finally(() => {
-    cleanupPromise = null;
-  });
-  return cleanupPromise;
+  throw new Error("Runtime retention cleanup requires DATABASE_URL outside development/test.");
 }
 
 export function resetRuntimeRetentionStateForTests(): void {

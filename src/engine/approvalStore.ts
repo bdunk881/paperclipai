@@ -6,7 +6,7 @@
  */
 
 import { randomUUID } from "crypto";
-import { getPostgresPool, isPostgresPersistenceEnabled } from "../db/postgres";
+import { getPostgresPool, inMemoryAllowed, isPostgresPersistenceEnabled } from "../db/postgres";
 import { approvalNotificationStore } from "./approvalNotificationStore";
 
 export interface ApprovalRequest {
@@ -36,6 +36,16 @@ interface PendingEntry {
 const store = new Map<string, PendingEntry>();
 const requestStore = new Map<string, ApprovalRequest>();
 
+function postgresPersistenceAvailable(): boolean {
+  if (isPostgresPersistenceEnabled()) {
+    return true;
+  }
+  if (inMemoryAllowed()) {
+    return false;
+  }
+  throw new Error("approvalStore requires DATABASE_URL outside development/test.");
+}
+
 function mapRowToRequest(row: Record<string, unknown>): ApprovalRequest {
   return {
     id: String(row["id"]),
@@ -55,7 +65,7 @@ function mapRowToRequest(row: Record<string, unknown>): ApprovalRequest {
 }
 
 async function persistRequest(request: ApprovalRequest): Promise<void> {
-  if (!isPostgresPersistenceEnabled()) {
+  if (!postgresPersistenceAvailable()) {
     requestStore.set(request.id, request);
     return;
   }
@@ -133,7 +143,7 @@ export const approvalStore = {
   },
 
   async get(id: string): Promise<ApprovalRequest | undefined> {
-    if (isPostgresPersistenceEnabled()) {
+    if (postgresPersistenceAvailable()) {
       const pool = getPostgresPool();
       const result = await pool.query("SELECT * FROM approval_requests WHERE id = $1", [id]);
       if (result.rows[0]) {
@@ -157,7 +167,7 @@ export const approvalStore = {
   },
 
   async list(status?: ApprovalRequest["status"], userId?: string): Promise<ApprovalRequest[]> {
-    if (!isPostgresPersistenceEnabled()) {
+    if (!postgresPersistenceAvailable()) {
       const all = Array.from(requestStore.values());
       const filtered = all
         .filter((request) => (status ? request.status === status : true))
@@ -183,7 +193,7 @@ export const approvalStore = {
     runId: string,
     status?: ApprovalRequest["status"]
   ): Promise<ApprovalRequest | undefined> {
-    if (!isPostgresPersistenceEnabled()) {
+    if (!postgresPersistenceAvailable()) {
       const requests = Array.from(requestStore.values())
         .filter((request) => request.runId === runId)
         .filter((request) => (status ? request.status === status : true))
@@ -254,7 +264,7 @@ export const approvalStore = {
       comment,
     };
 
-    if (!isPostgresPersistenceEnabled()) {
+    if (!postgresPersistenceAvailable()) {
       requestStore.set(id, request);
     }
 
@@ -275,7 +285,7 @@ export const approvalStore = {
     requestStore.clear();
     await approvalNotificationStore.clear();
 
-    if (!isPostgresPersistenceEnabled()) {
+    if (!postgresPersistenceAvailable()) {
       return;
     }
 

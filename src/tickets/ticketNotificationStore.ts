@@ -1,6 +1,6 @@
 import { randomUUID } from "crypto";
 import { parseJsonColumn, serializeJson } from "../db/json";
-import { getPostgresPool, isPostgresPersistenceEnabled } from "../db/postgres";
+import { getPostgresPool, inMemoryAllowed, isPostgresPersistenceEnabled } from "../db/postgres";
 import { TicketActorRef } from "./ticketStore";
 
 export type TicketNotificationChannel = "inbox" | "email" | "agent_wake";
@@ -44,6 +44,16 @@ interface NotificationRow {
 
 const memoryNotifications = new Map<string, TicketNotification>();
 
+function postgresPersistenceAvailable(): boolean {
+  if (isPostgresPersistenceEnabled()) {
+    return true;
+  }
+  if (inMemoryAllowed()) {
+    return false;
+  }
+  throw new Error("ticketNotificationStore requires DATABASE_URL outside development/test.");
+}
+
 function cloneNotification(notification: TicketNotification): TicketNotification {
   return {
     ...notification,
@@ -72,7 +82,7 @@ function mapRow(row: NotificationRow): TicketNotification {
 }
 
 async function persist(notification: TicketNotification): Promise<void> {
-  if (!isPostgresPersistenceEnabled()) {
+  if (!postgresPersistenceAvailable()) {
     memoryNotifications.set(notification.id, cloneNotification(notification));
     return;
   }
@@ -145,7 +155,7 @@ export const ticketNotificationStore = {
     channel?: TicketNotificationChannel;
     status?: TicketNotificationStatus;
   }): Promise<TicketNotification[]> {
-    if (!isPostgresPersistenceEnabled()) {
+    if (!postgresPersistenceAvailable()) {
       return Array.from(memoryNotifications.values())
         .filter((notification) =>
           filters?.recipientType ? notification.recipient.type === filters.recipientType : true,
@@ -210,7 +220,7 @@ export const ticketNotificationStore = {
   },
 
   async get(id: string): Promise<TicketNotification | undefined> {
-    if (!isPostgresPersistenceEnabled()) {
+    if (!postgresPersistenceAvailable()) {
       const notification = memoryNotifications.get(id);
       return notification ? cloneNotification(notification) : undefined;
     }
@@ -223,7 +233,7 @@ export const ticketNotificationStore = {
 
   async clear(): Promise<void> {
     memoryNotifications.clear();
-    if (!isPostgresPersistenceEnabled()) {
+    if (!postgresPersistenceAvailable()) {
       return;
     }
     await getPostgresPool().query("DELETE FROM ticket_notifications");

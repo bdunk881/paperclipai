@@ -1,5 +1,5 @@
 import { randomUUID } from "crypto";
-import { isPostgresConfigured, queryPostgres } from "../db/postgres";
+import { inMemoryAllowed, isPostgresConfigured, queryPostgres } from "../db/postgres";
 
 export type CompanyLifecycleStatus = "active" | "paused";
 export type CompanyLifecycleAction = "pause" | "resume";
@@ -47,6 +47,16 @@ type PersistedAuditRow = {
 const lifecycleStates = new Map<string, ControlPlaneCompanyLifecycleState>();
 const lifecycleAudit = new Map<string, ControlPlaneCompanyLifecycleAuditEntry[]>();
 let preloadPromise: Promise<void> | null = null;
+
+function postgresPersistenceAvailable(): boolean {
+  if (isPostgresConfigured()) {
+    return true;
+  }
+  if (inMemoryAllowed()) {
+    return false;
+  }
+  throw new Error("companyLifecycleStore requires DATABASE_URL outside development/test.");
+}
 
 function nowIso(): string {
   return new Date().toISOString();
@@ -100,7 +110,7 @@ function hydrateAuditEntry(row: PersistedAuditRow): ControlPlaneCompanyLifecycle
 }
 
 async function preloadFromPostgres(): Promise<void> {
-  if (!isPostgresConfigured()) {
+  if (!postgresPersistenceAvailable()) {
     return;
   }
 
@@ -141,7 +151,7 @@ async function ensurePreloaded(): Promise<void> {
 }
 
 async function persistState(state: ControlPlaneCompanyLifecycleState): Promise<void> {
-  if (!isPostgresConfigured()) {
+  if (!postgresPersistenceAvailable()) {
     return;
   }
 
@@ -167,7 +177,7 @@ async function persistState(state: ControlPlaneCompanyLifecycleState): Promise<v
 }
 
 async function persistAuditEntry(entry: ControlPlaneCompanyLifecycleAuditEntry): Promise<void> {
-  if (!isPostgresConfigured()) {
+  if (!postgresPersistenceAvailable()) {
     return;
   }
 

@@ -1,5 +1,5 @@
 import { auditService, type AuditCategory, type AuditTarget } from "./auditService";
-import { isPostgresPersistenceEnabled, queryPostgres } from "../db/postgres";
+import { inMemoryAllowed, isPostgresPersistenceEnabled, queryPostgres } from "../db/postgres";
 
 export interface ControlPlaneAuditInput {
   workspaceId?: string | null;
@@ -14,6 +14,16 @@ export interface ControlPlaneAuditInput {
 
 function shouldEmitAudit(workspaceId?: string | null): workspaceId is string {
   return Boolean(workspaceId?.trim()) && isPostgresPersistenceEnabled();
+}
+
+function postgresPersistenceAvailable(): boolean {
+  if (isPostgresPersistenceEnabled()) {
+    return true;
+  }
+  if (inMemoryAllowed()) {
+    return false;
+  }
+  throw new Error("control-plane audit resolution requires DATABASE_URL outside development/test.");
 }
 
 export async function recordControlPlaneAudit(input: ControlPlaneAuditInput): Promise<void> {
@@ -62,7 +72,7 @@ export async function resolveAuditWorkspaceIdForUser(
     return explicitWorkspaceId.trim();
   }
 
-  if (!isPostgresPersistenceEnabled()) {
+  if (!postgresPersistenceAvailable()) {
     return null;
   }
 

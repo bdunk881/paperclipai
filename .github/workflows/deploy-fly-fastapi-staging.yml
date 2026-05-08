@@ -92,23 +92,17 @@ jobs:
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
 
-      - name: Sync staging Fly secrets
+      - name: Sync staging Infisical Fly secrets
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
-          PRODUCTION_SUPABASE_URL: ${{ secrets.PRODUCTION_SUPABASE_URL }}
-          PRODUCTION_SUPABASE_ANON_KEY: ${{ secrets.PRODUCTION_SUPABASE_ANON_KEY }}
-          PRODUCTION_SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.PRODUCTION_SUPABASE_SERVICE_ROLE_KEY }}
-          PRODUCTION_CONNECTOR_CREDENTIAL_ENCRYPTION_KEY: ${{ secrets.PRODUCTION_CONNECTOR_CREDENTIAL_ENCRYPTION_KEY }}
-          PRODUCTION_LLM_CONFIG_ENCRYPTION_KEY: ${{ secrets.PRODUCTION_LLM_CONFIG_ENCRYPTION_KEY }}
+          INFISICAL_PROJECT_ID: ${{ secrets.INFISICAL_PROJECT_ID }}
+          INFISICAL_TOKEN: ${{ secrets.INFISICAL_TOKEN }}
         run: |
           set -euo pipefail
 
           required_vars=(
-            PRODUCTION_SUPABASE_URL
-            PRODUCTION_SUPABASE_ANON_KEY
-            PRODUCTION_SUPABASE_SERVICE_ROLE_KEY
-            PRODUCTION_CONNECTOR_CREDENTIAL_ENCRYPTION_KEY
-            PRODUCTION_LLM_CONFIG_ENCRYPTION_KEY
+            INFISICAL_PROJECT_ID
+            INFISICAL_TOKEN
           )
 
           for name in "${required_vars[@]}"; do
@@ -119,14 +113,8 @@ jobs:
           done
 
           secrets_args=(
-            "APP_ENV=staging"
-            "ALLOWED_ORIGINS=${FLY_STAGING_ALLOWED_ORIGINS}"
-            "AUTH_NATIVE_AUTH_PROXY_ALLOWED_ORIGINS=${FLY_STAGING_ALLOWED_ORIGINS}"
-            "SUPABASE_URL=${PRODUCTION_SUPABASE_URL}"
-            "SUPABASE_ANON_KEY=${PRODUCTION_SUPABASE_ANON_KEY}"
-            "SUPABASE_SERVICE_ROLE_KEY=${PRODUCTION_SUPABASE_SERVICE_ROLE_KEY}"
-            "CONNECTOR_CREDENTIAL_ENCRYPTION_KEY=${PRODUCTION_CONNECTOR_CREDENTIAL_ENCRYPTION_KEY}"
-            "LLM_CONFIG_ENCRYPTION_KEY=${PRODUCTION_LLM_CONFIG_ENCRYPTION_KEY}"
+            "INFISICAL_PROJECT_ID=${INFISICAL_PROJECT_ID}"
+            "INFISICAL_TOKEN=${INFISICAL_TOKEN}"
           )
 
           flyctl secrets set "${secrets_args[@]}" --app "${{ steps.settings.outputs.app_name }}"
@@ -137,6 +125,37 @@ jobs:
             --remote-only \
             --config "${{ steps.settings.outputs.config_path }}" \
             --app "${{ steps.settings.outputs.app_name }}"
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+
+      - name: Drain legacy staging Fly secrets
+        run: |
+          set -euo pipefail
+
+          legacy_secrets=(
+            APP_ENV
+            ALLOWED_ORIGINS
+            AUTH_NATIVE_AUTH_PROXY_ALLOWED_ORIGINS
+            SUPABASE_URL
+            SUPABASE_ANON_KEY
+            SUPABASE_SERVICE_ROLE_KEY
+            CONNECTOR_CREDENTIAL_ENCRYPTION_KEY
+            LLM_CONFIG_ENCRYPTION_KEY
+          )
+          existing_names="$(flyctl secrets list --app "${{ steps.settings.outputs.app_name }}" | awk 'NR > 1 {print $1}')"
+          secrets_to_unset=()
+
+          for key in "${legacy_secrets[@]}"; do
+            if grep -qx "$key" <<< "$existing_names"; then
+              secrets_to_unset+=("$key")
+            fi
+          done
+
+          if (( ${#secrets_to_unset[@]} > 0 )); then
+            flyctl secrets unset "${secrets_to_unset[@]}" --app "${{ steps.settings.outputs.app_name }}"
+          else
+            echo "No legacy Fly secrets found to drain."
+          fi
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
 
@@ -154,12 +173,12 @@ jobs:
             echo "- Environment: ${FLY_DEPLOY_ENV}"
             echo "- Fly app: ${{ steps.settings.outputs.app_name }}"
             echo "- Stable Fly hostname: ${{ steps.settings.outputs.base_url }}"
-            echo "- Shared Supabase URL secret: configured from PRODUCTION_SUPABASE_URL"
+            echo "- Runtime secrets: loaded through Infisical at container startup"
             echo "- Allowed origins: ${FLY_STAGING_ALLOWED_ORIGINS}"
             echo
             echo "## Notes"
             echo
-            echo "- Staging uses production Supabase API credentials so invited beta accounts survive promotion to master."
+            echo "- Staging uses Infisical's staging environment for runtime secrets."
           } > "$OUT_DIR/dns-ready-cutover.md"
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}

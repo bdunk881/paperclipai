@@ -33,27 +33,23 @@ Deployment authentication is scoped to each target platform:
 
 - Fly.io deployments use `FLY_API_TOKEN`.
 - Cloudflare Pages deployments use `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`.
-- Supabase access is supplied through environment-specific database and API secrets.
+- Backend runtime secrets are loaded from Infisical by the Fly container entrypoint.
+- Dashboard Supabase access is supplied through environment-specific GitHub Actions secrets.
 
 ## GitHub Actions secrets required
 
 Add these in the repo settings -> Secrets and variables -> Actions:
 
-### Fly.io and Supabase
+### Fly.io and Infisical
 
 | Secret | Description |
 |---|---|
 | `FLY_API_TOKEN` | Fly deploy token used by both backend workflows |
-| `DEV_DATABASE_URL` | PostgreSQL URL for the isolated `autoflow-dev` project; use the Supabase-compatible form ending in `?uselibpqcompat=true&sslmode=require` |
-| `DEV_SUPABASE_URL` | Dev Supabase project URL |
-| `DEV_SUPABASE_ANON_KEY` | Dev Supabase anon key |
-| `DEV_SUPABASE_SERVICE_ROLE_KEY` | Dev Supabase service-role key |
-| `DEV_CONNECTOR_CREDENTIAL_ENCRYPTION_KEY` | Dev-only connector credential encryption key synced into the Fly runtime |
-| `PRODUCTION_SUPABASE_URL` | Shared staging/master Supabase project URL |
-| `PRODUCTION_SUPABASE_ANON_KEY` | Shared staging/master anon key |
-| `PRODUCTION_SUPABASE_SERVICE_ROLE_KEY` | Shared staging/master service-role key |
-| `PRODUCTION_CONNECTOR_CREDENTIAL_ENCRYPTION_KEY` | Shared staging/master connector credential encryption key for the Fly staging runtime |
-| `PRODUCTION_LLM_CONFIG_ENCRYPTION_KEY` | Shared staging/master LLM config encryption key for the Fly staging runtime |
+| `INFISICAL_PROJECT_ID` | Infisical project id for the `autoflow` project; synced to Fly as `INFISICAL_PROJECT_ID` |
+| `INFISICAL_TOKEN` | Environment-scoped Infisical service token; configure separately for the `dev` and `staging` GitHub environments |
+
+The Fly apps should keep only `INFISICAL_TOKEN` and `INFISICAL_PROJECT_ID` as secrets.
+Non-secret runtime values such as `APP_ENV`, `INFISICAL_ENV`, and allowed origins live in the Fly TOML files.
 
 ### Cloudflare Pages
 
@@ -61,6 +57,10 @@ Add these in the repo settings -> Secrets and variables -> Actions:
 |---|---|
 | `CLOUDFLARE_API_TOKEN` | Token used by the Pages workflows |
 | `CLOUDFLARE_ACCOUNT_ID` | Cloudflare account id used by the Pages workflows |
+| `DEV_SUPABASE_URL` | Dev Supabase project URL used by dashboard builds |
+| `DEV_SUPABASE_ANON_KEY` | Dev Supabase anon key used by dashboard builds |
+| `PRODUCTION_SUPABASE_URL` | Shared staging/master Supabase project URL used by dashboard builds |
+| `PRODUCTION_SUPABASE_ANON_KEY` | Shared staging/master anon key used by dashboard builds |
 
 ### FastAPI Fly.io
 

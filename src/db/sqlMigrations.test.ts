@@ -12,6 +12,7 @@ jest.mock("fs/promises", () => ({
 }));
 
 jest.mock("./postgres", () => ({
+  inMemoryAllowed: () => true,
   isPostgresConfigured: () => mockIsPostgresConfigured(),
   queryPostgres: (...args: unknown[]) => mockQueryPostgres(...args),
 }));

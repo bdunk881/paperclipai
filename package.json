@@ -6,7 +6,8 @@
   "scripts": {
     "build": "tsc",
     "start": "node dist/index.js",
-    "dev": "ts-node src/index.ts",
+    "dev": "infisical run --env=dev -- ts-node src/index.ts",
+    "dev:no-secrets": "ts-node src/index.ts",
     "test": "jest --config jest.config.cjs --runInBand",
     "test:coverage": "jest --config jest.config.cjs --coverage --runInBand --forceExit",
     "test:connectors:provider": "jest --config jest.config.cjs --runInBand src/integrations/provider-facing/tier1ProviderFacing.test.ts",

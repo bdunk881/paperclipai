@@ -1,3 +1,6 @@
+# CLAUDE.md
+
+See [AGENTS.md](AGENTS.md) for the canonical agent operating manual. Anything Claude-Code-specific lives there too.
 # AutoFlow — agent + contributor playbook
 
 This file is the source of truth for branch protocol, environment rules, and how AI agents should operate in this repo. Both human contributors and AI agents (Claude Code, the cloud routine, ad-hoc agents) MUST follow it.

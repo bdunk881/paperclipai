@@ -19,16 +19,8 @@ Configure these values before running the workflow:
 | Type | Name | Required | Notes |
 |---|---|---|---|
 | Secret | `FLY_API_TOKEN` | Yes | Prefer a deploy token that can manage both Fly apps. |
-| Secret | `DEV_DATABASE_URL` | Dev only | PostgreSQL connection string for `autoflow-dev`; for Supabase direct Postgres use `...?uselibpqcompat=true&sslmode=require`. |
-| Secret | `DEV_SUPABASE_URL` | Dev only | Supabase URL for `autoflow-dev`. |
-| Secret | `DEV_SUPABASE_ANON_KEY` | Dev only | Public anon key for `autoflow-dev`. |
-| Secret | `DEV_SUPABASE_SERVICE_ROLE_KEY` | Dev only | Service-role key for `autoflow-dev`. |
-| Secret | `DEV_CONNECTOR_CREDENTIAL_ENCRYPTION_KEY` | Dev only | Required backend runtime key for connector credential encryption in the isolated dev environment. |
-| Secret | `PRODUCTION_SUPABASE_URL` | Staging only | Shared Supabase URL used by staging and master. |
-| Secret | `PRODUCTION_SUPABASE_ANON_KEY` | Staging only | Shared anon key used by staging and master. |
-| Secret | `PRODUCTION_SUPABASE_SERVICE_ROLE_KEY` | Staging only | Shared service-role key used by staging and master. |
-| Secret | `PRODUCTION_CONNECTOR_CREDENTIAL_ENCRYPTION_KEY` | Staging only | Current production/staging connector credential key copied into the Fly staging runtime. |
-| Secret | `PRODUCTION_LLM_CONFIG_ENCRYPTION_KEY` | Staging only | Current production/staging LLM config key copied into the Fly staging runtime. |
+| Secret | `INFISICAL_PROJECT_ID` | Yes | Infisical project id for the `autoflow` project; synced to Fly as `INFISICAL_PROJECT_ID`. |
+| Secret | `INFISICAL_TOKEN` | Yes | Environment-scoped Infisical service token; configure separately for the `dev` and `staging` GitHub environments. |
 | Variable | `FLY_DEV_APP_NAME` | Optional | Defaults to `autoflow-fastapi-dev`. |
 | Variable | `FLY_DEV_BASE_URL` | Optional | Defaults to `https://autoflow-fastapi-dev.fly.dev`. |
 | Variable | `FLY_STAGING_APP_NAME` | Optional | Defaults to `autoflow-fastapi-staging`. |
@@ -71,6 +63,26 @@ Manual staging deploy:
 1. Open the `Deploy FastAPI Fly.io Staging` workflow in GitHub Actions.
 2. Run `workflow_dispatch`.
 3. Confirm the validation job passes before the deploy job starts.
+
+## Fly secrets
+
+The backend image starts through `infisical run`, so Fly should not store the
+individual Supabase, Stripe, OAuth, connector, or encryption secrets. Final Fly
+secret state for each backend app should be:
+
+- `INFISICAL_TOKEN`
+- `INFISICAL_PROJECT_ID`
+
+The deploy workflows set those two secrets, deploy the image, and then unset the
+legacy per-secret Fly values before running smoke checks. For the production app,
+perform the same drain after the Infisical-backed image is deployed:
+
+```bash
+fly secrets set INFISICAL_TOKEN=<service-token> INFISICAL_PROJECT_ID=<project-id> -a autoflow-fastapi-production
+fly deploy --config fly.production.toml -a autoflow-fastapi-production
+fly secrets unset APP_ENV DATABASE_URL SUPABASE_URL SUPABASE_ANON_KEY SUPABASE_SERVICE_ROLE_KEY CONNECTOR_CREDENTIAL_ENCRYPTION_KEY LLM_CONFIG_ENCRYPTION_KEY ALLOWED_ORIGINS AUTH_NATIVE_AUTH_PROXY_ALLOWED_ORIGINS -a autoflow-fastapi-production
+fly secrets list -a autoflow-fastapi-production
+```
 
 ## Smoke verification
 

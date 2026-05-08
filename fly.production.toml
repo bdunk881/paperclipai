@@ -6,7 +6,9 @@ primary_region = "ord"
 
 [env]
   ALLOWED_ORIGINS = "https://app.helloautoflow.com,https://staging.app.helloautoflow.com"
+  APP_ENV = "production"
   AUTH_NATIVE_AUTH_PROXY_ALLOWED_ORIGINS = "https://app.helloautoflow.com,https://staging.app.helloautoflow.com"
+  INFISICAL_ENV = "prod"
   PORT = "8080"
 
 [http_service]

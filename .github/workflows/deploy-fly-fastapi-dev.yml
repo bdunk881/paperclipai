@@ -45,7 +45,6 @@ jobs:
     env:
       FLY_DEV_APP_FALLBACK: autoflow-fastapi-dev
       FLY_DEV_BASE_URL_FALLBACK: https://autoflow-fastapi-dev.fly.dev
-      FLY_DEV_ALLOWED_ORIGINS: https://dev.helloautoflow.com
       FLY_SHARED_SMOKE_USER_FALLBACK: qa-smoke-user
     steps:
       - uses: actions/checkout@v5
@@ -87,23 +86,17 @@ jobs:
           fi
           flyctl apps create "${{ steps.settings.outputs.app_name }}"
 
-      - name: Sync dev Fly secrets
+      - name: Sync dev Infisical Fly secrets
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
-          DEV_DATABASE_URL: ${{ secrets.DEV_DATABASE_URL }}
-          DEV_SUPABASE_URL: ${{ secrets.DEV_SUPABASE_URL }}
-          DEV_SUPABASE_ANON_KEY: ${{ secrets.DEV_SUPABASE_ANON_KEY }}
-          DEV_SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.DEV_SUPABASE_SERVICE_ROLE_KEY }}
-          DEV_CONNECTOR_CREDENTIAL_ENCRYPTION_KEY: ${{ secrets.DEV_CONNECTOR_CREDENTIAL_ENCRYPTION_KEY }}
+          INFISICAL_PROJECT_ID: ${{ secrets.INFISICAL_PROJECT_ID }}
+          INFISICAL_TOKEN: ${{ secrets.INFISICAL_TOKEN }}
         run: |
           set -euo pipefail
 
           required_vars=(
-            DEV_DATABASE_URL
-            DEV_SUPABASE_URL
-            DEV_SUPABASE_ANON_KEY
-            DEV_SUPABASE_SERVICE_ROLE_KEY
-            DEV_CONNECTOR_CREDENTIAL_ENCRYPTION_KEY
+            INFISICAL_PROJECT_ID
+            INFISICAL_TOKEN
           )
 
           for name in "${required_vars[@]}"; do
@@ -114,14 +107,8 @@ jobs:
           done
 
           flyctl secrets set \
-            APP_ENV=dev \
-            DATABASE_URL="${DEV_DATABASE_URL}" \
-            SUPABASE_URL="${DEV_SUPABASE_URL}" \
-            SUPABASE_ANON_KEY="${DEV_SUPABASE_ANON_KEY}" \
-            SUPABASE_SERVICE_ROLE_KEY="${DEV_SUPABASE_SERVICE_ROLE_KEY}" \
-            CONNECTOR_CREDENTIAL_ENCRYPTION_KEY="${DEV_CONNECTOR_CREDENTIAL_ENCRYPTION_KEY}" \
-            ALLOWED_ORIGINS="${FLY_DEV_ALLOWED_ORIGINS}" \
-            AUTH_NATIVE_AUTH_PROXY_ALLOWED_ORIGINS="${FLY_DEV_ALLOWED_ORIGINS}" \
+            INFISICAL_PROJECT_ID="${INFISICAL_PROJECT_ID}" \
+            INFISICAL_TOKEN="${INFISICAL_TOKEN}" \
             --app "${{ steps.settings.outputs.app_name }}"
 
       - name: Deploy FastAPI Fly.io service
@@ -132,6 +119,37 @@ jobs:
             --remote-only \
             --config fly.dev.toml \
             --app "${{ steps.settings.outputs.app_name }}"
+
+      - name: Drain legacy dev Fly secrets
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          legacy_secrets=(
+            APP_ENV
+            DATABASE_URL
+            SUPABASE_URL
+            SUPABASE_ANON_KEY
+            SUPABASE_SERVICE_ROLE_KEY
+            CONNECTOR_CREDENTIAL_ENCRYPTION_KEY
+            ALLOWED_ORIGINS
+            AUTH_NATIVE_AUTH_PROXY_ALLOWED_ORIGINS
+          )
+          existing_names="$(flyctl secrets list --app "${{ steps.settings.outputs.app_name }}" | awk 'NR > 1 {print $1}')"
+          secrets_to_unset=()
+
+          for key in "${legacy_secrets[@]}"; do
+            if grep -qx "$key" <<< "$existing_names"; then
+              secrets_to_unset+=("$key")
+            fi
+          done
+
+          if (( ${#secrets_to_unset[@]} > 0 )); then
+            flyctl secrets unset "${secrets_to_unset[@]}" --app "${{ steps.settings.outputs.app_name }}"
+          else
+            echo "No legacy Fly secrets found to drain."
+          fi
 
       - name: Run FastAPI smoke checks
         run: bash infra/scripts/fly_fastapi_smoke.sh

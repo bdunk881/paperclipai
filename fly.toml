@@ -5,9 +5,11 @@ primary_region = "ord"
   dockerfile = "docker/backend/Dockerfile"
 
 [env]
-  ALLOWED_ORIGINS = "https://app.helloautoflow.com,https://staging.app.helloautoflow.com"
-  AUTH_NATIVE_AUTH_PROXY_ALLOWED_ORIGINS = "https://app.helloautoflow.com,https://staging.app.helloautoflow.com"
+  ALLOWED_ORIGINS = "https://staging.helloautoflow.com,https://staging.app.helloautoflow.com,https://app.helloautoflow.com"
+  APP_ENV = "staging"
+  AUTH_NATIVE_AUTH_PROXY_ALLOWED_ORIGINS = "https://staging.helloautoflow.com,https://staging.app.helloautoflow.com,https://app.helloautoflow.com"
   FASTAPI_EDGE_RELAY_BASE_URL = "https://staging-api.helloautoflow.com"
+  INFISICAL_ENV = "staging"
   PORT = "8080"
 
 [http_service]

@@ -231,38 +231,6 @@ describe("OpenAI adapter", () => {
   });
 });
 
-describe("Azure OpenAI adapter", () => {
-  const config: LLMProviderConfig = {
-    provider: "azure-openai",
-    model: "gpt-4o",
-    credentials: { apiKey: "azure-test-key" },
-    options: {
-      endpoint: "https://example-resource.openai.azure.com/",
-      deployment: "gpt4o-prod",
-    },
-  };
-
-  it("uses providerOptions endpoint/deployment instead of overloading model", async () => {
-    const provider = getProvider(config);
-    openaiInstance().chat.completions.create.mockResolvedValueOnce({
-      choices: [{ message: { content: "Azure hello" } }],
-      usage: null,
-    });
-
-    await provider("Prompt");
-
-    expect(MockOpenAI.mock.calls[MockOpenAI.mock.calls.length - 1]?.[0]).toEqual(
-      expect.objectContaining({
-        apiKey: "azure-test-key",
-        baseURL: "https://example-resource.openai.azure.com/openai/deployments/gpt4o-prod",
-      })
-    );
-    expect(openaiInstance().chat.completions.create).toHaveBeenCalledWith(
-      expect.objectContaining({ model: "gpt4o-prod" })
-    );
-  });
-});
-
 describe("AWS Bedrock adapter", () => {
   const config: LLMProviderConfig = {
     provider: "bedrock",
@@ -346,7 +314,7 @@ describe("Vertex AI adapter", () => {
       },
       options: {
         projectId: "autoflow-prod",
-        location: "us-central1",
+        location: "us-west1",
       },
     });
     vertexModelInstance().generateContent.mockResolvedValueOnce({
@@ -370,7 +338,7 @@ describe("Vertex AI adapter", () => {
     expect(MockVertexAI).toHaveBeenCalledWith(
       expect.objectContaining({
         project: "autoflow-prod",
-        location: "us-central1",
+        location: "us-west1",
         googleAuthOptions: expect.objectContaining({
           credentials: expect.objectContaining({
             client_email: "vertex@example.iam.gserviceaccount.com",
@@ -395,7 +363,7 @@ describe("Vertex AI adapter", () => {
       },
       options: {
         projectId: "autoflow-prod",
-        location: "us-central1",
+        location: "us-west1",
       },
     });
     vertexModelInstance().generateContent.mockResolvedValueOnce({
@@ -426,7 +394,7 @@ describe("Vertex AI adapter", () => {
       },
       options: {
         projectId: "autoflow-prod",
-        location: "us-central1",
+        location: "us-west1",
       },
     });
     vertexModelInstance().generateContent.mockRejectedValueOnce(new Error("permission denied"));

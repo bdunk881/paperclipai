@@ -1,13 +1,10 @@
 import { checkPostgresConnection, isPostgresConfigured } from "./db/postgres";
 import { ensureSqlMigrationsApplied } from "./db/sqlMigrations";
 import { ensureKnowledgeSchema } from "./knowledge/knowledgeStore";
-import { loadSecretsFromKeyVault } from "./secrets/keyVaultSecrets";
 
 type Logger = Pick<typeof console, "log" | "warn" | "error">;
 
 export async function initializePersistence(logger: Logger = console): Promise<void> {
-  await loadSecretsFromKeyVault();
-
   if (!isPostgresConfigured()) {
     return;
   }

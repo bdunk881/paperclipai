@@ -1,11 +1,9 @@
 import { initializePersistence } from "./bootstrap";
-import { hydrateProcessEnvFromKeyVault } from "./startup/keyVaultEnv";
 
 const PORT = process.env.PORT || 3000;
 
 async function startServer() {
   try {
-    await hydrateProcessEnvFromKeyVault();
     await initializePersistence();
   } catch (err) {
     console.error("[startup] Fatal initialization failure:", (err as Error).message);

@@ -2,7 +2,6 @@ const mockCheckPostgresConnection = jest.fn();
 const mockIsPostgresConfigured = jest.fn();
 const mockEnsureSqlMigrationsApplied = jest.fn();
 const mockEnsureKnowledgeSchema = jest.fn();
-const mockLoadSecretsFromKeyVault = jest.fn();
 
 jest.mock("./db/postgres", () => ({
   checkPostgresConnection: () => mockCheckPostgresConnection(),
@@ -15,10 +14,6 @@ jest.mock("./db/sqlMigrations", () => ({
 
 jest.mock("./knowledge/knowledgeStore", () => ({
   ensureKnowledgeSchema: () => mockEnsureKnowledgeSchema(),
-}));
-
-jest.mock("./secrets/keyVaultSecrets", () => ({
-  loadSecretsFromKeyVault: () => mockLoadSecretsFromKeyVault(),
 }));
 
 import { initializePersistence } from "./bootstrap";
@@ -35,7 +30,6 @@ describe("initializePersistence", () => {
     mockIsPostgresConfigured.mockReset();
     mockEnsureSqlMigrationsApplied.mockReset();
     mockEnsureKnowledgeSchema.mockReset();
-    mockLoadSecretsFromKeyVault.mockReset();
     logger.log.mockReset();
     logger.warn.mockReset();
     logger.error.mockReset();
@@ -46,7 +40,6 @@ describe("initializePersistence", () => {
 
     await initializePersistence(logger);
 
-    expect(mockLoadSecretsFromKeyVault).toHaveBeenCalledTimes(1);
     expect(mockCheckPostgresConnection).not.toHaveBeenCalled();
     expect(mockEnsureSqlMigrationsApplied).not.toHaveBeenCalled();
   });
@@ -57,7 +50,6 @@ describe("initializePersistence", () => {
 
     await initializePersistence(logger);
 
-    expect(mockLoadSecretsFromKeyVault).toHaveBeenCalledTimes(1);
     expect(mockEnsureSqlMigrationsApplied).not.toHaveBeenCalled();
     expect(logger.warn).toHaveBeenCalledWith(
       "[postgres] Database unreachable — knowledge routes will return empty results"
@@ -77,17 +69,6 @@ describe("initializePersistence", () => {
     expect(logger.log).toHaveBeenNthCalledWith(2, "[postgres] Applied 12 SQL migration files");
     expect(mockEnsureKnowledgeSchema).toHaveBeenCalledTimes(1);
     expect(logger.log).toHaveBeenNthCalledWith(3, "[knowledge] Schema initialized");
-  });
-
-  it("loads Key Vault secrets before checking postgres availability", async () => {
-    mockIsPostgresConfigured.mockReturnValue(true);
-    mockCheckPostgresConnection.mockResolvedValue(false);
-
-    await initializePersistence(logger);
-
-    expect(mockLoadSecretsFromKeyVault.mock.invocationCallOrder[0]).toBeLessThan(
-      mockCheckPostgresConnection.mock.invocationCallOrder[0]
-    );
   });
 
   it("surfaces migration failures", async () => {

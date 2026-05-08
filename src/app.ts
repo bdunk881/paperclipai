@@ -72,9 +72,6 @@ import gmailRoutes, { gmailWebhookRouter } from "./integrations/gmail/routes";
 import stripeRoutes, { stripeConnectorWebhookRouter } from "./integrations/stripe/routes";
 import posthogRoutes, { posthogWebhookRouter } from "./integrations/posthog/routes";
 import intercomRoutes, { intercomWebhookRouter } from "./integrations/intercom/routes";
-import datadogAzureMonitorRoutes, {
-  datadogAzureMonitorWebhookRouter,
-} from "./integrations/datadog-azure-monitor/routes";
 import { composioRoutes, composioWebhookRouter } from "./integrations/composio";
 import agentCatalogRoutes from "./integrations/agent-catalog/routes";
 import oauthBridgeRoutes from "./integrations/oauthBridgeRoutes";
@@ -301,8 +298,6 @@ app.use("/api/webhooks/stripe/connect", stripeConnectorWebhookRouter);
 app.use("/api/webhooks/posthog", posthogWebhookRouter);
 // Intercom webhook — mounted before express.json() for signature verification
 app.use("/api/webhooks/intercom", intercomWebhookRouter);
-// Datadog + Azure Monitor webhook — mounted before express.json() for signature verification
-app.use("/api/webhooks/datadog-azure-monitor", datadogAzureMonitorWebhookRouter);
 // Composio webhook — mounted before express.json() because the route verifies the raw payload
 app.use("/api/webhooks/ticket-sync", ticketSyncWebhookRoutes);
 app.use("/api/connectors/google-workspace", googleWorkspaceWebhookRoutes);
@@ -415,7 +410,6 @@ app.use("/api/integrations/stripe", stripeRoutes);
 app.use("/api/integrations/composio", composioRoutes);
 app.use("/api/integrations/posthog", posthogRoutes);
 app.use("/api/integrations/intercom", intercomRoutes);
-app.use("/api/integrations/datadog-azure-monitor", datadogAzureMonitorRoutes);
 app.use("/api/integrations/agent-catalog", agentCatalogRoutes);
 app.use("/api/connectors/google-workspace", googleWorkspaceConnectorRoutes);
 app.use("/api/workspaces", requireAuth, workspaceRoutes);

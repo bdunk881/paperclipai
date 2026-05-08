@@ -7,7 +7,7 @@ This document inventories the Next.js features currently used in `landing/` and 
 - Both sites are on the Next.js App Router, not the legacy Pages Router.
 - `docs/` is a low-risk static App Router site with no MDX pipeline, no API routes, and no dynamic segments.
 - `landing/` carries the real migration surface: dynamic blog routing, Sanity-backed server fetches, local markdown fallbacks, `next/image`, metadata generation, sitemap/robots generation, and App Router route handlers under `app/api/*`.
-- Phase 0 risk is concentrated in two places:
+- Phase 0 risk sits in two places:
   - Sanity-backed content and image rendering for the blog
   - Replacing Next-specific APIs (`next/image`, metadata files, route handlers) with RR7 + Cloudflare-native equivalents
 

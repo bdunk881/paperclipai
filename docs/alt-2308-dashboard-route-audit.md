@@ -124,4 +124,4 @@ Phase 0 audit for the current dashboard SPA before the `react-router-dom` to RR7
 - Cleanup opportunities during Phase 4a:
   - Collapse duplicated `Integrations` routing (`/settings/integrations` and `/integrations`) behind one canonical path.
   - Move query-param-backed filtering on ticket screens into loader inputs so URL state and data state stay aligned.
-  - Centralize direct `fetch` callsites behind RR7 actions or shared API helpers before adding optimistic UI.
+  - Route direct `fetch` callsites through RR7 actions or shared API helpers before adding optimistic UI.

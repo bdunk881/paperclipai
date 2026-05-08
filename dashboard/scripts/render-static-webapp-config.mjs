@@ -8,12 +8,12 @@ const outputPath = path.join(outputDir, "staticwebapp.config.json");
 
 function normalizeHttpsOrigin(value) {
   if (typeof value !== "string") {
-    throw new Error("VITE_API_BASE_URL is required for Azure Static Web Apps deploys.");
+    throw new Error("VITE_API_BASE_URL is required for static dashboard deploys.");
   }
 
   const trimmed = value.trim();
   if (!trimmed) {
-    throw new Error("VITE_API_BASE_URL is required for Azure Static Web Apps deploys.");
+    throw new Error("VITE_API_BASE_URL is required for static dashboard deploys.");
   }
 
   const parsed = new URL(trimmed);

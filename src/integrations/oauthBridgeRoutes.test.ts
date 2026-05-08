@@ -51,9 +51,6 @@ const posthogDisconnect = jest.fn();
 const intercomBeginOAuth = jest.fn();
 const intercomCompleteOAuth = jest.fn();
 const intercomDisconnect = jest.fn();
-const datadogBeginOAuth = jest.fn();
-const datadogCompleteOAuth = jest.fn();
-const datadogDisconnect = jest.fn();
 const stripeBeginOAuth = jest.fn();
 const stripeCompleteOAuth = jest.fn();
 const stripeDisconnect = jest.fn();
@@ -69,7 +66,6 @@ const docusignGetActiveByUser = jest.fn();
 const teamsGetActiveByUser = jest.fn();
 const posthogGetActiveByUser = jest.fn();
 const intercomGetActiveByUser = jest.fn();
-const monitoringGetActiveByUserAndProvider = jest.fn();
 const stripeGetActiveByUser = jest.fn();
 
 jest.mock("./slack/service", () => ({
@@ -160,14 +156,6 @@ jest.mock("./intercom/service", () => ({
   },
 }));
 
-jest.mock("./datadog-azure-monitor/service", () => ({
-  datadogAzureMonitorConnectorService: {
-    beginAzureOAuth: (...args: unknown[]) => datadogBeginOAuth(...args),
-    completeAzureOAuth: (...args: unknown[]) => datadogCompleteOAuth(...args),
-    disconnect: (...args: unknown[]) => datadogDisconnect(...args),
-  },
-}));
-
 jest.mock("./stripe/service", () => ({
   stripeConnectorService: {
     beginOAuth: (...args: unknown[]) => stripeBeginOAuth(...args),
@@ -242,12 +230,6 @@ jest.mock("./intercom/credentialStore", () => ({
   },
 }));
 
-jest.mock("./datadog-azure-monitor/credentialStore", () => ({
-  monitoringCredentialStore: {
-    getActiveByUserAndProvider: (...args: unknown[]) => monitoringGetActiveByUserAndProvider(...args),
-  },
-}));
-
 jest.mock("./stripe/credentialStore", () => ({
   stripeCredentialStore: {
     getActiveByUser: (...args: unknown[]) => stripeGetActiveByUser(...args),
@@ -275,7 +257,6 @@ describe("unified oauth bridge routes", () => {
     teamsBeginOAuth.mockReturnValue({ authUrl: "https://teams.example/oauth" });
     posthogBeginOAuth.mockReturnValue({ authUrl: "https://posthog.example/oauth" });
     intercomBeginOAuth.mockReturnValue({ authUrl: "https://intercom.example/oauth" });
-    datadogBeginOAuth.mockReturnValue({ authUrl: "https://azure.example/oauth" });
     stripeBeginOAuth.mockReturnValue({ authUrl: "https://stripe.example/oauth" });
     slackCompleteOAuth.mockResolvedValue({ id: "conn-1" });
     linearCompleteOAuth.mockResolvedValue({ id: "conn-1" });
@@ -288,7 +269,6 @@ describe("unified oauth bridge routes", () => {
     teamsCompleteOAuth.mockResolvedValue({ id: "conn-1" });
     posthogCompleteOAuth.mockResolvedValue({ id: "conn-1" });
     intercomCompleteOAuth.mockResolvedValue({ id: "conn-1" });
-    datadogCompleteOAuth.mockResolvedValue({ id: "conn-1" });
     stripeCompleteOAuth.mockResolvedValue({ id: "conn-1" });
     slackDisconnect.mockReturnValue(true);
     linearDisconnect.mockReturnValue(true);
@@ -301,7 +281,6 @@ describe("unified oauth bridge routes", () => {
     teamsDisconnect.mockReturnValue(true);
     posthogDisconnect.mockReturnValue(true);
     intercomDisconnect.mockReturnValue(true);
-    datadogDisconnect.mockReturnValue(true);
     stripeDisconnect.mockReturnValue(true);
     slackGetActiveByUser.mockReturnValue(null);
     linearGetActiveByUser.mockReturnValue(null);
@@ -314,7 +293,6 @@ describe("unified oauth bridge routes", () => {
     teamsGetActiveByUser.mockReturnValue(null);
     posthogGetActiveByUser.mockReturnValue(null);
     intercomGetActiveByUser.mockReturnValue(null);
-    monitoringGetActiveByUserAndProvider.mockReturnValue(null);
     stripeGetActiveByUser.mockReturnValue(null);
   });
 
@@ -367,17 +345,6 @@ describe("unified oauth bridge routes", () => {
       shopDomain: "acme.myshopify.com",
     });
     expect(response.body.redirectUrl).toBe("https://shopify.example/oauth");
-  });
-
-  it("handles datadog-azure-monitor provider", async () => {
-    const response = await request(app)
-      .post("/api/integrations/datadog-azure-monitor/connect")
-      .set("Authorization", "Bearer user-123")
-      .send({});
-
-    expect(response.status).toBe(201);
-    expect(datadogBeginOAuth).toHaveBeenCalledWith("user-123");
-    expect(response.body.redirectUrl).toBe("https://azure.example/oauth");
   });
 
   it("redirects unified callback success", async () => {
@@ -455,17 +422,6 @@ describe("unified oauth bridge routes", () => {
       createdAt: "2026-04-18T12:30:00.000Z",
       scopes: ["contacts:read"],
     });
-    monitoringGetActiveByUserAndProvider.mockImplementation((userId: string, provider: string) => {
-      if (provider === "datadog") {
-        return {
-          id: "dd-1",
-          createdAt: "2026-04-18T11:00:00.000Z",
-          scopes: ["metrics:read"],
-        };
-      }
-      return null;
-    });
-
     const response = await request(app)
       .get("/api/integrations/status")
       .set("Authorization", "Bearer user-123");
@@ -487,11 +443,6 @@ describe("unified oauth bridge routes", () => {
       scopes: ["contacts:read"],
     });
     expect(response.body.providers.stripe).toEqual({ connected: false });
-    expect(response.body.providers["datadog-azure-monitor"]).toEqual({
-      connected: true,
-      connectedAt: "2026-04-18T11:00:00.000Z",
-      scopes: ["metrics:read"],
-    });
     expect(response.body.providers.intercom).toEqual({ connected: false });
   });
 
@@ -536,23 +487,4 @@ describe("unified oauth bridge routes", () => {
     expect(linearDisconnect).not.toHaveBeenCalled();
   });
 
-  it("disconnects datadog-azure-monitor by revoking both provider credentials when present", async () => {
-    monitoringGetActiveByUserAndProvider.mockImplementation((userId: string, provider: string) => {
-      if (provider === "datadog") {
-        return { id: "dd-1", createdAt: "2026-04-18T10:00:00.000Z", scopes: ["metrics:read"] };
-      }
-      if (provider === "azure_monitor") {
-        return { id: "az-1", createdAt: "2026-04-18T09:00:00.000Z", scopes: ["user_impersonation"] };
-      }
-      return null;
-    });
-
-    const response = await request(app)
-      .delete("/api/integrations/datadog-azure-monitor/disconnect")
-      .set("Authorization", "Bearer user-123");
-
-    expect(response.status).toBe(204);
-    expect(datadogDisconnect).toHaveBeenCalledWith("user-123", "dd-1");
-    expect(datadogDisconnect).toHaveBeenCalledWith("user-123", "az-1");
-  });
 });

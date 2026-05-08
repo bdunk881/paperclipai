@@ -24,12 +24,19 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
+      - name: Pull branch protection secrets from Infisical
+        uses: Infisical/secrets-action@v1
+        with:
+          method: universal-auth
+          client-id: ${{ secrets.INFISICAL_CLIENT_ID }}
+          client-secret: ${{ secrets.INFISICAL_CLIENT_SECRET }}
+          project-slug: autoflow
+          env-slug: production
+
       - name: Validate admin token
-        env:
-          GH_TOKEN: ${{ secrets.BRANCH_ADMIN_TOKEN }}
         run: |
-          if [ -z "${GH_TOKEN:-}" ]; then
-            echo "::error::Missing BRANCH_ADMIN_TOKEN secret with repo admin scope"
+          if [ -z "${BRANCH_ADMIN_TOKEN:-}" ]; then
+            echo "::error::Missing BRANCH_ADMIN_TOKEN Infisical secret with repo admin scope"
             exit 1
           fi
 
@@ -41,10 +48,9 @@ jobs:
 
       - name: Apply branch protection
         env:
-          GH_TOKEN: ${{ secrets.BRANCH_ADMIN_TOKEN }}
           GITHUB_REPOSITORY: ${{ github.repository }}
           STAGING_REQUIRED_CHECKS: ${{ github.event.inputs.staging_required_checks || steps.required-checks.outputs.staging }}
           MASTER_REQUIRED_CHECKS: ${{ github.event.inputs.master_required_checks || steps.required-checks.outputs.master }}
           MASTER_ALLOWED_USERS: bdunk881
           STAGING_ALLOWED_USERS: bdunk881
-        run: bash infra/scripts/enforce_branch_protection.sh
+        run: GH_TOKEN="${BRANCH_ADMIN_TOKEN}" bash infra/scripts/enforce_branch_protection.sh

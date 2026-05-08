@@ -51,6 +51,35 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
+      - name: Pull production secrets from Infisical
+        uses: Infisical/secrets-action@v1
+        with:
+          method: universal-auth
+          client-id: ${{ secrets.INFISICAL_CLIENT_ID }}
+          client-secret: ${{ secrets.INFISICAL_CLIENT_SECRET }}
+          project-slug: autoflow
+          env-slug: production
+
+      - name: Validate staging deployment secrets
+        run: |
+          set -euo pipefail
+
+          required_vars=(
+            FLY_API_TOKEN
+            PRODUCTION_SUPABASE_URL
+            PRODUCTION_SUPABASE_ANON_KEY
+            PRODUCTION_SUPABASE_SERVICE_ROLE_KEY
+            PRODUCTION_CONNECTOR_CREDENTIAL_ENCRYPTION_KEY
+            PRODUCTION_LLM_CONFIG_ENCRYPTION_KEY
+          )
+
+          for name in "${required_vars[@]}"; do
+            if [[ -z "${!name:-}" ]]; then
+              echo "::error::Missing required Infisical secret ${name}"
+              exit 1
+            fi
+          done
+
       - name: Resolve Fly deployment settings
         id: settings
         run: |
@@ -89,8 +118,6 @@ jobs:
             exit 0
           fi
           flyctl apps create "${{ steps.settings.outputs.app_name }}"
-        env:
-          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
 
       - name: Sync staging Infisical Fly secrets
         env:
@@ -125,8 +152,6 @@ jobs:
             --remote-only \
             --config "${{ steps.settings.outputs.config_path }}" \
             --app "${{ steps.settings.outputs.app_name }}"
-        env:
-          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
 
       - name: Drain legacy staging Fly secrets
         run: |
@@ -180,8 +205,6 @@ jobs:
             echo
             echo "- Staging uses Infisical's staging environment for runtime secrets."
           } > "$OUT_DIR/dns-ready-cutover.md"
-        env:
-          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
  
       - name: Run FastAPI smoke checks
         run: bash infra/scripts/fly_fastapi_smoke.sh

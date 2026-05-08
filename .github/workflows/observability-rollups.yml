@@ -17,7 +17,6 @@ jobs:
     name: Refresh rollups and retention
     runs-on: ubuntu-latest
     env:
-      OBSERVABILITY_DATABASE_URL: ${{ secrets.OBSERVABILITY_DATABASE_URL }}
       OBS_FUTURE_PARTITION_DAYS: ${{ vars.OBS_FUTURE_PARTITION_DAYS }}
       OBS_ROLLUP_LOOKBACK_HOURS: ${{ vars.OBS_ROLLUP_LOOKBACK_HOURS }}
       OBS_RAW_RETENTION_DAYS: ${{ vars.OBS_RAW_RETENTION_DAYS }}
@@ -25,6 +24,23 @@ jobs:
       OBS_DAILY_RETENTION_DAYS: ${{ vars.OBS_DAILY_RETENTION_DAYS }}
     steps:
       - uses: actions/checkout@v4
+
+      - name: Pull observability secrets from Infisical
+        uses: Infisical/secrets-action@v1
+        with:
+          method: universal-auth
+          client-id: ${{ secrets.INFISICAL_CLIENT_ID }}
+          client-secret: ${{ secrets.INFISICAL_CLIENT_SECRET }}
+          project-slug: autoflow
+          env-slug: production
+
+      - name: Validate observability secrets
+        run: |
+          set -euo pipefail
+          if [[ -z "${OBSERVABILITY_DATABASE_URL:-}" ]]; then
+            echo "::error::Missing required Infisical secret OBSERVABILITY_DATABASE_URL"
+            exit 1
+          fi
 
       - name: Install PostgreSQL client
         run: |

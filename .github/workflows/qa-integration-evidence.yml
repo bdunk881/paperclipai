@@ -14,15 +14,19 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     env:
-      QA_API_BASE_URL: ${{ secrets.QA_API_BASE_URL }}
-      QA_E2E_BEARER_TOKEN: ${{ secrets.QA_E2E_BEARER_TOKEN }}
-      QA_E2E_USER_ID: ${{ secrets.QA_E2E_USER_ID }}
-      QA_JIRA_TICKET_SYNC_CONNECTION_ID: ${{ secrets.QA_JIRA_TICKET_SYNC_CONNECTION_ID }}
-      STRIPE_WEBHOOK_SECRET: ${{ secrets.STRIPE_WEBHOOK_SECRET }}
       VITE_USE_MOCK: "true"
     steps:
       - name: Checkout
         uses: actions/checkout@v5
+
+      - name: Pull QA secrets from Infisical
+        uses: Infisical/secrets-action@v1
+        with:
+          method: universal-auth
+          client-id: ${{ secrets.INFISICAL_CLIENT_ID }}
+          client-secret: ${{ secrets.INFISICAL_CLIENT_SECRET }}
+          project-slug: autoflow
+          env-slug: production
 
       - name: Detect probe availability
         id: probe-gate

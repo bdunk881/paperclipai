@@ -28,20 +28,45 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Pull Cloudflare Pages secrets from Infisical
+        uses: Infisical/secrets-action@v1
+        with:
+          method: universal-auth
+          client-id: ${{ secrets.INFISICAL_CLIENT_ID }}
+          client-secret: ${{ secrets.INFISICAL_CLIENT_SECRET }}
+          project-slug: autoflow
+          env-slug: production
+
+      - name: Validate Cloudflare Pages secrets
+        run: |
+          set -euo pipefail
+          required_vars=(
+            CLOUDFLARE_ACCOUNT_ID
+            CLOUDFLARE_API_TOKEN
+            APP_JWT_SECRET
+            QA_PREVIEW_ACCESS_TOKEN
+          )
+
+          for name in "${required_vars[@]}"; do
+            if [[ -z "${!name:-}" ]]; then
+              echo "::error::Missing required Infisical secret ${name}"
+              exit 1
+            fi
+          done
+
       - uses: actions/setup-node@v4
         with:
           node-version: 20
 
       - name: Sync Cloudflare Pages projects
         env:
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           GITHUB_REPOSITORY_ID: ${{ github.event.repository.id }}
           GITHUB_REPOSITORY_NAME: ${{ github.event.repository.name }}
           GITHUB_REPOSITORY_OWNER: ${{ github.repository_owner }}
           CF_PAGES_PROJECTS: ${{ inputs.projects }}
           CF_PAGES_APPLY_DOMAINS: ${{ inputs.apply_domains }}
           CF_PAGES_RETIRE_LEGACY: ${{ inputs.retire_legacy }}
-          CF_PAGES_APP_JWT_SECRET: ${{ secrets.APP_JWT_SECRET }}
-          CF_PAGES_QA_PREVIEW_ACCESS_TOKEN: ${{ secrets.QA_PREVIEW_ACCESS_TOKEN }}
-        run: node infra/scripts/cloudflare-pages-sync.mjs
+        run: |
+          CF_PAGES_APP_JWT_SECRET="${APP_JWT_SECRET}" \
+            CF_PAGES_QA_PREVIEW_ACCESS_TOKEN="${QA_PREVIEW_ACCESS_TOKEN}" \
+            node infra/scripts/cloudflare-pages-sync.mjs

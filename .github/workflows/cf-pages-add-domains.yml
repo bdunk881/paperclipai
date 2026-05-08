@@ -13,15 +13,34 @@ jobs:
     name: Add custom domains to CF Pages projects
     runs-on: ubuntu-latest
     steps:
+      - name: Pull Cloudflare secrets from Infisical
+        uses: Infisical/secrets-action@v1
+        with:
+          method: universal-auth
+          client-id: ${{ secrets.INFISICAL_CLIENT_ID }}
+          client-secret: ${{ secrets.INFISICAL_CLIENT_SECRET }}
+          project-slug: autoflow
+          env-slug: production
+
+      - name: Validate Cloudflare secrets
+        run: |
+          set -euo pipefail
+          for name in CLOUDFLARE_API_TOKEN CLOUDFLARE_ACCOUNT_ID; do
+            if [[ -z "${!name:-}" ]]; then
+              echo "::error::Missing required Infisical secret ${name}"
+              exit 1
+            fi
+          done
+
       - name: Pre-flight - verify token and list Pages projects
         run: |
           echo "=== Listing CF Pages projects (verifies token + account ID) ==="
           RESP=$(curl -s -X GET \
-            -H "Authorization: Bearer ${{ secrets.CLOUDFLARE_API_TOKEN }}" \
-            "https://api.cloudflare.com/client/v4/accounts/${{ secrets.CLOUDFLARE_ACCOUNT_ID }}/pages/projects")
+            -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
+            "https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/pages/projects")
           echo "$RESP" | jq '{success, errors, project_names: [.result[]?.name]}'
           if [ "$(echo "$RESP" | jq -r '.success')" != "true" ]; then
-            echo "FATAL: Cannot list projects. Check CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID secrets."
+            echo "FATAL: Cannot list projects. Check CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID Infisical secrets."
             exit 1
           fi
 
@@ -33,10 +52,10 @@ jobs:
             exit 0
           fi
           RESP=$(curl -s -X POST \
-            -H "Authorization: Bearer ${{ secrets.CLOUDFLARE_API_TOKEN }}" \
+            -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
             -H "Content-Type: application/json" \
             -d '{"name":"app.helloautoflow.com"}' \
-            "https://api.cloudflare.com/client/v4/accounts/${{ secrets.CLOUDFLARE_ACCOUNT_ID }}/pages/projects/autoflow-dashboard/domains")
+            "https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/pages/projects/autoflow-dashboard/domains")
           echo "=== Full response ===" && echo "$RESP" | jq .
           SUCCESS=$(echo "$RESP" | jq -r '.success')
           ERR_CODE=$(echo "$RESP" | jq -r '.errors[0].code // empty')
@@ -54,10 +73,10 @@ jobs:
             exit 0
           fi
           RESP=$(curl -s -X POST \
-            -H "Authorization: Bearer ${{ secrets.CLOUDFLARE_API_TOKEN }}" \
+            -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
             -H "Content-Type: application/json" \
             -d '{"name":"docs.helloautoflow.com"}' \
-            "https://api.cloudflare.com/client/v4/accounts/${{ secrets.CLOUDFLARE_ACCOUNT_ID }}/pages/projects/autoflow-docs/domains")
+            "https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/pages/projects/autoflow-docs/domains")
           echo "=== Full response ===" && echo "$RESP" | jq .
           SUCCESS=$(echo "$RESP" | jq -r '.success')
           ERR_CODE=$(echo "$RESP" | jq -r '.errors[0].code // empty')
@@ -75,10 +94,10 @@ jobs:
             exit 0
           fi
           RESP=$(curl -s -X POST \
-            -H "Authorization: Bearer ${{ secrets.CLOUDFLARE_API_TOKEN }}" \
+            -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
             -H "Content-Type: application/json" \
             -d '{"name":"helloautoflow.com"}' \
-            "https://api.cloudflare.com/client/v4/accounts/${{ secrets.CLOUDFLARE_ACCOUNT_ID }}/pages/projects/autoflow-landing/domains")
+            "https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/pages/projects/autoflow-landing/domains")
           echo "=== Full response ===" && echo "$RESP" | jq .
           SUCCESS=$(echo "$RESP" | jq -r '.success')
           ERR_CODE=$(echo "$RESP" | jq -r '.errors[0].code // empty')
@@ -96,10 +115,10 @@ jobs:
             exit 0
           fi
           RESP=$(curl -s -X POST \
-            -H "Authorization: Bearer ${{ secrets.CLOUDFLARE_API_TOKEN }}" \
+            -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
             -H "Content-Type: application/json" \
             -d '{"name":"www.helloautoflow.com"}' \
-            "https://api.cloudflare.com/client/v4/accounts/${{ secrets.CLOUDFLARE_ACCOUNT_ID }}/pages/projects/autoflow-landing/domains")
+            "https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/pages/projects/autoflow-landing/domains")
           echo "=== Full response ===" && echo "$RESP" | jq .
           SUCCESS=$(echo "$RESP" | jq -r '.success')
           ERR_CODE=$(echo "$RESP" | jq -r '.errors[0].code // empty')
@@ -116,10 +135,10 @@ jobs:
             exit 0
           fi
           RESP=$(curl -s -X POST \
-            -H "Authorization: Bearer ${{ secrets.CLOUDFLARE_API_TOKEN }}" \
+            -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
             -H "Content-Type: application/json" \
             -d '{"name":"dev.helloautoflow.com"}' \
-            "https://api.cloudflare.com/client/v4/accounts/${{ secrets.CLOUDFLARE_ACCOUNT_ID }}/pages/projects/autoflow-dashboard-dev-git/domains")
+            "https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/pages/projects/autoflow-dashboard-dev-git/domains")
           echo "=== Full response ===" && echo "$RESP" | jq .
           SUCCESS=$(echo "$RESP" | jq -r '.success')
           ERR_CODE=$(echo "$RESP" | jq -r '.errors[0].code // empty')

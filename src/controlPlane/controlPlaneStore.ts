@@ -878,7 +878,7 @@ async function ensureWorkspaceHydrated(workspaceId: string | undefined, userId: 
                   workflow_template_name, deployment_mode, status, paused_by_company_lifecycle,
                   restart_count, budget_monthly_usd, tool_budget_ceilings, alert_thresholds,
                   orchestration_enabled, last_heartbeat_at, created_at, updated_at
-             FROM control_plane_teams
+             FROM agent_teams
             WHERE user_id = $1`,
           [userId]
         ),
@@ -887,7 +887,7 @@ async function ensureWorkspaceHydrated(workspaceId: string | undefined, userId: 
                   workflow_step_kind, model, instructions, budget_monthly_usd, reporting_to_agent_id,
                   skills, schedule, status, paused_by_company_lifecycle, current_execution_id,
                   last_heartbeat_at, last_heartbeat_status, created_at, updated_at
-             FROM control_plane_agents
+             FROM agents
             WHERE user_id = $1`,
           [userId]
         ),
@@ -896,7 +896,7 @@ async function ensureWorkspaceHydrated(workspaceId: string | undefined, userId: 
                   source_workflow_step_id, source_workflow_step_name, task_id, status,
                   applied_skills, metadata, summary, cost_usd, requested_at, started_at,
                   completed_at, last_heartbeat_at, restart_count
-             FROM control_plane_executions
+             FROM agent_executions
             WHERE user_id = $1`,
           [userId]
         ),
@@ -905,7 +905,7 @@ async function ensureWorkspaceHydrated(workspaceId: string | undefined, userId: 
                   provisioned_workspace_id, provisioned_workspace_name, provisioned_workspace_slug,
                   team_id, idempotency_key, budget_monthly_usd, allocated_budget_monthly_usd,
                   remaining_budget_monthly_usd, created_at, updated_at
-             FROM provisioned_companies
+             FROM companies
             WHERE user_id = $1`,
           [userId]
         ),
@@ -960,7 +960,7 @@ async function ensureWorkspaceHydrated(workspaceId: string | undefined, userId: 
 async function upsertTeamRow(team: ControlPlaneTeam, workspaceId: string, client?: PoolClient): Promise<void> {
   const companyId = teamCompanyIds.get(team.id) ?? null;
   await (client ?? getPostgresPool()).query(
-    `INSERT INTO control_plane_teams (
+    `INSERT INTO agent_teams (
        id, workspace_id, user_id, company_id, name, description, workflow_template_id,
        workflow_template_name, deployment_mode, status, paused_by_company_lifecycle,
        restart_count, budget_monthly_usd, tool_budget_ceilings, alert_thresholds,
@@ -1011,7 +1011,7 @@ async function upsertTeamRow(team: ControlPlaneTeam, workspaceId: string, client
 
 async function upsertAgentRow(agent: ControlPlaneAgent, workspaceId: string, client?: PoolClient): Promise<void> {
   await (client ?? getPostgresPool()).query(
-    `INSERT INTO control_plane_agents (
+    `INSERT INTO agents (
        id, workspace_id, user_id, team_id, name, role_key, workflow_step_id, workflow_step_kind,
        model, instructions, budget_monthly_usd, reporting_to_agent_id, skills, schedule,
        status, paused_by_company_lifecycle, current_execution_id, last_heartbeat_at,
@@ -1036,8 +1036,8 @@ async function upsertAgentRow(agent: ControlPlaneAgent, workspaceId: string, cli
            status = EXCLUDED.status,
            paused_by_company_lifecycle = EXCLUDED.paused_by_company_lifecycle,
            current_execution_id = EXCLUDED.current_execution_id,
-           last_heartbeat_at = COALESCE(EXCLUDED.last_heartbeat_at, control_plane_agents.last_heartbeat_at),
-           last_heartbeat_status = COALESCE(EXCLUDED.last_heartbeat_status, control_plane_agents.last_heartbeat_status),
+           last_heartbeat_at = COALESCE(EXCLUDED.last_heartbeat_at, agents.last_heartbeat_at),
+           last_heartbeat_status = COALESCE(EXCLUDED.last_heartbeat_status, agents.last_heartbeat_status),
            updated_at = EXCLUDED.updated_at`,
     [
       agent.id,
@@ -1071,7 +1071,7 @@ async function upsertExecutionRow(
   client?: PoolClient
 ): Promise<void> {
   await (client ?? getPostgresPool()).query(
-    `INSERT INTO control_plane_executions (
+    `INSERT INTO agent_executions (
        id, workspace_id, user_id, team_id, agent_id, source_run_id, source_workflow_step_id,
        source_workflow_step_name, task_id, status, applied_skills, metadata, summary, cost_usd,
        requested_at, started_at, completed_at, last_heartbeat_at, restart_count
@@ -1129,7 +1129,7 @@ async function upsertProvisionedCompanyRow(input: {
 }): Promise<void> {
   companyTenantWorkspaceIds.set(input.company.id, input.tenantWorkspaceId);
   await (input.client ?? getPostgresPool()).query(
-    `INSERT INTO provisioned_companies (
+    `INSERT INTO companies (
        id, workspace_id, user_id, name, external_company_id, provisioned_workspace_id,
        provisioned_workspace_name, provisioned_workspace_slug, team_id, idempotency_key,
        budget_monthly_usd, allocated_budget_monthly_usd, remaining_budget_monthly_usd,

@@ -925,10 +925,10 @@ CREATE TABLE public.connector_credentials (
 ALTER TABLE public.connector_credentials OWNER TO paperclip;
 
 --
--- Name: control_plane_agents; Type: TABLE; Schema: public; Owner: paperclip
+-- Name: agents; Type: TABLE; Schema: public; Owner: paperclip
 --
 
-CREATE TABLE public.control_plane_agents (
+CREATE TABLE public.agents (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     workspace_id uuid NOT NULL,
     user_id text NOT NULL,
@@ -955,16 +955,16 @@ CREATE TABLE public.control_plane_agents (
     CONSTRAINT control_plane_agents_status_check CHECK ((status = ANY (ARRAY['active'::text, 'paused'::text, 'terminated'::text])))
 );
 
-ALTER TABLE ONLY public.control_plane_agents FORCE ROW LEVEL SECURITY;
+ALTER TABLE ONLY public.agents FORCE ROW LEVEL SECURITY;
 
 
-ALTER TABLE public.control_plane_agents OWNER TO paperclip;
+ALTER TABLE public.agents OWNER TO paperclip;
 
 --
--- Name: control_plane_audit_log; Type: TABLE; Schema: public; Owner: paperclip
+-- Name: audit_log; Type: TABLE; Schema: public; Owner: paperclip
 --
 
-CREATE TABLE public.control_plane_audit_log (
+CREATE TABLE public.audit_log (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     workspace_id uuid NOT NULL,
     actor_user_id text,
@@ -980,16 +980,16 @@ CREATE TABLE public.control_plane_audit_log (
     CONSTRAINT control_plane_audit_log_category_check CHECK ((category = ANY (ARRAY['secret'::text, 'provisioning'::text, 'team_lifecycle'::text, 'agent_lifecycle'::text, 'execution'::text, 'auth'::text, 'bypass_attempt'::text])))
 );
 
-ALTER TABLE ONLY public.control_plane_audit_log FORCE ROW LEVEL SECURITY;
+ALTER TABLE ONLY public.audit_log FORCE ROW LEVEL SECURITY;
 
 
-ALTER TABLE public.control_plane_audit_log OWNER TO paperclip;
+ALTER TABLE public.audit_log OWNER TO paperclip;
 
 --
--- Name: control_plane_budget_alerts; Type: TABLE; Schema: public; Owner: paperclip
+-- Name: budget_alerts; Type: TABLE; Schema: public; Owner: paperclip
 --
 
-CREATE TABLE public.control_plane_budget_alerts (
+CREATE TABLE public.budget_alerts (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     workspace_id uuid NOT NULL,
     user_id text NOT NULL,
@@ -1007,16 +1007,16 @@ CREATE TABLE public.control_plane_budget_alerts (
     CONSTRAINT control_plane_budget_alerts_threshold_check CHECK (((threshold > (0)::numeric) AND (threshold <= (2)::numeric)))
 );
 
-ALTER TABLE ONLY public.control_plane_budget_alerts FORCE ROW LEVEL SECURITY;
+ALTER TABLE ONLY public.budget_alerts FORCE ROW LEVEL SECURITY;
 
 
-ALTER TABLE public.control_plane_budget_alerts OWNER TO paperclip;
+ALTER TABLE public.budget_alerts OWNER TO paperclip;
 
 --
--- Name: control_plane_company_lifecycle; Type: TABLE; Schema: public; Owner: paperclip
+-- Name: company_lifecycle; Type: TABLE; Schema: public; Owner: paperclip
 --
 
-CREATE TABLE public.control_plane_company_lifecycle (
+CREATE TABLE public.company_lifecycle (
     user_id text NOT NULL,
     status text NOT NULL,
     pause_reason text,
@@ -1027,13 +1027,13 @@ CREATE TABLE public.control_plane_company_lifecycle (
 );
 
 
-ALTER TABLE public.control_plane_company_lifecycle OWNER TO paperclip;
+ALTER TABLE public.company_lifecycle OWNER TO paperclip;
 
 --
--- Name: control_plane_company_lifecycle_audit; Type: TABLE; Schema: public; Owner: paperclip
+-- Name: company_lifecycle_audit; Type: TABLE; Schema: public; Owner: paperclip
 --
 
-CREATE TABLE public.control_plane_company_lifecycle_audit (
+CREATE TABLE public.company_lifecycle_audit (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     user_id text NOT NULL,
     action text NOT NULL,
@@ -1046,13 +1046,13 @@ CREATE TABLE public.control_plane_company_lifecycle_audit (
 );
 
 
-ALTER TABLE public.control_plane_company_lifecycle_audit OWNER TO paperclip;
+ALTER TABLE public.company_lifecycle_audit OWNER TO paperclip;
 
 --
--- Name: control_plane_executions; Type: TABLE; Schema: public; Owner: paperclip
+-- Name: agent_executions; Type: TABLE; Schema: public; Owner: paperclip
 --
 
-CREATE TABLE public.control_plane_executions (
+CREATE TABLE public.agent_executions (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     workspace_id uuid NOT NULL,
     user_id text NOT NULL,
@@ -1076,16 +1076,16 @@ CREATE TABLE public.control_plane_executions (
     CONSTRAINT control_plane_executions_status_check CHECK ((status = ANY (ARRAY['queued'::text, 'running'::text, 'blocked'::text, 'completed'::text, 'failed'::text, 'stopped'::text])))
 );
 
-ALTER TABLE ONLY public.control_plane_executions FORCE ROW LEVEL SECURITY;
+ALTER TABLE ONLY public.agent_executions FORCE ROW LEVEL SECURITY;
 
 
-ALTER TABLE public.control_plane_executions OWNER TO paperclip;
+ALTER TABLE public.agent_executions OWNER TO paperclip;
 
 --
--- Name: control_plane_heartbeats; Type: TABLE; Schema: public; Owner: paperclip
+-- Name: agent_heartbeats; Type: TABLE; Schema: public; Owner: paperclip
 --
 
-CREATE TABLE public.control_plane_heartbeats (
+CREATE TABLE public.agent_heartbeats (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     workspace_id uuid NOT NULL,
     user_id text NOT NULL,
@@ -1101,16 +1101,16 @@ CREATE TABLE public.control_plane_heartbeats (
     CONSTRAINT control_plane_heartbeats_status_check CHECK ((status = ANY (ARRAY['queued'::text, 'running'::text, 'blocked'::text, 'completed'::text])))
 );
 
-ALTER TABLE ONLY public.control_plane_heartbeats FORCE ROW LEVEL SECURITY;
+ALTER TABLE ONLY public.agent_heartbeats FORCE ROW LEVEL SECURITY;
 
 
-ALTER TABLE public.control_plane_heartbeats OWNER TO paperclip;
+ALTER TABLE public.agent_heartbeats OWNER TO paperclip;
 
 --
--- Name: control_plane_secret_audit; Type: TABLE; Schema: public; Owner: paperclip
+-- Name: audit_log; Type: TABLE; Schema: public; Owner: paperclip
 --
 
-CREATE TABLE public.control_plane_secret_audit (
+CREATE TABLE public.audit_log (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     workspace_id uuid NOT NULL,
     company_id uuid NOT NULL,
@@ -1126,16 +1126,16 @@ CREATE TABLE public.control_plane_secret_audit (
     CONSTRAINT control_plane_secret_audit_key_version_check CHECK ((key_version >= 1))
 );
 
-ALTER TABLE ONLY public.control_plane_secret_audit FORCE ROW LEVEL SECURITY;
+ALTER TABLE ONLY public.audit_log FORCE ROW LEVEL SECURITY;
 
 
-ALTER TABLE public.control_plane_secret_audit OWNER TO paperclip;
+ALTER TABLE public.audit_log OWNER TO paperclip;
 
 --
--- Name: control_plane_spend_entries; Type: TABLE; Schema: public; Owner: paperclip
+-- Name: spend_entries; Type: TABLE; Schema: public; Owner: paperclip
 --
 
-CREATE TABLE public.control_plane_spend_entries (
+CREATE TABLE public.spend_entries (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     workspace_id uuid NOT NULL,
     user_id text NOT NULL,
@@ -1153,16 +1153,16 @@ CREATE TABLE public.control_plane_spend_entries (
     CONSTRAINT control_plane_spend_entries_cost_usd_check CHECK ((cost_usd >= (0)::numeric))
 );
 
-ALTER TABLE ONLY public.control_plane_spend_entries FORCE ROW LEVEL SECURITY;
+ALTER TABLE ONLY public.spend_entries FORCE ROW LEVEL SECURITY;
 
 
-ALTER TABLE public.control_plane_spend_entries OWNER TO paperclip;
+ALTER TABLE public.spend_entries OWNER TO paperclip;
 
 --
--- Name: control_plane_tasks; Type: TABLE; Schema: public; Owner: paperclip
+-- Name: agent_tasks; Type: TABLE; Schema: public; Owner: paperclip
 --
 
-CREATE TABLE public.control_plane_tasks (
+CREATE TABLE public.agent_tasks (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     workspace_id uuid NOT NULL,
     user_id text NOT NULL,
@@ -1183,16 +1183,16 @@ CREATE TABLE public.control_plane_tasks (
     CONSTRAINT control_plane_tasks_status_check CHECK ((status = ANY (ARRAY['todo'::text, 'in_progress'::text, 'done'::text, 'blocked'::text])))
 );
 
-ALTER TABLE ONLY public.control_plane_tasks FORCE ROW LEVEL SECURITY;
+ALTER TABLE ONLY public.agent_tasks FORCE ROW LEVEL SECURITY;
 
 
-ALTER TABLE public.control_plane_tasks OWNER TO paperclip;
+ALTER TABLE public.agent_tasks OWNER TO paperclip;
 
 --
--- Name: control_plane_teams; Type: TABLE; Schema: public; Owner: paperclip
+-- Name: agent_teams; Type: TABLE; Schema: public; Owner: paperclip
 --
 
-CREATE TABLE public.control_plane_teams (
+CREATE TABLE public.agent_teams (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     workspace_id uuid NOT NULL,
     user_id text NOT NULL,
@@ -1218,10 +1218,10 @@ CREATE TABLE public.control_plane_teams (
     CONSTRAINT control_plane_teams_status_check CHECK ((status = ANY (ARRAY['active'::text, 'paused'::text, 'stopped'::text])))
 );
 
-ALTER TABLE ONLY public.control_plane_teams FORCE ROW LEVEL SECURITY;
+ALTER TABLE ONLY public.agent_teams FORCE ROW LEVEL SECURITY;
 
 
-ALTER TABLE public.control_plane_teams OWNER TO paperclip;
+ALTER TABLE public.agent_teams OWNER TO paperclip;
 
 --
 -- Name: email_sends; Type: TABLE; Schema: public; Owner: paperclip
@@ -1312,10 +1312,10 @@ CREATE TABLE public.leads (
 ALTER TABLE public.leads OWNER TO paperclip;
 
 --
--- Name: llm_configs; Type: TABLE; Schema: public; Owner: paperclip
+-- Name: llm_credentials; Type: TABLE; Schema: public; Owner: paperclip
 --
 
-CREATE TABLE public.llm_configs (
+CREATE TABLE public.llm_credentials (
     id text NOT NULL,
     user_id text NOT NULL,
     provider text NOT NULL,
@@ -1329,7 +1329,7 @@ CREATE TABLE public.llm_configs (
 );
 
 
-ALTER TABLE public.llm_configs OWNER TO paperclip;
+ALTER TABLE public.llm_credentials OWNER TO paperclip;
 
 --
 -- Name: memory_entries; Type: TABLE; Schema: public; Owner: paperclip
@@ -1468,10 +1468,10 @@ CREATE TABLE public.observability_events (
 ALTER TABLE public.observability_events OWNER TO paperclip;
 
 --
--- Name: provisioned_companies; Type: TABLE; Schema: public; Owner: paperclip
+-- Name: companies; Type: TABLE; Schema: public; Owner: paperclip
 --
 
-CREATE TABLE public.provisioned_companies (
+CREATE TABLE public.companies (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     workspace_id uuid NOT NULL,
     user_id text NOT NULL,
@@ -1491,10 +1491,10 @@ CREATE TABLE public.provisioned_companies (
     CONSTRAINT provisioned_companies_budget_monthly_usd_check CHECK ((budget_monthly_usd >= (0)::numeric))
 );
 
-ALTER TABLE ONLY public.provisioned_companies FORCE ROW LEVEL SECURITY;
+ALTER TABLE ONLY public.companies FORCE ROW LEVEL SECURITY;
 
 
-ALTER TABLE public.provisioned_companies OWNER TO paperclip;
+ALTER TABLE public.companies OWNER TO paperclip;
 
 --
 -- Name: provisioned_company_secrets; Type: TABLE; Schema: public; Owner: paperclip
@@ -2155,90 +2155,90 @@ ALTER TABLE ONLY public.connector_credentials
 
 
 --
--- Name: control_plane_agents control_plane_agents_pkey; Type: CONSTRAINT; Schema: public; Owner: paperclip
+-- Name: agents control_plane_agents_pkey; Type: CONSTRAINT; Schema: public; Owner: paperclip
 --
 
-ALTER TABLE ONLY public.control_plane_agents
+ALTER TABLE ONLY public.agents
     ADD CONSTRAINT control_plane_agents_pkey PRIMARY KEY (id);
 
 
 --
--- Name: control_plane_audit_log control_plane_audit_log_pkey; Type: CONSTRAINT; Schema: public; Owner: paperclip
+-- Name: audit_log control_plane_audit_log_pkey; Type: CONSTRAINT; Schema: public; Owner: paperclip
 --
 
-ALTER TABLE ONLY public.control_plane_audit_log
+ALTER TABLE ONLY public.audit_log
     ADD CONSTRAINT control_plane_audit_log_pkey PRIMARY KEY (id);
 
 
 --
--- Name: control_plane_budget_alerts control_plane_budget_alerts_pkey; Type: CONSTRAINT; Schema: public; Owner: paperclip
+-- Name: budget_alerts control_plane_budget_alerts_pkey; Type: CONSTRAINT; Schema: public; Owner: paperclip
 --
 
-ALTER TABLE ONLY public.control_plane_budget_alerts
+ALTER TABLE ONLY public.budget_alerts
     ADD CONSTRAINT control_plane_budget_alerts_pkey PRIMARY KEY (id);
 
 
 --
--- Name: control_plane_company_lifecycle_audit control_plane_company_lifecycle_audit_pkey; Type: CONSTRAINT; Schema: public; Owner: paperclip
+-- Name: company_lifecycle_audit control_plane_company_lifecycle_audit_pkey; Type: CONSTRAINT; Schema: public; Owner: paperclip
 --
 
-ALTER TABLE ONLY public.control_plane_company_lifecycle_audit
+ALTER TABLE ONLY public.company_lifecycle_audit
     ADD CONSTRAINT control_plane_company_lifecycle_audit_pkey PRIMARY KEY (id);
 
 
 --
--- Name: control_plane_company_lifecycle control_plane_company_lifecycle_pkey; Type: CONSTRAINT; Schema: public; Owner: paperclip
+-- Name: company_lifecycle control_plane_company_lifecycle_pkey; Type: CONSTRAINT; Schema: public; Owner: paperclip
 --
 
-ALTER TABLE ONLY public.control_plane_company_lifecycle
+ALTER TABLE ONLY public.company_lifecycle
     ADD CONSTRAINT control_plane_company_lifecycle_pkey PRIMARY KEY (user_id);
 
 
 --
--- Name: control_plane_executions control_plane_executions_pkey; Type: CONSTRAINT; Schema: public; Owner: paperclip
+-- Name: agent_executions control_plane_executions_pkey; Type: CONSTRAINT; Schema: public; Owner: paperclip
 --
 
-ALTER TABLE ONLY public.control_plane_executions
+ALTER TABLE ONLY public.agent_executions
     ADD CONSTRAINT control_plane_executions_pkey PRIMARY KEY (id);
 
 
 --
--- Name: control_plane_heartbeats control_plane_heartbeats_pkey; Type: CONSTRAINT; Schema: public; Owner: paperclip
+-- Name: agent_heartbeats control_plane_heartbeats_pkey; Type: CONSTRAINT; Schema: public; Owner: paperclip
 --
 
-ALTER TABLE ONLY public.control_plane_heartbeats
+ALTER TABLE ONLY public.agent_heartbeats
     ADD CONSTRAINT control_plane_heartbeats_pkey PRIMARY KEY (id);
 
 
 --
--- Name: control_plane_secret_audit control_plane_secret_audit_pkey; Type: CONSTRAINT; Schema: public; Owner: paperclip
+-- Name: audit_log control_plane_secret_audit_pkey; Type: CONSTRAINT; Schema: public; Owner: paperclip
 --
 
-ALTER TABLE ONLY public.control_plane_secret_audit
+ALTER TABLE ONLY public.audit_log
     ADD CONSTRAINT control_plane_secret_audit_pkey PRIMARY KEY (id);
 
 
 --
--- Name: control_plane_spend_entries control_plane_spend_entries_pkey; Type: CONSTRAINT; Schema: public; Owner: paperclip
+-- Name: spend_entries control_plane_spend_entries_pkey; Type: CONSTRAINT; Schema: public; Owner: paperclip
 --
 
-ALTER TABLE ONLY public.control_plane_spend_entries
+ALTER TABLE ONLY public.spend_entries
     ADD CONSTRAINT control_plane_spend_entries_pkey PRIMARY KEY (id);
 
 
 --
--- Name: control_plane_tasks control_plane_tasks_pkey; Type: CONSTRAINT; Schema: public; Owner: paperclip
+-- Name: agent_tasks control_plane_tasks_pkey; Type: CONSTRAINT; Schema: public; Owner: paperclip
 --
 
-ALTER TABLE ONLY public.control_plane_tasks
+ALTER TABLE ONLY public.agent_tasks
     ADD CONSTRAINT control_plane_tasks_pkey PRIMARY KEY (id);
 
 
 --
--- Name: control_plane_teams control_plane_teams_pkey; Type: CONSTRAINT; Schema: public; Owner: paperclip
+-- Name: agent_teams control_plane_teams_pkey; Type: CONSTRAINT; Schema: public; Owner: paperclip
 --
 
-ALTER TABLE ONLY public.control_plane_teams
+ALTER TABLE ONLY public.agent_teams
     ADD CONSTRAINT control_plane_teams_pkey PRIMARY KEY (id);
 
 
@@ -2283,10 +2283,10 @@ ALTER TABLE ONLY public.leads
 
 
 --
--- Name: llm_configs llm_configs_pkey; Type: CONSTRAINT; Schema: public; Owner: paperclip
+-- Name: llm_credentials llm_configs_pkey; Type: CONSTRAINT; Schema: public; Owner: paperclip
 --
 
-ALTER TABLE ONLY public.llm_configs
+ALTER TABLE ONLY public.llm_credentials
     ADD CONSTRAINT llm_configs_pkey PRIMARY KEY (id);
 
 
@@ -2363,26 +2363,26 @@ ALTER TABLE ONLY public.observability_events
 
 
 --
--- Name: provisioned_companies provisioned_companies_pkey; Type: CONSTRAINT; Schema: public; Owner: paperclip
+-- Name: companies provisioned_companies_pkey; Type: CONSTRAINT; Schema: public; Owner: paperclip
 --
 
-ALTER TABLE ONLY public.provisioned_companies
+ALTER TABLE ONLY public.companies
     ADD CONSTRAINT provisioned_companies_pkey PRIMARY KEY (id);
 
 
 --
--- Name: provisioned_companies provisioned_companies_provisioned_workspace_id_key; Type: CONSTRAINT; Schema: public; Owner: paperclip
+-- Name: companies provisioned_companies_provisioned_workspace_id_key; Type: CONSTRAINT; Schema: public; Owner: paperclip
 --
 
-ALTER TABLE ONLY public.provisioned_companies
+ALTER TABLE ONLY public.companies
     ADD CONSTRAINT provisioned_companies_provisioned_workspace_id_key UNIQUE (provisioned_workspace_id);
 
 
 --
--- Name: provisioned_companies provisioned_companies_workspace_id_user_id_idempotency_key_key; Type: CONSTRAINT; Schema: public; Owner: paperclip
+-- Name: companies provisioned_companies_workspace_id_user_id_idempotency_key_key; Type: CONSTRAINT; Schema: public; Owner: paperclip
 --
 
-ALTER TABLE ONLY public.provisioned_companies
+ALTER TABLE ONLY public.companies
     ADD CONSTRAINT provisioned_companies_workspace_id_user_id_idempotency_key_key UNIQUE (workspace_id, user_id, idempotency_key);
 
 
@@ -3068,238 +3068,238 @@ CREATE INDEX idx_connector_credentials_service_user ON public.connector_credenti
 -- Name: idx_control_plane_agents_team; Type: INDEX; Schema: public; Owner: paperclip
 --
 
-CREATE INDEX idx_control_plane_agents_team ON public.control_plane_agents USING btree (team_id);
+CREATE INDEX idx_control_plane_agents_team ON public.agents USING btree (team_id);
 
 
 --
 -- Name: idx_control_plane_agents_user; Type: INDEX; Schema: public; Owner: paperclip
 --
 
-CREATE INDEX idx_control_plane_agents_user ON public.control_plane_agents USING btree (workspace_id, user_id);
+CREATE INDEX idx_control_plane_agents_user ON public.agents USING btree (workspace_id, user_id);
 
 
 --
 -- Name: idx_control_plane_agents_workspace; Type: INDEX; Schema: public; Owner: paperclip
 --
 
-CREATE INDEX idx_control_plane_agents_workspace ON public.control_plane_agents USING btree (workspace_id);
+CREATE INDEX idx_control_plane_agents_workspace ON public.agents USING btree (workspace_id);
 
 
 --
 -- Name: idx_control_plane_audit_log_actor_agent; Type: INDEX; Schema: public; Owner: paperclip
 --
 
-CREATE INDEX idx_control_plane_audit_log_actor_agent ON public.control_plane_audit_log USING btree (actor_agent_id, at DESC) WHERE (actor_agent_id IS NOT NULL);
+CREATE INDEX idx_control_plane_audit_log_actor_agent ON public.audit_log USING btree (actor_agent_id, at DESC) WHERE (actor_agent_id IS NOT NULL);
 
 
 --
 -- Name: idx_control_plane_audit_log_actor_user; Type: INDEX; Schema: public; Owner: paperclip
 --
 
-CREATE INDEX idx_control_plane_audit_log_actor_user ON public.control_plane_audit_log USING btree (actor_user_id, at DESC) WHERE (actor_user_id IS NOT NULL);
+CREATE INDEX idx_control_plane_audit_log_actor_user ON public.audit_log USING btree (actor_user_id, at DESC) WHERE (actor_user_id IS NOT NULL);
 
 
 --
 -- Name: idx_control_plane_audit_log_category_at; Type: INDEX; Schema: public; Owner: paperclip
 --
 
-CREATE INDEX idx_control_plane_audit_log_category_at ON public.control_plane_audit_log USING btree (category, at DESC);
+CREATE INDEX idx_control_plane_audit_log_category_at ON public.audit_log USING btree (category, at DESC);
 
 
 --
 -- Name: idx_control_plane_audit_log_target; Type: INDEX; Schema: public; Owner: paperclip
 --
 
-CREATE INDEX idx_control_plane_audit_log_target ON public.control_plane_audit_log USING btree (target_type, target_id) WHERE (target_type IS NOT NULL);
+CREATE INDEX idx_control_plane_audit_log_target ON public.audit_log USING btree (target_type, target_id) WHERE (target_type IS NOT NULL);
 
 
 --
 -- Name: idx_control_plane_audit_log_workspace_at; Type: INDEX; Schema: public; Owner: paperclip
 --
 
-CREATE INDEX idx_control_plane_audit_log_workspace_at ON public.control_plane_audit_log USING btree (workspace_id, at DESC);
+CREATE INDEX idx_control_plane_audit_log_workspace_at ON public.audit_log USING btree (workspace_id, at DESC);
 
 
 --
 -- Name: idx_control_plane_budget_alerts_team_recorded; Type: INDEX; Schema: public; Owner: paperclip
 --
 
-CREATE INDEX idx_control_plane_budget_alerts_team_recorded ON public.control_plane_budget_alerts USING btree (team_id, recorded_at DESC);
+CREATE INDEX idx_control_plane_budget_alerts_team_recorded ON public.budget_alerts USING btree (team_id, recorded_at DESC);
 
 
 --
 -- Name: idx_control_plane_budget_alerts_workspace; Type: INDEX; Schema: public; Owner: paperclip
 --
 
-CREATE INDEX idx_control_plane_budget_alerts_workspace ON public.control_plane_budget_alerts USING btree (workspace_id);
+CREATE INDEX idx_control_plane_budget_alerts_workspace ON public.budget_alerts USING btree (workspace_id);
 
 
 --
 -- Name: idx_control_plane_company_lifecycle_audit_user_created; Type: INDEX; Schema: public; Owner: paperclip
 --
 
-CREATE INDEX idx_control_plane_company_lifecycle_audit_user_created ON public.control_plane_company_lifecycle_audit USING btree (user_id, created_at DESC);
+CREATE INDEX idx_control_plane_company_lifecycle_audit_user_created ON public.company_lifecycle_audit USING btree (user_id, created_at DESC);
 
 
 --
 -- Name: idx_control_plane_executions_agent; Type: INDEX; Schema: public; Owner: paperclip
 --
 
-CREATE INDEX idx_control_plane_executions_agent ON public.control_plane_executions USING btree (agent_id);
+CREATE INDEX idx_control_plane_executions_agent ON public.agent_executions USING btree (agent_id);
 
 
 --
 -- Name: idx_control_plane_executions_team; Type: INDEX; Schema: public; Owner: paperclip
 --
 
-CREATE INDEX idx_control_plane_executions_team ON public.control_plane_executions USING btree (team_id);
+CREATE INDEX idx_control_plane_executions_team ON public.agent_executions USING btree (team_id);
 
 
 --
 -- Name: idx_control_plane_executions_user_requested; Type: INDEX; Schema: public; Owner: paperclip
 --
 
-CREATE INDEX idx_control_plane_executions_user_requested ON public.control_plane_executions USING btree (workspace_id, user_id, requested_at);
+CREATE INDEX idx_control_plane_executions_user_requested ON public.agent_executions USING btree (workspace_id, user_id, requested_at);
 
 
 --
 -- Name: idx_control_plane_executions_workspace; Type: INDEX; Schema: public; Owner: paperclip
 --
 
-CREATE INDEX idx_control_plane_executions_workspace ON public.control_plane_executions USING btree (workspace_id);
+CREATE INDEX idx_control_plane_executions_workspace ON public.agent_executions USING btree (workspace_id);
 
 
 --
 -- Name: idx_control_plane_heartbeats_agent_started; Type: INDEX; Schema: public; Owner: paperclip
 --
 
-CREATE INDEX idx_control_plane_heartbeats_agent_started ON public.control_plane_heartbeats USING btree (agent_id, started_at DESC);
+CREATE INDEX idx_control_plane_heartbeats_agent_started ON public.agent_heartbeats USING btree (agent_id, started_at DESC);
 
 
 --
 -- Name: idx_control_plane_heartbeats_execution; Type: INDEX; Schema: public; Owner: paperclip
 --
 
-CREATE INDEX idx_control_plane_heartbeats_execution ON public.control_plane_heartbeats USING btree (execution_id);
+CREATE INDEX idx_control_plane_heartbeats_execution ON public.agent_heartbeats USING btree (execution_id);
 
 
 --
 -- Name: idx_control_plane_heartbeats_team_started; Type: INDEX; Schema: public; Owner: paperclip
 --
 
-CREATE INDEX idx_control_plane_heartbeats_team_started ON public.control_plane_heartbeats USING btree (team_id, started_at DESC);
+CREATE INDEX idx_control_plane_heartbeats_team_started ON public.agent_heartbeats USING btree (team_id, started_at DESC);
 
 
 --
 -- Name: idx_control_plane_heartbeats_workspace; Type: INDEX; Schema: public; Owner: paperclip
 --
 
-CREATE INDEX idx_control_plane_heartbeats_workspace ON public.control_plane_heartbeats USING btree (workspace_id);
+CREATE INDEX idx_control_plane_heartbeats_workspace ON public.agent_heartbeats USING btree (workspace_id);
 
 
 --
 -- Name: idx_control_plane_secret_audit_actor_agent; Type: INDEX; Schema: public; Owner: paperclip
 --
 
-CREATE INDEX idx_control_plane_secret_audit_actor_agent ON public.control_plane_secret_audit USING btree (actor_agent_id) WHERE (actor_agent_id IS NOT NULL);
+CREATE INDEX idx_control_plane_secret_audit_actor_agent ON public.audit_log USING btree (actor_agent_id) WHERE (actor_agent_id IS NOT NULL);
 
 
 --
 -- Name: idx_control_plane_secret_audit_actor_user; Type: INDEX; Schema: public; Owner: paperclip
 --
 
-CREATE INDEX idx_control_plane_secret_audit_actor_user ON public.control_plane_secret_audit USING btree (actor_user_id) WHERE (actor_user_id IS NOT NULL);
+CREATE INDEX idx_control_plane_secret_audit_actor_user ON public.audit_log USING btree (actor_user_id) WHERE (actor_user_id IS NOT NULL);
 
 
 --
 -- Name: idx_control_plane_secret_audit_company_at; Type: INDEX; Schema: public; Owner: paperclip
 --
 
-CREATE INDEX idx_control_plane_secret_audit_company_at ON public.control_plane_secret_audit USING btree (company_id, at DESC);
+CREATE INDEX idx_control_plane_secret_audit_company_at ON public.audit_log USING btree (company_id, at DESC);
 
 
 --
 -- Name: idx_control_plane_secret_audit_workspace; Type: INDEX; Schema: public; Owner: paperclip
 --
 
-CREATE INDEX idx_control_plane_secret_audit_workspace ON public.control_plane_secret_audit USING btree (workspace_id);
+CREATE INDEX idx_control_plane_secret_audit_workspace ON public.audit_log USING btree (workspace_id);
 
 
 --
 -- Name: idx_control_plane_spend_agent_recorded; Type: INDEX; Schema: public; Owner: paperclip
 --
 
-CREATE INDEX idx_control_plane_spend_agent_recorded ON public.control_plane_spend_entries USING btree (agent_id, recorded_at DESC);
+CREATE INDEX idx_control_plane_spend_agent_recorded ON public.spend_entries USING btree (agent_id, recorded_at DESC);
 
 
 --
 -- Name: idx_control_plane_spend_execution; Type: INDEX; Schema: public; Owner: paperclip
 --
 
-CREATE INDEX idx_control_plane_spend_execution ON public.control_plane_spend_entries USING btree (execution_id);
+CREATE INDEX idx_control_plane_spend_execution ON public.spend_entries USING btree (execution_id);
 
 
 --
 -- Name: idx_control_plane_spend_team_recorded; Type: INDEX; Schema: public; Owner: paperclip
 --
 
-CREATE INDEX idx_control_plane_spend_team_recorded ON public.control_plane_spend_entries USING btree (team_id, recorded_at DESC);
+CREATE INDEX idx_control_plane_spend_team_recorded ON public.spend_entries USING btree (team_id, recorded_at DESC);
 
 
 --
 -- Name: idx_control_plane_spend_workspace; Type: INDEX; Schema: public; Owner: paperclip
 --
 
-CREATE INDEX idx_control_plane_spend_workspace ON public.control_plane_spend_entries USING btree (workspace_id);
+CREATE INDEX idx_control_plane_spend_workspace ON public.spend_entries USING btree (workspace_id);
 
 
 --
 -- Name: idx_control_plane_tasks_agent; Type: INDEX; Schema: public; Owner: paperclip
 --
 
-CREATE INDEX idx_control_plane_tasks_agent ON public.control_plane_tasks USING btree (assigned_agent_id);
+CREATE INDEX idx_control_plane_tasks_agent ON public.agent_tasks USING btree (assigned_agent_id);
 
 
 --
 -- Name: idx_control_plane_tasks_execution; Type: INDEX; Schema: public; Owner: paperclip
 --
 
-CREATE INDEX idx_control_plane_tasks_execution ON public.control_plane_tasks USING btree (execution_id);
+CREATE INDEX idx_control_plane_tasks_execution ON public.agent_tasks USING btree (execution_id);
 
 
 --
 -- Name: idx_control_plane_tasks_user_team; Type: INDEX; Schema: public; Owner: paperclip
 --
 
-CREATE INDEX idx_control_plane_tasks_user_team ON public.control_plane_tasks USING btree (workspace_id, user_id, team_id, created_at);
+CREATE INDEX idx_control_plane_tasks_user_team ON public.agent_tasks USING btree (workspace_id, user_id, team_id, created_at);
 
 
 --
 -- Name: idx_control_plane_tasks_workspace; Type: INDEX; Schema: public; Owner: paperclip
 --
 
-CREATE INDEX idx_control_plane_tasks_workspace ON public.control_plane_tasks USING btree (workspace_id);
+CREATE INDEX idx_control_plane_tasks_workspace ON public.agent_tasks USING btree (workspace_id);
 
 
 --
 -- Name: idx_control_plane_teams_company; Type: INDEX; Schema: public; Owner: paperclip
 --
 
-CREATE INDEX idx_control_plane_teams_company ON public.control_plane_teams USING btree (company_id);
+CREATE INDEX idx_control_plane_teams_company ON public.agent_teams USING btree (company_id);
 
 
 --
 -- Name: idx_control_plane_teams_user; Type: INDEX; Schema: public; Owner: paperclip
 --
 
-CREATE INDEX idx_control_plane_teams_user ON public.control_plane_teams USING btree (workspace_id, user_id);
+CREATE INDEX idx_control_plane_teams_user ON public.agent_teams USING btree (workspace_id, user_id);
 
 
 --
 -- Name: idx_control_plane_teams_workspace; Type: INDEX; Schema: public; Owner: paperclip
 --
 
-CREATE INDEX idx_control_plane_teams_workspace ON public.control_plane_teams USING btree (workspace_id);
+CREATE INDEX idx_control_plane_teams_workspace ON public.agent_teams USING btree (workspace_id);
 
 
 --
@@ -3362,14 +3362,14 @@ CREATE INDEX idx_leads_workspace_id ON public.leads USING btree (workspace_id);
 -- Name: idx_llm_configs_user_default; Type: INDEX; Schema: public; Owner: paperclip
 --
 
-CREATE UNIQUE INDEX idx_llm_configs_user_default ON public.llm_configs USING btree (user_id) WHERE (is_default = true);
+CREATE UNIQUE INDEX idx_llm_configs_user_default ON public.llm_credentials USING btree (user_id) WHERE (is_default = true);
 
 
 --
 -- Name: idx_llm_configs_user_id; Type: INDEX; Schema: public; Owner: paperclip
 --
 
-CREATE INDEX idx_llm_configs_user_id ON public.llm_configs USING btree (user_id);
+CREATE INDEX idx_llm_configs_user_id ON public.llm_credentials USING btree (user_id);
 
 
 --
@@ -3432,14 +3432,14 @@ CREATE INDEX idx_observability_events_user_sequence ON public.observability_even
 -- Name: idx_provisioned_companies_user; Type: INDEX; Schema: public; Owner: paperclip
 --
 
-CREATE INDEX idx_provisioned_companies_user ON public.provisioned_companies USING btree (workspace_id, user_id);
+CREATE INDEX idx_provisioned_companies_user ON public.companies USING btree (workspace_id, user_id);
 
 
 --
 -- Name: idx_provisioned_companies_workspace; Type: INDEX; Schema: public; Owner: paperclip
 --
 
-CREATE INDEX idx_provisioned_companies_workspace ON public.provisioned_companies USING btree (workspace_id);
+CREATE INDEX idx_provisioned_companies_workspace ON public.companies USING btree (workspace_id);
 
 
 --
@@ -3593,21 +3593,21 @@ CREATE UNIQUE INDEX leads_workspace_email_key ON public.leads USING btree (works
 -- Name: uq_control_plane_budget_alerts_agent_scope; Type: INDEX; Schema: public; Owner: paperclip
 --
 
-CREATE UNIQUE INDEX uq_control_plane_budget_alerts_agent_scope ON public.control_plane_budget_alerts USING btree (team_id, agent_id, threshold) WHERE ((scope = 'agent'::text) AND (agent_id IS NOT NULL));
+CREATE UNIQUE INDEX uq_control_plane_budget_alerts_agent_scope ON public.budget_alerts USING btree (team_id, agent_id, threshold) WHERE ((scope = 'agent'::text) AND (agent_id IS NOT NULL));
 
 
 --
 -- Name: uq_control_plane_budget_alerts_team_scope; Type: INDEX; Schema: public; Owner: paperclip
 --
 
-CREATE UNIQUE INDEX uq_control_plane_budget_alerts_team_scope ON public.control_plane_budget_alerts USING btree (team_id, threshold) WHERE (scope = 'team'::text);
+CREATE UNIQUE INDEX uq_control_plane_budget_alerts_team_scope ON public.budget_alerts USING btree (team_id, threshold) WHERE (scope = 'team'::text);
 
 
 --
 -- Name: uq_control_plane_budget_alerts_tool_scope; Type: INDEX; Schema: public; Owner: paperclip
 --
 
-CREATE UNIQUE INDEX uq_control_plane_budget_alerts_tool_scope ON public.control_plane_budget_alerts USING btree (team_id, tool_name, threshold) WHERE ((scope = 'tool'::text) AND (tool_name IS NOT NULL));
+CREATE UNIQUE INDEX uq_control_plane_budget_alerts_tool_scope ON public.budget_alerts USING btree (team_id, tool_name, threshold) WHERE ((scope = 'tool'::text) AND (tool_name IS NOT NULL));
 
 
 --
@@ -4106,218 +4106,218 @@ ALTER TABLE ONLY public.campaigns
 
 
 --
--- Name: control_plane_agents control_plane_agents_current_execution_fk; Type: FK CONSTRAINT; Schema: public; Owner: paperclip
+-- Name: agents control_plane_agents_current_execution_fk; Type: FK CONSTRAINT; Schema: public; Owner: paperclip
 --
 
-ALTER TABLE ONLY public.control_plane_agents
-    ADD CONSTRAINT control_plane_agents_current_execution_fk FOREIGN KEY (current_execution_id) REFERENCES public.control_plane_executions(id) ON DELETE SET NULL DEFERRABLE INITIALLY DEFERRED;
-
-
---
--- Name: control_plane_agents control_plane_agents_reporting_to_agent_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: paperclip
---
-
-ALTER TABLE ONLY public.control_plane_agents
-    ADD CONSTRAINT control_plane_agents_reporting_to_agent_id_fkey FOREIGN KEY (reporting_to_agent_id) REFERENCES public.control_plane_agents(id) ON DELETE SET NULL;
+ALTER TABLE ONLY public.agents
+    ADD CONSTRAINT control_plane_agents_current_execution_fk FOREIGN KEY (current_execution_id) REFERENCES public.agent_executions(id) ON DELETE SET NULL DEFERRABLE INITIALLY DEFERRED;
 
 
 --
--- Name: control_plane_agents control_plane_agents_team_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: paperclip
+-- Name: agents control_plane_agents_reporting_to_agent_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: paperclip
 --
 
-ALTER TABLE ONLY public.control_plane_agents
-    ADD CONSTRAINT control_plane_agents_team_id_fkey FOREIGN KEY (team_id) REFERENCES public.control_plane_teams(id) ON DELETE CASCADE;
+ALTER TABLE ONLY public.agents
+    ADD CONSTRAINT control_plane_agents_reporting_to_agent_id_fkey FOREIGN KEY (reporting_to_agent_id) REFERENCES public.agents(id) ON DELETE SET NULL;
 
 
 --
--- Name: control_plane_agents control_plane_agents_workspace_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: paperclip
+-- Name: agents control_plane_agents_team_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: paperclip
 --
 
-ALTER TABLE ONLY public.control_plane_agents
+ALTER TABLE ONLY public.agents
+    ADD CONSTRAINT control_plane_agents_team_id_fkey FOREIGN KEY (team_id) REFERENCES public.agent_teams(id) ON DELETE CASCADE;
+
+
+--
+-- Name: agents control_plane_agents_workspace_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: paperclip
+--
+
+ALTER TABLE ONLY public.agents
     ADD CONSTRAINT control_plane_agents_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
 
 
 --
--- Name: control_plane_audit_log control_plane_audit_log_workspace_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: paperclip
+-- Name: audit_log control_plane_audit_log_workspace_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: paperclip
 --
 
-ALTER TABLE ONLY public.control_plane_audit_log
+ALTER TABLE ONLY public.audit_log
     ADD CONSTRAINT control_plane_audit_log_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
 
 
 --
--- Name: control_plane_budget_alerts control_plane_budget_alerts_agent_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: paperclip
+-- Name: budget_alerts control_plane_budget_alerts_agent_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: paperclip
 --
 
-ALTER TABLE ONLY public.control_plane_budget_alerts
-    ADD CONSTRAINT control_plane_budget_alerts_agent_id_fkey FOREIGN KEY (agent_id) REFERENCES public.control_plane_agents(id) ON DELETE CASCADE;
-
-
---
--- Name: control_plane_budget_alerts control_plane_budget_alerts_team_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: paperclip
---
-
-ALTER TABLE ONLY public.control_plane_budget_alerts
-    ADD CONSTRAINT control_plane_budget_alerts_team_id_fkey FOREIGN KEY (team_id) REFERENCES public.control_plane_teams(id) ON DELETE CASCADE;
+ALTER TABLE ONLY public.budget_alerts
+    ADD CONSTRAINT control_plane_budget_alerts_agent_id_fkey FOREIGN KEY (agent_id) REFERENCES public.agents(id) ON DELETE CASCADE;
 
 
 --
--- Name: control_plane_budget_alerts control_plane_budget_alerts_workspace_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: paperclip
+-- Name: budget_alerts control_plane_budget_alerts_team_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: paperclip
 --
 
-ALTER TABLE ONLY public.control_plane_budget_alerts
+ALTER TABLE ONLY public.budget_alerts
+    ADD CONSTRAINT control_plane_budget_alerts_team_id_fkey FOREIGN KEY (team_id) REFERENCES public.agent_teams(id) ON DELETE CASCADE;
+
+
+--
+-- Name: budget_alerts control_plane_budget_alerts_workspace_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: paperclip
+--
+
+ALTER TABLE ONLY public.budget_alerts
     ADD CONSTRAINT control_plane_budget_alerts_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
 
 
 --
--- Name: control_plane_executions control_plane_executions_agent_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: paperclip
+-- Name: agent_executions control_plane_executions_agent_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: paperclip
 --
 
-ALTER TABLE ONLY public.control_plane_executions
-    ADD CONSTRAINT control_plane_executions_agent_id_fkey FOREIGN KEY (agent_id) REFERENCES public.control_plane_agents(id) ON DELETE CASCADE;
-
-
---
--- Name: control_plane_executions control_plane_executions_team_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: paperclip
---
-
-ALTER TABLE ONLY public.control_plane_executions
-    ADD CONSTRAINT control_plane_executions_team_id_fkey FOREIGN KEY (team_id) REFERENCES public.control_plane_teams(id) ON DELETE CASCADE;
+ALTER TABLE ONLY public.agent_executions
+    ADD CONSTRAINT control_plane_executions_agent_id_fkey FOREIGN KEY (agent_id) REFERENCES public.agents(id) ON DELETE CASCADE;
 
 
 --
--- Name: control_plane_executions control_plane_executions_workspace_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: paperclip
+-- Name: agent_executions control_plane_executions_team_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: paperclip
 --
 
-ALTER TABLE ONLY public.control_plane_executions
+ALTER TABLE ONLY public.agent_executions
+    ADD CONSTRAINT control_plane_executions_team_id_fkey FOREIGN KEY (team_id) REFERENCES public.agent_teams(id) ON DELETE CASCADE;
+
+
+--
+-- Name: agent_executions control_plane_executions_workspace_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: paperclip
+--
+
+ALTER TABLE ONLY public.agent_executions
     ADD CONSTRAINT control_plane_executions_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
 
 
 --
--- Name: control_plane_heartbeats control_plane_heartbeats_agent_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: paperclip
+-- Name: agent_heartbeats control_plane_heartbeats_agent_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: paperclip
 --
 
-ALTER TABLE ONLY public.control_plane_heartbeats
-    ADD CONSTRAINT control_plane_heartbeats_agent_id_fkey FOREIGN KEY (agent_id) REFERENCES public.control_plane_agents(id) ON DELETE CASCADE;
-
-
---
--- Name: control_plane_heartbeats control_plane_heartbeats_execution_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: paperclip
---
-
-ALTER TABLE ONLY public.control_plane_heartbeats
-    ADD CONSTRAINT control_plane_heartbeats_execution_id_fkey FOREIGN KEY (execution_id) REFERENCES public.control_plane_executions(id) ON DELETE SET NULL;
+ALTER TABLE ONLY public.agent_heartbeats
+    ADD CONSTRAINT control_plane_heartbeats_agent_id_fkey FOREIGN KEY (agent_id) REFERENCES public.agents(id) ON DELETE CASCADE;
 
 
 --
--- Name: control_plane_heartbeats control_plane_heartbeats_team_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: paperclip
+-- Name: agent_heartbeats control_plane_heartbeats_execution_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: paperclip
 --
 
-ALTER TABLE ONLY public.control_plane_heartbeats
-    ADD CONSTRAINT control_plane_heartbeats_team_id_fkey FOREIGN KEY (team_id) REFERENCES public.control_plane_teams(id) ON DELETE CASCADE;
+ALTER TABLE ONLY public.agent_heartbeats
+    ADD CONSTRAINT control_plane_heartbeats_execution_id_fkey FOREIGN KEY (execution_id) REFERENCES public.agent_executions(id) ON DELETE SET NULL;
 
 
 --
--- Name: control_plane_heartbeats control_plane_heartbeats_workspace_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: paperclip
+-- Name: agent_heartbeats control_plane_heartbeats_team_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: paperclip
 --
 
-ALTER TABLE ONLY public.control_plane_heartbeats
+ALTER TABLE ONLY public.agent_heartbeats
+    ADD CONSTRAINT control_plane_heartbeats_team_id_fkey FOREIGN KEY (team_id) REFERENCES public.agent_teams(id) ON DELETE CASCADE;
+
+
+--
+-- Name: agent_heartbeats control_plane_heartbeats_workspace_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: paperclip
+--
+
+ALTER TABLE ONLY public.agent_heartbeats
     ADD CONSTRAINT control_plane_heartbeats_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
 
 
 --
--- Name: control_plane_secret_audit control_plane_secret_audit_company_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: paperclip
+-- Name: audit_log control_plane_secret_audit_company_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: paperclip
 --
 
-ALTER TABLE ONLY public.control_plane_secret_audit
-    ADD CONSTRAINT control_plane_secret_audit_company_id_fkey FOREIGN KEY (company_id) REFERENCES public.provisioned_companies(id) ON DELETE CASCADE;
+ALTER TABLE ONLY public.audit_log
+    ADD CONSTRAINT control_plane_secret_audit_company_id_fkey FOREIGN KEY (company_id) REFERENCES public.companies(id) ON DELETE CASCADE;
 
 
 --
--- Name: control_plane_secret_audit control_plane_secret_audit_workspace_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: paperclip
+-- Name: audit_log control_plane_secret_audit_workspace_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: paperclip
 --
 
-ALTER TABLE ONLY public.control_plane_secret_audit
+ALTER TABLE ONLY public.audit_log
     ADD CONSTRAINT control_plane_secret_audit_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
 
 
 --
--- Name: control_plane_spend_entries control_plane_spend_entries_agent_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: paperclip
+-- Name: spend_entries control_plane_spend_entries_agent_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: paperclip
 --
 
-ALTER TABLE ONLY public.control_plane_spend_entries
-    ADD CONSTRAINT control_plane_spend_entries_agent_id_fkey FOREIGN KEY (agent_id) REFERENCES public.control_plane_agents(id) ON DELETE CASCADE;
-
-
---
--- Name: control_plane_spend_entries control_plane_spend_entries_execution_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: paperclip
---
-
-ALTER TABLE ONLY public.control_plane_spend_entries
-    ADD CONSTRAINT control_plane_spend_entries_execution_id_fkey FOREIGN KEY (execution_id) REFERENCES public.control_plane_executions(id) ON DELETE SET NULL;
+ALTER TABLE ONLY public.spend_entries
+    ADD CONSTRAINT control_plane_spend_entries_agent_id_fkey FOREIGN KEY (agent_id) REFERENCES public.agents(id) ON DELETE CASCADE;
 
 
 --
--- Name: control_plane_spend_entries control_plane_spend_entries_team_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: paperclip
+-- Name: spend_entries control_plane_spend_entries_execution_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: paperclip
 --
 
-ALTER TABLE ONLY public.control_plane_spend_entries
-    ADD CONSTRAINT control_plane_spend_entries_team_id_fkey FOREIGN KEY (team_id) REFERENCES public.control_plane_teams(id) ON DELETE CASCADE;
+ALTER TABLE ONLY public.spend_entries
+    ADD CONSTRAINT control_plane_spend_entries_execution_id_fkey FOREIGN KEY (execution_id) REFERENCES public.agent_executions(id) ON DELETE SET NULL;
 
 
 --
--- Name: control_plane_spend_entries control_plane_spend_entries_workspace_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: paperclip
+-- Name: spend_entries control_plane_spend_entries_team_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: paperclip
 --
 
-ALTER TABLE ONLY public.control_plane_spend_entries
+ALTER TABLE ONLY public.spend_entries
+    ADD CONSTRAINT control_plane_spend_entries_team_id_fkey FOREIGN KEY (team_id) REFERENCES public.agent_teams(id) ON DELETE CASCADE;
+
+
+--
+-- Name: spend_entries control_plane_spend_entries_workspace_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: paperclip
+--
+
+ALTER TABLE ONLY public.spend_entries
     ADD CONSTRAINT control_plane_spend_entries_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
 
 
 --
--- Name: control_plane_tasks control_plane_tasks_assigned_agent_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: paperclip
+-- Name: agent_tasks control_plane_tasks_assigned_agent_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: paperclip
 --
 
-ALTER TABLE ONLY public.control_plane_tasks
-    ADD CONSTRAINT control_plane_tasks_assigned_agent_id_fkey FOREIGN KEY (assigned_agent_id) REFERENCES public.control_plane_agents(id) ON DELETE SET NULL;
-
-
---
--- Name: control_plane_tasks control_plane_tasks_execution_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: paperclip
---
-
-ALTER TABLE ONLY public.control_plane_tasks
-    ADD CONSTRAINT control_plane_tasks_execution_id_fkey FOREIGN KEY (execution_id) REFERENCES public.control_plane_executions(id) ON DELETE SET NULL;
+ALTER TABLE ONLY public.agent_tasks
+    ADD CONSTRAINT control_plane_tasks_assigned_agent_id_fkey FOREIGN KEY (assigned_agent_id) REFERENCES public.agents(id) ON DELETE SET NULL;
 
 
 --
--- Name: control_plane_tasks control_plane_tasks_team_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: paperclip
+-- Name: agent_tasks control_plane_tasks_execution_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: paperclip
 --
 
-ALTER TABLE ONLY public.control_plane_tasks
-    ADD CONSTRAINT control_plane_tasks_team_id_fkey FOREIGN KEY (team_id) REFERENCES public.control_plane_teams(id) ON DELETE CASCADE;
+ALTER TABLE ONLY public.agent_tasks
+    ADD CONSTRAINT control_plane_tasks_execution_id_fkey FOREIGN KEY (execution_id) REFERENCES public.agent_executions(id) ON DELETE SET NULL;
 
 
 --
--- Name: control_plane_tasks control_plane_tasks_workspace_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: paperclip
+-- Name: agent_tasks control_plane_tasks_team_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: paperclip
 --
 
-ALTER TABLE ONLY public.control_plane_tasks
+ALTER TABLE ONLY public.agent_tasks
+    ADD CONSTRAINT control_plane_tasks_team_id_fkey FOREIGN KEY (team_id) REFERENCES public.agent_teams(id) ON DELETE CASCADE;
+
+
+--
+-- Name: agent_tasks control_plane_tasks_workspace_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: paperclip
+--
+
+ALTER TABLE ONLY public.agent_tasks
     ADD CONSTRAINT control_plane_tasks_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
 
 
 --
--- Name: control_plane_teams control_plane_teams_company_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: paperclip
+-- Name: agent_teams control_plane_teams_company_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: paperclip
 --
 
-ALTER TABLE ONLY public.control_plane_teams
-    ADD CONSTRAINT control_plane_teams_company_id_fkey FOREIGN KEY (company_id) REFERENCES public.provisioned_companies(id) ON DELETE CASCADE;
+ALTER TABLE ONLY public.agent_teams
+    ADD CONSTRAINT control_plane_teams_company_id_fkey FOREIGN KEY (company_id) REFERENCES public.companies(id) ON DELETE CASCADE;
 
 
 --
--- Name: control_plane_teams control_plane_teams_workspace_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: paperclip
+-- Name: agent_teams control_plane_teams_workspace_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: paperclip
 --
 
-ALTER TABLE ONLY public.control_plane_teams
+ALTER TABLE ONLY public.agent_teams
     ADD CONSTRAINT control_plane_teams_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
 
 
@@ -4410,18 +4410,18 @@ ALTER TABLE ONLY public.notification_preferences
 
 
 --
--- Name: provisioned_companies provisioned_companies_team_fk; Type: FK CONSTRAINT; Schema: public; Owner: paperclip
+-- Name: companies provisioned_companies_team_fk; Type: FK CONSTRAINT; Schema: public; Owner: paperclip
 --
 
-ALTER TABLE ONLY public.provisioned_companies
-    ADD CONSTRAINT provisioned_companies_team_fk FOREIGN KEY (team_id) REFERENCES public.control_plane_teams(id) ON DELETE RESTRICT DEFERRABLE INITIALLY DEFERRED;
+ALTER TABLE ONLY public.companies
+    ADD CONSTRAINT provisioned_companies_team_fk FOREIGN KEY (team_id) REFERENCES public.agent_teams(id) ON DELETE RESTRICT DEFERRABLE INITIALLY DEFERRED;
 
 
 --
--- Name: provisioned_companies provisioned_companies_workspace_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: paperclip
+-- Name: companies provisioned_companies_workspace_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: paperclip
 --
 
-ALTER TABLE ONLY public.provisioned_companies
+ALTER TABLE ONLY public.companies
     ADD CONSTRAINT provisioned_companies_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
 
 
@@ -4430,7 +4430,7 @@ ALTER TABLE ONLY public.provisioned_companies
 --
 
 ALTER TABLE ONLY public.provisioned_company_secrets
-    ADD CONSTRAINT provisioned_company_secrets_company_id_fkey FOREIGN KEY (company_id) REFERENCES public.provisioned_companies(id) ON DELETE CASCADE;
+    ADD CONSTRAINT provisioned_company_secrets_company_id_fkey FOREIGN KEY (company_id) REFERENCES public.companies(id) ON DELETE CASCADE;
 
 
 --
@@ -4551,148 +4551,148 @@ CREATE POLICY campaigns_tenant_isolation ON public.campaigns USING (((public.app
 
 
 --
--- Name: control_plane_agents; Type: ROW SECURITY; Schema: public; Owner: paperclip
+-- Name: agents; Type: ROW SECURITY; Schema: public; Owner: paperclip
 --
 
-ALTER TABLE public.control_plane_agents ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.agents ENABLE ROW LEVEL SECURITY;
 
 --
--- Name: control_plane_agents control_plane_agents_tenant_isolation; Type: POLICY; Schema: public; Owner: paperclip
+-- Name: agents control_plane_agents_tenant_isolation; Type: POLICY; Schema: public; Owner: paperclip
 --
 
-CREATE POLICY control_plane_agents_tenant_isolation ON public.control_plane_agents USING (((public.app_current_workspace_id() IS NOT NULL) AND (workspace_id = public.app_current_workspace_id()))) WITH CHECK (((public.app_current_workspace_id() IS NOT NULL) AND (workspace_id = public.app_current_workspace_id())));
-
-
---
--- Name: control_plane_audit_log; Type: ROW SECURITY; Schema: public; Owner: paperclip
---
-
-ALTER TABLE public.control_plane_audit_log ENABLE ROW LEVEL SECURITY;
-
---
--- Name: control_plane_audit_log control_plane_audit_log_no_delete; Type: POLICY; Schema: public; Owner: paperclip
---
-
-CREATE POLICY control_plane_audit_log_no_delete ON public.control_plane_audit_log AS RESTRICTIVE FOR DELETE USING (false);
+CREATE POLICY control_plane_agents_tenant_isolation ON public.agents USING (((public.app_current_workspace_id() IS NOT NULL) AND (workspace_id = public.app_current_workspace_id()))) WITH CHECK (((public.app_current_workspace_id() IS NOT NULL) AND (workspace_id = public.app_current_workspace_id())));
 
 
 --
--- Name: control_plane_audit_log control_plane_audit_log_no_update; Type: POLICY; Schema: public; Owner: paperclip
+-- Name: audit_log; Type: ROW SECURITY; Schema: public; Owner: paperclip
 --
 
-CREATE POLICY control_plane_audit_log_no_update ON public.control_plane_audit_log AS RESTRICTIVE FOR UPDATE USING (false) WITH CHECK (false);
-
-
---
--- Name: control_plane_audit_log control_plane_audit_log_tenant_isolation; Type: POLICY; Schema: public; Owner: paperclip
---
-
-CREATE POLICY control_plane_audit_log_tenant_isolation ON public.control_plane_audit_log USING (((public.app_current_workspace_id() IS NOT NULL) AND (workspace_id = public.app_current_workspace_id()))) WITH CHECK (((public.app_current_workspace_id() IS NOT NULL) AND (workspace_id = public.app_current_workspace_id())));
-
+ALTER TABLE public.audit_log ENABLE ROW LEVEL SECURITY;
 
 --
--- Name: control_plane_budget_alerts; Type: ROW SECURITY; Schema: public; Owner: paperclip
+-- Name: audit_log control_plane_audit_log_no_delete; Type: POLICY; Schema: public; Owner: paperclip
 --
 
-ALTER TABLE public.control_plane_budget_alerts ENABLE ROW LEVEL SECURITY;
-
---
--- Name: control_plane_budget_alerts control_plane_budget_alerts_tenant_isolation; Type: POLICY; Schema: public; Owner: paperclip
---
-
-CREATE POLICY control_plane_budget_alerts_tenant_isolation ON public.control_plane_budget_alerts USING (((public.app_current_workspace_id() IS NOT NULL) AND (workspace_id = public.app_current_workspace_id()))) WITH CHECK (((public.app_current_workspace_id() IS NOT NULL) AND (workspace_id = public.app_current_workspace_id())));
+CREATE POLICY control_plane_audit_log_no_delete ON public.audit_log AS RESTRICTIVE FOR DELETE USING (false);
 
 
 --
--- Name: control_plane_executions; Type: ROW SECURITY; Schema: public; Owner: paperclip
+-- Name: audit_log control_plane_audit_log_no_update; Type: POLICY; Schema: public; Owner: paperclip
 --
 
-ALTER TABLE public.control_plane_executions ENABLE ROW LEVEL SECURITY;
-
---
--- Name: control_plane_executions control_plane_executions_tenant_isolation; Type: POLICY; Schema: public; Owner: paperclip
---
-
-CREATE POLICY control_plane_executions_tenant_isolation ON public.control_plane_executions USING (((public.app_current_workspace_id() IS NOT NULL) AND (workspace_id = public.app_current_workspace_id()))) WITH CHECK (((public.app_current_workspace_id() IS NOT NULL) AND (workspace_id = public.app_current_workspace_id())));
+CREATE POLICY control_plane_audit_log_no_update ON public.audit_log AS RESTRICTIVE FOR UPDATE USING (false) WITH CHECK (false);
 
 
 --
--- Name: control_plane_heartbeats; Type: ROW SECURITY; Schema: public; Owner: paperclip
+-- Name: audit_log control_plane_audit_log_tenant_isolation; Type: POLICY; Schema: public; Owner: paperclip
 --
 
-ALTER TABLE public.control_plane_heartbeats ENABLE ROW LEVEL SECURITY;
-
---
--- Name: control_plane_heartbeats control_plane_heartbeats_tenant_isolation; Type: POLICY; Schema: public; Owner: paperclip
---
-
-CREATE POLICY control_plane_heartbeats_tenant_isolation ON public.control_plane_heartbeats USING (((public.app_current_workspace_id() IS NOT NULL) AND (workspace_id = public.app_current_workspace_id()))) WITH CHECK (((public.app_current_workspace_id() IS NOT NULL) AND (workspace_id = public.app_current_workspace_id())));
+CREATE POLICY control_plane_audit_log_tenant_isolation ON public.audit_log USING (((public.app_current_workspace_id() IS NOT NULL) AND (workspace_id = public.app_current_workspace_id()))) WITH CHECK (((public.app_current_workspace_id() IS NOT NULL) AND (workspace_id = public.app_current_workspace_id())));
 
 
 --
--- Name: control_plane_secret_audit; Type: ROW SECURITY; Schema: public; Owner: paperclip
+-- Name: budget_alerts; Type: ROW SECURITY; Schema: public; Owner: paperclip
 --
 
-ALTER TABLE public.control_plane_secret_audit ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.budget_alerts ENABLE ROW LEVEL SECURITY;
 
 --
--- Name: control_plane_secret_audit control_plane_secret_audit_no_delete; Type: POLICY; Schema: public; Owner: paperclip
+-- Name: budget_alerts control_plane_budget_alerts_tenant_isolation; Type: POLICY; Schema: public; Owner: paperclip
 --
 
-CREATE POLICY control_plane_secret_audit_no_delete ON public.control_plane_secret_audit AS RESTRICTIVE FOR DELETE USING (false);
-
-
---
--- Name: control_plane_secret_audit control_plane_secret_audit_no_update; Type: POLICY; Schema: public; Owner: paperclip
---
-
-CREATE POLICY control_plane_secret_audit_no_update ON public.control_plane_secret_audit AS RESTRICTIVE FOR UPDATE USING (false) WITH CHECK (false);
+CREATE POLICY control_plane_budget_alerts_tenant_isolation ON public.budget_alerts USING (((public.app_current_workspace_id() IS NOT NULL) AND (workspace_id = public.app_current_workspace_id()))) WITH CHECK (((public.app_current_workspace_id() IS NOT NULL) AND (workspace_id = public.app_current_workspace_id())));
 
 
 --
--- Name: control_plane_secret_audit control_plane_secret_audit_tenant_isolation; Type: POLICY; Schema: public; Owner: paperclip
+-- Name: agent_executions; Type: ROW SECURITY; Schema: public; Owner: paperclip
 --
 
-CREATE POLICY control_plane_secret_audit_tenant_isolation ON public.control_plane_secret_audit USING (((public.app_current_workspace_id() IS NOT NULL) AND (workspace_id = public.app_current_workspace_id()))) WITH CHECK (((public.app_current_workspace_id() IS NOT NULL) AND (workspace_id = public.app_current_workspace_id())));
-
-
---
--- Name: control_plane_spend_entries; Type: ROW SECURITY; Schema: public; Owner: paperclip
---
-
-ALTER TABLE public.control_plane_spend_entries ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.agent_executions ENABLE ROW LEVEL SECURITY;
 
 --
--- Name: control_plane_spend_entries control_plane_spend_entries_tenant_isolation; Type: POLICY; Schema: public; Owner: paperclip
+-- Name: agent_executions control_plane_executions_tenant_isolation; Type: POLICY; Schema: public; Owner: paperclip
 --
 
-CREATE POLICY control_plane_spend_entries_tenant_isolation ON public.control_plane_spend_entries USING (((public.app_current_workspace_id() IS NOT NULL) AND (workspace_id = public.app_current_workspace_id()))) WITH CHECK (((public.app_current_workspace_id() IS NOT NULL) AND (workspace_id = public.app_current_workspace_id())));
+CREATE POLICY control_plane_executions_tenant_isolation ON public.agent_executions USING (((public.app_current_workspace_id() IS NOT NULL) AND (workspace_id = public.app_current_workspace_id()))) WITH CHECK (((public.app_current_workspace_id() IS NOT NULL) AND (workspace_id = public.app_current_workspace_id())));
 
 
 --
--- Name: control_plane_tasks; Type: ROW SECURITY; Schema: public; Owner: paperclip
+-- Name: agent_heartbeats; Type: ROW SECURITY; Schema: public; Owner: paperclip
 --
 
-ALTER TABLE public.control_plane_tasks ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.agent_heartbeats ENABLE ROW LEVEL SECURITY;
 
 --
--- Name: control_plane_tasks control_plane_tasks_tenant_isolation; Type: POLICY; Schema: public; Owner: paperclip
+-- Name: agent_heartbeats control_plane_heartbeats_tenant_isolation; Type: POLICY; Schema: public; Owner: paperclip
 --
 
-CREATE POLICY control_plane_tasks_tenant_isolation ON public.control_plane_tasks USING (((public.app_current_workspace_id() IS NOT NULL) AND (workspace_id = public.app_current_workspace_id()))) WITH CHECK (((public.app_current_workspace_id() IS NOT NULL) AND (workspace_id = public.app_current_workspace_id())));
+CREATE POLICY control_plane_heartbeats_tenant_isolation ON public.agent_heartbeats USING (((public.app_current_workspace_id() IS NOT NULL) AND (workspace_id = public.app_current_workspace_id()))) WITH CHECK (((public.app_current_workspace_id() IS NOT NULL) AND (workspace_id = public.app_current_workspace_id())));
 
 
 --
--- Name: control_plane_teams; Type: ROW SECURITY; Schema: public; Owner: paperclip
+-- Name: audit_log; Type: ROW SECURITY; Schema: public; Owner: paperclip
 --
 
-ALTER TABLE public.control_plane_teams ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.audit_log ENABLE ROW LEVEL SECURITY;
 
 --
--- Name: control_plane_teams control_plane_teams_tenant_isolation; Type: POLICY; Schema: public; Owner: paperclip
+-- Name: audit_log control_plane_secret_audit_no_delete; Type: POLICY; Schema: public; Owner: paperclip
 --
 
-CREATE POLICY control_plane_teams_tenant_isolation ON public.control_plane_teams USING (((public.app_current_workspace_id() IS NOT NULL) AND (workspace_id = public.app_current_workspace_id()))) WITH CHECK (((public.app_current_workspace_id() IS NOT NULL) AND (workspace_id = public.app_current_workspace_id())));
+CREATE POLICY control_plane_secret_audit_no_delete ON public.audit_log AS RESTRICTIVE FOR DELETE USING (false);
+
+
+--
+-- Name: audit_log control_plane_secret_audit_no_update; Type: POLICY; Schema: public; Owner: paperclip
+--
+
+CREATE POLICY control_plane_secret_audit_no_update ON public.audit_log AS RESTRICTIVE FOR UPDATE USING (false) WITH CHECK (false);
+
+
+--
+-- Name: audit_log control_plane_secret_audit_tenant_isolation; Type: POLICY; Schema: public; Owner: paperclip
+--
+
+CREATE POLICY control_plane_secret_audit_tenant_isolation ON public.audit_log USING (((public.app_current_workspace_id() IS NOT NULL) AND (workspace_id = public.app_current_workspace_id()))) WITH CHECK (((public.app_current_workspace_id() IS NOT NULL) AND (workspace_id = public.app_current_workspace_id())));
+
+
+--
+-- Name: spend_entries; Type: ROW SECURITY; Schema: public; Owner: paperclip
+--
+
+ALTER TABLE public.spend_entries ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: spend_entries control_plane_spend_entries_tenant_isolation; Type: POLICY; Schema: public; Owner: paperclip
+--
+
+CREATE POLICY control_plane_spend_entries_tenant_isolation ON public.spend_entries USING (((public.app_current_workspace_id() IS NOT NULL) AND (workspace_id = public.app_current_workspace_id()))) WITH CHECK (((public.app_current_workspace_id() IS NOT NULL) AND (workspace_id = public.app_current_workspace_id())));
+
+
+--
+-- Name: agent_tasks; Type: ROW SECURITY; Schema: public; Owner: paperclip
+--
+
+ALTER TABLE public.agent_tasks ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: agent_tasks control_plane_tasks_tenant_isolation; Type: POLICY; Schema: public; Owner: paperclip
+--
+
+CREATE POLICY control_plane_tasks_tenant_isolation ON public.agent_tasks USING (((public.app_current_workspace_id() IS NOT NULL) AND (workspace_id = public.app_current_workspace_id()))) WITH CHECK (((public.app_current_workspace_id() IS NOT NULL) AND (workspace_id = public.app_current_workspace_id())));
+
+
+--
+-- Name: agent_teams; Type: ROW SECURITY; Schema: public; Owner: paperclip
+--
+
+ALTER TABLE public.agent_teams ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: agent_teams control_plane_teams_tenant_isolation; Type: POLICY; Schema: public; Owner: paperclip
+--
+
+CREATE POLICY control_plane_teams_tenant_isolation ON public.agent_teams USING (((public.app_current_workspace_id() IS NOT NULL) AND (workspace_id = public.app_current_workspace_id()))) WITH CHECK (((public.app_current_workspace_id() IS NOT NULL) AND (workspace_id = public.app_current_workspace_id())));
 
 
 --
@@ -4735,16 +4735,16 @@ CREATE POLICY leads_tenant_isolation ON public.leads USING (((public.app_current
 
 
 --
--- Name: provisioned_companies; Type: ROW SECURITY; Schema: public; Owner: paperclip
+-- Name: companies; Type: ROW SECURITY; Schema: public; Owner: paperclip
 --
 
-ALTER TABLE public.provisioned_companies ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.companies ENABLE ROW LEVEL SECURITY;
 
 --
--- Name: provisioned_companies provisioned_companies_tenant_isolation; Type: POLICY; Schema: public; Owner: paperclip
+-- Name: companies provisioned_companies_tenant_isolation; Type: POLICY; Schema: public; Owner: paperclip
 --
 
-CREATE POLICY provisioned_companies_tenant_isolation ON public.provisioned_companies USING (((public.app_current_workspace_id() IS NOT NULL) AND (workspace_id = public.app_current_workspace_id()))) WITH CHECK (((public.app_current_workspace_id() IS NOT NULL) AND (workspace_id = public.app_current_workspace_id())));
+CREATE POLICY provisioned_companies_tenant_isolation ON public.companies USING (((public.app_current_workspace_id() IS NOT NULL) AND (workspace_id = public.app_current_workspace_id()))) WITH CHECK (((public.app_current_workspace_id() IS NOT NULL) AND (workspace_id = public.app_current_workspace_id())));
 
 
 --

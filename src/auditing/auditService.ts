@@ -2,13 +2,12 @@
  * Shared cross-phase audit log service (ALT-2078 / ALT-1915 Phase 5).
  *
  * Single emit surface for tenant-mutating actions across every phase of the
- * multi-tenant isolation programme. Persists to `control_plane_audit_log`,
- * which is workspace-scoped, FORCE RLS, and append-only enforced (migration
- * 020).
+ * multi-tenant isolation programme. Persists to `audit_log` (renamed from
+ * `control_plane_audit_log` in migration 021), which is workspace-scoped,
+ * FORCE RLS, and append-only enforced (migration 020).
  *
- * Coexists with `control_plane_secret_audit` (migration 017/018) during the
- * deprecation window. Secret callsites continue to write to both ledgers; new
- * callsites should use this service exclusively.
+ * `control_plane_secret_audit` was folded into `audit_log` in migration 021.
+ * Secret callsites in secretsRepository.ts now write here directly.
  */
 import type { Pool, PoolClient } from "pg";
 import { getPostgresPool } from "../db/postgres";
@@ -78,7 +77,7 @@ async function insertAuditRow(
 ): Promise<void> {
   const action = validateAction(entry.action);
   await client.query(
-    `INSERT INTO control_plane_audit_log (
+    `INSERT INTO audit_log (
        workspace_id, actor_user_id, actor_agent_id,
        category, action, target_type, target_id, metadata
      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,

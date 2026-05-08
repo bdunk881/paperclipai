@@ -50,7 +50,7 @@ describe("recordAction", () => {
     expect(mockWithWorkspaceContext).toHaveBeenCalledTimes(1);
     expect(client.query).toHaveBeenCalledTimes(1);
     const [sql, params] = (client.query as jest.Mock).mock.calls[0];
-    expect(sql).toMatch(/INSERT INTO control_plane_audit_log/);
+    expect(sql).toMatch(/INSERT INTO audit_log/);
     expect(params).toEqual([
       "ws-1",
       "u-1",

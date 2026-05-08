@@ -41,10 +41,10 @@ describe("controlPlaneStore RLS integration", () => {
     }
 
     const { postgres, controlPlane } = await loadModules();
-    await postgres.queryPostgres("DELETE FROM control_plane_executions WHERE user_id = $1", [userId]);
-    await postgres.queryPostgres("DELETE FROM control_plane_agents WHERE user_id = $1", [userId]);
-    await postgres.queryPostgres("DELETE FROM control_plane_teams WHERE user_id = $1", [userId]);
-    await postgres.queryPostgres("DELETE FROM provisioned_companies WHERE user_id = $1", [userId]);
+    await postgres.queryPostgres("DELETE FROM agent_executions WHERE user_id = $1", [userId]);
+    await postgres.queryPostgres("DELETE FROM agents WHERE user_id = $1", [userId]);
+    await postgres.queryPostgres("DELETE FROM agent_teams WHERE user_id = $1", [userId]);
+    await postgres.queryPostgres("DELETE FROM companies WHERE user_id = $1", [userId]);
     await postgres.queryPostgres("DELETE FROM workspace_members WHERE user_id = $1", [userId]);
     await postgres.queryPostgres("DELETE FROM workspaces WHERE owner_user_id = $1", [userId]);
     controlPlane.controlPlaneStore.clear();
@@ -86,7 +86,7 @@ describe("controlPlaneStore RLS integration", () => {
 
     await expect(
       workspaceContext.withWorkspaceContext(pool, { workspaceId: workspaceTwo, userId }, async (client) => {
-        const result = await client.query("SELECT id FROM control_plane_teams WHERE id = $1", [teamOne.id]);
+        const result = await client.query("SELECT id FROM agent_teams WHERE id = $1", [teamOne.id]);
         expect(result.rowCount ?? result.rows.length).toBe(0);
       })
     ).resolves.toBeUndefined();
@@ -94,7 +94,7 @@ describe("controlPlaneStore RLS integration", () => {
     await expect(
       workspaceContext.withWorkspaceContext(pool, { workspaceId: workspaceOne, userId }, async (client) => {
         await client.query(
-          `INSERT INTO control_plane_teams (
+          `INSERT INTO agent_teams (
              id, workspace_id, user_id, name, deployment_mode, status, paused_by_company_lifecycle,
              restart_count, budget_monthly_usd, tool_budget_ceilings, alert_thresholds,
              orchestration_enabled, created_at, updated_at

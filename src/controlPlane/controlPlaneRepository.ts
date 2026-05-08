@@ -188,7 +188,7 @@ function rowToBudgetAlert(row: BudgetAlertRow): ControlPlaneBudgetAlert {
 
 async function insertTaskRow(client: PoolClient, ctx: ControlPlaneRepoContext, task: ControlPlaneTask): Promise<void> {
   await client.query(
-    `INSERT INTO control_plane_tasks (
+    `INSERT INTO agent_tasks (
        id, workspace_id, user_id, team_id, assigned_agent_id, execution_id,
        title, description, source_run_id, source_workflow_step_id,
        status, checked_out_by, checked_out_at, audit_trail, metadata,
@@ -238,7 +238,7 @@ async function insertHeartbeatRow(
   heartbeat: AgentHeartbeatRecord
 ): Promise<void> {
   await client.query(
-    `INSERT INTO control_plane_heartbeats (
+    `INSERT INTO agent_heartbeats (
        id, workspace_id, user_id, team_id, agent_id, execution_id,
        status, summary, cost_usd, created_task_ids,
        started_at, completed_at
@@ -276,7 +276,7 @@ async function insertSpendEntryRow(
   entry: ControlPlaneSpendEntry
 ): Promise<void> {
   await client.query(
-    `INSERT INTO control_plane_spend_entries (
+    `INSERT INTO spend_entries (
        id, workspace_id, user_id, team_id, agent_id, execution_id,
        category, cost_usd, model, provider, tool_name, metadata, recorded_at
      ) VALUES (
@@ -324,7 +324,7 @@ async function upsertBudgetAlertRow(
   }
 
   await client.query(
-    `INSERT INTO control_plane_budget_alerts (
+    `INSERT INTO budget_alerts (
        id, workspace_id, user_id, team_id, agent_id, tool_name,
        scope, threshold, budget_usd, spent_usd, recorded_at
      ) VALUES (
@@ -374,7 +374,7 @@ export const controlPlaneRepository = {
                 source_workflow_step_id, assigned_agent_id, execution_id, status,
                 checked_out_by, checked_out_at, audit_trail, metadata,
                 created_at, updated_at
-           FROM control_plane_tasks
+           FROM agent_tasks
           WHERE ${where}
           ORDER BY created_at ASC`,
         params
@@ -415,7 +415,7 @@ export const controlPlaneRepository = {
       const result = await client.query<HeartbeatRow>(
         `SELECT id, team_id, user_id, agent_id, execution_id, status,
                 summary, cost_usd, created_task_ids, started_at, completed_at
-           FROM control_plane_heartbeats
+           FROM agent_heartbeats
           WHERE ${where}
           ORDER BY started_at DESC${limitClause}`,
         params
@@ -455,7 +455,7 @@ export const controlPlaneRepository = {
       const result = await client.query<SpendEntryRow>(
         `SELECT id, team_id, user_id, agent_id, execution_id, category, cost_usd,
                 model, provider, tool_name, metadata, recorded_at
-           FROM control_plane_spend_entries
+           FROM spend_entries
           WHERE ${where}
           ORDER BY recorded_at DESC`,
         params
@@ -487,7 +487,7 @@ export const controlPlaneRepository = {
       const result = await client.query<BudgetAlertRow>(
         `SELECT id, team_id, user_id, agent_id, tool_name, scope, threshold,
                 budget_usd, spent_usd, recorded_at
-           FROM control_plane_budget_alerts
+           FROM budget_alerts
           WHERE ${where}
           ORDER BY recorded_at DESC`,
         params

@@ -33,15 +33,15 @@ describe("secretsRepository RLS integration", () => {
     const teamId = randomUUID();
     const provisionedWorkspaceId = randomUUID();
     await withWorkspaceContext(pool, { workspaceId, userId }, async (client) => {
-      // provisioned_companies.team_id has a deferred FK to control_plane_teams.
+      // companies.team_id has a deferred FK to agent_teams.
       // Seed the team row in the same transaction so the FK resolves at COMMIT.
       await client.query(
-        `INSERT INTO control_plane_teams (id, workspace_id, user_id, name)
+        `INSERT INTO agent_teams (id, workspace_id, user_id, name)
          VALUES ($1, $2, $3, $4)`,
         [teamId, workspaceId, userId, `${label} Team`]
       );
       await client.query(
-        `INSERT INTO provisioned_companies (
+        `INSERT INTO companies (
            id, workspace_id, user_id, name,
            provisioned_workspace_id, provisioned_workspace_name, provisioned_workspace_slug,
            team_id, idempotency_key
@@ -89,7 +89,7 @@ describe("secretsRepository RLS integration", () => {
     }
     const { postgres } = await loadModules();
     await postgres.queryPostgres(
-      "DELETE FROM control_plane_secret_audit WHERE company_id = ANY($1::uuid[])",
+      "DELETE FROM audit_log WHERE target_id = ANY($1::text[]) AND category = 'secret'",
       [[companyA, companyB]]
     );
     await postgres.queryPostgres(
@@ -97,10 +97,10 @@ describe("secretsRepository RLS integration", () => {
       [[companyA, companyB]]
     );
     await postgres.queryPostgres(
-      "DELETE FROM provisioned_companies WHERE id = ANY($1::uuid[])",
+      "DELETE FROM companies WHERE id = ANY($1::uuid[])",
       [[companyA, companyB]]
     );
-    await postgres.queryPostgres("DELETE FROM control_plane_teams WHERE user_id = $1", [userId]);
+    await postgres.queryPostgres("DELETE FROM agent_teams WHERE user_id = $1", [userId]);
     await postgres.queryPostgres("DELETE FROM workspace_members WHERE user_id = $1", [userId]);
     await postgres.queryPostgres("DELETE FROM workspaces WHERE owner_user_id = $1", [userId]);
     await postgres.closePostgresPoolForTests();
@@ -181,9 +181,9 @@ describe("secretsRepository RLS integration", () => {
         actor_agent_id: string | null;
         key_version: number;
       }>(
-        `SELECT action, actor_user_id, actor_agent_id, key_version
-           FROM control_plane_secret_audit
-          WHERE company_id = $1 AND key = $2 ORDER BY at ASC`,
+        `SELECT action, actor_user_id, actor_agent_id, (metadata->>'key_version')::int AS key_version
+           FROM audit_log
+          WHERE target_id = $1 AND category = 'secret' AND metadata->>'key' = $2 ORDER BY at ASC`,
         [companyA, "OPENAI_API_KEY"]
       );
       const actions = result.rows.map((row) => row.action);
@@ -198,7 +198,7 @@ describe("secretsRepository RLS integration", () => {
     // Audit log under workspace B context must NOT see workspace A audit rows.
     await workspaceContext.withWorkspaceContext(pool, ctxB, async (client) => {
       const result = await client.query(
-        `SELECT id FROM control_plane_secret_audit WHERE company_id = $1`,
+        `SELECT id FROM audit_log WHERE target_id = $1 AND category = 'secret'`,
         [companyA]
       );
       expect(result.rowCount ?? result.rows.length).toBe(0);
@@ -215,8 +215,9 @@ describe("secretsRepository RLS integration", () => {
         actor_agent_id: string | null;
       }>(
         `SELECT actor_user_id, actor_agent_id
-           FROM control_plane_secret_audit
-          WHERE company_id = $1
+           FROM audit_log
+          WHERE target_id = $1
+            AND category = 'secret'
             AND action = 'read'
             AND actor_agent_id = $2`,
         [companyA, agentActor]
@@ -228,7 +229,7 @@ describe("secretsRepository RLS integration", () => {
     // Audit log is append-only: UPDATE and DELETE are denied even within the owning tenant.
     await workspaceContext.withWorkspaceContext(pool, ctxA, async (client) => {
       const updateResult = await client.query(
-        `UPDATE control_plane_secret_audit SET actor_user_id = 'tampered' WHERE company_id = $1`,
+        `UPDATE audit_log SET actor_user_id = 'tampered' WHERE target_id = $1 AND category = 'secret'`,
         [companyA]
       );
       expect(updateResult.rowCount).toBe(0);
@@ -236,7 +237,7 @@ describe("secretsRepository RLS integration", () => {
 
     await workspaceContext.withWorkspaceContext(pool, ctxA, async (client) => {
       const deleteResult = await client.query(
-        `DELETE FROM control_plane_secret_audit WHERE company_id = $1`,
+        `DELETE FROM audit_log WHERE target_id = $1 AND category = 'secret'`,
         [companyA]
       );
       expect(deleteResult.rowCount).toBe(0);
@@ -269,8 +270,8 @@ describe("secretsRepository RLS integration", () => {
     // Rotation emitted an audit row.
     await workspaceContext.withWorkspaceContext(pool, ctxA, async (client) => {
       const result = await client.query<{ action: string; metadata: Record<string, unknown> | null }>(
-        `SELECT action, metadata FROM control_plane_secret_audit
-          WHERE company_id = $1 AND action = 'rotate'`,
+        `SELECT action, metadata FROM audit_log
+          WHERE target_id = $1 AND category = 'secret' AND action = 'rotate'`,
         [companyA]
       );
       expect(result.rowCount).toBe(1);
@@ -301,8 +302,8 @@ describe("secretsRepository RLS integration", () => {
         key: string;
         metadata: Record<string, unknown> | null;
       }>(
-        `SELECT action, key, metadata FROM control_plane_secret_audit
-          WHERE company_id = $1 AND action = 'list'`,
+        `SELECT action, metadata->>'key' AS key, metadata FROM audit_log
+          WHERE target_id = $1 AND category = 'secret' AND action = 'list'`,
         [companyA]
       );
       expect(result.rowCount).toBe(1);
@@ -334,8 +335,8 @@ describe("secretsRepository RLS integration", () => {
         metadata: Record<string, unknown> | null;
       }>(
         `SELECT action, actor_user_id, metadata
-           FROM control_plane_secret_audit
-          WHERE company_id = $1 AND action = 'read_failed'
+           FROM audit_log
+          WHERE target_id = $1 AND category = 'secret' AND action = 'read_failed'
           ORDER BY at DESC
           LIMIT 1`,
         [companyA]

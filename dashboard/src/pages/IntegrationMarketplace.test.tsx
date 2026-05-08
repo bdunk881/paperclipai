@@ -65,6 +65,8 @@ function installFetchMock(options?: {
 }
 
 describe("IntegrationMarketplace", () => {
+  const originalWindowLocation = window.location;
+
   beforeEach(() => {
     vi.clearAllMocks();
     window.sessionStorage.clear();
@@ -73,6 +75,12 @@ describe("IntegrationMarketplace", () => {
 
   afterEach(() => {
     vi.restoreAllMocks();
+    // Restore the real window.location after any test that stubbed it.
+    Object.defineProperty(window, "location", {
+      configurable: true,
+      writable: true,
+      value: originalWindowLocation,
+    });
   });
 
   it("filters integrations by search and category, then clears the empty state", () => {
@@ -101,7 +109,15 @@ describe("IntegrationMarketplace", () => {
 
   it("loads live status and uses the real OAuth/disconnect routes for supported providers", async () => {
     const fetchMock = installFetchMock();
-    const assignMock = vi.spyOn(window.location, "assign").mockImplementation(() => {});
+    // window.location.assign is non-configurable in newer JSDOM versions, so vi.spyOn fails.
+    // Replace the location object with a writable proxy that preserves the spec for the test.
+    const originalLocation = window.location;
+    const assignMock = vi.fn();
+    Object.defineProperty(window, "location", {
+      configurable: true,
+      writable: true,
+      value: { ...originalLocation, assign: assignMock },
+    });
 
     renderMarketplace();
 

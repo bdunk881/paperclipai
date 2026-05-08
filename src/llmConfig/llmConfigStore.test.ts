@@ -133,7 +133,7 @@ describe("llmConfigStore async persistence", () => {
       })
     );
     expect(mockQueryPostgres).toHaveBeenCalledWith(
-      "SELECT id, user_id, record_data FROM connector_credentials WHERE service = $1 ORDER BY created_at DESC",
+      "SELECT id, user_id, record_data, key_version FROM connector_credentials WHERE service = $1 ORDER BY created_at DESC",
       ["llm-config"]
     );
   });
@@ -260,7 +260,7 @@ describe("llmConfigStore async persistence", () => {
     );
     expect(listed).toHaveLength(2);
     expect(mockQueryPostgres).toHaveBeenCalledWith(
-      "SELECT id, user_id, record_data FROM connector_credentials WHERE service = $1 ORDER BY created_at DESC",
+      "SELECT id, user_id, record_data, key_version FROM connector_credentials WHERE service = $1 ORDER BY created_at DESC",
       ["llm-config"]
     );
   });

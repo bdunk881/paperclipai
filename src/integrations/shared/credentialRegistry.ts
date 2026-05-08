@@ -1,120 +1,60 @@
-import { createCipheriv, createDecipheriv, randomBytes, scryptSync } from "crypto";
 import { parseJsonColumn } from "../../db/json";
 import { inMemoryAllowed, isPostgresConfigured, queryPostgres } from "../../db/postgres";
+import { KeyVersionedSecretVault } from "../../secrets/keyVersionedSecretVault";
 
 export interface CredentialRegistryRecord {
   id: string;
   userId: string;
   createdAt: string;
   revokedAt?: string;
+  keyVersion?: number;
 }
 
 interface SecretVaultOptions {
   currentKeyEnvVars: string[];
   previousKeyEnvVars?: string[];
+  v2KeyEnvVars?: string[];
   salts?: string[];
 }
 
-const EPHEMERAL_KEY_ALLOWED_ENVS = new Set(["development", "test"]);
-
-function parseEnvList(value: string | undefined): string[] {
-  if (!value) {
+function inferEncryptedFieldVersions(record: unknown, secretVault: SecretVault): number[] {
+  if (typeof record !== "object" || record === null) {
     return [];
   }
 
-  return value
-    .split(",")
-    .map((item) => item.trim())
-    .filter(Boolean);
-}
-
-function deriveKeys(seeds: string[], salts: string[]): Buffer[] {
-  const seen = new Set<string>();
-  const keys: Buffer[] = [];
-
-  for (const seed of seeds) {
-    for (const salt of salts) {
-      const cacheKey = `${seed}:${salt}`;
-      if (seen.has(cacheKey)) {
-        continue;
-      }
-
-      seen.add(cacheKey);
-      keys.push(scryptSync(seed, salt, 32) as Buffer);
-    }
-  }
-
-  return keys;
-}
-
-function getRuntimeEnvironment(): string {
-  return (process.env.NODE_ENV ?? "development").trim().toLowerCase();
-}
-
-function createMissingEncryptionKeyError(currentKeyEnvVars: string[]): Error {
-  const runtimeEnvironment = getRuntimeEnvironment();
-  return new Error(
-    `Missing connector credential encryption key for NODE_ENV=${runtimeEnvironment}. ` +
-      `Set one of ${currentKeyEnvVars.join(", ")} before starting the server. ` +
-      "Ephemeral random fallback is only allowed in development or test."
-  );
-}
-
-export class SecretVault {
-  private readonly primaryKey: Buffer;
-
-  private readonly candidateKeys: Buffer[];
-
-  constructor(options: SecretVaultOptions) {
-    const salts = options.salts ?? ["autoflow-connector-salt"];
-    const currentSeeds = options.currentKeyEnvVars.flatMap((envVar) => parseEnvList(process.env[envVar]));
-    const previousSeeds = (options.previousKeyEnvVars ?? []).flatMap((envVar) =>
-      parseEnvList(process.env[envVar])
-    );
-
-    const primarySeed = currentSeeds[0];
-    if (!primarySeed) {
-      const runtimeEnvironment = getRuntimeEnvironment();
-      if (!EPHEMERAL_KEY_ALLOWED_ENVS.has(runtimeEnvironment)) {
-        throw createMissingEncryptionKeyError(options.currentKeyEnvVars);
-      }
-    }
-
-    this.primaryKey = primarySeed ? deriveKeys([primarySeed], [salts[0]])[0] : randomBytes(32);
-
-    const candidateKeys = deriveKeys([...currentSeeds, ...previousSeeds], salts);
-    this.candidateKeys = candidateKeys.length > 0 ? candidateKeys : [this.primaryKey];
-  }
-
-  encrypt(plaintext: string): string {
-    const iv = randomBytes(12);
-    const cipher = createCipheriv("aes-256-gcm", this.primaryKey, iv);
-    const encrypted = Buffer.concat([cipher.update(plaintext, "utf8"), cipher.final()]);
-    const tag = cipher.getAuthTag();
-    return `${iv.toString("hex")}:${tag.toString("hex")}:${encrypted.toString("hex")}`;
-  }
-
-  decrypt(ciphertext: string): string {
-    const [ivHex, tagHex, dataHex] = ciphertext.split(":");
-    if (!ivHex || !tagHex || !dataHex) {
-      throw new Error("Invalid ciphertext format");
-    }
-
-    const iv = Buffer.from(ivHex, "hex");
-    const tag = Buffer.from(tagHex, "hex");
-    const data = Buffer.from(dataHex, "hex");
-
-    for (const key of this.candidateKeys) {
+  const versions: number[] = [];
+  for (const [key, value] of Object.entries(record)) {
+    if (typeof value === "string" && key.endsWith("Encrypted")) {
       try {
-        const decipher = createDecipheriv("aes-256-gcm", key, iv);
-        decipher.setAuthTag(tag);
-        return decipher.update(data).toString("utf8") + decipher.final("utf8");
+        versions.push(secretVault.getCiphertextKeyVersion(value));
       } catch {
-        continue;
+        // Some tests and legacy in-memory paths use placeholder encrypted
+        // values. Decryption still fails later; persistence should not throw
+        // while merely computing row-level rotation metadata.
       }
+      continue;
     }
 
-    throw new Error("Unable to decrypt secret with configured connector keys");
+    if (typeof value === "object" && value !== null) {
+      versions.push(...inferEncryptedFieldVersions(value, secretVault));
+    }
+  }
+
+  return versions;
+}
+
+function inferRecordKeyVersion(record: CredentialRegistryRecord, secretVault: SecretVault): number {
+  const versions = inferEncryptedFieldVersions(record, secretVault);
+  if (versions.length === 0) {
+    return record.keyVersion ?? secretVault.getActiveKeyVersion();
+  }
+
+  return Math.min(...versions);
+}
+
+export class SecretVault extends KeyVersionedSecretVault {
+  constructor(options: SecretVaultOptions) {
+    super({ ...options, keyLabel: "connector credential" });
   }
 }
 
@@ -129,6 +69,11 @@ export const connectorSecretVault = new SecretVault({
     "CONNECTOR_CREDENTIALS_ENCRYPTION_KEY_PREVIOUS",
     "CONNECTOR_CREDENTIAL_ENCRYPTION_KEY_PREVIOUS_KEYS",
     "CONNECTOR_CREDENTIALS_ENCRYPTION_KEY_PREVIOUS_KEYS",
+  ],
+  v2KeyEnvVars: [
+    "CONNECTOR_CREDENTIAL_ENCRYPTION_KEY_V2",
+    "CONNECTOR_CREDENTIALS_ENCRYPTION_KEY_V2",
+    "LLM_CONFIG_ENCRYPTION_KEY_V2",
   ],
   salts: ["autoflow-connector-salt", "autoflow-connectors-salt"],
 });
@@ -161,6 +106,7 @@ interface PersistedCredentialRegistryRow {
   id: string;
   user_id: string;
   record_data: unknown;
+  key_version?: number;
 }
 
 function mergeStoredRecords<TStored extends CredentialRegistryRecord>(
@@ -212,13 +158,17 @@ export class CredentialRegistry<TStored extends CredentialRegistryRecord, TPubli
 
   save(record: TStored): TStored {
     const usePostgres = this.postgresPersistenceAvailable();
-    this.bucket.set(record.id, record);
+    const recordWithKeyVersion = {
+      ...record,
+      keyVersion: inferRecordKeyVersion(record, this.secretVault),
+    };
+    this.bucket.set(record.id, recordWithKeyVersion);
     if (usePostgres) {
-      void this.persistRecord(record).catch((error) => {
+      void this.persistRecord(recordWithKeyVersion).catch((error) => {
         console.error(`[credentialRegistry:${this.service}] Failed to persist credential`, error);
       });
     }
-    return record;
+    return recordWithKeyVersion;
   }
 
   listPublicByUser(userId: string, includeRevoked = true): TPublic[] {
@@ -249,7 +199,7 @@ export class CredentialRegistry<TStored extends CredentialRegistryRecord, TPubli
     }
 
     const result = await queryPostgres<PersistedCredentialRegistryRow>(
-      "SELECT id, user_id, record_data FROM connector_credentials WHERE service = $1 AND id = $2",
+      "SELECT id, user_id, record_data, key_version FROM connector_credentials WHERE service = $1 AND id = $2",
       [this.service, id]
     );
     const row = result.rows[0];
@@ -281,13 +231,17 @@ export class CredentialRegistry<TStored extends CredentialRegistryRecord, TPubli
     }
 
     const updated = mutate(existing);
-    this.bucket.set(id, updated);
+    const updatedWithKeyVersion = {
+      ...updated,
+      keyVersion: inferRecordKeyVersion(updated, this.secretVault),
+    };
+    this.bucket.set(id, updatedWithKeyVersion);
     if (usePostgres) {
-      void this.persistRecord(updated).catch((error) => {
+      void this.persistRecord(updatedWithKeyVersion).catch((error) => {
         console.error(`[credentialRegistry:${this.service}] Failed to persist credential update`, error);
       });
     }
-    return updated;
+    return updatedWithKeyVersion;
   }
 
   purge(predicate: (record: TStored) => boolean): void {
@@ -330,7 +284,7 @@ export class CredentialRegistry<TStored extends CredentialRegistryRecord, TPubli
     }
 
     const result = await queryPostgres<PersistedCredentialRegistryRow>(
-      "SELECT id, user_id, record_data FROM connector_credentials WHERE service = $1 ORDER BY created_at DESC",
+      "SELECT id, user_id, record_data, key_version FROM connector_credentials WHERE service = $1 ORDER BY created_at DESC",
       [this.service]
     );
     const persisted = result.rows
@@ -351,12 +305,19 @@ export class CredentialRegistry<TStored extends CredentialRegistryRecord, TPubli
     return this.secretVault.decrypt(ciphertext);
   }
 
+  getActiveKeyVersion(): number {
+    return this.secretVault.getActiveKeyVersion();
+  }
+
   private mapPersistedRecord(row: PersistedCredentialRegistryRow): TStored {
     const record = parseJsonColumn(row.record_data, null as TStored | null);
     if (!record) {
       throw new Error(`Persisted credential ${this.service}/${row.id} is missing record_data`);
     }
 
+    if (record.keyVersion === undefined && row.key_version !== undefined) {
+      record.keyVersion = row.key_version;
+    }
     this.bucket.set(record.id, record);
     return record;
   }
@@ -366,6 +327,9 @@ export class CredentialRegistry<TStored extends CredentialRegistryRecord, TPubli
       return;
     }
 
+    const keyVersion = record.keyVersion ?? inferRecordKeyVersion(record, this.secretVault);
+    const recordWithKeyVersion = { ...record, keyVersion };
+
     await queryPostgres(
       `INSERT INTO connector_credentials (
         service,
@@ -373,20 +337,23 @@ export class CredentialRegistry<TStored extends CredentialRegistryRecord, TPubli
         user_id,
         created_at,
         revoked_at,
-        record_data
-      ) VALUES ($1, $2, $3, $4::timestamptz, $5::timestamptz, $6::jsonb)
+        record_data,
+        key_version
+      ) VALUES ($1, $2, $3, $4::timestamptz, $5::timestamptz, $6::jsonb, $7)
       ON CONFLICT (service, id) DO UPDATE SET
         user_id = EXCLUDED.user_id,
         created_at = EXCLUDED.created_at,
         revoked_at = EXCLUDED.revoked_at,
-        record_data = EXCLUDED.record_data`,
+        record_data = EXCLUDED.record_data,
+        key_version = EXCLUDED.key_version`,
       [
         this.service,
         record.id,
         record.userId,
         record.createdAt,
         record.revokedAt ?? null,
-        JSON.stringify(record),
+        JSON.stringify(recordWithKeyVersion),
+        keyVersion,
       ]
     );
   }

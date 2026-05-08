@@ -11,6 +11,7 @@ interface TestCredential {
 describe("CredentialRegistry", () => {
   const originalCurrent = process.env.TEST_CONNECTOR_KEY;
   const originalPrevious = process.env.TEST_CONNECTOR_PREVIOUS;
+  const originalCurrentV2 = process.env.TEST_CONNECTOR_KEY_V2;
   const originalNodeEnv = process.env.NODE_ENV;
 
   beforeEach(() => {
@@ -30,6 +31,12 @@ describe("CredentialRegistry", () => {
       delete process.env.TEST_CONNECTOR_PREVIOUS;
     } else {
       process.env.TEST_CONNECTOR_PREVIOUS = originalPrevious;
+    }
+
+    if (originalCurrentV2 === undefined) {
+      delete process.env.TEST_CONNECTOR_KEY_V2;
+    } else {
+      process.env.TEST_CONNECTOR_KEY_V2 = originalCurrentV2;
     }
 
     if (originalNodeEnv === undefined) {
@@ -81,6 +88,28 @@ describe("CredentialRegistry", () => {
     expect(rotatingVault.decrypt(ciphertext)).toBe("rotating-secret");
   });
 
+  it("writes with V2 when configured and still decrypts legacy V1 ciphertext", () => {
+    delete process.env.TEST_CONNECTOR_KEY_V2;
+    const legacyVault = new SecretVault({
+      currentKeyEnvVars: ["TEST_CONNECTOR_KEY"],
+      salts: ["autoflow-connector-salt"],
+    });
+    const legacyCiphertext = legacyVault.encrypt("legacy-secret");
+
+    process.env.TEST_CONNECTOR_KEY_V2 = "rotated-key";
+    const rotatingVault = new SecretVault({
+      currentKeyEnvVars: ["TEST_CONNECTOR_KEY"],
+      salts: ["autoflow-connector-salt"],
+    });
+
+    const rotatedCiphertext = rotatingVault.encrypt("rotated-secret");
+    expect(rotatingVault.getActiveKeyVersion()).toBe(2);
+    expect(rotatingVault.getCiphertextKeyVersion(rotatedCiphertext)).toBe(2);
+    expect(rotatedCiphertext.startsWith("v2:")).toBe(true);
+    expect(rotatingVault.decrypt(legacyCiphertext)).toBe("legacy-secret");
+    expect(rotatingVault.decrypt(rotatedCiphertext)).toBe("rotated-secret");
+  });
+
   it.each(["staging", "production"])(
     "fails fast when no encryption key is configured in %s",
     (nodeEnv) => {
@@ -94,7 +123,7 @@ describe("CredentialRegistry", () => {
             salts: ["autoflow-connector-salt"],
           })
       ).toThrow(
-        `Missing connector credential encryption key for NODE_ENV=${nodeEnv}. Set one of TEST_CONNECTOR_KEY before starting the server. Ephemeral random fallback is only allowed in development or test.`
+        `Missing connector credential encryption key for NODE_ENV=${nodeEnv}. Set one of TEST_CONNECTOR_KEY_V2, TEST_CONNECTOR_KEY before starting the server. Ephemeral random fallback is only allowed in development or test.`
       );
     }
   );

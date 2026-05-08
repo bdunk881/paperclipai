@@ -58,7 +58,7 @@ jobs:
           echo "custom_domain=$custom_domain" >> "$GITHUB_OUTPUT"
 
       - name: Pull target secrets from Infisical
-        uses: Infisical/secrets-action@v1
+        uses: Infisical/secrets-action@v1.0.9
         with:
           method: universal-auth
           client-id: ${{ secrets.INFISICAL_CLIENT_ID }}

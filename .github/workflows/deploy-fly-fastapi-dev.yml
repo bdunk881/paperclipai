@@ -50,7 +50,7 @@ jobs:
       - uses: actions/checkout@v5
 
       - name: Pull dev secrets from Infisical
-        uses: Infisical/secrets-action@v1
+        uses: Infisical/secrets-action@v1.0.9
         with:
           method: universal-auth
           client-id: ${{ secrets.INFISICAL_CLIENT_ID }}

@@ -29,7 +29,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Pull Cloudflare Pages secrets from Infisical
-        uses: Infisical/secrets-action@v1
+        uses: Infisical/secrets-action@v1.0.9
         with:
           method: universal-auth
           client-id: ${{ secrets.INFISICAL_CLIENT_ID }}

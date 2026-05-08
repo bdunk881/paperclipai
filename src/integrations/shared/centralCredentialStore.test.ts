@@ -1,9 +1,9 @@
-import { CentralCredentialStore } from "./centralCredentialStore";
+import { SharedCredentialStore } from "./sharedCredentialStore";
 
-describe("CentralCredentialStore", () => {
+describe("SharedCredentialStore", () => {
   it("stores encrypted secret bundles and decrypts them by record id", () => {
-    const store = new CentralCredentialStore<{ accountId: string }, { apiKey?: string; refreshToken?: string }>({
-      service: "central-store-basic",
+    const store = new SharedCredentialStore<{ accountId: string }, { apiKey?: string; refreshToken?: string }>({
+      service: "shared-store-basic",
     });
 
     const created = store.create({
@@ -25,11 +25,11 @@ describe("CentralCredentialStore", () => {
   });
 
   it("keeps service buckets isolated while supporting different auth methods", () => {
-    const oauthStore = new CentralCredentialStore<{ teamId: string }, { accessToken: string }>({
-      service: "central-store-oauth",
+    const oauthStore = new SharedCredentialStore<{ teamId: string }, { accessToken: string }>({
+      service: "shared-store-oauth",
     });
-    const basicStore = new CentralCredentialStore<{ host: string }, { username: string; password: string }>({
-      service: "central-store-basic-auth",
+    const basicStore = new SharedCredentialStore<{ host: string }, { username: string; password: string }>({
+      service: "shared-store-basic-auth",
     });
 
     oauthStore.create({

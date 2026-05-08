@@ -137,19 +137,6 @@ function validateProviderConfig(params: {
     return null;
   }
 
-  if (provider === "azure-openai") {
-    if (!credentials.apiKey || credentials.apiKey.length < 4) {
-      return "azure-openai requires apiKey (minimum 4 characters)";
-    }
-    if (!providerOptions?.endpoint) {
-      return "azure-openai requires providerOptions.endpoint";
-    }
-    if (!providerOptions.deployment) {
-      return "azure-openai requires providerOptions.deployment";
-    }
-    return null;
-  }
-
   if (provider === "bedrock") {
     if (!credentials.accessKeyId || !credentials.secretAccessKey) {
       return "bedrock requires credentials.accessKeyId and credentials.secretAccessKey";

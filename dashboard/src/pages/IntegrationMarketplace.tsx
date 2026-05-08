@@ -140,7 +140,7 @@ const INTEGRATIONS: Integration[] = [
   { id: "telegram", name: "Telegram Bot", description: "Messaging platform with bot API.", category: "Communication", connected: false, premium: false, official: false, actions: ["send_message", "send_photo", "create_poll"] },
   { id: "whatsapp", name: "WhatsApp Business", description: "Business messaging via WhatsApp API.", category: "Communication", connected: false, premium: true, official: true, actions: ["send_template", "reply_message", "send_media"] },
   { id: "webex", name: "Webex", description: "Video conferencing and team collaboration by Cisco.", category: "Communication", connected: false, premium: false, official: false, actions: ["create_meeting", "send_message", "share_screen"] },
-  { id: "ringcentral", name: "RingCentral", description: "Cloud phone, video, and messaging platform.", category: "Communication", connected: false, premium: true, official: false, actions: ["make_call", "send_sms", "create_meeting"] },
+  { id: "cloud-phone", name: "Cloud Phone", description: "Cloud phone, video, and messaging platform.", category: "Communication", connected: false, premium: true, official: false, actions: ["make_call", "send_sms", "create_meeting"] },
   { id: "vonage", name: "Vonage", description: "Communication APIs for messaging, voice, and video.", category: "Communication", connected: false, premium: false, official: false, actions: ["send_sms", "make_call", "verify_number"] },
 
   // ── Developer Tools (14) ──

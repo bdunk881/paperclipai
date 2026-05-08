@@ -107,12 +107,12 @@ npm install`}</pre>
       </h2>
       <p className="text-gray-600 mb-3">
         AutoFlow backend runs on{" "}
-        <a href="https://azure.microsoft.com/" className="text-indigo-600 hover:underline">
-          Azure
+        <a href="https://fly.io/" className="text-indigo-600 hover:underline">
+          Fly.io
         </a>
         ; the dashboard is hosted on{" "}
-        <a href="https://vercel.com/" className="text-indigo-600 hover:underline">
-          Vercel
+        <a href="https://pages.cloudflare.com/" className="text-indigo-600 hover:underline">
+          Cloudflare Pages
         </a>
         . See{" "}
         <a

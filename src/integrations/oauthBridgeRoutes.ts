@@ -11,7 +11,6 @@ import { docuSignConnectorService } from "./docusign/service";
 import { teamsConnectorService } from "./teams/service";
 import { posthogConnectorService } from "./posthog/service";
 import { intercomConnectorService } from "./intercom/service";
-import { datadogAzureMonitorConnectorService } from "./datadog-azure-monitor/service";
 import { stripeConnectorService } from "./stripe/service";
 import { slackCredentialStore } from "./slack/credentialStore";
 import { linearCredentialStore } from "./linear/credentialStore";
@@ -24,7 +23,6 @@ import { docuSignCredentialStore } from "./docusign/credentialStore";
 import { teamsCredentialStore } from "./teams/credentialStore";
 import { posthogCredentialStore } from "./posthog/credentialStore";
 import { intercomCredentialStore } from "./intercom/credentialStore";
-import { monitoringCredentialStore } from "./datadog-azure-monitor/credentialStore";
 import { stripeCredentialStore } from "./stripe/credentialStore";
 
 type UnifiedProvider =
@@ -39,7 +37,6 @@ type UnifiedProvider =
   | "teams"
   | "posthog"
   | "intercom"
-  | "datadog-azure-monitor"
   | "stripe";
 
 type StatusProvider =
@@ -64,7 +61,6 @@ const PROVIDERS: Set<UnifiedProvider> = new Set([
   "teams",
   "posthog",
   "intercom",
-  "datadog-azure-monitor",
   "stripe",
 ]);
 
@@ -80,7 +76,6 @@ const STATUS_PROVIDERS: StatusProvider[] = [
   "teams",
   "posthog",
   "intercom",
-  "datadog-azure-monitor",
   "stripe",
   "composio",
 ];
@@ -94,17 +89,6 @@ function isConnected(connectedAt: string | undefined, scopes: string[] | undefin
     connectedAt,
     ...(Array.isArray(scopes) && scopes.length > 0 ? { scopes } : {}),
   };
-}
-
-function datadogAzureMonitorStatus(userId: string) {
-  const datadogCredential = monitoringCredentialStore.getActiveByUserAndProvider(userId, "datadog");
-  const azureCredential = monitoringCredentialStore.getActiveByUserAndProvider(userId, "azure_monitor");
-
-  const chosen = [datadogCredential, azureCredential]
-    .filter((value): value is NonNullable<typeof value> => Boolean(value))
-    .sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0];
-
-  return isConnected(chosen?.createdAt, chosen?.scopes);
 }
 
 function connectionStatusForCredential(credential: { createdAt: string; scopes: string[] } | null | undefined): ProviderStatus {
@@ -217,8 +201,6 @@ router.post("/:provider/connect", requireAuth, (req: AuthenticatedRequest, res) 
           return posthogConnectorService.beginOAuth(userId);
         case "intercom":
           return intercomConnectorService.beginOAuth(userId);
-        case "datadog-azure-monitor":
-          return datadogAzureMonitorConnectorService.beginAzureOAuth(userId);
         case "stripe":
           return stripeConnectorService.beginOAuth(userId);
         default:
@@ -266,7 +248,6 @@ router.get("/status", requireAuth, (req: AuthenticatedRequest, res) => {
     teams: connectionStatusForCredential(teamsCredential),
     posthog: connectionStatusForCredential(posthogCredential),
     intercom: connectionStatusForCredential(intercomCredential),
-    "datadog-azure-monitor": datadogAzureMonitorStatus(userId),
     stripe: connectionStatusForCredential(stripeCredential),
     composio: { connected: false },
   };
@@ -349,9 +330,6 @@ router.get("/callback", async (req, res) => {
         break;
       case "intercom":
         await intercomConnectorService.completeOAuth({ code, state });
-        break;
-      case "datadog-azure-monitor":
-        await datadogAzureMonitorConnectorService.completeAzureOAuth({ code, state });
         break;
       case "stripe":
         await stripeConnectorService.completeOAuth({ code, state });
@@ -456,17 +434,6 @@ router.delete("/:provider/disconnect", requireAuth, async (req: AuthenticatedReq
       const current = intercomCredentialStore.getActiveByUser(userId);
       if (current) {
         intercomConnectorService.disconnect(userId, current.id);
-      }
-      break;
-    }
-    case "datadog-azure-monitor": {
-      const datadog = monitoringCredentialStore.getActiveByUserAndProvider(userId, "datadog");
-      const azure = monitoringCredentialStore.getActiveByUserAndProvider(userId, "azure_monitor");
-      if (datadog) {
-        datadogAzureMonitorConnectorService.disconnect(userId, datadog.id);
-      }
-      if (azure) {
-        datadogAzureMonitorConnectorService.disconnect(userId, azure.id);
       }
       break;
     }

@@ -36,4 +36,4 @@ npm run build
 
 - `docs/integrations/*.md` exists as file-backed content, but those guides are not yet exposed as public routes in this port.
 - Reason: the approved design direction requires every public integration page to use a canonical logo asset, and the brand repo currently only contains a partial integration logo set.
-- Before exposing those guides, source missing canonical assets for at least: Apollo, Datadog/Azure Monitor, DocuSign, Intercom, PostHog, and Shopify.
+- Before exposing those guides, source missing canonical assets for at least: Apollo, Datadog, DocuSign, Intercom, PostHog, and Shopify.

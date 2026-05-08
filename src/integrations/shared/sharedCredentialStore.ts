@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import { CredentialRegistry, CredentialRegistryRecord } from "./credentialRegistry";
 
-export interface CentralCredentialRecord<TMetadata extends object> extends CredentialRegistryRecord {
+export interface SharedCredentialRecord<TMetadata extends object> extends CredentialRegistryRecord {
   authMethod: string;
   label: string;
   updatedAt: string;
@@ -10,24 +10,24 @@ export interface CentralCredentialRecord<TMetadata extends object> extends Crede
   secretPayloadEncrypted: string;
 }
 
-export interface CentralCredentialDecrypted<TMetadata extends object, TSecrets extends object> {
-  record: CentralCredentialRecord<TMetadata>;
+export interface SharedCredentialDecrypted<TMetadata extends object, TSecrets extends object> {
+  record: SharedCredentialRecord<TMetadata>;
   secrets: TSecrets;
 }
 
-interface CentralCredentialStoreOptions<TMetadata extends object> {
+interface SharedCredentialStoreOptions<TMetadata extends object> {
   service: string;
-  sortValue?: (record: CentralCredentialRecord<TMetadata>) => string;
+  sortValue?: (record: SharedCredentialRecord<TMetadata>) => string;
 }
 
-export class CentralCredentialStore<TMetadata extends object, TSecrets extends object> {
+export class SharedCredentialStore<TMetadata extends object, TSecrets extends object> {
   private readonly registry: CredentialRegistry<
-    CentralCredentialRecord<TMetadata>,
-    CentralCredentialRecord<TMetadata>
+    SharedCredentialRecord<TMetadata>,
+    SharedCredentialRecord<TMetadata>
   >;
 
-  constructor(options: CentralCredentialStoreOptions<TMetadata>) {
-    this.registry = new CredentialRegistry<CentralCredentialRecord<TMetadata>, CentralCredentialRecord<TMetadata>>({
+  constructor(options: SharedCredentialStoreOptions<TMetadata>) {
+    this.registry = new CredentialRegistry<SharedCredentialRecord<TMetadata>, SharedCredentialRecord<TMetadata>>({
       service: options.service,
       toPublic: (record) => record,
       sortValue: options.sortValue,
@@ -44,9 +44,9 @@ export class CentralCredentialStore<TMetadata extends object, TSecrets extends o
     createdAt?: string;
     updatedAt?: string;
     revokedAt?: string;
-  }): CentralCredentialRecord<TMetadata> {
+  }): SharedCredentialRecord<TMetadata> {
     const now = params.createdAt ?? new Date().toISOString();
-    const record: CentralCredentialRecord<TMetadata> = {
+    const record: SharedCredentialRecord<TMetadata> = {
       id: params.id ?? randomUUID(),
       userId: params.userId,
       authMethod: params.authMethod,
@@ -61,40 +61,40 @@ export class CentralCredentialStore<TMetadata extends object, TSecrets extends o
     return this.registry.save(record);
   }
 
-  listByUser(userId: string, includeRevoked = true): CentralCredentialRecord<TMetadata>[] {
+  listByUser(userId: string, includeRevoked = true): SharedCredentialRecord<TMetadata>[] {
     return this.registry.listStoredByUser(userId, includeRevoked);
   }
 
   async listByUserAsync(
     userId: string,
     includeRevoked = true,
-  ): Promise<CentralCredentialRecord<TMetadata>[]> {
+  ): Promise<SharedCredentialRecord<TMetadata>[]> {
     return this.registry.listStoredByUserAsync(userId, includeRevoked);
   }
 
-  getById(id: string): CentralCredentialRecord<TMetadata> | null {
+  getById(id: string): SharedCredentialRecord<TMetadata> | null {
     return this.registry.getById(id);
   }
 
-  async getByIdAsync(id: string): Promise<CentralCredentialRecord<TMetadata> | null> {
+  async getByIdAsync(id: string): Promise<SharedCredentialRecord<TMetadata> | null> {
     return this.registry.getByIdAsync(id);
   }
 
   findLatest(
-    predicate: (record: CentralCredentialRecord<TMetadata>) => boolean,
+    predicate: (record: SharedCredentialRecord<TMetadata>) => boolean,
     includeRevoked = false,
-  ): CentralCredentialRecord<TMetadata> | null {
+  ): SharedCredentialRecord<TMetadata> | null {
     return this.registry.findLatest(predicate, includeRevoked);
   }
 
   async findLatestAsync(
-    predicate: (record: CentralCredentialRecord<TMetadata>) => boolean,
+    predicate: (record: SharedCredentialRecord<TMetadata>) => boolean,
     includeRevoked = false,
-  ): Promise<CentralCredentialRecord<TMetadata> | null> {
+  ): Promise<SharedCredentialRecord<TMetadata> | null> {
     return this.registry.findLatestAsync(predicate, includeRevoked);
   }
 
-  getDecrypted(id: string): CentralCredentialDecrypted<TMetadata, TSecrets> | null {
+  getDecrypted(id: string): SharedCredentialDecrypted<TMetadata, TSecrets> | null {
     const record = this.registry.getById(id);
     if (!record) {
       return null;
@@ -106,7 +106,7 @@ export class CentralCredentialStore<TMetadata extends object, TSecrets extends o
     };
   }
 
-  async getDecryptedAsync(id: string): Promise<CentralCredentialDecrypted<TMetadata, TSecrets> | null> {
+  async getDecryptedAsync(id: string): Promise<SharedCredentialDecrypted<TMetadata, TSecrets> | null> {
     const record = await this.registry.getByIdAsync(id);
     if (!record) {
       return null;
@@ -121,13 +121,13 @@ export class CentralCredentialStore<TMetadata extends object, TSecrets extends o
   update(
     id: string,
     mutate: (
-      record: CentralCredentialRecord<TMetadata>,
+      record: SharedCredentialRecord<TMetadata>,
       secrets: TSecrets,
     ) => {
-      record?: CentralCredentialRecord<TMetadata>;
+      record?: SharedCredentialRecord<TMetadata>;
       secrets?: TSecrets;
     },
-  ): CentralCredentialRecord<TMetadata> | null {
+  ): SharedCredentialRecord<TMetadata> | null {
     return this.registry.update(id, (existing) => {
       const existingSecrets = this.decodeSecrets(existing.secretPayloadEncrypted);
       const mutation = mutate(existing, existingSecrets);

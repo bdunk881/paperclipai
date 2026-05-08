@@ -62,5 +62,3 @@ jobs:
             BUILD_SHA=${{ github.sha }}
             BUILD_DATE=${{ github.event.head_commit.timestamp }}
 
-  # Azure backend deployment is handled by .github/workflows/deploy-azure.yml (OIDC auth).
-  # Dashboard deploys are handled by .github/workflows/deploy-swa.yml on pushes to master.

@@ -2,8 +2,6 @@
 
 Primary deployment path is now branch-driven GitHub Actions targeting Fly.io,
 Supabase, and Cloudflare Pages.
-Legacy Azure teardown and DNS cutover steps remain documented under
-[ALT-2325](/ALT/issues/ALT-2325) for Phase 5 retirement work.
 
 ## Stack
 
@@ -29,26 +27,13 @@ Legacy Azure teardown and DNS cutover steps remain documented under
 | `observability rollups` | GitHub Actions + PostgreSQL | `.github/workflows/observability-rollups.yml` |
 | `autoflow-brand` (planned) | GitHub + Cloudflare R2 + MemPalace | `infra/brand-assets/*` |
 
-## Phase 5 decommission
-
-Use [`infra/runbooks/azure-cutover-decommission.md`](runbooks/azure-cutover-decommission.md)
-as the source of truth for the final DNS cutover, Azure destroy sequence, CIAM
-cleanup, and subscription shutdown. Azure-specific docs in this directory should
-be treated as legacy references unless that runbook explicitly points to them.
-
 ## Authentication
 
-### Backend (Azure)
+Deployment authentication is scoped to each target platform:
 
-GitHub Actions authenticates to Azure via **OIDC workload identity federation** — no static credentials stored as secrets.
-
-| Setting | Value |
-|---|---|
-| App registration (client ID) | `1a18157f-bc97-4ad1-a170-1ebd3ae93968` |
-| Tenant ID | `b1cb1311-760a-4c88-a778-5d2c227a1f45` |
-| Auth method | `azure/login@v2` with `id-token: write` permission |
-
-The federated credential is configured in the app registration under Certificates & secrets → Federated credentials. No `AZURE_CREDENTIALS` secret is needed.
+- Fly.io deployments use `FLY_API_TOKEN`.
+- Cloudflare Pages deployments use `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`.
+- Supabase access is supplied through environment-specific database and API secrets.
 
 ## GitHub Actions secrets required
 
@@ -88,7 +73,7 @@ Add these in the repo settings -> Secrets and variables -> Actions:
 | `FLY_PRODUCTION_APP_NAME` | Optional override for the production Fly app name |
 | `FLY_PRODUCTION_BASE_URL` | Optional override for the production Fly hostname used by smoke checks |
 | `FLY_PRODUCTION_SMOKE_USER_ID` | Optional user id sent through production smoke requests |
-| `FLY_PRODUCTION_RELAY_BASE_URL` | Optional direct legacy backend host to relay callbacks/webhooks during the pre-cutover window; if omitted, the workflow uses `https://api.helloautoflow.com` and the cutover operator must replace it with the direct Azure ingress target before DNS flips |
+| `FLY_PRODUCTION_RELAY_BASE_URL` | Optional direct backend host to relay callbacks/webhooks during a production cutover window; if omitted, the workflow uses `https://api.helloautoflow.com` |
 
 ## Daily operations
 
@@ -100,14 +85,6 @@ Add these in the repo settings -> Secrets and variables -> Actions:
 - **Deploy landing:** pushes and PRs with `landing/**` changes run `.github/workflows/landing-cloudflare-pages.yml`.
 - **Enforce branch protection:** run `enforce-branch-protection.yml` to require CI on both protected branches, plus an extra `Staging-First Promotion Gate` and code-owner approval on `master`. Both branches disallow direct pushes, and `master` promotions must come from a PR whose head branch is exactly `staging`.
 - **Rollback:** redeploy the last healthy Fly release for backend or re-run the previous Pages deployment for the affected frontend app.
-- **Legacy Azure teardown:** follow `infra/runbooks/azure-cutover-decommission.md` for the remaining Phase 5 retirement work and any temporary cutover verification still tied to Azure.
-
-## Infrastructure as Code
-
-| Component | Path | Tool |
-|-----------|------|------|
-| Blob Storage | `infra/storage/` | Terraform |
-
 ## Protected Preview QA Access
 
 - Set `QA_PREVIEW_ACCESS_TOKEN` only on the dashboard Vercel project's `preview` environment.
@@ -124,15 +101,12 @@ Recommended host split for the three-environment pipeline:
 - `helloautoflow.com` -> production frontend target
 - `api.helloautoflow.com` -> production backend target
 
-Use [`infra/runbooks/azure-cutover-decommission.md`](runbooks/azure-cutover-decommission.md)
-to verify and remove any remaining Azure-bound records during Phase 5.
+Manage DNS through Cloudflare and keep production API records pointed at the active Fly.io backend target.
 
 ## QA Integration Evidence
 
 - Workflow: `.github/workflows/qa-integration-evidence.yml`
 - Smoke script: `infra/scripts/qa_integration_smoke.sh`
-- Runbook: `infra/runbooks/qa-integration-environment.md`
-- Tier 1 release path: `infra/runbooks/tier1-connector-release.md`
 
 ## FastAPI Fly.io
 
@@ -145,14 +119,6 @@ to verify and remove any remaining Azure-bound records during Phase 5.
 - Migration: `migrations/013_observability_events.sql`
 - Workflow: `.github/workflows/observability-rollups.yml`
 - Maintenance script: `infra/scripts/run_observability_rollups.sh`
-- Runbook: `infra/runbooks/observability-postgres-rollups.md`
-
-## CIAM Native Auth Password Reset
-
-- Enable tenant-side Email OTP SSPR before relying on `resetpassword/v1.0/*` in native auth.
-- Script: `infra/azure/scripts/enable-ciam-native-auth-sspr.sh`
-- Verification: `infra/azure/scripts/verify-ciam-native-auth-sspr.sh`
-- Runbook: `infra/runbooks/ciam-native-auth-sspr.md`
 
 ## Brand asset infra package (ALT-1363)
 

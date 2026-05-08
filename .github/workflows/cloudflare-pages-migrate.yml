@@ -42,8 +42,6 @@ jobs:
           CF_PAGES_PROJECTS: ${{ inputs.projects }}
           CF_PAGES_APPLY_DOMAINS: ${{ inputs.apply_domains }}
           CF_PAGES_RETIRE_LEGACY: ${{ inputs.retire_legacy }}
-          CF_PAGES_AZURE_TENANT_SUBDOMAIN: ${{ secrets.VITE_AZURE_TENANT_SUBDOMAIN }}
-          CF_PAGES_AZURE_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
           CF_PAGES_APP_JWT_SECRET: ${{ secrets.APP_JWT_SECRET }}
           CF_PAGES_QA_PREVIEW_ACCESS_TOKEN: ${{ secrets.QA_PREVIEW_ACCESS_TOKEN }}
         run: node infra/scripts/cloudflare-pages-sync.mjs

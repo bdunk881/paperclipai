@@ -3,23 +3,6 @@ import { createOpenAICompatibleProvider } from "./openaiCompatible";
 export { createBedrockProvider } from "./bedrock";
 export { createVertexAIProvider } from "./vertexAi";
 
-export function createAzureOpenAIProvider(config: LLMProviderConfig): LLMProvider {
-  return createOpenAICompatibleProvider(config, {
-    label: "Azure OpenAI",
-    baseURLEnvVar: "AZURE_OPENAI_BASE_URL",
-    resolveBaseURL: (providerConfig) => {
-      const endpoint = providerConfig.options?.endpoint?.replace(/\/+$/, "");
-      const deployment = providerConfig.options?.deployment;
-      if (!endpoint || !deployment) {
-        return undefined;
-      }
-      return `${endpoint}/openai/deployments/${deployment}`;
-    },
-    resolveModel: (providerConfig) =>
-      providerConfig.options?.deployment ?? providerConfig.model,
-  });
-}
-
 export function createGroqProvider(config: LLMProviderConfig): LLMProvider {
   return createOpenAICompatibleProvider(config, {
     label: "Groq",

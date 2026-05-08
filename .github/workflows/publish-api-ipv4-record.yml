@@ -1,0 +1,132 @@
+name: Publish API IPv4 Record
+
+on:
+  push:
+    branches:
+      - feat/ALT-2361-fly-prod-domain
+    paths:
+      - ".github/workflows/publish-api-ipv4-record.yml"
+  workflow_dispatch:
+    inputs:
+      zone_name:
+        description: Cloudflare zone name
+        required: true
+        default: helloautoflow.com
+        type: string
+      record_name:
+        description: Fully qualified record name
+        required: true
+        default: api.helloautoflow.com
+        type: string
+      ipv4_address:
+        description: IPv4 address to publish
+        required: true
+        default: 66.241.125.85
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  publish-record:
+    name: Upsert Cloudflare A record and verify IPv4
+    runs-on: ubuntu-latest
+    env:
+      ZONE_NAME: ${{ github.event.inputs.zone_name || 'helloautoflow.com' }}
+      RECORD_NAME: ${{ github.event.inputs.record_name || 'api.helloautoflow.com' }}
+      IPV4_ADDRESS: ${{ github.event.inputs.ipv4_address || '66.241.125.85' }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Upsert Cloudflare DNS record
+        run: |
+          set -euo pipefail
+
+          OUT_DIR="artifacts/cloudflare-api-ipv4"
+          mkdir -p "$OUT_DIR"
+
+          auth_header="Authorization: Bearer $CLOUDFLARE_API_TOKEN"
+          api_base="https://api.cloudflare.com/client/v4"
+
+          zone_response=$(curl -fsSL \
+            -H "$auth_header" \
+            "$api_base/zones?name=$ZONE_NAME&status=active")
+          printf '%s\n' "$zone_response" >"$OUT_DIR/zone-response.json"
+
+          zone_id=$(printf '%s' "$zone_response" | jq -r '.result[0].id // empty')
+          if [[ -z "$zone_id" ]]; then
+            echo "Unable to resolve Cloudflare zone id for $ZONE_NAME" >&2
+            exit 1
+          fi
+
+          record_response=$(curl -fsSL \
+            -H "$auth_header" \
+            "$api_base/zones/$zone_id/dns_records?type=A&name=$RECORD_NAME")
+          printf '%s\n' "$record_response" >"$OUT_DIR/record-response.json"
+
+          record_id=$(printf '%s' "$record_response" | jq -r '.result[0].id // empty')
+          payload=$(jq -n \
+            --arg type "A" \
+            --arg name "$RECORD_NAME" \
+            --arg content "$IPV4_ADDRESS" \
+            '{type:$type,name:$name,content:$content,ttl:1,proxied:false}')
+
+          if [[ -n "$record_id" ]]; then
+            mutation_response=$(curl -fsSL -X PATCH \
+              -H "$auth_header" \
+              -H "Content-Type: application/json" \
+              "$api_base/zones/$zone_id/dns_records/$record_id" \
+              --data "$payload")
+          else
+            mutation_response=$(curl -fsSL -X POST \
+              -H "$auth_header" \
+              -H "Content-Type: application/json" \
+              "$api_base/zones/$zone_id/dns_records" \
+              --data "$payload")
+          fi
+
+          printf '%s\n' "$payload" >"$OUT_DIR/request-payload.json"
+          printf '%s\n' "$mutation_response" >"$OUT_DIR/mutation-response.json"
+
+      - name: Verify IPv4 publication
+        run: |
+          set -euo pipefail
+
+          OUT_DIR="artifacts/cloudflare-api-ipv4"
+
+          {
+            echo "# API IPv4 record verification"
+            echo
+            echo "- Timestamp (UTC): $(date -u +"%Y-%m-%dT%H:%M:%SZ")"
+            echo "- Zone: $ZONE_NAME"
+            echo "- Record: $RECORD_NAME"
+            echo "- Target IPv4: $IPV4_ADDRESS"
+            echo
+            echo "## Public DNS"
+            echo
+            echo '```text'
+            dig +short "$RECORD_NAME" A @1.1.1.1
+            echo '```'
+          } >"$OUT_DIR/summary.md"
+
+          dig +short "$RECORD_NAME" A @1.1.1.1 >"$OUT_DIR/dig-a-1.1.1.1.txt"
+          dig +short "$RECORD_NAME" A @8.8.8.8 >"$OUT_DIR/dig-a-8.8.8.8.txt"
+          dig +short "$RECORD_NAME" AAAA @1.1.1.1 >"$OUT_DIR/dig-aaaa-1.1.1.1.txt"
+
+          cat "$OUT_DIR/dig-a-1.1.1.1.txt"
+          cat "$OUT_DIR/dig-a-8.8.8.8.txt"
+
+          grep -qx "$IPV4_ADDRESS" "$OUT_DIR/dig-a-1.1.1.1.txt"
+          grep -qx "$IPV4_ADDRESS" "$OUT_DIR/dig-a-8.8.8.8.txt"
+
+          curl -4 -fsS --resolve "$RECORD_NAME:443:$IPV4_ADDRESS" \
+            "https://$RECORD_NAME/health" >"$OUT_DIR/curl-ipv4-health.json"
+
+      - name: Upload Cloudflare DNS evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cloudflare-api-ipv4-${{ github.run_id }}
+          path: artifacts/cloudflare-api-ipv4/
+          retention-days: 14

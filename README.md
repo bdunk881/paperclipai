@@ -1,257 +1,123 @@
 # AutoFlow
 
-**Hire AI. Deploy Fast. Earn More.**
+Hire a team of AI agents that actually ship.
 
-AutoFlow is an open-source AI workflow automation platform. Spin up autonomous AI businesses in minutes — complete with agents, workflow templates, and revenue infrastructure.
+AutoFlow is the workplace for autonomous agents — describe your mission, get a draft hiring plan, confirm the agents, connect your tools, and watch routines run with human approval where it matters. Think n8n + Zapier + an agent orchestration layer in one product.
 
 > **Live demo:** [helloautoflow.com/demo](https://helloautoflow.com/demo)
 > **Docs:** [docs.helloautoflow.com](https://docs.helloautoflow.com)
-> **Product Hunt:** [producthunt.com/posts/autoflow](https://www.producthunt.com/posts/autoflow)
+> **Status:** open-source, pre-launch (no paying customers yet). The codebase is mature; the customer loop is being compressed in [the production-ready initiative](https://linear.app/helloautoflow/initiative/production-ready-saas-first-paying-customer-6137d1a98469).
 
----
+## What AutoFlow does
 
-## What is AutoFlow?
+1. **Mission intake.** Describe what your business is trying to do.
+2. **Hiring plan.** An LLM drafts an org chart of agents — roles, model tiers, tools, budgets, reporting lines.
+3. **Confirm.** You review and edit the plan; agents are provisioned with persistent identity.
+4. **Connect.** Wire up your tools via OAuth (Slack, Gmail, HubSpot, Linear, GitHub, Stripe, etc.).
+5. **Build routines.** Drag-and-drop workflows in Studio — triggers, actions, LLM calls, conditions, outputs.
+6. **Run with guardrails.** Routines fire on schedule or trigger; approvals gate the risky steps; budgets cap the spend; activity feed shows everything.
 
-AutoFlow gives you a library of pre-built AI workflow templates that you can deploy, configure, and run against your own data. Each template is a multi-step workflow with trigger, LLM, transform, and action steps that chain together into an autonomous pipeline.
+Bring your own LLM keys (Anthropic, OpenAI, Google, Bedrock, Azure) or use AutoFlow’s hosted models with tier routing.
 
-**Built-in templates:**
+## Repo layout
 
-| Template | Category | What it does |
-|---|---|---|
-| Lead Enrichment | Sales | Enriches incoming leads, scores them 0–100 with AI, routes hot leads to your CRM |
-| Content Generator | Content | Takes a brief, generates an AI draft, applies brand voice + SEO meta, pushes to publish queue |
-| Customer Support Bot | Support | Classifies inbound tickets, generates AI replies, escalates edge cases to humans |
+| Path | What lives there |
+|---|---|
+| `src/` | Backend (Express + TypeScript). Engine, auth, billing, integrations, workflows, agents, approvals, tickets. |
+| `dashboard/` | Customer-facing app (Vite + React 18 + Tailwind + react-router 7). |
+| `landing/` | Marketing site (React Router 7 + Sanity CMS + Stripe Checkout). |
+| `docs/` | Public documentation site. |
+| `autoflow-brand/` | Brand assets and Storybook-style demo of the design system. |
+| `migrations/` | Postgres migrations (raw SQL). Supabase-managed migrations live in `supabase/migrations/`. |
+| `infra/` | Deploy configs, runbooks, infrastructure-as-code. |
+| `docker/` | Container definitions for backend + frontend. |
+| `.github/workflows/` | CI/CD (Cloudflare Pages, Fly.io, release-please). |
 
----
+## Stack
 
-## Quick Start
+| Layer | Service |
+|---|---|
+| Frontend hosting | Cloudflare Pages/Workers |
+| Backend compute | Fly.io (`autoflow-fastapi-{dev,staging,production}`) |
+| Database + auth (CIAM) | Supabase |
+| Cache + queue broker | Upstash Redis |
+| Object storage | Cloudflare R2 |
+| Secrets | Infisical (see [`docs/secrets.md`](docs/secrets.md)) |
+| Observability | Sentry, Datadog, Cloudflare Analytics |
+| Billing | Stripe |
+| Email / messaging | Slack, Intercom (existing integrations; both used internally) |
+
+## Quick start
 
 ### Prerequisites
 
 - Node.js 18+
-- Docker (optional, for containerized deployment)
+- Docker (optional, for local Postgres + Redis)
+- An [Infisical](https://infisical.com) account ([HEL-9](https://linear.app/helloautoflow/issue/HEL-9) sets up the workspace)
 
-### Run locally
+### Run the API locally
 
 ```bash
-# Clone the repo
 git clone https://github.com/bdunk881/paperclipai.git
 cd paperclipai
-
-# Install dependencies
 npm install
 
-# Start the API server (port 3000)
-npm run dev
+# Pull dev secrets from Infisical and start the API
+infisical login                                # one-time
+infisical run --env=dev -- npm run dev
 ```
 
-### Verify it works
+The API is on `http://localhost:8000`. Hit `/health` to verify.
+
+### Run the dashboard
 
 ```bash
-# Health check
-curl http://localhost:3000/health
-
-# List templates
-curl http://localhost:3000/api/templates
-
-# Run a workflow
-curl -X POST http://localhost:3000/api/runs \
-  -H "Content-Type: application/json" \
-  -d '{
-    "templateId": "tpl-lead-enrich",
-    "input": {
-      "name": "Jane Smith",
-      "email": "jane@acme.com",
-      "company": "Acme Corp"
-    },
-    "config": {
-      "crmIntegration": "hubspot",
-      "idealCustomerProfile": "Series A SaaS, 50-200 employees"
-    }
-  }'
+cd dashboard
+infisical run --env=dev -- npm run dev
 ```
 
-### Run via Docker
+Dashboard at `http://localhost:5173`.
+
+### Run via Docker (optional, for parity with prod)
 
 ```bash
-cp .env.local.example .env.local
-docker compose up
+cp .env.local.example .env.local              # local-only secrets (DB password, etc.)
+docker compose up                              # spins Postgres + Redis + backend + dashboard
 ```
 
-The API is available at `http://localhost:8000`.
+## Branching + release flow
 
----
+See [`CLAUDE.md`](CLAUDE.md) for the canonical rules. TL;DR:
 
-## API Reference
+- Feature work happens on `feature/*` branches off `dev`.
+- `dev` is main. Currently has minimum protection (no force-push, no delete, CI must pass).
+- `staging` is the UAT branch. PRs into staging require approval and a green CI build.
+- `master` is the production branch. Currently frozen on an older build while we settle the v2 redesign and the production-ready initiative; new code lands here only after staging UAT.
 
-Full API docs at [docs.helloautoflow.com/api-reference](https://docs.helloautoflow.com/api-reference).
+## Testing
 
-### Core endpoints
+```bash
+# Backend
+npm test                                       # unit + integration
+npm run test:engine                            # workflow engine only
+npm run test:templates                         # template smoke tests
 
-| Method | Path | Description |
-|---|---|---|
-| `GET` | `/health` | Health check + run stats |
-| `GET` | `/api/templates` | List all workflow templates |
-| `GET` | `/api/templates/:id` | Get a single template definition |
-| `GET` | `/api/templates/:id/sample` | Get sample input/output for a template |
-| `GET` | `/api/workflows/schema` | Get the current portable workflow JSON schema descriptor |
-| `GET` | `/api/templates/:id/export` | Export a template in portable workflow JSON format |
-| `POST` | `/api/templates/import` | Import a portable workflow template |
-| `POST` | `/api/runs` | Start a new workflow run |
-| `GET` | `/api/runs` | List all runs |
-| `GET` | `/api/runs/:id` | Get a specific run + logs |
-| `POST` | `/api/webhooks/:templateId` | Trigger a workflow from a webhook |
+# Dashboard
+cd dashboard && npm test                       # vitest unit
+cd dashboard && npm run e2e                    # Playwright e2e
 
----
-
-## Project Structure
-
-```
-autoflow/
-├── src/                  # Backend API (Node.js + Express)
-│   ├── app.ts            # Express app (routes)
-│   ├── index.ts          # Server entry point
-│   ├── engine/           # Workflow execution engine
-│   │   ├── WorkflowEngine.ts
-│   │   ├── queue.ts
-│   │   ├── runStore.ts
-│   │   └── stepHandlers.ts
-│   ├── templates/        # Built-in workflow templates
-│   │   ├── lead-enrichment.ts
-│   │   ├── content-generator.ts
-│   │   └── customer-support-bot.ts
-│   └── types/            # TypeScript types
-│       └── workflow.ts
-├── dashboard/            # React dashboard UI
-├── landing/              # Marketing site (Next.js)
-├── docs/                 # Documentation site (Next.js)
-├── docker/               # Dockerfiles
-├── infra/                # Deployment config (Azure + Vercel)
-└── docker-compose.yml
+# Type check anywhere
+npm run type-check
 ```
 
----
-
-## Deployment
-
-AutoFlow backend is deployed on Azure; the dashboard is hosted on Vercel. See [`infra/README.md`](infra/README.md) for full setup instructions.
-
-### CI/CD
-
-AutoFlow now uses a staging-first promotion flow:
-
-- Feature branches open PRs into `staging`.
-- `staging` deploys first and carries the validation checks.
-- Only the `staging` branch may open a PR into `master`.
-- PRs into `master` require one code-owner approval from `@bdunk881` plus the `Staging-First Promotion Gate` check before production deploys can proceed.
-
-Required GitHub Actions secret for backend test job:
-- `CI_POSTGRES_PASSWORD`
-
----
+Every PR runs the full suite via [`ci.yml`](.github/workflows/ci.yml).
 
 ## Contributing
 
-1. Fork the repo
-2. Create a branch: `git checkout -b feat/my-feature`
-3. Make your changes and add tests
-4. Run `npm test` to verify everything passes
-5. Open your PR against `staging`, not `master`
-6. After staging validation, promote `staging` to `master` with a dedicated PR reviewed by the production code owner
+This is currently a solo-founder + AI-agent project. Branch protocol in [`CLAUDE.md`](CLAUDE.md). Issue tracker: [Linear `Helloautoflow` team](https://linear.app/helloautoflow). The production roadmap is the [Production-Ready SaaS initiative](https://linear.app/helloautoflow/initiative/production-ready-saas-first-paying-customer-6137d1a98469).
 
-Operational routine note:
-- The CTO stale-PR pinger lives at `scripts/stale-pr-pinger.sh`. Run it from the repo root with `PAPERCLIP_API_URL`, `PAPERCLIP_COMPANY_ID`, and either `PAPERCLIP_API_KEY` or agent JWT env vars present. Use `DRY_RUN=1` to preview mentions without posting comments.
-
-### Running tests
-
-```bash
-npm test              # All tests
-npm run test:engine   # Workflow engine
-npm run test:api      # API endpoints
-npm run test:templates # Template definitions
-npm run test:coverage  # Coverage report (80% threshold)
-```
-
-### Portable workflow bundle example
-
-```json
-{
-  "format": "autoflow.workflow-template",
-  "schemaVersion": "2026-04-19",
-  "exportedAt": "2026-04-20T00:00:00.000Z",
-  "template": {
-    "id": "tpl-support-bot",
-    "name": "Customer Support Bot"
-  }
-}
-```
-
----
-
-## LLM Tier Routing
-
-AutoFlow automatically routes each LLM step to the cheapest model that can handle its complexity, reducing inference costs by ≥40% compared to routing everything through a high-capability model.
-
-### Tiers
-
-| Tier | Anthropic | OpenAI | When used |
-|------|-----------|--------|-----------|
-| `lite` | claude-haiku | gpt-4o-mini | Short classification, entity extraction, yes/no decisions |
-| `standard` | claude-sonnet | gpt-4o | Multi-step reasoning, content generation, NL→workflow |
-| `power` | claude-opus | gpt-4o | Complex orchestration, large context (>2 000 chars), agent steps |
-
-The tier is chosen automatically by a rule-based complexity classifier. The classifier inspects:
-- Rendered prompt length (>2 000 chars → power)
-- Step kind (`agent` → power)
-- Keywords in the prompt template (`classify`, `extract`, `yes or no` → lite; `orchestrate`, `plan` → power)
-- Number of output keys (>3 keys → standard or power)
-
-### Per-step override
-
-Add `llmTier` to any LLM step definition to bypass the classifier:
-
-```ts
-{
-  id: "step_classify",
-  kind: "llm",
-  llmTier: "lite",           // force lite model regardless of prompt length
-  promptTemplate: "Classify: {{body}}",
-  outputKeys: ["intent"],
-}
-```
-
-Valid values: `"lite"`, `"standard"`, `"power"`.
-
-### Cost observability
-
-Every LLM step result includes a `costLog` field:
-
-```json
-{
-  "stepId": "step_classify",
-  "costLog": {
-    "modelTier": "lite",
-    "modelId": "claude-haiku-4-5-20251001",
-    "promptTokens": 210,
-    "completionTokens": 55,
-    "estimatedCostUsd": 0.0000921
-  }
-}
-```
-
-The `GET /api/runs/:id` response exposes `costLog` on every step result, so you can aggregate costs per run in your admin UI or analytics pipeline.
-
----
+If you’d like to contribute as an outside human, open an issue first — the codebase is changing fast and a quick alignment saves wasted work.
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
-
----
-
-## Links
-
-- **Website:** [helloautoflow.com](https://helloautoflow.com)
-- **Demo:** [helloautoflow.com/demo](https://helloautoflow.com/demo)
-- **Docs:** [docs.helloautoflow.com](https://docs.helloautoflow.com)
-- **Issues:** [github.com/bdunk881/paperclipai/issues](https://github.com/bdunk881/paperclipai/issues)
+MIT. See [`LICENSE`](LICENSE).

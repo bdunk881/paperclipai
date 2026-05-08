@@ -1,4 +1,4 @@
-import { CentralCredentialStore } from "../../integrations/shared/centralCredentialStore";
+import { SharedCredentialStore } from "../../integrations/shared/sharedCredentialStore";
 
 export type GoogleWorkspaceAuthMethod = "oauth_pkce" | "api_key";
 export type GoogleWorkspaceCredentialStatus = "pending_validation" | "active" | "revoked";
@@ -52,7 +52,7 @@ export interface GoogleWorkspaceCredentialDecrypted extends GoogleWorkspaceCrede
 
 export type GoogleWorkspaceCredentialPublic = GoogleWorkspaceCredential;
 
-const store = new CentralCredentialStore<
+const store = new SharedCredentialStore<
   GoogleWorkspaceCredentialMetadata,
   GoogleWorkspaceCredentialSecrets
 >({

@@ -21,7 +21,7 @@ This plan addresses per-company workspace isolation, secrets management, and age
 | **Foreign keys** | All business tables (`leads`, `campaigns`, `tickets`, etc.) have `workspace_id NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE` | `migrations/001_autoflow_schema.sql`, `migrations/008_ticketing.sql` |
 | **RLS policies** | Policies defined on all major tables checking `workspace_id = app_current_workspace_id()` | `migrations/001_autoflow_schema.sql` |
 | **SQL helper functions** | `app_current_workspace_id()` and `app_current_user_id()` reading PostgreSQL session variables | `migrations/001_autoflow_schema.sql` |
-| **Auth middleware** | JWT verification via Azure Entra External ID, extracts `sub` (userId) and `tenantId` | `src/auth/authMiddleware.ts` |
+| **Auth middleware** | JWT verification via the configured identity provider, extracts `sub` (userId) and `tenantId` | `src/auth/authMiddleware.ts` |
 | **Company provisioning** | POST `/api/companies` creates company + workspace + team + agents | `src/companies/companyRoutes.ts` |
 | **Secret binding** | Per-company `secretBindings` accepted at provisioning, masked in responses | `src/companies/companyRoutes.ts`, `src/controlPlane/controlPlaneStore.ts` |
 
@@ -63,7 +63,7 @@ This plan addresses per-company workspace isolation, secrets management, and age
 
 #### GAP-6: No Cross-Tenant Audit Trail (MEDIUM)
 
-**Impact:** No centralized audit log for workspace access, secret reads, or cross-tenant operations.
+**Impact:** No unified audit log for workspace access, secret reads, or cross-tenant operations.
 
 **Risk:** Compliance gap — cannot prove who accessed what data and when.
 
@@ -212,7 +212,7 @@ CREATE POLICY secrets_tenant_isolation ON company_secrets
 
 **Option A (Recommended for MVP):** Application-layer encryption using `CONNECTOR_CREDENTIAL_ENCRYPTION_KEY` with AES-256-GCM. Key stored in environment, per-secret IV stored alongside ciphertext.
 
-**Option B (Target State):** Azure Key Vault integration. Each company gets a dedicated key in Key Vault. Application calls Key Vault for encrypt/decrypt operations. Provides HSM backing, automatic rotation, and audit trail.
+**Option B (Target State):** Managed key service integration. Each company gets a dedicated key. Application calls the key service for encrypt/decrypt operations. Provides HSM backing, automatic rotation, and audit trail.
 
 #### 3.3 Secret Access Audit Table
 
@@ -231,7 +231,7 @@ CREATE TABLE secret_access_log (
 
 **Subtask assignments:**
 - Backend Engineer: Implement encryption/decryption service
-- DevOps Engineer: Set up Azure Key Vault if Option B
+- DevOps Engineer: Set up the managed key service if Option B
 - Security Engineer (self): Define rotation policy, audit requirements
 
 ---
@@ -275,7 +275,7 @@ All API calls made by agents must include workspace context:
 - Log all QA bypass authentications
 - Consider removing entirely and using proper test user provisioning
 
-#### 5.2 Centralized Audit Log
+#### 5.2 Unified Audit Log
 
 ```sql
 CREATE TABLE audit_log (
@@ -335,7 +335,7 @@ CREATE INDEX idx_audit_log_actor ON audit_log (actor_id, created_at DESC);
 ## Dependencies and Risks
 
 - **Backend Engineer** needed for middleware implementation, PostgreSQL store migration
-- **DevOps Engineer** needed for Azure Key Vault setup (Phase 3 Option B)
+- **DevOps Engineer** needed for managed key service setup (Phase 3 Option B)
 - **Risk:** Large migration surface — recommend phased rollout with feature flags per phase
 - **Risk:** Connection pool behavior with `SET` — must verify pgBouncer/connection pooler compatibility
 - **Risk:** Performance impact of per-request `SET` — benchmark required

@@ -1,0 +1,6 @@
+---
+description: Project agent operating manual — load on every chat
+alwaysApply: true
+---
+
+Read and follow [AGENTS.md](mdc:AGENTS.md) end-to-end before any code change. It is the canonical source for the project goal, branch flow, agent operating protocol, stop conditions, and the hard "never" list. If anything in this conversation conflicts with AGENTS.md, AGENTS.md wins.

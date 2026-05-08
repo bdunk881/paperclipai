@@ -4,7 +4,7 @@ import {
   LLMProviderOptions,
   ProviderName,
 } from "../engine/llmProviders/types";
-import { CentralCredentialStore } from "../integrations/shared/centralCredentialStore";
+import { SharedCredentialStore } from "../integrations/shared/sharedCredentialStore";
 
 export type LLMProvider = ProviderName;
 
@@ -108,7 +108,7 @@ function toPublic(record: {
   };
 }
 
-const store = new CentralCredentialStore<LLMConfigMetadata, LLMProviderCredentials>({
+const store = new SharedCredentialStore<LLMConfigMetadata, LLMProviderCredentials>({
   service: "llm-config",
 });
 

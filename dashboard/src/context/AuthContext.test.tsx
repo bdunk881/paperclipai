@@ -4,35 +4,51 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AuthProvider, useAuth } from "./AuthContext";
 
 const {
-  readStoredAuthSessionMock,
   readStoredAuthUserMock,
-  clearStoredAuthSessionMock,
-  writeStoredAuthSessionMock,
-  refreshNativeAuthSessionMock,
-  sessionFromTokenResponseMock,
+  clearStoredAuthUserMock,
+  writeStoredAuthUserMock,
+  signOutSupabaseMock,
+  getSupabaseClientMock,
+  getSupabaseStoredSessionMock,
 } = vi.hoisted(() => ({
-  readStoredAuthSessionMock: vi.fn(),
   readStoredAuthUserMock: vi.fn(),
-  clearStoredAuthSessionMock: vi.fn(),
-  writeStoredAuthSessionMock: vi.fn(),
-  refreshNativeAuthSessionMock: vi.fn(),
-  sessionFromTokenResponseMock: vi.fn(),
+  clearStoredAuthUserMock: vi.fn(),
+  writeStoredAuthUserMock: vi.fn(),
+  signOutSupabaseMock: vi.fn(),
+  getSupabaseClientMock: vi.fn(),
+  getSupabaseStoredSessionMock: vi.fn(),
+}));
+
+const unsubscribeMock = vi.fn();
+const onAuthStateChangeMock = vi.fn(() => ({
+  data: {
+    subscription: {
+      unsubscribe: unsubscribeMock,
+    },
+  },
 }));
 
 vi.mock("../auth/authStorage", () => ({
   AUTH_STORAGE_EVENT: "autoflow-auth-user-changed",
-  readStoredAuthSession: readStoredAuthSessionMock,
   readStoredAuthUser: readStoredAuthUserMock,
-  clearStoredAuthSession: clearStoredAuthSessionMock,
-  writeStoredAuthSession: writeStoredAuthSessionMock,
-  getInMemoryRefreshToken: vi.fn(),
-  setInMemoryRefreshToken: vi.fn(),
+  clearStoredAuthUser: clearStoredAuthUserMock,
+  writeStoredAuthUser: writeStoredAuthUserMock,
 }));
 
-vi.mock("../auth/nativeAuthClient", () => ({
-  isSessionExpiring: vi.fn((session: { expiresAt: number } | null) => !session || session.expiresAt <= Date.now()),
-  refreshNativeAuthSession: refreshNativeAuthSessionMock,
-  sessionFromTokenResponse: sessionFromTokenResponseMock,
+vi.mock("../auth/supabaseAuth", () => ({
+  getSupabaseClient: getSupabaseClientMock,
+  getSupabaseStoredSession: getSupabaseStoredSessionMock,
+  sessionFromSupabaseSession: vi.fn((session: { access_token: string; expires_at: number; user: { id: string; email: string } }) => ({
+    accessToken: session.access_token,
+    expiresAt: session.expires_at * 1000,
+    user: {
+      id: session.user.id,
+      email: session.user.email,
+      name: session.user.email,
+    },
+    authProvider: "supabase",
+  })),
+  signOutSupabase: signOutSupabaseMock,
 }));
 
 let latestAuth:
@@ -47,25 +63,28 @@ function CaptureAuth() {
 describe("AuthContext", () => {
   beforeEach(() => {
     latestAuth = undefined;
+    unsubscribeMock.mockReset();
     vi.clearAllMocks();
     readStoredAuthUserMock.mockReturnValue(null);
-    readStoredAuthSessionMock.mockReturnValue(null);
+    getSupabaseStoredSessionMock.mockResolvedValue(null);
+    signOutSupabaseMock.mockResolvedValue(undefined);
+    getSupabaseClientMock.mockReturnValue({
+      auth: {
+        onAuthStateChange: onAuthStateChangeMock,
+      },
+    });
   });
 
   afterEach(() => {
     vi.restoreAllMocks();
   });
 
-  it("maps a stored native session into the current user", () => {
-    readStoredAuthSessionMock.mockReturnValue({
-      accessToken: "token-123",
-      expiresAt: Date.now() + 60_000,
-      user: {
-        id: "user-1",
-        email: "user@example.com",
-        name: "Example User",
-        tenantId: "tenant-1",
-      },
+  it("maps a stored preview user into the current user", () => {
+    readStoredAuthUserMock.mockReturnValue({
+      id: "user-1",
+      email: "user@example.com",
+      name: "Example User",
+      tenantId: "tenant-1",
     });
 
     render(
@@ -83,69 +102,18 @@ describe("AuthContext", () => {
     });
   });
 
-  it("re-reads storage on mount so callback-written sessions are not missed", async () => {
-    const session = {
-      accessToken: "token-123",
-      expiresAt: Date.now() + 60_000,
-      user: {
-        id: "user-1",
-        email: "user@example.com",
-        name: "Example User",
-      },
-    };
-
-    readStoredAuthSessionMock.mockReturnValueOnce(null).mockReturnValue(session);
-    readStoredAuthUserMock.mockReturnValueOnce(null).mockReturnValue(session.user);
-
+  it("returns null when no Supabase session is available", async () => {
     render(
       <AuthProvider>
         <CaptureAuth />
       </AuthProvider>
     );
 
-    await waitFor(() => {
-      expect(screen.getByText("user@example.com")).toBeInTheDocument();
-    });
+    await expect(latestAuth?.getAccessToken()).resolves.toBeNull();
   });
 
-  it("returns the stored access token when the session is still valid", async () => {
-    readStoredAuthSessionMock.mockReturnValue({
-      accessToken: "token-123",
-      expiresAt: Date.now() + 60_000,
-      user: {
-        id: "user-1",
-        email: "user@example.com",
-        name: "Example User",
-      },
-    });
-
-    render(
-      <AuthProvider>
-        <CaptureAuth />
-      </AuthProvider>
-    );
-
-    await expect(latestAuth?.getAccessToken()).resolves.toBe("token-123");
-  });
-
-  it("refreshes the session when the access token has expired", async () => {
-    readStoredAuthSessionMock.mockReturnValue({
-      accessToken: "expired-token",
-      refreshToken: "refresh-123",
-      expiresAt: Date.now() - 1_000,
-      user: {
-        id: "user-1",
-        email: "user@example.com",
-        name: "Example User",
-      },
-    });
-
-    refreshNativeAuthSessionMock.mockResolvedValue({
-      access_token: "fresh-token",
-      expires_in: 3600,
-      token_type: "Bearer",
-    });
-    sessionFromTokenResponseMock.mockReturnValue({
+  it("hydrates the latest Supabase session when requesting an access token", async () => {
+    getSupabaseStoredSessionMock.mockResolvedValue({
       accessToken: "fresh-token",
       expiresAt: Date.now() + 3_600_000,
       user: {
@@ -153,6 +121,7 @@ describe("AuthContext", () => {
         email: "user@example.com",
         name: "Example User",
       },
+      authProvider: "supabase",
     });
 
     render(
@@ -162,24 +131,13 @@ describe("AuthContext", () => {
     );
 
     await expect(latestAuth?.getAccessToken()).resolves.toBe("fresh-token");
-    expect(refreshNativeAuthSessionMock).toHaveBeenCalledWith("refresh-123");
-    expect(writeStoredAuthSessionMock).toHaveBeenCalledTimes(1);
+    expect(writeStoredAuthUserMock).toHaveBeenCalledWith(
+      expect.objectContaining({ email: "user@example.com" })
+    );
   });
 
-  it("throws when a token is required but the session cannot be refreshed", async () => {
-    readStoredAuthSessionMock.mockReturnValue({
-      accessToken: "expired-token",
-      refreshToken: "refresh-123",
-      expiresAt: Date.now() - 1_000,
-      user: {
-        id: "user-1",
-        email: "user@example.com",
-        name: "Example User",
-      },
-    });
-
-    refreshNativeAuthSessionMock.mockRejectedValue(new Error("refresh failed"));
-
+  it("throws when a token is required but the Supabase session cannot be refreshed", async () => {
+    getSupabaseStoredSessionMock.mockResolvedValue(null);
     render(
       <AuthProvider>
         <CaptureAuth />
@@ -189,11 +147,10 @@ describe("AuthContext", () => {
     await expect(latestAuth?.requireAccessToken()).rejects.toThrow(
       "Authentication session expired. Sign in again to continue."
     );
-    expect(clearStoredAuthSessionMock).toHaveBeenCalledTimes(1);
   });
 
-  it("clears the stored session on logout", async () => {
-    readStoredAuthSessionMock.mockReturnValue({
+  it("signs out Supabase-backed sessions on logout", async () => {
+    getSupabaseStoredSessionMock.mockResolvedValue({
       accessToken: "token-123",
       expiresAt: Date.now() + 60_000,
       user: {
@@ -201,6 +158,7 @@ describe("AuthContext", () => {
         email: "user@example.com",
         name: "Example User",
       },
+      authProvider: "supabase",
     });
 
     render(
@@ -209,10 +167,17 @@ describe("AuthContext", () => {
       </AuthProvider>
     );
 
+    await waitFor(() => {
+      expect(writeStoredAuthUserMock).toHaveBeenCalledWith(
+        expect.objectContaining({ email: "user@example.com" })
+      );
+    });
+
     latestAuth?.logout();
 
     await waitFor(() => {
-      expect(clearStoredAuthSessionMock).toHaveBeenCalledTimes(1);
+      expect(signOutSupabaseMock).toHaveBeenCalledTimes(1);
+      expect(clearStoredAuthUserMock).toHaveBeenCalledTimes(1);
     });
   });
 });

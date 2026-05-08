@@ -1,0 +1,47 @@
+name: Migrate Cloudflare Pages Projects
+
+on:
+  workflow_dispatch:
+    inputs:
+      projects:
+        description: Comma-separated project keys to sync
+        required: true
+        default: dashboard,staging
+      apply_domains:
+        description: Attach custom domains after project sync
+        required: true
+        default: true
+        type: boolean
+      retire_legacy:
+        description: Delete legacy direct-upload projects after domain cutover
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+jobs:
+  sync-pages:
+    name: Sync Pages projects
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Sync Cloudflare Pages projects
+        env:
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          GITHUB_REPOSITORY_ID: ${{ github.event.repository.id }}
+          GITHUB_REPOSITORY_NAME: ${{ github.event.repository.name }}
+          GITHUB_REPOSITORY_OWNER: ${{ github.repository_owner }}
+          CF_PAGES_PROJECTS: ${{ inputs.projects }}
+          CF_PAGES_APPLY_DOMAINS: ${{ inputs.apply_domains }}
+          CF_PAGES_RETIRE_LEGACY: ${{ inputs.retire_legacy }}
+          CF_PAGES_APP_JWT_SECRET: ${{ secrets.APP_JWT_SECRET }}
+          CF_PAGES_QA_PREVIEW_ACCESS_TOKEN: ${{ secrets.QA_PREVIEW_ACCESS_TOKEN }}
+        run: node infra/scripts/cloudflare-pages-sync.mjs

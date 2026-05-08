@@ -9,8 +9,8 @@
     "Build Frontend (Dashboard)",
     "Auth Regression Smoke (Playwright)",
     "E2E Tests (Dashboard)",
-    "Branch Protection Sync Check",
-    "Docker Build Check"
+    "Docker Build Check (backend)",
+    "Docker Build Check (frontend)"
   ],
   "master": [
     "Lint Backend",
@@ -22,8 +22,8 @@
     "Build Frontend (Dashboard)",
     "Auth Regression Smoke (Playwright)",
     "E2E Tests (Dashboard)",
-    "Branch Protection Sync Check",
-    "Docker Build Check",
+    "Docker Build Check (backend)",
+    "Docker Build Check (frontend)",
     "Staging-First Promotion Gate"
   ]
 }

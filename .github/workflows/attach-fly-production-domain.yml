@@ -1,0 +1,93 @@
+name: Attach Fly Production Domain
+
+on:
+  push:
+    branches:
+      - feat/ALT-2361-fly-prod-domain
+    paths:
+      - ".github/workflows/attach-fly-production-domain.yml"
+  workflow_dispatch:
+    inputs:
+      app_name:
+        description: Fly app to update
+        required: true
+        default: autoflow-fastapi-production
+        type: string
+      domain:
+        description: Custom domain to attach
+        required: true
+        default: api.helloautoflow.com
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  attach-domain:
+    name: Attach domain and capture TLS evidence
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Set up flyctl
+        uses: superfly/flyctl-actions/setup-flyctl@master
+
+      - name: Attach certificate and capture evidence
+        env:
+          APP_NAME: ${{ github.event.inputs.app_name || 'autoflow-fastapi-production' }}
+          DOMAIN: ${{ github.event.inputs.domain || 'api.helloautoflow.com' }}
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          OUT_DIR="artifacts/fly-production-domain"
+          mkdir -p "$OUT_DIR"
+
+          run_and_capture() {
+            local name="$1"
+            shift
+
+            set +e
+            "$@" >"$OUT_DIR/$name.txt" 2>&1
+            local status=$?
+            set -e
+
+            printf '%s\n' "$status" >"$OUT_DIR/$name.exit"
+            cat "$OUT_DIR/$name.txt"
+            return 0
+          }
+
+          run_and_capture fly-version flyctl version
+          run_and_capture fly-status flyctl status --app "$APP_NAME"
+          run_and_capture fly-ips flyctl ips list --app "$APP_NAME"
+          run_and_capture certs-add flyctl certs add "$DOMAIN" --app "$APP_NAME"
+          run_and_capture certs-list flyctl certs list --app "$APP_NAME"
+          run_and_capture certs-show flyctl certs show "$DOMAIN" --app "$APP_NAME"
+          run_and_capture certs-check flyctl certs check "$DOMAIN" --app "$APP_NAME"
+
+          dig +short "$DOMAIN" >"$OUT_DIR/public-dns.txt" || true
+
+          {
+            echo "# Fly production domain attach"
+            echo
+            echo "- Timestamp (UTC): $(date -u +"%Y-%m-%dT%H:%M:%SZ")"
+            echo "- Fly app: $APP_NAME"
+            echo "- Domain: $DOMAIN"
+            echo "- certs add exit: $(cat "$OUT_DIR/certs-add.exit")"
+            echo "- certs show exit: $(cat "$OUT_DIR/certs-show.exit")"
+            echo "- certs check exit: $(cat "$OUT_DIR/certs-check.exit")"
+            echo
+            echo "## Current public DNS"
+            echo
+            echo '```text'
+            cat "$OUT_DIR/public-dns.txt"
+            echo '```'
+          } >"$OUT_DIR/summary.md"
+
+      - name: Upload Fly domain evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fly-production-domain-${{ github.run_id }}
+          path: artifacts/fly-production-domain/
+          retention-days: 14

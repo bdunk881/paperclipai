@@ -90,31 +90,6 @@ describe("POST /api/llm-configs", () => {
     expect(listRes.body.configs[0].isDefault).toBe(true);
   });
 
-  it("accepts azure-openai config with provider options", async () => {
-    const res = await request(app)
-      .post("/api/llm-configs")
-      .set(asAuth(USER_A))
-      .send({
-        provider: "azure-openai",
-        label: "Azure prod",
-        model: "gpt-4o",
-        apiKey: "azure-secret-1234",
-        providerOptions: {
-          endpoint: "https://example-resource.openai.azure.com",
-          deployment: "gpt4o-prod",
-          apiVersion: "2025-01-01-preview",
-        },
-      });
-
-    expect(res.status).toBe(201);
-    expect(res.body.providerOptions).toEqual({
-      endpoint: "https://example-resource.openai.azure.com",
-      deployment: "gpt4o-prod",
-      apiVersion: "2025-01-01-preview",
-    });
-    expect(res.body.apiKeyMasked).toBe("****1234");
-  });
-
   it("accepts bedrock config with AWS credentials", async () => {
     const res = await request(app)
       .post("/api/llm-configs")
@@ -162,32 +137,20 @@ describe("POST /api/llm-configs", () => {
         },
         providerOptions: {
           projectId: "autoflow-prod",
-          location: "us-central1",
+          location: "us-west1",
         },
       });
 
     expect(res.status).toBe(201);
     expect(res.body.providerOptions).toEqual({
       projectId: "autoflow-prod",
-      location: "us-central1",
+      location: "us-west1",
     });
     expect(res.body.credentialSummary.serviceAccountJsonMasked).toMatch(/^\*\*\*\*/);
     expect(JSON.stringify(res.body)).not.toContain("vertex@example");
   });
 
   it("returns 400 for missing provider-specific requirements", async () => {
-    const azure = await request(app)
-      .post("/api/llm-configs")
-      .set(asAuth(USER_A))
-      .send({
-        provider: "azure-openai",
-        label: "Azure",
-        model: "gpt-4o",
-        apiKey: "azure-secret-1234",
-      });
-    expect(azure.status).toBe(400);
-    expect(azure.body.error).toMatch(/deployment|endpoint/i);
-
     const bedrock = await request(app)
       .post("/api/llm-configs")
       .set(asAuth(USER_A))
@@ -207,7 +170,7 @@ describe("POST /api/llm-configs", () => {
         provider: "vertex-ai",
         label: "Vertex",
         model: "gemini-1.5-pro-002",
-        providerOptions: { projectId: "autoflow-prod", location: "us-central1" },
+        providerOptions: { projectId: "autoflow-prod", location: "us-west1" },
       });
     expect(vertex.status).toBe(400);
     expect(vertex.body.error).toMatch(/serviceAccountJson|oauthAccessToken/);
@@ -303,13 +266,15 @@ describe("PATCH /api/llm-configs/:id", () => {
       .post("/api/llm-configs")
       .set(asAuth(USER_A))
       .send({
-        provider: "azure-openai",
-        label: "Azure old",
-        model: "gpt-4o",
-        apiKey: "azure-old-1234",
+        provider: "bedrock",
+        label: "Bedrock old",
+        model: "amazon.nova-lite-v1:0",
+        credentials: {
+          accessKeyId: "AKIAIOSFODNN7EXAMPLE",
+          secretAccessKey: "bedrock-old-secret",
+        },
         providerOptions: {
-          endpoint: "https://old-resource.openai.azure.com",
-          deployment: "old-deployment",
+          region: "us-east-1",
         },
       });
 
@@ -317,24 +282,23 @@ describe("PATCH /api/llm-configs/:id", () => {
       .patch(`/api/llm-configs/${created.body.id}`)
       .set(asAuth(USER_A))
       .send({
-        label: "Azure new",
+        label: "Bedrock new",
         providerOptions: {
-          endpoint: "https://new-resource.openai.azure.com",
-          deployment: "new-deployment",
-          apiVersion: "2025-01-01-preview",
+          region: "us-west-2",
         },
-        apiKey: "azure-new-9999",
+        credentials: {
+          accessKeyId: "AKIAIOSFODNN7EXAMPLE",
+          secretAccessKey: "bedrock-new-secret-9999",
+        },
       });
 
     expect(res.status).toBe(200);
-    expect(res.body.label).toBe("Azure new");
+    expect(res.body.label).toBe("Bedrock new");
     expect(res.body.providerOptions).toEqual({
-      endpoint: "https://new-resource.openai.azure.com",
-      deployment: "new-deployment",
-      apiVersion: "2025-01-01-preview",
+      region: "us-west-2",
     });
-    expect(res.body.apiKeyMasked).toBe("****9999");
-    expect(res.body.apiKey).toBeUndefined();
+    expect(res.body.credentialSummary.secretAccessKeyMasked).toBe("****9999");
+    expect(res.body.credentials).toBeUndefined();
   });
 
   it("returns 404 when accessing another user's config", async () => {

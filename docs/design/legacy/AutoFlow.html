@@ -1,0 +1,185 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>AutoFlow · All views</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="app/styles.css" />
+<link rel="stylesheet" href="app/styles-pages.css" />
+<style>
+  body { margin: 0; }
+  .hub-wrap { max-width: 1240px; margin: 0 auto; padding: 60px 40px 120px; color: var(--af-fg-1); }
+  .hub-eyebrow { font-size: 11px; color: var(--af-brand-300); letter-spacing: 0.14em; font-family: "JetBrains Mono", monospace; }
+  .hub-h1 { font-size: 56px; font-weight: 800; letter-spacing: -0.035em; line-height: 1.05; margin: 8px 0 12px; }
+  .hub-h1-grad { background: linear-gradient(135deg, var(--af-brand-400), var(--af-teal)); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; }
+  .hub-sub { font-size: 16px; color: var(--af-fg-3); max-width: 640px; line-height: 1.55; margin: 0 0 36px; }
+  .hub-meta { display: flex; gap: 14px; align-items: center; margin-bottom: 48px; flex-wrap: wrap; }
+  .hub-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+  .hub-card {
+    display: block; text-decoration: none; color: inherit;
+    background: var(--af-bg-1); border: 1px solid var(--af-line); border-radius: 18px;
+    padding: 24px; transition: all .18s; position: relative; overflow: hidden;
+  }
+  .hub-card:hover { transform: translateY(-3px); border-color: var(--af-brand-400); box-shadow: 0 16px 40px rgba(99,102,241,0.18); }
+  .hub-card-head { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; }
+  .hub-card-num { font-family: "JetBrains Mono", monospace; font-size: 11px; color: var(--af-fg-4); }
+  .hub-card-tag { margin-left: auto; font-family: "JetBrains Mono", monospace; font-size: 10px; padding: 2px 8px; border-radius: 999px; background: var(--af-bg-3); color: var(--af-fg-3); letter-spacing: 0.06em; }
+  .hub-card-title { font-size: 22px; font-weight: 700; letter-spacing: -0.02em; }
+  .hub-card-blurb { font-size: 13.5px; color: var(--af-fg-3); line-height: 1.55; margin: 6px 0 16px; }
+  .hub-card-foot { display: flex; gap: 6px; flex-wrap: wrap; }
+  .hub-card-arrow { position: absolute; right: 22px; bottom: 22px; color: var(--af-fg-3); transition: transform .18s, color .18s; }
+  .hub-card:hover .hub-card-arrow { transform: translateX(4px); color: var(--af-brand-300); }
+
+  /* tiny inline previews */
+  .hub-prev { height: 130px; margin: 0 -24px 18px; padding: 0 24px; background: var(--af-bg-0); border-top: 1px solid var(--af-line); border-bottom: 1px solid var(--af-line); display: flex; align-items: center; gap: 8px; overflow: hidden; position: relative; }
+  .hub-prev-runs { background: radial-gradient(ellipse at top, rgba(99,102,241,0.22), transparent), var(--af-bg-0); align-items: flex-end; padding-bottom: 18px; }
+  .hub-bar { width: 6px; background: var(--af-brand-500); border-radius: 1px; opacity: .85; }
+  .hub-prev-mp { gap: 12px; padding-left: 24px; flex-wrap: nowrap; }
+  .hub-mp-tile { width: 56px; height: 56px; border-radius: 10px; background: white; padding: 8px; flex-shrink: 0; display: grid; place-items: center; }
+  .hub-mp-tile img { width: 100%; height: 100%; object-fit: contain; }
+  .hub-prev-mcp { font-family: "JetBrains Mono", monospace; font-size: 11px; color: var(--af-fg-3); padding: 14px 24px; background: var(--af-bg-0); white-space: pre; overflow: hidden; }
+  .hub-prev-lp { background: radial-gradient(ellipse at top, rgba(249,115,22,0.18), transparent), radial-gradient(circle, rgba(255,255,255,0.04) 1px, transparent 1px) 0 0 / 18px 18px, var(--af-bg-0); justify-content: center; }
+  .hub-prev-lp-h { font-size: 28px; font-weight: 800; letter-spacing: -0.03em; }
+  .hub-prev-lp-h em { font-style: normal; background: linear-gradient(135deg, var(--af-brand-400), var(--af-teal)); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; }
+  .hub-prev-builder { background: radial-gradient(circle, rgba(255,255,255,0.04) 1px, transparent 1px) 0 0 / 18px 18px, var(--af-bg-0); padding: 14px 22px; }
+  .hub-mini-node { display: inline-block; padding: 6px 10px; background: var(--af-bg-2); border: 1px solid var(--af-line); border-top: 2px solid var(--af-brand-500); border-radius: 6px; font-size: 10.5px; font-family: "JetBrains Mono", monospace; margin-right: 6px; }
+  .hub-mini-node.teal { border-top-color: var(--af-teal); }
+  .hub-mini-node.orange { border-top-color: var(--af-orange); }
+
+  .hub-foot { margin-top: 60px; padding-top: 28px; border-top: 1px solid var(--af-line); display: flex; justify-content: space-between; font-family: "JetBrains Mono", monospace; font-size: 11.5px; color: var(--af-fg-4); }
+</style>
+</head>
+<body>
+<div class="hub-wrap">
+  <div class="hub-eyebrow">AUTOFLOW · v0.1 · DESIGN EXPLORATION</div>
+  <h1 class="hub-h1">Five surfaces.<br/><span class="hub-h1-grad">One nervous system.</span></h1>
+  <p class="hub-sub">Each card is a self-contained design. Builder is the canonical canvas; the four follow-ups extend the system to history, marketplace, server detail, and the public marketing front door.</p>
+  <div class="hub-meta">
+    <span class="af-mcp-pill"><span class="af-mcp-dot"></span><span class="af-mono">MCP-NATIVE</span></span>
+    <span class="af-pill af-mono">dark + light</span>
+    <span class="af-pill af-mono">3 mood variants</span>
+    <span class="af-pill af-mono">tier-routed</span>
+  </div>
+
+  <div class="hub-grid">
+    <a class="hub-card" href="AutoFlow Builder.html">
+      <div class="hub-card-head">
+        <span class="hub-card-num">01</span>
+        <span class="hub-card-tag">CANVAS</span>
+      </div>
+      <div class="hub-card-title">Workflow Builder</div>
+      <p class="hub-card-blurb">Templates gallery, prompt-to-flow, drag-connect canvas, inspector with tier picker, runtime drawer with cost log. The flagship.</p>
+      <div class="hub-prev hub-prev-builder">
+        <span class="hub-mini-node orange">⚡ trigger</span>
+        <span class="hub-mini-node teal">✦ classify · lite</span>
+        <span class="hub-mini-node teal">✦ draft · standard</span>
+        <span class="hub-mini-node">◆ post</span>
+      </div>
+      <div class="hub-card-foot">
+        <span class="af-pill af-mono">3 templates</span>
+        <span class="af-pill af-mono">tweaks</span>
+        <span class="af-pill af-mono">live run</span>
+      </div>
+      <span class="hub-card-arrow">→</span>
+    </a>
+
+    <a class="hub-card" href="AutoFlow Runs.html">
+      <div class="hub-card-head">
+        <span class="hub-card-num">02</span>
+        <span class="hub-card-tag">OBSERVABILITY</span>
+      </div>
+      <div class="hub-card-title">Run history</div>
+      <p class="hub-card-blurb">24-hour timeline, filterable run table, run-detail panel with step gantt, cost breakdown by tier, replay actions.</p>
+      <div class="hub-prev hub-prev-runs">
+        <script>
+          // inline-rendered bars for the preview
+          document.write(Array.from({length: 56}, (_, i) => {
+            const h = 8 + Math.round(Math.abs(Math.sin(i * 0.7)) * 60 + Math.random() * 20);
+            return `<span class="hub-bar" style="height:${h}px"></span>`;
+          }).join(""));
+        </script>
+      </div>
+      <div class="hub-card-foot">
+        <span class="af-pill af-mono">48 runs</span>
+        <span class="af-pill af-mono">timeline</span>
+        <span class="af-pill af-mono">cost split</span>
+      </div>
+      <span class="hub-card-arrow">→</span>
+    </a>
+
+    <a class="hub-card" href="AutoFlow Marketplace.html">
+      <div class="hub-card-head">
+        <span class="hub-card-num">03</span>
+        <span class="hub-card-tag">INTEGRATIONS</span>
+      </div>
+      <div class="hub-card-title">MCP marketplace</div>
+      <p class="hub-card-blurb">18 integrations as MCP-native tiles, category filters, install / configure flow, search. Every tile is a server.</p>
+      <div class="hub-prev hub-prev-mp">
+        <div class="hub-mp-tile"><img src="autoflow-brand/public/integrations/github.svg"/></div>
+        <div class="hub-mp-tile"><img src="autoflow-brand/public/integrations/slack.svg"/></div>
+        <div class="hub-mp-tile"><img src="autoflow-brand/public/integrations/linear.svg"/></div>
+        <div class="hub-mp-tile"><img src="autoflow-brand/public/integrations/notion.svg"/></div>
+        <div class="hub-mp-tile"><img src="autoflow-brand/public/integrations/postgresql.svg"/></div>
+        <div class="hub-mp-tile"><img src="autoflow-brand/public/integrations/stripe.svg"/></div>
+      </div>
+      <div class="hub-card-foot">
+        <span class="af-pill af-mono">18 servers</span>
+        <span class="af-pill af-mono">11 categories</span>
+        <span class="af-pill af-mono">100% MCP</span>
+      </div>
+      <span class="hub-card-arrow">→</span>
+    </a>
+
+    <a class="hub-card" href="AutoFlow MCP.html">
+      <div class="hub-card-head">
+        <span class="hub-card-num">04</span>
+        <span class="hub-card-tag">SERVER DETAIL</span>
+      </div>
+      <div class="hub-card-title">github · MCP server</div>
+      <p class="hub-card-blurb">Tools list with read/write scopes, live event stream, manifest JSON, auth config, latency + uptime. The page behind a marketplace tile.</p>
+      <div class="hub-prev hub-prev-mcp">{`{
+  "name": "github",
+  "spec": "mcp/2024-11-05",
+  "tools": [
+    { "name": "openPullRequest", "scope": "write" },
+    { "name": "searchCode",      "scope": "read"  }
+  ]
+}`}</div>
+      <div class="hub-card-foot">
+        <span class="af-pill af-mono">8 tools</span>
+        <span class="af-pill af-mono">events</span>
+        <span class="af-pill af-mono">manifest</span>
+      </div>
+      <span class="hub-card-arrow">→</span>
+    </a>
+
+    <a class="hub-card" href="AutoFlow Landing.html" style="grid-column: span 2">
+      <div class="hub-card-head">
+        <span class="hub-card-num">05</span>
+        <span class="hub-card-tag">MARKETING</span>
+      </div>
+      <div class="hub-card-title">helloautoflow.com — landing</div>
+      <p class="hub-card-blurb">Hero with prompt bar, animated canvas preview, tier-routing story with cost-log JSON, MCP integrations row, CTA. Public face of the system.</p>
+      <div class="hub-prev hub-prev-lp">
+        <div class="hub-prev-lp-h">Hire AI. <em>Deploy fast.</em> Earn more.</div>
+      </div>
+      <div class="hub-card-foot">
+        <span class="af-pill af-mono">hero</span>
+        <span class="af-pill af-mono">prompt-to-flow</span>
+        <span class="af-pill af-mono">42% savings story</span>
+        <span class="af-pill af-mono">MCP grid</span>
+      </div>
+      <span class="hub-card-arrow">→</span>
+    </a>
+  </div>
+
+  <div class="hub-foot">
+    <span>autoflow · 5 surfaces · shared design system</span>
+    <span>helloautoflow.com</span>
+  </div>
+</div>
+</body>
+</html>

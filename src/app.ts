@@ -96,9 +96,12 @@ import {
   parsePortableWorkflowBundle,
 } from "./workflows/portableSchema";
 import landingPublicApiRoutes from "./landing/publicApiRoutes";
+import { requirePersistence } from "./bootstrap";
 
 import { getImportedTemplate, saveImportedTemplate } from "./templates/importedTemplateStore";
 import { getConnectorHealthSummary, listConnectorHealth } from "./connectors/health";
+
+requirePersistence();
 
 const app = express();
 const workspaceResolver = isPostgresPersistenceEnabled()

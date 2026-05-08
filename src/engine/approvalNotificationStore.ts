@@ -1,6 +1,6 @@
 import { randomUUID } from "crypto";
 import { parseJsonValue, serializeJson } from "../db/json";
-import { getPostgresPool, isPostgresPersistenceEnabled } from "../db/postgres";
+import { getPostgresPool, inMemoryAllowed, isPostgresPersistenceEnabled } from "../db/postgres";
 import { ApprovalRequest } from "./approvalStore";
 
 export interface ApprovalNotification {
@@ -20,6 +20,16 @@ export interface ApprovalNotification {
 }
 
 const memoryStore = new Map<string, ApprovalNotification>();
+
+function postgresPersistenceAvailable(): boolean {
+  if (isPostgresPersistenceEnabled()) {
+    return true;
+  }
+  if (inMemoryAllowed()) {
+    return false;
+  }
+  throw new Error("approvalNotificationStore requires DATABASE_URL outside development/test.");
+}
 
 function cloneNotification(notification: ApprovalNotification): ApprovalNotification {
   return {
@@ -47,7 +57,7 @@ function mapRowToNotification(row: Record<string, unknown>): ApprovalNotificatio
 }
 
 async function persistNotification(notification: ApprovalNotification): Promise<void> {
-  if (!isPostgresPersistenceEnabled()) {
+  if (!postgresPersistenceAvailable()) {
     memoryStore.set(notification.id, cloneNotification(notification));
     return;
   }
@@ -116,7 +126,7 @@ export const approvalNotificationStore = {
     approvalRequestId: string,
     status?: ApprovalNotification["status"]
   ): Promise<ApprovalNotification[]> {
-    if (!isPostgresPersistenceEnabled()) {
+    if (!postgresPersistenceAvailable()) {
       return Array.from(memoryStore.values())
         .filter((notification) => notification.approvalRequestId === approvalRequestId)
         .filter((notification) => (status ? notification.status === status : true))
@@ -199,7 +209,7 @@ export const approvalNotificationStore = {
   },
 
   async get(id: string): Promise<ApprovalNotification | undefined> {
-    if (!isPostgresPersistenceEnabled()) {
+    if (!postgresPersistenceAvailable()) {
       const notification = memoryStore.get(id);
       return notification ? cloneNotification(notification) : undefined;
     }
@@ -212,7 +222,7 @@ export const approvalNotificationStore = {
   async clear(): Promise<void> {
     memoryStore.clear();
 
-    if (!isPostgresPersistenceEnabled()) {
+    if (!postgresPersistenceAvailable()) {
       return;
     }
 

@@ -1,6 +1,6 @@
 import { randomUUID } from "crypto";
 import { parseJsonColumn, serializeJson } from "../db/json";
-import { isPostgresConfigured, queryPostgres } from "../db/postgres";
+import { inMemoryAllowed, isPostgresConfigured, queryPostgres } from "../db/postgres";
 import {
   NotificationCadence,
   NotificationChannel,
@@ -16,6 +16,16 @@ const preferenceStore = new Map<string, NotificationPreference>();
 const transportStore = new Map<string, NotificationTransportConfig>();
 const eventStore = new Map<string, NotificationEventRecord>();
 const deliveryStore = new Map<string, NotificationDeliveryRecord>();
+
+function postgresPersistenceAvailable(): boolean {
+  if (isPostgresConfigured()) {
+    return true;
+  }
+  if (inMemoryAllowed()) {
+    return false;
+  }
+  throw new Error("notificationStore requires DATABASE_URL outside development/test.");
+}
 
 function preferenceKey(workspaceId: string, channel: NotificationChannel, kind: NotificationKind): string {
   return `${workspaceId}:${channel}:${kind}`;
@@ -119,7 +129,7 @@ function fromPreferenceRow(row: {
 
 export const notificationStore = {
   async listPreferences(workspaceId: string): Promise<NotificationPreference[]> {
-    if (!isPostgresConfigured()) {
+    if (!postgresPersistenceAvailable()) {
       const preferences = ALL_CHANNELS.flatMap((channel) =>
         ALL_KINDS.map((kind) => {
           const key = preferenceKey(workspaceId, channel, kind);
@@ -177,7 +187,7 @@ export const notificationStore = {
     };
     const key = preferenceKey(next.workspaceId, next.channel, next.kind);
 
-    if (!isPostgresConfigured()) {
+    if (!postgresPersistenceAvailable()) {
       preferenceStore.set(key, next);
       return clonePreference(next);
     }
@@ -203,7 +213,7 @@ export const notificationStore = {
   },
 
   async listTransportConfigs(workspaceId: string): Promise<NotificationTransportConfig[]> {
-    if (!isPostgresConfigured()) {
+    if (!postgresPersistenceAvailable()) {
       return Array.from(transportStore.values())
         .filter((config) => config.workspaceId === workspaceId)
         .sort((a, b) => a.channel.localeCompare(b.channel))
@@ -245,7 +255,7 @@ export const notificationStore = {
       updatedAt: new Date().toISOString(),
     };
 
-    if (!isPostgresConfigured()) {
+    if (!postgresPersistenceAvailable()) {
       transportStore.set(`${next.workspaceId}:${next.channel}`, next);
       return cloneTransport(next);
     }
@@ -303,7 +313,7 @@ export const notificationStore = {
       createdAt: new Date().toISOString(),
     };
 
-    if (!isPostgresConfigured()) {
+    if (!postgresPersistenceAvailable()) {
       eventStore.set(event.id, event);
       return cloneEvent(event);
     }
@@ -332,7 +342,7 @@ export const notificationStore = {
   },
 
   async listEvents(workspaceId: string, kind?: NotificationKind): Promise<NotificationEventRecord[]> {
-    if (!isPostgresConfigured()) {
+    if (!postgresPersistenceAvailable()) {
       return Array.from(eventStore.values())
         .filter((event) => event.workspaceId === workspaceId)
         .filter((event) => (kind ? event.kind === kind : true))
@@ -398,7 +408,7 @@ export const notificationStore = {
       ...input,
     };
 
-    if (!isPostgresConfigured()) {
+    if (!postgresPersistenceAvailable()) {
       deliveryStore.set(delivery.id, delivery);
       return cloneDelivery(delivery);
     }
@@ -430,7 +440,7 @@ export const notificationStore = {
     channel?: NotificationChannel,
     cadence?: Exclude<NotificationCadence, "off">,
   ): Promise<NotificationDeliveryRecord[]> {
-    if (!isPostgresConfigured()) {
+    if (!postgresPersistenceAvailable()) {
       return Array.from(deliveryStore.values())
         .filter((delivery) => delivery.workspaceId === workspaceId)
         .filter((delivery) => (channel ? delivery.channel === channel : true))
@@ -477,7 +487,7 @@ export const notificationStore = {
     eventStore.clear();
     deliveryStore.clear();
 
-    if (!isPostgresConfigured()) {
+    if (!postgresPersistenceAvailable()) {
       return;
     }
 

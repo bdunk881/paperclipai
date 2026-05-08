@@ -1,6 +1,6 @@
 import { randomUUID } from "crypto";
 import { parseJsonValue, serializeJson } from "../db/json";
-import { getPostgresPool, isPostgresPersistenceEnabled } from "../db/postgres";
+import { getPostgresPool, inMemoryAllowed, isPostgresPersistenceEnabled } from "../db/postgres";
 import {
   ObservabilityEvent,
   ObservabilityEventInput,
@@ -23,6 +23,16 @@ const memoryEvents = new Map<string, ObservabilityEvent[]>();
 const subscribers = new Map<string, ObservabilitySubscriber>();
 
 let lastSequence = 0;
+
+function postgresPersistenceAvailable(): boolean {
+  if (isPostgresPersistenceEnabled()) {
+    return true;
+  }
+  if (inMemoryAllowed()) {
+    return false;
+  }
+  throw new Error("observabilityStore requires DATABASE_URL outside development/test.");
+}
 
 function nowIso(): string {
   return new Date().toISOString();
@@ -136,7 +146,7 @@ async function listEventsFromPostgres(query: ObservabilityEventQuery): Promise<O
 }
 
 async function persistEvent(event: ObservabilityEvent): Promise<void> {
-  if (!isPostgresPersistenceEnabled()) {
+  if (!postgresPersistenceAvailable()) {
     return;
   }
 
@@ -304,7 +314,7 @@ export const observabilityStore = {
     const limit = Math.min(Math.max(query.limit ?? 50, 1), 200);
     let events = getEventsFromMemory({ ...query, limit });
 
-    if (events.length === 0 && isPostgresPersistenceEnabled()) {
+    if (events.length === 0 && postgresPersistenceAvailable()) {
       events = await listEventsFromPostgres({ ...query, limit });
     }
 

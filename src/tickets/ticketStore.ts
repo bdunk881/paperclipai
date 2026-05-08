@@ -1,7 +1,7 @@
 import { randomUUID } from "crypto";
 import { Pool, PoolClient } from "pg";
 import { parseJsonColumn, serializeJson } from "../db/json";
-import { getPostgresPool, isPostgresPersistenceEnabled } from "../db/postgres";
+import { getPostgresPool, inMemoryAllowed, isPostgresPersistenceEnabled } from "../db/postgres";
 import { agentMemoryStore, AgentMemorySearchResult, AgentMemoryTier } from "../agents/agentMemoryStore";
 import { subscriptionStore } from "../billing/subscriptionStore";
 import { llmConfigStore } from "../llmConfig/llmConfigStore";
@@ -143,6 +143,16 @@ const memoryUpdates = new Map<string, TicketUpdate[]>();
 const pendingTicketCloseMemoryWrites = new Map<string, PendingTicketCloseMemoryWrite>();
 const GIGABYTE = 1024 * 1024 * 1024;
 type Queryable = Pick<Pool, "query"> | Pick<PoolClient, "query">;
+
+function postgresPersistenceAvailable(): boolean {
+  if (isPostgresPersistenceEnabled()) {
+    return true;
+  }
+  if (inMemoryAllowed()) {
+    return false;
+  }
+  throw new Error("ticketStore requires DATABASE_URL outside development/test.");
+}
 
 const TIER_POLICY: Record<
   AgentMemoryTier,
@@ -812,7 +822,7 @@ async function persistAggregate(
   aggregate: TicketAggregate,
   context: TicketWorkspaceStoreContext = deriveTicketContext(aggregate.ticket),
 ): Promise<void> {
-  if (!isPostgresPersistenceEnabled()) {
+  if (!postgresPersistenceAvailable()) {
     memoryTickets.set(aggregate.ticket.id, cloneTicket(aggregate.ticket));
     memoryUpdates.set(
       aggregate.ticket.id,
@@ -910,7 +920,7 @@ async function loadAssignments(
     return assignments;
   }
 
-  if (!isPostgresPersistenceEnabled()) {
+  if (!postgresPersistenceAvailable()) {
     for (const ticketId of ticketIds) {
       const ticket = memoryTickets.get(ticketId);
       if (ticket) {
@@ -941,7 +951,7 @@ async function loadAssignments(
 }
 
 async function loadUpdates(ticketId: string, queryable?: Queryable): Promise<TicketUpdate[]> {
-  if (!isPostgresPersistenceEnabled()) {
+  if (!postgresPersistenceAvailable()) {
     return (memoryUpdates.get(ticketId) ?? []).map(cloneUpdate);
   }
 
@@ -1035,14 +1045,14 @@ export const ticketStore = {
     context?: TicketWorkspaceStoreContext,
   ): Promise<TicketAggregate | undefined> {
     const localTicket = memoryTickets.get(ticketId);
-    if (localTicket && !isPostgresPersistenceEnabled()) {
+    if (localTicket && !postgresPersistenceAvailable()) {
       return {
         ticket: cloneTicket(localTicket),
         updates: (memoryUpdates.get(ticketId) ?? []).map(cloneUpdate),
       };
     }
 
-    if (isPostgresPersistenceEnabled()) {
+    if (postgresPersistenceAvailable()) {
       return withWorkspaceContext(
         getPostgresPool(),
         requireWorkspaceContext(context),
@@ -1090,7 +1100,7 @@ export const ticketStore = {
     priority?: TicketPriority;
     slaState?: string;
   } = {}, context?: TicketWorkspaceStoreContext): Promise<TicketRecord[]> {
-    if (!isPostgresPersistenceEnabled()) {
+    if (!postgresPersistenceAvailable()) {
       return Array.from(memoryTickets.values())
         .filter((ticket) => (filters.workspaceId ? ticket.workspaceId === filters.workspaceId : true))
         .filter((ticket) => (filters.status ? ticket.status === filters.status : true))
@@ -1596,7 +1606,7 @@ export const ticketStore = {
     await ticketSlaStore.clear();
     await ticketNotificationStore.clear();
 
-    if (!isPostgresPersistenceEnabled()) {
+    if (!postgresPersistenceAvailable()) {
       return;
     }
 

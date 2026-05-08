@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { parseJsonColumn } from "../db/json";
-import { isPostgresConfigured, queryPostgres } from "../db/postgres";
+import { inMemoryAllowed, isPostgresConfigured, queryPostgres } from "../db/postgres";
 import { cosineSimilarity, embedText } from "../knowledge/embeddings";
 
 export type AgentMemoryTier = "explore" | "flow" | "automate" | "scale";
@@ -189,6 +189,16 @@ const heartbeatLogs = new Map<string, StoredHeartbeatLog>();
 const memoryEvents = new Map<string, AgentMemoryEvent>();
 
 let schemaEnsured = false;
+
+function postgresPersistenceAvailable(): boolean {
+  if (isPostgresConfigured()) {
+    return true;
+  }
+  if (inMemoryAllowed()) {
+    return false;
+  }
+  throw new Error("agentMemoryStore requires DATABASE_URL outside development/test.");
+}
 
 function nowIso(): string {
   return new Date().toISOString();
@@ -488,7 +498,7 @@ function mapEventRow(row: PersistedEventRow): AgentMemoryEvent {
 }
 
 async function ensureSchema(): Promise<void> {
-  if (!isPostgresConfigured() || schemaEnsured) {
+  if (!postgresPersistenceAvailable() || schemaEnsured) {
     return;
   }
 
@@ -749,7 +759,7 @@ async function purgeExpiredForUser(userId: string): Promise<void> {
     }
   }
 
-  if (!isPostgresConfigured()) {
+  if (!postgresPersistenceAvailable()) {
     return;
   }
 
@@ -820,7 +830,7 @@ async function appendEvent(input: {
 
   memoryEvents.set(event.id, event);
 
-  if (isPostgresConfigured()) {
+  if (postgresPersistenceAvailable()) {
     await ensureSchema();
     await queryPostgres(
       `INSERT INTO agent_memory_events (
@@ -908,7 +918,7 @@ export const agentMemoryStore = {
       createdAt: entry.createdAt,
     });
 
-    if (isPostgresConfigured()) {
+    if (postgresPersistenceAvailable()) {
       await ensureSchema();
       await queryPostgres(
         `INSERT INTO agent_memory_entries (
@@ -995,7 +1005,7 @@ export const agentMemoryStore = {
 
     const workspaceId = input.workspaceId?.trim() || input.userId;
     let candidates: StoredAgentMemoryEntry[];
-    if (isPostgresConfigured()) {
+    if (postgresPersistenceAvailable()) {
       await ensureSchema();
       const rows = await queryPostgres<PersistedEntryRow>(
         `SELECT id, user_id, workspace_id, agent_id, run_id, scope, entry_type, memory_layer, team_id, key, text_value, metadata, embedding, created_at, updated_at, expires_at, archived_at
@@ -1124,7 +1134,7 @@ export const agentMemoryStore = {
       createdAt: fact.createdAt,
     });
 
-    if (isPostgresConfigured()) {
+    if (postgresPersistenceAvailable()) {
       await ensureSchema();
       await queryPostgres(
         `INSERT INTO agent_memory_kg_facts (
@@ -1170,7 +1180,7 @@ export const agentMemoryStore = {
 
     const workspaceId = input.workspaceId?.trim() || input.userId;
     let facts: StoredKnowledgeFact[];
-    if (isPostgresConfigured()) {
+    if (postgresPersistenceAvailable()) {
       await ensureSchema();
       const rows = await queryPostgres<PersistedFactRow>(
         `SELECT id, user_id, workspace_id, agent_id, run_id, scope, memory_layer, team_id, subject, predicate, object, metadata, created_at, expires_at, archived_at
@@ -1266,7 +1276,7 @@ export const agentMemoryStore = {
       createdAt: log.createdAt,
     });
 
-    if (isPostgresConfigured()) {
+    if (postgresPersistenceAvailable()) {
       await ensureSchema();
       await queryPostgres(
         `INSERT INTO agent_heartbeat_logs (
@@ -1307,7 +1317,7 @@ export const agentMemoryStore = {
     const limit = Math.min(Math.max(input.limit ?? 100, 1), 100);
     const workspaceId = input.workspaceId?.trim() || input.userId;
 
-    if (isPostgresConfigured()) {
+    if (postgresPersistenceAvailable()) {
       await ensureSchema();
       const rows = await queryPostgres<PersistedHeartbeatRow>(
         `SELECT id, user_id, workspace_id, agent_id, run_id, memory_layer, team_id, status, summary, metadata, created_at, expires_at, archived_at
@@ -1353,7 +1363,7 @@ export const agentMemoryStore = {
     await purgeExpiredForUser(userId);
 
     const tenantWorkspaceId = workspaceId?.trim();
-    if (isPostgresConfigured()) {
+    if (postgresPersistenceAvailable()) {
       await ensureSchema();
       const result = await queryPostgres<{ count: string }>(
         `SELECT COUNT(*)::text AS count
@@ -1375,7 +1385,7 @@ export const agentMemoryStore = {
     await purgeExpiredForUser(userId);
 
     const tenantWorkspaceId = workspaceId?.trim();
-    if (isPostgresConfigured()) {
+    if (postgresPersistenceAvailable()) {
       await ensureSchema();
       const result = await queryPostgres<{ total_bytes: string }>(
         `SELECT COALESCE(SUM(
@@ -1414,7 +1424,7 @@ export const agentMemoryStore = {
     await purgeExpiredForUser(input.userId);
 
     const limit = Math.min(Math.max(input.limit ?? 500, 1), 2000);
-    if (isPostgresConfigured()) {
+    if (postgresPersistenceAvailable()) {
       await ensureSchema();
       const rows = await queryPostgres<PersistedEventRow>(
         `SELECT id, user_id, workspace_id, agent_id, run_id, memory_layer, team_id, entity_type, event_type, entity_id, payload, created_at
@@ -1560,7 +1570,7 @@ export const agentMemoryStore = {
     const archivedFacts = await markArchived(Array.from(knowledgeFacts.values()), "knowledge_fact");
     const archivedHeartbeatLogs = await markArchived(Array.from(heartbeatLogs.values()), "heartbeat_log");
 
-    if (isPostgresConfigured()) {
+    if (postgresPersistenceAvailable()) {
       await ensureSchema();
       await queryPostgres(
         `UPDATE agent_memory_entries

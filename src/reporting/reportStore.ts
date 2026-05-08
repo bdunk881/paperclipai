@@ -1,6 +1,6 @@
 import { randomUUID } from "crypto";
 import { parseJsonColumn, serializeJson } from "../db/json";
-import { isPostgresConfigured, queryPostgres } from "../db/postgres";
+import { inMemoryAllowed, isPostgresConfigured, queryPostgres } from "../db/postgres";
 import { GeneratedReport, ReportDelivery, ReportKind, ReportMetric, ReportSection, ReportTemplateConfig } from "./types";
 
 interface ReportRow {
@@ -22,6 +22,16 @@ interface ReportRow {
 }
 
 const memoryReports = new Map<string, GeneratedReport>();
+
+function postgresPersistenceAvailable(): boolean {
+  if (isPostgresConfigured()) {
+    return true;
+  }
+  if (inMemoryAllowed()) {
+    return false;
+  }
+  throw new Error("reportStore requires DATABASE_URL outside development/test.");
+}
 
 function cloneReport(report: GeneratedReport): GeneratedReport {
   return {
@@ -55,7 +65,7 @@ function mapRow(row: ReportRow): GeneratedReport {
 }
 
 async function persist(report: GeneratedReport): Promise<void> {
-  if (!isPostgresConfigured()) {
+  if (!postgresPersistenceAvailable()) {
     memoryReports.set(report.id, cloneReport(report));
     return;
   }
@@ -122,7 +132,7 @@ export const reportStore = {
   },
 
   async listByUser(userId: string, filters?: { teamId?: string; kind?: ReportKind }): Promise<GeneratedReport[]> {
-    if (!isPostgresConfigured()) {
+    if (!postgresPersistenceAvailable()) {
       return Array.from(memoryReports.values())
         .filter((report) => report.userId === userId)
         .filter((report) => (filters?.teamId ? report.teamId === filters.teamId : true))
@@ -146,7 +156,7 @@ export const reportStore = {
   },
 
   async getById(id: string, userId: string): Promise<GeneratedReport | undefined> {
-    if (!isPostgresConfigured()) {
+    if (!postgresPersistenceAvailable()) {
       const report = memoryReports.get(id);
       return report && report.userId === userId ? cloneReport(report) : undefined;
     }
@@ -160,7 +170,7 @@ export const reportStore = {
 
   async clear(): Promise<void> {
     memoryReports.clear();
-    if (!isPostgresConfigured()) {
+    if (!postgresPersistenceAvailable()) {
       return;
     }
     await queryPostgres("DELETE FROM generated_reports");

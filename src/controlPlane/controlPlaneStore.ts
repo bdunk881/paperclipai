@@ -2,7 +2,7 @@ import { randomUUID } from "crypto";
 import { PoolClient } from "pg";
 import { WorkflowStep, WorkflowTemplate } from "../types/workflow";
 import { DEFAULT_ROLE_LIBRARY } from "../goals/teamAssembly";
-import { getPostgresPool, isPostgresConfigured } from "../db/postgres";
+import { getPostgresPool, inMemoryAllowed, isPostgresConfigured } from "../db/postgres";
 import { withWorkspaceContext } from "../middleware/workspaceContext";
 import { assertAgentWorkspaceBinding } from "../security/agentWorkspaceBinding";
 import { companyLifecycleStore } from "./companyLifecycleStore";
@@ -498,12 +498,22 @@ function requireWorkspaceIdForPersistence(workspaceId: string | undefined): stri
   return workspaceId;
 }
 
+function postgresPersistenceAvailable(): boolean {
+  if (isPostgresConfigured()) {
+    return true;
+  }
+  if (inMemoryAllowed()) {
+    return false;
+  }
+  throw new Error("controlPlaneStore requires DATABASE_URL outside development/test.");
+}
+
 function workspaceUserKey(workspaceId: string, userId: string): string {
   return `${workspaceId}:${userId}`;
 }
 
 function workspaceContextForTeam(teamId: string, userId: string): { workspaceId: string; userId: string } | undefined {
-  if (!isPostgresConfigured()) {
+  if (!postgresPersistenceAvailable()) {
     return undefined;
   }
   const workspaceId = teamWorkspaceIds.get(teamId);
@@ -848,7 +858,7 @@ function hydrateProvisionedCompany(row: PersistedProvisionedCompanyRow): {
 }
 
 async function ensureWorkspaceHydrated(workspaceId: string | undefined, userId: string): Promise<void> {
-  if (!isPostgresConfigured()) {
+  if (!postgresPersistenceAvailable()) {
     return;
   }
 
@@ -1317,7 +1327,7 @@ async function upsertBudgetAlert(input: {
   };
   budgetAlerts.set(dedupeKey, alert);
 
-  if (isPostgresConfigured()) {
+  if (postgresPersistenceAvailable()) {
     const workspaceId = teamWorkspaceIds.get(input.team.id);
     if (workspaceId) {
       await controlPlaneRepository.upsertBudgetAlert(
@@ -1600,7 +1610,7 @@ export const controlPlaneStore = {
         throw new Error("idempotency_target_missing");
       }
 
-      const replaySummaries = isPostgresConfigured()
+      const replaySummaries = postgresPersistenceAvailable()
         ? await secretsRepository.listSecretSummaries(
             {
               workspaceId: requireWorkspaceIdForPersistence(input.workspaceId),
@@ -1712,13 +1722,13 @@ export const controlPlaneStore = {
     });
     companies.set(company.id, company);
     companyWorkspaces.set(workspace.id, workspace);
-    if (!isPostgresConfigured()) {
+    if (!postgresPersistenceAvailable()) {
       companySecretBindings.set(company.id, { ...input.secretBindings });
     }
     companyIdempotencyIndex.set(idempotencyIndexKey, { companyId: company.id, fingerprint });
     teamCompanyIds.set(team.id, company.id);
 
-    if (isPostgresConfigured()) {
+    if (postgresPersistenceAvailable()) {
       const workspaceId = requireWorkspaceIdForPersistence(input.workspaceId);
       await withWorkspaceContext(getPostgresPool(), { workspaceId, userId: input.userId }, async (client) => {
         await upsertTeamRow(team, workspaceId, client);
@@ -1766,7 +1776,7 @@ export const controlPlaneStore = {
   }): Promise<ControlPlaneTeam> {
     await ensureWorkspaceHydrated(input.workspaceId, input.userId);
     const team = createTeamRecord(input);
-    if (isPostgresConfigured()) {
+    if (postgresPersistenceAvailable()) {
       const workspaceId = requireWorkspaceIdForPersistence(input.workspaceId);
       await withWorkspaceContext(getPostgresPool(), { workspaceId, userId: input.userId }, async (client) => {
         await upsertTeamRow(team, workspaceId, client);
@@ -1955,7 +1965,7 @@ export const controlPlaneStore = {
       });
     }
 
-    if (isPostgresConfigured()) {
+    if (postgresPersistenceAvailable()) {
       const workspaceId = requireWorkspaceIdForPersistence(input.workspaceId);
       await withWorkspaceContext(getPostgresPool(), { workspaceId, userId: input.userId }, async (client) => {
         await upsertTeamRow(team, workspaceId, client);
@@ -2017,7 +2027,7 @@ export const controlPlaneStore = {
       });
     }
 
-    if (isPostgresConfigured()) {
+    if (postgresPersistenceAvailable()) {
       const workspaceId = requireWorkspaceIdForPersistence(input.workspaceId);
       await withWorkspaceContext(getPostgresPool(), { workspaceId, userId: input.userId }, async (client) => {
         await upsertTeamRow(team!, workspaceId, client);
@@ -2095,7 +2105,7 @@ export const controlPlaneStore = {
     }
 
     teams.set(team.id, team);
-    if (isPostgresConfigured()) {
+    if (postgresPersistenceAvailable()) {
       const workspaceId = requireWorkspaceIdForPersistence(input.workspaceId);
       await withWorkspaceContext(getPostgresPool(), { workspaceId, userId: input.userId }, async (client) => {
         await upsertTeamRow(team, workspaceId, client);
@@ -2145,7 +2155,7 @@ export const controlPlaneStore = {
         execution.lastHeartbeatAt = nowIso();
       });
 
-    if (isPostgresConfigured()) {
+    if (postgresPersistenceAvailable()) {
       const workspaceId = requireWorkspaceIdForPersistence(input.workspaceId);
       await withWorkspaceContext(getPostgresPool(), { workspaceId, userId: input.userId }, async (client) => {
         await upsertAgentRow(agent, workspaceId, client);
@@ -2608,7 +2618,7 @@ export const controlPlaneStore = {
       occurredAt: execution.requestedAt,
     });
 
-    if (isPostgresConfigured()) {
+    if (postgresPersistenceAvailable()) {
       const workspaceId = requireWorkspaceIdForPersistence(input.workspaceId);
       await withWorkspaceContext(getPostgresPool(), { workspaceId, userId: input.userId }, async (client) => {
         await upsertTeamRow(team, workspaceId, client);
@@ -2755,7 +2765,7 @@ export const controlPlaneStore = {
       });
     }
 
-    if (isPostgresConfigured()) {
+    if (postgresPersistenceAvailable()) {
       const workspaceId = requireWorkspaceIdForPersistence(input.workspaceId);
       await withWorkspaceContext(getPostgresPool(), { workspaceId, userId: input.userId }, async (client) => {
         if (team) {
@@ -2796,7 +2806,7 @@ export const controlPlaneStore = {
     }
     execution.lastHeartbeatAt = timestamp;
     executions.set(execution.id, execution);
-    if (isPostgresConfigured()) {
+    if (postgresPersistenceAvailable()) {
       const workspaceId = requireWorkspaceIdForPersistence(input.workspaceId);
       await withWorkspaceContext(getPostgresPool(), { workspaceId, userId: input.userId }, async (client) => {
         await upsertExecutionRow(execution, workspaceId, client);
@@ -2977,7 +2987,7 @@ export const controlPlaneStore = {
       });
     }
 
-    if (isPostgresConfigured()) {
+    if (postgresPersistenceAvailable()) {
       const workspaceId = requireWorkspaceIdForPersistence(input.workspaceId);
       await withWorkspaceContext(getPostgresPool(), { workspaceId, userId: input.userId }, async (client) => {
         await upsertTeamRow(team, workspaceId, client);

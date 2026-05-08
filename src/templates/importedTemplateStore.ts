@@ -1,8 +1,18 @@
 import { parseJsonColumn } from "../db/json";
-import { isPostgresConfigured, queryPostgres } from "../db/postgres";
+import { inMemoryAllowed, isPostgresConfigured, queryPostgres } from "../db/postgres";
 import { WorkflowTemplate } from "../types/workflow";
 
 const importedTemplates = new Map<string, WorkflowTemplate>();
+
+function postgresPersistenceAvailable(): boolean {
+  if (isPostgresConfigured()) {
+    return true;
+  }
+  if (inMemoryAllowed()) {
+    return false;
+  }
+  throw new Error("importedTemplateStore requires DATABASE_URL outside development/test.");
+}
 
 interface PersistedImportedTemplateRow {
   id: string;
@@ -29,7 +39,7 @@ async function persistImportedTemplate(
   template: WorkflowTemplate,
   importedBy?: string
 ): Promise<void> {
-  if (!isPostgresConfigured()) {
+  if (!postgresPersistenceAvailable()) {
     return;
   }
 
@@ -65,7 +75,7 @@ export function listImportedTemplates(): WorkflowTemplate[] {
 
 export async function listImportedTemplatesAsync(): Promise<WorkflowTemplate[]> {
   const localTemplates = listImportedTemplates();
-  if (localTemplates.length > 0 || !isPostgresConfigured()) {
+  if (localTemplates.length > 0 || !postgresPersistenceAvailable()) {
     return localTemplates;
   }
 
@@ -85,7 +95,7 @@ export async function getImportedTemplateAsync(
   id: string
 ): Promise<WorkflowTemplate | undefined> {
   const localTemplate = importedTemplates.get(id);
-  if (localTemplate || !isPostgresConfigured()) {
+  if (localTemplate || !postgresPersistenceAvailable()) {
     return localTemplate;
   }
 

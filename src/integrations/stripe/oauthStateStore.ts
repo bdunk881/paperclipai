@@ -5,6 +5,7 @@ interface OAuthState {
   createdAt: number;
 }
 
+// HEL-44: process-local OAuth handshake state; promote to Redis in P3.
 const stateStore = new Map<string, OAuthState>();
 const STATE_TTL_MS = 10 * 60 * 1000;
 

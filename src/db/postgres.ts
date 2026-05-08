@@ -3,6 +3,16 @@ import { Pool, QueryResultRow } from "pg";
 let pool: Pool | null = null;
 let lastConnectionStatus: boolean | null = null;
 
+const IN_MEMORY_ALLOWED_ENVIRONMENTS = new Set(["development", "test"]);
+
+export function getRuntimeEnvironment(env: NodeJS.ProcessEnv = process.env): string {
+  return (env.NODE_ENV ?? "development").trim().toLowerCase();
+}
+
+export function inMemoryAllowed(env: NodeJS.ProcessEnv = process.env): boolean {
+  return IN_MEMORY_ALLOWED_ENVIRONMENTS.has(getRuntimeEnvironment(env));
+}
+
 export function isPostgresPersistenceEnabled(): boolean {
   if (process.env.AUTOFLOW_DISABLE_PG_PERSISTENCE === "1") {
     return false;
@@ -18,40 +28,44 @@ export function isPostgresPersistenceEnabled(): boolean {
 export const isPostgresConfigured = isPostgresPersistenceEnabled;
 
 export function getPostgresPool(): Pool {
-  if (!isPostgresPersistenceEnabled()) {
+  if (isPostgresPersistenceEnabled()) {
+    if (!pool) {
+      pool = new Pool({
+        connectionString: process.env.DATABASE_URL,
+        max: 10,
+        connectionTimeoutMillis: 5000,
+        idleTimeoutMillis: 30_000,
+        statement_timeout: 30000,
+      });
+      pool.on("error", (err) => {
+        console.error("[postgres] Unexpected pool error:", err.message);
+      });
+    }
+
+    return pool;
+  }
+
+  if (inMemoryAllowed()) {
     throw new Error("DATABASE_URL is required for PostgreSQL persistence");
   }
-
-  if (!pool) {
-    pool = new Pool({
-      connectionString: process.env.DATABASE_URL,
-      max: 10,
-      connectionTimeoutMillis: 5000,
-      idleTimeoutMillis: 30_000,
-      statement_timeout: 30000,
-    });
-    pool.on("error", (err) => {
-      console.error("[postgres] Unexpected pool error:", err.message);
-    });
-  }
-
-  return pool;
+  throw new Error("DATABASE_URL is required for PostgreSQL persistence outside development/test");
 }
 
 export async function checkPostgresConnection(): Promise<boolean> {
-  if (!isPostgresConfigured()) {
-    lastConnectionStatus = false;
-    return false;
+  if (isPostgresConfigured()) {
+    try {
+      await getPostgresPool().query("SELECT 1");
+      lastConnectionStatus = true;
+      return true;
+    } catch (err) {
+      console.error("[postgres] Connection check failed:", (err as Error).message);
+      lastConnectionStatus = false;
+      return false;
+    }
   }
-  try {
-    await getPostgresPool().query("SELECT 1");
-    lastConnectionStatus = true;
-    return true;
-  } catch (err) {
-    console.error("[postgres] Connection check failed:", (err as Error).message);
-    lastConnectionStatus = false;
-    return false;
-  }
+
+  lastConnectionStatus = false;
+  return false;
 }
 
 export function getPostgresConnectionStatus(): boolean | null {

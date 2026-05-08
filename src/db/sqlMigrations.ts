@@ -1,6 +1,6 @@
 import { readdir, readFile } from "fs/promises";
 import path from "path";
-import { isPostgresConfigured, queryPostgres } from "./postgres";
+import { inMemoryAllowed, isPostgresConfigured, queryPostgres } from "./postgres";
 
 const DEFAULT_MIGRATIONS_DIR = path.resolve(__dirname, "..", "..", "migrations");
 
@@ -30,18 +30,22 @@ export async function applySqlMigrations(options?: {
 }
 
 export async function ensureSqlMigrationsApplied(): Promise<number> {
-  if (!isPostgresConfigured()) {
+  if (isPostgresConfigured()) {
+    if (!migrationPromise) {
+      migrationPromise = applySqlMigrations().catch((error) => {
+        migrationPromise = null;
+        throw error;
+      });
+    }
+
+    return migrationPromise;
+  }
+
+  if (inMemoryAllowed()) {
     return 0;
   }
 
-  if (!migrationPromise) {
-    migrationPromise = applySqlMigrations().catch((error) => {
-      migrationPromise = null;
-      throw error;
-    });
-  }
-
-  return migrationPromise;
+  throw new Error("SQL migrations require DATABASE_URL outside development/test.");
 }
 
 export function resetSqlMigrationStateForTests(): void {

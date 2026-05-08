@@ -1,5 +1,5 @@
 import { parseJsonColumn } from "../db/json";
-import { getPostgresPool, isPostgresPersistenceEnabled } from "../db/postgres";
+import { getPostgresPool, inMemoryAllowed, isPostgresPersistenceEnabled } from "../db/postgres";
 import { withWorkspaceContext } from "../middleware/workspaceContext";
 import { TicketSlaSnapshot } from "./ticketSla";
 import { TicketWorkspaceStoreContext } from "./ticketSlaPolicyStore";
@@ -25,6 +25,16 @@ interface SnapshotRow {
 }
 
 const memorySnapshots = new Map<string, TicketSlaSnapshot>();
+
+function postgresPersistenceAvailable(): boolean {
+  if (isPostgresPersistenceEnabled()) {
+    return true;
+  }
+  if (inMemoryAllowed()) {
+    return false;
+  }
+  throw new Error("ticketSlaStore requires DATABASE_URL outside development/test.");
+}
 
 function requireWorkspaceContext(context?: TicketWorkspaceStoreContext): TicketWorkspaceStoreContext {
   if (!context) {
@@ -67,7 +77,7 @@ async function persistSnapshot(
   snapshot: TicketSlaSnapshot,
   context?: TicketWorkspaceStoreContext,
 ): Promise<void> {
-  if (!isPostgresPersistenceEnabled()) {
+  if (!postgresPersistenceAvailable()) {
     memorySnapshots.set(snapshot.ticketId, cloneSnapshot(snapshot));
     return;
   }
@@ -131,7 +141,7 @@ export const ticketSlaStore = {
     ticketId: string,
     context?: TicketWorkspaceStoreContext,
   ): Promise<TicketSlaSnapshot | undefined> {
-    if (!isPostgresPersistenceEnabled()) {
+    if (!postgresPersistenceAvailable()) {
       const snapshot = memorySnapshots.get(ticketId);
       return snapshot ? cloneSnapshot(snapshot) : undefined;
     }
@@ -153,7 +163,7 @@ export const ticketSlaStore = {
     workspaceId: string,
     context?: TicketWorkspaceStoreContext,
   ): Promise<TicketSlaSnapshot[]> {
-    if (!isPostgresPersistenceEnabled()) {
+    if (!postgresPersistenceAvailable()) {
       return Array.from(memorySnapshots.values())
         .filter((snapshot) => snapshot.workspaceId === workspaceId)
         .map(cloneSnapshot);
@@ -174,7 +184,7 @@ export const ticketSlaStore = {
 
   async clear(): Promise<void> {
     memorySnapshots.clear();
-    if (!isPostgresPersistenceEnabled()) {
+    if (!postgresPersistenceAvailable()) {
       return;
     }
     await getPostgresPool().query("DELETE FROM ticket_sla_snapshots");

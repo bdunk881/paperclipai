@@ -1,5 +1,5 @@
 import { randomUUID } from "crypto";
-import { getPostgresPool, isPostgresPersistenceEnabled } from "../db/postgres";
+import { getPostgresPool, inMemoryAllowed, isPostgresPersistenceEnabled } from "../db/postgres";
 import {
   ApprovalTierActionType,
   ApprovalTierPolicy,
@@ -17,6 +17,16 @@ interface ApprovalTierPolicyRow {
 }
 
 const memoryPolicies = new Map<string, ApprovalTierPolicy>();
+
+function postgresPersistenceAvailable(): boolean {
+  if (isPostgresPersistenceEnabled()) {
+    return true;
+  }
+  if (inMemoryAllowed()) {
+    return false;
+  }
+  throw new Error("approvalPolicyStore requires DATABASE_URL outside development/test.");
+}
 
 function policyKey(workspaceId: string, actionType: ApprovalTierActionType): string {
   return `${workspaceId}:${actionType}`;
@@ -39,7 +49,7 @@ function mapRow(row: ApprovalTierPolicyRow): ApprovalTierPolicy {
 }
 
 async function persistPolicy(policy: ApprovalTierPolicy): Promise<void> {
-  if (!isPostgresPersistenceEnabled()) {
+  if (!postgresPersistenceAvailable()) {
     memoryPolicies.set(policyKey(policy.workspaceId, policy.actionType), clonePolicy(policy));
     return;
   }
@@ -85,7 +95,7 @@ export const approvalPolicyStore = {
   },
 
   async listByWorkspace(workspaceId: string): Promise<ApprovalTierPolicy[]> {
-    if (!isPostgresPersistenceEnabled()) {
+    if (!postgresPersistenceAvailable()) {
       return Array.from(memoryPolicies.values())
         .filter((policy) => policy.workspaceId === workspaceId)
         .sort((left, right) => left.actionType.localeCompare(right.actionType))
@@ -140,7 +150,7 @@ export const approvalPolicyStore = {
 
   async clear(): Promise<void> {
     memoryPolicies.clear();
-    if (!isPostgresPersistenceEnabled()) {
+    if (!postgresPersistenceAvailable()) {
       return;
     }
 

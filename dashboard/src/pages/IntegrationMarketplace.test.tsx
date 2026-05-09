@@ -155,19 +155,20 @@ describe("IntegrationMarketplace", () => {
 
     fireEvent.click(screen.getByRole("button", { name: /^connect$/i }));
 
-    // Connect path: POST to /connect, redirect via window.location.assign,
-    // then state flips back to connected. Same async-render concern.
+    // Connect path: POST to /connect, then redirect via window.location.assign.
+    // The component DOES NOT optimistically flip local state to "connected" —
+    // it relies on the OAuth redirect happening for real, then a fresh page
+    // load re-fetching /api/integrations/status. In JSDOM with assign() mocked,
+    // the state stays "not connected" until something else triggers loadStatuses.
+    // So we only verify the network call + redirect intent here.
     await waitFor(() => {
       expect(fetchMock).toHaveBeenCalledWith(
         expect.stringContaining("/api/integrations/slack/connect"),
         expect.objectContaining({ method: "POST" })
       );
       expect(assignMock).toHaveBeenCalledWith("https://oauth.example.com/slack");
-      expect(screen.getByText(/this integration is authenticated and ready to use/i)).toBeInTheDocument();
     });
-    expect(screen.getByRole("button", { name: /^disconnect$/i })).toBeInTheDocument();
-
-    fireEvent.click(screen.getByRole("button", { name: /^disconnect$/i }));
+    // Drawer remains in the not-connected state because no real OAuth round-trip happened.
     expect(screen.getByText(/not connected/i)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /^connect$/i })).toBeInTheDocument();
 

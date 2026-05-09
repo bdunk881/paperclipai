@@ -197,7 +197,17 @@ async function listEventsFromPostgres(query: ObservabilityEventQuery): Promise<O
 
   if (query.categories?.length) {
     params.push(query.categories);
-    clauses.push(`split_part(kind, '.', 1) = ANY($${params.length}::text[])`);
+    // Backfilled rows from the legacy ticket_updates → activity_events mapping
+    // carry kind="ticket.*". The API category vocabulary is
+    // {issue,run,heartbeat,budget,alert} and inferCategory() maps unknown kinds
+    // (including ticket.*) to "issue". Mirror that mapping in SQL so a request
+    // for category=issue includes those backfilled rows.
+    clauses.push(
+      `(
+        split_part(kind, '.', 1) = ANY($${params.length}::text[])
+        OR (split_part(kind, '.', 1) = 'ticket' AND $${params.length}::text[] @> ARRAY['issue'])
+      )`
+    );
   }
 
   params.push(Math.min(Math.max(query.limit ?? 50, 1), 200));
@@ -410,9 +420,23 @@ export const observabilityStore = {
     let events: ObservabilityEvent[] = [];
 
     if (postgresPersistenceAvailable() && query.workspaceId) {
-      events = await listEventsFromPostgres({ ...query, limit });
-    }
-    if (events.length === 0) {
+      // Race fix: record() appends to memory synchronously but persistEvent runs
+      // async. A read between those two can miss in-flight events. Always merge
+      // memory + DB and dedupe by id so the live UI never shows transient gaps.
+      const dbEvents = await listEventsFromPostgres({ ...query, limit });
+      const memoryEventsForQuery = getEventsFromMemory({ ...query, limit });
+      const seen = new Set<string>();
+      events = [...dbEvents, ...memoryEventsForQuery]
+        .filter((e) => {
+          if (seen.has(e.id)) return false;
+          seen.add(e.id);
+          return true;
+        })
+        .sort((a, b) => {
+          const cmp = a.occurredAt.localeCompare(b.occurredAt);
+          return cmp !== 0 ? cmp : a.id.localeCompare(b.id);
+        });
+    } else {
       events = getEventsFromMemory({ ...query, limit });
     }
 

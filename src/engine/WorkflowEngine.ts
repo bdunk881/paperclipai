@@ -274,9 +274,11 @@ export class WorkflowEngine {
       id: randomUUID(),
       templateId: template.id,
       templateName: template.name,
+      workspaceId: this._resolveWorkspaceId(input, runConfig),
       status: "pending",
       startedAt: new Date().toISOString(),
       input,
+      workflowDag: template,
       stepResults: [],
       runtimeState: {
         config: { ...runConfig },

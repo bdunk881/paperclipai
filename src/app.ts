@@ -1098,7 +1098,13 @@ app.post("/api/executions/:id/resume", requireAuth, async (req: AuthenticatedReq
 
   let template;
   try {
-    template = getTemplate(run.templateId);
+    template =
+      run.workflowDag &&
+      typeof run.workflowDag === "object" &&
+      !Array.isArray(run.workflowDag) &&
+      Array.isArray((run.workflowDag as Partial<WorkflowTemplate>).steps)
+        ? (run.workflowDag as WorkflowTemplate)
+        : getTemplate(run.templateId);
   } catch (error) {
     res.status(404).json({ error: String(error) });
     return;

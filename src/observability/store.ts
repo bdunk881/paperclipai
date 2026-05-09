@@ -54,6 +54,41 @@ function cloneEvent<T extends ObservabilityEvent>(event: T): T {
   };
 }
 
+// Cursor format is "<sequence>:<id>" so events sharing an `occurred_at`
+// microsecond bucket can still be discriminated by id ASC. The two-segment
+// form is backward-compatible: a bare numeric sequence parses to id="" and
+// the comparison degrades to a pure-sequence filter (callers that only ever
+// see microsecond-unique events keep working unchanged).
+function parseCursor(cursor: string | undefined): { sequence: bigint; id: string } | undefined {
+  if (!cursor) return undefined;
+  const [seqRaw, idRaw = ""] = String(cursor).split(":", 2);
+  if (seqRaw === "") return undefined;
+  let sequence: bigint;
+  try {
+    sequence = BigInt(seqRaw);
+  } catch {
+    return undefined;
+  }
+  return { sequence, id: idRaw };
+}
+
+function compareCursor(eventSequence: string, eventId: string, cursor: { sequence: bigint; id: string }): number {
+  const evSeq = (() => {
+    try { return BigInt(eventSequence); } catch { return 0n; }
+  })();
+  if (evSeq < cursor.sequence) return -1;
+  if (evSeq > cursor.sequence) return 1;
+  // Same microsecond bucket — fall back to id lexical compare so we don't
+  // skip co-located events on page-boundary cursors.
+  if (eventId < cursor.id) return -1;
+  if (eventId > cursor.id) return 1;
+  return 0;
+}
+
+function buildCursor(event: ObservabilityEvent): string {
+  return `${event.sequence}:${event.id}`;
+}
+
 function eventMatchesQuery(event: ObservabilityEvent, query: ObservabilityEventQuery): boolean {
   if (event.userId !== query.userId) {
     return false;
@@ -61,7 +96,8 @@ function eventMatchesQuery(event: ObservabilityEvent, query: ObservabilityEventQ
   if (query.workspaceId && event.workspaceId && event.workspaceId !== query.workspaceId) {
     return false;
   }
-  if (query.after && Number(event.sequence) <= Number(query.after)) {
+  const cursor = parseCursor(query.after);
+  if (cursor && compareCursor(event.sequence, event.id, cursor) <= 0) {
     return false;
   }
   if (query.categories?.length && !query.categories.includes(event.category)) {
@@ -145,8 +181,18 @@ async function listEventsFromPostgres(query: ObservabilityEventQuery): Promise<O
   const clauses = ["workspace_id = $1"];
 
   if (query.after) {
-    params.push(query.after);
-    clauses.push(`floor(extract(epoch from occurred_at) * 1000000)::bigint > $${params.length}::bigint`);
+    const cursor = parseCursor(query.after);
+    if (cursor) {
+      // Composite (sequence, id) tuple comparison so events sharing the same
+      // microsecond bucket don't get skipped on page boundaries.
+      params.push(cursor.sequence.toString());
+      const seqIdx = params.length;
+      params.push(cursor.id);
+      const idIdx = params.length;
+      clauses.push(
+        `(floor(extract(epoch from occurred_at) * 1000000)::bigint, id::text) > ($${seqIdx}::bigint, $${idIdx}::text)`
+      );
+    }
   }
 
   if (query.categories?.length) {
@@ -188,7 +234,23 @@ async function persistEvent(event: ObservabilityEvent): Promise<void> {
     return;
   }
   if (!event.workspaceId) {
-    console.error("[observability] failed to persist event: workspaceId is required for activity_events");
+    // Tracked as a structured warning so monitoring catches the silent
+    // data-loss path. The deeper fix (resolve workspace_id from team cache /
+    // DB on cache miss) is HEL-66 — when the team→workspace cache misses in
+    // controlPlaneStore.ts the call sites here drop the persisted copy of
+    // the event. The in-memory event is still recorded, so the live UI is
+    // unaffected; only durability past restart is broken.
+    console.error(
+      JSON.stringify({
+        level: "error",
+        scope: "observability",
+        kind: "missing_workspace_id_on_persist",
+        eventId: event.id,
+        eventType: event.type,
+        followUp: "HEL-66",
+        message: "activity_events not persisted: workspaceId missing",
+      })
+    );
     return;
   }
 
@@ -244,14 +306,15 @@ function notifySubscribers(event: ObservabilityEvent): void {
     if (subscriber.userId !== event.userId) {
       continue;
     }
-    if (subscriber.after && Number(event.sequence) <= Number(subscriber.after)) {
+    const subscriberCursor = parseCursor(subscriber.after);
+    if (subscriberCursor && compareCursor(event.sequence, event.id, subscriberCursor) <= 0) {
       continue;
     }
     if (subscriber.categories?.size && !subscriber.categories.has(event.category)) {
       continue;
     }
     subscriber.send(cloneEvent(event));
-    subscriber.after = event.sequence;
+    subscriber.after = buildCursor(event);
   }
 }
 
@@ -356,7 +419,7 @@ export const observabilityStore = {
     const sliced = events.slice(0, limit);
     return {
       events: sliced,
-      nextCursor: sliced.length > 0 ? sliced.at(-1)?.sequence ?? null : null,
+      nextCursor: sliced.length > 0 ? (sliced.at(-1) ? buildCursor(sliced.at(-1)!) : null) : null,
       hasMore: events.length > limit,
       generatedAt: nowIso(),
     };

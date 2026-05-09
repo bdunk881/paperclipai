@@ -121,7 +121,7 @@ FROM public.ticket_assignments
 WHERE ticket_assignments.ticket_id = tickets.id
   AND ticket_assignments.actor_type = 'agent'
   AND ticket_assignments.role = 'primary'
-  AND ticket_assignments.actor_id ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+  AND ticket_assignments.actor_id ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
   AND tickets.assigned_agent_id IS NULL;
 
 UPDATE public.tickets
@@ -287,11 +287,11 @@ JOIN LATERAL (
   FROM (SELECT 1) seed
   LEFT JOIN public.workspaces workspace_parent
     ON observability_events.subject_parent_type = 'workspace'
-   AND observability_events.subject_parent_id ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+   AND observability_events.subject_parent_id ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
    AND workspace_parent.id = observability_events.subject_parent_id::uuid
   LEFT JOIN public.agent_teams team_parent
     ON observability_events.subject_parent_type = 'team'
-   AND observability_events.subject_parent_id ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+   AND observability_events.subject_parent_id ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
    AND team_parent.id = observability_events.subject_parent_id::uuid
 ) resolved ON resolved.workspace_id IS NOT NULL
 ON CONFLICT (id) DO NOTHING;

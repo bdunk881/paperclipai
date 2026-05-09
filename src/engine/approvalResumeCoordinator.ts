@@ -1,10 +1,24 @@
 import { getTemplate } from "../templates";
+import { WorkflowTemplate, WorkflowRun } from "../types/workflow";
 import { runStore } from "./runStore";
 import { approvalStore } from "./approvalStore";
 import { workflowEngine } from "./WorkflowEngine";
 
 const activeResumes = new Set<string>();
 let resumeSweepTimer: ReturnType<typeof setInterval> | undefined;
+
+function resolveRunTemplateSnapshot(run: WorkflowRun): WorkflowTemplate {
+  if (
+    run.workflowDag &&
+    typeof run.workflowDag === "object" &&
+    !Array.isArray(run.workflowDag) &&
+    Array.isArray((run.workflowDag as Partial<WorkflowTemplate>).steps)
+  ) {
+    return run.workflowDag as WorkflowTemplate;
+  }
+
+  return getTemplate(run.templateId);
+}
 
 export async function runApprovalResumeSweep(): Promise<{
   scanned: number;
@@ -45,7 +59,7 @@ export async function runApprovalResumeSweep(): Promise<{
 
     let template;
     try {
-      template = getTemplate(run.templateId);
+      template = resolveRunTemplateSnapshot(run);
     } catch {
       skippedMissingSnapshot += 1;
       continue;

@@ -156,7 +156,15 @@ describe("runStore.clear", () => {
 describe("runStore postgres persistence", () => {
   it("writes run rows and step results when persistence is enabled", async () => {
     const query = jest.fn().mockResolvedValue({ rows: [] });
-    const clientQuery = jest.fn().mockResolvedValue({ rows: [] });
+    const clientQuery = jest.fn(async (sql: string) => {
+      if (sql.includes("INSERT INTO workflows")) return { rows: [{ id: "11111111-1111-4111-8111-111111111111" }] };
+      if (sql.includes("SELECT id, version")) return { rows: [] };
+      if (sql.includes("SELECT COALESCE(MAX(version)")) return { rows: [{ next_version: 1 }] };
+      if (sql.includes("INSERT INTO workflow_versions")) {
+        return { rows: [{ id: "22222222-2222-4222-8222-222222222222", version: 1 }] };
+      }
+      return { rows: [] };
+    });
     const release = jest.fn();
     jest.spyOn(postgres, "isPostgresPersistenceEnabled").mockReturnValue(true);
     jest
@@ -170,6 +178,17 @@ describe("runStore postgres persistence", () => {
       makeRun({
         input: { customerId: "cust-1" },
         output: { status: "ok" },
+        workflowDag: {
+          id: "tpl-support-bot",
+          name: "Customer Support Bot",
+          description: "Support",
+          category: "support",
+          version: "1",
+          configFields: [],
+          steps: [],
+          sampleInput: {},
+          expectedOutput: {},
+        },
         runtimeState: {
           config: { mode: "resume" },
           context: { ticketId: "T-1" },
@@ -190,13 +209,15 @@ describe("runStore postgres persistence", () => {
     );
 
     expect(created.input).toEqual({ customerId: "cust-1" });
-    expect(query.mock.calls[0]?.[0]).toContain("INSERT INTO workflow_runs");
+    expect(created.workflowVersionId).toBe("22222222-2222-4222-8222-222222222222");
     expect(clientQuery.mock.calls[0]?.[0]).toBe("BEGIN");
-    expect(clientQuery.mock.calls[1]?.[0]).toContain("SELECT id FROM workflow_runs WHERE id = $1::uuid FOR UPDATE");
-    expect(clientQuery.mock.calls[2]?.[0]).toContain("DELETE FROM workflow_step_results WHERE run_id = $1::uuid");
-    expect(clientQuery.mock.calls[3]?.[0]).toContain("INSERT INTO workflow_step_results");
-    expect(clientQuery.mock.calls[3]?.[0]).toContain("ON CONFLICT (run_id, step_id, ordinal) DO UPDATE");
-    expect(clientQuery.mock.calls[4]?.[0]).toBe("COMMIT");
+    expect(clientQuery.mock.calls.some(([sql]) => String(sql).includes("INSERT INTO workflows"))).toBe(true);
+    expect(clientQuery.mock.calls.some(([sql]) => String(sql).includes("INSERT INTO workflow_versions"))).toBe(true);
+    expect(clientQuery.mock.calls.some(([sql]) => String(sql).includes("INSERT INTO runs"))).toBe(true);
+    expect(clientQuery.mock.calls.some(([sql]) => String(sql).includes("SELECT id FROM runs WHERE id = $1::uuid FOR UPDATE"))).toBe(true);
+    expect(clientQuery.mock.calls.some(([sql]) => String(sql).includes("DELETE FROM step_results WHERE run_id = $1::uuid"))).toBe(true);
+    expect(clientQuery.mock.calls.some(([sql]) => String(sql).includes("INSERT INTO step_results"))).toBe(true);
+    expect(clientQuery.mock.calls.at(-1)?.[0]).toBe("COMMIT");
     expect(release).toHaveBeenCalled();
   });
 
@@ -207,13 +228,23 @@ describe("runStore postgres persistence", () => {
         rows: [
           {
             id: "run-pg",
+            workspace_id: null,
+            routine_id: null,
+            workflow_id: "11111111-1111-4111-8111-111111111111",
+            workflow_version_id: "22222222-2222-4222-8222-222222222222",
+            workflow_version: 3,
+            workflow_dag: {
+              id: "tpl-support-bot",
+              name: "Customer Support Bot",
+              steps: [{ id: "step-1" }],
+            },
             template_id: "tpl-support-bot",
             template_name: "Customer Support Bot",
             status: "awaiting_approval",
             started_at: "2026-04-22T00:00:00.000Z",
-            completed_at: null,
-            input_json: JSON.stringify({ customerId: "cust-1" }),
-            output_json: JSON.stringify({ status: "pending" }),
+            ended_at: null,
+            input: JSON.stringify({ customerId: "cust-1" }),
+            output: JSON.stringify({ status: "pending" }),
             runtime_state_json: JSON.stringify({
               config: { mode: "resume" },
               context: { ticketId: "T-1" },
@@ -232,7 +263,7 @@ describe("runStore postgres persistence", () => {
           step_id: "step-1",
           step_name: "Approve",
           status: "success",
-          output_json: JSON.stringify({ approved: true }),
+          output: JSON.stringify({ approved: true }),
           duration_ms: 15,
           error: null,
             agent_slot_results_json: null,
@@ -249,6 +280,8 @@ describe("runStore postgres persistence", () => {
       id: "run-pg",
       status: "awaiting_approval",
       userId: "user-1",
+      workflowVersionId: "22222222-2222-4222-8222-222222222222",
+      workflowVersion: 3,
       input: { customerId: "cust-1" },
       output: { status: "pending" },
       runtimeState: {
@@ -275,26 +308,38 @@ describe("runStore postgres persistence", () => {
         rows: [
           {
             id: "run-pg-1",
+            workspace_id: null,
+            routine_id: null,
+            workflow_id: "11111111-1111-4111-8111-111111111111",
+            workflow_version_id: "22222222-2222-4222-8222-222222222222",
+            workflow_version: 1,
+            workflow_dag: { id: "tpl-support-bot", name: "Customer Support Bot", steps: [] },
             template_id: "tpl-support-bot",
             template_name: "Customer Support Bot",
             status: "completed",
             started_at: "2026-04-22T00:00:00.000Z",
-            completed_at: "2026-04-22T00:05:00.000Z",
-            input_json: JSON.stringify({ customerId: "cust-1" }),
-            output_json: JSON.stringify({ ok: true }),
+            ended_at: "2026-04-22T00:05:00.000Z",
+            input: JSON.stringify({ customerId: "cust-1" }),
+            output: JSON.stringify({ ok: true }),
             runtime_state_json: null,
             error: null,
             user_id: "user-1",
           },
           {
             id: "run-pg-2",
+            workspace_id: null,
+            routine_id: null,
+            workflow_id: "11111111-1111-4111-8111-111111111111",
+            workflow_version_id: "33333333-3333-4333-8333-333333333333",
+            workflow_version: 2,
+            workflow_dag: { id: "tpl-support-bot", name: "Customer Support Bot", steps: [] },
             template_id: "tpl-support-bot",
             template_name: "Customer Support Bot",
             status: "failed",
             started_at: "2026-04-21T00:00:00.000Z",
-            completed_at: "2026-04-21T00:03:00.000Z",
-            input_json: JSON.stringify({ customerId: "cust-2" }),
-            output_json: JSON.stringify({ ok: false }),
+            ended_at: "2026-04-21T00:03:00.000Z",
+            input: JSON.stringify({ customerId: "cust-2" }),
+            output: JSON.stringify({ ok: false }),
             runtime_state_json: null,
             error: "Step failed",
             user_id: "user-1",
@@ -308,7 +353,7 @@ describe("runStore postgres persistence", () => {
             step_id: "step-1",
             step_name: "Approve",
             status: "success",
-            output_json: JSON.stringify({ approved: true }),
+            output: JSON.stringify({ approved: true }),
             duration_ms: 15,
             error: null,
             agent_slot_results_json: null,
@@ -319,7 +364,7 @@ describe("runStore postgres persistence", () => {
             step_id: "step-2",
             step_name: "Notify",
             status: "error",
-            output_json: JSON.stringify({ delivered: false }),
+            output: JSON.stringify({ delivered: false }),
             duration_ms: 7,
             error: "notify failed",
             agent_slot_results_json: null,
@@ -369,13 +414,19 @@ describe("runStore postgres persistence", () => {
         rows: [
           {
             id: "run-pg",
+            workspace_id: null,
+            routine_id: null,
+            workflow_id: "11111111-1111-4111-8111-111111111111",
+            workflow_version_id: "22222222-2222-4222-8222-222222222222",
+            workflow_version: 1,
+            workflow_dag: { id: "tpl-support-bot", name: "Customer Support Bot", steps: [] },
             template_id: "tpl-support-bot",
             template_name: "Customer Support Bot",
             status: "pending",
             started_at: "2026-04-22T00:00:00.000Z",
-            completed_at: null,
-            input_json: JSON.stringify({ customerId: "cust-1" }),
-            output_json: null,
+            ended_at: null,
+            input: JSON.stringify({ customerId: "cust-1" }),
+            output: null,
             runtime_state_json: null,
             error: null,
             user_id: "user-1",
@@ -415,12 +466,12 @@ describe("runStore postgres persistence", () => {
       output: { ok: true },
       stepResults: [expect.objectContaining({ stepId: "step-1" })],
     });
-    expect(query.mock.calls[2]?.[0]).toContain("UPDATE workflow_runs");
+    expect(query.mock.calls[2]?.[0]).toContain("UPDATE runs");
     expect(query.mock.calls[2]?.[0]).toContain("WHERE id = $1::uuid");
     expect(clientQuery.mock.calls[0]?.[0]).toBe("BEGIN");
-    expect(clientQuery.mock.calls[1]?.[0]).toContain("SELECT id FROM workflow_runs WHERE id = $1::uuid FOR UPDATE");
-    expect(clientQuery.mock.calls[2]?.[0]).toContain("DELETE FROM workflow_step_results WHERE run_id = $1::uuid");
-    expect(clientQuery.mock.calls[3]?.[0]).toContain("INSERT INTO workflow_step_results");
+    expect(clientQuery.mock.calls[1]?.[0]).toContain("SELECT id FROM runs WHERE id = $1::uuid FOR UPDATE");
+    expect(clientQuery.mock.calls[2]?.[0]).toContain("DELETE FROM step_results WHERE run_id = $1::uuid");
+    expect(clientQuery.mock.calls[3]?.[0]).toContain("INSERT INTO step_results");
     expect(clientQuery.mock.calls[3]?.[0]).toContain("ON CONFLICT (run_id, step_id, ordinal) DO UPDATE");
     expect(clientQuery.mock.calls[4]?.[0]).toBe("COMMIT");
     expect(release).toHaveBeenCalled();
@@ -434,6 +485,6 @@ describe("runStore postgres persistence", () => {
       .mockReturnValue({ query } as unknown as ReturnType<typeof postgres.getPostgresPool>);
 
     await runStore.clear();
-    expect(query).toHaveBeenCalledWith("DELETE FROM workflow_runs");
+    expect(query).toHaveBeenCalledWith("DELETE FROM runs");
   });
 });

@@ -16,7 +16,8 @@ function postgresPersistenceAvailable(): boolean {
 
 interface PersistedImportedTemplateRow {
   id: string;
-  template_definition: WorkflowTemplate | string | null;
+  template_definition?: WorkflowTemplate | string | null;
+  dag?: WorkflowTemplate | string | null;
 }
 
 function hydrateImportedTemplate(template: WorkflowTemplate): WorkflowTemplate {
@@ -27,7 +28,7 @@ function hydrateImportedTemplate(template: WorkflowTemplate): WorkflowTemplate {
 function mapPersistedImportedTemplate(
   row: PersistedImportedTemplateRow
 ): WorkflowTemplate | undefined {
-  const template = parseJsonColumn(row.template_definition, null as WorkflowTemplate | null);
+  const template = parseJsonColumn(row.dag ?? row.template_definition, null as WorkflowTemplate | null);
   if (!template) {
     return undefined;
   }
@@ -43,30 +44,59 @@ async function persistImportedTemplate(
     return;
   }
 
+  const workflow = await queryPostgres<{ id: string }>(
+    `INSERT INTO workflows (workspace_id, external_template_id, name)
+     VALUES (NULL, $1, $2)
+     ON CONFLICT (external_template_id)
+     WHERE workspace_id IS NULL AND external_template_id IS NOT NULL
+     DO UPDATE SET name = EXCLUDED.name, updated_at = now()
+     RETURNING id`,
+    [template.id, template.name]
+  );
+  const workflowId = workflow.rows[0]?.id;
+  if (!workflowId) {
+    throw new Error(`Failed to persist imported workflow ${template.id}`);
+  }
+
+  const existingVersion = await queryPostgres<{ id: string; version: number }>(
+    `SELECT id, version
+     FROM workflow_versions
+     WHERE workflow_id = $1::uuid
+       AND dag = $2::jsonb
+     ORDER BY version DESC
+     LIMIT 1`,
+    [workflowId, JSON.stringify(template)]
+  );
+
+  let versionId = existingVersion.rows[0]?.id;
+  if (!versionId) {
+    const nextVersion = await queryPostgres<{ next_version: number }>(
+      `SELECT COALESCE(MAX(version), 0) + 1 AS next_version
+       FROM workflow_versions
+       WHERE workflow_id = $1::uuid`,
+      [workflowId]
+    );
+    const insertedVersion = await queryPostgres<{ id: string }>(
+      `INSERT INTO workflow_versions (workflow_id, version, dag, created_by_user_id)
+       VALUES ($1::uuid, $2, $3::jsonb, $4)
+       RETURNING id`,
+      [
+        workflowId,
+        Number(nextVersion.rows[0]?.next_version ?? 1),
+        JSON.stringify(template),
+        importedBy ?? null,
+      ]
+    );
+    versionId = insertedVersion.rows[0]?.id;
+  }
+
+  if (!versionId) {
+    throw new Error(`Failed to persist imported workflow version ${template.id}`);
+  }
+
   await queryPostgres(
-    `INSERT INTO workflow_imported_templates (
-      id,
-      name,
-      category,
-      version,
-      template_definition,
-      imported_by
-    ) VALUES ($1, $2, $3, $4, $5::jsonb, $6)
-    ON CONFLICT (id) DO UPDATE SET
-      name = EXCLUDED.name,
-      category = EXCLUDED.category,
-      version = EXCLUDED.version,
-      template_definition = EXCLUDED.template_definition,
-      imported_by = EXCLUDED.imported_by,
-      imported_at = now()`,
-    [
-      template.id,
-      template.name,
-      template.category,
-      template.version,
-      JSON.stringify(template),
-      importedBy ?? null,
-    ]
+    "UPDATE workflows SET latest_version_id = $2::uuid, updated_at = now() WHERE id = $1::uuid",
+    [workflowId, versionId]
   );
 }
 export function listImportedTemplates(): WorkflowTemplate[] {
@@ -80,7 +110,12 @@ export async function listImportedTemplatesAsync(): Promise<WorkflowTemplate[]> 
   }
 
   const result = await queryPostgres<PersistedImportedTemplateRow>(
-    "SELECT id, template_definition FROM workflow_imported_templates ORDER BY imported_at DESC"
+    `SELECT w.external_template_id AS id, v.dag
+     FROM workflows w
+     JOIN workflow_versions v ON v.id = w.latest_version_id
+     WHERE w.workspace_id IS NULL
+       AND w.external_template_id IS NOT NULL
+     ORDER BY v.created_at DESC`
   );
 
   return result.rows
@@ -100,7 +135,11 @@ export async function getImportedTemplateAsync(
   }
 
   const result = await queryPostgres<PersistedImportedTemplateRow>(
-    "SELECT id, template_definition FROM workflow_imported_templates WHERE id = $1",
+    `SELECT w.external_template_id AS id, v.dag
+     FROM workflows w
+     JOIN workflow_versions v ON v.id = w.latest_version_id
+     WHERE w.workspace_id IS NULL
+       AND w.external_template_id = $1`,
     [id]
   );
   const row = result.rows[0];

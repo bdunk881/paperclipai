@@ -61,7 +61,7 @@ describe("importedTemplateStore", () => {
     expect(loaded).toEqual(template);
     expect(getImportedTemplate(template.id)).toEqual(template);
     expect(mockQueryPostgres).toHaveBeenCalledWith(
-      "SELECT id, template_definition FROM workflow_imported_templates WHERE id = $1",
+      expect.stringContaining("FROM workflows w"),
       [template.id]
     );
   });
@@ -74,24 +74,55 @@ describe("importedTemplateStore", () => {
     });
 
     mockIsPostgresConfigured.mockReturnValue(true);
-    mockQueryPostgres.mockResolvedValue({
-      rows: [],
-      rowCount: 1,
-      command: "INSERT",
-      oid: 0,
-      fields: [],
-    });
+    mockQueryPostgres
+      .mockResolvedValueOnce({
+        rows: [{ id: "11111111-1111-4111-8111-111111111111" }],
+        rowCount: 1,
+        command: "INSERT",
+        oid: 0,
+        fields: [],
+      })
+      .mockResolvedValueOnce({
+        rows: [],
+        rowCount: 0,
+        command: "SELECT",
+        oid: 0,
+        fields: [],
+      })
+      .mockResolvedValueOnce({
+        rows: [{ next_version: 1 }],
+        rowCount: 1,
+        command: "SELECT",
+        oid: 0,
+        fields: [],
+      })
+      .mockResolvedValueOnce({
+        rows: [{ id: "22222222-2222-4222-8222-222222222222" }],
+        rowCount: 1,
+        command: "INSERT",
+        oid: 0,
+        fields: [],
+      })
+      .mockResolvedValueOnce({
+        rows: [],
+        rowCount: 1,
+        command: "UPDATE",
+        oid: 0,
+        fields: [],
+      });
 
     await saveImportedTemplate(template, "user-123");
 
     expect(listImportedTemplates()).toEqual([template]);
     expect(mockQueryPostgres).toHaveBeenCalledWith(
-      expect.stringContaining("INSERT INTO workflow_imported_templates"),
+      expect.stringContaining("INSERT INTO workflows"),
+      [template.id, template.name]
+    );
+    expect(mockQueryPostgres).toHaveBeenCalledWith(
+      expect.stringContaining("INSERT INTO workflow_versions"),
       [
-        template.id,
-        template.name,
-        template.category,
-        template.version,
+        "11111111-1111-4111-8111-111111111111",
+        1,
         JSON.stringify(template),
         "user-123",
       ]

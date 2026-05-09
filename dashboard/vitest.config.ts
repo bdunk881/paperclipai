@@ -33,11 +33,7 @@ export default defineConfig({
       thresholds: {
         lines: 46,
         functions: 36,
-        // Lowered from 63 to 53 while HEL-54 is open. The skipped
-        // IntegrationMarketplace OAuth/disconnect test was contributing
-        // ~10% of dashboard branch coverage; without it, 63 is unreachable.
-        // Restore to 63 when HEL-54 re-enables the test.
-        branches: 53,
+        branches: 63,
         statements: 46,
       },
     },

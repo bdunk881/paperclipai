@@ -28,18 +28,13 @@ export async function cleanupRuntimePersistenceHistory(now = new Date()): Promis
     const cutoff = new Date(now.getTime() - retentionDays * 24 * 60 * 60 * 1000).toISOString();
 
     await queryPostgres(
-      `DELETE FROM workflow_queue_jobs
-       WHERE COALESCE(completed_at, updated_at) < $1::timestamptz`,
+      `DELETE FROM approval_requests
+       WHERE COALESCE(resolved_at, requested_at) < $1::timestamptz`,
       [cutoff]
     );
     await queryPostgres(
-      `DELETE FROM workflow_approval_requests
-       WHERE COALESCE(resolved_at, expires_at, requested_at) < $1::timestamptz`,
-      [cutoff]
-    );
-    await queryPostgres(
-      `DELETE FROM workflow_runs
-       WHERE COALESCE(completed_at, started_at) < $1::timestamptz`,
+      `DELETE FROM runs
+       WHERE COALESCE(ended_at, started_at) < $1::timestamptz`,
       [cutoff]
     );
     await queryPostgres(

@@ -46,11 +46,10 @@ describe("cleanupRuntimePersistenceHistory", () => {
 
     await cleanupRuntimePersistenceHistory(new Date("2026-04-20T00:00:00.000Z"));
 
-    expect(mockedQueryPostgres).toHaveBeenCalledTimes(4);
-    expect(mockedQueryPostgres.mock.calls[0][0]).toMatch(/DELETE FROM workflow_queue_jobs/);
-    expect(mockedQueryPostgres.mock.calls[1][0]).toMatch(/DELETE FROM workflow_approval_requests/);
-    expect(mockedQueryPostgres.mock.calls[2][0]).toMatch(/DELETE FROM workflow_runs/);
-    expect(mockedQueryPostgres.mock.calls[3][0]).toMatch(/DELETE FROM memory_entries/);
+    expect(mockedQueryPostgres).toHaveBeenCalledTimes(3);
+    expect(mockedQueryPostgres.mock.calls[0][0]).toMatch(/DELETE FROM approval_requests/);
+    expect(mockedQueryPostgres.mock.calls[1][0]).toMatch(/DELETE FROM runs/);
+    expect(mockedQueryPostgres.mock.calls[2][0]).toMatch(/DELETE FROM memory_entries/);
     expect(mockedQueryPostgres.mock.calls[0][1]).toEqual(["2026-04-13T00:00:00.000Z"]);
   });
 });
@@ -65,6 +64,6 @@ describe("scheduleRuntimePersistenceCleanup", () => {
     expect(first).toBeInstanceOf(Promise);
     expect(second).toBe(first);
     await first;
-    expect(mockedQueryPostgres).toHaveBeenCalledTimes(4);
+    expect(mockedQueryPostgres).toHaveBeenCalledTimes(3);
   });
 });

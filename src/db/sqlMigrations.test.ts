@@ -332,4 +332,43 @@ describe("sql migrations", () => {
       expect(migration.trim().endsWith("COMMIT;")).toBe(true);
     });
   });
+
+  describe("migration 022 canonical workflow runtime (HEL-15)", () => {
+    const migration = readFileSync(
+      path.resolve(__dirname, "..", "..", "migrations", "022_canonical_workflow_runtime.sql"),
+      "utf8"
+    );
+
+    it("declares canonical workflow runtime tables", () => {
+      for (const table of ["routines", "workflows", "workflow_versions", "runs", "step_results"]) {
+        expect(migration).toContain(`CREATE TABLE IF NOT EXISTS ${table}`);
+      }
+    });
+
+    it("makes runs reference the exact workflow version they executed", () => {
+      expect(migration).toContain("workflow_version_id uuid NOT NULL REFERENCES workflow_versions(id) ON DELETE RESTRICT");
+      expect(migration).toContain("FROM workflow_versions v");
+    });
+
+    it("migrates and removes legacy workflow runtime tables", () => {
+      expect(migration).toContain("workflow_imported_templates -> workflows + workflow_versions");
+      expect(migration).toContain("workflow_runs               -> runs");
+      expect(migration).toContain("workflow_step_results        -> step_results");
+      expect(migration).toContain("DROP TABLE IF EXISTS workflow_queue_jobs");
+      expect(migration).toContain("DROP TABLE IF EXISTS workflow_step_results");
+      expect(migration).toContain("DROP TABLE IF EXISTS workflow_runs");
+      expect(migration).toContain("DROP TABLE IF EXISTS workflow_imported_templates");
+    });
+
+    it("keeps workflow edits reproducible by inserting immutable DAG versions", () => {
+      expect(migration).toContain("dag jsonb NOT NULL");
+      expect(migration).toContain("UNIQUE (workflow_id, version)");
+      expect(migration).toContain("latest_version_id uuid");
+    });
+
+    it("wraps schema changes in a single transaction", () => {
+      expect(migration).toContain("BEGIN;");
+      expect(migration.trim().endsWith("COMMIT;")).toBe(true);
+    });
+  });
 });

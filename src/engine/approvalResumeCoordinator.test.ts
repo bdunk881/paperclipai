@@ -90,6 +90,12 @@ describe("runApprovalResumeSweep", () => {
     expect(pendingApproval).toBeDefined();
     await approvalStore.resolve(pendingApproval!.id, "approved", "resume automatically");
 
+    TEMPLATE_MAP[template.id] = {
+      ...template,
+      name: "Edited after run started",
+      steps: [template.steps[0]!],
+    };
+
     const sweep = await runApprovalResumeSweep();
     expect(sweep.resumed).toBe(1);
 
@@ -216,7 +222,7 @@ describe("runApprovalResumeSweep", () => {
   it("does not crash startup when persisted workflow tables are missing", async () => {
     const listSpy = jest
       .spyOn(runStore, "list")
-      .mockRejectedValueOnce(new Error('relation "workflow_runs" does not exist'));
+      .mockRejectedValueOnce(new Error('relation "runs" does not exist'));
     const warnSpy = jest.spyOn(console, "warn").mockImplementation(() => {});
 
     await expect(runApprovalResumeSweep()).resolves.toMatchObject({
@@ -228,7 +234,7 @@ describe("runApprovalResumeSweep", () => {
 
     expect(warnSpy).toHaveBeenCalledWith(
       "[approval] Resume sweep skipped:",
-      'relation "workflow_runs" does not exist'
+      'relation "runs" does not exist'
     );
 
     listSpy.mockRestore();

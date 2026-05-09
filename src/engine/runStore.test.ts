@@ -297,7 +297,7 @@ describe("runStore postgres persistence", () => {
         }),
       ],
     });
-    expect(query.mock.calls[0]?.[0]).toContain("WHERE id = $1::uuid");
+    expect(query.mock.calls[0]?.[0]).toContain("WHERE r.id = $1::uuid");
     expect(query.mock.calls[1]?.[0]).toContain("WHERE run_id = ANY($1::uuid[])");
   });
 

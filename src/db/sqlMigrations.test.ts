@@ -332,4 +332,71 @@ describe("sql migrations", () => {
       expect(migration.trim().endsWith("COMMIT;")).toBe(true);
     });
   });
+
+  describe("migration 022 companies/missions/hiring_plans (HEL-13)", () => {
+    const migration = readFileSync(
+      path.resolve(__dirname, "..", "..", "migrations", "022_companies_missions_hiring_plans.sql"),
+      "utf8"
+    );
+    const seed = readFileSync(
+      path.resolve(__dirname, "..", "..", "test", "fixtures", "hel_13_companies_missions_hiring_plans_seed.sql"),
+      "utf8"
+    );
+
+    it("creates the canonical product-noun tables and fields", () => {
+      expect(migration).toContain("CREATE TABLE IF NOT EXISTS companies");
+      expect(migration).toContain("workspace_id uuid NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE");
+      expect(migration).toContain("ADD COLUMN IF NOT EXISTS description text");
+      expect(migration).toContain("CREATE TABLE IF NOT EXISTS missions");
+      expect(migration).toContain("company_id uuid NOT NULL REFERENCES companies(id) ON DELETE CASCADE");
+      expect(migration).toContain("created_by_user_id text NOT NULL REFERENCES user_profiles(user_id) ON DELETE RESTRICT");
+      expect(migration).toContain("CREATE TABLE IF NOT EXISTS hiring_plans");
+      expect(migration).toContain("mission_id uuid NOT NULL REFERENCES missions(id) ON DELETE CASCADE");
+      expect(migration).toContain("accepted_by_user_id text REFERENCES user_profiles(user_id) ON DELETE SET NULL");
+    });
+
+    it("relaxes legacy company provisioning columns so canonical company rows can be seeded", () => {
+      for (const column of [
+        "user_id",
+        "provisioned_workspace_name",
+        "provisioned_workspace_slug",
+        "team_id",
+        "idempotency_key",
+      ]) {
+        expect(migration).toContain(`AND column_name = '${column}'`);
+        expect(migration).toContain(`ALTER TABLE companies ALTER COLUMN ${column} DROP NOT NULL;`);
+      }
+    });
+
+    it.each(["companies", "missions", "hiring_plans"])(
+      "enables and forces row-level security on %s",
+      (table) => {
+        expect(migration).toContain(`ALTER TABLE ${table} ENABLE ROW LEVEL SECURITY;`);
+        expect(migration).toContain(`ALTER TABLE ${table} FORCE ROW LEVEL SECURITY;`);
+      }
+    );
+
+    it("uses direct workspace RLS for companies and parent-scoped RLS for child tables", () => {
+      const companiesPolicy = /CREATE POLICY companies_tenant_isolation\s+ON companies\s+USING \(\s*app_current_workspace_id\(\) IS NOT NULL\s+AND workspace_id = app_current_workspace_id\(\)\s*\)\s+WITH CHECK \(\s*app_current_workspace_id\(\) IS NOT NULL\s+AND workspace_id = app_current_workspace_id\(\)\s*\);/m;
+      expect(migration).toMatch(companiesPolicy);
+      expect(migration).toContain("CREATE POLICY missions_tenant_isolation");
+      expect(migration).toContain("WHERE companies.id = missions.company_id");
+      expect(migration).toContain("CREATE POLICY hiring_plans_tenant_isolation");
+      expect(migration).toContain("WHERE missions.id = hiring_plans.mission_id");
+    });
+
+    it("ships a reusable sample seed for tests", () => {
+      expect(seed).toContain("SELECT set_config('app.current_workspace_id'");
+      expect(seed).toContain("SELECT set_config('app.current_user_id'");
+      expect(seed).toContain("INSERT INTO companies (id, workspace_id, name, description)");
+      expect(seed).toContain("INSERT INTO missions (id, company_id, statement, status, created_by_user_id)");
+      expect(seed).toContain("INSERT INTO hiring_plans (id, mission_id, draft)");
+      expect(seed).toContain("ON CONFLICT (id) DO NOTHING");
+    });
+
+    it("wraps schema changes in a single transaction", () => {
+      expect(migration).toContain("BEGIN;");
+      expect(migration.trim().endsWith("COMMIT;")).toBe(true);
+    });
+  });
 });

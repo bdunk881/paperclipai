@@ -386,6 +386,8 @@ describe("sql migrations", () => {
     });
 
     it("ships a reusable sample seed for tests", () => {
+      expect(seed).toContain("SELECT set_config('app.current_workspace_id'");
+      expect(seed).toContain("SELECT set_config('app.current_user_id'");
       expect(seed).toContain("INSERT INTO companies (id, workspace_id, name, description)");
       expect(seed).toContain("INSERT INTO missions (id, company_id, statement, status, created_by_user_id)");
       expect(seed).toContain("INSERT INTO hiring_plans (id, mission_id, draft)");

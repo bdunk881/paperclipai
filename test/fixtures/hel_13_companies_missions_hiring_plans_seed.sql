@@ -3,6 +3,9 @@
 
 BEGIN;
 
+SELECT set_config('app.current_workspace_id', '13131313-1313-4131-8131-131313131313', true);
+SELECT set_config('app.current_user_id', 'hel-13-seed-user', true);
+
 INSERT INTO user_profiles (user_id, display_name)
 VALUES ('hel-13-seed-user', 'HEL-13 Seed User')
 ON CONFLICT (user_id) DO NOTHING;

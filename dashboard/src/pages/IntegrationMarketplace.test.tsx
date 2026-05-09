@@ -107,10 +107,7 @@ describe("IntegrationMarketplace", () => {
     expect(screen.getAllByText("Salesforce").length).toBeGreaterThan(0);
   });
 
-  // TODO(HEL-54): Re-enable after fixing the assertion mismatch — the drawer does
-  // not currently render "this integration is authenticated and ready to use".
-  // See https://linear.app/helloautoflow/issue/HEL-54.
-  it.skip("loads live status and uses the real OAuth/disconnect routes for supported providers", async () => {
+  it("loads live status and uses the real OAuth/disconnect routes for supported providers", async () => {
     const fetchMock = installFetchMock();
     // window.location.assign is non-configurable in newer JSDOM versions, so vi.spyOn fails.
     // Replace the location object with a writable proxy that preserves the spec for the test.
@@ -130,36 +127,44 @@ describe("IntegrationMarketplace", () => {
 
     fireEvent.click(screen.getAllByText("Slack").at(-1) as HTMLElement);
 
+    // Wait for both the drawer (sync — appears on click) AND the connected
+    // status text (async — depends on /api/integrations/status resolving and
+    // applyProviderStatuses re-rendering). The original test used a bare
+    // synchronous assertion for the "authenticated" text and got flaky.
     await waitFor(() => {
       expect(screen.getByRole("heading", { name: "Slack" })).toBeInTheDocument();
+      expect(screen.getByText(/this integration is authenticated and ready to use/i)).toBeInTheDocument();
     });
 
     expect(screen.getAllByText(/lead capture to crm/i).length).toBeGreaterThan(0);
-    expect(screen.getByText(/this integration is authenticated and ready to use/i)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /^disconnect$/i })).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: /^disconnect$/i }));
 
+    // Disconnect is async (DELETE then state-update); wait for the post-state
+    // copy to appear so the assertion isn't racing the state setter.
     await waitFor(() => {
       expect(fetchMock).toHaveBeenCalledWith(
         expect.stringContaining("/api/integrations/slack/disconnect"),
         expect.objectContaining({ method: "DELETE" })
       );
+      expect(screen.getByText(/click connect below to launch the live oauth flow/i)).toBeInTheDocument();
     });
-    expect(screen.getByText(/click connect below to launch the live oauth flow/i)).toBeInTheDocument();
     expect(screen.getByText(/not connected/i)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /^connect$/i })).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: /^connect$/i }));
 
+    // Connect path: POST to /connect, redirect via window.location.assign,
+    // then state flips back to connected. Same async-render concern.
     await waitFor(() => {
       expect(fetchMock).toHaveBeenCalledWith(
         expect.stringContaining("/api/integrations/slack/connect"),
         expect.objectContaining({ method: "POST" })
       );
       expect(assignMock).toHaveBeenCalledWith("https://oauth.example.com/slack");
+      expect(screen.getByText(/this integration is authenticated and ready to use/i)).toBeInTheDocument();
     });
-    expect(screen.getByText(/this integration is authenticated and ready to use/i)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /^disconnect$/i })).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: /^disconnect$/i }));

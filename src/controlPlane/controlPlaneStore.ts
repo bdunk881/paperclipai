@@ -2216,6 +2216,7 @@ export const controlPlaneStore = {
       await controlPlaneRepository.upsertTask(taskCtx, task);
     }
     observabilityStore.record({
+      workspaceId: taskCtx?.workspaceId,
       userId: input.userId,
       category: "issue",
       type: "issue.created",
@@ -2273,6 +2274,7 @@ export const controlPlaneStore = {
       await controlPlaneRepository.upsertTask(taskCtx, task);
     }
     observabilityStore.record({
+      workspaceId: taskCtx?.workspaceId,
       userId: input.userId,
       category: "issue",
       type: "issue.status_changed",
@@ -2320,6 +2322,7 @@ export const controlPlaneStore = {
       await controlPlaneRepository.upsertTask(taskCtx, task);
     }
     observabilityStore.record({
+      workspaceId: taskCtx?.workspaceId,
       userId: input.userId,
       category: "issue",
       type: "issue.status_changed",
@@ -2595,6 +2598,7 @@ export const controlPlaneStore = {
     });
 
     observabilityStore.record({
+      workspaceId: input.workspaceId,
       userId: input.userId,
       category: "run",
       type: "run.started",
@@ -2716,6 +2720,7 @@ export const controlPlaneStore = {
     });
 
     observabilityStore.record({
+      workspaceId: input.workspaceId ?? teamWorkspaceIds.get(execution.teamId),
       userId: input.userId,
       category: "run",
       type: `run.${input.status}`,
@@ -2742,6 +2747,7 @@ export const controlPlaneStore = {
 
     if (input.status === "blocked" || input.status === "failed") {
       observabilityStore.record({
+        workspaceId: input.workspaceId ?? teamWorkspaceIds.get(execution.teamId),
         userId: input.userId,
         category: "alert",
         type: "alert.triggered",
@@ -2918,6 +2924,7 @@ export const controlPlaneStore = {
     }
 
     observabilityStore.record({
+      workspaceId: input.workspaceId,
       userId: input.userId,
       category: "heartbeat",
       type: "heartbeat.recorded",
@@ -2941,6 +2948,7 @@ export const controlPlaneStore = {
 
     if (typeof input.costUsd === "number" && input.costUsd > 0) {
       observabilityStore.record({
+        workspaceId: input.workspaceId,
         userId: input.userId,
         category: "budget",
         type: "budget.spent",
@@ -2964,6 +2972,7 @@ export const controlPlaneStore = {
 
     if (input.status === "blocked") {
       observabilityStore.record({
+        workspaceId: input.workspaceId,
         userId: input.userId,
         category: "alert",
         type: "alert.triggered",

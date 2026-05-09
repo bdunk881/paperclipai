@@ -65,6 +65,7 @@ export type ObservabilityEventPayload =
 export interface ObservabilityEvent {
   id: string;
   sequence: string;
+  workspaceId?: string;
   userId: string;
   category: ObservabilityEventCategory;
   type: string;
@@ -76,6 +77,7 @@ export interface ObservabilityEvent {
 }
 
 export interface ObservabilityEventInput {
+  workspaceId?: string;
   userId: string;
   category: ObservabilityEventCategory;
   type: string;
@@ -87,6 +89,7 @@ export interface ObservabilityEventInput {
 }
 
 export interface ObservabilityEventQuery {
+  workspaceId?: string;
   userId: string;
   after?: string;
   categories?: ObservabilityEventCategory[];

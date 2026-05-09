@@ -1,6 +1,7 @@
 import { randomUUID } from "crypto";
 import { parseJsonValue, serializeJson } from "../db/json";
 import { getPostgresPool, inMemoryAllowed, isPostgresPersistenceEnabled } from "../db/postgres";
+import { withWorkspaceContext } from "../middleware/workspaceContext";
 import {
   ObservabilityEvent,
   ObservabilityEventInput,
@@ -57,6 +58,9 @@ function eventMatchesQuery(event: ObservabilityEvent, query: ObservabilityEventQ
   if (event.userId !== query.userId) {
     return false;
   }
+  if (query.workspaceId && event.workspaceId && event.workspaceId !== query.workspaceId) {
+    return false;
+  }
   if (query.after && Number(event.sequence) <= Number(query.after)) {
     return false;
   }
@@ -66,80 +70,114 @@ function eventMatchesQuery(event: ObservabilityEvent, query: ObservabilityEventQ
   return true;
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === "object" && !Array.isArray(value);
+}
+
+function inferCategory(kind: string, payload: Record<string, unknown>): ObservabilityEvent["category"] {
+  const category = typeof payload["category"] === "string" ? payload["category"] : kind.split(".")[0];
+  if (category === "issue" || category === "run" || category === "heartbeat" || category === "budget" || category === "alert") {
+    return category;
+  }
+  return "issue";
+}
+
+function inferWorkspaceId(input: ObservabilityEventInput): string | undefined {
+  if (input.workspaceId?.trim()) {
+    return input.workspaceId.trim();
+  }
+  if (input.subject.parentType === "workspace" && input.subject.parentId?.trim()) {
+    return input.subject.parentId.trim();
+  }
+  if (input.subject.type === "workspace" && input.subject.id?.trim()) {
+    return input.subject.id.trim();
+  }
+  return undefined;
+}
+
 function getEventsFromMemory(query: ObservabilityEventQuery): ObservabilityEvent[] {
   const events = memoryEvents.get(query.userId) ?? [];
   return events.filter((event) => eventMatchesQuery(event, query)).map((event) => cloneEvent(event));
 }
 
 function mapRowToEvent(row: Record<string, unknown>): ObservabilityEvent {
+  const kind = String(row["kind"]);
+  const actor = parseJsonValue<Record<string, unknown>>(row["actor"], {});
+  const subject = parseJsonValue<Record<string, unknown>>(row["subject"], {});
+  const payloadEnvelope = parseJsonValue<Record<string, unknown>>(row["payload"], {});
+  const data = payloadEnvelope["data"];
+  const payload = isRecord(data) ? data : payloadEnvelope;
+
   return {
-    id: String(row["event_id"]),
+    id: String(row["id"]),
     sequence: String(row["sequence"]),
+    workspaceId: String(row["workspace_id"]),
     userId: String(row["user_id"]),
-    category: String(row["category"]) as ObservabilityEvent["category"],
-    type: String(row["type"]),
+    category: inferCategory(kind, payloadEnvelope),
+    type: kind,
     actor: {
-      type: String(row["actor_type"]) as ObservabilityEvent["actor"]["type"],
-      id: String(row["actor_id"]),
-      label: typeof row["actor_label"] === "string" ? row["actor_label"] : undefined,
+      type: String(actor["type"]) as ObservabilityEvent["actor"]["type"],
+      id: String(actor["id"]),
+      label: typeof actor["label"] === "string" ? actor["label"] : undefined,
     },
     subject: {
-      type: String(row["subject_type"]) as ObservabilityEvent["subject"]["type"],
-      id: String(row["subject_id"]),
-      label: typeof row["subject_label"] === "string" ? row["subject_label"] : undefined,
+      type: String(subject["type"]) as ObservabilityEvent["subject"]["type"],
+      id: String(subject["id"]),
+      label: typeof subject["label"] === "string" ? subject["label"] : undefined,
       parentType:
-        typeof row["subject_parent_type"] === "string"
-          ? (row["subject_parent_type"] as ObservabilityEvent["subject"]["parentType"])
+        typeof subject["parentType"] === "string"
+          ? (subject["parentType"] as ObservabilityEvent["subject"]["parentType"])
           : undefined,
-      parentId: typeof row["subject_parent_id"] === "string" ? row["subject_parent_id"] : undefined,
+      parentId: typeof subject["parentId"] === "string" ? subject["parentId"] : undefined,
     },
-    summary: String(row["summary"]),
-    payload: parseJsonValue(row["payload_json"], {}),
+    summary: typeof payloadEnvelope["summary"] === "string" ? payloadEnvelope["summary"] : kind,
+    payload: payload as ObservabilityEvent["payload"],
     occurredAt: new Date(String(row["occurred_at"])).toISOString(),
   };
 }
 
 async function listEventsFromPostgres(query: ObservabilityEventQuery): Promise<ObservabilityEvent[]> {
-  const params: unknown[] = [query.userId];
-  const clauses = ["user_id = $1"];
+  if (!query.workspaceId) {
+    return [];
+  }
+
+  const params: unknown[] = [query.workspaceId];
+  const clauses = ["workspace_id = $1"];
 
   if (query.after) {
     params.push(query.after);
-    clauses.push(`sequence::bigint > $${params.length}::bigint`);
+    clauses.push(`floor(extract(epoch from occurred_at) * 1000000)::bigint > $${params.length}::bigint`);
   }
 
   if (query.categories?.length) {
     params.push(query.categories);
-    clauses.push(`category = ANY($${params.length}::text[])`);
+    clauses.push(`split_part(kind, '.', 1) = ANY($${params.length}::text[])`);
   }
 
   params.push(Math.min(Math.max(query.limit ?? 50, 1), 200));
 
-  const result = await getPostgresPool().query(
-    `
-      SELECT
-        event_id,
-        sequence,
-        user_id,
-        category,
-        type,
-        actor_type,
-        actor_id,
-        actor_label,
-        subject_type,
-        subject_id,
-        subject_label,
-        subject_parent_type,
-        subject_parent_id,
-        summary,
-        payload_json,
-        occurred_at
-      FROM observability_events
-      WHERE ${clauses.join(" AND ")}
-      ORDER BY sequence ASC
-      LIMIT $${params.length}
-    `,
-    params
+  const result = await withWorkspaceContext(
+    getPostgresPool(),
+    { workspaceId: query.workspaceId, userId: query.userId },
+    async (client) => client.query(
+      `
+        SELECT
+          id,
+          workspace_id,
+          floor(extract(epoch from occurred_at) * 1000000)::bigint AS sequence,
+          $${params.length + 1}::text AS user_id,
+          kind,
+          actor,
+          subject,
+          payload,
+          occurred_at
+        FROM activity_events
+        WHERE ${clauses.join(" AND ")}
+        ORDER BY occurred_at ASC, id ASC
+        LIMIT $${params.length}
+      `,
+      [...params, query.userId]
+    )
   );
 
   return result.rows.map((row) => mapRowToEvent(row));
@@ -149,50 +187,43 @@ async function persistEvent(event: ObservabilityEvent): Promise<void> {
   if (!postgresPersistenceAvailable()) {
     return;
   }
+  if (!event.workspaceId) {
+    console.error("[observability] failed to persist event: workspaceId is required for activity_events");
+    return;
+  }
 
   try {
-    await getPostgresPool().query(
-      `
-        INSERT INTO observability_events (
-          event_id,
-          sequence,
-          user_id,
-          category,
-          type,
-          actor_type,
-          actor_id,
-          actor_label,
-          subject_type,
-          subject_id,
-          subject_label,
-          subject_parent_type,
-          subject_parent_id,
-          summary,
-          payload_json,
-          occurred_at
-        )
-        VALUES (
-          $1, $2::bigint, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15::jsonb, $16
-        )
-      `,
-      [
-        event.id,
-        event.sequence,
-        event.userId,
-        event.category,
-        event.type,
-        event.actor.type,
-        event.actor.id,
-        event.actor.label ?? null,
-        event.subject.type,
-        event.subject.id,
-        event.subject.label ?? null,
-        event.subject.parentType ?? null,
-        event.subject.parentId ?? null,
-        event.summary,
-        serializeJson(event.payload),
-        event.occurredAt,
-      ]
+    await withWorkspaceContext(
+      getPostgresPool(),
+      { workspaceId: event.workspaceId, userId: event.userId },
+      async (client) => client.query(
+        `
+          INSERT INTO activity_events (
+            id,
+            workspace_id,
+            kind,
+            actor,
+            subject,
+            payload,
+            occurred_at
+          )
+          VALUES ($1, $2, $3, $4::jsonb, $5::jsonb, $6::jsonb, $7)
+          ON CONFLICT (id) DO NOTHING
+        `,
+        [
+          event.id,
+          event.workspaceId,
+          event.type,
+          serializeJson(event.actor),
+          serializeJson(event.subject),
+          serializeJson({
+            summary: event.summary,
+            category: event.category,
+            data: event.payload,
+          }),
+          event.occurredAt,
+        ]
+      )
     );
   } catch (error) {
     console.error("[observability] failed to persist event:", (error as Error).message);
@@ -294,6 +325,7 @@ export const observabilityStore = {
     const event: ObservabilityEvent = {
       id: randomUUID(),
       sequence: nextSequence(),
+      workspaceId: inferWorkspaceId(input),
       userId: input.userId,
       category: input.category,
       type: input.type,
@@ -312,10 +344,13 @@ export const observabilityStore = {
 
   async listEvents(query: ObservabilityEventQuery): Promise<ObservabilityFeedPage> {
     const limit = Math.min(Math.max(query.limit ?? 50, 1), 200);
-    let events = getEventsFromMemory({ ...query, limit });
+    let events: ObservabilityEvent[] = [];
 
-    if (events.length === 0 && postgresPersistenceAvailable()) {
+    if (postgresPersistenceAvailable() && query.workspaceId) {
       events = await listEventsFromPostgres({ ...query, limit });
+    }
+    if (events.length === 0) {
+      events = getEventsFromMemory({ ...query, limit });
     }
 
     const sliced = events.slice(0, limit);

@@ -5,6 +5,32 @@ export default {
   theme: {
     extend: {
       colors: {
+        // AutoFlow v2 tokens (HEL-30) — referenced via CSS custom properties
+        // in dashboard/src/af2-tokens.css so the dark variant
+        // ([data-af2-theme="dark"]) works without Tailwind's class-based switch.
+        // Use these only on pages migrated to v2: bg-af2-paper, text-af2-ink,
+        // border-af2-line, etc. Legacy pages keep using brand-* / surface-*.
+        af2: {
+          paper: "var(--af2-paper)",
+          "paper-2": "var(--af2-paper-2)",
+          "paper-3": "var(--af2-paper-3)",
+          card: "var(--af2-card)",
+          ink: "var(--af2-ink)",
+          "ink-2": "var(--af2-ink-2)",
+          "ink-3": "var(--af2-ink-3)",
+          "ink-4": "var(--af2-ink-4)",
+          line: "var(--af2-line)",
+          "line-2": "var(--af2-line-2)",
+          clay: "var(--af2-clay)",
+          "clay-2": "var(--af2-clay-2)",
+          "clay-soft": "var(--af2-clay-soft)",
+          sage: "var(--af2-sage)",
+          "sage-2": "var(--af2-sage-2)",
+          mustard: "var(--af2-mustard)",
+          "mustard-2": "var(--af2-mustard-2)",
+          plum: "var(--af2-plum)",
+          "ink-blue": "var(--af2-ink-blue)",
+        },
         brand: {
           50: "#eef2ff",
           100: "#e0e7ff",
@@ -49,6 +75,31 @@ export default {
           "-apple-system",
           "sans-serif",
         ],
+        // AutoFlow v2 type stacks (HEL-30) — Fraunces serif display +
+        // Geist UI sans + JetBrains Mono. Use via font-af2-serif,
+        // font-af2-sans, font-af2-mono on pages migrated to v2.
+        "af2-serif": [
+          "Fraunces",
+          "Source Serif 4",
+          "Iowan Old Style",
+          "Georgia",
+          "serif",
+        ],
+        "af2-sans": [
+          "Geist",
+          "Inter",
+          "ui-sans-serif",
+          "system-ui",
+          "-apple-system",
+          "sans-serif",
+        ],
+        "af2-mono": [
+          "JetBrains Mono",
+          "SFMono-Regular",
+          "ui-monospace",
+          "Menlo",
+          "monospace",
+        ],
       },
       fontSize: {
         "display-xl": ["4.5rem", { lineHeight: "1.05", letterSpacing: "-0.03em", fontWeight: "800" }],
@@ -69,6 +120,9 @@ export default {
         "card-hover": "0 4px 12px rgba(0,0,0,0.08), 0 2px 4px rgba(0,0,0,0.04)",
         "card-dark": "0 1px 3px rgba(0,0,0,0.3), 0 1px 2px rgba(0,0,0,0.2), inset 0 1px 0 rgba(255,255,255,0.03)",
         "card-dark-hover": "0 8px 24px rgba(0,0,0,0.4), 0 2px 8px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.05)",
+        // AutoFlow v2 shadows (HEL-30) — softer, paper-feeling
+        af2: "0 1px 0 rgba(26,20,16,0.04), 0 6px 20px rgba(26,20,16,0.06)",
+        "af2-lg": "0 1px 0 rgba(26,20,16,0.04), 0 18px 40px rgba(26,20,16,0.10)",
       },
       borderRadius: {
         "2xl": "1rem",

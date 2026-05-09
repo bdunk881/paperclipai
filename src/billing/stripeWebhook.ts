@@ -201,6 +201,7 @@ async function syncSubscriptionEntitlements(sub: Subscription): Promise<void> {
 function buildSubscriptionRecord(params: {
   existing?: Subscription;
   stripeSub: Stripe.Subscription;
+  stripeSubscriptionId?: string;
   metadata: Record<string, string>;
   email?: string;
   workspaceId?: string;
@@ -213,7 +214,7 @@ function buildSubscriptionRecord(params: {
   return {
     id: params.existing?.id ?? randomUUID(),
     workspaceId: params.workspaceId ?? params.metadata.workspaceId ?? params.existing?.workspaceId,
-    stripeSubscriptionId: params.stripeSub.id,
+    stripeSubscriptionId: params.stripeSubscriptionId ?? params.stripeSub.id,
     stripeCustomerId: getStripeCustomerId(params.stripeSub.customer),
     userId: params.userId ?? params.metadata.userId ?? params.existing?.userId ?? "",
     email: params.email ?? params.metadata.email ?? params.existing?.email ?? "",
@@ -263,6 +264,7 @@ async function handleCheckoutSessionCompleted(session: Stripe.Checkout.Session):
   const sub = buildSubscriptionRecord({
     existing,
     stripeSub,
+    stripeSubscriptionId: stripeSubId,
     metadata: meta,
     email,
     userId,

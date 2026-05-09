@@ -35,6 +35,7 @@ function configuredPriceIds(): { flow: string[]; automate: string[]; scale: stri
 
 export interface Subscription {
   id: string;
+  workspaceId?: string;
   stripeSubscriptionId: string;
   stripeCustomerId: string;
   userId: string;

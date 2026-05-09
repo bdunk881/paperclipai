@@ -5,10 +5,62 @@
 
 import { Router, Request, Response } from "express";
 import { AuthenticatedRequest } from "../auth/authMiddleware";
+import { recordControlPlaneAudit } from "../auditing/controlPlaneAudit";
 import { getStripe, PRICING_TIERS, TierKey } from "./stripeClient";
 import { subscriptionStore, resolveTier } from "./subscriptionStore";
+import { billingRepository, effectiveEntitlementPlan } from "./billingRepository";
+import { entitlementStore } from "./entitlements";
 
 const router = Router();
+
+function getWorkspaceId(req: Request): string | undefined {
+  const authWorkspaceId = (req as AuthenticatedRequest).auth?.workspaceId?.trim();
+  if (authWorkspaceId) {
+    return authWorkspaceId;
+  }
+  const headerWorkspaceId = req.headers["x-workspace-id"];
+  if (typeof headerWorkspaceId === "string" && headerWorkspaceId.trim()) {
+    return headerWorkspaceId.trim();
+  }
+  const body = req.body as { workspaceId?: unknown } | undefined;
+  return typeof body?.workspaceId === "string" && body.workspaceId.trim()
+    ? body.workspaceId.trim()
+    : undefined;
+}
+
+async function syncSubscriptionWorkspaceState(req: Request, subId: string): Promise<void> {
+  const sub = subscriptionStore.get(subId);
+  if (!sub?.workspaceId) {
+    return;
+  }
+
+  entitlementStore.upsert(sub.workspaceId, effectiveEntitlementPlan(sub.tier, sub.status));
+  await billingRepository.upsertSubscriptionAndEntitlements({
+    workspaceId: sub.workspaceId,
+    userId: sub.userId,
+    stripeSubscriptionId: sub.stripeSubscriptionId,
+    stripeCustomerId: sub.stripeCustomerId,
+    plan: sub.tier,
+    status: sub.status,
+    currentPeriodEnd: sub.currentPeriodEnd,
+  });
+
+  if (sub.userId) {
+    await recordControlPlaneAudit({
+      workspaceId: sub.workspaceId,
+      userId: sub.userId,
+      category: "billing",
+      action: "subscription_mutated",
+      target: { type: "subscription", id: sub.stripeSubscriptionId },
+      metadata: {
+        method: req.method,
+        path: req.originalUrl || req.path,
+        plan: sub.tier,
+        status: sub.status,
+      },
+    });
+  }
+}
 
 /**
  * GET /api/billing/subscription
@@ -102,10 +154,15 @@ router.post("/change-tier", async (req: AuthenticatedRequest, res: Response) => 
       metadata: { ...stripeSub.metadata, tier: newTier },
     });
 
-    subscriptionStore.update(sub.id, {
+    const workspaceId = sub.workspaceId ?? getWorkspaceId(req);
+    const stored = subscriptionStore.update(sub.id, {
+      workspaceId,
       tier: newTier as TierKey,
       status: updated.status,
     });
+    if (stored) {
+      await syncSubscriptionWorkspaceState(req, stored.id);
+    }
 
     console.log(`[stripe/subscription] ${isUpgrade ? "Upgraded" : "Downgraded"} ${userId} from ${sub.tier} to ${newTier}`);
     res.json({
@@ -150,10 +207,15 @@ router.post("/cancel", async (req: AuthenticatedRequest, res: Response) => {
       cancel_at_period_end: true,
     });
 
-    subscriptionStore.update(sub.id, {
+    const workspaceId = sub.workspaceId ?? getWorkspaceId(req);
+    const stored = subscriptionStore.update(sub.id, {
+      workspaceId,
       cancelAtPeriodEnd: true,
       status: updated.status,
     });
+    if (stored) {
+      await syncSubscriptionWorkspaceState(req, stored.id);
+    }
 
     console.log(`[stripe/subscription] Cancellation scheduled for ${userId} at period end (${sub.currentPeriodEnd})`);
     res.json({
@@ -197,10 +259,15 @@ router.post("/reactivate", async (req: AuthenticatedRequest, res: Response) => {
       cancel_at_period_end: false,
     });
 
-    subscriptionStore.update(sub.id, {
+    const workspaceId = sub.workspaceId ?? getWorkspaceId(req);
+    const stored = subscriptionStore.update(sub.id, {
+      workspaceId,
       cancelAtPeriodEnd: false,
       status: updated.status,
     });
+    if (stored) {
+      await syncSubscriptionWorkspaceState(req, stored.id);
+    }
 
     console.log(`[stripe/subscription] Reactivated subscription for ${userId}`);
     res.json({ success: true, cancelAtPeriodEnd: false });

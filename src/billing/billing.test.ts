@@ -38,6 +38,7 @@ import app from "../app";
 import { subscriptionStore } from "./subscriptionStore";
 import { mapStripeStatusToAccess, resolveTier } from "./subscriptionStore";
 import { getStripe } from "./stripeClient";
+import { entitlementStore } from "./entitlements";
 
 function asAuth(userId: string) {
   return { Authorization: `Bearer ${userId}` };
@@ -83,6 +84,7 @@ beforeEach(() => {
   stripeMock = makeStripeMock();
   (getStripe as jest.Mock).mockReturnValue(stripeMock);
   subscriptionStore.clear();
+  entitlementStore.clear();
   process.env.STRIPE_WEBHOOK_SECRET = "whsec_test";
 });
 
@@ -297,6 +299,7 @@ describe("POST /api/billing/checkout", () => {
       firstName: "Ada",
       companyName: "AutoFlow",
       userId: "user-123",
+      workspaceId: "11111111-1111-1111-1111-111111111111",
     });
 
     expect(res.status).toBe(200);
@@ -306,13 +309,30 @@ describe("POST /api/billing/checkout", () => {
         mode: "subscription",
         customer_email: "buyer@example.com",
         line_items: [{ price: "price_flow_test", quantity: 1 }],
-        subscription_data: { trial_period_days: 14 },
+        subscription_data: {
+          trial_period_days: 14,
+          metadata: expect.objectContaining({
+            tier: "flow",
+            workspaceId: "11111111-1111-1111-1111-111111111111",
+          }),
+        },
         metadata: {
           tier: "flow",
           email: "buyer@example.com",
           firstName: "Ada",
           companyName: "AutoFlow",
           userId: "user-123",
+          workspaceId: "11111111-1111-1111-1111-111111111111",
+        },
+      })
+    );
+    expect(stripeMock.checkout.sessions.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        subscription_data: {
+          trial_period_days: 14,
+          metadata: expect.objectContaining({
+            workspaceId: "11111111-1111-1111-1111-111111111111",
+          }),
         },
       })
     );
@@ -485,7 +505,12 @@ describe("POST /api/webhooks/stripe", () => {
       data: {
         object: {
           mode: "subscription",
-          metadata: { tier: "automate", userId: "webhook-user", email: "webhook@example.com" },
+          metadata: {
+            tier: "automate",
+            userId: "webhook-user",
+            email: "webhook@example.com",
+            workspaceId: "22222222-2222-2222-2222-222222222222",
+          },
           customer: "cus_webhook",
           subscription: "sub_webhook_1",
         },
@@ -504,6 +529,7 @@ describe("POST /api/webhooks/stripe", () => {
           },
         ],
       },
+      customer: "cus_webhook",
     });
 
     const res = await request(app)
@@ -516,8 +542,10 @@ describe("POST /api/webhooks/stripe", () => {
     expect(res.status).toBe(200);
     expect(res.body).toEqual({ received: true });
     expect(sub?.userId).toBe("webhook-user");
+    expect(sub?.workspaceId).toBe("22222222-2222-2222-2222-222222222222");
     expect(sub?.tier).toBe("automate");
     expect(sub?.accessLevel).toBe("active");
+    expect(entitlementStore.get("22222222-2222-2222-2222-222222222222")?.byokAllowed).toBe(true);
   });
 
   it("handles invoice.paid and refreshes period dates", async () => {

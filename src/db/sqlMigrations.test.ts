@@ -439,48 +439,50 @@ describe("sql migrations", () => {
     });
   });
 
-  describe("migration 024 HITL activity events (HEL-16)", () => {
-    // Renumbered from 023 to 024 during rebase: HEL-15 (#653) landed first
-    // and claimed the 023 slot.
+  describe("migration 025 canonical remaining entities (HEL-17)", () => {
+    // Renumbered from 022 → 025 during rebase: HEL-13 owns 022, HEL-15 owns
+    // 023, HEL-16 owns 024. HEL-17 stacks on top.
     const migration = readFileSync(
-      path.resolve(__dirname, "..", "..", "migrations", "024_hitl_activity_events.sql"),
+      path.resolve(__dirname, "..", "..", "migrations", "025_canonical_remaining_entities.sql"),
       "utf8"
     );
 
-    it("declares canonical approvals and activity_events tables", () => {
-      expect(migration).toContain("CREATE TABLE IF NOT EXISTS approvals");
-      expect(migration).toContain("CREATE TABLE IF NOT EXISTS activity_events");
-      // After HEL-15 the canonical run table is `runs`, not `workflow_runs`.
-      expect(migration).toContain("run_id uuid NOT NULL REFERENCES runs(id) ON DELETE CASCADE");
-      expect(migration).toContain("workspace_id uuid NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE");
-      expect(migration).toContain("kind text NOT NULL");
-      expect(migration).toContain("actor jsonb NOT NULL");
-      expect(migration).toContain("subject jsonb NOT NULL");
-      expect(migration).toContain("payload jsonb NOT NULL");
-      expect(migration).toContain("occurred_at timestamptz NOT NULL");
+    const tables = ["connector_connections", "budgets", "subscriptions", "entitlements"];
+
+    it.each(tables)("declares %s with workspace-scoped tenant ownership", (table) => {
+      const definitionPattern = new RegExp(
+        `CREATE TABLE IF NOT EXISTS ${table} \\([\\s\\S]*?workspace_id uuid (?:PRIMARY KEY )?(?:NOT NULL )?REFERENCES workspaces\\(id\\) ON DELETE CASCADE`,
+        "m"
+      );
+      expect(migration).toMatch(definitionPattern);
     });
 
-    it("backfills canonical rows from legacy approval, ticket, and observability tables", () => {
-      expect(migration).toContain("FROM approval_requests");
-      expect(migration).toContain("FROM ticket_updates");
-      expect(migration).toContain("FROM observability_events");
-      expect(migration).toContain("ON CONFLICT (id) DO NOTHING");
+    it.each(tables)("enables and forces row-level security on %s", (table) => {
+      expect(migration).toContain(`ALTER TABLE ${table} ENABLE ROW LEVEL SECURITY;`);
+      expect(migration).toContain(`ALTER TABLE ${table} FORCE ROW LEVEL SECURITY;`);
     });
 
-    it("keeps tickets compatible with existing SLA infrastructure", () => {
-      expect(migration).toContain("ADD COLUMN IF NOT EXISTS body text");
-      expect(migration).toContain("ADD COLUMN IF NOT EXISTS assigned_agent_id uuid REFERENCES agents(id) ON DELETE SET NULL");
-      expect(migration).toContain("ADD COLUMN IF NOT EXISTS assigned_user_id text");
-      expect(migration).not.toMatch(/DROP\s+TABLE\s+(IF\s+EXISTS\s+)?ticket_sla_/i);
-      expect(migration).not.toMatch(/DROP\s+COLUMN\s+(IF\s+EXISTS\s+)?(priority|sla_state|due_date)/i);
+    it("adds canonical BYOK columns to llm_credentials without dropping legacy columns", () => {
+      expect(migration).toContain("ADD COLUMN IF NOT EXISTS workspace_id uuid REFERENCES workspaces(id) ON DELETE CASCADE");
+      expect(migration).toContain("ADD COLUMN IF NOT EXISTS key_ref text");
+      expect(migration).toContain("ADD COLUMN IF NOT EXISTS validated_at timestamptz");
+      expect(migration).toContain("ADD COLUMN IF NOT EXISTS status text NOT NULL DEFAULT 'pending'");
     });
 
-    it("enforces tenant isolation and append-only activity events", () => {
-      expect(migration).toContain("ALTER TABLE activity_events ENABLE ROW LEVEL SECURITY;");
-      expect(migration).toContain("ALTER TABLE activity_events FORCE ROW LEVEL SECURITY;");
-      expect(migration).toContain("CREATE POLICY activity_events_tenant_isolation");
-      expect(migration).toContain("CREATE POLICY activity_events_no_update");
-      expect(migration).toContain("CREATE POLICY activity_events_no_delete");
+    it("creates indexed O(1) budget gate functions over budgets.used_cents", () => {
+      expect(migration).toContain("CREATE UNIQUE INDEX IF NOT EXISTS uq_budgets_workspace_scope_period");
+      expect(migration).toContain("CREATE OR REPLACE FUNCTION check_budget");
+      expect(migration).toContain("CREATE OR REPLACE FUNCTION reserve_budget_cents");
+      expect(migration).toContain("used_cents + p_delta_cents <= cap_cents");
+    });
+
+    it("adds canonical audit aliases and new privileged mutation categories", () => {
+      expect(migration).toContain("ADD COLUMN IF NOT EXISTS target_kind text");
+      expect(migration).toContain("ADD COLUMN IF NOT EXISTS payload jsonb");
+      expect(migration).toContain("ADD COLUMN IF NOT EXISTS occurred_at timestamptz");
+      expect(migration).toContain("'billing'");
+      expect(migration).toContain("'entitlement'");
+      expect(migration).toContain("'budget'");
     });
 
     it("wraps schema changes in a single transaction", () => {

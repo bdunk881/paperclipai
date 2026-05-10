@@ -512,15 +512,52 @@ function workspaceUserKey(workspaceId: string, userId: string): string {
   return `${workspaceId}:${userId}`;
 }
 
-function workspaceContextForTeam(teamId: string, userId: string): { workspaceId: string; userId: string } | undefined {
+/**
+ * Resolves the workspace context for a given teamId. HEL-66:
+ *
+ * - Primary path: hit the in-memory `teamWorkspaceIds` cache (populated
+ *   when teams are loaded / created).
+ * - Cache miss: look up `agent_teams.workspace_id` in Postgres (single
+ *   small SELECT). On hit, populate the cache so future calls don't pay
+ *   the DB round-trip again.
+ * - DB miss: return undefined (genuinely unknown team — caller decides
+ *   how to handle, usually by surfacing a 404 upstream).
+ *
+ * Without this fallback, `controlPlaneStore` ops that fired right after a
+ * cold start (before teams had been listed once and hydrated the cache)
+ * would land in observabilityStore.record() with workspaceId=undefined,
+ * which then dropped the DB persist — silent durability gap on activity
+ * events.
+ */
+async function workspaceContextForTeam(
+  teamId: string,
+  userId: string,
+): Promise<{ workspaceId: string; userId: string } | undefined> {
   if (!postgresPersistenceAvailable()) {
     return undefined;
   }
-  const workspaceId = teamWorkspaceIds.get(teamId);
-  if (!workspaceId) {
+  const cached = teamWorkspaceIds.get(teamId);
+  if (cached) {
+    return { workspaceId: cached, userId };
+  }
+  // Cache miss — query the DB and populate the cache for next time.
+  try {
+    const result = await getPostgresPool().query<{ workspace_id: string }>(
+      `SELECT workspace_id FROM agent_teams WHERE id = $1 LIMIT 1`,
+      [teamId],
+    );
+    if (result.rowCount === 0) {
+      return undefined;
+    }
+    const workspaceId = result.rows[0].workspace_id;
+    teamWorkspaceIds.set(teamId, workspaceId);
+    return { workspaceId, userId };
+  } catch (err) {
+    console.warn(
+      `[controlPlaneStore] workspaceContextForTeam DB lookup failed for team=${teamId}: ${(err as Error).message}`,
+    );
     return undefined;
   }
-  return { workspaceId, userId };
 }
 
 function matchesWorkspace(teamId: string, workspaceId?: string): boolean {
@@ -2211,7 +2248,7 @@ export const controlPlaneStore = {
       auditTrail: [buildAuditEvent("created", input.actor, "Task created with status todo")],
     };
     tasks.set(task.id, task);
-    const taskCtx = workspaceContextForTeam(task.teamId, input.userId);
+    const taskCtx = await workspaceContextForTeam(task.teamId, input.userId);
     if (taskCtx) {
       await controlPlaneRepository.upsertTask(taskCtx, task);
     }
@@ -2269,7 +2306,7 @@ export const controlPlaneStore = {
       buildAuditEvent("checked_out", input.actor, `Task checked out by ${input.actor}`)
     );
     tasks.set(task.id, task);
-    const taskCtx = workspaceContextForTeam(task.teamId, input.userId);
+    const taskCtx = await workspaceContextForTeam(task.teamId, input.userId);
     if (taskCtx) {
       await controlPlaneRepository.upsertTask(taskCtx, task);
     }
@@ -2317,7 +2354,7 @@ export const controlPlaneStore = {
       buildAuditEvent("status_changed", input.actor, `Task status changed to ${input.status}`)
     );
     tasks.set(task.id, task);
-    const taskCtx = workspaceContextForTeam(task.teamId, input.userId);
+    const taskCtx = await workspaceContextForTeam(task.teamId, input.userId);
     if (taskCtx) {
       await controlPlaneRepository.upsertTask(taskCtx, task);
     }
@@ -2481,7 +2518,7 @@ export const controlPlaneStore = {
       recordedAt: nowIso(),
     };
     spendEntries.set(entry.id, entry);
-    const spendCtx = workspaceContextForTeam(input.teamId, input.userId);
+    const spendCtx = await workspaceContextForTeam(input.teamId, input.userId);
     if (spendCtx) {
       await controlPlaneRepository.insertSpendEntry(spendCtx, entry);
     }

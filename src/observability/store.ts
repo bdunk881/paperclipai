@@ -254,22 +254,13 @@ async function persistEvent(event: ObservabilityEvent): Promise<void> {
     return;
   }
   if (!event.workspaceId) {
-    // Tracked as a structured warning so monitoring catches the silent
-    // data-loss path. The deeper fix (resolve workspace_id from team cache /
-    // DB on cache miss) is HEL-66 — when the team→workspace cache misses in
-    // controlPlaneStore.ts the call sites here drop the persisted copy of
-    // the event. The in-memory event is still recorded, so the live UI is
-    // unaffected; only durability past restart is broken.
+    // HEL-66 closed the team→workspace inference gap — workspaceContextForTeam
+    // now falls back to a DB lookup on cache miss, so this branch should be
+    // unreachable from the controlPlaneStore call sites. If we ever hit it
+    // again, that's a NEW unscoped producer; log loud + drop the persist.
     console.error(
-      JSON.stringify({
-        level: "error",
-        scope: "observability",
-        kind: "missing_workspace_id_on_persist",
-        eventId: event.id,
-        eventType: event.type,
-        followUp: "HEL-66",
-        message: "activity_events not persisted: workspaceId missing",
-      })
+      "[observability] activity_events not persisted: workspaceId missing for event",
+      { eventId: event.id, eventType: event.type },
     );
     return;
   }

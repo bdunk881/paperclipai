@@ -14,6 +14,10 @@ import {
 type ObservabilitySubscriber = {
   id: string;
   userId: string;
+  // When set, only events with this workspaceId are streamed. Same strict-scope
+  // rule as eventMatchesQuery: workspace-scoped subscribers never see events
+  // recorded in another workspace, even if the same user belongs to both.
+  workspaceId?: string;
   after?: string;
   categories?: Set<string>;
   send: (event: ObservabilityEvent) => void;
@@ -322,6 +326,14 @@ function notifySubscribers(event: ObservabilityEvent): void {
     if (subscriber.userId !== event.userId) {
       continue;
     }
+    // Workspace-scoped SSE subscribers must not receive events from other
+    // workspaces (P1 review on PR #652). Mirrors eventMatchesQuery's strict
+    // scope: events without a resolved workspaceId are also dropped.
+    if (subscriber.workspaceId) {
+      if (!event.workspaceId || event.workspaceId !== subscriber.workspaceId) {
+        continue;
+      }
+    }
     const subscriberCursor = parseCursor(subscriber.after);
     if (subscriberCursor && compareCursor(event.sequence, event.id, subscriberCursor) <= 0) {
       continue;
@@ -438,9 +450,19 @@ export const observabilityStore = {
           seen.add(e.id);
           return true;
         })
+        // Sort by (sequence, id) — same field set as the cursor (built via
+        // buildCursor()). Sorting by occurredAt+id risks placing a higher-
+        // sequence event before a lower-sequence sibling when both share an
+        // ms timestamp; the page-1 cursor would then permanently exclude the
+        // lower-sequence event from page 2.
         .sort((a, b) => {
-          const cmp = a.occurredAt.localeCompare(b.occurredAt);
-          return cmp !== 0 ? cmp : a.id.localeCompare(b.id);
+          let aSeq = 0n;
+          let bSeq = 0n;
+          try { aSeq = BigInt(a.sequence); } catch { /* keep 0 */ }
+          try { bSeq = BigInt(b.sequence); } catch { /* keep 0 */ }
+          if (aSeq < bSeq) return -1;
+          if (aSeq > bSeq) return 1;
+          return a.id.localeCompare(b.id);
         });
     } else {
       events = getEventsFromMemory({ ...query, limit });
@@ -462,6 +484,7 @@ export const observabilityStore = {
 
   subscribe(input: {
     userId: string;
+    workspaceId?: string;
     after?: string;
     categories?: string[];
     send: (event: ObservabilityEvent) => void;
@@ -470,6 +493,7 @@ export const observabilityStore = {
     subscribers.set(id, {
       id,
       userId: input.userId,
+      workspaceId: input.workspaceId,
       after: input.after,
       categories: input.categories?.length ? new Set(input.categories) : undefined,
       send: input.send,

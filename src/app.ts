@@ -103,6 +103,18 @@ import { getConnectorHealthSummary, listConnectorHealth } from "./connectors/hea
 
 requirePersistence();
 
+// HEL-45: rehydrate in-memory subscription cache from Postgres so the
+// store survives a process restart. Fire-and-forget at boot — failures
+// only mean the cache rebuilds on the next webhook (Stripe retries).
+import("./billing/subscriptionStore")
+  .then(({ subscriptionStore }) => subscriptionStore.hydrateFromPostgres())
+  .then((count) => {
+    if (count > 0) console.log(`[billing] hydrated ${count} subscription(s) from Postgres`);
+  })
+  .catch((err) => {
+    console.warn("[billing] subscription hydration failed:", (err as Error).message);
+  });
+
 const app = express();
 const workspaceResolver = isPostgresPersistenceEnabled()
   ? createWorkspaceResolver(getPostgresPool())

@@ -187,14 +187,21 @@ async function syncSubscriptionEntitlements(sub: Subscription): Promise<void> {
 
   const entitlementPlan = effectiveEntitlementPlan(sub.tier, sub.status);
   entitlementStore.upsert(sub.workspaceId, entitlementPlan);
+  // HEL-45: include all subscriptionStore fields so the Postgres row is a
+  // complete round-trip target for hydration on restart.
   await billingRepository.upsertSubscriptionAndEntitlements({
     workspaceId: sub.workspaceId,
     userId: sub.userId,
+    email: sub.email,
     stripeSubscriptionId: sub.stripeSubscriptionId,
     stripeCustomerId: sub.stripeCustomerId,
     plan: sub.tier,
     status: sub.status,
+    accessLevel: sub.accessLevel,
+    currentPeriodStart: sub.currentPeriodStart,
     currentPeriodEnd: sub.currentPeriodEnd,
+    cancelAtPeriodEnd: sub.cancelAtPeriodEnd,
+    trialEnd: sub.trialEnd,
   });
 }
 

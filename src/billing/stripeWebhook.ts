@@ -244,7 +244,10 @@ async function handleCheckoutSessionCompleted(session: Stripe.Checkout.Session):
   const meta = (session.metadata ?? {}) as Record<string, string>;
   const email = meta.email ?? session.customer_details?.email ?? session.customer_email ?? "";
   const userId = meta.userId ?? "";
-  const workspaceId = meta.workspaceId ?? "";
+  // Leave undefined (not "") so downstream nullish-coalescing falls through
+  // to the next workspace resolver instead of writing a record with the empty
+  // string as workspace_id.
+  const workspaceId = meta.workspaceId || undefined;
   const stripeSubId = typeof session.subscription === "string"
     ? session.subscription
     : session.subscription?.id ?? "";

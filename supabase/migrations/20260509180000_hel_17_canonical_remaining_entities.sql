@@ -261,14 +261,22 @@ ALTER TABLE public.audit_log
   ADD COLUMN IF NOT EXISTS payload jsonb,
   ADD COLUMN IF NOT EXISTS occurred_at timestamptz;
 
-UPDATE public.audit_log
-SET
-  target_kind = COALESCE(target_kind, target_type),
-  payload = COALESCE(payload, metadata),
-  occurred_at = COALESCE(occurred_at, at)
-WHERE target_kind IS NULL
-   OR payload IS NULL
-   OR occurred_at IS NULL;
+-- audit_log carries an append-only RLS policy from the rename in 021.
+-- Disable row_security for the canonical-column backfill so the migration
+-- doesn't abort under non-BYPASSRLS roles (e.g. Supabase migration runner).
+DO $$
+BEGIN
+  PERFORM set_config('row_security', 'off', true);
+  UPDATE public.audit_log
+  SET
+    target_kind = COALESCE(target_kind, target_type),
+    payload = COALESCE(payload, metadata),
+    occurred_at = COALESCE(occurred_at, at)
+  WHERE target_kind IS NULL
+     OR payload IS NULL
+     OR occurred_at IS NULL;
+  PERFORM set_config('row_security', 'on', true);
+END$$;
 
 ALTER TABLE public.audit_log
   ALTER COLUMN occurred_at SET DEFAULT now();

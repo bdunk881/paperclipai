@@ -14,18 +14,13 @@ import { entitlementStore } from "./entitlements";
 const router = Router();
 
 function getWorkspaceId(req: Request): string | undefined {
-  const authWorkspaceId = (req as AuthenticatedRequest).auth?.workspaceId?.trim();
-  if (authWorkspaceId) {
-    return authWorkspaceId;
-  }
-  const headerWorkspaceId = req.headers["x-workspace-id"];
-  if (typeof headerWorkspaceId === "string" && headerWorkspaceId.trim()) {
-    return headerWorkspaceId.trim();
-  }
-  const body = req.body as { workspaceId?: unknown } | undefined;
-  return typeof body?.workspaceId === "string" && body.workspaceId.trim()
-    ? body.workspaceId.trim()
-    : undefined;
+  // SECURITY: trust ONLY the JWT-resolved workspace. Header / body fallbacks
+  // here would let an authenticated user pass another tenant's UUID and cause
+  // cross-tenant subscription/entitlement writes via syncSubscriptionWorkspaceState
+  // (no workspace-membership validation gates the persist path). Pre-migration
+  // subscriptions without a stored workspaceId remain accessible read-only,
+  // and write ops on them now require the JWT to carry the matching workspace.
+  return (req as AuthenticatedRequest).auth?.workspaceId?.trim() || undefined;
 }
 
 async function syncSubscriptionWorkspaceState(req: Request, subId: string): Promise<void> {
@@ -34,7 +29,9 @@ async function syncSubscriptionWorkspaceState(req: Request, subId: string): Prom
     return;
   }
 
-  entitlementStore.upsert(sub.workspaceId, effectiveEntitlementPlan(sub.tier, sub.status));
+  // DB persist first, then in-memory cache. Reversing this order risked the
+  // in-memory entitlement diverging from durable state if the DB write
+  // failed (Sentry P2 review on PR #650).
   await billingRepository.upsertSubscriptionAndEntitlements({
     workspaceId: sub.workspaceId,
     userId: sub.userId,
@@ -44,6 +41,7 @@ async function syncSubscriptionWorkspaceState(req: Request, subId: string): Prom
     status: sub.status,
     currentPeriodEnd: sub.currentPeriodEnd,
   });
+  entitlementStore.upsert(sub.workspaceId, effectiveEntitlementPlan(sub.tier, sub.status));
 
   if (sub.userId) {
     await recordControlPlaneAudit({

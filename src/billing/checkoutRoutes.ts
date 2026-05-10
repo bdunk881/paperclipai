@@ -27,19 +27,25 @@ function resolveAppBaseUrl(req: Request): string {
  * Returns: { url: string } — Stripe hosted checkout URL
  */
 router.post("/", async (req: AuthenticatedRequest, res: Response) => {
-  const { tier, email, firstName, companyName, userId, workspaceId } = req.body as {
+  const { tier, email, firstName, companyName } = req.body as {
     tier?: string;
     email?: string;
     firstName?: string;
     companyName?: string;
-    userId?: string;
-    workspaceId?: string;
   };
-  const resolvedUserId = req.auth?.sub ?? (typeof userId === "string" ? userId : undefined);
-  const resolvedWorkspaceId =
-    req.auth?.workspaceId ??
-    (typeof req.headers["x-workspace-id"] === "string" ? req.headers["x-workspace-id"].trim() : undefined) ??
-    (typeof workspaceId === "string" ? workspaceId.trim() : undefined);
+  // SECURITY: this route is intentionally mounted without requireAuth so that
+  // an anonymous visitor can land on Stripe Checkout from the marketing site.
+  // Therefore we MUST NOT trust workspaceId / userId from the request body or
+  // x-workspace-id header — anyone who knows a victim's workspace UUID could
+  // otherwise overwrite that tenant's subscription/entitlements when the
+  // webhook fires (handleCheckoutSessionCompleted writes to subscriptions
+  // and entitlements keyed by workspace_id from session metadata).
+  //
+  // Only the authenticated identity is trusted. If the user is anonymous,
+  // we leave workspaceId/userId out of the Stripe metadata; the user claims
+  // the subscription post-signup via the customer.subscription.* webhook.
+  const resolvedUserId = req.auth?.sub;
+  const resolvedWorkspaceId = req.auth?.workspaceId;
 
   if (!tier || !(tier in PRICING_TIERS)) {
     res.status(400).json({ error: `Invalid tier. Must be one of: ${Object.keys(PRICING_TIERS).join(", ")}` });

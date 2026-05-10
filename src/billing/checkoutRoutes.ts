@@ -33,17 +33,11 @@ router.post("/", async (req: AuthenticatedRequest, res: Response) => {
     firstName?: string;
     companyName?: string;
   };
-  // SECURITY: this route is intentionally mounted without requireAuth so that
-  // an anonymous visitor can land on Stripe Checkout from the marketing site.
-  // Therefore we MUST NOT trust workspaceId / userId from the request body or
-  // x-workspace-id header — anyone who knows a victim's workspace UUID could
-  // otherwise overwrite that tenant's subscription/entitlements when the
-  // webhook fires (handleCheckoutSessionCompleted writes to subscriptions
-  // and entitlements keyed by workspace_id from session metadata).
-  //
-  // Only the authenticated identity is trusted. If the user is anonymous,
-  // we leave workspaceId/userId out of the Stripe metadata; the user claims
-  // the subscription post-signup via the customer.subscription.* webhook.
+  // SECURITY: route is now requireAuth-mounted (src/app.ts) — req.auth is
+  // populated. Trust ONLY the JWT-resolved identity for workspace + user.
+  // Anyone who knew a victim's workspace UUID would otherwise overwrite that
+  // tenant's subscription/entitlements at webhook time
+  // (handleCheckoutSessionCompleted writes by workspace_id).
   const resolvedUserId = req.auth?.sub;
   const resolvedWorkspaceId = req.auth?.workspaceId;
 

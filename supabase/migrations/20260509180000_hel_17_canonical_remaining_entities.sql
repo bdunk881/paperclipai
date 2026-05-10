@@ -261,22 +261,32 @@ ALTER TABLE public.audit_log
   ADD COLUMN IF NOT EXISTS payload jsonb,
   ADD COLUMN IF NOT EXISTS occurred_at timestamptz;
 
--- audit_log carries an append-only RLS policy from the rename in 021.
--- Disable row_security for the canonical-column backfill so the migration
--- doesn't abort under non-BYPASSRLS roles (e.g. Supabase migration runner).
-DO $$
-BEGIN
-  PERFORM set_config('row_security', 'off', true);
-  UPDATE public.audit_log
-  SET
-    target_kind = COALESCE(target_kind, target_type),
-    payload = COALESCE(payload, metadata),
-    occurred_at = COALESCE(occurred_at, at)
-  WHERE target_kind IS NULL
-     OR payload IS NULL
-     OR occurred_at IS NULL;
-  PERFORM set_config('row_security', 'on', true);
-END$$;
+-- audit_log carries an append-only RLS policy from the rename in 021. Drop
+-- the no-update / no-delete policies, run the backfill, recreate them.
+-- set_config('row_security','off') does NOT bypass FORCE RLS so the previous
+-- attempt would still abort the migration under non-BYPASSRLS roles.
+DROP POLICY IF EXISTS audit_log_no_update ON public.audit_log;
+DROP POLICY IF EXISTS audit_log_no_delete ON public.audit_log;
+
+UPDATE public.audit_log
+SET
+  target_kind = COALESCE(target_kind, target_type),
+  payload = COALESCE(payload, metadata),
+  occurred_at = COALESCE(occurred_at, at)
+WHERE target_kind IS NULL
+   OR payload IS NULL
+   OR occurred_at IS NULL;
+
+CREATE POLICY audit_log_no_update
+  ON public.audit_log
+  FOR UPDATE
+  USING (false)
+  WITH CHECK (false);
+
+CREATE POLICY audit_log_no_delete
+  ON public.audit_log
+  FOR DELETE
+  USING (false);
 
 ALTER TABLE public.audit_log
   ALTER COLUMN occurred_at SET DEFAULT now();

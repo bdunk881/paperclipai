@@ -512,15 +512,58 @@ function workspaceUserKey(workspaceId: string, userId: string): string {
   return `${workspaceId}:${userId}`;
 }
 
-function workspaceContextForTeam(teamId: string, userId: string): { workspaceId: string; userId: string } | undefined {
+/**
+ * Resolves the workspace context for a given teamId. HEL-66:
+ *
+ * - Primary path: hit the in-memory `teamWorkspaceIds` cache (populated
+ *   when teams are loaded / created).
+ * - Cache miss: look up `agent_teams.workspace_id` in Postgres (single
+ *   small SELECT). On hit, populate the cache so future calls don't pay
+ *   the DB round-trip again.
+ * - DB miss: return undefined (genuinely unknown team — caller decides
+ *   how to handle, usually by surfacing a 404 upstream).
+ *
+ * Without this fallback, `controlPlaneStore` ops that fired right after a
+ * cold start (before teams had been listed once and hydrated the cache)
+ * would land in observabilityStore.record() with workspaceId=undefined,
+ * which then dropped the DB persist — silent durability gap on activity
+ * events.
+ */
+async function workspaceContextForTeam(
+  teamId: string,
+  userId: string,
+): Promise<{ workspaceId: string; userId: string } | undefined> {
   if (!postgresPersistenceAvailable()) {
     return undefined;
   }
-  const workspaceId = teamWorkspaceIds.get(teamId);
-  if (!workspaceId) {
+  const cached = teamWorkspaceIds.get(teamId);
+  if (cached) {
+    return { workspaceId: cached, userId };
+  }
+  // Cache miss — call the SECURITY DEFINER helper to bypass RLS. We
+  // can't use the regular workspace-context channel here because the
+  // whole point of this lookup is to FIND the workspace_id; we don't
+  // have one to set on the session yet. agent_teams has FORCE RLS
+  // requiring app_current_workspace_id() IS NOT NULL, so a raw SELECT
+  // would return zero rows for a legitimate team.
+  // The helper is migration 030's `lookup_team_workspace_id(uuid)`.
+  try {
+    const result = await getPostgresPool().query<{ workspace_id: string | null }>(
+      `SELECT lookup_team_workspace_id($1) AS workspace_id`,
+      [teamId],
+    );
+    const workspaceId = result.rows[0]?.workspace_id;
+    if (!workspaceId) {
+      return undefined;
+    }
+    teamWorkspaceIds.set(teamId, workspaceId);
+    return { workspaceId, userId };
+  } catch (err) {
+    console.warn(
+      `[controlPlaneStore] workspaceContextForTeam DB lookup failed for team=${teamId}: ${(err as Error).message}`,
+    );
     return undefined;
   }
-  return { workspaceId, userId };
 }
 
 function matchesWorkspace(teamId: string, workspaceId?: string): boolean {
@@ -2211,7 +2254,17 @@ export const controlPlaneStore = {
       auditTrail: [buildAuditEvent("created", input.actor, "Task created with status todo")],
     };
     tasks.set(task.id, task);
-    const taskCtx = workspaceContextForTeam(task.teamId, input.userId);
+    // HEL-66: snapshot before await — same race fix as checkoutTask /
+    // updateTaskStatus. Less likely to fire here because the caller doesn't
+    // know task.id yet, but defensive consistency keeps the pattern uniform.
+    const snapshotStatus = task.status;
+    const snapshotCreatedAt = task.createdAt;
+    const snapshotTaskMeta = {
+      sourceRunId: task.sourceRunId,
+      sourceWorkflowStepId: task.sourceWorkflowStepId,
+      metadata: task.metadata,
+    };
+    const taskCtx = await workspaceContextForTeam(task.teamId, input.userId);
     if (taskCtx) {
       await controlPlaneRepository.upsertTask(taskCtx, task);
     }
@@ -2230,12 +2283,10 @@ export const controlPlaneStore = {
       },
       summary: `Task created: ${task.title}`,
       payload: {
-        status: task.status,
-        sourceRunId: task.sourceRunId,
-        sourceWorkflowStepId: task.sourceWorkflowStepId,
-        metadata: task.metadata,
+        status: snapshotStatus,
+        ...snapshotTaskMeta,
       },
-      occurredAt: task.createdAt,
+      occurredAt: snapshotCreatedAt,
     });
     return task;
   },
@@ -2269,7 +2320,18 @@ export const controlPlaneStore = {
       buildAuditEvent("checked_out", input.actor, `Task checked out by ${input.actor}`)
     );
     tasks.set(task.id, task);
-    const taskCtx = workspaceContextForTeam(task.teamId, input.userId);
+    // HEL-66: snapshot the fields the observability event reads BEFORE the
+    // await on workspaceContextForTeam. Otherwise a concurrent
+    // updateTaskStatus that lands during the await window would mutate
+    // task.status, and the emitted event would carry the wrong status.
+    const snapshotStatus = task.status;
+    const snapshotUpdatedAt = task.updatedAt;
+    const snapshotTaskMeta = {
+      sourceRunId: task.sourceRunId,
+      sourceWorkflowStepId: task.sourceWorkflowStepId,
+      metadata: task.metadata,
+    };
+    const taskCtx = await workspaceContextForTeam(task.teamId, input.userId);
     if (taskCtx) {
       await controlPlaneRepository.upsertTask(taskCtx, task);
     }
@@ -2286,15 +2348,13 @@ export const controlPlaneStore = {
         parentType: "team",
         parentId: task.teamId,
       },
-      summary: `Task moved to ${task.status}`,
+      summary: `Task moved to ${snapshotStatus}`,
       payload: {
         previousStatus: "todo",
-        status: task.status,
-        sourceRunId: task.sourceRunId,
-        sourceWorkflowStepId: task.sourceWorkflowStepId,
-        metadata: task.metadata,
+        status: snapshotStatus,
+        ...snapshotTaskMeta,
       },
-      occurredAt: task.updatedAt,
+      occurredAt: snapshotUpdatedAt,
     });
     return task;
   },
@@ -2317,7 +2377,15 @@ export const controlPlaneStore = {
       buildAuditEvent("status_changed", input.actor, `Task status changed to ${input.status}`)
     );
     tasks.set(task.id, task);
-    const taskCtx = workspaceContextForTeam(task.teamId, input.userId);
+    // HEL-66: snapshot before await — see checkoutTask for the same race fix.
+    const snapshotStatus = task.status;
+    const snapshotUpdatedAt = task.updatedAt;
+    const snapshotTaskMeta = {
+      sourceRunId: task.sourceRunId,
+      sourceWorkflowStepId: task.sourceWorkflowStepId,
+      metadata: task.metadata,
+    };
+    const taskCtx = await workspaceContextForTeam(task.teamId, input.userId);
     if (taskCtx) {
       await controlPlaneRepository.upsertTask(taskCtx, task);
     }
@@ -2334,15 +2402,13 @@ export const controlPlaneStore = {
         parentType: "team",
         parentId: task.teamId,
       },
-      summary: `Task moved to ${task.status}`,
+      summary: `Task moved to ${snapshotStatus}`,
       payload: {
         previousStatus,
-        status: task.status,
-        sourceRunId: task.sourceRunId,
-        sourceWorkflowStepId: task.sourceWorkflowStepId,
-        metadata: task.metadata,
+        status: snapshotStatus,
+        ...snapshotTaskMeta,
       },
-      occurredAt: task.updatedAt,
+      occurredAt: snapshotUpdatedAt,
     });
     return task;
   },
@@ -2481,7 +2547,7 @@ export const controlPlaneStore = {
       recordedAt: nowIso(),
     };
     spendEntries.set(entry.id, entry);
-    const spendCtx = workspaceContextForTeam(input.teamId, input.userId);
+    const spendCtx = await workspaceContextForTeam(input.teamId, input.userId);
     if (spendCtx) {
       await controlPlaneRepository.insertSpendEntry(spendCtx, entry);
     }

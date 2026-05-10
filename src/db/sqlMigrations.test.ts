@@ -491,6 +491,44 @@ describe("sql migrations", () => {
     });
   });
 
+  describe("migration 029 stripe_webhook_events (HEL-67)", () => {
+    const migration = readFileSync(
+      path.resolve(__dirname, "..", "..", "migrations", "029_stripe_webhook_events.sql"),
+      "utf8"
+    );
+
+    it("creates the stripe_webhook_events table keyed on event_id", () => {
+      expect(migration).toContain("CREATE TABLE IF NOT EXISTS stripe_webhook_events");
+      expect(migration).toContain("event_id text PRIMARY KEY");
+    });
+
+    it.each(["event_type", "event_created", "resource_id", "processed_at"])(
+      "declares the %s column for ordering / dedupe",
+      (col) => {
+        expect(migration).toContain(col);
+      }
+    );
+
+    it("indexes (resource_id, event_created DESC) for ordering checks", () => {
+      expect(migration).toContain(
+        "CREATE INDEX IF NOT EXISTS idx_stripe_webhook_events_resource"
+      );
+      expect(migration).toContain("(resource_id, event_created DESC)");
+      expect(migration).toContain("WHERE resource_id IS NOT NULL");
+    });
+
+    it("indexes processed_at DESC for ops dashboards", () => {
+      expect(migration).toContain(
+        "CREATE INDEX IF NOT EXISTS idx_stripe_webhook_events_processed_at"
+      );
+    });
+
+    it("wraps schema changes in a single transaction", () => {
+      expect(migration).toContain("BEGIN;");
+      expect(migration.trim().endsWith("COMMIT;")).toBe(true);
+    });
+  });
+
   describe("migration 028 subscription_store_columns (HEL-45)", () => {
     const migration = readFileSync(
       path.resolve(__dirname, "..", "..", "migrations", "028_subscription_store_columns.sql"),

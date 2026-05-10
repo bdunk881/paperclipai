@@ -277,6 +277,11 @@ describe("POST /api/billing/checkout", () => {
       url: "https://checkout.stripe.test/session_123",
     });
 
+    // Body workspaceId is intentionally ignored by the route now (HEL-17
+    // security fix — see checkoutRoutes.ts comment). The test asserts that
+    // only the JWT-derived userId reaches Stripe metadata; workspaceId
+    // would have to come from req.auth.workspaceId, which the test's
+    // requireAuth mock doesn't set.
     const res = await request(app).post("/api/billing/checkout").set(asAuth("user-123")).send({
       tier: "flow",
       email: "buyer@example.com",
@@ -297,7 +302,6 @@ describe("POST /api/billing/checkout", () => {
           trial_period_days: 14,
           metadata: expect.objectContaining({
             tier: "flow",
-            workspaceId: "11111111-1111-1111-1111-111111111111",
           }),
         },
         metadata: {
@@ -306,18 +310,15 @@ describe("POST /api/billing/checkout", () => {
           firstName: "Ada",
           companyName: "AutoFlow",
           userId: "user-123",
-          workspaceId: "11111111-1111-1111-1111-111111111111",
         },
       })
     );
-    expect(stripeMock.checkout.sessions.create).toHaveBeenCalledWith(
+    // Body-supplied workspaceId never reaches Stripe metadata.
+    expect(stripeMock.checkout.sessions.create).not.toHaveBeenCalledWith(
       expect.objectContaining({
-        subscription_data: {
-          trial_period_days: 14,
-          metadata: expect.objectContaining({
-            workspaceId: "11111111-1111-1111-1111-111111111111",
-          }),
-        },
+        metadata: expect.objectContaining({
+          workspaceId: expect.any(String),
+        }),
       })
     );
   });

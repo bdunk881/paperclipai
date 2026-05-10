@@ -34,7 +34,10 @@ describe("createWorkspaceResolver", () => {
   it("falls back to a single owned workspace when no explicit override or JWT claim is present", async () => {
     const query = jest
       .fn<Promise<QueryResult>, [string, unknown[]]>()
-      .mockResolvedValueOnce(createQueryResult([{ id: "22222222-2222-4222-8222-222222222222" }], null));
+      // 1st call: resolveDefaultWorkspaceId — owned workspaces lookup
+      .mockResolvedValueOnce(createQueryResult([{ id: "22222222-2222-4222-8222-222222222222" }], null))
+      // 2nd call: resolveWorkspaceRole — populate req.workspace.role (HEL-18)
+      .mockResolvedValueOnce(createQueryResult([{ role: "owner" }], null));
     const pool = { query } as unknown as Pool;
     const middleware = createWorkspaceResolver(pool);
     const req = createRequest({ auth: { sub: "user-123" } });
@@ -44,6 +47,10 @@ describe("createWorkspaceResolver", () => {
     await middleware(req, res, next);
 
     expect(req.workspaceId).toBe("22222222-2222-4222-8222-222222222222");
+    expect(req.workspace).toEqual({
+      id: "22222222-2222-4222-8222-222222222222",
+      role: "owner",
+    });
     expect(next).toHaveBeenCalledTimes(1);
     expect(res.status).not.toHaveBeenCalled();
   });

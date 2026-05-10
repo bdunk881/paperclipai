@@ -7,6 +7,12 @@
  * route enforces before any side effect runs.
  */
 
+// Prevent transitive import of ESM-only @mistralai/mistralai (same pattern
+// as src/api.test.ts). The reject paths under test never invoke a provider.
+jest.mock("../engine/llmProviders", () => ({
+  getProvider: jest.fn(),
+}));
+
 import express, { type Request, type Response, type NextFunction } from "express";
 import request from "supertest";
 import { createMissionRoutes } from "./missionRoutes";

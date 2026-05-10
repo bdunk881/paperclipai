@@ -29,7 +29,7 @@ import {
   type TeamAssemblyResult,
 } from "../goals/teamAssembly";
 import { llmConfigStore } from "../llmConfig/llmConfigStore";
-import { resolveModelForTier } from "../engine/llmModels";
+import { resolveModelForTier } from "../engine/llmRouter";
 import { getProvider } from "../engine/llmProviders";
 
 interface MissionRow {

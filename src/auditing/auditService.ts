@@ -20,7 +20,12 @@ export type AuditCategory =
   | "agent_lifecycle"
   | "execution"
   | "auth"
-  | "bypass_attempt";
+  | "bypass_attempt"
+  | "billing"
+  | "entitlement"
+  | "connector_connection"
+  | "llm_credential"
+  | "budget";
 
 export interface AuditContext {
   workspaceId: string;

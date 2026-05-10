@@ -1,5 +1,19 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+
+// Pricing now reads from useAuth() to forward an Authorization header on the
+// checkout call (HEL-17 hardening — /api/billing/checkout requires auth).
+// Mock the AuthContext at the module boundary so the test doesn't need an
+// AuthProvider wrapper.
+vi.mock("../context/AuthContext", () => ({
+  useAuth: () => ({
+    user: { id: "u1", email: "test@example.com", name: "Test" },
+    logout: vi.fn(),
+    getAccessToken: vi.fn().mockResolvedValue("test-token"),
+    requireAccessToken: vi.fn().mockResolvedValue("test-token"),
+  }),
+}));
+
 import Pricing from "./Pricing";
 
 describe("Pricing", () => {

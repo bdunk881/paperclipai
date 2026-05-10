@@ -13,6 +13,8 @@ import {
   resolveTier,
   Subscription,
 } from "./subscriptionStore";
+import { billingRepository, effectiveEntitlementPlan } from "./billingRepository";
+import { entitlementStore } from "./entitlements";
 
 const router = Router();
 
@@ -160,6 +162,74 @@ function getSubscriptionIdFromInvoice(invoice: Stripe.Invoice): string | undefin
   return typeof sub === "string" ? sub : sub?.id;
 }
 
+function getSubscriptionItem(stripeSub: Stripe.Subscription): Stripe.SubscriptionItem | undefined {
+  return stripeSub.items.data[0];
+}
+
+function getCurrentPeriodStart(stripeSub: Stripe.Subscription): string {
+  const periodStart = getSubscriptionItem(stripeSub)?.current_period_start;
+  return new Date(periodStart ? periodStart * 1000 : Date.now()).toISOString();
+}
+
+function getCurrentPeriodEnd(stripeSub: Stripe.Subscription): string {
+  const periodEnd = getSubscriptionItem(stripeSub)?.current_period_end;
+  return new Date(periodEnd ? periodEnd * 1000 : Date.now()).toISOString();
+}
+
+function getStripeCustomerId(value: Stripe.Subscription["customer"] | Stripe.Checkout.Session["customer"]): string {
+  return typeof value === "string" ? value : value?.id ?? "";
+}
+
+async function syncSubscriptionEntitlements(sub: Subscription): Promise<void> {
+  if (!sub.workspaceId) {
+    return;
+  }
+
+  const entitlementPlan = effectiveEntitlementPlan(sub.tier, sub.status);
+  entitlementStore.upsert(sub.workspaceId, entitlementPlan);
+  await billingRepository.upsertSubscriptionAndEntitlements({
+    workspaceId: sub.workspaceId,
+    userId: sub.userId,
+    stripeSubscriptionId: sub.stripeSubscriptionId,
+    stripeCustomerId: sub.stripeCustomerId,
+    plan: sub.tier,
+    status: sub.status,
+    currentPeriodEnd: sub.currentPeriodEnd,
+  });
+}
+
+function buildSubscriptionRecord(params: {
+  existing?: Subscription;
+  stripeSub: Stripe.Subscription;
+  stripeSubscriptionId?: string;
+  metadata: Record<string, string>;
+  email?: string;
+  workspaceId?: string;
+  userId?: string;
+  tier?: ReturnType<typeof resolveTier>;
+}): Subscription {
+  const now = new Date().toISOString();
+  const priceId = getSubscriptionItem(params.stripeSub)?.price?.id;
+  const tier = params.tier ?? resolveTier(params.metadata, priceId);
+  return {
+    id: params.existing?.id ?? randomUUID(),
+    workspaceId: params.workspaceId ?? params.metadata.workspaceId ?? params.existing?.workspaceId,
+    stripeSubscriptionId: params.stripeSubscriptionId ?? params.stripeSub.id,
+    stripeCustomerId: getStripeCustomerId(params.stripeSub.customer),
+    userId: params.userId ?? params.metadata.userId ?? params.existing?.userId ?? "",
+    email: params.email ?? params.metadata.email ?? params.existing?.email ?? "",
+    tier,
+    accessLevel: mapStripeStatusToAccess(params.stripeSub.status, params.stripeSub.cancel_at_period_end),
+    status: params.stripeSub.status,
+    currentPeriodStart: getCurrentPeriodStart(params.stripeSub),
+    currentPeriodEnd: getCurrentPeriodEnd(params.stripeSub),
+    cancelAtPeriodEnd: params.stripeSub.cancel_at_period_end,
+    trialEnd: params.stripeSub.trial_end ? new Date(params.stripeSub.trial_end * 1000).toISOString() : null,
+    createdAt: params.existing?.createdAt ?? now,
+    updatedAt: now,
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Event handlers
 // ---------------------------------------------------------------------------
@@ -174,6 +244,10 @@ async function handleCheckoutSessionCompleted(session: Stripe.Checkout.Session):
   const meta = (session.metadata ?? {}) as Record<string, string>;
   const email = meta.email ?? session.customer_details?.email ?? session.customer_email ?? "";
   const userId = meta.userId ?? "";
+  // Leave undefined (not "") so downstream nullish-coalescing falls through
+  // to the next workspace resolver instead of writing a record with the empty
+  // string as workspace_id.
+  const workspaceId = meta.workspaceId || undefined;
   const stripeSubId = typeof session.subscription === "string"
     ? session.subscription
     : session.subscription?.id ?? "";
@@ -186,30 +260,23 @@ async function handleCheckoutSessionCompleted(session: Stripe.Checkout.Session):
   // Fetch the full subscription to get period details
   const stripe = getStripe();
   const stripeSub = await stripe.subscriptions.retrieve(stripeSubId);
-  const priceId = stripeSub.items.data[0]?.price?.id;
+  const priceId = getSubscriptionItem(stripeSub)?.price?.id;
   const tier = resolveTier(meta, priceId);
 
   const existing = subscriptionStore.getByStripeSubscriptionId(stripeSubId);
-  const now = new Date().toISOString();
-
-  const sub: Subscription = {
-    id: existing?.id ?? randomUUID(),
+  const sub = buildSubscriptionRecord({
+    existing,
+    stripeSub,
     stripeSubscriptionId: stripeSubId,
-    stripeCustomerId: typeof session.customer === "string" ? session.customer : session.customer?.id ?? "",
-    userId,
+    metadata: meta,
     email,
+    userId,
+    workspaceId,
     tier,
-    accessLevel: mapStripeStatusToAccess(stripeSub.status, stripeSub.cancel_at_period_end),
-    status: stripeSub.status,
-    currentPeriodStart: new Date(stripeSub.items.data[0]?.current_period_start ? stripeSub.items.data[0].current_period_start * 1000 : Date.now()).toISOString(),
-    currentPeriodEnd: new Date(stripeSub.items.data[0]?.current_period_end ? stripeSub.items.data[0].current_period_end * 1000 : Date.now()).toISOString(),
-    cancelAtPeriodEnd: stripeSub.cancel_at_period_end,
-    trialEnd: stripeSub.trial_end ? new Date(stripeSub.trial_end * 1000).toISOString() : null,
-    createdAt: existing?.createdAt ?? now,
-    updatedAt: now,
-  };
+  });
 
   subscriptionStore.upsert(sub);
+  await syncSubscriptionEntitlements(sub);
   console.log(`[stripe/webhook] checkout.session.completed — provisioned ${tier} subscription for ${email}`);
 
   if ((tier === "automate" || tier === "scale") && email) {
@@ -229,39 +296,27 @@ async function handleSubscriptionCreated(stripeSub: Stripe.Subscription): Promis
   const existing = subscriptionStore.getByStripeSubscriptionId(stripeSub.id);
   if (existing) {
     // Already provisioned via checkout.session.completed
-    subscriptionStore.update(existing.id, {
+    const updated = subscriptionStore.update(existing.id, {
+      workspaceId: existing.workspaceId ?? stripeSub.metadata?.workspaceId,
       status: stripeSub.status,
       accessLevel: mapStripeStatusToAccess(stripeSub.status, stripeSub.cancel_at_period_end),
       cancelAtPeriodEnd: stripeSub.cancel_at_period_end,
+      currentPeriodStart: getCurrentPeriodStart(stripeSub),
+      currentPeriodEnd: getCurrentPeriodEnd(stripeSub),
     });
+    if (updated) {
+      await syncSubscriptionEntitlements(updated);
+    }
     console.log(`[stripe/webhook] subscription.created — updated existing record for ${stripeSub.id}`);
     return;
   }
 
-  const customerId = typeof stripeSub.customer === "string" ? stripeSub.customer : stripeSub.customer?.id ?? "";
-  const priceId = stripeSub.items.data[0]?.price?.id;
   const meta = (stripeSub.metadata ?? {}) as Record<string, string>;
-  const tier = resolveTier(meta, priceId);
-  const now = new Date().toISOString();
-
-  const sub: Subscription = {
-    id: randomUUID(),
-    stripeSubscriptionId: stripeSub.id,
-    stripeCustomerId: customerId,
-    userId: meta.userId ?? "",
-    email: meta.email ?? "",
-    tier,
-    accessLevel: mapStripeStatusToAccess(stripeSub.status, stripeSub.cancel_at_period_end),
-    status: stripeSub.status,
-    currentPeriodStart: new Date(stripeSub.items.data[0]?.current_period_start ? stripeSub.items.data[0].current_period_start * 1000 : Date.now()).toISOString(),
-    currentPeriodEnd: new Date(stripeSub.items.data[0]?.current_period_end ? stripeSub.items.data[0].current_period_end * 1000 : Date.now()).toISOString(),
-    cancelAtPeriodEnd: stripeSub.cancel_at_period_end,
-    trialEnd: stripeSub.trial_end ? new Date(stripeSub.trial_end * 1000).toISOString() : null,
-    createdAt: now,
-    updatedAt: now,
-  };
+  const tier = resolveTier(meta, getSubscriptionItem(stripeSub)?.price?.id);
+  const sub = buildSubscriptionRecord({ stripeSub, metadata: meta, tier });
 
   subscriptionStore.upsert(sub);
+  await syncSubscriptionEntitlements(sub);
   console.log(`[stripe/webhook] subscription.created — recorded new ${tier} subscription ${stripeSub.id}`);
 }
 
@@ -272,22 +327,28 @@ async function handleInvoicePaid(invoice: Stripe.Invoice): Promise<void> {
   const stripeSubId = getSubscriptionIdFromInvoice(invoice);
   if (!stripeSubId) return;
 
-  const sub = subscriptionStore.getByStripeSubscriptionId(stripeSubId);
-  if (!sub) {
-    console.warn(`[stripe/webhook] invoice.paid — no subscription found for ${stripeSubId}`);
-    return;
-  }
-
   // Fetch updated subscription to get new period dates
   const stripe = getStripe();
   const stripeSub = await stripe.subscriptions.retrieve(stripeSubId);
+  const sub = subscriptionStore.getByStripeSubscriptionId(stripeSubId);
+  if (!sub) {
+    const metadata = (stripeSub.metadata ?? {}) as Record<string, string>;
+    const created = buildSubscriptionRecord({ stripeSub, metadata });
+    subscriptionStore.upsert(created);
+    await syncSubscriptionEntitlements(created);
+    console.warn(`[stripe/webhook] invoice.paid — created missing subscription cache for ${stripeSubId}`);
+    return;
+  }
 
-  subscriptionStore.update(sub.id, {
+  const updated = subscriptionStore.update(sub.id, {
     status: stripeSub.status,
     accessLevel: mapStripeStatusToAccess(stripeSub.status, stripeSub.cancel_at_period_end),
-    currentPeriodStart: new Date(stripeSub.items.data[0]?.current_period_start ? stripeSub.items.data[0].current_period_start * 1000 : Date.now()).toISOString(),
-    currentPeriodEnd: new Date(stripeSub.items.data[0]?.current_period_end ? stripeSub.items.data[0].current_period_end * 1000 : Date.now()).toISOString(),
+    currentPeriodStart: getCurrentPeriodStart(stripeSub),
+    currentPeriodEnd: getCurrentPeriodEnd(stripeSub),
   });
+  if (updated) {
+    await syncSubscriptionEntitlements(updated);
+  }
 
   console.log(`[stripe/webhook] invoice.paid — access extended for subscription ${stripeSubId}`);
 }
@@ -299,16 +360,22 @@ async function handleInvoicePaymentFailed(invoice: Stripe.Invoice): Promise<void
   const stripeSubId = getSubscriptionIdFromInvoice(invoice);
   if (!stripeSubId) return;
 
-  const sub = subscriptionStore.getByStripeSubscriptionId(stripeSubId);
+  let sub = subscriptionStore.getByStripeSubscriptionId(stripeSubId);
   if (!sub) {
-    console.warn(`[stripe/webhook] invoice.payment_failed — no subscription found for ${stripeSubId}`);
-    return;
+    const stripe = getStripe();
+    const stripeSub = await stripe.subscriptions.retrieve(stripeSubId);
+    const metadata = (stripeSub.metadata ?? {}) as Record<string, string>;
+    sub = subscriptionStore.upsert(buildSubscriptionRecord({ stripeSub, metadata }));
+    console.warn(`[stripe/webhook] invoice.payment_failed — created missing subscription cache for ${stripeSubId}`);
   }
 
-  subscriptionStore.update(sub.id, {
+  const updated = subscriptionStore.update(sub.id, {
     status: "past_due",
     accessLevel: "past_due",
   });
+  if (updated) {
+    await syncSubscriptionEntitlements(updated);
+  }
 
   console.log(`[stripe/webhook] invoice.payment_failed — flagged subscription ${stripeSubId} as past_due (attempt ${invoice.attempt_count})`);
   // TODO: Trigger dunning email flow via email provider
@@ -332,17 +399,21 @@ async function handleTrialWillEnd(stripeSub: Stripe.Subscription): Promise<void>
  * subscription.deleted — revoke access.
  */
 async function handleSubscriptionDeleted(stripeSub: Stripe.Subscription): Promise<void> {
-  const sub = subscriptionStore.getByStripeSubscriptionId(stripeSub.id);
+  let sub = subscriptionStore.getByStripeSubscriptionId(stripeSub.id);
   if (!sub) {
-    console.warn(`[stripe/webhook] subscription.deleted — no subscription found for ${stripeSub.id}`);
-    return;
+    const metadata = (stripeSub.metadata ?? {}) as Record<string, string>;
+    sub = subscriptionStore.upsert(buildSubscriptionRecord({ stripeSub, metadata }));
+    console.warn(`[stripe/webhook] subscription.deleted — created missing subscription cache for ${stripeSub.id}`);
   }
 
-  subscriptionStore.update(sub.id, {
+  const updated = subscriptionStore.update(sub.id, {
     status: "canceled",
     accessLevel: "cancelled",
     cancelAtPeriodEnd: false,
   });
+  if (updated) {
+    await syncSubscriptionEntitlements(updated);
+  }
 
   console.log(`[stripe/webhook] subscription.deleted — access revoked for ${sub.email} (subscription ${stripeSub.id})`);
 }

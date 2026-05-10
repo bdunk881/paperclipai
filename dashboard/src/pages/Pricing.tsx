@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Check, Zap, Sparkles } from "lucide-react";
+import { useAuth } from "../context/AuthContext";
 
 const TIERS = [
   {
@@ -100,7 +101,7 @@ function redirectTo(path: string): void {
   window.dispatchEvent(new PopStateEvent("popstate"));
 }
 
-async function startCheckout(tierId: string): Promise<void> {
+async function startCheckout(tierId: string, getAccessToken: () => Promise<string | null>): Promise<void> {
   if (tierId === "explore") {
     redirectTo("/signup");
     return;
@@ -110,9 +111,17 @@ async function startCheckout(tierId: string): Promise<void> {
     throw new Error("Unsupported pricing tier");
   }
 
+  // /api/billing/checkout is requireAuth-mounted upstream (HEL-17 hardening).
+  // Forward the user's access token; without it the request 401s.
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  const token = await getAccessToken();
+  if (token) {
+    headers["Authorization"] = `Bearer ${token}`;
+  }
+
   const res = await fetch("/api/billing/checkout", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers,
     body: JSON.stringify({ tier: tierId }),
   });
   const data = (await res.json().catch(() => null)) as { url?: string; error?: string } | null;
@@ -129,12 +138,13 @@ async function startCheckout(tierId: string): Promise<void> {
 export default function Pricing() {
   const [loading, setLoading] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const { getAccessToken } = useAuth();
 
   async function handleCta(tierId: string) {
     setLoading(tierId);
     setError(null);
     try {
-      await startCheckout(tierId);
+      await startCheckout(tierId, getAccessToken);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Something went wrong");
     } finally {

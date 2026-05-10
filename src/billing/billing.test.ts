@@ -38,6 +38,7 @@ import app from "../app";
 import { subscriptionStore } from "./subscriptionStore";
 import { mapStripeStatusToAccess, resolveTier } from "./subscriptionStore";
 import { getStripe } from "./stripeClient";
+import { entitlementStore } from "./entitlements";
 
 function asAuth(userId: string) {
   return { Authorization: `Bearer ${userId}` };
@@ -83,6 +84,7 @@ beforeEach(() => {
   stripeMock = makeStripeMock();
   (getStripe as jest.Mock).mockReturnValue(stripeMock);
   subscriptionStore.clear();
+  entitlementStore.clear();
   process.env.STRIPE_WEBHOOK_SECRET = "whsec_test";
 });
 
@@ -249,29 +251,13 @@ describe("resolveTier", () => {
 // ---------------------------------------------------------------------------
 
 describe("POST /api/billing/checkout", () => {
-  it("allows unauthenticated checkout creation for paid tiers", async () => {
-    stripeMock.checkout.sessions.create.mockResolvedValue({
-      url: "https://checkout.stripe.test/session_public_123",
-    });
-
+  it("rejects unauthenticated checkout creation", async () => {
+    // Hardened in HEL-17 review: the route is now requireAuth-mounted so a
+    // caller who knew a victim's workspace UUID can't overwrite that tenant's
+    // entitlement row via the webhook by pointing checkout at it.
     const res = await request(app).post("/api/billing/checkout").send({ tier: "flow" });
-
-    expect(res.status).toBe(200);
-    expect(res.body).toEqual({ url: "https://checkout.stripe.test/session_public_123" });
-    expect(stripeMock.checkout.sessions.create).toHaveBeenCalledWith(
-      expect.objectContaining({
-        metadata: expect.objectContaining({
-          tier: "flow",
-        }),
-      })
-    );
-    expect(stripeMock.checkout.sessions.create).toHaveBeenCalledWith(
-      expect.not.objectContaining({
-        metadata: expect.objectContaining({
-          userId: expect.any(String),
-        }),
-      })
-    );
+    expect(res.status).toBe(401);
+    expect(stripeMock.checkout.sessions.create).not.toHaveBeenCalled();
   });
 
   it("rejects missing tier", async () => {
@@ -291,12 +277,18 @@ describe("POST /api/billing/checkout", () => {
       url: "https://checkout.stripe.test/session_123",
     });
 
+    // Body workspaceId is intentionally ignored by the route now (HEL-17
+    // security fix — see checkoutRoutes.ts comment). The test asserts that
+    // only the JWT-derived userId reaches Stripe metadata; workspaceId
+    // would have to come from req.auth.workspaceId, which the test's
+    // requireAuth mock doesn't set.
     const res = await request(app).post("/api/billing/checkout").set(asAuth("user-123")).send({
       tier: "flow",
       email: "buyer@example.com",
       firstName: "Ada",
       companyName: "AutoFlow",
       userId: "user-123",
+      workspaceId: "11111111-1111-1111-1111-111111111111",
     });
 
     expect(res.status).toBe(200);
@@ -306,7 +298,12 @@ describe("POST /api/billing/checkout", () => {
         mode: "subscription",
         customer_email: "buyer@example.com",
         line_items: [{ price: "price_flow_test", quantity: 1 }],
-        subscription_data: { trial_period_days: 14 },
+        subscription_data: {
+          trial_period_days: 14,
+          metadata: expect.objectContaining({
+            tier: "flow",
+          }),
+        },
         metadata: {
           tier: "flow",
           email: "buyer@example.com",
@@ -314,6 +311,14 @@ describe("POST /api/billing/checkout", () => {
           companyName: "AutoFlow",
           userId: "user-123",
         },
+      })
+    );
+    // Body-supplied workspaceId never reaches Stripe metadata.
+    expect(stripeMock.checkout.sessions.create).not.toHaveBeenCalledWith(
+      expect.objectContaining({
+        metadata: expect.objectContaining({
+          workspaceId: expect.any(String),
+        }),
       })
     );
   });
@@ -485,7 +490,12 @@ describe("POST /api/webhooks/stripe", () => {
       data: {
         object: {
           mode: "subscription",
-          metadata: { tier: "automate", userId: "webhook-user", email: "webhook@example.com" },
+          metadata: {
+            tier: "automate",
+            userId: "webhook-user",
+            email: "webhook@example.com",
+            workspaceId: "22222222-2222-2222-2222-222222222222",
+          },
           customer: "cus_webhook",
           subscription: "sub_webhook_1",
         },
@@ -504,6 +514,7 @@ describe("POST /api/webhooks/stripe", () => {
           },
         ],
       },
+      customer: "cus_webhook",
     });
 
     const res = await request(app)
@@ -516,8 +527,10 @@ describe("POST /api/webhooks/stripe", () => {
     expect(res.status).toBe(200);
     expect(res.body).toEqual({ received: true });
     expect(sub?.userId).toBe("webhook-user");
+    expect(sub?.workspaceId).toBe("22222222-2222-2222-2222-222222222222");
     expect(sub?.tier).toBe("automate");
     expect(sub?.accessLevel).toBe("active");
+    expect(entitlementStore.get("22222222-2222-2222-2222-222222222222")?.byokAllowed).toBe(true);
   });
 
   it("handles invoice.paid and refreshes period dates", async () => {

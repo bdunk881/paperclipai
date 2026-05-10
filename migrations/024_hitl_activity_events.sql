@@ -128,6 +128,10 @@ WHERE ticket_assignments.ticket_id = tickets.id
   AND ticket_assignments.actor_type = 'agent'
   AND ticket_assignments.role = 'primary'
   AND ticket_assignments.actor_id ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+  -- Guard against historical assignments that point at an agent row that no
+  -- longer exists. Without this the new FK to agents(id) would cause the
+  -- whole migration transaction to abort.
+  AND EXISTS (SELECT 1 FROM agents WHERE agents.id = ticket_assignments.actor_id::uuid)
   AND tickets.assigned_agent_id IS NULL;
 
 UPDATE tickets

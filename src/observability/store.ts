@@ -93,8 +93,14 @@ function eventMatchesQuery(event: ObservabilityEvent, query: ObservabilityEventQ
   if (event.userId !== query.userId) {
     return false;
   }
-  if (query.workspaceId && event.workspaceId && event.workspaceId !== query.workspaceId) {
-    return false;
+  if (query.workspaceId) {
+    // Strict workspace scoping: events without a resolved workspaceId
+    // (inference miss) MUST NOT leak into another workspace's feed. Until
+    // HEL-66 closes the inference gap, drop unscoped events from
+    // workspace-scoped queries.
+    if (!event.workspaceId || event.workspaceId !== query.workspaceId) {
+      return false;
+    }
   }
   const cursor = parseCursor(query.after);
   if (cursor && compareCursor(event.sequence, event.id, cursor) <= 0) {

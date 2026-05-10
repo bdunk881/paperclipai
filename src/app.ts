@@ -438,7 +438,7 @@ app.use("/api/integrations/intercom", intercomRoutes);
 app.use("/api/integrations/agent-catalog", agentCatalogRoutes);
 app.use("/api/connectors/google-workspace", googleWorkspaceConnectorRoutes);
 app.use("/api/workspaces", requireAuth, workspaceRoutes);
-app.use("/api/missions", requireAuth, workspaceResolver, missionRoutes);
+app.use("/api/missions", requireAuth, workspaceResolver, llmEndpointRateLimiter, missionRoutes);
 app.use("/api/companies", requireAuth, workspaceResolver, companyRoutes);
 app.use("/api/control-plane", requireAuth, workspaceResolver, controlPlaneRoutes);
 app.use("/api/hitl", requireAuth, hitlRoutes);

@@ -491,6 +491,54 @@ describe("sql migrations", () => {
     });
   });
 
+  describe("migration 031 agent_assignments + org_edges (HEL-14)", () => {
+    const migration = readFileSync(
+      path.resolve(__dirname, "..", "..", "migrations", "031_agent_assignments_org_edges.sql"),
+      "utf8"
+    );
+
+    it("adds company_id FK on agents (nullable, ON DELETE SET NULL)", () => {
+      expect(migration).toContain(
+        "ADD COLUMN IF NOT EXISTS company_id uuid REFERENCES companies(id) ON DELETE SET NULL"
+      );
+    });
+
+    it("creates agent_assignments with UNIQUE (agent_id, routine_id)", () => {
+      expect(migration).toContain("CREATE TABLE IF NOT EXISTS agent_assignments");
+      expect(migration).toContain("UNIQUE (agent_id, routine_id)");
+    });
+
+    it("creates org_edges with no-self-loop CHECK + manager+agent UNIQUE", () => {
+      expect(migration).toContain("CREATE TABLE IF NOT EXISTS org_edges");
+      expect(migration).toContain("UNIQUE (manager_agent_id, agent_id)");
+      expect(migration).toContain(
+        "CONSTRAINT org_edges_no_self_loop CHECK (manager_agent_id <> agent_id)"
+      );
+    });
+
+    it("installs the cycle-prevention BEFORE INSERT/UPDATE trigger", () => {
+      expect(migration).toContain("CREATE OR REPLACE FUNCTION org_edges_assert_no_cycle");
+      expect(migration).toContain("RAISE EXCEPTION 'org_edges cycle detected");
+      expect(migration).toContain(
+        "CREATE TRIGGER org_edges_no_cycle\n  BEFORE INSERT OR UPDATE ON org_edges"
+      );
+    });
+
+    it.each(["agent_assignments", "org_edges"])(
+      "ENABLE + FORCE row level security on %s with tenant isolation policy",
+      (table) => {
+        expect(migration).toContain(`ALTER TABLE ${table} ENABLE ROW LEVEL SECURITY`);
+        expect(migration).toContain(`ALTER TABLE ${table} FORCE ROW LEVEL SECURITY`);
+        expect(migration).toContain(`CREATE POLICY ${table}_tenant_isolation`);
+      }
+    );
+
+    it("wraps schema changes in a single transaction", () => {
+      expect(migration).toContain("BEGIN;");
+      expect(migration.trim().endsWith("COMMIT;")).toBe(true);
+    });
+  });
+
   describe("migration 030 lookup_team_workspace_id (HEL-66)", () => {
     const migration = readFileSync(
       path.resolve(__dirname, "..", "..", "migrations", "030_lookup_team_workspace_id.sql"),

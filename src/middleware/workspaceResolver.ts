@@ -2,7 +2,27 @@ import { Request, Response, NextFunction } from "express";
 import { Pool } from "pg";
 import { AuthenticatedRequest } from "../auth/authMiddleware";
 
-export type WorkspaceRole = "owner" | "admin" | "member";
+/**
+ * Canonical workspace role set (HEL-19, migration 026).
+ *
+ * - `owner`     — full access; billing; delete workspace. Implicit superuser
+ *                 in `requireRole()` checks (always passes).
+ * - `admin`     — full operational access EXCEPT billing + delete.
+ * - `billing`   — `/api/billing/*` only.
+ * - `operator`  — runs / approvals / cost views.
+ * - `developer` — workflows / connectors / LLM credentials.
+ * - `approver`  — resolves approvals (HITL specialists).
+ * - `member`    — transitional / least-privileged. Pre-canonical rows from
+ *                 the legacy `{owner, admin, member}` enum land here.
+ */
+export type WorkspaceRole =
+  | "owner"
+  | "admin"
+  | "billing"
+  | "operator"
+  | "developer"
+  | "approver"
+  | "member";
 
 /**
  * The chokepoint type every authenticated handler should depend on (HEL-18).

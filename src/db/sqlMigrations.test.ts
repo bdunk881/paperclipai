@@ -490,4 +490,36 @@ describe("sql migrations", () => {
       expect(migration.trim().endsWith("COMMIT;")).toBe(true);
     });
   });
+
+  describe("migration 026 workspace_member_roles (HEL-19)", () => {
+    const migration = readFileSync(
+      path.resolve(__dirname, "..", "..", "migrations", "026_workspace_member_roles.sql"),
+      "utf8"
+    );
+
+    it("expands workspace_members.role to the canonical six roles plus member", () => {
+      expect(migration).toContain(
+        "CHECK (role IN ('owner', 'admin', 'billing', 'operator', 'developer', 'approver', 'member'))"
+      );
+    });
+
+    it("drops both the legacy and the new constraint name idempotently before re-adding", () => {
+      expect(migration).toContain("conname = 'workspace_members_role_check'");
+      expect(migration).toContain("conname = 'workspace_members_role_canonical_check'");
+      expect(migration).toContain("DROP CONSTRAINT workspace_members_role_check");
+      expect(migration).toContain("DROP CONSTRAINT workspace_members_role_canonical_check");
+    });
+
+    it("adds an index supporting workspace+role lookups", () => {
+      expect(migration).toContain(
+        "CREATE INDEX IF NOT EXISTS idx_workspace_members_workspace_role"
+      );
+      expect(migration).toContain("ON workspace_members (workspace_id, role)");
+    });
+
+    it("wraps schema changes in a single transaction", () => {
+      expect(migration).toContain("BEGIN;");
+      expect(migration.trim().endsWith("COMMIT;")).toBe(true);
+    });
+  });
 });

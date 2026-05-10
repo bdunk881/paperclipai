@@ -491,6 +491,43 @@ describe("sql migrations", () => {
     });
   });
 
+  describe("migration 027 RLS audit close gaps (HEL-20)", () => {
+    const migration = readFileSync(
+      path.resolve(__dirname, "..", "..", "migrations", "027_rls_audit_close_gaps.sql"),
+      "utf8"
+    );
+
+    it.each(["workflows", "workflow_versions", "routines", "runs", "step_results"])(
+      "FORCEs row level security on %s (closes the table-owner-bypass gap)",
+      (table) => {
+        // Tolerate any whitespace between table name and FORCE so the
+        // visually-aligned migration source isn't brittle on column count.
+        const pattern = new RegExp(`ALTER TABLE ${table}\\s+FORCE ROW LEVEL SECURITY;`);
+        expect(migration).toMatch(pattern);
+      }
+    );
+
+    it("adds workspace-scoped tenant isolation on approvals (joins through runs)", () => {
+      expect(migration).toContain(
+        "DROP POLICY IF EXISTS approvals_workspace_tenant_isolation ON approvals"
+      );
+      expect(migration).toContain("CREATE POLICY approvals_workspace_tenant_isolation");
+      expect(migration).toContain("FROM runs");
+      expect(migration).toContain("runs.id = approvals.run_id");
+      expect(migration).toContain("runs.workspace_id = app_current_workspace_id()");
+    });
+
+    it("uses both USING and WITH CHECK on the new approvals policy (read + write gated)", () => {
+      const policy = /CREATE POLICY approvals_workspace_tenant_isolation[\s\S]*?USING \([\s\S]*?\)[\s\S]*?WITH CHECK \([\s\S]*?\);/m;
+      expect(migration).toMatch(policy);
+    });
+
+    it("wraps schema changes in a single transaction", () => {
+      expect(migration).toContain("BEGIN;");
+      expect(migration.trim().endsWith("COMMIT;")).toBe(true);
+    });
+  });
+
   describe("migration 026 workspace_member_roles (HEL-19)", () => {
     const migration = readFileSync(
       path.resolve(__dirname, "..", "..", "migrations", "026_workspace_member_roles.sql"),

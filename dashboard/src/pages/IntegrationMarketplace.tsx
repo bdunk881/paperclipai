@@ -17,6 +17,7 @@ import { getConfiguredApiOrigin } from "../api/baseUrl";
 import { readStoredAuthUser } from "../auth/authStorage";
 import { useAuth } from "../context/AuthContext";
 import { LIVE_CONNECTOR_PROVIDER_BY_KEY, type ProviderKey } from "../integrations/liveConnectorCatalog";
+import { runConnectAction } from "./integrationMarketplaceConnect";
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
@@ -438,50 +439,18 @@ export default function IntegrationMarketplace() {
   );
 
   async function handleConnectAction(integration: Integration) {
-    const providerKey = providerKeyForIntegration(integration.id);
-    if ((integration.premium && !integration.connected) || !providerKey) {
-      return;
-    }
-
-    const provider = LIVE_CONNECTOR_PROVIDER_BY_KEY[providerKey];
-    setBusyIntegrationId(integration.id);
-    setConnectionError(null);
-
-    try {
-      if (integration.connected) {
-        await authorizedFetch(`/api/integrations/${providerKey}/disconnect`, {
-          method: "DELETE",
-        });
-        await loadStatuses();
-        return;
-      }
-
-      if (provider.supportsOAuth) {
-        const response = await authorizedFetch(`/api/integrations/${providerKey}/connect`, {
-          method: "POST",
-        });
-        const payload = (await response.json()) as { authUrl?: string; redirectUrl?: string };
-        const redirectUrl = payload.redirectUrl ?? payload.authUrl;
-        if (!redirectUrl) {
-          throw new Error(`No OAuth redirect URL returned for ${integration.name}`);
-        }
-        window.location.assign(redirectUrl);
-        return;
-      }
-
-      if (provider.supportsApiKey) {
-        window.location.assign("/integrations");
-        return;
-      }
-
-      throw new Error(`${integration.name} does not support a live connection flow yet`);
-    } catch (error) {
-      setConnectionError(
-        error instanceof Error ? error.message : `Failed to update ${integration.name} connection`
-      );
-    } finally {
-      setBusyIntegrationId(null);
-    }
+    // Body extracted to runConnectAction (HEL-57) — see
+    // ./integrationMarketplaceConnect.ts for the pure-helper version that
+    // unit-tests cover branch-by-branch.
+    await runConnectAction(integration, {
+      authorizedFetch,
+      loadStatuses,
+      providerKeyFor: providerKeyForIntegration,
+      providerCatalog: LIVE_CONNECTOR_PROVIDER_BY_KEY,
+      redirect: (url) => window.location.assign(url),
+      setBusyIntegrationId,
+      setConnectionError,
+    });
   }
 
   return (

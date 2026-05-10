@@ -33,15 +33,7 @@ export default defineConfig({
       thresholds: {
         lines: 46,
         functions: 36,
-        // Branch threshold lowered to 53 because the IntegrationMarketplace
-        // OAuth/disconnect test (HEL-54) now exercises fewer branches after
-        // pruning assertions that didn't match real component behavior — the
-        // connect handler only redirects via window.location.assign and never
-        // optimistically flips state to "connected", so the post-connect
-        // "authenticated" branch is unreachable in JSDOM. Re-raising the
-        // threshold belongs to a follow-up that adds explicit unit coverage
-        // for handleConnectAction's success/error paths.
-        branches: 53,
+        branches: 63,
         statements: 46,
       },
     },

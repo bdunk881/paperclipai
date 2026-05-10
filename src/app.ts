@@ -90,6 +90,7 @@ import {
   WorkspaceAwareRequest,
 } from "./middleware/workspaceResolver";
 import { createWorkspaceRoutes } from "./workspaces/workspaceRoutes";
+import { createMissionRoutes } from "./missions/missionRoutes";
 import {
   createPortableWorkflowBundle,
   getPortableWorkflowSchemaDescriptor,
@@ -128,6 +129,15 @@ const workspaceRoutes = isPostgresPersistenceEnabled()
       .post("/", (_req, res) => {
         res.status(501).json({ error: "Workspace creation requires PostgreSQL persistence." });
       });
+
+// HEL-24: mission routes (POST /api/missions/:id/generate-plan).
+// Requires Postgres for the mission/hiring_plans persistence; in-memory
+// mode returns 501 for the generate-plan endpoint.
+const missionRoutes = isPostgresPersistenceEnabled()
+  ? createMissionRoutes(getPostgresPool())
+  : express.Router().post("/:missionId/generate-plan", (_req, res) => {
+      res.status(501).json({ error: "Mission planning requires PostgreSQL persistence." });
+    });
 
 function parseAllowedOrigins(value: string | undefined): string[] {
   if (!value) {
@@ -428,6 +438,7 @@ app.use("/api/integrations/intercom", intercomRoutes);
 app.use("/api/integrations/agent-catalog", agentCatalogRoutes);
 app.use("/api/connectors/google-workspace", googleWorkspaceConnectorRoutes);
 app.use("/api/workspaces", requireAuth, workspaceRoutes);
+app.use("/api/missions", requireAuth, workspaceResolver, missionRoutes);
 app.use("/api/companies", requireAuth, workspaceResolver, companyRoutes);
 app.use("/api/control-plane", requireAuth, workspaceResolver, controlPlaneRoutes);
 app.use("/api/hitl", requireAuth, hitlRoutes);

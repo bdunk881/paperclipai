@@ -15,6 +15,7 @@ import {
 } from "./subscriptionStore";
 import { billingRepository, effectiveEntitlementPlan } from "./billingRepository";
 import { entitlementStore } from "./entitlements";
+import { hasNewerEventForResource, recordEventOnce } from "./stripeWebhookEventLog";
 
 const router = Router();
 
@@ -111,6 +112,56 @@ router.post("/", async (req: Request, res: Response) => {
     return;
   }
 
+  // HEL-67: idempotency. Stripe retries failed webhooks, so the same event
+  // can hit us twice. recordEventOnce returns false if another retry already
+  // landed; we acknowledge with 200 and skip the handler.
+  let firstTime: boolean;
+  try {
+    firstTime = await recordEventOnce(
+      event.id,
+      event.type,
+      event.created,
+      resourceIdFor(event),
+    );
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error(`[stripe/webhook] idempotency log write failed for ${event.id}: ${msg}`);
+    // Fail closed — don't run the handler if we couldn't record the event.
+    // Stripe retries; the next attempt will either succeed or hit the
+    // existing row.
+    res.status(500).json({ error: "Idempotency log unavailable" });
+    return;
+  }
+
+  if (!firstTime) {
+    console.log(`[stripe/webhook] duplicate event ${event.id} (${event.type}) — skipping handler`);
+    res.json({ received: true, duplicate: true });
+    return;
+  }
+
+  // HEL-67: ordering guard. If a NEWER event for the same resource has
+  // already been processed, this incoming event is stale and would
+  // overwrite newer state with older state (silent customer downgrade
+  // on out-of-order subscription.updated). Apply only the most recent.
+  const resourceId = resourceIdFor(event);
+  if (resourceId) {
+    try {
+      const stale = await hasNewerEventForResource(event.id, resourceId, event.created);
+      if (stale) {
+        console.log(
+          `[stripe/webhook] stale event ${event.id} (${event.type}) for ${resourceId} — newer event already processed, skipping`,
+        );
+        res.json({ received: true, stale: true });
+        return;
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.warn(`[stripe/webhook] ordering check failed for ${event.id}: ${msg}`);
+      // Don't fail the request — fall through and apply the event. The
+      // dedupe row already landed; on retry we'd hit the duplicate path.
+    }
+  }
+
   try {
     await handleEvent(event);
   } catch (err) {
@@ -122,6 +173,22 @@ router.post("/", async (req: Request, res: Response) => {
 
   res.json({ received: true });
 });
+
+/**
+ * Pulls the primary resource id off a Stripe event payload so the
+ * webhook log can dedupe per-resource for ordering checks.
+ */
+function resourceIdFor(event: Stripe.Event): string | null {
+  const obj = event.data?.object as { id?: unknown; subscription?: unknown } | undefined;
+  // For checkout.session.completed the subscription id is on the inner field.
+  const subscriptionRef = obj?.subscription;
+  if (typeof subscriptionRef === "string") return subscriptionRef;
+  if (subscriptionRef && typeof (subscriptionRef as { id?: unknown }).id === "string") {
+    return (subscriptionRef as { id: string }).id;
+  }
+  if (obj && typeof obj.id === "string") return obj.id;
+  return null;
+}
 
 // ---------------------------------------------------------------------------
 // Event dispatcher

@@ -2248,6 +2248,16 @@ export const controlPlaneStore = {
       auditTrail: [buildAuditEvent("created", input.actor, "Task created with status todo")],
     };
     tasks.set(task.id, task);
+    // HEL-66: snapshot before await — same race fix as checkoutTask /
+    // updateTaskStatus. Less likely to fire here because the caller doesn't
+    // know task.id yet, but defensive consistency keeps the pattern uniform.
+    const snapshotStatus = task.status;
+    const snapshotCreatedAt = task.createdAt;
+    const snapshotTaskMeta = {
+      sourceRunId: task.sourceRunId,
+      sourceWorkflowStepId: task.sourceWorkflowStepId,
+      metadata: task.metadata,
+    };
     const taskCtx = await workspaceContextForTeam(task.teamId, input.userId);
     if (taskCtx) {
       await controlPlaneRepository.upsertTask(taskCtx, task);
@@ -2267,12 +2277,10 @@ export const controlPlaneStore = {
       },
       summary: `Task created: ${task.title}`,
       payload: {
-        status: task.status,
-        sourceRunId: task.sourceRunId,
-        sourceWorkflowStepId: task.sourceWorkflowStepId,
-        metadata: task.metadata,
+        status: snapshotStatus,
+        ...snapshotTaskMeta,
       },
-      occurredAt: task.createdAt,
+      occurredAt: snapshotCreatedAt,
     });
     return task;
   },
@@ -2306,6 +2314,17 @@ export const controlPlaneStore = {
       buildAuditEvent("checked_out", input.actor, `Task checked out by ${input.actor}`)
     );
     tasks.set(task.id, task);
+    // HEL-66: snapshot the fields the observability event reads BEFORE the
+    // await on workspaceContextForTeam. Otherwise a concurrent
+    // updateTaskStatus that lands during the await window would mutate
+    // task.status, and the emitted event would carry the wrong status.
+    const snapshotStatus = task.status;
+    const snapshotUpdatedAt = task.updatedAt;
+    const snapshotTaskMeta = {
+      sourceRunId: task.sourceRunId,
+      sourceWorkflowStepId: task.sourceWorkflowStepId,
+      metadata: task.metadata,
+    };
     const taskCtx = await workspaceContextForTeam(task.teamId, input.userId);
     if (taskCtx) {
       await controlPlaneRepository.upsertTask(taskCtx, task);
@@ -2323,15 +2342,13 @@ export const controlPlaneStore = {
         parentType: "team",
         parentId: task.teamId,
       },
-      summary: `Task moved to ${task.status}`,
+      summary: `Task moved to ${snapshotStatus}`,
       payload: {
         previousStatus: "todo",
-        status: task.status,
-        sourceRunId: task.sourceRunId,
-        sourceWorkflowStepId: task.sourceWorkflowStepId,
-        metadata: task.metadata,
+        status: snapshotStatus,
+        ...snapshotTaskMeta,
       },
-      occurredAt: task.updatedAt,
+      occurredAt: snapshotUpdatedAt,
     });
     return task;
   },
@@ -2354,6 +2371,14 @@ export const controlPlaneStore = {
       buildAuditEvent("status_changed", input.actor, `Task status changed to ${input.status}`)
     );
     tasks.set(task.id, task);
+    // HEL-66: snapshot before await — see checkoutTask for the same race fix.
+    const snapshotStatus = task.status;
+    const snapshotUpdatedAt = task.updatedAt;
+    const snapshotTaskMeta = {
+      sourceRunId: task.sourceRunId,
+      sourceWorkflowStepId: task.sourceWorkflowStepId,
+      metadata: task.metadata,
+    };
     const taskCtx = await workspaceContextForTeam(task.teamId, input.userId);
     if (taskCtx) {
       await controlPlaneRepository.upsertTask(taskCtx, task);
@@ -2371,15 +2396,13 @@ export const controlPlaneStore = {
         parentType: "team",
         parentId: task.teamId,
       },
-      summary: `Task moved to ${task.status}`,
+      summary: `Task moved to ${snapshotStatus}`,
       payload: {
         previousStatus,
-        status: task.status,
-        sourceRunId: task.sourceRunId,
-        sourceWorkflowStepId: task.sourceWorkflowStepId,
-        metadata: task.metadata,
+        status: snapshotStatus,
+        ...snapshotTaskMeta,
       },
-      occurredAt: task.updatedAt,
+      occurredAt: snapshotUpdatedAt,
     });
     return task;
   },

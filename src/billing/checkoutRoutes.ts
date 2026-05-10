@@ -23,18 +23,23 @@ function resolveAppBaseUrl(req: Request): string {
 
 /**
  * POST /api/billing/checkout
- * Body: { tier: "flow"|"automate"|"scale", email?, firstName?, companyName? }
+ * Body: { tier: "flow"|"automate"|"scale", email?, firstName?, companyName?, workspaceId? }
  * Returns: { url: string } — Stripe hosted checkout URL
  */
 router.post("/", async (req: AuthenticatedRequest, res: Response) => {
-  const { tier, email, firstName, companyName, userId } = req.body as {
+  const { tier, email, firstName, companyName } = req.body as {
     tier?: string;
     email?: string;
     firstName?: string;
     companyName?: string;
-    userId?: string;
   };
-  const resolvedUserId = req.auth?.sub ?? (typeof userId === "string" ? userId : undefined);
+  // SECURITY: route is requireAuth-mounted (src/app.ts). Trust ONLY the
+  // JWT-resolved identity for both userId and workspaceId. Body / header
+  // fallbacks would let any caller knowing a victim's workspace UUID overwrite
+  // that tenant's entitlement row at webhook time
+  // (handleCheckoutSessionCompleted writes by workspace_id with ON CONFLICT).
+  const resolvedUserId = req.auth?.sub;
+  const resolvedWorkspaceId = req.auth?.workspaceId;
 
   if (!tier || !(tier in PRICING_TIERS)) {
     res.status(400).json({ error: `Invalid tier. Must be one of: ${Object.keys(PRICING_TIERS).join(", ")}` });
@@ -57,6 +62,15 @@ router.post("/", async (req: AuthenticatedRequest, res: Response) => {
     const stripe = getStripe();
     const appBaseUrl = resolveAppBaseUrl(req);
 
+    const metadata = {
+      tier,
+      ...(email ? { email } : {}),
+      ...(firstName ? { firstName } : {}),
+      ...(companyName ? { companyName } : {}),
+      ...(resolvedUserId ? { userId: resolvedUserId } : {}),
+      ...(resolvedWorkspaceId ? { workspaceId: resolvedWorkspaceId } : {}),
+    };
+
     const sessionParams: Stripe.Checkout.SessionCreateParams = {
       mode: "subscription",
       payment_method_types: ["card"],
@@ -64,20 +78,17 @@ router.post("/", async (req: AuthenticatedRequest, res: Response) => {
       success_url: `${appBaseUrl}/checkout/success?session_id={CHECKOUT_SESSION_ID}`,
       cancel_url: `${appBaseUrl}/pricing`,
       allow_promotion_codes: true,
-      metadata: {
-        tier,
-        ...(email ? { email } : {}),
-        ...(firstName ? { firstName } : {}),
-        ...(companyName ? { companyName } : {}),
-        ...(resolvedUserId ? { userId: resolvedUserId } : {}),
-      },
+      metadata,
     };
 
     // Add trial period for eligible tiers
     if (tierConfig.trialDays > 0) {
       sessionParams.subscription_data = {
         trial_period_days: tierConfig.trialDays,
+        metadata,
       };
+    } else {
+      sessionParams.subscription_data = { metadata };
     }
 
     // Pre-fill email if provided

@@ -1,0 +1,67 @@
+/* AutoFlow v2 design tokens — "Workplace" editorial palette.
+ *
+ * Lifted from docs/design/v2/styles.css per HEL-30. These tokens
+ * power the dashboard's gradual cutover to the v2 design (paper,
+ * ink, terracotta) tracked under HEL-31 (layout) and HEL-32
+ * (per-page migration).
+ *
+ * Usage:
+ *   - Reference via Tailwind classes: bg-af2-paper, text-af2-ink, border-af2-line
+ *     (configured in tailwind.config.js → theme.extend.colors.af2)
+ *   - Reference via raw CSS: var(--af2-paper)
+ *   - Toggle dark variant by adding data-af2-theme="dark" to <html> or any container
+ *     (Tailwind's existing html.dark switch is independent and stays for the
+ *     legacy Electric Lab surfaces — both can coexist during the cutover.)
+ *
+ * Don't use these on legacy pages — they have their own brand-* / surface-*
+ * tokens. Only adopt af2-* when migrating a page to v2 visual language.
+ */
+
+:root {
+  /* Paper & ink */
+  --af2-paper: #f6f1e7;
+  --af2-paper-2: #ede5d3;
+  --af2-paper-3: #e3d9c2;
+  --af2-card: #ffffff;
+  --af2-ink: #1a1410;
+  --af2-ink-2: #3a2f25;
+  --af2-ink-3: #6b5a48;
+  --af2-ink-4: #94836e;
+  --af2-line: rgba(26, 20, 16, 0.10);
+  --af2-line-2: rgba(26, 20, 16, 0.18);
+
+  /* Brand accents — earthy, deliberate */
+  --af2-clay: #c2502b;
+  --af2-clay-2: #d96239;
+  --af2-clay-soft: #f0c8b8;
+  --af2-sage: #4a6b4a;
+  --af2-sage-2: #6b8e6b;
+  --af2-mustard: #b8862c;
+  --af2-mustard-2: #d49e3e;
+  --af2-plum: #5d3a5e;
+  --af2-ink-blue: #1f3a52;
+
+  /* Radii + shadows */
+  --af2-radius: 6px;
+  --af2-radius-lg: 12px;
+  --af2-shadow: 0 1px 0 rgba(26, 20, 16, 0.04), 0 6px 20px rgba(26, 20, 16, 0.06);
+  --af2-shadow-lg: 0 1px 0 rgba(26, 20, 16, 0.04), 0 18px 40px rgba(26, 20, 16, 0.10);
+
+  /* Type stacks */
+  --af2-serif: "Fraunces", "Source Serif 4", "Iowan Old Style", Georgia, serif;
+  --af2-sans: "Geist", "Inter", ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --af2-mono: "JetBrains Mono", "SFMono-Regular", ui-monospace, Menlo, monospace;
+}
+
+[data-af2-theme="dark"] {
+  --af2-paper: #15110d;
+  --af2-paper-2: #1d1813;
+  --af2-paper-3: #25201a;
+  --af2-card: #1d1813;
+  --af2-ink: #f6f1e7;
+  --af2-ink-2: #e3d9c2;
+  --af2-ink-3: #b6a78f;
+  --af2-ink-4: #8a7a63;
+  --af2-line: rgba(246, 241, 231, 0.10);
+  --af2-line-2: rgba(246, 241, 231, 0.18);
+}

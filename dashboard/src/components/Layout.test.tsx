@@ -90,7 +90,7 @@ describe("Layout", () => {
     expect(screen.queryByRole("button", { name: /toggle navigation/i })).toBeNull();
   });
 
-  it("marks Mission State as the active primary-nav destination", () => {
+  it("renders the v2 four-pillar IA and marks Missions as active on /mission-state", () => {
     render(
       <MemoryRouter initialEntries={["/mission-state"]}>
         <Routes>
@@ -101,7 +101,14 @@ describe("Layout", () => {
       </MemoryRouter>
     );
 
-    expect(screen.getByText("Core")).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Mission State" })).toHaveAttribute("aria-current", "page");
+    // Four-pillar section headers (HEL-31).
+    expect(screen.getByText("Run")).toBeInTheDocument();
+    expect(screen.getByText("Workforce")).toBeInTheDocument();
+    expect(screen.getByText("Build")).toBeInTheDocument();
+    expect(screen.getByText("Connect")).toBeInTheDocument();
+
+    // The Missions link (route is still /mission-state until HEL-23 lands the
+    // mission-intake UI under its v2-native path) is active.
+    expect(screen.getByRole("link", { name: "Missions" })).toHaveAttribute("aria-current", "page");
   });
 });

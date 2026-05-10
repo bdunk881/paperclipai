@@ -51,6 +51,13 @@ Thumbs.db
 *.swp
 *.swo
 
+# Agent / IDE local state — these tools drop session/cache dirs into
+# whatever cwd they run from. Keep them out of the repo.
+.claude/
+.cursor-*/
+.codex/
+.aider*
+
 # Vitest / Jest
 .vitest-cache/
 jest-coverage/

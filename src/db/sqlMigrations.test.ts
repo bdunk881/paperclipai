@@ -332,4 +332,162 @@ describe("sql migrations", () => {
       expect(migration.trim().endsWith("COMMIT;")).toBe(true);
     });
   });
+
+  describe("migration 022 companies/missions/hiring_plans (HEL-13)", () => {
+    const migration = readFileSync(
+      path.resolve(__dirname, "..", "..", "migrations", "022_companies_missions_hiring_plans.sql"),
+      "utf8"
+    );
+    const seed = readFileSync(
+      path.resolve(__dirname, "..", "..", "test", "fixtures", "hel_13_companies_missions_hiring_plans_seed.sql"),
+      "utf8"
+    );
+
+    it("creates the canonical product-noun tables and fields", () => {
+      expect(migration).toContain("CREATE TABLE IF NOT EXISTS companies");
+      expect(migration).toContain("workspace_id uuid NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE");
+      expect(migration).toContain("ADD COLUMN IF NOT EXISTS description text");
+      expect(migration).toContain("CREATE TABLE IF NOT EXISTS missions");
+      expect(migration).toContain("company_id uuid NOT NULL REFERENCES companies(id) ON DELETE CASCADE");
+      expect(migration).toContain("created_by_user_id text NOT NULL REFERENCES user_profiles(user_id) ON DELETE RESTRICT");
+      expect(migration).toContain("CREATE TABLE IF NOT EXISTS hiring_plans");
+      expect(migration).toContain("mission_id uuid NOT NULL REFERENCES missions(id) ON DELETE CASCADE");
+      expect(migration).toContain("accepted_by_user_id text REFERENCES user_profiles(user_id) ON DELETE SET NULL");
+    });
+
+    it("relaxes legacy company provisioning columns so canonical company rows can be seeded", () => {
+      for (const column of [
+        "user_id",
+        "provisioned_workspace_name",
+        "provisioned_workspace_slug",
+        "team_id",
+        "idempotency_key",
+      ]) {
+        expect(migration).toContain(`AND column_name = '${column}'`);
+        expect(migration).toContain(`ALTER TABLE companies ALTER COLUMN ${column} DROP NOT NULL;`);
+      }
+    });
+
+    it.each(["companies", "missions", "hiring_plans"])(
+      "enables and forces row-level security on %s",
+      (table) => {
+        expect(migration).toContain(`ALTER TABLE ${table} ENABLE ROW LEVEL SECURITY;`);
+        expect(migration).toContain(`ALTER TABLE ${table} FORCE ROW LEVEL SECURITY;`);
+      }
+    );
+
+    it("uses direct workspace RLS for companies and parent-scoped RLS for child tables", () => {
+      const companiesPolicy = /CREATE POLICY companies_tenant_isolation\s+ON companies\s+USING \(\s*app_current_workspace_id\(\) IS NOT NULL\s+AND workspace_id = app_current_workspace_id\(\)\s*\)\s+WITH CHECK \(\s*app_current_workspace_id\(\) IS NOT NULL\s+AND workspace_id = app_current_workspace_id\(\)\s*\);/m;
+      expect(migration).toMatch(companiesPolicy);
+      expect(migration).toContain("CREATE POLICY missions_tenant_isolation");
+      expect(migration).toContain("WHERE companies.id = missions.company_id");
+      expect(migration).toContain("CREATE POLICY hiring_plans_tenant_isolation");
+      expect(migration).toContain("WHERE missions.id = hiring_plans.mission_id");
+    });
+
+    it("ships a reusable sample seed for tests", () => {
+      expect(seed).toContain("SELECT set_config('app.current_workspace_id'");
+      expect(seed).toContain("SELECT set_config('app.current_user_id'");
+      expect(seed).toContain("INSERT INTO companies (id, workspace_id, name, description)");
+      expect(seed).toContain("INSERT INTO missions (id, company_id, statement, status, created_by_user_id)");
+      expect(seed).toContain("INSERT INTO hiring_plans (id, mission_id, draft)");
+      expect(seed).toContain("ON CONFLICT (id) DO NOTHING");
+    });
+
+    it("wraps schema changes in a single transaction", () => {
+      expect(migration).toContain("BEGIN;");
+      expect(migration.trim().endsWith("COMMIT;")).toBe(true);
+    });
+  });
+
+  describe("migration 023 canonical workflow runtime (HEL-15)", () => {
+    const migration = readFileSync(
+      path.resolve(__dirname, "..", "..", "migrations", "023_canonical_workflow_runtime.sql"),
+      "utf8"
+    );
+
+    it("declares canonical workflow runtime tables", () => {
+      for (const table of ["routines", "workflows", "workflow_versions", "runs", "step_results"]) {
+        expect(migration).toContain(`CREATE TABLE IF NOT EXISTS ${table}`);
+      }
+    });
+
+    it("makes runs reference the exact workflow version they executed", () => {
+      expect(migration).toContain("workflow_version_id uuid NOT NULL REFERENCES workflow_versions(id) ON DELETE RESTRICT");
+      expect(migration).toContain("FROM workflow_versions v");
+    });
+
+    it("migrates and removes legacy workflow runtime tables", () => {
+      expect(migration).toContain("workflow_imported_templates -> workflows + workflow_versions");
+      expect(migration).toContain("workflow_runs               -> runs");
+      expect(migration).toContain("workflow_step_results        -> step_results");
+      expect(migration).toContain("DROP TABLE IF EXISTS workflow_queue_jobs");
+      expect(migration).toContain("DROP TABLE IF EXISTS workflow_step_results");
+      expect(migration).toContain("DROP TABLE IF EXISTS workflow_runs");
+      expect(migration).toContain("DROP TABLE IF EXISTS workflow_imported_templates");
+    });
+
+    it("keeps workflow edits reproducible by inserting immutable DAG versions", () => {
+      expect(migration).toContain("dag jsonb NOT NULL");
+      expect(migration).toContain("UNIQUE (workflow_id, version)");
+      expect(migration).toContain("latest_version_id uuid");
+    });
+
+    it("wraps schema changes in a single transaction", () => {
+      expect(migration).toContain("BEGIN;");
+      expect(migration.trim().endsWith("COMMIT;")).toBe(true);
+    });
+  });
+
+  describe("migration 025 canonical remaining entities (HEL-17)", () => {
+    // Renumbered from 022 → 025 during rebase: HEL-13 owns 022, HEL-15 owns
+    // 023, HEL-16 owns 024. HEL-17 stacks on top.
+    const migration = readFileSync(
+      path.resolve(__dirname, "..", "..", "migrations", "025_canonical_remaining_entities.sql"),
+      "utf8"
+    );
+
+    const tables = ["connector_connections", "budgets", "subscriptions", "entitlements"];
+
+    it.each(tables)("declares %s with workspace-scoped tenant ownership", (table) => {
+      const definitionPattern = new RegExp(
+        `CREATE TABLE IF NOT EXISTS ${table} \\([\\s\\S]*?workspace_id uuid (?:PRIMARY KEY )?(?:NOT NULL )?REFERENCES workspaces\\(id\\) ON DELETE CASCADE`,
+        "m"
+      );
+      expect(migration).toMatch(definitionPattern);
+    });
+
+    it.each(tables)("enables and forces row-level security on %s", (table) => {
+      expect(migration).toContain(`ALTER TABLE ${table} ENABLE ROW LEVEL SECURITY;`);
+      expect(migration).toContain(`ALTER TABLE ${table} FORCE ROW LEVEL SECURITY;`);
+    });
+
+    it("adds canonical BYOK columns to llm_credentials without dropping legacy columns", () => {
+      expect(migration).toContain("ADD COLUMN IF NOT EXISTS workspace_id uuid REFERENCES workspaces(id) ON DELETE CASCADE");
+      expect(migration).toContain("ADD COLUMN IF NOT EXISTS key_ref text");
+      expect(migration).toContain("ADD COLUMN IF NOT EXISTS validated_at timestamptz");
+      expect(migration).toContain("ADD COLUMN IF NOT EXISTS status text NOT NULL DEFAULT 'pending'");
+    });
+
+    it("creates indexed O(1) budget gate functions over budgets.used_cents", () => {
+      expect(migration).toContain("CREATE UNIQUE INDEX IF NOT EXISTS uq_budgets_workspace_scope_period");
+      expect(migration).toContain("CREATE OR REPLACE FUNCTION check_budget");
+      expect(migration).toContain("CREATE OR REPLACE FUNCTION reserve_budget_cents");
+      expect(migration).toContain("used_cents + p_delta_cents <= cap_cents");
+    });
+
+    it("adds canonical audit aliases and new privileged mutation categories", () => {
+      expect(migration).toContain("ADD COLUMN IF NOT EXISTS target_kind text");
+      expect(migration).toContain("ADD COLUMN IF NOT EXISTS payload jsonb");
+      expect(migration).toContain("ADD COLUMN IF NOT EXISTS occurred_at timestamptz");
+      expect(migration).toContain("'billing'");
+      expect(migration).toContain("'entitlement'");
+      expect(migration).toContain("'budget'");
+    });
+
+    it("wraps schema changes in a single transaction", () => {
+      expect(migration).toContain("BEGIN;");
+      expect(migration.trim().endsWith("COMMIT;")).toBe(true);
+    });
+  });
 });

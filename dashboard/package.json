@@ -4,7 +4,8 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
+    "dev": "infisical run --env=dev -- vite",
+    "dev:no-secrets": "vite",
     "build": "tsc && vite build",
     "build:swa": "npm run build && node scripts/render-static-webapp-config.mjs",
     "preview": "vite preview",

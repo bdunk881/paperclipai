@@ -204,9 +204,27 @@ jobs:
           node-version: "24"
           cache: npm
           cache-dependency-path: dashboard/package-lock.json
+      - name: Install Infisical CLI
+        # Playwright's webServer directive starts the dashboard via `npm run dev`,
+        # which is wrapped with `infisical run --env=dev -- ...` (HEL-39). Without
+        # the CLI here, the start command exits 127. Install it before npm ci so
+        # the binary is on PATH when Playwright spawns the dev server.
+        run: |
+          curl -1sLf 'https://artifacts-cli.infisical.com/setup.deb.sh' | sudo -E bash
+          sudo apt-get update
+          sudo apt-get install -y infisical
+          infisical --version
       - run: npm ci
       - name: Install Playwright browsers
         run: npx playwright install --with-deps chromium webkit
+      - name: Pull dashboard preview secrets from Infisical
+        uses: Infisical/secrets-action@v1
+        with:
+          method: universal
+          client-id: ${{ secrets.INFISICAL_CLIENT_ID }}
+          client-secret: ${{ secrets.INFISICAL_CLIENT_SECRET }}
+          project-slug: autoflow
+          env-slug: dev
       - name: Run auth regression smoke tests
         run: npm run e2e:auth-regression
         env:
@@ -232,9 +250,25 @@ jobs:
           node-version: "24"
           cache: npm
           cache-dependency-path: dashboard/package-lock.json
+      - name: Install Infisical CLI
+        # Same as auth-regression — npm run dev now wraps with `infisical run`,
+        # so the CLI must be on PATH before Playwright starts the dev server.
+        run: |
+          curl -1sLf 'https://artifacts-cli.infisical.com/setup.deb.sh' | sudo -E bash
+          sudo apt-get update
+          sudo apt-get install -y infisical
+          infisical --version
       - run: npm ci
       - name: Install Playwright browsers
         run: npx playwright install --with-deps chromium webkit
+      - name: Pull dashboard preview secrets from Infisical
+        uses: Infisical/secrets-action@v1
+        with:
+          method: universal
+          client-id: ${{ secrets.INFISICAL_CLIENT_ID }}
+          client-secret: ${{ secrets.INFISICAL_CLIENT_SECRET }}
+          project-slug: autoflow
+          env-slug: dev
       - name: Run E2E tests
         run: npm run e2e
         env:

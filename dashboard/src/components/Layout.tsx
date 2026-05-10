@@ -1,31 +1,23 @@
 import { type ElementType, useMemo, useState } from "react";
 import { Outlet, NavLink, useLocation, useNavigate } from "react-router-dom";
 import {
-  LayoutDashboard,
-  Flag,
-  Workflow,
+  Home,
+  Target,
+  Stamp,
   Activity,
-  History,
-  LogOut,
-  Cpu,
+  Users,
+  UserPlus,
+  Wallet,
+  Wand2,
+  BookOpen,
+  Plug,
+  Sparkles,
   Settings,
-  DollarSign,
-  CheckSquare,
-  Database,
-  PlugZap,
-  ScrollText,
-  Bot,
-  BotMessageSquare,
-  Repeat,
-  Network,
-  BarChart3,
-  BriefcaseBusiness,
-  Ticket,
+  LogOut,
   Menu,
   X,
   Moon,
   Sun,
-  Siren,
 } from "lucide-react";
 import clsx from "clsx";
 import logoLockup from "../assets/logo/lockup.svg";
@@ -33,6 +25,11 @@ import { useAuth } from "../context/AuthContext";
 import { useTheme } from "../hooks/useTheme";
 import { WorkspaceSwitcher } from "./WorkspaceSwitcher";
 
+// v2 four-pillar IA (HEL-31). Labels follow the v2 design (`docs/design/v2/data.jsx`,
+// `docs/design/v2/shell.jsx`); routes map to existing dashboard pages until the
+// per-page restyle work in HEL-32 lands. New v2-native pages (Hire intake,
+// Studio, Library) are tracked separately and will replace these route fallbacks
+// when they ship.
 type NavItem = {
   to: string;
   icon: ElementType;
@@ -42,42 +39,36 @@ type NavItem = {
 
 const NAV_SECTIONS: Array<{ title: string; items: NavItem[] }> = [
   {
-    title: "Core",
+    title: "Run",
     items: [
-      { to: "/", icon: LayoutDashboard, label: "Dashboard", end: true },
-      { to: "/mission-state", icon: Flag, label: "Mission State" },
-      { to: "/tickets", icon: Ticket, label: "Tickets" },
-      { to: "/builder", icon: Workflow, label: "Builder" },
-      { to: "/monitor", icon: Activity, label: "Run Monitor" },
-      { to: "/history", icon: History, label: "History" },
+      { to: "/", icon: Home, label: "Home", end: true },
+      { to: "/mission-state", icon: Target, label: "Missions" },
+      { to: "/approvals", icon: Stamp, label: "Approvals" },
+      { to: "/agents/activity", icon: Activity, label: "Activity" },
     ],
   },
   {
-    title: "Agents",
+    title: "Workforce",
     items: [
-      { to: "/agents", icon: Bot, label: "Agent Catalog" },
-      { to: "/agents/my", icon: Bot, label: "My Agents" },
-      { to: "/agents/activity", icon: BotMessageSquare, label: "Agent Activity" },
-      { to: "/agents/routines", icon: Repeat, label: "Routines" },
+      { to: "/workspace/org-structure", icon: Users, label: "Team" },
+      // end:true so /agents/activity etc don't ALSO highlight Hire as active.
+      { to: "/agents", icon: UserPlus, label: "Hire", end: true },
+      { to: "/workspace/budget-dashboard", icon: Wallet, label: "Budget" },
     ],
   },
   {
-    title: "Workspace",
+    title: "Build",
     items: [
-      { to: "/workspace/staffing-plan", icon: BriefcaseBusiness, label: "Staffing Plan" },
-      { to: "/workspace/org-structure", icon: Network, label: "Org Structure" },
-      { to: "/workspace/budget-dashboard", icon: BarChart3, label: "Budget Dashboard" },
-      { to: "/approvals", icon: CheckSquare, label: "Approvals" },
+      { to: "/builder", icon: Wand2, label: "Studio" },
+      { to: "/templates", icon: BookOpen, label: "Library" },
     ],
   },
   {
-    title: "Ops",
+    title: "Connect",
     items: [
-      { to: "/logs", icon: ScrollText, label: "Logs" },
-      { to: "/memory", icon: Database, label: "Memory" },
-      { to: "/integrations/health", icon: Siren, label: "Connector Health" },
-      { to: "/integrations/mcp", icon: PlugZap, label: "Integrations" },
-      { to: "/pricing", icon: DollarSign, label: "Pricing" },
+      { to: "/integrations/mcp", icon: Plug, label: "Integrations" },
+      { to: "/settings/llm-providers", icon: Sparkles, label: "Models" },
+      { to: "/settings", icon: Settings, label: "Settings", end: true },
     ],
   },
 ] as const;
@@ -107,12 +98,12 @@ export default function Layout() {
     setMobileNavOpen(false);
   }
 
-  function NavItems({ nested = false }: { nested?: boolean }) {
+  function NavItems() {
     return (
       <>
         {NAV_SECTIONS.map((section) => (
           <div key={section.title} className="mb-4">
-            <p className="px-3 pb-2 text-[11px] font-semibold uppercase tracking-[0.22em] text-gray-400 dark:text-surface-500">
+            <p className="px-3 pb-2 font-af2-sans text-[11px] font-semibold uppercase tracking-[0.22em] text-gray-400 dark:text-surface-500">
               {section.title}
             </p>
             <div className="space-y-1">
@@ -138,41 +129,6 @@ export default function Layout() {
             </div>
           </div>
         ))}
-
-        <div className="mt-2 border-t border-gray-200 pt-3 dark:border-surface-700">
-          <NavLink
-            to="/settings"
-            end
-            onClick={closeNav}
-            className={({ isActive }) =>
-              clsx(
-                "flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
-                isActive
-                  ? "bg-brand-600 text-white"
-                  : "text-gray-600 hover:bg-gray-100 hover:text-gray-900 dark:text-surface-400 dark:hover:bg-surface-800 dark:hover:text-white"
-              )
-            }
-          >
-            <Settings size={18} />
-            Settings
-          </NavLink>
-          <NavLink
-            to="/settings/llm-providers"
-            onClick={closeNav}
-            className={({ isActive }) =>
-              clsx(
-                "flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
-                nested && "pl-9",
-                isActive
-                  ? "bg-brand-600 text-white"
-                  : "text-gray-600 hover:bg-gray-100 hover:text-gray-900 dark:text-surface-400 dark:hover:bg-surface-800 dark:hover:text-white"
-              )
-            }
-          >
-            <Cpu size={18} />
-            LLM Providers
-          </NavLink>
-        </div>
       </>
     );
   }
@@ -233,8 +189,8 @@ export default function Layout() {
 
           <WorkspaceSwitcher />
 
-          <nav className="flex-1 space-y-1 px-3 py-4">
-            <NavItems nested />
+          <nav className="flex-1 space-y-1 px-3 py-4 overflow-y-auto">
+            <NavItems />
           </nav>
 
           <div className="border-t border-gray-200 px-4 py-4 dark:border-surface-800">

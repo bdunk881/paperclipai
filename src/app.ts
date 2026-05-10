@@ -369,7 +369,7 @@ app.use("/api/webhooks/apollo", apolloWebhookRoutes);
 // ---------------------------------------------------------------------------
 // Billing API — Stripe checkout sessions + subscription lifecycle
 // ---------------------------------------------------------------------------
-app.use("/api/billing/checkout", billingMutationRateLimiter, checkoutRoutes);
+app.use("/api/billing/checkout", requireAuth, billingMutationRateLimiter, checkoutRoutes);
 app.use("/api/billing/subscription", requireAuth, billingMutationRateLimiter, subscriptionRoutes);
 app.use("/api/public/landing", landingPublicApiRoutes);
 
@@ -1098,7 +1098,13 @@ app.post("/api/executions/:id/resume", requireAuth, async (req: AuthenticatedReq
 
   let template;
   try {
-    template = getTemplate(run.templateId);
+    template =
+      run.workflowDag &&
+      typeof run.workflowDag === "object" &&
+      !Array.isArray(run.workflowDag) &&
+      Array.isArray((run.workflowDag as Partial<WorkflowTemplate>).steps)
+        ? (run.workflowDag as WorkflowTemplate)
+        : getTemplate(run.templateId);
   } catch (error) {
     res.status(404).json({ error: String(error) });
     return;

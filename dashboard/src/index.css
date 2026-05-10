@@ -1,4 +1,9 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@500;600&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@500;600&family=Fraunces:opsz,wght@9..144,300..600&family=Geist:wght@400;500;600;700&display=swap');
+
+/* AutoFlow v2 design tokens — see dashboard/src/af2-tokens.css for the rationale.
+   Coexists with the legacy Electric Lab tokens defined below; only used by
+   pages that have migrated to v2 (HEL-31 / HEL-32). */
+@import "./af2-tokens.css";
 
 @tailwind base;
 @tailwind components;

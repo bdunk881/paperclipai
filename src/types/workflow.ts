@@ -155,6 +155,12 @@ export interface WorkflowRun {
   id: string;
   templateId: string;
   templateName: string;
+  workspaceId?: string;
+  routineId?: string;
+  workflowId?: string;
+  workflowVersionId?: string;
+  workflowVersion?: number;
+  workflowDag?: WorkflowTemplate | Record<string, unknown>;
   status: "pending" | "running" | "completed" | "failed" | "escalated" | "awaiting_approval";
   startedAt: string;
   completedAt?: string;

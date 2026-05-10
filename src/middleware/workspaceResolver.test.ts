@@ -168,9 +168,11 @@ describe("createExplicitWorkspaceHeaderResolver", () => {
     middleware(req, res, next);
 
     expect(req.workspaceId).toBe("22222222-2222-4222-8222-222222222222");
+    // Dev fallback (no Postgres) defaults to least-privileged role so
+    // role-gated handlers don't silently elevate without a membership check.
     expect(req.workspace).toEqual({
       id: "22222222-2222-4222-8222-222222222222",
-      role: "owner",
+      role: "member",
     });
     expect(next).toHaveBeenCalledTimes(1);
     expect(res.status).not.toHaveBeenCalled();

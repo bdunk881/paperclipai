@@ -200,11 +200,13 @@ export function createExplicitWorkspaceHeaderResolver() {
     const resolved = explicitWorkspaceId || claimedWorkspaceId || undefined;
     req.workspaceId = resolved;
     if (resolved) {
-      // No-Postgres path (test / dev fallback). We can't fetch the membership
-      // row, so we default the role to 'owner' — the membership-check security
-      // belongs to the Postgres-backed resolver. Tests that need a specific
-      // role should mock the resolver.
-      req.workspace = { id: resolved, role: "owner" };
+      // No-Postgres path (test / dev fallback). We can't run the membership
+      // check, so default to the LEAST-privileged role ('member') rather than
+      // 'owner' — defaulting to owner would mask permission bugs in dev that
+      // would surface in prod, and would let role-gated actions silently
+      // succeed when they should fail. Tests that need a specific role
+      // should mock the resolver explicitly.
+      req.workspace = { id: resolved, role: "member" };
     }
     next();
   };

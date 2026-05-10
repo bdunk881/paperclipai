@@ -540,16 +540,22 @@ async function workspaceContextForTeam(
   if (cached) {
     return { workspaceId: cached, userId };
   }
-  // Cache miss — query the DB and populate the cache for next time.
+  // Cache miss — call the SECURITY DEFINER helper to bypass RLS. We
+  // can't use the regular workspace-context channel here because the
+  // whole point of this lookup is to FIND the workspace_id; we don't
+  // have one to set on the session yet. agent_teams has FORCE RLS
+  // requiring app_current_workspace_id() IS NOT NULL, so a raw SELECT
+  // would return zero rows for a legitimate team.
+  // The helper is migration 030's `lookup_team_workspace_id(uuid)`.
   try {
-    const result = await getPostgresPool().query<{ workspace_id: string }>(
-      `SELECT workspace_id FROM agent_teams WHERE id = $1 LIMIT 1`,
+    const result = await getPostgresPool().query<{ workspace_id: string | null }>(
+      `SELECT lookup_team_workspace_id($1) AS workspace_id`,
       [teamId],
     );
-    if (result.rowCount === 0) {
+    const workspaceId = result.rows[0]?.workspace_id;
+    if (!workspaceId) {
       return undefined;
     }
-    const workspaceId = result.rows[0].workspace_id;
     teamWorkspaceIds.set(teamId, workspaceId);
     return { workspaceId, userId };
   } catch (err) {

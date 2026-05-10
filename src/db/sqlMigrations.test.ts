@@ -491,6 +491,33 @@ describe("sql migrations", () => {
     });
   });
 
+  describe("migration 030 lookup_team_workspace_id (HEL-66)", () => {
+    const migration = readFileSync(
+      path.resolve(__dirname, "..", "..", "migrations", "030_lookup_team_workspace_id.sql"),
+      "utf8"
+    );
+
+    it("declares lookup_team_workspace_id as a SECURITY DEFINER function", () => {
+      expect(migration).toContain("CREATE OR REPLACE FUNCTION lookup_team_workspace_id(p_team_id uuid)");
+      expect(migration).toContain("SECURITY DEFINER");
+    });
+
+    it("returns the workspace_id from agent_teams (single row)", () => {
+      expect(migration).toMatch(/SELECT workspace_id FROM agent_teams WHERE id = p_team_id LIMIT 1/);
+    });
+
+    it("locks search_path to defend against schema-shadowing attacks on SECURITY DEFINER", () => {
+      expect(migration).toContain(
+        "ALTER FUNCTION lookup_team_workspace_id(uuid) SET search_path = public, pg_catalog"
+      );
+    });
+
+    it("wraps schema changes in a single transaction", () => {
+      expect(migration).toContain("BEGIN;");
+      expect(migration.trim().endsWith("COMMIT;")).toBe(true);
+    });
+  });
+
   describe("migration 029 stripe_webhook_events (HEL-67)", () => {
     const migration = readFileSync(
       path.resolve(__dirname, "..", "..", "migrations", "029_stripe_webhook_events.sql"),

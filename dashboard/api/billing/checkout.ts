@@ -50,13 +50,22 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const upstreamUrl = `${backendBase}/api/billing/checkout`;
 
   try {
+    // Forward Authorization so the upstream requireAuth middleware (HEL-17
+    // hardening) sees the caller's Bearer token. Without this every paid-tier
+    // checkout from the dashboard would return 401.
+    const upstreamHeaders: Record<string, string> = {
+      "Content-Type": "application/json",
+      "X-Forwarded-For": req.headers["x-forwarded-for"]?.toString() ?? req.socket.remoteAddress ?? "",
+      "X-Forwarded-Host": req.headers.host ?? "",
+    };
+    const auth = req.headers.authorization;
+    if (typeof auth === "string" && auth.trim()) {
+      upstreamHeaders["Authorization"] = auth;
+    }
+
     const upstreamRes = await fetch(upstreamUrl, {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "X-Forwarded-For": req.headers["x-forwarded-for"]?.toString() ?? req.socket.remoteAddress ?? "",
-        "X-Forwarded-Host": req.headers.host ?? "",
-      },
+      headers: upstreamHeaders,
       body: JSON.stringify(req.body ?? {}),
     });
 

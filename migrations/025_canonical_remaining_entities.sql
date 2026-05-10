@@ -311,15 +311,20 @@ WHERE target_kind IS NULL
    OR payload IS NULL
    OR occurred_at IS NULL;
 
--- Re-create the append-only policies (same definitions as 020 / 021 carried).
+-- Re-create the append-only policies. AS RESTRICTIVE so they AND with the
+-- permissive tenant-isolation policy — without it PostgreSQL OR's permissive
+-- USING clauses and a workspace-scoped role passing tenant-isolation could
+-- still UPDATE/DELETE its own audit rows, breaking immutability.
 CREATE POLICY audit_log_no_update
   ON audit_log
+  AS RESTRICTIVE
   FOR UPDATE
   USING (false)
   WITH CHECK (false);
 
 CREATE POLICY audit_log_no_delete
   ON audit_log
+  AS RESTRICTIVE
   FOR DELETE
   USING (false);
 

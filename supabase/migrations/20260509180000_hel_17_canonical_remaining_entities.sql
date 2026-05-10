@@ -277,14 +277,17 @@ WHERE target_kind IS NULL
    OR payload IS NULL
    OR occurred_at IS NULL;
 
+-- AS RESTRICTIVE so they AND with the permissive tenant-isolation policy.
 CREATE POLICY audit_log_no_update
   ON public.audit_log
+  AS RESTRICTIVE
   FOR UPDATE
   USING (false)
   WITH CHECK (false);
 
 CREATE POLICY audit_log_no_delete
   ON public.audit_log
+  AS RESTRICTIVE
   FOR DELETE
   USING (false);
 

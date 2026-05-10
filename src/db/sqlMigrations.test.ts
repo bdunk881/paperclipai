@@ -491,6 +491,47 @@ describe("sql migrations", () => {
     });
   });
 
+  describe("migration 028 subscription_store_columns (HEL-45)", () => {
+    const migration = readFileSync(
+      path.resolve(__dirname, "..", "..", "migrations", "028_subscription_store_columns.sql"),
+      "utf8"
+    );
+
+    it.each([
+      "user_id",
+      "email",
+      "current_period_start",
+      "trial_end",
+      "access_level",
+    ])("adds %s column for subscriptionStore round-trip parity", (col) => {
+      expect(migration).toContain(`ADD COLUMN IF NOT EXISTS ${col}`);
+    });
+
+    it("adds cancel_at_period_end with NOT NULL DEFAULT false", () => {
+      expect(migration).toContain(
+        "ADD COLUMN IF NOT EXISTS cancel_at_period_end boolean NOT NULL DEFAULT false"
+      );
+    });
+
+    it("constrains access_level to the in-memory store enum", () => {
+      expect(migration).toContain(
+        "CHECK (access_level IS NULL OR access_level IN ('trial', 'active', 'past_due', 'cancelled', 'none'))"
+      );
+    });
+
+    it("adds a partial index on user_id for getByUserId lookups", () => {
+      expect(migration).toContain(
+        "CREATE INDEX IF NOT EXISTS idx_subscriptions_user_id"
+      );
+      expect(migration).toContain("WHERE user_id IS NOT NULL");
+    });
+
+    it("wraps schema changes in a single transaction", () => {
+      expect(migration).toContain("BEGIN;");
+      expect(migration.trim().endsWith("COMMIT;")).toBe(true);
+    });
+  });
+
   describe("migration 027 RLS audit close gaps (HEL-20)", () => {
     const migration = readFileSync(
       path.resolve(__dirname, "..", "..", "migrations", "027_rls_audit_close_gaps.sql"),

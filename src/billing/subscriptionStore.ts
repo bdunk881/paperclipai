@@ -1,7 +1,16 @@
 /**
- * In-memory subscription store.
- * Tracks Stripe subscriptions mapped to internal user access levels.
- * Replace with a PostgreSQL-backed store for production (see ALT-30).
+ * Subscription store — Stripe subscriptions mapped to internal access levels.
+ *
+ * Read path is in-memory (Map<id, Subscription>) for low-latency lookups
+ * during webhook handling and per-request access checks. Write path mirrors
+ * to Postgres via `billingRepository.upsertSubscriptionAndEntitlements`
+ * (called from `stripeWebhook.ts::syncSubscriptionEntitlements` after every
+ * upsert) so the data survives a process restart.
+ *
+ * `hydrateFromPostgres()` repopulates the in-memory map at app boot — see
+ * `src/app.ts` startup. Without that hydration, an API restart would lose
+ * all subscription state until the next webhook arrived for each customer
+ * (HEL-45 was the urgent fix that closed this gap).
  */
 
 export type SubscriptionTier = "explore" | "flow" | "automate" | "scale";
@@ -143,5 +152,24 @@ export const subscriptionStore = {
     byStripeSubId.clear();
     byStripeCustomerId.clear();
     byUserId.clear();
+  },
+
+  /**
+   * HEL-45: rebuild the in-memory cache from Postgres at app startup.
+   *
+   * Imports lazily so this module stays Postgres-agnostic at import time
+   * (the test suite mocks billingRepository or runs without DATABASE_URL).
+   * Returns the count of subscriptions hydrated; safe to call multiple
+   * times — re-hydration overwrites any in-memory entries with the
+   * latest persisted state.
+   */
+  async hydrateFromPostgres(): Promise<number> {
+    const { billingRepository } = await import("./billingRepository");
+    const rows = await billingRepository.loadAllSubscriptions();
+    for (const sub of rows) {
+      store.set(sub.id, sub);
+      addIndex(sub);
+    }
+    return rows.length;
   },
 };

@@ -343,6 +343,7 @@ router.post("/", requireRunId, async (req: WorkspaceAwareRequest, res) => {
   });
 
   observabilityStore.record({
+    workspaceId: context.workspaceId,
     userId: actor.id,
     category: "issue",
     type: "issue.created",
@@ -857,6 +858,7 @@ router.patch("/:id", requireRunId, async (req: WorkspaceAwareRequest, res) => {
   }
 
   observabilityStore.record({
+    workspaceId: context.workspaceId,
     userId: actor.id,
     category: "issue",
     type: "issue.updated",
@@ -923,6 +925,7 @@ router.post("/:id/updates", requireRunId, async (req: WorkspaceAwareRequest, res
       });
 
       observabilityStore.record({
+        workspaceId: context.workspaceId,
         userId: actor.id,
         category: "issue",
         type: "issue.commented",
@@ -997,6 +1000,7 @@ router.post("/:id/transitions", requireRunId, async (req: WorkspaceAwareRequest,
     });
 
     observabilityStore.record({
+      workspaceId: context.workspaceId,
       userId: actor.id,
       category: "issue",
       type: "issue.status_changed",

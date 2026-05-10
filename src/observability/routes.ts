@@ -1,6 +1,7 @@
 import express from "express";
 import { z } from "zod";
 import { AuthenticatedRequest } from "../auth/authMiddleware";
+import { WorkspaceAwareRequest } from "../middleware/workspaceResolver";
 import { observabilityStore } from "./store";
 import { ObservabilityEventCategory } from "./types";
 
@@ -46,7 +47,11 @@ function parseWindowHours(raw: unknown, fallback = 24): number {
   return Math.min(parsed, 24 * 14);
 }
 
-router.get("/events", async (req: AuthenticatedRequest, res) => {
+function getWorkspaceId(req: WorkspaceAwareRequest): string | undefined {
+  return typeof req.workspaceId === "string" && req.workspaceId.trim() ? req.workspaceId.trim() : undefined;
+}
+
+router.get("/events", async (req: WorkspaceAwareRequest, res) => {
   const userId = getUserId(req);
   if (!userId) {
     res.status(401).json({ error: "Authenticated user required" });
@@ -54,6 +59,7 @@ router.get("/events", async (req: AuthenticatedRequest, res) => {
   }
 
   const page = await observabilityStore.listEvents({
+    workspaceId: getWorkspaceId(req),
     userId,
     after: typeof req.query.after === "string" ? req.query.after : undefined,
     categories: parseCategories(req.query.categories),
@@ -63,7 +69,7 @@ router.get("/events", async (req: AuthenticatedRequest, res) => {
   res.json(page);
 });
 
-router.get("/events/stream", async (req: AuthenticatedRequest, res) => {
+router.get("/events/stream", async (req: WorkspaceAwareRequest, res) => {
   const userId = getUserId(req);
   if (!userId) {
     res.status(401).json({ error: "Authenticated user required" });
@@ -88,6 +94,7 @@ router.get("/events/stream", async (req: AuthenticatedRequest, res) => {
   };
 
   const replay = await observabilityStore.listEvents({
+    workspaceId: getWorkspaceId(req),
     userId,
     after,
     categories,
@@ -126,7 +133,7 @@ router.get("/events/stream", async (req: AuthenticatedRequest, res) => {
   });
 });
 
-router.get("/throughput", async (req: AuthenticatedRequest, res) => {
+router.get("/throughput", async (req: WorkspaceAwareRequest, res) => {
   const userId = getUserId(req);
   if (!userId) {
     res.status(401).json({ error: "Authenticated user required" });

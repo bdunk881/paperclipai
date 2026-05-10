@@ -21,6 +21,8 @@ prefixes was executed in migration 021 (HEL-43).
 | `company_lifecycle`   | `control_plane_company_lifecycle`    | Pause/resume state for a provisioned company |
 | `company_lifecycle_audit` | `control_plane_company_lifecycle_audit` | Audit trail for lifecycle actions |
 | `llm_credentials`     | `llm_configs`                        | LLM provider credentials (API keys, models) |
+| `approvals`           | `approval_requests`                  | Human approval gates inside workflow runs |
+| `activity_events`     | `observability_events`               | Workspace-scoped append-only activity feed |
 
 ## Rule
 
@@ -38,4 +40,4 @@ prefixes was executed in migration 021 (HEL-43).
 | `provisioned_company_secrets` | Still valid name; FK to `companies` auto-updated |
 | `agent_heartbeat_logs` | Legacy; `agentMemoryStore.ts` manages its own DDL inline |
 | `memory_entries` | Legacy; referenced by `runtimeRetention.ts` |
-| `observability_events` | Live queries in `observability/store.ts` |
+| `observability_events` | Legacy compatibility; activity feed now materializes from `activity_events` |

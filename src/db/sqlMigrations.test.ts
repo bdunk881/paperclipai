@@ -438,4 +438,54 @@ describe("sql migrations", () => {
       expect(migration.trim().endsWith("COMMIT;")).toBe(true);
     });
   });
+
+  describe("migration 024 HITL activity events (HEL-16)", () => {
+    // Renumbered from 023 to 024 during rebase: HEL-15 (#653) landed first
+    // and claimed the 023 slot.
+    const migration = readFileSync(
+      path.resolve(__dirname, "..", "..", "migrations", "024_hitl_activity_events.sql"),
+      "utf8"
+    );
+
+    it("declares canonical approvals and activity_events tables", () => {
+      expect(migration).toContain("CREATE TABLE IF NOT EXISTS approvals");
+      expect(migration).toContain("CREATE TABLE IF NOT EXISTS activity_events");
+      // After HEL-15 the canonical run table is `runs`, not `workflow_runs`.
+      expect(migration).toContain("run_id uuid NOT NULL REFERENCES runs(id) ON DELETE CASCADE");
+      expect(migration).toContain("workspace_id uuid NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE");
+      expect(migration).toContain("kind text NOT NULL");
+      expect(migration).toContain("actor jsonb NOT NULL");
+      expect(migration).toContain("subject jsonb NOT NULL");
+      expect(migration).toContain("payload jsonb NOT NULL");
+      expect(migration).toContain("occurred_at timestamptz NOT NULL");
+    });
+
+    it("backfills canonical rows from legacy approval, ticket, and observability tables", () => {
+      expect(migration).toContain("FROM approval_requests");
+      expect(migration).toContain("FROM ticket_updates");
+      expect(migration).toContain("FROM observability_events");
+      expect(migration).toContain("ON CONFLICT (id) DO NOTHING");
+    });
+
+    it("keeps tickets compatible with existing SLA infrastructure", () => {
+      expect(migration).toContain("ADD COLUMN IF NOT EXISTS body text");
+      expect(migration).toContain("ADD COLUMN IF NOT EXISTS assigned_agent_id uuid REFERENCES agents(id) ON DELETE SET NULL");
+      expect(migration).toContain("ADD COLUMN IF NOT EXISTS assigned_user_id text");
+      expect(migration).not.toMatch(/DROP\s+TABLE\s+(IF\s+EXISTS\s+)?ticket_sla_/i);
+      expect(migration).not.toMatch(/DROP\s+COLUMN\s+(IF\s+EXISTS\s+)?(priority|sla_state|due_date)/i);
+    });
+
+    it("enforces tenant isolation and append-only activity events", () => {
+      expect(migration).toContain("ALTER TABLE activity_events ENABLE ROW LEVEL SECURITY;");
+      expect(migration).toContain("ALTER TABLE activity_events FORCE ROW LEVEL SECURITY;");
+      expect(migration).toContain("CREATE POLICY activity_events_tenant_isolation");
+      expect(migration).toContain("CREATE POLICY activity_events_no_update");
+      expect(migration).toContain("CREATE POLICY activity_events_no_delete");
+    });
+
+    it("wraps schema changes in a single transaction", () => {
+      expect(migration).toContain("BEGIN;");
+      expect(migration.trim().endsWith("COMMIT;")).toBe(true);
+    });
+  });
 });

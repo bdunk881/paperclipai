@@ -168,7 +168,6 @@ describe("runConnectAction", () => {
   // Non-Error throw → defaults to a friendly message.
   it("falls back to a generic message when the thrown value is not an Error", async () => {
     const authorizedFetch = vi.fn().mockImplementation(() => {
-      // eslint-disable-next-line @typescript-eslint/no-throw-literal
       throw "string-error";
     });
     const deps = buildDeps({ authorizedFetch });

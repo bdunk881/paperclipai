@@ -1,0 +1,180 @@
+/**
+ * Entitlement-gating middleware (HEL-22).
+ *
+ * Composes after `withWorkspace`: the chokepoint resolves the workspace,
+ * this middleware then checks the workspace's entitlements (per the active
+ * Stripe subscription tier) before allowing the action.
+ *
+ *   app.use(
+ *     "/api/llm-configs",
+ *     requireAuth,
+ *     withWorkspace(pool),
+ *     requireEntitlement("byokAllowed"),
+ *     llmConfigRoutes,
+ *   );
+ *
+ *   app.post(
+ *     "/api/agents",
+ *     requireAuth,
+ *     withWorkspace(pool),
+ *     requireEntitlement("agentCap", { getCurrent: (req) => agentStore.countByWorkspace(req.workspace!.id) }),
+ *     handler,
+ *   );
+ *
+ * Error shape — every gated rejection carries the same machine-readable
+ * payload so the dashboard can render a consistent "Upgrade to <tier>" CTA:
+ *
+ *   {
+ *     error: "Plan limit reached: <feature>",
+ *     code: "entitlement_exceeded",
+ *     feature: "<feature name>",
+ *     limit: <number | boolean>,
+ *     current: <number | undefined>,
+ *     upgradeTo: "<next tier name>" | null,
+ *   }
+ */
+
+import type { NextFunction, Response } from "express";
+import type { WorkspaceAwareRequest } from "./workspaceResolver";
+import {
+  entitlementStore,
+  type EntitlementLimits,
+  type WorkspaceEntitlements,
+} from "../billing/entitlements";
+import type { SubscriptionTier } from "../billing/subscriptionStore";
+
+// Boolean entitlement features.
+type BooleanFeature = "byokAllowed";
+
+// Numeric / quota features.
+type QuotaFeature =
+  | "runsPerMonth"
+  | "agentCap"
+  | "integrationCap"
+  | "logRetentionDays"
+  | "approvalTierMax";
+
+export type EntitlementFeature = BooleanFeature | QuotaFeature;
+
+const BOOLEAN_FEATURES = new Set<EntitlementFeature>(["byokAllowed"]);
+
+// Tier upgrade ladder — drives the "Upgrade to ..." hint in the 402 payload.
+const UPGRADE_PATH: Record<SubscriptionTier, SubscriptionTier | null> = {
+  explore: "flow",
+  flow: "automate",
+  automate: "scale",
+  scale: null, // Already on the top tier.
+};
+
+function entitlementsFor(workspaceId: string): WorkspaceEntitlements {
+  // entitlementStore.upsert is fired by stripeWebhook.ts on every relevant
+  // Stripe event. If we have nothing for this workspace yet, default to the
+  // free tier ('explore') — never accidentally grant paid features.
+  const cached = entitlementStore.get(workspaceId);
+  if (cached) return cached;
+  return entitlementStore.upsert(workspaceId, "explore");
+}
+
+export interface RequireEntitlementOptions {
+  /**
+   * For quota features only: a function that returns the current count for
+   * the workspace. The middleware compares this against the limit.
+   *
+   * If omitted on a quota feature, the middleware enforces only that the
+   * limit > 0 (i.e. the feature is allowed at all under the active plan).
+   * That's appropriate for "this action will increment by 1" gates where
+   * the count check happens inside the handler.
+   */
+  getCurrent?: (req: WorkspaceAwareRequest) => Promise<number> | number;
+
+  /**
+   * For quota features only: how much the request will add to the count
+   * (default 1). Used together with `getCurrent` so the middleware can
+   * pre-check `current + delta <= limit`.
+   */
+  delta?: number;
+}
+
+export type RequireEntitlementMiddleware = (
+  req: WorkspaceAwareRequest,
+  res: Response,
+  next: NextFunction,
+) => Promise<void> | void;
+
+export function requireEntitlement(
+  feature: EntitlementFeature,
+  options: RequireEntitlementOptions = {},
+): RequireEntitlementMiddleware {
+  return async function checkEntitlement(req, res, next) {
+    if (!req.workspace) {
+      console.error(
+        "[requireEntitlement] no req.workspace set. Mount withWorkspace(pool) before requireEntitlement().",
+      );
+      res.status(500).json({ error: "Server misconfiguration: workspace context missing." });
+      return;
+    }
+
+    const entitlements = entitlementsFor(req.workspace.id);
+    const limit = entitlements[feature] as boolean | number;
+
+    const denyPayload = {
+      error: `Plan limit reached: ${feature}`,
+      code: "entitlement_exceeded" as const,
+      feature,
+      limit,
+      currentTier: entitlements.plan,
+      upgradeTo: UPGRADE_PATH[entitlements.plan],
+    };
+
+    if (BOOLEAN_FEATURES.has(feature)) {
+      if (limit !== true) {
+        res.status(402).json(denyPayload);
+        return;
+      }
+      next();
+      return;
+    }
+
+    // Quota feature path.
+    const quotaLimit = limit as number;
+    const delta = Math.max(0, options.delta ?? 1);
+
+    if (quotaLimit <= 0) {
+      // Plan doesn't allow the feature at all (e.g. agentCap=0 on a tier
+      // that excludes agents).
+      res.status(402).json(denyPayload);
+      return;
+    }
+
+    if (!options.getCurrent) {
+      // No count provided — middleware just confirms the feature is
+      // available under the plan. Per-request count enforcement happens
+      // inside the handler.
+      next();
+      return;
+    }
+
+    let current: number;
+    try {
+      current = await options.getCurrent(req);
+    } catch (err) {
+      console.error(
+        `[requireEntitlement] getCurrent threw for feature=${feature}:`,
+        (err as Error).message,
+      );
+      res.status(500).json({ error: "Failed to evaluate entitlement quota." });
+      return;
+    }
+
+    if (current + delta > quotaLimit) {
+      res.status(402).json({ ...denyPayload, current });
+      return;
+    }
+
+    next();
+  };
+}
+
+// Re-exports so consumers don't need to import from billing/entitlements directly
+// (keeps the middleware module self-contained at the API boundary).
+export type { EntitlementLimits, WorkspaceEntitlements };

@@ -33,11 +33,11 @@ router.post("/", async (req: AuthenticatedRequest, res: Response) => {
     firstName?: string;
     companyName?: string;
   };
-  // SECURITY: route is now requireAuth-mounted (src/app.ts) — req.auth is
-  // populated. Trust ONLY the JWT-resolved identity for workspace + user.
-  // Anyone who knew a victim's workspace UUID would otherwise overwrite that
-  // tenant's subscription/entitlements at webhook time
-  // (handleCheckoutSessionCompleted writes by workspace_id).
+  // SECURITY: route is requireAuth-mounted (src/app.ts). Trust ONLY the
+  // JWT-resolved identity for both userId and workspaceId. Body / header
+  // fallbacks would let any caller knowing a victim's workspace UUID overwrite
+  // that tenant's entitlement row at webhook time
+  // (handleCheckoutSessionCompleted writes by workspace_id with ON CONFLICT).
   const resolvedUserId = req.auth?.sub;
   const resolvedWorkspaceId = req.auth?.workspaceId;
 

@@ -251,29 +251,13 @@ describe("resolveTier", () => {
 // ---------------------------------------------------------------------------
 
 describe("POST /api/billing/checkout", () => {
-  it("allows unauthenticated checkout creation for paid tiers", async () => {
-    stripeMock.checkout.sessions.create.mockResolvedValue({
-      url: "https://checkout.stripe.test/session_public_123",
-    });
-
+  it("rejects unauthenticated checkout creation", async () => {
+    // Hardened in HEL-17 review: the route is now requireAuth-mounted so a
+    // caller who knew a victim's workspace UUID can't overwrite that tenant's
+    // entitlement row via the webhook by pointing checkout at it.
     const res = await request(app).post("/api/billing/checkout").send({ tier: "flow" });
-
-    expect(res.status).toBe(200);
-    expect(res.body).toEqual({ url: "https://checkout.stripe.test/session_public_123" });
-    expect(stripeMock.checkout.sessions.create).toHaveBeenCalledWith(
-      expect.objectContaining({
-        metadata: expect.objectContaining({
-          tier: "flow",
-        }),
-      })
-    );
-    expect(stripeMock.checkout.sessions.create).toHaveBeenCalledWith(
-      expect.not.objectContaining({
-        metadata: expect.objectContaining({
-          userId: expect.any(String),
-        }),
-      })
-    );
+    expect(res.status).toBe(401);
+    expect(stripeMock.checkout.sessions.create).not.toHaveBeenCalled();
   });
 
   it("rejects missing tier", async () => {

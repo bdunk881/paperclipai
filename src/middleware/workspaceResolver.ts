@@ -2,8 +2,23 @@ import { Request, Response, NextFunction } from "express";
 import { Pool } from "pg";
 import { AuthenticatedRequest } from "../auth/authMiddleware";
 
+export type WorkspaceRole = "owner" | "admin" | "member";
+
+/**
+ * The chokepoint type every authenticated handler should depend on (HEL-18).
+ *
+ * - `workspaceId` is the legacy field — kept populated for backwards compat
+ *   with existing handlers. New code should prefer `workspace.id` and
+ *   `workspace.role`.
+ * - `workspace` is the canonical typed setter. When the middleware finishes
+ *   successfully, both are guaranteed non-null.
+ */
 export interface WorkspaceAwareRequest extends AuthenticatedRequest {
   workspaceId?: string;
+  workspace?: {
+    id: string;
+    role: WorkspaceRole;
+  };
 }
 
 function getResultCount<T extends { rowCount: number | null; rows: unknown[] }>(result: T): number {
@@ -24,21 +39,39 @@ function readExplicitWorkspaceHeader(req: Request): string | null {
   return trimmed.length > 0 ? trimmed : null;
 }
 
-async function ensureWorkspaceMembership(pool: Pool, workspaceId: string, userId: string): Promise<boolean> {
-  const membershipCheck = await pool.query(
-    `SELECT 1 FROM workspaces w
+/**
+ * Returns the user's role in the workspace, or null if not a member.
+ *
+ * SECURITY (HEL-18): a spoofed workspace UUID in the URL or x-workspace-id
+ * header MUST land in the null branch — the membership predicate gates
+ * downstream queries from ever running with the wrong workspace_id.
+ */
+async function resolveWorkspaceRole(
+  pool: Pool,
+  workspaceId: string,
+  userId: string,
+): Promise<WorkspaceRole | null> {
+  const result = await pool.query<{ role: WorkspaceRole }>(
+    `SELECT
+       CASE
+         WHEN w.owner_user_id = $2 THEN 'owner'::text
+         ELSE wm.role
+       END AS role
+     FROM workspaces w
+     LEFT JOIN workspace_members wm
+       ON wm.workspace_id = w.id AND wm.user_id = $2
      WHERE w.id = $1
-       AND (
-         w.owner_user_id = $2
-         OR EXISTS (
-           SELECT 1 FROM workspace_members wm
-           WHERE wm.workspace_id = w.id AND wm.user_id = $2
-         )
-       )`,
+       AND (w.owner_user_id = $2 OR wm.user_id = $2)
+     LIMIT 1`,
     [workspaceId, userId],
   );
 
-  return getResultCount(membershipCheck) > 0;
+  if (getResultCount(result) === 0) return null;
+  return result.rows[0].role;
+}
+
+async function ensureWorkspaceMembership(pool: Pool, workspaceId: string, userId: string): Promise<boolean> {
+  return (await resolveWorkspaceRole(pool, workspaceId, userId)) !== null;
 }
 
 async function resolveDefaultWorkspaceId(pool: Pool, userId: string): Promise<string | null> {
@@ -96,13 +129,17 @@ export function createWorkspaceResolver(pool: Pool) {
       }
 
       try {
-        const isMember = await ensureWorkspaceMembership(pool, candidateWorkspaceId, userId);
-        if (!isMember) {
+        const role = await resolveWorkspaceRole(pool, candidateWorkspaceId, userId);
+        if (role === null) {
+          // SECURITY: opaque 403 — don't leak whether the workspace exists.
+          // A user who guesses a foreign workspace UUID gets the same
+          // response as one who passes a non-existent UUID.
           res.status(403).json({ error: "Not a member of the requested workspace." });
           return;
         }
 
         req.workspaceId = candidateWorkspaceId;
+        req.workspace = { id: candidateWorkspaceId, role };
         next();
         return;
       } catch (err) {
@@ -121,13 +158,35 @@ export function createWorkspaceResolver(pool: Pool) {
         return;
       }
 
+      const role = await resolveWorkspaceRole(pool, defaultWorkspaceId, userId);
+      if (role === null) {
+        // Should be impossible after resolveDefaultWorkspaceId, but guard anyway.
+        res.status(403).json({ error: "Not a member of the resolved workspace." });
+        return;
+      }
+
       req.workspaceId = defaultWorkspaceId;
+      req.workspace = { id: defaultWorkspaceId, role };
       next();
     } catch (err) {
       console.error("[workspaceResolver] Failed to resolve workspace:", (err as Error).message);
       res.status(500).json({ error: "Failed to resolve workspace context." });
     }
   };
+}
+
+/**
+ * Canonical alias for `createWorkspaceResolver` (HEL-18).
+ *
+ * Use this name in new code so the chokepoint reads naturally at the route
+ * mount: `app.use("/api/foo", requireAuth, withWorkspace, fooRoutes)`.
+ *
+ * Returns the same Express middleware as `createWorkspaceResolver`. Both
+ * exports remain so existing call sites keep working through the rename
+ * window.
+ */
+export function withWorkspace(pool: Pool) {
+  return createWorkspaceResolver(pool);
 }
 
 export function createExplicitWorkspaceHeaderResolver() {
@@ -138,7 +197,17 @@ export function createExplicitWorkspaceHeaderResolver() {
   ): void {
     const explicitWorkspaceId = readExplicitWorkspaceHeader(req);
     const claimedWorkspaceId = req.auth?.workspaceId?.trim() || null;
-    req.workspaceId = explicitWorkspaceId || claimedWorkspaceId || undefined;
+    const resolved = explicitWorkspaceId || claimedWorkspaceId || undefined;
+    req.workspaceId = resolved;
+    if (resolved) {
+      // No-Postgres path (test / dev fallback). We can't run the membership
+      // check, so default to the LEAST-privileged role ('member') rather than
+      // 'owner' — defaulting to owner would mask permission bugs in dev that
+      // would surface in prod, and would let role-gated actions silently
+      // succeed when they should fail. Tests that need a specific role
+      // should mock the resolver explicitly.
+      req.workspace = { id: resolved, role: "member" };
+    }
     next();
   };
 }

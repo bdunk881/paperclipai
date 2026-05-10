@@ -51,7 +51,8 @@ const NAV_SECTIONS: Array<{ title: string; items: NavItem[] }> = [
     title: "Workforce",
     items: [
       { to: "/workspace/org-structure", icon: Users, label: "Team" },
-      { to: "/agents", icon: UserPlus, label: "Hire" },
+      // end:true so /agents/activity etc don't ALSO highlight Hire as active.
+      { to: "/agents", icon: UserPlus, label: "Hire", end: true },
       { to: "/workspace/budget-dashboard", icon: Wallet, label: "Budget" },
     ],
   },

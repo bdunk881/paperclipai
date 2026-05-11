@@ -38,6 +38,7 @@ function defaultProviderStates(): Record<OAuthProvider, ProviderConnectionState>
   };
 }
 
+// eslint-disable-next-line react-refresh/only-export-components
 export function toWorkflowCategory(category: AgentCatalogTemplate["category"]): WorkflowTemplate["category"] {
   const normalized = category.toLowerCase();
   if (normalized === "sales") return "sales";
@@ -47,6 +48,7 @@ export function toWorkflowCategory(category: AgentCatalogTemplate["category"]): 
   return "operations";
 }
 
+// eslint-disable-next-line react-refresh/only-export-components
 export function buildTemplateDeploymentBlueprint(
   template: AgentCatalogTemplate,
   budgetMonthlyUsd: number,

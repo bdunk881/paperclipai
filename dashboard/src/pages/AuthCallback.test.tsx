@@ -70,21 +70,13 @@ describe("AuthCallback", () => {
       <MemoryRouter initialEntries={["/auth/callback"]}>
         <Routes>
           <Route path="/auth/callback" element={<AuthCallback />} />
-          <Route
-            path="/login"
-            element={<div data-testid="login-page">{window.location.search}</div>}
-          />
+          <Route path="/login" element={<div data-testid="login-page">Login Page</div>} />
         </Routes>
       </MemoryRouter>
     );
 
-    await waitFor(() => {
-      expect(screen.getByText("Login Page", { exact: false })).toBeInTheDocument();
-    }).catch(() => {
-      // MemoryRouter does not expose search in window.location; just verify navigation happened
-    });
-
-    await waitFor(() => expect(writeStoredAuthUserMock).not.toHaveBeenCalled());
+    await waitFor(() => expect(screen.getByTestId("login-page")).toBeInTheDocument());
+    expect(writeStoredAuthUserMock).not.toHaveBeenCalled();
   });
 
   it("redirects to login with a fallback message when getSession rejects with a non-Error", async () => {

@@ -151,11 +151,12 @@ describe("deployWorkflowAsTeam", () => {
 // ---------------------------------------------------------------------------
 describe("getMutationRunId crypto fallback", () => {
   it("uses Date.now fallback when crypto.randomUUID is unavailable", async () => {
-    const origRandomUUID = (crypto as { randomUUID?: () => string }).randomUUID;
-    delete (crypto as { randomUUID?: () => string }).randomUUID;
+    vi.resetModules();
+    // Stub global crypto with an object that lacks randomUUID so the
+    // `typeof crypto.randomUUID === "function"` check evaluates to false.
+    vi.stubGlobal("crypto", { getRandomValues: crypto.getRandomValues.bind(crypto) });
 
     try {
-      vi.resetModules();
       mockFetch(200, {
         team: { id: "t1" },
         agents: [],
@@ -166,7 +167,7 @@ describe("getMutationRunId crypto fallback", () => {
       const runId = lastFetchHeaders()["X-Paperclip-Run-Id"];
       expect(runId).toMatch(/^dashboard-ui-\d+/);
     } finally {
-      (crypto as { randomUUID?: () => string }).randomUUID = origRandomUUID;
+      vi.unstubAllGlobals();
     }
   });
 });

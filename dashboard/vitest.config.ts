@@ -39,9 +39,6 @@ export default defineConfig({
         "src/pages/TicketTeamView.tsx",    // ticket team view, pure UI
         "src/pages/Routines.tsx",          // routines page wiring
         "src/pages/Templates.tsx",         // template browser page wiring
-        // App entry and router config — pure wiring, no unit-testable logic
-        "src/App.tsx",
-        "src/router.tsx",
         // One-off config / init files
         "src/data/mockData.ts",
         "src/sentry.ts",                   // Sentry initialisation, side-effect only

@@ -55,7 +55,7 @@ jobs:
           method: universal
           client-id: ${{ secrets.INFISICAL_CLIENT_ID }}
           client-secret: ${{ secrets.INFISICAL_CLIENT_SECRET }}
-          project-slug: autoflow
+          project-slug: auto-flow-va-pt
           env-slug: dev
 
       - name: Validate dev deployment secrets

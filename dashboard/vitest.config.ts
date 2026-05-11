@@ -34,7 +34,6 @@ export default defineConfig({
         "src/pages/AgentDeploy.tsx",       // deployment wizard, pure UI flow
         "src/pages/OrgStructure.tsx",      // org chart visualisation (rendering only)
         "src/pages/BudgetDashboard.tsx",   // pending restyle in HEL-61
-        "src/pages/AuthCallback.tsx",      // OAuth redirect handler, wiring only
         "src/pages/TicketActorView.tsx",   // ticket actor view, pure UI
         "src/pages/TicketTeamView.tsx",    // ticket team view, pure UI
         "src/pages/Routines.tsx",          // routines page wiring
@@ -43,7 +42,6 @@ export default defineConfig({
         "src/data/mockData.ts",
         "src/sentry.ts",                   // Sentry initialisation, side-effect only
         "src/test-global-teardown.ts",     // test infrastructure
-        "src/routes/ticketRouteData.ts",   // route data configuration
       ],
       thresholds: {
         lines: 46,

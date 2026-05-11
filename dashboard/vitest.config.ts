@@ -36,8 +36,6 @@ export default defineConfig({
         "src/pages/BudgetDashboard.tsx",   // pending restyle in HEL-61
         "src/pages/TicketActorView.tsx",   // ticket actor view, pure UI
         "src/pages/TicketTeamView.tsx",    // ticket team view, pure UI
-        "src/pages/Routines.tsx",          // routines page wiring
-        "src/pages/Templates.tsx",         // template browser page wiring
         // One-off config / init files
         "src/data/mockData.ts",
         "src/sentry.ts",                   // Sentry initialisation, side-effect only

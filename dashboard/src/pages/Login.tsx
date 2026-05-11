@@ -306,7 +306,7 @@ export default function Login() {
 
             {!configured ? (
               <div className="mb-4 rounded-2xl border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-100">
-                Supabase auth is not configured yet. Set `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` before using
+                Supabase auth is not configured yet. Set `VITE_SUPABASE_URL` and `VITE_SUPABASE_PUBLISHABLE_KEY` before using
                 this dashboard surface.
               </div>
             ) : null}

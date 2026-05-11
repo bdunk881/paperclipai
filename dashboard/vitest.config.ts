@@ -29,8 +29,6 @@ export default defineConfig({
         // --- complex UI pages excluded like WorkflowBuilder / Memory ---
         "src/pages/WorkflowBuilder.tsx",
         "src/pages/Memory.tsx",
-        // Heavy UI components with no meaningful unit-testable logic
-        "src/pages/AgentDeploy.tsx",       // deployment wizard, pure UI flow
         // One-off config / init files
         "src/data/mockData.ts",
         "src/sentry.ts",                   // Sentry initialisation, side-effect only

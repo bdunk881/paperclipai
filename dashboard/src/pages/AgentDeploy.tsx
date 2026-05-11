@@ -38,7 +38,7 @@ function defaultProviderStates(): Record<OAuthProvider, ProviderConnectionState>
   };
 }
 
-function toWorkflowCategory(category: AgentCatalogTemplate["category"]): WorkflowTemplate["category"] {
+export function toWorkflowCategory(category: AgentCatalogTemplate["category"]): WorkflowTemplate["category"] {
   const normalized = category.toLowerCase();
   if (normalized === "sales") return "sales";
   if (normalized === "support") return "support";
@@ -47,7 +47,7 @@ function toWorkflowCategory(category: AgentCatalogTemplate["category"]): Workflo
   return "operations";
 }
 
-function buildTemplateDeploymentBlueprint(
+export function buildTemplateDeploymentBlueprint(
   template: AgentCatalogTemplate,
   budgetMonthlyUsd: number,
   defaultIntervalMinutes: number

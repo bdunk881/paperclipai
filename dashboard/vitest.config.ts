@@ -42,10 +42,6 @@ export default defineConfig({
         // App entry and router config — pure wiring, no unit-testable logic
         "src/App.tsx",
         "src/router.tsx",
-        // Thin API client wrappers with no branching logic worth unit-testing
-        "src/api/agentCatalog.ts",
-        "src/api/controlPlane.ts",
-        "src/api/observability.ts",        // monitoring client, thin fetch wrappers
         // One-off config / init files
         "src/data/mockData.ts",
         "src/sentry.ts",                   // Sentry initialisation, side-effect only

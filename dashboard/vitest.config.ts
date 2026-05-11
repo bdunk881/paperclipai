@@ -31,7 +31,6 @@ export default defineConfig({
         "src/pages/Memory.tsx",
         // Heavy UI components with no meaningful unit-testable logic
         "src/pages/AgentDeploy.tsx",       // deployment wizard, pure UI flow
-        "src/pages/BudgetDashboard.tsx",   // pending restyle in HEL-61
         // One-off config / init files
         "src/data/mockData.ts",
         "src/sentry.ts",                   // Sentry initialisation, side-effect only

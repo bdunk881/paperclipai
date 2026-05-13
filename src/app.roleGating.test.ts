@@ -153,19 +153,35 @@ describe.each([
 });
 
 // ---------------------------------------------------------------------------
-// User-scoped routes — no requireRole, accessible with any authenticated user
+// billing role (checkout + subscription)
 // ---------------------------------------------------------------------------
 
-describe("user-scoped routes bypass role gating", () => {
-  it("GET /api/workspaces is reachable with any role (member)", async () => {
-    const res = await request(app).get("/api/workspaces").set("x-test-role", "member");
-    // Workspace routes are user-scoped — must not return 403 for any auth'd user.
-    expect(res.status).not.toBe(403);
-  });
+describe.each(["/api/billing/checkout", "/api/billing/subscription"])(
+  "billing route — %s",
+  (path) => {
+    it.each(["admin", "developer", "operator", "approver", "member"])(
+      "403 for non-billing role=%s",
+      async (role) => {
+        const res = await request(app).get(path).set("x-test-role", role);
+        expect(res.status).toBe(403);
+      },
+    );
 
-  it("GET /api/billing/subscription is reachable with any role (member)", async () => {
-    // Billing is user-scoped; no workspace context required. Always skip role gate.
-    const res = await request(app).get("/api/billing/subscription").set("x-test-role", "member");
+    it.each(["billing", "owner"])("allows role=%s (not 403)", async (role) => {
+      const res = await request(app).get(path).set("x-test-role", role);
+      expect(res.status).not.toBe(403);
+    });
+  },
+);
+
+// ---------------------------------------------------------------------------
+// Workspace management — allowlisted (no requireRole, user-scoped)
+// ---------------------------------------------------------------------------
+
+describe("workspace management routes bypass role gating", () => {
+  it("GET /api/workspaces is reachable with any role (member)", async () => {
+    // Workspace management is user-scoped — must not return 403 for any auth'd user.
+    const res = await request(app).get("/api/workspaces").set("x-test-role", "member");
     expect(res.status).not.toBe(403);
   });
 });

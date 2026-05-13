@@ -65,11 +65,11 @@ jobs:
       - name: Require requireRole() on every authenticated API route mount
         run: |
           # Every app.use("/api/...") with requireAuth must also declare requireRole()
-          # or be in the explicit user-scoped allowlist (billing, workspaces management).
+          # or be in the explicit user-scoped allowlist (workspaces management only).
           violations=$(grep -n 'app\.use("/api/' src/app.ts \
             | grep 'requireAuth' \
             | grep -v 'requireRole(' \
-            | grep -Ev '"/api/(billing|workspaces)[/"]' \
+            | grep -Ev '"/api/workspaces[/"]' \
             || true)
           if [ -n "$violations" ]; then
             printf 'FAIL: app.use mounts have requireAuth but no requireRole() — add requireRole() or the allowlist comment:\n%s\n' "$violations"

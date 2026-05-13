@@ -3,6 +3,20 @@ jest.mock("../engine/llmProviders", () => ({
   getProvider: jest.fn(),
 }));
 
+// Bypass workspace resolution — set req.workspace with billing role so requireRole("billing") passes.
+jest.mock("../middleware/workspaceResolver", () => ({
+  createWorkspaceResolver: jest.fn(() => (req: Record<string, unknown>, _res: unknown, next: () => void) => {
+    req.workspace = { id: "test-workspace-id", role: "billing" };
+    req.workspaceId = "test-workspace-id";
+    next();
+  }),
+  createExplicitWorkspaceHeaderResolver: jest.fn(() => (req: Record<string, unknown>, _res: unknown, next: () => void) => {
+    req.workspace = { id: "test-workspace-id", role: "billing" };
+    req.workspaceId = "test-workspace-id";
+    next();
+  }),
+}));
+
 jest.mock("./stripeClient", () => ({
   getStripe: jest.fn(),
   PRICING_TIERS: {

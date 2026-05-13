@@ -392,10 +392,11 @@ app.use("/api/webhooks/apollo", apolloWebhookRoutes);
 // ---------------------------------------------------------------------------
 // Billing API — Stripe checkout sessions + subscription lifecycle
 // ---------------------------------------------------------------------------
-// user-scoped: billing is tied to the authenticated user's subscription, not a workspace
-app.use("/api/billing/checkout", requireAuth, billingMutationRateLimiter, checkoutRoutes);
-// user-scoped: billing is tied to the authenticated user's subscription, not a workspace
-app.use("/api/billing/subscription", requireAuth, billingMutationRateLimiter, subscriptionRoutes);
+// HEL-69: billing is workspace-scoped per the canonical role mapping (Stripe
+// customer ID lives on the workspace; see HEL-22 entitlements). requireRole
+// ensures only members with the billing role can manage subscriptions.
+app.use("/api/billing/checkout", requireAuth, workspaceResolver, requireRole("billing"), billingMutationRateLimiter, checkoutRoutes);
+app.use("/api/billing/subscription", requireAuth, workspaceResolver, requireRole("billing"), billingMutationRateLimiter, subscriptionRoutes);
 app.use("/api/public/landing", landingPublicApiRoutes);
 
 // ---------------------------------------------------------------------------

@@ -116,4 +116,104 @@ describe("workspace resolver route mounting", () => {
     expect(res.body.error).toBe("workspace resolver invoked");
     expect(workspaceResolverSpy).toHaveBeenCalledTimes(1);
   });
+
+  it("gates llm-configs routes behind the workspace resolver (HEL-68)", async () => {
+    const res = await request(app)
+      .get("/api/llm-configs")
+      .set("Authorization", "Bearer test-user-id");
+
+    expect(res.status).toBe(418);
+    expect(res.body.error).toBe("workspace resolver invoked");
+    expect(workspaceResolverSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it("gates mcp/servers routes behind the workspace resolver (HEL-68)", async () => {
+    const res = await request(app)
+      .get("/api/mcp/servers")
+      .set("Authorization", "Bearer test-user-id");
+
+    expect(res.status).toBe(418);
+    expect(res.body.error).toBe("workspace resolver invoked");
+    expect(workspaceResolverSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it("gates memory routes behind the workspace resolver (HEL-68)", async () => {
+    const res = await request(app)
+      .get("/api/memory")
+      .set("Authorization", "Bearer test-user-id");
+
+    expect(res.status).toBe(418);
+    expect(res.body.error).toBe("workspace resolver invoked");
+    expect(workspaceResolverSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it("gates agent memory routes behind the workspace resolver (HEL-68)", async () => {
+    const res = await request(app)
+      .get("/api/agents/test-agent-id/memory/search")
+      .set("Authorization", "Bearer test-user-id");
+
+    expect(res.status).toBe(418);
+    expect(res.body.error).toBe("workspace resolver invoked");
+    expect(workspaceResolverSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it("gates knowledge routes behind the workspace resolver (HEL-68)", async () => {
+    const res = await request(app)
+      .get("/api/knowledge/bases")
+      .set("Authorization", "Bearer test-user-id");
+
+    expect(res.status).toBe(418);
+    expect(res.body.error).toBe("workspace resolver invoked");
+    expect(workspaceResolverSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it("gates integration connection routes behind the workspace resolver (HEL-68)", async () => {
+    const res = await request(app)
+      .get("/api/integrations/connections")
+      .set("Authorization", "Bearer test-user-id");
+
+    expect(res.status).toBe(418);
+    expect(res.body.error).toBe("workspace resolver invoked");
+    expect(workspaceResolverSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it("gates hitl routes behind the workspace resolver (HEL-68)", async () => {
+    const res = await request(app)
+      .get("/api/hitl/companies/some-company/state")
+      .set("Authorization", "Bearer test-user-id");
+
+    expect(res.status).toBe(418);
+    expect(res.body.error).toBe("workspace resolver invoked");
+    expect(workspaceResolverSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it("gates reporting routes behind the workspace resolver (HEL-68)", async () => {
+    const res = await request(app)
+      .get("/api/reporting")
+      .set("Authorization", "Bearer test-user-id");
+
+    expect(res.status).toBe(418);
+    expect(res.body.error).toBe("workspace resolver invoked");
+    expect(workspaceResolverSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it("gates ticket-sync routes behind the workspace resolver (HEL-68)", async () => {
+    const res = await request(app)
+      .get("/api/ticket-sync/connections")
+      .set("Authorization", "Bearer test-user-id");
+
+    expect(res.status).toBe(418);
+    expect(res.body.error).toBe("workspace resolver invoked");
+    expect(workspaceResolverSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it("gates approval-policies routes behind the workspace resolver (HEL-68)", async () => {
+    const res = await request(app)
+      .get("/api/approval-policies")
+      .set("Authorization", "Bearer test-user-id");
+
+    expect(res.status).toBe(418);
+    expect(res.body.error).toBe("workspace resolver invoked");
+    expect(workspaceResolverSpy).toHaveBeenCalledTimes(1);
+  });
 });

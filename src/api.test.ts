@@ -390,8 +390,9 @@ describe("Approval tier policy API", () => {
 
   it("lists default approval tier policies for a workspace", async () => {
     const res = await request(app)
-      .get(`/api/approval-policies?workspaceId=${workspaceId}`)
-      .set(asAuth());
+      .get("/api/approval-policies")
+      .set(asAuth())
+      .set("X-Workspace-Id", workspaceId);
 
     expect(res.status).toBe(200);
     expect(res.body.total).toBe(5);
@@ -402,8 +403,8 @@ describe("Approval tier policy API", () => {
     const res = await request(app)
       .put("/api/approval-policies/public_posts")
       .set(asAuth())
+      .set("X-Workspace-Id", workspaceId)
       .send({
-        workspaceId,
         mode: "notify_only",
       });
 
@@ -416,8 +417,8 @@ describe("Approval tier policy API", () => {
     const res = await request(app)
       .put("/api/approval-policies/spend_above_threshold")
       .set(asAuth())
+      .set("X-Workspace-Id", workspaceId)
       .send({
-        workspaceId,
         mode: "require_approval",
         spendThresholdCents: -1,
       });

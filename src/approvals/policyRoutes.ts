@@ -1,5 +1,5 @@
 import express from "express";
-import { AuthenticatedRequest } from "../auth/authMiddleware";
+import { WorkspaceAwareRequest } from "../middleware/workspaceResolver";
 import { approvalPolicyStore } from "./policyStore";
 import {
   APPROVAL_TIER_ACTION_TYPES,
@@ -10,21 +10,16 @@ import {
 
 const router = express.Router();
 
-function requireWorkspaceId(req: express.Request, res: express.Response): string | null {
-  const queryValue = typeof req.query.workspaceId === "string" ? req.query.workspaceId.trim() : "";
-  const bodyValue =
-    typeof (req.body as { workspaceId?: unknown } | undefined)?.workspaceId === "string"
-      ? String((req.body as { workspaceId?: string }).workspaceId).trim()
-      : "";
-  const workspaceId = queryValue || bodyValue;
+function requireWorkspaceId(req: WorkspaceAwareRequest, res: express.Response): string | null {
+  const workspaceId = req.workspaceId?.trim();
   if (!workspaceId) {
-    res.status(400).json({ error: "workspaceId is required" });
+    res.status(500).json({ error: "Workspace context was not resolved for the request" });
     return null;
   }
   return workspaceId;
 }
 
-router.get("/", async (req: AuthenticatedRequest, res) => {
+router.get("/", async (req: WorkspaceAwareRequest, res) => {
   const workspaceId = requireWorkspaceId(req, res);
   if (!workspaceId) {
     return;
@@ -39,7 +34,7 @@ router.get("/", async (req: AuthenticatedRequest, res) => {
   });
 });
 
-router.put("/:actionType", async (req: AuthenticatedRequest, res) => {
+router.put("/:actionType", async (req: WorkspaceAwareRequest, res) => {
   const workspaceId = requireWorkspaceId(req, res);
   if (!workspaceId) {
     return;

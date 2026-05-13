@@ -34,7 +34,7 @@ const assigneeSchema = z.object({
 });
 
 const createConnectionSchema = z.object({
-  workspaceId: z.string().uuid(),
+  workspaceId: z.string().uuid().optional(),
   provider: z.enum(["github", "jira", "linear"]),
   authMethod: z.enum(["oauth2_pkce", "api_key", "basic"]),
   label: z.string().trim().min(1).max(120),
@@ -64,7 +64,7 @@ const createConnectionSchema = z.object({
 });
 
 const bootstrapConnectionSchema = z.object({
-  workspaceId: z.string().uuid(),
+  workspaceId: z.string().uuid().optional(),
   provider: z.enum(["github", "jira", "linear"]),
   label: z.string().trim().min(1).max(120),
   syncDirection: z.enum(["outbound", "inbound", "bidirectional"]).default("bidirectional"),
@@ -132,41 +132,33 @@ const ticketLinkParamsSchema = z.object({
   ticketId: z.string().uuid(),
 });
 
-router.get("/connections", async (req, res) => {
-  const workspaceId = typeof req.query.workspaceId === "string" ? req.query.workspaceId : "";
-  if (!workspaceId) {
-    res.status(400).json({ error: "workspaceId is required" });
+router.get("/connections", async (req: WorkspaceAwareRequest, res) => {
+  const context = resolveWorkspaceContext(req, res);
+  if (!context) {
     return;
   }
 
-  const userId = (req as AuthenticatedRequest).auth?.sub?.trim();
-  if (!userId) {
-    res.status(401).json({ error: "Authenticated user required" });
-    return;
-  }
-
-  const connections = await ticketSyncService.listConnections(workspaceId, userId);
+  const connections = await ticketSyncService.listConnections(context.workspaceId, context.userId);
   res.json({ connections, total: connections.length });
 });
 
-router.post("/connections", async (req: AuthenticatedRequest, res) => {
+router.post("/connections", async (req: WorkspaceAwareRequest, res) => {
   const parsed = createConnectionSchema.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Invalid request body" });
     return;
   }
 
-  const userId = req.auth?.sub?.trim();
-  if (!userId) {
-    res.status(401).json({ error: "Authenticated user required" });
+  const context = resolveWorkspaceContext(req, res);
+  if (!context) {
     return;
   }
 
   const connection = await ticketSyncService.createConnection({
-    userId,
+    userId: context.userId,
     label: parsed.data.label,
     metadata: {
-      workspaceId: parsed.data.workspaceId,
+      workspaceId: context.workspaceId,
       provider: parsed.data.provider,
       authMethod: parsed.data.authMethod,
       label: parsed.data.label,
@@ -182,23 +174,22 @@ router.post("/connections", async (req: AuthenticatedRequest, res) => {
   res.status(201).json(connection);
 });
 
-router.post("/connections/bootstrap", async (req: AuthenticatedRequest, res) => {
+router.post("/connections/bootstrap", async (req: WorkspaceAwareRequest, res) => {
   const parsed = bootstrapConnectionSchema.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Invalid request body" });
     return;
   }
 
-  const userId = req.auth?.sub?.trim();
-  if (!userId) {
-    res.status(401).json({ error: "Authenticated user required" });
+  const context = resolveWorkspaceContext(req, res);
+  if (!context) {
     return;
   }
 
   try {
     const connection = await ticketSyncService.bootstrapConnection({
-      userId,
-      workspaceId: parsed.data.workspaceId,
+      userId: context.userId,
+      workspaceId: context.workspaceId,
       provider: parsed.data.provider,
       label: parsed.data.label,
       syncDirection: parsed.data.syncDirection,

@@ -50,6 +50,7 @@ import {
   listClassificationDecisions,
 } from "./engine/classificationLog";
 import { requireAuth, requireAuthOrQaBypass, AuthenticatedRequest } from "./auth/authMiddleware";
+import { requireRole } from "./middleware/requireRole";
 import socialAuthRoutes from "./auth/socialAuthRoutes";
 import stripeWebhookRoutes from "./billing/stripeWebhook";
 import apolloWebhookRoutes from "./integrations/apollo-attio/webhookRoute";
@@ -89,7 +90,6 @@ import {
   createWorkspaceResolver,
   WorkspaceAwareRequest,
 } from "./middleware/workspaceResolver";
-import { requireRole } from "./middleware/requireRole";
 import { createWorkspaceRoutes } from "./workspaces/workspaceRoutes";
 import { createMissionRoutes } from "./missions/missionRoutes";
 import {
@@ -392,11 +392,9 @@ app.use("/api/webhooks/apollo", apolloWebhookRoutes);
 // ---------------------------------------------------------------------------
 // Billing API — Stripe checkout sessions + subscription lifecycle
 // ---------------------------------------------------------------------------
-// HEL-69: billing surfaces are workspace-scoped per the canonical role mapping
-// (Stripe customer ID lives on the workspace, not the user — see HEL-22 entitlements).
-// The implementation still pulls userId + workspaceId from JWT claims today; that
-// stays valid because `workspaceResolver` populates both legacy `req.workspaceId`
-// and canonical `req.workspace` so `requireRole("billing")` can gate correctly.
+// HEL-69: billing is workspace-scoped per the canonical role mapping (Stripe
+// customer ID lives on the workspace; see HEL-22 entitlements). requireRole
+// ensures only members with the billing role can manage subscriptions.
 app.use("/api/billing/checkout", requireAuth, workspaceResolver, requireRole("billing"), billingMutationRateLimiter, checkoutRoutes);
 app.use("/api/billing/subscription", requireAuth, workspaceResolver, requireRole("billing"), billingMutationRateLimiter, subscriptionRoutes);
 app.use("/api/public/landing", landingPublicApiRoutes);
@@ -420,7 +418,7 @@ app.use("/api/agents", requireAuth, workspaceResolver, requireRole("admin", "dev
 app.use("/api/integrations/apollo", apolloRoutes);
 
 // Routines stub — returns empty list until a full routines store is implemented.
-app.get("/api/routines", requireAuth, (_req, res) => {
+app.get("/api/routines", requireAuth, workspaceResolver, requireRole("admin", "developer"), (_req, res) => {
   res.json({ routines: [] });
 });
 app.use("/api/knowledge", requireAuth, workspaceResolver, requireRole("admin", "developer"), knowledgeMutationRateLimiter, knowledgeRoutes);
@@ -444,11 +442,6 @@ app.use("/api/integrations/intercom", intercomRoutes);
 app.use("/api/integrations/agent-catalog", agentCatalogRoutes);
 app.use("/api/connectors/google-workspace", googleWorkspaceConnectorRoutes);
 // user-scoped: workspace management creates/lists workspaces and cannot itself be workspace-gated
-// HEL-69 ALLOWLIST: /api/workspaces is intentionally public-after-auth. The
-// create-workspace flow runs before the user has any workspace at all, so
-// `withWorkspace` would have nothing to resolve and `requireRole` would have
-// no role to gate. Per-route role enforcement (delete-workspace requires owner,
-// update-workspace requires admin) happens inside `workspaceRoutes`.
 app.use("/api/workspaces", requireAuth, workspaceRoutes);
 app.use("/api/missions", requireAuth, workspaceResolver, requireRole("admin", "developer"), llmEndpointRateLimiter, missionRoutes);
 app.use("/api/companies", requireAuth, workspaceResolver, requireRole("admin", "developer"), companyRoutes);
@@ -822,7 +815,7 @@ Rules:
  * Uses the authenticated JWT subject to resolve the user's LLM config.
  * Returns: { steps: WorkflowStep[] }
  */
-app.post("/api/workflows/generate", requireAuth, workspaceResolver, llmEndpointRateLimiter, async (req: WorkspaceAwareRequest, res) => {
+app.post("/api/workflows/generate", requireAuth, workspaceResolver, requireRole("admin", "developer"), llmEndpointRateLimiter, async (req: WorkspaceAwareRequest, res) => {
   const { description, llmConfigId } = req.body as {
     description?: unknown;
     llmConfigId?: unknown;

@@ -8,6 +8,9 @@ const mockAuthClient = {
   signInWithOtp: vi.fn(),
   signInWithOAuth: vi.fn(),
   signOut: vi.fn(),
+  // HEL-76 follow-up: PKCE magic-link / OAuth callbacks need this to exchange
+  // the `?code=...` query param for a session before getSession returns.
+  exchangeCodeForSession: vi.fn(),
 };
 
 vi.mock("@supabase/supabase-js", () => ({
@@ -35,7 +38,7 @@ describe("isSupabaseAuthConfigured", () => {
 
   it("returns true when both env vars are set", async () => {
     vi.stubEnv("VITE_SUPABASE_URL", "https://proj.supabase.co");
-    vi.stubEnv("VITE_SUPABASE_ANON_KEY", "anon-key-123");
+    vi.stubEnv("VITE_SUPABASE_PUBLISHABLE_KEY", "anon-key-123");
     const { isSupabaseAuthConfigured } = await import("./supabaseAuth");
     expect(isSupabaseAuthConfigured()).toBe(true);
   });
@@ -58,7 +61,7 @@ describe("getSupabaseClient", () => {
 
   it("creates and returns a client when env vars are set", async () => {
     vi.stubEnv("VITE_SUPABASE_URL", "https://proj.supabase.co");
-    vi.stubEnv("VITE_SUPABASE_ANON_KEY", "anon-key");
+    vi.stubEnv("VITE_SUPABASE_PUBLISHABLE_KEY", "anon-key");
     const { getSupabaseClient } = await import("./supabaseAuth");
     const client = getSupabaseClient();
     expect(client).not.toBeNull();
@@ -218,7 +221,7 @@ describe("getSupabaseStoredSession", () => {
 
   it("returns null when no session is stored", async () => {
     vi.stubEnv("VITE_SUPABASE_URL", "https://proj.supabase.co");
-    vi.stubEnv("VITE_SUPABASE_ANON_KEY", "anon-key");
+    vi.stubEnv("VITE_SUPABASE_PUBLISHABLE_KEY", "anon-key");
     mockAuthClient.getSession.mockResolvedValue({ data: { session: null }, error: null });
     const { getSupabaseStoredSession } = await import("./supabaseAuth");
     expect(await getSupabaseStoredSession()).toBeNull();
@@ -226,10 +229,73 @@ describe("getSupabaseStoredSession", () => {
 
   it("throws when getSession returns an error", async () => {
     vi.stubEnv("VITE_SUPABASE_URL", "https://proj.supabase.co");
-    vi.stubEnv("VITE_SUPABASE_ANON_KEY", "anon-key");
+    vi.stubEnv("VITE_SUPABASE_PUBLISHABLE_KEY", "anon-key");
     mockAuthClient.getSession.mockResolvedValue({ data: { session: null }, error: { message: "session error" } });
     const { getSupabaseStoredSession } = await import("./supabaseAuth");
     await expect(getSupabaseStoredSession()).rejects.toThrow("session error");
+  });
+
+  // PKCE magic-link callback regression — without this exchange, the user
+  // lands on /auth/callback with `?code=...` but getSession returns null and
+  // the dashboard shows "The sign-in link is invalid, expired, or missing
+  // a session."
+  it("exchanges ?code= for a session before reading the session (PKCE flow)", async () => {
+    vi.stubEnv("VITE_SUPABASE_URL", "https://proj.supabase.co");
+    vi.stubEnv("VITE_SUPABASE_PUBLISHABLE_KEY", "anon-key");
+
+    // Simulate landing on /auth/callback?code=ABC after a magic link click.
+    const originalLocation = window.location;
+    Object.defineProperty(window, "location", {
+      writable: true,
+      value: { ...originalLocation, search: "?code=ABC&state=xyz", href: "https://app.test/auth/callback?code=ABC&state=xyz", origin: "https://app.test", pathname: "/auth/callback" },
+    });
+    // jsdom blocks history.replaceState across origins; stub it as a no-op
+    // for this test — production callers run inside their real origin.
+    const originalReplaceState = window.history.replaceState;
+    window.history.replaceState = vi.fn();
+
+    mockAuthClient.exchangeCodeForSession.mockResolvedValue({
+      data: {},
+      error: null,
+    });
+    mockAuthClient.getSession.mockResolvedValue({
+      data: {
+        session: {
+          access_token: "freshly-exchanged",
+          refresh_token: "refresh",
+          expires_at: 9999999999,
+          user: { id: "u1", email: "a@b.com", user_metadata: {}, app_metadata: {} },
+        },
+      },
+      error: null,
+    });
+
+    const { getSupabaseStoredSession } = await import("./supabaseAuth");
+    const session = await getSupabaseStoredSession();
+
+    expect(mockAuthClient.exchangeCodeForSession).toHaveBeenCalledWith(
+      "https://app.test/auth/callback?code=ABC&state=xyz",
+    );
+    expect(session?.accessToken).toBe("freshly-exchanged");
+
+    Object.defineProperty(window, "location", { writable: true, value: originalLocation });
+    window.history.replaceState = originalReplaceState;
+  });
+
+  it("surfaces ?error= query params from a failed callback", async () => {
+    vi.stubEnv("VITE_SUPABASE_URL", "https://proj.supabase.co");
+    vi.stubEnv("VITE_SUPABASE_PUBLISHABLE_KEY", "anon-key");
+
+    const originalLocation = window.location;
+    Object.defineProperty(window, "location", {
+      writable: true,
+      value: { ...originalLocation, search: "?error=access_denied&error_description=Email+link+is+invalid+or+expired", href: "https://app.test/auth/callback?error=access_denied", origin: "https://app.test", pathname: "/auth/callback" },
+    });
+
+    const { getSupabaseStoredSession } = await import("./supabaseAuth");
+    await expect(getSupabaseStoredSession()).rejects.toThrow(/Email link is invalid or expired/i);
+
+    Object.defineProperty(window, "location", { writable: true, value: originalLocation });
   });
 });
 
@@ -244,7 +310,7 @@ describe("signInWithSupabasePassword", () => {
 
   it("throws when sign-in returns an error", async () => {
     vi.stubEnv("VITE_SUPABASE_URL", "https://proj.supabase.co");
-    vi.stubEnv("VITE_SUPABASE_ANON_KEY", "anon-key");
+    vi.stubEnv("VITE_SUPABASE_PUBLISHABLE_KEY", "anon-key");
     mockAuthClient.signInWithPassword.mockResolvedValue({ data: {}, error: { message: "bad credentials" } });
     const { signInWithSupabasePassword } = await import("./supabaseAuth");
     await expect(signInWithSupabasePassword("a@b.com", "wrong")).rejects.toThrow("bad credentials");
@@ -252,7 +318,7 @@ describe("signInWithSupabasePassword", () => {
 
   it("throws when sign-in succeeds but returns no session", async () => {
     vi.stubEnv("VITE_SUPABASE_URL", "https://proj.supabase.co");
-    vi.stubEnv("VITE_SUPABASE_ANON_KEY", "anon-key");
+    vi.stubEnv("VITE_SUPABASE_PUBLISHABLE_KEY", "anon-key");
     mockAuthClient.signInWithPassword.mockResolvedValue({ data: { session: null }, error: null });
     const { signInWithSupabasePassword } = await import("./supabaseAuth");
     await expect(signInWithSupabasePassword("a@b.com", "pass")).rejects.toThrow(/did not return a session/i);
@@ -270,7 +336,7 @@ describe("signUpWithSupabasePassword", () => {
 
   it("returns null when sign-up succeeds but requires email confirmation", async () => {
     vi.stubEnv("VITE_SUPABASE_URL", "https://proj.supabase.co");
-    vi.stubEnv("VITE_SUPABASE_ANON_KEY", "anon-key");
+    vi.stubEnv("VITE_SUPABASE_PUBLISHABLE_KEY", "anon-key");
     mockAuthClient.signUp.mockResolvedValue({ data: { session: null }, error: null });
     const { signUpWithSupabasePassword } = await import("./supabaseAuth");
     const result = await signUpWithSupabasePassword({ email: "a@b.com", password: "p", fullName: "A" });
@@ -279,7 +345,7 @@ describe("signUpWithSupabasePassword", () => {
 
   it("throws when sign-up returns an error", async () => {
     vi.stubEnv("VITE_SUPABASE_URL", "https://proj.supabase.co");
-    vi.stubEnv("VITE_SUPABASE_ANON_KEY", "anon-key");
+    vi.stubEnv("VITE_SUPABASE_PUBLISHABLE_KEY", "anon-key");
     mockAuthClient.signUp.mockResolvedValue({ data: {}, error: { message: "email taken" } });
     const { signUpWithSupabasePassword } = await import("./supabaseAuth");
     await expect(signUpWithSupabasePassword({ email: "a@b.com", password: "p", fullName: "A" })).rejects.toThrow("email taken");
@@ -297,7 +363,7 @@ describe("sendSupabaseMagicLink", () => {
 
   it("throws when OTP call returns an error", async () => {
     vi.stubEnv("VITE_SUPABASE_URL", "https://proj.supabase.co");
-    vi.stubEnv("VITE_SUPABASE_ANON_KEY", "anon-key");
+    vi.stubEnv("VITE_SUPABASE_PUBLISHABLE_KEY", "anon-key");
     mockAuthClient.signInWithOtp.mockResolvedValue({ error: { message: "rate limited" } });
     const { sendSupabaseMagicLink } = await import("./supabaseAuth");
     await expect(sendSupabaseMagicLink("a@b.com")).rejects.toThrow("rate limited");
@@ -305,7 +371,7 @@ describe("sendSupabaseMagicLink", () => {
 
   it("resolves when OTP call succeeds", async () => {
     vi.stubEnv("VITE_SUPABASE_URL", "https://proj.supabase.co");
-    vi.stubEnv("VITE_SUPABASE_ANON_KEY", "anon-key");
+    vi.stubEnv("VITE_SUPABASE_PUBLISHABLE_KEY", "anon-key");
     mockAuthClient.signInWithOtp.mockResolvedValue({ error: null });
     const { sendSupabaseMagicLink } = await import("./supabaseAuth");
     await expect(sendSupabaseMagicLink("a@b.com")).resolves.toBeUndefined();
@@ -323,7 +389,7 @@ describe("signInWithSupabaseOAuth", () => {
 
   it("throws when OAuth call returns an error", async () => {
     vi.stubEnv("VITE_SUPABASE_URL", "https://proj.supabase.co");
-    vi.stubEnv("VITE_SUPABASE_ANON_KEY", "anon-key");
+    vi.stubEnv("VITE_SUPABASE_PUBLISHABLE_KEY", "anon-key");
     mockAuthClient.signInWithOAuth.mockResolvedValue({ data: { url: null }, error: { message: "oauth error" } });
     const { signInWithSupabaseOAuth } = await import("./supabaseAuth");
     await expect(signInWithSupabaseOAuth("github")).rejects.toThrow("oauth error");
@@ -331,7 +397,7 @@ describe("signInWithSupabaseOAuth", () => {
 
   it("calls window.location.assign with the OAuth URL", async () => {
     vi.stubEnv("VITE_SUPABASE_URL", "https://proj.supabase.co");
-    vi.stubEnv("VITE_SUPABASE_ANON_KEY", "anon-key");
+    vi.stubEnv("VITE_SUPABASE_PUBLISHABLE_KEY", "anon-key");
     mockAuthClient.signInWithOAuth.mockResolvedValue({ data: { url: "https://oauth.example.com/auth" }, error: null });
     const assignFn = vi.fn();
     vi.stubGlobal("location", { assign: assignFn, origin: "http://localhost" });
@@ -342,7 +408,7 @@ describe("signInWithSupabaseOAuth", () => {
 
   it("does not redirect when OAuth returns no URL", async () => {
     vi.stubEnv("VITE_SUPABASE_URL", "https://proj.supabase.co");
-    vi.stubEnv("VITE_SUPABASE_ANON_KEY", "anon-key");
+    vi.stubEnv("VITE_SUPABASE_PUBLISHABLE_KEY", "anon-key");
     mockAuthClient.signInWithOAuth.mockResolvedValue({ data: { url: null }, error: null });
     const assignFn = vi.fn();
     vi.stubGlobal("location", { assign: assignFn, origin: "http://localhost" });
@@ -363,7 +429,7 @@ describe("signOutSupabase", () => {
 
   it("throws when sign-out returns an error", async () => {
     vi.stubEnv("VITE_SUPABASE_URL", "https://proj.supabase.co");
-    vi.stubEnv("VITE_SUPABASE_ANON_KEY", "anon-key");
+    vi.stubEnv("VITE_SUPABASE_PUBLISHABLE_KEY", "anon-key");
     mockAuthClient.signOut.mockResolvedValue({ error: { message: "sign-out failed" } });
     const { signOutSupabase } = await import("./supabaseAuth");
     await expect(signOutSupabase()).rejects.toThrow("sign-out failed");
@@ -371,7 +437,7 @@ describe("signOutSupabase", () => {
 
   it("resolves when sign-out succeeds", async () => {
     vi.stubEnv("VITE_SUPABASE_URL", "https://proj.supabase.co");
-    vi.stubEnv("VITE_SUPABASE_ANON_KEY", "anon-key");
+    vi.stubEnv("VITE_SUPABASE_PUBLISHABLE_KEY", "anon-key");
     mockAuthClient.signOut.mockResolvedValue({ error: null });
     const { signOutSupabase } = await import("./supabaseAuth");
     await expect(signOutSupabase()).resolves.toBeUndefined();

@@ -62,30 +62,17 @@ jobs:
             echo "Customer-facing surface leaked an internal noun — see docs/glossary.md"
             exit 1
           fi
-
-      - name: Guard authenticated /api routes require requireRole(...)  # HEL-69
+      - name: Require requireRole() on every authenticated API route mount
         run: |
-          set -euo pipefail
-          # Per HEL-69: every authenticated route mount in src/app.ts must
-          # compose `requireRole(...)` after `withWorkspace`/`workspaceResolver`,
-          # OR be on the explicit allowlist below with an inline rationale.
-          #
-          # Allowlist (extended-regex literal — bash compares full mount line):
-          #   /api/workspaces  — create-workspace flow runs before any
-          #     workspace exists, so role gating happens inside the router.
-          ALLOWLIST='app\.use\("/api/workspaces",'
-
-          missing=$(grep -nE 'app\.use\("/api/[^"]+",\s*requireAuth' src/app.ts \
+          # Every app.use("/api/...") with requireAuth must also declare requireRole()
+          # or be in the explicit user-scoped allowlist (workspaces management only).
+          violations=$(grep -n 'app\.use("/api/' src/app.ts \
+            | grep 'requireAuth' \
             | grep -v 'requireRole(' \
-            | grep -vE "$ALLOWLIST" \
+            | grep -Ev '"/api/workspaces[/"]' \
             || true)
-
-          if [[ -n "$missing" ]]; then
-            echo "::error::Authenticated /api/* routes are missing requireRole(...):"
-            printf '%s\n' "$missing"
-            echo
-            echo "Add requireRole(...) per HEL-69's role mapping in src/app.ts,"
-            echo "or extend the ALLOWLIST in this CI step with an inline rationale."
+          if [ -n "$violations" ]; then
+            printf 'FAIL: app.use mounts have requireAuth but no requireRole() — add requireRole() or the allowlist comment:\n%s\n' "$violations"
             exit 1
           fi
 

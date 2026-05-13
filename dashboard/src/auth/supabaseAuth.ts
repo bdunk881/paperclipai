@@ -154,7 +154,7 @@ export async function getSupabaseStoredSession(): Promise<StoredAuthSession | nu
     const errorDescription = params.get("error_description") || params.get("error");
 
     if (errorDescription) {
-      throw new Error(decodeURIComponent(errorDescription.replace(/\+/g, " ")));
+      throw new Error(errorDescription);
     }
 
     if (code) {

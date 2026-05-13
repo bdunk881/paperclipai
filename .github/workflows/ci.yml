@@ -62,6 +62,19 @@ jobs:
             echo "Customer-facing surface leaked an internal noun — see docs/glossary.md"
             exit 1
           fi
+      - name: Require requireRole() on every authenticated API route mount
+        run: |
+          # Every app.use("/api/...") with requireAuth must also declare requireRole()
+          # or be in the explicit user-scoped allowlist (workspaces management only).
+          violations=$(grep -n 'app\.use("/api/' src/app.ts \
+            | grep 'requireAuth' \
+            | grep -v 'requireRole(' \
+            | grep -Ev '"/api/workspaces[/"]' \
+            || true)
+          if [ -n "$violations" ]; then
+            printf 'FAIL: app.use mounts have requireAuth but no requireRole() — add requireRole() or the allowlist comment:\n%s\n' "$violations"
+            exit 1
+          fi
 
   test-backend:
     name: Test Backend

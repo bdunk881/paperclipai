@@ -1,78 +1,12 @@
 /**
- * AutoFlow Design Tokens
+ * Legacy design tokens — superseded by `./v2.css`.
  *
- * This single file controls the visual identity of the landing page.
- * To rebrand for a new autonomous company, swap only this file.
+ * The previous indigo/teal/coral palette was retired when the landing
+ * was rebuilt against the v2 editorial design (cream paper + terracotta
+ * clay). Tokens for the live landing now live in `./v2.css` under the
+ * `--af2-*` namespace.
  *
- * Usage in components: var(--color-primary), var(--font-heading), etc.
+ * Kept as an explicit no-op so existing imports still resolve until the
+ * next cleanup pass; deleting this file would break `root.tsx`'s current
+ * import. The next refactor can drop the import entirely.
  */
-
-:root {
-  /* AutoFlow brand palette */
-  --color-teal: #00D4B8;
-  --color-indigo: #4A3AFF;
-  --color-coral: #FF5F57;
-  --color-yellow: #FFD93D;
-  --color-navy: #0F1333;
-  --color-slate: #2D3748;
-  --color-cloud: #F7FAFC;
-
-  /* Semantic brand colors (mapped to palette) */
-  --color-primary: var(--color-indigo);
-  --color-primary-hover: #3b2ce0;
-  --color-primary-light: #ede8ff;
-  --color-primary-text: #2a1dbf;
-  --color-accent: var(--color-teal);
-  --color-accent-hover: #00b89f;
-  --color-cta: var(--color-coral);
-  --color-cta-hover: #e54e46;
-  --color-highlight: var(--color-yellow);
-
-  /* Neutral palette */
-  --color-bg: #ffffff;
-  --color-bg-subtle: var(--color-cloud);
-  --color-surface: #ffffff;
-  --color-border: #e5e7eb;           /* gray-200 */
-  --color-text-primary: var(--color-navy);
-  --color-text-secondary: var(--color-slate);
-  --color-text-muted: #9ca3af;       /* gray-400 */
-
-  /* Typography */
-  --font-display: "Poppins", ui-sans-serif, system-ui, sans-serif;
-  --font-heading: "Poppins", ui-sans-serif, system-ui, sans-serif;
-  --font-body: "Inter", ui-sans-serif, system-ui, sans-serif;
-  --font-mono: "JetBrains Mono", ui-monospace, "Cascadia Code", monospace;
-
-  /* Spacing scale */
-  --section-padding-y: 6rem;         /* 96px */
-  --section-padding-x: 1.5rem;       /* 24px */
-  --container-max-width: 80rem;      /* 1280px */
-
-  /* Border radius */
-  --radius-sm: 0.375rem;             /* 6px */
-  --radius-md: 0.5rem;               /* 8px */
-  --radius-lg: 0.75rem;              /* 12px */
-  --radius-xl: 1rem;                 /* 16px */
-  --radius-2xl: 1.5rem;              /* 24px */
-
-  /* Shadows */
-  --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.05);
-  --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
-  --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
-
-  /* CTA button */
-  --cta-bg: var(--color-cta);
-  --cta-bg-hover: var(--color-cta-hover);
-  --cta-text: #ffffff;
-  --cta-radius: var(--radius-lg);
-
-  /* Hero gradient */
-  --gradient-hero: linear-gradient(135deg, var(--color-indigo) 0%, var(--color-teal) 50%, var(--color-yellow) 100%);
-
-  /* Flow builder node status colors */
-  --flow-edge: var(--color-teal);
-  --flow-selected: var(--color-indigo);
-  --flow-error: var(--color-coral);
-  --flow-warning: var(--color-yellow);
-  --flow-success: var(--color-teal);
-}

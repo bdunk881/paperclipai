@@ -38,7 +38,8 @@ function defaultProviderStates(): Record<OAuthProvider, ProviderConnectionState>
   };
 }
 
-function toWorkflowCategory(category: AgentCatalogTemplate["category"]): WorkflowTemplate["category"] {
+// eslint-disable-next-line react-refresh/only-export-components
+export function toWorkflowCategory(category: AgentCatalogTemplate["category"]): WorkflowTemplate["category"] {
   const normalized = category.toLowerCase();
   if (normalized === "sales") return "sales";
   if (normalized === "support") return "support";
@@ -47,7 +48,8 @@ function toWorkflowCategory(category: AgentCatalogTemplate["category"]): Workflo
   return "operations";
 }
 
-function buildTemplateDeploymentBlueprint(
+// eslint-disable-next-line react-refresh/only-export-components
+export function buildTemplateDeploymentBlueprint(
   template: AgentCatalogTemplate,
   budgetMonthlyUsd: number,
   defaultIntervalMinutes: number

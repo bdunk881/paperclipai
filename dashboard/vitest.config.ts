@@ -26,18 +26,18 @@ export default defineConfig({
         "src/main.tsx",
         "src/test-setup.ts",
         "src/**/*.test.{ts,tsx}",
+        // --- complex UI pages excluded like WorkflowBuilder / Memory ---
         "src/pages/WorkflowBuilder.tsx",
         "src/pages/Memory.tsx",
+        // One-off config / init files
         "src/data/mockData.ts",
+        "src/sentry.ts",                   // Sentry initialisation, side-effect only
+        "src/test-global-teardown.ts",     // test infrastructure
       ],
       thresholds: {
         lines: 46,
         functions: 36,
-        // Branches still at 53 — this PR (HEL-57) added direct unit tests for
-        // handleConnectAction which contributed ~1pp of branch coverage. To
-        // reach 63 we need a broader sweep across other low-coverage files.
-        // Tracked as HEL-73.
-        branches: 53,
+        branches: 63,
         statements: 46,
       },
     },

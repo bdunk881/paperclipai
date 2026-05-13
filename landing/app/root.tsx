@@ -9,16 +9,17 @@ import {
 
 import "./globals.css";
 import "./tokens.css";
+import "./v2.css";
 
 export function meta() {
   return [
     {
-      title: "AutoFlow — Agent-Native Automation | Operating Layer for SMB Operators and Dev Teams",
+      title: "AutoFlow — Hire your first team of agents",
     },
     {
       name: "description",
       content:
-        "AutoFlow is the agent-native automation platform for lean SMB operators and dev teams. BYOLLM, MCP-standard, 22-skill marketplace. Built by Altitude Media.",
+        "Write a mission. AutoFlow drafts a hiring plan, an org, a budget, and the first week of work. Approve what matters. Watch the rest run.",
     },
   ];
 }
@@ -36,7 +37,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
         <link
           rel="stylesheet"
-          href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap"
+          href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,300;9..144,400;9..144,500;9..144,600&family=Geist:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"
         />
         <Meta />
         <Links />
@@ -79,18 +80,37 @@ export function ErrorBoundary({ error }: { error: unknown }) {
   }
 
   return (
-    <main className="min-h-screen bg-[#020617] px-6 py-24 text-slate-100">
-      <div className="mx-auto flex max-w-3xl flex-col gap-6 rounded-[28px] border border-slate-800 bg-slate-950/80 p-10 shadow-2xl shadow-slate-950/40">
-        <p className="text-sm font-semibold uppercase tracking-[0.24em] text-orange-400">
-          Error {code}
+    <main
+      style={{
+        minHeight: "100vh",
+        background: "var(--af2-paper)",
+        color: "var(--af2-ink)",
+        padding: "96px 24px",
+        fontFamily: "var(--af2-sans)",
+      }}
+    >
+      <div
+        style={{
+          maxWidth: 720,
+          margin: "0 auto",
+          padding: 40,
+          background: "var(--af2-card)",
+          border: "1px solid var(--af2-line)",
+          borderRadius: 14,
+          display: "flex",
+          flexDirection: "column",
+          gap: 18,
+        }}
+      >
+        <span className="af2-eyebrow">Error {code}</span>
+        <h1 style={{ font: "400 36px/1.05 var(--af2-serif)", letterSpacing: "-0.02em", margin: 0 }}>
+          {title}
+        </h1>
+        <p style={{ fontSize: 15, lineHeight: 1.55, color: "var(--af2-ink-2)", margin: 0 }}>
+          {description}
         </p>
-        <h1 className="text-4xl font-semibold tracking-[-0.04em] text-white">{title}</h1>
-        <p className="max-w-2xl text-base leading-7 text-slate-400">{description}</p>
         <div>
-          <a
-            href="/"
-            className="inline-flex items-center rounded-2xl bg-teal-400 px-5 py-3 text-sm font-semibold text-slate-950 transition hover:brightness-105"
-          >
+          <a href="/" className="af2-btn af2-btn-clay">
             Return home
           </a>
         </div>

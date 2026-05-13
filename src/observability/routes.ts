@@ -1,6 +1,7 @@
 import express from "express";
 import { z } from "zod";
 import { AuthenticatedRequest } from "../auth/authMiddleware";
+import { entitlementStore } from "../billing/entitlements";
 import { WorkspaceAwareRequest } from "../middleware/workspaceResolver";
 import { observabilityStore } from "./store";
 import { ObservabilityEventCategory } from "./types";
@@ -58,10 +59,23 @@ router.get("/events", async (req: WorkspaceAwareRequest, res) => {
     return;
   }
 
+  const workspaceId = getWorkspaceId(req);
+
+  // Clamp the history window to the workspace's log retention entitlement.
+  let since: string | undefined;
+  if (workspaceId) {
+    const ent = entitlementStore.get(workspaceId);
+    const retentionDays = ent?.logRetentionDays ?? 14; // explore-tier default
+    const cutoff = new Date();
+    cutoff.setUTCDate(cutoff.getUTCDate() - retentionDays);
+    since = cutoff.toISOString();
+  }
+
   const page = await observabilityStore.listEvents({
-    workspaceId: getWorkspaceId(req),
+    workspaceId,
     userId,
     after: typeof req.query.after === "string" ? req.query.after : undefined,
+    since,
     categories: parseCategories(req.query.categories),
     limit: parseLimit(req.query.limit),
   });

@@ -92,6 +92,8 @@ export interface ObservabilityEventQuery {
   workspaceId?: string;
   userId: string;
   after?: string;
+  /** ISO-8601 timestamp — exclude events that occurred before this instant. */
+  since?: string;
   categories?: ObservabilityEventCategory[];
   limit?: number;
 }

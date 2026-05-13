@@ -391,25 +391,27 @@ app.use("/api/webhooks/apollo", apolloWebhookRoutes);
 // ---------------------------------------------------------------------------
 // Billing API — Stripe checkout sessions + subscription lifecycle
 // ---------------------------------------------------------------------------
+// user-scoped: billing is tied to the authenticated user's subscription, not a workspace
 app.use("/api/billing/checkout", requireAuth, billingMutationRateLimiter, checkoutRoutes);
+// user-scoped: billing is tied to the authenticated user's subscription, not a workspace
 app.use("/api/billing/subscription", requireAuth, billingMutationRateLimiter, subscriptionRoutes);
 app.use("/api/public/landing", landingPublicApiRoutes);
 
 // ---------------------------------------------------------------------------
 // LLM Config API — BYOLLM provider credentials
 // ---------------------------------------------------------------------------
-app.use("/api/llm-configs", requireAuth, llmConfigRoutes);
+app.use("/api/llm-configs", requireAuth, workspaceResolver, llmConfigRoutes);
 
 // ---------------------------------------------------------------------------
 // MCP Registry API — register and discover MCP server connections
 // ---------------------------------------------------------------------------
-app.use("/api/mcp/servers", requireAuth, mcpRoutes);
+app.use("/api/mcp/servers", requireAuth, workspaceResolver, mcpRoutes);
 
 // ---------------------------------------------------------------------------
 // Memory API — persistent context memory store for agents/workflows
 // ---------------------------------------------------------------------------
-app.use("/api/memory", requireAuth, memoryRoutes);
-app.use("/api/agents/:agentId/memory", requireAuth, agentMemoryRoutes);
+app.use("/api/memory", requireAuth, workspaceResolver, memoryRoutes);
+app.use("/api/agents/:agentId/memory", requireAuth, workspaceResolver, agentMemoryRoutes);
 app.use("/api/agents", requireAuth, workspaceResolver, agentRoutes);
 app.use("/api/integrations/apollo", apolloRoutes);
 
@@ -417,10 +419,10 @@ app.use("/api/integrations/apollo", apolloRoutes);
 app.get("/api/routines", requireAuth, (_req, res) => {
   res.json({ routines: [] });
 });
-app.use("/api/knowledge", requireAuth, knowledgeMutationRateLimiter, knowledgeRoutes);
+app.use("/api/knowledge", requireAuth, workspaceResolver, knowledgeMutationRateLimiter, knowledgeRoutes);
 app.use("/api/integrations/catalog", integrationCatalogRoutes);
 app.use("/api/integrations/oauth2", integrationOAuthCallbackRoutes);
-app.use("/api/integrations", requireAuth, integrationRoutes);
+app.use("/api/integrations", requireAuth, workspaceResolver, integrationRoutes);
 app.use("/api/webhooks/relay", webhookRelayRouter);
 app.use("/api/integrations", oauthBridgeRoutes);
 app.use("/api/integrations/slack", slackRoutes);
@@ -437,17 +439,18 @@ app.use("/api/integrations/posthog", posthogRoutes);
 app.use("/api/integrations/intercom", intercomRoutes);
 app.use("/api/integrations/agent-catalog", agentCatalogRoutes);
 app.use("/api/connectors/google-workspace", googleWorkspaceConnectorRoutes);
+// user-scoped: workspace management creates/lists workspaces and cannot itself be workspace-gated
 app.use("/api/workspaces", requireAuth, workspaceRoutes);
 app.use("/api/missions", requireAuth, workspaceResolver, llmEndpointRateLimiter, missionRoutes);
 app.use("/api/companies", requireAuth, workspaceResolver, companyRoutes);
 app.use("/api/control-plane", requireAuth, workspaceResolver, controlPlaneRoutes);
-app.use("/api/hitl", requireAuth, hitlRoutes);
+app.use("/api/hitl", requireAuth, workspaceResolver, hitlRoutes);
 app.use("/api/observability", requireAuth, workspaceResolver, observabilityRoutes);
-app.use("/api/reporting", requireAuth, reportRoutes);
+app.use("/api/reporting", requireAuth, workspaceResolver, reportRoutes);
 app.use("/api/tickets", requireAuth, workspaceResolver, ticketRoutes);
-app.use("/api/ticket-sync", requireAuth, ticketSyncRoutes);
+app.use("/api/ticket-sync", requireAuth, workspaceResolver, ticketSyncRoutes);
 app.use("/api/notifications", requireAuth, workspaceResolver, notificationRoutes);
-app.use("/api/approval-policies", requireAuth, approvalPolicyRoutes);
+app.use("/api/approval-policies", requireAuth, workspaceResolver, approvalPolicyRoutes);
 
 // ---------------------------------------------------------------------------
 // Auth API — identity and social callback endpoints

@@ -86,7 +86,7 @@ jobs:
           # deploy failures impossible to diagnose.
           set +e
           deploy_output="$(npx wrangler@4 pages deploy "${{ steps.artifact.outputs.path }}" \
-            --project-name=autoflow--landing-git \
+            --project-name=autoflow-landing \
             --branch="${DEPLOY_BRANCH}" 2>&1)"
           deploy_status=$?
           set -e

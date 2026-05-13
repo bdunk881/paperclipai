@@ -27,12 +27,12 @@ export default function AgentOAuthCallback() {
   }, [message, provider, status]);
 
   return (
-    <div className="min-h-full bg-gray-50 p-8">
-      <div className="mx-auto max-w-md rounded-xl border border-gray-200 bg-white p-6 text-center">
-        <h1 className="text-lg font-semibold text-gray-900">
+    <div className="min-h-full bg-af2-paper p-8 text-af2-ink">
+      <div className="mx-auto max-w-md rounded-md border border-af2-line bg-af2-card p-6 text-center">
+        <h1 className="font-af2-serif text-2xl font-medium tracking-[-0.015em] text-af2-ink">
           {status === "success" ? "Connection complete" : "Connection failed"}
         </h1>
-        <p className="mt-2 text-sm text-gray-600">
+        <p className="mt-2 text-sm leading-6 text-af2-ink-2">
           {status === "success"
             ? `Finishing ${provider || "provider"} verification. You can close this window.`
             : message || "OAuth callback failed. Return to the deploy screen and retry."}

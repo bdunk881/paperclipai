@@ -38,7 +38,8 @@ describe("AuthCallback", () => {
       </MemoryRouter>
     );
 
-    expect(screen.getByText(/completing supabase sign-in/i)).toBeInTheDocument();
+    // HEL-76: v2 restyle changed copy from "Completing Supabase sign-in…" to "Signing you in…".
+    expect(screen.getByText(/signing you in/i)).toBeInTheDocument();
 
     await waitFor(() => {
       expect(writeStoredAuthUserMock).toHaveBeenCalledTimes(1);

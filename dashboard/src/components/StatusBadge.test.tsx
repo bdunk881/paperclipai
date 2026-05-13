@@ -1,8 +1,14 @@
 /**
  * Unit tests for the StatusBadge component.
  *
- * Verifies rendering for all run and step status values,
- * the animated pulse indicator for "running", and class application.
+ * Verifies rendering for all run and step status values, the animated pulse
+ * indicator for "running", and class application. After the af2 shell sweep
+ * the status colors map to af2 tones rather than raw Tailwind colors:
+ *   - sage    = success / live / running / completed / on-track
+ *   - clay    = error / blocked / failed / off-track
+ *   - mustard = pending / awaiting / at-risk
+ *   - plum    = governance / escalated
+ *   - ink-3   = neutral / skipped / not-started
  */
 
 import { render, screen } from "@testing-library/react";
@@ -23,34 +29,34 @@ describe("StatusBadge — run statuses", () => {
     });
   }
 
-  it("applies green styling for 'completed'", () => {
+  it("applies sage (success) styling for 'completed'", () => {
     render(<StatusBadge status="completed" />);
     const badge = screen.getByText("completed");
-    expect(badge.className).toMatch(/green/);
+    expect(badge.className).toMatch(/af2-sage/);
   });
 
-  it("applies red styling for 'failed'", () => {
+  it("applies clay (alert) styling for 'failed'", () => {
     render(<StatusBadge status="failed" />);
     const badge = screen.getByText("failed");
-    expect(badge.className).toMatch(/red/);
+    expect(badge.className).toMatch(/af2-clay/);
   });
 
-  it("applies purple styling for 'escalated'", () => {
+  it("applies plum (governance) styling for 'escalated'", () => {
     render(<StatusBadge status="escalated" />);
     const badge = screen.getByText("escalated");
-    expect(badge.className).toMatch(/purple/);
+    expect(badge.className).toMatch(/af2-plum/);
   });
 
-  it("applies yellow styling for 'running'", () => {
+  it("applies sage (live) styling for 'running'", () => {
     render(<StatusBadge status="running" />);
     const badge = screen.getByText("running");
-    expect(badge.className).toMatch(/yellow/);
+    expect(badge.className).toMatch(/af2-sage/);
   });
 
-  it("applies gray styling for 'pending'", () => {
+  it("applies neutral (ink-3 + paper-2) styling for 'pending'", () => {
     render(<StatusBadge status="pending" />);
     const badge = screen.getByText("pending");
-    expect(badge.className).toMatch(/gray/);
+    expect(badge.className).toMatch(/af2-(ink-3|paper-2)/);
   });
 
   it("renders awaiting approval with the mapped label", () => {
@@ -87,22 +93,19 @@ describe("StatusBadge — step statuses", () => {
     });
   }
 
-  it("applies green styling for 'success'", () => {
+  it("applies sage styling for 'success'", () => {
     render(<StatusBadge status="success" />);
-    const badge = screen.getByText("success");
-    expect(badge.className).toMatch(/green/);
+    expect(screen.getByText("success").className).toMatch(/af2-sage/);
   });
 
-  it("applies red styling for 'failure'", () => {
+  it("applies clay styling for 'failure'", () => {
     render(<StatusBadge status="failure" />);
-    const badge = screen.getByText("failure");
-    expect(badge.className).toMatch(/red/);
+    expect(screen.getByText("failure").className).toMatch(/af2-clay/);
   });
 
-  it("applies gray styling for 'skipped'", () => {
+  it("applies neutral styling for 'skipped'", () => {
     render(<StatusBadge status="skipped" />);
-    const badge = screen.getByText("skipped");
-    expect(badge.className).toMatch(/gray/);
+    expect(screen.getByText("skipped").className).toMatch(/af2-(ink-3|paper-2)/);
   });
 });
 
@@ -116,19 +119,19 @@ describe("StatusBadge — mission statuses", () => {
     });
   }
 
-  it("applies teal styling for 'On Track'", () => {
+  it("applies sage styling for 'On Track'", () => {
     render(<StatusBadge status="On Track" />);
-    expect(screen.getByText("On Track").className).toMatch(/teal/);
+    expect(screen.getByText("On Track").className).toMatch(/af2-sage/);
   });
 
-  it("applies orange styling for 'At Risk'", () => {
+  it("applies mustard styling for 'At Risk'", () => {
     render(<StatusBadge status="At Risk" />);
-    expect(screen.getByText("At Risk").className).toMatch(/orange/);
+    expect(screen.getByText("At Risk").className).toMatch(/af2-mustard/);
   });
 
-  it("applies red styling for 'Blocked'", () => {
+  it("applies clay styling for 'Blocked'", () => {
     render(<StatusBadge status="Blocked" />);
-    expect(screen.getByText("Blocked").className).toMatch(/red/);
+    expect(screen.getByText("Blocked").className).toMatch(/af2-clay/);
   });
 });
 

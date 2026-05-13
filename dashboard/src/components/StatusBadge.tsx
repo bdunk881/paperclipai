@@ -4,36 +4,39 @@ type RunStatus = "pending" | "running" | "completed" | "failed" | "escalated" | 
 type StepStatus = "success" | "failure" | "skipped" | "running";
 type MissionStatus = "On Track" | "At Risk" | "Blocked" | "Off Track" | "Not Started";
 
+// Status palette maps to the af2 editorial tones:
+// sage = healthy / live / running, clay = alert / blocked / failed,
+// mustard = pending / awaiting, plum = governance / escalated, ink-3 = neutral.
 const RUN_STATUS_STYLES: Record<RunStatus, string> = {
-  pending: "bg-gray-100 text-gray-600",
-  running: "bg-yellow-100 text-yellow-700",
-  completed: "bg-green-100 text-green-700",
-  failed: "bg-red-100 text-red-700",
-  escalated: "bg-purple-100 text-purple-700",
-  awaiting_approval: "bg-orange-100 text-orange-700",
+  pending: "bg-af2-paper-2 text-af2-ink-3",
+  running: "bg-af2-sage/15 text-af2-sage",
+  completed: "bg-af2-sage/15 text-af2-sage",
+  failed: "bg-af2-clay/15 text-af2-clay",
+  escalated: "bg-af2-plum/15 text-af2-plum",
+  awaiting_approval: "bg-af2-mustard/15 text-af2-mustard",
 };
 
 const STEP_STATUS_STYLES: Record<StepStatus, string> = {
-  success: "bg-green-100 text-green-700",
-  failure: "bg-red-100 text-red-700",
-  skipped: "bg-gray-100 text-gray-500",
-  running: "bg-yellow-100 text-yellow-700",
+  success: "bg-af2-sage/15 text-af2-sage",
+  failure: "bg-af2-clay/15 text-af2-clay",
+  skipped: "bg-af2-paper-2 text-af2-ink-3",
+  running: "bg-af2-mustard/15 text-af2-mustard",
 };
 
 const MISSION_STATUS_STYLES: Record<MissionStatus, string> = {
-  "On Track": "bg-teal-100 text-teal-700 dark:bg-teal-500/15 dark:text-teal-200",
-  "At Risk": "bg-orange-100 text-orange-700 dark:bg-orange-500/15 dark:text-orange-200",
-  Blocked: "bg-red-100 text-red-700 dark:bg-red-500/15 dark:text-red-200",
-  "Off Track": "bg-red-100 text-red-700 dark:bg-red-500/15 dark:text-red-200",
-  "Not Started": "bg-slate-200 text-slate-700 dark:bg-slate-700/50 dark:text-slate-200",
+  "On Track": "bg-af2-sage/15 text-af2-sage",
+  "At Risk": "bg-af2-mustard/15 text-af2-mustard",
+  Blocked: "bg-af2-clay/15 text-af2-clay",
+  "Off Track": "bg-af2-clay/15 text-af2-clay",
+  "Not Started": "bg-af2-paper-2 text-af2-ink-3",
 };
 
 const MISSION_STATUS_DOT: Record<MissionStatus, string> = {
-  "On Track": "bg-accent-teal",
-  "At Risk": "bg-accent-orange",
-  Blocked: "bg-red-500",
-  "Off Track": "bg-red-500",
-  "Not Started": "bg-slate-400 dark:bg-slate-300",
+  "On Track": "bg-af2-sage",
+  "At Risk": "bg-af2-mustard",
+  Blocked: "bg-af2-clay",
+  "Off Track": "bg-af2-clay",
+  "Not Started": "bg-af2-ink-4",
 };
 
 const RUN_LABELS: Partial<Record<RunStatus, string>> = {
@@ -66,10 +69,10 @@ export function StatusBadge({ status }: { status: RunStatus | StepStatus | Missi
       )}
     >
       {status === "running" && (
-        <span className="w-1.5 h-1.5 rounded-full bg-yellow-500 animate-pulse" />
+        <span className="w-1.5 h-1.5 rounded-full bg-af2-sage animate-pulse" />
       )}
       {status === "awaiting_approval" && (
-        <span className="w-1.5 h-1.5 rounded-full bg-orange-500 animate-pulse" />
+        <span className="w-1.5 h-1.5 rounded-full bg-af2-mustard animate-pulse" />
       )}
       {isMissionStatus(status) && <span className={clsx("h-1.5 w-1.5 rounded-full", MISSION_STATUS_DOT[status])} />}
       {label}

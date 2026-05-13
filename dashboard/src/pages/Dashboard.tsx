@@ -525,51 +525,51 @@ export default function Dashboard() {
 
   return (
     <>
-      <div className="min-h-full bg-[#eef1f7] p-5 text-slate-950 md:p-8">
+      <div className="min-h-full bg-af2-paper px-6 py-8 text-af2-ink md:px-10 md:py-10">
         <div className="mx-auto max-w-7xl">
-          <section className="overflow-hidden rounded-[32px] border border-slate-200 bg-white shadow-[0_24px_80px_rgba(15,23,42,0.08)]">
-            <div className="border-b border-slate-200 bg-[linear-gradient(135deg,#1e1b4b_0%,#312e81_38%,#0f766e_100%)] px-6 py-6 text-white md:px-8">
-              <div className="flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
-                <div className="max-w-3xl">
-                  <div className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.24em] text-teal-100">
-                    <Command size={12} />
-                    Customer command center
-                  </div>
-                  <h1 className="mt-4 text-3xl font-semibold tracking-[-0.04em]">
-                    {firstName}, here is your live workspace summary.
-                  </h1>
-                  <p className="mt-3 max-w-2xl text-sm leading-6 text-indigo-100/90">
-                    This view reflects current agent activity, budget usage, approvals, and recent runs for your
-                    workspace. Empty sections stay empty until the backend has real state to show.
-                  </p>
-                </div>
-                <div className="grid gap-3 sm:grid-cols-3">
-                  <HeroChip
-                    label="Live agents"
-                    value={String(liveAgents)}
-                    hint={flaggedAgents > 0 ? `${flaggedAgents} need attention` : "All clear"}
-                    tone="teal"
-                  />
-                  <HeroChip
-                    label="Budget used"
-                    value={totalBudget > 0 ? `${Math.round(spendRatio * 100)}%` : "n/a"}
-                    hint={`${formatCurrency(totalSpend)} of ${formatCurrency(totalBudget)}`}
-                    tone={spendRatio >= 0.8 ? "orange" : "indigo"}
-                  />
-                  <HeroChip
-                    label="Approval queue"
-                    value={String(pendingApprovals.length)}
-                    hint={pendingApprovals.length > 0 ? "Action recommended" : "Nothing waiting"}
-                    tone={pendingApprovals.length > 0 ? "orange" : "teal"}
-                  />
-                </div>
+          {/* Page head — editorial greeting + at-a-glance status chips. */}
+          <header className="mb-6 flex flex-col gap-6 border-b border-af2-line pb-6 lg:flex-row lg:items-end lg:justify-between">
+            <div className="max-w-3xl">
+              <div className="inline-flex items-center gap-2 text-[11px] font-medium uppercase tracking-[0.14em] text-af2-ink-3">
+                <Command size={12} />
+                Workspace · today
               </div>
+              <h1 className="mt-3 font-af2-serif text-5xl font-normal leading-tight tracking-[-0.02em] text-af2-ink">
+                Good {greetingPart()}, {firstName}.
+              </h1>
+              <p className="mt-3 max-w-2xl text-sm leading-6 text-af2-ink-2">
+                {liveAgents} agents on the clock · {pendingApprovals.length} approvals waiting ·{" "}
+                {formatCurrency(totalSpend)} spent this period.
+              </p>
             </div>
+            <div className="grid gap-3 sm:grid-cols-3">
+              <HeroChip
+                label="Live agents"
+                value={String(liveAgents)}
+                hint={flaggedAgents > 0 ? `${flaggedAgents} need attention` : "All clear"}
+                tone="teal"
+              />
+              <HeroChip
+                label="Budget used"
+                value={totalBudget > 0 ? `${Math.round(spendRatio * 100)}%` : "n/a"}
+                hint={`${formatCurrency(totalSpend)} of ${formatCurrency(totalBudget)}`}
+                tone={spendRatio >= 0.8 ? "orange" : "indigo"}
+              />
+              <HeroChip
+                label="Approval queue"
+                value={String(pendingApprovals.length)}
+                hint={pendingApprovals.length > 0 ? "Action recommended" : "Nothing waiting"}
+                tone={pendingApprovals.length > 0 ? "orange" : "teal"}
+              />
+            </div>
+          </header>
 
-            <div className="border-b border-slate-200 bg-slate-50 px-6 py-4 md:px-8">
+          <section className="overflow-hidden rounded-xl border border-af2-line bg-af2-card">
+            {/* Workspace shortcuts strip */}
+            <div className="border-b border-af2-line bg-af2-paper-2/40 px-6 py-4 md:px-8">
               <div className="grid gap-3">
-                <div className="rounded-[24px] border border-slate-200 bg-white px-4 py-4">
-                  <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-500">
+                <div className="rounded-md border border-af2-line bg-af2-card px-4 py-4">
+                  <div className="flex items-center gap-2 text-[11px] font-medium uppercase tracking-[0.14em] text-af2-ink-3">
                     <Gauge size={13} />
                     Workspace actions
                   </div>
@@ -623,12 +623,12 @@ export default function Dashboard() {
                   <Panel
                     title="Execution Burndown"
                     eyebrow="Sprint pulse"
-                    action={<span className="font-mono text-xs text-slate-400">last {DAYS} days</span>}
+                    action={<span className="font-mono text-xs text-af2-ink-3">last {DAYS} days</span>}
                   >
                     <ChartLegend
                       items={[
-                        { label: "Remaining", tone: "bg-indigo-500" },
-                        { label: "Completed", tone: "bg-teal-500" },
+                        { label: "Remaining", tone: "bg-af2-clay-soft/400" },
+                        { label: "Completed", tone: "bg-af2-sage/100" },
                       ]}
                     />
                     <MiniLineChart
@@ -651,10 +651,10 @@ export default function Dashboard() {
                   <Panel
                     title="Spend vs Budget"
                     eyebrow="Cost discipline"
-                    action={<span className="font-mono text-xs text-slate-400">{formatCurrency(totalSpend)}</span>}
+                    action={<span className="font-mono text-xs text-af2-ink-3">{formatCurrency(totalSpend)}</span>}
                   >
                     <SpendBars snapshots={agentSnapshots} />
-                    <p className="mt-4 text-sm text-slate-500">
+                    <p className="mt-4 text-sm text-af2-ink-2">
                       Indigo bars show budget allocation. Teal fills show live spend. Orange callouts trigger when an
                       agent crosses 80% of budget.
                     </p>
@@ -665,7 +665,7 @@ export default function Dashboard() {
                   title="Queued Approvals"
                   eyebrow="Human checkpoint"
                   action={
-                    <Link to="/approvals" className="inline-flex items-center gap-1 text-sm font-medium text-indigo-600">
+                    <Link to="/approvals" className="inline-flex items-center gap-1 text-sm font-medium text-af2-clay">
                       Open queue
                       <ArrowRight size={14} />
                     </Link>
@@ -681,21 +681,21 @@ export default function Dashboard() {
                       pendingApprovals.slice(0, 4).map((approval) => (
                         <article
                           key={approval.id}
-                          className="rounded-[22px] border border-orange-200 bg-orange-50/60 px-4 py-4"
+                          className="rounded-[22px] border border-af2-clay/30 bg-af2-clay-soft/30 px-4 py-4"
                         >
                           <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
                             <div>
-                              <div className="inline-flex items-center gap-2 rounded-full bg-white px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.22em] text-orange-700">
+                              <div className="inline-flex items-center gap-2 rounded-full bg-af2-card px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.22em] text-af2-clay">
                                 <Clock3 size={12} />
                                 Awaiting input
                               </div>
-                              <h3 className="mt-3 text-base font-semibold text-slate-900">
+                              <h3 className="mt-3 text-base font-semibold text-af2-ink">
                                 {approval.templateName} / {approval.stepName}
                               </h3>
-                              <p className="mt-2 text-sm text-slate-600">{approval.message}</p>
+                              <p className="mt-2 text-sm text-af2-ink-2">{approval.message}</p>
                             </div>
-                            <div className="space-y-2 text-sm text-slate-500 md:text-right">
-                              <div className="font-mono text-xs text-slate-400">{formatRelative(approval.requestedAt)}</div>
+                            <div className="space-y-2 text-sm text-af2-ink-2 md:text-right">
+                              <div className="font-mono text-xs text-af2-ink-3">{formatRelative(approval.requestedAt)}</div>
                               <div>Assignee: {approval.assignee}</div>
                               <div>Timeout: {approval.timeoutMinutes}m</div>
                             </div>
@@ -715,7 +715,7 @@ export default function Dashboard() {
                       onClick={() => {
                         void loadDashboard();
                       }}
-                      className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-sm font-medium text-slate-700 transition hover:border-indigo-300 hover:text-indigo-700"
+                      className="inline-flex items-center gap-2 rounded-full border border-af2-line bg-af2-paper-2/40 px-3 py-1.5 text-sm font-medium text-af2-ink-2 transition hover:border-af2-clay/40 hover:text-af2-clay"
                     >
                       <RefreshCcw size={14} />
                       Refresh data
@@ -723,19 +723,19 @@ export default function Dashboard() {
                   }
                 >
                   <div className="grid gap-5 lg:grid-cols-[0.95fr,1.05fr]">
-                    <section className="rounded-[24px] border border-slate-200 bg-slate-50/80 p-4">
+                    <section className="rounded-[24px] border border-af2-line bg-af2-paper-2/40 p-4">
                       <div className="flex items-start justify-between gap-3">
                         <div>
-                          <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-400">
+                          <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-af2-ink-3">
                             Transport status
                           </div>
-                          <h3 className="mt-2 text-lg font-semibold text-slate-950">
+                          <h3 className="mt-2 text-lg font-semibold text-af2-ink">
                             {transportStateLabel(transportState)}
                           </h3>
                         </div>
                         <TransportPill state={transportState} />
                       </div>
-                      <p className="mt-3 text-sm leading-6 text-slate-500">
+                      <p className="mt-3 text-sm leading-6 text-af2-ink-2">
                         {transportDetail ?? "Waiting for the stream handshake to complete."}
                       </p>
                       <div className="mt-4 grid gap-3 sm:grid-cols-2">
@@ -758,8 +758,8 @@ export default function Dashboard() {
                             onClick={() => setCategoryFilter(option.value)}
                             className={`rounded-full border px-3 py-1.5 text-sm transition ${
                               categoryFilter === option.value
-                                ? "border-indigo-300 bg-indigo-50 text-indigo-700"
-                                : "border-slate-200 bg-white text-slate-600 hover:border-indigo-200 hover:text-indigo-700"
+                                ? "border-af2-clay/40 bg-af2-clay-soft/40 text-af2-clay"
+                                : "border-af2-line bg-af2-card text-af2-ink-2 hover:border-af2-clay/30 hover:text-af2-clay"
                             }`}
                           >
                             {option.label}
@@ -776,8 +776,8 @@ export default function Dashboard() {
                             onClick={() => setWindowHours(option)}
                             className={`rounded-full border px-3 py-1.5 text-sm transition ${
                               windowHours === option
-                                ? "border-teal-300 bg-teal-50 text-teal-700"
-                                : "border-slate-200 bg-white text-slate-600 hover:border-teal-200 hover:text-teal-700"
+                                ? "border-af2-sage/50 bg-af2-sage/10 text-af2-sage"
+                                : "border-af2-line bg-af2-card text-af2-ink-2 hover:border-af2-sage/30 hover:text-af2-sage"
                             }`}
                           >
                             {option}h
@@ -786,7 +786,7 @@ export default function Dashboard() {
                       </div>
 
                       {transportState === "polling" ? (
-                        <div className="mt-4 rounded-[20px] border border-orange-200 bg-orange-50 px-4 py-3 text-sm text-orange-700">
+                        <div className="mt-4 rounded-[20px] border border-af2-clay/30 bg-af2-clay-soft/40 px-4 py-3 text-sm text-af2-clay">
                           Live streaming is unavailable. Polling continuity is active.
                         </div>
                       ) : null}
@@ -817,30 +817,30 @@ export default function Dashboard() {
                         />
                       </div>
 
-                      <section className="rounded-[24px] border border-slate-200 bg-white p-4">
+                      <section className="rounded-[24px] border border-af2-line bg-af2-card p-4">
                         <div className="flex items-center justify-between gap-3">
                           <div>
-                            <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-400">
+                            <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-af2-ink-3">
                               KPI prototype
                             </div>
-                            <h3 className="mt-2 text-lg font-semibold text-slate-950">
+                            <h3 className="mt-2 text-lg font-semibold text-af2-ink">
                               Throughput over the last {windowHours} hours
                             </h3>
                           </div>
-                          <span className="rounded-full bg-teal-50 px-3 py-1 text-sm font-medium text-teal-700">
+                          <span className="rounded-full bg-af2-sage/10 px-3 py-1 text-sm font-medium text-af2-sage">
                             {Math.round((throughput?.summary.completionRate ?? 0) * 100)}% completion
                           </span>
                         </div>
                         <div className="mt-4 grid grid-cols-8 items-end gap-2">
                           {renderedBuckets.map((bucket) => (
                             <div key={bucket.bucketStart} className="flex flex-col items-center gap-2">
-                              <div className="flex h-24 w-full items-end justify-center rounded-2xl bg-slate-50 px-2 py-2">
+                              <div className="flex h-24 w-full items-end justify-center rounded-2xl bg-af2-paper-2/40 px-2 py-2">
                                 <div
-                                  className="w-full rounded-full bg-gradient-to-t from-indigo-500 via-teal-400 to-orange-300"
+                                  className="w-full rounded-full bg-gradient-to-t from-af2-clay via-af2-mustard to-af2-sage"
                                   style={{ height: `${Math.max(bucket.heightPercent, 12)}%` }}
                                 />
                               </div>
-                              <span className="text-[11px] text-slate-500">
+                              <span className="text-[11px] text-af2-ink-2">
                                 {formatBucketLabel(bucket.bucketStart)}
                               </span>
                             </div>
@@ -848,17 +848,17 @@ export default function Dashboard() {
                         </div>
                       </section>
 
-                      <section className="rounded-[24px] border border-slate-200 bg-white p-4">
+                      <section className="rounded-[24px] border border-af2-line bg-af2-card p-4">
                         <div className="flex items-start justify-between gap-3">
                           <div>
-                            <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-400">
+                            <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-af2-ink-3">
                               Live feed
                             </div>
-                            <h3 className="mt-2 text-lg font-semibold text-slate-950">
+                            <h3 className="mt-2 text-lg font-semibold text-af2-ink">
                               Activity updates as they happen
                             </h3>
                           </div>
-                          <Link to="/history" className="text-sm font-medium text-indigo-600">
+                          <Link to="/history" className="text-sm font-medium text-af2-clay">
                             Full history
                           </Link>
                         </div>
@@ -872,7 +872,7 @@ export default function Dashboard() {
                             observabilityFeed.map((event) => (
                               <article
                                 key={event.id}
-                                className="rounded-[20px] border border-slate-200 bg-slate-50 px-4 py-3"
+                                className="rounded-[20px] border border-af2-line bg-af2-paper-2/40 px-4 py-3"
                               >
                                 <div className="flex items-start gap-3">
                                   <div>{eventCategoryIcon(event.category)}</div>
@@ -881,12 +881,12 @@ export default function Dashboard() {
                                       <span className={eventCategoryBadge(event.category)}>
                                         {event.category}
                                       </span>
-                                      <span className="text-xs text-slate-400">
+                                      <span className="text-xs text-af2-ink-3">
                                         {formatObservabilityDateTime(event.occurredAt)}
                                       </span>
                                     </div>
-                                    <p className="mt-2 text-sm font-medium text-slate-900">{event.summary}</p>
-                                    <div className="mt-2 flex flex-wrap gap-x-4 gap-y-2 text-xs text-slate-500">
+                                    <p className="mt-2 text-sm font-medium text-af2-ink">{event.summary}</p>
+                                    <div className="mt-2 flex flex-wrap gap-x-4 gap-y-2 text-xs text-af2-ink-2">
                                       <span>{event.subject.label ?? event.subject.type}</span>
                                       <span>{event.type}</span>
                                       <span>{event.actor.label ?? event.actor.id}</span>
@@ -906,13 +906,13 @@ export default function Dashboard() {
                   title="Artifact Review"
                   eyebrow="Feedback loop"
                   action={
-                    <div className="flex items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5">
-                      <MessageSquare size={13} className="text-slate-400" />
+                    <div className="flex items-center gap-2 rounded-full border border-af2-line bg-af2-paper-2/40 px-3 py-1.5">
+                      <MessageSquare size={13} className="text-af2-ink-3" />
                       <input
                         value={artifactQuery}
                         onChange={(event) => setArtifactQuery(event.target.value)}
                         placeholder="Filter artifacts"
-                        className="w-40 bg-transparent text-sm text-slate-700 outline-none placeholder:text-slate-400"
+                        className="w-40 bg-transparent text-sm text-af2-ink-2 outline-none placeholder:text-af2-ink-3"
                       />
                     </div>
                   }
@@ -930,34 +930,34 @@ export default function Dashboard() {
                         return (
                           <article
                             key={run.id}
-                            className="rounded-[24px] border border-slate-200 bg-slate-50/70 p-4"
+                            className="rounded-[24px] border border-af2-line bg-af2-paper-2/40 p-4"
                           >
                             <div className="flex flex-col gap-4 lg:flex-row">
                               <div className="min-w-0 flex-1">
                                 <div className="flex flex-wrap items-center gap-2">
-                                  <span className="rounded-full bg-indigo-950 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-indigo-100">
+                                  <span className="rounded-full bg-af2-ink px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-af2-paper-2">
                                     {guessArtifactKind(run)}
                                   </span>
-                                  <span className="font-mono text-xs text-slate-400">{run.id}</span>
+                                  <span className="font-mono text-xs text-af2-ink-3">{run.id}</span>
                                 </div>
                                 <button
                                   type="button"
                                   onClick={() => setSelectedRun(run)}
                                   className="mt-3 text-left"
                                 >
-                                  <h3 className="text-lg font-semibold text-slate-950 hover:text-indigo-700">
+                                  <h3 className="text-lg font-semibold text-af2-ink hover:text-af2-clay">
                                     {run.templateName}
                                   </h3>
-                                  <p className="mt-2 text-sm leading-6 text-slate-600">{summarizeArtifact(run)}</p>
+                                  <p className="mt-2 text-sm leading-6 text-af2-ink-2">{summarizeArtifact(run)}</p>
                                 </button>
-                                <div className="mt-3 flex flex-wrap gap-4 text-sm text-slate-500">
+                                <div className="mt-3 flex flex-wrap gap-4 text-sm text-af2-ink-2">
                                   <span>Status: {run.status.replace("_", " ")}</span>
                                   <span>{formatRelative(run.startedAt)}</span>
                                   <span>Owner: {owner?.name ?? "Needs routing"}</span>
                                 </div>
                               </div>
                               <div className="w-full lg:max-w-sm">
-                                <label className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-400">
+                                <label className="text-[11px] font-semibold uppercase tracking-[0.22em] text-af2-ink-3">
                                   Inline review comment
                                 </label>
                                 <textarea
@@ -969,14 +969,14 @@ export default function Dashboard() {
                                     }))
                                   }
                                   placeholder="Route artifact feedback to the responsible agent."
-                                  className="mt-2 h-24 w-full rounded-[18px] border border-slate-200 bg-white px-3 py-3 text-sm text-slate-700 outline-none transition focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100"
+                                  className="mt-2 h-24 w-full rounded-[18px] border border-af2-line bg-af2-card px-3 py-3 text-sm text-af2-ink-2 outline-none transition focus:border-af2-clay/40 focus:ring-2 focus:ring-af2-clay/20"
                                 />
                                 <div className="mt-3 flex items-center justify-between gap-3">
                                   <button
                                     type="button"
                                     onClick={() => void submitArtifactFeedback(run)}
                                     disabled={state.saving}
-                                    className="inline-flex items-center gap-2 rounded-full bg-orange-500 px-4 py-2 text-sm font-semibold text-white transition hover:bg-orange-400 disabled:cursor-not-allowed disabled:opacity-60"
+                                    className="inline-flex items-center gap-2 rounded-full bg-af2-clay-soft/400 px-4 py-2 text-sm font-semibold text-white transition hover:bg-af2-clay-2 disabled:cursor-not-allowed disabled:opacity-60"
                                   >
                                     <BadgeCheck size={14} />
                                     {state.saving ? "Routing..." : "Send to owner"}
@@ -984,13 +984,13 @@ export default function Dashboard() {
                                   <button
                                     type="button"
                                     onClick={() => setSelectedRun(run)}
-                                    className="text-sm font-medium text-indigo-600"
+                                    className="text-sm font-medium text-af2-clay"
                                   >
                                     Open trace
                                   </button>
                                 </div>
                                 {state.notice ? (
-                                  <p className="mt-2 text-sm text-slate-500">{state.notice}</p>
+                                  <p className="mt-2 text-sm text-af2-ink-2">{state.notice}</p>
                                 ) : null}
                               </div>
                             </div>
@@ -1012,16 +1012,16 @@ export default function Dashboard() {
                       />
                     ) : (
                       orgRows.map((row) => (
-                        <article key={row.id} className="rounded-[22px] border border-slate-200 bg-slate-50 px-4 py-4">
+                        <article key={row.id} className="rounded-[22px] border border-af2-line bg-af2-paper-2/40 px-4 py-4">
                           <div className="flex items-start justify-between gap-3">
                             <div>
-                              <h3 className="text-sm font-semibold text-slate-900">{row.name}</h3>
-                              <p className="mt-1 text-xs uppercase tracking-[0.18em] text-slate-400">{row.role}</p>
+                              <h3 className="text-sm font-semibold text-af2-ink">{row.name}</h3>
+                              <p className="mt-1 text-xs uppercase tracking-[0.18em] text-af2-ink-3">{row.role}</p>
                             </div>
                             <span className={statusPill(row.status)}>{row.status}</span>
                           </div>
-                          <p className="mt-3 text-sm leading-6 text-slate-600">{row.heartbeat}</p>
-                          <div className="mt-3 flex items-center justify-between border-t border-slate-200 pt-3 text-xs text-slate-500">
+                          <p className="mt-3 text-sm leading-6 text-af2-ink-2">{row.heartbeat}</p>
+                          <div className="mt-3 flex items-center justify-between border-t border-af2-line pt-3 text-xs text-af2-ink-2">
                             <span className="font-mono">
                               {formatCurrency(row.spend)} / {formatCurrency(row.budget)}
                             </span>
@@ -1050,7 +1050,7 @@ export default function Dashboard() {
                   </div>
                 </Panel>
 
-                <Panel title="Reasoning Activity" eyebrow="Recent signals" action={<BrainCircuit size={16} className="text-slate-400" />}>
+                <Panel title="Reasoning Activity" eyebrow="Recent signals" action={<BrainCircuit size={16} className="text-af2-ink-3" />}>
                   <div className="space-y-3">
                     {activityEvents.length === 0 ? (
                       <ZeroState
@@ -1059,16 +1059,16 @@ export default function Dashboard() {
                       />
                     ) : (
                       activityEvents.slice(0, 8).map((event) => (
-                        <article key={event.id} className="rounded-[20px] border border-slate-200 bg-slate-50 px-4 py-3">
+                        <article key={event.id} className="rounded-[20px] border border-af2-line bg-af2-paper-2/40 px-4 py-3">
                           <div className="flex items-center justify-between gap-3">
                             <div className="flex items-center gap-2">
                               <span className={activityDot(event.status)} />
-                              <span className="text-sm font-semibold text-slate-900">{event.agentName}</span>
+                              <span className="text-sm font-semibold text-af2-ink">{event.agentName}</span>
                             </div>
-                            <span className="font-mono text-[11px] text-slate-400">{formatRelative(event.at)}</span>
+                            <span className="font-mono text-[11px] text-af2-ink-3">{formatRelative(event.at)}</span>
                           </div>
-                          <p className="mt-2 text-sm font-medium text-slate-700">{event.title}</p>
-                          <p className="mt-1 text-sm leading-6 text-slate-500">{event.detail}</p>
+                          <p className="mt-2 text-sm font-medium text-af2-ink-2">{event.title}</p>
+                          <p className="mt-1 text-sm leading-6 text-af2-ink-2">{event.detail}</p>
                         </article>
                       ))
                     )}
@@ -1252,16 +1252,16 @@ function formatRelative(iso: string) {
 }
 
 function statusPill(status: string) {
-  if (status === "running") return "rounded-full bg-teal-100 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-teal-700";
-  if (status === "error") return "rounded-full bg-orange-100 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-orange-700";
-  if (status === "paused") return "rounded-full bg-slate-200 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-600";
-  return "rounded-full bg-indigo-100 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-indigo-700";
+  if (status === "running") return "rounded-full bg-af2-sage/20 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-af2-sage";
+  if (status === "error") return "rounded-full bg-af2-clay-soft px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-af2-clay";
+  if (status === "paused") return "rounded-full bg-af2-paper-2 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-af2-ink-2";
+  return "rounded-full bg-af2-clay-soft px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-af2-clay";
 }
 
 function activityDot(status: ActivityEvent["status"]) {
-  if (status === "success") return "h-2.5 w-2.5 rounded-full bg-teal-500";
-  if (status === "warning") return "h-2.5 w-2.5 rounded-full bg-orange-500";
-  return "h-2.5 w-2.5 rounded-full bg-indigo-500";
+  if (status === "success") return "h-2.5 w-2.5 rounded-full bg-af2-sage/100";
+  if (status === "warning") return "h-2.5 w-2.5 rounded-full bg-af2-clay-soft/400";
+  return "h-2.5 w-2.5 rounded-full bg-af2-clay-soft/400";
 }
 
 function HeroChip({
@@ -1275,17 +1275,23 @@ function HeroChip({
   hint: string;
   tone: "indigo" | "teal" | "orange";
 }) {
-  const classes =
-    tone === "teal"
-      ? "border-teal-300/25 bg-teal-400/10 text-teal-50"
-      : tone === "orange"
-        ? "border-orange-300/25 bg-orange-400/10 text-orange-50"
-        : "border-indigo-200/20 bg-white/10 text-indigo-50";
+  // v2: HeroChips live on top of the cream page-head; the accent indicates state
+  // (clay = needs attention, sage = healthy, ink = neutral).
+  const accent =
+    tone === "orange"
+      ? "text-af2-clay"
+      : tone === "teal"
+        ? "text-af2-sage"
+        : "text-af2-ink-2";
   return (
-    <div className={`rounded-[22px] border px-4 py-3 backdrop-blur ${classes}`}>
-      <div className="text-[11px] font-semibold uppercase tracking-[0.22em]">{label}</div>
-      <div className="mt-2 text-2xl font-semibold tracking-[-0.04em]">{value}</div>
-      <div className="mt-1 text-xs text-white/70">{hint}</div>
+    <div className="rounded-md border border-af2-line bg-af2-card px-4 py-3">
+      <div className="text-[11px] font-medium uppercase tracking-[0.14em] text-af2-ink-3">
+        {label}
+      </div>
+      <div className={`mt-2 font-af2-serif text-3xl leading-none tracking-[-0.02em] ${accent}`}>
+        {value}
+      </div>
+      <div className="mt-1 text-xs text-af2-ink-3">{hint}</div>
     </div>
   );
 }
@@ -1301,10 +1307,10 @@ function MetricChip({
 }) {
   const classes =
     tone === "teal"
-      ? "border-teal-100 bg-teal-50 text-teal-700"
+      ? "border-af2-sage/30 bg-af2-sage/10 text-af2-sage"
       : tone === "orange"
-        ? "border-orange-100 bg-orange-50 text-orange-700"
-        : "border-indigo-100 bg-indigo-50 text-indigo-700";
+        ? "border-af2-clay/30 bg-af2-clay-soft/40 text-af2-clay"
+        : "border-af2-line bg-af2-clay-soft/40 text-af2-clay";
 
   return (
     <div className={`rounded-[20px] border px-4 py-4 ${classes}`}>
@@ -1317,15 +1323,15 @@ function MetricChip({
 function TransportPill({ state }: { state: TransportState }) {
   const config =
     state === "live"
-      ? { label: "Streaming", className: "bg-teal-50 text-teal-700 border-teal-100", icon: <Wifi size={14} /> }
+      ? { label: "Streaming", className: "bg-af2-sage/10 text-af2-sage border-af2-sage/30", icon: <Wifi size={14} /> }
       : state === "reconnecting"
         ? {
             label: "Recovering",
-            className: "bg-orange-50 text-orange-700 border-orange-100",
+            className: "bg-af2-clay-soft/40 text-af2-clay border-af2-clay/30",
             icon: <RefreshCcw size={14} className="animate-spin" />,
           }
         : state === "polling"
-          ? { label: "Polling", className: "bg-slate-100 text-slate-700 border-slate-200", icon: <WifiOff size={14} /> }
+          ? { label: "Polling", className: "bg-af2-paper-2 text-af2-ink-2 border-af2-line", icon: <WifiOff size={14} /> }
           : state === "error"
             ? {
                 label: "Attention",
@@ -1334,7 +1340,7 @@ function TransportPill({ state }: { state: TransportState }) {
               }
             : {
                 label: "Connecting",
-                className: "bg-indigo-50 text-indigo-700 border-indigo-100",
+                className: "bg-af2-clay-soft/40 text-af2-clay border-af2-line",
                 icon: <Activity size={14} />,
               };
 
@@ -1359,21 +1365,25 @@ function MetricCard({
   icon: React.ReactNode;
   accent: "indigo" | "teal" | "orange";
 }) {
-  const tone =
+  const iconTone =
     accent === "teal"
-      ? "bg-teal-50 text-teal-700 border-teal-100"
+      ? "border-af2-sage/30 bg-af2-sage/10 text-af2-sage"
       : accent === "orange"
-        ? "bg-orange-50 text-orange-700 border-orange-100"
-        : "bg-indigo-50 text-indigo-700 border-indigo-100";
+        ? "border-af2-clay/30 bg-af2-clay/10 text-af2-clay"
+        : "border-af2-ink-blue/30 bg-af2-ink-blue/10 text-af2-ink-blue";
   return (
-    <article className="rounded-[24px] border border-slate-200 bg-white p-4 shadow-sm">
+    <article className="rounded-xl border border-af2-line bg-af2-card p-5">
       <div className="flex items-center justify-between gap-3">
         <div>
-          <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-400">{label}</p>
-          <h2 className="mt-3 font-mono text-3xl font-semibold tracking-[-0.05em] text-slate-950">{value}</h2>
-          <p className="mt-2 text-sm text-slate-500">{detail}</p>
+          <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-af2-ink-3">
+            {label}
+          </p>
+          <h2 className="mt-3 font-af2-serif text-4xl font-normal leading-none tracking-[-0.02em] text-af2-ink">
+            {value}
+          </h2>
+          <p className="mt-2 text-sm leading-snug text-af2-ink-2">{detail}</p>
         </div>
-        <div className={`rounded-2xl border px-3 py-3 ${tone}`}>{icon}</div>
+        <div className={`rounded-md border p-2 ${iconTone}`}>{icon}</div>
       </div>
     </article>
   );
@@ -1391,11 +1401,15 @@ function Panel({
   children: React.ReactNode;
 }) {
   return (
-    <section className="rounded-[28px] border border-slate-200 bg-white p-5 shadow-sm">
-      <div className="flex flex-col gap-3 border-b border-slate-100 pb-4 md:flex-row md:items-end md:justify-between">
+    <section className="rounded-xl border border-af2-line bg-af2-card p-5">
+      <div className="flex flex-col gap-3 border-b border-af2-line pb-4 md:flex-row md:items-end md:justify-between">
         <div>
-          <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-400">{eyebrow}</div>
-          <h2 className="mt-2 text-xl font-semibold tracking-[-0.03em] text-slate-950">{title}</h2>
+          <div className="text-[11px] font-medium uppercase tracking-[0.14em] text-af2-ink-3">
+            {eyebrow}
+          </div>
+          <h2 className="mt-2 font-af2-serif text-2xl font-medium leading-tight tracking-[-0.015em] text-af2-ink">
+            {title}
+          </h2>
         </div>
         {action ? <div>{action}</div> : null}
       </div>
@@ -1408,17 +1422,17 @@ function ShortcutCard({ to, title, detail }: { to: string; title: string; detail
   return (
     <Link
       to={to}
-      className="rounded-[20px] border border-slate-200 bg-slate-50 px-4 py-3 transition hover:border-indigo-300 hover:bg-indigo-50"
+      className="rounded-md border border-af2-line bg-af2-paper px-4 py-3 transition hover:border-af2-clay/40 hover:bg-af2-clay-soft/40"
     >
-      <div className="text-sm font-semibold text-slate-900">{title}</div>
-      <p className="mt-1 text-sm text-slate-500">{detail}</p>
+      <div className="text-sm font-medium text-af2-ink">{title}</div>
+      <p className="mt-1 text-sm text-af2-ink-2">{detail}</p>
     </Link>
   );
 }
 
 function ChartLegend({ items }: { items: Array<{ label: string; tone: string }> }) {
   return (
-    <div className="flex flex-wrap gap-4 text-sm text-slate-500">
+    <div className="flex flex-wrap gap-4 text-sm text-af2-ink-2">
       {items.map((item) => (
         <div key={item.label} className="flex items-center gap-2">
           <span className={`h-2.5 w-2.5 rounded-full ${item.tone}`} />
@@ -1431,9 +1445,11 @@ function ChartLegend({ items }: { items: Array<{ label: string; tone: string }> 
 
 function ChartStat({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-[18px] border border-slate-200 bg-slate-50 px-3 py-3">
-      <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-400">{label}</div>
-      <div className="mt-2 font-mono text-lg font-semibold text-slate-950">{value}</div>
+    <div className="rounded-md border border-af2-line bg-af2-paper px-3 py-3">
+      <div className="text-[11px] font-medium uppercase tracking-[0.14em] text-af2-ink-3">
+        {label}
+      </div>
+      <div className="mt-2 font-af2-mono text-lg font-medium text-af2-ink">{value}</div>
     </div>
   );
 }
@@ -1460,7 +1476,7 @@ function MiniLineChart({
   const stepX = data.length > 1 ? (width - inset * 2) / (data.length - 1) : 0;
 
   return (
-    <div className="mt-4 overflow-hidden rounded-[22px] border border-slate-200 bg-slate-50 px-4 py-4">
+    <div className="mt-4 overflow-hidden rounded-[22px] border border-af2-line bg-af2-paper-2/40 px-4 py-4">
       <svg viewBox={`0 0 ${width} ${height}`} className="h-44 w-full">
         {[0.25, 0.5, 0.75].map((ratio) => {
           const y = inset + (height - inset * 2) * ratio;
@@ -1506,7 +1522,7 @@ function MiniLineChart({
             x={inset + stepX * index}
             y={height - 2}
             textAnchor="middle"
-            className="fill-slate-400 text-[10px] font-medium"
+            className="fill-af2-ink-3 text-[10px] font-medium"
           >
             {String(point.label)}
           </text>
@@ -1537,15 +1553,15 @@ function SpendBars({ snapshots }: { snapshots: AgentSnapshot[] }) {
         return (
           <div key={row.id}>
             <div className="mb-1.5 flex items-center justify-between gap-3 text-sm">
-              <span className="font-medium text-slate-700">{row.name}</span>
-              <span className="font-mono text-xs text-slate-400">
+              <span className="font-medium text-af2-ink-2">{row.name}</span>
+              <span className="font-mono text-xs text-af2-ink-3">
                 {formatCurrency(row.spend)} / {formatCurrency(row.budget)}
               </span>
             </div>
-            <div className="relative h-3 rounded-full bg-slate-100">
-              <div className="absolute inset-y-0 left-0 rounded-full bg-indigo-200" style={{ width: `${budgetWidth}%` }} />
+            <div className="relative h-3 rounded-full bg-af2-paper-2">
+              <div className="absolute inset-y-0 left-0 rounded-full bg-af2-clay-soft" style={{ width: `${budgetWidth}%` }} />
               <div
-                className={`absolute inset-y-0 left-0 rounded-full ${row.spend / Math.max(row.budget, 1) >= 0.8 ? "bg-orange-400" : "bg-teal-500"}`}
+                className={`absolute inset-y-0 left-0 rounded-full ${row.spend / Math.max(row.budget, 1) >= 0.8 ? "bg-af2-clay-2" : "bg-af2-sage/100"}`}
                 style={{ width: `${spendWidth}%` }}
               />
             </div>
@@ -1566,34 +1582,34 @@ function transportStateLabel(state: TransportState): string {
 
 function eventCategoryBadge(category: ObservabilityEventCategory): string {
   if (category === "run") {
-    return "rounded-full bg-indigo-50 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-indigo-700";
+    return "rounded-full bg-af2-clay-soft/40 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-af2-clay";
   }
   if (category === "alert") {
-    return "rounded-full bg-orange-50 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-orange-700";
+    return "rounded-full bg-af2-clay-soft/40 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-af2-clay";
   }
   if (category === "heartbeat") {
-    return "rounded-full bg-teal-50 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-teal-700";
+    return "rounded-full bg-af2-sage/10 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-af2-sage";
   }
   if (category === "budget") {
     return "rounded-full bg-cyan-50 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-cyan-700";
   }
-  return "rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-700";
+  return "rounded-full bg-af2-paper-2 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-af2-ink-2";
 }
 
 function eventCategoryIcon(category: ObservabilityEventCategory) {
   if (category === "run") {
-    return <span className="flex h-9 w-9 items-center justify-center rounded-2xl bg-indigo-50 text-indigo-700"><Activity size={16} /></span>;
+    return <span className="flex h-9 w-9 items-center justify-center rounded-2xl bg-af2-clay-soft/40 text-af2-clay"><Activity size={16} /></span>;
   }
   if (category === "alert") {
-    return <span className="flex h-9 w-9 items-center justify-center rounded-2xl bg-orange-50 text-orange-700"><AlertTriangle size={16} /></span>;
+    return <span className="flex h-9 w-9 items-center justify-center rounded-2xl bg-af2-clay-soft/40 text-af2-clay"><AlertTriangle size={16} /></span>;
   }
   if (category === "heartbeat") {
-    return <span className="flex h-9 w-9 items-center justify-center rounded-2xl bg-teal-50 text-teal-700"><Wifi size={16} /></span>;
+    return <span className="flex h-9 w-9 items-center justify-center rounded-2xl bg-af2-sage/10 text-af2-sage"><Wifi size={16} /></span>;
   }
   if (category === "budget") {
     return <span className="flex h-9 w-9 items-center justify-center rounded-2xl bg-cyan-50 text-cyan-700"><DollarSign size={16} /></span>;
   }
-  return <span className="flex h-9 w-9 items-center justify-center rounded-2xl bg-slate-100 text-slate-700"><Clock3 size={16} /></span>;
+  return <span className="flex h-9 w-9 items-center justify-center rounded-2xl bg-af2-paper-2 text-af2-ink-2"><Clock3 size={16} /></span>;
 }
 
 function formatObservabilityDateTime(value: string): string {
@@ -1612,11 +1628,19 @@ function formatBucketLabel(value: string): string {
   });
 }
 
+/** Returns a time-of-day greeting in the user's local timezone. */
+function greetingPart(): "morning" | "afternoon" | "evening" {
+  const hour = new Date().getHours();
+  if (hour < 12) return "morning";
+  if (hour < 18) return "afternoon";
+  return "evening";
+}
+
 function ZeroState({ title, detail }: { title: string; detail: string }) {
   return (
-    <div className="rounded-[22px] border border-dashed border-slate-200 bg-slate-50 px-4 py-8 text-center">
-      <div className="text-base font-semibold text-slate-900">{title}</div>
-      <p className="mx-auto mt-2 max-w-lg text-sm leading-6 text-slate-500">{detail}</p>
+    <div className="rounded-md border border-dashed border-af2-line bg-af2-paper px-4 py-8 text-center">
+      <div className="font-af2-serif text-lg font-medium text-af2-ink">{title}</div>
+      <p className="mx-auto mt-2 max-w-lg text-sm leading-6 text-af2-ink-2">{detail}</p>
     </div>
   );
 }

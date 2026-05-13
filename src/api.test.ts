@@ -96,6 +96,7 @@ import { approvalStore } from "./engine/approvalStore";
 import { approvalNotificationStore } from "./engine/approvalNotificationStore";
 import { approvalPolicyStore } from "./approvals/policyStore";
 import { runStore } from "./engine/runStore";
+import { entitlementStore } from "./billing/entitlements";
 import { knowledgeStore } from "./knowledge/knowledgeStore";
 import { llmConfigStore } from "./llmConfig/llmConfigStore";
 import { getProvider } from "./engine/llmProviders";
@@ -394,6 +395,11 @@ describe("POST /api/templates", () => {
 
 describe("Approval tier policy API", () => {
   const workspaceId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+
+  beforeEach(() => {
+    // Seed automate tier so the approvalTierMax gate allows notify_only / require_approval.
+    entitlementStore.upsert(workspaceId, "automate");
+  });
 
   it("lists default approval tier policies for a workspace", async () => {
     const res = await request(app)

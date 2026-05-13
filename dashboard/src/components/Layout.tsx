@@ -103,7 +103,7 @@ export default function Layout() {
       <>
         {NAV_SECTIONS.map((section) => (
           <div key={section.title} className="mb-4">
-            <p className="px-3 pb-2 font-af2-sans text-[11px] font-semibold uppercase tracking-[0.22em] text-gray-400 dark:text-surface-500">
+            <p className="px-3 pb-2 font-af2-sans text-[10.5px] font-medium uppercase tracking-[0.12em] text-af2-ink-4">
               {section.title}
             </p>
             <div className="space-y-1">
@@ -115,10 +115,10 @@ export default function Layout() {
                   onClick={closeNav}
                   className={({ isActive }) =>
                     clsx(
-                      "flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
+                      "flex items-center gap-3 rounded-md px-3 py-1.5 text-sm font-medium transition-colors",
                       isActive
-                        ? "bg-brand-600 text-white"
-                        : "text-gray-600 hover:bg-gray-100 hover:text-gray-900 dark:text-surface-400 dark:hover:bg-surface-800 dark:hover:text-white"
+                        ? "bg-af2-ink text-af2-paper"
+                        : "text-af2-ink-2 hover:bg-af2-paper-2 hover:text-af2-ink"
                     )
                   }
                 >
@@ -134,23 +134,23 @@ export default function Layout() {
   }
 
   return (
-    <div className="relative flex h-screen bg-surface-50 text-gray-900 transition-colors duration-200 dark:bg-surface-950 dark:text-gray-100">
+    <div className="relative flex h-screen bg-af2-paper text-af2-ink transition-colors duration-200">
       {!isBuilderPopout && (
-        <header className="fixed inset-x-0 top-0 z-40 flex items-center justify-between border-b border-gray-200 bg-white px-4 py-3 transition-colors duration-200 lg:hidden dark:border-surface-800 dark:bg-surface-900">
+        <header className="fixed inset-x-0 top-0 z-40 flex items-center justify-between border-b border-af2-line bg-af2-card px-4 py-3 transition-colors duration-200 lg:hidden">
           <button
             onClick={() => setMobileNavOpen((prev) => !prev)}
-            className="rounded-lg border border-gray-200 p-2 text-gray-700 transition-colors hover:bg-gray-50 dark:border-surface-700 dark:text-gray-200 dark:hover:bg-surface-800"
+            className="rounded-md border border-af2-line p-2 text-af2-ink-2 transition-colors hover:bg-af2-paper-2 hover:text-af2-ink"
             aria-label="Toggle navigation"
           >
             {mobileNavOpen ? <X size={18} /> : <Menu size={18} />}
           </button>
           <div className="flex items-center gap-2">
-            <img src={logoLockup} alt="AutoFlow" className="h-8 w-auto object-contain text-gray-900 dark:text-gray-100" />
+            <img src={logoLockup} alt="AutoFlow" className="h-8 w-auto object-contain" />
           </div>
           <div className="flex items-center gap-2">
             <button
               onClick={toggleTheme}
-              className="rounded-lg border border-gray-200 p-2 text-gray-600 transition-colors hover:bg-gray-50 dark:border-surface-700 dark:text-gray-200 dark:hover:bg-surface-800"
+              className="rounded-md border border-af2-line p-2 text-af2-ink-2 transition-colors hover:bg-af2-paper-2 hover:text-af2-ink"
               title={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
               aria-label={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
             >
@@ -158,7 +158,7 @@ export default function Layout() {
             </button>
             <button
               onClick={handleLogout}
-              className="rounded-lg border border-gray-200 p-2 text-gray-600 transition-colors hover:bg-gray-50 dark:border-surface-700 dark:text-gray-200 dark:hover:bg-surface-800"
+              className="rounded-md border border-af2-line p-2 text-af2-ink-2 transition-colors hover:bg-af2-paper-2 hover:text-af2-ink"
               title="Sign out"
               aria-label="Sign out"
             >
@@ -171,7 +171,7 @@ export default function Layout() {
       {!isBuilderPopout && mobileNavOpen && (
         <button
           onClick={closeNav}
-          className="fixed inset-0 z-30 bg-surface-950/35 lg:hidden"
+          className="fixed inset-0 z-30 bg-af2-ink/35 lg:hidden"
           aria-label="Close navigation"
         />
       )}
@@ -179,12 +179,12 @@ export default function Layout() {
       {!isBuilderPopout && (
         <aside
           className={clsx(
-            "fixed bottom-0 left-0 top-0 z-40 flex w-72 flex-col border-r border-gray-200 bg-white text-gray-900 transition-transform lg:relative lg:w-60 lg:translate-x-0 dark:border-surface-800 dark:bg-surface-900 dark:text-gray-100",
+            "fixed bottom-0 left-0 top-0 z-40 flex w-72 flex-col border-r border-af2-line bg-af2-paper text-af2-ink transition-transform lg:relative lg:w-60 lg:translate-x-0",
             mobileNavOpen ? "translate-x-0" : "-translate-x-full"
           )}
         >
           <div className="flex items-center gap-2 px-5 py-5">
-            <img src={logoLockup} alt="AutoFlow" className="h-9 w-auto object-contain text-gray-900 dark:text-gray-100" />
+            <img src={logoLockup} alt="AutoFlow" className="h-9 w-auto object-contain" />
           </div>
 
           <WorkspaceSwitcher />
@@ -193,18 +193,18 @@ export default function Layout() {
             <NavItems />
           </nav>
 
-          <div className="border-t border-gray-200 px-4 py-4 dark:border-surface-800">
+          <div className="border-t border-af2-line px-4 py-4">
             <div className="flex items-center gap-3">
-              <div className="flex h-8 w-8 items-center justify-center rounded-full bg-brand-600 text-sm font-bold uppercase text-white">
+              <div className="flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-br from-af2-clay to-af2-mustard text-sm font-bold uppercase text-white">
                 {user?.name?.[0] ?? "U"}
               </div>
               <div className="min-w-0 flex-1">
-                <p className="truncate text-sm font-medium">{user?.name}</p>
-                <p className="truncate text-xs text-gray-500 dark:text-surface-400">{user?.email}</p>
+                <p className="truncate text-sm font-medium text-af2-ink">{user?.name}</p>
+                <p className="truncate text-xs text-af2-ink-3">{user?.email}</p>
               </div>
               <button
                 onClick={toggleTheme}
-                className="rounded-lg p-1.5 text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-900 dark:text-surface-400 dark:hover:bg-surface-800 dark:hover:text-white"
+                className="rounded-md p-1.5 text-af2-ink-3 transition-colors hover:bg-af2-paper-2 hover:text-af2-ink"
                 title={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
                 aria-label={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
               >
@@ -212,7 +212,7 @@ export default function Layout() {
               </button>
               <button
                 onClick={handleLogout}
-                className="rounded-lg p-1.5 text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-900 dark:text-surface-400 dark:hover:bg-surface-800 dark:hover:text-white"
+                className="rounded-md p-1.5 text-af2-ink-3 transition-colors hover:bg-af2-paper-2 hover:text-af2-ink"
                 title="Sign out"
                 aria-label="Sign out"
               >

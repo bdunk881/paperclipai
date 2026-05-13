@@ -248,6 +248,39 @@ Per-page port is tracked under [HEL-32](https://linear.app/helloautoflow/issue/H
 
 ---
 
+## Cursor Cloud specific instructions
+
+### Services overview
+
+| Service | Directory | Port | Start command |
+|---|---|---|---|
+| Express API (TypeScript) | `/workspace` | 3000 | `NODE_ENV=development TS_NODE_TRANSPILE_ONLY=true npm run dev:no-secrets` |
+| Dashboard (Vite + React) | `/workspace/dashboard` | 5173 | `VITE_USE_MOCK=true npm run dev:no-secrets` |
+| FastAPI (Python) | `/workspace/backend` | 8000 | `uvicorn main:app --host 0.0.0.0 --port 8000 --reload` |
+
+### Key dev caveats
+
+- **Node.js 24** is the CI-pinned version. Use `source /home/ubuntu/.nvm/nvm.sh && nvm use 24` before any Node command.
+- **`ts-node` must be installed globally** (`npm install -g ts-node`) — the root `package.json` references it in scripts but does not declare it as a `devDependency`.
+- **Express API requires `TS_NODE_TRANSPILE_ONLY=true`** at runtime. Without it, `ts-node` fails on a missing `@types/passport-google-oauth20` declaration that the project does not include. The `tsc --noEmit` type-check passes fine (it uses `tsconfig.json` which is more lenient); this is a `ts-node`-specific quirk.
+- **Express API runs in-memory** when `NODE_ENV=development` and no `DATABASE_URL` is set. This is sufficient for local dev and running tests.
+- **Dashboard mock mode**: set `VITE_USE_MOCK=true` to run without a real Supabase backend.
+- **Python tools** (`uvicorn`, `pytest`, `ruff`, `mypy`) install to `~/.local/bin` — ensure that's on `PATH`.
+- **No Infisical required** for local dev: all services have `:no-secrets` script variants or accept environment variables directly.
+
+### Test commands (see README for full list)
+
+- Root backend: `npm test` (Jest, 105 suites)
+- Dashboard: `cd dashboard && npm test` (Vitest, 75 suites)
+- Python backend: `cd backend && pytest` (137 tests)
+- Type-check root: `npx tsc --noEmit`
+- Type-check dashboard: `cd dashboard && npm run type-check`
+- Lint dashboard: `cd dashboard && npm run lint`
+- Lint Python: `cd backend && ruff check .`
+- Mypy Python: `cd backend && mypy .`
+
+---
+
 ## When this file is wrong
 
 If you (a future agent or contributor) find this file describes a flow that no longer matches reality, **fix the file in the same PR** as whatever change made it wrong. Drift in `AGENTS.md` is itself a P0 — it leads agents astray and the cost compounds.

@@ -25,7 +25,7 @@ function getSupabaseUrl(): string {
 }
 
 function getSupabaseAnonKey(): string {
-  return String(import.meta.env.VITE_SUPABASE_ANON_KEY ?? "").trim();
+  return String(import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY ?? "").trim();
 }
 
 function createSessionStorageAdapter() {

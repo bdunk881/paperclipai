@@ -58,9 +58,9 @@ Non-secret runtime values such as `APP_ENV`, `INFISICAL_ENV`, and allowed origin
 | `CLOUDFLARE_API_TOKEN` | Token used by the Pages workflows |
 | `CLOUDFLARE_ACCOUNT_ID` | Cloudflare account id used by the Pages workflows |
 | `DEV_SUPABASE_URL` | Dev Supabase project URL used by dashboard builds |
-| `DEV_SUPABASE_ANON_KEY` | Dev Supabase anon key used by dashboard builds |
+| `DEV_SUPABASE_PUBLISHABLE_KEY` | Dev Supabase publishable key (`sb_publishable_*`) used by dashboard builds. Replaces the legacy `anon` JWT. |
 | `PRODUCTION_SUPABASE_URL` | Shared staging/master Supabase project URL used by dashboard builds |
-| `PRODUCTION_SUPABASE_ANON_KEY` | Shared staging/master anon key used by dashboard builds |
+| `PRODUCTION_SUPABASE_PUBLISHABLE_KEY` | Shared staging/master publishable key used by dashboard builds |
 
 ### FastAPI Fly.io
 

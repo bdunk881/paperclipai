@@ -78,12 +78,25 @@ jobs:
         env:
           DEPLOY_BRANCH: ${{ github.event_name == 'pull_request' && github.head_ref || github.ref_name }}
         run: |
-          set -euo pipefail
+          set -uo pipefail
 
+          # NB: Do NOT use `set -e` around the wrangler invocation. Command-substitution
+          # capture (`$()`) discards the output if the command fails under `set -e`,
+          # which previously silently swallowed wrangler's error message and made
+          # deploy failures impossible to diagnose.
+          set +e
           deploy_output="$(npx wrangler@4 pages deploy "${{ steps.artifact.outputs.path }}" \
             --project-name=autoflow-landing \
             --branch="${DEPLOY_BRANCH}" 2>&1)"
+          deploy_status=$?
+          set -e
+
           printf '%s\n' "$deploy_output"
+
+          if [[ $deploy_status -ne 0 ]]; then
+            echo "::error::wrangler pages deploy exited with status ${deploy_status}"
+            exit "$deploy_status"
+          fi
 
           deploy_url="$(printf '%s\n' "$deploy_output" | grep -Eo 'https://[^[:space:]]+\.pages\.dev' | tail -n 1)"
           if [[ -z "$deploy_url" ]]; then

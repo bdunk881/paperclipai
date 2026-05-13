@@ -130,23 +130,23 @@ const APPROVAL_STATUS_CONFIG: Record<
 > = {
   pending: {
     label: "Awaiting Input",
-    badge: "bg-orange-100 text-orange-700",
-    card: "border-orange-300",
+    badge: "bg-af2-clay-soft text-af2-clay",
+    card: "border-af2-clay/40",
   },
   approved: {
     label: "Approved",
-    badge: "bg-teal-100 text-teal-700",
-    card: "border-teal-300",
+    badge: "bg-af2-sage/15 text-af2-sage",
+    card: "border-af2-sage/40",
   },
   rejected: {
     label: "Rejected",
-    badge: "bg-rose-100 text-rose-700",
+    badge: "bg-af2-clay-soft/60 text-af2-clay",
     card: "border-rose-300",
   },
   timed_out: {
     label: "Timed Out",
-    badge: "bg-slate-100 text-slate-500",
-    card: "border-slate-300",
+    badge: "bg-af2-paper-2 text-af2-ink-3",
+    card: "border-af2-line-2",
   },
 };
 
@@ -156,23 +156,23 @@ const CHECKPOINT_STATUS_CONFIG: Record<
 > = {
   pending: {
     label: "Pending",
-    badge: "bg-amber-100 text-amber-700",
+    badge: "bg-af2-mustard/15 text-af2-mustard",
     card: "border-amber-300",
   },
   acknowledged: {
     label: "Acknowledged",
-    badge: "bg-indigo-100 text-indigo-700",
-    card: "border-indigo-300",
+    badge: "bg-af2-clay-soft text-af2-clay",
+    card: "border-af2-clay/40",
   },
   resolved: {
     label: "Resolved",
-    badge: "bg-teal-100 text-teal-700",
-    card: "border-teal-300",
+    badge: "bg-af2-sage/15 text-af2-sage",
+    card: "border-af2-sage/40",
   },
   dismissed: {
     label: "Dismissed",
-    badge: "bg-slate-100 text-slate-600",
-    card: "border-slate-300",
+    badge: "bg-af2-paper-2 text-af2-ink-2",
+    card: "border-af2-line-2",
   },
 };
 
@@ -428,7 +428,7 @@ export default function Approvals() {
 
   if (loading && !companyState && approvals.length === 0) {
     return (
-      <div className="flex min-h-[60vh] items-center justify-center text-slate-500">
+      <div className="flex min-h-[60vh] items-center justify-center text-af2-ink-3">
         <Loader2 size={22} className="mr-2 animate-spin" />
         Loading HITL console...
       </div>
@@ -436,30 +436,30 @@ export default function Approvals() {
   }
 
   return (
-    <div className="min-h-full bg-[#f6f7fb] text-slate-900">
-      <div className="border-b border-slate-200 bg-[radial-gradient(circle_at_top_right,rgba(99,102,241,0.16),transparent_34%),radial-gradient(circle_at_top_left,rgba(20,184,166,0.12),transparent_26%),linear-gradient(180deg,#ffffff,rgba(244,246,255,0.96))]">
+    <div className="min-h-full bg-[#f6f7fb] text-af2-ink">
+      <div className="border-b border-af2-line bg-[radial-gradient(circle_at_top_right,rgba(99,102,241,0.16),transparent_34%),radial-gradient(circle_at_top_left,rgba(20,184,166,0.12),transparent_26%),linear-gradient(180deg,#ffffff,rgba(244,246,255,0.96))]">
         <div className="mx-auto max-w-7xl px-6 py-8">
           <div className="flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
             <div className="max-w-3xl">
-              <div className="inline-flex items-center gap-2 rounded-full border border-indigo-200 bg-indigo-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.22em] text-indigo-700">
+              <div className="inline-flex items-center gap-2 rounded-full border border-af2-clay/30 bg-af2-clay-soft/40 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.22em] text-af2-clay">
                 <Sparkles size={12} />
                 Human Review Console
               </div>
-              <h1 className="mt-4 text-3xl font-semibold tracking-tight text-slate-950">
+              <h1 className="mt-4 text-3xl font-semibold tracking-tight text-af2-ink">
                 Approvals, checkpoints, and routed feedback in one lane.
               </h1>
-              <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600">
+              <p className="mt-2 max-w-2xl text-sm leading-6 text-af2-ink-2">
                 Extend the existing approvals surface with company-level checkpoint controls,
                 inline artifact routing, and an Ask the CEO briefing loop.
               </p>
             </div>
             <div className="flex flex-wrap items-center gap-3">
-              <label className="flex min-w-[220px] flex-col gap-1 text-xs font-medium uppercase tracking-[0.18em] text-slate-500">
+              <label className="flex min-w-[220px] flex-col gap-1 text-xs font-medium uppercase tracking-[0.18em] text-af2-ink-3">
                 Company
                 <select
                   value={selectedCompanyId}
                   onChange={(event) => setSelectedCompanyId(event.target.value)}
-                  className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-medium normal-case tracking-normal text-slate-900 shadow-sm outline-none transition focus:border-indigo-400"
+                  className="rounded-2xl border border-af2-line bg-af2-card px-4 py-3 text-sm font-medium normal-case tracking-normal text-af2-ink shadow-sm outline-none transition focus:border-af2-clay/40"
                 >
                   {teams.map((team) => (
                     <option key={team.id} value={team.id}>
@@ -470,7 +470,7 @@ export default function Approvals() {
               </label>
               <button
                 onClick={handleRefresh}
-                className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-medium text-slate-700 shadow-sm transition hover:border-indigo-200 hover:text-indigo-700"
+                className="inline-flex items-center gap-2 rounded-2xl border border-af2-line bg-af2-card px-4 py-3 text-sm font-medium text-af2-ink-2 shadow-sm transition hover:border-af2-clay/30 hover:text-af2-clay"
               >
                 <RefreshCw size={15} />
                 Refresh
@@ -485,10 +485,10 @@ export default function Approvals() {
             <MetricCard label="Ask CEO briefs" value={askCeoCount} accent="slate" />
           </div>
 
-          <div className="mt-4 flex flex-wrap items-center gap-3 text-xs text-slate-500">
+          <div className="mt-4 flex flex-wrap items-center gap-3 text-xs text-af2-ink-3">
             <span>Updated {lastRefreshed.toLocaleTimeString()}</span>
             {selectedTeam && (
-              <span className="rounded-full bg-slate-900 px-2.5 py-1 font-mono text-[11px] text-white">
+              <span className="rounded-full bg-af2-ink px-2.5 py-1 font-mono text-[11px] text-white">
                 {selectedTeam.id}
               </span>
             )}
@@ -504,29 +504,29 @@ export default function Approvals() {
 
       <div className="mx-auto max-w-7xl px-6 py-8">
         {error && (
-          <div className="mb-6 flex items-center gap-2 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+          <div className="mb-6 flex items-center gap-2 rounded-2xl border border-rose-200 bg-af2-clay-soft/30 px-4 py-3 text-sm text-af2-clay">
             <AlertCircle size={16} />
             <span>{error}</span>
           </div>
         )}
 
         {notice && (
-          <div className="mb-6 flex items-center gap-2 rounded-2xl border border-teal-200 bg-teal-50 px-4 py-3 text-sm text-teal-700">
+          <div className="mb-6 flex items-center gap-2 rounded-2xl border border-af2-sage/30 bg-af2-sage/10 px-4 py-3 text-sm text-af2-sage">
             <CheckCircle size={16} />
             <span>{notice}</span>
           </div>
         )}
 
         {teams.length === 0 && (
-          <div className="rounded-[28px] border border-dashed border-slate-300 bg-white p-10 text-center shadow-sm">
-            <Bot size={28} className="mx-auto text-indigo-500" />
-            <h2 className="mt-4 text-lg font-semibold text-slate-900">No deployed companies yet</h2>
-            <p className="mt-2 text-sm text-slate-500">
+          <div className="rounded-[28px] border border-dashed border-af2-line-2 bg-af2-card p-10 text-center shadow-sm">
+            <Bot size={28} className="mx-auto text-af2-clay" />
+            <h2 className="mt-4 text-lg font-semibold text-af2-ink">No deployed companies yet</h2>
+            <p className="mt-2 text-sm text-af2-ink-3">
               Deploy a control-plane team first so the HITL console has a company context to manage.
             </p>
             <Link
               to="/builder"
-              className="mt-5 inline-flex items-center gap-2 rounded-full bg-slate-900 px-4 py-2 text-sm font-medium text-white"
+              className="mt-5 inline-flex items-center gap-2 rounded-full bg-af2-ink px-4 py-2 text-sm font-medium text-white"
             >
               Open builder
             </Link>
@@ -536,20 +536,20 @@ export default function Approvals() {
         {teams.length > 0 && companyState && (
           <div className="grid gap-6 xl:grid-cols-[1.7fr_1fr]">
             <div className="space-y-6">
-              <section className="rounded-[28px] border border-slate-200 bg-white p-6 shadow-sm">
+              <section className="rounded-[28px] border border-af2-line bg-af2-card p-6 shadow-sm">
                 <div className="flex items-center justify-between gap-4">
                   <div>
-                    <p className="text-xs font-semibold uppercase tracking-[0.18em] text-indigo-600">
+                    <p className="text-xs font-semibold uppercase tracking-[0.18em] text-af2-clay">
                       Checkpoint schedule
                     </p>
-                    <h2 className="mt-2 text-xl font-semibold text-slate-950">
+                    <h2 className="mt-2 text-xl font-semibold text-af2-ink">
                       Tune weekly reviews, milestone gates, and KPI guardrails.
                     </h2>
                   </div>
                   <button
                     onClick={handleSaveSchedule}
                     disabled={savingSection === "schedule"}
-                    className="inline-flex items-center gap-2 rounded-2xl bg-indigo-600 px-4 py-2.5 text-sm font-medium text-white transition hover:bg-indigo-700 disabled:opacity-60"
+                    className="inline-flex items-center gap-2 rounded-2xl bg-af2-clay px-4 py-2.5 text-sm font-medium text-white transition hover:bg-af2-clay-2 disabled:opacity-60"
                   >
                     {savingSection === "schedule" ? (
                       <Loader2 size={15} className="animate-spin" />
@@ -561,17 +561,17 @@ export default function Approvals() {
                 </div>
 
                 <div className="mt-6 grid gap-4 md:grid-cols-2">
-                  <label className="text-sm font-medium text-slate-700">
+                  <label className="text-sm font-medium text-af2-ink-2">
                     Timezone
                     <input
                       value={scheduleDraft.timezone}
                       onChange={(event) =>
                         setScheduleDraft((current) => ({ ...current, timezone: event.target.value }))
                       }
-                      className="mt-2 w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm shadow-sm outline-none focus:border-indigo-400"
+                      className="mt-2 w-full rounded-2xl border border-af2-line px-4 py-3 text-sm shadow-sm outline-none focus:border-af2-clay/40"
                     />
                   </label>
-                  <label className="text-sm font-medium text-slate-700">
+                  <label className="text-sm font-medium text-af2-ink-2">
                     Weekly review hour (UTC)
                     <input
                       type="number"
@@ -584,10 +584,10 @@ export default function Approvals() {
                           weeklyReviewHour: Number(event.target.value),
                         }))
                       }
-                      className="mt-2 w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm shadow-sm outline-none focus:border-indigo-400"
+                      className="mt-2 w-full rounded-2xl border border-af2-line px-4 py-3 text-sm shadow-sm outline-none focus:border-af2-clay/40"
                     />
                   </label>
-                  <label className="text-sm font-medium text-slate-700">
+                  <label className="text-sm font-medium text-af2-ink-2">
                     Weekly review day
                     <select
                       value={scheduleDraft.weeklyReviewDay}
@@ -597,7 +597,7 @@ export default function Approvals() {
                           weeklyReviewDay: Number(event.target.value),
                         }))
                       }
-                      className="mt-2 w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm shadow-sm outline-none focus:border-indigo-400"
+                      className="mt-2 w-full rounded-2xl border border-af2-line px-4 py-3 text-sm shadow-sm outline-none focus:border-af2-clay/40"
                     >
                       {DAY_LABELS.map((label, index) => (
                         <option key={label} value={index}>
@@ -606,7 +606,7 @@ export default function Approvals() {
                       ))}
                     </select>
                   </label>
-                  <label className="text-sm font-medium text-slate-700">
+                  <label className="text-sm font-medium text-af2-ink-2">
                     Milestone blocking statuses
                     <input
                       value={scheduleDraft.milestoneStatuses}
@@ -616,10 +616,10 @@ export default function Approvals() {
                           milestoneStatuses: event.target.value,
                         }))
                       }
-                      className="mt-2 w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm shadow-sm outline-none focus:border-indigo-400"
+                      className="mt-2 w-full rounded-2xl border border-af2-line px-4 py-3 text-sm shadow-sm outline-none focus:border-af2-clay/40"
                     />
                   </label>
-                  <label className="text-sm font-medium text-slate-700">
+                  <label className="text-sm font-medium text-af2-ink-2">
                     KPI metric key
                     <input
                       value={scheduleDraft.kpiMetricKey}
@@ -627,10 +627,10 @@ export default function Approvals() {
                         setScheduleDraft((current) => ({ ...current, kpiMetricKey: event.target.value }))
                       }
                       placeholder="weekly_signups"
-                      className="mt-2 w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm shadow-sm outline-none focus:border-indigo-400"
+                      className="mt-2 w-full rounded-2xl border border-af2-line px-4 py-3 text-sm shadow-sm outline-none focus:border-af2-clay/40"
                     />
                   </label>
-                  <label className="text-sm font-medium text-slate-700">
+                  <label className="text-sm font-medium text-af2-ink-2">
                     KPI threshold
                     <input
                       value={scheduleDraft.kpiThreshold}
@@ -638,7 +638,7 @@ export default function Approvals() {
                         setScheduleDraft((current) => ({ ...current, kpiThreshold: event.target.value }))
                       }
                       placeholder="100"
-                      className="mt-2 w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm shadow-sm outline-none focus:border-indigo-400"
+                      className="mt-2 w-full rounded-2xl border border-af2-line px-4 py-3 text-sm shadow-sm outline-none focus:border-af2-clay/40"
                     />
                   </label>
                 </div>
@@ -678,20 +678,20 @@ export default function Approvals() {
               </section>
 
               <section className="grid gap-6 lg:grid-cols-2">
-                <div className="rounded-[28px] border border-slate-200 bg-white p-6 shadow-sm">
+                <div className="rounded-[28px] border border-af2-line bg-af2-card p-6 shadow-sm">
                   <div className="flex items-center justify-between">
                     <div>
-                      <p className="text-xs font-semibold uppercase tracking-[0.18em] text-teal-600">
+                      <p className="text-xs font-semibold uppercase tracking-[0.18em] text-af2-sage">
                         Manual checkpoint
                       </p>
-                      <h2 className="mt-2 text-lg font-semibold text-slate-950">
+                      <h2 className="mt-2 text-lg font-semibold text-af2-ink">
                         Open a checkpoint for a human owner.
                       </h2>
                     </div>
                     <button
                       onClick={handleCreateCheckpoint}
                       disabled={savingSection === "checkpoint"}
-                      className="inline-flex items-center gap-2 rounded-2xl bg-teal-600 px-4 py-2.5 text-sm font-medium text-white transition hover:bg-teal-700 disabled:opacity-60"
+                      className="inline-flex items-center gap-2 rounded-2xl bg-af2-sage px-4 py-2.5 text-sm font-medium text-white transition hover:bg-af2-sage disabled:opacity-60"
                     >
                       {savingSection === "checkpoint" ? (
                         <Loader2 size={15} className="animate-spin" />
@@ -709,7 +709,7 @@ export default function Approvals() {
                         setCheckpointForm((current) => ({ ...current, title: event.target.value }))
                       }
                       placeholder="Checkpoint title"
-                      className="w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm shadow-sm outline-none focus:border-teal-400"
+                      className="w-full rounded-2xl border border-af2-line px-4 py-3 text-sm shadow-sm outline-none focus:border-af2-sage/50"
                     />
                     <textarea
                       value={checkpointForm.description}
@@ -718,7 +718,7 @@ export default function Approvals() {
                       }
                       rows={3}
                       placeholder="What needs review before this can move?"
-                      className="w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm shadow-sm outline-none focus:border-teal-400"
+                      className="w-full rounded-2xl border border-af2-line px-4 py-3 text-sm shadow-sm outline-none focus:border-af2-sage/50"
                     />
                     <div className="grid gap-3 md:grid-cols-2">
                       <input
@@ -727,7 +727,7 @@ export default function Approvals() {
                         onChange={(event) =>
                           setCheckpointForm((current) => ({ ...current, dueAt: event.target.value }))
                         }
-                        className="w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm shadow-sm outline-none focus:border-teal-400"
+                        className="w-full rounded-2xl border border-af2-line px-4 py-3 text-sm shadow-sm outline-none focus:border-af2-sage/50"
                       />
                       <input
                         value={checkpointForm.recipientId}
@@ -735,7 +735,7 @@ export default function Approvals() {
                           setCheckpointForm((current) => ({ ...current, recipientId: event.target.value }))
                         }
                         placeholder="Recipient user id"
-                        className="w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm shadow-sm outline-none focus:border-teal-400"
+                        className="w-full rounded-2xl border border-af2-line px-4 py-3 text-sm shadow-sm outline-none focus:border-af2-sage/50"
                       />
                     </div>
                     <input
@@ -744,25 +744,25 @@ export default function Approvals() {
                         setCheckpointForm((current) => ({ ...current, artifactRefs: event.target.value }))
                       }
                       placeholder="Artifact refs, comma separated"
-                      className="w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm shadow-sm outline-none focus:border-teal-400"
+                      className="w-full rounded-2xl border border-af2-line px-4 py-3 text-sm shadow-sm outline-none focus:border-af2-sage/50"
                     />
                   </div>
                 </div>
 
-                <div className="rounded-[28px] border border-slate-200 bg-white p-6 shadow-sm">
+                <div className="rounded-[28px] border border-af2-line bg-af2-card p-6 shadow-sm">
                   <div className="flex items-center justify-between">
                     <div>
-                      <p className="text-xs font-semibold uppercase tracking-[0.18em] text-indigo-600">
+                      <p className="text-xs font-semibold uppercase tracking-[0.18em] text-af2-clay">
                         Ask the CEO
                       </p>
-                      <h2 className="mt-2 text-lg font-semibold text-slate-950">
+                      <h2 className="mt-2 text-lg font-semibold text-af2-ink">
                         Generate a cited company-state briefing.
                       </h2>
                     </div>
                     <button
                       onClick={handleAskCeo}
                       disabled={savingSection === "ask-ceo"}
-                      className="inline-flex items-center gap-2 rounded-2xl bg-slate-900 px-4 py-2.5 text-sm font-medium text-white transition hover:bg-slate-800 disabled:opacity-60"
+                      className="inline-flex items-center gap-2 rounded-2xl bg-af2-ink px-4 py-2.5 text-sm font-medium text-white transition hover:bg-af2-ink-2 disabled:opacity-60"
                     >
                       {savingSection === "ask-ceo" ? (
                         <Loader2 size={15} className="animate-spin" />
@@ -778,22 +778,22 @@ export default function Approvals() {
                     onChange={(event) => setAskForm({ question: event.target.value })}
                     rows={4}
                     placeholder="What needs my attention right now?"
-                    className="mt-5 w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm shadow-sm outline-none focus:border-indigo-400"
+                    className="mt-5 w-full rounded-2xl border border-af2-line px-4 py-3 text-sm shadow-sm outline-none focus:border-af2-clay/40"
                   />
 
                   {recentAsk && (
-                    <div className="mt-5 rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                      <div className="flex items-center gap-2 text-sm font-semibold text-slate-900">
-                        <Bot size={15} className="text-indigo-600" />
+                    <div className="mt-5 rounded-2xl border border-af2-line bg-af2-paper-2/40 p-4">
+                      <div className="flex items-center gap-2 text-sm font-semibold text-af2-ink">
+                        <Bot size={15} className="text-af2-clay" />
                         Latest answer
                       </div>
-                      <p className="mt-3 text-sm leading-6 text-slate-700">
+                      <p className="mt-3 text-sm leading-6 text-af2-ink-2">
                         {recentAsk.response.summary}
                       </p>
-                      <ul className="mt-3 space-y-2 text-sm text-slate-600">
+                      <ul className="mt-3 space-y-2 text-sm text-af2-ink-2">
                         {recentAsk.response.recommendedActions.map((action) => (
                           <li key={action} className="flex items-start gap-2">
-                            <span className="mt-1 h-1.5 w-1.5 rounded-full bg-indigo-500" />
+                            <span className="mt-1 h-1.5 w-1.5 rounded-full bg-af2-clay" />
                             <span>{action}</span>
                           </li>
                         ))}
@@ -803,20 +803,20 @@ export default function Approvals() {
                 </div>
               </section>
 
-              <section className="rounded-[28px] border border-slate-200 bg-white p-6 shadow-sm">
+              <section className="rounded-[28px] border border-af2-line bg-af2-card p-6 shadow-sm">
                 <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
                   <div>
-                    <p className="text-xs font-semibold uppercase tracking-[0.18em] text-orange-600">
+                    <p className="text-xs font-semibold uppercase tracking-[0.18em] text-af2-clay">
                       Inline artifact comments
                     </p>
-                    <h2 className="mt-2 text-lg font-semibold text-slate-950">
+                    <h2 className="mt-2 text-lg font-semibold text-af2-ink">
                       Route feedback to the responsible agent from the artifact itself.
                     </h2>
                   </div>
                   <button
                     onClick={handleCreateComment}
                     disabled={savingSection === "comment"}
-                    className="inline-flex items-center gap-2 rounded-2xl bg-orange-500 px-4 py-2.5 text-sm font-medium text-white transition hover:bg-orange-600 disabled:opacity-60"
+                    className="inline-flex items-center gap-2 rounded-2xl bg-af2-clay px-4 py-2.5 text-sm font-medium text-white transition hover:bg-af2-clay-2 disabled:opacity-60"
                   >
                     {savingSection === "comment" ? (
                       <Loader2 size={15} className="animate-spin" />
@@ -836,7 +836,7 @@ export default function Approvals() {
                         artifactKind: event.target.value as HitlArtifactComment["artifact"]["kind"],
                       }))
                     }
-                    className="rounded-2xl border border-slate-200 px-4 py-3 text-sm shadow-sm outline-none focus:border-orange-400"
+                    className="rounded-2xl border border-af2-line px-4 py-3 text-sm shadow-sm outline-none focus:border-af2-clay/40"
                   >
                     <option value="document">Document</option>
                     <option value="ticket">Ticket</option>
@@ -850,7 +850,7 @@ export default function Approvals() {
                       setCommentForm((current) => ({ ...current, artifactId: event.target.value }))
                     }
                     placeholder="Artifact id"
-                    className="rounded-2xl border border-slate-200 px-4 py-3 text-sm shadow-sm outline-none focus:border-orange-400"
+                    className="rounded-2xl border border-af2-line px-4 py-3 text-sm shadow-sm outline-none focus:border-af2-clay/40"
                   />
                   <input
                     value={commentForm.artifactTitle}
@@ -858,7 +858,7 @@ export default function Approvals() {
                       setCommentForm((current) => ({ ...current, artifactTitle: event.target.value }))
                     }
                     placeholder="Artifact title"
-                    className="rounded-2xl border border-slate-200 px-4 py-3 text-sm shadow-sm outline-none focus:border-orange-400"
+                    className="rounded-2xl border border-af2-line px-4 py-3 text-sm shadow-sm outline-none focus:border-af2-clay/40"
                   />
                   <input
                     value={commentForm.artifactPath}
@@ -866,7 +866,7 @@ export default function Approvals() {
                       setCommentForm((current) => ({ ...current, artifactPath: event.target.value }))
                     }
                     placeholder="Artifact path"
-                    className="rounded-2xl border border-slate-200 px-4 py-3 text-sm shadow-sm outline-none focus:border-orange-400"
+                    className="rounded-2xl border border-af2-line px-4 py-3 text-sm shadow-sm outline-none focus:border-af2-clay/40"
                   />
                   <input
                     value={commentForm.recipientId}
@@ -874,7 +874,7 @@ export default function Approvals() {
                       setCommentForm((current) => ({ ...current, recipientId: event.target.value }))
                     }
                     placeholder="Responsible agent id"
-                    className="rounded-2xl border border-slate-200 px-4 py-3 text-sm shadow-sm outline-none focus:border-orange-400"
+                    className="rounded-2xl border border-af2-line px-4 py-3 text-sm shadow-sm outline-none focus:border-af2-clay/40"
                   />
                   <input
                     value={commentForm.reason}
@@ -882,7 +882,7 @@ export default function Approvals() {
                       setCommentForm((current) => ({ ...current, reason: event.target.value }))
                     }
                     placeholder="Routing reason"
-                    className="rounded-2xl border border-slate-200 px-4 py-3 text-sm shadow-sm outline-none focus:border-orange-400"
+                    className="rounded-2xl border border-af2-line px-4 py-3 text-sm shadow-sm outline-none focus:border-af2-clay/40"
                   />
                 </div>
                 <input
@@ -891,7 +891,7 @@ export default function Approvals() {
                     setCommentForm((current) => ({ ...current, quote: event.target.value }))
                   }
                   placeholder="Quoted anchor text"
-                  className="mt-3 w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm shadow-sm outline-none focus:border-orange-400"
+                  className="mt-3 w-full rounded-2xl border border-af2-line px-4 py-3 text-sm shadow-sm outline-none focus:border-af2-clay/40"
                 />
                 <textarea
                   value={commentForm.body}
@@ -900,23 +900,23 @@ export default function Approvals() {
                   }
                   rows={3}
                   placeholder="Please add the company-state evidence block before this ships."
-                  className="mt-3 w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm shadow-sm outline-none focus:border-orange-400"
+                  className="mt-3 w-full rounded-2xl border border-af2-line px-4 py-3 text-sm shadow-sm outline-none focus:border-af2-clay/40"
                 />
               </section>
             </div>
 
             <div className="space-y-6">
-              <section className="rounded-[28px] border border-slate-200 bg-white p-6 shadow-sm">
+              <section className="rounded-[28px] border border-af2-line bg-af2-card p-6 shadow-sm">
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
+                    <p className="text-xs font-semibold uppercase tracking-[0.18em] text-af2-ink-3">
                       Live notifications
                     </p>
-                    <h2 className="mt-2 text-lg font-semibold text-slate-950">
+                    <h2 className="mt-2 text-lg font-semibold text-af2-ink">
                       HITL signals emitted by the backend.
                     </h2>
                   </div>
-                  <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600">
+                  <span className="rounded-full bg-af2-paper-2 px-3 py-1 text-xs font-semibold text-af2-ink-2">
                     {formatChannels(companyState.checkpointSchedule.notificationChannels)}
                   </span>
                 </div>
@@ -927,15 +927,15 @@ export default function Approvals() {
                   {notifications.slice(0, 5).map((notification) => (
                     <div
                       key={notification.id}
-                      className="rounded-2xl border border-slate-200 bg-slate-50 p-4"
+                      className="rounded-2xl border border-af2-line bg-af2-paper-2/40 p-4"
                     >
                       <div className="flex items-center justify-between gap-3">
-                        <span className="text-sm font-semibold capitalize text-slate-900">
+                        <span className="text-sm font-semibold capitalize text-af2-ink">
                           {notification.kind.replace(/_/g, " ")}
                         </span>
-                        <span className="text-xs text-slate-500">{timeAgo(notification.createdAt)}</span>
+                        <span className="text-xs text-af2-ink-3">{timeAgo(notification.createdAt)}</span>
                       </div>
-                      <p className="mt-2 text-xs uppercase tracking-[0.16em] text-slate-500">
+                      <p className="mt-2 text-xs uppercase tracking-[0.16em] text-af2-ink-3">
                         {notification.channel} · {notification.recipientType}:{notification.recipientId}
                       </p>
                     </div>
@@ -943,12 +943,12 @@ export default function Approvals() {
                 </div>
               </section>
 
-              <section className="rounded-[28px] border border-slate-200 bg-white p-6 shadow-sm">
+              <section className="rounded-[28px] border border-af2-line bg-af2-card p-6 shadow-sm">
                 <div>
-                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-teal-600">
+                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-af2-sage">
                     Open checkpoints
                   </p>
-                  <h2 className="mt-2 text-lg font-semibold text-slate-950">
+                  <h2 className="mt-2 text-lg font-semibold text-af2-ink">
                     Review gates already waiting on a human.
                   </h2>
                 </div>
@@ -962,12 +962,12 @@ export default function Approvals() {
                 </div>
               </section>
 
-              <section className="rounded-[28px] border border-slate-200 bg-white p-6 shadow-sm">
+              <section className="rounded-[28px] border border-af2-line bg-af2-card p-6 shadow-sm">
                 <div>
-                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-orange-600">
+                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-af2-clay">
                     Routed comments
                   </p>
-                  <h2 className="mt-2 text-lg font-semibold text-slate-950">
+                  <h2 className="mt-2 text-lg font-semibold text-af2-ink">
                     Inline feedback currently in flight.
                   </h2>
                 </div>
@@ -978,21 +978,21 @@ export default function Approvals() {
                   {companyState.artifactComments.slice(0, 5).map((comment) => (
                     <div
                       key={comment.id}
-                      className="rounded-2xl border border-slate-200 bg-slate-50 p-4"
+                      className="rounded-2xl border border-af2-line bg-af2-paper-2/40 p-4"
                     >
                       <div className="flex items-center justify-between gap-3">
-                        <span className="text-sm font-semibold text-slate-900">
+                        <span className="text-sm font-semibold text-af2-ink">
                           {comment.artifact.title ?? comment.artifact.id}
                         </span>
-                        <span className="text-xs text-slate-500">{timeAgo(comment.createdAt)}</span>
+                        <span className="text-xs text-af2-ink-3">{timeAgo(comment.createdAt)}</span>
                       </div>
                       {comment.anchor?.quote && (
-                        <p className="mt-2 rounded-xl border border-orange-200 bg-orange-50 px-3 py-2 text-sm text-orange-700">
+                        <p className="mt-2 rounded-xl border border-af2-clay/30 bg-af2-clay-soft/40 px-3 py-2 text-sm text-af2-clay">
                           “{comment.anchor.quote}”
                         </p>
                       )}
-                      <p className="mt-2 text-sm leading-6 text-slate-700">{comment.body}</p>
-                      <p className="mt-2 text-xs uppercase tracking-[0.14em] text-slate-500">
+                      <p className="mt-2 text-sm leading-6 text-af2-ink-2">{comment.body}</p>
+                      <p className="mt-2 text-xs uppercase tracking-[0.14em] text-af2-ink-3">
                         agent:{comment.routing.recipientId}
                       </p>
                     </div>
@@ -1000,12 +1000,12 @@ export default function Approvals() {
                 </div>
               </section>
 
-              <section className="rounded-[28px] border border-slate-200 bg-white p-6 shadow-sm">
+              <section className="rounded-[28px] border border-af2-line bg-af2-card p-6 shadow-sm">
                 <div>
-                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-indigo-600">
+                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-af2-clay">
                     Approval inbox
                   </p>
-                  <h2 className="mt-2 text-lg font-semibold text-slate-950">
+                  <h2 className="mt-2 text-lg font-semibold text-af2-ink">
                     Existing workflow approvals still live alongside HITL.
                   </h2>
                 </div>
@@ -1046,15 +1046,15 @@ function MetricCard({
   accent: "orange" | "indigo" | "teal" | "slate";
 }) {
   const styles = {
-    orange: "from-orange-50 to-white text-orange-700 border-orange-100",
-    indigo: "from-indigo-50 to-white text-indigo-700 border-indigo-100",
-    teal: "from-teal-50 to-white text-teal-700 border-teal-100",
-    slate: "from-slate-100 to-white text-slate-700 border-slate-200",
+    orange: "from-af2-clay-soft/30 to-af2-card text-af2-clay border-af2-clay/30",
+    indigo: "from-af2-clay-soft/30 to-af2-card text-af2-clay border-af2-clay/30",
+    teal: "from-af2-sage/10 to-af2-card text-af2-sage border-af2-sage/30",
+    slate: "from-slate-100 to-white text-af2-ink-2 border-af2-line",
   }[accent];
 
   return (
     <div className={`rounded-[24px] border bg-gradient-to-br p-5 shadow-sm ${styles}`}>
-      <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">{label}</p>
+      <p className="text-xs font-semibold uppercase tracking-[0.18em] text-af2-ink-3">{label}</p>
       <p className="mt-3 font-mono text-3xl font-semibold">{value}</p>
     </div>
   );
@@ -1075,8 +1075,8 @@ function ToggleCard({
       onClick={onToggle}
       className={`rounded-2xl border px-4 py-3 text-left text-sm shadow-sm transition ${
         enabled
-          ? "border-indigo-200 bg-indigo-50 text-indigo-700"
-          : "border-slate-200 bg-white text-slate-500"
+          ? "border-af2-clay/30 bg-af2-clay-soft/40 text-af2-clay"
+          : "border-af2-line bg-af2-card text-af2-ink-3"
       }`}
     >
       <div className="font-semibold">{label}</div>
@@ -1087,7 +1087,7 @@ function ToggleCard({
 
 function EmptyCard({ copy }: { copy: string }) {
   return (
-    <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 px-4 py-5 text-sm text-slate-500">
+    <div className="rounded-2xl border border-dashed border-af2-line bg-af2-paper-2/40 px-4 py-5 text-sm text-af2-ink-3">
       {copy}
     </div>
   );
@@ -1096,17 +1096,17 @@ function EmptyCard({ copy }: { copy: string }) {
 function CheckpointCard({ checkpoint }: { checkpoint: HitlCheckpoint }) {
   const config = CHECKPOINT_STATUS_CONFIG[checkpoint.status];
   return (
-    <div className={`rounded-2xl border bg-white p-4 ${config.card}`}>
+    <div className={`rounded-2xl border bg-af2-card p-4 ${config.card}`}>
       <div className="flex items-center justify-between gap-3">
-        <span className="text-sm font-semibold text-slate-900">{checkpoint.title}</span>
+        <span className="text-sm font-semibold text-af2-ink">{checkpoint.title}</span>
         <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${config.badge}`}>
           {config.label}
         </span>
       </div>
       {checkpoint.description && (
-        <p className="mt-2 text-sm leading-6 text-slate-600">{checkpoint.description}</p>
+        <p className="mt-2 text-sm leading-6 text-af2-ink-2">{checkpoint.description}</p>
       )}
-      <div className="mt-3 flex flex-wrap items-center gap-3 text-xs uppercase tracking-[0.14em] text-slate-500">
+      <div className="mt-3 flex flex-wrap items-center gap-3 text-xs uppercase tracking-[0.14em] text-af2-ink-3">
         <span>{checkpoint.triggerType.replace(/_/g, " ")}</span>
         <span>{timeAgo(checkpoint.createdAt)}</span>
         {checkpoint.dueAt && <span>due {timeAgo(checkpoint.dueAt)}</span>}
@@ -1144,13 +1144,13 @@ function ApprovalCard({
   }
 
   return (
-    <div className={`rounded-2xl border bg-slate-50 p-4 ${config.card}`}>
+    <div className={`rounded-2xl border bg-af2-paper-2/40 p-4 ${config.card}`}>
       <div className="flex items-center justify-between gap-3">
         <div>
-          <div className="text-sm font-semibold text-slate-900">
-            {item.templateName} <span className="text-slate-400">›</span> {item.stepName}
+          <div className="text-sm font-semibold text-af2-ink">
+            {item.templateName} <span className="text-af2-ink-3">›</span> {item.stepName}
           </div>
-          <div className="mt-1 text-xs uppercase tracking-[0.14em] text-slate-500">
+          <div className="mt-1 text-xs uppercase tracking-[0.14em] text-af2-ink-3">
             {item.assignee} · {timeAgo(item.requestedAt)}
           </div>
         </div>
@@ -1159,23 +1159,23 @@ function ApprovalCard({
         </span>
       </div>
 
-      <p className="mt-3 text-sm leading-6 text-slate-700">{item.message}</p>
+      <p className="mt-3 text-sm leading-6 text-af2-ink-2">{item.message}</p>
 
       {item.status === "pending" && (
-        <div className="mt-4 space-y-3 border-t border-slate-200 pt-4">
+        <div className="mt-4 space-y-3 border-t border-af2-line pt-4">
           <textarea
             value={comment}
             onChange={(event) => setComment(event.target.value)}
             rows={2}
             placeholder="Optional comment for the requester"
-            className="w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm shadow-sm outline-none focus:border-orange-400"
+            className="w-full rounded-2xl border border-af2-line px-4 py-3 text-sm shadow-sm outline-none focus:border-af2-clay/40"
           />
-          {submitError && <p className="text-sm text-rose-600">{submitError}</p>}
+          {submitError && <p className="text-sm text-af2-clay">{submitError}</p>}
           <div className="flex gap-2">
             <button
               onClick={() => handleResolve("approved")}
               disabled={submitting}
-              className="inline-flex items-center gap-2 rounded-xl bg-teal-600 px-3 py-2 text-sm font-medium text-white disabled:opacity-60"
+              className="inline-flex items-center gap-2 rounded-xl bg-af2-sage px-3 py-2 text-sm font-medium text-white disabled:opacity-60"
             >
               {submitting ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle size={14} />}
               Approve
@@ -1183,7 +1183,7 @@ function ApprovalCard({
             <button
               onClick={() => handleResolve("rejected")}
               disabled={submitting}
-              className="inline-flex items-center gap-2 rounded-xl border border-rose-200 bg-white px-3 py-2 text-sm font-medium text-rose-700 disabled:opacity-60"
+              className="inline-flex items-center gap-2 rounded-xl border border-rose-200 bg-af2-card px-3 py-2 text-sm font-medium text-af2-clay disabled:opacity-60"
             >
               Reject
             </button>

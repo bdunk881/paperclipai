@@ -256,34 +256,34 @@ export default function NotificationsSettings() {
   return (
     <div className="max-w-6xl p-8">
       <div className="mb-8">
-        <h1 className="text-2xl font-bold text-gray-900">Notifications</h1>
-        <p className="mt-1 text-gray-500">Slack, email, and SMS digests with workspace-level cadence controls.</p>
+        <h1 className="text-2xl font-bold text-af2-ink">Notifications</h1>
+        <p className="mt-1 text-af2-ink-3">Slack, email, and SMS digests with workspace-level cadence controls.</p>
       </div>
 
       {error ? (
-        <div className="mb-4 rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+        <div className="mb-4 rounded-lg border border-rose-200 bg-af2-clay-soft/30 px-4 py-3 text-sm text-af2-clay">
           {error}
         </div>
       ) : null}
       {notice ? (
-        <div className="mb-4 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
+        <div className="mb-4 rounded-lg border border-emerald-200 bg-af2-sage/10 px-4 py-3 text-sm text-af2-sage">
           {notice}
         </div>
       ) : null}
 
       {loading ? (
-        <div className="flex items-center gap-3 rounded-xl border border-gray-200 bg-white px-5 py-6 text-sm text-gray-500">
+        <div className="flex items-center gap-3 rounded-xl border border-af2-line bg-af2-card px-5 py-6 text-sm text-af2-ink-3">
           <Loader2 className="h-4 w-4 animate-spin" />
           Loading notification settings…
         </div>
       ) : (
         <div className="space-y-6">
-          <section className="rounded-2xl border border-gray-200 bg-white p-6">
+          <section className="rounded-2xl border border-af2-line bg-af2-card p-6">
             <div className="mb-5 flex items-center gap-3">
-              <ShieldAlert className="h-5 w-5 text-gray-500" />
+              <ShieldAlert className="h-5 w-5 text-af2-ink-3" />
               <div>
-                <h2 className="text-base font-semibold text-gray-900">Channel transports</h2>
-                <p className="text-sm text-gray-500">Attach one connected provider per channel and set delivery targets.</p>
+                <h2 className="text-base font-semibold text-af2-ink">Channel transports</h2>
+                <p className="text-sm text-af2-ink-3">Attach one connected provider per channel and set delivery targets.</p>
               </div>
             </div>
 
@@ -292,16 +292,16 @@ export default function NotificationsSettings() {
                 const transport = transportsByChannel[meta.channel];
                 const options = connectionOptions[meta.channel];
                 return (
-                  <div key={meta.channel} className="rounded-xl border border-gray-200 p-4">
+                  <div key={meta.channel} className="rounded-xl border border-af2-line p-4">
                     <div className="mb-3">
-                      <h3 className="text-sm font-semibold text-gray-900">{meta.label}</h3>
-                      <p className="mt-1 text-xs text-gray-500">{meta.helper}</p>
+                      <h3 className="text-sm font-semibold text-af2-ink">{meta.label}</h3>
+                      <p className="mt-1 text-xs text-af2-ink-3">{meta.helper}</p>
                     </div>
 
-                    <label className="mb-3 block text-xs font-medium uppercase tracking-wide text-gray-500">
+                    <label className="mb-3 block text-xs font-medium uppercase tracking-wide text-af2-ink-3">
                       Connected provider
                       <select
-                        className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+                        className="mt-1 w-full rounded-lg border border-af2-line-2 px-3 py-2 text-sm"
                         value={transport?.connectionId ?? ""}
                         onChange={(event) => void handleConnectionSelect(meta.channel, event.target.value)}
                       >
@@ -317,7 +317,7 @@ export default function NotificationsSettings() {
                     {meta.channel === "slack" ? (
                       <>
                         <input
-                          className="mb-2 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+                          className="mb-2 w-full rounded-lg border border-af2-line-2 px-3 py-2 text-sm"
                           placeholder="Slack channel ID"
                           value={transportDrafts.slack.slackChannelId ?? ""}
                           onChange={(event) =>
@@ -328,7 +328,7 @@ export default function NotificationsSettings() {
                           }
                         />
                         <input
-                          className="mb-3 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+                          className="mb-3 w-full rounded-lg border border-af2-line-2 px-3 py-2 text-sm"
                           placeholder="Channel label"
                           value={transportDrafts.slack.slackChannelName ?? ""}
                           onChange={(event) =>
@@ -344,7 +344,7 @@ export default function NotificationsSettings() {
                     {meta.channel === "email" ? (
                       <>
                         <input
-                          className="mb-2 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+                          className="mb-2 w-full rounded-lg border border-af2-line-2 px-3 py-2 text-sm"
                           placeholder="Recipient email"
                           value={transportDrafts.email.recipientEmail ?? ""}
                           onChange={(event) =>
@@ -355,7 +355,7 @@ export default function NotificationsSettings() {
                           }
                         />
                         <input
-                          className="mb-2 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+                          className="mb-2 w-full rounded-lg border border-af2-line-2 px-3 py-2 text-sm"
                           placeholder="From email"
                           value={transportDrafts.email.fromEmail ?? ""}
                           onChange={(event) =>
@@ -366,7 +366,7 @@ export default function NotificationsSettings() {
                           }
                         />
                         <input
-                          className="mb-3 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+                          className="mb-3 w-full rounded-lg border border-af2-line-2 px-3 py-2 text-sm"
                           placeholder="From name"
                           value={transportDrafts.email.fromName ?? ""}
                           onChange={(event) =>
@@ -382,7 +382,7 @@ export default function NotificationsSettings() {
                     {meta.channel === "sms" ? (
                       <>
                         <input
-                          className="mb-2 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+                          className="mb-2 w-full rounded-lg border border-af2-line-2 px-3 py-2 text-sm"
                           placeholder="To phone"
                           value={transportDrafts.sms.toPhone ?? ""}
                           onChange={(event) =>
@@ -393,7 +393,7 @@ export default function NotificationsSettings() {
                           }
                         />
                         <input
-                          className="mb-3 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+                          className="mb-3 w-full rounded-lg border border-af2-line-2 px-3 py-2 text-sm"
                           placeholder="From phone"
                           value={transportDrafts.sms.fromPhone ?? ""}
                           onChange={(event) =>
@@ -407,7 +407,7 @@ export default function NotificationsSettings() {
                     ) : null}
 
                     <button
-                      className="inline-flex items-center rounded-lg bg-gray-900 px-3 py-2 text-sm font-medium text-white"
+                      className="inline-flex items-center rounded-lg bg-af2-ink px-3 py-2 text-sm font-medium text-white"
                       onClick={() => void handleTransportSave(meta.channel)}
                       disabled={savingKey === `transport:${meta.channel}`}
                     >
@@ -420,25 +420,25 @@ export default function NotificationsSettings() {
             </div>
           </section>
 
-          <section className="rounded-2xl border border-gray-200 bg-white p-6">
+          <section className="rounded-2xl border border-af2-line bg-af2-card p-6">
             <div className="mb-5 flex items-center gap-3">
-              <MessageSquareWarning className="h-5 w-5 text-gray-500" />
+              <MessageSquareWarning className="h-5 w-5 text-af2-ink-3" />
               <div>
-                <h2 className="text-base font-semibold text-gray-900">Cadence by notification type</h2>
-                <p className="text-sm text-gray-500">Set independent digests per channel and mute noisy streams temporarily.</p>
+                <h2 className="text-base font-semibold text-af2-ink">Cadence by notification type</h2>
+                <p className="text-sm text-af2-ink-3">Set independent digests per channel and mute noisy streams temporarily.</p>
               </div>
             </div>
 
             <div className="space-y-4">
               {KIND_META.map((meta) => (
-                <div key={meta.kind} className="rounded-xl border border-gray-200">
-                  <div className="flex items-start justify-between gap-4 border-b border-gray-100 px-4 py-4">
+                <div key={meta.kind} className="rounded-xl border border-af2-line">
+                  <div className="flex items-start justify-between gap-4 border-b border-af2-line px-4 py-4">
                     <div>
-                      <h3 className="text-sm font-semibold text-gray-900">{meta.label}</h3>
-                      <p className="mt-1 text-xs text-gray-500">{meta.description}</p>
+                      <h3 className="text-sm font-semibold text-af2-ink">{meta.label}</h3>
+                      <p className="mt-1 text-xs text-af2-ink-3">{meta.description}</p>
                     </div>
                     <button
-                      className="inline-flex items-center rounded-lg border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700"
+                      className="inline-flex items-center rounded-lg border border-af2-line-2 px-3 py-2 text-sm font-medium text-af2-ink-2"
                       onClick={() => void handleTestSend(meta.kind)}
                       disabled={savingKey === `test:${meta.kind}`}
                     >
@@ -451,17 +451,17 @@ export default function NotificationsSettings() {
                     {CHANNEL_META.map((channel) => {
                       const preference = preferencesByKey.get(preferenceKey(channel.channel, meta.kind));
                       return (
-                        <div key={channel.channel} className="rounded-lg border border-gray-200 p-3">
+                        <div key={channel.channel} className="rounded-lg border border-af2-line p-3">
                           <div className="mb-2 flex items-center justify-between">
-                            <span className="text-sm font-medium text-gray-900">{channel.label}</span>
+                            <span className="text-sm font-medium text-af2-ink">{channel.label}</span>
                             {preference?.mutedUntil ? (
-                              <span className="rounded-full bg-amber-100 px-2 py-1 text-[11px] font-medium text-amber-700">
+                              <span className="rounded-full bg-af2-mustard/15 px-2 py-1 text-[11px] font-medium text-af2-mustard">
                                 Muted
                               </span>
                             ) : null}
                           </div>
                           <select
-                            className="mb-2 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+                            className="mb-2 w-full rounded-lg border border-af2-line-2 px-3 py-2 text-sm"
                             value={preference?.cadence ?? "off"}
                             onChange={(event) =>
                               void handleCadenceChange(channel.channel, meta.kind, event.target.value as NotificationCadence)
@@ -474,7 +474,7 @@ export default function NotificationsSettings() {
                             ))}
                           </select>
                           <button
-                            className="text-xs font-medium text-gray-600 underline"
+                            className="text-xs font-medium text-af2-ink-2 underline"
                             onClick={() => void handleMute(channel.channel, meta.kind)}
                             disabled={savingKey === `mute:${channel.channel}:${meta.kind}`}
                           >

@@ -116,32 +116,32 @@ export default function TicketSlaSettings() {
   }
 
   return (
-    <div className="min-h-full bg-[#0b1120] pb-28 text-slate-100">
+    <div className="min-h-full bg-[#0b1120] pb-28 text-af2-paper">
       <div className="mx-auto flex w-full max-w-7xl flex-col gap-6 px-4 py-6 md:px-8 md:py-8">
-        <section className="rounded-[30px] border border-slate-800/80 bg-slate-950/85 px-6 py-6 md:px-8">
+        <section className="rounded-[30px] border border-af2-line/80 bg-af2-ink/85 px-6 py-6 md:px-8">
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div className="max-w-3xl">
               <Link
                 to="/settings"
-                className="inline-flex items-center gap-2 text-sm text-slate-400 transition hover:text-slate-100"
+                className="inline-flex items-center gap-2 text-sm text-af2-ink-3 transition hover:text-af2-paper"
               >
                 <ArrowLeft size={14} />
                 Back to settings
               </Link>
-              <div className="mt-4 inline-flex items-center gap-2 rounded-full border border-indigo-500/30 bg-indigo-500/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.2em] text-indigo-200">
+              <div className="mt-4 inline-flex items-center gap-2 rounded-full border border-af2-clay/30 bg-af2-clay/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.2em] text-af2-paper-2">
                 <ShieldAlert size={12} />
                 Workspace SLA
               </div>
-              <h1 className="mt-4 text-3xl font-semibold tracking-tight text-slate-100">
+              <h1 className="mt-4 text-3xl font-semibold tracking-tight text-af2-paper">
                 SLA Policy Editor
               </h1>
-              <p className="mt-2 text-sm leading-6 text-slate-400">
+              <p className="mt-2 text-sm leading-6 text-af2-ink-3">
                 Define response and resolution targets by priority, then set the breach actions that keep work moving.
               </p>
             </div>
             <Link
               to="/tickets/sla"
-              className="inline-flex items-center gap-2 rounded-full border border-slate-700 bg-slate-900/80 px-4 py-2 text-sm font-medium text-slate-200 transition hover:border-teal-500/40 hover:text-teal-100"
+              className="inline-flex items-center gap-2 rounded-full border border-af2-line-2 bg-af2-ink/80 px-4 py-2 text-sm font-medium text-af2-paper-2 transition hover:border-af2-sage/40 hover:text-af2-sage/80"
             >
               Monitor dashboard
             </Link>
@@ -159,11 +159,11 @@ export default function TicketSlaSettings() {
           </div>
         ) : settings ? (
           <>
-            <section className="rounded-[30px] border border-slate-800 bg-slate-950/85 p-5">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+            <section className="rounded-[30px] border border-af2-line bg-af2-ink/85 p-5">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-af2-ink-3">
                 Policy Editor
               </p>
-              <h2 className="mt-2 text-lg font-semibold text-slate-100">Targets by priority</h2>
+              <h2 className="mt-2 text-lg font-semibold text-af2-paper">Targets by priority</h2>
               <div className="mt-5 grid gap-4">
                 {policyRows.map((row) => {
                   const invalid = validationErrors.has(row.priority);
@@ -171,12 +171,12 @@ export default function TicketSlaSettings() {
                     <div
                       key={row.priority}
                       className={clsx(
-                        "grid gap-4 rounded-[28px] border bg-slate-900/70 p-4 md:grid-cols-[120px_minmax(0,1fr)_minmax(0,1fr)]",
-                        invalid ? "border-[#FF5F57]/50" : "border-slate-800"
+                        "grid gap-4 rounded-[28px] border bg-af2-ink/70 p-4 md:grid-cols-[120px_minmax(0,1fr)_minmax(0,1fr)]",
+                        invalid ? "border-[#FF5F57]/50" : "border-af2-line"
                       )}
                     >
                       <div>
-                        <p className="font-ticket-mono text-xs uppercase tracking-[0.2em] text-slate-400">
+                        <p className="font-ticket-mono text-xs uppercase tracking-[0.2em] text-af2-ink-3">
                           {row.priority}
                         </p>
                       </div>
@@ -205,11 +205,11 @@ export default function TicketSlaSettings() {
               </div>
             </section>
 
-            <section className="rounded-[30px] border border-slate-800 bg-slate-950/85 p-5">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+            <section className="rounded-[30px] border border-af2-line bg-af2-ink/85 p-5">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-af2-ink-3">
                 Escalation Builder
               </p>
-              <h2 className="mt-2 text-lg font-semibold text-slate-100">Breach rules</h2>
+              <h2 className="mt-2 text-lg font-semibold text-af2-paper">Breach rules</h2>
               <div className="mt-5 grid gap-4">
                 {ruleRows.map((row) => {
                   const invalid = validationErrors.has(row.priority);
@@ -217,14 +217,14 @@ export default function TicketSlaSettings() {
                     <div
                       key={row.priority}
                       className={clsx(
-                        "grid gap-4 rounded-[24px] border bg-slate-900/70 p-4",
+                        "grid gap-4 rounded-[24px] border bg-af2-ink/70 p-4",
                         invalid
-                          ? "border-orange-500/50 animate-soft-shake"
-                          : "border-slate-800"
+                          ? "border-af2-clay/50 animate-soft-shake"
+                          : "border-af2-line"
                       )}
                     >
                       <div className="flex items-center justify-between gap-4">
-                        <p className="font-ticket-mono text-xs uppercase tracking-[0.2em] text-slate-400">
+                        <p className="font-ticket-mono text-xs uppercase tracking-[0.2em] text-af2-ink-3">
                           {row.priority}
                         </p>
                         <div className="flex flex-wrap gap-2">
@@ -242,29 +242,29 @@ export default function TicketSlaSettings() {
                       </div>
 
                       <label className="grid gap-2">
-                        <span className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                        <span className="text-[11px] font-semibold uppercase tracking-[0.18em] text-af2-ink-3">
                           Notify Targets
                         </span>
                         <input
                           value={row.notifyTargets}
                           onChange={(event) => updateRuleRow(row.priority, "notifyTargets", event.target.value, setRuleRows)}
                           placeholder="@CTO, #incident-room, ops@autoflow.ai"
-                          className="rounded-2xl border border-slate-800 bg-slate-950/70 px-4 py-3 text-sm text-slate-100 placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-teal-400"
+                          className="rounded-2xl border border-af2-line bg-af2-ink/70 px-4 py-3 text-sm text-af2-paper placeholder:text-af2-ink-3 focus:outline-none focus:ring-2 focus:ring-teal-400"
                         />
                       </label>
 
                       <label className="grid gap-2">
-                        <span className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                        <span className="text-[11px] font-semibold uppercase tracking-[0.18em] text-af2-ink-3">
                           Fallback Actor
                         </span>
                         <select
                           value={row.fallbackActorId}
                           onChange={(event) => updateRuleRow(row.priority, "fallbackActorId", event.target.value, setRuleRows)}
                           className={clsx(
-                            "rounded-2xl border bg-slate-950/70 px-4 py-3 text-sm text-slate-100 focus:outline-none focus:ring-2 focus:ring-teal-400",
+                            "rounded-2xl border bg-af2-ink/70 px-4 py-3 text-sm text-af2-paper focus:outline-none focus:ring-2 focus:ring-teal-400",
                             row.autoReassign && !row.fallbackActorId
-                              ? "border-orange-500 text-orange-100"
-                              : "border-slate-800"
+                              ? "border-af2-clay/60 text-af2-paper-2"
+                              : "border-af2-line"
                           )}
                         >
                           <option value="">Select fallback actor</option>
@@ -277,7 +277,7 @@ export default function TicketSlaSettings() {
                       </label>
 
                       {invalid ? (
-                        <p className="text-sm text-orange-200">{validationErrors.get(row.priority)}</p>
+                        <p className="text-sm text-af2-paper-2">{validationErrors.get(row.priority)}</p>
                       ) : null}
                     </div>
                   );
@@ -288,17 +288,17 @@ export default function TicketSlaSettings() {
         ) : null}
       </div>
 
-      <div className="fixed inset-x-0 bottom-0 z-30 border-t border-slate-800/80 bg-slate-950/95 backdrop-blur">
+      <div className="fixed inset-x-0 bottom-0 z-30 border-t border-af2-line/80 bg-af2-ink/95 backdrop-blur">
         <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-3 px-4 py-4 md:px-8">
           <div>
-            <p className="text-sm font-medium text-slate-200">Save SLA policy changes</p>
-            <p className="text-xs text-slate-500">
+            <p className="text-sm font-medium text-af2-paper-2">Save SLA policy changes</p>
+            <p className="text-xs text-af2-ink-3">
               Targets and escalation rules apply to newly created tickets after save.
             </p>
           </div>
           <div className="flex items-center gap-3">
             {saveState === "saved" ? (
-              <span className="inline-flex items-center gap-2 rounded-full bg-teal-500/15 px-3 py-1.5 text-sm text-teal-200">
+              <span className="inline-flex items-center gap-2 rounded-full bg-af2-sage/15 px-3 py-1.5 text-sm text-af2-sage/80">
                 <Check size={14} />
                 Saved
               </span>
@@ -311,8 +311,8 @@ export default function TicketSlaSettings() {
               className={clsx(
                 "inline-flex min-w-[160px] items-center justify-center gap-2 rounded-full px-4 py-2 text-sm font-semibold transition",
                 saving
-                  ? "cursor-not-allowed bg-slate-700 text-slate-400"
-                  : "bg-indigo-500 text-white hover:bg-indigo-400"
+                  ? "cursor-not-allowed bg-af2-ink-2 text-af2-ink-3"
+                  : "bg-af2-clay text-white hover:bg-af2-clay-2"
               )}
             >
               {saving ? <Loader2 size={15} className="animate-spin" /> : <Save size={15} />}
@@ -418,26 +418,26 @@ function DurationField({
 }) {
   return (
     <label className="grid gap-2">
-      <span className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">{label}</span>
+      <span className="text-[11px] font-semibold uppercase tracking-[0.18em] text-af2-ink-3">{label}</span>
       <div className="grid grid-cols-[minmax(0,1fr)_92px] gap-2">
         <input
           type="number"
           min={1}
           value={value}
           onChange={(event) => onValueChange(Number(event.target.value))}
-          className="rounded-2xl border border-slate-800 bg-slate-950/70 px-4 py-3 font-ticket-mono text-sm text-slate-100 focus:outline-none focus:ring-2 focus:ring-teal-400"
+          className="rounded-2xl border border-af2-line bg-af2-ink/70 px-4 py-3 font-ticket-mono text-sm text-af2-paper focus:outline-none focus:ring-2 focus:ring-teal-400"
         />
         <div className="relative">
           <select
             value={unit}
             onChange={(event) => onUnitChange(event.target.value as Unit)}
-            className="w-full rounded-2xl border border-slate-800 bg-slate-950/70 px-4 py-3 font-ticket-mono text-sm text-slate-100 focus:outline-none focus:ring-2 focus:ring-teal-400"
+            className="w-full rounded-2xl border border-af2-line bg-af2-ink/70 px-4 py-3 font-ticket-mono text-sm text-af2-paper focus:outline-none focus:ring-2 focus:ring-teal-400"
           >
             <option value="m">m</option>
             <option value="h">h</option>
             <option value="d">d</option>
           </select>
-          {success ? <Check size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-teal-300" /> : null}
+          {success ? <Check size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-af2-sage" /> : null}
         </div>
       </div>
     </label>
@@ -454,12 +454,12 @@ function ToggleField({
   onChange: (checked: boolean) => void;
 }) {
   return (
-    <label className="inline-flex items-center gap-2 rounded-full border border-slate-700 bg-slate-950/70 px-3 py-1.5 text-xs text-slate-300">
+    <label className="inline-flex items-center gap-2 rounded-full border border-af2-line-2 bg-af2-ink/70 px-3 py-1.5 text-xs text-af2-ink-3">
       <input
         type="checkbox"
         checked={checked}
         onChange={(event) => onChange(event.target.checked)}
-        className="h-4 w-4 rounded border-slate-700 bg-slate-950 text-indigo-500 focus:ring-indigo-400"
+        className="h-4 w-4 rounded border-af2-line-2 bg-af2-ink text-af2-clay focus:ring-indigo-400"
       />
       {label}
     </label>

@@ -50,20 +50,20 @@ export default function Settings() {
   return (
     <div className="p-8 max-w-4xl">
       <div className="mb-8">
-        <h1 className="text-2xl font-bold text-gray-900">Settings</h1>
-        <p className="text-gray-500 mt-1">Manage your account and workspace configuration.</p>
+        <h1 className="text-2xl font-bold text-af2-ink">Settings</h1>
+        <p className="text-af2-ink-3 mt-1">Manage your account and workspace configuration.</p>
       </div>
 
       <div className="grid grid-cols-2 gap-4">
         {SETTINGS_SECTIONS.map(({ to, icon: Icon, title, description }) => (
           <Link key={to} to={to} className="block">
-            <div className="bg-white rounded-xl border border-gray-200 p-6 flex items-start gap-4 hover:shadow-md cursor-pointer transition-shadow">
-              <div className="flex items-center justify-center w-10 h-10 rounded-lg bg-blue-50 text-blue-600 flex-shrink-0">
+            <div className="bg-af2-card rounded-xl border border-af2-line p-6 flex items-start gap-4 hover:shadow-md cursor-pointer transition-shadow">
+              <div className="flex items-center justify-center w-10 h-10 rounded-lg bg-af2-ink-blue/10 text-af2-ink-blue flex-shrink-0">
                 <Icon size={20} />
               </div>
               <div>
-                <p className="font-semibold text-gray-900 mb-1">{title}</p>
-                <p className="text-sm text-gray-500">{description}</p>
+                <p className="font-semibold text-af2-ink mb-1">{title}</p>
+                <p className="text-sm text-af2-ink-3">{description}</p>
               </div>
             </div>
           </Link>

@@ -240,17 +240,17 @@ export default function Integrations() {
   const callbackMessage = searchParams.get("message");
 
   return (
-    <div className="min-h-full bg-gray-50 p-8">
+    <div className="min-h-full bg-af2-paper-2/40 p-8">
       <div className="mx-auto max-w-6xl">
         <div className="mb-6 flex items-start justify-between gap-4">
           <div>
             <div className="flex items-center gap-3">
-              <h1 className="text-2xl font-bold text-gray-900">Integrations</h1>
-              <span className="rounded-full bg-blue-50 px-2 py-0.5 text-xs font-medium text-blue-600">
+              <h1 className="text-2xl font-bold text-af2-ink">Integrations</h1>
+              <span className="rounded-full bg-af2-ink-blue/10 px-2 py-0.5 text-xs font-medium text-af2-ink-blue">
                 Connector setup
               </span>
             </div>
-            <p className="mt-1 text-sm text-gray-500">
+            <p className="mt-1 text-sm text-af2-ink-3">
               Connect the SaaS tools your agents depend on. OAuth launches one-click setup, and every live connector
               exposes an API-key fallback in the same card.
             </p>
@@ -260,7 +260,7 @@ export default function Integrations() {
             onClick={() => {
               void loadStatuses();
             }}
-            className="inline-flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm font-medium text-gray-700 transition hover:bg-gray-50"
+            className="inline-flex items-center gap-2 rounded-lg border border-af2-line bg-af2-card px-3 py-2 text-sm font-medium text-af2-ink-2 transition hover:bg-af2-paper-2/40"
           >
             <RefreshCw size={14} />
             Refresh
@@ -271,8 +271,8 @@ export default function Integrations() {
           <div
             className={`mb-5 rounded-xl border px-4 py-3 text-sm ${
               callbackStatus === "success"
-                ? "border-green-200 bg-green-50 text-green-700"
-                : "border-red-200 bg-red-50 text-red-700"
+                ? "border-af2-sage/30 bg-af2-sage/10 text-af2-sage"
+                : "border-af2-clay/30 bg-af2-clay-soft/30 text-af2-clay"
             }`}
           >
             <span className="font-medium capitalize">{callbackProvider}</span>
@@ -283,13 +283,13 @@ export default function Integrations() {
         )}
 
         {error && (
-          <div className="mb-5 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          <div className="mb-5 rounded-xl border border-af2-clay/30 bg-af2-clay-soft/30 px-4 py-3 text-sm text-af2-clay">
             {error}
           </div>
         )}
 
         {loading ? (
-          <div className="rounded-2xl border border-gray-200 bg-white p-12 text-center text-gray-500">
+          <div className="rounded-2xl border border-af2-line bg-af2-card p-12 text-center text-af2-ink-3">
             <Loader2 size={18} className="mx-auto mb-3 animate-spin" />
             Loading connector status...
           </div>
@@ -301,23 +301,23 @@ export default function Integrations() {
               const apiKeyPanelOpen = apiKeyPanels[provider.key] ?? !provider.supportsOAuth;
 
               return (
-                <div key={provider.key} className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
+                <div key={provider.key} className="rounded-2xl border border-af2-line bg-af2-card p-5 shadow-sm">
                   <div className="flex items-start justify-between gap-3">
                     <div className="flex items-center gap-3">
-                      <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gray-100 text-gray-700">
+                      <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-af2-paper-2 text-af2-ink-2">
                         <PlugZap size={16} />
                       </div>
                       <div>
-                        <h2 className="text-sm font-semibold text-gray-900">{provider.name}</h2>
-                        <p className="text-xs text-gray-400">{provider.category}</p>
+                        <h2 className="text-sm font-semibold text-af2-ink">{provider.name}</h2>
+                        <p className="text-xs text-af2-ink-4">{provider.category}</p>
                       </div>
                     </div>
 
                     <span
                       className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium ${
                         status.connected
-                          ? "bg-green-50 text-green-700"
-                          : "bg-gray-100 text-gray-500"
+                          ? "bg-af2-sage/10 text-af2-sage"
+                          : "bg-af2-paper-2 text-af2-ink-3"
                       }`}
                     >
                       {status.connected ? <CheckCircle2 size={12} /> : <XCircle size={12} />}
@@ -325,36 +325,36 @@ export default function Integrations() {
                     </span>
                   </div>
 
-                  <p className="mt-3 text-sm leading-relaxed text-gray-500">{provider.description}</p>
+                  <p className="mt-3 text-sm leading-relaxed text-af2-ink-3">{provider.description}</p>
 
-                  <div className="mt-4 space-y-2 rounded-xl bg-gray-50 p-3 text-xs text-gray-600">
+                  <div className="mt-4 space-y-2 rounded-xl bg-af2-paper-2/40 p-3 text-xs text-af2-ink-2">
                     <div className="flex items-center justify-between gap-3">
-                      <span className="font-medium text-gray-500">Auth mode</span>
+                      <span className="font-medium text-af2-ink-3">Auth mode</span>
                       <span className="font-mono uppercase">{authModeLabel(provider)}</span>
                     </div>
                     <div className="flex items-center justify-between gap-3">
-                      <span className="font-medium text-gray-500">Connected at</span>
+                      <span className="font-medium text-af2-ink-3">Connected at</span>
                       <span>{status.connectedAt ? new Date(status.connectedAt).toLocaleString() : "Not yet"}</span>
                     </div>
                     <div className="flex items-center justify-between gap-3">
-                      <span className="font-medium text-gray-500">Connection type</span>
+                      <span className="font-medium text-af2-ink-3">Connection type</span>
                       <span>{connectionTypeLabel(status.authMethod)}</span>
                     </div>
                     <div className="flex items-center justify-between gap-3">
-                      <span className="font-medium text-gray-500">Account</span>
+                      <span className="font-medium text-af2-ink-3">Account</span>
                       <span>{status.accountLabel ?? status.tokenMasked ?? "Not yet"}</span>
                     </div>
                     <div>
-                      <div className="mb-1 font-medium text-gray-500">Scopes</div>
+                      <div className="mb-1 font-medium text-af2-ink-3">Scopes</div>
                       <div className="flex flex-wrap gap-1">
                         {status.scopes?.length ? (
                           status.scopes.slice(0, 4).map((scope) => (
-                            <span key={scope} className="rounded bg-white px-2 py-0.5 font-mono text-[11px] text-gray-600">
+                            <span key={scope} className="rounded bg-af2-card px-2 py-0.5 font-mono text-[11px] text-af2-ink-2">
                               {scope}
                             </span>
                           ))
                         ) : (
-                          <span className="text-gray-400">No scopes recorded</span>
+                          <span className="text-af2-ink-4">No scopes recorded</span>
                         )}
                       </div>
                     </div>
@@ -368,7 +368,7 @@ export default function Integrations() {
                           void handleDisconnect(provider);
                         }}
                         disabled={isBusy}
-                        className="inline-flex flex-1 items-center justify-center gap-2 rounded-lg border border-gray-200 px-3 py-2 text-sm font-medium text-gray-700 transition hover:bg-gray-50 disabled:opacity-60"
+                        className="inline-flex flex-1 items-center justify-center gap-2 rounded-lg border border-af2-line px-3 py-2 text-sm font-medium text-af2-ink-2 transition hover:bg-af2-paper-2/40 disabled:opacity-60"
                       >
                         {isBusy ? <Loader2 size={14} className="animate-spin" /> : <Unplug size={14} />}
                         Disconnect
@@ -382,7 +382,7 @@ export default function Integrations() {
                               void handleOAuthConnect(provider);
                             }}
                             disabled={isBusy}
-                            className="inline-flex flex-1 items-center justify-center gap-2 rounded-lg bg-blue-600 px-3 py-2 text-sm font-medium text-white transition hover:bg-blue-700 disabled:opacity-60"
+                            className="inline-flex flex-1 items-center justify-center gap-2 rounded-lg bg-af2-ink-blue px-3 py-2 text-sm font-medium text-white transition hover:bg-af2-ink-blue disabled:opacity-60"
                           >
                             {isBusy ? <Loader2 size={14} className="animate-spin" /> : <PlugZap size={14} />}
                             Connect
@@ -395,7 +395,7 @@ export default function Integrations() {
                               toggleApiKeyPanel(provider);
                             }}
                             disabled={isBusy}
-                            className="inline-flex items-center justify-center gap-2 rounded-lg border border-gray-200 px-3 py-2 text-sm font-medium text-gray-700 transition hover:bg-gray-50 disabled:opacity-60"
+                            className="inline-flex items-center justify-center gap-2 rounded-lg border border-af2-line px-3 py-2 text-sm font-medium text-af2-ink-2 transition hover:bg-af2-paper-2/40 disabled:opacity-60"
                           >
                             <KeyRound size={14} />
                             {apiKeyPanelOpen ? "Hide API key" : "Use API key"}
@@ -407,15 +407,15 @@ export default function Integrations() {
                     <button
                       type="button"
                       title={`See ${provider.name} setup details`}
-                      className="inline-flex items-center justify-center rounded-lg border border-gray-200 px-3 py-2 text-gray-500 transition hover:bg-gray-50 hover:text-gray-700"
+                      className="inline-flex items-center justify-center rounded-lg border border-af2-line px-3 py-2 text-af2-ink-3 transition hover:bg-af2-paper-2/40 hover:text-af2-ink-2"
                     >
                       <ExternalLink size={14} />
                     </button>
                   </div>
 
                   {!status.connected && provider.supportsApiKey && apiKeyPanelOpen && (
-                    <form onSubmit={(event) => submitApiKey(event, provider)} className="mt-4 rounded-xl border border-gray-200 bg-gray-50 p-3">
-                      <label className="block text-xs font-medium text-gray-600" htmlFor={`${provider.key}-api-key`}>
+                    <form onSubmit={(event) => submitApiKey(event, provider)} className="mt-4 rounded-xl border border-af2-line bg-af2-paper-2/40 p-3">
+                      <label className="block text-xs font-medium text-af2-ink-2" htmlFor={`${provider.key}-api-key`}>
                         {provider.name} API key
                       </label>
                       <input
@@ -428,16 +428,16 @@ export default function Integrations() {
                           setApiKeyDrafts((current) => ({ ...current, [provider.key]: value }));
                         }}
                         placeholder={`Paste ${provider.name} API key`}
-                        className="mt-2 w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-900 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                        className="mt-2 w-full rounded-lg border border-af2-line bg-af2-card px-3 py-2 text-sm text-af2-ink outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
                       />
-                      <p className="mt-2 text-xs text-gray-500">
+                      <p className="mt-2 text-xs text-af2-ink-3">
                         Stored as an encrypted connector credential and revocable from this dashboard.
                       </p>
                       <div className="mt-3 flex gap-2">
                         <button
                           type="submit"
                           disabled={isBusy}
-                          className="inline-flex items-center gap-2 rounded-lg bg-slate-900 px-3 py-2 text-sm font-medium text-white transition hover:bg-slate-800 disabled:opacity-60"
+                          className="inline-flex items-center gap-2 rounded-lg bg-af2-ink px-3 py-2 text-sm font-medium text-white transition hover:bg-af2-ink-2 disabled:opacity-60"
                         >
                           {isBusy ? <Loader2 size={14} className="animate-spin" /> : <KeyRound size={14} />}
                           Save API key
@@ -448,7 +448,7 @@ export default function Integrations() {
                             onClick={() => {
                               setApiKeyPanels((current) => ({ ...current, [provider.key]: false }));
                             }}
-                            className="rounded-lg border border-gray-200 px-3 py-2 text-sm font-medium text-gray-600 transition hover:bg-white"
+                            className="rounded-lg border border-af2-line px-3 py-2 text-sm font-medium text-af2-ink-2 transition hover:bg-af2-card"
                           >
                             Cancel
                           </button>

@@ -76,7 +76,8 @@ describe("LLMProviders", () => {
 
     fireEvent.click(screen.getAllByRole("button", { name: /^connect$/i })[0]);
 
-    const modal = screen.getByRole("heading", { name: /connect openai/i }).closest("div[class*='bg-white']")?.parentElement;
+    // bg-white was renamed to bg-af2-card in the v2 sweep.
+    const modal = screen.getByRole("heading", { name: /connect openai/i }).closest("div[class*='bg-af2-card']")?.parentElement;
     if (!modal) throw new Error("Connect modal not found");
 
     fireEvent.click(within(modal).getByRole("button", { name: /^connect$/i }));

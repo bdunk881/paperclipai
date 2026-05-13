@@ -252,7 +252,7 @@ const API_BASE = import.meta.env.VITE_API_URL ?? "http://localhost:3001";
 function formatAvailability(option: IntegrationOption, liveStatuses: Record<ProviderKey, ProviderStatus> | null) {
   if (!option.liveProviderKey) {
     return {
-      badgeClassName: "bg-slate-100 text-slate-700",
+      badgeClassName: "bg-af2-paper-2 text-af2-ink-2",
       badgeLabel: "Registry required",
       helperText: "No native AutoFlow setup flow yet. Register a compatible MCP server in the Integration Registry.",
       ctaLabel: "Register server",
@@ -266,7 +266,7 @@ function formatAvailability(option: IntegrationOption, liveStatuses: Record<Prov
 
   if (status?.connected) {
     return {
-      badgeClassName: "bg-green-100 text-green-700",
+      badgeClassName: "bg-af2-sage/15 text-af2-sage",
       badgeLabel: "Connected",
       helperText: `${provider.name} is already connected through the live connector setup surface.`,
       ctaLabel: "Manage connection",
@@ -276,7 +276,7 @@ function formatAvailability(option: IntegrationOption, liveStatuses: Record<Prov
   }
 
   return {
-    badgeClassName: "bg-blue-50 text-blue-700",
+    badgeClassName: "bg-af2-ink-blue/10 text-af2-ink-blue",
     badgeLabel: provider.supportsOAuth ? "Setup available" : "API-key setup",
     helperText:
       provider.supportsOAuth
@@ -360,54 +360,54 @@ export default function IntegrationsHub() {
     .slice(0, 4);
 
   return (
-    <div className="min-h-full bg-gray-50">
-      <div className="border-b border-gray-200 bg-white px-8 py-6">
+    <div className="min-h-full bg-af2-paper-2/40">
+      <div className="border-b border-af2-line bg-af2-card px-8 py-6">
         <div className="flex items-center justify-between gap-4">
           <div>
             <div className="flex items-center gap-3">
-              <h1 className="text-2xl font-bold text-gray-900">Integrations Hub</h1>
-              <span className="rounded-full bg-blue-50 px-2 py-0.5 text-xs font-medium text-blue-600">
+              <h1 className="text-2xl font-bold text-af2-ink">Integrations Hub</h1>
+              <span className="rounded-full bg-af2-ink-blue/10 px-2 py-0.5 text-xs font-medium text-af2-ink-blue">
                 Live connector setup
               </span>
             </div>
-            <p className="mt-1 text-sm text-gray-500">
+            <p className="mt-1 text-sm text-af2-ink-3">
               Use the live connector setup page for supported SaaS providers, and use the Integration Registry for
               custom MCP servers that do not have a native AutoFlow setup flow yet.
             </p>
           </div>
           <div className="text-right space-y-1">
             <div>
-              <div className="text-2xl font-bold text-gray-900">{registeredCount}</div>
-              <div className="text-xs text-gray-400">custom MCP servers registered</div>
+              <div className="text-2xl font-bold text-af2-ink">{registeredCount}</div>
+              <div className="text-xs text-af2-ink-4">custom MCP servers registered</div>
             </div>
             <div>
-              <div className="text-sm font-semibold text-gray-700">
+              <div className="text-sm font-semibold text-af2-ink-2">
                 {loadingLiveStatuses ? "…" : `${connectedLiveCount}/${liveSetupOptions.length}`}
               </div>
-              <div className="text-xs text-gray-400">cards with live setup already connected</div>
+              <div className="text-xs text-af2-ink-4">cards with live setup already connected</div>
             </div>
           </div>
         </div>
 
-        <div className="mt-5 rounded-xl border border-gray-200 bg-white p-4">
+        <div className="mt-5 rounded-xl border border-af2-line bg-af2-card p-4">
           <div className="flex items-center justify-between gap-3">
             <div>
-              <p className="text-sm font-semibold text-gray-900">Custom Integration Activity</p>
-              <p className="mt-1 text-xs text-gray-500">
+              <p className="text-sm font-semibold text-af2-ink">Custom Integration Activity</p>
+              <p className="mt-1 text-xs text-af2-ink-3">
                 Register your own MCP servers here. For Slack and Stripe, open the live connector setup surface instead
                 of treating them as coming-soon marketplace entries.
               </p>
             </div>
             <Link
               to="/settings/mcp-servers"
-              className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 px-3 py-2 text-xs font-medium text-gray-700 transition hover:bg-gray-50"
+              className="inline-flex items-center gap-1.5 rounded-lg border border-af2-line px-3 py-2 text-xs font-medium text-af2-ink-2 transition hover:bg-af2-paper-2/40"
             >
               Manage registry
               <ExternalLink size={12} />
             </Link>
           </div>
           {loadingRegistered ? (
-            <div className="mt-3 inline-flex items-center gap-2 text-xs text-gray-500">
+            <div className="mt-3 inline-flex items-center gap-2 text-xs text-af2-ink-3">
               <Loader2 size={12} className="animate-spin" />
               Loading custom integrations…
             </div>
@@ -416,7 +416,7 @@ export default function IntegrationsHub() {
               {recentRegistered.map((item) => (
                 <span
                   key={item.id}
-                  className="inline-flex items-center gap-1 rounded-full border border-gray-200 bg-gray-50 px-2.5 py-1 text-xs text-gray-700"
+                  className="inline-flex items-center gap-1 rounded-full border border-af2-line bg-af2-paper-2/40 px-2.5 py-1 text-xs text-af2-ink-2"
                   title={item.url}
                 >
                   <PlugZap size={11} />
@@ -425,15 +425,15 @@ export default function IntegrationsHub() {
               ))}
             </div>
           ) : (
-            <p className="mt-3 text-xs text-gray-500">No custom integrations registered yet.</p>
+            <p className="mt-3 text-xs text-af2-ink-3">No custom integrations registered yet.</p>
           )}
         </div>
 
         <div className="mt-5 flex gap-3">
           <div className="relative max-w-sm flex-1">
-            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-af2-ink-4" />
             <input
-              className="w-full rounded-lg border border-gray-200 py-2 pl-9 pr-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full rounded-lg border border-af2-line py-2 pl-9 pr-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
               placeholder="Search servers..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
@@ -446,8 +446,8 @@ export default function IntegrationsHub() {
                 onClick={() => setCategory(cat)}
                 className={`rounded-lg px-3 py-1.5 text-xs font-medium transition ${
                   category === cat
-                    ? "bg-gray-900 text-white"
-                    : "border border-gray-200 bg-white text-gray-500 hover:border-gray-300"
+                    ? "bg-af2-ink text-white"
+                    : "border border-af2-line bg-af2-card text-af2-ink-3 hover:border-af2-line-2"
                 }`}
               >
                 {cat}
@@ -464,13 +464,13 @@ export default function IntegrationsHub() {
             const logo = server.logo ? (
               <img src={server.logo} alt={`${server.name} logo`} className="h-6 w-6 object-contain" />
             ) : (
-              <PlugZap size={16} className="text-gray-600 dark:text-gray-400" />
+              <PlugZap size={16} className="text-af2-ink-2 dark:text-af2-ink-4" />
             );
 
             return (
               <div
                 key={server.id}
-                className="group rounded-xl border border-gray-200 bg-white p-5 transition-all duration-300 hover:border-indigo-500/50 hover:shadow-md dark:border-slate-800 dark:bg-slate-900 dark:hover:border-indigo-500/50"
+                className="group rounded-xl border border-af2-line bg-af2-card p-5 transition-all duration-300 hover:border-af2-clay/50 hover:shadow-md"
               >
                 <div className="flex items-start justify-between">
                   <div className="flex items-center gap-2.5">
@@ -479,10 +479,10 @@ export default function IntegrationsHub() {
                     </div>
                     <div>
                       <div className="flex items-center gap-1.5">
-                        <span className="text-sm font-semibold text-gray-900 dark:text-gray-100">{server.name}</span>
-                        {server.official && <CheckCircle size={12} className="text-blue-500 dark:text-blue-400" />}
+                        <span className="text-sm font-semibold text-af2-ink">{server.name}</span>
+                        {server.official && <CheckCircle size={12} className="text-af2-ink-blue" />}
                       </div>
-                      <div className="flex items-center gap-1 text-xs text-gray-400 dark:text-gray-500">
+                      <div className="flex items-center gap-1 text-xs text-af2-ink-4 dark:text-af2-ink-3">
                         <Tag size={9} />
                         {server.category}
                       </div>
@@ -494,31 +494,31 @@ export default function IntegrationsHub() {
                   </span>
                 </div>
 
-                <p className="mt-3 text-xs leading-relaxed text-gray-500 dark:text-gray-400">{server.description}</p>
+                <p className="mt-3 text-xs leading-relaxed text-af2-ink-3 dark:text-af2-ink-4">{server.description}</p>
 
                 <div className="mt-3 flex flex-wrap gap-1">
                   {server.tools.slice(0, 3).map((tool) => (
                     <span
                       key={tool}
-                      className="rounded bg-gray-100 px-2 py-0.5 font-mono text-xs text-gray-600 dark:bg-slate-800 dark:text-gray-300"
+                      className="rounded bg-af2-paper-2 px-2 py-0.5 font-mono text-xs text-af2-ink-2"
                     >
                       {tool}
                     </span>
                   ))}
                   {server.tools.length > 3 && (
-                    <span className="rounded bg-gray-100 px-2 py-0.5 text-xs text-gray-400 dark:bg-slate-800 dark:text-gray-500">
+                    <span className="rounded bg-af2-paper-2 px-2 py-0.5 text-xs text-af2-ink-4 dark:text-af2-ink-3">
                       +{server.tools.length - 3} more
                     </span>
                   )}
                 </div>
 
-                <p className="mt-3 text-xs leading-relaxed text-gray-500">{availability.helperText}</p>
+                <p className="mt-3 text-xs leading-relaxed text-af2-ink-3">{availability.helperText}</p>
 
-                <div className="mt-4 flex gap-2 border-t border-gray-100 pt-3 dark:border-slate-800">
+                <div className="mt-4 flex gap-2 border-t border-af2-line pt-3">
                   <Link
                     to={availability.ctaTo}
                     title={availability.title}
-                    className="flex flex-1 items-center justify-center gap-1.5 rounded-lg border border-gray-200 px-3 py-2 text-xs font-medium text-gray-700 transition hover:bg-gray-50"
+                    className="flex flex-1 items-center justify-center gap-1.5 rounded-lg border border-af2-line px-3 py-2 text-xs font-medium text-af2-ink-2 transition hover:bg-af2-paper-2/40"
                   >
                     <Plug size={12} />
                     {availability.ctaLabel}
@@ -526,7 +526,7 @@ export default function IntegrationsHub() {
                   <Link
                     to={availability.ctaTo}
                     title={availability.title}
-                    className="rounded-lg border border-gray-200 px-2.5 py-2 text-gray-400 transition hover:border-gray-300 hover:text-gray-600 dark:border-slate-800 dark:hover:border-slate-700 dark:hover:text-gray-200"
+                    className="rounded-lg border border-af2-line px-2.5 py-2 text-af2-ink-4 transition hover:border-af2-line-2 hover:text-af2-ink-2"
                   >
                     <ExternalLink size={12} />
                   </Link>
@@ -537,7 +537,7 @@ export default function IntegrationsHub() {
         </div>
 
         {filtered.length === 0 && (
-          <div className="py-16 text-center text-gray-400">
+          <div className="py-16 text-center text-af2-ink-4">
             <PlugZap size={40} className="mx-auto mb-3 opacity-30" />
             <p className="text-sm">No integrations match your search</p>
           </div>

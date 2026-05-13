@@ -16,12 +16,12 @@ import {
 import { useAuth } from "../context/AuthContext";
 
 const STATE_STYLES: Record<ConnectorHealthState, string> = {
-  healthy: "bg-emerald-100 text-emerald-800",
-  degraded: "bg-amber-100 text-amber-800",
-  rate_limited: "bg-orange-100 text-orange-800",
-  auth_failed: "bg-rose-100 text-rose-800",
-  provider_error: "bg-red-100 text-red-800",
-  disabled: "bg-slate-100 text-slate-800",
+  healthy: "bg-af2-sage/15 text-emerald-800",
+  degraded: "bg-af2-mustard/15 text-amber-800",
+  rate_limited: "bg-af2-clay-soft text-af2-clay",
+  auth_failed: "bg-af2-clay-soft/60 text-rose-800",
+  provider_error: "bg-af2-clay-soft/60 text-af2-clay",
+  disabled: "bg-af2-paper-2 text-af2-ink",
 };
 
 const STATE_LABELS: Record<ConnectorHealthState, string> = {
@@ -68,14 +68,14 @@ export default function ConnectorHealth() {
     <div className="space-y-8 p-8">
       <section className="flex items-start justify-between gap-6">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Connector Health</h1>
-          <p className="mt-1 max-w-3xl text-sm text-gray-500">
+          <h1 className="text-2xl font-bold text-af2-ink">Connector Health</h1>
+          <p className="mt-1 max-w-3xl text-sm text-af2-ink-3">
             Operational view of Tier 1 connector state, recent failures, and alerting
             thresholds across your connected providers.
           </p>
         </div>
         {summary ? (
-          <div className="rounded-2xl border border-blue-100 bg-blue-50 px-4 py-3 text-sm text-blue-900">
+          <div className="rounded-2xl border border-af2-ink-blue/20 bg-af2-ink-blue/10 px-4 py-3 text-sm text-af2-ink-blue">
             <div className="font-medium">Last updated</div>
             <div>{new Date(summary.lastUpdatedAt).toLocaleString()}</div>
           </div>
@@ -88,58 +88,58 @@ export default function ConnectorHealth() {
             label="Healthy"
             value={summary.states.healthy}
             hint={`${summary.total} total connectors`}
-            icon={<ShieldCheck className="text-emerald-600" size={18} />}
-            tone="bg-emerald-50"
+            icon={<ShieldCheck className="text-af2-sage" size={18} />}
+            tone="bg-af2-sage/10"
           />
           <SummaryCard
             label="Degraded"
             value={summary.states.degraded}
             hint={`Alert after ${summary.alertPolicy.degradedWithinMinutes} minutes`}
-            icon={<Activity className="text-amber-600" size={18} />}
-            tone="bg-amber-50"
+            icon={<Activity className="text-af2-mustard" size={18} />}
+            tone="bg-af2-mustard/10"
           />
           <SummaryCard
             label="Rate Limited"
             value={summary.states.rate_limited}
             hint={`Threshold ${summary.alertPolicy.rateLimitThreshold15m}/15m`}
-            icon={<Signal className="text-orange-600" size={18} />}
-            tone="bg-orange-50"
+            icon={<Signal className="text-af2-clay" size={18} />}
+            tone="bg-af2-clay-soft/40"
           />
           <SummaryCard
             label="Auth Failures"
             value={summary.states.auth_failed}
             hint={`Threshold ${summary.alertPolicy.authFailureThreshold15m}/15m`}
-            icon={<ShieldAlert className="text-rose-600" size={18} />}
-            tone="bg-rose-50"
+            icon={<ShieldAlert className="text-af2-clay" size={18} />}
+            tone="bg-af2-clay-soft/30"
           />
           <SummaryCard
             label="Provider Errors"
             value={summary.states.provider_error}
             hint={`Alert after ${summary.alertPolicy.outageThresholdMinutes} minutes`}
-            icon={<AlertTriangle className="text-red-600" size={18} />}
-            tone="bg-red-50"
+            icon={<AlertTriangle className="text-af2-clay" size={18} />}
+            tone="bg-af2-clay-soft/30"
           />
           <SummaryCard
             label="Disabled"
             value={summary.states.disabled}
             hint="Not connected or intentionally turned off"
-            icon={<Clock3 className="text-slate-600" size={18} />}
-            tone="bg-slate-50"
+            icon={<Clock3 className="text-af2-ink-2" size={18} />}
+            tone="bg-af2-paper-2/40"
           />
         </section>
       ) : null}
 
       <section className="grid gap-6 xl:grid-cols-[2fr_1fr]">
-        <div className="rounded-2xl border border-gray-200 bg-white">
-          <div className="border-b border-gray-100 px-6 py-4">
-            <h2 className="font-semibold text-gray-900">Connector Status Board</h2>
-            <p className="text-sm text-gray-500">
+        <div className="rounded-2xl border border-af2-line bg-af2-card">
+          <div className="border-b border-af2-line px-6 py-4">
+            <h2 className="font-semibold text-af2-ink">Connector Status Board</h2>
+            <p className="text-sm text-af2-ink-3">
               Current state, last good execution, and latest operator-facing error.
             </p>
           </div>
           <div className="overflow-x-auto">
             <table className="min-w-full divide-y divide-gray-100">
-              <thead className="bg-gray-50 text-left text-xs uppercase tracking-wide text-gray-500">
+              <thead className="bg-af2-paper-2/40 text-left text-xs uppercase tracking-wide text-af2-ink-3">
                 <tr>
                   <th className="px-6 py-3 font-medium">Connector</th>
                   <th className="px-6 py-3 font-medium">State</th>
@@ -148,12 +148,12 @@ export default function ConnectorHealth() {
                   <th className="px-6 py-3 font-medium">Last Error</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-100 bg-white text-sm text-gray-700">
+              <tbody className="divide-y divide-gray-100 bg-af2-card text-sm text-af2-ink-2">
                 {connectors.map((connector) => (
                   <tr key={connector.connectorKey}>
                     <td className="px-6 py-4">
-                      <div className="font-medium text-gray-900">{connector.connectorName}</div>
-                      <div className="mt-1 text-xs uppercase tracking-wide text-gray-400">
+                      <div className="font-medium text-af2-ink">{connector.connectorName}</div>
+                      <div className="mt-1 text-xs uppercase tracking-wide text-af2-ink-4">
                         {connector.connectorKey}
                       </div>
                     </td>
@@ -165,13 +165,13 @@ export default function ConnectorHealth() {
                       </span>
                     </td>
                     <td className="px-6 py-4">{connector.successRate24h.toFixed(1)}%</td>
-                    <td className="px-6 py-4 text-gray-500">
+                    <td className="px-6 py-4 text-af2-ink-3">
                       {formatTimestamp(connector.lastSuccessAt)}
                     </td>
                     <td className="px-6 py-4">
-                      <div className="text-gray-500">{formatTimestamp(connector.lastErrorAt)}</div>
+                      <div className="text-af2-ink-3">{formatTimestamp(connector.lastErrorAt)}</div>
                       {connector.lastErrorMessage ? (
-                        <div className="mt-1 max-w-sm text-xs text-gray-400">
+                        <div className="mt-1 max-w-sm text-xs text-af2-ink-4">
                           {connector.lastErrorMessage}
                         </div>
                       ) : null}
@@ -184,10 +184,10 @@ export default function ConnectorHealth() {
         </div>
 
         <div className="space-y-6">
-          <div className="rounded-2xl border border-gray-200 bg-white p-6">
-            <h2 className="font-semibold text-gray-900">Alert Policy</h2>
+          <div className="rounded-2xl border border-af2-line bg-af2-card p-6">
+            <h2 className="font-semibold text-af2-ink">Alert Policy</h2>
             {summary ? (
-              <div className="mt-4 space-y-3 text-sm text-gray-600">
+              <div className="mt-4 space-y-3 text-sm text-af2-ink-2">
                 <PolicyRow
                   label="Connector-wide degradation"
                   value={`Fire within ${summary.alertPolicy.degradedWithinMinutes} minutes`}
@@ -208,10 +208,10 @@ export default function ConnectorHealth() {
             ) : null}
           </div>
 
-          <div className="rounded-2xl border border-gray-200 bg-white p-6">
+          <div className="rounded-2xl border border-af2-line bg-af2-card p-6">
             <div className="flex items-center gap-2">
-              <Clock3 size={16} className="text-gray-500" />
-              <h2 className="font-semibold text-gray-900">Recent Transitions</h2>
+              <Clock3 size={16} className="text-af2-ink-3" />
+              <h2 className="font-semibold text-af2-ink">Recent Transitions</h2>
             </div>
             <div className="mt-4 space-y-4">
               {connectors
@@ -226,16 +226,16 @@ export default function ConnectorHealth() {
                 .map((transition) => (
                   <div
                     key={`${transition.connectorName}-${transition.at}`}
-                    className="border-l-2 border-gray-200 pl-4"
+                    className="border-l-2 border-af2-line pl-4"
                   >
-                    <div className="text-sm font-medium text-gray-900">
+                    <div className="text-sm font-medium text-af2-ink">
                       {transition.connectorName}: {STATE_LABELS[transition.from]} to{" "}
                       {STATE_LABELS[transition.to]}
                     </div>
-                    <div className="mt-1 text-xs text-gray-500">
+                    <div className="mt-1 text-xs text-af2-ink-3">
                       {new Date(transition.at).toLocaleString()}
                     </div>
-                    <div className="mt-1 text-sm text-gray-600">{transition.reason}</div>
+                    <div className="mt-1 text-sm text-af2-ink-2">{transition.reason}</div>
                   </div>
                 ))}
             </div>
@@ -244,7 +244,7 @@ export default function ConnectorHealth() {
       </section>
 
       {error ? (
-        <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+        <div className="rounded-xl border border-af2-clay/30 bg-af2-clay-soft/30 px-4 py-3 text-sm text-af2-clay">
           {error}
         </div>
       ) : null}
@@ -266,15 +266,15 @@ function SummaryCard({
   tone: string;
 }) {
   return (
-    <div className="rounded-2xl border border-gray-200 bg-white p-5">
+    <div className="rounded-2xl border border-af2-line bg-af2-card p-5">
       <div className="flex items-center justify-between">
         <div>
-          <div className="text-sm text-gray-500">{label}</div>
-          <div className="mt-2 text-3xl font-bold text-gray-900">{value}</div>
+          <div className="text-sm text-af2-ink-3">{label}</div>
+          <div className="mt-2 text-3xl font-bold text-af2-ink">{value}</div>
         </div>
         <div className={`rounded-xl p-3 ${tone}`}>{icon}</div>
       </div>
-      <div className="mt-3 text-xs text-gray-500">{hint}</div>
+      <div className="mt-3 text-xs text-af2-ink-3">{hint}</div>
     </div>
   );
 }
@@ -282,8 +282,8 @@ function SummaryCard({
 function PolicyRow({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex items-start justify-between gap-4">
-      <div className="text-gray-500">{label}</div>
-      <div className="text-right font-medium text-gray-900">{value}</div>
+      <div className="text-af2-ink-3">{label}</div>
+      <div className="text-right font-medium text-af2-ink">{value}</div>
     </div>
   );
 }

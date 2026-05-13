@@ -553,6 +553,32 @@ export const runStore = {
     }
   },
 
+  async countByWorkspaceCurrentMonth(workspaceId: string): Promise<number> {
+    const yearMonth = new Date().toISOString().slice(0, 7); // "YYYY-MM"
+
+    const memoryCount = () =>
+      Array.from(memoryStore.values()).filter((run) => {
+        const ws = resolveWorkspaceId(run);
+        return ws === workspaceId && run.startedAt.startsWith(yearMonth);
+      }).length;
+
+    if (!postgresPersistenceAvailable()) {
+      return memoryCount();
+    }
+
+    try {
+      const pool = getPostgresPool();
+      const result = await pool.query<{ count: string }>(
+        `SELECT COUNT(*) AS count FROM runs WHERE workspace_id = $1 AND started_at >= date_trunc('month', now())`,
+        [workspaceId],
+      );
+      return Number(result.rows[0]?.count ?? 0);
+    } catch (err) {
+      console.error("[runStore] countByWorkspaceCurrentMonth postgres failed, using in-memory:", (err as Error).message);
+      return memoryCount();
+    }
+  },
+
   async clear(): Promise<void> {
     memoryStore.clear();
 

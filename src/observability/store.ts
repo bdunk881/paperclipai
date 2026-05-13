@@ -110,6 +110,9 @@ function eventMatchesQuery(event: ObservabilityEvent, query: ObservabilityEventQ
   if (cursor && compareCursor(event.sequence, event.id, cursor) <= 0) {
     return false;
   }
+  if (query.since && event.occurredAt < query.since) {
+    return false;
+  }
   if (query.categories?.length && !query.categories.includes(event.category)) {
     return false;
   }
@@ -203,6 +206,11 @@ async function listEventsFromPostgres(query: ObservabilityEventQuery): Promise<O
         `(floor(extract(epoch from occurred_at) * 1000000)::bigint, id::text) > ($${seqIdx}::bigint, $${idIdx}::text)`
       );
     }
+  }
+
+  if (query.since) {
+    params.push(query.since);
+    clauses.push(`occurred_at >= $${params.length}::timestamptz`);
   }
 
   if (query.categories?.length) {

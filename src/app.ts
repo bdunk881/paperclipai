@@ -50,6 +50,7 @@ import {
   listClassificationDecisions,
 } from "./engine/classificationLog";
 import { requireAuth, requireAuthOrQaBypass, AuthenticatedRequest } from "./auth/authMiddleware";
+import { requireEntitlement } from "./middleware/requireEntitlement";
 import { requireRole } from "./middleware/requireRole";
 import socialAuthRoutes from "./auth/socialAuthRoutes";
 import stripeWebhookRoutes from "./billing/stripeWebhook";
@@ -623,7 +624,16 @@ app.get("/api/templates/:id/sample", (req, res) => {
  * Body: { templateId, input, config? }
  * Returns the new run (status=pending) immediately; execution is async.
  */
-app.post("/api/runs", requireAuthOrQaBypass, workspaceResolver, llmEndpointRateLimiter, async (req: WorkspaceAwareRequest, res) => {
+app.post(
+  "/api/runs",
+  requireAuthOrQaBypass,
+  workspaceResolver,
+  llmEndpointRateLimiter,
+  requireEntitlement("runsPerMonth", {
+    getCurrent: (req) => runStore.countByWorkspaceCurrentMonth(req.workspace!.id),
+    delta: 1,
+  }),
+  async (req: WorkspaceAwareRequest, res) => {
   const { templateId, input, config } = req.body as {
     templateId?: string;
     input?: Record<string, unknown>;

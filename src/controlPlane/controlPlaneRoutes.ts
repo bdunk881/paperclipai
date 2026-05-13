@@ -2,6 +2,7 @@ import express from "express";
 import { AuthenticatedRequest } from "../auth/authMiddleware";
 import { recordControlPlaneAudit, recordControlPlaneAuditBatch } from "../auditing/controlPlaneAudit";
 import { inMemoryAllowed, isPostgresPersistenceEnabled } from "../db/postgres";
+import { requireEntitlement } from "../middleware/requireEntitlement";
 import { WorkspaceAwareRequest } from "../middleware/workspaceResolver";
 import { getTemplate } from "../templates";
 import { WorkflowTemplate } from "../types/workflow";
@@ -292,7 +293,17 @@ router.post("/teams", requirePaperclipRunId, async (req: WorkspaceAwareRequest, 
   res.status(201).json(team);
 });
 
-router.post("/deployments/workflow", requirePaperclipRunId, async (req: WorkspaceAwareRequest, res) => {
+router.post(
+  "/deployments/workflow",
+  requirePaperclipRunId,
+  requireEntitlement("agentCap", {
+    getCurrent: (req) => {
+      const userId = (req as AuthenticatedRequest).auth?.sub ?? "";
+      return controlPlaneStore.listAllAgents(userId, req.workspace?.id).length;
+    },
+    delta: 1,
+  }),
+  async (req: WorkspaceAwareRequest, res) => {
   const context = resolveWorkspaceContext(req, res);
   if (!context) {
     return;

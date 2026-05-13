@@ -1,4 +1,5 @@
 import express from "express";
+import { requireEntitlement } from "../middleware/requireEntitlement";
 import { WorkspaceAwareRequest } from "../middleware/workspaceResolver";
 import { approvalPolicyStore } from "./policyStore";
 import {
@@ -7,6 +8,14 @@ import {
   isApprovalTierActionType,
   isApprovalTierMode,
 } from "./policyTypes";
+
+// Maps an approval mode to its numeric tier level so requireEntitlement can
+// compare it against the workspace's approvalTierMax quota.
+const APPROVAL_MODE_TIER: Record<string, number> = {
+  auto_approve: 0,
+  notify_only: 1,
+  require_approval: 2,
+};
 
 const router = express.Router();
 
@@ -34,7 +43,16 @@ router.get("/", async (req: WorkspaceAwareRequest, res) => {
   });
 });
 
-router.put("/:actionType", async (req: WorkspaceAwareRequest, res) => {
+router.put(
+  "/:actionType",
+  requireEntitlement("approvalTierMax", {
+    // Treat the requested mode as an ordinal tier level and deny if it exceeds
+    // the workspace's approvalTierMax. delta=0 because we're checking the
+    // absolute level, not incrementing a count.
+    getCurrent: (req) => APPROVAL_MODE_TIER[(req.body as { mode?: string }).mode ?? "auto_approve"] ?? 0,
+    delta: 0,
+  }),
+  async (req: WorkspaceAwareRequest, res) => {
   const workspaceId = requireWorkspaceId(req, res);
   if (!workspaceId) {
     return;

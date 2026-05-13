@@ -1,6 +1,7 @@
 import type { WorkflowTemplate, WorkflowRun, WorkflowStep } from "../types/workflow";
 import { getApiBasePath } from "./baseUrl";
 import { readStoredAuthUser } from "../auth/authStorage";
+import { EntitlementError } from "./entitlementError";
 import { trackedFetch } from "./trackedFetch";
 import {
   createMockTemplate,
@@ -265,8 +266,10 @@ export async function createLLMConfig(
     body: JSON.stringify(input),
   });
   if (!res.ok) {
-    const err = await res.json().catch(() => null);
-    throw new Error(err?.error ?? `Failed to create LLM config: ${res.status}`);
+    const body = await res.json().catch(() => null);
+    const entitlementErr = EntitlementError.fromBody(body);
+    if (entitlementErr) throw entitlementErr;
+    throw new Error(body?.error ?? `Failed to create LLM config: ${res.status}`);
   }
   return res.json() as Promise<LLMConfig>;
 }

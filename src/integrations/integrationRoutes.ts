@@ -37,6 +37,7 @@
 
 import { Router } from "express";
 import { AuthenticatedRequest } from "../auth/authMiddleware";
+import { requireEntitlement } from "../middleware/requireEntitlement";
 import {
   INTEGRATION_CATALOG,
   INTEGRATION_CATALOG_CATEGORIES,
@@ -192,7 +193,13 @@ router.get("/connections", (req, res) => {
 });
 
 /** POST /api/integrations/connections — store a static credential */
-router.post("/connections", (req, res) => {
+router.post(
+  "/connections",
+  requireEntitlement("integrationCap", {
+    getCurrent: (req) => integrationCredentialStore.list((req as AuthenticatedRequest).auth!.sub).length,
+    delta: 1,
+  }),
+  (req, res) => {
   const userId = (req as AuthenticatedRequest).auth!.sub;
 
   const { integrationSlug, label, credentials } = req.body as {

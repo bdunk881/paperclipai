@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
-import { X, Plus, CheckCircle2, Trash2, Star, Cpu } from "lucide-react";
+import { X, Plus, CheckCircle2, Trash2, Star, Cpu, ArrowUpCircle } from "lucide-react";
 import {
   listLLMConfigs,
   createLLMConfig,
@@ -11,6 +11,7 @@ import {
 } from "../api/client";
 import clsx from "clsx";
 import { useAuth } from "../context/AuthContext";
+import { useEntitlement402, type Entitlement402State } from "../hooks/useEntitlement402";
 
 // ---------------------------------------------------------------------------
 // Provider metadata
@@ -72,6 +73,7 @@ interface ConnectModalProps {
 
 function ConnectModal({ provider, onClose, onSuccess }: ConnectModalProps) {
   const { requireAccessToken } = useAuth();
+  const entitlement402 = useEntitlement402();
   const meta = PROVIDERS[provider];
   const models = PROVIDER_MODELS[provider] ?? [];
 
@@ -80,6 +82,7 @@ function ConnectModal({ provider, onClose, onSuccess }: ConnectModalProps) {
   const [model, setModel] = useState(models[0]);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [upgradeState, setUpgradeState] = useState<Entitlement402State | null>(null);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
 
   function validate() {
@@ -99,6 +102,7 @@ function ConnectModal({ provider, onClose, onSuccess }: ConnectModalProps) {
     }
     setFieldErrors({});
     setError(null);
+    setUpgradeState(null);
     setSubmitting(true);
     try {
       const accessToken = await requireAccessToken();
@@ -108,7 +112,12 @@ function ConnectModal({ provider, onClose, onSuccess }: ConnectModalProps) {
       );
       onSuccess();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to connect provider");
+      const upgrade = entitlement402.parse(err);
+      if (upgrade) {
+        setUpgradeState(upgrade);
+      } else {
+        setError(err instanceof Error ? err.message : "Failed to connect provider");
+      }
     } finally {
       setSubmitting(false);
     }
@@ -143,6 +152,25 @@ function ConnectModal({ provider, onClose, onSuccess }: ConnectModalProps) {
         </div>
 
         <form onSubmit={handleSubmit} className="px-6 py-5 space-y-4">
+          {upgradeState && (
+            <div className="px-3 py-3 rounded-lg bg-amber-50 border border-amber-200 text-sm text-amber-800 space-y-2">
+              <div className="flex items-center gap-2 font-medium">
+                <ArrowUpCircle size={16} className="text-amber-600 shrink-0" />
+                <span>
+                  Your {upgradeState.currentTier} plan doesn&apos;t include BYOK (bring-your-own-key).
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={upgradeState.openUpgrade}
+                className="w-full px-3 py-1.5 rounded-lg bg-amber-600 text-white text-xs font-medium hover:bg-amber-700 transition-colors"
+              >
+                {upgradeState.upgradeTo
+                  ? `Upgrade to ${upgradeState.upgradeTo}`
+                  : "Contact sales"}
+              </button>
+            </div>
+          )}
           {error && (
             <div className="px-3 py-2 rounded-lg bg-af2-clay-soft/30 border border-af2-clay/30 text-sm text-af2-clay">
               {error}

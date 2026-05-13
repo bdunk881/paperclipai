@@ -10,9 +10,8 @@ export default [
   route("terms", "terms/page.tsx"),
   route("robots.txt", "robots.ts"),
   route("sitemap.xml", "sitemap.ts"),
-  route("api/waitlist-signup", "api/waitlist-signup/route.ts"),
-  route("api/subscribe", "api/subscribe/route.ts"),
-  route("api/beta-signup", "api/beta-signup/route.ts"),
-  route("api/checkout", "api/checkout/route.ts"),
-  route("api/stripe/webhook", "api/stripe/webhook/route.ts"),
+  // API endpoints (waitlist-signup, subscribe, beta-signup, checkout, stripe webhook)
+  // live in the FastAPI backend under /api/public/landing/* and /api/stripe/webhook.
+  // They're invoked via buildLandingApiUrl() against NEXT_PUBLIC_API_URL — not via
+  // React Router routes.
 ] satisfies RouteConfig;

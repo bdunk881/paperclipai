@@ -125,10 +125,50 @@ export function sessionFromSupabaseSession(session: Session): StoredAuthSession 
   };
 }
 
+/**
+ * Reads the current Supabase session from local storage, OR — if the caller
+ * just landed on /auth/callback with a `?code=` or `?token_hash=` param from
+ * a magic-link / OAuth / signup-confirm email — exchanges that code for a
+ * fresh session first.
+ *
+ * The PKCE flow (configured at client creation, line 95 above) delivers
+ * magic links as `?code=<code>` query strings. Without an explicit
+ * `exchangeCodeForSession(...)` call, `getSession()` returns `null` because
+ * no session exists yet, and the user sees "The sign-in link is invalid…".
+ * `detectSessionInUrl: true` on its own is timing-sensitive — explicitly
+ * exchanging makes this deterministic.
+ */
 export async function getSupabaseStoredSession(): Promise<StoredAuthSession | null> {
   const client = getSupabaseClient();
   if (!client) {
     return null;
+  }
+
+  // If we just landed from a magic-link / OAuth / signup-confirm redirect,
+  // there's a `?code=` query param (PKCE flow) we need to exchange before
+  // the session exists. Short-circuit if no code is present — that's the
+  // normal page-load path where the session is already in storage.
+  if (typeof window !== "undefined") {
+    const params = new URLSearchParams(window.location.search);
+    const code = params.get("code");
+    const errorDescription = params.get("error_description") || params.get("error");
+
+    if (errorDescription) {
+      throw new Error(decodeURIComponent(errorDescription.replace(/\+/g, " ")));
+    }
+
+    if (code) {
+      const { error: exchangeError } = await client.auth.exchangeCodeForSession(
+        window.location.href,
+      );
+      if (exchangeError) {
+        throw new Error(exchangeError.message);
+      }
+      // Strip the code/state params from the URL after exchange so refreshes
+      // don't replay the now-consumed code.
+      const cleanUrl = `${window.location.origin}${window.location.pathname}`;
+      window.history.replaceState({}, "", cleanUrl);
+    }
   }
 
   const { data, error } = await client.auth.getSession();

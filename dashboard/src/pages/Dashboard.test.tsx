@@ -183,7 +183,8 @@ describe("Dashboard", () => {
       </MemoryRouter>
     );
 
-    await screen.findByText(/Test, here is your live workspace summary/i);
+    // v2 (HEL-58): greeting renders as "Good {timeOfDay}, {firstName}."
+await screen.findByText(/Good (morning|afternoon|evening), Test\./i);
 
     expect(requireAccessTokenMock).toHaveBeenCalledTimes(1);
     expect(listRunsMock).toHaveBeenCalledWith(undefined, "mock-token");
@@ -201,7 +202,8 @@ describe("Dashboard", () => {
       </MemoryRouter>
     );
 
-    expect(await screen.findByText("Customer command center")).toBeInTheDocument();
+    // v2 (HEL-58): replaced the "Customer command center" pill with the editorial "Workspace · today" eyebrow.
+    expect(await screen.findByText("Workspace · today")).toBeInTheDocument();
     expect(screen.getByText("Execution Burndown")).toBeInTheDocument();
     expect(screen.getByText("Spend vs Budget")).toBeInTheDocument();
     expect(screen.getByText("Queued Approvals")).toBeInTheDocument();
@@ -209,6 +211,35 @@ describe("Dashboard", () => {
     expect(screen.getByText("Approve the final ship candidate.")).toBeInTheDocument();
     expect(screen.getAllByText("Graphic Designer").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Frontend Engineer").length).toBeGreaterThan(0);
+  });
+
+  it("renders the v2 visual language (HEL-58)", async () => {
+    const { container } = render(
+      <MemoryRouter>
+        <Dashboard />
+      </MemoryRouter>
+    );
+
+    // Wait for the greeting to mount, signalling that the post-loading
+    // dashboard tree is live.
+    await screen.findByText(/Good (morning|afternoon|evening), Test\./i);
+
+    // The top-level wrapper carries the v2 paper background + ink text.
+    const root = container.firstChild as HTMLElement;
+    expect(root.className).toContain("bg-af2-paper");
+    expect(root.className).toContain("text-af2-ink");
+
+    // The page-head h1 uses the af2 editorial serif type.
+    const heading = screen.getByRole("heading", { level: 1 });
+    expect(heading.className).toContain("font-af2-serif");
+
+    // No legacy obsidian-era Tailwind colors leaked into the rendered tree.
+    const html = container.innerHTML;
+    expect(html).not.toMatch(/text-slate-(4|5|6|7|9)\d{2}/);
+    expect(html).not.toMatch(/bg-slate-50\b/);
+    expect(html).not.toMatch(/text-indigo-(6|7)00/);
+    expect(html).not.toMatch(/border-indigo-(1|2|3)00/);
+    expect(html).not.toMatch(/bg-orange-(5|4)00/);
   });
 
   it("routes inline artifact feedback to the matched owner via ticket creation", async () => {
@@ -247,7 +278,7 @@ describe("Dashboard", () => {
 
     expect(await screen.findByText("Customer dashboard unavailable")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: /retry/i }));
-    expect(await screen.findByText(/Test, here is your live workspace summary/i)).toBeInTheDocument();
+    expect(await screen.findByText(/Good (morning|afternoon|evening), Test\./i)).toBeInTheDocument();
     expect(listRunsMock).toHaveBeenCalledTimes(2);
   });
 });

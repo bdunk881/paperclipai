@@ -10,6 +10,9 @@
 
 // Mock the LLM providers to avoid ESM incompatibilities in Jest
 jest.mock("../engine/llmProviders", () => ({ getProvider: jest.fn() }));
+// HEL-69: shared auto-mock — sets req.workspace = { id, role: "owner" } so
+// requireRole(...) gates pass. See src/middleware/__mocks__/workspaceResolver.ts.
+jest.mock("../middleware/workspaceResolver");
 
 // Bypass JWT verification in unit tests.
 // - Requests with an Authorization header get req.auth populated.

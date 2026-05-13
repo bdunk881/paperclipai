@@ -3,6 +3,10 @@ jest.mock("../engine/llmProviders", () => ({
   getProvider: jest.fn(),
 }));
 
+// HEL-69: shared auto-mock that sets `req.workspace = { id, role: "owner" }`
+// so requireRole(...) gates pass. See src/middleware/__mocks__/workspaceResolver.ts.
+jest.mock("../middleware/workspaceResolver");
+
 jest.mock("./stripeClient", () => ({
   getStripe: jest.fn(),
   PRICING_TIERS: {

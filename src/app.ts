@@ -89,6 +89,7 @@ import {
   createWorkspaceResolver,
   WorkspaceAwareRequest,
 } from "./middleware/workspaceResolver";
+import { requireRole } from "./middleware/requireRole";
 import { createWorkspaceRoutes } from "./workspaces/workspaceRoutes";
 import { createMissionRoutes } from "./missions/missionRoutes";
 import {
@@ -391,38 +392,41 @@ app.use("/api/webhooks/apollo", apolloWebhookRoutes);
 // ---------------------------------------------------------------------------
 // Billing API — Stripe checkout sessions + subscription lifecycle
 // ---------------------------------------------------------------------------
-// user-scoped: billing is tied to the authenticated user's subscription, not a workspace
-app.use("/api/billing/checkout", requireAuth, billingMutationRateLimiter, checkoutRoutes);
-// user-scoped: billing is tied to the authenticated user's subscription, not a workspace
-app.use("/api/billing/subscription", requireAuth, billingMutationRateLimiter, subscriptionRoutes);
+// HEL-69: billing surfaces are workspace-scoped per the canonical role mapping
+// (Stripe customer ID lives on the workspace, not the user — see HEL-22 entitlements).
+// The implementation still pulls userId + workspaceId from JWT claims today; that
+// stays valid because `workspaceResolver` populates both legacy `req.workspaceId`
+// and canonical `req.workspace` so `requireRole("billing")` can gate correctly.
+app.use("/api/billing/checkout", requireAuth, workspaceResolver, requireRole("billing"), billingMutationRateLimiter, checkoutRoutes);
+app.use("/api/billing/subscription", requireAuth, workspaceResolver, requireRole("billing"), billingMutationRateLimiter, subscriptionRoutes);
 app.use("/api/public/landing", landingPublicApiRoutes);
 
 // ---------------------------------------------------------------------------
 // LLM Config API — BYOLLM provider credentials
 // ---------------------------------------------------------------------------
-app.use("/api/llm-configs", requireAuth, workspaceResolver, llmConfigRoutes);
+app.use("/api/llm-configs", requireAuth, workspaceResolver, requireRole("admin", "developer"), llmConfigRoutes);
 
 // ---------------------------------------------------------------------------
 // MCP Registry API — register and discover MCP server connections
 // ---------------------------------------------------------------------------
-app.use("/api/mcp/servers", requireAuth, workspaceResolver, mcpRoutes);
+app.use("/api/mcp/servers", requireAuth, workspaceResolver, requireRole("admin", "developer"), mcpRoutes);
 
 // ---------------------------------------------------------------------------
 // Memory API — persistent context memory store for agents/workflows
 // ---------------------------------------------------------------------------
-app.use("/api/memory", requireAuth, workspaceResolver, memoryRoutes);
-app.use("/api/agents/:agentId/memory", requireAuth, workspaceResolver, agentMemoryRoutes);
-app.use("/api/agents", requireAuth, workspaceResolver, agentRoutes);
+app.use("/api/memory", requireAuth, workspaceResolver, requireRole("admin", "developer"), memoryRoutes);
+app.use("/api/agents/:agentId/memory", requireAuth, workspaceResolver, requireRole("admin", "developer"), agentMemoryRoutes);
+app.use("/api/agents", requireAuth, workspaceResolver, requireRole("admin", "developer"), agentRoutes);
 app.use("/api/integrations/apollo", apolloRoutes);
 
 // Routines stub — returns empty list until a full routines store is implemented.
 app.get("/api/routines", requireAuth, (_req, res) => {
   res.json({ routines: [] });
 });
-app.use("/api/knowledge", requireAuth, workspaceResolver, knowledgeMutationRateLimiter, knowledgeRoutes);
+app.use("/api/knowledge", requireAuth, workspaceResolver, requireRole("admin", "developer"), knowledgeMutationRateLimiter, knowledgeRoutes);
 app.use("/api/integrations/catalog", integrationCatalogRoutes);
 app.use("/api/integrations/oauth2", integrationOAuthCallbackRoutes);
-app.use("/api/integrations", requireAuth, workspaceResolver, integrationRoutes);
+app.use("/api/integrations", requireAuth, workspaceResolver, requireRole("admin", "developer"), integrationRoutes);
 app.use("/api/webhooks/relay", webhookRelayRouter);
 app.use("/api/integrations", oauthBridgeRoutes);
 app.use("/api/integrations/slack", slackRoutes);
@@ -440,17 +444,22 @@ app.use("/api/integrations/intercom", intercomRoutes);
 app.use("/api/integrations/agent-catalog", agentCatalogRoutes);
 app.use("/api/connectors/google-workspace", googleWorkspaceConnectorRoutes);
 // user-scoped: workspace management creates/lists workspaces and cannot itself be workspace-gated
+// HEL-69 ALLOWLIST: /api/workspaces is intentionally public-after-auth. The
+// create-workspace flow runs before the user has any workspace at all, so
+// `withWorkspace` would have nothing to resolve and `requireRole` would have
+// no role to gate. Per-route role enforcement (delete-workspace requires owner,
+// update-workspace requires admin) happens inside `workspaceRoutes`.
 app.use("/api/workspaces", requireAuth, workspaceRoutes);
-app.use("/api/missions", requireAuth, workspaceResolver, llmEndpointRateLimiter, missionRoutes);
-app.use("/api/companies", requireAuth, workspaceResolver, companyRoutes);
-app.use("/api/control-plane", requireAuth, workspaceResolver, controlPlaneRoutes);
-app.use("/api/hitl", requireAuth, workspaceResolver, hitlRoutes);
-app.use("/api/observability", requireAuth, workspaceResolver, observabilityRoutes);
-app.use("/api/reporting", requireAuth, workspaceResolver, reportRoutes);
-app.use("/api/tickets", requireAuth, workspaceResolver, ticketRoutes);
-app.use("/api/ticket-sync", requireAuth, workspaceResolver, ticketSyncRoutes);
-app.use("/api/notifications", requireAuth, workspaceResolver, notificationRoutes);
-app.use("/api/approval-policies", requireAuth, workspaceResolver, approvalPolicyRoutes);
+app.use("/api/missions", requireAuth, workspaceResolver, requireRole("admin", "developer"), llmEndpointRateLimiter, missionRoutes);
+app.use("/api/companies", requireAuth, workspaceResolver, requireRole("admin", "developer"), companyRoutes);
+app.use("/api/control-plane", requireAuth, workspaceResolver, requireRole("admin", "operator"), controlPlaneRoutes);
+app.use("/api/hitl", requireAuth, workspaceResolver, requireRole("admin", "approver", "operator"), hitlRoutes);
+app.use("/api/observability", requireAuth, workspaceResolver, requireRole("admin", "operator"), observabilityRoutes);
+app.use("/api/reporting", requireAuth, workspaceResolver, requireRole("admin", "operator"), reportRoutes);
+app.use("/api/tickets", requireAuth, workspaceResolver, requireRole("admin", "operator"), ticketRoutes);
+app.use("/api/ticket-sync", requireAuth, workspaceResolver, requireRole("admin", "operator"), ticketSyncRoutes);
+app.use("/api/notifications", requireAuth, workspaceResolver, requireRole("admin", "operator"), notificationRoutes);
+app.use("/api/approval-policies", requireAuth, workspaceResolver, requireRole("admin", "approver", "operator"), approvalPolicyRoutes);
 
 // ---------------------------------------------------------------------------
 // Auth API — identity and social callback endpoints

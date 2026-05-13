@@ -61,18 +61,54 @@ jest.mock("./auth/authMiddleware", () => ({
     res.status(401).json({ error: "Missing or malformed Authorization header." });
   },
 }));
-jest.mock("./middleware/workspaceResolver", () => ({
-  createWorkspaceResolver: () =>
-    (_req: unknown, _res: unknown, next: () => void) => next(),
-  createExplicitWorkspaceHeaderResolver: () =>
-    (req: { headers?: Record<string, string | undefined>; workspaceId?: string }, _res: unknown, next: () => void) => {
-      const explicitWorkspaceId = req.headers?.["x-workspace-id"]?.trim();
-      if (explicitWorkspaceId) {
-        req.workspaceId = explicitWorkspaceId;
-      }
-      next();
+// HEL-69 note: requireRole runs after these resolvers and reads
+// `req.workspace.role`. The test fixture stub here mirrors what the real
+// resolver does in production — set both `req.workspaceId` (legacy) and
+// `req.workspace = { id, role: "owner" }` (canonical). "owner" passes every
+// requireRole gate, which is the right default for an authenticated test
+// session; per-role denial behavior is covered separately in
+// `src/middleware/requireRole.test.ts`.
+// HEL-69 note: requireRole runs after these resolvers and reads
+// `req.workspace.role`. The test fixture stub here mirrors what the real
+// resolver does in production — set both `req.workspaceId` (legacy) and
+// `req.workspace = { id, role: "owner" }` (canonical). Defaults are applied
+// when the test doesn't pass `X-Workspace-Id`, simulating "an authenticated
+// session with implicit default workspace". "owner" passes every requireRole
+// gate, which is the right default for an authenticated test session; per-role
+// denial behavior is covered separately in `src/middleware/requireRole.test.ts`.
+const TEST_DEFAULT_WORKSPACE_ID = "11111111-1111-4111-8111-111111111111";
+
+jest.mock("./middleware/workspaceResolver", () => {
+  // Per-route behavior:
+  //   - `req.workspace = { id, role: "owner" }` is ALWAYS set so requireRole
+  //     gates pass. (Owner passes every check.)
+  //   - `req.workspaceId` is ONLY set when X-Workspace-Id was passed
+  //     explicitly. Leaving it undefined preserves pre-HEL-69 behavior for
+  //     handlers that interpret undefined as "no filter / cross-workspace",
+  //     which the existing test suite relies on.
+  const stub = (
+    req: {
+      headers?: Record<string, string | undefined>;
+      workspaceId?: string;
+      workspace?: { id: string; role: string };
     },
-}));
+    _res: unknown,
+    next: () => void,
+  ) => {
+    const explicitWorkspaceId = req.headers?.["x-workspace-id"]?.trim();
+    if (explicitWorkspaceId) {
+      req.workspaceId = explicitWorkspaceId;
+    }
+    const workspaceIdForRole = explicitWorkspaceId || "11111111-1111-4111-8111-111111111111";
+    req.workspace = { id: workspaceIdForRole, role: "owner" };
+    next();
+  };
+
+  return {
+    createWorkspaceResolver: () => stub,
+    createExplicitWorkspaceHeaderResolver: () => stub,
+  };
+});
 import request from "supertest";
 import app from "./app";
 import { recordControlPlaneAudit, recordControlPlaneAuditBatch } from "./auditing/controlPlaneAudit";

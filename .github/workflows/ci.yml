@@ -63,6 +63,32 @@ jobs:
             exit 1
           fi
 
+      - name: Guard authenticated /api routes require requireRole(...)  # HEL-69
+        run: |
+          set -euo pipefail
+          # Per HEL-69: every authenticated route mount in src/app.ts must
+          # compose `requireRole(...)` after `withWorkspace`/`workspaceResolver`,
+          # OR be on the explicit allowlist below with an inline rationale.
+          #
+          # Allowlist (extended-regex literal — bash compares full mount line):
+          #   /api/workspaces  — create-workspace flow runs before any
+          #     workspace exists, so role gating happens inside the router.
+          ALLOWLIST='app\.use\("/api/workspaces",'
+
+          missing=$(grep -nE 'app\.use\("/api/[^"]+",\s*requireAuth' src/app.ts \
+            | grep -v 'requireRole(' \
+            | grep -vE "$ALLOWLIST" \
+            || true)
+
+          if [[ -n "$missing" ]]; then
+            echo "::error::Authenticated /api/* routes are missing requireRole(...):"
+            printf '%s\n' "$missing"
+            echo
+            echo "Add requireRole(...) per HEL-69's role mapping in src/app.ts,"
+            echo "or extend the ALLOWLIST in this CI step with an inline rationale."
+            exit 1
+          fi
+
   test-backend:
     name: Test Backend
     runs-on: ubuntu-latest

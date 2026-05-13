@@ -470,7 +470,7 @@ export default function IntegrationsHub() {
             return (
               <div
                 key={server.id}
-                className="group rounded-xl border border-af2-line bg-af2-card p-5 transition-all duration-300 hover:border-af2-clay/60/50 hover:shadow-md"
+                className="group rounded-xl border border-af2-line bg-af2-card p-5 transition-all duration-300 hover:border-af2-clay/50 hover:shadow-md"
               >
                 <div className="flex items-start justify-between">
                   <div className="flex items-center gap-2.5">

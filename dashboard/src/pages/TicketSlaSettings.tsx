@@ -219,7 +219,7 @@ export default function TicketSlaSettings() {
                       className={clsx(
                         "grid gap-4 rounded-[24px] border bg-af2-ink/70 p-4",
                         invalid
-                          ? "border-af2-clay/60/50 animate-soft-shake"
+                          ? "border-af2-clay/50 animate-soft-shake"
                           : "border-af2-line"
                       )}
                     >

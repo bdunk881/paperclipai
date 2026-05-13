@@ -177,53 +177,62 @@
     animation: mission-skeleton 1.5s ease-in-out infinite;
   }
 
+  /*
+   * Auth surface (HEL-76): cream paper + clay accents, matching the v2
+   * editorial language. Token values match `dashboard/src/af2-tokens.css`.
+   */
   .auth-input {
-    @apply w-full rounded-xl border px-4 py-3 text-sm transition;
-    border-color: rgb(30 41 59);
-    background: rgb(2 6 23);
-    color: rgb(248 250 252);
-    box-shadow: inset 0 1px 0 rgba(255,255,255,0.02);
+    @apply w-full px-3.5 py-2.5 text-sm transition;
+    background: var(--af2-card);
+    border: 1px solid var(--af2-line-2);
+    border-radius: var(--af2-radius);
+    color: var(--af2-ink);
   }
 
   .auth-input::placeholder {
-    color: rgb(100 116 139);
+    color: var(--af2-ink-4);
   }
 
   .auth-input:focus {
     outline: none;
-    border-color: rgb(99 102 241);
-    box-shadow: 0 0 0 4px rgba(99, 102, 241, 0.2);
+    border-color: var(--af2-clay);
+    box-shadow: 0 0 0 3px rgba(194, 80, 43, 0.16);
   }
 
   .auth-primary-button {
-    @apply inline-flex w-full items-center justify-center gap-2 rounded-xl px-4 py-3 text-sm font-medium transition disabled:cursor-not-allowed disabled:opacity-50;
-    background: rgb(99 102 241);
-    color: rgb(241 245 249);
+    @apply inline-flex w-full items-center justify-center gap-2 px-4 py-3 text-sm font-medium transition disabled:cursor-not-allowed disabled:opacity-50;
+    background: var(--af2-clay);
+    color: #fff;
+    border: 1px solid var(--af2-clay);
+    border-radius: var(--af2-radius);
+    box-shadow: 0 1px 0 rgba(255, 255, 255, 0.18) inset, 0 6px 16px rgba(194, 80, 43, 0.22);
   }
 
   .auth-primary-button:hover {
-    background: rgb(129 140 248);
+    background: var(--af2-clay-2);
+    border-color: var(--af2-clay-2);
   }
 
   .auth-primary-button:active {
-    background: rgb(67 56 202);
+    background: #a8451f;
+    border-color: #a8451f;
   }
 
   .auth-microsoft-button {
-    @apply inline-flex w-full items-center justify-center gap-3 rounded-xl border px-4 py-3 text-sm font-medium transition disabled:cursor-not-allowed disabled:opacity-50;
-    border-color: rgb(51 65 85);
-    background: rgba(15, 23, 42, 0.88);
-    color: rgb(241 245 249);
-    box-shadow: inset 0 1px 0 rgba(255,255,255,0.03);
+    @apply inline-flex w-full items-center justify-center gap-3 px-4 py-3 text-sm font-medium transition disabled:cursor-not-allowed disabled:opacity-50;
+    background: var(--af2-card);
+    border: 1px solid var(--af2-line-2);
+    border-radius: var(--af2-radius);
+    color: var(--af2-ink);
   }
 
   .auth-microsoft-button:hover {
-    border-color: rgb(99 102 241);
-    background: rgba(30, 41, 59, 0.92);
+    border-color: var(--af2-clay);
+    background: var(--af2-paper-2);
   }
 
   .auth-microsoft-button:active {
-    background: rgba(2, 6, 23, 0.96);
+    background: var(--af2-paper-3);
   }
 
   .auth-or-divider {
@@ -232,10 +241,11 @@
     align-items: center;
     justify-content: center;
     margin-top: 1rem;
-    color: rgb(148 163 184);
-    font-size: 0.75rem;
+    color: var(--af2-ink-3);
+    font-size: 0.7rem;
+    font-weight: 500;
     text-transform: uppercase;
-    letter-spacing: 0.28em;
+    letter-spacing: 0.14em;
   }
 
   .auth-or-divider::before {
@@ -243,13 +253,13 @@
     position: absolute;
     inset: 50% 0 auto;
     height: 1px;
-    background: rgb(30 41 59);
+    background: var(--af2-line);
   }
 
   .auth-or-divider span {
     position: relative;
     padding: 0 0.875rem;
-    background: rgb(15 23 42);
+    background: var(--af2-paper);
   }
 
   .scanline-skeleton {

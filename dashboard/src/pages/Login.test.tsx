@@ -47,12 +47,41 @@ describe("Login", () => {
       </MemoryRouter>
     );
 
-    expect(screen.getByText("Sign in to AutoFlow")).toBeInTheDocument();
+    // HEL-76: v2 restyle replaced "Sign in to AutoFlow" with the friendlier
+    // editorial copy "Welcome back".
+    expect(screen.getByText("Welcome back")).toBeInTheDocument();
     expect(screen.getAllByRole("button", { name: "Sign in" })).toHaveLength(2);
     expect(screen.getByRole("button", { name: "Sign up" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Magic link" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Sign in with Google" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Sign in with GitHub" })).toBeInTheDocument();
+  });
+
+  it("renders the v2 visual language (HEL-76)", () => {
+    const { container } = render(
+      <MemoryRouter initialEntries={["/login"]}>
+        <Routes>
+          <Route path="/login" element={<Login />} />
+        </Routes>
+      </MemoryRouter>
+    );
+
+    // Top-level wrapper carries the v2 cream paper + ink text.
+    const root = container.firstChild as HTMLElement;
+    expect(root.className).toContain("bg-af2-paper");
+    expect(root.className).toContain("text-af2-ink");
+
+    // The h1 uses the af2 editorial serif type.
+    const heading = screen.getByRole("heading", { level: 1 });
+    expect(heading.className).toContain("font-af2-serif");
+
+    // No legacy obsidian-era Tailwind colors leaked into the rendered tree.
+    const html = container.innerHTML;
+    expect(html).not.toMatch(/bg-slate-\d{2,3}/);
+    expect(html).not.toMatch(/text-slate-(4|5|6|7|9)\d{2}/);
+    expect(html).not.toMatch(/bg-indigo-\d{2,3}/);
+    expect(html).not.toMatch(/bg-teal-\d{2,3}/);
+    expect(html).not.toMatch(/border-slate-\d{2,3}/);
   });
 
   it("stores the returned Supabase session after password sign-in", async () => {

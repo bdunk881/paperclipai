@@ -1,5 +1,5 @@
-import { FormEvent, useMemo, useState } from "react";
-import { ArrowRight, CheckCircle2, KeyRound, Link2, Loader2, Mail, ShieldCheck } from "lucide-react";
+import { FormEvent, useState } from "react";
+import { ArrowRight, CheckCircle2, Link2, Loader2 } from "lucide-react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { writeStoredAuthUser } from "../auth/authStorage";
 import {
@@ -13,10 +13,25 @@ import {
 
 type AuthMode = "signin" | "signup" | "magic-link";
 
-const lockupUrl = new URL("../../../infra/brand-assets/payload/logos/product/lockup.svg", import.meta.url).href;
-const noiseUrl = new URL("../../../infra/brand-assets/payload/textures/noise-overlay.svg", import.meta.url).href;
+// HEL-76: noise overlay + obsidian lockup dropped for v2 cream/clay aesthetic.
+// Inline AutoFlowMark + cream paper backdrop match the landing's editorial style.
 const googleLogoUrl = new URL("../../../infra/brand-assets/payload/logos/integrations/google/logo.svg", import.meta.url).href;
 const githubLogoUrl = new URL("../assets/integrations/github.svg", import.meta.url).href;
+
+function AutoFlowMark({ size = 28 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 32 32" aria-hidden="true">
+      <rect width="32" height="32" rx="7" fill="var(--af2-ink)" />
+      <path
+        d="M9 11.5a4.5 4.5 0 0 1 9 0v9a4.5 4.5 0 0 1-9 0M14 11.5a4.5 4.5 0 0 1 9 0v9"
+        fill="none"
+        stroke="var(--af2-paper)"
+        strokeWidth="2.2"
+        strokeLinecap="round"
+      />
+    </svg>
+  );
+}
 
 const socialProviders: Array<{ key: SupabaseOAuthProvider; label: string }> = [
   { key: "google", label: "Google" },
@@ -47,19 +62,19 @@ function mapSupabaseError(error: unknown): string {
 }
 
 function cardTitle(mode: AuthMode): string {
-  if (mode === "signup") return "Create your AutoFlow account";
-  if (mode === "magic-link") return "Email yourself a magic link";
-  return "Sign in to AutoFlow";
+  if (mode === "signup") return "Create your account";
+  if (mode === "magic-link") return "Magic link sign-in";
+  return "Welcome back";
 }
 
 function cardCopy(mode: AuthMode): string {
   if (mode === "signup") {
-    return "Create a Supabase-backed dashboard session with email/password or an approved provider.";
+    return "Start with a free workspace. Bring your own LLM keys, hire your first agents in minutes.";
   }
   if (mode === "magic-link") {
-    return "Send a one-time sign-in link to your inbox for fast access on the current device.";
+    return "We'll send a one-time link to your inbox. Open it on this device to sign in.";
   }
-  return "Use Supabase Auth for email/password access or continue with an approved provider.";
+  return "Sign in to your AutoFlow workspace.";
 }
 
 export default function Login() {
@@ -93,14 +108,8 @@ export default function Login() {
   const configured = isSupabaseAuthConfigured();
   const isAnyBusy = busy || activeProvider !== null;
 
-  const signals = useMemo(
-    () => [
-      { icon: ShieldCheck, label: "Supabase JWT for dashboard APIs" },
-      { icon: KeyRound, label: "Email/password and PKCE OAuth" },
-      { icon: Mail, label: "Magic-link callback through /auth/callback" },
-    ],
-    []
-  );
+  // HEL-76: the v1 hero-side `signals` strip was dropped for the v2 single-card
+  // layout. Trust pills (BYOK / OAuth / SOC 2) render under the form instead.
 
   function triggerError(message: string) {
     setError(message);
@@ -234,101 +243,67 @@ export default function Login() {
   const helperText = cardCopy(mode);
 
   return (
-    <div className="relative flex min-h-screen overflow-hidden bg-slate-950 text-slate-100">
-      <div className="pointer-events-none absolute inset-0">
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,_rgba(99,102,241,0.18),_transparent_42%),radial-gradient(circle_at_bottom_right,_rgba(20,184,166,0.16),_transparent_38%)]" />
-        <div className="absolute inset-0 opacity-[0.16]" style={{ backgroundImage: `url("${noiseUrl}")` }} />
-      </div>
+    <div className="relative flex min-h-screen items-center justify-center bg-af2-paper px-6 py-12 text-af2-ink">
+      <div className="w-full max-w-md">
+        {/* AutoFlow mark + wordmark */}
+        <div className="mb-8 flex flex-col items-center gap-3">
+          <AutoFlowMark size={36} />
+          <span className="font-af2-serif text-2xl font-medium tracking-[-0.02em] text-af2-ink">
+            AutoFlow
+          </span>
+        </div>
 
-      <div className="relative z-10 mx-auto flex w-full max-w-6xl flex-col justify-center gap-10 px-6 py-10 lg:flex-row lg:items-center lg:gap-16">
-        <section className="max-w-xl space-y-8">
-          <div className="inline-flex items-center gap-2 rounded-full border border-slate-800 bg-slate-900/60 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.28em] text-slate-400">
-            Supabase Authentication Stub
-          </div>
-          <div className="space-y-5">
-            <img src={lockupUrl} alt="AutoFlow" className="h-auto w-40" />
-            <h1 className="max-w-lg text-4xl font-semibold tracking-[-0.04em] text-slate-50 sm:text-5xl">
-              Secure dashboard access with a Supabase-backed session.
+        <section className="animate-auth-card-in rounded-xl border border-af2-line bg-af2-card p-7 shadow-[0_18px_40px_rgba(26,20,16,0.08)] sm:p-8">
+          <header className="mb-6">
+            <h1 className="font-af2-serif text-3xl font-normal leading-tight tracking-[-0.02em] text-af2-ink">
+              {headerText}
             </h1>
-            <p className="max-w-lg text-base leading-7 text-slate-300">
-              Use Supabase email/password, magic link, or an approved provider to access the dashboard.
-            </p>
-          </div>
+            <p className="mt-2 text-sm leading-6 text-af2-ink-2">{helperText}</p>
+          </header>
 
-          <div className="grid gap-3 sm:grid-cols-3">
-            {signals.map(({ icon: Icon, label }, index) => (
-              <article
-                key={label}
-                className="animate-auth-field-in rounded-2xl border border-slate-800 bg-slate-900/70 p-4 shadow-[0_20px_30px_-22px_rgba(0,0,0,0.9)]"
-                style={{ animationDelay: `${index * 50}ms` }}
+          {/* Mode tabs */}
+          <div className="mb-6 inline-flex w-full rounded-md border border-af2-line bg-af2-paper p-1 text-sm">
+            {(["signin", "signup", "magic-link"] as const).map((m) => (
+              <button
+                key={m}
+                type="button"
+                onClick={() => switchMode(m)}
+                className={`flex-1 rounded px-3 py-1.5 text-sm font-medium transition ${
+                  mode === m
+                    ? "bg-af2-ink text-af2-paper"
+                    : "text-af2-ink-3 hover:text-af2-ink"
+                }`}
               >
-                <Icon size={18} className="mb-3 text-indigo-300" />
-                <p className="text-sm leading-6 text-slate-300">{label}</p>
-              </article>
+                {m === "signin" ? "Sign in" : m === "signup" ? "Sign up" : "Magic link"}
+              </button>
             ))}
           </div>
-        </section>
 
-        <section className="animate-auth-card-in relative w-full max-w-xl overflow-hidden rounded-xl border border-slate-800 bg-slate-900/90 shadow-[0_20px_25px_-5px_rgba(0,0,0,0.5)]">
-          <div className="pointer-events-none absolute inset-0 opacity-[0.02]" style={{ backgroundImage: `url("${noiseUrl}")` }} />
-          <div className="relative p-6 sm:p-8">
-            <div className="mb-6 flex items-center justify-between gap-4">
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-[0.28em] text-slate-500">Command Center Access</p>
-                <h2 className="mt-3 text-3xl font-semibold tracking-[-0.03em] text-slate-50">{headerText}</h2>
-                <p className="mt-3 max-w-md text-sm leading-6 text-slate-300">{helperText}</p>
-              </div>
+          {!configured ? (
+            <div className="mb-4 rounded-md border border-af2-mustard/40 bg-af2-mustard/10 px-4 py-3 text-sm text-af2-mustard">
+              Supabase auth is not configured yet. Set <code className="font-af2-mono text-xs">VITE_SUPABASE_URL</code> and{" "}
+              <code className="font-af2-mono text-xs">VITE_SUPABASE_PUBLISHABLE_KEY</code> before using this dashboard surface.
             </div>
-
-            <div className="mb-6 inline-flex rounded-full border border-slate-800 bg-slate-950/70 p-1 text-sm">
-              <button
-                type="button"
-                onClick={() => switchMode("signin")}
-                className={`rounded-full px-4 py-2 transition ${mode === "signin" ? "bg-indigo-500 text-white" : "text-slate-400 hover:text-slate-200"}`}
-              >
-                Sign in
-              </button>
-              <button
-                type="button"
-                onClick={() => switchMode("signup")}
-                className={`rounded-full px-4 py-2 transition ${mode === "signup" ? "bg-indigo-500 text-white" : "text-slate-400 hover:text-slate-200"}`}
-              >
-                Sign up
-              </button>
-              <button
-                type="button"
-                onClick={() => switchMode("magic-link")}
-                className={`rounded-full px-4 py-2 transition ${mode === "magic-link" ? "bg-indigo-500 text-white" : "text-slate-400 hover:text-slate-200"}`}
-              >
-                Magic link
-              </button>
+          ) : null}
+          {error ? (
+            <div className="mb-4 rounded-md border border-af2-clay/40 bg-af2-clay-soft/30 px-4 py-3 text-sm text-af2-clay">
+              {error}
             </div>
-
-            {!configured ? (
-              <div className="mb-4 rounded-2xl border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-100">
-                Supabase auth is not configured yet. Set `VITE_SUPABASE_URL` and `VITE_SUPABASE_PUBLISHABLE_KEY` before using
-                this dashboard surface.
-              </div>
-            ) : null}
-            {error ? (
-              <div className="mb-4 rounded-2xl border border-red-500/50 bg-red-500/10 px-4 py-3 text-sm text-red-200">
-                {error}
-              </div>
-            ) : null}
-            {notice ? (
-              <div className="mb-4 rounded-2xl border border-teal-500/40 bg-teal-500/10 px-4 py-3 text-sm text-teal-100">
-                {notice}
-              </div>
-            ) : null}
-            {qaPreviewError ? (
-              <p className="mb-4 text-xs leading-5 text-orange-300">
-                Request a fresh QA preview-access link if you still need smoke-test access for this deployment.
-              </p>
-            ) : null}
+          ) : null}
+          {notice ? (
+            <div className="mb-4 rounded-md border border-af2-sage/40 bg-af2-sage/10 px-4 py-3 text-sm text-af2-sage">
+              {notice}
+            </div>
+          ) : null}
+          {qaPreviewError ? (
+            <p className="mb-4 text-xs leading-5 text-af2-clay">
+              Request a fresh QA preview-access link if you still need smoke-test access for this deployment.
+            </p>
+          ) : null}
 
             {mode !== "magic-link" ? (
               <>
-                <p className="mb-4 text-xs font-semibold uppercase tracking-[0.24em] text-slate-500">Or continue with</p>
+                <p className="mb-3 text-[11px] font-medium uppercase tracking-[0.14em] text-af2-ink-3">Or continue with</p>
                 <SocialButtonRail
                   mode={mode}
                   activeProvider={activeProvider}
@@ -443,13 +418,23 @@ export default function Login() {
               </form>
             ) : null}
 
-            <div className="mt-6 flex flex-wrap items-center gap-3 text-xs text-slate-500">
-              <span className="rounded-full border border-slate-800 px-3 py-1">Electric Lab auth surface</span>
-              <span className="rounded-full border border-slate-800 px-3 py-1">Google + GitHub approved</span>
-              <span className="rounded-full border border-slate-800 px-3 py-1">Supabase JWT-backed API session</span>
-            </div>
+          <div className="mt-6 flex flex-wrap items-center gap-2 text-[11px] text-af2-ink-3">
+            <span className="rounded-full border border-af2-line px-2.5 py-0.5">Bring your own keys</span>
+            <span className="rounded-full border border-af2-line px-2.5 py-0.5">Google + GitHub OAuth</span>
+            <span className="rounded-full border border-af2-line px-2.5 py-0.5">SOC 2 in progress</span>
           </div>
         </section>
+
+        <p className="mt-6 text-center text-xs text-af2-ink-3">
+          New to AutoFlow?{" "}
+          <button
+            type="button"
+            onClick={() => switchMode(mode === "signup" ? "signin" : "signup")}
+            className="font-medium text-af2-clay hover:underline"
+          >
+            {mode === "signup" ? "Sign in instead" : "Create a workspace"}
+          </button>
+        </p>
       </div>
     </div>
   );
@@ -486,13 +471,13 @@ function SocialButtonRail({
             type="button"
             disabled={disabled}
             onClick={() => onSelect(provider.key)}
-            className="flex h-12 w-full items-center rounded-lg border border-[#3f4655] bg-[#1a1d23] px-4 text-sm font-medium text-[#e8eaee] transition duration-200 ease-out hover:border-[#4f5769] hover:bg-[#242932] hover:text-white active:border-[#5865f2] active:bg-[#0f1117] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#5865f2] disabled:cursor-not-allowed disabled:border-[#2d3138] disabled:bg-[#0f1117] disabled:text-[#5a5f6b]"
+            className="auth-microsoft-button"
             aria-label={`${actionLabel} with ${provider.label}`}
           >
-            <span className="mr-4 flex h-6 w-6 items-center justify-center">
-              {isActive ? <Loader2 size={18} className="animate-spin text-[#8a8e99]" /> : <ProviderIcon provider={provider.key} disabled={disabled} />}
+            <span className="flex h-6 w-6 items-center justify-center">
+              {isActive ? <Loader2 size={18} className="animate-spin text-af2-ink-3" /> : <ProviderIcon provider={provider.key} disabled={disabled} />}
             </span>
-            <span>{isActive ? "Redirecting..." : `${actionLabel} with ${provider.label}`}</span>
+            <span>{isActive ? "Redirecting…" : `${actionLabel} with ${provider.label}`}</span>
           </button>
         );
       })}
@@ -511,7 +496,7 @@ function Field({
 }) {
   return (
     <label className="block animate-auth-field-in" style={{ animationDelay: `${delay}ms` }}>
-      <span className="mb-2 block text-xs font-medium uppercase tracking-[0.2em] text-slate-400">{label}</span>
+      <span className="mb-1.5 block text-[11px] font-medium uppercase tracking-[0.14em] text-af2-ink-3">{label}</span>
       {children}
     </label>
   );

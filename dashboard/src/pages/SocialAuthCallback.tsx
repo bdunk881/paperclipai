@@ -17,10 +17,10 @@ export default function SocialAuthCallback() {
   }, [navigate]);
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-slate-950 px-6 text-slate-100">
-      <div className="flex items-center gap-3 rounded-2xl border border-slate-800 bg-slate-900/90 px-5 py-4 text-sm shadow-2xl shadow-black/30">
-        <Loader2 size={18} className="animate-spin text-indigo-400" />
-        Redirecting to the current login flow...
+    <div className="flex min-h-screen items-center justify-center bg-af2-paper px-6 text-af2-ink">
+      <div className="flex items-center gap-3 rounded-md border border-af2-line bg-af2-card px-5 py-4 text-sm shadow-[0_18px_40px_rgba(26,20,16,0.08)]">
+        <Loader2 size={18} className="animate-spin text-af2-clay" />
+        <span className="font-af2-serif text-base text-af2-ink">Redirecting to the current sign-in flow…</span>
       </div>
     </div>
   );

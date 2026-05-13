@@ -101,6 +101,11 @@ const INTEGRATIONS: Array<{ name: string; cat: string }> = [
   { name: "Bedrock", cat: "Models" },
 ];
 
+// 4-tier pricing ladder matches `src/billing/stripeClient.ts` exactly:
+//   explore $0 → flow $19 → automate $49 → scale $99
+// The $19 Flow tier exists specifically to lower the barrier between the
+// free Explore tier and the team-priced Automate tier; surfacing it in the
+// landing is intentional.
 const PRICING_TIERS: Array<{
   eyebrow: string;
   name: string;
@@ -109,15 +114,14 @@ const PRICING_TIERS: Array<{
   bullets: string[];
   cta: string;
   ctaHref?: string;
-  // Maps to backend `PRICING_TIERS` keys in `src/billing/stripeClient.ts`.
-  // Free Tinker tier links to /signup (no checkout). Team → automate ($49).
-  // Studio → mailto (sales-assisted).
+  // Maps to backend `PRICING_TIERS` keys; explore is free → /signup, the
+  // other three hit POST /api/public/landing/checkout.
   ctaPriceTier?: "flow" | "automate" | "scale";
   featured?: boolean;
 }> = [
   {
     eyebrow: "Solo",
-    name: "Tinker",
+    name: "Explore",
     price: "$0",
     unit: "/mo",
     bullets: [
@@ -130,35 +134,50 @@ const PRICING_TIERS: Array<{
     ctaHref: "/signup",
   },
   {
+    eyebrow: "Indie operators",
+    name: "Flow",
+    price: "$19",
+    unit: "/mo",
+    bullets: [
+      "1 workspace, 8 agents",
+      "2.5k runs / mo",
+      "All integrations",
+      "Bring your own keys",
+      "14-day free trial",
+    ],
+    cta: "Try Flow",
+    ctaPriceTier: "flow",
+  },
+  {
     eyebrow: "Most teams",
-    name: "Team",
+    name: "Automate",
     price: "$49",
     unit: "/seat/mo",
     bullets: [
       "3 workspaces, 25 agents",
       "10k runs / mo",
-      "All integrations + custom MCP",
-      "Approvals, audit log, SSO",
+      "Custom MCP + approvals",
+      "Audit log, SSO",
       "Per-agent budgets",
     ],
-    cta: "Try Team",
+    cta: "Try Automate",
     ctaPriceTier: "automate",
     featured: true,
   },
   {
     eyebrow: "SMB & Enterprise",
-    name: "Studio",
-    price: "Talk",
-    unit: " to us",
+    name: "Scale",
+    price: "$99",
+    unit: "/seat/mo",
     bullets: [
       "Unlimited workspaces & agents",
       "SSO/SAML, SCIM, RBAC",
       "Self-hosted runners",
-      "Custom MCP servers, on-prem",
+      "Custom MCP servers",
       "Dedicated solutions engineer",
     ],
-    cta: "Book a demo",
-    ctaHref: "mailto:hello@helloautoflow.com?subject=AutoFlow Studio demo",
+    cta: "Talk to us",
+    ctaHref: "mailto:hello@helloautoflow.com?subject=AutoFlow Scale demo",
   },
 ];
 

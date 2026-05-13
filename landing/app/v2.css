@@ -372,10 +372,10 @@ body { background: var(--af2-paper); }
 .lp-mock-side { background: var(--af2-paper); border-right: 1px solid var(--af2-line); padding: 16px 12px; }
 .lp-mock-body { padding: 22px; }
 
-/* Pricing */
+/* Pricing — 4-tier ladder (explore / flow / automate / scale) */
 .lp-pricing { padding: 80px 32px; max-width: 1280px; margin: 0 auto; }
-.lp-tiers { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; margin-top: 36px; }
-.lp-tier { background: var(--af2-card); border: 1px solid var(--af2-line); border-radius: 14px; padding: 28px; }
+.lp-tiers { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-top: 36px; }
+.lp-tier { background: var(--af2-card); border: 1px solid var(--af2-line); border-radius: 14px; padding: 24px; }
 .lp-tier.featured { background: var(--af2-ink); color: var(--af2-paper); border-color: var(--af2-ink); }
 .lp-tier.featured .af2-eyebrow, .lp-tier.featured .af2-muted { color: rgba(246,241,231,0.7); }
 .lp-tier h3 { font: 500 26px/1.1 var(--af2-serif); margin: 8px 0 6px; }
@@ -420,5 +420,7 @@ body { background: var(--af2-paper); }
   #lp-integrations { grid-template-columns: repeat(2, 1fr) !important; }
 }
 @media (min-width: 901px) and (max-width: 1200px) {
+  /* 2x2 pricing grid so 4 tiers stay readable on tablet/laptop widths */
+  .lp-tiers { grid-template-columns: repeat(2, 1fr) !important; }
   #lp-integrations { grid-template-columns: repeat(4, 1fr) !important; }
 }

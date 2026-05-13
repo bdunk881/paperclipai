@@ -74,13 +74,16 @@ function firstTierThatAllows(
   feature: EntitlementFeature,
   fromTier: SubscriptionTier,
 ): SubscriptionTier | null {
-  let tier: SubscriptionTier | null = UPGRADE_PATH[fromTier];
+  // Use ?? null so an unknown/legacy tier value (UPGRADE_PATH returns undefined
+  // for non-canonical plan strings) collapses to null and terminates the loop
+  // rather than looping forever on `undefined !== null`.
+  let tier: SubscriptionTier | null = UPGRADE_PATH[fromTier] ?? null;
   while (tier !== null) {
     const limits = getEntitlementLimits(tier);
     const limit = limits[feature] as boolean | number;
     const allows = BOOLEAN_FEATURES.has(feature) ? limit === true : (limit as number) > 0;
     if (allows) return tier;
-    tier = UPGRADE_PATH[tier];
+    tier = UPGRADE_PATH[tier] ?? null;
   }
   return null;
 }

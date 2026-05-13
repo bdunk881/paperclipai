@@ -2,7 +2,14 @@ import { defineConfig, devices } from "@playwright/test";
 
 export default defineConfig({
   testDir: "./e2e",
-  testMatch: ["**/auth.spec.ts", "**/auth-regression.spec.ts"],
+  testMatch: [
+    "**/auth.spec.ts",
+    "**/auth-regression.spec.ts",
+    // HEL-28: golden-path Playwright e2e. Phase tests blocked on other
+    // P2 tickets are marked with `test.fixme()` and will start passing
+    // automatically as their unblocking tickets land.
+    "**/golden-path.spec.ts",
+  ],
   fullyParallel: true,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 2 : 0,

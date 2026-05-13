@@ -1,18 +1,24 @@
 /**
- * Mission routes (HEL-24).
+ * Mission routes (HEL-23 + HEL-24).
+ *
+ * POST /api/missions
+ *   Create a new mission for the active workspace. Accepts a free-text
+ *   statement plus optional structured prompts (industry, target customer,
+ *   success metric, runway) stored as `missions.metadata` jsonb.
+ *   If the workspace has no company yet, creates a default company named
+ *   after the workspace so the mission has somewhere to live. (HEL-23.)
+ *
+ * GET /api/missions
+ *   List the active workspace's missions, newest first. Includes the latest
+ *   hiring plan id when present. (HEL-23.)
+ *
+ * GET /api/missions/:missionId
+ *   Single-mission lookup with latest hiring plan if drafted. (HEL-23.)
  *
  * POST /api/missions/:missionId/generate-plan
- *
- *   Reads the mission row, builds a teamAssembly request from the mission
- *   statement, calls the workspace's default LLM, and persists the response
- *   as a `hiring_plans` draft (status='pending_review'). Returns the
- *   hiring_plan id + the structured plan.
- *
- * Reuses the existing `src/goals/teamAssembly.ts` prompt + parser — that
- * module already shipped a working schema, structured-output prompt, and
- * response parser; HEL-24 just adapts it to the mission-rooted model
- * (mission.statement → normalizedGoalDocument.goal) and wires the
- * persistence layer (HEL-13's hiring_plans table).
+ *   Reads the mission row, builds a teamAssembly request, calls the
+ *   workspace's default LLM, and persists the response as a
+ *   `hiring_plans` draft. (HEL-24.)
  */
 
 import { Router } from "express";
@@ -20,6 +26,7 @@ import type { Pool } from "pg";
 import { randomUUID } from "node:crypto";
 import { AuthenticatedRequest } from "../auth/authMiddleware";
 import { withWorkspaceContext } from "../middleware/workspaceContext";
+import type { WorkspaceAwareRequest } from "../middleware/workspaceResolver";
 import {
   buildTeamAssemblyPrompt,
   DEFAULT_ROLE_LIBRARY,
@@ -38,6 +45,93 @@ interface MissionRow {
   statement: string;
   workspace_id: string;
   company_name: string | null;
+}
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+export interface MissionMetadata {
+  industry?: string;
+  targetCustomer?: string;
+  successMetric?: string;
+  runway?: string;
+}
+
+export interface MissionListItem {
+  id: string;
+  statement: string;
+  status: string;
+  metadata: MissionMetadata;
+  createdAt: string;
+  companyId: string;
+  companyName: string;
+  latestHiringPlanId: string | null;
+}
+
+const MAX_STATEMENT_LENGTH = 4000;
+const MAX_METADATA_FIELD_LENGTH = 280;
+
+function trimMetadataField(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const trimmed = value.trim();
+  if (!trimmed) return undefined;
+  return trimmed.length > MAX_METADATA_FIELD_LENGTH
+    ? trimmed.slice(0, MAX_METADATA_FIELD_LENGTH)
+    : trimmed;
+}
+
+function sanitizeMetadata(input: unknown): MissionMetadata {
+  if (!input || typeof input !== "object") return {};
+  const raw = input as Record<string, unknown>;
+  const out: MissionMetadata = {};
+  const industry = trimMetadataField(raw.industry);
+  if (industry) out.industry = industry;
+  const targetCustomer = trimMetadataField(raw.targetCustomer);
+  if (targetCustomer) out.targetCustomer = targetCustomer;
+  const successMetric = trimMetadataField(raw.successMetric);
+  if (successMetric) out.successMetric = successMetric;
+  const runway = trimMetadataField(raw.runway);
+  if (runway) out.runway = runway;
+  return out;
+}
+
+/**
+ * Resolves the workspace's default company id. Creates one named after the
+ * workspace if none exists yet. Idempotent: subsequent calls return the
+ * existing company.
+ *
+ * Per the HEL-13 schema, missions require a company_id (NOT NULL). We don't
+ * want the customer to deal with "create a company first" friction for the
+ * single-company case, so auto-provisioning here keeps the intake flow
+ * one-step.
+ */
+async function ensureDefaultCompany(
+  pool: Pool,
+  workspaceId: string,
+  userId: string,
+): Promise<{ id: string; name: string }> {
+  return withWorkspaceContext(pool, { workspaceId, userId }, async (client) => {
+    const existing = await client.query<{ id: string; name: string }>(
+      `SELECT id, name FROM companies
+         WHERE workspace_id = $1
+         ORDER BY created_at ASC
+         LIMIT 1`,
+      [workspaceId],
+    );
+    if (existing.rows.length > 0) return existing.rows[0];
+
+    const workspaceRow = await client.query<{ name: string }>(
+      `SELECT name FROM workspaces WHERE id = $1 LIMIT 1`,
+      [workspaceId],
+    );
+    const workspaceName = workspaceRow.rows[0]?.name ?? "Untitled workspace";
+    const id = randomUUID();
+    await client.query(
+      `INSERT INTO companies (id, workspace_id, name)
+         VALUES ($1, $2, $3)`,
+      [id, workspaceId, workspaceName],
+    );
+    return { id, name: workspaceName };
+  });
 }
 
 async function loadMissionScopedToWorkspace(
@@ -108,6 +202,206 @@ async function persistHiringPlanDraft(
 export function createMissionRoutes(pool: Pool) {
   const router = Router();
 
+  // ---------------------------------------------------------------------
+  // POST /api/missions — create a mission (HEL-23)
+  // ---------------------------------------------------------------------
+  router.post("/", async (req: AuthenticatedRequest, res) => {
+    const userId = req.auth?.sub;
+    const workspaceId = (req as WorkspaceAwareRequest).workspace?.id;
+    if (!userId || !workspaceId) {
+      res.status(401).json({ error: "Authenticated user + workspace required" });
+      return;
+    }
+
+    const body = req.body as { statement?: unknown; metadata?: unknown };
+    const rawStatement =
+      typeof body?.statement === "string" ? body.statement.trim() : "";
+    if (!rawStatement) {
+      res.status(400).json({ error: "Mission statement is required" });
+      return;
+    }
+    if (rawStatement.length > MAX_STATEMENT_LENGTH) {
+      res.status(400).json({
+        error: `Mission statement is too long (max ${MAX_STATEMENT_LENGTH} characters)`,
+      });
+      return;
+    }
+    const metadata = sanitizeMetadata(body?.metadata);
+
+    let company: { id: string; name: string };
+    try {
+      company = await ensureDefaultCompany(pool, workspaceId, userId);
+    } catch (err) {
+      console.error(`[missions] ensureDefaultCompany failed: ${(err as Error).message}`);
+      res.status(500).json({ error: "Failed to resolve workspace company" });
+      return;
+    }
+
+    const missionId = randomUUID();
+    try {
+      await withWorkspaceContext(pool, { workspaceId, userId }, async (client) =>
+        client.query(
+          `INSERT INTO missions (id, company_id, statement, status, created_by_user_id, metadata)
+             VALUES ($1, $2, $3, 'draft', $4, $5::jsonb)`,
+          [missionId, company.id, rawStatement, userId, JSON.stringify(metadata)],
+        ),
+      );
+    } catch (err) {
+      console.error(`[missions] insert failed: ${(err as Error).message}`);
+      res.status(500).json({ error: "Failed to create mission" });
+      return;
+    }
+
+    res.status(201).json({
+      id: missionId,
+      statement: rawStatement,
+      status: "draft",
+      metadata,
+      createdAt: new Date().toISOString(),
+      companyId: company.id,
+      companyName: company.name,
+      latestHiringPlanId: null,
+    } satisfies MissionListItem);
+  });
+
+  // ---------------------------------------------------------------------
+  // GET /api/missions — list this workspace's missions (HEL-23)
+  // ---------------------------------------------------------------------
+  router.get("/", async (req: AuthenticatedRequest, res) => {
+    const userId = req.auth?.sub;
+    const workspaceId = (req as WorkspaceAwareRequest).workspace?.id;
+    if (!userId || !workspaceId) {
+      res.status(401).json({ error: "Authenticated user + workspace required" });
+      return;
+    }
+
+    interface ListRow {
+      id: string;
+      statement: string;
+      status: string;
+      metadata: MissionMetadata;
+      created_at: Date | string;
+      company_id: string;
+      company_name: string;
+      latest_hiring_plan_id: string | null;
+    }
+
+    try {
+      const result = await withWorkspaceContext(
+        pool,
+        { workspaceId, userId },
+        async (client) =>
+          client.query<ListRow>(
+            `SELECT m.id, m.statement, m.status, m.metadata, m.created_at,
+                    m.company_id, c.name AS company_name,
+                    (
+                      SELECT hp.id FROM hiring_plans hp
+                       WHERE hp.mission_id = m.id
+                       ORDER BY hp.created_at DESC
+                       LIMIT 1
+                    ) AS latest_hiring_plan_id
+               FROM missions m
+               JOIN companies c ON c.id = m.company_id
+              WHERE c.workspace_id = $1
+              ORDER BY m.created_at DESC
+              LIMIT 100`,
+            [workspaceId],
+          ),
+      );
+      res.json({
+        missions: result.rows.map<MissionListItem>((row) => ({
+          id: row.id,
+          statement: row.statement,
+          status: row.status,
+          metadata: row.metadata ?? {},
+          createdAt:
+            row.created_at instanceof Date
+              ? row.created_at.toISOString()
+              : String(row.created_at),
+          companyId: row.company_id,
+          companyName: row.company_name,
+          latestHiringPlanId: row.latest_hiring_plan_id,
+        })),
+      });
+    } catch (err) {
+      console.error(`[missions] list failed: ${(err as Error).message}`);
+      res.status(500).json({ error: "Failed to list missions" });
+    }
+  });
+
+  // ---------------------------------------------------------------------
+  // GET /api/missions/:missionId — single mission lookup (HEL-23)
+  // ---------------------------------------------------------------------
+  router.get("/:missionId", async (req: AuthenticatedRequest, res) => {
+    const userId = req.auth?.sub;
+    const workspaceId = (req as WorkspaceAwareRequest).workspace?.id;
+    if (!userId || !workspaceId) {
+      res.status(401).json({ error: "Authenticated user + workspace required" });
+      return;
+    }
+
+    const missionId = req.params.missionId;
+    if (!missionId || !UUID_RE.test(missionId)) {
+      res.status(400).json({ error: "Invalid mission ID format" });
+      return;
+    }
+
+    interface DetailRow {
+      id: string;
+      statement: string;
+      status: string;
+      metadata: MissionMetadata;
+      created_at: Date | string;
+      company_id: string;
+      company_name: string;
+      latest_hiring_plan_id: string | null;
+    }
+
+    try {
+      const result = await withWorkspaceContext(
+        pool,
+        { workspaceId, userId },
+        async (client) =>
+          client.query<DetailRow>(
+            `SELECT m.id, m.statement, m.status, m.metadata, m.created_at,
+                    m.company_id, c.name AS company_name,
+                    (
+                      SELECT hp.id FROM hiring_plans hp
+                       WHERE hp.mission_id = m.id
+                       ORDER BY hp.created_at DESC
+                       LIMIT 1
+                    ) AS latest_hiring_plan_id
+               FROM missions m
+               JOIN companies c ON c.id = m.company_id
+              WHERE m.id = $1 AND c.workspace_id = $2
+              LIMIT 1`,
+            [missionId, workspaceId],
+          ),
+      );
+      if (result.rows.length === 0) {
+        res.status(404).json({ error: "Mission not found" });
+        return;
+      }
+      const row = result.rows[0];
+      res.json({
+        id: row.id,
+        statement: row.statement,
+        status: row.status,
+        metadata: row.metadata ?? {},
+        createdAt:
+          row.created_at instanceof Date
+            ? row.created_at.toISOString()
+            : String(row.created_at),
+        companyId: row.company_id,
+        companyName: row.company_name,
+        latestHiringPlanId: row.latest_hiring_plan_id,
+      } satisfies MissionListItem);
+    } catch (err) {
+      console.error(`[missions] get failed: ${(err as Error).message}`);
+      res.status(500).json({ error: "Failed to load mission" });
+    }
+  });
+
   router.post("/:missionId/generate-plan", async (req: AuthenticatedRequest, res) => {
     const userId = req.auth?.sub;
     const workspaceId = (req as AuthenticatedRequest & { workspace?: { id: string } }).workspace?.id;
@@ -117,7 +411,7 @@ export function createMissionRoutes(pool: Pool) {
     }
 
     const missionId = req.params.missionId;
-    if (!missionId || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(missionId)) {
+    if (!missionId || !UUID_RE.test(missionId)) {
       res.status(400).json({ error: "Invalid mission ID format" });
       return;
     }

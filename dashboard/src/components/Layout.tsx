@@ -51,8 +51,9 @@ const NAV_SECTIONS: Array<{ title: string; items: NavItem[] }> = [
     title: "Workforce",
     items: [
       { to: "/workspace/org-structure", icon: Users, label: "Team" },
-      // end:true so /agents/activity etc don't ALSO highlight Hire as active.
-      { to: "/agents", icon: UserPlus, label: "Hire", end: true },
+      // HEL-23: Hire = mission intake (`/hire` → Hire.tsx). AgentCatalog
+      // (`/agents`) is reachable from the Build > Library entry below.
+      { to: "/hire", icon: UserPlus, label: "Hire" },
       { to: "/workspace/budget-dashboard", icon: Wallet, label: "Budget" },
     ],
   },

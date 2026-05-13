@@ -273,7 +273,9 @@ describe("getSupabaseStoredSession", () => {
     const { getSupabaseStoredSession } = await import("./supabaseAuth");
     const session = await getSupabaseStoredSession();
 
-    expect(mockAuthClient.exchangeCodeForSession).toHaveBeenCalledWith("ABC");
+    expect(mockAuthClient.exchangeCodeForSession).toHaveBeenCalledWith(
+      "https://app.test/auth/callback?code=ABC&state=xyz",
+    );
     expect(session?.accessToken).toBe("freshly-exchanged");
 
     Object.defineProperty(window, "location", { writable: true, value: originalLocation });

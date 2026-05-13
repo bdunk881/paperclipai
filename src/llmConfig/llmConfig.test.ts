@@ -3,15 +3,28 @@
  * Verifies secret masking, provider-specific validation, and backward compatibility.
  */
 
+// Bypass workspace resolution — set req.workspace with owner role so requireRole() always passes.
+jest.mock("../middleware/workspaceResolver", () => ({
+  createWorkspaceResolver: jest.fn(() => (req: Record<string, unknown>, _res: unknown, next: () => void) => {
+    req.workspace = { id: "test-workspace-id", role: "owner" };
+    req.workspaceId = "test-workspace-id";
+    next();
+  }),
+  createExplicitWorkspaceHeaderResolver: jest.fn(() => (req: Record<string, unknown>, _res: unknown, next: () => void) => {
+    req.workspace = { id: "test-workspace-id", role: "owner" };
+    req.workspaceId = "test-workspace-id";
+    next();
+  }),
+}));
+
 jest.mock("../engine/llmProviders", () => ({
   getProvider: jest.fn(),
 }));
-// HEL-69: shared auto-mock — sets req.workspace = { id, role: "owner" } so
-// requireRole(...) gates pass. See src/middleware/__mocks__/workspaceResolver.ts.
-jest.mock("../middleware/workspaceResolver");
-// HEL-71: entitlement auto-mock — defaults workspaces to "automate" so
-// byokAllowed=true. Tests that need denial-path coverage call
-// entitlementStore.upsert(wsId, "explore") to flip a specific workspace down.
+// HEL-71: entitlement auto-mock — defaults workspaces to "automate" tier
+// (byokAllowed=true) so the existing test suite isn't gated. Tests that
+// exercise the denial path call entitlementStore.upsert(wsId, "explore") to
+// flip a specific workspace down. The workspaceResolver mock above (lines 7-18)
+// pairs the workspace id `test-workspace-id` with role "owner".
 jest.mock("../billing/entitlements");
 jest.mock("../auth/authMiddleware", () => ({
   requireAuth: (
@@ -49,7 +62,8 @@ import { entitlementStore } from "../billing/entitlements";
 
 const USER_A = "user-alice";
 const USER_B = "user-bob";
-const DEFAULT_WORKSPACE = "11111111-1111-4111-8111-111111111111";
+// Must match the workspace.id set by the workspaceResolver mock above (lines 9 & 14).
+const DEFAULT_WORKSPACE = "test-workspace-id";
 
 function asAuth(userId: string) {
   return { Authorization: `Bearer ${userId}` };

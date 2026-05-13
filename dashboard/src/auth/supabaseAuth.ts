@@ -154,11 +154,13 @@ export async function getSupabaseStoredSession(): Promise<StoredAuthSession | nu
     const errorDescription = params.get("error_description") || params.get("error");
 
     if (errorDescription) {
-      throw new Error(errorDescription);
+      throw new Error(decodeURIComponent(errorDescription.replace(/\+/g, " ")));
     }
 
     if (code) {
-      const { error: exchangeError } = await client.auth.exchangeCodeForSession(code);
+      const { error: exchangeError } = await client.auth.exchangeCodeForSession(
+        window.location.href,
+      );
       if (exchangeError) {
         throw new Error(exchangeError.message);
       }

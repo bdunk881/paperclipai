@@ -9,6 +9,10 @@ jest.mock("../engine/llmProviders", () => ({
 // HEL-69: shared auto-mock — sets req.workspace = { id, role: "owner" } so
 // requireRole(...) gates pass. See src/middleware/__mocks__/workspaceResolver.ts.
 jest.mock("../middleware/workspaceResolver");
+// HEL-71: entitlement auto-mock — defaults workspaces to "automate" so
+// byokAllowed=true. Tests that need denial-path coverage call
+// entitlementStore.upsert(wsId, "explore") to flip a specific workspace down.
+jest.mock("../billing/entitlements");
 jest.mock("../auth/authMiddleware", () => ({
   requireAuth: (
     req: { headers: { authorization?: string }; auth?: { sub: string } },
@@ -41,9 +45,11 @@ jest.mock("../auth/authMiddleware", () => ({
 import request from "supertest";
 import app from "../app";
 import { llmConfigStore } from "./llmConfigStore";
+import { entitlementStore } from "../billing/entitlements";
 
 const USER_A = "user-alice";
 const USER_B = "user-bob";
+const DEFAULT_WORKSPACE = "11111111-1111-4111-8111-111111111111";
 
 function asAuth(userId: string) {
   return { Authorization: `Bearer ${userId}` };
@@ -51,6 +57,7 @@ function asAuth(userId: string) {
 
 beforeEach(() => {
   llmConfigStore.clear();
+  entitlementStore.clear();
 });
 
 describe("POST /api/llm-configs", () => {
@@ -187,6 +194,32 @@ describe("POST /api/llm-configs", () => {
 
     expect(res.status).toBe(400);
     expect(res.body.error).toMatch(/provider/i);
+  });
+
+  it("returns 402 with entitlement_exceeded payload when BYOK is disallowed on the plan (HEL-71)", async () => {
+    // Flip the test workspace down to the Explore (free) tier where
+    // byokAllowed=false. The default workspace id is the one the auto-mock
+    // workspaceResolver sets when no X-Workspace-Id header is passed.
+    entitlementStore.upsert(DEFAULT_WORKSPACE, "explore");
+
+    const res = await request(app)
+      .post("/api/llm-configs")
+      .set(asAuth(USER_A))
+      .send({
+        provider: "openai",
+        label: "key",
+        model: "gpt-4o",
+        apiKey: "sk-test-abc1234",
+      });
+
+    expect(res.status).toBe(402);
+    expect(res.body).toMatchObject({
+      code: "entitlement_exceeded",
+      feature: "byokAllowed",
+      limit: false,
+      currentTier: "explore",
+      upgradeTo: "flow",
+    });
   });
 });
 

@@ -38,6 +38,7 @@ import type { NextFunction, Response } from "express";
 import type { WorkspaceAwareRequest } from "./workspaceResolver";
 import {
   entitlementStore,
+  getEntitlementLimits,
   type EntitlementLimits,
   type WorkspaceEntitlements,
 } from "../billing/entitlements";
@@ -65,6 +66,27 @@ const UPGRADE_PATH: Record<SubscriptionTier, SubscriptionTier | null> = {
   automate: "scale",
   scale: null, // Already on the top tier.
 };
+
+// Returns the first tier in the upgrade ladder that enables the requested feature,
+// skipping tiers where the feature is still gated. This prevents the 402 payload
+// from pointing users at a tier that would still block them (e.g. Flow for byokAllowed).
+function firstTierThatAllows(
+  feature: EntitlementFeature,
+  fromTier: SubscriptionTier,
+): SubscriptionTier | null {
+  // Use ?? null so an unknown/legacy tier value (UPGRADE_PATH returns undefined
+  // for non-canonical plan strings) collapses to null and terminates the loop
+  // rather than looping forever on `undefined !== null`.
+  let tier: SubscriptionTier | null = UPGRADE_PATH[fromTier] ?? null;
+  while (tier !== null) {
+    const limits = getEntitlementLimits(tier);
+    const limit = limits[feature] as boolean | number;
+    const allows = BOOLEAN_FEATURES.has(feature) ? limit === true : (limit as number) > 0;
+    if (allows) return tier;
+    tier = UPGRADE_PATH[tier] ?? null;
+  }
+  return null;
+}
 
 function entitlementsFor(workspaceId: string): WorkspaceEntitlements {
   // entitlementStore.upsert is fired by stripeWebhook.ts on every relevant
@@ -123,7 +145,7 @@ export function requireEntitlement(
       feature,
       limit,
       currentTier: entitlements.plan,
-      upgradeTo: UPGRADE_PATH[entitlements.plan],
+      upgradeTo: firstTierThatAllows(feature, entitlements.plan),
     };
 
     if (BOOLEAN_FEATURES.has(feature)) {

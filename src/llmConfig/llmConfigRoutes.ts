@@ -12,6 +12,7 @@ import {
   PROVIDER_NAMES,
 } from "../engine/llmProviders/types";
 import { llmConfigStore, LLMProvider } from "./llmConfigStore";
+import { requireEntitlement } from "../middleware/requireEntitlement";
 
 const VALID_PROVIDERS: LLMProvider[] = [...PROVIDER_NAMES];
 const API_KEY_PROVIDERS = new Set<LLMProvider>([
@@ -162,7 +163,12 @@ function validateProviderConfig(params: {
 
 const router = Router();
 
-router.post("/", (req: AuthenticatedRequest, res: Response) => {
+// HEL-71: BYOK (bring-your-own-key) is gated behind the workspace's
+// `byokAllowed` entitlement. Free Explore + Flow tiers have it off; Automate
+// and Scale have it on. Reads default to the active plan via entitlementStore;
+// 402 on deny carries the structured payload the dashboard can surface as an
+// "Upgrade to Automate" CTA.
+router.post("/", requireEntitlement("byokAllowed"), (req: AuthenticatedRequest, res: Response) => {
   const userId = getUserId(req);
   if (!userId) {
     res.status(401).json({ error: "Authenticated user is required" });

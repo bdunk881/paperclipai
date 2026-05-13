@@ -25,6 +25,7 @@ module.exports = {
     "src/templates/**/*.ts",
     "!src/index.ts",
     "!src/test-factories/**",
+    "!src/**/__mocks__/**",
   ],
   coverageThreshold: {
     global: {

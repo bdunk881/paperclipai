@@ -196,7 +196,7 @@ describe("requireEntitlement", () => {
       expect(res.json).toHaveBeenCalledWith(
         expect.objectContaining({
           currentTier: "explore",
-          upgradeTo: "flow",
+          upgradeTo: "automate",
         }),
       );
     });

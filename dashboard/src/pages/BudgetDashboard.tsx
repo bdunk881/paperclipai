@@ -78,16 +78,16 @@ export default function BudgetDashboard() {
   }
 
   return (
-    <div className="min-h-full bg-gray-50 p-6 md:p-8">
+    <div className="min-h-full bg-af2-paper-2/40 p-6 md:p-8">
       <div className="mx-auto max-w-6xl">
         <div className="mb-6 flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
           <div>
-            <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-orange-200 bg-orange-50 px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-orange-700">
+            <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-af2-clay/30 bg-af2-clay-soft/40 px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-af2-clay">
               <BarChart3 size={12} />
               Budget Dashboard
             </div>
-            <h1 className="text-2xl font-bold text-gray-900">Spend and Quota Health</h1>
-            <p className="mt-1 text-sm text-gray-500">
+            <h1 className="text-2xl font-bold text-af2-ink">Spend and Quota Health</h1>
+            <p className="mt-1 text-sm text-af2-ink-3">
               Live budget snapshots and agent-level spend from the agent budget API.
             </p>
           </div>
@@ -113,16 +113,16 @@ export default function BudgetDashboard() {
               />
             </div>
 
-            <div className="rounded-3xl border border-gray-200 bg-white p-6 shadow-sm">
+            <div className="rounded-3xl border border-af2-line bg-af2-card p-6 shadow-sm">
               <div className="mb-4 flex items-center justify-between gap-4">
                 <div>
-                  <h2 className="text-lg font-semibold text-gray-900">Spend by Agent</h2>
-                  <p className="text-sm text-gray-500">Last known spend derived from live budget snapshots.</p>
+                  <h2 className="text-lg font-semibold text-af2-ink">Spend by Agent</h2>
+                  <p className="text-sm text-af2-ink-3">Last known spend derived from live budget snapshots.</p>
                 </div>
-                <div className="h-3 w-48 overflow-hidden rounded-full bg-gray-100">
+                <div className="h-3 w-48 overflow-hidden rounded-full bg-af2-paper-2">
                   <div
                     className={`h-full rounded-full ${
-                      budgetRatio >= 0.8 ? "bg-orange-500" : "bg-teal-500"
+                      budgetRatio >= 0.8 ? "bg-af2-clay" : "bg-af2-sage"
                     }`}
                     style={{ width: `${Math.min(100, budgetRatio * 100)}%` }}
                   />
@@ -135,19 +135,19 @@ export default function BudgetDashboard() {
                     <div key={entry.id} className="grid gap-2 md:grid-cols-[minmax(0,1fr)_120px] md:items-center">
                       <div>
                         <div className="mb-1 flex items-center justify-between gap-3">
-                          <p className="font-medium text-gray-900">{entry.name}</p>
-                          <p className="text-sm text-gray-500">
+                          <p className="font-medium text-af2-ink">{entry.name}</p>
+                          <p className="text-sm text-af2-ink-3">
                             {formatUsd(entry.spend)} / {formatUsd(entry.budget)}
                           </p>
                         </div>
-                        <div className="h-3 overflow-hidden rounded-full bg-gray-100">
+                        <div className="h-3 overflow-hidden rounded-full bg-af2-paper-2">
                           <div
                             className="h-full rounded-full bg-gradient-to-r from-indigo-500 to-orange-500"
                             style={{ width: `${Math.max(6, usagePercent)}%` }}
                           />
                         </div>
                       </div>
-                      <p className="text-right font-mono text-sm text-gray-500">
+                      <p className="text-right font-mono text-sm text-af2-ink-3">
                         {entry.budget > 0 ? `${Math.round((entry.spend / entry.budget) * 100)}%` : "0%"}
                       </p>
                     </div>
@@ -175,16 +175,16 @@ function BudgetCard({
 }) {
   const tone =
     accent === "orange"
-      ? "bg-orange-50 text-orange-700"
+      ? "bg-af2-clay-soft/40 text-af2-clay"
       : accent === "teal"
-      ? "bg-teal-50 text-teal-700"
-      : "bg-indigo-50 text-indigo-700";
+      ? "bg-af2-sage/10 text-af2-sage"
+      : "bg-af2-clay-soft/40 text-af2-clay";
 
   return (
-    <div className="rounded-3xl border border-gray-200 bg-white p-5 shadow-sm">
+    <div className="rounded-3xl border border-af2-line bg-af2-card p-5 shadow-sm">
       <div className={`inline-flex rounded-2xl p-2 ${tone}`}>{icon}</div>
-      <p className="mt-3 text-xs font-semibold uppercase tracking-[0.18em] text-gray-400">{label}</p>
-      <p className="mt-2 font-mono text-3xl font-semibold text-gray-900">{value}</p>
+      <p className="mt-3 text-xs font-semibold uppercase tracking-[0.18em] text-af2-ink-4">{label}</p>
+      <p className="mt-2 font-mono text-3xl font-semibold text-af2-ink">{value}</p>
     </div>
   );
 }

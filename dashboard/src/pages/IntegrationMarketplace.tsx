@@ -454,28 +454,28 @@ export default function IntegrationMarketplace() {
   }
 
   return (
-    <div className="min-h-full bg-gray-50">
+    <div className="min-h-full bg-af2-paper-2/40">
       {/* ── Header ── */}
-      <div className="bg-white border-b border-gray-200 px-8 py-6">
+      <div className="bg-af2-card border-b border-af2-line px-8 py-6">
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-bold text-gray-900">Integration Marketplace</h1>
-            <p className="text-gray-500 text-sm mt-1">
+            <h1 className="text-2xl font-bold text-af2-ink">Integration Marketplace</h1>
+            <p className="text-af2-ink-3 text-sm mt-1">
               Browse and connect {INTEGRATIONS.length}+ integrations across {CATEGORIES.length} categories
             </p>
           </div>
           <div className="flex items-center gap-6">
             <div className="text-center">
-              <div className="text-2xl font-bold text-gray-900">{connectedCount}</div>
-              <div className="text-xs text-gray-400">connected</div>
+              <div className="text-2xl font-bold text-af2-ink">{connectedCount}</div>
+              <div className="text-xs text-af2-ink-4">connected</div>
             </div>
             <div className="text-center">
-              <div className="text-2xl font-bold text-blue-600">{INTEGRATIONS.length}</div>
-              <div className="text-xs text-gray-400">available</div>
+              <div className="text-2xl font-bold text-af2-ink-blue">{INTEGRATIONS.length}</div>
+              <div className="text-xs text-af2-ink-4">available</div>
             </div>
             <div className="text-center">
               <div className="text-2xl font-bold text-amber-500">{premiumCount}</div>
-              <div className="text-xs text-gray-400">premium</div>
+              <div className="text-xs text-af2-ink-4">premium</div>
             </div>
           </div>
         </div>
@@ -483,9 +483,9 @@ export default function IntegrationMarketplace() {
         {/* Search + controls */}
         <div className="flex items-center gap-3 mt-5">
           <div className="relative flex-1 max-w-md">
-            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-af2-ink-4" />
             <input
-              className="w-full pl-9 pr-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full pl-9 pr-3 py-2 text-sm border border-af2-line rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
               placeholder="Search integrations, categories, or actions..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
@@ -493,18 +493,18 @@ export default function IntegrationMarketplace() {
             {search && (
               <button
                 onClick={() => setSearch("")}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-300 hover:text-gray-500"
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-af2-ink-3 hover:text-af2-ink-3"
               >
                 <X size={14} />
               </button>
             )}
           </div>
-          <div className="flex items-center border border-gray-200 rounded-lg overflow-hidden">
+          <div className="flex items-center border border-af2-line rounded-lg overflow-hidden">
             <button
               onClick={() => setViewMode("grid")}
               className={clsx(
                 "p-2 transition",
-                viewMode === "grid" ? "bg-gray-900 text-white" : "bg-white text-gray-400 hover:text-gray-600"
+                viewMode === "grid" ? "bg-af2-ink text-white" : "bg-af2-card text-af2-ink-4 hover:text-af2-ink-2"
               )}
             >
               <Grid3X3 size={14} />
@@ -513,7 +513,7 @@ export default function IntegrationMarketplace() {
               onClick={() => setViewMode("list")}
               className={clsx(
                 "p-2 transition",
-                viewMode === "list" ? "bg-gray-900 text-white" : "bg-white text-gray-400 hover:text-gray-600"
+                viewMode === "list" ? "bg-af2-ink text-white" : "bg-af2-card text-af2-ink-4 hover:text-af2-ink-2"
               )}
             >
               <List size={14} />
@@ -524,8 +524,8 @@ export default function IntegrationMarketplace() {
             className={clsx(
               "flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium transition border",
               showTemplates
-                ? "bg-blue-50 text-blue-600 border-blue-200"
-                : "bg-white text-gray-500 border-gray-200 hover:border-gray-300"
+                ? "bg-af2-ink-blue/10 text-af2-ink-blue border-af2-ink-blue/30"
+                : "bg-af2-card text-af2-ink-3 border-af2-line hover:border-af2-line-2"
             )}
           >
             <Zap size={12} />
@@ -536,7 +536,7 @@ export default function IntegrationMarketplace() {
 
       <div className="max-w-7xl mx-auto px-8 py-6">
         {connectionError ? (
-          <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          <div className="mb-4 rounded-xl border border-af2-clay/30 bg-af2-clay-soft/30 px-4 py-3 text-sm text-af2-clay">
             {connectionError}
           </div>
         ) : null}
@@ -546,41 +546,41 @@ export default function IntegrationMarketplace() {
           <div className="mb-8">
             <div className="flex items-center justify-between mb-4">
               <div>
-                <h2 className="text-lg font-semibold text-gray-900">Workflow Templates</h2>
-                <p className="text-xs text-gray-400 mt-0.5">Pre-built automation recipes using popular integrations</p>
+                <h2 className="text-lg font-semibold text-af2-ink">Workflow Templates</h2>
+                <p className="text-xs text-af2-ink-4 mt-0.5">Pre-built automation recipes using popular integrations</p>
               </div>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
               {filteredTemplates.map((tpl) => (
                 <div
                   key={tpl.id}
-                  className="bg-white rounded-xl border border-gray-200 p-4 hover:shadow-sm hover:border-blue-200 transition cursor-pointer group"
+                  className="bg-af2-card rounded-xl border border-af2-line p-4 hover:shadow-sm hover:border-af2-ink-blue/30 transition cursor-pointer group"
                 >
                   <div className="flex items-center gap-2 mb-2">
                     <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center">
                       <Zap size={13} className="text-white" />
                     </div>
-                    <span className="px-2 py-0.5 rounded-full bg-gray-100 text-gray-500 text-xs font-medium">
+                    <span className="px-2 py-0.5 rounded-full bg-af2-paper-2 text-af2-ink-3 text-xs font-medium">
                       {tpl.category}
                     </span>
                   </div>
-                  <h3 className="font-semibold text-sm text-gray-900 group-hover:text-blue-600 transition">
+                  <h3 className="font-semibold text-sm text-af2-ink group-hover:text-af2-ink-blue transition">
                     {tpl.name}
                   </h3>
-                  <p className="text-xs text-gray-500 mt-1 leading-relaxed line-clamp-2">{tpl.description}</p>
+                  <p className="text-xs text-af2-ink-3 mt-1 leading-relaxed line-clamp-2">{tpl.description}</p>
                   <div className="flex items-center gap-1.5 mt-3">
                     {tpl.integrations.slice(0, 3).map((intId) => {
                       const integration = INTEGRATIONS.find((i) => i.id === intId);
                       return (
                         <span
                           key={intId}
-                          className="px-1.5 py-0.5 bg-gray-100 text-gray-600 rounded text-xs"
+                          className="px-1.5 py-0.5 bg-af2-paper-2 text-af2-ink-2 rounded text-xs"
                         >
                           {integration?.name ?? intId}
                         </span>
                       );
                     })}
-                    <span className="text-xs text-blue-500 font-medium ml-auto group-hover:translate-x-0.5 transition-transform flex items-center gap-0.5">
+                    <span className="text-xs text-af2-ink-blue font-medium ml-auto group-hover:translate-x-0.5 transition-transform flex items-center gap-0.5">
                       Use <ArrowRight size={10} />
                     </span>
                   </div>
@@ -592,14 +592,14 @@ export default function IntegrationMarketplace() {
 
         {/* ── Category Filter ── */}
         <div className="flex items-center gap-2 mb-5 overflow-x-auto pb-1">
-          <Filter size={14} className="text-gray-400 shrink-0" />
+          <Filter size={14} className="text-af2-ink-4 shrink-0" />
           <button
             onClick={() => setSelectedCategory("All")}
             className={clsx(
               "px-3 py-1.5 rounded-lg text-xs font-medium transition whitespace-nowrap",
               selectedCategory === "All"
-                ? "bg-gray-900 text-white"
-                : "bg-white border border-gray-200 text-gray-500 hover:border-gray-300"
+                ? "bg-af2-ink text-white"
+                : "bg-af2-card border border-af2-line text-af2-ink-3 hover:border-af2-line-2"
             )}
           >
             All ({categoryCounts["All"]})
@@ -611,8 +611,8 @@ export default function IntegrationMarketplace() {
               className={clsx(
                 "px-3 py-1.5 rounded-lg text-xs font-medium transition whitespace-nowrap",
                 selectedCategory === cat
-                  ? "bg-gray-900 text-white"
-                  : "bg-white border border-gray-200 text-gray-500 hover:border-gray-300"
+                  ? "bg-af2-ink text-white"
+                  : "bg-af2-card border border-af2-line text-af2-ink-3 hover:border-af2-line-2"
               )}
             >
               {cat} ({categoryCounts[cat] ?? 0})
@@ -627,43 +627,43 @@ export default function IntegrationMarketplace() {
               <div
                 key={integration.id}
                 onClick={() => setDetailId(integration.id)}
-                className="bg-white rounded-xl border border-gray-200 p-4 hover:shadow-sm hover:border-gray-300 transition cursor-pointer group"
+                className="bg-af2-card rounded-xl border border-af2-line p-4 hover:shadow-sm hover:border-af2-line-2 transition cursor-pointer group"
               >
                 <div className="flex items-start justify-between mb-2">
                   <div className="flex items-center gap-2">
-                    <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-gray-100 to-gray-200 flex items-center justify-center text-sm font-bold text-gray-500">
+                    <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-gray-100 to-gray-200 flex items-center justify-center text-sm font-bold text-af2-ink-3">
                       {integration.name.charAt(0)}
                     </div>
                     <div>
                       <div className="flex items-center gap-1">
-                        <span className="font-semibold text-sm text-gray-900">{integration.name}</span>
-                        {integration.official && <CheckCircle size={11} className="text-blue-500" />}
+                        <span className="font-semibold text-sm text-af2-ink">{integration.name}</span>
+                        {integration.official && <CheckCircle size={11} className="text-af2-ink-blue" />}
                         {integration.premium && <Crown size={11} className="text-amber-500" />}
                       </div>
-                      <span className="text-xs text-gray-400">{integration.category}</span>
+                      <span className="text-xs text-af2-ink-4">{integration.category}</span>
                     </div>
                   </div>
                 </div>
-                <p className="text-xs text-gray-500 leading-relaxed line-clamp-2">{integration.description}</p>
-                <div className="flex items-center justify-between mt-3 pt-2 border-t border-gray-100">
+                <p className="text-xs text-af2-ink-3 leading-relaxed line-clamp-2">{integration.description}</p>
+                <div className="flex items-center justify-between mt-3 pt-2 border-t border-af2-line">
                   <div className="flex gap-1">
                     {integration.actions.slice(0, 2).map((a) => (
-                      <span key={a} className="px-1.5 py-0.5 bg-gray-100 text-gray-500 rounded text-xs font-mono">
+                      <span key={a} className="px-1.5 py-0.5 bg-af2-paper-2 text-af2-ink-3 rounded text-xs font-mono">
                         {a}
                       </span>
                     ))}
                     {integration.actions.length > 2 && (
-                      <span className="px-1.5 py-0.5 bg-gray-100 text-gray-400 rounded text-xs">
+                      <span className="px-1.5 py-0.5 bg-af2-paper-2 text-af2-ink-4 rounded text-xs">
                         +{integration.actions.length - 2}
                       </span>
                     )}
                   </div>
                   {integration.connected ? (
-                    <span className="px-2 py-0.5 rounded-full bg-green-100 text-green-700 text-xs font-medium">
+                    <span className="px-2 py-0.5 rounded-full bg-af2-sage/15 text-af2-sage text-xs font-medium">
                       Connected
                     </span>
                   ) : integration.premium ? (
-                    <span className="px-2 py-0.5 rounded-full bg-amber-50 text-amber-600 text-xs font-medium flex items-center gap-0.5">
+                    <span className="px-2 py-0.5 rounded-full bg-af2-mustard/10 text-af2-mustard text-xs font-medium flex items-center gap-0.5">
                       <Lock size={9} /> Premium
                     </span>
                   ) : null}
@@ -672,36 +672,36 @@ export default function IntegrationMarketplace() {
             ))}
           </div>
         ) : (
-          <div className="bg-white rounded-xl border border-gray-200 divide-y divide-gray-100">
+          <div className="bg-af2-card rounded-xl border border-af2-line divide-y divide-gray-100">
             {filtered.map((integration) => (
               <div
                 key={integration.id}
                 onClick={() => setDetailId(integration.id)}
-                className="flex items-center gap-4 px-5 py-3 hover:bg-gray-50 transition cursor-pointer"
+                className="flex items-center gap-4 px-5 py-3 hover:bg-af2-paper-2/40 transition cursor-pointer"
               >
-                <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-gray-100 to-gray-200 flex items-center justify-center text-sm font-bold text-gray-500 shrink-0">
+                <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-gray-100 to-gray-200 flex items-center justify-center text-sm font-bold text-af2-ink-3 shrink-0">
                   {integration.name.charAt(0)}
                 </div>
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-1.5">
-                    <span className="font-semibold text-sm text-gray-900">{integration.name}</span>
-                    {integration.official && <CheckCircle size={11} className="text-blue-500" />}
+                    <span className="font-semibold text-sm text-af2-ink">{integration.name}</span>
+                    {integration.official && <CheckCircle size={11} className="text-af2-ink-blue" />}
                     {integration.premium && <Crown size={11} className="text-amber-500" />}
-                    <span className="text-xs text-gray-400 ml-2">{integration.category}</span>
+                    <span className="text-xs text-af2-ink-4 ml-2">{integration.category}</span>
                   </div>
-                  <p className="text-xs text-gray-500 truncate">{integration.description}</p>
+                  <p className="text-xs text-af2-ink-3 truncate">{integration.description}</p>
                 </div>
                 <div className="flex items-center gap-2 shrink-0">
                   {integration.connected ? (
-                    <span className="px-2 py-0.5 rounded-full bg-green-100 text-green-700 text-xs font-medium">
+                    <span className="px-2 py-0.5 rounded-full bg-af2-sage/15 text-af2-sage text-xs font-medium">
                       Connected
                     </span>
                   ) : integration.premium ? (
-                    <span className="px-2 py-0.5 rounded-full bg-amber-50 text-amber-600 text-xs font-medium flex items-center gap-0.5">
+                    <span className="px-2 py-0.5 rounded-full bg-af2-mustard/10 text-af2-mustard text-xs font-medium flex items-center gap-0.5">
                       <Lock size={9} /> Premium
                     </span>
                   ) : (
-                    <span className="px-2 py-0.5 rounded-full bg-gray-100 text-gray-400 text-xs">
+                    <span className="px-2 py-0.5 rounded-full bg-af2-paper-2 text-af2-ink-4 text-xs">
                       Available
                     </span>
                   )}
@@ -712,12 +712,12 @@ export default function IntegrationMarketplace() {
         )}
 
         {filtered.length === 0 && (
-          <div className="text-center py-16 text-gray-400">
+          <div className="text-center py-16 text-af2-ink-4">
             <Search size={40} className="mx-auto mb-3 opacity-30" />
             <p className="text-sm">No integrations match your search</p>
             <button
               onClick={() => { setSearch(""); setSelectedCategory("All"); }}
-              className="mt-2 text-xs text-blue-500 hover:text-blue-600"
+              className="mt-2 text-xs text-af2-ink-blue hover:text-af2-ink-blue"
             >
               Clear filters
             </button>
@@ -726,7 +726,7 @@ export default function IntegrationMarketplace() {
 
         {/* ── Results count ── */}
         {filtered.length > 0 && (
-          <div className="text-center mt-6 text-xs text-gray-400">
+          <div className="text-center mt-6 text-xs text-af2-ink-4">
             Showing {filtered.length} of {INTEGRATIONS.length} integrations
           </div>
         )}
@@ -736,35 +736,35 @@ export default function IntegrationMarketplace() {
       {detail && (
         <div className="fixed inset-0 z-50 flex justify-end">
           <div className="absolute inset-0 bg-black/20" onClick={() => setDetailId(null)} />
-          <div className="relative w-full max-w-md bg-white shadow-xl overflow-y-auto">
-            <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between">
+          <div className="relative w-full max-w-md bg-af2-card shadow-xl overflow-y-auto">
+            <div className="sticky top-0 bg-af2-card border-b border-af2-line px-6 py-4 flex items-center justify-between">
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-gray-100 to-gray-200 flex items-center justify-center text-lg font-bold text-gray-500">
+                <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-gray-100 to-gray-200 flex items-center justify-center text-lg font-bold text-af2-ink-3">
                   {detail.name.charAt(0)}
                 </div>
                 <div>
                   <div className="flex items-center gap-1.5">
-                    <h2 className="font-bold text-gray-900">{detail.name}</h2>
-                    {detail.official && <CheckCircle size={13} className="text-blue-500" />}
+                    <h2 className="font-bold text-af2-ink">{detail.name}</h2>
+                    {detail.official && <CheckCircle size={13} className="text-af2-ink-blue" />}
                     {detail.premium && <Crown size={13} className="text-amber-500" />}
                   </div>
-                  <span className="text-xs text-gray-400">{detail.category}</span>
+                  <span className="text-xs text-af2-ink-4">{detail.category}</span>
                 </div>
               </div>
               <button
                 onClick={() => setDetailId(null)}
-                className="p-2 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition"
+                className="p-2 rounded-lg text-af2-ink-4 hover:text-af2-ink-2 hover:bg-af2-paper-2 transition"
               >
                 <X size={16} />
               </button>
             </div>
             <div className="px-6 py-5 space-y-5">
-              <p className="text-sm text-gray-600 leading-relaxed">{detail.description}</p>
+              <p className="text-sm text-af2-ink-2 leading-relaxed">{detail.description}</p>
 
               {detail.premium && !detail.connected && (
-                <div className="flex items-center gap-2 p-3 rounded-lg bg-amber-50 border border-amber-200">
+                <div className="flex items-center gap-2 p-3 rounded-lg bg-af2-mustard/10 border border-af2-mustard/30">
                   <Crown size={14} className="text-amber-500 shrink-0" />
-                  <p className="text-xs text-amber-700">
+                  <p className="text-xs text-af2-mustard">
                     This is a premium integration. Upgrade your plan to connect.
                   </p>
                 </div>
@@ -772,13 +772,13 @@ export default function IntegrationMarketplace() {
 
               {/* Status */}
               <div className="flex items-center gap-2">
-                <span className="text-xs text-gray-400 w-20">Status</span>
+                <span className="text-xs text-af2-ink-4 w-20">Status</span>
                 {detail.connected ? (
-                  <span className="px-2 py-0.5 rounded-full bg-green-100 text-green-700 text-xs font-medium">
+                  <span className="px-2 py-0.5 rounded-full bg-af2-sage/15 text-af2-sage text-xs font-medium">
                     Connected
                   </span>
                 ) : (
-                  <span className="px-2 py-0.5 rounded-full bg-gray-100 text-gray-500 text-xs font-medium">
+                  <span className="px-2 py-0.5 rounded-full bg-af2-paper-2 text-af2-ink-3 text-xs font-medium">
                     Not connected
                   </span>
                 )}
@@ -786,14 +786,14 @@ export default function IntegrationMarketplace() {
 
               {/* Available actions */}
               <div>
-                <h3 className="text-xs font-semibold text-gray-900 uppercase tracking-wider mb-2">
+                <h3 className="text-xs font-semibold text-af2-ink uppercase tracking-wider mb-2">
                   Available Actions
                 </h3>
                 <div className="flex flex-wrap gap-1.5">
                   {detail.actions.map((action) => (
                     <span
                       key={action}
-                      className="px-2 py-1 bg-gray-100 text-gray-600 rounded-lg text-xs font-mono"
+                      className="px-2 py-1 bg-af2-paper-2 text-af2-ink-2 rounded-lg text-xs font-mono"
                     >
                       {action}
                     </span>
@@ -804,17 +804,17 @@ export default function IntegrationMarketplace() {
               {/* Related templates */}
               {TEMPLATES.filter((t) => t.integrations.includes(detail.id)).length > 0 && (
                 <div>
-                  <h3 className="text-xs font-semibold text-gray-900 uppercase tracking-wider mb-2">
+                  <h3 className="text-xs font-semibold text-af2-ink uppercase tracking-wider mb-2">
                     Related Templates
                   </h3>
                   <div className="space-y-2">
                     {TEMPLATES.filter((t) => t.integrations.includes(detail.id)).map((tpl) => (
-                      <div key={tpl.id} className="p-3 rounded-lg bg-blue-50 border border-blue-100">
+                      <div key={tpl.id} className="p-3 rounded-lg bg-af2-ink-blue/10 border border-af2-ink-blue/20">
                         <div className="flex items-center gap-1.5">
-                          <Zap size={11} className="text-blue-500" />
-                          <span className="text-sm font-medium text-blue-900">{tpl.name}</span>
+                          <Zap size={11} className="text-af2-ink-blue" />
+                          <span className="text-sm font-medium text-af2-ink-blue">{tpl.name}</span>
                         </div>
-                        <p className="text-xs text-blue-600 mt-1">{tpl.description}</p>
+                        <p className="text-xs text-af2-ink-blue mt-1">{tpl.description}</p>
                       </div>
                     ))}
                   </div>
@@ -823,11 +823,11 @@ export default function IntegrationMarketplace() {
 
               {/* Auth setup placeholder */}
               <div>
-                <h3 className="text-xs font-semibold text-gray-900 uppercase tracking-wider mb-2">
+                <h3 className="text-xs font-semibold text-af2-ink uppercase tracking-wider mb-2">
                   Authentication
                 </h3>
-                <div className="p-3 rounded-lg bg-gray-50 border border-gray-200">
-                  <p className="text-xs text-gray-500">
+                <div className="p-3 rounded-lg bg-af2-paper-2/40 border border-af2-line">
+                  <p className="text-xs text-af2-ink-3">
                     {detail.connected
                       ? "This integration is authenticated and ready to use in your workflows."
                       : detail.premium
@@ -849,14 +849,14 @@ export default function IntegrationMarketplace() {
                   className={clsx(
                     "flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-lg text-sm font-medium transition",
                     busyIntegrationId === detail.id
-                      ? "bg-blue-100 text-blue-500 border border-blue-200 cursor-wait"
+                      ? "bg-af2-ink-blue/15 text-af2-ink-blue border border-af2-ink-blue/30 cursor-wait"
                       : detail.connected
-                      ? "bg-red-50 text-red-600 hover:bg-red-100 border border-red-200"
+                      ? "bg-af2-clay-soft/30 text-af2-clay hover:bg-af2-clay-soft/60 border border-af2-clay/30"
                       : detail.premium
-                        ? "bg-gray-100 text-gray-400 cursor-not-allowed border border-gray-200"
+                        ? "bg-af2-paper-2 text-af2-ink-4 cursor-not-allowed border border-af2-line"
                         : !detailProvider
-                          ? "bg-gray-100 text-gray-400 cursor-not-allowed border border-gray-200"
-                        : "bg-blue-600 text-white hover:bg-blue-700"
+                          ? "bg-af2-paper-2 text-af2-ink-4 cursor-not-allowed border border-af2-line"
+                        : "bg-af2-ink-blue text-white hover:bg-af2-ink-blue"
                   )}
                 >
                   {busyIntegrationId === detail.id
@@ -869,7 +869,7 @@ export default function IntegrationMarketplace() {
                           ? "Connect"
                           : "Coming Soon"}
                 </button>
-                <button className="px-3 py-2.5 rounded-lg border border-gray-200 text-gray-400 hover:text-gray-600 hover:border-gray-300 transition">
+                <button className="px-3 py-2.5 rounded-lg border border-af2-line text-af2-ink-4 hover:text-af2-ink-2 hover:border-af2-line-2 transition">
                   <ExternalLink size={14} />
                 </button>
               </div>

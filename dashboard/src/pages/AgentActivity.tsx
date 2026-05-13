@@ -24,9 +24,9 @@ type ActivityItem = {
 };
 
 function statusIcon(status: ActivityStatus) {
-  if (status === "success") return <CircleCheck size={14} className="text-teal-600" />;
-  if (status === "warning") return <CircleAlert size={14} className="text-orange-600" />;
-  return <CircleDashed size={14} className="text-indigo-600" />;
+  if (status === "success") return <CircleCheck size={14} className="text-af2-sage" />;
+  if (status === "warning") return <CircleAlert size={14} className="text-af2-clay" />;
+  return <CircleDashed size={14} className="text-af2-clay" />;
 }
 
 function heartbeatStatusToTone(status: AgentHeartbeat["status"]): ActivityStatus {
@@ -135,32 +135,32 @@ export default function AgentActivity() {
   }
 
   return (
-    <div className="min-h-full bg-gray-50 p-6 md:p-8">
+    <div className="min-h-full bg-af2-paper-2/40 p-6 md:p-8">
       <div className="mx-auto max-w-5xl">
         <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
           <div>
-            <h1 className="text-2xl font-bold text-gray-900">Agent Activity Feed</h1>
-            <p className="mt-1 text-sm text-gray-500">
+            <h1 className="text-2xl font-bold text-af2-ink">Agent Activity Feed</h1>
+            <p className="mt-1 text-sm text-af2-ink-3">
               Live stream of heartbeats, execution runs, and runtime signals from the agent API.
             </p>
           </div>
           <Link
             to="/agents/my"
-            className="inline-flex items-center gap-1.5 text-sm font-medium text-indigo-600 hover:text-indigo-700"
+            className="inline-flex items-center gap-1.5 text-sm font-medium text-af2-clay hover:text-af2-clay"
           >
             Manage deployments
             <ArrowRight size={14} />
           </Link>
         </div>
 
-        <div className="mt-6 rounded-3xl border border-gray-200 bg-white p-4 shadow-sm">
+        <div className="mt-6 rounded-3xl border border-af2-line bg-af2-card p-4 shadow-sm">
           <div className="flex flex-col gap-3 md:flex-row md:items-center">
             <div className="relative flex-1">
-              <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+              <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-af2-ink-4" />
               <input
                 value={query}
                 onChange={(event) => setQuery(event.target.value)}
-                className="w-full rounded-2xl border border-gray-200 pl-9 pr-3 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
+                className="w-full rounded-2xl border border-af2-line pl-9 pr-3 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
                 placeholder="Filter activity..."
               />
             </div>
@@ -171,8 +171,8 @@ export default function AgentActivity() {
                   onClick={() => setStatus(value)}
                   className={`rounded-full px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.14em] transition ${
                     status === value
-                      ? "bg-slate-900 text-white"
-                      : "border border-gray-200 text-gray-600 hover:border-gray-300"
+                      ? "bg-af2-ink text-white"
+                      : "border border-af2-line text-af2-ink-2 hover:border-af2-line-2"
                   }`}
                 >
                   {value}
@@ -193,21 +193,21 @@ export default function AgentActivity() {
             return (
               <article
                 key={item.id}
-                className={`animate-slide-in-down rounded-3xl border border-gray-200 border-l-4 ${borderTone} bg-white p-4 shadow-sm`}
+                className={`animate-slide-in-down rounded-3xl border border-af2-line border-l-4 ${borderTone} bg-af2-card p-4 shadow-sm`}
               >
                 <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
                   <div className="min-w-0">
-                    <div className="flex items-center gap-2 text-sm font-semibold text-gray-900">
+                    <div className="flex items-center gap-2 text-sm font-semibold text-af2-ink">
                       {statusIcon(item.status)}
                       <span>{item.agentName}</span>
-                      <span className="font-normal text-gray-400">·</span>
-                      <span className="font-normal text-gray-600">{item.action}</span>
+                      <span className="font-normal text-af2-ink-4">·</span>
+                      <span className="font-normal text-af2-ink-2">{item.action}</span>
                     </div>
-                    <p className="mt-1 text-sm text-gray-600">{item.summary}</p>
+                    <p className="mt-1 text-sm text-af2-ink-2">{item.summary}</p>
                   </div>
                   <div className="text-left md:text-right">
-                    <p className="font-mono text-sm font-medium text-gray-700">{item.tokenUsage.toLocaleString()} tok</p>
-                    <p className="mt-1 text-xs text-gray-400">{new Date(item.createdAt).toLocaleString()}</p>
+                    <p className="font-mono text-sm font-medium text-af2-ink-2">{item.tokenUsage.toLocaleString()} tok</p>
+                    <p className="mt-1 text-xs text-af2-ink-4">{new Date(item.createdAt).toLocaleString()}</p>
                   </div>
                 </div>
               </article>

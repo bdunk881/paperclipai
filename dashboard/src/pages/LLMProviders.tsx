@@ -25,20 +25,20 @@ interface ProviderMeta {
 }
 
 const PROVIDERS: Record<ProviderName, ProviderMeta> = {
-  openai: { name: "OpenAI", color: "text-green-700", bg: "bg-green-100", abbr: "OAI", logo: "openai.svg" },
-  anthropic: { name: "Anthropic", color: "text-orange-700", bg: "bg-orange-100", abbr: "ANT", logo: "anthropic.svg" },
-  gemini: { name: "Google Gemini", color: "text-blue-700", bg: "bg-blue-100", abbr: "GEM", logo: "google.svg" },
-  mistral: { name: "Mistral", color: "text-purple-700", bg: "bg-purple-100", abbr: "MIS", logo: "mistral.svg" },
-  groq: { name: "Groq", color: "text-emerald-700", bg: "bg-emerald-100", abbr: "GRQ" },
-  fireworks: { name: "Fireworks AI", color: "text-rose-700", bg: "bg-rose-100", abbr: "FWK" },
+  openai: { name: "OpenAI", color: "text-af2-sage", bg: "bg-af2-sage/15", abbr: "OAI", logo: "openai.svg" },
+  anthropic: { name: "Anthropic", color: "text-af2-clay", bg: "bg-af2-clay-soft", abbr: "ANT", logo: "anthropic.svg" },
+  gemini: { name: "Google Gemini", color: "text-af2-ink-blue", bg: "bg-af2-ink-blue/15", abbr: "GEM", logo: "google.svg" },
+  mistral: { name: "Mistral", color: "text-af2-plum", bg: "bg-af2-plum/15", abbr: "MIS", logo: "mistral.svg" },
+  groq: { name: "Groq", color: "text-af2-sage", bg: "bg-af2-sage/15", abbr: "GRQ" },
+  fireworks: { name: "Fireworks AI", color: "text-af2-clay", bg: "bg-af2-clay-soft/60", abbr: "FWK" },
   together: { name: "Together AI", color: "text-fuchsia-700", bg: "bg-fuchsia-100", abbr: "TGT" },
   ollama: { name: "Ollama", color: "text-stone-700", bg: "bg-stone-100", abbr: "OLL" },
-  localai: { name: "LocalAI", color: "text-slate-700", bg: "bg-slate-100", abbr: "LCL" },
-  cohere: { name: "Cohere", color: "text-indigo-700", bg: "bg-indigo-100", abbr: "COH" },
+  localai: { name: "LocalAI", color: "text-af2-ink-2", bg: "bg-af2-paper-2", abbr: "LCL" },
+  cohere: { name: "Cohere", color: "text-af2-clay", bg: "bg-af2-clay-soft", abbr: "COH" },
   perplexity: { name: "Perplexity", color: "text-cyan-700", bg: "bg-cyan-100", abbr: "PPL" },
   xai: { name: "xAI", color: "text-zinc-700", bg: "bg-zinc-100", abbr: "XAI" },
-  deepseek: { name: "DeepSeek", color: "text-teal-700", bg: "bg-teal-100", abbr: "DSK" },
-  bedrock: { name: "AWS Bedrock", color: "text-amber-700", bg: "bg-amber-100", abbr: "AWS" },
+  deepseek: { name: "DeepSeek", color: "text-af2-sage", bg: "bg-af2-sage/15", abbr: "DSK" },
+  bedrock: { name: "AWS Bedrock", color: "text-af2-mustard", bg: "bg-af2-mustard/15", abbr: "AWS" },
   "vertex-ai": { name: "Vertex AI", color: "text-lime-700", bg: "bg-lime-100", abbr: "VTX" },
 };
 
@@ -116,8 +116,8 @@ function ConnectModal({ provider, onClose, onSuccess }: ConnectModalProps) {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-      <div className="bg-white rounded-xl shadow-xl w-full max-w-md mx-4">
-        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
+      <div className="bg-af2-card rounded-xl shadow-xl w-full max-w-md mx-4">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-af2-line">
           <div className="flex items-center gap-3">
             {meta.logo ? (
               <div className={clsx("flex items-center justify-center w-9 h-9 rounded-lg p-1.5", meta.bg)}>
@@ -132,11 +132,11 @@ function ConnectModal({ provider, onClose, onSuccess }: ConnectModalProps) {
                 {meta.abbr}
               </div>
             )}
-            <h2 className="font-semibold text-gray-900">Connect {meta.name}</h2>
+            <h2 className="font-semibold text-af2-ink">Connect {meta.name}</h2>
           </div>
           <button
             onClick={onClose}
-            className="p-1.5 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors"
+            className="p-1.5 rounded-lg text-af2-ink-4 hover:text-af2-ink-2 hover:bg-af2-paper-2 transition-colors"
           >
             <X size={16} />
           </button>
@@ -144,13 +144,13 @@ function ConnectModal({ provider, onClose, onSuccess }: ConnectModalProps) {
 
         <form onSubmit={handleSubmit} className="px-6 py-5 space-y-4">
           {error && (
-            <div className="px-3 py-2 rounded-lg bg-red-50 border border-red-200 text-sm text-red-700">
+            <div className="px-3 py-2 rounded-lg bg-af2-clay-soft/30 border border-af2-clay/30 text-sm text-af2-clay">
               {error}
             </div>
           )}
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
+            <label className="block text-sm font-medium text-af2-ink-2 mb-1">
               Label
             </label>
             <input
@@ -160,16 +160,16 @@ function ConnectModal({ provider, onClose, onSuccess }: ConnectModalProps) {
               placeholder="e.g. My OpenAI Key"
               className={clsx(
                 "w-full px-3 py-2 rounded-lg border text-sm focus:outline-none focus:ring-2 focus:ring-blue-500",
-                fieldErrors.label ? "border-red-300 bg-red-50" : "border-gray-300"
+                fieldErrors.label ? "border-af2-clay/40 bg-af2-clay-soft/30" : "border-af2-line-2"
               )}
             />
             {fieldErrors.label && (
-              <p className="mt-1 text-xs text-red-600">{fieldErrors.label}</p>
+              <p className="mt-1 text-xs text-af2-clay">{fieldErrors.label}</p>
             )}
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
+            <label className="block text-sm font-medium text-af2-ink-2 mb-1">
               API Key
             </label>
             <input
@@ -180,24 +180,24 @@ function ConnectModal({ provider, onClose, onSuccess }: ConnectModalProps) {
               autoComplete="new-password"
               className={clsx(
                 "w-full px-3 py-2 rounded-lg border text-sm focus:outline-none focus:ring-2 focus:ring-blue-500",
-                fieldErrors.apiKey ? "border-red-300 bg-red-50" : "border-gray-300"
+                fieldErrors.apiKey ? "border-af2-clay/40 bg-af2-clay-soft/30" : "border-af2-line-2"
               )}
             />
             {fieldErrors.apiKey && (
-              <p className="mt-1 text-xs text-red-600">{fieldErrors.apiKey}</p>
+              <p className="mt-1 text-xs text-af2-clay">{fieldErrors.apiKey}</p>
             )}
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
+            <label className="block text-sm font-medium text-af2-ink-2 mb-1">
               Model
             </label>
             <select
               value={model}
               onChange={(e) => setModel(e.target.value)}
               className={clsx(
-                "w-full px-3 py-2 rounded-lg border text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white",
-                fieldErrors.model ? "border-red-300 bg-red-50" : "border-gray-300"
+                "w-full px-3 py-2 rounded-lg border text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-af2-card",
+                fieldErrors.model ? "border-af2-clay/40 bg-af2-clay-soft/30" : "border-af2-line-2"
               )}
             >
               {models.map((m) => (
@@ -205,7 +205,7 @@ function ConnectModal({ provider, onClose, onSuccess }: ConnectModalProps) {
               ))}
             </select>
             {fieldErrors.model && (
-              <p className="mt-1 text-xs text-red-600">{fieldErrors.model}</p>
+              <p className="mt-1 text-xs text-af2-clay">{fieldErrors.model}</p>
             )}
           </div>
 
@@ -213,14 +213,14 @@ function ConnectModal({ provider, onClose, onSuccess }: ConnectModalProps) {
             <button
               type="button"
               onClick={onClose}
-              className="flex-1 px-4 py-2 rounded-lg border border-gray-300 text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors"
+              className="flex-1 px-4 py-2 rounded-lg border border-af2-line-2 text-sm font-medium text-af2-ink-2 hover:bg-af2-paper-2/40 transition-colors"
             >
               Cancel
             </button>
             <button
               type="submit"
               disabled={submitting}
-              className="flex-1 px-4 py-2 rounded-lg bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 disabled:opacity-60 transition-colors"
+              className="flex-1 px-4 py-2 rounded-lg bg-af2-ink-blue text-white text-sm font-medium hover:bg-af2-ink-blue disabled:opacity-60 transition-colors"
             >
               {submitting ? "Connecting…" : "Connect"}
             </button>
@@ -261,26 +261,26 @@ function DeleteConfirm({ config, onClose, onSuccess }: DeleteConfirmProps) {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-      <div className="bg-white rounded-xl shadow-xl w-full max-w-sm mx-4 p-6">
-        <h2 className="font-semibold text-gray-900 mb-2">Disconnect provider?</h2>
-        <p className="text-sm text-gray-500 mb-4">
-          This will remove <span className="font-medium text-gray-700">"{config.label}"</span> and
+      <div className="bg-af2-card rounded-xl shadow-xl w-full max-w-sm mx-4 p-6">
+        <h2 className="font-semibold text-af2-ink mb-2">Disconnect provider?</h2>
+        <p className="text-sm text-af2-ink-3 mb-4">
+          This will remove <span className="font-medium text-af2-ink-2">"{config.label}"</span> and
           any workflows using it will stop working.
         </p>
         {error && (
-          <p className="mb-3 text-sm text-red-600">{error}</p>
+          <p className="mb-3 text-sm text-af2-clay">{error}</p>
         )}
         <div className="flex gap-3">
           <button
             onClick={onClose}
-            className="flex-1 px-4 py-2 rounded-lg border border-gray-300 text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors"
+            className="flex-1 px-4 py-2 rounded-lg border border-af2-line-2 text-sm font-medium text-af2-ink-2 hover:bg-af2-paper-2/40 transition-colors"
           >
             Cancel
           </button>
           <button
             onClick={handleDelete}
             disabled={deleting}
-            className="flex-1 px-4 py-2 rounded-lg bg-red-600 text-white text-sm font-medium hover:bg-red-700 disabled:opacity-60 transition-colors"
+            className="flex-1 px-4 py-2 rounded-lg bg-af2-clay-2 text-white text-sm font-medium hover:bg-af2-clay-2 disabled:opacity-60 transition-colors"
           >
             {deleting ? "Removing…" : "Disconnect"}
           </button>
@@ -346,8 +346,8 @@ export default function LLMProviders() {
   return (
     <div className="p-8 max-w-4xl">
       <div className="mb-8">
-        <h1 className="text-2xl font-bold text-gray-900">LLM Providers</h1>
-        <p className="text-gray-500 mt-1">
+        <h1 className="text-2xl font-bold text-af2-ink">LLM Providers</h1>
+        <p className="text-af2-ink-3 mt-1">
           Connect your own LLM API keys to use in workflows.
         </p>
       </div>
@@ -363,7 +363,7 @@ export default function LLMProviders() {
           return (
             <div
               key={providerKey}
-              className="bg-white rounded-xl border border-gray-200 p-5 flex items-start gap-4"
+              className="bg-af2-card rounded-xl border border-af2-line p-5 flex items-start gap-4"
             >
               {meta.logo ? (
                 <div className={clsx("flex items-center justify-center w-11 h-11 rounded-xl p-2 flex-shrink-0", meta.bg)}>
@@ -380,28 +380,28 @@ export default function LLMProviders() {
               )}
               <div className="flex-1 min-w-0">
                 <div className="flex items-center justify-between gap-2 mb-1">
-                  <p className="font-semibold text-gray-900">{meta.name}</p>
+                  <p className="font-semibold text-af2-ink">{meta.name}</p>
                   {isConnected ? (
-                    <span className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-green-100 text-green-700 text-xs font-medium">
+                    <span className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-af2-sage/15 text-af2-sage text-xs font-medium">
                       <CheckCircle2 size={11} />
                       Connected
                     </span>
                   ) : null}
                 </div>
-                <p className="text-xs text-gray-400 mb-3">
+                <p className="text-xs text-af2-ink-4 mb-3">
                   {availableModels.length} models available
                 </p>
                 {isConnected ? (
                   <button
                     onClick={() => setConnectingProvider(providerKey)}
-                    className="text-xs text-blue-600 hover:text-blue-700 font-medium"
+                    className="text-xs text-af2-ink-blue hover:text-af2-ink-blue font-medium"
                   >
                     + Add another ({count} connected)
                   </button>
                 ) : (
                   <button
                     onClick={() => setConnectingProvider(providerKey)}
-                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-600 text-white text-xs font-medium hover:bg-blue-700 transition-colors"
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-af2-ink-blue text-white text-xs font-medium hover:bg-af2-ink-blue transition-colors"
                   >
                     <Plus size={12} />
                     Connect
@@ -415,34 +415,34 @@ export default function LLMProviders() {
 
       {/* Connected configs list */}
       <div>
-        <h2 className="text-base font-semibold text-gray-900 mb-3">Connected Configs</h2>
+        <h2 className="text-base font-semibold text-af2-ink mb-3">Connected Configs</h2>
 
         {loading ? (
-          <div className="bg-white rounded-xl border border-gray-200 px-6 py-10 text-center text-sm text-gray-400">
+          <div className="bg-af2-card rounded-xl border border-af2-line px-6 py-10 text-center text-sm text-af2-ink-4">
             Loading…
           </div>
         ) : error ? (
-          <div className="bg-white rounded-xl border border-red-200 px-6 py-6 text-center text-sm text-red-600">
+          <div className="bg-af2-card rounded-xl border border-af2-clay/30 px-6 py-6 text-center text-sm text-af2-clay">
             {error}
           </div>
         ) : configs.length === 0 ? (
-          <div className="bg-white rounded-xl border border-dashed border-gray-300 px-6 py-12 text-center">
-            <Cpu size={32} className="mx-auto text-gray-300 mb-3" />
-            <p className="text-sm font-medium text-gray-500">No providers connected yet</p>
-            <p className="text-xs text-gray-400 mt-1">
+          <div className="bg-af2-card rounded-xl border border-dashed border-af2-line-2 px-6 py-12 text-center">
+            <Cpu size={32} className="mx-auto text-af2-ink-3 mb-3" />
+            <p className="text-sm font-medium text-af2-ink-3">No providers connected yet</p>
+            <p className="text-xs text-af2-ink-4 mt-1">
               Connect a provider above to start using BYOLLM in your workflows.
             </p>
           </div>
         ) : (
-          <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+          <div className="bg-af2-card rounded-xl border border-af2-line overflow-hidden">
             <table className="w-full text-sm">
               <thead>
-                <tr className="border-b border-gray-100 bg-gray-50">
-                  <th className="text-left px-5 py-3 text-xs font-medium text-gray-500 uppercase tracking-wide">Label</th>
-                  <th className="text-left px-5 py-3 text-xs font-medium text-gray-500 uppercase tracking-wide">Provider</th>
-                  <th className="text-left px-5 py-3 text-xs font-medium text-gray-500 uppercase tracking-wide">Model</th>
-                  <th className="text-left px-5 py-3 text-xs font-medium text-gray-500 uppercase tracking-wide">API Key</th>
-                  <th className="text-left px-5 py-3 text-xs font-medium text-gray-500 uppercase tracking-wide">Default</th>
+                <tr className="border-b border-af2-line bg-af2-paper-2/40">
+                  <th className="text-left px-5 py-3 text-xs font-medium text-af2-ink-3 uppercase tracking-wide">Label</th>
+                  <th className="text-left px-5 py-3 text-xs font-medium text-af2-ink-3 uppercase tracking-wide">Provider</th>
+                  <th className="text-left px-5 py-3 text-xs font-medium text-af2-ink-3 uppercase tracking-wide">Model</th>
+                  <th className="text-left px-5 py-3 text-xs font-medium text-af2-ink-3 uppercase tracking-wide">API Key</th>
+                  <th className="text-left px-5 py-3 text-xs font-medium text-af2-ink-3 uppercase tracking-wide">Default</th>
                   <th className="px-5 py-3" />
                 </tr>
               </thead>
@@ -450,8 +450,8 @@ export default function LLMProviders() {
                 {configs.map((cfg) => {
                   const meta = PROVIDERS[cfg.provider];
                   return (
-                    <tr key={cfg.id} className="hover:bg-gray-50 transition-colors">
-                      <td className="px-5 py-3 font-medium text-gray-900">{cfg.label}</td>
+                    <tr key={cfg.id} className="hover:bg-af2-paper-2/40 transition-colors">
+                      <td className="px-5 py-3 font-medium text-af2-ink">{cfg.label}</td>
                       <td className="px-5 py-3">
                         <div className="flex items-center gap-2">
                           {meta.logo ? (
@@ -472,8 +472,8 @@ export default function LLMProviders() {
                           </span>
                         </div>
                       </td>
-                      <td className="px-5 py-3 text-gray-600 font-mono text-xs">{cfg.model}</td>
-                      <td className="px-5 py-3 text-gray-400 font-mono text-xs">{getMaskedApiKey(cfg)}</td>
+                      <td className="px-5 py-3 text-af2-ink-2 font-mono text-xs">{cfg.model}</td>
+                      <td className="px-5 py-3 text-af2-ink-4 font-mono text-xs">{getMaskedApiKey(cfg)}</td>
                       <td className="px-5 py-3">
                         <button
                           onClick={() => !cfg.isDefault && handleSetDefault(cfg.id)}
@@ -482,8 +482,8 @@ export default function LLMProviders() {
                           className={clsx(
                             "p-1 rounded-lg transition-colors",
                             cfg.isDefault
-                              ? "text-yellow-500 cursor-default"
-                              : "text-gray-300 hover:text-yellow-400 disabled:opacity-50"
+                              ? "text-af2-mustard cursor-default"
+                              : "text-af2-ink-3 hover:text-af2-mustard disabled:opacity-50"
                           )}
                         >
                           <Star size={16} fill={cfg.isDefault ? "currentColor" : "none"} />
@@ -493,7 +493,7 @@ export default function LLMProviders() {
                         <button
                           onClick={() => setDeletingConfig(cfg)}
                           title="Disconnect"
-                          className="p-1.5 rounded-lg text-gray-400 hover:text-red-500 hover:bg-red-50 transition-colors"
+                          className="p-1.5 rounded-lg text-af2-ink-4 hover:text-af2-clay hover:bg-af2-clay-soft/30 transition-colors"
                         >
                           <Trash2 size={15} />
                         </button>

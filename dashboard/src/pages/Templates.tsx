@@ -85,32 +85,32 @@ export default function Templates({
   }
 
   return (
-    <div className="min-h-full bg-gray-50 p-6 md:p-8">
+    <div className="min-h-full bg-af2-paper-2/40 p-6 md:p-8">
       <div className="mx-auto max-w-7xl">
         <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
           <div>
-            <h1 className="text-2xl font-bold text-gray-900">Workflow Templates</h1>
-            <p className="mt-1 text-sm text-gray-500">
+            <h1 className="text-2xl font-bold text-af2-ink">Workflow Templates</h1>
+            <p className="mt-1 text-sm text-af2-ink-3">
               Start from a live workflow template, then open it in the builder to customize and deploy.
             </p>
           </div>
           <Link
             to="/builder"
-            className="inline-flex items-center gap-2 rounded-2xl bg-brand-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-brand-700"
+            className="inline-flex items-center gap-2 rounded-2xl bg-af2-clay px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-af2-clay-2"
           >
             Open Builder
             <ArrowRight size={14} />
           </Link>
         </div>
 
-        <div className="mt-6 rounded-3xl border border-gray-200 bg-white p-4 shadow-sm">
+        <div className="mt-6 rounded-3xl border border-af2-line bg-af2-card p-4 shadow-sm">
           <div className="flex flex-col gap-3 md:flex-row md:items-center">
             <div className="relative flex-1">
-              <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+              <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-af2-ink-4" />
               <input
                 value={query}
                 onChange={(event) => setQuery(event.target.value)}
-                className="w-full rounded-2xl border border-gray-200 px-3 py-3 pl-9 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/20"
+                className="w-full rounded-2xl border border-af2-line px-3 py-3 pl-9 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/20"
                 placeholder="Search templates..."
               />
             </div>
@@ -121,8 +121,8 @@ export default function Templates({
                   onClick={() => setCategory(option)}
                   className={`rounded-full px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.14em] transition ${
                     category === option
-                      ? "bg-slate-900 text-white"
-                      : "border border-gray-200 text-gray-600 hover:border-gray-300"
+                      ? "bg-af2-ink text-white"
+                      : "border border-af2-line text-af2-ink-2 hover:border-af2-line-2"
                   }`}
                 >
                   {option}
@@ -134,38 +134,38 @@ export default function Templates({
 
         <div className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
           {filtered.map((template) => (
-            <article key={template.id} className="rounded-3xl border border-gray-200 bg-white p-5 shadow-sm">
+            <article key={template.id} className="rounded-3xl border border-af2-line bg-af2-card p-5 shadow-sm">
               <div className="flex items-start justify-between gap-3">
                 <div>
-                  <h2 className="text-lg font-semibold text-gray-900">{template.name}</h2>
-                  <p className="mt-1 text-xs font-semibold uppercase tracking-[0.16em] text-gray-400">
+                  <h2 className="text-lg font-semibold text-af2-ink">{template.name}</h2>
+                  <p className="mt-1 text-xs font-semibold uppercase tracking-[0.16em] text-af2-ink-4">
                     {template.category}
                   </p>
                 </div>
-                <div className="rounded-2xl bg-brand-50 p-2 text-brand-600">
+                <div className="rounded-2xl bg-af2-clay-soft/40 p-2 text-af2-clay">
                   <Layers3 size={16} />
                 </div>
               </div>
 
-              <p className="mt-4 min-h-[3rem] text-sm leading-6 text-gray-600">
+              <p className="mt-4 min-h-[3rem] text-sm leading-6 text-af2-ink-2">
                 {template.description || "No description provided for this template yet."}
               </p>
 
-              <div className="mt-5 grid grid-cols-2 gap-3 rounded-2xl border border-gray-100 bg-gray-50 px-4 py-3 text-sm">
+              <div className="mt-5 grid grid-cols-2 gap-3 rounded-2xl border border-af2-line bg-af2-paper-2/40 px-4 py-3 text-sm">
                 <div>
-                  <p className="text-xs font-semibold uppercase tracking-[0.16em] text-gray-400">Version</p>
-                  <p className="mt-1 font-medium text-gray-700">{template.version}</p>
+                  <p className="text-xs font-semibold uppercase tracking-[0.16em] text-af2-ink-4">Version</p>
+                  <p className="mt-1 font-medium text-af2-ink-2">{template.version}</p>
                 </div>
                 <div>
-                  <p className="text-xs font-semibold uppercase tracking-[0.16em] text-gray-400">Template ID</p>
-                  <p className="mt-1 truncate font-mono text-xs text-gray-600">{template.id}</p>
+                  <p className="text-xs font-semibold uppercase tracking-[0.16em] text-af2-ink-4">Template ID</p>
+                  <p className="mt-1 truncate font-mono text-xs text-af2-ink-2">{template.id}</p>
                 </div>
               </div>
 
-              <div className="mt-5 flex items-center justify-between gap-3 border-t border-gray-100 pt-4">
+              <div className="mt-5 flex items-center justify-between gap-3 border-t border-af2-line pt-4">
                 <Link
                   to={`/builder/${template.id}`}
-                  className="inline-flex items-center gap-1.5 text-sm font-semibold text-brand-600 hover:text-brand-700"
+                  className="inline-flex items-center gap-1.5 text-sm font-semibold text-af2-clay hover:text-af2-clay"
                 >
                   Open in builder
                   <ArrowRight size={14} />
@@ -176,9 +176,9 @@ export default function Templates({
         </div>
 
         {filtered.length === 0 ? (
-          <div className="mt-8 rounded-3xl border border-dashed border-gray-300 bg-white px-6 py-12 text-center">
-            <p className="text-sm font-medium text-gray-600">No templates match this filter.</p>
-            <p className="mt-2 text-xs text-gray-400">
+          <div className="mt-8 rounded-3xl border border-dashed border-af2-line-2 bg-af2-card px-6 py-12 text-center">
+            <p className="text-sm font-medium text-af2-ink-2">No templates match this filter.</p>
+            <p className="mt-2 text-xs text-af2-ink-4">
               Try a different category or open the builder to create a new workflow.
             </p>
           </div>

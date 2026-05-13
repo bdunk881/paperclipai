@@ -109,7 +109,10 @@ const PRICING_TIERS: Array<{
   bullets: string[];
   cta: string;
   ctaHref?: string;
-  ctaPriceTier?: "starter" | "growth" | "scale";
+  // Maps to backend `PRICING_TIERS` keys in `src/billing/stripeClient.ts`.
+  // Free Tinker tier links to /signup (no checkout). Team → automate ($49).
+  // Studio → mailto (sales-assisted).
+  ctaPriceTier?: "flow" | "automate" | "scale";
   featured?: boolean;
 }> = [
   {
@@ -139,7 +142,7 @@ const PRICING_TIERS: Array<{
       "Per-agent budgets",
     ],
     cta: "Try Team",
-    ctaPriceTier: "growth",
+    ctaPriceTier: "automate",
     featured: true,
   },
   {

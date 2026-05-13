@@ -218,7 +218,7 @@ describe("POST /api/llm-configs", () => {
       feature: "byokAllowed",
       limit: false,
       currentTier: "explore",
-      upgradeTo: "flow",
+      upgradeTo: "automate",
     });
   });
 });

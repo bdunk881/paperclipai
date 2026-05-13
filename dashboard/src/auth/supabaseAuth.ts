@@ -158,9 +158,7 @@ export async function getSupabaseStoredSession(): Promise<StoredAuthSession | nu
     }
 
     if (code) {
-      const { error: exchangeError } = await client.auth.exchangeCodeForSession(
-        window.location.href,
-      );
+      const { error: exchangeError } = await client.auth.exchangeCodeForSession(code);
       if (exchangeError) {
         throw new Error(exchangeError.message);
       }

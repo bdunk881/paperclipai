@@ -50,6 +50,7 @@ import {
   listClassificationDecisions,
 } from "./engine/classificationLog";
 import { requireAuth, requireAuthOrQaBypass, AuthenticatedRequest } from "./auth/authMiddleware";
+import { requireRole } from "./middleware/requireRole";
 import socialAuthRoutes from "./auth/socialAuthRoutes";
 import stripeWebhookRoutes from "./billing/stripeWebhook";
 import apolloWebhookRoutes from "./integrations/apollo-attio/webhookRoute";
@@ -400,29 +401,29 @@ app.use("/api/public/landing", landingPublicApiRoutes);
 // ---------------------------------------------------------------------------
 // LLM Config API — BYOLLM provider credentials
 // ---------------------------------------------------------------------------
-app.use("/api/llm-configs", requireAuth, workspaceResolver, llmConfigRoutes);
+app.use("/api/llm-configs", requireAuth, workspaceResolver, requireRole("admin", "developer"), llmConfigRoutes);
 
 // ---------------------------------------------------------------------------
 // MCP Registry API — register and discover MCP server connections
 // ---------------------------------------------------------------------------
-app.use("/api/mcp/servers", requireAuth, workspaceResolver, mcpRoutes);
+app.use("/api/mcp/servers", requireAuth, workspaceResolver, requireRole("admin", "developer"), mcpRoutes);
 
 // ---------------------------------------------------------------------------
 // Memory API — persistent context memory store for agents/workflows
 // ---------------------------------------------------------------------------
-app.use("/api/memory", requireAuth, workspaceResolver, memoryRoutes);
-app.use("/api/agents/:agentId/memory", requireAuth, workspaceResolver, agentMemoryRoutes);
-app.use("/api/agents", requireAuth, workspaceResolver, agentRoutes);
+app.use("/api/memory", requireAuth, workspaceResolver, requireRole("admin", "developer"), memoryRoutes);
+app.use("/api/agents/:agentId/memory", requireAuth, workspaceResolver, requireRole("admin", "developer"), agentMemoryRoutes);
+app.use("/api/agents", requireAuth, workspaceResolver, requireRole("admin", "developer"), agentRoutes);
 app.use("/api/integrations/apollo", apolloRoutes);
 
 // Routines stub — returns empty list until a full routines store is implemented.
-app.get("/api/routines", requireAuth, (_req, res) => {
+app.get("/api/routines", requireAuth, workspaceResolver, requireRole("admin", "developer"), (_req, res) => {
   res.json({ routines: [] });
 });
-app.use("/api/knowledge", requireAuth, workspaceResolver, knowledgeMutationRateLimiter, knowledgeRoutes);
+app.use("/api/knowledge", requireAuth, workspaceResolver, requireRole("admin", "developer"), knowledgeMutationRateLimiter, knowledgeRoutes);
 app.use("/api/integrations/catalog", integrationCatalogRoutes);
 app.use("/api/integrations/oauth2", integrationOAuthCallbackRoutes);
-app.use("/api/integrations", requireAuth, workspaceResolver, integrationRoutes);
+app.use("/api/integrations", requireAuth, workspaceResolver, requireRole("admin", "developer"), integrationRoutes);
 app.use("/api/webhooks/relay", webhookRelayRouter);
 app.use("/api/integrations", oauthBridgeRoutes);
 app.use("/api/integrations/slack", slackRoutes);
@@ -441,16 +442,16 @@ app.use("/api/integrations/agent-catalog", agentCatalogRoutes);
 app.use("/api/connectors/google-workspace", googleWorkspaceConnectorRoutes);
 // user-scoped: workspace management creates/lists workspaces and cannot itself be workspace-gated
 app.use("/api/workspaces", requireAuth, workspaceRoutes);
-app.use("/api/missions", requireAuth, workspaceResolver, llmEndpointRateLimiter, missionRoutes);
-app.use("/api/companies", requireAuth, workspaceResolver, companyRoutes);
-app.use("/api/control-plane", requireAuth, workspaceResolver, controlPlaneRoutes);
-app.use("/api/hitl", requireAuth, workspaceResolver, hitlRoutes);
-app.use("/api/observability", requireAuth, workspaceResolver, observabilityRoutes);
-app.use("/api/reporting", requireAuth, workspaceResolver, reportRoutes);
-app.use("/api/tickets", requireAuth, workspaceResolver, ticketRoutes);
-app.use("/api/ticket-sync", requireAuth, workspaceResolver, ticketSyncRoutes);
-app.use("/api/notifications", requireAuth, workspaceResolver, notificationRoutes);
-app.use("/api/approval-policies", requireAuth, workspaceResolver, approvalPolicyRoutes);
+app.use("/api/missions", requireAuth, workspaceResolver, requireRole("admin", "developer"), llmEndpointRateLimiter, missionRoutes);
+app.use("/api/companies", requireAuth, workspaceResolver, requireRole("admin", "developer"), companyRoutes);
+app.use("/api/control-plane", requireAuth, workspaceResolver, requireRole("admin", "operator"), controlPlaneRoutes);
+app.use("/api/hitl", requireAuth, workspaceResolver, requireRole("admin", "approver", "operator"), hitlRoutes);
+app.use("/api/observability", requireAuth, workspaceResolver, requireRole("admin", "operator"), observabilityRoutes);
+app.use("/api/reporting", requireAuth, workspaceResolver, requireRole("admin", "operator"), reportRoutes);
+app.use("/api/tickets", requireAuth, workspaceResolver, requireRole("admin", "operator"), ticketRoutes);
+app.use("/api/ticket-sync", requireAuth, workspaceResolver, requireRole("admin", "operator"), ticketSyncRoutes);
+app.use("/api/notifications", requireAuth, workspaceResolver, requireRole("admin", "operator"), notificationRoutes);
+app.use("/api/approval-policies", requireAuth, workspaceResolver, requireRole("admin", "approver", "operator"), approvalPolicyRoutes);
 
 // ---------------------------------------------------------------------------
 // Auth API — identity and social callback endpoints
@@ -813,7 +814,7 @@ Rules:
  * Uses the authenticated JWT subject to resolve the user's LLM config.
  * Returns: { steps: WorkflowStep[] }
  */
-app.post("/api/workflows/generate", requireAuth, workspaceResolver, llmEndpointRateLimiter, async (req: WorkspaceAwareRequest, res) => {
+app.post("/api/workflows/generate", requireAuth, workspaceResolver, requireRole("admin", "developer"), llmEndpointRateLimiter, async (req: WorkspaceAwareRequest, res) => {
   const { description, llmConfigId } = req.body as {
     description?: unknown;
     llmConfigId?: unknown;

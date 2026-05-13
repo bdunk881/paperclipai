@@ -63,13 +63,20 @@ jest.mock("./auth/authMiddleware", () => ({
 }));
 jest.mock("./middleware/workspaceResolver", () => ({
   createWorkspaceResolver: () =>
-    (_req: unknown, _res: unknown, next: () => void) => next(),
+    (req: Record<string, unknown>, _res: unknown, next: () => void) => {
+      req.workspace = { id: "test-workspace-id", role: "owner" };
+      req.workspaceId = "test-workspace-id";
+      next();
+    },
   createExplicitWorkspaceHeaderResolver: () =>
-    (req: { headers?: Record<string, string | undefined>; workspaceId?: string }, _res: unknown, next: () => void) => {
+    (req: { headers?: Record<string, string | undefined>; workspaceId?: string; workspace?: { id: string; role: string } }, _res: unknown, next: () => void) => {
+      // Preserve original workspaceId scoping: only set from header when present.
+      // Always set req.workspace so requireRole() can check the role.
       const explicitWorkspaceId = req.headers?.["x-workspace-id"]?.trim();
       if (explicitWorkspaceId) {
         req.workspaceId = explicitWorkspaceId;
       }
+      req.workspace = { id: explicitWorkspaceId ?? "test-workspace-id", role: "owner" };
       next();
     },
 }));

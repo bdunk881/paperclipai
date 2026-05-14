@@ -38,7 +38,7 @@ Bring your own LLM keys (Anthropic, OpenAI, Google, Bedrock, Azure) or use AutoF
 | Layer | Service |
 |---|---|
 | Frontend hosting | Cloudflare Pages/Workers |
-| Backend compute | Fly.io (`autoflow-fastapi-{dev,staging,production}`) |
+| Backend compute | Fly.io (`autoflow-api-{dev,staging,production}` — single TS Express runtime, src/app.ts. Public hostnames: `api.helloautoflow.com`, `staging-api.helloautoflow.com`, `dev-api.helloautoflow.com`.) |
 | Database + auth (CIAM) | Supabase |
 | Cache + queue broker | Upstash Redis |
 | Object storage | Cloudflare R2 |

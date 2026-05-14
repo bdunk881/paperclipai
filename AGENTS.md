@@ -58,7 +58,7 @@ Compress a sprawling but mature open-source codebase into one sharp customer loo
 | Layer | Service |
 |---|---|
 | Frontend hosting | Cloudflare Pages/Workers |
-| Backend compute | Fly.io (`autoflow-fastapi-{dev,staging,production}`) |
+| Backend compute | Fly.io (`autoflow-api-{dev,staging,production}` — consolidated TS Express per the [P2.5 backend consolidation](https://linear.app/helloautoflow/project/p25-backend-consolidation-ts-express-on-fly-a2f0e7006ec9). Legacy `autoflow-fastapi-*` apps retired in HEL-97.) |
 | Database + auth (CIAM) | Supabase |
 | Cache + queue broker | Upstash Redis (BullMQ in P3) |
 | Object storage | Cloudflare R2 |
@@ -116,9 +116,9 @@ The single source of truth is [`docs/glossary.md`](docs/glossary.md). Every API 
 
 | Env | Supabase project | Fly app | Cloudflare Pages | Notes |
 |---|---|---|---|---|
-| Dev | `autoflow-dev` (isolated) | `autoflow-fastapi-dev` | `autoflow-dashboard` (preview) | Safe to break. |
-| Staging | Production Supabase project (UAT data preserved) | `autoflow-fastapi-staging` | `autoflow-dashboard-staging` | Beta accounts live here. |
-| Production | Production Supabase project | `autoflow-fastapi-production` | `autoflow-dashboard` | Real customers (when they arrive). |
+| Dev | `autoflow-dev` (isolated) | `autoflow-api-dev` (TS Express; `dev-api.helloautoflow.com`) | `autoflow-dashboard` (preview) | Safe to break. |
+| Staging | Production Supabase project (UAT data preserved) | `autoflow-api-staging` (TS Express; `staging-api.helloautoflow.com`) | `autoflow-dashboard-staging` | Beta accounts live here. |
+| Production | Production Supabase project | `autoflow-api-production` (TS Express; `api.helloautoflow.com`) | `autoflow-dashboard` | Real customers (when they arrive). |
 
 **Never point dev code or dev deploy secrets at the production Supabase project.** Single most common foot-gun in this repo.
 
@@ -236,6 +236,36 @@ Per-page port is tracked under [HEL-32](https://linear.app/helloautoflow/issue/H
 - **Persistent agent context for Brad's local machine** lives at `C:\Users\bdunk\CLAUDE.md` (machine-level setup) and `C:\Users\bdunk\.claude\memory\*.md` (auto-memory).
 - **Project-level decisions** for AutoFlow live in this file (`AGENTS.md`) and in [`docs/`](docs/).
 - **Tool-specific shims**: `CLAUDE.md` is a 3-line pointer to this file. `.cursor/rules/00-agents.mdc` loads this file as Cursor context. Codex reads `AGENTS.md` natively.
+
+---
+
+## Cross-model agents + the three-layer memory model
+
+Shipped via the [P2.5 — Backend consolidation](https://linear.app/helloautoflow/project/p25-backend-consolidation-ts-express-on-fly-a2f0e7006ec9). The runtime architecture:
+
+### Tier routing (HEL-81)
+
+Each workspace stores a `tier_routing` JSONB matrix mapping logical tiers → concrete `{provider, model, credential_id}`. Five tiers: `small / medium / large / embeddings / vision`. Smart defaults inferred from connected BYOK providers; per-agent override via `agents.tier_overrides`. Resolver: `src/llmConfig/tierRouter.ts:resolveTier()`. Every downstream feature (triage, agent reasoning, embeddings) references tiers, never specific models — so a Claude-only workspace and an OpenAI-only workspace use the same code path.
+
+### Provider adapters (HEL-82)
+
+`src/llmConfig/adapters/` normalizes provider wire formats behind a single `NormalizedRequest` / `NormalizedResponse` shape. v1 ships Anthropic + OpenAI; Gemini + Mistral are follow-up tickets. Tool calls + JSON-schema structured outputs work uniformly across providers.
+
+### Three-layer memory (HEL-86 → HEL-91)
+
+| Layer | Table | Role |
+|---|---|---|
+| 1 — Instructions | `workspace_instructions` | Human-authored markdown, always inlined into agent system prompts at boot. Also stores per-agent `triage_policy` rows. |
+| 2 — Knowledge | `knowledge_items` | Durable RAG-retrievable facts: uploaded docs, connector pulls, synthesized patterns. pgvector. Conflict via `superseded_by`. |
+| 3 — Episodes | `agent_episodes` | Append-only log of observations / action results / reflections / escalations. 90-day TTL. Reflection (HEL-91) graduates patterns to Layer 2. |
+
+Two visibility scopes only: `autoflow_curated` (global, AutoFlow-managed) and `workspace`. `mission_id` + `author_agent_id` are retrieval-relevance tags, **never** visibility walls — memory is shared across all agents in a workspace by default.
+
+The retrieval ranker (HEL-89) is org-chart-aware: a subagent's manager's memories rank higher than a stranger agent's. Generic vector retrieval treats agents as isolated; AutoFlow's are employees with reporting lines.
+
+### Event-driven wake-ups (HEL-94)
+
+Heartbeat polling is too expensive. Each potential wake source (scheduled cron, inbound webhook, @-mention, approval resolution, direct user message, upstream completion) publishes to `wake_events` → triage layer applies the agent's own `triage_policy` → `ACT / DEFER / IGNORE / ESCALATE` decision persisted back. The triage call uses the **agent's own authored policy** executed cheaply (tier=small), not generic external judgment. ACTed events kick off real agent boots.
 
 ---
 

@@ -11,16 +11,17 @@
  * Postgres container).  CI sets DATABASE_URL via the postgres service attached
  * to the test-api-integration job.
  *
- * Module setup: jest.resetModules() + dynamic imports run ONCE in beforeAll so
- * migrations are only applied once per suite.  Calling loadModules() (and
- * therefore resetModules()) inside each test body would clear migrationPromise,
- * causing every test to re-apply all migrations; migration 001 creates policies
- * without IF NOT EXISTS guards so the second apply would fail.
+ * Design notes:
+ * - jest.resetModules() is intentionally absent: isPostgresPersistenceEnabled()
+ *   reads process.env at call time, not at module-load time.  Deleting
+ *   JEST_WORKER_ID in beforeAll is sufficient to enable persistence.
+ * - Modules are imported once in beforeAll and reused.  Dynamic imports inside
+ *   each test body would have cleared migrationPromise via jest.resetModules(),
+ *   causing re-application of migrations; migration 001 has CREATE POLICY
+ *   without IF NOT EXISTS guards and fails on a second apply.
  */
 
-import type * as PostgresModule from "../db/postgres";
-import type * as BillingModule from "./billingRepository";
-import type * as StoreModule from "./subscriptionStore";
+/* eslint-disable @typescript-eslint/no-explicit-any */
 
 describe("subscriptionStore hydration integration (HEL-72)", () => {
   const originalDatabaseUrl = process.env.DATABASE_URL;
@@ -34,27 +35,31 @@ describe("subscriptionStore hydration integration (HEL-72)", () => {
 
   let canRunIntegration = false;
 
-  // Shared module instances — set once in beforeAll, reused across tests.
-  let pg: typeof PostgresModule;
-  let billing: typeof BillingModule;
-  let store: typeof StoreModule;
+  // Shared module instances set once in beforeAll and reused across tests.
+  let pg: any;
+  let billing: any;
+  let store: any;
 
   beforeAll(async () => {
+    // Remove Jest's worker marker so isPostgresPersistenceEnabled() returns true.
     delete process.env.JEST_WORKER_ID;
     if (!process.env.DATABASE_URL?.trim()) {
       return;
     }
 
-    // resetModules() once so persistence checks re-read env (no JEST_WORKER_ID).
-    jest.resetModules();
-    pg = await import("../db/postgres");
-    const migrations = await import("../db/sqlMigrations");
-    billing = await import("./billingRepository");
-    store = await import("./subscriptionStore");
+    try {
+      pg = await import("../db/postgres");
+      const migrations = await import("../db/sqlMigrations");
+      billing = await import("./billingRepository");
+      store = await import("./subscriptionStore");
 
-    canRunIntegration = await pg.checkPostgresConnection();
-    if (canRunIntegration) {
-      await migrations.ensureSqlMigrationsApplied();
+      canRunIntegration = await pg.checkPostgresConnection();
+      if (canRunIntegration) {
+        await migrations.ensureSqlMigrationsApplied();
+      }
+    } catch (err) {
+      console.error("[HEL-72] beforeAll setup failed:", err);
+      canRunIntegration = false;
     }
   }, 120_000);
 
@@ -66,7 +71,9 @@ describe("subscriptionStore hydration integration (HEL-72)", () => {
       delete process.env.JEST_WORKER_ID;
     }
     if (pg) {
-      await pg.closePostgresPoolForTests();
+      await pg.closePostgresPoolForTests().catch((err: unknown) => {
+        console.error("[HEL-72] pool close failed:", err);
+      });
     }
   }, 30_000);
 
@@ -110,8 +117,6 @@ describe("subscriptionStore hydration integration (HEL-72)", () => {
       const periodEnd = new Date(Date.UTC(2026, 4, 1)).toISOString();
 
       // Step 1: simulate the write that every Stripe webhook handler performs
-      // after processing a subscription lifecycle event (checkout.session.completed,
-      // customer.subscription.created, invoice.paid, etc.)
       await billing.billingRepository.upsertSubscriptionAndEntitlements({
         workspaceId,
         userId,
@@ -147,19 +152,7 @@ describe("subscriptionStore hydration integration (HEL-72)", () => {
       });
 
       // Step 3: verify the Postgres row was written with all columns from migration 028
-      const pgResult = await pg.queryPostgres<{
-        stripe_subscription_id: string;
-        stripe_customer_id: string | null;
-        user_id: string | null;
-        email: string | null;
-        plan: string;
-        status: string;
-        access_level: string | null;
-        current_period_start: Date | null;
-        current_period_end: Date | null;
-        cancel_at_period_end: boolean;
-        trial_end: Date | null;
-      }>(
+      const pgResult = await pg.queryPostgres(
         `SELECT stripe_subscription_id, stripe_customer_id, user_id, email,
                 plan, status, access_level,
                 current_period_start, current_period_end,

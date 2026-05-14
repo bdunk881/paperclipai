@@ -30,6 +30,7 @@ import AuthCallback from "./pages/AuthCallback";
 import BudgetDashboard from "./pages/BudgetDashboard";
 import CheckoutSuccess from "./pages/CheckoutSuccess";
 import Hire from "./pages/Hire";
+import WorkspaceMemory from "./pages/WorkspaceMemory";
 import ConnectorHealth from "./pages/ConnectorHealth";
 import Dashboard from "./pages/Dashboard";
 import ExecutionLogs from "./pages/ExecutionLogs";
@@ -310,6 +311,8 @@ const routes: RouteObject[] = [
       { path: "agents/team/:teamId", element: <AgentTeamDetail /> },
       // HEL-23: Hire page — mission intake. Lives under the Workforce pillar.
       { path: "hire", element: <Hire /> },
+      // HEL-90/92: Workspace memory (instructions + knowledge + episodes)
+      { path: "settings/memory", element: <WorkspaceMemory /> },
       { path: "approvals", element: <Approvals /> },
       { path: "integrations", element: <Integrations /> },
       { path: "integrations/health", element: <ConnectorHealth /> },

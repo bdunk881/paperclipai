@@ -1,0 +1,125 @@
+name: Deploy TS Express API to Fly (staging)
+
+# HEL-95 — deploys the consolidated AutoFlow Express backend to
+# `autoflow-api-staging`. Runs in parallel with the legacy
+# `autoflow-fastapi-staging` deploy until HEL-97 cleanup retires it.
+#
+# Hostname: staging-api.helloautoflow.com (custom domain on this Fly app
+# after DNS swap).
+
+on:
+  push:
+    branches: [staging]
+    paths:
+      - "src/**"
+      - "docker/api/**"
+      - "fly.api.staging.toml"
+      - "package.json"
+      - "package-lock.json"
+      - "tsconfig.json"
+      - ".github/workflows/deploy-fly-api-staging.yml"
+      - "infra/scripts/fly_api_smoke.sh"
+      - "migrations/**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  deployments: write
+
+concurrency:
+  group: deploy-fly-api-staging
+  cancel-in-progress: false
+
+env:
+  FLY_APP: autoflow-api-staging
+  FLY_REGION: ord
+
+jobs:
+  validate:
+    name: Validate backend build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx tsc --noEmit
+      - run: npx jest --config jest.config.cjs --runInBand --testPathIgnorePatterns="dashboard"
+        env:
+          AUTOFLOW_ALLOW_INMEMORY: "true"
+          NODE_ENV: test
+
+  deploy:
+    name: Deploy to Fly
+    runs-on: ubuntu-latest
+    needs: [validate]
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Pull staging secrets from Infisical
+        uses: Infisical/secrets-action@v1.0.9
+        with:
+          method: universal
+          client-id: ${{ secrets.INFISICAL_CLIENT_ID }}
+          client-secret: ${{ secrets.INFISICAL_CLIENT_SECRET }}
+          project-slug: auto-flow-va-pt
+          env-slug: staging
+
+      - name: Verify required env vars
+        run: |
+          set -euo pipefail
+          for v in FLY_API_TOKEN INFISICAL_PROJECT_ID INFISICAL_TOKEN_STAGING; do
+            if [[ -z "${!v:-}" ]]; then
+              echo "::error::Missing required secret: $v"
+              exit 1
+            fi
+          done
+
+      - uses: superfly/flyctl-actions/setup-flyctl@master
+
+      - name: Ensure Fly app exists
+        env:
+          FLY_API_TOKEN: ${{ env.FLY_API_TOKEN }}
+        run: |
+          set -euo pipefail
+          if ! flyctl apps list | grep -q "^${FLY_APP}\b"; then
+            flyctl apps create "${FLY_APP}" --org personal
+          fi
+
+      - name: Sync Fly machine-level secrets
+        env:
+          FLY_API_TOKEN: ${{ env.FLY_API_TOKEN }}
+        run: |
+          flyctl secrets set \
+            INFISICAL_PROJECT_ID="${INFISICAL_PROJECT_ID}" \
+            INFISICAL_TOKEN="${INFISICAL_TOKEN_STAGING}" \
+            --app "${FLY_APP}" \
+            --stage
+
+      - name: Deploy
+        env:
+          FLY_API_TOKEN: ${{ env.FLY_API_TOKEN }}
+        run: |
+          flyctl deploy \
+            --config fly.api.staging.toml \
+            --remote-only \
+            --build-arg BUILD_SHA="${{ github.sha }}" \
+            --build-arg BUILD_DATE="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+
+      - name: Smoke test
+        env:
+          FLY_API_TOKEN: ${{ env.FLY_API_TOKEN }}
+          FLY_API_SMOKE_ORIGIN: https://staging.app.helloautoflow.com
+        run: |
+          bash infra/scripts/fly_api_smoke.sh "https://${FLY_APP}.fly.dev"
+
+      - name: Summarize
+        run: |
+          {
+            echo "## Deploy: ${FLY_APP}"
+            echo
+            echo "- Health: $(curl -s -o /dev/null -w '%{http_code}' https://${FLY_APP}.fly.dev/health)"
+            echo "- Custom domain (post-cutover): https://staging-api.helloautoflow.com"
+          } >> "$GITHUB_STEP_SUMMARY"

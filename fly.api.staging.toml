@@ -1,0 +1,45 @@
+# Fly.io config for the TS Express backend, STAGING environment (HEL-95).
+#
+# Runs the consolidated AutoFlow API (src/app.ts) deployed via docker/api/Dockerfile.
+# Public hostname: staging-api.helloautoflow.com (Cloudflare CNAME to
+# autoflow-api-staging.fly.dev, Fly cert allocated separately).
+#
+# Replaces autoflow-fastapi-staging (the relay shim from the aborted Phase-3
+# cutover). The FastAPI app stays running in parallel during cutover; the DNS
+# swap is the cutover moment (see infra/runbooks/fly-api-dev.md for the
+# corresponding dev runbook).
+
+app = "autoflow-api-staging"
+primary_region = "ord"
+
+[build]
+  dockerfile = "docker/api/Dockerfile"
+
+[env]
+  ALLOWED_ORIGINS = "https://staging.app.helloautoflow.com,https://staging.helloautoflow.com"
+  APP_ENV = "staging"
+  INFISICAL_ENV = "staging"
+  PORT = "8080"
+  NODE_ENV = "production"
+  # AUTOFLOW_ALLOW_INMEMORY intentionally unset — HEL-80 enforces double-locked
+  # production safety. The server will fail-fast if Postgres is unreachable.
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = "off"
+  auto_start_machines = true
+  min_machines_running = 1
+  processes = ["app"]
+
+  [[http_service.checks]]
+    interval = "15s"
+    timeout = "5s"
+    grace_period = "20s"
+    method = "GET"
+    path = "/health"
+
+[vm]
+  cpu_kind = "shared"
+  cpus = 2
+  memory = "1024mb"

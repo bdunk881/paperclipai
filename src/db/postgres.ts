@@ -9,8 +9,27 @@ export function getRuntimeEnvironment(env: NodeJS.ProcessEnv = process.env): str
   return (env.NODE_ENV ?? "development").trim().toLowerCase();
 }
 
+/**
+ * Whether process-local (in-memory) persistence is permitted as a fallback for
+ * stores that haven't been wired to Postgres yet, or when DATABASE_URL is
+ * unset.
+ *
+ * Double-locked per HEL-80: BOTH `NODE_ENV` must be `development` or `test`
+ * AND `AUTOFLOW_ALLOW_INMEMORY` must be exactly the string `"true"`. The
+ * second gate exists so a production deploy that accidentally inherits
+ * `NODE_ENV=development` (or is left unset) cannot silently fall through to
+ * in-memory storage — the operator would have to make *two* misconfiguration
+ * mistakes for the fallback to trip.
+ *
+ * Jest sets `AUTOFLOW_ALLOW_INMEMORY=true` via `jest.env.cjs` so existing
+ * tests continue to work. Local dev should opt in via the env var (documented
+ * in `.env.local.example`).
+ */
 export function inMemoryAllowed(env: NodeJS.ProcessEnv = process.env): boolean {
-  return IN_MEMORY_ALLOWED_ENVIRONMENTS.has(getRuntimeEnvironment(env));
+  if (!IN_MEMORY_ALLOWED_ENVIRONMENTS.has(getRuntimeEnvironment(env))) {
+    return false;
+  }
+  return env.AUTOFLOW_ALLOW_INMEMORY === "true";
 }
 
 export function isPostgresPersistenceEnabled(): boolean {

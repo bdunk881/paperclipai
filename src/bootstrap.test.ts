@@ -5,7 +5,11 @@ const mockEnsureKnowledgeSchema = jest.fn();
 
 jest.mock("./db/postgres", () => ({
   checkPostgresConnection: () => mockCheckPostgresConnection(),
-  inMemoryAllowed: () => ["development", "test"].includes((process.env.NODE_ENV ?? "development").trim().toLowerCase()),
+  getRuntimeEnvironment: (env: NodeJS.ProcessEnv = process.env) =>
+    (env.NODE_ENV ?? "development").trim().toLowerCase(),
+  inMemoryAllowed: () =>
+    ["development", "test"].includes((process.env.NODE_ENV ?? "development").trim().toLowerCase()) &&
+    process.env.AUTOFLOW_ALLOW_INMEMORY === "true",
   isPostgresConfigured: () => mockIsPostgresConfigured(),
 }));
 
@@ -45,7 +49,9 @@ describe("initializePersistence", () => {
     expect(mockEnsureSqlMigrationsApplied).not.toHaveBeenCalled();
   });
 
-  it("warns and returns when postgres is unreachable", async () => {
+  it("warns and returns when postgres is unreachable in dev/test", async () => {
+    // jest.env.cjs sets NODE_ENV=test + AUTOFLOW_ALLOW_INMEMORY=true so this
+    // is the default test environment.
     mockIsPostgresConfigured.mockReturnValue(true);
     mockCheckPostgresConnection.mockResolvedValue(false);
 
@@ -55,6 +61,29 @@ describe("initializePersistence", () => {
     expect(logger.warn).toHaveBeenCalledWith(
       "[postgres] Database unreachable — knowledge routes will return empty results"
     );
+  });
+
+  it("throws when postgres is unreachable in production (HEL-80 fail-fast)", async () => {
+    const originalNodeEnv = process.env.NODE_ENV;
+    process.env.NODE_ENV = "production";
+    try {
+      mockIsPostgresConfigured.mockReturnValue(true);
+      mockCheckPostgresConnection.mockResolvedValue(false);
+
+      await expect(initializePersistence(logger)).rejects.toThrow(
+        /Database is configured but unreachable/,
+      );
+      expect(logger.error).toHaveBeenCalledWith(
+        expect.stringMatching(/Database is configured but unreachable/),
+      );
+      expect(mockEnsureSqlMigrationsApplied).not.toHaveBeenCalled();
+    } finally {
+      if (originalNodeEnv === undefined) {
+        delete process.env.NODE_ENV;
+      } else {
+        process.env.NODE_ENV = originalNodeEnv;
+      }
+    }
   });
 
   it("applies migrations before initializing knowledge schema", async () => {

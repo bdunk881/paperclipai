@@ -56,7 +56,7 @@ describe("subscriptionStore hydration integration (HEL-72)", () => {
     if (canRunIntegration) {
       await migrations.ensureSqlMigrationsApplied();
     }
-  });
+  }, 120_000);
 
   afterAll(async () => {
     process.env.DATABASE_URL = originalDatabaseUrl;
@@ -68,7 +68,7 @@ describe("subscriptionStore hydration integration (HEL-72)", () => {
     if (pg) {
       await pg.closePostgresPoolForTests();
     }
-  });
+  }, 30_000);
 
   afterEach(async () => {
     if (!canRunIntegration) return;

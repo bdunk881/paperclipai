@@ -34,7 +34,15 @@ export default defineConfig({
   webServer: process.env.PLAYWRIGHT_BASE_URL
     ? undefined
     : {
-        command: "npm run dev",
+        // In CI, `Infisical/secrets-action@v1.0.9` has already exported the dev
+        // secrets into process.env before Playwright starts. Re-wrapping with
+        // `infisical run` would require either a `.infisical.json` project
+        // binding or a `--projectId` flag — neither of which the action sets up.
+        // Using the unwrapped script reads from process.env directly.
+        //
+        // Locally, `npm run dev` (wrapped) is the right default so devs don't
+        // forget to load secrets.
+        command: process.env.CI ? "npm run dev:no-secrets" : "npm run dev",
         url: "http://localhost:5173",
         reuseExistingServer: !process.env.CI,
         timeout: 60_000,

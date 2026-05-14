@@ -33,14 +33,41 @@ describe("baseUrl host fallback", () => {
     expect(getApiBasePath()).toBe("https://staging-api.helloautoflow.com/api");
   });
 
-  it("uses the staging backend origin on Vercel preview hosts", () => {
+  it("uses the dev Fly backend on the dev custom domain (dev.helloautoflow.com)", () => {
     Object.defineProperty(window, "location", {
-      value: { hostname: "dashboard-r6ww4hpqu-brad-duncans-projects.vercel.app" },
+      value: { hostname: "dev.helloautoflow.com" },
       configurable: true,
     });
 
-    expect(getConfiguredApiOrigin()).toBe("https://staging-api.helloautoflow.com");
-    expect(getApiBasePath()).toBe("https://staging-api.helloautoflow.com/api");
+    expect(getConfiguredApiOrigin()).toBe("https://autoflow-fastapi-dev.fly.dev");
+    expect(getApiBasePath()).toBe("https://autoflow-fastapi-dev.fly.dev/api");
+  });
+
+  it("uses the dev Fly backend on the dev.app subdomain alias", () => {
+    Object.defineProperty(window, "location", {
+      value: { hostname: "dev.app.helloautoflow.com" },
+      configurable: true,
+    });
+
+    expect(getConfiguredApiOrigin()).toBe("https://autoflow-fastapi-dev.fly.dev");
+  });
+
+  it("uses the dev Fly backend on raw Cloudflare Pages dev preview URLs", () => {
+    Object.defineProperty(window, "location", {
+      value: { hostname: "03561998.autoflow-dashboard-dev-git.pages.dev" },
+      configurable: true,
+    });
+
+    expect(getConfiguredApiOrigin()).toBe("https://autoflow-fastapi-dev.fly.dev");
+  });
+
+  it("uses the production backend on raw Cloudflare Pages prod preview URLs", () => {
+    Object.defineProperty(window, "location", {
+      value: { hostname: "abc1234.autoflow-dashboard.pages.dev" },
+      configurable: true,
+    });
+
+    expect(getConfiguredApiOrigin()).toBe("https://api.helloautoflow.com");
   });
 
   it("prefers the hosted origin over an explicit environment origin", () => {

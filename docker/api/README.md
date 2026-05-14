@@ -8,10 +8,13 @@ Built and pushed by `.github/workflows/deploy-fly-api-{dev,staging,production}.y
 
 ```
 docker/api/
-  ├── Dockerfile        # multi-stage build: deps → tsc → slim runtime
-  ├── entrypoint.sh     # Infisical wrapper (mirrors docker/backend/entrypoint.sh)
-  └── README.md         # this file
+  ├── Dockerfile               # multi-stage build: deps → tsc → slim runtime
+  ├── Dockerfile.dockerignore  # build-context exclusions, scoped to this Dockerfile
+  ├── entrypoint.sh            # Infisical wrapper (mirrors docker/backend/entrypoint.sh)
+  └── README.md                # this file
 ```
+
+The `Dockerfile.dockerignore` lives next to its Dockerfile (instead of in repo root) so it doesn't starve sibling images (`docker/frontend/Dockerfile`, `docker/backend/Dockerfile`) of their source. BuildKit picks it up automatically — see the [Docker docs on filename and location](https://docs.docker.com/build/concepts/context/#filename-and-location).
 
 ## Build args
 

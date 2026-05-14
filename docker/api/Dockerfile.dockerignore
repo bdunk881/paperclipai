@@ -1,0 +1,75 @@
+# Per-Dockerfile dockerignore — scoped to docker/api/Dockerfile only.
+# BuildKit picks this up automatically when this file lives next to its
+# matching Dockerfile (see https://docs.docker.com/build/concepts/context/#filename-and-location).
+#
+# Keeps the build context tight without breaking sibling Dockerfiles
+# (docker/frontend/Dockerfile, docker/backend/Dockerfile) that share the
+# repo root as their context.
+
+# Dependencies — installed fresh inside the image
+node_modules
+dashboard/node_modules
+landing/node_modules
+docs/node_modules
+autoflow-brand/node_modules
+
+# Build outputs — regenerated inside the image
+dist
+dashboard/dist
+landing/.next
+landing/build
+docs/.docusaurus
+docs/build
+
+# Test artifacts — never run inside the production image
+coverage
+*.test.ts.snap
+**/*.test.ts
+**/__tests__
+**/__mocks__
+**/test-factories
+
+# Workspaces this image doesn't need
+dashboard
+landing
+docs
+autoflow-brand
+.worktrees
+
+# Python backend (being retired in HEL-97 — don't ship Python sources
+# into the Node image)
+backend
+docker/backend
+fly.dev.toml
+fly.staging.toml
+fly.production.toml
+fly.toml
+
+# Editor + OS noise
+.git
+.github
+.vscode
+.idea
+.DS_Store
+Thumbs.db
+
+# Local env + secrets
+.env
+.env.*
+!.env.example
+!.env.local.example
+
+# Logs + caches
+*.log
+.cache
+.npm
+.turbo
+.next
+.vercel
+.claude
+.codex
+
+# Sensitive files
+*.pem
+*.key
+*.ppk

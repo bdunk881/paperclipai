@@ -37,12 +37,15 @@ function getHostedApiOrigin(): string {
     return "https://staging-api.helloautoflow.com";
   }
 
-  // Dev — three valid surfaces (custom domain, alias custom domain, raw Pages URL)
+  // Dev — three valid surfaces (custom domain, alias custom domain, raw Pages URL).
+  // Targets the consolidated TS Express backend at dev-api.helloautoflow.com
+  // (autoflow-api-dev Fly app) after HEL-83 stood it up. The legacy
+  // autoflow-fastapi-dev app stays running in parallel until HEL-97 cleanup.
   if (hostname === "dev.helloautoflow.com" || hostname === "dev.app.helloautoflow.com") {
-    return "https://autoflow-fastapi-dev.fly.dev";
+    return "https://dev-api.helloautoflow.com";
   }
   if (hostname.endsWith(".autoflow-dashboard-dev-git.pages.dev")) {
-    return "https://autoflow-fastapi-dev.fly.dev";
+    return "https://dev-api.helloautoflow.com";
   }
 
   // Bare Cloudflare Pages prod preview

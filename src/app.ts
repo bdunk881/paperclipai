@@ -97,6 +97,7 @@ import { createInstructionRoutes } from "./instructions/instructionRoutes";
 import { createKnowledgeItemRoutes } from "./knowledge/knowledgeItemRoutes";
 import { createEpisodeRoutes } from "./episodes/episodeRoutes";
 import { createCuratedKnowledgeRoutes } from "./admin/curatedKnowledgeRoutes";
+import { createReflectionRoutes } from "./knowledge/reflectionRoutes";
 import {
   createPortableWorkflowBundle,
   getPortableWorkflowSchemaDescriptor,
@@ -482,6 +483,14 @@ const curatedKnowledgeRoutes = isPostgresPersistenceEnabled()
       res.status(501).json({ error: "Curated knowledge requires PostgreSQL persistence." }),
     );
 app.use("/api/admin/curated-knowledge", requireAuth, curatedKnowledgeRoutes);
+// HEL-91: manual reflection — clusters unreflected episodes and graduates
+// durable patterns to Layer-2 synthesized knowledge_items.
+const reflectionRoutes = isPostgresPersistenceEnabled()
+  ? createReflectionRoutes(getPostgresPool())
+  : express.Router().all("*", (_req, res) =>
+      res.status(501).json({ error: "Reflection requires PostgreSQL persistence." }),
+    );
+app.use("/api/knowledge/reflect", requireAuth, workspaceResolver, requireRole("admin", "operator"), reflectionRoutes);
 app.use("/api/companies", requireAuth, workspaceResolver, requireRole("admin", "developer"), companyRoutes);
 app.use("/api/control-plane", requireAuth, workspaceResolver, requireRole("admin", "operator"), controlPlaneRoutes);
 app.use("/api/hitl", requireAuth, workspaceResolver, requireRole("admin", "approver", "operator"), hitlRoutes);

@@ -138,6 +138,22 @@ jobs:
     permissions:
       contents: read
       id-token: write
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: autoflow
+          POSTGRES_PASSWORD: autoflow
+          POSTGRES_DB: autoflow_test
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+    env:
+      DATABASE_URL: postgresql://autoflow:autoflow@localhost:5432/autoflow_test
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v5

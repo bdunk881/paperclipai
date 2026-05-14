@@ -77,14 +77,18 @@ RUN --mount=type=cache,target=/root/.npm \
 # Compiled output
 COPY --from=build /app/dist ./dist
 
+# SQL migrations — ensureSqlMigrationsApplied() resolves
+# path.resolve(__dirname, "..", "..", "migrations") → /app/migrations
+COPY migrations ./migrations
+
 # Entrypoint wrapper
 COPY docker/api/entrypoint.sh /usr/local/bin/autoflow-api-entrypoint
 RUN chmod +x /usr/local/bin/autoflow-api-entrypoint
 
 # Healthcheck — uses Node's built-in http module so we don't have to install curl
-# in the runtime image. The check matches src/app.ts which mounts /api/health.
+# in the runtime image. Route is /health (src/app.ts), not /api/health.
 HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
-    CMD node -e "const http=require('http'); http.get({host:'127.0.0.1',port:process.env.PORT||8080,path:'/api/health',timeout:5000}, r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))"
+    CMD node -e "const http=require('http'); http.get({host:'127.0.0.1',port:process.env.PORT||8080,path:'/health',timeout:5000}, r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))"
 
 EXPOSE 8080
 

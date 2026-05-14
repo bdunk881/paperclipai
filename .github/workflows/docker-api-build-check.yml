@@ -1,0 +1,99 @@
+name: Docker API build check
+
+# Smoke-build the TS Express image on every PR that touches the API source,
+# the Dockerfile, or the entrypoint script. Catches Dockerfile / package-lock /
+# tsconfig drift before it lands in dev and breaks the Fly deploy in HEL-83.
+#
+# Does not push the image — that's the deploy workflow's job (per env).
+
+on:
+  pull_request:
+    paths:
+      - "src/**"
+      - "package.json"
+      - "package-lock.json"
+      - "tsconfig.json"
+      - "docker/api/**"
+      - ".dockerignore"
+      - ".github/workflows/docker-api-build-check.yml"
+  push:
+    branches: [dev]
+    paths:
+      - "src/**"
+      - "package.json"
+      - "package-lock.json"
+      - "tsconfig.json"
+      - "docker/api/**"
+      - ".dockerignore"
+      - ".github/workflows/docker-api-build-check.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: docker-api-build-check-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build autoflow-api image
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build image (no push)
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: docker/api/Dockerfile
+          push: false
+          load: true
+          tags: autoflow-api:check
+          cache-from: type=gha,scope=autoflow-api
+          cache-to: type=gha,mode=max,scope=autoflow-api
+          build-args: |
+            BUILD_SHA=${{ github.sha }}
+            BUILD_DATE=${{ github.event.pull_request.updated_at || github.event.head_commit.timestamp }}
+
+      - name: Inspect image size
+        run: |
+          set -euo pipefail
+          size_bytes="$(docker image inspect autoflow-api:check --format='{{.Size}}')"
+          size_mb=$(( size_bytes / 1024 / 1024 ))
+          echo "Image size: ${size_mb} MB"
+          echo "image_size_mb=${size_mb}" >> "$GITHUB_OUTPUT"
+
+          # Soft cap — warn at 600 MB, fail at 800 MB. Target per docker/api/README is < 500 MB.
+          if [ "$size_mb" -gt 800 ]; then
+            echo "::error::Image size ${size_mb} MB exceeds the 800 MB hard cap. Check for dev deps slipping into the runtime stage."
+            exit 1
+          fi
+          if [ "$size_mb" -gt 600 ]; then
+            echo "::warning::Image size ${size_mb} MB is above the 600 MB soft target. Aim for under 500 MB."
+          fi
+
+      - name: Verify entrypoint + node binary
+        run: |
+          set -euo pipefail
+
+          # Sanity: the entrypoint script is executable and the runtime image
+          # has node + infisical installed where we expect.
+          docker run --rm --entrypoint sh autoflow-api:check -c "ls -la /usr/local/bin/autoflow-api-entrypoint && which node && which infisical"
+
+      - name: Verify HEALTHCHECK metadata
+        run: |
+          set -euo pipefail
+          docker image inspect autoflow-api:check --format='{{json .Config.Healthcheck}}'
+
+      - name: Summarize
+        run: |
+          {
+            echo "## Docker API build check"
+            echo
+            echo "- Image: \`autoflow-api:check\`"
+            echo "- BUILD_SHA: ${{ github.sha }}"
+            echo "- Status: built successfully"
+          } >> "$GITHUB_STEP_SUMMARY"

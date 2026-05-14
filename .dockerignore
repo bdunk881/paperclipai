@@ -1,0 +1,73 @@
+# Keep the Docker build context tight so multi-stage builds are fast and
+# don't accidentally ship secrets, tests, or build outputs from the host.
+
+# Dependencies — installed fresh inside the image
+node_modules
+dashboard/node_modules
+landing/node_modules
+docs/node_modules
+autoflow-brand/node_modules
+
+# Build outputs — regenerated inside the image
+dist
+dashboard/dist
+landing/.next
+landing/build
+docs/.docusaurus
+docs/build
+
+# Test artifacts
+coverage
+*.test.ts.snap
+**/*.test.ts
+**/__tests__
+**/__mocks__
+**/test-factories
+
+# Editor + OS noise
+.git
+.github
+.vscode
+.idea
+.DS_Store
+Thumbs.db
+
+# Local env + secrets
+.env
+.env.*
+!.env.example
+!.env.local.example
+
+# Workspaces we don't build server-side
+dashboard
+landing
+docs
+autoflow-brand
+.worktrees
+.codex
+.claude
+
+# Logs + caches
+*.log
+.cache
+.npm
+.turbo
+.next
+.vercel
+
+# Backend Python (being retired in HEL-97 — exclude from API image so we don't
+# accidentally ship Python sources/tests into the Node image)
+backend
+docker/backend
+fly.dev.toml
+fly.staging.toml
+fly.production.toml
+fly.toml
+
+# Worktrees
+.worktrees
+
+# Sensitive local files
+*.pem
+*.key
+*.ppk

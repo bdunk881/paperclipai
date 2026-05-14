@@ -29,6 +29,11 @@ const ALLOWLIST = new Set<string>([
   // so `withWorkspace` has nothing to resolve and `requireRole` has no role
   // to gate. Per-route role enforcement lives inside workspaceRoutes.
   "/api/workspaces",
+  // AutoFlow-internal admin routes use `requireStaff` (env-var allowlist of
+  // Supabase sub values) inside the router, which is more restrictive than any
+  // workspace role. These routes span all workspaces so no workspace context
+  // applies.
+  "/api/admin/curated-knowledge",
 ]);
 
 interface AuthenticatedMount {

@@ -166,7 +166,7 @@ jobs:
       id-token: write
     services:
       postgres:
-        image: postgres:16
+        image: pgvector/pgvector:pg16
         env:
           POSTGRES_USER: autoflow
           POSTGRES_PASSWORD: autoflow

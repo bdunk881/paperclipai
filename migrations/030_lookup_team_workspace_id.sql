@@ -31,8 +31,6 @@ $$;
 ALTER FUNCTION lookup_team_workspace_id(uuid) SET search_path = public, pg_catalog;
 
 COMMENT ON FUNCTION lookup_team_workspace_id(uuid) IS
-  'HEL-66: SECURITY DEFINER helper. Resolves a team''s workspace_id ' ||
-  'without needing a workspace context. Returns NULL if the team does ' ||
-  'not exist.';
+  'HEL-66: SECURITY DEFINER helper. Resolves a team''s workspace_id without needing a workspace context. Returns NULL if the team does not exist.';
 
 COMMIT;

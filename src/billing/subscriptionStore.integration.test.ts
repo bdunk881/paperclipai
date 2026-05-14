@@ -9,8 +9,18 @@
  *
  * Skipped automatically when DATABASE_URL is absent (local dev without a
  * Postgres container).  CI sets DATABASE_URL via the postgres service attached
- * to the test-api job.
+ * to the test-api-integration job.
+ *
+ * Module setup: jest.resetModules() + dynamic imports run ONCE in beforeAll so
+ * migrations are only applied once per suite.  Calling loadModules() (and
+ * therefore resetModules()) inside each test body would clear migrationPromise,
+ * causing every test to re-apply all migrations; migration 001 creates policies
+ * without IF NOT EXISTS guards so the second apply would fail.
  */
+
+import type * as PostgresModule from "../db/postgres";
+import type * as BillingModule from "./billingRepository";
+import type * as StoreModule from "./subscriptionStore";
 
 describe("subscriptionStore hydration integration (HEL-72)", () => {
   const originalDatabaseUrl = process.env.DATABASE_URL;
@@ -24,43 +34,28 @@ describe("subscriptionStore hydration integration (HEL-72)", () => {
 
   let canRunIntegration = false;
 
-  async function loadModules() {
-    jest.resetModules();
-    const postgres = await import("../db/postgres");
-    const migrations = await import("../db/sqlMigrations");
-    const billing = await import("./billingRepository");
-    const store = await import("./subscriptionStore");
-    return { postgres, migrations, billing, store };
-  }
-
-  async function cleanup(): Promise<void> {
-    const { postgres } = await loadModules();
-    await postgres.queryPostgres(
-      `DELETE FROM subscriptions WHERE stripe_subscription_id = $1`,
-      [stripeSubId],
-    );
-    await postgres.queryPostgres(
-      `DELETE FROM entitlements WHERE workspace_id = $1`,
-      [workspaceId],
-    );
-    await postgres.queryPostgres(
-      `DELETE FROM workspaces WHERE id = $1`,
-      [workspaceId],
-    );
-    await postgres.queryPostgres(
-      `DELETE FROM user_profiles WHERE user_id = $1`,
-      [userId],
-    );
-    await postgres.closePostgresPoolForTests();
-  }
+  // Shared module instances — set once in beforeAll, reused across tests.
+  let pg: typeof PostgresModule;
+  let billing: typeof BillingModule;
+  let store: typeof StoreModule;
 
   beforeAll(async () => {
     delete process.env.JEST_WORKER_ID;
     if (!process.env.DATABASE_URL?.trim()) {
       return;
     }
-    const { postgres } = await loadModules();
-    canRunIntegration = await postgres.checkPostgresConnection();
+
+    // resetModules() once so persistence checks re-read env (no JEST_WORKER_ID).
+    jest.resetModules();
+    pg = await import("../db/postgres");
+    const migrations = await import("../db/sqlMigrations");
+    billing = await import("./billingRepository");
+    store = await import("./subscriptionStore");
+
+    canRunIntegration = await pg.checkPostgresConnection();
+    if (canRunIntegration) {
+      await migrations.ensureSqlMigrationsApplied();
+    }
   });
 
   afterAll(async () => {
@@ -70,11 +65,29 @@ describe("subscriptionStore hydration integration (HEL-72)", () => {
     } else {
       delete process.env.JEST_WORKER_ID;
     }
+    if (pg) {
+      await pg.closePostgresPoolForTests();
+    }
   });
 
   afterEach(async () => {
     if (!canRunIntegration) return;
-    await cleanup();
+    await pg.queryPostgres(
+      `DELETE FROM subscriptions WHERE stripe_subscription_id LIKE $1`,
+      [stripeSubId + "%"],
+    );
+    await pg.queryPostgres(
+      `DELETE FROM entitlements WHERE workspace_id = $1`,
+      [workspaceId],
+    );
+    await pg.queryPostgres(
+      `DELETE FROM workspaces WHERE id = $1`,
+      [workspaceId],
+    );
+    await pg.queryPostgres(
+      `DELETE FROM user_profiles WHERE user_id = $1`,
+      [userId],
+    );
   });
 
   it(
@@ -82,15 +95,12 @@ describe("subscriptionStore hydration integration (HEL-72)", () => {
     async () => {
       if (!canRunIntegration) return;
 
-      const { postgres, migrations, billing, store } = await loadModules();
-      await migrations.ensureSqlMigrationsApplied();
-
       // Seed: user_profile + workspace (workspace FK required by subscriptions table)
-      await postgres.queryPostgres(
+      await pg.queryPostgres(
         `INSERT INTO user_profiles (user_id, display_name) VALUES ($1, $2) ON CONFLICT (user_id) DO NOTHING`,
         [userId, "HEL-72 Integration User"],
       );
-      await postgres.queryPostgres(
+      await pg.queryPostgres(
         `INSERT INTO workspaces (id, name, owner_user_id) VALUES ($1, $2, $3) ON CONFLICT (id) DO NOTHING`,
         [workspaceId, "HEL-72 Integration Workspace", userId],
       );
@@ -117,10 +127,7 @@ describe("subscriptionStore hydration integration (HEL-72)", () => {
         trialEnd: null,
       });
 
-      // Step 2: upsert also populates the in-memory store via syncSubscriptionEntitlements
-      // (indirectly via the webhook handler), but here we upsert manually to mirror
-      // what subscriptionStore.upsert does in production.
-      // Seed the in-memory store as the webhook handler would.
+      // Step 2: seed the in-memory store as the webhook handler would.
       store.subscriptionStore.upsert({
         id: "hel72-test-id",
         workspaceId,
@@ -140,7 +147,7 @@ describe("subscriptionStore hydration integration (HEL-72)", () => {
       });
 
       // Step 3: verify the Postgres row was written with all columns from migration 028
-      const pgResult = await postgres.queryPostgres<{
+      const pgResult = await pg.queryPostgres<{
         stripe_subscription_id: string;
         stripe_customer_id: string | null;
         user_id: string | null;
@@ -217,14 +224,11 @@ describe("subscriptionStore hydration integration (HEL-72)", () => {
     async () => {
       if (!canRunIntegration) return;
 
-      const { postgres, migrations, billing, store } = await loadModules();
-      await migrations.ensureSqlMigrationsApplied();
-
-      await postgres.queryPostgres(
+      await pg.queryPostgres(
         `INSERT INTO user_profiles (user_id, display_name) VALUES ($1, $2) ON CONFLICT (user_id) DO NOTHING`,
         [userId, "HEL-72 Integration User"],
       );
-      await postgres.queryPostgres(
+      await pg.queryPostgres(
         `INSERT INTO workspaces (id, name, owner_user_id) VALUES ($1, $2, $3) ON CONFLICT (id) DO NOTHING`,
         [workspaceId, "HEL-72 Integration Workspace", userId],
       );
@@ -232,7 +236,6 @@ describe("subscriptionStore hydration integration (HEL-72)", () => {
       const periodStart = new Date(Date.UTC(2026, 3, 1)).toISOString();
       const periodEnd = new Date(Date.UTC(2026, 4, 1)).toISOString();
 
-      // Write two subscriptions with the same workspace
       const stripeSubId2 = `${stripeSubId}_second`;
       await billing.billingRepository.upsertSubscriptionAndEntitlements({
         workspaceId,
@@ -251,7 +254,7 @@ describe("subscriptionStore hydration integration (HEL-72)", () => {
       // Insert second sub directly since upsertSubscriptionAndEntitlements updates
       // the entitlements row via ON CONFLICT; the subscription row gets a new
       // stripe_subscription_id so it's a fresh insert.
-      await postgres.queryPostgres(
+      await pg.queryPostgres(
         `INSERT INTO subscriptions (workspace_id, stripe_subscription_id, stripe_customer_id,
           user_id, email, plan, status, access_level, current_period_start, current_period_end,
           cancel_at_period_end, trial_end)
@@ -267,12 +270,6 @@ describe("subscriptionStore hydration integration (HEL-72)", () => {
 
       expect(store.subscriptionStore.getByStripeSubscriptionId(stripeSubId)).toBeDefined();
       expect(store.subscriptionStore.getByStripeSubscriptionId(stripeSubId2)).toBeDefined();
-
-      // Cleanup second sub
-      await postgres.queryPostgres(
-        `DELETE FROM subscriptions WHERE stripe_subscription_id = $1`,
-        [stripeSubId2],
-      );
     },
     60_000,
   );

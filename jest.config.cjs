@@ -2,6 +2,10 @@ module.exports = {
   preset: "ts-jest",
   testEnvironment: "node",
   testMatch: ["**/*.test.ts"],
+  // Per HEL-80: AUTOFLOW_ALLOW_INMEMORY=true is required to use the
+  // in-memory store fallback (postgres.ts:inMemoryAllowed). Tests opt in
+  // automatically; production must never set this variable.
+  setupFiles: ["<rootDir>/jest.env.cjs"],
   testPathIgnorePatterns: [
     "/node_modules/",
     "/dashboard/",

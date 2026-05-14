@@ -162,23 +162,23 @@ test.describe("Phase 4 — Workspace provisioned", () => {
 
 // ---------------------------------------------------------------------------
 // Phase 5 — Mission intake.
-// Status: BLOCKED on HEL-23 (Mission intake UI on Hire page). The UI
-// doesn't exist yet — when it lands, remove the .fixme below.
+// Status: shipped in HEL-23. `/hire` renders Hire.tsx; POST /api/missions
+// persists the statement to the missions table. Phases 6+ still wait on
+// HEL-25 / HEL-26 / HEL-27.
 // ---------------------------------------------------------------------------
 
 test.describe("Phase 5 — Mission intake", () => {
-  test.fixme(true, "Blocked on HEL-23 — mission intake UI on Hire page");
-
   test.beforeEach(async ({ page }) => {
     await loginAsMockUser(page);
   });
 
   test("user can type a mission and persist it", async ({ page }) => {
     await page.goto("/hire");
+    await expect(page.getByRole("heading", { name: /Hire from a mission/i })).toBeVisible();
     await page
-      .getByPlaceholder(/mission|what do you want/i)
+      .getByLabel(/Mission statement/i)
       .fill("Launch the R-7 to North America.");
-    await page.getByRole("button", { name: /save mission|continue/i }).click();
+    await page.getByRole("button", { name: /Save draft/i }).click();
     // After save, the mission appears in the workspace mission list.
     await expect(page.getByText(/Launch the R-7/)).toBeVisible();
   });

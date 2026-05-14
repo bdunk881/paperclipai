@@ -68,3 +68,82 @@ describe("POST /api/missions/:missionId/generate-plan", () => {
     expect(res.body.error).toMatch(/Invalid mission ID/);
   });
 });
+
+describe("POST /api/missions (HEL-23 create)", () => {
+  it("returns 401 when no authenticated user is present", async () => {
+    const app = buildApp({ workspaceId: "11111111-1111-4111-8111-111111111111" });
+    const res = await request(app).post("/api/missions").send({ statement: "Launch X." });
+    expect(res.status).toBe(401);
+  });
+
+  it("returns 401 when no workspace context is present", async () => {
+    const app = buildApp({ sub: "user-1" });
+    const res = await request(app).post("/api/missions").send({ statement: "Launch X." });
+    expect(res.status).toBe(401);
+  });
+
+  it("returns 400 when the statement is missing", async () => {
+    const app = buildApp({
+      sub: "user-1",
+      workspaceId: "11111111-1111-4111-8111-111111111111",
+    });
+    const res = await request(app).post("/api/missions").send({});
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/statement/i);
+  });
+
+  it("returns 400 when the statement is empty whitespace", async () => {
+    const app = buildApp({
+      sub: "user-1",
+      workspaceId: "11111111-1111-4111-8111-111111111111",
+    });
+    const res = await request(app).post("/api/missions").send({ statement: "   \n  " });
+    expect(res.status).toBe(400);
+  });
+
+  it("returns 400 when the statement exceeds 4000 characters", async () => {
+    const app = buildApp({
+      sub: "user-1",
+      workspaceId: "11111111-1111-4111-8111-111111111111",
+    });
+    const res = await request(app)
+      .post("/api/missions")
+      .send({ statement: "a".repeat(4001) });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/too long/i);
+  });
+});
+
+describe("GET /api/missions (HEL-23 list)", () => {
+  it("returns 401 when no authenticated user is present", async () => {
+    const app = buildApp({ workspaceId: "11111111-1111-4111-8111-111111111111" });
+    const res = await request(app).get("/api/missions");
+    expect(res.status).toBe(401);
+  });
+
+  it("returns 401 when no workspace context is present", async () => {
+    const app = buildApp({ sub: "user-1" });
+    const res = await request(app).get("/api/missions");
+    expect(res.status).toBe(401);
+  });
+});
+
+describe("GET /api/missions/:missionId (HEL-23 read)", () => {
+  it("returns 401 when no authenticated user is present", async () => {
+    const app = buildApp({ workspaceId: "11111111-1111-4111-8111-111111111111" });
+    const res = await request(app).get(
+      "/api/missions/22222222-2222-4222-8222-222222222222",
+    );
+    expect(res.status).toBe(401);
+  });
+
+  it("returns 400 when the mission ID is malformed", async () => {
+    const app = buildApp({
+      sub: "user-1",
+      workspaceId: "11111111-1111-4111-8111-111111111111",
+    });
+    const res = await request(app).get("/api/missions/not-a-uuid");
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/Invalid mission ID/);
+  });
+});

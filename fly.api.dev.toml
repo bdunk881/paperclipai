@@ -1,0 +1,44 @@
+# Fly.io config for the TS Express backend, dev environment (HEL-83).
+#
+# Runs the consolidated AutoFlow API (src/app.ts) deployed via docker/api/Dockerfile.
+# Public hostname: dev-api.helloautoflow.com (Cloudflare CNAME to <app>.fly.dev,
+# Fly cert allocated separately).
+#
+# Replaces autoflow-fastapi-dev (which is the relay shim from the aborted
+# Phase-3 cutover — see backend/fly-cutover-probe-matrix.md). FastAPI app
+# stays running in parallel until HEL-97 cleanup.
+
+app = "autoflow-api-dev"
+primary_region = "ord"
+
+[build]
+  dockerfile = "docker/api/Dockerfile"
+
+[env]
+  ALLOWED_ORIGINS = "https://dev.helloautoflow.com,https://dev.app.helloautoflow.com"
+  APP_ENV = "dev"
+  INFISICAL_ENV = "dev"
+  PORT = "8080"
+  NODE_ENV = "production"
+  # AUTOFLOW_ALLOW_INMEMORY is intentionally unset — HEL-80 enforces double-locked
+  # production safety. The server will fail-fast if Postgres is unreachable.
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = "off"
+  auto_start_machines = true
+  min_machines_running = 1
+  processes = ["app"]
+
+  [[http_service.checks]]
+    interval = "15s"
+    timeout = "5s"
+    grace_period = "20s"
+    method = "GET"
+    path = "/health"
+
+[vm]
+  cpu_kind = "shared"
+  cpus = 2
+  memory = "1024mb"

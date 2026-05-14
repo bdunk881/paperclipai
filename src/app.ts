@@ -96,6 +96,7 @@ import { createMissionRoutes } from "./missions/missionRoutes";
 import { createInstructionRoutes } from "./instructions/instructionRoutes";
 import { createKnowledgeItemRoutes } from "./knowledge/knowledgeItemRoutes";
 import { createEpisodeRoutes } from "./episodes/episodeRoutes";
+import { createCuratedKnowledgeRoutes } from "./admin/curatedKnowledgeRoutes";
 import {
   createPortableWorkflowBundle,
   getPortableWorkflowSchemaDescriptor,
@@ -472,6 +473,15 @@ app.use("/api/missions", requireAuth, workspaceResolver, requireRole("admin", "d
 app.use("/api/instructions", requireAuth, workspaceResolver, requireRole("admin", "developer", "operator"), instructionRoutes);
 app.use("/api/knowledge-items", requireAuth, workspaceResolver, requireRole("admin", "developer", "operator"), knowledgeItemRoutes);
 app.use("/api/episodes", requireAuth, workspaceResolver, requireRole("admin", "developer", "operator"), episodeRoutes);
+// HEL-93: AutoFlow staff admin — curated global knowledge tier. No workspace
+// scope (cross-workspace by design); requireStaff gates access via the
+// AUTOFLOW_STAFF_USER_IDS env-var allowlist.
+const curatedKnowledgeRoutes = isPostgresPersistenceEnabled()
+  ? createCuratedKnowledgeRoutes(getPostgresPool())
+  : express.Router().all("*", (_req, res) =>
+      res.status(501).json({ error: "Curated knowledge requires PostgreSQL persistence." }),
+    );
+app.use("/api/admin/curated-knowledge", requireAuth, curatedKnowledgeRoutes);
 app.use("/api/companies", requireAuth, workspaceResolver, requireRole("admin", "developer"), companyRoutes);
 app.use("/api/control-plane", requireAuth, workspaceResolver, requireRole("admin", "operator"), controlPlaneRoutes);
 app.use("/api/hitl", requireAuth, workspaceResolver, requireRole("admin", "approver", "operator"), hitlRoutes);

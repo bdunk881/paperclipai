@@ -93,6 +93,9 @@ import {
 } from "./middleware/workspaceResolver";
 import { createWorkspaceRoutes } from "./workspaces/workspaceRoutes";
 import { createMissionRoutes } from "./missions/missionRoutes";
+import { createInstructionRoutes } from "./instructions/instructionRoutes";
+import { createKnowledgeItemRoutes } from "./knowledge/knowledgeItemRoutes";
+import { createEpisodeRoutes } from "./episodes/episodeRoutes";
 import {
   createPortableWorkflowBundle,
   getPortableWorkflowSchemaDescriptor,
@@ -140,6 +143,26 @@ const missionRoutes = isPostgresPersistenceEnabled()
   : express.Router().post("/:missionId/generate-plan", (_req, res) => {
       res.status(501).json({ error: "Mission planning requires PostgreSQL persistence." });
     });
+
+// HEL-87: three-layer memory routes (instructions / knowledge-items / episodes).
+// All three require Postgres for RLS-backed persistence; in-memory mode
+// returns 501 for the entire surface.
+const memoryRoutesAreLive = isPostgresPersistenceEnabled();
+const instructionRoutes = memoryRoutesAreLive
+  ? createInstructionRoutes(getPostgresPool())
+  : express.Router().all("*", (_req, res) =>
+      res.status(501).json({ error: "Workspace instructions require PostgreSQL persistence." }),
+    );
+const knowledgeItemRoutes = memoryRoutesAreLive
+  ? createKnowledgeItemRoutes(getPostgresPool())
+  : express.Router().all("*", (_req, res) =>
+      res.status(501).json({ error: "Knowledge items require PostgreSQL persistence." }),
+    );
+const episodeRoutes = memoryRoutesAreLive
+  ? createEpisodeRoutes(getPostgresPool())
+  : express.Router().all("*", (_req, res) =>
+      res.status(501).json({ error: "Agent episodes require PostgreSQL persistence." }),
+    );
 
 function parseAllowedOrigins(value: string | undefined): string[] {
   if (!value) {
@@ -445,6 +468,10 @@ app.use("/api/connectors/google-workspace", googleWorkspaceConnectorRoutes);
 // user-scoped: workspace management creates/lists workspaces and cannot itself be workspace-gated
 app.use("/api/workspaces", requireAuth, workspaceRoutes);
 app.use("/api/missions", requireAuth, workspaceResolver, requireRole("admin", "developer"), llmEndpointRateLimiter, missionRoutes);
+// HEL-87: three-layer memory.
+app.use("/api/instructions", requireAuth, workspaceResolver, requireRole("admin", "developer", "operator"), instructionRoutes);
+app.use("/api/knowledge-items", requireAuth, workspaceResolver, requireRole("admin", "developer", "operator"), knowledgeItemRoutes);
+app.use("/api/episodes", requireAuth, workspaceResolver, requireRole("admin", "developer", "operator"), episodeRoutes);
 app.use("/api/companies", requireAuth, workspaceResolver, requireRole("admin", "developer"), companyRoutes);
 app.use("/api/control-plane", requireAuth, workspaceResolver, requireRole("admin", "operator"), controlPlaneRoutes);
 app.use("/api/hitl", requireAuth, workspaceResolver, requireRole("admin", "approver", "operator"), hitlRoutes);

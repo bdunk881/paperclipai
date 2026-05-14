@@ -14,23 +14,21 @@
 
 set -eu
 
-is_fly_runtime() {
-  [ -n "${FLY_APP_NAME:-}" ] || [ -n "${FLY_MACHINE_ID:-}" ]
-}
+# When INFISICAL_TOKEN + INFISICAL_PROJECT_ID are set, wrap the CMD in
+# `infisical run` so secrets get injected at runtime. When they're absent,
+# exec the CMD directly — the Fly machine's `flyctl secrets set` from the
+# deploy workflow already pinned the runtime env vars (DATABASE_URL,
+# SUPABASE_*, etc.) onto the machine, so process.env is populated either way.
+#
+# Either path produces a working server; the Infisical wrap just enables
+# secret rotation without redeploying. v1 ships with direct env vars to
+# avoid a runtime-Infisical bootstrap dependency; flip to the wrapped path
+# once INFISICAL_PROJECT_ID + INFISICAL_TOKEN exist in Infisical's per-env
+# secret set.
 
-if [ -z "${INFISICAL_TOKEN:-}" ]; then
-  if is_fly_runtime; then
-    echo "INFISICAL_TOKEN is required to start the AutoFlow API on Fly." >&2
-    exit 1
-  fi
-
-  echo "INFISICAL_TOKEN is not set; starting the API without Infisical." >&2
+if [ -z "${INFISICAL_TOKEN:-}" ] || [ -z "${INFISICAL_PROJECT_ID:-}" ]; then
+  echo "INFISICAL_TOKEN/INFISICAL_PROJECT_ID not set; starting API with direct env vars." >&2
   exec "$@"
-fi
-
-if [ -z "${INFISICAL_PROJECT_ID:-}" ]; then
-  echo "INFISICAL_PROJECT_ID is required when INFISICAL_TOKEN is set." >&2
-  exit 1
 fi
 
 INFISICAL_ENV="${INFISICAL_ENV:-prod}"

@@ -4,10 +4,12 @@ FastAPI entrypoint for the staging Python backend.
 
 from __future__ import annotations
 
+import os
 from typing import Annotated
 
 import httpx
 from fastapi import Depends, FastAPI, Header, HTTPException, Request, Response, status
+from fastapi.middleware.cors import CORSMiddleware
 
 from edge_proxy import (
     copy_response_headers,
@@ -30,6 +32,39 @@ app = FastAPI(
     title="AutoFlow Runtime API",
     version="1.0.0",
     description="Staging FastAPI backend for AutoFlow runtime compatibility.",
+)
+
+
+def _parse_allowed_origins() -> list[str]:
+    """
+    Read the comma-separated ALLOWED_ORIGINS env var (set per-environment in
+    fly.{dev,staging,production}.toml). Falls back to the known production +
+    staging + dev dashboard origins so a missing env var never accidentally
+    locks the dashboard out.
+    """
+    raw = os.environ.get("ALLOWED_ORIGINS", "").strip()
+    if raw:
+        origins = [origin.strip() for origin in raw.split(",") if origin.strip()]
+        if origins:
+            return origins
+    return [
+        "https://app.helloautoflow.com",
+        "https://staging.app.helloautoflow.com",
+        "https://dev.helloautoflow.com",
+        "https://dev.app.helloautoflow.com",
+    ]
+
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=_parse_allowed_origins(),
+    # Also allow Cloudflare Pages raw preview URLs (dev-git + prod) so any
+    # CF Pages deployment hash works without a fly.toml redeploy.
+    allow_origin_regex=r"^https://[^.]+\.autoflow-dashboard(-dev-git)?\.pages\.dev$",
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+    expose_headers=["*"],
 )
 
 

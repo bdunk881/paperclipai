@@ -5,9 +5,9 @@ primary_region = "ord"
   dockerfile = "docker/backend/Dockerfile"
 
 [env]
-  ALLOWED_ORIGINS = "https://dev.helloautoflow.com"
+  ALLOWED_ORIGINS = "https://dev.helloautoflow.com,https://dev.app.helloautoflow.com"
   APP_ENV = "dev"
-  AUTH_NATIVE_AUTH_PROXY_ALLOWED_ORIGINS = "https://dev.helloautoflow.com"
+  AUTH_NATIVE_AUTH_PROXY_ALLOWED_ORIGINS = "https://dev.helloautoflow.com,https://dev.app.helloautoflow.com"
   INFISICAL_ENV = "dev"
   PORT = "8080"
 

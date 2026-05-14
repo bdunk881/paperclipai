@@ -71,9 +71,21 @@ jobs:
       - name: Verify required env vars are present
         run: |
           set -euo pipefail
-          for v in FLY_API_TOKEN INFISICAL_PROJECT_ID INFISICAL_TOKEN_DEV; do
+          # FLY_API_TOKEN comes from Infisical's dev env (alongside DATABASE_URL,
+          # DEV_SUPABASE_*, etc.). INFISICAL_PROJECT_ID + INFISICAL_TOKEN are
+          # OPTIONAL — when present, the Fly app entrypoint can wrap with
+          # `infisical run`; when absent, we set every runtime env var directly
+          # on the Fly app via `flyctl secrets set` below, bypassing the
+          # entrypoint's Infisical layer entirely.
+          if [[ -z "${FLY_API_TOKEN:-}" ]]; then
+            echo "::error::Missing required secret: FLY_API_TOKEN (should be in Infisical's dev env)"
+            exit 1
+          fi
+          # Critical runtime env vars the Express server reads from process.env.
+          # All sourced from Infisical's dev env via the secrets-action step above.
+          for v in DATABASE_URL DEV_SUPABASE_URL DEV_SUPABASE_PUBLISHABLE_KEY; do
             if [[ -z "${!v:-}" ]]; then
-              echo "::error::Missing required secret: $v"
+              echo "::error::Missing required Infisical secret in dev env: $v"
               exit 1
             fi
           done
@@ -90,16 +102,30 @@ jobs:
             flyctl apps create "${FLY_APP}" --org personal
           fi
 
-      - name: Sync Fly machine-level secrets (INFISICAL_TOKEN + project ID)
+      - name: Sync Fly machine-level runtime secrets from Infisical
         env:
           FLY_API_TOKEN: ${{ env.FLY_API_TOKEN }}
         run: |
           set -euo pipefail
-          flyctl secrets set \
-            INFISICAL_PROJECT_ID="${INFISICAL_PROJECT_ID}" \
-            INFISICAL_TOKEN="${INFISICAL_TOKEN_DEV}" \
-            --app "${FLY_APP}" \
-            --stage
+          # Copy every runtime env var from the Infisical-pulled $GITHUB_ENV onto
+          # the Fly machine. The Express server reads these from process.env at
+          # startup. Rotation = a new deploy (acceptable for now; we'll
+          # reintroduce runtime Infisical wrapping when INFISICAL_PROJECT_ID +
+          # INFISICAL_TOKEN are set in the Infisical dev env).
+          args=()
+          # Map the Infisical names → runtime env names the app expects:
+          args+=( "DATABASE_URL=${DATABASE_URL}" )
+          args+=( "SUPABASE_URL=${DEV_SUPABASE_URL}" )
+          args+=( "SUPABASE_PUBLISHABLE_KEY=${DEV_SUPABASE_PUBLISHABLE_KEY}" )
+          [[ -n "${DEV_SUPABASE_SECRET_KEY:-}" ]] && args+=( "SUPABASE_SECRET_KEY=${DEV_SUPABASE_SECRET_KEY}" )
+          [[ -n "${DATABASE_URL_UNPOOLED:-}" ]] && args+=( "DATABASE_URL_UNPOOLED=${DATABASE_URL_UNPOOLED}" )
+          [[ -n "${SENTRY_DSN:-}" ]] && args+=( "SENTRY_DSN=${SENTRY_DSN}" )
+          [[ -n "${GOOGLE_CLIENT_ID:-}" ]] && args+=( "GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}" )
+          [[ -n "${GOOGLE_CLIENT_SECRET:-}" ]] && args+=( "GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET}" )
+          [[ -n "${GITHUB_CLIENT_ID:-}" ]] && args+=( "GITHUB_CLIENT_ID=${GITHUB_CLIENT_ID}" )
+          [[ -n "${GITHUB_CLIENT_SECRET:-}" ]] && args+=( "GITHUB_CLIENT_SECRET=${GITHUB_CLIENT_SECRET}" )
+
+          flyctl secrets set "${args[@]}" --app "${FLY_APP}" --stage
 
       - name: Deploy
         env:

@@ -91,7 +91,7 @@ jobs:
             echo "VITE_SUPABASE_PUBLISHABLE_KEY=${DEV_SUPABASE_PUBLISHABLE_KEY}" >> "$GITHUB_ENV"
             # Belt-and-suspenders fallback for hostnames not in the dashboard's
             # built-in host map (see dashboard/src/api/baseUrl.ts).
-            echo "VITE_API_BASE_URL=https://autoflow-fastapi-dev.fly.dev" >> "$GITHUB_ENV"
+            echo "VITE_API_BASE_URL=https://dev-api.helloautoflow.com" >> "$GITHUB_ENV"
           else
             echo "VITE_SUPABASE_URL=${PRODUCTION_SUPABASE_URL}" >> "$GITHUB_ENV"
             echo "VITE_SUPABASE_PUBLISHABLE_KEY=${PRODUCTION_SUPABASE_PUBLISHABLE_KEY}" >> "$GITHUB_ENV"

@@ -1,0 +1,47 @@
+# Fly.io config for the TS Express backend, PRODUCTION environment (HEL-96).
+#
+# Runs the consolidated AutoFlow API (src/app.ts) deployed via docker/api/Dockerfile.
+# Public hostname: api.helloautoflow.com (Cloudflare CNAME to
+# autoflow-api-production.fly.dev — the SAME hostname OAuth providers and
+# Stripe webhooks already point at). The cutover is a DNS swap, not a URL
+# change, so provider configs never need to update.
+#
+# Replaces autoflow-fastapi-production (the relay shim from the aborted
+# Phase-3 cutover). The FastAPI app stays running in parallel during cutover;
+# HEL-97 retires it after 7 days of stable production.
+
+app = "autoflow-api-production"
+primary_region = "ord"
+
+[build]
+  dockerfile = "docker/api/Dockerfile"
+
+[env]
+  ALLOWED_ORIGINS = "https://app.helloautoflow.com,https://helloautoflow.com,https://www.helloautoflow.com"
+  APP_ENV = "production"
+  INFISICAL_ENV = "production"
+  PORT = "8080"
+  NODE_ENV = "production"
+  # AUTOFLOW_ALLOW_INMEMORY intentionally unset — HEL-80 enforces double-locked
+  # production safety. The server will fail-fast if Postgres is unreachable.
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = "off"
+  auto_start_machines = true
+  # Production runs 2 minimum so we have headroom during routine reboots.
+  min_machines_running = 2
+  processes = ["app"]
+
+  [[http_service.checks]]
+    interval = "15s"
+    timeout = "5s"
+    grace_period = "20s"
+    method = "GET"
+    path = "/health"
+
+[vm]
+  cpu_kind = "shared"
+  cpus = 2
+  memory = "1024mb"

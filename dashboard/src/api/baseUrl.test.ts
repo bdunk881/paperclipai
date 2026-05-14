@@ -39,8 +39,8 @@ describe("baseUrl host fallback", () => {
       configurable: true,
     });
 
-    expect(getConfiguredApiOrigin()).toBe("https://autoflow-fastapi-dev.fly.dev");
-    expect(getApiBasePath()).toBe("https://autoflow-fastapi-dev.fly.dev/api");
+    expect(getConfiguredApiOrigin()).toBe("https://dev-api.helloautoflow.com");
+    expect(getApiBasePath()).toBe("https://dev-api.helloautoflow.com/api");
   });
 
   it("uses the dev Fly backend on the dev.app subdomain alias", () => {
@@ -49,7 +49,7 @@ describe("baseUrl host fallback", () => {
       configurable: true,
     });
 
-    expect(getConfiguredApiOrigin()).toBe("https://autoflow-fastapi-dev.fly.dev");
+    expect(getConfiguredApiOrigin()).toBe("https://dev-api.helloautoflow.com");
   });
 
   it("uses the dev Fly backend on raw Cloudflare Pages dev preview URLs", () => {
@@ -58,7 +58,7 @@ describe("baseUrl host fallback", () => {
       configurable: true,
     });
 
-    expect(getConfiguredApiOrigin()).toBe("https://autoflow-fastapi-dev.fly.dev");
+    expect(getConfiguredApiOrigin()).toBe("https://dev-api.helloautoflow.com");
   });
 
   it("uses the production backend on raw Cloudflare Pages prod preview URLs", () => {

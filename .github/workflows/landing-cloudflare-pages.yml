@@ -45,6 +45,23 @@ jobs:
             fi
           done
 
+      - name: Inject NEXT_PUBLIC_API_URL for build (HEL-84)
+        # landing/lib/publicApi.ts reads this at build time. Without it, the
+        # signup + checkout buttons fall back to a relative /api path which
+        # 404s against the static landing site. Per-target-branch routing
+        # matches the dashboard host-map convention.
+        env:
+          TARGET_BRANCH: ${{ github.event_name == 'pull_request' && github.base_ref || github.ref_name }}
+        run: |
+          set -euo pipefail
+          if [[ "$TARGET_BRANCH" == "dev" ]]; then
+            echo "NEXT_PUBLIC_API_URL=https://dev-api.helloautoflow.com" >> "$GITHUB_ENV"
+          elif [[ "$TARGET_BRANCH" == "staging" ]]; then
+            echo "NEXT_PUBLIC_API_URL=https://staging-api.helloautoflow.com" >> "$GITHUB_ENV"
+          else
+            echo "NEXT_PUBLIC_API_URL=https://api.helloautoflow.com" >> "$GITHUB_ENV"
+          fi
+
       - uses: actions/setup-node@v5
         with:
           node-version: 22

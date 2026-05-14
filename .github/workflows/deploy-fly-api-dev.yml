@@ -97,7 +97,13 @@ jobs:
           FLY_API_TOKEN: ${{ env.FLY_API_TOKEN }}
         run: |
           set -euo pipefail
-          if ! flyctl apps list | grep -q "^${FLY_APP}\b"; then
+          # Use `flyctl status` for the existence probe — exits 0 when the app
+          # exists, non-zero otherwise. The previous grep against `flyctl apps
+          # list` output didn't match Fly's table layout and tried to recreate
+          # an already-existing app ("Name has already been taken").
+          if flyctl status -a "${FLY_APP}" >/dev/null 2>&1; then
+            echo "Fly app ${FLY_APP} already exists; skipping create."
+          else
             echo "Creating Fly app ${FLY_APP}"
             flyctl apps create "${FLY_APP}" --org personal
           fi

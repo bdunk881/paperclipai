@@ -42,6 +42,34 @@ function buildApp(authOverrides: { sub?: string; workspaceId?: string } = {}): e
   return app;
 }
 
+describe("GET /api/hiring-plans/:hiringPlanId (HEL-105)", () => {
+  it("returns 401 when no authenticated user is present", async () => {
+    const app = buildApp({ workspaceId: "11111111-1111-4111-8111-111111111111" });
+    const res = await request(app).get(
+      "/api/hiring-plans/22222222-2222-4222-8222-222222222222",
+    );
+    expect(res.status).toBe(401);
+  });
+
+  it("returns 401 when no workspace context is present", async () => {
+    const app = buildApp({ sub: "user-1" });
+    const res = await request(app).get(
+      "/api/hiring-plans/22222222-2222-4222-8222-222222222222",
+    );
+    expect(res.status).toBe(401);
+  });
+
+  it("returns 400 when the hiring plan ID is not a valid UUID", async () => {
+    const app = buildApp({
+      sub: "user-1",
+      workspaceId: "11111111-1111-4111-8111-111111111111",
+    });
+    const res = await request(app).get("/api/hiring-plans/not-a-uuid");
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/Invalid hiring plan ID/);
+  });
+});
+
 describe("POST /api/hiring-plans/:hiringPlanId/confirm", () => {
   it("returns 401 when no authenticated user is present", async () => {
     const app = buildApp({ workspaceId: "11111111-1111-4111-8111-111111111111" });

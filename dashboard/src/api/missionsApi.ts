@@ -144,3 +144,86 @@ export async function confirmHiringPlan(
     `Failed to confirm hiring plan: ${response.status}`,
   );
 }
+
+// ---------------------------------------------------------------------------
+// HEL-105: full hiring plan detail (side-by-side review page).
+// `confirmHiringPlan` above returns the post-confirm provisioning result;
+// `getHiringPlan` returns the full TeamAssemblyResult `plan` payload plus
+// the parent mission statement so the review page can render mission ↔
+// plan in one screen.
+// ---------------------------------------------------------------------------
+
+interface PhasePlan {
+  objectives: string[];
+  deliverables: string[];
+  ownerRoleKeys: string[];
+}
+
+export interface StaffingRecommendation {
+  roleKey: string;
+  title: string;
+  roleType: "executive" | "operator";
+  department: string;
+  headcount: number;
+  reportsToRoleKey: string | null;
+  mandate: string;
+  justification: string;
+  kpis: string[];
+  skills: string[];
+  tools: string[];
+  modelTier: "lite" | "standard" | "power";
+  budgetMonthlyUsd: number | null;
+  provisioningInstructions: string;
+}
+
+export interface HiringPlan {
+  schemaVersion: string;
+  company: {
+    name: string | null;
+    goal: string;
+    targetCustomer: string | null;
+    budget: string | null;
+    timeHorizon: string | null;
+  };
+  summary: string;
+  rationale: string;
+  orgChart: {
+    executives: StaffingRecommendation[];
+    operators: StaffingRecommendation[];
+    reportingLines: Array<{ managerRoleKey: string; reportRoleKey: string }>;
+  };
+  provisioningPlan: {
+    teamName: string;
+    deploymentMode: string;
+    agents: StaffingRecommendation[];
+  };
+  roadmap306090: {
+    day30: PhasePlan;
+    day60: PhasePlan;
+    day90: PhasePlan;
+  };
+}
+
+export interface HiringPlanResponse {
+  id: string;
+  missionId: string;
+  missionStatement: string;
+  plan: HiringPlan;
+  acceptedAt: string | null;
+  acceptedByUserId: string | null;
+  createdAt: string;
+}
+
+export async function getHiringPlan(
+  hiringPlanId: string,
+  accessToken: string,
+): Promise<HiringPlanResponse> {
+  const response = await trackedFetch(
+    `${BASE}/hiring-plans/${encodeURIComponent(hiringPlanId)}`,
+    { headers: buildHeaders(accessToken) },
+  );
+  return parseJsonOrError<HiringPlanResponse>(
+    response,
+    `Failed to fetch hiring plan: ${response.status}`,
+  );
+}

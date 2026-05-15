@@ -109,7 +109,7 @@ export default function TicketSlaDashboard() {
                     {card.label}
                   </p>
                   <div className="mt-5 flex items-end justify-between gap-4">
-                    <p className="font-ticket-mono text-4xl font-bold tracking-tight text-slate-100">
+                    <p className="font-af2-mono text-4xl font-bold tracking-tight text-slate-100">
                       {card.value}
                     </p>
                     <p
@@ -136,7 +136,7 @@ export default function TicketSlaDashboard() {
                 <div className="mt-6 space-y-4">
                   {dashboard.resolutionBuckets.map((bucket) => (
                     <div key={bucket.label} className="grid gap-2 sm:grid-cols-[84px_minmax(0,1fr)_72px] sm:items-center">
-                      <span className="font-ticket-mono text-xs uppercase tracking-[0.18em] text-slate-400">
+                      <span className="font-af2-mono text-xs uppercase tracking-[0.18em] text-slate-400">
                         {bucket.label}
                       </span>
                       <div className="h-11 overflow-hidden rounded-2xl bg-slate-800/90">
@@ -167,7 +167,7 @@ export default function TicketSlaDashboard() {
                     >
                       <div className="flex items-start justify-between gap-3">
                         <div>
-                          <p className="font-ticket-mono text-xs uppercase tracking-[0.18em] text-slate-400">
+                          <p className="font-af2-mono text-xs uppercase tracking-[0.18em] text-slate-400">
                             {row.priority}
                           </p>
                           <p className="mt-2 text-sm text-slate-300">

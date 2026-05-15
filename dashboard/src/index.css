@@ -55,12 +55,17 @@
   body {
     @apply antialiased transition-colors duration-200;
     font-family: 'Inter', ui-sans-serif, system-ui, -apple-system, sans-serif;
-    background-color: rgb(var(--color-bg-primary));
-    color: rgb(var(--color-text-primary));
+    /* HEL-116a — migrated from v1 --color-bg-primary / --color-text-primary
+       to af2 paper / ink so the chrome doesn't depend on the legacy :root
+       block. Dark mode still uses html.dark scoped CSS vars from the v1
+       block until the dark-mode af2 strategy is decided. */
+    background-color: var(--af2-paper);
+    color: var(--af2-ink);
   }
 
-  .font-ticket-mono {
-    font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+  html.dark body {
+    background-color: rgb(var(--color-bg-primary));
+    color: rgb(var(--color-text-primary));
   }
 }
 

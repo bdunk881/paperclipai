@@ -59,7 +59,7 @@ export function TicketSlaBadge({ slaState }: { slaState: TicketSlaStateLike | st
   return (
     <span
       className={clsx(
-        "inline-flex items-center gap-1 rounded-full border px-2 py-0.5 font-ticket-mono text-[10px] font-bold uppercase tracking-[0.2em] transition-colors duration-300 ease-in-out",
+        "inline-flex items-center gap-1 rounded-full border px-2 py-0.5 font-af2-mono text-[10px] font-bold uppercase tracking-[0.2em] transition-colors duration-300 ease-in-out",
         ticketSlaClasses(normalized)
       )}
     >
@@ -191,7 +191,7 @@ export function TicketRowMeta({
 
   return (
     <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
-      <span className="font-ticket-mono uppercase tracking-[0.16em] text-slate-500 dark:text-slate-400">{ticket.id}</span>
+      <span className="font-af2-mono uppercase tracking-[0.16em] text-slate-500 dark:text-slate-400">{ticket.id}</span>
       {owner ? (
         <>
           <span className="text-slate-300 dark:text-slate-700">&bull;</span>

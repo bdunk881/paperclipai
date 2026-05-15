@@ -176,7 +176,7 @@ export default function TicketSlaSettings() {
                       )}
                     >
                       <div>
-                        <p className="font-ticket-mono text-xs uppercase tracking-[0.2em] text-af2-ink-3">
+                        <p className="font-af2-mono text-xs uppercase tracking-[0.2em] text-af2-ink-3">
                           {row.priority}
                         </p>
                       </div>
@@ -224,7 +224,7 @@ export default function TicketSlaSettings() {
                       )}
                     >
                       <div className="flex items-center justify-between gap-4">
-                        <p className="font-ticket-mono text-xs uppercase tracking-[0.2em] text-af2-ink-3">
+                        <p className="font-af2-mono text-xs uppercase tracking-[0.2em] text-af2-ink-3">
                           {row.priority}
                         </p>
                         <div className="flex flex-wrap gap-2">
@@ -425,13 +425,13 @@ function DurationField({
           min={1}
           value={value}
           onChange={(event) => onValueChange(Number(event.target.value))}
-          className="rounded-2xl border border-af2-line bg-af2-ink/70 px-4 py-3 font-ticket-mono text-sm text-af2-paper focus:outline-none focus:ring-2 focus:ring-teal-400"
+          className="rounded-2xl border border-af2-line bg-af2-ink/70 px-4 py-3 font-af2-mono text-sm text-af2-paper focus:outline-none focus:ring-2 focus:ring-teal-400"
         />
         <div className="relative">
           <select
             value={unit}
             onChange={(event) => onUnitChange(event.target.value as Unit)}
-            className="w-full rounded-2xl border border-af2-line bg-af2-ink/70 px-4 py-3 font-ticket-mono text-sm text-af2-paper focus:outline-none focus:ring-2 focus:ring-teal-400"
+            className="w-full rounded-2xl border border-af2-line bg-af2-ink/70 px-4 py-3 font-af2-mono text-sm text-af2-paper focus:outline-none focus:ring-2 focus:ring-teal-400"
           >
             <option value="m">m</option>
             <option value="h">h</option>

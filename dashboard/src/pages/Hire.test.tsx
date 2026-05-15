@@ -10,18 +10,25 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter } from "react-router-dom";
 
-const { listMissionsMock, createMissionMock, generateHiringPlanMock, requireAccessTokenMock } =
-  vi.hoisted(() => ({
-    listMissionsMock: vi.fn(),
-    createMissionMock: vi.fn(),
-    generateHiringPlanMock: vi.fn(),
-    requireAccessTokenMock: vi.fn(),
-  }));
+const {
+  listMissionsMock,
+  createMissionMock,
+  generateHiringPlanMock,
+  confirmHiringPlanMock,
+  requireAccessTokenMock,
+} = vi.hoisted(() => ({
+  listMissionsMock: vi.fn(),
+  createMissionMock: vi.fn(),
+  generateHiringPlanMock: vi.fn(),
+  confirmHiringPlanMock: vi.fn(),
+  requireAccessTokenMock: vi.fn(),
+}));
 
 vi.mock("../api/missionsApi", () => ({
   listMissions: listMissionsMock,
   createMission: createMissionMock,
   generateHiringPlan: generateHiringPlanMock,
+  confirmHiringPlan: confirmHiringPlanMock,
   getMission: vi.fn(),
 }));
 
@@ -159,6 +166,66 @@ describe("Hire page (HEL-23)", () => {
     fireEvent.click(screen.getByRole("button", { name: /Save draft/i }));
 
     expect(await screen.findByRole("alert")).toHaveTextContent(/Plan limit reached: missions/);
+  });
+
+  it("confirms a drafted hiring plan and refreshes the missions list (HEL-25)", async () => {
+    listMissionsMock
+      .mockResolvedValueOnce([
+        {
+          id: "m-with-plan",
+          statement: "Launch the R-7 to industrial buyers",
+          status: "draft",
+          metadata: {},
+          createdAt: new Date().toISOString(),
+          companyId: "company-1",
+          companyName: "Acme",
+          latestHiringPlanId: "plan-xyz",
+        },
+      ])
+      .mockResolvedValueOnce([
+        {
+          id: "m-with-plan",
+          statement: "Launch the R-7 to industrial buyers",
+          status: "active",
+          metadata: {},
+          createdAt: new Date().toISOString(),
+          companyId: "company-1",
+          companyName: "Acme",
+          latestHiringPlanId: "plan-xyz",
+        },
+      ]);
+    confirmHiringPlanMock.mockResolvedValue({
+      hiringPlanId: "plan-xyz",
+      missionId: "m-with-plan",
+      acceptedAt: new Date().toISOString(),
+      agents: [
+        { id: "a-1", roleKey: "ceo", name: "CEO", modelTier: "power", model: null, budgetMonthlyUsd: 0, reportingToAgentId: null },
+        { id: "a-2", roleKey: "sdr", name: "SDR", modelTier: "lite", model: null, budgetMonthlyUsd: 0, reportingToAgentId: "a-1" },
+      ],
+      orgEdges: [{ managerAgentId: "a-1", agentId: "a-2" }],
+    });
+
+    render(
+      <MemoryRouter>
+        <Hire />
+      </MemoryRouter>,
+    );
+
+    const confirmButton = await screen.findByRole("button", { name: /Confirm plan/i });
+    fireEvent.click(confirmButton);
+
+    await waitFor(() => {
+      expect(confirmHiringPlanMock).toHaveBeenCalledWith("plan-xyz", "mock-token");
+    });
+
+    // Success banner mentions both counts.
+    expect(await screen.findByText(/provisioned 2 agents/i)).toBeInTheDocument();
+
+    // After refresh the mission status flips to 'active' and the CTA
+    // becomes "View team" linking to /team.
+    await waitFor(() => {
+      expect(screen.getByRole("link", { name: /View team/i })).toHaveAttribute("href", "/team");
+    });
   });
 
   it("renders saved missions returned by the API", async () => {

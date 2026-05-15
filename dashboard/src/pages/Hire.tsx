@@ -18,6 +18,7 @@ import { Link } from "react-router-dom";
 import { Loader2, Sparkles } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import {
+  confirmHiringPlan,
   createMission,
   generateHiringPlan,
   listMissions,
@@ -101,6 +102,10 @@ export default function Hire() {
   const [notice, setNotice] = useState<string | null>(null);
   const [loadingList, setLoadingList] = useState(true);
   const [listError, setListError] = useState<string | null>(null);
+  // HEL-25: per-mission confirm state. The hiring-plan confirm endpoint is
+  // atomic and idempotent (409 on second call), so a single in-flight key
+  // per mission keeps the UI honest.
+  const [confirmingMissionId, setConfirmingMissionId] = useState<string | null>(null);
 
   const refreshMissions = useCallback(async () => {
     setLoadingList(true);
@@ -132,6 +137,29 @@ export default function Hire() {
 
   function updateMetadata<K extends keyof MissionMetadata>(key: K, value: string) {
     setMetadata((current) => ({ ...current, [key]: value }));
+  }
+
+  async function handleConfirmPlan(mission: Mission): Promise<void> {
+    if (!mission.latestHiringPlanId) return;
+    setConfirmingMissionId(mission.id);
+    setError(null);
+    setNotice(null);
+    try {
+      const token = await requireAccessToken();
+      const result = await confirmHiringPlan(mission.latestHiringPlanId, token);
+      setNotice(
+        `Confirmed: provisioned ${result.agents.length} agent${
+          result.agents.length === 1 ? "" : "s"
+        } with ${result.orgEdges.length} reporting line${
+          result.orgEdges.length === 1 ? "" : "s"
+        }. The Team page now shows your org chart.`,
+      );
+      void refreshMissions();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to confirm hiring plan");
+    } finally {
+      setConfirmingMissionId(null);
+    }
   }
 
   async function handleSave(generateAfter: boolean): Promise<void> {
@@ -472,16 +500,38 @@ export default function Hire() {
               </span>
               <div style={{ textAlign: "right" }}>
                 {mission.latestHiringPlanId ? (
-                  <Link
-                    to="/team"
-                    className="af2-btn af2-btn-sm"
-                    style={{
-                      textDecoration: "none",
-                      display: "inline-block",
-                    }}
-                  >
-                    View plan
-                  </Link>
+                  mission.status === "active" ? (
+                    // HEL-25: plan already confirmed (mission moved to
+                    // 'active'); link to the Team page to view the org chart.
+                    <Link
+                      to="/team"
+                      className="af2-btn af2-btn-sm"
+                      style={{ textDecoration: "none", display: "inline-block" }}
+                    >
+                      View team
+                    </Link>
+                  ) : (
+                    // HEL-25: drafted plan, not yet confirmed. Inline confirm
+                    // is the simplest path for v1; a side-by-side review UI is
+                    // the HEL-25b follow-on once HEL-26 (org chart) lands.
+                    <button
+                      type="button"
+                      onClick={() => void handleConfirmPlan(mission)}
+                      disabled={confirmingMissionId === mission.id}
+                      className="af2-btn af2-btn-sm af2-btn-clay"
+                      style={{
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: 6,
+                        opacity: confirmingMissionId === mission.id ? 0.5 : 1,
+                      }}
+                    >
+                      {confirmingMissionId === mission.id ? (
+                        <Loader2 size={14} className="animate-spin" />
+                      ) : null}
+                      Confirm plan
+                    </button>
+                  )
                 ) : null}
               </div>
             </div>

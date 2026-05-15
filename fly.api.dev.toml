@@ -14,6 +14,13 @@ primary_region = "ord"
 [build]
   dockerfile = "docker/api/Dockerfile"
 
+# HEL-106: two processes — the HTTP API and the BullMQ worker.
+# Both run from the same Docker image; the worker connects to Upstash Redis
+# via REDIS_URL (or UPSTASH_REDIS_URL) injected as a Fly secret.
+[processes]
+  app = "node dist/index.js"
+  worker = "node dist/worker.js"
+
 [env]
   ALLOWED_ORIGINS = "https://dev.helloautoflow.com,https://dev.app.helloautoflow.com"
   APP_ENV = "dev"

@@ -140,7 +140,7 @@ const APPROVAL_STATUS_CONFIG: Record<
   rejected: {
     label: "Rejected",
     badge: "bg-af2-clay-soft/60 text-af2-clay",
-    card: "border-rose-300",
+    card: "border-af2-clay/30",
   },
   timed_out: {
     label: "Timed Out",
@@ -156,7 +156,7 @@ const CHECKPOINT_STATUS_CONFIG: Record<
   pending: {
     label: "Pending",
     badge: "bg-af2-mustard/15 text-af2-mustard",
-    card: "border-amber-300",
+    card: "border-af2-mustard/40",
   },
   acknowledged: {
     label: "Acknowledged",
@@ -514,7 +514,7 @@ export default function Approvals() {
 
       <div>
         {error && (
-          <div className="mb-6 flex items-center gap-2 rounded-2xl border border-rose-200 bg-af2-clay-soft/30 px-4 py-3 text-sm text-af2-clay">
+          <div className="mb-6 flex items-center gap-2 rounded-2xl border border-af2-clay/30 bg-af2-clay-soft/30 px-4 py-3 text-sm text-af2-clay">
             <AlertCircle size={16} />
             <span>{error}</span>
           </div>
@@ -528,7 +528,7 @@ export default function Approvals() {
         )}
 
         {teams.length === 0 && (
-          <div className="rounded-[28px] border border-dashed border-af2-line-2 bg-af2-card p-10 text-center shadow-sm">
+          <div className="af2-card">
             <Bot size={28} className="mx-auto text-af2-clay" />
             <h2 className="mt-4 text-lg font-semibold text-af2-ink">No deployed companies yet</h2>
             <p className="mt-2 text-sm text-af2-ink-3">
@@ -546,7 +546,7 @@ export default function Approvals() {
         {teams.length > 0 && companyState && (
           <div className="grid gap-6 xl:grid-cols-[1.7fr_1fr]">
             <div className="space-y-6">
-              <section className="rounded-[28px] border border-af2-line bg-af2-card p-6 shadow-sm">
+              <section className="af2-card">
                 <div className="flex items-center justify-between gap-4">
                   <div>
                     <p className="text-xs font-semibold uppercase tracking-[0.18em] text-af2-clay">
@@ -559,7 +559,7 @@ export default function Approvals() {
                   <button
                     onClick={handleSaveSchedule}
                     disabled={savingSection === "schedule"}
-                    className="inline-flex items-center gap-2 rounded-2xl bg-af2-clay px-4 py-2.5 text-sm font-medium text-white transition hover:bg-af2-clay-2 disabled:opacity-60"
+                    className="af2-btn af2-btn-clay inline-flex items-center gap-2 disabled:opacity-60"
                   >
                     {savingSection === "schedule" ? (
                       <Loader2 size={15} className="animate-spin" />
@@ -578,7 +578,7 @@ export default function Approvals() {
                       onChange={(event) =>
                         setScheduleDraft((current) => ({ ...current, timezone: event.target.value }))
                       }
-                      className="mt-2 w-full rounded-2xl border border-af2-line px-4 py-3 text-sm shadow-sm outline-none focus:border-af2-clay/40"
+                      className="mt-2 w-full af2-input"
                     />
                   </label>
                   <label className="text-sm font-medium text-af2-ink-2">
@@ -594,7 +594,7 @@ export default function Approvals() {
                           weeklyReviewHour: Number(event.target.value),
                         }))
                       }
-                      className="mt-2 w-full rounded-2xl border border-af2-line px-4 py-3 text-sm shadow-sm outline-none focus:border-af2-clay/40"
+                      className="mt-2 w-full af2-input"
                     />
                   </label>
                   <label className="text-sm font-medium text-af2-ink-2">
@@ -607,7 +607,7 @@ export default function Approvals() {
                           weeklyReviewDay: Number(event.target.value),
                         }))
                       }
-                      className="mt-2 w-full rounded-2xl border border-af2-line px-4 py-3 text-sm shadow-sm outline-none focus:border-af2-clay/40"
+                      className="mt-2 w-full af2-input"
                     >
                       {DAY_LABELS.map((label, index) => (
                         <option key={label} value={index}>
@@ -626,7 +626,7 @@ export default function Approvals() {
                           milestoneStatuses: event.target.value,
                         }))
                       }
-                      className="mt-2 w-full rounded-2xl border border-af2-line px-4 py-3 text-sm shadow-sm outline-none focus:border-af2-clay/40"
+                      className="mt-2 w-full af2-input"
                     />
                   </label>
                   <label className="text-sm font-medium text-af2-ink-2">
@@ -637,7 +637,7 @@ export default function Approvals() {
                         setScheduleDraft((current) => ({ ...current, kpiMetricKey: event.target.value }))
                       }
                       placeholder="weekly_signups"
-                      className="mt-2 w-full rounded-2xl border border-af2-line px-4 py-3 text-sm shadow-sm outline-none focus:border-af2-clay/40"
+                      className="mt-2 w-full af2-input"
                     />
                   </label>
                   <label className="text-sm font-medium text-af2-ink-2">
@@ -648,7 +648,7 @@ export default function Approvals() {
                         setScheduleDraft((current) => ({ ...current, kpiThreshold: event.target.value }))
                       }
                       placeholder="100"
-                      className="mt-2 w-full rounded-2xl border border-af2-line px-4 py-3 text-sm shadow-sm outline-none focus:border-af2-clay/40"
+                      className="mt-2 w-full af2-input"
                     />
                   </label>
                 </div>
@@ -688,7 +688,7 @@ export default function Approvals() {
               </section>
 
               <section className="grid gap-6 lg:grid-cols-2">
-                <div className="rounded-[28px] border border-af2-line bg-af2-card p-6 shadow-sm">
+                <div className="af2-card">
                   <div className="flex items-center justify-between">
                     <div>
                       <p className="text-xs font-semibold uppercase tracking-[0.18em] text-af2-sage">
@@ -701,7 +701,7 @@ export default function Approvals() {
                     <button
                       onClick={handleCreateCheckpoint}
                       disabled={savingSection === "checkpoint"}
-                      className="inline-flex items-center gap-2 rounded-2xl bg-af2-sage px-4 py-2.5 text-sm font-medium text-white transition hover:bg-af2-sage disabled:opacity-60"
+                      className="af2-btn inline-flex items-center gap-2 disabled:opacity-60"
                     >
                       {savingSection === "checkpoint" ? (
                         <Loader2 size={15} className="animate-spin" />
@@ -719,7 +719,7 @@ export default function Approvals() {
                         setCheckpointForm((current) => ({ ...current, title: event.target.value }))
                       }
                       placeholder="Checkpoint title"
-                      className="w-full rounded-2xl border border-af2-line px-4 py-3 text-sm shadow-sm outline-none focus:border-af2-sage/50"
+                      className="w-full af2-input"
                     />
                     <textarea
                       value={checkpointForm.description}
@@ -728,7 +728,7 @@ export default function Approvals() {
                       }
                       rows={3}
                       placeholder="What needs review before this can move?"
-                      className="w-full rounded-2xl border border-af2-line px-4 py-3 text-sm shadow-sm outline-none focus:border-af2-sage/50"
+                      className="w-full af2-input"
                     />
                     <div className="grid gap-3 md:grid-cols-2">
                       <input
@@ -737,7 +737,7 @@ export default function Approvals() {
                         onChange={(event) =>
                           setCheckpointForm((current) => ({ ...current, dueAt: event.target.value }))
                         }
-                        className="w-full rounded-2xl border border-af2-line px-4 py-3 text-sm shadow-sm outline-none focus:border-af2-sage/50"
+                        className="w-full af2-input"
                       />
                       <input
                         value={checkpointForm.recipientId}
@@ -745,7 +745,7 @@ export default function Approvals() {
                           setCheckpointForm((current) => ({ ...current, recipientId: event.target.value }))
                         }
                         placeholder="Recipient user id"
-                        className="w-full rounded-2xl border border-af2-line px-4 py-3 text-sm shadow-sm outline-none focus:border-af2-sage/50"
+                        className="w-full af2-input"
                       />
                     </div>
                     <input
@@ -754,12 +754,12 @@ export default function Approvals() {
                         setCheckpointForm((current) => ({ ...current, artifactRefs: event.target.value }))
                       }
                       placeholder="Artifact refs, comma separated"
-                      className="w-full rounded-2xl border border-af2-line px-4 py-3 text-sm shadow-sm outline-none focus:border-af2-sage/50"
+                      className="w-full af2-input"
                     />
                   </div>
                 </div>
 
-                <div className="rounded-[28px] border border-af2-line bg-af2-card p-6 shadow-sm">
+                <div className="af2-card">
                   <div className="flex items-center justify-between">
                     <div>
                       <p className="text-xs font-semibold uppercase tracking-[0.18em] text-af2-clay">
@@ -772,7 +772,7 @@ export default function Approvals() {
                     <button
                       onClick={handleAskCeo}
                       disabled={savingSection === "ask-ceo"}
-                      className="inline-flex items-center gap-2 rounded-2xl bg-af2-ink px-4 py-2.5 text-sm font-medium text-white transition hover:bg-af2-ink-2 disabled:opacity-60"
+                      className="af2-btn af2-btn-primary inline-flex items-center gap-2 disabled:opacity-60"
                     >
                       {savingSection === "ask-ceo" ? (
                         <Loader2 size={15} className="animate-spin" />
@@ -788,7 +788,7 @@ export default function Approvals() {
                     onChange={(event) => setAskForm({ question: event.target.value })}
                     rows={4}
                     placeholder="What needs my attention right now?"
-                    className="mt-5 w-full rounded-2xl border border-af2-line px-4 py-3 text-sm shadow-sm outline-none focus:border-af2-clay/40"
+                    className="mt-5 w-full af2-input"
                   />
 
                   {recentAsk && (
@@ -813,7 +813,7 @@ export default function Approvals() {
                 </div>
               </section>
 
-              <section className="rounded-[28px] border border-af2-line bg-af2-card p-6 shadow-sm">
+              <section className="af2-card">
                 <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
                   <div>
                     <p className="text-xs font-semibold uppercase tracking-[0.18em] text-af2-clay">
@@ -826,7 +826,7 @@ export default function Approvals() {
                   <button
                     onClick={handleCreateComment}
                     disabled={savingSection === "comment"}
-                    className="inline-flex items-center gap-2 rounded-2xl bg-af2-clay px-4 py-2.5 text-sm font-medium text-white transition hover:bg-af2-clay-2 disabled:opacity-60"
+                    className="af2-btn af2-btn-clay inline-flex items-center gap-2 disabled:opacity-60"
                   >
                     {savingSection === "comment" ? (
                       <Loader2 size={15} className="animate-spin" />
@@ -846,7 +846,7 @@ export default function Approvals() {
                         artifactKind: event.target.value as HitlArtifactComment["artifact"]["kind"],
                       }))
                     }
-                    className="rounded-2xl border border-af2-line px-4 py-3 text-sm shadow-sm outline-none focus:border-af2-clay/40"
+                    className="af2-input"
                   >
                     <option value="document">Document</option>
                     <option value="ticket">Ticket</option>
@@ -860,7 +860,7 @@ export default function Approvals() {
                       setCommentForm((current) => ({ ...current, artifactId: event.target.value }))
                     }
                     placeholder="Artifact id"
-                    className="rounded-2xl border border-af2-line px-4 py-3 text-sm shadow-sm outline-none focus:border-af2-clay/40"
+                    className="af2-input"
                   />
                   <input
                     value={commentForm.artifactTitle}
@@ -868,7 +868,7 @@ export default function Approvals() {
                       setCommentForm((current) => ({ ...current, artifactTitle: event.target.value }))
                     }
                     placeholder="Artifact title"
-                    className="rounded-2xl border border-af2-line px-4 py-3 text-sm shadow-sm outline-none focus:border-af2-clay/40"
+                    className="af2-input"
                   />
                   <input
                     value={commentForm.artifactPath}
@@ -876,7 +876,7 @@ export default function Approvals() {
                       setCommentForm((current) => ({ ...current, artifactPath: event.target.value }))
                     }
                     placeholder="Artifact path"
-                    className="rounded-2xl border border-af2-line px-4 py-3 text-sm shadow-sm outline-none focus:border-af2-clay/40"
+                    className="af2-input"
                   />
                   <input
                     value={commentForm.recipientId}
@@ -884,7 +884,7 @@ export default function Approvals() {
                       setCommentForm((current) => ({ ...current, recipientId: event.target.value }))
                     }
                     placeholder="Responsible agent id"
-                    className="rounded-2xl border border-af2-line px-4 py-3 text-sm shadow-sm outline-none focus:border-af2-clay/40"
+                    className="af2-input"
                   />
                   <input
                     value={commentForm.reason}
@@ -892,7 +892,7 @@ export default function Approvals() {
                       setCommentForm((current) => ({ ...current, reason: event.target.value }))
                     }
                     placeholder="Routing reason"
-                    className="rounded-2xl border border-af2-line px-4 py-3 text-sm shadow-sm outline-none focus:border-af2-clay/40"
+                    className="af2-input"
                   />
                 </div>
                 <input
@@ -901,7 +901,7 @@ export default function Approvals() {
                     setCommentForm((current) => ({ ...current, quote: event.target.value }))
                   }
                   placeholder="Quoted anchor text"
-                  className="mt-3 w-full rounded-2xl border border-af2-line px-4 py-3 text-sm shadow-sm outline-none focus:border-af2-clay/40"
+                  className="mt-3 w-full af2-input"
                 />
                 <textarea
                   value={commentForm.body}
@@ -910,13 +910,13 @@ export default function Approvals() {
                   }
                   rows={3}
                   placeholder="Please add the company-state evidence block before this ships."
-                  className="mt-3 w-full rounded-2xl border border-af2-line px-4 py-3 text-sm shadow-sm outline-none focus:border-af2-clay/40"
+                  className="mt-3 w-full af2-input"
                 />
               </section>
             </div>
 
             <div className="space-y-6">
-              <section className="rounded-[28px] border border-af2-line bg-af2-card p-6 shadow-sm">
+              <section className="af2-card">
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="text-xs font-semibold uppercase tracking-[0.18em] text-af2-ink-3">
@@ -953,7 +953,7 @@ export default function Approvals() {
                 </div>
               </section>
 
-              <section className="rounded-[28px] border border-af2-line bg-af2-card p-6 shadow-sm">
+              <section className="af2-card">
                 <div>
                   <p className="text-xs font-semibold uppercase tracking-[0.18em] text-af2-sage">
                     Open checkpoints
@@ -972,7 +972,7 @@ export default function Approvals() {
                 </div>
               </section>
 
-              <section className="rounded-[28px] border border-af2-line bg-af2-card p-6 shadow-sm">
+              <section className="af2-card">
                 <div>
                   <p className="text-xs font-semibold uppercase tracking-[0.18em] text-af2-clay">
                     Routed comments
@@ -1010,7 +1010,7 @@ export default function Approvals() {
                 </div>
               </section>
 
-              <section className="rounded-[28px] border border-af2-line bg-af2-card p-6 shadow-sm">
+              <section className="af2-card">
                 <div>
                   <p className="text-xs font-semibold uppercase tracking-[0.18em] text-af2-clay">
                     Approval inbox
@@ -1160,7 +1160,7 @@ function ApprovalCard({
             onChange={(event) => setComment(event.target.value)}
             rows={2}
             placeholder="Optional comment for the requester"
-            className="w-full rounded-2xl border border-af2-line px-4 py-3 text-sm shadow-sm outline-none focus:border-af2-clay/40"
+            className="w-full af2-input"
           />
           {submitError && <p className="text-sm text-af2-clay">{submitError}</p>}
           <div className="flex gap-2">
@@ -1175,7 +1175,7 @@ function ApprovalCard({
             <button
               onClick={() => handleResolve("rejected")}
               disabled={submitting}
-              className="inline-flex items-center gap-2 rounded-xl border border-rose-200 bg-af2-card px-3 py-2 text-sm font-medium text-af2-clay disabled:opacity-60"
+              className="inline-flex items-center gap-2 rounded-xl border border-af2-clay/30 bg-af2-card px-3 py-2 text-sm font-medium text-af2-clay disabled:opacity-60"
             >
               Reject
             </button>

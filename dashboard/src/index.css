@@ -5,6 +5,13 @@
    pages that have migrated to v2 (HEL-31 / HEL-32). */
 @import "./af2-tokens.css";
 
+/* AutoFlow v2 component classes (.af2-page, .af2-card, .af2-eyebrow, .af2-h1,
+   .af2-tabs, .af2-list, .af2-btn, .af2-pill, etc.). Lifted from
+   docs/design/v2/styles.css so per-page restyle PRs (HEL-32 sub-tickets) can
+   use the same structural markers the v2 reference uses. HEL-30 ported only
+   the :root token block; this completes the lift. */
+@import "./af2-components.css";
+
 @tailwind base;
 @tailwind components;
 

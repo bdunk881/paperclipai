@@ -191,7 +191,7 @@ export function buildMissionRecordFromBackend(
 
 function MissionStatusBadge({ status }: { status: MissionStatus }) {
   const tone = {
-    "On Track": "bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-200",
+    "On Track": "bg-emerald-100 text-emerald-700",
     "At Risk": "af2-tone-bg-mustard",
     Blocked: "af2-tone-bg-clay",
     "Off Track": "af2-tone-bg-clay",
@@ -222,7 +222,7 @@ function MissionSkeleton({ lines = 3 }: { lines?: number }) {
       {Array.from({ length: lines }).map((_, index) => (
         <div
           key={index}
-          className="animate-mission-skeleton h-3 rounded-full bg-af2-paper-2 dark:bg-af2-paper-3"
+          className="animate-mission-skeleton h-3 rounded-full bg-af2-paper-2"
           style={{ width: `${100 - index * 12}%` }}
         />
       ))}
@@ -439,11 +439,11 @@ export function MissionStateView({
             >
               <div className="space-y-4">
                 <div className="rounded-2xl p-4 af2-tone-bg-sage">
-                  <p className="text-xs font-semibold uppercase tracking-[0.16em] text-teal-700 dark:text-teal-200">Overall Confidence</p>
+                  <p className="text-xs font-semibold uppercase tracking-[0.16em] text-teal-700">Overall Confidence</p>
                   <p className="mt-2 af2-h3 text-af2-ink">{data?.confidence}</p>
                 </div>
                 <div className="rounded-2xl p-4 af2-tone-bg-mustard">
-                  <div className="flex items-center gap-2 text-sm font-semibold text-orange-700 dark:text-orange-200">
+                  <div className="flex items-center gap-2 text-sm font-semibold text-orange-700">
                     <AlertTriangle size={16} />
                     At-risk indicator
                   </div>
@@ -507,7 +507,7 @@ export function MissionStateView({
                   data.topBlockers.map((blocker) => (
                     <div key={blocker} className="af2-card">
                       <div className="flex items-start gap-3">
-                        <ShieldAlert size={16} className="mt-0.5 text-orange-600 dark:text-orange-300" />
+                        <ShieldAlert size={16} className="mt-0.5 text-orange-600" />
                         <p className="text-sm leading-6 text-af2-ink-2">{blocker}</p>
                       </div>
                     </div>
@@ -515,7 +515,7 @@ export function MissionStateView({
                 ) : (
                   <div className="af2-card af2-tone-bg-sage" style={{ borderStyle: "dashed", borderColor: "rgba(74,107,74,0.3)" }}>
                     <div className="flex items-start gap-3">
-                      <CheckCircle2 size={16} className="mt-0.5 text-teal-600 dark:text-teal-300" />
+                      <CheckCircle2 size={16} className="mt-0.5 text-teal-600" />
                       <p className="text-sm leading-6 text-af2-ink-2">No blockers or risk summaries are currently attached to this mission.</p>
                     </div>
                   </div>

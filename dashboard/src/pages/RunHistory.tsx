@@ -149,7 +149,7 @@ export default function RunHistory() {
     <div className="p-8">
       {/* Header */}
       <div className="mb-8">
-        <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">Run History</h1>
+        <h1 className="text-2xl font-bold text-gray-900">Run History</h1>
         <p className="text-gray-500 mt-1 text-sm">
           All workflow runs — {allRuns.length} total
         </p>
@@ -320,7 +320,7 @@ export default function RunHistory() {
                   <Fragment key={run.id}>
                     <tr className="hover:bg-gray-50 transition-colors">
                       <td className="px-5 py-3 font-mono text-xs text-gray-500">{run.id}</td>
-                      <td className="px-5 py-3 font-medium text-gray-900 dark:text-gray-100">{run.templateName}</td>
+                      <td className="px-5 py-3 font-medium text-gray-900">{run.templateName}</td>
                       <td className="px-5 py-3">
                         <StatusBadge status={run.status} />
                       </td>
@@ -337,7 +337,7 @@ export default function RunHistory() {
                         <button
                           type="button"
                           onClick={() => setSelectedRun(run)}
-                          className="inline-flex items-center gap-1 rounded-full border border-surface-700/20 bg-surface-900 px-3 py-1.5 text-xs font-medium text-surface-50 transition hover:border-brand-500/50 hover:text-white dark:bg-surface-950"
+                          className="inline-flex items-center gap-1 rounded-full border border-surface-700/20 bg-surface-900 px-3 py-1.5 text-xs font-medium text-surface-50 transition hover:border-brand-500/50 hover:text-white"
                           aria-label={`Open run audit for ${run.templateName}`}
                         >
                           Audit view

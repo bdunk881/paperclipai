@@ -153,20 +153,20 @@ export default function Pricing() {
   }
 
   return (
-    <div className="min-h-full bg-af2-paper dark:bg-surface-950 transition-colors duration-200">
+    <div className="min-h-full bg-af2-paper transition-colors duration-200">
       {/* Header */}
-      <div className="bg-af2-card dark:bg-surface-900 border-b border-af2-line dark:border-surface-800 px-8 py-10 text-center">
-        <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-af2-clay-soft dark:bg-brand-500/10 text-af2-clay-2 dark:text-brand-300 text-xs font-medium mb-4">
+      <div className="bg-af2-card border-b border-af2-line px-8 py-10 text-center">
+        <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-af2-clay-soft text-af2-clay-2 text-xs font-medium mb-4">
           <Zap size={12} />
           Unlimited Executions on Every Plan
         </div>
-        <h1 className="text-3xl font-bold text-gray-900 dark:text-white mb-3 tracking-tight">Simple, Flat-Fee Pricing</h1>
-        <p className="text-gray-500 dark:text-gray-400 max-w-xl mx-auto text-sm">
+        <h1 className="text-3xl font-bold text-gray-900 mb-3 tracking-tight">Simple, Flat-Fee Pricing</h1>
+        <p className="text-gray-500 max-w-xl mx-auto text-sm">
           No per-execution charges. No usage limits. Pay a flat monthly fee and run
           as many workflows as you need.
         </p>
         {error && (
-          <div className="mt-4 inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-red-50 dark:bg-red-950/20 border border-red-200 dark:border-red-900/50 text-red-700 dark:text-red-400 text-xs">
+          <div className="mt-4 inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-red-50 border border-red-200 text-red-700 text-xs">
             {error}
           </div>
         )}
@@ -180,8 +180,8 @@ export default function Pricing() {
               key={tier.name}
               className={`relative rounded-2xl border-2 p-8 flex flex-col transition-all duration-200 ${
                 tier.highlight
-                  ? "border-af2-clay bg-af2-card dark:bg-surface-900 shadow-xl shadow-af2-clay/10 dark:shadow-brand-500/5 scale-105 z-10"
-                  : "border-af2-line dark:border-surface-800 bg-af2-card dark:bg-surface-900 shadow-sm"
+                  ? "border-af2-clay bg-af2-card shadow-xl shadow-af2-clay/10 scale-105 z-10"
+                  : "border-af2-line bg-af2-card shadow-sm"
               }`}
             >
               {tier.badge && (
@@ -193,12 +193,12 @@ export default function Pricing() {
               )}
 
               <div className="mb-6">
-                <h2 className="text-xl font-bold text-gray-900 dark:text-white">{tier.name}</h2>
-                <p className="text-gray-500 dark:text-gray-400 text-sm mt-1">{tier.description}</p>
+                <h2 className="text-xl font-bold text-gray-900">{tier.name}</h2>
+                <p className="text-gray-500 text-sm mt-1">{tier.description}</p>
                 <div className="mt-4 flex items-end gap-1">
-                  <span className="text-4xl font-extrabold text-gray-900 dark:text-white">{tier.price}</span>
+                  <span className="text-4xl font-extrabold text-gray-900">{tier.price}</span>
                   {tier.period && (
-                    <span className="text-gray-400 dark:text-gray-500 text-sm mb-1">{tier.period}</span>
+                    <span className="text-gray-400 text-sm mb-1">{tier.period}</span>
                   )}
                 </div>
                 <div className="mt-1 text-xs text-af2-sage font-medium uppercase tracking-wide">
@@ -212,7 +212,7 @@ export default function Pricing() {
                 className={`w-full py-2.5 rounded-xl text-sm font-bold transition-all mb-8 disabled:opacity-60 disabled:cursor-wait ${
                   tier.highlight
                     ? "bg-af2-clay-2 hover:bg-af2-clay text-af2-card shadow-lg shadow-af2-clay/20"
-                    : "border border-af2-line dark:border-surface-700 text-af2-ink-2 dark:text-gray-300 hover:bg-af2-paper-2 dark:hover:bg-surface-800"
+                    : "border border-af2-line text-af2-ink-2 hover:bg-af2-paper-2"
                 }`}
               >
                 {loading === tier.tierId ? "Redirecting…" : tier.cta}
@@ -220,14 +220,14 @@ export default function Pricing() {
 
               <ul className="space-y-3 flex-1">
                 {tier.features.map((f) => (
-                  <li key={f} className="flex items-start gap-2.5 text-sm text-af2-ink-2 dark:text-gray-300">
+                  <li key={f} className="flex items-start gap-2.5 text-sm text-af2-ink-2">
                     <Check size={15} className="text-af2-sage mt-0.5 shrink-0" />
                     {f}
                   </li>
                 ))}
                 {tier.notIncluded.map((f) => (
-                  <li key={f} className="flex items-start gap-2.5 text-sm text-af2-ink-3 dark:text-gray-600 line-through opacity-60">
-                    <span className="w-3.5 h-3.5 mt-0.5 shrink-0 rounded-full border border-af2-line dark:border-surface-700 inline-block" />
+                  <li key={f} className="flex items-start gap-2.5 text-sm text-af2-ink-3 line-through opacity-60">
+                    <span className="w-3.5 h-3.5 mt-0.5 shrink-0 rounded-full border border-af2-line inline-block" />
                     {f}
                   </li>
                 ))}
@@ -237,7 +237,7 @@ export default function Pricing() {
         </div>
 
         {/* Feature comparison note */}
-        <div className="mt-12 rounded-2xl bg-af2-ink dark:bg-surface-850 text-af2-card p-8 border border-af2-ink-2 shadow-xl overflow-hidden relative">
+        <div className="mt-12 rounded-2xl bg-af2-ink text-af2-card p-8 border border-af2-ink-2 shadow-xl overflow-hidden relative">
           <div className="absolute top-0 right-0 w-64 h-64 bg-af2-clay/10 blur-3xl -mr-32 -mt-32 rounded-full pointer-events-none" />
           <div className="relative z-10">
             <h3 className="text-lg font-bold mb-2 flex items-center gap-2">

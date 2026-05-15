@@ -130,8 +130,8 @@ export default function RunMonitor() {
       {/* Header */}
       <div className="flex items-center justify-between mb-8">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">Run Monitor</h1>
-          <p className="text-gray-500 dark:text-surface-400 mt-1 text-sm">
+          <h1 className="text-2xl font-bold text-gray-900">Run Monitor</h1>
+          <p className="text-gray-500 mt-1 text-sm">
             Live view of active workflow runs · auto-refreshes every {POLL_INTERVAL_MS / 1000}s
           </p>
         </div>
@@ -152,12 +152,12 @@ export default function RunMonitor() {
 
       {/* Active runs */}
       <section className="mb-8">
-        <h2 className="text-sm font-semibold text-gray-500 dark:text-surface-400 uppercase tracking-wide mb-4">
+        <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-4">
           Agent Teams ({teamDetails.length})
         </h2>
 
         {teamDetails.length === 0 ? (
-          <div className="bg-af2-card dark:bg-surface-900 rounded-xl border border-gray-200 dark:border-surface-800 p-12 text-center">
+          <div className="bg-af2-card rounded-xl border border-gray-200 p-12 text-center">
             <div className="w-12 h-12 rounded-full bg-af2-clay-soft flex items-center justify-center mx-auto mb-3">
               <Bot size={22} className="text-af2-clay" />
             </div>
@@ -176,12 +176,12 @@ export default function RunMonitor() {
       </section>
 
       <section className="mb-8">
-        <h2 className="text-sm font-semibold text-gray-500 dark:text-surface-400 uppercase tracking-wide mb-4">
+        <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-4">
           Active Runs ({activeRuns.length})
         </h2>
 
         {activeRuns.length === 0 ? (
-          <div className="bg-af2-card dark:bg-surface-900 rounded-xl border border-gray-200 dark:border-surface-800 p-12 text-center">
+          <div className="bg-af2-card rounded-xl border border-gray-200 p-12 text-center">
             <div className="w-12 h-12 rounded-full bg-af2-sage/10 flex items-center justify-center mx-auto mb-3">
               <CheckCircle2 size={22} className="text-af2-sage" />
             </div>
@@ -210,7 +210,7 @@ export default function RunMonitor() {
 
       {/* Recent completed/failed */}
       <section>
-        <h2 className="text-sm font-semibold text-gray-500 dark:text-surface-400 uppercase tracking-wide mb-4">
+        <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-4">
           Recently Completed ({recentRuns.length})
         </h2>
         {recentRuns.length === 0 ? (
@@ -244,17 +244,17 @@ function TeamMonitorCard({ detail }: { detail: ControlPlaneTeamDetail }) {
     .sort((left, right) => new Date(right.startedAt).getTime() - new Date(left.startedAt).getTime())[0];
 
   return (
-    <div className="overflow-hidden rounded-[24px] border border-gray-200 bg-af2-card shadow-sm dark:border-surface-800 dark:bg-surface-900">
-      <div className="border-b border-gray-100 px-5 py-4 dark:border-surface-800">
+    <div className="overflow-hidden rounded-[24px] border border-gray-200 bg-af2-card shadow-sm">
+      <div className="border-b border-gray-100 px-5 py-4">
         <div className="flex items-start justify-between gap-4">
           <div>
             <div className="flex items-center gap-2">
-              <h3 className="text-base font-semibold text-gray-900 dark:text-gray-100">{detail.team.name}</h3>
-              <span className="rounded-full bg-teal-50 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide text-teal-700 dark:bg-teal-500/10 dark:text-teal-300">
+              <h3 className="text-base font-semibold text-gray-900">{detail.team.name}</h3>
+              <span className="rounded-full bg-teal-50 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide text-teal-700">
                 {detail.team.deploymentMode.replace("_", " ")}
               </span>
             </div>
-            <p className="mt-1 text-sm text-gray-500 dark:text-surface-400">
+            <p className="mt-1 text-sm text-gray-500">
               {/* HEL-119 — prefer canonical workflowName; fall back to the
                   deprecated workflowTemplateName until the backend rename ships. */}
               {detail.team.workflowName ??
@@ -264,7 +264,7 @@ function TeamMonitorCard({ detail }: { detail: ControlPlaneTeamDetail }) {
           </div>
           <Link
             to={`/agents/team/${detail.team.id}`}
-            className="text-sm font-medium text-af2-clay-2 transition hover:text-af2-clay-2 dark:text-brand-300 dark:hover:text-brand-200"
+            className="text-sm font-medium text-af2-clay-2 transition hover:text-af2-clay-2"
           >
             Open team
           </Link>
@@ -281,8 +281,8 @@ function TeamMonitorCard({ detail }: { detail: ControlPlaneTeamDetail }) {
         />
       </div>
 
-      <div className="border-t border-gray-100 px-5 py-4 dark:border-surface-800">
-        <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-gray-400 dark:text-surface-500">
+      <div className="border-t border-gray-100 px-5 py-4">
+        <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-gray-400">
           Agent roster
         </p>
         <div className="space-y-2">
@@ -295,16 +295,16 @@ function TeamMonitorCard({ detail }: { detail: ControlPlaneTeamDetail }) {
               <Link
                 key={agent.id}
                 to={`/agents/team/${detail.team.id}?agent=${encodeURIComponent(agent.id)}`}
-                className="flex items-center justify-between gap-3 rounded-2xl border border-gray-200 bg-gray-50 px-4 py-3 transition hover:border-af2-clay/40 hover:bg-af2-clay-soft/40 dark:border-surface-800 dark:bg-surface-950/40 dark:hover:border-brand-500/40 dark:hover:bg-brand-500/5"
+                className="flex items-center justify-between gap-3 rounded-2xl border border-gray-200 bg-gray-50 px-4 py-3 transition hover:border-af2-clay/40 hover:bg-af2-clay-soft/40"
               >
                 <div className="min-w-0">
                   <div className="flex items-center gap-2">
                     <Bot size={14} className="text-af2-clay" />
-                    <span className="truncate text-sm font-medium text-gray-900 dark:text-gray-100">
+                    <span className="truncate text-sm font-medium text-gray-900">
                       {agent.name}
                     </span>
                   </div>
-                  <p className="mt-1 text-xs uppercase tracking-wide text-gray-400 dark:text-surface-500">
+                  <p className="mt-1 text-xs uppercase tracking-wide text-gray-400">
                     {agent.roleKey}
                   </p>
                 </div>
@@ -335,8 +335,8 @@ function MonitorMetric({
   tone?: "teal" | "amber" | "rose" | "slate";
 }) {
   return (
-    <div className="rounded-2xl border border-gray-200 bg-gray-50 px-4 py-3 dark:border-surface-800 dark:bg-surface-950/40">
-      <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-400 dark:text-surface-500">
+    <div className="rounded-2xl border border-gray-200 bg-gray-50 px-4 py-3">
+      <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-400">
         {label}
       </p>
       <p className={clsx("mt-2 text-sm font-semibold capitalize", heartbeatTextTone(tone))}>{value}</p>
@@ -353,19 +353,19 @@ function heartbeatTone(status?: ControlPlaneTeamDetail["heartbeats"][number]["st
 
 function heartbeatToneClasses(tone: "teal" | "amber" | "rose" | "slate") {
   return {
-    teal: "bg-teal-50 text-teal-700 dark:bg-teal-500/10 dark:text-teal-300",
-    amber: "bg-af2-mustard/10 text-af2-mustard-2 dark:bg-amber-500/10 dark:text-amber-300",
-    rose: "bg-rose-50 text-rose-700 dark:bg-rose-500/10 dark:text-rose-300",
-    slate: "bg-slate-100 text-slate-600 dark:bg-surface-800 dark:text-surface-300",
+    teal: "bg-teal-50 text-teal-700",
+    amber: "bg-af2-mustard/10 text-af2-mustard-2",
+    rose: "bg-rose-50 text-rose-700",
+    slate: "bg-slate-100 text-slate-600",
   }[tone];
 }
 
 function heartbeatTextTone(tone: "teal" | "amber" | "rose" | "slate") {
   return {
-    teal: "text-teal-700 dark:text-teal-300",
-    amber: "text-af2-mustard-2 dark:text-amber-300",
-    rose: "text-rose-700 dark:text-rose-300",
-    slate: "text-gray-900 dark:text-gray-100",
+    teal: "text-teal-700",
+    amber: "text-af2-mustard-2",
+    rose: "text-rose-700",
+    slate: "text-gray-900",
   }[tone];
 }
 
@@ -389,7 +389,7 @@ function RunCard({
   const progressPct = totalSteps > 0 ? Math.round((completedSteps / totalSteps) * 100) : 0;
 
   return (
-    <div className="bg-af2-card dark:bg-surface-900 rounded-xl border border-gray-200 dark:border-surface-800 overflow-hidden">
+    <div className="bg-af2-card rounded-xl border border-gray-200 overflow-hidden">
       {/* Card header */}
       <button
         onClick={onToggle}
@@ -401,7 +401,7 @@ function RunCard({
 
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 mb-1">
-            <p className="text-sm font-semibold text-gray-900 dark:text-gray-100 truncate">{run.templateName}</p>
+            <p className="text-sm font-semibold text-gray-900 truncate">{run.templateName}</p>
             <StatusBadge status={run.status} />
           </div>
           <div className="flex items-center gap-4 text-xs text-gray-400">
@@ -504,7 +504,7 @@ function StepRow({ step, index }: { step: StepResult; index: number }) {
   return (
     <div className="flex items-start gap-3">
       <div className="flex flex-col items-center shrink-0 mt-0.5">
-        <span className="w-5 h-5 flex items-center justify-center rounded-full bg-gray-100 text-xs text-gray-500 dark:text-surface-400 font-medium">
+        <span className="w-5 h-5 flex items-center justify-center rounded-full bg-gray-100 text-xs text-gray-500 font-medium">
           {index}
         </span>
       </div>
@@ -585,7 +585,7 @@ function StepRow({ step, index }: { step: StepResult; index: number }) {
         )}
 
         {showOutput && hasOutput && (
-          <pre className="mt-2 text-xs bg-gray-50 border border-gray-200 dark:border-surface-800 rounded-lg p-3 overflow-x-auto text-gray-700">
+          <pre className="mt-2 text-xs bg-gray-50 border border-gray-200 rounded-lg p-3 overflow-x-auto text-gray-700">
             {JSON.stringify(step.output, null, 2)}
           </pre>
         )}
@@ -624,10 +624,10 @@ function AgentSlotPanel({ slots }: { slots: AgentSlotResult[] }) {
             className={clsx(
               "flex flex-col items-start gap-1 p-2 rounded-md border text-left transition",
               slot.status === "success"
-                ? "bg-af2-card dark:bg-surface-900 border-af2-sage/40 hover:border-green-400"
+                ? "bg-af2-card border-af2-sage/40 hover:border-green-400"
                 : slot.status === "failure"
                 ? "bg-af2-clay/10 border-af2-clay/40 hover:border-red-400"
-                : "bg-af2-card dark:bg-surface-900 border-yellow-200 hover:border-yellow-400"
+                : "bg-af2-card border-yellow-200 hover:border-yellow-400"
             )}
           >
             <div className="flex items-center gap-1 text-xs font-medium text-gray-700">
@@ -658,7 +658,7 @@ function AgentSlotPanel({ slots }: { slots: AgentSlotResult[] }) {
             )}
 
             {Object.keys(slot.output).length > 0 && (
-              <pre className="text-xs bg-af2-card dark:bg-surface-900 border border-indigo-200 rounded p-2 overflow-x-auto text-gray-700">
+              <pre className="text-xs bg-af2-card border border-indigo-200 rounded p-2 overflow-x-auto text-gray-700">
                 {JSON.stringify(slot.output, null, 2)}
               </pre>
             )}
@@ -673,7 +673,7 @@ function AgentSlotPanel({ slots }: { slots: AgentSlotResult[] }) {
                       "text-xs px-2 py-1 rounded",
                       msg.from === "manager"
                         ? "bg-indigo-100 text-indigo-700"
-                        : "bg-af2-card dark:bg-surface-900 border border-indigo-200 text-gray-700"
+                        : "bg-af2-card border border-indigo-200 text-gray-700"
                     )}
                   >
                     <span className="font-medium capitalize mr-1">{msg.from}→</span>

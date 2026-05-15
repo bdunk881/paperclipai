@@ -464,7 +464,7 @@ export default function IntegrationsHub() {
             const logo = server.logo ? (
               <img src={server.logo} alt={`${server.name} logo`} className="h-6 w-6 object-contain" />
             ) : (
-              <PlugZap size={16} className="text-af2-ink-2 dark:text-af2-ink-4" />
+              <PlugZap size={16} className="text-af2-ink-2" />
             );
 
             return (
@@ -474,7 +474,7 @@ export default function IntegrationsHub() {
               >
                 <div className="flex items-start justify-between">
                   <div className="flex items-center gap-2.5">
-                    <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-gradient-to-br from-gray-100 to-gray-200 transition-transform duration-300 group-hover:scale-110 dark:from-slate-800 dark:to-slate-900">
+                    <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-gradient-to-br from-gray-100 to-gray-200 transition-transform duration-300 group-hover:scale-110">
                       {logo}
                     </div>
                     <div>
@@ -482,7 +482,7 @@ export default function IntegrationsHub() {
                         <span className="text-sm font-semibold text-af2-ink">{server.name}</span>
                         {server.official && <CheckCircle size={12} className="text-af2-ink-blue" />}
                       </div>
-                      <div className="flex items-center gap-1 text-xs text-af2-ink-4 dark:text-af2-ink-3">
+                      <div className="flex items-center gap-1 text-xs text-af2-ink-4">
                         <Tag size={9} />
                         {server.category}
                       </div>
@@ -494,7 +494,7 @@ export default function IntegrationsHub() {
                   </span>
                 </div>
 
-                <p className="mt-3 text-xs leading-relaxed text-af2-ink-3 dark:text-af2-ink-4">{server.description}</p>
+                <p className="mt-3 text-xs leading-relaxed text-af2-ink-3">{server.description}</p>
 
                 <div className="mt-3 flex flex-wrap gap-1">
                   {server.tools.slice(0, 3).map((tool) => (
@@ -506,7 +506,7 @@ export default function IntegrationsHub() {
                     </span>
                   ))}
                   {server.tools.length > 3 && (
-                    <span className="rounded bg-af2-paper-2 px-2 py-0.5 text-xs text-af2-ink-4 dark:text-af2-ink-3">
+                    <span className="rounded bg-af2-paper-2 px-2 py-0.5 text-xs text-af2-ink-4">
                       +{server.tools.length - 3} more
                     </span>
                   )}

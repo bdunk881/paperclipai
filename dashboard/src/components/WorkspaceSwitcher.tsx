@@ -96,7 +96,7 @@ export function WorkspaceSwitcher() {
 
   return (
     <>
-      <div ref={dropdownRef} className="relative border-b border-af2-line px-3 pb-3 dark:border-surface-800">
+      <div ref={dropdownRef} className="relative border-b border-af2-line px-3 pb-3">
         <button
           id={triggerId}
           type="button"
@@ -107,17 +107,17 @@ export function WorkspaceSwitcher() {
           onClick={() => setOpen((current) => !current)}
           className={clsx(
             "mt-3 flex h-11 w-full items-center gap-3 rounded-xl border px-3 py-2 text-left transition-all",
-            "bg-transparent text-af2-ink hover:bg-af2-paper-2 dark:bg-surface-900 dark:text-surface-50 dark:hover:bg-surface-850",
+            "bg-transparent text-af2-ink hover:bg-af2-paper-2",
             open
-              ? "border-af2-clay/50 shadow-[0_0_0_1px_rgba(99,102,241,0.18)] dark:bg-surface-800"
-              : "border-af2-line shadow-none dark:border-surface-700",
+              ? "border-af2-clay/50 shadow-[0_0_0_1px_rgba(99,102,241,0.18)]"
+              : "border-af2-line shadow-none",
             error && !activeWorkspace
-              ? "border-af2-clay/60 text-af2-clay dark:border-af2-clay/60 dark:text-af2-clay"
+              ? "border-af2-clay/60 text-af2-clay"
               : null,
             loading && !activeWorkspace ? "cursor-not-allowed opacity-55" : null
           )}
         >
-          <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-af2-clay-soft/40 text-xs font-bold uppercase text-af2-clay dark:bg-af2-clay-soft/40 dark:text-brand-300">
+          <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-af2-clay-soft/40 text-xs font-bold uppercase text-af2-clay">
             {loading && !activeWorkspace ? <Loader2 size={14} className="animate-spin" /> : workspaceInitial(activeWorkspace?.name)}
           </div>
 
@@ -130,7 +130,7 @@ export function WorkspaceSwitcher() {
                 "truncate text-[11px]",
                 error && !activeWorkspace
                   ? "text-af2-clay"
-                  : "text-af2-ink-3 dark:text-surface-400"
+                  : "text-af2-ink-3"
               )}
             >
               {secondaryText}
@@ -140,8 +140,8 @@ export function WorkspaceSwitcher() {
           <ChevronDown
             size={16}
             className={clsx(
-              "shrink-0 text-af2-ink-4 transition-transform duration-[180ms] dark:text-surface-400",
-              open ? "rotate-180 text-af2-ink-3 dark:text-surface-300" : null
+              "shrink-0 text-af2-ink-4 transition-transform duration-[180ms]",
+              open ? "rotate-180 text-af2-ink-3" : null
             )}
           />
         </button>
@@ -151,7 +151,7 @@ export function WorkspaceSwitcher() {
           role="menu"
           aria-labelledby={triggerId}
           className={clsx(
-            "pointer-events-none absolute left-3 right-3 top-[calc(100%+4px)] z-30 origin-top rounded-2xl border border-af2-line bg-af2-card/98 shadow-[0_20px_48px_rgba(15,23,42,0.16)] backdrop-blur transition-all dark:border-surface-700 dark:bg-surface-900/98 dark:shadow-[0_24px_64px_rgba(2,6,23,0.42)]",
+            "pointer-events-none absolute left-3 right-3 top-[calc(100%+4px)] z-30 origin-top rounded-2xl border border-af2-line bg-af2-card/98 shadow-[0_20px_48px_rgba(15,23,42,0.16)] backdrop-blur transition-all",
             open
               ? "pointer-events-auto translate-y-0 opacity-100 duration-[180ms] ease-out"
               : "-translate-y-1 opacity-0 duration-[140ms] ease-in"
@@ -159,7 +159,7 @@ export function WorkspaceSwitcher() {
         >
           <div className="max-h-72 overflow-y-auto p-2">
             {loading ? (
-              <div className="flex items-center gap-3 rounded-xl px-3 py-3 text-sm text-af2-ink-3 dark:text-surface-400">
+              <div className="flex items-center gap-3 rounded-xl px-3 py-3 text-sm text-af2-ink-3">
                 <Loader2 size={14} className="animate-spin" />
                 Loading workspaces
               </div>
@@ -174,7 +174,7 @@ export function WorkspaceSwitcher() {
                 <RefreshCw size={14} />
               </button>
             ) : workspaces.length === 0 ? (
-              <div className="rounded-xl border border-dashed border-af2-line px-3 py-4 text-sm text-af2-ink-3 dark:border-surface-700 dark:text-surface-400">
+              <div className="rounded-xl border border-dashed border-af2-line px-3 py-4 text-sm text-af2-ink-3">
                 No workspaces available yet.
               </div>
             ) : (
@@ -195,8 +195,8 @@ export function WorkspaceSwitcher() {
                       className={clsx(
                         "relative flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left transition",
                         selected
-                          ? "bg-af2-clay-soft/40 text-af2-ink dark:bg-af2-clay-soft/40 dark:text-surface-50"
-                          : "text-af2-ink-2 hover:bg-af2-paper-2 dark:text-surface-300 dark:hover:bg-surface-800"
+                          ? "bg-af2-clay-soft/40 text-af2-ink"
+                          : "text-af2-ink-2 hover:bg-af2-paper-2"
                       )}
                     >
                       <span
@@ -205,12 +205,12 @@ export function WorkspaceSwitcher() {
                           selected ? "opacity-100" : "opacity-0"
                         )}
                       />
-                      <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-af2-clay-soft/40 text-xs font-bold uppercase text-af2-clay dark:bg-af2-clay-soft/40 dark:text-brand-300">
+                      <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-af2-clay-soft/40 text-xs font-bold uppercase text-af2-clay">
                         {workspaceInitial(workspace.name)}
                       </div>
                       <div className="min-w-0 flex-1">
                         <p className="truncate text-sm font-semibold tracking-[-0.01em]">{workspace.name}</p>
-                        <p className="truncate text-[11px] text-af2-ink-3 dark:text-surface-400">
+                        <p className="truncate text-[11px] text-af2-ink-3">
                           {workspace.slug}
                         </p>
                       </div>
@@ -222,14 +222,14 @@ export function WorkspaceSwitcher() {
             )}
           </div>
 
-          <div className="border-t border-af2-line p-2 dark:border-surface-700">
+          <div className="border-t border-af2-line p-2">
             <button
               type="button"
               onClick={() => {
                 setCreateError(null);
                 setCreateOpen(true);
               }}
-              className="flex w-full items-center justify-center gap-2 rounded-xl border border-af2-line px-3 py-2.5 text-sm font-medium text-af2-ink-2 transition hover:border-af2-clay/40 hover:text-af2-clay dark:border-surface-700 dark:text-surface-200 dark:hover:border-af2-clay/40 dark:hover:text-surface-50"
+              className="flex w-full items-center justify-center gap-2 rounded-xl border border-af2-line px-3 py-2.5 text-sm font-medium text-af2-ink-2 transition hover:border-af2-clay/40 hover:text-af2-clay"
             >
               <Plus size={14} />
               Create workspace
@@ -250,24 +250,24 @@ export function WorkspaceSwitcher() {
             role="dialog"
             aria-modal="true"
             aria-labelledby="create-workspace-title"
-            className="animate-ticket-modal relative z-10 w-full max-w-md rounded-[28px] border border-af2-line bg-[linear-gradient(180deg,rgba(255,255,255,0.98),rgba(241,245,249,0.98))] p-6 shadow-2xl dark:border-slate-800 dark:bg-[linear-gradient(180deg,rgba(15,23,42,0.96),rgba(7,12,24,0.98))]"
+            className="animate-ticket-modal relative z-10 w-full max-w-md rounded-[28px] border border-af2-line bg-[linear-gradient(180deg,rgba(255,255,255,0.98),rgba(241,245,249,0.98))] p-6 shadow-2xl"
           >
             <div className="flex items-start justify-between gap-4">
               <div>
                 <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-af2-clay">
                   Workspace Setup
                 </p>
-                <h2 id="create-workspace-title" className="mt-2 text-xl font-semibold text-af2-ink dark:text-slate-100">
+                <h2 id="create-workspace-title" className="mt-2 text-xl font-semibold text-af2-ink">
                   Create workspace
                 </h2>
-                <p className="mt-2 text-sm leading-6 text-af2-ink-2 dark:text-surface-400">
+                <p className="mt-2 text-sm leading-6 text-af2-ink-2">
                   Create a new workspace and switch the dashboard into it immediately.
                 </p>
               </div>
               <button
                 type="button"
                 onClick={() => setCreateOpen(false)}
-                className="rounded-full border border-af2-line p-2 text-af2-ink-3 transition hover:border-af2-clay/30 hover:text-af2-ink dark:border-surface-700 dark:text-surface-400 dark:hover:text-surface-50"
+                className="rounded-full border border-af2-line p-2 text-af2-ink-3 transition hover:border-af2-clay/30 hover:text-af2-ink"
                 aria-label="Close create workspace modal"
               >
                 <X size={14} />
@@ -276,7 +276,7 @@ export function WorkspaceSwitcher() {
 
             <form className="mt-6 space-y-4" onSubmit={handleCreateWorkspaceSubmit}>
               <div>
-                <label htmlFor="workspace-name" className="mb-2 block text-sm font-medium text-af2-ink-2 dark:text-surface-200">
+                <label htmlFor="workspace-name" className="mb-2 block text-sm font-medium text-af2-ink-2">
                   Workspace name
                 </label>
                 <input
@@ -286,7 +286,7 @@ export function WorkspaceSwitcher() {
                   maxLength={80}
                   autoFocus
                   placeholder="Acme launch ops"
-                  className="w-full rounded-2xl border border-af2-line bg-af2-card px-4 py-3 text-sm text-af2-ink transition focus:outline-none focus:ring-2 focus:ring-af2-clay/20 dark:border-surface-700 dark:bg-surface-900 dark:text-surface-50"
+                  className="w-full rounded-2xl border border-af2-line bg-af2-card px-4 py-3 text-sm text-af2-ink transition focus:outline-none focus:ring-2 focus:ring-af2-clay/20"
                 />
               </div>
 
@@ -300,7 +300,7 @@ export function WorkspaceSwitcher() {
                 <button
                   type="button"
                   onClick={() => setCreateOpen(false)}
-                  className="rounded-xl border border-af2-line px-4 py-2 text-sm font-medium text-af2-ink-2 transition hover:border-af2-line-2 hover:text-af2-ink dark:border-surface-700 dark:text-surface-300 dark:hover:text-surface-50"
+                  className="rounded-xl border border-af2-line px-4 py-2 text-sm font-medium text-af2-ink-2 transition hover:border-af2-line-2 hover:text-af2-ink"
                 >
                   Cancel
                 </button>

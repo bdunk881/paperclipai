@@ -92,7 +92,7 @@ const KIND_META: Record<
     label: "Trigger",
     icon: <Zap size={14} />,
     chipColor: "text-af2-mustard dark:text-af2-mustard",
-    chipBg: "bg-af2-mustard/10 border-af2-mustard/30 dark:bg-af2-mustard/100/10 dark:border-af2-mustard/30",
+    chipBg: "bg-af2-mustard/10 border-af2-mustard/30 dark:bg-af2-mustard/10 dark:border-af2-mustard/30",
     categoryTint: "rgba(249,115,22,0.12)",
     darkCategoryTint: "rgba(249,115,22,0.18)",
     categoryBorder: "#f97316",
@@ -101,7 +101,7 @@ const KIND_META: Record<
     label: "Cron Trigger",
     icon: <CalendarClock size={14} />,
     chipColor: "text-af2-sage dark:text-af2-sage",
-    chipBg: "bg-af2-sage/10 border-af2-sage/30 dark:bg-af2-sage/100/10 dark:border-af2-sage/30",
+    chipBg: "bg-af2-sage/10 border-af2-sage/30 dark:bg-af2-sage/10 dark:border-af2-sage/30",
     categoryTint: "rgba(16,185,129,0.12)",
     darkCategoryTint: "rgba(16,185,129,0.18)",
     categoryBorder: "#10b981",
@@ -110,7 +110,7 @@ const KIND_META: Record<
     label: "Interval Trigger",
     icon: <Timer size={14} />,
     chipColor: "text-af2-sage dark:text-af2-sage",
-    chipBg: "bg-af2-sage/10 border-af2-sage/30 dark:bg-af2-sage/100/10 dark:border-af2-sage/30",
+    chipBg: "bg-af2-sage/10 border-af2-sage/30 dark:bg-af2-sage/10 dark:border-af2-sage/30",
     categoryTint: "rgba(16,185,129,0.12)",
     darkCategoryTint: "rgba(16,185,129,0.18)",
     categoryBorder: "#10b981",
@@ -119,7 +119,7 @@ const KIND_META: Record<
     label: "LLM",
     icon: <Brain size={14} />,
     chipColor: "text-af2-clay",
-    chipBg: "bg-af2-clay-soft/30 border-af2-clay/30 dark:bg-af2-clay-soft/300/10 dark:border-af2-clay/30",
+    chipBg: "bg-af2-clay-soft/30 border-af2-clay/30 dark:bg-af2-clay-soft/10 dark:border-af2-clay/30",
     categoryTint: "rgba(99,102,241,0.12)",
     darkCategoryTint: "rgba(99,102,241,0.18)",
     categoryBorder: "#6366f1",
@@ -127,8 +127,8 @@ const KIND_META: Record<
   condition: {
     label: "Condition",
     icon: <GitBranch size={14} />,
-    chipColor: "text-af2-mustard dark:text-amber-400",
-    chipBg: "bg-af2-mustard/10 border-af2-mustard/30 dark:bg-af2-mustard/100/10 dark:border-af2-mustard/30",
+    chipColor: "text-af2-mustard dark:text-af2-mustard",
+    chipBg: "bg-af2-mustard/10 border-af2-mustard/30 dark:bg-af2-mustard/10 dark:border-af2-mustard/30",
     categoryTint: "rgba(245,158,11,0.12)",
     darkCategoryTint: "rgba(245,158,11,0.18)",
     categoryBorder: "#f59e0b",
@@ -137,7 +137,7 @@ const KIND_META: Record<
     label: "Transform",
     icon: <Wrench size={14} />,
     chipColor: "text-af2-clay",
-    chipBg: "bg-af2-clay-soft/30 border-af2-clay/30 dark:bg-af2-clay-soft/300/10 dark:border-af2-clay/30",
+    chipBg: "bg-af2-clay-soft/30 border-af2-clay/30 dark:bg-af2-clay-soft/10 dark:border-af2-clay/30",
     categoryTint: "rgba(99,102,241,0.12)",
     darkCategoryTint: "rgba(99,102,241,0.18)",
     categoryBorder: "#6366f1",
@@ -146,7 +146,7 @@ const KIND_META: Record<
     label: "Action",
     icon: <ArrowRight size={14} />,
     chipColor: "text-af2-clay",
-    chipBg: "bg-af2-clay-soft/30 border-af2-clay/30 dark:bg-af2-clay-soft/300/10 dark:border-af2-clay/30",
+    chipBg: "bg-af2-clay-soft/30 border-af2-clay/30 dark:bg-af2-clay-soft/10 dark:border-af2-clay/30",
     categoryTint: "rgba(99,102,241,0.12)",
     darkCategoryTint: "rgba(99,102,241,0.18)",
     categoryBorder: "#6366f1",
@@ -155,7 +155,7 @@ const KIND_META: Record<
     label: "Output",
     icon: <Flag size={14} />,
     chipColor: "text-af2-clay",
-    chipBg: "bg-af2-clay-soft/30 border-af2-clay/30 dark:bg-af2-clay-soft/300/10 dark:border-af2-clay/30",
+    chipBg: "bg-af2-clay-soft/30 border-af2-clay/30 dark:bg-af2-clay-soft/10 dark:border-af2-clay/30",
     categoryTint: "rgba(99,102,241,0.12)",
     darkCategoryTint: "rgba(99,102,241,0.18)",
     categoryBorder: "#6366f1",
@@ -164,7 +164,7 @@ const KIND_META: Record<
     label: "Agent",
     icon: <Bot size={14} />,
     chipColor: "text-af2-clay",
-    chipBg: "bg-af2-clay-soft/30 border-af2-clay/30 dark:bg-af2-clay-soft/300/10 dark:border-af2-clay/30",
+    chipBg: "bg-af2-clay-soft/30 border-af2-clay/30 dark:bg-af2-clay-soft/10 dark:border-af2-clay/30",
     categoryTint: "rgba(99,102,241,0.12)",
     darkCategoryTint: "rgba(99,102,241,0.18)",
     categoryBorder: "#6366f1",
@@ -173,7 +173,7 @@ const KIND_META: Record<
     label: "Approval",
     icon: <UserCheck size={14} />,
     chipColor: "text-af2-clay",
-    chipBg: "bg-af2-clay-soft/30 border-af2-clay/30 dark:bg-af2-clay-soft/300/10 dark:border-af2-clay/30",
+    chipBg: "bg-af2-clay-soft/30 border-af2-clay/30 dark:bg-af2-clay-soft/10 dark:border-af2-clay/30",
     categoryTint: "rgba(99,102,241,0.12)",
     darkCategoryTint: "rgba(99,102,241,0.18)",
     categoryBorder: "#6366f1",
@@ -191,7 +191,7 @@ const KIND_META: Record<
     label: "File Trigger",
     icon: <FileInput size={14} />,
     chipColor: "text-af2-mustard dark:text-af2-mustard",
-    chipBg: "bg-af2-mustard/10 border-af2-mustard/30 dark:bg-af2-mustard/100/10 dark:border-af2-mustard/30",
+    chipBg: "bg-af2-mustard/10 border-af2-mustard/30 dark:bg-af2-mustard/10 dark:border-af2-mustard/30",
     categoryTint: "rgba(249,115,22,0.12)",
     darkCategoryTint: "rgba(249,115,22,0.18)",
     categoryBorder: "#f97316",
@@ -1257,7 +1257,7 @@ export default function WorkflowBuilder() {
                     {cronValidationError ? (
                       <p className="mt-1 text-xs text-af2-clay">{cronValidationError}</p>
                     ) : cronPreview ? (
-                      <p className="mt-1 text-xs text-af2-paper0 dark:text-af2-ink-4">{cronPreview}</p>
+                      <p className="mt-1 text-xs text-af2-ink-4 dark:text-af2-ink-4">{cronPreview}</p>
                     ) : null}
                   </div>
                 </Field>
@@ -1944,7 +1944,7 @@ function WorkflowCopilotSidebar({
 
       <div className="flex-1 space-y-3 overflow-y-auto px-5 py-4">
         {messages.length === 0 && (
-          <div className="rounded-2xl border border-af2-clay/30 bg-af2-clay-soft/30/80 p-4 text-sm text-af2-clay dark:border-af2-clay/30 dark:bg-af2-clay-soft/300/10 dark:text-af2-clay">
+          <div className="rounded-2xl border border-af2-clay/30 bg-af2-clay-soft/30 p-4 text-sm text-af2-clay dark:border-af2-clay/30 dark:bg-af2-clay-soft/10 dark:text-af2-clay">
             Ask AutoFlow Copilot to explain this workflow, generate a new sequence, or propose a targeted node change.
           </div>
         )}
@@ -1956,14 +1956,14 @@ function WorkflowCopilotSidebar({
                 "rounded-2xl border px-4 py-3 text-sm leading-relaxed",
                 message.role === "user"
                   ? "border-af2-line bg-surface-100 text-af2-ink-2 dark:border-af2-line-2 dark:bg-af2-paper-2 dark:text-af2-ink-2"
-                  : "border-af2-clay/30 bg-af2-clay-soft/30 text-brand-900 dark:border-af2-clay/20 dark:bg-af2-clay-soft/300/10 dark:text-brand-100"
+                  : "border-af2-clay/30 bg-af2-clay-soft/30 text-brand-900 dark:border-af2-clay/20 dark:bg-af2-clay-soft/10 dark:text-brand-100"
               )}
             >
               {message.content}
             </div>
 
             {message.proposal && (
-              <div className="rounded-2xl border border-af2-sage/30 bg-af2-sage/10/80 p-4 dark:border-af2-sage/30 dark:bg-af2-sage/100/10">
+              <div className="rounded-2xl border border-af2-sage/30 bg-af2-sage/10 p-4 dark:border-af2-sage/30 dark:bg-af2-sage/10">
                 <div className="flex items-start justify-between gap-3">
                   <div>
                     <p className="text-sm font-semibold text-af2-sage dark:text-teal-200">
@@ -1995,12 +1995,12 @@ function WorkflowCopilotSidebar({
         ))}
 
         {busy && (
-          <div className="rounded-2xl border border-af2-clay/30 bg-af2-clay-soft/30 px-4 py-3 text-sm text-af2-clay dark:border-af2-clay/20 dark:bg-af2-clay-soft/300/10 dark:text-af2-clay">
+          <div className="rounded-2xl border border-af2-clay/30 bg-af2-clay-soft/30 px-4 py-3 text-sm text-af2-clay dark:border-af2-clay/20 dark:bg-af2-clay-soft/10 dark:text-af2-clay">
             <div className="mb-2 flex items-center gap-2">
               <Loader size={14} className="animate-spin" />
               AutoFlow Copilot is thinking…
             </div>
-            <div className="h-1.5 rounded-full bg-brand-200/70 dark:bg-af2-clay-soft/300/20">
+            <div className="h-1.5 rounded-full bg-brand-200/70 dark:bg-af2-clay-soft/20">
               <div className="h-1.5 w-1/3 animate-glow-pulse rounded-full bg-af2-clay-soft/300" />
             </div>
           </div>
@@ -2018,7 +2018,7 @@ function WorkflowCopilotSidebar({
             onChange={(event) => onInputChange(event.target.value)}
             rows={4}
             placeholder="Add a Slack notification step after Step 3"
-            className="w-full resize-none bg-transparent px-2 py-2 text-sm text-af2-ink outline-none placeholder:text-af2-ink-4 dark:text-af2-ink-2 dark:placeholder:text-af2-paper0"
+            className="w-full resize-none bg-transparent px-2 py-2 text-sm text-af2-ink outline-none placeholder:text-af2-ink-4 dark:text-af2-ink-2 dark:placeholder:text-af2-ink-4"
           />
           <div className="flex items-center justify-between gap-2 px-2 pt-1">
             <span className="text-xs text-af2-ink-4">
@@ -2497,7 +2497,7 @@ function StepNode({
           <div
             className={clsx(
               "flex items-center gap-1 px-2 py-1 rounded-md border text-xs font-medium mt-0.5",
-              isAgentNode ? "border-af2-clay/30 bg-af2-clay-soft/300/12 text-indigo-100" : meta.chipBg,
+              isAgentNode ? "border-af2-clay/30 bg-af2-clay-soft/12 text-indigo-100" : meta.chipBg,
               isAgentNode ? "" : meta.chipColor
             )}
           >
@@ -2545,8 +2545,8 @@ function StepNode({
                     className={clsx(
                       "mr-1 rounded px-1.5 py-0.5",
                       isAgentNode
-                        ? "bg-af2-clay-soft/300/12 text-indigo-200"
-                        : "bg-af2-clay-soft/30 text-af2-clay dark:bg-af2-clay-soft/300/10 dark:text-af2-clay"
+                        ? "bg-af2-clay-soft/12 text-indigo-200"
+                        : "bg-af2-clay-soft/30 text-af2-clay dark:bg-af2-clay-soft/10 dark:text-af2-clay"
                     )}
                   >
                     {k}
@@ -2562,14 +2562,14 @@ function StepNode({
           <>
             <div className="mt-3 grid gap-2 text-xs text-slate-500 dark:text-af2-ink-4">
               <div className="flex flex-wrap gap-2">
-                <span className="rounded-full border border-af2-clay/30 bg-af2-clay-soft/30 px-2 py-1 font-medium text-af2-clay dark:border-af2-clay/30 dark:bg-af2-clay-soft/300/10 dark:text-af2-clay">
+                <span className="rounded-full border border-af2-clay/30 bg-af2-clay-soft/30 px-2 py-1 font-medium text-af2-clay dark:border-af2-clay/30 dark:bg-af2-clay-soft/10 dark:text-af2-clay">
                   {step.agentRoleKey ?? "custom-agent"}
                 </span>
                 <span className="rounded-full border border-slate-200 bg-slate-50 px-2 py-1 font-medium text-slate-600 dark:border-af2-line-2 dark:bg-af2-paper-2 dark:text-af2-ink-3">
                   ${step.agentBudgetMonthlyUsd ?? 0}/mo
                 </span>
                 {teamAgent && (
-                  <span className="rounded-full border border-af2-sage/30 bg-af2-sage/10 px-2 py-1 font-medium capitalize text-af2-sage dark:border-af2-sage/30 dark:bg-af2-sage/100/10 dark:text-af2-sage">
+                  <span className="rounded-full border border-af2-sage/30 bg-af2-sage/10 px-2 py-1 font-medium capitalize text-af2-sage dark:border-af2-sage/30 dark:bg-af2-sage/10 dark:text-af2-sage">
                     {teamAgent.status}
                   </span>
                 )}
@@ -2592,7 +2592,7 @@ function StepNode({
               <a
                 href={teamAgentHref}
                 onClick={(event) => event.stopPropagation()}
-                className="mt-3 inline-flex items-center gap-1 rounded-full border border-af2-sage/30 bg-af2-sage/10 px-3 py-1.5 text-[11px] font-semibold text-af2-sage transition hover:bg-teal-100 dark:border-af2-sage/30 dark:bg-af2-sage/100/10 dark:text-af2-sage"
+                className="mt-3 inline-flex items-center gap-1 rounded-full border border-af2-sage/30 bg-af2-sage/10 px-3 py-1.5 text-[11px] font-semibold text-af2-sage transition hover:bg-teal-100 dark:border-af2-sage/30 dark:bg-af2-sage/10 dark:text-af2-sage"
               >
                 <Bot size={11} />
                 View deployed agent
@@ -2781,7 +2781,7 @@ function DeployAsTeamModal({
         <div className="grid gap-0 lg:grid-cols-[1.15fr_0.85fr]">
           <div className="border-b border-slate-200 p-6 dark:border-af2-line-2 lg:border-b-0 lg:border-r">
             <div className="mb-5">
-              <h3 className="text-sm font-semibold uppercase tracking-[0.16em] text-slate-400 dark:text-af2-paper0">
+              <h3 className="text-sm font-semibold uppercase tracking-[0.16em] text-slate-400 dark:text-af2-ink-4">
                 Team preview
               </h3>
               <p className="mt-2 text-sm text-slate-500 dark:text-af2-ink-4">
@@ -2790,7 +2790,7 @@ function DeployAsTeamModal({
             </div>
 
             <div className="space-y-3">
-              <div className="rounded-[24px] border border-af2-clay/30 bg-af2-clay-soft/30 px-5 py-4 dark:border-af2-clay/30 dark:bg-af2-clay-soft/300/10">
+              <div className="rounded-[24px] border border-af2-clay/30 bg-af2-clay-soft/30 px-5 py-4 dark:border-af2-clay/30 dark:bg-af2-clay-soft/10">
                 <div className="flex items-center gap-3">
                   <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-indigo-600 text-white">
                     <Bot size={18} />
@@ -2816,7 +2816,7 @@ function DeployAsTeamModal({
                       <p className="text-sm font-semibold text-slate-900 dark:text-af2-paper">
                         {step.name}
                       </p>
-                      <p className="mt-1 text-xs uppercase tracking-[0.16em] text-slate-400 dark:text-af2-paper0">
+                      <p className="mt-1 text-xs uppercase tracking-[0.16em] text-slate-400 dark:text-af2-ink-4">
                         {step.agentRoleKey ?? `${step.kind}-${index + 1}`}
                       </p>
                     </div>
@@ -2838,7 +2838,7 @@ function DeployAsTeamModal({
                     {(step.agentSkills ?? []).slice(0, 3).map((skill) => (
                       <span
                         key={skill}
-                        className="rounded-full border border-af2-sage/30 bg-af2-sage/10 px-3 py-1 text-xs font-medium text-af2-sage dark:border-af2-sage/30 dark:bg-af2-sage/100/10 dark:text-af2-sage"
+                        className="rounded-full border border-af2-sage/30 bg-af2-sage/10 px-3 py-1 text-xs font-medium text-af2-sage dark:border-af2-sage/30 dark:bg-af2-sage/10 dark:text-af2-sage"
                       >
                         {skill}
                       </span>
@@ -2861,7 +2861,7 @@ function DeployAsTeamModal({
             }}
           >
             <div>
-              <h3 className="text-sm font-semibold uppercase tracking-[0.16em] text-slate-400 dark:text-af2-paper0">
+              <h3 className="text-sm font-semibold uppercase tracking-[0.16em] text-slate-400 dark:text-af2-ink-4">
                 Launch settings
               </h3>
               <p className="mt-2 text-sm text-slate-500 dark:text-af2-ink-4">
@@ -2898,7 +2898,7 @@ function DeployAsTeamModal({
               />
             </Field>
 
-            <div className="rounded-[24px] border border-af2-mustard/30 bg-af2-mustard/10 px-4 py-3 text-sm text-amber-900 dark:border-af2-mustard/30 dark:bg-af2-mustard/100/10 dark:text-amber-200">
+            <div className="rounded-[24px] border border-af2-mustard/30 bg-af2-mustard/10 px-4 py-3 text-sm text-amber-900 dark:border-af2-mustard/30 dark:bg-af2-mustard/10 dark:text-amber-200">
               Deploying creates a control-plane team and agent roster. Start/stop lifecycle controls are not exposed by the current backend yet, so monitoring and task handoff are the primary post-deploy actions available in this release.
             </div>
 
@@ -3029,7 +3029,7 @@ function FileUploadModal({
 
           {/* Status */}
           {state === "error" && errorMsg && (
-            <div className="flex items-start gap-2 px-3 py-2 rounded-lg bg-af2-clay-soft/30 dark:bg-af2-clay-soft/300/10 border border-af2-clay/30 dark:border-red-500/30 text-sm text-af2-clay dark:text-red-300">
+            <div className="flex items-start gap-2 px-3 py-2 rounded-lg bg-af2-clay-soft/30 dark:bg-af2-clay-soft/10 border border-af2-clay/30 dark:border-red-500/30 text-sm text-af2-clay dark:text-red-300">
               <AlertCircle size={15} className="mt-0.5 shrink-0" />
               {errorMsg}
             </div>

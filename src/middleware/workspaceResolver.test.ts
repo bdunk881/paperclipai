@@ -55,6 +55,57 @@ describe("createWorkspaceResolver", () => {
     expect(res.status).not.toHaveBeenCalled();
   });
 
+  it("auto-provisions a default workspace when the user has zero workspaces (HEL-83 follow-on)", async () => {
+    // Brad's regression after the Supabase auth cutover: a freshly-signed-up
+    // user with zero workspaces hits the resolver from /auth/callback, gets
+    // a confusing "Multiple workspaces available" 400, and the dashboard
+    // is stuck. The resolver now auto-creates instead of 400ing.
+    const newWorkspaceId = "55555555-5555-4555-8555-555555555555";
+    const query = jest
+      .fn<Promise<QueryResult>, [string, unknown[]]>()
+      // 1st call: resolveDefaultWorkspaceId — owned lookup, returns 0 rows
+      .mockResolvedValueOnce(createQueryResult([], null))
+      // 2nd call: resolveDefaultWorkspaceId — member lookup, returns 0 rows
+      .mockResolvedValueOnce(createQueryResult([], null));
+    const connectQuery = jest
+      .fn<Promise<QueryResult>, [string, unknown[]?]>()
+      // BEGIN
+      .mockResolvedValueOnce(createQueryResult([], null))
+      // pg_advisory_xact_lock
+      .mockResolvedValueOnce(createQueryResult([], null))
+      // re-check inside lock — still 0 rows
+      .mockResolvedValueOnce(createQueryResult([], null))
+      // INSERT workspaces RETURNING id
+      .mockResolvedValueOnce(createQueryResult([{ id: newWorkspaceId }], null))
+      // INSERT workspace_members
+      .mockResolvedValueOnce(createQueryResult([], null))
+      // COMMIT
+      .mockResolvedValueOnce(createQueryResult([], null));
+    const release = jest.fn();
+    const connect = jest.fn().mockResolvedValue({ query: connectQuery, release });
+    // After provisioning, the resolver re-queries the role.
+    query.mockResolvedValueOnce(createQueryResult([{ role: "owner" }], null));
+    const pool = { query, connect } as unknown as Pool;
+    const middleware = createWorkspaceResolver(pool);
+    const req = createRequest({ auth: { sub: "user-new" } });
+    const res = createResponse();
+    const next = jest.fn() as NextFunction;
+
+    await middleware(req, res, next);
+
+    expect(connect).toHaveBeenCalledTimes(1);
+    expect(req.workspaceId).toBe(newWorkspaceId);
+    expect(req.workspace).toEqual({ id: newWorkspaceId, role: "owner" });
+    expect(next).toHaveBeenCalledTimes(1);
+    expect(res.status).not.toHaveBeenCalled();
+    expect(release).toHaveBeenCalledTimes(1);
+    // Confirm the INSERT actually ran (not just the re-check short-circuit).
+    expect(connectQuery).toHaveBeenCalledWith(
+      expect.stringContaining("INSERT INTO workspaces"),
+      expect.arrayContaining(["My Workspace", "user-new"]),
+    );
+  });
+
   it("rejects invalid explicit workspace header formats before any lookup", async () => {
     const query = jest.fn();
     const pool = { query } as unknown as Pool;

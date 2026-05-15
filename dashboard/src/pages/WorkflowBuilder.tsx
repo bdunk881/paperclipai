@@ -2570,11 +2570,11 @@ function StepNode({
         "group workflow-step-node relative cursor-pointer overflow-hidden rounded-[12px] border shadow-md transition-all",
         isAgentNode
           ? selected
-            ? "border-2 border-af2-clay bg-slate-800 ring-2 ring-brand-500/20 shadow-[0_16px_34px_rgba(15,23,42,0.42)]"
+            ? "border-2 border-af2-clay bg-slate-800 ring-2 ring-af2-clay/20 shadow-[0_16px_34px_rgba(15,23,42,0.42)]"
             : "border border-slate-700 bg-slate-800 hover:border-af2-clay shadow-[0_14px_28px_rgba(15,23,42,0.36)]"
           : selected
-            ? "border-2 border-af2-clay bg-white ring-2 ring-brand-500/20 dark:bg-af2-paper-2"
-            : "border border-af2-line-2 bg-white hover:border-af2-clay/40 dark:border-af2-line-2 dark:bg-af2-paper-2 dark:hover:border-af2-clay/50",
+            ? "border-2 border-af2-clay bg-af2-card ring-2 ring-af2-clay/20 dark:bg-af2-paper-2"
+            : "border border-af2-line-2 bg-af2-card hover:border-af2-clay/40 dark:border-af2-line-2 dark:bg-af2-paper-2 dark:hover:border-af2-clay/50",
         dragging ? "opacity-90 shadow-lg" : "",
         showRunningState ? "workflow-node-running" : "",
         showSuccessState ? "workflow-node-success" : "",

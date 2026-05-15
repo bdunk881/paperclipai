@@ -153,10 +153,10 @@ export default function Pricing() {
   }
 
   return (
-    <div className="min-h-full bg-surface-50 dark:bg-surface-950 transition-colors duration-200">
+    <div className="min-h-full bg-af2-paper dark:bg-surface-950 transition-colors duration-200">
       {/* Header */}
-      <div className="bg-white dark:bg-surface-900 border-b border-gray-200 dark:border-surface-800 px-8 py-10 text-center">
-        <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-brand-50 dark:bg-brand-500/10 text-brand-600 dark:text-brand-300 text-xs font-medium mb-4">
+      <div className="bg-af2-card dark:bg-surface-900 border-b border-af2-line dark:border-surface-800 px-8 py-10 text-center">
+        <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-af2-clay-soft dark:bg-brand-500/10 text-af2-clay-2 dark:text-brand-300 text-xs font-medium mb-4">
           <Zap size={12} />
           Unlimited Executions on Every Plan
         </div>
@@ -180,13 +180,13 @@ export default function Pricing() {
               key={tier.name}
               className={`relative rounded-2xl border-2 p-8 flex flex-col transition-all duration-200 ${
                 tier.highlight
-                  ? "border-brand-500 bg-white dark:bg-surface-900 shadow-xl shadow-brand-500/10 dark:shadow-brand-500/5 scale-105 z-10"
-                  : "border-gray-200 dark:border-surface-800 bg-white dark:bg-surface-900 shadow-sm"
+                  ? "border-af2-clay bg-af2-card dark:bg-surface-900 shadow-xl shadow-af2-clay/10 dark:shadow-brand-500/5 scale-105 z-10"
+                  : "border-af2-line dark:border-surface-800 bg-af2-card dark:bg-surface-900 shadow-sm"
               }`}
             >
               {tier.badge && (
                 <div className="absolute -top-3.5 left-1/2 -translate-x-1/2">
-                  <span className="px-3 py-1 rounded-full bg-brand-600 text-white text-[10px] font-bold uppercase tracking-wider">
+                  <span className="px-3 py-1 rounded-full bg-af2-clay-2 text-af2-card text-[10px] font-bold uppercase tracking-wider">
                     {tier.badge}
                   </span>
                 </div>
@@ -201,7 +201,7 @@ export default function Pricing() {
                     <span className="text-gray-400 dark:text-gray-500 text-sm mb-1">{tier.period}</span>
                   )}
                 </div>
-                <div className="mt-1 text-xs text-accent-teal font-medium uppercase tracking-wide">
+                <div className="mt-1 text-xs text-af2-sage font-medium uppercase tracking-wide">
                   Unlimited executions included
                 </div>
               </div>
@@ -211,8 +211,8 @@ export default function Pricing() {
                 onClick={() => handleCta(tier.tierId)}
                 className={`w-full py-2.5 rounded-xl text-sm font-bold transition-all mb-8 disabled:opacity-60 disabled:cursor-wait ${
                   tier.highlight
-                    ? "bg-brand-600 hover:bg-brand-700 text-white shadow-lg shadow-brand-600/20"
-                    : "border border-gray-300 dark:border-surface-700 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-surface-800"
+                    ? "bg-af2-clay-2 hover:bg-af2-clay text-af2-card shadow-lg shadow-af2-clay/20"
+                    : "border border-af2-line dark:border-surface-700 text-af2-ink-2 dark:text-gray-300 hover:bg-af2-paper-2 dark:hover:bg-surface-800"
                 }`}
               >
                 {loading === tier.tierId ? "Redirecting…" : tier.cta}
@@ -220,14 +220,14 @@ export default function Pricing() {
 
               <ul className="space-y-3 flex-1">
                 {tier.features.map((f) => (
-                  <li key={f} className="flex items-start gap-2.5 text-sm text-gray-700 dark:text-gray-300">
-                    <Check size={15} className="text-accent-teal mt-0.5 shrink-0" />
+                  <li key={f} className="flex items-start gap-2.5 text-sm text-af2-ink-2 dark:text-gray-300">
+                    <Check size={15} className="text-af2-sage mt-0.5 shrink-0" />
                     {f}
                   </li>
                 ))}
                 {tier.notIncluded.map((f) => (
-                  <li key={f} className="flex items-start gap-2.5 text-sm text-gray-400 dark:text-gray-600 line-through opacity-60">
-                    <span className="w-3.5 h-3.5 mt-0.5 shrink-0 rounded-full border border-gray-300 dark:border-surface-700 inline-block" />
+                  <li key={f} className="flex items-start gap-2.5 text-sm text-af2-ink-3 dark:text-gray-600 line-through opacity-60">
+                    <span className="w-3.5 h-3.5 mt-0.5 shrink-0 rounded-full border border-af2-line dark:border-surface-700 inline-block" />
                     {f}
                   </li>
                 ))}
@@ -237,14 +237,14 @@ export default function Pricing() {
         </div>
 
         {/* Feature comparison note */}
-        <div className="mt-12 rounded-2xl bg-surface-900 dark:bg-surface-850 text-white p-8 border border-surface-800 shadow-xl overflow-hidden relative">
-          <div className="absolute top-0 right-0 w-64 h-64 bg-brand-500/10 blur-3xl -mr-32 -mt-32 rounded-full pointer-events-none" />
+        <div className="mt-12 rounded-2xl bg-af2-ink dark:bg-surface-850 text-af2-card p-8 border border-af2-ink-2 shadow-xl overflow-hidden relative">
+          <div className="absolute top-0 right-0 w-64 h-64 bg-af2-clay/10 blur-3xl -mr-32 -mt-32 rounded-full pointer-events-none" />
           <div className="relative z-10">
             <h3 className="text-lg font-bold mb-2 flex items-center gap-2">
-              <Sparkles size={20} className="text-brand-400" />
+              <Sparkles size={20} className="text-af2-clay" />
               Why flat-fee pricing?
             </h3>
-            <p className="text-surface-300 text-sm leading-relaxed max-w-2xl">
+            <p className="text-af2-paper-2 text-sm leading-relaxed max-w-2xl">
               Traditional AI platforms charge per token or per execution — costs that spiral as your
               workflows scale. AutoFlow believes your team should iterate freely without worrying about
               runaway bills. Our flat-fee model means you can run experiments, debug in production, and

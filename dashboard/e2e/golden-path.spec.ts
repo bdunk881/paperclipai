@@ -38,9 +38,11 @@
 
 import { test, expect, request as playwrightRequest } from "@playwright/test";
 import { loginAsMockUser } from "./helpers/auth";
+import { stubStripeCheckoutApi, stubSlackOAuth } from "./helpers/networkStubs";
 
 const LANDING_BASE_URL = process.env.LANDING_BASE_URL ?? "http://localhost:3000";
 const BACKEND_BASE_URL = process.env.BACKEND_BASE_URL ?? "http://localhost:8000";
+const DASHBOARD_BASE_URL = process.env.DASHBOARD_BASE_URL ?? "http://localhost:5173";
 
 // ---------------------------------------------------------------------------
 // Phase 1 — Anonymous visitor lands on the marketing site.
@@ -80,6 +82,14 @@ test.describe("Phase 2 — Pricing CTA", () => {
     "Set RUN_LANDING_PHASES=1 to exercise the cross-origin landing assertions",
   );
 
+  // HEL-75: stub the backend checkout endpoint for both Phase 2 tests so a
+  // CTA click never escapes to live Stripe. Each test calls page.goto()
+  // after this hook so the route handler is registered before the page
+  // ever asks the backend for a checkout URL.
+  test.beforeEach(async ({ page }) => {
+    await stubStripeCheckoutApi(page, DASHBOARD_BASE_URL);
+  });
+
   test("the free Tinker/Explore tier links to /signup", async ({ page }) => {
     await page.goto(`${LANDING_BASE_URL}/#pricing`);
     const startFree = page.getByRole("link", { name: /Start free/i }).first();
@@ -93,8 +103,11 @@ test.describe("Phase 2 — Pricing CTA", () => {
     // The Team CTA is a button (not a Link) because it POSTs the tier.
     const tryTeam = page.getByRole("button", { name: /Try Automate/i });
     await expect(tryTeam).toBeVisible();
-    // We don't actually click here — the click would redirect to live Stripe
-    // and that is verified by Phase 3 below as an API-only assertion.
+    // With stubStripeCheckoutApi registered above, clicking Try Automate
+    // would now end up on /checkout/success?session_id=cs_test_golden_path
+    // instead of live Stripe — but we don't click here because Phase 3
+    // already asserts that endpoint contract API-only. The stub being in
+    // place means flipping that click on later is a no-op for safety.
   });
 });
 
@@ -373,6 +386,39 @@ test.describe("Phase 12 — Approval resolves", () => {
     await page.goto("/approvals");
     await page.getByRole("button", { name: /approve/i }).first().click();
     await expect(page.getByText(/approved|resolved/i)).toBeVisible();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Phase 12.5 — Connect a Slack workspace (placeholder for the connector OAuth
+// surface). Status: BLOCKED on a Slack-connect ticket (no dedicated HEL yet —
+// connector OAuth flows are in HEL-22 entitlements + planned Tier-1 work).
+//
+// The phase exists today only as a fixme'd placeholder that registers the
+// stubSlackOAuth helper. Once the connector connect flow lands, the .fixme
+// flips off and the synthetic OAuth round-trip drives a `connector_connection`
+// row insert without ever calling slack.com.
+// ---------------------------------------------------------------------------
+
+test.describe("Phase 12.5 — Slack connect (placeholder)", () => {
+  test.fixme(true, "Placeholder until a Slack connector OAuth flow ships (HEL follow-on to HEL-22)");
+
+  test.beforeEach(async ({ page }) => {
+    await loginAsMockUser(page);
+    // HEL-75 — short-circuit the Slack OAuth round-trip so when the connect
+    // button is wired, the dashboard's callback handler runs against the
+    // synthetic redirect rather than slack.com.
+    await stubSlackOAuth(page);
+  });
+
+  test("clicking Connect Slack triggers the OAuth callback handler (no live slack.com)", async ({
+    page,
+  }) => {
+    await page.goto("/integrations");
+    // Future click: page.getByRole("button", { name: /Connect Slack/i }).click()
+    // The stub will redirect back to /integrations/slack/callback?code=...
+    // and the dashboard should display a connected state.
+    await expect(page.getByText(/Slack/)).toBeVisible();
   });
 });
 

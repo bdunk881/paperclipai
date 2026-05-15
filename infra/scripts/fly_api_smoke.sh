@@ -94,7 +94,7 @@ require_status_in "$cors_status" "200,204" "cors_preflight"
 # ---------------------------------------------------------------------------
 # 3. Protected route — confirm auth gate returns 401 (not 404 — proves it's wired)
 # ---------------------------------------------------------------------------
-protected_status=$(request "protected" "GET" "/api/protected" "$OUT_DIR/protected.json")
+protected_status=$(request "protected" "GET" "/api/companies" "$OUT_DIR/protected.json")
 require_status_in "$protected_status" "401,403" "protected"
 
 # ---------------------------------------------------------------------------
@@ -132,7 +132,7 @@ require_status_in "$stripe_status" "400,401" "stripe_webhook"
   echo
   echo "- \`GET /health\` => 200, JSON \`status:ok\`"
   echo "- \`OPTIONS /health\` (CORS preflight) => 200/204"
-  echo "- \`GET /api/protected\` => 401/403 (auth wired)"
+  echo "- \`GET /api/companies\` (no auth) => 401/403 (auth wired)"
   echo "- \`GET /api/integrations/slack/oauth/callback?error=...\` => 200/302/307/400/401/404"
   echo "- \`POST /api/webhooks/stripe\` (unsigned) => 400/401"
   echo

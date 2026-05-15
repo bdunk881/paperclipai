@@ -3,11 +3,18 @@ import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import AgentActivity from "./AgentActivity";
 
-const { getAccessTokenMock, listAgentsMock, getAgentHeartbeatMock, listAgentRunsMock } = vi.hoisted(() => ({
+const {
+  getAccessTokenMock,
+  listAgentsMock,
+  getAgentHeartbeatMock,
+  listAgentRunsMock,
+  listActivityEventsMock,
+} = vi.hoisted(() => ({
   getAccessTokenMock: vi.fn(),
   listAgentsMock: vi.fn(),
   getAgentHeartbeatMock: vi.fn(),
   listAgentRunsMock: vi.fn(),
+  listActivityEventsMock: vi.fn(),
 }));
 const accessModeMock = vi.fn();
 
@@ -24,16 +31,24 @@ vi.mock("../api/agentApi", () => ({
   listAgentRuns: listAgentRunsMock,
 }));
 
+vi.mock("../api/activityApi", () => ({
+  listActivityEvents: listActivityEventsMock,
+}));
+
 describe("AgentActivity", () => {
   beforeEach(() => {
     getAccessTokenMock.mockReset();
     listAgentsMock.mockReset();
     getAgentHeartbeatMock.mockReset();
     listAgentRunsMock.mockReset();
+    listActivityEventsMock.mockReset();
     accessModeMock.mockReset();
 
     accessModeMock.mockReturnValue("authenticated");
     getAccessTokenMock.mockResolvedValue("token-123");
+    // Default the canonical feed to empty so the existing tests don't
+    // need to set it explicitly.
+    listActivityEventsMock.mockResolvedValue([]);
   });
 
   it("filters activity by search query and status", async () => {
@@ -126,6 +141,33 @@ describe("AgentActivity", () => {
     expect(container.querySelector("h1.af2-h1")).not.toBeNull();
     expect(container.querySelector(".af2-tabs")).not.toBeNull();
     expect(container.querySelector(".af2-card")).not.toBeNull();
+  });
+
+  it("merges canonical activity_events into the timeline (HEL-29)", async () => {
+    // Agent side: empty (no agents) so the only items come from the
+    // canonical activity feed.
+    listAgentsMock.mockResolvedValue([]);
+    listActivityEventsMock.mockResolvedValue([
+      {
+        id: "evt-1",
+        kind: "hiring_plan_accepted",
+        actor: { type: "user", id: "user-1", label: "Brad" },
+        subject: { type: "hiring_plan", id: "plan-xyz", label: "Q1 Launch" },
+        payload: { agentCount: 3, edgeCount: 2 },
+        occurredAt: "2026-05-15T10:00:00.000Z",
+      },
+    ]);
+
+    render(
+      <MemoryRouter>
+        <AgentActivity />
+      </MemoryRouter>
+    );
+
+    // The kind name appears in the action column.
+    expect(await screen.findByText("hiring_plan_accepted")).toBeInTheDocument();
+    // The actor label is the strong agent name in the row.
+    expect(screen.getByText("Brad")).toBeInTheDocument();
   });
 
   it("shows an empty-state message when no events match the filter", async () => {

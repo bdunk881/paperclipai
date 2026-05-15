@@ -94,6 +94,7 @@ import {
 import { createWorkspaceRoutes } from "./workspaces/workspaceRoutes";
 import { createMissionRoutes } from "./missions/missionRoutes";
 import { createHiringPlanRoutes } from "./missions/hiringPlanRoutes";
+import { createActivityRoutes } from "./activity/activityRoutes";
 import { createInstructionRoutes } from "./instructions/instructionRoutes";
 import { createKnowledgeItemRoutes } from "./knowledge/knowledgeItemRoutes";
 import { createEpisodeRoutes } from "./episodes/episodeRoutes";
@@ -154,6 +155,14 @@ const hiringPlanRoutes = isPostgresPersistenceEnabled()
   ? createHiringPlanRoutes(getPostgresPool())
   : express.Router().post("/:hiringPlanId/confirm", (_req, res) => {
       res.status(501).json({ error: "Hiring plan confirmation requires PostgreSQL persistence." });
+    });
+
+// HEL-29: activity feed route (GET /api/activity-events).
+// Polls the canonical activity_events table; SSE/WS promotion is P3.
+const activityRoutes = isPostgresPersistenceEnabled()
+  ? createActivityRoutes(getPostgresPool())
+  : express.Router().get("/", (_req, res) => {
+      res.json({ events: [], limit: 0, total: 0 });
     });
 
 // HEL-87: three-layer memory routes (instructions / knowledge-items / episodes).
@@ -484,6 +493,10 @@ app.use("/api/missions", requireAuth, workspaceResolver, requireRole("admin", "d
 // requireRole gates this to admin/developer so a billing-only seat can't
 // provision agents that incur LLM cost.
 app.use("/api/hiring-plans", requireAuth, workspaceResolver, requireRole("admin", "developer"), hiringPlanRoutes);
+// HEL-29: activity feed. Any authenticated workspace member can read the
+// activity stream — it's the workspace-wide "room right now" surface. No
+// requireRole gate since read-only and RLS-scoped to the workspace.
+app.use("/api/activity-events", requireAuth, workspaceResolver, activityRoutes);
 // HEL-87: three-layer memory.
 app.use("/api/instructions", requireAuth, workspaceResolver, requireRole("admin", "developer", "operator"), instructionRoutes);
 app.use("/api/knowledge-items", requireAuth, workspaceResolver, requireRole("admin", "developer", "operator"), knowledgeItemRoutes);

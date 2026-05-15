@@ -1160,7 +1160,7 @@ function CloseRequestBanner({
 
 function MemorySidebar({ memoryState }: { memoryState: MemoryLoadState }) {
   return (
-    <section className="animate-slide-in-right overflow-hidden rounded-[30px] border border-af2-line bg-af2-paper shadow-card">
+    <section className="animate-slide-in-right overflow-hidden rounded-[30px] border border-af2-line bg-af2-paper shadow-af2">
       <div className="sticky top-0 flex h-14 items-center gap-2 border-b border-af2-line px-5 text-af2-ink-4 backdrop-blur">
         <Brain size={16} />
         <span className="text-sm font-semibold">Memory</span>

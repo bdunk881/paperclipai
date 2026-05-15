@@ -248,7 +248,7 @@ export default function Layout() {
 
       <main
         className={clsx(
-          "flex-1 overflow-y-auto bg-surface-50 transition-colors duration-200",
+          "flex-1 overflow-y-auto bg-af2-paper transition-colors duration-200",
           isBuilderPopout ? "pt-0" : "pt-14 lg:pt-0"
         )}
       >

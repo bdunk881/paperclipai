@@ -86,10 +86,46 @@ describe("AgentActivity", () => {
     expect(screen.queryByText("Heartbeat paused")).not.toBeInTheDocument();
     expect(screen.getByText("Heartbeat error")).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: "warning" }));
+    // After HEL-60 v2 restyle, status filter buttons render as tabs labeled
+    // "All / Live / Blocked / Other" (mapping success / warning / info to
+    // operator-meaningful names). "Blocked" maps to the warning status.
+    fireEvent.click(screen.getByRole("button", { name: "Blocked" }));
 
     expect(screen.getByText("Heartbeat error")).toBeInTheDocument();
     expect(screen.queryByText("Heartbeat paused")).not.toBeInTheDocument();
+  });
+
+  it("renders with v2 structural markers (HEL-60)", async () => {
+    // Regression guard: assert v2 chrome is actually present, not just af2-*
+    // color tokens. Mirrors the marker check from Settings.test.tsx (HEL-64).
+    listAgentsMock.mockResolvedValue([
+      {
+        id: "agent-sales",
+        name: "Sales Agent",
+      },
+    ]);
+    getAgentHeartbeatMock.mockResolvedValue({
+      id: "heartbeat-sales",
+      status: "running",
+      summary: "Sales Agent is online.",
+      tokenUsage: 42,
+      recordedAt: "2026-04-22T00:00:00.000Z",
+    });
+    listAgentRunsMock.mockResolvedValue([]);
+
+    const { container } = render(
+      <MemoryRouter>
+        <AgentActivity />
+      </MemoryRouter>
+    );
+
+    expect(await screen.findByText("Heartbeat running")).toBeInTheDocument();
+    expect(container.querySelector(".af2-page")).not.toBeNull();
+    expect(container.querySelector(".af2-page-head")).not.toBeNull();
+    expect(container.querySelector(".af2-eyebrow")).not.toBeNull();
+    expect(container.querySelector("h1.af2-h1")).not.toBeNull();
+    expect(container.querySelector(".af2-tabs")).not.toBeNull();
+    expect(container.querySelector(".af2-card")).not.toBeNull();
   });
 
   it("shows an empty-state message when no events match the filter", async () => {

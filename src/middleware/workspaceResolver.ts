@@ -95,31 +95,29 @@ async function ensureWorkspaceMembership(pool: Pool, workspaceId: string, userId
 }
 
 async function resolveDefaultWorkspaceId(pool: Pool, userId: string): Promise<string | null> {
+  // Returns the oldest workspace the user owns, or (if they don't own any) the
+  // oldest workspace they're a member of. The dashboard's WorkspaceContext
+  // bootstraps the active workspace asynchronously and the switcher writes
+  // X-Workspace-Id once the user picks one explicitly — but during the
+  // bootstrap race or on first-page-load, requests reach this middleware
+  // without the header. Returning a deterministic default unblocks those
+  // calls; clients that need explicit selection still set X-Workspace-Id
+  // and the candidateWorkspaceId branch above honors it.
   const ownedWorkspaces = await pool.query<{ id: string }>(
-    `SELECT id FROM workspaces WHERE owner_user_id = $1 ORDER BY created_at ASC LIMIT 2`,
+    `SELECT id FROM workspaces WHERE owner_user_id = $1 ORDER BY created_at ASC LIMIT 1`,
     [userId],
   );
-  const ownedWorkspaceCount = getResultCount(ownedWorkspaces);
-
-  if (ownedWorkspaceCount > 1) {
-    return null;
-  }
-  if (ownedWorkspaceCount === 1) {
+  if (getResultCount(ownedWorkspaces) >= 1) {
     return ownedWorkspaces.rows[0].id;
   }
 
   const memberWorkspaces = await pool.query<{ id: string }>(
     `SELECT wm.workspace_id AS id FROM workspace_members wm
      WHERE wm.user_id = $1
-     ORDER BY wm.created_at ASC LIMIT 2`,
+     ORDER BY wm.created_at ASC LIMIT 1`,
     [userId],
   );
-  const memberWorkspaceCount = getResultCount(memberWorkspaces);
-
-  if (memberWorkspaceCount > 1) {
-    return null;
-  }
-  if (memberWorkspaceCount === 1) {
+  if (getResultCount(memberWorkspaces) >= 1) {
     return memberWorkspaces.rows[0].id;
   }
 

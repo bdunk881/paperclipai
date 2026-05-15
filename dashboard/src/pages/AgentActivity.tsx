@@ -8,8 +8,13 @@ import {
   type AgentHeartbeat,
   type AgentRun,
 } from "../api/agentApi";
+import { listActivityEvents, type ActivityEvent } from "../api/activityApi";
 import { EmptyState, ErrorState, LoadingState } from "../components/UiStates";
 import { useAuth } from "../context/AuthContext";
+
+// HEL-29: poll the canonical activity feed every 5s and merge new events
+// into the timeline alongside the per-agent heartbeats + runs.
+const ACTIVITY_POLL_MS = 5_000;
 
 /**
  * Activity feed (HEL-60 v2 restyle).
@@ -61,6 +66,53 @@ function runStatusToTone(status: AgentRun["status"]): ActivityStatus {
   return "info";
 }
 
+/**
+ * Maps a canonical activity_events row (`hiring_plan_accepted`,
+ * `agent_provisioned`, `run.started`, etc.) into the legacy
+ * ActivityItem shape so it merges naturally into the existing timeline.
+ */
+function activityEventToItem(event: ActivityEvent): ActivityItem {
+  const subject = event.subject as Record<string, unknown>;
+  const payload = event.payload as Record<string, unknown>;
+  const actor = event.actor as Record<string, unknown>;
+
+  // Pick a reasonable display name for the actor (user id) and summary line.
+  const actorName =
+    (typeof actor.label === "string" ? actor.label : undefined) ??
+    (typeof actor.id === "string" ? actor.id : "system");
+
+  // Map well-known kinds to operator-meaningful labels + status.
+  const KIND_TO_STATUS: Record<string, ActivityStatus> = {
+    hiring_plan_accepted: "success",
+    agent_provisioned: "success",
+    "run.completed": "success",
+    "run.started": "info",
+    "run.failed": "warning",
+    "approval.requested": "info",
+    "approval.resolved": "success",
+  };
+
+  const status: ActivityStatus = KIND_TO_STATUS[event.kind] ?? "info";
+
+  // Build a readable summary from the subject + payload.
+  const subjectLabel =
+    (typeof subject.label === "string" ? subject.label : undefined) ??
+    (typeof subject.id === "string" ? subject.id : event.kind);
+  const summary =
+    (typeof payload.summary === "string" ? payload.summary : undefined) ??
+    JSON.stringify(payload).slice(0, 240);
+
+  return {
+    id: `activity-${event.id}`,
+    agentName: actorName,
+    action: event.kind,
+    summary: `${subjectLabel}: ${summary}`,
+    status,
+    tokenUsage: 0,
+    createdAt: event.occurredAt,
+  };
+}
+
 function formatTime(iso: string): string {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return "—";
@@ -108,61 +160,106 @@ export default function AgentActivity() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const loadActivity = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const token = await getAccessToken();
-      if (accessMode === "preview" && !token) {
-        setActivity([]);
-        return;
+  const loadActivity = useCallback(
+    async (silent = false): Promise<void> => {
+      if (!silent) setLoading(true);
+      setError(null);
+      try {
+        const token = await getAccessToken();
+        if (accessMode === "preview" && !token) {
+          setActivity([]);
+          return;
+        }
+        if (!token) throw new Error("Authentication session expired.");
+
+        // Fetch all three sources in parallel: legacy heartbeats+runs and
+        // canonical activity_events (HEL-29). The canonical feed is the
+        // longer-term source; heartbeats+runs stay until the engine writes
+        // run.started / run.completed / run.failed into activity_events.
+        const [agents, canonicalEvents] = await Promise.all([
+          listAgents(token),
+          listActivityEvents(token, 50).catch((cause: unknown) => {
+            // Non-fatal — agent-derived items still render if the canonical
+            // endpoint is unavailable (e.g. in-memory mode pre-HEL-29).
+            console.warn("[activity] canonical feed failed:", cause);
+            return [] as ActivityEvent[];
+          }),
+        ]);
+
+        const agentItems = (
+          await Promise.all(
+            agents.map(async (agent) => {
+              const [heartbeat, runs] = await Promise.all([
+                getAgentHeartbeat(agent.id, token),
+                listAgentRuns(agent.id, token),
+              ]);
+              const heartbeatItems = heartbeat
+                ? [
+                    {
+                      id: `heartbeat-${heartbeat.id}`,
+                      agentName: agent.name,
+                      action: `Heartbeat ${heartbeat.status}`,
+                      summary: heartbeat.summary ?? "Latest heartbeat recorded for this agent.",
+                      status: heartbeatStatusToTone(heartbeat.status),
+                      tokenUsage: heartbeat.tokenUsage,
+                      createdAt: heartbeat.recordedAt,
+                    },
+                  ]
+                : [];
+              const runItems = runs.map((run) => ({
+                id: `run-${run.id}`,
+                agentName: agent.name,
+                action: `Run ${run.status}`,
+                summary: run.summary ?? `Agent execution ${run.status}.`,
+                status: runStatusToTone(run.status),
+                tokenUsage: run.tokenUsage,
+                createdAt: run.completedAt ?? run.startedAt ?? run.createdAt,
+              }));
+              return [...heartbeatItems, ...runItems];
+            }),
+          )
+        ).flat();
+
+        const canonicalItems: ActivityItem[] = canonicalEvents.map(activityEventToItem);
+
+        const merged = [...agentItems, ...canonicalItems].sort((left, right) =>
+          right.createdAt.localeCompare(left.createdAt),
+        );
+
+        // Dedupe by id (the canonical source might overlap with run items
+        // once the engine writes both — for now they have different prefixes
+        // so this is purely defensive).
+        const seen = new Set<string>();
+        const deduped = merged.filter((item) => {
+          if (seen.has(item.id)) return false;
+          seen.add(item.id);
+          return true;
+        });
+
+        setActivity(deduped);
+      } catch (cause) {
+        setError(cause instanceof Error ? cause.message : "Failed to load activity");
+      } finally {
+        if (!silent) setLoading(false);
       }
-      if (!token) throw new Error("Authentication session expired.");
-      const agents = await listAgents(token);
-      const items = (
-        await Promise.all(
-          agents.map(async (agent) => {
-            const [heartbeat, runs] = await Promise.all([
-              getAgentHeartbeat(agent.id, token),
-              listAgentRuns(agent.id, token),
-            ]);
-            const heartbeatItems = heartbeat
-              ? [
-                  {
-                    id: `heartbeat-${heartbeat.id}`,
-                    agentName: agent.name,
-                    action: `Heartbeat ${heartbeat.status}`,
-                    summary: heartbeat.summary ?? "Latest heartbeat recorded for this agent.",
-                    status: heartbeatStatusToTone(heartbeat.status),
-                    tokenUsage: heartbeat.tokenUsage,
-                    createdAt: heartbeat.recordedAt,
-                  },
-                ]
-              : [];
-            const runItems = runs.map((run) => ({
-              id: `run-${run.id}`,
-              agentName: agent.name,
-              action: `Run ${run.status}`,
-              summary: run.summary ?? `Agent execution ${run.status}.`,
-              status: runStatusToTone(run.status),
-              tokenUsage: run.tokenUsage,
-              createdAt: run.completedAt ?? run.startedAt ?? run.createdAt,
-            }));
-            return [...heartbeatItems, ...runItems];
-          })
-        )
-      ).flat();
-      setActivity(items.sort((left, right) => right.createdAt.localeCompare(left.createdAt)));
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Failed to load activity");
-    } finally {
-      setLoading(false);
-    }
-  }, [accessMode, getAccessToken]);
+    },
+    [accessMode, getAccessToken],
+  );
 
   useEffect(() => {
     void loadActivity();
   }, [loadActivity]);
+
+  // HEL-29 polling: refresh the activity feed every 5 seconds without
+  // showing the loading state (silent=true) so the timeline reflows in
+  // place. The interval is cleared on unmount.
+  useEffect(() => {
+    if (accessMode === "preview") return;
+    const interval = window.setInterval(() => {
+      void loadActivity(true);
+    }, ACTIVITY_POLL_MS);
+    return () => window.clearInterval(interval);
+  }, [accessMode, loadActivity]);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();

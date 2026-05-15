@@ -421,7 +421,7 @@ export default function Tickets({ initialData, routeAction }: TicketsProps = {})
                       className="group grid gap-4 border-l-[2px] border-transparent bg-af2-card px-5 py-4 transition hover:border-indigo-500 hover:bg-af2-paper dark:bg-[#0f172a] dark:hover:bg-slate-800/50 lg:grid-cols-[120px_minmax(0,1.4fr)_180px_170px_150px_110px]"
                     >
                       <div className="space-y-2">
-                        <p className="font-ticket-mono text-xs font-medium uppercase tracking-[0.18em] text-af2-ink-4 dark:text-slate-300">
+                        <p className="font-af2-mono text-xs font-medium uppercase tracking-[0.18em] text-af2-ink-4 dark:text-slate-300">
                           {ticket.id}
                         </p>
                         <p className="text-[11px] text-af2-ink-4">Updated {relativeTicketTime(ticket.updatedAt)}</p>

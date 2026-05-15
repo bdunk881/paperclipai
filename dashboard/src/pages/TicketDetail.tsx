@@ -548,7 +548,7 @@ export default function TicketDetail({
                 Back to queue
               </Link>
               <div className="mt-3 flex flex-wrap items-center gap-3">
-                <span className="font-ticket-mono text-xs uppercase tracking-[0.2em] text-slate-400">
+                <span className="font-af2-mono text-xs uppercase tracking-[0.2em] text-slate-400">
                   {ticket.id}
                 </span>
                 <TicketStatusBadge status={ticket.status} />
@@ -666,7 +666,7 @@ export default function TicketDetail({
                       <div className="min-w-0 flex-1">
                         <p className="truncate text-sm font-semibold text-slate-100">{childTicket.title}</p>
                         <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-slate-500">
-                          <span className="font-ticket-mono uppercase tracking-[0.16em]">{childTicket.id}</span>
+                          <span className="font-af2-mono uppercase tracking-[0.16em]">{childTicket.id}</span>
                           {childTicket.owner ? (
                             <>
                               <span>•</span>
@@ -1227,10 +1227,10 @@ function SlaTimerPanel({
     <section className="rounded-[30px] border border-slate-800 bg-slate-950/80 p-5">
       <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">SLA Clock</p>
       <div className="mt-4 rounded-[24px] border border-slate-800 bg-slate-900/70 p-4">
-        <p className="font-ticket-mono text-[11px] uppercase tracking-[0.18em] text-slate-500">
+        <p className="font-af2-mono text-[11px] uppercase tracking-[0.18em] text-slate-500">
           Resolution timer
         </p>
-        <p className="mt-3 font-ticket-mono tabular-nums text-3xl font-bold text-slate-100">
+        <p className="mt-3 font-af2-mono tabular-nums text-3xl font-bold text-slate-100">
           {countdown.primary}
         </p>
         <p className="mt-2 text-sm text-slate-400">{countdown.secondary}</p>

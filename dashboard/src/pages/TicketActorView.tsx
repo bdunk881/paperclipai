@@ -162,7 +162,7 @@ export default function TicketActorView() {
                 <div className="flex flex-wrap items-start justify-between gap-4">
                   <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-center gap-2">
-                      <span className="font-ticket-mono text-xs uppercase tracking-[0.18em] text-slate-400">
+                      <span className="font-af2-mono text-xs uppercase tracking-[0.18em] text-slate-400">
                         {ticket.id}
                       </span>
                       <TicketStatusBadge status={ticket.status} />

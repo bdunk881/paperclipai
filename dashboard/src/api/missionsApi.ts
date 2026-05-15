@@ -103,3 +103,44 @@ export async function generateHiringPlan(
     `Failed to generate hiring plan: ${response.status}`,
   );
 }
+
+/**
+ * HEL-25 — confirm a generated hiring plan, atomically provisioning the
+ * agents + org_edges + activity_events backing the org chart on the Team
+ * page. A 409 means the plan was already accepted (race or repeat click);
+ * the response payload carries the original `acceptedAt`.
+ */
+export interface ProvisionedAgent {
+  id: string;
+  roleKey: string;
+  name: string;
+  modelTier: "lite" | "standard" | "power";
+  model: string | null;
+  budgetMonthlyUsd: number;
+  reportingToAgentId: string | null;
+}
+
+export interface ConfirmHiringPlanResponse {
+  hiringPlanId: string;
+  missionId: string;
+  acceptedAt: string;
+  agents: ProvisionedAgent[];
+  orgEdges: Array<{ managerAgentId: string; agentId: string }>;
+}
+
+export async function confirmHiringPlan(
+  hiringPlanId: string,
+  accessToken: string,
+): Promise<ConfirmHiringPlanResponse> {
+  const response = await trackedFetch(
+    `${BASE}/hiring-plans/${encodeURIComponent(hiringPlanId)}/confirm`,
+    {
+      method: "POST",
+      headers: buildHeaders(accessToken, { "Content-Type": "application/json" }),
+    },
+  );
+  return parseJsonOrError<ConfirmHiringPlanResponse>(
+    response,
+    `Failed to confirm hiring plan: ${response.status}`,
+  );
+}

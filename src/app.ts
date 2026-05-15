@@ -505,9 +505,18 @@ app.use("/api/missions", requireAuth, workspaceResolver, requireRole("admin", "d
 // provision agents that incur LLM cost.
 app.use("/api/hiring-plans", requireAuth, workspaceResolver, requireRole("admin", "developer"), hiringPlanRoutes);
 // HEL-29: activity feed. Any authenticated workspace member can read the
-// activity stream — it's the workspace-wide "room right now" surface. No
-// requireRole gate since read-only and RLS-scoped to the workspace.
-app.use("/api/activity-events", requireAuth, workspaceResolver, activityRoutes);
+// activity stream — it's the workspace-wide "room right now" surface. We
+// enumerate every workspace role explicitly to satisfy the CI guard that
+// requires a requireRole() declaration on every authenticated mount; the
+// surface itself is RLS-scoped to the workspace and the requireRole call is
+// effectively a no-op pass-through across all valid roles.
+app.use(
+  "/api/activity-events",
+  requireAuth,
+  workspaceResolver,
+  requireRole("owner", "admin", "billing", "operator", "developer", "approver", "member"),
+  activityRoutes,
+);
 // HEL-27 canonical workflows router is mounted further below, AFTER the
 // pre-existing /api/workflows/schema + /api/workflows/generate specific
 // handlers, so those don't get intercepted by the :workflowId param.

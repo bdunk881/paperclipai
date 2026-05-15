@@ -137,7 +137,7 @@ BEGIN
   IF to_regclass('public.workflow_imported_templates') IS NOT NULL THEN
     EXECUTE $sql$
       INSERT INTO workflows (workspace_id, external_template_id, name, created_at, updated_at)
-      SELECT NULL, id, name, imported_at, imported_at
+      SELECT NULL::uuid, id, name, imported_at, imported_at
       FROM workflow_imported_templates
       ON CONFLICT (external_template_id)
       WHERE workspace_id IS NULL AND external_template_id IS NOT NULL
@@ -177,7 +177,7 @@ BEGIN
   IF to_regclass('public.workflow_runs') IS NOT NULL THEN
     EXECUTE $sql$
       INSERT INTO workflows (workspace_id, external_template_id, name)
-      SELECT DISTINCT NULL, template_id, template_name
+      SELECT DISTINCT NULL::uuid, template_id, template_name
       FROM workflow_runs
       ON CONFLICT (external_template_id)
       WHERE workspace_id IS NULL AND external_template_id IS NOT NULL
@@ -450,9 +450,9 @@ WITH CHECK (
   )
 );
 
-DROP TABLE IF EXISTS workflow_queue_jobs;
-DROP TABLE IF EXISTS workflow_step_results;
-DROP TABLE IF EXISTS workflow_runs;
-DROP TABLE IF EXISTS workflow_imported_templates;
+DROP TABLE IF EXISTS workflow_queue_jobs CASCADE;
+DROP TABLE IF EXISTS workflow_step_results CASCADE;
+DROP TABLE IF EXISTS workflow_runs CASCADE;
+DROP TABLE IF EXISTS workflow_imported_templates CASCADE;
 
 COMMIT;

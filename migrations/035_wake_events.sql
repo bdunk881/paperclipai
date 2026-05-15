@@ -43,8 +43,7 @@ CREATE TABLE IF NOT EXISTS wake_events (
   acted_run_id    UUID,
   created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
   triaged_at      TIMESTAMPTZ,
-  expires_at      TIMESTAMPTZ GENERATED ALWAYS AS
-                  (created_at + INTERVAL '30 days') STORED
+  expires_at      TIMESTAMPTZ
 );
 
 CREATE INDEX IF NOT EXISTS wake_events_workspace_agent_idx
@@ -57,6 +56,19 @@ CREATE INDEX IF NOT EXISTS wake_events_deferred_idx
   WHERE decision = 'DEFER' AND deferred_until IS NOT NULL;
 CREATE INDEX IF NOT EXISTS wake_events_expires_idx ON wake_events (expires_at);
 
+CREATE OR REPLACE FUNCTION wake_events_set_expires_at()
+RETURNS TRIGGER LANGUAGE plpgsql AS $$
+BEGIN
+  NEW.expires_at := NEW.created_at + INTERVAL '30 days';
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS wake_events_expires_at_trigger ON wake_events;
+CREATE TRIGGER wake_events_expires_at_trigger
+  BEFORE INSERT ON wake_events
+  FOR EACH ROW EXECUTE FUNCTION wake_events_set_expires_at();
+
 ALTER TABLE wake_events ENABLE ROW LEVEL SECURITY;
 
 DROP POLICY IF EXISTS wake_events_member_access ON wake_events;
@@ -64,13 +76,13 @@ CREATE POLICY wake_events_member_access ON wake_events
   USING (
     workspace_id IN (
       SELECT workspace_id FROM workspace_members
-      WHERE user_id = current_setting('autoflow.user_id', true)::uuid
+      WHERE user_id = current_setting('autoflow.user_id', true)
     )
   )
   WITH CHECK (
     workspace_id IN (
       SELECT workspace_id FROM workspace_members
-      WHERE user_id = current_setting('autoflow.user_id', true)::uuid
+      WHERE user_id = current_setting('autoflow.user_id', true)
     )
   );
 

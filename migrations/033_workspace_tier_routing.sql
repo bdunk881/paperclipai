@@ -29,16 +29,13 @@ ALTER TABLE workspaces
   ADD COLUMN IF NOT EXISTS tier_routing JSONB NOT NULL DEFAULT '{}'::jsonb;
 
 COMMENT ON COLUMN workspaces.tier_routing IS
-  'Tier-to-provider/model map. Keys: small, medium, large, embeddings, vision. ' ||
-  'Empty object falls back to inferred defaults based on connected BYOK credentials. ' ||
-  'See src/llmConfig/tierRouter.ts.';
+  'Tier-to-provider/model map. Keys: small, medium, large, embeddings, vision. Empty object falls back to inferred defaults based on connected BYOK credentials. See src/llmConfig/tierRouter.ts.';
 
 ALTER TABLE agents
   ADD COLUMN IF NOT EXISTS tier_overrides JSONB NOT NULL DEFAULT '{}'::jsonb;
 
 COMMENT ON COLUMN agents.tier_overrides IS
-  'Per-agent tier binding override. Same shape as workspaces.tier_routing. ' ||
-  'When set for a tier, this overrides the workspace default for that agent only.';
+  'Per-agent tier binding override. Same shape as workspaces.tier_routing. When set for a tier, this overrides the workspace default for that agent only.';
 
 -- GIN indexes for jsonb path lookups (cheap; only used when explicitly
 -- querying by inner key — most reads go through tierRouter.resolveTier).

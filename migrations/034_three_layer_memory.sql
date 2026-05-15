@@ -34,7 +34,7 @@ CREATE TABLE IF NOT EXISTS workspace_instructions (
   title           TEXT NOT NULL,
   body            TEXT NOT NULL,
   version         INT NOT NULL DEFAULT 1,
-  author_user_id  UUID REFERENCES users(id),
+  author_user_id  UUID,
   -- For triage_policy kind only — which agent does this policy belong to.
   agent_id        UUID REFERENCES agents(id) ON DELETE CASCADE,
   created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -80,7 +80,7 @@ CREATE TABLE IF NOT EXISTS knowledge_items (
   -- Retrieval-relevance tag (not a visibility wall). When set, retrieval
   -- boosts items tagged with the current mission.
   mission_id           UUID REFERENCES missions(id) ON DELETE SET NULL,
-  author_user_id       UUID REFERENCES users(id),
+  author_user_id       UUID,
   author_agent_id      UUID REFERENCES agents(id) ON DELETE SET NULL,
   trust_score          NUMERIC NOT NULL DEFAULT 0.5,
   -- Conflict handling: when a newer fact contradicts this one, the new row's
@@ -95,7 +95,7 @@ CREATE TABLE IF NOT EXISTS knowledge_items (
   deleted_at           TIMESTAMPTZ,
   -- Invariant: scope='autoflow_curated' rows MUST have workspace_id=NULL,
   -- and scope='workspace' rows MUST have a workspace_id.
-  CONSTRAINT knowledge_items_scope_check
+  CONSTRAINT knowledge_items_scope_workspace_check
     CHECK ((scope = 'autoflow_curated' AND workspace_id IS NULL)
         OR (scope = 'workspace' AND workspace_id IS NOT NULL))
 );
@@ -140,8 +140,7 @@ CREATE TABLE IF NOT EXISTS agent_episodes (
   embedding_version INT NOT NULL DEFAULT 1,
   -- TTL — episodes age out by default after 90d unless the workspace overrides.
   ttl_days        INT NOT NULL DEFAULT 90,
-  expires_at      TIMESTAMPTZ GENERATED ALWAYS AS
-                  (created_at + (ttl_days || ' days')::INTERVAL) STORED,
+  expires_at      TIMESTAMPTZ,
   -- Set when the reflection job (HEL-91) processes this episode into a
   -- synthesized knowledge item. Lets reflection be idempotent.
   reflected_at    TIMESTAMPTZ,
@@ -166,6 +165,21 @@ CREATE INDEX IF NOT EXISTS agent_episodes_embedding_idx
   ON agent_episodes USING ivfflat (embedding vector_cosine_ops)
   WITH (lists = 100);
 
+-- Trigger to set expires_at on INSERT (GENERATED ALWAYS AS cannot use TIMESTAMPTZ + interval
+-- because timestamptz arithmetic is STABLE not IMMUTABLE in PostgreSQL).
+CREATE OR REPLACE FUNCTION agent_episodes_set_expires_at()
+RETURNS TRIGGER LANGUAGE plpgsql AS $$
+BEGIN
+  NEW.expires_at := NEW.created_at + NEW.ttl_days * INTERVAL '1 day';
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS agent_episodes_expires_at_trigger ON agent_episodes;
+CREATE TRIGGER agent_episodes_expires_at_trigger
+  BEFORE INSERT ON agent_episodes
+  FOR EACH ROW EXECUTE FUNCTION agent_episodes_set_expires_at();
+
 -- ---------------------------------------------------------------------------
 -- RLS — every read/write is workspace-scoped via the existing withWorkspace()
 -- middleware. autoflow_curated is the one exception (workspace_id IS NULL, but
@@ -181,13 +195,13 @@ CREATE POLICY workspace_instructions_member_access ON workspace_instructions
   USING (
     workspace_id IN (
       SELECT workspace_id FROM workspace_members
-      WHERE user_id = current_setting('autoflow.user_id', true)::uuid
+      WHERE user_id = current_setting('autoflow.user_id', true)
     )
   )
   WITH CHECK (
     workspace_id IN (
       SELECT workspace_id FROM workspace_members
-      WHERE user_id = current_setting('autoflow.user_id', true)::uuid
+      WHERE user_id = current_setting('autoflow.user_id', true)
     )
   );
 
@@ -198,7 +212,7 @@ CREATE POLICY knowledge_items_member_read ON knowledge_items FOR SELECT
     scope = 'autoflow_curated'
     OR workspace_id IN (
       SELECT workspace_id FROM workspace_members
-      WHERE user_id = current_setting('autoflow.user_id', true)::uuid
+      WHERE user_id = current_setting('autoflow.user_id', true)
     )
   );
 
@@ -209,7 +223,7 @@ CREATE POLICY knowledge_items_member_write ON knowledge_items FOR INSERT
     scope = 'workspace'
     AND workspace_id IN (
       SELECT workspace_id FROM workspace_members
-      WHERE user_id = current_setting('autoflow.user_id', true)::uuid
+      WHERE user_id = current_setting('autoflow.user_id', true)
     )
   );
 
@@ -219,7 +233,7 @@ CREATE POLICY knowledge_items_member_update ON knowledge_items FOR UPDATE
     scope = 'workspace'
     AND workspace_id IN (
       SELECT workspace_id FROM workspace_members
-      WHERE user_id = current_setting('autoflow.user_id', true)::uuid
+      WHERE user_id = current_setting('autoflow.user_id', true)
     )
   );
 
@@ -229,13 +243,13 @@ CREATE POLICY agent_episodes_member_access ON agent_episodes
   USING (
     workspace_id IN (
       SELECT workspace_id FROM workspace_members
-      WHERE user_id = current_setting('autoflow.user_id', true)::uuid
+      WHERE user_id = current_setting('autoflow.user_id', true)
     )
   )
   WITH CHECK (
     workspace_id IN (
       SELECT workspace_id FROM workspace_members
-      WHERE user_id = current_setting('autoflow.user_id', true)::uuid
+      WHERE user_id = current_setting('autoflow.user_id', true)
     )
   );
 

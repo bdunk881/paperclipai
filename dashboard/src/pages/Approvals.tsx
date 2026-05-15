@@ -9,7 +9,6 @@ import {
   RefreshCw,
   Send,
   Settings2,
-  Sparkles,
 } from "lucide-react";
 import {
   createHitlArtifactComment,
@@ -436,73 +435,84 @@ export default function Approvals() {
   }
 
   return (
-    <div className="min-h-full bg-[#f6f7fb] text-af2-ink">
-      <div className="border-b border-af2-line bg-[radial-gradient(circle_at_top_right,rgba(99,102,241,0.16),transparent_34%),radial-gradient(circle_at_top_left,rgba(20,184,166,0.12),transparent_26%),linear-gradient(180deg,#ffffff,rgba(244,246,255,0.96))]">
-        <div className="mx-auto max-w-7xl px-6 py-8">
-          <div className="flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
-            <div className="max-w-3xl">
-              <div className="inline-flex items-center gap-2 rounded-full border border-af2-clay/30 bg-af2-clay-soft/40 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.22em] text-af2-clay">
-                <Sparkles size={12} />
-                Human Review Console
-              </div>
-              <h1 className="mt-4 text-3xl font-semibold tracking-tight text-af2-ink">
-                Approvals, checkpoints, and routed feedback in one lane.
-              </h1>
-              <p className="mt-2 max-w-2xl text-sm leading-6 text-af2-ink-2">
-                Extend the existing approvals surface with company-level checkpoint controls,
-                inline artifact routing, and an Ask the CEO briefing loop.
-              </p>
-            </div>
-            <div className="flex flex-wrap items-center gap-3">
-              <label className="flex min-w-[220px] flex-col gap-1 text-xs font-medium uppercase tracking-[0.18em] text-af2-ink-3">
-                Company
-                <select
-                  value={selectedCompanyId}
-                  onChange={(event) => setSelectedCompanyId(event.target.value)}
-                  className="rounded-2xl border border-af2-line bg-af2-card px-4 py-3 text-sm font-medium normal-case tracking-normal text-af2-ink shadow-sm outline-none transition focus:border-af2-clay/40"
-                >
-                  {teams.map((team) => (
-                    <option key={team.id} value={team.id}>
-                      {team.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <button
-                onClick={handleRefresh}
-                className="inline-flex items-center gap-2 rounded-2xl border border-af2-line bg-af2-card px-4 py-3 text-sm font-medium text-af2-ink-2 shadow-sm transition hover:border-af2-clay/30 hover:text-af2-clay"
-              >
-                <RefreshCw size={15} />
-                Refresh
-              </button>
-            </div>
+    <div className="af2-page text-af2-ink" style={{ maxWidth: 1280 }}>
+      <div className="af2-page-head">
+        <div>
+          <div className="af2-eyebrow">Governance · Board</div>
+          <h1 className="af2-h1" style={{ marginTop: 6 }}>
+            Approvals
+          </h1>
+          <div className="af2-page-head-meta">
+            {pendingApprovals} pending · {openCheckpoints} open checkpoints · {unresolvedComments}{" "}
+            unresolved comments · {askCeoCount} CEO briefs.
           </div>
-
-          <div className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-            <MetricCard label="Pending approvals" value={pendingApprovals} accent="orange" />
-            <MetricCard label="Open checkpoints" value={openCheckpoints} accent="indigo" />
-            <MetricCard label="Unresolved comments" value={unresolvedComments} accent="teal" />
-            <MetricCard label="Ask CEO briefs" value={askCeoCount} accent="slate" />
-          </div>
-
-          <div className="mt-4 flex flex-wrap items-center gap-3 text-xs text-af2-ink-3">
-            <span>Updated {lastRefreshed.toLocaleTimeString()}</span>
-            {selectedTeam && (
-              <span className="rounded-full bg-af2-ink px-2.5 py-1 font-mono text-[11px] text-white">
-                {selectedTeam.id}
-              </span>
-            )}
-            {companyState?.checkpointSchedule && (
-              <span>
-                Weekly review: {DAY_LABELS[companyState.checkpointSchedule.weeklyReview.dayOfWeek]} at{" "}
-                {String(companyState.checkpointSchedule.weeklyReview.hour).padStart(2, "0")}:00 UTC
-              </span>
-            )}
-          </div>
+        </div>
+        <div className="af2-page-actions">
+          <select
+            className="af2-input"
+            aria-label="Company"
+            value={selectedCompanyId}
+            onChange={(event) => setSelectedCompanyId(event.target.value)}
+            style={{ minWidth: 200 }}
+          >
+            {teams.map((team) => (
+              <option key={team.id} value={team.id}>
+                {team.name}
+              </option>
+            ))}
+          </select>
+          <button
+            type="button"
+            onClick={handleRefresh}
+            className="af2-btn"
+            style={{ display: "inline-flex", alignItems: "center", gap: 6 }}
+          >
+            <RefreshCw size={14} />
+            Refresh
+          </button>
         </div>
       </div>
 
-      <div className="mx-auto max-w-7xl px-6 py-8">
+      {/* Stats strip — replaces the gradient hero's MetricCard row. */}
+      <div className="af2-stats" style={{ marginBottom: 22 }}>
+        <div className="af2-stat">
+          <div className="af2-stat-label">Pending approvals</div>
+          <div className="af2-stat-value">{pendingApprovals}</div>
+        </div>
+        <div className="af2-stat">
+          <div className="af2-stat-label">Open checkpoints</div>
+          <div className="af2-stat-value">{openCheckpoints}</div>
+        </div>
+        <div className="af2-stat">
+          <div className="af2-stat-label">Unresolved comments</div>
+          <div className="af2-stat-value">{unresolvedComments}</div>
+        </div>
+        <div className="af2-stat">
+          <div className="af2-stat-label">Ask CEO briefs</div>
+          <div className="af2-stat-value">{askCeoCount}</div>
+        </div>
+      </div>
+
+      <div
+        className="af2-row af2-muted-2"
+        style={{ marginBottom: 18, fontSize: 11, flexWrap: "wrap", gap: 10 }}
+      >
+        <span>Updated {lastRefreshed.toLocaleTimeString()}</span>
+        {selectedTeam ? (
+          <span className="af2-mono" style={{ fontSize: 11 }}>
+            · {selectedTeam.id}
+          </span>
+        ) : null}
+        {companyState?.checkpointSchedule ? (
+          <span>
+            · Weekly review:{" "}
+            {DAY_LABELS[companyState.checkpointSchedule.weeklyReview.dayOfWeek]} at{" "}
+            {String(companyState.checkpointSchedule.weeklyReview.hour).padStart(2, "0")}:00 UTC
+          </span>
+        ) : null}
+      </div>
+
+      <div>
         {error && (
           <div className="mb-6 flex items-center gap-2 rounded-2xl border border-rose-200 bg-af2-clay-soft/30 px-4 py-3 text-sm text-af2-clay">
             <AlertCircle size={16} />
@@ -1036,29 +1046,11 @@ export default function Approvals() {
   );
 }
 
-function MetricCard({
-  label,
-  value,
-  accent,
-}: {
-  label: string;
-  value: number;
-  accent: "orange" | "indigo" | "teal" | "slate";
-}) {
-  const styles = {
-    orange: "from-af2-clay-soft/30 to-af2-card text-af2-clay border-af2-clay/30",
-    indigo: "from-af2-clay-soft/30 to-af2-card text-af2-clay border-af2-clay/30",
-    teal: "from-af2-sage/10 to-af2-card text-af2-sage border-af2-sage/30",
-    slate: "from-slate-100 to-white text-af2-ink-2 border-af2-line",
-  }[accent];
-
-  return (
-    <div className={`rounded-[24px] border bg-gradient-to-br p-5 shadow-sm ${styles}`}>
-      <p className="text-xs font-semibold uppercase tracking-[0.18em] text-af2-ink-3">{label}</p>
-      <p className="mt-3 font-mono text-3xl font-semibold">{value}</p>
-    </div>
-  );
-}
+// MetricCard removed in HEL-59 v2 restyle; the page chrome now uses the
+// af2-stats / af2-stat structural classes from af2-components.css (lifted
+// in PR #732). If a per-card accent treatment is needed later, the v2
+// reference shows it via a 3px top-border on each af2-stat in af2 colors
+// (clay/sage/mustard/plum) — apply via inline style, not a wrapper class.
 
 function ToggleCard({
   label,

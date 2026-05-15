@@ -184,13 +184,32 @@ describe("Approvals", () => {
       </MemoryRouter>
     );
 
+    // HEL-59 v2 restyle: hero copy was replaced with editorial chrome.
+    // The h1 is now just "Approvals"; the descriptor moves to the meta line.
     expect(
-      await screen.findByText("Approvals, checkpoints, and routed feedback in one lane.")
+      await screen.findByRole("heading", { name: /^Approvals$/i, level: 1 })
     ).toBeInTheDocument();
-    expect(screen.getAllByText("Open checkpoints")).toHaveLength(2);
+    // The metric label is now in the af2-stats strip (one occurrence).
+    expect(screen.getAllByText("Open checkpoints").length).toBeGreaterThanOrEqual(1);
     expect(screen.getByText("Review the launch narrative")).toBeInTheDocument();
     expect(screen.getByText("Launch PRD")).toBeInTheDocument();
     expect(screen.getByText("Latest answer")).toBeInTheDocument();
+  });
+
+  it("renders with v2 structural markers (HEL-59)", async () => {
+    const { container } = render(
+      <MemoryRouter>
+        <Approvals />
+      </MemoryRouter>
+    );
+
+    await screen.findByRole("heading", { name: /^Approvals$/i, level: 1 });
+    expect(container.querySelector(".af2-page")).not.toBeNull();
+    expect(container.querySelector(".af2-page-head")).not.toBeNull();
+    expect(container.querySelector(".af2-eyebrow")).not.toBeNull();
+    expect(container.querySelector("h1.af2-h1")).not.toBeNull();
+    expect(container.querySelector(".af2-stats")).not.toBeNull();
+    expect(container.querySelectorAll(".af2-stat").length).toBe(4);
   });
 
   it("submits an Ask the CEO request and refreshes the console", async () => {

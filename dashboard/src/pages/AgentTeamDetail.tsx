@@ -119,7 +119,7 @@ function AgentTeamDetail() {
         <div>
           <Link
             to="/monitor"
-            className="inline-flex items-center gap-2 text-sm text-slate-500 transition hover:text-slate-800 dark:text-surface-400 dark:hover:text-surface-100"
+            className="inline-flex items-center gap-2 text-sm text-slate-500 transition hover:text-slate-800"
           >
             <ArrowLeft size={14} />
             Back to monitor
@@ -128,10 +128,10 @@ function AgentTeamDetail() {
             <p className="text-xs font-semibold uppercase tracking-[0.18em] text-teal-600">
               Deployed Agent Team
             </p>
-            <h1 className="mt-2 text-3xl font-semibold text-slate-900 dark:text-surface-50">
+            <h1 className="mt-2 text-3xl font-semibold text-slate-900">
               {detail.team.name}
             </h1>
-            <p className="mt-2 max-w-3xl text-sm text-slate-500 dark:text-surface-400">
+            <p className="mt-2 max-w-3xl text-sm text-slate-500">
               {detail.team.description || "Workflow-derived agent team ready for monitoring and handoff review."}
             </p>
           </div>
@@ -141,7 +141,7 @@ function AgentTeamDetail() {
             void loadTeam();
           }}
           aria-label="Refresh deployed team status"
-          className="inline-flex items-center gap-2 rounded-full border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition hover:border-indigo-300 hover:text-indigo-700 dark:border-surface-700 dark:bg-surface-900 dark:text-surface-200 dark:hover:border-brand-500/40 dark:hover:text-brand-300"
+          className="inline-flex items-center gap-2 rounded-full border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition hover:border-indigo-300 hover:text-indigo-700"
         >
           <RefreshCw size={14} />
           Refresh
@@ -155,15 +155,15 @@ function AgentTeamDetail() {
         <StatCard label="Budget" value={`$${detail.team.budgetMonthlyUsd.toFixed(2)}`} />
       </section>
 
-      <section className="rounded-[28px] border border-slate-200 bg-white p-6 shadow-sm dark:border-surface-800 dark:bg-surface-900">
+      <section className="rounded-[28px] border border-slate-200 bg-white p-6 shadow-sm">
         <div className="mb-5 flex items-center justify-between gap-3">
           <div>
-            <h2 className="text-lg font-semibold text-slate-900 dark:text-surface-50">Agent roster</h2>
-            <p className="text-sm text-slate-500 dark:text-surface-400">
+            <h2 className="text-lg font-semibold text-slate-900">Agent roster</h2>
+            <p className="text-sm text-slate-500">
               Workflow step mapping, heartbeat health, and current workload.
             </p>
           </div>
-          <span className="rounded-full bg-teal-50 px-3 py-1 text-xs font-semibold text-teal-700 dark:bg-teal-500/10 dark:text-teal-300">
+          <span className="rounded-full bg-teal-50 px-3 py-1 text-xs font-semibold text-teal-700">
             Auto-refresh {POLL_INTERVAL_MS / 1000}s
           </span>
         </div>
@@ -186,11 +186,11 @@ function AgentTeamDetail() {
 
 function StatCard({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-[24px] border border-slate-200 bg-white px-5 py-4 shadow-sm dark:border-surface-800 dark:bg-surface-900">
-      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400 dark:text-surface-500">
+    <div className="rounded-[24px] border border-slate-200 bg-white px-5 py-4 shadow-sm">
+      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
         {label}
       </p>
-      <p className="mt-2 text-xl font-semibold text-slate-900 dark:text-surface-50">{value}</p>
+      <p className="mt-2 text-xl font-semibold text-slate-900">{value}</p>
     </div>
   );
 }
@@ -213,8 +213,8 @@ function AgentCard({
       className={clsx(
         "rounded-[24px] border p-5 shadow-sm transition",
         highlighted
-          ? "border-indigo-400 bg-indigo-50/70 dark:border-brand-500 dark:bg-brand-500/10"
-          : "border-slate-200 bg-slate-50/60 dark:border-surface-800 dark:bg-surface-950/40"
+          ? "border-indigo-400 bg-indigo-50/70"
+          : "border-slate-200 bg-slate-50/60"
       )}
     >
       <div className="flex items-start justify-between gap-3">
@@ -224,12 +224,12 @@ function AgentCard({
           </div>
           <div>
             <div className="flex flex-wrap items-center gap-2">
-              <h3 className="text-base font-semibold text-slate-900 dark:text-surface-50">{agent.name}</h3>
+              <h3 className="text-base font-semibold text-slate-900">{agent.name}</h3>
               <StatusPill tone={agent.status === "active" ? "teal" : agent.status === "paused" ? "amber" : "rose"}>
                 {agent.status}
               </StatusPill>
             </div>
-            <p className="mt-1 text-xs uppercase tracking-[0.16em] text-slate-400 dark:text-surface-500">
+            <p className="mt-1 text-xs uppercase tracking-[0.16em] text-slate-400">
               {agent.roleKey}
             </p>
           </div>
@@ -245,24 +245,24 @@ function AgentCard({
         <InlineMetric label="Budget" value={`$${agent.budgetMonthlyUsd.toFixed(2)}`} icon={<Bot size={12} />} />
       </div>
 
-      <p className="mt-4 text-sm leading-6 text-slate-600 dark:text-surface-300">
+      <p className="mt-4 text-sm leading-6 text-slate-600">
         {agent.instructions}
       </p>
 
       <div className="mt-4 space-y-2">
-        <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400 dark:text-surface-500">
+        <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
           Current queue
         </p>
         {openTasks.length === 0 ? (
-          <p className="text-sm text-slate-500 dark:text-surface-400">No open tasks assigned.</p>
+          <p className="text-sm text-slate-500">No open tasks assigned.</p>
         ) : (
           openTasks.slice(0, 3).map((task) => (
             <div
               key={task.id}
-              className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm dark:border-surface-800 dark:bg-surface-900"
+              className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm"
             >
               <div className="flex items-center justify-between gap-3">
-                <span className="font-medium text-slate-900 dark:text-surface-50">{task.title}</span>
+                <span className="font-medium text-slate-900">{task.title}</span>
                 <StatusPill tone={task.status === "done" ? "teal" : task.status === "blocked" ? "rose" : "amber"}>
                   {task.status.replace("_", " ")}
                 </StatusPill>
@@ -285,12 +285,12 @@ function InlineMetric({
   icon: ReactNode;
 }) {
   return (
-    <div className="rounded-2xl border border-slate-200 bg-white px-3 py-2 dark:border-surface-800 dark:bg-surface-900">
-      <div className="flex items-center gap-1 text-xs font-semibold uppercase tracking-[0.14em] text-slate-400 dark:text-surface-500">
+    <div className="rounded-2xl border border-slate-200 bg-white px-3 py-2">
+      <div className="flex items-center gap-1 text-xs font-semibold uppercase tracking-[0.14em] text-slate-400">
         {icon}
         {label}
       </div>
-      <p className="mt-2 text-sm font-medium text-slate-900 dark:text-surface-50">{value}</p>
+      <p className="mt-2 text-sm font-medium text-slate-900">{value}</p>
     </div>
   );
 }
@@ -303,10 +303,10 @@ function StatusPill({
   tone: "teal" | "amber" | "rose" | "slate";
 }) {
   const palette = {
-    teal: "bg-teal-50 text-teal-700 dark:bg-teal-500/10 dark:text-teal-300",
-    amber: "bg-amber-50 text-amber-700 dark:bg-amber-500/10 dark:text-amber-300",
-    rose: "bg-rose-50 text-rose-700 dark:bg-rose-500/10 dark:text-rose-300",
-    slate: "bg-slate-100 text-slate-600 dark:bg-surface-800 dark:text-surface-300",
+    teal: "bg-teal-50 text-teal-700",
+    amber: "bg-amber-50 text-amber-700",
+    rose: "bg-rose-50 text-rose-700",
+    slate: "bg-slate-100 text-slate-600",
   } as const;
 
   return (

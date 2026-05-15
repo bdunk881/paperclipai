@@ -16,15 +16,12 @@ import {
   LogOut,
   Menu,
   X,
-  Moon,
-  Sun,
   Bug,
 } from "lucide-react";
 import clsx from "clsx";
 import * as Sentry from "@sentry/react";
 import logoLockup from "../assets/logo/lockup.svg";
 import { useAuth } from "../context/AuthContext";
-import { useTheme } from "../hooks/useTheme";
 import { WorkspaceSwitcher } from "./WorkspaceSwitcher";
 
 // v2 four-pillar IA (HEL-31). Labels follow the v2 design (`docs/design/v2/data.jsx`,
@@ -80,7 +77,6 @@ export default function Layout() {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
-  const { theme, toggleTheme } = useTheme();
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const isBuilderPopout = useMemo(() => {
     if (!location.pathname.startsWith("/builder")) {
@@ -180,14 +176,6 @@ export default function Layout() {
               <Bug size={16} />
             </button>
             <button
-              onClick={toggleTheme}
-              className="rounded-md border border-af2-line p-2 text-af2-ink-2 transition-colors hover:bg-af2-paper-2 hover:text-af2-ink"
-              title={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
-              aria-label={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
-            >
-              {theme === "dark" ? <Sun size={16} /> : <Moon size={16} />}
-            </button>
-            <button
               onClick={handleLogout}
               className="rounded-md border border-af2-line p-2 text-af2-ink-2 transition-colors hover:bg-af2-paper-2 hover:text-af2-ink"
               title="Sign out"
@@ -246,14 +234,6 @@ export default function Layout() {
                 <p className="truncate text-xs text-af2-ink-3">{user?.email}</p>
               </div>
               <button
-                onClick={toggleTheme}
-                className="rounded-md p-1.5 text-af2-ink-3 transition-colors hover:bg-af2-paper-2 hover:text-af2-ink"
-                title={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
-                aria-label={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
-              >
-                {theme === "dark" ? <Sun size={16} /> : <Moon size={16} />}
-              </button>
-              <button
                 onClick={handleLogout}
                 className="rounded-md p-1.5 text-af2-ink-3 transition-colors hover:bg-af2-paper-2 hover:text-af2-ink"
                 title="Sign out"
@@ -268,7 +248,7 @@ export default function Layout() {
 
       <main
         className={clsx(
-          "flex-1 overflow-y-auto bg-surface-50 transition-colors duration-200 dark:bg-surface-950",
+          "flex-1 overflow-y-auto bg-surface-50 transition-colors duration-200",
           isBuilderPopout ? "pt-0" : "pt-14 lg:pt-0"
         )}
       >

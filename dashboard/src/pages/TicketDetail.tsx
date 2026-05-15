@@ -661,7 +661,7 @@ export default function TicketDetail({
                     <Link
                       key={childTicket.id}
                       to={`/tickets/${childTicket.id}`}
-                      className="flex items-center gap-3 rounded-2xl px-3 py-3 transition hover:bg-af2-paper-2/10 dark:hover:bg-surface-850"
+                      className="flex items-center gap-3 rounded-2xl px-3 py-3 transition hover:bg-af2-paper-2/10"
                     >
                       <div className="min-w-0 flex-1">
                         <p className="truncate text-sm font-semibold text-slate-100">{childTicket.title}</p>
@@ -721,7 +721,7 @@ export default function TicketDetail({
                     />
 
                     {mentionContext ? (
-                      <div className="absolute left-0 right-0 top-[calc(100%+0.75rem)] z-20 overflow-hidden rounded-2xl border border-af2-line bg-af2-card shadow-glow-lg dark:border-surface-800 dark:bg-surface-900">
+                      <div className="absolute left-0 right-0 top-[calc(100%+0.75rem)] z-20 overflow-hidden rounded-2xl border border-af2-line bg-af2-card shadow-glow-lg">
                         <div className="h-0.5 bg-af2-clay/80" />
                         {mentionCandidates.length ? (
                           <div className="animate-scale-in p-2">
@@ -735,7 +735,7 @@ export default function TicketDetail({
                                   "flex w-full items-center gap-3 rounded-2xl px-4 py-2 text-left text-sm transition",
                                   index === activeMentionIndex
                                     ? "bg-af2-clay text-white"
-                                    : "text-af2-ink-4 hover:bg-af2-paper-2 dark:text-surface-200 dark:hover:bg-surface-800"
+                                    : "text-af2-ink-4 hover:bg-af2-paper-2"
                                 )}
                               >
                                 <span
@@ -761,7 +761,7 @@ export default function TicketDetail({
                                       "block truncate text-xs",
                                       index === activeMentionIndex
                                         ? "text-white/80"
-                                        : "text-af2-ink-4 dark:text-surface-400"
+                                        : "text-af2-ink-4"
                                     )}
                                   >
                                     {candidate.subtitle}
@@ -771,7 +771,7 @@ export default function TicketDetail({
                             ))}
                           </div>
                         ) : (
-                          <div className="p-4 text-sm text-af2-ink-4 dark:text-surface-400">
+                          <div className="p-4 text-sm text-af2-ink-4">
                             No agents found.
                           </div>
                         )}
@@ -1088,7 +1088,7 @@ function CloseRequestBanner({
   onReject: () => void;
 }) {
   return (
-    <section className="relative overflow-hidden rounded-[28px] border border-af2-clay/40 bg-af2-clay-soft px-5 py-5 dark:bg-brand-950/20">
+    <section className="relative overflow-hidden rounded-[28px] border border-af2-clay/40 bg-af2-clay-soft px-5 py-5">
       <div className="absolute inset-x-0 top-0 h-px bg-af2-clay/80 shadow-glow" />
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div className="max-w-3xl">
@@ -1160,8 +1160,8 @@ function CloseRequestBanner({
 
 function MemorySidebar({ memoryState }: { memoryState: MemoryLoadState }) {
   return (
-    <section className="animate-slide-in-right overflow-hidden rounded-[30px] border border-af2-line bg-af2-paper shadow-card dark:border-surface-800 dark:bg-surface-900">
-      <div className="sticky top-0 flex h-14 items-center gap-2 border-b border-af2-line px-5 text-af2-ink-4 backdrop-blur dark:border-surface-800 dark:text-surface-100">
+    <section className="animate-slide-in-right overflow-hidden rounded-[30px] border border-af2-line bg-af2-paper shadow-card">
+      <div className="sticky top-0 flex h-14 items-center gap-2 border-b border-af2-line px-5 text-af2-ink-4 backdrop-blur">
         <Brain size={16} />
         <span className="text-sm font-semibold">Memory</span>
         {memoryState.status === "error" ? (
@@ -1180,10 +1180,10 @@ function MemorySidebar({ memoryState }: { memoryState: MemoryLoadState }) {
           memoryState.entries.map((entry) => (
             <article
               key={entry.id}
-              className="rounded-2xl border border-af2-line bg-af2-card p-4 dark:border-surface-800/50 dark:bg-surface-950"
+              className="rounded-2xl border border-af2-line bg-af2-card p-4"
             >
               <p
-                className="text-sm leading-6 text-af2-ink-4 dark:text-surface-400"
+                className="text-sm leading-6 text-af2-ink-4"
                 style={{
                   display: "-webkit-box",
                   WebkitLineClamp: 3,
@@ -1203,7 +1203,7 @@ function MemorySidebar({ memoryState }: { memoryState: MemoryLoadState }) {
         ) : (
           <div className="flex min-h-[220px] flex-col items-center justify-center px-4 text-center">
             <BrainCircuit size={40} className="text-af2-ink-3" />
-            <p className="mt-4 text-sm font-medium text-af2-ink-4 dark:text-surface-400">
+            <p className="mt-4 text-sm font-medium text-af2-ink-4">
               No relevant memories found.
             </p>
           </div>
@@ -1242,12 +1242,12 @@ function SlaTimerPanel({
 function ChildTicketStatusPill({ status }: { status: TicketStatus }) {
   const tone =
     status === "resolved"
-      ? "bg-af2-sage/10 text-af2-sage dark:bg-emerald-950/30 dark:text-emerald-400"
+      ? "bg-af2-sage/10 text-af2-sage"
       : status === "in_progress"
-        ? "bg-af2-clay-soft text-af2-clay-2 dark:bg-brand-950/30 dark:text-brand-400"
+        ? "bg-af2-clay-soft text-af2-clay-2"
         : status === "blocked"
-          ? "bg-af2-clay/10 text-af2-clay dark:bg-red-950/30 dark:text-red-400"
-          : "bg-af2-paper-2 text-af2-ink-4 dark:bg-surface-800 dark:text-surface-300";
+          ? "bg-af2-clay/10 text-af2-clay"
+          : "bg-af2-paper-2 text-af2-ink-4";
 
   return (
     <span className={clsx("rounded-full px-3 py-1 text-xs font-semibold capitalize", tone)}>

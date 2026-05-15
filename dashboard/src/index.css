@@ -34,38 +34,13 @@
     --card-shadow-hover: 0 4px 12px rgba(0,0,0,0.08), 0 2px 4px rgba(0,0,0,0.04);
   }
 
-  html.dark {
-    --color-bg-primary: 2 6 23;
-    --color-bg-secondary: 15 23 42;
-    --color-bg-tertiary: 30 41 59;
-    --surface-base: 15 23 42;
-    --surface-deep: 2 6 23;
-    --surface-elevated: 30 41 59;
-    --color-text-primary: 241 245 249;
-    --color-text-secondary: 148 163 184;
-    --color-text-tertiary: 100 116 139;
-    --color-border: 30 41 59;
-    --color-border-subtle: 30 41 59 / 0.5;
-    --color-accent: 139 92 246;
-    --color-accent-subtle: 139 92 246 / 0.12;
-    --card-shadow: 0 1px 3px rgba(0,0,0,0.3), 0 1px 2px rgba(0,0,0,0.2), inset 0 1px 0 rgba(255,255,255,0.03);
-    --card-shadow-hover: 0 8px 24px rgba(0,0,0,0.4), 0 2px 8px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.05);
-  }
+  /* HEL-116b — dark mode dropped (v2 editorial paper aesthetic is light-only). */
 
   body {
     @apply antialiased transition-colors duration-200;
     font-family: 'Inter', ui-sans-serif, system-ui, -apple-system, sans-serif;
-    /* HEL-116a — migrated from v1 --color-bg-primary / --color-text-primary
-       to af2 paper / ink so the chrome doesn't depend on the legacy :root
-       block. Dark mode still uses html.dark scoped CSS vars from the v1
-       block until the dark-mode af2 strategy is decided. */
     background-color: var(--af2-paper);
     color: var(--af2-ink);
-  }
-
-  html.dark body {
-    background-color: rgb(var(--color-bg-primary));
-    color: rgb(var(--color-text-primary));
   }
 }
 
@@ -92,25 +67,12 @@
     backdrop-filter: blur(12px) saturate(180%);
     -webkit-backdrop-filter: blur(12px) saturate(180%);
   }
-
-  .dark .glass {
-    background: rgba(15, 23, 42, 0.75);
-    backdrop-filter: blur(12px) saturate(180%);
-    -webkit-backdrop-filter: blur(12px) saturate(180%);
-  }
-
   .glass-card {
     background: color-mix(in srgb, var(--af2-card) 85%, transparent);
     backdrop-filter: blur(8px);
     -webkit-backdrop-filter: blur(8px);
     box-shadow: 0 1px 0 rgba(26, 20, 16, 0.04), 0 6px 20px rgba(26, 20, 16, 0.06);
     border: 1px solid var(--af2-line);
-  }
-
-  .dark .glass-card {
-    background: rgba(15, 23, 42, 0.6);
-    border-color: rgba(148, 163, 184, 0.08);
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3), 0 1px 2px rgba(0, 0, 0, 0.2), inset 0 1px 0 rgba(255, 255, 255, 0.03);
   }
 
   .glass-card:hover {
@@ -286,12 +248,6 @@
     background-size: 200% 100%;
     animation: scanline 1.2s linear infinite;
   }
-
-  .dark .scanline-skeleton {
-    background: linear-gradient(90deg, rgba(15, 23, 42, 0.6) 0%, rgba(20, 184, 166, 0.22) 50%, rgba(15, 23, 42, 0.6) 100%);
-    background-size: 200% 100%;
-  }
-
   .signal-lost {
     backdrop-filter: blur(10px);
     -webkit-backdrop-filter: blur(10px);
@@ -454,223 +410,6 @@
     100% {
       background-position: -200% 0;
     }
-  }
-  /* Dark mode overrides for legacy Tailwind utility classes */
-  .dark .bg-white {
-    background-color: rgb(15 23 42);
-  }
-  .dark .bg-gray-50 {
-    background-color: rgb(2 6 23);
-  }
-  .dark .bg-gray-100 {
-    background-color: rgb(30 41 59);
-  }
-  .dark .bg-gray-200 {
-    background-color: rgb(51 65 85);
-  }
-  .dark .bg-gray-300 {
-    background-color: rgb(71 85 105);
-  }
-  .dark .border-gray-100 {
-    border-color: rgb(30 41 59 / 0.7);
-  }
-  .dark .border-gray-200 {
-    border-color: rgb(30 41 59);
-  }
-  .dark .border-gray-300 {
-    border-color: rgb(51 65 85);
-  }
-  .dark .border-gray-50 {
-    border-color: rgb(51 65 85 / 0.4);
-  }
-  .dark .text-gray-900 {
-    color: rgb(241 245 249);
-  }
-  .dark .text-gray-800 {
-    color: rgb(226 232 240);
-  }
-  .dark .text-gray-700 {
-    color: rgb(203 213 225);
-  }
-  .dark .text-gray-600 {
-    color: rgb(148 163 184);
-  }
-  .dark .text-gray-500 {
-    color: rgb(148 163 184);
-  }
-  .dark .text-gray-400 {
-    color: rgb(100 116 139);
-  }
-  .dark .hover\:bg-gray-50:hover {
-    background-color: rgb(30 41 59);
-  }
-  .dark .hover\:bg-gray-100:hover {
-    background-color: rgb(30 41 59);
-  }
-  .dark .hover\:bg-red-50:hover {
-    background-color: rgb(69 10 10 / 0.55);
-  }
-  .dark .hover\:text-gray-500:hover,
-  .dark .hover\:text-gray-600:hover,
-  .dark .hover\:text-gray-700:hover {
-    color: rgb(226 232 240);
-  }
-
-  .dark .bg-red-50 {
-    background-color: rgb(69 10 10 / 0.4);
-  }
-  .dark .bg-amber-50 {
-    background-color: rgb(69 26 3 / 0.35);
-  }
-  .dark .bg-yellow-50 {
-    background-color: rgb(66 32 6 / 0.35);
-  }
-  .dark .bg-purple-50 {
-    background-color: rgb(59 7 100 / 0.35);
-  }
-  .dark .bg-indigo-50 {
-    background-color: rgb(30 27 75 / 0.35);
-  }
-  .dark .bg-blue-50 {
-    background-color: rgb(30 58 138 / 0.35);
-  }
-  .dark .bg-violet-50 {
-    background-color: rgb(46 16 101 / 0.35);
-  }
-  .dark .bg-emerald-50 {
-    background-color: rgb(6 78 59 / 0.35);
-  }
-  .dark .bg-green-50 {
-    background-color: rgb(5 46 22 / 0.35);
-  }
-  .dark .bg-cyan-50 {
-    background-color: rgb(22 78 99 / 0.35);
-  }
-
-  .dark .bg-blue-100 {
-    background-color: rgb(30 58 138 / 0.5);
-  }
-  .dark .bg-violet-100 {
-    background-color: rgb(46 16 101 / 0.5);
-  }
-  .dark .bg-indigo-100 {
-    background-color: rgb(30 27 75 / 0.5);
-  }
-  .dark .bg-emerald-100 {
-    background-color: rgb(6 78 59 / 0.5);
-  }
-  .dark .bg-green-100 {
-    background-color: rgb(5 46 22 / 0.5);
-  }
-  .dark .bg-amber-100 {
-    background-color: rgb(69 26 3 / 0.5);
-  }
-
-  .dark .border-red-200 {
-    border-color: rgb(127 29 29 / 0.5);
-  }
-  .dark .border-red-300 {
-    border-color: rgb(153 27 27 / 0.55);
-  }
-  .dark .border-amber-200 {
-    border-color: rgb(120 53 15 / 0.5);
-  }
-  .dark .border-yellow-200 {
-    border-color: rgb(113 63 18 / 0.5);
-  }
-  .dark .border-purple-200 {
-    border-color: rgb(88 28 135 / 0.5);
-  }
-  .dark .border-indigo-200 {
-    border-color: rgb(49 46 129 / 0.5);
-  }
-  .dark .border-indigo-300 {
-    border-color: rgb(67 56 202 / 0.55);
-  }
-  .dark .border-blue-200 {
-    border-color: rgb(30 58 138 / 0.5);
-  }
-  .dark .border-violet-200 {
-    border-color: rgb(46 16 101 / 0.5);
-  }
-  .dark .border-green-200 {
-    border-color: rgb(20 83 45 / 0.5);
-  }
-  .dark .border-emerald-200 {
-    border-color: rgb(6 78 59 / 0.5);
-  }
-
-  .dark .text-red-600 {
-    color: rgb(252 165 165);
-  }
-  .dark .text-red-700 {
-    color: rgb(254 202 202);
-  }
-  .dark .text-red-800 {
-    color: rgb(254 226 226);
-  }
-  .dark .text-amber-600 {
-    color: rgb(252 211 77);
-  }
-  .dark .text-amber-700 {
-    color: rgb(253 230 138);
-  }
-  .dark .text-amber-800 {
-    color: rgb(254 243 199);
-  }
-  .dark .text-yellow-600 {
-    color: rgb(253 224 71);
-  }
-  .dark .text-green-600 {
-    color: rgb(134 239 172);
-  }
-  .dark .text-green-700 {
-    color: rgb(187 247 208);
-  }
-  .dark .text-green-800 {
-    color: rgb(220 252 231);
-  }
-  .dark .text-emerald-600 {
-    color: rgb(110 231 183);
-  }
-  .dark .text-emerald-700 {
-    color: rgb(167 243 208);
-  }
-  .dark .text-blue-600 {
-    color: rgb(147 197 253);
-  }
-  .dark .text-blue-700 {
-    color: rgb(191 219 254);
-  }
-  .dark .text-blue-800 {
-    color: rgb(219 234 254);
-  }
-  .dark .text-violet-600 {
-    color: rgb(196 181 253);
-  }
-  .dark .text-violet-700 {
-    color: rgb(221 214 254);
-  }
-  .dark .text-violet-800 {
-    color: rgb(237 233 254);
-  }
-  .dark .text-indigo-600 {
-    color: rgb(165 180 252);
-  }
-  .dark .text-indigo-700 {
-    color: rgb(199 210 254);
-  }
-  .dark .text-indigo-800 {
-    color: rgb(224 231 255);
-  }
-  .dark .text-cyan-600 {
-    color: rgb(103 232 249);
-  }
-  .dark .text-sky-600 {
-    color: rgb(125 211 252);
-  }
-  .dark .text-sky-700 {
-    color: rgb(186 230 253);
   }
 
   /* HEL-116c — workflow chrome rewritten on af2 tokens.

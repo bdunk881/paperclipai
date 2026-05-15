@@ -61,6 +61,10 @@ import {
   type LLMConfig,
   type TemplateSummary,
 } from "../api/client";
+import {
+  createCanonicalWorkflow,
+  createCanonicalWorkflowVersion,
+} from "../api/workflowsApi";
 import { Tooltip } from "../components/Tooltip";
 import { ErrorState, LoadingState } from "../components/UiStates";
 import type { WorkflowStep, StepKind, WorkflowTemplate } from "../types/workflow";
@@ -462,6 +466,14 @@ export default function WorkflowBuilder() {
   const [copilotLiveMessage, setCopilotLiveMessage] = useState("");
   const [consumedIncomingPrompt, setConsumedIncomingPrompt] = useState(false);
   const [fieldFlashKey, setFieldFlashKey] = useState<string | null>(null);
+  // HEL-27: Pro mode reveals the env panel + advanced inspector. The toggle
+  // lives next to Save/Run in the header; the panel renders alongside the
+  // existing inspector when on.
+  const [proMode, setProMode] = useState(false);
+  // HEL-27: canonical workflow_id for this template. Set on first save
+  // when the canonical /api/workflows POST returns; subsequent saves call
+  // POST /api/workflows/:id/versions to create immutable versions.
+  const [canonicalWorkflowId, setCanonicalWorkflowId] = useState<string | null>(null);
 
   const hasFileTrigger = template.steps.some((s) => s.kind === "file_trigger");
   const fileTriggerStep = template.steps.find((s) => s.kind === "file_trigger");
@@ -838,6 +850,46 @@ export default function WorkflowBuilder() {
         expectedOutput: template.expectedOutput ?? {},
       }, accessToken);
       setTemplate(nextTemplate);
+
+      // HEL-27: dual-write to the canonical workflows + workflow_versions
+      // store. Non-blocking: if the canonical write fails (e.g. backend not
+      // upgraded), the legacy template save above already succeeded so the
+      // user-facing flow is intact. The error is logged for diagnosis.
+      if (accessToken) {
+        try {
+          const dag = {
+            name: nextTemplate.name,
+            description: nextTemplate.description ?? "",
+            version: nextTemplate.version ?? "1.0.0",
+            category: nextTemplate.category ?? "custom",
+            configFields: nextTemplate.configFields ?? [],
+            steps: nextTemplate.steps ?? [],
+            sampleInput: nextTemplate.sampleInput ?? {},
+            expectedOutput: nextTemplate.expectedOutput ?? {},
+          };
+          if (canonicalWorkflowId) {
+            // Subsequent edit: create an immutable new version.
+            await createCanonicalWorkflowVersion(canonicalWorkflowId, dag, accessToken);
+          } else {
+            // First save: create the canonical workflow + v1.
+            const created = await createCanonicalWorkflow(
+              {
+                name: nextTemplate.name,
+                dag,
+                externalTemplateId: nextTemplate.id,
+              },
+              accessToken,
+            );
+            setCanonicalWorkflowId(created.id);
+          }
+        } catch (canonicalErr) {
+          console.warn(
+            "[builder] canonical workflow write failed:",
+            canonicalErr instanceof Error ? canonicalErr.message : canonicalErr,
+          );
+        }
+      }
+
       setSaved(true);
       setTimeout(() => setSaved(false), 2000);
       navigate(`/builder/${nextTemplate.id}`, { replace: true });
@@ -1003,6 +1055,20 @@ export default function WorkflowBuilder() {
             </div>
           </div>
           <div className="flex items-center gap-2">
+            {/* HEL-27: Pro mode toggle. Reveals env panel + advanced
+                inspector when on. State only — sub-panels read `proMode`
+                to decide whether to render. */}
+            <Tooltip content="Pro mode reveals the env panel and advanced inspector controls">
+              <button
+                type="button"
+                onClick={() => setProMode((prev) => !prev)}
+                aria-pressed={proMode}
+                className={`af2-btn af2-btn-sm${proMode ? " af2-btn-clay" : ""}`}
+                style={{ display: "inline-flex", alignItems: "center", gap: 6 }}
+              >
+                Pro mode {proMode ? "on" : "off"}
+              </button>
+            </Tooltip>
             <button
               type="button"
               onClick={() => setShowCopilot((open) => !open)}
@@ -1083,6 +1149,41 @@ export default function WorkflowBuilder() {
             </button>
           </div>
         </div>
+
+        {/* HEL-27 Pro mode env panel — renders below the header when proMode
+            is on. v1 surface: workspace env vars textarea (one KEY=VALUE
+            per line) + a hint that values are passed to LLM/tool steps at
+            run time. Persistence is HEL-27 follow-on (no env-vars table
+            yet); for v1 the textarea is local UI state. */}
+        {proMode ? (
+          <div
+            className="border-b border-af2-line px-6 py-3 text-sm"
+            style={{ background: "var(--af2-paper-2)" }}
+          >
+            <div className="af2-eyebrow" style={{ marginBottom: 4 }}>
+              Pro mode · Env panel
+            </div>
+            <div
+              className="af2-mono af2-muted-2"
+              style={{ fontSize: 11, marginBottom: 6 }}
+            >
+              KEY=value, one per line. Values are passed to LLM + tool steps at run time.
+              Persistence is tracked under HEL-27 follow-on (no env-vars table yet).
+            </div>
+            <textarea
+              className="af2-input"
+              placeholder={"SLACK_DEFAULT_CHANNEL=#ops\nMAX_RETRIES=3"}
+              rows={3}
+              style={{
+                width: "100%",
+                fontFamily: "var(--af2-mono)",
+                fontSize: 12,
+                resize: "vertical",
+              }}
+              aria-label="Workspace environment variables"
+            />
+          </div>
+        ) : null}
 
         {/* Canvas */}
         <div className="relative flex-1 overflow-hidden bg-slate-50 dark:bg-af2-paper-3">

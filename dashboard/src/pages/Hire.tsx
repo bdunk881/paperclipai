@@ -181,93 +181,142 @@ export default function Hire() {
   }
 
   return (
-    <div className="mx-auto max-w-4xl px-6 py-10 text-af2-ink">
-      <header className="mb-8">
-        <span className="text-[11px] font-medium uppercase tracking-[0.14em] text-af2-ink-3">
-          Workforce · Hiring
-        </span>
-        <h1 className="mt-1 font-af2-serif text-4xl font-normal leading-tight tracking-[-0.02em]">
-          Hire from a mission.
-        </h1>
-        <p className="mt-2 max-w-2xl text-sm leading-6 text-af2-ink-2">
-          Tell AutoFlow what you need done. We'll draft an org, a budget, and the first week of
-          work.
-        </p>
-      </header>
+    <div className="af2-page text-af2-ink" style={{ maxWidth: 920 }}>
+      <div className="af2-page-head">
+        <div>
+          <div className="af2-eyebrow">Workforce · Hiring</div>
+          <h1 className="af2-h1 font-af2-serif" style={{ marginTop: 6 }}>
+            Hire from a mission.
+          </h1>
+          <div className="af2-page-head-meta">
+            Tell AutoFlow what you need done. We&rsquo;ll draft an org, a budget, and the first
+            week of work.
+          </div>
+        </div>
+      </div>
 
       {notice ? (
-        <div className="mb-4 rounded-md border border-af2-sage/40 bg-af2-sage/10 px-4 py-3 text-sm text-af2-sage">
+        <div
+          style={{
+            marginBottom: 14,
+            padding: "10px 14px",
+            borderRadius: "var(--af2-radius)",
+            border: "1px solid rgba(74,107,74,0.25)",
+            background: "rgba(74,107,74,0.10)",
+            color: "var(--af2-sage)",
+            fontSize: 13,
+          }}
+        >
           {notice}
         </div>
       ) : null}
       {error ? (
         <div
           role="alert"
-          className="mb-4 rounded-md border border-af2-clay/40 bg-af2-clay-soft/30 px-4 py-3 text-sm text-af2-clay"
+          style={{
+            marginBottom: 14,
+            padding: "10px 14px",
+            borderRadius: "var(--af2-radius)",
+            border: "1px solid rgba(194,80,43,0.3)",
+            background: "rgba(194,80,43,0.10)",
+            color: "var(--af2-clay)",
+            fontSize: 13,
+          }}
         >
           {error}
         </div>
       ) : null}
 
       {/* Mission statement card */}
-      <section className="rounded-xl border border-af2-line bg-af2-card p-6">
-        <label
-          htmlFor="mission-statement"
-          className="text-[11px] font-medium uppercase tracking-[0.14em] text-af2-ink-3"
-        >
+      <div className="af2-card" style={{ padding: 22 }}>
+        <label htmlFor="mission-statement" className="af2-eyebrow">
           Mission statement
         </label>
         <textarea
           id="mission-statement"
+          className="af2-input"
           value={statement}
           onChange={(e) => setStatement(e.target.value.slice(0, STATEMENT_MAX))}
           placeholder="Launch the Acme R-7 robotic arm to industrial buyers in North America by Q4."
           rows={4}
-          className="mt-2 w-full resize-y rounded-md border border-af2-line-2 bg-af2-card px-4 py-3 font-af2-serif text-lg leading-snug text-af2-ink outline-none transition focus:border-af2-clay focus:ring-2 focus:ring-af2-clay/20"
+          style={{
+            width: "100%",
+            marginTop: 8,
+            fontSize: 16,
+            fontFamily: "var(--af2-serif)",
+            lineHeight: 1.4,
+            resize: "vertical",
+          }}
           disabled={submitState === "saving" || submitState === "generating"}
         />
-        <div className="mt-1 text-right text-[11px] text-af2-ink-3">
+        <div
+          className="af2-muted-2"
+          style={{ marginTop: 4, fontSize: 11, textAlign: "right" }}
+        >
           {charactersLeft} of {STATEMENT_MAX} characters left
         </div>
 
         {/* Structured prompts */}
-        <div className="mt-5 grid gap-4 sm:grid-cols-2">
+        <div
+          style={{
+            marginTop: 18,
+            display: "grid",
+            gridTemplateColumns: "repeat(2, 1fr)",
+            gap: 14,
+          }}
+        >
           {STRUCTURED_FIELDS.map((field) => (
             <div key={field.key}>
-              <label
-                htmlFor={`metadata-${field.key}`}
-                className="text-[11px] font-medium uppercase tracking-[0.14em] text-af2-ink-3"
-              >
-                {field.label}{" "}
-                <span className="ml-1 font-normal normal-case tracking-normal text-af2-ink-4">
+              <label htmlFor={`metadata-${field.key}`} className="af2-eyebrow">
+                {field.label}
+                <span
+                  className="af2-muted-2"
+                  style={{
+                    marginLeft: 6,
+                    fontWeight: 400,
+                    textTransform: "none",
+                    letterSpacing: 0,
+                    fontSize: 11,
+                  }}
+                >
                   optional
                 </span>
               </label>
               <input
                 id={`metadata-${field.key}`}
                 type="text"
+                className="af2-input"
                 value={metadata[field.key] ?? ""}
                 onChange={(e) => updateMetadata(field.key, e.target.value)}
                 placeholder={field.placeholder}
-                className="mt-1.5 w-full rounded-md border border-af2-line-2 bg-af2-card px-3 py-2 text-sm text-af2-ink outline-none transition focus:border-af2-clay focus:ring-2 focus:ring-af2-clay/20"
+                style={{ width: "100%", marginTop: 6 }}
                 disabled={submitState === "saving" || submitState === "generating"}
               />
-              <p className="mt-1 text-[11px] leading-snug text-af2-ink-3">{field.helper}</p>
+              <p className="af2-muted" style={{ marginTop: 4, fontSize: 11, lineHeight: 1.4 }}>
+                {field.helper}
+              </p>
             </div>
           ))}
         </div>
 
         {/* Actions */}
-        <div className="mt-6 flex flex-wrap items-center gap-3">
-          <span className="text-xs text-af2-ink-3">
-            Saved missions stay in this workspace. Generate the plan when you're ready.
+        <div className="af2-row" style={{ marginTop: 18, gap: 10 }}>
+          <span className="af2-muted-2" style={{ fontSize: 11.5 }}>
+            Saved missions stay in this workspace. Generate the plan when you&rsquo;re ready.
           </span>
-          <span className="flex-1" />
+          <span className="af2-spacer" />
           <button
             type="button"
             onClick={() => void handleSave(false)}
             disabled={!canSave}
-            className="inline-flex items-center gap-2 rounded-md border border-af2-line-2 bg-af2-card px-4 py-2 text-sm font-medium text-af2-ink-2 transition hover:border-af2-clay/40 hover:text-af2-ink disabled:cursor-not-allowed disabled:opacity-50"
+            className="af2-btn"
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 6,
+              opacity: canSave ? 1 : 0.5,
+              cursor: canSave ? "pointer" : "not-allowed",
+            }}
           >
             {submitState === "saving" ? <Loader2 size={14} className="animate-spin" /> : null}
             Save draft
@@ -276,7 +325,14 @@ export default function Hire() {
             type="button"
             onClick={() => void handleSave(true)}
             disabled={!canGenerate}
-            className="inline-flex items-center gap-2 rounded-md bg-af2-clay px-4 py-2 text-sm font-medium text-white shadow-[0_1px_0_rgba(255,255,255,0.18)_inset,0_6px_16px_rgba(194,80,43,0.25)] transition hover:bg-af2-clay-2 disabled:cursor-not-allowed disabled:opacity-50"
+            className="af2-btn af2-btn-clay"
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 6,
+              opacity: canGenerate ? 1 : 0.5,
+              cursor: canGenerate ? "pointer" : "not-allowed",
+            }}
           >
             {submitState === "generating" ? (
               <Loader2 size={14} className="animate-spin" />
@@ -286,92 +342,152 @@ export default function Hire() {
             {submitState === "generating" ? "Generating…" : "Save & generate plan →"}
           </button>
         </div>
-      </section>
+      </div>
 
       {/* Inline LLM preview */}
       {trimmedStatement.length > 0 ? (
-        <section className="mt-6 rounded-xl border border-dashed border-af2-line bg-af2-paper-2/40 p-5">
-          <div className="text-[11px] font-medium uppercase tracking-[0.14em] text-af2-ink-3">
-            How we'll brief the planner
-          </div>
-          <pre className="mt-2 whitespace-pre-wrap font-af2-mono text-[12.5px] leading-6 text-af2-ink-2">
+        <div
+          className="af2-card"
+          style={{
+            marginTop: 18,
+            padding: 18,
+            background: "var(--af2-paper-2)",
+            borderStyle: "dashed",
+          }}
+        >
+          <div className="af2-eyebrow">How we&rsquo;ll brief the planner</div>
+          <pre
+            className="af2-mono"
+            style={{
+              marginTop: 8,
+              whiteSpace: "pre-wrap",
+              fontSize: 12.5,
+              lineHeight: 1.5,
+              color: "var(--af2-ink-2)",
+            }}
+          >
             {preview}
           </pre>
-        </section>
+        </div>
       ) : null}
 
       {/* Saved missions list */}
-      <section className="mt-10">
-        <div className="mb-3 flex items-baseline justify-between">
-          <h2 className="font-af2-serif text-2xl font-medium tracking-[-0.015em] text-af2-ink">
-            Saved missions
-          </h2>
-          <button
-            type="button"
-            onClick={() => void refreshMissions()}
-            className="text-xs font-medium text-af2-clay hover:underline disabled:opacity-50"
-            disabled={loadingList}
-          >
-            {loadingList ? "Loading…" : "Refresh"}
-          </button>
+      <h3 className="af2-h3" style={{ marginTop: 28, marginBottom: 12 }}>
+        Saved missions
+      </h3>
+      <div className="af2-row" style={{ marginBottom: 12 }}>
+        <span className="af2-spacer" />
+        <button
+          type="button"
+          onClick={() => void refreshMissions()}
+          className="af2-btn af2-btn-sm af2-btn-ghost"
+          disabled={loadingList}
+        >
+          {loadingList ? "Loading…" : "Refresh"}
+        </button>
+      </div>
+
+      {listError ? (
+        <div
+          style={{
+            marginBottom: 14,
+            padding: "10px 14px",
+            borderRadius: "var(--af2-radius)",
+            border: "1px solid rgba(194,80,43,0.3)",
+            background: "rgba(194,80,43,0.10)",
+            color: "var(--af2-clay)",
+            fontSize: 13,
+          }}
+        >
+          {listError}
         </div>
+      ) : null}
 
-        {listError ? (
-          <div className="rounded-md border border-af2-clay/40 bg-af2-clay-soft/30 px-4 py-3 text-sm text-af2-clay">
-            {listError}
-          </div>
-        ) : null}
+      {!listError && missions.length === 0 && !loadingList ? (
+        <div
+          className="af2-card"
+          style={{
+            padding: "40px 24px",
+            textAlign: "center",
+            borderStyle: "dashed",
+            borderColor: "var(--af2-line-2)",
+          }}
+        >
+          <p className="af2-serif" style={{ fontSize: 15, color: "var(--af2-ink-2)" }}>
+            No missions yet. Save your first one above to get started.
+          </p>
+        </div>
+      ) : null}
 
-        {!listError && missions.length === 0 && !loadingList ? (
-          <div className="rounded-md border border-dashed border-af2-line bg-af2-paper p-6 text-center">
-            <p className="font-af2-serif text-base text-af2-ink-2">
-              No missions yet. Save your first one above to get started.
-            </p>
-          </div>
-        ) : null}
-
-        {missions.length > 0 ? (
-          <ul className="space-y-2.5">
-            {missions.map((mission) => (
-              <li
-                key={mission.id}
-                className="rounded-md border border-af2-line bg-af2-card p-4 transition hover:border-af2-line-2"
-              >
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0 flex-1">
-                    <p className="font-af2-serif text-base leading-snug text-af2-ink">
-                      {mission.statement}
-                    </p>
-                    <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-af2-ink-3">
-                      <span>{mission.companyName}</span>
-                      <span className="text-af2-line-2">·</span>
-                      <span>{mission.status}</span>
-                      <span className="text-af2-line-2">·</span>
-                      <span>{formatRelative(mission.createdAt)}</span>
-                      {mission.latestHiringPlanId ? (
-                        <>
-                          <span className="text-af2-line-2">·</span>
-                          <span className="text-af2-sage">plan drafted</span>
-                        </>
-                      ) : null}
-                    </div>
-                  </div>
-                  <div className="flex shrink-0 items-center gap-2">
-                    {mission.latestHiringPlanId ? (
-                      <Link
-                        to="/team"
-                        className="rounded-md border border-af2-line-2 px-2.5 py-1 text-[11px] font-medium text-af2-ink-2 transition hover:border-af2-clay/40 hover:text-af2-ink"
-                      >
-                        View plan
-                      </Link>
-                    ) : null}
-                  </div>
+      {missions.length > 0 ? (
+        <div className="af2-list">
+          {missions.map((mission, index) => (
+            <div
+              key={mission.id}
+              className="af2-list-row"
+              style={{
+                gridTemplateColumns: "1fr 130px 90px",
+                cursor: "default",
+                borderBottom:
+                  index < missions.length - 1 ? "1px solid var(--af2-line)" : "none",
+              }}
+            >
+              <div style={{ minWidth: 0 }}>
+                <p
+                  className="af2-serif"
+                  style={{
+                    fontSize: 14,
+                    lineHeight: 1.4,
+                    color: "var(--af2-ink)",
+                    margin: 0,
+                  }}
+                >
+                  {mission.statement}
+                </p>
+                <div
+                  className="af2-mono af2-muted-2"
+                  style={{
+                    marginTop: 4,
+                    fontSize: 11,
+                    display: "flex",
+                    flexWrap: "wrap",
+                    gap: 8,
+                  }}
+                >
+                  <span>{mission.companyName}</span>
+                  <span>·</span>
+                  <span>{mission.status}</span>
+                  <span>·</span>
+                  <span>{formatRelative(mission.createdAt)}</span>
+                  {mission.latestHiringPlanId ? (
+                    <>
+                      <span>·</span>
+                      <span style={{ color: "var(--af2-sage)" }}>plan drafted</span>
+                    </>
+                  ) : null}
                 </div>
-              </li>
-            ))}
-          </ul>
-        ) : null}
-      </section>
+              </div>
+              <span className="af2-muted" style={{ fontSize: 11.5 }}>
+                {mission.status}
+              </span>
+              <div style={{ textAlign: "right" }}>
+                {mission.latestHiringPlanId ? (
+                  <Link
+                    to="/team"
+                    className="af2-btn af2-btn-sm"
+                    style={{
+                      textDecoration: "none",
+                      display: "inline-block",
+                    }}
+                  >
+                    View plan
+                  </Link>
+                ) : null}
+              </div>
+            </div>
+          ))}
+        </div>
+      ) : null}
     </div>
   );
 }

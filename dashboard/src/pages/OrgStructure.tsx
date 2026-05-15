@@ -1,89 +1,224 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Bot, Network, Users } from "lucide-react";
+import { Link } from "react-router-dom";
 import { listAgents, type Agent } from "../api/agentApi";
+import { listMissions, type Mission } from "../api/missionsApi";
 import { EmptyState, ErrorState, LoadingState } from "../components/UiStates";
 import { useAuth } from "../context/AuthContext";
+
+/**
+ * Team page — Workforce > Team (HEL-26).
+ *
+ * Renders the agent reporting graph created by HEL-25's hiring-plan confirm
+ * endpoint:
+ *
+ *   mission (at the top)
+ *      └── pod-lead agent (3-col grid)
+ *           └── reports under each lead (indented list)
+ *
+ * Data sources:
+ *   - `listAgents()` → agents with `metadata.reportingToAgentId` (HEL-25 mirrors
+ *     `org_edges` onto this column so the parent-pointer query path keeps
+ *     working alongside the canonical edges table).
+ *   - `listMissions()` → pick the active mission for the page-head card. If
+ *     there's no active mission, fall back to the most recent one.
+ *
+ * Reference design: `docs/design/v2/pages.jsx::AF2_Team` (lines 250-321).
+ *
+ * Click an agent card → opens detail (placeholder route for now). The full
+ * AF2_AgentModal pattern is HEL-26b follow-on once shared modal chrome is
+ * defined.
+ */
 
 function managerIdFor(agent: Agent): string | null {
   const metadata = agent.metadata ?? {};
   const manager =
-    metadata.reportingToAgentId ??
-    metadata.managerAgentId ??
-    metadata.parentAgentId;
+    (metadata as Record<string, unknown>).reportingToAgentId ??
+    (metadata as Record<string, unknown>).managerAgentId ??
+    (metadata as Record<string, unknown>).parentAgentId;
   return typeof manager === "string" && manager.length > 0 ? manager : null;
 }
 
-function AgentNode({
-  agent,
-  childrenByManager,
-  depth = 0,
+function initialsFor(name: string): string {
+  return name
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase() ?? "")
+    .join("");
+}
+
+function toneFor(agentId: string): "clay" | "sage" | "mustard" | "plum" | "blue" | "ink" {
+  const tones = ["clay", "sage", "mustard", "plum", "blue", "ink"] as const;
+  let hash = 0;
+  for (let i = 0; i < agentId.length; i += 1) {
+    hash = (hash * 31 + agentId.charCodeAt(i)) | 0;
+  }
+  return tones[Math.abs(hash) % tones.length];
+}
+
+function PodLead({
+  lead,
+  reports,
 }: {
-  agent: Agent;
-  childrenByManager: Map<string, Agent[]>;
-  depth?: number;
+  lead: Agent;
+  reports: Agent[];
 }) {
-  const children = childrenByManager.get(agent.id) ?? [];
+  const tone = toneFor(lead.id);
+  // Map af2 tone names to actual border colors used by the v2 reference.
+  const topBorderColor =
+    tone === "blue"
+      ? "var(--af2-ink-blue)"
+      : tone === "plum"
+        ? "var(--af2-plum)"
+        : tone === "sage"
+          ? "var(--af2-sage)"
+          : tone === "mustard"
+            ? "var(--af2-mustard)"
+            : tone === "ink"
+              ? "var(--af2-ink)"
+              : "var(--af2-clay)";
+
   return (
-    <div className="space-y-3">
-      <div
-        className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm"
-        style={{ marginLeft: `${depth * 28}px` }}
+    <div>
+      <Link
+        to={`/agents/${encodeURIComponent(lead.id)}`}
+        style={{ textDecoration: "none", color: "inherit" }}
       >
-        <div className="flex items-start gap-3">
-          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-indigo-100 text-indigo-700">
-            <Bot size={16} />
+        <div
+          className="af2-card"
+          style={{
+            padding: 16,
+            borderTop: `3px solid ${topBorderColor}`,
+            cursor: "pointer",
+          }}
+        >
+          <div className="af2-row" style={{ gap: 12 }}>
+            <div className={`af2-avatar lg af2-tone-${tone}`}>{initialsFor(lead.name)}</div>
+            <div style={{ minWidth: 0 }}>
+              <div style={{ fontWeight: 600, color: "var(--af2-ink)" }}>{lead.name}</div>
+              <div className="af2-muted" style={{ fontSize: 12 }}>
+                {lead.roleKey ?? "—"}
+              </div>
+              {lead.model ? (
+                <div
+                  className="af2-mono"
+                  style={{ fontSize: 11, color: "var(--af2-ink-3)", marginTop: 4 }}
+                >
+                  {lead.model}
+                </div>
+              ) : null}
+            </div>
           </div>
-          <div className="min-w-0">
-            <p className="font-semibold text-gray-900">{agent.name}</p>
-            <p className="text-sm text-gray-500">{agent.roleKey}</p>
-            <p className="mt-2 text-xs uppercase tracking-[0.18em] text-gray-400">{agent.status}</p>
+          <div className="af2-row" style={{ marginTop: 12, gap: 14, fontSize: 12 }}>
+            <div>
+              <strong>{reports.length}</strong>{" "}
+              <span className="af2-muted">{reports.length === 1 ? "report" : "reports"}</span>
+            </div>
+            {lead.budgetMonthlyUsd > 0 ? (
+              <div>
+                <span className="af2-muted">${lead.budgetMonthlyUsd.toFixed(0)}/mo budget</span>
+              </div>
+            ) : null}
           </div>
         </div>
+      </Link>
+
+      {/* Reports under this lead — dashed left border per AF2_Team. */}
+      <div
+        style={{
+          marginTop: 10,
+          marginLeft: 18,
+          borderLeft: "1px dashed var(--af2-line-2)",
+          paddingLeft: 14,
+        }}
+      >
+        {reports.map((report) => (
+          <Link
+            key={report.id}
+            to={`/agents/${encodeURIComponent(report.id)}`}
+            style={{ textDecoration: "none", color: "inherit" }}
+          >
+            <div
+              className="af2-card"
+              style={{
+                padding: 10,
+                marginTop: 8,
+                display: "flex",
+                alignItems: "center",
+                gap: 10,
+                cursor: "pointer",
+              }}
+            >
+              <div className={`af2-avatar sm af2-tone-${toneFor(report.id)}`}>
+                {initialsFor(report.name)}
+              </div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div
+                  style={{ fontWeight: 500, fontSize: 13, color: "var(--af2-ink)" }}
+                >
+                  {report.name}
+                </div>
+                <div className="af2-muted" style={{ fontSize: 11.5 }}>
+                  {report.roleKey ?? "—"}
+                </div>
+              </div>
+              {report.budgetMonthlyUsd > 0 ? (
+                <span
+                  className="af2-mono af2-muted-2"
+                  style={{ fontSize: 11 }}
+                >
+                  ${report.budgetMonthlyUsd.toFixed(0)}
+                </span>
+              ) : null}
+            </div>
+          </Link>
+        ))}
+        {reports.length === 0 ? (
+          <div
+            className="af2-muted-2"
+            style={{ marginTop: 8, fontSize: 11.5, paddingLeft: 4 }}
+          >
+            No reports yet.
+          </div>
+        ) : null}
       </div>
-      {children.map((child) => (
-        <AgentNode key={child.id} agent={child} childrenByManager={childrenByManager} depth={depth + 1} />
-      ))}
     </div>
   );
 }
 
-function TeamTree({ agents }: { agents: Agent[] }) {
-  const childrenByManager = useMemo(() => {
-    const map = new Map<string, Agent[]>();
-    for (const agent of agents) {
-      const managerId = managerIdFor(agent);
-      if (!managerId) continue;
-      map.set(managerId, [...(map.get(managerId) ?? []), agent]);
-    }
-    return map;
-  }, [agents]);
+interface OrgTree {
+  mission: Mission | null;
+  rootAgents: Agent[];
+  reportsByLeadId: Map<string, Agent[]>;
+}
 
-  const roots = agents.filter((agent) => !managerIdFor(agent));
+function buildOrgTree(agents: Agent[], missions: Mission[]): OrgTree {
+  // Pick the active mission first; fall back to the newest if none is active.
+  const mission =
+    missions.find((m) => m.status === "active") ?? missions[0] ?? null;
 
-  return (
-    <section className="rounded-3xl border border-gray-200 bg-white p-6 shadow-sm">
-      <div className="mb-6 flex items-center justify-between gap-4">
-        <div>
-          <h2 className="text-lg font-semibold text-gray-900">Agent reporting graph</h2>
-          <p className="text-sm text-gray-500">Derived from deployed agent metadata and manager links.</p>
-        </div>
-        <div className="rounded-2xl border border-gray-200 bg-gray-50 px-4 py-3 text-right">
-          <p className="text-xs uppercase tracking-[0.18em] text-gray-400">Direct Reports</p>
-          <p className="font-mono text-2xl font-semibold text-gray-900">{agents.length}</p>
-        </div>
-      </div>
-      <div className="space-y-4">
-        {roots.map((agent) => (
-          <AgentNode key={agent.id} agent={agent} childrenByManager={childrenByManager} />
-        ))}
-      </div>
-    </section>
-  );
+  const reportsByLeadId = new Map<string, Agent[]>();
+  const reportIds = new Set<string>();
+  for (const agent of agents) {
+    const managerId = managerIdFor(agent);
+    if (!managerId) continue;
+    reportsByLeadId.set(managerId, [...(reportsByLeadId.get(managerId) ?? []), agent]);
+    reportIds.add(agent.id);
+  }
+
+  // Leads are agents not pointed to by any reporting line — i.e. they're at
+  // the top of the tree. Sorted by name for a stable render.
+  const rootAgents = agents
+    .filter((agent) => !reportIds.has(agent.id))
+    .sort((a, b) => a.name.localeCompare(b.name));
+
+  return { mission, rootAgents, reportsByLeadId };
 }
 
 export default function OrgStructure() {
   const { accessMode, getAccessToken } = useAuth();
   const [agents, setAgents] = useState<Agent[]>([]);
+  const [missions, setMissions] = useState<Mission[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -94,10 +229,16 @@ export default function OrgStructure() {
       const token = await getAccessToken();
       if (accessMode === "preview" && !token) {
         setAgents([]);
+        setMissions([]);
         return;
       }
       if (!token) throw new Error("Authentication session expired.");
-      setAgents(await listAgents(token));
+      const [nextAgents, nextMissions] = await Promise.all([
+        listAgents(token),
+        listMissions(token),
+      ]);
+      setAgents(nextAgents);
+      setMissions(nextMissions);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Failed to load org structure");
     } finally {
@@ -109,9 +250,11 @@ export default function OrgStructure() {
     void loadOrg();
   }, [loadOrg]);
 
+  const tree = useMemo(() => buildOrgTree(agents, missions), [agents, missions]);
+
   if (loading) {
     return (
-      <div className="p-8">
+      <div className="af2-page">
         <LoadingState label="Mapping the org graph..." />
       </div>
     );
@@ -119,48 +262,96 @@ export default function OrgStructure() {
 
   if (error) {
     return (
-      <div className="p-8">
+      <div className="af2-page">
         <ErrorState title="Signal Lost" message={error} onRetry={() => void loadOrg()} />
       </div>
     );
   }
 
   return (
-    <div className="min-h-full bg-gray-50 p-6 md:p-8">
-      <div className="mx-auto max-w-6xl">
-        <div className="mb-6 flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
-          <div>
-            <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-indigo-200 bg-indigo-50 px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-indigo-700">
-              <Network size={12} />
-              Org Structure
-            </div>
-            <h1 className="text-2xl font-bold text-gray-900">Reporting Chains</h1>
-            <p className="mt-1 text-sm text-gray-500">
-              Team and manager relationships generated from deployed agent metadata.
-            </p>
-          </div>
-          <div className="inline-flex items-center gap-2 rounded-2xl border border-gray-200 bg-white px-4 py-3 shadow-sm">
-            <Users size={16} className="text-indigo-600" />
-            <div>
-              <p className="text-xs uppercase tracking-[0.18em] text-gray-400">Agents Online</p>
-              <p className="font-mono text-xl font-semibold text-gray-900">{agents.length}</p>
-            </div>
+    <div className="af2-page">
+      <div className="af2-page-head">
+        <div>
+          <div className="af2-eyebrow">Workforce</div>
+          <h1 className="af2-h1" style={{ marginTop: 6 }}>
+            Team
+          </h1>
+          <div className="af2-page-head-meta">
+            {agents.length === 0
+              ? "No agents provisioned yet. Confirm a hiring plan from the Hire page to populate this view."
+              : `${agents.length} agent${agents.length === 1 ? "" : "s"} across ${
+                  tree.rootAgents.length
+                } pod${tree.rootAgents.length === 1 ? "" : "s"}. Click a card to open the agent.`}
           </div>
         </div>
-
-        {agents.length === 0 ? (
-          <EmptyState
-            title="No org graph yet"
-            description="Deploy agents to populate reporting lines and agent hierarchies."
-            ctaLabel="Open marketplace"
-            ctaTo="/agents"
-          />
-        ) : (
-          <div className="space-y-6">
-            <TeamTree agents={agents} />
-          </div>
-        )}
+        <div className="af2-page-actions">
+          <Link
+            to="/hire"
+            className="af2-btn af2-btn-sm af2-btn-primary"
+            style={{ textDecoration: "none", display: "inline-flex", alignItems: "center", gap: 6 }}
+          >
+            ＋ Hire
+          </Link>
+        </div>
       </div>
+
+      {agents.length === 0 ? (
+        <EmptyState
+          title="No org graph yet"
+          description="Confirm a hiring plan from the Hire page to provision your first team and populate this view."
+          ctaLabel="Open Hire page"
+          ctaTo="/hire"
+        />
+      ) : (
+        <>
+          {/* Mission card at top (centered), per AF2_Team. Shown only when
+              a mission exists; otherwise the pod grid alone is enough. */}
+          {tree.mission ? (
+            <div style={{ display: "flex", justifyContent: "center", marginBottom: 18 }}>
+              <div
+                className="af2-card"
+                style={{ padding: 18, maxWidth: 480, textAlign: "center" }}
+              >
+                <div className="af2-eyebrow">Mission</div>
+                <div
+                  className="af2-serif"
+                  style={{
+                    fontSize: 17,
+                    marginTop: 8,
+                    lineHeight: 1.35,
+                    color: "var(--af2-ink)",
+                  }}
+                >
+                  {tree.mission.statement}
+                </div>
+                <div
+                  className="af2-mono af2-muted-2"
+                  style={{ marginTop: 8, fontSize: 11 }}
+                >
+                  {tree.mission.companyName} · {tree.mission.status}
+                </div>
+              </div>
+            </div>
+          ) : null}
+
+          {/* Pod grid — leads in a responsive 3-col grid. */}
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: `repeat(${Math.min(3, Math.max(1, tree.rootAgents.length))}, 1fr)`,
+              gap: 18,
+            }}
+          >
+            {tree.rootAgents.map((lead) => (
+              <PodLead
+                key={lead.id}
+                lead={lead}
+                reports={tree.reportsByLeadId.get(lead.id) ?? []}
+              />
+            ))}
+          </div>
+        </>
+      )}
     </div>
   );
 }

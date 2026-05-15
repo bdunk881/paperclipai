@@ -4,9 +4,10 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { Agent } from "../api/agentApi";
 import OrgStructure from "./OrgStructure";
 
-const { getAccessTokenMock, listAgentsMock, accessModeMock } = vi.hoisted(() => ({
+const { getAccessTokenMock, listAgentsMock, listMissionsMock, accessModeMock } = vi.hoisted(() => ({
   getAccessTokenMock: vi.fn(),
   listAgentsMock: vi.fn(),
+  listMissionsMock: vi.fn(),
   accessModeMock: vi.fn(),
 }));
 
@@ -19,6 +20,10 @@ vi.mock("../context/AuthContext", () => ({
 
 vi.mock("../api/agentApi", () => ({
   listAgents: listAgentsMock,
+}));
+
+vi.mock("../api/missionsApi", () => ({
+  listMissions: listMissionsMock,
 }));
 
 function makeAgent(overrides: Partial<Agent> = {}): Agent {
@@ -38,10 +43,12 @@ describe("OrgStructure", () => {
   beforeEach(() => {
     getAccessTokenMock.mockReset();
     listAgentsMock.mockReset();
+    listMissionsMock.mockReset();
     accessModeMock.mockReset();
     accessModeMock.mockReturnValue("authenticated");
     getAccessTokenMock.mockResolvedValue("token-123");
     listAgentsMock.mockResolvedValue([]);
+    listMissionsMock.mockResolvedValue([]);
   });
 
   it("renders the preview empty state without calling protected agent APIs", async () => {
@@ -119,5 +126,38 @@ describe("OrgStructure", () => {
     listAgentsMock.mockResolvedValueOnce([manager, report]);
     render(<MemoryRouter><OrgStructure /></MemoryRouter>);
     await waitFor(() => expect(screen.getByText("Child Bot")).toBeInTheDocument());
+  });
+
+  it("renders the active mission card at the top when one exists (HEL-26)", async () => {
+    listAgentsMock.mockResolvedValueOnce([makeAgent({ id: "a1", name: "Lead Bot" })]);
+    listMissionsMock.mockResolvedValueOnce([
+      {
+        id: "m1",
+        statement: "Become the leader in industrial robotics",
+        status: "active",
+        metadata: {},
+        createdAt: new Date().toISOString(),
+        companyId: "c1",
+        companyName: "Acme",
+        latestHiringPlanId: "p1",
+      },
+    ]);
+    render(<MemoryRouter><OrgStructure /></MemoryRouter>);
+    await waitFor(() =>
+      expect(screen.getByText("Become the leader in industrial robotics")).toBeInTheDocument()
+    );
+    // Mission card also shows the company name + status.
+    expect(screen.getByText(/Acme · active/)).toBeInTheDocument();
+  });
+
+  it("renders with v2 structural markers (HEL-26)", async () => {
+    listAgentsMock.mockResolvedValueOnce([makeAgent({ id: "a1", name: "Solo Bot" })]);
+    const { container } = render(<MemoryRouter><OrgStructure /></MemoryRouter>);
+    await waitFor(() => expect(screen.getByText("Solo Bot")).toBeInTheDocument());
+    expect(container.querySelector(".af2-page")).not.toBeNull();
+    expect(container.querySelector(".af2-page-head")).not.toBeNull();
+    expect(container.querySelector(".af2-eyebrow")).not.toBeNull();
+    expect(container.querySelector("h1.af2-h1")).not.toBeNull();
+    expect(container.querySelectorAll(".af2-card").length).toBeGreaterThan(0);
   });
 });

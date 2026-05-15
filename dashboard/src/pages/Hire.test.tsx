@@ -168,42 +168,24 @@ describe("Hire page (HEL-23)", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent(/Plan limit reached: missions/);
   });
 
-  it("confirms a drafted hiring plan and refreshes the missions list (HEL-25)", async () => {
-    listMissionsMock
-      .mockResolvedValueOnce([
-        {
-          id: "m-with-plan",
-          statement: "Launch the R-7 to industrial buyers",
-          status: "draft",
-          metadata: {},
-          createdAt: new Date().toISOString(),
-          companyId: "company-1",
-          companyName: "Acme",
-          latestHiringPlanId: "plan-xyz",
-        },
-      ])
-      .mockResolvedValueOnce([
-        {
-          id: "m-with-plan",
-          statement: "Launch the R-7 to industrial buyers",
-          status: "active",
-          metadata: {},
-          createdAt: new Date().toISOString(),
-          companyId: "company-1",
-          companyName: "Acme",
-          latestHiringPlanId: "plan-xyz",
-        },
-      ]);
-    confirmHiringPlanMock.mockResolvedValue({
-      hiringPlanId: "plan-xyz",
-      missionId: "m-with-plan",
-      acceptedAt: new Date().toISOString(),
-      agents: [
-        { id: "a-1", roleKey: "ceo", name: "CEO", modelTier: "power", model: null, budgetMonthlyUsd: 0, reportingToAgentId: null },
-        { id: "a-2", roleKey: "sdr", name: "SDR", modelTier: "lite", model: null, budgetMonthlyUsd: 0, reportingToAgentId: "a-1" },
-      ],
-      orgEdges: [{ managerAgentId: "a-1", agentId: "a-2" }],
-    });
+  it("links a drafted hiring plan to the side-by-side review page (HEL-105)", async () => {
+    // HEL-105 replaced the inline Confirm button (HEL-25 v1) with a
+    // "Review plan" link that routes to /hire/plan/:missionId/:planId.
+    // This test asserts the link is wired correctly. The confirm flow
+    // itself is exercised by HiringPlanReview.test.tsx + the backend
+    // tests in hiringPlanRoutes.test.ts.
+    listMissionsMock.mockResolvedValueOnce([
+      {
+        id: "m-with-plan",
+        statement: "Launch the R-7 to industrial buyers",
+        status: "draft",
+        metadata: {},
+        createdAt: new Date().toISOString(),
+        companyId: "company-1",
+        companyName: "Acme",
+        latestHiringPlanId: "plan-xyz",
+      },
+    ]);
 
     render(
       <MemoryRouter>
@@ -211,21 +193,32 @@ describe("Hire page (HEL-23)", () => {
       </MemoryRouter>,
     );
 
-    const confirmButton = await screen.findByRole("button", { name: /Confirm plan/i });
-    fireEvent.click(confirmButton);
+    const reviewLink = await screen.findByRole("link", { name: /Review plan/i });
+    expect(reviewLink).toHaveAttribute("href", "/hire/plan/m-with-plan/plan-xyz");
+  });
 
-    await waitFor(() => {
-      expect(confirmHiringPlanMock).toHaveBeenCalledWith("plan-xyz", "mock-token");
-    });
+  it("renders a 'View team' link when the mission is already active (HEL-105)", async () => {
+    listMissionsMock.mockResolvedValueOnce([
+      {
+        id: "m-confirmed",
+        statement: "Already provisioned mission",
+        status: "active",
+        metadata: {},
+        createdAt: new Date().toISOString(),
+        companyId: "company-1",
+        companyName: "Acme",
+        latestHiringPlanId: "plan-abc",
+      },
+    ]);
 
-    // Success banner mentions both counts.
-    expect(await screen.findByText(/provisioned 2 agents/i)).toBeInTheDocument();
+    render(
+      <MemoryRouter>
+        <Hire />
+      </MemoryRouter>,
+    );
 
-    // After refresh the mission status flips to 'active' and the CTA
-    // becomes "View team" linking to /team.
-    await waitFor(() => {
-      expect(screen.getByRole("link", { name: /View team/i })).toHaveAttribute("href", "/team");
-    });
+    const teamLink = await screen.findByRole("link", { name: /View team/i });
+    expect(teamLink).toHaveAttribute("href", "/team");
   });
 
   it("renders saved missions returned by the API", async () => {

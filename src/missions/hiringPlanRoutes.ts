@@ -210,6 +210,78 @@ async function emitActivityEvent(
 export function createHiringPlanRoutes(pool: Pool) {
   const router = Router();
 
+  // HEL-105: side-by-side review needs to read the plan + mission context
+  // in one call. Returns the draft TeamAssemblyResult under `plan`, plus the
+  // mission statement / acceptance state so the review page can show
+  // "already confirmed" without a second roundtrip.
+  router.get("/:hiringPlanId", async (req: AuthenticatedRequest, res) => {
+    const userId = req.auth?.sub;
+    const workspaceId = (req as WorkspaceAwareRequest).workspace?.id;
+    if (!userId || !workspaceId) {
+      res.status(401).json({ error: "Authenticated user + workspace required" });
+      return;
+    }
+
+    const hiringPlanId = req.params.hiringPlanId;
+    if (!hiringPlanId || !UUID_RE.test(hiringPlanId)) {
+      res.status(400).json({ error: "Invalid hiring plan ID format" });
+      return;
+    }
+
+    interface PlanDetailRow {
+      id: string;
+      mission_id: string;
+      mission_statement: string;
+      draft: TeamAssemblyResult;
+      accepted_at: Date | string | null;
+      accepted_by_user_id: string | null;
+      created_at: Date | string;
+    }
+
+    try {
+      const result = await withWorkspaceContext(
+        pool,
+        { workspaceId, userId },
+        async (client) =>
+          client.query<PlanDetailRow>(
+            `SELECT hp.id, hp.mission_id, m.statement AS mission_statement,
+                    hp.draft, hp.accepted_at, hp.accepted_by_user_id, hp.created_at
+               FROM hiring_plans hp
+               JOIN missions m ON m.id = hp.mission_id
+               JOIN companies c ON c.id = m.company_id
+              WHERE hp.id = $1
+              LIMIT 1`,
+            [hiringPlanId],
+          ),
+      );
+
+      if (result.rows.length === 0) {
+        res.status(404).json({ error: "Hiring plan not found" });
+        return;
+      }
+
+      const row = result.rows[0];
+      res.json({
+        id: row.id,
+        missionId: row.mission_id,
+        missionStatement: row.mission_statement,
+        plan: row.draft,
+        acceptedAt:
+          row.accepted_at instanceof Date
+            ? row.accepted_at.toISOString()
+            : row.accepted_at,
+        acceptedByUserId: row.accepted_by_user_id,
+        createdAt:
+          row.created_at instanceof Date
+            ? row.created_at.toISOString()
+            : String(row.created_at),
+      });
+    } catch (err) {
+      console.error(`[hiring-plans] get failed: ${(err as Error).message}`);
+      res.status(500).json({ error: "Failed to load hiring plan" });
+    }
+  });
+
   router.post("/:hiringPlanId/confirm", async (req: AuthenticatedRequest, res) => {
     const userId = req.auth?.sub;
     const workspaceId = (req as WorkspaceAwareRequest).workspace?.id;

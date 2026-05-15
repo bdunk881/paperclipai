@@ -109,14 +109,22 @@ oauth_status=$(
 require_status_in "$oauth_status" "200,302,307,400,401,404" "slack_oauth_callback"
 
 # ---------------------------------------------------------------------------
-# 5. Stripe webhook surface — expect 400/401 (signature missing), NOT 404
+# 5. Stripe webhook surface — expect 400/401 (signature missing) or 503
+#    ("Webhook not configured" — dev envs without STRIPE_WEBHOOK_SECRET).
+#
+#    The smoke test's purpose here is to confirm the route is WIRED, not to
+#    validate Stripe behaviour. Express returns 503 from the webhook handler
+#    when the signing secret env var is missing — which is the expected dev
+#    state until we wire Stripe into the dev Fly app. The old FastAPI app
+#    returned 404 for any missing route, so accepting 503 here still proves
+#    we're hitting Express rather than a stale relay.
 # ---------------------------------------------------------------------------
 echo '{}' > "$tmp_dir/stripe-webhook.json"
 stripe_status=$(
   request "stripe_webhook" "POST" "/api/webhooks/stripe" \
     "$OUT_DIR/stripe-webhook.json" "$tmp_dir/stripe-webhook.json"
 )
-require_status_in "$stripe_status" "400,401" "stripe_webhook"
+require_status_in "$stripe_status" "400,401,503" "stripe_webhook"
 
 # ---------------------------------------------------------------------------
 # Summary
@@ -134,7 +142,7 @@ require_status_in "$stripe_status" "400,401" "stripe_webhook"
   echo "- \`OPTIONS /health\` (CORS preflight) => 200/204"
   echo "- \`GET /api/companies\` (no auth) => 401/403 (auth wired)"
   echo "- \`GET /api/integrations/slack/oauth/callback?error=...\` => 200/302/307/400/401/404"
-  echo "- \`POST /api/webhooks/stripe\` (unsigned) => 400/401"
+  echo "- \`POST /api/webhooks/stripe\` (unsigned) => 400/401/503"
   echo
   echo "## Requests"
   echo

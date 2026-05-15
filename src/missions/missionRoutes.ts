@@ -1,5 +1,5 @@
 /**
- * Mission routes (HEL-23 + HEL-24).
+ * Mission routes (HEL-23 + HEL-24 + HEL-25).
  *
  * POST /api/missions
  *   Create a new mission for the active workspace. Accepts a free-text
@@ -19,10 +19,17 @@
  *   Reads the mission row, builds a teamAssembly request, calls the
  *   workspace's default LLM, and persists the response as a
  *   `hiring_plans` draft. (HEL-24.)
+ *
+ * GET /api/missions/:missionId/hiring-plans/:planId
+ *   Read a single hiring plan draft. (HEL-25.)
+ *
+ * POST /api/missions/:missionId/hiring-plans/:planId/confirm
+ *   Confirm a hiring plan: inserts agents + org_edges, marks the plan
+ *   accepted, and emits activity_events. (HEL-25.)
  */
 
 import { Router } from "express";
-import type { Pool } from "pg";
+import type { Pool, PoolClient } from "pg";
 import { randomUUID } from "node:crypto";
 import { AuthenticatedRequest } from "../auth/authMiddleware";
 import { withWorkspaceContext } from "../middleware/workspaceContext";
@@ -481,5 +488,291 @@ export function createMissionRoutes(pool: Pool) {
     });
   });
 
+  // ---------------------------------------------------------------------
+  // GET /api/missions/:missionId/hiring-plans/:planId (HEL-25)
+  // ---------------------------------------------------------------------
+  router.get("/:missionId/hiring-plans/:planId", async (req: AuthenticatedRequest, res) => {
+    const userId = req.auth?.sub;
+    const workspaceId = (req as WorkspaceAwareRequest).workspace?.id;
+    if (!userId || !workspaceId) {
+      res.status(401).json({ error: "Authenticated user + workspace required" });
+      return;
+    }
+
+    const { missionId, planId } = req.params;
+    if (!UUID_RE.test(missionId) || !UUID_RE.test(planId)) {
+      res.status(400).json({ error: "Invalid ID format" });
+      return;
+    }
+
+    interface PlanRow {
+      id: string;
+      mission_id: string;
+      draft: TeamAssemblyResult;
+      accepted_at: Date | string | null;
+      accepted_by_user_id: string | null;
+      created_at: Date | string;
+      statement: string;
+    }
+
+    try {
+      const result = await withWorkspaceContext(
+        pool,
+        { workspaceId, userId },
+        async (client) =>
+          client.query<PlanRow>(
+            `SELECT hp.id, hp.mission_id, hp.draft, hp.accepted_at,
+                    hp.accepted_by_user_id, hp.created_at, m.statement
+               FROM hiring_plans hp
+               JOIN missions m ON m.id = hp.mission_id
+               JOIN companies c ON c.id = m.company_id
+              WHERE hp.id = $1
+                AND m.id = $2
+                AND c.workspace_id = $3
+              LIMIT 1`,
+            [planId, missionId, workspaceId],
+          ),
+      );
+      if (result.rows.length === 0) {
+        res.status(404).json({ error: "Hiring plan not found" });
+        return;
+      }
+      const row = result.rows[0];
+      res.json({
+        id: row.id,
+        missionId: row.mission_id,
+        missionStatement: row.statement,
+        plan: row.draft,
+        acceptedAt: row.accepted_at
+          ? row.accepted_at instanceof Date
+            ? row.accepted_at.toISOString()
+            : String(row.accepted_at)
+          : null,
+        acceptedByUserId: row.accepted_by_user_id,
+        createdAt:
+          row.created_at instanceof Date
+            ? row.created_at.toISOString()
+            : String(row.created_at),
+      });
+    } catch (err) {
+      console.error(`[missions] get hiring plan failed: ${(err as Error).message}`);
+      res.status(500).json({ error: "Failed to load hiring plan" });
+    }
+  });
+
+  // ---------------------------------------------------------------------
+  // POST /api/missions/:missionId/hiring-plans/:planId/confirm (HEL-25)
+  //
+  // Idempotent: if already accepted returns 200 with the existing agent list.
+  // ---------------------------------------------------------------------
+  router.post("/:missionId/hiring-plans/:planId/confirm", async (req: AuthenticatedRequest, res) => {
+    const userId = req.auth?.sub;
+    const workspaceId = (req as WorkspaceAwareRequest).workspace?.id;
+    if (!userId || !workspaceId) {
+      res.status(401).json({ error: "Authenticated user + workspace required" });
+      return;
+    }
+
+    const { missionId, planId } = req.params;
+    if (!UUID_RE.test(missionId) || !UUID_RE.test(planId)) {
+      res.status(400).json({ error: "Invalid ID format" });
+      return;
+    }
+
+    interface HiringPlanRow {
+      id: string;
+      mission_id: string;
+      draft: TeamAssemblyResult;
+      accepted_at: Date | string | null;
+      company_id: string;
+      mission_statement: string;
+    }
+
+    let planRow: HiringPlanRow;
+    try {
+      const result = await withWorkspaceContext(
+        pool,
+        { workspaceId, userId },
+        async (client) =>
+          client.query<HiringPlanRow>(
+            `SELECT hp.id, hp.mission_id, hp.draft, hp.accepted_at,
+                    m.company_id, m.statement AS mission_statement
+               FROM hiring_plans hp
+               JOIN missions m ON m.id = hp.mission_id
+               JOIN companies c ON c.id = m.company_id
+              WHERE hp.id = $1
+                AND m.id = $2
+                AND c.workspace_id = $3
+              LIMIT 1`,
+            [planId, missionId, workspaceId],
+          ),
+      );
+      if (result.rows.length === 0) {
+        res.status(404).json({ error: "Hiring plan not found" });
+        return;
+      }
+      planRow = result.rows[0];
+    } catch (err) {
+      console.error(`[missions] confirm plan lookup failed: ${(err as Error).message}`);
+      res.status(500).json({ error: "Failed to load hiring plan" });
+      return;
+    }
+
+    const draft = planRow.draft;
+    if (!draft?.provisioningPlan?.agents?.length) {
+      res.status(422).json({ error: "Hiring plan has no agents to provision" });
+      return;
+    }
+
+    // Already confirmed — idempotent return.
+    if (planRow.accepted_at) {
+      res.json({ alreadyConfirmed: true, planId, missionId });
+      return;
+    }
+
+    interface ProvisionedAgent {
+      id: string;
+      roleKey: string;
+      name: string;
+      modelTier: string;
+      budgetMonthlyUsd: number | null;
+    }
+    const provisionedAgents: ProvisionedAgent[] = [];
+
+    try {
+      await withWorkspaceContext(pool, { workspaceId, userId }, async (client) => {
+        const teamId = await ensureAgentTeam(
+          client,
+          workspaceId,
+          userId,
+          planRow.company_id,
+          draft.provisioningPlan.teamName,
+        );
+
+        const roleKeyToAgentId = new Map<string, string>();
+
+        for (const agentSpec of draft.provisioningPlan.agents) {
+          const agentId = randomUUID();
+          await client.query(
+            `INSERT INTO agents (
+               id, workspace_id, user_id, team_id, name, role_key, model,
+               budget_monthly_usd, skills, company_id, status
+             ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb,$10,'active')`,
+            [
+              agentId,
+              workspaceId,
+              userId,
+              teamId,
+              agentSpec.title,
+              agentSpec.roleKey,
+              agentSpec.modelTier,
+              agentSpec.budgetMonthlyUsd ?? 0,
+              JSON.stringify(agentSpec.skills ?? []),
+              planRow.company_id,
+            ],
+          );
+          roleKeyToAgentId.set(agentSpec.roleKey, agentId);
+          provisionedAgents.push({
+            id: agentId,
+            roleKey: agentSpec.roleKey,
+            name: agentSpec.title,
+            modelTier: agentSpec.modelTier,
+            budgetMonthlyUsd: agentSpec.budgetMonthlyUsd,
+          });
+        }
+
+        for (const line of (draft.orgChart?.reportingLines ?? [])) {
+          const managerAgentId = roleKeyToAgentId.get(line.managerRoleKey);
+          const reportAgentId = roleKeyToAgentId.get(line.reportRoleKey);
+          if (!managerAgentId || !reportAgentId) continue;
+          await client.query(
+            `INSERT INTO org_edges (workspace_id, manager_agent_id, agent_id)
+             VALUES ($1,$2,$3)
+             ON CONFLICT (manager_agent_id, agent_id) DO NOTHING`,
+            [workspaceId, managerAgentId, reportAgentId],
+          );
+        }
+
+        await client.query(
+          `UPDATE hiring_plans
+              SET accepted_at = now(), accepted_by_user_id = $1
+            WHERE id = $2`,
+          [userId, planId],
+        );
+
+        const actorJson = JSON.stringify({ type: "user", id: userId });
+        const planSubjectJson = JSON.stringify({
+          type: "hiring_plan",
+          id: planId,
+          label: draft.provisioningPlan.teamName,
+        });
+
+        await client.query(
+          `INSERT INTO activity_events
+             (workspace_id, kind, actor, subject, payload)
+           VALUES ($1,'hiring_plan_accepted',$2::jsonb,$3::jsonb,$4::jsonb)`,
+          [
+            workspaceId,
+            actorJson,
+            planSubjectJson,
+            JSON.stringify({ missionId, planId }),
+          ],
+        );
+
+        for (const agent of provisionedAgents) {
+          await client.query(
+            `INSERT INTO activity_events
+               (workspace_id, kind, actor, subject, payload)
+             VALUES ($1,'agent_provisioned',$2::jsonb,$3::jsonb,$4::jsonb)`,
+            [
+              workspaceId,
+              actorJson,
+              JSON.stringify({ type: "agent", id: agent.id, label: agent.name }),
+              JSON.stringify({ roleKey: agent.roleKey, modelTier: agent.modelTier }),
+            ],
+          );
+        }
+      });
+    } catch (err) {
+      console.error(`[missions] confirm plan failed: ${(err as Error).message}`);
+      res.status(500).json({ error: "Failed to confirm hiring plan" });
+      return;
+    }
+
+    res.json({ confirmed: true, planId, missionId, agents: provisionedAgents });
+  });
+
   return router;
+}
+
+/**
+ * Find or create the agent_team for this workspace+company that will own
+ * the hiring-plan provisioned agents. Uses continuous_agents deployment mode
+ * to match the hiring plan's intent.
+ */
+async function ensureAgentTeam(
+  client: PoolClient,
+  workspaceId: string,
+  userId: string,
+  companyId: string,
+  teamName: string,
+): Promise<string> {
+  const existing = await client.query<{ id: string }>(
+    `SELECT id FROM agent_teams
+      WHERE workspace_id = $1 AND company_id = $2
+      ORDER BY created_at ASC LIMIT 1`,
+    [workspaceId, companyId],
+  );
+  if (existing.rows.length > 0) return existing.rows[0].id;
+
+  const teamId = randomUUID();
+  await client.query(
+    `INSERT INTO agent_teams (
+       id, workspace_id, user_id, company_id, name,
+       deployment_mode, status, budget_monthly_usd,
+       tool_budget_ceilings, alert_thresholds
+     ) VALUES ($1,$2,$3,$4,$5,'continuous_agents','active',0,'{}','[0.8,0.9,1]'::jsonb)`,
+    [teamId, workspaceId, userId, companyId, teamName],
+  );
+  return teamId;
 }

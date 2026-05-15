@@ -147,3 +147,87 @@ describe("GET /api/missions/:missionId (HEL-23 read)", () => {
     expect(res.body.error).toMatch(/Invalid mission ID/);
   });
 });
+
+describe("GET /api/missions/:missionId/hiring-plans/:planId (HEL-25 read plan)", () => {
+  it("returns 401 when no authenticated user is present", async () => {
+    const app = buildApp({ workspaceId: "11111111-1111-4111-8111-111111111111" });
+    const res = await request(app).get(
+      "/api/missions/22222222-2222-4222-8222-222222222222/hiring-plans/33333333-3333-4333-8333-333333333333",
+    );
+    expect(res.status).toBe(401);
+  });
+
+  it("returns 400 when mission ID is not a valid UUID", async () => {
+    const app = buildApp({
+      sub: "user-1",
+      workspaceId: "11111111-1111-4111-8111-111111111111",
+    });
+    const res = await request(app).get(
+      "/api/missions/not-a-uuid/hiring-plans/33333333-3333-4333-8333-333333333333",
+    );
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/Invalid ID format/);
+  });
+
+  it("returns 400 when plan ID is not a valid UUID", async () => {
+    const app = buildApp({
+      sub: "user-1",
+      workspaceId: "11111111-1111-4111-8111-111111111111",
+    });
+    const res = await request(app).get(
+      "/api/missions/22222222-2222-4222-8222-222222222222/hiring-plans/not-a-uuid",
+    );
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/Invalid ID format/);
+  });
+});
+
+describe("POST /api/missions/:missionId/hiring-plans/:planId/confirm (HEL-25 confirm)", () => {
+  it("returns 401 when no authenticated user is present", async () => {
+    const app = buildApp({ workspaceId: "11111111-1111-4111-8111-111111111111" });
+    const res = await request(app)
+      .post(
+        "/api/missions/22222222-2222-4222-8222-222222222222/hiring-plans/33333333-3333-4333-8333-333333333333/confirm",
+      )
+      .send({});
+    expect(res.status).toBe(401);
+  });
+
+  it("returns 401 when no workspace context is present", async () => {
+    const app = buildApp({ sub: "user-1" });
+    const res = await request(app)
+      .post(
+        "/api/missions/22222222-2222-4222-8222-222222222222/hiring-plans/33333333-3333-4333-8333-333333333333/confirm",
+      )
+      .send({});
+    expect(res.status).toBe(401);
+  });
+
+  it("returns 400 when mission ID is not a valid UUID", async () => {
+    const app = buildApp({
+      sub: "user-1",
+      workspaceId: "11111111-1111-4111-8111-111111111111",
+    });
+    const res = await request(app)
+      .post(
+        "/api/missions/not-a-uuid/hiring-plans/33333333-3333-4333-8333-333333333333/confirm",
+      )
+      .send({});
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/Invalid ID format/);
+  });
+
+  it("returns 400 when plan ID is not a valid UUID", async () => {
+    const app = buildApp({
+      sub: "user-1",
+      workspaceId: "11111111-1111-4111-8111-111111111111",
+    });
+    const res = await request(app)
+      .post(
+        "/api/missions/22222222-2222-4222-8222-222222222222/hiring-plans/not-a-uuid/confirm",
+      )
+      .send({});
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/Invalid ID format/);
+  });
+});

@@ -43,6 +43,81 @@ export interface GeneratedPlanResponse {
   plan: unknown;
 }
 
+export interface HiringPlanResponse {
+  id: string;
+  missionId: string;
+  missionStatement: string;
+  plan: HiringPlan;
+  acceptedAt: string | null;
+  acceptedByUserId: string | null;
+  createdAt: string;
+}
+
+export interface HiringPlan {
+  schemaVersion: string;
+  company: {
+    name: string | null;
+    goal: string;
+    targetCustomer: string | null;
+    budget: string | null;
+    timeHorizon: string | null;
+  };
+  summary: string;
+  rationale: string;
+  orgChart: {
+    executives: StaffingRecommendation[];
+    operators: StaffingRecommendation[];
+    reportingLines: Array<{ managerRoleKey: string; reportRoleKey: string }>;
+  };
+  provisioningPlan: {
+    teamName: string;
+    deploymentMode: string;
+    agents: StaffingRecommendation[];
+  };
+  roadmap306090: {
+    day30: PhasePlan;
+    day60: PhasePlan;
+    day90: PhasePlan;
+  };
+}
+
+export interface StaffingRecommendation {
+  roleKey: string;
+  title: string;
+  roleType: "executive" | "operator";
+  department: string;
+  headcount: number;
+  reportsToRoleKey: string | null;
+  mandate: string;
+  justification: string;
+  kpis: string[];
+  skills: string[];
+  tools: string[];
+  modelTier: "lite" | "standard" | "power";
+  budgetMonthlyUsd: number | null;
+  provisioningInstructions: string;
+}
+
+interface PhasePlan {
+  objectives: string[];
+  deliverables: string[];
+  ownerRoleKeys: string[];
+}
+
+export interface ConfirmedPlanResponse {
+  confirmed: boolean;
+  alreadyConfirmed?: boolean;
+  planId: string;
+  missionId: string;
+  agents?: Array<{
+    id: string;
+    roleKey: string;
+    name: string;
+    modelTier: string;
+    budgetMonthlyUsd: number | null;
+  }>;
+}
+
 function buildHeaders(accessToken: string, extra?: HeadersInit): HeadersInit {
   return { ...(extra ?? {}), Authorization: `Bearer ${accessToken}` };
 }
@@ -101,5 +176,38 @@ export async function generateHiringPlan(
   return parseJsonOrError<GeneratedPlanResponse>(
     response,
     `Failed to generate hiring plan: ${response.status}`,
+  );
+}
+
+export async function getHiringPlan(
+  missionId: string,
+  planId: string,
+  accessToken: string,
+): Promise<HiringPlanResponse> {
+  const response = await trackedFetch(
+    `${BASE}/missions/${encodeURIComponent(missionId)}/hiring-plans/${encodeURIComponent(planId)}`,
+    { headers: buildHeaders(accessToken) },
+  );
+  return parseJsonOrError<HiringPlanResponse>(
+    response,
+    `Failed to fetch hiring plan: ${response.status}`,
+  );
+}
+
+export async function confirmHiringPlan(
+  missionId: string,
+  planId: string,
+  accessToken: string,
+): Promise<ConfirmedPlanResponse> {
+  const response = await trackedFetch(
+    `${BASE}/missions/${encodeURIComponent(missionId)}/hiring-plans/${encodeURIComponent(planId)}/confirm`,
+    {
+      method: "POST",
+      headers: buildHeaders(accessToken, { "Content-Type": "application/json" }),
+    },
+  );
+  return parseJsonOrError<ConfirmedPlanResponse>(
+    response,
+    `Failed to confirm hiring plan: ${response.status}`,
   );
 }

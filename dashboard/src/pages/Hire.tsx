@@ -359,10 +359,10 @@ export default function Hire() {
                   <div className="flex shrink-0 items-center gap-2">
                     {mission.latestHiringPlanId ? (
                       <Link
-                        to="/team"
+                        to={`/hire/plan/${mission.id}/${mission.latestHiringPlanId}`}
                         className="rounded-md border border-af2-line-2 px-2.5 py-1 text-[11px] font-medium text-af2-ink-2 transition hover:border-af2-clay/40 hover:text-af2-ink"
                       >
-                        View plan
+                        Review plan
                       </Link>
                     ) : null}
                   </div>

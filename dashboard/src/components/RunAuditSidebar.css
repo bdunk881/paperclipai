@@ -1,12 +1,12 @@
-@import url("https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&display=swap");
+/* HEL-115 — JetBrains Mono is loaded globally via index.css; no per-file import. */
 
 .run-audit-mono {
-  font-family: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-family: var(--af2-mono);
 }
 
 .run-audit-scrollbar {
   scrollbar-width: thin;
-  scrollbar-color: #334155 transparent;
+  scrollbar-color: var(--af2-line-2, #d3cfc6) transparent;
 }
 
 .run-audit-scrollbar::-webkit-scrollbar {
@@ -19,7 +19,7 @@
 
 .run-audit-scrollbar::-webkit-scrollbar-thumb {
   border-radius: 9999px;
-  background: #334155;
+  background: var(--af2-line-2, #d3cfc6);
 }
 
 .run-audit-step-enter {

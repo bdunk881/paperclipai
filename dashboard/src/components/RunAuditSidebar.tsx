@@ -28,31 +28,31 @@ const STEP_STATUS_META: Record<
 > = {
   success: {
     label: "Success",
-    dot: "bg-accent-teal",
+    dot: "bg-af2-sage",
     glow: "shadow-[0_0_24px_rgba(20,184,166,0.28)]",
     icon: CheckCircle2,
-    iconClass: "text-accent-teal",
+    iconClass: "text-af2-sage",
   },
   running: {
     label: "Running",
-    dot: "bg-brand-500",
+    dot: "bg-af2-clay",
     glow: "shadow-[0_0_24px_rgba(99,102,241,0.32)]",
     icon: Loader2,
-    iconClass: "text-brand-400",
+    iconClass: "text-af2-clay",
   },
   failure: {
     label: "Failed",
-    dot: "bg-red-500",
+    dot: "bg-af2-clay",
     glow: "shadow-[0_0_24px_rgba(239,68,68,0.24)]",
     icon: XCircle,
-    iconClass: "text-red-400",
+    iconClass: "text-af2-clay",
   },
   skipped: {
     label: "Skipped",
-    dot: "bg-surface-600",
+    dot: "bg-af2-ink-4",
     glow: "shadow-none",
     icon: SkipForward,
-    iconClass: "text-surface-400",
+    iconClass: "text-af2-ink-3",
   },
 };
 
@@ -177,7 +177,7 @@ function JsonValue({
         <JsonLine depth={depth}>{"{"}</JsonLine>
         {entries.map(([key, entryValue], index) => (
           <JsonLine key={key} depth={depth + 1}>
-            <span className="text-[#818cf8]">"{key}"</span>: <JsonValue value={entryValue} depth={0} />
+            <span className="text-af2-clay">"{key}"</span>: <JsonValue value={entryValue} depth={0} />
             {index < entries.length - 1 ? "," : ""}
           </JsonLine>
         ))}
@@ -187,22 +187,22 @@ function JsonValue({
   }
 
   if (typeof value === "string") {
-    return <span className="text-[#14b8a6]">"{value}"</span>;
+    return <span className="text-af2-sage">"{value}"</span>;
   }
 
   if (typeof value === "number") {
-    return <span className="text-[#f97316]">{value}</span>;
+    return <span className="text-af2-mustard">{value}</span>;
   }
 
   if (typeof value === "boolean") {
-    return <span className="text-surface-300">{String(value)}</span>;
+    return <span className="text-af2-ink-2">{String(value)}</span>;
   }
 
   if (value === null) {
-    return <span className="text-surface-500">null</span>;
+    return <span className="text-af2-ink-4">null</span>;
   }
 
-  return <span className="text-surface-500">undefined</span>;
+  return <span className="text-af2-ink-4">undefined</span>;
 }
 
 function JsonPanel({
@@ -217,18 +217,18 @@ function JsonPanel({
   const [open, setOpen] = useState(defaultOpen);
 
   return (
-    <div className="overflow-hidden rounded-xl border border-surface-800 bg-surface-950">
+    <div className="overflow-hidden rounded-xl border border-af2-line bg-af2-paper-3">
       <button
         type="button"
         onClick={() => setOpen((current) => !current)}
-        className="flex w-full items-center justify-between gap-3 border-b border-surface-800 px-3 py-2 text-left text-[11px] font-semibold uppercase tracking-[0.22em] text-surface-500 transition hover:bg-surface-900"
+        className="flex w-full items-center justify-between gap-3 border-b border-af2-line px-3 py-2 text-left text-[11px] font-semibold uppercase tracking-[0.22em] text-af2-ink-4 transition hover:bg-af2-paper-2"
         aria-expanded={open}
       >
         <span>{label}</span>
         {open ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
       </button>
       {open && (
-        <div className="run-audit-mono overflow-x-auto px-3 py-3 text-xs leading-6 text-surface-300">
+        <div className="run-audit-mono overflow-x-auto px-3 py-3 text-xs leading-6 text-af2-ink-2">
           <JsonValue value={value} />
         </div>
       )}
@@ -258,21 +258,21 @@ function AuditStepCard({
   const hasOutput = Boolean(step.output && Object.keys(step.output).length > 0);
   const iconBorderClass =
     step.status === "success"
-      ? "border-emerald-500"
+      ? "border-af2-sage"
       : step.status === "failure"
-        ? "border-red-500"
+        ? "border-af2-clay"
         : active
-          ? "border-brand-500"
-          : "border-surface-700";
+          ? "border-af2-clay"
+          : "border-af2-line";
   const TimelineStatusIcon = step.status === "failure" ? AlertCircle : StatusIcon;
 
   return (
     <div className="run-audit-step-enter relative pl-12" style={{ animationDelay: `${index * 20}ms` }}>
       {!isLast && (
-        <div className="absolute left-[15px] top-10 h-[calc(100%-1rem)] w-0.5 bg-surface-800">
+        <div className="absolute left-[15px] top-10 h-[calc(100%-1rem)] w-0.5 bg-af2-paper-2">
           <div
             className={clsx(
-              "h-full w-full bg-gradient-to-b from-brand-500 to-accent-teal transition-opacity duration-300",
+              "h-full w-full bg-gradient-to-b from-af2-clay to-af2-sage transition-opacity duration-300",
               step.status === "success" || step.status === "running" ? "opacity-100" : "opacity-30"
             )}
           />
@@ -281,7 +281,7 @@ function AuditStepCard({
 
       <div
         className={clsx(
-          "absolute left-0 top-1 flex h-8 w-8 items-center justify-center rounded-full border bg-surface-800",
+          "absolute left-0 top-1 flex h-8 w-8 items-center justify-center rounded-full border bg-af2-paper-2",
           iconBorderClass,
           statusMeta.glow
         )}
@@ -297,24 +297,24 @@ function AuditStepCard({
         className={clsx(
           "rounded-2xl border px-4 py-4 transition-all duration-200",
           active
-            ? "border-brand-500/40 bg-surface-800/90 shadow-[0_18px_40px_rgba(2,6,23,0.28)]"
-            : "border-surface-700/70 bg-surface-900/65 hover:border-surface-600"
+            ? "border-af2-clay/40 bg-af2-paper-2/90 shadow-[0_18px_40px_rgba(2,6,23,0.28)]"
+            : "border-af2-line/70 bg-af2-paper-2/65 hover:border-af2-line-2"
         )}
       >
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
             <div className="mb-1 flex items-center gap-2">
-              <span className="rounded-full border border-surface-700 bg-surface-950 px-2 py-0.5 text-[11px] font-medium uppercase tracking-[0.22em] text-surface-400">
+              <span className="rounded-full border border-af2-line bg-af2-paper-3 px-2 py-0.5 text-[11px] font-medium uppercase tracking-[0.22em] text-af2-ink-3">
                 Step {index + 1}
               </span>
               <span className={clsx("h-2 w-2 rounded-full", statusMeta.dot)} />
-              <span className="text-[11px] uppercase tracking-[0.2em] text-surface-500">
+              <span className="text-[11px] uppercase tracking-[0.2em] text-af2-ink-4">
                 {statusMeta.label}
               </span>
             </div>
-            <h3 className="text-sm font-medium text-surface-50">{step.stepName}</h3>
-            <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-surface-400">
-              <span className="run-audit-mono text-[11px] text-surface-500">{step.stepId}</span>
+            <h3 className="text-sm font-medium text-af2-ink">{step.stepName}</h3>
+            <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-af2-ink-3">
+              <span className="run-audit-mono text-[11px] text-af2-ink-4">{step.stepId}</span>
               {step.durationMs > 0 && (
                 <span className="inline-flex items-center gap-1">
                   <Clock3 size={11} />
@@ -329,7 +329,7 @@ function AuditStepCard({
             <button
               type="button"
               onClick={onToggle}
-              className="inline-flex items-center gap-1 rounded-full border border-surface-700 bg-surface-950/80 px-2.5 py-1 text-[11px] font-medium text-surface-300 transition hover:border-brand-500/50 hover:text-surface-50"
+              className="inline-flex items-center gap-1 rounded-full border border-af2-line bg-af2-paper-3/80 px-2.5 py-1 text-[11px] font-medium text-af2-ink-2 transition hover:border-af2-clay/50 hover:text-af2-ink"
               aria-expanded={expanded}
             >
               Thought Process
@@ -338,7 +338,7 @@ function AuditStepCard({
             <button
               type="button"
               onClick={() => setShowData((current) => !current)}
-              className="inline-flex items-center gap-1 rounded-full border border-surface-700 bg-surface-950/80 px-2.5 py-1 text-[11px] font-medium text-surface-300 transition hover:border-brand-500/50 hover:text-surface-50"
+              className="inline-flex items-center gap-1 rounded-full border border-af2-line bg-af2-paper-3/80 px-2.5 py-1 text-[11px] font-medium text-af2-ink-2 transition hover:border-af2-clay/50 hover:text-af2-ink"
               aria-expanded={showData}
             >
               Data I/O
@@ -348,7 +348,7 @@ function AuditStepCard({
         </div>
 
         {step.error && (
-          <div className="mt-3 rounded-xl border border-red-500/20 bg-red-500/10 px-3 py-2 text-xs text-red-100">
+          <div className="mt-3 rounded-xl border border-af2-clay/20 bg-af2-clay/10 px-3 py-2 text-xs text-af2-clay">
             {step.error}
           </div>
         )}
@@ -359,17 +359,17 @@ function AuditStepCard({
             expanded ? "mt-3 max-h-[28rem] opacity-100" : "max-h-0 opacity-0"
           )}
         >
-          <div className="rounded-xl border border-surface-800 bg-surface-950 px-3 py-3">
-            <div className="mb-2 flex items-center gap-2 text-[10px] font-bold uppercase tracking-[0.22em] text-surface-600">
+          <div className="rounded-xl border border-af2-line bg-af2-paper-3 px-3 py-3">
+            <div className="mb-2 flex items-center gap-2 text-[10px] font-bold uppercase tracking-[0.22em] text-af2-ink-4">
               <Brain size={12} />
               Thinking...
             </div>
             {thoughtProcess ? (
-              <pre className="run-audit-mono overflow-x-auto whitespace-pre-wrap break-words text-xs leading-6 text-surface-300">
+              <pre className="run-audit-mono overflow-x-auto whitespace-pre-wrap break-words text-xs leading-6 text-af2-ink-2">
                 {thoughtProcess}
               </pre>
             ) : (
-              <p className="run-audit-mono text-xs leading-6 text-surface-500">
+              <p className="run-audit-mono text-xs leading-6 text-af2-ink-4">
                 No reasoning trace was captured for this step.
               </p>
             )}
@@ -386,8 +386,8 @@ function AuditStepCard({
             {hasOutput ? (
               <JsonPanel label="Output" value={step.output} defaultOpen />
             ) : (
-              <div className="rounded-xl border border-surface-800 bg-surface-950 px-3 py-3">
-                <p className="run-audit-mono text-xs leading-6 text-surface-500">
+              <div className="rounded-xl border border-af2-line bg-af2-paper-3 px-3 py-3">
+                <p className="run-audit-mono text-xs leading-6 text-af2-ink-4">
                   No step output was captured for this step.
                 </p>
               </div>
@@ -443,7 +443,7 @@ export function RunAuditSidebar({
       <button
         type="button"
         className={clsx(
-          "absolute inset-0 bg-surface-950/55 backdrop-blur-[2px] transition-opacity duration-200",
+          "absolute inset-0 bg-af2-paper-3/55 backdrop-blur-[2px] transition-opacity duration-200",
           open ? "opacity-100" : "opacity-0"
         )}
         onClick={onClose}
@@ -452,27 +452,27 @@ export function RunAuditSidebar({
 
       <aside
         className={clsx(
-          "pointer-events-auto absolute right-0 top-0 flex h-full w-full max-w-[400px] flex-col border-l border-surface-700/50 bg-surface-900/80 shadow-[0_24px_80px_rgba(2,6,23,0.6)] backdrop-blur-[12px] transition-transform duration-300 ease-out",
+          "pointer-events-auto absolute right-0 top-0 flex h-full w-full max-w-[400px] flex-col border-l border-af2-line/50 bg-af2-paper-2/80 shadow-[0_24px_80px_rgba(2,6,23,0.6)] backdrop-blur-[12px] transition-transform duration-300 ease-out",
           open ? "translate-x-0" : "translate-x-full"
         )}
         role="dialog"
         aria-modal="true"
         aria-label="Run audit view"
       >
-        <div className="border-b border-surface-700/70 px-6 py-5">
+        <div className="border-b border-af2-line/70 px-6 py-5">
           <div className="flex items-start justify-between gap-4">
             <div className="min-w-0">
-              <div className="mb-2 flex items-center gap-2 text-[11px] uppercase tracking-[0.24em] text-surface-500">
+              <div className="mb-2 flex items-center gap-2 text-[11px] uppercase tracking-[0.24em] text-af2-ink-4">
                 <Workflow size={12} />
                 Run Audit
               </div>
-              <h2 className="truncate text-lg font-semibold text-surface-50">{run.templateName}</h2>
+              <h2 className="truncate text-lg font-semibold text-af2-ink">{run.templateName}</h2>
               <div className="mt-3 flex flex-wrap items-center gap-2">
                 <StatusBadge status={run.status} />
-                <span className="rounded-full border border-surface-700 bg-surface-950 px-2.5 py-1 text-xs text-surface-300">
+                <span className="rounded-full border border-af2-line bg-af2-paper-3 px-2.5 py-1 text-xs text-af2-ink-2">
                   {completedSteps}/{run.stepResults.length} complete
                 </span>
-                <span className="rounded-full border border-surface-700 bg-surface-950 px-2.5 py-1 text-xs text-surface-400">
+                <span className="rounded-full border border-af2-line bg-af2-paper-3 px-2.5 py-1 text-xs text-af2-ink-3">
                   {formatRunDuration(run)}
                 </span>
               </div>
@@ -480,7 +480,7 @@ export function RunAuditSidebar({
                 <button
                   type="button"
                   onClick={() => window.open(popoutHref, "_blank", "noopener,noreferrer")}
-                  className="inline-flex items-center gap-2 rounded-full border border-brand-500/35 bg-surface-950 px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-surface-50 shadow-[0_14px_28px_rgba(15,23,42,0.26)] transition duration-200 ease-in-out hover:-translate-y-0.5 hover:border-brand-400/70 hover:shadow-[0_18px_36px_rgba(15,23,42,0.34)]"
+                  className="inline-flex items-center gap-2 rounded-full border border-af2-clay/35 bg-af2-paper-3 px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-af2-ink shadow-[0_14px_28px_rgba(15,23,42,0.26)] transition duration-200 ease-in-out hover:-translate-y-0.5 hover:border-af2-clay-2/70 hover:shadow-[0_18px_36px_rgba(15,23,42,0.34)]"
                   aria-label={`Open ${run.templateName} in the workflow builder`}
                 >
                   Open in Builder
@@ -492,21 +492,21 @@ export function RunAuditSidebar({
             <button
               type="button"
               onClick={onClose}
-              className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-surface-700 bg-surface-950/80 text-surface-300 transition hover:border-brand-500/50 hover:bg-surface-800 hover:text-surface-50"
+              className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-af2-line bg-af2-paper-3/80 text-af2-ink-2 transition hover:border-af2-clay/50 hover:bg-af2-paper-2 hover:text-af2-ink"
               aria-label="Close audit sidebar"
             >
               <X size={16} />
             </button>
           </div>
 
-          <div className="mt-4 grid gap-2 rounded-2xl border border-surface-700/70 bg-surface-950/70 p-3 text-xs text-surface-400">
+          <div className="mt-4 grid gap-2 rounded-2xl border border-af2-line/70 bg-af2-paper-3/70 p-3 text-xs text-af2-ink-3">
             <div className="flex items-center justify-between gap-3">
-              <span className="uppercase tracking-[0.2em] text-surface-500">Run ID</span>
-              <span className="run-audit-mono truncate text-surface-300">{run.id}</span>
+              <span className="uppercase tracking-[0.2em] text-af2-ink-4">Run ID</span>
+              <span className="run-audit-mono truncate text-af2-ink-2">{run.id}</span>
             </div>
             <div className="flex items-center justify-between gap-3">
-              <span className="uppercase tracking-[0.2em] text-surface-500">Started</span>
-              <span className="text-right text-surface-300">{new Date(run.startedAt).toLocaleString()}</span>
+              <span className="uppercase tracking-[0.2em] text-af2-ink-4">Started</span>
+              <span className="text-right text-af2-ink-2">{new Date(run.startedAt).toLocaleString()}</span>
             </div>
           </div>
         </div>

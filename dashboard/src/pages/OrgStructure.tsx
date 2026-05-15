@@ -1,14 +1,21 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import {
-  getAgentBudget,
-  listAgents,
-  type Agent,
-  type AgentBudgetSnapshot,
-} from "../api/agentApi";
+import { listAgents, type Agent } from "../api/agentApi";
+import { listBudgets, type BudgetRow } from "../api/canonicalApi";
 import { getApiBasePath } from "../api/baseUrl";
 import { trackedFetch } from "../api/trackedFetch";
 import { listMissions, type Mission } from "../api/missionsApi";
+
+/**
+ * Slim per-agent budget row used by OrgStructure. Derived from the canonical
+ * /api/budgets bulk call (one request total) instead of fanning out
+ * `getAgentBudget` per agent — which used to burn through the 100 req/min
+ * rate limit on workspaces with > 50 agents.
+ */
+interface AgentSpendRow {
+  spentUsd: number;
+  monthlyUsd: number;
+}
 import { EmptyState, ErrorState, LoadingState } from "../components/UiStates";
 import { useAuth } from "../context/AuthContext";
 
@@ -252,7 +259,7 @@ function PodLead({
   reports: Agent[];
   tone: Tone;
   leadStats: LeadStats | null;
-  reportStats: Map<string, AgentBudgetSnapshot>;
+  reportStats: Map<string, AgentSpendRow>;
 }) {
   const avatarClass = avatarClassFor(tone);
   const borderColor = topBorderFor(tone);
@@ -409,7 +416,7 @@ export default function OrgStructure() {
   const [agents, setAgents] = useState<Agent[]>([]);
   const [missions, setMissions] = useState<Mission[]>([]);
   const [edges, setEdges] = useState<OrgGraphResponse["edges"] | null>(null);
-  const [budgets, setBudgets] = useState<Map<string, AgentBudgetSnapshot>>(
+  const [budgets, setBudgets] = useState<Map<string, AgentSpendRow>>(
     new Map(),
   );
   const [loading, setLoading] = useState(true);
@@ -428,29 +435,28 @@ export default function OrgStructure() {
         return;
       }
       if (!token) throw new Error("Authentication session expired.");
-      const [nextAgents, nextMissions, orgGraph] = await Promise.all([
+      // Bulk-fetch all four canonical surfaces in parallel — one HTTP call
+      // each instead of `listAgents` + N × `getAgentBudget`. The /api/budgets
+      // canonical reads route (HEL-118) returns workspace + per-agent caps
+      // in a single response.
+      const [nextAgents, nextMissions, orgGraph, budgetRows] = await Promise.all([
         listAgents(token),
         listMissions(token),
         fetchOrgGraph(token),
+        listBudgets(token).catch(() => [] as BudgetRow[]),
       ]);
       setAgents(nextAgents);
       setMissions(nextMissions);
       setEdges(orgGraph?.edges ?? null);
 
-      // Fetch budgets in parallel — failures are non-fatal, we just fall
-      // back to the static `agent.budgetMonthlyUsd` column for display.
-      const budgetMap = new Map<string, AgentBudgetSnapshot>();
-      const snapshots = await Promise.all(
-        nextAgents.map(async (agent) => {
-          try {
-            return [agent.id, await getAgentBudget(agent.id, token)] as const;
-          } catch {
-            return [agent.id, null] as const;
-          }
-        }),
-      );
-      for (const [agentId, snap] of snapshots) {
-        if (snap) budgetMap.set(agentId, snap);
+      const budgetMap = new Map<string, AgentSpendRow>();
+      for (const row of budgetRows) {
+        if (row.scopeKind === "agent" && row.scopeId) {
+          budgetMap.set(row.scopeId, {
+            spentUsd: row.usedCents / 100,
+            monthlyUsd: row.capCents / 100,
+          });
+        }
       }
       setBudgets(budgetMap);
     } catch (cause) {

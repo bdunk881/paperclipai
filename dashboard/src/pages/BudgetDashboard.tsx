@@ -23,7 +23,8 @@
  * spec replaces it with the af2 stat strip + list pattern.
  */
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { getAgentBudget, listAgents, type Agent } from "../api/agentApi";
+import { listAgents, type Agent } from "../api/agentApi";
+import { listBudgets, type BudgetRow } from "../api/canonicalApi";
 import { ErrorState, LoadingState } from "../components/UiStates";
 import { useAuth } from "../context/AuthContext";
 
@@ -80,17 +81,28 @@ export default function BudgetDashboard() {
         return;
       }
       if (!token) throw new Error("Authentication session expired.");
-      const agents = await listAgents(token);
-      const budgets = await Promise.all(
-        agents.map((agent) => getAgentBudget(agent.id, token).catch(() => null)),
-      );
-      const rows: AgentBudgetRow[] = agents.map((agent, index) => ({
-        id: agent.id,
-        name: agent.name,
-        role: roleFor(agent),
-        budget: budgets[index]?.monthlyUsd ?? agent.budgetMonthlyUsd,
-        spent: budgets[index]?.spentUsd ?? 0,
-      }));
+      // Bulk: one /api/budgets call instead of one per agent. Caps + spend
+      // come from the canonical budgets table; if a row is missing for a
+      // specific agent we fall back to `agent.budgetMonthlyUsd` for the cap
+      // and 0 for spend.
+      const [agents, budgets] = await Promise.all([
+        listAgents(token),
+        listBudgets(token).catch(() => [] as BudgetRow[]),
+      ]);
+      const byAgent = new Map<string, BudgetRow>();
+      for (const row of budgets) {
+        if (row.scopeKind === "agent" && row.scopeId) byAgent.set(row.scopeId, row);
+      }
+      const rows: AgentBudgetRow[] = agents.map((agent) => {
+        const row = byAgent.get(agent.id);
+        return {
+          id: agent.id,
+          name: agent.name,
+          role: roleFor(agent),
+          budget: row ? row.capCents / 100 : agent.budgetMonthlyUsd,
+          spent: row ? row.usedCents / 100 : 0,
+        };
+      });
       rows.sort((left, right) => right.spent - left.spent);
       setAgentRows(rows);
     } catch (cause) {

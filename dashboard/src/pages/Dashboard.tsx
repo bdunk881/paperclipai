@@ -20,13 +20,12 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { listApprovals, listRuns, type ApprovalRequest } from "../api/client";
 import {
-  getAgentBudget,
   getAgentHeartbeat,
   listAgents,
   type Agent,
-  type AgentBudgetSnapshot,
   type AgentHeartbeat,
 } from "../api/agentApi";
+import { listBudgets, type BudgetRow } from "../api/canonicalApi";
 import { listMissions, type Mission } from "../api/missionsApi";
 import { ErrorState, LoadingState } from "../components/UiStates";
 import { useAuth } from "../context/AuthContext";
@@ -35,9 +34,14 @@ import type { WorkflowRun } from "../types/workflow";
 
 interface AgentSnapshot {
   agent: Agent;
-  budget: AgentBudgetSnapshot | null;
+  budgetCents: number | null;
+  capCents: number | null;
   heartbeat: AgentHeartbeat | null;
 }
+
+// Cap how many agents we fetch live heartbeats for. Beyond this, "The room
+// right now" shows a compact summary instead of fanning out per-agent calls.
+const ROOM_NOW_HEARTBEAT_LIMIT = 6;
 
 function greetingPart(): "morning" | "afternoon" | "evening" {
   const hour = new Date().getHours();
@@ -151,26 +155,51 @@ export default function Dashboard() {
       setError(null);
       const accessToken = await requireAccessToken();
 
-      const [agentList, approvalList, runList] = await Promise.all([
-        listAgents(accessToken),
-        listApprovals(accessToken),
-        listRuns(undefined, accessToken),
-      ]);
+      // Bulk + parallel: 4 fixed calls instead of 4 + 2N fan-out. The
+      // canonical /api/budgets returns one row per agent (and workspace) in
+      // a single shot, so per-agent budget fetches are no longer required.
+      const [agentList, approvalList, runList, budgetList, missionsList] =
+        await Promise.all([
+          listAgents(accessToken),
+          listApprovals(accessToken),
+          listRuns(undefined, accessToken),
+          listBudgets(accessToken).catch(() => [] as BudgetRow[]),
+          activeWorkspaceId
+            ? listMissions(accessToken).catch(() => [] as Mission[])
+            : Promise.resolve([] as Mission[]),
+        ]);
 
-      // Missions API requires a workspace; if no active workspace yet, skip.
-      const missionsList = activeWorkspaceId
-        ? await listMissions(accessToken).catch(() => [] as Mission[])
-        : [];
-
-      const snapshots = await Promise.all(
-        agentList.map(async (agent) => {
-          const [budget, heartbeat] = await Promise.all([
-            getAgentBudget(agent.id, accessToken).catch(() => null),
-            getAgentHeartbeat(agent.id, accessToken).catch(() => null),
-          ]);
-          return { agent, budget, heartbeat } satisfies AgentSnapshot;
-        }),
+      // Heartbeats are limited to the top-N agents we actually render in
+      // "The room right now". Avoids a 50-agent dashboard burning the
+      // 100-requests-per-minute generalApiRateLimiter on a single page load.
+      const visibleAgents = agentList.slice(0, ROOM_NOW_HEARTBEAT_LIMIT);
+      const heartbeats = await Promise.all(
+        visibleAgents.map((agent) =>
+          getAgentHeartbeat(agent.id, accessToken).catch(() => null),
+        ),
       );
+      const heartbeatById = new Map<string, AgentHeartbeat | null>(
+        visibleAgents.map((agent, idx) => [agent.id, heartbeats[idx]]),
+      );
+
+      // Build snapshots from the bulk budget rows. Workspace-scope budget
+      // rows are ignored here; we want per-agent caps for the spend strip.
+      const budgetByAgent = new Map<string, BudgetRow>();
+      for (const row of budgetList) {
+        if (row.scopeKind === "agent" && row.scopeId) {
+          budgetByAgent.set(row.scopeId, row);
+        }
+      }
+
+      const snapshots: AgentSnapshot[] = agentList.map((agent) => {
+        const budget = budgetByAgent.get(agent.id);
+        return {
+          agent,
+          budgetCents: budget?.usedCents ?? null,
+          capCents: budget?.capCents ?? null,
+          heartbeat: heartbeatById.get(agent.id) ?? null,
+        };
+      });
 
       setMissions(missionsList);
       setAgentSnapshots(snapshots);
@@ -191,23 +220,26 @@ export default function Dashboard() {
     const activeMissions = missions.filter(
       (m) => m.status !== "completed" && m.status !== "archived",
     );
-    const totalSpend = agentSnapshots.reduce(
-      (sum, snap) => sum + (snap.budget?.spentUsd ?? 0),
+    // Sum from agent.budgetMonthlyUsd (USD, on every agent row) so we don't
+    // need a per-agent budget fetch to populate the strip. The canonical
+    // /api/budgets cap (capCents) fills in the per-agent bars below.
+    const totalSpendCents = agentSnapshots.reduce(
+      (sum, snap) => sum + (snap.budgetCents ?? 0),
       0,
     );
-    const totalBudget = agentSnapshots.reduce(
-      (sum, snap) => sum + (snap.budget?.monthlyUsd ?? 0),
+    const totalCapCents = agentSnapshots.reduce(
+      (sum, snap) => sum + (snap.capCents ?? Math.round((snap.agent.budgetMonthlyUsd ?? 0) * 100)),
       0,
     );
+    const totalSpend = totalSpendCents / 100;
+    const totalBudget = totalCapCents / 100;
     const liveAgents = agentSnapshots.filter(
       (snap) => snap.agent.status === "running" || snap.heartbeat?.status === "running",
     ).length;
     const pendingApprovals = approvals.filter((a) => a.status === "pending");
-    const todaySpend = agentSnapshots.reduce((sum, snap) => {
-      // Approximate today's spend as 1/30 of monthly used. A dedicated
-      // per-day budget surface (HEL-118 budgets route) can replace this.
-      return sum + (snap.budget?.spentUsd ?? 0) / 30;
-    }, 0);
+    // Approximate today's spend as 1/30 of monthly used until HEL-118's
+    // step_results.cost_cents aggregation surfaces a real per-day figure.
+    const todaySpend = totalSpend / 30;
     return {
       activeMissions,
       totalSpend,
@@ -560,8 +592,9 @@ export default function Dashboard() {
               </div>
             ) : (
               agentSnapshots.slice(0, 5).map((snap) => {
-                const spent = snap.budget?.spentUsd ?? 0;
-                const budget = snap.budget?.monthlyUsd ?? 0;
+                const spent = (snap.budgetCents ?? 0) / 100;
+                const budget =
+                  (snap.capCents ?? Math.round((snap.agent.budgetMonthlyUsd ?? 0) * 100)) / 100;
                 const pct = budget > 0 ? spent / budget : 0;
                 const hot = pct > 0.8;
                 return (

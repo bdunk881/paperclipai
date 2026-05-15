@@ -13,10 +13,45 @@ function normalizeEndpoint(url: string): string {
   );
 }
 
+// Global 429 cooldown. When the backend's express-rate-limit emits 429, it
+// also sends Retry-After. We honor it by short-circuiting new requests to
+// a synthetic 429 response for the same window. Otherwise React effects fire
+// dozens of requests per second from re-mounting components and the user
+// gets stuck in an unrecoverable loop. Caller code already handles 429 as
+// a normal `!res.ok` branch.
+let cooldownUntilMs = 0;
+let cachedCooldownReason: string | null = null;
+
+function recordRetryAfter(headers: Headers): void {
+  const raw = headers.get("Retry-After");
+  if (!raw) return;
+  const seconds = Number.parseInt(raw, 10);
+  if (!Number.isFinite(seconds) || seconds <= 0) return;
+  // Cap the cooldown at 60s so a misconfigured Retry-After can't lock the
+  // dashboard out for an hour.
+  const cappedMs = Math.min(seconds, 60) * 1000;
+  cooldownUntilMs = Math.max(cooldownUntilMs, Date.now() + cappedMs);
+  cachedCooldownReason = `Rate limit cooldown for ${cappedMs / 1000}s`;
+}
+
+function makeCooldownResponse(): Response {
+  return new Response(
+    JSON.stringify({ error: cachedCooldownReason ?? "Rate limit cooldown" }),
+    {
+      status: 429,
+      headers: { "Content-Type": "application/json" },
+    },
+  );
+}
+
 export async function trackedFetch(
   input: RequestInfo | URL,
   init?: RequestInit,
 ): Promise<Response> {
+  if (Date.now() < cooldownUntilMs) {
+    return makeCooldownResponse();
+  }
+
   const nextInit: RequestInit = {
     ...init,
     headers: withActiveWorkspaceHeader(init?.headers),
@@ -39,6 +74,9 @@ export async function trackedFetch(
   try {
     const res = await fetch(input, nextInit);
     statusCode = res.status;
+    if (statusCode === 429) {
+      recordRetryAfter(res.headers);
+    }
     return res;
   } catch (err) {
     Sentry.metrics.count("api.network_error", 1, { attributes: { endpoint, method } });

@@ -1,21 +1,22 @@
 import { render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { Agent, AgentBudgetSnapshot } from "../api/agentApi";
+import type { Agent } from "../api/agentApi";
+import type { BudgetRow } from "../api/canonicalApi";
 import OrgStructure from "./OrgStructure";
 
 const {
   getAccessTokenMock,
   listAgentsMock,
   listMissionsMock,
-  getAgentBudgetMock,
+  listBudgetsMock,
   accessModeMock,
   trackedFetchMock,
 } = vi.hoisted(() => ({
   getAccessTokenMock: vi.fn(),
   listAgentsMock: vi.fn(),
   listMissionsMock: vi.fn(),
-  getAgentBudgetMock: vi.fn(),
+  listBudgetsMock: vi.fn(),
   accessModeMock: vi.fn(),
   trackedFetchMock: vi.fn(),
 }));
@@ -29,7 +30,10 @@ vi.mock("../context/AuthContext", () => ({
 
 vi.mock("../api/agentApi", () => ({
   listAgents: listAgentsMock,
-  getAgentBudget: getAgentBudgetMock,
+}));
+
+vi.mock("../api/canonicalApi", () => ({
+  listBudgets: listBudgetsMock,
 }));
 
 vi.mock("../api/missionsApi", () => ({
@@ -57,17 +61,16 @@ function makeAgent(overrides: Partial<Agent> = {}): Agent {
   } as Agent;
 }
 
-function makeBudget(overrides: Partial<AgentBudgetSnapshot> = {}): AgentBudgetSnapshot {
+function makeBudgetRow(agentId: string, monthlyUsd: number, spentUsd: number): BudgetRow {
   return {
-    agentId: "a1",
-    userId: "u1",
-    monthlyUsd: 0,
-    spentUsd: 0,
-    remainingUsd: 0,
-    currentPeriod: "2026-05",
-    autoPaused: false,
-    lastUpdatedAt: null,
-    ...overrides,
+    id: `budget-${agentId}`,
+    scopeKind: "agent",
+    scopeId: agentId,
+    capCents: Math.round(monthlyUsd * 100),
+    usedCents: Math.round(spentUsd * 100),
+    period: "monthly",
+    createdAt: "2026-05-01T00:00:00Z",
+    updatedAt: "2026-05-01T00:00:00Z",
   };
 }
 
@@ -85,14 +88,14 @@ describe("OrgStructure", () => {
     getAccessTokenMock.mockReset();
     listAgentsMock.mockReset();
     listMissionsMock.mockReset();
-    getAgentBudgetMock.mockReset();
+    listBudgetsMock.mockReset();
     accessModeMock.mockReset();
     trackedFetchMock.mockReset();
     accessModeMock.mockReturnValue("authenticated");
     getAccessTokenMock.mockResolvedValue("token-123");
     listAgentsMock.mockResolvedValue([]);
     listMissionsMock.mockResolvedValue([]);
-    getAgentBudgetMock.mockResolvedValue(null);
+    listBudgetsMock.mockResolvedValue([]);
     mockOrgGraphEmpty();
   });
 
@@ -305,13 +308,11 @@ describe("OrgStructure", () => {
     expect(screen.getByRole("link", { name: /hire/i })).toHaveAttribute("href", "/hire");
   });
 
-  it("shows real spend from getAgentBudget when present", async () => {
+  it("shows real spend from /api/budgets when present", async () => {
     listAgentsMock.mockResolvedValueOnce([
       makeAgent({ id: "a1", name: "Cash Bot", budgetMonthlyUsd: 200 }),
     ]);
-    getAgentBudgetMock.mockResolvedValueOnce(
-      makeBudget({ agentId: "a1", monthlyUsd: 250, spentUsd: 117 }),
-    );
+    listBudgetsMock.mockResolvedValueOnce([makeBudgetRow("a1", 250, 117)]);
     render(
       <MemoryRouter>
         <OrgStructure />

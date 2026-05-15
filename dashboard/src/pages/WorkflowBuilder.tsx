@@ -181,8 +181,8 @@ const KIND_META: Record<
   mcp: {
     label: "Integration",
     icon: <Plug size={14} />,
-    chipColor: "text-sky-700 dark:text-sky-400",
-    chipBg: "bg-sky-50 border-sky-200 dark:bg-sky-500/10 dark:border-sky-500/30",
+    chipColor: "text-af2-ink-blue dark:text-af2-ink-blue",
+    chipBg: "bg-af2-ink-blue/10 border-af2-ink-blue/30 dark:bg-af2-ink-blue/10 dark:border-af2-ink-blue/30",
     categoryTint: "rgba(14,165,233,0.12)",
     darkCategoryTint: "rgba(14,165,233,0.18)",
     categoryBorder: "#0ea5e9",
@@ -359,9 +359,9 @@ function buildStepFieldClass(options?: { mono?: boolean; hasError?: boolean; fla
     "w-full rounded-lg border px-3 py-2 text-sm focus:outline-none focus:ring-2 bg-af2-card text-af2-ink",
     options?.mono && "font-mono",
     options?.hasError
-      ? "border-red-500 focus:ring-red-500"
+      ? "border-af2-clay focus:ring-af2-clay/30"
       : options?.flashSuccess
-        ? "border-emerald-500 focus:ring-af2-clay/30 ring-2 ring-emerald-500/20"
+        ? "border-af2-sage focus:ring-af2-clay/30 ring-2 ring-emerald-500/20"
         : "border-af2-line-2 focus:ring-af2-clay/30",
   );
 }
@@ -1085,7 +1085,7 @@ export default function WorkflowBuilder() {
         </div>
 
         {/* Canvas */}
-        <div className="relative flex-1 overflow-hidden bg-slate-50 dark:bg-surface-950">
+        <div className="relative flex-1 overflow-hidden bg-slate-50 dark:bg-af2-paper-3">
           {template.steps.length === 0 ? (
             <EmptyCanvas onAdd={addStep} templates={allTemplates} />
           ) : (
@@ -1348,7 +1348,7 @@ export default function WorkflowBuilder() {
                 ) : llmConfigs.length === 0 ? (
                   <div className="px-3 py-2.5 rounded-lg border border-af2-mustard/30 bg-af2-mustard/10 text-xs text-af2-mustard leading-relaxed">
                     No LLM providers connected.{" "}
-                    <a href="/settings/llm-providers" className="underline font-medium hover:text-amber-900">
+                    <a href="/settings/llm-providers" className="underline font-medium hover:text-af2-mustard">
                       Go to Settings
                     </a>{" "}
                     to add one.
@@ -1696,7 +1696,7 @@ function WorkflowBuilderHelpPanel({ onClose }: { onClose: () => void }) {
   }, [onClose]);
 
   return (
-    <div className="fixed inset-0 z-50 flex justify-end bg-gray-950/35">
+    <div className="fixed inset-0 z-50 flex justify-end bg-af2-paper-3/35">
       <button className="flex-1" onClick={onClose} aria-label="Close guidance" />
       <aside
         role="dialog"
@@ -1711,7 +1711,7 @@ function WorkflowBuilderHelpPanel({ onClose }: { onClose: () => void }) {
           </div>
           <button
             onClick={onClose}
-            className="rounded-md p-1.5 text-af2-ink-3 transition hover:bg-af2-paper-2 dark:hover:bg-af2-paper-2 hover:text-gray-800 dark:hover:text-af2-ink-2"
+            className="rounded-md p-1.5 text-af2-ink-3 transition hover:bg-af2-paper-2 dark:hover:bg-af2-paper-2 hover:text-af2-ink dark:hover:text-af2-ink-2"
             aria-label="Close guidance panel"
           >
             <X size={16} />
@@ -1780,7 +1780,7 @@ function NLWorkflowModal({
       <div className="bg-af2-card rounded-2xl shadow-2xl w-full max-w-lg mx-4 overflow-hidden">
         <div className="flex items-center justify-between px-6 py-4 border-b border-af2-line">
           <div className="flex items-center gap-2">
-            <Sparkles size={18} className="text-purple-500" />
+            <Sparkles size={18} className="text-af2-plum" />
             <h2 className="font-semibold text-af2-ink">Generate Workflow with AI</h2>
           </div>
           <button onClick={onClose} className="p-1 rounded hover:bg-af2-paper-2 dark:hover:bg-af2-paper-2">
@@ -1794,7 +1794,7 @@ function NLWorkflowModal({
               Describe your workflow
             </label>
             <textarea
-              className="w-full px-3 py-2.5 text-sm border border-af2-line-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 bg-af2-card text-af2-ink resize-none"
+              className="w-full px-3 py-2.5 text-sm border border-af2-line-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-af2-plum/30 bg-af2-card text-af2-ink resize-none"
               rows={4}
               placeholder="e.g. When a customer support email arrives, classify its intent, check if it's urgent, and send an automated reply or escalate to a human agent…"
               value={prompt}
@@ -1843,7 +1843,7 @@ function NLWorkflowModal({
                           {meta.icon}
                           {meta.label}
                         </span>
-                        <span className="text-gray-800 dark:text-af2-ink-2 font-medium flex-1">{step.name}</span>
+                        <span className="text-af2-ink dark:text-af2-ink-2 font-medium flex-1">{step.name}</span>
                       </div>
                     );
                   })}
@@ -1955,8 +1955,8 @@ function WorkflowCopilotSidebar({
               className={clsx(
                 "rounded-2xl border px-4 py-3 text-sm leading-relaxed",
                 message.role === "user"
-                  ? "border-af2-line bg-surface-100 text-af2-ink-2 dark:border-af2-line-2 dark:bg-af2-paper-2 dark:text-af2-ink-2"
-                  : "border-af2-clay/30 bg-af2-clay-soft/30 text-brand-900 dark:border-af2-clay/20 dark:bg-af2-clay-soft/10 dark:text-brand-100"
+                  ? "border-af2-line bg-af2-paper-2 text-af2-ink-2 dark:border-af2-line-2 dark:bg-af2-paper-2 dark:text-af2-ink-2"
+                  : "border-af2-clay/30 bg-af2-clay-soft/30 text-af2-clay dark:border-af2-clay/20 dark:bg-af2-clay-soft/10 dark:text-af2-clay"
               )}
             >
               {message.content}
@@ -1966,7 +1966,7 @@ function WorkflowCopilotSidebar({
               <div className="rounded-2xl border border-af2-sage/30 bg-af2-sage/10 p-4 dark:border-af2-sage/30 dark:bg-af2-sage/10">
                 <div className="flex items-start justify-between gap-3">
                   <div>
-                    <p className="text-sm font-semibold text-af2-sage dark:text-teal-200">
+                    <p className="text-sm font-semibold text-af2-sage dark:text-af2-sage">
                       {message.proposal.title}
                     </p>
                     <p className="mt-1 text-sm text-af2-sage">
@@ -1984,7 +1984,7 @@ function WorkflowCopilotSidebar({
                   </button>
                   <button
                     onClick={() => onReject(message.id)}
-                    className="rounded-lg border border-af2-sage/30 px-3 py-2 text-sm font-medium text-af2-sage transition hover:bg-white dark:border-teal-500/40 dark:text-af2-sage dark:hover:bg-af2-paper-2"
+                    className="rounded-lg border border-af2-sage/30 px-3 py-2 text-sm font-medium text-af2-sage transition hover:bg-white dark:border-af2-sage/40 dark:text-af2-sage dark:hover:bg-af2-paper-2"
                   >
                     Reject
                   </button>
@@ -2000,7 +2000,7 @@ function WorkflowCopilotSidebar({
               <Loader size={14} className="animate-spin" />
               AutoFlow Copilot is thinking…
             </div>
-            <div className="h-1.5 rounded-full bg-brand-200/70 dark:bg-af2-clay-soft/20">
+            <div className="h-1.5 rounded-full bg-af2-clay-soft/70 dark:bg-af2-clay-soft/20">
               <div className="h-1.5 w-1/3 animate-glow-pulse rounded-full bg-af2-clay-soft/300" />
             </div>
           </div>
@@ -2027,7 +2027,7 @@ function WorkflowCopilotSidebar({
             <button
               onClick={onSubmit}
               disabled={!input.trim() || busy}
-              className="inline-flex items-center gap-2 rounded-xl bg-brand-600 px-3 py-2 text-sm font-medium text-white transition hover:bg-af2-clay-soft/300 disabled:opacity-50"
+              className="inline-flex items-center gap-2 rounded-xl bg-af2-clay px-3 py-2 text-sm font-medium text-white transition hover:bg-af2-clay-soft/300 disabled:opacity-50"
             >
               <Send size={14} />
               Send
@@ -2488,8 +2488,8 @@ function StepNode({
           <span style={{ color: meta.categoryBorder }}>{meta.icon}</span>
           {meta.label}
           {showRunningState && <Loader size={12} className="ml-auto animate-spin text-af2-clay" />}
-          {showSuccessState && <CheckCircle2 size={12} className="ml-auto text-emerald-600 dark:text-af2-sage" />}
-          {showErrorState && <AlertCircle size={12} className="ml-auto text-rose-600 dark:text-af2-clay" />}
+          {showSuccessState && <CheckCircle2 size={12} className="ml-auto text-af2-sage dark:text-af2-sage" />}
+          {showErrorState && <AlertCircle size={12} className="ml-auto text-af2-clay dark:text-af2-clay" />}
         </div>
       </div>
       <div className="p-4">
@@ -2497,7 +2497,7 @@ function StepNode({
           <div
             className={clsx(
               "flex items-center gap-1 px-2 py-1 rounded-md border text-xs font-medium mt-0.5",
-              isAgentNode ? "border-af2-clay/30 bg-af2-clay-soft/12 text-indigo-100" : meta.chipBg,
+              isAgentNode ? "border-af2-clay/30 bg-af2-clay-soft/12 text-af2-clay" : meta.chipBg,
               isAgentNode ? "" : meta.chipColor
             )}
           >
@@ -2528,7 +2528,7 @@ function StepNode({
                       "mr-1 rounded px-1.5 py-0.5",
                       isAgentNode
                         ? "bg-slate-900 text-slate-300"
-                        : "bg-gray-100 text-af2-ink-3 dark:bg-af2-paper-2 dark:text-af2-ink-3"
+                        : "bg-af2-paper-2 text-af2-ink-3 dark:bg-af2-paper-2 dark:text-af2-ink-3"
                     )}
                   >
                     {k}
@@ -2545,7 +2545,7 @@ function StepNode({
                     className={clsx(
                       "mr-1 rounded px-1.5 py-0.5",
                       isAgentNode
-                        ? "bg-af2-clay-soft/12 text-indigo-200"
+                        ? "bg-af2-clay-soft/12 text-af2-clay"
                         : "bg-af2-clay-soft/30 text-af2-clay dark:bg-af2-clay-soft/10 dark:text-af2-clay"
                     )}
                   >
@@ -2592,7 +2592,7 @@ function StepNode({
               <a
                 href={teamAgentHref}
                 onClick={(event) => event.stopPropagation()}
-                className="mt-3 inline-flex items-center gap-1 rounded-full border border-af2-sage/30 bg-af2-sage/10 px-3 py-1.5 text-[11px] font-semibold text-af2-sage transition hover:bg-teal-100 dark:border-af2-sage/30 dark:bg-af2-sage/10 dark:text-af2-sage"
+                className="mt-3 inline-flex items-center gap-1 rounded-full border border-af2-sage/30 bg-af2-sage/10 px-3 py-1.5 text-[11px] font-semibold text-af2-sage transition hover:bg-af2-sage/20 dark:border-af2-sage/30 dark:bg-af2-sage/10 dark:text-af2-sage"
               >
                 <Bot size={11} />
                 View deployed agent
@@ -2626,7 +2626,7 @@ function StepNode({
         )}
         <button
           onClick={(e) => { e.stopPropagation(); onRemove(); }}
-          className="p-1 rounded hover:bg-af2-clay-soft/30 dark:hover:bg-red-900/20 text-af2-ink-4 hover:text-red-500"
+          className="p-1 rounded hover:bg-af2-clay-soft/30 dark:hover:bg-af2-clay-soft/20 text-af2-ink-4 hover:text-af2-clay"
           title="Delete step"
           aria-label="Delete step"
         >
@@ -2649,8 +2649,8 @@ function AddStepMenu({ onAdd }: { onAdd: (k: StepKind) => void }) {
         className={clsx(
           "flex items-center gap-2 rounded-full border px-4 py-2 text-sm font-medium transition",
           open
-            ? "border-brand-300 dark:border-af2-clay/50 bg-af2-clay-soft/30 text-af2-clay"
-            : "border-af2-line-2 text-af2-ink-3 dark:text-af2-ink-4 hover:border-brand-300 dark:hover:border-af2-clay/50 hover:text-af2-clay dark:hover:text-af2-clay"
+            ? "border-af2-clay/30 dark:border-af2-clay/50 bg-af2-clay-soft/30 text-af2-clay"
+            : "border-af2-line-2 text-af2-ink-3 dark:text-af2-ink-4 hover:border-af2-clay/30 dark:hover:border-af2-clay/50 hover:text-af2-clay dark:hover:text-af2-clay"
         )}
       >
         <Plus size={16} /> Node Palette
@@ -2792,7 +2792,7 @@ function DeployAsTeamModal({
             <div className="space-y-3">
               <div className="rounded-[24px] border border-af2-clay/30 bg-af2-clay-soft/30 px-5 py-4 dark:border-af2-clay/30 dark:bg-af2-clay-soft/10">
                 <div className="flex items-center gap-3">
-                  <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-indigo-600 text-white">
+                  <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-af2-clay text-white">
                     <Bot size={18} />
                   </div>
                   <div>
@@ -2809,7 +2809,7 @@ function DeployAsTeamModal({
               {actionableSteps.map((step, index) => (
                 <div
                   key={step.id}
-                  className="rounded-[24px] border border-slate-200 bg-slate-50 px-5 py-4 dark:border-af2-line-2 dark:bg-surface-950/40"
+                  className="rounded-[24px] border border-slate-200 bg-slate-50 px-5 py-4 dark:border-af2-line-2 dark:bg-af2-paper-3/40"
                 >
                   <div className="flex items-start justify-between gap-4">
                     <div>
@@ -2898,7 +2898,7 @@ function DeployAsTeamModal({
               />
             </Field>
 
-            <div className="rounded-[24px] border border-af2-mustard/30 bg-af2-mustard/10 px-4 py-3 text-sm text-amber-900 dark:border-af2-mustard/30 dark:bg-af2-mustard/10 dark:text-amber-200">
+            <div className="rounded-[24px] border border-af2-mustard/30 bg-af2-mustard/10 px-4 py-3 text-sm text-af2-mustard dark:border-af2-mustard/30 dark:bg-af2-mustard/10 dark:text-af2-mustard">
               Deploying creates a control-plane team and agent roster. Start/stop lifecycle controls are not exposed by the current backend yet, so monitoring and task handoff are the primary post-deploy actions available in this release.
             </div>
 
@@ -2907,7 +2907,7 @@ function DeployAsTeamModal({
                 type="button"
                 onClick={onClose}
                 aria-label="Cancel agent team deployment"
-                className="rounded-full border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50 dark:border-af2-line-2 dark:text-surface-200 dark:hover:bg-af2-paper-2"
+                className="rounded-full border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50 dark:border-af2-line-2 dark:text-af2-ink-2 dark:hover:bg-af2-paper-2"
                 disabled={busy}
               >
                 Cancel
@@ -2982,7 +2982,7 @@ function FileUploadModal({
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-af2-line">
           <div className="flex items-center gap-2">
-            <UploadCloud size={18} className="text-rose-500" />
+            <UploadCloud size={18} className="text-af2-clay" />
             <h2 className="font-semibold text-af2-ink">Upload File to Run Workflow</h2>
           </div>
           <button onClick={onClose} className="p-1 rounded hover:bg-af2-paper-2 dark:hover:bg-af2-paper-2" disabled={state === "uploading"}>
@@ -2998,7 +2998,7 @@ function FileUploadModal({
             onDrop={handleDrop}
             className={clsx(
               "relative flex flex-col items-center justify-center gap-3 rounded-xl border-2 border-dashed p-8 text-center cursor-pointer transition",
-              dragOver ? "border-rose-400 bg-rose-50 dark:bg-rose-500/10" : "border-af2-line-2 hover:border-rose-300 hover:bg-af2-paper-2 dark:hover:bg-af2-paper-2"
+              dragOver ? "border-af2-clay/40 bg-af2-clay-soft/30 dark:bg-af2-clay-soft/30" : "border-af2-line-2 hover:border-af2-clay/30 hover:bg-af2-paper-2 dark:hover:bg-af2-paper-2"
             )}
             onClick={() => document.getElementById("file-upload-input")?.click()}
           >
@@ -3029,13 +3029,13 @@ function FileUploadModal({
 
           {/* Status */}
           {state === "error" && errorMsg && (
-            <div className="flex items-start gap-2 px-3 py-2 rounded-lg bg-af2-clay-soft/30 dark:bg-af2-clay-soft/10 border border-af2-clay/30 dark:border-red-500/30 text-sm text-af2-clay dark:text-red-300">
+            <div className="flex items-start gap-2 px-3 py-2 rounded-lg bg-af2-clay-soft/30 dark:bg-af2-clay-soft/10 border border-af2-clay/30 dark:border-af2-clay/30 text-sm text-af2-clay dark:text-af2-clay">
               <AlertCircle size={15} className="mt-0.5 shrink-0" />
               {errorMsg}
             </div>
           )}
           {state === "done" && (
-            <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-green-50 dark:bg-green-500/10 border border-green-200 dark:border-green-500/30 text-sm text-green-700 dark:text-green-300">
+            <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-af2-sage/10 dark:bg-af2-sage/10 border border-af2-sage/30 dark:border-af2-sage/30 text-sm text-af2-sage dark:text-af2-sage">
               <CheckCircle2 size={15} className="shrink-0" />
               Run started — redirecting to monitor…
             </div>
@@ -3053,7 +3053,7 @@ function FileUploadModal({
             <button
               onClick={handleSubmit}
               disabled={!file || state === "uploading" || state === "done"}
-              className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-lg bg-rose-600 hover:bg-rose-700 text-white text-sm font-medium transition disabled:opacity-50"
+              className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-lg bg-af2-clay hover:bg-af2-clay-2 text-white text-sm font-medium transition disabled:opacity-50"
             >
               {state === "uploading" ? (
                 <>

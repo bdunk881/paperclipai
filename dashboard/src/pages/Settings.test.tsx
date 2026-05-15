@@ -30,4 +30,23 @@ describe("Settings", () => {
       "/settings/ticketing-sla"
     );
   });
+
+  it("renders with v2 structural markers (HEL-64)", () => {
+    // Guards against regression to token-only restyle. The earlier "v2 restyle
+    // sweep" (PR #696) only swapped color tokens and left the legacy layout
+    // skeleton in place; this assertion makes sure the chrome (af2-page,
+    // af2-page-head, af2-eyebrow, af2-h1) actually wraps the page.
+    const { container } = render(
+      <MemoryRouter>
+        <Settings />
+      </MemoryRouter>
+    );
+
+    expect(container.querySelector(".af2-page")).not.toBeNull();
+    expect(container.querySelector(".af2-page-head")).not.toBeNull();
+    expect(container.querySelector(".af2-eyebrow")).not.toBeNull();
+    expect(container.querySelector("h1.af2-h1")).not.toBeNull();
+    // At least one tile uses the af2-card structural class
+    expect(container.querySelectorAll(".af2-card").length).toBeGreaterThan(0);
+  });
 });

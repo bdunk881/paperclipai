@@ -1,12 +1,29 @@
 import { Link } from "react-router-dom";
 import { Cpu, User, Bell, Shield, Key, PlugZap, ShieldAlert } from "lucide-react";
 
+/**
+ * Settings hub (HEL-64 v2 restyle).
+ *
+ * v1 of the v2 visual rebuild: keep the hub-of-sub-pages pattern (Profile,
+ * Security, Notifications, etc. live on separate routes) so we don't break
+ * users' bookmarks, but render it in the v2 editorial language —
+ * `af2-page` + `af2-page-head` + `af2-eyebrow` + serif `af2-h1` + a tile
+ * grid of `af2-card`s instead of the legacy gradient-on-soft-card pattern.
+ *
+ * Future iteration: collapse the sub-pages into a single tabbed surface
+ * per the v2 reference (`docs/design/v2/pages-extra.jsx::AF2_Settings`),
+ * which uses tabs General / Members / Policies / Security / Billing / API.
+ * That requires (a) wiring Members + Billing surfaces that don't exist
+ * yet and (b) inlining the existing /settings/* page content. Tracked
+ * separately so this PR can land the visual change without scope creep.
+ */
 const SETTINGS_SECTIONS = [
   {
     to: "/settings/llm-providers",
     icon: Cpu,
     title: "LLM Providers",
-    description: "Connect your own API keys for OpenAI, Anthropic, Gemini, and Mistral to use in workflows.",
+    description:
+      "Connect your own API keys for OpenAI, Anthropic, Gemini, and Mistral to use in workflows.",
   },
   {
     to: "/settings/integrations",
@@ -18,7 +35,8 @@ const SETTINGS_SECTIONS = [
     to: "/settings/ticketing-sla",
     icon: ShieldAlert,
     title: "Ticketing SLA",
-    description: "Configure first-response targets, resolution windows, and escalation rules by priority.",
+    description:
+      "Configure first-response targets, resolution windows, and escalation rules by priority.",
   },
   {
     to: "/settings/profile",
@@ -48,22 +66,77 @@ const SETTINGS_SECTIONS = [
 
 export default function Settings() {
   return (
-    <div className="p-8 max-w-4xl">
-      <div className="mb-8">
-        <h1 className="text-2xl font-bold text-af2-ink">Settings</h1>
-        <p className="text-af2-ink-3 mt-1">Manage your account and workspace configuration.</p>
+    <div className="af2-page" style={{ maxWidth: 920 }}>
+      <div className="af2-page-head">
+        <div>
+          <div className="af2-eyebrow">Connect · Workspace</div>
+          <h1 className="af2-h1" style={{ marginTop: 6 }}>
+            Settings
+          </h1>
+          <div className="af2-page-head-meta">
+            Manage your account and workspace configuration.
+          </div>
+        </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-4">
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "repeat(2, 1fr)",
+          gap: 14,
+        }}
+      >
         {SETTINGS_SECTIONS.map(({ to, icon: Icon, title, description }) => (
-          <Link key={to} to={to} className="block">
-            <div className="bg-af2-card rounded-xl border border-af2-line p-6 flex items-start gap-4 hover:shadow-md cursor-pointer transition-shadow">
-              <div className="flex items-center justify-center w-10 h-10 rounded-lg bg-af2-ink-blue/10 text-af2-ink-blue flex-shrink-0">
-                <Icon size={20} />
+          <Link
+            key={to}
+            to={to}
+            style={{ textDecoration: "none", color: "inherit" }}
+          >
+            <div
+              className="af2-card"
+              style={{
+                padding: 18,
+                display: "flex",
+                gap: 14,
+                alignItems: "flex-start",
+                cursor: "pointer",
+                transition: "box-shadow 0.15s, border-color 0.15s",
+              }}
+              onMouseEnter={(event) => {
+                event.currentTarget.style.boxShadow = "var(--af2-shadow)";
+                event.currentTarget.style.borderColor = "var(--af2-line-2)";
+              }}
+              onMouseLeave={(event) => {
+                event.currentTarget.style.boxShadow = "";
+                event.currentTarget.style.borderColor = "";
+              }}
+            >
+              <div
+                className="af2-tone-bg-blue"
+                style={{
+                  width: 36,
+                  height: 36,
+                  borderRadius: 8,
+                  display: "grid",
+                  placeItems: "center",
+                  flexShrink: 0,
+                }}
+              >
+                <Icon size={18} />
               </div>
-              <div>
-                <p className="font-semibold text-af2-ink mb-1">{title}</p>
-                <p className="text-sm text-af2-ink-3">{description}</p>
+              <div style={{ minWidth: 0 }}>
+                <div
+                  className="af2-h3"
+                  style={{ fontSize: 16, lineHeight: 1.2, marginBottom: 4 }}
+                >
+                  {title}
+                </div>
+                <div
+                  className="af2-muted"
+                  style={{ fontSize: 12.5, lineHeight: 1.5 }}
+                >
+                  {description}
+                </div>
               </div>
             </div>
           </Link>

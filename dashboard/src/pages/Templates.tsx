@@ -1,24 +1,46 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { ArrowRight, Search } from "lucide-react";
 import { listTemplates, type TemplateSummary } from "../api/client";
 import { ErrorState, LoadingState } from "../components/UiStates";
 
 /**
  * Library (Templates) page — HEL-65 v2 restyle.
  *
- * v2 reference: `docs/design/v2/pages-extra.jsx::AF2_Library` — `af2-page`
- * chrome with eyebrow "Build · Routines", serif h1, action buttons,
- * `af2-tabs` strip, and a 2-col `af2-card` grid where each card shows
- * routine name + live/draft pill, description, owner avatar, run count,
- * and "Open in Studio" CTA.
+ * Matches `docs/design/v2/pages-extra.jsx::AF2_Library` — `af2-page` chrome
+ * with eyebrow "Build · Routines", serif h1 "Library", two action buttons,
+ * an `af2-tabs` strip with All/Mine/Shared/Templates, and a 2-col `af2-card`
+ * grid where each card shows routine name, live/draft pill, description,
+ * secondary metadata, and an "Open in Studio" CTA.
  *
- * The route is `/templates`; the dashboard's four-pillar IA labels this
- * "Library" under the Build pillar. AgentCatalog.tsx surfaces the Hire
- * destination separately so this page can stay routine-focused.
+ * Real data deltas vs. the v2 mockup:
+ * - `TemplateSummary` has no `live` flag → every listed template renders as "live".
+ * - No `uses` (run-count) field → show `{stepCount} steps · {configFieldCount} fields`.
+ * - No `owner` field → show category as the secondary text.
+ * - No ownership/sharing signal → "Mine" and "Shared" tabs render empty for now;
+ *   "Templates" is an alias for "All".
  */
 
-const ALL_CATEGORY = "All";
+type TabKey = "all" | "mine" | "shared" | "templates";
+
+const TAB_DEFS: ReadonlyArray<{ key: TabKey; label: string }> = [
+  { key: "all", label: "All" },
+  { key: "mine", label: "Mine" },
+  { key: "shared", label: "Shared" },
+  { key: "templates", label: "Templates" },
+];
+
+function filterByTab(templates: TemplateSummary[], tab: TabKey): TemplateSummary[] {
+  switch (tab) {
+    case "mine":
+    case "shared":
+      // TemplateSummary carries no ownership or sharing signal yet.
+      return [];
+    case "all":
+    case "templates":
+    default:
+      return templates;
+  }
+}
 
 export default function Templates({
   initialTemplates,
@@ -28,8 +50,7 @@ export default function Templates({
   const [templates, setTemplates] = useState<TemplateSummary[]>(() => initialTemplates ?? []);
   const [loading, setLoading] = useState(() => initialTemplates == null);
   const [error, setError] = useState<string | null>(null);
-  const [query, setQuery] = useState("");
-  const [category, setCategory] = useState(ALL_CATEGORY);
+  const [activeTab, setActiveTab] = useState<TabKey>("all");
 
   useEffect(() => {
     if (initialTemplates) {
@@ -62,26 +83,6 @@ export default function Templates({
     };
   }, [initialTemplates]);
 
-  const categories = useMemo(
-    () => [ALL_CATEGORY, ...Array.from(new Set(templates.map((template) => template.category))).sort()],
-    [templates]
-  );
-
-  const filtered = useMemo(() => {
-    const normalizedQuery = query.trim().toLowerCase();
-
-    return templates.filter((template) => {
-      const categoryMatch = category === ALL_CATEGORY || template.category === category;
-      const queryMatch =
-        normalizedQuery.length === 0 ||
-        template.name.toLowerCase().includes(normalizedQuery) ||
-        template.description.toLowerCase().includes(normalizedQuery) ||
-        template.category.toLowerCase().includes(normalizedQuery);
-
-      return categoryMatch && queryMatch;
-    });
-  }, [category, query, templates]);
-
   if (loading) {
     return (
       <div className="af2-page">
@@ -98,6 +99,9 @@ export default function Templates({
     );
   }
 
+  const totalCount = templates.length;
+  const filtered = filterByTab(templates, activeTab);
+
   return (
     <div className="af2-page">
       <div className="af2-page-head">
@@ -111,68 +115,33 @@ export default function Templates({
           </div>
         </div>
         <div className="af2-page-actions">
+          <button type="button" className="af2-btn">
+            Browse templates
+          </button>
           <Link
             to="/builder"
             className="af2-btn af2-btn-clay"
-            style={{
-              textDecoration: "none",
-              display: "inline-flex",
-              alignItems: "center",
-              gap: 6,
-            }}
+            style={{ textDecoration: "none" }}
           >
             ＋ New routine
-            <ArrowRight size={14} />
           </Link>
         </div>
       </div>
 
       <div className="af2-tabs">
-        {categories.map((option) => (
-          <button
-            key={option}
-            type="button"
-            onClick={() => setCategory(option)}
-            className={`af2-tab${category === option ? " active" : ""}`}
-          >
-            {option}
-          </button>
-        ))}
-      </div>
-
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          gap: 12,
-          marginBottom: 14,
-        }}
-      >
-        <div
-          style={{
-            position: "relative",
-            flex: 1,
-            display: "flex",
-            alignItems: "center",
-          }}
-        >
-          <Search
-            size={14}
-            style={{
-              position: "absolute",
-              left: 12,
-              color: "var(--af2-ink-4)",
-              pointerEvents: "none",
-            }}
-          />
-          <input
-            className="af2-input"
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-            style={{ width: "100%", paddingLeft: 32 }}
-            placeholder="Search templates..."
-          />
-        </div>
+        {TAB_DEFS.map(({ key, label }) => {
+          const displayLabel = key === "all" ? `All (${totalCount})` : label;
+          return (
+            <button
+              key={key}
+              type="button"
+              onClick={() => setActiveTab(key)}
+              className={`af2-tab${activeTab === key ? " active" : ""}`}
+            >
+              {displayLabel}
+            </button>
+          );
+        })}
       </div>
 
       <div
@@ -195,50 +164,31 @@ export default function Templates({
               </span>
             </div>
 
-            <div className="af2-eyebrow" style={{ marginTop: 8 }}>
-              {template.category}
-            </div>
-
             <div
               className="af2-muted"
               style={{
                 fontSize: 12.5,
-                marginTop: 8,
+                marginTop: 6,
                 lineHeight: 1.5,
-                minHeight: "3rem",
               }}
             >
               {template.description || "No description provided for this template yet."}
             </div>
 
-            <div
-              className="af2-row"
-              style={{
-                marginTop: 14,
-                gap: 10,
-                paddingTop: 14,
-                borderTop: "1px solid var(--af2-line)",
-              }}
-            >
-              <span
-                className="af2-mono af2-muted-2"
-                style={{ fontSize: 11 }}
-              >
-                v{template.version} · {template.stepCount} steps
+            <div className="af2-row" style={{ marginTop: 14, gap: 10 }}>
+              <span className="af2-muted" style={{ fontSize: 12 }}>
+                {template.category}
               </span>
               <span className="af2-spacer" />
+              <span className="af2-mono af2-muted-2" style={{ fontSize: 11 }}>
+                {template.stepCount} steps · {template.configFieldCount} fields
+              </span>
               <Link
-                to={`/builder/${template.id}`}
+                to={`/templates/${template.id}`}
                 className="af2-btn af2-btn-sm"
-                style={{
-                  textDecoration: "none",
-                  display: "inline-flex",
-                  alignItems: "center",
-                  gap: 4,
-                }}
+                style={{ textDecoration: "none" }}
               >
                 Open in Studio
-                <ArrowRight size={12} />
               </Link>
             </div>
           </div>
@@ -257,13 +207,10 @@ export default function Templates({
           }}
         >
           <div style={{ fontSize: 14, fontWeight: 500, color: "var(--af2-ink-2)" }}>
-            No templates match this filter.
+            No routines to show here yet.
           </div>
-          <div
-            className="af2-muted"
-            style={{ marginTop: 6, fontSize: 12 }}
-          >
-            Try a different category or open the builder to create a new workflow.
+          <div className="af2-muted" style={{ marginTop: 6, fontSize: 12 }}>
+            Switch tabs or open the builder to create a new workflow.
           </div>
         </div>
       ) : null}

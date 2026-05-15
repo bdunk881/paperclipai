@@ -1,14 +1,17 @@
 /**
- * HEL-23 — input-validation + happy-path coverage for the mission intake
- * page. The page is the entry point of the customer loop (mission → plan →
- * agents → routine → run) so we assert: it renders v2 markers, the Save
- * button disables on empty input, structured-prompt fields capture metadata,
- * and submitting POSTs to /api/missions through the api client.
+ * HEL-23 — mission intake page tests (v2 refresh).
+ *
+ * Covers the v2 page chrome ("Hire from a mission." headline, Workforce ·
+ * Hiring eyebrow, mission textarea, Generate-hiring-plan CTA, Past missions
+ * list) plus the existing data flow (createMission, generateHiringPlan,
+ * Review-plan link routing). After a successful generate the page navigates
+ * to /hire/plan/:missionId/:planId — HiringPlanReview owns the review
+ * surface, not this page.
  */
 
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { MemoryRouter } from "react-router-dom";
+import { MemoryRouter, Route, Routes } from "react-router-dom";
 
 const {
   listMissionsMock,
@@ -41,7 +44,23 @@ vi.mock("../context/AuthContext", () => ({
 
 import Hire from "./Hire";
 
-describe("Hire page (HEL-23)", () => {
+function renderHire() {
+  return render(
+    <MemoryRouter initialEntries={["/hire"]}>
+      <Routes>
+        <Route path="/hire" element={<Hire />} />
+        {/* Stub for the review page so the post-generate navigate has a
+            target. The text is asserted by the navigate test below. */}
+        <Route
+          path="/hire/plan/:missionId/:planId"
+          element={<div>plan review stub</div>}
+        />
+      </Routes>
+    </MemoryRouter>,
+  );
+}
+
+describe("Hire page (HEL-23, v2)", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     requireAccessTokenMock.mockResolvedValue("mock-token");
@@ -53,27 +72,28 @@ describe("Hire page (HEL-23)", () => {
   });
 
   it("renders the v2 page-head copy", async () => {
-    render(
-      <MemoryRouter>
-        <Hire />
-      </MemoryRouter>,
-    );
+    renderHire();
     await screen.findByRole("heading", { name: /Hire from a mission/i });
     expect(screen.getByText(/Workforce · Hiring/i)).toBeInTheDocument();
     expect(listMissionsMock).toHaveBeenCalledTimes(1);
   });
 
+  it("renders the mission textarea + Generate hiring plan CTA", async () => {
+    renderHire();
+    await screen.findByRole("heading", { name: /Hire from a mission/i });
+    expect(screen.getByLabelText(/Mission statement/i)).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /Generate hiring plan/i }),
+    ).toBeInTheDocument();
+  });
+
   it("disables both action buttons while the statement is empty", async () => {
-    render(
-      <MemoryRouter>
-        <Hire />
-      </MemoryRouter>,
-    );
+    renderHire();
     await screen.findByRole("heading", { name: /Hire from a mission/i });
     const saveDraft = screen.getByRole("button", { name: /Save draft/i });
-    const savePlan = screen.getByRole("button", { name: /Save & generate plan/i });
+    const generate = screen.getByRole("button", { name: /Generate hiring plan/i });
     expect(saveDraft).toBeDisabled();
-    expect(savePlan).toBeDisabled();
+    expect(generate).toBeDisabled();
   });
 
   it("submits a draft mission with statement + structured prompts", async () => {
@@ -88,11 +108,7 @@ describe("Hire page (HEL-23)", () => {
       latestHiringPlanId: null,
     });
 
-    render(
-      <MemoryRouter>
-        <Hire />
-      </MemoryRouter>,
-    );
+    renderHire();
     await screen.findByRole("heading", { name: /Hire from a mission/i });
 
     fireEvent.change(screen.getByLabelText(/Mission statement/i), {
@@ -111,11 +127,10 @@ describe("Hire page (HEL-23)", () => {
       },
       "mock-token",
     );
-    // After save the success banner appears.
     expect(await screen.findByText(/saved as a draft/i)).toBeInTheDocument();
   });
 
-  it("calls generateHiringPlan after save when the user clicks Save & generate", async () => {
+  it("calls generateHiringPlan and navigates to the review page", async () => {
     createMissionMock.mockResolvedValue({
       id: "mission-new",
       statement: "Migrate the billing service",
@@ -133,31 +148,26 @@ describe("Hire page (HEL-23)", () => {
       plan: {},
     });
 
-    render(
-      <MemoryRouter>
-        <Hire />
-      </MemoryRouter>,
-    );
+    renderHire();
     await screen.findByRole("heading", { name: /Hire from a mission/i });
 
     fireEvent.change(screen.getByLabelText(/Mission statement/i), {
       target: { value: "Migrate the billing service" },
     });
-    fireEvent.click(screen.getByRole("button", { name: /Save & generate plan/i }));
+    fireEvent.click(screen.getByRole("button", { name: /Generate hiring plan/i }));
 
     await waitFor(() => expect(createMissionMock).toHaveBeenCalledTimes(1));
     await waitFor(() => expect(generateHiringPlanMock).toHaveBeenCalledTimes(1));
     expect(generateHiringPlanMock).toHaveBeenCalledWith("mission-new", "mock-token");
-    expect(await screen.findByText(/hiring plan generated/i)).toBeInTheDocument();
+    // After a successful generate, the page navigates to the side-by-side
+    // review surface (HEL-105). The Hire page itself does not render the
+    // generated plan inline.
+    expect(await screen.findByText(/plan review stub/i)).toBeInTheDocument();
   });
 
   it("surfaces an error if the create call fails", async () => {
     createMissionMock.mockRejectedValue(new Error("Plan limit reached: missions"));
-    render(
-      <MemoryRouter>
-        <Hire />
-      </MemoryRouter>,
-    );
+    renderHire();
     await screen.findByRole("heading", { name: /Hire from a mission/i });
 
     fireEvent.change(screen.getByLabelText(/Mission statement/i), {
@@ -169,11 +179,6 @@ describe("Hire page (HEL-23)", () => {
   });
 
   it("links a drafted hiring plan to the side-by-side review page (HEL-105)", async () => {
-    // HEL-105 replaced the inline Confirm button (HEL-25 v1) with a
-    // "Review plan" link that routes to /hire/plan/:missionId/:planId.
-    // This test asserts the link is wired correctly. The confirm flow
-    // itself is exercised by HiringPlanReview.test.tsx + the backend
-    // tests in hiringPlanRoutes.test.ts.
     listMissionsMock.mockResolvedValueOnce([
       {
         id: "m-with-plan",
@@ -187,11 +192,7 @@ describe("Hire page (HEL-23)", () => {
       },
     ]);
 
-    render(
-      <MemoryRouter>
-        <Hire />
-      </MemoryRouter>,
-    );
+    renderHire();
 
     const reviewLink = await screen.findByRole("link", { name: /Review plan/i });
     expect(reviewLink).toHaveAttribute("href", "/hire/plan/m-with-plan/plan-xyz");
@@ -211,17 +212,13 @@ describe("Hire page (HEL-23)", () => {
       },
     ]);
 
-    render(
-      <MemoryRouter>
-        <Hire />
-      </MemoryRouter>,
-    );
+    renderHire();
 
     const teamLink = await screen.findByRole("link", { name: /View team/i });
     expect(teamLink).toHaveAttribute("href", "/team");
   });
 
-  it("renders saved missions returned by the API", async () => {
+  it("renders past missions returned by the API", async () => {
     listMissionsMock.mockResolvedValueOnce([
       {
         id: "m-existing",
@@ -234,41 +231,32 @@ describe("Hire page (HEL-23)", () => {
         latestHiringPlanId: null,
       },
     ]);
-    render(
-      <MemoryRouter>
-        <Hire />
-      </MemoryRouter>,
-    );
+    renderHire();
+    expect(await screen.findByText(/Past missions/i)).toBeInTheDocument();
     expect(await screen.findByText(/Onboard top-50 enterprise leads/)).toBeInTheDocument();
     expect(screen.getByText(/Acme Robotics/)).toBeInTheDocument();
   });
 
   it("uses af2 visual language (HEL-23 + HEL-99)", async () => {
-    const { container } = render(
-      <MemoryRouter>
-        <Hire />
-      </MemoryRouter>,
-    );
+    const { container } = renderHire();
     await screen.findByRole("heading", { name: /Hire from a mission/i });
     const heading = screen.getByRole("heading", { level: 1 });
-    // HEL-99 structural marker: h1 carries af2-h1 (replaces the inline
-    // text-4xl/font-normal/tracking pattern). font-af2-serif is kept as a
-    // belt-and-suspenders class so anyone reading the markup still sees the
-    // serif intent.
     expect(heading.className).toContain("af2-h1");
     expect(heading.className).toContain("font-af2-serif");
-    // The outer wrapper is af2-page (HEL-99 chrome) and keeps text-af2-ink
-    // so the h1 inherits ink color from the page.
     const outer = container.firstChild as HTMLElement;
     expect(outer.className).toContain("af2-page");
     expect(outer.className).toContain("text-af2-ink");
-    // Page chrome structural markers present.
+    // Page chrome structural markers.
     expect(container.querySelector(".af2-page-head")).not.toBeNull();
     expect(container.querySelector(".af2-eyebrow")).not.toBeNull();
-    // No regressions to legacy palettes.
+    expect(container.querySelector(".af2-card")).not.toBeNull();
+    // Readiness pill is part of the v2 reference design.
+    expect(container.querySelector(".af2-pill")).not.toBeNull();
+    // No regressions to legacy palettes or dark-mode variants.
     const html = container.innerHTML;
     expect(html).not.toMatch(/text-slate-(4|5|6|7|9)\d{2}/);
     expect(html).not.toMatch(/bg-white\b/);
     expect(html).not.toMatch(/bg-indigo-/);
+    expect(html).not.toMatch(/\bdark:/);
   });
 });

@@ -1,45 +1,39 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { Search, Plug, PlugZap, Tag, ExternalLink, CheckCircle, Loader2 } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import { apiGet } from "../api/settingsClient";
+import { ErrorState, LoadingState } from "../components/UiStates";
 import {
   LIVE_CONNECTOR_PROVIDER_BY_KEY,
   type ProviderKey,
   type ProviderStatus,
 } from "../integrations/liveConnectorCatalog";
 
-import githubLogo from "../assets/integrations/github.svg";
-import linearLogo from "../assets/integrations/linear.svg";
-import slackLogo from "../assets/integrations/slack.svg";
-import postgresLogo from "../assets/integrations/postgresql.svg";
-import notionLogo from "../assets/integrations/notion.svg";
-import stripeLogo from "../assets/integrations/stripe.svg";
-import hubspotLogo from "../assets/integrations/hubspot.svg";
-import googleLogo from "../assets/integrations/google.svg";
-import braveLogo from "../assets/integrations/brave-search.svg";
-import filesystemLogo from "../assets/integrations/filesystem.svg";
-import puppeteerLogo from "../assets/integrations/puppeteer.svg";
-import intercomLogo from "../assets/integrations/intercom.svg";
-import sanityLogo from "../assets/integrations/sanity.svg";
-import oktaLogo from "../assets/integrations/okta.svg";
-import jiraLogo from "../assets/integrations/jira.svg";
-import discordLogo from "../assets/integrations/discord.svg";
-import gmailLogo from "../assets/integrations/gmail.svg";
-import twitterLogo from "../assets/integrations/twitter.svg";
-import quickbooksLogo from "../assets/integrations/quickbooks.svg";
+/**
+ * Integrations (MCP / Connect) page — v2 restyle.
+ *
+ * v2 reference: `docs/design/v2/pages-extra.jsx::AF2_Integrations` — `af2-page`
+ * chrome with eyebrow "Connect", serif h1 "Integrations", a category
+ * `af2-cluster` of pills, and a responsive `af2-card` grid where each card
+ * shows a mark, name + category · auth method, description, status pill,
+ * and a Connect/Manage CTA.
+ *
+ * The route is `/integrations/mcp`. Custom MCP server registration lives on
+ * the `/settings/mcp-servers` page; this page surfaces a quick count of
+ * registered custom servers and a CTA to the registry.
+ */
 
-interface IntegrationOption {
+interface IntegrationCard {
   id: string;
   name: string;
-  description: string;
   category: string;
-  tools: string[];
-  official: boolean;
-  logo?: string;
+  auth: string;
+  description: string;
+  installed: boolean;
+  ctaTo: string;
+  status: "connected" | "available";
+  /** Optional live provider key — when set, status follows the live connector. */
   liveProviderKey?: ProviderKey;
-  rating?: number;
-  connected?: boolean;
 }
 
 interface RegisteredIntegration {
@@ -50,498 +44,456 @@ interface RegisteredIntegration {
   createdAt: string;
 }
 
-const INTEGRATION_OPTIONS: IntegrationOption[] = [
+/**
+ * Static catalog of integrations. The card grid is built from this list
+ * cross-referenced with live provider statuses fetched from the backend.
+ */
+const CATALOG: Array<Omit<IntegrationCard, "installed" | "status" | "ctaTo">> = [
   {
-    id: "mcp-github",
+    id: "github",
     name: "GitHub",
-    description: "Read and write GitHub repositories, issues, PRs, and code search.",
     category: "Developer Tools",
-    tools: ["search_code", "create_issue", "list_prs", "get_file", "push_commit"],
-    official: true,
-    logo: githubLogo,
+    auth: "OAuth",
+    description: "Read and write GitHub repositories, issues, PRs, and code search.",
   },
   {
-    id: "mcp-linear",
+    id: "linear",
     name: "Linear",
-    description: "Sync projects and issues with Linear to automate triage, assignment, and status updates.",
     category: "Project Management",
-    tools: ["list_teams", "list_issues", "create_issue", "update_issue"],
-    official: true,
-    logo: linearLogo,
+    auth: "OAuth",
+    description:
+      "Sync projects and issues with Linear to automate triage, assignment, and status updates.",
+    liveProviderKey: "linear",
   },
   {
-    id: "mcp-slack",
+    id: "slack",
     name: "Slack",
-    description: "Send messages, read channels, and manage Slack workspaces.",
     category: "Communication",
-    tools: ["send_message", "list_channels", "get_thread", "add_reaction"],
-    official: true,
-    logo: slackLogo,
+    auth: "OAuth",
+    description: "Send messages, read channels, and manage Slack workspaces.",
     liveProviderKey: "slack",
   },
   {
-    id: "mcp-postgres",
+    id: "postgres",
     name: "PostgreSQL",
-    description: "Query and mutate PostgreSQL databases with schema introspection.",
     category: "Database",
-    tools: ["query", "execute", "list_tables", "describe_table"],
-    official: true,
-    logo: postgresLogo,
+    auth: "Connection string",
+    description: "Query and mutate PostgreSQL databases with schema introspection.",
   },
   {
-    id: "mcp-filesystem",
+    id: "filesystem",
     name: "Filesystem",
-    description: "Read and write files on your local or remote filesystem.",
     category: "Storage",
-    tools: ["read_file", "write_file", "list_directory", "move_file", "delete_file"],
-    official: true,
-    logo: filesystemLogo,
+    auth: "Local",
+    description: "Read and write files on your local or remote filesystem.",
   },
   {
-    id: "mcp-brave",
+    id: "brave",
     name: "Brave Search",
-    description: "Real-time web search via Brave's privacy-focused search API.",
     category: "Search",
-    tools: ["web_search", "news_search", "image_search"],
-    official: false,
-    logo: braveLogo,
+    auth: "API key",
+    description: "Real-time web search via Brave's privacy-focused search API.",
   },
   {
-    id: "mcp-hubspot",
+    id: "hubspot",
     name: "HubSpot",
-    description: "Sync contacts, companies, and deals with HubSpot CRM.",
     category: "CRM",
-    tools: ["get_contact", "update_deal", "list_companies"],
-    rating: 4.7,
-    connected: false,
-    official: true,
-    logo: hubspotLogo,
+    auth: "OAuth",
+    description: "Sync contacts, companies, and deals with HubSpot CRM.",
+    liveProviderKey: "hubspot",
   },
   {
-    id: "mcp-google",
+    id: "google",
     name: "Google Workspace",
-    description: "Send emails via Gmail and manage files in Google Drive.",
     category: "Productivity",
-    tools: ["send_email", "list_files", "create_doc"],
-    rating: 4.8,
-    connected: false,
-    official: true,
-    logo: googleLogo,
+    auth: "OAuth",
+    description: "Send emails via Gmail and manage files in Google Drive.",
+    liveProviderKey: "gmail",
   },
   {
-    id: "mcp-stripe",
+    id: "stripe",
     name: "Stripe",
-    description: "Manage payments, customers, subscriptions, and invoices via Stripe.",
     category: "Payments",
-    tools: ["create_customer", "charge_card", "list_subscriptions", "create_invoice"],
-    official: true,
-    logo: stripeLogo,
+    auth: "API key",
+    description: "Manage payments, customers, subscriptions, and invoices via Stripe.",
     liveProviderKey: "stripe",
   },
   {
-    id: "mcp-notion",
+    id: "notion",
     name: "Notion",
+    category: "Productivity",
+    auth: "OAuth",
     description: "Read and write Notion pages, databases, and blocks.",
-    category: "Productivity",
-    tools: ["get_page", "create_page", "query_database", "update_block"],
-    official: false,
-    logo: notionLogo,
   },
   {
-    id: "mcp-puppeteer",
+    id: "puppeteer",
     name: "Puppeteer",
-    description: "Browser automation — navigate pages, click, fill forms, take screenshots.",
     category: "Browser",
-    tools: ["navigate", "click", "type", "screenshot", "evaluate"],
-    official: false,
-    logo: puppeteerLogo,
+    auth: "Local",
+    description: "Browser automation — navigate pages, click, fill forms, take screenshots.",
   },
   {
-    id: "mcp-intercom",
+    id: "intercom",
     name: "Intercom",
-    description: "Sync customer data and manage conversations via Intercom.",
     category: "Support",
-    tools: ["get_contact", "list_conversations", "send_reply"],
-    rating: 4.7,
-    connected: false,
-    official: true,
-    logo: intercomLogo,
+    auth: "OAuth",
+    description: "Sync customer data and manage conversations via Intercom.",
   },
   {
-    id: "mcp-sanity",
+    id: "sanity",
     name: "Sanity",
-    description: "Query and mutate content in your Sanity CMS datasets.",
     category: "Content",
-    tools: ["query_content", "create_document", "patch_document"],
-    rating: 4.6,
-    connected: false,
-    official: false,
-    logo: sanityLogo,
+    auth: "Token",
+    description: "Query and mutate content in your Sanity CMS datasets.",
   },
   {
-    id: "mcp-okta",
+    id: "okta",
     name: "Okta",
-    description: "Manage user access and authentication via Okta SSO.",
     category: "Identity",
-    tools: ["list_users", "get_user", "update_user_status"],
-    rating: 4.8,
-    connected: false,
-    official: true,
-    logo: oktaLogo,
+    auth: "OAuth",
+    description: "Manage user access and authentication via Okta SSO.",
   },
   {
-    id: "mcp-jira",
+    id: "jira",
     name: "Jira",
-    description: "Automate Jira issue creation and project tracking.",
     category: "Project Management",
-    tools: ["create_issue", "update_issue", "list_projects"],
-    rating: 4.7,
-    connected: false,
-    official: true,
-    logo: jiraLogo,
+    auth: "OAuth",
+    description: "Automate Jira issue creation and project tracking.",
   },
   {
-    id: "mcp-discord",
+    id: "discord",
     name: "Discord",
-    description: "Send notifications and manage community interactions via Discord.",
     category: "Communication",
-    tools: ["send_message", "list_guilds", "add_member"],
-    rating: 4.5,
-    connected: false,
-    official: false,
-    logo: discordLogo,
+    auth: "Bot token",
+    description: "Send notifications and manage community interactions via Discord.",
   },
   {
-    id: "mcp-gmail",
-    name: "Gmail",
-    description: "Send emails and manage inbox workflows via Gmail.",
-    category: "Productivity",
-    tools: ["send_email", "list_messages", "create_draft"],
-    rating: 4.9,
-    connected: false,
-    official: true,
-    logo: gmailLogo,
+    id: "sentry",
+    name: "Sentry",
+    category: "Developer Tools",
+    auth: "OAuth",
+    description: "Track issues, releases, and project health via Sentry.",
+    liveProviderKey: "sentry",
   },
   {
-    id: "mcp-twitter",
+    id: "twitter",
     name: "Twitter",
-    description: "Schedule tweets and monitor mentions via X (Twitter).",
     category: "Social",
-    tools: ["create_tweet", "get_mentions", "search_tweets"],
-    rating: 4.4,
-    connected: false,
-    official: false,
-    logo: twitterLogo,
+    auth: "OAuth",
+    description: "Schedule tweets and monitor mentions via X (Twitter).",
   },
   {
-    id: "mcp-quickbooks",
+    id: "quickbooks",
     name: "Quickbooks",
-    description: "Automate bookkeeping and financial reporting via Quickbooks.",
     category: "Finance",
-    tools: ["list_invoices", "create_expense", "get_reports"],
-    rating: 4.7,
-    connected: false,
-    official: true,
-    logo: quickbooksLogo,
+    auth: "OAuth",
+    description: "Automate bookkeeping and financial reporting via Quickbooks.",
   },
 ];
 
-const CATEGORIES = ["All", ...Array.from(new Set(INTEGRATION_OPTIONS.map((s) => s.category))).sort()];
+const ALL_CATEGORY = "All";
 const API_BASE = import.meta.env.VITE_API_URL ?? "http://localhost:3001";
+const REGISTRY_ROUTE = "/settings/mcp-servers";
+const LIVE_CONNECTOR_ROUTE = "/integrations";
 
-function formatAvailability(option: IntegrationOption, liveStatuses: Record<ProviderKey, ProviderStatus> | null) {
-  if (!option.liveProviderKey) {
+function buildCards(liveStatuses: Record<ProviderKey, ProviderStatus> | null): IntegrationCard[] {
+  return CATALOG.map((entry) => {
+    if (entry.liveProviderKey) {
+      const provider = LIVE_CONNECTOR_PROVIDER_BY_KEY[entry.liveProviderKey];
+      const connected = liveStatuses?.[entry.liveProviderKey]?.connected ?? false;
+      return {
+        id: entry.id,
+        name: entry.name,
+        category: entry.category,
+        auth: provider.supportsOAuth ? "OAuth" : "API key",
+        description: entry.description,
+        liveProviderKey: entry.liveProviderKey,
+        installed: connected,
+        status: connected ? "connected" : "available",
+        ctaTo: LIVE_CONNECTOR_ROUTE,
+      };
+    }
+
     return {
-      badgeClassName: "bg-af2-paper-2 text-af2-ink-2",
-      badgeLabel: "Registry required",
-      helperText: "No native AutoFlow setup flow yet. Register a compatible MCP server in the Integration Registry.",
-      ctaLabel: "Register server",
-      ctaTo: "/settings/mcp-servers",
-      title: "This entry relies on a custom MCP server. Add your endpoint in the Integration Registry.",
+      id: entry.id,
+      name: entry.name,
+      category: entry.category,
+      auth: entry.auth,
+      description: entry.description,
+      installed: false,
+      status: "available",
+      ctaTo: REGISTRY_ROUTE,
     };
-  }
-
-  const provider = LIVE_CONNECTOR_PROVIDER_BY_KEY[option.liveProviderKey];
-  const status = liveStatuses?.[option.liveProviderKey];
-
-  if (status?.connected) {
-    return {
-      badgeClassName: "bg-af2-sage/15 text-af2-sage",
-      badgeLabel: "Connected",
-      helperText: `${provider.name} is already connected through the live connector setup surface.`,
-      ctaLabel: "Manage connection",
-      ctaTo: "/integrations",
-      title: `Open the live ${provider.name} connector setup page.`,
-    };
-  }
-
-  return {
-    badgeClassName: "bg-af2-ink-blue/10 text-af2-ink-blue",
-    badgeLabel: provider.supportsOAuth ? "Setup available" : "API-key setup",
-    helperText:
-      provider.supportsOAuth
-        ? `${provider.name} has a live connector setup flow in AutoFlow today.`
-        : `${provider.name} is configured through the live API-key connector surface.`,
-    ctaLabel: "Open connector setup",
-    ctaTo: "/integrations",
-    title: `Open the live ${provider.name} connector setup page.`,
-  };
+  });
 }
 
 export default function IntegrationsHub() {
   const { user, requireAccessToken } = useAuth();
-  const [search, setSearch] = useState("");
-  const [category, setCategory] = useState("All");
+  const [category, setCategory] = useState<string>(ALL_CATEGORY);
   const [registered, setRegistered] = useState<RegisteredIntegration[]>([]);
   const [loadingRegistered, setLoadingRegistered] = useState(true);
-  const [liveStatuses, setLiveStatuses] = useState<Record<ProviderKey, ProviderStatus> | null>(null);
+  const [registeredError, setRegisteredError] = useState<string | null>(null);
+  const [liveStatuses, setLiveStatuses] = useState<Record<ProviderKey, ProviderStatus> | null>(
+    null
+  );
   const [loadingLiveStatuses, setLoadingLiveStatuses] = useState(true);
 
   useEffect(() => {
-    async function loadRegistered() {
+    let cancelled = false;
+
+    void (async () => {
       try {
         const accessToken = await requireAccessToken();
-        const data = await apiGet<{ servers: RegisteredIntegration[] }>("/api/mcp/servers", user, accessToken);
-        setRegistered(data.servers);
+        const data = await apiGet<{ servers: RegisteredIntegration[] }>(
+          "/api/mcp/servers",
+          user,
+          accessToken
+        );
+        if (!cancelled) {
+          setRegistered(data.servers);
+        }
+      } catch (loadError) {
+        if (!cancelled) {
+          setRegisteredError(
+            loadError instanceof Error ? loadError.message : "Failed to load custom integrations"
+          );
+        }
       } finally {
-        setLoadingRegistered(false);
+        if (!cancelled) {
+          setLoadingRegistered(false);
+        }
       }
-    }
-    void loadRegistered();
+    })();
+
+    return () => {
+      cancelled = true;
+    };
   }, [requireAccessToken, user]);
 
   useEffect(() => {
-    async function loadLiveStatuses() {
+    let cancelled = false;
+
+    void (async () => {
       try {
         const accessToken = await requireAccessToken();
         const headers = new Headers();
         headers.set("Authorization", `Bearer ${accessToken}`);
-
         const response = await fetch(`${API_BASE}/api/integrations/status`, { headers });
         if (!response.ok) {
           return;
         }
-
-        const payload = (await response.json()) as { providers: Record<ProviderKey, ProviderStatus> };
-        setLiveStatuses(payload.providers);
+        const payload = (await response.json()) as {
+          providers: Record<ProviderKey, ProviderStatus>;
+        };
+        if (!cancelled) {
+          setLiveStatuses(payload.providers);
+        }
       } catch {
-        setLiveStatuses(null);
+        if (!cancelled) {
+          setLiveStatuses(null);
+        }
       } finally {
-        setLoadingLiveStatuses(false);
+        if (!cancelled) {
+          setLoadingLiveStatuses(false);
+        }
       }
-    }
+    })();
 
-    void loadLiveStatuses();
+    return () => {
+      cancelled = true;
+    };
   }, [requireAccessToken]);
 
-  const filtered = useMemo(
-    () =>
-      INTEGRATION_OPTIONS.filter((option) => {
-        const matchSearch =
-          option.name.toLowerCase().includes(search.toLowerCase()) ||
-          option.description.toLowerCase().includes(search.toLowerCase());
-        const matchCategory = category === "All" || option.category === category;
-        return matchSearch && matchCategory;
-      }),
-    [category, search]
+  const cards = useMemo(() => buildCards(liveStatuses), [liveStatuses]);
+
+  const categories = useMemo(
+    () => Array.from(new Set(cards.map((card) => card.category))).sort(),
+    [cards]
   );
 
-  const liveSetupOptions = INTEGRATION_OPTIONS.filter((option) => option.liveProviderKey);
-  const connectedLiveCount = liveSetupOptions.reduce((count, option) => {
-    if (option.liveProviderKey && liveStatuses?.[option.liveProviderKey]?.connected) {
-      return count + 1;
-    }
-    return count;
-  }, 0);
+  const filtered = useMemo(
+    () => cards.filter((card) => category === ALL_CATEGORY || card.category === category),
+    [cards, category]
+  );
+
+  const totalCount = cards.length;
   const registeredCount = registered.length;
-  const recentRegistered = registered
-    .slice()
-    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
-    .slice(0, 4);
 
   return (
-    <div className="min-h-full bg-af2-paper-2/40">
-      <div className="border-b border-af2-line bg-af2-card px-8 py-6">
-        <div className="flex items-center justify-between gap-4">
-          <div>
-            <div className="flex items-center gap-3">
-              <h1 className="text-2xl font-bold text-af2-ink">Integrations Hub</h1>
-              <span className="rounded-full bg-af2-ink-blue/10 px-2 py-0.5 text-xs font-medium text-af2-ink-blue">
-                Live connector setup
-              </span>
-            </div>
-            <p className="mt-1 text-sm text-af2-ink-3">
-              Use the live connector setup page for supported SaaS providers, and use the Integration Registry for
-              custom MCP servers that do not have a native AutoFlow setup flow yet.
-            </p>
-          </div>
-          <div className="text-right space-y-1">
-            <div>
-              <div className="text-2xl font-bold text-af2-ink">{registeredCount}</div>
-              <div className="text-xs text-af2-ink-4">custom MCP servers registered</div>
-            </div>
-            <div>
-              <div className="text-sm font-semibold text-af2-ink-2">
-                {loadingLiveStatuses ? "…" : `${connectedLiveCount}/${liveSetupOptions.length}`}
-              </div>
-              <div className="text-xs text-af2-ink-4">cards with live setup already connected</div>
-            </div>
+    <div className="af2-page">
+      <div className="af2-page-head">
+        <div>
+          <div className="af2-eyebrow">Connect</div>
+          <h1 className="af2-h1" style={{ marginTop: 6 }}>
+            Integrations
+          </h1>
+          <div className="af2-page-head-meta">
+            Tools your agents can use. OAuth, app tokens, raw API — pick whatever your IT team
+            prefers.
           </div>
         </div>
-
-        <div className="mt-5 rounded-xl border border-af2-line bg-af2-card p-4">
-          <div className="flex items-center justify-between gap-3">
-            <div>
-              <p className="text-sm font-semibold text-af2-ink">Custom Integration Activity</p>
-              <p className="mt-1 text-xs text-af2-ink-3">
-                Register your own MCP servers here. For Slack and Stripe, open the live connector setup surface instead
-                of treating them as coming-soon marketplace entries.
-              </p>
-            </div>
-            <Link
-              to="/settings/mcp-servers"
-              className="inline-flex items-center gap-1.5 rounded-lg border border-af2-line px-3 py-2 text-xs font-medium text-af2-ink-2 transition hover:bg-af2-paper-2/40"
-            >
-              Manage registry
-              <ExternalLink size={12} />
-            </Link>
-          </div>
-          {loadingRegistered ? (
-            <div className="mt-3 inline-flex items-center gap-2 text-xs text-af2-ink-3">
-              <Loader2 size={12} className="animate-spin" />
-              Loading custom integrations…
-            </div>
-          ) : recentRegistered.length > 0 ? (
-            <div className="mt-3 flex flex-wrap gap-2">
-              {recentRegistered.map((item) => (
-                <span
-                  key={item.id}
-                  className="inline-flex items-center gap-1 rounded-full border border-af2-line bg-af2-paper-2/40 px-2.5 py-1 text-xs text-af2-ink-2"
-                  title={item.url}
-                >
-                  <PlugZap size={11} />
-                  {item.name}
-                </span>
-              ))}
-            </div>
-          ) : (
-            <p className="mt-3 text-xs text-af2-ink-3">No custom integrations registered yet.</p>
-          )}
-        </div>
-
-        <div className="mt-5 flex gap-3">
-          <div className="relative max-w-sm flex-1">
-            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-af2-ink-4" />
-            <input
-              className="w-full rounded-lg border border-af2-line py-2 pl-9 pr-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-              placeholder="Search servers..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-            />
-          </div>
-          <div className="flex gap-1">
-            {CATEGORIES.map((cat) => (
-              <button
-                key={cat}
-                onClick={() => setCategory(cat)}
-                className={`rounded-lg px-3 py-1.5 text-xs font-medium transition ${
-                  category === cat
-                    ? "bg-af2-ink text-white"
-                    : "border border-af2-line bg-af2-card text-af2-ink-3 hover:border-af2-line-2"
-                }`}
-              >
-                {cat}
-              </button>
-            ))}
-          </div>
+        <div className="af2-page-actions">
+          <Link
+            to={LIVE_CONNECTOR_ROUTE}
+            className="af2-btn"
+            style={{ textDecoration: "none" }}
+          >
+            Browse marketplace
+          </Link>
+          <Link
+            to={REGISTRY_ROUTE}
+            className="af2-btn af2-btn-primary"
+            style={{ textDecoration: "none" }}
+          >
+            ＋ Custom MCP server
+          </Link>
         </div>
       </div>
 
-      <div className="mx-auto max-w-6xl px-8 py-6">
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
-          {filtered.map((server) => {
-            const availability = formatAvailability(server, liveStatuses);
-            const logo = server.logo ? (
-              <img src={server.logo} alt={`${server.name} logo`} className="h-6 w-6 object-contain" />
-            ) : (
-              <PlugZap size={16} className="text-af2-ink-2" />
-            );
+      <div className="af2-cluster" style={{ marginBottom: 18 }}>
+        <button
+          type="button"
+          className={`af2-pill${category === ALL_CATEGORY ? " af2-pill-live" : ""}`}
+          onClick={() => setCategory(ALL_CATEGORY)}
+        >
+          <span className="af2-dot" />
+          All ({totalCount})
+        </button>
+        {categories.map((cat) => (
+          <button
+            key={cat}
+            type="button"
+            className={`af2-pill${category === cat ? " af2-pill-live" : ""}`}
+            onClick={() => setCategory(cat)}
+          >
+            {cat}
+          </button>
+        ))}
+      </div>
 
-            return (
+      {loadingLiveStatuses && cards.length === 0 ? (
+        <LoadingState label="Loading integrations..." />
+      ) : null}
+
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))",
+          gap: 12,
+        }}
+      >
+        {filtered.map((card) => (
+          <div key={card.id} className="af2-card" style={{ padding: 16 }}>
+            <div className="af2-row">
               <div
-                key={server.id}
-                className="group rounded-xl border border-af2-line bg-af2-card p-5 transition-all duration-300 hover:border-af2-clay/50 hover:shadow-md"
+                style={{
+                  width: 36,
+                  height: 36,
+                  borderRadius: 8,
+                  background: "var(--af2-paper-2)",
+                  display: "grid",
+                  placeItems: "center",
+                }}
               >
-                <div className="flex items-start justify-between">
-                  <div className="flex items-center gap-2.5">
-                    <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-gradient-to-br from-gray-100 to-gray-200 transition-transform duration-300 group-hover:scale-110">
-                      {logo}
-                    </div>
-                    <div>
-                      <div className="flex items-center gap-1.5">
-                        <span className="text-sm font-semibold text-af2-ink">{server.name}</span>
-                        {server.official && <CheckCircle size={12} className="text-af2-ink-blue" />}
-                      </div>
-                      <div className="flex items-center gap-1 text-xs text-af2-ink-4">
-                        <Tag size={9} />
-                        {server.category}
-                      </div>
-                    </div>
-                  </div>
-
-                  <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${availability.badgeClassName}`}>
-                    {availability.badgeLabel}
-                  </span>
-                </div>
-
-                <p className="mt-3 text-xs leading-relaxed text-af2-ink-3">{server.description}</p>
-
-                <div className="mt-3 flex flex-wrap gap-1">
-                  {server.tools.slice(0, 3).map((tool) => (
-                    <span
-                      key={tool}
-                      className="rounded bg-af2-paper-2 px-2 py-0.5 font-mono text-xs text-af2-ink-2"
-                    >
-                      {tool}
-                    </span>
-                  ))}
-                  {server.tools.length > 3 && (
-                    <span className="rounded bg-af2-paper-2 px-2 py-0.5 text-xs text-af2-ink-4">
-                      +{server.tools.length - 3} more
-                    </span>
-                  )}
-                </div>
-
-                <p className="mt-3 text-xs leading-relaxed text-af2-ink-3">{availability.helperText}</p>
-
-                <div className="mt-4 flex gap-2 border-t border-af2-line pt-3">
-                  <Link
-                    to={availability.ctaTo}
-                    title={availability.title}
-                    className="flex flex-1 items-center justify-center gap-1.5 rounded-lg border border-af2-line px-3 py-2 text-xs font-medium text-af2-ink-2 transition hover:bg-af2-paper-2/40"
-                  >
-                    <Plug size={12} />
-                    {availability.ctaLabel}
-                  </Link>
-                  <Link
-                    to={availability.ctaTo}
-                    title={availability.title}
-                    className="rounded-lg border border-af2-line px-2.5 py-2 text-af2-ink-4 transition hover:border-af2-line-2 hover:text-af2-ink-2"
-                  >
-                    <ExternalLink size={12} />
-                  </Link>
-                </div>
+                <span className="font-af2-serif">{card.name.charAt(0)}</span>
               </div>
-            );
-          })}
-        </div>
-
-        {filtered.length === 0 && (
-          <div className="py-16 text-center text-af2-ink-4">
-            <PlugZap size={40} className="mx-auto mb-3 opacity-30" />
-            <p className="text-sm">No integrations match your search</p>
+              <span className="af2-spacer" />
+              {card.installed ? (
+                <span className="af2-pill af2-pill-live">
+                  <span className="af2-dot" />
+                  connected
+                </span>
+              ) : (
+                <span className="af2-pill">
+                  <span className="af2-dot" />
+                  available
+                </span>
+              )}
+            </div>
+            <div style={{ fontWeight: 600, marginTop: 12 }}>{card.name}</div>
+            <div className="af2-muted" style={{ fontSize: 11.5, marginTop: 2 }}>
+              {card.category} · {card.auth}
+            </div>
+            <div
+              style={{
+                fontSize: 12.5,
+                color: "var(--af2-ink-2)",
+                marginTop: 10,
+                lineHeight: 1.45,
+                minHeight: 36,
+              }}
+            >
+              {card.description}
+            </div>
+            <Link
+              to={card.ctaTo}
+              className="af2-btn af2-btn-sm"
+              style={{
+                marginTop: 12,
+                width: "100%",
+                textDecoration: "none",
+                display: "inline-flex",
+                justifyContent: "center",
+              }}
+            >
+              {card.installed ? "Manage" : "Connect"}
+            </Link>
           </div>
-        )}
+        ))}
+      </div>
+
+      {filtered.length === 0 && !loadingLiveStatuses ? (
+        <div
+          style={{
+            marginTop: 22,
+            padding: "40px 24px",
+            textAlign: "center",
+            border: "1px dashed var(--af2-line-2)",
+            borderRadius: "var(--af2-radius-lg)",
+            background: "var(--af2-card)",
+          }}
+        >
+          <div style={{ fontSize: 14, fontWeight: 500, color: "var(--af2-ink-2)" }}>
+            No integrations in this category yet.
+          </div>
+          <div className="af2-muted" style={{ marginTop: 6, fontSize: 12 }}>
+            Try a different category or register a custom MCP server.
+          </div>
+        </div>
+      ) : null}
+
+      <div
+        className="af2-card"
+        style={{ marginTop: 22, padding: 16 }}
+      >
+        <div className="af2-row">
+          <div>
+            <div className="af2-eyebrow">Custom MCP servers</div>
+            <div style={{ fontWeight: 600, marginTop: 6 }}>
+              {registeredCount} custom MCP {registeredCount === 1 ? "server" : "servers"} registered
+            </div>
+            <div className="af2-muted" style={{ fontSize: 12, marginTop: 4 }}>
+              Register your own MCP endpoints in the registry to expose them to agents.
+            </div>
+          </div>
+          <span className="af2-spacer" />
+          <Link
+            to={REGISTRY_ROUTE}
+            className="af2-btn af2-btn-sm"
+            style={{ textDecoration: "none" }}
+          >
+            Manage registry
+          </Link>
+        </div>
+        {registeredError ? (
+          <div style={{ marginTop: 12 }}>
+            <ErrorState title="Couldn't load custom servers" message={registeredError} />
+          </div>
+        ) : loadingRegistered ? (
+          <div className="af2-muted" style={{ marginTop: 12, fontSize: 12 }}>
+            Loading custom integrations…
+          </div>
+        ) : null}
       </div>
     </div>
   );

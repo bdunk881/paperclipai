@@ -1,4 +1,5 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter } from "react-router-dom";
 import IntegrationsHub from "./MCPIntegrations";
@@ -27,79 +28,96 @@ const liveStatuses = {
   stripe: { connected: false },
 };
 
-describe("IntegrationsHub", () => {
+function renderHub() {
+  return render(
+    <MemoryRouter>
+      <IntegrationsHub />
+    </MemoryRouter>
+  );
+}
+
+describe("IntegrationsHub (v2)", () => {
   beforeEach(() => {
     apiGetMock.mockReset();
     apiGetMock.mockResolvedValue({ servers: [] });
+    vi.spyOn(global, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({ providers: liveStatuses }), { status: 200 })
+    );
   });
 
   afterEach(() => {
     vi.restoreAllMocks();
   });
 
-  it("routes overlapping cards to the live connector setup surface", async () => {
-    vi.spyOn(global, "fetch").mockResolvedValueOnce(
-      new Response(JSON.stringify({ providers: liveStatuses }), { status: 200 })
-    );
+  it("renders v2 chrome (af2-page, af2-page-head, af2-eyebrow, h1.af2-h1)", async () => {
+    const { container } = renderHub();
 
-    render(
-      <MemoryRouter>
-        <IntegrationsHub />
-      </MemoryRouter>
-    );
-
-    expect(await screen.findByText("Slack")).toBeInTheDocument();
-    expect(screen.getByText("cards with live setup already connected")).toBeInTheDocument();
-    expect(await screen.findByRole("link", { name: "Manage connection" })).toHaveAttribute(
-      "href",
-      "/integrations"
-    );
-    expect(await screen.findByRole("link", { name: "Open connector setup" })).toHaveAttribute(
-      "href",
-      "/integrations"
-    );
+    await waitFor(() => {
+      expect(container.querySelector(".af2-page")).not.toBeNull();
+    });
+    expect(container.querySelector(".af2-page-head")).not.toBeNull();
+    expect(container.querySelector(".af2-eyebrow")).not.toBeNull();
+    expect(container.querySelector("h1.af2-h1")).not.toBeNull();
   });
 
-  it("renders a Linear integration card", async () => {
-    vi.spyOn(global, "fetch").mockResolvedValueOnce(
-      new Response(JSON.stringify({ providers: liveStatuses }), { status: 200 })
-    );
-
-    render(
-      <MemoryRouter>
-        <IntegrationsHub />
-      </MemoryRouter>
-    );
-
-    expect(await screen.findByText("Linear")).toBeInTheDocument();
+  it("shows the 'Connect' eyebrow and 'Integrations' heading", async () => {
+    const { container } = renderHub();
+    await waitFor(() => {
+      expect(container.querySelector(".af2-eyebrow")).not.toBeNull();
+    });
+    expect(container.querySelector(".af2-eyebrow")?.textContent).toBe("Connect");
     expect(
-      screen.getByText(
-        "Sync projects and issues with Linear to automate triage, assignment, and status updates."
-      )
+      await screen.findByRole("heading", { level: 1, name: /integrations/i })
     ).toBeInTheDocument();
-    expect(screen.getAllByText("Linear")).toHaveLength(1);
   });
 
-  it("replaces coming-soon marketplace language with explicit registry guidance", async () => {
-    vi.spyOn(global, "fetch").mockResolvedValueOnce(
-      new Response(JSON.stringify({ providers: liveStatuses }), { status: 200 })
-    );
+  it("renders integration cards", async () => {
+    const { container } = renderHub();
 
-    render(
-      <MemoryRouter>
-        <IntegrationsHub />
-      </MemoryRouter>
-    );
+    await waitFor(() => {
+      expect(container.querySelectorAll(".af2-card").length).toBeGreaterThan(0);
+    });
+    expect(await screen.findByText("Slack")).toBeInTheDocument();
+    expect(await screen.findByText("Linear")).toBeInTheDocument();
+    expect(await screen.findByText("GitHub")).toBeInTheDocument();
+  });
 
-    expect(await screen.findByText("custom MCP servers registered")).toBeInTheDocument();
-    expect(screen.getAllByText("Registry required").length).toBeGreaterThan(0);
-    expect(screen.getAllByRole("link", { name: "Register server" }).length).toBeGreaterThan(0);
-    expect(screen.getAllByRole("link", { name: "Register server" })[0]).toHaveAttribute(
-      "href",
-      "/settings/mcp-servers"
-    );
-    expect(screen.queryByText("4.9")).not.toBeInTheDocument();
-    expect(screen.queryByText("4.8")).not.toBeInTheDocument();
-    expect(screen.queryByText("Connect (coming soon)")).not.toBeInTheDocument();
+  it("renders category pills in an af2-cluster", async () => {
+    const { container } = renderHub();
+
+    await waitFor(() => {
+      expect(container.querySelector(".af2-cluster")).not.toBeNull();
+    });
+    expect(container.querySelectorAll(".af2-cluster .af2-pill").length).toBeGreaterThan(1);
+    expect(await screen.findByRole("button", { name: /^All \(/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /communication/i })).toBeInTheDocument();
+  });
+
+  it("marks live-connected providers as 'connected'", async () => {
+    renderHub();
+
+    // Wait for Slack card (which is connected per the mocked /status payload).
+    await screen.findByText("Slack");
+    // Slack lives in the Communication category — switch to it so we can isolate.
+    await userEvent.click(screen.getByRole("button", { name: /communication/i }));
+
+    expect(screen.getAllByText(/connected/i).length).toBeGreaterThan(0);
+  });
+
+  it("links the '+ Custom MCP server' CTA to the registry route", async () => {
+    renderHub();
+
+    const customCta = await screen.findByRole("link", { name: /custom mcp server/i });
+    expect(customCta).toHaveAttribute("href", "/settings/mcp-servers");
+  });
+
+  it("filters cards by selected category", async () => {
+    renderHub();
+
+    await screen.findByText("Slack");
+    await userEvent.click(screen.getByRole("button", { name: /^payments$/i }));
+
+    expect(screen.getByText("Stripe")).toBeInTheDocument();
+    expect(screen.queryByText("Slack")).not.toBeInTheDocument();
   });
 });

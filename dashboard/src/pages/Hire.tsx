@@ -1,22 +1,26 @@
 /**
- * Hire page (HEL-23) — mission intake UI.
+ * Hire page (HEL-23, v2 refresh).
  *
- * Captures a free-text mission statement plus four optional structured
- * prompts (industry, target customer, success metric, runway) and persists
- * to `missions` via POST /api/missions. Reference design:
- * `Projects/AutoFlow/v2/pages.jsx::AF2_Hire`.
+ * Mission-intake screen styled to the v2 "Hire from a mission" reference in
+ * `docs/design/v2/pages.jsx::AF2_Hire`: an editorial page-head, a single
+ * `af2-card` that captures the mission statement plus four optional
+ * structured prompts (industry, target customer, success metric, runway),
+ * a readiness pill, and a "Past missions" list of prior briefs.
  *
- * After save, the user can immediately trigger HEL-24's plan generator
- * (`POST /api/missions/:id/generate-plan`). The org chart + plan-card UI
- * that consumes the generated plan is HEL-25/HEL-26 work, not part of this
- * ticket — when no hiring plan exists yet, this page shows a placeholder
- * that links onward.
+ * Data flow is unchanged from the HEL-23 / HEL-24 / HEL-105 surface area:
+ *   - `createMission` persists the draft via POST /api/missions
+ *   - `generateHiringPlan` calls HEL-24's POST /api/missions/:id/generate-plan
+ *   - On a successful generate, we navigate straight to the side-by-side
+ *     review page at `/hire/plan/:missionId/:planId` (HiringPlanReview /
+ *     HEL-105 owns the review surface). Inline confirmation lives there,
+ *     not here, so a misclick on this page can't provision a team.
  */
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { Loader2, Sparkles } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
+import { ErrorState, LoadingState } from "../components/UiStates";
 import {
   createMission,
   generateHiringPlan,
@@ -33,32 +37,15 @@ const STRUCTURED_FIELDS: Array<{
   key: keyof MissionMetadata;
   label: string;
   placeholder: string;
-  helper: string;
 }> = [
-  {
-    key: "industry",
-    label: "Industry",
-    placeholder: "Industrial robotics",
-    helper: "Anchors role suggestions to a vertical.",
-  },
+  { key: "industry", label: "Industry", placeholder: "Industrial robotics" },
   {
     key: "targetCustomer",
     label: "Target customer",
     placeholder: "OEM purchasing managers in the US",
-    helper: "Helps shape the SDR + content roles.",
   },
-  {
-    key: "successMetric",
-    label: "Success metric",
-    placeholder: "200 demos by Q4",
-    helper: "Defines what 'shipped' looks like.",
-  },
-  {
-    key: "runway",
-    label: "Budget / runway",
-    placeholder: "$250k over 6 months",
-    helper: "Caps the total team budget the planner allocates.",
-  },
+  { key: "successMetric", label: "Success metric", placeholder: "200 demos by Q4" },
+  { key: "runway", label: "Budget / runway", placeholder: "$250k over 6 months" },
 ];
 
 function formatRelative(iso: string): string {
@@ -74,25 +61,36 @@ function formatRelative(iso: string): string {
   return `${days}d ago`;
 }
 
-function previewPrompt(statement: string, metadata: MissionMetadata): string {
-  const lines: string[] = [];
-  lines.push("Mission:");
-  lines.push(statement || "(none yet)");
-  const meta: string[] = [];
-  if (metadata.industry) meta.push(`Industry: ${metadata.industry}`);
-  if (metadata.targetCustomer) meta.push(`Target customer: ${metadata.targetCustomer}`);
-  if (metadata.successMetric) meta.push(`Success metric: ${metadata.successMetric}`);
-  if (metadata.runway) meta.push(`Budget: ${metadata.runway}`);
-  if (meta.length > 0) {
-    lines.push("");
-    lines.push("Context:");
-    for (const line of meta) lines.push(`- ${line}`);
-  }
-  return lines.join("\n");
+/**
+ * Cheap readiness score so the readiness pill in the v2 design has
+ * something to render. We weight the mission statement heavily (it's the
+ * only required field) and give each structured prompt a smaller bump.
+ * Returns a [0, 1] number; the surrounding copy switches at thresholds.
+ */
+function computeReadiness(statement: string, metadata: MissionMetadata): number {
+  const trimmed = statement.trim();
+  if (trimmed.length === 0) return 0;
+  const statementScore = Math.min(trimmed.length / 80, 1) * 0.6;
+  const filled = [
+    metadata.industry,
+    metadata.targetCustomer,
+    metadata.successMetric,
+    metadata.runway,
+  ].filter((v) => (v ?? "").trim().length > 0).length;
+  const metadataScore = (filled / 4) * 0.4;
+  return Math.min(1, Number((statementScore + metadataScore).toFixed(2)));
+}
+
+function readinessLabel(score: number): string {
+  if (score === 0) return "Draft a mission to get started";
+  if (score < 0.5) return "Add a few more details";
+  if (score < 0.8) return "Almost there";
+  return "Ready for plan";
 }
 
 export default function Hire() {
   const { requireAccessToken } = useAuth();
+  const navigate = useNavigate();
   const [statement, setStatement] = useState("");
   const [metadata, setMetadata] = useState<MissionMetadata>({});
   const [missions, setMissions] = useState<Mission[]>([]);
@@ -125,19 +123,14 @@ export default function Hire() {
   const canSave = trimmedStatement.length > 0 && !isBusy;
   const canGenerate = trimmedStatement.length > 0 && !isBusy;
   const charactersLeft = STATEMENT_MAX - statement.length;
-  const preview = useMemo(
-    () => previewPrompt(trimmedStatement, metadata),
-    [trimmedStatement, metadata],
+  const readiness = useMemo(
+    () => computeReadiness(statement, metadata),
+    [statement, metadata],
   );
 
   function updateMetadata<K extends keyof MissionMetadata>(key: K, value: string) {
     setMetadata((current) => ({ ...current, [key]: value }));
   }
-
-  // HEL-105: the inline "Confirm plan" handler from #745 was replaced by
-  // the side-by-side review page at /hire/plan/:missionId/:planId. The
-  // saved-missions list now links there rather than committing in place,
-  // so a misclick can't provision a team.
 
   async function handleSave(generateAfter: boolean): Promise<void> {
     if (!trimmedStatement) {
@@ -159,16 +152,18 @@ export default function Hire() {
 
       if (generateAfter) {
         try {
-          await generateHiringPlan(created.id, token);
-          setNotice(
-            "Mission saved and hiring plan generated. The plan card on the Team page will pick it up.",
-          );
+          const plan = await generateHiringPlan(created.id, token);
+          // HEL-105: jump straight to the side-by-side review page so the
+          // user can scan mission ↔ plan ↔ agents in one screen before
+          // confirming. The Hire page deliberately doesn't render the
+          // generated plan inline.
+          setSubmitState("idle");
+          navigate(`/hire/plan/${created.id}/${plan.hiringPlanId}`);
+          return;
         } catch (planErr) {
-          // Mission already exists; the plan generator step failed. Surface
-          // the error so the user knows the partial state.
           const planMsg = planErr instanceof Error ? planErr.message : String(planErr);
           setNotice(
-            `Mission saved as draft, but plan generation failed: ${planMsg}. You can retry from the missions list below.`,
+            `Mission saved as a draft, but plan generation failed: ${planMsg}. You can retry from past missions below.`,
           );
         }
       } else {
@@ -194,8 +189,8 @@ export default function Hire() {
             Hire from a mission.
           </h1>
           <div className="af2-page-head-meta">
-            Tell AutoFlow what you need done. We&rsquo;ll draft an org, a budget, and the first
-            week of work.
+            Tell AutoFlow what you need done. We&rsquo;ll draft an org, a budget, and the
+            first week of work.
           </div>
         </div>
       </div>
@@ -232,7 +227,7 @@ export default function Hire() {
         </div>
       ) : null}
 
-      {/* Mission statement card */}
+      {/* Mission statement card — v2 intake surface */}
       <div className="af2-card" style={{ padding: 22 }}>
         <label htmlFor="mission-statement" className="af2-eyebrow">
           Mission statement
@@ -243,7 +238,7 @@ export default function Hire() {
           value={statement}
           onChange={(e) => setStatement(e.target.value.slice(0, STATEMENT_MAX))}
           placeholder="Launch the Acme R-7 robotic arm to industrial buyers in North America by Q4."
-          rows={4}
+          rows={3}
           style={{
             width: "100%",
             marginTop: 8,
@@ -252,7 +247,7 @@ export default function Hire() {
             lineHeight: 1.4,
             resize: "vertical",
           }}
-          disabled={submitState === "saving" || submitState === "generating"}
+          disabled={isBusy}
         />
         <div
           className="af2-muted-2"
@@ -261,31 +256,20 @@ export default function Hire() {
           {charactersLeft} of {STATEMENT_MAX} characters left
         </div>
 
-        {/* Structured prompts */}
+        {/* Optional structured prompts. Compact two-column layout so the
+            card matches the v2 reference's airy single-card feel. */}
         <div
           style={{
-            marginTop: 18,
+            marginTop: 16,
             display: "grid",
-            gridTemplateColumns: "repeat(2, 1fr)",
-            gap: 14,
+            gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+            gap: 12,
           }}
         >
           {STRUCTURED_FIELDS.map((field) => (
             <div key={field.key}>
               <label htmlFor={`metadata-${field.key}`} className="af2-eyebrow">
                 {field.label}
-                <span
-                  className="af2-muted-2"
-                  style={{
-                    marginLeft: 6,
-                    fontWeight: 400,
-                    textTransform: "none",
-                    letterSpacing: 0,
-                    fontSize: 11,
-                  }}
-                >
-                  optional
-                </span>
               </label>
               <input
                 id={`metadata-${field.key}`}
@@ -295,19 +279,20 @@ export default function Hire() {
                 onChange={(e) => updateMetadata(field.key, e.target.value)}
                 placeholder={field.placeholder}
                 style={{ width: "100%", marginTop: 6 }}
-                disabled={submitState === "saving" || submitState === "generating"}
+                disabled={isBusy}
               />
-              <p className="af2-muted" style={{ marginTop: 4, fontSize: 11, lineHeight: 1.4 }}>
-                {field.helper}
-              </p>
             </div>
           ))}
         </div>
 
-        {/* Actions */}
-        <div className="af2-row" style={{ marginTop: 18, gap: 10 }}>
-          <span className="af2-muted-2" style={{ fontSize: 11.5 }}>
-            Saved missions stay in this workspace. Generate the plan when you&rsquo;re ready.
+        {/* Readiness pill + actions row, mirroring the v2 footer pattern. */}
+        <div className="af2-row" style={{ marginTop: 16, gap: 10 }}>
+          <span className="af2-pill" aria-label={`Readiness ${readiness.toFixed(2)}`}>
+            <span
+              className="af2-dot"
+              style={{ background: readiness >= 0.5 ? "var(--af2-sage)" : "var(--af2-ink-3)" }}
+            />
+            Readiness {readiness.toFixed(2)} · {readinessLabel(readiness)}
           </span>
           <span className="af2-spacer" />
           <button
@@ -344,82 +329,43 @@ export default function Hire() {
             ) : (
               <Sparkles size={14} />
             )}
-            {submitState === "generating" ? "Generating…" : "Save & generate plan →"}
+            {submitState === "generating" ? "Generating…" : "Generate hiring plan →"}
           </button>
         </div>
       </div>
 
-      {/* Inline LLM preview */}
-      {trimmedStatement.length > 0 ? (
-        <div
-          className="af2-card"
-          style={{
-            marginTop: 18,
-            padding: 18,
-            background: "var(--af2-paper-2)",
-            borderStyle: "dashed",
-          }}
-        >
-          <div className="af2-eyebrow">How we&rsquo;ll brief the planner</div>
-          <pre
-            className="af2-mono"
-            style={{
-              marginTop: 8,
-              whiteSpace: "pre-wrap",
-              fontSize: 12.5,
-              lineHeight: 1.5,
-              color: "var(--af2-ink-2)",
-            }}
-          >
-            {preview}
-          </pre>
-        </div>
-      ) : null}
-
-      {/* Saved missions list */}
-      <h3 className="af2-h3" style={{ marginTop: 28, marginBottom: 12 }}>
-        Saved missions
+      {/* Past missions — compact editorial list of prior briefs. */}
+      <h3 className="af2-h3 font-af2-serif" style={{ marginTop: 28, marginBottom: 12 }}>
+        Past missions
       </h3>
-      <div className="af2-row" style={{ marginBottom: 12 }}>
-        <span className="af2-spacer" />
-        <button
-          type="button"
-          onClick={() => void refreshMissions()}
-          className="af2-btn af2-btn-sm af2-btn-ghost"
-          disabled={loadingList}
-        >
-          {loadingList ? "Loading…" : "Refresh"}
-        </button>
-      </div>
+
+      {loadingList && missions.length === 0 ? (
+        <LoadingState label="Loading missions…" />
+      ) : null}
 
       {listError ? (
-        <div
-          style={{
-            marginBottom: 14,
-            padding: "10px 14px",
-            borderRadius: "var(--af2-radius)",
-            border: "1px solid rgba(194,80,43,0.3)",
-            background: "rgba(194,80,43,0.10)",
-            color: "var(--af2-clay)",
-            fontSize: 13,
-          }}
-        >
-          {listError}
-        </div>
+        <ErrorState
+          title="Couldn't load missions"
+          message={listError}
+          onRetry={() => void refreshMissions()}
+        />
       ) : null}
 
-      {!listError && missions.length === 0 && !loadingList ? (
+      {!listError && !loadingList && missions.length === 0 ? (
         <div
           className="af2-card"
           style={{
-            padding: "40px 24px",
+            padding: "32px 24px",
             textAlign: "center",
             borderStyle: "dashed",
             borderColor: "var(--af2-line-2)",
           }}
         >
-          <p className="af2-serif" style={{ fontSize: 15, color: "var(--af2-ink-2)" }}>
-            No missions yet. Save your first one above to get started.
+          <p
+            className="font-af2-serif"
+            style={{ fontSize: 15, color: "var(--af2-ink-2)", margin: 0 }}
+          >
+            No missions yet. Draft your first one above to get started.
           </p>
         </div>
       ) : null}
@@ -431,7 +377,7 @@ export default function Hire() {
               key={mission.id}
               className="af2-list-row"
               style={{
-                gridTemplateColumns: "1fr 130px 90px",
+                gridTemplateColumns: "1fr 120px 110px",
                 cursor: "default",
                 borderBottom:
                   index < missions.length - 1 ? "1px solid var(--af2-line)" : "none",
@@ -439,7 +385,7 @@ export default function Hire() {
             >
               <div style={{ minWidth: 0 }}>
                 <p
-                  className="af2-serif"
+                  className="font-af2-serif"
                   style={{
                     fontSize: 14,
                     lineHeight: 1.4,
@@ -461,8 +407,6 @@ export default function Hire() {
                 >
                   <span>{mission.companyName}</span>
                   <span>·</span>
-                  <span>{mission.status}</span>
-                  <span>·</span>
                   <span>{formatRelative(mission.createdAt)}</span>
                   {mission.latestHiringPlanId ? (
                     <>
@@ -478,8 +422,6 @@ export default function Hire() {
               <div style={{ textAlign: "right" }}>
                 {mission.latestHiringPlanId ? (
                   mission.status === "active" ? (
-                    // HEL-25: plan already confirmed (mission moved to
-                    // 'active'); link to the Team page to view the org chart.
                     <Link
                       to="/team"
                       className="af2-btn af2-btn-sm"
@@ -488,12 +430,6 @@ export default function Hire() {
                       View team
                     </Link>
                   ) : (
-                    // HEL-105: drafted plan, not yet confirmed. Link to the
-                    // side-by-side review page so the user can scan the
-                    // mission + plan + roadmap + agent cards before
-                    // committing. The review page calls the confirm endpoint
-                    // and refreshes; this CTA stops short of an inline
-                    // confirm so a misclick doesn't provision a team.
                     <Link
                       to={`/hire/plan/${mission.id}/${mission.latestHiringPlanId}`}
                       className="af2-btn af2-btn-sm af2-btn-clay"

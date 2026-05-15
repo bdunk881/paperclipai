@@ -1,42 +1,29 @@
+/**
+ * Approvals — v2 editorial governance board tests.
+ *
+ * Asserts:
+ *   - v2 page chrome (`.af2-page`, `.af2-page-head`, `h1.af2-h1`).
+ *   - Eyebrow "Governance · Board" + heading "Approvals".
+ *   - Pending approval message rows render.
+ *   - Each row has Approve + Reject buttons.
+ *   - Clicking Approve invokes resolveApproval with the right args
+ *     and the API is then refetched.
+ */
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import Approvals from "./Approvals";
 
-const {
-  createHitlAskCeoRequestMock,
-  listApprovalsMock,
-  listControlPlaneTeamsMock,
-  getHitlCompanyStateMock,
-  listHitlNotificationsMock,
-  resolveApprovalMock,
-  updateHitlCheckpointScheduleMock,
-  createHitlCheckpointMock,
-  createHitlArtifactCommentMock,
-} = vi.hoisted(() => ({
-  createHitlAskCeoRequestMock: vi.fn(),
+const { listApprovalsMock, resolveApprovalMock } = vi.hoisted(() => ({
   listApprovalsMock: vi.fn(),
-  listControlPlaneTeamsMock: vi.fn(),
-  getHitlCompanyStateMock: vi.fn(),
-  listHitlNotificationsMock: vi.fn(),
   resolveApprovalMock: vi.fn(),
-  updateHitlCheckpointScheduleMock: vi.fn(),
-  createHitlCheckpointMock: vi.fn(),
-  createHitlArtifactCommentMock: vi.fn(),
 }));
 
 const requireAccessTokenMock = vi.fn();
 
 vi.mock("../api/client", () => ({
-  createHitlAskCeoRequest: createHitlAskCeoRequestMock,
   listApprovals: listApprovalsMock,
-  listControlPlaneTeams: listControlPlaneTeamsMock,
-  getHitlCompanyState: getHitlCompanyStateMock,
-  listHitlNotifications: listHitlNotificationsMock,
   resolveApproval: resolveApprovalMock,
-  updateHitlCheckpointSchedule: updateHitlCheckpointScheduleMock,
-  createHitlCheckpoint: createHitlCheckpointMock,
-  createHitlArtifactComment: createHitlArtifactCommentMock,
 }));
 
 vi.mock("../context/AuthContext", () => ({
@@ -46,210 +33,116 @@ vi.mock("../context/AuthContext", () => ({
   }),
 }));
 
-describe("Approvals", () => {
+const SAMPLE_APPROVALS = [
+  {
+    id: "11111111-2222-3333-4444-555555555555",
+    runId: "run-1",
+    templateName: "Launch Plan",
+    stepId: "step-approve",
+    stepName: "Publish sign-off",
+    assignee: "Brad Dunk",
+    message: "Approve the final ship candidate.",
+    timeoutMinutes: 60,
+    requestedAt: "2026-04-27T12:15:00.000Z",
+    status: "pending" as const,
+  },
+  {
+    id: "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+    runId: "run-2",
+    templateName: "Migration",
+    stepId: "step-confirm",
+    stepName: "Schema cutover",
+    assignee: "Casey Smith",
+    message: "Confirm Postgres cutover window.",
+    timeoutMinutes: 10,
+    requestedAt: "2026-04-27T11:00:00.000Z",
+    status: "pending" as const,
+  },
+];
+
+describe("Approvals (v2 Governance board)", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     requireAccessTokenMock.mockResolvedValue("token-123");
-    listApprovalsMock.mockResolvedValue([]);
-    listControlPlaneTeamsMock.mockResolvedValue([
-      {
-        id: "company-1",
-        name: "AutoFlow Build",
-        status: "running",
-      },
-    ]);
-    getHitlCompanyStateMock.mockResolvedValue({
-      companyId: "company-1",
-      version: "2026-04-28T20:00:00.000Z",
-      summary: {
-        companyId: "company-1",
-        version: "2026-04-28T20:00:00.000Z",
-        team: {
-          id: "company-1",
-          name: "AutoFlow Build",
-          status: "running",
-          budgetMonthlyUsd: 2000,
-          agentCount: 4,
-          activeExecutionCount: 1,
-          openTaskCount: 3,
-        },
-        hitl: {
-          openCheckpointCount: 2,
-          unresolvedCommentCount: 1,
-          askCeoRequestCount: 1,
-        },
-      },
-      checkpointSchedule: {
-        id: "schedule-1",
-        companyId: "company-1",
-        userId: "user-123",
-        enabled: true,
-        timezone: "America/New_York",
-        notificationChannels: ["inbox", "agent_wake"],
-        weeklyReview: {
-          enabled: true,
-          dayOfWeek: 5,
-          hour: 16,
-          minute: 0,
-        },
-        milestoneGate: {
-          enabled: true,
-          blockingStatuses: ["at_risk", "ready_for_review", "blocked"],
-        },
-        kpiDeviation: {
-          enabled: true,
-          thresholds: [],
-        },
-        createdAt: "2026-04-28T20:00:00.000Z",
-        updatedAt: "2026-04-28T20:00:00.000Z",
-      },
-      checkpoints: [
-        {
-          id: "checkpoint-1",
-          companyId: "company-1",
-          userId: "user-123",
-          triggerType: "manual",
-          source: "manual",
-          title: "Review the launch narrative",
-          status: "pending",
-          artifactRefs: [],
-          createdAt: "2026-04-28T20:00:00.000Z",
-          updatedAt: "2026-04-28T20:00:00.000Z",
-          notificationIds: [],
-        },
-      ],
-      artifactComments: [
-        {
-          id: "comment-1",
-          companyId: "company-1",
-          userId: "user-123",
-          artifact: {
-            kind: "document",
-            id: "prd-1",
-            title: "Launch PRD",
-          },
-          anchor: {
-            quote: "Ask the CEO should include citations",
-          },
-          body: "Please add the company-state evidence block before this ships.",
-          status: "open",
-          routing: {
-            recipientType: "agent",
-            recipientId: "backend-engineer",
-          },
-          createdAt: "2026-04-28T20:00:00.000Z",
-          updatedAt: "2026-04-28T20:00:00.000Z",
-          notificationIds: [],
-        },
-      ],
-      askCeoRequests: [
-        {
-          id: "ask-1",
-          companyId: "company-1",
-          userId: "user-123",
-          question: "What needs my attention?",
-          status: "answered",
-          response: {
-            summary: "Company AutoFlow Build has 3 open tasks and 2 checkpoints.",
-            recommendedActions: [
-              "Review newly opened checkpoints before advancing milestones.",
-            ],
-            citedEntities: [],
-            companyStateVersion: "2026-04-28T20:00:00.000Z",
-          },
-          createdAt: "2026-04-28T20:00:00.000Z",
-        },
-      ],
-    });
-    listHitlNotificationsMock.mockResolvedValue([
-      {
-        id: "notification-1",
-        companyId: "company-1",
-        userId: "user-123",
-        kind: "checkpoint",
-        channel: "inbox",
-        recipientType: "user",
-        recipientId: "user-123",
-        status: "pending",
-        payload: {},
-        createdAt: "2026-04-28T20:00:00.000Z",
-      },
-    ]);
+    listApprovalsMock.mockResolvedValue(SAMPLE_APPROVALS);
+    resolveApprovalMock.mockResolvedValue(undefined);
   });
 
-  it("renders the HITL console with company-scoped data", async () => {
-    render(
-      <MemoryRouter>
-        <Approvals />
-      </MemoryRouter>
-    );
-
-    // HEL-59 v2 restyle: hero copy was replaced with editorial chrome.
-    // The h1 is now just "Approvals"; the descriptor moves to the meta line.
-    expect(
-      await screen.findByRole("heading", { name: /^Approvals$/i, level: 1 })
-    ).toBeInTheDocument();
-    // The metric label is now in the af2-stats strip (one occurrence).
-    expect(screen.getAllByText("Open checkpoints").length).toBeGreaterThanOrEqual(1);
-    expect(screen.getByText("Review the launch narrative")).toBeInTheDocument();
-    expect(screen.getByText("Launch PRD")).toBeInTheDocument();
-    expect(screen.getByText("Latest answer")).toBeInTheDocument();
-  });
-
-  it("renders with v2 structural markers (HEL-59)", async () => {
+  it("renders the v2 page chrome", async () => {
     const { container } = render(
       <MemoryRouter>
         <Approvals />
-      </MemoryRouter>
+      </MemoryRouter>,
     );
 
     await screen.findByRole("heading", { name: /^Approvals$/i, level: 1 });
+
     expect(container.querySelector(".af2-page")).not.toBeNull();
     expect(container.querySelector(".af2-page-head")).not.toBeNull();
-    expect(container.querySelector(".af2-eyebrow")).not.toBeNull();
     expect(container.querySelector("h1.af2-h1")).not.toBeNull();
-    expect(container.querySelector(".af2-stats")).not.toBeNull();
-    expect(container.querySelectorAll(".af2-stat").length).toBe(4);
   });
 
-  it("submits an Ask the CEO request and refreshes the console", async () => {
-    createHitlAskCeoRequestMock.mockResolvedValue({
-      id: "ask-2",
-      companyId: "company-1",
-      userId: "user-123",
-      question: "What changed today?",
-      status: "answered",
-      response: {
-        summary: "New checkpoint activity detected.",
-        recommendedActions: [],
-        citedEntities: [],
-        companyStateVersion: "2026-04-28T20:00:00.000Z",
-      },
-      createdAt: "2026-04-28T20:00:00.000Z",
-    });
-
+  it("renders the eyebrow and heading", async () => {
     render(
       <MemoryRouter>
         <Approvals />
-      </MemoryRouter>
+      </MemoryRouter>,
     );
 
-    expect(await screen.findByText("Latest answer")).toBeInTheDocument();
+    expect(
+      await screen.findByRole("heading", { name: /^Approvals$/i, level: 1 }),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Governance · Board")).toBeInTheDocument();
+  });
 
-    fireEvent.change(screen.getByPlaceholderText("What needs my attention right now?"), {
-      target: { value: "What changed today?" },
-    });
-    fireEvent.click(screen.getByRole("button", { name: "Ask" }));
+  it("renders pending approval messages", async () => {
+    render(
+      <MemoryRouter>
+        <Approvals />
+      </MemoryRouter>,
+    );
+
+    expect(
+      await screen.findByText("Approve the final ship candidate."),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Confirm Postgres cutover window.")).toBeInTheDocument();
+  });
+
+  it("renders Approve and Reject buttons per pending row", async () => {
+    render(
+      <MemoryRouter>
+        <Approvals />
+      </MemoryRouter>,
+    );
+
+    await screen.findByText("Approve the final ship candidate.");
+
+    expect(screen.getAllByRole("button", { name: /^Approve$/i })).toHaveLength(2);
+    expect(screen.getAllByRole("button", { name: /^Reject$/i })).toHaveLength(2);
+  });
+
+  it("calls resolveApproval and refetches on Approve", async () => {
+    render(
+      <MemoryRouter>
+        <Approvals />
+      </MemoryRouter>,
+    );
+
+    await screen.findByText("Approve the final ship candidate.");
+    expect(listApprovalsMock).toHaveBeenCalledTimes(1);
+
+    fireEvent.click(screen.getAllByRole("button", { name: /^Approve$/i })[0]);
 
     await waitFor(() => {
-      expect(createHitlAskCeoRequestMock).toHaveBeenCalledWith(
-        "company-1",
-        {
-          question: "What changed today?",
-          context: { checkpointId: "checkpoint-1" },
-        },
-        "token-123"
+      expect(resolveApprovalMock).toHaveBeenCalledWith(
+        SAMPLE_APPROVALS[0].id,
+        "approved",
+        "token-123",
       );
+    });
+
+    await waitFor(() => {
+      expect(listApprovalsMock).toHaveBeenCalledTimes(2);
     });
   });
 });

@@ -91,8 +91,8 @@ const KIND_META: Record<
   trigger: {
     label: "Trigger",
     icon: <Zap size={14} />,
-    chipColor: "text-orange-700 dark:text-orange-400",
-    chipBg: "bg-orange-50 border-orange-200 dark:bg-orange-500/10 dark:border-orange-500/30",
+    chipColor: "text-af2-mustard dark:text-af2-mustard",
+    chipBg: "bg-af2-mustard/10 border-af2-mustard/30 dark:bg-af2-mustard/100/10 dark:border-af2-mustard/30",
     categoryTint: "rgba(249,115,22,0.12)",
     darkCategoryTint: "rgba(249,115,22,0.18)",
     categoryBorder: "#f97316",
@@ -100,8 +100,8 @@ const KIND_META: Record<
   cron_trigger: {
     label: "Cron Trigger",
     icon: <CalendarClock size={14} />,
-    chipColor: "text-emerald-700 dark:text-emerald-400",
-    chipBg: "bg-emerald-50 border-emerald-200 dark:bg-emerald-500/10 dark:border-emerald-500/30",
+    chipColor: "text-af2-sage dark:text-af2-sage",
+    chipBg: "bg-af2-sage/10 border-af2-sage/30 dark:bg-af2-sage/100/10 dark:border-af2-sage/30",
     categoryTint: "rgba(16,185,129,0.12)",
     darkCategoryTint: "rgba(16,185,129,0.18)",
     categoryBorder: "#10b981",
@@ -109,8 +109,8 @@ const KIND_META: Record<
   interval_trigger: {
     label: "Interval Trigger",
     icon: <Timer size={14} />,
-    chipColor: "text-emerald-700 dark:text-emerald-400",
-    chipBg: "bg-emerald-50 border-emerald-200 dark:bg-emerald-500/10 dark:border-emerald-500/30",
+    chipColor: "text-af2-sage dark:text-af2-sage",
+    chipBg: "bg-af2-sage/10 border-af2-sage/30 dark:bg-af2-sage/100/10 dark:border-af2-sage/30",
     categoryTint: "rgba(16,185,129,0.12)",
     darkCategoryTint: "rgba(16,185,129,0.18)",
     categoryBorder: "#10b981",
@@ -118,8 +118,8 @@ const KIND_META: Record<
   llm: {
     label: "LLM",
     icon: <Brain size={14} />,
-    chipColor: "text-brand-700 dark:text-brand-300",
-    chipBg: "bg-brand-50 border-brand-200 dark:bg-brand-500/10 dark:border-brand-500/30",
+    chipColor: "text-af2-clay",
+    chipBg: "bg-af2-clay-soft/30 border-af2-clay/30 dark:bg-af2-clay-soft/300/10 dark:border-af2-clay/30",
     categoryTint: "rgba(99,102,241,0.12)",
     darkCategoryTint: "rgba(99,102,241,0.18)",
     categoryBorder: "#6366f1",
@@ -127,8 +127,8 @@ const KIND_META: Record<
   condition: {
     label: "Condition",
     icon: <GitBranch size={14} />,
-    chipColor: "text-amber-700 dark:text-amber-400",
-    chipBg: "bg-amber-50 border-amber-200 dark:bg-amber-500/10 dark:border-amber-500/30",
+    chipColor: "text-af2-mustard dark:text-amber-400",
+    chipBg: "bg-af2-mustard/10 border-af2-mustard/30 dark:bg-af2-mustard/100/10 dark:border-af2-mustard/30",
     categoryTint: "rgba(245,158,11,0.12)",
     darkCategoryTint: "rgba(245,158,11,0.18)",
     categoryBorder: "#f59e0b",
@@ -136,8 +136,8 @@ const KIND_META: Record<
   transform: {
     label: "Transform",
     icon: <Wrench size={14} />,
-    chipColor: "text-brand-700 dark:text-brand-300",
-    chipBg: "bg-brand-50 border-brand-200 dark:bg-brand-500/10 dark:border-brand-500/30",
+    chipColor: "text-af2-clay",
+    chipBg: "bg-af2-clay-soft/30 border-af2-clay/30 dark:bg-af2-clay-soft/300/10 dark:border-af2-clay/30",
     categoryTint: "rgba(99,102,241,0.12)",
     darkCategoryTint: "rgba(99,102,241,0.18)",
     categoryBorder: "#6366f1",
@@ -145,8 +145,8 @@ const KIND_META: Record<
   action: {
     label: "Action",
     icon: <ArrowRight size={14} />,
-    chipColor: "text-brand-700 dark:text-brand-300",
-    chipBg: "bg-brand-50 border-brand-200 dark:bg-brand-500/10 dark:border-brand-500/30",
+    chipColor: "text-af2-clay",
+    chipBg: "bg-af2-clay-soft/30 border-af2-clay/30 dark:bg-af2-clay-soft/300/10 dark:border-af2-clay/30",
     categoryTint: "rgba(99,102,241,0.12)",
     darkCategoryTint: "rgba(99,102,241,0.18)",
     categoryBorder: "#6366f1",
@@ -154,8 +154,8 @@ const KIND_META: Record<
   output: {
     label: "Output",
     icon: <Flag size={14} />,
-    chipColor: "text-brand-700 dark:text-brand-300",
-    chipBg: "bg-brand-50 border-brand-200 dark:bg-brand-500/10 dark:border-brand-500/30",
+    chipColor: "text-af2-clay",
+    chipBg: "bg-af2-clay-soft/30 border-af2-clay/30 dark:bg-af2-clay-soft/300/10 dark:border-af2-clay/30",
     categoryTint: "rgba(99,102,241,0.12)",
     darkCategoryTint: "rgba(99,102,241,0.18)",
     categoryBorder: "#6366f1",
@@ -163,8 +163,8 @@ const KIND_META: Record<
   agent: {
     label: "Agent",
     icon: <Bot size={14} />,
-    chipColor: "text-brand-700 dark:text-brand-300",
-    chipBg: "bg-brand-50 border-brand-200 dark:bg-brand-500/10 dark:border-brand-500/30",
+    chipColor: "text-af2-clay",
+    chipBg: "bg-af2-clay-soft/30 border-af2-clay/30 dark:bg-af2-clay-soft/300/10 dark:border-af2-clay/30",
     categoryTint: "rgba(99,102,241,0.12)",
     darkCategoryTint: "rgba(99,102,241,0.18)",
     categoryBorder: "#6366f1",
@@ -172,8 +172,8 @@ const KIND_META: Record<
   approval: {
     label: "Approval",
     icon: <UserCheck size={14} />,
-    chipColor: "text-brand-700 dark:text-brand-300",
-    chipBg: "bg-brand-50 border-brand-200 dark:bg-brand-500/10 dark:border-brand-500/30",
+    chipColor: "text-af2-clay",
+    chipBg: "bg-af2-clay-soft/30 border-af2-clay/30 dark:bg-af2-clay-soft/300/10 dark:border-af2-clay/30",
     categoryTint: "rgba(99,102,241,0.12)",
     darkCategoryTint: "rgba(99,102,241,0.18)",
     categoryBorder: "#6366f1",
@@ -190,8 +190,8 @@ const KIND_META: Record<
   file_trigger: {
     label: "File Trigger",
     icon: <FileInput size={14} />,
-    chipColor: "text-orange-700 dark:text-orange-400",
-    chipBg: "bg-orange-50 border-orange-200 dark:bg-orange-500/10 dark:border-orange-500/30",
+    chipColor: "text-af2-mustard dark:text-af2-mustard",
+    chipBg: "bg-af2-mustard/10 border-af2-mustard/30 dark:bg-af2-mustard/100/10 dark:border-af2-mustard/30",
     categoryTint: "rgba(249,115,22,0.12)",
     darkCategoryTint: "rgba(249,115,22,0.18)",
     categoryBorder: "#f97316",
@@ -356,13 +356,13 @@ function describeCronExpression(cronExpression: string, timezone: string): strin
 
 function buildStepFieldClass(options?: { mono?: boolean; hasError?: boolean; flashSuccess?: boolean }) {
   return clsx(
-    "w-full rounded-lg border px-3 py-2 text-sm focus:outline-none focus:ring-2 bg-white dark:bg-surface-800 text-gray-900 dark:text-gray-100",
+    "w-full rounded-lg border px-3 py-2 text-sm focus:outline-none focus:ring-2 bg-af2-card text-af2-ink",
     options?.mono && "font-mono",
     options?.hasError
       ? "border-red-500 focus:ring-red-500"
       : options?.flashSuccess
-        ? "border-emerald-500 focus:ring-brand-500 ring-2 ring-emerald-500/20"
-        : "border-gray-300 dark:border-surface-700 focus:ring-brand-500",
+        ? "border-emerald-500 focus:ring-af2-clay/30 ring-2 ring-emerald-500/20"
+        : "border-af2-line-2 focus:ring-af2-clay/30",
   );
 }
 
@@ -924,41 +924,41 @@ export default function WorkflowBuilder() {
       {/* Left panel — canvas */}
       <div className="flex-1 flex flex-col overflow-hidden">
         {runError && (
-          <div className="px-6 py-2 bg-red-50 border-b border-red-200 text-sm text-red-700">
+          <div className="px-6 py-2 bg-af2-clay-soft/30 border-b border-af2-clay/30 text-sm text-af2-clay">
             {runError}
           </div>
         )}
         {templatesError && (
-          <div className="px-6 py-2 bg-amber-50 border-b border-amber-200 text-sm text-amber-800">
+          <div className="px-6 py-2 bg-af2-mustard/10 border-b border-af2-mustard/30 text-sm text-af2-mustard">
             {templatesError}
           </div>
         )}
         {saveError && (
-          <div className="px-6 py-2 bg-red-50 border-b border-red-200 text-sm text-red-700">
+          <div className="px-6 py-2 bg-af2-clay-soft/30 border-b border-af2-clay/30 text-sm text-af2-clay">
             {saveError}
           </div>
         )}
         {deployError && (
-          <div className="px-6 py-2 bg-red-50 border-b border-red-200 text-sm text-red-700">
+          <div className="px-6 py-2 bg-af2-clay-soft/30 border-b border-af2-clay/30 text-sm text-af2-clay">
             {deployError}
           </div>
         )}
         {latestDeployment && (
-          <div className="flex items-center justify-between gap-3 px-6 py-3 bg-teal-50 border-b border-teal-200 text-sm text-teal-900">
+          <div className="flex items-center justify-between gap-3 px-6 py-3 bg-af2-sage/10 border-b border-af2-sage/30 text-sm text-af2-sage">
             <div>
               Deployed as <span className="font-semibold">{latestDeployment.team.name}</span> with{" "}
               <span className="font-semibold">{latestDeployment.agents.length}</span> agents.
             </div>
             <a
               href={`/agents/team/${latestDeployment.team.id}`}
-              className="rounded-full bg-teal-700 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-teal-800"
+              className="rounded-full bg-af2-sage px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-af2-sage-2"
             >
               Open team monitor
             </a>
           </div>
         )}
         {graphError && (
-          <div className="px-6 py-2 bg-amber-50 border-b border-amber-200 text-sm text-amber-800">
+          <div className="px-6 py-2 bg-af2-mustard/10 border-b border-af2-mustard/30 text-sm text-af2-mustard">
             {graphError}
           </div>
         )}
@@ -1128,7 +1128,7 @@ export default function WorkflowBuilder() {
                 />
               </ReactFlow>
               <div className="pointer-events-none absolute bottom-6 left-1/2 z-10 -translate-x-1/2">
-                <div className="pointer-events-auto rounded-full border border-slate-200 dark:border-surface-700 bg-white/95 dark:bg-surface-800/95 px-2 py-1.5 shadow-md backdrop-blur">
+                <div className="pointer-events-auto rounded-full border border-slate-200 dark:border-af2-line-2 bg-white/95 dark:bg-af2-paper-2/95 px-2 py-1.5 shadow-md backdrop-blur">
                   <AddStepMenu onAdd={addStep} />
                 </div>
               </div>
@@ -1158,24 +1158,24 @@ export default function WorkflowBuilder() {
       {selectedStep && (
         <div
           className={clsx(
-            "animate-slide-up absolute top-0 z-20 h-full w-[360px] overflow-y-auto border-l border-gray-200 dark:border-surface-800 bg-white dark:bg-surface-900 shadow-xl transition-transform duration-200",
+            "animate-slide-up absolute top-0 z-20 h-full w-[360px] overflow-y-auto border-l border-af2-line bg-af2-card shadow-xl transition-transform duration-200",
             showCopilot ? "right-[360px]" : "right-0"
           )}
         >
-          <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100 dark:border-surface-800">
-            <h3 className="font-semibold text-gray-900 dark:text-gray-100 text-sm">Step Properties</h3>
+          <div className="flex items-center justify-between px-5 py-4 border-b border-af2-line">
+            <h3 className="font-semibold text-af2-ink text-sm">Step Properties</h3>
             <button
               onClick={() => setSelectedStepId(null)}
-              className="p-1 rounded hover:bg-gray-100 dark:hover:bg-surface-800"
+              className="p-1 rounded hover:bg-af2-paper-2 dark:hover:bg-af2-paper-2"
             >
-              <X size={16} className="text-gray-500" />
+              <X size={16} className="text-af2-ink-3" />
             </button>
           </div>
 
           <div className="p-5 space-y-5">
             <Field label="Name">
               <input
-                className="w-full px-3 py-2 text-sm border border-gray-300 dark:border-surface-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-500 bg-white dark:bg-surface-800 text-gray-900 dark:text-gray-100"
+                className="w-full px-3 py-2 text-sm border border-af2-line-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-af2-clay/30 bg-af2-card text-af2-ink"
                 value={selectedStep.name}
                 onChange={(e) => updateStep(selectedStep.id, { name: e.target.value })}
               />
@@ -1183,7 +1183,7 @@ export default function WorkflowBuilder() {
 
             <Field label="Kind">
               <select
-                className="w-full px-3 py-2 text-sm border border-gray-300 dark:border-surface-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-500 bg-white dark:bg-surface-800 text-gray-900 dark:text-gray-100"
+                className="w-full px-3 py-2 text-sm border border-af2-line-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-af2-clay/30 bg-af2-card text-af2-ink"
                 value={selectedStep.kind}
                 onChange={(e) =>
                   updateStep(selectedStep.id, { kind: e.target.value as StepKind })
@@ -1199,7 +1199,7 @@ export default function WorkflowBuilder() {
 
             <Field label="Description">
               <textarea
-                className="w-full px-3 py-2 text-sm border border-gray-300 dark:border-surface-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-500 resize-none bg-white dark:bg-surface-800 text-gray-900 dark:text-gray-100"
+                className="w-full px-3 py-2 text-sm border border-af2-line-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-af2-clay/30 resize-none bg-af2-card text-af2-ink"
                 rows={3}
                 value={selectedStep.description}
                 onChange={(e) =>
@@ -1211,7 +1211,7 @@ export default function WorkflowBuilder() {
             {selectedStep.kind === "llm" && (
               <Field label="Prompt Template">
                 <textarea
-                  className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none font-mono text-xs"
+                  className="w-full px-3 py-2 text-sm border border-af2-line-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-af2-clay/30 resize-none font-mono text-xs"
                   rows={5}
                   placeholder="Use {{key}} for variable interpolation"
                   value={selectedStep.promptTemplate ?? ""}
@@ -1243,21 +1243,21 @@ export default function WorkflowBuilder() {
                         }
                       }}
                     />
-                    <p className="mt-1 text-xs text-gray-500 dark:text-surface-400">
+                    <p className="mt-1 text-xs text-af2-ink-3">
                       Standard crontab format.{" "}
                       <a
                         href="https://crontab.guru"
                         target="_blank"
                         rel="noreferrer"
-                        className="font-medium underline hover:text-brand-600 dark:hover:text-brand-300"
+                        className="font-medium underline hover:text-af2-clay dark:hover:text-af2-clay"
                       >
                         Learn more
                       </a>
                     </p>
                     {cronValidationError ? (
-                      <p className="mt-1 text-xs text-red-600">{cronValidationError}</p>
+                      <p className="mt-1 text-xs text-af2-clay">{cronValidationError}</p>
                     ) : cronPreview ? (
-                      <p className="mt-1 text-xs text-surface-500 dark:text-surface-400">{cronPreview}</p>
+                      <p className="mt-1 text-xs text-af2-paper0 dark:text-af2-ink-4">{cronPreview}</p>
                     ) : null}
                   </div>
                 </Field>
@@ -1306,11 +1306,11 @@ export default function WorkflowBuilder() {
                         }
                       }}
                     />
-                    <p className="mt-1 text-xs text-gray-500 dark:text-surface-400">
+                    <p className="mt-1 text-xs text-af2-ink-3">
                       How often the workflow should execute.
                     </p>
                     {intervalValidationError && (
-                      <p className="mt-1 text-xs text-red-600">{intervalValidationError}</p>
+                      <p className="mt-1 text-xs text-af2-clay">{intervalValidationError}</p>
                     )}
                   </div>
                 </Field>
@@ -1340,13 +1340,13 @@ export default function WorkflowBuilder() {
             {selectedStep.kind === "llm" && (
               <Field label="LLM Provider">
                 {llmConfigsLoading ? (
-                  <div className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg text-gray-400 bg-gray-50">
+                  <div className="w-full px-3 py-2 text-sm border border-af2-line rounded-lg text-af2-ink-4 bg-af2-paper-2">
                     Loading providers…
                   </div>
                 ) : llmConfigsError ? (
-                  <p className="text-xs text-red-600">{llmConfigsError}</p>
+                  <p className="text-xs text-af2-clay">{llmConfigsError}</p>
                 ) : llmConfigs.length === 0 ? (
-                  <div className="px-3 py-2.5 rounded-lg border border-amber-200 bg-amber-50 text-xs text-amber-700 leading-relaxed">
+                  <div className="px-3 py-2.5 rounded-lg border border-af2-mustard/30 bg-af2-mustard/10 text-xs text-af2-mustard leading-relaxed">
                     No LLM providers connected.{" "}
                     <a href="/settings/llm-providers" className="underline font-medium hover:text-amber-900">
                       Go to Settings
@@ -1355,7 +1355,7 @@ export default function WorkflowBuilder() {
                   </div>
                 ) : (
                   <select
-                    className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                    className="w-full px-3 py-2 text-sm border border-af2-line-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-af2-clay/30 bg-white"
                     value={selectedStep.llmConfigId ?? ""}
                     onChange={(e) =>
                       updateStep(selectedStep.id, {
@@ -1377,7 +1377,7 @@ export default function WorkflowBuilder() {
             {selectedStep.kind === "condition" && (
               <Field label="Condition Expression">
                 <input
-                  className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono"
+                  className="w-full px-3 py-2 text-sm border border-af2-line-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-af2-clay/30 font-mono"
                   placeholder='e.g. urgency === "high"'
                   value={selectedStep.condition ?? ""}
                   onChange={(e) =>
@@ -1390,7 +1390,7 @@ export default function WorkflowBuilder() {
             {selectedStep.kind === "action" && (
               <Field label="Action Target">
                 <input
-                  className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono"
+                  className="w-full px-3 py-2 text-sm border border-af2-line-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-af2-clay/30 font-mono"
                   placeholder="e.g. email.send"
                   value={selectedStep.action ?? ""}
                   onChange={(e) =>
@@ -1403,13 +1403,13 @@ export default function WorkflowBuilder() {
             {selectedStep.kind === "agent" && (
               <>
                 {latestDeployment && deploymentAgentByStepId.get(selectedStep.id) && (
-                  <div className="rounded-xl border border-teal-200 bg-teal-50 px-4 py-3 text-sm text-teal-900">
+                  <div className="rounded-xl border border-af2-sage/30 bg-af2-sage/10 px-4 py-3 text-sm text-af2-sage">
                     <p className="font-medium">This node is mapped to a deployed agent.</p>
                     <a
                       href={`/agents/team/${latestDeployment.team.id}?agent=${encodeURIComponent(
                         deploymentAgentByStepId.get(selectedStep.id)!.id
                       )}`}
-                      className="mt-2 inline-flex text-xs font-semibold text-teal-700 underline"
+                      className="mt-2 inline-flex text-xs font-semibold text-af2-sage underline"
                     >
                       Open agent detail
                     </a>
@@ -1417,7 +1417,7 @@ export default function WorkflowBuilder() {
                 )}
                 <Field label="Role Key">
                   <input
-                    className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="w-full px-3 py-2 text-sm border border-af2-line-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-af2-clay/30"
                     placeholder="e.g. workflow-manager"
                     value={selectedStep.agentRoleKey ?? ""}
                     onChange={(e) =>
@@ -1427,7 +1427,7 @@ export default function WorkflowBuilder() {
                 </Field>
                 <Field label="Model">
                   <input
-                    className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="w-full px-3 py-2 text-sm border border-af2-line-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-af2-clay/30"
                     placeholder="e.g. claude-sonnet-4-6"
                     value={selectedStep.agentModel ?? ""}
                     onChange={(e) =>
@@ -1437,7 +1437,7 @@ export default function WorkflowBuilder() {
                 </Field>
                 <Field label="Instructions">
                   <textarea
-                    className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+                    className="w-full px-3 py-2 text-sm border border-af2-line-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-af2-clay/30 resize-none"
                     rows={4}
                     placeholder="System instructions for this agent…"
                     value={selectedStep.agentInstructions ?? ""}
@@ -1448,7 +1448,7 @@ export default function WorkflowBuilder() {
                 </Field>
                 <Field label="Assigned Skills (comma-separated)">
                   <input
-                    className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="w-full px-3 py-2 text-sm border border-af2-line-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-af2-clay/30"
                     placeholder="paperclip, para-memory-files, security-review"
                     value={(selectedStep.agentSkills ?? []).join(", ")}
                     onChange={(e) =>
@@ -1466,7 +1466,7 @@ export default function WorkflowBuilder() {
                     type="number"
                     min={0}
                     step="1"
-                    className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="w-full px-3 py-2 text-sm border border-af2-line-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-af2-clay/30"
                     placeholder="0"
                     value={selectedStep.agentBudgetMonthlyUsd ?? 0}
                     onChange={(e) =>
@@ -1478,7 +1478,7 @@ export default function WorkflowBuilder() {
                 </Field>
                 <Field label="Trigger Schedule">
                   <select
-                    className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                    className="w-full px-3 py-2 text-sm border border-af2-line-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-af2-clay/30 bg-white"
                     value={selectedStep.agentScheduleType ?? "manual"}
                     onChange={(e) =>
                       updateStep(selectedStep.id, {
@@ -1495,7 +1495,7 @@ export default function WorkflowBuilder() {
                   selectedStep.agentScheduleType === "cron") && (
                   <Field label={selectedStep.agentScheduleType === "interval" ? "Interval Minutes" : "Cron Expression"}>
                     <input
-                      className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      className="w-full px-3 py-2 text-sm border border-af2-line-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-af2-clay/30"
                       placeholder={selectedStep.agentScheduleType === "interval" ? "30" : "0 * * * *"}
                       value={selectedStep.agentScheduleValue ?? ""}
                       onChange={(e) =>
@@ -1509,7 +1509,7 @@ export default function WorkflowBuilder() {
                     type="number"
                     min={1}
                     max={20}
-                    className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="w-full px-3 py-2 text-sm border border-af2-line-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-af2-clay/30"
                     placeholder="1"
                     value={selectedStep.subAgentSlots ?? 1}
                     onChange={(e) =>
@@ -1524,7 +1524,7 @@ export default function WorkflowBuilder() {
               <>
                 <Field label="Assignee (email or role)">
                   <input
-                    className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="w-full px-3 py-2 text-sm border border-af2-line-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-af2-clay/30"
                     placeholder="e.g. manager@company.com"
                     value={selectedStep.approvalAssignee ?? ""}
                     onChange={(e) =>
@@ -1534,7 +1534,7 @@ export default function WorkflowBuilder() {
                 </Field>
                 <Field label="Approval Request Message">
                   <textarea
-                    className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+                    className="w-full px-3 py-2 text-sm border border-af2-line-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-af2-clay/30 resize-none"
                     rows={3}
                     placeholder="Please review and approve this step before continuing…"
                     value={selectedStep.approvalMessage ?? ""}
@@ -1547,7 +1547,7 @@ export default function WorkflowBuilder() {
                   <input
                     type="number"
                     min={1}
-                    className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="w-full px-3 py-2 text-sm border border-af2-line-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-af2-clay/30"
                     placeholder="60"
                     value={selectedStep.approvalTimeoutMinutes ?? 60}
                     onChange={(e) =>
@@ -1557,7 +1557,7 @@ export default function WorkflowBuilder() {
                     }
                   />
                 </Field>
-                <div className="px-3 py-2.5 rounded-lg border border-amber-200 bg-amber-50 text-xs text-amber-700 leading-relaxed">
+                <div className="px-3 py-2.5 rounded-lg border border-af2-mustard/30 bg-af2-mustard/10 text-xs text-af2-mustard leading-relaxed">
                   Workflow will pause at this step until the assignee approves or rejects. On timeout, the workflow escalates or continues based on your escalation policy.
                 </div>
               </>
@@ -1567,7 +1567,7 @@ export default function WorkflowBuilder() {
               <>
                 <Field label="Integration Server URL">
                   <input
-                    className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono"
+                    className="w-full px-3 py-2 text-sm border border-af2-line-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-af2-clay/30 font-mono"
                     placeholder="https://mcp.example.com/sse"
                     value={selectedStep.mcpServerUrl ?? ""}
                     onChange={(e) =>
@@ -1577,7 +1577,7 @@ export default function WorkflowBuilder() {
                 </Field>
                 <Field label="Tool Name">
                   <input
-                    className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono"
+                    className="w-full px-3 py-2 text-sm border border-af2-line-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-af2-clay/30 font-mono"
                     placeholder="e.g. search_web"
                     value={selectedStep.mcpTool ?? ""}
                     onChange={(e) =>
@@ -1591,7 +1591,7 @@ export default function WorkflowBuilder() {
             {selectedStep.kind === "file_trigger" && (
               <Field label="Accepted File Types (comma-separated)">
                 <input
-                  className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full px-3 py-2 text-sm border border-af2-line-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-af2-clay/30"
                   placeholder=".pdf, .png, .jpg, .mp3, .wav"
                   value={(selectedStep.acceptedFileTypes ?? []).join(", ")}
                   onChange={(e) =>
@@ -1608,7 +1608,7 @@ export default function WorkflowBuilder() {
 
             <Field label="Input Keys (comma-separated)">
               <input
-                className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full px-3 py-2 text-sm border border-af2-line-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-af2-clay/30"
                 placeholder="key1, key2"
                 value={selectedStep.inputKeys.join(", ")}
                 onChange={(e) =>
@@ -1624,7 +1624,7 @@ export default function WorkflowBuilder() {
 
             <Field label="Output Keys (comma-separated)">
               <input
-                className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full px-3 py-2 text-sm border border-af2-line-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-af2-clay/30"
                 placeholder="result1, result2"
                 value={selectedStep.outputKeys.join(", ")}
                 onChange={(e) =>
@@ -1702,40 +1702,40 @@ function WorkflowBuilderHelpPanel({ onClose }: { onClose: () => void }) {
         role="dialog"
         aria-modal="true"
         aria-label="Workflow guidance"
-        className="w-full max-w-md overflow-y-auto border-l border-gray-200 dark:border-surface-800 bg-white dark:bg-surface-900 p-6 shadow-xl"
+        className="w-full max-w-md overflow-y-auto border-l border-af2-line bg-af2-card p-6 shadow-xl"
       >
         <div className="mb-5 flex items-start justify-between gap-3">
           <div>
-            <p className="text-xs font-semibold uppercase tracking-wide text-brand-600 dark:text-brand-400">Workflow help</p>
-            <h2 className="mt-1 text-lg font-semibold text-gray-900 dark:text-gray-100">Build and launch confidently</h2>
+            <p className="text-xs font-semibold uppercase tracking-wide text-af2-clay dark:text-af2-clay">Workflow help</p>
+            <h2 className="mt-1 text-lg font-semibold text-af2-ink">Build and launch confidently</h2>
           </div>
           <button
             onClick={onClose}
-            className="rounded-md p-1.5 text-gray-500 transition hover:bg-gray-100 dark:hover:bg-surface-800 hover:text-gray-800 dark:hover:text-gray-200"
+            className="rounded-md p-1.5 text-af2-ink-3 transition hover:bg-af2-paper-2 dark:hover:bg-af2-paper-2 hover:text-gray-800 dark:hover:text-af2-ink-2"
             aria-label="Close guidance panel"
           >
             <X size={16} />
           </button>
         </div>
 
-        <div className="space-y-4 text-sm text-gray-700 dark:text-gray-300">
-          <section className="rounded-lg border border-gray-200 dark:border-surface-800 bg-gray-50 dark:bg-surface-800/50 p-4">
-            <h3 className="font-medium text-gray-900 dark:text-gray-100">Suggested flow</h3>
+        <div className="space-y-4 text-sm text-af2-ink-2 dark:text-af2-ink-4">
+          <section className="rounded-lg border border-af2-line bg-af2-paper-2 dark:bg-af2-paper-2/50 p-4">
+            <h3 className="font-medium text-af2-ink">Suggested flow</h3>
             <p className="mt-1">Trigger -&gt; LLM -&gt; Condition/Transform -&gt; Action -&gt; Output.</p>
           </section>
 
-          <section className="rounded-lg border border-gray-200 dark:border-surface-800 p-4">
-            <h3 className="font-medium text-gray-900 dark:text-gray-100">High-impact tips</h3>
-            <ul className="mt-2 space-y-1 text-gray-600 dark:text-gray-400">
+          <section className="rounded-lg border border-af2-line p-4">
+            <h3 className="font-medium text-af2-ink">High-impact tips</h3>
+            <ul className="mt-2 space-y-1 text-af2-ink-3 dark:text-af2-ink-4">
               <li>Use clear step names so run logs are easy to debug.</li>
               <li>Define input/output keys on each step to avoid brittle data passing.</li>
               <li>Connect an LLM provider before testing any LLM step.</li>
             </ul>
           </section>
 
-          <section className="rounded-lg border border-gray-200 dark:border-surface-800 p-4">
-            <h3 className="font-medium text-gray-900 dark:text-gray-100">When runs fail</h3>
-            <ul className="mt-2 space-y-1 text-gray-600 dark:text-gray-400">
+          <section className="rounded-lg border border-af2-line p-4">
+            <h3 className="font-medium text-af2-ink">When runs fail</h3>
+            <ul className="mt-2 space-y-1 text-af2-ink-3 dark:text-af2-ink-4">
               <li>Validate the integration server URL and tool name for Integration steps.</li>
               <li>Check approval timeout for long-running approvals.</li>
               <li>Run from a smaller sample payload first, then scale.</li>
@@ -1777,24 +1777,24 @@ function NLWorkflowModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-      <div className="bg-white dark:bg-surface-900 rounded-2xl shadow-2xl w-full max-w-lg mx-4 overflow-hidden">
-        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 dark:border-surface-800">
+      <div className="bg-af2-card rounded-2xl shadow-2xl w-full max-w-lg mx-4 overflow-hidden">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-af2-line">
           <div className="flex items-center gap-2">
             <Sparkles size={18} className="text-purple-500" />
-            <h2 className="font-semibold text-gray-900 dark:text-gray-100">Generate Workflow with AI</h2>
+            <h2 className="font-semibold text-af2-ink">Generate Workflow with AI</h2>
           </div>
-          <button onClick={onClose} className="p-1 rounded hover:bg-gray-100 dark:hover:bg-surface-800">
-            <X size={16} className="text-gray-500" />
+          <button onClick={onClose} className="p-1 rounded hover:bg-af2-paper-2 dark:hover:bg-af2-paper-2">
+            <X size={16} className="text-af2-ink-3" />
           </button>
         </div>
 
         <div className="p-6 space-y-4">
           <div>
-            <label className="block text-xs font-medium text-gray-600 dark:text-surface-400 mb-1.5">
+            <label className="block text-xs font-medium text-af2-ink-3 mb-1.5">
               Describe your workflow
             </label>
             <textarea
-              className="w-full px-3 py-2.5 text-sm border border-gray-300 dark:border-surface-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 bg-white dark:bg-surface-800 text-gray-900 dark:text-gray-100 resize-none"
+              className="w-full px-3 py-2.5 text-sm border border-af2-line-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 bg-af2-card text-af2-ink resize-none"
               rows={4}
               placeholder="e.g. When a customer support email arrives, classify its intent, check if it's urgent, and send an automated reply or escalate to a human agent…"
               value={prompt}
@@ -1804,14 +1804,14 @@ function NLWorkflowModal({
           </div>
 
           {generateError && (
-            <p className="text-xs text-red-600">{generateError}</p>
+            <p className="text-xs text-af2-clay">{generateError}</p>
           )}
 
           {!preview && (
             <button
               onClick={handleGenerate}
               disabled={!prompt.trim() || generating}
-              className="w-full flex items-center justify-center gap-2 py-2.5 rounded-lg bg-purple-600 hover:bg-purple-700 text-white text-sm font-medium transition disabled:opacity-50"
+              className="w-full flex items-center justify-center gap-2 py-2.5 rounded-lg bg-af2-plum hover:bg-af2-plum text-white text-sm font-medium transition disabled:opacity-50"
             >
               {generating ? (
                 <>
@@ -1830,20 +1830,20 @@ function NLWorkflowModal({
           {preview && (
             <>
               <div>
-                <p className="text-xs font-medium text-gray-600 dark:text-surface-400 mb-2">
+                <p className="text-xs font-medium text-af2-ink-3 mb-2">
                   Preview — {preview.length} steps suggested
                 </p>
-                <div className="rounded-xl border border-gray-200 dark:border-surface-800 divide-y divide-gray-100 dark:divide-surface-800 overflow-hidden">
+                <div className="rounded-xl border border-af2-line divide-y divide-gray-100 dark:divide-surface-800 overflow-hidden">
                   {preview.map((step, i) => {
                     const meta = KIND_META[step.kind];
                     return (
-                      <div key={step.id} className="flex items-center gap-3 px-4 py-2.5 text-sm bg-white dark:bg-surface-900">
-                        <span className="text-gray-300 dark:text-surface-600 text-xs w-4">{i + 1}</span>
+                      <div key={step.id} className="flex items-center gap-3 px-4 py-2.5 text-sm bg-af2-card">
+                        <span className="text-af2-ink-4 dark:text-af2-ink-3 text-xs w-4">{i + 1}</span>
                         <span className={clsx("flex items-center gap-1 px-1.5 py-0.5 rounded text-xs font-medium border", meta.chipBg, meta.chipColor)}>
                           {meta.icon}
                           {meta.label}
                         </span>
-                        <span className="text-gray-800 dark:text-gray-200 font-medium flex-1">{step.name}</span>
+                        <span className="text-gray-800 dark:text-af2-ink-2 font-medium flex-1">{step.name}</span>
                       </div>
                     );
                   })}
@@ -1852,13 +1852,13 @@ function NLWorkflowModal({
               <div className="flex gap-2 pt-1">
                 <button
                   onClick={() => onApply(preview)}
-                  className="flex-1 py-2.5 rounded-lg bg-purple-600 hover:bg-purple-700 text-white text-sm font-medium transition"
+                  className="flex-1 py-2.5 rounded-lg bg-af2-plum hover:bg-af2-plum text-white text-sm font-medium transition"
                 >
                   Apply to Canvas
                 </button>
                 <button
                   onClick={() => { setPreview(null); setPrompt(""); }}
-                  className="px-4 py-2.5 rounded-lg border border-gray-200 dark:border-surface-700 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-surface-800 text-sm font-medium transition"
+                  className="px-4 py-2.5 rounded-lg border border-af2-line dark:border-af2-line-2 text-af2-ink-3 dark:text-af2-ink-4 hover:bg-af2-paper-2 dark:hover:bg-af2-paper-2 text-sm font-medium transition"
                 >
                   Try Again
                 </button>
@@ -1902,37 +1902,37 @@ function WorkflowCopilotSidebar({
 
   return (
     <aside
-      className="absolute right-0 top-0 z-20 flex h-full w-[360px] animate-slide-in-right flex-col border-l border-gray-200 bg-white shadow-xl dark:border-surface-800 dark:bg-surface-900"
+      className="absolute right-0 top-0 z-20 flex h-full w-[360px] animate-slide-in-right flex-col border-l border-af2-line bg-white shadow-xl dark:border-af2-line-2 dark:bg-af2-paper-2"
       role="dialog"
       aria-modal="false"
       aria-label="AutoFlow Copilot"
     >
-      <div className="flex items-center justify-between border-b border-gray-100 px-5 py-4 dark:border-surface-800">
+      <div className="flex items-center justify-between border-b border-af2-line px-5 py-4 dark:border-af2-line-2">
         <div>
-          <p className="text-xs font-semibold uppercase tracking-wide text-brand-600 dark:text-brand-400">
+          <p className="text-xs font-semibold uppercase tracking-wide text-af2-clay dark:text-af2-clay">
             AutoFlow Copilot
           </p>
-          <h3 className="mt-1 text-sm font-semibold text-gray-900 dark:text-gray-100">
+          <h3 className="mt-1 text-sm font-semibold text-af2-ink">
             Ask, generate, and apply
           </h3>
         </div>
         <button
           onClick={onClose}
-          className="rounded-md p-1.5 text-gray-500 transition hover:bg-gray-100 dark:hover:bg-surface-800"
+          className="rounded-md p-1.5 text-af2-ink-3 transition hover:bg-af2-paper-2 dark:hover:bg-af2-paper-2"
           aria-label="Close copilot sidebar"
         >
           <X size={16} />
         </button>
       </div>
 
-      <div className="border-b border-gray-100 px-5 py-3 dark:border-surface-800">
-        <label className="mb-1 block text-xs font-medium text-gray-500 dark:text-surface-400">
+      <div className="border-b border-af2-line px-5 py-3 dark:border-af2-line-2">
+        <label className="mb-1 block text-xs font-medium text-af2-ink-3">
           Reasoning mode
         </label>
         <select
           value={model}
           onChange={(event) => onModelChange(event.target.value)}
-          className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-brand-500 dark:border-surface-700 dark:bg-surface-800 dark:text-gray-100"
+          className="w-full rounded-lg border border-af2-line-2 bg-white px-3 py-2 text-sm text-af2-ink focus:outline-none focus:ring-2 focus:ring-af2-clay/30 dark:border-af2-line-2 dark:bg-af2-paper-2 dark:text-af2-ink-2"
         >
           {modelOptions.map((option) => (
             <option key={option} value={option}>
@@ -1944,7 +1944,7 @@ function WorkflowCopilotSidebar({
 
       <div className="flex-1 space-y-3 overflow-y-auto px-5 py-4">
         {messages.length === 0 && (
-          <div className="rounded-2xl border border-brand-200 bg-brand-50/80 p-4 text-sm text-brand-700 dark:border-brand-500/30 dark:bg-brand-500/10 dark:text-brand-300">
+          <div className="rounded-2xl border border-af2-clay/30 bg-af2-clay-soft/30/80 p-4 text-sm text-af2-clay dark:border-af2-clay/30 dark:bg-af2-clay-soft/300/10 dark:text-af2-clay">
             Ask AutoFlow Copilot to explain this workflow, generate a new sequence, or propose a targeted node change.
           </div>
         )}
@@ -1955,36 +1955,36 @@ function WorkflowCopilotSidebar({
               className={clsx(
                 "rounded-2xl border px-4 py-3 text-sm leading-relaxed",
                 message.role === "user"
-                  ? "border-gray-200 bg-surface-100 text-gray-700 dark:border-surface-700 dark:bg-surface-800 dark:text-gray-200"
-                  : "border-brand-200 bg-brand-50 text-brand-900 dark:border-brand-500/20 dark:bg-brand-500/10 dark:text-brand-100"
+                  ? "border-af2-line bg-surface-100 text-af2-ink-2 dark:border-af2-line-2 dark:bg-af2-paper-2 dark:text-af2-ink-2"
+                  : "border-af2-clay/30 bg-af2-clay-soft/30 text-brand-900 dark:border-af2-clay/20 dark:bg-af2-clay-soft/300/10 dark:text-brand-100"
               )}
             >
               {message.content}
             </div>
 
             {message.proposal && (
-              <div className="rounded-2xl border border-teal-300 bg-teal-50/80 p-4 dark:border-teal-500/30 dark:bg-teal-500/10">
+              <div className="rounded-2xl border border-af2-sage/30 bg-af2-sage/10/80 p-4 dark:border-af2-sage/30 dark:bg-af2-sage/100/10">
                 <div className="flex items-start justify-between gap-3">
                   <div>
-                    <p className="text-sm font-semibold text-teal-900 dark:text-teal-200">
+                    <p className="text-sm font-semibold text-af2-sage dark:text-teal-200">
                       {message.proposal.title}
                     </p>
-                    <p className="mt-1 text-sm text-teal-700 dark:text-teal-300">
+                    <p className="mt-1 text-sm text-af2-sage">
                       {message.proposal.summary}
                     </p>
                   </div>
-                  <Sparkles size={16} className="mt-0.5 shrink-0 text-teal-600 dark:text-teal-300" />
+                  <Sparkles size={16} className="mt-0.5 shrink-0 text-af2-sage dark:text-af2-sage" />
                 </div>
                 <div className="mt-3 flex gap-2">
                   <button
                     onClick={() => onApply(message.id, message.proposal!)}
-                    className="rounded-lg bg-teal-600 px-3 py-2 text-sm font-medium text-white transition hover:bg-teal-500"
+                    className="rounded-lg bg-af2-sage px-3 py-2 text-sm font-medium text-white transition hover:bg-af2-sage/100"
                   >
                     Apply
                   </button>
                   <button
                     onClick={() => onReject(message.id)}
-                    className="rounded-lg border border-teal-300 px-3 py-2 text-sm font-medium text-teal-700 transition hover:bg-white dark:border-teal-500/40 dark:text-teal-300 dark:hover:bg-surface-900"
+                    className="rounded-lg border border-af2-sage/30 px-3 py-2 text-sm font-medium text-af2-sage transition hover:bg-white dark:border-teal-500/40 dark:text-af2-sage dark:hover:bg-af2-paper-2"
                   >
                     Reject
                   </button>
@@ -1995,39 +1995,39 @@ function WorkflowCopilotSidebar({
         ))}
 
         {busy && (
-          <div className="rounded-2xl border border-brand-200 bg-brand-50 px-4 py-3 text-sm text-brand-700 dark:border-brand-500/20 dark:bg-brand-500/10 dark:text-brand-300">
+          <div className="rounded-2xl border border-af2-clay/30 bg-af2-clay-soft/30 px-4 py-3 text-sm text-af2-clay dark:border-af2-clay/20 dark:bg-af2-clay-soft/300/10 dark:text-af2-clay">
             <div className="mb-2 flex items-center gap-2">
               <Loader size={14} className="animate-spin" />
               AutoFlow Copilot is thinking…
             </div>
-            <div className="h-1.5 rounded-full bg-brand-200/70 dark:bg-brand-500/20">
-              <div className="h-1.5 w-1/3 animate-glow-pulse rounded-full bg-brand-500" />
+            <div className="h-1.5 rounded-full bg-brand-200/70 dark:bg-af2-clay-soft/300/20">
+              <div className="h-1.5 w-1/3 animate-glow-pulse rounded-full bg-af2-clay-soft/300" />
             </div>
           </div>
         )}
       </div>
 
-      <div className="border-t border-gray-100 px-5 py-4 dark:border-surface-800">
-        <label htmlFor="workflow-copilot-input" className="mb-2 block text-xs font-medium text-gray-500 dark:text-surface-400">
+      <div className="border-t border-af2-line px-5 py-4 dark:border-af2-line-2">
+        <label htmlFor="workflow-copilot-input" className="mb-2 block text-xs font-medium text-af2-ink-3">
           Ask Copilot
         </label>
-        <div className="rounded-2xl border border-gray-200 bg-white p-2 dark:border-surface-700 dark:bg-surface-900">
+        <div className="rounded-2xl border border-af2-line bg-white p-2 dark:border-af2-line-2 dark:bg-af2-paper-2">
           <textarea
             id="workflow-copilot-input"
             value={input}
             onChange={(event) => onInputChange(event.target.value)}
             rows={4}
             placeholder="Add a Slack notification step after Step 3"
-            className="w-full resize-none bg-transparent px-2 py-2 text-sm text-gray-900 outline-none placeholder:text-gray-400 dark:text-gray-100 dark:placeholder:text-surface-500"
+            className="w-full resize-none bg-transparent px-2 py-2 text-sm text-af2-ink outline-none placeholder:text-af2-ink-4 dark:text-af2-ink-2 dark:placeholder:text-af2-paper0"
           />
           <div className="flex items-center justify-between gap-2 px-2 pt-1">
-            <span className="text-xs text-gray-400 dark:text-surface-500">
+            <span className="text-xs text-af2-ink-4">
               Use @ to reference steps on the canvas
             </span>
             <button
               onClick={onSubmit}
               disabled={!input.trim() || busy}
-              className="inline-flex items-center gap-2 rounded-xl bg-brand-600 px-3 py-2 text-sm font-medium text-white transition hover:bg-brand-500 disabled:opacity-50"
+              className="inline-flex items-center gap-2 rounded-xl bg-brand-600 px-3 py-2 text-sm font-medium text-white transition hover:bg-af2-clay-soft/300 disabled:opacity-50"
             >
               <Send size={14} />
               Send
@@ -2036,8 +2036,8 @@ function WorkflowCopilotSidebar({
         </div>
 
         {references.length > 0 && (
-          <div className="mt-3 rounded-xl border border-gray-200 bg-white p-2 dark:border-surface-800 dark:bg-surface-900">
-            <p className="px-2 pb-1 text-xs font-medium text-gray-500 dark:text-surface-400">
+          <div className="mt-3 rounded-xl border border-af2-line bg-white p-2 dark:border-af2-line-2 dark:bg-af2-paper-2">
+            <p className="px-2 pb-1 text-xs font-medium text-af2-ink-3">
               References
             </p>
             <div className="space-y-1">
@@ -2045,7 +2045,7 @@ function WorkflowCopilotSidebar({
                 <button
                   key={reference.id}
                   onClick={() => onInputChange(`${input}${input.endsWith("@") ? "" : " "}${reference.label} `)}
-                  className="block w-full rounded-lg px-2 py-1.5 text-left text-xs text-gray-600 transition hover:bg-gray-50 dark:text-surface-300 dark:hover:bg-surface-800"
+                  className="block w-full rounded-lg px-2 py-1.5 text-left text-xs text-af2-ink-3 transition hover:bg-af2-paper-2 dark:text-af2-ink-3 dark:hover:bg-af2-paper-2"
                 >
                   {reference.label}
                 </button>
@@ -2469,11 +2469,11 @@ function StepNode({
         "group workflow-step-node relative cursor-pointer overflow-hidden rounded-[12px] border shadow-md transition-all",
         isAgentNode
           ? selected
-            ? "border-2 border-brand-500 bg-slate-800 ring-2 ring-brand-500/20 shadow-[0_16px_34px_rgba(15,23,42,0.42)]"
-            : "border border-slate-700 bg-slate-800 hover:border-brand-500 shadow-[0_14px_28px_rgba(15,23,42,0.36)]"
+            ? "border-2 border-af2-clay bg-slate-800 ring-2 ring-brand-500/20 shadow-[0_16px_34px_rgba(15,23,42,0.42)]"
+            : "border border-slate-700 bg-slate-800 hover:border-af2-clay shadow-[0_14px_28px_rgba(15,23,42,0.36)]"
           : selected
-            ? "border-2 border-brand-500 bg-white ring-2 ring-brand-500/20 dark:bg-surface-900"
-            : "border border-gray-300 bg-white hover:border-brand-400 dark:border-surface-700 dark:bg-surface-900 dark:hover:border-brand-500/50",
+            ? "border-2 border-af2-clay bg-white ring-2 ring-brand-500/20 dark:bg-af2-paper-2"
+            : "border border-af2-line-2 bg-white hover:border-af2-clay/40 dark:border-af2-line-2 dark:bg-af2-paper-2 dark:hover:border-af2-clay/50",
         dragging ? "opacity-90 shadow-lg" : "",
         showRunningState ? "workflow-node-running" : "",
         showSuccessState ? "workflow-node-success" : "",
@@ -2484,12 +2484,12 @@ function StepNode({
         className={clsx("h-10 border-b px-4", isAgentNode ? "border-slate-700 bg-slate-900/80" : "border-black/5 dark:border-white/5")}
         style={isAgentNode ? undefined : { backgroundColor: theme === "dark" ? meta.darkCategoryTint : meta.categoryTint }}
       >
-        <div className={clsx("flex h-full items-center gap-2 text-xs font-medium", isAgentNode ? "text-slate-200" : "text-gray-700 dark:text-gray-300")}>
+        <div className={clsx("flex h-full items-center gap-2 text-xs font-medium", isAgentNode ? "text-slate-200" : "text-af2-ink-2 dark:text-af2-ink-4")}>
           <span style={{ color: meta.categoryBorder }}>{meta.icon}</span>
           {meta.label}
-          {showRunningState && <Loader size={12} className="ml-auto animate-spin text-brand-500" />}
-          {showSuccessState && <CheckCircle2 size={12} className="ml-auto text-emerald-600 dark:text-emerald-400" />}
-          {showErrorState && <AlertCircle size={12} className="ml-auto text-rose-600 dark:text-rose-400" />}
+          {showRunningState && <Loader size={12} className="ml-auto animate-spin text-af2-clay" />}
+          {showSuccessState && <CheckCircle2 size={12} className="ml-auto text-emerald-600 dark:text-af2-sage" />}
+          {showErrorState && <AlertCircle size={12} className="ml-auto text-rose-600 dark:text-af2-clay" />}
         </div>
       </div>
       <div className="p-4">
@@ -2497,7 +2497,7 @@ function StepNode({
           <div
             className={clsx(
               "flex items-center gap-1 px-2 py-1 rounded-md border text-xs font-medium mt-0.5",
-              isAgentNode ? "border-brand-500/30 bg-brand-500/12 text-indigo-100" : meta.chipBg,
+              isAgentNode ? "border-af2-clay/30 bg-af2-clay-soft/300/12 text-indigo-100" : meta.chipBg,
               isAgentNode ? "" : meta.chipColor
             )}
           >
@@ -2506,9 +2506,9 @@ function StepNode({
           </div>
 
           <div className="flex-1 min-w-0">
-            <p className={clsx("text-sm font-medium", isAgentNode ? "text-slate-50" : "text-gray-900 dark:text-gray-100")}>{step.name}</p>
+            <p className={clsx("text-sm font-medium", isAgentNode ? "text-slate-50" : "text-af2-ink")}>{step.name}</p>
             {step.description && (
-              <p className={clsx("mt-0.5 text-xs truncate", isAgentNode ? "text-slate-400" : "text-gray-500 dark:text-surface-400")}>
+              <p className={clsx("mt-0.5 text-xs truncate", isAgentNode ? "text-slate-400" : "text-af2-ink-3")}>
                 {step.description}
               </p>
             )}
@@ -2520,7 +2520,7 @@ function StepNode({
           <div className="flex gap-4 mt-3 text-xs">
             {step.inputKeys.length > 0 && (
               <div>
-                <span className={clsx("mr-1", isAgentNode ? "text-slate-500" : "text-gray-400 dark:text-surface-500")}>in:</span>
+                <span className={clsx("mr-1", isAgentNode ? "text-slate-500" : "text-af2-ink-4")}>in:</span>
                 {step.inputKeys.map((k) => (
                   <span
                     key={k}
@@ -2528,7 +2528,7 @@ function StepNode({
                       "mr-1 rounded px-1.5 py-0.5",
                       isAgentNode
                         ? "bg-slate-900 text-slate-300"
-                        : "bg-gray-100 text-gray-600 dark:bg-surface-800 dark:text-surface-300"
+                        : "bg-gray-100 text-af2-ink-3 dark:bg-af2-paper-2 dark:text-af2-ink-3"
                     )}
                   >
                     {k}
@@ -2538,15 +2538,15 @@ function StepNode({
             )}
             {step.outputKeys.length > 0 && (
               <div>
-                <span className={clsx("mr-1", isAgentNode ? "text-slate-500" : "text-gray-400 dark:text-surface-500")}>out:</span>
+                <span className={clsx("mr-1", isAgentNode ? "text-slate-500" : "text-af2-ink-4")}>out:</span>
                 {step.outputKeys.map((k) => (
                   <span
                     key={k}
                     className={clsx(
                       "mr-1 rounded px-1.5 py-0.5",
                       isAgentNode
-                        ? "bg-indigo-500/12 text-indigo-200"
-                        : "bg-brand-50 text-brand-600 dark:bg-brand-500/10 dark:text-brand-300"
+                        ? "bg-af2-clay-soft/300/12 text-indigo-200"
+                        : "bg-af2-clay-soft/30 text-af2-clay dark:bg-af2-clay-soft/300/10 dark:text-af2-clay"
                     )}
                   >
                     {k}
@@ -2560,16 +2560,16 @@ function StepNode({
         {/* Agent slots — spec-driven modular layout for model, memory, and tools */}
         {step.kind === "agent" && (
           <>
-            <div className="mt-3 grid gap-2 text-xs text-slate-500 dark:text-surface-400">
+            <div className="mt-3 grid gap-2 text-xs text-slate-500 dark:text-af2-ink-4">
               <div className="flex flex-wrap gap-2">
-                <span className="rounded-full border border-indigo-200 bg-indigo-50 px-2 py-1 font-medium text-indigo-700 dark:border-brand-500/30 dark:bg-brand-500/10 dark:text-brand-300">
+                <span className="rounded-full border border-af2-clay/30 bg-af2-clay-soft/30 px-2 py-1 font-medium text-af2-clay dark:border-af2-clay/30 dark:bg-af2-clay-soft/300/10 dark:text-af2-clay">
                   {step.agentRoleKey ?? "custom-agent"}
                 </span>
-                <span className="rounded-full border border-slate-200 bg-slate-50 px-2 py-1 font-medium text-slate-600 dark:border-surface-700 dark:bg-surface-800 dark:text-surface-300">
+                <span className="rounded-full border border-slate-200 bg-slate-50 px-2 py-1 font-medium text-slate-600 dark:border-af2-line-2 dark:bg-af2-paper-2 dark:text-af2-ink-3">
                   ${step.agentBudgetMonthlyUsd ?? 0}/mo
                 </span>
                 {teamAgent && (
-                  <span className="rounded-full border border-teal-200 bg-teal-50 px-2 py-1 font-medium capitalize text-teal-700 dark:border-teal-500/30 dark:bg-teal-500/10 dark:text-teal-300">
+                  <span className="rounded-full border border-af2-sage/30 bg-af2-sage/10 px-2 py-1 font-medium capitalize text-af2-sage dark:border-af2-sage/30 dark:bg-af2-sage/100/10 dark:text-af2-sage">
                     {teamAgent.status}
                   </span>
                 )}
@@ -2579,7 +2579,7 @@ function StepNode({
                   {step.agentSkills.slice(0, 3).map((skill) => (
                     <span
                       key={skill}
-                      className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-600 dark:bg-surface-800 dark:text-surface-300"
+                      className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-600 dark:bg-af2-paper-2 dark:text-af2-ink-3"
                     >
                       {skill}
                     </span>
@@ -2592,7 +2592,7 @@ function StepNode({
               <a
                 href={teamAgentHref}
                 onClick={(event) => event.stopPropagation()}
-                className="mt-3 inline-flex items-center gap-1 rounded-full border border-teal-200 bg-teal-50 px-3 py-1.5 text-[11px] font-semibold text-teal-700 transition hover:bg-teal-100 dark:border-teal-500/30 dark:bg-teal-500/10 dark:text-teal-300"
+                className="mt-3 inline-flex items-center gap-1 rounded-full border border-af2-sage/30 bg-af2-sage/10 px-3 py-1.5 text-[11px] font-semibold text-af2-sage transition hover:bg-teal-100 dark:border-af2-sage/30 dark:bg-af2-sage/100/10 dark:text-af2-sage"
               >
                 <Bot size={11} />
                 View deployed agent
@@ -2607,7 +2607,7 @@ function StepNode({
         {!isFirst && (
           <button
             onClick={(e) => { e.stopPropagation(); onMoveUp(); }}
-            className="p-1 rounded hover:bg-gray-100 dark:hover:bg-surface-800 text-gray-400 hover:text-gray-700 dark:hover:text-gray-200"
+            className="p-1 rounded hover:bg-af2-paper-2 dark:hover:bg-af2-paper-2 text-af2-ink-4 hover:text-af2-ink-2 dark:hover:text-af2-ink-2"
             title="Move step up"
             aria-label="Move step up"
           >
@@ -2617,7 +2617,7 @@ function StepNode({
         {!isLast && (
           <button
             onClick={(e) => { e.stopPropagation(); onMoveDown(); }}
-            className="p-1 rounded hover:bg-gray-100 dark:hover:bg-surface-800 text-gray-400 hover:text-gray-700 dark:hover:text-gray-200"
+            className="p-1 rounded hover:bg-af2-paper-2 dark:hover:bg-af2-paper-2 text-af2-ink-4 hover:text-af2-ink-2 dark:hover:text-af2-ink-2"
             title="Move step down"
             aria-label="Move step down"
           >
@@ -2626,7 +2626,7 @@ function StepNode({
         )}
         <button
           onClick={(e) => { e.stopPropagation(); onRemove(); }}
-          className="p-1 rounded hover:bg-red-50 dark:hover:bg-red-900/20 text-gray-400 hover:text-red-500"
+          className="p-1 rounded hover:bg-af2-clay-soft/30 dark:hover:bg-red-900/20 text-af2-ink-4 hover:text-red-500"
           title="Delete step"
           aria-label="Delete step"
         >
@@ -2649,20 +2649,20 @@ function AddStepMenu({ onAdd }: { onAdd: (k: StepKind) => void }) {
         className={clsx(
           "flex items-center gap-2 rounded-full border px-4 py-2 text-sm font-medium transition",
           open
-            ? "border-brand-300 dark:border-brand-500/50 bg-brand-50 dark:bg-brand-500/10 text-brand-700 dark:text-brand-300"
-            : "border-gray-300 dark:border-surface-700 text-gray-600 dark:text-gray-300 hover:border-brand-300 dark:hover:border-brand-500/50 hover:text-brand-700 dark:hover:text-brand-300"
+            ? "border-brand-300 dark:border-af2-clay/50 bg-af2-clay-soft/30 text-af2-clay"
+            : "border-af2-line-2 text-af2-ink-3 dark:text-af2-ink-4 hover:border-brand-300 dark:hover:border-af2-clay/50 hover:text-af2-clay dark:hover:text-af2-clay"
         )}
       >
         <Plus size={16} /> Node Palette
       </button>
 
       {open && (
-        <div className="absolute bottom-full mb-2 left-1/2 z-10 w-56 -translate-x-1/2 rounded-2xl border border-gray-200 dark:border-surface-800 bg-white dark:bg-surface-900 p-2 shadow-lg">
+        <div className="absolute bottom-full mb-2 left-1/2 z-10 w-56 -translate-x-1/2 rounded-2xl border border-af2-line bg-af2-card p-2 shadow-lg">
           {kinds.map(([kind, meta]) => (
             <button
               key={kind}
               onClick={() => { onAdd(kind); setOpen(false); }}
-              className="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-left rounded-lg hover:bg-gray-50 dark:hover:bg-surface-800 transition text-gray-700 dark:text-gray-300"
+              className="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-left rounded-lg hover:bg-af2-paper-2 dark:hover:bg-af2-paper-2 transition text-af2-ink-2 dark:text-af2-ink-4"
             >
               <span className={clsx("rounded p-1", meta.chipBg, meta.chipColor)}>{meta.icon}</span>
               {meta.label}
@@ -2684,28 +2684,28 @@ function EmptyCanvas({
   return (
     <div className="h-full overflow-y-auto px-6 py-8">
       <div className="mx-auto flex min-h-full w-full max-w-4xl flex-col items-center justify-center text-center">
-        <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-brand-50 dark:bg-brand-500/10">
-          <Zap size={28} className="text-brand-500" />
+        <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-af2-clay-soft/30">
+          <Zap size={28} className="text-af2-clay" />
         </div>
-        <h3 className="mb-2 text-lg font-semibold text-gray-900 dark:text-gray-100">Start building your workflow</h3>
-        <p className="mb-6 max-w-xs text-sm text-gray-500 dark:text-surface-400">
+        <h3 className="mb-2 text-lg font-semibold text-af2-ink">Start building your workflow</h3>
+        <p className="mb-6 max-w-xs text-sm text-af2-ink-3">
           Add steps to compose your AI workflow. Each step passes data to the next.
         </p>
         <AddStepMenu onAdd={onAdd} />
 
         {templates.length > 0 && (
           <div className="mt-8 w-full max-w-3xl">
-            <p className="mb-3 text-xs text-gray-400 dark:text-surface-500">Or start from a template:</p>
+            <p className="mb-3 text-xs text-af2-ink-4">Or start from a template:</p>
             <div
               aria-label="Workflow templates"
-              className="max-h-[min(40vh,26rem)] overflow-y-auto rounded-2xl border border-gray-200 bg-white/80 p-3 shadow-sm backdrop-blur dark:border-surface-800 dark:bg-surface-900/80"
+              className="max-h-[min(40vh,26rem)] overflow-y-auto rounded-2xl border border-af2-line bg-white/80 p-3 shadow-sm backdrop-blur dark:border-af2-line-2 dark:bg-af2-paper-2/80"
             >
               <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
                 {templates.map((t) => (
                   <a
                     key={t.id}
                     href={`/builder/${t.id}`}
-                    className="rounded-xl border border-gray-200 bg-white px-3 py-2 text-left text-xs text-gray-600 transition hover:border-brand-400 hover:text-brand-600 dark:border-surface-700 dark:bg-surface-800 dark:text-gray-300 dark:hover:border-brand-500/50 dark:hover:text-brand-300"
+                    className="rounded-xl border border-af2-line bg-white px-3 py-2 text-left text-xs text-af2-ink-3 transition hover:border-af2-clay/40 hover:text-af2-clay dark:border-af2-line-2 dark:bg-af2-paper-2 dark:text-af2-ink-4 dark:hover:border-af2-clay/50 dark:hover:text-af2-clay"
                   >
                     {t.name}
                   </a>
@@ -2728,7 +2728,7 @@ function Field({
 }) {
   return (
     <div>
-      <label className="block text-xs font-medium text-gray-600 dark:text-surface-400 mb-1.5">{label}</label>
+      <label className="block text-xs font-medium text-af2-ink-3 mb-1.5">{label}</label>
       {children}
     </div>
   );
@@ -2758,20 +2758,20 @@ function DeployAsTeamModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/45 px-4">
-      <div className="max-h-[90vh] w-full max-w-4xl overflow-hidden rounded-[32px] border border-slate-200 bg-white shadow-2xl dark:border-surface-800 dark:bg-surface-900">
-        <div className="flex items-center justify-between border-b border-slate-200 px-6 py-5 dark:border-surface-800">
+      <div className="max-h-[90vh] w-full max-w-4xl overflow-hidden rounded-[32px] border border-slate-200 bg-white shadow-2xl dark:border-af2-line-2 dark:bg-af2-paper-2">
+        <div className="flex items-center justify-between border-b border-slate-200 px-6 py-5 dark:border-af2-line-2">
           <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-teal-600">
+            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-af2-sage">
               Deploy as Team
             </p>
-            <h2 className="mt-1 text-xl font-semibold text-slate-900 dark:text-surface-50">
+            <h2 className="mt-1 text-xl font-semibold text-slate-900 dark:text-af2-paper">
               Promote this workflow into a live agent roster
             </h2>
           </div>
           <button
             onClick={onClose}
             aria-label="Close deploy as team dialog"
-            className="rounded-full p-2 text-slate-500 transition hover:bg-slate-100 hover:text-slate-900 dark:hover:bg-surface-800 dark:hover:text-surface-50"
+            className="rounded-full p-2 text-slate-500 transition hover:bg-slate-100 hover:text-slate-900 dark:hover:bg-af2-paper-2 dark:hover:text-af2-paper"
             disabled={busy}
           >
             <X size={16} />
@@ -2779,27 +2779,27 @@ function DeployAsTeamModal({
         </div>
 
         <div className="grid gap-0 lg:grid-cols-[1.15fr_0.85fr]">
-          <div className="border-b border-slate-200 p-6 dark:border-surface-800 lg:border-b-0 lg:border-r">
+          <div className="border-b border-slate-200 p-6 dark:border-af2-line-2 lg:border-b-0 lg:border-r">
             <div className="mb-5">
-              <h3 className="text-sm font-semibold uppercase tracking-[0.16em] text-slate-400 dark:text-surface-500">
+              <h3 className="text-sm font-semibold uppercase tracking-[0.16em] text-slate-400 dark:text-af2-paper0">
                 Team preview
               </h3>
-              <p className="mt-2 text-sm text-slate-500 dark:text-surface-400">
+              <p className="mt-2 text-sm text-slate-500 dark:text-af2-ink-4">
                 The manager owns orchestration, then actionable workflow steps become worker agents.
               </p>
             </div>
 
             <div className="space-y-3">
-              <div className="rounded-[24px] border border-indigo-200 bg-indigo-50 px-5 py-4 dark:border-brand-500/30 dark:bg-brand-500/10">
+              <div className="rounded-[24px] border border-af2-clay/30 bg-af2-clay-soft/30 px-5 py-4 dark:border-af2-clay/30 dark:bg-af2-clay-soft/300/10">
                 <div className="flex items-center gap-3">
                   <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-indigo-600 text-white">
                     <Bot size={18} />
                   </div>
                   <div>
-                    <p className="text-sm font-semibold text-slate-900 dark:text-surface-50">
+                    <p className="text-sm font-semibold text-slate-900 dark:text-af2-paper">
                       {template.name} Manager
                     </p>
-                    <p className="text-xs uppercase tracking-[0.16em] text-indigo-700 dark:text-brand-300">
+                    <p className="text-xs uppercase tracking-[0.16em] text-af2-clay dark:text-af2-clay">
                       workflow-manager
                     </p>
                   </div>
@@ -2809,18 +2809,18 @@ function DeployAsTeamModal({
               {actionableSteps.map((step, index) => (
                 <div
                   key={step.id}
-                  className="rounded-[24px] border border-slate-200 bg-slate-50 px-5 py-4 dark:border-surface-800 dark:bg-surface-950/40"
+                  className="rounded-[24px] border border-slate-200 bg-slate-50 px-5 py-4 dark:border-af2-line-2 dark:bg-surface-950/40"
                 >
                   <div className="flex items-start justify-between gap-4">
                     <div>
-                      <p className="text-sm font-semibold text-slate-900 dark:text-surface-50">
+                      <p className="text-sm font-semibold text-slate-900 dark:text-af2-paper">
                         {step.name}
                       </p>
-                      <p className="mt-1 text-xs uppercase tracking-[0.16em] text-slate-400 dark:text-surface-500">
+                      <p className="mt-1 text-xs uppercase tracking-[0.16em] text-slate-400 dark:text-af2-paper0">
                         {step.agentRoleKey ?? `${step.kind}-${index + 1}`}
                       </p>
                     </div>
-                    <span className="rounded-full bg-white px-3 py-1 text-xs font-semibold text-slate-600 shadow-sm dark:bg-surface-900 dark:text-surface-300">
+                    <span className="rounded-full bg-white px-3 py-1 text-xs font-semibold text-slate-600 shadow-sm dark:bg-af2-paper-2 dark:text-af2-ink-3">
                       {step.agentScheduleType === "interval"
                         ? `${step.agentScheduleValue || defaultIntervalMinutes} min`
                         : step.agentScheduleType === "cron"
@@ -2829,16 +2829,16 @@ function DeployAsTeamModal({
                     </span>
                   </div>
                   <div className="mt-3 flex flex-wrap gap-2">
-                    <span className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-medium text-slate-600 dark:border-surface-700 dark:bg-surface-900 dark:text-surface-300">
+                    <span className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-medium text-slate-600 dark:border-af2-line-2 dark:bg-af2-paper-2 dark:text-af2-ink-3">
                       {step.agentModel ?? step.llmConfigId ?? "Default model"}
                     </span>
-                    <span className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-medium text-slate-600 dark:border-surface-700 dark:bg-surface-900 dark:text-surface-300">
+                    <span className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-medium text-slate-600 dark:border-af2-line-2 dark:bg-af2-paper-2 dark:text-af2-ink-3">
                       ${step.agentBudgetMonthlyUsd ?? 0}/mo
                     </span>
                     {(step.agentSkills ?? []).slice(0, 3).map((skill) => (
                       <span
                         key={skill}
-                        className="rounded-full border border-teal-200 bg-teal-50 px-3 py-1 text-xs font-medium text-teal-700 dark:border-teal-500/30 dark:bg-teal-500/10 dark:text-teal-300"
+                        className="rounded-full border border-af2-sage/30 bg-af2-sage/10 px-3 py-1 text-xs font-medium text-af2-sage dark:border-af2-sage/30 dark:bg-af2-sage/100/10 dark:text-af2-sage"
                       >
                         {skill}
                       </span>
@@ -2861,17 +2861,17 @@ function DeployAsTeamModal({
             }}
           >
             <div>
-              <h3 className="text-sm font-semibold uppercase tracking-[0.16em] text-slate-400 dark:text-surface-500">
+              <h3 className="text-sm font-semibold uppercase tracking-[0.16em] text-slate-400 dark:text-af2-paper0">
                 Launch settings
               </h3>
-              <p className="mt-2 text-sm text-slate-500 dark:text-surface-400">
+              <p className="mt-2 text-sm text-slate-500 dark:text-af2-ink-4">
                 Use the approved agent-surface direction: teal health cues, indigo orchestration, and clear budget visibility.
               </p>
             </div>
 
             <Field label="Team Name">
               <input
-                className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-brand-500 dark:border-surface-700 dark:bg-surface-800 dark:text-surface-50"
+                className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-af2-clay/30 dark:border-af2-line-2 dark:bg-af2-paper-2 dark:text-af2-paper"
                 value={teamName}
                 onChange={(event) => setTeamName(event.target.value)}
               />
@@ -2882,7 +2882,7 @@ function DeployAsTeamModal({
                 type="number"
                 min={0}
                 step="10"
-                className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-brand-500 dark:border-surface-700 dark:bg-surface-800 dark:text-surface-50"
+                className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-af2-clay/30 dark:border-af2-line-2 dark:bg-af2-paper-2 dark:text-af2-paper"
                 value={budgetMonthlyUsd}
                 onChange={(event) => setBudgetMonthlyUsd(Number(event.target.value) || 0)}
               />
@@ -2892,13 +2892,13 @@ function DeployAsTeamModal({
               <input
                 type="number"
                 min={1}
-                className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-brand-500 dark:border-surface-700 dark:bg-surface-800 dark:text-surface-50"
+                className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-af2-clay/30 dark:border-af2-line-2 dark:bg-af2-paper-2 dark:text-af2-paper"
                 value={defaultIntervalMinutes}
                 onChange={(event) => setDefaultIntervalMinutes(Number(event.target.value) || 1)}
               />
             </Field>
 
-            <div className="rounded-[24px] border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200">
+            <div className="rounded-[24px] border border-af2-mustard/30 bg-af2-mustard/10 px-4 py-3 text-sm text-amber-900 dark:border-af2-mustard/30 dark:bg-af2-mustard/100/10 dark:text-amber-200">
               Deploying creates a control-plane team and agent roster. Start/stop lifecycle controls are not exposed by the current backend yet, so monitoring and task handoff are the primary post-deploy actions available in this release.
             </div>
 
@@ -2907,7 +2907,7 @@ function DeployAsTeamModal({
                 type="button"
                 onClick={onClose}
                 aria-label="Cancel agent team deployment"
-                className="rounded-full border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50 dark:border-surface-700 dark:text-surface-200 dark:hover:bg-surface-800"
+                className="rounded-full border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50 dark:border-af2-line-2 dark:text-surface-200 dark:hover:bg-af2-paper-2"
                 disabled={busy}
               >
                 Cancel
@@ -2916,7 +2916,7 @@ function DeployAsTeamModal({
                 type="submit"
                 disabled={busy}
                 aria-label="Confirm agent team deployment"
-                className="inline-flex items-center gap-2 rounded-full bg-teal-600 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-teal-700 disabled:opacity-60"
+                className="inline-flex items-center gap-2 rounded-full bg-af2-sage px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-af2-sage disabled:opacity-60"
               >
                 {busy ? <Loader size={15} className="animate-spin" /> : <Send size={15} />}
                 Confirm deployment
@@ -2978,15 +2978,15 @@ function FileUploadModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-      <div className="bg-white dark:bg-surface-900 rounded-2xl shadow-2xl w-full max-w-md mx-4 overflow-hidden">
+      <div className="bg-af2-card rounded-2xl shadow-2xl w-full max-w-md mx-4 overflow-hidden">
         {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 dark:border-surface-800">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-af2-line">
           <div className="flex items-center gap-2">
             <UploadCloud size={18} className="text-rose-500" />
-            <h2 className="font-semibold text-gray-900 dark:text-gray-100">Upload File to Run Workflow</h2>
+            <h2 className="font-semibold text-af2-ink">Upload File to Run Workflow</h2>
           </div>
-          <button onClick={onClose} className="p-1 rounded hover:bg-gray-100 dark:hover:bg-surface-800" disabled={state === "uploading"}>
-            <X size={16} className="text-gray-500" />
+          <button onClick={onClose} className="p-1 rounded hover:bg-af2-paper-2 dark:hover:bg-af2-paper-2" disabled={state === "uploading"}>
+            <X size={16} className="text-af2-ink-3" />
           </button>
         </div>
 
@@ -2998,7 +2998,7 @@ function FileUploadModal({
             onDrop={handleDrop}
             className={clsx(
               "relative flex flex-col items-center justify-center gap-3 rounded-xl border-2 border-dashed p-8 text-center cursor-pointer transition",
-              dragOver ? "border-rose-400 bg-rose-50 dark:bg-rose-500/10" : "border-gray-300 dark:border-surface-700 hover:border-rose-300 hover:bg-gray-50 dark:hover:bg-surface-800"
+              dragOver ? "border-rose-400 bg-rose-50 dark:bg-rose-500/10" : "border-af2-line-2 hover:border-rose-300 hover:bg-af2-paper-2 dark:hover:bg-af2-paper-2"
             )}
             onClick={() => document.getElementById("file-upload-input")?.click()}
           >
@@ -3009,18 +3009,18 @@ function FileUploadModal({
               accept={acceptAttr}
               onChange={(e) => { const f = e.target.files?.[0]; if (f) setFile(f); }}
             />
-            <UploadCloud size={32} className={dragOver ? "text-rose-400" : "text-gray-300 dark:text-surface-600"} />
+            <UploadCloud size={32} className={dragOver ? "text-af2-clay" : "text-af2-ink-4 dark:text-af2-ink-3"} />
             <div>
-              <p className="text-sm font-medium text-gray-700 dark:text-gray-200">
+              <p className="text-sm font-medium text-af2-ink-2">
                 {file ? file.name : "Drop a file here, or click to browse"}
               </p>
               {acceptedFileTypes.length > 0 && (
-                <p className="text-xs text-gray-400 dark:text-surface-500 mt-1">
+                <p className="text-xs text-af2-ink-4 mt-1">
                   Accepted: {acceptedFileTypes.join(", ")}
                 </p>
               )}
               {file && (
-                <p className="text-xs text-gray-400 dark:text-surface-500 mt-1">
+                <p className="text-xs text-af2-ink-4 mt-1">
                   {(file.size / 1024).toFixed(1)} KB · {file.type || "unknown type"}
                 </p>
               )}
@@ -3029,7 +3029,7 @@ function FileUploadModal({
 
           {/* Status */}
           {state === "error" && errorMsg && (
-            <div className="flex items-start gap-2 px-3 py-2 rounded-lg bg-red-50 dark:bg-red-500/10 border border-red-200 dark:border-red-500/30 text-sm text-red-700 dark:text-red-300">
+            <div className="flex items-start gap-2 px-3 py-2 rounded-lg bg-af2-clay-soft/30 dark:bg-af2-clay-soft/300/10 border border-af2-clay/30 dark:border-red-500/30 text-sm text-af2-clay dark:text-red-300">
               <AlertCircle size={15} className="mt-0.5 shrink-0" />
               {errorMsg}
             </div>
@@ -3046,7 +3046,7 @@ function FileUploadModal({
             <button
               onClick={onClose}
               disabled={state === "uploading" || state === "done"}
-              className="flex-1 py-2.5 rounded-lg border border-gray-200 dark:border-surface-700 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-surface-800 text-sm font-medium transition disabled:opacity-50"
+              className="flex-1 py-2.5 rounded-lg border border-af2-line dark:border-af2-line-2 text-af2-ink-3 dark:text-af2-ink-4 hover:bg-af2-paper-2 dark:hover:bg-af2-paper-2 text-sm font-medium transition disabled:opacity-50"
             >
               Cancel
             </button>

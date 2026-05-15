@@ -784,7 +784,7 @@ describe("LLM config APIs", () => {
 
     const result = await listLLMConfigs("token-123");
     expect(result).toHaveLength(1);
-    expect(lastFetchUrl()).toBe("/api/llm-configs");
+    expect(lastFetchUrl()).toBe("/api/llm-credentials");
     expect((lastFetchOptions().headers as Record<string, string>).Authorization).toBe("Bearer token-123");
   });
 
@@ -804,7 +804,7 @@ describe("LLM config APIs", () => {
       model: "gpt-4o",
       apiKey: "sk-test",
     }, ACCESS_TOKEN);
-    expect(lastFetchUrl()).toBe("/api/llm-configs");
+    expect(lastFetchUrl()).toBe("/api/llm-credentials");
     expect(lastFetchOptions().method).toBe("POST");
 
     mockFetch({
@@ -817,12 +817,12 @@ describe("LLM config APIs", () => {
       createdAt: "2026-04-22T00:00:00.000Z",
     });
     await setDefaultLLMConfig("cfg_1", ACCESS_TOKEN);
-    expect(lastFetchUrl()).toBe("/api/llm-configs/cfg_1/default");
+    expect(lastFetchUrl()).toBe("/api/llm-credentials/cfg_1/default");
     expect(lastFetchOptions().method).toBe("PATCH");
 
     mockFetch({}, 204);
     await deleteLLMConfig("cfg_1", ACCESS_TOKEN);
-    expect(lastFetchUrl()).toBe("/api/llm-configs/cfg_1");
+    expect(lastFetchUrl()).toBe("/api/llm-credentials/cfg_1");
     expect(lastFetchOptions().method).toBe("DELETE");
   });
 

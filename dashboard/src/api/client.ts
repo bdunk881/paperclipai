@@ -240,14 +240,19 @@ export interface ObservabilityThroughputSnapshot {
 // LLM Config API functions
 // ---------------------------------------------------------------------------
 
-/** GET /api/llm-configs */
+// HEL-117: canonical noun is `llm_credentials` (migration 025). The dashboard
+// now calls the canonical path; the legacy `/api/llm-configs` mount still
+// resolves for any older clients during the rename window.
+const LLM_CREDENTIALS_PATH = "/llm-credentials";
+
+/** GET /api/llm-credentials */
 export async function listLLMConfigs(accessToken: string): Promise<LLMConfig[]> {
   return withMockApi(
     async () => {
-      const res = await trackedFetch(`${BASE}/llm-configs`, {
+      const res = await trackedFetch(`${BASE}${LLM_CREDENTIALS_PATH}`, {
         headers: buildAuthHeaders(accessToken),
       });
-      if (!res.ok) throw new Error(`Failed to fetch LLM configs: ${res.status}`);
+      if (!res.ok) throw new Error(`Failed to fetch LLM credentials: ${res.status}`);
       const data = await res.json();
       return data.configs as LLMConfig[];
     },
@@ -255,12 +260,12 @@ export async function listLLMConfigs(accessToken: string): Promise<LLMConfig[]> 
   );
 }
 
-/** POST /api/llm-configs */
+/** POST /api/llm-credentials */
 export async function createLLMConfig(
   input: CreateLLMConfigInput,
   accessToken?: string
 ): Promise<LLMConfig> {
-  const res = await trackedFetch(`${BASE}/llm-configs`, {
+  const res = await trackedFetch(`${BASE}${LLM_CREDENTIALS_PATH}`, {
     method: "POST",
     headers: buildJsonHeaders(accessToken),
     body: JSON.stringify(input),
@@ -269,28 +274,34 @@ export async function createLLMConfig(
     const body = await res.json().catch(() => null);
     const entitlementErr = EntitlementError.fromBody(body);
     if (entitlementErr) throw entitlementErr;
-    throw new Error(body?.error ?? `Failed to create LLM config: ${res.status}`);
+    throw new Error(body?.error ?? `Failed to create LLM credential: ${res.status}`);
   }
   return res.json() as Promise<LLMConfig>;
 }
 
-/** PATCH /api/llm-configs/:id/default */
+/** PATCH /api/llm-credentials/:id/default */
 export async function setDefaultLLMConfig(id: string, accessToken?: string): Promise<LLMConfig> {
-  const res = await trackedFetch(`${BASE}/llm-configs/${encodeURIComponent(id)}/default`, {
-    method: "PATCH",
-    headers: buildAuthHeaders(accessToken),
-  });
+  const res = await trackedFetch(
+    `${BASE}${LLM_CREDENTIALS_PATH}/${encodeURIComponent(id)}/default`,
+    {
+      method: "PATCH",
+      headers: buildAuthHeaders(accessToken),
+    }
+  );
   if (!res.ok) throw new Error(`Failed to set default: ${res.status}`);
   return res.json() as Promise<LLMConfig>;
 }
 
-/** DELETE /api/llm-configs/:id */
+/** DELETE /api/llm-credentials/:id */
 export async function deleteLLMConfig(id: string, accessToken?: string): Promise<void> {
-  const res = await trackedFetch(`${BASE}/llm-configs/${encodeURIComponent(id)}`, {
-    method: "DELETE",
-    headers: buildAuthHeaders(accessToken),
-  });
-  if (!res.ok) throw new Error(`Failed to delete LLM config: ${res.status}`);
+  const res = await trackedFetch(
+    `${BASE}${LLM_CREDENTIALS_PATH}/${encodeURIComponent(id)}`,
+    {
+      method: "DELETE",
+      headers: buildAuthHeaders(accessToken),
+    }
+  );
+  if (!res.ok) throw new Error(`Failed to delete LLM credential: ${res.status}`);
 }
 
 const BASE = getApiBasePath();

@@ -95,6 +95,14 @@ import { createWorkspaceRoutes } from "./workspaces/workspaceRoutes";
 import { createMissionRoutes } from "./missions/missionRoutes";
 import { createHiringPlanRoutes } from "./missions/hiringPlanRoutes";
 import { createActivityRoutes } from "./activity/activityRoutes";
+import {
+  createBudgetsRoutes,
+  createConnectorConnectionsRoutes,
+  createEntitlementsRoutes,
+  createOrgGraphRoutes,
+  createStepResultsRoutes,
+  createWakeEventsRoutes,
+} from "./canonical/canonicalReadRoutes";
 import { createWorkflowRoutes } from "./workflows/workflowRoutes";
 import { createInstructionRoutes } from "./instructions/instructionRoutes";
 import { createKnowledgeItemRoutes } from "./knowledge/knowledgeItemRoutes";
@@ -165,6 +173,51 @@ const activityRoutes = isPostgresPersistenceEnabled()
   : express.Router().get("/", (_req, res) => {
       res.json({ events: [], limit: 0, total: 0 });
     });
+
+// HEL-118: canonical read-only API surfaces. Each one is RLS-scoped at the
+// DB; the in-memory fallback returns empty payloads so the dashboard renders
+// the empty state instead of crashing.
+const canonicalReadsArePostgres = isPostgresPersistenceEnabled();
+const orgGraphRoutes = canonicalReadsArePostgres
+  ? createOrgGraphRoutes(getPostgresPool())
+  : express.Router().get("/", (_req, res) =>
+      res.json({ workspaceId: null, agents: [], edges: [] }),
+    );
+const stepResultsRoutes = canonicalReadsArePostgres
+  ? createStepResultsRoutes(getPostgresPool())
+  : express.Router().get("/:runId", (_req, res) =>
+      res.json({ runId: _req.params.runId, stepResults: [], total: 0 }),
+    );
+const budgetsRoutes = canonicalReadsArePostgres
+  ? createBudgetsRoutes(getPostgresPool())
+  : express.Router().get("/", (_req, res) =>
+      res.json({ budgets: [], limit: 0, total: 0 }),
+    );
+const entitlementsRoutes = canonicalReadsArePostgres
+  ? createEntitlementsRoutes(getPostgresPool())
+  : express.Router().get("/", (_req, res) =>
+      res.json({
+        workspaceId: null,
+        plan: "explore",
+        runsPerMonth: 0,
+        agentCap: 0,
+        integrationCap: 0,
+        byokAllowed: false,
+        logRetentionDays: 7,
+        approvalTierMax: 0,
+        updatedAt: null,
+      }),
+    );
+const wakeEventsRoutes = canonicalReadsArePostgres
+  ? createWakeEventsRoutes(getPostgresPool())
+  : express.Router().get("/", (_req, res) =>
+      res.json({ events: [], limit: 0, total: 0 }),
+    );
+const connectorConnectionsRoutes = canonicalReadsArePostgres
+  ? createConnectorConnectionsRoutes(getPostgresPool())
+  : express.Router().get("/", (_req, res) =>
+      res.json({ connections: [], limit: 0, total: 0 }),
+    );
 
 // HEL-27: canonical workflow + workflow_version CRUD routes. Sits alongside
 // the legacy /api/templates persistence path; the dashboard's Studio
@@ -459,6 +512,10 @@ app.use("/api/public/landing", landingPublicApiRoutes);
 // LLM Config API — BYOLLM provider credentials
 // ---------------------------------------------------------------------------
 app.use("/api/llm-configs", requireAuth, workspaceResolver, requireRole("admin", "developer"), llmConfigRoutes);
+// HEL-117: canonical noun alias (table is `llm_credentials` in migration 025).
+// Both paths resolve to the same router until the dashboard fully migrates;
+// then `/api/llm-configs` becomes a legacy alias for one release before removal.
+app.use("/api/llm-credentials", requireAuth, workspaceResolver, requireRole("admin", "developer"), llmConfigRoutes);
 
 // ---------------------------------------------------------------------------
 // MCP Registry API — register and discover MCP server connections
@@ -516,6 +573,62 @@ app.use(
   workspaceResolver,
   requireRole("owner", "admin", "billing", "operator", "developer", "approver", "member"),
   activityRoutes,
+);
+// HEL-118: canonical read-only surfaces. Same role enumeration pattern as
+// activity-events — read-only + RLS-scoped, every workspace member can read.
+const ALL_MEMBER_ROLES = [
+  "owner",
+  "admin",
+  "billing",
+  "operator",
+  "developer",
+  "approver",
+  "member",
+] as const;
+app.use(
+  "/api/org-graph",
+  requireAuth,
+  workspaceResolver,
+  requireRole(...ALL_MEMBER_ROLES),
+  orgGraphRoutes,
+);
+// HEL-118: step-results is mounted under /api/step-results (not /api/runs/...)
+// to avoid colliding with the legacy /api/runs/:id endpoint which uses
+// requireAuthOrQaBypass and its own workspaceResolver chain.
+app.use(
+  "/api/step-results",
+  requireAuth,
+  workspaceResolver,
+  requireRole(...ALL_MEMBER_ROLES),
+  stepResultsRoutes,
+);
+app.use(
+  "/api/budgets",
+  requireAuth,
+  workspaceResolver,
+  requireRole(...ALL_MEMBER_ROLES),
+  budgetsRoutes,
+);
+app.use(
+  "/api/entitlements",
+  requireAuth,
+  workspaceResolver,
+  requireRole(...ALL_MEMBER_ROLES),
+  entitlementsRoutes,
+);
+app.use(
+  "/api/wake-events",
+  requireAuth,
+  workspaceResolver,
+  requireRole(...ALL_MEMBER_ROLES),
+  wakeEventsRoutes,
+);
+app.use(
+  "/api/connector-connections",
+  requireAuth,
+  workspaceResolver,
+  requireRole(...ALL_MEMBER_ROLES),
+  connectorConnectionsRoutes,
 );
 // HEL-27 canonical workflows router is mounted further below, AFTER the
 // pre-existing /api/workflows/schema + /api/workflows/generate specific

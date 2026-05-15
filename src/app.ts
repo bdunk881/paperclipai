@@ -95,6 +95,7 @@ import { createWorkspaceRoutes } from "./workspaces/workspaceRoutes";
 import { createMissionRoutes } from "./missions/missionRoutes";
 import { createHiringPlanRoutes } from "./missions/hiringPlanRoutes";
 import { createActivityRoutes } from "./activity/activityRoutes";
+import { createWorkflowRoutes } from "./workflows/workflowRoutes";
 import { createInstructionRoutes } from "./instructions/instructionRoutes";
 import { createKnowledgeItemRoutes } from "./knowledge/knowledgeItemRoutes";
 import { createEpisodeRoutes } from "./episodes/episodeRoutes";
@@ -164,6 +165,16 @@ const activityRoutes = isPostgresPersistenceEnabled()
   : express.Router().get("/", (_req, res) => {
       res.json({ events: [], limit: 0, total: 0 });
     });
+
+// HEL-27: canonical workflow + workflow_version CRUD routes. Sits alongside
+// the legacy /api/templates persistence path; the dashboard's Studio
+// dual-writes on save so this canonical store fills up as customers
+// build routines. Postgres-required (FK chain to workspaces + RLS).
+const canonicalWorkflowRoutes = isPostgresPersistenceEnabled()
+  ? createWorkflowRoutes(getPostgresPool())
+  : express.Router().all("*", (_req, res) =>
+      res.status(501).json({ error: "Canonical workflows require PostgreSQL persistence." }),
+    );
 
 // HEL-87: three-layer memory routes (instructions / knowledge-items / episodes).
 // All three require Postgres for RLS-backed persistence; in-memory mode
@@ -497,6 +508,9 @@ app.use("/api/hiring-plans", requireAuth, workspaceResolver, requireRole("admin"
 // activity stream — it's the workspace-wide "room right now" surface. No
 // requireRole gate since read-only and RLS-scoped to the workspace.
 app.use("/api/activity-events", requireAuth, workspaceResolver, activityRoutes);
+// HEL-27 canonical workflows router is mounted further below, AFTER the
+// pre-existing /api/workflows/schema + /api/workflows/generate specific
+// handlers, so those don't get intercepted by the :workflowId param.
 // HEL-87: three-layer memory.
 app.use("/api/instructions", requireAuth, workspaceResolver, requireRole("admin", "developer", "operator"), instructionRoutes);
 app.use("/api/knowledge-items", requireAuth, workspaceResolver, requireRole("admin", "developer", "operator"), knowledgeItemRoutes);
@@ -964,6 +978,13 @@ app.post("/api/workflows/generate", requireAuth, workspaceResolver, requireRole(
 
   res.json({ steps });
 });
+
+// HEL-27: mount the canonical workflows router AFTER the specific
+// /api/workflows/schema + /api/workflows/generate handlers above so those
+// continue to win on path match. The router only defines GET/, GET/:id,
+// POST/, POST/:id/versions — none of which conflict with /schema or
+// /generate (those are top-level paths handled before this point).
+app.use("/api/workflows", requireAuth, workspaceResolver, requireRole("admin", "developer"), canonicalWorkflowRoutes);
 
 // ---------------------------------------------------------------------------
 // POST /api/goals/team-assembly

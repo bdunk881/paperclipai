@@ -962,70 +962,123 @@ export default function WorkflowBuilder() {
             {graphError}
           </div>
         )}
-        {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 bg-white dark:bg-surface-900 border-b border-gray-200 dark:border-surface-800">
+        {/* Header — HEL-100 v2 restyle: editorial chrome over the canvas.
+            af2-page wrapper isn't used here because Studio is a full-bleed
+            canvas tool; the top bar still adopts af2 button styles + eyebrow
+            for the v2 visual language. Deep restyles (palette, inspector,
+            modals, copilot panel) tracked separately as HEL-100b/c. */}
+        <div
+          className="flex items-center justify-between px-6 py-3"
+          style={{
+            background: "var(--af2-paper)",
+            borderBottom: "1px solid var(--af2-line)",
+          }}
+        >
           <div className="flex items-center gap-3">
-            <input
-              className="text-lg font-semibold text-gray-900 dark:text-gray-100 bg-transparent border-none outline-none focus:ring-2 focus:ring-brand-500 rounded px-1 -ml-1"
-              value={template.name}
-              onChange={(e) => setTemplate((t) => ({ ...t, name: e.target.value }))}
-            />
-            <span className="text-xs px-2 py-0.5 bg-gray-100 dark:bg-surface-800 text-gray-500 dark:text-surface-400 rounded-full capitalize">
-              {template.category}
-            </span>
+            <div>
+              <div className="af2-eyebrow">Build · Studio</div>
+              <div className="flex items-center gap-2" style={{ marginTop: 4 }}>
+                <input
+                  className="af2-serif"
+                  value={template.name}
+                  onChange={(e) => setTemplate((t) => ({ ...t, name: e.target.value }))}
+                  style={{
+                    fontSize: 20,
+                    fontWeight: 500,
+                    letterSpacing: "-0.015em",
+                    color: "var(--af2-ink)",
+                    background: "transparent",
+                    border: "none",
+                    outline: "none",
+                    padding: "2px 4px",
+                    margin: "0 -4px",
+                    minWidth: 240,
+                  }}
+                  aria-label="Workflow name"
+                />
+                <span className="af2-pill" style={{ textTransform: "capitalize" }}>
+                  {template.category}
+                </span>
+              </div>
+            </div>
           </div>
           <div className="flex items-center gap-2">
             <button
+              type="button"
               onClick={() => setShowCopilot((open) => !open)}
-              className="flex items-center gap-2 px-3.5 py-2 text-sm font-medium rounded-lg border border-brand-200 dark:border-brand-500/30 text-brand-700 dark:text-brand-300 bg-brand-50 dark:bg-brand-500/10 hover:bg-brand-100 dark:hover:bg-brand-500/20 transition"
+              className="af2-btn af2-btn-sm"
+              style={{ display: "inline-flex", alignItems: "center", gap: 6 }}
             >
-              {showCopilot ? <PanelRightClose size={15} /> : <PanelRightOpen size={15} />}
+              {showCopilot ? <PanelRightClose size={14} /> : <PanelRightOpen size={14} />}
               Copilot
             </button>
             <Tooltip content="Open setup guidance and best practices for this page">
               <button
+                type="button"
                 onClick={() => setShowHelp(true)}
-                className="flex items-center gap-2 px-3.5 py-2 text-sm font-medium rounded-lg border border-gray-300 dark:border-surface-700 text-gray-700 dark:text-gray-200 bg-white dark:bg-surface-800 hover:bg-gray-50 dark:hover:bg-surface-700 transition"
+                className="af2-btn af2-btn-sm af2-btn-ghost"
+                style={{ display: "inline-flex", alignItems: "center", gap: 6 }}
               >
-                <CircleHelp size={15} />
+                <CircleHelp size={14} />
                 Guidance
               </button>
             </Tooltip>
             <button
+              type="button"
               onClick={() => setShowNLModal(true)}
-              className="flex items-center gap-2 px-3.5 py-2 text-sm font-medium rounded-lg border border-purple-300 dark:border-purple-500/30 text-purple-700 dark:text-purple-300 bg-purple-50 dark:bg-purple-500/10 hover:bg-purple-100 dark:hover:bg-purple-500/20 transition"
+              className="af2-btn af2-btn-sm"
+              style={{ display: "inline-flex", alignItems: "center", gap: 6 }}
             >
-              <Sparkles size={15} />
+              <Sparkles size={14} />
               Generate with AI
             </button>
             <button
+              type="button"
               onClick={() => void handleSave()}
               disabled={saving}
               className={clsx(
-                "flex items-center gap-2 px-3.5 py-2 text-sm font-medium rounded-lg border transition disabled:opacity-50",
-                saved
-                  ? "bg-green-50 dark:bg-green-500/10 border-green-300 dark:border-green-500/30 text-green-700 dark:text-green-300"
-                  : "border-gray-300 dark:border-surface-700 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-surface-700"
+                "af2-btn af2-btn-sm",
+                saved ? "af2-btn-clay" : undefined,
               )}
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 6,
+                opacity: saving ? 0.6 : 1,
+              }}
             >
-              {saving ? <Loader size={15} className="animate-spin" /> : <Save size={15} />}
+              {saving ? <Loader size={14} className="animate-spin" /> : <Save size={14} />}
               {saving ? "Saving..." : saved ? "Saved!" : "Save"}
             </button>
             <button
+              type="button"
               onClick={() => setShowDeployModal(true)}
               disabled={template.steps.length === 0 || deployBusy}
               aria-label="Deploy workflow as agent team"
-              className="flex items-center gap-2 rounded-lg border border-teal-300 bg-teal-50 px-3.5 py-2 text-sm font-medium text-teal-700 transition hover:bg-teal-100 disabled:opacity-50 dark:border-teal-500/30 dark:bg-teal-500/10 dark:text-teal-300"
+              className="af2-btn af2-btn-sm"
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 6,
+                opacity: template.steps.length === 0 || deployBusy ? 0.5 : 1,
+              }}
             >
-              {deployBusy ? <Loader size={15} className="animate-spin" /> : <Send size={15} />}
+              {deployBusy ? <Loader size={14} className="animate-spin" /> : <Send size={14} />}
               Deploy as Team
             </button>
             <button
+              type="button"
               onClick={handleRun}
               disabled={template.steps.length === 0}
-              className="flex items-center gap-2 px-3.5 py-2 bg-brand-600 hover:bg-brand-700 text-white text-sm font-medium rounded-lg transition disabled:opacity-50"
+              className="af2-btn af2-btn-sm af2-btn-primary"
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 6,
+                opacity: template.steps.length === 0 ? 0.5 : 1,
+              }}
             >
-              <Play size={15} />
+              <Play size={14} />
               Run
             </button>
           </div>

@@ -278,28 +278,28 @@ export default function Memory() {
     progress.total > 0 ? Math.max(8, Math.round((progress.current / progress.total) * 100)) : 0;
 
   return (
-    <div className="min-h-full bg-slate-50 text-slate-900 dark:bg-surface-base dark:text-slate-100">
+    <div className="min-h-full bg-af2-paper text-af2-ink dark:bg-surface-base dark:text-slate-100">
       <div className="mx-auto flex w-full max-w-7xl flex-col gap-8 px-4 py-6 md:px-8 md:py-8">
-        <section className="glass-card noise-overlay overflow-hidden rounded-[28px] border border-slate-200 bg-white/90 dark:border-slate-800/80">
-          <div className="relative border-b border-slate-200 px-8 py-7 dark:border-slate-800/80">
+        <section className="glass-card noise-overlay overflow-hidden rounded-[28px] border border-af2-line bg-af2-card/90 dark:border-slate-800/80">
+          <div className="relative border-b border-af2-line px-8 py-7 dark:border-slate-800/80">
             <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(99,102,241,0.16),transparent_40%),radial-gradient(circle_at_bottom_left,rgba(20,184,166,0.12),transparent_35%)]" />
             <div className="relative flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
               <div className="max-w-2xl">
-                <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-indigo-500/30 bg-indigo-500/10 px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-indigo-200">
+                <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-af2-clay/40 bg-af2-clay-soft px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-af2-clay">
                   <Sparkles size={12} />
                   Data / Knowledge
                 </div>
-                <h1 className="text-2xl font-semibold text-slate-900 dark:text-slate-100 md:text-[24px]">
+                <h1 className="text-2xl font-semibold text-af2-ink dark:text-slate-100 md:text-[24px]">
                   Knowledge Ingest
                 </h1>
-                <p className="mt-2 max-w-xl text-sm text-slate-600 dark:text-slate-400">
+                <p className="mt-2 max-w-xl text-sm text-af2-ink-4 dark:text-slate-400">
                   Ingest source files and structured Q&A pairs into the shared memory layer for
                   workflows and agents.
                 </p>
               </div>
               <button
                 onClick={() => void loadEntries()}
-                className="inline-flex items-center gap-2 self-start rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition hover:border-slate-300 hover:bg-slate-100 hover:text-slate-900 dark:border-slate-700 dark:bg-slate-900/70 dark:text-slate-300 dark:hover:border-slate-600 dark:hover:bg-slate-800/80 dark:hover:text-slate-100"
+                className="inline-flex items-center gap-2 self-start rounded-xl border border-af2-line bg-af2-card px-4 py-2 text-sm font-medium text-af2-ink-4 transition hover:border-af2-line hover:bg-af2-paper-2 hover:text-af2-ink dark:border-slate-700 dark:bg-slate-900/70 dark:text-slate-300 dark:hover:border-slate-600 dark:hover:bg-slate-800/80 dark:hover:text-slate-100"
                 title="Refresh memory data"
               >
                 <RefreshCw size={14} className={loading ? "animate-spin" : ""} />
@@ -308,7 +308,7 @@ export default function Memory() {
             </div>
           </div>
 
-          <div className="grid gap-4 border-b border-slate-200 px-8 py-6 dark:border-slate-800/70 md:grid-cols-3">
+          <div className="grid gap-4 border-b border-af2-line px-8 py-6 dark:border-slate-800/70 md:grid-cols-3">
             <MetricCard icon={<Database size={14} />} label="Total Entries" value={stats.totalEntries} />
             <MetricCard
               icon={<BarChart2 size={14} />}
@@ -327,10 +327,10 @@ export default function Memory() {
           <div className="grid gap-6 px-8 py-8 xl:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)]">
             <section className="space-y-4">
               <div>
-                <h2 className="text-sm font-semibold uppercase tracking-[0.18em] text-slate-400">
+                <h2 className="text-sm font-semibold uppercase tracking-[0.18em] text-af2-ink-3">
                   File Dropzone
                 </h2>
-                <p className="mt-2 text-sm text-slate-500">
+                <p className="mt-2 text-sm text-af2-ink-4">
                   Supports PDF, TXT, and MD up to 10 MB per file.
                 </p>
               </div>
@@ -354,31 +354,31 @@ export default function Memory() {
                 onDrop={handleDrop}
                 onClick={openFilePicker}
                 className={clsx(
-                  "glass-card w-full rounded-2xl border-2 border-dashed px-6 py-10 text-left transition-all duration-200 ease-in-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-50 dark:focus-visible:ring-offset-surface-base",
+                  "glass-card w-full rounded-2xl border-2 border-dashed px-6 py-10 text-left transition-all duration-200 ease-in-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-af2-clay focus-visible:ring-offset-2 focus-visible:ring-offset-af2-paper dark:focus-visible:ring-offset-surface-base",
                   dragOver
-                    ? "border-indigo-500 bg-indigo-500/5 shadow-[0_0_15px_rgba(99,102,241,0.2)]"
-                    : "border-slate-300 bg-white hover:border-indigo-500 hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-800/70",
-                  uploadState === "success" && "border-emerald-500/80",
-                  uploadState === "error" && "border-red-500/80"
+                    ? "border-af2-clay bg-af2-clay-soft shadow-[0_0_15px_rgba(99,102,241,0.2)]"
+                    : "border-af2-line bg-af2-card hover:border-af2-clay hover:bg-af2-paper dark:border-slate-700 dark:hover:bg-slate-800/70",
+                  uploadState === "success" && "border-af2-sage/80",
+                  uploadState === "error" && "border-af2-clay/80"
                 )}
                 aria-label="Knowledge ingest file dropzone"
               >
                 <div className="flex flex-col items-center gap-4 text-center">
                   {uploadState === "uploading" ? (
-                    <Loader2 size={32} className="animate-spin text-indigo-400" />
+                    <Loader2 size={32} className="animate-spin text-af2-clay" />
                   ) : uploadState === "success" ? (
-                    <CheckCircle2 size={32} className="text-emerald-400" />
+                    <CheckCircle2 size={32} className="text-af2-sage" />
                   ) : uploadState === "error" ? (
-                    <AlertCircle size={32} className="text-red-400" />
+                    <AlertCircle size={32} className="text-af2-clay" />
                   ) : (
-                    <UploadCloud size={32} className="text-indigo-400" />
+                    <UploadCloud size={32} className="text-af2-clay" />
                   )}
 
                   <div>
-                    <p className="text-sm font-medium text-slate-900 dark:text-slate-100">
+                    <p className="text-sm font-medium text-af2-ink dark:text-slate-100">
                       Drag &amp; drop files here or click to browse
                     </p>
-                    <p className="mt-1 text-xs text-slate-500">
+                    <p className="mt-1 text-xs text-af2-ink-4">
                       Supports PDF, TXT, MD (Max 10MB)
                     </p>
                   </div>
@@ -388,7 +388,7 @@ export default function Memory() {
                       {files.map((file) => (
                         <span
                           key={`${file.name}-${file.size}`}
-                          className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-slate-100 px-3 py-1 text-xs text-slate-700 dark:border-slate-700 dark:bg-slate-900/70 dark:text-slate-300"
+                          className="inline-flex items-center gap-2 rounded-full border border-af2-line bg-af2-paper-2 px-3 py-1 text-xs text-af2-ink-4 dark:border-slate-700 dark:bg-slate-900/70 dark:text-slate-300"
                         >
                           <FileText size={12} />
                           {file.name}
@@ -403,44 +403,44 @@ export default function Memory() {
             <section className="space-y-4">
               <div className="flex items-end justify-between gap-3">
                 <div>
-                  <h2 className="text-sm font-semibold uppercase tracking-[0.18em] text-slate-400">
+                  <h2 className="text-sm font-semibold uppercase tracking-[0.18em] text-af2-ink-3">
                     Manual Q&amp;A Table
                   </h2>
-                  <p className="mt-2 text-sm text-slate-500">
+                  <p className="mt-2 text-sm text-af2-ink-4">
                     Capture exact questions and answers as searchable memory entries.
                   </p>
                 </div>
                 <button
                   type="button"
                   onClick={addRow}
-                  className="glow-border inline-flex items-center gap-2 rounded-xl border border-indigo-500/40 bg-transparent px-3 py-2 text-sm font-medium text-indigo-300 transition hover:bg-indigo-500/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-50 dark:focus-visible:ring-offset-surface-base"
+                  className="glow-border inline-flex items-center gap-2 rounded-xl border border-af2-clay/40 bg-transparent px-3 py-2 text-sm font-medium text-af2-clay transition hover:bg-af2-clay-soft focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-af2-clay focus-visible:ring-offset-2 focus-visible:ring-offset-af2-paper dark:focus-visible:ring-offset-surface-base"
                 >
                   <Plus size={14} />
                   Add row
                 </button>
               </div>
 
-              <div className="glass-card overflow-hidden rounded-2xl border border-slate-200 bg-white/90 dark:border-slate-700/80">
-                <div className="hidden grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)_88px] gap-4 bg-slate-100 px-4 py-3 dark:bg-[rgba(30,41,59,0.8)] md:grid">
-                  <span className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
+              <div className="glass-card overflow-hidden rounded-2xl border border-af2-line bg-af2-card/90 dark:border-slate-700/80">
+                <div className="hidden grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)_88px] gap-4 bg-af2-paper-2 px-4 py-3 dark:bg-[rgba(30,41,59,0.8)] md:grid">
+                  <span className="text-xs font-semibold uppercase tracking-[0.18em] text-af2-ink-4 dark:text-slate-400">
                     Question
                   </span>
-                  <span className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
+                  <span className="text-xs font-semibold uppercase tracking-[0.18em] text-af2-ink-4 dark:text-slate-400">
                     Answer
                   </span>
-                  <span className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
+                  <span className="text-xs font-semibold uppercase tracking-[0.18em] text-af2-ink-4 dark:text-slate-400">
                     Actions
                   </span>
                 </div>
 
-                <div className="divide-y divide-slate-200 dark:divide-slate-800/90">
+                <div className="divide-y divide-af2-line dark:divide-slate-800/90">
                   {rows.map((row, index) => (
                     <div
                       key={row.id}
-                      className="grid gap-3 px-4 py-4 transition-colors duration-200 ease-in-out hover:bg-slate-50 dark:hover:bg-slate-800/50 md:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)_88px] md:items-start"
+                      className="grid gap-3 px-4 py-4 transition-colors duration-200 ease-in-out hover:bg-af2-paper dark:hover:bg-slate-800/50 md:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)_88px] md:items-start"
                     >
                       <div className="space-y-2">
-                        <label className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500 md:hidden">
+                        <label className="text-[11px] font-semibold uppercase tracking-[0.18em] text-af2-ink-4 md:hidden">
                           Question
                         </label>
                         <textarea
@@ -448,12 +448,12 @@ export default function Memory() {
                           value={row.question}
                           onChange={(event) => updateRow(row.id, "question", event.target.value)}
                           placeholder="What should the agent know?"
-                          className="min-h-[92px] w-full resize-y rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 transition focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-400 dark:border-slate-700/70 dark:bg-transparent dark:text-slate-100 dark:placeholder:text-slate-600 dark:focus:bg-surface-base"
+                          className="min-h-[92px] w-full resize-y rounded-xl border border-af2-line bg-af2-card px-3 py-2 text-sm text-af2-ink placeholder:text-af2-ink-3 transition focus:bg-af2-card focus:outline-none focus:ring-2 focus:ring-af2-clay dark:border-slate-700/70 dark:bg-transparent dark:text-slate-100 dark:placeholder:text-slate-600 dark:focus:bg-surface-base"
                         />
                       </div>
 
                       <div className="space-y-2">
-                        <label className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500 md:hidden">
+                        <label className="text-[11px] font-semibold uppercase tracking-[0.18em] text-af2-ink-4 md:hidden">
                           Answer
                         </label>
                         <textarea
@@ -461,16 +461,16 @@ export default function Memory() {
                           value={row.answer}
                           onChange={(event) => updateRow(row.id, "answer", event.target.value)}
                           placeholder="Provide the canonical answer or context."
-                          className="min-h-[92px] w-full resize-y rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 transition focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-400 dark:border-slate-700/70 dark:bg-transparent dark:text-slate-100 dark:placeholder:text-slate-600 dark:focus:bg-surface-base"
+                          className="min-h-[92px] w-full resize-y rounded-xl border border-af2-line bg-af2-card px-3 py-2 text-sm text-af2-ink placeholder:text-af2-ink-3 transition focus:bg-af2-card focus:outline-none focus:ring-2 focus:ring-af2-clay dark:border-slate-700/70 dark:bg-transparent dark:text-slate-100 dark:placeholder:text-slate-600 dark:focus:bg-surface-base"
                         />
                       </div>
 
                       <div className="flex items-center justify-between gap-3 md:justify-end">
-                        <span className="text-xs text-slate-500 md:hidden">Row {index + 1}</span>
+                        <span className="text-xs text-af2-ink-4 md:hidden">Row {index + 1}</span>
                         <button
                           type="button"
                           onClick={() => removeRow(row.id)}
-                          className="inline-flex items-center gap-2 rounded-xl border border-slate-300 px-3 py-2 text-sm text-slate-500 transition hover:border-red-500/40 hover:text-red-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400 dark:border-slate-700 dark:text-slate-400 dark:hover:text-red-400"
+                          className="inline-flex items-center gap-2 rounded-xl border border-af2-line px-3 py-2 text-sm text-af2-ink-4 transition hover:border-af2-clay/40 hover:text-af2-clay focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-af2-clay dark:border-slate-700 dark:text-slate-400 dark:hover:text-red-400"
                           aria-label={`Remove Q&A row ${index + 1}`}
                         >
                           <Trash2 size={14} />
@@ -484,16 +484,16 @@ export default function Memory() {
             </section>
           </div>
 
-          <div className="space-y-4 border-t border-slate-200 px-8 py-6 dark:border-slate-800/70">
+          <div className="space-y-4 border-t border-af2-line px-8 py-6 dark:border-slate-800/70">
             {uploadState === "uploading" && (
               <div className="space-y-2">
-                <div className="h-1 overflow-hidden rounded-full bg-slate-200 dark:bg-slate-700">
+                <div className="h-1 overflow-hidden rounded-full bg-af2-paper-3 dark:bg-slate-700">
                   <div
-                    className="h-full rounded-full bg-indigo-500 transition-all duration-200 ease-in-out"
+                    className="h-full rounded-full bg-af2-clay transition-all duration-200 ease-in-out"
                     style={{ width: `${progressPercent}%` }}
                   />
                 </div>
-                <p className="text-xs text-slate-400">
+                <p className="text-xs text-af2-ink-3">
                   Ingesting {progress.current} of {progress.total} entries
                 </p>
               </div>
@@ -504,8 +504,8 @@ export default function Memory() {
                 className={clsx(
                   "rounded-xl border px-4 py-3 text-sm",
                   uploadState === "success" &&
-                    "border-emerald-500/40 bg-emerald-500/10 text-emerald-300",
-                  uploadState === "error" && "border-red-500/40 bg-red-500/10 text-red-300"
+                    "border-af2-sage/40 bg-af2-sage/10 text-af2-sage-2",
+                  uploadState === "error" && "border-af2-clay/40 bg-af2-clay/10 text-af2-clay-2"
                 )}
               >
                 {uploadMessage}
@@ -513,7 +513,7 @@ export default function Memory() {
             )}
 
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-              <p className="text-sm text-slate-500">
+              <p className="text-sm text-af2-ink-4">
                 Focus states remain keyboard-visible, and manual rows collapse into stacked cards
                 on smaller screens.
               </p>
@@ -521,7 +521,7 @@ export default function Memory() {
                 type="button"
                 onClick={() => void handleIngest()}
                 disabled={uploadState === "uploading"}
-                className="inline-flex items-center justify-center gap-2 rounded-xl bg-indigo-500 px-6 py-3 text-sm font-bold text-white transition hover:bg-indigo-600 disabled:cursor-not-allowed disabled:bg-slate-300 disabled:text-slate-500 dark:disabled:bg-slate-700"
+                className="inline-flex items-center justify-center gap-2 rounded-xl bg-af2-clay px-6 py-3 text-sm font-bold text-white transition hover:bg-af2-clay-2 disabled:cursor-not-allowed disabled:bg-af2-paper-3 disabled:text-af2-ink-3 dark:disabled:bg-slate-700"
               >
                 {uploadState === "uploading" ? (
                   <>
@@ -540,21 +540,21 @@ export default function Memory() {
         </section>
 
         {error && (
-          <div className="rounded-xl border border-red-500/40 bg-red-500/10 px-4 py-3 text-sm text-red-300">
+          <div className="rounded-xl border border-af2-clay/40 bg-af2-clay/10 px-4 py-3 text-sm text-af2-clay-2">
             {error}
           </div>
         )}
 
-        <section className="grid gap-0 overflow-hidden rounded-[28px] border border-slate-200 bg-white/95 dark:border-slate-800/80 dark:bg-slate-950/80 xl:grid-cols-[380px_minmax(0,1fr)]">
-          <div className="border-b border-slate-200 bg-slate-50/90 dark:border-slate-800/80 dark:bg-slate-950/90 xl:border-b-0 xl:border-r">
-            <div className="border-b border-slate-200 p-4 dark:border-slate-800/80">
+        <section className="grid gap-0 overflow-hidden rounded-[28px] border border-af2-line bg-af2-card/95 dark:border-slate-800/80 dark:bg-slate-950/80 xl:grid-cols-[380px_minmax(0,1fr)]">
+          <div className="border-b border-af2-line bg-af2-paper/90 dark:border-slate-800/80 dark:bg-slate-950/90 xl:border-b-0 xl:border-r">
+            <div className="border-b border-af2-line p-4 dark:border-slate-800/80">
               <div className="relative">
                 <Search
                   size={14}
-                  className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 dark:text-slate-500"
+                  className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-af2-ink-3 dark:text-slate-500"
                 />
                 <input
-                  className="w-full rounded-xl border border-slate-300 bg-white py-2 pl-9 pr-3 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-400 dark:border-slate-700 dark:bg-slate-900/70 dark:text-slate-100 dark:placeholder:text-slate-500"
+                  className="w-full rounded-xl border border-af2-line bg-af2-card py-2 pl-9 pr-3 text-sm text-af2-ink placeholder:text-af2-ink-3 focus:outline-none focus:ring-2 focus:ring-af2-clay dark:border-slate-700 dark:bg-slate-900/70 dark:text-slate-100 dark:placeholder:text-slate-500"
                   placeholder="Search keys or content..."
                   value={search}
                   onChange={(event) => setSearch(event.target.value)}
@@ -564,12 +564,12 @@ export default function Memory() {
 
             <div className="max-h-[640px] overflow-y-auto">
               {loading && entries.length === 0 ? (
-                <div className="flex h-36 flex-col items-center justify-center text-sm text-slate-500">
+                <div className="flex h-36 flex-col items-center justify-center text-sm text-af2-ink-4">
                   <RefreshCw size={20} className="mb-2 animate-spin opacity-50" />
                   Loading memory store…
                 </div>
               ) : entries.length === 0 ? (
-                <div className="flex h-36 flex-col items-center justify-center text-sm text-slate-500">
+                <div className="flex h-36 flex-col items-center justify-center text-sm text-af2-ink-4">
                   <Database size={24} className="mb-2 opacity-30" />
                   {search ? "No results" : "No memory entries yet"}
                 </div>
@@ -578,8 +578,8 @@ export default function Memory() {
                   <div
                     key={entry.id}
                     className={clsx(
-                      "border-b border-slate-200 transition hover:bg-slate-50 dark:border-slate-800/60 dark:hover:bg-slate-900/80",
-                      selected?.id === entry.id && "bg-indigo-500/10"
+                      "border-b border-af2-line transition hover:bg-af2-paper dark:border-slate-800/60 dark:hover:bg-slate-900/80",
+                      selected?.id === entry.id && "bg-af2-clay-soft"
                     )}
                   >
                     <div className="flex items-start gap-3 px-4 py-4">
@@ -592,9 +592,9 @@ export default function Memory() {
                       >
                         <div className="flex flex-col gap-2">
                           <div className="flex items-start justify-between gap-3">
-                            <span className="truncate font-mono text-xs text-slate-700 dark:text-slate-200">{entry.key}</span>
+                            <span className="truncate font-mono text-xs text-af2-ink-4 dark:text-slate-200">{entry.key}</span>
                           </div>
-                          <div className="flex flex-wrap items-center gap-2 text-[11px] text-slate-500">
+                          <div className="flex flex-wrap items-center gap-2 text-[11px] text-af2-ink-4">
                             <span>{entry.workflowName ?? entry.workflowId ?? "Knowledge Ingest"}</span>
                             <span>·</span>
                             <Clock size={10} />
@@ -602,7 +602,7 @@ export default function Memory() {
                             {entry.ttlSeconds && (
                               <>
                                 <span>·</span>
-                                <span className="text-amber-300">{ttlLabel(entry.ttlSeconds)}</span>
+                                <span className="text-af2-mustard">{ttlLabel(entry.ttlSeconds)}</span>
                               </>
                             )}
                           </div>
@@ -611,7 +611,7 @@ export default function Memory() {
                       <button
                         type="button"
                         onClick={() => void handleDelete(entry.id)}
-                        className="shrink-0 rounded-lg p-1 text-slate-500 transition hover:bg-red-500/10 hover:text-red-400"
+                        className="shrink-0 rounded-lg p-1 text-af2-ink-4 transition hover:bg-af2-clay/10 hover:text-af2-clay"
                         aria-label={`Delete memory entry ${entry.key}`}
                       >
                         <Trash2 size={13} />
@@ -628,16 +628,16 @@ export default function Memory() {
               <div>
                 <div className="mb-6 flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
                   <div>
-                    <p className="mb-2 text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
+                    <p className="mb-2 text-xs font-semibold uppercase tracking-[0.18em] text-af2-ink-4">
                       Selected Entry
                     </p>
-                    <h2 className="break-all font-mono text-lg font-semibold text-slate-900 dark:text-slate-100">
+                    <h2 className="break-all font-mono text-lg font-semibold text-af2-ink dark:text-slate-100">
                       {selected.key}
                     </h2>
                   </div>
                   <button
                     onClick={() => void handleDelete(selected.id)}
-                    className="inline-flex items-center gap-2 rounded-xl border border-red-500/30 px-3 py-2 text-sm text-red-300 transition hover:bg-red-500/10"
+                    className="inline-flex items-center gap-2 rounded-xl border border-af2-clay/30 px-3 py-2 text-sm text-af2-clay-2 transition hover:bg-af2-clay/10"
                   >
                     <Trash2 size={14} />
                     Delete
@@ -650,11 +650,11 @@ export default function Memory() {
                   <DetailCard label="TTL" value={ttlLabel(selected.ttlSeconds)} />
                   <DetailCard label="Last Updated" value={timeAgo(selected.updatedAt)} />
                   {selected.expiresAt ? (
-                    <div className="rounded-2xl border border-amber-300 bg-amber-50 p-4 md:col-span-2 dark:border-amber-500/30 dark:bg-amber-500/10">
-                      <div className="text-xs font-semibold uppercase tracking-[0.18em] text-amber-800 dark:text-amber-200">
+                    <div className="rounded-2xl border border-af2-mustard/40 bg-af2-mustard/10 p-4 md:col-span-2 dark:border-amber-500/30 dark:bg-amber-500/10">
+                      <div className="text-xs font-semibold uppercase tracking-[0.18em] text-af2-mustard-2 dark:text-amber-200">
                         Expires At
                       </div>
-                      <div className="mt-2 text-sm text-amber-900 dark:text-amber-100">
+                      <div className="mt-2 text-sm text-af2-mustard-2 dark:text-amber-100">
                         {new Date(selected.expiresAt).toLocaleString()}
                       </div>
                     </div>
@@ -662,10 +662,10 @@ export default function Memory() {
                 </div>
 
                 <div>
-                  <label className="mb-2 block text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
+                  <label className="mb-2 block text-xs font-semibold uppercase tracking-[0.18em] text-af2-ink-4">
                     Value
                   </label>
-                  <pre className="overflow-x-auto rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 text-xs leading-relaxed text-emerald-700 dark:border-slate-800 dark:bg-slate-950 dark:text-emerald-300">
+                  <pre className="overflow-x-auto rounded-2xl border border-af2-line bg-af2-paper px-4 py-4 text-xs leading-relaxed text-af2-sage-2 dark:border-slate-800 dark:bg-slate-950 dark:text-emerald-300">
                     {(() => {
                       try {
                         return JSON.stringify(JSON.parse(selected.text), null, 2);
@@ -677,9 +677,9 @@ export default function Memory() {
                 </div>
               </div>
             ) : (
-              <div className="flex h-full flex-col items-center justify-center text-center text-slate-500">
+              <div className="flex h-full flex-col items-center justify-center text-center text-af2-ink-4">
                 <Database size={40} className="mb-4 opacity-30" />
-                <p className="text-sm text-slate-500 dark:text-slate-400">Select a memory entry to inspect the ingested payload.</p>
+                <p className="text-sm text-af2-ink-4 dark:text-slate-400">Select a memory entry to inspect the ingested payload.</p>
               </div>
             )}
           </div>
@@ -701,13 +701,13 @@ function MetricCard({
   helper?: string;
 }) {
   return (
-    <div className="rounded-2xl border border-slate-200 bg-white/95 p-4 dark:border-slate-800/90 dark:bg-slate-950/60">
-      <div className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
+    <div className="rounded-2xl border border-af2-line bg-af2-card/95 p-4 dark:border-slate-800/90 dark:bg-slate-950/60">
+      <div className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.18em] text-af2-ink-4">
         {icon}
         {label}
       </div>
-      <div className="text-2xl font-semibold text-slate-900 dark:text-slate-100">{value}</div>
-      {helper ? <div className="mt-1 text-xs text-slate-500">{helper}</div> : null}
+      <div className="text-2xl font-semibold text-af2-ink dark:text-slate-100">{value}</div>
+      {helper ? <div className="mt-1 text-xs text-af2-ink-4">{helper}</div> : null}
     </div>
   );
 }
@@ -722,9 +722,9 @@ function DetailCard({
   mono?: boolean;
 }) {
   return (
-    <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-800/90 dark:bg-slate-900/70">
-      <div className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">{label}</div>
-      <div className={clsx("mt-2 text-sm text-slate-800 dark:text-slate-100", mono && "font-mono")}>{value}</div>
+    <div className="rounded-2xl border border-af2-line bg-af2-paper p-4 dark:border-slate-800/90 dark:bg-slate-900/70">
+      <div className="text-xs font-semibold uppercase tracking-[0.18em] text-af2-ink-4">{label}</div>
+      <div className={clsx("mt-2 text-sm text-af2-ink dark:text-slate-100", mono && "font-mono")}>{value}</div>
     </div>
   );
 }

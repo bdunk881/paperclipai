@@ -140,7 +140,7 @@ function buildDraftAgents(plan: TeamAssemblyResult): DraftAgent[] {
 }
 
 function toneForTier(tier: TeamAssemblyModelTier): string {
-  if (tier === "power") return "bg-emerald-100 text-emerald-700 border-emerald-200";
+  if (tier === "power") return "bg-af2-sage/10 text-af2-sage-2 border-af2-sage/40";
   if (tier === "standard") return "bg-blue-100 text-blue-700 border-blue-200";
   return "bg-slate-100 text-slate-600 border-slate-200";
 }
@@ -390,7 +390,7 @@ export default function StaffingPlanReview({
 
   if (loadingTemplates) {
     return (
-      <div className="p-8">
+      <div className="af2-page p-8">
         <LoadingState label="Loading staffing-plan contracts..." />
       </div>
     );
@@ -398,17 +398,17 @@ export default function StaffingPlanReview({
 
   if (pageError) {
     return (
-      <div className="p-8">
+      <div className="af2-page p-8">
         <ErrorState title="Staffing plan unavailable" message={pageError} />
       </div>
     );
   }
 
   return (
-    <div className="min-h-full bg-slate-50 p-6 md:p-8">
+    <div className="af2-page min-h-full bg-af2-paper p-6 md:p-8">
       <div className="mx-auto max-w-7xl space-y-6">
-        <section className="overflow-hidden rounded-[28px] border border-slate-200 bg-white shadow-sm">
-          <div className="border-b border-slate-200 bg-[linear-gradient(135deg,#eff6ff_0%,#ffffff_45%,#ecfeff_100%)] px-6 py-6">
+        <section className="overflow-hidden rounded-[28px] border border-af2-line bg-af2-card shadow-sm">
+          <div className="border-b border-af2-line bg-[linear-gradient(135deg,#eff6ff_0%,#ffffff_45%,#ecfeff_100%)] px-6 py-6">
             <div className="flex flex-wrap items-start justify-between gap-4">
               <div className="max-w-3xl">
                 <div className="inline-flex items-center gap-2 rounded-full border border-blue-200 bg-blue-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.22em] text-blue-700">
@@ -435,7 +435,7 @@ export default function StaffingPlanReview({
           </div>
 
           <div className="grid gap-0 lg:grid-cols-[1.2fr_0.8fr]">
-            <section className="border-b border-slate-200 p-6 lg:border-b-0 lg:border-r">
+            <section className="border-b border-af2-line p-6 lg:border-b-0 lg:border-r">
               <div className="mb-5 flex items-center gap-3">
                 <ShieldCheck size={18} className="text-blue-600" />
                 <div>
@@ -544,7 +544,7 @@ export default function StaffingPlanReview({
                 </LabeledField>
               </div>
 
-              <div className="mt-5 rounded-2xl border border-slate-200 bg-slate-50 p-4">
+              <div className="mt-5 rounded-2xl border border-af2-line bg-af2-paper p-4">
                 <label className="flex items-center gap-3 text-sm font-medium text-slate-700">
                   <input
                     type="checkbox"
@@ -651,7 +651,7 @@ export default function StaffingPlanReview({
               </div>
 
               {generationError ? (
-                <div className="mt-4 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                <div className="mt-4 rounded-2xl border border-af2-clay/40 bg-af2-clay/10 px-4 py-3 text-sm text-af2-clay-2">
                   {generationError}
                 </div>
               ) : null}
@@ -660,7 +660,7 @@ export default function StaffingPlanReview({
                 <button
                   onClick={() => void handleGeneratePlan()}
                   disabled={loadingPlan || !requestForm.goal.trim()}
-                  className="inline-flex items-center gap-2 rounded-full bg-blue-500 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-blue-600 disabled:cursor-not-allowed disabled:bg-slate-300"
+                  className="inline-flex items-center gap-2 rounded-full bg-blue-500 px-5 py-2.5 text-sm font-semibold text-af2-card transition hover:bg-blue-600 disabled:cursor-not-allowed disabled:bg-slate-300"
                 >
                   {loadingPlan ? <Loader2 size={16} className="animate-spin" /> : <Sparkles size={16} />}
                   Generate staffing plan
@@ -669,7 +669,7 @@ export default function StaffingPlanReview({
                   <button
                     onClick={() => void handleGeneratePlan()}
                     disabled={loadingPlan}
-                    className="inline-flex items-center gap-2 rounded-full border border-slate-300 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 transition hover:border-blue-300 hover:text-blue-700"
+                    className="inline-flex items-center gap-2 rounded-full border border-slate-300 bg-af2-card px-4 py-2.5 text-sm font-medium text-slate-700 transition hover:border-blue-300 hover:text-blue-700"
                   >
                     <RefreshCw size={15} />
                     Refresh recommendation
@@ -680,7 +680,7 @@ export default function StaffingPlanReview({
 
             <section className="p-6">
               <div className="mb-5 flex items-center gap-3">
-                <Network size={18} className="text-emerald-600" />
+                <Network size={18} className="text-af2-sage-2" />
                 <div>
                   <h2 className="text-lg font-semibold text-slate-900">Review flow</h2>
                   <p className="text-sm text-slate-500">
@@ -689,7 +689,7 @@ export default function StaffingPlanReview({
                 </div>
               </div>
 
-              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+              <div className="rounded-2xl border border-af2-line bg-af2-paper p-4">
                 <div className="flex items-center justify-between gap-3">
                   <div>
                     <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
@@ -699,7 +699,7 @@ export default function StaffingPlanReview({
                       {roleTemplates.length} supported role templates are available from the backend.
                     </p>
                   </div>
-                  <span className="rounded-full bg-emerald-100 px-3 py-1 text-xs font-semibold text-emerald-700">
+                  <span className="rounded-full bg-af2-sage/10 px-3 py-1 text-xs font-semibold text-af2-sage-2">
                     Contract ready
                   </span>
                 </div>
@@ -707,7 +707,7 @@ export default function StaffingPlanReview({
                   {roleTemplates.slice(0, 8).map((template) => (
                     <span
                       key={template.id}
-                      className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-medium text-slate-700"
+                      className="rounded-full border border-af2-line bg-af2-card px-3 py-1 text-xs font-medium text-slate-700"
                     >
                       {template.name}
                     </span>
@@ -721,7 +721,7 @@ export default function StaffingPlanReview({
         {plan ? (
           <>
             <section className="grid gap-6 xl:grid-cols-[minmax(0,1.6fr)_360px]">
-              <div className="rounded-[28px] border border-slate-200 bg-white p-6 shadow-sm">
+              <div className="rounded-[28px] border border-af2-line bg-af2-card p-6 shadow-sm">
                 <div className="flex flex-wrap items-start justify-between gap-4">
                   <div className="max-w-2xl">
                     <p className="text-xs font-semibold uppercase tracking-[0.18em] text-blue-700">AI Plan Summary</p>
@@ -729,7 +729,7 @@ export default function StaffingPlanReview({
                     <p className="mt-3 text-sm leading-6 text-slate-600">{plan.summary}</p>
                     <p className="mt-3 text-sm leading-6 text-slate-500">{plan.rationale}</p>
                   </div>
-                  <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-right">
+                  <div className="rounded-2xl border border-af2-line bg-af2-paper px-4 py-3 text-right">
                     <p className="text-xs uppercase tracking-[0.18em] text-slate-400">Monthly Budget Signal</p>
                     <p className="mt-2 font-mono text-2xl font-semibold text-slate-900">{formatUsd(totalAllocatedBudget)}</p>
                   </div>
@@ -771,7 +771,7 @@ export default function StaffingPlanReview({
                 </div>
               </div>
 
-              <aside className="rounded-[28px] border border-slate-200 bg-white p-6 shadow-sm">
+              <aside className="rounded-[28px] border border-af2-line bg-af2-card p-6 shadow-sm">
                 {selectedAgent ? (
                   <>
                     <div className="flex items-start justify-between gap-3">
@@ -881,7 +881,7 @@ export default function StaffingPlanReview({
                       </LabeledField>
                     </div>
 
-                    <div className="mt-6 rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                    <div className="mt-6 rounded-2xl border border-af2-line bg-af2-paper p-4">
                       <div className="flex items-center gap-2 text-sm font-semibold text-slate-700">
                         <ArrowRightLeft size={15} className="text-blue-600" />
                         Swap recommended roles
@@ -913,13 +913,13 @@ export default function StaffingPlanReview({
                       </button>
                     </div>
 
-                    <div className="mt-6 rounded-2xl border border-slate-200 bg-white p-4">
+                    <div className="mt-6 rounded-2xl border border-af2-line bg-af2-card p-4">
                       <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">Signals</p>
                       <div className="mt-3 flex flex-wrap gap-2">
                         {selectedAgent.skills.map((skill) => (
                           <span
                             key={skill}
-                            className="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-medium text-emerald-700"
+                            className="rounded-full border border-af2-sage/40 bg-af2-sage/10 px-3 py-1 text-xs font-medium text-af2-sage-2"
                           >
                             {skill}
                           </span>
@@ -929,7 +929,7 @@ export default function StaffingPlanReview({
                         {selectedAgent.tools.map((tool) => (
                           <span
                             key={tool}
-                            className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-medium text-slate-700"
+                            className="rounded-full border border-af2-line bg-af2-paper px-3 py-1 text-xs font-medium text-slate-700"
                           >
                             {tool}
                           </span>
@@ -938,7 +938,7 @@ export default function StaffingPlanReview({
                     </div>
                   </>
                 ) : (
-                  <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-6 text-center text-sm text-slate-500">
+                  <div className="rounded-2xl border border-dashed border-slate-300 bg-af2-paper p-6 text-center text-sm text-slate-500">
                     Select a role card to edit the staffing plan.
                   </div>
                 )}
@@ -946,11 +946,11 @@ export default function StaffingPlanReview({
             </section>
 
             <section className="grid gap-6 xl:grid-cols-[minmax(0,1.3fr)_minmax(0,0.7fr)]">
-              <div className="rounded-[28px] border border-slate-200 bg-white p-6 shadow-sm">
+              <div className="rounded-[28px] border border-af2-line bg-af2-card p-6 shadow-sm">
                 <SectionHeader title="Budget allocation" subtitle="Role-level costs are multiplied by headcount before approval." />
-                <div className="mt-5 overflow-hidden rounded-2xl border border-slate-200">
+                <div className="mt-5 overflow-hidden rounded-2xl border border-af2-line">
                   <table className="min-w-full divide-y divide-slate-200 text-sm">
-                    <thead className="bg-slate-50 text-left text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
+                    <thead className="bg-af2-paper text-left text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
                       <tr>
                         <th className="px-4 py-3">Role</th>
                         <th className="px-4 py-3">Headcount</th>
@@ -959,7 +959,7 @@ export default function StaffingPlanReview({
                         <th className="px-4 py-3">Reports to</th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-slate-200 bg-white">
+                    <tbody className="divide-y divide-slate-200 bg-af2-card">
                       {draftAgents.map((agent) => (
                         <tr key={agent.slotId}>
                           <td className="px-4 py-3">
@@ -977,7 +977,7 @@ export default function StaffingPlanReview({
                         </tr>
                       ))}
                     </tbody>
-                    <tfoot className="bg-slate-50">
+                    <tfoot className="bg-af2-paper">
                       <tr>
                         <td className="px-4 py-3 text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
                           Total
@@ -1000,7 +1000,7 @@ export default function StaffingPlanReview({
                 </div>
               </div>
 
-              <div className="rounded-[28px] border border-slate-200 bg-white p-6 shadow-sm">
+              <div className="rounded-[28px] border border-af2-line bg-af2-card p-6 shadow-sm">
                 <SectionHeader
                   title="Approve and provision"
                   subtitle="Provisioning requires an explicit company budget, idempotency key, and at least one secret binding."
@@ -1065,7 +1065,7 @@ export default function StaffingPlanReview({
                   </label>
                 </div>
 
-                <div className="mt-6 rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                <div className="mt-6 rounded-2xl border border-af2-line bg-af2-paper p-4">
                   <div className="flex items-center justify-between gap-3">
                     <div>
                       <p className="text-sm font-semibold text-slate-800">Secret bindings</p>
@@ -1075,7 +1075,7 @@ export default function StaffingPlanReview({
                     </div>
                     <button
                       onClick={() => setSecretRows((current) => [...current, createSecretDraft()])}
-                      className="inline-flex items-center gap-2 rounded-full border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 transition hover:border-blue-300 hover:text-blue-700"
+                      className="inline-flex items-center gap-2 rounded-full border border-slate-300 bg-af2-card px-3 py-1.5 text-xs font-medium text-slate-700 transition hover:border-blue-300 hover:text-blue-700"
                     >
                       <Plus size={12} />
                       Add secret
@@ -1116,7 +1116,7 @@ export default function StaffingPlanReview({
                               current.length === 1 ? [createSecretDraft()] : current.filter((item) => item.id !== row.id)
                             )
                           }
-                          className="rounded-full border border-slate-300 px-3 py-2 text-xs font-medium text-slate-600 transition hover:border-red-300 hover:text-red-600"
+                          className="rounded-full border border-slate-300 px-3 py-2 text-xs font-medium text-slate-600 transition hover:border-af2-clay/40 hover:text-af2-clay-2"
                         >
                           Remove
                         </button>
@@ -1126,23 +1126,23 @@ export default function StaffingPlanReview({
                 </div>
 
                 {approvalError ? (
-                  <div className="mt-4 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                  <div className="mt-4 rounded-2xl border border-af2-clay/40 bg-af2-clay/10 px-4 py-3 text-sm text-af2-clay-2">
                     {approvalError}
                   </div>
                 ) : null}
 
                 {approvalResult ? (
-                  <div className="mt-4 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-4">
+                  <div className="mt-4 rounded-2xl border border-af2-sage/40 bg-af2-sage/10 px-4 py-4">
                     <div className="flex items-start gap-3">
-                      <CheckCircle2 size={18} className="mt-0.5 text-emerald-600" />
+                      <CheckCircle2 size={18} className="mt-0.5 text-af2-sage-2" />
                       <div>
-                        <p className="font-semibold text-emerald-900">Provisioning started successfully</p>
-                        <p className="mt-1 text-sm text-emerald-700">
+                        <p className="font-semibold text-af2-sage-2">Provisioning started successfully</p>
+                        <p className="mt-1 text-sm text-af2-sage-2">
                           Team <span className="font-medium">{approvalResult.team.name}</span> is ready for monitoring.
                         </p>
                         <Link
                           to={`/agents/team/${approvalResult.team.id}`}
-                          className="mt-3 inline-flex items-center gap-2 text-sm font-medium text-emerald-800 hover:text-emerald-900"
+                          className="mt-3 inline-flex items-center gap-2 text-sm font-medium text-af2-sage-2 hover:text-af2-sage"
                         >
                           Open deployed team
                           <ChevronRight size={14} />
@@ -1156,7 +1156,7 @@ export default function StaffingPlanReview({
                   <button
                     onClick={() => void handleApprovePlan()}
                     disabled={submittingApproval || !draftAgents.length}
-                    className="inline-flex items-center gap-2 rounded-full bg-blue-500 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-blue-600 disabled:cursor-not-allowed disabled:bg-slate-300"
+                    className="inline-flex items-center gap-2 rounded-full bg-blue-500 px-5 py-2.5 text-sm font-semibold text-af2-card transition hover:bg-blue-600 disabled:cursor-not-allowed disabled:bg-slate-300"
                   >
                     {submittingApproval ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
                     Approve and provision
@@ -1189,7 +1189,7 @@ function MetricCard({
 }) {
   const tones = {
     blue: "bg-blue-50 border-blue-200 text-blue-800",
-    emerald: "bg-emerald-50 border-emerald-200 text-emerald-800",
+    emerald: "bg-af2-sage/10 border-af2-sage/40 text-af2-sage-2",
     slate: "bg-slate-50 border-slate-200 text-slate-800",
   } as const;
 
@@ -1228,12 +1228,12 @@ function RoleCard({
         "w-full rounded-2xl border p-4 text-left transition",
         selected
           ? "border-blue-500 bg-blue-50 shadow-[0_0_0_1px_rgba(59,130,246,0.18),0_12px_30px_rgba(59,130,246,0.14)]"
-          : "border-slate-200 bg-slate-50 hover:border-blue-200 hover:bg-blue-50/50"
+          : "border-af2-line bg-af2-paper hover:border-blue-200 hover:bg-blue-50/50"
       )}
     >
       <div className="flex items-start justify-between gap-3">
         <div className="flex items-start gap-3">
-          <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-slate-900 text-white">
+          <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-slate-900 text-af2-card">
             {agent.roleType === "executive" ? <Users size={18} /> : <Bot size={18} />}
           </div>
           <div>
@@ -1250,13 +1250,13 @@ function RoleCard({
             </div>
             <p className="mt-1 text-sm text-slate-500">{agent.justification}</p>
             <div className="mt-3 flex flex-wrap gap-2">
-              <span className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-medium text-slate-700">
+              <span className="rounded-full border border-af2-line bg-af2-card px-3 py-1 text-xs font-medium text-slate-700">
                 {agent.roleKey}
               </span>
-              <span className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-medium text-slate-700">
+              <span className="rounded-full border border-af2-line bg-af2-card px-3 py-1 text-xs font-medium text-slate-700">
                 Headcount {agent.headcount}
               </span>
-              <span className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-medium text-slate-700">
+              <span className="rounded-full border border-af2-line bg-af2-card px-3 py-1 text-xs font-medium text-slate-700">
                 {formatUsd((agent.budgetMonthlyUsd ?? 0) * agent.headcount)}
               </span>
             </div>
@@ -1267,7 +1267,7 @@ function RoleCard({
           <span
             className={clsx(
               "rounded-full px-2.5 py-1 text-[11px] font-semibold",
-              supported ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-700"
+              supported ? "bg-af2-sage/10 text-af2-sage-2" : "bg-af2-mustard/10 text-af2-mustard-2"
             )}
           >
             {supported ? "Supported" : "Review role"}
@@ -1290,7 +1290,7 @@ function RoadmapCard({
   };
 }) {
   return (
-    <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+    <div className="rounded-2xl border border-af2-line bg-af2-paper p-4">
       <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">{label}</p>
       <div className="mt-3 space-y-3 text-sm text-slate-600">
         <div>
@@ -1309,7 +1309,7 @@ function RoadmapCard({
           <ul className="mt-1 space-y-1">
             {phase.deliverables.map((item) => (
               <li key={item} className="flex gap-2">
-                <span className="mt-1 h-1.5 w-1.5 rounded-full bg-emerald-500" />
+                <span className="mt-1 h-1.5 w-1.5 rounded-full bg-af2-sage" />
                 <span>{item}</span>
               </li>
             ))}
@@ -1336,7 +1336,7 @@ function LabeledField({
 }
 
 const inputClassName =
-  "w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 shadow-sm outline-none transition focus:border-blue-400 focus:ring-2 focus:ring-blue-200";
+  "w-full rounded-2xl border border-af2-line bg-af2-card px-4 py-3 text-sm text-slate-900 shadow-sm outline-none transition focus:border-blue-400 focus:ring-2 focus:ring-blue-200";
 
 const textareaClassName =
-  "w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 shadow-sm outline-none transition focus:border-blue-400 focus:ring-2 focus:ring-blue-200";
+  "w-full rounded-2xl border border-af2-line bg-af2-card px-4 py-3 text-sm text-slate-900 shadow-sm outline-none transition focus:border-blue-400 focus:ring-2 focus:ring-blue-200";

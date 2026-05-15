@@ -67,8 +67,19 @@ export interface ControlPlaneTeam {
   userId: string;
   name: string;
   description?: string;
+  /**
+   * @deprecated HEL-119 — use {@link workflowId}. "workflow_template" is an
+   * internal storage detail and was bleeding into the customer-facing UI via
+   * `workflowTemplateName`. Both fields are dual-emitted for one release; new
+   * surfaces must read `workflowId` / `workflowName`.
+   */
   workflowTemplateId?: string;
+  /** @deprecated HEL-119 — use {@link workflowName}. */
   workflowTemplateName?: string;
+  /** Canonical noun. Mirrors {@link workflowTemplateId} during the rename. */
+  workflowId?: string;
+  /** Canonical noun. Mirrors {@link workflowTemplateName} during the rename. */
+  workflowName?: string;
   deploymentMode: TeamDeploymentMode;
   status: TeamLifecycleStatus;
   pausedByCompanyLifecycle?: boolean;

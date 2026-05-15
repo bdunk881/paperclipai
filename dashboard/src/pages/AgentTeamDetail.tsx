@@ -4,10 +4,12 @@ import {
   useEffect,
   useMemo,
   useState,
+  type ErrorInfo,
   type ReactNode,
 } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 import { ArrowLeft, Bot, Clock3, RefreshCw, Workflow } from "lucide-react";
+import * as Sentry from "@sentry/react";
 import {
   getControlPlaneTeam,
   type ControlPlaneAgent,
@@ -344,6 +346,15 @@ class AgentTeamDetailErrorBoundary extends Component<
 
   static getDerivedStateFromError(): { hasError: boolean } {
     return { hasError: true };
+  }
+
+  override componentDidCatch(error: Error, info: ErrorInfo): void {
+    Sentry.captureException(error, {
+      contexts: {
+        react: { componentStack: info.componentStack ?? "" },
+      },
+      tags: { boundary: "AgentTeamDetail" },
+    });
   }
 
   override render() {

@@ -2,6 +2,8 @@ import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { apiGet } from "../api/settingsClient";
+import { getApiBasePath } from "../api/baseUrl";
+import { trackedFetch } from "../api/trackedFetch";
 import { ErrorState, LoadingState } from "../components/UiStates";
 import {
   LIVE_CONNECTOR_PROVIDER_BY_KEY,
@@ -192,7 +194,10 @@ const CATALOG: Array<Omit<IntegrationCard, "installed" | "status" | "ctaTo">> = 
 ];
 
 const ALL_CATEGORY = "All";
-const API_BASE = import.meta.env.VITE_API_URL ?? "http://localhost:3001";
+// Resolves to the correct Fly API origin via getApiBasePath() — same logic
+// every other dashboard fetch uses (handles dev / staging / production
+// hostname maps + Cloudflare Pages preview surfaces).
+const API_BASE = getApiBasePath();
 const REGISTRY_ROUTE = "/settings/mcp-servers";
 const LIVE_CONNECTOR_ROUTE = "/integrations";
 
@@ -278,7 +283,9 @@ export default function IntegrationsHub() {
         const accessToken = await requireAccessToken();
         const headers = new Headers();
         headers.set("Authorization", `Bearer ${accessToken}`);
-        const response = await fetch(`${API_BASE}/api/integrations/status`, { headers });
+        // getApiBasePath() already includes the `/api` suffix, so the path
+        // here is just the route under the api mount.
+        const response = await trackedFetch(`${API_BASE}/integrations/status`, { headers });
         if (!response.ok) {
           return;
         }

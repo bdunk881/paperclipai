@@ -177,4 +177,20 @@ describe("Templates", () => {
     renderTemplates({ initialTemplates: templates });
     expect(screen.getByText(/no description provided/i)).toBeInTheDocument();
   });
+
+  // ---------------------------------------------------------------------------
+  // v2 structural marker regression guard (HEL-65)
+  // ---------------------------------------------------------------------------
+
+  it("renders with v2 structural markers (HEL-65)", () => {
+    const templates = [makeTemplate({ name: "Marker Template" })];
+    const { container } = renderTemplates({ initialTemplates: templates });
+
+    expect(container.querySelector(".af2-page")).not.toBeNull();
+    expect(container.querySelector(".af2-page-head")).not.toBeNull();
+    expect(container.querySelector(".af2-eyebrow")).not.toBeNull();
+    expect(container.querySelector("h1.af2-h1")).not.toBeNull();
+    expect(container.querySelector(".af2-tabs")).not.toBeNull();
+    expect(container.querySelectorAll(".af2-card").length).toBeGreaterThan(0);
+  });
 });

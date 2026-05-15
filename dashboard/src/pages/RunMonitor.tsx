@@ -157,9 +157,9 @@ export default function RunMonitor() {
         </h2>
 
         {teamDetails.length === 0 ? (
-          <div className="bg-white dark:bg-surface-900 rounded-xl border border-gray-200 dark:border-surface-800 p-12 text-center">
-            <div className="w-12 h-12 rounded-full bg-brand-50 flex items-center justify-center mx-auto mb-3">
-              <Bot size={22} className="text-brand-500" />
+          <div className="bg-af2-card dark:bg-surface-900 rounded-xl border border-gray-200 dark:border-surface-800 p-12 text-center">
+            <div className="w-12 h-12 rounded-full bg-af2-clay-soft flex items-center justify-center mx-auto mb-3">
+              <Bot size={22} className="text-af2-clay" />
             </div>
             <p className="text-gray-600 font-medium">No deployed teams yet</p>
             <p className="text-gray-400 text-sm mt-1">
@@ -181,14 +181,14 @@ export default function RunMonitor() {
         </h2>
 
         {activeRuns.length === 0 ? (
-          <div className="bg-white dark:bg-surface-900 rounded-xl border border-gray-200 dark:border-surface-800 p-12 text-center">
-            <div className="w-12 h-12 rounded-full bg-green-50 flex items-center justify-center mx-auto mb-3">
-              <CheckCircle2 size={22} className="text-green-500" />
+          <div className="bg-af2-card dark:bg-surface-900 rounded-xl border border-gray-200 dark:border-surface-800 p-12 text-center">
+            <div className="w-12 h-12 rounded-full bg-af2-sage/10 flex items-center justify-center mx-auto mb-3">
+              <CheckCircle2 size={22} className="text-af2-sage" />
             </div>
             <p className="text-gray-600 font-medium">No active runs</p>
             <p className="text-gray-400 text-sm mt-1">
               Start a workflow from the{" "}
-              <Link to="/builder" className="text-brand-600 hover:underline">
+              <Link to="/builder" className="text-af2-clay-2 hover:underline">
                 builder
               </Link>{" "}
               to see it here.
@@ -244,7 +244,7 @@ function TeamMonitorCard({ detail }: { detail: ControlPlaneTeamDetail }) {
     .sort((left, right) => new Date(right.startedAt).getTime() - new Date(left.startedAt).getTime())[0];
 
   return (
-    <div className="overflow-hidden rounded-[24px] border border-gray-200 bg-white shadow-sm dark:border-surface-800 dark:bg-surface-900">
+    <div className="overflow-hidden rounded-[24px] border border-gray-200 bg-af2-card shadow-sm dark:border-surface-800 dark:bg-surface-900">
       <div className="border-b border-gray-100 px-5 py-4 dark:border-surface-800">
         <div className="flex items-start justify-between gap-4">
           <div>
@@ -264,7 +264,7 @@ function TeamMonitorCard({ detail }: { detail: ControlPlaneTeamDetail }) {
           </div>
           <Link
             to={`/agents/team/${detail.team.id}`}
-            className="text-sm font-medium text-brand-600 transition hover:text-brand-700 dark:text-brand-300 dark:hover:text-brand-200"
+            className="text-sm font-medium text-af2-clay-2 transition hover:text-af2-clay-2 dark:text-brand-300 dark:hover:text-brand-200"
           >
             Open team
           </Link>
@@ -295,11 +295,11 @@ function TeamMonitorCard({ detail }: { detail: ControlPlaneTeamDetail }) {
               <Link
                 key={agent.id}
                 to={`/agents/team/${detail.team.id}?agent=${encodeURIComponent(agent.id)}`}
-                className="flex items-center justify-between gap-3 rounded-2xl border border-gray-200 bg-gray-50 px-4 py-3 transition hover:border-brand-300 hover:bg-brand-50/40 dark:border-surface-800 dark:bg-surface-950/40 dark:hover:border-brand-500/40 dark:hover:bg-brand-500/5"
+                className="flex items-center justify-between gap-3 rounded-2xl border border-gray-200 bg-gray-50 px-4 py-3 transition hover:border-af2-clay/40 hover:bg-af2-clay-soft/40 dark:border-surface-800 dark:bg-surface-950/40 dark:hover:border-brand-500/40 dark:hover:bg-brand-500/5"
               >
                 <div className="min-w-0">
                   <div className="flex items-center gap-2">
-                    <Bot size={14} className="text-brand-500" />
+                    <Bot size={14} className="text-af2-clay" />
                     <span className="truncate text-sm font-medium text-gray-900 dark:text-gray-100">
                       {agent.name}
                     </span>
@@ -354,7 +354,7 @@ function heartbeatTone(status?: ControlPlaneTeamDetail["heartbeats"][number]["st
 function heartbeatToneClasses(tone: "teal" | "amber" | "rose" | "slate") {
   return {
     teal: "bg-teal-50 text-teal-700 dark:bg-teal-500/10 dark:text-teal-300",
-    amber: "bg-amber-50 text-amber-700 dark:bg-amber-500/10 dark:text-amber-300",
+    amber: "bg-af2-mustard/10 text-af2-mustard-2 dark:bg-amber-500/10 dark:text-amber-300",
     rose: "bg-rose-50 text-rose-700 dark:bg-rose-500/10 dark:text-rose-300",
     slate: "bg-slate-100 text-slate-600 dark:bg-surface-800 dark:text-surface-300",
   }[tone];
@@ -363,7 +363,7 @@ function heartbeatToneClasses(tone: "teal" | "amber" | "rose" | "slate") {
 function heartbeatTextTone(tone: "teal" | "amber" | "rose" | "slate") {
   return {
     teal: "text-teal-700 dark:text-teal-300",
-    amber: "text-amber-700 dark:text-amber-300",
+    amber: "text-af2-mustard-2 dark:text-amber-300",
     rose: "text-rose-700 dark:text-rose-300",
     slate: "text-gray-900 dark:text-gray-100",
   }[tone];
@@ -389,14 +389,14 @@ function RunCard({
   const progressPct = totalSteps > 0 ? Math.round((completedSteps / totalSteps) * 100) : 0;
 
   return (
-    <div className="bg-white dark:bg-surface-900 rounded-xl border border-gray-200 dark:border-surface-800 overflow-hidden">
+    <div className="bg-af2-card dark:bg-surface-900 rounded-xl border border-gray-200 dark:border-surface-800 overflow-hidden">
       {/* Card header */}
       <button
         onClick={onToggle}
         className="w-full flex items-center gap-4 px-5 py-4 text-left hover:bg-gray-50 transition-colors"
       >
-        <div className="flex items-center justify-center w-9 h-9 rounded-lg bg-brand-50 shrink-0">
-          <Workflow size={18} className="text-brand-600" />
+        <div className="flex items-center justify-center w-9 h-9 rounded-lg bg-af2-clay-soft shrink-0">
+          <Workflow size={18} className="text-af2-clay-2" />
         </div>
 
         <div className="flex-1 min-w-0">
@@ -424,7 +424,7 @@ function RunCard({
             <div
               className={clsx(
                 "h-full rounded-full transition-all duration-500",
-                run.status === "failed" ? "bg-red-400" : "bg-brand-500"
+                run.status === "failed" ? "bg-red-400" : "bg-af2-clay"
               )}
               style={{ width: `${progressPct}%` }}
             />
@@ -445,7 +445,7 @@ function RunCard({
           </p>
           <Link
             to="/approvals"
-            className="text-xs px-3 py-1.5 rounded-lg bg-yellow-600 hover:bg-yellow-700 text-white font-medium transition"
+            className="text-xs px-3 py-1.5 rounded-lg bg-yellow-600 hover:bg-yellow-700 text-af2-card font-medium transition"
           >
             Review in Approvals →
           </Link>
@@ -456,7 +456,7 @@ function RunCard({
       {expanded && (
         <div className="border-t border-gray-100 px-5 py-4">
           {run.error && (
-            <div className="mb-4 flex items-start gap-2 p-3 bg-red-50 rounded-lg text-sm text-red-700">
+            <div className="mb-4 flex items-start gap-2 p-3 bg-af2-clay/10 rounded-lg text-sm text-af2-clay-2">
               <XCircle size={15} className="mt-0.5 shrink-0" />
               <span>{run.error}</span>
             </div>
@@ -481,8 +481,8 @@ function StepRow({ step, index }: { step: StepResult; index: number }) {
   const hasOutput = Object.keys(step.output).length > 0;
 
   const icon = {
-    success: <CheckCircle2 size={15} className="text-green-500" />,
-    failure: <XCircle size={15} className="text-red-500" />,
+    success: <CheckCircle2 size={15} className="text-af2-sage" />,
+    failure: <XCircle size={15} className="text-af2-clay" />,
     skipped: <SkipForward size={15} className="text-gray-400" />,
     running: <Loader2 size={15} className="text-yellow-500 animate-spin" />,
   }[step.status];
@@ -541,7 +541,7 @@ function StepRow({ step, index }: { step: StepResult; index: number }) {
             {hasOutput && step.status !== "running" && (
               <button
                 onClick={() => setShowOutput((v) => !v)}
-                className="text-xs text-brand-600 hover:underline"
+                className="text-xs text-af2-clay-2 hover:underline"
               >
                 {showOutput ? "hide output" : "show output"}
               </button>
@@ -550,11 +550,11 @@ function StepRow({ step, index }: { step: StepResult; index: number }) {
         </div>
 
         {step.error && (
-          <p className="mt-1 text-xs text-red-600">{step.error}</p>
+          <p className="mt-1 text-xs text-af2-clay-2">{step.error}</p>
         )}
 
         {debugError && (
-          <p className="mt-1 text-xs text-red-500">{debugError}</p>
+          <p className="mt-1 text-xs text-af2-clay">{debugError}</p>
         )}
 
         {debugResult && (
@@ -603,8 +603,8 @@ function AgentSlotPanel({ slots }: { slots: AgentSlotResult[] }) {
 
   const slotStatusIcon = (s: AgentSlotResult["status"]) =>
     ({
-      success: <CheckCircle2 size={12} className="text-green-500" />,
-      failure: <XCircle size={12} className="text-red-500" />,
+      success: <CheckCircle2 size={12} className="text-af2-sage" />,
+      failure: <XCircle size={12} className="text-af2-clay" />,
       running: <Loader2 size={12} className="text-yellow-500 animate-spin" />,
     })[s];
 
@@ -624,10 +624,10 @@ function AgentSlotPanel({ slots }: { slots: AgentSlotResult[] }) {
             className={clsx(
               "flex flex-col items-start gap-1 p-2 rounded-md border text-left transition",
               slot.status === "success"
-                ? "bg-white dark:bg-surface-900 border-green-200 hover:border-green-400"
+                ? "bg-af2-card dark:bg-surface-900 border-af2-sage/40 hover:border-green-400"
                 : slot.status === "failure"
-                ? "bg-red-50 border-red-200 hover:border-red-400"
-                : "bg-white dark:bg-surface-900 border-yellow-200 hover:border-yellow-400"
+                ? "bg-af2-clay/10 border-af2-clay/40 hover:border-red-400"
+                : "bg-af2-card dark:bg-surface-900 border-yellow-200 hover:border-yellow-400"
             )}
           >
             <div className="flex items-center gap-1 text-xs font-medium text-gray-700">
@@ -652,13 +652,13 @@ function AgentSlotPanel({ slots }: { slots: AgentSlotResult[] }) {
         return (
           <div className="mt-2 space-y-2">
             {slot.error && (
-              <p className="text-xs text-red-600 bg-red-50 border border-red-200 rounded p-2">
+              <p className="text-xs text-af2-clay-2 bg-af2-clay/10 border border-af2-clay/40 rounded p-2">
                 {slot.error}
               </p>
             )}
 
             {Object.keys(slot.output).length > 0 && (
-              <pre className="text-xs bg-white dark:bg-surface-900 border border-indigo-200 rounded p-2 overflow-x-auto text-gray-700">
+              <pre className="text-xs bg-af2-card dark:bg-surface-900 border border-indigo-200 rounded p-2 overflow-x-auto text-gray-700">
                 {JSON.stringify(slot.output, null, 2)}
               </pre>
             )}
@@ -673,7 +673,7 @@ function AgentSlotPanel({ slots }: { slots: AgentSlotResult[] }) {
                       "text-xs px-2 py-1 rounded",
                       msg.from === "manager"
                         ? "bg-indigo-100 text-indigo-700"
-                        : "bg-white dark:bg-surface-900 border border-indigo-200 text-gray-700"
+                        : "bg-af2-card dark:bg-surface-900 border border-indigo-200 text-gray-700"
                     )}
                   >
                     <span className="font-medium capitalize mr-1">{msg.from}→</span>

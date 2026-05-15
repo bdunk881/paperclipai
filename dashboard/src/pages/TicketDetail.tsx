@@ -661,7 +661,7 @@ export default function TicketDetail({
                     <Link
                       key={childTicket.id}
                       to={`/tickets/${childTicket.id}`}
-                      className="flex items-center gap-3 rounded-2xl px-3 py-3 transition hover:bg-surface-100/10 dark:hover:bg-surface-850"
+                      className="flex items-center gap-3 rounded-2xl px-3 py-3 transition hover:bg-af2-paper-2/10 dark:hover:bg-surface-850"
                     >
                       <div className="min-w-0 flex-1">
                         <p className="truncate text-sm font-semibold text-slate-100">{childTicket.title}</p>
@@ -721,8 +721,8 @@ export default function TicketDetail({
                     />
 
                     {mentionContext ? (
-                      <div className="absolute left-0 right-0 top-[calc(100%+0.75rem)] z-20 overflow-hidden rounded-2xl border border-surface-200 bg-surface-0 shadow-glow-lg dark:border-surface-800 dark:bg-surface-900">
-                        <div className="h-0.5 bg-brand-500/80" />
+                      <div className="absolute left-0 right-0 top-[calc(100%+0.75rem)] z-20 overflow-hidden rounded-2xl border border-af2-line bg-af2-card shadow-glow-lg dark:border-surface-800 dark:bg-surface-900">
+                        <div className="h-0.5 bg-af2-clay/80" />
                         {mentionCandidates.length ? (
                           <div className="animate-scale-in p-2">
                             {mentionCandidates.map((candidate, index) => (
@@ -734,8 +734,8 @@ export default function TicketDetail({
                                 className={clsx(
                                   "flex w-full items-center gap-3 rounded-2xl px-4 py-2 text-left text-sm transition",
                                   index === activeMentionIndex
-                                    ? "bg-brand-500 text-white"
-                                    : "text-surface-700 hover:bg-surface-100 dark:text-surface-200 dark:hover:bg-surface-800"
+                                    ? "bg-af2-clay text-white"
+                                    : "text-af2-ink-4 hover:bg-af2-paper-2 dark:text-surface-200 dark:hover:bg-surface-800"
                                 )}
                               >
                                 <span
@@ -748,7 +748,7 @@ export default function TicketDetail({
                                         : candidate.tone === "orange"
                                           ? "bg-orange-500/15 text-orange-500"
                                           : candidate.tone === "indigo"
-                                            ? "bg-brand-500/15 text-brand-500"
+                                            ? "bg-af2-clay-soft text-af2-clay"
                                             : "bg-slate-700/40 text-slate-300"
                                   )}
                                 >
@@ -761,7 +761,7 @@ export default function TicketDetail({
                                       "block truncate text-xs",
                                       index === activeMentionIndex
                                         ? "text-white/80"
-                                        : "text-surface-500 dark:text-surface-400"
+                                        : "text-af2-ink-4 dark:text-surface-400"
                                     )}
                                   >
                                     {candidate.subtitle}
@@ -771,7 +771,7 @@ export default function TicketDetail({
                             ))}
                           </div>
                         ) : (
-                          <div className="p-4 text-sm text-surface-500 dark:text-surface-400">
+                          <div className="p-4 text-sm text-af2-ink-4 dark:text-surface-400">
                             No agents found.
                           </div>
                         )}
@@ -787,7 +787,7 @@ export default function TicketDetail({
                       .map((mention) => (
                         <span
                           key={`${mention.actor.type}:${mention.actor.id}`}
-                          className="inline-flex items-center gap-2 rounded-full border border-brand-500/30 bg-brand-500/10 px-3 py-1 text-xs font-medium text-brand-100"
+                          className="inline-flex items-center gap-2 rounded-full border border-af2-clay/40 bg-af2-clay-soft px-3 py-1 text-xs font-medium text-af2-clay"
                         >
                           {mention.label}
                         </span>
@@ -806,7 +806,7 @@ export default function TicketDetail({
                           "inline-flex items-center gap-2 rounded-full border px-4 py-2 text-sm font-semibold transition",
                           submitting
                             ? "cursor-not-allowed border-slate-700 bg-slate-800 text-slate-500"
-                            : "border-brand-500/30 bg-brand-500/10 text-brand-100 hover:border-brand-400/50 hover:bg-brand-500/20"
+                            : "border-af2-clay/40 bg-af2-clay-soft text-af2-clay hover:border-af2-clay/40 hover:bg-af2-clay-soft"
                         )}
                       >
                         <Sparkles size={15} />
@@ -1088,11 +1088,11 @@ function CloseRequestBanner({
   onReject: () => void;
 }) {
   return (
-    <section className="relative overflow-hidden rounded-[28px] border border-brand-500/20 bg-brand-50/10 px-5 py-5 dark:bg-brand-950/20">
-      <div className="absolute inset-x-0 top-0 h-px bg-brand-400/80 shadow-glow" />
+    <section className="relative overflow-hidden rounded-[28px] border border-af2-clay/40 bg-af2-clay-soft px-5 py-5 dark:bg-brand-950/20">
+      <div className="absolute inset-x-0 top-0 h-px bg-af2-clay/80 shadow-glow" />
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div className="max-w-3xl">
-          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-brand-200">Ready to close</p>
+          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-af2-clay">Ready to close</p>
           <h2 className="mt-2 text-lg font-semibold text-slate-100">
             {getTicketActorProfile(closeRequest.requestedBy).name} requested closure review
           </h2>
@@ -1129,7 +1129,7 @@ function CloseRequestBanner({
               onDoubleClick={onDoubleConfirm}
               disabled={submitting}
               className={clsx(
-                "relative inline-flex items-center gap-2 overflow-hidden rounded-full bg-brand-600 px-4 py-2 text-sm font-semibold text-white shadow-glow transition hover:bg-brand-500",
+                "relative inline-flex items-center gap-2 overflow-hidden rounded-full bg-af2-clay-2 px-4 py-2 text-sm font-semibold text-white shadow-glow transition hover:bg-af2-clay",
                 submitting && "cursor-not-allowed opacity-60"
               )}
             >
@@ -1139,7 +1139,7 @@ function CloseRequestBanner({
               />
               {showResolveBurst ? (
                 <span className="absolute inset-0 flex items-center justify-center">
-                  <span className="h-12 w-12 rounded-full bg-gradient-to-r from-brand-400/40 to-teal-400/40 blur-xl" />
+                  <span className="h-12 w-12 rounded-full bg-gradient-to-r from-af2-clay/40 to-teal-400/40 blur-xl" />
                 </span>
               ) : null}
               <span className="relative inline-flex items-center gap-2">
@@ -1160,12 +1160,12 @@ function CloseRequestBanner({
 
 function MemorySidebar({ memoryState }: { memoryState: MemoryLoadState }) {
   return (
-    <section className="animate-slide-in-right overflow-hidden rounded-[30px] border border-surface-200 bg-surface-50 shadow-card dark:border-surface-800 dark:bg-surface-900">
-      <div className="sticky top-0 flex h-14 items-center gap-2 border-b border-surface-200 px-5 text-surface-700 backdrop-blur dark:border-surface-800 dark:text-surface-100">
+    <section className="animate-slide-in-right overflow-hidden rounded-[30px] border border-af2-line bg-af2-paper shadow-card dark:border-surface-800 dark:bg-surface-900">
+      <div className="sticky top-0 flex h-14 items-center gap-2 border-b border-af2-line px-5 text-af2-ink-4 backdrop-blur dark:border-surface-800 dark:text-surface-100">
         <Brain size={16} />
         <span className="text-sm font-semibold">Memory</span>
         {memoryState.status === "error" ? (
-          <span className="ml-auto text-xs font-medium text-red-400">Memory sync failed.</span>
+          <span className="ml-auto text-xs font-medium text-af2-clay">Memory sync failed.</span>
         ) : null}
       </div>
 
@@ -1180,10 +1180,10 @@ function MemorySidebar({ memoryState }: { memoryState: MemoryLoadState }) {
           memoryState.entries.map((entry) => (
             <article
               key={entry.id}
-              className="rounded-2xl border border-surface-200/50 bg-surface-0 p-4 dark:border-surface-800/50 dark:bg-surface-950"
+              className="rounded-2xl border border-af2-line bg-af2-card p-4 dark:border-surface-800/50 dark:bg-surface-950"
             >
               <p
-                className="text-sm leading-6 text-surface-600 dark:text-surface-400"
+                className="text-sm leading-6 text-af2-ink-4 dark:text-surface-400"
                 style={{
                   display: "-webkit-box",
                   WebkitLineClamp: 3,
@@ -1202,8 +1202,8 @@ function MemorySidebar({ memoryState }: { memoryState: MemoryLoadState }) {
           ))
         ) : (
           <div className="flex min-h-[220px] flex-col items-center justify-center px-4 text-center">
-            <BrainCircuit size={40} className="text-surface-400" />
-            <p className="mt-4 text-sm font-medium text-surface-500 dark:text-surface-400">
+            <BrainCircuit size={40} className="text-af2-ink-3" />
+            <p className="mt-4 text-sm font-medium text-af2-ink-4 dark:text-surface-400">
               No relevant memories found.
             </p>
           </div>
@@ -1242,12 +1242,12 @@ function SlaTimerPanel({
 function ChildTicketStatusPill({ status }: { status: TicketStatus }) {
   const tone =
     status === "resolved"
-      ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-400"
+      ? "bg-af2-sage/10 text-af2-sage dark:bg-emerald-950/30 dark:text-emerald-400"
       : status === "in_progress"
-        ? "bg-brand-50 text-brand-700 dark:bg-brand-950/30 dark:text-brand-400"
+        ? "bg-af2-clay-soft text-af2-clay-2 dark:bg-brand-950/30 dark:text-brand-400"
         : status === "blocked"
-          ? "bg-red-50 text-red-700 dark:bg-red-950/30 dark:text-red-400"
-          : "bg-surface-100 text-surface-700 dark:bg-surface-800 dark:text-surface-300";
+          ? "bg-af2-clay/10 text-af2-clay dark:bg-red-950/30 dark:text-red-400"
+          : "bg-af2-paper-2 text-af2-ink-4 dark:bg-surface-800 dark:text-surface-300";
 
   return (
     <span className={clsx("rounded-full px-3 py-1 text-xs font-semibold capitalize", tone)}>

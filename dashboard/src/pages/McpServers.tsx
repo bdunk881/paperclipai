@@ -182,7 +182,7 @@ export default function McpServers() {
             <Tooltip content="Read setup tips and connection troubleshooting">
               <button
                 onClick={() => setShowHelp(true)}
-                className="flex items-center gap-2 px-3 py-2 border border-gray-200 bg-white text-sm font-medium text-gray-700 rounded-lg hover:bg-gray-50 transition"
+                className="flex items-center gap-2 px-3 py-2 border border-gray-200 bg-af2-card text-sm font-medium text-gray-700 rounded-lg hover:bg-gray-50 transition"
               >
                 <CircleHelp size={14} />
                 Guidance
@@ -201,11 +201,11 @@ export default function McpServers() {
 
       {/* Add-server form */}
       {showForm && (
-        <form onSubmit={(e) => void handleAdd(e)} className="bg-white border border-gray-200 rounded-xl p-6 mb-6 space-y-4">
+        <form onSubmit={(e) => void handleAdd(e)} className="bg-af2-card border border-gray-200 rounded-xl p-6 mb-6 space-y-4">
           <h2 className="font-semibold text-gray-900 text-sm">New Integration</h2>
 
           {formError && (
-            <p className="text-xs text-red-600 bg-red-50 border border-red-200 rounded px-3 py-2">{formError}</p>
+            <p className="text-xs text-af2-clay bg-af2-clay/10 border border-af2-clay/40 rounded px-3 py-2">{formError}</p>
           )}
 
           <div className="grid grid-cols-2 gap-4">
@@ -273,7 +273,7 @@ export default function McpServers() {
         </form>
       )}
       {actionError && (
-        <p className="mb-4 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+        <p className="mb-4 rounded-lg border border-af2-clay/40 bg-af2-clay/10 px-3 py-2 text-sm text-af2-clay">
           {actionError}
         </p>
       )}
@@ -284,7 +284,7 @@ export default function McpServers() {
           <Loader2 size={16} className="animate-spin" /> Loading servers…
         </div>
       ) : error ? (
-        <p className="text-sm text-red-600">{error}</p>
+        <p className="text-sm text-af2-clay">{error}</p>
       ) : servers.length === 0 ? (
         <div className="text-center py-16 text-gray-400 border-2 border-dashed border-gray-200 rounded-xl">
           <PlugZap size={36} className="mx-auto mb-3 opacity-30" />
@@ -299,7 +299,7 @@ export default function McpServers() {
             const isExpanded = expandedTools[server.id];
 
             return (
-              <div key={server.id} className="bg-white border border-gray-200 rounded-xl p-5">
+              <div key={server.id} className="bg-af2-card border border-gray-200 rounded-xl p-5">
                 <div className="flex items-start justify-between">
                   <div className="flex items-center gap-3">
                     <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center">
@@ -312,13 +312,13 @@ export default function McpServers() {
                   </div>
                   <div className="flex items-center gap-2">
                     {server.hasAuth && (
-                      <span className="px-2 py-0.5 bg-green-50 text-green-700 text-xs rounded-full border border-green-200">
+                      <span className="px-2 py-0.5 bg-af2-sage/10 text-af2-sage text-xs rounded-full border border-af2-sage/40">
                         Auth configured
                       </span>
                     )}
                     <button
                       onClick={() => void handleDelete(server.id)}
-                      className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition"
+                      className="p-1.5 text-gray-400 hover:text-af2-clay hover:bg-af2-clay/10 rounded-lg transition"
                       title="Delete integration"
                       aria-label={`Delete ${server.name}`}
                     >
@@ -330,7 +330,7 @@ export default function McpServers() {
                 {/* Test result */}
                 {testResult && testResult !== "loading" && (
                   <div className={`mt-3 flex items-center gap-2 text-xs px-3 py-2 rounded-lg ${
-                    testResult.ok ? "bg-green-50 text-green-700" : "bg-red-50 text-red-700"
+                    testResult.ok ? "bg-af2-sage/10 text-af2-sage" : "bg-af2-clay/10 text-af2-clay"
                   }`}>
                     {testResult.ok
                       ? <CheckCircle size={12} />
@@ -362,7 +362,7 @@ export default function McpServers() {
                   </div>
                 )}
                 {isExpanded && serverTools === "error" && (
-                  <p className="mt-3 text-xs text-red-600 border-t border-gray-100 pt-3">Could not discover tools — check the server URL and auth.</p>
+                  <p className="mt-3 text-xs text-af2-clay border-t border-gray-100 pt-3">Could not discover tools — check the server URL and auth.</p>
                 )}
 
                 {/* Action buttons */}
@@ -406,7 +406,7 @@ export default function McpServers() {
             role="dialog"
             aria-modal="true"
             aria-label="Integration setup guidance"
-            className="w-full max-w-md overflow-y-auto border-l border-gray-200 bg-white p-6 shadow-xl"
+            className="w-full max-w-md overflow-y-auto border-l border-gray-200 bg-af2-card p-6 shadow-xl"
           >
             <div className="mb-5 flex items-start justify-between gap-3">
               <div>

@@ -38,18 +38,18 @@ const FEATURES = [
     title: "1,000+ Integrations",
     description:
       "Connect to any API, database, or SaaS tool. OAuth, API keys, and webhooks out of the box.",
-    gradient: "from-emerald-500/20 to-green-600/20",
-    iconColor: "text-emerald-400",
-    borderColor: "border-emerald-500/20 hover:border-emerald-500/40",
+    gradient: "from-af2-sage/20 to-af2-sage-2/20",
+    iconColor: "text-af2-sage",
+    borderColor: "border-af2-sage/40 hover:border-af2-sage/40",
   },
   {
     icon: BarChart2,
     title: "Full Observability",
     description:
       "Real-time monitoring, step-by-step execution logs, and performance dashboards built in.",
-    gradient: "from-amber-500/20 to-orange-600/20",
-    iconColor: "text-amber-400",
-    borderColor: "border-amber-500/20 hover:border-amber-500/40",
+    gradient: "from-af2-mustard/20 to-af2-mustard/20",
+    iconColor: "text-af2-mustard",
+    borderColor: "border-af2-mustard/40 hover:border-af2-mustard/40",
   },
   {
     icon: Clock,
@@ -96,8 +96,8 @@ const HOW_IT_WORKS = [
     description:
       "Your AI agents run 24/7, handling edge cases that break rule-based tools. Monitor from a single dashboard.",
     icon: Zap,
-    color: "text-emerald-400",
-    bg: "bg-emerald-500/10",
+    color: "text-af2-sage",
+    bg: "bg-af2-sage/10",
   },
 ];
 
@@ -185,7 +185,7 @@ export default function LandingPage() {
         <div className="relative max-w-5xl mx-auto text-center">
           {/* Badge */}
           <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-violet-500/10 border border-violet-500/20 text-violet-300 text-sm font-medium mb-8 animate-fade-in">
-            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+            <span className="w-1.5 h-1.5 rounded-full bg-af2-sage animate-pulse" />
             Now in private beta
           </div>
 
@@ -210,7 +210,7 @@ export default function LandingPage() {
             className="flex flex-col sm:flex-row gap-3 max-w-lg mx-auto animate-slide-up"
           >
             {submitted ? (
-              <div className="flex-1 flex items-center justify-center gap-2 px-5 py-3.5 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 font-semibold text-sm">
+              <div className="flex-1 flex items-center justify-center gap-2 px-5 py-3.5 rounded-xl bg-af2-sage/10 border border-af2-sage/40 text-af2-sage font-semibold text-sm">
                 <Check className="w-4 h-4" />
                 You're on the list — we'll be in touch!
               </div>
@@ -235,7 +235,7 @@ export default function LandingPage() {
             )}
           </form>
           {submitError && (
-            <p role="alert" className="mt-3 text-xs text-red-400">
+            <p role="alert" className="mt-3 text-xs text-af2-clay">
               {submitError}
             </p>
           )}
@@ -278,8 +278,8 @@ export default function LandingPage() {
         <div className="max-w-5xl mx-auto">
           <div className="grid md:grid-cols-2 gap-16 items-start">
             <div className="relative">
-              <div className="absolute -left-4 top-0 bottom-0 w-px bg-gradient-to-b from-red-500/50 to-transparent" />
-              <p className="text-xs font-semibold text-red-400 uppercase tracking-[0.2em] mb-4">
+              <div className="absolute -left-4 top-0 bottom-0 w-px bg-gradient-to-b from-af2-clay/50 to-transparent" />
+              <p className="text-xs font-semibold text-af2-clay uppercase tracking-[0.2em] mb-4">
                 The Problem
               </p>
               <h2 className="text-2xl sm:text-3xl font-bold tracking-tight mb-6 text-white">
@@ -293,7 +293,7 @@ export default function LandingPage() {
                   "Existing automation breaks on the first edge case",
                 ].map((item) => (
                   <li key={item} className="flex items-start gap-3 text-gray-400 text-sm">
-                    <span className="mt-0.5 w-5 h-5 rounded-full bg-red-500/10 border border-red-500/20 text-red-400 flex items-center justify-center text-xs shrink-0">
+                    <span className="mt-0.5 w-5 h-5 rounded-full bg-af2-clay/10 border border-af2-clay/40 text-af2-clay flex items-center justify-center text-xs shrink-0">
                       x
                     </span>
                     <span>{item}</span>
@@ -302,8 +302,8 @@ export default function LandingPage() {
               </ul>
             </div>
             <div className="relative">
-              <div className="absolute -left-4 top-0 bottom-0 w-px bg-gradient-to-b from-emerald-500/50 to-transparent" />
-              <p className="text-xs font-semibold text-emerald-400 uppercase tracking-[0.2em] mb-4">
+              <div className="absolute -left-4 top-0 bottom-0 w-px bg-gradient-to-b from-af2-sage/50 to-transparent" />
+              <p className="text-xs font-semibold text-af2-sage uppercase tracking-[0.2em] mb-4">
                 The Solution
               </p>
               <h2 className="text-2xl sm:text-3xl font-bold tracking-tight mb-6 text-white">
@@ -317,7 +317,7 @@ export default function LandingPage() {
                   "Scale operations without growing headcount",
                 ].map((item) => (
                   <li key={item} className="flex items-start gap-3 text-gray-400 text-sm">
-                    <span className="mt-0.5 w-5 h-5 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 flex items-center justify-center text-xs shrink-0">
+                    <span className="mt-0.5 w-5 h-5 rounded-full bg-af2-sage/10 border border-af2-sage/40 text-af2-sage flex items-center justify-center text-xs shrink-0">
                       <Check className="w-3 h-3" />
                     </span>
                     <span>{item}</span>
@@ -388,7 +388,7 @@ export default function LandingPage() {
       {/* Integrations */}
       <section id="integrations" className="py-24 px-4 sm:px-6">
         <div className="max-w-5xl mx-auto text-center">
-          <p className="text-xs font-semibold text-emerald-400 uppercase tracking-[0.2em] mb-3">
+          <p className="text-xs font-semibold text-af2-sage uppercase tracking-[0.2em] mb-3">
             Integrations
           </p>
           <h2 className="text-3xl sm:text-4xl font-bold tracking-tight text-white mb-4">
@@ -450,7 +450,7 @@ export default function LandingPage() {
           </p>
           <form onSubmit={handleSubmit} className="flex flex-col sm:flex-row gap-3 max-w-md mx-auto">
             {submitted ? (
-              <div className="flex-1 flex items-center justify-center gap-2 px-5 py-3.5 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 font-semibold text-sm">
+              <div className="flex-1 flex items-center justify-center gap-2 px-5 py-3.5 rounded-xl bg-af2-sage/10 border border-af2-sage/40 text-af2-sage font-semibold text-sm">
                 <Check className="w-4 h-4" />
                 You're on the list!
               </div>

@@ -18,10 +18,10 @@ function formatWhen(value: string): string {
 }
 
 function statusClass(status: ObservabilityRecord["status"]): string {
-  if (status === "success") return "bg-emerald-50 text-emerald-700";
-  if (status === "failure") return "bg-red-50 text-red-700";
-  if (status === "running") return "bg-blue-50 text-blue-700";
-  return "bg-slate-100 text-slate-700";
+  if (status === "success") return "bg-af2-sage/10 text-af2-sage-2";
+  if (status === "failure") return "bg-af2-clay/10 text-af2-clay-2";
+  if (status === "running") return "bg-af2-ink-blue/10 text-af2-ink-blue";
+  return "bg-af2-paper-2 text-af2-ink-4";
 }
 
 function toolSummary(record: ObservabilityRecord): string {
@@ -33,60 +33,60 @@ function TraceCard({ record }: { record: ObservabilityRecord }) {
   const [expanded, setExpanded] = useState(false);
 
   return (
-    <article className="rounded-3xl border border-gray-200 bg-white p-5 shadow-sm">
+    <article className="rounded-3xl border border-af2-line bg-af2-card p-5 shadow-sm">
       <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
-            <h2 className="text-lg font-semibold text-gray-900">{record.stepName}</h2>
+            <h2 className="text-lg font-semibold text-af2-ink">{record.stepName}</h2>
             <span className={`rounded-full px-2.5 py-1 text-xs font-semibold uppercase tracking-[0.14em] ${statusClass(record.status)}`}>
               {record.status}
             </span>
-            <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-slate-600">
+            <span className="rounded-full bg-af2-paper-2 px-2.5 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-af2-ink-4">
               {record.stepKind}
             </span>
           </div>
-          <p className="mt-1 text-sm text-gray-500">
+          <p className="mt-1 text-sm text-af2-ink-3">
             {record.templateName} · {record.agentName ?? "Workflow runtime"} · {record.taskTitle ?? "No task linked"}
           </p>
         </div>
-        <div className="grid grid-cols-2 gap-3 text-sm text-gray-600 lg:text-right">
+        <div className="grid grid-cols-2 gap-3 text-sm text-af2-ink-4 lg:text-right">
           <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-gray-400">Started</p>
+            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-af2-ink-3">Started</p>
             <p>{formatWhen(record.startedAt)}</p>
           </div>
           <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-gray-400">Cost</p>
+            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-af2-ink-3">Cost</p>
             <p className="font-mono">{formatUsd(record.costUsd)}</p>
           </div>
           <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-gray-400">Duration</p>
+            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-af2-ink-3">Duration</p>
             <p className="font-mono">{formatDuration(record.durationMs)}</p>
           </div>
           <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-gray-400">Tools</p>
+            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-af2-ink-3">Tools</p>
             <p className="truncate">{record.toolCalls.length}</p>
           </div>
         </div>
       </div>
 
       <div className="mt-4 grid gap-4 xl:grid-cols-3">
-        <div className="rounded-2xl border border-gray-100 bg-gray-50 px-4 py-3 xl:col-span-2">
-          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-gray-400">Reasoning Trace</p>
-          <p className="mt-2 whitespace-pre-wrap break-words text-sm text-gray-700">
+        <div className="rounded-2xl border border-af2-line bg-af2-paper px-4 py-3 xl:col-span-2">
+          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-af2-ink-3">Reasoning Trace</p>
+          <p className="mt-2 whitespace-pre-wrap break-words text-sm text-af2-ink-4">
             {record.reasoningTrace?.trim() || "No reasoning trace captured for this step."}
           </p>
         </div>
-        <div className="rounded-2xl border border-gray-100 bg-gray-50 px-4 py-3">
-          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-gray-400">Audit Log</p>
-          <p className="mt-2 text-sm text-gray-700">{toolSummary(record)}</p>
-          <p className="mt-2 font-mono text-xs text-gray-500">{record.executionId ?? record.runId}</p>
+        <div className="rounded-2xl border border-af2-line bg-af2-paper px-4 py-3">
+          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-af2-ink-3">Audit Log</p>
+          <p className="mt-2 text-sm text-af2-ink-4">{toolSummary(record)}</p>
+          <p className="mt-2 font-mono text-xs text-af2-ink-3">{record.executionId ?? record.runId}</p>
         </div>
       </div>
 
       <button
         type="button"
         onClick={() => setExpanded((current) => !current)}
-        className="mt-4 text-sm font-medium text-indigo-600 hover:text-indigo-700"
+        className="mt-4 text-sm font-medium text-af2-clay hover:text-af2-clay-2"
       >
         {expanded ? "Hide tool audit details" : "Show tool audit details"}
       </button>
@@ -94,23 +94,23 @@ function TraceCard({ record }: { record: ObservabilityRecord }) {
       {expanded ? (
         <div className="mt-3 space-y-3">
           {record.toolCalls.length === 0 ? (
-            <div className="rounded-2xl border border-dashed border-gray-200 px-4 py-4 text-sm text-gray-500">
+            <div className="rounded-2xl border border-dashed border-af2-line px-4 py-4 text-sm text-af2-ink-3">
               No tool-call audit records were captured for this step.
             </div>
           ) : (
             record.toolCalls.map((call, index) => (
-              <div key={`${record.id}-${index}`} className="rounded-2xl border border-gray-200 bg-gray-50 px-4 py-3">
+              <div key={`${record.id}-${index}`} className="rounded-2xl border border-af2-line bg-af2-paper px-4 py-3">
                 <div className="flex flex-wrap items-center justify-between gap-2">
-                  <p className="text-sm font-semibold text-gray-900">
+                  <p className="text-sm font-semibold text-af2-ink">
                     {call.toolType}:{call.toolName}
                   </p>
-                  <p className="text-xs text-gray-500">{formatWhen(call.timestamp)}</p>
+                  <p className="text-xs text-af2-ink-3">{formatWhen(call.timestamp)}</p>
                 </div>
                 <div className="mt-3 grid gap-3 xl:grid-cols-2">
-                  <pre className="overflow-x-auto rounded-xl bg-gray-900 p-3 text-xs text-green-300">
+                  <pre className="overflow-x-auto rounded-xl bg-af2-paper-3 p-3 text-xs text-af2-sage">
                     {JSON.stringify(call.input, null, 2)}
                   </pre>
-                  <pre className="overflow-x-auto rounded-xl bg-gray-900 p-3 text-xs text-green-300">
+                  <pre className="overflow-x-auto rounded-xl bg-af2-paper-3 p-3 text-xs text-af2-sage">
                     {JSON.stringify(call.output, null, 2)}
                   </pre>
                 </div>
@@ -182,60 +182,60 @@ export default function ExecutionLogs() {
   }, [records, statusFilter]);
 
   return (
-    <div className="min-h-full bg-gray-50">
-      <div className="border-b border-gray-200 bg-white px-8 py-6">
+    <div className="min-h-full bg-af2-paper">
+      <div className="border-b border-af2-line bg-af2-card px-8 py-6">
         <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
           <div>
             <div className="flex items-center gap-3">
-              <h1 className="text-2xl font-bold text-gray-900">Execution Logs</h1>
-              <span className="rounded-full bg-blue-50 px-2 py-0.5 text-xs font-medium text-blue-600">
+              <h1 className="text-2xl font-bold text-af2-ink">Execution Logs</h1>
+              <span className="rounded-full bg-af2-ink-blue/10 px-2 py-0.5 text-xs font-medium text-af2-ink-blue">
                 Live Data
               </span>
               {records.some((record) => record.status === "running") ? (
-                <span className="flex items-center gap-1 rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-700">
+                <span className="flex items-center gap-1 rounded-full bg-af2-sage/15 px-2 py-0.5 text-xs font-medium text-af2-sage-2">
                   <Radio size={10} className="animate-pulse" />
                   Live
                 </span>
               ) : null}
             </div>
-            <p className="mt-1 text-sm text-gray-500">
+            <p className="mt-1 text-sm text-af2-ink-3">
               Searchable observability for reasoning traces, agent cost, and tool audit logs.
             </p>
           </div>
           <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
-            <div className="rounded-2xl border border-gray-200 bg-gray-50 px-4 py-3">
-              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-gray-400">Trace Records</p>
-              <p className="mt-1 text-lg font-semibold text-gray-900">{filtered.length}</p>
+            <div className="rounded-2xl border border-af2-line bg-af2-paper px-4 py-3">
+              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-af2-ink-3">Trace Records</p>
+              <p className="mt-1 text-lg font-semibold text-af2-ink">{filtered.length}</p>
             </div>
-            <div className="rounded-2xl border border-gray-200 bg-gray-50 px-4 py-3">
-              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-gray-400">Cost</p>
-              <p className="mt-1 font-mono text-lg font-semibold text-gray-900">{formatUsd(totalCostUsd)}</p>
+            <div className="rounded-2xl border border-af2-line bg-af2-paper px-4 py-3">
+              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-af2-ink-3">Cost</p>
+              <p className="mt-1 font-mono text-lg font-semibold text-af2-ink">{formatUsd(totalCostUsd)}</p>
             </div>
-            <div className="rounded-2xl border border-gray-200 bg-gray-50 px-4 py-3">
-              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-gray-400">Agents</p>
-              <p className="mt-1 text-lg font-semibold text-gray-900">{agents.length}</p>
+            <div className="rounded-2xl border border-af2-line bg-af2-paper px-4 py-3">
+              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-af2-ink-3">Agents</p>
+              <p className="mt-1 text-lg font-semibold text-af2-ink">{agents.length}</p>
             </div>
-            <div className="rounded-2xl border border-gray-200 bg-gray-50 px-4 py-3">
-              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-gray-400">Tasks</p>
-              <p className="mt-1 text-lg font-semibold text-gray-900">{tasks.length}</p>
+            <div className="rounded-2xl border border-af2-line bg-af2-paper px-4 py-3">
+              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-af2-ink-3">Tasks</p>
+              <p className="mt-1 text-lg font-semibold text-af2-ink">{tasks.length}</p>
             </div>
           </div>
         </div>
 
         <div className="mt-5 grid gap-3 xl:grid-cols-[minmax(0,1fr)_180px_180px_auto]">
           <label className="relative">
-            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-af2-ink-3" />
             <input
               value={search}
               onChange={(event) => setSearch(event.target.value)}
-              className="w-full rounded-2xl border border-gray-200 py-3 pl-9 pr-3 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
+              className="w-full rounded-2xl border border-af2-line py-3 pl-9 pr-3 text-sm focus:outline-none focus:ring-2 focus:ring-af2-clay/20"
               placeholder="Search traces, tools, or reasoning…"
             />
           </label>
           <select
             value={agentId}
             onChange={(event) => setAgentId(event.target.value)}
-            className="rounded-2xl border border-gray-200 px-3 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
+            className="rounded-2xl border border-af2-line px-3 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-af2-clay/20"
           >
             <option value="">All agents</option>
             {agents.map((agent) => (
@@ -247,7 +247,7 @@ export default function ExecutionLogs() {
           <select
             value={taskId}
             onChange={(event) => setTaskId(event.target.value)}
-            className="rounded-2xl border border-gray-200 px-3 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
+            className="rounded-2xl border border-af2-line px-3 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-af2-clay/20"
           >
             <option value="">All tasks</option>
             {tasks.map((task) => (
@@ -276,7 +276,7 @@ export default function ExecutionLogs() {
               anchor.click();
               URL.revokeObjectURL(objectUrl);
             }}
-            className="inline-flex items-center justify-center gap-2 rounded-2xl border border-gray-200 px-4 py-3 text-sm font-medium text-gray-700 hover:bg-gray-50"
+            className="inline-flex items-center justify-center gap-2 rounded-2xl border border-af2-line px-4 py-3 text-sm font-medium text-af2-ink-4 hover:bg-af2-paper"
           >
             <Download size={14} />
             Export CSV
@@ -289,7 +289,7 @@ export default function ExecutionLogs() {
               key={value}
               onClick={() => setStatusFilter(value)}
               className={`rounded-lg px-4 py-1.5 text-sm font-medium capitalize transition ${
-                statusFilter === value ? "bg-gray-900 text-white" : "text-gray-500 hover:bg-gray-100"
+                statusFilter === value ? "bg-af2-ink text-af2-card" : "text-af2-ink-3 hover:bg-af2-paper-2"
               }`}
             >
               {value}
@@ -300,12 +300,12 @@ export default function ExecutionLogs() {
 
       <div className="mx-auto max-w-6xl space-y-4 px-8 py-6">
         {loadError ? (
-          <div className="rounded-xl border border-red-200 bg-red-50 px-5 py-4 text-sm text-red-700">
+          <div className="rounded-xl border border-af2-clay/40 bg-af2-clay/10 px-5 py-4 text-sm text-af2-clay-2">
             {loadError}
           </div>
         ) : null}
         {loading ? (
-          <div className="flex items-center justify-center py-16 text-gray-500">
+          <div className="flex items-center justify-center py-16 text-af2-ink-3">
             <RefreshCw size={18} className="mr-2 animate-spin" />
             Loading execution logs…
           </div>
@@ -314,7 +314,7 @@ export default function ExecutionLogs() {
           <TraceCard key={record.id} record={record} />
         ))}
         {!loading && filtered.length === 0 ? (
-          <div className="rounded-3xl border border-dashed border-gray-200 bg-white px-6 py-16 text-center text-sm text-gray-500">
+          <div className="rounded-3xl border border-dashed border-af2-line bg-af2-card px-6 py-16 text-center text-sm text-af2-ink-3">
             {records.length === 0 ? "No execution logs are available yet." : "No traces match this filter."}
           </div>
         ) : null}

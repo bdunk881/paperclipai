@@ -92,6 +92,53 @@ describe("MissionStateView", () => {
     expect(screen.getByText("Readiness metrics could not be loaded.")).toBeInTheDocument();
   });
 
+  it("contains no legacy slate-*/brand-*/teal-50/orange-50 palette refs (HEL-101)", () => {
+    // Deep-pass regression guard. After PR #739 the chrome was v2 but the
+    // six CardShell sections still used slate-* + brand-* + teal-50/orange-50
+    // palettes. HEL-101 converts CardShell + every inline accent block to
+    // af2 tones. This test fails if a future commit re-introduces any of
+    // those legacy palette tokens anywhere in the rendered output.
+    const { container } = render(
+      <MemoryRouter>
+        <MissionStateView
+          data={{
+            title: "Demo",
+            objective: "Objective",
+            overallStatus: "At Risk",
+            phase: "Execution",
+            phaseAvailable: true,
+            ownerTeam: "Team",
+            lastUpdated: "today",
+            confidence: "Watch required",
+            atRiskIndicator: "Demo risk",
+            statusSummary: "Demo status",
+            staffingReadiness: "1/2 staffed",
+            dependencyCountLabel: "n/a",
+            blockerCount: 1,
+            activeWorkstreamsLabel: "Live",
+            nextMilestone: "Demo milestone",
+            nextMilestoneAvailable: true,
+            topBlockers: ["a blocker"],
+            recommendedActions: [
+              { label: "Do thing", detail: "detail", to: "/x", kind: "primary" },
+            ],
+            timeline: [],
+          }}
+        />
+      </MemoryRouter>
+    );
+    const html = container.innerHTML;
+    // The grep guards: any class token starting with these legacy prefixes
+    // signals a regression. `slate-y` (from translate-y-*) is allowed.
+    expect(html).not.toMatch(/(?<!translate-)slate-(0|1|2|3|4|5|6|7|8|9)/);
+    expect(html).not.toMatch(/\bbg-teal-50\b/);
+    expect(html).not.toMatch(/\bbg-orange-50\b/);
+    expect(html).not.toMatch(/\bbg-rose-(50|100)\b/);
+    expect(html).not.toMatch(/\bbg-amber-(50|100)\b/);
+    expect(html).not.toMatch(/\bbrand-\d/);
+    expect(html).not.toMatch(/accent-(teal|orange)/);
+  });
+
   it("renders with v2 structural markers (HEL-98)", () => {
     const { container } = render(
       <MemoryRouter>

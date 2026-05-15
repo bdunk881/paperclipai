@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { AlertTriangle, ArrowRight, CheckCircle2, Flag, Layers3, ShieldAlert, Users } from "lucide-react";
+import { AlertTriangle, ArrowRight, CheckCircle2, Layers3, ShieldAlert, Users } from "lucide-react";
 import { Link, useLocation } from "react-router-dom";
 import { ErrorState, EmptyState } from "../components/UiStates";
 import { useAuth } from "../context/AuthContext";
@@ -298,24 +298,64 @@ export function MissionStateView({
   };
 
   return (
-    <div className="min-h-full bg-surface-50 px-4 py-6 dark:bg-surface-deep sm:px-6 lg:px-8">
-      <div className="mx-auto max-w-7xl">
-        <div className="animate-mission-reveal" style={{ animationDelay: animationDelays.breadcrumb }}>
-          <div className="mb-4 flex flex-wrap items-center gap-2 text-sm text-slate-500 dark:text-slate-400">
-            <Link to="/" className="font-medium text-slate-600 underline decoration-slate-300 underline-offset-4 transition-colors hover:text-brand-600 dark:text-slate-300 dark:decoration-slate-600">
-              Dashboard
-            </Link>
-            <ArrowRight size={14} />
-            <span className="font-semibold text-slate-900 dark:text-slate-100">Mission State</span>
-            {entryPoint === "staffing-plan" && (
-              <span className="rounded-full border border-brand-200 bg-brand-50 px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-brand-700 dark:border-brand-500/30 dark:bg-brand-500/10 dark:text-brand-200">
-                Opened from Staffing Plan
-              </span>
-            )}
+    <div className="af2-page" style={{ maxWidth: 1280 }}>
+      <div className="af2-page-head">
+        <div>
+          <div className="af2-eyebrow">Run · Missions</div>
+          <h1 className="af2-h1" style={{ marginTop: 6 }}>
+            {data?.title || "Mission state"}
+          </h1>
+          <div className="af2-page-head-meta">
+            {data?.objective ||
+              "Track the active mission's health, readiness, blockers, and timeline. Briefs become plans, plans become a paper trail."}
           </div>
         </div>
+        <div className="af2-page-actions">
+          <Link
+            to="/"
+            className="af2-btn af2-btn-ghost af2-btn-sm"
+            style={{ textDecoration: "none", display: "inline-flex", alignItems: "center", gap: 6 }}
+          >
+            ← Home
+          </Link>
+          {entryPoint === "staffing-plan" ? (
+            <span className="af2-pill af2-pill-pending">
+              <span className="af2-dot" />
+              From staffing plan
+            </span>
+          ) : null}
+        </div>
+      </div>
 
-        <div className="grid grid-cols-1 gap-6 lg:grid-cols-4">
+      {data ? (
+        <div className="af2-row" style={{ marginBottom: 18, flexWrap: "wrap", gap: 8 }}>
+          <MissionStatusBadge status={data.overallStatus} />
+          <span
+            className="af2-pill"
+            style={{ background: "var(--af2-paper-2)", color: "var(--af2-ink-2)" }}
+          >
+            Owner · {data.ownerTeam}
+          </span>
+          <span
+            className="af2-pill"
+            style={{ background: "var(--af2-paper-2)", color: "var(--af2-ink-2)" }}
+          >
+            Phase · {data.phase}
+          </span>
+          <span
+            className="af2-pill"
+            style={{ background: "var(--af2-paper-2)", color: "var(--af2-ink-2)" }}
+          >
+            Next · {data.nextMilestone}
+          </span>
+          <span className="af2-spacer" />
+          <span className="af2-mono af2-muted-2" style={{ fontSize: 11 }}>
+            Updated {data.lastUpdated}
+          </span>
+        </div>
+      ) : null}
+
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-4">
           <section
             className="animate-mission-reveal overflow-hidden rounded-[28px] border border-slate-200/70 bg-white/95 shadow-sm dark:border-slate-800 dark:bg-slate-900/95 lg:col-span-4"
             style={{ animationDelay: animationDelays.header }}
@@ -340,17 +380,14 @@ export function MissionStateView({
                 <div className="absolute inset-x-0 top-0 h-40 bg-gradient-to-r from-brand-500/12 via-accent-teal/12 to-accent-orange/10" />
                 <div className="relative flex flex-col gap-6 lg:flex-row lg:items-start lg:justify-between">
                   <div className="max-w-3xl">
-                    <div className="mb-4 flex flex-wrap items-center gap-3">
-                      <span className="inline-flex items-center gap-2 rounded-full border border-brand-200 bg-brand-50 px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-brand-700 dark:border-brand-500/20 dark:bg-brand-500/10 dark:text-brand-200">
-                        <Flag size={14} />
-                        Mission Summary
-                      </span>
-                      <MissionStatusBadge status={data?.overallStatus ?? "Not Started"} />
+                    {/* HEL-98 v2 restyle: title + status moved to the
+                        canonical af2-h1 + af2-row in af2-page-head. This
+                        card keeps the eyebrow + objective so the summary
+                        section still has a lede when scanned in isolation. */}
+                    <div className="af2-eyebrow" style={{ marginBottom: 12 }}>
+                      Mission summary
                     </div>
-                    <h1 className="text-3xl font-semibold tracking-tight text-slate-950 dark:text-white sm:text-4xl">
-                      {data?.title}
-                    </h1>
-                    <p className="mt-4 max-w-2xl text-base leading-7 text-slate-600 dark:text-slate-300">
+                    <p className="max-w-2xl text-base leading-7 text-af2-ink-2">
                       {data?.objective}
                     </p>
                   </div>
@@ -546,7 +583,6 @@ export function MissionStateView({
           </div>
         </div>
       </div>
-    </div>
   );
 }
 

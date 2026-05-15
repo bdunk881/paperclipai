@@ -337,7 +337,7 @@ export default function RunHistory() {
                         <button
                           type="button"
                           onClick={() => setSelectedRun(run)}
-                          className="inline-flex items-center gap-1 rounded-full border border-surface-700/20 bg-surface-900 px-3 py-1.5 text-xs font-medium text-surface-50 transition hover:border-brand-500/50 hover:text-white"
+                          className="inline-flex items-center gap-1 rounded-full border border-af2-line bg-af2-ink px-3 py-1.5 text-xs font-medium text-af2-card transition hover:border-af2-clay hover:text-af2-paper"
                           aria-label={`Open run audit for ${run.templateName}`}
                         >
                           Audit view

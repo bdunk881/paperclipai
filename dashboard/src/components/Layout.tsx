@@ -18,8 +18,10 @@ import {
   X,
   Moon,
   Sun,
+  Bug,
 } from "lucide-react";
 import clsx from "clsx";
+import * as Sentry from "@sentry/react";
 import logoLockup from "../assets/logo/lockup.svg";
 import { useAuth } from "../context/AuthContext";
 import { useTheme } from "../hooks/useTheme";
@@ -99,6 +101,26 @@ export default function Layout() {
     setMobileNavOpen(false);
   }
 
+  // HEL-113: surface Sentry's User Feedback dialog from the chrome so users can
+  // file a report even when the floating Sentry widget is dismissed or hidden.
+  async function handleReportBug() {
+    const feedback = Sentry.getFeedback?.();
+    if (feedback) {
+      try {
+        const form = await feedback.createForm();
+        form.appendToDom();
+        form.open();
+        return;
+      } catch {
+        // fall through to the mailto below
+      }
+    }
+    // Fallback if Sentry isn't initialized (no DSN in this env). The mailto
+    // keeps the affordance functional in local/dev so we never lose reports.
+    window.location.href =
+      "mailto:support@helloautoflow.com?subject=AutoFlow%20bug%20report";
+  }
+
   function NavItems() {
     return (
       <>
@@ -150,6 +172,14 @@ export default function Layout() {
           </div>
           <div className="flex items-center gap-2">
             <button
+              onClick={handleReportBug}
+              className="rounded-md border border-af2-line p-2 text-af2-ink-2 transition-colors hover:bg-af2-paper-2 hover:text-af2-ink"
+              title="Report a bug"
+              aria-label="Report a bug"
+            >
+              <Bug size={16} />
+            </button>
+            <button
               onClick={toggleTheme}
               className="rounded-md border border-af2-line p-2 text-af2-ink-2 transition-colors hover:bg-af2-paper-2 hover:text-af2-ink"
               title={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
@@ -193,6 +223,18 @@ export default function Layout() {
           <nav className="flex-1 space-y-1 px-3 py-4 overflow-y-auto">
             <NavItems />
           </nav>
+
+          <div className="border-t border-af2-line px-3 py-2">
+            <button
+              type="button"
+              onClick={handleReportBug}
+              className="flex w-full items-center gap-3 rounded-md px-3 py-1.5 text-sm font-medium text-af2-ink-2 transition-colors hover:bg-af2-paper-2 hover:text-af2-ink"
+              title="Report a bug"
+            >
+              <Bug size={18} />
+              Report a bug
+            </button>
+          </div>
 
           <div className="border-t border-af2-line px-4 py-4">
             <div className="flex items-center gap-3">

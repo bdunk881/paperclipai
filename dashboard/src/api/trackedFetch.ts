@@ -43,6 +43,12 @@ export async function trackedFetch(
   } catch (err) {
     Sentry.metrics.count("api.network_error", 1, { attributes: { endpoint, method } });
     Sentry.logger.error(`Network error: ${method} ${endpoint}`, { endpoint, method });
+    Sentry.captureException(err, {
+      level: "error",
+      tags: { endpoint, method, kind: "api_network_error" },
+      contexts: { request: { url, method } },
+      fingerprint: ["api_network_error", method, endpoint],
+    });
     throw err;
   } finally {
     const duration = Math.round(performance.now() - start);
@@ -65,6 +71,18 @@ export async function trackedFetch(
         status: statusCode,
         duration,
       });
+      // Also raise an Issue (not just a Log) so 5xx spikes are alertable.
+      Sentry.captureException(
+        new Error(`api_5xx: ${method} ${endpoint} → ${statusCode}`),
+        {
+          level: "error",
+          tags: { endpoint, method, status: String(statusCode), kind: "api_5xx" },
+          contexts: {
+            request: { url, method, status: statusCode, duration_ms: duration },
+          },
+          fingerprint: ["api_5xx", method, endpoint, String(statusCode)],
+        },
+      );
     } else if (statusCode >= 400) {
       Sentry.logger.warn(`${method} ${endpoint} → ${statusCode} (${duration}ms)`, {
         endpoint,

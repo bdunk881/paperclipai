@@ -548,8 +548,14 @@ export interface ControlPlaneTeam {
   userId: string;
   name: string;
   description?: string;
+  /** @deprecated HEL-119 — use {@link workflowId}. */
   workflowTemplateId?: string;
+  /** @deprecated HEL-119 — use {@link workflowName}. */
   workflowTemplateName?: string;
+  /** Canonical noun alias for {@link workflowTemplateId}. */
+  workflowId?: string;
+  /** Canonical noun alias for {@link workflowTemplateName}. */
+  workflowName?: string;
   deploymentMode: ControlPlaneTeamDeploymentMode;
   budgetMonthlyUsd: number;
   orchestrationEnabled: boolean;

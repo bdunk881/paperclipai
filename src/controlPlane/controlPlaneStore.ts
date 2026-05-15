@@ -803,6 +803,9 @@ function hydrateTeam(row: PersistedTeamRow): ControlPlaneTeam {
     description: row.description ?? undefined,
     workflowTemplateId: row.workflow_template_id ?? undefined,
     workflowTemplateName: row.workflow_template_name ?? undefined,
+    // HEL-119 — canonical-noun aliases (mirror the deprecated fields above).
+    workflowId: row.workflow_template_id ?? undefined,
+    workflowName: row.workflow_template_name ?? undefined,
     deploymentMode: row.deployment_mode,
     status: row.status,
     pausedByCompanyLifecycle: row.paused_by_company_lifecycle || undefined,

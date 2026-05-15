@@ -255,7 +255,11 @@ function TeamMonitorCard({ detail }: { detail: ControlPlaneTeamDetail }) {
               </span>
             </div>
             <p className="mt-1 text-sm text-gray-500 dark:text-surface-400">
-              {detail.team.workflowTemplateName ?? "Custom workflow deployment"}
+              {/* HEL-119 — prefer canonical workflowName; fall back to the
+                  deprecated workflowTemplateName until the backend rename ships. */}
+              {detail.team.workflowName ??
+                detail.team.workflowTemplateName ??
+                "Custom workflow"}
             </p>
           </div>
           <Link

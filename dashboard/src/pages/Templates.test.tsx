@@ -86,96 +86,128 @@ describe("Templates", () => {
   });
 
   // ---------------------------------------------------------------------------
-  // Filtering — category
+  // v2 chrome — eyebrow, h1, page-head meta, action buttons
   // ---------------------------------------------------------------------------
 
-  it("shows all templates when 'All' category is selected (default)", () => {
-    const templates = [
-      makeTemplate({ id: "t1", name: "Ops Work", category: "ops" }),
-      makeTemplate({ id: "t2", name: "Sales Work", category: "sales" }),
-    ];
-    renderTemplates({ initialTemplates: templates });
-    expect(screen.getByText("Ops Work")).toBeInTheDocument();
-    expect(screen.getByText("Sales Work")).toBeInTheDocument();
-  });
+  it("renders the v2 Library page chrome", () => {
+    renderTemplates({ initialTemplates: [makeTemplate()] });
 
-  it("filters to selected category", async () => {
-    const templates = [
-      makeTemplate({ id: "t1", name: "Ops Work", category: "ops" }),
-      makeTemplate({ id: "t2", name: "Sales Work", category: "sales" }),
-    ];
-    renderTemplates({ initialTemplates: templates });
-
-    await userEvent.click(screen.getByRole("button", { name: /ops/i }));
-
-    expect(screen.getByText("Ops Work")).toBeInTheDocument();
-    expect(screen.queryByText("Sales Work")).not.toBeInTheDocument();
+    expect(screen.getByText("Build · Routines")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { level: 1, name: /library/i })).toBeInTheDocument();
+    expect(screen.getByText(/reusable workflows your agents call as routines/i)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /browse templates/i })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /new routine/i })).toHaveAttribute("href", "/builder");
   });
 
   // ---------------------------------------------------------------------------
-  // Filtering — query
+  // Cards — secondary metadata, live pill, Open in Studio link
   // ---------------------------------------------------------------------------
 
-  it("filters by name match", async () => {
+  it("renders template cards with name, description, category, and metrics", () => {
     const templates = [
-      makeTemplate({ id: "t1", name: "Alpha Workflow", description: "desc1", category: "ops" }),
-      makeTemplate({ id: "t2", name: "Beta Workflow", description: "desc2", category: "ops" }),
+      makeTemplate({
+        id: "t1",
+        name: "Lead Enrichment",
+        description: "Enrich incoming leads",
+        category: "sales",
+        stepCount: 5,
+        configFieldCount: 4,
+      }),
     ];
     renderTemplates({ initialTemplates: templates });
 
-    await userEvent.type(screen.getByPlaceholderText(/search templates/i), "alpha");
-
-    expect(screen.getByText("Alpha Workflow")).toBeInTheDocument();
-    expect(screen.queryByText("Beta Workflow")).not.toBeInTheDocument();
+    expect(screen.getByText("Lead Enrichment")).toBeInTheDocument();
+    expect(screen.getByText("Enrich incoming leads")).toBeInTheDocument();
+    expect(screen.getByText("sales")).toBeInTheDocument();
+    expect(screen.getByText("5 steps · 4 fields")).toBeInTheDocument();
   });
 
-  it("filters by description match", async () => {
+  it("renders a live pill on every card", () => {
     const templates = [
-      makeTemplate({ id: "t1", name: "Work A", description: "special desc", category: "ops" }),
-      makeTemplate({ id: "t2", name: "Work B", description: "other text", category: "ops" }),
+      makeTemplate({ id: "t1", name: "A" }),
+      makeTemplate({ id: "t2", name: "B" }),
     ];
-    renderTemplates({ initialTemplates: templates });
+    const { container } = renderTemplates({ initialTemplates: templates });
 
-    await userEvent.type(screen.getByPlaceholderText(/search templates/i), "special");
-
-    expect(screen.getByText("Work A")).toBeInTheDocument();
-    expect(screen.queryByText("Work B")).not.toBeInTheDocument();
+    expect(container.querySelectorAll(".af2-pill-live").length).toBe(2);
   });
 
-  it("filters by category name match in query", async () => {
-    const templates = [
-      makeTemplate({ id: "t1", name: "Work A", description: "desc", category: "support" }),
-      makeTemplate({ id: "t2", name: "Work B", description: "desc", category: "sales" }),
-    ];
+  it("links Open in Studio to the per-template builder route", () => {
+    const templates = [makeTemplate({ id: "tpl-abc", name: "Routine" })];
     renderTemplates({ initialTemplates: templates });
 
-    await userEvent.type(screen.getByPlaceholderText(/search templates/i), "support");
-
-    expect(screen.getByText("Work A")).toBeInTheDocument();
-    expect(screen.queryByText("Work B")).not.toBeInTheDocument();
+    const link = screen.getByRole("link", { name: /open in studio/i });
+    expect(link).toHaveAttribute("href", "/templates/tpl-abc");
   });
-
-  // ---------------------------------------------------------------------------
-  // Empty state
-  // ---------------------------------------------------------------------------
-
-  it("shows empty state when no templates match the filter", async () => {
-    const templates = [makeTemplate({ name: "Alpha Workflow", category: "ops" })];
-    renderTemplates({ initialTemplates: templates });
-
-    await userEvent.type(screen.getByPlaceholderText(/search templates/i), "zzz-no-match");
-
-    expect(screen.getByText(/no templates match this filter/i)).toBeInTheDocument();
-  });
-
-  // ---------------------------------------------------------------------------
-  // Description fallback
-  // ---------------------------------------------------------------------------
 
   it("shows fallback text for templates with empty description", () => {
     const templates = [makeTemplate({ description: "" })];
     renderTemplates({ initialTemplates: templates });
     expect(screen.getByText(/no description provided/i)).toBeInTheDocument();
+  });
+
+  // ---------------------------------------------------------------------------
+  // Tabs — All/Mine/Shared/Templates with count on All
+  // ---------------------------------------------------------------------------
+
+  it("renders the four library tabs with count on 'All'", () => {
+    const templates = [
+      makeTemplate({ id: "t1", name: "A" }),
+      makeTemplate({ id: "t2", name: "B" }),
+      makeTemplate({ id: "t3", name: "C" }),
+    ];
+    renderTemplates({ initialTemplates: templates });
+
+    expect(screen.getByRole("button", { name: "All (3)" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Mine" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Shared" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Templates" })).toBeInTheDocument();
+  });
+
+  it("starts with 'All' tab active and shows every template", () => {
+    const templates = [
+      makeTemplate({ id: "t1", name: "Ops Work", category: "ops" }),
+      makeTemplate({ id: "t2", name: "Sales Work", category: "sales" }),
+    ];
+    renderTemplates({ initialTemplates: templates });
+
+    expect(screen.getByRole("button", { name: /all \(2\)/i })).toHaveClass("active");
+    expect(screen.getByText("Ops Work")).toBeInTheDocument();
+    expect(screen.getByText("Sales Work")).toBeInTheDocument();
+  });
+
+  it("treats the 'Templates' tab as an alias for 'All'", async () => {
+    const templates = [
+      makeTemplate({ id: "t1", name: "Ops Work" }),
+      makeTemplate({ id: "t2", name: "Sales Work" }),
+    ];
+    renderTemplates({ initialTemplates: templates });
+
+    await userEvent.click(screen.getByRole("button", { name: "Templates" }));
+
+    expect(screen.getByRole("button", { name: "Templates" })).toHaveClass("active");
+    expect(screen.getByText("Ops Work")).toBeInTheDocument();
+    expect(screen.getByText("Sales Work")).toBeInTheDocument();
+  });
+
+  it("shows an empty state when 'Mine' is selected (no ownership signal yet)", async () => {
+    const templates = [makeTemplate({ id: "t1", name: "Ops Work" })];
+    renderTemplates({ initialTemplates: templates });
+
+    await userEvent.click(screen.getByRole("button", { name: "Mine" }));
+
+    expect(screen.queryByText("Ops Work")).not.toBeInTheDocument();
+    expect(screen.getByText(/no routines to show/i)).toBeInTheDocument();
+  });
+
+  it("shows an empty state when 'Shared' is selected (no sharing signal yet)", async () => {
+    const templates = [makeTemplate({ id: "t1", name: "Ops Work" })];
+    renderTemplates({ initialTemplates: templates });
+
+    await userEvent.click(screen.getByRole("button", { name: "Shared" }));
+
+    expect(screen.queryByText("Ops Work")).not.toBeInTheDocument();
+    expect(screen.getByText(/no routines to show/i)).toBeInTheDocument();
   });
 
   // ---------------------------------------------------------------------------

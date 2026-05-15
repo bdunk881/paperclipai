@@ -1,24 +1,72 @@
+/**
+ * Budget — v2 editorial spend dashboard.
+ *
+ * Matches `docs/design/v2/pages.jsx::AF2_Budget`:
+ *   - Eyebrow ("Workforce · Spend") + h1 "Budget" + dynamic meta line
+ *     ("$X of $Y cap used · NN% · — days left in cycle.")
+ *   - "Forecast" + "Adjust caps" page actions (stubs)
+ *   - 4-stat strip: Spent · MTD / Forecast · EoM / Top spender /
+ *     Cost per hour saved
+ *   - `af2-list` table of agents with usage bar, spent, cap, edit
+ *   - "By model · last 30 days" card placeholder (real per-model rollup
+ *     lands with HEL-118 step_results.cost_cents aggregation)
+ *
+ * Real wiring:
+ *   - `listAgents` + per-agent `getAgentBudget` feed the per-agent rows
+ *     and the MTD/forecast/top-spender stats.
+ *   - "Cost per hour saved" is "—" until hours-saved telemetry exists.
+ *   - "Adjust caps" / "Edit" are TODO stubs — no-op buttons until the
+ *     budget-mutation API ships.
+ *
+ * The previous BudgetCard / gradient-bar layout was the v1 spend page
+ * (rounded indigo→orange gradients, BudgetCard accent tiles). The v2
+ * spec replaces it with the af2 stat strip + list pattern.
+ */
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { AlertTriangle, BarChart3, CircleDollarSign } from "lucide-react";
-import { getAgentBudget, listAgents } from "../api/agentApi";
-import { EmptyState, ErrorState, LoadingState } from "../components/UiStates";
+import { getAgentBudget, listAgents, type Agent } from "../api/agentApi";
+import { ErrorState, LoadingState } from "../components/UiStates";
 import { useAuth } from "../context/AuthContext";
 
-type AgentSpend = {
+interface AgentBudgetRow {
   id: string;
   name: string;
-  spend: number;
+  role: string;
+  spent: number;
   budget: number;
-};
+}
 
-function formatUsd(value: number): string {
-  return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(value);
+const AGENT_GRID = "200px 1fr 110px 110px 90px";
+
+function formatCurrency(value: number, fractionDigits = 0): string {
+  return new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: "USD",
+    minimumFractionDigits: fractionDigits,
+    maximumFractionDigits: fractionDigits,
+  }).format(value);
+}
+
+function initialsFor(name: string | undefined | null): string {
+  if (!name) return "—";
+  const parts = name.trim().split(/\s+/).slice(0, 2);
+  return parts.map((p) => p[0]?.toUpperCase() ?? "").join("") || "—";
+}
+
+function firstName(name: string | undefined | null): string {
+  if (!name) return "—";
+  return name.trim().split(/\s+/)[0] ?? "—";
+}
+
+function roleFor(agent: Agent): string {
+  if (agent.roleKey && agent.roleKey.trim().length > 0) return agent.roleKey;
+  const metaRole = (agent.metadata as Record<string, unknown> | undefined)?.role;
+  if (typeof metaRole === "string" && metaRole.trim().length > 0) return metaRole;
+  return "Agent";
 }
 
 export default function BudgetDashboard() {
   const { accessMode, getAccessToken } = useAuth();
-  const [agentSpend, setAgentSpend] = useState<AgentSpend[]>([]);
-  const [teamBudget, setTeamBudget] = useState(0);
+  const [agentRows, setAgentRows] = useState<AgentBudgetRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -28,21 +76,23 @@ export default function BudgetDashboard() {
     try {
       const token = await getAccessToken();
       if (accessMode === "preview" && !token) {
-        setAgentSpend([]);
-        setTeamBudget(0);
+        setAgentRows([]);
         return;
       }
       if (!token) throw new Error("Authentication session expired.");
       const agents = await listAgents(token);
-      const budgets = await Promise.all(agents.map((agent) => getAgentBudget(agent.id, token)));
-      const nextSpend = agents.map((agent, index) => ({
+      const budgets = await Promise.all(
+        agents.map((agent) => getAgentBudget(agent.id, token).catch(() => null)),
+      );
+      const rows: AgentBudgetRow[] = agents.map((agent, index) => ({
         id: agent.id,
         name: agent.name,
+        role: roleFor(agent),
         budget: budgets[index]?.monthlyUsd ?? agent.budgetMonthlyUsd,
-        spend: budgets[index]?.spentUsd ?? 0,
+        spent: budgets[index]?.spentUsd ?? 0,
       }));
-      setAgentSpend(nextSpend.sort((left, right) => right.spend - left.spend));
-      setTeamBudget(nextSpend.reduce((sum, detail) => sum + detail.budget, 0));
+      rows.sort((left, right) => right.spent - left.spent);
+      setAgentRows(rows);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Failed to load budget dashboard");
     } finally {
@@ -54,137 +104,232 @@ export default function BudgetDashboard() {
     void loadBudget();
   }, [loadBudget]);
 
-  const totalSpend = useMemo(
-    () => agentSpend.reduce((sum, entry) => sum + entry.spend, 0),
-    [agentSpend]
-  );
-  const maxSpend = useMemo(() => Math.max(1, ...agentSpend.map((entry) => entry.spend)), [agentSpend]);
-  const budgetRatio = teamBudget > 0 ? totalSpend / teamBudget : 0;
+  const totals = useMemo(() => {
+    const spent = agentRows.reduce((sum, row) => sum + row.spent, 0);
+    const cap = agentRows.reduce((sum, row) => sum + row.budget, 0);
+    const pct = cap > 0 ? Math.round((spent / cap) * 100) : 0;
+    const now = new Date();
+    const dayOfMonth = Math.max(1, now.getDate());
+    const forecast = spent > 0 ? (spent * 30) / dayOfMonth : 0;
+    const top = agentRows[0] ?? null;
+    const forecastDelta = cap > 0 ? Math.round(((cap - forecast) / cap) * 100) : 0;
+    return { spent, cap, pct, forecast, top, forecastDelta };
+  }, [agentRows]);
 
   if (loading) {
     return (
-      <div className="p-8">
-        <LoadingState label="Loading budget telemetry..." />
+      <div className="af2-page">
+        <LoadingState label="Loading budget telemetry…" />
       </div>
     );
   }
 
   if (error) {
     return (
-      <div className="p-8">
-        <ErrorState title="Signal Lost" message={error} onRetry={() => void loadBudget()} />
+      <div className="af2-page">
+        <ErrorState
+          title="Signal Lost"
+          message={error}
+          onRetry={() => void loadBudget()}
+        />
       </div>
     );
   }
 
   return (
-    <div className="min-h-full bg-af2-paper-2/40 p-6 md:p-8">
-      <div className="mx-auto max-w-6xl">
-        <div className="mb-6 flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
-          <div>
-            <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-af2-clay/30 bg-af2-clay-soft/40 px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-af2-clay">
-              <BarChart3 size={12} />
-              Budget Dashboard
-            </div>
-            <h1 className="text-2xl font-bold text-af2-ink">Spend and Quota Health</h1>
-            <p className="mt-1 text-sm text-af2-ink-3">
-              Live budget snapshots and agent-level spend from the agent budget API.
-            </p>
+    <div className="af2-page">
+      <div className="af2-page-head">
+        <div>
+          <div className="af2-eyebrow">Workforce · Spend</div>
+          <h1 className="af2-h1" style={{ marginTop: 6 }}>
+            Budget
+          </h1>
+          <div className="af2-page-head-meta">
+            {formatCurrency(totals.spent)} of {formatCurrency(totals.cap)} cap used · {totals.pct}% · — days left in cycle.
           </div>
         </div>
-
-        {agentSpend.length === 0 ? (
-          <EmptyState
-            title="No budget activity yet"
-            description="Deploy agents and let them produce heartbeats before spend analytics become available."
-            ctaLabel="Deploy an agent"
-            ctaTo="/agents"
-          />
-        ) : (
-          <>
-            <div className="mb-6 grid gap-4 md:grid-cols-3">
-              <BudgetCard label="Total Spend" value={formatUsd(totalSpend)} icon={<CircleDollarSign size={16} />} />
-              <BudgetCard label="Monthly Budget" value={formatUsd(teamBudget)} icon={<BarChart3 size={16} />} />
-              <BudgetCard
-                label="Budget Health"
-                value={teamBudget > 0 ? `${Math.round(budgetRatio * 100)}%` : "n/a"}
-                icon={<AlertTriangle size={16} />}
-                accent={budgetRatio >= 0.8 ? "orange" : "teal"}
-              />
-            </div>
-
-            <div className="rounded-3xl border border-af2-line bg-af2-card p-6 shadow-sm">
-              <div className="mb-4 flex items-center justify-between gap-4">
-                <div>
-                  <h2 className="text-lg font-semibold text-af2-ink">Spend by Agent</h2>
-                  <p className="text-sm text-af2-ink-3">Last known spend derived from live budget snapshots.</p>
-                </div>
-                <div className="h-3 w-48 overflow-hidden rounded-full bg-af2-paper-2">
-                  <div
-                    className={`h-full rounded-full ${
-                      budgetRatio >= 0.8 ? "bg-af2-clay" : "bg-af2-sage"
-                    }`}
-                    style={{ width: `${Math.min(100, budgetRatio * 100)}%` }}
-                  />
-                </div>
-              </div>
-              <div className="space-y-4">
-                {agentSpend.map((entry) => {
-                  const usagePercent = maxSpend > 0 ? (entry.spend / maxSpend) * 100 : 0;
-                  return (
-                    <div key={entry.id} className="grid gap-2 md:grid-cols-[minmax(0,1fr)_120px] md:items-center">
-                      <div>
-                        <div className="mb-1 flex items-center justify-between gap-3">
-                          <p className="font-medium text-af2-ink">{entry.name}</p>
-                          <p className="text-sm text-af2-ink-3">
-                            {formatUsd(entry.spend)} / {formatUsd(entry.budget)}
-                          </p>
-                        </div>
-                        <div className="h-3 overflow-hidden rounded-full bg-af2-paper-2">
-                          <div
-                            className="h-full rounded-full bg-gradient-to-r from-indigo-500 to-orange-500"
-                            style={{ width: `${Math.max(6, usagePercent)}%` }}
-                          />
-                        </div>
-                      </div>
-                      <p className="text-right font-mono text-sm text-af2-ink-3">
-                        {entry.budget > 0 ? `${Math.round((entry.spend / entry.budget) * 100)}%` : "0%"}
-                      </p>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          </>
-        )}
+        <div className="af2-page-actions">
+          <button type="button" className="af2-btn">
+            Forecast
+          </button>
+          {/* TODO: wire to a budget-mutation modal once the budgets PATCH route lands. */}
+          <button type="button" className="af2-btn af2-btn-primary">
+            Adjust caps
+          </button>
+        </div>
       </div>
-    </div>
-  );
-}
 
-function BudgetCard({
-  label,
-  value,
-  icon,
-  accent = "indigo",
-}: {
-  label: string;
-  value: string;
-  icon: React.ReactNode;
-  accent?: "indigo" | "orange" | "teal";
-}) {
-  const tone =
-    accent === "orange"
-      ? "bg-af2-clay-soft/40 text-af2-clay"
-      : accent === "teal"
-      ? "bg-af2-sage/10 text-af2-sage"
-      : "bg-af2-clay-soft/40 text-af2-clay";
+      <div className="af2-stats" style={{ marginBottom: 22 }}>
+        <div className="af2-stat">
+          <div className="af2-stat-label">Spent · MTD</div>
+          <div className="af2-stat-value">{formatCurrency(totals.spent)}</div>
+        </div>
+        <div className="af2-stat">
+          <div className="af2-stat-label">Forecast · EoM</div>
+          <div className="af2-stat-value">
+            {totals.forecast > 0 ? formatCurrency(totals.forecast) : "—"}
+          </div>
+          {totals.cap > 0 && totals.forecast > 0 ? (
+            <div
+              className={`af2-stat-delta ${
+                totals.forecastDelta >= 0 ? "up" : "down"
+              }`}
+            >
+              {totals.forecastDelta >= 0
+                ? `${totals.forecastDelta}% under cap`
+                : `${Math.abs(totals.forecastDelta)}% over cap`}
+            </div>
+          ) : null}
+        </div>
+        <div className="af2-stat">
+          <div className="af2-stat-label">Top spender</div>
+          <div
+            className="af2-stat-value font-af2-serif"
+            style={{ fontSize: 22 }}
+          >
+            {totals.top ? firstName(totals.top.name) : "—"}
+          </div>
+          {totals.top ? (
+            <div className="af2-stat-delta">
+              {totals.top.role} · {formatCurrency(totals.top.spent)}
+            </div>
+          ) : null}
+        </div>
+        <div className="af2-stat">
+          <div className="af2-stat-label">Cost per hour saved</div>
+          <div className="af2-stat-value">—</div>
+          <div className="af2-stat-delta">Wired with HEL-118 step_results</div>
+        </div>
+      </div>
 
-  return (
-    <div className="rounded-3xl border border-af2-line bg-af2-card p-5 shadow-sm">
-      <div className={`inline-flex rounded-2xl p-2 ${tone}`}>{icon}</div>
-      <p className="mt-3 text-xs font-semibold uppercase tracking-[0.18em] text-af2-ink-4">{label}</p>
-      <p className="mt-2 font-mono text-3xl font-semibold text-af2-ink">{value}</p>
+      <h3 className="af2-h3" style={{ marginBottom: 10 }}>
+        By agent
+      </h3>
+      {agentRows.length === 0 ? (
+        <div className="af2-card" style={{ padding: 24, textAlign: "center" }}>
+          <div className="af2-muted" style={{ fontSize: 13 }}>
+            No agent spend recorded yet. Deploy agents and let them run before
+            budget rollups appear.
+          </div>
+        </div>
+      ) : (
+        <div className="af2-list">
+          <div
+            className="af2-list-head"
+            style={{ gridTemplateColumns: AGENT_GRID }}
+          >
+            <div>Agent</div>
+            <div>Usage</div>
+            <div>Spent</div>
+            <div>Cap</div>
+            <div></div>
+          </div>
+          {agentRows.map((row) => {
+            const pct = row.budget > 0 ? (row.spent / row.budget) * 100 : 0;
+            const clamped = Math.min(100, Math.max(0, pct));
+            return (
+              <div
+                key={row.id}
+                className="af2-list-row"
+                style={{ gridTemplateColumns: AGENT_GRID }}
+              >
+                <div className="af2-row" style={{ gap: 10 }}>
+                  <div
+                    style={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      width: 28,
+                      height: 28,
+                      borderRadius: "50%",
+                      background: "var(--af2-clay-soft)",
+                      color: "var(--af2-clay-2)",
+                      fontSize: 11,
+                      fontWeight: 700,
+                    }}
+                  >
+                    {initialsFor(row.name)}
+                  </div>
+                  <div>
+                    <div style={{ fontSize: 13, fontWeight: 500 }}>
+                      {row.name}
+                    </div>
+                    <div className="af2-muted" style={{ fontSize: 11.5 }}>
+                      {row.role}
+                    </div>
+                  </div>
+                </div>
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 10,
+                  }}
+                >
+                  <div
+                    style={{
+                      flex: 1,
+                      height: 6,
+                      background: "var(--af2-paper-2)",
+                      borderRadius: 3,
+                      overflow: "hidden",
+                    }}
+                  >
+                    <div
+                      style={{
+                        width: `${clamped}%`,
+                        height: "100%",
+                        background:
+                          pct > 80 ? "var(--af2-clay)" : "var(--af2-ink-2)",
+                      }}
+                    />
+                  </div>
+                  <span
+                    className="af2-mono af2-muted"
+                    style={{ fontSize: 11 }}
+                  >
+                    {Math.round(pct)}%
+                  </span>
+                </div>
+                <div className="af2-mono" style={{ fontSize: 12 }}>
+                  {formatCurrency(row.spent)}
+                </div>
+                <div
+                  className="af2-mono af2-muted"
+                  style={{ fontSize: 12 }}
+                >
+                  {formatCurrency(row.budget)}
+                </div>
+                <div style={{ textAlign: "right" }}>
+                  {/* TODO: open a per-agent cap-edit modal once the
+                      budgets PATCH route lands. */}
+                  <button
+                    type="button"
+                    className="af2-btn af2-btn-sm"
+                    onClick={() => {
+                      /* no-op stub */
+                    }}
+                  >
+                    Edit
+                  </button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      <h3 className="af2-h3" style={{ marginTop: 28, marginBottom: 10 }}>
+        By model · last 30 days
+      </h3>
+      <div className="af2-card" style={{ padding: 18 }}>
+        <div className="af2-row" style={{ gap: 8 }}>
+          <span className="af2-mono" style={{ fontSize: 14 }}>—</span>
+          <span className="af2-muted" style={{ fontSize: 12.5 }}>
+            Per-model rollup lands with HEL-118 step_results.cost_cents aggregation.
+          </span>
+        </div>
+      </div>
     </div>
   );
 }

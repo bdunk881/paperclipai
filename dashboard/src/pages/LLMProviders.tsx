@@ -1,5 +1,34 @@
-import { useState, useEffect, useCallback } from "react";
-import { X, Plus, Trash2, Star, Cpu, ArrowUpCircle } from "lucide-react";
+/**
+ * Models — v2 editorial "Connect" surface for BYO-LLM provider configs.
+ *
+ * Matches `docs/design/v2/pages.jsx::AF2_Models`:
+ *   - Eyebrow "Connect" + h1 "Models" + meta line
+ *     ("Bring your own keys. AutoFlow routes to the right tier...")
+ *   - Page actions: "Routing rules" (stub) + "＋ Add provider"
+ *   - "Default routing" section: 3 tier cards (Lite/Standard/Power) with
+ *     colored top borders — derived from configured LLMConfigs via name
+ *     heuristic (haiku/mini/lite → lite, sonnet/4o/command-r → standard,
+ *     opus/4-turbo/command-a/reasoner → power).
+ *   - "Providers" section: af2-list grouped by `provider`, with vendor
+ *     name, model pills, BYOK column (always yes — BYOK-only product),
+ *     status pill (primary/fallback/off), and per-row Configure button.
+ *
+ * Real wiring:
+ *   - `listLLMConfigs` / `createLLMConfig` / `setDefaultLLMConfig` /
+ *     `deleteLLMConfig` from `../api/client`.
+ *   - `PROVIDER_MODELS` drives the connect form's model dropdown.
+ *   - "Routing rules" is a TODO stub — no routing-mutation API yet.
+ *   - Per-tier "Change default" CTAs let the user pick which of their
+ *     existing configs in that tier should be the global default
+ *     (uses setDefaultLLMConfig). When no config exists in a tier the
+ *     card surfaces "Set default →" which opens the add-provider modal.
+ *
+ * The previous tile-grid + Connected-Configs-table layout was the
+ * pre-v2 sweep. v2 collapses both into a single af2-list grouped by
+ * vendor with status pills, matching the rest of the Connect surface.
+ */
+import { useState, useEffect, useCallback, useMemo } from "react";
+import { X, ArrowUpCircle } from "lucide-react";
 import {
   listLLMConfigs,
   createLLMConfig,
@@ -43,22 +72,58 @@ const PROVIDERS: Record<ProviderName, ProviderMeta> = {
   "vertex-ai": { name: "Vertex AI", color: "text-lime-700", bg: "bg-lime-100", abbr: "VTX" },
 };
 
-const PROVIDER_ORDER: ProviderName[] = [
-  "openai",
-  "anthropic",
-  "gemini",
-  "mistral",
-  "groq",
-  "fireworks",
-  "together",
-  "ollama",
-  "localai",
-  "cohere",
-  "perplexity",
-  "xai",
-  "deepseek",
-  "bedrock",
-  "vertex-ai",
+// ---------------------------------------------------------------------------
+// Tier classification — pure heuristic over model strings.
+//   Lite     → haiku / mini / lite / flash / 8b / small / haiku-* / 3.5
+//   Power    → opus / 4-turbo / command-a / reasoner / 70b / large / pro
+//   Standard → everything else (the default bucket).
+// ---------------------------------------------------------------------------
+
+type Tier = "lite" | "standard" | "power";
+
+const TIER_GRID = "200px 1fr 100px 110px 130px";
+
+function classifyTier(model: string): Tier {
+  const m = model.toLowerCase();
+  if (
+    /(haiku|mini|lite|flash|small|nano|8b|3\.5-turbo|sonar(?!-pro))/.test(m)
+  ) return "lite";
+  if (
+    /(opus|4-turbo|command-a|reasoner|70b|large|pro|grok-2|sonar-pro|gemini-1\.5-pro)/.test(m)
+  ) return "power";
+  return "standard";
+}
+
+interface TierInfo {
+  tier: Tier;
+  label: string;
+  when: string;
+  cost: string;
+  accent: string; // af2 color token name (without --)
+}
+
+const TIER_DEFS: TierInfo[] = [
+  {
+    tier: "lite",
+    label: "Lite",
+    when: "Drafts, lookups, classification.",
+    cost: "$0.005/1k tok",
+    accent: "sage",
+  },
+  {
+    tier: "standard",
+    label: "Standard",
+    when: "Most agent work — research, writing, code review.",
+    cost: "$0.03/1k tok",
+    accent: "ink-blue",
+  },
+  {
+    tier: "power",
+    label: "Power",
+    when: "Long reasoning, planning, multi-step research.",
+    cost: "$0.15/1k tok",
+    accent: "clay",
+  },
 ];
 
 // ---------------------------------------------------------------------------
@@ -66,24 +131,34 @@ const PROVIDER_ORDER: ProviderName[] = [
 // ---------------------------------------------------------------------------
 
 interface ConnectModalProps {
-  provider: ProviderName;
+  initialProvider?: ProviderName;
   onClose: () => void;
   onSuccess: () => void;
 }
 
-function ConnectModal({ provider, onClose, onSuccess }: ConnectModalProps) {
+function ConnectModal({ initialProvider, onClose, onSuccess }: ConnectModalProps) {
   const { requireAccessToken } = useAuth();
   const entitlement402 = useEntitlement402();
+  const providerKeys = Object.keys(PROVIDER_MODELS) as ProviderName[];
+  const [provider, setProvider] = useState<ProviderName>(
+    initialProvider ?? providerKeys[0] ?? "openai"
+  );
   const meta = PROVIDERS[provider];
   const models = PROVIDER_MODELS[provider] ?? [];
 
   const [label, setLabel] = useState("");
   const [apiKey, setApiKey] = useState("");
-  const [model, setModel] = useState(models[0]);
+  const [model, setModel] = useState(models[0] ?? "");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [upgradeState, setUpgradeState] = useState<Entitlement402State | null>(null);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
+
+  function handleProviderChange(next: ProviderName) {
+    setProvider(next);
+    const nextModels = PROVIDER_MODELS[next] ?? [];
+    setModel(nextModels[0] ?? "");
+  }
 
   function validate() {
     const errs: Record<string, string> = {};
@@ -146,6 +221,7 @@ function ConnectModal({ provider, onClose, onSuccess }: ConnectModalProps) {
           <button
             onClick={onClose}
             className="p-1.5 rounded-lg text-af2-ink-4 hover:text-af2-ink-2 hover:bg-af2-paper-2 transition-colors"
+            aria-label="Close"
           >
             <X size={16} />
           </button>
@@ -176,6 +252,21 @@ function ConnectModal({ provider, onClose, onSuccess }: ConnectModalProps) {
               {error}
             </div>
           )}
+
+          <div>
+            <label className="block text-sm font-medium text-af2-ink-2 mb-1">
+              Provider
+            </label>
+            <select
+              value={provider}
+              onChange={(e) => handleProviderChange(e.target.value as ProviderName)}
+              className="w-full px-3 py-2 rounded-lg border border-af2-line-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-af2-card"
+            >
+              {providerKeys.map((k) => (
+                <option key={k} value={k}>{PROVIDERS[k].name}</option>
+              ))}
+            </select>
+          </div>
 
           <div>
             <label className="block text-sm font-medium text-af2-ink-2 mb-1">
@@ -260,6 +351,96 @@ function ConnectModal({ provider, onClose, onSuccess }: ConnectModalProps) {
 }
 
 // ---------------------------------------------------------------------------
+// Configure (per-vendor) modal — pick default config in vendor + disconnect.
+// ---------------------------------------------------------------------------
+
+interface ConfigureModalProps {
+  vendor: ProviderName;
+  configs: LLMConfig[];
+  onClose: () => void;
+  onSetDefault: (id: string) => Promise<void>;
+  togglingDefault: string | null;
+  onDelete: (config: LLMConfig) => void;
+}
+
+function ConfigureModal({
+  vendor,
+  configs,
+  onClose,
+  onSetDefault,
+  togglingDefault,
+  onDelete,
+}: ConfigureModalProps) {
+  const meta = PROVIDERS[vendor];
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+      <div className="bg-af2-card rounded-xl shadow-xl w-full max-w-lg mx-4">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-af2-line">
+          <h2 className="font-semibold text-af2-ink">Configure {meta.name}</h2>
+          <button
+            onClick={onClose}
+            className="p-1.5 rounded-lg text-af2-ink-4 hover:text-af2-ink-2 hover:bg-af2-paper-2 transition-colors"
+            aria-label="Close"
+          >
+            <X size={16} />
+          </button>
+        </div>
+        <div className="px-6 py-5">
+          {configs.length === 0 ? (
+            <p className="af2-muted" style={{ fontSize: 13 }}>
+              No keys connected yet for this vendor.
+            </p>
+          ) : (
+            <div className="af2-list">
+              <div className="af2-list-head" style={{ gridTemplateColumns: "1fr 1fr 110px 110px" }}>
+                <div>Label</div>
+                <div>Model</div>
+                <div>Default</div>
+                <div></div>
+              </div>
+              {configs.map((cfg) => (
+                <div
+                  key={cfg.id}
+                  className="af2-list-row"
+                  style={{ gridTemplateColumns: "1fr 1fr 110px 110px" }}
+                >
+                  <div>
+                    <div style={{ fontSize: 13, fontWeight: 500 }}>{cfg.label}</div>
+                    <div className="af2-mono af2-muted-2" style={{ fontSize: 11 }}>
+                      {cfg.apiKeyMasked}
+                    </div>
+                  </div>
+                  <div className="af2-mono af2-muted" style={{ fontSize: 12 }}>{cfg.model}</div>
+                  <div>
+                    <button
+                      onClick={() => !cfg.isDefault && onSetDefault(cfg.id)}
+                      disabled={cfg.isDefault || togglingDefault === cfg.id}
+                      title={cfg.isDefault ? "Default config" : "Set as default"}
+                      className="af2-btn af2-btn-sm"
+                    >
+                      {cfg.isDefault ? "Default" : "Make default"}
+                    </button>
+                  </div>
+                  <div style={{ textAlign: "right" }}>
+                    <button
+                      onClick={() => onDelete(cfg)}
+                      className="af2-btn af2-btn-sm"
+                      title="Disconnect"
+                    >
+                      Disconnect
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Delete confirmation modal
 // ---------------------------------------------------------------------------
 
@@ -327,7 +508,8 @@ export default function LLMProviders() {
   const [configs, setConfigs] = useState<LLMConfig[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [connectingProvider, setConnectingProvider] = useState<ProviderName | null>(null);
+  const [showAddModal, setShowAddModal] = useState(false);
+  const [configuringVendor, setConfiguringVendor] = useState<ProviderName | null>(null);
   const [deletingConfig, setDeletingConfig] = useState<LLMConfig | null>(null);
   const [togglingDefault, setTogglingDefault] = useState<string | null>(null);
 
@@ -346,7 +528,7 @@ export default function LLMProviders() {
 
   useEffect(() => { loadConfigs(); }, [loadConfigs]);
 
-  async function handleSetDefault(id: string) {
+  const handleSetDefault = useCallback(async (id: string) => {
     setTogglingDefault(id);
     try {
       const accessToken = await requireAccessToken();
@@ -360,16 +542,43 @@ export default function LLMProviders() {
     } finally {
       setTogglingDefault(null);
     }
-  }
+  }, [requireAccessToken, loadConfigs]);
 
-  const connectedByProvider = configs.reduce<Record<string, number>>((acc, c) => {
-    acc[c.provider] = (acc[c.provider] ?? 0) + 1;
-    return acc;
-  }, {});
+  // Default-routing tier resolution: pick the user's default config in each
+  // tier bucket. If the global isDefault config falls in that bucket, prefer
+  // it; otherwise pick the first matching config.
+  const tierResolution = useMemo(() => {
+    const byTier: Record<Tier, LLMConfig | undefined> = {
+      lite: undefined,
+      standard: undefined,
+      power: undefined,
+    };
+    for (const cfg of configs) {
+      const t = classifyTier(cfg.model);
+      if (!byTier[t] || cfg.isDefault) byTier[t] = cfg;
+    }
+    return byTier;
+  }, [configs]);
 
-  function getMaskedApiKey(config: LLMConfig): string {
-    return config.apiKeyMasked ?? "Hidden";
-  }
+  // Group configs by vendor for the Providers list.
+  const grouped = useMemo(() => {
+    const map = new Map<ProviderName, LLMConfig[]>();
+    for (const cfg of configs) {
+      const arr = map.get(cfg.provider) ?? [];
+      arr.push(cfg);
+      map.set(cfg.provider, arr);
+    }
+    return Array.from(map.entries()).map(([provider, items]) => {
+      const status: "primary" | "secondary" | "off" =
+        items.some((c) => c.isDefault) ? "primary" : items.length > 0 ? "secondary" : "off";
+      const models = Array.from(new Set(items.map((c) => c.model)));
+      return { provider, items, status, models };
+    });
+  }, [configs]);
+
+  const configuringConfigs = configuringVendor
+    ? grouped.find((g) => g.provider === configuringVendor)?.items ?? []
+    : [];
 
   return (
     <div className="af2-page" style={{ maxWidth: 1080 }}>
@@ -383,224 +592,197 @@ export default function LLMProviders() {
             Bring your own keys. AutoFlow routes to the right tier so you never pay Opus for a Haiku job.
           </div>
         </div>
+        <div className="af2-page-actions">
+          <button className="af2-btn" type="button">Routing rules</button>
+          <button
+            className="af2-btn af2-btn-primary"
+            type="button"
+            onClick={() => setShowAddModal(true)}
+          >
+            ＋ Add provider
+          </button>
+        </div>
       </div>
 
-      <h3 className="af2-h3" style={{ marginBottom: 12 }}>
-        Providers
-      </h3>
+      {error && !loading && (
+        <div
+          className="af2-card"
+          style={{
+            textAlign: "center",
+            padding: "16px",
+            borderColor: "rgba(194,80,43,0.3)",
+            color: "var(--af2-clay)",
+            fontSize: 13,
+            marginBottom: 20,
+          }}
+        >
+          {error}
+        </div>
+      )}
 
-      {/* Provider tile grid */}
+      <h3 className="af2-h3" style={{ marginBottom: 10 }}>Default routing</h3>
       <div
         style={{
           display: "grid",
-          gridTemplateColumns: "repeat(2, 1fr)",
+          gridTemplateColumns: "repeat(3, 1fr)",
           gap: 14,
           marginBottom: 28,
         }}
       >
-        {PROVIDER_ORDER.map((providerKey) => {
-          const meta = PROVIDERS[providerKey];
-          const count = connectedByProvider[providerKey] ?? 0;
-          const isConnected = count > 0;
-          const availableModels = PROVIDER_MODELS[providerKey] ?? [];
-
+        {TIER_DEFS.map((t) => {
+          const cfg = tierResolution[t.tier];
           return (
             <div
-              key={providerKey}
+              key={t.tier}
               className="af2-card"
               style={{
                 padding: 18,
-                display: "flex",
-                gap: 14,
-                alignItems: "flex-start",
+                borderTop: `3px solid var(--af2-${t.accent})`,
               }}
             >
-              {meta.logo ? (
-                <div className={clsx("flex items-center justify-center w-11 h-11 rounded-xl p-2 flex-shrink-0", meta.bg)}>
-                  <img
-                    src={new URL(`../assets/integrations/${meta.logo}`, import.meta.url).href}
-                    alt=""
-                    className="w-full h-full object-contain"
-                  />
-                </div>
-              ) : (
-                <div className={clsx("flex items-center justify-center w-11 h-11 rounded-xl font-bold text-sm flex-shrink-0", meta.bg, meta.color)}>
-                  {meta.abbr}
-                </div>
-              )}
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div className="af2-row" style={{ justifyContent: "space-between", marginBottom: 4 }}>
-                  <div className="af2-h3" style={{ fontSize: 15 }}>
-                    {meta.name}
-                  </div>
-                  {isConnected ? (
-                    <span className="af2-pill af2-pill-live">
-                      <span className="af2-dot" />
-                      Connected
-                    </span>
-                  ) : null}
-                </div>
-                <p
-                  className="af2-mono af2-muted-2"
-                  style={{ fontSize: 11.5, marginBottom: 12 }}
-                >
-                  {availableModels.length} models available
-                </p>
-                {isConnected ? (
-                  <button
-                    onClick={() => setConnectingProvider(providerKey)}
-                    className="af2-btn af2-btn-ghost af2-btn-sm"
-                    style={{ padding: 0 }}
-                  >
-                    + Add another ({count} connected)
-                  </button>
-                ) : (
-                  <button
-                    onClick={() => setConnectingProvider(providerKey)}
-                    className="af2-btn af2-btn-sm"
-                    style={{ display: "inline-flex", alignItems: "center", gap: 6 }}
-                  >
-                    <Plus size={12} />
-                    Connect
-                  </button>
-                )}
+              <div className="af2-eyebrow">{t.label} tier</div>
+              <div className="af2-h3" style={{ marginTop: 6 }}>
+                {cfg ? cfg.model : "—"}
               </div>
+              <div style={{ fontSize: 12.5, color: "var(--af2-ink-2)", marginTop: 8 }}>
+                {t.when}
+              </div>
+              <div className="af2-mono af2-muted" style={{ fontSize: 11.5, marginTop: 12 }}>
+                {t.cost}
+              </div>
+              {cfg ? (
+                <button
+                  className="af2-btn af2-btn-sm"
+                  style={{ marginTop: 12, width: "100%" }}
+                  type="button"
+                  onClick={() => setConfiguringVendor(cfg.provider)}
+                >
+                  Change default
+                </button>
+              ) : (
+                <button
+                  className="af2-btn af2-btn-sm"
+                  style={{ marginTop: 12, width: "100%" }}
+                  type="button"
+                  onClick={() => setShowAddModal(true)}
+                >
+                  Set default →
+                </button>
+              )}
             </div>
           );
         })}
       </div>
 
-      {/* Connected configs list */}
-      <h3 className="af2-h3" style={{ marginBottom: 12 }}>
-        Connected Configs
-      </h3>
-      <div>
-        {loading ? (
-          <div
-            className="af2-card"
-            style={{
-              textAlign: "center",
-              padding: "40px 24px",
-              color: "var(--af2-ink-4)",
-              fontSize: 13,
-            }}
-          >
-            Loading…
+      <h3 className="af2-h3" style={{ marginBottom: 10 }}>Providers</h3>
+
+      {loading ? (
+        <div
+          className="af2-card"
+          style={{
+            textAlign: "center",
+            padding: "40px 24px",
+            color: "var(--af2-ink-4)",
+            fontSize: 13,
+          }}
+        >
+          Loading…
+        </div>
+      ) : grouped.length === 0 ? (
+        <div
+          className="af2-card"
+          style={{
+            textAlign: "center",
+            padding: "48px 24px",
+            borderStyle: "dashed",
+            borderColor: "var(--af2-line-2)",
+          }}
+        >
+          <p style={{ fontSize: 14, fontWeight: 500, color: "var(--af2-ink-3)" }}>
+            No providers connected yet
+          </p>
+          <p className="af2-muted" style={{ fontSize: 12, marginTop: 4 }}>
+            Connect a provider to start using BYOLLM in your workflows.
+          </p>
+        </div>
+      ) : (
+        <div className="af2-list">
+          <div className="af2-list-head" style={{ gridTemplateColumns: TIER_GRID }}>
+            <div>Vendor</div>
+            <div>Models available</div>
+            <div>BYOK</div>
+            <div>Status</div>
+            <div></div>
           </div>
-        ) : error ? (
-          <div
-            className="af2-card"
-            style={{
-              textAlign: "center",
-              padding: "24px",
-              borderColor: "rgba(194,80,43,0.3)",
-              color: "var(--af2-clay)",
-              fontSize: 13,
-            }}
-          >
-            {error}
-          </div>
-        ) : configs.length === 0 ? (
-          <div
-            className="af2-card"
-            style={{
-              textAlign: "center",
-              padding: "48px 24px",
-              borderStyle: "dashed",
-              borderColor: "var(--af2-line-2)",
-            }}
-          >
-            <Cpu size={32} style={{ margin: "0 auto 12px", color: "var(--af2-ink-3)" }} />
-            <p style={{ fontSize: 14, fontWeight: 500, color: "var(--af2-ink-3)" }}>
-              No providers connected yet
-            </p>
-            <p className="af2-muted" style={{ fontSize: 12, marginTop: 4 }}>
-              Connect a provider above to start using BYOLLM in your workflows.
-            </p>
-          </div>
-        ) : (
-          <div className="bg-af2-card rounded-xl border border-af2-line overflow-hidden">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-af2-line bg-af2-paper-2/40">
-                  <th className="text-left px-5 py-3 text-xs font-medium text-af2-ink-3 uppercase tracking-wide">Label</th>
-                  <th className="text-left px-5 py-3 text-xs font-medium text-af2-ink-3 uppercase tracking-wide">Provider</th>
-                  <th className="text-left px-5 py-3 text-xs font-medium text-af2-ink-3 uppercase tracking-wide">Model</th>
-                  <th className="text-left px-5 py-3 text-xs font-medium text-af2-ink-3 uppercase tracking-wide">API Key</th>
-                  <th className="text-left px-5 py-3 text-xs font-medium text-af2-ink-3 uppercase tracking-wide">Default</th>
-                  <th className="px-5 py-3" />
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-50">
-                {configs.map((cfg) => {
-                  const meta = PROVIDERS[cfg.provider];
-                  return (
-                    <tr key={cfg.id} className="hover:bg-af2-paper-2/40 transition-colors">
-                      <td className="px-5 py-3 font-medium text-af2-ink">{cfg.label}</td>
-                      <td className="px-5 py-3">
-                        <div className="flex items-center gap-2">
-                          {meta.logo ? (
-                            <div className={clsx("flex items-center justify-center w-6 h-6 rounded p-0.5", meta.bg)}>
-                              <img
-                                src={new URL(`../assets/integrations/${meta.logo}`, import.meta.url).href}
-                                alt=""
-                                className="w-full h-full object-contain"
-                              />
-                            </div>
-                          ) : (
-                            <div className={clsx("flex items-center justify-center w-6 h-6 rounded font-bold text-[10px]", meta.bg, meta.color)}>
-                              {meta.abbr}
-                            </div>
-                          )}
-                          <span className={clsx("px-2 py-0.5 rounded-full text-xs font-medium", meta.bg, meta.color)}>
-                            {meta.name}
-                          </span>
-                        </div>
-                      </td>
-                      <td className="px-5 py-3 text-af2-ink-2 font-mono text-xs">{cfg.model}</td>
-                      <td className="px-5 py-3 text-af2-ink-4 font-mono text-xs">{getMaskedApiKey(cfg)}</td>
-                      <td className="px-5 py-3">
-                        <button
-                          onClick={() => !cfg.isDefault && handleSetDefault(cfg.id)}
-                          disabled={cfg.isDefault || togglingDefault === cfg.id}
-                          title={cfg.isDefault ? "Default config" : "Set as default"}
-                          className={clsx(
-                            "p-1 rounded-lg transition-colors",
-                            cfg.isDefault
-                              ? "text-af2-mustard cursor-default"
-                              : "text-af2-ink-3 hover:text-af2-mustard disabled:opacity-50"
-                          )}
-                        >
-                          <Star size={16} fill={cfg.isDefault ? "currentColor" : "none"} />
-                        </button>
-                      </td>
-                      <td className="px-5 py-3 text-right">
-                        <button
-                          onClick={() => setDeletingConfig(cfg)}
-                          title="Disconnect"
-                          className="p-1.5 rounded-lg text-af2-ink-4 hover:text-af2-clay hover:bg-af2-clay-soft/30 transition-colors"
-                        >
-                          <Trash2 size={15} />
-                        </button>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </div>
+          {grouped.map(({ provider, models, status }) => {
+            const meta = PROVIDERS[provider];
+            return (
+              <div
+                key={provider}
+                className="af2-list-row"
+                style={{ gridTemplateColumns: TIER_GRID }}
+              >
+                <div className="af2-row">
+                  <strong style={{ fontSize: 13.5 }}>{meta.name}</strong>
+                </div>
+                <div className="af2-cluster">
+                  {models.map((m) => (
+                    <span key={m} className="af2-pill af2-mono" style={{ fontSize: 11 }}>
+                      {m}
+                    </span>
+                  ))}
+                </div>
+                <div className="af2-mono af2-muted" style={{ fontSize: 12 }}>yes</div>
+                <div>
+                  {status === "primary" && (
+                    <span className="af2-pill af2-pill-live">
+                      <span className="af2-dot" />primary
+                    </span>
+                  )}
+                  {status === "secondary" && (
+                    <span className="af2-pill af2-pill-pending">
+                      <span className="af2-dot" />fallback
+                    </span>
+                  )}
+                  {status === "off" && (
+                    <span className="af2-pill">
+                      <span className="af2-dot" />off
+                    </span>
+                  )}
+                </div>
+                <div style={{ textAlign: "right" }}>
+                  <button
+                    className="af2-btn af2-btn-sm"
+                    type="button"
+                    onClick={() => setConfiguringVendor(provider)}
+                  >
+                    Configure
+                  </button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
 
       {/* Modals */}
-      {connectingProvider && (
+      {showAddModal && (
         <ConnectModal
-          provider={connectingProvider}
-          onClose={() => setConnectingProvider(null)}
+          onClose={() => setShowAddModal(false)}
           onSuccess={() => {
-            setConnectingProvider(null);
+            setShowAddModal(false);
             loadConfigs();
           }}
+        />
+      )}
+      {configuringVendor && (
+        <ConfigureModal
+          vendor={configuringVendor}
+          configs={configuringConfigs}
+          onClose={() => setConfiguringVendor(null)}
+          onSetDefault={handleSetDefault}
+          togglingDefault={togglingDefault}
+          onDelete={(cfg) => setDeletingConfig(cfg)}
         />
       )}
       {deletingConfig && (
@@ -609,6 +791,7 @@ export default function LLMProviders() {
           onClose={() => setDeletingConfig(null)}
           onSuccess={() => {
             setDeletingConfig(null);
+            setConfiguringVendor(null);
             loadConfigs();
           }}
         />

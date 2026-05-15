@@ -1,141 +1,85 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+/**
+ * AgentActivity — HEL-60 v2 restyle tests.
+ *
+ * The page now sources from `listObservabilityEvents` (canonical
+ * observability stream) and renders v2 chrome with tabs (Live / Today /
+ * This week / All) and event rows with mono timestamps + initials avatar
+ * + verb-summary copy.
+ */
+import { render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import AgentActivity from "./AgentActivity";
+import type { ObservabilityEvent, ObservabilityFeedPage } from "../api/observability";
 
-const {
-  getAccessTokenMock,
-  listAgentsMock,
-  getAgentHeartbeatMock,
-  listAgentRunsMock,
-  listActivityEventsMock,
-} = vi.hoisted(() => ({
-  getAccessTokenMock: vi.fn(),
-  listAgentsMock: vi.fn(),
-  getAgentHeartbeatMock: vi.fn(),
-  listAgentRunsMock: vi.fn(),
-  listActivityEventsMock: vi.fn(),
+const { requireAccessTokenMock, listObservabilityEventsMock } = vi.hoisted(() => ({
+  requireAccessTokenMock: vi.fn(),
+  listObservabilityEventsMock: vi.fn(),
 }));
 const accessModeMock = vi.fn();
 
 vi.mock("../context/AuthContext", () => ({
   useAuth: () => ({
     accessMode: accessModeMock(),
-    getAccessToken: getAccessTokenMock,
+    requireAccessToken: requireAccessTokenMock,
   }),
 }));
 
-vi.mock("../api/agentApi", () => ({
-  listAgents: listAgentsMock,
-  getAgentHeartbeat: getAgentHeartbeatMock,
-  listAgentRuns: listAgentRunsMock,
+vi.mock("../api/observability", () => ({
+  listObservabilityEvents: listObservabilityEventsMock,
 }));
 
-vi.mock("../api/activityApi", () => ({
-  listActivityEvents: listActivityEventsMock,
-}));
+function makeEvent(overrides: Partial<ObservabilityEvent> = {}): ObservabilityEvent {
+  return {
+    id: "evt-1",
+    sequence: "1",
+    userId: "usr-1",
+    category: "run",
+    type: "run.started",
+    actor: { type: "agent", id: "agent-1", label: "Sales Agent" },
+    subject: { type: "execution", id: "exec-1", label: "Outreach run" },
+    summary: "outreach for 38 enterprise leads",
+    payload: {},
+    occurredAt: new Date().toISOString(),
+    ...overrides,
+  };
+}
 
-describe("AgentActivity", () => {
+function makePage(events: ObservabilityEvent[]): ObservabilityFeedPage {
+  return {
+    events,
+    nextCursor: events[0]?.sequence ?? null,
+    hasMore: false,
+    generatedAt: new Date().toISOString(),
+  };
+}
+
+describe("AgentActivity (HEL-60 v2)", () => {
   beforeEach(() => {
-    getAccessTokenMock.mockReset();
-    listAgentsMock.mockReset();
-    getAgentHeartbeatMock.mockReset();
-    listAgentRunsMock.mockReset();
-    listActivityEventsMock.mockReset();
+    requireAccessTokenMock.mockReset();
+    listObservabilityEventsMock.mockReset();
     accessModeMock.mockReset();
 
     accessModeMock.mockReturnValue("authenticated");
-    getAccessTokenMock.mockResolvedValue("token-123");
-    // Default the canonical feed to empty so the existing tests don't
-    // need to set it explicitly.
-    listActivityEventsMock.mockResolvedValue([]);
+    requireAccessTokenMock.mockResolvedValue("token-123");
+    listObservabilityEventsMock.mockResolvedValue(makePage([]));
   });
 
-  it("filters activity by search query and status", async () => {
-    listAgentsMock.mockResolvedValue([
-      {
-        id: "agent-sales",
-        name: "Sales Agent",
-      },
-      {
-        id: "agent-support",
-        name: "Support Agent",
-      },
-    ]);
-    getAgentHeartbeatMock.mockImplementation(async (agentId: string) => {
-      if (agentId === "agent-sales") {
-        return {
-          id: "heartbeat-sales",
-          status: "paused",
-          summary: "Sales Agent resumed successfully.",
-          tokenUsage: 128,
-          recordedAt: "2026-04-22T00:00:00.000Z",
-        };
-      }
-      if (agentId === "agent-support") {
-        return {
-          id: "heartbeat-support",
-          status: "error",
-          summary: "Support Agent exceeded retry budget.",
-          tokenUsage: 64,
-          recordedAt: "2026-04-22T01:00:00.000Z",
-        };
-      }
-      return null;
-    });
-    listAgentRunsMock.mockResolvedValue([]);
-
-    render(
-      <MemoryRouter>
-        <AgentActivity />
-      </MemoryRouter>
+  it("renders v2 chrome (page, head, h1, eyebrow, tabs, card)", async () => {
+    listObservabilityEventsMock.mockResolvedValue(
+      makePage([makeEvent({ id: "evt-a", actor: { type: "agent", id: "ag-1", label: "Alex" } })]),
     );
-
-    expect(await screen.findByText("Heartbeat paused")).toBeInTheDocument();
-    expect(screen.getByText("Heartbeat error")).toBeInTheDocument();
-
-    fireEvent.change(screen.getByPlaceholderText(/filter activity/i), {
-      target: { value: "support" },
-    });
-
-    expect(screen.queryByText("Heartbeat paused")).not.toBeInTheDocument();
-    expect(screen.getByText("Heartbeat error")).toBeInTheDocument();
-
-    // After HEL-60 v2 restyle, status filter buttons render as tabs labeled
-    // "All / Live / Blocked / Other" (mapping success / warning / info to
-    // operator-meaningful names). "Blocked" maps to the warning status.
-    fireEvent.click(screen.getByRole("button", { name: "Blocked" }));
-
-    expect(screen.getByText("Heartbeat error")).toBeInTheDocument();
-    expect(screen.queryByText("Heartbeat paused")).not.toBeInTheDocument();
-  });
-
-  it("renders with v2 structural markers (HEL-60)", async () => {
-    // Regression guard: assert v2 chrome is actually present, not just af2-*
-    // color tokens. Mirrors the marker check from Settings.test.tsx (HEL-64).
-    listAgentsMock.mockResolvedValue([
-      {
-        id: "agent-sales",
-        name: "Sales Agent",
-      },
-    ]);
-    getAgentHeartbeatMock.mockResolvedValue({
-      id: "heartbeat-sales",
-      status: "running",
-      summary: "Sales Agent is online.",
-      tokenUsage: 42,
-      recordedAt: "2026-04-22T00:00:00.000Z",
-    });
-    listAgentRunsMock.mockResolvedValue([]);
 
     const { container } = render(
       <MemoryRouter>
         <AgentActivity />
-      </MemoryRouter>
+      </MemoryRouter>,
     );
 
-    expect(await screen.findByText("Heartbeat running")).toBeInTheDocument();
-    expect(container.querySelector(".af2-page")).not.toBeNull();
+    await waitFor(() => {
+      expect(container.querySelector(".af2-page")).not.toBeNull();
+    });
+
     expect(container.querySelector(".af2-page-head")).not.toBeNull();
     expect(container.querySelector(".af2-eyebrow")).not.toBeNull();
     expect(container.querySelector("h1.af2-h1")).not.toBeNull();
@@ -143,75 +87,54 @@ describe("AgentActivity", () => {
     expect(container.querySelector(".af2-card")).not.toBeNull();
   });
 
-  it("merges canonical activity_events into the timeline (HEL-29)", async () => {
-    // Agent side: empty (no agents) so the only items come from the
-    // canonical activity feed.
-    listAgentsMock.mockResolvedValue([]);
-    listActivityEventsMock.mockResolvedValue([
-      {
-        id: "evt-1",
-        kind: "hiring_plan_accepted",
-        actor: { type: "user", id: "user-1", label: "Brad" },
-        subject: { type: "hiring_plan", id: "plan-xyz", label: "Q1 Launch" },
-        payload: { agentCount: 3, edgeCount: 2 },
-        occurredAt: "2026-05-15T10:00:00.000Z",
-      },
-    ]);
-
+  it("shows the Activity heading and Run · Live eyebrow", async () => {
     render(
       <MemoryRouter>
         <AgentActivity />
-      </MemoryRouter>
+      </MemoryRouter>,
     );
 
-    // The kind name appears in the action column.
-    expect(await screen.findByText("hiring_plan_accepted")).toBeInTheDocument();
-    // The actor label is the strong agent name in the row.
-    expect(screen.getByText("Brad")).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Activity", level: 1 })).toBeInTheDocument();
+    expect(screen.getByText(/Run\s*·\s*Live/i)).toBeInTheDocument();
   });
 
-  it("shows an empty-state message when no events match the filter", async () => {
-    listAgentsMock.mockResolvedValue([
-      {
-        id: "agent-sales",
-        name: "Sales Agent",
-      },
-    ]);
-    getAgentHeartbeatMock.mockResolvedValue({
-      id: "heartbeat-sales",
-      status: "paused",
-      summary: "Sales Agent resumed successfully.",
-      tokenUsage: 128,
-      recordedAt: "2026-04-22T00:00:00.000Z",
-    });
-    listAgentRunsMock.mockResolvedValue([]);
-
+  it("renders the four time-tab buttons", async () => {
     render(
       <MemoryRouter>
         <AgentActivity />
-      </MemoryRouter>
+      </MemoryRouter>,
     );
 
-    expect(await screen.findByText("Heartbeat paused")).toBeInTheDocument();
+    await screen.findByRole("heading", { name: "Activity", level: 1 });
 
-    fireEvent.change(screen.getByPlaceholderText(/filter activity/i), {
-      target: { value: "no-match" },
-    });
-
-    expect(screen.getByText(/no activity matches this filter/i)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Live \(live\)/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^Today$/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^This week$/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^All$/ })).toBeInTheDocument();
   });
 
-  it("renders the preview empty state without calling protected agent APIs", async () => {
-    accessModeMock.mockReturnValue("preview");
-    getAccessTokenMock.mockResolvedValue(null);
+  it("renders event rows from listObservabilityEvents", async () => {
+    listObservabilityEventsMock.mockResolvedValue(
+      makePage([
+        makeEvent({
+          id: "evt-row",
+          actor: { type: "agent", id: "ag-1", label: "Alex" },
+          type: "run.started",
+          summary: "outreach for 38 enterprise leads",
+          occurredAt: new Date().toISOString(),
+        }),
+      ]),
+    );
 
     render(
       <MemoryRouter>
         <AgentActivity />
-      </MemoryRouter>
+      </MemoryRouter>,
     );
 
-    expect(await screen.findByText(/no activity yet/i)).toBeInTheDocument();
-    expect(listAgentsMock).not.toHaveBeenCalled();
+    expect(await screen.findByText("Alex")).toBeInTheDocument();
+    expect(screen.getByText(/outreach for 38 enterprise leads/)).toBeInTheDocument();
+    // "Details →" CTA per row
+    expect(screen.getAllByText(/Details/).length).toBeGreaterThan(0);
   });
 });

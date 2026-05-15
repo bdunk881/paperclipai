@@ -40,10 +40,6 @@ function makeConfig(overrides: Partial<Record<string, unknown>> = {}) {
   };
 }
 
-function getBodyRows(container: HTMLElement) {
-  return Array.from(container.querySelectorAll("tbody tr"));
-}
-
 describe("LLMProviders", () => {
   beforeEach(() => {
     listLLMConfigsMock.mockReset();
@@ -63,8 +59,11 @@ describe("LLMProviders", () => {
 
     expect(container.querySelector(".af2-page")).not.toBeNull();
     expect(container.querySelector(".af2-page-head")).not.toBeNull();
-    expect(container.querySelector(".af2-eyebrow")).not.toBeNull();
-    expect(container.querySelector("h1.af2-h1")).not.toBeNull();
+    expect(container.querySelector(".af2-page-actions")).not.toBeNull();
+    expect(container.querySelector(".af2-eyebrow")?.textContent).toBe("Connect");
+    expect(container.querySelector("h1.af2-h1")?.textContent).toBe("Models");
+    expect(screen.getByRole("heading", { level: 3, name: /default routing/i })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { level: 3, name: /providers/i })).toBeInTheDocument();
     expect(container.querySelectorAll(".af2-card").length).toBeGreaterThan(0);
   });
 
@@ -76,26 +75,29 @@ describe("LLMProviders", () => {
     expect(await screen.findByText("Config fetch failed")).toBeInTheDocument();
   });
 
-  it("validates connect form, creates a provider config, and reloads the table", async () => {
+  it("validates connect form, creates a provider config, and reloads the list", async () => {
     listLLMConfigsMock
       .mockResolvedValueOnce([])
       .mockResolvedValueOnce([
         makeConfig({ id: "cfg-new", label: "Team OpenAI", isDefault: false }),
       ]);
-    createLLMConfigMock.mockResolvedValue(makeConfig({ id: "cfg-new", label: "Team OpenAI", isDefault: false }));
+    createLLMConfigMock.mockResolvedValue(
+      makeConfig({ id: "cfg-new", label: "Team OpenAI", isDefault: false })
+    );
 
     render(<LLMProviders />);
 
     expect(await screen.findByText(/no providers connected yet/i)).toBeInTheDocument();
 
-    fireEvent.click(screen.getAllByRole("button", { name: /^connect$/i })[0]);
+    // Open the connect modal via "+ Add provider" in the page head.
+    fireEvent.click(screen.getByRole("button", { name: /add provider/i }));
 
-    // bg-white was renamed to bg-af2-card in the v2 sweep.
-    const modal = screen.getByRole("heading", { name: /connect openai/i }).closest("div[class*='bg-af2-card']")?.parentElement;
+    const modalHeading = await screen.findByRole("heading", { name: /connect openai/i });
+    const modal = modalHeading.closest("div[class*='bg-af2-card']")?.parentElement;
     if (!modal) throw new Error("Connect modal not found");
 
+    // Submit empty — surface validation errors.
     fireEvent.click(within(modal).getByRole("button", { name: /^connect$/i }));
-
     expect(screen.getByText("Label is required")).toBeInTheDocument();
     expect(screen.getByText("API key is required")).toBeInTheDocument();
 
@@ -104,16 +106,21 @@ describe("LLMProviders", () => {
     fireEvent.click(within(modal).getByRole("button", { name: /^connect$/i }));
 
     await waitFor(() => {
-      expect(createLLMConfigMock).toHaveBeenCalledWith({
-        label: "Team OpenAI",
-        provider: "openai",
-        model: "gpt-4o",
-        apiKey: "sk-test-key",
-      }, "token-123");
+      expect(createLLMConfigMock).toHaveBeenCalledWith(
+        {
+          label: "Team OpenAI",
+          provider: "openai",
+          model: "gpt-4o",
+          apiKey: "sk-test-key",
+        },
+        "token-123"
+      );
     });
 
-    expect(await screen.findByText("Team OpenAI")).toBeInTheDocument();
-    expect(screen.getByText("sk-...1234")).toBeInTheDocument();
+    // After reload the providers list shows the OpenAI vendor row with the
+    // model pill and a Configure action.
+    expect(await screen.findByText(/^openai$/i)).toBeInTheDocument();
+    expect(screen.getAllByRole("button", { name: /configure/i }).length).toBeGreaterThan(0);
   });
 
   it("sets a new default config when the toggle succeeds", async () => {
@@ -128,31 +135,42 @@ describe("LLMProviders", () => {
         apiKeyMasked: "sk-...5678",
       }),
     ]);
-    setDefaultLLMConfigMock.mockResolvedValue(makeConfig({
-      id: "cfg-2",
-      label: "Backup Anthropic",
-      provider: "anthropic",
-      model: "claude-sonnet-4-6",
-      isDefault: true,
-      apiKeyMasked: "sk-...5678",
-    }));
+    setDefaultLLMConfigMock.mockResolvedValue(
+      makeConfig({
+        id: "cfg-2",
+        label: "Backup Anthropic",
+        provider: "anthropic",
+        model: "claude-sonnet-4-6",
+        isDefault: true,
+        apiKeyMasked: "sk-...5678",
+      })
+    );
 
-    const { container } = render(<LLMProviders />);
+    render(<LLMProviders />);
 
-    expect(await screen.findByText("Backup Anthropic")).toBeInTheDocument();
+    // Wait for the Anthropic vendor row to render.
+    expect(await screen.findByText(/anthropic/i)).toBeInTheDocument();
 
-    const secondRowButton = getBodyRows(container)[1]?.querySelector("td:nth-child(5) button") as HTMLButtonElement;
-    fireEvent.click(secondRowButton);
+    // Open the Anthropic Configure modal. There are two Configure buttons
+    // (openai + anthropic); pick the one whose row contains "anthropic".
+    const configureButtons = screen.getAllByRole("button", { name: /configure/i });
+    const anthropicConfigureBtn = configureButtons.find((btn) =>
+      btn.closest(".af2-list-row")?.textContent?.toLowerCase().includes("anthropic")
+    );
+    if (!anthropicConfigureBtn) throw new Error("Anthropic configure button not found");
+    fireEvent.click(anthropicConfigureBtn);
+
+    // In the modal, click "Make default" for the non-default Anthropic config.
+    const makeDefaultBtn = await screen.findByRole("button", { name: /make default/i });
+    fireEvent.click(makeDefaultBtn);
 
     await waitFor(() => {
       expect(setDefaultLLMConfigMock).toHaveBeenCalledWith("cfg-2", "token-123");
     });
 
+    // After resolution the modal shows the Anthropic config as default.
     await waitFor(() => {
-      const rows = getBodyRows(container);
-      expect((rows[0]?.querySelector("td:nth-child(5) button") as HTMLButtonElement).disabled).toBe(false);
-      expect((rows[1]?.querySelector("td:nth-child(5) button") as HTMLButtonElement).disabled).toBe(true);
-      expect(rows[1]?.querySelector("td:nth-child(5) button")?.getAttribute("title")).toBe("Default config");
+      expect(screen.getByRole("button", { name: /^default$/i })).toBeDisabled();
     });
   });
 
@@ -180,26 +198,39 @@ describe("LLMProviders", () => {
           apiKeyMasked: "sk-...5678",
         }),
       ])
-      .mockResolvedValueOnce([
-        makeConfig(),
-      ]);
+      .mockResolvedValueOnce([makeConfig()]);
     setDefaultLLMConfigMock.mockRejectedValue(new Error("Set default failed"));
     deleteLLMConfigMock.mockResolvedValue(undefined);
 
-    const { container } = render(<LLMProviders />);
+    render(<LLMProviders />);
 
-    expect(await screen.findByText("Backup Anthropic")).toBeInTheDocument();
+    expect(await screen.findByText(/anthropic/i)).toBeInTheDocument();
 
-    fireEvent.click(getBodyRows(container)[1]?.querySelector("td:nth-child(5) button") as HTMLButtonElement);
+    // Open Anthropic Configure modal.
+    const configureButtons = screen.getAllByRole("button", { name: /configure/i });
+    const anthropicConfigureBtn = configureButtons.find((btn) =>
+      btn.closest(".af2-list-row")?.textContent?.toLowerCase().includes("anthropic")
+    );
+    if (!anthropicConfigureBtn) throw new Error("Anthropic configure button not found");
+    fireEvent.click(anthropicConfigureBtn);
+
+    fireEvent.click(await screen.findByRole("button", { name: /make default/i }));
 
     await waitFor(() => {
       expect(setDefaultLLMConfigMock).toHaveBeenCalledWith("cfg-2", "token-123");
       expect(listLLMConfigsMock).toHaveBeenCalledTimes(2);
     });
 
-    fireEvent.click(getBodyRows(container)[1]?.querySelector("td:last-child button") as HTMLButtonElement);
-    const disconnectButtons = screen.getAllByRole("button", { name: /^disconnect$/i });
-    fireEvent.click(disconnectButtons[disconnectButtons.length - 1] as HTMLButtonElement);
+    // The reload re-renders the modal contents; click "Disconnect" on the
+    // Anthropic row, then confirm in the DeleteConfirm dialog.
+    const disconnectButtons = await screen.findAllByRole("button", { name: /^disconnect$/i });
+    fireEvent.click(disconnectButtons[0] as HTMLButtonElement);
+
+    // The confirm modal also has a "Disconnect" button — click the last one,
+    // which is inside the confirm modal (rendered on top of the configure
+    // modal).
+    const confirmDisconnectButtons = screen.getAllByRole("button", { name: /^disconnect$/i });
+    fireEvent.click(confirmDisconnectButtons[confirmDisconnectButtons.length - 1] as HTMLButtonElement);
 
     await waitFor(() => {
       expect(deleteLLMConfigMock).toHaveBeenCalledWith("cfg-2", "token-123");
@@ -207,7 +238,7 @@ describe("LLMProviders", () => {
     });
 
     await waitFor(() => {
-      expect(screen.queryByText("Backup Anthropic")).not.toBeInTheDocument();
+      expect(screen.queryByText(/anthropic/i)).not.toBeInTheDocument();
     });
   });
 });

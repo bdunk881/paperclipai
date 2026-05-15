@@ -16,7 +16,6 @@ import {
 } from "./api/tickets";
 import { listCompanyRoleTemplates, listTemplates, type CompanyRoleTemplate } from "./api/client";
 import { getSupabaseStoredSession } from "./auth/supabaseAuth";
-import { apiGet } from "./api/settingsClient";
 import Layout from "./components/Layout";
 import { useAuth } from "./context/AuthContext";
 import AgentActivity from "./pages/AgentActivity";
@@ -70,13 +69,6 @@ import {
   type TicketDetailRouteData,
   type TicketsRouteData,
 } from "./routes/ticketRouteData";
-import {
-  buildMissionRecordFromBackend,
-  extractTeams,
-  type BackendMissionState,
-  type CardState,
-  type MissionStateRecord,
-} from "./pages/MissionState";
 
 function PrivateRoute({ children }: { children: React.ReactNode }) {
   const { user } = useAuth();
@@ -103,52 +95,6 @@ async function ticketsLoader(): Promise<TicketsRouteData> {
 
 async function templatesLoader() {
   return { templates: await listTemplates() };
-}
-
-async function missionStateLoader({
-  request,
-}: {
-  request: Request;
-}): Promise<{ record: MissionStateRecord | null; loadState: CardState }> {
-  const url = new URL(request.url);
-  const simulatedState = url.searchParams.get("state");
-  const selectedTeamId = url.searchParams.get("teamId");
-  const session = await readCurrentAccessSession();
-
-  if (simulatedState === "loading" || simulatedState === "empty" || simulatedState === "error") {
-    return { record: null, loadState: simulatedState };
-  }
-
-  if (!session?.accessToken) {
-    return { record: null, loadState: "error" };
-  }
-
-  try {
-    const teamPayload = await apiGet<unknown>(
-      "/api/control-plane/teams",
-      session.user,
-      session.accessToken
-    );
-    const teams = extractTeams(teamPayload);
-    const resolvedTeamId = selectedTeamId ?? teams[0]?.id;
-
-    if (!resolvedTeamId) {
-      return { record: null, loadState: "empty" };
-    }
-
-    const missionPayload = await apiGet<{ missionState: BackendMissionState }>(
-      `/api/control-plane/teams/${encodeURIComponent(resolvedTeamId)}/mission-state`,
-      session.user,
-      session.accessToken
-    );
-
-    return {
-      record: buildMissionRecordFromBackend(missionPayload.missionState),
-      loadState: "ready",
-    };
-  } catch {
-    return { record: null, loadState: "error" };
-  }
 }
 
 async function staffingPlanLoader(): Promise<{
@@ -262,11 +208,6 @@ function TemplatesRoute() {
   return <Templates initialTemplates={data.templates} />;
 }
 
-function MissionStateRoute() {
-  const data = useLoaderData() as { record: MissionStateRecord | null; loadState: CardState };
-  return <MissionState initialData={data} />;
-}
-
 function StaffingPlanRoute() {
   const data = useLoaderData() as {
     roleTemplates: CompanyRoleTemplate[];
@@ -324,7 +265,7 @@ const routes: RouteObject[] = [
       { path: "integrations/mcp", element: <MCPIntegrations /> },
       { path: "logs", element: <ExecutionLogs /> },
       { path: "memory", element: <Memory /> },
-      { path: "mission-state", loader: missionStateLoader, element: <MissionStateRoute /> },
+      { path: "mission-state", element: <MissionState /> },
       { path: "monitor", element: <RunMonitor /> },
       { path: "history", element: <RunHistory /> },
       { path: "pricing", element: <Pricing /> },

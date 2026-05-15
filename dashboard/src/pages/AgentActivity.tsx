@@ -1,278 +1,174 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Link } from "react-router-dom";
-import { ArrowRight, CircleAlert, CircleCheck, CircleDashed, Search } from "lucide-react";
 import {
-  getAgentHeartbeat,
-  listAgentRuns,
-  listAgents,
-  type AgentHeartbeat,
-  type AgentRun,
-} from "../api/agentApi";
-import { listActivityEvents, type ActivityEvent } from "../api/activityApi";
-import { EmptyState, ErrorState, LoadingState } from "../components/UiStates";
+  listObservabilityEvents,
+  type ObservabilityEvent,
+} from "../api/observability";
+import { ErrorState, LoadingState } from "../components/UiStates";
 import { useAuth } from "../context/AuthContext";
 
-// HEL-29: poll the canonical activity feed every 5s and merge new events
-// into the timeline alongside the per-agent heartbeats + runs.
+// HEL-29 / HEL-60 v2: poll the observability feed every 5s while on the
+// Live tab so the timeline reflows in place. The interval is cleared when
+// the tab is not "Live" and on unmount.
 const ACTIVITY_POLL_MS = 5_000;
+const FEED_LIMIT = 100;
 
 /**
  * Activity feed (HEL-60 v2 restyle).
  *
  * v2 reference: `docs/design/v2/pages-extra.jsx::AF2_Activity` — `af2-page`
  * chrome, eyebrow "Run · Live", serif h1, time-tabs (Live / Today / This
- * week / All), and an `af2-card` list of timeline rows with mono timestamps,
- * agent avatars, and verb-summary copy.
+ * week / All), and an `af2-card` list of timeline rows with mono
+ * timestamps, agent avatars, and verb-summary copy.
  *
- * Data wiring kept from the previous implementation: still pulls
- * agent runs + heartbeats via the existing `listAgents` / `listAgentRuns`
- * / `getAgentHeartbeat` API (polling on mount only — SSE / real-time push
- * is tracked separately under HEL-29).
+ * Data source: `listObservabilityEvents` (the canonical observability
+ * stream). Live tab polls every 5s; other tabs render the cached batch
+ * filtered by `occurredAt`.
  */
 
-type ActivityStatus = "success" | "warning" | "info";
+type TabKey = "live" | "today" | "week" | "all";
 
-type ActivityItem = {
-  id: string;
-  agentName: string;
-  action: string;
-  summary: string;
-  status: ActivityStatus;
-  tokenUsage: number;
-  createdAt: string;
-};
+const TABS: Array<{ key: TabKey; label: string }> = [
+  { key: "live", label: "Live (live)" },
+  { key: "today", label: "Today" },
+  { key: "week", label: "This week" },
+  { key: "all", label: "All" },
+];
 
-function statusIcon(status: ActivityStatus) {
-  if (status === "success") return <CircleCheck size={14} className="text-af2-sage" />;
-  if (status === "warning") return <CircleAlert size={14} className="text-af2-clay" />;
-  return <CircleDashed size={14} className="text-af2-clay" />;
-}
-
-function statusTone(status: ActivityStatus): "sage" | "clay" | "mustard" {
-  if (status === "success") return "sage";
-  if (status === "warning") return "clay";
-  return "mustard";
-}
-
-function heartbeatStatusToTone(status: AgentHeartbeat["status"]): ActivityStatus {
-  if (status === "running") return "success";
-  if (status === "error") return "warning";
-  return "info";
-}
-
-function runStatusToTone(status: AgentRun["status"]): ActivityStatus {
-  if (status === "completed") return "success";
-  if (status === "failed" || status === "blocked") return "warning";
-  return "info";
-}
-
-/**
- * Maps a canonical activity_events row (`hiring_plan_accepted`,
- * `agent_provisioned`, `run.started`, etc.) into the legacy
- * ActivityItem shape so it merges naturally into the existing timeline.
- */
-function activityEventToItem(event: ActivityEvent): ActivityItem {
-  const subject = event.subject as Record<string, unknown>;
-  const payload = event.payload as Record<string, unknown>;
-  const actor = event.actor as Record<string, unknown>;
-
-  // Pick a reasonable display name for the actor (user id) and summary line.
-  const actorName =
-    (typeof actor.label === "string" ? actor.label : undefined) ??
-    (typeof actor.id === "string" ? actor.id : "system");
-
-  // Map well-known kinds to operator-meaningful labels + status.
-  const KIND_TO_STATUS: Record<string, ActivityStatus> = {
-    hiring_plan_accepted: "success",
-    agent_provisioned: "success",
-    "run.completed": "success",
-    "run.started": "info",
-    "run.failed": "warning",
-    "approval.requested": "info",
-    "approval.resolved": "success",
-  };
-
-  const status: ActivityStatus = KIND_TO_STATUS[event.kind] ?? "info";
-
-  // Build a readable summary from the subject + payload.
-  const subjectLabel =
-    (typeof subject.label === "string" ? subject.label : undefined) ??
-    (typeof subject.id === "string" ? subject.id : event.kind);
-  const summary =
-    (typeof payload.summary === "string" ? payload.summary : undefined) ??
-    JSON.stringify(payload).slice(0, 240);
-
-  return {
-    id: `activity-${event.id}`,
-    agentName: actorName,
-    action: event.kind,
-    summary: `${subjectLabel}: ${summary}`,
-    status,
-    tokenUsage: 0,
-    createdAt: event.occurredAt,
-  };
-}
+const LIVE_WINDOW_MS = 5 * 60 * 1000;
+const WEEK_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
 
 function formatTime(iso: string): string {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return "—";
-  return d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit", hour12: false });
+  return d.toLocaleTimeString(undefined, {
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  });
 }
 
-function formatRelative(iso: string): string {
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return "";
-  return d.toLocaleString();
+function actorDisplayName(event: ObservabilityEvent): string {
+  return event.actor.label ?? event.actor.id ?? "system";
 }
 
-function agentInitials(name: string): string {
-  return name
-    .split(/\s+/)
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((part) => part[0]?.toUpperCase() ?? "")
-    .join("");
+function firstName(displayName: string): string {
+  const trimmed = displayName.trim();
+  if (!trimmed) return "system";
+  return trimmed.split(/\s+/)[0] ?? trimmed;
 }
 
-function agentToneClass(agentName: string): string {
-  // Stable per-agent color from the af2 tone palette.
-  const tones = ["clay", "sage", "mustard", "plum", "blue", "ink"] as const;
-  let hash = 0;
-  for (let i = 0; i < agentName.length; i += 1) {
-    hash = (hash * 31 + agentName.charCodeAt(i)) | 0;
+function initials(displayName: string): string {
+  const parts = displayName.trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return "··";
+  if (parts.length === 1) {
+    const word = parts[0];
+    return (word[0] ?? "·").concat(word[1] ?? "").toUpperCase();
   }
-  const tone = tones[Math.abs(hash) % tones.length];
-  return `af2-tone-${tone}`;
+  return ((parts[0][0] ?? "") + (parts[1][0] ?? "")).toUpperCase();
 }
 
-const STATUS_FILTERS: Array<{ value: "all" | ActivityStatus; label: string }> = [
-  { value: "all", label: "All" },
-  { value: "success", label: "Live" },
-  { value: "warning", label: "Blocked" },
-  { value: "info", label: "Other" },
-];
+/**
+ * Derive a human verb phrase from an observability `event.type`. Well-known
+ * event types get a hand-tuned label; anything else falls back to the
+ * dot-separated parts of the type joined by a space.
+ */
+function verbFromType(type: string): string {
+  const known: Record<string, string> = {
+    "run.started": "started",
+    "run.completed": "completed",
+    "run.failed": "failed",
+    "approval.requested": "filed approval",
+    "approval.resolved": "resolved approval",
+    "budget.exceeded": "exceeded budget",
+    "alert.raised": "raised alert",
+    "issue.created": "opened issue",
+    "issue.resolved": "resolved issue",
+    "heartbeat.recorded": "checked in",
+  };
+  if (known[type]) return known[type];
+  return type.split(".").join(" ");
+}
+
+function filterEventsForTab(
+  events: ObservabilityEvent[],
+  tab: TabKey,
+  now: number,
+): ObservabilityEvent[] {
+  if (tab === "all") return events;
+
+  return events.filter((event) => {
+    const ts = new Date(event.occurredAt).getTime();
+    if (Number.isNaN(ts)) return false;
+
+    if (tab === "live") {
+      return now - ts <= LIVE_WINDOW_MS;
+    }
+    if (tab === "week") {
+      return now - ts <= WEEK_WINDOW_MS;
+    }
+    // "today"
+    const eventDay = new Date(ts);
+    const today = new Date(now);
+    return (
+      eventDay.getFullYear() === today.getFullYear() &&
+      eventDay.getMonth() === today.getMonth() &&
+      eventDay.getDate() === today.getDate()
+    );
+  });
+}
 
 export default function AgentActivity() {
-  const { accessMode, getAccessToken } = useAuth();
-  const [query, setQuery] = useState("");
-  const [status, setStatus] = useState<"all" | ActivityStatus>("all");
-  const [activity, setActivity] = useState<ActivityItem[]>([]);
+  const { accessMode, requireAccessToken } = useAuth();
+  const [events, setEvents] = useState<ObservabilityEvent[]>([]);
+  const [tab, setTab] = useState<TabKey>("live");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  // Snapshot of `Date.now()` used to compute live/today/week windows.
+  // Refreshed every poll so the Live tab actually expires old events.
+  const [now, setNow] = useState<number>(() => Date.now());
 
-  const loadActivity = useCallback(
+  const loadEvents = useCallback(
     async (silent = false): Promise<void> => {
       if (!silent) setLoading(true);
       setError(null);
       try {
-        const token = await getAccessToken();
-        if (accessMode === "preview" && !token) {
-          setActivity([]);
+        if (accessMode === "preview") {
+          setEvents([]);
+          setNow(Date.now());
           return;
         }
-        if (!token) throw new Error("Authentication session expired.");
-
-        // Fetch all three sources in parallel: legacy heartbeats+runs and
-        // canonical activity_events (HEL-29). The canonical feed is the
-        // longer-term source; heartbeats+runs stay until the engine writes
-        // run.started / run.completed / run.failed into activity_events.
-        const [agents, canonicalEvents] = await Promise.all([
-          listAgents(token),
-          listActivityEvents(token, 50).catch((cause: unknown) => {
-            // Non-fatal — agent-derived items still render if the canonical
-            // endpoint is unavailable (e.g. in-memory mode pre-HEL-29).
-            console.warn("[activity] canonical feed failed:", cause);
-            return [] as ActivityEvent[];
-          }),
-        ]);
-
-        const agentItems = (
-          await Promise.all(
-            agents.map(async (agent) => {
-              const [heartbeat, runs] = await Promise.all([
-                getAgentHeartbeat(agent.id, token),
-                listAgentRuns(agent.id, token),
-              ]);
-              const heartbeatItems = heartbeat
-                ? [
-                    {
-                      id: `heartbeat-${heartbeat.id}`,
-                      agentName: agent.name,
-                      action: `Heartbeat ${heartbeat.status}`,
-                      summary: heartbeat.summary ?? "Latest heartbeat recorded for this agent.",
-                      status: heartbeatStatusToTone(heartbeat.status),
-                      tokenUsage: heartbeat.tokenUsage,
-                      createdAt: heartbeat.recordedAt,
-                    },
-                  ]
-                : [];
-              const runItems = runs.map((run) => ({
-                id: `run-${run.id}`,
-                agentName: agent.name,
-                action: `Run ${run.status}`,
-                summary: run.summary ?? `Agent execution ${run.status}.`,
-                status: runStatusToTone(run.status),
-                tokenUsage: run.tokenUsage,
-                createdAt: run.completedAt ?? run.startedAt ?? run.createdAt,
-              }));
-              return [...heartbeatItems, ...runItems];
-            }),
-          )
-        ).flat();
-
-        const canonicalItems: ActivityItem[] = canonicalEvents.map(activityEventToItem);
-
-        const merged = [...agentItems, ...canonicalItems].sort((left, right) =>
-          right.createdAt.localeCompare(left.createdAt),
-        );
-
-        // Dedupe by id (the canonical source might overlap with run items
-        // once the engine writes both — for now they have different prefixes
-        // so this is purely defensive).
-        const seen = new Set<string>();
-        const deduped = merged.filter((item) => {
-          if (seen.has(item.id)) return false;
-          seen.add(item.id);
-          return true;
-        });
-
-        setActivity(deduped);
+        const token = await requireAccessToken();
+        const page = await listObservabilityEvents(token, { limit: FEED_LIMIT });
+        setEvents(page.events);
+        setNow(Date.now());
       } catch (cause) {
         setError(cause instanceof Error ? cause.message : "Failed to load activity");
       } finally {
         if (!silent) setLoading(false);
       }
     },
-    [accessMode, getAccessToken],
+    [accessMode, requireAccessToken],
   );
 
   useEffect(() => {
-    void loadActivity();
-  }, [loadActivity]);
+    void loadEvents();
+  }, [loadEvents]);
 
-  // HEL-29 polling: refresh the activity feed every 5 seconds without
-  // showing the loading state (silent=true) so the timeline reflows in
-  // place. The interval is cleared on unmount.
+  // Live polling: only refresh while the Live tab is active so the other
+  // tabs (which are point-in-time views) don't flicker every 5s.
   useEffect(() => {
     if (accessMode === "preview") return;
+    if (tab !== "live") return;
     const interval = window.setInterval(() => {
-      void loadActivity(true);
+      void loadEvents(true);
     }, ACTIVITY_POLL_MS);
     return () => window.clearInterval(interval);
-  }, [accessMode, loadActivity]);
+  }, [accessMode, loadEvents, tab]);
 
-  const filtered = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    return activity.filter((item) => {
-      const statusMatch = status === "all" || item.status === status;
-      const queryMatch =
-        q.length === 0 ||
-        item.agentName.toLowerCase().includes(q) ||
-        item.action.toLowerCase().includes(q) ||
-        item.summary.toLowerCase().includes(q);
-      return statusMatch && queryMatch;
-    });
-  }, [activity, query, status]);
+  const filtered = useMemo(
+    () => filterEventsForTab(events, tab, now),
+    [events, now, tab],
+  );
 
   if (loading) {
     return (
@@ -285,7 +181,11 @@ export default function AgentActivity() {
   if (error) {
     return (
       <div className="af2-page">
-        <ErrorState title="Signal Lost" message={error} onRetry={() => void loadActivity()} />
+        <ErrorState
+          title="Signal Lost"
+          message={error}
+          onRetry={() => void loadEvents()}
+        />
       </div>
     );
   }
@@ -299,133 +199,124 @@ export default function AgentActivity() {
             Activity
           </h1>
           <div className="af2-page-head-meta">
-            Every move your team makes — heartbeats, runs, signals. Searchable, with receipts.
+            Every move your team makes — searchable, exportable, with receipts.
           </div>
         </div>
         <div className="af2-page-actions">
-          <Link
-            to="/agents/my"
+          <button
+            type="button"
             className="af2-btn"
-            style={{ textDecoration: "none", display: "inline-flex", alignItems: "center", gap: 6 }}
+            // TODO(HEL-60): wire to /observability/events?format=csv
+            onClick={() => {
+              /* no-op for now */
+            }}
           >
-            Manage deployments
-            <ArrowRight size={14} />
-          </Link>
+            Export CSV
+          </button>
+          <button
+            type="button"
+            className="af2-btn"
+            // TODO(HEL-60): event-type filter modal
+            onClick={() => {
+              /* no-op for now */
+            }}
+          >
+            Filter
+          </button>
         </div>
       </div>
 
       <div className="af2-tabs">
-        {STATUS_FILTERS.map((tab) => (
+        {TABS.map((t) => (
           <button
-            key={tab.value}
+            key={t.key}
             type="button"
-            onClick={() => setStatus(tab.value)}
-            className={`af2-tab${status === tab.value ? " active" : ""}`}
+            onClick={() => setTab(t.key)}
+            className={`af2-tab${tab === t.key ? " active" : ""}`}
           >
-            {tab.label}
+            {t.label}
           </button>
         ))}
       </div>
 
-      <div
-        style={{
-          display: "flex",
-          gap: 12,
-          marginBottom: 14,
-          alignItems: "center",
-        }}
-      >
-        <div
-          style={{
-            position: "relative",
-            flex: 1,
-            display: "flex",
-            alignItems: "center",
-          }}
-        >
-          <Search
-            size={14}
-            style={{
-              position: "absolute",
-              left: 12,
-              color: "var(--af2-ink-4)",
-              pointerEvents: "none",
-            }}
-          />
-          <input
-            className="af2-input"
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-            style={{ width: "100%", paddingLeft: 32 }}
-            placeholder="Filter activity..."
-          />
-        </div>
-      </div>
-
       <div className="af2-card" style={{ padding: 0 }}>
-        {filtered.map((item, index) => (
-          <div
-            key={item.id}
-            style={{
-              display: "grid",
-              gridTemplateColumns: "60px 32px 1fr auto",
-              gap: 14,
-              padding: "12px 18px",
-              borderBottom:
-                index < filtered.length - 1 ? "1px solid var(--af2-line)" : "none",
-              alignItems: "center",
-            }}
-          >
-            <span
-              className="af2-mono af2-muted-2"
-              style={{ fontSize: 11 }}
-              title={formatRelative(item.createdAt)}
-            >
-              {formatTime(item.createdAt)}
-            </span>
-
+        {filtered.map((event, index) => {
+          const displayName = actorDisplayName(event);
+          const first = firstName(displayName);
+          const verb = verbFromType(event.type);
+          return (
             <div
-              className={`af2-avatar sm ${agentToneClass(item.agentName)}`}
-              aria-label={item.agentName}
-            >
-              {agentInitials(item.agentName)}
-            </div>
-
-            <div style={{ fontSize: 13, minWidth: 0 }}>
-              <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
-                {statusIcon(item.status)}
-                <strong>{item.agentName}</strong>
-              </span>
-              <span className="af2-muted">{" · "}</span>
-              <span>{item.action}</span>
-              <span className="af2-muted">{" · "}</span>
-              <span style={{ color: "var(--af2-ink)" }}>{item.summary}</span>
-            </div>
-
-            <div
+              key={event.id}
               style={{
-                textAlign: "right",
-                whiteSpace: "nowrap",
+                display: "grid",
+                gridTemplateColumns: "60px 36px 1fr 80px",
+                gap: 14,
+                padding: "11px 18px",
+                borderBottom:
+                  index < filtered.length - 1
+                    ? "1px solid var(--af2-line)"
+                    : "none",
+                alignItems: "center",
               }}
             >
               <span
-                className={`af2-pill af2-pill-${statusTone(item.status) === "sage" ? "live" : statusTone(item.status) === "clay" ? "clay" : "pending"}`}
+                className="af2-mono af2-muted-2"
+                style={{ fontSize: 11 }}
+                title={new Date(event.occurredAt).toLocaleString()}
               >
-                <span className="af2-dot" />
-                {item.tokenUsage.toLocaleString()} tok
+                {formatTime(event.occurredAt)}
               </span>
+
+              <div
+                aria-label={displayName}
+                style={{
+                  width: 28,
+                  height: 28,
+                  borderRadius: "50%",
+                  background: "var(--af2-clay-soft)",
+                  color: "var(--af2-clay-2, var(--af2-clay))",
+                  display: "inline-flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  fontSize: 10,
+                  fontWeight: 600,
+                  letterSpacing: "0.02em",
+                }}
+              >
+                {initials(displayName)}
+              </div>
+
+              <div style={{ fontSize: 13, minWidth: 0 }}>
+                <strong>{first}</strong>
+                <span className="af2-muted"> {verb} </span>
+                <span style={{ color: "var(--af2-ink)" }}>{event.summary}</span>
+              </div>
+
+              <a
+                href={`/agents/activity?focus=${encodeURIComponent(event.id)}`}
+                className="af2-btn af2-btn-ghost af2-btn-sm"
+                style={{
+                  justifySelf: "end",
+                  textDecoration: "none",
+                  whiteSpace: "nowrap",
+                }}
+              >
+                Details →
+              </a>
             </div>
-          </div>
-        ))}
+          );
+        })}
 
         {filtered.length === 0 ? (
-          <div style={{ padding: 18 }}>
-            <EmptyState
-              title={activity.length === 0 ? "No activity yet" : "No activity matches this filter"}
-              description="Heartbeats and execution runs will appear here once your agents are deployed and running."
-              ctaLabel="Deploy an agent"
-              ctaTo="/agents"
-            />
+          <div
+            style={{
+              padding: "18px",
+              fontSize: 13,
+              color: "var(--af2-ink-3)",
+              textAlign: "center",
+            }}
+          >
+            No activity matches this view yet.
           </div>
         ) : null}
       </div>

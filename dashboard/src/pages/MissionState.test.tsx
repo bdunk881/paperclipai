@@ -55,7 +55,9 @@ describe("MissionStateView", () => {
       </MemoryRouter>
     );
 
-    expect(screen.getByText("Mission State")).toBeInTheDocument();
+    // HEL-98 v2 restyle: breadcrumb removed in favor of af2-eyebrow above
+    // the serif h1. The h1 itself still shows the mission title.
+    expect(screen.getByText("Run · Missions")).toBeInTheDocument();
     expect(screen.getByRole("heading", { level: 1, name: "Revenue Automation" })).toBeInTheDocument();
   });
 
@@ -88,6 +90,41 @@ describe("MissionStateView", () => {
     );
 
     expect(screen.getByText("Readiness metrics could not be loaded.")).toBeInTheDocument();
+  });
+
+  it("renders with v2 structural markers (HEL-98)", () => {
+    const { container } = render(
+      <MemoryRouter>
+        <MissionStateView
+          data={{
+            title: "Demo mission",
+            objective: "Demo objective",
+            overallStatus: "On Track",
+            phase: "Execution",
+            phaseAvailable: true,
+            ownerTeam: "Demo Team",
+            lastUpdated: "today",
+            confidence: "High confidence",
+            atRiskIndicator: "No blockers",
+            statusSummary: "All good",
+            staffingReadiness: "2/2 staffed",
+            dependencyCountLabel: "n/a",
+            blockerCount: 0,
+            activeWorkstreamsLabel: "Live",
+            nextMilestone: "Beta launch",
+            nextMilestoneAvailable: true,
+            topBlockers: [],
+            recommendedActions: [],
+            timeline: [],
+          }}
+        />
+      </MemoryRouter>
+    );
+
+    expect(container.querySelector(".af2-page")).not.toBeNull();
+    expect(container.querySelector(".af2-page-head")).not.toBeNull();
+    expect(container.querySelector(".af2-eyebrow")).not.toBeNull();
+    expect(container.querySelector("h1.af2-h1")).not.toBeNull();
   });
 });
 
@@ -175,6 +212,7 @@ describe("MissionState route behavior", () => {
       </MemoryRouter>
     );
 
-    expect(await screen.findByText("Opened from Staffing Plan")).toBeInTheDocument();
+    // HEL-98 v2 restyle: copy shortened, moved to af2-pill in the action row.
+    expect(await screen.findByText(/from staffing plan/i)).toBeInTheDocument();
   });
 });

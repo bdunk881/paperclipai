@@ -192,10 +192,10 @@ export function buildMissionRecordFromBackend(
 function MissionStatusBadge({ status }: { status: MissionStatus }) {
   const tone = {
     "On Track": "bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-200",
-    "At Risk": "bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-200",
-    Blocked: "bg-rose-100 text-rose-700 dark:bg-rose-500/15 dark:text-rose-200",
-    "Off Track": "bg-slate-200 text-slate-700 dark:bg-slate-700 dark:text-slate-100",
-    "Not Started": "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-200",
+    "At Risk": "af2-tone-bg-mustard",
+    Blocked: "af2-tone-bg-clay",
+    "Off Track": "af2-tone-bg-clay",
+    "Not Started": "bg-af2-paper-2 text-af2-ink-3",
   }[status];
 
   return (
@@ -222,7 +222,7 @@ function MissionSkeleton({ lines = 3 }: { lines?: number }) {
       {Array.from({ length: lines }).map((_, index) => (
         <div
           key={index}
-          className="animate-mission-skeleton h-3 rounded-full bg-slate-200 dark:bg-slate-700"
+          className="animate-mission-skeleton h-3 rounded-full bg-af2-paper-2 dark:bg-af2-paper-3"
           style={{ width: `${100 - index * 12}%` }}
         />
       ))}
@@ -260,20 +260,25 @@ function CardShell({
       children
     );
 
+  // HEL-101 deep pass: CardShell now wraps in af2-card with af2-eyebrow +
+  // serif af2-h3 title. This single component is the leverage point for all
+  // six section cards on the Missions page; restyling it once propagates
+  // the v2 visual language to every section without touching the call sites.
   return (
     <section
       id={sectionId}
-      className="rounded-3xl border border-slate-200/70 bg-white/90 p-6 shadow-sm transition-all duration-150 hover:-translate-y-0.5 hover:shadow-lg dark:border-slate-800 dark:bg-slate-900/90"
+      className="af2-card"
+      style={{ padding: 22 }}
     >
-      <div className="mb-4 flex items-start justify-between gap-4">
+      <div className="af2-row" style={{ marginBottom: 14, alignItems: "flex-start" }}>
         <div>
-          <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-slate-400 dark:text-slate-500">
-            {eyebrow}
-          </p>
-          <h2 className="mt-2 text-lg font-semibold text-slate-900 dark:text-slate-100">{title}</h2>
+          <div className="af2-eyebrow">{eyebrow}</div>
+          <h2 className="af2-h3" style={{ fontSize: 17, marginTop: 6 }}>
+            {title}
+          </h2>
         </div>
       </div>
-      <div className="transition-opacity duration-200">{content}</div>
+      <div style={{ transition: "opacity .2s" }}>{content}</div>
     </section>
   );
 }
@@ -357,7 +362,7 @@ export function MissionStateView({
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-4">
           <section
-            className="animate-mission-reveal overflow-hidden rounded-[28px] border border-slate-200/70 bg-white/95 shadow-sm dark:border-slate-800 dark:bg-slate-900/95 lg:col-span-4"
+            className="animate-mission-reveal af2-card overflow-hidden lg:col-span-4"
             style={{ animationDelay: animationDelays.header }}
           >
             {getCardState(states, "header") === "loading" ? (
@@ -377,7 +382,9 @@ export function MissionStateView({
               </div>
             ) : (
               <div className="relative overflow-hidden p-6 sm:p-8">
-                <div className="absolute inset-x-0 top-0 h-40 bg-gradient-to-r from-brand-500/12 via-accent-teal/12 to-accent-orange/10" />
+                {/* HEL-101: gradient header strip removed in favor of the
+                    af2-card flat tone. Title + meta now live in af2-page-head
+                    so this section just shows the summary card's lede. */}
                 <div className="relative flex flex-col gap-6 lg:flex-row lg:items-start lg:justify-between">
                   <div className="max-w-3xl">
                     {/* HEL-98 v2 restyle: title + status moved to the
@@ -392,26 +399,26 @@ export function MissionStateView({
                     </p>
                   </div>
                   <div className="grid min-w-[280px] grid-cols-2 gap-3 sm:grid-cols-4 lg:w-[420px] lg:grid-cols-2">
-                    <div className="rounded-2xl border border-slate-200/80 bg-white/80 p-4 dark:border-slate-800 dark:bg-slate-950/70">
-                      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">Owner / Team</p>
-                      <p className="mt-2 text-sm font-medium text-slate-900 dark:text-slate-100">{data?.ownerTeam}</p>
+                    <div className="af2-card">
+                      <p className="af2-eyebrow">Owner / Team</p>
+                      <p className="mt-2 text-sm font-medium text-af2-ink">{data?.ownerTeam}</p>
                     </div>
-                    <div className="rounded-2xl border border-slate-200/80 bg-white/80 p-4 dark:border-slate-800 dark:bg-slate-950/70">
-                      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">Current Phase</p>
-                      <p className="mt-2 text-sm font-medium text-slate-900 dark:text-slate-100">{data?.phase}</p>
+                    <div className="af2-card">
+                      <p className="af2-eyebrow">Current Phase</p>
+                      <p className="mt-2 text-sm font-medium text-af2-ink">{data?.phase}</p>
                       {!data?.phaseAvailable && (
-                        <p className="mt-1 text-xs text-slate-400 dark:text-slate-500">Current phase is unavailable on the v1 backend contract.</p>
+                        <p className="mt-1 text-xs text-af2-ink-4">Current phase is unavailable on the v1 backend contract.</p>
                       )}
                     </div>
-                    <div className="rounded-2xl border border-slate-200/80 bg-white/80 p-4 dark:border-slate-800 dark:bg-slate-950/70">
-                      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">Last Updated</p>
-                      <p className="mt-2 text-sm font-medium text-slate-900 dark:text-slate-100">{data?.lastUpdated}</p>
+                    <div className="af2-card">
+                      <p className="af2-eyebrow">Last Updated</p>
+                      <p className="mt-2 text-sm font-medium text-af2-ink">{data?.lastUpdated}</p>
                     </div>
-                    <div className="rounded-2xl border border-slate-200/80 bg-white/80 p-4 dark:border-slate-800 dark:bg-slate-950/70">
-                      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">Next Milestone</p>
-                      <p className="mt-2 text-sm font-medium text-slate-900 dark:text-slate-100">{data?.nextMilestone}</p>
+                    <div className="af2-card">
+                      <p className="af2-eyebrow">Next Milestone</p>
+                      <p className="mt-2 text-sm font-medium text-af2-ink">{data?.nextMilestone}</p>
                       {!data?.nextMilestoneAvailable && (
-                        <p className="mt-1 text-xs text-slate-400 dark:text-slate-500">Next milestone is intentionally `null` on the current backend surface.</p>
+                        <p className="mt-1 text-xs text-af2-ink-4">Next milestone is intentionally `null` on the current backend surface.</p>
                       )}
                     </div>
                   </div>
@@ -431,18 +438,18 @@ export function MissionStateView({
               errorMessage="Mission health is temporarily unavailable."
             >
               <div className="space-y-4">
-                <div className="rounded-2xl bg-teal-50 p-4 dark:bg-teal-500/10">
+                <div className="rounded-2xl p-4 af2-tone-bg-sage">
                   <p className="text-xs font-semibold uppercase tracking-[0.16em] text-teal-700 dark:text-teal-200">Overall Confidence</p>
-                  <p className="mt-2 text-2xl font-semibold text-slate-950 dark:text-white">{data?.confidence}</p>
+                  <p className="mt-2 af2-h3 text-af2-ink">{data?.confidence}</p>
                 </div>
-                <div className="rounded-2xl bg-orange-50 p-4 dark:bg-orange-500/10">
+                <div className="rounded-2xl p-4 af2-tone-bg-mustard">
                   <div className="flex items-center gap-2 text-sm font-semibold text-orange-700 dark:text-orange-200">
                     <AlertTriangle size={16} />
                     At-risk indicator
                   </div>
-                  <p className="mt-2 text-sm leading-6 text-slate-700 dark:text-slate-300">{data?.atRiskIndicator}</p>
+                  <p className="mt-2 text-sm leading-6 text-af2-ink-2">{data?.atRiskIndicator}</p>
                 </div>
-                <p className="text-sm leading-6 text-slate-600 dark:text-slate-300">{data?.statusSummary}</p>
+                <p className="text-sm leading-6 text-af2-ink-3">{data?.statusSummary}</p>
               </div>
             </CardShell>
           </div>
@@ -457,29 +464,29 @@ export function MissionStateView({
               emptyDescription="Staffing coverage, dependency counts, and active workstream totals will surface here when mission-state staffing data is available."
               errorMessage="Readiness metrics could not be loaded."
             >
-              <div className="space-y-4 text-sm text-slate-600 dark:text-slate-300">
-                <div className="flex items-center justify-between rounded-2xl border border-slate-200/80 bg-slate-50 px-4 py-3 dark:border-slate-800 dark:bg-slate-950/60">
+              <div className="space-y-4 text-sm text-af2-ink-3">
+                <div className="af2-card flex items-center justify-between" style={{ padding: "12px 16px", background: "var(--af2-paper-2)" }}>
                   <span className="flex items-center gap-2 font-medium"><Users size={15} /> Staffing readiness</span>
-                  <span className="font-semibold text-slate-950 dark:text-white">{data?.staffingReadiness}</span>
+                  <span className="font-semibold text-af2-ink">{data?.staffingReadiness}</span>
                 </div>
                 <div className="grid grid-cols-2 gap-3">
-                  <div className="rounded-2xl border border-slate-200/80 p-4 dark:border-slate-800">
-                    <p className="text-xs uppercase tracking-[0.14em] text-slate-400">Blockers</p>
-                    <p className="mt-2 text-2xl font-semibold text-slate-950 dark:text-white">{data?.blockerCount}</p>
+                  <div className="af2-card">
+                    <p className="af2-eyebrow">Blockers</p>
+                    <p className="mt-2 af2-h3 text-af2-ink">{data?.blockerCount}</p>
                   </div>
-                  <div className="rounded-2xl border border-slate-200/80 p-4 dark:border-slate-800">
-                    <p className="text-xs uppercase tracking-[0.14em] text-slate-400">Dependencies</p>
-                    <p className="mt-2 text-2xl font-semibold text-slate-950 dark:text-white">{data?.dependencyCountLabel}</p>
-                    <p className="mt-1 text-xs text-slate-400 dark:text-slate-500">Dependency count is not exposed by the current mission-state contract.</p>
+                  <div className="af2-card">
+                    <p className="af2-eyebrow">Dependencies</p>
+                    <p className="mt-2 af2-h3 text-af2-ink">{data?.dependencyCountLabel}</p>
+                    <p className="mt-1 text-xs text-af2-ink-4">Dependency count is not exposed by the current mission-state contract.</p>
                   </div>
                 </div>
-                <div className="flex items-center justify-between rounded-2xl border border-slate-200/80 p-4 dark:border-slate-800">
+                <div className="flex items-center justify-between af2-card">
                   <span className="flex items-center gap-2 font-medium"><Layers3 size={15} /> Active workstreams</span>
-                  <span className="font-semibold text-slate-950 dark:text-white">{data?.activeWorkstreamsLabel}</span>
+                  <span className="font-semibold text-af2-ink">{data?.activeWorkstreamsLabel}</span>
                 </div>
-                <div className="rounded-2xl border border-slate-200/80 p-4 dark:border-slate-800">
-                  <p className="text-xs uppercase tracking-[0.14em] text-slate-400">Next milestone</p>
-                  <p className="mt-2 font-medium text-slate-950 dark:text-white">{data?.nextMilestone}</p>
+                <div className="af2-card">
+                  <p className="af2-eyebrow">Next milestone</p>
+                  <p className="mt-2 font-medium text-af2-ink">{data?.nextMilestone}</p>
                 </div>
               </div>
             </CardShell>
@@ -498,18 +505,18 @@ export function MissionStateView({
               <div className="space-y-3">
                 {data && data.topBlockers.length > 0 ? (
                   data.topBlockers.map((blocker) => (
-                    <div key={blocker} className="rounded-2xl border border-slate-200/80 p-4 dark:border-slate-800">
+                    <div key={blocker} className="af2-card">
                       <div className="flex items-start gap-3">
                         <ShieldAlert size={16} className="mt-0.5 text-orange-600 dark:text-orange-300" />
-                        <p className="text-sm leading-6 text-slate-700 dark:text-slate-300">{blocker}</p>
+                        <p className="text-sm leading-6 text-af2-ink-2">{blocker}</p>
                       </div>
                     </div>
                   ))
                 ) : (
-                  <div className="rounded-2xl border border-dashed border-teal-200 bg-teal-50/70 p-4 dark:border-teal-500/20 dark:bg-teal-500/10">
+                  <div className="af2-card af2-tone-bg-sage" style={{ borderStyle: "dashed", borderColor: "rgba(74,107,74,0.3)" }}>
                     <div className="flex items-start gap-3">
                       <CheckCircle2 size={16} className="mt-0.5 text-teal-600 dark:text-teal-300" />
-                      <p className="text-sm leading-6 text-slate-700 dark:text-slate-300">No blockers or risk summaries are currently attached to this mission.</p>
+                      <p className="text-sm leading-6 text-af2-ink-2">No blockers or risk summaries are currently attached to this mission.</p>
                     </div>
                   </div>
                 )}
@@ -531,13 +538,13 @@ export function MissionStateView({
                 {(data?.recommendedActions ?? []).map((action) => {
                   const actionClass =
                     action.kind === "primary"
-                      ? "border-brand-200 bg-brand-50 text-brand-700 dark:border-brand-500/30 dark:bg-brand-500/10 dark:text-brand-100"
-                      : "border-slate-200 bg-white text-slate-700 dark:border-slate-800 dark:bg-slate-950/70 dark:text-slate-200";
+                      ? "af2-tone-bg-clay border border-af2-clay/30"
+                      : "border border-af2-line bg-af2-card text-af2-ink-2";
                   const Content = (
                     <>
                       <div>
                         <p className="text-sm font-semibold">{action.label}</p>
-                        <p className="mt-1 text-sm leading-6 text-slate-500 dark:text-slate-400">{action.detail}</p>
+                        <p className="mt-1 text-sm leading-6 text-af2-ink-3">{action.detail}</p>
                       </div>
                       <ArrowRight size={16} />
                     </>

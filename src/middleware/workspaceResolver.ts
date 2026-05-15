@@ -143,7 +143,7 @@ const DEFAULT_WORKSPACE_NAME = "My Workspace";
  * first-login UX can prompt for a real name and PATCH it; auto-create keeps
  * the API path unblocked in the meantime.
  */
-async function provisionDefaultWorkspace(pool: Pool, userId: string): Promise<string> {
+export async function provisionDefaultWorkspace(pool: Pool, userId: string): Promise<string> {
   const client = await pool.connect();
   try {
     await client.query("BEGIN");

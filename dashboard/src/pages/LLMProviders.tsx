@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
-import { X, Plus, CheckCircle2, Trash2, Star, Cpu, ArrowUpCircle } from "lucide-react";
+import { X, Plus, Trash2, Star, Cpu, ArrowUpCircle } from "lucide-react";
 import {
   listLLMConfigs,
   createLLMConfig,
@@ -372,16 +372,32 @@ export default function LLMProviders() {
   }
 
   return (
-    <div className="p-8 max-w-4xl">
-      <div className="mb-8">
-        <h1 className="text-2xl font-bold text-af2-ink">LLM Providers</h1>
-        <p className="text-af2-ink-3 mt-1">
-          Connect your own LLM API keys to use in workflows.
-        </p>
+    <div className="af2-page" style={{ maxWidth: 1080 }}>
+      <div className="af2-page-head">
+        <div>
+          <div className="af2-eyebrow">Connect</div>
+          <h1 className="af2-h1" style={{ marginTop: 6 }}>
+            Models
+          </h1>
+          <div className="af2-page-head-meta">
+            Bring your own keys. AutoFlow routes to the right tier so you never pay Opus for a Haiku job.
+          </div>
+        </div>
       </div>
 
-      {/* Provider cards */}
-      <div className="grid grid-cols-2 gap-4 mb-10">
+      <h3 className="af2-h3" style={{ marginBottom: 12 }}>
+        Providers
+      </h3>
+
+      {/* Provider tile grid */}
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "repeat(2, 1fr)",
+          gap: 14,
+          marginBottom: 28,
+        }}
+      >
         {PROVIDER_ORDER.map((providerKey) => {
           const meta = PROVIDERS[providerKey];
           const count = connectedByProvider[providerKey] ?? 0;
@@ -391,7 +407,13 @@ export default function LLMProviders() {
           return (
             <div
               key={providerKey}
-              className="bg-af2-card rounded-xl border border-af2-line p-5 flex items-start gap-4"
+              className="af2-card"
+              style={{
+                padding: 18,
+                display: "flex",
+                gap: 14,
+                alignItems: "flex-start",
+              }}
             >
               {meta.logo ? (
                 <div className={clsx("flex items-center justify-center w-11 h-11 rounded-xl p-2 flex-shrink-0", meta.bg)}>
@@ -406,30 +428,37 @@ export default function LLMProviders() {
                   {meta.abbr}
                 </div>
               )}
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center justify-between gap-2 mb-1">
-                  <p className="font-semibold text-af2-ink">{meta.name}</p>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div className="af2-row" style={{ justifyContent: "space-between", marginBottom: 4 }}>
+                  <div className="af2-h3" style={{ fontSize: 15 }}>
+                    {meta.name}
+                  </div>
                   {isConnected ? (
-                    <span className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-af2-sage/15 text-af2-sage text-xs font-medium">
-                      <CheckCircle2 size={11} />
+                    <span className="af2-pill af2-pill-live">
+                      <span className="af2-dot" />
                       Connected
                     </span>
                   ) : null}
                 </div>
-                <p className="text-xs text-af2-ink-4 mb-3">
+                <p
+                  className="af2-mono af2-muted-2"
+                  style={{ fontSize: 11.5, marginBottom: 12 }}
+                >
                   {availableModels.length} models available
                 </p>
                 {isConnected ? (
                   <button
                     onClick={() => setConnectingProvider(providerKey)}
-                    className="text-xs text-af2-ink-blue hover:text-af2-ink-blue font-medium"
+                    className="af2-btn af2-btn-ghost af2-btn-sm"
+                    style={{ padding: 0 }}
                   >
                     + Add another ({count} connected)
                   </button>
                 ) : (
                   <button
                     onClick={() => setConnectingProvider(providerKey)}
-                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-af2-ink-blue text-white text-xs font-medium hover:bg-af2-ink-blue transition-colors"
+                    className="af2-btn af2-btn-sm"
+                    style={{ display: "inline-flex", alignItems: "center", gap: 6 }}
                   >
                     <Plus size={12} />
                     Connect
@@ -442,22 +471,50 @@ export default function LLMProviders() {
       </div>
 
       {/* Connected configs list */}
+      <h3 className="af2-h3" style={{ marginBottom: 12 }}>
+        Connected Configs
+      </h3>
       <div>
-        <h2 className="text-base font-semibold text-af2-ink mb-3">Connected Configs</h2>
-
         {loading ? (
-          <div className="bg-af2-card rounded-xl border border-af2-line px-6 py-10 text-center text-sm text-af2-ink-4">
+          <div
+            className="af2-card"
+            style={{
+              textAlign: "center",
+              padding: "40px 24px",
+              color: "var(--af2-ink-4)",
+              fontSize: 13,
+            }}
+          >
             Loading…
           </div>
         ) : error ? (
-          <div className="bg-af2-card rounded-xl border border-af2-clay/30 px-6 py-6 text-center text-sm text-af2-clay">
+          <div
+            className="af2-card"
+            style={{
+              textAlign: "center",
+              padding: "24px",
+              borderColor: "rgba(194,80,43,0.3)",
+              color: "var(--af2-clay)",
+              fontSize: 13,
+            }}
+          >
             {error}
           </div>
         ) : configs.length === 0 ? (
-          <div className="bg-af2-card rounded-xl border border-dashed border-af2-line-2 px-6 py-12 text-center">
-            <Cpu size={32} className="mx-auto text-af2-ink-3 mb-3" />
-            <p className="text-sm font-medium text-af2-ink-3">No providers connected yet</p>
-            <p className="text-xs text-af2-ink-4 mt-1">
+          <div
+            className="af2-card"
+            style={{
+              textAlign: "center",
+              padding: "48px 24px",
+              borderStyle: "dashed",
+              borderColor: "var(--af2-line-2)",
+            }}
+          >
+            <Cpu size={32} style={{ margin: "0 auto 12px", color: "var(--af2-ink-3)" }} />
+            <p style={{ fontSize: 14, fontWeight: 500, color: "var(--af2-ink-3)" }}>
+              No providers connected yet
+            </p>
+            <p className="af2-muted" style={{ fontSize: 12, marginTop: 4 }}>
               Connect a provider above to start using BYOLLM in your workflows.
             </p>
           </div>

@@ -183,7 +183,7 @@ describe("Hire page (HEL-23)", () => {
     expect(screen.getByText(/Acme Robotics/)).toBeInTheDocument();
   });
 
-  it("uses af2 visual language (HEL-23)", async () => {
+  it("uses af2 visual language (HEL-23 + HEL-99)", async () => {
     const { container } = render(
       <MemoryRouter>
         <Hire />
@@ -191,9 +191,21 @@ describe("Hire page (HEL-23)", () => {
     );
     await screen.findByRole("heading", { name: /Hire from a mission/i });
     const heading = screen.getByRole("heading", { level: 1 });
+    // HEL-99 structural marker: h1 carries af2-h1 (replaces the inline
+    // text-4xl/font-normal/tracking pattern). font-af2-serif is kept as a
+    // belt-and-suspenders class so anyone reading the markup still sees the
+    // serif intent.
+    expect(heading.className).toContain("af2-h1");
     expect(heading.className).toContain("font-af2-serif");
-    // The outer wrapper carries text-af2-ink; the h1 inherits color.
-    expect((container.firstChild as HTMLElement).className).toContain("text-af2-ink");
+    // The outer wrapper is af2-page (HEL-99 chrome) and keeps text-af2-ink
+    // so the h1 inherits ink color from the page.
+    const outer = container.firstChild as HTMLElement;
+    expect(outer.className).toContain("af2-page");
+    expect(outer.className).toContain("text-af2-ink");
+    // Page chrome structural markers present.
+    expect(container.querySelector(".af2-page-head")).not.toBeNull();
+    expect(container.querySelector(".af2-eyebrow")).not.toBeNull();
+    // No regressions to legacy palettes.
     const html = container.innerHTML;
     expect(html).not.toMatch(/text-slate-(4|5|6|7|9)\d{2}/);
     expect(html).not.toMatch(/bg-white\b/);

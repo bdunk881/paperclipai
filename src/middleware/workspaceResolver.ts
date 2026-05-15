@@ -124,6 +124,75 @@ async function resolveDefaultWorkspaceId(pool: Pool, userId: string): Promise<st
   return null;
 }
 
+const DEFAULT_WORKSPACE_NAME = "My Workspace";
+
+/**
+ * Lazily provisions a default workspace for a freshly-signed-up user (HEL-83
+ * follow-on). Brad hit this immediately after the Supabase auth cutover: the
+ * dashboard's auth-callback fires API calls before any "create a workspace"
+ * UX exists, so newly-authenticated users with zero workspaces would otherwise
+ * get a confusing "Multiple workspaces available" 400 on every request.
+ *
+ * Concurrency: two parallel first requests from the same user could both try
+ * to create. We serialize per-user via a Postgres advisory lock (hash of
+ * userId) so only one INSERT wins; the second observes the row created by
+ * the first and short-circuits. The lock is transaction-scoped and released
+ * automatically on COMMIT/ROLLBACK.
+ *
+ * Naming: "My Workspace" is intentionally generic. The dashboard's later
+ * first-login UX can prompt for a real name and PATCH it; auto-create keeps
+ * the API path unblocked in the meantime.
+ */
+async function provisionDefaultWorkspace(pool: Pool, userId: string): Promise<string> {
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    // Advisory lock keyed off a stable hash of userId — Postgres' hashtext()
+    // is portable, deterministic, and avoids needing a dedicated lock table.
+    await client.query("SELECT pg_advisory_xact_lock(hashtext($1))", [userId]);
+
+    // Re-check inside the lock in case a concurrent request already
+    // provisioned. Same query as resolveDefaultWorkspaceId's owned branch.
+    const existing = await client.query<{ id: string }>(
+      `SELECT id FROM workspaces WHERE owner_user_id = $1 ORDER BY created_at ASC LIMIT 1`,
+      [userId],
+    );
+    if (getResultCount(existing) >= 1) {
+      await client.query("COMMIT");
+      return existing.rows[0].id;
+    }
+
+    const inserted = await client.query<{ id: string }>(
+      `INSERT INTO workspaces (name, owner_user_id) VALUES ($1, $2) RETURNING id`,
+      [DEFAULT_WORKSPACE_NAME, userId],
+    );
+    const workspaceId = inserted.rows[0]?.id;
+    if (!workspaceId) {
+      throw new Error("provisionDefaultWorkspace: INSERT returned no id");
+    }
+
+    await client.query(
+      `INSERT INTO workspace_members (workspace_id, user_id, role)
+       VALUES ($1, $2, 'owner')
+       ON CONFLICT (workspace_id, user_id) DO NOTHING`,
+      [workspaceId, userId],
+    );
+
+    await client.query("COMMIT");
+    console.log(`[workspaceResolver] Auto-provisioned default workspace ${workspaceId} for user ${userId}`);
+    return workspaceId;
+  } catch (err) {
+    try {
+      await client.query("ROLLBACK");
+    } catch {
+      // Preserve the original error.
+    }
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
 export function createWorkspaceResolver(pool: Pool) {
   return async function resolveWorkspace(
     req: WorkspaceAwareRequest,
@@ -168,17 +237,20 @@ export function createWorkspaceResolver(pool: Pool) {
     }
 
     try {
-      const defaultWorkspaceId = await resolveDefaultWorkspaceId(pool, userId);
+      let defaultWorkspaceId = await resolveDefaultWorkspaceId(pool, userId);
       if (!defaultWorkspaceId) {
-        res.status(400).json({
-          error: "Multiple workspaces available. Specify X-Workspace-Id header.",
-        });
-        return;
+        // First authenticated request for a brand-new user — lazy-provision
+        // a default workspace so the dashboard isn't stuck on a 400. The
+        // previous "Multiple workspaces available. Specify X-Workspace-Id"
+        // message fired in this branch too, which was misleading: there were
+        // zero workspaces, not multiple. Auto-create unblocks /auth/callback
+        // and every subsequent API call.
+        defaultWorkspaceId = await provisionDefaultWorkspace(pool, userId);
       }
 
       const role = await resolveWorkspaceRole(pool, defaultWorkspaceId, userId);
       if (role === null) {
-        // Should be impossible after resolveDefaultWorkspaceId, but guard anyway.
+        // Should be impossible after resolve-or-provision, but guard anyway.
         res.status(403).json({ error: "Not a member of the resolved workspace." });
         return;
       }

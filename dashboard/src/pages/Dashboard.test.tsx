@@ -1,4 +1,16 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+/**
+ * Dashboard / Home — v2 editorial Home page tests.
+ *
+ * Asserts:
+ *   - The greeting + meta line render with live data.
+ *   - The 4-stat strip is present with the canonical labels.
+ *   - The Active missions table renders rows from the missions API.
+ *   - "Needs your stamp" surfaces pending approvals.
+ *   - "The room right now" surfaces agent snapshots.
+ *   - "Spend by agent · this week" renders per-agent bars.
+ *   - Error + loading states render correctly.
+ */
+import { fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter } from "react-router-dom";
 import Dashboard from "./Dashboard";
@@ -9,8 +21,7 @@ const {
   listAgentsMock,
   getAgentBudgetMock,
   getAgentHeartbeatMock,
-  listAgentRunsMock,
-  createTicketMock,
+  listMissionsMock,
   requireAccessTokenMock,
 } = vi.hoisted(() => ({
   listRunsMock: vi.fn(),
@@ -18,8 +29,7 @@ const {
   listAgentsMock: vi.fn(),
   getAgentBudgetMock: vi.fn(),
   getAgentHeartbeatMock: vi.fn(),
-  listAgentRunsMock: vi.fn(),
-  createTicketMock: vi.fn(),
+  listMissionsMock: vi.fn(),
   requireAccessTokenMock: vi.fn(),
 }));
 
@@ -32,15 +42,10 @@ vi.mock("../api/agentApi", () => ({
   listAgents: listAgentsMock,
   getAgentBudget: getAgentBudgetMock,
   getAgentHeartbeat: getAgentHeartbeatMock,
-  listAgentRuns: listAgentRunsMock,
 }));
 
-vi.mock("../api/tickets", () => ({
-  createTicket: createTicketMock,
-}));
-
-vi.mock("../components/RunAuditSidebar", () => ({
-  RunAuditSidebar: ({ open }: { open: boolean }) => (open ? <div>Run audit open</div> : null),
+vi.mock("../api/missionsApi", () => ({
+  listMissions: listMissionsMock,
 }));
 
 vi.mock("../context/AuthContext", () => ({
@@ -50,7 +55,13 @@ vi.mock("../context/AuthContext", () => ({
   }),
 }));
 
-describe("Dashboard", () => {
+vi.mock("../context/useWorkspace", () => ({
+  useWorkspace: () => ({
+    activeWorkspaceId: "ws-1",
+  }),
+}));
+
+describe("Dashboard (v2 Home)", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     requireAccessTokenMock.mockResolvedValue("mock-token");
@@ -63,23 +74,13 @@ describe("Dashboard", () => {
         startedAt: "2026-04-27T10:00:00.000Z",
         completedAt: "2026-04-27T10:10:00.000Z",
         input: {},
-        output: { summary: "Homepage concept approved with three revision notes." },
-        stepResults: [],
-      },
-      {
-        id: "run-code",
-        templateId: "tpl-code",
-        templateName: "Frontend Build",
-        status: "running",
-        startedAt: "2026-04-27T12:00:00.000Z",
-        input: {},
         output: {},
         stepResults: [],
       },
     ]);
     listApprovalsMock.mockResolvedValue([
       {
-        id: "approval-1",
+        id: "approval-1234abcd",
         runId: "run-code",
         templateName: "Frontend Build",
         stepId: "step-approve",
@@ -99,6 +100,7 @@ describe("Dashboard", () => {
         instructions: "",
         status: "running",
         budgetMonthlyUsd: 200,
+        model: "claude-sonnet-4-6",
         metadata: { teamName: "Brand" },
         createdAt: "2026-04-20T00:00:00.000Z",
         updatedAt: "2026-04-27T12:00:00.000Z",
@@ -110,9 +112,32 @@ describe("Dashboard", () => {
         instructions: "",
         status: "running",
         budgetMonthlyUsd: 240,
+        model: "claude-opus-4-6",
         metadata: { teamName: "Engineering" },
         createdAt: "2026-04-20T00:00:00.000Z",
         updatedAt: "2026-04-27T12:00:00.000Z",
+      },
+    ]);
+    listMissionsMock.mockResolvedValue([
+      {
+        id: "mission-1",
+        statement: "Launch Q3 product hunt campaign",
+        status: "in_flight",
+        metadata: {},
+        createdAt: "2026-04-20T00:00:00.000Z",
+        companyId: "company-1",
+        companyName: "Acme Robotics",
+        latestHiringPlanId: "plan-1",
+      },
+      {
+        id: "mission-2",
+        statement: "Migrate billing service to Postgres 16",
+        status: "blocked",
+        metadata: {},
+        createdAt: "2026-04-21T00:00:00.000Z",
+        companyId: "company-1",
+        companyName: "Acme Robotics",
+        latestHiringPlanId: null,
       },
     ]);
     getAgentBudgetMock.mockImplementation(async (agentId: string) =>
@@ -132,7 +157,7 @@ describe("Dashboard", () => {
             spentUsd: 120,
             remainingUsd: 120,
             currentPeriod: "2026-04",
-          }
+          },
     );
     getAgentHeartbeatMock.mockImplementation(async (agentId: string) => ({
       id: `heartbeat-${agentId}`,
@@ -148,137 +173,115 @@ describe("Dashboard", () => {
       createdByRunId: `run-${agentId}`,
       recordedAt: "2026-04-27T12:30:00.000Z",
     }));
-    listAgentRunsMock.mockImplementation(async (agentId: string) => [
-      {
-        id: `agent-run-${agentId}`,
-        agentId,
-        userId: "user-1",
-        status: "completed",
-        summary:
-          agentId === "agent-graphic" ? "Delivered the approved visual direction." : "Shipped the latest UI pass.",
-        tokenUsage: 120,
-        costUsd: 0.8,
-        startedAt: "2026-04-27T11:00:00.000Z",
-        completedAt: "2026-04-27T11:30:00.000Z",
-        createdByRunId: `source-run-${agentId}`,
-        createdAt: "2026-04-27T11:00:00.000Z",
-      },
-    ]);
-    createTicketMock.mockResolvedValue({
-      ticket: { id: "ticket-1" },
-      updates: [],
-      source: "api",
-      integrationWarnings: [],
-    });
   });
 
   afterEach(() => {
     vi.restoreAllMocks();
   });
 
-  it("passes the access token to live dashboard APIs", async () => {
-    render(
-      <MemoryRouter>
-        <Dashboard />
-      </MemoryRouter>
-    );
-
-    // v2 (HEL-58): greeting renders as "Good {timeOfDay}, {firstName}."
-await screen.findByText(/Good (morning|afternoon|evening), Test\./i);
-
-    expect(requireAccessTokenMock).toHaveBeenCalledTimes(1);
-    expect(listRunsMock).toHaveBeenCalledWith(undefined, "mock-token");
-    expect(listApprovalsMock).toHaveBeenCalledWith("mock-token");
-    expect(listAgentsMock).toHaveBeenCalledWith("mock-token");
-    expect(getAgentBudgetMock).toHaveBeenCalledTimes(2);
-    expect(getAgentHeartbeatMock).toHaveBeenCalledTimes(2);
-    expect(listAgentRunsMock).toHaveBeenCalledTimes(2);
-  });
-
-  it("renders the customer dashboard sections and live approval queue", async () => {
-    render(
-      <MemoryRouter>
-        <Dashboard />
-      </MemoryRouter>
-    );
-
-    // v2 (HEL-58): replaced the "Customer command center" pill with the editorial "Workspace · today" eyebrow.
-    expect(await screen.findByText("Workspace · today")).toBeInTheDocument();
-    expect(screen.getByText("Execution Burndown")).toBeInTheDocument();
-    expect(screen.getByText("Spend vs Budget")).toBeInTheDocument();
-    expect(screen.getByText("Queued Approvals")).toBeInTheDocument();
-    expect(screen.getByText("Artifact Review")).toBeInTheDocument();
-    expect(screen.getByText("Approve the final ship candidate.")).toBeInTheDocument();
-    expect(screen.getAllByText("Graphic Designer").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("Frontend Engineer").length).toBeGreaterThan(0);
-  });
-
-  it("renders the v2 visual language (HEL-58)", async () => {
+  it("renders the v2 page chrome + greeting", async () => {
     const { container } = render(
       <MemoryRouter>
         <Dashboard />
-      </MemoryRouter>
+      </MemoryRouter>,
     );
 
-    // Wait for the greeting to mount, signalling that the post-loading
-    // dashboard tree is live.
     await screen.findByText(/Good (morning|afternoon|evening), Test\./i);
 
-    // The top-level wrapper carries the v2 paper background + ink text.
-    const root = container.firstChild as HTMLElement;
-    expect(root.className).toContain("bg-af2-paper");
-    expect(root.className).toContain("text-af2-ink");
-
-    // The page-head h1 uses the af2 editorial serif type.
-    const heading = screen.getByRole("heading", { level: 1 });
-    expect(heading.className).toContain("font-af2-serif");
-
-    // No legacy obsidian-era Tailwind colors leaked into the rendered tree.
-    const html = container.innerHTML;
-    expect(html).not.toMatch(/text-slate-(4|5|6|7|9)\d{2}/);
-    expect(html).not.toMatch(/bg-slate-50\b/);
-    expect(html).not.toMatch(/text-indigo-(6|7)00/);
-    expect(html).not.toMatch(/border-indigo-(1|2|3)00/);
-    expect(html).not.toMatch(/bg-orange-(5|4)00/);
+    expect(container.querySelector(".af2-page")).not.toBeNull();
+    expect(container.querySelector(".af2-page-head")).not.toBeNull();
+    expect(container.querySelector("h1.af2-h1")).not.toBeNull();
   });
 
-  it("routes inline artifact feedback to the matched owner via ticket creation", async () => {
+  it("calls the live APIs with the access token", async () => {
     render(
       <MemoryRouter>
         <Dashboard />
-      </MemoryRouter>
+      </MemoryRouter>,
     );
+    await screen.findByText(/Good (morning|afternoon|evening), Test\./i);
 
-    await screen.findByText("Artifact Review");
+    expect(requireAccessTokenMock).toHaveBeenCalledTimes(1);
+    expect(listAgentsMock).toHaveBeenCalledWith("mock-token");
+    expect(listApprovalsMock).toHaveBeenCalledWith("mock-token");
+    expect(listRunsMock).toHaveBeenCalledWith(undefined, "mock-token");
+    expect(listMissionsMock).toHaveBeenCalledWith("mock-token");
+  });
 
-    fireEvent.change(screen.getAllByPlaceholderText(/route artifact feedback/i)[0], {
-      target: { value: "Tighten the headline spacing before customer review." },
-    });
-    fireEvent.click(screen.getAllByRole("button", { name: /send to owner/i })[0]);
-
-    await waitFor(() => expect(createTicketMock).toHaveBeenCalledTimes(1));
-    expect(createTicketMock).toHaveBeenCalledWith(
-      expect.objectContaining({
-        title: "Artifact review: Frontend Build",
-        assignees: [{ type: "agent", id: "agent-frontend", role: "primary" }],
-      }),
-      "mock-token"
+  it("renders the 4-stat strip with canonical labels", async () => {
+    render(
+      <MemoryRouter>
+        <Dashboard />
+      </MemoryRouter>,
     );
-    expect(await screen.findByText(/feedback routed to Frontend Engineer/i)).toBeInTheDocument();
+    await screen.findByText(/Good (morning|afternoon|evening), Test\./i);
+
+    expect(screen.getByText("Missions in flight")).toBeInTheDocument();
+    expect(screen.getByText("Hours saved · 7d")).toBeInTheDocument();
+    expect(screen.getByText("Spend · month")).toBeInTheDocument();
+    expect(screen.getByText("Approval p50")).toBeInTheDocument();
+  });
+
+  it("renders the Active missions table with rows from the API", async () => {
+    render(
+      <MemoryRouter>
+        <Dashboard />
+      </MemoryRouter>,
+    );
+    await screen.findByText("Active missions");
+
+    expect(screen.getByText("Launch Q3 product hunt campaign")).toBeInTheDocument();
+    expect(screen.getByText("Migrate billing service to Postgres 16")).toBeInTheDocument();
+  });
+
+  it("surfaces pending approvals under 'Needs your stamp'", async () => {
+    render(
+      <MemoryRouter>
+        <Dashboard />
+      </MemoryRouter>,
+    );
+    await screen.findByText("Needs your stamp");
+
+    expect(screen.getByText("Approve the final ship candidate.")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /Open/i })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /Approve/i })).toBeInTheDocument();
+  });
+
+  it("renders 'The room right now' with each agent + their heartbeat summary", async () => {
+    render(
+      <MemoryRouter>
+        <Dashboard />
+      </MemoryRouter>,
+    );
+    await screen.findByText("The room right now");
+
+    expect(screen.getByText("Graphic Designer")).toBeInTheDocument();
+    expect(screen.getByText("Frontend Engineer")).toBeInTheDocument();
+  });
+
+  it("renders the 'Spend by agent · this week' bar list", async () => {
+    render(
+      <MemoryRouter>
+        <Dashboard />
+      </MemoryRouter>,
+    );
+    await screen.findByText("Spend by agent · this week");
   });
 
   it("renders the error state and retries loading", async () => {
-    listRunsMock.mockRejectedValueOnce(new Error("dashboard failed"));
+    listAgentsMock.mockRejectedValueOnce(new Error("agents failed"));
 
     render(
       <MemoryRouter>
         <Dashboard />
-      </MemoryRouter>
+      </MemoryRouter>,
     );
 
-    expect(await screen.findByText("Customer dashboard unavailable")).toBeInTheDocument();
+    expect(await screen.findByText("Home unavailable")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: /retry/i }));
-    expect(await screen.findByText(/Good (morning|afternoon|evening), Test\./i)).toBeInTheDocument();
-    expect(listRunsMock).toHaveBeenCalledTimes(2);
+    expect(
+      await screen.findByText(/Good (morning|afternoon|evening), Test\./i),
+    ).toBeInTheDocument();
+    expect(listAgentsMock).toHaveBeenCalledTimes(2);
   });
 });

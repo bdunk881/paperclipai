@@ -1,1634 +1,44 @@
-import {
-  startTransition,
-  useCallback,
-  useDeferredValue,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
+/**
+ * Dashboard / Home — v2 editorial Home page.
+ *
+ * Matches `docs/design/v2/pages.jsx::AF2_Home`:
+ *   - "Good {timeOfDay}, {firstName}." headline + sub-summary
+ *   - 4-column stat strip (missions in flight / hours saved · 7d / spend ·
+ *     month / approval p50)
+ *   - Active missions table (left, ~62% width)
+ *   - The room right now agent list (left, under the table)
+ *   - Needs your stamp approval queue (right sidebar)
+ *   - Spend by agent · this week bar list (right sidebar, bottom)
+ *
+ * The earlier non-v2 Dashboard (Execution Burndown / Spend vs Budget /
+ * Queued Approvals / Artifact Review / Org Status panels) was structurally
+ * the old "Customer command center" iteration. The full restructure replaces
+ * it; the heavy observability streaming + ticket-routing flows were moved
+ * to their canonical pages (Activity / Tickets) where they belong.
+ */
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import {
-  Activity,
-  AlertTriangle,
-  ArrowRight,
-  BadgeCheck,
-  Bot,
-  BrainCircuit,
-  Clock3,
-  Command,
-  DollarSign,
-  Gauge,
-  MessageSquare,
-  RefreshCcw,
-  ShieldAlert,
-  TrendingUp,
-  Wifi,
-  WifiOff,
-} from "lucide-react";
 import { listApprovals, listRuns, type ApprovalRequest } from "../api/client";
 import {
   getAgentBudget,
   getAgentHeartbeat,
-  listAgentRuns,
   listAgents,
   type Agent,
   type AgentBudgetSnapshot,
   type AgentHeartbeat,
-  type AgentRun,
 } from "../api/agentApi";
-import {
-  getObservabilityThroughput,
-  listObservabilityEvents,
-  streamObservabilityEvents,
-  type ObservabilityEvent,
-  type ObservabilityEventCategory,
-  type ObservabilityThroughputSnapshot,
-} from "../api/observability";
-import { createTicket, type TicketAssignee } from "../api/tickets";
-import { RunAuditSidebar } from "../components/RunAuditSidebar";
+import { listMissions, type Mission } from "../api/missionsApi";
 import { ErrorState, LoadingState } from "../components/UiStates";
 import { useAuth } from "../context/AuthContext";
 import { useWorkspace } from "../context/useWorkspace";
 import type { WorkflowRun } from "../types/workflow";
 
-type AgentSnapshot = {
+interface AgentSnapshot {
   agent: Agent;
   budget: AgentBudgetSnapshot | null;
   heartbeat: AgentHeartbeat | null;
-  runs: AgentRun[];
-};
-
-type ActivityEvent = {
-  id: string;
-  agentName: string;
-  status: "success" | "warning" | "info";
-  title: string;
-  detail: string;
-  at: string;
-};
-
-type ArtifactFeedbackState = {
-  saving: boolean;
-  notice: string | null;
-};
-
-type FeedFilter = "all" | ObservabilityEventCategory;
-type TransportState = "connecting" | "live" | "reconnecting" | "polling" | "error";
-
-const DAYS = 7;
-const WINDOW_OPTIONS = [1, 6, 24] as const;
-const FILTER_OPTIONS: Array<{ value: FeedFilter; label: string }> = [
-  { value: "all", label: "All activity" },
-  { value: "issue", label: "Issues" },
-  { value: "run", label: "Runs" },
-  { value: "alert", label: "Alerts" },
-];
-const MAX_FEED_ITEMS = 20;
-const POLLING_INTERVAL_MS = 15_000;
-const MAX_RECONNECT_ATTEMPTS = 2;
-
-export default function Dashboard() {
-  const { accessMode, user, requireAccessToken } = useAuth();
-  const { activeWorkspaceId } = useWorkspace();
-  const [runs, setRuns] = useState<WorkflowRun[]>([]);
-  const [approvals, setApprovals] = useState<ApprovalRequest[]>([]);
-  const [agentSnapshots, setAgentSnapshots] = useState<AgentSnapshot[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [selectedRun, setSelectedRun] = useState<WorkflowRun | null>(null);
-  const [artifactQuery, setArtifactQuery] = useState("");
-  const deferredArtifactQuery = useDeferredValue(artifactQuery);
-  const [feedbackDrafts, setFeedbackDrafts] = useState<Record<string, string>>({});
-  const [feedbackState, setFeedbackState] = useState<Record<string, ArtifactFeedbackState>>({});
-  const [observabilityFeed, setObservabilityFeed] = useState<ObservabilityEvent[]>([]);
-  const [throughput, setThroughput] = useState<ObservabilityThroughputSnapshot | null>(null);
-  const [transportState, setTransportState] = useState<TransportState>("connecting");
-  const [windowHours, setWindowHours] = useState<(typeof WINDOW_OPTIONS)[number]>(24);
-  const [categoryFilter, setCategoryFilter] = useState<FeedFilter>("all");
-  const [transportDetail, setTransportDetail] = useState<string | null>(null);
-  const [lastUpdatedAt, setLastUpdatedAt] = useState<string | null>(null);
-
-  const latestCursorRef = useRef<string | undefined>(undefined);
-  const reconnectAttemptRef = useRef(0);
-  const pollIntervalRef = useRef<number | null>(null);
-  const reconnectTimeoutRef = useRef<number | null>(null);
-  const streamAbortRef = useRef<AbortController | null>(null);
-
-  const selectedCategories = useMemo(
-    () => (categoryFilter === "all" ? undefined : [categoryFilter]),
-    [categoryFilter]
-  );
-
-  const mergeFeed = useCallback((incoming: ObservabilityEvent[]) => {
-    if (incoming.length === 0) return;
-
-    setObservabilityFeed((current) => {
-      const merged = new Map(current.map((event) => [event.id, event]));
-      for (const event of incoming) {
-        merged.set(event.id, event);
-      }
-
-      const next = Array.from(merged.values())
-        .sort((left, right) => Number(right.sequence) - Number(left.sequence))
-        .slice(0, MAX_FEED_ITEMS);
-
-      latestCursorRef.current = next.reduce<string | undefined>((cursor, event) => {
-        if (!cursor || Number(event.sequence) > Number(cursor)) {
-          return event.sequence;
-        }
-        return cursor;
-      }, latestCursorRef.current);
-
-      return next;
-    });
-
-    setLastUpdatedAt(incoming[0]?.occurredAt ?? new Date().toISOString());
-  }, []);
-
-  const stopRealtime = useCallback(() => {
-    streamAbortRef.current?.abort();
-    streamAbortRef.current = null;
-
-    if (pollIntervalRef.current) {
-      window.clearInterval(pollIntervalRef.current);
-      pollIntervalRef.current = null;
-    }
-
-    if (reconnectTimeoutRef.current) {
-      window.clearTimeout(reconnectTimeoutRef.current);
-      reconnectTimeoutRef.current = null;
-    }
-  }, []);
-
-  const startPolling = useCallback(
-    (accessToken: string, reason: string) => {
-      stopRealtime();
-      setTransportState("polling");
-      setTransportDetail(reason);
-
-      pollIntervalRef.current = window.setInterval(() => {
-        void (async () => {
-          try {
-            const [page, snapshot] = await Promise.all([
-              listObservabilityEvents(accessToken, {
-                after: latestCursorRef.current,
-                categories: selectedCategories,
-                limit: MAX_FEED_ITEMS,
-              }),
-              getObservabilityThroughput(accessToken, windowHours),
-            ]);
-
-            mergeFeed(page.events);
-            setThroughput(snapshot);
-            setLastUpdatedAt(snapshot.generatedAt);
-          } catch (pollError) {
-            setTransportState("error");
-            setTransportDetail(
-              pollError instanceof Error ? pollError.message : "Polling fallback failed"
-            );
-          }
-        })();
-      }, POLLING_INTERVAL_MS);
-    },
-    [mergeFeed, selectedCategories, stopRealtime, windowHours]
-  );
-
-  const startStream = useCallback(
-    (accessToken: string) => {
-      stopRealtime();
-      const controller = new AbortController();
-      streamAbortRef.current = controller;
-      setTransportState(latestCursorRef.current ? "reconnecting" : "connecting");
-
-      void streamObservabilityEvents(accessToken, {
-        after: latestCursorRef.current,
-        categories: selectedCategories,
-        limit: 100,
-        signal: controller.signal,
-        onEvent: (event) => {
-          reconnectAttemptRef.current = 0;
-          setTransportState("live");
-          setTransportDetail("Fresh events are streaming from the control plane.");
-          mergeFeed([event]);
-        },
-        onReady: (ready) => {
-          reconnectAttemptRef.current = 0;
-          if (ready.nextCursor) {
-            latestCursorRef.current = ready.nextCursor;
-          }
-          setTransportState("live");
-          setTransportDetail(
-            ready.replayed > 0
-              ? `Replayed ${ready.replayed} events before switching to live updates.`
-              : "Streaming live updates."
-          );
-          setLastUpdatedAt(ready.generatedAt);
-        },
-        onKeepalive: (keepalive) => {
-          setLastUpdatedAt(keepalive.generatedAt);
-        },
-      })
-        .then(() => {
-          if (!controller.signal.aborted) {
-            startPolling(accessToken, "Live stream closed. Polling every 15 seconds.");
-          }
-        })
-        .catch((streamError) => {
-          if (controller.signal.aborted) return;
-
-          const message =
-            streamError instanceof Error ? streamError.message : "Live stream unavailable";
-          if (reconnectAttemptRef.current < MAX_RECONNECT_ATTEMPTS) {
-            reconnectAttemptRef.current += 1;
-            setTransportState("reconnecting");
-            setTransportDetail(
-              `Reconnecting to live stream (${reconnectAttemptRef.current}/${MAX_RECONNECT_ATTEMPTS})...`
-            );
-            reconnectTimeoutRef.current = window.setTimeout(() => {
-              startStream(accessToken);
-            }, 2_500);
-            return;
-          }
-
-          startPolling(accessToken, `${message} Falling back to polling.`);
-        });
-    },
-    [mergeFeed, selectedCategories, startPolling, stopRealtime]
-  );
-
-  const loadDashboard = useCallback(async () => {
-    stopRealtime();
-    reconnectAttemptRef.current = 0;
-    setLoading(true);
-    setError(null);
-    setTransportDetail(null);
-    try {
-      if (accessMode === "preview") {
-        setRuns([]);
-        setApprovals([]);
-        setAgentSnapshots([]);
-        setObservabilityFeed([]);
-        setThroughput(null);
-        setTransportState("connecting");
-        setLastUpdatedAt(null);
-        latestCursorRef.current = undefined;
-        return;
-      }
-
-      const accessToken = await requireAccessToken();
-      const [fetchedRuns, fetchedAgents, fetchedApprovals] = await Promise.all([
-        listRuns(undefined, accessToken),
-        listAgents(accessToken).catch(() => []),
-        listApprovals(accessToken).catch(() => []),
-      ]);
-      const [observabilityPageResult, observabilitySnapshotResult] = await Promise.allSettled([
-        listObservabilityEvents(accessToken, {
-          categories: selectedCategories,
-          limit: MAX_FEED_ITEMS,
-        }),
-        getObservabilityThroughput(accessToken, windowHours),
-      ]);
-
-      const snapshots = await Promise.all(
-        fetchedAgents.map(async (agent) => {
-          const [budget, heartbeat, agentRuns] = await Promise.all([
-            getAgentBudget(agent.id, accessToken).catch(() => null),
-            getAgentHeartbeat(agent.id, accessToken).catch(() => null),
-            listAgentRuns(agent.id, accessToken).catch(() => []),
-          ]);
-          return {
-            agent,
-            budget,
-            heartbeat,
-            runs: agentRuns,
-          };
-        })
-      );
-
-      setRuns(fetchedRuns);
-      setApprovals(fetchedApprovals);
-      setAgentSnapshots(snapshots);
-
-      if (
-        observabilityPageResult.status === "fulfilled" &&
-        observabilitySnapshotResult.status === "fulfilled"
-      ) {
-        const sortedFeed = [...observabilityPageResult.value.events].sort(
-          (left, right) => Number(right.sequence) - Number(left.sequence)
-        );
-        setObservabilityFeed(sortedFeed.slice(0, MAX_FEED_ITEMS));
-        latestCursorRef.current = sortedFeed[0]?.sequence;
-        setThroughput(observabilitySnapshotResult.value);
-        setLastUpdatedAt(observabilitySnapshotResult.value.generatedAt);
-        startStream(accessToken);
-      } else {
-        const observabilityError =
-          observabilityPageResult.status === "rejected"
-            ? observabilityPageResult.reason
-            : observabilitySnapshotResult.status === "rejected"
-              ? observabilitySnapshotResult.reason
-              : new Error("Observability is unavailable.");
-
-        setObservabilityFeed([]);
-        setThroughput(null);
-        latestCursorRef.current = undefined;
-        setLastUpdatedAt(null);
-        setTransportState("error");
-        setTransportDetail(
-          observabilityError instanceof Error
-            ? observabilityError.message
-            : "Observability is unavailable."
-        );
-      }
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Failed to load customer dashboard");
-      setTransportState("error");
-    } finally {
-      setLoading(false);
-    }
-  }, [accessMode, requireAccessToken, selectedCategories, startStream, stopRealtime, windowHours]);
-
-  useEffect(() => {
-    void loadDashboard();
-    return () => stopRealtime();
-  }, [activeWorkspaceId, loadDashboard, stopRealtime]);
-
-  const firstName = user?.name?.split(" ")[0] ?? user?.email?.split("@")[0] ?? "Operator";
-
-  const totalBudget = useMemo(
-    () =>
-      agentSnapshots.reduce(
-        (sum, snapshot) => sum + (snapshot.budget?.monthlyUsd ?? snapshot.agent.budgetMonthlyUsd ?? 0),
-        0
-      ),
-    [agentSnapshots]
-  );
-  const totalSpend = useMemo(
-    () => agentSnapshots.reduce((sum, snapshot) => sum + (snapshot.budget?.spentUsd ?? 0), 0),
-    [agentSnapshots]
-  );
-  const spendRatio = totalBudget > 0 ? totalSpend / totalBudget : 0;
-
-  const liveAgents = agentSnapshots.filter((snapshot) => snapshot.agent.status === "running").length;
-  const flaggedAgents = agentSnapshots.filter(
-    (snapshot) => snapshot.agent.status === "error" || snapshot.heartbeat?.status === "error"
-  ).length;
-  const pendingApprovals = approvals.filter((approval) => approval.status === "pending");
-
-  const orgRows = useMemo(
-    () =>
-      agentSnapshots
-        .map((snapshot) => {
-          const sortedRuns = [...snapshot.runs].sort((left, right) => left.startedAt.localeCompare(right.startedAt));
-          const latestRun = sortedRuns[sortedRuns.length - 1];
-          return {
-            id: snapshot.agent.id,
-            name: snapshot.agent.name,
-            role:
-              typeof snapshot.agent.metadata?.teamName === "string"
-                ? snapshot.agent.metadata.teamName
-                : snapshot.agent.roleKey ?? snapshot.agent.description ?? "Assigned team",
-            status: snapshot.agent.status,
-            heartbeat: snapshot.heartbeat?.summary ?? latestRun?.summary ?? "Standing by for the next assigned task.",
-            budget: snapshot.budget?.monthlyUsd ?? snapshot.agent.budgetMonthlyUsd ?? 0,
-            spend: snapshot.budget?.spentUsd ?? 0,
-            runStatus: latestRun?.status ?? null,
-          };
-        })
-        .sort((left, right) => left.name.localeCompare(right.name)),
-    [agentSnapshots]
-  );
-
-  const burndownSeries = useMemo(() => buildBurndownSeries(runs), [runs]);
-  const kpiSeries = useMemo(() => buildKpiSeries(runs, approvals), [runs, approvals]);
-  const latestKpi = kpiSeries[kpiSeries.length - 1];
-
-  const activityEvents = useMemo(() => buildActivityEvents(agentSnapshots), [agentSnapshots]);
-  const renderedBuckets = useMemo(() => {
-    const buckets = throughput?.buckets.slice(-8) ?? [];
-    const maxValue = Math.max(
-      1,
-      ...buckets.map((bucket) => bucket.createdCount + bucket.completedCount + bucket.blockedCount)
-    );
-
-    return buckets.map((bucket) => ({
-      ...bucket,
-      total: bucket.createdCount + bucket.completedCount + bucket.blockedCount,
-      heightPercent:
-        ((bucket.createdCount + bucket.completedCount + bucket.blockedCount) / maxValue) * 100,
-    }));
-  }, [throughput]);
-  const recentArtifacts = useMemo(() => {
-    const query = deferredArtifactQuery.trim().toLowerCase();
-    return [...runs]
-      .sort((left, right) => right.startedAt.localeCompare(left.startedAt))
-      .filter((run) => {
-        if (!query) return true;
-        const haystack = `${run.templateName} ${run.status} ${summarizeArtifact(run)}`.toLowerCase();
-        return haystack.includes(query);
-      })
-      .slice(0, 6);
-  }, [deferredArtifactQuery, runs]);
-
-  const submitArtifactFeedback = useCallback(
-    async (run: WorkflowRun) => {
-      const draft = feedbackDrafts[run.id]?.trim();
-      if (!draft) {
-        setFeedbackState((current) => ({
-          ...current,
-          [run.id]: { saving: false, notice: "Add a review note before routing feedback." },
-        }));
-        return;
-      }
-
-      const owner = findResponsibleAgent(run, agentSnapshots.map((snapshot) => snapshot.agent));
-      if (!owner) {
-        setFeedbackState((current) => ({
-          ...current,
-          [run.id]: { saving: false, notice: "No responsible agent is available for this artifact." },
-        }));
-        return;
-      }
-
-      setFeedbackState((current) => ({
-        ...current,
-        [run.id]: { saving: true, notice: null },
-      }));
-
-      try {
-        const accessToken = await requireAccessToken();
-        const assignees: TicketAssignee[] = [{ type: "agent", id: owner.id, role: "primary" }];
-        await createTicket(
-          {
-            title: `Artifact review: ${run.templateName}`,
-            description: [
-              `Artifact workflow: ${run.templateName}`,
-              `Run ID: ${run.id}`,
-              `Artifact kind: ${guessArtifactKind(run)}`,
-              `Current status: ${run.status}`,
-              "",
-              "Review note",
-              draft,
-              "",
-              "Artifact summary",
-              summarizeArtifact(run),
-            ].join("\n"),
-            priority: "medium",
-            tags: ["artifact-review", "customer-dashboard", guessArtifactKind(run)],
-            assignees,
-          },
-          accessToken
-        );
-
-        startTransition(() => {
-          setFeedbackDrafts((current) => ({ ...current, [run.id]: "" }));
-          setFeedbackState((current) => ({
-            ...current,
-            [run.id]: { saving: false, notice: `Feedback routed to ${owner.name}.` },
-          }));
-        });
-      } catch (cause) {
-        setFeedbackState((current) => ({
-          ...current,
-          [run.id]: {
-            saving: false,
-            notice: cause instanceof Error ? cause.message : "Failed to route artifact feedback.",
-          },
-        }));
-      }
-    },
-    [agentSnapshots, feedbackDrafts, requireAccessToken]
-  );
-
-  if (loading) {
-    return (
-      <div className="p-8">
-        <LoadingState label="Loading customer command center..." />
-      </div>
-    );
-  }
-
-  if (error) {
-    return (
-      <div className="p-8">
-        <ErrorState
-          title="Customer dashboard unavailable"
-          message={error}
-          onRetry={() => {
-            void loadDashboard();
-          }}
-        />
-      </div>
-    );
-  }
-
-  return (
-    <>
-      <div className="min-h-full bg-af2-paper px-6 py-8 text-af2-ink md:px-10 md:py-10">
-        <div className="mx-auto max-w-7xl">
-          {/* Page head — editorial greeting + at-a-glance status chips. */}
-          <header className="mb-6 flex flex-col gap-6 border-b border-af2-line pb-6 lg:flex-row lg:items-end lg:justify-between">
-            <div className="max-w-3xl">
-              <div className="inline-flex items-center gap-2 text-[11px] font-medium uppercase tracking-[0.14em] text-af2-ink-3">
-                <Command size={12} />
-                Workspace · today
-              </div>
-              <h1 className="mt-3 font-af2-serif text-5xl font-normal leading-tight tracking-[-0.02em] text-af2-ink">
-                Good {greetingPart()}, {firstName}.
-              </h1>
-              <p className="mt-3 max-w-2xl text-sm leading-6 text-af2-ink-2">
-                {liveAgents} agents on the clock · {pendingApprovals.length} approvals waiting ·{" "}
-                {formatCurrency(totalSpend)} spent this period.
-              </p>
-            </div>
-            <div className="grid gap-3 sm:grid-cols-3">
-              <HeroChip
-                label="Live agents"
-                value={String(liveAgents)}
-                hint={flaggedAgents > 0 ? `${flaggedAgents} need attention` : "All clear"}
-                tone="teal"
-              />
-              <HeroChip
-                label="Budget used"
-                value={totalBudget > 0 ? `${Math.round(spendRatio * 100)}%` : "n/a"}
-                hint={`${formatCurrency(totalSpend)} of ${formatCurrency(totalBudget)}`}
-                tone={spendRatio >= 0.8 ? "orange" : "indigo"}
-              />
-              <HeroChip
-                label="Approval queue"
-                value={String(pendingApprovals.length)}
-                hint={pendingApprovals.length > 0 ? "Action recommended" : "Nothing waiting"}
-                tone={pendingApprovals.length > 0 ? "orange" : "teal"}
-              />
-            </div>
-          </header>
-
-          <section className="overflow-hidden rounded-xl border border-af2-line bg-af2-card">
-            {/* Workspace shortcuts strip */}
-            <div className="border-b border-af2-line bg-af2-paper-2/40 px-6 py-4 md:px-8">
-              <div className="grid gap-3">
-                <div className="rounded-md border border-af2-line bg-af2-card px-4 py-4">
-                  <div className="flex items-center gap-2 text-[11px] font-medium uppercase tracking-[0.14em] text-af2-ink-3">
-                    <Gauge size={13} />
-                    Workspace actions
-                  </div>
-                  <div className="mt-3 grid gap-3 sm:grid-cols-3">
-                    <ShortcutCard to="/approvals" title="Review approvals" detail="Act on pending decisions" />
-                    <ShortcutCard
-                      to="/workspace/budget-dashboard"
-                      title="Inspect spend"
-                      detail="Open agent-level budget telemetry"
-                    />
-                    <ShortcutCard to="/agents/activity" title="Trace activity" detail="Jump into agent activity feed" />
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <div className="grid gap-5 px-6 py-6 md:px-8 xl:grid-cols-12">
-              <div className="space-y-5 xl:col-span-8">
-                <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-                  <MetricCard
-                    label="Org status"
-                    value={`${liveAgents}/${agentSnapshots.length || 0}`}
-                    detail="agents running"
-                    icon={<Bot size={18} />}
-                    accent="indigo"
-                  />
-                  <MetricCard
-                    label="KPI trajectory"
-                    value={`${latestKpi?.successRate ?? 0}%`}
-                    detail="execution success"
-                    icon={<TrendingUp size={18} />}
-                    accent="teal"
-                  />
-                  <MetricCard
-                    label="Spend pressure"
-                    value={totalBudget > 0 ? `${Math.round(spendRatio * 100)}%` : "n/a"}
-                    detail="of budget allocated"
-                    icon={<DollarSign size={18} />}
-                    accent={spendRatio >= 0.8 ? "orange" : "teal"}
-                  />
-                  <MetricCard
-                    label="Approvals at risk"
-                    value={String(pendingApprovals.length)}
-                    detail="awaiting operator action"
-                    icon={<ShieldAlert size={18} />}
-                    accent={pendingApprovals.length > 0 ? "orange" : "indigo"}
-                  />
-                </section>
-
-                <section className="grid gap-5 lg:grid-cols-2">
-                  <Panel
-                    title="Execution Burndown"
-                    eyebrow="Sprint pulse"
-                    action={<span className="font-mono text-xs text-af2-ink-3">last {DAYS} days</span>}
-                  >
-                    <ChartLegend
-                      items={[
-                        { label: "Remaining", tone: "bg-af2-clay-soft/400" },
-                        { label: "Completed", tone: "bg-af2-sage/100" },
-                      ]}
-                    />
-                    <MiniLineChart
-                      data={burndownSeries}
-                      lines={[
-                        { key: "remaining", stroke: "#4f46e5" },
-                        { key: "completed", stroke: "#0f766e" },
-                      ]}
-                    />
-                    <div className="mt-4 grid grid-cols-3 gap-3">
-                      <ChartStat label="Runs in window" value={String(runs.length)} />
-                      <ChartStat
-                        label="Completed"
-                        value={String(runs.filter((run) => run.status === "completed").length)}
-                      />
-                      <ChartStat label="Pending" value={String(runs.filter((run) => run.status === "running").length)} />
-                    </div>
-                  </Panel>
-
-                  <Panel
-                    title="Spend vs Budget"
-                    eyebrow="Cost discipline"
-                    action={<span className="font-mono text-xs text-af2-ink-3">{formatCurrency(totalSpend)}</span>}
-                  >
-                    <SpendBars snapshots={agentSnapshots} />
-                    <p className="mt-4 text-sm text-af2-ink-2">
-                      Indigo bars show budget allocation. Teal fills show live spend. Orange callouts trigger when an
-                      agent crosses 80% of budget.
-                    </p>
-                  </Panel>
-                </section>
-
-                <Panel
-                  title="Queued Approvals"
-                  eyebrow="Human checkpoint"
-                  action={
-                    <Link to="/approvals" className="inline-flex items-center gap-1 text-sm font-medium text-af2-clay">
-                      Open queue
-                      <ArrowRight size={14} />
-                    </Link>
-                  }
-                >
-                  <div className="grid gap-3">
-                    {pendingApprovals.length === 0 ? (
-                      <ZeroState
-                        title="No approvals waiting"
-                        detail="Approval pressure is clear right now. New human checkpoints will surface here in real time."
-                      />
-                    ) : (
-                      pendingApprovals.slice(0, 4).map((approval) => (
-                        <article
-                          key={approval.id}
-                          className="rounded-[22px] border border-af2-clay/30 bg-af2-clay-soft/30 px-4 py-4"
-                        >
-                          <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-                            <div>
-                              <div className="inline-flex items-center gap-2 rounded-full bg-af2-card px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.22em] text-af2-clay">
-                                <Clock3 size={12} />
-                                Awaiting input
-                              </div>
-                              <h3 className="mt-3 text-base font-semibold text-af2-ink">
-                                {approval.templateName} / {approval.stepName}
-                              </h3>
-                              <p className="mt-2 text-sm text-af2-ink-2">{approval.message}</p>
-                            </div>
-                            <div className="space-y-2 text-sm text-af2-ink-2 md:text-right">
-                              <div className="font-mono text-xs text-af2-ink-3">{formatRelative(approval.requestedAt)}</div>
-                              <div>Assignee: {approval.assignee}</div>
-                              <div>Timeout: {approval.timeoutMinutes}m</div>
-                            </div>
-                          </div>
-                        </article>
-                      ))
-                    )}
-                  </div>
-                </Panel>
-
-                <Panel
-                  title="Observability Cockpit"
-                  eyebrow="Live activity"
-                  action={
-                    <button
-                      type="button"
-                      onClick={() => {
-                        void loadDashboard();
-                      }}
-                      className="inline-flex items-center gap-2 rounded-full border border-af2-line bg-af2-paper-2/40 px-3 py-1.5 text-sm font-medium text-af2-ink-2 transition hover:border-af2-clay/40 hover:text-af2-clay"
-                    >
-                      <RefreshCcw size={14} />
-                      Refresh data
-                    </button>
-                  }
-                >
-                  <div className="grid gap-5 lg:grid-cols-[0.95fr,1.05fr]">
-                    <section className="rounded-[24px] border border-af2-line bg-af2-paper-2/40 p-4">
-                      <div className="flex items-start justify-between gap-3">
-                        <div>
-                          <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-af2-ink-3">
-                            Transport status
-                          </div>
-                          <h3 className="mt-2 text-lg font-semibold text-af2-ink">
-                            {transportStateLabel(transportState)}
-                          </h3>
-                        </div>
-                        <TransportPill state={transportState} />
-                      </div>
-                      <p className="mt-3 text-sm leading-6 text-af2-ink-2">
-                        {transportDetail ?? "Waiting for the stream handshake to complete."}
-                      </p>
-                      <div className="mt-4 grid gap-3 sm:grid-cols-2">
-                        <ChartStat
-                          label="Last refresh"
-                          value={lastUpdatedAt ? formatRelative(lastUpdatedAt) : "waiting"}
-                        />
-                        <ChartStat
-                          label="Fallback mode"
-                          value={transportState === "polling" ? "15s poll" : "standby"}
-                        />
-                      </div>
-
-                      <div className="mt-4 flex flex-wrap gap-2">
-                        {FILTER_OPTIONS.map((option) => (
-                          <button
-                            key={option.value}
-                            type="button"
-                            aria-pressed={categoryFilter === option.value}
-                            onClick={() => setCategoryFilter(option.value)}
-                            className={`rounded-full border px-3 py-1.5 text-sm transition ${
-                              categoryFilter === option.value
-                                ? "border-af2-clay/40 bg-af2-clay-soft/40 text-af2-clay"
-                                : "border-af2-line bg-af2-card text-af2-ink-2 hover:border-af2-clay/30 hover:text-af2-clay"
-                            }`}
-                          >
-                            {option.label}
-                          </button>
-                        ))}
-                      </div>
-
-                      <div className="mt-3 flex flex-wrap gap-2">
-                        {WINDOW_OPTIONS.map((option) => (
-                          <button
-                            key={option}
-                            type="button"
-                            aria-pressed={windowHours === option}
-                            onClick={() => setWindowHours(option)}
-                            className={`rounded-full border px-3 py-1.5 text-sm transition ${
-                              windowHours === option
-                                ? "border-af2-sage/50 bg-af2-sage/10 text-af2-sage"
-                                : "border-af2-line bg-af2-card text-af2-ink-2 hover:border-af2-sage/30 hover:text-af2-sage"
-                            }`}
-                          >
-                            {option}h
-                          </button>
-                        ))}
-                      </div>
-
-                      {transportState === "polling" ? (
-                        <div className="mt-4 rounded-[20px] border border-af2-clay/30 bg-af2-clay-soft/40 px-4 py-3 text-sm text-af2-clay">
-                          Live streaming is unavailable. Polling continuity is active.
-                        </div>
-                      ) : null}
-
-                      {transportState === "error" ? (
-                        <div className="mt-4 rounded-[20px] border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-                          Live transport is degraded. Retry the dashboard refresh to re-establish the stream.
-                        </div>
-                      ) : null}
-                    </section>
-
-                    <section className="space-y-4">
-                      <div className="grid gap-3 sm:grid-cols-3">
-                        <MetricChip
-                          label="Created"
-                          value={throughput?.summary.createdCount ?? 0}
-                          tone="indigo"
-                        />
-                        <MetricChip
-                          label="Completed"
-                          value={throughput?.summary.completedCount ?? 0}
-                          tone="teal"
-                        />
-                        <MetricChip
-                          label="Blocked"
-                          value={throughput?.summary.blockedCount ?? 0}
-                          tone="orange"
-                        />
-                      </div>
-
-                      <section className="rounded-[24px] border border-af2-line bg-af2-card p-4">
-                        <div className="flex items-center justify-between gap-3">
-                          <div>
-                            <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-af2-ink-3">
-                              KPI prototype
-                            </div>
-                            <h3 className="mt-2 text-lg font-semibold text-af2-ink">
-                              Throughput over the last {windowHours} hours
-                            </h3>
-                          </div>
-                          <span className="rounded-full bg-af2-sage/10 px-3 py-1 text-sm font-medium text-af2-sage">
-                            {Math.round((throughput?.summary.completionRate ?? 0) * 100)}% completion
-                          </span>
-                        </div>
-                        <div className="mt-4 grid grid-cols-8 items-end gap-2">
-                          {renderedBuckets.map((bucket) => (
-                            <div key={bucket.bucketStart} className="flex flex-col items-center gap-2">
-                              <div className="flex h-24 w-full items-end justify-center rounded-2xl bg-af2-paper-2/40 px-2 py-2">
-                                <div
-                                  className="w-full rounded-full bg-gradient-to-t from-af2-clay via-af2-mustard to-af2-sage"
-                                  style={{ height: `${Math.max(bucket.heightPercent, 12)}%` }}
-                                />
-                              </div>
-                              <span className="text-[11px] text-af2-ink-2">
-                                {formatBucketLabel(bucket.bucketStart)}
-                              </span>
-                            </div>
-                          ))}
-                        </div>
-                      </section>
-
-                      <section className="rounded-[24px] border border-af2-line bg-af2-card p-4">
-                        <div className="flex items-start justify-between gap-3">
-                          <div>
-                            <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-af2-ink-3">
-                              Live feed
-                            </div>
-                            <h3 className="mt-2 text-lg font-semibold text-af2-ink">
-                              Activity updates as they happen
-                            </h3>
-                          </div>
-                          <Link to="/history" className="text-sm font-medium text-af2-clay">
-                            Full history
-                          </Link>
-                        </div>
-                        <div className="mt-4 space-y-3">
-                          {observabilityFeed.length === 0 ? (
-                            <ZeroState
-                              title="No activity in this view"
-                              detail="Try a broader time range or switch the feed filter back to all activity."
-                            />
-                          ) : (
-                            observabilityFeed.map((event) => (
-                              <article
-                                key={event.id}
-                                className="rounded-[20px] border border-af2-line bg-af2-paper-2/40 px-4 py-3"
-                              >
-                                <div className="flex items-start gap-3">
-                                  <div>{eventCategoryIcon(event.category)}</div>
-                                  <div className="min-w-0 flex-1">
-                                    <div className="flex flex-wrap items-center gap-2">
-                                      <span className={eventCategoryBadge(event.category)}>
-                                        {event.category}
-                                      </span>
-                                      <span className="text-xs text-af2-ink-3">
-                                        {formatObservabilityDateTime(event.occurredAt)}
-                                      </span>
-                                    </div>
-                                    <p className="mt-2 text-sm font-medium text-af2-ink">{event.summary}</p>
-                                    <div className="mt-2 flex flex-wrap gap-x-4 gap-y-2 text-xs text-af2-ink-2">
-                                      <span>{event.subject.label ?? event.subject.type}</span>
-                                      <span>{event.type}</span>
-                                      <span>{event.actor.label ?? event.actor.id}</span>
-                                    </div>
-                                  </div>
-                                </div>
-                              </article>
-                            ))
-                          )}
-                        </div>
-                      </section>
-                    </section>
-                  </div>
-                </Panel>
-
-                <Panel
-                  title="Artifact Review"
-                  eyebrow="Feedback loop"
-                  action={
-                    <div className="flex items-center gap-2 rounded-full border border-af2-line bg-af2-paper-2/40 px-3 py-1.5">
-                      <MessageSquare size={13} className="text-af2-ink-3" />
-                      <input
-                        value={artifactQuery}
-                        onChange={(event) => setArtifactQuery(event.target.value)}
-                        placeholder="Filter artifacts"
-                        className="w-40 bg-transparent text-sm text-af2-ink-2 outline-none placeholder:text-af2-ink-3"
-                      />
-                    </div>
-                  }
-                >
-                  <div className="grid gap-4">
-                    {recentArtifacts.length === 0 ? (
-                      <ZeroState
-                        title="No artifacts available"
-                        detail="Recent workflow output will appear here once runs complete or pause for approval."
-                      />
-                    ) : (
-                      recentArtifacts.map((run) => {
-                        const owner = findResponsibleAgent(run, agentSnapshots.map((snapshot) => snapshot.agent));
-                        const state = feedbackState[run.id] ?? { saving: false, notice: null };
-                        return (
-                          <article
-                            key={run.id}
-                            className="rounded-[24px] border border-af2-line bg-af2-paper-2/40 p-4"
-                          >
-                            <div className="flex flex-col gap-4 lg:flex-row">
-                              <div className="min-w-0 flex-1">
-                                <div className="flex flex-wrap items-center gap-2">
-                                  <span className="rounded-full bg-af2-ink px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-af2-paper-2">
-                                    {guessArtifactKind(run)}
-                                  </span>
-                                  <span className="font-mono text-xs text-af2-ink-3">{run.id}</span>
-                                </div>
-                                <button
-                                  type="button"
-                                  onClick={() => setSelectedRun(run)}
-                                  className="mt-3 text-left"
-                                >
-                                  <h3 className="text-lg font-semibold text-af2-ink hover:text-af2-clay">
-                                    {run.templateName}
-                                  </h3>
-                                  <p className="mt-2 text-sm leading-6 text-af2-ink-2">{summarizeArtifact(run)}</p>
-                                </button>
-                                <div className="mt-3 flex flex-wrap gap-4 text-sm text-af2-ink-2">
-                                  <span>Status: {run.status.replace("_", " ")}</span>
-                                  <span>{formatRelative(run.startedAt)}</span>
-                                  <span>Owner: {owner?.name ?? "Needs routing"}</span>
-                                </div>
-                              </div>
-                              <div className="w-full lg:max-w-sm">
-                                <label className="text-[11px] font-semibold uppercase tracking-[0.22em] text-af2-ink-3">
-                                  Inline review comment
-                                </label>
-                                <textarea
-                                  value={feedbackDrafts[run.id] ?? ""}
-                                  onChange={(event) =>
-                                    setFeedbackDrafts((current) => ({
-                                      ...current,
-                                      [run.id]: event.target.value,
-                                    }))
-                                  }
-                                  placeholder="Route artifact feedback to the responsible agent."
-                                  className="mt-2 h-24 w-full rounded-[18px] border border-af2-line bg-af2-card px-3 py-3 text-sm text-af2-ink-2 outline-none transition focus:border-af2-clay/40 focus:ring-2 focus:ring-af2-clay/20"
-                                />
-                                <div className="mt-3 flex items-center justify-between gap-3">
-                                  <button
-                                    type="button"
-                                    onClick={() => void submitArtifactFeedback(run)}
-                                    disabled={state.saving}
-                                    className="inline-flex items-center gap-2 rounded-full bg-af2-clay-soft/400 px-4 py-2 text-sm font-semibold text-white transition hover:bg-af2-clay-2 disabled:cursor-not-allowed disabled:opacity-60"
-                                  >
-                                    <BadgeCheck size={14} />
-                                    {state.saving ? "Routing..." : "Send to owner"}
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={() => setSelectedRun(run)}
-                                    className="text-sm font-medium text-af2-clay"
-                                  >
-                                    Open trace
-                                  </button>
-                                </div>
-                                {state.notice ? (
-                                  <p className="mt-2 text-sm text-af2-ink-2">{state.notice}</p>
-                                ) : null}
-                              </div>
-                            </div>
-                          </article>
-                        );
-                      })
-                    )}
-                  </div>
-                </Panel>
-              </div>
-
-              <div className="space-y-5 xl:col-span-4">
-                <Panel title="Org Status" eyebrow="Agent roster">
-                  <div className="space-y-3">
-                    {orgRows.length === 0 ? (
-                      <ZeroState
-                        title="No agents deployed"
-                        detail="Deploy agents to surface role status, budget posture, and current task summaries."
-                      />
-                    ) : (
-                      orgRows.map((row) => (
-                        <article key={row.id} className="rounded-[22px] border border-af2-line bg-af2-paper-2/40 px-4 py-4">
-                          <div className="flex items-start justify-between gap-3">
-                            <div>
-                              <h3 className="text-sm font-semibold text-af2-ink">{row.name}</h3>
-                              <p className="mt-1 text-xs uppercase tracking-[0.18em] text-af2-ink-3">{row.role}</p>
-                            </div>
-                            <span className={statusPill(row.status)}>{row.status}</span>
-                          </div>
-                          <p className="mt-3 text-sm leading-6 text-af2-ink-2">{row.heartbeat}</p>
-                          <div className="mt-3 flex items-center justify-between border-t border-af2-line pt-3 text-xs text-af2-ink-2">
-                            <span className="font-mono">
-                              {formatCurrency(row.spend)} / {formatCurrency(row.budget)}
-                            </span>
-                            <span>{row.runStatus ? row.runStatus.replace("_", " ") : "idle"}</span>
-                          </div>
-                        </article>
-                      ))
-                    )}
-                  </div>
-                </Panel>
-
-                <Panel title="KPI Trajectory" eyebrow="Operational slope">
-                  <MiniLineChart
-                    data={kpiSeries}
-                    lines={[
-                      { key: "successRate", stroke: "#0f766e" },
-                      { key: "approvalLoad", stroke: "#f97316" },
-                      { key: "throughput", stroke: "#4338ca" },
-                    ]}
-                    maxY={100}
-                  />
-                  <div className="mt-4 grid grid-cols-3 gap-3">
-                    <ChartStat label="Success" value={`${latestKpi?.successRate ?? 0}%`} />
-                    <ChartStat label="Throughput" value={String(latestKpi?.throughput ?? 0)} />
-                    <ChartStat label="Approval load" value={String(latestKpi?.approvalLoad ?? 0)} />
-                  </div>
-                </Panel>
-
-                <Panel title="Reasoning Activity" eyebrow="Recent signals" action={<BrainCircuit size={16} className="text-af2-ink-3" />}>
-                  <div className="space-y-3">
-                    {activityEvents.length === 0 ? (
-                      <ZeroState
-                        title="No activity signals yet"
-                        detail="Heartbeats and execution summaries will stack here as agents begin working."
-                      />
-                    ) : (
-                      activityEvents.slice(0, 8).map((event) => (
-                        <article key={event.id} className="rounded-[20px] border border-af2-line bg-af2-paper-2/40 px-4 py-3">
-                          <div className="flex items-center justify-between gap-3">
-                            <div className="flex items-center gap-2">
-                              <span className={activityDot(event.status)} />
-                              <span className="text-sm font-semibold text-af2-ink">{event.agentName}</span>
-                            </div>
-                            <span className="font-mono text-[11px] text-af2-ink-3">{formatRelative(event.at)}</span>
-                          </div>
-                          <p className="mt-2 text-sm font-medium text-af2-ink-2">{event.title}</p>
-                          <p className="mt-1 text-sm leading-6 text-af2-ink-2">{event.detail}</p>
-                        </article>
-                      ))
-                    )}
-                  </div>
-                </Panel>
-              </div>
-            </div>
-          </section>
-        </div>
-      </div>
-
-      <RunAuditSidebar run={selectedRun} open={Boolean(selectedRun)} onClose={() => setSelectedRun(null)} />
-    </>
-  );
 }
 
-function buildBurndownSeries(runs: WorkflowRun[]) {
-  const buckets = createDailyBuckets(DAYS);
-  const completedByDay = new Map<string, number>();
-
-  for (const run of runs) {
-    if (run.status !== "completed" || !run.completedAt) continue;
-    const day = run.completedAt.slice(0, 10);
-    completedByDay.set(day, (completedByDay.get(day) ?? 0) + 1);
-  }
-
-  let cumulativeCompleted = 0;
-  return buckets.map((bucket) => {
-    cumulativeCompleted += completedByDay.get(bucket.key) ?? 0;
-    return {
-      label: bucket.label,
-      remaining: Math.max(runs.length - cumulativeCompleted, 0),
-      completed: cumulativeCompleted,
-    };
-  });
-}
-
-function buildKpiSeries(runs: WorkflowRun[], approvals: ApprovalRequest[]) {
-  const buckets = createDailyBuckets(DAYS);
-  return buckets.map((bucket) => {
-    const runsInBucket = runs.filter((run) => run.startedAt.slice(0, 10) === bucket.key);
-    const completed = runsInBucket.filter((run) => run.status === "completed").length;
-    const successRate = runsInBucket.length > 0 ? Math.round((completed / runsInBucket.length) * 100) : 0;
-    const approvalLoad = approvals.filter((approval) => approval.requestedAt.slice(0, 10) === bucket.key).length;
-    return {
-      label: bucket.label,
-      successRate,
-      approvalLoad,
-      throughput: runsInBucket.length,
-    };
-  });
-}
-
-function buildActivityEvents(agentSnapshots: AgentSnapshot[]): ActivityEvent[] {
-  return agentSnapshots
-    .flatMap((snapshot) => {
-      const heartbeatStatus: ActivityEvent["status"] =
-        snapshot.heartbeat?.status === "running"
-          ? "success"
-          : snapshot.heartbeat?.status === "error"
-            ? "warning"
-            : "info";
-      const heartbeatEvent = snapshot.heartbeat
-        ? [
-            {
-              id: `heartbeat-${snapshot.heartbeat.id}`,
-              agentName: snapshot.agent.name,
-              status: heartbeatStatus,
-              title: `Heartbeat ${snapshot.heartbeat.status}`,
-              detail: snapshot.heartbeat.summary ?? "Latest heartbeat recorded.",
-              at: snapshot.heartbeat.recordedAt,
-            } satisfies ActivityEvent,
-          ]
-        : [];
-
-      const runEvents = snapshot.runs.slice(0, 2).map((run) => {
-        const status: ActivityEvent["status"] =
-          run.status === "completed" ? "success" : run.status === "failed" || run.status === "blocked" ? "warning" : "info";
-        return {
-          id: `run-${run.id}`,
-          agentName: snapshot.agent.name,
-          status,
-          title: `Run ${run.status}`,
-          detail: run.summary ?? "Execution completed without an attached summary.",
-          at: run.completedAt ?? run.startedAt ?? run.createdAt,
-        };
-      });
-
-      return [...heartbeatEvent, ...runEvents];
-    })
-    .sort((left, right) => right.at.localeCompare(left.at));
-}
-
-function createDailyBuckets(days: number) {
-  const base = new Date();
-  base.setUTCHours(0, 0, 0, 0);
-  return Array.from({ length: days }, (_, index) => {
-    const current = new Date(base);
-    current.setUTCDate(base.getUTCDate() - (days - index - 1));
-    return {
-      key: current.toISOString().slice(0, 10),
-      label: current.toLocaleDateString(undefined, { month: "short", day: "numeric" }),
-    };
-  });
-}
-
-function guessArtifactKind(run: WorkflowRun) {
-  const text = `${run.templateName} ${summarizeArtifact(run)}`.toLowerCase();
-  if (text.includes("design") || text.includes("creative") || text.includes("ad")) return "design";
-  if (text.includes("email") || text.includes("copy") || text.includes("content")) return "copy";
-  if (text.includes("code") || text.includes("deploy") || text.includes("frontend") || text.includes("backend")) {
-    return "code";
-  }
-  if (text.includes("approval")) return "approval";
-  return "artifact";
-}
-
-function summarizeArtifact(run: WorkflowRun) {
-  const lastStep = [...run.stepResults].reverse().find((step) => step.output && Object.keys(step.output).length > 0);
-  const source = lastStep?.output ?? run.output ?? run.input;
-  const text = stringifyArtifactValue(source);
-  return text.length > 180 ? `${text.slice(0, 177)}...` : text;
-}
-
-function stringifyArtifactValue(value: unknown): string {
-  if (typeof value === "string") return value.trim();
-  if (typeof value === "number" || typeof value === "boolean") return String(value);
-  if (Array.isArray(value)) return value.map((entry) => stringifyArtifactValue(entry)).filter(Boolean).join(" ");
-  if (value && typeof value === "object") {
-    const record = value as Record<string, unknown>;
-    const preferredKeys = ["summary", "reasoning", "message", "content", "title", "artifact"];
-    for (const key of preferredKeys) {
-      const candidate = stringifyArtifactValue(record[key]);
-      if (candidate) return candidate;
-    }
-    try {
-      return JSON.stringify(record);
-    } catch {
-      return "Artifact output available in trace.";
-    }
-  }
-  return "Artifact output available in trace.";
-}
-
-function findResponsibleAgent(run: WorkflowRun, agents: Agent[]) {
-  const text = `${run.templateName} ${summarizeArtifact(run)}`.toLowerCase();
-  const checks: Array<[needle: string[], matcher: (agent: Agent) => boolean]> = [
-    [["design", "creative", "ad"], (agent) => agent.name.toLowerCase().includes("graphic designer")],
-    [["email", "content", "copy"], (agent) => agent.name.toLowerCase().includes("content") || agent.name.toLowerCase().includes("cmo")],
-    [["frontend", "ui"], (agent) => agent.name.toLowerCase().includes("frontend")],
-    [["backend", "api", "auth", "data"], (agent) => agent.name.toLowerCase().includes("backend")],
-    [["budget", "spend", "forecast"], (agent) => agent.name.toLowerCase().includes("cfo")],
-  ];
-
-  for (const [needles, matcher] of checks) {
-    if (needles.some((needle) => text.includes(needle))) {
-      const match = agents.find(matcher);
-      if (match) return match;
-    }
-  }
-
-  return agents.find((agent) => agent.status === "running") ?? agents[0] ?? null;
-}
-
-function formatCurrency(value: number) {
-  return new Intl.NumberFormat(undefined, {
-    style: "currency",
-    currency: "USD",
-    maximumFractionDigits: value >= 1000 ? 0 : 2,
-  }).format(value || 0);
-}
-
-function formatRelative(iso: string) {
-  const delta = Date.now() - new Date(iso).getTime();
-  const minutes = Math.max(Math.floor(delta / 60000), 0);
-  if (minutes < 1) return "just now";
-  if (minutes < 60) return `${minutes}m ago`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours}h ago`;
-  return `${Math.floor(hours / 24)}d ago`;
-}
-
-function statusPill(status: string) {
-  if (status === "running") return "rounded-full bg-af2-sage/20 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-af2-sage";
-  if (status === "error") return "rounded-full bg-af2-clay-soft px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-af2-clay";
-  if (status === "paused") return "rounded-full bg-af2-paper-2 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-af2-ink-2";
-  return "rounded-full bg-af2-clay-soft px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-af2-clay";
-}
-
-function activityDot(status: ActivityEvent["status"]) {
-  if (status === "success") return "h-2.5 w-2.5 rounded-full bg-af2-sage/100";
-  if (status === "warning") return "h-2.5 w-2.5 rounded-full bg-af2-clay-soft/400";
-  return "h-2.5 w-2.5 rounded-full bg-af2-clay-soft/400";
-}
-
-function HeroChip({
-  label,
-  value,
-  hint,
-  tone,
-}: {
-  label: string;
-  value: string;
-  hint: string;
-  tone: "indigo" | "teal" | "orange";
-}) {
-  // v2: HeroChips live on top of the cream page-head; the accent indicates state
-  // (clay = needs attention, sage = healthy, ink = neutral).
-  const accent =
-    tone === "orange"
-      ? "text-af2-clay"
-      : tone === "teal"
-        ? "text-af2-sage"
-        : "text-af2-ink-2";
-  return (
-    <div className="rounded-md border border-af2-line bg-af2-card px-4 py-3">
-      <div className="text-[11px] font-medium uppercase tracking-[0.14em] text-af2-ink-3">
-        {label}
-      </div>
-      <div className={`mt-2 font-af2-serif text-3xl leading-none tracking-[-0.02em] ${accent}`}>
-        {value}
-      </div>
-      <div className="mt-1 text-xs text-af2-ink-3">{hint}</div>
-    </div>
-  );
-}
-
-function MetricChip({
-  label,
-  value,
-  tone,
-}: {
-  label: string;
-  value: number;
-  tone: "indigo" | "teal" | "orange";
-}) {
-  const classes =
-    tone === "teal"
-      ? "border-af2-sage/30 bg-af2-sage/10 text-af2-sage"
-      : tone === "orange"
-        ? "border-af2-clay/30 bg-af2-clay-soft/40 text-af2-clay"
-        : "border-af2-line bg-af2-clay-soft/40 text-af2-clay";
-
-  return (
-    <div className={`rounded-[20px] border px-4 py-4 ${classes}`}>
-      <p className="text-[11px] font-semibold uppercase tracking-[0.2em]">{label}</p>
-      <p className="mt-3 text-2xl font-semibold">{value}</p>
-    </div>
-  );
-}
-
-function TransportPill({ state }: { state: TransportState }) {
-  const config =
-    state === "live"
-      ? { label: "Streaming", className: "bg-af2-sage/10 text-af2-sage border-af2-sage/30", icon: <Wifi size={14} /> }
-      : state === "reconnecting"
-        ? {
-            label: "Recovering",
-            className: "bg-af2-clay-soft/40 text-af2-clay border-af2-clay/30",
-            icon: <RefreshCcw size={14} className="animate-spin" />,
-          }
-        : state === "polling"
-          ? { label: "Polling", className: "bg-af2-paper-2 text-af2-ink-2 border-af2-line", icon: <WifiOff size={14} /> }
-          : state === "error"
-            ? {
-                label: "Attention",
-                className: "bg-red-50 text-red-700 border-red-100",
-                icon: <AlertTriangle size={14} />,
-              }
-            : {
-                label: "Connecting",
-                className: "bg-af2-clay-soft/40 text-af2-clay border-af2-line",
-                icon: <Activity size={14} />,
-              };
-
-  return (
-    <span className={`inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-sm font-medium ${config.className}`}>
-      {config.icon}
-      {config.label}
-    </span>
-  );
-}
-
-function MetricCard({
-  label,
-  value,
-  detail,
-  icon,
-  accent,
-}: {
-  label: string;
-  value: string;
-  detail: string;
-  icon: React.ReactNode;
-  accent: "indigo" | "teal" | "orange";
-}) {
-  const iconTone =
-    accent === "teal"
-      ? "border-af2-sage/30 bg-af2-sage/10 text-af2-sage"
-      : accent === "orange"
-        ? "border-af2-clay/30 bg-af2-clay/10 text-af2-clay"
-        : "border-af2-ink-blue/30 bg-af2-ink-blue/10 text-af2-ink-blue";
-  return (
-    <article className="rounded-xl border border-af2-line bg-af2-card p-5">
-      <div className="flex items-center justify-between gap-3">
-        <div>
-          <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-af2-ink-3">
-            {label}
-          </p>
-          <h2 className="mt-3 font-af2-serif text-4xl font-normal leading-none tracking-[-0.02em] text-af2-ink">
-            {value}
-          </h2>
-          <p className="mt-2 text-sm leading-snug text-af2-ink-2">{detail}</p>
-        </div>
-        <div className={`rounded-md border p-2 ${iconTone}`}>{icon}</div>
-      </div>
-    </article>
-  );
-}
-
-function Panel({
-  title,
-  eyebrow,
-  action,
-  children,
-}: {
-  title: string;
-  eyebrow: string;
-  action?: React.ReactNode;
-  children: React.ReactNode;
-}) {
-  return (
-    <section className="rounded-xl border border-af2-line bg-af2-card p-5">
-      <div className="flex flex-col gap-3 border-b border-af2-line pb-4 md:flex-row md:items-end md:justify-between">
-        <div>
-          <div className="text-[11px] font-medium uppercase tracking-[0.14em] text-af2-ink-3">
-            {eyebrow}
-          </div>
-          <h2 className="mt-2 font-af2-serif text-2xl font-medium leading-tight tracking-[-0.015em] text-af2-ink">
-            {title}
-          </h2>
-        </div>
-        {action ? <div>{action}</div> : null}
-      </div>
-      <div className="pt-4">{children}</div>
-    </section>
-  );
-}
-
-function ShortcutCard({ to, title, detail }: { to: string; title: string; detail: string }) {
-  return (
-    <Link
-      to={to}
-      className="rounded-md border border-af2-line bg-af2-paper px-4 py-3 transition hover:border-af2-clay/40 hover:bg-af2-clay-soft/40"
-    >
-      <div className="text-sm font-medium text-af2-ink">{title}</div>
-      <p className="mt-1 text-sm text-af2-ink-2">{detail}</p>
-    </Link>
-  );
-}
-
-function ChartLegend({ items }: { items: Array<{ label: string; tone: string }> }) {
-  return (
-    <div className="flex flex-wrap gap-4 text-sm text-af2-ink-2">
-      {items.map((item) => (
-        <div key={item.label} className="flex items-center gap-2">
-          <span className={`h-2.5 w-2.5 rounded-full ${item.tone}`} />
-          <span>{item.label}</span>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-function ChartStat({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="rounded-md border border-af2-line bg-af2-paper px-3 py-3">
-      <div className="text-[11px] font-medium uppercase tracking-[0.14em] text-af2-ink-3">
-        {label}
-      </div>
-      <div className="mt-2 font-af2-mono text-lg font-medium text-af2-ink">{value}</div>
-    </div>
-  );
-}
-
-function MiniLineChart({
-  data,
-  lines,
-  maxY,
-}: {
-  data: Array<Record<string, number | string>>;
-  lines: Array<{ key: string; stroke: string }>;
-  maxY?: number;
-}) {
-  const width = 520;
-  const height = 180;
-  const inset = 18;
-  const numericValues = data.flatMap((point) =>
-    lines.map((line) => {
-      const value = point[line.key];
-      return typeof value === "number" ? value : 0;
-    })
-  );
-  const ceiling = Math.max(maxY ?? 0, ...numericValues, 1);
-  const stepX = data.length > 1 ? (width - inset * 2) / (data.length - 1) : 0;
-
-  return (
-    <div className="mt-4 overflow-hidden rounded-[22px] border border-af2-line bg-af2-paper-2/40 px-4 py-4">
-      <svg viewBox={`0 0 ${width} ${height}`} className="h-44 w-full">
-        {[0.25, 0.5, 0.75].map((ratio) => {
-          const y = inset + (height - inset * 2) * ratio;
-          return (
-            <line
-              key={ratio}
-              x1={inset}
-              x2={width - inset}
-              y1={y}
-              y2={y}
-              stroke="#cbd5e1"
-              strokeDasharray="5 7"
-              strokeWidth="1"
-            />
-          );
-        })}
-
-        {lines.map((line) => {
-          const path = data
-            .map((point, index) => {
-              const value = typeof point[line.key] === "number" ? Number(point[line.key]) : 0;
-              const x = inset + stepX * index;
-              const y = height - inset - (value / ceiling) * (height - inset * 2);
-              return `${index === 0 ? "M" : "L"} ${x} ${y}`;
-            })
-            .join(" ");
-          return (
-            <path
-              key={line.key}
-              d={path}
-              fill="none"
-              stroke={line.stroke}
-              strokeWidth="3"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            />
-          );
-        })}
-
-        {data.map((point, index) => (
-          <text
-            key={String(point.label)}
-            x={inset + stepX * index}
-            y={height - 2}
-            textAnchor="middle"
-            className="fill-af2-ink-3 text-[10px] font-medium"
-          >
-            {String(point.label)}
-          </text>
-        ))}
-      </svg>
-    </div>
-  );
-}
-
-function SpendBars({ snapshots }: { snapshots: AgentSnapshot[] }) {
-  const rows = [...snapshots]
-    .map((snapshot) => ({
-      id: snapshot.agent.id,
-      name: snapshot.agent.name,
-      budget: snapshot.budget?.monthlyUsd ?? snapshot.agent.budgetMonthlyUsd ?? 0,
-      spend: snapshot.budget?.spentUsd ?? 0,
-    }))
-    .sort((left, right) => right.spend - left.spend)
-    .slice(0, 6);
-
-  const maxBudget = Math.max(1, ...rows.map((row) => row.budget));
-
-  return (
-    <div className="space-y-3">
-      {rows.map((row) => {
-        const budgetWidth = row.budget > 0 ? (row.budget / maxBudget) * 100 : 0;
-        const spendWidth = row.budget > 0 ? Math.min((row.spend / row.budget) * budgetWidth, budgetWidth) : 0;
-        return (
-          <div key={row.id}>
-            <div className="mb-1.5 flex items-center justify-between gap-3 text-sm">
-              <span className="font-medium text-af2-ink-2">{row.name}</span>
-              <span className="font-mono text-xs text-af2-ink-3">
-                {formatCurrency(row.spend)} / {formatCurrency(row.budget)}
-              </span>
-            </div>
-            <div className="relative h-3 rounded-full bg-af2-paper-2">
-              <div className="absolute inset-y-0 left-0 rounded-full bg-af2-clay-soft" style={{ width: `${budgetWidth}%` }} />
-              <div
-                className={`absolute inset-y-0 left-0 rounded-full ${row.spend / Math.max(row.budget, 1) >= 0.8 ? "bg-af2-clay-2" : "bg-af2-sage/100"}`}
-                style={{ width: `${spendWidth}%` }}
-              />
-            </div>
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
-function transportStateLabel(state: TransportState): string {
-  if (state === "live") return "Fresh events are flowing";
-  if (state === "reconnecting") return "Recovering live transport";
-  if (state === "polling") return "Polling fallback active";
-  if (state === "error") return "Operator attention required";
-  return "Connecting to live transport";
-}
-
-function eventCategoryBadge(category: ObservabilityEventCategory): string {
-  if (category === "run") {
-    return "rounded-full bg-af2-clay-soft/40 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-af2-clay";
-  }
-  if (category === "alert") {
-    return "rounded-full bg-af2-clay-soft/40 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-af2-clay";
-  }
-  if (category === "heartbeat") {
-    return "rounded-full bg-af2-sage/10 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-af2-sage";
-  }
-  if (category === "budget") {
-    return "rounded-full bg-cyan-50 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-cyan-700";
-  }
-  return "rounded-full bg-af2-paper-2 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-af2-ink-2";
-}
-
-function eventCategoryIcon(category: ObservabilityEventCategory) {
-  if (category === "run") {
-    return <span className="flex h-9 w-9 items-center justify-center rounded-2xl bg-af2-clay-soft/40 text-af2-clay"><Activity size={16} /></span>;
-  }
-  if (category === "alert") {
-    return <span className="flex h-9 w-9 items-center justify-center rounded-2xl bg-af2-clay-soft/40 text-af2-clay"><AlertTriangle size={16} /></span>;
-  }
-  if (category === "heartbeat") {
-    return <span className="flex h-9 w-9 items-center justify-center rounded-2xl bg-af2-sage/10 text-af2-sage"><Wifi size={16} /></span>;
-  }
-  if (category === "budget") {
-    return <span className="flex h-9 w-9 items-center justify-center rounded-2xl bg-cyan-50 text-cyan-700"><DollarSign size={16} /></span>;
-  }
-  return <span className="flex h-9 w-9 items-center justify-center rounded-2xl bg-af2-paper-2 text-af2-ink-2"><Clock3 size={16} /></span>;
-}
-
-function formatObservabilityDateTime(value: string): string {
-  return new Date(value).toLocaleString([], {
-    month: "short",
-    day: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-  });
-}
-
-function formatBucketLabel(value: string): string {
-  return new Date(value).toLocaleTimeString([], {
-    hour: "numeric",
-    minute: "2-digit",
-  });
-}
-
-/** Returns a time-of-day greeting in the user's local timezone. */
 function greetingPart(): "morning" | "afternoon" | "evening" {
   const hour = new Date().getHours();
   if (hour < 12) return "morning";
@@ -1636,11 +46,560 @@ function greetingPart(): "morning" | "afternoon" | "evening" {
   return "evening";
 }
 
-function ZeroState({ title, detail }: { title: string; detail: string }) {
+function formatTodayChrome(): string {
+  return new Date().toLocaleDateString("en-US", {
+    weekday: "long",
+    month: "long",
+    day: "numeric",
+  });
+}
+
+function formatCurrency(value: number, fractionDigits = 0): string {
+  return new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: "USD",
+    minimumFractionDigits: fractionDigits,
+    maximumFractionDigits: fractionDigits,
+  }).format(value);
+}
+
+function initialsFor(name: string | undefined | null): string {
+  if (!name) return "—";
+  const parts = name.trim().split(/\s+/).slice(0, 2);
+  return parts.map((p) => p[0]?.toUpperCase() ?? "").join("") || "—";
+}
+
+function firstName(name: string | undefined | null): string {
+  if (!name) return "there";
+  return name.trim().split(/\s+/)[0] ?? "there";
+}
+
+function teamNameFor(agent: Agent): string | null {
+  const raw = (agent.metadata as Record<string, unknown> | undefined)?.teamName;
+  return typeof raw === "string" && raw.trim().length > 0 ? raw : null;
+}
+
+function missionPillTone(mission: Mission): {
+  className: string;
+  label: string;
+  progressColor: string;
+} {
+  switch (mission.status) {
+    case "blocked":
+      return {
+        className: "af2-pill af2-pill-clay",
+        label: "blocked",
+        progressColor: "var(--af2-clay)",
+      };
+    case "review":
+    case "awaiting_approval":
+      return {
+        className: "af2-pill af2-pill-pending",
+        label: "review",
+        progressColor: "var(--af2-mustard)",
+      };
+    case "scheduled":
+    case "draft":
+      return {
+        className: "af2-pill",
+        label: mission.status,
+        progressColor: "var(--af2-ink-3)",
+      };
+    default:
+      return {
+        className: "af2-pill af2-pill-live",
+        label: "in-flight",
+        progressColor: "var(--af2-sage)",
+      };
+  }
+}
+
+function missionDueText(mission: Mission, latestRuns: WorkflowRun[]): string {
+  // Without a dedicated due-date field on Mission, we fall back to inferring
+  // urgency from the latest run state for the mission. If no run is linked,
+  // show an em-dash.
+  const latest = latestRuns.find((run) => run.input?.missionId === mission.id);
+  if (!latest) return "—";
+  if (latest.status === "failed") return "overdue";
+  if (latest.status === "running") return "in flight";
+  if (latest.status === "completed") return "done";
+  return latest.status;
+}
+
+function approvalCostUsd(approval: ApprovalRequest): string {
+  // ApprovalRequest doesn't currently carry a cost field. Display "—" so the
+  // structure renders identically to the v2 reference; the real number wires
+  // through once HEL-118's step_results rollup is consumed here.
+  void approval;
+  return "—";
+}
+
+export default function Dashboard() {
+  const { user, requireAccessToken } = useAuth();
+  const { activeWorkspaceId } = useWorkspace();
+
+  const [missions, setMissions] = useState<Mission[]>([]);
+  const [agentSnapshots, setAgentSnapshots] = useState<AgentSnapshot[]>([]);
+  const [approvals, setApprovals] = useState<ApprovalRequest[]>([]);
+  const [runs, setRuns] = useState<WorkflowRun[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const loadDashboard = useCallback(async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      const accessToken = await requireAccessToken();
+
+      const [agentList, approvalList, runList] = await Promise.all([
+        listAgents(accessToken),
+        listApprovals(accessToken),
+        listRuns(undefined, accessToken),
+      ]);
+
+      // Missions API requires a workspace; if no active workspace yet, skip.
+      const missionsList = activeWorkspaceId
+        ? await listMissions(accessToken).catch(() => [] as Mission[])
+        : [];
+
+      const snapshots = await Promise.all(
+        agentList.map(async (agent) => {
+          const [budget, heartbeat] = await Promise.all([
+            getAgentBudget(agent.id, accessToken).catch(() => null),
+            getAgentHeartbeat(agent.id, accessToken).catch(() => null),
+          ]);
+          return { agent, budget, heartbeat } satisfies AgentSnapshot;
+        }),
+      );
+
+      setMissions(missionsList);
+      setAgentSnapshots(snapshots);
+      setApprovals(approvalList);
+      setRuns(runList);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to load dashboard");
+    } finally {
+      setLoading(false);
+    }
+  }, [activeWorkspaceId, requireAccessToken]);
+
+  useEffect(() => {
+    void loadDashboard();
+  }, [loadDashboard]);
+
+  const totals = useMemo(() => {
+    const activeMissions = missions.filter(
+      (m) => m.status !== "completed" && m.status !== "archived",
+    );
+    const totalSpend = agentSnapshots.reduce(
+      (sum, snap) => sum + (snap.budget?.spentUsd ?? 0),
+      0,
+    );
+    const totalBudget = agentSnapshots.reduce(
+      (sum, snap) => sum + (snap.budget?.monthlyUsd ?? 0),
+      0,
+    );
+    const liveAgents = agentSnapshots.filter(
+      (snap) => snap.agent.status === "running" || snap.heartbeat?.status === "running",
+    ).length;
+    const pendingApprovals = approvals.filter((a) => a.status === "pending");
+    const todaySpend = agentSnapshots.reduce((sum, snap) => {
+      // Approximate today's spend as 1/30 of monthly used. A dedicated
+      // per-day budget surface (HEL-118 budgets route) can replace this.
+      return sum + (snap.budget?.spentUsd ?? 0) / 30;
+    }, 0);
+    return {
+      activeMissions,
+      totalSpend,
+      totalBudget,
+      liveAgents,
+      pendingApprovals,
+      todaySpend,
+    };
+  }, [missions, agentSnapshots, approvals]);
+
+  if (loading) {
+    return (
+      <div className="af2-page">
+        <LoadingState label="Loading home…" />
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="af2-page">
+        <ErrorState
+          title="Home unavailable"
+          message={error}
+          onRetry={() => void loadDashboard()}
+        />
+      </div>
+    );
+  }
+
+  const spendPercent = totals.totalBudget > 0
+    ? Math.round((totals.totalSpend / totals.totalBudget) * 100)
+    : 0;
+
   return (
-    <div className="rounded-md border border-dashed border-af2-line bg-af2-paper px-4 py-8 text-center">
-      <div className="font-af2-serif text-lg font-medium text-af2-ink">{title}</div>
-      <p className="mx-auto mt-2 max-w-lg text-sm leading-6 text-af2-ink-2">{detail}</p>
+    <div className="af2-page bg-af2-paper text-af2-ink">
+      <div className="af2-page-head">
+        <div>
+          <div className="af2-eyebrow">{formatTodayChrome()}</div>
+          <h1 className="af2-h1 font-af2-serif" style={{ marginTop: 6 }}>
+            Good {greetingPart()}, {firstName(user?.name)}.
+          </h1>
+          <div className="af2-page-head-meta">
+            {totals.liveAgents} agents on the clock · {totals.pendingApprovals.length}{" "}
+            approvals waiting · {formatCurrency(totals.todaySpend, 2)} spent today
+          </div>
+        </div>
+        <div className="af2-page-actions">
+          <Link to="/hire" className="af2-btn">
+            Brief an agent
+          </Link>
+          <Link to="/hire" className="af2-btn af2-btn-clay">
+            ＋ New mission
+          </Link>
+        </div>
+      </div>
+
+      <div className="af2-stats" style={{ marginBottom: 22 }}>
+        <div className="af2-stat">
+          <div className="af2-stat-label">Missions in flight</div>
+          <div className="af2-stat-value">{totals.activeMissions.length}</div>
+          <div className="af2-stat-delta">
+            {missions.length} total · {totals.activeMissions.length} active
+          </div>
+        </div>
+        <div className="af2-stat">
+          <div className="af2-stat-label">Hours saved · 7d</div>
+          <div className="af2-stat-value">—</div>
+          <div className="af2-stat-delta">Tracking lands with HEL-118</div>
+        </div>
+        <div className="af2-stat">
+          <div className="af2-stat-label">Spend · month</div>
+          <div className="af2-stat-value">{formatCurrency(totals.totalSpend)}</div>
+          <div className="af2-stat-delta">
+            {totals.totalBudget > 0
+              ? `${spendPercent}% of ${formatCurrency(totals.totalBudget)} cap`
+              : "No budget set"}
+          </div>
+        </div>
+        <div className="af2-stat">
+          <div className="af2-stat-label">Approval p50</div>
+          <div className="af2-stat-value">—</div>
+          <div className="af2-stat-delta">Median wired with approvals rollup</div>
+        </div>
+      </div>
+
+      <div
+        style={{ display: "grid", gridTemplateColumns: "minmax(0, 1.6fr) minmax(0, 1fr)", gap: 22 }}
+      >
+        <section>
+          <div className="af2-row" style={{ marginBottom: 10 }}>
+            <h3 className="af2-h3">Active missions</h3>
+            <span className="af2-spacer" />
+            <Link to="/mission-state" className="af2-btn af2-btn-ghost af2-btn-sm">
+              All missions →
+            </Link>
+          </div>
+          {totals.activeMissions.length === 0 ? (
+            <div className="af2-card" style={{ padding: 24, textAlign: "center" }}>
+              <div className="af2-muted" style={{ fontSize: 13 }}>
+                No active missions yet. <Link to="/hire" className="af2-btn af2-btn-ghost af2-btn-sm" style={{ display: "inline-flex", marginLeft: 8 }}>Start one →</Link>
+              </div>
+            </div>
+          ) : (
+            <div className="af2-list">
+              <div
+                className="af2-list-head"
+                style={{ gridTemplateColumns: "1.7fr 130px 110px 90px 90px" }}
+              >
+                <div>Mission</div>
+                <div>Owner</div>
+                <div>Status</div>
+                <div>Due</div>
+                <div>Approvals</div>
+              </div>
+              {totals.activeMissions.slice(0, 8).map((mission) => {
+                const tone = missionPillTone(mission);
+                const due = missionDueText(mission, runs);
+                const missionApprovals = approvals.filter(
+                  (a) => a.status === "pending" && (a as { missionId?: string }).missionId === mission.id,
+                );
+                const owner = mission.companyName || "Workspace";
+                return (
+                  <Link
+                    key={mission.id}
+                    to={mission.latestHiringPlanId ? `/hire/plan/${mission.id}/${mission.latestHiringPlanId}` : `/mission-state`}
+                    className="af2-list-row"
+                    style={{
+                      gridTemplateColumns: "1.7fr 130px 110px 90px 90px",
+                      textDecoration: "none",
+                      color: "inherit",
+                    }}
+                  >
+                    <div>
+                      <div style={{ fontWeight: 500 }}>{mission.statement}</div>
+                      <div
+                        style={{
+                          height: 4,
+                          background: "var(--af2-paper-2)",
+                          borderRadius: 4,
+                          marginTop: 6,
+                          overflow: "hidden",
+                        }}
+                      >
+                        <div
+                          style={{
+                            width: `${mission.status === "completed" ? 100 : 40}%`,
+                            height: "100%",
+                            background: tone.progressColor,
+                          }}
+                        />
+                      </div>
+                    </div>
+                    <div className="af2-row">
+                      <div
+                        style={{
+                          display: "inline-flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          width: 24,
+                          height: 24,
+                          borderRadius: "50%",
+                          background: "var(--af2-clay-soft)",
+                          color: "var(--af2-clay-2)",
+                          fontSize: 11,
+                          fontWeight: 700,
+                        }}
+                      >
+                        {initialsFor(owner)}
+                      </div>
+                      <span style={{ fontSize: 12.5 }}>{owner.split(" ")[0]}</span>
+                    </div>
+                    <div>
+                      <span className={tone.className}>
+                        <span className="af2-dot" />
+                        {tone.label}
+                      </span>
+                    </div>
+                    <div className="af2-mono" style={{ color: due === "overdue" ? "var(--af2-clay)" : "var(--af2-ink-3)" }}>
+                      {due}
+                    </div>
+                    <div>
+                      {missionApprovals.length > 0 ? (
+                        <span className="af2-pill af2-pill-clay">{missionApprovals.length}</span>
+                      ) : (
+                        <span className="af2-muted-2">—</span>
+                      )}
+                    </div>
+                  </Link>
+                );
+              })}
+            </div>
+          )}
+
+          <h3 className="af2-h3" style={{ marginTop: 28, marginBottom: 10 }}>
+            The room right now
+          </h3>
+          <div className="af2-card" style={{ padding: 0 }}>
+            {agentSnapshots.length === 0 ? (
+              <div className="af2-muted" style={{ padding: 16, fontSize: 13, textAlign: "center" }}>
+                No agents deployed yet. <Link to="/hire" style={{ color: "var(--af2-clay-2)" }}>Hire an agent →</Link>
+              </div>
+            ) : (
+              agentSnapshots.slice(0, 6).map((snap, idx) => {
+                const summary =
+                  snap.heartbeat?.summary ??
+                  (snap.agent.status === "idle" ? "Idle · awaiting next mission" : "Awaiting status…");
+                const isWorking = snap.heartbeat?.status === "running" || snap.agent.status === "running";
+                return (
+                  <Link
+                    key={snap.agent.id}
+                    to={`/agents/team/${(snap.agent as Agent & { teamId?: string }).teamId ?? snap.agent.id}`}
+                    className="af2-row"
+                    style={{
+                      padding: "12px 18px",
+                      borderBottom:
+                        idx === Math.min(agentSnapshots.length, 6) - 1 ? 0 : "1px solid var(--af2-line)",
+                      gap: 14,
+                      cursor: "pointer",
+                      textDecoration: "none",
+                      color: "inherit",
+                    }}
+                  >
+                    <div
+                      style={{
+                        display: "inline-flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        width: 32,
+                        height: 32,
+                        borderRadius: "50%",
+                        background: "var(--af2-clay-soft)",
+                        color: "var(--af2-clay-2)",
+                        fontSize: 12,
+                        fontWeight: 700,
+                      }}
+                    >
+                      {initialsFor(snap.agent.name)}
+                    </div>
+                    <div style={{ minWidth: 160 }}>
+                      <div style={{ fontWeight: 600, fontSize: 13.5 }}>{snap.agent.name}</div>
+                      <div className="af2-muted" style={{ fontSize: 12 }}>
+                        {teamNameFor(snap.agent) ?? "Unassigned"}
+                      </div>
+                    </div>
+                    <div style={{ flex: 1, fontSize: 13, color: "var(--af2-ink-2)" }}>
+                      {isWorking ? (
+                        <em className="font-af2-serif" style={{ color: "var(--af2-ink-2)" }}>
+                          "{summary}"
+                        </em>
+                      ) : (
+                        <span className="af2-muted">{summary}</span>
+                      )}
+                    </div>
+                    <div className="af2-mono af2-muted" style={{ fontSize: 11.5 }}>
+                      {(snap.agent as Agent & { model?: string }).model ?? "—"}
+                    </div>
+                  </Link>
+                );
+              })
+            )}
+          </div>
+        </section>
+
+        <aside>
+          <h3 className="af2-h3" style={{ marginBottom: 10 }}>
+            Needs your stamp
+          </h3>
+          <div className="af2-card" style={{ padding: 0 }}>
+            {totals.pendingApprovals.length === 0 ? (
+              <div className="af2-muted" style={{ padding: 16, fontSize: 13, textAlign: "center" }}>
+                Nothing waiting on you.
+              </div>
+            ) : (
+              totals.pendingApprovals.slice(0, 4).map((approval, idx) => {
+                const owningAgent = agentSnapshots.find((snap) =>
+                  snap.heartbeat?.createdByRunId === approval.runId,
+                );
+                const ownerName = owningAgent?.agent.name ?? approval.assignee ?? "—";
+                return (
+                  <div
+                    key={approval.id}
+                    style={{
+                      padding: "14px 16px",
+                      borderBottom:
+                        idx === Math.min(totals.pendingApprovals.length, 4) - 1
+                          ? 0
+                          : "1px solid var(--af2-line)",
+                    }}
+                  >
+                    <div className="af2-row">
+                      <span className="af2-mono af2-muted-2" style={{ fontSize: 11 }}>
+                        {approval.id.slice(0, 8).toUpperCase()}
+                      </span>
+                      <span className="af2-spacer" />
+                      <span className="af2-mono af2-muted" style={{ fontSize: 11 }}>
+                        ● {approval.timeoutMinutes && approval.timeoutMinutes <= 30 ? "high" : "low"}
+                      </span>
+                    </div>
+                    <div style={{ fontSize: 13.5, marginTop: 4, lineHeight: 1.35 }}>
+                      {approval.message ?? approval.stepName}
+                    </div>
+                    <div className="af2-row" style={{ marginTop: 10, gap: 8 }}>
+                      <div
+                        style={{
+                          display: "inline-flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          width: 20,
+                          height: 20,
+                          borderRadius: "50%",
+                          background: "var(--af2-clay-soft)",
+                          color: "var(--af2-clay-2)",
+                          fontSize: 10,
+                          fontWeight: 700,
+                        }}
+                      >
+                        {initialsFor(ownerName)}
+                      </div>
+                      <span className="af2-muted" style={{ fontSize: 12 }}>
+                        {firstName(ownerName)} · {approvalCostUsd(approval)}
+                      </span>
+                      <span className="af2-spacer" />
+                      <Link
+                        to={`/approvals`}
+                        className="af2-btn af2-btn-sm"
+                      >
+                        Open
+                      </Link>
+                      <Link
+                        to={`/approvals`}
+                        className="af2-btn af2-btn-sm af2-btn-primary"
+                      >
+                        Approve
+                      </Link>
+                    </div>
+                  </div>
+                );
+              })
+            )}
+          </div>
+
+          <h3 className="af2-h3" style={{ marginTop: 28, marginBottom: 10 }}>
+            Spend by agent · this week
+          </h3>
+          <div className="af2-card">
+            {agentSnapshots.length === 0 ? (
+              <div className="af2-muted" style={{ fontSize: 13, textAlign: "center" }}>
+                No agent spend recorded yet.
+              </div>
+            ) : (
+              agentSnapshots.slice(0, 5).map((snap) => {
+                const spent = snap.budget?.spentUsd ?? 0;
+                const budget = snap.budget?.monthlyUsd ?? 0;
+                const pct = budget > 0 ? spent / budget : 0;
+                const hot = pct > 0.8;
+                return (
+                  <div key={snap.agent.id} style={{ marginBottom: 12 }}>
+                    <div className="af2-row" style={{ fontSize: 12, marginBottom: 4 }}>
+                      <span style={{ fontWeight: 500 }}>{firstName(snap.agent.name)}</span>
+                      <span className="af2-muted" style={{ marginLeft: 6 }}>
+                        · {teamNameFor(snap.agent) ?? "Unassigned"}
+                      </span>
+                      <span className="af2-spacer" />
+                      <span className="af2-mono">
+                        {formatCurrency(spent)}{" "}
+                        <span className="af2-muted-2">/ {formatCurrency(budget)}</span>
+                      </span>
+                    </div>
+                    <div
+                      style={{
+                        height: 4,
+                        background: "var(--af2-paper-2)",
+                        borderRadius: 3,
+                        overflow: "hidden",
+                      }}
+                    >
+                      <div
+                        style={{
+                          width: `${Math.min(pct * 100, 100)}%`,
+                          height: "100%",
+                          background: hot ? "var(--af2-clay)" : "var(--af2-ink-2)",
+                        }}
+                      />
+                    </div>
+                  </div>
+                );
+              })
+            )}
+          </div>
+        </aside>
+      </div>
     </div>
   );
 }

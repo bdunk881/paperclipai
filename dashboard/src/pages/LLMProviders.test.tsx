@@ -54,6 +54,20 @@ describe("LLMProviders", () => {
     requireAccessTokenMock.mockResolvedValue("token-123");
   });
 
+  it("renders with v2 structural markers (HEL-63)", async () => {
+    listLLMConfigsMock.mockResolvedValue([]);
+    const { container } = render(<LLMProviders />);
+    await waitFor(() =>
+      expect(screen.getByText(/no providers connected yet/i)).toBeInTheDocument()
+    );
+
+    expect(container.querySelector(".af2-page")).not.toBeNull();
+    expect(container.querySelector(".af2-page-head")).not.toBeNull();
+    expect(container.querySelector(".af2-eyebrow")).not.toBeNull();
+    expect(container.querySelector("h1.af2-h1")).not.toBeNull();
+    expect(container.querySelectorAll(".af2-card").length).toBeGreaterThan(0);
+  });
+
   it("shows the backend error when config loading fails", async () => {
     listLLMConfigsMock.mockRejectedValue(new Error("Config fetch failed"));
 

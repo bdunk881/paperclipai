@@ -1,13 +1,14 @@
 import { render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { Agent, AgentBudgetSnapshot } from "../api/agentApi";
+import type { Agent } from "../api/agentApi";
+import type { BudgetRow } from "../api/canonicalApi";
 import BudgetDashboard from "./BudgetDashboard";
 
-const { getAccessTokenMock, listAgentsMock, getAgentBudgetMock, accessModeMock } = vi.hoisted(() => ({
+const { getAccessTokenMock, listAgentsMock, listBudgetsMock, accessModeMock } = vi.hoisted(() => ({
   getAccessTokenMock: vi.fn(),
   listAgentsMock: vi.fn(),
-  getAgentBudgetMock: vi.fn(),
+  listBudgetsMock: vi.fn(),
   accessModeMock: vi.fn(),
 }));
 
@@ -20,7 +21,10 @@ vi.mock("../context/AuthContext", () => ({
 
 vi.mock("../api/agentApi", () => ({
   listAgents: listAgentsMock,
-  getAgentBudget: getAgentBudgetMock,
+}));
+
+vi.mock("../api/canonicalApi", () => ({
+  listBudgets: listBudgetsMock,
 }));
 
 function agent(overrides: Partial<Agent> & Pick<Agent, "id" | "name">): Agent {
@@ -43,29 +47,33 @@ function agent(overrides: Partial<Agent> & Pick<Agent, "id" | "name">): Agent {
   } as Agent;
 }
 
-function budget(overrides: Partial<AgentBudgetSnapshot> & Pick<AgentBudgetSnapshot, "agentId">): AgentBudgetSnapshot {
+function budgetRow(
+  agentId: string,
+  monthlyUsd: number,
+  spentUsd: number,
+): BudgetRow {
   return {
-    agentId: overrides.agentId,
-    userId: "u1",
-    monthlyUsd: 0,
-    spentUsd: 0,
-    remainingUsd: 0,
-    currentPeriod: "2026-05",
-    autoPaused: false,
-    lastUpdatedAt: null,
-    ...overrides,
-  } as AgentBudgetSnapshot;
+    id: `budget-${agentId}`,
+    scopeKind: "agent",
+    scopeId: agentId,
+    capCents: Math.round(monthlyUsd * 100),
+    usedCents: Math.round(spentUsd * 100),
+    period: "monthly",
+    createdAt: "2026-05-01T00:00:00Z",
+    updatedAt: "2026-05-01T00:00:00Z",
+  };
 }
 
 describe("BudgetDashboard", () => {
   beforeEach(() => {
     getAccessTokenMock.mockReset();
     listAgentsMock.mockReset();
-    getAgentBudgetMock.mockReset();
+    listBudgetsMock.mockReset();
     accessModeMock.mockReset();
     accessModeMock.mockReturnValue("authenticated");
     getAccessTokenMock.mockResolvedValue("token-123");
     listAgentsMock.mockResolvedValue([]);
+    listBudgetsMock.mockResolvedValue([]);
   });
 
   it("shows loading state initially", () => {
@@ -113,7 +121,7 @@ describe("BudgetDashboard", () => {
       await screen.findByText(/no agent spend recorded yet/i),
     ).toBeInTheDocument();
     expect(listAgentsMock).not.toHaveBeenCalled();
-    expect(getAgentBudgetMock).not.toHaveBeenCalled();
+    expect(listBudgetsMock).not.toHaveBeenCalled();
   });
 
   it("shows auth error when token is null in authenticated mode", async () => {
@@ -143,11 +151,10 @@ describe("BudgetDashboard", () => {
       agent({ id: "a1", name: "Devon", roleKey: "CTO", budgetMonthlyUsd: 700 }),
       agent({ id: "a2", name: "Maya", roleKey: "Ops", budgetMonthlyUsd: 500 }),
     ]);
-    getAgentBudgetMock.mockImplementation(async (id: string) => {
-      if (id === "a1") return budget({ agentId: "a1", monthlyUsd: 700, spentUsd: 510 });
-      if (id === "a2") return budget({ agentId: "a2", monthlyUsd: 500, spentUsd: 120 });
-      return null;
-    });
+    listBudgetsMock.mockResolvedValueOnce([
+      budgetRow("a1", 700, 510),
+      budgetRow("a2", 500, 120),
+    ]);
 
     render(<MemoryRouter><BudgetDashboard /></MemoryRouter>);
 
@@ -185,7 +192,7 @@ describe("BudgetDashboard", () => {
     listAgentsMock.mockResolvedValueOnce([
       agent({ id: "a1", name: "Fallback Agent", budgetMonthlyUsd: 75 }),
     ]);
-    getAgentBudgetMock.mockResolvedValueOnce(null);
+    listBudgetsMock.mockResolvedValueOnce([]);
     render(<MemoryRouter><BudgetDashboard /></MemoryRouter>);
     await waitFor(() => expect(screen.getByText("Fallback Agent")).toBeInTheDocument());
     expect(screen.getByText("$75")).toBeInTheDocument();

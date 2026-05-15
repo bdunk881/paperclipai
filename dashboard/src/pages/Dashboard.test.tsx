@@ -19,16 +19,16 @@ const {
   listRunsMock,
   listApprovalsMock,
   listAgentsMock,
-  getAgentBudgetMock,
   getAgentHeartbeatMock,
+  listBudgetsMock,
   listMissionsMock,
   requireAccessTokenMock,
 } = vi.hoisted(() => ({
   listRunsMock: vi.fn(),
   listApprovalsMock: vi.fn(),
   listAgentsMock: vi.fn(),
-  getAgentBudgetMock: vi.fn(),
   getAgentHeartbeatMock: vi.fn(),
+  listBudgetsMock: vi.fn(),
   listMissionsMock: vi.fn(),
   requireAccessTokenMock: vi.fn(),
 }));
@@ -40,8 +40,11 @@ vi.mock("../api/client", () => ({
 
 vi.mock("../api/agentApi", () => ({
   listAgents: listAgentsMock,
-  getAgentBudget: getAgentBudgetMock,
   getAgentHeartbeat: getAgentHeartbeatMock,
+}));
+
+vi.mock("../api/canonicalApi", () => ({
+  listBudgets: listBudgetsMock,
 }));
 
 vi.mock("../api/missionsApi", () => ({
@@ -140,25 +143,28 @@ describe("Dashboard (v2 Home)", () => {
         latestHiringPlanId: null,
       },
     ]);
-    getAgentBudgetMock.mockImplementation(async (agentId: string) =>
-      agentId === "agent-graphic"
-        ? {
-            agentId,
-            userId: "user-1",
-            monthlyUsd: 200,
-            spentUsd: 40,
-            remainingUsd: 160,
-            currentPeriod: "2026-04",
-          }
-        : {
-            agentId,
-            userId: "user-1",
-            monthlyUsd: 240,
-            spentUsd: 120,
-            remainingUsd: 120,
-            currentPeriod: "2026-04",
-          },
-    );
+    listBudgetsMock.mockResolvedValue([
+      {
+        id: "budget-graphic",
+        scopeKind: "agent" as const,
+        scopeId: "agent-graphic",
+        capCents: 20000,
+        usedCents: 4000,
+        period: "monthly",
+        createdAt: "2026-04-01T00:00:00.000Z",
+        updatedAt: "2026-04-27T00:00:00.000Z",
+      },
+      {
+        id: "budget-frontend",
+        scopeKind: "agent" as const,
+        scopeId: "agent-frontend",
+        capCents: 24000,
+        usedCents: 12000,
+        period: "monthly",
+        createdAt: "2026-04-01T00:00:00.000Z",
+        updatedAt: "2026-04-27T00:00:00.000Z",
+      },
+    ]);
     getAgentHeartbeatMock.mockImplementation(async (agentId: string) => ({
       id: `heartbeat-${agentId}`,
       agentId,

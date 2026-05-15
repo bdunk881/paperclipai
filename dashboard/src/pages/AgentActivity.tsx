@@ -154,15 +154,31 @@ export default function AgentActivity() {
     void loadEvents();
   }, [loadEvents]);
 
-  // Live polling: only refresh while the Live tab is active so the other
-  // tabs (which are point-in-time views) don't flicker every 5s.
+  // Live polling: only refresh while the Live tab is active AND the tab is
+  // visible. Background polling burns through the 100 req/min general API
+  // rate limiter without the user ever seeing the result; the visibility
+  // gate also pauses polling when the user switches windows so reopening
+  // dev.helloautoflow.com after lunch doesn't spam 12 backed-up requests.
   useEffect(() => {
     if (accessMode === "preview") return;
     if (tab !== "live") return;
+    if (typeof document !== "undefined" && document.hidden) return;
+
     const interval = window.setInterval(() => {
       void loadEvents(true);
     }, ACTIVITY_POLL_MS);
-    return () => window.clearInterval(interval);
+
+    const onVisibility = () => {
+      if (document.hidden) {
+        window.clearInterval(interval);
+      }
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+
+    return () => {
+      window.clearInterval(interval);
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
   }, [accessMode, loadEvents, tab]);
 
   const filtered = useMemo(

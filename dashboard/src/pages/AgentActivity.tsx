@@ -11,6 +11,20 @@ import {
 import { EmptyState, ErrorState, LoadingState } from "../components/UiStates";
 import { useAuth } from "../context/AuthContext";
 
+/**
+ * Activity feed (HEL-60 v2 restyle).
+ *
+ * v2 reference: `docs/design/v2/pages-extra.jsx::AF2_Activity` — `af2-page`
+ * chrome, eyebrow "Run · Live", serif h1, time-tabs (Live / Today / This
+ * week / All), and an `af2-card` list of timeline rows with mono timestamps,
+ * agent avatars, and verb-summary copy.
+ *
+ * Data wiring kept from the previous implementation: still pulls
+ * agent runs + heartbeats via the existing `listAgents` / `listAgentRuns`
+ * / `getAgentHeartbeat` API (polling on mount only — SSE / real-time push
+ * is tracked separately under HEL-29).
+ */
+
 type ActivityStatus = "success" | "warning" | "info";
 
 type ActivityItem = {
@@ -29,6 +43,12 @@ function statusIcon(status: ActivityStatus) {
   return <CircleDashed size={14} className="text-af2-clay" />;
 }
 
+function statusTone(status: ActivityStatus): "sage" | "clay" | "mustard" {
+  if (status === "success") return "sage";
+  if (status === "warning") return "clay";
+  return "mustard";
+}
+
 function heartbeatStatusToTone(status: AgentHeartbeat["status"]): ActivityStatus {
   if (status === "running") return "success";
   if (status === "error") return "warning";
@@ -40,6 +60,45 @@ function runStatusToTone(status: AgentRun["status"]): ActivityStatus {
   if (status === "failed" || status === "blocked") return "warning";
   return "info";
 }
+
+function formatTime(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "—";
+  return d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit", hour12: false });
+}
+
+function formatRelative(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  return d.toLocaleString();
+}
+
+function agentInitials(name: string): string {
+  return name
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase() ?? "")
+    .join("");
+}
+
+function agentToneClass(agentName: string): string {
+  // Stable per-agent color from the af2 tone palette.
+  const tones = ["clay", "sage", "mustard", "plum", "blue", "ink"] as const;
+  let hash = 0;
+  for (let i = 0; i < agentName.length; i += 1) {
+    hash = (hash * 31 + agentName.charCodeAt(i)) | 0;
+  }
+  const tone = tones[Math.abs(hash) % tones.length];
+  return `af2-tone-${tone}`;
+}
+
+const STATUS_FILTERS: Array<{ value: "all" | ActivityStatus; label: string }> = [
+  { value: "all", label: "All" },
+  { value: "success", label: "Live" },
+  { value: "warning", label: "Blocked" },
+  { value: "info", label: "Other" },
+];
 
 export default function AgentActivity() {
   const { accessMode, getAccessToken } = useAuth();
@@ -120,7 +179,7 @@ export default function AgentActivity() {
 
   if (loading) {
     return (
-      <div className="p-8">
+      <div className="af2-page">
         <LoadingState label="Streaming agent activity..." />
       </div>
     );
@@ -128,101 +187,150 @@ export default function AgentActivity() {
 
   if (error) {
     return (
-      <div className="p-8">
+      <div className="af2-page">
         <ErrorState title="Signal Lost" message={error} onRetry={() => void loadActivity()} />
       </div>
     );
   }
 
   return (
-    <div className="min-h-full bg-af2-paper-2/40 p-6 md:p-8">
-      <div className="mx-auto max-w-5xl">
-        <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
-          <div>
-            <h1 className="text-2xl font-bold text-af2-ink">Agent Activity Feed</h1>
-            <p className="mt-1 text-sm text-af2-ink-3">
-              Live stream of heartbeats, execution runs, and runtime signals from the agent API.
-            </p>
+    <div className="af2-page">
+      <div className="af2-page-head">
+        <div>
+          <div className="af2-eyebrow">Run · Live</div>
+          <h1 className="af2-h1" style={{ marginTop: 6 }}>
+            Activity
+          </h1>
+          <div className="af2-page-head-meta">
+            Every move your team makes — heartbeats, runs, signals. Searchable, with receipts.
           </div>
+        </div>
+        <div className="af2-page-actions">
           <Link
             to="/agents/my"
-            className="inline-flex items-center gap-1.5 text-sm font-medium text-af2-clay hover:text-af2-clay"
+            className="af2-btn"
+            style={{ textDecoration: "none", display: "inline-flex", alignItems: "center", gap: 6 }}
           >
             Manage deployments
             <ArrowRight size={14} />
           </Link>
         </div>
+      </div>
 
-        <div className="mt-6 rounded-3xl border border-af2-line bg-af2-card p-4 shadow-sm">
-          <div className="flex flex-col gap-3 md:flex-row md:items-center">
-            <div className="relative flex-1">
-              <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-af2-ink-4" />
-              <input
-                value={query}
-                onChange={(event) => setQuery(event.target.value)}
-                className="w-full rounded-2xl border border-af2-line pl-9 pr-3 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
-                placeholder="Filter activity..."
-              />
+      <div className="af2-tabs">
+        {STATUS_FILTERS.map((tab) => (
+          <button
+            key={tab.value}
+            type="button"
+            onClick={() => setStatus(tab.value)}
+            className={`af2-tab${status === tab.value ? " active" : ""}`}
+          >
+            {tab.label}
+          </button>
+        ))}
+      </div>
+
+      <div
+        style={{
+          display: "flex",
+          gap: 12,
+          marginBottom: 14,
+          alignItems: "center",
+        }}
+      >
+        <div
+          style={{
+            position: "relative",
+            flex: 1,
+            display: "flex",
+            alignItems: "center",
+          }}
+        >
+          <Search
+            size={14}
+            style={{
+              position: "absolute",
+              left: 12,
+              color: "var(--af2-ink-4)",
+              pointerEvents: "none",
+            }}
+          />
+          <input
+            className="af2-input"
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            style={{ width: "100%", paddingLeft: 32 }}
+            placeholder="Filter activity..."
+          />
+        </div>
+      </div>
+
+      <div className="af2-card" style={{ padding: 0 }}>
+        {filtered.map((item, index) => (
+          <div
+            key={item.id}
+            style={{
+              display: "grid",
+              gridTemplateColumns: "60px 32px 1fr auto",
+              gap: 14,
+              padding: "12px 18px",
+              borderBottom:
+                index < filtered.length - 1 ? "1px solid var(--af2-line)" : "none",
+              alignItems: "center",
+            }}
+          >
+            <span
+              className="af2-mono af2-muted-2"
+              style={{ fontSize: 11 }}
+              title={formatRelative(item.createdAt)}
+            >
+              {formatTime(item.createdAt)}
+            </span>
+
+            <div
+              className={`af2-avatar sm ${agentToneClass(item.agentName)}`}
+              aria-label={item.agentName}
+            >
+              {agentInitials(item.agentName)}
             </div>
-            <div className="flex gap-2">
-              {(["all", "success", "warning", "info"] as const).map((value) => (
-                <button
-                  key={value}
-                  onClick={() => setStatus(value)}
-                  className={`rounded-full px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.14em] transition ${
-                    status === value
-                      ? "bg-af2-ink text-white"
-                      : "border border-af2-line text-af2-ink-2 hover:border-af2-line-2"
-                  }`}
-                >
-                  {value}
-                </button>
-              ))}
+
+            <div style={{ fontSize: 13, minWidth: 0 }}>
+              <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+                {statusIcon(item.status)}
+                <strong>{item.agentName}</strong>
+              </span>
+              <span className="af2-muted">{" · "}</span>
+              <span>{item.action}</span>
+              <span className="af2-muted">{" · "}</span>
+              <span style={{ color: "var(--af2-ink)" }}>{item.summary}</span>
+            </div>
+
+            <div
+              style={{
+                textAlign: "right",
+                whiteSpace: "nowrap",
+              }}
+            >
+              <span
+                className={`af2-pill af2-pill-${statusTone(item.status) === "sage" ? "live" : statusTone(item.status) === "clay" ? "clay" : "pending"}`}
+              >
+                <span className="af2-dot" />
+                {item.tokenUsage.toLocaleString()} tok
+              </span>
             </div>
           </div>
-        </div>
+        ))}
 
-        <div className="mt-4 space-y-3">
-          {filtered.map((item) => {
-            const borderTone =
-              item.status === "success"
-                ? "border-l-teal-500"
-                : item.status === "warning"
-                ? "border-l-orange-500"
-                : "border-l-indigo-500";
-            return (
-              <article
-                key={item.id}
-                className={`animate-slide-in-down rounded-3xl border border-af2-line border-l-4 ${borderTone} bg-af2-card p-4 shadow-sm`}
-              >
-                <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-2 text-sm font-semibold text-af2-ink">
-                      {statusIcon(item.status)}
-                      <span>{item.agentName}</span>
-                      <span className="font-normal text-af2-ink-4">·</span>
-                      <span className="font-normal text-af2-ink-2">{item.action}</span>
-                    </div>
-                    <p className="mt-1 text-sm text-af2-ink-2">{item.summary}</p>
-                  </div>
-                  <div className="text-left md:text-right">
-                    <p className="font-mono text-sm font-medium text-af2-ink-2">{item.tokenUsage.toLocaleString()} tok</p>
-                    <p className="mt-1 text-xs text-af2-ink-4">{new Date(item.createdAt).toLocaleString()}</p>
-                  </div>
-                </div>
-              </article>
-            );
-          })}
-
-          {filtered.length === 0 ? (
+        {filtered.length === 0 ? (
+          <div style={{ padding: 18 }}>
             <EmptyState
               title={activity.length === 0 ? "No activity yet" : "No activity matches this filter"}
               description="Heartbeats and execution runs will appear here once your agents are deployed and running."
               ctaLabel="Deploy an agent"
               ctaTo="/agents"
             />
-          ) : null}
-        </div>
+          </div>
+        ) : null}
       </div>
     </div>
   );

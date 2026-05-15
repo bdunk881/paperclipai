@@ -38,6 +38,8 @@ import {
 import { llmConfigStore } from "../llmConfig/llmConfigStore";
 import { resolveModelForTier } from "../engine/llmRouter";
 import { getProvider } from "../engine/llmProviders";
+import { computeHiringPlanCostCents } from "./hiringPlanCost";
+import { recordHiringPlanCost } from "./hiringPlanCostWriter";
 
 interface MissionRow {
   id: string;
@@ -445,14 +447,43 @@ export function createMissionRoutes(pool: Pool) {
     });
 
     const request = teamAssemblyRequestFromMission(mission);
+    // HEL-74: wrap the LLM call so we can capture wall time + token usage
+    // and emit a step_results row regardless of parse success/failure.
     let rawText: string;
+    let promptTokens = 0;
+    let completionTokens = 0;
+    const llmStartedAtMs = Date.now();
     try {
-      rawText = (await provider(buildTeamAssemblyPrompt(request))).text;
+      const llmResponse = await provider(buildTeamAssemblyPrompt(request));
+      rawText = llmResponse.text;
+      promptTokens = llmResponse.usage?.promptTokens ?? 0;
+      completionTokens = llmResponse.usage?.completionTokens ?? 0;
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
+      // HEL-74: record the failed-LLM-call step_result so the budget +
+      // observability surfaces see the attempt + cost (likely zero on
+      // hard provider errors, non-zero if the provider charges for
+      // partial work).
+      void recordHiringPlanCost({
+        pool,
+        workspaceId,
+        userId,
+        missionId,
+        hiringPlanId: "(none)",
+        costCents: 0,
+        durationMs: Date.now() - llmStartedAtMs,
+        status: "failure",
+        errorMessage: msg,
+        rateMatched: false,
+        promptTokens: 0,
+        completionTokens: 0,
+        provider: resolved.config.provider,
+        model: assemblyModel,
+      });
       res.status(502).json({ error: `LLM call failed: ${msg}` });
       return;
     }
+    const llmDurationMs = Date.now() - llmStartedAtMs;
 
     let plan: TeamAssemblyResult;
     try {
@@ -473,11 +504,38 @@ export function createMissionRoutes(pool: Pool) {
       return;
     }
 
+    // HEL-74: compute cost from token usage + record a successful
+    // step_results row so the Budget page + observability surfaces see
+    // the generation. Write is fire-and-forget; failure is logged but
+    // never breaks the user response.
+    const costResult = computeHiringPlanCostCents({
+      provider: resolved.config.provider,
+      model: assemblyModel,
+      promptTokens,
+      completionTokens,
+    });
+    void recordHiringPlanCost({
+      pool,
+      workspaceId,
+      userId,
+      missionId,
+      hiringPlanId,
+      costCents: costResult.costCents,
+      durationMs: llmDurationMs,
+      status: "success",
+      rateMatched: costResult.matched,
+      promptTokens,
+      completionTokens,
+      provider: resolved.config.provider,
+      model: assemblyModel,
+    });
+
     res.json({
       hiringPlanId,
       missionId,
       schemaVersion: TEAM_ASSEMBLY_SCHEMA_VERSION,
       plan,
+      costCents: costResult.costCents,
     });
   });
 

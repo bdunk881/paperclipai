@@ -402,6 +402,18 @@
     backdrop-filter: blur(6px);
   }
 
+  /* HEL-100 v2 mini-map — sits in the top-right of the canvas. The
+     react-flow MiniMap default chrome is on slate; retint via af2 tokens
+     so it sits inside the paper aesthetic. */
+  .workflow-minimap.react-flow__minimap {
+    background: var(--af2-card);
+    border: 1px solid var(--af2-line);
+    border-radius: 8px;
+    box-shadow: 0 1px 0 rgba(26, 20, 16, 0.04),
+      0 6px 20px rgba(26, 20, 16, 0.06);
+    margin: 12px;
+  }
+
   .workflow-controls-pill button {
     border-color: var(--af2-line);
     color: var(--af2-ink-2);

@@ -1,5 +1,5 @@
 import type { ComponentType, ReactNode } from "react";
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import WorkflowBuilder from "./WorkflowBuilder";
@@ -15,6 +15,7 @@ vi.mock("@xyflow/react", () => ({
   Controls: () => null,
   Handle: () => null,
   MarkerType: { ArrowClosed: "arrowclosed" },
+  MiniMap: () => null,
   Position: { Top: "top", Bottom: "bottom", Left: "left", Right: "right" },
   ReactFlow: ({
     children,
@@ -163,6 +164,61 @@ describe("WorkflowBuilder", () => {
     expect(screen.getByText("Agent Step")).toBeInTheDocument();
     expect(screen.getByText("Step Properties")).toBeInTheDocument();
     expect(screen.getByPlaceholderText(/claude-sonnet-4-6/i)).toBeInTheDocument();
+  });
+
+  it("reveals Pro inspector tabs (Inspector / Versions / Observability) when Pro mode is on", async () => {
+    renderBuilder();
+
+    expect(await screen.findByText("Start building your workflow")).toBeInTheDocument();
+
+    openNodePalette();
+    fireEvent.click(screen.getByRole("button", { name: /^agent$/i }));
+
+    // No tabs visible before Pro mode is on.
+    expect(screen.queryByRole("tab", { name: /Inspector/i })).toBeNull();
+    expect(screen.queryByRole("tab", { name: /Versions/i })).toBeNull();
+    expect(screen.queryByRole("tab", { name: /Observability/i })).toBeNull();
+
+    // Toggle Pro mode on; tabs appear, Inspector is selected by default.
+    fireEvent.click(screen.getByRole("button", { name: /Enable Pro mode/i }));
+
+    expect(screen.getByRole("tab", { name: /Inspector/i })).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
+    expect(screen.getByRole("tab", { name: /Versions/i })).toHaveAttribute(
+      "aria-selected",
+      "false",
+    );
+    expect(screen.getByRole("tab", { name: /Observability/i })).toHaveAttribute(
+      "aria-selected",
+      "false",
+    );
+
+    // Click Versions — the Versions panel surfaces the current draft version.
+    // "v1.0.0" also lives in the header pill ("draft · v1.0.0"), so scope
+    // the version assertion to the panel.
+    fireEvent.click(screen.getByRole("tab", { name: /Versions/i }));
+    expect(screen.getByRole("tab", { name: /Versions/i })).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
+    const versionsPanel = document.getElementById(
+      "pro-inspector-panel-versions",
+    );
+    expect(versionsPanel).not.toBeNull();
+    expect(within(versionsPanel!).getByText(/v1\.0\.0/)).toBeInTheDocument();
+    // Exact-string match — the panel has a "current" pill; the form
+    // below (still in the DOM, just hidden) contains other case-insensitive
+    // matches like "Current..." copy.
+    expect(within(versionsPanel!).getByText("current")).toBeInTheDocument();
+
+    // Click Observability — the Observability panel surfaces stub
+    // sections for latency, cost, errors.
+    fireEvent.click(screen.getByRole("tab", { name: /Observability/i }));
+    expect(screen.getByText(/Latency · p99/i)).toBeInTheDocument();
+    expect(screen.getByText(/Cost · per run/i)).toBeInTheDocument();
+    expect(screen.getByText(/Recent errors/i)).toBeInTheDocument();
   });
 
   it("opens the deploy as team modal for populated workflows", async () => {

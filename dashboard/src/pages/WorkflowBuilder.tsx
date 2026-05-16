@@ -1049,22 +1049,53 @@ export default function WorkflowBuilder() {
                 <span className="af2-pill" style={{ textTransform: "capitalize" }}>
                   {template.category}
                 </span>
+                {/* HEL-100 v2: deployment/version pill — mirrors the
+                    `live · v12` badge in docs/design/v2/studio.jsx. Shows
+                    "live · v{version}" when a team is deployed for this
+                    workflow, otherwise a quiet "draft · v{version}" pill. */}
+                {latestDeployment ? (
+                  <span className="af2-pill af2-pill-live" aria-label="Workflow status">
+                    <span className="af2-dot" />
+                    live · v{template.version || "1.0.0"}
+                  </span>
+                ) : (
+                  <span className="af2-pill" aria-label="Workflow status">
+                    <span className="af2-dot" />
+                    draft · v{template.version || "1.0.0"}
+                  </span>
+                )}
               </div>
             </div>
           </div>
           <div className="flex items-center gap-2">
             {/* HEL-27: Pro mode toggle. Reveals env panel + advanced
                 inspector when on. State only — sub-panels read `proMode`
-                to decide whether to render. */}
+                to decide whether to render. v2 pill styling (HEL-100)
+                mirrors docs/design/v2/studio.jsx::AF2_Studio. */}
             <Tooltip content="Pro mode reveals the env panel and advanced inspector controls">
               <button
                 type="button"
                 onClick={() => setProMode((prev) => !prev)}
                 aria-pressed={proMode}
-                className={`af2-btn af2-btn-sm${proMode ? " af2-btn-clay" : ""}`}
-                style={{ display: "inline-flex", alignItems: "center", gap: 6 }}
+                aria-label={proMode ? "Disable Pro mode" : "Enable Pro mode"}
+                className="inline-flex items-center gap-2 rounded-full border py-1 pl-1 pr-3 text-xs font-medium transition"
+                style={{
+                  background: proMode ? "var(--af2-clay)" : "rgba(26,20,16,0.06)",
+                  color: proMode ? "#fff" : "var(--af2-ink-2)",
+                  borderColor: proMode ? "var(--af2-clay)" : "var(--af2-line-2)",
+                }}
               >
-                Pro mode {proMode ? "on" : "off"}
+                <span
+                  className="grid h-[22px] w-[22px] place-items-center rounded-full text-[11px] font-bold"
+                  style={{
+                    background: proMode ? "#fff" : "var(--af2-card)",
+                    color: proMode ? "var(--af2-clay)" : "var(--af2-ink)",
+                  }}
+                  aria-hidden="true"
+                >
+                  P
+                </span>
+                Pro mode {proMode ? "ON" : "OFF"}
               </button>
             </Tooltip>
             <button

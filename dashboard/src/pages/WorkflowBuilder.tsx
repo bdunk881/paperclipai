@@ -38,6 +38,7 @@ import {
   type Connection,
   Controls,
   Handle,
+  MiniMap,
   Position,
   ReactFlow,
   type Edge,
@@ -475,6 +476,12 @@ export default function WorkflowBuilder() {
   // lives next to Save/Run in the header; the panel renders alongside the
   // existing inspector when on.
   const [proMode, setProMode] = useState(false);
+  // HEL-100 v2: when proMode is on, the right rail switches between three
+  // panels (Inspector / Versions / Observability) per AF2_Studio. The
+  // default tab is "inspector" which shows the existing step-detail form.
+  const [proInspectorTab, setProInspectorTab] = useState<
+    "inspector" | "versions" | "observability"
+  >("inspector");
   // HEL-27: canonical workflow_id for this template. Set on first save
   // when the canonical /api/workflows POST returns; subsequent saves call
   // POST /api/workflows/:id/versions to create immutable versions.
@@ -1272,6 +1279,20 @@ export default function WorkflowBuilder() {
                   showInteractive={false}
                   className="workflow-controls-pill"
                 />
+                {/* HEL-100 v2: mini-map (top-right per AF2_Studio). Built
+                    in to @xyflow/react. Uses af2 tokens via inline style
+                    so it sits inside the v2 paper aesthetic. */}
+                <MiniMap
+                  position="top-right"
+                  pannable
+                  zoomable
+                  ariaLabel="Workflow mini-map"
+                  className="workflow-minimap"
+                  nodeStrokeColor="var(--af2-ink)"
+                  nodeColor={() => "var(--af2-ink-2)"}
+                  nodeBorderRadius={4}
+                  maskColor="color-mix(in srgb, var(--af2-paper) 70%, transparent)"
+                />
               </ReactFlow>
               <div className="pointer-events-none absolute bottom-6 left-1/2 z-10 -translate-x-1/2">
                 <div className="pointer-events-auto rounded-full border border-af2-line bg-af2-card/95 px-2 py-1.5 shadow-af2 backdrop-blur">
@@ -1343,7 +1364,62 @@ export default function WorkflowBuilder() {
             </button>
           </div>
 
-          <div className="p-5 space-y-5">
+          {/* HEL-100 v2 Pro inspector tabs — when Pro mode is on, the
+              right rail switches between Inspector / Versions /
+              Observability per AF2_Studio. Inspector keeps the existing
+              form; Versions + Observability are stub panels in this PR
+              and get real data wiring in follow-ups. */}
+          {proMode && (
+            <div
+              role="tablist"
+              aria-label="Pro inspector tabs"
+              className="flex items-center gap-1 border-b border-af2-line px-3 pt-3"
+            >
+              {(
+                [
+                  ["inspector", "Inspector"],
+                  ["versions", "Versions"],
+                  ["observability", "Observability"],
+                ] as const
+              ).map(([key, label]) => {
+                const active = proInspectorTab === key;
+                return (
+                  <button
+                    key={key}
+                    type="button"
+                    role="tab"
+                    aria-selected={active}
+                    aria-controls={`pro-inspector-panel-${key}`}
+                    onClick={() => setProInspectorTab(key)}
+                    className={clsx(
+                      "rounded-t-md border-b-2 px-3 py-2 text-xs font-medium transition",
+                      active
+                        ? "border-af2-clay text-af2-ink"
+                        : "border-transparent text-af2-ink-3 hover:text-af2-ink"
+                    )}
+                  >
+                    {label}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+
+          {proMode && proInspectorTab === "versions" && (
+            <VersionsPanel template={template} />
+          )}
+          {proMode && proInspectorTab === "observability" && (
+            <ObservabilityPanel />
+          )}
+
+          <div
+            className={clsx(
+              "p-5 space-y-5",
+              proMode && proInspectorTab !== "inspector" ? "hidden" : "block"
+            )}
+            id={proMode ? "pro-inspector-panel-inspector" : undefined}
+            role={proMode ? "tabpanel" : undefined}
+          >
             <Field label="Name">
               <input
                 className="w-full px-3 py-2 text-sm border border-af2-line-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-af2-clay/30 bg-af2-card text-af2-ink"
@@ -2960,6 +3036,80 @@ function EmptyCanvas({
             </div>
           </div>
         )}
+      </div>
+    </div>
+  );
+}
+
+// HEL-100 v2 Pro inspector — Versions panel stub. Shows the current
+// template's version + a placeholder note about the version history
+// surface. Real version-history wiring (POST /api/workflows/:id/versions,
+// version diff, restore) is a follow-up.
+function VersionsPanel({ template }: { template: WorkflowTemplate }) {
+  return (
+    <div
+      id="pro-inspector-panel-versions"
+      role="tabpanel"
+      className="p-5 space-y-3"
+    >
+      <div className="af2-eyebrow">Versions</div>
+      <div className="af2-card flex items-center gap-3 p-3">
+        <span className="font-af2-mono text-[12px] font-semibold text-af2-ink">
+          v{template.version || "1.0.0"}
+        </span>
+        <span className="af2-pill af2-pill-live">
+          <span className="af2-dot" />
+          current
+        </span>
+        <div className="ml-auto text-[11px] text-af2-ink-3">
+          Draft · unsaved changes auto-version on Publish
+        </div>
+      </div>
+      <p className="text-[12px] leading-5 text-af2-ink-3">
+        Version history (diff + restore) lands with the canonical
+        workflow_versions API. Until then this panel just surfaces the
+        current draft.
+      </p>
+    </div>
+  );
+}
+
+// HEL-100 v2 Pro inspector — Observability panel stub. Real metrics
+// (p99 latency, cost/run, recent errors) come from the canonical
+// step_results + cost-tracking surfaces in a follow-up.
+function ObservabilityPanel() {
+  return (
+    <div
+      id="pro-inspector-panel-observability"
+      role="tabpanel"
+      className="p-5 space-y-4"
+    >
+      <div>
+        <div className="af2-eyebrow">Latency · p99</div>
+        <p className="mt-2 text-[12px] text-af2-ink-3">
+          No run data yet. Once this workflow has been deployed and
+          invoked, p99 + cost-per-run roll up here.
+        </p>
+      </div>
+      <div>
+        <div className="af2-eyebrow">Cost · per run</div>
+        <div className="af2-card mt-2 flex gap-4 p-3">
+          <div>
+            <div className="font-af2-serif text-[20px] text-af2-ink-3">—</div>
+            <div className="text-[11px] text-af2-ink-4">median</div>
+          </div>
+          <div>
+            <div className="font-af2-serif text-[20px] text-af2-ink-3">—</div>
+            <div className="text-[11px] text-af2-ink-4">p99</div>
+          </div>
+        </div>
+      </div>
+      <div>
+        <div className="af2-eyebrow">Recent errors</div>
+        <p className="mt-2 text-[12px] text-af2-ink-3">
+          No errors recorded. Failures will surface here with timestamp
+          + count.
+        </p>
       </div>
     </div>
   );

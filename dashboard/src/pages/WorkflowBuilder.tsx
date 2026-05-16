@@ -1523,7 +1523,7 @@ export default function WorkflowBuilder() {
             />
           )}
           {proMode && proInspectorTab === "observability" && (
-            <ObservabilityPanel />
+            <ObservabilityPanel runs={runHistory} />
           )}
 
           <div
@@ -3347,9 +3347,26 @@ function formatVersionTimestamp(iso: string): string {
 }
 
 // HEL-100 v2 Pro inspector — Observability panel stub. Real metrics
-// (p99 latency, cost/run, recent errors) come from the canonical
-// step_results + cost-tracking surfaces in a follow-up.
-function ObservabilityPanel() {
+// (p99 latency, cost/run, recent errors) are derived from the same
+// runHistory the canvas run-history strip uses — runs come from
+// GET /api/runs?templateId=X (RLS-scoped via workspaceResolver) and
+// already include stepResults with costLog.estimatedCostUsd, so this
+// panel doesn't need a separate fetch.
+function ObservabilityPanel({ runs }: { runs: WorkflowRun[] }) {
+  const durationsMs = runs.flatMap((run) => {
+    if (run.status !== "completed" || !run.completedAt) return [];
+    const ms = new Date(run.completedAt).getTime() - new Date(run.startedAt).getTime();
+    return ms > 0 && Number.isFinite(ms) ? [ms] : [];
+  });
+  const completedRunCostsUsd = runs
+    .filter((run) => run.status === "completed")
+    .map(sumRunCostUsd)
+    .filter((cost): cost is number => cost !== null);
+
+  const recentErrors = runs
+    .filter((run) => run.status === "failed")
+    .slice(0, 5);
+
   return (
     <div
       id="pro-inspector-panel-observability"
@@ -3358,33 +3375,114 @@ function ObservabilityPanel() {
     >
       <div>
         <div className="af2-eyebrow">Latency · p99</div>
-        <p className="mt-2 text-[12px] text-af2-ink-3">
-          No run data yet. Once this workflow has been deployed and
-          invoked, p99 + cost-per-run roll up here.
-        </p>
+        {durationsMs.length === 0 ? (
+          <p className="mt-2 text-[12px] text-af2-ink-3">
+            No completed runs yet. p99 will roll up here once this
+            workflow has been deployed and invoked.
+          </p>
+        ) : (
+          <div className="af2-card mt-2 flex gap-4 p-3">
+            <ObservabilityStat
+              label="p50"
+              value={formatRunMs(percentile(durationsMs, 50))}
+            />
+            <ObservabilityStat
+              label="p99"
+              value={formatRunMs(percentile(durationsMs, 99))}
+            />
+            <ObservabilityStat
+              label="runs"
+              value={String(durationsMs.length)}
+            />
+          </div>
+        )}
       </div>
       <div>
         <div className="af2-eyebrow">Cost · per run</div>
         <div className="af2-card mt-2 flex gap-4 p-3">
-          <div>
-            <div className="font-af2-serif text-[20px] text-af2-ink-3">—</div>
-            <div className="text-[11px] text-af2-ink-4">median</div>
-          </div>
-          <div>
-            <div className="font-af2-serif text-[20px] text-af2-ink-3">—</div>
-            <div className="text-[11px] text-af2-ink-4">p99</div>
-          </div>
+          <ObservabilityStat
+            label="median"
+            value={
+              completedRunCostsUsd.length > 0
+                ? formatUsd(percentile(completedRunCostsUsd, 50))
+                : "—"
+            }
+          />
+          <ObservabilityStat
+            label="p99"
+            value={
+              completedRunCostsUsd.length > 0
+                ? formatUsd(percentile(completedRunCostsUsd, 99))
+                : "—"
+            }
+          />
         </div>
+        {completedRunCostsUsd.length === 0 && (
+          <p className="mt-2 text-[11px] text-af2-ink-4">
+            Cost telemetry is captured per step; values fill in once LLM
+            or tool steps run.
+          </p>
+        )}
       </div>
       <div>
         <div className="af2-eyebrow">Recent errors</div>
-        <p className="mt-2 text-[12px] text-af2-ink-3">
-          No errors recorded. Failures will surface here with timestamp
-          + count.
-        </p>
+        {recentErrors.length === 0 ? (
+          <p className="mt-2 text-[12px] text-af2-ink-3">
+            No failures recorded across the last {runs.length || 30} runs.
+          </p>
+        ) : (
+          <ul className="mt-2 space-y-2" role="list">
+            {recentErrors.map((run) => (
+              <li
+                key={run.id}
+                className="af2-card flex items-start gap-3 p-3"
+              >
+                <span className="font-af2-mono text-[11px] text-af2-ink-3">
+                  {formatVersionTimestamp(run.startedAt)}
+                </span>
+                <span className="min-w-0 flex-1 truncate text-[12px] text-af2-clay">
+                  {run.error ?? "Run failed"}
+                </span>
+              </li>
+            ))}
+          </ul>
+        )}
       </div>
     </div>
   );
+}
+
+function ObservabilityStat({ label, value }: { label: string; value: string }) {
+  return (
+    <div>
+      <div className="font-af2-serif text-[20px] text-af2-ink">{value}</div>
+      <div className="text-[11px] text-af2-ink-4">{label}</div>
+    </div>
+  );
+}
+
+// Sum the step-level estimatedCostUsd to get the run's total cost.
+// Returns null if no step reported cost telemetry (so the caller can
+// distinguish "$0" from "unknown").
+function sumRunCostUsd(run: WorkflowRun): number | null {
+  let total = 0;
+  let any = false;
+  for (const step of run.stepResults) {
+    const cost = step.costLog?.estimatedCostUsd;
+    if (typeof cost === "number" && Number.isFinite(cost)) {
+      total += cost;
+      any = true;
+    }
+  }
+  return any ? total : null;
+}
+
+function formatUsd(usd: number): string {
+  if (!Number.isFinite(usd) || usd < 0) return "—";
+  if (usd >= 1) return `$${usd.toFixed(2)}`;
+  if (usd >= 0.01) return `$${usd.toFixed(3)}`;
+  if (usd === 0) return "$0.00";
+  return `$${usd.toFixed(4)}`;
 }
 
 function Field({

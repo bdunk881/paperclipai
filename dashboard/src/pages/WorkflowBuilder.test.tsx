@@ -532,6 +532,121 @@ describe("WorkflowBuilder", () => {
     expect(await screen.findByText(/run started — redirecting to monitor/i)).toBeInTheDocument();
   });
 
+  it("Observability panel surfaces real p99 latency + cost stats + recent errors from runHistory", async () => {
+    // Saved template with runs that have cost telemetry. One failed
+    // run so the recent-errors list also has content. Pro mode + the
+    // Observability tab pull from the same runHistory the canvas strip
+    // uses, so no extra fetch is needed.
+    getTemplateMock.mockResolvedValue({
+      id: "tpl-obs",
+      name: "Obs workflow",
+      description: "",
+      category: "support",
+      version: "1.0.0",
+      configFields: [],
+      steps: [
+        {
+          id: "step-1",
+          name: "Action",
+          kind: "action",
+          description: "",
+          inputKeys: [],
+          outputKeys: [],
+          action: "noop",
+        },
+      ],
+      sampleInput: {},
+      expectedOutput: {},
+    });
+    listRunsMock.mockResolvedValue([
+      {
+        id: "run-1",
+        templateId: "tpl-obs",
+        templateName: "Obs workflow",
+        status: "completed",
+        startedAt: "2026-05-16T12:00:00.000Z",
+        completedAt: "2026-05-16T12:00:01.000Z", // 1s
+        input: {},
+        stepResults: [
+          {
+            stepId: "step-1",
+            stepName: "Action",
+            status: "success",
+            output: {},
+            durationMs: 1000,
+            costLog: { estimatedCostUsd: 0.05 },
+          },
+        ],
+      },
+      {
+        id: "run-2",
+        templateId: "tpl-obs",
+        templateName: "Obs workflow",
+        status: "completed",
+        startedAt: "2026-05-16T12:01:00.000Z",
+        completedAt: "2026-05-16T12:01:02.000Z", // 2s
+        input: {},
+        stepResults: [
+          {
+            stepId: "step-1",
+            stepName: "Action",
+            status: "success",
+            output: {},
+            durationMs: 2000,
+            costLog: { estimatedCostUsd: 0.20 },
+          },
+        ],
+      },
+      {
+        id: "run-3",
+        templateId: "tpl-obs",
+        templateName: "Obs workflow",
+        status: "failed",
+        startedAt: "2026-05-16T12:02:00.000Z",
+        input: {},
+        stepResults: [],
+        error: "Apollo 429 — rate limited",
+      },
+    ]);
+
+    render(
+      <MemoryRouter initialEntries={["/builder/tpl-obs"]}>
+        <Routes>
+          <Route path="/builder/:templateId" element={<WorkflowBuilder />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    // Wait for runHistory to populate (the canvas strip surfaces first).
+    expect(await screen.findByText(/Last 3 runs/i)).toBeInTheDocument();
+
+    // Select the canvas step so the inspector + Pro tabs render.
+    // (Loaded templates don't auto-select a step the way addStep does.)
+    fireEvent.click(screen.getAllByText("Action")[0]);
+
+    // Flip Pro mode on + Observability tab.
+    fireEvent.click(screen.getByRole("button", { name: /Enable Pro mode/i }));
+    fireEvent.click(screen.getByRole("tab", { name: /Observability/i }));
+
+    const obsPanel = document.getElementById(
+      "pro-inspector-panel-observability",
+    );
+    expect(obsPanel).not.toBeNull();
+
+    // Latency: durations [1000, 2000] → p50=1.0s, p99=2.0s, runs=2 completed.
+    expect(within(obsPanel!).getByText("1.0s")).toBeInTheDocument();
+    expect(within(obsPanel!).getByText("2.0s")).toBeInTheDocument();
+
+    // Cost: per-run sums [$0.05, $0.20] → median $0.050, p99 $0.200.
+    expect(within(obsPanel!).getByText("$0.050")).toBeInTheDocument();
+    expect(within(obsPanel!).getByText("$0.200")).toBeInTheDocument();
+
+    // Recent errors: the failed run surfaces with its error message.
+    expect(
+      within(obsPanel!).getByText(/Apollo 429 — rate limited/i),
+    ).toBeInTheDocument();
+  });
+
   it("renders the run-history strip with p50 / p99 / % ok stats when runs exist for a saved template", async () => {
     // Saved template (has an ID): the run-history strip should fetch
     // runs and render once they're loaded. Three runs in a known shape

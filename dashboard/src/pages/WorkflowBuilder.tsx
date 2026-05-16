@@ -434,6 +434,13 @@ export default function WorkflowBuilder() {
   const { requireAccessToken, getAccessToken } = useAuth();
   const { activeWorkspaceId } = useWorkspace();
   const incomingState = location.state as BuilderLocationState;
+  // HEL-100: builder pop-out (?popout=1) hides every piece of chrome —
+  // Layout.tsx skips its sidebar+topbar, and we skip the left palette
+  // rail too so the canvas can go full-bleed.
+  const isBuilderPopout = useMemo(() => {
+    const params = new URLSearchParams(location.search);
+    return params.get("popout") === "1";
+  }, [location.search]);
 
   const [template, setTemplate] = useState<WorkflowTemplate>(BLANK_TEMPLATE);
   const [loading, setLoading] = useState(!!templateId);
@@ -971,6 +978,13 @@ export default function WorkflowBuilder() {
 
   return (
     <div className="relative flex h-full">
+      {/* HEL-100 v2: left palette rail — Triggers / Tools / Logic
+          sections, mirrors docs/design/v2/studio.jsx::AF2_Studio. Clicking
+          an item adds that step kind via the same `addStep` handler the
+          inline AddStepMenu uses. Hidden in builder pop-out (?popout=1)
+          so the canvas can go full-bleed. */}
+      {!isBuilderPopout && <StudioPalette onAdd={addStep} />}
+
       {/* Left panel — canvas */}
       <div className="flex-1 flex flex-col overflow-hidden">
         {runError && (
@@ -2763,6 +2777,82 @@ function StepNode({
         </button>
       </div>
     </div>
+  );
+}
+
+// HEL-100 v2 left rail. Mirrors docs/design/v2/studio.jsx::AF2_Studio
+// — three sections (Triggers / Tools / Logic), each item clickable.
+// Sections are derived from KIND_META so adding a new StepKind there
+// flows through here (after assigning it to a section below).
+const STUDIO_PALETTE_SECTIONS: Array<{
+  title: string;
+  kinds: StepKind[];
+}> = [
+  {
+    title: "Triggers",
+    kinds: ["trigger", "cron_trigger", "interval_trigger", "file_trigger"],
+  },
+  {
+    title: "Tools",
+    kinds: ["llm", "transform", "action", "mcp", "agent"],
+  },
+  {
+    title: "Logic",
+    kinds: ["condition", "approval", "output"],
+  },
+];
+
+function StudioPalette({ onAdd }: { onAdd: (kind: StepKind) => void }) {
+  return (
+    <aside
+      data-testid="studio-palette"
+      aria-label="Node palette"
+      className="hidden w-60 shrink-0 flex-col gap-5 overflow-y-auto border-r border-af2-line bg-af2-paper px-4 py-5 lg:flex"
+    >
+      {STUDIO_PALETTE_SECTIONS.map((section) => (
+        <div key={section.title}>
+          <p
+            className="af2-eyebrow"
+            style={{ marginBottom: 8 }}
+          >
+            {section.title}
+            <span
+              aria-hidden="true"
+              className="ml-2 font-af2-mono text-af2-ink-4"
+              style={{ fontSize: 10.5 }}
+            >
+              · {section.kinds.length}
+            </span>
+          </p>
+          <ul className="space-y-1.5" role="list">
+            {section.kinds.map((kind) => {
+              const meta = KIND_META[kind];
+              return (
+                <li key={kind}>
+                  <button
+                    type="button"
+                    onClick={() => onAdd(kind)}
+                    aria-label={`Add ${meta.label} step`}
+                    className="flex w-full items-center gap-2.5 rounded-lg border border-af2-line bg-af2-card px-3 py-2 text-left text-[13px] text-af2-ink-2 transition hover:border-af2-line-2 hover:bg-af2-paper-2 hover:text-af2-ink"
+                  >
+                    <span
+                      className={clsx(
+                        "flex h-6 w-6 items-center justify-center rounded border",
+                        meta.chipBg,
+                        meta.chipColor,
+                      )}
+                    >
+                      {meta.icon}
+                    </span>
+                    <span className="truncate">{meta.label}</span>
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      ))}
+    </aside>
   );
 }
 

@@ -1,5 +1,5 @@
 import type { ComponentType, ReactNode } from "react";
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import WorkflowBuilder from "./WorkflowBuilder";
@@ -110,6 +110,43 @@ describe("WorkflowBuilder", () => {
 
     fireEvent.keyDown(window, { key: "Escape" });
     expect(screen.queryByText("Build and launch confidently")).toBeNull();
+  });
+
+  it("renders the v2 left palette rail with Triggers / Tools / Logic sections", async () => {
+    renderBuilder();
+
+    expect(await screen.findByText("Start building your workflow")).toBeInTheDocument();
+
+    const palette = screen.getByTestId("studio-palette");
+    expect(palette).toBeInTheDocument();
+
+    // HEL-100 v2: three sections, derived from KIND_META, ordered
+    // Triggers → Tools → Logic.
+    expect(palette).toHaveTextContent("Triggers");
+    expect(palette).toHaveTextContent("Tools");
+    expect(palette).toHaveTextContent("Logic");
+
+    // Spot-check one item per section reaches the rail.
+    expect(palette).toHaveTextContent("Cron Trigger");
+    expect(palette).toHaveTextContent("LLM");
+    expect(palette).toHaveTextContent("Approval");
+  });
+
+  it("adds a step when a palette item is clicked", async () => {
+    renderBuilder();
+
+    expect(await screen.findByText("Start building your workflow")).toBeInTheDocument();
+
+    const palette = screen.getByTestId("studio-palette");
+
+    // Click the Agent button in the Tools section; it should add an Agent
+    // step (same handler as the popover-style AddStepMenu). Palette items
+    // expose an aria-label of "Add {Label} step" to keep them disjoint
+    // from the popover's exact-label buttons.
+    fireEvent.click(within(palette).getByRole("button", { name: /Add Agent step/i }));
+
+    expect(await screen.findByTestId("react-flow")).toBeInTheDocument();
+    expect(screen.getByText("Agent Step")).toBeInTheDocument();
   });
 
   it("renders the v2 draft/version pill and a Pro mode pill toggle", async () => {
@@ -382,7 +419,7 @@ describe("WorkflowBuilder", () => {
     expect(await screen.findByText("Start building your workflow")).toBeInTheDocument();
 
     openNodePalette();
-    fireEvent.click(screen.getByRole("button", { name: /file trigger/i }));
+    fireEvent.click(screen.getByRole("button", { name: /^file trigger$/i }));
 
     fireEvent.change(screen.getByPlaceholderText(/\.pdf, \.png, \.jpg, \.mp3, \.wav/i), {
       target: { value: ".csv, .pdf" },

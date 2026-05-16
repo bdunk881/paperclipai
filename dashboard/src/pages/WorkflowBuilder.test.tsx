@@ -160,9 +160,28 @@ describe("WorkflowBuilder", () => {
     fireEvent.click(screen.getByRole("button", { name: /^agent$/i }));
 
     expect(await screen.findByTestId("react-flow")).toBeInTheDocument();
-    expect(screen.getByText("Agent Step")).toBeInTheDocument();
-    expect(screen.getByText("Step Properties")).toBeInTheDocument();
+    // HEL-100 v2 inspector chrome: the step name now appears both in
+    // the node card (canvas) and in the inspector header's serif title.
+    expect(screen.getAllByText("Agent Step").length).toBeGreaterThan(0);
+    expect(screen.getByText("Selected node")).toBeInTheDocument();
     expect(screen.getByPlaceholderText(/claude-sonnet-4-6/i)).toBeInTheDocument();
+  });
+
+  it("inspector header flips to 'Selected node · Pro' when Pro mode is on", async () => {
+    renderBuilder();
+
+    expect(await screen.findByText("Start building your workflow")).toBeInTheDocument();
+
+    openNodePalette();
+    fireEvent.click(screen.getByRole("button", { name: /^agent$/i }));
+
+    // Inspector opens with the basic eyebrow.
+    expect(screen.getByText("Selected node")).toBeInTheDocument();
+    expect(screen.queryByText(/Selected node · Pro/)).toBeNull();
+
+    // Toggle Pro mode on; the eyebrow gains the " · Pro" suffix.
+    fireEvent.click(screen.getByRole("button", { name: /Enable Pro mode/i }));
+    expect(screen.getByText("Selected node · Pro")).toBeInTheDocument();
   });
 
   it("opens the deploy as team modal for populated workflows", async () => {

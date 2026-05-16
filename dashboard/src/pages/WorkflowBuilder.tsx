@@ -54,6 +54,7 @@ import {
   generateWorkflow,
   getTemplate,
   listLLMConfigs,
+  listRuns,
   listTemplates,
   startRun,
   startRunWithFile,
@@ -68,7 +69,7 @@ import {
 } from "../api/workflowsApi";
 import { Tooltip } from "../components/Tooltip";
 import { ErrorState, LoadingState } from "../components/UiStates";
-import type { WorkflowStep, StepKind, WorkflowTemplate } from "../types/workflow";
+import type { WorkflowRun, WorkflowStep, StepKind, WorkflowTemplate } from "../types/workflow";
 import {
   buildDefaultEdge,
   buildEdgesFromSteps,
@@ -482,6 +483,11 @@ export default function WorkflowBuilder() {
   const [proInspectorTab, setProInspectorTab] = useState<
     "inspector" | "versions" | "observability"
   >("inspector");
+  // HEL-100 v2: last-30 runs for the canvas-bottom history strip. Empty
+  // until the template has been saved at least once (no templateId =
+  // no runs to fetch); on a successful fetch we keep only the most
+  // recent 30 by startedAt DESC.
+  const [runHistory, setRunHistory] = useState<WorkflowRun[]>([]);
   // HEL-27: canonical workflow_id for this template. Set on first save
   // when the canonical /api/workflows POST returns; subsequent saves call
   // POST /api/workflows/:id/versions to create immutable versions.
@@ -543,6 +549,42 @@ export default function WorkflowBuilder() {
     const timeout = window.setTimeout(() => setFieldFlashKey(null), 900);
     return () => window.clearTimeout(timeout);
   }, [fieldFlashKey]);
+
+  // HEL-100 v2: fetch the most-recent runs for this template to feed the
+  // canvas-bottom run-history strip. Skipped for unsaved drafts (no
+  // templateId); fired again when the templateId loads from the URL.
+  // Failures (incl. no-token) are silent — the strip simply doesn't
+  // render — because the sparkline is decorative, not load-bearing.
+  // Uses requireAccessToken via a stable closure rather than
+  // getAccessToken as a dep, because some useAuth implementations return
+  // a fresh getAccessToken on every render (the test mock does) which
+  // would re-fire this effect infinitely.
+  useEffect(() => {
+    if (!templateId) {
+      setRunHistory([]);
+      return;
+    }
+    let cancelled = false;
+    async function loadRunHistory() {
+      try {
+        const accessToken = await requireAccessToken();
+        const runs = await listRuns(templateId, accessToken);
+        if (cancelled) return;
+        // Sort startedAt DESC; keep the most recent 30 so the sparkline
+        // matches the AF2_Studio reference's "Last 30 runs" strap.
+        const sorted = [...runs].sort((a, b) =>
+          new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime(),
+        );
+        setRunHistory(sorted.slice(0, 30));
+      } catch {
+        if (!cancelled) setRunHistory([]);
+      }
+    }
+    void loadRunHistory();
+    return () => {
+      cancelled = true;
+    };
+  }, [templateId, requireAccessToken]);
 
   useEffect(() => {
     if (!isLlmStep) return;
@@ -1302,6 +1344,17 @@ export default function WorkflowBuilder() {
                   <AddStepMenu onAdd={addStep} />
                 </div>
               </div>
+              {/* HEL-100 v2: run history strip — bottom-left of canvas
+                  per AF2_Studio. Renders only when we actually have
+                  runs to show (skipped for unsaved drafts + workflows
+                  with zero runs). */}
+              {runHistory.length > 0 && (
+                <div className="pointer-events-none absolute bottom-4 left-4 z-10 w-[min(420px,calc(100%-260px))]">
+                  <div className="pointer-events-auto">
+                    <RunHistoryStrip runs={runHistory} />
+                  </div>
+                </div>
+              )}
             </>
           )}
         </div>
@@ -2873,6 +2926,90 @@ function StepNode({
       </div>
     </div>
   );
+}
+
+// HEL-100 v2 run history strip — bottom of canvas per AF2_Studio.
+// Renders the last ~30 runs of this workflow as a 32px sparkline plus
+// a "p50 X · p99 Y · Z% ok" stat line. Bar height = duration normalized
+// against the slowest completed run; bar tint = status (sage for ok,
+// clay for fail, mustard for in-flight). Pure presentational — the
+// caller supplies pre-sorted, pre-trimmed runs.
+function RunHistoryStrip({ runs }: { runs: WorkflowRun[] }) {
+  const durations: number[] = runs.flatMap((run) => {
+    if (run.status !== "completed" || !run.completedAt) return [];
+    const ms = new Date(run.completedAt).getTime() - new Date(run.startedAt).getTime();
+    return ms > 0 && Number.isFinite(ms) ? [ms] : [];
+  });
+  const okCount = runs.filter((r) => r.status === "completed").length;
+  const totalForOkRate = runs.filter(
+    (r) => r.status === "completed" || r.status === "failed",
+  ).length;
+  const okPct = totalForOkRate > 0
+    ? Math.round((okCount / totalForOkRate) * 100)
+    : 100;
+
+  // Render newest → oldest left-to-right, so the rightmost bar is the
+  // most recent run (matches AF2_Studio's "last 30 runs" reading order).
+  const ordered = [...runs].reverse();
+  const maxDuration = durations.length > 0 ? Math.max(...durations) : 1;
+
+  return (
+    <div className="af2-card" style={{ padding: "10px 14px" }}>
+      <div className="flex items-center gap-3">
+        <span className="af2-eyebrow">Last {runs.length} runs</span>
+        <span className="ml-auto font-af2-mono text-[11px] text-af2-ink-3">
+          {durations.length > 0 ? `p50 ${formatRunMs(percentile(durations, 50))} · ` : ""}
+          {durations.length > 0 ? `p99 ${formatRunMs(percentile(durations, 99))} · ` : ""}
+          {okPct}% ok
+        </span>
+      </div>
+      <div className="mt-2 flex h-8 items-end gap-[3px]">
+        {ordered.map((run) => {
+          const ms =
+            run.completedAt && run.status === "completed"
+              ? new Date(run.completedAt).getTime() - new Date(run.startedAt).getTime()
+              : 0;
+          // Min 6px so even instant runs are visible; max 28px (the
+          // 32px height minus 4px padding).
+          const height = ms > 0
+            ? 6 + (ms / maxDuration) * 22
+            : 6;
+          const tone =
+            run.status === "completed"
+              ? "var(--af2-sage)"
+              : run.status === "failed"
+                ? "var(--af2-clay)"
+                : "var(--af2-mustard)";
+          return (
+            <div
+              key={run.id}
+              title={`${run.status} · ${formatRunMs(ms)}`}
+              className="w-2 rounded-[1px]"
+              style={{
+                height,
+                background: tone,
+                opacity: 0.85,
+              }}
+            />
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function percentile(sortedSource: number[], p: number): number {
+  if (sortedSource.length === 0) return 0;
+  const sorted = [...sortedSource].sort((a, b) => a - b);
+  const rank = Math.ceil((p / 100) * sorted.length) - 1;
+  return sorted[Math.max(0, Math.min(sorted.length - 1, rank))] ?? 0;
+}
+
+function formatRunMs(ms: number): string {
+  if (!Number.isFinite(ms) || ms <= 0) return "—";
+  if (ms < 1000) return `${Math.round(ms)}ms`;
+  if (ms < 60_000) return `${(ms / 1000).toFixed(1)}s`;
+  return `${(ms / 60_000).toFixed(1)}m`;
 }
 
 // HEL-100 v2 left rail. Mirrors docs/design/v2/studio.jsx::AF2_Studio

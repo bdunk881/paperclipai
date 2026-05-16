@@ -3,7 +3,7 @@ import { act, fireEvent, render, screen, waitFor, within } from "@testing-librar
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import WorkflowBuilder from "./WorkflowBuilder";
-import { generateWorkflow, listLLMConfigs, listTemplates, startRunWithFile } from "../api/client";
+import { generateWorkflow, getTemplate, listLLMConfigs, listRuns, listTemplates, startRunWithFile } from "../api/client";
 import type { WorkflowStep } from "../types/workflow";
 
 const requireAccessTokenMock = vi.fn();
@@ -54,6 +54,7 @@ vi.mock("../api/client", () => ({
   listTemplates: vi.fn().mockResolvedValue([]),
   getTemplate: vi.fn(),
   listLLMConfigs: vi.fn().mockResolvedValue([]),
+  listRuns: vi.fn().mockResolvedValue([]),
   startRun: vi.fn(),
   startRunWithFile: vi.fn(),
   generateWorkflow: vi.fn(),
@@ -76,6 +77,8 @@ const listTemplatesMock = vi.mocked(listTemplates);
 const listLLMConfigsMock = vi.mocked(listLLMConfigs);
 const generateWorkflowMock = vi.mocked(generateWorkflow);
 const startRunWithFileMock = vi.mocked(startRunWithFile);
+const listRunsMock = vi.mocked(listRuns);
+const getTemplateMock = vi.mocked(getTemplate);
 
 function renderBuilder() {
   render(
@@ -96,6 +99,8 @@ beforeEach(() => {
   requireAccessTokenMock.mockResolvedValue("token-123");
   listTemplatesMock.mockResolvedValue([]);
   listLLMConfigsMock.mockResolvedValue([]);
+  listRunsMock.mockResolvedValue([]);
+  getTemplateMock.mockReset();
   generateWorkflowMock.mockReset();
   startRunWithFileMock.mockReset();
 });
@@ -516,5 +521,83 @@ describe("WorkflowBuilder", () => {
       expect(startRunWithFileMock).toHaveBeenCalledWith(expect.any(String), file, undefined, "token-123");
     });
     expect(await screen.findByText(/run started — redirecting to monitor/i)).toBeInTheDocument();
+  });
+
+  it("renders the run-history strip with p50 / p99 / % ok stats when runs exist for a saved template", async () => {
+    // Saved template (has an ID): the run-history strip should fetch
+    // runs and render once they're loaded. Three runs in a known shape
+    // so we can assert the rolled-up stats.
+    getTemplateMock.mockResolvedValue({
+      id: "tpl-existing",
+      name: "Existing workflow",
+      description: "",
+      category: "support",
+      version: "1.0.0",
+      configFields: [],
+      steps: [
+        {
+          id: "step-1",
+          name: "Action step",
+          kind: "action",
+          description: "",
+          inputKeys: [],
+          outputKeys: [],
+          action: "noop",
+        },
+      ],
+      sampleInput: {},
+      expectedOutput: {},
+    });
+    listRunsMock.mockResolvedValue([
+      {
+        id: "run-1",
+        templateId: "tpl-existing",
+        templateName: "Existing workflow",
+        status: "completed",
+        startedAt: "2026-05-16T12:00:00.000Z",
+        completedAt: "2026-05-16T12:00:01.000Z", // 1s
+        input: {},
+        stepResults: [],
+      },
+      {
+        id: "run-2",
+        templateId: "tpl-existing",
+        templateName: "Existing workflow",
+        status: "completed",
+        startedAt: "2026-05-16T12:01:00.000Z",
+        completedAt: "2026-05-16T12:01:02.000Z", // 2s
+        input: {},
+        stepResults: [],
+      },
+      {
+        id: "run-3",
+        templateId: "tpl-existing",
+        templateName: "Existing workflow",
+        status: "failed",
+        startedAt: "2026-05-16T12:02:00.000Z",
+        input: {},
+        stepResults: [],
+        error: "boom",
+      },
+    ]);
+
+    render(
+      <MemoryRouter initialEntries={["/builder/tpl-existing"]}>
+        <Routes>
+          <Route path="/builder/:templateId" element={<WorkflowBuilder />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    // Wait for the template + runs to load and the strip to surface.
+    expect(await screen.findByText(/Last 3 runs/i)).toBeInTheDocument();
+
+    // 2 of 3 (completed | failed) succeeded → 67% ok. p50 of [1s, 2s]
+    // by nearest-rank with 50% = ceil(0.5*2)-1 = 0 → 1s. p99 → 2s.
+    expect(screen.getByText(/p50 1\.0s · p99 2\.0s · 67% ok/i)).toBeInTheDocument();
+
+    // requireAccessToken returns the token-123 from beforeEach, so the
+    // run-history fetch passes that along.
+    expect(listRunsMock).toHaveBeenCalledWith("tpl-existing", "token-123");
   });
 });

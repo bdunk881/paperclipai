@@ -123,3 +123,48 @@ describe("GET /api/workflows/:workflowId/versions", () => {
     expect(res.body.error).toMatch(/Invalid workflow ID/);
   });
 });
+
+describe("GET /api/workflows/:workflowId/versions/:versionId", () => {
+  const goodWorkflowId = "22222222-2222-4222-8222-222222222222";
+  const goodVersionId = "33333333-3333-4333-8333-333333333333";
+
+  it("returns 401 when no authenticated user is present", async () => {
+    const app = buildApp({ workspaceId: "11111111-1111-4111-8111-111111111111" });
+    const res = await request(app).get(
+      `/api/workflows/${goodWorkflowId}/versions/${goodVersionId}`,
+    );
+    expect(res.status).toBe(401);
+  });
+
+  it("returns 401 when no workspace context is present", async () => {
+    const app = buildApp({ sub: "user-1" });
+    const res = await request(app).get(
+      `/api/workflows/${goodWorkflowId}/versions/${goodVersionId}`,
+    );
+    expect(res.status).toBe(401);
+  });
+
+  it("returns 400 when the workflow ID is malformed", async () => {
+    const app = buildApp({
+      sub: "user-1",
+      workspaceId: "11111111-1111-4111-8111-111111111111",
+    });
+    const res = await request(app).get(
+      `/api/workflows/not-a-uuid/versions/${goodVersionId}`,
+    );
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/Invalid workflow ID/);
+  });
+
+  it("returns 400 when the version ID is malformed", async () => {
+    const app = buildApp({
+      sub: "user-1",
+      workspaceId: "11111111-1111-4111-8111-111111111111",
+    });
+    const res = await request(app).get(
+      `/api/workflows/${goodWorkflowId}/versions/not-a-uuid`,
+    );
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/Invalid version ID/);
+  });
+});

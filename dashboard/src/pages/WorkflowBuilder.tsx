@@ -66,7 +66,9 @@ import {
 import {
   createCanonicalWorkflow,
   createCanonicalWorkflowVersion,
+  getCanonicalWorkflowVersion,
   listCanonicalWorkflowVersions,
+  type CanonicalWorkflowVersionDetail,
   type CanonicalWorkflowVersionSummary,
 } from "../api/workflowsApi";
 import { Tooltip } from "../components/Tooltip";
@@ -499,6 +501,20 @@ export default function WorkflowBuilder() {
   >([]);
   const [versionsLoading, setVersionsLoading] = useState(false);
   const [versionsError, setVersionsError] = useState<string | null>(null);
+  // HEL-100 v2 diff modal state: which version the user is comparing
+  // against the current latest. Null = modal closed.
+  const [diffTargetVersionId, setDiffTargetVersionId] = useState<string | null>(
+    null,
+  );
+  // HEL-100 v2 restore flow: tracks which version id is being restored
+  // so the row can show a spinner + disable other restore buttons
+  // during the POST.
+  const [restoringVersionId, setRestoringVersionId] = useState<string | null>(
+    null,
+  );
+  const [versionsActionError, setVersionsActionError] = useState<string | null>(
+    null,
+  );
   // HEL-27: canonical workflow_id for this template. Set on first save
   // when the canonical /api/workflows POST returns; subsequent saves call
   // POST /api/workflows/:id/versions to create immutable versions.
@@ -637,6 +653,59 @@ export default function WorkflowBuilder() {
       cancelled = true;
     };
   }, [proMode, proInspectorTab, canonicalWorkflowId, requireAccessToken]);
+
+  // HEL-100 v2 Versions panel actions: refresh the list (used after a
+  // successful restore so the new version row appears + the "current"
+  // pill flips to it).
+  const refreshVersions = useCallback(async () => {
+    if (!canonicalWorkflowId) return;
+    try {
+      const accessToken = await requireAccessToken();
+      const versions = await listCanonicalWorkflowVersions(
+        canonicalWorkflowId,
+        accessToken,
+      );
+      setWorkflowVersions(versions);
+    } catch (err) {
+      setVersionsError(
+        err instanceof Error ? err.message : "Failed to refresh versions",
+      );
+    }
+  }, [canonicalWorkflowId, requireAccessToken]);
+
+  // HEL-100 v2 restore semantics: fetch the chosen version's dag, then
+  // POST it as a brand-new workflow_versions row. History is never
+  // destroyed — the older version stays in place; the restored copy
+  // becomes the new latest. After success, refresh the list so the
+  // "current" pill flips to the new row.
+  const handleRestoreVersion = useCallback(
+    async (versionId: string) => {
+      if (!canonicalWorkflowId) return;
+      setVersionsActionError(null);
+      setRestoringVersionId(versionId);
+      try {
+        const accessToken = await requireAccessToken();
+        const detail = await getCanonicalWorkflowVersion(
+          canonicalWorkflowId,
+          versionId,
+          accessToken,
+        );
+        await createCanonicalWorkflowVersion(
+          canonicalWorkflowId,
+          detail.dag,
+          accessToken,
+        );
+        await refreshVersions();
+      } catch (err) {
+        setVersionsActionError(
+          err instanceof Error ? err.message : "Failed to restore version",
+        );
+      } finally {
+        setRestoringVersionId(null);
+      }
+    },
+    [canonicalWorkflowId, refreshVersions, requireAccessToken],
+  );
 
   useEffect(() => {
     if (!isLlmStep) return;
@@ -1520,6 +1589,10 @@ export default function WorkflowBuilder() {
               versions={workflowVersions}
               loading={versionsLoading}
               error={versionsError}
+              actionError={versionsActionError}
+              restoringVersionId={restoringVersionId}
+              onCompare={(versionId) => setDiffTargetVersionId(versionId)}
+              onRestore={handleRestoreVersion}
             />
           )}
           {proMode && proInspectorTab === "observability" && (
@@ -2036,6 +2109,17 @@ export default function WorkflowBuilder() {
       )}
 
       {showHelp && <WorkflowBuilderHelpPanel onClose={() => setShowHelp(false)} />}
+
+      {diffTargetVersionId && canonicalWorkflowId && (
+        <VersionDiffModal
+          canonicalWorkflowId={canonicalWorkflowId}
+          targetVersionId={diffTargetVersionId}
+          latestVersionId={
+            workflowVersions.find((v) => v.isLatest)?.id ?? null
+          }
+          onClose={() => setDiffTargetVersionId(null)}
+        />
+      )}
     </div>
   );
 }
@@ -3233,21 +3317,33 @@ function EmptyCanvas({
 // drafts (no canonicalWorkflowId yet, i.e. never been saved) fall back
 // to a "draft · v{template.version}" pill with a one-line explanation.
 //
-// Diff + restore are deferred: the UX is bigger than one PR (full DAG
-// diff renderer, restore confirmation, rebase against open edits) and
-// each lands on its own ticket. This PR ships the read-only list.
+// Each non-latest row exposes Compare + Restore actions:
+//   · Compare opens the VersionDiffModal (this version vs the current
+//     latest) — step-level diff (added / removed / changed) computed
+//     from the two dag.steps arrays.
+//   · Restore fetches this version's dag and POSTs it as a new latest
+//     via createCanonicalWorkflowVersion(). History is never destroyed;
+//     the restored copy becomes a brand-new workflow_versions row.
 function VersionsPanel({
   template,
   canonicalWorkflowId,
   versions,
   loading,
   error,
+  actionError,
+  restoringVersionId,
+  onCompare,
+  onRestore,
 }: {
   template: WorkflowTemplate;
   canonicalWorkflowId: string | null;
   versions: CanonicalWorkflowVersionSummary[];
   loading: boolean;
   error: string | null;
+  actionError: string | null;
+  restoringVersionId: string | null;
+  onCompare: (versionId: string) => void;
+  onRestore: (versionId: string) => void;
 }) {
   return (
     <div
@@ -3275,7 +3371,6 @@ function VersionsPanel({
           </div>
           <p className="text-[12px] leading-5 text-af2-ink-3">
             Edits create immutable workflow_versions rows on save.
-            Version diff + restore are tracked as follow-ups.
           </p>
         </>
       )}
@@ -3293,42 +3388,359 @@ function VersionsPanel({
       {/* Loaded list. */}
       {canonicalWorkflowId && !loading && !error && (
         <>
+          {actionError && (
+            <div className="rounded-2xl border border-af2-clay/40 bg-af2-clay/10 px-3 py-2 text-[12px] text-af2-clay">
+              {actionError}
+            </div>
+          )}
           {versions.length === 0 ? (
             <p className="text-[12px] text-af2-ink-3">
               No versions saved yet for this workflow.
             </p>
           ) : (
             <ul className="space-y-2" role="list">
-              {versions.map((v) => (
-                <li
-                  key={v.id}
-                  className="af2-card flex items-center gap-3 p-3"
-                >
-                  <span className="font-af2-mono text-[12px] font-semibold text-af2-ink">
-                    v{v.version}
-                  </span>
-                  {v.isLatest && (
-                    <span className="af2-pill af2-pill-live">
-                      <span className="af2-dot" />
-                      current
-                    </span>
-                  )}
-                  <div className="ml-auto text-right">
-                    <div className="text-[11px] text-af2-ink-3">
-                      {formatVersionTimestamp(v.createdAt)}
+              {versions.map((v) => {
+                const restoring = restoringVersionId === v.id;
+                const anyRestoring = restoringVersionId !== null;
+                return (
+                  <li
+                    key={v.id}
+                    className="af2-card flex flex-col gap-2 p-3"
+                  >
+                    <div className="flex items-center gap-3">
+                      <span className="font-af2-mono text-[12px] font-semibold text-af2-ink">
+                        v{v.version}
+                      </span>
+                      {v.isLatest && (
+                        <span className="af2-pill af2-pill-live">
+                          <span className="af2-dot" />
+                          current
+                        </span>
+                      )}
+                      <div className="ml-auto text-[11px] text-af2-ink-3">
+                        {formatVersionTimestamp(v.createdAt)}
+                      </div>
                     </div>
-                  </div>
-                </li>
-              ))}
+                    {!v.isLatest && (
+                      <div className="flex items-center justify-end gap-2">
+                        <button
+                          type="button"
+                          onClick={() => onCompare(v.id)}
+                          disabled={anyRestoring}
+                          className="af2-btn af2-btn-sm"
+                          aria-label={`Compare v${v.version} against current`}
+                        >
+                          Compare
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => onRestore(v.id)}
+                          disabled={anyRestoring}
+                          className="af2-btn af2-btn-sm af2-btn-clay"
+                          aria-label={`Restore v${v.version}`}
+                        >
+                          {restoring ? (
+                            <Loader size={12} className="mr-1 inline animate-spin" />
+                          ) : null}
+                          Restore
+                        </button>
+                      </div>
+                    )}
+                  </li>
+                );
+              })}
             </ul>
           )}
           <p className="text-[11px] leading-4 text-af2-ink-4">
-            Diff + restore arrive in a follow-up.
+            Restore creates a new version with the older dag — history
+            is preserved.
           </p>
         </>
       )}
     </div>
   );
+}
+
+// HEL-100 v2 Versions diff modal. Fetches the target version + the
+// current latest via GET /api/workflows/:wf/versions/:id, then computes
+// a step-level diff from `dag.steps`. Step-level (not byte-level) is
+// the right resolution here — a workflow author thinks in steps, not
+// JSON keys, and a structural diff is robust to incidental ordering
+// or whitespace.
+function VersionDiffModal({
+  canonicalWorkflowId,
+  targetVersionId,
+  latestVersionId,
+  onClose,
+}: {
+  canonicalWorkflowId: string;
+  targetVersionId: string;
+  latestVersionId: string | null;
+  onClose: () => void;
+}) {
+  const { requireAccessToken } = useAuth();
+  const [target, setTarget] = useState<CanonicalWorkflowVersionDetail | null>(
+    null,
+  );
+  const [latest, setLatest] = useState<CanonicalWorkflowVersionDetail | null>(
+    null,
+  );
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    setError(null);
+    async function load() {
+      try {
+        const accessToken = await requireAccessToken();
+        const targetPromise = getCanonicalWorkflowVersion(
+          canonicalWorkflowId,
+          targetVersionId,
+          accessToken,
+        );
+        const latestPromise = latestVersionId
+          ? getCanonicalWorkflowVersion(
+              canonicalWorkflowId,
+              latestVersionId,
+              accessToken,
+            )
+          : Promise.resolve<CanonicalWorkflowVersionDetail | null>(null);
+        const [t, l] = await Promise.all([targetPromise, latestPromise]);
+        if (cancelled) return;
+        setTarget(t);
+        setLatest(l);
+      } catch (err) {
+        if (!cancelled) {
+          setError(err instanceof Error ? err.message : "Failed to load diff");
+        }
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    }
+    void load();
+    return () => {
+      cancelled = true;
+    };
+  }, [canonicalWorkflowId, targetVersionId, latestVersionId, requireAccessToken]);
+
+  // Esc closes the modal — matches the pattern of the other Studio
+  // modals (DeployAsTeamModal, FileUploadModal).
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") onClose();
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  const diff = useMemo(() => {
+    if (!target || !latest) return null;
+    return computeStepDiff(extractSteps(target.dag), extractSteps(latest.dag));
+  }, [target, latest]);
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-af2-ink/55 backdrop-blur-[2px] px-4">
+      <div className="max-h-[90vh] w-full max-w-3xl overflow-hidden rounded-[28px] border border-af2-line bg-af2-card shadow-af2-lg">
+        <div className="flex items-center justify-between gap-4 border-b border-af2-line px-6 py-5">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-af2-clay">
+              Compare versions
+            </p>
+            <h2 className="font-af2-serif mt-1 text-xl font-medium text-af2-ink">
+              {target && latest
+                ? `v${target.version} → v${latest.version} (current)`
+                : "Loading…"}
+            </h2>
+          </div>
+          <button
+            onClick={onClose}
+            aria-label="Close diff modal"
+            className="rounded-full border border-af2-line p-2 text-af2-ink-3 transition hover:border-af2-line-2 hover:bg-af2-paper-2 hover:text-af2-ink"
+          >
+            <X size={16} />
+          </button>
+        </div>
+
+        <div className="max-h-[calc(90vh-140px)] overflow-y-auto p-6">
+          {loading && (
+            <p className="text-[13px] text-af2-ink-3">Loading versions…</p>
+          )}
+          {error && !loading && (
+            <div className="rounded-2xl border border-af2-clay/40 bg-af2-clay/10 px-3 py-2 text-[13px] text-af2-clay">
+              {error}
+            </div>
+          )}
+          {!loading && !error && diff && (
+            <div className="space-y-5">
+              <div className="text-[12.5px] text-af2-ink-3">
+                Step-level diff. Order of steps in the canvas isn't
+                surfaced here; rename / kind / description / I/O key
+                changes count as <em>changed</em>.
+              </div>
+              <DiffSection
+                title="Added in current"
+                tone="sage"
+                items={diff.added.map((s) => `${s.name} (${s.kind})`)}
+                empty="No new steps."
+              />
+              <DiffSection
+                title="Removed since this version"
+                tone="clay"
+                items={diff.removed.map((s) => `${s.name} (${s.kind})`)}
+                empty="No removed steps."
+              />
+              <DiffSection
+                title="Changed"
+                tone="mustard"
+                items={diff.changed.map(
+                  (c) => `${c.name} (${c.kind}) — ${c.what}`,
+                )}
+                empty="No edited steps."
+              />
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function DiffSection({
+  title,
+  tone,
+  items,
+  empty,
+}: {
+  title: string;
+  tone: "sage" | "clay" | "mustard";
+  items: string[];
+  empty: string;
+}) {
+  const pillClass =
+    tone === "sage"
+      ? "af2-pill-live"
+      : tone === "clay"
+        ? "af2-pill-clay"
+        : "af2-pill-pending";
+  return (
+    <div>
+      <div className="mb-2 flex items-center gap-2">
+        <h3 className="font-af2-sans text-[13px] font-semibold text-af2-ink">
+          {title}
+        </h3>
+        <span className={`af2-pill ${pillClass}`}>
+          <span className="af2-dot" />
+          {items.length}
+        </span>
+      </div>
+      {items.length === 0 ? (
+        <p className="text-[12px] text-af2-ink-3">{empty}</p>
+      ) : (
+        <ul className="space-y-1" role="list">
+          {items.map((label, i) => (
+            <li
+              key={`${title}-${i}`}
+              className="rounded-md border border-af2-line bg-af2-paper-2 px-3 py-2 text-[12.5px] text-af2-ink"
+            >
+              {label}
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+// Step-level diff: structural compare of two dag.steps arrays by id.
+// Returns added/removed/changed groups. "Changed" reasons are listed
+// in a compact `what` string so the panel can show a short summary
+// without expanding into a full property tree.
+interface StepDiffSummary {
+  added: { id: string; name: string; kind: string }[];
+  removed: { id: string; name: string; kind: string }[];
+  changed: { id: string; name: string; kind: string; what: string }[];
+}
+
+interface DiffStep {
+  id: string;
+  name: string;
+  kind: string;
+  description?: string;
+  inputKeys?: string[];
+  outputKeys?: string[];
+}
+
+function extractSteps(dag: unknown): DiffStep[] {
+  if (!dag || typeof dag !== "object") return [];
+  const stepsAny = (dag as { steps?: unknown }).steps;
+  if (!Array.isArray(stepsAny)) return [];
+  return stepsAny
+    .filter((s): s is Record<string, unknown> => Boolean(s) && typeof s === "object")
+    .map((s) => ({
+      id: String(s.id ?? ""),
+      name: typeof s.name === "string" ? s.name : "",
+      kind: typeof s.kind === "string" ? s.kind : "",
+      description: typeof s.description === "string" ? s.description : undefined,
+      inputKeys: Array.isArray(s.inputKeys)
+        ? s.inputKeys.filter((k): k is string => typeof k === "string")
+        : undefined,
+      outputKeys: Array.isArray(s.outputKeys)
+        ? s.outputKeys.filter((k): k is string => typeof k === "string")
+        : undefined,
+    }))
+    .filter((s) => s.id !== "");
+}
+
+function computeStepDiff(
+  target: DiffStep[],
+  latest: DiffStep[],
+): StepDiffSummary {
+  const targetById = new Map(target.map((s) => [s.id, s]));
+  const latestById = new Map(latest.map((s) => [s.id, s]));
+
+  const added: StepDiffSummary["added"] = [];
+  const removed: StepDiffSummary["removed"] = [];
+  const changed: StepDiffSummary["changed"] = [];
+
+  for (const step of latest) {
+    if (!targetById.has(step.id)) {
+      added.push({ id: step.id, name: step.name, kind: step.kind });
+    }
+  }
+  for (const step of target) {
+    if (!latestById.has(step.id)) {
+      removed.push({ id: step.id, name: step.name, kind: step.kind });
+    }
+  }
+  for (const t of target) {
+    const l = latestById.get(t.id);
+    if (!l) continue;
+    const reasons: string[] = [];
+    if (t.name !== l.name) reasons.push("name");
+    if (t.kind !== l.kind) reasons.push("kind");
+    if ((t.description ?? "") !== (l.description ?? "")) reasons.push("description");
+    if (!arraysEqual(t.inputKeys ?? [], l.inputKeys ?? [])) reasons.push("inputs");
+    if (!arraysEqual(t.outputKeys ?? [], l.outputKeys ?? [])) reasons.push("outputs");
+    if (reasons.length > 0) {
+      changed.push({
+        id: l.id,
+        name: l.name,
+        kind: l.kind,
+        what: reasons.join(", "),
+      });
+    }
+  }
+  return { added, removed, changed };
+}
+
+function arraysEqual(a: string[], b: string[]): boolean {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) {
+    if (a[i] !== b[i]) return false;
+  }
+  return true;
 }
 
 function formatVersionTimestamp(iso: string): string {

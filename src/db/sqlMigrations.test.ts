@@ -131,11 +131,12 @@ describe("sql migrations", () => {
           seeded.add(name);
         },
         detectPostRenameSchema: async () => true,
+        tableExists: async () => true,
       })
     ).resolves.toBe(3);
 
-    // Nothing executed — auto-seed marked all migrations as applied without
-    // running them. This is what unblocks a dev DB that already has the
+    // Nothing executed — auto-seed marked all 001–021 migrations as applied
+    // without running them. This unblocks a dev DB that already has the
     // canonical noun schema from prior manual setup.
     expect(execute).not.toHaveBeenCalled();
     expect(seeded).toEqual(
@@ -146,6 +147,116 @@ describe("sql migrations", () => {
         expect.stringContaining("Detected canonical schema"),
       ])
     );
+  });
+
+  it("auto-seed runs (not bypasses) migrations 022+ (regression guard for the over-seed bug)", async () => {
+    const execute = jest.fn().mockResolvedValue(undefined);
+    const log = jest.fn();
+    const seedingOrder: string[] = [];
+    const executingOrder: string[] = [];
+
+    mockReaddir.mockResolvedValue([
+      { name: "001_a.sql", isFile: () => true },
+      { name: "021_canonical_noun_rename.sql", isFile: () => true },
+      { name: "022_companies_missions_hiring_plans.sql", isFile: () => true },
+      { name: "023_canonical_workflow_runtime.sql", isFile: () => true },
+      { name: "035_wake_events.sql", isFile: () => true },
+    ]);
+    mockReadFile.mockImplementation(async (filePath: string) => `-- ${filePath}`);
+    execute.mockImplementation(async (sql: string) => {
+      executingOrder.push(sql);
+    });
+
+    await applySqlMigrations({
+      migrationsDir: "/tmp/migrations",
+      execute,
+      log,
+      readApplied: async () => new Set(),
+      markApplied: async (name) => {
+        seedingOrder.push(name);
+      },
+      detectPostRenameSchema: async () => true,
+      tableExists: async () => false,
+    });
+
+    // 001 + 021 were auto-seeded as applied without executing.
+    expect(executingOrder.some((sql) => sql.includes("001_a.sql"))).toBe(false);
+    expect(executingOrder.some((sql) => sql.includes("021_canonical_noun_rename.sql"))).toBe(
+      false,
+    );
+    // But 022+ DID execute (because the auto-seed cap leaves them out).
+    expect(executingOrder.some((sql) => sql.includes("022_companies_missions_hiring_plans.sql"))).toBe(
+      true,
+    );
+    expect(executingOrder.some((sql) => sql.includes("023_canonical_workflow_runtime.sql"))).toBe(
+      true,
+    );
+    expect(executingOrder.some((sql) => sql.includes("035_wake_events.sql"))).toBe(true);
+    // The cap log message is present.
+    expect(log.mock.calls.map(([m]) => String(m))).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining("Migrations 022+ will run normally"),
+      ]),
+    );
+  });
+
+  it("self-repair: un-marks a canonical migration when its target table is missing", async () => {
+    const execute = jest.fn().mockResolvedValue(undefined);
+    const log = jest.fn();
+    const applied = new Set([
+      "001_a.sql",
+      "021_canonical_noun_rename.sql",
+      "022_companies_missions_hiring_plans.sql",
+      "023_canonical_workflow_runtime.sql",
+    ]);
+    const removed: string[] = [];
+    const marked: string[] = [];
+
+    mockReaddir.mockResolvedValue([
+      { name: "001_a.sql", isFile: () => true },
+      { name: "021_canonical_noun_rename.sql", isFile: () => true },
+      { name: "022_companies_missions_hiring_plans.sql", isFile: () => true },
+      { name: "023_canonical_workflow_runtime.sql", isFile: () => true },
+    ]);
+    mockReadFile.mockResolvedValue("-- migration body");
+
+    await applySqlMigrations({
+      migrationsDir: "/tmp/migrations",
+      execute,
+      log,
+      readApplied: async () => applied,
+      markApplied: async (name) => {
+        marked.push(name);
+      },
+      removeApplied: async (name) => {
+        removed.push(name);
+        applied.delete(name);
+      },
+      tableExists: async (table) => {
+        // Simulate the dev-bug state: 022 + 023 were falsely seeded, the
+        // missions + runs tables don't exist. We expect those two migrations
+        // to be un-applied and then re-executed.
+        if (["missions", "hiring_plans", "runs", "workflows", "step_results"].includes(table)) {
+          return false;
+        }
+        return true;
+      },
+      detectPostRenameSchema: async () => false,
+    });
+
+    expect(removed).toEqual(
+      expect.arrayContaining([
+        "022_companies_missions_hiring_plans.sql",
+        "023_canonical_workflow_runtime.sql",
+      ]),
+    );
+    // Repair log message present.
+    const logs = log.mock.calls.map(([m]) => String(m));
+    expect(logs.some((m) => m.includes("Repair: migration 022_"))).toBe(true);
+    expect(logs.some((m) => m.includes("Repair: migration 023_"))).toBe(true);
+    // And they got re-applied.
+    expect(marked).toContain("022_companies_missions_hiring_plans.sql");
+    expect(marked).toContain("023_canonical_workflow_runtime.sql");
   });
 
   it("runs migrations only once per process when postgres is configured", async () => {

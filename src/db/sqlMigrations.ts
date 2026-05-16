@@ -26,14 +26,52 @@ const TRACKING_TABLE_DDL = `
 /**
  * Tables whose presence indicates the schema is already at-or-past the
  * canonical-noun rename point (migration 021). When the tracking table is
- * empty AND any of these are present, seed the tracking table with the full
- * known migration list so the runner doesn't try to re-apply non-idempotent
- * DDL against an already-migrated database.
+ * empty AND any of these are present, seed the tracking table with migrations
+ * 001–021 so the runner doesn't try to re-apply non-idempotent DDL against
+ * the already-renamed schema.
  *
  * `companies` came from migration 021 (renamed from `provisioned_companies`).
  * `agents` came from the same migration (renamed from `control_plane_agents`).
  */
 const POST_RENAME_INDICATORS = ["companies", "agents", "audit_log"];
+
+/**
+ * The highest filename prefix safe to auto-seed. Originally the auto-seed
+ * marked EVERY migration file as applied — which falsely fast-forwarded
+ * past 022+ on dev databases that had the post-rename schema but never ran
+ * the canonical-product migrations. The result: `runs` / `missions` /
+ * `step_results` / `approvals` / `activity_events` tables never existed on
+ * dev despite the boot log claiming "All 47 migration file(s) already
+ * applied". We cap the auto-seed at 021 (the rename migration itself); 022+
+ * are post-rename canonical tables that must be allowed to run.
+ */
+const AUTO_SEED_PREFIX_CEILING = "022_";
+
+/**
+ * Canonical-schema tables introduced by migrations 022+. If any of these is
+ * missing on boot AND its migration is marked applied in `__sql_migrations`,
+ * the runner un-marks the affected migration so it re-applies on the next
+ * boot. Pairs with the auto-seed cap above as belt-and-suspenders against
+ * the over-seeding regression that bit dev.
+ */
+const CANONICAL_TABLE_TO_MIGRATION: ReadonlyArray<{ table: string; filenamePrefix: string }> = [
+  { table: "missions", filenamePrefix: "022_" },
+  { table: "hiring_plans", filenamePrefix: "022_" },
+  { table: "workflows", filenamePrefix: "023_" },
+  { table: "workflow_versions", filenamePrefix: "023_" },
+  { table: "routines", filenamePrefix: "023_" },
+  { table: "runs", filenamePrefix: "023_" },
+  { table: "step_results", filenamePrefix: "023_" },
+  { table: "approvals", filenamePrefix: "024_" },
+  { table: "activity_events", filenamePrefix: "024_" },
+  { table: "connector_connections", filenamePrefix: "025_" },
+  { table: "budgets", filenamePrefix: "025_" },
+  { table: "subscriptions", filenamePrefix: "025_" },
+  { table: "entitlements", filenamePrefix: "025_" },
+  { table: "agent_assignments", filenamePrefix: "031_" },
+  { table: "org_edges", filenamePrefix: "031_" },
+  { table: "wake_events", filenamePrefix: "035_" },
+];
 
 interface ExecutorOptions {
   migrationsDir?: string;
@@ -46,6 +84,10 @@ interface ExecutorOptions {
   readApplied?: () => Promise<Set<string>>;
   /** Optional override for marking a migration applied. */
   markApplied?: (filename: string) => Promise<void>;
+  /** Optional override for un-marking a migration applied (self-repair path). */
+  removeApplied?: (filename: string) => Promise<void>;
+  /** Optional override for table-existence probes (self-repair path). */
+  tableExists?: (table: string) => Promise<boolean>;
   /** Optional override for the bootstrap "is this a post-rename DB?" probe. */
   detectPostRenameSchema?: () => Promise<boolean>;
 }
@@ -98,16 +140,60 @@ export async function applySqlMigrations(options?: ExecutorOptions): Promise<num
 
   // Auto-seed for a pre-existing post-rename DB: if the tracking table is
   // empty but the canonical schema indicates migrations have already been
-  // applied historically, mark every known file as applied to skip them.
+  // applied historically, mark migrations 001–021 as applied so the runner
+  // doesn't try to re-apply non-idempotent renames. CRITICAL: we cap the
+  // seed at AUTO_SEED_PREFIX_CEILING — over-seeding past 021 is the bug
+  // that left `runs`/`missions`/`step_results`/etc. missing on dev despite
+  // boot logs claiming everything was applied.
   if (applied.size === 0 && (await detectPostRenameSchema())) {
+    const eligible = migrationFiles.filter((f) => f < AUTO_SEED_PREFIX_CEILING);
     log(
       `[postgres] Detected canonical schema (likely from prior manual setup); ` +
-        `seeding __sql_migrations with ${migrationFiles.length} files to skip re-application.`
+        `seeding __sql_migrations with ${eligible.length} pre-canonical files ` +
+        `(001-021) to skip re-application. Migrations 022+ will run normally.`
     );
-    for (const filename of migrationFiles) {
+    for (const filename of eligible) {
       await markApplied(filename);
       applied.add(filename);
     }
+  }
+
+  // Self-repair: if a canonical-schema table from migration 022+ is missing
+  // but its source migration is recorded as applied, un-mark the migration
+  // so it re-applies. Catches the regression where the old over-seeding
+  // logic falsely fast-forwarded the tracking table past 022.
+  const removeApplied =
+    options?.removeApplied ??
+    (async (filename: string) => {
+      await queryPostgres("DELETE FROM __sql_migrations WHERE filename = $1", [filename]);
+    });
+  const tableExists =
+    options?.tableExists ??
+    (async (table: string) => {
+      const result = await queryPostgres<{ exists: boolean }>(
+        `SELECT EXISTS (
+          SELECT 1 FROM information_schema.tables
+          WHERE table_schema = 'public' AND table_name = $1
+        ) AS exists`,
+        [table]
+      );
+      return result.rows[0]?.exists === true;
+    });
+
+  const repaired = new Set<string>();
+  for (const { table, filenamePrefix } of CANONICAL_TABLE_TO_MIGRATION) {
+    const filename = migrationFiles.find((f) => f.startsWith(filenamePrefix));
+    if (!filename || repaired.has(filename)) continue;
+    if (!applied.has(filename)) continue;
+    if (await tableExists(table)) continue;
+
+    log(
+      `[postgres] Repair: migration ${filename} is marked applied but ` +
+        `canonical table "${table}" is missing. Un-marking so it re-applies.`
+    );
+    await removeApplied(filename);
+    applied.delete(filename);
+    repaired.add(filename);
   }
 
   let appliedCount = 0;

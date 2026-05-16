@@ -18,12 +18,14 @@ const {
   createMissionMock,
   generateHiringPlanMock,
   confirmHiringPlanMock,
+  listLLMConfigsMock,
   requireAccessTokenMock,
 } = vi.hoisted(() => ({
   listMissionsMock: vi.fn(),
   createMissionMock: vi.fn(),
   generateHiringPlanMock: vi.fn(),
   confirmHiringPlanMock: vi.fn(),
+  listLLMConfigsMock: vi.fn(),
   requireAccessTokenMock: vi.fn(),
 }));
 
@@ -33,6 +35,10 @@ vi.mock("../api/missionsApi", () => ({
   generateHiringPlan: generateHiringPlanMock,
   confirmHiringPlan: confirmHiringPlanMock,
   getMission: vi.fn(),
+}));
+
+vi.mock("../api/client", () => ({
+  listLLMConfigs: listLLMConfigsMock,
 }));
 
 vi.mock("../context/AuthContext", () => ({
@@ -65,6 +71,20 @@ describe("Hire page (HEL-23, v2)", () => {
     vi.clearAllMocks();
     requireAccessTokenMock.mockResolvedValue("mock-token");
     listMissionsMock.mockResolvedValue([]);
+    // Default to "user has at least one LLM credential" so the Generate
+    // button is enabled across most tests. The no-LLM gate test below
+    // explicitly overrides this with an empty array.
+    listLLMConfigsMock.mockResolvedValue([
+      {
+        id: "cfg-1",
+        label: "OpenAI",
+        provider: "openai",
+        model: "gpt-4o",
+        isDefault: true,
+        apiKeyMasked: "sk-…",
+        createdAt: "2026-05-01T00:00:00Z",
+      },
+    ]);
   });
 
   afterEach(() => {
@@ -128,6 +148,28 @@ describe("Hire page (HEL-23, v2)", () => {
       "mock-token",
     );
     expect(await screen.findByText(/saved as a draft/i)).toBeInTheDocument();
+  });
+
+  it("blocks Generate with an inline call-out when no LLM model is connected", async () => {
+    listLLMConfigsMock.mockResolvedValueOnce([]);
+    renderHire();
+    await screen.findByRole("heading", { name: /Hire from a mission/i });
+
+    // Inline call-out renders with a clear next step.
+    expect(
+      await screen.findByText(/Connect a model before you can generate/i),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /Add a model/i })).toHaveAttribute(
+      "href",
+      "/settings/llm-providers",
+    );
+
+    // The Generate button is disabled even with a populated mission statement.
+    const textarea = screen.getByLabelText(/Mission statement/i) as HTMLTextAreaElement;
+    fireEvent.change(textarea, { target: { value: "Test mission" } });
+    const generate = screen.getByRole("button", { name: /Generate hiring plan/i });
+    expect(generate).toBeDisabled();
+    expect(generateHiringPlanMock).not.toHaveBeenCalled();
   });
 
   it("calls generateHiringPlan and navigates to the review page", async () => {

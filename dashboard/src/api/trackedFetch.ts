@@ -52,9 +52,26 @@ export async function trackedFetch(
     return makeCooldownResponse();
   }
 
+  // Default 15s timeout. Otherwise a backend that hangs (slow Postgres query,
+  // worker crash, network blackhole) leaves the React effect's try/finally
+  // never running and the spinner spins forever. If the caller already passed
+  // an AbortSignal we chain through; otherwise we own the controller.
+  const FETCH_TIMEOUT_MS = 15_000;
+  const callerSignal = init?.signal ?? undefined;
+  const controller = new AbortController();
+  const timeoutHandle = window.setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+  if (callerSignal) {
+    if (callerSignal.aborted) {
+      controller.abort();
+    } else {
+      callerSignal.addEventListener("abort", () => controller.abort(), { once: true });
+    }
+  }
+
   const nextInit: RequestInit = {
     ...init,
     headers: withActiveWorkspaceHeader(init?.headers),
+    signal: controller.signal,
   };
   const url =
     typeof input === "string"
@@ -79,16 +96,30 @@ export async function trackedFetch(
     }
     return res;
   } catch (err) {
-    Sentry.metrics.count("api.network_error", 1, { attributes: { endpoint, method } });
-    Sentry.logger.error(`Network error: ${method} ${endpoint}`, { endpoint, method });
-    Sentry.captureException(err, {
-      level: "error",
-      tags: { endpoint, method, kind: "api_network_error" },
-      contexts: { request: { url, method } },
-      fingerprint: ["api_network_error", method, endpoint],
+    // Surface a friendlier message for the timeout case so callers don't
+    // just see "The user aborted a request." in their error state.
+    const isAbort =
+      err instanceof DOMException && err.name === "AbortError" && !callerSignal?.aborted;
+    const surfaceErr = isAbort
+      ? new Error(`Request timed out after ${FETCH_TIMEOUT_MS / 1000}s: ${method} ${endpoint}`)
+      : err;
+    Sentry.metrics.count("api.network_error", 1, {
+      attributes: { endpoint, method, kind: isAbort ? "timeout" : "network" },
     });
-    throw err;
+    Sentry.logger.error(`Network error: ${method} ${endpoint}`, {
+      endpoint,
+      method,
+      kind: isAbort ? "timeout" : "network",
+    });
+    Sentry.captureException(surfaceErr, {
+      level: "error",
+      tags: { endpoint, method, kind: isAbort ? "api_timeout" : "api_network_error" },
+      contexts: { request: { url, method, timeoutMs: FETCH_TIMEOUT_MS } },
+      fingerprint: [isAbort ? "api_timeout" : "api_network_error", method, endpoint],
+    });
+    throw surfaceErr;
   } finally {
+    window.clearTimeout(timeoutHandle);
     const duration = Math.round(performance.now() - start);
 
     Sentry.metrics.distribution("api.response_time_ms", duration, {

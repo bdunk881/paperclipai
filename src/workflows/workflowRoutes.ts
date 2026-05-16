@@ -462,7 +462,11 @@ export function createWorkflowRoutes(pool: Pool) {
   });
 
   // ---------------------------------------------------------------------
-  // GET /api/workflows — list newest first (LIMIT 100)
+  // GET /api/workflows — list newest first (LIMIT 100). Optional
+  // ?externalTemplateId=X filter lets the dashboard resolve the
+  // canonical workflow_id for a loaded legacy template ID so the
+  // Versions panel can surface for templates that haven't been
+  // re-saved since canonicalization.
   // ---------------------------------------------------------------------
   router.get("/", async (req: AuthenticatedRequest, res) => {
     const userId = req.auth?.sub;
@@ -471,6 +475,12 @@ export function createWorkflowRoutes(pool: Pool) {
       res.status(401).json({ error: "Authenticated user + workspace required" });
       return;
     }
+
+    const externalTemplateId =
+      typeof req.query.externalTemplateId === "string" &&
+      req.query.externalTemplateId.trim().length > 0
+        ? req.query.externalTemplateId.trim().slice(0, MAX_NAME_LENGTH)
+        : null;
 
     interface ListRow {
       id: string;
@@ -489,9 +499,10 @@ export function createWorkflowRoutes(pool: Pool) {
             `SELECT id, name, external_template_id, created_at, updated_at
                FROM workflows
               WHERE workspace_id = $1
+                AND ($2::text IS NULL OR external_template_id = $2)
               ORDER BY updated_at DESC, id DESC
               LIMIT 100`,
-            [workspaceId],
+            [workspaceId, externalTemplateId],
           ),
       );
       res.json({

@@ -97,8 +97,15 @@ export async function getCanonicalWorkflow(
 
 export async function listCanonicalWorkflows(
   accessToken: string,
+  options: { externalTemplateId?: string } = {},
 ): Promise<CanonicalWorkflow[]> {
-  const response = await trackedFetch(`${BASE}/workflows`, {
+  const params = new URLSearchParams();
+  if (options.externalTemplateId) {
+    params.set("externalTemplateId", options.externalTemplateId);
+  }
+  const qs = params.toString();
+  const url = qs ? `${BASE}/workflows?${qs}` : `${BASE}/workflows`;
+  const response = await trackedFetch(url, {
     headers: buildHeaders(accessToken),
   });
   const data = await parseJsonOrError<{ workflows: CanonicalWorkflow[] }>(

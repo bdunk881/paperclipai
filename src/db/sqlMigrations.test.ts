@@ -200,6 +200,61 @@ describe("sql migrations", () => {
     );
   });
 
+  it("self-repair: triggers blanket repair when a canonical COLUMN (not table) is missing", async () => {
+    const execute = jest.fn().mockResolvedValue(undefined);
+    const log = jest.fn();
+    const applied = new Set([
+      "001_a.sql",
+      "022_companies_missions_hiring_plans.sql",
+      "028_subscription_store_columns.sql",
+      "032_missions_metadata.sql",
+    ]);
+    const removed: string[] = [];
+
+    mockReaddir.mockResolvedValue([
+      { name: "001_a.sql", isFile: () => true },
+      { name: "022_companies_missions_hiring_plans.sql", isFile: () => true },
+      { name: "028_subscription_store_columns.sql", isFile: () => true },
+      { name: "032_missions_metadata.sql", isFile: () => true },
+    ]);
+    mockReadFile.mockResolvedValue("-- migration body");
+
+    await applySqlMigrations({
+      migrationsDir: "/tmp/migrations",
+      execute,
+      log,
+      readApplied: async () => applied,
+      markApplied: async () => {},
+      removeApplied: async (name) => {
+        removed.push(name);
+        applied.delete(name);
+      },
+      // All canonical TABLES exist (the over-seed bug let 023/024/025 run on
+      // a prior repair pass). But the missions.metadata COLUMN is missing
+      // because migration 032 (ALTER TABLE) was over-seeded and never ran.
+      tableExists: async () => true,
+      columnExists: async (table, column) => {
+        if (table === "missions" && column === "metadata") return false;
+        return true;
+      },
+      detectPostRenameSchema: async () => false,
+    });
+
+    // Blanket repair fires — even though tables are fine, the missing
+    // column triggers un-marking ALL 022+ migrations.
+    expect(removed).toEqual(
+      expect.arrayContaining([
+        "022_companies_missions_hiring_plans.sql",
+        "028_subscription_store_columns.sql",
+        "032_missions_metadata.sql",
+      ]),
+    );
+    const logs = log.mock.calls.map(([m]) => String(m));
+    expect(logs.some((m) => m.includes('canonical column "missions.metadata" is missing'))).toBe(
+      true,
+    );
+  });
+
   it("self-repair: un-marks ALL 022+ migrations when over-seed bug detected (covers ALTER TABLE migrations too)", async () => {
     const execute = jest.fn().mockResolvedValue(undefined);
     const log = jest.fn();

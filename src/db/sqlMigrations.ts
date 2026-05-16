@@ -73,6 +73,25 @@ const CANONICAL_TABLE_TO_MIGRATION: ReadonlyArray<{ table: string; filenamePrefi
   { table: "wake_events", filenamePrefix: "035_" },
 ];
 
+/**
+ * Canonical columns added by ALTER TABLE migrations 022+. If a column is
+ * missing on boot, repair fires — covers the case where the over-seeded
+ * tracking table marked an ALTER TABLE migration as applied without ever
+ * running it (e.g. 028 adds subscriptions.user_id, 032 adds
+ * missions.metadata).
+ */
+const CANONICAL_COLUMN_TO_MIGRATION: ReadonlyArray<{
+  table: string;
+  column: string;
+  filenamePrefix: string;
+}> = [
+  { table: "missions", column: "metadata", filenamePrefix: "032_" },
+  { table: "subscriptions", column: "user_id", filenamePrefix: "028_" },
+  { table: "subscriptions", column: "current_period_start", filenamePrefix: "028_" },
+  { table: "workspace_members", column: "role", filenamePrefix: "026_" },
+  { table: "workspaces", column: "tier_routing", filenamePrefix: "033_" },
+];
+
 interface ExecutorOptions {
   migrationsDir?: string;
   execute?: (sql: string) => Promise<unknown>;
@@ -88,6 +107,8 @@ interface ExecutorOptions {
   removeApplied?: (filename: string) => Promise<void>;
   /** Optional override for table-existence probes (self-repair path). */
   tableExists?: (table: string) => Promise<boolean>;
+  /** Optional override for column-existence probes (self-repair path). */
+  columnExists?: (table: string, column: string) => Promise<boolean>;
   /** Optional override for the bootstrap "is this a post-rename DB?" probe. */
   detectPostRenameSchema?: () => Promise<boolean>;
 }
@@ -180,21 +201,49 @@ export async function applySqlMigrations(options?: ExecutorOptions): Promise<num
       return result.rows[0]?.exists === true;
     });
 
+  const columnExists =
+    options?.columnExists ??
+    (async (table: string, column: string) => {
+      const result = await queryPostgres<{ exists: boolean }>(
+        `SELECT EXISTS (
+          SELECT 1 FROM information_schema.columns
+          WHERE table_schema = 'public' AND table_name = $1 AND column_name = $2
+        ) AS exists`,
+        [table, column]
+      );
+      return result.rows[0]?.exists === true;
+    });
+
   // Pass 1: detect the over-seed bug by checking for any missing canonical
-  // table from migrations 022+. If we find ANY missing table while its
-  // creating-migration is marked applied, we know auto-seed ran the bad path.
+  // table OR column from migrations 022+. If we find ANY missing table or
+  // column while its creating-migration is marked applied, we know auto-seed
+  // ran the bad path.
   let detectedOverSeed = false;
+  let overseedReason = "";
   for (const { table, filenamePrefix } of CANONICAL_TABLE_TO_MIGRATION) {
     const filename = migrationFiles.find((f) => f.startsWith(filenamePrefix));
     if (!filename || !applied.has(filename)) continue;
     if (await tableExists(table)) continue;
     detectedOverSeed = true;
+    overseedReason = `canonical table "${table}" is missing (migration ${filename})`;
+    break;
+  }
+  if (!detectedOverSeed) {
+    for (const { table, column, filenamePrefix } of CANONICAL_COLUMN_TO_MIGRATION) {
+      const filename = migrationFiles.find((f) => f.startsWith(filenamePrefix));
+      if (!filename || !applied.has(filename)) continue;
+      if (!(await tableExists(table))) continue;
+      if (await columnExists(table, column)) continue;
+      detectedOverSeed = true;
+      overseedReason = `canonical column "${table}.${column}" is missing (migration ${filename})`;
+      break;
+    }
+  }
+  if (detectedOverSeed) {
     log(
-      `[postgres] Repair: migration ${filename} is marked applied but ` +
-        `canonical table "${table}" is missing. Over-seed bug detected; ` +
+      `[postgres] Repair: ${overseedReason}. Over-seed bug detected; ` +
         `un-marking ALL migrations >= ${AUTO_SEED_PREFIX_CEILING} so they re-apply.`
     );
-    break;
   }
 
   // Pass 2: if over-seed was detected, un-mark every migration 022+. This

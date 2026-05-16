@@ -327,6 +327,66 @@ export function createWorkflowRoutes(pool: Pool) {
   });
 
   // ---------------------------------------------------------------------
+  // GET /api/workflows/:workflowId/versions — list immutable versions
+  // newest first (LIMIT 50). Powers the v2 Studio Versions panel.
+  // ---------------------------------------------------------------------
+  router.get("/:workflowId/versions", async (req: AuthenticatedRequest, res) => {
+    const userId = req.auth?.sub;
+    const workspaceId = (req as WorkspaceAwareRequest).workspace?.id;
+    if (!userId || !workspaceId) {
+      res.status(401).json({ error: "Authenticated user + workspace required" });
+      return;
+    }
+
+    const workflowId = req.params.workflowId;
+    if (!workflowId || !UUID_RE.test(workflowId)) {
+      res.status(400).json({ error: "Invalid workflow ID format" });
+      return;
+    }
+
+    interface VersionRow {
+      id: string;
+      version: number;
+      created_at: Date | string;
+      is_latest: boolean;
+    }
+
+    try {
+      const result = await withWorkspaceContext(
+        pool,
+        { workspaceId, userId },
+        async (client) =>
+          client.query<VersionRow>(
+            `SELECT v.id, v.version, v.created_at,
+                    (v.id = w.latest_version_id) AS is_latest
+               FROM workflow_versions v
+               JOIN workflows w ON w.id = v.workflow_id
+              WHERE v.workflow_id = $1
+                AND w.workspace_id = $2
+              ORDER BY v.version DESC
+              LIMIT 50`,
+            [workflowId, workspaceId],
+          ),
+      );
+      res.json({
+        workflowId,
+        versions: result.rows.map((row) => ({
+          id: row.id,
+          version: row.version,
+          createdAt:
+            row.created_at instanceof Date
+              ? row.created_at.toISOString()
+              : String(row.created_at),
+          isLatest: row.is_latest,
+        })),
+      });
+    } catch (err) {
+      console.error(`[workflows] versions list failed: ${(err as Error).message}`);
+      res.status(500).json({ error: "Failed to list workflow versions" });
+    }
+  });
+
+  // ---------------------------------------------------------------------
   // GET /api/workflows — list newest first (LIMIT 100)
   // ---------------------------------------------------------------------
   router.get("/", async (req: AuthenticatedRequest, res) => {

@@ -66,6 +66,8 @@ import {
 import {
   createCanonicalWorkflow,
   createCanonicalWorkflowVersion,
+  listCanonicalWorkflowVersions,
+  type CanonicalWorkflowVersionSummary,
 } from "../api/workflowsApi";
 import { Tooltip } from "../components/Tooltip";
 import { ErrorState, LoadingState } from "../components/UiStates";
@@ -488,6 +490,15 @@ export default function WorkflowBuilder() {
   // no runs to fetch); on a successful fetch we keep only the most
   // recent 30 by startedAt DESC.
   const [runHistory, setRunHistory] = useState<WorkflowRun[]>([]);
+  // HEL-100 v2 Pro Versions tab: immutable workflow_versions list for
+  // canonicalWorkflowId, newest first. Empty until the workflow has
+  // been canonicalized (first save). Diff + restore wiring is a
+  // follow-up — this PR ships the list.
+  const [workflowVersions, setWorkflowVersions] = useState<
+    CanonicalWorkflowVersionSummary[]
+  >([]);
+  const [versionsLoading, setVersionsLoading] = useState(false);
+  const [versionsError, setVersionsError] = useState<string | null>(null);
   // HEL-27: canonical workflow_id for this template. Set on first save
   // when the canonical /api/workflows POST returns; subsequent saves call
   // POST /api/workflows/:id/versions to create immutable versions.
@@ -585,6 +596,47 @@ export default function WorkflowBuilder() {
       cancelled = true;
     };
   }, [templateId, requireAccessToken]);
+
+  // HEL-100 v2: fetch the canonical workflow_versions list when the Pro
+  // Versions tab opens. Skipped for drafts (no canonicalWorkflowId)
+  // and when the user isn't on the Versions tab. Re-fetches on tab
+  // re-open and after a save (canonicalWorkflowId changes once per
+  // first save, but the latest workflow_versions row gets appended on
+  // every subsequent save — we re-trigger via proInspectorTab so the
+  // panel reflects the newest list whenever the user comes back to
+  // it).
+  useEffect(() => {
+    if (!proMode || proInspectorTab !== "versions" || !canonicalWorkflowId) {
+      return;
+    }
+    let cancelled = false;
+    setVersionsLoading(true);
+    setVersionsError(null);
+    async function loadVersions() {
+      try {
+        const accessToken = await requireAccessToken();
+        const versions = await listCanonicalWorkflowVersions(
+          canonicalWorkflowId!,
+          accessToken,
+        );
+        if (!cancelled) {
+          setWorkflowVersions(versions);
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setVersionsError(
+            err instanceof Error ? err.message : "Failed to load versions",
+          );
+        }
+      } finally {
+        if (!cancelled) setVersionsLoading(false);
+      }
+    }
+    void loadVersions();
+    return () => {
+      cancelled = true;
+    };
+  }, [proMode, proInspectorTab, canonicalWorkflowId, requireAccessToken]);
 
   useEffect(() => {
     if (!isLlmStep) return;
@@ -1462,7 +1514,13 @@ export default function WorkflowBuilder() {
           )}
 
           {proMode && proInspectorTab === "versions" && (
-            <VersionsPanel template={template} />
+            <VersionsPanel
+              template={template}
+              canonicalWorkflowId={canonicalWorkflowId}
+              versions={workflowVersions}
+              loading={versionsLoading}
+              error={versionsError}
+            />
           )}
           {proMode && proInspectorTab === "observability" && (
             <ObservabilityPanel />
@@ -3170,11 +3228,27 @@ function EmptyCanvas({
   );
 }
 
-// HEL-100 v2 Pro inspector — Versions panel stub. Shows the current
-// template's version + a placeholder note about the version history
-// surface. Real version-history wiring (POST /api/workflows/:id/versions,
-// version diff, restore) is a follow-up.
-function VersionsPanel({ template }: { template: WorkflowTemplate }) {
+// HEL-100 v2 Pro inspector — Versions panel. Renders the immutable
+// workflow_versions list (newest first) for canonicalized workflows;
+// drafts (no canonicalWorkflowId yet, i.e. never been saved) fall back
+// to a "draft · v{template.version}" pill with a one-line explanation.
+//
+// Diff + restore are deferred: the UX is bigger than one PR (full DAG
+// diff renderer, restore confirmation, rebase against open edits) and
+// each lands on its own ticket. This PR ships the read-only list.
+function VersionsPanel({
+  template,
+  canonicalWorkflowId,
+  versions,
+  loading,
+  error,
+}: {
+  template: WorkflowTemplate;
+  canonicalWorkflowId: string | null;
+  versions: CanonicalWorkflowVersionSummary[];
+  loading: boolean;
+  error: string | null;
+}) {
   return (
     <div
       id="pro-inspector-panel-versions"
@@ -3182,25 +3256,94 @@ function VersionsPanel({ template }: { template: WorkflowTemplate }) {
       className="p-5 space-y-3"
     >
       <div className="af2-eyebrow">Versions</div>
-      <div className="af2-card flex items-center gap-3 p-3">
-        <span className="font-af2-mono text-[12px] font-semibold text-af2-ink">
-          v{template.version || "1.0.0"}
-        </span>
-        <span className="af2-pill af2-pill-live">
-          <span className="af2-dot" />
-          current
-        </span>
-        <div className="ml-auto text-[11px] text-af2-ink-3">
-          Draft · unsaved changes auto-version on Publish
+
+      {/* Draft state — workflow has never been canonicalized (never
+          saved). Show the v{template.version} marker only. */}
+      {!canonicalWorkflowId && (
+        <>
+          <div className="af2-card flex items-center gap-3 p-3">
+            <span className="font-af2-mono text-[12px] font-semibold text-af2-ink">
+              v{template.version || "1.0.0"}
+            </span>
+            <span className="af2-pill">
+              <span className="af2-dot" />
+              draft
+            </span>
+            <div className="ml-auto text-[11px] text-af2-ink-3">
+              Save to start version history
+            </div>
+          </div>
+          <p className="text-[12px] leading-5 text-af2-ink-3">
+            Edits create immutable workflow_versions rows on save.
+            Version diff + restore are tracked as follow-ups.
+          </p>
+        </>
+      )}
+
+      {/* Loading / error states. */}
+      {canonicalWorkflowId && loading && (
+        <p className="text-[12px] text-af2-ink-3">Loading versions…</p>
+      )}
+      {canonicalWorkflowId && error && !loading && (
+        <div className="rounded-2xl border border-af2-clay/40 bg-af2-clay/10 px-3 py-2 text-[12px] text-af2-clay">
+          {error}
         </div>
-      </div>
-      <p className="text-[12px] leading-5 text-af2-ink-3">
-        Version history (diff + restore) lands with the canonical
-        workflow_versions API. Until then this panel just surfaces the
-        current draft.
-      </p>
+      )}
+
+      {/* Loaded list. */}
+      {canonicalWorkflowId && !loading && !error && (
+        <>
+          {versions.length === 0 ? (
+            <p className="text-[12px] text-af2-ink-3">
+              No versions saved yet for this workflow.
+            </p>
+          ) : (
+            <ul className="space-y-2" role="list">
+              {versions.map((v) => (
+                <li
+                  key={v.id}
+                  className="af2-card flex items-center gap-3 p-3"
+                >
+                  <span className="font-af2-mono text-[12px] font-semibold text-af2-ink">
+                    v{v.version}
+                  </span>
+                  {v.isLatest && (
+                    <span className="af2-pill af2-pill-live">
+                      <span className="af2-dot" />
+                      current
+                    </span>
+                  )}
+                  <div className="ml-auto text-right">
+                    <div className="text-[11px] text-af2-ink-3">
+                      {formatVersionTimestamp(v.createdAt)}
+                    </div>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+          <p className="text-[11px] leading-4 text-af2-ink-4">
+            Diff + restore arrive in a follow-up.
+          </p>
+        </>
+      )}
     </div>
   );
+}
+
+function formatVersionTimestamp(iso: string): string {
+  try {
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return iso;
+    return d.toLocaleString(undefined, {
+      month: "short",
+      day: "numeric",
+      hour: "numeric",
+      minute: "2-digit",
+    });
+  } catch {
+    return iso;
+  }
 }
 
 // HEL-100 v2 Pro inspector — Observability panel stub. Real metrics

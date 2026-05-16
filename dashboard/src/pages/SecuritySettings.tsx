@@ -37,10 +37,15 @@ export default function SecuritySettings() {
   }
 
   return (
-    <div className="p-8 max-w-4xl">
-      <div className="mb-8">
-        <h1 className="text-2xl font-bold text-af2-ink">Security</h1>
-        <p className="text-af2-ink-3 mt-1">Manage your password and active sessions.</p>
+    <div className="af2-page" style={{ maxWidth: 920 }}>
+      <div className="af2-page-head">
+        <div>
+          <div className="af2-eyebrow">Settings · Security</div>
+          <h1 className="af2-h1" style={{ marginTop: 6 }}>Security</h1>
+          <div className="af2-page-head-meta">
+            Manage your password and active sessions.
+          </div>
+        </div>
       </div>
 
       {/* Change Password */}

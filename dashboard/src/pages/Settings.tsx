@@ -167,10 +167,16 @@ const TAB_HUB: Partial<Record<TabKey, Array<{ to: string; title: string; descrip
   ],
   policies: [
     {
+      to: "#approvals",
+      title: "Approval policies",
+      description:
+        "Tier-based rules for when a workflow run requires human sign-off. Currently read-only — view the live list on the General tab.",
+    },
+    {
       to: "/settings/ticketing-sla",
       title: "Ticketing SLA",
       description:
-        "Configure first-response targets, resolution windows, and escalation rules by priority.",
+        "First-response targets, resolution windows, and escalation rules by ticket priority.",
     },
   ],
 };
@@ -286,7 +292,7 @@ export default function Settings() {
           onPauseAll={handlePauseAll}
         />
       ) : (
-        <HubTab tabKey={activeTab} />
+        <HubTab tabKey={activeTab} onJumpToGeneral={() => setActiveTab("general")} />
       )}
     </div>
   );
@@ -406,13 +412,26 @@ function GeneralTab({
               <span className="af2-muted" style={{ fontSize: 12 }}>
                 {policyValueText(policy)}
               </span>
-              <Link
-                to="/settings/ticketing-sla"
+              {/* Approval policies are read-only in this iteration. The
+                  underlying /api/approval-policies route doesn't expose a
+                  PATCH endpoint yet (tracked separately); previously this
+                  button linked to /settings/ticketing-sla which is a
+                  different concept entirely (HEL-? bug). Show the button
+                  disabled with a tooltip so users know editing is coming
+                  but don't get bounced to the wrong place. */}
+              <button
+                type="button"
+                disabled
+                title="Approval policy editor coming soon. View the JSON via /api/approval-policies for now."
                 className="af2-btn af2-btn-sm"
-                style={{ textDecoration: "none", textAlign: "center" }}
+                style={{
+                  textAlign: "center",
+                  opacity: 0.45,
+                  cursor: "not-allowed",
+                }}
               >
                 Edit
-              </Link>
+              </button>
             </div>
           ))
         )}
@@ -455,7 +474,13 @@ function GeneralTab({
   );
 }
 
-function HubTab({ tabKey }: { tabKey: TabKey }) {
+function HubTab({
+  tabKey,
+  onJumpToGeneral,
+}: {
+  tabKey: TabKey;
+  onJumpToGeneral?: () => void;
+}) {
   const tiles = TAB_HUB[tabKey] ?? [];
 
   if (tiles.length === 0) {
@@ -477,35 +502,63 @@ function HubTab({ tabKey }: { tabKey: TabKey }) {
         gap: 14,
       }}
     >
-      {tiles.map(({ to, title, description }) => (
-        <Link
-          key={to}
-          to={to}
-          className="af2-card"
-          style={{
-            padding: 18,
-            textDecoration: "none",
-            color: "inherit",
-            display: "block",
-          }}
-        >
-          <div
+      {tiles.map(({ to, title, description }) => {
+        // Anchor-style targets (e.g. "#approvals") jump back to the General
+        // tab instead of navigating away to a different route.
+        const isInternalJump = to.startsWith("#");
+        if (isInternalJump) {
+          return (
+            <button
+              key={to}
+              type="button"
+              onClick={() => onJumpToGeneral?.()}
+              className="af2-card"
+              style={{
+                padding: 18,
+                textAlign: "left",
+                cursor: "pointer",
+                background: "var(--af2-card)",
+              }}
+            >
+              <div style={{ fontWeight: 600, fontSize: 14, marginBottom: 4 }}>
+                {title}
+              </div>
+              <div className="af2-muted" style={{ fontSize: 12.5, lineHeight: 1.5 }}>
+                {description}
+              </div>
+            </button>
+          );
+        }
+        return (
+          <Link
+            key={to}
+            to={to}
+            className="af2-card"
             style={{
-              fontWeight: 600,
-              fontSize: 14,
-              marginBottom: 4,
+              padding: 18,
+              textDecoration: "none",
+              color: "inherit",
+              display: "block",
             }}
           >
-            {title}
-          </div>
-          <div
-            className="af2-muted"
-            style={{ fontSize: 12.5, lineHeight: 1.5 }}
-          >
-            {description}
-          </div>
-        </Link>
-      ))}
+            <div
+              style={{
+                fontWeight: 600,
+                fontSize: 14,
+                marginBottom: 4,
+              }}
+            >
+              {title}
+            </div>
+            <div
+              className="af2-muted"
+              style={{ fontSize: 12.5, lineHeight: 1.5 }}
+            >
+              {description}
+            </div>
+          </Link>
+        );
+      })}
     </div>
   );
 }

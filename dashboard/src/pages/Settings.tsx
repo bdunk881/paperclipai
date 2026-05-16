@@ -112,6 +112,30 @@ function policyKeyText(policy: ApprovalPolicy): string {
   return ACTION_LABEL[policy.actionType];
 }
 
+async function updateApprovalPolicy(
+  actionType: ApprovalTierActionType,
+  body: { mode: ApprovalTierMode; spendThresholdCents?: number },
+  token: string,
+): Promise<ApprovalPolicy> {
+  const res = await trackedFetch(
+    `${getApiBasePath()}/approval-policies/${encodeURIComponent(actionType)}`,
+    {
+      method: "PUT",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(body),
+    },
+  );
+  if (!res.ok) {
+    const payload = (await res.json().catch(() => null)) as { error?: string } | null;
+    throw new Error(payload?.error ?? `Failed to update approval policy (${res.status})`);
+  }
+  const { policy } = (await res.json()) as { policy: ApprovalPolicy };
+  return policy;
+}
+
 function formatDate(iso?: string | null): string {
   if (!iso) return "—";
   const d = new Date(iso);
@@ -189,6 +213,9 @@ export default function Settings() {
 
   const [missions, setMissions] = useState<Mission[]>([]);
   const [policies, setPolicies] = useState<ApprovalPolicy[]>([]);
+  // When non-null, the approval-policy editor modal is open and editing
+  // this policy. The PUT response replaces the matching row in `policies`.
+  const [editingPolicy, setEditingPolicy] = useState<ApprovalPolicy | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -289,10 +316,25 @@ export default function Settings() {
           missionStatement={missionStatement}
           policies={policies}
           onPauseAll={handlePauseAll}
+          onEditPolicy={(policy) => setEditingPolicy(policy)}
         />
       ) : (
         <HubTab tabKey={activeTab} onJumpToGeneral={() => setActiveTab("general")} />
       )}
+
+      {editingPolicy ? (
+        <ApprovalPolicyEditor
+          policy={editingPolicy}
+          onClose={() => setEditingPolicy(null)}
+          onSaved={(updated) => {
+            setPolicies((current) =>
+              current.map((p) => (p.actionType === updated.actionType ? updated : p)),
+            );
+            setEditingPolicy(null);
+          }}
+          requireAccessToken={requireAccessToken}
+        />
+      ) : null}
     </div>
   );
 }
@@ -302,12 +344,14 @@ interface GeneralTabProps {
   missionStatement: string;
   policies: ApprovalPolicy[];
   onPauseAll: () => void;
+  onEditPolicy: (policy: ApprovalPolicy) => void;
 }
 
 function GeneralTab({
   workspaceName,
   missionStatement,
   policies,
+  onEditPolicy,
   onPauseAll,
 }: GeneralTabProps) {
   return (
@@ -411,23 +455,11 @@ function GeneralTab({
               <span className="af2-muted" style={{ fontSize: 12 }}>
                 {policyValueText(policy)}
               </span>
-              {/* Approval policies are read-only in this iteration. The
-                  underlying /api/approval-policies route doesn't expose a
-                  PATCH endpoint yet (tracked separately); previously this
-                  button linked to /settings/ticketing-sla which is a
-                  different concept entirely (HEL-? bug). Show the button
-                  disabled with a tooltip so users know editing is coming
-                  but don't get bounced to the wrong place. */}
               <button
                 type="button"
-                disabled
-                title="Approval policy editor coming soon. View the JSON via /api/approval-policies for now."
+                onClick={() => onEditPolicy(policy)}
                 className="af2-btn af2-btn-sm"
-                style={{
-                  textAlign: "center",
-                  opacity: 0.45,
-                  cursor: "not-allowed",
-                }}
+                style={{ textAlign: "center" }}
               >
                 Edit
               </button>
@@ -466,6 +498,179 @@ function GeneralTab({
             }}
           >
             Pause all
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ApprovalPolicyEditor({
+  policy,
+  onClose,
+  onSaved,
+  requireAccessToken,
+}: {
+  policy: ApprovalPolicy;
+  onClose: () => void;
+  onSaved: (updated: ApprovalPolicy) => void;
+  requireAccessToken: () => Promise<string>;
+}) {
+  const [mode, setMode] = useState<ApprovalTierMode>(policy.mode);
+  const [spendDollars, setSpendDollars] = useState<string>(
+    policy.actionType === "spend_above_threshold" && policy.spendThresholdCents != null
+      ? String(policy.spendThresholdCents / 100)
+      : "500",
+  );
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const isSpend = policy.actionType === "spend_above_threshold";
+
+  async function handleSave() {
+    setSaving(true);
+    setError(null);
+    try {
+      const token = await requireAccessToken();
+      const body: { mode: ApprovalTierMode; spendThresholdCents?: number } = { mode };
+      if (isSpend) {
+        const dollars = Number.parseFloat(spendDollars);
+        if (!Number.isFinite(dollars) || dollars < 0) {
+          setError("Spend threshold must be a non-negative dollar amount.");
+          setSaving(false);
+          return;
+        }
+        body.spendThresholdCents = Math.round(dollars * 100);
+      }
+      const updated = await updateApprovalPolicy(policy.actionType, body, token);
+      onSaved(updated);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to save policy");
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="approval-policy-editor-title"
+      style={{
+        position: "fixed",
+        inset: 0,
+        zIndex: 50,
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        background: "rgba(15, 23, 42, 0.45)",
+        padding: 16,
+      }}
+      onClick={(event) => {
+        // Click outside the inner card closes the modal.
+        if (event.target === event.currentTarget) onClose();
+      }}
+    >
+      <div
+        className="af2-card"
+        style={{ padding: 22, maxWidth: 520, width: "100%" }}
+      >
+        <div className="af2-eyebrow">Edit policy</div>
+        <h2
+          id="approval-policy-editor-title"
+          className="af2-h3"
+          style={{ marginTop: 6 }}
+        >
+          {policyKeyText(policy)}
+        </h2>
+        <p className="af2-muted" style={{ fontSize: 13, marginTop: 4, lineHeight: 1.5 }}>
+          Choose how AutoFlow handles {ACTION_LABEL[policy.actionType].toLowerCase()}{" "}
+          requests for this workspace.
+        </p>
+
+        <fieldset style={{ border: "none", padding: 0, margin: "16px 0 0" }}>
+          <legend className="af2-eyebrow" style={{ padding: 0 }}>
+            Mode
+          </legend>
+          {(["require_approval", "notify_only", "auto_approve"] as ApprovalTierMode[]).map(
+            (option) => (
+              <label
+                key={option}
+                style={{
+                  display: "flex",
+                  alignItems: "flex-start",
+                  gap: 10,
+                  marginTop: 10,
+                  cursor: "pointer",
+                }}
+              >
+                <input
+                  type="radio"
+                  name="approval-mode"
+                  value={option}
+                  checked={mode === option}
+                  onChange={() => setMode(option)}
+                  style={{ marginTop: 3 }}
+                />
+                <span style={{ fontSize: 13.5 }}>{MODE_LABEL[option]}</span>
+              </label>
+            ),
+          )}
+        </fieldset>
+
+        {isSpend ? (
+          <div style={{ marginTop: 16 }}>
+            <label htmlFor="spend-threshold" className="af2-eyebrow">
+              Spend threshold ($)
+            </label>
+            <input
+              id="spend-threshold"
+              className="af2-input"
+              type="number"
+              min="0"
+              step="1"
+              value={spendDollars}
+              onChange={(event) => setSpendDollars(event.target.value)}
+              style={{ width: "100%", marginTop: 6 }}
+            />
+            <p className="af2-muted-2" style={{ fontSize: 11.5, marginTop: 4 }}>
+              Spend at or above this amount triggers the rule above.
+            </p>
+          </div>
+        ) : null}
+
+        {error ? (
+          <div
+            className="af2-mono"
+            style={{
+              marginTop: 16,
+              fontSize: 12,
+              color: "var(--af2-clay)",
+              padding: "8px 12px",
+              background: "var(--af2-clay-soft)",
+              borderRadius: 6,
+            }}
+          >
+            {error}
+          </div>
+        ) : null}
+
+        <div className="af2-row" style={{ marginTop: 22, gap: 10 }}>
+          <button
+            type="button"
+            className="af2-btn"
+            onClick={onClose}
+            disabled={saving}
+          >
+            Cancel
+          </button>
+          <span className="af2-spacer" />
+          <button
+            type="button"
+            className="af2-btn af2-btn-primary"
+            onClick={() => void handleSave()}
+            disabled={saving}
+          >
+            {saving ? "Saving…" : "Save policy"}
           </button>
         </div>
       </div>

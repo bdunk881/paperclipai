@@ -38,6 +38,7 @@ import {
   type Connection,
   Controls,
   Handle,
+  MiniMap,
   Position,
   ReactFlow,
   type Edge,
@@ -1277,6 +1278,23 @@ export default function WorkflowBuilder() {
                   position="bottom-right"
                   showInteractive={false}
                   className="workflow-controls-pill"
+                />
+                {/* HEL-100 v2: mini-map (top-right per AF2_Studio).
+                    @xyflow/react ships <MiniMap />; the import is
+                    type-augmented via src/xyflow-react.d.ts to work
+                    around the package's wildcard re-export drop. Tints
+                    via af2 tokens so it sits inside the v2 paper
+                    aesthetic. */}
+                <MiniMap
+                  position="top-right"
+                  pannable
+                  zoomable
+                  ariaLabel="Workflow mini-map"
+                  className="workflow-minimap"
+                  nodeStrokeColor="var(--af2-ink)"
+                  nodeColor={() => "var(--af2-ink-2)"}
+                  nodeBorderRadius={4}
+                  maskColor="color-mix(in srgb, var(--af2-paper) 70%, transparent)"
                 />
               </ReactFlow>
               <div className="pointer-events-none absolute bottom-6 left-1/2 z-10 -translate-x-1/2">

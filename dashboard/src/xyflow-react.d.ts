@@ -1,63 +1,30 @@
+// HEL-100 follow-up: module augmentation that surfaces the additional
+// @xyflow/react components which the package's wildcard re-export chain
+// silently drops under TS moduleResolution=bundler.
+//
+// `@xyflow/react/dist/esm/index.d.ts` does `export * from './additional-components'`
+// and that nested barrel does `export * from './MiniMap'` etc., but TS
+// only picks up Background / Controls / BackgroundVariant — MiniMap,
+// NodeResizer, NodeToolbar, EdgeToolbar are dropped. At runtime the JS
+// bundle does export them, so the augmentation is purely a type-system
+// patch.
+//
+// The side-effect `import "@xyflow/react"` turns this file into an
+// external module so the `declare module` block augments the existing
+// types instead of replacing them (the latter being what happens if
+// it's parsed as an ambient module declaration).
+//
+// Drop this shim if/when upstream fixes the re-export. As of
+// @xyflow/react@12.10.2 this is the cleanest workaround that keeps the
+// rest of the import surface intact.
+import "@xyflow/react";
+
 declare module "@xyflow/react" {
-  import type * as React from "react";
-
-  export type XYPosition = { x: number; y: number };
-
-  export type Connection = {
-    source: string | null;
-    target: string | null;
-  };
-
-  export type Edge = {
-    id: string;
-    source: string;
-    target: string;
-    type?: string;
-    animated?: boolean;
-    className?: string;
-    markerEnd?: unknown;
-    style?: React.CSSProperties;
-  };
-
-  export type Node<T = unknown> = {
-    id: string;
-    type?: string;
-    position: XYPosition;
-    data: T;
-    draggable?: boolean;
-    selectable?: boolean;
-  };
-
-  export type NodeProps<T extends Node = Node> = {
-    id: string;
-    data: T["data"];
-    selected?: boolean;
-    dragging?: boolean;
-  };
-
-  type NodeRenderer<Props extends NodeProps = NodeProps> = {
-    bivarianceHack(props: Props): React.ReactElement | null;
-  }["bivarianceHack"];
-
-  export type NodeTypes = Record<string, NodeRenderer>;
-
-  export const Background: React.ComponentType<Record<string, unknown>>;
-  export const Controls: React.ComponentType<Record<string, unknown>>;
-  export const Handle: React.ComponentType<Record<string, unknown>>;
-  export const ReactFlow: React.ComponentType<Record<string, unknown>>;
-
-  export const MarkerType: {
-    ArrowClosed: string;
-  };
-
-  export const Position: {
-    Top: string;
-    Bottom: string;
-    Left: string;
-    Right: string;
-  };
-
-  export const BackgroundVariant: {
-    Dots: string;
-  };
+  export type {
+    MiniMapProps,
+    MiniMapNodeProps,
+    GetMiniMapNodeAttribute,
+  } from "@xyflow/react/dist/esm/additional-components/MiniMap/types";
+  export { MiniMap } from "@xyflow/react/dist/esm/additional-components/MiniMap/MiniMap";
+  export { MiniMapNode } from "@xyflow/react/dist/esm/additional-components/MiniMap/MiniMapNode";
 }

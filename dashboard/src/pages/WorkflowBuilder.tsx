@@ -1308,13 +1308,38 @@ export default function WorkflowBuilder() {
             showCopilot ? "right-[360px]" : "right-0"
           )}
         >
-          <div className="flex items-center justify-between px-5 py-4 border-b border-af2-line">
-            <h3 className="font-semibold text-af2-ink text-sm">Step Properties</h3>
+          {/* HEL-100 v2 inspector header — mirrors AF2_Studio's
+              InspectorBasic / InspectorPro: eyebrow ("Selected node" +
+              " · Pro" when proMode is on) over a serif title (the
+              selected step's display name) and a muted subtitle (its
+              kind label). The editable Name field stays below in the
+              form. */}
+          <div className="flex items-start justify-between gap-3 px-5 py-4 border-b border-af2-line">
+            <div className="min-w-0">
+              <div className="af2-eyebrow">
+                Selected node{proMode ? " · Pro" : ""}
+              </div>
+              <h3
+                className="font-af2-serif text-af2-ink"
+                style={{
+                  marginTop: 6,
+                  fontSize: 19,
+                  fontWeight: 500,
+                  letterSpacing: "-0.015em",
+                }}
+              >
+                <span className="block truncate">{selectedStep.name}</span>
+              </h3>
+              <p className="mt-1 text-[12.5px] text-af2-ink-3">
+                {KIND_META[selectedStep.kind]?.label ?? selectedStep.kind}
+              </p>
+            </div>
             <button
               onClick={() => setSelectedStepId(null)}
-              className="p-1 rounded hover:bg-af2-paper-2"
+              aria-label="Close step inspector"
+              className="shrink-0 rounded p-1 text-af2-ink-3 transition hover:bg-af2-paper-2 hover:text-af2-ink"
             >
-              <X size={16} className="text-af2-ink-3" />
+              <X size={16} />
             </button>
           </div>
 

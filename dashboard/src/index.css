@@ -413,20 +413,31 @@
     color: var(--af2-clay-2);
   }
 
+  /* HEL-100 v2: idle edges adopt the AF2_Studio look — thinner, dashed,
+     softer opacity. Hover/selected/running stay solid clay to make the
+     active state pop. */
   .workflow-edge path {
-    transition: stroke 160ms ease, filter 160ms ease;
+    transition: stroke 160ms ease, stroke-width 160ms ease,
+      stroke-dasharray 160ms ease, opacity 160ms ease, filter 160ms ease;
     stroke: var(--af2-ink-3);
-    stroke-width: 2px;
+    stroke-width: 1.4px;
+    stroke-dasharray: 4 4;
+    opacity: 0.55;
   }
 
   .workflow-edge:hover path,
   .react-flow__edge.selected.workflow-edge path {
     stroke: var(--af2-clay);
+    stroke-width: 2px;
+    stroke-dasharray: none;
+    opacity: 1;
   }
 
   .workflow-edge.workflow-edge-running path {
     stroke: var(--af2-clay);
+    stroke-width: 2px;
     stroke-dasharray: 8 6;
+    opacity: 1;
     animation: workflow-edge-dash 0.9s linear infinite, workflow-edge-glow 1.5s ease-in-out infinite;
   }
 

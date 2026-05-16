@@ -124,4 +124,13 @@ export interface StepResult {
   error?: string;
   /** Populated for agent steps — one entry per parallel worker slot */
   agentSlotResults?: AgentSlotResult[];
+  /**
+   * Per-step cost telemetry written by the engine (cost_log_json column).
+   * `estimatedCostUsd` is the dollar cost of this step's LLM/tool calls;
+   * undefined for steps that didn't incur a measurable cost.
+   */
+  costLog?: {
+    estimatedCostUsd?: number;
+    [key: string]: unknown;
+  };
 }

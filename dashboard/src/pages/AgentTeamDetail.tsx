@@ -118,11 +118,11 @@ function AgentTeamDetail() {
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <Link
-            to="/monitor"
+            to="/workspace/org-structure"
             className="inline-flex items-center gap-2 text-sm text-slate-500 transition hover:text-slate-800"
           >
             <ArrowLeft size={14} />
-            Back to monitor
+            Back to Team
           </Link>
           <div className="mt-3">
             <p className="text-xs font-semibold uppercase tracking-[0.18em] text-teal-600">

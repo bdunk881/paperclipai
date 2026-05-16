@@ -14,14 +14,10 @@ import {
   listTickets,
   type TicketPriority,
 } from "./api/tickets";
-import { listCompanyRoleTemplates, listTemplates, type CompanyRoleTemplate } from "./api/client";
 import { getSupabaseStoredSession } from "./auth/supabaseAuth";
 import Layout from "./components/Layout";
 import { useAuth } from "./context/AuthContext";
 import AgentActivity from "./pages/AgentActivity";
-import AgentCatalog from "./pages/AgentCatalog";
-import AgentDeploy from "./pages/AgentDeploy";
-import AgentDetail from "./pages/AgentDetail";
 import AgentTeamDetail from "./pages/AgentTeamDetail";
 import ApiKeys from "./pages/ApiKeys";
 import Approvals from "./pages/Approvals";
@@ -31,10 +27,7 @@ import CheckoutSuccess from "./pages/CheckoutSuccess";
 import Hire from "./pages/Hire";
 import HiringPlanReview from "./pages/HiringPlanReview";
 import WorkspaceMemory from "./pages/WorkspaceMemory";
-import ConnectorHealth from "./pages/ConnectorHealth";
 import Dashboard from "./pages/Dashboard";
-import ExecutionLogs from "./pages/ExecutionLogs";
-import Integrations from "./pages/Integrations";
 import LandingPage from "./pages/LandingPage";
 import LLMProviders from "./pages/LLMProviders";
 import Login from "./pages/Login";
@@ -42,18 +35,13 @@ import MCPIntegrations from "./pages/MCPIntegrations";
 import McpServers from "./pages/McpServers";
 import Memory from "./pages/Memory";
 import MissionState from "./pages/MissionState";
-import MyAgents from "./pages/MyAgents";
 import NotificationsSettings from "./pages/NotificationsSettings";
 import OrgStructure from "./pages/OrgStructure";
 import Pricing from "./pages/Pricing";
 import ProfileSettings from "./pages/ProfileSettings";
-import Routines from "./pages/Routines";
-import RunHistory from "./pages/RunHistory";
-import RunMonitor from "./pages/RunMonitor";
 import SecuritySettings from "./pages/SecuritySettings";
 import Settings from "./pages/Settings";
 import SocialAuthCallback from "./pages/SocialAuthCallback";
-import StaffingPlanReview from "./pages/StaffingPlanReview";
 import TicketActorView from "./pages/TicketActorView";
 import TicketDetail from "./pages/TicketDetail";
 import TicketSlaDashboard from "./pages/TicketSlaDashboard";
@@ -91,33 +79,6 @@ async function readCurrentAccessSession() {
 async function ticketsLoader(): Promise<TicketsRouteData> {
   const session = await readCurrentAccessSession();
   return listTickets({}, session?.accessToken);
-}
-
-async function templatesLoader() {
-  return { templates: await listTemplates() };
-}
-
-async function staffingPlanLoader(): Promise<{
-  roleTemplates: CompanyRoleTemplate[];
-  pageError: string | null;
-}> {
-  const session = await readCurrentAccessSession();
-  if (!session?.accessToken) {
-    return {
-      roleTemplates: [],
-      pageError: "Authentication session expired. Sign in again to continue.",
-    };
-  }
-
-  try {
-    const response = await listCompanyRoleTemplates(session.accessToken);
-    return { roleTemplates: response.roleTemplates, pageError: null };
-  } catch (error) {
-    return {
-      roleTemplates: [],
-      pageError: error instanceof Error ? error.message : "Failed to load role templates",
-    };
-  }
 }
 
 async function ticketDetailLoader({
@@ -203,19 +164,6 @@ function TicketDetailRoute() {
   return <TicketDetail initialData={initialData} />;
 }
 
-function TemplatesRoute() {
-  const data = useLoaderData() as { templates: Awaited<ReturnType<typeof listTemplates>> };
-  return <Templates initialTemplates={data.templates} />;
-}
-
-function StaffingPlanRoute() {
-  const data = useLoaderData() as {
-    roleTemplates: CompanyRoleTemplate[];
-    pageError: string | null;
-  };
-  return <StaffingPlanReview initialRouteData={data} />;
-}
-
 const routes: RouteObject[] = [
   { path: "/waitlist", element: <LandingPage /> },
   { path: "/checkout/success", element: <CheckoutSuccess /> },
@@ -240,52 +188,70 @@ const routes: RouteObject[] = [
     ),
     children: [
       { index: true, element: <Dashboard /> },
+
+      // Build pillar
       { path: "builder", element: <WorkflowBuilder /> },
       { path: "builder/:templateId", element: <WorkflowBuilder /> },
-      { path: "templates", loader: templatesLoader, element: <TemplatesRoute /> },
+      { path: "templates", element: <Templates /> },
       { path: "templates/:templateId", element: <WorkflowBuilder /> },
-      { path: "agents", element: <AgentCatalog /> },
-      { path: "agents/:templateId", element: <AgentDetail /> },
-      { path: "agents/deploy/:templateId", element: <AgentDeploy /> },
+
+      // Run pillar
       { path: "agents/activity", element: <AgentActivity /> },
-      { path: "agents/my", element: <MyAgents /> },
-      { path: "agents/routines", element: <Routines /> },
       { path: "agents/team/:teamId", element: <AgentTeamDetail /> },
-      // HEL-23: Hire page — mission intake. Lives under the Workforce pillar.
+      { path: "approvals", element: <Approvals /> },
+      { path: "mission-state", element: <MissionState /> },
+
+      // Workforce pillar
+      // HEL-23: Hire page — mission intake.
       { path: "hire", element: <Hire /> },
-      // HEL-105: Side-by-side review page for a drafted hiring plan.
-      // missionId is kept in the URL for breadcrumb context + back-links;
-      // the API calls key off planId only.
+      // HEL-105: side-by-side review page for a drafted hiring plan.
       { path: "hire/plan/:missionId/:planId", element: <HiringPlanReview /> },
+      { path: "workspace/budget-dashboard", element: <BudgetDashboard /> },
+      { path: "workspace/org-structure", element: <OrgStructure /> },
+
+      // Connect pillar
+      { path: "integrations/mcp", element: <MCPIntegrations /> },
+      { path: "memory", element: <Memory /> },
       // HEL-90/92: Workspace memory (instructions + knowledge + episodes)
       { path: "settings/memory", element: <WorkspaceMemory /> },
-      { path: "approvals", element: <Approvals /> },
-      { path: "integrations", element: <Integrations /> },
-      { path: "integrations/health", element: <ConnectorHealth /> },
-      { path: "integrations/mcp", element: <MCPIntegrations /> },
-      { path: "logs", element: <ExecutionLogs /> },
-      { path: "memory", element: <Memory /> },
-      { path: "mission-state", element: <MissionState /> },
-      { path: "monitor", element: <RunMonitor /> },
-      { path: "history", element: <RunHistory /> },
-      { path: "pricing", element: <Pricing /> },
+
+      // Settings + per-tab sub-routes (still v2-chromed since #772)
       { path: "settings", element: <Settings /> },
       { path: "settings/api-keys", element: <ApiKeys /> },
-      { path: "settings/integrations", element: <Integrations /> },
       { path: "settings/llm-providers", element: <LLMProviders /> },
       { path: "settings/mcp-servers", element: <McpServers /> },
       { path: "settings/notifications", element: <NotificationsSettings /> },
       { path: "settings/profile", element: <ProfileSettings /> },
       { path: "settings/security", element: <SecuritySettings /> },
       { path: "settings/ticketing-sla", element: <TicketSlaSettings /> },
+
+      // Tickets subsystem (HITL) — not in the four-pillar nav today but the
+      // pages cross-link each other and are reachable from Approvals.
       { path: "tickets", loader: ticketsLoader, action: ticketsAction, element: <TicketsRoute /> },
       { path: "tickets/:ticketId", loader: ticketDetailLoader, element: <TicketDetailRoute /> },
       { path: "tickets/actors/:actorType/:actorId", element: <TicketActorView /> },
       { path: "tickets/sla", element: <TicketSlaDashboard /> },
       { path: "tickets/team", element: <TicketTeamView /> },
-      { path: "workspace/budget-dashboard", element: <BudgetDashboard /> },
-      { path: "workspace/org-structure", element: <OrgStructure /> },
-      { path: "workspace/staffing-plan", loader: staffingPlanLoader, element: <StaffingPlanRoute /> },
+
+      { path: "pricing", element: <Pricing /> },
+
+      // ---------------------------------------------------------------------
+      // Redirects for old v1 routes that the v2 nav doesn't surface anymore.
+      // Keeps stale bookmarks / share-links landing somewhere useful instead
+      // of on half-converted v1 pages.
+      // ---------------------------------------------------------------------
+      { path: "agents", element: <Navigate to="/templates" replace /> },
+      { path: "agents/my", element: <Navigate to="/workspace/org-structure" replace /> },
+      { path: "agents/routines", element: <Navigate to="/templates" replace /> },
+      { path: "agents/:templateId", element: <Navigate to="/templates" replace /> },
+      { path: "agents/deploy/:templateId", element: <Navigate to="/templates" replace /> },
+      { path: "integrations", element: <Navigate to="/integrations/mcp" replace /> },
+      { path: "integrations/health", element: <Navigate to="/integrations/mcp" replace /> },
+      { path: "settings/integrations", element: <Navigate to="/integrations/mcp" replace /> },
+      { path: "logs", element: <Navigate to="/agents/activity" replace /> },
+      { path: "monitor", element: <Navigate to="/" replace /> },
+      { path: "history", element: <Navigate to="/agents/activity" replace /> },
+      { path: "workspace/staffing-plan", element: <Navigate to="/mission-state" replace /> },
     ],
   },
   { path: "*", element: <Navigate to="/" replace /> },

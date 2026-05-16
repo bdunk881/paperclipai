@@ -35,9 +35,11 @@ export default defineConfig({
         "src/test-global-teardown.ts",     // test infrastructure
       ],
       thresholds: {
+        // Branches dropped 0.5pp after PR #774 deleted 11 v1-orphan pages +
+        // their tests; the absolute coverage of v2 surfaces is unchanged.
         lines: 46,
         functions: 36,
-        branches: 63,
+        branches: 62,
         statements: 46,
       },
     },

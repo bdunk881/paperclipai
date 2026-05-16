@@ -5,7 +5,7 @@
  * "Connect · Workspace" eyebrow, the tab strip, and that the General tab
  * surfaces Workspace + Approvals + Danger zone sections.
  */
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -235,5 +235,64 @@ describe("Settings (v2 tabbed surface)", () => {
     );
 
     expect(await screen.findByText("Settings unavailable")).toBeInTheDocument();
+  });
+
+  it("opens the approval-policy editor when Edit is clicked and PUTs the new mode", async () => {
+    render(
+      <MemoryRouter>
+        <Settings />
+      </MemoryRouter>
+    );
+
+    await screen.findByRole("heading", { level: 1, name: "Settings" });
+
+    // Two policies in the General tab's Approvals card; click the first Edit
+    // button (Spend above threshold) to open the editor.
+    const editButtons = await screen.findAllByRole("button", { name: /^Edit$/ });
+    expect(editButtons.length).toBeGreaterThanOrEqual(2);
+    fireEvent.click(editButtons[0]);
+
+    // Modal opens. The dialog is labelled by the policy heading
+    // ("Spend over $500" for the first policy).
+    expect(
+      await screen.findByRole("dialog", { name: /Spend over/i }),
+    ).toBeInTheDocument();
+
+    // Switch the mode to "Notify only" and save.
+    fireEvent.click(screen.getByRole("radio", { name: /Notify only/i }));
+
+    // Stub the PUT response.
+    trackedFetchMock.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        policy: {
+          id: "policy-1",
+          workspaceId: "ws-1",
+          actionType: "spend_above_threshold",
+          mode: "notify_only",
+          spendThresholdCents: 50000,
+          createdAt: "2026-04-01T00:00:00.000Z",
+          updatedAt: "2026-05-16T00:00:00.000Z",
+        },
+      }),
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: /^Save policy$/ }));
+
+    await waitFor(() => {
+      // Modal closed.
+      expect(screen.queryByRole("dialog", { name: /Spend over/i })).toBeNull();
+    });
+
+    // The PUT call should have hit /approval-policies/spend_above_threshold.
+    const putCall = trackedFetchMock.mock.calls.find(([url, init]) => {
+      const opts = init as { method?: string } | undefined;
+      return (
+        typeof url === "string" &&
+        url.includes("/approval-policies/spend_above_threshold") &&
+        opts?.method === "PUT"
+      );
+    });
+    expect(putCall).toBeDefined();
   });
 });

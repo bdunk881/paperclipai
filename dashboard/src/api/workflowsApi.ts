@@ -107,3 +107,29 @@ export async function listCanonicalWorkflows(
   );
   return data.workflows;
 }
+
+export interface CanonicalWorkflowVersionSummary {
+  id: string;
+  version: number;
+  createdAt: string;
+  isLatest: boolean;
+}
+
+// HEL-100 v2 Versions panel: returns the immutable version list for
+// a workflow (newest first, up to 50). The list view is intentionally
+// lighter than the full version row — it omits the dag blob so the
+// panel renders fast even on workflows with many versions.
+export async function listCanonicalWorkflowVersions(
+  workflowId: string,
+  accessToken: string,
+): Promise<CanonicalWorkflowVersionSummary[]> {
+  const response = await trackedFetch(
+    `${BASE}/workflows/${encodeURIComponent(workflowId)}/versions`,
+    { headers: buildHeaders(accessToken) },
+  );
+  const data = await parseJsonOrError<{
+    workflowId: string;
+    versions: CanonicalWorkflowVersionSummary[];
+  }>(response, `Failed to list workflow versions: ${response.status}`);
+  return data.versions;
+}

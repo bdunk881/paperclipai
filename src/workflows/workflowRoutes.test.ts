@@ -95,3 +95,31 @@ describe("GET /api/workflows/:workflowId", () => {
     expect(res.status).toBe(400);
   });
 });
+
+describe("GET /api/workflows/:workflowId/versions", () => {
+  it("returns 401 when no authenticated user is present", async () => {
+    const app = buildApp({ workspaceId: "11111111-1111-4111-8111-111111111111" });
+    const res = await request(app).get(
+      "/api/workflows/22222222-2222-4222-8222-222222222222/versions",
+    );
+    expect(res.status).toBe(401);
+  });
+
+  it("returns 401 when no workspace context is present", async () => {
+    const app = buildApp({ sub: "user-1" });
+    const res = await request(app).get(
+      "/api/workflows/22222222-2222-4222-8222-222222222222/versions",
+    );
+    expect(res.status).toBe(401);
+  });
+
+  it("returns 400 when the workflow ID is malformed", async () => {
+    const app = buildApp({
+      sub: "user-1",
+      workspaceId: "11111111-1111-4111-8111-111111111111",
+    });
+    const res = await request(app).get("/api/workflows/not-a-uuid/versions");
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/Invalid workflow ID/);
+  });
+});

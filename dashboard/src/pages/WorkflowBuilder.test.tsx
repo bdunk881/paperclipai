@@ -66,6 +66,12 @@ vi.mock("../api/client", () => ({
   }),
 }));
 
+vi.mock("../api/workflowsApi", () => ({
+  createCanonicalWorkflow: vi.fn(),
+  createCanonicalWorkflowVersion: vi.fn(),
+  listCanonicalWorkflowVersions: vi.fn().mockResolvedValue([]),
+}));
+
 vi.mock("../context/AuthContext", () => ({
   useAuth: () => ({
     getAccessToken: vi.fn().mockResolvedValue("token-123"),
@@ -271,10 +277,13 @@ describe("WorkflowBuilder", () => {
     );
     expect(versionsPanel).not.toBeNull();
     expect(within(versionsPanel!).getByText(/v1\.0\.0/)).toBeInTheDocument();
-    // Exact-string match — the panel has a "current" pill; the form
-    // below (still in the DOM, just hidden) contains other case-insensitive
-    // matches like "Current..." copy.
-    expect(within(versionsPanel!).getByText("current")).toBeInTheDocument();
+    // This workflow has no canonicalWorkflowId (never been saved), so
+    // the panel renders the draft state — a "draft" pill + a
+    // "Save to start version history" hint.
+    expect(within(versionsPanel!).getByText("draft")).toBeInTheDocument();
+    expect(
+      within(versionsPanel!).getByText(/Save to start version history/i),
+    ).toBeInTheDocument();
 
     // Click Observability — the Observability panel surfaces stub
     // sections for latency, cost, errors.

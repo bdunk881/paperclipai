@@ -28,6 +28,7 @@ import {
   type Mission,
   type MissionMetadata,
 } from "../api/missionsApi";
+import { listLLMConfigs, type LLMConfig } from "../api/client";
 
 type SubmitState = "idle" | "saving" | "generating" | "error";
 
@@ -99,6 +100,14 @@ export default function Hire() {
   const [notice, setNotice] = useState<string | null>(null);
   const [loadingList, setLoadingList] = useState(true);
   const [listError, setListError] = useState<string | null>(null);
+  // Gate the Generate button on having at least one LLM credential. Without
+  // one, the backend's POST /api/missions/:id/generate-plan returns 422
+  // ("No LLM provider configured"). We surface the gap up front so the user
+  // doesn't fill out the whole form and then bounce off an error.
+  const [llmConfigs, setLlmConfigs] = useState<LLMConfig[] | null>(null);
+  const [llmConfigError, setLlmConfigError] = useState<string | null>(null);
+  const hasLLM = (llmConfigs?.length ?? 0) > 0;
+  const llmCheckLoading = llmConfigs === null && llmConfigError === null;
 
   const refreshMissions = useCallback(async () => {
     setLoadingList(true);
@@ -118,10 +127,32 @@ export default function Hire() {
     void refreshMissions();
   }, [refreshMissions]);
 
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const token = await requireAccessToken();
+        const list = await listLLMConfigs(token);
+        if (!cancelled) setLlmConfigs(list);
+      } catch (err) {
+        if (!cancelled) {
+          setLlmConfigError(err instanceof Error ? err.message : "Failed to check LLM models");
+          setLlmConfigs([]);
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [requireAccessToken]);
+
   const trimmedStatement = statement.trim();
   const isBusy = submitState === "saving" || submitState === "generating";
   const canSave = trimmedStatement.length > 0 && !isBusy;
-  const canGenerate = trimmedStatement.length > 0 && !isBusy;
+  // Generate is gated on LLM credentials. Save-as-draft stays available so a
+  // user without a model can still capture mission ideas now and generate
+  // later once they connect a provider.
+  const canGenerate = trimmedStatement.length > 0 && !isBusy && hasLLM && !llmCheckLoading;
   const charactersLeft = STATEMENT_MAX - statement.length;
   const readiness = useMemo(
     () => computeReadiness(statement, metadata),
@@ -227,6 +258,53 @@ export default function Hire() {
         </div>
       ) : null}
 
+      {/* Inline gate: if no LLM credentials exist yet, the backend's
+          POST /api/missions/:id/generate-plan will fail with 422. Surface
+          that up front rather than after a full form submission. */}
+      {!llmCheckLoading && !hasLLM ? (
+        <div
+          className="af2-card"
+          style={{
+            padding: 16,
+            marginBottom: 14,
+            borderColor: "var(--af2-mustard)",
+            background: "color-mix(in srgb, var(--af2-mustard) 10%, var(--af2-card))",
+          }}
+        >
+          <div className="af2-row" style={{ alignItems: "flex-start", gap: 12 }}>
+            <Sparkles size={18} style={{ color: "var(--af2-mustard)", marginTop: 2 }} />
+            <div style={{ flex: 1 }}>
+              <div style={{ fontWeight: 600, fontSize: 14 }}>
+                Connect a model before you can generate a hiring plan
+              </div>
+              <div
+                className="af2-muted"
+                style={{ fontSize: 12.5, marginTop: 4, lineHeight: 1.5 }}
+              >
+                AutoFlow uses your own API key to draft the org chart, budget, and first
+                week of work. Add an OpenAI, Anthropic, or other provider key in Models,
+                then come back here.
+              </div>
+              {llmConfigError ? (
+                <div
+                  className="af2-mono"
+                  style={{ fontSize: 11.5, color: "var(--af2-clay)", marginTop: 6 }}
+                >
+                  {llmConfigError}
+                </div>
+              ) : null}
+            </div>
+            <Link
+              to="/settings/llm-providers"
+              className="af2-btn af2-btn-clay"
+              style={{ flexShrink: 0 }}
+            >
+              Add a model →
+            </Link>
+          </div>
+        </div>
+      ) : null}
+
       {/* Mission statement card — v2 intake surface */}
       <div className="af2-card" style={{ padding: 22 }}>
         <label htmlFor="mission-statement" className="af2-eyebrow">
@@ -316,6 +394,11 @@ export default function Hire() {
             onClick={() => void handleSave(true)}
             disabled={!canGenerate}
             className="af2-btn af2-btn-clay"
+            title={
+              !hasLLM && !llmCheckLoading
+                ? "Add an LLM model in Settings → Models first"
+                : undefined
+            }
             style={{
               display: "inline-flex",
               alignItems: "center",

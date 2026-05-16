@@ -180,20 +180,36 @@ export async function applySqlMigrations(options?: ExecutorOptions): Promise<num
       return result.rows[0]?.exists === true;
     });
 
-  const repaired = new Set<string>();
+  // Pass 1: detect the over-seed bug by checking for any missing canonical
+  // table from migrations 022+. If we find ANY missing table while its
+  // creating-migration is marked applied, we know auto-seed ran the bad path.
+  let detectedOverSeed = false;
   for (const { table, filenamePrefix } of CANONICAL_TABLE_TO_MIGRATION) {
     const filename = migrationFiles.find((f) => f.startsWith(filenamePrefix));
-    if (!filename || repaired.has(filename)) continue;
-    if (!applied.has(filename)) continue;
+    if (!filename || !applied.has(filename)) continue;
     if (await tableExists(table)) continue;
-
+    detectedOverSeed = true;
     log(
       `[postgres] Repair: migration ${filename} is marked applied but ` +
-        `canonical table "${table}" is missing. Un-marking so it re-applies.`
+        `canonical table "${table}" is missing. Over-seed bug detected; ` +
+        `un-marking ALL migrations >= ${AUTO_SEED_PREFIX_CEILING} so they re-apply.`
     );
-    await removeApplied(filename);
-    applied.delete(filename);
-    repaired.add(filename);
+    break;
+  }
+
+  // Pass 2: if over-seed was detected, un-mark every migration 022+. This
+  // covers ALTER TABLE migrations (e.g. 028 subscription columns, 032 missions
+  // metadata, 033 workspace tier routing) whose missing columns aren't visible
+  // to a tableExists() probe. All affected migrations are idempotent (CREATE
+  // TABLE IF NOT EXISTS / ADD COLUMN IF NOT EXISTS / CREATE OR REPLACE), so
+  // re-applying them on a partially-applied schema is safe.
+  if (detectedOverSeed) {
+    for (const filename of migrationFiles) {
+      if (filename < AUTO_SEED_PREFIX_CEILING) continue;
+      if (!applied.has(filename)) continue;
+      await removeApplied(filename);
+      applied.delete(filename);
+    }
   }
 
   let appliedCount = 0;

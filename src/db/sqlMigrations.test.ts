@@ -200,7 +200,7 @@ describe("sql migrations", () => {
     );
   });
 
-  it("self-repair: un-marks a canonical migration when its target table is missing", async () => {
+  it("self-repair: un-marks ALL 022+ migrations when over-seed bug detected (covers ALTER TABLE migrations too)", async () => {
     const execute = jest.fn().mockResolvedValue(undefined);
     const log = jest.fn();
     const applied = new Set([
@@ -208,6 +208,10 @@ describe("sql migrations", () => {
       "021_canonical_noun_rename.sql",
       "022_companies_missions_hiring_plans.sql",
       "023_canonical_workflow_runtime.sql",
+      "026_workspace_member_roles.sql",
+      "028_subscription_store_columns.sql",
+      "032_missions_metadata.sql",
+      "034_three_layer_memory.sql",
     ]);
     const removed: string[] = [];
     const marked: string[] = [];
@@ -217,6 +221,10 @@ describe("sql migrations", () => {
       { name: "021_canonical_noun_rename.sql", isFile: () => true },
       { name: "022_companies_missions_hiring_plans.sql", isFile: () => true },
       { name: "023_canonical_workflow_runtime.sql", isFile: () => true },
+      { name: "026_workspace_member_roles.sql", isFile: () => true },
+      { name: "028_subscription_store_columns.sql", isFile: () => true },
+      { name: "032_missions_metadata.sql", isFile: () => true },
+      { name: "034_three_layer_memory.sql", isFile: () => true },
     ]);
     mockReadFile.mockResolvedValue("-- migration body");
 
@@ -233,30 +241,40 @@ describe("sql migrations", () => {
         applied.delete(name);
       },
       tableExists: async (table) => {
-        // Simulate the dev-bug state: 022 + 023 were falsely seeded, the
-        // missions + runs tables don't exist. We expect those two migrations
-        // to be un-applied and then re-executed.
-        if (["missions", "hiring_plans", "runs", "workflows", "step_results"].includes(table)) {
-          return false;
-        }
+        // Simulate the dev-bug state: missions table is missing. ONE missing
+        // table is enough to trigger blanket repair of ALL 022+ migrations.
+        if (table === "missions") return false;
         return true;
       },
       detectPostRenameSchema: async () => false,
     });
 
+    // Even though only `missions` is missing, repair un-marks ALL 022+
+    // migrations because the ALTER TABLE / column-add migrations (028, 032)
+    // aren't visible to a tableExists() probe.
     expect(removed).toEqual(
       expect.arrayContaining([
         "022_companies_missions_hiring_plans.sql",
         "023_canonical_workflow_runtime.sql",
+        "026_workspace_member_roles.sql",
+        "028_subscription_store_columns.sql",
+        "032_missions_metadata.sql",
+        "034_three_layer_memory.sql",
       ]),
     );
-    // Repair log message present.
+    // 001 and 021 stay applied.
+    expect(removed).not.toContain("001_a.sql");
+    expect(removed).not.toContain("021_canonical_noun_rename.sql");
+
+    // Repair log message present (mentions un-marking ALL).
     const logs = log.mock.calls.map(([m]) => String(m));
-    expect(logs.some((m) => m.includes("Repair: migration 022_"))).toBe(true);
-    expect(logs.some((m) => m.includes("Repair: migration 023_"))).toBe(true);
-    // And they got re-applied.
+    expect(logs.some((m) => m.includes("Over-seed bug detected"))).toBe(true);
+    expect(logs.some((m) => m.includes("un-marking ALL"))).toBe(true);
+
+    // And they all get re-applied.
     expect(marked).toContain("022_companies_missions_hiring_plans.sql");
-    expect(marked).toContain("023_canonical_workflow_runtime.sql");
+    expect(marked).toContain("026_workspace_member_roles.sql");
+    expect(marked).toContain("032_missions_metadata.sql");
   });
 
   it("runs migrations only once per process when postgres is configured", async () => {

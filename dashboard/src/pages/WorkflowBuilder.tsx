@@ -68,6 +68,7 @@ import {
   createCanonicalWorkflowVersion,
   getCanonicalWorkflowVersion,
   listCanonicalWorkflowVersions,
+  listCanonicalWorkflows,
   type CanonicalWorkflowVersionDetail,
   type CanonicalWorkflowVersionSummary,
 } from "../api/workflowsApi";
@@ -543,6 +544,41 @@ export default function WorkflowBuilder() {
       })
       .finally(() => setLoading(false));
   }, [activeWorkspaceId, templateId]);
+
+  // HEL-100 v2 follow-up: resolve the canonical workflow_id for a
+  // loaded legacy template so the Versions panel can surface for
+  // templates the user opens without re-saving. canonicalWorkflowId
+  // gets set on first save in the dual-write path, but a freshly
+  // loaded template starts at null — meaning the Versions tab would
+  // stay in its "Save to start version history" state even though the
+  // canonical workflow exists. listCanonicalWorkflows with the
+  // ?externalTemplateId filter finds the match; silent on failure
+  // since the panel falls back to the draft state cleanly.
+  useEffect(() => {
+    if (!templateId) {
+      return;
+    }
+    let cancelled = false;
+    async function resolveCanonicalWorkflow() {
+      try {
+        const accessToken = await requireAccessToken();
+        const workflows = await listCanonicalWorkflows(accessToken, {
+          externalTemplateId: templateId,
+        });
+        if (cancelled) return;
+        if (workflows.length > 0 && workflows[0]) {
+          setCanonicalWorkflowId(workflows[0].id);
+        }
+      } catch {
+        // Silent: Versions panel just stays in draft state if the
+        // lookup fails. The save path can still canonicalize later.
+      }
+    }
+    void resolveCanonicalWorkflow();
+    return () => {
+      cancelled = true;
+    };
+  }, [templateId, requireAccessToken]);
 
   const selectedStep = template.steps.find((s) => s.id === selectedStepId) ?? null;
   const isLlmStep = selectedStep?.kind === "llm";

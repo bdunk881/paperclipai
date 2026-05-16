@@ -70,6 +70,7 @@ vi.mock("../api/workflowsApi", () => ({
   createCanonicalWorkflow: vi.fn(),
   createCanonicalWorkflowVersion: vi.fn(),
   listCanonicalWorkflowVersions: vi.fn().mockResolvedValue([]),
+  listCanonicalWorkflows: vi.fn().mockResolvedValue([]),
   getCanonicalWorkflowVersion: vi.fn(),
 }));
 

@@ -713,7 +713,10 @@ export default function WorkflowBuilder() {
   // POST it as a brand-new workflow_versions row. History is never
   // destroyed — the older version stays in place; the restored copy
   // becomes the new latest. After success, refresh the list so the
-  // "current" pill flips to the new row.
+  // "current" pill flips to the new row AND apply the restored dag
+  // to the in-editor template state so the canvas reflects the
+  // restored steps (closing #795's deferred "reload-editor-after-
+  // restore" follow-up).
   const handleRestoreVersion = useCallback(
     async (versionId: string) => {
       if (!canonicalWorkflowId) return;
@@ -731,6 +734,29 @@ export default function WorkflowBuilder() {
           detail.dag,
           accessToken,
         );
+        // Apply the restored dag to the in-editor template state. We
+        // keep template.id pinned to the active legacy template ID
+        // (the dag's own id is the same value across versions, but
+        // belt + suspenders against weird older dags), and we clear
+        // selectedStepId if the restored steps no longer contain it
+        // (otherwise the inspector would point at a phantom).
+        setTemplate((current) => {
+          const restored = applyDagToTemplate(current, detail.dag);
+          return restored;
+        });
+        setSelectedStepId((currentSelectedId) => {
+          if (!currentSelectedId) return currentSelectedId;
+          const stepsAny = (detail.dag as { steps?: unknown }).steps;
+          const stillExists =
+            Array.isArray(stepsAny) &&
+            stepsAny.some(
+              (s) =>
+                typeof s === "object" &&
+                s !== null &&
+                (s as { id?: unknown }).id === currentSelectedId,
+            );
+          return stillExists ? currentSelectedId : null;
+        });
         await refreshVersions();
       } catch (err) {
         setVersionsActionError(
@@ -3706,6 +3732,44 @@ interface DiffStep {
   description?: string;
   inputKeys?: string[];
   outputKeys?: string[];
+}
+
+// HEL-100 v2 restore-and-reload: merge an immutable dag blob (from a
+// workflow_versions row) back into the editor's template state. Keeps
+// the active template's id pinned (legacy template ID stays stable
+// across versions, but defending against weird older dags is cheap),
+// and reads the dag's structural fields with safe fallbacks so we
+// never crash on a malformed payload.
+function applyDagToTemplate(
+  current: WorkflowTemplate,
+  dag: unknown,
+): WorkflowTemplate {
+  if (!dag || typeof dag !== "object") return current;
+  const blob = dag as Record<string, unknown>;
+  const dagSteps = Array.isArray(blob.steps) ? (blob.steps as WorkflowStep[]) : current.steps;
+  return {
+    ...current,
+    name: typeof blob.name === "string" ? blob.name : current.name,
+    description:
+      typeof blob.description === "string" ? blob.description : current.description,
+    category:
+      typeof blob.category === "string"
+        ? (blob.category as WorkflowTemplate["category"])
+        : current.category,
+    version: typeof blob.version === "string" ? blob.version : current.version,
+    configFields: Array.isArray(blob.configFields)
+      ? (blob.configFields as WorkflowTemplate["configFields"])
+      : current.configFields,
+    steps: dagSteps,
+    sampleInput:
+      blob.sampleInput && typeof blob.sampleInput === "object"
+        ? (blob.sampleInput as Record<string, unknown>)
+        : current.sampleInput,
+    expectedOutput:
+      blob.expectedOutput && typeof blob.expectedOutput === "object"
+        ? (blob.expectedOutput as Record<string, unknown>)
+        : current.expectedOutput,
+  };
 }
 
 function extractSteps(dag: unknown): DiffStep[] {

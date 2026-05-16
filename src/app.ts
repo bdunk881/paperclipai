@@ -116,11 +116,53 @@ import {
 } from "./workflows/portableSchema";
 import landingPublicApiRoutes from "./landing/publicApiRoutes";
 import { requirePersistence } from "./bootstrap";
+import { createOrgGraphRoutes } from "./orgGraph/orgGraphRoutes";
+import { createStepResultRoutes } from "./runs/stepResultRoutes";
+import { createBudgetRoutes } from "./billing/budgetRoutes";
+import { createEntitlementRoutes } from "./billing/entitlementRoutes";
+import { createWakeEventRoutes } from "./agents/wakeEventRoutes";
+import { createConnectorConnectionRoutes } from "./connectors/connectorConnectionRoutes";
 
 import { getImportedTemplate, saveImportedTemplate } from "./templates/importedTemplateStore";
 import { getConnectorHealthSummary, listConnectorHealth } from "./connectors/health";
 
 requirePersistence();
+
+const orgGraphRoutes = isPostgresPersistenceEnabled()
+  ? createOrgGraphRoutes(getPostgresPool())
+  : express.Router().all("*", (_req, res) =>
+      res.status(501).json({ error: "Org graph requires PostgreSQL persistence." }),
+    );
+
+const stepResultRoutes = isPostgresPersistenceEnabled()
+  ? createStepResultRoutes(getPostgresPool())
+  : express.Router({ mergeParams: true }).all("*", (_req, res) =>
+      res.status(501).json({ error: "Step results require PostgreSQL persistence." }),
+    );
+
+const budgetRoutes = isPostgresPersistenceEnabled()
+  ? createBudgetRoutes(getPostgresPool())
+  : express.Router().all("*", (_req, res) =>
+      res.status(501).json({ error: "Budgets require PostgreSQL persistence." }),
+    );
+
+const entitlementRoutes = isPostgresPersistenceEnabled()
+  ? createEntitlementRoutes(getPostgresPool())
+  : express.Router().all("*", (_req, res) =>
+      res.status(501).json({ error: "Entitlements require PostgreSQL persistence." }),
+    );
+
+const wakeEventRoutes = isPostgresPersistenceEnabled()
+  ? createWakeEventRoutes(getPostgresPool())
+  : express.Router().all("*", (_req, res) =>
+      res.status(501).json({ error: "Wake events require PostgreSQL persistence." }),
+    );
+
+const connectorConnectionRoutes = isPostgresPersistenceEnabled()
+  ? createConnectorConnectionRoutes(getPostgresPool())
+  : express.Router().all("*", (_req, res) =>
+      res.status(501).json({ error: "Connector connections require PostgreSQL persistence." }),
+    );
 
 // HEL-45: rehydrate in-memory subscription cache from Postgres so the
 // store survives a process restart. Fire-and-forget at boot — failures
@@ -663,6 +705,14 @@ app.use("/api/tickets", requireAuth, workspaceResolver, requireRole("admin", "op
 app.use("/api/ticket-sync", requireAuth, workspaceResolver, requireRole("admin", "operator"), ticketSyncRoutes);
 app.use("/api/notifications", requireAuth, workspaceResolver, requireRole("admin", "operator"), notificationRoutes);
 app.use("/api/approval-policies", requireAuth, workspaceResolver, requireRole("admin", "approver", "operator"), approvalPolicyRoutes);
+
+// HEL-118: read-only canonical surfaces — RLS-scoped, no requireRole gate.
+app.use("/api/org-graph", requireAuth, workspaceResolver, orgGraphRoutes);
+app.use("/api/runs/:runId/step-results", requireAuth, workspaceResolver, stepResultRoutes);
+app.use("/api/budgets", requireAuth, workspaceResolver, budgetRoutes);
+app.use("/api/entitlements", requireAuth, workspaceResolver, entitlementRoutes);
+app.use("/api/wake-events", requireAuth, workspaceResolver, wakeEventRoutes);
+app.use("/api/connector-connections", requireAuth, workspaceResolver, connectorConnectionRoutes);
 
 // ---------------------------------------------------------------------------
 // Auth API — identity and social callback endpoints

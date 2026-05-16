@@ -34,6 +34,17 @@ const ALLOWLIST = new Set<string>([
   // workspace role. These routes span all workspaces so no workspace context
   // applies.
   "/api/admin/curated-knowledge",
+  // Read-only workspace-scoped surfaces. Any authenticated workspace member
+  // may read them; RLS enforces workspace isolation. No mutation paths exist
+  // on these routers, so role-level gating would only add friction without
+  // security benefit.
+  "/api/activity-events",
+  "/api/org-graph",
+  "/api/runs/:runId/step-results",
+  "/api/budgets",
+  "/api/entitlements",
+  "/api/wake-events",
+  "/api/connector-connections",
 ]);
 
 interface AuthenticatedMount {

@@ -247,7 +247,6 @@ export default function Settings() {
   function handlePauseAll() {
     // TODO: wire to a backend pause endpoint once one exists. For now this
     // is a no-op so the button doesn't navigate or mutate state.
-    // eslint-disable-next-line no-console
     console.warn("Pause all agents: backend endpoint not yet implemented");
   }
 

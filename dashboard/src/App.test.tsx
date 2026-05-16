@@ -133,7 +133,7 @@ describe("App", () => {
     render(<App />);
 
     expect(await screen.findByText("Layout Shell")).toBeInTheDocument();
-    expect(screen.getByText("Dashboard Page")).toBeInTheDocument();
+    expect(await screen.findByText("Dashboard Page")).toBeInTheDocument();
     expect(screen.queryByText("Login Page")).not.toBeInTheDocument();
   });
 
@@ -154,7 +154,7 @@ describe("App", () => {
     render(<App />);
 
     expect(await screen.findByText("Layout Shell")).toBeInTheDocument();
-    expect(screen.getByText("Dashboard Page")).toBeInTheDocument();
+    expect(await screen.findByText("Dashboard Page")).toBeInTheDocument();
   });
 
   it("renders the templates route for authenticated users", async () => {
@@ -174,7 +174,7 @@ describe("App", () => {
     render(<App />);
 
     expect(await screen.findByText("Layout Shell")).toBeInTheDocument();
-    expect(screen.getByText("Mission State Page")).toBeInTheDocument();
+    expect(await screen.findByText("Mission State Page")).toBeInTheDocument();
   });
 
   it("renders the mission state route for authenticated users", async () => {
@@ -184,7 +184,7 @@ describe("App", () => {
     render(<App />);
 
     expect(await screen.findByText("Layout Shell")).toBeInTheDocument();
-    expect(screen.getByText("Mission State Page")).toBeInTheDocument();
+    expect(await screen.findByText("Mission State Page")).toBeInTheDocument();
   });
 
   it("renders the SLA dashboard route for authenticated users", async () => {
@@ -234,6 +234,6 @@ describe("App", () => {
     render(<App />);
 
     expect(await screen.findByText("Layout Shell")).toBeInTheDocument();
-    expect(screen.getByText("Dashboard Page")).toBeInTheDocument();
+    expect(await screen.findByText("Dashboard Page")).toBeInTheDocument();
   });
 });

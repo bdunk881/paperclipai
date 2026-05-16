@@ -15,7 +15,6 @@ vi.mock("@xyflow/react", () => ({
   Controls: () => null,
   Handle: () => null,
   MarkerType: { ArrowClosed: "arrowclosed" },
-  MiniMap: () => null,
   Position: { Top: "top", Bottom: "bottom", Left: "left", Right: "right" },
   ReactFlow: ({
     children,

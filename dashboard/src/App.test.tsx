@@ -43,8 +43,6 @@ vi.mock("./pages/Signup", () => ({ default: () => <div>Signup Page</div> }));
 vi.mock("./pages/Dashboard", () => ({ default: () => <div>Dashboard Page</div> }));
 vi.mock("./pages/WorkflowBuilder", () => ({ default: () => <div>Workflow Builder Page</div> }));
 vi.mock("./pages/Templates", () => ({ default: () => <div>Templates Page</div> }));
-vi.mock("./pages/RunMonitor", () => ({ default: () => <div>Run Monitor Page</div> }));
-vi.mock("./pages/RunHistory", () => ({ default: () => <div>Run History Page</div> }));
 vi.mock("./pages/LandingPage", () => ({ default: () => <div>Landing Page</div> }));
 vi.mock("./pages/LLMProviders", () => ({ default: () => <div>LLM Providers Page</div> }));
 vi.mock("./pages/MissionState", async (importOriginal) => {
@@ -66,11 +64,8 @@ vi.mock("./pages/TicketDetail", () => ({ default: () => <div>Ticket Detail Page<
 vi.mock("./pages/TicketTeamView", () => ({ default: () => <div>Ticket Team View Page</div> }));
 vi.mock("./pages/TicketActorView", () => ({ default: () => <div>Ticket Actor View Page</div> }));
 vi.mock("./pages/Memory", () => ({ default: () => <div>Memory Page</div> }));
-vi.mock("./pages/Integrations", () => ({ default: () => <div>Integrations Page</div> }));
 vi.mock("./pages/MCPIntegrations", () => ({ default: () => <div>MCP Integrations Page</div> }));
 vi.mock("./pages/McpServers", () => ({ default: () => <div>MCP Servers Page</div> }));
-vi.mock("./pages/StaffingPlanReview", () => ({ default: () => <div>Staffing Plan Review Page</div> }));
-vi.mock("./pages/ExecutionLogs", () => ({ default: () => <div>Execution Logs Page</div> }));
 vi.mock("./pages/CheckoutSuccess", () => ({ default: () => <div>Checkout Success Page</div> }));
 vi.mock("./pages/AuthCallback", () => ({ default: () => <div>Auth Callback Page</div> }));
 vi.mock("./pages/SocialAuthCallback", () => ({ default: () => <div>Social Auth Callback Page</div> }));
@@ -124,11 +119,11 @@ describe("App", () => {
   });
 
   it("redirects private routes to login when unauthenticated", async () => {
-    window.history.replaceState({}, "", "/logs");
+    window.history.replaceState({}, "", "/approvals");
     render(<App />);
 
     expect(await screen.findByText("Login Page")).toBeInTheDocument();
-    expect(screen.queryByText("Execution Logs Page")).not.toBeInTheDocument();
+    expect(screen.queryByText("Approvals Page")).not.toBeInTheDocument();
   });
 
   it("redirects authenticated users away from login to the dashboard", async () => {
@@ -152,14 +147,14 @@ describe("App", () => {
     expect(screen.getByText("API Keys Page")).toBeInTheDocument();
   });
 
-  it("renders the run monitor on a direct authenticated entry", async () => {
+  it("redirects the legacy /monitor URL to the dashboard home", async () => {
     authState.user = { id: "user-1", email: "user@example.com", name: "User" };
     window.history.replaceState({}, "", "/monitor");
 
     render(<App />);
 
     expect(await screen.findByText("Layout Shell")).toBeInTheDocument();
-    expect(screen.getByText("Run Monitor Page")).toBeInTheDocument();
+    expect(screen.getByText("Dashboard Page")).toBeInTheDocument();
   });
 
   it("renders the templates route for authenticated users", async () => {
@@ -172,14 +167,14 @@ describe("App", () => {
     expect(screen.getByText("Templates Page")).toBeInTheDocument();
   });
 
-  it("renders the staffing plan route for authenticated users", async () => {
+  it("redirects the legacy /workspace/staffing-plan URL to Missions", async () => {
     authState.user = { id: "user-1", email: "user@example.com", name: "User" };
     window.history.replaceState({}, "", "/workspace/staffing-plan");
 
     render(<App />);
 
     expect(await screen.findByText("Layout Shell")).toBeInTheDocument();
-    expect(screen.getByText("Staffing Plan Review Page")).toBeInTheDocument();
+    expect(screen.getByText("Mission State Page")).toBeInTheDocument();
   });
 
   it("renders the mission state route for authenticated users", async () => {

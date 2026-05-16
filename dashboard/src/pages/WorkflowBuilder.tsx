@@ -3522,22 +3522,26 @@ function DeployAsTeamModal({
   const [budgetMonthlyUsd, setBudgetMonthlyUsd] = useState(120);
   const [defaultIntervalMinutes, setDefaultIntervalMinutes] = useState(30);
 
+  // HEL-100 v2: DeployAsTeamModal restyle. Drops the slate-* + bg-white
+  // chrome for af2 tokens (paper / card / ink / line) so the modal
+  // matches the rest of the v2 paper aesthetic. Behaviour and layout
+  // unchanged.
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/45 px-4">
-      <div className="max-h-[90vh] w-full max-w-4xl overflow-hidden rounded-[32px] border border-slate-200 bg-white shadow-2xl">
-        <div className="flex items-center justify-between border-b border-slate-200 px-6 py-5">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-af2-ink/55 backdrop-blur-[2px] px-4">
+      <div className="max-h-[90vh] w-full max-w-4xl overflow-hidden rounded-[32px] border border-af2-line bg-af2-card shadow-af2-lg">
+        <div className="flex items-center justify-between border-b border-af2-line px-6 py-5">
           <div>
             <p className="text-xs font-semibold uppercase tracking-[0.18em] text-af2-sage">
               Deploy as Team
             </p>
-            <h2 className="mt-1 text-xl font-semibold text-slate-900">
+            <h2 className="font-af2-serif mt-1 text-xl font-medium text-af2-ink">
               Promote this workflow into a live agent roster
             </h2>
           </div>
           <button
             onClick={onClose}
             aria-label="Close deploy as team dialog"
-            className="rounded-full p-2 text-slate-500 transition hover:bg-slate-100 hover:text-slate-900"
+            className="rounded-full border border-af2-line p-2 text-af2-ink-3 transition hover:border-af2-line-2 hover:bg-af2-paper-2 hover:text-af2-ink"
             disabled={busy}
           >
             <X size={16} />
@@ -3545,12 +3549,10 @@ function DeployAsTeamModal({
         </div>
 
         <div className="grid gap-0 lg:grid-cols-[1.15fr_0.85fr]">
-          <div className="border-b border-slate-200 p-6 lg:border-b-0 lg:border-r">
+          <div className="border-b border-af2-line p-6 lg:border-b-0 lg:border-r">
             <div className="mb-5">
-              <h3 className="text-sm font-semibold uppercase tracking-[0.16em] text-slate-400">
-                Team preview
-              </h3>
-              <p className="mt-2 text-sm text-slate-500">
+              <h3 className="af2-eyebrow">Team preview</h3>
+              <p className="mt-2 text-sm text-af2-ink-3">
                 The manager owns orchestration, then actionable workflow steps become worker agents.
               </p>
             </div>
@@ -3562,7 +3564,7 @@ function DeployAsTeamModal({
                     <Bot size={18} />
                   </div>
                   <div>
-                    <p className="text-sm font-semibold text-slate-900">
+                    <p className="text-sm font-semibold text-af2-ink">
                       {template.name} Manager
                     </p>
                     <p className="text-xs uppercase tracking-[0.16em] text-af2-clay">
@@ -3575,18 +3577,18 @@ function DeployAsTeamModal({
               {actionableSteps.map((step, index) => (
                 <div
                   key={step.id}
-                  className="rounded-[24px] border border-slate-200 bg-slate-50 px-5 py-4"
+                  className="rounded-[24px] border border-af2-line bg-af2-paper-2 px-5 py-4"
                 >
                   <div className="flex items-start justify-between gap-4">
                     <div>
-                      <p className="text-sm font-semibold text-slate-900">
+                      <p className="text-sm font-semibold text-af2-ink">
                         {step.name}
                       </p>
-                      <p className="mt-1 text-xs uppercase tracking-[0.16em] text-slate-400">
+                      <p className="mt-1 text-xs uppercase tracking-[0.16em] text-af2-ink-4">
                         {step.agentRoleKey ?? `${step.kind}-${index + 1}`}
                       </p>
                     </div>
-                    <span className="rounded-full bg-white px-3 py-1 text-xs font-semibold text-slate-600 shadow-sm">
+                    <span className="rounded-full border border-af2-line bg-af2-card px-3 py-1 text-xs font-semibold text-af2-ink-2 shadow-sm">
                       {step.agentScheduleType === "interval"
                         ? `${step.agentScheduleValue || defaultIntervalMinutes} min`
                         : step.agentScheduleType === "cron"
@@ -3595,10 +3597,10 @@ function DeployAsTeamModal({
                     </span>
                   </div>
                   <div className="mt-3 flex flex-wrap gap-2">
-                    <span className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-medium text-slate-600">
+                    <span className="rounded-full border border-af2-line bg-af2-card px-3 py-1 text-xs font-medium text-af2-ink-2">
                       {step.agentModel ?? step.llmConfigId ?? "Default model"}
                     </span>
-                    <span className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-medium text-slate-600">
+                    <span className="rounded-full border border-af2-line bg-af2-card px-3 py-1 text-xs font-medium text-af2-ink-2">
                       ${step.agentBudgetMonthlyUsd ?? 0}/mo
                     </span>
                     {(step.agentSkills ?? []).slice(0, 3).map((skill) => (
@@ -3627,17 +3629,15 @@ function DeployAsTeamModal({
             }}
           >
             <div>
-              <h3 className="text-sm font-semibold uppercase tracking-[0.16em] text-slate-400">
-                Launch settings
-              </h3>
-              <p className="mt-2 text-sm text-slate-500">
-                Use the approved agent-surface direction: teal health cues, indigo orchestration, and clear budget visibility.
+              <h3 className="af2-eyebrow">Launch settings</h3>
+              <p className="mt-2 text-sm text-af2-ink-3">
+                Pick a name, a monthly budget cap, and the default schedule cadence for new worker agents.
               </p>
             </div>
 
             <Field label="Team Name">
               <input
-                className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-af2-clay/30"
+                className="w-full rounded-xl border border-af2-line-2 bg-af2-card px-3 py-2 text-sm text-af2-ink focus:outline-none focus:ring-2 focus:ring-af2-clay/30"
                 value={teamName}
                 onChange={(event) => setTeamName(event.target.value)}
               />
@@ -3648,7 +3648,7 @@ function DeployAsTeamModal({
                 type="number"
                 min={0}
                 step="10"
-                className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-af2-clay/30"
+                className="w-full rounded-xl border border-af2-line-2 bg-af2-card px-3 py-2 text-sm text-af2-ink focus:outline-none focus:ring-2 focus:ring-af2-clay/30"
                 value={budgetMonthlyUsd}
                 onChange={(event) => setBudgetMonthlyUsd(Number(event.target.value) || 0)}
               />
@@ -3658,7 +3658,7 @@ function DeployAsTeamModal({
               <input
                 type="number"
                 min={1}
-                className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-af2-clay/30"
+                className="w-full rounded-xl border border-af2-line-2 bg-af2-card px-3 py-2 text-sm text-af2-ink focus:outline-none focus:ring-2 focus:ring-af2-clay/30"
                 value={defaultIntervalMinutes}
                 onChange={(event) => setDefaultIntervalMinutes(Number(event.target.value) || 1)}
               />
@@ -3673,7 +3673,7 @@ function DeployAsTeamModal({
                 type="button"
                 onClick={onClose}
                 aria-label="Cancel agent team deployment"
-                className="rounded-full border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
+                className="rounded-full border border-af2-line-2 px-4 py-2 text-sm font-medium text-af2-ink-2 transition hover:bg-af2-paper-2 hover:text-af2-ink"
                 disabled={busy}
               >
                 Cancel
@@ -3682,7 +3682,7 @@ function DeployAsTeamModal({
                 type="submit"
                 disabled={busy}
                 aria-label="Confirm agent team deployment"
-                className="inline-flex items-center gap-2 rounded-full bg-af2-sage px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-af2-sage disabled:opacity-60"
+                className="inline-flex items-center gap-2 rounded-full bg-af2-sage px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-af2-sage-2 disabled:opacity-60"
               >
                 {busy ? <Loader size={15} className="animate-spin" /> : <Send size={15} />}
                 Confirm deployment

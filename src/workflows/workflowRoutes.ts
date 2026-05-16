@@ -327,6 +327,81 @@ export function createWorkflowRoutes(pool: Pool) {
   });
 
   // ---------------------------------------------------------------------
+  // GET /api/workflows/:workflowId/versions/:versionId — single version
+  // with the full dag. Powers the v2 Studio Versions panel diff modal
+  // and the restore flow (which fetches an older version's dag, then
+  // POSTs it back as a new version).
+  // ---------------------------------------------------------------------
+  router.get(
+    "/:workflowId/versions/:versionId",
+    async (req: AuthenticatedRequest, res) => {
+      const userId = req.auth?.sub;
+      const workspaceId = (req as WorkspaceAwareRequest).workspace?.id;
+      if (!userId || !workspaceId) {
+        res.status(401).json({ error: "Authenticated user + workspace required" });
+        return;
+      }
+
+      const { workflowId, versionId } = req.params;
+      if (!workflowId || !UUID_RE.test(workflowId)) {
+        res.status(400).json({ error: "Invalid workflow ID format" });
+        return;
+      }
+      if (!versionId || !UUID_RE.test(versionId)) {
+        res.status(400).json({ error: "Invalid version ID format" });
+        return;
+      }
+
+      interface SingleVersionRow {
+        id: string;
+        version: number;
+        dag: unknown;
+        created_at: Date | string;
+        is_latest: boolean;
+      }
+
+      try {
+        const result = await withWorkspaceContext(
+          pool,
+          { workspaceId, userId },
+          async (client) =>
+            client.query<SingleVersionRow>(
+              `SELECT v.id, v.version, v.dag, v.created_at,
+                      (v.id = w.latest_version_id) AS is_latest
+                 FROM workflow_versions v
+                 JOIN workflows w ON w.id = v.workflow_id
+                WHERE v.id = $1
+                  AND v.workflow_id = $2
+                  AND w.workspace_id = $3
+                LIMIT 1`,
+              [versionId, workflowId, workspaceId],
+            ),
+        );
+        if (result.rows.length === 0) {
+          res.status(404).json({ error: "Workflow version not found" });
+          return;
+        }
+        const row = result.rows[0]!;
+        res.json({
+          id: row.id,
+          version: row.version,
+          dag: row.dag ?? {},
+          createdAt:
+            row.created_at instanceof Date
+              ? row.created_at.toISOString()
+              : String(row.created_at),
+          isLatest: row.is_latest,
+        });
+      } catch (err) {
+        console.error(
+          `[workflows] version fetch failed: ${(err as Error).message}`,
+        );
+        res.status(500).json({ error: "Failed to load workflow version" });
+      }
+    },
+  );
+
+  // ---------------------------------------------------------------------
   // GET /api/workflows/:workflowId/versions — list immutable versions
   // newest first (LIMIT 50). Powers the v2 Studio Versions panel.
   // ---------------------------------------------------------------------

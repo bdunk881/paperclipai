@@ -112,6 +112,31 @@ describe("WorkflowBuilder", () => {
     expect(screen.queryByText("Build and launch confidently")).toBeNull();
   });
 
+  it("renders the v2 draft/version pill and a Pro mode pill toggle", async () => {
+    renderBuilder();
+
+    expect(await screen.findByText("Start building your workflow")).toBeInTheDocument();
+
+    // HEL-100 v2 chrome: when no team is deployed for this workflow, the
+    // header shows a "draft · v{version}" pill (live · v{version} when
+    // deployed). The default template version in this app is 1.0.0.
+    expect(screen.getByLabelText("Workflow status")).toHaveTextContent(
+      /draft · v1\.0\.0/i,
+    );
+
+    // Pro mode pill toggle: starts OFF, flips to ON on click. aria-pressed
+    // and accessible label flip in lockstep with the visual state.
+    const proToggle = screen.getByRole("button", { name: /Enable Pro mode/i });
+    expect(proToggle).toHaveAttribute("aria-pressed", "false");
+    expect(proToggle).toHaveTextContent(/Pro mode OFF/i);
+
+    fireEvent.click(proToggle);
+
+    const proToggleOn = screen.getByRole("button", { name: /Disable Pro mode/i });
+    expect(proToggleOn).toHaveAttribute("aria-pressed", "true");
+    expect(proToggleOn).toHaveTextContent(/Pro mode ON/i);
+  });
+
   it("skips invalid auto-links when adding a step after an output", async () => {
     renderBuilder();
 

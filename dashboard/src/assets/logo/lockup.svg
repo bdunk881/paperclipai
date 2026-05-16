@@ -1,12 +1,17 @@
-<svg viewBox="0 0 400 100" fill="none" xmlns="http://www.w3.org/2000/svg">
-  <!-- Icon -->
-  <g transform="translate(10, 10) scale(0.8)">
-    <path d="M50 15L85 85H70L50 45L30 85H15L50 15Z" fill="#6366f1" />
-    <circle cx="50" cy="45" r="8" fill="#14b8a6" />
-    <path d="M50 45V15" stroke="#14b8a6" stroke-width="4" stroke-linecap="round" />
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 220 40" fill="none" role="img" aria-label="AutoFlow">
+  <!-- AF2 mark: rounded ink square with two interlocking curves in paper.
+       Mirrors docs/design/v2/shell.jsx::AF2_Mark; sized 32 inside a 40
+       tall viewBox so the lockup reads at h-8 (32px) without crowding. -->
+  <g transform="translate(4 4)">
+    <rect width="32" height="32" rx="7" fill="#1a1410" />
+    <path d="M9 11.5a4.5 4.5 0 0 1 9 0v9a4.5 4.5 0 0 1-9 0M14 11.5a4.5 4.5 0 0 1 9 0v9" fill="none" stroke="#f6f1e7" stroke-width="2.2" stroke-linecap="round" />
   </g>
-  <!-- Wordmark -->
-  <text x="100" y="65" font-family="Inter, sans-serif" font-weight="900" font-size="48" fill="currentColor">
-    Auto<tspan fill="#6366f1">Flow</tspan>
+  <!-- Serif wordmark in af2-ink. Fraunces is loaded as a webfont in
+       index.css but won't resolve inside an <img>-rendered SVG; the
+       Georgia / serif fallback keeps the editorial feel without
+       reflowing the lockup. fill="currentColor" lets the parent set
+       the colour if it ever swaps onto a dark surface. -->
+  <text x="46" y="28" font-family="Fraunces, 'Source Serif 4', Georgia, serif" font-size="22" font-weight="500" letter-spacing="-0.4" fill="#1a1410">
+    AutoFlow
   </text>
 </svg>

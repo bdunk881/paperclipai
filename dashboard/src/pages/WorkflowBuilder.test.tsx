@@ -146,7 +146,9 @@ describe("WorkflowBuilder", () => {
     fireEvent.click(within(palette).getByRole("button", { name: /Add Agent step/i }));
 
     expect(await screen.findByTestId("react-flow")).toBeInTheDocument();
-    expect(screen.getByText("Agent Step")).toBeInTheDocument();
+    // "Agent Step" appears in both the canvas card and the inspector
+    // header's serif title (HEL-100 v2 inspector chrome).
+    expect(screen.getAllByText("Agent Step").length).toBeGreaterThan(0);
   });
 
   it("renders the v2 draft/version pill and a Pro mode pill toggle", async () => {

@@ -127,7 +127,7 @@ export default function ProfileSettings() {
 
   if (loading) {
     return (
-      <div className="p-8 max-w-4xl">
+      <div className="af2-page">
         <div className="flex items-center gap-2 text-sm text-af2-ink-3">
           <Loader2 size={16} className="animate-spin" />
           Loading profile settings...
@@ -137,11 +137,16 @@ export default function ProfileSettings() {
   }
 
   return (
-    <div className="p-8 max-w-4xl">
+    <div className="af2-page" style={{ maxWidth: 920 }}>
       {toast && <Toast variant={toast.variant} message={toast.message} />}
-      <div className="mb-8">
-        <h1 className="text-2xl font-bold text-af2-ink">Profile</h1>
-        <p className="text-af2-ink-3 mt-1">Update your display name and account preferences.</p>
+      <div className="af2-page-head">
+        <div>
+          <div className="af2-eyebrow">Settings · Members</div>
+          <h1 className="af2-h1" style={{ marginTop: 6 }}>Profile</h1>
+          <div className="af2-page-head-meta">
+            Update your display name and account preferences.
+          </div>
+        </div>
       </div>
 
       <div className="bg-af2-card rounded-xl border border-af2-line p-6">

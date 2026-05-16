@@ -254,10 +254,15 @@ export default function NotificationsSettings() {
   }
 
   return (
-    <div className="max-w-6xl p-8">
-      <div className="mb-8">
-        <h1 className="text-2xl font-bold text-af2-ink">Notifications</h1>
-        <p className="mt-1 text-af2-ink-3">Slack, email, and SMS digests with workspace-level cadence controls.</p>
+    <div className="af2-page" style={{ maxWidth: 1080 }}>
+      <div className="af2-page-head">
+        <div>
+          <div className="af2-eyebrow">Settings · Security</div>
+          <h1 className="af2-h1" style={{ marginTop: 6 }}>Notifications</h1>
+          <div className="af2-page-head-meta">
+            Slack, email, and SMS digests with workspace-level cadence controls.
+          </div>
+        </div>
       </div>
 
       {error ? (

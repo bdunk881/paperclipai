@@ -116,37 +116,34 @@ export default function TicketSlaSettings() {
   }
 
   return (
-    <div className="min-h-full bg-[#0b1120] pb-28 text-af2-paper">
-      <div className="mx-auto flex w-full max-w-7xl flex-col gap-6 px-4 py-6 md:px-8 md:py-8">
-        <section className="rounded-[30px] border border-af2-line/80 bg-af2-ink/85 px-6 py-6 md:px-8">
-          <div className="flex flex-wrap items-start justify-between gap-4">
-            <div className="max-w-3xl">
-              <Link
-                to="/settings"
-                className="inline-flex items-center gap-2 text-sm text-af2-ink-3 transition hover:text-af2-paper"
-              >
-                <ArrowLeft size={14} />
-                Back to settings
-              </Link>
-              <div className="mt-4 inline-flex items-center gap-2 rounded-full border border-af2-clay/30 bg-af2-clay/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.2em] text-af2-paper-2">
-                <ShieldAlert size={12} />
-                Workspace SLA
-              </div>
-              <h1 className="mt-4 text-3xl font-semibold tracking-tight text-af2-paper">
-                SLA Policy Editor
-              </h1>
-              <p className="mt-2 text-sm leading-6 text-af2-ink-3">
-                Define response and resolution targets by priority, then set the breach actions that keep work moving.
-              </p>
-            </div>
-            <Link
-              to="/tickets/sla"
-              className="inline-flex items-center gap-2 rounded-full border border-af2-line-2 bg-af2-ink/80 px-4 py-2 text-sm font-medium text-af2-paper-2 transition hover:border-af2-sage/40 hover:text-af2-sage/80"
-            >
-              Monitor dashboard
-            </Link>
+    <div className="af2-page">
+      <div className="af2-page-head">
+        <div>
+          <Link
+            to="/settings"
+            className="inline-flex items-center gap-2 text-sm text-af2-ink-3 transition hover:text-af2-ink"
+            style={{ textDecoration: "none" }}
+          >
+            <ArrowLeft size={14} />
+            Back to settings
+          </Link>
+          <div className="af2-eyebrow" style={{ marginTop: 12 }}>
+            <ShieldAlert size={12} style={{ display: "inline-block", marginRight: 6 }} />
+            Workspace · Ticketing SLA
           </div>
-        </section>
+          <h1 className="af2-h1" style={{ marginTop: 6 }}>
+            Ticketing SLA
+          </h1>
+          <div className="af2-page-head-meta">
+            Define response and resolution targets by priority, then set the breach actions that keep work moving.
+          </div>
+        </div>
+        <div className="af2-page-actions">
+          <Link to="/tickets/sla" className="af2-btn">
+            Monitor dashboard
+          </Link>
+        </div>
+      </div>
 
         {loading ? (
           <>
@@ -286,7 +283,6 @@ export default function TicketSlaSettings() {
             </section>
           </>
         ) : null}
-      </div>
 
       <div className="fixed inset-x-0 bottom-0 z-30 border-t border-af2-line/80 bg-af2-ink/95 backdrop-blur">
         <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-3 px-4 py-4 md:px-8">

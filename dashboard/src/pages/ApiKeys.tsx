@@ -2,10 +2,15 @@ import { KeyRound, ShieldAlert } from "lucide-react";
 
 export default function ApiKeys() {
   return (
-    <div className="p-8 max-w-4xl">
-      <div className="mb-8">
-        <h1 className="text-2xl font-bold text-af2-ink">API Keys</h1>
-        <p className="text-af2-ink-3 mt-1">Generate and manage API keys for programmatic access.</p>
+    <div className="af2-page" style={{ maxWidth: 920 }}>
+      <div className="af2-page-head">
+        <div>
+          <div className="af2-eyebrow">Settings · API</div>
+          <h1 className="af2-h1" style={{ marginTop: 6 }}>API Keys</h1>
+          <div className="af2-page-head-meta">
+            Generate and manage API keys for programmatic access.
+          </div>
+        </div>
       </div>
 
       <div className="bg-af2-card rounded-xl border border-af2-line p-6">

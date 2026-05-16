@@ -77,7 +77,7 @@ describe("TicketSlaSettings", () => {
       </MemoryRouter>
     );
 
-    expect(await screen.findByText("SLA Policy Editor")).toBeInTheDocument();
+    expect(await screen.findByText("Targets by priority")).toBeInTheDocument();
     expect(screen.getByText("Targets by priority")).toBeInTheDocument();
     expect(screen.getByText("Breach rules")).toBeInTheDocument();
   });
@@ -90,7 +90,7 @@ describe("TicketSlaSettings", () => {
       </MemoryRouter>
     );
 
-    await screen.findByText("SLA Policy Editor");
+    await screen.findByText("Targets by priority");
     const fallbackSelect = screen.getAllByLabelText(/fallback actor/i)[0];
     await user.selectOptions(fallbackSelect, "");
     await user.click(screen.getByRole("button", { name: /save changes/i }));
@@ -107,7 +107,7 @@ describe("TicketSlaSettings", () => {
       </MemoryRouter>
     );
 
-    await screen.findByText("SLA Policy Editor");
+    await screen.findByText("Targets by priority");
     await user.click(screen.getByRole("button", { name: /save changes/i }));
 
     await waitFor(() => {

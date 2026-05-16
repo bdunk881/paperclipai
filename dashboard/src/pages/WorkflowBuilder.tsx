@@ -1228,8 +1228,10 @@ export default function WorkflowBuilder() {
           </div>
         ) : null}
 
-        {/* Canvas */}
-        <div className="relative flex-1 overflow-hidden bg-slate-50">
+        {/* Canvas — HEL-100 v2: paper-2 surface with the existing dot
+            grid (Background gap=20) matches docs/design/v2/styles.css
+            (radial-gradient over var(--af2-paper-2)). */}
+        <div className="relative flex-1 overflow-hidden bg-af2-paper-2">
           {template.steps.length === 0 ? (
             <EmptyCanvas onAdd={addStep} templates={allTemplates} />
           ) : (
@@ -1272,7 +1274,7 @@ export default function WorkflowBuilder() {
                 />
               </ReactFlow>
               <div className="pointer-events-none absolute bottom-6 left-1/2 z-10 -translate-x-1/2">
-                <div className="pointer-events-auto rounded-full border border-slate-200 bg-white/95 px-2 py-1.5 shadow-md backdrop-blur">
+                <div className="pointer-events-auto rounded-full border border-af2-line bg-af2-card/95 px-2 py-1.5 shadow-af2 backdrop-blur">
                   <AddStepMenu onAdd={addStep} />
                 </div>
               </div>

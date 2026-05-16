@@ -146,7 +146,9 @@ describe("WorkflowBuilder", () => {
     fireEvent.click(within(palette).getByRole("button", { name: /Add Agent step/i }));
 
     expect(await screen.findByTestId("react-flow")).toBeInTheDocument();
-    expect(screen.getByText("Agent Step")).toBeInTheDocument();
+    // "Agent Step" appears in both the canvas card and the inspector
+    // header's serif title (HEL-100 v2 inspector chrome).
+    expect(screen.getAllByText("Agent Step").length).toBeGreaterThan(0);
   });
 
   it("renders the v2 draft/version pill and a Pro mode pill toggle", async () => {
@@ -219,6 +221,61 @@ describe("WorkflowBuilder", () => {
     // Toggle Pro mode on; the eyebrow gains the " · Pro" suffix.
     fireEvent.click(screen.getByRole("button", { name: /Enable Pro mode/i }));
     expect(screen.getByText("Selected node · Pro")).toBeInTheDocument();
+  });
+
+  it("reveals Pro inspector tabs (Inspector / Versions / Observability) when Pro mode is on", async () => {
+    renderBuilder();
+
+    expect(await screen.findByText("Start building your workflow")).toBeInTheDocument();
+
+    openNodePalette();
+    fireEvent.click(screen.getByRole("button", { name: /^agent$/i }));
+
+    // No tabs visible before Pro mode is on.
+    expect(screen.queryByRole("tab", { name: /Inspector/i })).toBeNull();
+    expect(screen.queryByRole("tab", { name: /Versions/i })).toBeNull();
+    expect(screen.queryByRole("tab", { name: /Observability/i })).toBeNull();
+
+    // Toggle Pro mode on; tabs appear, Inspector is selected by default.
+    fireEvent.click(screen.getByRole("button", { name: /Enable Pro mode/i }));
+
+    expect(screen.getByRole("tab", { name: /Inspector/i })).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
+    expect(screen.getByRole("tab", { name: /Versions/i })).toHaveAttribute(
+      "aria-selected",
+      "false",
+    );
+    expect(screen.getByRole("tab", { name: /Observability/i })).toHaveAttribute(
+      "aria-selected",
+      "false",
+    );
+
+    // Click Versions — the Versions panel surfaces the current draft version.
+    // "v1.0.0" also lives in the header pill ("draft · v1.0.0"), so scope
+    // the version assertion to the panel.
+    fireEvent.click(screen.getByRole("tab", { name: /Versions/i }));
+    expect(screen.getByRole("tab", { name: /Versions/i })).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
+    const versionsPanel = document.getElementById(
+      "pro-inspector-panel-versions",
+    );
+    expect(versionsPanel).not.toBeNull();
+    expect(within(versionsPanel!).getByText(/v1\.0\.0/)).toBeInTheDocument();
+    // Exact-string match — the panel has a "current" pill; the form
+    // below (still in the DOM, just hidden) contains other case-insensitive
+    // matches like "Current..." copy.
+    expect(within(versionsPanel!).getByText("current")).toBeInTheDocument();
+
+    // Click Observability — the Observability panel surfaces stub
+    // sections for latency, cost, errors.
+    fireEvent.click(screen.getByRole("tab", { name: /Observability/i }));
+    expect(screen.getByText(/Latency · p99/i)).toBeInTheDocument();
+    expect(screen.getByText(/Cost · per run/i)).toBeInTheDocument();
+    expect(screen.getByText(/Recent errors/i)).toBeInTheDocument();
   });
 
   it("opens the deploy as team modal for populated workflows", async () => {

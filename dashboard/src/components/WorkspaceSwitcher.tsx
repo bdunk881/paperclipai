@@ -8,7 +8,11 @@ function workspaceInitial(name: string | undefined): string {
   return initial || "W";
 }
 
-export function WorkspaceSwitcher() {
+type WorkspaceSwitcherVariant = "sidebar" | "topbar";
+
+export function WorkspaceSwitcher({
+  variant = "sidebar",
+}: { variant?: WorkspaceSwitcherVariant } = {}) {
   const {
     workspaces,
     activeWorkspace,
@@ -94,43 +98,72 @@ export function WorkspaceSwitcher() {
     }
   }
 
+  const isTopbar = variant === "topbar";
+
   return (
     <>
-      <div ref={dropdownRef} className="relative border-b border-af2-line px-3 pb-3">
+      <div
+        ref={dropdownRef}
+        className={clsx(
+          "relative",
+          isTopbar ? "" : "border-b border-af2-line px-3 pb-3"
+        )}
+      >
         <button
           id={triggerId}
           type="button"
           aria-haspopup="menu"
           aria-expanded={open}
           aria-controls={menuId}
+          aria-label={
+            isTopbar
+              ? `Switch workspace (current: ${activeWorkspace?.name ?? "none"})`
+              : undefined
+          }
           disabled={loading && !activeWorkspace}
           onClick={() => setOpen((current) => !current)}
           className={clsx(
-            "mt-3 flex h-11 w-full items-center gap-3 rounded-xl border px-3 py-2 text-left transition-all",
-            "bg-transparent text-af2-ink hover:bg-af2-paper-2",
-            open
-              ? "border-af2-clay/50 shadow-[0_0_0_1px_rgba(99,102,241,0.18)]"
-              : "border-af2-line shadow-none",
+            "flex items-center text-left transition-all",
+            isTopbar
+              ? clsx(
+                  "h-9 gap-2.5 rounded-lg border px-2.5 py-1.5 text-af2-ink hover:bg-af2-paper-2",
+                  open ? "border-af2-line-2 bg-af2-paper-2" : "border-af2-line"
+                )
+              : clsx(
+                  "mt-3 h-11 w-full gap-3 rounded-xl border bg-transparent px-3 py-2 text-af2-ink hover:bg-af2-paper-2",
+                  open
+                    ? "border-af2-clay/50 shadow-[0_0_0_1px_rgba(99,102,241,0.18)]"
+                    : "border-af2-line shadow-none"
+                ),
             error && !activeWorkspace
               ? "border-af2-clay/60 text-af2-clay"
               : null,
             loading && !activeWorkspace ? "cursor-not-allowed opacity-55" : null
           )}
         >
-          <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-af2-clay-soft/40 text-xs font-bold uppercase text-af2-clay">
+          <div
+            className={clsx(
+              "flex items-center justify-center rounded-md bg-af2-clay-soft/40 font-bold uppercase text-af2-clay",
+              isTopbar ? "h-6 w-6 text-[11px]" : "h-7 w-7 rounded-lg text-xs"
+            )}
+          >
             {loading && !activeWorkspace ? <Loader2 size={14} className="animate-spin" /> : workspaceInitial(activeWorkspace?.name)}
           </div>
 
-          <div className="min-w-0 flex-1">
-            <p className="truncate text-sm font-semibold tracking-[-0.01em]">
+          <div className={clsx("min-w-0", isTopbar ? "flex flex-col leading-tight" : "flex-1")}>
+            <p
+              className={clsx(
+                "truncate font-semibold tracking-[-0.01em]",
+                isTopbar ? "text-[13px]" : "text-sm"
+              )}
+            >
               {activeWorkspace?.name ?? "Workspace"}
             </p>
             <p
               className={clsx(
-                "truncate text-[11px]",
-                error && !activeWorkspace
-                  ? "text-af2-clay"
-                  : "text-af2-ink-3"
+                "truncate",
+                isTopbar ? "text-[10.5px]" : "text-[11px]",
+                error && !activeWorkspace ? "text-af2-clay" : "text-af2-ink-3"
               )}
             >
               {secondaryText}
@@ -138,9 +171,10 @@ export function WorkspaceSwitcher() {
           </div>
 
           <ChevronDown
-            size={16}
+            size={isTopbar ? 14 : 16}
             className={clsx(
               "shrink-0 text-af2-ink-4 transition-transform duration-[180ms]",
+              isTopbar ? "ml-1" : null,
               open ? "rotate-180 text-af2-ink-3" : null
             )}
           />
@@ -151,7 +185,10 @@ export function WorkspaceSwitcher() {
           role="menu"
           aria-labelledby={triggerId}
           className={clsx(
-            "pointer-events-none absolute left-3 right-3 top-[calc(100%+4px)] z-30 origin-top rounded-2xl border border-af2-line bg-af2-card/98 shadow-[0_20px_48px_rgba(15,23,42,0.16)] backdrop-blur transition-all",
+            "pointer-events-none absolute z-30 origin-top rounded-2xl border border-af2-line bg-af2-card/98 shadow-[0_20px_48px_rgba(15,23,42,0.16)] backdrop-blur transition-all",
+            isTopbar
+              ? "left-0 top-[calc(100%+6px)] w-[300px]"
+              : "left-3 right-3 top-[calc(100%+4px)]",
             open
               ? "pointer-events-auto translate-y-0 opacity-100 duration-[180ms] ease-out"
               : "-translate-y-1 opacity-0 duration-[140ms] ease-in"

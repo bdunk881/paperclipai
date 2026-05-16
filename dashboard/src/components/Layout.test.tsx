@@ -10,6 +10,20 @@ vi.mock("../context/AuthContext", () => ({
   }),
 }));
 
+vi.mock("../context/useWorkspace", () => ({
+  useWorkspace: () => ({
+    workspaces: [{ id: "ws-1", name: "Acme Robotics", slug: "acme" }],
+    activeWorkspace: { id: "ws-1", name: "Acme Robotics", slug: "acme" },
+    activeWorkspaceId: "ws-1",
+    loading: false,
+    creating: false,
+    error: null,
+    setActiveWorkspaceId: vi.fn(),
+    refreshWorkspaces: vi.fn(),
+    createWorkspace: vi.fn(),
+  }),
+}));
+
 describe("Layout", () => {
   it("hides the app chrome for builder pop-out routes", () => {
     render(
@@ -23,7 +37,8 @@ describe("Layout", () => {
     );
 
     expect(screen.getByText("Builder pop-out")).toBeInTheDocument();
-    expect(screen.queryByText("AutoFlow")).toBeNull();
+    // Topbar is suppressed in pop-out mode.
+    expect(screen.queryByTestId("app-topbar")).toBeNull();
     expect(screen.queryByRole("button", { name: /toggle navigation/i })).toBeNull();
   });
 
@@ -47,5 +62,29 @@ describe("Layout", () => {
     // The Missions link (route is still /mission-state until HEL-23 lands the
     // mission-intake UI under its v2-native path) is active.
     expect(screen.getByRole("link", { name: "Missions" })).toHaveAttribute("aria-current", "page");
+  });
+
+  it("renders the v2 topbar with workspace switcher + global search + New mission CTA", () => {
+    render(
+      <MemoryRouter initialEntries={["/"]}>
+        <Routes>
+          <Route path="/" element={<Layout />}>
+            <Route index element={<div>Home content</div>} />
+          </Route>
+        </Routes>
+      </MemoryRouter>
+    );
+
+    expect(screen.getByTestId("app-topbar")).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /Switch workspace/i })
+    ).toHaveTextContent("Acme Robotics");
+    expect(
+      screen.getByRole("searchbox", { name: /search agents, missions, tickets, runs/i })
+    ).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /new mission/i })).toHaveAttribute(
+      "href",
+      "/hire"
+    );
   });
 });

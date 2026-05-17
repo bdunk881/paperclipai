@@ -90,24 +90,42 @@ const MODE_LABEL: Record<ApprovalTierMode, string> = {
   require_approval: "Always require human",
 };
 
+// $0 threshold is semantically "no threshold" — the spend policy mode
+// (auto-approve / notify / require-human) decides behavior at every
+// spend already. Surface that as "any spend" so the dashboard doesn't
+// render meaningless copy like "Spend over $0" (which surfaced live
+// on dev where legacy rows had spend_threshold_cents = 0 from the
+// backend's pre-fix default).
 function formatSpend(cents?: number): string {
-  if (cents == null || !Number.isFinite(cents)) return "any amount";
+  if (cents == null || !Number.isFinite(cents) || cents <= 0) {
+    return "any spend";
+  }
   const dollars = cents / 100;
   return dollars >= 1000
     ? `$${(dollars / 1000).toLocaleString(undefined, { maximumFractionDigits: 1 })}k`
     : `$${dollars.toLocaleString()}`;
 }
 
+function spendKeyLabel(cents?: number): string {
+  // "any spend" reads better as a sentence prefix; for positive
+  // thresholds we use the "Spend over $X" pattern.
+  const label = formatSpend(cents);
+  return label === "any spend" ? "Spend (any amount)" : `Spend over ${label}`;
+}
+
 function policyValueText(policy: ApprovalPolicy): string {
   if (policy.actionType === "spend_above_threshold") {
-    return `${MODE_LABEL[policy.mode]} for spend over ${formatSpend(policy.spendThresholdCents)}`;
+    const formatted = formatSpend(policy.spendThresholdCents);
+    return formatted === "any spend"
+      ? `${MODE_LABEL[policy.mode]} on any spend`
+      : `${MODE_LABEL[policy.mode]} for spend over ${formatted}`;
   }
   return MODE_LABEL[policy.mode];
 }
 
 function policyKeyText(policy: ApprovalPolicy): string {
   if (policy.actionType === "spend_above_threshold") {
-    return `Spend over ${formatSpend(policy.spendThresholdCents ?? 50000)}`;
+    return spendKeyLabel(policy.spendThresholdCents);
   }
   return ACTION_LABEL[policy.actionType];
 }

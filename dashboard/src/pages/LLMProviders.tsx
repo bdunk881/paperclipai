@@ -28,7 +28,7 @@
  * vendor with status pills, matching the rest of the Connect surface.
  */
 import { useState, useEffect, useCallback, useMemo } from "react";
-import { X, ArrowUpCircle } from "lucide-react";
+import { AlertTriangle, X, ArrowUpCircle } from "lucide-react";
 import {
   listLLMConfigs,
   createLLMConfig,
@@ -38,6 +38,10 @@ import {
   type LLMConfig,
   type ProviderName,
 } from "../api/client";
+import {
+  getHostedFreeCatalog,
+  type HostedFreeCatalog,
+} from "../api/hostedFreeModelsApi";
 import clsx from "clsx";
 import { useAuth } from "../context/AuthContext";
 import { useEntitlement402, type Entitlement402State } from "../hooks/useEntitlement402";
@@ -512,6 +516,11 @@ export default function LLMProviders() {
   const [configuringVendor, setConfiguringVendor] = useState<ProviderName | null>(null);
   const [deletingConfig, setDeletingConfig] = useState<LLMConfig | null>(null);
   const [togglingDefault, setTogglingDefault] = useState<string | null>(null);
+  // PR B.3: hosted-free catalog + per-workspace daily usage. Silent on
+  // failure since the rest of the page works fine without it (the
+  // catalog is decorative — engine-level routing in stepHandlers.ts
+  // is what actually drives the fallback).
+  const [hostedFree, setHostedFree] = useState<HostedFreeCatalog | null>(null);
 
   const loadConfigs = useCallback(async () => {
     try {
@@ -527,6 +536,25 @@ export default function LLMProviders() {
   }, [requireAccessToken]);
 
   useEffect(() => { loadConfigs(); }, [loadConfigs]);
+
+  // PR B.3: load the hosted-free catalog separately so a backend
+  // hiccup on this surface can't block the main BYOK list rendering.
+  useEffect(() => {
+    let cancelled = false;
+    async function loadHostedFree() {
+      try {
+        const accessToken = await requireAccessToken();
+        const data = await getHostedFreeCatalog(accessToken);
+        if (!cancelled) setHostedFree(data);
+      } catch {
+        if (!cancelled) setHostedFree(null);
+      }
+    }
+    void loadHostedFree();
+    return () => {
+      cancelled = true;
+    };
+  }, [requireAccessToken]);
 
   const handleSetDefault = useCallback(async (id: string) => {
     setTogglingDefault(id);
@@ -673,6 +701,201 @@ export default function LLMProviders() {
           );
         })}
       </div>
+
+      {/* PR B.3: hosted-free section. Only renders when the backend
+          surfaces a catalog (lookup fails silently above; old environments
+          / unconfigured deploys gracefully skip the section). The cards
+          are non-deletable + non-editable — engine fallback in
+          stepHandlers.ts is what drives the actual routing. */}
+      {hostedFree && hostedFree.providers.length > 0 && (
+        <>
+          <h3 className="af2-h3" style={{ marginBottom: 10 }}>Free hosted tier</h3>
+          <p
+            style={{
+              fontSize: 12.5,
+              color: "var(--af2-ink-3)",
+              marginBottom: 14,
+              maxWidth: 720,
+            }}
+          >
+            Don&apos;t want to bring your own key yet? AutoFlow includes hosted
+            access to a few free models for Explore workspaces. Add your own key
+            above when you need more headroom — these tiers share a small daily
+            token budget per workspace.
+          </p>
+
+          {/* Daily usage badge — surfaces the per-workspace cap from PR B.2. */}
+          <div
+            className="af2-card"
+            style={{
+              padding: "12px 16px",
+              marginBottom: 14,
+              borderColor: hostedFree.usage.exceeded
+                ? "rgba(194,80,43,0.35)"
+                : hostedFree.usage.warning
+                  ? "rgba(184,134,44,0.35)"
+                  : undefined,
+              background: hostedFree.usage.exceeded
+                ? "rgba(194,80,43,0.05)"
+                : hostedFree.usage.warning
+                  ? "rgba(184,134,44,0.05)"
+                  : undefined,
+            }}
+          >
+            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <div className="af2-eyebrow">Daily usage</div>
+              <span
+                className="af2-mono"
+                style={{
+                  fontSize: 12,
+                  color: hostedFree.usage.exceeded
+                    ? "var(--af2-clay)"
+                    : hostedFree.usage.warning
+                      ? "var(--af2-mustard)"
+                      : "var(--af2-ink-2)",
+                  marginLeft: "auto",
+                }}
+              >
+                {hostedFree.usage.usedTokens.toLocaleString()}
+                {" / "}
+                {hostedFree.usage.capTokens.toLocaleString()} tokens
+              </span>
+            </div>
+            <div
+              style={{
+                marginTop: 8,
+                height: 6,
+                background: "var(--af2-paper-2)",
+                borderRadius: 999,
+                overflow: "hidden",
+              }}
+              role="progressbar"
+              aria-valuemin={0}
+              aria-valuemax={hostedFree.usage.capTokens}
+              aria-valuenow={hostedFree.usage.usedTokens}
+            >
+              <div
+                style={{
+                  height: "100%",
+                  width: `${Math.min(
+                    100,
+                    hostedFree.usage.capTokens > 0
+                      ? (hostedFree.usage.usedTokens / hostedFree.usage.capTokens) * 100
+                      : 0,
+                  )}%`,
+                  background: hostedFree.usage.exceeded
+                    ? "var(--af2-clay)"
+                    : hostedFree.usage.warning
+                      ? "var(--af2-mustard)"
+                      : "var(--af2-sage)",
+                  transition: "width 200ms ease",
+                }}
+              />
+            </div>
+            {hostedFree.usage.exceeded && (
+              <div
+                style={{
+                  marginTop: 10,
+                  fontSize: 12,
+                  color: "var(--af2-clay)",
+                  display: "flex",
+                  alignItems: "flex-start",
+                  gap: 6,
+                }}
+              >
+                <AlertTriangle size={14} style={{ marginTop: 2, flexShrink: 0 }} />
+                <span>
+                  You&apos;ve hit today&apos;s free-tier limit. Add your own LLM key
+                  above to keep running, or wait for the cap to reset at UTC
+                  midnight.
+                </span>
+              </div>
+            )}
+          </div>
+
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))",
+              gap: 14,
+              marginBottom: 28,
+            }}
+          >
+            {hostedFree.providers.map((p) => (
+              <div
+                key={p.id}
+                className="af2-card"
+                style={{
+                  padding: 18,
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: 10,
+                  opacity: p.available ? 1 : 0.55,
+                }}
+              >
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <span className="af2-eyebrow">Tier {p.tier}</span>
+                  {p.isDefault && (
+                    <span className="af2-pill af2-pill-live">
+                      <span className="af2-dot" />
+                      default
+                    </span>
+                  )}
+                  {!p.available && (
+                    <span className="af2-pill">
+                      <span className="af2-dot" />
+                      not configured
+                    </span>
+                  )}
+                </div>
+                <div className="af2-h3" style={{ marginTop: 0 }}>
+                  {p.label}
+                </div>
+                <div style={{ fontSize: 12.5, color: "var(--af2-ink-2)" }}>
+                  {p.description}
+                </div>
+                <div
+                  className="af2-mono af2-muted"
+                  style={{ fontSize: 11, marginTop: "auto" }}
+                >
+                  {p.provider} · {p.modelId}
+                </div>
+                {p.warnings.length > 0 && (
+                  <ul
+                    style={{
+                      margin: 0,
+                      paddingLeft: 0,
+                      listStyle: "none",
+                      display: "flex",
+                      flexDirection: "column",
+                      gap: 6,
+                    }}
+                  >
+                    {p.warnings.map((w) => (
+                      <li
+                        key={w}
+                        style={{
+                          fontSize: 11.5,
+                          color: "var(--af2-mustard)",
+                          display: "flex",
+                          alignItems: "flex-start",
+                          gap: 6,
+                        }}
+                      >
+                        <AlertTriangle
+                          size={12}
+                          style={{ marginTop: 2, flexShrink: 0 }}
+                        />
+                        <span>{w}</span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            ))}
+          </div>
+        </>
+      )}
 
       <h3 className="af2-h3" style={{ marginBottom: 10 }}>Providers</h3>
 

@@ -21,6 +21,13 @@ vi.mock("../api/client", () => ({
   },
 }));
 
+const getHostedFreeCatalogMock = vi.fn();
+
+vi.mock("../api/hostedFreeModelsApi", () => ({
+  getHostedFreeCatalog: (...args: unknown[]) =>
+    getHostedFreeCatalogMock(...args),
+}));
+
 vi.mock("../context/AuthContext", () => ({
   useAuth: () => ({
     requireAccessToken: requireAccessTokenMock,
@@ -48,6 +55,10 @@ describe("LLMProviders", () => {
     deleteLLMConfigMock.mockReset();
     requireAccessTokenMock.mockReset();
     requireAccessTokenMock.mockResolvedValue("token-123");
+    // Default: hosted-free section is hidden (no catalog returned).
+    // Specific tests that exercise the section override below.
+    getHostedFreeCatalogMock.mockReset();
+    getHostedFreeCatalogMock.mockRejectedValue(new Error("no hosted free"));
   });
 
   it("renders with v2 structural markers (HEL-63)", async () => {
@@ -239,6 +250,134 @@ describe("LLMProviders", () => {
 
     await waitFor(() => {
       expect(screen.queryByText(/anthropic/i)).not.toBeInTheDocument();
+    });
+  });
+
+  // PR B.3: hosted-free section
+  describe("Hosted free tier (PR B.3)", () => {
+    it("renders the catalog cards + usage badge when the API returns a catalog", async () => {
+      listLLMConfigsMock.mockResolvedValue([]);
+      getHostedFreeCatalogMock.mockResolvedValue({
+        defaultProviderId: "groq_llama_31_8b",
+        providers: [
+          {
+            id: "opencode_zen_big_pickle",
+            tier: 1,
+            label: "AutoFlow Free Beta",
+            description: "Stealth model via OpenCode Zen.",
+            provider: "opencode_zen",
+            modelId: "big-pickle",
+            warnings: [
+              "Prompts may be used to train this model.",
+              "Limited-time beta — could be removed at any time.",
+            ],
+            available: true,
+            isDefault: false,
+          },
+          {
+            id: "groq_llama_31_8b",
+            tier: 2,
+            label: "Free Fast (Llama 3.1 8B)",
+            description: "Llama 3.1 8B on Groq.",
+            provider: "groq",
+            modelId: "llama-3.1-8b-instant",
+            warnings: [],
+            available: true,
+            isDefault: true,
+          },
+          {
+            id: "groq_llama_33_70b",
+            tier: 3,
+            label: "Free Smart (Llama 3.3 70B)",
+            description: "Llama 3.3 70B on Groq.",
+            provider: "groq",
+            modelId: "llama-3.3-70b-versatile",
+            warnings: [],
+            available: true,
+            isDefault: false,
+          },
+        ],
+        usage: {
+          workspaceId: "ws-1",
+          dayKey: "2026-05-17",
+          usedTokens: 12_345,
+          capTokens: 50_000,
+          remainingTokens: 37_655,
+          warning: false,
+          exceeded: false,
+        },
+      });
+
+      render(<LLMProviders />);
+
+      // Section header renders.
+      expect(
+        await screen.findByRole("heading", { level: 3, name: /free hosted tier/i }),
+      ).toBeInTheDocument();
+      // All 3 tier labels surface.
+      expect(screen.getByText("AutoFlow Free Beta")).toBeInTheDocument();
+      expect(screen.getByText("Free Fast (Llama 3.1 8B)")).toBeInTheDocument();
+      expect(screen.getByText("Free Smart (Llama 3.3 70B)")).toBeInTheDocument();
+      // Big Pickle's training-on-data disclosure surfaces.
+      expect(
+        screen.getByText(/prompts may be used to train this model/i),
+      ).toBeInTheDocument();
+      // Daily usage badge shows the formatted counts.
+      expect(screen.getByText(/12,345/)).toBeInTheDocument();
+      expect(screen.getByText(/50,000/)).toBeInTheDocument();
+    });
+
+    it("hides the section entirely when the API call fails (graceful degradation)", async () => {
+      listLLMConfigsMock.mockResolvedValue([]);
+      getHostedFreeCatalogMock.mockRejectedValue(
+        new Error("hosted-free endpoint unavailable"),
+      );
+
+      render(<LLMProviders />);
+
+      // The main page renders ("No providers connected yet" zero-state).
+      await waitFor(() =>
+        expect(screen.getByText(/no providers connected yet/i)).toBeInTheDocument(),
+      );
+      // The hosted-free section header is absent.
+      expect(
+        screen.queryByRole("heading", { level: 3, name: /free hosted tier/i }),
+      ).toBeNull();
+    });
+
+    it("surfaces the 'hit the cap' message when usage.exceeded is true", async () => {
+      listLLMConfigsMock.mockResolvedValue([]);
+      getHostedFreeCatalogMock.mockResolvedValue({
+        defaultProviderId: "groq_llama_31_8b",
+        providers: [
+          {
+            id: "groq_llama_31_8b",
+            tier: 2,
+            label: "Free Fast (Llama 3.1 8B)",
+            description: "Llama 3.1 8B on Groq.",
+            provider: "groq",
+            modelId: "llama-3.1-8b-instant",
+            warnings: [],
+            available: true,
+            isDefault: true,
+          },
+        ],
+        usage: {
+          workspaceId: "ws-1",
+          dayKey: "2026-05-17",
+          usedTokens: 50_000,
+          capTokens: 50_000,
+          remainingTokens: 0,
+          warning: true,
+          exceeded: true,
+        },
+      });
+
+      render(<LLMProviders />);
+
+      expect(
+        await screen.findByText(/you've hit today's free-tier limit/i),
+      ).toBeInTheDocument();
     });
   });
 });

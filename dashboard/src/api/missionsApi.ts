@@ -87,6 +87,32 @@ export async function createMission(
   return parseJsonOrError<Mission>(response, `Failed to create mission: ${response.status}`);
 }
 
+/**
+ * Discard a mission and any draft hiring plans hanging off it. The
+ * backend refuses with 409 if a hiring plan for this mission was
+ * already confirmed (agents provisioned) — in that case the user
+ * needs to retire the team first.
+ */
+export async function deleteMission(
+  missionId: string,
+  accessToken: string,
+): Promise<void> {
+  const response = await trackedFetch(
+    `${BASE}/missions/${encodeURIComponent(missionId)}`,
+    {
+      method: "DELETE",
+      headers: buildHeaders(accessToken),
+    },
+  );
+  if (response.status === 204) return;
+  const payload = (await response.json().catch(() => null)) as
+    | { error?: string }
+    | null;
+  throw new Error(
+    payload?.error ?? `Failed to delete mission: ${response.status}`,
+  );
+}
+
 // generate-plan calls a power-tier LLM end-to-end on the backend (prompt
 // build → model call → JSON parse → DB insert), which can easily exceed
 // the 15s default fetch timeout. Pre-fix the dashboard aborted the

@@ -18,11 +18,12 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { Loader2, Sparkles } from "lucide-react";
+import { Loader2, Sparkles, Trash2 } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import { ErrorState, LoadingState } from "../components/UiStates";
 import {
   createMission,
+  deleteMission,
   generateHiringPlan,
   listMissions,
   type Mission,
@@ -100,6 +101,10 @@ export default function Hire() {
   const [notice, setNotice] = useState<string | null>(null);
   const [loadingList, setLoadingList] = useState(true);
   const [listError, setListError] = useState<string | null>(null);
+  // Per-row in-flight + error state for delete. Keyed by missionId so
+  // two simultaneous deletes never collide on a shared spinner.
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
   // Gate the Generate button on having at least one LLM credential. Without
   // one, the backend's POST /api/missions/:id/generate-plan returns 422
   // ("No LLM provider configured"). We surface the gap up front so the user
@@ -108,6 +113,36 @@ export default function Hire() {
   const [llmConfigError, setLlmConfigError] = useState<string | null>(null);
   const hasLLM = (llmConfigs?.length ?? 0) > 0;
   const llmCheckLoading = llmConfigs === null && llmConfigError === null;
+
+  async function handleDelete(mission: Mission): Promise<void> {
+    // Native confirm() is fine for Wave 1 — fast path, clear copy,
+    // no modal infra needed. Confirmed-plan refusal is shaped on the
+    // backend (409 with explanation); we surface that error string
+    // verbatim so the user knows to retire the team first.
+    const ok = window.confirm(
+      `Discard this mission?\n\n"${mission.statement.slice(0, 140)}${
+        mission.statement.length > 140 ? "…" : ""
+      }"\n\nAny draft hiring plan attached to it will also be deleted. This can't be undone.`,
+    );
+    if (!ok) return;
+
+    setDeletingId(mission.id);
+    setDeleteError(null);
+    try {
+      const token = await requireAccessToken();
+      await deleteMission(mission.id, token);
+      // Optimistic prune — list reflects the removal immediately while
+      // the background refresh confirms it from the server.
+      setMissions((current) => current.filter((m) => m.id !== mission.id));
+      void refreshMissions();
+    } catch (err) {
+      setDeleteError(
+        err instanceof Error ? err.message : "Failed to delete mission",
+      );
+    } finally {
+      setDeletingId(null);
+    }
+  }
 
   const refreshMissions = useCallback(async () => {
     setLoadingList(true);
@@ -434,6 +469,23 @@ export default function Hire() {
         />
       ) : null}
 
+      {deleteError ? (
+        <div
+          role="alert"
+          style={{
+            marginBottom: 12,
+            padding: "10px 14px",
+            borderRadius: "var(--af2-radius)",
+            border: "1px solid rgba(192,84,76,0.30)",
+            background: "rgba(192,84,76,0.10)",
+            color: "var(--af2-clay)",
+            fontSize: 13,
+          }}
+        >
+          {deleteError}
+        </div>
+      ) : null}
+
       {!listError && !loadingList && missions.length === 0 ? (
         <div
           className="af2-card"
@@ -460,7 +512,7 @@ export default function Hire() {
               key={mission.id}
               className="af2-list-row"
               style={{
-                gridTemplateColumns: "1fr 120px 110px",
+                gridTemplateColumns: "1fr 120px 110px 36px",
                 cursor: "default",
                 borderBottom:
                   index < missions.length - 1 ? "1px solid var(--af2-line)" : "none",
@@ -528,6 +580,41 @@ export default function Hire() {
                   )
                 ) : null}
               </div>
+              <button
+                type="button"
+                aria-label={`Discard mission: ${mission.statement.slice(0, 60)}`}
+                title="Discard mission"
+                disabled={deletingId === mission.id}
+                onClick={() => void handleDelete(mission)}
+                style={{
+                  background: "transparent",
+                  border: "none",
+                  cursor: deletingId === mission.id ? "wait" : "pointer",
+                  color: "var(--af2-muted)",
+                  padding: 6,
+                  borderRadius: 6,
+                  display: "inline-flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  opacity: deletingId === mission.id ? 0.5 : 1,
+                }}
+                onMouseEnter={(e) => {
+                  if (deletingId !== mission.id) {
+                    e.currentTarget.style.color = "var(--af2-clay)";
+                    e.currentTarget.style.background = "rgba(192,84,76,0.08)";
+                  }
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.color = "var(--af2-muted)";
+                  e.currentTarget.style.background = "transparent";
+                }}
+              >
+                {deletingId === mission.id ? (
+                  <Loader2 size={14} className="animate-spin" />
+                ) : (
+                  <Trash2 size={14} />
+                )}
+              </button>
             </div>
           ))}
         </div>

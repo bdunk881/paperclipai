@@ -16,16 +16,23 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { CheckCircle2, Loader2, Users } from "lucide-react";
+import { CheckCircle2, Loader2, Trash2, Users } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import {
+  deleteMission,
   getHiringPlan,
   confirmHiringPlan,
   type HiringPlanResponse,
   type StaffingRecommendation,
 } from "../api/missionsApi";
 
-type PageState = "loading" | "ready" | "confirming" | "confirmed" | "error";
+type PageState =
+  | "loading"
+  | "ready"
+  | "confirming"
+  | "confirmed"
+  | "discarding"
+  | "error";
 
 function ModelTierBadge({ tier }: { tier: string }) {
   const colors: Record<string, string> = {
@@ -125,6 +132,28 @@ export default function HiringPlanReview() {
       setPlan(refreshed);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to confirm plan");
+      setPageState("ready");
+    }
+  }
+
+  async function handleDiscard() {
+    // Discards the parent mission, which cascades the draft hiring
+    // plan via the FK. The backend refuses (409) if the plan was
+    // already confirmed (agents provisioned). We don't show this
+    // button in that state, but defend against a race anyway.
+    if (!plan || plan.acceptedAt) return;
+    const ok = window.confirm(
+      `Discard this draft and the mission it belongs to?\n\nThis can't be undone.`,
+    );
+    if (!ok) return;
+    setPageState("discarding");
+    setError(null);
+    try {
+      const token = await requireAccessToken();
+      await deleteMission(plan.missionId, token);
+      navigate("/hire");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to discard plan");
       setPageState("ready");
     }
   }
@@ -331,19 +360,47 @@ export default function HiringPlanReview() {
                 be undone from this screen.
               </p>
               <div className="af2-row" style={{ gap: 10 }}>
+                <button
+                  type="button"
+                  onClick={() => void handleDiscard()}
+                  disabled={
+                    pageState === "confirming" || pageState === "discarding"
+                  }
+                  className="af2-btn af2-btn-ghost"
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: 6,
+                    color: "var(--af2-clay)",
+                    cursor:
+                      pageState === "discarding" ? "wait" : "pointer",
+                  }}
+                  title="Discard this draft and the mission it belongs to"
+                >
+                  {pageState === "discarding" ? (
+                    <Loader2 size={14} className="animate-spin" />
+                  ) : (
+                    <Trash2 size={14} />
+                  )}
+                  {pageState === "discarding" ? "Discarding…" : "Discard draft"}
+                </button>
                 <span className="af2-spacer" />
                 <button
                   type="button"
                   onClick={() => void navigate("/hire")}
                   className="af2-btn af2-btn-ghost"
-                  disabled={pageState === "confirming"}
+                  disabled={
+                    pageState === "confirming" || pageState === "discarding"
+                  }
                 >
                   Cancel
                 </button>
                 <button
                   type="button"
                   onClick={() => void handleConfirm()}
-                  disabled={pageState === "confirming"}
+                  disabled={
+                    pageState === "confirming" || pageState === "discarding"
+                  }
                   className="af2-btn af2-btn-clay"
                   style={{
                     display: "inline-flex",

@@ -180,6 +180,34 @@ describe("GET /api/missions/:missionId (HEL-23 read)", () => {
   });
 });
 
+describe("DELETE /api/missions/:missionId (Wave 1 — discard draft)", () => {
+  it("returns 401 when no authenticated user is present", async () => {
+    const app = buildApp({ workspaceId: "11111111-1111-4111-8111-111111111111" });
+    const res = await request(app).delete(
+      "/api/missions/22222222-2222-4222-8222-222222222222",
+    );
+    expect(res.status).toBe(401);
+  });
+
+  it("returns 401 when no workspace context is present", async () => {
+    const app = buildApp({ sub: "user-1" });
+    const res = await request(app).delete(
+      "/api/missions/22222222-2222-4222-8222-222222222222",
+    );
+    expect(res.status).toBe(401);
+  });
+
+  it("returns 400 when the mission ID is malformed", async () => {
+    const app = buildApp({
+      sub: "user-1",
+      workspaceId: "11111111-1111-4111-8111-111111111111",
+    });
+    const res = await request(app).delete("/api/missions/not-a-uuid");
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/Invalid mission ID/);
+  });
+});
+
 // Regression for the dashboard "Too Many Requests" surface on /hire +
 // /mission-state. The LLM endpoint rate limiter used to be mounted at
 // the router level (app.use("/api/missions", ..., llmEndpointRateLimiter)),

@@ -459,6 +459,97 @@ export function createMissionRoutes(
     }
   });
 
+  // ---------------------------------------------------------------------
+  // DELETE /api/missions/:missionId — discard a mission + any drafts
+  //
+  // Semantics:
+  //   - Draft hiring_plans (accepted_by_user_id IS NULL) cascade away
+  //     via the FK on hiring_plans.mission_id (ON DELETE CASCADE in
+  //     migration 022).
+  //   - If ANY hiring_plan for this mission was confirmed
+  //     (accepted_by_user_id IS NOT NULL), we refuse with 409 — those
+  //     plans provisioned agents + org_edges and need a dedicated
+  //     "retire team" flow (Wave 1.5 / future PR) before the parent
+  //     mission can be safely removed.
+  //   - Returns 204 on success (no body) so the dashboard just refreshes
+  //     the list.
+  // ---------------------------------------------------------------------
+  router.delete("/:missionId", async (req: AuthenticatedRequest, res) => {
+    const userId = req.auth?.sub;
+    const workspaceId = (req as WorkspaceAwareRequest).workspace?.id;
+    if (!userId || !workspaceId) {
+      res.status(401).json({ error: "Authenticated user + workspace required" });
+      return;
+    }
+
+    const missionId = req.params.missionId;
+    if (!missionId || !UUID_RE.test(missionId)) {
+      res.status(400).json({ error: "Invalid mission ID format" });
+      return;
+    }
+
+    try {
+      await withWorkspaceContext(pool, { workspaceId, userId }, async (client) => {
+        // Confirm the mission belongs to this workspace before the
+        // delete fires, so a 404 surfaces cleanly instead of a silent
+        // no-op (DELETE … WHERE returns rowcount 0 either way).
+        const own = await client.query<{ id: string }>(
+          `SELECT m.id
+             FROM missions m
+             JOIN companies c ON c.id = m.company_id
+            WHERE m.id = $1 AND c.workspace_id = $2
+            LIMIT 1`,
+          [missionId, workspaceId],
+        );
+        if (own.rows.length === 0) {
+          // Use a sentinel value the outer caller maps to 404.
+          throw Object.assign(new Error("Mission not found"), { code: "NOT_FOUND" });
+        }
+
+        // Guard against blowing away a confirmed plan's parent. The
+        // dedicated "retire team" flow lives in a later wave.
+        const confirmed = await client.query<{ count: string }>(
+          `SELECT COUNT(*)::text AS count
+             FROM hiring_plans
+            WHERE mission_id = $1
+              AND accepted_by_user_id IS NOT NULL`,
+          [missionId],
+        );
+        if (Number(confirmed.rows[0]?.count ?? "0") > 0) {
+          throw Object.assign(
+            new Error(
+              "This mission has a confirmed hiring plan and active agents — retire the team before deleting the mission.",
+            ),
+            { code: "CONFIRMED_PLAN_EXISTS" },
+          );
+        }
+
+        // Draft hiring_plans drop via FK ON DELETE CASCADE.
+        await client.query(
+          `DELETE FROM missions WHERE id = $1`,
+          [missionId],
+        );
+      });
+      res.status(204).end();
+    } catch (err) {
+      const code = (err as { code?: string } | null)?.code;
+      if (code === "NOT_FOUND") {
+        res.status(404).json({ error: "Mission not found" });
+        return;
+      }
+      if (code === "CONFIRMED_PLAN_EXISTS") {
+        res.status(409).json({ error: (err as Error).message });
+        return;
+      }
+      console.error(`[missions] delete failed: ${(err as Error).message}`);
+      Sentry.captureException(err, {
+        tags: { route: "DELETE /api/missions/:missionId", phase: "delete" },
+        contexts: { mission: { workspaceId, userId, missionId } },
+      });
+      res.status(500).json({ error: "Failed to delete mission" });
+    }
+  });
+
   const generatePlanMiddleware: import("express").RequestHandler[] = llmRouteLimiter
     ? [llmRouteLimiter]
     : [];

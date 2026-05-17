@@ -161,7 +161,7 @@ export interface WorkflowRun {
   workflowVersionId?: string;
   workflowVersion?: number;
   workflowDag?: WorkflowTemplate | Record<string, unknown>;
-  status: "queued" | "pending" | "running" | "completed" | "failed" | "escalated" | "awaiting_approval";
+  status: "queued" | "pending" | "running" | "completed" | "failed" | "escalated" | "awaiting_approval" | "canceled";
   startedAt: string;
   completedAt?: string;
   input: Record<string, unknown>;

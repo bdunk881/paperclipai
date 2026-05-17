@@ -105,6 +105,7 @@ import {
   createWakeEventsRoutes,
 } from "./canonical/canonicalReadRoutes";
 import { createWorkflowRoutes } from "./workflows/workflowRoutes";
+import { createRoutineRoutes } from "./routines/routineRoutes";
 import { createInstructionRoutes } from "./instructions/instructionRoutes";
 import { createKnowledgeItemRoutes } from "./knowledge/knowledgeItemRoutes";
 import { createEpisodeRoutes } from "./episodes/episodeRoutes";
@@ -236,6 +237,11 @@ const canonicalWorkflowRoutes = isPostgresPersistenceEnabled()
   : express.Router().all("*", (_req, res) =>
       res.status(501).json({ error: "Canonical workflows require PostgreSQL persistence." }),
     );
+
+// HEL-108: routines CRUD — list + enable/disable with BullMQ scheduler sync.
+const routineRoutes = isPostgresPersistenceEnabled()
+  ? createRoutineRoutes(getPostgresPool(), getRunQueue())
+  : express.Router().get("/", (_req, res) => res.json({ routines: [] }));
 
 // HEL-87: three-layer memory routes (instructions / knowledge-items / episodes).
 // All three require Postgres for RLS-backed persistence; in-memory mode
@@ -563,10 +569,8 @@ app.use("/api/agents/:agentId/memory", requireAuth, workspaceResolver, requireRo
 app.use("/api/agents", requireAuth, workspaceResolver, requireRole("admin", "developer"), agentRoutes);
 app.use("/api/integrations/apollo", apolloRoutes);
 
-// Routines stub — returns empty list until a full routines store is implemented.
-app.get("/api/routines", requireAuth, workspaceResolver, requireRole("admin", "developer"), (_req, res) => {
-  res.json({ routines: [] });
-});
+// HEL-108: routines CRUD (list + enable/disable).
+app.use("/api/routines", requireAuth, workspaceResolver, requireRole("admin", "developer"), routineRoutes);
 app.use("/api/knowledge", requireAuth, workspaceResolver, requireRole("admin", "developer"), knowledgeMutationRateLimiter, knowledgeRoutes);
 app.use("/api/integrations/catalog", integrationCatalogRoutes);
 app.use("/api/integrations/oauth2", integrationOAuthCallbackRoutes);
@@ -977,6 +981,42 @@ app.get("/api/runs/:id", requireAuthOrQaBypass, workspaceResolver, async (req: W
     return;
   }
   res.json(run);
+});
+
+/**
+ * Cancel a queued (not yet running) run.
+ * Removes the BullMQ job if it is still waiting, then marks the run canceled.
+ * Returns 409 if the run has already started or finished.
+ */
+app.delete("/api/runs/:id/cancel", requireAuthOrQaBypass, workspaceResolver, async (req: WorkspaceAwareRequest, res) => {
+  const runId = req.params.id;
+  const run = await runStore.get(runId);
+  const userId = req.auth?.sub;
+
+  if (!run || (run.userId !== undefined && run.userId !== userId)) {
+    res.status(404).json({ error: `Run not found: ${runId}` });
+    return;
+  }
+
+  if (run.status !== "queued" && run.status !== "pending") {
+    res.status(409).json({ error: `Run cannot be canceled: status is '${run.status}'` });
+    return;
+  }
+
+  const runQueue = getRunQueue();
+  if (runQueue) {
+    try {
+      const job = await runQueue.getJob(runId);
+      if (job) {
+        await job.remove();
+      }
+    } catch {
+      // Job may already be gone; continue to update DB status.
+    }
+  }
+
+  const canceled = await runStore.update(runId, { status: "canceled", completedAt: new Date().toISOString() });
+  res.json(canceled);
 });
 
 app.get("/api/observability", requireAuth, async (req: AuthenticatedRequest, res) => {

@@ -4,13 +4,18 @@
  * Start with: node dist/worker.js
  * Requires REDIS_URL or UPSTASH_REDIS_URL to be set.
  *
+ * On startup, syncRepeatableJobs() reconciles BullMQ job schedulers against
+ * the routines table so cron schedules survive process restarts (HEL-108).
+ *
  * Execution stub: logs the job and marks it complete.
  * Actual step execution is wired in HEL-107+.
  */
 
-import { Worker, Job } from "bullmq";
+import { Worker, Job, Queue } from "bullmq";
 import { getRedisClient } from "./queue/redisClient";
 import type { RunJobPayload } from "./queue/queues";
+import { syncRepeatableJobs } from "./queue/scheduler";
+import { getPostgresPool, isPostgresConfigured } from "./db/postgres";
 
 const connection = getRedisClient();
 if (!connection) {
@@ -26,6 +31,8 @@ async function executeStep(data: RunJobPayload): Promise<void> {
     `[worker] Received run ${data.runId} step ${data.stepIndex} (template: ${data.templateId})`
   );
 }
+
+const runQueue = new Queue<RunJobPayload>("runs", { connection });
 
 const worker = new Worker<RunJobPayload>(
   "runs",
@@ -49,5 +56,15 @@ worker.on("failed", (job, err) => {
 worker.on("stalled", (jobId) => {
   console.warn(`[worker] Job ${jobId} stalled — will be re-queued`);
 });
+
+// Sync cron schedules after a short delay to let the DB connection warm up.
+if (isPostgresConfigured()) {
+  const pool = getPostgresPool();
+  setTimeout(() => {
+    syncRepeatableJobs(runQueue, pool).catch((err: Error) => {
+      console.error("[worker] syncRepeatableJobs failed:", err.message);
+    });
+  }, 2000);
+}
 
 console.log("[worker] Started, listening on 'runs' queue");

@@ -19,6 +19,7 @@ import {
   recordHostedFreeTokens,
 } from "../hostedFreeModels/usageStore";
 import { getProvider } from "./llmProviders";
+import { extractStructuredOutput } from "./structuredOutput";
 import { getBus, releaseBus } from "./agentBus";
 import { classifyTierWithConfidence, resolveModelForTier, buildCostLog, LlmCostLog } from "./llmRouter";
 import { logClassificationDecision } from "./classificationLog";
@@ -280,16 +281,22 @@ export async function handleLlm(
     recordHostedFreeTokens(hostedFreeWorkspaceId, promptTokens + completionTokens);
   }
 
-  // Attempt to parse JSON; fall back to mapping text to the first output key
+  // Attempt to parse JSON; fall back to mapping text to the first
+  // output key. The shared extractor tolerates chatty preambles +
+  // fenced/prose-wrapped JSON across every provider (Mistral routinely
+  // emits "Sure! Here you go:\n```json\n…```"); the silent text
+  // fallback preserves the pre-extractor contract for steps whose
+  // prompt didn't actually ask for JSON.
   const output: Record<string, unknown> = {};
+  let parsed: unknown = null;
   try {
-    const parsed = JSON.parse(response.text) as unknown;
-    if (typeof parsed === "object" && parsed !== null) {
-      Object.assign(output, parsed);
-    } else {
-      output[step.outputKeys[0] ?? "output"] = response.text;
-    }
+    parsed = extractStructuredOutput(response.text, { label: "llm-step" });
   } catch {
+    parsed = null;
+  }
+  if (parsed && typeof parsed === "object") {
+    Object.assign(output, parsed);
+  } else {
     output[step.outputKeys[0] ?? "output"] = response.text;
   }
 
@@ -856,15 +863,20 @@ export async function handleAgent(
       const response = await provider(prompt);
       totalPromptTokens += response.usage?.promptTokens ?? 0;
       totalCompletionTokens += response.usage?.completionTokens ?? 0;
+      // Same chatty-tolerant extraction as the single-LLM step path
+      // above. Slot workers ask for "valid JSON only" in the prompt
+      // but providers still drift; we keep the {result: rawText}
+      // fallback so a slot returning prose still flows downstream.
       let parsed: Record<string, unknown> = {};
+      let candidate: unknown = null;
       try {
-        const raw = JSON.parse(response.text) as unknown;
-        if (typeof raw === "object" && raw !== null) {
-          parsed = raw as Record<string, unknown>;
-        } else {
-          parsed = { result: response.text };
-        }
+        candidate = extractStructuredOutput(response.text, { label: "agent-slot" });
       } catch {
+        candidate = null;
+      }
+      if (candidate && typeof candidate === "object") {
+        parsed = candidate as Record<string, unknown>;
+      } else {
         parsed = { result: response.text };
       }
 

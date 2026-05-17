@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { extractStructuredOutput } from "../engine/structuredOutput";
 
 const goalSourceDocumentSchema = z.object({
   sourceType: z.enum(["notion", "google-doc", "markdown"]),
@@ -144,7 +145,10 @@ export function buildGoalIntakePrompt(input: GoalIntakeRequest): string {
 }
 
 export function parseGoalIntakeResponse(rawText: string): GoalIntakeResult {
-  const cleaned = rawText.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "").trim();
-  const parsed = JSON.parse(cleaned) as unknown;
-  return goalIntakeResultSchema.parse(parsed);
+  // Shared extractor tolerates chatty preambles + fence variations the
+  // old single-regex strip couldn't handle. See src/engine/structuredOutput.ts.
+  return extractStructuredOutput<GoalIntakeResult>(rawText, {
+    schema: goalIntakeResultSchema,
+    label: "goal-intake",
+  });
 }

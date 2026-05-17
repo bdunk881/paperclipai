@@ -526,12 +526,20 @@ app.use("/api/llm-configs", requireAuth, workspaceResolver, requireRole("admin",
 app.use("/api/llm-credentials", requireAuth, workspaceResolver, requireRole("admin", "developer"), llmConfigRoutes);
 
 // ---------------------------------------------------------------------------
-// Hosted free model catalog (PR B.1) — read-only catalog of the three
-// free tiers AutoFlow offers out of the box for Explore workspaces.
-// Engine fallback in src/engine/stepHandlers.ts uses this catalog to
-// route LLM steps when a workspace has no BYOK config configured.
+// Hosted free model catalog (PR B.1) + per-workspace daily token usage
+// (PR B.2). Read-only catalog of the three free tiers AutoFlow offers
+// out of the box for Explore workspaces. Engine fallback in
+// src/engine/stepHandlers.ts uses this catalog to route LLM steps when
+// a workspace has no BYOK config configured. workspaceResolver is
+// required so the GET handler can surface the active workspace's
+// daily token usage in the response.
 // ---------------------------------------------------------------------------
-app.use("/api/hosted-free-models", requireAuth, createHostedFreeRoutes());
+app.use(
+  "/api/hosted-free-models",
+  requireAuth,
+  workspaceResolver,
+  createHostedFreeRoutes(),
+);
 
 // ---------------------------------------------------------------------------
 // MCP Registry API — register and discover MCP server connections

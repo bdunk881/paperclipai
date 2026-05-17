@@ -221,6 +221,112 @@ describe("handleLlm", () => {
     );
   });
 
+  describe("hosted-free fallback (PR B.1 + B.2)", () => {
+    // These cases hit the new fallback path that lets Explore
+    // workspaces with no BYOK config still run LLM steps via the
+    // hosted free tier. Tests run with GROQ_API_KEY set so
+    // getDefaultHostedFreeProvider() returns a real provider; the
+    // engine then synthesizes a DecryptedLLMConfig + routes through
+    // getProvider (mocked) and records token usage.
+    const previousGroqKey = process.env.GROQ_API_KEY;
+
+    beforeEach(() => {
+      llmConfigStore.clear();
+      process.env.GROQ_API_KEY = "gsk-test-fallback";
+      // Reset the per-workspace counter so cap tests are independent.
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      require("../hostedFreeModels/usageStore").resetHostedFreeUsageForTests();
+    });
+
+    afterAll(() => {
+      if (previousGroqKey === undefined) {
+        delete process.env.GROQ_API_KEY;
+      } else {
+        process.env.GROQ_API_KEY = previousGroqKey;
+      }
+    });
+
+    it("falls back to the hosted-free Groq provider when no BYOK config exists", async () => {
+      (getProvider as jest.Mock).mockReturnValue(
+        jest.fn().mockResolvedValue({
+          text: "hosted-free result",
+          usage: { promptTokens: 100, completionTokens: 200 },
+        })
+      );
+      const step = makeStep({
+        kind: "llm",
+        outputKeys: ["out"],
+        promptTemplate: "Hello hosted-free",
+      });
+
+      const result = await handleLlm(
+        step,
+        { workspaceId: "ws-hosted-free-1" },
+        TEST_USER
+      );
+
+      expect(getProvider).toHaveBeenCalledWith(
+        expect.objectContaining({
+          provider: "groq",
+          model: "llama-3.1-8b-instant",
+          apiKey: "gsk-test-fallback",
+        })
+      );
+      expect(result.output.out).toBe("hosted-free result");
+    });
+
+    it("records tokens against the workspace's daily counter after a hosted-free call", async () => {
+      (getProvider as jest.Mock).mockReturnValue(
+        jest.fn().mockResolvedValue({
+          text: "ok",
+          usage: { promptTokens: 1_000, completionTokens: 2_500 },
+        })
+      );
+      const step = makeStep({
+        kind: "llm",
+        outputKeys: ["out"],
+        promptTemplate: "Token tracking",
+      });
+
+      await handleLlm(step, { workspaceId: "ws-hosted-free-2" }, TEST_USER);
+
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const { getHostedFreeUsage } = require("../hostedFreeModels/usageStore");
+      expect(getHostedFreeUsage("ws-hosted-free-2").usedTokens).toBe(3_500);
+    });
+
+    it("throws HostedFreeCapExceededError when the workspace has hit its daily cap", async () => {
+      // Pre-fill the workspace's counter to the cap.
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const { recordHostedFreeTokens } = require("../hostedFreeModels/usageStore");
+      recordHostedFreeTokens("ws-hosted-free-3", 50_000);
+      (getProvider as jest.Mock).mockReturnValue(
+        jest.fn().mockResolvedValue({ text: "should not be called", usage: {} })
+      );
+      const step = makeStep({
+        kind: "llm",
+        outputKeys: ["out"],
+        promptTemplate: "At the cap",
+      });
+
+      await expect(
+        handleLlm(step, { workspaceId: "ws-hosted-free-3" }, TEST_USER)
+      ).rejects.toThrow(/daily token cap/i);
+    });
+
+    it("surfaces the original error when GROQ_API_KEY is not set", async () => {
+      delete process.env.GROQ_API_KEY;
+      const step = makeStep({
+        kind: "llm",
+        outputKeys: ["out"],
+        promptTemplate: "No fallback available",
+      });
+      await expect(handleLlm(step, {}, TEST_USER)).rejects.toThrow(
+        /no LLM provider configured/
+      );
+    });
+  });
+
   it("throws when promptTemplate is missing", async () => {
     const step = makeStep({ kind: "llm", outputKeys: ["out"] });
 

@@ -3329,6 +3329,24 @@ function AddStepMenu({ onAdd }: { onAdd: (k: StepKind) => void }) {
   );
 }
 
+/**
+ * EmptyCanvas (UX-15 redesign) — first impression of the Studio canvas
+ * for a brand-new (or freshly-cleared) workflow. Pre-UX-15 this was a
+ * decent-but-bare "Add a step" prompt that left first-time owners
+ * staring at a logo icon with no narrative for what a workflow IS.
+ *
+ * New layout:
+ *   - Colored welcome band (clay) with eyebrow + h2.
+ *   - One-sentence "What's a workflow?" explainer.
+ *   - 3-step visual guide: Input → Process → Output, each with an
+ *     icon + a one-line description so the concept of "steps that
+ *     pass data" is concrete before they click anything.
+ *   - Primary path: AddStepMenu with the "Add your first step" CTA.
+ *   - Templates section is visually elevated with a heading + helper
+ *     copy ("Don't know where to start? Pick a template and tweak it.")
+ *     and slightly chunkier cards. Hidden entirely when no templates
+ *     so the empty-empty case stays clean.
+ */
 function EmptyCanvas({
   onAdd,
   templates,
@@ -3337,32 +3355,95 @@ function EmptyCanvas({
   templates: TemplateSummary[];
 }) {
   return (
-    <div className="h-full overflow-y-auto px-6 py-8">
-      <div className="mx-auto flex min-h-full w-full max-w-4xl flex-col items-center justify-center text-center">
-        <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-af2-clay-soft/30">
-          <Zap size={28} className="text-af2-clay" />
+    <div className="h-full overflow-y-auto px-6 py-10">
+      <div className="mx-auto flex min-h-full w-full max-w-3xl flex-col items-center text-center">
+        {/* Welcome band */}
+        <div
+          className="mb-6 w-full rounded-2xl border border-af2-clay/20 px-6 py-5"
+          style={{
+            background:
+              "linear-gradient(135deg, rgba(192,84,76,0.06), rgba(192,142,58,0.04))",
+          }}
+        >
+          <div className="mb-2 inline-flex items-center gap-2">
+            <Zap size={14} className="text-af2-clay" />
+            <span className="af2-eyebrow" style={{ color: "var(--af2-clay)" }}>
+              Build · Studio
+            </span>
+          </div>
+          <h3 className="font-af2-serif text-xl font-semibold text-af2-ink">
+            Compose a workflow your team can run.
+          </h3>
+          <p className="mt-1.5 text-sm text-af2-ink-3 max-w-xl mx-auto">
+            A workflow is a sequence of steps. Each step takes data, does
+            something with it (call an LLM, hit an integration, ask a human),
+            and passes its output forward.
+          </p>
         </div>
-        <h3 className="mb-2 text-lg font-semibold text-af2-ink">Start building your workflow</h3>
-        <p className="mb-6 max-w-xs text-sm text-af2-ink-3">
-          Add steps to compose your AI workflow. Each step passes data to the next.
-        </p>
-        <AddStepMenu onAdd={onAdd} />
 
+        {/* 3-step concept walkthrough */}
+        <div className="mb-7 grid w-full grid-cols-1 gap-3 sm:grid-cols-3">
+          <ConceptStep
+            number={1}
+            title="Input"
+            body="A trigger fires the workflow — a schedule, a webhook, or an owner clicking 'Run now'."
+          />
+          <ConceptStep
+            number={2}
+            title="Process"
+            body="LLM steps, integration calls, transforms, agent handoffs, approvals — chained however you need."
+          />
+          <ConceptStep
+            number={3}
+            title="Output"
+            body="The final step writes a result somewhere your team uses — Slack, a doc, a database, an email."
+          />
+        </div>
+
+        {/* Primary CTA */}
+        <div className="mb-2 text-xs uppercase tracking-[0.18em] text-af2-ink-4">
+          Ready to build?
+        </div>
+        <div className="mb-2">
+          <AddStepMenu onAdd={onAdd} />
+        </div>
+        <p className="mb-8 max-w-xs text-xs text-af2-ink-4">
+          Pick a step type and drop it on the canvas. You can rearrange them
+          later.
+        </p>
+
+        {/* Templates */}
         {templates.length > 0 && (
-          <div className="mt-8 w-full max-w-3xl">
-            <p className="mb-3 text-xs text-af2-ink-4">Or start from a template:</p>
+          <div className="w-full">
+            <div className="mb-2 flex items-baseline justify-between">
+              <div className="af2-eyebrow text-af2-ink-2">
+                Or start from a template
+              </div>
+              <span className="text-[11px] text-af2-ink-4">
+                {templates.length} available
+              </span>
+            </div>
+            <p className="mb-3 text-xs text-af2-ink-4 max-w-xl text-left">
+              Pre-built workflows you can fork and edit. Open one to see how the
+              steps connect, then tweak it for your own use.
+            </p>
             <div
               aria-label="Workflow templates"
-              className="max-h-[min(40vh,26rem)] overflow-y-auto rounded-2xl border border-af2-line bg-white/80 p-3 shadow-sm backdrop-blur"
+              className="max-h-[min(40vh,26rem)] overflow-y-auto rounded-2xl border border-af2-line bg-white/85 p-3 shadow-sm backdrop-blur"
             >
               <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
                 {templates.map((t) => (
                   <a
                     key={t.id}
                     href={`/builder/${t.id}`}
-                    className="rounded-xl border border-af2-line bg-white px-3 py-2 text-left text-xs text-af2-ink-3 transition hover:border-af2-clay/40 hover:text-af2-clay"
+                    className="group flex flex-col gap-1 rounded-xl border border-af2-line bg-white px-3 py-2.5 text-left transition hover:-translate-y-0.5 hover:border-af2-clay/40 hover:shadow-sm"
                   >
-                    {t.name}
+                    <span className="text-[13px] font-medium text-af2-ink group-hover:text-af2-clay">
+                      {t.name}
+                    </span>
+                    <span className="text-[11px] text-af2-ink-4">
+                      Open template →
+                    </span>
                   </a>
                 ))}
               </div>
@@ -3370,6 +3451,35 @@ function EmptyCanvas({
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+function ConceptStep({
+  number,
+  title,
+  body,
+}: {
+  number: number;
+  title: string;
+  body: string;
+}) {
+  return (
+    <div className="rounded-xl border border-af2-line bg-white/80 px-4 py-3 text-left backdrop-blur">
+      <div className="mb-1.5 flex items-center gap-2">
+        <span
+          aria-hidden="true"
+          className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-af2-clay-soft text-[10px] font-bold text-af2-clay"
+          style={{
+            fontFamily:
+              "var(--af2-mono, ui-monospace, SFMono-Regular, Menlo, monospace)",
+          }}
+        >
+          {number}
+        </span>
+        <span className="text-[13px] font-semibold text-af2-ink">{title}</span>
+      </div>
+      <p className="text-[12px] leading-relaxed text-af2-ink-3">{body}</p>
     </div>
   );
 }

@@ -383,7 +383,63 @@ export function buildTeamAssemblyPrompt(input: TeamAssemblyRequest): string {
   ].join("\n");
 }
 
+/**
+ * Pulls the JSON payload out of an LLM response that may include chatty
+ * preamble or trailing prose around the actual object.
+ *
+ * The prompt instructs the model to return JSON only, but several
+ * providers (especially Mistral) routinely ignore that and emit
+ * "Here's the staffing plan:\n```json\n{...}\n```\nHope this helps!" —
+ * which exploded the previous fence-strip regex (it only matched fences
+ * at the very start/end of the string) and surfaced as a 502 "Plan
+ * parse failed" on /hire generate-plan.
+ *
+ * Resolution order:
+ *   1. Try the whole string verbatim (cheapest path; works for
+ *      well-behaved models that obey the prompt).
+ *   2. Look for the first ```json ... ``` (or bare ``` ... ```) fenced
+ *      block and try that.
+ *   3. Slice from the first `{` to the last `}` and try that.
+ *
+ * Returns the parsed value or throws — the caller already wraps this
+ * in a 502 with the original raw text excerpt for Sentry.
+ */
+function extractJsonCandidate(rawText: string): unknown {
+  const attempts: string[] = [];
+
+  // 1. Whole-string after light fence trim (preserves old behavior).
+  attempts.push(rawText.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "").trim());
+
+  // 2. First fenced ```json (or bare ```) block anywhere in the body.
+  const fencedMatch = rawText.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
+  if (fencedMatch?.[1]) {
+    attempts.push(fencedMatch[1].trim());
+  }
+
+  // 3. Substring from first `{` to last `}` — last-ditch when the model
+  //    forgot the fences entirely but wrapped the JSON in prose.
+  const firstBrace = rawText.indexOf("{");
+  const lastBrace = rawText.lastIndexOf("}");
+  if (firstBrace !== -1 && lastBrace > firstBrace) {
+    attempts.push(rawText.slice(firstBrace, lastBrace + 1));
+  }
+
+  let lastErr: unknown = null;
+  for (const candidate of attempts) {
+    if (!candidate) continue;
+    try {
+      return JSON.parse(candidate) as unknown;
+    } catch (err) {
+      lastErr = err;
+    }
+  }
+  throw new Error(
+    `Could not extract JSON from model response: ${
+      lastErr instanceof Error ? lastErr.message : String(lastErr)
+    }`,
+  );
+}
+
 export function parseTeamAssemblyResponse(rawText: string): TeamAssemblyResult {
-  const cleaned = rawText.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "").trim();
-  return teamAssemblyResultSchema.parse(JSON.parse(cleaned) as unknown);
+  return teamAssemblyResultSchema.parse(extractJsonCandidate(rawText));
 }

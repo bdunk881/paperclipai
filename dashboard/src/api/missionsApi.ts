@@ -241,11 +241,32 @@ export interface HiringPlan {
   };
 }
 
+/**
+ * Per-agent starter Job Description previews (UX-4). The backend
+ * pre-computes the markdown body that the confirm flow would seed
+ * into `workspace_instructions` per agent, so the review page can
+ * show owners exactly what each agent's persona will look like
+ * before they click Confirm.
+ */
+export interface StarterJobDescription {
+  agentRoleKey: string;
+  agentTitle: string;
+  title: string;
+  body: string;
+}
+
 export interface HiringPlanResponse {
   id: string;
   missionId: string;
   missionStatement: string;
   plan: HiringPlan;
+  /**
+   * Per-agent Job Description previews. Empty when the plan has no
+   * agents in `provisioningPlan.agents` (shouldn't happen post-
+   * validation, but the field is defensive). Optional for backward
+   * compat with older API responses.
+   */
+  starterJobDescriptions?: StarterJobDescription[];
   acceptedAt: string | null;
   acceptedByUserId: string | null;
   createdAt: string;

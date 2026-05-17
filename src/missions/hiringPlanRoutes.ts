@@ -351,11 +351,33 @@ export function createHiringPlanRoutes(pool: Pool) {
       }
 
       const row = result.rows[0];
+      // UX-4: pre-compute the starter Job Description bodies that the
+      // confirm flow (Wave 6) would seed per agent. Surfacing them
+      // here lets the review page show owners exactly what each
+      // agent's persona will look like before they click Confirm —
+      // no surprises, no "where did this come from?" moment.
+      const draft = row.draft;
+      const starterJobDescriptions =
+        draft?.provisioningPlan?.agents?.map((agent) => ({
+          agentRoleKey: agent.roleKey,
+          agentTitle: agent.title,
+          title: `${agent.title} — Job description`,
+          body: buildStarterJobDescriptionBody({
+            title: agent.title,
+            mandate: agent.mandate,
+            justification: agent.justification,
+            kpis: agent.kpis,
+            tools: agent.tools,
+            budgetMonthlyUsd: agent.budgetMonthlyUsd,
+          }),
+        })) ?? [];
+
       res.json({
         id: row.id,
         missionId: row.mission_id,
         missionStatement: row.mission_statement,
         plan: row.draft,
+        starterJobDescriptions,
         acceptedAt:
           row.accepted_at instanceof Date
             ? row.accepted_at.toISOString()

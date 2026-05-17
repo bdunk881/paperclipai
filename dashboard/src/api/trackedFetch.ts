@@ -44,9 +44,26 @@ function makeCooldownResponse(): Response {
   );
 }
 
+export interface TrackedFetchOptions {
+  /**
+   * Per-call override for the default 15s abort timeout. Useful for
+   * endpoints that intentionally do slow work (LLM calls, big imports)
+   * where the dashboard would otherwise abort the request mid-flight and
+   * surface a confusing "Request timed out" even though the backend is
+   * still working. Keep the default short — only widen it when the
+   * server-side budget genuinely exceeds 15s. Capped at 300s defensively
+   * so a misuse can't lock the dashboard's spinner forever.
+   */
+  timeoutMs?: number;
+}
+
+const DEFAULT_FETCH_TIMEOUT_MS = 15_000;
+const MAX_FETCH_TIMEOUT_MS = 300_000;
+
 export async function trackedFetch(
   input: RequestInfo | URL,
   init?: RequestInit,
+  options?: TrackedFetchOptions,
 ): Promise<Response> {
   if (Date.now() < cooldownUntilMs) {
     return makeCooldownResponse();
@@ -56,7 +73,11 @@ export async function trackedFetch(
   // worker crash, network blackhole) leaves the React effect's try/finally
   // never running and the spinner spins forever. If the caller already passed
   // an AbortSignal we chain through; otherwise we own the controller.
-  const FETCH_TIMEOUT_MS = 15_000;
+  const requestedTimeoutMs = options?.timeoutMs ?? DEFAULT_FETCH_TIMEOUT_MS;
+  const FETCH_TIMEOUT_MS = Math.max(
+    1_000,
+    Math.min(requestedTimeoutMs, MAX_FETCH_TIMEOUT_MS),
+  );
   const callerSignal = init?.signal ?? undefined;
   const controller = new AbortController();
   const timeoutHandle = window.setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);

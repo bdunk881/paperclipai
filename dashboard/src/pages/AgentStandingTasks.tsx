@@ -21,6 +21,7 @@ import { Link, useParams } from "react-router-dom";
 import { ArrowLeft, Loader2, Save } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import { ErrorState, LoadingState } from "../components/UiStates";
+import { useToast } from "../components/ToastProvider";
 import {
   listRoutines,
   updateRoutine,
@@ -34,6 +35,7 @@ type PageState = "loading" | "ready" | "error";
 export default function AgentStandingTasks() {
   const { agentId } = useParams<{ agentId: string }>();
   const { requireAccessToken } = useAuth();
+  const toast = useToast();
 
   const [agent, setAgent] = useState<Agent | null>(null);
   const [routines, setRoutines] = useState<Routine[]>([]);
@@ -44,6 +46,9 @@ export default function AgentStandingTasks() {
   // background refresh of one routine doesn't clobber another's edit.
   const [cronEdits, setCronEdits] = useState<Record<string, string>>({});
   const [savingId, setSavingId] = useState<string | null>(null);
+  // Per-row error retained (instead of toast-only) because the failing
+  // routine is easy to identify visually when the error sits in its
+  // own card. The toast still fires for cross-app consistency.
   const [rowError, setRowError] = useState<Record<string, string>>({});
 
   const load = useCallback(async () => {
@@ -84,11 +89,15 @@ export default function AgentStandingTasks() {
       setRoutines((prev) =>
         prev.map((r) => (r.id === routine.id ? updated : r)),
       );
+      toast.success(
+        updated.enabled
+          ? `Standing task "${updated.name}" enabled.`
+          : `Standing task "${updated.name}" paused.`,
+      );
     } catch (err) {
-      setRowError((prev) => ({
-        ...prev,
-        [routine.id]: err instanceof Error ? err.message : "Toggle failed",
-      }));
+      const msg = err instanceof Error ? err.message : "Toggle failed";
+      setRowError((prev) => ({ ...prev, [routine.id]: msg }));
+      toast.error(msg);
     } finally {
       setSavingId(null);
     }
@@ -113,11 +122,11 @@ export default function AgentStandingTasks() {
         delete copy[routine.id];
         return copy;
       });
+      toast.success(`Schedule for "${updated.name}" saved.`);
     } catch (err) {
-      setRowError((prev) => ({
-        ...prev,
-        [routine.id]: err instanceof Error ? err.message : "Save failed",
-      }));
+      const msg = err instanceof Error ? err.message : "Save failed";
+      setRowError((prev) => ({ ...prev, [routine.id]: msg }));
+      toast.error(msg);
     } finally {
       setSavingId(null);
     }

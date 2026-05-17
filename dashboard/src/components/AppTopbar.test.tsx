@@ -57,7 +57,7 @@ describe("AppTopbar", () => {
     );
 
     const search = screen.getByRole("searchbox", {
-      name: /search agents, missions, tickets, runs/i,
+      name: /search agents, missions, assignments, runs/i,
     });
     expect(search).toBeInTheDocument();
     expect(screen.getByText("⌘K")).toBeInTheDocument();
@@ -71,7 +71,7 @@ describe("AppTopbar", () => {
     );
 
     const search = screen.getByRole("searchbox", {
-      name: /search agents, missions, tickets, runs/i,
+      name: /search agents, missions, assignments, runs/i,
     });
 
     expect(search).not.toHaveFocus();

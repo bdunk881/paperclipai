@@ -5,6 +5,7 @@ import {
   RouterProvider,
   useFetcher,
   useLoaderData,
+  useParams,
   type ActionFunctionArgs,
   type RouteObject,
 } from "react-router-dom";
@@ -223,15 +224,24 @@ const routes: RouteObject[] = [
       { path: "settings/notifications", element: <NotificationsSettings /> },
       { path: "settings/profile", element: <ProfileSettings /> },
       { path: "settings/security", element: <SecuritySettings /> },
-      { path: "settings/ticketing-sla", element: <TicketSlaSettings /> },
+      { path: "settings/mission-assignment-sla", element: <TicketSlaSettings /> },
 
-      // Tickets subsystem (HITL) — not in the four-pillar nav today but the
-      // pages cross-link each other and are reachable from Approvals.
-      { path: "tickets", loader: ticketsLoader, action: ticketsAction, element: <TicketsRoute /> },
-      { path: "tickets/:ticketId", loader: ticketDetailLoader, element: <TicketDetailRoute /> },
-      { path: "tickets/actors/:actorType/:actorId", element: <TicketActorView /> },
-      { path: "tickets/sla", element: <TicketSlaDashboard /> },
-      { path: "tickets/team", element: <TicketTeamView /> },
+      // Mission assignments subsystem (HITL) — formerly "Tickets". Reachable
+      // from Approvals. The pages cross-link each other; old /tickets* URLs
+      // redirect into here so bookmarks / shared links keep working.
+      { path: "mission-assignments", loader: ticketsLoader, action: ticketsAction, element: <TicketsRoute /> },
+      { path: "mission-assignments/:ticketId", loader: ticketDetailLoader, element: <TicketDetailRoute /> },
+      { path: "mission-assignments/actors/:actorType/:actorId", element: <TicketActorView /> },
+      { path: "mission-assignments/sla", element: <TicketSlaDashboard /> },
+      { path: "mission-assignments/team", element: <TicketTeamView /> },
+
+      // Backwards-compat redirects for old /tickets* URLs.
+      { path: "tickets", element: <Navigate to="/mission-assignments" replace /> },
+      { path: "tickets/sla", element: <Navigate to="/mission-assignments/sla" replace /> },
+      { path: "tickets/team", element: <Navigate to="/mission-assignments/team" replace /> },
+      { path: "tickets/:ticketId", element: <RedirectTicketDetail /> },
+      { path: "tickets/actors/:actorType/:actorId", element: <RedirectTicketActor /> },
+      { path: "settings/ticketing-sla", element: <Navigate to="/settings/mission-assignment-sla" replace /> },
 
       { path: "pricing", element: <Pricing /> },
 
@@ -278,6 +288,27 @@ function readCreateTicketActionPayload(formData: FormData): CreateTicketRouteAct
     tags: readString(formData.get("tags")),
     externalSyncRequested: readString(formData.get("externalSyncRequested")) === "true",
   };
+}
+
+/**
+ * Backwards-compat redirect: old /tickets/:ticketId URL maps to the
+ * new /mission-assignments/:ticketId route, preserving the dynamic
+ * segment. The Navigate component can't interpolate URL params on its
+ * own, so we read them with useParams and build the target manually.
+ */
+function RedirectTicketDetail() {
+  const { ticketId } = useParams<{ ticketId: string }>();
+  return <Navigate to={`/mission-assignments/${ticketId ?? ""}`} replace />;
+}
+
+function RedirectTicketActor() {
+  const { actorType, actorId } = useParams<{ actorType: string; actorId: string }>();
+  return (
+    <Navigate
+      to={`/mission-assignments/actors/${actorType ?? ""}/${actorId ?? ""}`}
+      replace
+    />
+  );
 }
 
 function readString(value: FormDataEntryValue | null): string {

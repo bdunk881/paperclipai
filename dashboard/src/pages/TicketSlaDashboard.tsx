@@ -52,7 +52,7 @@ export default function TicketSlaDashboard() {
                   SLA Monitor
                 </div>
                 <h1 className="mt-4 text-3xl font-semibold tracking-tight text-slate-100">
-                  Ticketing SLA Dashboard
+                  Mission Assignment SLA Dashboard
                 </h1>
                 <p className="mt-2 text-sm leading-6 text-slate-400">
                   Watch breach pressure, resolution distribution, and actor-level performance from one operational surface.

@@ -57,7 +57,7 @@ describe("TicketSlaDashboard", () => {
       </MemoryRouter>
     );
 
-    expect(await screen.findByText("Ticketing SLA Dashboard")).toBeInTheDocument();
+    expect(await screen.findByText("Mission Assignment SLA Dashboard")).toBeInTheDocument();
     expect(screen.getByText("Breach Rate")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /SLA settings/i })).toHaveAttribute(
       "href",

@@ -25,7 +25,7 @@ describe("Tickets", () => {
       </MemoryRouter>
     );
 
-    await screen.findByText("Ticketing Command Surface");
-    await screen.findByRole("button", { name: /create ticket/i });
+    await screen.findByText("Mission Assignments");
+    await screen.findByRole("button", { name: /create assignment/i });
   });
 });

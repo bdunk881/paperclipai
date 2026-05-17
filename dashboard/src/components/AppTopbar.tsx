@@ -82,8 +82,8 @@ export function AppTopbar({ leading }: AppTopbarProps = {}) {
         <input
           ref={searchRef}
           type="search"
-          aria-label="Search agents, missions, tickets, runs"
-          placeholder="Search agents, missions, tickets, runs…"
+          aria-label="Search agents, missions, assignments, runs"
+          placeholder="Search agents, missions, assignments, runs…"
           className="h-9 w-full rounded-lg border border-af2-line bg-af2-paper-2/60 pl-8 pr-12 text-[13px] text-af2-ink placeholder:text-af2-ink-4 focus:border-af2-line-2 focus:bg-af2-card focus:outline-none focus:ring-2 focus:ring-af2-clay/20"
         />
         <span

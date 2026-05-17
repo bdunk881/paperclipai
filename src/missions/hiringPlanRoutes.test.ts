@@ -97,3 +97,34 @@ describe("POST /api/hiring-plans/:hiringPlanId/confirm", () => {
     expect(res.body.error).toMatch(/Invalid hiring plan ID/);
   });
 });
+
+describe("DASH-1 — canonical table-name regression", () => {
+  // Migration 021 renamed `control_plane_teams → agent_teams`. An earlier
+  // draft of hiringPlanRoutes referenced `teams`, which raised "relation
+  // does not exist" inside the confirm transaction and surfaced as
+  // "Failed to deploy mission" in the dashboard. Lock the canonical name
+  // in via a source-string assertion so a future revert can't reintroduce
+  // the bug without a CI failure.
+  it("ensures hiringPlanRoutes references agent_teams, not the bare `teams` table", () => {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const fs = require("node:fs") as typeof import("node:fs");
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const path = require("node:path") as typeof import("node:path");
+    const src = fs.readFileSync(
+      path.join(__dirname, "hiringPlanRoutes.ts"),
+      "utf8",
+    );
+    expect(src).toMatch(/FROM\s+agent_teams\b/);
+    expect(src).toMatch(/INSERT\s+INTO\s+agent_teams\b/);
+    // The bare `teams` table does not exist; references to it must not
+    // creep back in (other than inside comments or strings discussing
+    // the bug). Strip line-comments + block-comments + string literals
+    // first so the assertion only inspects real SQL/identifiers.
+    const codeOnly = src
+      .replace(/\/\*[\s\S]*?\*\//g, "")
+      .replace(/(^|[^:])\/\/[^\n]*/g, "$1")
+      .replace(/(['"`])(?:\\.|(?!\1).)*\1/g, "");
+    expect(codeOnly).not.toMatch(/\bFROM\s+teams\b/);
+    expect(codeOnly).not.toMatch(/\bINTO\s+teams\b/);
+  });
+});

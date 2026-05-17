@@ -30,6 +30,7 @@
 import { Router } from "express";
 import type { Pool, PoolClient } from "pg";
 import { randomUUID } from "node:crypto";
+import * as Sentry from "@sentry/node";
 import { AuthenticatedRequest } from "../auth/authMiddleware";
 import { withWorkspaceContext } from "../middleware/workspaceContext";
 import type { WorkspaceAwareRequest } from "../middleware/workspaceResolver";
@@ -103,13 +104,20 @@ async function loadHiringPlanScopedToWorkspace(
 }
 
 /**
- * Get-or-create the default `teams` row this workspace uses for newly
- * provisioned canonical agents. The legacy `agents.team_id` column is
- * still NOT NULL (predates HEL-13 canonical model), so we create one
+ * Get-or-create the default `agent_teams` row this workspace uses for
+ * newly provisioned canonical agents. The legacy `agents.team_id` column
+ * is still NOT NULL (predates HEL-13 canonical model), so we create one
  * team-per-workspace on first confirm and reuse it forever.
  *
  * Named after `provisioningPlan.teamName` from the plan draft on first
  * create; subsequent confirms reuse the same row regardless of plan name.
+ *
+ * Table name note: the canonical rename in migration 021 took
+ * `control_plane_teams → agent_teams` (NOT just `teams`). An earlier
+ * draft of this file referenced `teams`, which raised "relation does
+ * not exist" inside the confirm transaction and surfaced as the generic
+ * "Failed to confirm hiring plan" 500 the dashboard rendered as
+ * "Failed to deploy mission" (DASH-1).
  */
 async function ensureWorkspaceTeam(
   client: PoolClient,
@@ -120,14 +128,14 @@ async function ensureWorkspaceTeam(
 ): Promise<string> {
   // Reuse an existing team if one exists for this workspace.
   const existing = await client.query<{ id: string }>(
-    `SELECT id FROM teams WHERE workspace_id = $1 ORDER BY created_at ASC LIMIT 1`,
+    `SELECT id FROM agent_teams WHERE workspace_id = $1 ORDER BY created_at ASC LIMIT 1`,
     [workspaceId],
   );
   if (existing.rows.length > 0) return existing.rows[0].id;
 
   const teamId = randomUUID();
   await client.query(
-    `INSERT INTO teams (id, workspace_id, user_id, company_id, name, deployment_mode, status)
+    `INSERT INTO agent_teams (id, workspace_id, user_id, company_id, name, deployment_mode, status)
        VALUES ($1, $2, $3, $4, $5, 'continuous_agents', 'active')`,
     [teamId, workspaceId, userId, companyId, teamName],
   );
@@ -524,8 +532,14 @@ export function createHiringPlanRoutes(pool: Pool) {
               // Wave 6: seed a starter Job Description (Wave 3 substrate)
               // so the new agent has a usable persona on day one. Owner
               // can edit / re-draft via the wizard on the agent's
-              // /agents/:id/job page. Inside the same transaction so a
-              // failure rolls back the agent insert too.
+              // /agents/:id/job page.
+              //
+              // DASH-1: the JD seed is a nice-to-have, NOT load-bearing —
+              // an agent with no starter JD still runs fine, the wizard
+              // just opens to an empty editor. So we use a SAVEPOINT and
+              // swallow failures rather than letting them roll back the
+              // whole agent provisioning. Sentry still gets the exception
+              // so we notice when seeding regresses.
               const starterBody = buildStarterJobDescriptionBody({
                 title: agent.title,
                 mandate: agent.mandate,
@@ -534,13 +548,38 @@ export function createHiringPlanRoutes(pool: Pool) {
                 tools: agent.tools,
                 budgetMonthlyUsd: agent.budgetMonthlyUsd,
               });
-              await insertStarterJobDescription(client, {
-                workspaceId,
-                userId,
-                agentId: id,
-                agentTitle: agent.title,
-                body: starterBody,
-              });
+              await client.query("SAVEPOINT starter_jd");
+              try {
+                await insertStarterJobDescription(client, {
+                  workspaceId,
+                  userId,
+                  agentId: id,
+                  agentTitle: agent.title,
+                  body: starterBody,
+                });
+                await client.query("RELEASE SAVEPOINT starter_jd");
+              } catch (jdErr) {
+                await client.query("ROLLBACK TO SAVEPOINT starter_jd");
+                console.warn(
+                  `[hiring-plans] starter JD seed failed for agent ${id} (continuing): ${
+                    (jdErr as Error).message
+                  }`,
+                );
+                Sentry.captureException(jdErr, {
+                  tags: {
+                    route: "POST /api/hiring-plans/:hiringPlanId/confirm",
+                    phase: "starter_job_description",
+                  },
+                  contexts: {
+                    hiring_plan: {
+                      workspaceId,
+                      hiringPlanId,
+                      agentId: id,
+                      roleKey: agent.roleKey,
+                    },
+                  },
+                });
+              }
             }
 
             // 2. Insert org_edges from reportingLines.
@@ -648,6 +687,24 @@ export function createHiringPlanRoutes(pool: Pool) {
         return;
       }
       console.error(`[hiring-plans] confirm failed: ${message}`);
+      // DASH-1: capture the underlying exception so we can diagnose
+      // regressions like the "relation teams does not exist" bug
+      // without having to instrument the route after the fact.
+      Sentry.captureException(err, {
+        tags: {
+          route: "POST /api/hiring-plans/:hiringPlanId/confirm",
+          phase: "transaction",
+        },
+        contexts: {
+          hiring_plan: {
+            workspaceId,
+            userId,
+            hiringPlanId,
+            missionId: lookup?.mission_id,
+            companyId: lookup?.company_id,
+          },
+        },
+      });
       res.status(500).json({ error: "Failed to confirm hiring plan" });
       return;
     }

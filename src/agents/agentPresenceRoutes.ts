@@ -25,9 +25,20 @@ import type { WorkspaceAwareRequest } from "../middleware/workspaceResolver";
 import {
   getAgentPresence,
   listWorkspaceAgentPresence,
+  presenceChannel,
   setAgentPresence,
+  type AgentPresence,
   type AgentPresenceState,
 } from "./agentPresence";
+import { getRedisClient } from "../queue/redisClient";
+
+/**
+ * Heartbeat interval for the SSE stream. Reverse proxies (Cloudflare,
+ * Fly's load balancer) typically idle out connections at 60-100s with
+ * no traffic — sending a comment line well inside that window keeps
+ * the stream alive without polluting the client's event log.
+ */
+const SSE_HEARTBEAT_MS = 15_000;
 
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -45,6 +56,100 @@ function isValidState(value: unknown): value is AgentPresenceState {
 
 export function createAgentPresenceRoutes(): Router {
   const router = Router();
+
+  // -------------------------------------------------------------------------
+  // GET /api/agents/presence/stream — Server-Sent Events feed of every
+  // presence change in the active workspace. Sends an initial "snapshot"
+  // event with the current state, then streams "update" events as the
+  // underlying agentPresence Redis key changes (PUBLISH from
+  // setAgentPresence). Includes a 15s heartbeat comment so proxies
+  // don't close the idle socket.
+  //
+  // Implementation notes:
+  //   - ioredis can only run one subscribe-mode connection at a time on
+  //     a given client. We `.duplicate()` here so the main app's BullMQ
+  //     traffic on the singleton stays unaffected.
+  //   - We tolerate Redis being unavailable: the snapshot still goes out
+  //     (it'll be empty), the stream stays open with heartbeats, and a
+  //     polling client gets the same data via GET /api/agents/presence.
+  // -------------------------------------------------------------------------
+  router.get("/presence/stream", async (req: AuthenticatedRequest, res) => {
+    const userId = req.auth?.sub;
+    const workspaceId = (req as WorkspaceAwareRequest).workspace?.id;
+    if (!userId || !workspaceId) {
+      res.status(401).json({ error: "Authenticated user + workspace required" });
+      return;
+    }
+
+    res.set({
+      "Content-Type": "text/event-stream",
+      "Cache-Control": "no-cache, no-transform",
+      Connection: "keep-alive",
+      "X-Accel-Buffering": "no",
+    });
+    res.flushHeaders?.();
+
+    const send = (event: string, payload: unknown): void => {
+      res.write(`event: ${event}\n`);
+      res.write(`data: ${JSON.stringify(payload)}\n\n`);
+    };
+
+    try {
+      const initial = await listWorkspaceAgentPresence(workspaceId);
+      send("snapshot", { agents: initial });
+    } catch (err) {
+      console.warn(
+        `[agentPresence] snapshot failed for stream ${workspaceId}: ${(err as Error).message}`,
+      );
+      send("snapshot", { agents: [] });
+    }
+
+    const heartbeat = setInterval(() => {
+      // SSE comment lines start with `:` and are ignored by EventSource
+      // parsers — they only keep the socket warm.
+      res.write(`: keep-alive ${Date.now()}\n\n`);
+    }, SSE_HEARTBEAT_MS);
+
+    // Duplicate the singleton so we can put this connection in
+    // subscribe mode without disabling normal commands elsewhere.
+    const base = getRedisClient();
+    const sub = base?.duplicate();
+
+    const cleanup = (): void => {
+      clearInterval(heartbeat);
+      if (sub) {
+        // unsubscribe + disconnect — leaks of subscribe-mode
+        // connections eat Upstash command quota fast.
+        sub.unsubscribe().catch(() => {});
+        sub.disconnect();
+      }
+    };
+
+    if (sub) {
+      try {
+        await sub.subscribe(presenceChannel(workspaceId));
+        sub.on("message", (_channel: string, message: string) => {
+          try {
+            const parsed = JSON.parse(message) as AgentPresence;
+            send("update", { presence: parsed });
+          } catch {
+            // Malformed payload from a future producer — drop it
+            // rather than terminate the whole stream.
+          }
+        });
+        sub.on("error", (err: Error) => {
+          console.warn(`[agentPresence] subscribe error: ${err.message}`);
+        });
+      } catch (err) {
+        console.warn(
+          `[agentPresence] subscribe failed: ${(err as Error).message}`,
+        );
+      }
+    }
+
+    req.on("close", cleanup);
+    req.on("aborted", cleanup);
+  });
 
   router.get("/presence", async (req: AuthenticatedRequest, res) => {
     const userId = req.auth?.sub;

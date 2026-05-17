@@ -572,6 +572,21 @@ app.use("/api/agents/:agentId/memory", requireAuth, workspaceResolver, requireRo
 // catch-all agentRoutes so the /presence paths win the match. Reader
 // is open to any workspace member; the role gate matches the rest of
 // the agent surface for now.
+//
+// Wave 2b SSE: EventSource has no header API, so the stream endpoint
+// accepts the token via ?access_token=… as well. This shim runs before
+// the standard auth chain and promotes the query token into the
+// Authorization header so the rest of the middleware stack works
+// unchanged. Scoped narrowly to /api/agents/presence/stream.
+app.use("/api/agents/presence/stream", (req, _res, next) => {
+  if (!req.headers.authorization) {
+    const queryToken = (req.query?.access_token as string | undefined) ?? "";
+    if (queryToken) {
+      req.headers.authorization = `Bearer ${queryToken}`;
+    }
+  }
+  next();
+});
 app.use("/api/agents", requireAuth, workspaceResolver, requireRole("admin", "developer"), createAgentPresenceRoutes());
 app.use("/api/agents", requireAuth, workspaceResolver, requireRole("admin", "developer"), agentRoutes);
 app.use("/api/integrations/apollo", apolloRoutes);

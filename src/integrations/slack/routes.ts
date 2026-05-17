@@ -174,12 +174,17 @@ slackWebhookRouter.post("/events", express.raw({ type: "application/json" }), (r
     }
 
     const rawBody = req.body as Buffer;
-    verifySlackSignature({
-      rawBody,
-      signatureHeader: req.header("x-slack-signature"),
-      timestampHeader: req.header("x-slack-request-timestamp"),
-      signingSecret,
-    });
+    try {
+      verifySlackSignature({
+        rawBody,
+        signatureHeader: req.header("x-slack-signature"),
+        timestampHeader: req.header("x-slack-request-timestamp"),
+        signingSecret,
+      });
+    } catch (verifyErr) {
+      console.error("[webhook.signature_rejected]", { provider: "slack", ip: req.ip, error: verifyErr instanceof Error ? verifyErr.message : String(verifyErr) });
+      throw verifyErr;
+    }
 
     const payload = JSON.parse(rawBody.toString("utf8"));
 

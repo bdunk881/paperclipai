@@ -130,7 +130,7 @@ describe("workspaceRoutes", () => {
     expect(client.query).toHaveBeenNthCalledWith(
       2,
       expect.stringContaining("INSERT INTO workspaces"),
-      ["Acme AI", "user-123"]
+      ["Acme AI", "user-123", expect.stringMatching(/^[0-9a-f]{64}$/)]
     );
     expect(client.query).toHaveBeenNthCalledWith(
       3,

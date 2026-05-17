@@ -1,4 +1,5 @@
 import { Router } from "express";
+import { randomBytes } from "crypto";
 import type { Pool, PoolClient } from "pg";
 import type { AuthenticatedRequest } from "../auth/authMiddleware";
 import { provisionDefaultWorkspace } from "../middleware/workspaceResolver";
@@ -84,11 +85,12 @@ export function createWorkspaceRoutes(pool: Pool) {
       client = await pool.connect();
       await client.query("BEGIN");
 
+      const outboundSecret = randomBytes(32).toString("hex");
       const insertedWorkspace = await client.query<CreateWorkspaceRow>(
-        `INSERT INTO workspaces (name, owner_user_id)
-         VALUES ($1, $2)
+        `INSERT INTO workspaces (name, owner_user_id, outbound_webhook_secret)
+         VALUES ($1, $2, $3)
          RETURNING id, name`,
-        [name, userId],
+        [name, userId, outboundSecret],
       );
       const workspace = insertedWorkspace.rows[0];
       if (!workspace) {

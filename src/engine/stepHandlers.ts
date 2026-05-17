@@ -8,6 +8,7 @@
 
 import { WorkflowStep, AgentSlotResult, AgentMessage } from "../types/workflow";
 import { createHash } from "crypto";
+import { signOutboundBody } from "../webhooks/verifySignature";
 import { llmConfigStore } from "../llmConfig/llmConfigStore";
 import {
   buildResolvedFromHostedFree,
@@ -493,6 +494,21 @@ export async function handleAction(
       _stub: true,
     };
     return { output };
+  }
+
+  if (action === "webhook.send") {
+    const url = typeof step.config?.["url"] === "string" ? step.config["url"] : "";
+    const secret = typeof ctx["outboundWebhookSecret"] === "string" ? ctx["outboundWebhookSecret"] : "";
+    if (!url) {
+      return { output: { sent: false, error: "url not configured", _stub: true } };
+    }
+    const bodyPayload = JSON.stringify({ event: step.config?.["event"] ?? "workflow.action", data: ctx });
+    const headers: Record<string, string> = { "Content-Type": "application/json" };
+    if (secret) {
+      headers["X-AutoFlow-Signature"] = signOutboundBody(secret, bodyPayload);
+    }
+    const response = await fetch(url, { method: "POST", headers, body: bodyPayload });
+    return { output: { sent: true, status: response.status } };
   }
 
   // Unknown action — pass through outputKeys from context

@@ -23,10 +23,13 @@
  * spec replaces it with the af2 stat strip + list pattern.
  */
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { Link } from "react-router-dom";
 import { listAgents, type Agent } from "../api/agentApi";
 import { listBudgets, type BudgetRow } from "../api/canonicalApi";
 import { ErrorState, LoadingState } from "../components/UiStates";
 import { useAuth } from "../context/AuthContext";
+import { AgentPresencePill } from "../components/AgentPresencePill";
+import { useAgentPresence } from "../hooks/useAgentPresence";
 
 interface AgentBudgetRow {
   id: string;
@@ -67,6 +70,7 @@ function roleFor(agent: Agent): string {
 
 export default function BudgetDashboard() {
   const { accessMode, getAccessToken } = useAuth();
+  const presence = useAgentPresence();
   const [agentRows, setAgentRows] = useState<AgentBudgetRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -218,10 +222,42 @@ export default function BudgetDashboard() {
         By agent
       </h3>
       {agentRows.length === 0 ? (
-        <div className="af2-card" style={{ padding: 24, textAlign: "center" }}>
-          <div className="af2-muted" style={{ fontSize: 13 }}>
-            No agent spend recorded yet. Deploy agents and let them run before
-            budget rollups appear.
+        <div
+          className="af2-card"
+          style={{
+            padding: "32px 24px",
+            textAlign: "center",
+            borderStyle: "dashed",
+            borderColor: "var(--af2-line-2)",
+          }}
+        >
+          <p
+            className="font-af2-serif"
+            style={{ fontSize: 16, color: "var(--af2-ink)", margin: 0 }}
+          >
+            No spend recorded yet.
+          </p>
+          <p
+            className="af2-muted"
+            style={{ fontSize: 13, marginTop: 8, lineHeight: 1.5 }}
+          >
+            Once your agents start running real work, you'll see per-agent
+            spend, monthly forecasts, and cap overage warnings here.
+          </p>
+          <div
+            style={{
+              marginTop: 14,
+              display: "inline-flex",
+              gap: 10,
+              alignItems: "center",
+            }}
+          >
+            <Link to="/hire" className="af2-btn af2-btn-clay">
+              Brief a new mission →
+            </Link>
+            <Link to="/workspace/org-structure" className="af2-btn af2-btn-ghost">
+              See your team →
+            </Link>
           </div>
         </div>
       ) : (
@@ -245,8 +281,10 @@ export default function BudgetDashboard() {
                 className="af2-list-row"
                 style={{ gridTemplateColumns: AGENT_GRID }}
               >
-                <div className="af2-row" style={{ gap: 10 }}>
-                  <div
+                <div className="af2-row" style={{ gap: 10, minWidth: 0 }}>
+                  <Link
+                    to={`/agents/${encodeURIComponent(row.id)}`}
+                    aria-label={`Open ${row.name}'s detail`}
                     style={{
                       display: "inline-flex",
                       alignItems: "center",
@@ -258,13 +296,33 @@ export default function BudgetDashboard() {
                       color: "var(--af2-clay-2)",
                       fontSize: 11,
                       fontWeight: 700,
+                      textDecoration: "none",
+                      flexShrink: 0,
                     }}
                   >
                     {initialsFor(row.name)}
-                  </div>
-                  <div>
-                    <div style={{ fontSize: 13, fontWeight: 500 }}>
-                      {row.name}
+                  </Link>
+                  <div style={{ minWidth: 0 }}>
+                    <div
+                      style={{
+                        fontSize: 13,
+                        fontWeight: 500,
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 8,
+                        flexWrap: "wrap",
+                      }}
+                    >
+                      <Link
+                        to={`/agents/${encodeURIComponent(row.id)}`}
+                        style={{
+                          color: "var(--af2-ink)",
+                          textDecoration: "none",
+                        }}
+                      >
+                        {row.name}
+                      </Link>
+                      <AgentPresencePill presence={presence.get(row.id)} />
                     </div>
                     <div className="af2-muted" style={{ fontSize: 11.5 }}>
                       {row.role}

@@ -136,9 +136,14 @@ export const approvalPolicyStore = {
       workspaceId: input.workspaceId,
       actionType: input.actionType,
       mode: input.mode,
+      // Default $500 (50_000 cents) when no threshold was passed and no
+      // prior row exists. A bare 0 here used to leak into the
+      // dashboard as a confusing "Spend over $0" display; $500 matches
+      // the dashboard's editor default + the canonical seed value, so
+      // new policies look intentional out of the box.
       spendThresholdCents:
         input.actionType === "spend_above_threshold"
-          ? input.spendThresholdCents ?? existing?.spendThresholdCents ?? 0
+          ? input.spendThresholdCents ?? existing?.spendThresholdCents ?? 50_000
           : undefined,
       createdAt: existing?.createdAt ?? now,
       updatedAt: now,

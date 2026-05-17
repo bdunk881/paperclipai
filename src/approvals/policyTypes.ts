@@ -36,6 +36,12 @@ export function isApprovalTierMode(value: unknown): value is ApprovalTierMode {
   return typeof value === "string" && APPROVAL_TIER_MODES.includes(value as ApprovalTierMode);
 }
 
+// Default spend-trigger threshold: $500. A bare 0 here used to leak
+// into the dashboard as a confusing "Spend over $0" display.
+// $500 matches the dashboard editor's default value and reads as an
+// intentional, conservative starting point for new workspaces.
+export const DEFAULT_SPEND_THRESHOLD_CENTS = 50_000;
+
 export function defaultApprovalTierPolicyForAction(
   workspaceId: string,
   actionType: ApprovalTierActionType,
@@ -46,7 +52,10 @@ export function defaultApprovalTierPolicyForAction(
     workspaceId,
     actionType,
     mode: "require_approval",
-    spendThresholdCents: actionType === "spend_above_threshold" ? 0 : undefined,
+    spendThresholdCents:
+      actionType === "spend_above_threshold"
+        ? DEFAULT_SPEND_THRESHOLD_CENTS
+        : undefined,
     createdAt: now,
     updatedAt: now,
   };

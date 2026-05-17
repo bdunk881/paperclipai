@@ -12,10 +12,13 @@ describe("approvalPolicyStore", () => {
 
     expect(policies).toHaveLength(5);
     expect(policies.every((policy) => policy.mode === "require_approval")).toBe(true);
+    // Default $500 spend threshold (DEFAULT_SPEND_THRESHOLD_CENTS in
+    // policyTypes.ts) — was 0 historically but rendered as "Spend over
+    // $0" in the dashboard, which is meaningless.
     expect(
       policies.find((policy) => policy.actionType === "spend_above_threshold")
         ?.spendThresholdCents,
-    ).toBe(0);
+    ).toBe(50_000);
   });
 
   it("upserts a workspace-specific override", async () => {

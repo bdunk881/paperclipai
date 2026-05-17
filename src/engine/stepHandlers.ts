@@ -14,6 +14,10 @@ import {
   getDefaultHostedFreeProvider,
   resolveHostedFreeApiKey,
 } from "../hostedFreeModels/providers";
+import {
+  assertWithinHostedFreeCap,
+  recordHostedFreeTokens,
+} from "../hostedFreeModels/usageStore";
 import { getProvider } from "./llmProviders";
 import { getBus, releaseBus } from "./agentBus";
 import { classifyTierWithConfidence, resolveModelForTier, buildCostLog, LlmCostLog } from "./llmRouter";
@@ -24,6 +28,21 @@ import { auditCrmApiCall } from "./crmAuditLog";
 import { controlPlaneStore } from "../controlPlane/controlPlaneStore";
 
 export type StepContext = Record<string, unknown>;
+
+// Hosted-free cap (PR B.2) needs a workspace identifier to key its
+// counter. ctx.workspaceId is set by the engine runtime; ctx.companyId
+// is a legacy fallback retained by the agent step path. Returns
+// undefined when neither is present (e.g. local dev runs) — caller
+// must handle that case explicitly.
+function readWorkspaceIdFromCtx(ctx: StepContext): string | undefined {
+  if (typeof ctx.workspaceId === "string" && ctx.workspaceId.trim()) {
+    return ctx.workspaceId.trim();
+  }
+  if (typeof ctx.companyId === "string" && ctx.companyId.trim()) {
+    return ctx.companyId.trim();
+  }
+  return undefined;
+}
 
 export interface StepHandlerResult {
   output: Record<string, unknown>;
@@ -203,6 +222,18 @@ export async function handleLlm(
     );
   }
 
+  // PR B.2: enforce the per-workspace daily token cap BEFORE invoking a
+  // hosted-free provider. The cap protects the shared GROQ / OpenCode
+  // Zen API keys from a runaway workspace. assertWithinHostedFreeCap
+  // throws a HostedFreeCapExceededError whose message tells the user
+  // how to unblock themselves (add a BYOK key or upgrade).
+  const hostedFreeWorkspaceId = usedHostedFree
+    ? readWorkspaceIdFromCtx(ctx)
+    : undefined;
+  if (usedHostedFree && hostedFreeWorkspaceId) {
+    assertWithinHostedFreeCap(hostedFreeWorkspaceId);
+  }
+
   // Determine the appropriate model tier for this step's complexity.
   // Hosted free fallbacks pin to the provider's fixed modelId — we
   // don't want the tier classifier swapping the stealth Big Pickle for
@@ -241,6 +272,13 @@ export async function handleLlm(
   });
 
   const response = await provider(renderedPrompt);
+
+  // PR B.2: record token usage so the next call can re-evaluate the cap.
+  if (usedHostedFree && hostedFreeWorkspaceId) {
+    const promptTokens = response.usage?.promptTokens ?? 0;
+    const completionTokens = response.usage?.completionTokens ?? 0;
+    recordHostedFreeTokens(hostedFreeWorkspaceId, promptTokens + completionTokens);
+  }
 
   // Attempt to parse JSON; fall back to mapping text to the first output key
   const output: Record<string, unknown> = {};
@@ -681,11 +719,13 @@ export async function handleAgent(
   // are set; otherwise surface the original "no LLM provider
   // configured" error.
   let resolved = await llmConfigStore.getDecryptedDefault(userId);
+  let agentUsedHostedFree = false;
   if (!resolved) {
     const hostedFree = getDefaultHostedFreeProvider();
     const hostedFreeKey = hostedFree ? resolveHostedFreeApiKey(hostedFree) : null;
     if (hostedFree && hostedFreeKey) {
       resolved = buildResolvedFromHostedFree(hostedFree, hostedFreeKey);
+      agentUsedHostedFree = true;
     }
   }
   if (!resolved) {
@@ -693,6 +733,13 @@ export async function handleAgent(
       `Agent step "${step.id}" failed: no LLM provider configured. ` +
         "Go to Settings > LLM Providers to connect one."
     );
+  }
+  // PR B.2: enforce the daily cap on hosted-free routes BEFORE we fan
+  // out across worker slots (an Agent step can issue many provider
+  // calls). The `workspaceId` variable above is already computed from
+  // ctx for the control-plane bridge — re-use it here.
+  if (agentUsedHostedFree && workspaceId) {
+    assertWithinHostedFreeCap(workspaceId);
   }
   const provider = getProvider({
     provider: resolved.config.provider,
@@ -898,6 +945,13 @@ export async function handleAgent(
 
   const anyFailure = slotResults.some((r) => r.status === "failure");
   const reasoningTrace = summarizeMessages(allMessages);
+  // PR B.2: record fanned-out hosted-free token usage once after all
+  // slots return. Done here (not per-slot inside the parallel loop)
+  // so a single Agent step counts as one batch against the daily cap,
+  // matching the way the cap surfaces in the dashboard.
+  if (agentUsedHostedFree && workspaceId) {
+    recordHostedFreeTokens(workspaceId, totalPromptTokens + totalCompletionTokens);
+  }
   const costLog = buildCostLog("power", resolved.config.model, totalPromptTokens, totalCompletionTokens);
   if (bridgedExecution) {
     await controlPlaneStore.finalizeAgentExecution({

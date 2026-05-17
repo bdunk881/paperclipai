@@ -2,13 +2,28 @@
  * PR B.1 test for GET /api/hosted-free-models.
  */
 
-import express from "express";
+import express, { type NextFunction, type Request, type Response } from "express";
 import request from "supertest";
 import { createHostedFreeRoutes } from "./hostedFreeRoutes";
+import {
+  recordHostedFreeTokens,
+  resetHostedFreeUsageForTests,
+} from "./usageStore";
 
-function buildApp(): express.Express {
+function buildApp(workspaceId: string | null = null): express.Express {
   const app = express();
   app.use(express.json());
+  // Stand-in for workspaceResolver — the real one reads
+  // X-Workspace-Id + RLS; the route only needs `req.workspace?.id`.
+  app.use((req: Request, _res: Response, next: NextFunction) => {
+    if (workspaceId) {
+      (req as Request & { workspace?: { id: string; role: string } }).workspace = {
+        id: workspaceId,
+        role: "owner",
+      };
+    }
+    next();
+  });
   app.use("/api/hosted-free-models", createHostedFreeRoutes());
   return app;
 }
@@ -57,5 +72,55 @@ describe("GET /api/hosted-free-models", () => {
     expect(tier1.isDefault).toBe(false);
     expect(tier1.warnings.length).toBeGreaterThan(0);
     expect(tier2.warnings).toEqual([]);
+  });
+
+  // PR B.2: usage snapshot piggybacks on the catalog response so the
+  // dashboard only needs one round-trip to render the LLM Providers
+  // page's hosted-free section.
+  describe("PR B.2 usage snapshot", () => {
+    beforeEach(() => {
+      resetHostedFreeUsageForTests();
+    });
+
+    it("returns a zeroed usage snapshot when no workspace context is attached", async () => {
+      const res = await request(buildApp(null)).get("/api/hosted-free-models");
+      expect(res.body.usage).toMatchObject({
+        workspaceId: null,
+        usedTokens: 0,
+        capTokens: 0,
+        exceeded: false,
+        warning: false,
+      });
+    });
+
+    it("returns the active workspace's daily usage when workspaceResolver populated req.workspace", async () => {
+      const ws = "ws-route-test";
+      recordHostedFreeTokens(ws, 12_345);
+      const res = await request(buildApp(ws)).get("/api/hosted-free-models");
+      expect(res.body.usage).toMatchObject({
+        workspaceId: ws,
+        usedTokens: 12_345,
+        capTokens: 50_000,
+        remainingTokens: 50_000 - 12_345,
+        exceeded: false,
+        warning: false,
+      });
+    });
+
+    it("flips warning=true at >= 80% used", async () => {
+      const ws = "ws-route-warn";
+      recordHostedFreeTokens(ws, 40_000); // exactly 80%
+      const res = await request(buildApp(ws)).get("/api/hosted-free-models");
+      expect(res.body.usage.warning).toBe(true);
+      expect(res.body.usage.exceeded).toBe(false);
+    });
+
+    it("flips exceeded=true at the cap", async () => {
+      const ws = "ws-route-exceeded";
+      recordHostedFreeTokens(ws, 50_000);
+      const res = await request(buildApp(ws)).get("/api/hosted-free-models");
+      expect(res.body.usage.exceeded).toBe(true);
+      expect(res.body.usage.remainingTokens).toBe(0);
+    });
   });
 });

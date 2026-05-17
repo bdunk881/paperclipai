@@ -286,9 +286,17 @@ export default function Approvals() {
                   >
                     {firstName(approval.assignee)}
                     {(() => {
-                      const matched = agentByName.get(
-                        approval.assignee.trim().toLowerCase(),
-                      );
+                      // DASH-14: prefer the real agent FK when present;
+                      // fall back to the legacy UX-10 client-side name
+                      // match for legacy rows / engine paths that
+                      // haven't grown agent context yet.
+                      const matchedById = approval.agentId
+                        ? agents.find((a) => a.id === approval.agentId) ?? null
+                        : null;
+                      const matched =
+                        matchedById ??
+                        agentByName.get(approval.assignee.trim().toLowerCase()) ??
+                        null;
                       if (!matched) return null;
                       return (
                         <AgentPresencePill presence={presence.get(matched.id)} />

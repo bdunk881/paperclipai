@@ -21,6 +21,7 @@ import { Link, useNavigate } from "react-router-dom";
 import { Loader2, Sparkles, Trash2 } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import { ErrorState, LoadingState } from "../components/UiStates";
+import { useToast } from "../components/ToastProvider";
 import {
   createMission,
   deleteMission,
@@ -92,6 +93,7 @@ function readinessLabel(score: number): string {
 
 export default function Hire() {
   const { requireAccessToken } = useAuth();
+  const toast = useToast();
   const navigate = useNavigate();
   const [statement, setStatement] = useState("");
   const [metadata, setMetadata] = useState<MissionMetadata>({});
@@ -135,10 +137,14 @@ export default function Hire() {
       // the background refresh confirms it from the server.
       setMissions((current) => current.filter((m) => m.id !== mission.id));
       void refreshMissions();
+      toast.success("Mission discarded.");
     } catch (err) {
-      setDeleteError(
-        err instanceof Error ? err.message : "Failed to delete mission",
-      );
+      const msg = err instanceof Error ? err.message : "Failed to delete mission";
+      // Keep the inline error too — the 409 ("confirmed plan") message
+      // is long and important enough that a passing toast isn't
+      // sufficient on its own.
+      setDeleteError(msg);
+      toast.error(msg);
     } finally {
       setDeletingId(null);
     }
@@ -228,12 +234,16 @@ export default function Hire() {
           return;
         } catch (planErr) {
           const planMsg = planErr instanceof Error ? planErr.message : String(planErr);
+          // Keep this one inline — the failure message includes a
+          // multi-line "you can retry from past missions below"
+          // pointer that loses context as a fly-by toast.
           setNotice(
             `Mission saved as a draft, but plan generation failed: ${planMsg}. You can retry from past missions below.`,
           );
+          toast.error(`Plan generation failed for ${created.statement.slice(0, 60)}…`);
         }
       } else {
-        setNotice("Mission saved as a draft. Generate the hiring plan when you're ready.");
+        toast.success("Mission saved as a draft.");
       }
 
       setStatement("");

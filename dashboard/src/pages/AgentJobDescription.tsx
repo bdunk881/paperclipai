@@ -21,6 +21,7 @@ import { Link, useParams } from "react-router-dom";
 import { ArrowLeft, Loader2, Sparkles } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import { ErrorState, LoadingState } from "../components/UiStates";
+import { useToast } from "../components/ToastProvider";
 import {
   draftAgentJobDescription as _draftUnused,
   listAgentInstructions,
@@ -64,11 +65,15 @@ const SECTIONS: NamedSection[] = [
   },
 ];
 
-type PageState = "loading" | "ready" | "saving" | "saved" | "error";
+// Note: the "saved" state is gone — UX-7 surfaces save confirmation
+// via the global toast system instead of an inline "✓ Saved just now"
+// span.
+type PageState = "loading" | "ready" | "saving" | "error";
 
 export default function AgentJobDescription() {
   const { agentId } = useParams<{ agentId: string }>();
   const { requireAccessToken } = useAuth();
+  const toast = useToast();
 
   const [agent, setAgent] = useState<Agent | null>(null);
   const [existing, setExisting] = useState<Instruction | null>(null);
@@ -121,7 +126,7 @@ export default function AgentJobDescription() {
   async function handleSave(): Promise<void> {
     if (!agentId) return;
     if (!body.trim()) {
-      setError("Body is required");
+      toast.error("Add a body before saving.");
       return;
     }
     setState("saving");
@@ -138,12 +143,15 @@ export default function AgentJobDescription() {
         token,
       );
       setExisting(saved);
-      setState("saved");
-      window.setTimeout(() => {
-        setState((s) => (s === "saved" ? "ready" : s));
-      }, 1500);
+      setState("ready");
+      toast.success(
+        existing
+          ? `${agent?.name ?? "Agent"}'s job description updated.`
+          : `${agent?.name ?? "Agent"}'s job description saved.`,
+      );
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Save failed");
+      const msg = err instanceof Error ? err.message : "Save failed";
+      toast.error(msg);
       setState("ready");
     }
   }
@@ -381,22 +389,11 @@ export default function AgentJobDescription() {
               gap: 10,
             }}
           >
-            {state === "saved" ? (
-              <span
-                className="af2-muted"
-                style={{ fontSize: 12, color: "var(--af2-sage)" }}
-              >
-                ✓ Saved just now
-              </span>
-            ) : null}
-            {error ? (
-              <span
-                className="af2-muted"
-                style={{ fontSize: 12, color: "var(--af2-clay)" }}
-              >
-                {error}
-              </span>
-            ) : null}
+            {/* Save confirmation + error live in the global toast
+                (UX-7). Inline error span only renders when state ===
+                "error" (e.g. initial load failure already handled
+                above) — empty here so this row doesn't double-up
+                with the toast message. */}
             <button
               type="button"
               onClick={() => void handleSave()}

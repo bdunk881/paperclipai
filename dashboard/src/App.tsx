@@ -9,6 +9,7 @@ import { sessionFromAccessToken } from "./auth/tokenSession";
 import { AuthProvider } from "./context/AuthContext";
 import { WorkspaceProvider } from "./context/WorkspaceContext";
 import { AppRouter } from "./router";
+import { ToastProvider } from "./components/ToastProvider";
 
 async function maybeActivateQaPreviewAccess(): Promise<void> {
   const token = readQaPreviewToken(window.location.search);
@@ -62,7 +63,14 @@ export default function App() {
     <Sentry.ErrorBoundary fallback={<p>An unexpected error occurred. Please refresh the page.</p>} showDialog>
       <AuthProvider>
         <WorkspaceProvider>
-          <AppRouter />
+          {/* UX-7: single toast surface for the entire app. Wraps the
+              router so every page (and every modal launched from a
+              page) can call useToast() and have its messages stack
+              bottom-right without each page wiring its own inline
+              fade-out state. */}
+          <ToastProvider>
+            <AppRouter />
+          </ToastProvider>
         </WorkspaceProvider>
       </AuthProvider>
     </Sentry.ErrorBoundary>

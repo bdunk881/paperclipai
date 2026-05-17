@@ -127,7 +127,7 @@ async function loadStepResultsByRunIds(runIds: string[]) {
   const pool = getPostgresPool();
   const result = await pool.query(
     `
-      SELECT run_id, step_id, step_name, status, output, duration_ms, error, agent_slot_results_json, cost_log_json
+      SELECT run_id, step_id, step_name, status, output, duration_ms, error, agent_slot_results_json, cost_log_json, idempotency_key
       FROM step_results
       WHERE run_id = ANY($1::uuid[])
       ORDER BY run_id ASC, ordinal ASC
@@ -151,6 +151,7 @@ async function loadStepResultsByRunIds(runIds: string[]) {
       error: typeof row.error === "string" ? row.error : undefined,
       agentSlotResults: parseJsonValue(row.agent_slot_results_json, undefined),
       costLog: parseJsonValue(row.cost_log_json, undefined),
+      idempotencyKey: typeof row.idempotency_key === "string" ? row.idempotency_key : undefined,
     });
   }
 
@@ -177,9 +178,9 @@ async function writeStepResults(
         `
           INSERT INTO step_results (
             run_id, step_id, step_name, status, output, cost_cents, duration_ms, error,
-            agent_slot_results_json, cost_log_json, ordinal
+            agent_slot_results_json, cost_log_json, ordinal, idempotency_key
           )
-          VALUES ($1, $2, $3, $4, $5::jsonb, $6, $7, $8, $9::jsonb, $10::jsonb, $11)
+          VALUES ($1, $2, $3, $4, $5::jsonb, $6, $7, $8, $9::jsonb, $10::jsonb, $11, $12)
           ON CONFLICT (run_id, step_id, ordinal) DO UPDATE
           SET step_name = EXCLUDED.step_name,
               status = EXCLUDED.status,
@@ -188,7 +189,8 @@ async function writeStepResults(
               duration_ms = EXCLUDED.duration_ms,
               error = EXCLUDED.error,
               agent_slot_results_json = EXCLUDED.agent_slot_results_json,
-              cost_log_json = EXCLUDED.cost_log_json
+              cost_log_json = EXCLUDED.cost_log_json,
+              idempotency_key = COALESCE(step_results.idempotency_key, EXCLUDED.idempotency_key)
         `,
         [
           runId,
@@ -202,6 +204,7 @@ async function writeStepResults(
           serializeJson(result.agentSlotResults),
           serializeJson(result.costLog),
           index,
+          result.idempotencyKey ?? null,
         ]
       );
     }

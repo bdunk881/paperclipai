@@ -506,6 +506,17 @@ export function createMissionRoutes(
       provider: resolved.config.provider,
       model: assemblyModel,
       apiKey: resolved.apiKey,
+      // Ask the provider for native JSON-mode output. The team-assembly
+      // prompt was the original trigger for the Mistral "Sure! Here's
+      // the plan:\n```json\n…```" 502 — switching to json_object mode
+      // forces clean JSON on every provider that supports it (OpenAI,
+      // Anthropic via forced tool-use, Mistral, Gemini, Groq, Fireworks,
+      // Together, xAI, DeepSeek, Perplexity, Ollama, LocalAI, OpenCode
+      // Zen). Providers without native mode (Bedrock, Vertex AI, Cohere)
+      // ignore the hint; the Tier 1 chatty-tolerant extractor catches
+      // their output downstream. The full zod schema still validates the
+      // shape after extraction, so type-safety is preserved.
+      responseFormat: { type: "json_object" },
     });
 
     const request = teamAssemblyRequestFromMission(mission);

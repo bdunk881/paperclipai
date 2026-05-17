@@ -153,6 +153,33 @@ describe("runStore.clear", () => {
   });
 });
 
+describe("runStore.list status filter", () => {
+  it("filters by status", async () => {
+    await runStore.create(makeRun({ id: "run-1", status: "completed" }));
+    await runStore.create(makeRun({ id: "run-2", status: "failed" }));
+    await runStore.create(makeRun({ id: "run-3", status: "failed" }));
+
+    const failed = await runStore.list(undefined, undefined, "failed");
+    expect(failed).toHaveLength(2);
+    expect(failed.every((r) => r.status === "failed")).toBe(true);
+  });
+});
+
+describe("runStore.markFailed", () => {
+  it("sets status to failed and records reason + failedAt", async () => {
+    await runStore.create(makeRun({ id: "run-dlq-1" }));
+    const result = await runStore.markFailed("run-dlq-1", "connector timeout");
+    expect(result?.status).toBe("failed");
+    expect(result?.failureReason).toBe("connector timeout");
+    expect(result?.failedAt).toBeDefined();
+  });
+
+  it("returns undefined for a non-existent run", async () => {
+    const result = await runStore.markFailed("run-missing", "error");
+    expect(result).toBeUndefined();
+  });
+});
+
 describe("runStore postgres persistence", () => {
   it("writes run rows and step results when persistence is enabled", async () => {
     const query = jest.fn().mockResolvedValue({ rows: [] });
@@ -401,7 +428,7 @@ describe("runStore postgres persistence", () => {
         }),
       ],
     });
-    expect(query.mock.calls[0]?.[1]).toEqual(["tpl-support-bot", "user-1"]);
+    expect(query.mock.calls[0]?.[1]).toEqual(["tpl-support-bot", "user-1", null]);
     expect(query).toHaveBeenCalledTimes(2);
     expect(query.mock.calls[1]?.[0]).toContain("WHERE run_id = ANY($1::uuid[])");
     expect(query.mock.calls[1]?.[1]).toEqual([["run-pg-1", "run-pg-2"]]);

@@ -174,6 +174,8 @@ export interface WorkflowRun {
     waitingApprovalId?: string;
   };
   error?: string;
+  failureReason?: string;
+  failedAt?: string;
   userId?: string;
 }
 

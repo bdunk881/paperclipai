@@ -1025,3 +1025,74 @@ describe("POST /api/runs/file", () => {
     expect(res.body.error).toMatch(/File parsing failed/);
   });
 });
+
+describe("GET /api/runs?status=failed", () => {
+  it("returns only failed runs when status=failed is provided", async () => {
+    await runStore.create({
+      id: "run-ok-1",
+      templateId: "tpl-a",
+      templateName: "Workflow A",
+      status: "completed",
+      startedAt: new Date().toISOString(),
+      input: {},
+      stepResults: [],
+      userId: "test-user-id",
+    });
+    await runStore.create({
+      id: "run-fail-1",
+      templateId: "tpl-b",
+      templateName: "Workflow B",
+      status: "failed",
+      startedAt: new Date().toISOString(),
+      input: {},
+      stepResults: [],
+      userId: "test-user-id",
+    });
+
+    const res = await request(app).get("/api/runs?status=failed");
+    expect(res.status).toBe(200);
+    expect(res.body.runs).toHaveLength(1);
+    expect(res.body.runs[0].id).toBe("run-fail-1");
+  });
+});
+
+describe("POST /api/runs/:id/retry", () => {
+  it("returns 404 for a run that does not exist", async () => {
+    const res = await request(app).post("/api/runs/run-missing/retry");
+    expect(res.status).toBe(404);
+  });
+
+  it("returns 409 when the run is not in failed state", async () => {
+    await runStore.create({
+      id: "run-running-1",
+      templateId: "tpl-a",
+      templateName: "Workflow A",
+      status: "running",
+      startedAt: new Date().toISOString(),
+      input: {},
+      stepResults: [],
+      userId: "test-user-id",
+    });
+
+    const res = await request(app).post("/api/runs/run-running-1/retry");
+    expect(res.status).toBe(409);
+    expect(res.body.error).toMatch(/cannot be retried/);
+  });
+
+  it("re-queues a failed run and resets status to queued", async () => {
+    await runStore.create({
+      id: "run-failed-2",
+      templateId: "tpl-b",
+      templateName: "Workflow B",
+      status: "failed",
+      startedAt: new Date().toISOString(),
+      input: {},
+      stepResults: [],
+      userId: "test-user-id",
+    });
+
+    const res = await request(app).post("/api/runs/run-failed-2/retry");
+    expect(res.status).toBe(200);
+    expect(res.body.status).toBe("queued");
+  });
+});

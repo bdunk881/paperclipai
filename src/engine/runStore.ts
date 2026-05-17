@@ -104,6 +104,8 @@ function mapRowToRun(row: Record<string, unknown>): WorkflowRun {
     output: parseJsonValue<Record<string, unknown> | undefined>(row["output"], undefined),
     runtimeState: parseJsonValue<WorkflowRun["runtimeState"] | undefined>(row["runtime_state_json"], undefined),
     error: typeof row["error"] === "string" ? row["error"] : undefined,
+    failureReason: typeof row["failure_reason"] === "string" ? row["failure_reason"] : undefined,
+    failedAt: row["failed_at"] ? new Date(String(row["failed_at"])).toISOString() : undefined,
     userId: typeof row["user_id"] === "string" ? row["user_id"] : undefined,
     stepResults: [],
   };
@@ -412,6 +414,8 @@ export const runStore = {
             r.output,
             r.runtime_state_json,
             r.error,
+            r.failure_reason,
+            r.failed_at,
             r.user_id
           FROM runs r
           JOIN workflow_versions v ON v.id = r.workflow_version_id
@@ -498,12 +502,13 @@ export const runStore = {
     return cloneRun(updated);
   },
 
-  async list(templateId?: string, userId?: string): Promise<WorkflowRun[]> {
+  async list(templateId?: string, userId?: string, status?: string): Promise<WorkflowRun[]> {
     const localRuns = () => {
       const runs = Array.from(memoryStore.values());
       return runs
         .filter((run) => (templateId ? run.templateId === templateId : true))
         .filter((run) => (userId ? run.userId === userId : true))
+        .filter((run) => (status ? run.status === status : true))
         .map((run) => cloneRun(run));
     };
 
@@ -532,15 +537,18 @@ export const runStore = {
             r.output,
             r.runtime_state_json,
             r.error,
+            r.failure_reason,
+            r.failed_at,
             r.user_id
           FROM runs r
           JOIN workflow_versions v ON v.id = r.workflow_version_id
           JOIN workflows w ON w.id = v.workflow_id
           WHERE ($1::text IS NULL OR w.external_template_id = $1)
             AND ($2::text IS NULL OR r.user_id = $2)
+            AND ($3::text IS NULL OR r.status = $3)
           ORDER BY r.started_at DESC
         `,
-        [templateId ?? null, userId ?? null]
+        [templateId ?? null, userId ?? null, status ?? null]
       );
 
       const runs = result.rows.map((row) => mapRowToRun(row));
@@ -595,5 +603,39 @@ export const runStore = {
     } catch (err) {
       console.error("[runStore] Postgres clear failed:", (err as Error).message);
     }
+  },
+
+  async markFailed(id: string, reason: string): Promise<WorkflowRun | undefined> {
+    const now = new Date().toISOString();
+    const existing = memoryStore.get(id);
+    if (existing) {
+      existing.status = "failed";
+      existing.failureReason = reason;
+      existing.failedAt = now;
+      existing.completedAt = now;
+      memoryStore.set(id, existing);
+    }
+
+    if (!postgresPersistenceAvailable()) {
+      return existing ? cloneRun(existing) : undefined;
+    }
+
+    try {
+      const pool = getPostgresPool();
+      await pool.query(
+        `UPDATE runs
+            SET status = 'failed',
+                failure_reason = $2,
+                failed_at = now(),
+                ended_at = COALESCE(ended_at, now()),
+                updated_at = now()
+          WHERE id = $1::uuid`,
+        [id, reason]
+      );
+    } catch (err) {
+      console.error("[runStore] markFailed Postgres update failed:", (err as Error).message);
+    }
+
+    return this.get(id);
   },
 };

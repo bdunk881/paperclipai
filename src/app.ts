@@ -1034,12 +1034,13 @@ app.post(
   res.status(202).json(run);
 });
 
-/** List all runs, optionally filtered by templateId */
+/** List all runs, optionally filtered by templateId or status */
 app.get("/api/runs", requireAuthOrQaBypass, workspaceResolver, async (req: WorkspaceAwareRequest, res) => {
-  const { templateId } = req.query;
+  const { templateId, status } = req.query;
   const runs = await runStore.list(
     typeof templateId === "string" ? templateId : undefined,
-    req.auth?.sub
+    req.auth?.sub,
+    typeof status === "string" ? status : undefined
   );
   res.json({ runs, total: runs.length });
 });
@@ -1089,6 +1090,50 @@ app.delete("/api/runs/:id/cancel", requireAuthOrQaBypass, workspaceResolver, asy
 
   const canceled = await runStore.update(runId, { status: "canceled", completedAt: new Date().toISOString() });
   res.json(canceled);
+});
+
+/**
+ * Re-enqueue a failed run from the DLQ.
+ * Resets status to "queued" and re-adds the job to the main runs queue.
+ * Returns 409 if the run is not in the "failed" state.
+ */
+app.post("/api/runs/:id/retry", requireAuthOrQaBypass, workspaceResolver, async (req: WorkspaceAwareRequest, res) => {
+  const runId = req.params.id;
+  const run = await runStore.get(runId);
+  const userId = req.auth?.sub;
+
+  if (!run || (run.userId !== undefined && run.userId !== userId)) {
+    res.status(404).json({ error: `Run not found: ${runId}` });
+    return;
+  }
+
+  if (run.status !== "failed") {
+    res.status(409).json({ error: `Run cannot be retried: status is '${run.status}'` });
+    return;
+  }
+
+  const runQueue = getRunQueue();
+  if (runQueue) {
+    await runQueue.add(
+      "run",
+      {
+        runId,
+        templateId: run.templateId,
+        workflowVersionId: run.workflowVersionId,
+        workspaceId: run.workspaceId ?? "",
+        stepIndex: 0,
+        idempotencyKey: `${runId}:retry:${Date.now()}`,
+      },
+      { jobId: `retry-${runId}-${Date.now()}` }
+    );
+  }
+
+  const updated = await runStore.update(runId, {
+    status: "queued",
+    completedAt: undefined,
+    error: undefined,
+  });
+  res.json(updated);
 });
 
 app.get("/api/observability", requireAuth, async (req: AuthenticatedRequest, res) => {

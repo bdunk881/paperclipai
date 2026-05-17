@@ -3,6 +3,8 @@ import {
   listObservabilityEvents,
   type ObservabilityEvent,
 } from "../api/observability";
+import { listRunsByStatus, retryRun } from "../api/runsApi";
+import type { WorkflowRun } from "../types/workflow";
 import { ErrorState, LoadingState } from "../components/UiStates";
 import { useAuth } from "../context/AuthContext";
 
@@ -25,13 +27,14 @@ const FEED_LIMIT = 100;
  * filtered by `occurredAt`.
  */
 
-type TabKey = "live" | "today" | "week" | "all";
+type TabKey = "live" | "today" | "week" | "all" | "failed";
 
 const TABS: Array<{ key: TabKey; label: string }> = [
   { key: "live", label: "Live (live)" },
   { key: "today", label: "Today" },
   { key: "week", label: "This week" },
   { key: "all", label: "All" },
+  { key: "failed", label: "Failed" },
 ];
 
 const LIVE_WINDOW_MS = 5 * 60 * 1000;
@@ -148,9 +151,24 @@ function filterEventsForTab(
   });
 }
 
+function formatFailedAt(iso: string | undefined): string {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "—";
+  return d.toLocaleString(undefined, {
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  });
+}
+
 export default function AgentActivity() {
   const { accessMode, requireAccessToken } = useAuth();
   const [events, setEvents] = useState<ObservabilityEvent[]>([]);
+  const [failedRuns, setFailedRuns] = useState<WorkflowRun[]>([]);
+  const [retryingIds, setRetryingIds] = useState<Set<string>>(new Set());
   const [tab, setTab] = useState<TabKey>("live");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -181,9 +199,34 @@ export default function AgentActivity() {
     [accessMode, requireAccessToken],
   );
 
+  const loadFailedRuns = useCallback(
+    async (silent = false): Promise<void> => {
+      if (!silent) setLoading(true);
+      setError(null);
+      try {
+        if (accessMode === "preview") {
+          setFailedRuns([]);
+          return;
+        }
+        const token = await requireAccessToken();
+        const { runs } = await listRunsByStatus(token, "failed");
+        setFailedRuns(runs);
+      } catch (cause) {
+        setError(cause instanceof Error ? cause.message : "Failed to load failed runs");
+      } finally {
+        if (!silent) setLoading(false);
+      }
+    },
+    [accessMode, requireAccessToken],
+  );
+
   useEffect(() => {
-    void loadEvents();
-  }, [loadEvents]);
+    if (tab === "failed") {
+      void loadFailedRuns();
+    } else {
+      void loadEvents();
+    }
+  }, [tab, loadEvents, loadFailedRuns]);
 
   // Live polling: only refresh while the Live tab is active AND the tab is
   // visible. Background polling burns through the 100 req/min general API
@@ -212,6 +255,27 @@ export default function AgentActivity() {
     };
   }, [accessMode, loadEvents, tab]);
 
+  const handleRetry = useCallback(
+    async (runId: string): Promise<void> => {
+      setRetryingIds((prev) => new Set(prev).add(runId));
+      try {
+        const token = await requireAccessToken();
+        await retryRun(token, runId);
+        // Optimistically remove from the failed list once re-queued.
+        setFailedRuns((prev) => prev.filter((r) => r.id !== runId));
+      } catch (cause) {
+        setError(cause instanceof Error ? cause.message : "Retry failed");
+      } finally {
+        setRetryingIds((prev) => {
+          const next = new Set(prev);
+          next.delete(runId);
+          return next;
+        });
+      }
+    },
+    [requireAccessToken],
+  );
+
   const filtered = useMemo(
     () => filterEventsForTab(events, tab, now),
     [events, now, tab],
@@ -231,7 +295,7 @@ export default function AgentActivity() {
         <ErrorState
           title="Signal Lost"
           message={error}
-          onRetry={() => void loadEvents()}
+          onRetry={() => void (tab === "failed" ? loadFailedRuns() : loadEvents())}
         />
       </div>
     );
@@ -286,121 +350,164 @@ export default function AgentActivity() {
         ))}
       </div>
 
-      <div className="af2-card" style={{ padding: 0 }}>
-        {filtered.map((event, index) => {
-          const displayName = actorDisplayName(event);
-          const first = firstName(displayName);
-          const verb = verbFromType(event.type);
-          return (
+      {tab === "failed" ? (
+        <div className="af2-card" style={{ padding: 0 }}>
+          {failedRuns.map((run, index) => {
+            const isRetrying = retryingIds.has(run.id);
+            const shortId = run.id.slice(0, 8);
+            const reason = run.failureReason ?? run.error ?? "Unknown error";
+            return (
+              <div
+                key={run.id}
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "120px 1fr 1fr 100px",
+                  gap: 14,
+                  padding: "11px 18px",
+                  borderBottom:
+                    index < failedRuns.length - 1
+                      ? "1px solid var(--af2-line)"
+                      : "none",
+                  alignItems: "center",
+                }}
+              >
+                <span
+                  className="af2-mono af2-muted-2"
+                  style={{ fontSize: 11 }}
+                  title={run.failedAt ?? run.completedAt}
+                >
+                  {formatFailedAt(run.failedAt ?? run.completedAt)}
+                </span>
+
+                <div style={{ fontSize: 13, minWidth: 0 }}>
+                  <div style={{ fontWeight: 600 }}>{run.templateName}</div>
+                  <div className="af2-mono af2-muted" style={{ fontSize: 11 }}>
+                    {shortId}…
+                  </div>
+                </div>
+
+                <div
+                  style={{
+                    fontSize: 12,
+                    color: "var(--af2-clay, #c0392b)",
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                    whiteSpace: "nowrap",
+                  }}
+                  title={reason}
+                >
+                  {reason.slice(0, 120)}
+                </div>
+
+                <button
+                  type="button"
+                  disabled={isRetrying}
+                  onClick={() => void handleRetry(run.id)}
+                  className="af2-btn af2-btn-sm"
+                  style={{ justifySelf: "end" }}
+                >
+                  {isRetrying ? "…" : "Retry"}
+                </button>
+              </div>
+            );
+          })}
+
+          {failedRuns.length === 0 ? (
             <div
-              key={event.id}
               style={{
-                display: "grid",
-                gridTemplateColumns: "60px 36px 1fr 80px",
-                gap: 14,
-                padding: "11px 18px",
-                borderBottom:
-                  index < filtered.length - 1
-                    ? "1px solid var(--af2-line)"
-                    : "none",
-                alignItems: "center",
+                padding: "18px",
+                fontSize: 13,
+                color: "var(--af2-ink-3)",
+                textAlign: "center",
               }}
             >
-              <span
-                className="af2-mono af2-muted-2"
-                style={{ fontSize: 11 }}
-                title={new Date(event.occurredAt).toLocaleString()}
-              >
-                {formatTime(event.occurredAt)}
-              </span>
-
+              No failed runs. All clear.
+            </div>
+          ) : null}
+        </div>
+      ) : (
+        <div className="af2-card" style={{ padding: 0 }}>
+          {filtered.map((event, index) => {
+            const displayName = actorDisplayName(event);
+            const first = firstName(displayName);
+            const verb = verbFromType(event.type);
+            return (
               <div
-                aria-label={displayName}
+                key={event.id}
                 style={{
-                  width: 28,
-                  height: 28,
-                  borderRadius: "50%",
-                  background: "var(--af2-clay-soft)",
-                  color: "var(--af2-clay-2, var(--af2-clay))",
-                  display: "inline-flex",
+                  display: "grid",
+                  gridTemplateColumns: "60px 36px 1fr 80px",
+                  gap: 14,
+                  padding: "11px 18px",
+                  borderBottom:
+                    index < filtered.length - 1
+                      ? "1px solid var(--af2-line)"
+                      : "none",
                   alignItems: "center",
-                  justifyContent: "center",
-                  fontSize: 10,
-                  fontWeight: 600,
-                  letterSpacing: "0.02em",
                 }}
               >
-                {initials(displayName)}
-              </div>
+                <span
+                  className="af2-mono af2-muted-2"
+                  style={{ fontSize: 11 }}
+                  title={new Date(event.occurredAt).toLocaleString()}
+                >
+                  {formatTime(event.occurredAt)}
+                </span>
 
-              <div
-                style={{
-                  fontSize: 13,
-                  minWidth: 0,
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 8,
-                  flexWrap: "wrap",
-                }}
-              >
-                <span>
+                <div
+                  aria-label={displayName}
+                  style={{
+                    width: 28,
+                    height: 28,
+                    borderRadius: "50%",
+                    background: "var(--af2-clay-soft)",
+                    color: "var(--af2-clay-2, var(--af2-clay))",
+                    display: "inline-flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    fontSize: 10,
+                    fontWeight: 600,
+                    letterSpacing: "0.02em",
+                  }}
+                >
+                  {initials(displayName)}
+                </div>
+
+                <div style={{ fontSize: 13, minWidth: 0 }}>
                   <strong>{first}</strong>
                   <span className="af2-muted"> {verb} </span>
                   <span style={{ color: "var(--af2-ink)" }}>{event.summary}</span>
-                </span>
-                {(() => {
-                  const badge = sourceBadge(event);
-                  if (!badge) return null;
-                  return (
-                    <span
-                      style={{
-                        display: "inline-flex",
-                        alignItems: "center",
-                        padding: "1px 8px",
-                        fontSize: 10.5,
-                        fontFamily:
-                          "var(--af2-mono, ui-monospace, SFMono-Regular, Menlo, monospace)",
-                        color: badge.color,
-                        background: badge.bg,
-                        borderRadius: 999,
-                        textTransform: "uppercase",
-                        letterSpacing: "0.04em",
-                      }}
-                    >
-                      {badge.label}
-                    </span>
-                  );
-                })()}
+                </div>
+
+                <a
+                  href={`/agents/activity?focus=${encodeURIComponent(event.id)}`}
+                  className="af2-btn af2-btn-ghost af2-btn-sm"
+                  style={{
+                    justifySelf: "end",
+                    textDecoration: "none",
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  Details →
+                </a>
               </div>
+            );
+          })}
 
-              <a
-                href={`/agents/activity?focus=${encodeURIComponent(event.id)}`}
-                className="af2-btn af2-btn-ghost af2-btn-sm"
-                style={{
-                  justifySelf: "end",
-                  textDecoration: "none",
-                  whiteSpace: "nowrap",
-                }}
-              >
-                Details →
-              </a>
+          {filtered.length === 0 ? (
+            <div
+              style={{
+                padding: "18px",
+                fontSize: 13,
+                color: "var(--af2-ink-3)",
+                textAlign: "center",
+              }}
+            >
+              No activity matches this view yet.
             </div>
-          );
-        })}
-
-        {filtered.length === 0 ? (
-          <div
-            style={{
-              padding: "18px",
-              fontSize: 13,
-              color: "var(--af2-ink-3)",
-              textAlign: "center",
-            }}
-          >
-            No activity matches this view yet.
-          </div>
-        ) : null}
-      </div>
+          ) : null}
+        </div>
+      )}
     </div>
   );
 }

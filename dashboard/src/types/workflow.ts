@@ -88,13 +88,16 @@ export interface WorkflowRun {
   id: string;
   templateId: string;
   templateName: string;
-  status: "pending" | "running" | "completed" | "failed" | "escalated" | "awaiting_approval";
+  routineId?: string;
+  status: "queued" | "pending" | "running" | "completed" | "failed" | "escalated" | "awaiting_approval" | "canceled";
   startedAt: string;
   completedAt?: string;
   input: Record<string, unknown>;
   output?: Record<string, unknown>;
   stepResults: StepResult[];
   error?: string;
+  failureReason?: string;
+  failedAt?: string;
 }
 
 /** A message exchanged between the manager agent and a worker slot */

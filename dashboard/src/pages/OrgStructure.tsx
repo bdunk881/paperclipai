@@ -19,12 +19,11 @@ interface AgentSpendRow {
 import { EmptyState, ErrorState, LoadingState } from "../components/UiStates";
 import { useAuth } from "../context/AuthContext";
 import { AgentPresencePill } from "../components/AgentPresencePill";
-import { HandoffModal } from "../components/HandoffModal";
+import { AgentCardActions } from "../components/AgentCardActions";
 import {
   useAgentPresence,
   type AgentPresence,
 } from "../hooks/useAgentPresence";
-import { checkInAgent } from "../api/agentActionsApi";
 
 /**
  * Team page — Workforce > Team (HEL-26).
@@ -270,28 +269,9 @@ function PodLead({
   reportStats: Map<string, AgentSpendRow>;
   presence: Map<string, AgentPresence>;
 }) {
-  const { requireAccessToken } = useAuth();
-  const [handoffOpen, setHandoffOpen] = useState(false);
-  const [actionState, setActionState] = useState<
-    "idle" | "checking-in" | "sent" | "error"
-  >("idle");
-  const [actionError, setActionError] = useState<string | null>(null);
-
-  async function handleCheckIn(): Promise<void> {
-    setActionState("checking-in");
-    setActionError(null);
-    try {
-      const token = await requireAccessToken();
-      await checkInAgent(lead.id, token);
-      setActionState("sent");
-      window.setTimeout(() => {
-        setActionState((s) => (s === "sent" ? "idle" : s));
-      }, 3_000);
-    } catch (err) {
-      setActionError(err instanceof Error ? err.message : "Check-in failed");
-      setActionState("error");
-    }
-  }
+  // Per-agent actions (check-in, hand-off, job desc, standing tasks)
+  // live in the shared AgentCardActions component so the same row
+  // works on lead cards + report cards + the future Agent Detail page.
   const avatarClass = avatarClassFor(tone);
   const borderColor = topBorderFor(tone);
   // Missions count is not a clean signal yet — fall back to the team size
@@ -368,77 +348,12 @@ function PodLead({
         </div>
       </Link>
 
-      {/* Wave 5 action row — wake the agent on demand, or hand off a
-          new task. Outside the Link wrapper so clicks don't navigate
-          to the agent detail page. */}
-      <div
-        style={{
-          marginTop: 8,
-          display: "flex",
-          gap: 6,
-          alignItems: "center",
-          fontSize: 12,
-        }}
-      >
-        <button
-          type="button"
-          onClick={(e) => {
-            e.preventDefault();
-            void handleCheckIn();
-          }}
-          disabled={actionState === "checking-in"}
-          className="af2-btn af2-btn-sm af2-btn-ghost"
-          style={{
-            display: "inline-flex",
-            alignItems: "center",
-            gap: 4,
-            opacity: actionState === "checking-in" ? 0.6 : 1,
-          }}
-          title={`Wake ${lead.name} to review current work and unblock self`}
-        >
-          {actionState === "checking-in" ? "Checking in…" : "Check in now"}
-        </button>
-        <button
-          type="button"
-          onClick={(e) => {
-            e.preventDefault();
-            setHandoffOpen(true);
-          }}
-          className="af2-btn af2-btn-sm af2-btn-ghost"
-          title={`Assign a new task to ${lead.name}`}
-        >
-          Hand off…
-        </button>
-        {actionState === "sent" ? (
-          <span
-            className="af2-muted"
-            style={{ fontSize: 11, color: "var(--af2-sage)" }}
-          >
-            ✓ Sent
-          </span>
-        ) : null}
-        {actionState === "error" && actionError ? (
-          <span
-            className="af2-muted"
-            style={{ fontSize: 11, color: "var(--af2-clay)" }}
-          >
-            {actionError}
-          </span>
-        ) : null}
+      {/* Per-agent actions (Check in / Hand off / Job desc / Standing
+          tasks). Outside the Link wrapper so clicks don't navigate to
+          the agent detail page. */}
+      <div style={{ marginTop: 8 }}>
+        <AgentCardActions agent={{ id: lead.id, name: lead.name }} />
       </div>
-
-      <HandoffModal
-        agentId={lead.id}
-        agentName={lead.name}
-        open={handoffOpen}
-        onClose={() => setHandoffOpen(false)}
-        onHandedOff={() => {
-          setActionState("sent");
-          window.setTimeout(() => {
-            setActionState((s) => (s === "sent" ? "idle" : s));
-          }, 3_000);
-        }}
-      />
 
       {/* Reports under this lead — dashed left border per AF2_Team. */}
       <div
@@ -458,20 +373,29 @@ function PodLead({
                 ? `$${report.budgetMonthlyUsd.toFixed(0)}`
                 : null;
           return (
-            <Link
+            // Outer div is no longer a Link so the AgentCardActions
+            // row below can hold buttons + nested Links without
+            // semantically nesting interactive elements inside an <a>.
+            // The avatar + name + role area inside is still linked.
+            <div
               key={report.id}
-              to={`/agents/${encodeURIComponent(report.id)}`}
-              style={{ textDecoration: "none", color: "inherit" }}
+              className="af2-card"
+              style={{
+                padding: 10,
+                marginTop: 8,
+                display: "flex",
+                flexDirection: "column",
+                gap: 8,
+              }}
             >
-              <div
-                className="af2-card"
+              <Link
+                to={`/agents/${encodeURIComponent(report.id)}`}
                 style={{
-                  padding: 10,
-                  marginTop: 8,
                   display: "flex",
                   alignItems: "center",
                   gap: 10,
-                  cursor: "pointer",
+                  textDecoration: "none",
+                  color: "inherit",
                 }}
               >
                 <div
@@ -512,8 +436,12 @@ function PodLead({
                     {reportSpend}
                   </span>
                 ) : null}
-              </div>
-            </Link>
+              </Link>
+              <AgentCardActions
+                agent={{ id: report.id, name: report.name }}
+                compact
+              />
+            </div>
           );
         })}
         <Link

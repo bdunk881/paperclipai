@@ -201,8 +201,31 @@ async function persistHiringPlanDraft(
   return id;
 }
 
-export function createMissionRoutes(pool: Pool) {
+export interface CreateMissionRoutesOptions {
+  /**
+   * Optional rate-limit middleware applied only to LLM-heavy routes
+   * (today: POST /:missionId/generate-plan, which calls a model to
+   * draft a hiring plan). Passed in so app.ts owns the shared budget
+   * across every LLM-touching endpoint instead of duplicating it
+   * here. When omitted, no per-router limiter is applied — safe for
+   * tests that don't want a shared quota.
+   *
+   * Critically, this is NOT applied to the GET handlers — those are
+   * cheap database reads that the dashboard polls on every page load
+   * (Hire, MissionState, Home). Pre-fix the blanket router-level
+   * llmEndpointRateLimiter on /api/missions caused 10/hour LLM cap
+   * to block dashboard list reads too, surfacing as "Too Many
+   * Requests" on /mission-state, /hire's "Past missions" pane, etc.
+   */
+  llmRouteLimiter?: import("express").RequestHandler;
+}
+
+export function createMissionRoutes(
+  pool: Pool,
+  options: CreateMissionRoutesOptions = {},
+) {
   const router = Router();
+  const llmRouteLimiter = options.llmRouteLimiter;
 
   // ---------------------------------------------------------------------
   // POST /api/missions — create a mission (HEL-23)
@@ -404,7 +427,10 @@ export function createMissionRoutes(pool: Pool) {
     }
   });
 
-  router.post("/:missionId/generate-plan", async (req: AuthenticatedRequest, res) => {
+  const generatePlanMiddleware: import("express").RequestHandler[] = llmRouteLimiter
+    ? [llmRouteLimiter]
+    : [];
+  router.post("/:missionId/generate-plan", ...generatePlanMiddleware, async (req: AuthenticatedRequest, res) => {
     const userId = req.auth?.sub;
     const workspaceId = (req as AuthenticatedRequest & { workspace?: { id: string } }).workspace?.id;
     if (!userId || !workspaceId) {

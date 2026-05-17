@@ -153,12 +153,12 @@ const workspaceRoutes = isPostgresPersistenceEnabled()
 
 // HEL-24: mission routes (POST /api/missions/:id/generate-plan).
 // Requires Postgres for the mission/hiring_plans persistence; in-memory
-// mode returns 501 for the generate-plan endpoint.
-const missionRoutes = isPostgresPersistenceEnabled()
-  ? createMissionRoutes(getPostgresPool())
-  : express.Router().post("/:missionId/generate-plan", (_req, res) => {
-      res.status(501).json({ error: "Mission planning requires PostgreSQL persistence." });
-    });
+// mode returns 501 for the generate-plan endpoint. NOTE: actual
+// construction is deferred until after the rate-limiter declarations
+// below so the LLM limiter can be passed in for the generate-plan
+// route only (previously the limiter was applied at the router mount
+// and blocked the GET list endpoint too — surfaced as "Too Many
+// Requests" on Hire + MissionState).
 
 // HEL-25: hiring plan confirm route (POST /api/hiring-plans/:id/confirm).
 // Requires Postgres for the agents + org_edges + activity_events writes;
@@ -374,6 +374,15 @@ const llmEndpointRateLimiter = rateLimit({
   handler: createRateLimitHandler(60 * 60 * 1000),
 });
 
+// Mission routes — constructed here (not at the top with the other
+// route factories) so the LLM rate limiter can be injected for the
+// generate-plan endpoint only. See createMissionRoutes() docs.
+const missionRoutes = isPostgresPersistenceEnabled()
+  ? createMissionRoutes(getPostgresPool(), { llmRouteLimiter: llmEndpointRateLimiter })
+  : express.Router().post("/:missionId/generate-plan", (_req, res) => {
+      res.status(501).json({ error: "Mission planning requires PostgreSQL persistence." });
+    });
+
 const authRouteRateLimitWindowMs = parsePositiveIntegerEnv(
   "AUTH_ROUTE_RATE_LIMIT_WINDOW_MS",
   60 * 1000
@@ -580,7 +589,11 @@ app.use("/api/integrations/agent-catalog", agentCatalogRoutes);
 app.use("/api/connectors/google-workspace", googleWorkspaceConnectorRoutes);
 // user-scoped: workspace management creates/lists workspaces and cannot itself be workspace-gated
 app.use("/api/workspaces", requireAuth, workspaceRoutes);
-app.use("/api/missions", requireAuth, workspaceResolver, requireRole("admin", "developer"), llmEndpointRateLimiter, missionRoutes);
+// llmEndpointRateLimiter is now applied INSIDE missionRoutes on the
+// generate-plan POST only (see createMissionRoutes). Mounting it
+// here would re-block the cheap GET list endpoint that the dashboard
+// polls on Hire + MissionState page loads.
+app.use("/api/missions", requireAuth, workspaceResolver, requireRole("admin", "developer"), missionRoutes);
 // HEL-25: hiring-plan confirm uses the same auth + workspace + role gate.
 // requireRole gates this to admin/developer so a billing-only seat can't
 // provision agents that incur LLM cost.

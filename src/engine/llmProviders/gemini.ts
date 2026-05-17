@@ -1,5 +1,11 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
-import { LLMProvider, LLMProviderConfig, LLMResponse, ResponseFormat } from "./types";
+import {
+  DEFAULT_LLM_REQUEST_TIMEOUT_MS,
+  LLMProvider,
+  LLMProviderConfig,
+  LLMResponse,
+  ResponseFormat,
+} from "./types";
 
 /**
  * Convert our provider-agnostic ResponseFormat into Gemini's
@@ -31,6 +37,10 @@ export function createGeminiProvider(config: LLMProviderConfig): LLMProvider {
 
   const genAI = new GoogleGenerativeAI(apiKey);
   const generationConfig = toGeminiGenerationConfig(config.responseFormat);
+  // Explicit per-request timeout — see DEFAULT_LLM_REQUEST_TIMEOUT_MS.
+  // Gemini's SDK passes this through `requestOptions.timeout` to the
+  // underlying fetch.
+  const timeoutMs = config.requestTimeoutMs ?? DEFAULT_LLM_REQUEST_TIMEOUT_MS;
 
   return async (prompt: string): Promise<LLMResponse> => {
     let result;
@@ -44,7 +54,7 @@ export function createGeminiProvider(config: LLMProviderConfig): LLMProvider {
         model: config.model,
         ...(generationConfig ? { generationConfig } : {}),
       } as Parameters<typeof genAI.getGenerativeModel>[0];
-      const model = genAI.getGenerativeModel(modelParams);
+      const model = genAI.getGenerativeModel(modelParams, { timeout: timeoutMs });
       result = await model.generateContent(prompt);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);

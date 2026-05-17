@@ -1,5 +1,11 @@
 import OpenAI from "openai";
-import { LLMProvider, LLMProviderConfig, LLMResponse, ResponseFormat } from "./types";
+import {
+  DEFAULT_LLM_REQUEST_TIMEOUT_MS,
+  LLMProvider,
+  LLMProviderConfig,
+  LLMResponse,
+  ResponseFormat,
+} from "./types";
 
 interface OpenAICompatibleOptions {
   label: string;
@@ -59,8 +65,14 @@ export function createOpenAICompatibleProvider(
     );
   }
 
+  // Explicit per-request timeout — see DEFAULT_LLM_REQUEST_TIMEOUT_MS.
+  // Covers every OpenAI-compat provider (OpenAI, Groq, Fireworks,
+  // Together, xAI, DeepSeek, Perplexity, Ollama, LocalAI, OpenCode Zen).
+  const timeoutMs = config.requestTimeoutMs ?? DEFAULT_LLM_REQUEST_TIMEOUT_MS;
+
   const client = new OpenAI({
     apiKey: resolvedApiKey,
+    timeout: timeoutMs,
     ...(resolvedBaseURL ? { baseURL: resolvedBaseURL } : {}),
   });
 

@@ -77,7 +77,33 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     };
   }, [syncStoredUser]);
 
-  const user = sessionUser(storedSession, storedUser);
+  // Stabilize the user reference: sessionUser() builds a fresh object on
+  // every call, so without useMemo every parent render hands consumers a
+  // new `user` ref. That's a request-storm trap — any consumer effect
+  // with `[..., user]` in its deps re-fires on every render, and at
+  // least one such effect (in MCPIntegrations) used to feed back into
+  // a setState that triggered the next render, looping until
+  // express-rate-limit emitted a 429 and trackedFetch's global cooldown
+  // locked the whole dashboard out for up to 60s. Key the memo on the
+  // primitive identity fields so structurally-equal users stay ref-equal.
+  //
+  // Inputs are flat by construction (sessionUser only reads id/email/
+  // name/tenantId), so reading those four keys is enough to detect a
+  // real identity change without holding the parent objects.
+  const userId = storedSession?.user?.id ?? storedUser?.id ?? null;
+  const userEmail = storedSession?.user?.email ?? storedUser?.email ?? null;
+  const userName = storedSession?.user?.name ?? storedUser?.name ?? null;
+  const userTenantId =
+    storedSession?.user?.tenantId ?? storedUser?.tenantId ?? null;
+  const user = React.useMemo(
+    () => sessionUser(storedSession, storedUser),
+    // The four primitives above fully determine sessionUser's output;
+    // storedSession/storedUser themselves are intentionally NOT deps
+    // because their references churn on every refresh even when the
+    // user identity is unchanged.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [userId, userEmail, userName, userTenantId],
+  );
 
   React.useEffect(() => {
     if (user) {
@@ -170,8 +196,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return accessToken;
   }, [getAccessToken]);
 
+  // Memoize the context value so consumers see a stable object reference
+  // when its constituent parts haven't changed. Otherwise every parent
+  // render hands every consumer a fresh value, which (combined with the
+  // user ref instability fix above) used to feed the integrations-page
+  // request storm.
+  const value = React.useMemo<AuthContextValue>(
+    () => ({ user, accessMode, logout, getAccessToken, requireAccessToken }),
+    [user, accessMode, logout, getAccessToken, requireAccessToken],
+  );
+
   return (
-    <AuthContext.Provider value={{ user, accessMode, logout, getAccessToken, requireAccessToken }}>
+    <AuthContext.Provider value={value}>
       {children}
     </AuthContext.Provider>
   );

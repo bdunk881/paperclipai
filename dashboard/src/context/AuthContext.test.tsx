@@ -180,4 +180,61 @@ describe("AuthContext", () => {
       expect(clearStoredAuthUserMock).toHaveBeenCalledTimes(1);
     });
   });
+
+  // Regression for the /integrations/mcp request-storm bug: useAuth()
+  // used to hand consumers a fresh `user` object on every render because
+  // sessionUser() rebuilt it from storedSession/storedUser each time.
+  // Any consumer effect with `[..., user]` deps then re-fired on every
+  // parent render, and pages like MCPIntegrations looped fetches until
+  // express-rate-limit emitted a 429 and trackedFetch's global cooldown
+  // locked the whole dashboard out. The fix memoizes `user` (+ the
+  // context value object) on the primitive identity fields, so forced
+  // re-renders without identity changes keep the same references.
+  it("keeps the user reference + context value stable across parent re-renders", () => {
+    readStoredAuthUserMock.mockReturnValue({
+      id: "user-1",
+      email: "user@example.com",
+      name: "Example User",
+      tenantId: "tenant-1",
+    });
+
+    const observedUsers: Array<ReturnType<typeof useAuth>["user"]> = [];
+    const observedContexts: ReturnType<typeof useAuth>[] = [];
+
+    function Probe() {
+      const ctx = useAuth();
+      observedUsers.push(ctx.user);
+      observedContexts.push(ctx);
+      return <div>{ctx.user?.email ?? "no-user"}</div>;
+    }
+
+    function Wrapper() {
+      // Force re-renders that don't change auth identity; the stabilized
+      // useAuth output should keep the same user + context references.
+      const [, setTick] = React.useState(0);
+      React.useEffect(() => {
+        setTick((t) => t + 1);
+      }, []);
+      React.useEffect(() => {
+        setTick((t) => t + 1);
+      }, []);
+      return <Probe />;
+    }
+
+    render(
+      <AuthProvider>
+        <Wrapper />
+      </AuthProvider>
+    );
+
+    expect(observedUsers.length).toBeGreaterThanOrEqual(2);
+    const firstUser = observedUsers[0];
+    for (const u of observedUsers) {
+      expect(u).toBe(firstUser);
+    }
+    const firstContext = observedContexts[0];
+    for (const ctx of observedContexts) {
+      expect(ctx).toBe(firstContext);
+    }
+  });
 });

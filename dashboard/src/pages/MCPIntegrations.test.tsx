@@ -1,5 +1,4 @@
 import { render, screen, waitFor } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter } from "react-router-dom";
 import IntegrationsHub from "./MCPIntegrations";
@@ -32,16 +31,16 @@ function renderHub() {
   return render(
     <MemoryRouter>
       <IntegrationsHub />
-    </MemoryRouter>
+    </MemoryRouter>,
   );
 }
 
-describe("IntegrationsHub (v2)", () => {
+describe("IntegrationsHub — V2 category-list rebuild (DASH-12/13/8)", () => {
   beforeEach(() => {
     apiGetMock.mockReset();
     apiGetMock.mockResolvedValue({ servers: [] });
     vi.spyOn(global, "fetch").mockResolvedValue(
-      new Response(JSON.stringify({ providers: liveStatuses }), { status: 200 })
+      new Response(JSON.stringify({ providers: liveStatuses }), { status: 200 }),
     );
   });
 
@@ -49,9 +48,8 @@ describe("IntegrationsHub (v2)", () => {
     vi.restoreAllMocks();
   });
 
-  it("renders v2 chrome (af2-page, af2-page-head, af2-eyebrow, h1.af2-h1)", async () => {
+  it("renders V2 chrome (af2-page, af2-page-head, serif h1)", async () => {
     const { container } = renderHub();
-
     await waitFor(() => {
       expect(container.querySelector(".af2-page")).not.toBeNull();
     });
@@ -60,64 +58,72 @@ describe("IntegrationsHub (v2)", () => {
     expect(container.querySelector("h1.af2-h1")).not.toBeNull();
   });
 
-  it("shows the 'Connect' eyebrow and 'Integrations' heading", async () => {
-    const { container } = renderHub();
-    await waitFor(() => {
-      expect(container.querySelector(".af2-eyebrow")).not.toBeNull();
-    });
-    expect(container.querySelector(".af2-eyebrow")?.textContent).toBe("Connect");
+  it("uses the editorial 'Connect · Integrations' eyebrow + 'Tools your agents can use' heading", async () => {
+    renderHub();
+    expect(await screen.findByText(/connect · integrations/i)).toBeInTheDocument();
     expect(
-      await screen.findByRole("heading", { level: 1, name: /integrations/i })
+      await screen.findByRole("heading", {
+        level: 1,
+        name: /tools your agents can use/i,
+      }),
     ).toBeInTheDocument();
   });
 
-  it("renders integration cards", async () => {
+  it("renders providers grouped under permanent category headings (no card grid, no filter pills)", async () => {
     const { container } = renderHub();
 
-    await waitFor(() => {
-      expect(container.querySelectorAll(".af2-card").length).toBeGreaterThan(0);
-    });
+    // Live providers from the catalog should appear by name.
     expect(await screen.findByText("Slack")).toBeInTheDocument();
     expect(await screen.findByText("Linear")).toBeInTheDocument();
-    expect(await screen.findByText("GitHub")).toBeInTheDocument();
+    expect(await screen.findByText("HubSpot")).toBeInTheDocument();
+
+    // Category eyebrows are rendered as <h3> on the page.
+    const categoryHeadings = Array.from(
+      container.querySelectorAll("h3.af2-eyebrow"),
+    ).map((node) => node.textContent);
+    expect(categoryHeadings).toEqual(
+      expect.arrayContaining(["Communication", "Developer Tools", "Payments"]),
+    );
+
+    // The V1 filter-pill cluster is gone — categories are always-on sections.
+    expect(container.querySelector(".af2-cluster")).toBeNull();
   });
 
-  it("renders category pills in an af2-cluster", async () => {
-    const { container } = renderHub();
-
-    await waitFor(() => {
-      expect(container.querySelector(".af2-cluster")).not.toBeNull();
-    });
-    expect(container.querySelectorAll(".af2-cluster .af2-pill").length).toBeGreaterThan(1);
-    expect(await screen.findByRole("button", { name: /^All \(/i })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /communication/i })).toBeInTheDocument();
-  });
-
-  it("marks live-connected providers as 'connected'", async () => {
+  it("marks live-connected providers as 'Connected' and unconnected ones as 'Available'", async () => {
     renderHub();
 
-    // Wait for Slack card (which is connected per the mocked /status payload).
+    // Slack is connected per the mocked /status payload.
     await screen.findByText("Slack");
-    // Slack lives in the Communication category — switch to it so we can isolate.
-    await userEvent.click(screen.getByRole("button", { name: /communication/i }));
-
     expect(screen.getAllByText(/connected/i).length).toBeGreaterThan(0);
+
+    // At least one "Available" pill should also exist (e.g., Apollo, HubSpot).
+    expect(screen.getAllByText(/available/i).length).toBeGreaterThan(0);
   });
 
-  it("links the '+ Custom MCP server' CTA to the registry route", async () => {
+  it("links the 'Custom MCP server' CTA to the registry route", async () => {
     renderHub();
-
-    const customCta = await screen.findByRole("link", { name: /custom mcp server/i });
-    expect(customCta).toHaveAttribute("href", "/settings/mcp-servers");
+    const customCta = await screen.findAllByRole("link", {
+      name: /custom mcp server/i,
+    });
+    expect(customCta.length).toBeGreaterThan(0);
+    expect(customCta[0]).toHaveAttribute("href", "/settings/mcp-servers");
   });
 
-  it("filters cards by selected category", async () => {
+  it("renders an OAuth 'Connect' button for OAuth-capable providers", async () => {
     renderHub();
+    await screen.findByText("HubSpot"); // wait for hydration
+    // HubSpot supports OAuth — there must be at least one Connect button on
+    // the page (Slack is connected, so its row shows Disconnect instead).
+    const connectButtons = screen.getAllByRole("button", { name: /^connect$/i });
+    expect(connectButtons.length).toBeGreaterThan(0);
+  });
 
-    await screen.findByText("Slack");
-    await userEvent.click(screen.getByRole("button", { name: /^payments$/i }));
-
-    expect(screen.getByText("Stripe")).toBeInTheDocument();
-    expect(screen.queryByText("Slack")).not.toBeInTheDocument();
+  it("offers 'Set up via MCP' for providers without a live connector", async () => {
+    renderHub();
+    // Notion ships via custom MCP today (no liveProviderKey in the catalog).
+    await screen.findByText("Notion");
+    const mcpLinks = screen.getAllByRole("link", { name: /set up via mcp/i });
+    expect(mcpLinks.length).toBeGreaterThan(0);
+    expect(mcpLinks[0]).toHaveAttribute("href", "/settings/mcp-servers");
   });
 });

@@ -244,12 +244,17 @@ linearWebhookRouter.post("/events", express.raw({ type: "application/json" }), (
     }
 
     const rawBody = req.body as Buffer;
-    verifyLinearWebhook({
-      rawBody,
-      signatureHeader: req.header("linear-signature") ?? req.header("x-linear-signature"),
-      deliveryIdHeader: req.header("linear-delivery") ?? req.header("x-linear-delivery"),
-      signingSecret,
-    });
+    try {
+      verifyLinearWebhook({
+        rawBody,
+        signatureHeader: req.header("linear-signature") ?? req.header("x-linear-signature"),
+        deliveryIdHeader: req.header("linear-delivery") ?? req.header("x-linear-delivery"),
+        signingSecret,
+      });
+    } catch (verifyErr) {
+      console.error("[webhook.signature_rejected]", { provider: "linear", ip: req.ip, error: verifyErr instanceof Error ? verifyErr.message : String(verifyErr) });
+      throw verifyErr;
+    }
 
     const payload = JSON.parse(rawBody.toString("utf8"));
 

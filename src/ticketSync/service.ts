@@ -1,4 +1,5 @@
 import { createHmac, timingSafeEqual } from "crypto";
+import { verifyHmac } from "../webhooks/verifySignature";
 import {
   buildMirroredCommentBody,
   buildTrackerIdempotencyKey,
@@ -418,24 +419,20 @@ function parseLinearWebhook(rawBody: Buffer): TicketSyncWebhookEvent {
 }
 
 function verifyGitHubWebhook(rawBody: Buffer, signatureHeader: string | undefined, secret: string): void {
-  if (!signatureHeader?.trim()) {
-    throw new TrackerError("auth", "Missing GitHub webhook signature", 401);
-  }
-
-  const expected = `sha256=${createHmac("sha256", secret).update(rawBody).digest("hex")}`;
-  if (!signaturesEqual(signatureHeader.trim(), expected)) {
-    throw new TrackerError("auth", "Invalid GitHub webhook signature", 401);
+  try {
+    verifyHmac({ secret, rawBody, signatureHeader, prefix: "sha256=" });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    throw new TrackerError("auth", msg.includes("Missing") ? "Missing GitHub webhook signature" : "Invalid GitHub webhook signature", 401);
   }
 }
 
 function verifyJiraWebhook(rawBody: Buffer, signatureHeader: string | undefined, secret: string): void {
-  if (!signatureHeader?.trim()) {
-    throw new TrackerError("auth", "Missing Jira webhook signature", 401);
-  }
-
-  const expected = createHmac("sha256", secret).update(rawBody).digest("hex");
-  if (!signaturesEqual(signatureHeader.trim().replace(/^sha256=/i, ""), expected)) {
-    throw new TrackerError("auth", "Invalid Jira webhook signature", 401);
+  try {
+    verifyHmac({ secret, rawBody, signatureHeader, prefix: "sha256=" });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    throw new TrackerError("auth", msg.includes("Missing") ? "Missing Jira webhook signature" : "Invalid Jira webhook signature", 401);
   }
 }
 
@@ -752,17 +749,22 @@ export const ticketSyncService = {
 
     const secret = built.decrypted.record.metadata.config.webhookSecret;
     if (secret) {
-      if (input.provider === "github") {
-        verifyGitHubWebhook(input.rawBody, input.headers["x-hub-signature-256"], secret);
-      } else if (input.provider === "jira") {
-        verifyJiraWebhook(input.rawBody, input.headers["x-atlassian-webhook-signature"], secret);
-      } else {
-        verifyLinearWebhook({
-          rawBody: input.rawBody,
-          signatureHeader: input.headers["linear-signature"] ?? input.headers["x-linear-signature"],
-          deliveryIdHeader: input.headers["linear-delivery"] ?? input.headers["x-linear-delivery"],
-          signingSecret: secret,
-        });
+      try {
+        if (input.provider === "github") {
+          verifyGitHubWebhook(input.rawBody, input.headers["x-hub-signature-256"], secret);
+        } else if (input.provider === "jira") {
+          verifyJiraWebhook(input.rawBody, input.headers["x-atlassian-webhook-signature"], secret);
+        } else {
+          verifyLinearWebhook({
+            rawBody: input.rawBody,
+            signatureHeader: input.headers["linear-signature"] ?? input.headers["x-linear-signature"],
+            deliveryIdHeader: input.headers["linear-delivery"] ?? input.headers["x-linear-delivery"],
+            signingSecret: secret,
+          });
+        }
+      } catch (sigErr) {
+        console.error("[webhook.signature_rejected]", { provider: input.provider, connectionId: input.connectionId, error: sigErr instanceof Error ? sigErr.message : String(sigErr) });
+        throw sigErr;
       }
     }
 

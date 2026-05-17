@@ -1,5 +1,6 @@
 import { Request, Response, NextFunction } from "express";
 import { Pool } from "pg";
+import { randomBytes } from "crypto";
 import { AuthenticatedRequest } from "../auth/authMiddleware";
 
 /**
@@ -162,9 +163,10 @@ export async function provisionDefaultWorkspace(pool: Pool, userId: string): Pro
       return existing.rows[0].id;
     }
 
+    const outboundSecret = randomBytes(32).toString("hex");
     const inserted = await client.query<{ id: string }>(
-      `INSERT INTO workspaces (name, owner_user_id) VALUES ($1, $2) RETURNING id`,
-      [DEFAULT_WORKSPACE_NAME, userId],
+      `INSERT INTO workspaces (name, owner_user_id, outbound_webhook_secret) VALUES ($1, $2, $3) RETURNING id`,
+      [DEFAULT_WORKSPACE_NAME, userId, outboundSecret],
     );
     const workspaceId = inserted.rows[0]?.id;
     if (!workspaceId) {

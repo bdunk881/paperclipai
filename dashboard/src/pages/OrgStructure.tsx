@@ -19,10 +19,12 @@ interface AgentSpendRow {
 import { EmptyState, ErrorState, LoadingState } from "../components/UiStates";
 import { useAuth } from "../context/AuthContext";
 import { AgentPresencePill } from "../components/AgentPresencePill";
+import { HandoffModal } from "../components/HandoffModal";
 import {
   useAgentPresence,
   type AgentPresence,
 } from "../hooks/useAgentPresence";
+import { checkInAgent } from "../api/agentActionsApi";
 
 /**
  * Team page — Workforce > Team (HEL-26).
@@ -268,6 +270,28 @@ function PodLead({
   reportStats: Map<string, AgentSpendRow>;
   presence: Map<string, AgentPresence>;
 }) {
+  const { requireAccessToken } = useAuth();
+  const [handoffOpen, setHandoffOpen] = useState(false);
+  const [actionState, setActionState] = useState<
+    "idle" | "checking-in" | "sent" | "error"
+  >("idle");
+  const [actionError, setActionError] = useState<string | null>(null);
+
+  async function handleCheckIn(): Promise<void> {
+    setActionState("checking-in");
+    setActionError(null);
+    try {
+      const token = await requireAccessToken();
+      await checkInAgent(lead.id, token);
+      setActionState("sent");
+      window.setTimeout(() => {
+        setActionState((s) => (s === "sent" ? "idle" : s));
+      }, 3_000);
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : "Check-in failed");
+      setActionState("error");
+    }
+  }
   const avatarClass = avatarClassFor(tone);
   const borderColor = topBorderFor(tone);
   // Missions count is not a clean signal yet — fall back to the team size
@@ -343,6 +367,78 @@ function PodLead({
           </div>
         </div>
       </Link>
+
+      {/* Wave 5 action row — wake the agent on demand, or hand off a
+          new task. Outside the Link wrapper so clicks don't navigate
+          to the agent detail page. */}
+      <div
+        style={{
+          marginTop: 8,
+          display: "flex",
+          gap: 6,
+          alignItems: "center",
+          fontSize: 12,
+        }}
+      >
+        <button
+          type="button"
+          onClick={(e) => {
+            e.preventDefault();
+            void handleCheckIn();
+          }}
+          disabled={actionState === "checking-in"}
+          className="af2-btn af2-btn-sm af2-btn-ghost"
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            gap: 4,
+            opacity: actionState === "checking-in" ? 0.6 : 1,
+          }}
+          title={`Wake ${lead.name} to review current work and unblock self`}
+        >
+          {actionState === "checking-in" ? "Checking in…" : "Check in now"}
+        </button>
+        <button
+          type="button"
+          onClick={(e) => {
+            e.preventDefault();
+            setHandoffOpen(true);
+          }}
+          className="af2-btn af2-btn-sm af2-btn-ghost"
+          title={`Assign a new task to ${lead.name}`}
+        >
+          Hand off…
+        </button>
+        {actionState === "sent" ? (
+          <span
+            className="af2-muted"
+            style={{ fontSize: 11, color: "var(--af2-sage)" }}
+          >
+            ✓ Sent
+          </span>
+        ) : null}
+        {actionState === "error" && actionError ? (
+          <span
+            className="af2-muted"
+            style={{ fontSize: 11, color: "var(--af2-clay)" }}
+          >
+            {actionError}
+          </span>
+        ) : null}
+      </div>
+
+      <HandoffModal
+        agentId={lead.id}
+        agentName={lead.name}
+        open={handoffOpen}
+        onClose={() => setHandoffOpen(false)}
+        onHandedOff={() => {
+          setActionState("sent");
+          window.setTimeout(() => {
+            setActionState((s) => (s === "sent" ? "idle" : s));
+          }, 3_000);
+        }}
+      />
 
       {/* Reports under this lead — dashed left border per AF2_Team. */}
       <div

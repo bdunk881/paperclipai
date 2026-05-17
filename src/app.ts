@@ -34,6 +34,7 @@ import agentMemoryRoutes from "./agents/agentMemoryRoutes";
 import agentRoutes from "./agents/agentRoutes";
 import { createAgentPresenceRoutes } from "./agents/agentPresenceRoutes";
 import { createAgentJobDescriptionRoutes } from "./agents/agentJobDescriptionRoutes";
+import { createAgentActionsRoutes } from "./agents/agentActionsRoutes";
 import knowledgeRoutes from "./knowledge/routes";
 import controlPlaneRoutes from "./controlPlane/controlPlaneRoutes";
 import companyRoutes from "./companies/companyRoutes";
@@ -604,6 +605,17 @@ const agentJobDescriptionRoutes = isPostgresPersistenceEnabled()
       res.status(501).json({ error: "Job description wizard requires PostgreSQL persistence." }),
     );
 app.use("/api/agents", requireAuth, workspaceResolver, requireRole("admin", "developer"), agentJobDescriptionRoutes);
+// Wave 5: agent action routes — POST /:agentId/check-in and
+// /:agentId/handoff. Both create a mission_assignment ticket through
+// the existing ticketStore; check-in additionally flips presence to
+// "checking-in" so the dashboard pill reflects the request. Same
+// Postgres gating as the wizard above.
+const agentActionsRoutes = isPostgresPersistenceEnabled()
+  ? createAgentActionsRoutes(getPostgresPool())
+  : express.Router().all("*", (_req, res) =>
+      res.status(501).json({ error: "Agent actions require PostgreSQL persistence." }),
+    );
+app.use("/api/agents", requireAuth, workspaceResolver, requireRole("admin", "developer"), agentActionsRoutes);
 app.use("/api/agents", requireAuth, workspaceResolver, requireRole("admin", "developer"), agentRoutes);
 app.use("/api/integrations/apollo", apolloRoutes);
 

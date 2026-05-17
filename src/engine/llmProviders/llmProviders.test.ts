@@ -574,3 +574,238 @@ describe("Mistral adapter", () => {
     );
   });
 });
+
+// ---------------------------------------------------------------------------
+// responseFormat → native JSON-mode wiring (Tier 2 of the
+// multi-provider chatty-output fix). Verifies each provider translates
+// the provider-agnostic ResponseFormat into the right native call
+// shape: OpenAI/compat → response_format, Anthropic → forced tool-use,
+// Mistral → responseFormat, Gemini → generationConfig.responseMimeType.
+// ---------------------------------------------------------------------------
+
+describe("responseFormat — native JSON mode per provider", () => {
+  const schema = { type: "object", properties: { ok: { type: "boolean" } } } as const;
+
+  it("OpenAI: json_object → response_format: { type: 'json_object' }", async () => {
+    const provider = getProvider({
+      provider: "openai",
+      model: "gpt-4o",
+      apiKey: "sk-test",
+      responseFormat: { type: "json_object" },
+    });
+    openaiInstance().chat.completions.create.mockResolvedValueOnce({
+      choices: [{ message: { content: '{"ok":true}' } }],
+      usage: null,
+    });
+
+    await provider("Prompt");
+    expect(openaiInstance().chat.completions.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        response_format: { type: "json_object" },
+      }),
+    );
+  });
+
+  it("OpenAI: json_schema → response_format: { type: 'json_schema', json_schema: { strict: true, ... } }", async () => {
+    const provider = getProvider({
+      provider: "openai",
+      model: "gpt-4o",
+      apiKey: "sk-test",
+      responseFormat: { type: "json_schema", name: "thing", schema: { ...schema } },
+    });
+    openaiInstance().chat.completions.create.mockResolvedValueOnce({
+      choices: [{ message: { content: '{"ok":true}' } }],
+      usage: null,
+    });
+
+    await provider("Prompt");
+    expect(openaiInstance().chat.completions.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        response_format: {
+          type: "json_schema",
+          json_schema: { name: "thing", schema: { ...schema }, strict: true },
+        },
+      }),
+    );
+  });
+
+  it("OpenAI: no responseFormat → no response_format key sent", async () => {
+    const provider = getProvider({
+      provider: "openai",
+      model: "gpt-4o",
+      apiKey: "sk-test",
+    });
+    openaiInstance().chat.completions.create.mockResolvedValueOnce({
+      choices: [{ message: { content: "plain text" } }],
+      usage: null,
+    });
+
+    await provider("Prompt");
+    const callArg = openaiInstance().chat.completions.create.mock.calls[0]?.[0] as
+      | Record<string, unknown>
+      | undefined;
+    expect(callArg).toBeDefined();
+    expect(callArg).not.toHaveProperty("response_format");
+  });
+
+  it("Groq (OpenAI-compat): responseFormat passes through the shared adapter", async () => {
+    const provider = getProvider({
+      provider: "groq",
+      model: "llama-3.3-70b-versatile",
+      apiKey: "gsk-test",
+      responseFormat: { type: "json_object" },
+    });
+    openaiInstance().chat.completions.create.mockResolvedValueOnce({
+      choices: [{ message: { content: '{"ok":true}' } }],
+      usage: null,
+    });
+
+    await provider("Prompt");
+    expect(openaiInstance().chat.completions.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        response_format: { type: "json_object" },
+      }),
+    );
+  });
+
+  it("Mistral: json_object → responseFormat: { type: 'json_object' }", async () => {
+    const provider = getProvider({
+      provider: "mistral",
+      model: "mistral-large-latest",
+      apiKey: "test-key",
+      responseFormat: { type: "json_object" },
+    });
+    mistralInstance().chat.complete.mockResolvedValueOnce({
+      choices: [{ message: { content: '{"ok":true}' } }],
+      usage: { promptTokens: 0, completionTokens: 0 },
+    });
+
+    await provider("Prompt");
+    expect(mistralInstance().chat.complete).toHaveBeenCalledWith(
+      expect.objectContaining({ responseFormat: { type: "json_object" } }),
+    );
+  });
+
+  it("Mistral: json_schema → responseFormat: { type: 'json_schema', jsonSchema: { strict: true, ... } }", async () => {
+    const provider = getProvider({
+      provider: "mistral",
+      model: "mistral-large-latest",
+      apiKey: "test-key",
+      responseFormat: { type: "json_schema", name: "thing", schema: { ...schema } },
+    });
+    mistralInstance().chat.complete.mockResolvedValueOnce({
+      choices: [{ message: { content: '{"ok":true}' } }],
+      usage: { promptTokens: 0, completionTokens: 0 },
+    });
+
+    await provider("Prompt");
+    expect(mistralInstance().chat.complete).toHaveBeenCalledWith(
+      expect.objectContaining({
+        responseFormat: {
+          type: "json_schema",
+          jsonSchema: { name: "thing", schemaDefinition: { ...schema }, strict: true },
+        },
+      }),
+    );
+  });
+
+  it("Anthropic: json_schema → forced tool-use, response.text is the tool input JSON-stringified", async () => {
+    const provider = getProvider({
+      provider: "anthropic",
+      model: "claude-opus-4-6",
+      apiKey: "sk-ant-test",
+      responseFormat: { type: "json_schema", schema: { ...schema } },
+    });
+    anthropicInstance().messages.create.mockResolvedValueOnce({
+      content: [
+        {
+          type: "tool_use",
+          name: "respond_with_json",
+          input: { ok: true },
+        },
+      ],
+      usage: { input_tokens: 5, output_tokens: 3 },
+    });
+
+    const result = await provider("Prompt");
+    // Tool-use input is serialized back into LLMResponse.text so every
+    // downstream parser path stays uniform.
+    expect(result.text).toBe('{"ok":true}');
+    expect(anthropicInstance().messages.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        tools: expect.arrayContaining([
+          expect.objectContaining({
+            name: "respond_with_json",
+            input_schema: { ...schema },
+          }),
+        ]),
+        tool_choice: { type: "tool", name: "respond_with_json" },
+      }),
+    );
+  });
+
+  it("Anthropic: no responseFormat → no tools / tool_choice keys sent (text path preserved)", async () => {
+    const provider = getProvider({
+      provider: "anthropic",
+      model: "claude-opus-4-6",
+      apiKey: "sk-ant-test",
+    });
+    anthropicInstance().messages.create.mockResolvedValueOnce({
+      content: [{ type: "text", text: "Hi" }],
+      usage: { input_tokens: 1, output_tokens: 1 },
+    });
+
+    await provider("Prompt");
+    const callArg = anthropicInstance().messages.create.mock.calls[0]?.[0] as
+      | Record<string, unknown>
+      | undefined;
+    expect(callArg).toBeDefined();
+    expect(callArg).not.toHaveProperty("tools");
+    expect(callArg).not.toHaveProperty("tool_choice");
+  });
+
+  it("Gemini: json_object → generationConfig.responseMimeType set, no schema", async () => {
+    const provider = getProvider({
+      provider: "gemini",
+      model: "gemini-1.5-pro",
+      apiKey: "g-test",
+      responseFormat: { type: "json_object" },
+    });
+    googleInstance().getGenerativeModel.mockReturnValueOnce({
+      generateContent: jest.fn().mockResolvedValue({
+        response: { text: () => '{"ok":true}', usageMetadata: undefined },
+      }),
+    });
+
+    await provider("Prompt");
+    expect(googleInstance().getGenerativeModel).toHaveBeenCalledWith(
+      expect.objectContaining({
+        generationConfig: { responseMimeType: "application/json" },
+      }),
+    );
+  });
+
+  it("Gemini: json_schema → generationConfig.responseSchema set alongside responseMimeType", async () => {
+    const provider = getProvider({
+      provider: "gemini",
+      model: "gemini-1.5-pro",
+      apiKey: "g-test",
+      responseFormat: { type: "json_schema", schema: { ...schema } },
+    });
+    googleInstance().getGenerativeModel.mockReturnValueOnce({
+      generateContent: jest.fn().mockResolvedValue({
+        response: { text: () => '{"ok":true}', usageMetadata: undefined },
+      }),
+    });
+
+    await provider("Prompt");
+    expect(googleInstance().getGenerativeModel).toHaveBeenCalledWith(
+      expect.objectContaining({
+        generationConfig: {
+          responseMimeType: "application/json",
+          responseSchema: { ...schema },
+        },
+      }),
+    );
+  });
+});

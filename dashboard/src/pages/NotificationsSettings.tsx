@@ -257,7 +257,7 @@ export default function NotificationsSettings() {
     <div className="af2-page" style={{ maxWidth: 1080 }}>
       <div className="af2-page-head">
         <div>
-          <div className="af2-eyebrow">Settings · Security</div>
+          <div className="af2-eyebrow">Settings · Notifications</div>
           <h1 className="af2-h1" style={{ marginTop: 6 }}>Notifications</h1>
           <div className="af2-page-head-meta">
             Slack, email, and SMS digests with workspace-level cadence controls.

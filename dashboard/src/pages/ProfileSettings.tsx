@@ -141,7 +141,7 @@ export default function ProfileSettings() {
       {toast && <Toast variant={toast.variant} message={toast.message} />}
       <div className="af2-page-head">
         <div>
-          <div className="af2-eyebrow">Settings · Members</div>
+          <div className="af2-eyebrow">Settings · Profile</div>
           <h1 className="af2-h1" style={{ marginTop: 6 }}>Profile</h1>
           <div className="af2-page-head-meta">
             Update your display name and account preferences.

@@ -27,6 +27,7 @@ import { approvalStore } from "./engine/approvalStore";
 import { approvalNotificationStore } from "./engine/approvalNotificationStore";
 import approvalPolicyRoutes from "./approvals/policyRoutes";
 import llmConfigRoutes from "./llmConfig/llmConfigRoutes";
+import { createHostedFreeRoutes } from "./hostedFreeModels/hostedFreeRoutes";
 import mcpRoutes from "./mcp/mcpRoutes";
 import memoryRoutes from "./memory/memoryRoutes";
 import agentMemoryRoutes from "./agents/agentMemoryRoutes";
@@ -523,6 +524,14 @@ app.use("/api/llm-configs", requireAuth, workspaceResolver, requireRole("admin",
 // Both paths resolve to the same router until the dashboard fully migrates;
 // then `/api/llm-configs` becomes a legacy alias for one release before removal.
 app.use("/api/llm-credentials", requireAuth, workspaceResolver, requireRole("admin", "developer"), llmConfigRoutes);
+
+// ---------------------------------------------------------------------------
+// Hosted free model catalog (PR B.1) — read-only catalog of the three
+// free tiers AutoFlow offers out of the box for Explore workspaces.
+// Engine fallback in src/engine/stepHandlers.ts uses this catalog to
+// route LLM steps when a workspace has no BYOK config configured.
+// ---------------------------------------------------------------------------
+app.use("/api/hosted-free-models", requireAuth, createHostedFreeRoutes());
 
 // ---------------------------------------------------------------------------
 // MCP Registry API — register and discover MCP server connections

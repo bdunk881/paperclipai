@@ -10,6 +10,16 @@ export function createGroqProvider(config: LLMProviderConfig): LLMProvider {
   });
 }
 
+export function createOpenCodeZenProvider(config: LLMProviderConfig): LLMProvider {
+  // OpenCode Zen exposes an OpenAI-compatible chat-completions endpoint at
+  // /zen/v1. Used by the hosted free tier (Big Pickle stealth model) —
+  // see src/hostedFreeModels/providers.ts.
+  return createOpenAICompatibleProvider(config, {
+    label: "OpenCode Zen",
+    baseURL: "https://opencode.ai/zen/v1",
+  });
+}
+
 export function createFireworksProvider(config: LLMProviderConfig): LLMProvider {
   return createOpenAICompatibleProvider(config, {
     label: "Fireworks AI",

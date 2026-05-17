@@ -9,6 +9,11 @@
 import { WorkflowStep, AgentSlotResult, AgentMessage } from "../types/workflow";
 import { createHash } from "crypto";
 import { llmConfigStore } from "../llmConfig/llmConfigStore";
+import {
+  buildResolvedFromHostedFree,
+  getDefaultHostedFreeProvider,
+  resolveHostedFreeApiKey,
+} from "../hostedFreeModels/providers";
 import { getProvider } from "./llmProviders";
 import { getBus, releaseBus } from "./agentBus";
 import { classifyTierWithConfidence, resolveModelForTier, buildCostLog, LlmCostLog } from "./llmRouter";
@@ -172,10 +177,25 @@ export async function handleLlm(
 
   const renderedPrompt = interpolate(step.promptTemplate, sanitized);
 
-  // Resolve config: step-level override or user's default
-  const resolved = step.llmConfigId
+  // Resolve config: step-level override or user's default. When neither
+  // exists, fall back to the hosted free model (PR B.1) so Explore
+  // workspaces with no BYOK key can still run workflows out of the box.
+  // If the hosted-free env vars aren't set in this environment, the
+  // fallback declines and we surface the original "no LLM provider
+  // configured" error instead of throwing a confusing 500.
+  let resolved = step.llmConfigId
     ? await llmConfigStore.getDecrypted(step.llmConfigId, userId)
     : await llmConfigStore.getDecryptedDefault(userId);
+  let usedHostedFree = false;
+
+  if (!resolved) {
+    const hostedFree = getDefaultHostedFreeProvider();
+    const hostedFreeKey = hostedFree ? resolveHostedFreeApiKey(hostedFree) : null;
+    if (hostedFree && hostedFreeKey) {
+      resolved = buildResolvedFromHostedFree(hostedFree, hostedFreeKey);
+      usedHostedFree = true;
+    }
+  }
 
   if (!resolved) {
     throw new Error(
@@ -183,9 +203,15 @@ export async function handleLlm(
     );
   }
 
-  // Determine the appropriate model tier for this step's complexity
+  // Determine the appropriate model tier for this step's complexity.
+  // Hosted free fallbacks pin to the provider's fixed modelId — we
+  // don't want the tier classifier swapping the stealth Big Pickle for
+  // a non-existent opencode-zen tier-model, and we want a consistent
+  // Llama 8B experience on the default Groq path.
   const classification = classifyTierWithConfidence(step, renderedPrompt.length);
-  const tieredModel = resolveModelForTier(resolved.config.provider, classification.tier);
+  const tieredModel = usedHostedFree
+    ? resolved.config.model
+    : resolveModelForTier(resolved.config.provider, classification.tier);
   logClassificationDecision({
     promptHash: hashPrompt(renderedPrompt),
     features: classification.features,
@@ -649,8 +675,19 @@ export async function handleAgent(
       }
     | undefined;
 
-  // Resolve the LLM provider once (shared across slots)
-  const resolved = await llmConfigStore.getDecryptedDefault(userId);
+  // Resolve the LLM provider once (shared across slots). Same hosted-
+  // free fallback as the llm step handler above: if no workspace BYOK
+  // config exists, route to the hosted free model when the env vars
+  // are set; otherwise surface the original "no LLM provider
+  // configured" error.
+  let resolved = await llmConfigStore.getDecryptedDefault(userId);
+  if (!resolved) {
+    const hostedFree = getDefaultHostedFreeProvider();
+    const hostedFreeKey = hostedFree ? resolveHostedFreeApiKey(hostedFree) : null;
+    if (hostedFree && hostedFreeKey) {
+      resolved = buildResolvedFromHostedFree(hostedFree, hostedFreeKey);
+    }
+  }
   if (!resolved) {
     throw new Error(
       `Agent step "${step.id}" failed: no LLM provider configured. ` +

@@ -70,7 +70,7 @@ jobs:
           violations=$(grep -n 'app\.use("/api/' src/app.ts \
             | grep 'requireAuth' \
             | grep -v 'requireRole(' \
-            | grep -Ev '"/api/workspaces[/"]|"/api/admin/|"/api/activity-events"|"/api/org-graph"|"/api/runs/|"/api/budgets"|"/api/entitlements"|"/api/wake-events"|"/api/connector-connections"' \
+            | grep -Ev '"/api/workspaces[/"]|"/api/admin/|"/api/activity-events"|"/api/org-graph"|"/api/runs/|"/api/budgets"|"/api/entitlements"|"/api/wake-events"|"/api/connector-connections"|"/api/hosted-free-models"' \
             || true)
           if [ -n "$violations" ]; then
             printf 'FAIL: app.use mounts have requireAuth but no requireRole() — add requireRole() or the allowlist comment:\n%s\n' "$violations"

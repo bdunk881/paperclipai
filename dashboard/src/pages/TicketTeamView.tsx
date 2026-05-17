@@ -1,6 +1,21 @@
+/**
+ * Team view — V2 editorial rebuild (DASH-19).
+ *
+ * Sub-route under Mission Assignments at /mission-assignments/team.
+ * Shows side-by-side agent and human queue counts so ownership
+ * drift is obvious before it becomes a problem.
+ *
+ * Used to render in the V1 indigo/teal glass-card design; now uses
+ * af2-page / af2-card / af2-list primitives like the rest of the
+ * /mission-assignments surface.
+ *
+ * Data layer unchanged from V1: `listTickets` + actor-count
+ * aggregation. Sub-page link repointed off the legacy /tickets/*
+ * redirect onto the canonical /mission-assignments/* path.
+ */
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { ArrowLeft, Bot, RefreshCw, UserRound } from "lucide-react";
+import { Bot, Loader2, RefreshCw, UserRound } from "lucide-react";
 import {
   getTicketActorProfile,
   listTickets,
@@ -29,7 +44,9 @@ export default function TicketTeamView() {
       setTickets(response.tickets);
       setSource(response.source);
     } catch (loadError) {
-      setError(loadError instanceof Error ? loadError.message : "Failed to load team view");
+      setError(
+        loadError instanceof Error ? loadError.message : "Failed to load team view",
+      );
     } finally {
       setLoading(false);
     }
@@ -44,71 +61,92 @@ export default function TicketTeamView() {
   const humans = actorCounts.filter((actor) => actor.type === "user");
 
   return (
-    <div className="min-h-full bg-[#0b1120] text-slate-100">
-      <div className="mx-auto flex w-full max-w-7xl flex-col gap-6 px-4 py-6 md:px-8 md:py-8">
-        <section className="rounded-[30px] border border-slate-800/80 bg-slate-950/85 px-6 py-6 md:px-8">
-          <div className="flex flex-wrap items-start justify-between gap-4">
-            <div className="max-w-2xl">
-              <Link
-                to="/tickets"
-                className="inline-flex items-center gap-2 text-sm text-slate-400 transition hover:text-slate-100"
-              >
-                <ArrowLeft size={14} />
-                Back to queue
-              </Link>
-              <h1 className="mt-4 text-3xl font-semibold tracking-tight text-slate-100">Team Assignment View</h1>
-              <p className="mt-2 text-sm leading-6 text-slate-400">
-                Agents and humans side-by-side with live counts by status so ownership drift is obvious before it becomes a problem.
-              </p>
-            </div>
-
-            <button
-              onClick={() => {
-                void load();
-              }}
-              className="inline-flex items-center gap-2 rounded-full border border-slate-700 bg-slate-900/80 px-4 py-2 text-sm font-medium text-slate-300 transition hover:border-indigo-500/30 hover:text-slate-100"
-            >
-              <RefreshCw size={14} />
-              Refresh
-            </button>
+    <div className="af2-page text-af2-ink">
+      <div className="af2-page-head">
+        <div>
+          <div className="af2-eyebrow">Run · Assignments · Team</div>
+          <h1 className="af2-h1 font-af2-serif" style={{ marginTop: 6 }}>
+            Team assignment view
+          </h1>
+          <div className="af2-page-head-meta">
+            Agents and humans side-by-side with live counts by status so
+            ownership drift is obvious before it becomes a problem.
           </div>
-
-          <div className="mt-5">
-            <TicketSourceNotice source={source} />
-          </div>
-        </section>
-
-        {loading ? (
-          <div className="grid gap-5 lg:grid-cols-2">
-            <div className="scanline-skeleton min-h-[340px] rounded-[28px]" />
-            <div className="scanline-skeleton min-h-[340px] rounded-[28px]" />
-          </div>
-        ) : error ? (
-          <div className="rounded-2xl border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-200">
-            {error}
-          </div>
-        ) : actorCounts.length === 0 ? (
-          <TicketEmptyState
-            title="No team activity yet"
-            body="Create a ticket to start building the team-wide queue view."
-          />
-        ) : (
-          <div className="grid gap-5 lg:grid-cols-2">
-            <ActorColumn
-              title="Agents"
-              body="Operational workload for autonomous teammates."
-              actors={agents}
-              icon={<Bot size={15} />}
-            />
-            <ActorColumn
-              title="Humans"
-              body="Hand-offs, PM review, and customer-facing ownership."
-              actors={humans}
-              icon={<UserRound size={15} />}
-            />
-          </div>
-        )}
+        </div>
+        <div className="af2-page-actions">
+          <Link
+            to="/mission-assignments"
+            className="af2-btn af2-btn-ghost af2-btn-sm"
+            style={{ textDecoration: "none" }}
+          >
+            ← Back to queue
+          </Link>
+          <button
+            type="button"
+            onClick={() => {
+              void load();
+            }}
+            className="af2-btn af2-btn-sm"
+            style={{ display: "inline-flex", alignItems: "center", gap: 6 }}
+            aria-label="Refresh team view"
+          >
+            <RefreshCw size={13} />
+            Refresh
+          </button>
+        </div>
       </div>
+
+      <TicketSourceNotice source={source} />
+
+      {loading ? (
+        <div className="af2-card" style={{ padding: 40, textAlign: "center" }}>
+          <Loader2
+            className="animate-spin"
+            style={{ margin: "0 auto 12px", opacity: 0.5 }}
+          />
+          <p className="af2-muted">Loading team view…</p>
+        </div>
+      ) : error ? (
+        <div
+          role="alert"
+          style={{
+            padding: "12px 16px",
+            borderRadius: "var(--af2-radius)",
+            border: "1px solid rgba(192,84,76,0.30)",
+            background: "rgba(192,84,76,0.10)",
+            color: "var(--af2-clay)",
+            fontSize: 13,
+          }}
+        >
+          {error}
+        </div>
+      ) : actorCounts.length === 0 ? (
+        <TicketEmptyState
+          title="No team activity yet"
+          body="Hand off work to an agent to start the team queue."
+        />
+      ) : (
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1fr)",
+            gap: 20,
+          }}
+        >
+          <ActorColumn
+            title="Agents"
+            body="Operational workload for autonomous teammates."
+            actors={agents}
+            icon={<Bot size={13} />}
+          />
+          <ActorColumn
+            title="Humans"
+            body="Hand-offs, PM review, and customer-facing ownership."
+            actors={humans}
+            icon={<UserRound size={13} />}
+          />
+        </div>
+      )}
     </div>
   );
 }
@@ -125,44 +163,98 @@ function ActorColumn({
   icon: React.ReactNode;
 }) {
   return (
-    <section className="rounded-[30px] border border-slate-800 bg-slate-950/80 p-5">
-      <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+    <section className="af2-card" style={{ padding: 18 }}>
+      <div
+        className="af2-eyebrow"
+        style={{ display: "inline-flex", alignItems: "center", gap: 6 }}
+      >
         {icon}
         {title}
       </div>
-      <p className="mt-3 text-sm text-slate-400">{body}</p>
+      <p className="af2-muted" style={{ fontSize: 12, marginTop: 6 }}>
+        {body}
+      </p>
 
-      <div className="mt-5 space-y-3">
-        {actors.map((actor) => {
-          const profile = getTicketActorProfile(actor);
-          return (
-            <Link
-              key={`${actor.type}:${actor.id}`}
-              to={`/tickets/actors/${actor.type}/${actor.id}`}
-              className="block rounded-[24px] border border-slate-800 bg-slate-900/70 px-4 py-4 transition hover:border-teal-500/30 hover:bg-slate-900"
-            >
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <p className="text-base font-semibold text-slate-100">{profile.name}</p>
-                  <p className="mt-1 text-xs uppercase tracking-[0.16em] text-slate-500">
-                    {profile.title}
-                  </p>
+      {actors.length === 0 ? (
+        <p
+          className="af2-muted-2"
+          style={{ fontSize: 12, marginTop: 18, textAlign: "center" }}
+        >
+          No {title.toLowerCase()} in the queue.
+        </p>
+      ) : (
+        <div style={{ display: "grid", gap: 8, marginTop: 14 }}>
+          {actors.map((actor) => {
+            const profile = getTicketActorProfile(actor);
+            return (
+              <Link
+                key={`${actor.type}:${actor.id}`}
+                to={`/mission-assignments/actors/${actor.type}/${actor.id}`}
+                className="af2-card"
+                style={{
+                  padding: 14,
+                  textDecoration: "none",
+                  color: "inherit",
+                  borderColor: "var(--af2-line)",
+                }}
+              >
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "flex-start",
+                    justifyContent: "space-between",
+                    gap: 10,
+                  }}
+                >
+                  <div style={{ minWidth: 0 }}>
+                    <div
+                      className="font-af2-serif"
+                      style={{
+                        fontSize: 15,
+                        fontWeight: 600,
+                        color: "var(--af2-ink)",
+                      }}
+                    >
+                      {profile.name}
+                    </div>
+                    <div
+                      className="af2-mono af2-muted-2"
+                      style={{
+                        fontSize: 10.5,
+                        marginTop: 4,
+                        textTransform: "uppercase",
+                        letterSpacing: "0.08em",
+                      }}
+                    >
+                      {profile.title}
+                    </div>
+                  </div>
+                  <span
+                    className="af2-pill"
+                    style={{ flexShrink: 0, fontSize: 11 }}
+                  >
+                    {actor.total} total
+                  </span>
                 </div>
-                <span className="rounded-full border border-slate-700 px-2.5 py-1 text-xs text-slate-400">
-                  {actor.total} total
-                </span>
-              </div>
 
-              <div className="mt-4 grid grid-cols-4 gap-2 text-center">
-                <CountPill label="Open" value={actor.open} />
-                <CountPill label="Active" value={actor.in_progress} tone="teal" />
-                <CountPill label="Blocked" value={actor.blocked} tone="orange" />
-                <CountPill label="Done" value={actor.resolved} tone="slate" />
-              </div>
-            </Link>
-          );
-        })}
-      </div>
+                <div
+                  style={{
+                    marginTop: 12,
+                    display: "grid",
+                    gridTemplateColumns: "repeat(4, 1fr)",
+                    gap: 6,
+                  }}
+                >
+                  <CountPill label="Open" value={actor.open} />
+                  <CountPill label="Active" value={actor.in_progress} tone="sage" />
+                  <CountPill label="Blocked" value={actor.blocked} tone="mustard" />
+                  <CountPill label="Done" value={actor.resolved} tone="muted" />
+                </div>
+              </Link>
+            );
+          })}
+        </div>
+      )}
     </section>
   );
 }
@@ -170,25 +262,60 @@ function ActorColumn({
 function CountPill({
   label,
   value,
-  tone = "indigo",
+  tone = "ink",
 }: {
   label: string;
   value: number;
-  tone?: "indigo" | "teal" | "orange" | "slate";
+  tone?: "ink" | "sage" | "mustard" | "muted";
 }) {
-  const toneClass =
-    tone === "teal"
-      ? "border-teal-500/30 bg-teal-500/10 text-teal-200"
-      : tone === "orange"
-        ? "border-orange-500/30 bg-orange-500/10 text-orange-200"
-        : tone === "slate"
-          ? "border-slate-700 bg-slate-950/80 text-slate-300"
-          : "border-indigo-500/30 bg-indigo-500/10 text-indigo-200";
-
+  const { fg, bg } = toneStyle(tone);
   return (
-    <div className={`rounded-2xl border px-2 py-3 ${toneClass}`}>
-      <p className="text-[11px] font-semibold uppercase tracking-[0.16em]">{label}</p>
-      <p className="mt-1 text-lg font-semibold">{value}</p>
+    <div
+      style={{
+        padding: "8px 6px",
+        borderRadius: 8,
+        border: `1px solid ${bg}`,
+        background: bg,
+        textAlign: "center",
+      }}
+    >
+      <div
+        className="af2-mono"
+        style={{
+          fontSize: 10,
+          textTransform: "uppercase",
+          letterSpacing: "0.06em",
+          color: fg,
+        }}
+      >
+        {label}
+      </div>
+      <div
+        style={{
+          fontSize: 16,
+          fontWeight: 600,
+          color: fg,
+          marginTop: 2,
+        }}
+      >
+        {value}
+      </div>
     </div>
   );
+}
+
+function toneStyle(tone: "ink" | "sage" | "mustard" | "muted"): {
+  fg: string;
+  bg: string;
+} {
+  if (tone === "sage") {
+    return { fg: "var(--af2-sage, #4a6b4a)", bg: "rgba(74,107,74,0.10)" };
+  }
+  if (tone === "mustard") {
+    return { fg: "var(--af2-mustard, #c08e3a)", bg: "rgba(192,142,58,0.10)" };
+  }
+  if (tone === "muted") {
+    return { fg: "var(--af2-ink-3, #888)", bg: "rgba(0,0,0,0.04)" };
+  }
+  return { fg: "var(--af2-ink, #222)", bg: "rgba(0,0,0,0.05)" };
 }

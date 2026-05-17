@@ -44,10 +44,10 @@ describe("TicketTeamView", () => {
     ).not.toBeInTheDocument();
   });
 
-  it("shows skeleton loading state while fetching", () => {
+  it("shows the V2 loading state while fetching (DASH-19: af2 spinner, not the V1 scanline skeleton)", () => {
     ticketsApiMocks.listTickets.mockReturnValueOnce(new Promise(() => {}));
-    const { container } = render(<MemoryRouter><TicketTeamView /></MemoryRouter>);
-    expect(container.querySelector(".scanline-skeleton")).not.toBeNull();
+    render(<MemoryRouter><TicketTeamView /></MemoryRouter>);
+    expect(screen.getByText(/loading team view…/i)).toBeInTheDocument();
   });
 
   it("shows fallback error message for non-Error throw", async () => {

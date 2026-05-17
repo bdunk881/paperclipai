@@ -500,13 +500,13 @@ export default function TicketDetail({
 
   if (loading) {
     return (
-      <div className="min-h-full bg-[#0b1120] p-8">
-        <div className="mx-auto max-w-7xl space-y-4">
-          <div className="scanline-skeleton h-24 rounded-[28px]" />
-          <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_320px]">
-            <div className="scanline-skeleton min-h-[520px] rounded-[28px]" />
-            <div className="scanline-skeleton min-h-[520px] rounded-[28px]" />
-          </div>
+      <div className="af2-page text-af2-ink">
+        <div className="af2-card" style={{ padding: 40, textAlign: "center" }}>
+          <Loader2
+            className="animate-spin"
+            style={{ margin: "0 auto 12px", opacity: 0.5 }}
+          />
+          <p className="af2-muted">Loading assignment…</p>
         </div>
       </div>
     );
@@ -514,107 +514,167 @@ export default function TicketDetail({
 
   if (!ticket) {
     return (
-      <div className="min-h-full bg-[#0b1120] p-8">
-        <div className="mx-auto max-w-5xl">
-          <TicketEmptyState
-            title="Ticket not found"
-            body={error ?? "The requested ticket could not be loaded."}
-            action={
-              <Link
-                to="/tickets"
-                className="inline-flex items-center gap-2 rounded-full bg-indigo-500 px-4 py-2 text-sm font-semibold text-white transition hover:bg-indigo-400"
-              >
-                <ArrowLeft size={14} />
-                Back to queue
-              </Link>
-            }
-          />
-        </div>
+      <div className="af2-page text-af2-ink">
+        <TicketEmptyState
+          title="Assignment not found"
+          body={error ?? "The requested assignment could not be loaded."}
+          action={
+            <Link
+              to="/mission-assignments"
+              className="af2-btn af2-btn-clay af2-btn-sm"
+              style={{
+                textDecoration: "none",
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 6,
+              }}
+            >
+              <ArrowLeft size={13} />
+              Back to queue
+            </Link>
+          }
+        />
       </div>
     );
   }
 
   return (
-    <div className="min-h-full bg-[#0b1120] text-slate-100">
-      <div className="mx-auto flex w-full max-w-7xl flex-col gap-6 px-4 py-6 md:px-8 md:py-8">
-        <section className="sticky top-0 z-20 rounded-[30px] border border-slate-800/80 bg-slate-950/85 px-6 py-6 shadow-lg backdrop-blur md:px-8">
-          <div className="flex flex-wrap items-start justify-between gap-4">
-            <div className="max-w-3xl">
-              <Link
-                to="/tickets"
-                className="inline-flex items-center gap-2 text-sm text-slate-400 transition hover:text-slate-100"
-              >
-                <ArrowLeft size={14} />
-                Back to queue
-              </Link>
-              <div className="mt-3 flex flex-wrap items-center gap-3">
-                <span className="font-af2-mono text-xs uppercase tracking-[0.2em] text-slate-400">
-                  {ticket.id}
-                </span>
-                <TicketStatusBadge status={ticket.status} />
-                <TicketPriorityBadge priority={ticket.priority} />
-                <TicketSlaBadge slaState={ticket.slaState} />
-              </div>
-              <h1 className="mt-4 text-3xl font-semibold tracking-tight text-slate-100">{ticket.title}</h1>
-              <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-400">
-                {ticket.description || "No description provided."}
-              </p>
-            </div>
-
-            <div className="flex flex-wrap items-center gap-3">
-              <Link
-                to="/tickets/sla"
-                className="inline-flex items-center gap-2 rounded-full border border-[#FFD93D]/30 bg-[#FFD93D]/10 px-3.5 py-2 text-sm font-medium text-[#fde68a] transition hover:border-[#FFD93D]/50 hover:text-[#fff1a6]"
-              >
-                SLA monitor
-                <ArrowUpRight size={14} />
-              </Link>
-              <Link
-                to="/settings/ticketing-sla"
-                className="inline-flex items-center gap-2 rounded-full border border-slate-700 bg-slate-900/80 px-3.5 py-2 text-sm font-medium text-slate-300 transition hover:border-indigo-500/30 hover:text-slate-100"
-              >
-                Policy editor
-                <ArrowUpRight size={14} />
-              </Link>
-              {TRANSITIONS.map((transition) => (
-                <button
-                  key={transition.status}
-                  onClick={() => {
-                    void handleStatusChange(transition.status);
-                  }}
-                  disabled={submitting || transition.status === ticket.status}
-                  className={clsx(
-                    "rounded-full border px-3.5 py-2 text-sm font-medium transition",
-                    transition.status === "blocked"
-                      ? "border-orange-500/30 bg-orange-500/10 text-orange-200"
-                      : transition.status === "cancelled"
-                        ? "border-rose-500/30 bg-rose-500/10 text-rose-200"
-                        : "border-slate-700 bg-slate-900/80 text-slate-200",
-                    (submitting || transition.status === ticket.status) && "cursor-not-allowed opacity-50"
-                  )}
-                >
-                  {transition.label}
-                </button>
-              ))}
-              <button
-                onClick={() => {
-                  void loadTicket();
-                }}
-                className="inline-flex items-center gap-2 rounded-full border border-slate-700 bg-slate-900/80 px-3.5 py-2 text-sm font-medium text-slate-300 transition hover:border-indigo-500/30 hover:text-slate-100"
-              >
-                <RefreshCw size={14} />
-                Refresh
-              </button>
-            </div>
+    <div className="af2-page text-af2-ink">
+      <div className="af2-page-head">
+        <div>
+          <div className="af2-eyebrow">Run · Assignments · Detail</div>
+          <div
+            style={{
+              display: "flex",
+              flexWrap: "wrap",
+              alignItems: "center",
+              gap: 8,
+              marginTop: 6,
+            }}
+          >
+            <span
+              className="af2-mono af2-muted-2"
+              style={{
+                fontSize: 11,
+                textTransform: "uppercase",
+                letterSpacing: "0.08em",
+              }}
+            >
+              {ticket.id.slice(0, 8)}
+            </span>
+            <TicketStatusBadge status={ticket.status} />
+            <TicketPriorityBadge priority={ticket.priority} />
+            <TicketSlaBadge slaState={ticket.slaState} />
           </div>
-
-          <div className="mt-5">
-            <TicketSourceNotice source={source} />
+          <h1
+            className="af2-h1 font-af2-serif"
+            style={{ marginTop: 10, marginBottom: 6 }}
+          >
+            {ticket.title}
+          </h1>
+          <div
+            className="af2-page-head-meta"
+            style={{ maxWidth: 720 }}
+          >
+            {ticket.description || "No description provided."}
           </div>
-        </section>
+        </div>
+        <div className="af2-page-actions" style={{ flexWrap: "wrap" }}>
+          <Link
+            to="/mission-assignments"
+            className="af2-btn af2-btn-ghost af2-btn-sm"
+            style={{ textDecoration: "none" }}
+          >
+            ← Back to queue
+          </Link>
+          <Link
+            to="/mission-assignments/sla"
+            className="af2-btn af2-btn-sm"
+            style={{
+              textDecoration: "none",
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 4,
+            }}
+          >
+            SLA monitor
+            <ArrowUpRight size={12} />
+          </Link>
+          <Link
+            to="/settings/ticketing-sla"
+            className="af2-btn af2-btn-sm"
+            style={{
+              textDecoration: "none",
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 4,
+            }}
+          >
+            Policy editor
+            <ArrowUpRight size={12} />
+          </Link>
+          {TRANSITIONS.map((transition) => (
+            <button
+              key={transition.status}
+              type="button"
+              onClick={() => {
+                void handleStatusChange(transition.status);
+              }}
+              disabled={submitting || transition.status === ticket.status}
+              className="af2-btn af2-btn-sm"
+              style={{
+                opacity: submitting || transition.status === ticket.status ? 0.5 : 1,
+                cursor:
+                  submitting || transition.status === ticket.status
+                    ? "not-allowed"
+                    : "pointer",
+                color:
+                  transition.status === "blocked"
+                    ? "var(--af2-mustard)"
+                    : transition.status === "cancelled"
+                      ? "var(--af2-clay)"
+                      : undefined,
+              }}
+            >
+              {transition.label}
+            </button>
+          ))}
+          <button
+            type="button"
+            onClick={() => {
+              void loadTicket();
+            }}
+            className="af2-btn af2-btn-sm"
+            style={{ display: "inline-flex", alignItems: "center", gap: 4 }}
+            aria-label="Refresh assignment"
+          >
+            <RefreshCw size={13} />
+            Refresh
+          </button>
+        </div>
+      </div>
+
+      <div
+        style={{
+          display: "flex",
+          flexDirection: "column",
+          gap: 16,
+        }}
+      >
+        <TicketSourceNotice source={source} />
 
         {error ? (
-          <div className="rounded-2xl border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-200">
+          <div
+            role="alert"
+            style={{
+              padding: "10px 14px",
+              borderRadius: "var(--af2-radius)",
+              border: "1px solid rgba(192,84,76,0.30)",
+              background: "rgba(192,84,76,0.10)",
+              color: "var(--af2-clay)",
+              fontSize: 13,
+            }}
+          >
             {error}
           </div>
         ) : null}

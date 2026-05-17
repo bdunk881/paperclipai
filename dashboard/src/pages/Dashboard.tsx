@@ -551,9 +551,19 @@ export default function Dashboard() {
               </div>
             ) : (
               totals.pendingApprovals.slice(0, 4).map((approval, idx) => {
-                const owningAgent = agentSnapshots.find((snap) =>
-                  snap.heartbeat?.createdByRunId === approval.runId,
-                );
+                // DASH-14: prefer the real agent FK on the approval row
+                // when present; fall back to the legacy run-id link, then
+                // to the bare assignee name string.
+                const agentById = approval.agentId
+                  ? agentSnapshots.find(
+                      (snap) => snap.agent.id === approval.agentId,
+                    )
+                  : undefined;
+                const owningAgent =
+                  agentById ??
+                  agentSnapshots.find(
+                    (snap) => snap.heartbeat?.createdByRunId === approval.runId,
+                  );
                 const ownerName = owningAgent?.agent.name ?? approval.assignee ?? "—";
                 return (
                   <div

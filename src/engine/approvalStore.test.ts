@@ -47,6 +47,21 @@ describe("approvalStore.create", () => {
     const req = await approvalStore.get(id);
     expect(() => new Date(req!.requestedAt)).not.toThrow();
   });
+
+  it("round-trips an optional agentId (DASH-14)", async () => {
+    const { id } = await approvalStore.create({
+      ...base,
+      agentId: "a8a0c4d2-2222-4d3e-9b9d-111122223333",
+    });
+    const req = await approvalStore.get(id);
+    expect(req?.agentId).toBe("a8a0c4d2-2222-4d3e-9b9d-111122223333");
+  });
+
+  it("leaves agentId undefined when not supplied (legacy callers)", async () => {
+    const { id } = await approvalStore.create(base);
+    const req = await approvalStore.get(id);
+    expect(req?.agentId).toBeUndefined();
+  });
 });
 
 describe("approvalStore.resolve — approve", () => {

@@ -24,6 +24,13 @@ export interface ApprovalRequest {
   resolvedAt?: string;
   comment?: string;
   userId?: string;
+  /**
+   * DASH-14: agent that originated the approval, when known. Lets the
+   * dashboard render a live presence pill / link to the agent without
+   * the UX-10 client-side name match. Nullable because legacy rows +
+   * engine call sites without agent context predate the column.
+   */
+  agentId?: string;
 }
 
 export type ApprovalDecision = Exclude<ApprovalRequest["status"], "pending">;
@@ -61,6 +68,7 @@ function mapRowToRequest(row: Record<string, unknown>): ApprovalRequest {
     resolvedAt: row["resolved_at"] ? new Date(String(row["resolved_at"])).toISOString() : undefined,
     comment: typeof row["comment"] === "string" ? row["comment"] : undefined,
     userId: typeof row["user_id"] === "string" ? row["user_id"] : undefined,
+    agentId: typeof row["agent_id"] === "string" ? row["agent_id"] : undefined,
   };
 }
 
@@ -75,14 +83,15 @@ async function persistRequest(request: ApprovalRequest): Promise<void> {
     `
       INSERT INTO approval_requests (
         id, run_id, template_name, step_id, step_name, assignee, message,
-        timeout_minutes, requested_at, status, resolved_at, comment, user_id
+        timeout_minutes, requested_at, status, resolved_at, comment, user_id, agent_id
       )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
       ON CONFLICT (id) DO UPDATE
       SET status = EXCLUDED.status,
           resolved_at = EXCLUDED.resolved_at,
           comment = EXCLUDED.comment,
           user_id = EXCLUDED.user_id,
+          agent_id = EXCLUDED.agent_id,
           updated_at = now()
     `,
     [
@@ -99,6 +108,7 @@ async function persistRequest(request: ApprovalRequest): Promise<void> {
       request.resolvedAt ?? null,
       request.comment ?? null,
       request.userId ?? null,
+      request.agentId ?? null,
     ]
   );
 }
@@ -114,6 +124,8 @@ export const approvalStore = {
     message: string;
     timeoutMinutes: number;
     userId?: string;
+    /** DASH-14: optional agent that originated the approval. */
+    agentId?: string;
   }): Promise<{ id: string }> {
     const id = randomUUID();
     const request: ApprovalRequest = {
@@ -129,6 +141,7 @@ export const approvalStore = {
       requestedAt: new Date().toISOString(),
       status: "pending",
       ...(params.userId !== undefined ? { userId: params.userId } : {}),
+      ...(params.agentId !== undefined ? { agentId: params.agentId } : {}),
     };
 
     const timeoutMs = params.timeoutMinutes * 60 * 1000;

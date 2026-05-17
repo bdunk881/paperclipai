@@ -1486,6 +1486,12 @@ export interface ApprovalRequest {
   status: "pending" | "approved" | "rejected" | "timed_out";
   resolvedAt?: string;
   comment?: string;
+  /**
+   * DASH-14: real FK to the originating agent when known. Lets the
+   * dashboard render the presence pill without the legacy UX-10
+   * name-match. Nullable until engine + backfill catch up.
+   */
+  agentId?: string;
 }
 
 /** GET /api/approvals */

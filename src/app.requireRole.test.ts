@@ -45,6 +45,10 @@ const ALLOWLIST = new Set<string>([
   "/api/entitlements",
   "/api/wake-events",
   "/api/connector-connections",
+  // PR B.1: static catalog of hosted free models. Returns the same
+  // data for every workspace + every user (3 tier definitions +
+  // availability flags read from process.env). No mutation paths.
+  "/api/hosted-free-models",
 ]);
 
 interface AuthenticatedMount {

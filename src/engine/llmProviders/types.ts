@@ -18,6 +18,9 @@ export const PROVIDER_NAMES = [
   "perplexity",
   "xai",
   "deepseek",
+  // OpenAI-compatible. Used by the hosted free tier (Big Pickle) — see
+  // src/hostedFreeModels/providers.ts.
+  "opencode_zen",
 ] as const;
 
 export type ProviderName = (typeof PROVIDER_NAMES)[number];
@@ -146,5 +149,8 @@ export const PROVIDER_MODELS: Record<ProviderName, string[]> = {
     "deepseek-chat",
     "deepseek-reasoner",
     "deepseek-coder",
+  ],
+  opencode_zen: [
+    "big-pickle",
   ],
 };

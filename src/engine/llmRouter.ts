@@ -106,6 +106,14 @@ export const TIER_MODELS: Record<ProviderName, Record<LlmTier, string>> = {
     standard: "deepseek-coder",
     power: "deepseek-reasoner",
   },
+  opencode_zen: {
+    // Hosted free tier provider has a single stealth model — use it for
+    // every tier so the engine's classifier doesn't accidentally pick
+    // an unknown opencode-zen model.
+    lite: "big-pickle",
+    standard: "big-pickle",
+    power: "big-pickle",
+  },
 };
 
 // ---------------------------------------------------------------------------

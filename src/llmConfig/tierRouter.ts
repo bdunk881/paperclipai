@@ -105,6 +105,11 @@ export const PROVIDER_TIER_DEFAULTS: Record<ProviderName, Partial<Record<TierKey
   perplexity: {},
   xai: {},
   deepseek: {},
+  // Hosted-free fallback provider (PR B.1). The engine doesn't go
+  // through tier routing for hosted-free — it pins to the catalog's
+  // modelId in src/hostedFreeModels/providers.ts — so we leave the
+  // tier map empty.
+  opencode_zen: {},
 };
 
 /**
@@ -128,6 +133,11 @@ const SMALL_TIER_COST_RANK: Record<ProviderName, number> = {
   cohere: 5,
   perplexity: 5,
   xai: 5,
+  // Hosted-free fallback (PR B.1) — zero cost so it sorts above paid
+  // BYOK providers when used as a tier-routing candidate. Reality is
+  // closer to "free until rate-limited or shut off", but for the
+  // ordering heuristic this is correct.
+  opencode_zen: 0,
 };
 
 // ---------------------------------------------------------------------------

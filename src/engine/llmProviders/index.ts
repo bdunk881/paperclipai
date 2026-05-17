@@ -10,6 +10,7 @@ import {
   createGroqProvider,
   createLocalAIProvider,
   createOllamaProvider,
+  createOpenCodeZenProvider,
   createPerplexityProvider,
   createTogetherProvider,
   createVertexAIProvider,
@@ -55,6 +56,8 @@ export function getProvider(config: LLMProviderConfig): LLMProvider {
       return createXAIProvider(config);
     case "deepseek":
       return createDeepSeekProvider(config);
+    case "opencode_zen":
+      return createOpenCodeZenProvider(config);
     default: {
       const exhaustive: never = config.provider;
       throw new Error(`Unknown LLM provider: ${String(exhaustive)}`);

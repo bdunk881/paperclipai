@@ -21,33 +21,33 @@ import { ClipboardList, Loader2, Send, Sparkles, Zap } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import { checkInAgent } from "../api/agentActionsApi";
 import { HandoffModal } from "./HandoffModal";
+import { useToast } from "./ToastProvider";
 
 interface Props {
   agent: { id: string; name: string };
   compact?: boolean;
 }
 
-type ActionState = "idle" | "checking-in" | "sent" | "error";
+type ActionState = "idle" | "checking-in";
 
 export function AgentCardActions({ agent, compact = false }: Props) {
   const { requireAccessToken } = useAuth();
+  const toast = useToast();
   const [handoffOpen, setHandoffOpen] = useState(false);
   const [state, setState] = useState<ActionState>("idle");
-  const [error, setError] = useState<string | null>(null);
 
   async function handleCheckIn(): Promise<void> {
     setState("checking-in");
-    setError(null);
     try {
       const token = await requireAccessToken();
       await checkInAgent(agent.id, token);
-      setState("sent");
-      window.setTimeout(() => {
-        setState((s) => (s === "sent" ? "idle" : s));
-      }, 3_000);
+      toast.success(`${agent.name} is checking in.`);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Check-in failed");
-      setState("error");
+      toast.error(
+        err instanceof Error ? err.message : `Couldn't reach ${agent.name}.`,
+      );
+    } finally {
+      setState("idle");
     }
   }
 
@@ -97,23 +97,6 @@ export function AgentCardActions({ agent, compact = false }: Props) {
           title={`Manage ${agent.name}'s standing tasks`}
           compact={compact}
         />
-        {state === "sent" ? (
-          <span
-            className="af2-muted"
-            style={{ fontSize: 11, color: "var(--af2-sage)" }}
-          >
-            ✓ Sent
-          </span>
-        ) : null}
-        {state === "error" && error ? (
-          <span
-            className="af2-muted"
-            style={{ fontSize: 11, color: "var(--af2-clay)" }}
-            title={error}
-          >
-            Failed
-          </span>
-        ) : null}
       </div>
 
       <HandoffModal
@@ -121,11 +104,8 @@ export function AgentCardActions({ agent, compact = false }: Props) {
         agentName={agent.name}
         open={handoffOpen}
         onClose={() => setHandoffOpen(false)}
-        onHandedOff={() => {
-          setState("sent");
-          window.setTimeout(() => {
-            setState((s) => (s === "sent" ? "idle" : s));
-          }, 3_000);
+        onHandedOff={(result) => {
+          toast.success(`Handed off to ${result.agentName}.`);
         }}
       />
     </>

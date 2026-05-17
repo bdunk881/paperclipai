@@ -49,19 +49,25 @@ vi.mock("../context/AuthContext", () => ({
 }));
 
 import Hire from "./Hire";
+import { ToastProvider } from "../components/ToastProvider";
 
 function renderHire() {
   return render(
     <MemoryRouter initialEntries={["/hire"]}>
-      <Routes>
-        <Route path="/hire" element={<Hire />} />
-        {/* Stub for the review page so the post-generate navigate has a
-            target. The text is asserted by the navigate test below. */}
-        <Route
-          path="/hire/plan/:missionId/:planId"
-          element={<div>plan review stub</div>}
-        />
-      </Routes>
+      {/* UX-7: production wraps the router in ToastProvider so
+          useToast() resolves. Mirror it here so save/error toasts
+          actually render in the test tree. */}
+      <ToastProvider>
+        <Routes>
+          <Route path="/hire" element={<Hire />} />
+          {/* Stub for the review page so the post-generate navigate has a
+              target. The text is asserted by the navigate test below. */}
+          <Route
+            path="/hire/plan/:missionId/:planId"
+            element={<div>plan review stub</div>}
+          />
+        </Routes>
+      </ToastProvider>
     </MemoryRouter>,
   );
 }

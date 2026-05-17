@@ -154,17 +154,6 @@ async function updateApprovalPolicy(
   return policy;
 }
 
-function formatDate(iso?: string | null): string {
-  if (!iso) return "—";
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return "—";
-  return d.toLocaleDateString(undefined, {
-    day: "numeric",
-    month: "long",
-    year: "numeric",
-  });
-}
-
 // The /settings/* hub tiles we still surface from the non-General tabs.
 // Each tab maps to either an inline panel (rendered in this file) or a
 // list of `{ to, title, description }` cards linking to the legacy
@@ -282,18 +271,14 @@ export default function Settings() {
     return sorted[0]?.statement ?? "";
   }, [missions]);
 
-  // TODO: workspace plan/seats/createdAt aren't on WorkspaceSummary yet.
-  // Surface real values once the workspace API exposes them.
+  // DASH-16: drop placeholder seats/createdAt from the meta line until
+  // the workspace API surfaces them. Showing "— seats · created —" was
+  // worse than skipping the line entirely.
   const planTier: string | null = null;
-  const seats: number | null = null;
-  const createdAt: string | null = null;
-  const metaLine = `${workspaceName} · ${planTier ?? "Free"} plan · ${seats ?? "—"} seats · created ${formatDate(createdAt)}.`;
-
-  function handlePauseAll() {
-    // TODO: wire to a backend pause endpoint once one exists. For now this
-    // is a no-op so the button doesn't navigate or mutate state.
-    console.warn("Pause all agents: backend endpoint not yet implemented");
-  }
+  const metaSegments = [workspaceName, `${planTier ?? "Free"} plan`].filter(
+    (s) => s.length > 0,
+  );
+  const metaLine = `${metaSegments.join(" · ")}.`;
 
   return (
     <div className="af2-page" style={{ maxWidth: 920 }}>
@@ -333,7 +318,6 @@ export default function Settings() {
           workspaceName={workspaceName}
           missionStatement={missionStatement}
           policies={policies}
-          onPauseAll={handlePauseAll}
           onEditPolicy={(policy) => setEditingPolicy(policy)}
         />
       ) : (
@@ -361,7 +345,6 @@ interface GeneralTabProps {
   workspaceName: string;
   missionStatement: string;
   policies: ApprovalPolicy[];
-  onPauseAll: () => void;
   onEditPolicy: (policy: ApprovalPolicy) => void;
 }
 
@@ -370,7 +353,6 @@ function GeneralTab({
   missionStatement,
   policies,
   onEditPolicy,
-  onPauseAll,
 }: GeneralTabProps) {
   return (
     <div
@@ -503,16 +485,24 @@ function GeneralTab({
               style={{ fontSize: 12, marginTop: 2 }}
             >
               Stops every agent and routine in this workspace immediately.
+              {" "}
+              <span className="af2-muted-2">Backend endpoint lands in a follow-up.</span>
             </div>
           </div>
           <span className="af2-spacer" />
+          {/* DASH-16: button stays in place so the layout doesn't shift
+              when the bulk-pause backend ships, but it's disabled with
+              a tooltip so a click can't silently no-op. */}
           <button
             type="button"
             className="af2-btn af2-btn-sm"
-            onClick={onPauseAll}
+            disabled
+            title="Coming soon — pause individual agents from the Team page in the meantime."
             style={{
-              color: "var(--af2-clay)",
-              borderColor: "rgba(194,80,43,0.3)",
+              color: "var(--af2-muted)",
+              borderColor: "var(--af2-line)",
+              cursor: "not-allowed",
+              opacity: 0.6,
             }}
           >
             Pause all

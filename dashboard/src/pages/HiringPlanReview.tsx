@@ -16,7 +16,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { CheckCircle2, Loader2, Trash2, Users } from "lucide-react";
+import { CheckCircle2, ChevronDown, ChevronUp, Loader2, Sparkles, Trash2, Users } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import {
   deleteMission,
@@ -24,6 +24,7 @@ import {
   confirmHiringPlan,
   type HiringPlanResponse,
   type StaffingRecommendation,
+  type StarterJobDescription,
 } from "../api/missionsApi";
 
 type PageState =
@@ -326,6 +327,15 @@ export default function HiringPlanReview() {
             )}
           </div>
 
+          {/* UX-4: preview the starter Job Descriptions that the
+              confirm flow will seed per agent. Collapsed by default so
+              the page isn't dense; one click reveals all of them. */}
+          {!plan.acceptedAt && (plan.starterJobDescriptions?.length ?? 0) > 0 ? (
+            <JobDescriptionPreviewSection
+              previews={plan.starterJobDescriptions ?? []}
+            />
+          ) : null}
+
           {/* Confirm / confirmed state */}
           {pageState === "confirmed" || plan.acceptedAt ? (
             <div
@@ -420,6 +430,113 @@ export default function HiringPlanReview() {
           )}
         </>
       ) : null}
+    </div>
+  );
+}
+
+/**
+ * Collapsible preview of the starter Job Descriptions the confirm flow
+ * will seed per agent (Wave 6). Collapsed by default so the review
+ * page isn't dense; one click reveals all of them stacked.
+ */
+function JobDescriptionPreviewSection({
+  previews,
+}: {
+  previews: StarterJobDescription[];
+}) {
+  const [expanded, setExpanded] = useState(false);
+  return (
+    <div
+      className="af2-card"
+      style={{
+        padding: "14px 18px",
+        marginTop: 12,
+        borderColor: "rgba(74,107,74,0.25)",
+        background: "rgba(74,107,74,0.04)",
+      }}
+    >
+      <button
+        type="button"
+        onClick={() => setExpanded((e) => !e)}
+        aria-expanded={expanded}
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 8,
+          width: "100%",
+          background: "transparent",
+          border: "none",
+          padding: 0,
+          cursor: "pointer",
+          color: "var(--af2-ink)",
+          fontSize: 14,
+          fontFamily: "var(--af2-serif, ui-serif, Georgia, serif)",
+        }}
+      >
+        <Sparkles size={14} style={{ color: "var(--af2-sage)" }} />
+        <span style={{ fontWeight: 600 }}>
+          {expanded ? "Hide" : "Preview"} the job descriptions we'll seed for these{" "}
+          {previews.length} agent{previews.length === 1 ? "" : "s"}
+        </span>
+        {expanded ? (
+          <ChevronUp size={14} style={{ marginLeft: "auto", color: "var(--af2-muted)" }} />
+        ) : (
+          <ChevronDown size={14} style={{ marginLeft: "auto", color: "var(--af2-muted)" }} />
+        )}
+      </button>
+      {expanded ? (
+        <div style={{ marginTop: 14, display: "grid", gap: 14 }}>
+          <p
+            className="af2-muted"
+            style={{ fontSize: 12, lineHeight: 1.5, margin: 0 }}
+          >
+            Each agent will arrive with this starter persona. You can edit or
+            re-draft any of them via the wizard on the agent's Job description
+            page after confirming.
+          </p>
+          {previews.map((preview) => (
+            <PreviewBlock key={preview.agentRoleKey} preview={preview} />
+          ))}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function PreviewBlock({ preview }: { preview: StarterJobDescription }) {
+  return (
+    <div
+      style={{
+        padding: 12,
+        borderRadius: 8,
+        border: "1px solid var(--af2-line)",
+        background: "var(--af2-card)",
+      }}
+    >
+      <div
+        className="af2-eyebrow"
+        style={{ marginBottom: 8, color: "var(--af2-ink-2)" }}
+      >
+        {preview.agentTitle}
+      </div>
+      <pre
+        style={{
+          margin: 0,
+          padding: 10,
+          fontSize: 12,
+          lineHeight: 1.6,
+          fontFamily: "var(--af2-mono, ui-monospace, SFMono-Regular, Menlo, monospace)",
+          background: "var(--af2-paper-2)",
+          border: "1px solid var(--af2-line-2)",
+          borderRadius: 6,
+          whiteSpace: "pre-wrap",
+          color: "var(--af2-ink)",
+          maxHeight: 320,
+          overflow: "auto",
+        }}
+      >
+        {preview.body}
+      </pre>
     </div>
   );
 }

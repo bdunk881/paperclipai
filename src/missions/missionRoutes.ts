@@ -24,6 +24,7 @@
 import { Router } from "express";
 import type { Pool } from "pg";
 import { randomUUID } from "node:crypto";
+import * as Sentry from "@sentry/node";
 import { AuthenticatedRequest } from "../auth/authMiddleware";
 import { withWorkspaceContext } from "../middleware/workspaceContext";
 import type { WorkspaceAwareRequest } from "../middleware/workspaceResolver";
@@ -273,6 +274,10 @@ export function createMissionRoutes(
       company = await ensureDefaultCompany(pool, workspaceId, userId);
     } catch (err) {
       console.error(`[missions] ensureDefaultCompany failed: ${(err as Error).message}`);
+      Sentry.captureException(err, {
+        tags: { route: "POST /api/missions", phase: "ensureDefaultCompany" },
+        contexts: { mission: { workspaceId, userId } },
+      });
       res.status(500).json({ error: "Failed to resolve workspace company" });
       return;
     }
@@ -288,6 +293,10 @@ export function createMissionRoutes(
       );
     } catch (err) {
       console.error(`[missions] insert failed: ${(err as Error).message}`);
+      Sentry.captureException(err, {
+        tags: { route: "POST /api/missions", phase: "insert" },
+        contexts: { mission: { workspaceId, userId, missionId, companyId: company.id } },
+      });
       res.status(500).json({ error: "Failed to create mission" });
       return;
     }
@@ -365,6 +374,10 @@ export function createMissionRoutes(
       });
     } catch (err) {
       console.error(`[missions] list failed: ${(err as Error).message}`);
+      Sentry.captureException(err, {
+        tags: { route: "GET /api/missions", phase: "list" },
+        contexts: { mission: { workspaceId, userId } },
+      });
       res.status(500).json({ error: "Failed to list missions" });
     }
   });
@@ -438,6 +451,10 @@ export function createMissionRoutes(
       } satisfies MissionListItem);
     } catch (err) {
       console.error(`[missions] get failed: ${(err as Error).message}`);
+      Sentry.captureException(err, {
+        tags: { route: "GET /api/missions/:missionId", phase: "get" },
+        contexts: { mission: { workspaceId, userId, missionId } },
+      });
       res.status(500).json({ error: "Failed to load mission" });
     }
   });
@@ -464,6 +481,10 @@ export function createMissionRoutes(
       mission = await loadMissionScopedToWorkspace(pool, missionId, workspaceId);
     } catch (err) {
       console.error(`[missions] mission lookup failed: ${(err as Error).message}`);
+      Sentry.captureException(err, {
+        tags: { route: "POST /api/missions/:missionId/generate-plan", phase: "lookup" },
+        contexts: { mission: { workspaceId, userId, missionId } },
+      });
       res.status(500).json({ error: "Mission lookup failed" });
       return;
     }
@@ -521,7 +542,25 @@ export function createMissionRoutes(
         provider: resolved.config.provider,
         model: assemblyModel,
       });
-      res.status(502).json({ error: `LLM call failed: ${msg}` });
+      console.error(
+        `[missions] LLM call failed (${resolved.config.provider}/${assemblyModel}): ${msg}`,
+      );
+      Sentry.captureException(err, {
+        tags: {
+          route: "POST /api/missions/:missionId/generate-plan",
+          phase: "llm_call",
+          provider: resolved.config.provider,
+          model: assemblyModel,
+        },
+        contexts: { mission: { workspaceId, userId, missionId } },
+      });
+      // Surface provider + model in the user-facing error so they can
+      // self-diagnose (e.g. "model not found" → switch tier in Settings).
+      res.status(502).json({
+        error: `LLM call failed (${resolved.config.provider}/${assemblyModel}): ${msg}`,
+        provider: resolved.config.provider,
+        model: assemblyModel,
+      });
       return;
     }
     const llmDurationMs = Date.now() - llmStartedAtMs;
@@ -532,7 +571,25 @@ export function createMissionRoutes(
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       console.error(`[missions] plan parse failed: ${msg}`);
-      res.status(502).json({ error: `Plan parse failed: ${msg}` });
+      Sentry.captureException(err, {
+        tags: {
+          route: "POST /api/missions/:missionId/generate-plan",
+          phase: "parse",
+          provider: resolved.config.provider,
+          model: assemblyModel,
+        },
+        contexts: {
+          mission: { workspaceId, userId, missionId },
+          // First 500 chars of the model's output so we can see what
+          // the parser tripped on without dumping the full response.
+          llm_response: { excerpt: rawText.slice(0, 500) },
+        },
+      });
+      res.status(502).json({
+        error: `Plan parse failed (${resolved.config.provider}/${assemblyModel}): ${msg}`,
+        provider: resolved.config.provider,
+        model: assemblyModel,
+      });
       return;
     }
 
@@ -541,6 +598,13 @@ export function createMissionRoutes(
       hiringPlanId = await persistHiringPlanDraft(pool, workspaceId, missionId, plan);
     } catch (err) {
       console.error(`[missions] hiring plan persist failed: ${(err as Error).message}`);
+      Sentry.captureException(err, {
+        tags: {
+          route: "POST /api/missions/:missionId/generate-plan",
+          phase: "persist",
+        },
+        contexts: { mission: { workspaceId, userId, missionId } },
+      });
       res.status(500).json({ error: "Failed to persist hiring plan" });
       return;
     }

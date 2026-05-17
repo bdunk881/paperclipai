@@ -18,6 +18,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { CheckCircle2, ChevronDown, ChevronUp, Loader2, Sparkles, Trash2, Users } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
+import { useToast } from "../components/ToastProvider";
 import {
   deleteMission,
   getHiringPlan,
@@ -96,6 +97,7 @@ export default function HiringPlanReview() {
   const { planId } = useParams<{ missionId: string; planId: string }>();
   const { requireAccessToken } = useAuth();
   const navigate = useNavigate();
+  const toast = useToast();
 
   const [pageState, setPageState] = useState<PageState>("loading");
   const [plan, setPlan] = useState<HiringPlanResponse | null>(null);
@@ -131,8 +133,16 @@ export default function HiringPlanReview() {
       // Refresh plan data so the confirmed state is reflected.
       const refreshed = await getHiringPlan(planId, token);
       setPlan(refreshed);
+      const agentCount = refreshed.plan.provisioningPlan.agents.length;
+      toast.success(
+        `Team confirmed — ${agentCount} agent${
+          agentCount === 1 ? "" : "s"
+        } provisioned.`,
+      );
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to confirm plan");
+      const msg = err instanceof Error ? err.message : "Failed to confirm plan";
+      setError(msg);
+      toast.error(msg);
       setPageState("ready");
     }
   }
@@ -152,9 +162,12 @@ export default function HiringPlanReview() {
     try {
       const token = await requireAccessToken();
       await deleteMission(plan.missionId, token);
+      toast.success("Draft discarded.");
       navigate("/hire");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to discard plan");
+      const msg = err instanceof Error ? err.message : "Failed to discard plan";
+      setError(msg);
+      toast.error(msg);
       setPageState("ready");
     }
   }

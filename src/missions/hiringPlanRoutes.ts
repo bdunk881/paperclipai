@@ -40,6 +40,7 @@ import {
 } from "../goals/teamAssembly";
 import { resolveModelForTier } from "../engine/llmRouter";
 import { llmConfigStore } from "../llmConfig/llmConfigStore";
+import { ensureUserProfileExists } from "../user/profileStore";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -416,6 +417,31 @@ export function createHiringPlanRoutes(pool: Pool) {
       return;
     }
 
+    // DASH-1 redux: `hiring_plans.accepted_by_user_id` has a FK on
+    // `user_profiles(user_id)`. OAuth-only users who have never opened
+    // Profile Settings don't yet have a user_profiles row, so the
+    // UPDATE inside the transaction below would fail with a FK
+    // violation that the catch block surfaced as the generic
+    // "Failed to confirm hiring plan" 500. Auto-provision the empty
+    // profile row up front (same pattern POST /api/missions uses) so
+    // the FK is satisfied before we open the transaction.
+    try {
+      await ensureUserProfileExists(userId);
+    } catch (err) {
+      console.error(
+        `[hiring-plans] ensureUserProfileExists failed: ${(err as Error).message}`,
+      );
+      Sentry.captureException(err, {
+        tags: {
+          route: "POST /api/hiring-plans/:hiringPlanId/confirm",
+          phase: "ensure_user_profile",
+        },
+        contexts: { hiring_plan: { workspaceId, userId, hiringPlanId } },
+      });
+      res.status(500).json({ error: "Failed to provision user profile" });
+      return;
+    }
+
     let lookup: PlanLookupRow | null;
     try {
       lookup = await loadHiringPlanScopedToWorkspace(pool, hiringPlanId, workspaceId, userId);
@@ -705,7 +731,14 @@ export function createHiringPlanRoutes(pool: Pool) {
           },
         },
       });
-      res.status(500).json({ error: "Failed to confirm hiring plan" });
+      // Outside production we surface the real cause so the customer
+      // (and the dashboard's network panel) can see what actually
+      // broke. Production stays generic to avoid leaking schema hints.
+      const isProd = process.env.NODE_ENV === "production";
+      res.status(500).json({
+        error: "Failed to confirm hiring plan",
+        ...(isProd ? {} : { detail: message }),
+      });
       return;
     }
 

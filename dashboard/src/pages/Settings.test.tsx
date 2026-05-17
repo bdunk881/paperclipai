@@ -29,6 +29,10 @@ vi.mock("../api/trackedFetch", () => ({
 
 vi.mock("../api/baseUrl", () => ({
   getApiBasePath: () => "/api",
+  // settingsClient.ts evaluates getConfiguredApiOrigin() at import
+  // time; stub it so the module loads cleanly under JSDOM (no
+  // window.location to introspect).
+  getConfiguredApiOrigin: () => "",
 }));
 
 vi.mock("../context/AuthContext", () => ({
@@ -158,11 +162,14 @@ describe("Settings (v2 tabbed surface)", () => {
 
     // Workspace section
     expect(await screen.findByText("Workspace")).toBeInTheDocument();
-    expect(screen.getByLabelText("Name")).toHaveValue("Acme Robotics");
+    expect(screen.getByLabelText("Workspace name")).toHaveValue("Acme Robotics");
     expect(screen.getByLabelText("Mission statement")).toHaveValue(
       "Win Q3 by shipping the onboarding revamp"
     );
     expect(screen.getByLabelText("Default timezone")).toBeInTheDocument();
+    // Save button gates on dirty state — present in the DOM, disabled
+    // until the user edits something.
+    expect(screen.getByRole("button", { name: /save changes/i })).toBeInTheDocument();
 
     // Approvals
     expect(screen.getByText("Approvals")).toBeInTheDocument();
@@ -175,9 +182,11 @@ describe("Settings (v2 tabbed surface)", () => {
     // Danger zone
     expect(screen.getByText("Danger zone")).toBeInTheDocument();
     expect(screen.getByText("Pause all agents")).toBeInTheDocument();
+    // DASH-16: "Pause all" button stays in the DOM but is disabled
+    // ("Coming soon") until the bulk-pause backend lands.
     expect(
       screen.getByRole("button", { name: "Pause all" })
-    ).toBeInTheDocument();
+    ).toBeDisabled();
   });
 
   it("renders the workspace meta strap with the active workspace name", async () => {

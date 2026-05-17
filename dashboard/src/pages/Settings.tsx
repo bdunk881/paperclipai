@@ -22,10 +22,13 @@
  */
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
+import { Loader2 } from "lucide-react";
 import { trackedFetch } from "../api/trackedFetch";
 import { getApiBasePath } from "../api/baseUrl";
+import { apiGet } from "../api/settingsClient";
 import { listMissions, type Mission } from "../api/missionsApi";
 import { ErrorState, LoadingState } from "../components/UiStates";
+import { useToast } from "../components/ToastProvider";
 import { useAuth } from "../context/AuthContext";
 import { useWorkspace } from "../context/useWorkspace";
 
@@ -319,6 +322,7 @@ export default function Settings() {
           missionStatement={missionStatement}
           policies={policies}
           onEditPolicy={(policy) => setEditingPolicy(policy)}
+          requireAccessToken={requireAccessToken}
         />
       ) : (
         <HubTab tabKey={activeTab} onJumpToGeneral={() => setActiveTab("general")} />
@@ -346,6 +350,7 @@ interface GeneralTabProps {
   missionStatement: string;
   policies: ApprovalPolicy[];
   onEditPolicy: (policy: ApprovalPolicy) => void;
+  requireAccessToken: () => Promise<string>;
 }
 
 function GeneralTab({
@@ -353,7 +358,96 @@ function GeneralTab({
   missionStatement,
   policies,
   onEditPolicy,
+  requireAccessToken,
 }: GeneralTabProps) {
+  const toast = useToast();
+  const browserTimezone =
+    Intl.DateTimeFormat().resolvedOptions().timeZone || "America/Los_Angeles";
+
+  // DASH-16 redux: General-tab inputs used to be uncontrolled
+  // (defaultValue) with no Save button, so the page LOOKED editable
+  // but nothing persisted. Now controlled state + a Save button
+  // wired to PATCH /api/profile (timezone + display name go through
+  // the user_profiles table). Workspace name has no PATCH endpoint
+  // yet, so it stays read-only with a pointer to the workspace
+  // switcher where renaming will land.
+  const [displayName, setDisplayName] = useState<string>("");
+  const [timezone, setTimezone] = useState<string>(browserTimezone);
+  const [initial, setInitial] = useState<{ displayName: string; timezone: string } | null>(
+    null,
+  );
+  const [profileLoading, setProfileLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const token = await requireAccessToken();
+        const data = await apiGet<{
+          profile?: { displayName?: string | null; timezone?: string };
+        }>("/api/profile", null, token);
+        if (cancelled) return;
+        const nextDisplay = data.profile?.displayName ?? "";
+        const nextTz = data.profile?.timezone ?? browserTimezone;
+        setDisplayName(nextDisplay);
+        setTimezone(nextTz);
+        setInitial({ displayName: nextDisplay, timezone: nextTz });
+      } catch {
+        if (cancelled) return;
+        // Falls back to the browser timezone we seeded above.
+        setInitial({ displayName: "", timezone: browserTimezone });
+      } finally {
+        if (!cancelled) setProfileLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [browserTimezone, requireAccessToken]);
+
+  const dirty =
+    initial !== null &&
+    (displayName.trim() !== initial.displayName.trim() ||
+      timezone.trim() !== initial.timezone.trim());
+
+  async function handleSave() {
+    setSaving(true);
+    setSaveError(null);
+    try {
+      const token = await requireAccessToken();
+      const response = await trackedFetch(`${getApiBasePath()}/profile`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          displayName: displayName.trim() || null,
+          timezone: timezone.trim(),
+        }),
+      });
+      if (!response.ok) {
+        const body = await response.text();
+        throw new Error(`Save failed (${response.status}): ${body.slice(0, 240)}`);
+      }
+      const data = (await response.json()) as {
+        profile?: { displayName?: string | null; timezone?: string };
+      };
+      const nextDisplay = data.profile?.displayName ?? displayName.trim();
+      const nextTz = data.profile?.timezone ?? timezone.trim();
+      setInitial({ displayName: nextDisplay, timezone: nextTz });
+      toast.success("Profile saved.");
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Failed to save profile";
+      setSaveError(msg);
+      toast.error(msg);
+    } finally {
+      setSaving(false);
+    }
+  }
+
   return (
     <div
       style={{
@@ -371,20 +465,56 @@ function GeneralTab({
           htmlFor="settings-workspace-name"
           style={{ fontSize: 12.5, color: "var(--af2-ink-3)" }}
         >
-          Name
+          Workspace name
         </label>
         <input
           id="settings-workspace-name"
           className="af2-input"
-          defaultValue={workspaceName}
+          value={workspaceName}
+          readOnly
+          title="Workspace renaming is coming soon — use the workspace switcher in the topbar to create a new one."
+          style={{
+            display: "block",
+            width: "100%",
+            marginTop: 6,
+            opacity: 0.7,
+            cursor: "not-allowed",
+          }}
+        />
+        <p
+          className="af2-muted-2"
+          style={{ fontSize: 11, marginTop: 4 }}
+        >
+          Workspace renaming is coming soon.
+        </p>
+
+        <label
+          htmlFor="settings-display-name"
+          style={{
+            fontSize: 12.5,
+            color: "var(--af2-ink-3)",
+            marginTop: 16,
+            display: "block",
+          }}
+        >
+          Your display name
+        </label>
+        <input
+          id="settings-display-name"
+          className="af2-input"
+          value={displayName}
+          onChange={(event) => setDisplayName(event.target.value.slice(0, 200))}
+          placeholder={profileLoading ? "Loading…" : "How you appear to teammates"}
+          disabled={profileLoading || saving}
           style={{ display: "block", width: "100%", marginTop: 6 }}
         />
+
         <label
           htmlFor="settings-mission-statement"
           style={{
             fontSize: 12.5,
             color: "var(--af2-ink-3)",
-            marginTop: 14,
+            marginTop: 16,
             display: "block",
           }}
         >
@@ -403,12 +533,23 @@ function GeneralTab({
           readOnly
           style={{ width: "100%", marginTop: 6, fontSize: 15 }}
         />
+        <p
+          className="af2-muted-2"
+          style={{ fontSize: 11, marginTop: 4 }}
+        >
+          Mission statements are authored on the{" "}
+          <Link to="/hire" style={{ color: "var(--af2-clay)" }}>
+            Hire page
+          </Link>
+          .
+        </p>
+
         <label
           htmlFor="settings-timezone"
           style={{
             fontSize: 12.5,
             color: "var(--af2-ink-3)",
-            marginTop: 14,
+            marginTop: 16,
             display: "block",
           }}
         >
@@ -417,12 +558,66 @@ function GeneralTab({
         <input
           id="settings-timezone"
           className="af2-input"
-          defaultValue={
-            Intl.DateTimeFormat().resolvedOptions().timeZone ||
-            "America/Los_Angeles"
-          }
+          value={timezone}
+          onChange={(event) => setTimezone(event.target.value)}
+          placeholder={profileLoading ? "Loading…" : browserTimezone}
+          disabled={profileLoading || saving}
           style={{ display: "block", width: "100%", marginTop: 6 }}
         />
+        <p
+          className="af2-muted-2"
+          style={{ fontSize: 11, marginTop: 4 }}
+        >
+          Used for displaying timestamps and scheduling routines.
+        </p>
+
+        {saveError ? (
+          <div
+            role="alert"
+            style={{
+              marginTop: 14,
+              padding: "10px 12px",
+              borderRadius: "var(--af2-radius)",
+              border: "1px solid rgba(192,84,76,0.30)",
+              background: "rgba(192,84,76,0.10)",
+              color: "var(--af2-clay)",
+              fontSize: 12.5,
+            }}
+          >
+            {saveError}
+          </div>
+        ) : null}
+
+        <div
+          style={{
+            marginTop: 18,
+            display: "flex",
+            alignItems: "center",
+            gap: 10,
+          }}
+        >
+          <button
+            type="button"
+            onClick={() => void handleSave()}
+            disabled={!dirty || saving || profileLoading}
+            className="af2-btn af2-btn-clay"
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 6,
+              opacity: !dirty || saving || profileLoading ? 0.5 : 1,
+              cursor: !dirty || saving || profileLoading ? "not-allowed" : "pointer",
+            }}
+          >
+            {saving ? <Loader2 size={13} className="animate-spin" /> : null}
+            Save changes
+          </button>
+          {dirty ? (
+            <span className="af2-muted-2" style={{ fontSize: 11 }}>
+              Unsaved changes
+            </span>
+          ) : null}
+        </div>
       </div>
 
       <div className="af2-eyebrow" style={{ paddingTop: 8 }}>

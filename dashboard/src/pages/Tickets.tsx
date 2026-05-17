@@ -96,7 +96,7 @@ type TicketsProps = {
 
 export default function Tickets({ initialData, routeAction }: TicketsProps = {}) {
   const navigate = useNavigate();
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const { getAccessToken, user } = useAuth();
   const { activeWorkspaceId } = useWorkspace();
   const [tickets, setTickets] = useState<TicketRecord[]>(
@@ -239,24 +239,28 @@ export default function Tickets({ initialData, routeAction }: TicketsProps = {})
     navigate(`/tickets/${actionData.aggregate.ticket.id}`);
   }, [navigate, routeAction?.data]);
 
-  useEffect(() => {
-    const status = searchParams.get("status");
-    const priority = searchParams.get("priority");
-    const sla = searchParams.get("sla");
-    setStatusFilter(
-      STATUS_OPTIONS.includes(status as StatusFilter)
-        ? (status as StatusFilter)
-        : "all",
-    );
-    setPriorityFilter(
-      PRIORITY_OPTIONS.includes(priority as PriorityFilter)
-        ? (priority as PriorityFilter)
-        : "all",
-    );
-    setSlaFilter(
-      SLA_OPTIONS.includes(sla as SlaFilter) ? (sla as SlaFilter) : "all",
-    );
-  }, [searchParams]);
+  // Note: we *don't* sync URL → state on every searchParams change.
+  // Earlier this effect read `?status=`/`?priority=`/`?sla=` from
+  // the URL and reset filter state — which clobbered the user's
+  // dropdown choices on every render (since `searchParams` is a
+  // fresh URLSearchParams object reference React-Router emits per
+  // call), making the filters feel "broken". State is now seeded
+  // once from URL via the useState() initializers above and updated
+  // imperatively when the user picks a filter (which writes back to
+  // the URL via setSearchParams in writeFilter below).
+
+  const writeFilter = useCallback(
+    (key: "status" | "priority" | "sla", value: string) => {
+      const next = new URLSearchParams(searchParams);
+      if (!value || value === "all") {
+        next.delete(key);
+      } else {
+        next.set(key, value);
+      }
+      setSearchParams(next, { replace: true });
+    },
+    [searchParams, setSearchParams],
+  );
 
   const actorOptions = useMemo(
     () => collectKnownActors(tickets, availableActors),
@@ -439,19 +443,28 @@ export default function Tickets({ initialData, routeAction }: TicketsProps = {})
           <FilterSelect
             label="Status"
             value={statusFilter}
-            onChange={(value) => setStatusFilter(value as StatusFilter)}
+            onChange={(value) => {
+              setStatusFilter(value as StatusFilter);
+              writeFilter("status", value);
+            }}
             options={STATUS_OPTIONS}
           />
           <FilterSelect
             label="Priority"
             value={priorityFilter}
-            onChange={(value) => setPriorityFilter(value as PriorityFilter)}
+            onChange={(value) => {
+              setPriorityFilter(value as PriorityFilter);
+              writeFilter("priority", value);
+            }}
             options={PRIORITY_OPTIONS}
           />
           <FilterSelect
             label="SLA"
             value={slaFilter}
-            onChange={(value) => setSlaFilter(value as SlaFilter)}
+            onChange={(value) => {
+              setSlaFilter(value as SlaFilter);
+              writeFilter("sla", value);
+            }}
             options={SLA_OPTIONS}
           />
 

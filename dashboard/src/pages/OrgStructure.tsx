@@ -18,6 +18,11 @@ interface AgentSpendRow {
 }
 import { EmptyState, ErrorState, LoadingState } from "../components/UiStates";
 import { useAuth } from "../context/AuthContext";
+import { AgentPresencePill } from "../components/AgentPresencePill";
+import {
+  useAgentPresence,
+  type AgentPresence,
+} from "../hooks/useAgentPresence";
 
 /**
  * Team page — Workforce > Team (HEL-26).
@@ -254,12 +259,14 @@ function PodLead({
   tone,
   leadStats,
   reportStats,
+  presence,
 }: {
   lead: Agent;
   reports: Agent[];
   tone: Tone;
   leadStats: LeadStats | null;
   reportStats: Map<string, AgentSpendRow>;
+  presence: Map<string, AgentPresence>;
 }) {
   const avatarClass = avatarClassFor(tone);
   const borderColor = topBorderFor(tone);
@@ -298,8 +305,18 @@ function PodLead({
               {initialsFor(lead.name)}
             </div>
             <div style={{ minWidth: 0 }}>
-              <div style={{ fontWeight: 600, color: "var(--af2-ink)" }}>
-                {lead.name}
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 8,
+                  flexWrap: "wrap",
+                }}
+              >
+                <span style={{ fontWeight: 600, color: "var(--af2-ink)" }}>
+                  {lead.name}
+                </span>
+                <AgentPresencePill presence={presence.get(lead.id)} />
               </div>
               <div className="af2-muted" style={{ fontSize: 12 }}>
                 {lead.roleKey ?? "—"}
@@ -369,9 +386,23 @@ function PodLead({
                 </div>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div
-                    style={{ fontWeight: 500, fontSize: 13, color: "var(--af2-ink)" }}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 6,
+                      flexWrap: "wrap",
+                    }}
                   >
-                    {report.name}
+                    <span
+                      style={{
+                        fontWeight: 500,
+                        fontSize: 13,
+                        color: "var(--af2-ink)",
+                      }}
+                    >
+                      {report.name}
+                    </span>
+                    <AgentPresencePill presence={presence.get(report.id)} />
                   </div>
                   <div className="af2-muted" style={{ fontSize: 11.5 }}>
                     {report.roleKey ?? "—"}
@@ -413,6 +444,10 @@ function PodLead({
 
 export default function OrgStructure() {
   const { accessMode, getAccessToken } = useAuth();
+  // Wave 2b: live presence map keyed by agent.id. Each PodLead pulls
+  // its own + its reports' entries from this map. Polls every 10s
+  // when the SSE upgrade isn't reachable (older proxy, no Redis).
+  const presence = useAgentPresence();
   const [agents, setAgents] = useState<Agent[]>([]);
   const [missions, setMissions] = useState<Mission[]>([]);
   const [edges, setEdges] = useState<OrgGraphResponse["edges"] | null>(null);
@@ -575,6 +610,7 @@ export default function OrgStructure() {
                 tone={toneForIndex(index)}
                 leadStats={leadStatsFor(lead.id)}
                 reportStats={budgets}
+                presence={presence}
               />
             ))}
           </div>

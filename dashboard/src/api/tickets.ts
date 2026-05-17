@@ -102,7 +102,14 @@ export interface TicketListFilters {
 export function normalizeTicketSlaState(value: TicketSlaStateLike | string): TicketSlaState {
   if (value === "warning") return "at_risk";
   if (value === "breached" || value === "paused" || value === "on_track") return value;
-  return "at_risk";
+  if (value === "at_risk") return "at_risk";
+  // Unknown / legacy values (e.g. backend returning "ok" / null /
+  // undefined for a healthy ticket) used to collapse to "at_risk"
+  // which made the SLA filter useless — every healthy ticket
+  // disappeared when you picked "on_track" and everything showed up
+  // under "at_risk". Default to the safer "on_track" so healthy
+  // tickets are filterable like they should be.
+  return "on_track";
 }
 
 export interface CreateTicketInput {

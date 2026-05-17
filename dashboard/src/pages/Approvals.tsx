@@ -20,6 +20,7 @@
  * page. They'll come back on their own dedicated screen when that lands.
  */
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { Link } from "react-router-dom";
 import { listApprovals, resolveApproval, type ApprovalRequest } from "../api/client";
 import { ErrorState, LoadingState } from "../components/UiStates";
 import { useAuth } from "../context/AuthContext";
@@ -126,7 +127,7 @@ export default function Approvals() {
             Approvals
           </h1>
           <div className="af2-page-head-meta">
-            {pending.length} {pending.length === 1 ? "ticket" : "tickets"} waiting · median wait — · — in pending action.
+            {pending.length} {pending.length === 1 ? "assignment" : "assignments"} waiting · median wait — · — in pending action.
           </div>
         </div>
         <div className="af2-page-actions">
@@ -150,15 +151,49 @@ export default function Approvals() {
       )}
 
       {pending.length === 0 ? (
-        <div className="af2-card" style={{ padding: 24, textAlign: "center" }}>
-          <div className="af2-muted" style={{ fontSize: 13 }}>
-            No approvals waiting. New requests will appear here.
+        <div
+          className="af2-card"
+          style={{
+            padding: "32px 24px",
+            textAlign: "center",
+            borderStyle: "dashed",
+            borderColor: "var(--af2-line-2)",
+          }}
+        >
+          <p
+            className="font-af2-serif"
+            style={{ fontSize: 16, color: "var(--af2-ink)", margin: 0 }}
+          >
+            ✓ All clear — no approvals waiting.
+          </p>
+          <p
+            className="af2-muted"
+            style={{ fontSize: 13, marginTop: 8, lineHeight: 1.5 }}
+          >
+            When an agent needs your stamp on a spend, contract, or
+            customer-facing action, it'll appear here. In the meantime,
+            see what your team is doing.
+          </p>
+          <div
+            style={{
+              marginTop: 14,
+              display: "inline-flex",
+              gap: 10,
+              alignItems: "center",
+            }}
+          >
+            <Link to="/agents/activity" className="af2-btn af2-btn-ghost">
+              Open Activity →
+            </Link>
+            <Link to="/mission-assignments" className="af2-btn af2-btn-ghost">
+              See mission assignments →
+            </Link>
           </div>
         </div>
       ) : (
         <div className="af2-list">
           <div className="af2-list-head" style={{ gridTemplateColumns: GRID_TEMPLATE }}>
-            <div>Ticket</div>
+            <div>Assignment</div>
             <div>Request</div>
             <div>Agent</div>
             <div>Risk</div>

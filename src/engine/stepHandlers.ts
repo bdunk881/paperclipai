@@ -21,6 +21,7 @@ import {
 } from "../hostedFreeModels/usageStore";
 import { getProvider } from "./llmProviders";
 import { extractStructuredOutput } from "./structuredOutput";
+import { setAgentPresence } from "../agents/agentPresence";
 import { getBus, releaseBus } from "./agentBus";
 import { classifyTierWithConfidence, resolveModelForTier, buildCostLog, LlmCostLog } from "./llmRouter";
 import { logClassificationDecision } from "./classificationLog";
@@ -816,6 +817,20 @@ export async function handleAgent(
         taskId: started.task?.id,
         skills: started.execution.appliedSkills,
       };
+
+      // Wave 2a: announce the agent is working on this step. Fire-and-
+      // forget — presence is a hint, not a source of truth. The TTL'd
+      // Redis key + workspace pub/sub channel lets the dashboard show
+      // "Aaron is working on <step.name>" in real time without polling
+      // the controlPlaneStore.
+      if (workspaceId) {
+        void setAgentPresence({
+          workspaceId,
+          agentId: bridgedExecution.agentId,
+          state: "working",
+          currentTask: step.name,
+        });
+      }
     }
   }
 
@@ -993,6 +1008,18 @@ export async function handleAgent(
           : `All ${slots} slot(s) failed for workflow step ${step.name}`,
       costUsd: costLog.estimatedCostUsd,
     });
+
+    // Wave 2a: flip presence back to idle / blocked depending on
+    // success. Fire-and-forget; the dashboard pill reflects the
+    // change inside the TTL window.
+    if (workspaceId) {
+      void setAgentPresence({
+        workspaceId,
+        agentId: bridgedExecution.agentId,
+        state: anyFailure && successSlots.length === 0 ? "blocked" : "idle",
+        currentTask: null,
+      });
+    }
   }
 
   return {

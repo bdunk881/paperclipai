@@ -29,6 +29,7 @@ import { withWorkspaceContext } from "../middleware/workspaceContext";
 import { ticketStore, type TicketPriority } from "../tickets/ticketStore";
 import { getRedisClient } from "../queue/redisClient";
 import { setAgentPresence } from "./agentPresence";
+import { observabilityStore } from "../observability/store";
 
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -150,6 +151,30 @@ export function createAgentActionsRoutes(pool: Pool): Router {
         currentTask: "Self check-in",
       });
 
+      // Emit an observability event so the Activity feed shows the
+      // owner-triggered check-in (with a `source: "check-in"` tag the
+      // dashboard renders as a colored badge). Same shape as other
+      // ticket.* events.
+      observabilityStore.record({
+        workspaceId,
+        userId,
+        category: "issue",
+        type: "ticket.opened",
+        actor: { type: "user", id: userId },
+        subject: {
+          type: "ticket",
+          id: aggregate.ticket.id,
+          label: aggregate.ticket.title,
+          parentType: "agent",
+          parentId: agent.id,
+        },
+        summary: `${agent.name} asked to check in.`,
+        payload: {
+          status: aggregate.ticket.status,
+          metadata: { source: "check-in", agentId: agent.id, agentName: agent.name },
+        },
+      });
+
       res.status(201).json({
         ticketId: aggregate.ticket.id,
         agentId: agent.id,
@@ -220,6 +245,31 @@ export function createAgentActionsRoutes(pool: Pool): Router {
         dueDate,
         assignees: [{ type: "agent", id: agent.id, role: "primary" }],
         context: { workspaceId, userId },
+      });
+
+      observabilityStore.record({
+        workspaceId,
+        userId,
+        category: "issue",
+        type: "ticket.opened",
+        actor: { type: "user", id: userId },
+        subject: {
+          type: "ticket",
+          id: aggregate.ticket.id,
+          label: aggregate.ticket.title,
+          parentType: "agent",
+          parentId: agent.id,
+        },
+        summary: `Handed off "${title}" to ${agent.name}.`,
+        payload: {
+          status: aggregate.ticket.status,
+          metadata: {
+            source: "handoff",
+            agentId: agent.id,
+            agentName: agent.name,
+            priority,
+          },
+        },
       });
 
       res.status(201).json({

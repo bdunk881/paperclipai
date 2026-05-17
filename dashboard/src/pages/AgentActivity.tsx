@@ -84,9 +84,40 @@ function verbFromType(type: string): string {
     "issue.created": "opened issue",
     "issue.resolved": "resolved issue",
     "heartbeat.recorded": "checked in",
+    "ticket.opened": "opened mission assignment",
   };
   if (known[type]) return known[type];
   return type.split(".").join(" ");
+}
+
+/**
+ * Render a small colored badge for events whose payload metadata
+ * carries a `source` tag (Wave 5 check-in / hand-off via the agent
+ * actions routes). Returns null for events without a recognized
+ * source so the row stays uncluttered.
+ */
+function sourceBadge(event: { payload?: unknown }): {
+  label: string;
+  color: string;
+  bg: string;
+} | null {
+  const payload = event.payload as { metadata?: { source?: string } } | undefined;
+  const source = payload?.metadata?.source;
+  if (source === "check-in") {
+    return {
+      label: "via Check-in",
+      color: "var(--af2-mustard)",
+      bg: "rgba(192,142,58,0.12)",
+    };
+  }
+  if (source === "handoff") {
+    return {
+      label: "via Hand-off",
+      color: "var(--af2-sage)",
+      bg: "rgba(90,122,90,0.12)",
+    };
+  }
+  return null;
 }
 
 function filterEventsForTab(
@@ -302,10 +333,44 @@ export default function AgentActivity() {
                 {initials(displayName)}
               </div>
 
-              <div style={{ fontSize: 13, minWidth: 0 }}>
-                <strong>{first}</strong>
-                <span className="af2-muted"> {verb} </span>
-                <span style={{ color: "var(--af2-ink)" }}>{event.summary}</span>
+              <div
+                style={{
+                  fontSize: 13,
+                  minWidth: 0,
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 8,
+                  flexWrap: "wrap",
+                }}
+              >
+                <span>
+                  <strong>{first}</strong>
+                  <span className="af2-muted"> {verb} </span>
+                  <span style={{ color: "var(--af2-ink)" }}>{event.summary}</span>
+                </span>
+                {(() => {
+                  const badge = sourceBadge(event);
+                  if (!badge) return null;
+                  return (
+                    <span
+                      style={{
+                        display: "inline-flex",
+                        alignItems: "center",
+                        padding: "1px 8px",
+                        fontSize: 10.5,
+                        fontFamily:
+                          "var(--af2-mono, ui-monospace, SFMono-Regular, Menlo, monospace)",
+                        color: badge.color,
+                        background: badge.bg,
+                        borderRadius: 999,
+                        textTransform: "uppercase",
+                        letterSpacing: "0.04em",
+                      }}
+                    >
+                      {badge.label}
+                    </span>
+                  );
+                })()}
               </div>
 
               <a

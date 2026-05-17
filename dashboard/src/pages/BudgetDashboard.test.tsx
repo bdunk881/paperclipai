@@ -103,7 +103,7 @@ describe("BudgetDashboard", () => {
     listAgentsMock.mockResolvedValueOnce([]);
     render(<MemoryRouter><BudgetDashboard /></MemoryRouter>);
     await waitFor(() =>
-      expect(screen.getByText(/no agent spend recorded yet/i)).toBeInTheDocument(),
+      expect(screen.getByText(/no spend recorded yet/i)).toBeInTheDocument(),
     );
   });
 
@@ -118,7 +118,7 @@ describe("BudgetDashboard", () => {
     );
 
     expect(
-      await screen.findByText(/no agent spend recorded yet/i),
+      await screen.findByText(/no spend recorded yet/i),
     ).toBeInTheDocument();
     expect(listAgentsMock).not.toHaveBeenCalled();
     expect(listBudgetsMock).not.toHaveBeenCalled();

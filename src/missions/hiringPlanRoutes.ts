@@ -186,6 +186,96 @@ async function insertAgent(
   return { id, model };
 }
 
+/**
+ * Wave 6: starter Job Description body derived from the StaffingRecommendation.
+ *
+ * Renders the agent's mandate / justification / kpis / tools / budget into
+ * the same H2 section shape the dashboard's SectionEditor parses
+ * (## Mission / ## How they work / ## Hard rules). The owner can edit or
+ * fully rewrite via the wizard later; the point of seeding it on confirm
+ * is to give the team a usable persona from day one without a tour
+ * through each agent's settings page.
+ *
+ * No LLM call — the template is purely structural, derived from the
+ * already-LLM-generated plan. Keeping confirm fast + free.
+ */
+export function buildStarterJobDescriptionBody(agent: {
+  title: string;
+  mandate: string;
+  justification: string;
+  kpis: string[];
+  tools: string[];
+  budgetMonthlyUsd: number | null;
+}): string {
+  const mandateLine = agent.mandate.trim();
+  const justificationLine = agent.justification.trim();
+  const kpiBullets = agent.kpis
+    .map((kpi) => `- ${kpi.trim()}`)
+    .join("\n");
+  const toolsLine =
+    agent.tools.length > 0
+      ? `You'll typically use: ${agent.tools.join(", ")}.`
+      : "";
+  const budgetRule =
+    typeof agent.budgetMonthlyUsd === "number" && agent.budgetMonthlyUsd > 0
+      ? `- Stay within your monthly budget of $${agent.budgetMonthlyUsd.toFixed(0)}.`
+      : "";
+
+  const howTheyWork = [
+    justificationLine,
+    "",
+    "You're responsible for:",
+    kpiBullets,
+    toolsLine,
+  ]
+    .filter((line) => line.trim().length > 0)
+    .join("\n");
+
+  const hardRules = [
+    budgetRule,
+    "- Escalate to your manager any decision that affects other teams or sensitive customers.",
+    "- Never share credentials, customer data, or financial info outside the workspace.",
+  ]
+    .filter((line) => line.trim().length > 0)
+    .join("\n");
+
+  return [
+    "## Mission",
+    mandateLine,
+    "",
+    "## How they work",
+    howTheyWork,
+    "",
+    "## Hard rules",
+    hardRules,
+  ].join("\n");
+}
+
+async function insertStarterJobDescription(
+  client: PoolClient,
+  params: {
+    workspaceId: string;
+    userId: string;
+    agentId: string;
+    agentTitle: string;
+    body: string;
+  },
+): Promise<void> {
+  await client.query(
+    `INSERT INTO workspace_instructions
+        (id, workspace_id, agent_id, kind, title, body, version, author_user_id)
+       VALUES ($1, $2, $3, 'instruction', $4, $5, 1, $6)`,
+    [
+      randomUUID(),
+      params.workspaceId,
+      params.agentId,
+      `${params.agentTitle} — Job description`,
+      params.body,
+      params.userId,
+    ],
+  );
+}
+
 async function emitActivityEvent(
   client: PoolClient,
   workspaceId: string,
@@ -407,6 +497,27 @@ export function createHiringPlanRoutes(pool: Pool) {
                 model,
                 budgetMonthlyUsd: agent.budgetMonthlyUsd ?? 0,
                 reportingToAgentId: null,
+              });
+
+              // Wave 6: seed a starter Job Description (Wave 3 substrate)
+              // so the new agent has a usable persona on day one. Owner
+              // can edit / re-draft via the wizard on the agent's
+              // /agents/:id/job page. Inside the same transaction so a
+              // failure rolls back the agent insert too.
+              const starterBody = buildStarterJobDescriptionBody({
+                title: agent.title,
+                mandate: agent.mandate,
+                justification: agent.justification,
+                kpis: agent.kpis,
+                tools: agent.tools,
+                budgetMonthlyUsd: agent.budgetMonthlyUsd,
+              });
+              await insertStarterJobDescription(client, {
+                workspaceId,
+                userId,
+                agentId: id,
+                agentTitle: agent.title,
+                body: starterBody,
               });
             }
 

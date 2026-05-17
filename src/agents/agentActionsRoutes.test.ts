@@ -25,6 +25,19 @@ jest.mock("../middleware/workspaceContext", () => ({
   ),
 }));
 
+// UX-12: agentCheckIn imports llmProviders → mistral SDK → ESM-only
+// @mistralai/mistralai. Stub the helper so the route's fire-and-
+// forget call is a no-op for these HTTP-shape tests.
+jest.mock("./agentCheckIn", () => ({
+  runAgentSelfCheckIn: jest.fn(),
+}));
+
+// observabilityStore.record is called inline on both routes; stub it
+// so the test doesn't need a real observability store harness.
+jest.mock("../observability/store", () => ({
+  observabilityStore: { record: jest.fn() },
+}));
+
 import express, { type Request, type Response, type NextFunction } from "express";
 import request from "supertest";
 import { createAgentActionsRoutes } from "./agentActionsRoutes";

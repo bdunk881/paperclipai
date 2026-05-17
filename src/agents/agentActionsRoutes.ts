@@ -30,6 +30,7 @@ import { ticketStore, type TicketPriority } from "../tickets/ticketStore";
 import { getRedisClient } from "../queue/redisClient";
 import { setAgentPresence } from "./agentPresence";
 import { observabilityStore } from "../observability/store";
+import { runAgentSelfCheckIn } from "./agentCheckIn";
 
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -50,6 +51,7 @@ const CHECK_IN_LOCK_TTL_SECONDS = 30;
 interface AgentRow {
   id: string;
   name: string;
+  role_key: string | null;
 }
 
 async function loadAgent(
@@ -64,7 +66,7 @@ async function loadAgent(
       { workspaceId, userId },
       async (client) => {
         const result = await client.query<AgentRow>(
-          `SELECT id, name FROM agents
+          `SELECT id, name, role_key FROM agents
             WHERE id = $1 AND workspace_id = $2
             LIMIT 1`,
           [agentId, workspaceId],
@@ -149,6 +151,20 @@ export function createAgentActionsRoutes(pool: Pool): Router {
         agentId: agent.id,
         state: "checking-in",
         currentTask: "Self check-in",
+      });
+
+      // UX-12: kick off the real agent self-review. Fire-and-forget;
+      // the LLM call runs after the response goes back to the
+      // dashboard, and updates presence to {idle | working | blocked}
+      // + a one-sentence summary when it finishes. The user sees the
+      // pill flip in real time via the SSE stream.
+      runAgentSelfCheckIn({
+        pool,
+        workspaceId,
+        userId,
+        agentId: agent.id,
+        agentName: agent.name,
+        agentRoleKey: agent.role_key,
       });
 
       // Emit an observability event so the Activity feed shows the

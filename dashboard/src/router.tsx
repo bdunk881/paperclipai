@@ -20,6 +20,7 @@ import Layout from "./components/Layout";
 import { useAuth } from "./context/AuthContext";
 import AgentActivity from "./pages/AgentActivity";
 import AgentTeamDetail from "./pages/AgentTeamDetail";
+import AgentJobDescription from "./pages/AgentJobDescription";
 import ApiKeys from "./pages/ApiKeys";
 import Approvals from "./pages/Approvals";
 import AuthCallback from "./pages/AuthCallback";
@@ -199,6 +200,9 @@ const routes: RouteObject[] = [
       // Run pillar
       { path: "agents/activity", element: <AgentActivity /> },
       { path: "agents/team/:teamId", element: <AgentTeamDetail /> },
+      // Wave 3: per-agent Job Description editor + LLM-assisted wizard.
+      // Linked from AgentTeamDetail and OrgStructure (via the agent card).
+      { path: "agents/:agentId/job", element: <AgentJobDescription /> },
       { path: "approvals", element: <Approvals /> },
       { path: "mission-state", element: <MissionState /> },
 

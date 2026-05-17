@@ -33,6 +33,7 @@ import memoryRoutes from "./memory/memoryRoutes";
 import agentMemoryRoutes from "./agents/agentMemoryRoutes";
 import agentRoutes from "./agents/agentRoutes";
 import { createAgentPresenceRoutes } from "./agents/agentPresenceRoutes";
+import { createAgentJobDescriptionRoutes } from "./agents/agentJobDescriptionRoutes";
 import knowledgeRoutes from "./knowledge/routes";
 import controlPlaneRoutes from "./controlPlane/controlPlaneRoutes";
 import companyRoutes from "./companies/companyRoutes";
@@ -588,6 +589,21 @@ app.use("/api/agents/presence/stream", (req, _res, next) => {
   next();
 });
 app.use("/api/agents", requireAuth, workspaceResolver, requireRole("admin", "developer"), createAgentPresenceRoutes());
+// Wave 3: Job Description wizard (calls the workspace's default LLM
+// to draft a 3-section markdown body from four short answers). Mount
+// before the catch-all agentRoutes so the /:agentId/job-description/
+// path wins the match. Saving the draft uses the existing
+// /api/instructions write surface.
+//
+// Gated on Postgres being configured (same pattern as instructionRoutes
+// above) so tests / in-memory-only deploys don't fail at module-load
+// time. In-memory mode returns 501 across the wizard surface.
+const agentJobDescriptionRoutes = isPostgresPersistenceEnabled()
+  ? createAgentJobDescriptionRoutes(getPostgresPool())
+  : express.Router().all("*", (_req, res) =>
+      res.status(501).json({ error: "Job description wizard requires PostgreSQL persistence." }),
+    );
+app.use("/api/agents", requireAuth, workspaceResolver, requireRole("admin", "developer"), agentJobDescriptionRoutes);
 app.use("/api/agents", requireAuth, workspaceResolver, requireRole("admin", "developer"), agentRoutes);
 app.use("/api/integrations/apollo", apolloRoutes);
 

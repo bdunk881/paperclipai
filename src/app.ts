@@ -1196,6 +1196,12 @@ app.post("/api/workflows/generate", requireAuth, workspaceResolver, requireRole(
     provider: resolved.config.provider,
     model: generationModel,
     apiKey: resolved.apiKey,
+    // Force native JSON output so chatty preambles can't break the
+    // array-parse downstream. Even json_object mode (no schema) is
+    // enough to kill the leading "Here are the steps:" prose that
+    // tripped the old fence-strip regex. The Tier 1 extractor still
+    // catches providers that don't support native mode.
+    responseFormat: { type: "json_object" },
   });
 
   let rawText: string;

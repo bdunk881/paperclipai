@@ -32,6 +32,12 @@ jest.mock("./agentCheckIn", () => ({
   runAgentSelfCheckIn: jest.fn(),
 }));
 
+// DASH-15: priorityClassifier transitively imports llmProviders too.
+// Stub the entry point so the route module loads under Jest.
+jest.mock("./priorityClassifier", () => ({
+  classifyHandoffPriority: jest.fn().mockResolvedValue(null),
+}));
+
 // observabilityStore.record is called inline on both routes; stub it
 // so the test doesn't need a real observability store harness.
 jest.mock("../observability/store", () => ({

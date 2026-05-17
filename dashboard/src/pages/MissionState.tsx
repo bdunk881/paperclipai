@@ -241,17 +241,40 @@ export default function MissionState() {
           onRetry={() => void loadMissions()}
         />
       ) : visibleMissions.length === 0 ? (
-        <div className="af2-card" style={{ padding: 24, textAlign: "center" }}>
-          <div className="af2-muted" style={{ fontSize: 13 }}>
-            No missions in this view yet.{" "}
-            <Link
-              to="/hire"
-              className="af2-btn af2-btn-ghost af2-btn-sm"
-              style={{ display: "inline-flex", marginLeft: 8 }}
-            >
-              Brief one →
-            </Link>
-          </div>
+        <div
+          className="af2-card"
+          style={{
+            padding: "32px 24px",
+            textAlign: "center",
+            borderStyle: "dashed",
+            borderColor: "var(--af2-line-2)",
+          }}
+        >
+          <p
+            className="font-af2-serif"
+            style={{ fontSize: 16, color: "var(--af2-ink)", margin: 0 }}
+          >
+            No missions in this view yet.
+          </p>
+          <p
+            className="af2-muted"
+            style={{ fontSize: 13, marginTop: 8, lineHeight: 1.5 }}
+          >
+            A mission is what your team is trying to accomplish. Brief one,
+            and we'll draft the team to run it.
+          </p>
+          <Link
+            to="/hire"
+            className="af2-btn af2-btn-clay"
+            style={{
+              marginTop: 14,
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 6,
+            }}
+          >
+            Brief a new mission →
+          </Link>
         </div>
       ) : (
         <div

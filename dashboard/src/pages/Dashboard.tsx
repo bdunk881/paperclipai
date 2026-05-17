@@ -32,6 +32,7 @@ import { useAuth } from "../context/AuthContext";
 import { useWorkspace } from "../context/useWorkspace";
 import { AgentPresencePill } from "../components/AgentPresencePill";
 import { useAgentPresence } from "../hooks/useAgentPresence";
+import { OnboardingBanner } from "../components/OnboardingBanner";
 import type { WorkflowRun } from "../types/workflow";
 
 interface AgentSnapshot {
@@ -303,6 +304,15 @@ export default function Dashboard() {
           </Link>
         </div>
       </div>
+
+      {/* UX-11: show the onboarding guide only when the workspace is
+          fully empty (no agents AND no missions). Auto-hides once
+          there's any data; permanently dismissible via the × button
+          which writes a localStorage flag. */}
+      <OnboardingBanner
+        show={agentSnapshots.length === 0 && missions.length === 0}
+        firstName={firstName(user?.name)}
+      />
 
       <div className="af2-stats" style={{ marginBottom: 22 }}>
         <div className="af2-stat">

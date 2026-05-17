@@ -24,6 +24,7 @@ import * as Sentry from "@sentry/react";
 import logoLockup from "../assets/logo/lockup.svg";
 import { useAuth } from "../context/AuthContext";
 import { AppTopbar } from "./AppTopbar";
+import { OnboardingTour } from "./OnboardingTour";
 
 // v2 four-pillar IA (HEL-31). Labels follow the v2 design (`docs/design/v2/data.jsx`,
 // `docs/design/v2/shell.jsx`); routes map to existing dashboard pages until the
@@ -246,6 +247,10 @@ export default function Layout() {
           <Outlet />
         </main>
       </div>
+
+      {/* DASH-17: anchored first-visit tour. Self-gates on a
+          localStorage flag so it never reappears after dismissal. */}
+      <OnboardingTour />
     </div>
   );
 }

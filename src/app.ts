@@ -116,6 +116,8 @@ import {
 } from "./workflows/portableSchema";
 import landingPublicApiRoutes from "./landing/publicApiRoutes";
 import { requirePersistence } from "./bootstrap";
+import { randomUUID } from "crypto";
+import { getRunQueue } from "./queue/queues";
 
 import { getImportedTemplate, saveImportedTemplate } from "./templates/importedTemplateStore";
 import { getConnectorHealthSummary, listConnectorHealth } from "./connectors/health";
@@ -871,6 +873,52 @@ app.post(
     resolvedInput.workspaceId = req.workspaceId;
   }
   const resolvedConfig = req.workspaceId ? { ...(config ?? {}), workspaceId: req.workspaceId } : config;
+
+  const runQueue = getRunQueue();
+  if (runQueue) {
+    // BullMQ path: create the run record with status "queued" and enqueue.
+    // The worker (src/worker.ts) picks it up for execution.
+    const defaultConfig: Record<string, unknown> = {};
+    for (const field of template.configFields) {
+      if (field.defaultValue !== undefined) defaultConfig[field.key] = field.defaultValue;
+    }
+    const runConfig = { ...defaultConfig, ...(resolvedConfig ?? {}) };
+    const runId = randomUUID();
+    const run = await runStore.create({
+      id: runId,
+      templateId: template.id,
+      templateName: template.name,
+      workspaceId: req.workspaceId,
+      status: "queued",
+      startedAt: new Date().toISOString(),
+      input: resolvedInput,
+      workflowDag: template,
+      stepResults: [],
+      runtimeState: {
+        config: { ...runConfig },
+        context: { ...runConfig, ...resolvedInput },
+        currentStepIndex: 0,
+      },
+      ...(userId !== undefined ? { userId } : {}),
+    });
+    const idempotencyKey = `${run.id}:0:${run.workflowVersionId ?? template.id}`;
+    await runQueue.add(
+      "run",
+      {
+        runId: run.id,
+        templateId: template.id,
+        workflowVersionId: run.workflowVersionId,
+        workspaceId: req.workspaceId ?? "",
+        stepIndex: 0,
+        idempotencyKey,
+      },
+      { jobId: run.id, removeOnComplete: 100 }
+    );
+    res.status(202).json({ runId: run.id });
+    return;
+  }
+
+  // Legacy in-process path (used when Redis is not configured).
   const run = await workflowEngine.startRun(template, resolvedInput, resolvedConfig, userId);
   res.status(202).json(run);
 });

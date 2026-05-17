@@ -53,12 +53,56 @@ export interface LLMProviderOptions {
   authType?: "api_key" | "aws" | "service_account" | "oauth";
 }
 
+/**
+ * Structured-output mode. Lets a caller ask the provider to enforce
+ * JSON output natively instead of begging in the prompt. Each provider
+ * maps this to its closest native primitive:
+ *
+ *   - OpenAI / OpenAI-compat (Groq, Fireworks, Together, xAI, DeepSeek,
+ *     Perplexity, Ollama, LocalAI, OpenCode Zen):
+ *       json_object  → response_format: { type: "json_object" }
+ *       json_schema  → response_format: { type: "json_schema", json_schema: {…, strict: true} }
+ *   - Anthropic:
+ *       json_object  → forced tool-use with a permissive {} schema
+ *       json_schema  → forced tool-use with the provided JSON schema as input_schema
+ *   - Mistral:
+ *       json_object  → response_format: { type: "json_object" }
+ *       json_schema  → response_format: { type: "json_schema", jsonSchema: {…} }
+ *   - Gemini:
+ *       json_object  → generationConfig: { responseMimeType: "application/json" }
+ *       json_schema  → generationConfig: { responseMimeType, responseSchema }
+ *
+ * Providers that don't (yet) have a native mode (Bedrock, Vertex AI,
+ * Cohere) ignore the hint — the caller still gets text and falls back
+ * to the shared extractStructuredOutput helper.
+ *
+ * `name` is used by OpenAI for the schema label (`response_format
+ * .json_schema.name`); other providers ignore it.
+ */
+export type ResponseFormat =
+  | { type: "text" }
+  | { type: "json_object" }
+  | {
+      type: "json_schema";
+      name?: string;
+      // JSON Schema (Draft-07-ish) object. Callers using zod should
+      // convert with `zod-to-json-schema` or hand-author the schema.
+      schema: Record<string, unknown>;
+    };
+
 export interface LLMProviderConfig {
   provider: ProviderName;
   model: string;
   apiKey?: string;
   credentials?: LLMProviderCredentials;
   options?: LLMProviderOptions;
+  /**
+   * Optional structured-output enforcement. See ResponseFormat. When
+   * provided, the provider call uses its native JSON-mode primitive
+   * (rather than relying on prompt instructions) for any provider that
+   * supports one. Providers without native support ignore the hint.
+   */
+  responseFormat?: ResponseFormat;
 }
 
 export interface LLMResponse {

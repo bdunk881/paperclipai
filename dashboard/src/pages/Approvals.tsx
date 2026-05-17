@@ -158,12 +158,24 @@ export default function Approvals() {
           </div>
         </div>
         <div className="af2-page-actions">
-          <button type="button" className="af2-btn">
+          {/* Policies → the approval-tier-policy editor lives inside
+              the Settings page. Audit log → the Activity feed is the
+              de-facto audit trail today; a dedicated audit page is a
+              future ticket. Both were dead <button>s pre-DASH-4. */}
+          <Link
+            to="/settings"
+            className="af2-btn"
+            style={{ textDecoration: "none" }}
+          >
             Policies
-          </button>
-          <button type="button" className="af2-btn">
+          </Link>
+          <Link
+            to="/agents/activity"
+            className="af2-btn"
+            style={{ textDecoration: "none" }}
+          >
             Audit log
-          </button>
+          </Link>
         </div>
       </div>
 

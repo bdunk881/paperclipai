@@ -114,16 +114,21 @@ export default function Templates({
             Reusable workflows your agents call as routines. Like functions, but with judgment.
           </div>
         </div>
+        {/* DASH-6/7: "Browse templates" was redundant — this whole
+            page IS the template browser. "+New routine" used to drop
+            users straight into Studio (the WorkflowBuilder canvas) on
+            click, which surprised SMB owners expecting a template
+            picker. Renamed to "Blank routine →" so the action
+            advertises what it actually does. Picking an existing
+            template from the list below is the recommended path. */}
         <div className="af2-page-actions">
-          <button type="button" className="af2-btn">
-            Browse templates
-          </button>
           <Link
             to="/builder"
             className="af2-btn af2-btn-clay"
             style={{ textDecoration: "none" }}
+            title="Open a blank Studio canvas. To start from a template, pick one from the list below."
           >
-            ＋ New routine
+            Blank routine →
           </Link>
         </div>
       </div>

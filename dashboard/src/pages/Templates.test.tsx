@@ -95,8 +95,17 @@ describe("Templates", () => {
     expect(screen.getByText("Build · Routines")).toBeInTheDocument();
     expect(screen.getByRole("heading", { level: 1, name: /library/i })).toBeInTheDocument();
     expect(screen.getByText(/reusable workflows your agents call as routines/i)).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /browse templates/i })).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: /new routine/i })).toHaveAttribute("href", "/builder");
+    // DASH-6/7: the dead "Browse templates" page-action was removed
+    // (the whole page is the browser) and "+New routine" was renamed
+    // to "Blank routine →" so the click destination (a blank Studio
+    // canvas) matches the label.
+    expect(
+      screen.queryByRole("button", { name: /browse templates/i }),
+    ).not.toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /blank routine/i })).toHaveAttribute(
+      "href",
+      "/builder",
+    );
   });
 
   // ---------------------------------------------------------------------------

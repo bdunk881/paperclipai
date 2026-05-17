@@ -164,15 +164,13 @@ export default function BudgetDashboard() {
             {formatCurrency(totals.spent)} of {formatCurrency(totals.cap)} cap used · {totals.pct}% · — days left in cycle.
           </div>
         </div>
-        <div className="af2-page-actions">
-          <button type="button" className="af2-btn">
-            Forecast
-          </button>
-          {/* TODO: wire to a budget-mutation modal once the budgets PATCH route lands. */}
-          <button type="button" className="af2-btn af2-btn-primary">
-            Adjust caps
-          </button>
-        </div>
+        {/* DASH-5: removed the dead "Forecast" + "Adjust caps" page
+            actions. Forecast was a duplicate — the same number lives
+            in the visible "Forecast · EoM" stat below. Adjust caps
+            had no PATCH endpoint; per-agent Edit buttons on each row
+            remain the cap-change surface until a workspace-wide
+            budgets-edit modal ships. */}
+        <div className="af2-page-actions" />
       </div>
 
       <div className="af2-stats" style={{ marginBottom: 22 }}>

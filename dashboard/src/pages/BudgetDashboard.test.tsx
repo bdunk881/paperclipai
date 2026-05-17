@@ -94,9 +94,16 @@ describe("BudgetDashboard", () => {
     expect(screen.getByText(/forecast · eom/i)).toBeInTheDocument();
     expect(screen.getByText(/top spender/i)).toBeInTheDocument();
     expect(screen.getByText(/cost per hour saved/i)).toBeInTheDocument();
-    // Page action buttons render.
-    expect(screen.getByRole("button", { name: /forecast/i })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /adjust caps/i })).toBeInTheDocument();
+    // DASH-5: the page no longer renders the dead "Forecast" /
+    // "Adjust caps" page actions. Forecast info is in the visible
+    // stat strip; per-agent cap edits live on each row's Edit
+    // button until a workspace-wide caps modal ships.
+    expect(
+      screen.queryByRole("button", { name: /^forecast$/i }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /adjust caps/i }),
+    ).not.toBeInTheDocument();
   });
 
   it("renders empty state when no agents are returned", async () => {

@@ -296,9 +296,11 @@ export default function Dashboard() {
           </div>
         </div>
         <div className="af2-page-actions">
-          <Link to="/hire" className="af2-btn">
-            Brief an agent
-          </Link>
+          {/* "Brief an agent" used to live here as a second CTA — same
+              /hire destination as +New mission, which made it a dead
+              duplicate. Page action is the single +New mission CTA
+              now; per-agent hand-offs live on the agent card and in
+              the Mission Assignments modal. */}
           <Link to="/hire" className="af2-btn af2-btn-clay">
             ＋ New mission
           </Link>

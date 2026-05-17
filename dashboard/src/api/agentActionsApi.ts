@@ -76,3 +76,35 @@ export async function handoffToAgent(
     `Failed to hand off task: ${response.status}`,
   );
 }
+
+export type HandoffPriority = "low" | "medium" | "high" | "urgent";
+
+export interface PrioritySuggestion {
+  priority: HandoffPriority;
+  reason: string;
+}
+
+/**
+ * DASH-15: classify a proposed hand-off into a priority via the
+ * workspace's lite-tier LLM. Returns `null` when the backend
+ * returned 204 — meaning "no suggestion, keep the user's default".
+ */
+export async function classifyHandoffPriority(
+  input: { title: string; description?: string },
+  accessToken: string,
+  signal?: AbortSignal,
+): Promise<PrioritySuggestion | null> {
+  const response = await trackedFetch(`${BASE}/agents/priority-classify`, {
+    method: "POST",
+    headers: buildHeaders(accessToken, { "Content-Type": "application/json" }),
+    body: JSON.stringify(input),
+    signal,
+  });
+  if (response.status === 204) return null;
+  if (!response.ok) {
+    // Treat any non-2xx as "no suggestion". The hand-off itself isn't
+    // gated on this — classifier failures must never block the form.
+    return null;
+  }
+  return (await response.json()) as PrioritySuggestion;
+}

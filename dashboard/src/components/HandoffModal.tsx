@@ -22,11 +22,13 @@
  *     agent will pick up.
  */
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { CalendarClock, Loader2, MessageSquareText, Send, Sparkles, Type, X } from "lucide-react";
 import {
+  classifyHandoffPriority,
   handoffToAgent,
   type AgentActionResult,
+  type PrioritySuggestion,
 } from "../api/agentActionsApi";
 import { useAuth } from "../context/AuthContext";
 import { useAgentPresence } from "../hooks/useAgentPresence";
@@ -90,6 +92,19 @@ export function HandoffModal({
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // DASH-15: lite-tier LLM priority suggestion. Fires on a debounce
+  // after the user pauses typing. We track:
+  //   - `suggestion`: the latest classifier result (or null)
+  //   - `suggestionLoading`: true while a request is in flight
+  //   - `userOverride`: true once the user manually picks a priority,
+  //     so the suggestion never silently changes their choice
+  //   - `suggestionDismissed`: true after explicit X-click, so the
+  //     banner doesn't pop back up for the same draft
+  const [suggestion, setSuggestion] = useState<PrioritySuggestion | null>(null);
+  const [suggestionLoading, setSuggestionLoading] = useState(false);
+  const [userOverride, setUserOverride] = useState(false);
+  const [suggestionDismissed, setSuggestionDismissed] = useState(false);
+
   // Stable per-mount example so the placeholder doesn't churn on every
   // keystroke. Re-rolls when the modal opens via the `open` boolean.
   const titlePlaceholder = useMemo(
@@ -109,6 +124,63 @@ export function HandoffModal({
   const priorityChoice = PRIORITIES.find((p) => p.value === priority)!;
   const previewActive = title.trim().length > 0 || description.trim().length > 0;
 
+  // Debounced classifier call. Re-fires whenever the trimmed title /
+  // description changes; aborts in-flight requests on subsequent
+  // edits so we don't race the response back onto an outdated draft.
+  const classifyAbortRef = useRef<AbortController | null>(null);
+  const trimmedTitle = title.trim();
+  const trimmedDescription = description.trim();
+  useEffect(() => {
+    if (!open) return;
+    if (trimmedTitle.length < 8) {
+      setSuggestion(null);
+      return;
+    }
+    const handle = window.setTimeout(() => {
+      classifyAbortRef.current?.abort();
+      const controller = new AbortController();
+      classifyAbortRef.current = controller;
+      setSuggestionLoading(true);
+      void (async () => {
+        try {
+          const token = await requireAccessToken();
+          const result = await classifyHandoffPriority(
+            { title: trimmedTitle, description: trimmedDescription || undefined },
+            token,
+            controller.signal,
+          );
+          if (controller.signal.aborted) return;
+          setSuggestion(result);
+        } catch {
+          if (!controller.signal.aborted) setSuggestion(null);
+        } finally {
+          if (!controller.signal.aborted) setSuggestionLoading(false);
+        }
+      })();
+    }, 650);
+    return () => window.clearTimeout(handle);
+    // requireAccessToken is stable from useAuth; safe to omit per
+    // existing patterns elsewhere in the dashboard.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, trimmedTitle, trimmedDescription]);
+
+  // Apply the suggestion automatically only when the user hasn't
+  // already changed priority manually. Otherwise leave their choice
+  // alone and let them tap "Use suggestion" to accept.
+  useEffect(() => {
+    if (
+      suggestion &&
+      !userOverride &&
+      !suggestionDismissed &&
+      suggestion.priority !== priority
+    ) {
+      setPriority(suggestion.priority);
+    }
+    // We intentionally don't depend on `priority` so the suggestion
+    // doesn't get reapplied after a manual change.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [suggestion, userOverride, suggestionDismissed]);
+
   function reset(): void {
     setTitle("");
     setDescription("");
@@ -116,6 +188,11 @@ export function HandoffModal({
     setDueDate("");
     setShowSchedule(false);
     setError(null);
+    setSuggestion(null);
+    setSuggestionLoading(false);
+    setUserOverride(false);
+    setSuggestionDismissed(false);
+    classifyAbortRef.current?.abort();
   }
 
   function close(): void {
@@ -351,7 +428,13 @@ export function HandoffModal({
                     role="radio"
                     aria-checked={selected}
                     key={p.value}
-                    onClick={() => setPriority(p.value)}
+                    onClick={() => {
+                      setPriority(p.value);
+                      // DASH-15: explicit click locks in the user's
+                      // choice — the LLM suggestion will not override
+                      // it for the rest of this modal session.
+                      setUserOverride(true);
+                    }}
                     disabled={submitting}
                     style={{
                       padding: "10px 12px",
@@ -384,6 +467,101 @@ export function HandoffModal({
                 );
               })}
             </div>
+
+            {/* DASH-15 suggestion banner. Only shows when:
+                  - classifier returned a suggestion
+                  - user hasn't dismissed it
+                  - suggestion differs from the user's manual choice
+                If the user already overrode, the banner offers a
+                "Use suggestion" CTA so they can swap back. */}
+            {suggestionLoading && trimmedTitle.length >= 8 ? (
+              <div
+                className="af2-muted-2"
+                style={{
+                  marginTop: 8,
+                  fontSize: 11.5,
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 6,
+                }}
+              >
+                <Loader2 size={11} className="animate-spin" />
+                Thinking…
+              </div>
+            ) : suggestion && !suggestionDismissed ? (
+              <div
+                role="status"
+                style={{
+                  marginTop: 8,
+                  padding: "8px 10px",
+                  borderRadius: 6,
+                  border: "1px solid var(--af2-line)",
+                  background: "var(--af2-paper-2)",
+                  display: "flex",
+                  alignItems: "flex-start",
+                  gap: 8,
+                  fontSize: 12,
+                  color: "var(--af2-ink-2)",
+                  lineHeight: 1.45,
+                }}
+              >
+                <Sparkles
+                  size={12}
+                  style={{
+                    color: "var(--af2-sage)",
+                    marginTop: 2,
+                    flexShrink: 0,
+                  }}
+                />
+                <span style={{ flex: 1, minWidth: 0 }}>
+                  Suggested: <strong>{suggestion.priority}</strong>
+                  {priority !== suggestion.priority ? (
+                    <>
+                      {" — "}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setPriority(suggestion.priority);
+                          setUserOverride(false);
+                        }}
+                        style={{
+                          background: "transparent",
+                          border: "none",
+                          padding: 0,
+                          cursor: "pointer",
+                          color: "var(--af2-clay)",
+                          textDecoration: "underline",
+                          font: "inherit",
+                        }}
+                      >
+                        use suggestion
+                      </button>
+                    </>
+                  ) : null}
+                  <span
+                    className="af2-muted"
+                    style={{ display: "block", marginTop: 2 }}
+                  >
+                    {suggestion.reason}
+                  </span>
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setSuggestionDismissed(true)}
+                  aria-label="Dismiss suggestion"
+                  style={{
+                    background: "transparent",
+                    border: "none",
+                    padding: 2,
+                    cursor: "pointer",
+                    color: "var(--af2-muted)",
+                    flexShrink: 0,
+                  }}
+                >
+                  <X size={11} />
+                </button>
+              </div>
+            ) : null}
           </Field>
 
           {/* Quiet "Adjust schedule" disclosure for the optional due date.

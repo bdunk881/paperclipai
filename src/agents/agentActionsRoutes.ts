@@ -23,6 +23,7 @@
 
 import { Router } from "express";
 import type { Pool } from "pg";
+import * as Sentry from "@sentry/node";
 import type { AuthenticatedRequest } from "../auth/authMiddleware";
 import type { WorkspaceAwareRequest } from "../middleware/workspaceResolver";
 import { withWorkspaceContext } from "../middleware/workspaceContext";
@@ -31,6 +32,7 @@ import { getRedisClient } from "../queue/redisClient";
 import { setAgentPresence } from "./agentPresence";
 import { observabilityStore } from "../observability/store";
 import { runAgentSelfCheckIn } from "./agentCheckIn";
+import { classifyHandoffPriority } from "./priorityClassifier";
 
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -298,6 +300,65 @@ export function createAgentActionsRoutes(pool: Pool): Router {
         `[agentActions] hand-off ticket create failed: ${(err as Error).message}`,
       );
       res.status(500).json({ error: "Failed to hand off task" });
+    }
+  });
+
+  /**
+   * DASH-15: lite-tier LLM auto-classifies a proposed hand-off into
+   * { low | medium | high | urgent } so the owner doesn't have to
+   * mentally rank every task. Modal calls this after a debounce on
+   * title (+ optional description).
+   *
+   * Failure modes are soft: if the LLM is unavailable, no key is
+   * configured, or parsing fails, we return 204 (no suggestion) so
+   * the modal silently keeps the user's default. Never blocks the
+   * hand-off itself.
+   */
+  router.post("/priority-classify", async (req: AuthenticatedRequest, res) => {
+    const userId = req.auth?.sub;
+    const workspaceId = (req as WorkspaceAwareRequest).workspace?.id;
+    if (!userId || !workspaceId) {
+      res.status(401).json({ error: "Authenticated user + workspace required" });
+      return;
+    }
+
+    const body = req.body as { title?: unknown; description?: unknown };
+    const title = typeof body?.title === "string" ? body.title.trim() : "";
+    const description =
+      typeof body?.description === "string" ? body.description.trim() : "";
+    if (title.length < 4) {
+      res.status(400).json({ error: "title must be at least 4 characters" });
+      return;
+    }
+    if (title.length > 400) {
+      res.status(400).json({ error: "title must be ≤ 400 characters" });
+      return;
+    }
+
+    try {
+      const result = await classifyHandoffPriority({
+        userId,
+        title,
+        description: description || undefined,
+      });
+      if (!result) {
+        res.status(204).end();
+        return;
+      }
+      res.status(200).json(result);
+    } catch (err) {
+      console.warn(
+        `[agentActions] priority classify failed (returning 204): ${(err as Error).message}`,
+      );
+      Sentry.captureException(err, {
+        tags: {
+          route: "POST /api/agents/priority-classify",
+          phase: "classify",
+        },
+      });
+      // Soft-fail: 204 means "no suggestion", modal falls back to the
+      // owner's manual default.
+      res.status(204).end();
     }
   });
 

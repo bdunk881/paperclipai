@@ -147,3 +147,99 @@ describe("GET /api/missions/:missionId (HEL-23 read)", () => {
     expect(res.body.error).toMatch(/Invalid mission ID/);
   });
 });
+
+// Regression for the dashboard "Too Many Requests" surface on /hire +
+// /mission-state. The LLM endpoint rate limiter used to be mounted at
+// the router level (app.use("/api/missions", ..., llmEndpointRateLimiter)),
+// which meant cheap GET list reads counted against the 10/hour LLM
+// quota and blocked dashboard page loads. The limiter is now injected
+// via createMissionRoutes(pool, { llmRouteLimiter }) and applied only
+// inside the generate-plan POST.
+describe("LLM rate-limiter wiring", () => {
+  function buildAppWithLimiter(
+    authOverrides: { sub?: string; workspaceId?: string },
+    limiter: import("express").RequestHandler,
+  ): express.Express {
+    const app = express();
+    app.use(express.json());
+    app.use((req: Request, _res: Response, next: NextFunction) => {
+      if (authOverrides.sub) {
+        (req as Request & { auth?: { sub: string } }).auth = { sub: authOverrides.sub };
+      }
+      if (authOverrides.workspaceId) {
+        (req as Request & { workspace?: { id: string; role: string } }).workspace = {
+          id: authOverrides.workspaceId,
+          role: "owner",
+        };
+      }
+      next();
+    });
+    app.use(
+      "/api/missions",
+      createMissionRoutes(stubPool, { llmRouteLimiter: limiter }),
+    );
+    return app;
+  }
+
+  it("does NOT apply the injected limiter to GET / (dashboard list reads)", async () => {
+    let limiterCalls = 0;
+    const fakeLimiter: import("express").RequestHandler = (_req, _res, next) => {
+      limiterCalls += 1;
+      next();
+    };
+    const app = buildAppWithLimiter(
+      {
+        sub: "user-1",
+        workspaceId: "11111111-1111-4111-8111-111111111111",
+      },
+      fakeLimiter,
+    );
+
+    // GET /api/missions hits the list handler — must bypass the limiter.
+    await request(app).get("/api/missions");
+    expect(limiterCalls).toBe(0);
+  });
+
+  it("DOES apply the injected limiter to POST /:missionId/generate-plan", async () => {
+    let limiterCalls = 0;
+    const fakeLimiter: import("express").RequestHandler = (_req, _res, next) => {
+      limiterCalls += 1;
+      next();
+    };
+    const app = buildAppWithLimiter(
+      {
+        sub: "user-1",
+        workspaceId: "11111111-1111-4111-8111-111111111111",
+      },
+      fakeLimiter,
+    );
+
+    await request(app)
+      .post("/api/missions/22222222-2222-4222-8222-222222222222/generate-plan")
+      .send({});
+    expect(limiterCalls).toBe(1);
+  });
+
+  it("works without an injected limiter (createMissionRoutes options is optional)", async () => {
+    // No limiter passed — generate-plan must still resolve (and return
+    // a sane status from the handler, not a middleware-chain crash).
+    const app = express();
+    app.use(express.json());
+    app.use((req: Request, _res: Response, next: NextFunction) => {
+      (req as Request & { auth?: { sub: string } }).auth = { sub: "user-1" };
+      (req as Request & { workspace?: { id: string; role: string } }).workspace = {
+        id: "11111111-1111-4111-8111-111111111111",
+        role: "owner",
+      };
+      next();
+    });
+    app.use("/api/missions", createMissionRoutes(stubPool));
+    const res = await request(app)
+      .post("/api/missions/22222222-2222-4222-8222-222222222222/generate-plan")
+      .send({});
+    // 400 from the handler's request-body validation is fine — what
+    // matters is we reached the handler, not that we crashed on a
+    // missing limiter.
+    expect([400, 404, 500]).toContain(res.status);
+  });
+});

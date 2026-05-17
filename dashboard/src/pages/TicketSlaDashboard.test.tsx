@@ -6,6 +6,10 @@ const authState = vi.hoisted(() => ({
   getAccessToken: vi.fn().mockResolvedValue("token-123"),
 }));
 
+const workspaceState = vi.hoisted(() => ({
+  activeWorkspaceId: null as string | null,
+}));
+
 const ticketingSlaApi = vi.hoisted(() => ({
   getTicketSlaDashboard: vi.fn(),
 }));
@@ -14,13 +18,17 @@ vi.mock("../context/AuthContext", () => ({
   useAuth: () => authState,
 }));
 
+vi.mock("../context/useWorkspace", () => ({
+  useWorkspace: () => workspaceState,
+}));
+
 vi.mock("../api/ticketingSla", () => ({
   getTicketSlaDashboard: ticketingSlaApi.getTicketSlaDashboard,
 }));
 
 import TicketSlaDashboard from "./TicketSlaDashboard";
 
-describe("TicketSlaDashboard", () => {
+describe("TicketSlaDashboard (V2 / DASH-18)", () => {
   beforeEach(() => {
     ticketingSlaApi.getTicketSlaDashboard.mockResolvedValue({
       summaryCards: [
@@ -50,22 +58,46 @@ describe("TicketSlaDashboard", () => {
     });
   });
 
-  it("renders dashboard summary cards and drill links", async () => {
+  it("renders V2 chrome (af2-page, eyebrow, serif h1)", async () => {
+    const { container } = render(
+      <MemoryRouter>
+        <TicketSlaDashboard />
+      </MemoryRouter>,
+    );
+
+    expect(
+      await screen.findByRole("heading", {
+        level: 1,
+        name: /mission assignment sla dashboard/i,
+      }),
+    ).toBeInTheDocument();
+    expect(container.querySelector(".af2-page")).not.toBeNull();
+    expect(container.querySelector(".af2-page-head")).not.toBeNull();
+    expect(screen.getByText(/run · assignments · sla/i)).toBeInTheDocument();
+  });
+
+  it("renders summary stats, sub-page links, and per-actor drill", async () => {
     render(
       <MemoryRouter>
         <TicketSlaDashboard />
-      </MemoryRouter>
+      </MemoryRouter>,
     );
 
-    expect(await screen.findByText("Mission Assignment SLA Dashboard")).toBeInTheDocument();
-    expect(screen.getByText("Breach Rate")).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: /SLA settings/i })).toHaveAttribute(
+    expect(await screen.findByText("Breach Rate")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /back to queue/i })).toHaveAttribute(
       "href",
-      "/settings/ticketing-sla"
+      "/mission-assignments",
     );
-    expect(screen.getByRole("link", { name: /Frontend Engineer/i })).toHaveAttribute(
+    expect(screen.getByRole("link", { name: /sla settings/i })).toHaveAttribute(
       "href",
-      "/tickets/actors/agent/frontend-engineer"
+      "/settings/ticketing-sla",
+    );
+    // Per-actor drill now points at the V2 mission-assignments actor view.
+    expect(
+      screen.getByRole("link", { name: /frontend engineer/i }),
+    ).toHaveAttribute(
+      "href",
+      "/mission-assignments/actors/agent/frontend-engineer",
     );
   });
 });

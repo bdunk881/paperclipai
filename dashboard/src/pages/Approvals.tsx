@@ -22,8 +22,11 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { listApprovals, resolveApproval, type ApprovalRequest } from "../api/client";
+import { listAgents, type Agent } from "../api/agentApi";
 import { ErrorState, LoadingState } from "../components/UiStates";
 import { useAuth } from "../context/AuthContext";
+import { AgentPresencePill } from "../components/AgentPresencePill";
+import { useAgentPresence } from "../hooks/useAgentPresence";
 
 function initialsFor(name: string | undefined | null): string {
   if (!name) return "—";
@@ -53,7 +56,14 @@ const GRID_TEMPLATE = "90px 1.4fr 130px 80px 100px 130px";
 
 export default function Approvals() {
   const { requireAccessToken } = useAuth();
+  const presence = useAgentPresence();
   const [approvals, setApprovals] = useState<ApprovalRequest[]>([]);
+  // Loaded once alongside approvals so we can map approval.assignee
+  // (display string today — no agentId on the backend ApprovalRequest)
+  // to a known agent and look up its live presence. A real fix is to
+  // surface agentId on the approval row server-side; this client-side
+  // name match is the small-PR version of the same idea.
+  const [agents, setAgents] = useState<Agent[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [resolvingId, setResolvingId] = useState<string | null>(null);
@@ -63,14 +73,31 @@ export default function Approvals() {
       setLoading(true);
       setError(null);
       const accessToken = await requireAccessToken();
-      const fetched = await listApprovals(accessToken);
+      const [fetched, agentList] = await Promise.all([
+        listApprovals(accessToken),
+        listAgents(accessToken).catch(() => [] as Agent[]),
+      ]);
       setApprovals(fetched);
+      setAgents(agentList);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load approvals");
     } finally {
       setLoading(false);
     }
   }, [requireAccessToken]);
+
+  // Name → agent map for the presence lookup. Case-insensitive,
+  // trimmed, so "Aaron Chen" matches "aaron chen ". Multiple agents
+  // with the same name resolve to the first one (rare in practice,
+  // and the wrong choice is harmless: the pill is a hint).
+  const agentByName = useMemo(() => {
+    const map = new Map<string, Agent>();
+    for (const a of agents) {
+      const key = a.name.trim().toLowerCase();
+      if (!map.has(key)) map.set(key, a);
+    }
+    return map;
+  }, [agents]);
 
   useEffect(() => {
     void loadApprovals();
@@ -235,7 +262,27 @@ export default function Approvals() {
                   >
                     {initialsFor(approval.assignee)}
                   </div>
-                  <span style={{ fontSize: 12.5 }}>{firstName(approval.assignee)}</span>
+                  <span
+                    style={{
+                      fontSize: 12.5,
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: 6,
+                      minWidth: 0,
+                      flexWrap: "wrap",
+                    }}
+                  >
+                    {firstName(approval.assignee)}
+                    {(() => {
+                      const matched = agentByName.get(
+                        approval.assignee.trim().toLowerCase(),
+                      );
+                      if (!matched) return null;
+                      return (
+                        <AgentPresencePill presence={presence.get(matched.id)} />
+                      );
+                    })()}
+                  </span>
                 </div>
                 <div>
                   <span

@@ -117,7 +117,7 @@ describe("WorkflowBuilder", () => {
   it("opens and closes the guidance panel", async () => {
     renderBuilder();
 
-    expect(await screen.findByText("Start building your workflow")).toBeInTheDocument();
+    expect(await screen.findByText("Compose a workflow your team can run.")).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: /guidance/i }));
     expect(screen.getByText("Build and launch confidently")).toBeInTheDocument();
@@ -129,7 +129,7 @@ describe("WorkflowBuilder", () => {
   it("renders the v2 left palette rail with Triggers / Tools / Logic sections", async () => {
     renderBuilder();
 
-    expect(await screen.findByText("Start building your workflow")).toBeInTheDocument();
+    expect(await screen.findByText("Compose a workflow your team can run.")).toBeInTheDocument();
 
     const palette = screen.getByTestId("studio-palette");
     expect(palette).toBeInTheDocument();
@@ -149,7 +149,7 @@ describe("WorkflowBuilder", () => {
   it("adds a step when a palette item is clicked", async () => {
     renderBuilder();
 
-    expect(await screen.findByText("Start building your workflow")).toBeInTheDocument();
+    expect(await screen.findByText("Compose a workflow your team can run.")).toBeInTheDocument();
 
     const palette = screen.getByTestId("studio-palette");
 
@@ -168,7 +168,7 @@ describe("WorkflowBuilder", () => {
   it("renders the v2 draft/version pill and a Pro mode pill toggle", async () => {
     renderBuilder();
 
-    expect(await screen.findByText("Start building your workflow")).toBeInTheDocument();
+    expect(await screen.findByText("Compose a workflow your team can run.")).toBeInTheDocument();
 
     // HEL-100 v2 chrome: when no team is deployed for this workflow, the
     // header shows a "draft · v{version}" pill (live · v{version} when
@@ -193,7 +193,7 @@ describe("WorkflowBuilder", () => {
   it("skips invalid auto-links when adding a step after an output", async () => {
     renderBuilder();
 
-    expect(await screen.findByText("Start building your workflow")).toBeInTheDocument();
+    expect(await screen.findByText("Compose a workflow your team can run.")).toBeInTheDocument();
 
     openNodePalette();
     fireEvent.click(screen.getByRole("button", { name: /^output$/i }));
@@ -207,7 +207,7 @@ describe("WorkflowBuilder", () => {
   it("renders a newly added agent step inside the React Flow canvas", async () => {
     renderBuilder();
 
-    expect(await screen.findByText("Start building your workflow")).toBeInTheDocument();
+    expect(await screen.findByText("Compose a workflow your team can run.")).toBeInTheDocument();
 
     openNodePalette();
     fireEvent.click(screen.getByRole("button", { name: /^agent$/i }));
@@ -223,7 +223,7 @@ describe("WorkflowBuilder", () => {
   it("inspector header flips to 'Selected node · Pro' when Pro mode is on", async () => {
     renderBuilder();
 
-    expect(await screen.findByText("Start building your workflow")).toBeInTheDocument();
+    expect(await screen.findByText("Compose a workflow your team can run.")).toBeInTheDocument();
 
     openNodePalette();
     fireEvent.click(screen.getByRole("button", { name: /^agent$/i }));
@@ -240,7 +240,7 @@ describe("WorkflowBuilder", () => {
   it("reveals Pro inspector tabs (Inspector / Versions / Observability) when Pro mode is on", async () => {
     renderBuilder();
 
-    expect(await screen.findByText("Start building your workflow")).toBeInTheDocument();
+    expect(await screen.findByText("Compose a workflow your team can run.")).toBeInTheDocument();
 
     openNodePalette();
     fireEvent.click(screen.getByRole("button", { name: /^agent$/i }));
@@ -304,7 +304,7 @@ describe("WorkflowBuilder", () => {
       </MemoryRouter>
     );
 
-    expect(await screen.findByText("Start building your workflow")).toBeInTheDocument();
+    expect(await screen.findByText("Compose a workflow your team can run.")).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: /node palette/i }));
     fireEvent.click(screen.getByRole("button", { name: /^agent$/i }));
@@ -323,7 +323,7 @@ describe("WorkflowBuilder", () => {
       </MemoryRouter>
     );
 
-    expect(await screen.findByText("Start building your workflow")).toBeInTheDocument();
+    expect(await screen.findByText("Compose a workflow your team can run.")).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: /node palette/i }));
     fireEvent.click(screen.getByRole("button", { name: /^cron trigger$/i }));
@@ -345,7 +345,7 @@ describe("WorkflowBuilder", () => {
       </MemoryRouter>
     );
 
-    expect(await screen.findByText("Start building your workflow")).toBeInTheDocument();
+    expect(await screen.findByText("Compose a workflow your team can run.")).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: /node palette/i }));
     fireEvent.click(screen.getByRole("button", { name: /^cron trigger$/i }));
@@ -363,7 +363,7 @@ describe("WorkflowBuilder", () => {
       </MemoryRouter>
     );
 
-    expect(await screen.findByText("Start building your workflow")).toBeInTheDocument();
+    expect(await screen.findByText("Compose a workflow your team can run.")).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: /node palette/i }));
     fireEvent.click(screen.getByRole("button", { name: /^interval trigger$/i }));
@@ -390,7 +390,7 @@ describe("WorkflowBuilder", () => {
   it("updates node positions continuously while dragging", async () => {
     renderBuilder();
 
-    expect(await screen.findByText("Start building your workflow")).toBeInTheDocument();
+    expect(await screen.findByText("Compose a workflow your team can run.")).toBeInTheDocument();
 
     openNodePalette();
     fireEvent.click(screen.getByRole("button", { name: /^trigger$/i }));
@@ -423,7 +423,7 @@ describe("WorkflowBuilder", () => {
   it("uses copilot to explain the canvas and apply a targeted slack step", async () => {
     renderBuilder();
 
-    expect(await screen.findByText("Start building your workflow")).toBeInTheDocument();
+    expect(await screen.findByText("Compose a workflow your team can run.")).toBeInTheDocument();
 
     openNodePalette();
     fireEvent.click(screen.getByRole("button", { name: /^trigger$/i }));
@@ -479,7 +479,7 @@ describe("WorkflowBuilder", () => {
 
     renderBuilder();
 
-    expect(await screen.findByText("Start building your workflow")).toBeInTheDocument();
+    expect(await screen.findByText("Compose a workflow your team can run.")).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: /generate with ai/i }));
     fireEvent.change(screen.getByPlaceholderText(/when a customer support email arrives/i), {
@@ -509,7 +509,7 @@ describe("WorkflowBuilder", () => {
     startRunWithFileMock.mockResolvedValue(undefined);
     renderBuilder();
 
-    expect(await screen.findByText("Start building your workflow")).toBeInTheDocument();
+    expect(await screen.findByText("Compose a workflow your team can run.")).toBeInTheDocument();
 
     openNodePalette();
     fireEvent.click(screen.getByRole("button", { name: /^file trigger$/i }));

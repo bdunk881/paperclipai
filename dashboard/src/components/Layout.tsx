@@ -5,6 +5,7 @@ import {
   Target,
   Stamp,
   Activity,
+  ClipboardList,
   Users,
   UserPlus,
   Wallet,
@@ -42,6 +43,15 @@ const NAV_SECTIONS: Array<{ title: string; items: NavItem[] }> = [
     items: [
       { to: "/", icon: Home, label: "Home", end: true },
       { to: "/mission-state", icon: Target, label: "Missions" },
+      // DASH-9: lift Mission Assignments to a top-level Run nav entry.
+      // Previously it was only reachable via cross-link from Approvals,
+      // which made the queue feel buried (and broke the natural flow
+      // of "mission → deploy → assign work").
+      {
+        to: "/mission-assignments",
+        icon: ClipboardList,
+        label: "Assignments",
+      },
       { to: "/approvals", icon: Stamp, label: "Approvals" },
       { to: "/agents/activity", icon: Activity, label: "Activity" },
     ],

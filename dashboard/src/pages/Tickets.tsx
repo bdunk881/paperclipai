@@ -1,16 +1,26 @@
+/**
+ * Mission Assignments — V2 editorial rebuild (DASH-10 / HEL-129).
+ *
+ * Replaces the V1 indigo/teal "Operational Clarity" glass-card design
+ * with the same af2-page chrome the rest of the dashboard uses:
+ *   - eyebrow ("Run · Assignments") + serif h1 + meta line
+ *   - af2-stats strip (Queue / Executing / Blocked / Urgent)
+ *   - af2-list with a 6-column grid (ID / Summary / Owner / Status /
+ *     Priority / SLA)
+ *
+ * The data layer (loader, action, listTickets/createTicket API, KPI
+ * counts, filtering, search) is unchanged from the V1 page — this
+ * is a visual + IA refresh, not a data refactor.
+ *
+ * DASH-11: the create-assignment modal now embeds a Mission picker
+ * (populated via listMissions) so an owner can scope each assignment
+ * to a specific mission. Missions are stored as a `mission:<id>` tag
+ * on the ticket; the rest of the surface continues to filter by tag.
+ * No backend change required.
+ */
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
-import {
-  ArrowRight,
-  Filter,
-  Loader2,
-  Plus,
-  RefreshCw,
-  Search,
-  Users2,
-  X,
-} from "lucide-react";
-import clsx from "clsx";
+import { Loader2, Plus, RefreshCw, Search, X } from "lucide-react";
 import {
   collectKnownActors,
   createTicket,
@@ -25,6 +35,7 @@ import {
   type TicketStatus,
 } from "../api/tickets";
 import { listAgents } from "../api/agentApi";
+import { listMissions, type Mission } from "../api/missionsApi";
 import { useAuth } from "../context/AuthContext";
 import { useWorkspace } from "../context/useWorkspace";
 import {
@@ -35,21 +46,30 @@ import {
 } from "../routes/ticketRouteData";
 import {
   TicketActorChip,
-  TicketEmptyState,
-  TicketKpiCard,
   TicketPriorityBadge,
   TicketRowMeta,
   TicketSlaBadge,
   TicketSourceNotice,
   TicketStatusBadge,
 } from "./tickets/ticketingUi";
-import { collaboratorCount, primaryAssignee, relativeTicketTime } from "./tickets/ticketingUi.helpers";
+import {
+  collaboratorCount,
+  primaryAssignee,
+  relativeTicketTime,
+} from "./tickets/ticketingUi.helpers";
 
 type StatusFilter = TicketStatus | "all";
 type PriorityFilter = TicketPriority | "all";
 type SlaFilter = TicketSlaStateLike | "all";
 
-const STATUS_OPTIONS: StatusFilter[] = ["all", "open", "in_progress", "blocked", "resolved", "cancelled"];
+const STATUS_OPTIONS: StatusFilter[] = [
+  "all",
+  "open",
+  "in_progress",
+  "blocked",
+  "resolved",
+  "cancelled",
+];
 const PRIORITY_OPTIONS: PriorityFilter[] = ["all", "urgent", "high", "medium", "low"];
 const SLA_OPTIONS: SlaFilter[] = ["all", "breached", "at_risk", "on_track", "paused"];
 
@@ -61,6 +81,7 @@ const EMPTY_FORM = {
   collaboratorKeys: [] as string[],
   dueDate: "",
   tags: "",
+  missionId: "",
   externalSyncRequested: false,
 };
 
@@ -78,25 +99,36 @@ export default function Tickets({ initialData, routeAction }: TicketsProps = {})
   const [searchParams] = useSearchParams();
   const { getAccessToken, user } = useAuth();
   const { activeWorkspaceId } = useWorkspace();
-  const [tickets, setTickets] = useState<TicketRecord[]>(() => initialData?.tickets ?? []);
-  const [availableActors, setAvailableActors] = useState<TicketActorRef[]>(() =>
-    initialData ? collectKnownActors(initialData.tickets) : []
+  const [tickets, setTickets] = useState<TicketRecord[]>(
+    () => initialData?.tickets ?? [],
   );
+  const [availableActors, setAvailableActors] = useState<TicketActorRef[]>(() =>
+    initialData ? collectKnownActors(initialData.tickets) : [],
+  );
+  const [missions, setMissions] = useState<Mission[]>([]);
   const [loading, setLoading] = useState(() => initialData == null);
   const [error, setError] = useState<string | null>(null);
-  const [source, setSource] = useState<"api" | "mock" | null>(() => initialData?.source ?? null);
+  const [source, setSource] = useState<"api" | "mock" | null>(
+    () => initialData?.source ?? null,
+  );
   const [integrationWarnings, setIntegrationWarnings] = useState<string[]>([]);
   const [statusFilter, setStatusFilter] = useState<StatusFilter>(() => {
     const value = searchParams.get("status");
-    return STATUS_OPTIONS.includes(value as StatusFilter) ? (value as StatusFilter) : "all";
+    return STATUS_OPTIONS.includes(value as StatusFilter)
+      ? (value as StatusFilter)
+      : "all";
   });
   const [priorityFilter, setPriorityFilter] = useState<PriorityFilter>(() => {
     const value = searchParams.get("priority");
-    return PRIORITY_OPTIONS.includes(value as PriorityFilter) ? (value as PriorityFilter) : "all";
+    return PRIORITY_OPTIONS.includes(value as PriorityFilter)
+      ? (value as PriorityFilter)
+      : "all";
   });
   const [slaFilter, setSlaFilter] = useState<SlaFilter>(() => {
     const value = searchParams.get("sla");
-    return SLA_OPTIONS.includes(value as SlaFilter) ? (value as SlaFilter) : "all";
+    return SLA_OPTIONS.includes(value as SlaFilter)
+      ? (value as SlaFilter)
+      : "all";
   });
   const [query, setQuery] = useState("");
   const [createOpen, setCreateOpen] = useState(false);
@@ -109,9 +141,10 @@ export default function Tickets({ initialData, routeAction }: TicketsProps = {})
     setError(null);
     try {
       const accessToken = (await getAccessToken()) ?? undefined;
-      const [response, agents] = await Promise.all([
+      const [response, agents, missionsList] = await Promise.all([
         listTickets({ workspaceId: activeWorkspaceId ?? undefined }, accessToken),
         accessToken ? listAgents(accessToken).catch(() => []) : Promise.resolve([]),
+        accessToken ? listMissions(accessToken).catch(() => []) : Promise.resolve([]),
       ]);
 
       const actorSeed: TicketActorRef[] = [];
@@ -125,7 +158,12 @@ export default function Tickets({ initialData, routeAction }: TicketsProps = {})
             .toUpperCase() || "U";
         registerTicketActorProfile(
           { type: "user", id: user.id },
-          { name: user.name, initials, title: "Workspace member", tone: "slate" }
+          {
+            name: user.name,
+            initials,
+            title: "Workspace member",
+            tone: "slate",
+          },
         );
         actorSeed.push({ type: "user", id: user.id });
       }
@@ -148,16 +186,17 @@ export default function Tickets({ initialData, routeAction }: TicketsProps = {})
                 ? agent.metadata.teamName
                 : agent.roleKey ?? "Agent",
             tone: "indigo",
-          }
+          },
         );
         actorSeed.push({ type: "agent", id: agent.id });
       }
 
       setTickets(response.tickets);
       setAvailableActors(collectKnownActors(response.tickets, actorSeed));
+      setMissions(missionsList);
       setSource(response.source);
     } catch (loadError) {
-      setError(loadError instanceof Error ? loadError.message : "Failed to load tickets");
+      setError(loadError instanceof Error ? loadError.message : "Failed to load assignments");
     } finally {
       setLoading(false);
     }
@@ -166,8 +205,21 @@ export default function Tickets({ initialData, routeAction }: TicketsProps = {})
   useEffect(() => {
     if (!initialData) {
       void loadTickets();
+    } else {
+      // initialData seeds tickets+actors; we still want the mission
+      // list for the create modal picker.
+      void (async () => {
+        const accessToken = (await getAccessToken()) ?? undefined;
+        if (!accessToken) return;
+        try {
+          const m = await listMissions(accessToken);
+          setMissions(m);
+        } catch {
+          // Soft-fail — mission picker stays empty rather than breaking the page.
+        }
+      })();
     }
-  }, [initialData, loadTickets]);
+  }, [getAccessToken, initialData, loadTickets]);
 
   useEffect(() => {
     const actionData = routeAction?.data;
@@ -191,20 +243,35 @@ export default function Tickets({ initialData, routeAction }: TicketsProps = {})
     const status = searchParams.get("status");
     const priority = searchParams.get("priority");
     const sla = searchParams.get("sla");
-    setStatusFilter(STATUS_OPTIONS.includes(status as StatusFilter) ? (status as StatusFilter) : "all");
-    setPriorityFilter(
-      PRIORITY_OPTIONS.includes(priority as PriorityFilter) ? (priority as PriorityFilter) : "all"
+    setStatusFilter(
+      STATUS_OPTIONS.includes(status as StatusFilter)
+        ? (status as StatusFilter)
+        : "all",
     );
-    setSlaFilter(SLA_OPTIONS.includes(sla as SlaFilter) ? (sla as SlaFilter) : "all");
+    setPriorityFilter(
+      PRIORITY_OPTIONS.includes(priority as PriorityFilter)
+        ? (priority as PriorityFilter)
+        : "all",
+    );
+    setSlaFilter(
+      SLA_OPTIONS.includes(sla as SlaFilter) ? (sla as SlaFilter) : "all",
+    );
   }, [searchParams]);
 
-  const actorOptions = useMemo(() => collectKnownActors(tickets, availableActors), [availableActors, tickets]);
+  const actorOptions = useMemo(
+    () => collectKnownActors(tickets, availableActors),
+    [availableActors, tickets],
+  );
 
   const filteredTickets = useMemo(() => {
     return tickets.filter((ticket) => {
       if (statusFilter !== "all" && ticket.status !== statusFilter) return false;
       if (priorityFilter !== "all" && ticket.priority !== priorityFilter) return false;
-      if (slaFilter !== "all" && normalizeTicketSlaState(ticket.slaState) !== slaFilter) return false;
+      if (
+        slaFilter !== "all" &&
+        normalizeTicketSlaState(ticket.slaState) !== slaFilter
+      )
+        return false;
       if (!query.trim()) return true;
       const normalized = query.trim().toLowerCase();
       const owner = primaryAssignee(ticket);
@@ -241,6 +308,15 @@ export default function Tickets({ initialData, routeAction }: TicketsProps = {})
       return;
     }
 
+    // DASH-11: when the owner picks a mission, attach `mission:<id>`
+    // to the tag list so the existing tag-search/filter surface
+    // groups this assignment with the rest of the mission.
+    const composedTags = formState.missionId
+      ? formState.tags.trim()
+        ? `${formState.tags},mission:${formState.missionId}`
+        : `mission:${formState.missionId}`
+      : formState.tags;
+
     if (routeAction) {
       routeAction.submit({
         title: formState.title,
@@ -249,7 +325,7 @@ export default function Tickets({ initialData, routeAction }: TicketsProps = {})
         primaryActorKey: formState.primaryActorKey,
         collaboratorKeys: formState.collaboratorKeys,
         dueDate: formState.dueDate,
-        tags: formState.tags,
+        tags: composedTags,
         workspaceId: activeWorkspaceId ?? undefined,
         externalSyncRequested: formState.externalSyncRequested,
       });
@@ -261,9 +337,10 @@ export default function Tickets({ initialData, routeAction }: TicketsProps = {})
       const created = await createTicket(
         buildCreateTicketPayload({
           ...formState,
+          tags: composedTags,
           workspaceId: activeWorkspaceId ?? undefined,
         }),
-        accessToken
+        accessToken,
       );
       setIntegrationWarnings(created.integrationWarnings);
       setSource(created.source);
@@ -273,420 +350,312 @@ export default function Tickets({ initialData, routeAction }: TicketsProps = {})
       navigate(`/tickets/${created.ticket.id}`);
     } catch (submitError) {
       setValidationError(
-        submitError instanceof Error ? submitError.message : "Unable to create ticket."
+        submitError instanceof Error ? submitError.message : "Unable to create assignment.",
       );
     }
   }
 
   return (
-    <div className="min-h-full bg-af2-paper text-af2-ink">
-      <div className="mx-auto flex w-full max-w-7xl flex-col gap-6 px-4 py-6 md:px-8 md:py-8">
-        <section className="glass-card noise-overlay overflow-hidden rounded-[30px] border border-af2-line bg-af2-card/90">
-          <div className="relative border-b border-af2-line px-6 py-6 md:px-8">
-            <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(99,102,241,0.18),transparent_35%),radial-gradient(circle_at_bottom_left,rgba(20,184,166,0.14),transparent_30%)]" />
-            <div className="relative flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
-              <div className="max-w-2xl">
-                <div className="inline-flex items-center gap-2 rounded-full border border-indigo-500/30 bg-indigo-500/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.2em] text-indigo-200">
-                  <Filter size={12} />
-                  Operational Clarity
-                </div>
-                <h1 className="mt-4 text-3xl font-semibold tracking-tight text-af2-ink">
-                  Mission Assignments
-                </h1>
-                <p className="mt-2 text-sm leading-6 text-af2-ink-4">
-                  Monitor execution, triage blocked work, and launch new assignments with a view
-                  that keeps humans and agents in the same operating lane.
-                </p>
-              </div>
-              <div className="flex flex-wrap items-center gap-3">
-                <Link
-                  to="/tickets/sla"
-                  className="inline-flex items-center gap-2 rounded-full border border-[#FFD93D]/30 bg-[#FFD93D]/10 px-4 py-2 text-sm font-medium text-[#fde68a] transition hover:border-[#FFD93D]/50 hover:text-[#fff1a6]"
-                >
-                  SLA monitor
-                </Link>
-                <Link
-                  to="/settings/ticketing-sla"
-                  className="inline-flex items-center gap-2 rounded-full border border-af2-line bg-af2-card px-4 py-2 text-sm font-medium text-af2-ink-4 transition hover:border-indigo-500/40 hover:text-indigo-700"
-                >
-                  SLA settings
-                </Link>
-                <Link
-                  to="/tickets/team"
-                  className="inline-flex items-center gap-2 rounded-full border border-af2-line bg-af2-card px-4 py-2 text-sm font-medium text-af2-ink-4 transition hover:border-teal-500/40 hover:text-teal-700"
-                >
-                  <Users2 size={15} />
-                  Team view
-                </Link>
-                <button
-                  onClick={() => setCreateOpen(true)}
-                  className="inline-flex items-center gap-2 rounded-full bg-teal-500 px-4 py-2 text-sm font-semibold text-slate-950 transition hover:bg-teal-400"
-                >
-                  <Plus size={15} />
-                  Create assignment
-                </button>
-              </div>
-            </div>
+    <div className="af2-page text-af2-ink">
+      <div className="af2-page-head">
+        <div>
+          <div className="af2-eyebrow">Run · Assignments</div>
+          <h1 className="af2-h1 font-af2-serif" style={{ marginTop: 6 }}>
+            Mission assignments
+          </h1>
+          <div className="af2-page-head-meta">
+            {counts.total} {counts.total === 1 ? "assignment" : "assignments"} in
+            the queue · {counts.urgent} urgent · {counts.blocked} blocked.
           </div>
-
-          <div className="grid gap-4 border-b border-af2-line px-6 py-6 md:grid-cols-4 md:px-8">
-            <TicketKpiCard label="Queue" value={String(counts.total)} helper="Open scope across the workspace." />
-            <TicketKpiCard label="Executing" value={String(counts.active)} helper="Tickets currently in flight." />
-            <TicketKpiCard label="Blocked" value={String(counts.blocked)} helper="Needs external action or dependency." />
-            <TicketKpiCard label="Urgent" value={String(counts.urgent)} helper="Coral priority tickets at risk." />
-          </div>
-
-          <div className="space-y-5 px-6 py-6 md:px-8">
-            <TicketSourceNotice source={source} warnings={integrationWarnings} />
-
-            <div className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_repeat(3,180px)_auto]">
-              <label className="relative block">
-                <Search
-                  size={15}
-                  className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-af2-ink-3"
-                />
-                <input
-                  value={query}
-                  onChange={(event) => setQuery(event.target.value)}
-                  placeholder="Search by title, ID, tag, or owner"
-                  className="w-full rounded-2xl border border-af2-line bg-af2-card py-3 pl-10 pr-4 text-sm text-af2-ink placeholder:text-af2-ink-3 focus:outline-none focus:ring-2 focus:ring-teal-400"
-                />
-              </label>
-
-              <FilterSelect
-                label="Status"
-                value={statusFilter}
-                onChange={(value) => setStatusFilter(value as StatusFilter)}
-                options={STATUS_OPTIONS}
-              />
-              <FilterSelect
-                label="Priority"
-                value={priorityFilter}
-                onChange={(value) => setPriorityFilter(value as PriorityFilter)}
-                options={PRIORITY_OPTIONS}
-              />
-              <FilterSelect
-                label="SLA"
-                value={slaFilter}
-                onChange={(value) => setSlaFilter(value as SlaFilter)}
-                options={SLA_OPTIONS}
-              />
-
-              <button
-                onClick={() => {
-                  void loadTickets();
-                }}
-                className="inline-flex items-center justify-center gap-2 rounded-2xl border border-af2-line bg-af2-card px-4 py-3 text-sm font-medium text-af2-ink-4 transition hover:border-indigo-500/30 hover:text-af2-ink"
-              >
-                <RefreshCw size={15} />
-                Refresh
-              </button>
-            </div>
-
-            {loading ? (
-              <TicketListSkeleton />
-            ) : error ? (
-              <div className="rounded-2xl border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-200">
-                {error}
-              </div>
-            ) : filteredTickets.length === 0 ? (
-              <TicketEmptyState
-                title="No assignments found"
-                body="Adjust filters or create a new assignment to start the queue."
-                action={
-                  <button
-                    onClick={() => setCreateOpen(true)}
-                    className="inline-flex items-center gap-2 rounded-full bg-indigo-500 px-4 py-2 text-sm font-semibold text-white transition hover:bg-indigo-400"
-                  >
-                    <Plus size={15} />
-                    Start an assignment
-                  </button>
-                }
-              />
-            ) : (
-              <div className="overflow-hidden rounded-[28px] border border-af2-line bg-af2-card/95">
-                <div className="hidden grid-cols-[120px_minmax(0,1.4fr)_180px_170px_150px_110px] gap-4 border-b border-af2-line bg-af2-paper-2/90 px-5 py-3 text-[11px] font-semibold uppercase tracking-[0.18em] text-af2-ink-4 lg:grid">
-                  <span>Assignment</span>
-                  <span>Summary</span>
-                  <span>Owner</span>
-                  <span>Status</span>
-                  <span>Priority</span>
-                  <span>SLA</span>
-                </div>
-                <div className="divide-y divide-af2-line">
-                  {filteredTickets.map((ticket) => (
-                    <Link
-                      key={ticket.id}
-                      to={`/tickets/${ticket.id}`}
-                      className="group grid gap-4 border-l-[2px] border-transparent bg-af2-card px-5 py-4 transition hover:border-indigo-500 hover:bg-af2-paper lg:grid-cols-[120px_minmax(0,1.4fr)_180px_170px_150px_110px]"
-                    >
-                      <div className="space-y-2">
-                        <p className="font-af2-mono text-xs font-medium uppercase tracking-[0.18em] text-af2-ink-4">
-                          {ticket.id}
-                        </p>
-                        <p className="text-[11px] text-af2-ink-4">Updated {relativeTicketTime(ticket.updatedAt)}</p>
-                      </div>
-
-                      <div className="min-w-0">
-                        <div className="flex items-start justify-between gap-3">
-                          <div className="min-w-0">
-                            <h2 className="truncate text-sm font-semibold text-af2-ink group-hover:text-af2-ink">
-                              {ticket.title}
-                            </h2>
-                            <p className="mt-1 line-clamp-2 text-sm text-af2-ink-4">
-                              {ticket.description || "No description provided."}
-                            </p>
-                          </div>
-                          <ArrowRight
-                            size={16}
-                            className="mt-0.5 hidden shrink-0 text-af2-ink-3 transition group-hover:translate-x-1 group-hover:text-indigo-500 lg:block"
-                          />
-                        </div>
-                        <div className="mt-3">
-                          <TicketRowMeta ticket={ticket} />
-                        </div>
-                      </div>
-
-                      <div className="flex items-center">
-                        {primaryAssignee(ticket) ? (
-                          <TicketActorChip actor={primaryAssignee(ticket)!} compact />
-                        ) : (
-                          <span className="text-xs text-af2-ink-4">No owner</span>
-                        )}
-                      </div>
-
-                      <div className="flex flex-col gap-2">
-                        <TicketStatusBadge status={ticket.status} />
-                        <span className="text-xs text-af2-ink-4">
-                          {collaboratorCount(ticket)} collaborator{collaboratorCount(ticket) === 1 ? "" : "s"}
-                        </span>
-                      </div>
-
-                      <div className="flex items-center">
-                        <TicketPriorityBadge priority={ticket.priority} />
-                      </div>
-
-                      <div className="flex items-center">
-                        <TicketSlaBadge slaState={ticket.slaState} />
-                      </div>
-                    </Link>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
-        </section>
+        </div>
+        <div className="af2-page-actions">
+          <Link
+            to="/mission-assignments/team"
+            className="af2-btn"
+            style={{ textDecoration: "none" }}
+          >
+            Team view
+          </Link>
+          <Link
+            to="/mission-assignments/sla"
+            className="af2-btn"
+            style={{ textDecoration: "none" }}
+          >
+            SLA monitor
+          </Link>
+          <button
+            type="button"
+            onClick={() => setCreateOpen(true)}
+            className="af2-btn af2-btn-clay"
+            style={{ display: "inline-flex", alignItems: "center", gap: 6 }}
+          >
+            <Plus size={14} />
+            New assignment
+          </button>
+        </div>
       </div>
 
-      {createOpen ? (
-        <div className="fixed inset-0 z-50 flex items-end justify-center bg-af2-paper-3/70 px-4 py-6 md:items-center">
-          <button
-            className="absolute inset-0"
-            onClick={() => {
-              setCreateOpen(false);
-              setValidationError(null);
-            }}
-            aria-label="Close create assignment modal"
+      <div className="af2-stats" style={{ marginBottom: 22 }}>
+        <Stat label="Queue" value={String(counts.total)} hint="Open scope across the workspace." />
+        <Stat label="Executing" value={String(counts.active)} hint="In flight right now." />
+        <Stat label="Blocked" value={String(counts.blocked)} hint="Needs external action." />
+        <Stat label="Urgent" value={String(counts.urgent)} hint="Priority assignments at risk." />
+      </div>
+
+      <TicketSourceNotice source={source} warnings={integrationWarnings} />
+
+      {/* Filter row */}
+      <div className="af2-card" style={{ padding: 14, marginBottom: 16 }}>
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "minmax(0, 1fr) 150px 150px 150px auto",
+            gap: 10,
+            alignItems: "end",
+          }}
+        >
+          <label style={{ display: "block", position: "relative" }}>
+            <Search
+              size={14}
+              style={{
+                position: "absolute",
+                left: 12,
+                top: "50%",
+                transform: "translateY(-50%)",
+                color: "var(--af2-ink-3)",
+                pointerEvents: "none",
+              }}
+            />
+            <input
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder="Search by title, ID, tag, or owner"
+              className="af2-input"
+              style={{ width: "100%", paddingLeft: 32 }}
+              aria-label="Search assignments"
+            />
+          </label>
+
+          <FilterSelect
+            label="Status"
+            value={statusFilter}
+            onChange={(value) => setStatusFilter(value as StatusFilter)}
+            options={STATUS_OPTIONS}
           />
-          <form
-            onSubmit={(event) => {
-              void handleCreateTicket(event);
+          <FilterSelect
+            label="Priority"
+            value={priorityFilter}
+            onChange={(value) => setPriorityFilter(value as PriorityFilter)}
+            options={PRIORITY_OPTIONS}
+          />
+          <FilterSelect
+            label="SLA"
+            value={slaFilter}
+            onChange={(value) => setSlaFilter(value as SlaFilter)}
+            options={SLA_OPTIONS}
+          />
+
+          <button
+            type="button"
+            onClick={() => {
+              void loadTickets();
             }}
-            className="animate-ticket-modal relative z-10 max-h-[92vh] w-full max-w-3xl overflow-y-auto rounded-[30px] border border-af2-line bg-[linear-gradient(180deg,rgba(255,255,255,0.98),rgba(241,245,249,0.98))] p-6 shadow-2xl md:p-7"
+            className="af2-btn af2-btn-sm"
+            style={{ display: "inline-flex", alignItems: "center", gap: 6 }}
+            aria-label="Refresh assignments"
           >
-            <div className="mb-6 flex items-start justify-between gap-4">
-              <div>
-                <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-teal-300">
-                  Create Assignment
-                </p>
-                <h2 className="mt-2 text-2xl font-semibold text-af2-ink">Capture work with full operating context</h2>
-                <p className="mt-2 text-sm text-af2-ink-4">
-                  Create a mission assignment with real assignees, priority, due date, and execution context.
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={() => setCreateOpen(false)}
-                className="rounded-full border border-af2-line p-2 text-af2-ink-4 transition hover:border-af2-line hover:text-af2-ink"
-                aria-label="Close create modal"
-              >
-                <X size={16} />
-              </button>
-            </div>
-
-            <div className="grid gap-5">
-              <label className="grid gap-2">
-                <span className="text-xs font-semibold uppercase tracking-[0.18em] text-af2-ink-4">Title</span>
-                <input
-                  autoFocus
-                  aria-label="Assignment title"
-                  value={formState.title}
-                  onChange={(event) =>
-                    setFormState((current) => ({ ...current, title: event.target.value }))
-                  }
-                  placeholder="Describe the task outcome"
-                  className="rounded-2xl border border-af2-line bg-af2-card px-4 py-3 text-sm text-af2-ink placeholder:text-af2-ink-3 focus:outline-none focus:ring-2 focus:ring-teal-400"
-                />
-              </label>
-
-              <label className="grid gap-2">
-                <span className="text-xs font-semibold uppercase tracking-[0.18em] text-af2-ink-4">Description</span>
-                <textarea
-                  rows={5}
-                  aria-label="Assignment description"
-                  value={formState.description}
-                  onChange={(event) =>
-                    setFormState((current) => ({ ...current, description: event.target.value }))
-                  }
-                  placeholder="Markdown-ready execution context, expected artifacts, blockers, and customer impact."
-                  className="rounded-2xl border border-af2-line bg-af2-card px-4 py-3 text-sm text-af2-ink placeholder:text-af2-ink-3 focus:outline-none focus:ring-2 focus:ring-teal-400"
-                />
-              </label>
-
-              <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-                <SelectField
-                  label="Primary assignee"
-                  value={formState.primaryActorKey}
-                  onChange={(value) =>
-                    setFormState((current) => ({
-                      ...current,
-                      primaryActorKey: value,
-                      collaboratorKeys: current.collaboratorKeys.filter((entry) => entry !== value),
-                    }))
-                  }
-                  options={actorOptions.map((actor) => ({
-                    value: `${actor.type}:${actor.id}`,
-                    label: `${getTicketActorProfile(actor).name} (${actor.type})`,
-                  }))}
-                  placeholder={actorOptions.length > 0 ? "Choose an owner" : "No live assignees available"}
-                />
-                <SelectField
-                  label="Priority"
-                  value={formState.priority}
-                  onChange={(value) =>
-                    setFormState((current) => ({ ...current, priority: value as TicketPriority }))
-                  }
-                  options={PRIORITY_OPTIONS.filter((entry) => entry !== "all").map((priority) => ({
-                    value: priority,
-                    label: priority,
-                  }))}
-                />
-                <label className="grid gap-2">
-                  <span className="text-xs font-semibold uppercase tracking-[0.18em] text-af2-ink-4">Due date</span>
-                  <input
-                    type="datetime-local"
-                    aria-label="Assignment due date"
-                    value={formState.dueDate}
-                    onChange={(event) =>
-                      setFormState((current) => ({ ...current, dueDate: event.target.value }))
-                    }
-                    className="rounded-2xl border border-af2-line bg-af2-card px-4 py-3 text-sm text-af2-ink focus:outline-none focus:ring-2 focus:ring-teal-400"
-                  />
-                </label>
-                <label className="grid gap-2">
-                  <span className="text-xs font-semibold uppercase tracking-[0.18em] text-af2-ink-4">Tags</span>
-                  <input
-                    aria-label="Assignment tags"
-                    value={formState.tags}
-                    onChange={(event) =>
-                      setFormState((current) => ({ ...current, tags: event.target.value }))
-                    }
-                    placeholder="launch, ui, escalation"
-                    className="rounded-2xl border border-af2-line bg-af2-card px-4 py-3 text-sm text-af2-ink placeholder:text-af2-ink-3 focus:outline-none focus:ring-2 focus:ring-teal-400"
-                  />
-                </label>
-              </div>
-
-              <label className="grid gap-2">
-                <span className="text-xs font-semibold uppercase tracking-[0.18em] text-af2-ink-4">Collaborators</span>
-                <select
-                  aria-label="Assignment collaborators"
-                  multiple
-                  value={formState.collaboratorKeys}
-                  onChange={(event) => {
-                    const nextValues = Array.from(event.target.selectedOptions, (option) => option.value);
-                    setFormState((current) => ({
-                      ...current,
-                      collaboratorKeys: nextValues.filter((value) => value !== current.primaryActorKey),
-                    }));
-                  }}
-                  className="min-h-[124px] rounded-2xl border border-af2-line bg-af2-card px-4 py-3 text-sm text-af2-ink focus:outline-none focus:ring-2 focus:ring-teal-400"
-                >
-                  {actorOptions.map((actor) => {
-                    const value = `${actor.type}:${actor.id}`;
-                    return (
-                      <option key={value} value={value}>
-                        {getTicketActorProfile(actor).name} ({actor.type})
-                      </option>
-                    );
-                  })}
-                </select>
-                <span className="text-xs text-af2-ink-4">
-                  Hold Cmd/Ctrl to select multiple collaborators.
-                </span>
-              </label>
-
-              <label className="flex items-start gap-3 rounded-2xl border border-af2-line bg-af2-card px-4 py-3 text-sm text-af2-ink-4">
-                <input
-                  type="checkbox"
-                  aria-label="Request external sync"
-                  checked={formState.externalSyncRequested}
-                  onChange={(event) =>
-                    setFormState((current) => ({
-                      ...current,
-                      externalSyncRequested: event.target.checked,
-                    }))
-                  }
-                  className="mt-1 h-4 w-4 rounded border-af2-line text-teal-500 focus:ring-2 focus:ring-teal-400"
-                />
-                <span className="grid gap-1">
-                  <span className="text-xs font-semibold uppercase tracking-[0.18em] text-af2-ink-4">
-                    Request external sync
-                  </span>
-                  <span className="text-xs text-af2-ink-4">
-                    Include this ticket in the follow-up integration sync queue after it is created.
-                  </span>
-                </span>
-              </label>
-
-            </div>
-
-            {validationError ? (
-              <div className="mt-5 rounded-2xl border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-200">
-                {validationError}
-              </div>
-            ) : null}
-
-            <div className="mt-6 flex flex-col gap-3 border-t border-af2-line pt-5 sm:flex-row sm:items-center sm:justify-between">
-              <p className="text-xs text-af2-ink-4">
-                Ticket IDs, assignees, and activity stream map to the live backend contract.
-              </p>
-              <div className="flex items-center gap-3">
-                <button
-                  type="button"
-                  onClick={() => setCreateOpen(false)}
-                  className="rounded-full border border-af2-line px-4 py-2 text-sm font-medium text-af2-ink-4 transition hover:border-af2-line hover:text-af2-ink"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={submitting}
-                  className={clsx(
-                    "inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-semibold transition",
-                    submitting
-                      ? "cursor-not-allowed bg-slate-700 text-slate-400"
-                      : "bg-teal-500 text-slate-950 hover:bg-teal-400"
-                  )}
-                >
-                  {submitting ? <Loader2 size={15} className="animate-spin" /> : <Plus size={15} />}
-                  Create ticket
-                </button>
-              </div>
-            </div>
-          </form>
+            <RefreshCw size={13} />
+            Refresh
+          </button>
         </div>
+      </div>
+
+      {loading ? (
+        <div className="af2-card" style={{ padding: 40, textAlign: "center" }}>
+          <Loader2 className="animate-spin" style={{ margin: "0 auto 12px", opacity: 0.5 }} />
+          <p className="af2-muted">Loading assignments…</p>
+        </div>
+      ) : error ? (
+        <div
+          role="alert"
+          style={{
+            padding: "12px 16px",
+            borderRadius: "var(--af2-radius)",
+            border: "1px solid rgba(192,84,76,0.30)",
+            background: "rgba(192,84,76,0.10)",
+            color: "var(--af2-clay)",
+            fontSize: 13,
+          }}
+        >
+          {error}
+        </div>
+      ) : filteredTickets.length === 0 ? (
+        <div
+          className="af2-card"
+          style={{
+            padding: "32px 24px",
+            textAlign: "center",
+            borderStyle: "dashed",
+            borderColor: "var(--af2-line-2)",
+          }}
+        >
+          <p
+            className="font-af2-serif"
+            style={{ fontSize: 15, color: "var(--af2-ink-2)", margin: 0 }}
+          >
+            {tickets.length === 0
+              ? "No assignments yet. Hand off work to an agent to start the queue."
+              : "No assignments match those filters."}
+          </p>
+          <button
+            type="button"
+            onClick={() => setCreateOpen(true)}
+            className="af2-btn af2-btn-clay af2-btn-sm"
+            style={{
+              marginTop: 12,
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 6,
+            }}
+          >
+            <Plus size={13} />
+            New assignment
+          </button>
+        </div>
+      ) : (
+        <div className="af2-list">
+          <div
+            className="af2-list-head"
+            style={{
+              display: "grid",
+              gridTemplateColumns:
+                "110px minmax(0, 1.4fr) 160px 140px 110px 90px",
+              gap: 14,
+            }}
+          >
+            <span>ID</span>
+            <span>Summary</span>
+            <span>Owner</span>
+            <span>Status</span>
+            <span>Priority</span>
+            <span>SLA</span>
+          </div>
+          {filteredTickets.map((ticket, idx) => (
+            <Link
+              key={ticket.id}
+              to={`/tickets/${ticket.id}`}
+              className="af2-list-row"
+              style={{
+                gridTemplateColumns:
+                  "110px minmax(0, 1.4fr) 160px 140px 110px 90px",
+                gap: 14,
+                cursor: "pointer",
+                textDecoration: "none",
+                color: "inherit",
+                borderBottom:
+                  idx < filteredTickets.length - 1
+                    ? "1px solid var(--af2-line)"
+                    : "none",
+              }}
+            >
+              <div>
+                <div
+                  className="af2-mono af2-muted-2"
+                  style={{ fontSize: 11, textTransform: "uppercase" }}
+                >
+                  {ticket.id.slice(0, 8)}
+                </div>
+                <div className="af2-muted-2" style={{ fontSize: 11, marginTop: 4 }}>
+                  Upd. {relativeTicketTime(ticket.updatedAt)}
+                </div>
+              </div>
+              <div style={{ minWidth: 0 }}>
+                <p
+                  className="font-af2-serif"
+                  style={{
+                    fontSize: 14,
+                    lineHeight: 1.35,
+                    margin: 0,
+                    color: "var(--af2-ink)",
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  {ticket.title}
+                </p>
+                <p
+                  className="af2-muted"
+                  style={{
+                    fontSize: 12,
+                    margin: "4px 0 0",
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  {ticket.description || "No description provided."}
+                </p>
+                <div style={{ marginTop: 6 }}>
+                  <TicketRowMeta ticket={ticket} />
+                </div>
+              </div>
+              <div>
+                {primaryAssignee(ticket) ? (
+                  <TicketActorChip actor={primaryAssignee(ticket)!} compact />
+                ) : (
+                  <span className="af2-muted" style={{ fontSize: 12 }}>
+                    No owner
+                  </span>
+                )}
+                {collaboratorCount(ticket) > 0 ? (
+                  <div className="af2-muted-2" style={{ fontSize: 11, marginTop: 4 }}>
+                    + {collaboratorCount(ticket)}{" "}
+                    collaborator{collaboratorCount(ticket) === 1 ? "" : "s"}
+                  </div>
+                ) : null}
+              </div>
+              <div>
+                <TicketStatusBadge status={ticket.status} />
+              </div>
+              <div>
+                <TicketPriorityBadge priority={ticket.priority} />
+              </div>
+              <div>
+                <TicketSlaBadge slaState={ticket.slaState} />
+              </div>
+            </Link>
+          ))}
+        </div>
+      )}
+
+      {createOpen ? (
+        <NewAssignmentModal
+          actorOptions={actorOptions}
+          missions={missions}
+          formState={formState}
+          setFormState={setFormState}
+          submitting={submitting}
+          validationError={validationError}
+          onClose={() => {
+            setCreateOpen(false);
+            setValidationError(null);
+          }}
+          onSubmit={(event) => {
+            void handleCreateTicket(event);
+          }}
+        />
       ) : null}
+    </div>
+  );
+}
+
+function Stat({ label, value, hint }: { label: string; value: string; hint: string }) {
+  return (
+    <div className="af2-stat">
+      <div className="af2-stat-label">{label}</div>
+      <div className="af2-stat-value">{value}</div>
+      <div className="af2-stat-delta af2-muted-2">{hint}</div>
     </div>
   );
 }
@@ -703,16 +672,16 @@ function FilterSelect({
   options: string[];
 }) {
   return (
-    <label className="grid gap-2">
-      <span className="text-[11px] font-semibold uppercase tracking-[0.18em] text-af2-ink-4">{label}</span>
+    <label style={{ display: "grid", gap: 4 }}>
+      <span className="af2-eyebrow">{label}</span>
       <select
         value={value}
         onChange={(event) => onChange(event.target.value)}
-        className="rounded-2xl border border-af2-line bg-af2-card px-4 py-3 text-sm text-af2-ink focus:outline-none focus:ring-2 focus:ring-teal-400"
+        className="af2-input"
       >
         {options.map((option) => (
           <option key={option} value={option}>
-            {option === "all" ? `All ${label}` : option.replace("_", " ")}
+            {option === "all" ? `All ${label.toLowerCase()}` : option.replace("_", " ")}
           </option>
         ))}
       </select>
@@ -720,52 +689,374 @@ function FilterSelect({
   );
 }
 
-function SelectField({
-  label,
-  value,
-  onChange,
-  options,
-  placeholder,
-}: {
-  label: string;
-  value: string;
-  onChange: (value: string) => void;
-  options: Array<{ value: string; label: string }>;
-  placeholder?: string;
-}) {
+interface NewAssignmentModalProps {
+  actorOptions: TicketActorRef[];
+  missions: Mission[];
+  formState: typeof EMPTY_FORM;
+  setFormState: React.Dispatch<React.SetStateAction<typeof EMPTY_FORM>>;
+  submitting: boolean;
+  validationError: string | null;
+  onClose: () => void;
+  onSubmit: (event: FormEvent<HTMLFormElement>) => void;
+}
+
+/**
+ * DASH-11: V2 New Assignment modal.
+ *
+ * Fields: title, description, mission (optional picker), primary
+ * assignee (agent or user), priority, tags, due date.
+ *
+ * Mission selection composes a `mission:<missionId>` tag onto the
+ * ticket so existing tag-based filtering "just works" without a
+ * schema change.
+ */
+function NewAssignmentModal({
+  actorOptions,
+  missions,
+  formState,
+  setFormState,
+  submitting,
+  validationError,
+  onClose,
+  onSubmit,
+}: NewAssignmentModalProps) {
   return (
-    <label className="grid gap-2">
-      <span className="text-xs font-semibold uppercase tracking-[0.18em] text-af2-ink-4">{label}</span>
-      <select
-        aria-label={label}
-        value={value}
-        onChange={(event) => onChange(event.target.value)}
-        className="rounded-2xl border border-af2-line bg-af2-card px-4 py-3 text-sm text-af2-ink focus:outline-none focus:ring-2 focus:ring-teal-400"
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="new-assignment-heading"
+      style={{
+        position: "fixed",
+        inset: 0,
+        zIndex: 50,
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        padding: 16,
+        background: "rgba(20, 22, 24, 0.55)",
+      }}
+    >
+      <button
+        type="button"
+        aria-label="Close"
+        onClick={onClose}
+        style={{
+          position: "absolute",
+          inset: 0,
+          background: "transparent",
+          border: "none",
+          cursor: "default",
+        }}
+      />
+      <form
+        onSubmit={onSubmit}
+        className="af2-card"
+        style={{
+          position: "relative",
+          zIndex: 1,
+          width: "100%",
+          maxWidth: 640,
+          maxHeight: "90vh",
+          overflowY: "auto",
+          padding: 24,
+          background: "var(--af2-card)",
+        }}
       >
-        <option value="">{placeholder ?? "Select an option"}</option>
-        {options.map((option) => (
-          <option key={option.value} value={option.value}>
-            {option.label}
-          </option>
-        ))}
-      </select>
-    </label>
-  );
-}
-
-function TicketListSkeleton() {
-  return (
-    <div className="overflow-hidden rounded-[28px] border border-af2-line bg-af2-card/95">
-      {Array.from({ length: 5 }).map((_, index) => (
         <div
-          key={index}
-          className="grid gap-4 border-b border-af2-line px-5 py-4 lg:grid-cols-[120px_minmax(0,1.4fr)_180px_170px_150px_110px]"
+          style={{
+            display: "flex",
+            alignItems: "flex-start",
+            justifyContent: "space-between",
+            gap: 16,
+            marginBottom: 18,
+          }}
         >
-          {Array.from({ length: 6 }).map((__, cell) => (
-            <div key={cell} className="scanline-skeleton h-12 rounded-2xl" />
-          ))}
+          <div>
+            <div className="af2-eyebrow">Run · Assignments · New</div>
+            <h2
+              id="new-assignment-heading"
+              className="af2-h2 font-af2-serif"
+              style={{ marginTop: 6 }}
+            >
+              Hand off work to an agent
+            </h2>
+            <p className="af2-muted" style={{ fontSize: 13, marginTop: 4 }}>
+              Scope to a mission, pick the agent, set priority. The ticket
+              shows up in their queue immediately.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="af2-btn af2-btn-sm"
+            aria-label="Close modal"
+            style={{
+              padding: 6,
+              minWidth: 32,
+              display: "inline-flex",
+              alignItems: "center",
+              justifyContent: "center",
+            }}
+          >
+            <X size={14} />
+          </button>
         </div>
-      ))}
+
+        <div style={{ display: "grid", gap: 14 }}>
+          <label style={{ display: "grid", gap: 4 }}>
+            <span className="af2-eyebrow">Title</span>
+            <input
+              autoFocus
+              aria-label="Assignment title"
+              value={formState.title}
+              onChange={(event) =>
+                setFormState((current) => ({ ...current, title: event.target.value }))
+              }
+              placeholder="Describe the outcome you need"
+              className="af2-input"
+            />
+          </label>
+
+          <label style={{ display: "grid", gap: 4 }}>
+            <span className="af2-eyebrow">Description</span>
+            <textarea
+              rows={4}
+              aria-label="Assignment description"
+              value={formState.description}
+              onChange={(event) =>
+                setFormState((current) => ({
+                  ...current,
+                  description: event.target.value,
+                }))
+              }
+              placeholder="Context, expected artifacts, blockers, customer impact…"
+              className="af2-input"
+              style={{ resize: "vertical" }}
+            />
+          </label>
+
+          <div style={{ display: "grid", gap: 12, gridTemplateColumns: "1fr 1fr" }}>
+            <label style={{ display: "grid", gap: 4 }}>
+              <span className="af2-eyebrow">Mission</span>
+              <select
+                aria-label="Assignment mission"
+                value={formState.missionId}
+                onChange={(event) =>
+                  setFormState((current) => ({
+                    ...current,
+                    missionId: event.target.value,
+                  }))
+                }
+                className="af2-input"
+              >
+                <option value="">No mission · standalone</option>
+                {missions.map((m) => (
+                  <option key={m.id} value={m.id}>
+                    {m.statement.length > 60
+                      ? `${m.statement.slice(0, 60)}…`
+                      : m.statement}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <label style={{ display: "grid", gap: 4 }}>
+              <span className="af2-eyebrow">Primary assignee</span>
+              <select
+                aria-label="Assignment primary assignee"
+                value={formState.primaryActorKey}
+                onChange={(event) =>
+                  setFormState((current) => ({
+                    ...current,
+                    primaryActorKey: event.target.value,
+                    collaboratorKeys: current.collaboratorKeys.filter(
+                      (entry) => entry !== event.target.value,
+                    ),
+                  }))
+                }
+                className="af2-input"
+              >
+                <option value="">
+                  {actorOptions.length === 0 ? "No assignees available" : "Choose an owner"}
+                </option>
+                {actorOptions.map((actor) => {
+                  const key = `${actor.type}:${actor.id}`;
+                  return (
+                    <option key={key} value={key}>
+                      {getTicketActorProfile(actor).name} ({actor.type})
+                    </option>
+                  );
+                })}
+              </select>
+            </label>
+          </div>
+
+          <div style={{ display: "grid", gap: 12, gridTemplateColumns: "1fr 1fr 1fr" }}>
+            <label style={{ display: "grid", gap: 4 }}>
+              <span className="af2-eyebrow">Priority</span>
+              <select
+                aria-label="Assignment priority"
+                value={formState.priority}
+                onChange={(event) =>
+                  setFormState((current) => ({
+                    ...current,
+                    priority: event.target.value as TicketPriority,
+                  }))
+                }
+                className="af2-input"
+              >
+                {PRIORITY_OPTIONS.filter((entry) => entry !== "all").map((priority) => (
+                  <option key={priority} value={priority}>
+                    {priority}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label style={{ display: "grid", gap: 4 }}>
+              <span className="af2-eyebrow">Due date</span>
+              <input
+                type="datetime-local"
+                aria-label="Assignment due date"
+                value={formState.dueDate}
+                onChange={(event) =>
+                  setFormState((current) => ({ ...current, dueDate: event.target.value }))
+                }
+                className="af2-input"
+              />
+            </label>
+            <label style={{ display: "grid", gap: 4 }}>
+              <span className="af2-eyebrow">Tags</span>
+              <input
+                aria-label="Assignment tags"
+                value={formState.tags}
+                onChange={(event) =>
+                  setFormState((current) => ({ ...current, tags: event.target.value }))
+                }
+                placeholder="launch, escalation"
+                className="af2-input"
+              />
+            </label>
+          </div>
+
+          <label style={{ display: "grid", gap: 4 }}>
+            <span className="af2-eyebrow">Collaborators</span>
+            <select
+              aria-label="Assignment collaborators"
+              multiple
+              value={formState.collaboratorKeys}
+              onChange={(event) => {
+                const nextValues = Array.from(
+                  event.target.selectedOptions,
+                  (option) => option.value,
+                );
+                setFormState((current) => ({
+                  ...current,
+                  collaboratorKeys: nextValues.filter(
+                    (value) => value !== current.primaryActorKey,
+                  ),
+                }));
+              }}
+              className="af2-input"
+              style={{ minHeight: 96 }}
+            >
+              {actorOptions.map((actor) => {
+                const value = `${actor.type}:${actor.id}`;
+                return (
+                  <option key={value} value={value}>
+                    {getTicketActorProfile(actor).name} ({actor.type})
+                  </option>
+                );
+              })}
+            </select>
+            <span className="af2-muted-2" style={{ fontSize: 11 }}>
+              Hold Cmd/Ctrl to pick multiple collaborators.
+            </span>
+          </label>
+
+          <label
+            style={{
+              display: "flex",
+              alignItems: "flex-start",
+              gap: 10,
+              padding: 12,
+              border: "1px solid var(--af2-line)",
+              borderRadius: "var(--af2-radius)",
+              fontSize: 12.5,
+              color: "var(--af2-ink-2)",
+            }}
+          >
+            <input
+              type="checkbox"
+              aria-label="Request external sync"
+              checked={formState.externalSyncRequested}
+              onChange={(event) =>
+                setFormState((current) => ({
+                  ...current,
+                  externalSyncRequested: event.target.checked,
+                }))
+              }
+              style={{ marginTop: 3 }}
+            />
+            <span>
+              <strong>Request external sync.</strong> Forward this assignment
+              to the integration sync queue (Linear, Slack, etc.) once it's
+              created.
+            </span>
+          </label>
+        </div>
+
+        {validationError ? (
+          <div
+            role="alert"
+            style={{
+              marginTop: 14,
+              padding: "10px 14px",
+              borderRadius: "var(--af2-radius)",
+              border: "1px solid rgba(192,84,76,0.30)",
+              background: "rgba(192,84,76,0.10)",
+              color: "var(--af2-clay)",
+              fontSize: 13,
+            }}
+          >
+            {validationError}
+          </div>
+        ) : null}
+
+        <div
+          style={{
+            marginTop: 20,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "flex-end",
+            gap: 10,
+            borderTop: "1px solid var(--af2-line)",
+            paddingTop: 16,
+          }}
+        >
+          <button
+            type="button"
+            onClick={onClose}
+            className="af2-btn af2-btn-ghost af2-btn-sm"
+          >
+            Cancel
+          </button>
+          <button
+            type="submit"
+            disabled={submitting}
+            className="af2-btn af2-btn-clay"
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 6,
+              opacity: submitting ? 0.6 : 1,
+              cursor: submitting ? "wait" : "pointer",
+            }}
+          >
+            {submitting ? <Loader2 size={14} className="animate-spin" /> : <Plus size={14} />}
+            Create assignment
+          </button>
+        </div>
+      </form>
     </div>
   );
 }

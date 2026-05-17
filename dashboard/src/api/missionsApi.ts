@@ -87,6 +87,16 @@ export async function createMission(
   return parseJsonOrError<Mission>(response, `Failed to create mission: ${response.status}`);
 }
 
+// generate-plan calls a power-tier LLM end-to-end on the backend (prompt
+// build → model call → JSON parse → DB insert), which can easily exceed
+// the 15s default fetch timeout. Pre-fix the dashboard aborted the
+// request after 15s and surfaced "Mission saved as a draft, but plan
+// generation failed: Request timed out after 15s" on /hire even when
+// the backend was still working and would have succeeded a few seconds
+// later. 90s is comfortably above observed p99 for the team-assembly
+// prompt without keeping a hung backend on screen indefinitely.
+const GENERATE_PLAN_TIMEOUT_MS = 90_000;
+
 export async function generateHiringPlan(
   missionId: string,
   accessToken: string,
@@ -97,6 +107,7 @@ export async function generateHiringPlan(
       method: "POST",
       headers: buildHeaders(accessToken, { "Content-Type": "application/json" }),
     },
+    { timeoutMs: GENERATE_PLAN_TIMEOUT_MS },
   );
   return parseJsonOrError<GeneratedPlanResponse>(
     response,

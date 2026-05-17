@@ -40,6 +40,7 @@ import { resolveModelForTier } from "../engine/llmRouter";
 import { getProvider } from "../engine/llmProviders";
 import { computeHiringPlanCostCents } from "./hiringPlanCost";
 import { recordHiringPlanCost } from "./hiringPlanCostWriter";
+import { ensureUserProfileExists } from "../user/profileStore";
 
 interface MissionRow {
   id: string;
@@ -252,6 +253,20 @@ export function createMissionRoutes(
       return;
     }
     const metadata = sanitizeMetadata(body?.metadata);
+
+    // missions.created_by_user_id FKs into user_profiles(user_id). The
+    // profile row is only created when the user explicitly saves Profile
+    // Settings, so OAuth-only users hit a FK violation here on their
+    // first mission. Auto-provision an empty profile (display_name NULL,
+    // timezone 'UTC' default) so the insert below succeeds; the user can
+    // fill the profile in later via PATCH /api/profile.
+    try {
+      await ensureUserProfileExists(userId);
+    } catch (err) {
+      console.error(`[missions] ensureUserProfileExists failed: ${(err as Error).message}`);
+      res.status(500).json({ error: "Failed to provision user profile" });
+      return;
+    }
 
     let company: { id: string; name: string };
     try {

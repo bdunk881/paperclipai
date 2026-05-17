@@ -13,6 +13,15 @@ jest.mock("../engine/llmProviders", () => ({
   getProvider: jest.fn(),
 }));
 
+// Stub profile-store helpers — the FK-precheck regression test asserts
+// against the spy, and the rejection-path tests don't care if the helper
+// runs or not.
+jest.mock("../user/profileStore", () => ({
+  ensureUserProfileExists: jest.fn().mockResolvedValue(undefined),
+}));
+
+import { ensureUserProfileExists as mockedEnsureUserProfileExists } from "../user/profileStore";
+
 import express, { type Request, type Response, type NextFunction } from "express";
 import request from "supertest";
 import { createMissionRoutes } from "./missionRoutes";
@@ -111,6 +120,29 @@ describe("POST /api/missions (HEL-23 create)", () => {
       .send({ statement: "a".repeat(4001) });
     expect(res.status).toBe(400);
     expect(res.body.error).toMatch(/too long/i);
+  });
+
+  // Regression: OAuth-only users (no Profile Settings save yet) used to
+  // hit a FK violation on missions.created_by_user_id -> user_profiles
+  // and saw a generic "Failed to create mission" banner on /hire. The
+  // POST handler now auto-provisions the user_profiles row before the
+  // INSERT, so the FK is always satisfied.
+  it("auto-provisions the user profile before the missions INSERT", async () => {
+    (mockedEnsureUserProfileExists as jest.Mock).mockClear();
+    const app = buildApp({
+      sub: "oauth-user-with-no-profile",
+      workspaceId: "11111111-1111-4111-8111-111111111111",
+    });
+    // The downstream ensureDefaultCompany call will fail against the
+    // stub pool (pool.connect is not implemented), but the profile
+    // pre-check must still have fired first.
+    await request(app)
+      .post("/api/missions")
+      .send({ statement: "Launch X." });
+    expect(mockedEnsureUserProfileExists).toHaveBeenCalledTimes(1);
+    expect(mockedEnsureUserProfileExists).toHaveBeenCalledWith(
+      "oauth-user-with-no-profile",
+    );
   });
 });
 

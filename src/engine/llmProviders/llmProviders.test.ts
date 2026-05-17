@@ -587,6 +587,114 @@ describe("Mistral adapter", () => {
       }),
     );
   });
+
+  it("honors requestTimeoutMs override from config", () => {
+    getProvider({ ...config, requestTimeoutMs: 30_000 });
+    expect(MockMistral).toHaveBeenCalledWith(
+      expect.objectContaining({ timeoutMs: 30_000 }),
+    );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// requestTimeoutMs → native SDK timeout wiring. After the Mistral
+// "Request timed out: TimeoutError" incident we apply a uniform 120 s
+// default to every provider whose SDK exposes a timeout knob, and let
+// callers override via LLMProviderConfig.requestTimeoutMs.
+// ---------------------------------------------------------------------------
+
+describe("requestTimeoutMs — native SDK timeout wiring", () => {
+  it("OpenAI: default 120 s timeout passed to the SDK constructor", () => {
+    getProvider({ provider: "openai", model: "gpt-4o", apiKey: "sk-test" });
+    expect(MockOpenAI).toHaveBeenCalledWith(
+      expect.objectContaining({ apiKey: "sk-test", timeout: 120_000 }),
+    );
+  });
+
+  it("OpenAI: requestTimeoutMs override wins", () => {
+    getProvider({
+      provider: "openai",
+      model: "gpt-4o",
+      apiKey: "sk-test",
+      requestTimeoutMs: 5_000,
+    });
+    expect(MockOpenAI).toHaveBeenCalledWith(
+      expect.objectContaining({ timeout: 5_000 }),
+    );
+  });
+
+  it("OpenAI-compat (Groq): default 120 s timeout passed through the shared adapter", () => {
+    getProvider({
+      provider: "groq",
+      model: "llama-3.3-70b-versatile",
+      apiKey: "gsk-test",
+    });
+    expect(MockOpenAI).toHaveBeenCalledWith(
+      expect.objectContaining({ timeout: 120_000 }),
+    );
+  });
+
+  it("Anthropic: default 120 s timeout passed to the SDK constructor", () => {
+    getProvider({
+      provider: "anthropic",
+      model: "claude-opus-4-6",
+      apiKey: "sk-ant-test",
+    });
+    expect(MockAnthropic).toHaveBeenCalledWith(
+      expect.objectContaining({ apiKey: "sk-ant-test", timeout: 120_000 }),
+    );
+  });
+
+  it("Anthropic: requestTimeoutMs override wins", () => {
+    getProvider({
+      provider: "anthropic",
+      model: "claude-opus-4-6",
+      apiKey: "sk-ant-test",
+      requestTimeoutMs: 60_000,
+    });
+    expect(MockAnthropic).toHaveBeenCalledWith(
+      expect.objectContaining({ timeout: 60_000 }),
+    );
+  });
+
+  it("Gemini: default 120 s timeout passed to getGenerativeModel requestOptions", async () => {
+    const provider = getProvider({
+      provider: "gemini",
+      model: "gemini-1.5-pro",
+      apiKey: "g-test",
+    });
+    googleInstance().getGenerativeModel.mockReturnValueOnce({
+      generateContent: jest.fn().mockResolvedValue({
+        response: { text: () => "ok", usageMetadata: undefined },
+      }),
+    });
+
+    await provider("Prompt");
+    expect(googleInstance().getGenerativeModel).toHaveBeenCalledWith(
+      expect.objectContaining({ model: "gemini-1.5-pro" }),
+      expect.objectContaining({ timeout: 120_000 }),
+    );
+  });
+
+  it("Gemini: requestTimeoutMs override wins", async () => {
+    const provider = getProvider({
+      provider: "gemini",
+      model: "gemini-1.5-pro",
+      apiKey: "g-test",
+      requestTimeoutMs: 45_000,
+    });
+    googleInstance().getGenerativeModel.mockReturnValueOnce({
+      generateContent: jest.fn().mockResolvedValue({
+        response: { text: () => "ok", usageMetadata: undefined },
+      }),
+    });
+
+    await provider("Prompt");
+    expect(googleInstance().getGenerativeModel).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ timeout: 45_000 }),
+    );
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -796,6 +904,7 @@ describe("responseFormat — native JSON mode per provider", () => {
       expect.objectContaining({
         generationConfig: { responseMimeType: "application/json" },
       }),
+      expect.anything(),
     );
   });
 
@@ -820,6 +929,7 @@ describe("responseFormat — native JSON mode per provider", () => {
           responseSchema: { ...schema },
         },
       }),
+      expect.anything(),
     );
   });
 });

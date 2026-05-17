@@ -90,6 +90,21 @@ export type ResponseFormat =
       schema: Record<string, unknown>;
     };
 
+/**
+ * Default per-request timeout applied to every LLM provider SDK that
+ * accepts one. Pre-fix Mistral was using the underlying fetch default
+ * and aborting heavy team-assembly calls before the model responded
+ * ("Mistral API error: Request timed out: TimeoutError" on /hire).
+ *
+ * 120s is comfortably above observed p99 for the heaviest call site
+ * across providers (mistral-large-latest, claude-opus, gpt-4o on the
+ * team-assembly prompt) while still keeping a hung backend from
+ * spinning forever. Callers can override per call via
+ * LLMProviderConfig.requestTimeoutMs — useful for cheap classification
+ * steps that should fail fast, or for very long agentic runs.
+ */
+export const DEFAULT_LLM_REQUEST_TIMEOUT_MS = 120_000;
+
 export interface LLMProviderConfig {
   provider: ProviderName;
   model: string;
@@ -103,6 +118,16 @@ export interface LLMProviderConfig {
    * supports one. Providers without native support ignore the hint.
    */
   responseFormat?: ResponseFormat;
+  /**
+   * Optional per-request timeout in ms, passed to the provider SDK's
+   * native timeout knob (OpenAI/Anthropic `timeout`, Gemini
+   * `requestOptions.timeout`, Mistral `timeoutMs`). Defaults to
+   * DEFAULT_LLM_REQUEST_TIMEOUT_MS when omitted. Providers whose SDKs
+   * don't expose a timeout option (Bedrock, Vertex AI, Cohere today)
+   * ignore the value — the dashboard's fetch wrapper and Express
+   * request timeout still bound the wall time end-to-end.
+   */
+  requestTimeoutMs?: number;
 }
 
 export interface LLMResponse {

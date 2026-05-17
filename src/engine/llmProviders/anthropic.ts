@@ -1,5 +1,11 @@
 import Anthropic from "@anthropic-ai/sdk";
-import { LLMProvider, LLMProviderConfig, LLMResponse, ResponseFormat } from "./types";
+import {
+  DEFAULT_LLM_REQUEST_TIMEOUT_MS,
+  LLMProvider,
+  LLMProviderConfig,
+  LLMResponse,
+  ResponseFormat,
+} from "./types";
 
 /**
  * Anthropic doesn't expose a `response_format` knob — the recommended
@@ -50,7 +56,12 @@ export function createAnthropicProvider(config: LLMProviderConfig): LLMProvider 
     throw new Error(`Anthropic API error: missing API key credentials for ${config.provider}`);
   }
 
-  const client = new Anthropic({ apiKey });
+  // Explicit per-request timeout — see DEFAULT_LLM_REQUEST_TIMEOUT_MS.
+  // Anthropic's SDK default is 10 minutes, but we want a uniform ceiling
+  // across providers so a slow Claude call can't outlive our Express
+  // request budget.
+  const timeoutMs = config.requestTimeoutMs ?? DEFAULT_LLM_REQUEST_TIMEOUT_MS;
+  const client = new Anthropic({ apiKey, timeout: timeoutMs });
   const forcedTool = toAnthropicForcedTool(config.responseFormat);
 
   return async (prompt: string): Promise<LLMResponse> => {

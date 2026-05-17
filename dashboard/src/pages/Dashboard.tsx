@@ -30,6 +30,8 @@ import { listMissions, type Mission } from "../api/missionsApi";
 import { ErrorState, LoadingState } from "../components/UiStates";
 import { useAuth } from "../context/AuthContext";
 import { useWorkspace } from "../context/useWorkspace";
+import { AgentPresencePill } from "../components/AgentPresencePill";
+import { useAgentPresence } from "../hooks/useAgentPresence";
 import type { WorkflowRun } from "../types/workflow";
 
 interface AgentSnapshot {
@@ -141,6 +143,11 @@ function approvalCostUsd(approval: ApprovalRequest): string {
 export default function Dashboard() {
   const { user, requireAccessToken } = useAuth();
   const { activeWorkspaceId } = useWorkspace();
+  // Wave 2 live presence layer. Used to render an AgentPresencePill
+  // next to each agent in "The room right now" so the home page shows
+  // real-time "working: <task> · 12s" / "blocked" / "offline" state
+  // instead of the lagging controlPlane heartbeat summary.
+  const presence = useAgentPresence();
 
   const [missions, setMissions] = useState<Mission[]>([]);
   const [agentSnapshots, setAgentSnapshots] = useState<AgentSnapshot[]>([]);
@@ -480,13 +487,30 @@ export default function Dashboard() {
                       {initialsFor(snap.agent.name)}
                     </div>
                     <div style={{ minWidth: 160 }}>
-                      <div style={{ fontWeight: 600, fontSize: 13.5 }}>{snap.agent.name}</div>
+                      <div
+                        style={{
+                          fontWeight: 600,
+                          fontSize: 13.5,
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 8,
+                          flexWrap: "wrap",
+                        }}
+                      >
+                        {snap.agent.name}
+                        <AgentPresencePill presence={presence.get(snap.agent.id)} />
+                      </div>
                       <div className="af2-muted" style={{ fontSize: 12 }}>
                         {teamNameFor(snap.agent) ?? "Unassigned"}
                       </div>
                     </div>
                     <div style={{ flex: 1, fontSize: 13, color: "var(--af2-ink-2)" }}>
-                      {isWorking ? (
+                      {/* Live presence pill above already shows the
+                          current task / state. The summary fallback
+                          here is the old controlPlane heartbeat
+                          summary, kept for agents whose Redis TTL
+                          lapsed (and so don't appear in `presence`). */}
+                      {presence.has(snap.agent.id) ? null : isWorking ? (
                         <em className="font-af2-serif" style={{ color: "var(--af2-ink-2)" }}>
                           "{summary}"
                         </em>

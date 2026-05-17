@@ -21,6 +21,7 @@ import { useAuth } from "./context/AuthContext";
 import AgentActivity from "./pages/AgentActivity";
 import AgentTeamDetail from "./pages/AgentTeamDetail";
 import AgentJobDescription from "./pages/AgentJobDescription";
+import AgentStandingTasks from "./pages/AgentStandingTasks";
 import ApiKeys from "./pages/ApiKeys";
 import Approvals from "./pages/Approvals";
 import AuthCallback from "./pages/AuthCallback";
@@ -203,6 +204,10 @@ const routes: RouteObject[] = [
       // Wave 3: per-agent Job Description editor + LLM-assisted wizard.
       // Linked from AgentTeamDetail and OrgStructure (via the agent card).
       { path: "agents/:agentId/job", element: <AgentJobDescription /> },
+      // Wave 4: per-agent Standing Tasks (routines) management. Lists
+      // scheduled work attached to the agent and lets the owner toggle
+      // enabled / edit cron.
+      { path: "agents/:agentId/standing-tasks", element: <AgentStandingTasks /> },
       { path: "approvals", element: <Approvals /> },
       { path: "mission-state", element: <MissionState /> },
 

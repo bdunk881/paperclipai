@@ -211,10 +211,12 @@ describe("POST /api/llm-configs", () => {
   });
 
   it("returns 402 with entitlement_exceeded payload when BYOK is disallowed on the plan (HEL-71)", async () => {
-    // Flip the test workspace down to the Explore (free) tier where
-    // byokAllowed=false. The default workspace id is the one the auto-mock
-    // workspaceResolver sets when no X-Workspace-Id header is passed.
-    entitlementStore.upsert(DEFAULT_WORKSPACE, "explore");
+    // Flip the test workspace to a tier where byokAllowed=false. As of
+    // the Explore-BYOK unlock, that's `flow` — Explore now allows BYOK
+    // while the hosted free-model path is built. The default workspace
+    // id is the one the auto-mock workspaceResolver sets when no
+    // X-Workspace-Id header is passed.
+    entitlementStore.upsert(DEFAULT_WORKSPACE, "flow");
 
     const res = await request(app)
       .post("/api/llm-configs")
@@ -231,7 +233,7 @@ describe("POST /api/llm-configs", () => {
       code: "entitlement_exceeded",
       feature: "byokAllowed",
       limit: false,
-      currentTier: "explore",
+      currentTier: "flow",
       upgradeTo: "automate",
     });
   });

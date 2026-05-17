@@ -26,7 +26,15 @@ const PLAN_LIMITS: Record<SubscriptionTier, EntitlementLimits> = {
     runsPerMonth: 25,
     agentCap: 1,
     integrationCap: 1,
-    byokAllowed: false,
+    // Temporarily unlocked while the hosted free-model path is built.
+    // Original intent: Explore users run on a hosted free model so they
+    // can try the product without supplying an API key. That hosted
+    // path isn't shipped yet, and the previous false here meant
+    // /api/llm-configs POST blocked Explore users at the entitlement
+    // gate — the product was literally unusable on the free tier.
+    // Flip back to false once the hosted-model fallback lands so the
+    // free→paid conversion mechanic ("BYOK on Automate+") survives.
+    byokAllowed: true,
     logRetentionDays: 14,
     approvalTierMax: 0,
   },

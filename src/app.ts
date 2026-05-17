@@ -204,7 +204,12 @@ const entitlementsRoutes = canonicalReadsArePostgres
         runsPerMonth: 0,
         agentCap: 0,
         integrationCap: 0,
-        byokAllowed: false,
+        // Keep this aligned with billing/entitlements.ts → PLAN_LIMITS.explore.
+        // The Explore tier now allows BYOK while the hosted free-model
+        // path is being built; this display fallback (for non-Postgres
+        // dev/test setups) should reflect that so the dashboard's
+        // entitlements display matches the real backend enforcement.
+        byokAllowed: true,
         logRetentionDays: 7,
         approvalTierMax: 0,
         updatedAt: null,

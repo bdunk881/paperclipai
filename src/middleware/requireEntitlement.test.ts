@@ -181,10 +181,16 @@ describe("requireEntitlement", () => {
   });
 
   describe("default-to-explore safety", () => {
-    it("treats a workspace with no stored entitlements as the explore tier (no paid grant)", async () => {
+    it("treats a workspace with no stored entitlements as the explore tier (no paid grant beyond explore's own grants)", async () => {
       const ws = "ws-unknown"; // never upserted
-      // explore: byokAllowed=false → must deny.
-      const middleware = requireEntitlement("byokAllowed");
+      // Explore now grants byokAllowed=true while the hosted free-model
+      // path is built; assert the safety property against approvalTierMax
+      // (still 0 on explore) so the test continues to verify "default
+      // to explore, no paid grant" without dragging in tier-specific
+      // BYOK policy.
+      const middleware = requireEntitlement("approvalTierMax", {
+        getCurrent: () => 1,
+      });
       const req = reqInWorkspace(ws);
       const res = createResponse();
       const next = jest.fn() as NextFunction;
@@ -196,7 +202,6 @@ describe("requireEntitlement", () => {
       expect(res.json).toHaveBeenCalledWith(
         expect.objectContaining({
           currentTier: "explore",
-          upgradeTo: "automate",
         }),
       );
     });

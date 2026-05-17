@@ -338,13 +338,17 @@ export function createEntitlementsRoutes(pool: Pool): Router {
       if (!row) {
         // Default to the conservative `explore` plan when no row exists yet
         // (e.g. brand-new workspace before the first Stripe sync).
+        // Keep aligned with billing/entitlements.ts → PLAN_LIMITS.explore;
+        // byokAllowed flips to true with the Explore tier so the
+        // dashboard's BYOK affordance shows up immediately for brand-
+        // new workspaces (before Stripe webhook fires its first sync).
         res.json({
           workspaceId: ctx.workspaceId,
           plan: "explore",
           runsPerMonth: 0,
           agentCap: 0,
           integrationCap: 0,
-          byokAllowed: false,
+          byokAllowed: true,
           logRetentionDays: 7,
           approvalTierMax: 0,
           updatedAt: null,

@@ -22,6 +22,7 @@ import AgentActivity from "./pages/AgentActivity";
 import AgentTeamDetail from "./pages/AgentTeamDetail";
 import AgentJobDescription from "./pages/AgentJobDescription";
 import AgentStandingTasks from "./pages/AgentStandingTasks";
+import AgentDetail from "./pages/AgentDetail";
 import ApiKeys from "./pages/ApiKeys";
 import Approvals from "./pages/Approvals";
 import AuthCallback from "./pages/AuthCallback";
@@ -208,6 +209,11 @@ const routes: RouteObject[] = [
       // scheduled work attached to the agent and lets the owner toggle
       // enabled / edit cron.
       { path: "agents/:agentId/standing-tasks", element: <AgentStandingTasks /> },
+      // UX-5: per-agent detail hub. Owner sees presence + action toolbar
+      // + job description preview + standing tasks summary + quick facts.
+      // Must come BEFORE the catch-all `agents/:templateId` redirect
+      // below or it'd get masked.
+      { path: "agents/:agentId", element: <AgentDetail /> },
       { path: "approvals", element: <Approvals /> },
       { path: "mission-state", element: <MissionState /> },
 
@@ -262,7 +268,12 @@ const routes: RouteObject[] = [
       { path: "agents", element: <Navigate to="/templates" replace /> },
       { path: "agents/my", element: <Navigate to="/workspace/org-structure" replace /> },
       { path: "agents/routines", element: <Navigate to="/templates" replace /> },
-      { path: "agents/:templateId", element: <Navigate to="/templates" replace /> },
+      // UX-5 note: the old catch-all `agents/:templateId` → /templates
+      // redirect used to mask real agent IDs (so OrgStructure's
+      // "View agent" links dead-ended). Removed; `agents/:agentId`
+      // above now resolves to the AgentDetail hub. v1 deploy-template
+      // URL keeps its redirect since `deploy/...` is structurally
+      // distinct from a UUID.
       { path: "agents/deploy/:templateId", element: <Navigate to="/templates" replace /> },
       { path: "integrations", element: <Navigate to="/integrations/mcp" replace /> },
       { path: "integrations/health", element: <Navigate to="/integrations/mcp" replace /> },

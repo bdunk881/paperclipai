@@ -208,4 +208,6 @@ export interface StepResult {
   agentSlotResults?: AgentSlotResult[];
   /** Populated for llm / agent steps — model, tier, and cost data */
   costLog?: import("../engine/llmRouter").LlmCostLog;
+  /** sha256(runId:stepIndex:workflowVersionId) — written at step completion for safe replay */
+  idempotencyKey?: string;
 }

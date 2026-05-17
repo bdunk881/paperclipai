@@ -44,6 +44,7 @@ import ticketSyncRoutes from "./ticketSync/routes";
 import ticketSyncWebhookRoutes from "./ticketSync/webhookRoutes";
 import { llmConfigStore } from "./llmConfig/llmConfigStore";
 import { getProvider } from "./engine/llmProviders";
+import { extractStructuredOutput } from "./engine/structuredOutput";
 import { parseFile } from "./engine/fileParser";
 import { resolveModelForTier } from "./engine/llmRouter";
 import {
@@ -1211,9 +1212,11 @@ app.post("/api/workflows/generate", requireAuth, workspaceResolver, requireRole(
 
   let steps: WorkflowStep[];
   try {
-    // Strip optional markdown code fences the LLM may include
-    const cleaned = rawText.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "").trim();
-    const parsed = JSON.parse(cleaned) as unknown;
+    // Shared extractor handles chatty preambles + fenced/prose-wrapped
+    // JSON across every provider (Mistral routinely emits a preamble).
+    const parsed = extractStructuredOutput<unknown>(rawText, {
+      label: "workflow-generate",
+    });
     if (!Array.isArray(parsed)) {
       throw new Error("Expected a JSON array");
     }

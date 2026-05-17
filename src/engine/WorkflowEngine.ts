@@ -26,6 +26,7 @@ import {
   resolveSpendAmountCents,
 } from "../approvals/policyTypes";
 import { handleLlm, handleMcp, handleFileTrigger, handleAgent, handleKnowledge } from "./stepHandlers";
+import { extractStructuredOutput } from "./structuredOutput";
 import { memoryStore } from "./memoryStore";
 import { LlmCostLog } from "./llmRouter";
 
@@ -180,11 +181,18 @@ async function executeLlm(
     const prompt = interpolate(rawPrompt, context);
     const rawOutput = await _llmProvider(prompt);
 
+    // Legacy/test path uses the same chatty-tolerant extractor as the
+    // production handlers so injected providers that emit
+    // "Sure!\n```json\n…\n```" don't fall through to the string
+    // fallback when their JSON is actually valid.
+    let parsed: unknown = null;
     try {
-      const parsed = JSON.parse(rawOutput) as unknown;
-      if (typeof parsed === "object" && parsed !== null) return { output: parsed as Record<string, unknown> };
+      parsed = extractStructuredOutput(rawOutput, { label: "legacy-custom-provider" });
     } catch {
-      // Not JSON — treat as a text value mapped to the first output key
+      parsed = null;
+    }
+    if (parsed && typeof parsed === "object") {
+      return { output: parsed as Record<string, unknown> };
     }
 
     const firstKey = step.outputKeys[0] ?? "output";

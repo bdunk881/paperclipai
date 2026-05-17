@@ -29,13 +29,27 @@ function toMistralResponseFormat(
   };
 }
 
+/**
+ * Mistral SDK request timeout. Defaults to 120 s because the
+ * team-assembly prompt is heavy (full role library + structured JSON
+ * schema in the prompt body, structured JSON output) and
+ * `mistral-large-latest` under load routinely runs 20-60 s end-to-end.
+ *
+ * Pre-fix we relied on the SDK's underlying fetch default, which on
+ * Fly.io's Node runtime aborts well before that — the user saw a fast
+ * "Mistral API error: Request timed out: TimeoutError" with no path
+ * forward. 120 s is comfortably above observed p99 for the heaviest
+ * call site while still keeping a hung backend from spinning forever.
+ */
+const MISTRAL_REQUEST_TIMEOUT_MS = 120_000;
+
 export function createMistralProvider(config: LLMProviderConfig): LLMProvider {
   const apiKey = config.apiKey ?? config.credentials?.apiKey;
   if (!apiKey) {
     throw new Error(`Mistral API error: missing API key credentials for ${config.provider}`);
   }
 
-  const client = new Mistral({ apiKey });
+  const client = new Mistral({ apiKey, timeoutMs: MISTRAL_REQUEST_TIMEOUT_MS });
   const responseFormat = toMistralResponseFormat(config.responseFormat);
 
   return async (prompt: string): Promise<LLMResponse> => {

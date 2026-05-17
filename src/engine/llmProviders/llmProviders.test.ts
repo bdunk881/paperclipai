@@ -573,6 +573,20 @@ describe("Mistral adapter", () => {
       expect.objectContaining({ model: "mistral-large-latest" })
     );
   });
+
+  // Regression: the Mistral SDK was using fetch's default timeout
+  // which aborted the team-assembly call before the model responded
+  // ("Mistral API error: Request timed out: TimeoutError"). We now
+  // pass an explicit 120 s timeoutMs to the SDK constructor.
+  it("constructs the Mistral SDK with an explicit 120 s timeoutMs", () => {
+    getProvider(config);
+    expect(MockMistral).toHaveBeenCalledWith(
+      expect.objectContaining({
+        apiKey: "mistral-test",
+        timeoutMs: 120_000,
+      }),
+    );
+  });
 });
 
 // ---------------------------------------------------------------------------

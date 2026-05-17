@@ -6,10 +6,15 @@ import Tickets from "./Tickets";
 vi.mock("../context/AuthContext", () => ({
   useAuth: () => ({
     getAccessToken: vi.fn().mockResolvedValue("token-123"),
+    user: null,
   }),
 }));
 
-describe("Tickets", () => {
+vi.mock("../context/useWorkspace", () => ({
+  useWorkspace: () => ({ activeWorkspaceId: null }),
+}));
+
+describe("Tickets (V2 / DASH-10)", () => {
   beforeEach(() => {
     vi.spyOn(globalThis, "fetch").mockRejectedValue(new Error("ticketing api unavailable"));
   });
@@ -18,14 +23,16 @@ describe("Tickets", () => {
     vi.restoreAllMocks();
   });
 
-  it("keeps the ticketing command surface available when the ticketing API is unavailable", async () => {
+  it("renders V2 page chrome and primary CTA even when the ticketing API is unavailable", async () => {
     render(
       <MemoryRouter>
         <Tickets />
-      </MemoryRouter>
+      </MemoryRouter>,
     );
 
-    await screen.findByText("Mission Assignments");
-    await screen.findByRole("button", { name: /create assignment/i });
+    // V2 page-head: eyebrow + serif h1 + primary CTA.
+    await screen.findByText(/run · assignments/i);
+    await screen.findByRole("heading", { level: 1, name: /mission assignments/i });
+    await screen.findByRole("button", { name: /new assignment/i });
   });
 });

@@ -56,7 +56,7 @@ export default function TicketTeamView() {
                 <ArrowLeft size={14} />
                 Back to queue
               </Link>
-              <h1 className="mt-4 text-3xl font-semibold tracking-tight text-slate-100">Team Ticket View</h1>
+              <h1 className="mt-4 text-3xl font-semibold tracking-tight text-slate-100">Team Assignment View</h1>
               <p className="mt-2 text-sm leading-6 text-slate-400">
                 Agents and humans side-by-side with live counts by status so ownership drift is obvious before it becomes a problem.
               </p>

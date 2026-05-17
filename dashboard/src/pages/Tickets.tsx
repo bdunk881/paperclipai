@@ -291,11 +291,11 @@ export default function Tickets({ initialData, routeAction }: TicketsProps = {})
                   Operational Clarity
                 </div>
                 <h1 className="mt-4 text-3xl font-semibold tracking-tight text-af2-ink">
-                  Ticketing Command Surface
+                  Mission Assignments
                 </h1>
                 <p className="mt-2 text-sm leading-6 text-af2-ink-4">
-                  Monitor execution, triage blocked work, and launch new tickets with a view that
-                  keeps humans and agents in the same operating lane.
+                  Monitor execution, triage blocked work, and launch new assignments with a view
+                  that keeps humans and agents in the same operating lane.
                 </p>
               </div>
               <div className="flex flex-wrap items-center gap-3">
@@ -323,7 +323,7 @@ export default function Tickets({ initialData, routeAction }: TicketsProps = {})
                   className="inline-flex items-center gap-2 rounded-full bg-teal-500 px-4 py-2 text-sm font-semibold text-slate-950 transition hover:bg-teal-400"
                 >
                   <Plus size={15} />
-                  Create ticket
+                  Create assignment
                 </button>
               </div>
             </div>
@@ -391,22 +391,22 @@ export default function Tickets({ initialData, routeAction }: TicketsProps = {})
               </div>
             ) : filteredTickets.length === 0 ? (
               <TicketEmptyState
-                title="No tickets found"
-                body="Adjust filters or create a new ticket to start the queue."
+                title="No assignments found"
+                body="Adjust filters or create a new assignment to start the queue."
                 action={
                   <button
                     onClick={() => setCreateOpen(true)}
                     className="inline-flex items-center gap-2 rounded-full bg-indigo-500 px-4 py-2 text-sm font-semibold text-white transition hover:bg-indigo-400"
                   >
                     <Plus size={15} />
-                    Start a ticket
+                    Start an assignment
                   </button>
                 }
               />
             ) : (
               <div className="overflow-hidden rounded-[28px] border border-af2-line bg-af2-card/95">
                 <div className="hidden grid-cols-[120px_minmax(0,1.4fr)_180px_170px_150px_110px] gap-4 border-b border-af2-line bg-af2-paper-2/90 px-5 py-3 text-[11px] font-semibold uppercase tracking-[0.18em] text-af2-ink-4 lg:grid">
-                  <span>Ticket</span>
+                  <span>Assignment</span>
                   <span>Summary</span>
                   <span>Owner</span>
                   <span>Status</span>
@@ -486,7 +486,7 @@ export default function Tickets({ initialData, routeAction }: TicketsProps = {})
               setCreateOpen(false);
               setValidationError(null);
             }}
-            aria-label="Close create ticket modal"
+            aria-label="Close create assignment modal"
           />
           <form
             onSubmit={(event) => {
@@ -497,11 +497,11 @@ export default function Tickets({ initialData, routeAction }: TicketsProps = {})
             <div className="mb-6 flex items-start justify-between gap-4">
               <div>
                 <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-teal-300">
-                  Create Ticket
+                  Create Assignment
                 </p>
                 <h2 className="mt-2 text-2xl font-semibold text-af2-ink">Capture work with full operating context</h2>
                 <p className="mt-2 text-sm text-af2-ink-4">
-                  Create a workspace ticket with real assignees, priority, due date, and execution context.
+                  Create a mission assignment with real assignees, priority, due date, and execution context.
                 </p>
               </div>
               <button
@@ -519,7 +519,7 @@ export default function Tickets({ initialData, routeAction }: TicketsProps = {})
                 <span className="text-xs font-semibold uppercase tracking-[0.18em] text-af2-ink-4">Title</span>
                 <input
                   autoFocus
-                  aria-label="Ticket title"
+                  aria-label="Assignment title"
                   value={formState.title}
                   onChange={(event) =>
                     setFormState((current) => ({ ...current, title: event.target.value }))
@@ -533,7 +533,7 @@ export default function Tickets({ initialData, routeAction }: TicketsProps = {})
                 <span className="text-xs font-semibold uppercase tracking-[0.18em] text-af2-ink-4">Description</span>
                 <textarea
                   rows={5}
-                  aria-label="Ticket description"
+                  aria-label="Assignment description"
                   value={formState.description}
                   onChange={(event) =>
                     setFormState((current) => ({ ...current, description: event.target.value }))
@@ -575,7 +575,7 @@ export default function Tickets({ initialData, routeAction }: TicketsProps = {})
                   <span className="text-xs font-semibold uppercase tracking-[0.18em] text-af2-ink-4">Due date</span>
                   <input
                     type="datetime-local"
-                    aria-label="Ticket due date"
+                    aria-label="Assignment due date"
                     value={formState.dueDate}
                     onChange={(event) =>
                       setFormState((current) => ({ ...current, dueDate: event.target.value }))
@@ -586,7 +586,7 @@ export default function Tickets({ initialData, routeAction }: TicketsProps = {})
                 <label className="grid gap-2">
                   <span className="text-xs font-semibold uppercase tracking-[0.18em] text-af2-ink-4">Tags</span>
                   <input
-                    aria-label="Ticket tags"
+                    aria-label="Assignment tags"
                     value={formState.tags}
                     onChange={(event) =>
                       setFormState((current) => ({ ...current, tags: event.target.value }))
@@ -600,7 +600,7 @@ export default function Tickets({ initialData, routeAction }: TicketsProps = {})
               <label className="grid gap-2">
                 <span className="text-xs font-semibold uppercase tracking-[0.18em] text-af2-ink-4">Collaborators</span>
                 <select
-                  aria-label="Ticket collaborators"
+                  aria-label="Assignment collaborators"
                   multiple
                   value={formState.collaboratorKeys}
                   onChange={(event) => {

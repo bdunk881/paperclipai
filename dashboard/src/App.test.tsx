@@ -207,24 +207,26 @@ describe("App", () => {
     expect(screen.getByText("Ticket SLA Settings Page")).toBeInTheDocument();
   });
 
-  it("renders ticket routes behind authentication", async () => {
+  it("renders mission-assignments routes behind authentication (legacy /tickets redirects)", async () => {
     authState.user = { id: "user-1", email: "user@example.com", name: "User" };
     window.history.replaceState({}, "", "/tickets");
 
     render(<App />);
 
     expect(await screen.findByText("Layout Shell")).toBeInTheDocument();
-    expect(screen.getByText("Tickets Page")).toBeInTheDocument();
+    // /tickets now redirects to /mission-assignments; the Tickets component
+    // is mounted at the new path, so the same mocked label should render.
+    expect(await screen.findByText("Tickets Page")).toBeInTheDocument();
   });
 
-  it("renders ticketing routes for authenticated users", async () => {
+  it("renders mission-assignment team view for authenticated users (legacy /tickets/team redirects)", async () => {
     authState.user = { id: "user-1", email: "user@example.com", name: "User" };
     window.history.replaceState({}, "", "/tickets/team");
 
     render(<App />);
 
     expect(await screen.findByText("Layout Shell")).toBeInTheDocument();
-    expect(screen.getByText("Ticket Team Page")).toBeInTheDocument();
+    expect(await screen.findByText("Ticket Team Page")).toBeInTheDocument();
   });
 
   it("redirects unknown routes back through the authenticated root", async () => {

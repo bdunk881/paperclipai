@@ -32,6 +32,7 @@ import mcpRoutes from "./mcp/mcpRoutes";
 import memoryRoutes from "./memory/memoryRoutes";
 import agentMemoryRoutes from "./agents/agentMemoryRoutes";
 import agentRoutes from "./agents/agentRoutes";
+import { createAgentPresenceRoutes } from "./agents/agentPresenceRoutes";
 import knowledgeRoutes from "./knowledge/routes";
 import controlPlaneRoutes from "./controlPlane/controlPlaneRoutes";
 import companyRoutes from "./companies/companyRoutes";
@@ -567,6 +568,11 @@ app.use("/api/mcp/servers", requireAuth, workspaceResolver, requireRole("admin",
 // ---------------------------------------------------------------------------
 app.use("/api/memory", requireAuth, workspaceResolver, requireRole("admin", "developer"), memoryRoutes);
 app.use("/api/agents/:agentId/memory", requireAuth, workspaceResolver, requireRole("admin", "developer"), agentMemoryRoutes);
+// Wave 2a: live agent presence (Redis-backed). Mounted BEFORE the
+// catch-all agentRoutes so the /presence paths win the match. Reader
+// is open to any workspace member; the role gate matches the rest of
+// the agent surface for now.
+app.use("/api/agents", requireAuth, workspaceResolver, requireRole("admin", "developer"), createAgentPresenceRoutes());
 app.use("/api/agents", requireAuth, workspaceResolver, requireRole("admin", "developer"), agentRoutes);
 app.use("/api/integrations/apollo", apolloRoutes);
 

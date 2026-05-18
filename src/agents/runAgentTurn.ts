@@ -40,6 +40,10 @@ import {
   createSaveMemoryAgentTool,
   SAVE_MEMORY_SYSTEM_PROMPT_GUIDANCE,
 } from "./saveMemoryAgentTool";
+import {
+  filterToolsByPermissions,
+  loadAgentIntegrationPermissions,
+} from "./agentToolPermissions";
 
 const TOKEN_PREVIEW_PUBLISH_INTERVAL_MS = 200;
 const TOKEN_PREVIEW_TAIL_CHARS = 240;
@@ -114,9 +118,9 @@ export async function runAgentTurn(
 
   const model = resolveModelForTier(resolved.config.provider, input.tier ?? "standard");
 
-  const tools: AgentTool[] = [];
+  const candidateTools: AgentTool[] = [];
   if (input.includeSaveMemory !== false) {
-    tools.push(
+    candidateTools.push(
       createSaveMemoryAgentTool({
         pool: input.pool,
         workspaceId: input.workspaceId,
@@ -126,7 +130,20 @@ export async function runAgentTurn(
       }),
     );
   }
-  if (input.extraTools) tools.push(...input.extraTools);
+  if (input.extraTools) candidateTools.push(...input.extraTools);
+
+  // DASH-23: enforce the agent's integration allowlist before the
+  // provider sees the tool list. Built-in tools (save_memory) pass
+  // through; integration-backed tools must match the agent's
+  // `allowed_integration_slugs` (NULL = inherit defaults, [] = no
+  // integrations, [...] = strict subset).
+  const permissions = await loadAgentIntegrationPermissions({
+    pool: input.pool,
+    workspaceId: input.workspaceId,
+    userId: input.userId,
+    agentId: input.agentId,
+  });
+  const tools = filterToolsByPermissions(candidateTools, permissions);
 
   const systemPrompt = composeSystemPrompt(input, tools);
 

@@ -25,12 +25,34 @@ if (dsn) {
   Sentry.init({
     dsn,
     environment: process.env.SENTRY_ENVIRONMENT ?? process.env.NODE_ENV ?? "development",
+    // Tag every event with the deployed sha so Sentry "Releases" maps
+    // a stack frame to a known commit. Falls back to the GitHub Action
+    // env var; in local dev where neither is set Sentry tags as
+    // "unknown" rather than crashing init.
+    release:
+      process.env.SENTRY_RELEASE ??
+      process.env.GITHUB_SHA ??
+      process.env.FLY_IMAGE_REF ??
+      undefined,
     tracesSampleRate: 1.0,
+    // DASH-33: in v10 the supported continuous-profiling shape is
+    // { profileLifecycle: "trace" } + the profiling integration. That
+    // captures a CPU profile for every traced request automatically.
+    // profilesSampleRate is left on as a belt-and-suspenders for
+    // transaction-bound profiling on hosts that don't honor
+    // profileLifecycle yet.
     profilesSampleRate: 1.0,
+    profileLifecycle: "trace",
+    // DASH-33: dev hostnames were missing — frontend → backend traces
+    // didn't link up for any dev request. Added autoflow-api-dev
+    // (Fly internal) AND dev-api.helloautoflow.com (Cloudflare
+    // CNAME). Same shape for staging + prod to be safe.
     tracePropagationTargets: [
       "localhost",
       /^https:\/\/api\.helloautoflow\.com/,
       /^https:\/\/staging-api\.helloautoflow\.com/,
+      /^https:\/\/dev-api\.helloautoflow\.com/,
+      /^https:\/\/autoflow-api-(?:dev|staging|production)\.fly\.dev/,
     ],
     sendDefaultPii: true,
     enableLogs: true,
@@ -45,6 +67,16 @@ if (dsn) {
       Sentry.expressIntegration(),
       // PostgreSQL query tracing
       Sentry.postgresIntegration(),
+      // DASH-33: native LLM-call tracing. Sentry v10 ships first-party
+      // integrations for Anthropic, OpenAI, and Google Gen AI that
+      // monkey-patch the SDKs to auto-emit spans per messages.create /
+      // chat.completions call with prompt/response token counts.
+      // Without these, our LLM calls show up as opaque outbound HTTP
+      // requests; with them, each one becomes a labeled span we can
+      // search in Performance + correlate with cost log rows.
+      Sentry.anthropicAIIntegration(),
+      Sentry.openAIIntegration(),
+      Sentry.googleGenAIIntegration(),
       // Route console.* calls to Sentry Logs endpoint (requires enableLogs: true)
       // Note: do NOT add captureConsoleIntegration alongside this — both wrap
       // console.* methods and the conflict silently breaks log forwarding

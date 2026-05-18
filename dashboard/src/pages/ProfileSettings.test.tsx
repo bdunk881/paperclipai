@@ -69,30 +69,23 @@ describe("ProfileSettings", () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
-  it("falls back to sessionStorage on 404", async () => {
+  it("surfaces 404 as an error after DASH-41 mounted profileRoutes", async () => {
+    // Pre-DASH-41 the page treated a 404 as "backend not implemented yet"
+    // and silently fell back to sessionStorage. After mounting profileRoutes
+    // at /api/user, a 404 is a real error — show it, fall back to the
+    // auth-provided defaults so the form is still editable.
     const fetchMock = vi.fn().mockResolvedValueOnce({
       ok: false,
       status: 404,
       statusText: "Not Found",
-      json: async () => ({ error: "Not found" }),
+      json: async () => ({ error: "Profile not found" }),
     });
     vi.stubGlobal("fetch", fetchMock);
 
-    const mockStorage = {
-      getItem: vi.fn().mockReturnValue(
-        JSON.stringify({ displayName: "Local User", timezone: "Europe/London" })
-      ),
-      setItem: vi.fn(),
-      removeItem: vi.fn(),
-    };
-    vi.stubGlobal("sessionStorage", mockStorage);
-
     render(<ProfileSettings />);
 
-    await waitFor(() => {
-      expect(screen.getByDisplayValue("Local User")).toBeInTheDocument();
-    });
-    expect(screen.getByDisplayValue("Europe/London")).toBeInTheDocument();
+    expect(await screen.findByText("Profile not found")).toBeInTheDocument();
+    expect(await screen.findByDisplayValue("Test User")).toBeInTheDocument();
   });
 
   it("successful save shows success toast", async () => {
@@ -122,14 +115,7 @@ describe("ProfileSettings", () => {
     });
   });
 
-  it("save with 404 falls back to sessionStorage", async () => {
-    const mockStorage = {
-      getItem: vi.fn().mockReturnValue(null),
-      setItem: vi.fn(),
-      removeItem: vi.fn(),
-    };
-    vi.stubGlobal("sessionStorage", mockStorage);
-
+  it("save with 404 surfaces error (no sessionStorage fallback after DASH-41)", async () => {
     const fetchMock = vi.fn()
       .mockResolvedValueOnce({
         ok: true,
@@ -140,7 +126,7 @@ describe("ProfileSettings", () => {
         ok: false,
         status: 404,
         statusText: "Not Found",
-        json: async () => ({ error: "Not found" }),
+        json: async () => ({ error: "Profile not found" }),
       });
     vi.stubGlobal("fetch", fetchMock);
 
@@ -153,9 +139,8 @@ describe("ProfileSettings", () => {
     fireEvent.click(screen.getByText("Save changes"));
 
     await waitFor(() => {
-      expect(screen.getByText("Profile saved locally while the backend endpoint is pending.")).toBeInTheDocument();
+      expect(screen.getByText("Failed to save profile. Please try again.")).toBeInTheDocument();
     });
-    expect(mockStorage.setItem).toHaveBeenCalled();
   });
 
   it("save with server error shows error toast", async () => {

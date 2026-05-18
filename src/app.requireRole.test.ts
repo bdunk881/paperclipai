@@ -49,6 +49,11 @@ const ALLOWLIST = new Set<string>([
   // data for every workspace + every user (3 tier definitions +
   // availability flags read from process.env). No mutation paths.
   "/api/hosted-free-models",
+  // DASH-41: user profile (displayName, timezone) is an account-level
+  // resource scoped to req.auth.sub, not a workspace. No workspace
+  // context applies, so requireRole has no role to gate. The router
+  // itself enforces ownership via getAuthenticatedUser(req).
+  "/api/user",
 ]);
 
 interface AuthenticatedMount {

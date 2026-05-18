@@ -38,8 +38,15 @@ const TABS: TabDef[] = [
   {
     key: "in_flight",
     label: "In flight",
+    // DASH-34: hiring-plan confirm sets missions.status to 'active'
+    // (see src/missions/hiringPlanRoutes.ts: "UPDATE missions SET
+    // status = 'active'"). The tab matcher previously didn't include
+    // 'active', so confirmed missions with a provisioned team only
+    // showed up under "All" — the default "In flight" view looked
+    // empty even when a team was visible on the Teams page.
     match: (m) =>
       m.status === "in_flight" ||
+      m.status === "active" ||
       m.status === "blocked" ||
       m.status === "running",
   },
@@ -76,6 +83,7 @@ function progressFor(status: string): number {
     case "awaiting_approval":
       return 0.75;
     case "in_flight":
+    case "active":
     case "running":
       return 0.5;
     case "blocked":

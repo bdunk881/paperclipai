@@ -141,6 +141,49 @@ export interface LLMProviderConfig {
    * code path and just never fires `onText`.
    */
   onText?: (delta: string, accumulated: string) => void;
+  /**
+   * Optional agentic tool loop. When at least one tool is supplied,
+   * the provider runs a multi-turn loop: model emits a tool call →
+   * provider invokes the matching handler → handler's result is fed
+   * back as a tool message → model continues until it stops calling
+   * tools. The final assistant text is returned in `LLMResponse.text`.
+   *
+   * Mutually exclusive with `responseFormat` (JSON-mode forces tool
+   * use to a single fixed tool — there's no loop). Providers that
+   * haven't been wired (everything except Anthropic today) silently
+   * ignore `tools` and fall back to the single-turn completion path.
+   *
+   * `maxToolIterations` caps the loop to prevent runaway agents — a
+   * model that keeps emitting tool calls past the cap returns its
+   * last text turn with an `[interrupted: max iterations]` suffix.
+   * Defaults to 8 when omitted.
+   */
+  tools?: AgentTool[];
+  maxToolIterations?: number;
+}
+
+/**
+ * A tool the model can call during an agentic turn. The provider
+ * loop translates the model's tool_use block into a call against
+ * `handler(input)` and feeds the JSON-serialized result back as the
+ * next message.
+ *
+ * `inputSchema` is a JSON Schema describing the tool's input. Most
+ * providers want the same shape (Anthropic, OpenAI, Mistral, Gemini
+ * all accept a JSON-Schema-ish object); the provider wrapper massages
+ * shape differences.
+ */
+export interface AgentTool {
+  name: string;
+  description: string;
+  inputSchema: Record<string, unknown>;
+  /**
+   * Invoked with the model's tool_use input. The returned value is
+   * JSON-stringified and returned to the model as the tool_result.
+   * Throw to surface an error to the model — the loop continues so
+   * the model can try a different approach.
+   */
+  handler: (input: Record<string, unknown>) => Promise<unknown>;
 }
 
 export interface LLMResponse {

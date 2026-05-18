@@ -2177,44 +2177,42 @@ describe("GET /api/runs/:id", () => {
 describe("POST /api/runs/:id/retry", () => {
   it("returns 503 when Redis is not configured", async () => {
     await runStore.create({
-      id: "run-failed-retry-test",
+      id: "run-failed-retry-v",
       templateId: "tpl-support-bot",
       templateName: "Customer Support Bot",
       status: "failed",
       startedAt: new Date().toISOString(),
       input: {},
       stepResults: [],
-      userId: "test-user",
     });
     const res = await request(app)
-      .post("/api/runs/run-failed-retry-test/retry")
-      .set(asAuth());
+      .post("/api/runs/run-failed-retry-v/retry")
+      .set(asAuth("ver-retry-usr"));
     expect(res.status).toBe(503);
     expect(res.body.error).toMatch(/queue/i);
   });
 
   it("returns 409 when run is not in failed status", async () => {
     await runStore.create({
-      id: "run-completed-retry-test",
+      id: "run-completed-retry-v",
       templateId: "tpl-support-bot",
       templateName: "Customer Support Bot",
       status: "completed",
       startedAt: new Date().toISOString(),
       input: {},
       stepResults: [],
-      userId: "test-user",
     });
     const res = await request(app)
-      .post("/api/runs/run-completed-retry-test/retry")
-      .set(asAuth());
+      .post("/api/runs/run-completed-retry-v/retry")
+      .set(asAuth("ver-retry-usr"));
     expect(res.status).toBe(409);
     expect(res.body.error).toMatch(/status/i);
   });
 
   it("returns 404 for unknown run id", async () => {
     const res = await request(app)
-      .post("/api/runs/run-does-not-exist/retry")
-      .set(asAuth());
+      .post("/api/runs/run-does-not-exist-ver/retry")
+      .set(asAuth("ver-retry-usr"));
     expect(res.status).toBe(404);
   });
 });
@@ -2226,53 +2224,51 @@ describe("POST /api/runs/:id/retry", () => {
 describe("POST /api/runs/:id/replay-with-latest", () => {
   it("returns 404 for an unknown run id", async () => {
     const res = await request(app)
-      .post("/api/runs/run-does-not-exist/replay-with-latest")
-      .set(asAuth());
+      .post("/api/runs/run-does-not-exist-ver/replay-with-latest")
+      .set(asAuth("ver-replay-usr"));
     expect(res.status).toBe(404);
     expect(res.body.error).toMatch(/not found/i);
   });
 
   it("returns 409 when the run is still queued", async () => {
     await runStore.create({
-      id: "run-queued-replay",
+      id: "run-queued-replay-v",
       templateId: "tpl-support-bot",
       templateName: "Customer Support Bot",
       status: "queued",
       startedAt: new Date().toISOString(),
       input: {},
       stepResults: [],
-      userId: "test-user",
     });
     const res = await request(app)
-      .post("/api/runs/run-queued-replay/replay-with-latest")
-      .set(asAuth());
+      .post("/api/runs/run-queued-replay-v/replay-with-latest")
+      .set(asAuth("ver-replay-usr"));
     expect(res.status).toBe(409);
     expect(res.body.error).toMatch(/queued/i);
   });
 
   it("returns 202 with a new run for a completed run", async () => {
     await runStore.create({
-      id: "run-completed-replay",
+      id: "run-completed-replay-v",
       templateId: "tpl-support-bot",
       templateName: "Customer Support Bot",
       status: "completed",
       startedAt: new Date().toISOString(),
       input: { ticketId: "TKT-999" },
       stepResults: [],
-      userId: "test-user",
     });
     const res = await request(app)
-      .post("/api/runs/run-completed-replay/replay-with-latest")
-      .set(asAuth());
+      .post("/api/runs/run-completed-replay-v/replay-with-latest")
+      .set(asAuth("ver-replay-usr"));
     expect(res.status).toBe(202);
     expect(res.body.id).toBeDefined();
-    expect(res.body.id).not.toBe("run-completed-replay");
+    expect(res.body.id).not.toBe("run-completed-replay-v");
     expect(res.body.templateId).toBe("tpl-support-bot");
   });
 
   it("returns 401 when not authenticated", async () => {
     const res = await request(app)
-      .post("/api/runs/some-run-id/replay-with-latest");
+      .post("/api/runs/some-run-id-ver/replay-with-latest");
     expect(res.status).toBe(401);
   });
 });

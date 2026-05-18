@@ -1113,20 +1113,23 @@ app.post("/api/runs/:id/retry", requireAuthOrQaBypass, workspaceResolver, async 
   }
 
   const runQueue = getRunQueue();
-  if (runQueue) {
-    await runQueue.add(
-      "run",
-      {
-        runId,
-        templateId: run.templateId,
-        workflowVersionId: run.workflowVersionId,
-        workspaceId: run.workspaceId ?? "",
-        stepIndex: 0,
-        idempotencyKey: `${runId}:retry:${Date.now()}`,
-      },
-      { jobId: `retry-${runId}-${Date.now()}` }
-    );
+  if (!runQueue) {
+    res.status(503).json({ error: "Queue unavailable: retry requires an active Redis connection" });
+    return;
   }
+
+  await runQueue.add(
+    "run",
+    {
+      runId,
+      templateId: run.templateId,
+      workflowVersionId: run.workflowVersionId,
+      workspaceId: run.workspaceId ?? "",
+      stepIndex: 0,
+      idempotencyKey: `${runId}:retry:${Date.now()}`,
+    },
+    { jobId: `retry-${runId}-${Date.now()}` }
+  );
 
   const updated = await runStore.update(runId, {
     status: "queued",

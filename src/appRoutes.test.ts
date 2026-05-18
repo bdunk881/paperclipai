@@ -9,6 +9,14 @@ jest.mock("./engine/llmProviders", () => ({
   getProvider: jest.fn(),
 }));
 
+const mockQueueAdd = jest.fn().mockResolvedValue({ id: "job-1" });
+jest.mock("./queue/queues", () => ({
+  getRunQueue: jest.fn(() => ({ add: mockQueueAdd })),
+  getDlqQueue: jest.fn(() => null),
+  resetRunQueueForTests: jest.fn(),
+  resetDlqQueueForTests: jest.fn(),
+}));
+
 // Bypass workspace resolution — set req.workspace with owner role so requireRole() always passes.
 jest.mock("./middleware/workspaceResolver", () => ({
   createWorkspaceResolver: jest.fn(() => (req: Record<string, unknown>, _res: unknown, next: () => void) => {
@@ -55,6 +63,8 @@ beforeEach(async () => {
   await runStore.clear();
   llmConfigStore.clear();
   mockGetProvider.mockReset();
+  mockQueueAdd.mockReset();
+  mockQueueAdd.mockResolvedValue({ id: "job-1" });
   jest.restoreAllMocks();
 });
 
@@ -1094,5 +1104,28 @@ describe("POST /api/runs/:id/retry", () => {
     const res = await request(app).post("/api/runs/run-failed-2/retry");
     expect(res.status).toBe(200);
     expect(res.body.status).toBe("queued");
+    expect(mockQueueAdd).toHaveBeenCalledTimes(1);
+  });
+
+  it("returns 503 when the run queue is unavailable (no Redis)", async () => {
+    const { getRunQueue } = jest.requireMock("./queue/queues") as { getRunQueue: jest.Mock };
+    getRunQueue.mockReturnValueOnce(null);
+
+    await runStore.create({
+      id: "run-failed-3",
+      templateId: "tpl-c",
+      templateName: "Workflow C",
+      status: "failed",
+      startedAt: new Date().toISOString(),
+      input: {},
+      stepResults: [],
+      userId: "test-user-id",
+    });
+
+    const res = await request(app).post("/api/runs/run-failed-3/retry");
+    expect(res.status).toBe(503);
+    expect(res.body.error).toMatch(/queue unavailable/i);
+    const unchanged = await runStore.get("run-failed-3");
+    expect(unchanged?.status).toBe("failed");
   });
 });

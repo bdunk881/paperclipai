@@ -10,8 +10,9 @@ jest.mock("./engine/llmProviders", () => ({
 }));
 
 const mockQueueAdd = jest.fn().mockResolvedValue({ id: "job-1" });
+const mockQueueGetJob = jest.fn().mockResolvedValue(null);
 jest.mock("./queue/queues", () => ({
-  getRunQueue: jest.fn(() => ({ add: mockQueueAdd })),
+  getRunQueue: jest.fn(() => ({ add: mockQueueAdd, getJob: mockQueueGetJob })),
   getDlqQueue: jest.fn(() => null),
   resetRunQueueForTests: jest.fn(),
   resetDlqQueueForTests: jest.fn(),
@@ -65,6 +66,8 @@ beforeEach(async () => {
   mockGetProvider.mockReset();
   mockQueueAdd.mockReset();
   mockQueueAdd.mockResolvedValue({ id: "job-1" });
+  mockQueueGetJob.mockReset();
+  mockQueueGetJob.mockResolvedValue(null);
   jest.restoreAllMocks();
 });
 
@@ -1111,6 +1114,27 @@ describe("POST /api/runs/:id/retry", () => {
       expect.objectContaining({ runId: "run-failed-2" }),
       expect.objectContaining({ jobId: "run-failed-2" }),
     );
+  });
+
+  it("removes a stale failed BullMQ job before re-enqueuing", async () => {
+    const mockRemove = jest.fn().mockResolvedValue(undefined);
+    mockQueueGetJob.mockResolvedValue({ id: "run-failed-2", remove: mockRemove });
+
+    await runStore.create({
+      id: "run-failed-2b",
+      templateId: "tpl-b",
+      templateName: "Workflow B",
+      status: "failed",
+      startedAt: new Date().toISOString(),
+      input: {},
+      stepResults: [],
+      userId: "test-user-id",
+    });
+
+    const res = await request(app).post("/api/runs/run-failed-2b/retry");
+    expect(res.status).toBe(200);
+    expect(mockRemove).toHaveBeenCalledTimes(1);
+    expect(mockQueueAdd).toHaveBeenCalledTimes(1);
   });
 
   it("returns 503 when the run queue is unavailable (no Redis)", async () => {

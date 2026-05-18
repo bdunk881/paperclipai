@@ -1118,6 +1118,19 @@ app.post("/api/runs/:id/retry", requireAuthOrQaBypass, workspaceResolver, async 
     return;
   }
 
+  // BullMQ keeps failed jobs until removeOnFail is exhausted, so a re-add
+  // with the same jobId silently no-ops. Remove the stale failed job first
+  // so the retry actually lands in the waiting set.
+  try {
+    const staleJob = await runQueue.getJob(runId);
+    if (staleJob) {
+      await staleJob.remove();
+    }
+  } catch {
+    // Removal is best-effort; if it fails the add below will still throw on
+    // duplicate conflict rather than silently succeed.
+  }
+
   await runQueue.add(
     "run",
     {

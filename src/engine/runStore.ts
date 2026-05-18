@@ -610,6 +610,7 @@ export const runStore = {
     const existing = memoryStore.get(id);
     if (existing) {
       existing.status = "failed";
+      existing.error = reason;
       existing.failureReason = reason;
       existing.failedAt = now;
       existing.completedAt = now;
@@ -625,6 +626,7 @@ export const runStore = {
       await pool.query(
         `UPDATE runs
             SET status = 'failed',
+                error = $2,
                 failure_reason = $2,
                 failed_at = now(),
                 ended_at = COALESCE(ended_at, now()),

@@ -321,24 +321,53 @@ export type TeamAssemblyResult = z.infer<typeof teamAssemblyResultSchema>;
 export function buildTeamAssemblyPrompt(input: TeamAssemblyRequest): string {
   const companyName = input.companyName?.trim() || "Unnamed Company";
 
+  // DASH-32: the LLM is the team architect, not a catalogue picker.
+  // Earlier prompt told it to "Select only the roles needed... drawn
+  // from the provided role library" + "do not invent roles outside
+  // the provided role library." Result: plans looked templated because
+  // the model copied the library's verbatim mandates.
+  //
+  // New framing:
+  //   - Library = OPTIONAL reference for common skill/tool vocabulary
+  //     and tier conventions (so 'cto' role names stay consistent
+  //     across workspaces). It is NOT a menu.
+  //   - The LLM owns role choice, role count, role names, mandates,
+  //     justifications, KPIs. It must design the team from the goal.
+  //   - Drop the "prefer lean teams" anchor — that biased the model
+  //     toward 3-4 person plans regardless of mission complexity.
   return [
-    "You are the CEO agent for AutoFlow.",
-    "Turn a normalized goal document into a staffing plan drawn from the provided role library.",
-    "Return JSON only. Do not wrap the response in markdown fences.",
-    `Use schemaVersion exactly \"${TEAM_ASSEMBLY_SCHEMA_VERSION}\".`,
-    "Select only the roles needed to achieve the goal in the next 90 days.",
-    "Prefer lean teams and do not invent roles outside the provided role library.",
-    "Every recommended role must include KPIs, skills, tools, model tier, and provisioning instructions.",
-    "Use budgetMonthlyUsd as null if you cannot infer a credible number from the context.",
-    "The provisioningPlan.agents array must contain every recommended role exactly once.",
-    "Make reportingLines consistent with reportsToRoleKey values.",
+    "You are the founding architect of an agentic AI team for a real company.",
+    "Read the goal carefully. Design the team THAT GOAL needs — not a generic startup team.",
+    "Every role you propose must be load-bearing for the goal. Cut anything that isn't.",
     "",
-    "Return this JSON object shape:",
+    "You decide:",
+    "  - WHICH roles exist (invent them; don't pick from a menu)",
+    "  - HOW MANY roles (could be 2, could be 12 — match the goal's scope)",
+    "  - WHO each role reports to",
+    "  - WHAT each role's mandate, KPIs, skills, and tools are",
+    "  - WHICH model tier (lite/standard/power) fits each role's reasoning load",
+    "",
+    "Quality bar for each StaffingRecommendation:",
+    "  - mandate: ONE sentence in the role's voice describing what they own. Specific to THIS company's goal — not generic.",
+    "  - justification: ONE sentence explaining why THIS role is essential to THIS goal.",
+    "  - kpis: 2-4 quantifiable outcomes the role moves. Not vanity metrics.",
+    "  - skills: concrete capabilities (e.g., 'b2b copywriting', 'SQL', 'cold outbound') — not buzzwords.",
+    "  - tools: actual SaaS the role uses (e.g., 'hubspot', 'github', 'slack') — kebab-case, lowercase.",
+    "  - modelTier: 'power' for ambiguous strategy work, 'standard' for execution, 'lite' for high-volume rote work.",
+    "  - budgetMonthlyUsd: an honest monthly LLM spend estimate, or null if you genuinely can't tell.",
+    "",
+    "Output format:",
+    "  - Return JSON only. No prose, no markdown fences.",
+    `  - schemaVersion must be exactly "${TEAM_ASSEMBLY_SCHEMA_VERSION}".`,
+    "  - provisioningPlan.agents must list every role exactly once (mirrors orgChart.executives + operators).",
+    "  - reportingLines must reconcile with reportsToRoleKey on each role.",
+    "",
+    "Return this JSON shape:",
     "{",
     `  "schemaVersion": "${TEAM_ASSEMBLY_SCHEMA_VERSION}",`,
     '  "company": { "name": string | null, "goal": string, "targetCustomer": string | null, "budget": string | null, "timeHorizon": string | null },',
-    '  "summary": string,',
-    '  "rationale": string,',
+    '  "summary": string,             // 1-2 sentences describing the team and how it ships the goal',
+    '  "rationale": string,           // why this shape vs. alternatives — be opinionated',
     '  "orgChart": {',
     '    "executives": [StaffingRecommendation],',
     '    "operators": [StaffingRecommendation],',
@@ -358,11 +387,11 @@ export function buildTeamAssemblyPrompt(input: TeamAssemblyRequest): string {
     "",
     "StaffingRecommendation shape:",
     "{",
-    '  "roleKey": string,',
-    '  "title": string,',
-    '  "roleType": "executive" | "operator",',
-    '  "department": string,',
-    '  "headcount": number,',
+    '  "roleKey": string,             // lowercase-kebab unique key you invent, e.g. "outbound-sdr", "rev-ops-analyst"',
+    '  "title": string,               // human-readable title',
+    '  "roleType": "executive" | "operator",  // executive = strategy + cross-team coord; operator = direct execution',
+    '  "department": string,          // e.g. "sales", "engineering", "growth"',
+    '  "headcount": number,           // usually 1; higher only when the workload genuinely needs parallel agents',
     '  "reportsToRoleKey": string | null,',
     '  "mandate": string,',
     '  "justification": string,',
@@ -371,16 +400,22 @@ export function buildTeamAssemblyPrompt(input: TeamAssemblyRequest): string {
     '  "tools": string[],',
     '  "modelTier": "lite" | "standard" | "power",',
     '  "budgetMonthlyUsd": number | null,',
-    '  "provisioningInstructions": string',
+    '  "provisioningInstructions": string  // 1-2 sentences on how to brief this role on day one',
     "}",
     "",
     `Company name: ${companyName}`,
     "",
-    `Normalized goal document:\n${JSON.stringify(input.normalizedGoalDocument, null, 2)}`,
+    `Goal document:\n${JSON.stringify(input.normalizedGoalDocument, null, 2)}`,
     "",
-    `PRD:\n${JSON.stringify(input.prd ?? null, null, 2)}`,
+    `PRD (optional, may be null):\n${JSON.stringify(input.prd ?? null, null, 2)}`,
     "",
-    `Role library:\n${JSON.stringify(input.roleLibrary, null, 2)}`,
+    // Reference is offered LAST + framed as inspiration so the model
+    // doesn't read it as constraint. The user-facing "Add this role"
+    // UX (tracked separately) will use this same library directly,
+    // bypassing the LLM, when an owner wants to pin a pre-built role.
+    "Reference library (skills/tools vocabulary + common archetypes):",
+    "Treat this as a glossary — borrow skill labels and tool slugs from here for consistency, but invent any role this goal actually needs. Do NOT limit yourself to the entries below.",
+    JSON.stringify(input.roleLibrary, null, 2),
   ].join("\n");
 }
 

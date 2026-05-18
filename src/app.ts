@@ -601,20 +601,42 @@ app.use("/api/agents", requireAuth, workspaceResolver, requireRole("admin", "dev
 // time. In-memory mode returns 501 across the wizard surface.
 const agentJobDescriptionRoutes = isPostgresPersistenceEnabled()
   ? createAgentJobDescriptionRoutes(getPostgresPool())
-  : express.Router().all("*", (_req, res) =>
-      res.status(501).json({ error: "Job description wizard requires PostgreSQL persistence." }),
-    );
+  : // DASH-26: same scoping as agentActionsRoutes below — `.all("*")`
+    // would hijack every /api/agents/* path including /budget,
+    // /heartbeat, /runs that belong to agentRoutes mounted later.
+    makePgGatedFallback("Job description wizard", [
+      "/:agentId/job-description/draft",
+    ]);
 app.use("/api/agents", requireAuth, workspaceResolver, requireRole("admin", "developer"), agentJobDescriptionRoutes);
 // Wave 5: agent action routes — POST /:agentId/check-in and
 // /:agentId/handoff. Both create a mission_assignment ticket through
 // the existing ticketStore; check-in additionally flips presence to
 // "checking-in" so the dashboard pill reflects the request. Same
 // Postgres gating as the wizard above.
+//
+// DASH-26: when Postgres is unavailable the fallback router MUST
+// scope its 501 to the action paths it owns — an `.all("*")` would
+// hijack every /api/agents/* request and short-circuit the
+// agentRoutes mount immediately below (so /budget, /heartbeat,
+// /runs et al. would all 501 too, which is what's been breaking
+// the CI test suite + blocking every dev Fly deploy since DASH-14).
+const PG_GATED_AGENT_ACTION_PATHS = [
+  "/priority-classify",
+  "/:agentId/check-in",
+  "/:agentId/handoff",
+];
+function makePgGatedFallback(label: string, paths: string[]) {
+  const router = express.Router();
+  for (const path of paths) {
+    router.all(path, (_req, res) =>
+      res.status(501).json({ error: `${label} requires PostgreSQL persistence.` }),
+    );
+  }
+  return router;
+}
 const agentActionsRoutes = isPostgresPersistenceEnabled()
   ? createAgentActionsRoutes(getPostgresPool())
-  : express.Router().all("*", (_req, res) =>
-      res.status(501).json({ error: "Agent actions require PostgreSQL persistence." }),
-    );
+  : makePgGatedFallback("Agent actions", PG_GATED_AGENT_ACTION_PATHS);
 app.use("/api/agents", requireAuth, workspaceResolver, requireRole("admin", "developer"), agentActionsRoutes);
 app.use("/api/agents", requireAuth, workspaceResolver, requireRole("admin", "developer"), agentRoutes);
 app.use("/api/integrations/apollo", apolloRoutes);

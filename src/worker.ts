@@ -11,6 +11,12 @@
  * Actual step execution is wired in HEL-107+.
  */
 
+// DASH-29: Sentry instrument MUST load first — same reasoning as
+// src/index.ts. The worker process emits Sentry events for queue
+// failures, retry exhaustion, etc. None of those events shipped
+// before this import was added.
+import "./instrument";
+
 import { Worker, Job, Queue } from "bullmq";
 import { getRedisClient } from "./queue/redisClient";
 import type { RunJobPayload } from "./queue/queues";

@@ -93,4 +93,8 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
 EXPOSE 8080
 
 ENTRYPOINT ["autoflow-api-entrypoint"]
-CMD ["node", "dist/index.js"]
+# DASH-29: --require ./dist/instrument.js loads Sentry's SDK before
+# anything else. Belt-and-suspenders alongside the `import "./instrument"`
+# first-line statement in src/index.ts. fly.api.dev.toml overrides this
+# CMD via [processes]; staging + production use this Dockerfile default.
+CMD ["node", "--require", "./dist/instrument.js", "dist/index.js"]

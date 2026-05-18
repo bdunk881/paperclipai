@@ -1105,6 +1105,12 @@ describe("POST /api/runs/:id/retry", () => {
     expect(res.status).toBe(200);
     expect(res.body.status).toBe("queued");
     expect(mockQueueAdd).toHaveBeenCalledTimes(1);
+    // jobId must equal runId so the cancel endpoint's getJob(runId) can find it
+    expect(mockQueueAdd).toHaveBeenCalledWith(
+      "run",
+      expect.objectContaining({ runId: "run-failed-2" }),
+      expect.objectContaining({ jobId: "run-failed-2" }),
+    );
   });
 
   it("returns 503 when the run queue is unavailable (no Redis)", async () => {

@@ -1128,7 +1128,7 @@ app.post("/api/runs/:id/retry", requireAuthOrQaBypass, workspaceResolver, async 
       stepIndex: 0,
       idempotencyKey: `${runId}:retry:${Date.now()}`,
     },
-    { jobId: `retry-${runId}-${Date.now()}` }
+    { jobId: runId }
   );
 
   const updated = await runStore.update(runId, {

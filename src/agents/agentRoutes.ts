@@ -1,6 +1,11 @@
 import express from "express";
 import { AuthenticatedRequest } from "../auth/authMiddleware";
 import { controlPlaneStore } from "../controlPlane/controlPlaneStore";
+import {
+  getPostgresPool,
+  isPostgresPersistenceEnabled,
+} from "../db/postgres";
+import { withWorkspaceContext } from "../middleware/workspaceContext";
 import { WorkspaceAwareRequest } from "../middleware/workspaceResolver";
 
 const router = express.Router();
@@ -54,44 +59,190 @@ function toDashboardRunStatus(
   return status;
 }
 
-router.get("/", (req: WorkspaceAwareRequest, res) => {
+router.get("/", async (req: WorkspaceAwareRequest, res) => {
   const context = resolveRequestContext(req);
   if (!context) {
     res.status(401).json({ error: "Authenticated user required" });
     return;
   }
 
-  const teams = new Map(controlPlaneStore.listTeams(context.userId, context.workspaceId).map((team) => [team.id, team]));
-  const agents = controlPlaneStore.listAllAgents(context.userId, context.workspaceId).map((agent) => {
-    const team = teams.get(agent.teamId);
-    const executions = controlPlaneStore.listAgentExecutions(agent.id, context.userId, context.workspaceId);
-    const lastExecution = executions.at(-1);
-    return {
-      id: agent.id,
-      userId: agent.userId,
-      name: agent.name,
-      description: team?.description ?? null,
-      roleKey: agent.roleKey,
-      model: agent.model ?? null,
-      instructions: agent.instructions,
-      status: toDashboardAgentStatus(agent.status, agent.lastHeartbeatStatus),
-      budgetMonthlyUsd: agent.budgetMonthlyUsd,
-      metadata: {
-        teamId: agent.teamId,
-        teamName: team?.name ?? null,
-        reportingToAgentId: agent.reportingToAgentId ?? null,
-        workflowStepId: agent.workflowStepId ?? null,
-        workflowStepKind: agent.workflowStepKind ?? null,
-      },
-      lastHeartbeatAt: agent.lastHeartbeatAt ?? null,
-      lastRunAt: lastExecution?.completedAt ?? lastExecution?.startedAt ?? null,
-      createdAt: agent.createdAt,
-      updatedAt: agent.updatedAt,
-    };
-  });
+  const teams = new Map(
+    controlPlaneStore
+      .listTeams(context.userId, context.workspaceId)
+      .map((team) => [team.id, team]),
+  );
 
-  res.json({ agents, total: agents.length });
+  const inMemoryAgents = controlPlaneStore
+    .listAllAgents(context.userId, context.workspaceId)
+    .map((agent) => {
+      const team = teams.get(agent.teamId);
+      const executions = controlPlaneStore.listAgentExecutions(
+        agent.id,
+        context.userId,
+        context.workspaceId,
+      );
+      const lastExecution = executions.at(-1);
+      return {
+        id: agent.id,
+        userId: agent.userId,
+        name: agent.name,
+        description: team?.description ?? null,
+        roleKey: agent.roleKey,
+        model: agent.model ?? null,
+        instructions: agent.instructions,
+        status: toDashboardAgentStatus(agent.status, agent.lastHeartbeatStatus),
+        budgetMonthlyUsd: agent.budgetMonthlyUsd,
+        metadata: {
+          teamId: agent.teamId,
+          teamName: team?.name ?? null,
+          reportingToAgentId: agent.reportingToAgentId ?? null,
+          workflowStepId: agent.workflowStepId ?? null,
+          workflowStepKind: agent.workflowStepKind ?? null,
+        },
+        lastHeartbeatAt: agent.lastHeartbeatAt ?? null,
+        lastRunAt: lastExecution?.completedAt ?? lastExecution?.startedAt ?? null,
+        createdAt: agent.createdAt,
+        updatedAt: agent.updatedAt,
+      };
+    });
+
+  // DASH-27: hiring-plan confirm writes agents directly to Postgres
+  // via withWorkspaceContext + raw INSERT — they never land in the
+  // legacy in-memory controlPlaneStore. Read both stores and merge
+  // by agent.id so newly-provisioned agents show up on the Team
+  // page without a server restart. The in-memory store stays as
+  // the source for runtime-only fields (lastHeartbeatStatus,
+  // executions) that the canonical Postgres rows don't carry yet.
+  const inMemoryById = new Map(inMemoryAgents.map((a) => [a.id, a]));
+  const merged = [...inMemoryAgents];
+  if (
+    isPostgresPersistenceEnabled() &&
+    context.workspaceId &&
+    typeof context.workspaceId === "string"
+  ) {
+    try {
+      const pgAgents = await loadCanonicalAgents(
+        context.workspaceId,
+        context.userId,
+      );
+      for (const agent of pgAgents) {
+        if (!inMemoryById.has(agent.id)) merged.push(agent);
+      }
+    } catch (err) {
+      console.warn(
+        `[agentRoutes] canonical Postgres read failed (continuing with in-memory only): ${
+          (err as Error).message
+        }`,
+      );
+    }
+  }
+
+  res.json({ agents: merged, total: merged.length });
 });
+
+/**
+ * Loads agents directly from the canonical `agents` Postgres table for
+ * the active workspace. Shape matches the in-memory dashboard payload
+ * above so the route can append without per-source transforms in the
+ * UI. Joined to `agent_teams` for the teamName field.
+ */
+async function loadCanonicalAgents(
+  workspaceId: string,
+  userId: string,
+): Promise<
+  Array<{
+    id: string;
+    userId: string;
+    name: string;
+    description: string | null;
+    roleKey: string;
+    model: string | null;
+    instructions: string;
+    status: DashboardAgentStatus;
+    budgetMonthlyUsd: number;
+    metadata: {
+      teamId: string;
+      teamName: string | null;
+      reportingToAgentId: string | null;
+      workflowStepId: string | null;
+      workflowStepKind: string | null;
+    };
+    lastHeartbeatAt: string | null;
+    lastRunAt: string | null;
+    createdAt: string;
+    updatedAt: string;
+  }>
+> {
+  interface AgentRow {
+    id: string;
+    workspace_id: string;
+    user_id: string;
+    team_id: string;
+    name: string;
+    role_key: string;
+    model: string | null;
+    instructions: string | null;
+    budget_monthly_usd: string | number;
+    reporting_to_agent_id: string | null;
+    status: "active" | "paused" | "terminated";
+    last_heartbeat_at: Date | string | null;
+    created_at: Date | string;
+    updated_at: Date | string;
+    team_name: string | null;
+    team_description: string | null;
+  }
+
+  const pool = getPostgresPool();
+  return withWorkspaceContext(
+    pool,
+    { workspaceId, userId },
+    async (client) => {
+      const result = await client.query<AgentRow>(
+        `SELECT a.id, a.workspace_id, a.user_id, a.team_id, a.name,
+                a.role_key, a.model, a.instructions, a.budget_monthly_usd,
+                a.reporting_to_agent_id, a.status, a.last_heartbeat_at,
+                a.created_at, a.updated_at,
+                t.name AS team_name, t.description AS team_description
+           FROM agents a
+           LEFT JOIN agent_teams t ON t.id = a.team_id
+          WHERE a.workspace_id = $1
+          ORDER BY a.created_at ASC`,
+        [workspaceId],
+      );
+      return result.rows.map((row) => ({
+        id: row.id,
+        userId: row.user_id,
+        name: row.name,
+        description: row.team_description,
+        roleKey: row.role_key,
+        model: row.model,
+        instructions: row.instructions ?? "",
+        status: toDashboardAgentStatus(row.status),
+        budgetMonthlyUsd: Number(row.budget_monthly_usd),
+        metadata: {
+          teamId: row.team_id,
+          teamName: row.team_name,
+          reportingToAgentId: row.reporting_to_agent_id,
+          workflowStepId: null,
+          workflowStepKind: null,
+        },
+        lastHeartbeatAt:
+          row.last_heartbeat_at instanceof Date
+            ? row.last_heartbeat_at.toISOString()
+            : (row.last_heartbeat_at ?? null),
+        lastRunAt: null,
+        createdAt:
+          row.created_at instanceof Date
+            ? row.created_at.toISOString()
+            : String(row.created_at),
+        updatedAt:
+          row.updated_at instanceof Date
+            ? row.updated_at.toISOString()
+            : String(row.updated_at),
+      }));
+    },
+  );
+}
 
 router.get("/:id/heartbeat", (req: WorkspaceAwareRequest, res) => {
   const context = resolveRequestContext(req);

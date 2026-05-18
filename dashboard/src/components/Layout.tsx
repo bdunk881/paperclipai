@@ -4,6 +4,7 @@ import {
   Home,
   Target,
   Stamp,
+  MessageSquare,
   Activity,
   ClipboardList,
   Users,
@@ -54,6 +55,8 @@ const NAV_SECTIONS: Array<{ title: string; items: NavItem[] }> = [
         label: "Assignments",
       },
       { to: "/approvals", icon: Stamp, label: "Approvals" },
+      // DASH-46: Ask-the-CEO escalation log.
+      { to: "/escalations", icon: MessageSquare, label: "Escalations" },
       { to: "/agents/activity", icon: Activity, label: "Activity" },
     ],
   },

@@ -149,30 +149,68 @@ export const approvalNotificationStore = {
     return result.rows.map(mapRowToNotification);
   },
 
-  list(filters?: {
+  // DASH-43: list() used to read memoryStore exclusively while
+  // persistNotification() wrote to Postgres whenever it was available. The
+  // two callers (GET /api/approvals/notifications + the coordinator's
+  // pending-sweep loop) consequently saw an empty list in any environment
+  // running with DATABASE_URL set, so persisted notifications never reached
+  // the dashboard inbox and never got swept by the coordinator. Make this
+  // function async and Postgres-aware so the read path mirrors the write
+  // path. Falls back to memoryStore when in-memory mode is allowed (tests
+  // and local dev without DB).
+  async list(filters?: {
     assignee?: string;
     approvalId?: string;
     runId?: string;
     status?: ApprovalNotification["status"];
-  }): ApprovalNotification[] {
-    let all = Array.from(memoryStore.values());
+  }): Promise<ApprovalNotification[]> {
+    if (!postgresPersistenceAvailable()) {
+      let all = Array.from(memoryStore.values());
 
-    if (filters?.assignee) {
-      all = all.filter((record) => record.recipient === filters.assignee);
-    }
-    if (filters?.approvalId) {
-      all = all.filter((record) => record.approvalRequestId === filters.approvalId);
-    }
-    if (filters?.runId) {
-      all = all.filter((record) => record.runId === filters.runId);
-    }
-    if (filters?.status) {
-      all = all.filter((record) => record.status === filters.status);
+      if (filters?.assignee) {
+        all = all.filter((record) => record.recipient === filters.assignee);
+      }
+      if (filters?.approvalId) {
+        all = all.filter((record) => record.approvalRequestId === filters.approvalId);
+      }
+      if (filters?.runId) {
+        all = all.filter((record) => record.runId === filters.runId);
+      }
+      if (filters?.status) {
+        all = all.filter((record) => record.status === filters.status);
+      }
+
+      return all
+        .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+        .map(cloneNotification);
     }
 
-    return all
-      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
-      .map(cloneNotification);
+    const conditions: string[] = [];
+    const params: unknown[] = [];
+    if (filters?.assignee !== undefined) {
+      params.push(filters.assignee);
+      conditions.push(`recipient = $${params.length}`);
+    }
+    if (filters?.approvalId !== undefined) {
+      params.push(filters.approvalId);
+      conditions.push(`approval_request_id = $${params.length}`);
+    }
+    if (filters?.runId !== undefined) {
+      params.push(filters.runId);
+      conditions.push(`run_id = $${params.length}`);
+    }
+    if (filters?.status !== undefined) {
+      params.push(filters.status);
+      conditions.push(`status = $${params.length}`);
+    }
+
+    const where = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
+    const pool = getPostgresPool();
+    const result = await pool.query(
+      `SELECT * FROM approval_notifications ${where} ORDER BY created_at DESC`,
+      params,
+    );
+    return result.rows.map(mapRowToNotification);
   },
 
   async markSent(id: string): Promise<boolean> {

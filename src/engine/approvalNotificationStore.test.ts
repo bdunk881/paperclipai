@@ -78,10 +78,10 @@ describe("approvalNotificationStore.list", () => {
     const [inbox] = await approvalNotificationStore.listByApprovalRequest(first.id);
     await approvalNotificationStore.markSent(inbox.id);
 
-    expect(approvalNotificationStore.list({ assignee: base.assignee })).toHaveLength(2);
-    expect(approvalNotificationStore.list({ runId: "run-2" })).toHaveLength(2);
-    expect(approvalNotificationStore.list({ approvalId: second.id })).toHaveLength(2);
-    expect(approvalNotificationStore.list({ status: "sent" })).toHaveLength(1);
+    expect(await approvalNotificationStore.list({ assignee: base.assignee })).toHaveLength(2);
+    expect(await approvalNotificationStore.list({ runId: "run-2" })).toHaveLength(2);
+    expect(await approvalNotificationStore.list({ approvalId: second.id })).toHaveLength(2);
+    expect(await approvalNotificationStore.list({ status: "sent" })).toHaveLength(1);
   });
 });
 

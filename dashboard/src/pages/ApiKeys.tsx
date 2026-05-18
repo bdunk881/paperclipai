@@ -14,7 +14,7 @@ export default function ApiKeys() {
       </div>
 
       <div className="bg-af2-card rounded-xl border border-af2-line p-6">
-        <div className="inline-flex items-center gap-2 px-2.5 py-1 rounded-full bg-af2-mustard/15 text-amber-800 text-xs font-medium">
+        <div className="inline-flex items-center gap-2 px-2.5 py-1 rounded-full bg-af2-mustard/15 text-af2-mustard text-xs font-medium">
           <ShieldAlert size={12} />
           Coming soon
         </div>
@@ -22,8 +22,8 @@ export default function ApiKeys() {
         <div className="mt-4 flex items-start gap-3 rounded-lg border border-af2-mustard/30 bg-af2-mustard/10 p-4">
           <KeyRound size={18} className="text-af2-mustard mt-0.5" />
           <div>
-            <p className="text-sm font-medium text-amber-900">API key lifecycle is not enabled yet</p>
-            <p className="text-sm text-amber-800 mt-1">
+            <p className="text-sm font-medium text-af2-mustard">API key lifecycle is not enabled yet</p>
+            <p className="text-sm text-af2-mustard mt-1">
               Key generation, rotation, and revocation are disabled until the backend endpoints are available.
             </p>
           </div>

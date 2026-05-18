@@ -119,19 +119,19 @@ function AgentTeamDetail() {
         <div>
           <Link
             to="/workspace/org-structure"
-            className="inline-flex items-center gap-2 text-sm text-slate-500 transition hover:text-slate-800"
+            className="inline-flex items-center gap-2 text-sm text-af2-ink-3 transition hover:text-af2-ink"
           >
             <ArrowLeft size={14} />
             Back to Team
           </Link>
           <div className="mt-3">
-            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-teal-600">
+            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-af2-sage">
               Deployed Agent Team
             </p>
-            <h1 className="mt-2 text-3xl font-semibold text-slate-900">
+            <h1 className="mt-2 text-3xl font-semibold text-af2-ink">
               {detail.team.name}
             </h1>
-            <p className="mt-2 max-w-3xl text-sm text-slate-500">
+            <p className="mt-2 max-w-3xl text-sm text-af2-ink-3">
               {detail.team.description || "Workflow-derived agent team ready for monitoring and handoff review."}
             </p>
           </div>
@@ -141,7 +141,7 @@ function AgentTeamDetail() {
             void loadTeam();
           }}
           aria-label="Refresh deployed team status"
-          className="inline-flex items-center gap-2 rounded-full border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition hover:border-indigo-300 hover:text-indigo-700"
+          className="inline-flex items-center gap-2 rounded-full border border-af2-line bg-af2-card px-4 py-2 text-sm font-medium text-af2-ink-2 transition hover:border-af2-clay/40 hover:text-af2-clay"
         >
           <RefreshCw size={14} />
           Refresh
@@ -155,15 +155,15 @@ function AgentTeamDetail() {
         <StatCard label="Budget" value={`$${detail.team.budgetMonthlyUsd.toFixed(2)}`} />
       </section>
 
-      <section className="rounded-[28px] border border-slate-200 bg-white p-6 shadow-sm">
+      <section className="af2-card p-6">
         <div className="mb-5 flex items-center justify-between gap-3">
           <div>
-            <h2 className="text-lg font-semibold text-slate-900">Agent roster</h2>
-            <p className="text-sm text-slate-500">
+            <h2 className="text-lg font-semibold text-af2-ink">Agent roster</h2>
+            <p className="text-sm text-af2-ink-3">
               Workflow step mapping, heartbeat health, and current workload.
             </p>
           </div>
-          <span className="rounded-full bg-teal-50 px-3 py-1 text-xs font-semibold text-teal-700">
+          <span className="rounded-full bg-af2-sage/15 px-3 py-1 text-xs font-semibold text-af2-sage">
             Auto-refresh {POLL_INTERVAL_MS / 1000}s
           </span>
         </div>
@@ -186,11 +186,11 @@ function AgentTeamDetail() {
 
 function StatCard({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-[24px] border border-slate-200 bg-white px-5 py-4 shadow-sm">
-      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
+    <div className="af2-card px-5 py-4">
+      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-af2-ink-3">
         {label}
       </p>
-      <p className="mt-2 text-xl font-semibold text-slate-900">{value}</p>
+      <p className="mt-2 text-xl font-semibold text-af2-ink">{value}</p>
     </div>
   );
 }
@@ -211,25 +211,25 @@ function AgentCard({
   return (
     <article
       className={clsx(
-        "rounded-[24px] border p-5 shadow-sm transition",
+        "rounded-md border p-5 transition",
         highlighted
-          ? "border-indigo-400 bg-indigo-50/70"
-          : "border-slate-200 bg-slate-50/60"
+          ? "border-af2-clay/40 bg-af2-clay/5"
+          : "border-af2-line bg-af2-paper-2"
       )}
     >
       <div className="flex items-start justify-between gap-3">
         <div className="flex items-start gap-3">
-          <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-indigo-600 text-white shadow-sm">
+          <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-af2-clay text-white shadow-sm">
             <Bot size={18} />
           </div>
           <div>
             <div className="flex flex-wrap items-center gap-2">
-              <h3 className="text-base font-semibold text-slate-900">{agent.name}</h3>
+              <h3 className="text-base font-semibold text-af2-ink">{agent.name}</h3>
               <StatusPill tone={agent.status === "active" ? "teal" : agent.status === "paused" ? "amber" : "rose"}>
                 {agent.status}
               </StatusPill>
             </div>
-            <p className="mt-1 text-xs uppercase tracking-[0.16em] text-slate-400">
+            <p className="mt-1 text-xs uppercase tracking-[0.16em] text-af2-ink-3">
               {agent.roleKey}
             </p>
           </div>
@@ -245,24 +245,24 @@ function AgentCard({
         <InlineMetric label="Budget" value={`$${agent.budgetMonthlyUsd.toFixed(2)}`} icon={<Bot size={12} />} />
       </div>
 
-      <p className="mt-4 text-sm leading-6 text-slate-600">
+      <p className="mt-4 text-sm leading-6 text-af2-ink-2">
         {agent.instructions}
       </p>
 
       <div className="mt-4 space-y-2">
-        <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
+        <p className="text-xs font-semibold uppercase tracking-[0.16em] text-af2-ink-3">
           Current queue
         </p>
         {openTasks.length === 0 ? (
-          <p className="text-sm text-slate-500">No open tasks assigned.</p>
+          <p className="text-sm text-af2-ink-3">No open tasks assigned.</p>
         ) : (
           openTasks.slice(0, 3).map((task) => (
             <div
               key={task.id}
-              className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm"
+              className="rounded-2xl border border-af2-line bg-af2-card px-4 py-3 text-sm"
             >
               <div className="flex items-center justify-between gap-3">
-                <span className="font-medium text-slate-900">{task.title}</span>
+                <span className="font-medium text-af2-ink">{task.title}</span>
                 <StatusPill tone={task.status === "done" ? "teal" : task.status === "blocked" ? "rose" : "amber"}>
                   {task.status.replace("_", " ")}
                 </StatusPill>
@@ -285,12 +285,12 @@ function InlineMetric({
   icon: ReactNode;
 }) {
   return (
-    <div className="rounded-2xl border border-slate-200 bg-white px-3 py-2">
-      <div className="flex items-center gap-1 text-xs font-semibold uppercase tracking-[0.14em] text-slate-400">
+    <div className="rounded-2xl border border-af2-line bg-af2-card px-3 py-2">
+      <div className="flex items-center gap-1 text-xs font-semibold uppercase tracking-[0.14em] text-af2-ink-3">
         {icon}
         {label}
       </div>
-      <p className="mt-2 text-sm font-medium text-slate-900">{value}</p>
+      <p className="mt-2 text-sm font-medium text-af2-ink">{value}</p>
     </div>
   );
 }
@@ -302,11 +302,12 @@ function StatusPill({
   children: string;
   tone: "teal" | "amber" | "rose" | "slate";
 }) {
+  // DASH-35: V2 tone palette — teal/amber/rose/slate → sage/mustard/clay/muted
   const palette = {
-    teal: "bg-teal-50 text-teal-700",
-    amber: "bg-amber-50 text-amber-700",
-    rose: "bg-rose-50 text-rose-700",
-    slate: "bg-slate-100 text-slate-600",
+    teal: "bg-af2-sage/15 text-af2-sage",
+    amber: "bg-af2-mustard/15 text-af2-mustard",
+    rose: "bg-af2-clay/15 text-af2-clay",
+    slate: "bg-af2-paper-2 text-af2-ink-2",
   } as const;
 
   return (

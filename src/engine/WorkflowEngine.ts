@@ -360,15 +360,44 @@ export class WorkflowEngine {
     return config;
   }
 
-  private _buildMemoryContext(
+  // DASH-44: memoryStore went Postgres-backed (async). The template
+  // interpolation layer expects a synchronous `read(query) -> entries`
+  // shape, so we pre-fetch every memory entry the user owns once when
+  // the run starts and serve `read` from that snapshot. A run that
+  // takes seconds is fine with a per-run snapshot; long-running runs
+  // that need fresh memory across steps would need an explicit refresh
+  // hook (none of the templates do that today).
+  private async _buildMemoryContext(
     template: WorkflowTemplate,
     userId?: string
-  ): { read: (query: string) => Array<{ key: string; text: string }>; write: (key: string, value: unknown) => void } {
+  ): Promise<{
+    read: (query: string) => Array<{ key: string; text: string }>;
+    write: (key: string, value: unknown) => void;
+  }> {
     const memoryUserId = userId ?? "anonymous";
+    const snapshot = await memoryStore.search("", memoryUserId, undefined, 1000);
+    const snapshotEntries = snapshot.map(({ entry }) => entry);
+
+    function scoreEntry(text: string, query: string): number {
+      const haystack = text.toLowerCase();
+      const tokens = query
+        .toLowerCase()
+        .split(/\s+/)
+        .filter((t) => t.length > 1);
+      if (tokens.length === 0) return 1;
+      const hits = tokens.filter((t) => haystack.includes(t)).length;
+      return hits / tokens.length;
+    }
+
     return {
       read: (query: string): Array<{ key: string; text: string }> => {
-        return memoryStore
-          .search(query, memoryUserId)
+        if (!query.trim()) {
+          return snapshotEntries.map((entry) => ({ key: entry.key, text: entry.text }));
+        }
+        return snapshotEntries
+          .map((entry) => ({ entry, score: scoreEntry(`${entry.key} ${entry.text}`, query) }))
+          .filter((r) => r.score > 0)
+          .sort((a, b) => b.score - a.score)
           .map(({ entry }) => ({ key: entry.key, text: entry.text }));
       },
       write: (key: string, value: unknown): void => {
@@ -658,7 +687,7 @@ export class WorkflowEngine {
     const context: Record<string, unknown> = {
       ...config,
       ...input,
-      memory: this._buildMemoryContext(template, userId),
+      memory: await this._buildMemoryContext(template, userId),
     };
     const stepResults: StepResult[] = [];
 
@@ -697,7 +726,7 @@ export class WorkflowEngine {
 
     const context: Record<string, unknown> = {
       ...runtimeState.context,
-      memory: this._buildMemoryContext(template, userId),
+      memory: await this._buildMemoryContext(template, userId),
     };
     const config = runtimeState.config;
     const stepResults = [...run.stepResults];

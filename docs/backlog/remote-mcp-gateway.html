@@ -1,0 +1,459 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Remote MCP Gateway — AutoFlow product brief</title>
+  <style>
+    :root {
+      --ink: #1f1d1a;
+      --ink-2: #4a4540;
+      --ink-3: #807a72;
+      --paper: #fdfaf3;
+      --paper-2: #f4eedd;
+      --line: #e6dec7;
+      --clay: #c0544c;
+      --sage: #4a6b4a;
+      --mustard: #c08e3a;
+      --serif: ui-serif, Georgia, "Times New Roman", serif;
+      --mono: ui-monospace, "SF Mono", Menlo, monospace;
+      --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+    }
+    body {
+      margin: 0;
+      padding: 0;
+      background: var(--paper);
+      color: var(--ink);
+      font-family: var(--sans);
+      font-size: 16px;
+      line-height: 1.6;
+    }
+    .wrap {
+      max-width: 880px;
+      margin: 0 auto;
+      padding: 56px 32px 96px;
+    }
+    .eyebrow {
+      font-family: var(--mono);
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.18em;
+      color: var(--clay);
+      margin: 0 0 12px;
+    }
+    h1 {
+      font-family: var(--serif);
+      font-weight: 600;
+      font-size: 40px;
+      line-height: 1.15;
+      margin: 0 0 16px;
+      letter-spacing: -0.01em;
+    }
+    .lede {
+      font-family: var(--serif);
+      font-size: 18px;
+      color: var(--ink-2);
+      margin: 0 0 40px;
+      max-width: 65ch;
+    }
+    h2 {
+      font-family: var(--serif);
+      font-size: 26px;
+      margin: 56px 0 14px;
+      letter-spacing: -0.01em;
+    }
+    h3 {
+      font-family: var(--serif);
+      font-size: 19px;
+      margin: 32px 0 10px;
+    }
+    p {
+      margin: 0 0 14px;
+      max-width: 70ch;
+    }
+    .callout {
+      background: var(--paper-2);
+      border-left: 3px solid var(--clay);
+      border-radius: 6px;
+      padding: 14px 18px;
+      margin: 24px 0;
+      font-size: 15px;
+    }
+    code, pre {
+      font-family: var(--mono);
+      font-size: 13px;
+    }
+    pre {
+      background: #1f1d1a;
+      color: #f4eedd;
+      padding: 18px 20px;
+      border-radius: 8px;
+      overflow-x: auto;
+      line-height: 1.5;
+      margin: 18px 0;
+    }
+    pre code { color: inherit; background: transparent; padding: 0; }
+    :not(pre) > code {
+      background: var(--paper-2);
+      padding: 1px 6px;
+      border-radius: 4px;
+      color: var(--clay);
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 18px 0 24px;
+      font-size: 14px;
+    }
+    th, td {
+      text-align: left;
+      padding: 10px 12px;
+      border-bottom: 1px solid var(--line);
+      vertical-align: top;
+    }
+    th {
+      font-family: var(--mono);
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+      color: var(--ink-3);
+      font-weight: 600;
+    }
+    ul, ol { padding-left: 22px; margin: 8px 0 16px; }
+    li { margin: 6px 0; }
+    .pillrow {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin: 12px 0 24px;
+    }
+    .pill {
+      background: var(--paper-2);
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      padding: 4px 12px;
+      font-size: 12px;
+      color: var(--ink-2);
+    }
+    .pill.live {
+      background: rgba(74, 107, 74, 0.12);
+      border-color: rgba(74, 107, 74, 0.3);
+      color: var(--sage);
+    }
+    .diagram {
+      background: #fefcf6;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 24px;
+      margin: 18px 0 26px;
+    }
+    .diagram pre {
+      background: transparent;
+      color: var(--ink);
+      padding: 0;
+      margin: 0;
+      font-size: 12.5px;
+    }
+    .twocol {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 24px;
+      margin: 20px 0;
+    }
+    .col h3 { margin-top: 0; }
+    @media (max-width: 720px) {
+      .twocol { grid-template-columns: 1fr; }
+      .wrap { padding: 40px 20px; }
+      h1 { font-size: 32px; }
+    }
+    .footnote {
+      font-size: 12px;
+      color: var(--ink-3);
+      margin-top: 56px;
+      padding-top: 18px;
+      border-top: 1px solid var(--line);
+    }
+  </style>
+</head>
+<body>
+<div class="wrap">
+
+  <p class="eyebrow">Backlog · Product brief · DASH-25</p>
+  <h1>Remote MCP Gateway</h1>
+  <p class="lede">
+    Stop wiring OAuth one integration at a time. Become the workspace's
+    single MCP-spec endpoint, expose every integration through it once,
+    let every LLM provider (and the user's own Claude / ChatGPT) inherit
+    the connection for free.
+  </p>
+
+  <div class="callout">
+    <strong>Status:</strong> backlogged behind the four agentic-infra PRs
+    (save_memory tool, integration allowlist, OpenAI streaming/tool-loop
+    parity, unified Credentials tab) which all shipped. This brief is the
+    visualization. Implementation lands once those four are stable in dev.
+  </div>
+
+  <h2>The problem</h2>
+  <p>
+    Today, every integration AutoFlow supports is a separate OAuth
+    wire-up: we register an app with Slack, an app with HubSpot, an app
+    with Stripe, store tokens per workspace, refresh them, run the
+    callbacks, etc. The Integrations rework (DASH-12/13) made the
+    surface usable, but the underlying cost is still per-provider.
+  </p>
+  <p>
+    That cost scales linearly with our integration count, and worse:
+    when a customer connects Slack to Claude Desktop OR uses a custom
+    GPT with Slack actions, our AutoFlow connection is duplicate
+    work. They had to OAuth twice. We can't see their Claude/ChatGPT
+    side. They can't use AutoFlow-managed integrations from inside their
+    Claude Desktop session.
+  </p>
+
+  <h2>The shift</h2>
+  <p>
+    Anthropic shipped <code>mcp_servers</code> support in the Messages
+    API (Nov '25). OpenAI shipped the equivalent through the Responses
+    API's <code>tools: [{type: "mcp", server_url}]</code>. Both
+    providers can now call <em>remote</em> MCP servers — the provider
+    hosts the round-trip; we just supply a URL plus a workspace-scoped
+    auth token.
+  </p>
+  <p>
+    That means we don't need the LLM to call our integration through
+    AutoFlow's own custom tool plumbing. We expose every integration as
+    a remote MCP endpoint, and the provider's own loop calls it.
+  </p>
+
+  <h2>The architecture</h2>
+  <div class="diagram">
+<pre>
+                ┌─────────────────────────────────────────────────────────┐
+                │   mcp.helloautoflow.com  (Cloudflare Worker, per-edge)  │
+                │   ───────────────────────────────────────────────────   │
+                │     /slack/&lt;workspaceId&gt;     →  Slack adapter           │
+                │     /hubspot/&lt;workspaceId&gt;   →  HubSpot adapter         │
+                │     /stripe/&lt;workspaceId&gt;    →  Stripe adapter          │
+                │     /gmail/&lt;workspaceId&gt;     →  Gmail adapter           │
+                │     /linear/&lt;workspaceId&gt;    →  Linear adapter          │
+                │                                                          │
+                │   AUTH:  Authorization: Bearer &lt;workspace JWT&gt;          │
+                │   MAPS:  workspaceId+integration → OAuth token in vault │
+                └────────────────┬─────────────────────────┬──────────────┘
+                                 │                         │
+                ┌────────────────┴──────────┐ ┌────────────┴────────────┐
+                │  Anthropic Messages API   │ │  OpenAI Responses API   │
+                │  mcp_servers: [{url,      │ │  tools: [{type: "mcp",  │
+                │    name, auth_token}]     │ │    server_url, ...}]    │
+                └────────────────┬──────────┘ └────────────┬────────────┘
+                                 │                         │
+                                 ▼                         ▼
+                ┌─────────────────────────────────────────────────────────┐
+                │     User's Claude Desktop / ChatGPT app (optional)      │
+                │     Drops an entry into claude_desktop_config.json:     │
+                │     {                                                   │
+                │       "mcpServers": {                                   │
+                │         "autoflow": {                                   │
+                │           "url": "https://mcp.helloautoflow.com/...",   │
+                │           "auth": {"token": "..."}                      │
+                │         }                                               │
+                │       }                                                 │
+                │     }                                                   │
+                │     → user's local Claude can call our integrations    │
+                └─────────────────────────────────────────────────────────┘
+</pre>
+  </div>
+
+  <h2>What changes in the AutoFlow product</h2>
+  <div class="twocol">
+    <div class="col">
+      <h3>Integrations page</h3>
+      <p>
+        Each row gets a second green pill: <em>"Exposed as MCP"</em>.
+        That state means we've issued a workspace-scoped JWT and the
+        endpoint is live at
+        <code>mcp.helloautoflow.com/&lt;integration&gt;/&lt;workspaceId&gt;</code>.
+      </p>
+      <p>
+        A new action becomes available alongside the existing Connect:
+        <em>"Use in Claude Desktop"</em> and <em>"Use in ChatGPT"</em>.
+        Click → copy the right snippet for their tool's config file.
+      </p>
+    </div>
+    <div class="col">
+      <h3>Hiring plan</h3>
+      <p>
+        When the LLM drafts an agent that needs Slack, we no longer have
+        to pre-register Slack as an AutoFlow connector tool. The agent's
+        provider call passes
+        <code>mcp_servers: [{url: ".../slack/&lt;workspaceId&gt;", auth}]</code>
+        and the provider's tool loop calls it directly.
+      </p>
+      <p>
+        Per-agent <code>allowed_integration_slugs</code> (PR 2/4) still
+        gates which gateway routes get included in <code>mcp_servers</code>.
+      </p>
+    </div>
+  </div>
+
+  <h2>Why this collapses our unit economics</h2>
+  <table>
+    <thead>
+      <tr><th>Dimension</th><th>Before</th><th>After</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>OAuth surface area</td>
+        <td>One per integration AutoFlow ships, forever</td>
+        <td>Still one — but covers every provider AND user's own Claude/ChatGPT</td>
+      </tr>
+      <tr>
+        <td>Per-provider integration plumbing</td>
+        <td>Need provider-specific tool wrappers per integration per provider</td>
+        <td>Zero. Provider hosts the call; gateway returns MCP-spec JSON</td>
+      </tr>
+      <tr>
+        <td>"Use Slack from my Claude Desktop"</td>
+        <td>Customer has to re-OAuth Slack inside Claude Desktop</td>
+        <td>Drop an URL into their config file. Done.</td>
+      </tr>
+      <tr>
+        <td>Adding a new integration</td>
+        <td>OAuth wire-up + tool wrappers + dashboard card + provider plumbing</td>
+        <td>OAuth wire-up + one gateway adapter file (MCP server impl)</td>
+      </tr>
+      <tr>
+        <td>Spend on hosting</td>
+        <td>App servers handle every integration tool call</td>
+        <td>Cloudflare Workers handle the gateway; calls fan out to provider APIs</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h2>Concrete sequence: "use Slack via Claude Desktop"</h2>
+  <ol>
+    <li>User connects Slack to AutoFlow as today (one-time OAuth).</li>
+    <li>Integrations page now shows a second pill: <strong>Exposed as MCP</strong>.</li>
+    <li>User clicks <strong>"Use in Claude Desktop"</strong> button.</li>
+    <li>
+      Modal shows a one-liner to paste into
+      <code>claude_desktop_config.json</code>:
+      <pre><code>{
+  "mcpServers": {
+    "autoflow-slack": {
+      "url": "https://mcp.helloautoflow.com/slack/ws_8a0f...",
+      "auth": { "token": "wsk_live_..." }
+    }
+  }
+}</code></pre>
+    </li>
+    <li>User restarts Claude Desktop. Their local Claude can now call
+    Slack via AutoFlow — same OAuth token, same audit trail, same
+    workspace scope.</li>
+    <li>Same URL pattern works for OpenAI's Responses API and the
+    AutoFlow engine itself.</li>
+  </ol>
+
+  <h2>What we need to build</h2>
+  <ol>
+    <li>
+      <strong>Workspace-scoped JWT issuance.</strong> Per-workspace
+      service-account token, rotatable from the Credentials tab,
+      signed with a key only the gateway worker holds.
+    </li>
+    <li>
+      <strong>Cloudflare Worker gateway.</strong> One Worker per integration
+      (or one Worker with route-based dispatch). Each adapter:
+      <ul>
+        <li>Validates the inbound JWT, extracts workspace + integration.</li>
+        <li>Looks up the workspace's OAuth token from the vault.</li>
+        <li>Translates incoming MCP protocol messages into the integration's native HTTP API.</li>
+        <li>Returns MCP-spec JSON to the calling provider.</li>
+      </ul>
+    </li>
+    <li>
+      <strong>OAuth vault lookup endpoint.</strong> Tight read-only
+      Postgres function callable from the Worker. Per-workspace, per-
+      integration. Caches in-Worker KV for low-latency reads.
+    </li>
+    <li>
+      <strong>Dashboard surfaces.</strong> Integration rows show MCP
+      status + the "Use in Claude" / "Use in ChatGPT" CTAs.
+    </li>
+    <li>
+      <strong>Per-agent allowlist enforcement.</strong> When AutoFlow's
+      own engine calls a provider with <code>mcp_servers</code>, only
+      include URLs the agent's <code>allowed_integration_slugs</code>
+      permits. (PR 2 plumbing reused.)
+    </li>
+    <li>
+      <strong>Audit log on every gateway call.</strong> Workspace + agent
+      (when known) + integration + tool name + bytes. Same audit_log
+      table we already use.
+    </li>
+  </ol>
+
+  <div class="pillrow">
+    <span class="pill">Phase 1: workspace JWT + Slack adapter as proof</span>
+    <span class="pill">Phase 2: HubSpot · Linear · Stripe · Gmail</span>
+    <span class="pill">Phase 3: "Use in Claude/ChatGPT" CTAs</span>
+    <span class="pill">Phase 4: customer-self-serve gateway URL rotation</span>
+  </div>
+
+  <h2>What it doesn't unlock</h2>
+  <p>
+    <strong>Claude Desktop's existing MCP servers stay invisible to us.</strong>
+    Those are configured in the user's local config file; they run on
+    the user's machine; the API has no surface that lists them. We
+    can't show "green because you already have this in Claude Desktop."
+    We can only show "green because you connected it through us, and
+    you can <em>also</em> point Claude Desktop at us."
+  </p>
+  <p>
+    <strong>ChatGPT custom GPT actions stay invisible.</strong> Same
+    reason — they live in OpenAI's UI, not the API.
+  </p>
+  <p>
+    The product framing is therefore not "detect your existing
+    connections." It's <em>"connect once with AutoFlow, get every LLM
+    + your local desktop tools for free."</em>
+  </p>
+
+  <h2>Risks worth naming up front</h2>
+  <ul>
+    <li>
+      <strong>Cloudflare Workers MCP performance.</strong> MCP is a
+      JSON-RPC-over-HTTP protocol. Cold starts on Workers should be
+      sub-50ms. If we hit latency on first call, KV-cache the workspace
+      → OAuth-token lookup.
+    </li>
+    <li>
+      <strong>Provider MCP spec drift.</strong> Anthropic and OpenAI
+      both implement the spec, but in slightly different shapes today.
+      Build the adapter to the strict spec, not to any one provider's
+      bend.
+    </li>
+    <li>
+      <strong>JWT rotation UX.</strong> A leaked workspace token is the
+      blast radius for that workspace's integrations. Make rotation
+      one-click from the Credentials tab + email the owner on rotation
+      + show last-used-at per token.
+    </li>
+    <li>
+      <strong>Audit log volume.</strong> Every Claude tool call lands
+      in audit_log. Index on (workspace_id, integration, created_at)
+      and retire rows past 90d to a cold table.
+    </li>
+  </ul>
+
+  <p class="footnote">
+    Author: pre-launch product brief, AutoFlow. Backlog ticket once
+    DASH-22 / DASH-23 are stable. The HTML page is the canonical
+    visualization — read this alongside the architecture diagram in
+    the diagram block above before opening implementation tickets.
+  </p>
+
+</div>
+</body>
+</html>

@@ -90,6 +90,7 @@ const CANONICAL_COLUMN_TO_MIGRATION: ReadonlyArray<{
   { table: "subscriptions", column: "current_period_start", filenamePrefix: "028_" },
   { table: "workspace_members", column: "role", filenamePrefix: "026_" },
   { table: "workspaces", column: "tier_routing", filenamePrefix: "033_" },
+  { table: "step_results", column: "idempotency_key", filenamePrefix: "040_" },
 ];
 
 interface ExecutorOptions {

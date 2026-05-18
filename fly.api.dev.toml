@@ -17,9 +17,15 @@ primary_region = "ord"
 # HEL-106: two processes — the HTTP API and the BullMQ worker.
 # Both run from the same Docker image; the worker connects to Upstash Redis
 # via REDIS_URL (or UPSTASH_REDIS_URL) injected as a Fly secret.
+#
+# DASH-29: --import ./dist/instrument.js loads Sentry's SDK BEFORE the
+# entry module's other imports resolve. Belt-and-suspenders alongside the
+# `import "./instrument"` first-line statements in index.ts / worker.ts.
+# Without this, Sentry's express/postgres/http auto-integrations attach
+# to already-loaded modules and silently drop captures.
 [processes]
-  app = "node dist/index.js"
-  worker = "node dist/worker.js"
+  app = "node --require ./dist/instrument.js dist/index.js"
+  worker = "node --require ./dist/instrument.js dist/worker.js"
 
 [env]
   ALLOWED_ORIGINS = "https://dev.helloautoflow.com,https://dev.app.helloautoflow.com"

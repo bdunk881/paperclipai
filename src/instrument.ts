@@ -3,6 +3,24 @@ import { nodeProfilingIntegration } from "@sentry/profiling-node";
 
 const dsn = process.env.SENTRY_DSN;
 
+// DASH-29: explicit boot log + DSN tail so a future "is Sentry up?"
+// check is a single grep in Fly logs instead of another diagnostic
+// round. We log the DSN's last 6 chars only — enough to identify
+// which Sentry project the worker is talking to without leaking the
+// public key in plain text.
+if (!dsn) {
+  console.warn(
+    "[sentry] SENTRY_DSN is unset. Backend events will NOT reach Sentry. " +
+      "Set it via: fly secrets set SENTRY_DSN=… -a <app>",
+  );
+} else {
+  console.log(
+    `[sentry] initializing with DSN tail …${dsn.slice(-8)} env=${
+      process.env.SENTRY_ENVIRONMENT ?? process.env.NODE_ENV ?? "development"
+    }`,
+  );
+}
+
 if (dsn) {
   Sentry.init({
     dsn,
@@ -47,4 +65,5 @@ if (dsn) {
       Sentry.requestDataIntegration(),
     ],
   });
+  console.log("[sentry] init complete");
 }

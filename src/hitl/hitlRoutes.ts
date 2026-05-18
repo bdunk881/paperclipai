@@ -1,4 +1,4 @@
-import express, { NextFunction, Response, Router } from "express";
+import express, { Response, Router } from "express";
 import { z } from "zod";
 import { AuthenticatedRequest } from "../auth/authMiddleware";
 import {
@@ -165,41 +165,35 @@ function readCompanyId(req: AuthenticatedRequest, res: Response): string | null 
   return companyId;
 }
 
-router.get("/companies/:companyId/checkpoint-schedule", (req: AuthenticatedRequest, res) => {
+// DASH-45: every handler is async because hitlStore went Postgres-backed.
+
+router.get("/companies/:companyId/checkpoint-schedule", async (req: AuthenticatedRequest, res) => {
   const userId = requireUserId(req, res);
   const companyId = readCompanyId(req, res);
-  if (!userId || !companyId) {
-    return;
-  }
-  res.json({ schedule: hitlStore.getSchedule(userId, companyId) });
+  if (!userId || !companyId) return;
+  res.json({ schedule: await hitlStore.getSchedule(userId, companyId) });
 });
 
 router.put(
   "/companies/:companyId/checkpoint-schedule",
   requirePaperclipRunId,
-  (req: AuthenticatedRequest, res) => {
+  async (req: AuthenticatedRequest, res) => {
     const userId = requireUserId(req, res);
     const companyId = readCompanyId(req, res);
-    if (!userId || !companyId) {
-      return;
-    }
+    if (!userId || !companyId) return;
     const parsed = parseBody(scheduleUpdateSchema, req, res);
-    if (!parsed) {
-      return;
-    }
-    res.json({ schedule: hitlStore.upsertSchedule(userId, companyId, parsed) });
+    if (!parsed) return;
+    res.json({ schedule: await hitlStore.upsertSchedule(userId, companyId, parsed) });
   }
 );
 
-router.get("/companies/:companyId/checkpoints", (req: AuthenticatedRequest, res) => {
+router.get("/companies/:companyId/checkpoints", async (req: AuthenticatedRequest, res) => {
   const userId = requireUserId(req, res);
   const companyId = readCompanyId(req, res);
-  if (!userId || !companyId) {
-    return;
-  }
+  if (!userId || !companyId) return;
   const status = typeof req.query.status === "string" ? req.query.status : undefined;
   res.json({
-    checkpoints: hitlStore.listCheckpoints(
+    checkpoints: await hitlStore.listCheckpoints(
       userId,
       companyId,
       checkpointStatusSchema.safeParse(status).success ? (status as HitlCheckpointStatus) : undefined
@@ -207,46 +201,42 @@ router.get("/companies/:companyId/checkpoints", (req: AuthenticatedRequest, res)
   });
 });
 
-router.post("/companies/:companyId/checkpoints", requirePaperclipRunId, (req: AuthenticatedRequest, res) => {
-  const userId = requireUserId(req, res);
-  const companyId = readCompanyId(req, res);
-  if (!userId || !companyId) {
-    return;
+router.post(
+  "/companies/:companyId/checkpoints",
+  requirePaperclipRunId,
+  async (req: AuthenticatedRequest, res) => {
+    const userId = requireUserId(req, res);
+    const companyId = readCompanyId(req, res);
+    if (!userId || !companyId) return;
+    const parsed = parseBody(manualCheckpointSchema, req, res);
+    if (!parsed) return;
+    const checkpoint = await hitlStore.createCheckpoint({
+      userId,
+      companyId,
+      triggerType: parsed.triggerType as HitlCheckpointTriggerType,
+      source: parsed.triggerType === "manual" ? "manual" : "system",
+      title: parsed.title,
+      description: parsed.description,
+      dueAt: parsed.dueAt,
+      artifactRefs: parsed.artifactRefs,
+      metadata: parsed.metadata,
+      recipientType: parsed.recipientType as HitlRecipientType,
+      recipientId: parsed.recipientId,
+    });
+    res.status(201).json({ checkpoint });
   }
-  const parsed = parseBody(manualCheckpointSchema, req, res);
-  if (!parsed) {
-    return;
-  }
-  const checkpoint = hitlStore.createCheckpoint({
-    userId,
-    companyId,
-    triggerType: parsed.triggerType as HitlCheckpointTriggerType,
-    source: parsed.triggerType === "manual" ? "manual" : "system",
-    title: parsed.title,
-    description: parsed.description,
-    dueAt: parsed.dueAt,
-    artifactRefs: parsed.artifactRefs,
-    metadata: parsed.metadata,
-    recipientType: parsed.recipientType as HitlRecipientType,
-    recipientId: parsed.recipientId,
-  });
-  res.status(201).json({ checkpoint });
-});
+);
 
 router.post(
   "/companies/:companyId/checkpoints/evaluate-trigger",
   requirePaperclipRunId,
-  (req: AuthenticatedRequest, res) => {
+  async (req: AuthenticatedRequest, res) => {
     const userId = requireUserId(req, res);
     const companyId = readCompanyId(req, res);
-    if (!userId || !companyId) {
-      return;
-    }
+    if (!userId || !companyId) return;
     const parsed = parseBody(triggerEvaluationSchema, req, res);
-    if (!parsed) {
-      return;
-    }
-    const evaluation = hitlStore.evaluateDefaultTrigger({
+    if (!parsed) return;
+    const evaluation = await hitlStore.evaluateDefaultTrigger({
       userId,
       companyId,
       triggerType: parsed.triggerType,
@@ -258,36 +248,29 @@ router.post(
   }
 );
 
-router.get("/companies/:companyId/artifact-comments", (req: AuthenticatedRequest, res) => {
+router.get("/companies/:companyId/artifact-comments", async (req: AuthenticatedRequest, res) => {
   const userId = requireUserId(req, res);
   const companyId = readCompanyId(req, res);
-  if (!userId || !companyId) {
-    return;
-  }
+  if (!userId || !companyId) return;
   const artifactId = typeof req.query.artifactId === "string" ? req.query.artifactId : undefined;
   const status = typeof req.query.status === "string" ? req.query.status : undefined;
-  const comments = hitlStore
-    .listArtifactComments(userId, companyId, artifactId)
-    .filter((comment) =>
-      commentStatusSchema.safeParse(status).success ? comment.status === (status as HitlCommentStatus) : true
-    );
+  const all = await hitlStore.listArtifactComments(userId, companyId, artifactId);
+  const comments = all.filter((comment) =>
+    commentStatusSchema.safeParse(status).success ? comment.status === (status as HitlCommentStatus) : true
+  );
   res.json({ comments, total: comments.length });
 });
 
 router.post(
   "/companies/:companyId/artifact-comments",
   requirePaperclipRunId,
-  (req: AuthenticatedRequest, res) => {
+  async (req: AuthenticatedRequest, res) => {
     const userId = requireUserId(req, res);
     const companyId = readCompanyId(req, res);
-    if (!userId || !companyId) {
-      return;
-    }
+    if (!userId || !companyId) return;
     const parsed = parseBody(artifactCommentSchema, req, res);
-    if (!parsed) {
-      return;
-    }
-    const comment = hitlStore.createArtifactComment({
+    if (!parsed) return;
+    const comment = await hitlStore.createArtifactComment({
       userId,
       companyId,
       artifact: parsed.artifact,
@@ -299,58 +282,55 @@ router.post(
   }
 );
 
-router.post("/companies/:companyId/ask-ceo/requests", requirePaperclipRunId, (req: AuthenticatedRequest, res) => {
+router.post(
+  "/companies/:companyId/ask-ceo/requests",
+  requirePaperclipRunId,
+  async (req: AuthenticatedRequest, res) => {
+    const userId = requireUserId(req, res);
+    const companyId = readCompanyId(req, res);
+    if (!userId || !companyId) return;
+    const parsed = parseBody(askCeoRequestSchema, req, res);
+    if (!parsed) return;
+    const requestRecord = await hitlStore.createAskCeoRequest({
+      userId,
+      companyId,
+      question: parsed.question,
+      context: parsed.context as AskCeoRequest["context"] | undefined,
+    });
+    res.status(201).json({ request: requestRecord });
+  }
+);
+
+router.get(
+  "/companies/:companyId/ask-ceo/requests/:requestId",
+  async (req: AuthenticatedRequest, res) => {
+    const userId = requireUserId(req, res);
+    const companyId = readCompanyId(req, res);
+    if (!userId || !companyId) return;
+    const requestRecord = await hitlStore.getAskCeoRequest(userId, companyId, req.params.requestId);
+    if (!requestRecord) {
+      res.status(404).json({ error: "Ask the CEO request not found" });
+      return;
+    }
+    res.json({ request: requestRecord });
+  }
+);
+
+router.get("/companies/:companyId/state", async (req: AuthenticatedRequest, res) => {
   const userId = requireUserId(req, res);
   const companyId = readCompanyId(req, res);
-  if (!userId || !companyId) {
-    return;
-  }
-  const parsed = parseBody(askCeoRequestSchema, req, res);
-  if (!parsed) {
-    return;
-  }
-  const requestRecord = hitlStore.createAskCeoRequest({
-    userId,
-    companyId,
-    question: parsed.question,
-    context: parsed.context as AskCeoRequest["context"] | undefined,
-  });
-  res.status(201).json({ request: requestRecord });
+  if (!userId || !companyId) return;
+  res.json(await hitlStore.getCompanyState(userId, companyId));
 });
 
-router.get("/companies/:companyId/ask-ceo/requests/:requestId", (req: AuthenticatedRequest, res) => {
+router.get("/companies/:companyId/notifications", async (req: AuthenticatedRequest, res) => {
   const userId = requireUserId(req, res);
   const companyId = readCompanyId(req, res);
-  if (!userId || !companyId) {
-    return;
-  }
-  const requestRecord = hitlStore.getAskCeoRequest(userId, companyId, req.params.requestId);
-  if (!requestRecord) {
-    res.status(404).json({ error: "Ask the CEO request not found" });
-    return;
-  }
-  res.json({ request: requestRecord });
-});
-
-router.get("/companies/:companyId/state", (req: AuthenticatedRequest, res) => {
-  const userId = requireUserId(req, res);
-  const companyId = readCompanyId(req, res);
-  if (!userId || !companyId) {
-    return;
-  }
-  res.json(hitlStore.getCompanyState(userId, companyId));
-});
-
-router.get("/companies/:companyId/notifications", (req: AuthenticatedRequest, res) => {
-  const userId = requireUserId(req, res);
-  const companyId = readCompanyId(req, res);
-  if (!userId || !companyId) {
-    return;
-  }
+  if (!userId || !companyId) return;
   const recipientType = typeof req.query.recipientType === "string" ? req.query.recipientType : undefined;
   const recipientId = typeof req.query.recipientId === "string" ? req.query.recipientId : undefined;
   const kind = typeof req.query.kind === "string" ? req.query.kind : undefined;
-  const notifications = hitlStore.listNotifications({
+  const notifications = await hitlStore.listNotifications({
     userId,
     companyId,
     recipientType: recipientTypeSchema.safeParse(recipientType).success

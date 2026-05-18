@@ -18,6 +18,12 @@ type JwtDiagnosticClaims = {
   iss?: string;
   exp?: number | null;
   nbf?: number | null;
+  // DASH-30: forensic fields for diagnosing "who sent this stale token?"
+  // Decoded but UNVERIFIED — only used in failure-log context, never
+  // for auth decisions.
+  sub?: string;
+  email?: string;
+  iat?: number | null;
 };
 
 function decodeJwtDiagnosticClaims(token: string): JwtDiagnosticClaims | null {
@@ -47,10 +53,50 @@ function decodeJwtDiagnosticClaims(token: string): JwtDiagnosticClaims | null {
           ? parsed.nbf
           : null
         : undefined,
+      sub: typeof parsed.sub === "string" ? parsed.sub : undefined,
+      email: typeof parsed.email === "string" ? parsed.email : undefined,
+      iat: Object.prototype.hasOwnProperty.call(parsed, "iat")
+        ? typeof parsed.iat === "number"
+          ? parsed.iat
+          : null
+        : undefined,
     };
   } catch {
     return null;
   }
+}
+
+/**
+ * DASH-30: pull request context onto JWT failure logs so we can identify
+ * WHO/WHAT is sending stale tokens. Without this, every JWTExpired line
+ * looks identical and forensics is impossible. Returns the small subset
+ * we want in logs + Sentry — never the Authorization header (logging
+ * raw bearer tokens is a security incident vector).
+ */
+function describeRequestForAuthLog(req: Request): {
+  method: string;
+  path: string;
+  ip: string;
+  userAgent: string | undefined;
+  referer: string | undefined;
+  cfRay: string | undefined;
+  forwarded: string | undefined;
+} {
+  return {
+    method: req.method,
+    path: req.originalUrl || req.url,
+    // req.ip respects the trust-proxy setting; falls back to socket
+    ip: req.ip || req.socket?.remoteAddress || "unknown",
+    userAgent: firstString(req.headers["user-agent"]),
+    referer: firstString(req.headers["referer"] ?? req.headers["referrer"]),
+    cfRay: firstString(req.headers["cf-ray"]),
+    forwarded: firstString(req.headers["x-forwarded-for"]),
+  };
+}
+
+function ageSeconds(epochSeconds: number | null | undefined): number | undefined {
+  if (typeof epochSeconds !== "number") return undefined;
+  return Math.round(Date.now() / 1000) - epochSeconds;
 }
 
 function firstString(value: unknown): string | undefined {
@@ -319,19 +365,32 @@ export function requireAuth(
     return;
   }
 
+  // DASH-30: capture request context BEFORE the async verify so it's
+  // bound to whichever failure branch fires below. Without this, every
+  // JWTExpired log looks identical and we can't identify the source.
+  const requestContext = describeRequestForAuthLog(req);
+
   void verifySupabaseTokenWithDiagnostics(token)
     .then(({ claims, errorMessage, errorName }) => {
       if (!claims?.sub) {
         console.warn("[auth] Supabase JWT verification failed", {
           errName: errorName,
           errMessage: errorMessage,
+          // Decoded-but-unverified claims (for forensics only)
+          tokenSub: tokenClaims?.sub,
+          tokenEmail: tokenClaims?.email,
           tokenAud: tokenClaims?.aud,
           tokenIss: tokenClaims?.iss,
+          tokenIat: tokenClaims?.iat,
           tokenExp: tokenClaims?.exp,
           tokenNbf: tokenClaims?.nbf,
+          tokenAgeSeconds: ageSeconds(tokenClaims?.iat),
+          tokenExpiredSecondsAgo: ageSeconds(tokenClaims?.exp),
           expectedAudiences: supabaseAuthConfig.audiences,
           expectedIssuer: supabaseAuthConfig.issuer,
           jwksUri: supabaseAuthConfig.jwksUri,
+          // Request fingerprint — answers "who sent this?"
+          request: requestContext,
         });
         res.status(401).json({ error: "Invalid or expired token." });
         return;
@@ -344,13 +403,19 @@ export function requireAuth(
       console.warn("[auth] Supabase JWT verification failed", {
         errName: error instanceof Error ? error.name : "UnknownError",
         errMessage: error instanceof Error ? error.message : "Unknown token verification error.",
+        tokenSub: tokenClaims?.sub,
+        tokenEmail: tokenClaims?.email,
         tokenAud: tokenClaims?.aud,
         tokenIss: tokenClaims?.iss,
+        tokenIat: tokenClaims?.iat,
         tokenExp: tokenClaims?.exp,
         tokenNbf: tokenClaims?.nbf,
+        tokenAgeSeconds: ageSeconds(tokenClaims?.iat),
+        tokenExpiredSecondsAgo: ageSeconds(tokenClaims?.exp),
         expectedAudiences: supabaseAuthConfig.audiences,
         expectedIssuer: supabaseAuthConfig.issuer,
         jwksUri: supabaseAuthConfig.jwksUri,
+        request: requestContext,
       });
       res.status(401).json({ error: "Invalid or expired token." });
     });

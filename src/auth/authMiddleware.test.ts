@@ -551,17 +551,29 @@ describe("requireAuth", () => {
     requireAuth(req, res as never, jest.fn());
     await flushMicrotasks();
 
-    expect(warnMock).toHaveBeenCalledWith("[auth] Supabase JWT verification failed", {
-      errName: "Error",
-      errMessage: "unexpected \"aud\" claim value",
-      tokenAud: "anon",
-      tokenIss: "https://autoflow.supabase.co/auth/v1",
-      tokenExp: 1234567890,
-      tokenNbf: 1234567000,
-      expectedAudiences: ["authenticated"],
-      expectedIssuer: "https://autoflow.supabase.co/auth/v1",
-      jwksUri: "https://autoflow.supabase.co/auth/v1/.well-known/jwks.json",
-    });
+    // DASH-30 added forensic fields (tokenSub / tokenEmail / tokenIat /
+    // tokenAgeSeconds / tokenExpiredSecondsAgo) and a `request` block
+    // containing method/path/ip/userAgent/etc. Match the structural
+    // shape with `expect.objectContaining` so future additions don't
+    // re-break this test.
+    expect(warnMock).toHaveBeenCalledWith(
+      "[auth] Supabase JWT verification failed",
+      expect.objectContaining({
+        errName: "Error",
+        errMessage: "unexpected \"aud\" claim value",
+        tokenAud: "anon",
+        tokenIss: "https://autoflow.supabase.co/auth/v1",
+        tokenExp: 1234567890,
+        tokenNbf: 1234567000,
+        expectedAudiences: ["authenticated"],
+        expectedIssuer: "https://autoflow.supabase.co/auth/v1",
+        jwksUri: "https://autoflow.supabase.co/auth/v1/.well-known/jwks.json",
+        // DASH-30: new forensic fields. Test fixture's `req` doesn't
+        // set `method` so we only assert `path` here — production
+        // requests carry the full Express request object.
+        request: expect.objectContaining({ path: "/api/me" }),
+      }),
+    );
     expect(JSON.stringify(warnMock.mock.calls)).not.toContain(token);
     expect(res.status).toHaveBeenCalledWith(401);
   });

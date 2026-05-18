@@ -28,7 +28,7 @@ Bring your own LLM keys (Anthropic, OpenAI, Google, Bedrock, Azure) or use AutoF
 | `landing/` | Marketing site (React Router 7 + Sanity CMS + Stripe Checkout). |
 | `docs/` | Public documentation site. |
 | `autoflow-brand/` | Brand assets and Storybook-style demo of the design system. |
-| `migrations/` | Postgres migrations (raw SQL). Supabase-managed migrations live in `supabase/migrations/`. |
+| `migrations/` | Postgres migrations (raw SQL, numeric `0NN_*.sql` prefixes). Single source of truth — applied at boot by `src/db/sqlMigrations.ts`. |
 | `infra/` | Deploy configs, runbooks, infrastructure-as-code. |
 | `docker/` | Container definitions for backend + frontend. |
 | `.github/workflows/` | CI/CD (Cloudflare Pages, Fly.io, release-please). |

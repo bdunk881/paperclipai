@@ -1,10 +1,10 @@
 # ALT-2321 RLS Review Packet
 
-This directory is the review entrypoint for Brad's Phase 1b sign-off on the `migration` branch.
+> **Historical packet.** This was the entrypoint for Brad's Phase 1b sign-off on the `migration` branch. The original SQL draft lived in `supabase/migrations/20260505054500_alt_2321_phase1b_rls_draft.sql`; DASH-39 consolidated all migrations into the numeric `migrations/` directory, so the draft now lives only in git history (`git show <pre-DASH-39 sha>:supabase/migrations/20260505054500_alt_2321_phase1b_rls_draft.sql`). The applied RLS posture is captured in `migrations/014_rls_hardening.sql`, `migrations/016_control_plane_force_rls.sql`, and `migrations/027_rls_audit_close_gaps.sql`.
 
 Canonical review artifacts:
 
-- [supabase/migrations/20260505054500_alt_2321_phase1b_rls_draft.sql](../../supabase/migrations/20260505054500_alt_2321_phase1b_rls_draft.sql)
+- The original draft SQL (now in git history — see header note above)
 - [docs/alt-2321-rls-review-matrix.md](../../docs/alt-2321-rls-review-matrix.md)
 - [docs/alt-2321-supabase-schema-plan.md](../../docs/alt-2321-supabase-schema-plan.md)
 
@@ -52,5 +52,5 @@ Validation already completed:
 
 Sign-off target:
 
-- Brad approval on the canonical SQL in `supabase/migrations/20260505054500_alt_2321_phase1b_rls_draft.sql`
+- Brad approval on the canonical SQL (originally `supabase/migrations/20260505054500_alt_2321_phase1b_rls_draft.sql`; see header note for git history pointer)
 - No promotion from `migration` to `staging` until that approval is explicit in the issue thread

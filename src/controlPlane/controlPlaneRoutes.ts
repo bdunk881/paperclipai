@@ -1,10 +1,18 @@
 import express from "express";
 import { AuthenticatedRequest } from "../auth/authMiddleware";
 import { recordControlPlaneAudit, recordControlPlaneAuditBatch } from "../auditing/controlPlaneAudit";
-import { inMemoryAllowed, isPostgresPersistenceEnabled } from "../db/postgres";
+import { getPostgresPool, inMemoryAllowed, isPostgresPersistenceEnabled } from "../db/postgres";
 import { requireEntitlement } from "../middleware/requireEntitlement";
+import { withWorkspaceContext } from "../middleware/workspaceContext";
 import { WorkspaceAwareRequest } from "../middleware/workspaceResolver";
 import { getTemplate } from "../templates";
+import type {
+  AgentLifecycleStatus,
+  ControlPlaneAgent,
+  ControlPlaneTeam,
+  TeamDeploymentMode,
+  TeamLifecycleStatus,
+} from "./types";
 import { WorkflowTemplate } from "../types/workflow";
 import { controlPlaneStore } from "./controlPlaneStore";
 
@@ -129,6 +137,155 @@ function resolveWorkspaceContext(req: WorkspaceAwareRequest, res: express.Respon
 
   res.status(500).json({ error: "Workspace context was not resolved for the request" });
   return null;
+}
+
+/**
+ * DASH-40: load a team + its agents directly from the canonical Postgres
+ * tables for the active workspace, scoped through `withWorkspaceContext`
+ * so RLS applies. Mirrors the DASH-27 `loadCanonicalAgents` pattern used
+ * by GET /api/agents. Returns null when no row matches the id/workspace
+ * pair; throws on Postgres connectivity errors so the caller can decide
+ * whether to 404 or 500.
+ *
+ * The mapper fills the in-memory ControlPlaneTeam / ControlPlaneAgent
+ * shape so the rest of the route handler stays uniform. Runtime-only
+ * fields (lastHeartbeatStatus, currentExecutionId, schedule beyond the
+ * stored cron/interval) default to safe values — the dashboard already
+ * tolerates them being absent on canonical-only teams.
+ */
+async function loadCanonicalTeamDetail(
+  teamId: string,
+  workspaceId: string,
+  userId: string,
+): Promise<{ team: ControlPlaneTeam; agents: ControlPlaneAgent[] } | null> {
+  interface TeamRow {
+    id: string;
+    user_id: string;
+    name: string;
+    description: string | null;
+    workflow_template_id: string | null;
+    workflow_template_name: string | null;
+    deployment_mode: TeamDeploymentMode;
+    status: TeamLifecycleStatus;
+    paused_by_company_lifecycle: boolean;
+    restart_count: number | string;
+    last_heartbeat_at: Date | string | null;
+    budget_monthly_usd: string | number;
+    tool_budget_ceilings: Record<string, number> | string | null;
+    alert_thresholds: number[] | string | null;
+    orchestration_enabled: boolean;
+    created_at: Date | string;
+    updated_at: Date | string;
+  }
+
+  interface AgentRow {
+    id: string;
+    team_id: string;
+    user_id: string;
+    name: string;
+    role_key: string;
+    model: string | null;
+    instructions: string | null;
+    budget_monthly_usd: string | number;
+    reporting_to_agent_id: string | null;
+    status: AgentLifecycleStatus;
+    last_heartbeat_at: Date | string | null;
+    created_at: Date | string;
+    updated_at: Date | string;
+  }
+
+  const pool = getPostgresPool();
+  return withWorkspaceContext(pool, { workspaceId, userId }, async (client) => {
+    const teamResult = await client.query<TeamRow>(
+      `SELECT id, user_id, name, description, workflow_template_id,
+              workflow_template_name, deployment_mode, status,
+              paused_by_company_lifecycle, restart_count, last_heartbeat_at,
+              budget_monthly_usd, tool_budget_ceilings, alert_thresholds,
+              orchestration_enabled, created_at, updated_at
+         FROM agent_teams
+        WHERE id = $1 AND workspace_id = $2`,
+      [teamId, workspaceId],
+    );
+    if (teamResult.rowCount === 0) {
+      return null;
+    }
+    const row = teamResult.rows[0];
+
+    const parseJsonField = <T>(value: unknown, fallback: T): T => {
+      if (value === null || value === undefined) return fallback;
+      if (typeof value === "string") {
+        try {
+          return JSON.parse(value) as T;
+        } catch {
+          return fallback;
+        }
+      }
+      return value as T;
+    };
+
+    const isoOrNull = (v: Date | string | null | undefined): string | undefined => {
+      if (v === null || v === undefined) return undefined;
+      return v instanceof Date ? v.toISOString() : v;
+    };
+
+    const team: ControlPlaneTeam = {
+      id: row.id,
+      userId: row.user_id,
+      name: row.name,
+      description: row.description ?? undefined,
+      workflowTemplateId: row.workflow_template_id ?? undefined,
+      workflowTemplateName: row.workflow_template_name ?? undefined,
+      workflowId: row.workflow_template_id ?? undefined,
+      workflowName: row.workflow_template_name ?? undefined,
+      deploymentMode: row.deployment_mode,
+      status: row.status,
+      pausedByCompanyLifecycle: row.paused_by_company_lifecycle,
+      restartCount: Number(row.restart_count),
+      lastHeartbeatAt: isoOrNull(row.last_heartbeat_at),
+      budgetMonthlyUsd: Number(row.budget_monthly_usd),
+      toolBudgetCeilings: parseJsonField<Record<string, number>>(row.tool_budget_ceilings, {}),
+      alertThresholds: parseJsonField<number[]>(row.alert_thresholds, [0.8, 0.9, 1]),
+      orchestrationEnabled: row.orchestration_enabled,
+      createdAt: row.created_at instanceof Date ? row.created_at.toISOString() : row.created_at,
+      updatedAt: row.updated_at instanceof Date ? row.updated_at.toISOString() : row.updated_at,
+    };
+
+    const agentResult = await client.query<AgentRow>(
+      `SELECT id, team_id, user_id, name, role_key, model, instructions,
+              budget_monthly_usd, reporting_to_agent_id, status,
+              last_heartbeat_at, created_at, updated_at
+         FROM agents
+        WHERE team_id = $1 AND workspace_id = $2
+        ORDER BY created_at ASC`,
+      [teamId, workspaceId],
+    );
+
+    const agents: ControlPlaneAgent[] = agentResult.rows.map((agentRow) => ({
+      id: agentRow.id,
+      teamId: agentRow.team_id,
+      userId: agentRow.user_id,
+      name: agentRow.name,
+      roleKey: agentRow.role_key,
+      model: agentRow.model ?? undefined,
+      instructions: agentRow.instructions ?? "",
+      budgetMonthlyUsd: Number(agentRow.budget_monthly_usd),
+      reportingToAgentId: agentRow.reporting_to_agent_id ?? undefined,
+      skills: [],
+      schedule: { type: "manual" },
+      status: agentRow.status,
+      lastHeartbeatAt: isoOrNull(agentRow.last_heartbeat_at),
+      createdAt:
+        agentRow.created_at instanceof Date
+          ? agentRow.created_at.toISOString()
+          : agentRow.created_at,
+      updatedAt:
+        agentRow.updated_at instanceof Date
+          ? agentRow.updated_at.toISOString()
+          : agentRow.updated_at,
+    }));
+
+    return { team, agents };
+  });
 }
 
 function requirePaperclipRunId(
@@ -402,24 +559,66 @@ router.post(
   }
 });
 
-router.get("/teams/:id", (req: WorkspaceAwareRequest, res) => {
+router.get("/teams/:id", async (req: WorkspaceAwareRequest, res) => {
   const context = resolveWorkspaceContext(req, res);
   if (!context) {
     return;
   }
 
   const team = controlPlaneStore.getTeam(req.params.id, context.userId, context.workspaceId);
-  if (!team) {
+  if (team) {
+    const agents = controlPlaneStore.listAgents(team.id, context.userId, context.workspaceId);
+    const tasks = controlPlaneStore.listTasks(context.userId, team.id, context.workspaceId);
+    const heartbeats = controlPlaneStore.listHeartbeats(context.userId, team.id, context.workspaceId);
+    const executions = controlPlaneStore.listExecutions(context.userId, team.id, context.workspaceId);
+    const spend = controlPlaneStore.getTeamSpendSnapshot(team.id, context.userId, context.workspaceId);
+    res.json({ team, agents, tasks, heartbeats, executions, spend });
+    return;
+  }
+
+  // DASH-40: hiring-plan confirm writes teams + agents directly to Postgres
+  // via withWorkspaceContext + raw INSERT — they never land in the legacy
+  // in-memory controlPlaneStore. After every Fly restart the in-memory
+  // map is empty, so /teams/:id 404'd on any team that was provisioned
+  // by hiring-plan confirm rather than the legacy deployWorkflowAsTeam
+  // path. Mirrors the DASH-27 fix for GET /api/agents.
+  //
+  // The runtime-only fields (tasks / heartbeats / executions / spend)
+  // don't exist in Postgres yet, so the fallback returns empty arrays
+  // for those — the dashboard already tolerates empty arrays. A team
+  // that exists in BOTH stores returns the in-memory payload above
+  // (richer data); only canonical-only teams take this path.
+  if (!isPostgresPersistenceEnabled() || !context.workspaceId) {
     res.status(404).json({ error: "Team not found" });
     return;
   }
 
-  const agents = controlPlaneStore.listAgents(team.id, context.userId, context.workspaceId);
-  const tasks = controlPlaneStore.listTasks(context.userId, team.id, context.workspaceId);
-  const heartbeats = controlPlaneStore.listHeartbeats(context.userId, team.id, context.workspaceId);
-  const executions = controlPlaneStore.listExecutions(context.userId, team.id, context.workspaceId);
-  const spend = controlPlaneStore.getTeamSpendSnapshot(team.id, context.userId, context.workspaceId);
-  res.json({ team, agents, tasks, heartbeats, executions, spend });
+  try {
+    const canonical = await loadCanonicalTeamDetail(
+      req.params.id,
+      context.workspaceId,
+      context.userId,
+    );
+    if (!canonical) {
+      res.status(404).json({ error: "Team not found" });
+      return;
+    }
+    res.json({
+      team: canonical.team,
+      agents: canonical.agents,
+      tasks: [],
+      heartbeats: [],
+      executions: [],
+      spend: null,
+    });
+  } catch (err) {
+    console.warn(
+      `[controlPlaneRoutes] canonical team lookup failed for ${req.params.id}: ${
+        (err as Error).message
+      }`,
+    );
+    res.status(404).json({ error: "Team not found" });
+  }
 });
 
 router.get("/teams/:id/spend", (req: WorkspaceAwareRequest, res) => {

@@ -129,7 +129,10 @@ export default function LandingPage() {
       if (import.meta.env.VITE_USE_MOCK === "true") {
         await new Promise((r) => setTimeout(r, 800));
       } else {
-        const res = await fetch("/api/waitlist-signup", {
+        // DASH-42: backend mounts publicApiRoutes at /api/public/landing and
+        // defines POST /waitlist-signup inside that router. The bare
+        // /api/waitlist-signup path 404'd every signup since landing shipped.
+        const res = await fetch("/api/public/landing/waitlist-signup", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ email: email.trim() }),

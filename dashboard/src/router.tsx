@@ -26,6 +26,7 @@ import AgentDetail from "./pages/AgentDetail";
 import ApiKeys from "./pages/ApiKeys";
 import Approvals from "./pages/Approvals";
 import AuthCallback from "./pages/AuthCallback";
+import Escalations from "./pages/Escalations";
 import BudgetDashboard from "./pages/BudgetDashboard";
 import CheckoutSuccess from "./pages/CheckoutSuccess";
 import Hire from "./pages/Hire";
@@ -215,6 +216,9 @@ const routes: RouteObject[] = [
       // below or it'd get masked.
       { path: "agents/:agentId", element: <AgentDetail /> },
       { path: "approvals", element: <Approvals /> },
+      // DASH-46: Ask-the-CEO surface. Backend was live since HEL-92 but
+      // no page consumed it (HEL-139 C3 + HEL-140 H3).
+      { path: "escalations", element: <Escalations /> },
       { path: "mission-state", element: <MissionState /> },
 
       // Workforce pillar

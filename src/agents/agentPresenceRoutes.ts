@@ -27,8 +27,10 @@ import {
   listWorkspaceAgentPresence,
   presenceChannel,
   setAgentPresence,
+  tokenPreviewChannel,
   type AgentPresence,
   type AgentPresenceState,
+  type AgentTokenPreviewEvent,
 } from "./agentPresence";
 import { getRedisClient } from "../queue/redisClient";
 
@@ -127,9 +129,19 @@ export function createAgentPresenceRoutes(): Router {
 
     if (sub) {
       try {
-        await sub.subscribe(presenceChannel(workspaceId));
-        sub.on("message", (_channel: string, message: string) => {
+        // Subscribe to both the durable presence channel and the
+        // ephemeral token-preview channel on the same SSE connection.
+        // SSE event types differentiate the two on the client.
+        const presenceCh = presenceChannel(workspaceId);
+        const tokensCh = tokenPreviewChannel(workspaceId);
+        await sub.subscribe(presenceCh, tokensCh);
+        sub.on("message", (channel: string, message: string) => {
           try {
+            if (channel === tokensCh) {
+              const parsed = JSON.parse(message) as AgentTokenPreviewEvent;
+              send("token", { preview: parsed });
+              return;
+            }
             const parsed = JSON.parse(message) as AgentPresence;
             send("update", { presence: parsed });
           } catch {

@@ -33,6 +33,13 @@ primary_region = "ord"
   INFISICAL_ENV = "dev"
   PORT = "8080"
   NODE_ENV = "production"
+  # DASH-38: Sentry tags every event with this value. Without it,
+  # instrument.ts falls back to NODE_ENV — which is "production" on Fly
+  # (Node prod-mode bundling) — so dev events landed in Sentry's prod
+  # project filter and got mixed in with real prod errors. Setting it
+  # explicitly here keeps the dev/staging/prod separation we wanted from
+  # the DASH-33 Sentry audit.
+  SENTRY_ENVIRONMENT = "dev"
   # AUTOFLOW_ALLOW_INMEMORY is intentionally unset — HEL-80 enforces double-locked
   # production safety. The server will fail-fast if Postgres is unreachable.
 
@@ -50,6 +57,18 @@ primary_region = "ord"
     grace_period = "20s"
     method = "GET"
     path = "/health"
+
+# DASH-38: restart-on-failure policy applies to BOTH process groups (app
+# and worker) because Fly evaluates `[[restart]]` against any machine
+# that has no http_service binding-or one whose service exits.
+# Without it the worker stays in `stopped` state forever after a single
+# crash — exactly what was observed when worker.ts hit
+# "REDIS_URL or UPSTASH_REDIS_URL must be set. Exiting." (DASH-37 fixes
+# the underlying Upstash wiring; this policy makes future crashes
+# auto-recover instead of silently leaving the queue unprocessed).
+[[restart]]
+  policy = "on-failure"
+  retries = 10
 
 [vm]
   cpu_kind = "shared"

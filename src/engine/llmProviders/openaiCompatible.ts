@@ -1,11 +1,14 @@
 import OpenAI from "openai";
 import {
+  AgentTool,
   DEFAULT_LLM_REQUEST_TIMEOUT_MS,
   LLMProvider,
   LLMProviderConfig,
   LLMResponse,
   ResponseFormat,
 } from "./types";
+
+const DEFAULT_MAX_TOOL_ITERATIONS = 8;
 
 interface OpenAICompatibleOptions {
   label: string;
@@ -79,6 +82,64 @@ export function createOpenAICompatibleProvider(
   const responseFormat = toOpenAIResponseFormat(config.responseFormat);
 
   return async (prompt: string): Promise<LLMResponse> => {
+    // Agentic tool-loop path (PR 3). Mirrors the Anthropic provider
+    // shape so callers can swap providers without changing call
+    // sites. JSON-mode (responseFormat) is intentionally not mixed
+    // with the loop — they use the same tool primitive in opposite
+    // ways.
+    if (config.tools && config.tools.length > 0 && !responseFormat) {
+      return runOpenAIToolLoop({
+        client,
+        model: resolvedModel,
+        label: options.label,
+        prompt,
+        tools: config.tools,
+        maxIterations: config.maxToolIterations ?? DEFAULT_MAX_TOOL_ITERATIONS,
+      });
+    }
+
+    // Streaming path: caller supplied an onText callback. Use the
+    // chat-completions stream and accumulate text deltas across
+    // chunks. Skipped when JSON-mode is in effect — structured
+    // responses arrive as a single content blob, streaming the
+    // delta-by-delta JSON isn't useful for the presence pill.
+    if (config.onText && !responseFormat) {
+      let accumulated = "";
+      const onText = config.onText;
+      let promptTokens = 0;
+      let completionTokens = 0;
+      try {
+        const stream = await client.chat.completions.create({
+          model: resolvedModel,
+          messages: [{ role: "user", content: prompt }],
+          stream: true,
+          stream_options: { include_usage: true },
+        });
+        for await (const chunk of stream) {
+          const delta = chunk.choices[0]?.delta?.content ?? "";
+          if (delta) {
+            accumulated += delta;
+            try {
+              onText(delta, accumulated);
+            } catch {
+              // Stream-consumer errors must not abort the LLM call.
+            }
+          }
+          if (chunk.usage) {
+            promptTokens = chunk.usage.prompt_tokens;
+            completionTokens = chunk.usage.completion_tokens;
+          }
+        }
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        throw new Error(`${options.label} API error: ${msg}`);
+      }
+      return {
+        text: accumulated,
+        usage: { promptTokens, completionTokens },
+      };
+    }
+
     let response;
     try {
       response = await client.chat.completions.create({
@@ -101,4 +162,170 @@ export function createOpenAICompatibleProvider(
 
     return { text, usage };
   };
+}
+
+/**
+ * PR 3: OpenAI-compatible agentic tool loop.
+ *
+ * Mirrors `runAnthropicToolLoop` in anthropic.ts but speaks the
+ * Chat Completions API: assistant turns carry `tool_calls`, tool
+ * results come back as `role: "tool"` messages with the matching
+ * `tool_call_id`. Loop terminates on `finish_reason !== "tool_calls"`
+ * or when maxIterations fires.
+ *
+ * Works against every OpenAI-compatible endpoint that supports
+ * tools (OpenAI, Groq, Fireworks, Together, xAI, Perplexity sonar-
+ * pro, Mistral via openai-compat — the last one is double-covered).
+ * Endpoints without tools support (older Ollama, LocalAI) will 400;
+ * the caller's catch surfaces the underlying provider error.
+ */
+async function runOpenAIToolLoop(args: {
+  client: OpenAI;
+  model: string;
+  label: string;
+  prompt: string;
+  tools: AgentTool[];
+  maxIterations: number;
+}): Promise<LLMResponse> {
+  const toolsByName = new Map(args.tools.map((t) => [t.name, t]));
+  const openaiTools: OpenAI.Chat.Completions.ChatCompletionTool[] = args.tools.map(
+    (t) => ({
+      type: "function",
+      function: {
+        name: t.name,
+        description: t.description,
+        parameters: t.inputSchema,
+      },
+    }),
+  );
+
+  const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
+    { role: "user", content: args.prompt },
+  ];
+
+  let cumulativePromptTokens = 0;
+  let cumulativeCompletionTokens = 0;
+
+  for (let iteration = 0; iteration < args.maxIterations; iteration++) {
+    let response: OpenAI.Chat.Completions.ChatCompletion;
+    try {
+      response = await args.client.chat.completions.create({
+        model: args.model,
+        messages,
+        tools: openaiTools,
+      });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      throw new Error(`${args.label} API error: ${msg}`);
+    }
+
+    if (response.usage) {
+      cumulativePromptTokens += response.usage.prompt_tokens;
+      cumulativeCompletionTokens += response.usage.completion_tokens;
+    }
+
+    const choice = response.choices[0];
+    const assistantMessage = choice?.message;
+    if (!assistantMessage) {
+      return {
+        text: "",
+        usage: {
+          promptTokens: cumulativePromptTokens,
+          completionTokens: cumulativeCompletionTokens,
+        },
+      };
+    }
+
+    messages.push(assistantMessage);
+
+    if (choice.finish_reason !== "tool_calls" || !assistantMessage.tool_calls) {
+      return {
+        text: assistantMessage.content ?? "",
+        usage: {
+          promptTokens: cumulativePromptTokens,
+          completionTokens: cumulativeCompletionTokens,
+        },
+      };
+    }
+
+    // Execute every tool_call in parallel. The Chat Completions API
+    // wants ONE `role: "tool"` message per tool_call_id, in order, so
+    // we map results back by id after the await.
+    const toolMessages = await Promise.all(
+      assistantMessage.tool_calls.map(async (call) => {
+        if (call.type !== "function") {
+          return {
+            role: "tool" as const,
+            tool_call_id: call.id,
+            content: `Tool calls of type "${call.type}" are not supported.`,
+          };
+        }
+        const tool = toolsByName.get(call.function.name);
+        if (!tool) {
+          return {
+            role: "tool" as const,
+            tool_call_id: call.id,
+            content: `Tool "${call.function.name}" is not registered. Try another approach.`,
+          };
+        }
+        try {
+          const input = call.function.arguments
+            ? (JSON.parse(call.function.arguments) as Record<string, unknown>)
+            : {};
+          const result = await tool.handler(input);
+          return {
+            role: "tool" as const,
+            tool_call_id: call.id,
+            content:
+              typeof result === "string" ? result : JSON.stringify(result),
+          };
+        } catch (handlerErr) {
+          const msg =
+            handlerErr instanceof Error ? handlerErr.message : String(handlerErr);
+          return {
+            role: "tool" as const,
+            tool_call_id: call.id,
+            content: `Tool "${call.function.name}" failed: ${msg}`,
+          };
+        }
+      }),
+    );
+
+    messages.push(...toolMessages);
+  }
+
+  // Iteration cap: ask for a wrap-up turn without tools.
+  try {
+    const finalTurn = await args.client.chat.completions.create({
+      model: args.model,
+      messages: [
+        ...messages,
+        {
+          role: "user",
+          content:
+            "Maximum tool iterations reached. Summarize what you accomplished and what's still pending in 1-3 sentences. Do not call any tools.",
+        },
+      ],
+    });
+    if (finalTurn.usage) {
+      cumulativePromptTokens += finalTurn.usage.prompt_tokens;
+      cumulativeCompletionTokens += finalTurn.usage.completion_tokens;
+    }
+    const text = finalTurn.choices[0]?.message?.content ?? "";
+    return {
+      text: `${text}\n\n[interrupted: max iterations]`,
+      usage: {
+        promptTokens: cumulativePromptTokens,
+        completionTokens: cumulativeCompletionTokens,
+      },
+    };
+  } catch {
+    return {
+      text: "[interrupted: max iterations]",
+      usage: {
+        promptTokens: cumulativePromptTokens,
+        completionTokens: cumulativeCompletionTokens,
+      },
+    };
+  }
 }

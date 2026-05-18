@@ -1,11 +1,14 @@
 import Anthropic from "@anthropic-ai/sdk";
 import {
+  AgentTool,
   DEFAULT_LLM_REQUEST_TIMEOUT_MS,
   LLMProvider,
   LLMProviderConfig,
   LLMResponse,
   ResponseFormat,
 } from "./types";
+
+const DEFAULT_MAX_TOOL_ITERATIONS = 8;
 
 /**
  * Anthropic doesn't expose a `response_format` knob — the recommended
@@ -65,6 +68,22 @@ export function createAnthropicProvider(config: LLMProviderConfig): LLMProvider 
   const forcedTool = toAnthropicForcedTool(config.responseFormat);
 
   return async (prompt: string): Promise<LLMResponse> => {
+    // Agentic tool-loop path (DASH-22). When `tools` is set the
+    // model can emit tool_use blocks; we invoke the matching handler
+    // and feed tool_result back until the model stops calling tools
+    // or we hit maxToolIterations. JSON-mode (forcedTool) is
+    // intentionally not combined with this path — they use the same
+    // tool primitive in opposite ways.
+    if (config.tools && config.tools.length > 0 && !forcedTool) {
+      return runAnthropicToolLoop({
+        client,
+        model: config.model,
+        prompt,
+        tools: config.tools,
+        maxIterations: config.maxToolIterations ?? DEFAULT_MAX_TOOL_ITERATIONS,
+      });
+    }
+
     // Streaming path: caller wired an onText callback to forward
     // incremental deltas (e.g. SSE → agent presence pill). Use the
     // Anthropic SDK's `messages.stream` helper so we still get the
@@ -149,4 +168,168 @@ export function createAnthropicProvider(config: LLMProviderConfig): LLMProvider 
 
     return { text, usage };
   };
+}
+
+/**
+ * DASH-22: Anthropic agentic tool loop.
+ *
+ * Runs `messages.create` in a loop:
+ *   1. Send the conversation so far + tool defs.
+ *   2. If the response has `stop_reason === "tool_use"`, gather every
+ *      tool_use block, invoke each handler concurrently, append the
+ *      assistant turn + the corresponding user-role tool_result turn
+ *      to the conversation, and loop.
+ *   3. Otherwise (`end_turn`, `max_tokens`, etc.) — return the final
+ *      assistant text + cumulative usage.
+ *
+ * Tool handler failures are surfaced to the model as a `tool_result`
+ * with `is_error: true` so the model can recover (try a different
+ * tool, or apologize to the user). They do NOT throw out of the loop.
+ *
+ * The cap is intentionally tight (8 by default). Real-world agentic
+ * tasks finish in 2-4 iterations; anything past that is usually a
+ * runaway loop. The model gets a final summarize-only turn when the
+ * cap fires so the caller always receives readable text.
+ */
+async function runAnthropicToolLoop(args: {
+  client: Anthropic;
+  model: string;
+  prompt: string;
+  tools: AgentTool[];
+  maxIterations: number;
+}): Promise<LLMResponse> {
+  const toolsByName = new Map(args.tools.map((t) => [t.name, t]));
+  const anthropicTools: Anthropic.Messages.Tool[] = args.tools.map((t) => ({
+    name: t.name,
+    description: t.description,
+    input_schema: t.inputSchema as Anthropic.Messages.Tool.InputSchema,
+  }));
+
+  const messages: Anthropic.Messages.MessageParam[] = [
+    { role: "user", content: args.prompt },
+  ];
+
+  let cumulativePromptTokens = 0;
+  let cumulativeCompletionTokens = 0;
+
+  for (let iteration = 0; iteration < args.maxIterations; iteration++) {
+    let response: Anthropic.Messages.Message;
+    try {
+      response = await args.client.messages.create({
+        model: args.model,
+        max_tokens: 4096,
+        messages,
+        tools: anthropicTools,
+      });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      throw new Error(`Anthropic API error: ${msg}`);
+    }
+
+    cumulativePromptTokens += response.usage.input_tokens;
+    cumulativeCompletionTokens += response.usage.output_tokens;
+
+    // Always append the assistant turn so the next loop iteration
+    // (or the final return) has the full transcript.
+    messages.push({ role: "assistant", content: response.content });
+
+    if (response.stop_reason !== "tool_use") {
+      const text = extractAssistantText(response.content);
+      return {
+        text,
+        usage: {
+          promptTokens: cumulativePromptTokens,
+          completionTokens: cumulativeCompletionTokens,
+        },
+      };
+    }
+
+    // Gather every tool_use block in this turn (Anthropic may emit
+    // more than one) and run them in parallel.
+    const toolUses = response.content.filter(
+      (block): block is Anthropic.Messages.ToolUseBlock =>
+        block.type === "tool_use",
+    );
+
+    const toolResults = await Promise.all(
+      toolUses.map(async (use) => {
+        const tool = toolsByName.get(use.name);
+        if (!tool) {
+          return {
+            type: "tool_result" as const,
+            tool_use_id: use.id,
+            content: `Tool "${use.name}" is not registered. Try a different tool or finish without it.`,
+            is_error: true,
+          };
+        }
+        try {
+          const input = (use.input ?? {}) as Record<string, unknown>;
+          const result = await tool.handler(input);
+          return {
+            type: "tool_result" as const,
+            tool_use_id: use.id,
+            content:
+              typeof result === "string" ? result : JSON.stringify(result),
+          };
+        } catch (handlerErr) {
+          const msg =
+            handlerErr instanceof Error ? handlerErr.message : String(handlerErr);
+          return {
+            type: "tool_result" as const,
+            tool_use_id: use.id,
+            content: `Tool "${use.name}" failed: ${msg}`,
+            is_error: true,
+          };
+        }
+      }),
+    );
+
+    messages.push({ role: "user", content: toolResults });
+  }
+
+  // Iteration cap exceeded: ask the model to wrap up without tools.
+  // This is best-effort; if the wrap-up itself errors we surface the
+  // last assistant text we already accumulated.
+  try {
+    const finalTurn = await args.client.messages.create({
+      model: args.model,
+      max_tokens: 1024,
+      messages: [
+        ...messages,
+        {
+          role: "user",
+          content:
+            "Maximum tool iterations reached. Summarize what you accomplished and what's still pending in 1-3 sentences. Do not call any tools.",
+        },
+      ],
+    });
+    cumulativePromptTokens += finalTurn.usage.input_tokens;
+    cumulativeCompletionTokens += finalTurn.usage.output_tokens;
+    const text =
+      extractAssistantText(finalTurn.content) ||
+      "[interrupted: max iterations]";
+    return {
+      text: `${text}\n\n[interrupted: max iterations]`,
+      usage: {
+        promptTokens: cumulativePromptTokens,
+        completionTokens: cumulativeCompletionTokens,
+      },
+    };
+  } catch {
+    return {
+      text: "[interrupted: max iterations]",
+      usage: {
+        promptTokens: cumulativePromptTokens,
+        completionTokens: cumulativeCompletionTokens,
+      },
+    };
+  }
+}
+
+function extractAssistantText(content: Anthropic.Messages.ContentBlock[]): string {
+  return content
+    .filter((b): b is Anthropic.Messages.TextBlock => b.type === "text")
+    .map((b) => b.text)
+    .join("")
+    .trim();
 }

@@ -1127,8 +1127,11 @@ app.post("/api/runs/:id/retry", requireAuthOrQaBypass, workspaceResolver, async 
       await staleJob.remove();
     }
   } catch {
-    // Removal is best-effort; if it fails the add below will still throw on
-    // duplicate conflict rather than silently succeed.
+    // If we cannot remove the stale job the re-add with the same jobId would
+    // silently no-op (BullMQ deduplicates by jobId), so fail fast rather than
+    // marking the run "queued" with no worker execution backing it.
+    res.status(503).json({ error: "Failed to clear stale job; retry aborted" });
+    return;
   }
 
   await runQueue.add(

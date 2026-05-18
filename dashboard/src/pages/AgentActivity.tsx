@@ -93,35 +93,6 @@ function verbFromType(type: string): string {
   return type.split(".").join(" ");
 }
 
-/**
- * Render a small colored badge for events whose payload metadata
- * carries a `source` tag (Wave 5 check-in / hand-off via the agent
- * actions routes). Returns null for events without a recognized
- * source so the row stays uncluttered.
- */
-function sourceBadge(event: { payload?: unknown }): {
-  label: string;
-  color: string;
-  bg: string;
-} | null {
-  const payload = event.payload as { metadata?: { source?: string } } | undefined;
-  const source = payload?.metadata?.source;
-  if (source === "check-in") {
-    return {
-      label: "via Check-in",
-      color: "var(--af2-mustard)",
-      bg: "rgba(192,142,58,0.12)",
-    };
-  }
-  if (source === "handoff") {
-    return {
-      label: "via Hand-off",
-      color: "var(--af2-sage)",
-      bg: "rgba(90,122,90,0.12)",
-    };
-  }
-  return null;
-}
 
 function filterEventsForTab(
   events: ObservabilityEvent[],

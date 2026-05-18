@@ -66,7 +66,7 @@ describe("TicketActorView", () => {
         </Routes>
       </MemoryRouter>
     );
-    expect(container.querySelector(".scanline-skeleton")).not.toBeNull();
+    expect(container.querySelector(".animate-spin")).not.toBeNull();
   });
 
   it("shows fallback error message for non-Error throw", async () => {

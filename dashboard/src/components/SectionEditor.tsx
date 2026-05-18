@@ -110,6 +110,7 @@ export function SectionEditor({ body, onChange, sections, disabled }: SectionEdi
  * Exported for testability — the round-trip invariant
  * `serialize(parse(x)) === x` is the regression we care about.
  */
+// eslint-disable-next-line react-refresh/only-export-components
 export function parseSections(
   body: string,
   knownSections: NamedSection[],
@@ -157,6 +158,7 @@ export function parseSections(
  * with empty bodies are omitted from the output so a half-filled draft
  * doesn't render with trailing empty headings.
  */
+// eslint-disable-next-line react-refresh/only-export-components
 export function serializeSections(
   blocks: Array<{ heading: string; body: string }>,
 ): string {

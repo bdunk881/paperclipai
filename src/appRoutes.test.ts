@@ -1118,7 +1118,7 @@ describe("POST /api/runs/:id/retry", () => {
 
   it("removes a stale failed BullMQ job before re-enqueuing", async () => {
     const mockRemove = jest.fn().mockResolvedValue(undefined);
-    mockQueueGetJob.mockResolvedValue({ id: "run-failed-2", remove: mockRemove });
+    mockQueueGetJob.mockResolvedValue({ id: "run-failed-2b", remove: mockRemove });
 
     await runStore.create({
       id: "run-failed-2b",
@@ -1135,6 +1135,30 @@ describe("POST /api/runs/:id/retry", () => {
     expect(res.status).toBe(200);
     expect(mockRemove).toHaveBeenCalledTimes(1);
     expect(mockQueueAdd).toHaveBeenCalledTimes(1);
+  });
+
+  it("returns 503 when stale job removal fails", async () => {
+    mockQueueGetJob.mockResolvedValue({
+      id: "run-failed-2c",
+      remove: jest.fn().mockRejectedValue(new Error("Redis error")),
+    });
+
+    await runStore.create({
+      id: "run-failed-2c",
+      templateId: "tpl-b",
+      templateName: "Workflow B",
+      status: "failed",
+      startedAt: new Date().toISOString(),
+      input: {},
+      stepResults: [],
+      userId: "test-user-id",
+    });
+
+    const res = await request(app).post("/api/runs/run-failed-2c/retry");
+    expect(res.status).toBe(503);
+    expect(res.body.error).toMatch(/stale job/i);
+    const unchanged = await runStore.get("run-failed-2c");
+    expect(unchanged?.status).toBe("failed");
   });
 
   it("returns 503 when the run queue is unavailable (no Redis)", async () => {

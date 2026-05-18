@@ -701,17 +701,17 @@ export default function TicketDetail({
         <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_320px]">
           <section className="space-y-5">
             {aggregate?.childTickets?.length ? (
-              <section className="rounded-[30px] border border-slate-800 bg-slate-950/80 p-5">
+              <section className="af2-card p-5">
                 <div className="mb-4 flex items-center justify-between gap-3">
                   <div>
-                    <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-af2-ink-3">
                       Linked Tasks
                     </p>
-                    <h2 className="mt-2 text-lg font-semibold text-slate-100">
+                    <h2 className="mt-2 font-af2-serif text-lg text-af2-ink">
                       Collaboration dependencies and child execution threads
                     </h2>
                   </div>
-                  <span className="rounded-full border border-slate-700 px-3 py-1 text-xs text-slate-400">
+                  <span className="rounded-full border border-af2-line px-3 py-1 text-xs text-af2-ink-3">
                     {aggregate.childTickets.length} linked
                   </span>
                 </div>
@@ -721,11 +721,11 @@ export default function TicketDetail({
                     <Link
                       key={childTicket.id}
                       to={`/tickets/${childTicket.id}`}
-                      className="flex items-center gap-3 rounded-2xl px-3 py-3 transition hover:bg-af2-paper-2/10"
+                      className="flex items-center gap-3 rounded-md px-3 py-3 transition hover:bg-af2-paper-2"
                     >
                       <div className="min-w-0 flex-1">
-                        <p className="truncate text-sm font-semibold text-slate-100">{childTicket.title}</p>
-                        <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-slate-500">
+                        <p className="truncate text-sm font-semibold text-af2-ink">{childTicket.title}</p>
+                        <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-af2-ink-3">
                           <span className="font-af2-mono uppercase tracking-[0.16em]">{childTicket.id}</span>
                           {childTicket.owner ? (
                             <>
@@ -744,24 +744,24 @@ export default function TicketDetail({
               </section>
             ) : null}
 
-            <div className="rounded-[30px] border border-slate-800 bg-slate-950/80 p-5">
+            <div className="af2-card p-5">
               <div className="mb-4 flex items-center justify-between gap-3">
                 <div>
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-af2-ink-3">
                     Activity Stream
                   </p>
-                  <h2 className="mt-2 text-lg font-semibold text-slate-100">
+                  <h2 className="mt-2 font-af2-serif text-lg text-af2-ink">
                     Timeline of comments, structured updates, and close proposals
                   </h2>
                 </div>
-                <span className="rounded-full border border-slate-700 px-3 py-1 text-xs text-slate-400">
+                <span className="rounded-full border border-af2-line px-3 py-1 text-xs text-af2-ink-3">
                   {updates.length} entries
                 </span>
               </div>
 
               <form onSubmit={(event) => void handleUpdateSubmit(event)} className="mb-5 space-y-3">
                 <label className="grid gap-2">
-                  <span className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">
+                  <span className="text-xs font-semibold uppercase tracking-[0.18em] text-af2-ink-3">
                     Publish structured update
                   </span>
                   <div className="relative">
@@ -777,7 +777,7 @@ export default function TicketDetail({
                       }
                       onKeyDown={handleComposerKeyDown}
                       placeholder="Summarize progress, blockers, or handoff notes. Use @ to mention agents or human teammates."
-                      className="w-full rounded-[24px] border border-slate-700 bg-slate-950/80 px-4 py-3 text-sm text-slate-100 placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-teal-400"
+                      className="af2-input w-full"
                     />
 
                     {mentionContext ? (
@@ -795,7 +795,7 @@ export default function TicketDetail({
                                   "flex w-full items-center gap-3 rounded-2xl px-4 py-2 text-left text-sm transition",
                                   index === activeMentionIndex
                                     ? "bg-af2-clay text-white"
-                                    : "text-af2-ink-4 hover:bg-af2-paper-2"
+                                    : "text-af2-ink-2 hover:bg-af2-paper-2"
                                 )}
                               >
                                 <span
@@ -804,12 +804,12 @@ export default function TicketDetail({
                                     index === activeMentionIndex
                                       ? "bg-white/15 text-white"
                                       : candidate.tone === "teal"
-                                        ? "bg-teal-500/15 text-teal-500"
+                                        ? "bg-af2-sage/15 text-af2-sage"
                                         : candidate.tone === "orange"
-                                          ? "bg-orange-500/15 text-orange-500"
+                                          ? "bg-af2-mustard/15 text-af2-mustard"
                                           : candidate.tone === "indigo"
-                                            ? "bg-af2-clay-soft text-af2-clay"
-                                            : "bg-slate-700/40 text-slate-300"
+                                            ? "bg-af2-clay/15 text-af2-clay"
+                                            : "bg-af2-paper-2 text-af2-ink-2"
                                   )}
                                 >
                                   {candidate.initials}
@@ -821,7 +821,7 @@ export default function TicketDetail({
                                       "block truncate text-xs",
                                       index === activeMentionIndex
                                         ? "text-white/80"
-                                        : "text-af2-ink-4"
+                                        : "text-af2-ink-3"
                                     )}
                                   >
                                     {candidate.subtitle}
@@ -831,7 +831,7 @@ export default function TicketDetail({
                             ))}
                           </div>
                         ) : (
-                          <div className="p-4 text-sm text-af2-ink-4">
+                          <div className="p-4 text-sm text-af2-ink-3">
                             No agents found.
                           </div>
                         )}
@@ -865,8 +865,8 @@ export default function TicketDetail({
                         className={clsx(
                           "inline-flex items-center gap-2 rounded-full border px-4 py-2 text-sm font-semibold transition",
                           submitting
-                            ? "cursor-not-allowed border-slate-700 bg-slate-800 text-slate-500"
-                            : "border-af2-clay/40 bg-af2-clay-soft text-af2-clay hover:border-af2-clay/40 hover:bg-af2-clay-soft"
+                            ? "cursor-not-allowed border-af2-line bg-af2-paper-2 text-af2-ink-3"
+                            : "border-af2-clay/40 bg-af2-clay/10 text-af2-clay hover:bg-af2-clay/15"
                         )}
                       >
                         <Sparkles size={15} />
@@ -879,8 +879,8 @@ export default function TicketDetail({
                       className={clsx(
                         "inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-semibold transition",
                         submitting || !updateDraft.trim()
-                          ? "cursor-not-allowed bg-slate-700 text-slate-400"
-                          : "bg-indigo-500 text-white hover:bg-indigo-400"
+                          ? "cursor-not-allowed bg-af2-paper-2 text-af2-ink-3"
+                          : "bg-af2-clay text-white hover:bg-af2-clay-2"
                       )}
                     >
                       {submitting ? <Loader2 size={15} className="animate-spin" /> : <MessageSquarePlus size={15} />}
@@ -903,8 +903,8 @@ export default function TicketDetail({
 
             <SlaTimerPanel ticket={ticket} nowMs={timerNow} />
 
-            <section className="rounded-[30px] border border-slate-800 bg-slate-950/80 p-5">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Ownership</p>
+            <section className="af2-card p-5">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-af2-ink-3">Ownership</p>
               <div className="mt-4 space-y-3">
                 {owner ? <TicketActorChip actor={owner} role="Primary" /> : null}
                 {collaborators.map((assignee) => (
@@ -913,8 +913,8 @@ export default function TicketDetail({
               </div>
             </section>
 
-            <section className="rounded-[30px] border border-slate-800 bg-slate-950/80 p-5">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Metadata</p>
+            <section className="af2-card p-5">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-af2-ink-3">Metadata</p>
               <div className="mt-4 grid gap-3">
                 <MetadataRow
                   label="SLA deadline"
@@ -939,8 +939,8 @@ export default function TicketDetail({
               </div>
             </section>
 
-            <section className="rounded-[30px] border border-slate-800 bg-slate-950/80 p-5">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Suggested actor views</p>
+            <section className="af2-card p-5">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-af2-ink-3">Suggested actor views</p>
               <div className="mt-4 space-y-2">
                 {[owner, ...collaborators].filter(Boolean).map((assignee) => {
                   const actor = assignee!;
@@ -950,13 +950,13 @@ export default function TicketDetail({
                     <Link
                       key={`${actor.type}:${actor.id}`}
                       to={`/tickets/actors/${actor.type}/${actor.id}`}
-                      className="flex items-center justify-between rounded-2xl border border-slate-800 bg-slate-900/60 px-4 py-3 text-sm transition hover:border-teal-500/30 hover:bg-slate-900"
+                      className="flex items-center justify-between rounded-md border border-af2-line bg-af2-card px-4 py-3 text-sm transition hover:border-af2-sage/30 hover:bg-af2-paper-2"
                     >
-                      <span className="inline-flex items-center gap-2 text-slate-200">
+                      <span className="inline-flex items-center gap-2 text-af2-ink">
                         <Icon size={14} />
                         {profile.name}
                       </span>
-                      <ArrowLeft size={14} className="rotate-180 text-slate-500" />
+                      <ArrowLeft size={14} className="rotate-180 text-af2-ink-3" />
                     </Link>
                   );
                 })}
@@ -1148,18 +1148,18 @@ function CloseRequestBanner({
   onReject: () => void;
 }) {
   return (
-    <section className="relative overflow-hidden rounded-[28px] border border-af2-clay/40 bg-af2-clay-soft px-5 py-5">
+    <section className="relative overflow-hidden rounded-md border border-af2-clay/40 bg-af2-clay/10 px-5 py-5">
       <div className="absolute inset-x-0 top-0 h-px bg-af2-clay/80 shadow-glow" />
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div className="max-w-3xl">
           <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-af2-clay">Ready to close</p>
-          <h2 className="mt-2 text-lg font-semibold text-slate-100">
+          <h2 className="mt-2 font-af2-serif text-lg text-af2-ink">
             {getTicketActorProfile(closeRequest.requestedBy).name} requested closure review
           </h2>
-          <p className="mt-2 text-sm leading-6 text-slate-300">
+          <p className="mt-2 text-sm leading-6 text-af2-ink-2">
             {closeRequest.note || "A collaborator proposed this ticket for final confirmation."}
           </p>
-          <p className="mt-2 text-xs uppercase tracking-[0.16em] text-slate-500">
+          <p className="mt-2 text-xs uppercase tracking-[0.16em] text-af2-ink-3">
             Requested {relativeTicketTime(closeRequest.requestedAt)}
           </p>
         </div>
@@ -1171,7 +1171,7 @@ function CloseRequestBanner({
               onClick={onReject}
               disabled={submitting}
               className={clsx(
-                "inline-flex items-center gap-2 rounded-full border border-slate-700 bg-slate-950/80 px-4 py-2 text-sm font-semibold text-slate-200 transition hover:border-rose-500/40 hover:text-rose-200",
+                "inline-flex items-center gap-2 rounded-full border border-af2-line bg-af2-card px-4 py-2 text-sm font-semibold text-af2-ink transition hover:border-af2-clay/40 hover:text-af2-clay",
                 submitting && "cursor-not-allowed opacity-60"
               )}
             >
@@ -1199,7 +1199,7 @@ function CloseRequestBanner({
               />
               {showResolveBurst ? (
                 <span className="absolute inset-0 flex items-center justify-center">
-                  <span className="h-12 w-12 rounded-full bg-gradient-to-r from-af2-clay/40 to-teal-400/40 blur-xl" />
+                  <span className="h-12 w-12 rounded-full bg-gradient-to-r from-af2-clay/40 to-af2-sage/40 blur-xl" />
                 </span>
               ) : null}
               <span className="relative inline-flex items-center gap-2">
@@ -1209,7 +1209,7 @@ function CloseRequestBanner({
             </button>
           </div>
         ) : (
-          <div className="rounded-2xl border border-slate-800 bg-slate-950/80 px-4 py-3 text-sm text-slate-300">
+          <div className="rounded-md border border-af2-line bg-af2-card px-4 py-3 text-sm text-af2-ink-2">
             Primary confirmation is restricted to the primary assignee.
           </div>
         )}
@@ -1220,7 +1220,7 @@ function CloseRequestBanner({
 
 function MemorySidebar({ memoryState }: { memoryState: MemoryLoadState }) {
   return (
-    <section className="animate-slide-in-right overflow-hidden rounded-[30px] border border-af2-line bg-af2-paper shadow-af2">
+    <section className="animate-slide-in-right af2-card overflow-hidden">
       <div className="sticky top-0 flex h-14 items-center gap-2 border-b border-af2-line px-5 text-af2-ink-4 backdrop-blur">
         <Brain size={16} />
         <span className="text-sm font-semibold">Memory</span>
@@ -1232,9 +1232,9 @@ function MemorySidebar({ memoryState }: { memoryState: MemoryLoadState }) {
       <div className="max-h-[32rem] space-y-3 overflow-y-auto px-4 py-4">
         {memoryState.status === "loading" && memoryState.entries.length === 0 ? (
           <>
-            <div className="scanline-skeleton h-24 rounded-2xl" />
-            <div className="scanline-skeleton h-24 rounded-2xl" />
-            <div className="scanline-skeleton h-24 rounded-2xl" />
+            <div className="h-24 animate-pulse rounded-md bg-af2-paper-2" />
+            <div className="h-24 animate-pulse rounded-md bg-af2-paper-2" />
+            <div className="h-24 animate-pulse rounded-md bg-af2-paper-2" />
           </>
         ) : memoryState.entries.length ? (
           memoryState.entries.map((entry) => (
@@ -1253,7 +1253,7 @@ function MemorySidebar({ memoryState }: { memoryState: MemoryLoadState }) {
               >
                 {entry.text}
               </p>
-              <div className="mt-3 flex flex-wrap items-center gap-2 text-xs uppercase tracking-[0.16em] text-teal-400">
+              <div className="mt-3 flex flex-wrap items-center gap-2 text-xs uppercase tracking-[0.16em] text-af2-sage">
                 <span>{entry.agentId ? actorLabelFromId(entry.agentId) : entry.key}</span>
                 <span>•</span>
                 <span>{entry.updatedAt ? relativeTicketTime(entry.updatedAt) : entry.workflowName ?? "Memory"}</span>
@@ -1284,16 +1284,16 @@ function SlaTimerPanel({
   const countdown = formatSlaCountdown(ticket.status, ticket.slaState, deadline, nowMs);
 
   return (
-    <section className="rounded-[30px] border border-slate-800 bg-slate-950/80 p-5">
-      <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">SLA Clock</p>
-      <div className="mt-4 rounded-[24px] border border-slate-800 bg-slate-900/70 p-4">
-        <p className="font-af2-mono text-[11px] uppercase tracking-[0.18em] text-slate-500">
+    <section className="af2-card p-5">
+      <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-af2-ink-3">SLA Clock</p>
+      <div className="mt-4 rounded-md border border-af2-line bg-af2-paper-2 p-4">
+        <p className="font-af2-mono text-[11px] uppercase tracking-[0.18em] text-af2-ink-3">
           Resolution timer
         </p>
-        <p className="mt-3 font-af2-mono tabular-nums text-3xl font-bold text-slate-100">
+        <p className="mt-3 font-af2-mono tabular-nums text-3xl font-bold text-af2-ink">
           {countdown.primary}
         </p>
-        <p className="mt-2 text-sm text-slate-400">{countdown.secondary}</p>
+        <p className="mt-2 text-sm text-af2-ink-3">{countdown.secondary}</p>
       </div>
     </section>
   );
@@ -1318,9 +1318,9 @@ function ChildTicketStatusPill({ status }: { status: TicketStatus }) {
 
 function MetadataRow({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-[22px] border border-slate-800 bg-slate-900/65 px-4 py-3">
-      <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">{label}</p>
-      <p className="mt-2 text-sm text-slate-200">{value}</p>
+    <div className="rounded-md border border-af2-line bg-af2-paper-2 px-4 py-3">
+      <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-af2-ink-3">{label}</p>
+      <p className="mt-2 text-sm text-af2-ink">{value}</p>
     </div>
   );
 }

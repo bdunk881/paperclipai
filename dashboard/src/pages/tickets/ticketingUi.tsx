@@ -80,21 +80,24 @@ export function TicketActorChip({
   const profile = getTicketActorProfile(actor);
   const Icon = actor.type === "agent" ? Bot : UserRound;
 
+  // DASH-35: avatar tone palette maps to af2 editorial colors.
+  // teal → sage (agent default), indigo → clay (executive),
+  // orange → mustard, slate → muted.
   return (
     <span
       className={clsx(
-        "inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white/90 text-slate-700",
-        compact ? "px-2.5 py-1 text-[11px]" : "px-3 py-1.5 text-xs"
+        "inline-flex items-center gap-2 rounded-full border border-af2-line bg-af2-card text-af2-ink",
+        compact ? "px-2 py-1 text-[11px]" : "px-3 py-1.5 text-xs"
       )}
     >
       <span
         className={clsx(
           "inline-flex items-center justify-center rounded-full font-semibold",
           compact ? "h-5 w-5 text-[10px]" : "h-6 w-6 text-[11px]",
-          profile.tone === "teal" && "bg-teal-500/20 text-teal-200",
-          profile.tone === "indigo" && "bg-indigo-500/20 text-indigo-200",
-          profile.tone === "orange" && "bg-orange-500/20 text-orange-200",
-          profile.tone === "slate" && "bg-slate-200 text-slate-700"
+          profile.tone === "teal" && "bg-af2-sage/15 text-af2-sage",
+          profile.tone === "indigo" && "bg-af2-clay/15 text-af2-clay",
+          profile.tone === "orange" && "bg-af2-mustard/15 text-af2-mustard",
+          profile.tone === "slate" && "bg-af2-paper-2 text-af2-ink-2"
         )}
       >
         {profile.initials}
@@ -103,7 +106,11 @@ export function TicketActorChip({
         <Icon size={compact ? 12 : 13} />
         <span className="truncate">{profile.name}</span>
       </span>
-      {role ? <span className="uppercase tracking-[0.16em] text-slate-500">{role}</span> : null}
+      {role ? (
+        <span className="uppercase tracking-[0.16em] text-af2-ink-3 text-[10px]">
+          {role}
+        </span>
+      ) : null}
     </span>
   );
 }
@@ -118,12 +125,12 @@ export function TicketEmptyState({
   action?: React.ReactNode;
 }) {
   return (
-    <div className="flex min-h-[260px] flex-col items-center justify-center rounded-[28px] border border-dashed border-slate-200 bg-slate-50 px-6 text-center">
-      <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-2xl border border-slate-200 bg-white text-slate-500">
-        <Ticket size={26} />
+    <div className="af2-card flex min-h-[220px] flex-col items-center justify-center border-dashed px-6 py-10 text-center">
+      <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-full border border-af2-line bg-af2-paper-2 text-af2-ink-3">
+        <Ticket size={22} />
       </div>
-      <h2 className="text-lg font-semibold text-slate-900">{title}</h2>
-      <p className="mt-2 max-w-md text-sm text-slate-500">{body}</p>
+      <h2 className="font-af2-serif text-lg text-af2-ink">{title}</h2>
+      <p className="mt-2 max-w-md text-sm leading-relaxed text-af2-ink-2">{body}</p>
       {action ? <div className="mt-5">{action}</div> : null}
     </div>
   );
@@ -141,10 +148,10 @@ export function TicketSourceNotice({
   return (
     <div
       className={clsx(
-        "rounded-2xl border px-4 py-3 text-sm",
+        "rounded-md border px-4 py-3 text-sm",
         source === "mock"
-          ? "border-orange-500/30 bg-orange-500/10 text-orange-200"
-          : "border-slate-200 bg-slate-50 text-slate-700"
+          ? "border-af2-mustard/30 bg-af2-mustard/10 text-af2-mustard"
+          : "border-af2-line bg-af2-paper-2 text-af2-ink-2"
       )}
     >
       <div className="flex items-center gap-2 font-medium">
@@ -154,7 +161,7 @@ export function TicketSourceNotice({
           : "Live ticket API connected."}
       </div>
       {warnings.length > 0 ? (
-        <ul className="mt-2 space-y-1 text-xs text-slate-500">
+        <ul className="mt-2 space-y-1 text-xs text-af2-ink-3">
           {warnings.map((warning) => (
             <li key={warning}>- {warning}</li>
           ))}
@@ -174,10 +181,14 @@ export function TicketKpiCard({
   helper: string;
 }) {
   return (
-    <div className="rounded-[24px] border border-slate-200 bg-white/90 px-5 py-4">
-      <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">{label}</p>
-      <p className="mt-2 text-2xl font-semibold text-slate-900">{value}</p>
-      <p className="mt-2 text-xs text-slate-500">{helper}</p>
+    <div className="af2-card px-5 py-4">
+      <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-af2-ink-3">
+        {label}
+      </p>
+      <p className="font-af2-serif mt-2 text-2xl font-semibold text-af2-ink">
+        {value}
+      </p>
+      <p className="mt-2 text-xs text-af2-ink-3">{helper}</p>
     </div>
   );
 }
@@ -190,11 +201,11 @@ export function TicketRowMeta({
   const owner = ticket.assignees.find((a) => a.role === "primary");
 
   return (
-    <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
-      <span className="font-af2-mono uppercase tracking-[0.16em] text-slate-500">{ticket.id}</span>
+    <div className="flex flex-wrap items-center gap-2 text-xs text-af2-ink-3">
+      <span className="font-af2-mono uppercase tracking-[0.16em]">{ticket.id}</span>
       {owner ? (
         <>
-          <span className="text-slate-300">&bull;</span>
+          <span className="text-af2-line-2">&bull;</span>
           <span className="inline-flex items-center gap-1">
             {owner.type === "agent" ? <Bot size={12} /> : <UserRound size={12} />}
             {getTicketActorProfile(owner).name}
@@ -203,7 +214,7 @@ export function TicketRowMeta({
       ) : null}
       {ticket.dueDate ? (
         <>
-          <span className="text-slate-300">&bull;</span>
+          <span className="text-af2-line-2">&bull;</span>
           <span>Due {formatTicketTimestamp(ticket.dueDate)}</span>
         </>
       ) : null}
@@ -216,11 +227,11 @@ export function TicketUpdateCard({ update }: { update: TicketUpdate }) {
   const Icon = ticketUpdateIcon(update);
 
   return (
-    <article className="rounded-[24px] border border-slate-200 bg-white/95 p-4">
+    <article className="af2-card p-4">
       <div className="flex items-start gap-3">
         <div
           className={clsx(
-            "mt-1 inline-flex h-10 w-10 items-center justify-center rounded-2xl border",
+            "mt-1 inline-flex h-10 w-10 items-center justify-center rounded-full border",
             ticketUpdateTone(update)
           )}
         >
@@ -228,23 +239,27 @@ export function TicketUpdateCard({ update }: { update: TicketUpdate }) {
         </div>
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
-            <span className="font-medium text-slate-900">{profile.name}</span>
-            <span className="text-[11px] uppercase tracking-[0.16em] text-slate-500">
+            <span className="font-medium text-af2-ink">{profile.name}</span>
+            <span className="text-[11px] uppercase tracking-[0.16em] text-af2-ink-3">
               {update.type.replace("_", " ")}
             </span>
-            <span className="text-xs text-slate-500">{relativeTicketTime(update.createdAt)}</span>
+            <span className="text-xs text-af2-ink-3">
+              {relativeTicketTime(update.createdAt)}
+            </span>
           </div>
-          <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-slate-600">{update.content}</p>
+          <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-af2-ink-2">
+            {update.content}
+          </p>
           {Object.keys(update.metadata ?? {}).length > 0 ? (
-            <div className="mt-3 rounded-2xl border border-slate-200 bg-slate-50 p-3">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+            <div className="mt-3 rounded-md border border-af2-line bg-af2-paper-2 p-3">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-af2-ink-3">
                 Metadata
               </p>
-              <div className="mt-2 flex flex-wrap gap-2 text-xs text-slate-500">
+              <div className="mt-2 flex flex-wrap gap-2 text-xs text-af2-ink-2">
                 {Object.entries(update.metadata).map(([key, value]) => (
                   <span
                     key={key}
-                    className="inline-flex items-center gap-1 rounded-full border border-slate-200 px-2.5 py-1"
+                    className="inline-flex items-center gap-1 rounded-full border border-af2-line bg-af2-card px-2.5 py-1"
                   >
                     <ArrowUpRight size={11} />
                     {key}: {String(value)}

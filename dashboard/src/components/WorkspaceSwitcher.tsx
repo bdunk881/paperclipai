@@ -287,7 +287,7 @@ export function WorkspaceSwitcher({
             role="dialog"
             aria-modal="true"
             aria-labelledby="create-workspace-title"
-            className="animate-ticket-modal relative z-10 w-full max-w-md rounded-[28px] border border-af2-line bg-[linear-gradient(180deg,rgba(255,255,255,0.98),rgba(241,245,249,0.98))] p-6 shadow-2xl"
+            className="animate-ticket-modal af2-card relative z-10 w-full max-w-md p-6 shadow-2xl"
           >
             <div className="flex items-start justify-between gap-4">
               <div>

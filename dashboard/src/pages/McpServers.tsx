@@ -167,14 +167,14 @@ export default function McpServers() {
   return (
     <div className="p-8 max-w-3xl">
       <div className="mb-6">
-        <Link to="/settings" className="flex items-center gap-1.5 text-sm text-gray-400 hover:text-gray-600 mb-4">
+        <Link to="/settings" className="flex items-center gap-1.5 text-sm text-af2-ink-3 hover:text-af2-ink-2 mb-4">
           <ArrowLeft size={14} />
           Back to Settings
         </Link>
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-bold text-gray-900">Integration Registry</h1>
-            <p className="text-gray-500 text-sm mt-1">
+            <h1 className="text-2xl font-bold text-af2-ink">Integration Registry</h1>
+            <p className="text-af2-ink-3 text-sm mt-1">
               Register custom integration servers to use in workflow steps.
             </p>
           </div>
@@ -182,7 +182,7 @@ export default function McpServers() {
             <Tooltip content="Read setup tips and connection troubleshooting">
               <button
                 onClick={() => setShowHelp(true)}
-                className="flex items-center gap-2 px-3 py-2 border border-gray-200 bg-af2-card text-sm font-medium text-gray-700 rounded-lg hover:bg-gray-50 transition"
+                className="flex items-center gap-2 px-3 py-2 border border-af2-line bg-af2-card text-sm font-medium text-af2-ink-2 rounded-lg hover:bg-af2-paper-2 transition"
               >
                 <CircleHelp size={14} />
                 Guidance
@@ -190,7 +190,7 @@ export default function McpServers() {
             </Tooltip>
             <button
               onClick={() => setShowForm((v) => !v)}
-              className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition"
+              className="flex items-center gap-2 px-4 py-2 bg-af2-clay text-white text-sm font-medium rounded-md hover:bg-af2-clay/85 transition"
             >
               <Plus size={14} />
               Add Integration
@@ -201,8 +201,8 @@ export default function McpServers() {
 
       {/* Add-server form */}
       {showForm && (
-        <form onSubmit={(e) => void handleAdd(e)} className="bg-af2-card border border-gray-200 rounded-xl p-6 mb-6 space-y-4">
-          <h2 className="font-semibold text-gray-900 text-sm">New Integration</h2>
+        <form onSubmit={(e) => void handleAdd(e)} className="bg-af2-card border border-af2-line rounded-xl p-6 mb-6 space-y-4">
+          <h2 className="font-semibold text-af2-ink text-sm">New Integration</h2>
 
           {formError && (
             <p className="text-xs text-af2-clay bg-af2-clay/10 border border-af2-clay/40 rounded px-3 py-2">{formError}</p>
@@ -210,20 +210,20 @@ export default function McpServers() {
 
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="block text-xs font-medium text-gray-700 mb-1">Name *</label>
+              <label className="block text-xs font-medium text-af2-ink-2 mb-1">Name *</label>
               <input
                 required
-                className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full px-3 py-2 text-sm border border-af2-line rounded-lg focus:outline-none focus:ring-2 focus:ring-af2-clay/40"
                 placeholder="My Integration"
                 value={formName}
                 onChange={(e) => setFormName(e.target.value)}
               />
             </div>
             <div>
-              <label className="block text-xs font-medium text-gray-700 mb-1">Server URL *</label>
+              <label className="block text-xs font-medium text-af2-ink-2 mb-1">Server URL *</label>
               <input
                 required
-                className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono"
+                className="w-full px-3 py-2 text-sm border border-af2-line rounded-lg focus:outline-none focus:ring-2 focus:ring-af2-clay/40 font-mono"
                 placeholder="https://mcp.example.com"
                 value={formUrl}
                 onChange={(e) => setFormUrl(e.target.value)}
@@ -233,19 +233,19 @@ export default function McpServers() {
 
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="block text-xs font-medium text-gray-700 mb-1">Auth Header Key <span className="text-gray-400">(optional)</span></label>
+              <label className="block text-xs font-medium text-af2-ink-2 mb-1">Auth Header Key <span className="text-af2-ink-3">(optional)</span></label>
               <input
-                className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono"
+                className="w-full px-3 py-2 text-sm border border-af2-line rounded-lg focus:outline-none focus:ring-2 focus:ring-af2-clay/40 font-mono"
                 placeholder="Authorization"
                 value={formAuthKey}
                 onChange={(e) => setFormAuthKey(e.target.value)}
               />
             </div>
             <div>
-              <label className="block text-xs font-medium text-gray-700 mb-1">Auth Header Value <span className="text-gray-400">(optional)</span></label>
+              <label className="block text-xs font-medium text-af2-ink-2 mb-1">Auth Header Value <span className="text-af2-ink-3">(optional)</span></label>
               <input
                 type="password"
-                className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono"
+                className="w-full px-3 py-2 text-sm border border-af2-line rounded-lg focus:outline-none focus:ring-2 focus:ring-af2-clay/40 font-mono"
                 placeholder="Bearer sk-..."
                 value={formAuthVal}
                 onChange={(e) => setFormAuthVal(e.target.value)}
@@ -257,7 +257,7 @@ export default function McpServers() {
             <button
               type="submit"
               disabled={submitting}
-              className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 disabled:opacity-50 transition"
+              className="flex items-center gap-2 px-4 py-2 bg-af2-clay text-white text-sm font-medium rounded-md hover:bg-af2-clay/85 disabled:opacity-50 transition"
             >
               {submitting ? <Loader2 size={14} className="animate-spin" /> : <Plus size={14} />}
               {submitting ? "Adding…" : "Add Integration"}
@@ -265,7 +265,7 @@ export default function McpServers() {
             <button
               type="button"
               onClick={() => { setShowForm(false); setFormError(null); }}
-              className="px-4 py-2 text-sm text-gray-500 border border-gray-200 rounded-lg hover:bg-gray-50 transition"
+              className="px-4 py-2 text-sm text-af2-ink-3 border border-af2-line rounded-lg hover:bg-af2-paper-2 transition"
             >
               Cancel
             </button>
@@ -280,13 +280,13 @@ export default function McpServers() {
 
       {/* Server list */}
       {loading ? (
-        <div className="flex items-center gap-2 text-gray-400 py-12">
+        <div className="flex items-center gap-2 text-af2-ink-3 py-12">
           <Loader2 size={16} className="animate-spin" /> Loading servers…
         </div>
       ) : error ? (
         <p className="text-sm text-af2-clay">{error}</p>
       ) : servers.length === 0 ? (
-        <div className="text-center py-16 text-gray-400 border-2 border-dashed border-gray-200 rounded-xl">
+        <div className="text-center py-16 text-af2-ink-3 border-2 border-dashed border-af2-line rounded-xl">
           <PlugZap size={36} className="mx-auto mb-3 opacity-30" />
           <p className="text-sm font-medium">No integrations registered</p>
           <p className="text-xs mt-1">Add an integration server to use it in workflow steps.</p>
@@ -299,15 +299,15 @@ export default function McpServers() {
             const isExpanded = expandedTools[server.id];
 
             return (
-              <div key={server.id} className="bg-af2-card border border-gray-200 rounded-xl p-5">
+              <div key={server.id} className="bg-af2-card border border-af2-line rounded-xl p-5">
                 <div className="flex items-start justify-between">
                   <div className="flex items-center gap-3">
-                    <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center">
-                      <PlugZap size={16} className="text-blue-600" />
+                    <div className="w-9 h-9 rounded-lg bg-af2-clay/10 flex items-center justify-center">
+                      <PlugZap size={16} className="text-af2-clay" />
                     </div>
                     <div>
-                      <p className="font-semibold text-gray-900 text-sm">{server.name}</p>
-                      <p className="text-xs text-gray-400 font-mono mt-0.5 truncate max-w-xs">{server.url}</p>
+                      <p className="font-semibold text-af2-ink text-sm">{server.name}</p>
+                      <p className="text-xs text-af2-ink-3 font-mono mt-0.5 truncate max-w-xs">{server.url}</p>
                     </div>
                   </div>
                   <div className="flex items-center gap-2">
@@ -318,7 +318,7 @@ export default function McpServers() {
                     )}
                     <button
                       onClick={() => void handleDelete(server.id)}
-                      className="p-1.5 text-gray-400 hover:text-af2-clay hover:bg-af2-clay/10 rounded-lg transition"
+                      className="p-1.5 text-af2-ink-3 hover:text-af2-clay hover:bg-af2-clay/10 rounded-lg transition"
                       title="Delete integration"
                       aria-label={`Delete ${server.name}`}
                     >
@@ -341,14 +341,14 @@ export default function McpServers() {
 
                 {/* Tools list */}
                 {isExpanded && serverTools && serverTools !== "loading" && serverTools !== "error" && (
-                  <div className="mt-3 border-t border-gray-100 pt-3">
-                    <p className="text-xs font-medium text-gray-500 mb-2">{serverTools.length} tool{serverTools.length !== 1 ? "s" : ""} available</p>
+                  <div className="mt-3 border-t border-af2-line pt-3">
+                    <p className="text-xs font-medium text-af2-ink-3 mb-2">{serverTools.length} tool{serverTools.length !== 1 ? "s" : ""} available</p>
                     <div className="flex flex-wrap gap-1.5">
                       {serverTools.map((tool) => (
                         <div
                           key={tool.name}
                           title={tool.description}
-                          className="px-2 py-1 bg-gray-100 rounded text-xs font-mono text-gray-700 cursor-default"
+                          className="px-2 py-1 bg-af2-paper-2 rounded text-xs font-mono text-af2-ink-2 cursor-default"
                         >
                           {tool.name}
                         </div>
@@ -357,20 +357,20 @@ export default function McpServers() {
                   </div>
                 )}
                 {isExpanded && serverTools === "loading" && (
-                  <div className="mt-3 flex items-center gap-2 text-xs text-gray-400 border-t border-gray-100 pt-3">
+                  <div className="mt-3 flex items-center gap-2 text-xs text-af2-ink-3 border-t border-af2-line pt-3">
                     <Loader2 size={12} className="animate-spin" /> Discovering tools…
                   </div>
                 )}
                 {isExpanded && serverTools === "error" && (
-                  <p className="mt-3 text-xs text-af2-clay border-t border-gray-100 pt-3">Could not discover tools — check the server URL and auth.</p>
+                  <p className="mt-3 text-xs text-af2-clay border-t border-af2-line pt-3">Could not discover tools — check the server URL and auth.</p>
                 )}
 
                 {/* Action buttons */}
-                <div className="flex gap-2 mt-4 pt-3 border-t border-gray-100">
+                <div className="flex gap-2 mt-4 pt-3 border-t border-af2-line">
                   <button
                     onClick={() => void handleTest(server.id)}
                     disabled={testResult === "loading"}
-                    className="flex items-center gap-1.5 px-3 py-1.5 text-xs border border-gray-200 rounded-lg text-gray-600 hover:bg-gray-50 disabled:opacity-50 transition"
+                    className="flex items-center gap-1.5 px-3 py-1.5 text-xs border border-af2-line rounded-lg text-af2-ink-2 hover:bg-af2-paper-2 disabled:opacity-50 transition"
                     title="Verify connectivity and authentication"
                   >
                     {testResult === "loading"
@@ -386,7 +386,7 @@ export default function McpServers() {
                         void handleDiscoverTools(server.id);
                       }
                     }}
-                    className="flex items-center gap-1.5 px-3 py-1.5 text-xs border border-gray-200 rounded-lg text-gray-600 hover:bg-gray-50 transition"
+                    className="flex items-center gap-1.5 px-3 py-1.5 text-xs border border-af2-line rounded-lg text-af2-ink-2 hover:bg-af2-paper-2 transition"
                     title="Discover available integration tools on this server"
                   >
                     {isExpanded ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
@@ -400,39 +400,39 @@ export default function McpServers() {
       )}
 
       {showHelp && (
-        <div className="fixed inset-0 z-50 flex justify-end bg-gray-950/35">
+        <div className="fixed inset-0 z-50 flex justify-end bg-af2-ink/55 backdrop-blur-[2px]">
           <button className="flex-1" onClick={() => setShowHelp(false)} aria-label="Close guidance" />
           <aside
             role="dialog"
             aria-modal="true"
             aria-label="Integration setup guidance"
-            className="w-full max-w-md overflow-y-auto border-l border-gray-200 bg-af2-card p-6 shadow-xl"
+            className="w-full max-w-md overflow-y-auto border-l border-af2-line bg-af2-card p-6 shadow-xl"
           >
             <div className="mb-5 flex items-start justify-between gap-3">
               <div>
-                <p className="text-xs font-semibold uppercase tracking-wide text-blue-600">Integration setup help</p>
-                <h2 className="mt-1 text-lg font-semibold text-gray-900">Connect integrations quickly</h2>
+                <p className="text-xs font-semibold uppercase tracking-wide text-af2-clay">Integration setup help</p>
+                <h2 className="mt-1 text-lg font-semibold text-af2-ink">Connect integrations quickly</h2>
               </div>
               <button
                 onClick={() => setShowHelp(false)}
-                className="rounded-md p-1.5 text-gray-500 transition hover:bg-gray-100 hover:text-gray-800"
+                className="rounded-md p-1.5 text-af2-ink-3 transition hover:bg-af2-paper-2 hover:text-af2-ink"
                 aria-label="Close guidance panel"
               >
                 <X size={16} />
               </button>
             </div>
-            <div className="space-y-4 text-sm text-gray-700">
-              <section className="rounded-lg border border-gray-200 bg-gray-50 p-4">
-                <h3 className="font-medium text-gray-900">Checklist</h3>
-                <ul className="mt-2 space-y-1 text-gray-600">
+            <div className="space-y-4 text-sm text-af2-ink-2">
+              <section className="rounded-lg border border-af2-line bg-af2-paper-2 p-4">
+                <h3 className="font-medium text-af2-ink">Checklist</h3>
+                <ul className="mt-2 space-y-1 text-af2-ink-2">
                   <li>Use the exact integration server base URL (include protocol).</li>
                   <li>Set auth header key/value if the endpoint is protected.</li>
                   <li>Run Test connection before discovering tools.</li>
                 </ul>
               </section>
-              <section className="rounded-lg border border-gray-200 p-4">
-                <h3 className="font-medium text-gray-900">Common failures</h3>
-                <ul className="mt-2 space-y-1 text-gray-600">
+              <section className="rounded-lg border border-af2-line p-4">
+                <h3 className="font-medium text-af2-ink">Common failures</h3>
+                <ul className="mt-2 space-y-1 text-af2-ink-2">
                   <li>401/403 means auth header is missing or invalid.</li>
                   <li>404 usually means the server URL path is incorrect.</li>
                   <li>Timeouts can indicate firewall or DNS restrictions.</li>

@@ -63,7 +63,7 @@ export default function SecuritySettings() {
             </div>
           ) : null}
 
-          <div className="px-3 py-2 rounded-lg bg-af2-mustard/10 border border-af2-mustard/30 text-sm text-amber-800">
+          <div className="px-3 py-2 rounded-md bg-af2-mustard/10 border border-af2-mustard/30 text-sm text-af2-mustard">
             Password management is not connected to a backend endpoint in this environment yet.
           </div>
 
@@ -74,7 +74,7 @@ export default function SecuritySettings() {
               value={currentPassword}
               onChange={(e) => setCurrentPassword(e.target.value)}
               autoComplete="current-password"
-              className="w-full px-3 py-2 rounded-lg border border-af2-line-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full px-3 py-2 rounded-lg border border-af2-line-2 text-sm focus:outline-none focus:ring-2 focus:ring-af2-clay/40"
             />
           </div>
 
@@ -85,7 +85,7 @@ export default function SecuritySettings() {
               value={newPassword}
               onChange={(e) => setNewPassword(e.target.value)}
               autoComplete="new-password"
-              className="w-full px-3 py-2 rounded-lg border border-af2-line-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full px-3 py-2 rounded-lg border border-af2-line-2 text-sm focus:outline-none focus:ring-2 focus:ring-af2-clay/40"
             />
           </div>
 
@@ -96,7 +96,7 @@ export default function SecuritySettings() {
               value={confirmPassword}
               onChange={(e) => setConfirmPassword(e.target.value)}
               autoComplete="new-password"
-              className="w-full px-3 py-2 rounded-lg border border-af2-line-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full px-3 py-2 rounded-lg border border-af2-line-2 text-sm focus:outline-none focus:ring-2 focus:ring-af2-clay/40"
             />
           </div>
 

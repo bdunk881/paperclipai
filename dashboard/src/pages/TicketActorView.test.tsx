@@ -57,16 +57,16 @@ describe("TicketActorView", () => {
     expect(screen.getByText(/actor not found/i)).toBeInTheDocument();
   });
 
-  it("shows skeleton loading state while fetching", () => {
+  it("shows the V2 loading state while fetching (DASH-35: af2 spinner, not V1 scanline)", async () => {
     ticketsApiMocks.listTicketQueue.mockReturnValueOnce(new Promise(() => {}));
-    const { container } = render(
+    const { findByText } = render(
       <MemoryRouter initialEntries={["/tickets/actors/user/user-1"]}>
         <Routes>
           <Route path="/tickets/actors/:actorType/:actorId" element={<TicketActorView />} />
         </Routes>
       </MemoryRouter>
     );
-    expect(container.querySelector(".scanline-skeleton")).not.toBeNull();
+    expect(await findByText(/loading queue…/i)).toBeInTheDocument();
   });
 
   it("shows fallback error message for non-Error throw", async () => {

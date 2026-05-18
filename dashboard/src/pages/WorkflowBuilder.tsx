@@ -3714,7 +3714,7 @@ function VersionDiffModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-af2-ink/55 backdrop-blur-[2px] px-4">
-      <div className="max-h-[90vh] w-full max-w-3xl overflow-hidden rounded-[28px] border border-af2-line bg-af2-card shadow-af2-lg">
+      <div className="af2-card max-h-[90vh] w-full max-w-3xl overflow-hidden shadow-af2-lg">
         <div className="flex items-center justify-between gap-4 border-b border-af2-line px-6 py-5">
           <div>
             <p className="text-xs font-semibold uppercase tracking-[0.18em] text-af2-clay">
@@ -4150,7 +4150,7 @@ function DeployAsTeamModal({
   // unchanged.
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-af2-ink/55 backdrop-blur-[2px] px-4">
-      <div className="max-h-[90vh] w-full max-w-4xl overflow-hidden rounded-[32px] border border-af2-line bg-af2-card shadow-af2-lg">
+      <div className="af2-card max-h-[90vh] w-full max-w-4xl overflow-hidden shadow-af2-lg">
         <div className="flex items-center justify-between border-b border-af2-line px-6 py-5">
           <div>
             <p className="text-xs font-semibold uppercase tracking-[0.18em] text-af2-sage">
@@ -4180,7 +4180,7 @@ function DeployAsTeamModal({
             </div>
 
             <div className="space-y-3">
-              <div className="rounded-[24px] border border-af2-clay/30 bg-af2-clay-soft/30 px-5 py-4">
+              <div className="rounded-md border border-af2-clay/30 bg-af2-clay/10 px-5 py-4">
                 <div className="flex items-center gap-3">
                   <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-af2-clay text-white">
                     <Bot size={18} />
@@ -4199,7 +4199,7 @@ function DeployAsTeamModal({
               {actionableSteps.map((step, index) => (
                 <div
                   key={step.id}
-                  className="rounded-[24px] border border-af2-line bg-af2-paper-2 px-5 py-4"
+                  className="rounded-md border border-af2-line bg-af2-paper-2 px-5 py-4"
                 >
                   <div className="flex items-start justify-between gap-4">
                     <div>
@@ -4286,7 +4286,7 @@ function DeployAsTeamModal({
               />
             </Field>
 
-            <div className="rounded-[24px] border border-af2-mustard/30 bg-af2-mustard/10 px-4 py-3 text-sm text-af2-mustard">
+            <div className="rounded-md border border-af2-mustard/30 bg-af2-mustard/10 px-4 py-3 text-sm text-af2-mustard">
               Deploying creates a control-plane team and agent roster. Start/stop lifecycle controls are not exposed by the current backend yet, so monitoring and task handoff are the primary post-deploy actions available in this release.
             </div>
 

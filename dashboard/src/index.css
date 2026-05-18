@@ -45,18 +45,6 @@
     backdrop-filter: blur(12px) saturate(180%);
     -webkit-backdrop-filter: blur(12px) saturate(180%);
   }
-  .glass-card {
-    background: color-mix(in srgb, var(--af2-card) 85%, transparent);
-    backdrop-filter: blur(8px);
-    -webkit-backdrop-filter: blur(8px);
-    box-shadow: 0 1px 0 rgba(26, 20, 16, 0.04), 0 6px 20px rgba(26, 20, 16, 0.06);
-    border: 1px solid var(--af2-line);
-  }
-
-  .glass-card:hover {
-    box-shadow: 0 1px 0 rgba(26, 20, 16, 0.04), 0 18px 40px rgba(26, 20, 16, 0.10);
-  }
-
   .shadow-glow {
     box-shadow: 0 0 0 1px color-mix(in srgb, var(--af2-clay) 8%, transparent), 0 12px 32px color-mix(in srgb, var(--af2-clay) 18%, transparent);
   }
@@ -75,19 +63,6 @@
   }
   .glow-border:hover::before {
     opacity: 1;
-  }
-
-  .noise-overlay {
-    position: relative;
-  }
-  .noise-overlay::after {
-    content: '';
-    position: absolute;
-    inset: 0;
-    background-image: url("https://cdn.helloautoflow.com/v0.1.0/textures/noise-overlay.svg");
-    pointer-events: none;
-    z-index: 1;
-    mix-blend-mode: overlay;
   }
 
   .animate-glow-pulse {
@@ -217,19 +192,6 @@
     position: relative;
     padding: 0 0.875rem;
     background: var(--af2-paper);
-  }
-
-  .scanline-skeleton {
-    position: relative;
-    overflow: hidden;
-    background: linear-gradient(90deg, color-mix(in srgb, var(--af2-ink) 6%, transparent) 0%, color-mix(in srgb, var(--af2-sage) 25%, transparent) 50%, color-mix(in srgb, var(--af2-ink) 6%, transparent) 100%);
-    background-size: 200% 100%;
-    animation: scanline 1.2s linear infinite;
-  }
-  .signal-lost {
-    backdrop-filter: blur(10px);
-    -webkit-backdrop-filter: blur(10px);
-    box-shadow: 0 10px 24px rgba(15, 23, 42, 0.06);
   }
 
   @keyframes glow-pulse {
@@ -378,15 +340,6 @@
     }
     50% {
       opacity: 0.9;
-    }
-  }
-
-  @keyframes scanline {
-    0% {
-      background-position: 200% 0;
-    }
-    100% {
-      background-position: -200% 0;
     }
   }
 

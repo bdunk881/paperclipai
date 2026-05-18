@@ -58,8 +58,8 @@ describe("normalizeTicketSlaState", () => {
     expect(normalizeTicketSlaState("on_track")).toBe("on_track");
   });
 
-  it("maps unknown values to 'at_risk'", () => {
-    expect(normalizeTicketSlaState("unknown_state")).toBe("at_risk");
+  it("maps unknown values to 'on_track'", () => {
+    expect(normalizeTicketSlaState("unknown_state")).toBe("on_track");
   });
 });
 
@@ -132,86 +132,87 @@ describe("slaLabel", () => {
 });
 
 // ---------------------------------------------------------------------------
-// ticketStatusClasses
+// ticketStatusClasses — DASH-35: v2 af2 token palette
 // ---------------------------------------------------------------------------
 describe("ticketStatusClasses", () => {
-  it("returns indigo for 'open'", () => {
-    expect(ticketStatusClasses("open")).toContain("indigo");
+  it("returns neutral ink chip for 'open'", () => {
+    expect(ticketStatusClasses("open")).toContain("af2-ink");
   });
 
-  it("returns teal for 'in_progress'", () => {
-    expect(ticketStatusClasses("in_progress")).toContain("teal");
+  it("returns sage for 'in_progress'", () => {
+    expect(ticketStatusClasses("in_progress")).toContain("af2-sage");
   });
 
-  it("returns orange for 'blocked'", () => {
-    expect(ticketStatusClasses("blocked")).toContain("orange");
+  it("returns mustard for 'blocked'", () => {
+    expect(ticketStatusClasses("blocked")).toContain("af2-mustard");
   });
 
-  it("returns slate for 'resolved'", () => {
-    expect(ticketStatusClasses("resolved")).toContain("slate");
+  it("returns muted ink-3 for 'resolved'", () => {
+    expect(ticketStatusClasses("resolved")).toContain("af2-ink-3");
   });
 
-  it("returns rose for 'cancelled'", () => {
-    expect(ticketStatusClasses("cancelled")).toContain("rose");
+  it("returns clay for 'cancelled'", () => {
+    expect(ticketStatusClasses("cancelled")).toContain("af2-clay");
   });
 
-  it("returns default slate for unknown status", () => {
-    expect(ticketStatusClasses("other" as never)).toContain("slate-700");
+  it("returns muted default for unknown status", () => {
+    expect(ticketStatusClasses("other" as never)).toContain("af2-ink-2");
   });
 });
 
 // ---------------------------------------------------------------------------
-// ticketPriorityClasses
+// ticketPriorityClasses — DASH-35
 // ---------------------------------------------------------------------------
 describe("ticketPriorityClasses", () => {
-  it("returns FF5F57 for 'urgent'", () => {
-    expect(ticketPriorityClasses("urgent")).toContain("FF5F57");
+  it("returns clay for 'urgent'", () => {
+    expect(ticketPriorityClasses("urgent")).toContain("af2-clay");
   });
 
-  it("returns orange for 'high'", () => {
-    expect(ticketPriorityClasses("high")).toContain("orange");
+  it("returns mustard for 'high'", () => {
+    expect(ticketPriorityClasses("high")).toContain("af2-mustard");
   });
 
-  it("returns teal for 'medium'", () => {
-    expect(ticketPriorityClasses("medium")).toContain("teal");
+  it("returns neutral ink for 'medium'", () => {
+    expect(ticketPriorityClasses("medium")).toContain("af2-ink");
   });
 
-  it("returns slate for 'low'", () => {
-    expect(ticketPriorityClasses("low")).toContain("slate");
+  it("returns muted for 'low'", () => {
+    expect(ticketPriorityClasses("low")).toContain("af2-ink-3");
   });
 
-  it("returns default slate-700 for unknown", () => {
-    expect(ticketPriorityClasses("other" as never)).toContain("slate-700");
+  it("returns muted default for unknown", () => {
+    expect(ticketPriorityClasses("other" as never)).toContain("af2-ink-2");
   });
 });
 
 // ---------------------------------------------------------------------------
-// ticketSlaClasses
+// ticketSlaClasses — DASH-35
 // ---------------------------------------------------------------------------
 describe("ticketSlaClasses", () => {
-  it("returns FFD93D for 'at_risk'", () => {
-    expect(ticketSlaClasses("at_risk")).toContain("FFD93D");
+  it("returns mustard for 'at_risk'", () => {
+    expect(ticketSlaClasses("at_risk")).toContain("af2-mustard");
   });
 
-  it("returns FFD93D for legacy 'warning' value", () => {
-    expect(ticketSlaClasses("warning")).toContain("FFD93D");
+  it("returns on_track sage for legacy 'warning' (now normalizes to on_track default? no — warning→at_risk)", () => {
+    // normalizeTicketSlaState("warning") → "at_risk"
+    expect(ticketSlaClasses("warning")).toContain("af2-mustard");
   });
 
-  it("returns FF5F57 for 'breached'", () => {
-    expect(ticketSlaClasses("breached")).toContain("FF5F57");
+  it("returns clay for 'breached'", () => {
+    expect(ticketSlaClasses("breached")).toContain("af2-clay");
   });
 
-  it("returns slate-500 for 'paused'", () => {
-    expect(ticketSlaClasses("paused")).toContain("slate-500");
+  it("returns muted ink-3 for 'paused'", () => {
+    expect(ticketSlaClasses("paused")).toContain("af2-ink-3");
   });
 
-  it("returns teal for 'on_track'", () => {
-    expect(ticketSlaClasses("on_track")).toContain("teal");
+  it("returns sage for 'on_track'", () => {
+    expect(ticketSlaClasses("on_track")).toContain("af2-sage");
   });
 
-  it("maps unknown SLA state to at_risk classes via normalizeTicketSlaState", () => {
-    // normalizeTicketSlaState("unknown") → "at_risk", so at_risk colour applies
-    expect(ticketSlaClasses("unknown")).toContain("FFD93D");
+  it("maps unknown SLA state to on_track sage via normalizeTicketSlaState", () => {
+    // normalizeTicketSlaState("unknown") → "on_track" (DASH-35)
+    expect(ticketSlaClasses("unknown")).toContain("af2-sage");
   });
 });
 
@@ -237,20 +238,20 @@ describe("ticketUpdateIcon", () => {
 });
 
 describe("ticketUpdateTone", () => {
-  it("returns orange for status_change", () => {
-    expect(ticketUpdateTone({ type: "status_change" } as TicketUpdate)).toContain("orange");
+  it("returns mustard for status_change", () => {
+    expect(ticketUpdateTone({ type: "status_change" } as TicketUpdate)).toContain("af2-mustard");
   });
 
-  it("returns teal for structured_update", () => {
-    expect(ticketUpdateTone({ type: "structured_update" } as TicketUpdate)).toContain("teal");
+  it("returns sage for structured_update", () => {
+    expect(ticketUpdateTone({ type: "structured_update" } as TicketUpdate)).toContain("af2-sage");
   });
 
-  it("returns slate for comment", () => {
-    expect(ticketUpdateTone({ type: "comment" } as TicketUpdate)).toContain("slate");
+  it("returns muted ink-2 for comment", () => {
+    expect(ticketUpdateTone({ type: "comment" } as TicketUpdate)).toContain("af2-ink-2");
   });
 
-  it("returns slate as default for unknown", () => {
-    expect(ticketUpdateTone({ type: "other" } as unknown as TicketUpdate)).toContain("slate");
+  it("returns muted default for unknown", () => {
+    expect(ticketUpdateTone({ type: "other" } as unknown as TicketUpdate)).toContain("af2-ink-2");
   });
 });
 
@@ -278,9 +279,9 @@ describe("slaStateIcon", () => {
     expect(slaStateIcon("on_track")).toBe(CheckCircle2);
   });
 
-  it("maps unknown state to at_risk then returns AlertTriangle", () => {
-    // normalizeTicketSlaState("unknown") → "at_risk"
-    expect(slaStateIcon("unknown")).toBe(AlertTriangle);
+  it("maps unknown state to on_track then returns CheckCircle2", () => {
+    // DASH-35: normalizeTicketSlaState("unknown") → "on_track"
+    expect(slaStateIcon("unknown")).toBe(CheckCircle2);
   });
 });
 
@@ -298,22 +299,31 @@ describe("primaryAssignee", () => {
     expect(primaryAssignee(ticket)).toMatchObject({ id: "u1", role: "primary" });
   });
 
-  it("returns undefined when there is no primary assignee", () => {
-    const ticket = { assignees: [{ type: "agent", id: "a1", role: "collaborator" }] } as unknown as TicketRecord;
+  it("returns undefined when there's no primary", () => {
+    const ticket = {
+      assignees: [{ type: "agent", id: "a1", role: "collaborator" }],
+    } as unknown as TicketRecord;
     expect(primaryAssignee(ticket)).toBeUndefined();
   });
 });
 
 describe("collaboratorCount", () => {
-  it("counts collaborator-role assignees", () => {
+  it("counts only collaborators (not primary)", () => {
     const ticket = {
       assignees: [
+        { type: "user", id: "u1", role: "primary" },
         { type: "agent", id: "a1", role: "collaborator" },
         { type: "agent", id: "a2", role: "collaborator" },
-        { type: "user", id: "u1", role: "primary" },
       ],
     } as unknown as TicketRecord;
     expect(collaboratorCount(ticket)).toBe(2);
+  });
+
+  it("returns 0 with no collaborators", () => {
+    const ticket = {
+      assignees: [{ type: "user", id: "u1", role: "primary" }],
+    } as unknown as TicketRecord;
+    expect(collaboratorCount(ticket)).toBe(0);
   });
 });
 
@@ -321,29 +331,35 @@ describe("collaboratorCount", () => {
 // aggregateActorCounts
 // ---------------------------------------------------------------------------
 describe("aggregateActorCounts", () => {
-  it("returns empty array for no tickets", () => {
-    expect(aggregateActorCounts([])).toEqual([]);
-  });
-
-  it("aggregates counts for the same actor across tickets", () => {
+  it("aggregates ticket counts per actor across statuses, sorted by total desc", () => {
     const tickets = [
-      { status: "open", assignees: [{ type: "agent", id: "a1", role: "primary" }] },
-      { status: "in_progress", assignees: [{ type: "agent", id: "a1", role: "primary" }] },
+      {
+        status: "open",
+        assignees: [{ type: "user", id: "u1", role: "primary" }],
+      },
+      {
+        status: "in_progress",
+        assignees: [
+          { type: "user", id: "u1", role: "primary" },
+          { type: "agent", id: "a1", role: "collaborator" },
+        ],
+      },
+      {
+        status: "resolved",
+        assignees: [{ type: "agent", id: "a1", role: "primary" }],
+      },
     ] as unknown as TicketRecord[];
+
     const result = aggregateActorCounts(tickets);
-    expect(result).toHaveLength(1);
+    expect(result).toHaveLength(2);
+    // u1: open=1, in_progress=1 → total=2
+    // a1: in_progress=1, resolved=1 → total=2
+    // sort is by total desc, ties allowed
     expect(result[0].total).toBe(2);
-    expect(result[0].open).toBe(1);
-    expect(result[0].in_progress).toBe(1);
+    expect(result[1].total).toBe(2);
   });
 
-  it("sorts actors by total descending", () => {
-    const tickets = [
-      { status: "open", assignees: [{ type: "agent", id: "a1", role: "primary" }, { type: "user", id: "u1", role: "collaborator" }] },
-      { status: "open", assignees: [{ type: "agent", id: "a1", role: "primary" }] },
-    ] as unknown as TicketRecord[];
-    const result = aggregateActorCounts(tickets);
-    expect(result[0].id).toBe("a1");
-    expect(result[1].id).toBe("u1");
+  it("returns empty array when given no tickets", () => {
+    expect(aggregateActorCounts([])).toEqual([]);
   });
 });

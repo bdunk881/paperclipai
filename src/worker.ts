@@ -20,8 +20,10 @@ import "./instrument";
 import { Worker, Job, Queue } from "bullmq";
 import { getRedisClient } from "./queue/redisClient";
 import type { RunJobPayload } from "./queue/queues";
+import { getDlqQueue } from "./queue/queues";
 import { syncRepeatableJobs } from "./queue/scheduler";
-import { getPostgresPool, isPostgresConfigured } from "./db/postgres";
+import { runStore } from "./engine/runStore";
+import { getPostgresPool, isPostgresConfigured, isPostgresPersistenceEnabled } from "./db/postgres";
 
 const connection = getRedisClient();
 if (!connection) {
@@ -53,10 +55,42 @@ worker.on("completed", (job) => {
 });
 
 worker.on("failed", (job, err) => {
-  console.error(
-    `[worker] Job ${job?.id ?? "unknown"} failed (run ${job?.data?.runId ?? "unknown"}):`,
-    err.message
-  );
+  const runId = job?.data?.runId ?? "unknown";
+  const attempts = job?.attemptsMade ?? 0;
+  const maxAttempts = job?.opts?.attempts ?? 3;
+  console.error(`[worker] Job ${job?.id ?? "unknown"} failed (run ${runId}):`, err.message);
+
+  // Only send to DLQ after all retries are exhausted.
+  if (attempts < maxAttempts) return;
+
+  const reason = err.message.slice(0, 1000);
+
+  runStore.markFailed(runId, reason).catch((markErr: Error) => {
+    console.error("[worker] markFailed failed:", markErr.message);
+  });
+
+  const dlq = getDlqQueue();
+  if (dlq && job?.data) {
+    dlq.add("dlq-entry", job.data, { removeOnComplete: 500, removeOnFail: 500 }).catch((dlqErr: Error) => {
+      console.error("[worker] DLQ enqueue failed:", dlqErr.message);
+    });
+  }
+
+  if (isPostgresPersistenceEnabled()) {
+    const pool = getPostgresPool();
+    pool.query(
+      `INSERT INTO activity_events (workspace_id, kind, actor, subject, payload, occurred_at)
+       VALUES ($1::uuid, 'run.failed', $2::jsonb, $3::jsonb, $4::jsonb, now())`,
+      [
+        job?.data?.workspaceId ?? null,
+        JSON.stringify({ type: "system", id: "worker", label: "Worker" }),
+        JSON.stringify({ type: "execution", id: runId, label: runId }),
+        JSON.stringify({ runId, error: reason }),
+      ]
+    ).catch((dbErr: Error) => {
+      console.error("[worker] activity_events insert failed:", dbErr.message);
+    });
+  }
 });
 
 worker.on("stalled", (jobId) => {

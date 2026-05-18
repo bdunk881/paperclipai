@@ -204,7 +204,7 @@ describe("App", () => {
     render(<App />);
 
     expect(await screen.findByText("Layout Shell")).toBeInTheDocument();
-    expect(screen.getByText("Ticket SLA Settings Page")).toBeInTheDocument();
+    expect(await screen.findByText("Ticket SLA Settings Page")).toBeInTheDocument();
   });
 
   it("renders mission-assignments routes behind authentication (legacy /tickets redirects)", async () => {

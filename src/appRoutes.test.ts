@@ -9,6 +9,15 @@ jest.mock("./engine/llmProviders", () => ({
   getProvider: jest.fn(),
 }));
 
+const mockQueueAdd = jest.fn().mockResolvedValue({ id: "job-1" });
+const mockQueueGetJob = jest.fn().mockResolvedValue(null);
+jest.mock("./queue/queues", () => ({
+  getRunQueue: jest.fn(() => ({ add: mockQueueAdd, getJob: mockQueueGetJob })),
+  getDlqQueue: jest.fn(() => null),
+  resetRunQueueForTests: jest.fn(),
+  resetDlqQueueForTests: jest.fn(),
+}));
+
 // Bypass workspace resolution — set req.workspace with owner role so requireRole() always passes.
 jest.mock("./middleware/workspaceResolver", () => ({
   createWorkspaceResolver: jest.fn(() => (req: Record<string, unknown>, _res: unknown, next: () => void) => {
@@ -55,6 +64,10 @@ beforeEach(async () => {
   await runStore.clear();
   llmConfigStore.clear();
   mockGetProvider.mockReset();
+  mockQueueAdd.mockReset();
+  mockQueueAdd.mockResolvedValue({ id: "job-1" });
+  mockQueueGetJob.mockReset();
+  mockQueueGetJob.mockResolvedValue(null);
   jest.restoreAllMocks();
 });
 
@@ -1023,5 +1036,150 @@ describe("POST /api/runs/file", () => {
       .attach("file", Buffer.from("corrupt data"), { filename: "bad.bin", contentType: "application/octet-stream" });
     expect(res.status).toBe(422);
     expect(res.body.error).toMatch(/File parsing failed/);
+  });
+});
+
+describe("GET /api/runs?status=failed", () => {
+  it("returns only failed runs when status=failed is provided", async () => {
+    await runStore.create({
+      id: "run-ok-1",
+      templateId: "tpl-a",
+      templateName: "Workflow A",
+      status: "completed",
+      startedAt: new Date().toISOString(),
+      input: {},
+      stepResults: [],
+      userId: "test-user-id",
+    });
+    await runStore.create({
+      id: "run-fail-1",
+      templateId: "tpl-b",
+      templateName: "Workflow B",
+      status: "failed",
+      startedAt: new Date().toISOString(),
+      input: {},
+      stepResults: [],
+      userId: "test-user-id",
+    });
+
+    const res = await request(app).get("/api/runs?status=failed");
+    expect(res.status).toBe(200);
+    expect(res.body.runs).toHaveLength(1);
+    expect(res.body.runs[0].id).toBe("run-fail-1");
+  });
+});
+
+describe("POST /api/runs/:id/retry", () => {
+  it("returns 404 for a run that does not exist", async () => {
+    const res = await request(app).post("/api/runs/run-missing/retry");
+    expect(res.status).toBe(404);
+  });
+
+  it("returns 409 when the run is not in failed state", async () => {
+    await runStore.create({
+      id: "run-running-1",
+      templateId: "tpl-a",
+      templateName: "Workflow A",
+      status: "running",
+      startedAt: new Date().toISOString(),
+      input: {},
+      stepResults: [],
+      userId: "test-user-id",
+    });
+
+    const res = await request(app).post("/api/runs/run-running-1/retry");
+    expect(res.status).toBe(409);
+    expect(res.body.error).toMatch(/cannot be retried/);
+  });
+
+  it("re-queues a failed run and resets status to queued", async () => {
+    await runStore.create({
+      id: "run-failed-2",
+      templateId: "tpl-b",
+      templateName: "Workflow B",
+      status: "failed",
+      startedAt: new Date().toISOString(),
+      input: {},
+      stepResults: [],
+      userId: "test-user-id",
+    });
+
+    const res = await request(app).post("/api/runs/run-failed-2/retry");
+    expect(res.status).toBe(200);
+    expect(res.body.status).toBe("queued");
+    expect(mockQueueAdd).toHaveBeenCalledTimes(1);
+    // jobId must equal runId so the cancel endpoint's getJob(runId) can find it
+    expect(mockQueueAdd).toHaveBeenCalledWith(
+      "run",
+      expect.objectContaining({ runId: "run-failed-2" }),
+      expect.objectContaining({ jobId: "run-failed-2" }),
+    );
+  });
+
+  it("removes a stale failed BullMQ job before re-enqueuing", async () => {
+    const mockRemove = jest.fn().mockResolvedValue(undefined);
+    mockQueueGetJob.mockResolvedValue({ id: "run-failed-2b", remove: mockRemove });
+
+    await runStore.create({
+      id: "run-failed-2b",
+      templateId: "tpl-b",
+      templateName: "Workflow B",
+      status: "failed",
+      startedAt: new Date().toISOString(),
+      input: {},
+      stepResults: [],
+      userId: "test-user-id",
+    });
+
+    const res = await request(app).post("/api/runs/run-failed-2b/retry");
+    expect(res.status).toBe(200);
+    expect(mockRemove).toHaveBeenCalledTimes(1);
+    expect(mockQueueAdd).toHaveBeenCalledTimes(1);
+  });
+
+  it("returns 503 when stale job removal fails", async () => {
+    mockQueueGetJob.mockResolvedValue({
+      id: "run-failed-2c",
+      remove: jest.fn().mockRejectedValue(new Error("Redis error")),
+    });
+
+    await runStore.create({
+      id: "run-failed-2c",
+      templateId: "tpl-b",
+      templateName: "Workflow B",
+      status: "failed",
+      startedAt: new Date().toISOString(),
+      input: {},
+      stepResults: [],
+      userId: "test-user-id",
+    });
+
+    const res = await request(app).post("/api/runs/run-failed-2c/retry");
+    expect(res.status).toBe(503);
+    expect(res.body.error).toMatch(/stale job/i);
+    const unchanged = await runStore.get("run-failed-2c");
+    expect(unchanged?.status).toBe("failed");
+  });
+
+  it("returns 503 when the run queue is unavailable (no Redis)", async () => {
+    const { getRunQueue } = jest.requireMock("./queue/queues") as { getRunQueue: jest.Mock };
+    getRunQueue.mockReturnValueOnce(null);
+
+    await runStore.create({
+      id: "run-failed-3",
+      templateId: "tpl-c",
+      templateName: "Workflow C",
+      status: "failed",
+      startedAt: new Date().toISOString(),
+      input: {},
+      stepResults: [],
+      userId: "test-user-id",
+    });
+
+    const res = await request(app).post("/api/runs/run-failed-3/retry");
+    expect(res.status).toBe(503);
+    expect(res.body.error).toMatch(/queue unavailable/i);
+    const unchanged = await runStore.get("run-failed-3");
+    expect(unchanged?.status).toBe("failed");
   });
 });

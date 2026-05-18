@@ -233,9 +233,9 @@ function ConnectModal({ initialProvider, onClose, onSuccess }: ConnectModalProps
 
         <form onSubmit={handleSubmit} className="px-6 py-5 space-y-4">
           {upgradeState && (
-            <div className="px-3 py-3 rounded-lg bg-amber-50 border border-amber-200 text-sm text-amber-800 space-y-2">
+            <div className="px-3 py-3 rounded-md bg-af2-mustard/10 border border-af2-mustard/30 text-sm text-af2-mustard space-y-2">
               <div className="flex items-center gap-2 font-medium">
-                <ArrowUpCircle size={16} className="text-amber-600 shrink-0" />
+                <ArrowUpCircle size={16} className="text-af2-mustard shrink-0" />
                 <span>
                   Your {upgradeState.currentTier} plan doesn&apos;t include BYOK (bring-your-own-key).
                 </span>
@@ -243,7 +243,7 @@ function ConnectModal({ initialProvider, onClose, onSuccess }: ConnectModalProps
               <button
                 type="button"
                 onClick={upgradeState.openUpgrade}
-                className="w-full px-3 py-1.5 rounded-lg bg-amber-600 text-white text-xs font-medium hover:bg-amber-700 transition-colors"
+                className="w-full px-3 py-1.5 rounded-md bg-af2-mustard text-white text-xs font-medium hover:bg-af2-mustard/85 transition-colors"
               >
                 {upgradeState.upgradeTo
                   ? `Upgrade to ${upgradeState.upgradeTo}`
@@ -264,7 +264,7 @@ function ConnectModal({ initialProvider, onClose, onSuccess }: ConnectModalProps
             <select
               value={provider}
               onChange={(e) => handleProviderChange(e.target.value as ProviderName)}
-              className="w-full px-3 py-2 rounded-lg border border-af2-line-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-af2-card"
+              className="w-full px-3 py-2 rounded-lg border border-af2-line-2 text-sm focus:outline-none focus:ring-2 focus:ring-af2-clay/40 bg-af2-card"
             >
               {providerKeys.map((k) => (
                 <option key={k} value={k}>{PROVIDERS[k].name}</option>
@@ -282,7 +282,7 @@ function ConnectModal({ initialProvider, onClose, onSuccess }: ConnectModalProps
               onChange={(e) => setLabel(e.target.value)}
               placeholder="e.g. My OpenAI Key"
               className={clsx(
-                "w-full px-3 py-2 rounded-lg border text-sm focus:outline-none focus:ring-2 focus:ring-blue-500",
+                "w-full px-3 py-2 rounded-lg border text-sm focus:outline-none focus:ring-2 focus:ring-af2-clay/40",
                 fieldErrors.label ? "border-af2-clay/40 bg-af2-clay-soft/30" : "border-af2-line-2"
               )}
             />
@@ -302,7 +302,7 @@ function ConnectModal({ initialProvider, onClose, onSuccess }: ConnectModalProps
               placeholder="sk-..."
               autoComplete="new-password"
               className={clsx(
-                "w-full px-3 py-2 rounded-lg border text-sm focus:outline-none focus:ring-2 focus:ring-blue-500",
+                "w-full px-3 py-2 rounded-lg border text-sm focus:outline-none focus:ring-2 focus:ring-af2-clay/40",
                 fieldErrors.apiKey ? "border-af2-clay/40 bg-af2-clay-soft/30" : "border-af2-line-2"
               )}
             />
@@ -319,7 +319,7 @@ function ConnectModal({ initialProvider, onClose, onSuccess }: ConnectModalProps
               value={model}
               onChange={(e) => setModel(e.target.value)}
               className={clsx(
-                "w-full px-3 py-2 rounded-lg border text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-af2-card",
+                "w-full px-3 py-2 rounded-lg border text-sm focus:outline-none focus:ring-2 focus:ring-af2-clay/40 bg-af2-card",
                 fieldErrors.model ? "border-af2-clay/40 bg-af2-clay-soft/30" : "border-af2-line-2"
               )}
             >

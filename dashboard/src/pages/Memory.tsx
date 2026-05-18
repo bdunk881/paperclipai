@@ -280,9 +280,11 @@ export default function Memory() {
   return (
     <div className="min-h-full bg-af2-paper text-af2-ink">
       <div className="mx-auto flex w-full max-w-7xl flex-col gap-8 px-4 py-6 md:px-8 md:py-8">
-        <section className="glass-card noise-overlay overflow-hidden rounded-[28px] border border-af2-line bg-af2-card/90">
+        {/* DASH-35: stripped V1 glass-card + noise-overlay classes and
+            the V1 indigo/teal radial gradient. Kept the af2-card border
+            + radius so the page-head visual rhythm survives. */}
+        <section className="af2-card overflow-hidden">
           <div className="relative border-b border-af2-line px-8 py-7">
-            <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(99,102,241,0.16),transparent_40%),radial-gradient(circle_at_bottom_left,rgba(20,184,166,0.12),transparent_35%)]" />
             <div className="relative flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
               <div className="max-w-2xl">
                 <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-af2-clay/40 bg-af2-clay-soft px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-af2-clay">
@@ -354,9 +356,11 @@ export default function Memory() {
                 onDrop={handleDrop}
                 onClick={openFilePicker}
                 className={clsx(
-                  "glass-card w-full rounded-2xl border-2 border-dashed px-6 py-10 text-left transition-all duration-200 ease-in-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-af2-clay focus-visible:ring-offset-2 focus-visible:ring-offset-af2-paper",
+                  // DASH-35: removed V1 glass-card + indigo glow shadow
+                  // on drag-over. Pure af2 paper-style now.
+                  "w-full rounded-md border-2 border-dashed px-6 py-10 text-left transition-all duration-200 ease-in-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-af2-clay focus-visible:ring-offset-2 focus-visible:ring-offset-af2-paper",
                   dragOver
-                    ? "border-af2-clay bg-af2-clay-soft shadow-[0_0_15px_rgba(99,102,241,0.2)]"
+                    ? "border-af2-clay bg-af2-clay/5"
                     : "border-af2-line bg-af2-card hover:border-af2-clay hover:bg-af2-paper",
                   uploadState === "success" && "border-af2-sage/80",
                   uploadState === "error" && "border-af2-clay/80"
@@ -420,7 +424,7 @@ export default function Memory() {
                 </button>
               </div>
 
-              <div className="glass-card overflow-hidden rounded-2xl border border-af2-line bg-af2-card/90">
+              <div className="af2-card overflow-hidden">
                 <div className="hidden grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)_88px] gap-4 bg-af2-paper-2 px-4 py-3 md:grid">
                   <span className="text-xs font-semibold uppercase tracking-[0.18em] text-af2-ink-4">
                     Question
@@ -545,7 +549,7 @@ export default function Memory() {
           </div>
         )}
 
-        <section className="grid gap-0 overflow-hidden rounded-[28px] border border-af2-line bg-af2-card/95 xl:grid-cols-[380px_minmax(0,1fr)]">
+        <section className="af2-card grid gap-0 overflow-hidden xl:grid-cols-[380px_minmax(0,1fr)]">
           <div className="border-b border-af2-line bg-af2-paper/90 xl:border-b-0 xl:border-r">
             <div className="border-b border-af2-line p-4">
               <div className="relative">

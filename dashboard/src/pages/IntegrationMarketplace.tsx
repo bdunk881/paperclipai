@@ -474,7 +474,7 @@ export default function IntegrationMarketplace() {
               <div className="text-xs text-af2-ink-4">available</div>
             </div>
             <div className="text-center">
-              <div className="text-2xl font-bold text-amber-500">{premiumCount}</div>
+              <div className="text-2xl font-bold text-af2-mustard">{premiumCount}</div>
               <div className="text-xs text-af2-ink-4">premium</div>
             </div>
           </div>
@@ -485,7 +485,7 @@ export default function IntegrationMarketplace() {
           <div className="relative flex-1 max-w-md">
             <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-af2-ink-4" />
             <input
-              className="w-full pl-9 pr-3 py-2 text-sm border border-af2-line rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full pl-9 pr-3 py-2 text-sm border border-af2-line rounded-lg focus:outline-none focus:ring-2 focus:ring-af2-clay/40"
               placeholder="Search integrations, categories, or actions..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
@@ -557,7 +557,7 @@ export default function IntegrationMarketplace() {
                   className="bg-af2-card rounded-xl border border-af2-line p-4 hover:shadow-sm hover:border-af2-ink-blue/30 transition cursor-pointer group"
                 >
                   <div className="flex items-center gap-2 mb-2">
-                    <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center">
+                    <div className="w-7 h-7 rounded-lg bg-af2-clay flex items-center justify-center">
                       <Zap size={13} className="text-white" />
                     </div>
                     <span className="px-2 py-0.5 rounded-full bg-af2-paper-2 text-af2-ink-3 text-xs font-medium">
@@ -638,7 +638,7 @@ export default function IntegrationMarketplace() {
                       <div className="flex items-center gap-1">
                         <span className="font-semibold text-sm text-af2-ink">{integration.name}</span>
                         {integration.official && <CheckCircle size={11} className="text-af2-ink-blue" />}
-                        {integration.premium && <Crown size={11} className="text-amber-500" />}
+                        {integration.premium && <Crown size={11} className="text-af2-mustard" />}
                       </div>
                       <span className="text-xs text-af2-ink-4">{integration.category}</span>
                     </div>
@@ -686,7 +686,7 @@ export default function IntegrationMarketplace() {
                   <div className="flex items-center gap-1.5">
                     <span className="font-semibold text-sm text-af2-ink">{integration.name}</span>
                     {integration.official && <CheckCircle size={11} className="text-af2-ink-blue" />}
-                    {integration.premium && <Crown size={11} className="text-amber-500" />}
+                    {integration.premium && <Crown size={11} className="text-af2-mustard" />}
                     <span className="text-xs text-af2-ink-4 ml-2">{integration.category}</span>
                   </div>
                   <p className="text-xs text-af2-ink-3 truncate">{integration.description}</p>
@@ -746,7 +746,7 @@ export default function IntegrationMarketplace() {
                   <div className="flex items-center gap-1.5">
                     <h2 className="font-bold text-af2-ink">{detail.name}</h2>
                     {detail.official && <CheckCircle size={13} className="text-af2-ink-blue" />}
-                    {detail.premium && <Crown size={13} className="text-amber-500" />}
+                    {detail.premium && <Crown size={13} className="text-af2-mustard" />}
                   </div>
                   <span className="text-xs text-af2-ink-4">{detail.category}</span>
                 </div>
@@ -763,7 +763,7 @@ export default function IntegrationMarketplace() {
 
               {detail.premium && !detail.connected && (
                 <div className="flex items-center gap-2 p-3 rounded-lg bg-af2-mustard/10 border border-af2-mustard/30">
-                  <Crown size={14} className="text-amber-500 shrink-0" />
+                  <Crown size={14} className="text-af2-mustard shrink-0" />
                   <p className="text-xs text-af2-mustard">
                     This is a premium integration. Upgrade your plan to connect.
                   </p>

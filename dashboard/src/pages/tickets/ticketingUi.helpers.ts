@@ -44,50 +44,64 @@ export function slaLabel(slaState: TicketSlaStateLike | string): string {
   return normalizeTicketSlaState(slaState).replace("_", " ");
 }
 
+// DASH-35: V2 token palette for ticket status / priority / SLA badges.
+//
+// Mapping from V1 dark-mode chip colors to af2 editorial tones:
+//   sage    = healthy / in-progress / on-track  (var(--af2-sage))
+//   mustard = warning / blocked / at-risk       (var(--af2-mustard))
+//   clay    = critical / urgent / breached      (var(--af2-clay))
+//   ink     = neutral / open / new              (var(--af2-ink))
+//   muted   = inactive / resolved / paused / low (var(--af2-ink-3))
+//
+// Returned class strings rely on the af2 color tokens compiled by
+// Tailwind from `tailwind.config.js` (text-af2-* + bg-af2-* + border-af2-*).
+// Keeping the chip shape identical across tones so layout doesn't shift
+// when a ticket moves states.
+
 export function ticketStatusClasses(status: TicketStatus): string {
   switch (status) {
     case "open":
-      return "border-indigo-500/30 bg-indigo-500/10 text-indigo-200";
+      return "border-af2-line bg-af2-paper-2 text-af2-ink";
     case "in_progress":
-      return "border-teal-500/30 bg-teal-500/10 text-teal-200";
+      return "border-af2-sage/30 bg-af2-sage/10 text-af2-sage";
     case "blocked":
-      return "border-orange-500/30 bg-orange-500/10 text-orange-200";
+      return "border-af2-mustard/30 bg-af2-mustard/10 text-af2-mustard";
     case "resolved":
-      return "border-slate-500/30 bg-slate-500/10 text-slate-300";
+      return "border-af2-line bg-af2-paper-2 text-af2-ink-3";
     case "cancelled":
-      return "border-rose-500/30 bg-rose-500/10 text-rose-200";
+      return "border-af2-clay/30 bg-af2-clay/10 text-af2-clay";
     default:
-      return "border-slate-700 bg-slate-900/70 text-slate-300";
+      return "border-af2-line bg-af2-paper-2 text-af2-ink-2";
   }
 }
 
 export function ticketPriorityClasses(priority: TicketPriority): string {
   switch (priority) {
     case "urgent":
-      return "border-[#FF5F57]/30 bg-[#FF5F57]/10 text-[#ff9f9b]";
+      return "border-af2-clay/30 bg-af2-clay/10 text-af2-clay";
     case "high":
-      return "border-orange-500/30 bg-orange-500/10 text-orange-200";
+      return "border-af2-mustard/30 bg-af2-mustard/10 text-af2-mustard";
     case "medium":
-      return "border-teal-500/30 bg-teal-500/10 text-teal-200";
+      return "border-af2-line bg-af2-paper-2 text-af2-ink";
     case "low":
-      return "border-slate-500/30 bg-slate-500/10 text-slate-300";
+      return "border-af2-line bg-af2-paper-2 text-af2-ink-3";
     default:
-      return "border-slate-700 bg-slate-900/70 text-slate-300";
+      return "border-af2-line bg-af2-paper-2 text-af2-ink-2";
   }
 }
 
 export function ticketSlaClasses(slaState: TicketSlaStateLike | string): string {
   switch (normalizeTicketSlaState(slaState)) {
     case "at_risk":
-      return "border-[#FFD93D]/30 bg-[#FFD93D]/10 text-[#fde68a]";
+      return "border-af2-mustard/30 bg-af2-mustard/10 text-af2-mustard";
     case "breached":
-      return "border-[#FF5F57]/30 bg-[#FF5F57]/10 text-[#ff9f9b]";
+      return "border-af2-clay/30 bg-af2-clay/10 text-af2-clay";
     case "paused":
-      return "border-slate-500/30 bg-slate-500/10 text-slate-300";
+      return "border-af2-line bg-af2-paper-2 text-af2-ink-3";
     case "on_track":
-      return "border-teal-500/30 bg-teal-500/10 text-teal-200";
+      return "border-af2-sage/30 bg-af2-sage/10 text-af2-sage";
     default:
-      return "border-slate-700 bg-slate-900/70 text-slate-300";
+      return "border-af2-line bg-af2-paper-2 text-af2-ink-2";
   }
 }
 
@@ -106,12 +120,12 @@ export function ticketUpdateIcon(update: TicketUpdate) {
 export function ticketUpdateTone(update: TicketUpdate): string {
   switch (update.type) {
     case "status_change":
-      return "border-orange-500/30 bg-orange-500/10 text-orange-200";
+      return "border-af2-mustard/30 bg-af2-mustard/10 text-af2-mustard";
     case "structured_update":
-      return "border-teal-500/30 bg-teal-500/10 text-teal-200";
+      return "border-af2-sage/30 bg-af2-sage/10 text-af2-sage";
     case "comment":
     default:
-      return "border-slate-700 bg-slate-900/70 text-slate-300";
+      return "border-af2-line bg-af2-paper-2 text-af2-ink-2";
   }
 }
 

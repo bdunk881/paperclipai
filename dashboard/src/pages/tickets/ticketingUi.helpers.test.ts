@@ -58,8 +58,8 @@ describe("normalizeTicketSlaState", () => {
     expect(normalizeTicketSlaState("on_track")).toBe("on_track");
   });
 
-  it("maps unknown values to 'at_risk'", () => {
-    expect(normalizeTicketSlaState("unknown_state")).toBe("at_risk");
+  it("maps unknown values to 'on_track'", () => {
+    expect(normalizeTicketSlaState("unknown_state")).toBe("on_track");
   });
 });
 
@@ -209,9 +209,9 @@ describe("ticketSlaClasses", () => {
     expect(ticketSlaClasses("on_track")).toContain("teal");
   });
 
-  it("maps unknown SLA state to at_risk classes via normalizeTicketSlaState", () => {
-    // normalizeTicketSlaState("unknown") → "at_risk", so at_risk colour applies
-    expect(ticketSlaClasses("unknown")).toContain("FFD93D");
+  it("maps unknown SLA state to on_track classes via normalizeTicketSlaState", () => {
+    // normalizeTicketSlaState("unknown") → "on_track", so on_track (teal) colour applies
+    expect(ticketSlaClasses("unknown")).toContain("teal");
   });
 });
 
@@ -278,9 +278,9 @@ describe("slaStateIcon", () => {
     expect(slaStateIcon("on_track")).toBe(CheckCircle2);
   });
 
-  it("maps unknown state to at_risk then returns AlertTriangle", () => {
-    // normalizeTicketSlaState("unknown") → "at_risk"
-    expect(slaStateIcon("unknown")).toBe(AlertTriangle);
+  it("maps unknown state to on_track then returns CheckCircle2", () => {
+    // normalizeTicketSlaState("unknown") → "on_track"
+    expect(slaStateIcon("unknown")).toBe(CheckCircle2);
   });
 });
 

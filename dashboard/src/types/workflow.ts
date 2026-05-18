@@ -89,6 +89,8 @@ export interface WorkflowRun {
   templateId: string;
   templateName: string;
   routineId?: string;
+  workflowVersionId?: string;
+  workflowVersion?: number;
   status: "queued" | "pending" | "running" | "completed" | "failed" | "escalated" | "awaiting_approval" | "canceled";
   startedAt: string;
   completedAt?: string;

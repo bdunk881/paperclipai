@@ -1155,6 +1155,97 @@ app.post("/api/runs/:id/retry", requireAuthOrQaBypass, workspaceResolver, async 
   res.json(updated);
 });
 
+/**
+ * Re-run a finished run using the CURRENT (latest) workflow version.
+ * Creates a fresh run record and enqueues it. Use /retry to replay with the
+ * original version instead.
+ */
+app.post("/api/runs/:id/replay-with-latest", requireAuthOrQaBypass, workspaceResolver, async (req: WorkspaceAwareRequest, res) => {
+  const runId = req.params.id;
+  const run = await runStore.get(runId);
+  const userId = req.auth?.sub;
+
+  if (!run || (run.userId !== undefined && run.userId !== userId)) {
+    res.status(404).json({ error: `Run not found: ${runId}` });
+    return;
+  }
+
+  if (run.status === "running" || run.status === "queued") {
+    res.status(409).json({ error: `Run cannot be replayed while in status '${run.status}'` });
+    return;
+  }
+
+  // Resolve the latest DAG: prefer the DB-stored latest version when available.
+  let latestDag: WorkflowTemplate | Record<string, unknown> | undefined;
+  if (run.workflowId && isPostgresPersistenceEnabled()) {
+    try {
+      const pool = getPostgresPool();
+      const result = await pool.query<{ dag: unknown }>(
+        `SELECT wv.dag
+           FROM workflow_versions wv
+           JOIN workflows w ON w.latest_version_id = wv.id
+          WHERE w.id = $1::uuid`,
+        [run.workflowId]
+      );
+      if (result.rows[0]) {
+        latestDag = result.rows[0].dag as Record<string, unknown>;
+      }
+    } catch (err) {
+      console.error("[runs] replay-with-latest DB lookup failed:", (err as Error).message);
+    }
+  }
+
+  if (!latestDag) {
+    try {
+      latestDag = getTemplate(run.templateId);
+    } catch {
+      res.status(404).json({ error: `Original template not found: ${run.templateId}` });
+      return;
+    }
+  }
+
+  const newRunId = randomUUID();
+  const newRun = await runStore.create({
+    id: newRunId,
+    templateId: run.templateId,
+    templateName: run.templateName,
+    workspaceId: run.workspaceId,
+    routineId: run.routineId,
+    status: "queued",
+    startedAt: new Date().toISOString(),
+    input: run.input,
+    workflowDag: latestDag,
+    stepResults: [],
+    runtimeState: {
+      config: run.runtimeState?.config ?? {},
+      context: { ...(run.runtimeState?.config ?? {}), ...run.input },
+      currentStepIndex: 0,
+    },
+    ...(userId !== undefined ? { userId } : {}),
+  });
+
+  const runQueue = getRunQueue();
+  if (runQueue) {
+    const idempotencyKey = `${newRun.id}:0:replay-latest:${Date.now()}`;
+    await runQueue.add(
+      "run",
+      {
+        runId: newRun.id,
+        templateId: run.templateId,
+        workflowVersionId: newRun.workflowVersionId,
+        workspaceId: run.workspaceId ?? "",
+        stepIndex: 0,
+        idempotencyKey,
+      },
+      { jobId: newRun.id, removeOnComplete: 100 }
+    );
+    res.status(202).json({ runId: newRun.id });
+    return;
+  }
+
+  res.status(202).json(newRun);
+});
+
 app.get("/api/observability", requireAuth, async (req: AuthenticatedRequest, res) => {
   const userId = req.auth?.sub;
   if (!userId) {

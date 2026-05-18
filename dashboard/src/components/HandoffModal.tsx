@@ -118,15 +118,10 @@ export function HandoffModal({
     [open],
   );
 
-  if (!open) return null;
-
-  const canSubmit = title.trim().length > 0 && !submitting;
-  const priorityChoice = PRIORITIES.find((p) => p.value === priority)!;
-  const previewActive = title.trim().length > 0 || description.trim().length > 0;
-
   // Debounced classifier call. Re-fires whenever the trimmed title /
   // description changes; aborts in-flight requests on subsequent
   // edits so we don't race the response back onto an outdated draft.
+  // Must be declared before the early return so hooks are called unconditionally.
   const classifyAbortRef = useRef<AbortController | null>(null);
   const trimmedTitle = title.trim();
   const trimmedDescription = description.trim();
@@ -180,6 +175,12 @@ export function HandoffModal({
     // doesn't get reapplied after a manual change.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [suggestion, userOverride, suggestionDismissed]);
+
+  if (!open) return null;
+
+  const canSubmit = title.trim().length > 0 && !submitting;
+  const priorityChoice = PRIORITIES.find((p) => p.value === priority)!;
+  const previewActive = title.trim().length > 0 || description.trim().length > 0;
 
   function reset(): void {
     setTitle("");

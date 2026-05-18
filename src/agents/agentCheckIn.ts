@@ -31,11 +31,27 @@ import { resolveModelForTier } from "../engine/llmRouter";
 import { getProvider } from "../engine/llmProviders";
 import { extractStructuredOutput } from "../engine/structuredOutput";
 import { ticketStore } from "../tickets/ticketStore";
-import { setAgentPresence, type AgentPresenceState } from "./agentPresence";
+import {
+  publishAgentTokenPreview,
+  setAgentPresence,
+  type AgentPresenceState,
+} from "./agentPresence";
 
 const SELF_CHECK_IN_TIMEOUT_MS = 45_000;
 const MAX_TICKETS_IN_PROMPT = 8;
 const MAX_SUMMARY_CHARS = 240;
+/**
+ * How long between token-preview publishes while the LLM streams.
+ * Anthropic emits dozens of text deltas per second; debouncing to
+ * ~5/s keeps Redis traffic + Cloudflare SSE bandwidth proportional
+ * to what a human can actually read in the dashboard pill.
+ */
+const TOKEN_PREVIEW_PUBLISH_INTERVAL_MS = 200;
+/**
+ * Tail of the streamed assistant text we keep in the rolling preview.
+ * The pill is one line; sending more than this is wasted bytes.
+ */
+const TOKEN_PREVIEW_TAIL_CHARS = 240;
 
 interface SelfReport {
   state: AgentPresenceState;
@@ -114,16 +130,54 @@ async function executeSelfCheckIn(input: RunInput): Promise<void> {
   }
 
   const model = resolveModelForTier(resolved.config.provider, "standard");
+  // Streaming token-preview wiring. Each text delta from the provider
+  // updates `lastPreview`; a debounced publisher fans that out on the
+  // workspace's token-preview Redis channel, which the dashboard's
+  // SSE stream forwards into the agent pill in near real time.
+  //
+  // We DON'T pass onText when the provider call is in JSON-mode
+  // (responseFormat: json_object) — the Anthropic provider falls
+  // back to non-stream for forced tool-use anyway, but being explicit
+  // avoids depending on that detail across providers. The check-in
+  // self-report *is* JSON, so this code path currently never streams.
+  // Leaving the streamer wired so a future "agent talks to owner"
+  // free-text flow can opt in trivially.
+  let lastPreview = "";
+  let publishHandle: ReturnType<typeof setTimeout> | null = null;
+  function schedulePublish(): void {
+    if (publishHandle) return;
+    publishHandle = setTimeout(() => {
+      publishHandle = null;
+      void publishAgentTokenPreview({
+        workspaceId,
+        agentId,
+        preview: lastPreview,
+      });
+    }, TOKEN_PREVIEW_PUBLISH_INTERVAL_MS);
+  }
+
   const provider = getProvider({
     provider: resolved.config.provider,
     model,
     apiKey: resolved.apiKey,
     responseFormat: { type: "json_object" },
     requestTimeoutMs: SELF_CHECK_IN_TIMEOUT_MS,
+    onText: (_delta, accumulated) => {
+      lastPreview = accumulated.slice(-TOKEN_PREVIEW_TAIL_CHARS);
+      schedulePublish();
+    },
   });
 
   const prompt = buildPrompt({ agentName, agentRoleKey, openTickets });
   const response = await provider(prompt);
+
+  // Flush any pending preview so consumers see the final tail
+  // immediately, then let the next setAgentPresence overwrite the
+  // pill with the canonical state.
+  if (publishHandle) {
+    clearTimeout(publishHandle);
+    publishHandle = null;
+  }
 
   let report: SelfReport;
   try {

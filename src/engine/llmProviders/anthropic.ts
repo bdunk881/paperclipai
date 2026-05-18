@@ -65,6 +65,50 @@ export function createAnthropicProvider(config: LLMProviderConfig): LLMProvider 
   const forcedTool = toAnthropicForcedTool(config.responseFormat);
 
   return async (prompt: string): Promise<LLMResponse> => {
+    // Streaming path: caller wired an onText callback to forward
+    // incremental deltas (e.g. SSE → agent presence pill). Use the
+    // Anthropic SDK's `messages.stream` helper so we still get the
+    // final assembled message + usage when the stream completes.
+    //
+    // Streaming is incompatible with forced-tool JSON mode in a
+    // straightforward way (we'd have to assemble tool_use blocks from
+    // input_json_delta events). When `responseFormat` is set, skip the
+    // stream and fall through to the standard create() call so
+    // structured-output callers continue to get clean JSON.
+    if (config.onText && !forcedTool) {
+      let accumulated = "";
+      const onText = config.onText;
+      try {
+        const stream = client.messages.stream({
+          model: config.model,
+          max_tokens: 4096,
+          messages: [{ role: "user", content: prompt }],
+        });
+        stream.on("text", (delta) => {
+          accumulated += delta;
+          try {
+            onText(delta, accumulated);
+          } catch {
+            // Swallow callback errors — streaming UX shouldn't break
+            // the LLM call. The final response below is what callers
+            // actually consume.
+          }
+        });
+        const final = await stream.finalMessage();
+        const usage = {
+          promptTokens: final.usage.input_tokens,
+          completionTokens: final.usage.output_tokens,
+        };
+        const firstBlock = final.content[0];
+        const text =
+          firstBlock?.type === "text" ? firstBlock.text : accumulated;
+        return { text, usage };
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        throw new Error(`Anthropic API error: ${msg}`);
+      }
+    }
+
     let response;
     try {
       response = await client.messages.create({

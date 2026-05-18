@@ -37,6 +37,21 @@ export function presenceChannel(workspaceId: string): string {
   return `workspace:${workspaceId}:agent-presence`;
 }
 
+/**
+ * Channel for transient token-preview updates while an agent's LLM
+ * call is streaming. Separate from the presence channel so we can
+ * publish at high frequency without rewriting the durable presence
+ * record (which is SETEX'd on a 30s TTL and shouldn't churn).
+ *
+ * Subscribers receive `AgentTokenPreviewEvent` JSON payloads. The
+ * SSE stream forwards them as `token` events so the dashboard pill
+ * can render the live preview in the same `currentTask` slot, then
+ * fall back to the canonical state on the next presence `update`.
+ */
+export function tokenPreviewChannel(workspaceId: string): string {
+  return `workspace:${workspaceId}:agent-token-preview`;
+}
+
 export function presenceKey(workspaceId: string, agentId: string): string {
   return `agent:${workspaceId}:${agentId}:presence`;
 }
@@ -131,6 +146,64 @@ export async function setAgentPresence(
   }
 
   return value;
+}
+
+/**
+ * Transient "what's streaming right now" payload. Published on the
+ * tokenPreviewChannel by streaming LLM callbacks; consumed by the
+ * presence SSE stream and the dashboard's `useAgentPresence` hook.
+ */
+export interface AgentTokenPreviewEvent {
+  workspaceId: string;
+  agentId: string;
+  /** Optional run/check-in id so the dashboard can scope per-run. */
+  runId?: string | null;
+  /**
+   * Rolling text preview the dashboard renders inline in the agent
+   * pill's `currentTask` slot. Producers should pre-truncate (e.g. to
+   * the last 240 chars of the assistant turn) so we don't pump
+   * unbounded payloads across the channel.
+   */
+  preview: string;
+  /** ISO timestamp of this preview emission. */
+  at: string;
+}
+
+/**
+ * Publish-only — no Redis SETEX. Lightweight enough to call from a
+ * streaming LLM `onText` callback after caller-side debouncing.
+ *
+ * No-op when Redis isn't configured. Read failures are warned but
+ * never thrown; the streaming code path must not be gated on Redis.
+ */
+export async function publishAgentTokenPreview(
+  input: { workspaceId: string; agentId: string; preview: string; runId?: string | null },
+): Promise<void> {
+  const redis = getRedisClient();
+  if (!redis) return;
+  // Drop empty / whitespace-only previews — the pill would render nothing.
+  const trimmed = input.preview.trim();
+  if (!trimmed) return;
+
+  const payload: AgentTokenPreviewEvent = {
+    workspaceId: input.workspaceId,
+    agentId: input.agentId,
+    runId: input.runId ?? null,
+    preview: trimmed,
+    at: new Date().toISOString(),
+  };
+  try {
+    await redis.publish(
+      tokenPreviewChannel(input.workspaceId),
+      JSON.stringify(payload),
+    );
+  } catch (err) {
+    console.warn(
+      `[agentPresence] token preview publish failed for ${input.agentId}: ${
+        (err as Error).message
+      }`,
+    );
+  }
 }
 
 /**

@@ -128,6 +128,19 @@ export interface LLMProviderConfig {
    * request timeout still bound the wall time end-to-end.
    */
   requestTimeoutMs?: number;
+  /**
+   * Optional streaming callback. When set, the provider opens its
+   * SDK's streaming endpoint and invokes `onText` with each incremental
+   * delta. The returned LLMResponse still resolves with the full
+   * assembled text + usage at the end — callers that don't need
+   * streaming can leave it unset and the provider returns a single
+   * non-stream completion as before.
+   *
+   * Providers without streaming support (or that haven't been wired
+   * yet) silently ignore this — the call falls back to the non-stream
+   * code path and just never fires `onText`.
+   */
+  onText?: (delta: string, accumulated: string) => void;
 }
 
 export interface LLMResponse {

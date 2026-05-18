@@ -1,7 +1,7 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { Loader2 } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
-import { ApiError, apiGet, apiPatch } from "../api/settingsClient";
+import { apiGet, apiPatch } from "../api/settingsClient";
 import Toast from "../components/Toast";
 
 const TIMEZONES = [
@@ -38,11 +38,6 @@ export default function ProfileSettings() {
   const [toast, setToast] = useState<{ variant: "success" | "error"; message: string } | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const fallbackStorageKey = useMemo(
-    () => `autoflow.profile-settings:${user?.id ?? "anonymous"}`,
-    [user?.id]
-  );
-
   useEffect(() => {
     let cancelled = false;
 
@@ -61,15 +56,10 @@ export default function ProfileSettings() {
         setTimezone(data.profile?.timezone ?? "UTC");
       } catch (e) {
         if (cancelled) return;
-        if (e instanceof ApiError && e.status === 404) {
-          const raw = sessionStorage.getItem(fallbackStorageKey);
-          const fallback = raw
-            ? (JSON.parse(raw) as { displayName?: string; timezone?: string })
-            : null;
-          setDisplayName(fallback?.displayName ?? user?.name ?? "");
-          setTimezone(fallback?.timezone ?? "UTC");
-          return;
-        }
+        // DASH-41: profileRoutes is now mounted at /api/user, so 404 is a
+        // real error rather than the historical "backend pending" placeholder.
+        // Fall back to the auth-provided defaults so the form is editable,
+        // but surface the error so the user knows the save will fail.
         setDisplayName(user?.name ?? "");
         setTimezone("UTC");
         setError(e instanceof Error ? e.message : "Failed to load profile.");
@@ -82,7 +72,7 @@ export default function ProfileSettings() {
     return () => {
       cancelled = true;
     };
-  }, [fallbackStorageKey, requireAccessToken, user]);
+  }, [requireAccessToken, user]);
 
   useEffect(() => {
     if (!toast) return;
@@ -104,22 +94,11 @@ export default function ProfileSettings() {
       );
       setToast({ variant: "success", message: "Profile saved successfully." });
     } catch (e) {
-      if (e instanceof ApiError && e.status === 404) {
-        sessionStorage.setItem(
-          fallbackStorageKey,
-          JSON.stringify({ displayName: displayName.trim(), timezone })
-        );
-        setToast({
-          variant: "success",
-          message: "Profile saved locally while the backend endpoint is pending.",
-        });
-      } else {
-        setError("Failed to save profile. Please try again.");
-        setToast({
-          variant: "error",
-          message: e instanceof Error ? e.message : "Profile save failed.",
-        });
-      }
+      setError("Failed to save profile. Please try again.");
+      setToast({
+        variant: "error",
+        message: e instanceof Error ? e.message : "Profile save failed.",
+      });
     } finally {
       setSaving(false);
     }

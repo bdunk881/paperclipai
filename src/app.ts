@@ -97,6 +97,7 @@ import {
   WorkspaceAwareRequest,
 } from "./middleware/workspaceResolver";
 import { createWorkspaceRoutes } from "./workspaces/workspaceRoutes";
+import profileRoutes from "./user/profileRoutes";
 import { createMissionRoutes } from "./missions/missionRoutes";
 import { createHiringPlanRoutes } from "./missions/hiringPlanRoutes";
 import { createActivityRoutes } from "./activity/activityRoutes";
@@ -665,6 +666,11 @@ app.use("/api/integrations/agent-catalog", agentCatalogRoutes);
 app.use("/api/connectors/google-workspace", googleWorkspaceConnectorRoutes);
 // user-scoped: workspace management creates/lists workspaces and cannot itself be workspace-gated
 app.use("/api/workspaces", requireAuth, workspaceRoutes);
+// DASH-41: mount profileRoutes (GET/PATCH/PUT /api/user/profile). Previously
+// the router was authored + tested but never wired in, so ProfileSettings
+// 404'd on every save and fell back to sessionStorage with a misleading
+// "backend endpoint pending" toast. Postgres-backed via profileStore.
+app.use("/api/user", requireAuth, profileRoutes);
 // llmEndpointRateLimiter is now applied INSIDE missionRoutes on the
 // generate-plan POST only (see createMissionRoutes). Mounting it
 // here would re-block the cheap GET list endpoint that the dashboard

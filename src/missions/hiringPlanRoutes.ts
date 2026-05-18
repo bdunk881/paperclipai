@@ -306,6 +306,54 @@ async function emitActivityEvent(
   );
 }
 
+/**
+ * DASH-21: pg driver attaches structured fields (code, constraint
+ * name, table, schema, detail) to its Error instances. Pull them out
+ * so the route can surface "exactly what failed" without the caller
+ * needing to grep the message string. Returns an empty object for
+ * non-pg errors.
+ */
+function extractPgErrorFields(err: unknown): {
+  code?: string;
+  constraint?: string;
+  table?: string;
+  schema?: string;
+  column?: string;
+  detail?: string;
+  routine?: string;
+} {
+  if (!err || typeof err !== "object") return {};
+  const e = err as Record<string, unknown>;
+  const fields: Record<string, string> = {};
+  for (const key of [
+    "code",
+    "constraint",
+    "table",
+    "schema",
+    "column",
+    "detail",
+    "routine",
+  ]) {
+    const v = e[key];
+    if (typeof v === "string" && v.length > 0) fields[key] = v;
+  }
+  return fields;
+}
+
+function composeDetailMessage(
+  baseMessage: string,
+  pg: ReturnType<typeof extractPgErrorFields>,
+): string {
+  if (Object.keys(pg).length === 0) return baseMessage;
+  const parts: string[] = [baseMessage];
+  if (pg.code) parts.push(`pg_code=${pg.code}`);
+  if (pg.constraint) parts.push(`constraint=${pg.constraint}`);
+  if (pg.table) parts.push(`table=${pg.table}`);
+  if (pg.column) parts.push(`column=${pg.column}`);
+  if (pg.detail) parts.push(`pg_detail=${pg.detail}`);
+  return parts.join(" · ");
+}
+
 export function createHiringPlanRoutes(pool: Pool) {
   const router = Router();
 
@@ -498,8 +546,14 @@ export function createHiringPlanRoutes(pool: Pool) {
         pool,
         { workspaceId, userId },
         async (client) => {
-          await client.query("BEGIN");
-
+          // DASH-21: withWorkspaceContext already wrapped this callback
+          // in BEGIN + SET LOCAL. The inner BEGIN that used to live
+          // here was a no-op WARNING (postgres rejects nested
+          // transactions), but the matching inner COMMIT closed the
+          // outer transaction prematurely — at which point SET LOCAL
+          // cleared and any tail query would have run without RLS
+          // workspace context. Drop both: throw on error so the
+          // wrapper rolls back, return on success so it commits.
           try {
             // Re-check inside the transaction to avoid the two-confirm race.
             const recheck = await client.query<{ accepted_at: Date | null }>(
@@ -686,8 +740,9 @@ export function createHiringPlanRoutes(pool: Pool) {
               );
             }
 
-            await client.query("COMMIT");
-
+            // DASH-21: no manual COMMIT — withWorkspaceContext owns
+            // the transaction lifecycle. Returning the response
+            // triggers the wrapper's commit.
             return {
               hiringPlanId,
               missionId: lookup!.mission_id,
@@ -696,11 +751,9 @@ export function createHiringPlanRoutes(pool: Pool) {
               orgEdges,
             } satisfies ConfirmHiringPlanResponse;
           } catch (err) {
-            try {
-              await client.query("ROLLBACK");
-            } catch {
-              // Swallow ROLLBACK errors so the original cause surfaces.
-            }
+            // DASH-21: no manual ROLLBACK — withWorkspaceContext
+            // catches the throw and rolls back. Re-throwing
+            // preserves the original cause for the outer catch.
             throw err;
           }
         },
@@ -712,14 +765,22 @@ export function createHiringPlanRoutes(pool: Pool) {
         res.status(409).json({ error: "Hiring plan already accepted", acceptedAt });
         return;
       }
-      console.error(`[hiring-plans] confirm failed: ${message}`);
-      // DASH-1: capture the underlying exception so we can diagnose
-      // regressions like the "relation teams does not exist" bug
-      // without having to instrument the route after the fact.
+      // DASH-21: extract pg-specific fields when present (code,
+      // constraint, table, detail). These pinpoint exactly which
+      // FK/RLS/check failed without needing schema knowledge on
+      // the dashboard side.
+      const pgFields = extractPgErrorFields(err);
+      console.error(
+        `[hiring-plans] confirm failed: ${message}`,
+        pgFields,
+        err instanceof Error ? err.stack : undefined,
+      );
       Sentry.captureException(err, {
         tags: {
           route: "POST /api/hiring-plans/:hiringPlanId/confirm",
           phase: "transaction",
+          ...(pgFields.code ? { pg_code: pgFields.code } : {}),
+          ...(pgFields.constraint ? { pg_constraint: pgFields.constraint } : {}),
         },
         contexts: {
           hiring_plan: {
@@ -729,15 +790,18 @@ export function createHiringPlanRoutes(pool: Pool) {
             missionId: lookup?.mission_id,
             companyId: lookup?.company_id,
           },
+          ...(Object.keys(pgFields).length > 0 ? { postgres: pgFields } : {}),
         },
       });
-      // Outside production we surface the real cause so the customer
-      // (and the dashboard's network panel) can see what actually
-      // broke. Production stays generic to avoid leaking schema hints.
-      const isProd = process.env.NODE_ENV === "production";
+      // Surface the underlying cause to the caller. AutoFlow is
+      // pre-launch + internal; "schema hint leakage" is a much
+      // smaller risk than an undiagnosable confirm bug for the
+      // founder + early customers. Revisit when external multi-
+      // tenant customers actually exist.
       res.status(500).json({
         error: "Failed to confirm hiring plan",
-        ...(isProd ? {} : { detail: message }),
+        detail: composeDetailMessage(message, pgFields),
+        ...(Object.keys(pgFields).length > 0 ? { postgres: pgFields } : {}),
       });
       return;
     }

@@ -16,16 +16,20 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { CheckCircle2, ChevronDown, ChevronUp, Loader2, Sparkles, Trash2, Users } from "lucide-react";
+import { CheckCircle2, ChevronDown, ChevronUp, Loader2, Plus, Sparkles, Trash2, Users } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import { useToast } from "../components/ToastProvider";
 import {
   deleteMission,
   getHiringPlan,
   confirmHiringPlan,
+  getRoleLibrary,
+  addLibraryRoles,
   type HiringPlanResponse,
+  type HiringPlan,
   type StaffingRecommendation,
   type StarterJobDescription,
+  type RoleLibraryEntry,
 } from "../api/missionsApi";
 
 type PageState =
@@ -86,6 +90,175 @@ function AgentCard({ agent }: { agent: StaffingRecommendation }) {
           </ul>
         </div>
       ) : null}
+    </div>
+  );
+}
+
+function LibraryRolePicker({
+  planId,
+  existingRoleKeys,
+  onRolesAdded,
+}: {
+  planId: string;
+  existingRoleKeys: Set<string>;
+  onRolesAdded: (updatedPlan: HiringPlan) => void;
+}) {
+  const { requireAccessToken } = useAuth();
+  const toast = useToast();
+  const [library, setLibrary] = useState<RoleLibraryEntry[] | null>(null);
+  const [selectedKeys, setSelectedKeys] = useState<Set<string>>(new Set());
+  const [deptFilter, setDeptFilter] = useState("all");
+  const [adding, setAdding] = useState(false);
+
+  useEffect(() => {
+    void (async () => {
+      try {
+        const token = await requireAccessToken();
+        const roles = await getRoleLibrary(token);
+        setLibrary(roles);
+      } catch {
+        // silent — picker won't render without the library
+      }
+    })();
+  }, [requireAccessToken]);
+
+  if (!library) return null;
+
+  const departments = ["all", ...Array.from(new Set(library.map((r) => r.department)))];
+  const filtered =
+    deptFilter === "all" ? library : library.filter((r) => r.department === deptFilter);
+
+  function toggleKey(key: string) {
+    setSelectedKeys((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  }
+
+  async function handleAdd() {
+    if (selectedKeys.size === 0) return;
+    const keys = Array.from(selectedKeys);
+    setAdding(true);
+    try {
+      const token = await requireAccessToken();
+      const { plan } = await addLibraryRoles(planId, keys, token);
+      onRolesAdded(plan);
+      setSelectedKeys(new Set());
+      toast.success(
+        `${keys.length} role${keys.length === 1 ? "" : "s"} added to team.`,
+      );
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to add roles");
+    } finally {
+      setAdding(false);
+    }
+  }
+
+  const selectedCount = selectedKeys.size;
+
+  return (
+    <div className="af2-card" style={{ padding: "16px 20px", marginBottom: 16 }}>
+      <div className="af2-eyebrow" style={{ marginBottom: 10 }}>
+        + Add a pre-built role to this team
+      </div>
+      <div className="af2-row" style={{ gap: 10, marginBottom: 12, alignItems: "center" }}>
+        <label style={{ fontSize: 12, color: "var(--af2-ink-3)" }}>
+          Filter by department
+        </label>
+        <select
+          value={deptFilter}
+          onChange={(e) => setDeptFilter(e.target.value)}
+          style={{
+            fontSize: 12,
+            padding: "3px 8px",
+            border: "1px solid var(--af2-line)",
+            borderRadius: 4,
+            background: "var(--af2-card)",
+            color: "var(--af2-ink)",
+          }}
+        >
+          {departments.map((d) => (
+            <option key={d} value={d}>
+              {d === "all" ? "All" : d}
+            </option>
+          ))}
+        </select>
+      </div>
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))",
+          gap: 8,
+          marginBottom: 14,
+        }}
+      >
+        {filtered.map((role) => {
+          const alreadyInPlan = existingRoleKeys.has(role.roleKey);
+          const selected = selectedKeys.has(role.roleKey);
+          return (
+            <label
+              key={role.roleKey}
+              style={{
+                display: "flex",
+                alignItems: "flex-start",
+                gap: 8,
+                padding: "8px 10px",
+                borderRadius: 6,
+                border: `1px solid ${
+                  alreadyInPlan ? "transparent" : selected ? "var(--af2-sage)" : "var(--af2-line)"
+                }`,
+                background: alreadyInPlan
+                  ? "var(--af2-paper-2)"
+                  : selected
+                    ? "rgba(74,107,74,0.08)"
+                    : "var(--af2-card)",
+                cursor: alreadyInPlan ? "not-allowed" : "pointer",
+                opacity: alreadyInPlan ? 0.5 : 1,
+                fontSize: 12,
+              }}
+            >
+              <input
+                type="checkbox"
+                disabled={alreadyInPlan}
+                checked={selected}
+                onChange={() => toggleKey(role.roleKey)}
+                style={{ marginTop: 2, flexShrink: 0 }}
+              />
+              <div>
+                <div style={{ fontWeight: 600, color: "var(--af2-ink)" }}>{role.title}</div>
+                <div
+                  className="af2-muted"
+                  style={{ fontSize: 11, marginTop: 2, lineHeight: 1.4 }}
+                >
+                  {role.mandate}
+                </div>
+              </div>
+            </label>
+          );
+        })}
+      </div>
+      <button
+        type="button"
+        onClick={() => void handleAdd()}
+        disabled={selectedCount === 0 || adding}
+        className="af2-btn af2-btn-clay"
+        style={{
+          display: "inline-flex",
+          alignItems: "center",
+          gap: 6,
+          opacity: selectedCount === 0 || adding ? 0.6 : 1,
+          cursor: selectedCount === 0 || adding ? "not-allowed" : "pointer",
+        }}
+      >
+        {adding ? <Loader2 size={14} className="animate-spin" /> : <Plus size={14} />}
+        {adding
+          ? "Adding…"
+          : selectedCount === 0
+            ? "Add pre-built role to team"
+            : `Add ${selectedCount} selected role${selectedCount === 1 ? "" : "s"} to team`}
+      </button>
     </div>
   );
 }
@@ -172,9 +345,14 @@ export default function HiringPlanReview() {
     }
   }
 
+  function handleRolesAdded(updatedPlan: HiringPlan) {
+    setPlan((prev) => (prev ? { ...prev, plan: updatedPlan } : prev));
+  }
+
   const agents = plan?.plan.provisioningPlan.agents ?? [];
   const executives = plan?.plan.orgChart.executives ?? [];
   const operators = plan?.plan.orgChart.operators ?? [];
+  const existingRoleKeys = new Set(agents.map((a) => a.roleKey));
 
   return (
     <div className="af2-page text-af2-ink" style={{ maxWidth: 1200 }}>
@@ -339,6 +517,15 @@ export default function HiringPlanReview() {
               <p className="af2-muted">No agents in this plan.</p>
             )}
           </div>
+
+          {/* HEL-138: pre-built role picker — only shown before the plan is confirmed. */}
+          {!plan.acceptedAt ? (
+            <LibraryRolePicker
+              planId={plan.id}
+              existingRoleKeys={existingRoleKeys}
+              onRolesAdded={handleRolesAdded}
+            />
+          ) : null}
 
           {/* UX-4: preview the starter Job Descriptions that the
               confirm flow will seed per agent. Collapsed by default so

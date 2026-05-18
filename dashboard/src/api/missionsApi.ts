@@ -294,3 +294,50 @@ export async function getHiringPlan(
     `Failed to fetch hiring plan: ${response.status}`,
   );
 }
+
+// ---------------------------------------------------------------------------
+// HEL-138: role library + add-library-roles endpoints.
+// ---------------------------------------------------------------------------
+
+export interface RoleLibraryEntry {
+  roleKey: string;
+  title: string;
+  roleType: "executive" | "operator";
+  department: string;
+  mandate: string;
+  defaultReportsToRoleKey: string | null | undefined;
+  defaultSkills: readonly string[];
+  defaultTools: readonly string[];
+  defaultModelTier: "lite" | "standard" | "power";
+  hiringSignals: readonly string[];
+}
+
+export async function getRoleLibrary(accessToken: string): Promise<RoleLibraryEntry[]> {
+  const response = await trackedFetch(`${BASE}/hiring-plans/role-library`, {
+    headers: buildHeaders(accessToken),
+  });
+  const payload = await parseJsonOrError<{ roles: RoleLibraryEntry[] }>(
+    response,
+    `Failed to fetch role library: ${response.status}`,
+  );
+  return payload.roles;
+}
+
+export async function addLibraryRoles(
+  hiringPlanId: string,
+  roleKeys: string[],
+  accessToken: string,
+): Promise<{ plan: HiringPlan }> {
+  const response = await trackedFetch(
+    `${BASE}/hiring-plans/${encodeURIComponent(hiringPlanId)}/add-library-roles`,
+    {
+      method: "POST",
+      headers: buildHeaders(accessToken, { "Content-Type": "application/json" }),
+      body: JSON.stringify({ roleKeys }),
+    },
+  );
+  return parseJsonOrError<{ plan: HiringPlan }>(
+    response,
+    `Failed to add library roles: ${response.status}`,
+  );
+}

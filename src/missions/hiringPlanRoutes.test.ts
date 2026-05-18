@@ -98,6 +98,102 @@ describe("POST /api/hiring-plans/:hiringPlanId/confirm", () => {
   });
 });
 
+describe("GET /api/hiring-plans/role-library (HEL-138)", () => {
+  it("returns 401 when no authenticated user is present", async () => {
+    const app = buildApp({ workspaceId: "11111111-1111-4111-8111-111111111111" });
+    const res = await request(app).get("/api/hiring-plans/role-library");
+    expect(res.status).toBe(401);
+  });
+
+  it("returns 401 when no workspace context is present", async () => {
+    const app = buildApp({ sub: "user-1" });
+    const res = await request(app).get("/api/hiring-plans/role-library");
+    expect(res.status).toBe(401);
+  });
+
+  it("returns 200 with roles array for an authenticated request", async () => {
+    const app = buildApp({
+      sub: "user-1",
+      workspaceId: "11111111-1111-4111-8111-111111111111",
+    });
+    const res = await request(app).get("/api/hiring-plans/role-library");
+    expect(res.status).toBe(200);
+    expect(Array.isArray(res.body.roles)).toBe(true);
+    expect(res.body.roles.length).toBeGreaterThan(0);
+    const first = res.body.roles[0];
+    expect(first).toHaveProperty("roleKey");
+    expect(first).toHaveProperty("title");
+    expect(first).toHaveProperty("department");
+    expect(first).toHaveProperty("roleType");
+    expect(first).toHaveProperty("mandate");
+  });
+});
+
+describe("POST /api/hiring-plans/:hiringPlanId/add-library-roles (HEL-138)", () => {
+  it("returns 401 when no authenticated user is present", async () => {
+    const app = buildApp({ workspaceId: "11111111-1111-4111-8111-111111111111" });
+    const res = await request(app)
+      .post("/api/hiring-plans/22222222-2222-4222-8222-222222222222/add-library-roles")
+      .send({ roleKeys: ["ceo"] });
+    expect(res.status).toBe(401);
+  });
+
+  it("returns 401 when no workspace context is present", async () => {
+    const app = buildApp({ sub: "user-1" });
+    const res = await request(app)
+      .post("/api/hiring-plans/22222222-2222-4222-8222-222222222222/add-library-roles")
+      .send({ roleKeys: ["ceo"] });
+    expect(res.status).toBe(401);
+  });
+
+  it("returns 400 when the hiring plan ID is not a valid UUID", async () => {
+    const app = buildApp({
+      sub: "user-1",
+      workspaceId: "11111111-1111-4111-8111-111111111111",
+    });
+    const res = await request(app)
+      .post("/api/hiring-plans/not-a-uuid/add-library-roles")
+      .send({ roleKeys: ["ceo"] });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/Invalid hiring plan ID/);
+  });
+
+  it("returns 400 when roleKeys is missing", async () => {
+    const app = buildApp({
+      sub: "user-1",
+      workspaceId: "11111111-1111-4111-8111-111111111111",
+    });
+    const res = await request(app)
+      .post("/api/hiring-plans/22222222-2222-4222-8222-222222222222/add-library-roles")
+      .send({});
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/roleKeys/);
+  });
+
+  it("returns 400 when roleKeys is an empty array", async () => {
+    const app = buildApp({
+      sub: "user-1",
+      workspaceId: "11111111-1111-4111-8111-111111111111",
+    });
+    const res = await request(app)
+      .post("/api/hiring-plans/22222222-2222-4222-8222-222222222222/add-library-roles")
+      .send({ roleKeys: [] });
+    expect(res.status).toBe(400);
+  });
+
+  it("returns 400 when a roleKey is not in the library", async () => {
+    const app = buildApp({
+      sub: "user-1",
+      workspaceId: "11111111-1111-4111-8111-111111111111",
+    });
+    const res = await request(app)
+      .post("/api/hiring-plans/22222222-2222-4222-8222-222222222222/add-library-roles")
+      .send({ roleKeys: ["not-a-real-role"] });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/Unknown role keys/);
+  });
+});
+
 describe("DASH-1 — canonical table-name regression", () => {
   // Migration 021 renamed `control_plane_teams → agent_teams`. An earlier
   // draft of hiringPlanRoutes referenced `teams`, which raised "relation

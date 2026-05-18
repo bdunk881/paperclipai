@@ -37,6 +37,7 @@ import type { WorkspaceAwareRequest } from "../middleware/workspaceResolver";
 import {
   TEAM_ASSEMBLY_SCHEMA_VERSION,
   type TeamAssemblyResult,
+  DEFAULT_ROLE_LIBRARY,
 } from "../goals/teamAssembly";
 import { resolveModelForTier } from "../engine/llmRouter";
 import { llmConfigStore } from "../llmConfig/llmConfigStore";
@@ -354,8 +355,61 @@ function composeDetailMessage(
   return parts.join(" · ");
 }
 
+const EXECUTIVE_DEFAULT_KPIS = [
+  "Quarterly OKR completion %",
+  "Cross-team unblocks per month",
+  "Direct-report capacity utilization",
+];
+
+const OPERATOR_DEFAULT_KPIS = [
+  "Throughput vs target",
+  "First-response time",
+  "Quality score (errors per task)",
+];
+
+function libraryEntryToRecommendation(
+  entry: (typeof DEFAULT_ROLE_LIBRARY)[number],
+  existingRoleKeys: Set<string>,
+): TeamAssemblyResult["provisioningPlan"]["agents"][number] {
+  const reportsToRoleKey =
+    entry.defaultReportsToRoleKey != null && existingRoleKeys.has(entry.defaultReportsToRoleKey)
+      ? (entry.defaultReportsToRoleKey as string)
+      : null;
+  return {
+    roleKey: entry.roleKey as string,
+    title: entry.title,
+    roleType: entry.roleType,
+    department: entry.department,
+    headcount: 1,
+    reportsToRoleKey,
+    mandate: entry.mandate,
+    justification: "Pre-built role added from library.",
+    kpis:
+      entry.roleType === "executive" ? [...EXECUTIVE_DEFAULT_KPIS] : [...OPERATOR_DEFAULT_KPIS],
+    skills: [...(entry.defaultSkills as string[])],
+    tools: entry.defaultTools.length > 0 ? [...(entry.defaultTools as string[])] : ["notion"],
+    modelTier: entry.defaultModelTier,
+    budgetMonthlyUsd: null,
+    provisioningInstructions:
+      "Brief this role on your company's specific goals and KPIs on day one.",
+  };
+}
+
 export function createHiringPlanRoutes(pool: Pool) {
   const router = Router();
+
+  // HEL-138: expose the role library so the dashboard can render the pre-built
+  // role picker without bundling the library client-side.
+  // Must be registered before /:hiringPlanId to avoid UUID validation mismatch.
+  router.get("/role-library", (req: AuthenticatedRequest, res) => {
+    const userId = req.auth?.sub;
+    const workspaceId = (req as WorkspaceAwareRequest).workspace?.id;
+    if (!userId || !workspaceId) {
+      res.status(401).json({ error: "Authenticated user + workspace required" });
+      return;
+    }
+    res.json({ roles: DEFAULT_ROLE_LIBRARY });
+  });
 
   // HEL-105: side-by-side review needs to read the plan + mission context
   // in one call. Returns the draft TeamAssemblyResult under `plan`, plus the
@@ -807,6 +861,140 @@ export function createHiringPlanRoutes(pool: Pool) {
     }
 
     res.status(200).json(response);
+  });
+
+  // HEL-138: append one or more pre-built library roles to an existing (unconfirmed)
+  // hiring plan draft. Zero LLM calls — library → JSON merge → UPDATE.
+  router.post("/:hiringPlanId/add-library-roles", async (req: AuthenticatedRequest, res) => {
+    const userId = req.auth?.sub;
+    const workspaceId = (req as WorkspaceAwareRequest).workspace?.id;
+    if (!userId || !workspaceId) {
+      res.status(401).json({ error: "Authenticated user + workspace required" });
+      return;
+    }
+
+    const hiringPlanId = req.params.hiringPlanId;
+    if (!hiringPlanId || !UUID_RE.test(hiringPlanId)) {
+      res.status(400).json({ error: "Invalid hiring plan ID format" });
+      return;
+    }
+
+    const { roleKeys } = req.body as { roleKeys?: unknown };
+    if (
+      !Array.isArray(roleKeys) ||
+      roleKeys.length === 0 ||
+      roleKeys.some((k) => typeof k !== "string")
+    ) {
+      res.status(400).json({ error: "roleKeys must be a non-empty array of strings" });
+      return;
+    }
+
+    const libraryByKey = new Map<string, (typeof DEFAULT_ROLE_LIBRARY)[number]>(
+      DEFAULT_ROLE_LIBRARY.map((r) => [r.roleKey as string, r]),
+    );
+    const unknownKeys = (roleKeys as string[]).filter((k) => !libraryByKey.has(k));
+    if (unknownKeys.length > 0) {
+      res.status(400).json({ error: `Unknown role keys: ${unknownKeys.join(", ")}` });
+      return;
+    }
+
+    try {
+      type AddResult =
+        | { notFound: true }
+        | { alreadyAccepted: true }
+        | { duplicates: string[] }
+        | { plan: TeamAssemblyResult };
+
+      const result = await withWorkspaceContext(
+        pool,
+        { workspaceId, userId },
+        async (client): Promise<AddResult> => {
+          const planResult = await client.query<PlanLookupRow>(
+            `SELECT hp.id AS hiring_plan_id,
+                    hp.mission_id,
+                    hp.draft,
+                    hp.accepted_at,
+                    m.company_id,
+                    c.workspace_id
+               FROM hiring_plans hp
+               JOIN missions m ON m.id = hp.mission_id
+               JOIN companies c ON c.id = m.company_id
+              WHERE hp.id = $1
+              LIMIT 1`,
+            [hiringPlanId],
+          );
+
+          if (planResult.rows.length === 0) return { notFound: true };
+
+          const lookup = planResult.rows[0];
+          if (lookup.accepted_at) return { alreadyAccepted: true };
+
+          const draft = lookup.draft;
+          const existingRoleKeys = new Set(draft.provisioningPlan.agents.map((a) => a.roleKey));
+          const duplicates = (roleKeys as string[]).filter((k) => existingRoleKeys.has(k));
+          if (duplicates.length > 0) return { duplicates };
+
+          const newAgents = (roleKeys as string[]).map((key) =>
+            libraryEntryToRecommendation(libraryByKey.get(key)!, existingRoleKeys),
+          );
+
+          const updatedDraft: TeamAssemblyResult = {
+            ...draft,
+            orgChart: {
+              ...draft.orgChart,
+              executives: [
+                ...draft.orgChart.executives,
+                ...newAgents.filter((a) => a.roleType === "executive"),
+              ],
+              operators: [
+                ...draft.orgChart.operators,
+                ...newAgents.filter((a) => a.roleType === "operator"),
+              ],
+              reportingLines: [
+                ...draft.orgChart.reportingLines,
+                ...newAgents
+                  .filter((a) => a.reportsToRoleKey !== null)
+                  .map((a) => ({
+                    managerRoleKey: a.reportsToRoleKey!,
+                    reportRoleKey: a.roleKey,
+                  })),
+              ],
+            },
+            provisioningPlan: {
+              ...draft.provisioningPlan,
+              agents: [...draft.provisioningPlan.agents, ...newAgents],
+            },
+          };
+
+          await client.query(
+            `UPDATE hiring_plans SET draft = $2 WHERE id = $1`,
+            [hiringPlanId, JSON.stringify(updatedDraft)],
+          );
+
+          return { plan: updatedDraft };
+        },
+      );
+
+      if ("notFound" in result) {
+        res.status(404).json({ error: "Hiring plan not found" });
+        return;
+      }
+      if ("alreadyAccepted" in result) {
+        res.status(409).json({ error: "Hiring plan already accepted" });
+        return;
+      }
+      if ("duplicates" in result) {
+        res
+          .status(409)
+          .json({ error: `Role(s) already in plan: ${result.duplicates.join(", ")}` });
+        return;
+      }
+
+      res.json({ plan: result.plan });
+    } catch (err) {
+      console.error(`[hiring-plans] add-library-roles failed: ${(err as Error).message}`);
+      res.status(500).json({ error: "Failed to add library roles" });
+    }
   });
 
   return router;

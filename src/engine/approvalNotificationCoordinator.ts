@@ -27,7 +27,9 @@ export async function runApprovalNotificationSweep(): Promise<{
   delivered: number;
   failed: number;
 }> {
-  const pendingNotifications = approvalNotificationStore.list({ status: "pending" });
+  // DASH-43: list() is async + Postgres-aware. Pre-fix, this loop only saw
+  // memoryStore entries and ignored every persisted pending notification.
+  const pendingNotifications = await approvalNotificationStore.list({ status: "pending" });
   let delivered = 0;
   let failed = 0;
 

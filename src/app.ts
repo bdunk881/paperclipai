@@ -1585,9 +1585,15 @@ app.get("/api/approvals", requireAuth, async (req: AuthenticatedRequest, res) =>
  * GET /api/approvals/notifications
  * Returns in-app approval notifications for the authenticated approver.
  */
-app.get("/api/approvals/notifications", requireAuth, (req: AuthenticatedRequest, res) => {
-  const notifications = approvalNotificationStore
-    .list({ assignee: req.auth?.sub, status: "pending" })
+app.get("/api/approvals/notifications", requireAuth, async (req: AuthenticatedRequest, res) => {
+  // DASH-43: list() is now async + Postgres-aware. Without the await,
+  // persisted notifications never reached this endpoint and the inbox
+  // looked empty.
+  const all = await approvalNotificationStore.list({
+    assignee: req.auth?.sub,
+    status: "pending",
+  });
+  const notifications = all
     .filter((notification) => notification.channel === "inbox")
     .map((notification) => ({
       ...notification,

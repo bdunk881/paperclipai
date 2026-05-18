@@ -1,12 +1,12 @@
 -- HEL-107 (DASH-36): add idempotency_key to step_results for safe BullMQ replay.
 --
--- This migration is a duplicate of
--- supabase/migrations/20260517090000_hel_107_step_results_idempotency_key.sql,
--- intentionally added under the numeric `migrations/` directory because that is
--- the only directory the boot-time runner in src/db/sqlMigrations.ts scans.
--- Without it, prod's step_results table never gained the column even though
--- runStore.ts began SELECT/INSERTing it — generating ~25k Sentry log errors
--- per week ("column \"idempotency_key\" does not exist") on every runs list.
+-- Originally this migration was authored only under supabase/migrations/ —
+-- which the boot-time runner in src/db/sqlMigrations.ts does NOT scan — so
+-- prod's step_results table never gained the column even though runStore.ts
+-- began SELECT/INSERTing it. The result was ~25k Sentry log errors per week
+-- ("column \"idempotency_key\" does not exist") on every runs list. DASH-36
+-- republished it here; DASH-39 consolidated migrations into this directory
+-- only, so this footgun can't recur.
 --
 -- Nullable so existing rows are unaffected. A partial unique index enforces
 -- uniqueness only for non-null values, preventing duplicate step writes on

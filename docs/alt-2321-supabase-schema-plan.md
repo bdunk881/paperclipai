@@ -2,11 +2,13 @@
 
 Generated on 2026-05-05 from `schema.sql` on `origin/migration` commit `5302a5b`.
 
+> **Historical plan doc.** The two `supabase/migrations/*.sql` artifacts referenced below were removed in DASH-39 (migration directory consolidation) and are only accessible via git history. The applied production schema lives entirely in the numeric `migrations/0NN_*.sql` files; the boot-time runner at `src/db/sqlMigrations.ts` is the single source of truth.
+
 ## Scope
 
 Phase 1a asks for a first-pass Supabase bootstrap from the committed Postgres dump, plus a concrete review of what still needs Supabase-specific handling before the schema is safe to apply and expose.
 
-This heartbeat produced:
+This heartbeat produced (now in git history only — see header note):
 
 - `supabase/migrations/20260505043000_alt_2321_initial_schema.sql`
 - `supabase/migrations/20260505054500_alt_2321_phase1b_rls_draft.sql`

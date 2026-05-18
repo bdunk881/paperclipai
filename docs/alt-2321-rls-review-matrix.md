@@ -2,11 +2,13 @@
 
 Generated on 2026-05-05 for `feat/ALT-2321-supabase-schema-plan`.
 
+> **Historical doc.** Captured here for posterity. The applied RLS posture lives in `migrations/014_rls_hardening.sql`, `migrations/016_control_plane_force_rls.sql`, and `migrations/027_rls_audit_close_gaps.sql`. The companion draft SQL referenced below was removed in DASH-39 (migration directory consolidation) and is only accessible via git history.
+
 ## Purpose
 
 Phase 1b is the highest-risk slice of ALT-2321 because Supabase will expose Postgres through JWT-scoped client sessions rather than only backend-controlled connections. This matrix turns the Phase 1a inventory into an explicit table-by-table access decision before Brad reviews any production-facing policy set.
 
-Companion draft SQL:
+Companion draft SQL (deleted in DASH-39 — see git history):
 
 - `supabase/migrations/20260505054500_alt_2321_phase1b_rls_draft.sql`
 

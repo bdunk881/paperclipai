@@ -2,6 +2,13 @@ import { readdir, readFile } from "fs/promises";
 import path from "path";
 import { inMemoryAllowed, isPostgresConfigured, queryPostgres } from "./postgres";
 
+// DASH-39: `migrations/` is the SINGLE source of truth for schema changes.
+// Files are numeric-prefixed (`0NN_*.sql`) and applied in lexicographic
+// order at server boot. There is no longer a `supabase/migrations/`
+// directory; the two-directory split was a footgun that caused HEL-107's
+// idempotency_key column to never reach prod (DASH-36 incident). When
+// adding a new migration, increment the next free `0NN_` prefix and drop
+// the file here — nowhere else.
 const DEFAULT_MIGRATIONS_DIR = path.resolve(__dirname, "..", "..", "migrations");
 
 let migrationPromise: Promise<number> | null = null;

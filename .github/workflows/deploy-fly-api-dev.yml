@@ -89,6 +89,29 @@ jobs:
               exit 1
             fi
           done
+          # DASH-37: Upstash Redis is optional (the two queue paths are safe no-ops
+          # without it — engine/queue.ts falls back to in-process chains,
+          # worker.ts refuses to start), but if ANY Upstash var is present we
+          # warn when the matching pair isn't complete. The two pairs power
+          # different code paths:
+          #   - UPSTASH_REDIS_REST_URL + UPSTASH_REDIS_REST_TOKEN → engine/queue.ts
+          #     (workflow queue via REST)
+          #   - UPSTASH_REDIS_URL (or REDIS_URL) → BullMQ worker + agent presence
+          #     (ioredis TCP). Use the rediss://… "TCP" / "Endpoint" URL from
+          #     the Upstash console, NOT the REST URL — they're different.
+          if [[ -n "${UPSTASH_REDIS_REST_URL:-}" && -z "${UPSTASH_REDIS_REST_TOKEN:-}" ]]; then
+            echo "::warning::UPSTASH_REDIS_REST_URL is set in Infisical but UPSTASH_REDIS_REST_TOKEN is missing — engine/queue.ts will fall back to in-process chains."
+          fi
+          if [[ -n "${UPSTASH_REDIS_REST_TOKEN:-}" && -z "${UPSTASH_REDIS_REST_URL:-}" ]]; then
+            echo "::warning::UPSTASH_REDIS_REST_TOKEN is set in Infisical but UPSTASH_REDIS_REST_URL is missing — engine/queue.ts will fall back to in-process chains."
+          fi
+          if [[ -z "${UPSTASH_REDIS_URL:-}" && -z "${REDIS_URL:-}" ]]; then
+            echo "::warning::Neither UPSTASH_REDIS_URL nor REDIS_URL is in Infisical's dev env — the BullMQ worker process will exit on boot and agent presence will be a no-op. Add the TCP/rediss:// endpoint to Infisical to enable durable runs."
+          fi
+          echo "[verify] Upstash REST URL present: $([ -n "${UPSTASH_REDIS_REST_URL:-}" ] && echo yes || echo no)"
+          echo "[verify] Upstash REST token present: $([ -n "${UPSTASH_REDIS_REST_TOKEN:-}" ] && echo yes || echo no)"
+          echo "[verify] Upstash TCP URL present: $([ -n "${UPSTASH_REDIS_URL:-}" ] && echo yes || echo no)"
+          echo "[verify] Legacy REDIS_URL present: $([ -n "${REDIS_URL:-}" ] && echo yes || echo no)"
 
       - uses: superfly/flyctl-actions/setup-flyctl@master
 
@@ -130,6 +153,13 @@ jobs:
           [[ -n "${GOOGLE_CLIENT_SECRET:-}" ]] && args+=( "GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET}" )
           [[ -n "${GITHUB_CLIENT_ID:-}" ]] && args+=( "GITHUB_CLIENT_ID=${GITHUB_CLIENT_ID}" )
           [[ -n "${GITHUB_CLIENT_SECRET:-}" ]] && args+=( "GITHUB_CLIENT_SECRET=${GITHUB_CLIENT_SECRET}" )
+          # DASH-37: Upstash Redis — forward whichever Upstash names are present
+          # in Infisical's dev env. The two pairs power separate code paths
+          # (engine/queue.ts uses REST; worker.ts + agent presence use TCP).
+          [[ -n "${UPSTASH_REDIS_REST_URL:-}" ]] && args+=( "UPSTASH_REDIS_REST_URL=${UPSTASH_REDIS_REST_URL}" )
+          [[ -n "${UPSTASH_REDIS_REST_TOKEN:-}" ]] && args+=( "UPSTASH_REDIS_REST_TOKEN=${UPSTASH_REDIS_REST_TOKEN}" )
+          [[ -n "${UPSTASH_REDIS_URL:-}" ]] && args+=( "UPSTASH_REDIS_URL=${UPSTASH_REDIS_URL}" )
+          [[ -n "${REDIS_URL:-}" ]] && args+=( "REDIS_URL=${REDIS_URL}" )
 
           flyctl secrets set "${args[@]}" --app "${FLY_APP}" --stage
 

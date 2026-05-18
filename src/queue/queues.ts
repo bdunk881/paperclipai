@@ -38,3 +38,22 @@ export function getRunQueue(): Queue<RunJobPayload> | null {
 export function resetRunQueueForTests(): void {
   _runQueue = null;
 }
+
+let _dlqQueue: Queue<RunJobPayload> | null = null;
+
+/**
+ * Returns the singleton BullMQ Queue for failed runs (dead-letter queue).
+ * Returns null when Redis is not configured (tests, local dev without Redis).
+ */
+export function getDlqQueue(): Queue<RunJobPayload> | null {
+  const connection = getRedisClient();
+  if (!connection) return null;
+  if (!_dlqQueue) {
+    _dlqQueue = new Queue<RunJobPayload>("runs-dlq", { connection });
+  }
+  return _dlqQueue;
+}
+
+export function resetDlqQueueForTests(): void {
+  _dlqQueue = null;
+}

@@ -49,8 +49,17 @@ function buildHeaders(accessToken: string, extra?: HeadersInit): HeadersInit {
 
 async function parseJsonOrError<T>(response: Response, fallback: string): Promise<T> {
   if (!response.ok) {
-    const payload = (await response.json().catch(() => null)) as { error?: string } | null;
-    throw new Error(payload?.error ?? fallback);
+    const payload = (await response.json().catch(() => null)) as
+      | { error?: string; detail?: string }
+      | null;
+    // DASH-21: the backend includes a `detail` field when it can't
+    // surface the underlying cause through `error` alone (see e.g.
+    // POST /api/hiring-plans/:id/confirm). Concatenate so the user
+    // sees the real reason instead of just "Failed to confirm hiring
+    // plan."
+    const base = payload?.error ?? fallback;
+    const detail = payload?.detail?.trim();
+    throw new Error(detail ? `${base}: ${detail}` : base);
   }
   return response.json() as Promise<T>;
 }

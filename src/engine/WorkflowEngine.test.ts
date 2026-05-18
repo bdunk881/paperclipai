@@ -260,8 +260,9 @@ describe("WorkflowEngine — action registry", () => {
 });
 
 describe("WorkflowEngine — memory context", () => {
-  it("reads previously stored memory entries for the current user", () => {
-    memoryStore.write({
+  it("reads previously stored memory entries for the current user", async () => {
+    // DASH-44: memoryStore is now async (Postgres-backed in prod).
+    await memoryStore.write({
       userId: "user-1",
       workflowId: "tpl-memory",
       workflowName: "Memory workflow",
@@ -269,11 +270,11 @@ describe("WorkflowEngine — memory context", () => {
       text: "VIP customer requested a refund last month",
     });
 
-    const memory = (engine as unknown as {
+    const memory = await (engine as unknown as {
       _buildMemoryContext: (
         template: WorkflowTemplate,
         userId?: string
-      ) => { read: (query: string) => Array<{ key: string; text: string }> };
+      ) => Promise<{ read: (query: string) => Array<{ key: string; text: string }> }>;
     })._buildMemoryContext(customerSupportBot, "user-1");
 
     expect(memory.read("refund")).toEqual([

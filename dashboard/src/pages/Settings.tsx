@@ -22,17 +22,30 @@
  */
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { Loader2 } from "lucide-react";
+import { CheckCircle2, KeyRound, Loader2, Plug, Sparkles } from "lucide-react";
 import { trackedFetch } from "../api/trackedFetch";
 import { getApiBasePath } from "../api/baseUrl";
 import { apiGet } from "../api/settingsClient";
 import { listMissions, type Mission } from "../api/missionsApi";
+import { listLLMConfigs, type LLMConfig } from "../api/client";
 import { ErrorState, LoadingState } from "../components/UiStates";
 import { useToast } from "../components/ToastProvider";
 import { useAuth } from "../context/AuthContext";
 import { useWorkspace } from "../context/useWorkspace";
+import {
+  LIVE_CONNECTOR_PROVIDERS,
+  type ProviderKey,
+  type ProviderStatus,
+} from "../integrations/liveConnectorCatalog";
 
-type TabKey = "general" | "members" | "policies" | "security" | "billing" | "api";
+type TabKey =
+  | "general"
+  | "members"
+  | "policies"
+  | "security"
+  | "billing"
+  | "credentials"
+  | "api";
 
 interface TabDef {
   key: TabKey;
@@ -45,6 +58,13 @@ const TABS: TabDef[] = [
   { key: "policies", label: "Policies" },
   { key: "security", label: "Security" },
   { key: "billing", label: "Billing" },
+  // PR 4: unified Credentials tab. Renders an inline summary of every
+  // secret the workspace holds (LLM keys, integration OAuth/API keys,
+  // custom MCP server tokens) so users have one place to scan
+  // "what's connected, what's stale, what's missing." Entry of new
+  // credentials still happens in the per-feature sub-routes — this
+  // surface is the unified VIEW, not the unified EDITOR.
+  { key: "credentials", label: "Credentials" },
   { key: "api", label: "API" },
 ];
 
@@ -324,6 +344,8 @@ export default function Settings() {
           onEditPolicy={(policy) => setEditingPolicy(policy)}
           requireAccessToken={requireAccessToken}
         />
+      ) : activeTab === "credentials" ? (
+        <CredentialsTab requireAccessToken={requireAccessToken} />
       ) : (
         <HubTab tabKey={activeTab} onJumpToGeneral={() => setActiveTab("general")} />
       )}
@@ -969,3 +991,322 @@ function HubTab({
     </div>
   );
 }
+
+// ---------------------------------------------------------------------------
+// PR 4: Unified Credentials tab
+// ---------------------------------------------------------------------------
+
+interface McpServerSummary {
+  id: string;
+  name: string;
+  url: string;
+  hasAuth: boolean;
+  createdAt: string;
+}
+
+interface CredentialsTabProps {
+  requireAccessToken: () => Promise<string>;
+}
+
+/**
+ * Read-only view of every secret the workspace holds. Three sections:
+ * Models (BYOK LLM keys), Integrations (OAuth + API-key connectors),
+ * Custom MCP (workspace MCP server tokens). Each row links to the
+ * dedicated sub-route where adding/rotating actually happens — this
+ * page is the SCAN surface, not the EDIT surface.
+ */
+function CredentialsTab({ requireAccessToken }: CredentialsTabProps) {
+  const [llm, setLlm] = useState<LLMConfig[] | null>(null);
+  const [integrations, setIntegrations] = useState<Record<
+    ProviderKey,
+    ProviderStatus
+  > | null>(null);
+  const [mcp, setMcp] = useState<McpServerSummary[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const token = await requireAccessToken();
+        const [llmList, integrationsRes, mcpRes] = await Promise.all([
+          listLLMConfigs(token).catch(() => [] as LLMConfig[]),
+          trackedFetch(`${getApiBasePath()}/integrations/status`, {
+            headers: { Authorization: `Bearer ${token}` },
+          })
+            .then(async (res) =>
+              res.ok
+                ? ((await res.json()) as {
+                    providers: Record<ProviderKey, ProviderStatus>;
+                  })
+                : null,
+            )
+            .catch(() => null),
+          trackedFetch(`${getApiBasePath()}/mcp/servers`, {
+            headers: { Authorization: `Bearer ${token}` },
+          })
+            .then(async (res) =>
+              res.ok
+                ? ((await res.json()) as { servers: McpServerSummary[] })
+                : null,
+            )
+            .catch(() => null),
+        ]);
+        if (cancelled) return;
+        setLlm(llmList);
+        setIntegrations(integrationsRes?.providers ?? null);
+        setMcp(mcpRes?.servers ?? []);
+      } catch (err) {
+        if (!cancelled) {
+          setError(err instanceof Error ? err.message : "Failed to load credentials");
+        }
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [requireAccessToken]);
+
+  const integrationRows = useMemo(() => {
+    if (!integrations) return [];
+    return LIVE_CONNECTOR_PROVIDERS.map((p) => ({
+      key: p.key,
+      name: p.name,
+      category: p.category,
+      status: integrations[p.key],
+    }));
+  }, [integrations]);
+
+  if (loading) {
+    return <LoadingState label="Loading credentials…" />;
+  }
+  if (error) {
+    return <ErrorState title="Couldn't load credentials" message={error} />;
+  }
+
+  const connectedIntegrations = integrationRows.filter(
+    (r) => r.status?.connected,
+  ).length;
+  const mcpCount = mcp?.length ?? 0;
+  const llmCount = llm?.length ?? 0;
+
+  return (
+    <div style={{ display: "grid", gap: 28 }}>
+      <p className="af2-muted" style={{ fontSize: 13, lineHeight: 1.5 }}>
+        Everything connected to this workspace, in one place. Add or rotate
+        credentials from the per-feature sub-routes; this tab is for
+        scanning what's wired.
+      </p>
+
+      <CredentialsSection
+        icon={<Sparkles size={14} />}
+        title="Models"
+        countLabel={`${llmCount} configured`}
+        emptyText="No LLM providers connected yet."
+        manageHref="/settings/llm-providers"
+        manageLabel="Manage models"
+        rows={(llm ?? []).map((cfg) => ({
+          key: cfg.id,
+          left: cfg.label,
+          middle: `${cfg.provider} · ${cfg.model}`,
+          right: cfg.isDefault ? "Default · " : "",
+          tail: cfg.apiKeyMasked,
+        }))}
+      />
+
+      <CredentialsSection
+        icon={<Plug size={14} />}
+        title="Integrations"
+        countLabel={`${connectedIntegrations} connected · ${integrationRows.length} available`}
+        emptyText="No integrations connected."
+        manageHref="/integrations/mcp"
+        manageLabel="Manage integrations"
+        rows={integrationRows
+          .filter((r) => r.status?.connected)
+          .map((r) => ({
+            key: r.key,
+            left: r.name,
+            middle: r.category,
+            right: r.status?.authMethod
+              ? r.status.authMethod === "api_key"
+                ? "API key · "
+                : "OAuth · "
+              : "",
+            tail: r.status?.tokenMasked ?? r.status?.accountLabel ?? "—",
+          }))}
+      />
+
+      <CredentialsSection
+        icon={<KeyRound size={14} />}
+        title="Custom MCP servers"
+        countLabel={`${mcpCount} registered`}
+        emptyText="No custom MCP servers registered."
+        manageHref="/settings/mcp-servers"
+        manageLabel="Manage MCP servers"
+        rows={(mcp ?? []).map((s) => ({
+          key: s.id,
+          left: s.name,
+          middle: s.url,
+          right: s.hasAuth ? "Auth · " : "No auth · ",
+          tail: relativeDate(s.createdAt),
+        }))}
+      />
+    </div>
+  );
+}
+
+interface CredentialsSectionProps {
+  icon: React.ReactNode;
+  title: string;
+  countLabel: string;
+  emptyText: string;
+  manageHref: string;
+  manageLabel: string;
+  rows: Array<{
+    key: string;
+    left: string;
+    middle: string;
+    right: string;
+    tail: string;
+  }>;
+}
+
+function CredentialsSection({
+  icon,
+  title,
+  countLabel,
+  emptyText,
+  manageHref,
+  manageLabel,
+  rows,
+}: CredentialsSectionProps) {
+  return (
+    <section>
+      <div
+        className="af2-row"
+        style={{ alignItems: "baseline", marginBottom: 8 }}
+      >
+        <div
+          className="af2-eyebrow"
+          style={{ display: "inline-flex", alignItems: "center", gap: 6 }}
+        >
+          {icon}
+          {title}
+        </div>
+        <span className="af2-spacer" />
+        <span className="af2-muted-2" style={{ fontSize: 11 }}>
+          {countLabel}
+        </span>
+      </div>
+      {rows.length === 0 ? (
+        <div
+          className="af2-card"
+          style={{
+            padding: 18,
+            textAlign: "center",
+            borderStyle: "dashed",
+          }}
+        >
+          <p className="af2-muted" style={{ fontSize: 13, margin: 0 }}>
+            {emptyText}
+          </p>
+          <Link
+            to={manageHref}
+            className="af2-btn af2-btn-sm af2-btn-clay"
+            style={{
+              marginTop: 10,
+              textDecoration: "none",
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 4,
+            }}
+          >
+            {manageLabel}
+          </Link>
+        </div>
+      ) : (
+        <div className="af2-list">
+          {rows.map((r, idx) => (
+            <div
+              key={r.key}
+              className="af2-list-row"
+              style={{
+                gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1.2fr) auto",
+                alignItems: "center",
+                gap: 12,
+                borderBottom:
+                  idx < rows.length - 1 ? "1px solid var(--af2-line)" : "none",
+              }}
+            >
+              <div style={{ minWidth: 0 }}>
+                <div
+                  style={{
+                    fontWeight: 600,
+                    fontSize: 13.5,
+                    color: "var(--af2-ink)",
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  {r.left}
+                </div>
+                <div
+                  className="af2-muted"
+                  style={{
+                    fontSize: 11.5,
+                    marginTop: 2,
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  {r.middle}
+                </div>
+              </div>
+              <div
+                className="af2-mono"
+                style={{
+                  fontSize: 11.5,
+                  color: "var(--af2-ink-2)",
+                  textAlign: "right",
+                }}
+              >
+                <span style={{ color: "var(--af2-sage)" }}>
+                  <CheckCircle2
+                    size={11}
+                    style={{ verticalAlign: "middle", marginRight: 4 }}
+                  />
+                  {r.right}
+                </span>
+                <span className="af2-muted-2">{r.tail}</span>
+              </div>
+              <Link
+                to={manageHref}
+                className="af2-btn af2-btn-sm af2-btn-ghost"
+                style={{ textDecoration: "none", flexShrink: 0 }}
+              >
+                Manage
+              </Link>
+            </div>
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function relativeDate(iso: string): string {
+  const ts = Date.parse(iso);
+  if (!Number.isFinite(ts)) return "—";
+  const diffMs = Date.now() - ts;
+  const days = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+  if (days < 1) return "today";
+  if (days < 7) return `${days}d ago`;
+  if (days < 30) return `${Math.floor(days / 7)}w ago`;
+  return `${Math.floor(days / 30)}mo ago`;
+}
+

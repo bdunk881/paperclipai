@@ -25,8 +25,8 @@ function buildApp() {
 }
 
 describe("HITL contract routes", () => {
-  beforeEach(() => {
-    hitlStore.clear();
+  beforeEach(async () => {
+    await hitlStore.clear();
     controlPlaneStore.clear();
   });
 

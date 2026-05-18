@@ -160,13 +160,13 @@ export default function Pricing() {
           <Zap size={12} />
           Unlimited Executions on Every Plan
         </div>
-        <h1 className="text-3xl font-bold text-gray-900 mb-3 tracking-tight">Simple, Flat-Fee Pricing</h1>
-        <p className="text-gray-500 max-w-xl mx-auto text-sm">
+        <h1 className="text-3xl font-bold text-af2-ink mb-3 tracking-tight">Simple, Flat-Fee Pricing</h1>
+        <p className="text-af2-ink-3 max-w-xl mx-auto text-sm">
           No per-execution charges. No usage limits. Pay a flat monthly fee and run
           as many workflows as you need.
         </p>
         {error && (
-          <div className="mt-4 inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-red-50 border border-red-200 text-red-700 text-xs">
+          <div className="mt-4 inline-flex items-center gap-2 px-3 py-1.5 rounded-md bg-af2-clay/10 border border-af2-clay/30 text-af2-clay text-xs">
             {error}
           </div>
         )}
@@ -193,12 +193,12 @@ export default function Pricing() {
               )}
 
               <div className="mb-6">
-                <h2 className="text-xl font-bold text-gray-900">{tier.name}</h2>
-                <p className="text-gray-500 text-sm mt-1">{tier.description}</p>
+                <h2 className="text-xl font-bold text-af2-ink">{tier.name}</h2>
+                <p className="text-af2-ink-3 text-sm mt-1">{tier.description}</p>
                 <div className="mt-4 flex items-end gap-1">
-                  <span className="text-4xl font-extrabold text-gray-900">{tier.price}</span>
+                  <span className="text-4xl font-extrabold text-af2-ink">{tier.price}</span>
                   {tier.period && (
-                    <span className="text-gray-400 text-sm mb-1">{tier.period}</span>
+                    <span className="text-af2-ink-3 text-sm mb-1">{tier.period}</span>
                   )}
                 </div>
                 <div className="mt-1 text-xs text-af2-sage font-medium uppercase tracking-wide">

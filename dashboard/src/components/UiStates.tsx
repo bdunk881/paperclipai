@@ -2,14 +2,17 @@ import { Loader2, AlertCircle } from "lucide-react";
 import { Link } from "react-router-dom";
 
 export function LoadingState({ label = "Loading..." }: { label?: string }) {
+  // DASH-35: replaced V1 scanline-skeleton bars with af2 placeholder
+  // lines tinted from the paper-2 token. Same visual rhythm (two
+  // staggered horizontal bars) without the dark-mode shimmer.
   return (
     <div className="rounded-md border border-af2-line bg-af2-card p-5">
       <div className="mb-4 flex items-center gap-2 text-[11px] font-medium uppercase tracking-[0.14em] text-af2-sage">
         <Loader2 size={14} className="animate-spin" />
         Live sync
       </div>
-      <div className="scanline-skeleton h-3 rounded-full" />
-      <div className="scanline-skeleton mt-3 h-3 w-3/4 rounded-full" />
+      <div className="h-3 animate-pulse rounded-full bg-af2-paper-2" />
+      <div className="mt-3 h-3 w-3/4 animate-pulse rounded-full bg-af2-paper-2" />
       <p className="mt-4 text-sm text-af2-ink-3">{label}</p>
     </div>
   );

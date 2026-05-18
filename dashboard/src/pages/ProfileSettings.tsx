@@ -165,7 +165,7 @@ export default function ProfileSettings() {
               value={displayName}
               onChange={(e) => setDisplayName(e.target.value)}
               placeholder="Your name"
-              className="w-full px-3 py-2 rounded-lg border border-af2-line-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full px-3 py-2 rounded-lg border border-af2-line-2 text-sm focus:outline-none focus:ring-2 focus:ring-af2-clay/40"
             />
           </div>
 
@@ -189,7 +189,7 @@ export default function ProfileSettings() {
             <select
               value={timezone}
               onChange={(e) => setTimezone(e.target.value)}
-              className="w-full px-3 py-2 rounded-lg border border-af2-line-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-af2-card"
+              className="w-full px-3 py-2 rounded-lg border border-af2-line-2 text-sm focus:outline-none focus:ring-2 focus:ring-af2-clay/40 bg-af2-card"
             >
               {TIMEZONES.map((tz) => (
                 <option key={tz} value={tz}>{tz}</option>

@@ -508,6 +508,14 @@ export function RunAuditSidebar({
               <span className="uppercase tracking-[0.2em] text-af2-ink-4">Started</span>
               <span className="text-right text-af2-ink-2">{new Date(run.startedAt).toLocaleString()}</span>
             </div>
+            {run.workflowVersion !== undefined && (
+              <div className="flex items-center justify-between gap-3">
+                <span className="uppercase tracking-[0.2em] text-af2-ink-4">Version</span>
+                <span className="run-audit-mono rounded-full border border-af2-line bg-af2-paper-2 px-2 py-0.5 text-af2-ink-2">
+                  v{run.workflowVersion}
+                </span>
+              </div>
+            )}
           </div>
         </div>
 

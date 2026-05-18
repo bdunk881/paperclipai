@@ -613,15 +613,29 @@ export function createMissionRoutes(
     const request = teamAssemblyRequestFromMission(mission);
     // HEL-74: wrap the LLM call so we can capture wall time + token usage
     // and emit a step_results row regardless of parse success/failure.
+    //
+    // DASH-31: explicit per-call provider/model/tokens log so we can
+    // answer "which provider actually generated this plan?" from a
+    // single grep instead of digging through step_results. Surfaced
+    // both in Fly logs and Sentry breadcrumbs (via console-logging
+    // integration). Useful for: confirming the workspace's expected
+    // BYOK provider is being hit, catching provider misroutes, and
+    // proving plans aren't stale-cached.
     let rawText: string;
     let promptTokens = 0;
     let completionTokens = 0;
     const llmStartedAtMs = Date.now();
+    console.log(
+      `[missions] LLM call dispatching for hiring plan: provider=${resolved.config.provider} model=${assemblyModel} userId=${userId} missionId=${missionId}`,
+    );
     try {
       const llmResponse = await provider(buildTeamAssemblyPrompt(request));
       rawText = llmResponse.text;
       promptTokens = llmResponse.usage?.promptTokens ?? 0;
       completionTokens = llmResponse.usage?.completionTokens ?? 0;
+      console.log(
+        `[missions] LLM call succeeded: provider=${resolved.config.provider} model=${assemblyModel} promptTokens=${promptTokens} completionTokens=${completionTokens} durationMs=${Date.now() - llmStartedAtMs} responseChars=${rawText.length}`,
+      );
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       // HEL-74: record the failed-LLM-call step_result so the budget +

@@ -12,15 +12,25 @@ import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { HiringPlanResponse } from "../api/missionsApi";
 
-const { getHiringPlanMock, confirmHiringPlanMock, requireAccessTokenMock } = vi.hoisted(() => ({
+const {
+  getHiringPlanMock,
+  confirmHiringPlanMock,
+  getRoleLibraryMock,
+  addLibraryRolesMock,
+  requireAccessTokenMock,
+} = vi.hoisted(() => ({
   getHiringPlanMock: vi.fn(),
   confirmHiringPlanMock: vi.fn(),
+  getRoleLibraryMock: vi.fn(),
+  addLibraryRolesMock: vi.fn(),
   requireAccessTokenMock: vi.fn(),
 }));
 
 vi.mock("../api/missionsApi", () => ({
   getHiringPlan: getHiringPlanMock,
   confirmHiringPlan: confirmHiringPlanMock,
+  getRoleLibrary: getRoleLibraryMock,
+  addLibraryRoles: addLibraryRolesMock,
 }));
 
 vi.mock("../context/AuthContext", () => ({
@@ -171,6 +181,9 @@ describe("HiringPlanReview (HEL-105)", () => {
       agents: [],
       orgEdges: [],
     });
+    // Return empty library by default so the picker renders but is empty.
+    getRoleLibraryMock.mockResolvedValue([]);
+    addLibraryRolesMock.mockResolvedValue({ plan: makeResponse().plan });
   });
 
   it("renders v2 page chrome", async () => {
@@ -223,5 +236,59 @@ describe("HiringPlanReview (HEL-105)", () => {
       "href",
       "/workspace/org-structure",
     );
+  });
+
+  it("renders the library role picker with roles when plan is unconfirmed", async () => {
+    const libraryRoles = [
+      {
+        roleKey: "cfo",
+        title: "CFO",
+        roleType: "executive" as const,
+        department: "finance",
+        mandate: "Own budget control, cash planning, and financial reporting.",
+        defaultReportsToRoleKey: "ceo",
+        defaultSkills: ["paperclip"],
+        defaultTools: ["stripe", "notion"],
+        defaultModelTier: "standard" as const,
+        hiringSignals: ["tight budgets"],
+      },
+    ];
+    getRoleLibraryMock.mockResolvedValue(libraryRoles);
+    getHiringPlanMock.mockResolvedValueOnce(makeResponse());
+    renderRoute();
+
+    // The picker section heading should appear after library loads.
+    await waitFor(() => {
+      expect(screen.getByText(/Add a pre-built role to this team/i)).toBeInTheDocument();
+    });
+    // The library role should be visible as a checkbox.
+    expect(screen.getByText("CFO")).toBeInTheDocument();
+  });
+
+  it("hides the library role picker when the plan is already confirmed", async () => {
+    const libraryRoles = [
+      {
+        roleKey: "cfo",
+        title: "CFO",
+        roleType: "executive" as const,
+        department: "finance",
+        mandate: "Own budget control.",
+        defaultReportsToRoleKey: null,
+        defaultSkills: ["paperclip"],
+        defaultTools: ["stripe"],
+        defaultModelTier: "standard" as const,
+        hiringSignals: [],
+      },
+    ];
+    getRoleLibraryMock.mockResolvedValue(libraryRoles);
+    getHiringPlanMock.mockResolvedValueOnce(
+      makeResponse({ acceptedAt: new Date().toISOString(), acceptedByUserId: "user-1" }),
+    );
+    renderRoute();
+
+    await waitFor(() => {
+      expect(screen.getByText(/Plan confirmed/i)).toBeInTheDocument();
+    });
+    expect(screen.queryByText(/Add a pre-built role to this team/i)).not.toBeInTheDocument();
   });
 });

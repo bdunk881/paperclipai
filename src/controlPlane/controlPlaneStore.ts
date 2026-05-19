@@ -34,7 +34,10 @@ import {
 } from "./types";
 import { observabilityStore } from "../observability/store";
 import { secretsRepository } from "./secretsRepository";
-import { controlPlaneRepository } from "./controlPlaneRepository";
+import {
+  __resetRepositoryInMemoryStateForTests,
+  controlPlaneRepository,
+} from "./controlPlaneRepository";
 
 function nowIso(): string {
   return new Date().toISOString();
@@ -290,8 +293,9 @@ const ROLE_TEMPLATE_CATALOG: ControlPlaneRoleTemplateDefinition[] = [
 const teams = new Map<string, ControlPlaneTeam>();
 // allowlist: hybrid store; in-memory mirror of Postgres-backed data
 const agents = new Map<string, ControlPlaneAgent>();
-// allowlist: hybrid store; in-memory mirror of Postgres-backed data
-const tasks = new Map<string, ControlPlaneTask>();
+// DASH-64.1: `tasks` Map removed. All task reads/writes now route
+// through `controlPlaneRepository` (Postgres-first; in-memory fallback
+// for test mode lives in the repository module itself per HEL-80).
 // allowlist: hybrid store; in-memory mirror of Postgres-backed data
 const heartbeats = new Map<string, AgentHeartbeatRecord>();
 // allowlist: hybrid store; in-memory mirror of Postgres-backed data
@@ -547,12 +551,24 @@ async function workspaceContextForTeam(
   teamId: string,
   userId: string,
 ): Promise<{ workspaceId: string; userId: string } | undefined> {
-  if (!postgresPersistenceAvailable()) {
-    return undefined;
-  }
+  // DASH-64.1: cache hit works in BOTH production AND test mode now.
+  // Pre-DASH-64.1 we returned `undefined` in test mode (Postgres
+  // unavailable) and relied on the in-memory `tasks` Map. With the Map
+  // gone, the repository's in-memory fallback needs a workspaceId to
+  // bucket by — and the cached value from teamWorkspaceIds is reliable
+  // because teams set it on create regardless of mode.
   const cached = teamWorkspaceIds.get(teamId);
   if (cached) {
     return { workspaceId: cached, userId };
+  }
+  if (!postgresPersistenceAvailable()) {
+    // Test mode + no cache hit. Some test-mode code paths (auto-
+    // provisioned teams in stepHandlers, tests that bypass the
+    // workspace-aware routes) create teams without an explicit
+    // workspaceId. Fall back to userId — same convention as
+    // `resolveWorkspaceContext` in test mode, and the repository's
+    // in-memory fallback will bucket by this same value.
+    return { workspaceId: userId, userId };
   }
   // Cache miss — call the SECURITY DEFINER helper to bypass RLS. We
   // can't use the regular workspace-context channel here because the
@@ -639,11 +655,20 @@ function latestIso(...timestamps: Array<string | undefined>): string {
     .at(-1) ?? nowIso();
 }
 
-function buildMissionState(
+async function buildMissionState(
   team: ControlPlaneTeam,
-): ControlPlaneMissionState {
+): Promise<ControlPlaneMissionState> {
   const teamAgents = Array.from(agents.values()).filter((agent) => agent.teamId === team.id);
-  const teamTasks = Array.from(tasks.values()).filter((task) => task.teamId === team.id);
+  // DASH-64.1: tasks read via repository instead of in-memory Map.
+  // The workspace context comes from the team row — teams still live in
+  // the in-memory store until DASH-64.6, so this is safe to read sync.
+  const teamWorkspaceId = teamWorkspaceIds.get(team.id);
+  const teamTasks: ControlPlaneTask[] = teamWorkspaceId
+    ? await controlPlaneRepository.listTasks(
+        { workspaceId: teamWorkspaceId, userId: team.userId },
+        { teamId: team.id },
+      )
+    : [];
   const teamExecutions = Array.from(executions.values()).filter((execution) => execution.teamId === team.id);
   const spendSnapshot = buildTeamSpendSnapshot(team);
   const blockedTasks = teamTasks.filter((task) => task.status === "blocked");
@@ -928,11 +953,14 @@ async function ensureWorkspaceHydrated(workspaceId: string | undefined, userId: 
     return;
   }
 
-  // Phase 4.2: also hydrate tasks / heartbeats / spend / alerts so they
+  // Phase 4.2: hydrate heartbeats / spend / alerts so they
   // survive a process restart. Same RLS-bound context, separate repository
   // calls so the SQL stays factored alongside the rest of execution-state PG.
-  const [hydratedTasks, hydratedHeartbeats, hydratedSpend, hydratedAlerts] = await Promise.all([
-    controlPlaneRepository.listTasks({ workspaceId: resolvedWorkspaceId, userId }),
+  //
+  // DASH-64.1: tasks NO LONGER hydrate here — tasks read live from the
+  // repository on every call, so a cold-start cache miss is just one
+  // Postgres round-trip, not a silent empty-state regression.
+  const [hydratedHeartbeats, hydratedSpend, hydratedAlerts] = await Promise.all([
     controlPlaneRepository.listHeartbeats({ workspaceId: resolvedWorkspaceId, userId }),
     controlPlaneRepository.listSpendEntries({ workspaceId: resolvedWorkspaceId, userId }),
     controlPlaneRepository.listBudgetAlerts({ workspaceId: resolvedWorkspaceId, userId }),
@@ -1002,9 +1030,8 @@ async function ensureWorkspaceHydrated(workspaceId: string | undefined, userId: 
     }
   );
 
-  hydratedTasks.forEach((task) => {
-    tasks.set(task.id, task);
-  });
+  // DASH-64.1: hydratedTasks block removed — tasks live entirely in the
+  // repository now.
   hydratedHeartbeats.forEach((heartbeat) => {
     heartbeats.set(heartbeat.id, heartbeat);
   });
@@ -1858,7 +1885,9 @@ export const controlPlaneStore = {
     return canAccessTeam(team, userId, workspaceId) ? team : undefined;
   },
 
-  getMissionState(teamId: string, userId: string, workspaceId?: string): ControlPlaneMissionState | undefined {
+  // DASH-64.1: now async because buildMissionState reads tasks from the
+  // repository (Postgres-first). Every caller updated to await.
+  async getMissionState(teamId: string, userId: string, workspaceId?: string): Promise<ControlPlaneMissionState | undefined> {
     const team = teams.get(teamId);
     if (!canAccessTeam(team, userId, workspaceId)) {
       return undefined;
@@ -2270,10 +2299,12 @@ export const controlPlaneStore = {
       updatedAt: timestamp,
       auditTrail: [buildAuditEvent("created", input.actor, "Task created with status todo")],
     };
-    tasks.set(task.id, task);
-    // HEL-66: snapshot before await — same race fix as checkoutTask /
-    // updateTaskStatus. Less likely to fire here because the caller doesn't
-    // know task.id yet, but defensive consistency keeps the pattern uniform.
+    // DASH-64.1: in-memory `tasks.set` removed. The repository write
+    // below is the single source of truth (Postgres in production,
+    // in-memory fallback in test mode — see controlPlaneRepository.ts).
+    // HEL-66 race-fix snapshots still apply because the observability
+    // record carries the data we want at task-creation time, even if
+    // a concurrent write updates the task row.
     const snapshotStatus = task.status;
     const snapshotCreatedAt = task.createdAt;
     const snapshotTaskMeta = {
@@ -2281,12 +2312,20 @@ export const controlPlaneStore = {
       sourceWorkflowStepId: task.sourceWorkflowStepId,
       metadata: task.metadata,
     };
+    // DASH-64.1 iter 4 (Codex P1 on #901): workspaceContextForTeam can
+    // return undefined when the team is not in cache AND the DB lookup
+    // misses (or errors). Previously this silently no-op'd the upsert,
+    // making createTask return success while never persisting the row
+    // — the dashboard would briefly see the optimistic task then it
+    // disappears on next read. Throw instead so callers see a real
+    // failure they can retry.
     const taskCtx = await workspaceContextForTeam(task.teamId, input.userId);
-    if (taskCtx) {
-      await controlPlaneRepository.upsertTask(taskCtx, task);
+    if (!taskCtx) {
+      throw new Error("task_workspace_unresolved");
     }
+    await controlPlaneRepository.upsertTask(taskCtx, task);
     observabilityStore.record({
-      workspaceId: taskCtx?.workspaceId,
+      workspaceId: taskCtx.workspaceId,
       userId: input.userId,
       category: "issue",
       type: "issue.created",
@@ -2308,9 +2347,25 @@ export const controlPlaneStore = {
     return task;
   },
 
-  listTasks(userId: string, teamId?: string, workspaceId?: string): ControlPlaneTask[] {
+  // DASH-64.1: now async — reads route through controlPlaneRepository.
+  // When workspaceId is provided, scopes to that workspace. When omitted
+  // (legacy callers like observability/service.ts that have only userId),
+  // walks every workspace via listAllTasksForUser. The team-filter step
+  // also restricts to accessible team IDs to preserve the same security
+  // boundary the Map-based version had.
+  async listTasks(
+    userId: string,
+    teamId?: string,
+    workspaceId?: string,
+  ): Promise<ControlPlaneTask[]> {
     const accessibleTeamIds = listAccessibleTeamIds(userId, workspaceId);
-    return Array.from(tasks.values())
+    const rows: ControlPlaneTask[] = workspaceId
+      ? await controlPlaneRepository.listTasks(
+          { workspaceId, userId },
+          teamId ? { teamId } : undefined,
+        )
+      : await controlPlaneRepository.listAllTasksForUser(userId);
+    return rows
       .filter((task) => accessibleTeamIds.has(task.teamId) && (!teamId || task.teamId === teamId))
       .sort((left, right) => left.createdAt.localeCompare(right.createdAt));
   },
@@ -2319,28 +2374,46 @@ export const controlPlaneStore = {
     taskId: string;
     userId: string;
     actor: string;
+    /**
+     * DASH-64.1: workspace context for the repository lookup.
+     * Routes resolve this from `resolveWorkspaceContext(req, res)`.
+     * When omitted (legacy test convention), falls back to userId —
+     * same convention as `resolveWorkspaceContext` for in-memory mode.
+     */
+    workspaceId?: string;
   }): Promise<ControlPlaneTask> {
-    const task = tasks.get(input.taskId);
-    if (!task || task.userId !== input.userId) {
+    const workspaceId = input.workspaceId ?? input.userId;
+    const timestamp = nowIso();
+    // DASH-64.1 hotfix (Codex review on PR #901): single atomic
+    // UPDATE eliminates the read-then-write race the pre-fix version
+    // had — two concurrent runs that both saw `checked_out_by = null`
+    // could both pass the staleness check and both write. The new
+    // `checkoutTaskAtomic` uses `WHERE checked_out_by IS NULL OR
+    // checked_out_by = $actor` with RETURNING, so only one writer
+    // wins; the loser throws `task_checked_out`.
+    const auditEntry = buildAuditEvent(
+      "checked_out",
+      input.actor,
+      `Task checked out by ${input.actor}`,
+    );
+    const task = await controlPlaneRepository.checkoutTaskAtomic(
+      { workspaceId, userId: input.userId },
+      {
+        taskId: input.taskId,
+        actor: input.actor,
+        checkedOutAt: timestamp,
+        updatedAt: timestamp,
+        newStatus: "in_progress",
+        auditEntry,
+      },
+    );
+    if (!task) {
       throw new Error("task_not_found");
     }
-    if (task.checkedOutBy && task.checkedOutBy !== input.actor) {
-      throw new Error("task_checked_out");
-    }
-
-    const timestamp = nowIso();
-    task.checkedOutBy = input.actor;
-    task.checkedOutAt = timestamp;
-    task.status = "in_progress";
-    task.updatedAt = timestamp;
-    task.auditTrail.push(
-      buildAuditEvent("checked_out", input.actor, `Task checked out by ${input.actor}`)
-    );
-    tasks.set(task.id, task);
-    // HEL-66: snapshot the fields the observability event reads BEFORE the
-    // await on workspaceContextForTeam. Otherwise a concurrent
-    // updateTaskStatus that lands during the await window would mutate
-    // task.status, and the emitted event would carry the wrong status.
+    // HEL-66 snapshots — the observability event captures the task as
+    // it was AT checkout time. Concurrent updates can't perturb these
+    // values because we read them off the returned-from-DB row before
+    // the next async hop.
     const snapshotStatus = task.status;
     const snapshotUpdatedAt = task.updatedAt;
     const snapshotTaskMeta = {
@@ -2348,12 +2421,8 @@ export const controlPlaneStore = {
       sourceWorkflowStepId: task.sourceWorkflowStepId,
       metadata: task.metadata,
     };
-    const taskCtx = await workspaceContextForTeam(task.teamId, input.userId);
-    if (taskCtx) {
-      await controlPlaneRepository.upsertTask(taskCtx, task);
-    }
     observabilityStore.record({
-      workspaceId: taskCtx?.workspaceId,
+      workspaceId,
       userId: input.userId,
       category: "issue",
       type: "issue.status_changed",
@@ -2381,20 +2450,43 @@ export const controlPlaneStore = {
     userId: string;
     actor: string;
     status: ControlPlaneTaskStatus;
+    /** DASH-64.1: workspace context — same fallback as checkoutTask. */
+    workspaceId?: string;
   }): Promise<ControlPlaneTask> {
-    const task = tasks.get(input.taskId);
-    if (!task || task.userId !== input.userId) {
+    const workspaceId = input.workspaceId ?? input.userId;
+    // DASH-64.1 iter 4 (Codex P2 on #901): atomic update with
+    // jsonb-concat audit-trail append. Pre-fix flow was getTask() →
+    // mutate in-memory → upsertTask, which dropped audit entries
+    // under concurrent status changes (both readers saw the same
+    // prior trail). The repository's updateTaskStatusAtomic uses a
+    // single UPDATE … audit_trail = COALESCE(audit_trail, '[]'::jsonb)
+    // || $entry::jsonb so concurrent appends both land.
+    //
+    // We do still need `previousStatus` for the observability event,
+    // so we read it via getTask BEFORE the atomic update — accepting
+    // that the snapshot is best-effort under concurrency (the atomic
+    // write below is the source of truth for the row state).
+    const taskCtx = { workspaceId, userId: input.userId };
+    const before = await controlPlaneRepository.getTask(taskCtx, input.taskId);
+    if (!before) {
       throw new Error("task_not_found");
     }
-
-    const previousStatus = task.status;
-    task.status = input.status;
-    task.updatedAt = nowIso();
-    task.auditTrail.push(
-      buildAuditEvent("status_changed", input.actor, `Task status changed to ${input.status}`)
+    const previousStatus = before.status;
+    const auditEntry = buildAuditEvent(
+      "status_changed",
+      input.actor,
+      `Task status changed to ${input.status}`,
     );
-    tasks.set(task.id, task);
-    // HEL-66: snapshot before await — see checkoutTask for the same race fix.
+    const timestamp = nowIso();
+    const task = await controlPlaneRepository.updateTaskStatusAtomic(taskCtx, {
+      taskId: input.taskId,
+      newStatus: input.status,
+      updatedAt: timestamp,
+      auditEntry,
+    });
+    if (!task) {
+      throw new Error("task_not_found");
+    }
     const snapshotStatus = task.status;
     const snapshotUpdatedAt = task.updatedAt;
     const snapshotTaskMeta = {
@@ -2402,12 +2494,8 @@ export const controlPlaneStore = {
       sourceWorkflowStepId: task.sourceWorkflowStepId,
       metadata: task.metadata,
     };
-    const taskCtx = await workspaceContextForTeam(task.teamId, input.userId);
-    if (taskCtx) {
-      await controlPlaneRepository.upsertTask(taskCtx, task);
-    }
     observabilityStore.record({
-      workspaceId: taskCtx?.workspaceId,
+      workspaceId,
       userId: input.userId,
       category: "issue",
       type: "issue.status_changed",
@@ -3105,7 +3193,9 @@ export const controlPlaneStore = {
   clear(): void {
     teams.clear();
     agents.clear();
-    tasks.clear();
+    // DASH-64.1: tasks Map no longer lives here; clear the repository's
+    // in-memory fallback instead so each test starts fresh.
+    __resetRepositoryInMemoryStateForTests();
     heartbeats.clear();
     executions.clear();
     companies.clear();

@@ -14,7 +14,7 @@
  */
 
 import { PoolClient } from "pg";
-import { getPostgresPool } from "../db/postgres";
+import { getPostgresPool, inMemoryAllowed, isPostgresConfigured } from "../db/postgres";
 import { withWorkspaceContext } from "../middleware/workspaceContext";
 import {
   AgentHeartbeatRecord,
@@ -27,6 +27,55 @@ import {
   HeartbeatStatus,
   SpendCategory,
 } from "./types";
+
+// ---------------------------------------------------------------------------
+// DASH-64.1: In-memory fallback for test/dev mode (HEL-80 pattern).
+//
+// Production runs with DATABASE_URL set and everything routes through
+// Postgres via withWorkspaceContext. Unit tests typically run without
+// Postgres available — the previous architecture handled this by keeping
+// a parallel in-memory Map at the controlPlaneStore level. DASH-64
+// removes those Maps in favor of repository-only reads, so the
+// fallback moves here.
+//
+// `inMemoryAllowed()` is true in NODE_ENV=test / development. Production
+// fails fast on the Postgres path because `inMemoryAllowed()` is false
+// and the repository goes straight to withWorkspaceContext (which throws
+// if Postgres isn't configured — by design, see HEL-80).
+//
+// Each in-memory store is a workspace-scoped Map<workspaceId, Map<id, row>>
+// so cross-tenant isolation behaves the same as RLS would in production.
+// ---------------------------------------------------------------------------
+
+// allowlist: test/dev fallback for repository; production routes to Postgres
+const memTasks = new Map<string, Map<string, ControlPlaneTask>>();
+// allowlist: test/dev fallback for repository; production routes to Postgres
+const memHeartbeats = new Map<string, Map<string, AgentHeartbeatRecord>>();
+// allowlist: test/dev fallback for repository; production routes to Postgres
+const memSpendEntries = new Map<string, Map<string, ControlPlaneSpendEntry>>();
+// allowlist: test/dev fallback for repository; production routes to Postgres
+const memBudgetAlerts = new Map<string, Map<string, ControlPlaneBudgetAlert>>();
+
+function memBucket<T>(
+  store: Map<string, Map<string, T>>,
+  workspaceId: string,
+): Map<string, T> {
+  let bucket = store.get(workspaceId);
+  if (!bucket) {
+    bucket = new Map<string, T>();
+    store.set(workspaceId, bucket);
+  }
+  return bucket;
+}
+
+/**
+ * Returns true when the repository should use its in-memory fallback
+ * instead of going to Postgres. Same gate as HEL-80 elsewhere in the
+ * codebase: tests + development without DATABASE_URL.
+ */
+function useInMemoryFallback(): boolean {
+  return !isPostgresConfigured() && inMemoryAllowed();
+}
 
 export interface ControlPlaneRepoContext {
   workspaceId: string;
@@ -353,29 +402,255 @@ async function upsertBudgetAlertRow(
 
 export const controlPlaneRepository = {
   async upsertTask(ctx: ControlPlaneRepoContext, task: ControlPlaneTask): Promise<void> {
+    if (useInMemoryFallback()) {
+      memBucket(memTasks, ctx.workspaceId).set(task.id, { ...task });
+      return;
+    }
     await withWorkspaceContext(getPostgresPool(), ctx, async (client) => {
       await insertTaskRow(client, ctx, task);
     });
   },
 
-  async listTasks(
+  /**
+   * DASH-64.1 iter 4 (Codex P2 on PR #901): atomic status update.
+   * Same race as checkoutTask had — the pre-fix flow read the task,
+   * appended to the in-memory audit trail, and upserted. Two
+   * concurrent status changes both read the same prior trail, both
+   * appended an entry, and the later upsert replaced the earlier
+   * row, dropping the earlier transition entirely.
+   *
+   * Fix: UPDATE with `audit_trail = COALESCE(audit_trail, '[]'::jsonb)
+   * || $newEntry::jsonb` so both concurrent appends are preserved by
+   * Postgres's jsonb concatenation, and RETURNING gives us the final
+   * row without a follow-up SELECT.
+   *
+   * Returns the updated task, or undefined if the task doesn't exist.
+   */
+  async updateTaskStatusAtomic(
     ctx: ControlPlaneRepoContext,
-    filters?: { teamId?: string }
-  ): Promise<ControlPlaneTask[]> {
-    return withWorkspaceContext(getPostgresPool(), ctx, async (client) => {
-      const params: unknown[] = [ctx.userId];
-      let where = "user_id = $1";
-      if (filters?.teamId) {
-        params.push(filters.teamId);
-        where += ` AND team_id = $${params.length}`;
+    input: {
+      taskId: string;
+      newStatus: ControlPlaneTaskStatus;
+      updatedAt: string;
+      auditEntry: ControlPlaneTaskAuditEvent;
+    },
+  ): Promise<ControlPlaneTask | undefined> {
+    if (useInMemoryFallback()) {
+      let task: ControlPlaneTask | undefined;
+      let bucket: Map<string, ControlPlaneTask> | undefined;
+      for (const b of memTasks.values()) {
+        const t = b.get(input.taskId);
+        if (t) {
+          task = t;
+          bucket = b;
+          break;
+        }
       }
+      if (!task || !bucket) return undefined;
+      const updated: ControlPlaneTask = {
+        ...task,
+        status: input.newStatus,
+        updatedAt: input.updatedAt,
+        auditTrail: [...task.auditTrail, input.auditEntry],
+      };
+      bucket.set(updated.id, updated);
+      return { ...updated };
+    }
+    return withWorkspaceContext(getPostgresPool(), ctx, async (client) => {
+      const result = await client.query<TaskRow>(
+        `UPDATE agent_tasks
+            SET status = $2,
+                updated_at = $3,
+                audit_trail = COALESCE(audit_trail, '[]'::jsonb) || $4::jsonb
+          WHERE id = $1
+       RETURNING id, team_id, user_id, title, description, source_run_id,
+                 source_workflow_step_id, assigned_agent_id, execution_id, status,
+                 checked_out_by, checked_out_at, audit_trail, metadata,
+                 created_at, updated_at`,
+        [
+          input.taskId,
+          input.newStatus,
+          new Date(input.updatedAt),
+          JSON.stringify([input.auditEntry]),
+        ],
+      );
+      if (result.rowCount === 0) return undefined;
+      return rowToTask(result.rows[0]);
+    });
+  },
+
+  /**
+   * DASH-64.1 hotfix (Codex review on PR #901): atomic conditional
+   * checkout. The previous flow did `getTask()` → mutate in-memory →
+   * `upsertTask()`, which races when two runs try to claim the same
+   * unclaimed task concurrently: both reads see `checked_out_by =
+   * null`, both passes the check, both upserts succeed, both callers
+   * receive success — but only one upsert wins.
+   *
+   * Fix: a single UPDATE statement with `WHERE checked_out_by IS NULL
+   * OR checked_out_by = $actor` + RETURNING. If another actor already
+   * holds the lease, the WHERE filter rejects the update and 0 rows
+   * are returned → throw task_checked_out. If 1 row is returned, this
+   * caller successfully claimed (or re-claimed) the task.
+   *
+   * Returns the updated task row, or undefined if the task doesn't
+   * exist. Throws `task_checked_out` when another actor holds it.
+   */
+  async checkoutTaskAtomic(
+    ctx: ControlPlaneRepoContext,
+    input: {
+      taskId: string;
+      actor: string;
+      checkedOutAt: string; // ISO timestamp
+      updatedAt: string; // ISO timestamp
+      newStatus: ControlPlaneTaskStatus; // "in_progress"
+      auditEntry: ControlPlaneTaskAuditEvent;
+    },
+  ): Promise<ControlPlaneTask | undefined> {
+    if (useInMemoryFallback()) {
+      // Find the task across all buckets (test-mode legacy behaviour).
+      let task: ControlPlaneTask | undefined;
+      let bucket: Map<string, ControlPlaneTask> | undefined;
+      for (const b of memTasks.values()) {
+        const t = b.get(input.taskId);
+        if (t) {
+          task = t;
+          bucket = b;
+          break;
+        }
+      }
+      if (!task || !bucket) return undefined;
+      if (task.checkedOutBy && task.checkedOutBy !== input.actor) {
+        throw new Error("task_checked_out");
+      }
+      const updated: ControlPlaneTask = {
+        ...task,
+        checkedOutBy: input.actor,
+        checkedOutAt: input.checkedOutAt,
+        status: input.newStatus,
+        updatedAt: input.updatedAt,
+        auditTrail: [...task.auditTrail, input.auditEntry],
+      };
+      bucket.set(updated.id, updated);
+      return { ...updated };
+    }
+    return withWorkspaceContext(getPostgresPool(), ctx, async (client) => {
+      // Atomic compare-and-set: the WHERE clause covers two cases —
+      // (a) task is unclaimed (checked_out_by IS NULL), or (b) this
+      // actor is re-claiming a task they already hold (idempotent).
+      // Any other actor's hold makes the WHERE return zero rows.
+      const result = await client.query<TaskRow>(
+        `UPDATE agent_tasks
+            SET checked_out_by = $2,
+                checked_out_at = $3,
+                status = $4,
+                updated_at = $5,
+                audit_trail = COALESCE(audit_trail, '[]'::jsonb) || $6::jsonb
+          WHERE id = $1
+            AND (checked_out_by IS NULL OR checked_out_by = $2)
+       RETURNING id, team_id, user_id, title, description, source_run_id,
+                 source_workflow_step_id, assigned_agent_id, execution_id, status,
+                 checked_out_by, checked_out_at, audit_trail, metadata,
+                 created_at, updated_at`,
+        [
+          input.taskId,
+          input.actor,
+          new Date(input.checkedOutAt),
+          input.newStatus,
+          new Date(input.updatedAt),
+          JSON.stringify([input.auditEntry]),
+        ],
+      );
+      if (result.rowCount === 0) {
+        // Either the task doesn't exist or another actor holds it.
+        // Distinguish by a plain SELECT.
+        const exists = await client.query(
+          `SELECT 1 FROM agent_tasks WHERE id = $1`,
+          [input.taskId],
+        );
+        if (exists.rowCount === 0) return undefined;
+        throw new Error("task_checked_out");
+      }
+      return rowToTask(result.rows[0]);
+    });
+  },
+
+  /**
+   * DASH-64.1: single-task lookup. Used by checkoutTask / updateTaskStatus
+   * paths that need to read a row before mutating it. Returns undefined
+   * when the task doesn't exist OR the caller doesn't own it (user_id
+   * filter — Postgres-side via RLS, in-memory-side via explicit check).
+   */
+  async getTask(
+    ctx: ControlPlaneRepoContext,
+    taskId: string,
+  ): Promise<ControlPlaneTask | undefined> {
+    if (useInMemoryFallback()) {
+      // First check the requested workspace's bucket.
+      const inWorkspace = memBucket(memTasks, ctx.workspaceId).get(taskId);
+      if (inWorkspace) return { ...inWorkspace };
+      // DASH-64.1: in tests, callers often don't have a workspace
+      // resolved (the route layer hasn't wired one through yet — that's
+      // DASH-64.6 work). Walk every bucket to preserve the old
+      // global-Map behaviour. Production RLS makes this branch
+      // unreachable.
+      for (const bucket of memTasks.values()) {
+        const task = bucket.get(taskId);
+        if (task) return { ...task };
+      }
+      return undefined;
+    }
+    return withWorkspaceContext(getPostgresPool(), ctx, async (client) => {
+      // DASH-64.1: workspace RLS is the access boundary; the id alone
+      // identifies the task.
       const result = await client.query<TaskRow>(
         `SELECT id, team_id, user_id, title, description, source_run_id,
                 source_workflow_step_id, assigned_agent_id, execution_id, status,
                 checked_out_by, checked_out_at, audit_trail, metadata,
                 created_at, updated_at
            FROM agent_tasks
-          WHERE ${where}
+          WHERE id = $1`,
+        [taskId],
+      );
+      const row = result.rows[0];
+      return row ? rowToTask(row) : undefined;
+    });
+  },
+
+
+  async listTasks(
+    ctx: ControlPlaneRepoContext,
+    filters?: { teamId?: string }
+  ): Promise<ControlPlaneTask[]> {
+    if (useInMemoryFallback()) {
+      // DASH-64.1: workspace IS the access boundary (RLS analogue).
+      // No userId filter — anyone with access to the workspace sees
+      // its tasks. The pre-DASH-64 in-memory Map used team-accessibility
+      // via listAccessibleTeamIds, which checks workspace membership.
+      const bucket = memBucket(memTasks, ctx.workspaceId);
+      return Array.from(bucket.values())
+        .filter((task) => !filters?.teamId || task.teamId === filters.teamId)
+        .map((task) => ({ ...task }))
+        .sort((left, right) => left.createdAt.localeCompare(right.createdAt));
+    }
+    return withWorkspaceContext(getPostgresPool(), ctx, async (client) => {
+      // DASH-64.1: no user_id filter — workspace RLS is the access
+      // boundary. The user_id column tracks who CREATED the task; it's
+      // not used for access control.
+      const params: unknown[] = [];
+      const conditions: string[] = [];
+      if (filters?.teamId) {
+        params.push(filters.teamId);
+        conditions.push(`team_id = $${params.length}`);
+      }
+      const where = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
+      const result = await client.query<TaskRow>(
+        `SELECT id, team_id, user_id, title, description, source_run_id,
+                source_workflow_step_id, assigned_agent_id, execution_id, status,
+                checked_out_by, checked_out_at, audit_trail, metadata,
+                created_at, updated_at
+           FROM agent_tasks
+          ${where}
           ORDER BY created_at ASC`,
         params
       );
@@ -383,10 +658,74 @@ export const controlPlaneRepository = {
     });
   },
 
+  /**
+   * DASH-64.1: list every task across every workspace this user owns.
+   * The team-less listTasks variant — used by the observability service's
+   * cross-workspace dashboard and any other code path that has a userId
+   * but no specific workspace in hand. In-memory fallback walks every
+   * bucket; Postgres returns the full user-scoped set under RLS.
+   *
+   * NOTE: production callers SHOULD pass a workspaceId when they have one
+   * for tighter RLS scoping. This helper exists for the legacy
+   * `controlPlaneStore.listTasks(userId)` shape which had no workspace
+   * filter.
+   */
+  async listAllTasksForUser(userId: string): Promise<ControlPlaneTask[]> {
+    if (useInMemoryFallback()) {
+      const out: ControlPlaneTask[] = [];
+      for (const bucket of memTasks.values()) {
+        for (const task of bucket.values()) {
+          if (task.userId === userId) out.push({ ...task });
+        }
+      }
+      return out.sort((left, right) => left.createdAt.localeCompare(right.createdAt));
+    }
+    // DASH-64.1 followup (Codex on PR #901): the previous raw
+    // `pool.query` against `agent_tasks` returned zero rows in
+    // production because FORCE RLS requires `app.current_workspace_id`
+    // to be set, and a cross-workspace listing has no single workspace
+    // context to pin.
+    //
+    // Migration 046 adds `list_agent_tasks_for_user(p_user_id text)` as
+    // a SECURITY DEFINER helper. Same pattern as `lookup_team_workspace_id`.
+    //
+    // DASH-64.1 iter 3 (Codex P1 on #901): the helper is bound to the
+    // authenticated subject via `app.current_user_id`. We MUST set
+    // that session var before calling, otherwise the function returns
+    // zero rows by NULL-denial. We use a dedicated client + transaction
+    // so the `set_config(..., true)` is scoped to this query alone
+    // (true = local-to-transaction).
+    const pool = getPostgresPool();
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN");
+      await client.query("SELECT set_config('app.current_user_id', $1, true)", [userId]);
+      const result = await client.query<TaskRow>(
+        `SELECT id, team_id, user_id, title, description, source_run_id,
+                source_workflow_step_id, assigned_agent_id, execution_id, status,
+                checked_out_by, checked_out_at, audit_trail, metadata,
+                created_at, updated_at
+           FROM list_agent_tasks_for_user($1)`,
+        [userId],
+      );
+      await client.query("COMMIT");
+      return result.rows.map(rowToTask);
+    } catch (err) {
+      await client.query("ROLLBACK").catch(() => undefined);
+      throw err;
+    } finally {
+      client.release();
+    }
+  },
+
   async insertHeartbeat(
     ctx: ControlPlaneRepoContext,
     heartbeat: AgentHeartbeatRecord
   ): Promise<void> {
+    if (useInMemoryFallback()) {
+      memBucket(memHeartbeats, ctx.workspaceId).set(heartbeat.id, { ...heartbeat });
+      return;
+    }
     await withWorkspaceContext(getPostgresPool(), ctx, async (client) => {
       await insertHeartbeatRow(client, ctx, heartbeat);
     });
@@ -428,6 +767,10 @@ export const controlPlaneRepository = {
     ctx: ControlPlaneRepoContext,
     entry: ControlPlaneSpendEntry
   ): Promise<void> {
+    if (useInMemoryFallback()) {
+      memBucket(memSpendEntries, ctx.workspaceId).set(entry.id, { ...entry });
+      return;
+    }
     await withWorkspaceContext(getPostgresPool(), ctx, async (client) => {
       await insertSpendEntryRow(client, ctx, entry);
     });
@@ -468,6 +811,10 @@ export const controlPlaneRepository = {
     ctx: ControlPlaneRepoContext,
     alert: ControlPlaneBudgetAlert
   ): Promise<void> {
+    if (useInMemoryFallback()) {
+      memBucket(memBudgetAlerts, ctx.workspaceId).set(alert.id, { ...alert });
+      return;
+    }
     await withWorkspaceContext(getPostgresPool(), ctx, async (client) => {
       await upsertBudgetAlertRow(client, ctx, alert);
     });
@@ -496,5 +843,20 @@ export const controlPlaneRepository = {
     });
   },
 };
+
+/**
+ * DASH-64.1: Test-only — clears the in-memory fallback stores so each
+ * `beforeEach` starts from a clean slate. No-op in production (Postgres
+ * is the source of truth and test fixtures handle their own teardown).
+ *
+ * Exported separately from the main `controlPlaneRepository` object so
+ * production code can't accidentally call it.
+ */
+export function __resetRepositoryInMemoryStateForTests(): void {
+  memTasks.clear();
+  memHeartbeats.clear();
+  memSpendEntries.clear();
+  memBudgetAlerts.clear();
+}
 
 export type ControlPlaneRepository = typeof controlPlaneRepository;

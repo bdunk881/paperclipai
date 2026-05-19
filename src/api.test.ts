@@ -2460,13 +2460,16 @@ describe("GET /api/observability/events", () => {
 
     expect(started.task).toBeDefined();
 
-    controlPlaneStore.checkoutTask({
+    // DASH-64.1: checkoutTask / updateTaskStatus now await an async
+    // repository round-trip. Without await the fire-and-forget call
+    // can lose its error and the subsequent assertion races.
+    await controlPlaneStore.checkoutTask({
       taskId: started.task!.id,
       userId: "test-user",
       actor: workerAgent.id,
     });
 
-    controlPlaneStore.updateTaskStatus({
+    await controlPlaneStore.updateTaskStatus({
       taskId: started.task!.id,
       userId: "test-user",
       actor: workerAgent.id,
@@ -2525,14 +2528,15 @@ describe("GET /api/observability/throughput", () => {
 
     expect(started.task).toBeDefined();
 
-    controlPlaneStore.updateTaskStatus({
+    // DASH-64.1: updateTaskStatus is now async.
+    await controlPlaneStore.updateTaskStatus({
       taskId: started.task!.id,
       userId: "test-user",
       actor: workerAgent.id,
       status: "blocked",
     });
 
-    controlPlaneStore.updateTaskStatus({
+    await controlPlaneStore.updateTaskStatus({
       taskId: started.task!.id,
       userId: "test-user",
       actor: workerAgent.id,

@@ -176,11 +176,15 @@ describe("subscriptionStore hydration integration (HEL-72)", () => {
       expect(row.current_period_start).toBeTruthy();
       expect(row.current_period_end).toBeTruthy();
 
-      // Step 4: simulate restart by wiping the in-memory cache
+      // Step 4: simulate restart by wiping the in-memory cache.
+      // Post-DASH-47: reads fall back to Postgres on cache miss, so data is
+      // still accessible after clear() — the old "looks like no subscription"
+      // failure mode no longer exists.  The assertions confirm the fallback
+      // contract rather than verifying the cache is empty.
       store.subscriptionStore.clear();
-      expect(await store.subscriptionStore.getByStripeSubscriptionId(stripeSubId)).toBeUndefined();
-      expect(await store.subscriptionStore.getByUserId(userId)).toBeUndefined();
-      expect(await store.subscriptionStore.getByStripeCustomerId(stripeCustomerId)).toHaveLength(0);
+      expect(await store.subscriptionStore.getByStripeSubscriptionId(stripeSubId)).toBeDefined();
+      expect(await store.subscriptionStore.getByUserId(userId)).toBeDefined();
+      expect(await store.subscriptionStore.getByStripeCustomerId(stripeCustomerId)).toHaveLength(1);
 
       // Step 5: hydrate from Postgres — this is what app.ts calls on startup
       const hydratedCount = await store.subscriptionStore.hydrateFromPostgres();

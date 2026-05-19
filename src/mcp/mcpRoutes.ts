@@ -86,13 +86,13 @@ async function callMcpRpc(
 // ---------------------------------------------------------------------------
 
 /** GET /api/mcp/servers */
-router.get("/", (req: AuthenticatedRequest, res) => {
+router.get("/", async (req: AuthenticatedRequest, res) => {
   const userId = resolveUserId(req);
   if (!userId) {
     res.status(401).json({ error: "Authenticated user is required" });
     return;
   }
-  res.json({ servers: mcpStore.list(userId) });
+  res.json({ servers: await mcpStore.list(userId) });
 });
 
 /** POST /api/mcp/servers */
@@ -128,7 +128,7 @@ router.post("/", async (req: AuthenticatedRequest, res) => {
     return;
   }
 
-  const server = mcpStore.add(userId, {
+  const server = await mcpStore.add(userId, {
     name,
     url: safeUrl,
     authHeaderKey: typeof authHeaderKey === "string" ? authHeaderKey : undefined,
@@ -139,14 +139,14 @@ router.post("/", async (req: AuthenticatedRequest, res) => {
 });
 
 /** DELETE /api/mcp/servers/:id */
-router.delete("/:id", (req: AuthenticatedRequest, res) => {
+router.delete("/:id", async (req: AuthenticatedRequest, res) => {
   const userId = resolveUserId(req);
   if (!userId) {
     res.status(401).json({ error: "Authenticated user is required" });
     return;
   }
 
-  const removed = mcpStore.remove(req.params.id, userId);
+  const removed = await mcpStore.remove(req.params.id, userId);
   if (!removed) {
     res.status(404).json({ error: "Server not found or not owned by you" });
     return;
@@ -163,7 +163,7 @@ router.get("/:id/tools", async (req: AuthenticatedRequest, res) => {
     return;
   }
 
-  const server = mcpStore.get(req.params.id);
+  const server = await mcpStore.get(req.params.id);
   if (!server || server.userId !== userId) {
     res.status(404).json({ error: "Server not found or not owned by you" });
     return;
@@ -195,7 +195,7 @@ router.post("/:id/test", async (req: AuthenticatedRequest, res) => {
     return;
   }
 
-  const server = mcpStore.get(req.params.id);
+  const server = await mcpStore.get(req.params.id);
   if (!server || server.userId !== userId) {
     res.status(404).json({ error: "Server not found or not owned by you" });
     return;

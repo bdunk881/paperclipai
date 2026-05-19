@@ -2446,22 +2446,39 @@ export const controlPlaneStore = {
     workspaceId?: string;
   }): Promise<ControlPlaneTask> {
     const workspaceId = input.workspaceId ?? input.userId;
-    const task = await controlPlaneRepository.getTask(
-      { workspaceId, userId: input.userId },
-      input.taskId,
+    // DASH-64.1 iter 4 (Codex P2 on #901): atomic update with
+    // jsonb-concat audit-trail append. Pre-fix flow was getTask() →
+    // mutate in-memory → upsertTask, which dropped audit entries
+    // under concurrent status changes (both readers saw the same
+    // prior trail). The repository's updateTaskStatusAtomic uses a
+    // single UPDATE … audit_trail = COALESCE(audit_trail, '[]'::jsonb)
+    // || $entry::jsonb so concurrent appends both land.
+    //
+    // We do still need `previousStatus` for the observability event,
+    // so we read it via getTask BEFORE the atomic update — accepting
+    // that the snapshot is best-effort under concurrency (the atomic
+    // write below is the source of truth for the row state).
+    const taskCtx = { workspaceId, userId: input.userId };
+    const before = await controlPlaneRepository.getTask(taskCtx, input.taskId);
+    if (!before) {
+      throw new Error("task_not_found");
+    }
+    const previousStatus = before.status;
+    const auditEntry = buildAuditEvent(
+      "status_changed",
+      input.actor,
+      `Task status changed to ${input.status}`,
     );
+    const timestamp = nowIso();
+    const task = await controlPlaneRepository.updateTaskStatusAtomic(taskCtx, {
+      taskId: input.taskId,
+      newStatus: input.status,
+      updatedAt: timestamp,
+      auditEntry,
+    });
     if (!task) {
       throw new Error("task_not_found");
     }
-
-    const previousStatus = task.status;
-    task.status = input.status;
-    task.updatedAt = nowIso();
-    task.auditTrail.push(
-      buildAuditEvent("status_changed", input.actor, `Task status changed to ${input.status}`)
-    );
-    // DASH-64.1: in-memory `tasks.set` removed; repository upsert is
-    // the only write. HEL-66 race-fix snapshots stay below.
     const snapshotStatus = task.status;
     const snapshotUpdatedAt = task.updatedAt;
     const snapshotTaskMeta = {
@@ -2469,8 +2486,6 @@ export const controlPlaneStore = {
       sourceWorkflowStepId: task.sourceWorkflowStepId,
       metadata: task.metadata,
     };
-    const taskCtx = { workspaceId, userId: input.userId };
-    await controlPlaneRepository.upsertTask(taskCtx, task);
     observabilityStore.record({
       workspaceId,
       userId: input.userId,

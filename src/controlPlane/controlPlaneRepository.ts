@@ -412,6 +412,74 @@ export const controlPlaneRepository = {
   },
 
   /**
+   * DASH-64.1 iter 4 (Codex P2 on PR #901): atomic status update.
+   * Same race as checkoutTask had — the pre-fix flow read the task,
+   * appended to the in-memory audit trail, and upserted. Two
+   * concurrent status changes both read the same prior trail, both
+   * appended an entry, and the later upsert replaced the earlier
+   * row, dropping the earlier transition entirely.
+   *
+   * Fix: UPDATE with `audit_trail = COALESCE(audit_trail, '[]'::jsonb)
+   * || $newEntry::jsonb` so both concurrent appends are preserved by
+   * Postgres's jsonb concatenation, and RETURNING gives us the final
+   * row without a follow-up SELECT.
+   *
+   * Returns the updated task, or undefined if the task doesn't exist.
+   */
+  async updateTaskStatusAtomic(
+    ctx: ControlPlaneRepoContext,
+    input: {
+      taskId: string;
+      newStatus: ControlPlaneTaskStatus;
+      updatedAt: string;
+      auditEntry: ControlPlaneTaskAuditEvent;
+    },
+  ): Promise<ControlPlaneTask | undefined> {
+    if (useInMemoryFallback()) {
+      let task: ControlPlaneTask | undefined;
+      let bucket: Map<string, ControlPlaneTask> | undefined;
+      for (const b of memTasks.values()) {
+        const t = b.get(input.taskId);
+        if (t) {
+          task = t;
+          bucket = b;
+          break;
+        }
+      }
+      if (!task || !bucket) return undefined;
+      const updated: ControlPlaneTask = {
+        ...task,
+        status: input.newStatus,
+        updatedAt: input.updatedAt,
+        auditTrail: [...task.auditTrail, input.auditEntry],
+      };
+      bucket.set(updated.id, updated);
+      return { ...updated };
+    }
+    return withWorkspaceContext(getPostgresPool(), ctx, async (client) => {
+      const result = await client.query<TaskRow>(
+        `UPDATE agent_tasks
+            SET status = $2,
+                updated_at = $3,
+                audit_trail = COALESCE(audit_trail, '[]'::jsonb) || $4::jsonb
+          WHERE id = $1
+       RETURNING id, team_id, user_id, title, description, source_run_id,
+                 source_workflow_step_id, assigned_agent_id, execution_id, status,
+                 checked_out_by, checked_out_at, audit_trail, metadata,
+                 created_at, updated_at`,
+        [
+          input.taskId,
+          input.newStatus,
+          new Date(input.updatedAt),
+          JSON.stringify([input.auditEntry]),
+        ],
+      );
+      if (result.rowCount === 0) return undefined;
+      return rowToTask(result.rows[0]);
+    });
+  },
+
+  /**
    * DASH-64.1 hotfix (Codex review on PR #901): atomic conditional
    * checkout. The previous flow did `getTask()` → mutate in-memory →
    * `upsertTask()`, which races when two runs try to claim the same

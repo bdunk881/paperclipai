@@ -291,8 +291,6 @@ const ROLE_TEMPLATE_CATALOG: ControlPlaneRoleTemplateDefinition[] = [
 ];
 // allowlist: hybrid store; in-memory mirror of Postgres-backed data
 const teams = new Map<string, ControlPlaneTeam>();
-// allowlist: hybrid store; in-memory mirror of Postgres-backed data
-const agents = new Map<string, ControlPlaneAgent>();
 // DASH-64.1: `tasks` Map removed. All task reads/writes now route
 // through `controlPlaneRepository` (Postgres-first; in-memory fallback
 // for test mode lives in the repository module itself per HEL-80).
@@ -304,6 +302,8 @@ const agents = new Map<string, ControlPlaneAgent>();
 // DASH-64.4: `executions` Map removed. Reads/writes route through
 // `controlPlaneRepository` (Postgres-first; in-memory fallback for
 // test mode lives in the repository module per HEL-80).
+// DASH-64.5: `agents` Map removed. Same pattern — repository owns
+// agent reads/writes (Postgres in prod, in-memory bucket in tests).
 // allowlist: hybrid store; in-memory mirror of Postgres-backed data
 const companies = new Map<string, ProvisionedCompanyRecord>();
 // allowlist: hybrid store; in-memory mirror of Postgres-backed data
@@ -344,31 +344,8 @@ type PersistedTeamRow = {
   updated_at: Date | string;
 };
 
-type PersistedAgentRow = {
-  id: string;
-  workspace_id: string;
-  user_id: string;
-  team_id: string;
-  name: string;
-  role_key: string;
-  workflow_step_id: string | null;
-  workflow_step_kind: string | null;
-  model: string | null;
-  instructions: string | null;
-  budget_monthly_usd: number | string;
-  reporting_to_agent_id: string | null;
-  skills: unknown;
-  schedule: unknown;
-  status: ControlPlaneAgent["status"];
-  paused_by_company_lifecycle: boolean;
-  current_execution_id: string | null;
-  last_heartbeat_at: Date | string | null;
-  last_heartbeat_status: ControlPlaneAgent["lastHeartbeatStatus"] | null;
-  created_at: Date | string;
-  updated_at: Date | string;
-};
-
 // DASH-64.4: PersistedExecutionRow lives in controlPlaneRepository now.
+// DASH-64.5: PersistedAgentRow lives in controlPlaneRepository now.
 
 type PersistedProvisionedCompanyRow = {
   id: string;
@@ -640,11 +617,19 @@ function latestIso(...timestamps: Array<string | undefined>): string {
 async function buildMissionState(
   team: ControlPlaneTeam,
 ): Promise<ControlPlaneMissionState> {
-  const teamAgents = Array.from(agents.values()).filter((agent) => agent.teamId === team.id);
   // DASH-64.1: tasks read via repository instead of in-memory Map.
+  // DASH-64.5: agents read via repository (same workspace context).
   // The workspace context comes from the team row — teams still live in
   // the in-memory store until DASH-64.6, so this is safe to read sync.
   const teamWorkspaceId = teamWorkspaceIds.get(team.id);
+  const teamAgents: ControlPlaneAgent[] = teamWorkspaceId
+    ? (
+        await controlPlaneRepository.listAgents(
+          { workspaceId: teamWorkspaceId, userId: team.userId },
+          { teamId: team.id },
+        )
+      ).filter((agent) => agent.userId === team.userId)
+    : [];
   const teamTasks: ControlPlaneTask[] = teamWorkspaceId
     ? await controlPlaneRepository.listTasks(
         { workspaceId: teamWorkspaceId, userId: team.userId },
@@ -804,12 +789,29 @@ function getTeamOwnedByUser(teamId: string, userId: string): ControlPlaneTeam | 
   return team;
 }
 
-function getAgentOwnedByUser(agentId: string, userId: string): ControlPlaneAgent | undefined {
-  const agent = agents.get(agentId);
-  if (!agent || agent.userId !== userId) {
-    return undefined;
+/**
+ * DASH-64.5: replaces the synchronous Map lookup. Resolves the agent's
+ * team workspace via workspaceContextForTeam — when the team is known
+ * (cached or hydrated), the lookup is workspace-scoped and respects
+ * RLS. Otherwise we fall back to the cross-workspace helper. Returns
+ * undefined if the agent doesn't exist or isn't owned by the caller.
+ */
+async function getAgentOwnedByUser(
+  agentId: string,
+  userId: string,
+  knownTeamId?: string,
+): Promise<ControlPlaneAgent | undefined> {
+  if (knownTeamId) {
+    const ctx = await workspaceContextForTeam(knownTeamId, userId);
+    if (ctx) {
+      const agent = await controlPlaneRepository.getAgent(ctx, agentId);
+      if (agent && agent.userId === userId) {
+        return agent;
+      }
+    }
   }
-  return agent;
+  const all = await controlPlaneRepository.listAllAgentsForUser(userId);
+  return all.find((agent) => agent.id === agentId);
 }
 
 /**
@@ -869,35 +871,10 @@ function hydrateTeam(row: PersistedTeamRow): ControlPlaneTeam {
   };
 }
 
-function hydrateAgent(row: PersistedAgentRow): ControlPlaneAgent {
-  teamWorkspaceIds.set(row.team_id, row.workspace_id);
-  return {
-    id: row.id,
-    teamId: row.team_id,
-    userId: row.user_id,
-    name: row.name,
-    roleKey: row.role_key,
-    workflowStepId: row.workflow_step_id ?? undefined,
-    workflowStepKind: row.workflow_step_kind ?? undefined,
-    model: row.model ?? undefined,
-    instructions: row.instructions ?? "",
-    budgetMonthlyUsd: toNumber(row.budget_monthly_usd),
-    reportingToAgentId: row.reporting_to_agent_id ?? undefined,
-    skills: normalizeStringArray(row.skills),
-    schedule: normalizeSchedule(row.schedule),
-    status: row.status,
-    pausedByCompanyLifecycle: row.paused_by_company_lifecycle || undefined,
-    currentExecutionId: row.current_execution_id ?? undefined,
-    lastHeartbeatAt: toIso(row.last_heartbeat_at),
-    lastHeartbeatStatus: row.last_heartbeat_status ?? undefined,
-    createdAt: toIso(row.created_at) ?? nowIso(),
-    updatedAt: toIso(row.updated_at) ?? nowIso(),
-  };
-}
-
 // DASH-64.4: hydrateExecution dropped along with the executions Map.
-// Reading agent_executions now lives entirely in controlPlaneRepository
-// (rowToExecution there mirrors the column → field mapping).
+// DASH-64.5: hydrateAgent dropped along with the agents Map.
+// Reading agent_executions / agents now lives entirely in
+// controlPlaneRepository (rowToExecution / rowToAgent there).
 
 function hydrateProvisionedCompany(row: PersistedProvisionedCompanyRow): {
   company: ProvisionedCompanyRecord;
@@ -954,24 +931,15 @@ async function ensureWorkspaceHydrated(workspaceId: string | undefined, userId: 
     { workspaceId: resolvedWorkspaceId, userId },
     async (client) => {
       // DASH-64.4: agent_executions no longer hydrates into an
-      // in-memory Map. Reads route through controlPlaneRepository on
-      // demand. Drop the SELECT from the parallel hydration block.
-      const [teamResult, agentResult, companyResult] = await Promise.all([
+      // in-memory Map. DASH-64.5: agents same — repo owns reads.
+      // Drop both SELECTs from the parallel hydration block.
+      const [teamResult, companyResult] = await Promise.all([
         client.query<PersistedTeamRow>(
           `SELECT id, workspace_id, user_id, company_id, name, description, workflow_template_id,
                   workflow_template_name, deployment_mode, status, paused_by_company_lifecycle,
                   restart_count, budget_monthly_usd, tool_budget_ceilings, alert_thresholds,
                   orchestration_enabled, last_heartbeat_at, created_at, updated_at
              FROM agent_teams
-            WHERE user_id = $1`,
-          [userId]
-        ),
-        client.query<PersistedAgentRow>(
-          `SELECT id, workspace_id, user_id, team_id, name, role_key, workflow_step_id,
-                  workflow_step_kind, model, instructions, budget_monthly_usd, reporting_to_agent_id,
-                  skills, schedule, status, paused_by_company_lifecycle, current_execution_id,
-                  last_heartbeat_at, last_heartbeat_status, created_at, updated_at
-             FROM agents
             WHERE user_id = $1`,
           [userId]
         ),
@@ -988,9 +956,6 @@ async function ensureWorkspaceHydrated(workspaceId: string | undefined, userId: 
 
       teamResult.rows.forEach((row) => {
         teams.set(row.id, hydrateTeam(row));
-      });
-      agentResult.rows.forEach((row) => {
-        agents.set(row.id, hydrateAgent(row));
       });
       companyResult.rows.forEach((row) => {
         const { company, workspace } = hydrateProvisionedCompany(row);
@@ -1065,61 +1030,9 @@ async function upsertTeamRow(team: ControlPlaneTeam, workspaceId: string, client
   );
 }
 
-async function upsertAgentRow(agent: ControlPlaneAgent, workspaceId: string, client?: PoolClient): Promise<void> {
-  await (client ?? getPostgresPool()).query(
-    `INSERT INTO agents (
-       id, workspace_id, user_id, team_id, name, role_key, workflow_step_id, workflow_step_kind,
-       model, instructions, budget_monthly_usd, reporting_to_agent_id, skills, schedule,
-       status, paused_by_company_lifecycle, current_execution_id, last_heartbeat_at,
-       last_heartbeat_status, created_at, updated_at
-     ) VALUES (
-       $1, $2, $3, $4, $5, $6, $7, $8,
-       $9, $10, $11, $12, $13::jsonb, $14::jsonb,
-       $15, $16, $17, $18, $19, $20, $21
-     )
-     ON CONFLICT (id) DO UPDATE
-       SET team_id = EXCLUDED.team_id,
-           name = EXCLUDED.name,
-           role_key = EXCLUDED.role_key,
-           workflow_step_id = EXCLUDED.workflow_step_id,
-           workflow_step_kind = EXCLUDED.workflow_step_kind,
-           model = EXCLUDED.model,
-           instructions = EXCLUDED.instructions,
-           budget_monthly_usd = EXCLUDED.budget_monthly_usd,
-           reporting_to_agent_id = EXCLUDED.reporting_to_agent_id,
-           skills = EXCLUDED.skills,
-           schedule = EXCLUDED.schedule,
-           status = EXCLUDED.status,
-           paused_by_company_lifecycle = EXCLUDED.paused_by_company_lifecycle,
-           current_execution_id = EXCLUDED.current_execution_id,
-           last_heartbeat_at = COALESCE(EXCLUDED.last_heartbeat_at, agents.last_heartbeat_at),
-           last_heartbeat_status = COALESCE(EXCLUDED.last_heartbeat_status, agents.last_heartbeat_status),
-           updated_at = EXCLUDED.updated_at`,
-    [
-      agent.id,
-      workspaceId,
-      agent.userId,
-      agent.teamId,
-      agent.name,
-      agent.roleKey,
-      agent.workflowStepId ?? null,
-      agent.workflowStepKind ?? null,
-      agent.model ?? null,
-      agent.instructions,
-      agent.budgetMonthlyUsd,
-      agent.reportingToAgentId ?? null,
-      JSON.stringify(agent.skills),
-      JSON.stringify(agent.schedule),
-      agent.status,
-      agent.pausedByCompanyLifecycle ?? false,
-      agent.currentExecutionId ?? null,
-      agent.lastHeartbeatAt ?? null,
-      agent.lastHeartbeatStatus ?? null,
-      agent.createdAt,
-      agent.updatedAt,
-    ]
-  );
-}
+// DASH-64.5: upsertAgentRow moved to controlPlaneRepository.
+// Store-level callers now invoke
+// `controlPlaneRepository.upsertAgent(ctx, agent)` instead.
 
 // DASH-64.4: upsertExecutionRow moved to controlPlaneRepository.
 // Store-level callers (startAgentExecution, finalizeAgentExecution,
@@ -1224,10 +1137,18 @@ function buildBudgetSnapshot(input: {
   };
 }
 
-function listAgentsForTeam(teamId: string, userId: string): ControlPlaneAgent[] {
-  return Array.from(agents.values())
-    .filter((agent) => agent.userId === userId && agent.teamId === teamId)
-    .sort((left, right) => left.createdAt.localeCompare(right.createdAt));
+// DASH-64.5: agents read via repository. Workspace ctx comes from the
+// team mapping (teams still in-memory until DASH-64.6).
+async function listAgentsForTeam(
+  teamId: string,
+  userId: string,
+): Promise<ControlPlaneAgent[]> {
+  const ctx = await workspaceContextForTeam(teamId, userId);
+  if (!ctx) {
+    return [];
+  }
+  const rows = await controlPlaneRepository.listAgents(ctx, { teamId });
+  return rows.filter((agent) => agent.userId === userId);
 }
 
 // DASH-64.3: now async because both spend entries AND budget alerts
@@ -1253,7 +1174,9 @@ async function buildTeamSpendSnapshot(team: ControlPlaneTeam): Promise<TeamSpend
     alertThresholds,
   });
 
-  const agentSnapshots = listAgentsForTeam(team.id, team.userId).map((agent) => {
+  // DASH-64.5: listAgentsForTeam is async now (repo-backed).
+  const teamAgentRows = await listAgentsForTeam(team.id, team.userId);
+  const agentSnapshots = teamAgentRows.map((agent) => {
     const spentUsd = entries
       .filter((entry) => entry.agentId === agent.id)
       .reduce((sum, entry) => sum + entry.costUsd, 0);
@@ -1383,14 +1306,23 @@ async function pauseExecutionForBudget(
     }
   }
 
-  const agent = agents.get(agentId);
+  // DASH-64.5: agent now read+written via repository. Same iter-2
+  // hardening: throw on unresolved ctx.
+  const agentCtx = await workspaceContextForTeam(team.id, team.userId);
+  if (!agentCtx) {
+    throw new Error("pause_execution_workspace_unresolved");
+  }
+  const agent = await controlPlaneRepository.getAgent(agentCtx, agentId);
   if (agent) {
-    agent.currentExecutionId = undefined;
-    agent.lastHeartbeatAt = timestamp;
-    agent.lastHeartbeatStatus = "blocked";
-    agent.updatedAt = timestamp;
-    agent.status = "paused";
-    agents.set(agent.id, agent);
+    const updatedAgent: ControlPlaneAgent = {
+      ...agent,
+      currentExecutionId: undefined,
+      lastHeartbeatAt: timestamp,
+      lastHeartbeatStatus: "blocked",
+      updatedAt: timestamp,
+      status: "paused",
+    };
+    await controlPlaneRepository.upsertAgent(agentCtx, updatedAgent);
   }
 }
 
@@ -1438,16 +1370,27 @@ async function applyBudgetPolicies(team: ControlPlaneTeam, agentId: string, exec
     team.status = "paused";
     team.updatedAt = nowIso();
     teams.set(team.id, team);
-    const teamAgents = listAgentsForTeam(team.id, team.userId);
+    // DASH-64.5: listAgentsForTeam is async (repo-backed). Each agent
+    // mutator routes through repo.upsertAgent — iter-2 hardening:
+    // throw on unresolved workspace ctx.
+    const policiesCtx = await workspaceContextForTeam(team.id, team.userId);
+    if (!policiesCtx) {
+      throw new Error("budget_policies_workspace_unresolved");
+    }
+    const teamAgents = await listAgentsForTeam(team.id, team.userId);
     for (const teamAgent of teamAgents) {
       if (teamAgent.status === "active") {
-        teamAgent.status = "paused";
-        teamAgent.updatedAt = nowIso();
         if (teamAgent.id === agentId) {
-          // DASH-64.4: pauseExecutionForBudget is now async (repo-backed).
+          // DASH-64.4: pauseExecutionForBudget is now async (repo-backed
+          // for both execution and agent).
           await pauseExecutionForBudget(team, teamAgent.id, executionId);
         } else {
-          agents.set(teamAgent.id, teamAgent);
+          const updated: ControlPlaneAgent = {
+            ...teamAgent,
+            status: "paused",
+            updatedAt: nowIso(),
+          };
+          await controlPlaneRepository.upsertAgent(policiesCtx, updated);
         }
       }
     }
@@ -1476,7 +1419,12 @@ async function assertExecutionAllowed(team: ControlPlaneTeam, agent: ControlPlan
 
   if (agentSnapshot && agentSnapshot.budgetUsd > 0 && agentSnapshot.spentUsd >= agentSnapshot.budgetUsd) {
     agent.status = "paused";
-    agents.set(agent.id, agent);
+    // DASH-64.5: persist agent status via repo (iter-2 hardened).
+    const assertCtx = await workspaceContextForTeam(team.id, team.userId);
+    if (!assertCtx) {
+      throw new Error("assert_execution_workspace_unresolved");
+    }
+    await controlPlaneRepository.upsertAgent(assertCtx, agent);
     throw new Error("agent_budget_exceeded");
   }
 }
@@ -1523,22 +1471,25 @@ function createTeamRecord(input: {
   return team;
 }
 
+/**
+ * DASH-64.5: builds an agent record without persisting it. The legacy
+ * `persist = true` branch wrote to the in-memory `agents` Map; with
+ * that Map gone, callers explicitly persist via
+ * `controlPlaneRepository.upsertAgent(ctx, agent)` once they have a
+ * workspace context. This matches the pre-DASH-64.5 `persist = false`
+ * callers (provisionCompanyWorkspace) — now the only flow.
+ */
 function createAgentRecord(
   input: Omit<ControlPlaneAgent, "id" | "createdAt" | "updatedAt">,
-  persist = true
 ): ControlPlaneAgent {
   const timestamp = nowIso();
-  const agent: ControlPlaneAgent = {
+  return {
     ...input,
     skills: [...input.skills],
     id: randomUUID(),
     createdAt: timestamp,
     updatedAt: timestamp,
   };
-  if (persist) {
-    agents.set(agent.id, agent);
-  }
-  return agent;
 }
 
 function provisionStepAgent(input: {
@@ -1573,15 +1524,17 @@ function provisionStepAgent(input: {
   });
 }
 
-function getAgentForWorkflowStep(teamId: string, userId: string, step: WorkflowStep): ControlPlaneAgent | undefined {
+// DASH-64.5: agents read via repository.
+async function getAgentForWorkflowStep(
+  teamId: string,
+  userId: string,
+  step: WorkflowStep,
+): Promise<ControlPlaneAgent | undefined> {
   const requestedRoleKey = inferRoleKey(step);
-  return Array.from(agents.values()).find((agent) => {
-    return (
-      agent.userId === userId &&
-      agent.teamId === teamId &&
-      (agent.workflowStepId === step.id || agent.roleKey === requestedRoleKey)
-    );
-  });
+  const teamAgents = await listAgentsForTeam(teamId, userId);
+  return teamAgents.find(
+    (agent) => agent.workflowStepId === step.id || agent.roleKey === requestedRoleKey,
+  );
 }
 
 function wasExecutionRequestedBeforePause(requestedAt: string, pausedAt?: string): boolean {
@@ -1661,7 +1614,7 @@ export const controlPlaneStore = {
         company: { ...company },
         workspace: { ...workspace },
         team: { ...team },
-        agents: this.listAgents(team.id, input.userId),
+        agents: await this.listAgents(team.id, input.userId),
         secretBindings: replaySummaries,
         availableSkills: this.listSkills(),
         idempotentReplay: true,
@@ -1717,7 +1670,7 @@ export const controlPlaneStore = {
         skills: mergeSkills(roleTemplate.defaultSkills, agentInput.skills),
         schedule: { type: "manual" },
         status: "active",
-      }, false);
+      });
     });
 
     const allocatedBudgetMonthlyUsd = Number(
@@ -1753,9 +1706,6 @@ export const controlPlaneStore = {
     };
 
     teams.set(team.id, team);
-    provisionedAgents.forEach((agent) => {
-      agents.set(agent.id, agent);
-    });
     companies.set(company.id, company);
     companyWorkspaces.set(workspace.id, workspace);
     if (!postgresPersistenceAvailable()) {
@@ -1764,13 +1714,22 @@ export const controlPlaneStore = {
     companyIdempotencyIndex.set(idempotencyIndexKey, { companyId: company.id, fingerprint });
     teamCompanyIds.set(team.id, company.id);
 
+    // DASH-64.5: agents persist via repository (test in-mem bucket OR
+    // production Postgres path both handled there). Iter-2 hardening:
+    // throw on unresolved workspace ctx instead of silently dropping.
+    const provisionCtx = await workspaceContextForTeam(team.id, input.userId);
+    if (!provisionCtx) {
+      throw new Error("agent_provision_workspace_unresolved");
+    }
+    for (const agent of provisionedAgents) {
+      await controlPlaneRepository.upsertAgent(provisionCtx, agent);
+    }
+
     if (postgresPersistenceAvailable()) {
       const workspaceId = requireWorkspaceIdForPersistence(input.workspaceId);
       await withWorkspaceContext(getPostgresPool(), { workspaceId, userId: input.userId }, async (client) => {
         await upsertTeamRow(team, workspaceId, client);
-        for (const agent of provisionedAgents) {
-          await upsertAgentRow(agent, workspaceId, client);
-        }
+        // DASH-64.5: agent writes already persisted above via repo.
         await upsertProvisionedCompanyRow({
           company,
           workspace,
@@ -1845,25 +1804,63 @@ export const controlPlaneStore = {
     return buildMissionState(team);
   },
 
-  listAgents(teamId: string, userId: string, workspaceId?: string): ControlPlaneAgent[] {
+  // DASH-64.5: listAgents is now async — repository-backed. The
+  // access boundary is workspace membership (canAccessTeam), NOT the
+  // agent's userId — pre-DASH-64.5 also did NOT filter by agent.userId,
+  // so a second identity in the same workspace could see provisioned
+  // agents even when they were created under a different user.
+  async listAgents(
+    teamId: string,
+    userId: string,
+    workspaceId?: string,
+  ): Promise<ControlPlaneAgent[]> {
     const team = teams.get(teamId);
     if (!canAccessTeam(team, userId, workspaceId)) {
       return [];
     }
-    return Array.from(agents.values())
-      .filter((agent) => agent.teamId === teamId)
-      .sort((left, right) => left.createdAt.localeCompare(right.createdAt));
+    let resolvedWorkspaceId = workspaceId;
+    if (!resolvedWorkspaceId) {
+      const teamCtx = await workspaceContextForTeam(teamId, userId);
+      resolvedWorkspaceId = teamCtx?.workspaceId;
+    }
+    if (!resolvedWorkspaceId) {
+      return [];
+    }
+    return controlPlaneRepository.listAgents(
+      { workspaceId: resolvedWorkspaceId, userId },
+      { teamId },
+    );
   },
 
-  listAllAgents(userId: string, workspaceId?: string): ControlPlaneAgent[] {
+  // DASH-64.5: listAllAgents is now async — repository-backed.
+  async listAllAgents(
+    userId: string,
+    workspaceId?: string,
+  ): Promise<ControlPlaneAgent[]> {
     const accessibleTeamIds = listAccessibleTeamIds(userId, workspaceId);
-    return Array.from(agents.values())
-      .filter((agent) => accessibleTeamIds.has(agent.teamId))
-      .sort((left, right) => left.createdAt.localeCompare(right.createdAt));
+    if (workspaceId) {
+      const rows = await controlPlaneRepository.listAgents(
+        { workspaceId, userId },
+      );
+      return rows.filter((agent) => accessibleTeamIds.has(agent.teamId));
+    }
+    const rows = await controlPlaneRepository.listAllAgentsForUser(userId);
+    return rows.filter((agent) => accessibleTeamIds.has(agent.teamId));
   },
 
-  getAgent(agentId: string, userId: string, workspaceId?: string): ControlPlaneAgent | undefined {
-    const agent = agents.get(agentId);
+  // DASH-64.5: getAgent is now async — repository-backed.
+  async getAgent(
+    agentId: string,
+    userId: string,
+    workspaceId?: string,
+  ): Promise<ControlPlaneAgent | undefined> {
+    if (workspaceId) {
+      const agent = await controlPlaneRepository.getAgent({ workspaceId, userId }, agentId);
+      return canAccessAgent(agent, userId, workspaceId) ? agent : undefined;
+    }
+    // No workspace pinned — use the cross-workspace fallback.
+    const all = await controlPlaneRepository.listAllAgentsForUser(userId);
+    const agent = all.find((candidate) => candidate.id === agentId);
     return canAccessAgent(agent, userId, workspaceId) ? agent : undefined;
   },
 
@@ -1892,12 +1889,13 @@ export const controlPlaneStore = {
   },
 
   // DASH-64.4: listAgentExecutions is now async — repository-backed.
+  // DASH-64.5: agent existence check now goes through repo too.
   async listAgentExecutions(
     agentId: string,
     userId: string,
     workspaceId?: string,
   ): Promise<ControlPlaneExecution[]> {
-    const agent = agents.get(agentId);
+    const agent = await this.getAgent(agentId, userId, workspaceId);
     if (!canAccessAgent(agent, userId, workspaceId)) {
       return [];
     }
@@ -1917,12 +1915,13 @@ export const controlPlaneStore = {
   },
 
   // DASH-64.2: now async — repository-backed.
+  // DASH-64.5: agent existence check goes through repo too.
   async listAgentHeartbeats(
     agentId: string,
     userId: string,
     workspaceId?: string,
   ): Promise<AgentHeartbeatRecord[]> {
-    const agent = agents.get(agentId);
+    const agent = await this.getAgent(agentId, userId, workspaceId);
     if (!canAccessAgent(agent, userId, workspaceId)) {
       return [];
     }
@@ -2032,6 +2031,11 @@ export const controlPlaneStore = {
     const perWorkerBudget =
       actionableSteps.length > 0 ? Number((workerBudgetPool / actionableSteps.length).toFixed(2)) : 0;
 
+    // DASH-64.5: collect agents into a local list (previously persisted
+    // straight to the `agents` Map via createAgentRecord). Then persist
+    // each via repo.upsertAgent (in-memory bucket in test, Postgres in
+    // prod).
+    const provisionedAgents: ControlPlaneAgent[] = [];
     const manager = createAgentRecord({
       teamId: team.id,
       userId: input.userId,
@@ -2044,51 +2048,64 @@ export const controlPlaneStore = {
       schedule: { type: "manual" },
       status: "active",
     });
+    provisionedAgents.push(manager);
 
     actionableSteps.forEach((step, index) => {
-      provisionStepAgent({
-        teamId: team.id,
-        userId: input.userId,
-        step,
-        budgetMonthlyUsd: perWorkerBudget,
-        reportingToAgentId: manager.id,
-        defaultIntervalMinutes: input.defaultIntervalMinutes,
-        index,
-      });
+      provisionedAgents.push(
+        provisionStepAgent({
+          teamId: team.id,
+          userId: input.userId,
+          step,
+          budgetMonthlyUsd: perWorkerBudget,
+          reportingToAgentId: manager.id,
+          defaultIntervalMinutes: input.defaultIntervalMinutes,
+          index,
+        }),
+      );
     });
 
     if (actionableSteps.length === 0) {
-      createAgentRecord({
-        teamId: team.id,
-        userId: input.userId,
-        name: "General Operator",
-        roleKey: "general-operator",
-        instructions: `Execute operational work for ${input.template.name} when no step-specific agent mapping exists.`,
-        budgetMonthlyUsd: workerBudgetPool,
-        reportingToAgentId: manager.id,
-        skills: ["paperclip"],
-        schedule:
-          input.defaultIntervalMinutes && input.defaultIntervalMinutes > 0
-            ? { type: "interval", intervalMinutes: input.defaultIntervalMinutes }
-            : { type: "manual" },
-        status: "active",
-      });
+      provisionedAgents.push(
+        createAgentRecord({
+          teamId: team.id,
+          userId: input.userId,
+          name: "General Operator",
+          roleKey: "general-operator",
+          instructions: `Execute operational work for ${input.template.name} when no step-specific agent mapping exists.`,
+          budgetMonthlyUsd: workerBudgetPool,
+          reportingToAgentId: manager.id,
+          skills: ["paperclip"],
+          schedule:
+            input.defaultIntervalMinutes && input.defaultIntervalMinutes > 0
+              ? { type: "interval", intervalMinutes: input.defaultIntervalMinutes }
+              : { type: "manual" },
+          status: "active",
+        }),
+      );
+    }
+
+    // DASH-64.5: persist agents via repo (iter-2 hardening: throw on
+    // unresolved ctx instead of silently dropping).
+    const deployCtx = await workspaceContextForTeam(team.id, input.userId);
+    if (!deployCtx) {
+      throw new Error("agent_provision_workspace_unresolved");
+    }
+    for (const agent of provisionedAgents) {
+      await controlPlaneRepository.upsertAgent(deployCtx, agent);
     }
 
     if (postgresPersistenceAvailable()) {
       const workspaceId = requireWorkspaceIdForPersistence(input.workspaceId);
       await withWorkspaceContext(getPostgresPool(), { workspaceId, userId: input.userId }, async (client) => {
         await upsertTeamRow(team, workspaceId, client);
-        for (const agent of this.listAgents(team.id, input.userId)) {
-          await upsertAgentRow(agent, workspaceId, client);
-        }
+        // DASH-64.5: agents already persisted via repo.upsertAgent above.
       });
       hydratedWorkspaceUsers.add(workspaceUserKey(workspaceId, input.userId));
     }
 
     return {
       team,
-      agents: this.listAgents(team.id, input.userId),
+      agents: await this.listAgents(team.id, input.userId),
       workflow: {
         id: input.template.id,
         name: input.template.name,
@@ -2127,7 +2144,9 @@ export const controlPlaneStore = {
       });
     }
 
-    let agent = getAgentForWorkflowStep(team.id, input.userId, input.step);
+    // DASH-64.5: getAgentForWorkflowStep is async (repo-backed).
+    let agent = await getAgentForWorkflowStep(team.id, input.userId, input.step);
+    let agentIsNew = false;
     if (!agent) {
       agent = provisionStepAgent({
         teamId: team.id,
@@ -2135,13 +2154,24 @@ export const controlPlaneStore = {
         step: input.step,
         budgetMonthlyUsd: input.step.agentBudgetMonthlyUsd ?? 0,
       });
+      agentIsNew = true;
+    }
+
+    // DASH-64.5: persist newly-provisioned agent via repo (iter-2
+    // hardening). Existing agents already live in the repo.
+    if (agentIsNew) {
+      const runtimeCtx = await workspaceContextForTeam(team.id, input.userId);
+      if (!runtimeCtx) {
+        throw new Error("agent_provision_workspace_unresolved");
+      }
+      await controlPlaneRepository.upsertAgent(runtimeCtx, agent);
     }
 
     if (postgresPersistenceAvailable()) {
       const workspaceId = requireWorkspaceIdForPersistence(input.workspaceId);
       await withWorkspaceContext(getPostgresPool(), { workspaceId, userId: input.userId }, async (client) => {
         await upsertTeamRow(team!, workspaceId, client);
-        await upsertAgentRow(agent!, workspaceId, client);
+        // DASH-64.5: agent persistence already handled above via repo.
       });
       hydratedWorkspaceUsers.add(workspaceUserKey(workspaceId, input.userId));
     }
@@ -2183,24 +2213,28 @@ export const controlPlaneStore = {
     }
     team.updatedAt = timestamp;
 
-    this.listAgents(team.id, input.userId).forEach((agent) => {
-      agent.status = toAgentStatus(input.action);
-      agent.pausedByCompanyLifecycle = false;
-      agent.updatedAt = timestamp;
-      if (input.action === "stop") {
-        agent.currentExecutionId = undefined;
-      }
-    });
-
-    // DASH-64.4: load + mutate + persist execution rows via repository.
-    // No more in-memory Map; we compute updates on the loaded snapshot
-    // and write each back via upsertExecution.
+    // DASH-64.5: agents + executions are now repository-backed. Load
+    // → mutate → persist in batch. Resolve workspace ctx ONCE for both.
     // DASH-64.4 iter 2 (mirrors Codex P1 on #901): throw on unresolved
     // workspace ctx so a team-lifecycle action doesn't silently leave
     // queued/running executions in a stale state.
     const lifecycleCtx = await workspaceContextForTeam(team.id, input.userId);
     if (!lifecycleCtx) {
       throw new Error("team_lifecycle_workspace_unresolved");
+    }
+
+    const teamAgentsForLifecycle = await this.listAgents(team.id, input.userId);
+    for (const agent of teamAgentsForLifecycle) {
+      const updatedAgent: ControlPlaneAgent = {
+        ...agent,
+        status: toAgentStatus(input.action),
+        pausedByCompanyLifecycle: false,
+        updatedAt: timestamp,
+      };
+      if (input.action === "stop") {
+        updatedAgent.currentExecutionId = undefined;
+      }
+      await controlPlaneRepository.upsertAgent(lifecycleCtx, updatedAgent);
     }
     if (input.action === "stop" || input.action === "restart") {
       const teamExecutions = await controlPlaneRepository.listExecutions(lifecycleCtx, {
@@ -2240,11 +2274,8 @@ export const controlPlaneStore = {
       const workspaceId = requireWorkspaceIdForPersistence(input.workspaceId);
       await withWorkspaceContext(getPostgresPool(), { workspaceId, userId: input.userId }, async (client) => {
         await upsertTeamRow(team, workspaceId, client);
-        for (const agent of this.listAgents(team.id, input.userId)) {
-          await upsertAgentRow(agent, workspaceId, client);
-        }
-        // DASH-64.4: execution writes already persisted via the repo
-        // upsert loop above; no in-TX echo needed here.
+        // DASH-64.4/5: agent + execution writes already persisted via
+        // the repo upsert loops above; no in-TX echo needed here.
       });
       hydratedWorkspaceUsers.add(workspaceUserKey(workspaceId, input.userId));
     }
@@ -2259,7 +2290,8 @@ export const controlPlaneStore = {
     skills: string[];
   }): Promise<ControlPlaneAgent> {
     await ensureWorkspaceHydrated(input.workspaceId, input.userId);
-    const agent = getAgentOwnedByUser(input.agentId, input.userId);
+    // DASH-64.5: getAgentOwnedByUser is now async (repo-backed).
+    const agent = await getAgentOwnedByUser(input.agentId, input.userId);
     if (!agent) {
       throw new Error("agent_not_found");
     }
@@ -2276,8 +2308,7 @@ export const controlPlaneStore = {
     });
     agent.skills = Array.from(current.values()).sort();
     agent.updatedAt = nowIso();
-    agents.set(agent.id, agent);
-
+    // DASH-64.5: agent persists via repository.
     // DASH-64.4: skill propagation onto live executions now flows
     // through the repository (no more in-memory Map mutation).
     //
@@ -2301,14 +2332,11 @@ export const controlPlaneStore = {
       await controlPlaneRepository.upsertExecution(skillsCtx, updated);
     }
 
-    if (postgresPersistenceAvailable()) {
-      const workspaceId = requireWorkspaceIdForPersistence(input.workspaceId);
-      await withWorkspaceContext(getPostgresPool(), { workspaceId, userId: input.userId }, async (client) => {
-        await upsertAgentRow(agent, workspaceId, client);
-        // DASH-64.4: execution skill updates already persisted via the
-        // repo upsert loop above.
-      });
-      hydratedWorkspaceUsers.add(workspaceUserKey(workspaceId, input.userId));
+    // DASH-64.5: persist agent via repo (handles both test in-memory
+    // and prod Postgres paths).
+    await controlPlaneRepository.upsertAgent(skillsCtx, agent);
+    if (postgresPersistenceAvailable() && input.workspaceId) {
+      hydratedWorkspaceUsers.add(workspaceUserKey(input.workspaceId, input.userId));
     }
 
     return agent;
@@ -2331,7 +2359,8 @@ export const controlPlaneStore = {
     }
 
     if (input.assignedAgentId) {
-      const agent = getAgentOwnedByUser(input.assignedAgentId, input.userId);
+      // DASH-64.5: getAgentOwnedByUser is async now (repo-backed).
+      const agent = await getAgentOwnedByUser(input.assignedAgentId, input.userId, team.id);
       if (!agent || agent.teamId !== team.id) {
         throw new Error("agent_not_found");
       }
@@ -2608,26 +2637,34 @@ export const controlPlaneStore = {
         }
       });
 
-    Array.from(agents.values())
-      .filter((agent) => agent.userId === input.userId)
-      .forEach((agent) => {
-        if (input.action === "pause") {
-          if (agent.status === "active") {
-            agent.status = "paused";
-            agent.pausedByCompanyLifecycle = true;
-            agent.updatedAt = timestamp;
-            affectedAgentIds.push(agent.id);
-          }
-          return;
+    // DASH-64.5: agents read from repository, persisted back per
+    // mutation (iter-2 hardening throws on unresolved workspace).
+    const allAgents = await controlPlaneRepository.listAllAgentsForUser(input.userId);
+    for (const agent of allAgents) {
+      let mutated = false;
+      const updated: ControlPlaneAgent = { ...agent };
+      if (input.action === "pause") {
+        if (updated.status === "active") {
+          updated.status = "paused";
+          updated.pausedByCompanyLifecycle = true;
+          updated.updatedAt = timestamp;
+          mutated = true;
         }
-
-        if (agent.status === "paused" && agent.pausedByCompanyLifecycle) {
-          agent.status = "active";
-          agent.pausedByCompanyLifecycle = false;
-          agent.updatedAt = timestamp;
-          affectedAgentIds.push(agent.id);
+      } else if (updated.status === "paused" && updated.pausedByCompanyLifecycle) {
+        updated.status = "active";
+        updated.pausedByCompanyLifecycle = false;
+        updated.updatedAt = timestamp;
+        mutated = true;
+      }
+      if (mutated) {
+        const lifecycleAgentCtx = await workspaceContextForTeam(agent.teamId, input.userId);
+        if (!lifecycleAgentCtx) {
+          throw new Error("company_lifecycle_workspace_unresolved");
         }
-      });
+        await controlPlaneRepository.upsertAgent(lifecycleAgentCtx, updated);
+        affectedAgentIds.push(updated.id);
+      }
+    }
 
     const { state, auditEntry } = await companyLifecycleStore.applyAction({
       userId: input.userId,
@@ -2662,7 +2699,10 @@ export const controlPlaneStore = {
     metadata?: Record<string, unknown>;
   }): Promise<ControlPlaneSpendEntry> {
     const team = getTeamOwnedByUser(input.teamId, input.userId);
-    const agent = getAgentOwnedByUser(input.agentId, input.userId);
+    // DASH-64.5: getAgentOwnedByUser is async now (repo-backed).
+    const agent = team
+      ? await getAgentOwnedByUser(input.agentId, input.userId, team.id)
+      : undefined;
     if (!team || !agent || agent.teamId !== team.id) {
       throw new Error("agent_not_found");
     }
@@ -2745,9 +2785,14 @@ export const controlPlaneStore = {
       throw new Error("team_not_found");
     }
 
+    // DASH-64.5: getAgentOwnedByUser + getAgentForWorkflowStep are
+    // async now (repo-backed).
+    const explicitAgent = input.requestedAgentId
+      ? await getAgentOwnedByUser(input.requestedAgentId, input.userId, team.id)
+      : undefined;
     const agent =
-      (input.requestedAgentId ? getAgentOwnedByUser(input.requestedAgentId, input.userId) : undefined) ??
-      getAgentForWorkflowStep(input.teamId, input.userId, input.step);
+      explicitAgent ??
+      (await getAgentForWorkflowStep(input.teamId, input.userId, input.step));
     if (!agent || agent.teamId !== team.id) {
       throw new Error("agent_not_found");
     }
@@ -2828,6 +2873,10 @@ export const controlPlaneStore = {
     agent.lastHeartbeatStatus = "running";
     normalizeAgentStatusForSuccessfulHeartbeat(agent, "running");
     agent.updatedAt = requestedAt;
+    // DASH-64.5: persist agent mutation BEFORE recordHeartbeat fetches
+    // a fresh copy via repo.getAgent (otherwise the mutation would be
+    // lost). Reuses startCtx (same workspace).
+    await controlPlaneRepository.upsertAgent(startCtx, agent);
 
     team.lastHeartbeatAt = requestedAt;
     team.updatedAt = requestedAt;
@@ -2872,8 +2921,8 @@ export const controlPlaneStore = {
       const workspaceId = requireWorkspaceIdForPersistence(input.workspaceId);
       await withWorkspaceContext(getPostgresPool(), { workspaceId, userId: input.userId }, async (client) => {
         await upsertTeamRow(team, workspaceId, client);
-        await upsertAgentRow(agent, workspaceId, client);
         // DASH-64.4: execution persisted above via repo.upsertExecution.
+        // DASH-64.5: agent persisted above via repo.upsertAgent.
       });
       hydratedWorkspaceUsers.add(workspaceUserKey(workspaceId, input.userId));
     }
@@ -2921,13 +2970,15 @@ export const controlPlaneStore = {
     }
     await controlPlaneRepository.upsertExecution(finalizeCtx, execution);
 
-    const agent = agents.get(execution.agentId);
+    // DASH-64.5: agent read+written via repository.
+    const agent = await controlPlaneRepository.getAgent(finalizeCtx, execution.agentId);
     if (agent) {
       agent.currentExecutionId = undefined;
       agent.lastHeartbeatAt = timestamp;
       agent.lastHeartbeatStatus = toHeartbeatStatus(input.status);
       normalizeAgentStatusForSuccessfulHeartbeat(agent, agent.lastHeartbeatStatus);
       agent.updatedAt = timestamp;
+      await controlPlaneRepository.upsertAgent(finalizeCtx, agent);
     }
 
     const team = teams.get(execution.teamId);
@@ -3033,10 +3084,8 @@ export const controlPlaneStore = {
         if (team) {
           await upsertTeamRow(team, workspaceId, client);
         }
-        if (agent) {
-          await upsertAgentRow(agent, workspaceId, client);
-        }
         // DASH-64.4: execution persisted above via repo.upsertExecution.
+        // DASH-64.5: agent persisted above via repo.upsertAgent.
       });
       hydratedWorkspaceUsers.add(workspaceUserKey(workspaceId, input.userId));
     }
@@ -3107,7 +3156,10 @@ export const controlPlaneStore = {
     await ensureWorkspaceHydrated(input.workspaceId, input.userId);
     const companyState = await companyLifecycleStore.getState(input.userId);
     const team = getTeamOwnedByUser(input.teamId, input.userId);
-    const agent = getAgentOwnedByUser(input.agentId, input.userId);
+    // DASH-64.5: getAgentOwnedByUser is async now (repo-backed).
+    const agent = team
+      ? await getAgentOwnedByUser(input.agentId, input.userId, team.id)
+      : undefined;
     if (!team || !agent || agent.teamId !== team.id) {
       throw new Error("agent_not_found");
     }
@@ -3271,11 +3323,20 @@ export const controlPlaneStore = {
       });
     }
 
+    // DASH-64.5: persist mutated agent via repo. Iter-2 hardening:
+    // we resolved heartbeatCtx earlier; reuse it (workspace context is
+    // the same as the heartbeat's).
+    const agentPersistCtx = await workspaceContextForTeam(team.id, input.userId);
+    if (!agentPersistCtx) {
+      throw new Error("heartbeat_workspace_unresolved");
+    }
+    await controlPlaneRepository.upsertAgent(agentPersistCtx, agent);
+
     if (postgresPersistenceAvailable()) {
       const workspaceId = requireWorkspaceIdForPersistence(input.workspaceId);
       await withWorkspaceContext(getPostgresPool(), { workspaceId, userId: input.userId }, async (client) => {
         await upsertTeamRow(team, workspaceId, client);
-        await upsertAgentRow(agent, workspaceId, client);
+        // DASH-64.5: agent persisted above via repo.upsertAgent.
         // DASH-64.4: execution write already happened above via repo
         // upsertExecution (no in-TX echo needed).
       });
@@ -3336,7 +3397,7 @@ export const controlPlaneStore = {
 
   clear(): void {
     teams.clear();
-    agents.clear();
+    // DASH-64.5: agents Map gone; cleared via the repository reset.
     // DASH-64.1: tasks Map no longer lives here.
     // DASH-64.2: heartbeats Map no longer lives here either.
     // Both — plus future spend/budget-alert Maps — are cleared via the

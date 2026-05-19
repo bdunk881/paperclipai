@@ -18,7 +18,10 @@ import { getPostgresPool, inMemoryAllowed, isPostgresConfigured } from "../db/po
 import { withWorkspaceContext } from "../middleware/workspaceContext";
 import {
   AgentHeartbeatRecord,
+  AgentLifecycleStatus,
   BudgetAlertScope,
+  ControlPlaneAgent,
+  ControlPlaneAgentSchedule,
   ControlPlaneBudgetAlert,
   ControlPlaneExecution,
   ControlPlaneExecutionStatus,
@@ -60,6 +63,9 @@ const memBudgetAlerts = new Map<string, Map<string, ControlPlaneBudgetAlert>>();
 // allowlist: test/dev fallback for repository; production routes to Postgres
 // DASH-64.4: executions Map ownership moves from controlPlaneStore to repo.
 const memExecutions = new Map<string, Map<string, ControlPlaneExecution>>();
+// allowlist: test/dev fallback for repository; production routes to Postgres
+// DASH-64.5: agents Map ownership moves from controlPlaneStore to repo.
+const memAgents = new Map<string, Map<string, ControlPlaneAgent>>();
 
 function memBucket<T>(
   store: Map<string, Map<string, T>>,
@@ -155,6 +161,30 @@ interface ExecutionRow {
   completed_at: Date | null;
   last_heartbeat_at: Date | null;
   restart_count: number;
+}
+
+interface AgentRow {
+  id: string;
+  workspace_id: string;
+  user_id: string;
+  team_id: string;
+  name: string;
+  role_key: string;
+  workflow_step_id: string | null;
+  workflow_step_kind: string | null;
+  model: string | null;
+  instructions: string;
+  budget_monthly_usd: string | number;
+  reporting_to_agent_id: string | null;
+  skills: string[] | null;
+  schedule: ControlPlaneAgentSchedule | null;
+  status: AgentLifecycleStatus;
+  paused_by_company_lifecycle: boolean | null;
+  current_execution_id: string | null;
+  last_heartbeat_at: Date | null;
+  last_heartbeat_status: HeartbeatStatus | null;
+  created_at: Date;
+  updated_at: Date;
 }
 
 interface BudgetAlertRow {
@@ -270,6 +300,38 @@ function rowToExecution(row: ExecutionRow): ControlPlaneExecution {
     completedAt: isoFromDate(row.completed_at),
     lastHeartbeatAt: isoFromDate(row.last_heartbeat_at),
     restartCount: row.restart_count,
+  };
+}
+
+function rowToAgent(row: AgentRow): ControlPlaneAgent {
+  const budget = typeof row.budget_monthly_usd === "string"
+    ? Number.parseFloat(row.budget_monthly_usd)
+    : row.budget_monthly_usd;
+  const schedule: ControlPlaneAgentSchedule =
+    row.schedule && typeof row.schedule === "object" && !Array.isArray(row.schedule)
+      ? (row.schedule as ControlPlaneAgentSchedule)
+      : { type: "manual" };
+  return {
+    id: row.id,
+    teamId: row.team_id,
+    userId: row.user_id,
+    name: row.name,
+    roleKey: row.role_key,
+    workflowStepId: row.workflow_step_id ?? undefined,
+    workflowStepKind: row.workflow_step_kind ?? undefined,
+    model: row.model ?? undefined,
+    instructions: row.instructions ?? "",
+    budgetMonthlyUsd: Number.isFinite(budget) ? Number(budget) : 0,
+    reportingToAgentId: row.reporting_to_agent_id ?? undefined,
+    skills: Array.isArray(row.skills) ? row.skills : [],
+    schedule,
+    status: row.status,
+    pausedByCompanyLifecycle: row.paused_by_company_lifecycle || undefined,
+    currentExecutionId: row.current_execution_id ?? undefined,
+    lastHeartbeatAt: isoFromDate(row.last_heartbeat_at),
+    lastHeartbeatStatus: row.last_heartbeat_status ?? undefined,
+    createdAt: isoFromDateRequired(row.created_at),
+    updatedAt: isoFromDateRequired(row.updated_at),
   };
 }
 
@@ -400,6 +462,66 @@ async function insertSpendEntryRow(
       entry.toolName ?? null,
       entry.metadata ? JSON.stringify(entry.metadata) : null,
       new Date(entry.recordedAt),
+    ]
+  );
+}
+
+async function upsertAgentRowInClient(
+  client: PoolClient,
+  ctx: ControlPlaneRepoContext,
+  agent: ControlPlaneAgent
+): Promise<void> {
+  await client.query(
+    `INSERT INTO agents (
+       id, workspace_id, user_id, team_id, name, role_key, workflow_step_id, workflow_step_kind,
+       model, instructions, budget_monthly_usd, reporting_to_agent_id, skills, schedule,
+       status, paused_by_company_lifecycle, current_execution_id, last_heartbeat_at,
+       last_heartbeat_status, created_at, updated_at
+     ) VALUES (
+       $1, $2, $3, $4, $5, $6, $7, $8,
+       $9, $10, $11, $12, $13::jsonb, $14::jsonb,
+       $15, $16, $17, $18, $19, $20, $21
+     )
+     ON CONFLICT (id) DO UPDATE
+       SET team_id = EXCLUDED.team_id,
+           name = EXCLUDED.name,
+           role_key = EXCLUDED.role_key,
+           workflow_step_id = EXCLUDED.workflow_step_id,
+           workflow_step_kind = EXCLUDED.workflow_step_kind,
+           model = EXCLUDED.model,
+           instructions = EXCLUDED.instructions,
+           budget_monthly_usd = EXCLUDED.budget_monthly_usd,
+           reporting_to_agent_id = EXCLUDED.reporting_to_agent_id,
+           skills = EXCLUDED.skills,
+           schedule = EXCLUDED.schedule,
+           status = EXCLUDED.status,
+           paused_by_company_lifecycle = EXCLUDED.paused_by_company_lifecycle,
+           current_execution_id = EXCLUDED.current_execution_id,
+           last_heartbeat_at = COALESCE(EXCLUDED.last_heartbeat_at, agents.last_heartbeat_at),
+           last_heartbeat_status = COALESCE(EXCLUDED.last_heartbeat_status, agents.last_heartbeat_status),
+           updated_at = EXCLUDED.updated_at`,
+    [
+      agent.id,
+      ctx.workspaceId,
+      agent.userId,
+      agent.teamId,
+      agent.name,
+      agent.roleKey,
+      agent.workflowStepId ?? null,
+      agent.workflowStepKind ?? null,
+      agent.model ?? null,
+      agent.instructions,
+      agent.budgetMonthlyUsd,
+      agent.reportingToAgentId ?? null,
+      JSON.stringify(agent.skills),
+      JSON.stringify(agent.schedule),
+      agent.status,
+      agent.pausedByCompanyLifecycle ?? false,
+      agent.currentExecutionId ?? null,
+      agent.lastHeartbeatAt ?? null,
+      agent.lastHeartbeatStatus ?? null,
+      agent.createdAt,
+      agent.updatedAt,
     ]
   );
 }
@@ -1045,6 +1167,152 @@ export const controlPlaneRepository = {
   },
 
   /**
+   * DASH-64.5: persist (insert or update) an agent row. Mirrors
+   * upsertExecution: production routes through Postgres via
+   * withWorkspaceContext, test mode buckets by workspace in memAgents.
+   * Callers mutate the agent record locally and call this to persist.
+   */
+  async upsertAgent(
+    ctx: ControlPlaneRepoContext,
+    agent: ControlPlaneAgent
+  ): Promise<void> {
+    if (useInMemoryFallback()) {
+      memBucket(memAgents, ctx.workspaceId).set(agent.id, { ...agent });
+      return;
+    }
+    await withWorkspaceContext(getPostgresPool(), ctx, async (client) => {
+      await upsertAgentRowInClient(client, ctx, agent);
+    });
+  },
+
+  /**
+   * DASH-64.5: single-agent lookup, mirrors getExecution. Returns a copy
+   * the caller can mutate freely; persistence requires a follow-up
+   * upsertAgent. RLS in production / workspaceId bucket in tests
+   * provides the access boundary.
+   */
+  async getAgent(
+    ctx: ControlPlaneRepoContext,
+    agentId: string
+  ): Promise<ControlPlaneAgent | undefined> {
+    if (useInMemoryFallback()) {
+      const inWorkspace = memBucket(memAgents, ctx.workspaceId).get(agentId);
+      if (inWorkspace) return { ...inWorkspace };
+      // DASH-64.5: same cross-workspace fallback shape as getTask /
+      // getExecution. Production RLS makes this branch unreachable.
+      for (const bucket of memAgents.values()) {
+        const agent = bucket.get(agentId);
+        if (agent) return { ...agent };
+      }
+      return undefined;
+    }
+    return withWorkspaceContext(getPostgresPool(), ctx, async (client) => {
+      const result = await client.query<AgentRow>(
+        `SELECT id, workspace_id, team_id, user_id, name, role_key,
+                workflow_step_id, workflow_step_kind, model, instructions,
+                budget_monthly_usd, reporting_to_agent_id, skills, schedule,
+                status, paused_by_company_lifecycle, current_execution_id,
+                last_heartbeat_at, last_heartbeat_status,
+                created_at, updated_at
+           FROM agents
+          WHERE id = $1`,
+        [agentId]
+      );
+      const row = result.rows[0];
+      return row ? rowToAgent(row) : undefined;
+    });
+  },
+
+  async listAgents(
+    ctx: ControlPlaneRepoContext,
+    filters?: { teamId?: string; status?: AgentLifecycleStatus }
+  ): Promise<ControlPlaneAgent[]> {
+    if (useInMemoryFallback()) {
+      // DASH-64.5: workspace IS the access boundary (RLS analogue) —
+      // no userId filter. Mirrors the pre-DASH-64.5 in-memory listAgents
+      // which only filtered by teamId (canAccessTeam handled access).
+      const bucket = memBucket(memAgents, ctx.workspaceId);
+      const rows = Array.from(bucket.values()).filter((agent) => {
+        if (filters?.teamId && agent.teamId !== filters.teamId) return false;
+        if (filters?.status && agent.status !== filters.status) return false;
+        return true;
+      });
+      return rows
+        .map((agent) => ({ ...agent }))
+        .sort((left, right) => left.createdAt.localeCompare(right.createdAt));
+    }
+    return withWorkspaceContext(getPostgresPool(), ctx, async (client) => {
+      // DASH-64.5: no user_id filter — workspace RLS is the access
+      // boundary (same pattern as DASH-64.1 listTasks).
+      const params: unknown[] = [];
+      const conditions: string[] = [];
+      if (filters?.teamId) {
+        params.push(filters.teamId);
+        conditions.push(`team_id = $${params.length}`);
+      }
+      if (filters?.status) {
+        params.push(filters.status);
+        conditions.push(`status = $${params.length}`);
+      }
+      const where = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
+      const result = await client.query<AgentRow>(
+        `SELECT id, workspace_id, team_id, user_id, name, role_key,
+                workflow_step_id, workflow_step_kind, model, instructions,
+                budget_monthly_usd, reporting_to_agent_id, skills, schedule,
+                status, paused_by_company_lifecycle, current_execution_id,
+                last_heartbeat_at, last_heartbeat_status,
+                created_at, updated_at
+           FROM agents
+          ${where}
+          ORDER BY created_at ASC`,
+        params
+      );
+      return result.rows.map(rowToAgent);
+    });
+  },
+
+  /**
+   * DASH-64.5: workspace-less fallback for legacy callers that have a
+   * userId but no resolved workspaceId (cross-workspace dashboards).
+   * Same pattern as listAllTasksForUser → migration 049 SECURITY
+   * DEFINER helper, bound to app.current_user_id.
+   */
+  async listAllAgentsForUser(userId: string): Promise<ControlPlaneAgent[]> {
+    if (useInMemoryFallback()) {
+      const out: ControlPlaneAgent[] = [];
+      for (const bucket of memAgents.values()) {
+        for (const agent of bucket.values()) {
+          if (agent.userId === userId) out.push({ ...agent });
+        }
+      }
+      return out.sort((left, right) => left.createdAt.localeCompare(right.createdAt));
+    }
+    const pool = getPostgresPool();
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN");
+      await client.query("SELECT set_config('app.current_user_id', $1, true)", [userId]);
+      const result = await client.query<AgentRow>(
+        `SELECT id, workspace_id, team_id, user_id, name, role_key,
+                workflow_step_id, workflow_step_kind, model, instructions,
+                budget_monthly_usd, reporting_to_agent_id, skills, schedule,
+                status, paused_by_company_lifecycle, current_execution_id,
+                last_heartbeat_at, last_heartbeat_status,
+                created_at, updated_at
+           FROM list_agents_for_user($1)`,
+        [userId]
+      );
+      await client.query("COMMIT");
+      return result.rows.map(rowToAgent);
+    } catch (err) {
+      await client.query("ROLLBACK").catch(() => undefined);
+      throw err;
+    } finally {
+      client.release();
+    }
+  },
+
+  /**
    * DASH-64.4: persist (insert or update) an execution row. Used by every
    * write-side mutator in controlPlaneStore (startAgentExecution,
    * finalizeAgentExecution, recordHeartbeat, updateExecutionLifecycle,
@@ -1250,6 +1518,7 @@ export function __resetRepositoryInMemoryStateForTests(): void {
   memSpendEntries.clear();
   memBudgetAlerts.clear();
   memExecutions.clear();
+  memAgents.clear();
 }
 
 export type ControlPlaneRepository = typeof controlPlaneRepository;

@@ -26,7 +26,8 @@ describe("controlPlaneStore identity scoping", () => {
     });
 
     expect(controlPlaneStore.listTeams(provisioningUserId, workspaceId)).toHaveLength(1);
-    expect(controlPlaneStore.listAgents(provisioned.team.id, provisioningUserId, workspaceId)).toHaveLength(1);
+    // DASH-64.5: listAgents is async now (repo-backed).
+    expect(await controlPlaneStore.listAgents(provisioned.team.id, provisioningUserId, workspaceId)).toHaveLength(1);
 
     expect(controlPlaneStore.listTeams(browserUserId, workspaceId)).toEqual([
       expect.objectContaining({ id: provisioned.team.id }),
@@ -34,7 +35,7 @@ describe("controlPlaneStore identity scoping", () => {
     expect(controlPlaneStore.getTeam(provisioned.team.id, browserUserId, workspaceId)).toEqual(
       expect.objectContaining({ id: provisioned.team.id })
     );
-    expect(controlPlaneStore.listAgents(provisioned.team.id, browserUserId, workspaceId)).toEqual([
+    expect(await controlPlaneStore.listAgents(provisioned.team.id, browserUserId, workspaceId)).toEqual([
       expect.objectContaining({ id: provisioned.agents[0].id }),
     ]);
   });

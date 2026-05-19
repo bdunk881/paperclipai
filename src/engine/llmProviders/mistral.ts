@@ -62,6 +62,11 @@ export function createMistralProvider(config: LLMProviderConfig): LLMProvider {
         ...(responseFormat
           ? ({ responseFormat } as unknown as Record<string, unknown>)
           : {}),
+        // HEL-147 followup (Codex on PR #900): honor the per-call cap.
+        // Mistral's API uses `maxTokens` (camelCase) in the SDK.
+        ...(typeof config.maxOutputTokens === "number"
+          ? { maxTokens: config.maxOutputTokens }
+          : {}),
       });
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);

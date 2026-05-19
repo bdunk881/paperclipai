@@ -279,9 +279,9 @@ describe("controlPlaneStore (Phase 4.2b) hydration round-trip", () => {
         provider: "anthropic",
       });
       recordedSpendId = entry.id;
-      expect(
-        controlPlane.controlPlaneStore.listSpendEntries(userId, { teamId }).map((e) => e.id)
-      ).toEqual([entry.id]);
+      // DASH-64.3: listSpendEntries is now async (repository-backed).
+      const liveSpend = await controlPlane.controlPlaneStore.listSpendEntries(userId, { teamId });
+      expect(liveSpend.map((e) => e.id)).toEqual([entry.id]);
     }
 
     const { postgres, controlPlane } = await loadModules();
@@ -291,10 +291,11 @@ describe("controlPlaneStore (Phase 4.2b) hydration round-trip", () => {
     {
       const fresh = await loadModules();
       await fresh.controlPlane.controlPlaneStore.ensureWorkspaceHydrated(workspaceId, userId);
-      const restored = fresh.controlPlane.controlPlaneStore.listSpendEntries(userId, { teamId });
+      const restored = await fresh.controlPlane.controlPlaneStore.listSpendEntries(userId, { teamId });
       expect(restored).toHaveLength(1);
       expect(restored[0].id).toBe(recordedSpendId);
-      const snapshot = fresh.controlPlane.controlPlaneStore.getTeamSpendSnapshot(teamId, userId);
+      // DASH-64.3: getTeamSpendSnapshot is now async.
+      const snapshot = await fresh.controlPlane.controlPlaneStore.getTeamSpendSnapshot(teamId, userId);
       expect(snapshot?.team.spentUsd).toBe(1.25);
     }
   });
@@ -331,7 +332,8 @@ describe("controlPlaneStore (Phase 4.2b) hydration round-trip", () => {
         costUsd: 0.81,
         provider: "anthropic",
       });
-      const alerts = controlPlane.controlPlaneStore.listBudgetAlerts(userId, teamId);
+      // DASH-64.3: listBudgetAlerts is now async (repository-backed).
+      const alerts = await controlPlane.controlPlaneStore.listBudgetAlerts(userId, teamId);
       expect(alerts).toHaveLength(1);
       expect(alerts[0].scope).toBe("team");
       expect(alerts[0].threshold).toBe(0.8);
@@ -345,15 +347,16 @@ describe("controlPlaneStore (Phase 4.2b) hydration round-trip", () => {
       const fresh = await loadModules();
       await fresh.controlPlane.controlPlaneStore.ensureWorkspaceHydrated(workspaceId, userId);
 
-      const rehydrated = fresh.controlPlane.controlPlaneStore.listBudgetAlerts(userId, teamId);
+      const rehydrated = await fresh.controlPlane.controlPlaneStore.listBudgetAlerts(userId, teamId);
       expect(rehydrated).toHaveLength(1);
       expect(rehydrated[0].scope).toBe("team");
       expect(rehydrated[0].threshold).toBe(0.8);
       expect(rehydrated[0].budgetUsd).toBe(1);
 
       // Second spend keeps total under 90% so only the 80% threshold trips
-      // again — the dedupe key in budgetAlertDedupeKey must reproduce from the
-      // hydrated alert and short-circuit the upsert, leaving exactly one row.
+      // again — dedupe is now enforced via the Postgres partial unique index
+      // (DASH-64.3 removed the in-memory budgetAlertDedupeKey check). The
+      // ON CONFLICT DO UPDATE leaves a single row.
       await fresh.controlPlane.controlPlaneStore.recordSpend({
         userId,
         teamId,
@@ -363,7 +366,7 @@ describe("controlPlaneStore (Phase 4.2b) hydration round-trip", () => {
         provider: "anthropic",
       });
 
-      const finalAlerts = fresh.controlPlane.controlPlaneStore.listBudgetAlerts(userId, teamId);
+      const finalAlerts = await fresh.controlPlane.controlPlaneStore.listBudgetAlerts(userId, teamId);
       expect(finalAlerts).toHaveLength(1);
       expect(finalAlerts[0].id).toBe(rehydrated[0].id);
 

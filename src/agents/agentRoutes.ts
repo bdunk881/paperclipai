@@ -343,7 +343,12 @@ router.get("/:id/budget", async (req: WorkspaceAwareRequest, res) => {
   // try/catch — Express 4 doesn't translate async rejections to 500s.
   try {
     const period = currentPeriodKey();
-    const teamSpend = controlPlaneStore.getTeamSpendSnapshot(agent.teamId, context.userId, context.workspaceId);
+    // DASH-64.3: getTeamSpendSnapshot is now async.
+    const teamSpend = await controlPlaneStore.getTeamSpendSnapshot(
+      agent.teamId,
+      context.userId,
+      context.workspaceId,
+    );
     const agentSpend = teamSpend?.agents.find((entry) => entry.agentId === agent.id);
     const heartbeats = await controlPlaneStore.listAgentHeartbeats(agent.id, context.userId, context.workspaceId);
     const spentUsd = agentSpend?.spentUsd ?? 0;

@@ -299,6 +299,8 @@ const agents = new Map<string, ControlPlaneAgent>();
 // DASH-64.2: `heartbeats` Map removed. All heartbeat reads/writes now
 // route through `controlPlaneRepository` (Postgres-first; in-memory
 // fallback for test mode lives in the repository module itself).
+// DASH-64.3: `spendEntries` and `budgetAlerts` Maps removed for the
+// same reason — repository is the single source of truth.
 // allowlist: hybrid store; in-memory mirror of Postgres-backed data
 const executions = new Map<string, ControlPlaneExecution>();
 // allowlist: hybrid store; in-memory mirror of Postgres-backed data
@@ -309,10 +311,8 @@ const companyWorkspaces = new Map<string, ProvisionedCompanyWorkspace>();
 const companySecretBindings = new Map<string, Record<string, string>>();
 // allowlist: hybrid store; in-memory mirror of Postgres-backed data
 const companyIdempotencyIndex = new Map<string, { companyId: string; fingerprint: string }>();
-// allowlist: hybrid store; in-memory mirror of Postgres-backed data
-const spendEntries = new Map<string, ControlPlaneSpendEntry>();
-// allowlist: hybrid store; in-memory mirror of Postgres-backed data
-const budgetAlerts = new Map<string, ControlPlaneBudgetAlert>();
+// DASH-64.3: spendEntries + budgetAlerts Maps removed. Both route
+// through controlPlaneRepository now.
 // allowlist: hybrid store; in-memory mirror of Postgres-backed data
 const teamWorkspaceIds = new Map<string, string>();
 // allowlist: hybrid store; in-memory mirror of Postgres-backed data
@@ -671,7 +671,8 @@ async function buildMissionState(
       )
     : [];
   const teamExecutions = Array.from(executions.values()).filter((execution) => execution.teamId === team.id);
-  const spendSnapshot = buildTeamSpendSnapshot(team);
+  // DASH-64.3: buildTeamSpendSnapshot is now async.
+  const spendSnapshot = await buildTeamSpendSnapshot(team);
   const blockedTasks = teamTasks.filter((task) => task.status === "blocked");
   const failedExecutions = teamExecutions.filter((execution) => execution.status === "failed");
   const blockedExecutions = teamExecutions.filter((execution) => execution.status === "blocked");
@@ -954,18 +955,14 @@ async function ensureWorkspaceHydrated(workspaceId: string | undefined, userId: 
     return;
   }
 
-  // Phase 4.2: hydrate spend / alerts so they survive a process
-  // restart. Same RLS-bound context, separate repository calls so the
-  // SQL stays factored alongside the rest of execution-state PG.
-  //
   // DASH-64.1: tasks NO LONGER hydrate here — they read live from the
   // repository on every call.
   // DASH-64.2: heartbeats NO LONGER hydrate here either — same pattern.
-  const [hydratedSpend, hydratedAlerts] = await Promise.all([
-    controlPlaneRepository.listSpendEntries({ workspaceId: resolvedWorkspaceId, userId }),
-    controlPlaneRepository.listBudgetAlerts({ workspaceId: resolvedWorkspaceId, userId }),
-  ]);
-
+  // DASH-64.3: spend entries + budget alerts NO LONGER hydrate here
+  // either. The hydration was process-restart-survival scaffolding for
+  // the in-memory Maps; now reads go straight to the repository, so
+  // no hydration step is needed.
+  // DASH-64.3: hydratedSpend / hydratedAlerts no longer fetched here.
   await withWorkspaceContext(
     getPostgresPool(),
     { workspaceId: resolvedWorkspaceId, userId },
@@ -1032,21 +1029,9 @@ async function ensureWorkspaceHydrated(workspaceId: string | undefined, userId: 
 
   // DASH-64.1: hydratedTasks block removed.
   // DASH-64.2: hydratedHeartbeats block removed.
-  hydratedSpend.forEach((entry) => {
-    spendEntries.set(entry.id, entry);
-  });
-  hydratedAlerts.forEach((alert) => {
-    const dedupeKey = budgetAlertDedupeKey({
-      userId: alert.userId,
-      teamId: alert.teamId,
-      period: periodKeyFromIso(alert.recordedAt),
-      scope: alert.scope,
-      agentId: alert.agentId,
-      toolName: alert.toolName,
-      threshold: alert.threshold,
-    });
-    budgetAlerts.set(dedupeKey, alert);
-  });
+  // DASH-64.3: hydratedSpend + hydratedAlerts blocks removed too.
+  // All four entity types (tasks, heartbeats, spend, budget alerts)
+  // read live from the repository; no Map hydration needed.
 
   hydratedWorkspaceUsers.add(cacheKey);
 }
@@ -1264,10 +1249,25 @@ async function upsertProvisionedCompanyRow(input: {
   );
 }
 
-function listSpendEntriesForPeriod(userId: string, period: string): ControlPlaneSpendEntry[] {
-  return Array.from(spendEntries.values()).filter((entry) => {
-    return entry.userId === userId && entry.recordedAt.startsWith(period);
+// DASH-64.3: spend entries live in the repository now. The team's
+// workspace is resolved via the same teamWorkspaceIds cache (or
+// lookup_team_workspace_id helper) we use elsewhere. Returns [] when
+// the workspace can't be resolved (e.g. tests pre-team-create).
+async function listSpendEntriesForPeriod(
+  userId: string,
+  teamId: string,
+  period: string,
+): Promise<ControlPlaneSpendEntry[]> {
+  const ctx = await workspaceContextForTeam(teamId, userId);
+  if (!ctx) return [];
+  // Repository takes `since` as ISO; the in-memory fallback compares
+  // with string startsWith semantics, so pass the period prefix as
+  // a since-floor matching the calendar-month grain we use here.
+  const entries = await controlPlaneRepository.listSpendEntries(ctx, {
+    teamId,
+    since: `${period}-01T00:00:00.000Z`,
   });
+  return entries.filter((entry) => entry.recordedAt.startsWith(period));
 }
 
 function buildBudgetSnapshot(input: {
@@ -1303,9 +1303,19 @@ function listAgentsForTeam(teamId: string, userId: string): ControlPlaneAgent[] 
     .sort((left, right) => left.createdAt.localeCompare(right.createdAt));
 }
 
-function buildTeamSpendSnapshot(team: ControlPlaneTeam): TeamSpendSnapshot {
+// DASH-64.3: now async because both spend entries AND budget alerts
+// live in the repository. Every caller awaits.
+async function buildTeamSpendSnapshot(team: ControlPlaneTeam): Promise<TeamSpendSnapshot> {
   const period = currentPeriodKey();
-  const entries = listSpendEntriesForPeriod(team.userId, period).filter((entry) => entry.teamId === team.id);
+  const ctx = await workspaceContextForTeam(team.id, team.userId);
+
+  const entries = ctx
+    ? (await controlPlaneRepository.listSpendEntries(ctx, {
+        teamId: team.id,
+        since: `${period}-01T00:00:00.000Z`,
+      })).filter((entry) => entry.recordedAt.startsWith(period))
+    : [];
+
   const alertThresholds = team.alertThresholds.length > 0 ? team.alertThresholds : [0.8, 0.9, 1];
   const teamSpent = entries.reduce((sum, entry) => sum + entry.costUsd, 0);
   const teamSnapshot = buildBudgetSnapshot({
@@ -1356,9 +1366,11 @@ function buildTeamSpendSnapshot(team: ControlPlaneTeam): TeamSpendSnapshot {
     return totals;
   }, {});
 
-  const alerts = Array.from(budgetAlerts.values())
-    .filter((alert) => alert.userId === team.userId && alert.teamId === team.id && alert.recordedAt.startsWith(period))
-    .sort((left, right) => left.recordedAt.localeCompare(right.recordedAt));
+  const alerts = ctx
+    ? (await controlPlaneRepository.listBudgetAlerts(ctx, { teamId: team.id }))
+        .filter((alert) => alert.recordedAt.startsWith(period))
+        .sort((left, right) => left.recordedAt.localeCompare(right.recordedAt))
+    : [];
 
   return {
     period,
@@ -1383,20 +1395,13 @@ async function upsertBudgetAlert(input: {
     return;
   }
 
-  const dedupeKey = budgetAlertDedupeKey({
-    userId: input.team.userId,
-    teamId: input.team.id,
-    period: currentPeriodKey(),
-    scope: input.scope,
-    agentId: input.agentId,
-    toolName: input.toolName,
-    threshold: input.threshold,
-  });
-
-  if (budgetAlerts.has(dedupeKey)) {
-    return;
-  }
-
+  // DASH-64.3 (Codex pattern from iter 2 + 4): repository owns the
+  // dedupe contract via Postgres ON CONFLICT (partial unique indexes
+  // on scope/agent_id/tool_name/threshold). The pre-DASH-64.3 inline
+  // `budgetAlerts.has(dedupeKey)` check is gone — concurrent threshold
+  // crossings now converge atomically at the DB layer (or the in-
+  // memory fallback's match-by-scope-key, see
+  // controlPlaneRepository.upsertBudgetAlert).
   const alert: ControlPlaneBudgetAlert = {
     id: randomUUID(),
     userId: input.team.userId,
@@ -1409,17 +1414,15 @@ async function upsertBudgetAlert(input: {
     spentUsd: Number(input.spentUsd.toFixed(2)),
     recordedAt: nowIso(),
   };
-  budgetAlerts.set(dedupeKey, alert);
 
-  if (postgresPersistenceAvailable()) {
-    const workspaceId = teamWorkspaceIds.get(input.team.id);
-    if (workspaceId) {
-      await controlPlaneRepository.upsertBudgetAlert(
-        { workspaceId, userId: input.team.userId },
-        alert
-      );
-    }
+  // DASH-64.3 iter 2 (mirrors Codex P1 on #901): throw instead of
+  // silently dropping the alert when workspaceContextForTeam returns
+  // undefined. A missing budget alert can mask real overspend.
+  const ctx = await workspaceContextForTeam(input.team.id, input.team.userId);
+  if (!ctx) {
+    throw new Error("budget_alert_workspace_unresolved");
   }
+  await controlPlaneRepository.upsertBudgetAlert(ctx, alert);
 }
 
 function pauseExecutionForBudget(agentId: string, executionId?: string): void {
@@ -1447,7 +1450,8 @@ function pauseExecutionForBudget(agentId: string, executionId?: string): void {
 }
 
 async function applyBudgetPolicies(team: ControlPlaneTeam, agentId: string, executionId?: string): Promise<void> {
-  const snapshot = buildTeamSpendSnapshot(team);
+  // DASH-64.3: buildTeamSpendSnapshot is now async.
+  const snapshot = await buildTeamSpendSnapshot(team);
   const agentSnapshot = snapshot.agents.find((entry) => entry.agentId === agentId);
 
   for (const threshold of snapshot.team.alertThresholdsTriggered) {
@@ -1512,8 +1516,9 @@ async function applyBudgetPolicies(team: ControlPlaneTeam, agentId: string, exec
   }
 }
 
-function assertExecutionAllowed(team: ControlPlaneTeam, agent: ControlPlaneAgent): void {
-  const snapshot = buildTeamSpendSnapshot(team);
+async function assertExecutionAllowed(team: ControlPlaneTeam, agent: ControlPlaneAgent): Promise<void> {
+  // DASH-64.3: buildTeamSpendSnapshot is now async.
+  const snapshot = await buildTeamSpendSnapshot(team);
   const agentSnapshot = snapshot.agents.find((entry) => entry.agentId === agent.id);
 
   if (snapshot.team.budgetUsd > 0 && snapshot.team.spentUsd >= snapshot.team.budgetUsd) {
@@ -1962,31 +1967,51 @@ export const controlPlaneStore = {
       .sort((left, right) => left.startedAt.localeCompare(right.startedAt));
   },
 
-  listSpendEntries(userId: string, filters?: {
-    teamId?: string;
-    agentId?: string;
-    executionId?: string;
-    period?: string;
-  }): ControlPlaneSpendEntry[] {
-    return Array.from(spendEntries.values())
+  // DASH-64.3: now async — repository-backed. teamId is required to
+  // resolve the workspace context; without one the result is empty
+  // (legacy behaviour: cross-workspace spend listing isn't exposed).
+  async listSpendEntries(
+    userId: string,
+    filters?: {
+      teamId?: string;
+      agentId?: string;
+      executionId?: string;
+      period?: string;
+    },
+  ): Promise<ControlPlaneSpendEntry[]> {
+    if (!filters?.teamId) return [];
+    const ctx = await workspaceContextForTeam(filters.teamId, userId);
+    if (!ctx) return [];
+    const rows = await controlPlaneRepository.listSpendEntries(ctx, {
+      teamId: filters.teamId,
+      agentId: filters.agentId,
+    });
+    return rows
       .filter((entry) => {
-        if (entry.userId !== userId) return false;
-        if (filters?.teamId && entry.teamId !== filters.teamId) return false;
-        if (filters?.agentId && entry.agentId !== filters.agentId) return false;
-        if (filters?.executionId && entry.executionId !== filters.executionId) return false;
-        if (filters?.period && !entry.recordedAt.startsWith(filters.period)) return false;
+        if (filters.executionId && entry.executionId !== filters.executionId) return false;
+        if (filters.period && !entry.recordedAt.startsWith(filters.period)) return false;
         return true;
       })
       .sort((left, right) => left.recordedAt.localeCompare(right.recordedAt));
   },
 
-  listBudgetAlerts(userId: string, teamId?: string): ControlPlaneBudgetAlert[] {
-    return Array.from(budgetAlerts.values())
-      .filter((alert) => alert.userId === userId && (!teamId || alert.teamId === teamId))
-      .sort((left, right) => left.recordedAt.localeCompare(right.recordedAt));
+  // DASH-64.3: now async — repository-backed. teamId required to
+  // resolve the workspace context.
+  async listBudgetAlerts(userId: string, teamId?: string): Promise<ControlPlaneBudgetAlert[]> {
+    if (!teamId) return [];
+    const ctx = await workspaceContextForTeam(teamId, userId);
+    if (!ctx) return [];
+    const rows = await controlPlaneRepository.listBudgetAlerts(ctx, { teamId });
+    return rows.sort((left, right) => left.recordedAt.localeCompare(right.recordedAt));
   },
 
-  getTeamSpendSnapshot(teamId: string, userId: string, workspaceId?: string): TeamSpendSnapshot | undefined {
+  // DASH-64.3: now async because buildTeamSpendSnapshot reads spend
+  // entries + budget alerts from the repository.
+  async getTeamSpendSnapshot(
+    teamId: string,
+    userId: string,
+    workspaceId?: string,
+  ): Promise<TeamSpendSnapshot | undefined> {
     const team = teams.get(teamId);
     if (!canAccessTeam(team, userId, workspaceId)) {
       return undefined;
@@ -2638,7 +2663,8 @@ export const controlPlaneStore = {
     }
 
     const toolBudget = input.toolName ? team.toolBudgetCeilings[input.toolName] ?? 0 : 0;
-    const snapshot = buildTeamSpendSnapshot(team);
+    // DASH-64.3: buildTeamSpendSnapshot is now async.
+    const snapshot = await buildTeamSpendSnapshot(team);
     const teamWouldExceed =
       team.budgetMonthlyUsd > 0 && snapshot.team.spentUsd >= team.budgetMonthlyUsd;
     const agentSnapshot = snapshot.agents.find((entry) => entry.agentId === agent.id);
@@ -2668,11 +2694,19 @@ export const controlPlaneStore = {
       metadata: input.metadata,
       recordedAt: nowIso(),
     };
-    spendEntries.set(entry.id, entry);
+    // DASH-64.3: in-memory `spendEntries.set` removed. Repository
+    // insertSpendEntry is the only write path (Postgres in production,
+    // in-memory fallback for test mode).
+    //
+    // DASH-64.3 iter 2 (mirrors Codex P1 on #901): throw instead of
+    // silently dropping the spend entry when workspaceContextForTeam
+    // returns undefined. Lost spend = unbilled compute = real money
+    // leakage.
     const spendCtx = await workspaceContextForTeam(input.teamId, input.userId);
-    if (spendCtx) {
-      await controlPlaneRepository.insertSpendEntry(spendCtx, entry);
+    if (!spendCtx) {
+      throw new Error("spend_workspace_unresolved");
     }
+    await controlPlaneRepository.insertSpendEntry(spendCtx, entry);
     await applyBudgetPolicies(team, agent.id, input.executionId);
     return entry;
   },
@@ -2714,7 +2748,8 @@ export const controlPlaneStore = {
       claimedWorkspaceId: input.workspaceId,
     });
 
-    const teamSnapshot = buildTeamSpendSnapshot(team);
+    // DASH-64.3: buildTeamSpendSnapshot is now async.
+    const teamSnapshot = await buildTeamSpendSnapshot(team);
     const agentSnapshot = teamSnapshot.agents.find((entry) => entry.agentId === agent.id);
     if (team.status !== "active") {
       if (teamSnapshot.team.budgetUsd > 0 && teamSnapshot.team.spentUsd >= teamSnapshot.team.budgetUsd) {
@@ -2728,7 +2763,7 @@ export const controlPlaneStore = {
       }
       throw new Error("agent_not_active");
     }
-    assertExecutionAllowed(team, agent);
+    await assertExecutionAllowed(team, agent);
 
     const task =
       input.taskTitle && input.taskTitle.trim()
@@ -3264,8 +3299,9 @@ export const controlPlaneStore = {
     companySecretBindings.clear();
     companyIdempotencyIndex.clear();
     companyLifecycleStore.clear();
-    spendEntries.clear();
-    budgetAlerts.clear();
+    // DASH-64.3: spendEntries / budgetAlerts Maps gone; the repository
+    // owns these too. __resetRepositoryInMemoryStateForTests() above
+    // already clears the spend/alert buckets.
     teamWorkspaceIds.clear();
     teamCompanyIds.clear();
     companyTenantWorkspaceIds.clear();

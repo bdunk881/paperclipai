@@ -126,32 +126,32 @@ describe("subscriptionStore", () => {
     updatedAt: "2026-04-01T00:00:00Z",
   };
 
-  it("upsert and get by id", () => {
+  it("upsert and get by id", async () => {
     subscriptionStore.upsert(baseSub);
-    expect(subscriptionStore.get("sub-1")).toEqual(baseSub);
+    expect(await subscriptionStore.get("sub-1")).toEqual(baseSub);
   });
 
-  it("get by stripe subscription id", () => {
+  it("get by stripe subscription id", async () => {
     subscriptionStore.upsert(baseSub);
-    expect(subscriptionStore.getByStripeSubscriptionId("sub_stripe_1")?.id).toBe("sub-1");
+    expect((await subscriptionStore.getByStripeSubscriptionId("sub_stripe_1"))?.id).toBe("sub-1");
   });
 
-  it("get by user id", () => {
+  it("get by user id", async () => {
     subscriptionStore.upsert(baseSub);
-    expect(subscriptionStore.getByUserId("user-1")?.id).toBe("sub-1");
+    expect((await subscriptionStore.getByUserId("user-1"))?.id).toBe("sub-1");
   });
 
-  it("get by stripe customer id", () => {
+  it("get by stripe customer id", async () => {
     subscriptionStore.upsert(baseSub);
-    const subs = subscriptionStore.getByStripeCustomerId("cus_1");
+    const subs = await subscriptionStore.getByStripeCustomerId("cus_1");
     expect(subs).toHaveLength(1);
     expect(subs[0].id).toBe("sub-1");
   });
 
-  it("update", () => {
+  it("update", async () => {
     subscriptionStore.upsert(baseSub);
-    subscriptionStore.update("sub-1", { tier: "automate" });
-    expect(subscriptionStore.get("sub-1")?.tier).toBe("automate");
+    await subscriptionStore.update("sub-1", { tier: "automate" });
+    expect((await subscriptionStore.get("sub-1"))?.tier).toBe("automate");
   });
 
   it("list returns all", () => {
@@ -160,10 +160,10 @@ describe("subscriptionStore", () => {
     expect(subscriptionStore.list()).toHaveLength(2);
   });
 
-  it("returns undefined for missing ids", () => {
-    expect(subscriptionStore.get("nonexistent")).toBeUndefined();
-    expect(subscriptionStore.getByStripeSubscriptionId("nope")).toBeUndefined();
-    expect(subscriptionStore.getByUserId("nope")).toBeUndefined();
+  it("returns undefined for missing ids", async () => {
+    expect(await subscriptionStore.get("nonexistent")).toBeUndefined();
+    expect(await subscriptionStore.getByStripeSubscriptionId("nope")).toBeUndefined();
+    expect(await subscriptionStore.getByUserId("nope")).toBeUndefined();
   });
 });
 
@@ -394,7 +394,7 @@ describe("POST /api/billing/subscription/cancel", () => {
     stripeMock.subscriptions.update.mockResolvedValue({ status: "active" });
 
     const res = await request(app).post("/api/billing/subscription/cancel").set(asAuth("cancel-user")).send({});
-    const updated = subscriptionStore.get("sub-cancel");
+    const updated = await subscriptionStore.get("sub-cancel");
 
     expect(res.status).toBe(200);
     expect(res.body).toEqual({
@@ -437,7 +437,7 @@ describe("POST /api/billing/subscription/change-tier", () => {
       .post("/api/billing/subscription/change-tier")
       .set(asAuth("upgrade-user"))
       .send({ newTier: "automate" });
-    const updated = subscriptionStore.get("sub-upgrade");
+    const updated = await subscriptionStore.get("sub-upgrade");
 
     expect(res.status).toBe(200);
     expect(res.body).toEqual({
@@ -476,7 +476,7 @@ describe("POST /api/billing/subscription/reactivate", () => {
     stripeMock.subscriptions.update.mockResolvedValue({ status: "active" });
 
     const res = await request(app).post("/api/billing/subscription/reactivate").set(asAuth("reactivate-user")).send({});
-    const updated = subscriptionStore.get("sub-reactivate");
+    const updated = await subscriptionStore.get("sub-reactivate");
 
     expect(res.status).toBe(200);
     expect(res.body).toEqual({ success: true, cancelAtPeriodEnd: false });
@@ -537,7 +537,7 @@ describe("POST /api/webhooks/stripe", () => {
       .set("Content-Type", "application/json")
       .send(JSON.stringify({ id: "evt_1" }));
 
-    const sub = subscriptionStore.getByStripeSubscriptionId("sub_webhook_1");
+    const sub = await subscriptionStore.getByStripeSubscriptionId("sub_webhook_1");
     expect(res.status).toBe(200);
     expect(res.body).toEqual({ received: true });
     expect(sub?.userId).toBe("webhook-user");
@@ -587,7 +587,7 @@ describe("POST /api/webhooks/stripe", () => {
       .set("Content-Type", "application/json")
       .send(JSON.stringify({ id: "evt_2" }));
 
-    const updated = subscriptionStore.get("sub-invoice-paid");
+    const updated = await subscriptionStore.get("sub-invoice-paid");
     expect(res.status).toBe(200);
     expect(updated?.currentPeriodStart).toBe("2024-05-01T00:00:00.000Z");
     expect(updated?.currentPeriodEnd).toBe("2024-05-31T00:00:00.000Z");
@@ -621,7 +621,7 @@ describe("POST /api/webhooks/stripe", () => {
       .set("Content-Type", "application/json")
       .send(JSON.stringify({ id: "evt_3" }));
 
-    const updated = subscriptionStore.get("sub-payment-failed");
+    const updated = await subscriptionStore.get("sub-payment-failed");
     expect(res.status).toBe(200);
     expect(updated?.status).toBe("past_due");
     expect(updated?.accessLevel).toBe("past_due");
@@ -650,7 +650,7 @@ describe("POST /api/webhooks/stripe", () => {
       .set("Content-Type", "application/json")
       .send(JSON.stringify({ id: "evt_4" }));
 
-    const updated = subscriptionStore.get("sub-deleted");
+    const updated = await subscriptionStore.get("sub-deleted");
     expect(res.status).toBe(200);
     expect(updated?.status).toBe("canceled");
     expect(updated?.accessLevel).toBe("cancelled");

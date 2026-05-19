@@ -337,7 +337,7 @@ async function handleCheckoutSessionCompleted(session: Stripe.Checkout.Session):
   const priceId = getSubscriptionItem(stripeSub)?.price?.id;
   const tier = resolveTier(meta, priceId);
 
-  const existing = subscriptionStore.getByStripeSubscriptionId(stripeSubId);
+  const existing = await subscriptionStore.getByStripeSubscriptionId(stripeSubId);
   const sub = buildSubscriptionRecord({
     existing,
     stripeSub,
@@ -367,10 +367,10 @@ async function handleCheckoutSessionCompleted(session: Stripe.Checkout.Session):
  * subscription.created — record new subscription.
  */
 async function handleSubscriptionCreated(stripeSub: Stripe.Subscription): Promise<void> {
-  const existing = subscriptionStore.getByStripeSubscriptionId(stripeSub.id);
+  const existing = await subscriptionStore.getByStripeSubscriptionId(stripeSub.id);
   if (existing) {
     // Already provisioned via checkout.session.completed
-    const updated = subscriptionStore.update(existing.id, {
+    const updated = await subscriptionStore.update(existing.id, {
       workspaceId: existing.workspaceId ?? stripeSub.metadata?.workspaceId,
       status: stripeSub.status,
       accessLevel: mapStripeStatusToAccess(stripeSub.status, stripeSub.cancel_at_period_end),
@@ -404,7 +404,7 @@ async function handleInvoicePaid(invoice: Stripe.Invoice): Promise<void> {
   // Fetch updated subscription to get new period dates
   const stripe = getStripe();
   const stripeSub = await stripe.subscriptions.retrieve(stripeSubId);
-  const sub = subscriptionStore.getByStripeSubscriptionId(stripeSubId);
+  const sub = await subscriptionStore.getByStripeSubscriptionId(stripeSubId);
   if (!sub) {
     const metadata = (stripeSub.metadata ?? {}) as Record<string, string>;
     const created = buildSubscriptionRecord({ stripeSub, metadata });
@@ -414,7 +414,7 @@ async function handleInvoicePaid(invoice: Stripe.Invoice): Promise<void> {
     return;
   }
 
-  const updated = subscriptionStore.update(sub.id, {
+  const updated = await subscriptionStore.update(sub.id, {
     status: stripeSub.status,
     accessLevel: mapStripeStatusToAccess(stripeSub.status, stripeSub.cancel_at_period_end),
     currentPeriodStart: getCurrentPeriodStart(stripeSub),
@@ -434,7 +434,7 @@ async function handleInvoicePaymentFailed(invoice: Stripe.Invoice): Promise<void
   const stripeSubId = getSubscriptionIdFromInvoice(invoice);
   if (!stripeSubId) return;
 
-  let sub = subscriptionStore.getByStripeSubscriptionId(stripeSubId);
+  let sub = await subscriptionStore.getByStripeSubscriptionId(stripeSubId);
   if (!sub) {
     const stripe = getStripe();
     const stripeSub = await stripe.subscriptions.retrieve(stripeSubId);
@@ -443,7 +443,7 @@ async function handleInvoicePaymentFailed(invoice: Stripe.Invoice): Promise<void
     console.warn(`[stripe/webhook] invoice.payment_failed — created missing subscription cache for ${stripeSubId}`);
   }
 
-  const updated = subscriptionStore.update(sub.id, {
+  const updated = await subscriptionStore.update(sub.id, {
     status: "past_due",
     accessLevel: "past_due",
   });
@@ -459,7 +459,7 @@ async function handleInvoicePaymentFailed(invoice: Stripe.Invoice): Promise<void
  * customer.subscription.trial_will_end — send 3-day trial expiry warning.
  */
 async function handleTrialWillEnd(stripeSub: Stripe.Subscription): Promise<void> {
-  const sub = subscriptionStore.getByStripeSubscriptionId(stripeSub.id);
+  const sub = await subscriptionStore.getByStripeSubscriptionId(stripeSub.id);
   if (!sub) {
     console.warn(`[stripe/webhook] trial_will_end — no subscription found for ${stripeSub.id}`);
     return;
@@ -473,14 +473,14 @@ async function handleTrialWillEnd(stripeSub: Stripe.Subscription): Promise<void>
  * subscription.deleted — revoke access.
  */
 async function handleSubscriptionDeleted(stripeSub: Stripe.Subscription): Promise<void> {
-  let sub = subscriptionStore.getByStripeSubscriptionId(stripeSub.id);
+  let sub = await subscriptionStore.getByStripeSubscriptionId(stripeSub.id);
   if (!sub) {
     const metadata = (stripeSub.metadata ?? {}) as Record<string, string>;
     sub = subscriptionStore.upsert(buildSubscriptionRecord({ stripeSub, metadata }));
     console.warn(`[stripe/webhook] subscription.deleted — created missing subscription cache for ${stripeSub.id}`);
   }
 
-  const updated = subscriptionStore.update(sub.id, {
+  const updated = await subscriptionStore.update(sub.id, {
     status: "canceled",
     accessLevel: "cancelled",
     cancelAtPeriodEnd: false,
@@ -496,14 +496,14 @@ async function handleSubscriptionDeleted(stripeSub: Stripe.Subscription): Promis
  * customer.updated — sync customer metadata.
  */
 async function handleCustomerUpdated(customer: Stripe.Customer): Promise<void> {
-  const subs = subscriptionStore.getByStripeCustomerId(customer.id);
+  const subs = await subscriptionStore.getByStripeCustomerId(customer.id);
   if (subs.length === 0) {
     console.log(`[stripe/webhook] customer.updated — no subscriptions for customer ${customer.id}`);
     return;
   }
 
   for (const sub of subs) {
-    subscriptionStore.update(sub.id, {
+    await subscriptionStore.update(sub.id, {
       email: customer.email ?? sub.email,
     });
   }

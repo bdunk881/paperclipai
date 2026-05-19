@@ -24,7 +24,7 @@ function getWorkspaceId(req: Request): string | undefined {
 }
 
 async function syncSubscriptionWorkspaceState(req: Request, subId: string): Promise<void> {
-  const sub = subscriptionStore.get(subId);
+  const sub = await subscriptionStore.get(subId);
   if (!sub?.workspaceId) {
     return;
   }
@@ -64,14 +64,14 @@ async function syncSubscriptionWorkspaceState(req: Request, subId: string): Prom
  * GET /api/billing/subscription
  * Returns the user's current subscription status.
  */
-router.get("/", (req: AuthenticatedRequest, res: Response) => {
+router.get("/", async (req: AuthenticatedRequest, res: Response) => {
   const userId = req.auth?.sub;
   if (!userId) {
     res.status(401).json({ error: "Authenticated user is required" });
     return;
   }
 
-  const sub = subscriptionStore.getByUserId(userId);
+  const sub = await subscriptionStore.getByUserId(userId);
   if (!sub) {
     res.json({ subscription: null, accessLevel: "none" });
     return;
@@ -109,7 +109,7 @@ router.post("/change-tier", async (req: AuthenticatedRequest, res: Response) => 
     return;
   }
 
-  const sub = subscriptionStore.getByUserId(userId);
+  const sub = await subscriptionStore.getByUserId(userId);
   if (!sub) {
     res.status(404).json({ error: "No active subscription found" });
     return;
@@ -153,7 +153,7 @@ router.post("/change-tier", async (req: AuthenticatedRequest, res: Response) => 
     });
 
     const workspaceId = sub.workspaceId ?? getWorkspaceId(req);
-    const stored = subscriptionStore.update(sub.id, {
+    const stored = await subscriptionStore.update(sub.id, {
       workspaceId,
       tier: newTier as TierKey,
       status: updated.status,
@@ -188,7 +188,7 @@ router.post("/cancel", async (req: AuthenticatedRequest, res: Response) => {
     return;
   }
 
-  const sub = subscriptionStore.getByUserId(userId);
+  const sub = await subscriptionStore.getByUserId(userId);
   if (!sub) {
     res.status(404).json({ error: "No active subscription found" });
     return;
@@ -206,7 +206,7 @@ router.post("/cancel", async (req: AuthenticatedRequest, res: Response) => {
     });
 
     const workspaceId = sub.workspaceId ?? getWorkspaceId(req);
-    const stored = subscriptionStore.update(sub.id, {
+    const stored = await subscriptionStore.update(sub.id, {
       workspaceId,
       cancelAtPeriodEnd: true,
       status: updated.status,
@@ -240,7 +240,7 @@ router.post("/reactivate", async (req: AuthenticatedRequest, res: Response) => {
     return;
   }
 
-  const sub = subscriptionStore.getByUserId(userId);
+  const sub = await subscriptionStore.getByUserId(userId);
   if (!sub) {
     res.status(404).json({ error: "No active subscription found" });
     return;
@@ -258,7 +258,7 @@ router.post("/reactivate", async (req: AuthenticatedRequest, res: Response) => {
     });
 
     const workspaceId = sub.workspaceId ?? getWorkspaceId(req);
-    const stored = subscriptionStore.update(sub.id, {
+    const stored = await subscriptionStore.update(sub.id, {
       workspaceId,
       cancelAtPeriodEnd: false,
       status: updated.status,

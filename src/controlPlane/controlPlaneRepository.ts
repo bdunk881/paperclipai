@@ -665,7 +665,11 @@ async function upsertTeamRowInClient(
        $12, $13, $14::jsonb, $15::jsonb, $16, $17, $18, $19
      )
      ON CONFLICT (id) DO UPDATE
-       SET company_id = EXCLUDED.company_id,
+       -- DASH-64.8: COALESCE so callers can pass companyId=null without
+       -- clobbering an existing link. The teamCompanyIds cache used to
+       -- carry the linkage; with the cache gone, only provisioning
+       -- knows the company at upsert time.
+       SET company_id = COALESCE(EXCLUDED.company_id, agent_teams.company_id),
            name = EXCLUDED.name,
            description = EXCLUDED.description,
            workflow_template_id = EXCLUDED.workflow_template_id,
@@ -1627,6 +1631,34 @@ export const controlPlaneRepository = {
       const row = result.rows[0];
       return row ? rowToTeam(row) : undefined;
     });
+  },
+
+  /**
+   * DASH-64.8: lightweight workspace-id lookup for a team. Replaces the
+   * `teamWorkspaceIds` in-memory cache. In test mode, scans all
+   * memTeams buckets to find the team's home workspace. In production,
+   * calls the existing `lookup_team_workspace_id` SECURITY DEFINER
+   * helper (migration 030).
+   */
+  async getTeamWorkspaceId(teamId: string): Promise<string | undefined> {
+    if (useInMemoryFallback()) {
+      for (const [workspaceId, bucket] of memTeams.entries()) {
+        if (bucket.has(teamId)) return workspaceId;
+      }
+      return undefined;
+    }
+    const pool = getPostgresPool();
+    const client = await pool.connect();
+    try {
+      const result = await client.query<{ workspace_id: string | null }>(
+        `SELECT lookup_team_workspace_id($1) AS workspace_id`,
+        [teamId]
+      );
+      const row = result.rows[0];
+      return row?.workspace_id ?? undefined;
+    } finally {
+      client.release();
+    }
   },
 
   async listTeams(

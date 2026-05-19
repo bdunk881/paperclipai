@@ -64,7 +64,7 @@ router.get("/events", async (req: WorkspaceAwareRequest, res) => {
   // Clamp the history window to the workspace's log retention entitlement.
   let since: string | undefined;
   if (workspaceId) {
-    const ent = entitlementStore.get(workspaceId);
+    const ent = await entitlementStore.get(workspaceId);
     const retentionDays = ent?.logRetentionDays ?? 14; // explore-tier default
     const cutoff = new Date();
     cutoff.setUTCDate(cutoff.getUTCDate() - retentionDays);

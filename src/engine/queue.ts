@@ -22,12 +22,15 @@ const RETRY_DELAY_MS = 1_000;
 const QUEUE_PREFIX = "autoflow:workflow-queue";
 
 /** Per-templateId Promise chains used in memory mode. */
+// allowlist: in-process Promise chain / job scheduler state
 const chains = new Map<string, Promise<void>>();
 
 /** Per-templateId active drain loops used in Upstash mode. */
+// allowlist: in-process Promise chain / job scheduler state
 const drains = new Map<string, Promise<void>>();
 
 /** Per-templateId enqueue chains so Redis writes preserve caller FIFO. */
+// allowlist: in-process Promise chain / job scheduler state
 const enqueueWrites = new Map<string, Promise<void>>();
 
 /** Registered handler invoked for each job */

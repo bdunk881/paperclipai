@@ -23,6 +23,7 @@ type ProfileLike = {
 type StrategyDone = (error: Error | null, user?: VerifiedUser | false) => void;
 
 const enabledProviders = new Set<SocialAuthProvider>();
+// allowlist: rolling counter / cached config; process-local by design
 const providerConfigurationErrors = new Map<SocialAuthProvider, string>();
 let configured = false;
 

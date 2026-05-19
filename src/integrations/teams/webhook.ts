@@ -2,6 +2,7 @@ import { createHash, timingSafeEqual } from "crypto";
 import { ConnectorError } from "./types";
 
 const FIVE_MINUTES_MS = 60 * 5 * 1000;
+// allowlist: webhook replay dedup cache; process-local TTL nonces
 const replayCache = new Map<string, number>();
 
 function cleanupReplayCache(nowMs: number): void {

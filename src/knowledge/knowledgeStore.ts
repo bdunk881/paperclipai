@@ -138,9 +138,13 @@ interface PersistedKnowledgeChunkRow {
   updated_at: string;
 }
 
+// allowlist: hybrid store; in-memory mirror of Postgres-backed data
 const knowledgeBases = new Map<string, KnowledgeBase>();
+// allowlist: hybrid store; in-memory mirror of Postgres-backed data
 const knowledgeDocuments = new Map<string, KnowledgeDocument>();
+// allowlist: hybrid store; in-memory mirror of Postgres-backed data
 const knowledgeChunks = new Map<string, KnowledgeChunk>();
+// allowlist: hybrid store; in-memory mirror of Postgres-backed data
 const chunkEmbeddings = new Map<string, number[]>();
 
 let schemaEnsured = false;

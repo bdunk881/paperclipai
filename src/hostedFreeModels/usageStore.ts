@@ -27,6 +27,7 @@ interface UsageEntry {
   tokens: number;
 }
 
+// allowlist: rolling counter / cached config; process-local by design
 const usageByWorkspace = new Map<string, UsageEntry>();
 
 function currentDayKey(now: Date = new Date()): string {

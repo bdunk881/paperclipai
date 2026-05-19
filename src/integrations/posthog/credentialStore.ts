@@ -38,6 +38,7 @@ function decrypt(ciphertext: string): string {
   return decipher.update(Buffer.from(dataHex, "hex")).toString("utf8") + decipher.final("utf8");
 }
 
+// allowlist: legacy in-memory store; review and migrate to Postgres OR add a more specific reason
 const store = new Map<string, PostHogCredential>();
 
 function toPublic(credential: PostHogCredential): PostHogCredentialPublic {

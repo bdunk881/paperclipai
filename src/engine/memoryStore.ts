@@ -67,6 +67,7 @@ export interface SearchResult {
 // Store
 // ---------------------------------------------------------------------------
 
+// allowlist: hot-path read cache; canonical state lives in Postgres (DASH-44..45)
 const memory = new Map<string, MemoryEntry>();
 
 function postgresAvailable(): boolean {

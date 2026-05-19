@@ -240,7 +240,9 @@ function pickCheapest(
 // In-memory store (dev/test fallback per HEL-80 conventions)
 // ---------------------------------------------------------------------------
 
+// allowlist: rolling counter / cached config; process-local by design
 const inMemoryWorkspaceMatrices = new Map<string, TierMatrix>();
+// allowlist: rolling counter / cached config; process-local by design
 const inMemoryAgentOverrides = new Map<string, TierMatrix>();
 
 // ---------------------------------------------------------------------------

@@ -7,6 +7,7 @@ interface PkceState {
 }
 
 // HEL-44: process-local OAuth handshake state; promote to Redis in P3.
+// allowlist: OAuth/PKCE state with short TTL; process-local by design (Phase D wants Upstash, not Postgres)
 const stateStore = new Map<string, PkceState>();
 const PKCE_TTL_MS = 10 * 60 * 1000;
 

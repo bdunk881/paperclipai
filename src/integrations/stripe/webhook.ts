@@ -2,6 +2,7 @@ import { createHash, createHmac, timingSafeEqual } from "crypto";
 import { ConnectorError, StripeWebhookEvent } from "./types";
 
 const DEFAULT_TOLERANCE_SECONDS = 300;
+// allowlist: webhook replay dedup cache; process-local TTL nonces
 const replayCache = new Map<string, number>();
 
 function toleranceSeconds(): number {

@@ -22,6 +22,7 @@ interface PolicyRow {
   updated_at: string;
 }
 
+// allowlist: hybrid store; in-memory mirror of Postgres-backed data
 const memoryPolicies = new Map<string, TicketSlaPolicy>();
 
 function postgresPersistenceAvailable(): boolean {

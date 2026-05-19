@@ -2,6 +2,7 @@ import { parseJsonColumn } from "../db/json";
 import { inMemoryAllowed, isPostgresConfigured, queryPostgres } from "../db/postgres";
 import { WorkflowTemplate } from "../types/workflow";
 
+// allowlist: hybrid store; in-memory mirror of Postgres-backed data
 const importedTemplates = new Map<string, WorkflowTemplate>();
 
 function postgresPersistenceAvailable(): boolean {

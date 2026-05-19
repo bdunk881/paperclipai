@@ -42,6 +42,7 @@ interface NotificationRow {
   error: string | null;
 }
 
+// allowlist: hybrid store; in-memory mirror of Postgres-backed data
 const memoryNotifications = new Map<string, TicketNotification>();
 
 function postgresPersistenceAvailable(): boolean {

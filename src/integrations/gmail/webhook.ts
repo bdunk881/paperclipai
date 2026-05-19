@@ -6,6 +6,7 @@ import { ConnectorError, GmailWebhookNotification } from "./types";
 const DEFAULT_TOLERANCE_SECONDS = 300;
 const GOOGLE_JWKS_URI = process.env.GMAIL_PUBSUB_JWKS_URI ?? "https://www.googleapis.com/oauth2/v3/certs";
 const GOOGLE_ISSUERS: [string, ...string[]] = ["accounts.google.com", "https://accounts.google.com"];
+// allowlist: webhook replay dedup cache; process-local TTL nonces
 const replayCache = new Map<string, number>();
 
 const jwksClient = jwksRsa({

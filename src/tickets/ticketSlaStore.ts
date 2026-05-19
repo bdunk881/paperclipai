@@ -24,6 +24,7 @@ interface SnapshotRow {
   updated_at: string;
 }
 
+// allowlist: hybrid store; in-memory mirror of Postgres-backed data
 const memorySnapshots = new Map<string, TicketSlaSnapshot>();
 
 function postgresPersistenceAvailable(): boolean {

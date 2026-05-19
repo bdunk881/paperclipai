@@ -72,6 +72,7 @@ const PLAN_LIMITS: Record<SubscriptionTier, EntitlementLimits> = {
 // undefined, which made `requireEntitlement.ts` silently downgrade the
 // caller to "explore" until the next webhook restored the cache —
 // effectively cancelling paid users' plans after every Fly restart.
+// allowlist: hot-path read cache; canonical state lives in Postgres (DASH-47..51)
 const entitlementsByWorkspace = new Map<string, WorkspaceEntitlements>();
 
 function postgresAvailable(): boolean {

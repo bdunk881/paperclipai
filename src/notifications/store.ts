@@ -12,9 +12,13 @@ import {
   NotificationTransportConfig,
 } from "./types";
 
+// allowlist: hybrid store; in-memory mirror of Postgres-backed data
 const preferenceStore = new Map<string, NotificationPreference>();
+// allowlist: hybrid store; in-memory mirror of Postgres-backed data
 const transportStore = new Map<string, NotificationTransportConfig>();
+// allowlist: hybrid store; in-memory mirror of Postgres-backed data
 const eventStore = new Map<string, NotificationEventRecord>();
+// allowlist: hybrid store; in-memory mirror of Postgres-backed data
 const deliveryStore = new Map<string, NotificationDeliveryRecord>();
 
 function postgresPersistenceAvailable(): boolean {

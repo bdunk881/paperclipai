@@ -72,6 +72,7 @@ function decryptCredentials(ciphertext: string): IntegrationCredentials {
 // ---------------------------------------------------------------------------
 
 const SERVICE_KEY = "integration_connection";
+// allowlist: hot-path read cache; canonical state lives in Postgres (DASH-47..51)
 const cache = new Map<string, IntegrationConnection>();
 
 function postgresAvailable(): boolean {

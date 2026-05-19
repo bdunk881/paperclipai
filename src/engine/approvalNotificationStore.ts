@@ -19,6 +19,7 @@ export interface ApprovalNotification {
   error?: string;
 }
 
+// allowlist: hybrid store; in-memory mirror of Postgres-backed data
 const memoryStore = new Map<string, ApprovalNotification>();
 
 function postgresPersistenceAvailable(): boolean {

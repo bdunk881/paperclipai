@@ -16,6 +16,7 @@ export type SupabaseJwtClaims = JWTPayload & {
   user_metadata?: Record<string, unknown>;
 };
 
+// allowlist: rolling counter / cached config; process-local by design
 const remoteJwksCache = new Map<string, ReturnType<typeof createRemoteJWKSet>>();
 
 function normalizeHttpsUrl(value: string | undefined): string | null {

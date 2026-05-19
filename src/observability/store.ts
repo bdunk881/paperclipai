@@ -24,7 +24,9 @@ type ObservabilitySubscriber = {
 };
 
 const MAX_MEMORY_EVENTS = 5_000;
+// allowlist: hybrid store; in-memory mirror of Postgres-backed data
 const memoryEvents = new Map<string, ObservabilityEvent[]>();
+// allowlist: hybrid store; in-memory mirror of Postgres-backed data
 const subscribers = new Map<string, ObservabilitySubscriber>();
 
 let lastSequence = 0;

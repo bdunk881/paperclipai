@@ -12,6 +12,7 @@ import {
 
 const router = Router({ mergeParams: true });
 const GIGABYTE = 1024 * 1024 * 1024;
+// allowlist: rolling counter / cached config; process-local by design
 const semanticSearchUsage = new Map<string, number>();
 
 const TIER_POLICY: Record<

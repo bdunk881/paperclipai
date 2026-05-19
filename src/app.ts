@@ -1260,7 +1260,8 @@ app.get("/api/observability", requireAuth, async (req: AuthenticatedRequest, res
   }
 
   const runs = await runStore.list(undefined, userId);
-  const response = buildObservabilityResponse(userId, runs, {
+  // DASH-64.1: now async — see buildObservabilityResponse.
+  const response = await buildObservabilityResponse(userId, runs, {
     agentId: typeof req.query.agentId === "string" ? req.query.agentId : undefined,
     taskId: typeof req.query.taskId === "string" ? req.query.taskId : undefined,
     search: typeof req.query.search === "string" ? req.query.search : undefined,

@@ -73,7 +73,8 @@ describe("controlPlaneStore workspace-scoped reads", () => {
     expect(controlPlaneStore.listExecutions("ceo-user", provisioned.team.id, "workspace-shared")).toEqual([
       expect.objectContaining({ id: started.execution.id }),
     ]);
-    expect(controlPlaneStore.listTasks("ceo-user", provisioned.team.id, "workspace-shared")).toEqual([
+    // DASH-64.1: listTasks is now async (repository-backed).
+    expect(await controlPlaneStore.listTasks("ceo-user", provisioned.team.id, "workspace-shared")).toEqual([
       expect.objectContaining({ id: started.task?.id }),
     ]);
     expect(controlPlaneStore.listHeartbeats("ceo-user", provisioned.team.id, "workspace-shared")).toHaveLength(1);

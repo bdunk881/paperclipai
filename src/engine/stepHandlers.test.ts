@@ -868,7 +868,8 @@ describe("handleAgent", () => {
     expect(executions).toHaveLength(1);
     expect(executions[0].status).toBe("completed");
 
-    const tasks = controlPlaneStore.listTasks("user-1", team.id);
+    // DASH-64.1: listTasks is now async (repository-backed).
+    const tasks = await controlPlaneStore.listTasks("user-1", team.id);
     expect(tasks).toHaveLength(1);
     expect(tasks[0].title).toBe("Work TKT-42");
   });

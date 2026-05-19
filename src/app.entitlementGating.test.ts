@@ -119,7 +119,9 @@ describe("integrationCap gate — POST /api/integrations/connections", () => {
   it("returns 402 when connection count is at cap", async () => {
     // Explore tier: integrationCap=1. Spy returns 1 existing connection → at cap.
     entitlementStore.upsert(WS, "explore");
-    jest.spyOn(integrationCredentialStore, "list").mockReturnValue(
+    // DASH-49 made integrationCredentialStore.list() async (Postgres-first
+    // on cache miss). Mock returns must be awaitable.
+    jest.spyOn(integrationCredentialStore, "list").mockResolvedValue(
       [{ id: "c1", userId: "test-user-ent", integrationSlug: "slack", label: "Slack", isDefault: false, createdAt: "", updatedAt: "" }]
     );
 
@@ -138,7 +140,7 @@ describe("integrationCap gate — POST /api/integrations/connections", () => {
 
   it("passes through the gate when under the integration cap", async () => {
     // Automate tier: integrationCap=10. No existing connections → under cap.
-    jest.spyOn(integrationCredentialStore, "list").mockReturnValue([]);
+    jest.spyOn(integrationCredentialStore, "list").mockResolvedValue([]);
 
     const res = await request(app)
       .post("/api/integrations/connections")

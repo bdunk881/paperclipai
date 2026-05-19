@@ -731,6 +731,32 @@ export const controlPlaneRepository = {
     });
   },
 
+  /**
+   * DASH-64.2 hotfix (Codex review on PR #902): workspace-less
+   * fallback for legacy callers that have a userId but no resolved
+   * workspaceId. Same pattern as listAllTasksForUser → migration 047
+   * SECURITY DEFINER helper (RLS bypass scoped to user_id filter).
+   */
+  async listAllHeartbeatsForUser(userId: string): Promise<AgentHeartbeatRecord[]> {
+    if (useInMemoryFallback()) {
+      const out: AgentHeartbeatRecord[] = [];
+      for (const bucket of memHeartbeats.values()) {
+        for (const heartbeat of bucket.values()) {
+          if (heartbeat.userId === userId) out.push({ ...heartbeat });
+        }
+      }
+      return out.sort((left, right) => right.startedAt.localeCompare(left.startedAt));
+    }
+    const pool = getPostgresPool();
+    const result = await pool.query<HeartbeatRow>(
+      `SELECT id, team_id, user_id, agent_id, execution_id, status,
+              summary, cost_usd, created_task_ids, started_at, completed_at
+         FROM list_agent_heartbeats_for_user($1)`,
+      [userId],
+    );
+    return result.rows.map(rowToHeartbeat);
+  },
+
   async listHeartbeats(
     ctx: ControlPlaneRepoContext,
     filters?: { agentId?: string; teamId?: string; limit?: number }

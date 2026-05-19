@@ -1942,11 +1942,21 @@ export const controlPlaneStore = {
     if (!canAccessAgent(agent, userId, workspaceId)) {
       return [];
     }
-    const resolvedWorkspaceId = workspaceId ?? userId;
-    const rows = await controlPlaneRepository.listHeartbeats(
-      { workspaceId: resolvedWorkspaceId, userId },
-      { agentId },
-    );
+    // DASH-64.2 hotfix (Codex on #902): resolve workspace via the
+    // agent's team before falling back to the cross-workspace helper.
+    let resolvedWorkspaceId = workspaceId;
+    if (!resolvedWorkspaceId && agent) {
+      const teamCtx = await workspaceContextForTeam(agent.teamId, userId);
+      resolvedWorkspaceId = teamCtx?.workspaceId;
+    }
+    const rows: AgentHeartbeatRecord[] = resolvedWorkspaceId
+      ? await controlPlaneRepository.listHeartbeats(
+          { workspaceId: resolvedWorkspaceId, userId },
+          { agentId },
+        )
+      : (await controlPlaneRepository.listAllHeartbeatsForUser(userId)).filter(
+          (heartbeat) => heartbeat.agentId === agentId,
+        );
     return rows
       .filter((heartbeat) => heartbeat.agentId === agentId)
       .sort((left, right) => left.startedAt.localeCompare(right.startedAt));
@@ -3204,17 +3214,31 @@ export const controlPlaneStore = {
   // DASH-64.2: now async — reads route through controlPlaneRepository.
   // The accessibleTeamIds filter is preserved to maintain the same
   // workspace-membership access semantics the old Map provided.
+  //
+  // DASH-64.2 hotfix (Codex review on PR #902): when workspaceId is
+  // omitted, look up the team's workspace via teamWorkspaceIds (cache
+  // populated on team create) and fall back to listAllHeartbeatsForUser
+  // (SECURITY DEFINER, migration 047) for the no-team case. The
+  // previous `workspaceId ?? userId` fallback returned empty in
+  // production because the real workspace id differs from userId and
+  // agent_heartbeats has FORCE RLS.
   async listHeartbeats(
     userId: string,
     teamId?: string,
     workspaceId?: string,
   ): Promise<AgentHeartbeatRecord[]> {
     const accessibleTeamIds = listAccessibleTeamIds(userId, workspaceId);
-    const resolvedWorkspaceId = workspaceId ?? userId;
-    const rows = await controlPlaneRepository.listHeartbeats(
-      { workspaceId: resolvedWorkspaceId, userId },
-      teamId ? { teamId } : undefined,
-    );
+    let resolvedWorkspaceId = workspaceId;
+    if (!resolvedWorkspaceId && teamId) {
+      const teamCtx = await workspaceContextForTeam(teamId, userId);
+      resolvedWorkspaceId = teamCtx?.workspaceId;
+    }
+    const rows: AgentHeartbeatRecord[] = resolvedWorkspaceId
+      ? await controlPlaneRepository.listHeartbeats(
+          { workspaceId: resolvedWorkspaceId, userId },
+          teamId ? { teamId } : undefined,
+        )
+      : await controlPlaneRepository.listAllHeartbeatsForUser(userId);
     return rows
       .filter((heartbeat) => accessibleTeamIds.has(heartbeat.teamId) && (!teamId || heartbeat.teamId === teamId))
       .sort((left, right) => left.startedAt.localeCompare(right.startedAt));

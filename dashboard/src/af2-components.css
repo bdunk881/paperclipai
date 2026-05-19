@@ -371,3 +371,55 @@
 .af2-muted-2 { color: var(--af2-ink-4); }
 .af2-cluster { display: flex; flex-wrap: wrap; gap: 6px; }
 .af2-stack { display: flex; flex-direction: column; gap: 14px; }
+
+/* Responsive (HEL-155) --------------------------------------- */
+@media (max-width: 1023px) {
+  .af2-stats {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .af2-stat:nth-child(2n) {
+    border-right: 0;
+  }
+  .af2-stat:nth-child(-n + 2) {
+    border-bottom: 1px solid var(--af2-line);
+  }
+}
+
+@media (max-width: 767px) {
+  .af2-page {
+    padding: 20px 16px 48px;
+  }
+  .af2-page-head {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 12px;
+  }
+  .af2-page-actions {
+    flex-wrap: wrap;
+    width: 100%;
+  }
+  .af2-stats {
+    grid-template-columns: 1fr;
+  }
+  .af2-stat {
+    border-right: 0 !important;
+    border-bottom: 1px solid var(--af2-line);
+  }
+  .af2-stat:last-child {
+    border-bottom: 0;
+  }
+  .af2-tabs {
+    overflow-x: auto;
+    flex-wrap: nowrap;
+    -webkit-overflow-scrolling: touch;
+  }
+  .af2-list-head {
+    display: none;
+  }
+  .af2-list-row {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+  }
+}

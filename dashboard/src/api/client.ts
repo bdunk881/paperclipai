@@ -1203,101 +1203,11 @@ export interface ProposalJobStatusResponse {
   usage?: ProposalUsageSummary;
 }
 
-const PROPOSAL_CONTEXT_FALLBACK: ProposalContextResponse = {
-  records: [
-    {
-      id: "crm-001",
-      accountName: "Northwind Logistics",
-      contactName: "Jordan Lee",
-      contactEmail: "jordan@northwind.example",
-      dealValue: 125000,
-      stage: "Negotiation",
-      owner: "R. Bennett",
-      updatedAt: "2026-04-18T14:10:00.000Z",
-    },
-    {
-      id: "crm-002",
-      accountName: "Summit BioSystems",
-      contactName: "Amaya Patel",
-      contactEmail: "amaya@summit.example",
-      dealValue: 78000,
-      stage: "Proposal Requested",
-      owner: "D. Kim",
-      updatedAt: "2026-04-18T16:35:00.000Z",
-    },
-    {
-      id: "crm-003",
-      accountName: "Atlas Retail Group",
-      contactName: "Chris Romero",
-      contactEmail: "chris@atlas.example",
-      dealValue: 212000,
-      stage: "Discovery",
-      owner: "S. Flores",
-      updatedAt: "2026-04-18T19:03:00.000Z",
-    },
-  ],
-  templates: [
-    {
-      id: "tpl-enterprise-modern",
-      name: "Enterprise Modern",
-      description: "Executive summary and phased delivery model.",
-      focus: "Enterprise rollout",
-    },
-    {
-      id: "tpl-growth-velocity",
-      name: "Growth Velocity",
-      description: "Outcome-led narrative built around measurable upside.",
-      focus: "Revenue acceleration",
-    },
-    {
-      id: "tpl-technical-deep-dive",
-      name: "Technical Deep Dive",
-      description: "Security, architecture, and integration-heavy proposal framing.",
-      focus: "Technical buyers",
-    },
-  ],
-  history: [
-    {
-      id: "proposal-882",
-      accountName: "Aster Cloud",
-      status: "Exported",
-      format: "PDF",
-      exportedAt: "2026-04-15T13:10:00.000Z",
-    },
-    {
-      id: "proposal-881",
-      accountName: "Falcon Finance",
-      status: "Sent",
-      format: "DOCX",
-      exportedAt: "2026-04-14T10:22:00.000Z",
-    },
-    {
-      id: "proposal-880",
-      accountName: "Pioneer Health",
-      status: "Draft",
-      format: "PDF",
-      exportedAt: "2026-04-13T17:45:00.000Z",
-    },
-  ],
-  usage: { used: 4, limit: 5 },
-};
-
-const PROPOSAL_JOB_FALLBACK: ProposalJobStatusResponse = {
-  jobId: "mock-proposal-job",
-  status: "completed",
-  events: [
-    "CRM context validated",
-    "Proposal brief generated",
-    "Draft sections assembled",
-    "Formatting pass complete",
-  ],
-  draft: {
-    title: "AutoFlow Proposal Draft",
-    body:
-      "# Executive Summary\n\nAutoFlow can reduce manual proposal prep by 70%.\n\n## Solution Outline\n\n- CRM context ingestion\n- AI-assisted draft generation\n- Team review and export\n\n## Commercial Terms\n\nEstimated annual value: {{DealValue}}",
-    variableHints: ["{{ClientName}}", "{{DealValue}}", "{{OwnerName}}"],
-  },
-  usage: { used: 5, limit: 5 },
+const EMPTY_PROPOSAL_CONTEXT: ProposalContextResponse = {
+  records: [],
+  templates: [],
+  history: [],
+  usage: { used: 0, limit: 0 },
 };
 
 export async function listProposalContext(accessToken?: string): Promise<ProposalContextResponse> {
@@ -1305,15 +1215,15 @@ export async function listProposalContext(accessToken?: string): Promise<Proposa
     headers: buildAuthHeaders(accessToken),
   });
   if (res.status === 404) {
-    return PROPOSAL_CONTEXT_FALLBACK;
+    return EMPTY_PROPOSAL_CONTEXT;
   }
   if (!res.ok) throw new Error(`Failed to fetch proposal context: ${res.status}`);
   const data = await res.json();
   return {
-    records: (data.records ?? PROPOSAL_CONTEXT_FALLBACK.records) as ProposalCrmRecord[],
-    templates: (data.templates ?? PROPOSAL_CONTEXT_FALLBACK.templates) as ProposalTemplateOption[],
-    history: (data.history ?? PROPOSAL_CONTEXT_FALLBACK.history) as ProposalHistoryItem[],
-    usage: (data.usage ?? PROPOSAL_CONTEXT_FALLBACK.usage) as ProposalUsageSummary,
+    records: (data.records ?? []) as ProposalCrmRecord[],
+    templates: (data.templates ?? []) as ProposalTemplateOption[],
+    history: (data.history ?? []) as ProposalHistoryItem[],
+    usage: (data.usage ?? EMPTY_PROPOSAL_CONTEXT.usage) as ProposalUsageSummary,
   };
 }
 
@@ -1330,7 +1240,7 @@ export async function createProposalDraft(
     body: JSON.stringify(input),
   });
   if (res.status === 404) {
-    return { jobId: PROPOSAL_JOB_FALLBACK.jobId, status: "queued" };
+    throw new Error("Proposal drafts are not available on this environment yet.");
   }
   if (!res.ok) {
     const err = await res.json().catch(() => null);
@@ -1347,7 +1257,7 @@ export async function getProposalJobStatus(
     headers: buildAuthHeaders(accessToken),
   });
   if (res.status === 404) {
-    return { ...PROPOSAL_JOB_FALLBACK, jobId };
+    throw new Error("Proposal job status is not available on this environment yet.");
   }
   if (!res.ok) {
     const err = await res.json().catch(() => null);

@@ -61,6 +61,30 @@ export interface UpdateRoutineInput {
   scheduleCron?: string | null;
 }
 
+export interface CreateRoutineInput {
+  agentId: string;
+  workflowId: string;
+  name: string;
+  scheduleCron?: string | null;
+  triggerKind?: "manual" | "scheduled" | "webhook" | "event";
+  enabled?: boolean;
+}
+
+export async function createRoutine(
+  input: CreateRoutineInput,
+  accessToken: string,
+): Promise<Routine> {
+  const response = await trackedFetch(`${BASE}/routines`, {
+    method: "POST",
+    headers: buildHeaders(accessToken, { "Content-Type": "application/json" }),
+    body: JSON.stringify(input),
+  });
+  return parseJsonOrError<Routine>(
+    response,
+    `Failed to create routine: ${response.status}`,
+  );
+}
+
 export async function updateRoutine(
   routineId: string,
   input: UpdateRoutineInput,

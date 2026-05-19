@@ -79,8 +79,13 @@ describe("controlPlaneStore RLS integration", () => {
     await controlPlane.controlPlaneStore.ensureWorkspaceHydrated(workspaceOne, userId);
     await controlPlane.controlPlaneStore.ensureWorkspaceHydrated(workspaceTwo, userId);
 
-    expect(controlPlane.controlPlaneStore.listTeams(userId, workspaceOne).map((team) => team.id)).toEqual([teamOne.id]);
-    expect(controlPlane.controlPlaneStore.listTeams(userId, workspaceTwo).map((team) => team.id)).toEqual([teamTwo.id]);
+    // DASH-64.6: listTeams is async now (repo-backed).
+    expect(
+      (await controlPlane.controlPlaneStore.listTeams(userId, workspaceOne)).map((team) => team.id)
+    ).toEqual([teamOne.id]);
+    expect(
+      (await controlPlane.controlPlaneStore.listTeams(userId, workspaceTwo)).map((team) => team.id)
+    ).toEqual([teamTwo.id]);
 
     const pool = postgres.getPostgresPool();
 

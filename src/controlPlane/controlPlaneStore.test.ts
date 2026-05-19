@@ -19,15 +19,16 @@ describe("controlPlaneStore workspace-scoped reads", () => {
     });
 
     expect(provisioned.company.workspaceId).toBe("workspace-shared");
-    expect(controlPlaneStore.listTeams("ceo-user", "workspace-shared")).toEqual([
+    // DASH-64.6: listTeams + getTeam are async now (repo-backed).
+    expect(await controlPlaneStore.listTeams("ceo-user", "workspace-shared")).toEqual([
       expect.objectContaining({ id: provisioned.team.id }),
     ]);
-    expect(controlPlaneStore.getTeam(provisioned.team.id, "ceo-user", "workspace-shared")).toEqual(
+    expect(await controlPlaneStore.getTeam(provisioned.team.id, "ceo-user", "workspace-shared")).toEqual(
       expect.objectContaining({ id: provisioned.team.id })
     );
     // DASH-64.5: listAllAgents is async now (repo-backed).
     expect(await controlPlaneStore.listAllAgents("ceo-user", "workspace-shared")).toHaveLength(1);
-    expect(controlPlaneStore.listTeams("ceo-user", "workspace-other")).toHaveLength(0);
+    expect(await controlPlaneStore.listTeams("ceo-user", "workspace-other")).toHaveLength(0);
   });
 
   it("exposes agents, executions, tasks, heartbeats, and spend snapshots through shared workspace access", async () => {

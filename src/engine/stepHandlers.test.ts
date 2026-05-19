@@ -861,7 +861,8 @@ describe("handleAgent", () => {
     expect(result.output["_controlPlaneExecutionId"]).toBeDefined();
     expect(result.output["_controlPlaneTaskId"]).toBeDefined();
 
-    const teams = controlPlaneStore.listTeams("user-1");
+    // DASH-64.6: listTeams is async now (repo-backed).
+    const teams = await controlPlaneStore.listTeams("user-1");
     expect(teams).toHaveLength(1);
     const team = teams[0];
     // DASH-64.4: listExecutions is now async (repository-backed).

@@ -25,14 +25,15 @@ describe("controlPlaneStore identity scoping", () => {
       agents: [{ roleTemplateId: "backend-engineer" }],
     });
 
-    expect(controlPlaneStore.listTeams(provisioningUserId, workspaceId)).toHaveLength(1);
+    // DASH-64.6: listTeams + getTeam are async now (repo-backed).
+    expect(await controlPlaneStore.listTeams(provisioningUserId, workspaceId)).toHaveLength(1);
     // DASH-64.5: listAgents is async now (repo-backed).
     expect(await controlPlaneStore.listAgents(provisioned.team.id, provisioningUserId, workspaceId)).toHaveLength(1);
 
-    expect(controlPlaneStore.listTeams(browserUserId, workspaceId)).toEqual([
+    expect(await controlPlaneStore.listTeams(browserUserId, workspaceId)).toEqual([
       expect.objectContaining({ id: provisioned.team.id }),
     ]);
-    expect(controlPlaneStore.getTeam(provisioned.team.id, browserUserId, workspaceId)).toEqual(
+    expect(await controlPlaneStore.getTeam(provisioned.team.id, browserUserId, workspaceId)).toEqual(
       expect.objectContaining({ id: provisioned.team.id })
     );
     expect(await controlPlaneStore.listAgents(provisioned.team.id, browserUserId, workspaceId)).toEqual([

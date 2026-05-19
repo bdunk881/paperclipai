@@ -66,11 +66,9 @@ router.get("/", async (req: WorkspaceAwareRequest, res) => {
     return;
   }
 
-  const teams = new Map(
-    controlPlaneStore
-      .listTeams(context.userId, context.workspaceId)
-      .map((team) => [team.id, team]),
-  );
+  // DASH-64.6: listTeams is async now (repo-backed).
+  const teamRows = await controlPlaneStore.listTeams(context.userId, context.workspaceId);
+  const teams = new Map(teamRows.map((team) => [team.id, team]));
 
   // DASH-64.4: listAgentExecutions is async now — Promise.all the
   // per-agent enrichment instead of mapping synchronously.

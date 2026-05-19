@@ -301,14 +301,20 @@ function requirePaperclipRunId(
   next();
 }
 
-router.get("/teams", (req: WorkspaceAwareRequest, res) => {
+router.get("/teams", async (req: WorkspaceAwareRequest, res) => {
   const context = resolveWorkspaceContext(req, res);
   if (!context) {
     return;
   }
 
-  const teams = controlPlaneStore.listTeams(context.userId, context.workspaceId);
-  res.json({ teams, total: teams.length });
+  try {
+    // DASH-64.6: listTeams is async now (repo-backed).
+    const teams = await controlPlaneStore.listTeams(context.userId, context.workspaceId);
+    res.json({ teams, total: teams.length });
+  } catch (err) {
+    console.warn(`[controlPlaneRoutes] /teams failed: ${(err as Error).message}`);
+    res.status(500).json({ error: "teams_unavailable" });
+  }
 });
 
 router.get("/company/lifecycle", async (req: AuthenticatedRequest, res) => {
@@ -566,7 +572,8 @@ router.get("/teams/:id", async (req: WorkspaceAwareRequest, res) => {
     return;
   }
 
-  const team = controlPlaneStore.getTeam(req.params.id, context.userId, context.workspaceId);
+  // DASH-64.6: getTeam is async now (repo-backed).
+  const team = await controlPlaneStore.getTeam(req.params.id, context.userId, context.workspaceId);
   if (team) {
     // DASH-64.5: listAgents is async now (repo-backed).
     const agents = await controlPlaneStore.listAgents(team.id, context.userId, context.workspaceId);

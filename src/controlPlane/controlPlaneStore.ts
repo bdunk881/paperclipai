@@ -1361,19 +1361,25 @@ async function pauseExecutionForBudget(
   if (executionId) {
     // DASH-64.4: execution now read+written via repository instead of
     // the in-memory Map.
+    //
+    // DASH-64.4 iter 2 (mirrors Codex P1 on #901): throw instead of
+    // silently skipping the pause when workspaceContextForTeam returns
+    // undefined. A skipped pause-for-budget means runaway compute
+    // beyond the budget cap.
     const ctx = await workspaceContextForTeam(team.id, team.userId);
-    if (ctx) {
-      const execution = await controlPlaneRepository.getExecution(ctx, executionId);
-      if (execution && execution.status === "running") {
-        const updated: ControlPlaneExecution = {
-          ...execution,
-          status: "blocked",
-          summary: execution.summary ?? "Execution halted after budget limit was reached.",
-          completedAt: timestamp,
-          lastHeartbeatAt: timestamp,
-        };
-        await controlPlaneRepository.upsertExecution(ctx, updated);
-      }
+    if (!ctx) {
+      throw new Error("pause_execution_workspace_unresolved");
+    }
+    const execution = await controlPlaneRepository.getExecution(ctx, executionId);
+    if (execution && execution.status === "running") {
+      const updated: ControlPlaneExecution = {
+        ...execution,
+        status: "blocked",
+        summary: execution.summary ?? "Execution halted after budget limit was reached.",
+        completedAt: timestamp,
+        lastHeartbeatAt: timestamp,
+      };
+      await controlPlaneRepository.upsertExecution(ctx, updated);
     }
   }
 
@@ -2189,8 +2195,14 @@ export const controlPlaneStore = {
     // DASH-64.4: load + mutate + persist execution rows via repository.
     // No more in-memory Map; we compute updates on the loaded snapshot
     // and write each back via upsertExecution.
+    // DASH-64.4 iter 2 (mirrors Codex P1 on #901): throw on unresolved
+    // workspace ctx so a team-lifecycle action doesn't silently leave
+    // queued/running executions in a stale state.
     const lifecycleCtx = await workspaceContextForTeam(team.id, input.userId);
-    if (lifecycleCtx && (input.action === "stop" || input.action === "restart")) {
+    if (!lifecycleCtx) {
+      throw new Error("team_lifecycle_workspace_unresolved");
+    }
+    if (input.action === "stop" || input.action === "restart") {
       const teamExecutions = await controlPlaneRepository.listExecutions(lifecycleCtx, {
         teamId: team.id,
       });
@@ -2268,20 +2280,25 @@ export const controlPlaneStore = {
 
     // DASH-64.4: skill propagation onto live executions now flows
     // through the repository (no more in-memory Map mutation).
+    //
+    // DASH-64.4 iter 2 (mirrors Codex P1 on #901): throw instead of
+    // silently dropping skill-update propagation when
+    // workspaceContextForTeam returns undefined.
     const skillsCtx = await workspaceContextForTeam(agent.teamId, input.userId);
-    if (skillsCtx) {
-      const runningExecutions = await controlPlaneRepository.listExecutions(skillsCtx, {
-        agentId: agent.id,
-        status: "running",
-      });
-      for (const execution of runningExecutions) {
-        const updated: ControlPlaneExecution = {
-          ...execution,
-          appliedSkills: [...agent.skills],
-          lastHeartbeatAt: nowIso(),
-        };
-        await controlPlaneRepository.upsertExecution(skillsCtx, updated);
-      }
+    if (!skillsCtx) {
+      throw new Error("agent_skills_workspace_unresolved");
+    }
+    const runningExecutions = await controlPlaneRepository.listExecutions(skillsCtx, {
+      agentId: agent.id,
+      status: "running",
+    });
+    for (const execution of runningExecutions) {
+      const updated: ControlPlaneExecution = {
+        ...execution,
+        appliedSkills: [...agent.skills],
+        lastHeartbeatAt: nowIso(),
+      };
+      await controlPlaneRepository.upsertExecution(skillsCtx, updated);
     }
 
     if (postgresPersistenceAvailable()) {
@@ -2795,10 +2812,16 @@ export const controlPlaneStore = {
     };
     // DASH-64.4: persist via repository (test in-mem bucket + prod
     // Postgres path both handled there).
+    //
+    // DASH-64.4 iter 2 (mirrors Codex P1 on #901): throw instead of
+    // silently dropping the execution row when workspaceContextForTeam
+    // returns undefined. Without this, startAgentExecution would
+    // return a phantom execution that disappears on the next read.
     const startCtx = await workspaceContextForTeam(team.id, input.userId);
-    if (startCtx) {
-      await controlPlaneRepository.upsertExecution(startCtx, execution);
+    if (!startCtx) {
+      throw new Error("execution_workspace_unresolved");
     }
+    await controlPlaneRepository.upsertExecution(startCtx, execution);
 
     agent.currentExecutionId = execution.id;
     agent.lastHeartbeatAt = requestedAt;
@@ -2887,10 +2910,16 @@ export const controlPlaneStore = {
     execution.lastHeartbeatAt = timestamp;
     execution.completedAt = timestamp;
     // DASH-64.4: persist execution mutation via repository.
+    //
+    // DASH-64.4 iter 2 (mirrors Codex P1 on #901): throw instead of
+    // silently dropping the finalize write — the run would appear
+    // to have completed but the row would still show "running" on
+    // next read.
     const finalizeCtx = await workspaceContextForTeam(execution.teamId, input.userId);
-    if (finalizeCtx) {
-      await controlPlaneRepository.upsertExecution(finalizeCtx, execution);
+    if (!finalizeCtx) {
+      throw new Error("execution_workspace_unresolved");
     }
+    await controlPlaneRepository.upsertExecution(finalizeCtx, execution);
 
     const agent = agents.get(execution.agentId);
     if (agent) {
@@ -3041,10 +3070,14 @@ export const controlPlaneStore = {
     // DASH-64.4: execution persistence now routes entirely through the
     // repository (Postgres for prod, in-memory bucket for tests). The
     // previous in-TX upsertExecutionRow call is no longer needed.
+    //
+    // DASH-64.4 iter 2 (mirrors Codex P1 on #901): throw on unresolved
+    // workspace ctx instead of silently dropping the lifecycle update.
     const lifecycleCtx = await workspaceContextForTeam(execution.teamId, input.userId);
-    if (lifecycleCtx) {
-      await controlPlaneRepository.upsertExecution(lifecycleCtx, execution);
+    if (!lifecycleCtx) {
+      throw new Error("execution_workspace_unresolved");
     }
+    await controlPlaneRepository.upsertExecution(lifecycleCtx, execution);
     if (postgresPersistenceAvailable() && input.workspaceId) {
       hydratedWorkspaceUsers.add(workspaceUserKey(input.workspaceId, input.userId));
     }
@@ -3102,10 +3135,15 @@ export const controlPlaneStore = {
       // DASH-64.4: persist execution heartbeat via repository (in-memory
       // bucket in test, Postgres in prod). The in-TX upsertExecutionRow
       // call below is removed since the repo already wrote it.
+      //
+      // DASH-64.4 iter 2 (mirrors Codex P1 on #901): throw on
+      // unresolved workspace ctx so the caller learns the heartbeat
+      // didn't actually persist instead of silently no-op'ing.
       const heartbeatExecCtx = await workspaceContextForTeam(execution.teamId, input.userId);
-      if (heartbeatExecCtx) {
-        await controlPlaneRepository.upsertExecution(heartbeatExecCtx, execution);
+      if (!heartbeatExecCtx) {
+        throw new Error("execution_workspace_unresolved");
       }
+      await controlPlaneRepository.upsertExecution(heartbeatExecCtx, execution);
     }
 
     const timestamp = nowIso();

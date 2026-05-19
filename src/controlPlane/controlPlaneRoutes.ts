@@ -568,7 +568,8 @@ router.get("/teams/:id", async (req: WorkspaceAwareRequest, res) => {
   const team = controlPlaneStore.getTeam(req.params.id, context.userId, context.workspaceId);
   if (team) {
     const agents = controlPlaneStore.listAgents(team.id, context.userId, context.workspaceId);
-    const tasks = controlPlaneStore.listTasks(context.userId, team.id, context.workspaceId);
+    // DASH-64.1: listTasks is async now.
+    const tasks = await controlPlaneStore.listTasks(context.userId, team.id, context.workspaceId);
     const heartbeats = controlPlaneStore.listHeartbeats(context.userId, team.id, context.workspaceId);
     const executions = controlPlaneStore.listExecutions(context.userId, team.id, context.workspaceId);
     const spend = controlPlaneStore.getTeamSpendSnapshot(team.id, context.userId, context.workspaceId);
@@ -787,13 +788,14 @@ router.post("/tasks", requirePaperclipRunId, async (req: AuthenticatedRequest, r
   }
 });
 
-router.get("/tasks", (req: WorkspaceAwareRequest, res) => {
+router.get("/tasks", async (req: WorkspaceAwareRequest, res) => {
   const context = resolveWorkspaceContext(req, res);
   if (!context) {
     return;
   }
   const teamId = typeof req.query.teamId === "string" ? req.query.teamId : undefined;
-  const tasks = controlPlaneStore.listTasks(context.userId, teamId, context.workspaceId);
+  // DASH-64.1: listTasks is now async (repository-backed).
+  const tasks = await controlPlaneStore.listTasks(context.userId, teamId, context.workspaceId);
   res.json({ tasks, total: tasks.length });
 });
 
@@ -852,18 +854,27 @@ router.post("/executions/:id/lifecycle", requirePaperclipRunId, async (req: Work
   }
 });
 
-router.post("/tasks/:id/checkout", requirePaperclipRunId, async (req: AuthenticatedRequest, res) => {
-  const userId = getUserId(req);
-  if (!userId) {
-    res.status(401).json({ error: "Authenticated user required" });
+router.post("/tasks/:id/checkout", requirePaperclipRunId, async (req: WorkspaceAwareRequest, res) => {
+  // DASH-64.1: now workspace-aware. Workspace context required for
+  // the repository-backed task lookup. resolveWorkspaceContext on a
+  // mutating verb always returns a defined workspaceId (either from
+  // header or the test-mode fallback to userId), but TS can't narrow
+  // through that branch — the explicit check below restates it.
+  const context = resolveWorkspaceContext(req, res);
+  if (!context) {
+    return;
+  }
+  if (!context.workspaceId) {
+    res.status(400).json({ error: "Workspace context is required" });
     return;
   }
 
   try {
     const task = await controlPlaneStore.checkoutTask({
       taskId: req.params.id,
-      userId,
+      userId: context.userId,
       actor: req.header("X-Paperclip-Run-Id") as string,
+      workspaceId: context.workspaceId,
     });
     res.json(task);
   } catch (error) {
@@ -879,10 +890,15 @@ router.post("/tasks/:id/checkout", requirePaperclipRunId, async (req: Authentica
   }
 });
 
-router.patch("/tasks/:id/status", requirePaperclipRunId, (req: AuthenticatedRequest, res) => {
-  const userId = getUserId(req);
-  if (!userId) {
-    res.status(401).json({ error: "Authenticated user required" });
+router.patch("/tasks/:id/status", requirePaperclipRunId, async (req: WorkspaceAwareRequest, res) => {
+  // DASH-64.1: now workspace-aware + async (was sync because the Map
+  // lookup didn't await; repository read is async).
+  const context = resolveWorkspaceContext(req, res);
+  if (!context) {
+    return;
+  }
+  if (!context.workspaceId) {
+    res.status(400).json({ error: "Workspace context is required" });
     return;
   }
 
@@ -893,11 +909,12 @@ router.patch("/tasks/:id/status", requirePaperclipRunId, (req: AuthenticatedRequ
   }
 
   try {
-    const task = controlPlaneStore.updateTaskStatus({
+    const task = await controlPlaneStore.updateTaskStatus({
       taskId: req.params.id,
-      userId,
+      userId: context.userId,
       actor: req.header("X-Paperclip-Run-Id") as string,
       status,
+      workspaceId: context.workspaceId,
     });
     res.json(task);
   } catch (error) {

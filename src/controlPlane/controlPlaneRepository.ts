@@ -14,7 +14,7 @@
  */
 
 import { PoolClient } from "pg";
-import { getPostgresPool } from "../db/postgres";
+import { getPostgresPool, inMemoryAllowed, isPostgresConfigured } from "../db/postgres";
 import { withWorkspaceContext } from "../middleware/workspaceContext";
 import {
   AgentHeartbeatRecord,
@@ -27,6 +27,55 @@ import {
   HeartbeatStatus,
   SpendCategory,
 } from "./types";
+
+// ---------------------------------------------------------------------------
+// DASH-64.1: In-memory fallback for test/dev mode (HEL-80 pattern).
+//
+// Production runs with DATABASE_URL set and everything routes through
+// Postgres via withWorkspaceContext. Unit tests typically run without
+// Postgres available — the previous architecture handled this by keeping
+// a parallel in-memory Map at the controlPlaneStore level. DASH-64
+// removes those Maps in favor of repository-only reads, so the
+// fallback moves here.
+//
+// `inMemoryAllowed()` is true in NODE_ENV=test / development. Production
+// fails fast on the Postgres path because `inMemoryAllowed()` is false
+// and the repository goes straight to withWorkspaceContext (which throws
+// if Postgres isn't configured — by design, see HEL-80).
+//
+// Each in-memory store is a workspace-scoped Map<workspaceId, Map<id, row>>
+// so cross-tenant isolation behaves the same as RLS would in production.
+// ---------------------------------------------------------------------------
+
+// allowlist: test/dev fallback for repository; production routes to Postgres
+const memTasks = new Map<string, Map<string, ControlPlaneTask>>();
+// allowlist: test/dev fallback for repository; production routes to Postgres
+const memHeartbeats = new Map<string, Map<string, AgentHeartbeatRecord>>();
+// allowlist: test/dev fallback for repository; production routes to Postgres
+const memSpendEntries = new Map<string, Map<string, ControlPlaneSpendEntry>>();
+// allowlist: test/dev fallback for repository; production routes to Postgres
+const memBudgetAlerts = new Map<string, Map<string, ControlPlaneBudgetAlert>>();
+
+function memBucket<T>(
+  store: Map<string, Map<string, T>>,
+  workspaceId: string,
+): Map<string, T> {
+  let bucket = store.get(workspaceId);
+  if (!bucket) {
+    bucket = new Map<string, T>();
+    store.set(workspaceId, bucket);
+  }
+  return bucket;
+}
+
+/**
+ * Returns true when the repository should use its in-memory fallback
+ * instead of going to Postgres. Same gate as HEL-80 elsewhere in the
+ * codebase: tests + development without DATABASE_URL.
+ */
+function useInMemoryFallback(): boolean {
+  return !isPostgresConfigured() && inMemoryAllowed();
+}
 
 export interface ControlPlaneRepoContext {
   workspaceId: string;
@@ -353,29 +402,91 @@ async function upsertBudgetAlertRow(
 
 export const controlPlaneRepository = {
   async upsertTask(ctx: ControlPlaneRepoContext, task: ControlPlaneTask): Promise<void> {
+    if (useInMemoryFallback()) {
+      memBucket(memTasks, ctx.workspaceId).set(task.id, { ...task });
+      return;
+    }
     await withWorkspaceContext(getPostgresPool(), ctx, async (client) => {
       await insertTaskRow(client, ctx, task);
     });
   },
 
-  async listTasks(
+  /**
+   * DASH-64.1: single-task lookup. Used by checkoutTask / updateTaskStatus
+   * paths that need to read a row before mutating it. Returns undefined
+   * when the task doesn't exist OR the caller doesn't own it (user_id
+   * filter — Postgres-side via RLS, in-memory-side via explicit check).
+   */
+  async getTask(
     ctx: ControlPlaneRepoContext,
-    filters?: { teamId?: string }
-  ): Promise<ControlPlaneTask[]> {
-    return withWorkspaceContext(getPostgresPool(), ctx, async (client) => {
-      const params: unknown[] = [ctx.userId];
-      let where = "user_id = $1";
-      if (filters?.teamId) {
-        params.push(filters.teamId);
-        where += ` AND team_id = $${params.length}`;
+    taskId: string,
+  ): Promise<ControlPlaneTask | undefined> {
+    if (useInMemoryFallback()) {
+      // First check the requested workspace's bucket.
+      const inWorkspace = memBucket(memTasks, ctx.workspaceId).get(taskId);
+      if (inWorkspace) return { ...inWorkspace };
+      // DASH-64.1: in tests, callers often don't have a workspace
+      // resolved (the route layer hasn't wired one through yet — that's
+      // DASH-64.6 work). Walk every bucket to preserve the old
+      // global-Map behaviour. Production RLS makes this branch
+      // unreachable.
+      for (const bucket of memTasks.values()) {
+        const task = bucket.get(taskId);
+        if (task) return { ...task };
       }
+      return undefined;
+    }
+    return withWorkspaceContext(getPostgresPool(), ctx, async (client) => {
+      // DASH-64.1: workspace RLS is the access boundary; the id alone
+      // identifies the task.
       const result = await client.query<TaskRow>(
         `SELECT id, team_id, user_id, title, description, source_run_id,
                 source_workflow_step_id, assigned_agent_id, execution_id, status,
                 checked_out_by, checked_out_at, audit_trail, metadata,
                 created_at, updated_at
            FROM agent_tasks
-          WHERE ${where}
+          WHERE id = $1`,
+        [taskId],
+      );
+      const row = result.rows[0];
+      return row ? rowToTask(row) : undefined;
+    });
+  },
+
+
+  async listTasks(
+    ctx: ControlPlaneRepoContext,
+    filters?: { teamId?: string }
+  ): Promise<ControlPlaneTask[]> {
+    if (useInMemoryFallback()) {
+      // DASH-64.1: workspace IS the access boundary (RLS analogue).
+      // No userId filter — anyone with access to the workspace sees
+      // its tasks. The pre-DASH-64 in-memory Map used team-accessibility
+      // via listAccessibleTeamIds, which checks workspace membership.
+      const bucket = memBucket(memTasks, ctx.workspaceId);
+      return Array.from(bucket.values())
+        .filter((task) => !filters?.teamId || task.teamId === filters.teamId)
+        .map((task) => ({ ...task }))
+        .sort((left, right) => left.createdAt.localeCompare(right.createdAt));
+    }
+    return withWorkspaceContext(getPostgresPool(), ctx, async (client) => {
+      // DASH-64.1: no user_id filter — workspace RLS is the access
+      // boundary. The user_id column tracks who CREATED the task; it's
+      // not used for access control.
+      const params: unknown[] = [];
+      const conditions: string[] = [];
+      if (filters?.teamId) {
+        params.push(filters.teamId);
+        conditions.push(`team_id = $${params.length}`);
+      }
+      const where = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
+      const result = await client.query<TaskRow>(
+        `SELECT id, team_id, user_id, title, description, source_run_id,
+                source_workflow_step_id, assigned_agent_id, execution_id, status,
+                checked_out_by, checked_out_at, audit_trail, metadata,
+                created_at, updated_at
+           FROM agent_tasks
+          ${where}
           ORDER BY created_at ASC`,
         params
       );
@@ -383,10 +494,53 @@ export const controlPlaneRepository = {
     });
   },
 
+  /**
+   * DASH-64.1: list every task across every workspace this user owns.
+   * The team-less listTasks variant — used by the observability service's
+   * cross-workspace dashboard and any other code path that has a userId
+   * but no specific workspace in hand. In-memory fallback walks every
+   * bucket; Postgres returns the full user-scoped set under RLS.
+   *
+   * NOTE: production callers SHOULD pass a workspaceId when they have one
+   * for tighter RLS scoping. This helper exists for the legacy
+   * `controlPlaneStore.listTasks(userId)` shape which had no workspace
+   * filter.
+   */
+  async listAllTasksForUser(userId: string): Promise<ControlPlaneTask[]> {
+    if (useInMemoryFallback()) {
+      const out: ControlPlaneTask[] = [];
+      for (const bucket of memTasks.values()) {
+        for (const task of bucket.values()) {
+          if (task.userId === userId) out.push({ ...task });
+        }
+      }
+      return out.sort((left, right) => left.createdAt.localeCompare(right.createdAt));
+    }
+    // No workspace context — go direct to pool with the user_id filter.
+    // RLS on agent_tasks is workspace-scoped so this hits FORCE RLS;
+    // use the security-definer helper instead of withWorkspaceContext.
+    const pool = getPostgresPool();
+    const result = await pool.query<TaskRow>(
+      `SELECT id, team_id, user_id, title, description, source_run_id,
+              source_workflow_step_id, assigned_agent_id, execution_id, status,
+              checked_out_by, checked_out_at, audit_trail, metadata,
+              created_at, updated_at
+         FROM agent_tasks
+        WHERE user_id = $1
+        ORDER BY created_at ASC`,
+      [userId],
+    );
+    return result.rows.map(rowToTask);
+  },
+
   async insertHeartbeat(
     ctx: ControlPlaneRepoContext,
     heartbeat: AgentHeartbeatRecord
   ): Promise<void> {
+    if (useInMemoryFallback()) {
+      memBucket(memHeartbeats, ctx.workspaceId).set(heartbeat.id, { ...heartbeat });
+      return;
+    }
     await withWorkspaceContext(getPostgresPool(), ctx, async (client) => {
       await insertHeartbeatRow(client, ctx, heartbeat);
     });
@@ -428,6 +582,10 @@ export const controlPlaneRepository = {
     ctx: ControlPlaneRepoContext,
     entry: ControlPlaneSpendEntry
   ): Promise<void> {
+    if (useInMemoryFallback()) {
+      memBucket(memSpendEntries, ctx.workspaceId).set(entry.id, { ...entry });
+      return;
+    }
     await withWorkspaceContext(getPostgresPool(), ctx, async (client) => {
       await insertSpendEntryRow(client, ctx, entry);
     });
@@ -468,6 +626,10 @@ export const controlPlaneRepository = {
     ctx: ControlPlaneRepoContext,
     alert: ControlPlaneBudgetAlert
   ): Promise<void> {
+    if (useInMemoryFallback()) {
+      memBucket(memBudgetAlerts, ctx.workspaceId).set(alert.id, { ...alert });
+      return;
+    }
     await withWorkspaceContext(getPostgresPool(), ctx, async (client) => {
       await upsertBudgetAlertRow(client, ctx, alert);
     });
@@ -496,5 +658,20 @@ export const controlPlaneRepository = {
     });
   },
 };
+
+/**
+ * DASH-64.1: Test-only — clears the in-memory fallback stores so each
+ * `beforeEach` starts from a clean slate. No-op in production (Postgres
+ * is the source of truth and test fixtures handle their own teardown).
+ *
+ * Exported separately from the main `controlPlaneRepository` object so
+ * production code can't accidentally call it.
+ */
+export function __resetRepositoryInMemoryStateForTests(): void {
+  memTasks.clear();
+  memHeartbeats.clear();
+  memSpendEntries.clear();
+  memBudgetAlerts.clear();
+}
 
 export type ControlPlaneRepository = typeof controlPlaneRepository;

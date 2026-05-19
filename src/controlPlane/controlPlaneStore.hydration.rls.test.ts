@@ -184,9 +184,9 @@ describe("controlPlaneStore (Phase 4.2b) hydration round-trip", () => {
         description: "Survives a restart",
         actor: "system",
       });
-      expect(controlPlane.controlPlaneStore.listTasks(userId, teamId).map((t) => t.id)).toEqual([
-        created.id,
-      ]);
+      // DASH-64.1: listTasks is now async (repository-backed).
+      const liveTasks = await controlPlane.controlPlaneStore.listTasks(userId, teamId);
+      expect(liveTasks.map((t) => t.id)).toEqual([created.id]);
     }
 
     const { postgres, controlPlane } = await loadModules();
@@ -194,11 +194,13 @@ describe("controlPlaneStore (Phase 4.2b) hydration round-trip", () => {
     await postgres.closePostgresPoolForTests();
 
     // Second boot: empty in-memory state, fresh pool. The task should come
-    // back from PG via ensureWorkspaceHydrated.
+    // back from PG — DASH-64.1: tasks live entirely in the repository
+    // now, so there's no in-store hydration step; the next listTasks
+    // call reads from Postgres directly.
     {
       const fresh = await loadModules();
       await fresh.controlPlane.controlPlaneStore.ensureWorkspaceHydrated(workspaceId, userId);
-      const restored = fresh.controlPlane.controlPlaneStore.listTasks(userId, teamId);
+      const restored = await fresh.controlPlane.controlPlaneStore.listTasks(userId, teamId);
       expect(restored).toHaveLength(1);
       expect(restored[0].title).toBe("Tasks round-trip");
       expect(restored[0].teamId).toBe(teamId);

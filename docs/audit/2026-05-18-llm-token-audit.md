@@ -78,7 +78,9 @@ Caching takes that to ~$5.
 const model = resolveModelForTier(resolved.config.provider, "standard");
 ```
 
-`"standard"` → `claude-sonnet-4-6` per `src/llmConfig/tierRouter.ts`.
+`"standard"` → `claude-sonnet-4-6` per `src/engine/llmRouter.ts`
+(the per-call tier router; see the "Tier-routing" section below for the
+distinction from `src/llmConfig/tierRouter.ts`).
 
 The call's output contract is:
 - `MAX_SUMMARY_CHARS = 240` (line 42)
@@ -91,11 +93,14 @@ agent, so it's a high-frequency call.
 
 **Fix:** change `"standard"` → `"lite"`. One-line change.
 
-### 3. `max_tokens: 4096` everywhere
+### 3. `max_tokens: 4096` everywhere (except the wrap-up path)
 
-Every call site in `src/engine/llmProviders/anthropic.ts` hardcodes
-`max_tokens: 4096` (lines 103, 135, 220, 296). The newer adapter
-defaults to the same when caller omits.
+Every regular Anthropic call site in
+`src/engine/llmProviders/anthropic.ts` hardcodes `max_tokens: 4096`
+(lines 103, 135, 220). The exception is line 296 — the
+max-iteration tool-loop wrap-up — which already uses a tighter `1024`
+cap. The newer adapter defaults to 4096 when the caller omits the
+cap.
 
 Specific over-allocations to fix:
 

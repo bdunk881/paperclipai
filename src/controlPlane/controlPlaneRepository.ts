@@ -747,14 +747,30 @@ export const controlPlaneRepository = {
       }
       return out.sort((left, right) => right.startedAt.localeCompare(left.startedAt));
     }
+    // DASH-64.2 iter 2 (Codex P1, same as listAllTasksForUser):
+    // migration 047's helper now binds to the authenticated subject
+    // via app.current_user_id. Backend MUST set that session var
+    // before calling; we use a dedicated client + transaction so
+    // set_config(..., true) is scoped to this query alone.
     const pool = getPostgresPool();
-    const result = await pool.query<HeartbeatRow>(
-      `SELECT id, team_id, user_id, agent_id, execution_id, status,
-              summary, cost_usd, created_task_ids, started_at, completed_at
-         FROM list_agent_heartbeats_for_user($1)`,
-      [userId],
-    );
-    return result.rows.map(rowToHeartbeat);
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN");
+      await client.query("SELECT set_config('app.current_user_id', $1, true)", [userId]);
+      const result = await client.query<HeartbeatRow>(
+        `SELECT id, team_id, user_id, agent_id, execution_id, status,
+                summary, cost_usd, created_task_ids, started_at, completed_at
+           FROM list_agent_heartbeats_for_user($1)`,
+        [userId],
+      );
+      await client.query("COMMIT");
+      return result.rows.map(rowToHeartbeat);
+    } catch (err) {
+      await client.query("ROLLBACK").catch(() => undefined);
+      throw err;
+    } finally {
+      client.release();
+    }
   },
 
   async listHeartbeats(

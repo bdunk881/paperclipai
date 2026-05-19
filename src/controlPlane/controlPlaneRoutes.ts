@@ -1107,12 +1107,25 @@ router.get("/heartbeats", async (req: WorkspaceAwareRequest, res) => {
     return;
   }
   const teamId = typeof req.query.teamId === "string" ? req.query.teamId : undefined;
-  const heartbeats = await controlPlaneStore.listHeartbeats(
-    context.userId,
-    teamId,
-    context.workspaceId,
-  );
-  res.json({ heartbeats, total: heartbeats.length });
+  // DASH-64.2 iter 2 (Codex P1 on #902): wrap async repo I/O in
+  // try/catch. Express 4 doesn't translate async rejections to 500s,
+  // so a transient Postgres/RLS failure would otherwise bubble out as
+  // an unhandled exception and crash the request.
+  try {
+    const heartbeats = await controlPlaneStore.listHeartbeats(
+      context.userId,
+      teamId,
+      context.workspaceId,
+    );
+    res.json({ heartbeats, total: heartbeats.length });
+  } catch (err) {
+    console.error(
+      `[controlPlaneRoutes] /heartbeats repository error for user=${context.userId}: ${
+        (err as Error).message
+      }`,
+    );
+    res.status(500).json({ error: "Failed to load heartbeats" });
+  }
 });
 
 export default router;

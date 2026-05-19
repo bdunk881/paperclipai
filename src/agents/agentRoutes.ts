@@ -257,30 +257,42 @@ router.get("/:id/heartbeat", async (req: WorkspaceAwareRequest, res) => {
     return;
   }
 
-  // DASH-64.2: listAgentHeartbeats is now async (repository-backed).
-  const agentHeartbeats = await controlPlaneStore.listAgentHeartbeats(
-    agent.id,
-    context.userId,
-    context.workspaceId,
-  );
-  const heartbeat = agentHeartbeats.at(-1);
-  if (!heartbeat) {
-    res.status(404).json({ error: "Heartbeat not found" });
-    return;
-  }
+  // DASH-64.2 iter 2 (Codex P1 on #902): wrap the async repository
+  // read in try/catch — Express 4 doesn't auto-convert async
+  // rejections into 500 responses, so a transient DB/RLS/query
+  // failure would otherwise bubble out as an unhandled exception.
+  try {
+    const agentHeartbeats = await controlPlaneStore.listAgentHeartbeats(
+      agent.id,
+      context.userId,
+      context.workspaceId,
+    );
+    const heartbeat = agentHeartbeats.at(-1);
+    if (!heartbeat) {
+      res.status(404).json({ error: "Heartbeat not found" });
+      return;
+    }
 
-  res.json({
-    id: heartbeat.id,
-    agentId: heartbeat.agentId,
-    userId: heartbeat.userId,
-    status: toDashboardHeartbeatStatus(heartbeat.status),
-    summary: heartbeat.summary ?? null,
-    tokenUsage: 0,
-    costUsd: heartbeat.costUsd ?? 0,
-    runId: heartbeat.executionId ?? null,
-    createdByRunId: heartbeat.executionId ?? "control-plane",
-    recordedAt: heartbeat.completedAt ?? heartbeat.startedAt,
-  });
+    res.json({
+      id: heartbeat.id,
+      agentId: heartbeat.agentId,
+      userId: heartbeat.userId,
+      status: toDashboardHeartbeatStatus(heartbeat.status),
+      summary: heartbeat.summary ?? null,
+      tokenUsage: 0,
+      costUsd: heartbeat.costUsd ?? 0,
+      runId: heartbeat.executionId ?? null,
+      createdByRunId: heartbeat.executionId ?? "control-plane",
+      recordedAt: heartbeat.completedAt ?? heartbeat.startedAt,
+    });
+  } catch (err) {
+    console.error(
+      `[agentRoutes] /:id/heartbeat repository error for agent=${agent.id}: ${
+        (err as Error).message
+      }`,
+    );
+    res.status(500).json({ error: "Failed to load agent heartbeat" });
+  }
 });
 
 router.get("/:id/runs", (req: WorkspaceAwareRequest, res) => {
@@ -327,28 +339,38 @@ router.get("/:id/budget", async (req: WorkspaceAwareRequest, res) => {
     return;
   }
 
-  const period = currentPeriodKey();
-  const teamSpend = controlPlaneStore.getTeamSpendSnapshot(agent.teamId, context.userId, context.workspaceId);
-  const agentSpend = teamSpend?.agents.find((entry) => entry.agentId === agent.id);
-  // DASH-64.2: listAgentHeartbeats is async.
-  const heartbeats = await controlPlaneStore.listAgentHeartbeats(agent.id, context.userId, context.workspaceId);
-  const spentUsd = agentSpend?.spentUsd ?? 0;
-  const monthlyUsd = agent.budgetMonthlyUsd;
-  const remainingUsd = Number(Math.max(0, monthlyUsd - spentUsd).toFixed(2));
-  const lastUpdatedAt = heartbeats.at(-1)?.completedAt ?? heartbeats.at(-1)?.startedAt ?? agent.updatedAt;
+  // DASH-64.2 iter 2 (Codex P1 on #902): wrap async repo I/O in
+  // try/catch — Express 4 doesn't translate async rejections to 500s.
+  try {
+    const period = currentPeriodKey();
+    const teamSpend = controlPlaneStore.getTeamSpendSnapshot(agent.teamId, context.userId, context.workspaceId);
+    const agentSpend = teamSpend?.agents.find((entry) => entry.agentId === agent.id);
+    const heartbeats = await controlPlaneStore.listAgentHeartbeats(agent.id, context.userId, context.workspaceId);
+    const spentUsd = agentSpend?.spentUsd ?? 0;
+    const monthlyUsd = agent.budgetMonthlyUsd;
+    const remainingUsd = Number(Math.max(0, monthlyUsd - spentUsd).toFixed(2));
+    const lastUpdatedAt = heartbeats.at(-1)?.completedAt ?? heartbeats.at(-1)?.startedAt ?? agent.updatedAt;
 
-  res.json({
-    agentId: agent.id,
-    userId: agent.userId,
-    monthlyUsd,
-    spentUsd,
-    remainingUsd,
-    currentPeriod: period,
-    autoPaused: agent.status === "paused" && monthlyUsd > 0 && spentUsd >= monthlyUsd,
-    thresholdState: agentSpend?.thresholdState ?? "healthy",
-    alertThresholdsTriggered: agentSpend?.alertThresholdsTriggered ?? [],
-    lastUpdatedAt,
-  });
+    res.json({
+      agentId: agent.id,
+      userId: agent.userId,
+      monthlyUsd,
+      spentUsd,
+      remainingUsd,
+      currentPeriod: period,
+      autoPaused: agent.status === "paused" && monthlyUsd > 0 && spentUsd >= monthlyUsd,
+      thresholdState: agentSpend?.thresholdState ?? "healthy",
+      alertThresholdsTriggered: agentSpend?.alertThresholdsTriggered ?? [],
+      lastUpdatedAt,
+    });
+  } catch (err) {
+    console.error(
+      `[agentRoutes] /:id/budget repository error for agent=${agent.id}: ${
+        (err as Error).message
+      }`,
+    );
+    res.status(500).json({ error: "Failed to load agent budget" });
+  }
 });
 
 router.get("/:id/token-usage", async (req: WorkspaceAwareRequest, res) => {
@@ -370,13 +392,26 @@ router.get("/:id/token-usage", async (req: WorkspaceAwareRequest, res) => {
   cutoff.setUTCHours(0, 0, 0, 0);
   cutoff.setUTCDate(cutoff.getUTCDate() - (days - 1));
 
+  // DASH-64.2 iter 2 (Codex P1 on #902): wrap async repo I/O in
+  // try/catch.
+  let agentHeartbeats: Awaited<ReturnType<typeof controlPlaneStore.listAgentHeartbeats>>;
+  try {
+    agentHeartbeats = await controlPlaneStore.listAgentHeartbeats(
+      agent.id,
+      context.userId,
+      context.workspaceId,
+    );
+  } catch (err) {
+    console.error(
+      `[agentRoutes] /:id/token-usage repository error for agent=${agent.id}: ${
+        (err as Error).message
+      }`,
+    );
+    res.status(500).json({ error: "Failed to load agent token usage" });
+    return;
+  }
+
   const dailyCosts = new Map<string, number>();
-  // DASH-64.2: listAgentHeartbeats is async (repository-backed).
-  const agentHeartbeats = await controlPlaneStore.listAgentHeartbeats(
-    agent.id,
-    context.userId,
-    context.workspaceId,
-  );
   for (const heartbeat of agentHeartbeats) {
     const timestamp = heartbeat.completedAt ?? heartbeat.startedAt;
     if (new Date(timestamp) < cutoff) {

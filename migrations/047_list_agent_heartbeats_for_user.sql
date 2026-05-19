@@ -17,11 +17,25 @@ BEGIN;
 
 CREATE OR REPLACE FUNCTION list_agent_heartbeats_for_user(p_user_id text)
 RETURNS SETOF agent_heartbeats
-LANGUAGE sql
+LANGUAGE plpgsql
 SECURITY DEFINER
 STABLE
 AS $$
-  SELECT * FROM agent_heartbeats WHERE user_id = p_user_id ORDER BY started_at DESC
+DECLARE
+  v_session_user text := app_current_user_id();
+BEGIN
+  -- DASH-64.2 iter 2 (Codex P1, same as migration 046): defense-in-depth
+  -- against a backend bug calling with the wrong p_user_id. Returns
+  -- zero rows when the session-bound subject doesn't match, or when
+  -- the session var is unset (NULL-denial — same hardened pattern RLS
+  -- policies use elsewhere). Backend MUST set
+  -- `app.current_user_id` via set_config before calling.
+  IF v_session_user IS NULL OR v_session_user <> p_user_id THEN
+    RETURN;
+  END IF;
+  RETURN QUERY
+    SELECT * FROM agent_heartbeats WHERE user_id = p_user_id ORDER BY started_at DESC;
+END;
 $$;
 
 ALTER FUNCTION list_agent_heartbeats_for_user(text) SET search_path = public, pg_catalog;

@@ -395,6 +395,13 @@ async function runOpenAIToolLoop(args: {
             "Maximum tool iterations reached. Summarize what you accomplished and what's still pending in 1-3 sentences. Do not call any tools.",
         },
       ],
+      // HEL-147 followup (Codex on PR #900): honour maxOutputTokens
+      // on the wrap-up. Without this a caller setting a tight cap to
+      // control runaway-loop cost still gets an uncapped summary in
+      // exactly the failure mode the cap is meant to contain.
+      // Falls back to 512 (tight summary) when no explicit cap.
+      max_tokens:
+        typeof args.maxOutputTokens === "number" ? args.maxOutputTokens : 512,
     });
     if (finalTurn.usage) {
       // HEL-145 contract iter 2: promptTokens is TOTAL; cached* are

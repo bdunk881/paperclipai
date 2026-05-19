@@ -504,7 +504,8 @@ async function buildCompanyStateSummary(
   companyId: string,
 ): Promise<CompanyStateSummary> {
   const team = controlPlaneStore.getTeam(companyId, userId);
-  const teamAgents = team ? controlPlaneStore.listAgents(team.id, userId) : [];
+  // DASH-64.5: listAgents is async now (repo-backed).
+  const teamAgents = team ? await controlPlaneStore.listAgents(team.id, userId) : [];
   // DASH-64.4: listExecutions is async now (repository-backed).
   const teamExecutions = team ? await controlPlaneStore.listExecutions(userId, team.id) : [];
   // DASH-64.1: listTasks is now async (repository-backed).

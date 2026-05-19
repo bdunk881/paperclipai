@@ -454,9 +454,10 @@ router.post(
   "/deployments/workflow",
   requirePaperclipRunId,
   requireEntitlement("agentCap", {
-    getCurrent: (req) => {
+    // DASH-64.5: listAllAgents is async now (repo-backed).
+    getCurrent: async (req) => {
       const userId = (req as AuthenticatedRequest).auth?.sub ?? "";
-      return controlPlaneStore.listAllAgents(userId, req.workspace?.id).length;
+      return (await controlPlaneStore.listAllAgents(userId, req.workspace?.id)).length;
     },
     delta: 1,
   }),
@@ -567,7 +568,8 @@ router.get("/teams/:id", async (req: WorkspaceAwareRequest, res) => {
 
   const team = controlPlaneStore.getTeam(req.params.id, context.userId, context.workspaceId);
   if (team) {
-    const agents = controlPlaneStore.listAgents(team.id, context.userId, context.workspaceId);
+    // DASH-64.5: listAgents is async now (repo-backed).
+    const agents = await controlPlaneStore.listAgents(team.id, context.userId, context.workspaceId);
     // DASH-64.1: listTasks is async now.
     // DASH-64.2: listHeartbeats is async now.
     // DASH-64.3: getTeamSpendSnapshot is async now.

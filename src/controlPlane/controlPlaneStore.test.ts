@@ -1,4 +1,5 @@
 import type { WorkflowStep } from "../types/workflow";
+import { controlPlaneRepository } from "./controlPlaneRepository";
 import { controlPlaneStore } from "./controlPlaneStore";
 
 describe("controlPlaneStore workspace-scoped reads", () => {
@@ -24,7 +25,8 @@ describe("controlPlaneStore workspace-scoped reads", () => {
     expect(controlPlaneStore.getTeam(provisioned.team.id, "ceo-user", "workspace-shared")).toEqual(
       expect.objectContaining({ id: provisioned.team.id })
     );
-    expect(controlPlaneStore.listAllAgents("ceo-user", "workspace-shared")).toHaveLength(1);
+    // DASH-64.5: listAllAgents is async now (repo-backed).
+    expect(await controlPlaneStore.listAllAgents("ceo-user", "workspace-shared")).toHaveLength(1);
     expect(controlPlaneStore.listTeams("ceo-user", "workspace-other")).toHaveLength(0);
   });
 
@@ -67,7 +69,8 @@ describe("controlPlaneStore workspace-scoped reads", () => {
       costUsd: 1.25,
     });
 
-    expect(controlPlaneStore.listAgents(provisioned.team.id, "ceo-user", "workspace-shared")).toEqual([
+    // DASH-64.5: listAgents is now async (repository-backed).
+    expect(await controlPlaneStore.listAgents(provisioned.team.id, "ceo-user", "workspace-shared")).toEqual([
       expect.objectContaining({ id: started.agent.id }),
     ]);
     // DASH-64.4: listExecutions is now async (repository-backed).
@@ -123,13 +126,23 @@ describe("controlPlaneStore workspace-scoped reads", () => {
       sourceRunId: "run-reset-1",
     });
 
-    const staleAgent = controlPlaneStore.getAgent(
+    // DASH-64.5: getAgent is async; agents are returned as fresh copies
+    // from the repository on each call (no shared-reference aliasing
+    // through the legacy in-memory Map). The "stale error status reset"
+    // behaviour is verified by reading the agent back after each mutator.
+    const staleAgent = (await controlPlaneStore.getAgent(
       provisioned.agents[0].id,
       "provisioning-user",
       "workspace-shared"
-    )!;
+    ))!;
 
-    (staleAgent as { status: string | typeof staleAgent.status }).status = "error";
+    // Force a stale "error" status into the repository so recordHeartbeat
+    // can prove it recovers it back to "active".
+    const repoCtx = { workspaceId: "workspace-shared", userId: "provisioning-user" };
+    await controlPlaneRepository.upsertAgent(repoCtx, {
+      ...staleAgent,
+      status: "error" as unknown as typeof staleAgent.status,
+    });
 
     await controlPlaneStore.recordHeartbeat({
       workspaceId: "workspace-shared",
@@ -141,9 +154,16 @@ describe("controlPlaneStore workspace-scoped reads", () => {
       summary: "Recovered after restart",
     });
 
-    expect(staleAgent.status).toBe("active");
+    expect(
+      (await controlPlaneStore.getAgent(staleAgent.id, "provisioning-user", "workspace-shared"))?.status
+    ).toBe("active");
 
-    (staleAgent as { status: string | typeof staleAgent.status }).status = "error";
+    // Force another stale "error" status to verify finalizeAgentExecution
+    // also normalizes it.
+    await controlPlaneRepository.upsertAgent(repoCtx, {
+      ...staleAgent,
+      status: "error" as unknown as typeof staleAgent.status,
+    });
 
     const completed = await controlPlaneStore.finalizeAgentExecution({
       workspaceId: "workspace-shared",
@@ -154,7 +174,8 @@ describe("controlPlaneStore workspace-scoped reads", () => {
     });
 
     expect(completed.status).toBe("completed");
-    expect(staleAgent.status).toBe("active");
-    expect(controlPlaneStore.getAgent(staleAgent.id, "provisioning-user", "workspace-shared")?.status).toBe("active");
+    expect(
+      (await controlPlaneStore.getAgent(staleAgent.id, "provisioning-user", "workspace-shared"))?.status
+    ).toBe("active");
   });
 });

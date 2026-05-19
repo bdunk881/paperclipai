@@ -220,7 +220,8 @@ export async function buildObservabilityResponse(
   runs: WorkflowRun[],
   query: ObservabilityQuery
 ): Promise<ObservabilityResponse> {
-  const agents = controlPlaneStore.listAllAgents(userId);
+  // DASH-64.5: listAllAgents is async now (repo-backed).
+  const agents = await controlPlaneStore.listAllAgents(userId);
   const agentMap = new Map(agents.map((agent) => [agent.id, agent]));
   const tasks = await controlPlaneStore.listTasks(userId);
   const taskMap = new Map(tasks.map((task) => [task.id, task]));

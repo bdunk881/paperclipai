@@ -74,9 +74,10 @@ router.get("/", async (req: WorkspaceAwareRequest, res) => {
 
   // DASH-64.4: listAgentExecutions is async now — Promise.all the
   // per-agent enrichment instead of mapping synchronously.
+  // DASH-64.5: listAllAgents is async now (repo-backed).
+  const allAgents = await controlPlaneStore.listAllAgents(context.userId, context.workspaceId);
   const inMemoryAgents = await Promise.all(
-    controlPlaneStore
-      .listAllAgents(context.userId, context.workspaceId)
+    allAgents
       .map(async (agent) => {
         const team = teams.get(agent.teamId);
         const executions = await controlPlaneStore.listAgentExecutions(
@@ -255,7 +256,8 @@ router.get("/:id/heartbeat", async (req: WorkspaceAwareRequest, res) => {
     return;
   }
 
-  const agent = controlPlaneStore.getAgent(req.params.id, context.userId, context.workspaceId);
+  // DASH-64.5: getAgent is async now (repo-backed).
+  const agent = await controlPlaneStore.getAgent(req.params.id, context.userId, context.workspaceId);
   if (!agent) {
     res.status(404).json({ error: "Agent not found" });
     return;
@@ -306,7 +308,8 @@ router.get("/:id/runs", async (req: WorkspaceAwareRequest, res) => {
     return;
   }
 
-  const agent = controlPlaneStore.getAgent(req.params.id, context.userId, context.workspaceId);
+  // DASH-64.5: getAgent is async now (repo-backed).
+  const agent = await controlPlaneStore.getAgent(req.params.id, context.userId, context.workspaceId);
   if (!agent) {
     res.status(404).json({ error: "Agent not found" });
     return;
@@ -347,7 +350,8 @@ router.get("/:id/budget", async (req: WorkspaceAwareRequest, res) => {
     return;
   }
 
-  const agent = controlPlaneStore.getAgent(req.params.id, context.userId, context.workspaceId);
+  // DASH-64.5: getAgent is async now (repo-backed).
+  const agent = await controlPlaneStore.getAgent(req.params.id, context.userId, context.workspaceId);
   if (!agent) {
     res.status(404).json({ error: "Agent not found" });
     return;
@@ -399,7 +403,8 @@ router.get("/:id/token-usage", async (req: WorkspaceAwareRequest, res) => {
     return;
   }
 
-  const agent = controlPlaneStore.getAgent(req.params.id, context.userId, context.workspaceId);
+  // DASH-64.5: getAgent is async now (repo-backed).
+  const agent = await controlPlaneStore.getAgent(req.params.id, context.userId, context.workspaceId);
   if (!agent) {
     res.status(404).json({ error: "Agent not found" });
     return;

@@ -77,8 +77,9 @@ describe("agentCap gate — POST /api/control-plane/deployments/workflow", () =>
   it("returns 402 with entitlement_exceeded payload when agent count is at cap", async () => {
     // Explore tier: agentCap=1. Spy returns 1 existing agent → at cap.
     entitlementStore.upsert(WS, "explore");
-    jest.spyOn(controlPlaneStore, "listAllAgents").mockReturnValue(
-      [{ id: "a1" }] as ReturnType<typeof controlPlaneStore.listAllAgents>
+    // DASH-64.5: listAllAgents returns Promise<ControlPlaneAgent[]> now.
+    jest.spyOn(controlPlaneStore, "listAllAgents").mockResolvedValue(
+      [{ id: "a1" }] as Awaited<ReturnType<typeof controlPlaneStore.listAllAgents>>
     );
 
     const res = await request(app)
@@ -98,7 +99,8 @@ describe("agentCap gate — POST /api/control-plane/deployments/workflow", () =>
 
   it("passes through the gate when under the agent cap", async () => {
     // Automate tier: agentCap=10. Spy returns 0 existing agents → under cap.
-    jest.spyOn(controlPlaneStore, "listAllAgents").mockReturnValue([]);
+    // DASH-64.5: listAllAgents returns Promise<ControlPlaneAgent[]> now.
+    jest.spyOn(controlPlaneStore, "listAllAgents").mockResolvedValue([]);
 
     const res = await request(app)
       .post("/api/control-plane/deployments/workflow")

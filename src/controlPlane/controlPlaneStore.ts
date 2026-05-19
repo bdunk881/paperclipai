@@ -303,14 +303,13 @@ const ROLE_TEMPLATE_CATALOG: ControlPlaneRoleTemplateDefinition[] = [
 // DASH-64.5: `agents` Map removed. Same pattern — repository owns
 // agent reads/writes (Postgres in prod, in-memory bucket in tests).
 // DASH-64.6: `teams` Map removed. Same pattern.
-// allowlist: hybrid store; in-memory mirror of Postgres-backed data
-const companies = new Map<string, ProvisionedCompanyRecord>();
-// allowlist: hybrid store; in-memory mirror of Postgres-backed data
-const companyWorkspaces = new Map<string, ProvisionedCompanyWorkspace>();
-// allowlist: hybrid store; in-memory mirror of Postgres-backed data
-const companySecretBindings = new Map<string, Record<string, string>>();
-// allowlist: hybrid store; in-memory mirror of Postgres-backed data
-const companyIdempotencyIndex = new Map<string, { companyId: string; fingerprint: string }>();
+// DASH-64.7: `companies` + `companyWorkspaces` + `companySecretBindings`
+// + `companyIdempotencyIndex` Maps removed. All four are now backed by
+// controlPlaneRepository (Postgres `companies` table in prod, in-memory
+// fallback in tests). companyIdempotencyIndex is derivable on demand by
+// scanning the user's companies for a matching idempotencyKey.
+// companySecretBindings stays in the in-memory fallback only — prod
+// uses secretsRepository for encrypted-at-rest secrets.
 // DASH-64.3: spendEntries + budgetAlerts Maps removed. Both route
 // through controlPlaneRepository now.
 // allowlist: hybrid store; in-memory mirror of Postgres-backed data
@@ -346,7 +345,8 @@ type PersistedTeamRow = {
 // DASH-64.4: PersistedExecutionRow lives in controlPlaneRepository now.
 // DASH-64.5: PersistedAgentRow lives in controlPlaneRepository now.
 
-type PersistedProvisionedCompanyRow = {
+// DASH-64.7: PersistedProvisionedCompanyRow lives in controlPlaneRepository now.
+interface PersistedProvisionedCompanyRow {
   id: string;
   workspace_id: string;
   user_id: string;
@@ -362,7 +362,7 @@ type PersistedProvisionedCompanyRow = {
   remaining_budget_monthly_usd: number | string;
   created_at: Date | string;
   updated_at: Date | string;
-};
+}
 
 function getSkillCatalogIds(): Set<string> {
   return new Set(SKILL_CATALOG.map((skill) => skill.id));
@@ -598,12 +598,18 @@ function makeProvisioningRoleKey(roleTemplateId: string, occurrence: number): st
   return occurrence === 0 ? roleTemplateId : `${roleTemplateId}-${occurrence + 1}`;
 }
 
-function getProvisionedCompanyOwnedByUser(companyId: string, userId: string): ProvisionedCompanyRecord | undefined {
-  const company = companies.get(companyId);
-  if (!company || company.userId !== userId) {
-    return undefined;
-  }
-  return company;
+/**
+ * DASH-64.7: replaces the synchronous Map lookup. Resolves the
+ * company via the repository (cross-workspace SECURITY DEFINER helper
+ * when no workspace context is pinned).
+ */
+async function getProvisionedCompanyOwnedByUser(
+  companyId: string,
+  userId: string,
+): Promise<ProvisionedCompanyRecord | undefined> {
+  const all = await controlPlaneRepository.listAllProvisionedCompaniesForUser(userId);
+  const entry = all.find((candidate) => candidate.company.id === companyId);
+  return entry?.company;
 }
 
 function latestIso(...timestamps: Array<string | undefined>): string {
@@ -750,14 +756,23 @@ async function listAccessibleTeamIds(
     return accessibleTeamIds;
   }
 
-  Array.from(companies.values())
-    .filter((company) => {
-      const tenantWorkspaceId = companyTenantWorkspaceIds.get(company.id);
-      return tenantWorkspaceId === normalizedWorkspaceId || company.workspaceId === normalizedWorkspaceId;
-    })
-    .forEach((company) => {
-      accessibleTeamIds.add(company.teamId);
-    });
+  // DASH-64.7: workspace-scoped company lookup — any user in the
+  // workspace can see any team provisioned via a company in that
+  // workspace (workspace RLS is the access boundary, NOT
+  // company.userId). This mirrors the pre-DASH-64.7 in-memory
+  // listAccessibleTeamIds which iterated the global companies Map
+  // without user filtering.
+  const workspaceCompanies = await controlPlaneRepository.listCompaniesInWorkspace({
+    workspaceId: normalizedWorkspaceId,
+    userId,
+  });
+  for (const entry of workspaceCompanies) {
+    const tenantWorkspaceId =
+      entry.tenantWorkspaceId || companyTenantWorkspaceIds.get(entry.company.id);
+    if (tenantWorkspaceId === normalizedWorkspaceId || entry.company.workspaceId === normalizedWorkspaceId) {
+      accessibleTeamIds.add(entry.company.teamId);
+    }
+  }
 
   return accessibleTeamIds;
 }
@@ -875,36 +890,8 @@ async function getExecutionOwnedByUser(
 // Reading agent_teams / agents / agent_executions now lives entirely
 // in controlPlaneRepository (rowToTeam / rowToAgent / rowToExecution).
 
-function hydrateProvisionedCompany(row: PersistedProvisionedCompanyRow): {
-  company: ProvisionedCompanyRecord;
-  workspace: ProvisionedCompanyWorkspace;
-} {
-  companyTenantWorkspaceIds.set(row.id, row.workspace_id);
-  const workspace: ProvisionedCompanyWorkspace = {
-    id: row.provisioned_workspace_id,
-    name: row.provisioned_workspace_name,
-    slug: row.provisioned_workspace_slug,
-    createdAt: toIso(row.created_at) ?? nowIso(),
-    updatedAt: toIso(row.updated_at) ?? nowIso(),
-  };
-
-  const company: ProvisionedCompanyRecord = {
-    id: row.id,
-    userId: row.user_id,
-    name: row.name,
-    externalCompanyId: row.external_company_id ?? undefined,
-    workspaceId: row.provisioned_workspace_id,
-    teamId: row.team_id,
-    idempotencyKey: row.idempotency_key,
-    budgetMonthlyUsd: toNumber(row.budget_monthly_usd),
-    allocatedBudgetMonthlyUsd: toNumber(row.allocated_budget_monthly_usd),
-    remainingBudgetMonthlyUsd: toNumber(row.remaining_budget_monthly_usd),
-    createdAt: toIso(row.created_at) ?? nowIso(),
-    updatedAt: toIso(row.updated_at) ?? nowIso(),
-  };
-
-  return { company, workspace };
-}
+// DASH-64.7: hydrateProvisionedCompany dropped along with the
+// companies Map. rowToProvisionedCompany lives in controlPlaneRepository.
 
 async function ensureWorkspaceHydrated(workspaceId: string | undefined, userId: string): Promise<void> {
   if (!postgresPersistenceAvailable()) {
@@ -964,14 +951,12 @@ async function ensureWorkspaceHydrated(workspaceId: string | undefined, userId: 
           teamCompanyIds.set(row.id, row.company_id);
         }
       });
+      // DASH-64.7: companies + companyWorkspaces + companyIdempotencyIndex
+      // are repository-backed. We still SELECT here only to populate
+      // the companyTenantWorkspaceIds derivative index (kept until
+      // DASH-64.8).
       companyResult.rows.forEach((row) => {
-        const { company, workspace } = hydrateProvisionedCompany(row);
-        companies.set(company.id, company);
-        companyWorkspaces.set(workspace.id, workspace);
-        companyIdempotencyIndex.set(`${company.userId}:${company.idempotencyKey}`, {
-          companyId: company.id,
-          fingerprint: "",
-        });
+        companyTenantWorkspaceIds.set(row.id, row.workspace_id);
       });
     }
   );
@@ -1003,54 +988,8 @@ async function persistTeamViaRepo(team: ControlPlaneTeam, workspaceId: string, u
 // updateExecutionLifecycle, pauseExecutionForBudget) now invoke
 // `controlPlaneRepository.upsertExecution(ctx, execution)` instead.
 
-async function upsertProvisionedCompanyRow(input: {
-  company: ProvisionedCompanyRecord;
-  workspace: ProvisionedCompanyWorkspace;
-  tenantWorkspaceId: string;
-  client?: PoolClient;
-}): Promise<void> {
-  companyTenantWorkspaceIds.set(input.company.id, input.tenantWorkspaceId);
-  await (input.client ?? getPostgresPool()).query(
-    `INSERT INTO companies (
-       id, workspace_id, user_id, name, external_company_id, provisioned_workspace_id,
-       provisioned_workspace_name, provisioned_workspace_slug, team_id, idempotency_key,
-       budget_monthly_usd, allocated_budget_monthly_usd, remaining_budget_monthly_usd,
-       created_at, updated_at
-     ) VALUES (
-       $1, $2, $3, $4, $5, $6,
-       $7, $8, $9, $10, $11, $12, $13,
-       $14, $15
-     )
-     ON CONFLICT (id) DO UPDATE
-       SET name = EXCLUDED.name,
-           external_company_id = EXCLUDED.external_company_id,
-           provisioned_workspace_name = EXCLUDED.provisioned_workspace_name,
-           provisioned_workspace_slug = EXCLUDED.provisioned_workspace_slug,
-           team_id = EXCLUDED.team_id,
-           idempotency_key = EXCLUDED.idempotency_key,
-           budget_monthly_usd = EXCLUDED.budget_monthly_usd,
-           allocated_budget_monthly_usd = EXCLUDED.allocated_budget_monthly_usd,
-           remaining_budget_monthly_usd = EXCLUDED.remaining_budget_monthly_usd,
-           updated_at = EXCLUDED.updated_at`,
-    [
-      input.company.id,
-      input.tenantWorkspaceId,
-      input.company.userId,
-      input.company.name,
-      input.company.externalCompanyId ?? null,
-      input.workspace.id,
-      input.workspace.name,
-      input.workspace.slug,
-      input.company.teamId,
-      input.company.idempotencyKey,
-      input.company.budgetMonthlyUsd,
-      input.company.allocatedBudgetMonthlyUsd,
-      input.company.remainingBudgetMonthlyUsd,
-      input.company.createdAt,
-      input.company.updatedAt,
-    ]
-  );
-}
+// DASH-64.7: upsertProvisionedCompanyRow moved to controlPlaneRepository.
+// Store-level callers invoke `repo.upsertProvisionedCompany(ctx, ...)`.
 
 // DASH-64.3: spend entries live in the repository now. The team's
 // workspace is resolved via the same teamWorkspaceIds cache (or
@@ -1556,18 +1495,23 @@ export const controlPlaneStore = {
       secretBindings: input.secretBindings,
       agents: input.agents,
     });
-    const idempotencyIndexKey = `${input.userId}:${normalizedIdempotencyKey}`;
-    const existingProvisioning = companyIdempotencyIndex.get(idempotencyIndexKey);
-    if (existingProvisioning) {
-      if (existingProvisioning.fingerprint && existingProvisioning.fingerprint !== fingerprint) {
+    // DASH-64.7: companyIdempotencyIndex is now derivable — scan the
+    // user's companies for a matching idempotencyKey. Fingerprint
+    // tracking moved into the repository's MemCompanyEntry.
+    const userCompanies = await controlPlaneRepository.listAllProvisionedCompaniesForUser(input.userId);
+    const existingEntry = userCompanies.find(
+      (entry) => entry.company.idempotencyKey === normalizedIdempotencyKey,
+    );
+    if (existingEntry) {
+      if (existingEntry.fingerprint && existingEntry.fingerprint !== fingerprint) {
         throw new Error("idempotency_conflict");
       }
 
-      const company = getProvisionedCompanyOwnedByUser(existingProvisioning.companyId, input.userId);
-      const workspace = company ? companyWorkspaces.get(company.workspaceId) : undefined;
+      const company = existingEntry.company;
+      const workspace = existingEntry.workspace;
       // DASH-64.6: getTeamOwnedByUser is async now (repo-backed).
-      const team = company ? await getTeamOwnedByUser(company.teamId, input.userId) : undefined;
-      if (!company || !workspace || !team) {
+      const team = await getTeamOwnedByUser(company.teamId, input.userId);
+      if (!team) {
         throw new Error("idempotency_target_missing");
       }
 
@@ -1580,7 +1524,7 @@ export const controlPlaneStore = {
             },
             company.id
           )
-        : buildCompanySecretSummaries(companySecretBindings.get(company.id) ?? {});
+        : buildCompanySecretSummaries(existingEntry.secretBindings);
 
       return {
         company: { ...company },
@@ -1654,12 +1598,17 @@ export const controlPlaneStore = {
 
     const timestamp = nowIso();
     const workspaceId = input.workspaceId?.trim() || randomUUID();
-    const existingWorkspace = companyWorkspaces.get(workspaceId);
+    // DASH-64.7: companyWorkspaces is repo-backed. We need the
+    // existing workspace's createdAt to preserve it on re-provisioning;
+    // look it up by scanning the user's companies.
+    const existingWorkspaceEntry = userCompanies.find(
+      (entry) => entry.workspace.id === workspaceId,
+    );
     const workspace: ProvisionedCompanyWorkspace = {
       id: workspaceId,
       name: normalizedWorkspaceName,
       slug: slugify(normalizedName),
-      createdAt: existingWorkspace?.createdAt ?? timestamp,
+      createdAt: existingWorkspaceEntry?.workspace.createdAt ?? timestamp,
       updatedAt: timestamp,
     };
     const company: ProvisionedCompanyRecord = {
@@ -1677,18 +1626,14 @@ export const controlPlaneStore = {
       updatedAt: timestamp,
     };
 
-    companies.set(company.id, company);
-    companyWorkspaces.set(workspace.id, workspace);
-    if (!postgresPersistenceAvailable()) {
-      companySecretBindings.set(company.id, { ...input.secretBindings });
-    }
-    companyIdempotencyIndex.set(idempotencyIndexKey, { companyId: company.id, fingerprint });
     teamCompanyIds.set(team.id, company.id);
 
     // DASH-64.5: agents persist via repository (test in-mem bucket OR
     // production Postgres path both handled there). Iter-2 hardening:
     // throw on unresolved workspace ctx instead of silently dropping.
     // DASH-64.6: team persists via repository too.
+    // DASH-64.7: company suite (company + workspace + idempotency
+    // fingerprint + test-mode secretBindings) persists via repository.
     const provisionCtx = await workspaceContextForTeam(team.id, input.userId);
     if (!provisionCtx) {
       throw new Error("agent_provision_workspace_unresolved");
@@ -1697,19 +1642,21 @@ export const controlPlaneStore = {
     for (const agent of provisionedAgents) {
       await controlPlaneRepository.upsertAgent(provisionCtx, agent);
     }
+    // DASH-64.7: company suite write goes through the repo. tenantWorkspaceId
+    // is the canonical workspace this tenant belongs to (provisionCtx).
+    // In test mode this also stores the fingerprint + secretBindings so the
+    // idempotency-replay path can find them on a second call.
+    companyTenantWorkspaceIds.set(company.id, provisionCtx.workspaceId);
+    await controlPlaneRepository.upsertProvisionedCompany(provisionCtx, {
+      company,
+      workspace,
+      tenantWorkspaceId: provisionCtx.workspaceId,
+      fingerprint,
+      secretBindings: !postgresPersistenceAvailable() ? input.secretBindings : undefined,
+    });
 
     if (postgresPersistenceAvailable()) {
       const workspaceId = requireWorkspaceIdForPersistence(input.workspaceId);
-      await withWorkspaceContext(getPostgresPool(), { workspaceId, userId: input.userId }, async (client) => {
-        // DASH-64.6: team writes already persisted above via repo.
-        // DASH-64.5: agent writes already persisted above via repo.
-        await upsertProvisionedCompanyRow({
-          company,
-          workspace,
-          tenantWorkspaceId: workspaceId,
-          client,
-        });
-      });
       await secretsRepository.setSecrets(
         { workspaceId, userId: input.userId, actorUserId: input.userId },
         company.id,
@@ -3422,10 +3369,8 @@ export const controlPlaneStore = {
     // repository's __resetRepositoryInMemoryStateForTests().
     __resetRepositoryInMemoryStateForTests();
     // DASH-64.4: executions Map gone; cleared via the repository reset.
-    companies.clear();
-    companyWorkspaces.clear();
-    companySecretBindings.clear();
-    companyIdempotencyIndex.clear();
+    // DASH-64.7: companies + companyWorkspaces + companySecretBindings
+    // + companyIdempotencyIndex Maps gone; cleared via repository reset.
     companyLifecycleStore.clear();
     // DASH-64.3: spendEntries / budgetAlerts Maps gone; the repository
     // owns these too. __resetRepositoryInMemoryStateForTests() above

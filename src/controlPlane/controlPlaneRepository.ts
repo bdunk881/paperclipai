@@ -31,6 +31,8 @@ import {
   ControlPlaneTaskStatus,
   ControlPlaneTeam,
   HeartbeatStatus,
+  ProvisionedCompanyRecord,
+  ProvisionedCompanyWorkspace,
   SpendCategory,
   TeamDeploymentMode,
   TeamLifecycleStatus,
@@ -72,6 +74,19 @@ const memAgents = new Map<string, Map<string, ControlPlaneAgent>>();
 // allowlist: test/dev fallback for repository; production routes to Postgres
 // DASH-64.6: teams Map ownership moves from controlPlaneStore to repo.
 const memTeams = new Map<string, Map<string, ControlPlaneTeam>>();
+// allowlist: test/dev fallback for repository; production routes to Postgres
+// DASH-64.7: companies + companyWorkspaces + companySecretBindings +
+// companyIdempotencyIndex Maps move from controlPlaneStore to repo.
+// In-memory rows are stored in a single bucket keyed by tenantWorkspaceId
+// (the workspace_id column in `companies`) for RLS parity.
+interface MemCompanyEntry {
+  company: ProvisionedCompanyRecord;
+  workspace: ProvisionedCompanyWorkspace;
+  tenantWorkspaceId: string;
+  fingerprint: string;
+  secretBindings: Record<string, string>;
+}
+const memCompanies = new Map<string, Map<string, MemCompanyEntry>>();
 
 function memBucket<T>(
   store: Map<string, Map<string, T>>,
@@ -167,6 +182,24 @@ interface ExecutionRow {
   completed_at: Date | null;
   last_heartbeat_at: Date | null;
   restart_count: number;
+}
+
+interface CompanyRow {
+  id: string;
+  workspace_id: string;
+  user_id: string;
+  name: string;
+  external_company_id: string | null;
+  provisioned_workspace_id: string;
+  provisioned_workspace_name: string;
+  provisioned_workspace_slug: string;
+  team_id: string;
+  idempotency_key: string;
+  budget_monthly_usd: string | number;
+  allocated_budget_monthly_usd: string | number;
+  remaining_budget_monthly_usd: string | number;
+  created_at: Date;
+  updated_at: Date;
 }
 
 interface TeamRow {
@@ -329,6 +362,44 @@ function rowToExecution(row: ExecutionRow): ControlPlaneExecution {
     lastHeartbeatAt: isoFromDate(row.last_heartbeat_at),
     restartCount: row.restart_count,
   };
+}
+
+function rowToProvisionedCompany(row: CompanyRow): {
+  company: ProvisionedCompanyRecord;
+  workspace: ProvisionedCompanyWorkspace;
+  tenantWorkspaceId: string;
+} {
+  const budget = typeof row.budget_monthly_usd === "string"
+    ? Number.parseFloat(row.budget_monthly_usd)
+    : row.budget_monthly_usd;
+  const allocated = typeof row.allocated_budget_monthly_usd === "string"
+    ? Number.parseFloat(row.allocated_budget_monthly_usd)
+    : row.allocated_budget_monthly_usd;
+  const remaining = typeof row.remaining_budget_monthly_usd === "string"
+    ? Number.parseFloat(row.remaining_budget_monthly_usd)
+    : row.remaining_budget_monthly_usd;
+  const company: ProvisionedCompanyRecord = {
+    id: row.id,
+    userId: row.user_id,
+    name: row.name,
+    externalCompanyId: row.external_company_id ?? undefined,
+    workspaceId: row.provisioned_workspace_id,
+    teamId: row.team_id,
+    idempotencyKey: row.idempotency_key,
+    budgetMonthlyUsd: Number.isFinite(budget) ? Number(budget) : 0,
+    allocatedBudgetMonthlyUsd: Number.isFinite(allocated) ? Number(allocated) : 0,
+    remainingBudgetMonthlyUsd: Number.isFinite(remaining) ? Number(remaining) : 0,
+    createdAt: isoFromDateRequired(row.created_at),
+    updatedAt: isoFromDateRequired(row.updated_at),
+  };
+  const workspace: ProvisionedCompanyWorkspace = {
+    id: row.provisioned_workspace_id,
+    name: row.provisioned_workspace_name,
+    slug: row.provisioned_workspace_slug,
+    createdAt: company.createdAt,
+    updatedAt: company.updatedAt,
+  };
+  return { company, workspace, tenantWorkspaceId: row.workspace_id };
 }
 
 function rowToTeam(row: TeamRow): ControlPlaneTeam {
@@ -523,6 +594,56 @@ async function insertSpendEntryRow(
       entry.toolName ?? null,
       entry.metadata ? JSON.stringify(entry.metadata) : null,
       new Date(entry.recordedAt),
+    ]
+  );
+}
+
+async function upsertCompanyRowInClient(
+  client: PoolClient,
+  input: {
+    company: ProvisionedCompanyRecord;
+    workspace: ProvisionedCompanyWorkspace;
+    tenantWorkspaceId: string;
+  }
+): Promise<void> {
+  await client.query(
+    `INSERT INTO companies (
+       id, workspace_id, user_id, name, external_company_id, provisioned_workspace_id,
+       provisioned_workspace_name, provisioned_workspace_slug, team_id, idempotency_key,
+       budget_monthly_usd, allocated_budget_monthly_usd, remaining_budget_monthly_usd,
+       created_at, updated_at
+     ) VALUES (
+       $1, $2, $3, $4, $5, $6,
+       $7, $8, $9, $10, $11, $12, $13,
+       $14, $15
+     )
+     ON CONFLICT (id) DO UPDATE
+       SET name = EXCLUDED.name,
+           external_company_id = EXCLUDED.external_company_id,
+           provisioned_workspace_name = EXCLUDED.provisioned_workspace_name,
+           provisioned_workspace_slug = EXCLUDED.provisioned_workspace_slug,
+           team_id = EXCLUDED.team_id,
+           idempotency_key = EXCLUDED.idempotency_key,
+           budget_monthly_usd = EXCLUDED.budget_monthly_usd,
+           allocated_budget_monthly_usd = EXCLUDED.allocated_budget_monthly_usd,
+           remaining_budget_monthly_usd = EXCLUDED.remaining_budget_monthly_usd,
+           updated_at = EXCLUDED.updated_at`,
+    [
+      input.company.id,
+      input.tenantWorkspaceId,
+      input.company.userId,
+      input.company.name,
+      input.company.externalCompanyId ?? null,
+      input.workspace.id,
+      input.workspace.name,
+      input.workspace.slug,
+      input.company.teamId,
+      input.company.idempotencyKey,
+      input.company.budgetMonthlyUsd,
+      input.company.allocatedBudgetMonthlyUsd,
+      input.company.remainingBudgetMonthlyUsd,
+      input.company.createdAt,
+      input.company.updatedAt,
     ]
   );
 }
@@ -1284,6 +1405,175 @@ export const controlPlaneRepository = {
   },
 
   /**
+   * DASH-64.7: persist a provisioned company (company + workspace +
+   * fingerprint + optional secretBindings). Production routes through
+   * Postgres via withWorkspaceContext (companies table); test mode
+   * buckets by tenantWorkspaceId in memCompanies.
+   */
+  async upsertProvisionedCompany(
+    ctx: ControlPlaneRepoContext,
+    input: {
+      company: ProvisionedCompanyRecord;
+      workspace: ProvisionedCompanyWorkspace;
+      tenantWorkspaceId: string;
+      fingerprint?: string;
+      secretBindings?: Record<string, string>;
+    }
+  ): Promise<void> {
+    if (useInMemoryFallback()) {
+      const bucket = memBucket(memCompanies, input.tenantWorkspaceId);
+      bucket.set(input.company.id, {
+        company: { ...input.company },
+        workspace: { ...input.workspace },
+        tenantWorkspaceId: input.tenantWorkspaceId,
+        fingerprint: input.fingerprint ?? "",
+        secretBindings: { ...(input.secretBindings ?? {}) },
+      });
+      return;
+    }
+    await withWorkspaceContext(getPostgresPool(), ctx, async (client) => {
+      await upsertCompanyRowInClient(client, {
+        company: input.company,
+        workspace: input.workspace,
+        tenantWorkspaceId: input.tenantWorkspaceId,
+      });
+    });
+  },
+
+  async getProvisionedCompany(
+    ctx: ControlPlaneRepoContext,
+    companyId: string,
+  ): Promise<MemCompanyEntry | undefined> {
+    if (useInMemoryFallback()) {
+      const bucket = memBucket(memCompanies, ctx.workspaceId);
+      const entry = bucket.get(companyId);
+      if (entry) {
+        return {
+          company: { ...entry.company },
+          workspace: { ...entry.workspace },
+          tenantWorkspaceId: entry.tenantWorkspaceId,
+          fingerprint: entry.fingerprint,
+          secretBindings: { ...entry.secretBindings },
+        };
+      }
+      // Cross-workspace fallback (test mode legacy behaviour).
+      for (const b of memCompanies.values()) {
+        const found = b.get(companyId);
+        if (found) {
+          return {
+            company: { ...found.company },
+            workspace: { ...found.workspace },
+            tenantWorkspaceId: found.tenantWorkspaceId,
+            fingerprint: found.fingerprint,
+            secretBindings: { ...found.secretBindings },
+          };
+        }
+      }
+      return undefined;
+    }
+    return withWorkspaceContext(getPostgresPool(), ctx, async (client) => {
+      const result = await client.query<CompanyRow>(
+        `SELECT id, workspace_id, user_id, name, external_company_id,
+                provisioned_workspace_id, provisioned_workspace_name, provisioned_workspace_slug,
+                team_id, idempotency_key, budget_monthly_usd, allocated_budget_monthly_usd,
+                remaining_budget_monthly_usd, created_at, updated_at
+           FROM companies
+          WHERE id = $1`,
+        [companyId]
+      );
+      const row = result.rows[0];
+      if (!row) return undefined;
+      const hydrated = rowToProvisionedCompany(row);
+      // Production secret bindings live in secretsRepository; this
+      // helper returns the row metadata only.
+      return { ...hydrated, fingerprint: "", secretBindings: {} };
+    });
+  },
+
+  /**
+   * DASH-64.7: list every provisioned company in the given workspace
+   * regardless of caller userId. Used by listAccessibleTeamIds so a
+   * second identity in the workspace can see teams provisioned by
+   * other users in the same workspace. Workspace RLS is the access
+   * boundary in production; the in-memory fallback mirrors that by
+   * bucketing memCompanies by tenantWorkspaceId.
+   */
+  async listCompaniesInWorkspace(ctx: ControlPlaneRepoContext): Promise<MemCompanyEntry[]> {
+    if (useInMemoryFallback()) {
+      const bucket = memBucket(memCompanies, ctx.workspaceId);
+      return Array.from(bucket.values()).map((entry) => ({
+        company: { ...entry.company },
+        workspace: { ...entry.workspace },
+        tenantWorkspaceId: entry.tenantWorkspaceId,
+        fingerprint: entry.fingerprint,
+        secretBindings: { ...entry.secretBindings },
+      }));
+    }
+    return withWorkspaceContext(getPostgresPool(), ctx, async (client) => {
+      const result = await client.query<CompanyRow>(
+        `SELECT id, workspace_id, user_id, name, external_company_id,
+                provisioned_workspace_id, provisioned_workspace_name, provisioned_workspace_slug,
+                team_id, idempotency_key, budget_monthly_usd, allocated_budget_monthly_usd,
+                remaining_budget_monthly_usd, created_at, updated_at
+           FROM companies`,
+        []
+      );
+      return result.rows.map((row) => {
+        const hydrated = rowToProvisionedCompany(row);
+        return { ...hydrated, fingerprint: "", secretBindings: {} };
+      });
+    });
+  },
+
+  /**
+   * DASH-64.7: cross-workspace fallback for legacy callers without a
+   * pinned workspaceId. Migration 051 SECURITY DEFINER helper.
+   */
+  async listAllProvisionedCompaniesForUser(userId: string): Promise<MemCompanyEntry[]> {
+    if (useInMemoryFallback()) {
+      const out: MemCompanyEntry[] = [];
+      for (const bucket of memCompanies.values()) {
+        for (const entry of bucket.values()) {
+          if (entry.company.userId === userId) {
+            out.push({
+              company: { ...entry.company },
+              workspace: { ...entry.workspace },
+              tenantWorkspaceId: entry.tenantWorkspaceId,
+              fingerprint: entry.fingerprint,
+              secretBindings: { ...entry.secretBindings },
+            });
+          }
+        }
+      }
+      return out.sort((left, right) => left.company.createdAt.localeCompare(right.company.createdAt));
+    }
+    const pool = getPostgresPool();
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN");
+      await client.query("SELECT set_config('app.current_user_id', $1, true)", [userId]);
+      const result = await client.query<CompanyRow>(
+        `SELECT id, workspace_id, user_id, name, external_company_id,
+                provisioned_workspace_id, provisioned_workspace_name, provisioned_workspace_slug,
+                team_id, idempotency_key, budget_monthly_usd, allocated_budget_monthly_usd,
+                remaining_budget_monthly_usd, created_at, updated_at
+           FROM list_companies_for_user($1)`,
+        [userId]
+      );
+      await client.query("COMMIT");
+      return result.rows.map((row) => {
+        const hydrated = rowToProvisionedCompany(row);
+        return { ...hydrated, fingerprint: "", secretBindings: {} };
+      });
+    } catch (err) {
+      await client.query("ROLLBACK").catch(() => undefined);
+      throw err;
+    } finally {
+      client.release();
+    }
+  },
+
+  /**
    * DASH-64.6: persist (insert or update) a team row. Production routes
    * through Postgres via withWorkspaceContext; test mode buckets by
    * workspace in memTeams. companyId is optional — callers that have a
@@ -1776,6 +2066,7 @@ export function __resetRepositoryInMemoryStateForTests(): void {
   memExecutions.clear();
   memAgents.clear();
   memTeams.clear();
+  memCompanies.clear();
 }
 
 export type ControlPlaneRepository = typeof controlPlaneRepository;

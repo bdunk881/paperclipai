@@ -82,6 +82,53 @@ describe("GET /api/routines", () => {
   });
 });
 
+describe("POST /api/routines", () => {
+  const AGENT_ID = "44444444-4444-4444-8444-444444444444";
+
+  it("creates a routine and registers the scheduler when enabled + cron", async () => {
+    const createdRow = {
+      ...ROUTINE_ROW,
+      agent_id: AGENT_ID,
+      name: "Morning standup",
+    };
+    const pool = {
+      query: jest
+        .fn()
+        .mockResolvedValueOnce({ rows: [{ id: AGENT_ID }] } as unknown as QueryResult)
+        .mockResolvedValueOnce({ rows: [{ id: VALID_UUID }] } as unknown as QueryResult)
+        .mockResolvedValueOnce({ rows: [createdRow] } as unknown as QueryResult),
+    } as unknown as Pool;
+    const queue = makeQueue();
+    const app = buildApp(pool, queue);
+
+    const res = await request(app)
+      .post("/api/routines")
+      .send({
+        agentId: AGENT_ID,
+        workflowId: VALID_UUID,
+        name: "Morning standup",
+        scheduleCron: "0 9 * * 1-5",
+        triggerKind: "scheduled",
+        enabled: true,
+      });
+
+    expect(res.status).toBe(201);
+    expect(res.body.name).toBe("Morning standup");
+    expect(queue.upsertJobScheduler).toHaveBeenCalledTimes(1);
+  });
+
+  it("returns 400 when scheduled without cron", async () => {
+    const app = buildApp(makePool([]));
+    const res = await request(app).post("/api/routines").send({
+      agentId: AGENT_ID,
+      workflowId: VALID_UUID,
+      name: "Task",
+      triggerKind: "scheduled",
+    });
+    expect(res.status).toBe(400);
+  });
+});
+
 describe("PATCH /api/routines/:id", () => {
   it("returns 400 when body has nothing to update", async () => {
     const app = buildApp(makePool([]));

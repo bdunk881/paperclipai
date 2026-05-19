@@ -42,8 +42,71 @@ import {
 import { resolveModelForTier } from "../engine/llmRouter";
 import { llmConfigStore } from "../llmConfig/llmConfigStore";
 import { ensureUserProfileExists } from "../user/profileStore";
+import { buildEntitlements, entitlementStore, getEntitlementLimits } from "../billing/entitlements";
+import type { SubscriptionTier } from "../billing/subscriptionStore";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+const UPGRADE_PATH: Record<SubscriptionTier, SubscriptionTier | null> = {
+  explore: "flow",
+  flow: "automate",
+  automate: "scale",
+  scale: null,
+};
+
+function firstTierThatAllowsAgentCap(fromTier: SubscriptionTier): SubscriptionTier | null {
+  let tier: SubscriptionTier | null = UPGRADE_PATH[fromTier] ?? null;
+  while (tier) {
+    if (getEntitlementLimits(tier).agentCap > 0) return tier;
+    tier = UPGRADE_PATH[tier] ?? null;
+  }
+  return null;
+}
+
+async function assertAgentCapForConfirm(
+  pool: Pool,
+  workspaceId: string,
+  agentsToAdd: number,
+): Promise<{ status: number; body: Record<string, unknown> } | null> {
+  const entitlements =
+    (await entitlementStore.get(workspaceId)) ?? buildEntitlements(workspaceId, "explore");
+
+  if (entitlements.agentCap <= 0) {
+    return {
+      status: 402,
+      body: {
+        error: "Plan limit reached: agentCap",
+        code: "entitlement_exceeded",
+        feature: "agentCap",
+        limit: entitlements.agentCap,
+        currentTier: entitlements.plan,
+        upgradeTo: firstTierThatAllowsAgentCap(entitlements.plan),
+      },
+    };
+  }
+
+  const countResult = await pool.query<{ n: string }>(
+    `SELECT count(*)::text AS n FROM agents WHERE workspace_id = $1::uuid`,
+    [workspaceId],
+  );
+  const current = Number(countResult.rows[0]?.n ?? 0);
+  if (current + agentsToAdd > entitlements.agentCap) {
+    return {
+      status: 402,
+      body: {
+        error: "Plan limit reached: agentCap",
+        code: "entitlement_exceeded",
+        feature: "agentCap",
+        limit: entitlements.agentCap,
+        current,
+        currentTier: entitlements.plan,
+        upgradeTo: firstTierThatAllowsAgentCap(entitlements.plan),
+      },
+    };
+  }
+
+  return null;
+}
 
 export interface ProvisionedAgentRow {
   id: string;
@@ -578,6 +641,13 @@ export function createHiringPlanRoutes(pool: Pool) {
           draft?.schemaVersion ?? "missing"
         }, expected ${TEAM_ASSEMBLY_SCHEMA_VERSION}). Re-generate the plan.`,
       });
+      return;
+    }
+
+    const agentsToAdd = draft.provisioningPlan.agents.length;
+    const capViolation = await assertAgentCapForConfirm(pool, workspaceId, agentsToAdd);
+    if (capViolation) {
+      res.status(capViolation.status).json(capViolation.body);
       return;
     }
 

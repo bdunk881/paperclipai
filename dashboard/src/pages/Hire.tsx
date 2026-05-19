@@ -31,6 +31,7 @@ import {
   type MissionMetadata,
 } from "../api/missionsApi";
 import { listLLMConfigs, type LLMConfig } from "../api/client";
+import { getHostedFreeCatalog } from "../api/hostedFreeModelsApi";
 
 type SubmitState = "idle" | "saving" | "generating" | "error";
 
@@ -113,7 +114,9 @@ export default function Hire() {
   // doesn't fill out the whole form and then bounce off an error.
   const [llmConfigs, setLlmConfigs] = useState<LLMConfig[] | null>(null);
   const [llmConfigError, setLlmConfigError] = useState<string | null>(null);
+  const [hostedFreeAvailable, setHostedFreeAvailable] = useState(false);
   const hasLLM = (llmConfigs?.length ?? 0) > 0;
+  const canUseLlm = hasLLM || hostedFreeAvailable;
   const llmCheckLoading = llmConfigs === null && llmConfigError === null;
 
   async function handleDelete(mission: Mission): Promise<void> {
@@ -173,12 +176,19 @@ export default function Hire() {
     void (async () => {
       try {
         const token = await requireAccessToken();
-        const list = await listLLMConfigs(token);
-        if (!cancelled) setLlmConfigs(list);
+        const [list, hosted] = await Promise.all([
+          listLLMConfigs(token),
+          getHostedFreeCatalog(token).catch(() => null),
+        ]);
+        if (!cancelled) {
+          setLlmConfigs(list);
+          setHostedFreeAvailable((hosted?.providers.length ?? 0) > 0);
+        }
       } catch (err) {
         if (!cancelled) {
           setLlmConfigError(err instanceof Error ? err.message : "Failed to check LLM models");
           setLlmConfigs([]);
+          setHostedFreeAvailable(false);
         }
       }
     })();
@@ -193,7 +203,7 @@ export default function Hire() {
   // Generate is gated on LLM credentials. Save-as-draft stays available so a
   // user without a model can still capture mission ideas now and generate
   // later once they connect a provider.
-  const canGenerate = trimmedStatement.length > 0 && !isBusy && hasLLM && !llmCheckLoading;
+  const canGenerate = trimmedStatement.length > 0 && !isBusy && canUseLlm && !llmCheckLoading;
   const charactersLeft = STATEMENT_MAX - statement.length;
   const readiness = useMemo(
     () => computeReadiness(statement, metadata),
@@ -306,7 +316,7 @@ export default function Hire() {
       {/* Inline gate: if no LLM credentials exist yet, the backend's
           POST /api/missions/:id/generate-plan will fail with 422. Surface
           that up front rather than after a full form submission. */}
-      {!llmCheckLoading && !hasLLM ? (
+      {!llmCheckLoading && !canUseLlm ? (
         <div
           className="af2-card"
           style={{
@@ -440,7 +450,7 @@ export default function Hire() {
             disabled={!canGenerate}
             className="af2-btn af2-btn-clay"
             title={
-              !hasLLM && !llmCheckLoading
+              !canUseLlm && !llmCheckLoading
                 ? "Add an LLM model in Settings → Models first"
                 : undefined
             }

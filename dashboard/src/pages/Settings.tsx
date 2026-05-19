@@ -389,7 +389,7 @@ function GeneralTab({
   // DASH-16 redux: General-tab inputs used to be uncontrolled
   // (defaultValue) with no Save button, so the page LOOKED editable
   // but nothing persisted. Now controlled state + a Save button
-  // wired to PATCH /api/profile (timezone + display name go through
+  // wired to PATCH /api/user/profile (timezone + display name go through
   // the user_profiles table). Workspace name has no PATCH endpoint
   // yet, so it stays read-only with a pointer to the workspace
   // switcher where renaming will land.
@@ -409,7 +409,7 @@ function GeneralTab({
         const token = await requireAccessToken();
         const data = await apiGet<{
           profile?: { displayName?: string | null; timezone?: string };
-        }>("/api/profile", null, token);
+        }>("/api/user/profile", null, token);
         if (cancelled) return;
         const nextDisplay = data.profile?.displayName ?? "";
         const nextTz = data.profile?.timezone ?? browserTimezone;
@@ -439,7 +439,7 @@ function GeneralTab({
     setSaveError(null);
     try {
       const token = await requireAccessToken();
-      const response = await trackedFetch(`${getApiBasePath()}/profile`, {
+      const response = await trackedFetch(`${getApiBasePath()}/user/profile`, {
         method: "PATCH",
         headers: {
           "Content-Type": "application/json",

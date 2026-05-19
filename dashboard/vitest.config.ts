@@ -42,7 +42,6 @@ export default defineConfig({
         // throw).  Unit-testing them requires mocking fetch at the module level,
         // which gives no signal beyond "the wrapper calls fetch".  Integration /
         // E2E tests provide the meaningful coverage for these files.
-        "src/api/activityApi.ts",
         "src/api/agentActionsApi.ts",
         "src/api/canonicalApi.ts",
         "src/api/hostedFreeModelsApi.ts",

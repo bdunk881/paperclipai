@@ -2,6 +2,7 @@
  * Routines CRUD routes (HEL-108).
  *
  *   GET    /api/routines          — list workspace routines
+ *   POST   /api/routines          — create routine (agent + workflow + schedule)
  *   PATCH  /api/routines/:id      — toggle enabled / update schedule_cron
  *
  * enable/disable side-effects: adds or removes the BullMQ job scheduler so
@@ -83,6 +84,110 @@ export function createRoutineRoutes(
     } catch (err) {
       console.error("[routines] list failed:", (err as Error).message);
       res.status(500).json({ error: "Failed to list routines" });
+    }
+  });
+
+  // -------------------------------------------------------------------------
+  // POST /api/routines — create a standing task for an agent + workflow.
+  // -------------------------------------------------------------------------
+  router.post("/", async (req: AuthenticatedRequest, res) => {
+    const userId = req.auth?.sub;
+    const workspaceId = (req as WorkspaceAwareRequest).workspace?.id;
+    if (!userId || !workspaceId) {
+      res.status(401).json({ error: "Authenticated user + workspace required" });
+      return;
+    }
+
+    const body = req.body as {
+      agentId?: unknown;
+      workflowId?: unknown;
+      name?: unknown;
+      scheduleCron?: unknown;
+      triggerKind?: unknown;
+      enabled?: unknown;
+    };
+
+    const agentId = typeof body.agentId === "string" ? body.agentId.trim() : "";
+    const workflowId = typeof body.workflowId === "string" ? body.workflowId.trim() : "";
+    const name = typeof body.name === "string" ? body.name.trim() : "";
+
+    if (!agentId || !UUID_RE.test(agentId)) {
+      res.status(400).json({ error: "Valid agentId is required" });
+      return;
+    }
+    if (!workflowId || !UUID_RE.test(workflowId)) {
+      res.status(400).json({ error: "Valid workflowId is required" });
+      return;
+    }
+    if (!name || name.length > 200) {
+      res.status(400).json({ error: "name is required (max 200 characters)" });
+      return;
+    }
+
+    const triggerKindRaw =
+      typeof body.triggerKind === "string" ? body.triggerKind.trim() : "manual";
+    const allowedTriggers = new Set(["manual", "scheduled", "webhook", "event"]);
+    if (!allowedTriggers.has(triggerKindRaw)) {
+      res.status(400).json({ error: "Invalid triggerKind" });
+      return;
+    }
+
+    const scheduleCron =
+      typeof body.scheduleCron === "string" && body.scheduleCron.trim()
+        ? body.scheduleCron.trim()
+        : null;
+    const enabled = typeof body.enabled === "boolean" ? body.enabled : true;
+
+    if (triggerKindRaw === "scheduled" && !scheduleCron) {
+      res.status(400).json({ error: "scheduleCron is required when triggerKind is scheduled" });
+      return;
+    }
+
+    try {
+      const agentCheck = await pool.query<{ id: string }>(
+        `SELECT id::text FROM agents
+          WHERE id = $1::uuid AND workspace_id = $2::uuid`,
+        [agentId, workspaceId],
+      );
+      if (agentCheck.rowCount === 0) {
+        res.status(404).json({ error: "Agent not found in this workspace" });
+        return;
+      }
+
+      const workflowCheck = await pool.query<{ id: string }>(
+        `SELECT id::text FROM workflows
+          WHERE id = $1::uuid AND workspace_id = $2::uuid`,
+        [workflowId, workspaceId],
+      );
+      if (workflowCheck.rowCount === 0) {
+        res.status(404).json({ error: "Workflow not found in this workspace" });
+        return;
+      }
+
+      const insert = await pool.query<RoutineRow>(
+        `INSERT INTO routines
+            (workspace_id, agent_id, name, schedule_cron, trigger_kind, workflow_id, enabled)
+         VALUES ($1::uuid, $2::uuid, $3, $4, $5, $6::uuid, $7)
+         RETURNING id, workspace_id::text, agent_id::text, name, schedule_cron,
+                   trigger_kind, workflow_id::text, enabled, created_at, updated_at`,
+        [workspaceId, agentId, name, scheduleCron, triggerKindRaw, workflowId, enabled],
+      );
+
+      const created = insert.rows[0]!;
+
+      if (runQueue && created.enabled && created.schedule_cron) {
+        await addRepeatableJob(
+          runQueue,
+          created.id,
+          created.schedule_cron,
+          created.workspace_id,
+        );
+      }
+
+      res.status(201).json(mapRow(created));
+    } catch (err) {
+      console.error("[routines] create failed:", (err as Error).message);
+      res.status(500).json({ error: "Failed to create routine" });
     }
   });
 

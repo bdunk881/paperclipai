@@ -742,12 +742,12 @@ describe("control plane client", () => {
 });
 
 describe("proposal builder client", () => {
-  it("falls back to mock context when /api/proposals/context returns 404", async () => {
+  it("returns empty proposal context when /api/proposals/context returns 404", async () => {
     mockFetchFail(404);
     const result = await listProposalContext(ACCESS_TOKEN);
     expect(lastFetchUrl()).toBe("/api/proposals/context");
-    expect(result.records.length).toBeGreaterThan(0);
-    expect(result.templates.length).toBeGreaterThan(0);
+    expect(result.records).toEqual([]);
+    expect(result.templates).toEqual([]);
   });
 
   it("posts to /api/proposals when creating a draft", async () => {
@@ -757,12 +757,12 @@ describe("proposal builder client", () => {
     expect(lastFetchOptions().method).toBe("POST");
   });
 
-  it("falls back to a mock completed job when proposal polling returns 404", async () => {
+  it("throws when proposal polling returns 404", async () => {
     mockFetchFail(404);
-    const result = await getProposalJobStatus("job-123", ACCESS_TOKEN);
+    await expect(getProposalJobStatus("job-123", ACCESS_TOKEN)).rejects.toThrow(
+      /not available/i,
+    );
     expect(lastFetchUrl()).toBe("/api/proposals/job-123");
-    expect(result.status).toBe("completed");
-    expect(result.draft?.title).toBeTruthy();
   });
 });
 

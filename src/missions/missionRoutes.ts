@@ -42,6 +42,11 @@ import { getProvider } from "../engine/llmProviders";
 import { computeHiringPlanCostCents } from "./hiringPlanCost";
 import { recordHiringPlanCost } from "./hiringPlanCostWriter";
 import { ensureUserProfileExists } from "../user/profileStore";
+import {
+  buildResolvedFromHostedFree,
+  getDefaultHostedFreeProvider,
+  resolveHostedFreeApiKey,
+} from "../hostedFreeModels/providers";
 
 interface MissionRow {
   id: string;
@@ -584,7 +589,14 @@ export function createMissionRoutes(
       return;
     }
 
-    const resolved = await llmConfigStore.getDecryptedDefault(userId);
+    let resolved = await llmConfigStore.getDecryptedDefault(userId);
+    if (!resolved) {
+      const hostedFree = getDefaultHostedFreeProvider();
+      const hostedFreeKey = hostedFree ? resolveHostedFreeApiKey(hostedFree) : null;
+      if (hostedFree && hostedFreeKey) {
+        resolved = buildResolvedFromHostedFree(hostedFree, hostedFreeKey);
+      }
+    }
     if (!resolved) {
       res.status(422).json({
         error: "No LLM provider configured. Go to Settings > LLM Providers to connect one.",

@@ -10,6 +10,7 @@ import { Router } from "express";
 import type { Pool } from "pg";
 import type { WorkspaceAwareRequest } from "../middleware/workspaceResolver";
 import { runReflection, type ReflectionPromptOutput } from "./reflectionJob";
+import { embedTextForWorkspace, llmReflectForWorkspace } from "./reflectionWiring";
 
 export interface ReflectionRouteDeps {
   /**
@@ -56,8 +57,12 @@ export function createReflectionRoutes(pool: Pool, deps: ReflectionRouteDeps = {
       const result = await runReflection(
         {
           pool,
-          llmReflect: deps.llmReflect ?? NULL_REFLECT,
-          embedFn: deps.embedFn ?? STUB_EMBED,
+          llmReflect:
+            deps.llmReflect ??
+            ((input) => llmReflectForWorkspace({ workspaceId, userId }, input)),
+          embedFn:
+            deps.embedFn ??
+            ((text) => embedTextForWorkspace({ workspaceId, userId }, text)),
         },
         {
           workspaceId,

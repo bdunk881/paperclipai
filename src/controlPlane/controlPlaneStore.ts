@@ -2312,12 +2312,20 @@ export const controlPlaneStore = {
       sourceWorkflowStepId: task.sourceWorkflowStepId,
       metadata: task.metadata,
     };
+    // DASH-64.1 iter 4 (Codex P1 on #901): workspaceContextForTeam can
+    // return undefined when the team is not in cache AND the DB lookup
+    // misses (or errors). Previously this silently no-op'd the upsert,
+    // making createTask return success while never persisting the row
+    // — the dashboard would briefly see the optimistic task then it
+    // disappears on next read. Throw instead so callers see a real
+    // failure they can retry.
     const taskCtx = await workspaceContextForTeam(task.teamId, input.userId);
-    if (taskCtx) {
-      await controlPlaneRepository.upsertTask(taskCtx, task);
+    if (!taskCtx) {
+      throw new Error("task_workspace_unresolved");
     }
+    await controlPlaneRepository.upsertTask(taskCtx, task);
     observabilityStore.record({
-      workspaceId: taskCtx?.workspaceId,
+      workspaceId: taskCtx.workspaceId,
       userId: input.userId,
       category: "issue",
       type: "issue.created",

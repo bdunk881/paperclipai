@@ -88,12 +88,15 @@ function firstTierThatAllows(
   return null;
 }
 
-function entitlementsFor(workspaceId: string): WorkspaceEntitlements {
-  // entitlementStore.upsert is fired by stripeWebhook.ts on every relevant
-  // Stripe event. If we have nothing for this workspace yet, default to the
-  // free tier ('explore') — never accidentally grant paid features.
-  const cached = entitlementStore.get(workspaceId);
-  if (cached) return cached;
+async function entitlementsFor(workspaceId: string): Promise<WorkspaceEntitlements> {
+  // DASH-48: get() is now async and falls back to the canonical
+  // `entitlements` Postgres row when the in-memory cache misses. Only
+  // when both the cache AND the DB have no row do we default to
+  // "explore" — pre-DASH-48 this fallback fired on every restart,
+  // silently downgrading paid users until the next webhook re-hydrated
+  // them.
+  const persisted = await entitlementStore.get(workspaceId);
+  if (persisted) return persisted;
   return entitlementStore.upsert(workspaceId, "explore");
 }
 
@@ -136,7 +139,7 @@ export function requireEntitlement(
       return;
     }
 
-    const entitlements = entitlementsFor(req.workspace.id);
+    const entitlements = await entitlementsFor(req.workspace.id);
     const limit = entitlements[feature] as boolean | number;
 
     const denyPayload = {

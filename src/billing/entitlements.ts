@@ -1,4 +1,5 @@
 import type { SubscriptionTier } from "./subscriptionStore";
+import { getPostgresPool, inMemoryAllowed, isPostgresPersistenceEnabled } from "../db/postgres";
 
 export interface WorkspaceEntitlements {
   workspaceId: string;
@@ -64,7 +65,47 @@ const PLAN_LIMITS: Record<SubscriptionTier, EntitlementLimits> = {
   },
 };
 
+// DASH-48: in-memory mirror stays as a hot-path cache; canonical row
+// lives in the `entitlements` Postgres table (migration 025) written by
+// billingRepository.upsertSubscriptionAndEntitlements on every Stripe
+// webhook. Pre-DASH-48, cache miss on `get(workspaceId)` returned
+// undefined, which made `requireEntitlement.ts` silently downgrade the
+// caller to "explore" until the next webhook restored the cache —
+// effectively cancelling paid users' plans after every Fly restart.
 const entitlementsByWorkspace = new Map<string, WorkspaceEntitlements>();
+
+function postgresAvailable(): boolean {
+  if (isPostgresPersistenceEnabled()) return true;
+  if (inMemoryAllowed()) return false;
+  throw new Error("entitlements store requires DATABASE_URL outside development/test.");
+}
+
+interface EntitlementRow {
+  workspace_id: string;
+  runs_per_month: number;
+  agent_cap: number;
+  integration_cap: number;
+  byok_allowed: boolean;
+  log_retention_days: number;
+  approval_tier_max: number;
+  plan: SubscriptionTier;
+  updated_at: Date | string;
+}
+
+function mapRow(row: EntitlementRow): WorkspaceEntitlements {
+  return {
+    workspaceId: row.workspace_id,
+    plan: row.plan,
+    runsPerMonth: row.runs_per_month,
+    agentCap: row.agent_cap,
+    integrationCap: row.integration_cap,
+    byokAllowed: row.byok_allowed,
+    logRetentionDays: row.log_retention_days,
+    approvalTierMax: row.approval_tier_max,
+    updatedAt:
+      row.updated_at instanceof Date ? row.updated_at.toISOString() : row.updated_at,
+  };
+}
 
 export function getEntitlementLimits(plan: SubscriptionTier): EntitlementLimits {
   return PLAN_LIMITS[plan] ?? PLAN_LIMITS.explore;
@@ -81,13 +122,32 @@ export function buildEntitlements(workspaceId: string, plan: SubscriptionTier): 
 
 export const entitlementStore = {
   upsert(workspaceId: string, plan: SubscriptionTier): WorkspaceEntitlements {
+    // The canonical Postgres write happens in
+    // billingRepository.upsertSubscriptionAndEntitlements (called from
+    // the same code paths that call this). This method just updates the
+    // in-process cache so the next read on this machine is fast.
     const entitlements = buildEntitlements(workspaceId, plan);
     entitlementsByWorkspace.set(workspaceId, entitlements);
     return entitlements;
   },
 
-  get(workspaceId: string): WorkspaceEntitlements | undefined {
-    return entitlementsByWorkspace.get(workspaceId);
+  async get(workspaceId: string): Promise<WorkspaceEntitlements | undefined> {
+    const cached = entitlementsByWorkspace.get(workspaceId);
+    if (cached) return cached;
+    if (!postgresAvailable()) return undefined;
+
+    const result = await getPostgresPool().query<EntitlementRow>(
+      `SELECT workspace_id, runs_per_month, agent_cap, integration_cap,
+              byok_allowed, log_retention_days, approval_tier_max, plan,
+              updated_at
+         FROM entitlements
+        WHERE workspace_id = $1`,
+      [workspaceId],
+    );
+    if (result.rowCount === 0) return undefined;
+    const entitlements = mapRow(result.rows[0]);
+    entitlementsByWorkspace.set(workspaceId, entitlements);
+    return entitlements;
   },
 
   clear(): void {

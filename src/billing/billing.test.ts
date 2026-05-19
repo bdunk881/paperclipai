@@ -544,7 +544,7 @@ describe("POST /api/webhooks/stripe", () => {
     expect(sub?.workspaceId).toBe("22222222-2222-2222-2222-222222222222");
     expect(sub?.tier).toBe("automate");
     expect(sub?.accessLevel).toBe("active");
-    expect(entitlementStore.get("22222222-2222-2222-2222-222222222222")?.byokAllowed).toBe(true);
+    expect((await entitlementStore.get("22222222-2222-2222-2222-222222222222"))?.byokAllowed).toBe(true);
   });
 
   it("handles invoice.paid and refreshes period dates", async () => {

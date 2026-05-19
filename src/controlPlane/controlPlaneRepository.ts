@@ -612,28 +612,42 @@ export const controlPlaneRepository = {
       }
       return out.sort((left, right) => left.createdAt.localeCompare(right.createdAt));
     }
-    // DASH-64.1 followup (Codex review on PR #901): the previous raw
+    // DASH-64.1 followup (Codex on PR #901): the previous raw
     // `pool.query` against `agent_tasks` returned zero rows in
     // production because FORCE RLS requires `app.current_workspace_id`
     // to be set, and a cross-workspace listing has no single workspace
     // context to pin.
     //
-    // Migration 046 adds `list_agent_tasks_for_user(p_user_id text)`
-    // as a SECURITY DEFINER helper. Same pattern as migration 030's
-    // `lookup_team_workspace_id`: bypass RLS for one specific read
-    // whose access boundary (the user_id filter) is encoded in the
-    // function body. Downstream callers that have a workspace id keep
-    // using the workspace-scoped listTasks above.
+    // Migration 046 adds `list_agent_tasks_for_user(p_user_id text)` as
+    // a SECURITY DEFINER helper. Same pattern as `lookup_team_workspace_id`.
+    //
+    // DASH-64.1 iter 3 (Codex P1 on #901): the helper is bound to the
+    // authenticated subject via `app.current_user_id`. We MUST set
+    // that session var before calling, otherwise the function returns
+    // zero rows by NULL-denial. We use a dedicated client + transaction
+    // so the `set_config(..., true)` is scoped to this query alone
+    // (true = local-to-transaction).
     const pool = getPostgresPool();
-    const result = await pool.query<TaskRow>(
-      `SELECT id, team_id, user_id, title, description, source_run_id,
-              source_workflow_step_id, assigned_agent_id, execution_id, status,
-              checked_out_by, checked_out_at, audit_trail, metadata,
-              created_at, updated_at
-         FROM list_agent_tasks_for_user($1)`,
-      [userId],
-    );
-    return result.rows.map(rowToTask);
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN");
+      await client.query("SELECT set_config('app.current_user_id', $1, true)", [userId]);
+      const result = await client.query<TaskRow>(
+        `SELECT id, team_id, user_id, title, description, source_run_id,
+                source_workflow_step_id, assigned_agent_id, execution_id, status,
+                checked_out_by, checked_out_at, audit_trail, metadata,
+                created_at, updated_at
+           FROM list_agent_tasks_for_user($1)`,
+        [userId],
+      );
+      await client.query("COMMIT");
+      return result.rows.map(rowToTask);
+    } catch (err) {
+      await client.query("ROLLBACK").catch(() => undefined);
+      throw err;
+    } finally {
+      client.release();
+    }
   },
 
   async insertHeartbeat(

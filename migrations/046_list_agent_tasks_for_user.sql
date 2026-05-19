@@ -27,11 +27,34 @@ BEGIN;
 
 CREATE OR REPLACE FUNCTION list_agent_tasks_for_user(p_user_id text)
 RETURNS SETOF agent_tasks
-LANGUAGE sql
+LANGUAGE plpgsql
 SECURITY DEFINER
 STABLE
 AS $$
-  SELECT * FROM agent_tasks WHERE user_id = p_user_id ORDER BY created_at ASC
+DECLARE
+  v_session_user text := app_current_user_id();
+BEGIN
+  -- DASH-64.1 iter 3 (Codex P1): defense-in-depth against a backend
+  -- bug calling with the wrong p_user_id. Even though EXECUTE is
+  -- restricted to server-only roles (REVOKE below), the function MUST
+  -- refuse to return rows when the caller's authenticated subject
+  -- (set on the session by the backend via
+  -- `set_config('app.current_user_id', userId, true)`) doesn't match
+  -- the requested user_id.
+  --
+  -- The session var is the same one RLS policies key off
+  -- (app_current_user_id()), set inside withWorkspaceContext per
+  -- HEL-80. A bug that passes the wrong p_user_id returns zero rows
+  -- because the predicate filters by the verified session user. If
+  -- the session var is NULL (backend forgot to set it), the function
+  -- returns zero rows by NULL-denial — same hardened pattern RLS
+  -- uses elsewhere.
+  IF v_session_user IS NULL OR v_session_user <> p_user_id THEN
+    RETURN;
+  END IF;
+  RETURN QUERY
+    SELECT * FROM agent_tasks WHERE user_id = p_user_id ORDER BY created_at ASC;
+END;
 $$;
 
 -- Lock the search_path so the SECURITY DEFINER body can't be hijacked

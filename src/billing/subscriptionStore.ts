@@ -1,17 +1,21 @@
 /**
  * Subscription store — Stripe subscriptions mapped to internal access levels.
  *
- * Read path is in-memory (Map<id, Subscription>) for low-latency lookups
- * during webhook handling and per-request access checks. Write path mirrors
- * to Postgres via `billingRepository.upsertSubscriptionAndEntitlements`
- * (called from `stripeWebhook.ts::syncSubscriptionEntitlements` after every
- * upsert) so the data survives a process restart.
+ * DASH-47: every read method is async and falls back to Postgres on
+ * in-memory miss. The four `Map<>` mirrors stay as a low-latency
+ * read cache — important for webhook handlers that fire repeatedly for
+ * the same customer — but they're no longer the source of truth. A
+ * miss because hydration hasn't finished, or because a different
+ * process wrote the row, now resolves correctly instead of returning
+ * undefined and looking like the customer has no subscription.
  *
- * `hydrateFromPostgres()` repopulates the in-memory map at app boot — see
- * `src/app.ts` startup. Without that hydration, an API restart would lose
- * all subscription state until the next webhook arrived for each customer
- * (HEL-45 was the urgent fix that closed this gap).
+ * Write path: `upsert` still goes to memory (so the next in-process
+ * read is fast); the canonical write lives in
+ * `billingRepository.upsertSubscriptionAndEntitlements`, called from
+ * `stripeWebhook.ts::syncSubscriptionEntitlements` after every change.
  */
+
+import { billingRepository } from "./billingRepository";
 
 export type SubscriptionTier = "explore" | "flow" | "automate" | "scale";
 export type AccessLevel = "trial" | "active" | "past_due" | "cancelled" | "none";
@@ -60,8 +64,11 @@ export interface Subscription {
   updatedAt: string;
 }
 
+// DASH-47: in-memory mirrors stay as a low-latency cache for hot-path
+// webhook + per-request lookups. Cache miss now falls back to Postgres
+// via billingRepository.findX — no more silent "undefined" for rows
+// that exist in the DB but aren't in this process's memory yet.
 const store = new Map<string, Subscription>();
-// Secondary indexes
 const byStripeSubId = new Map<string, string>();
 const byStripeCustomerId = new Map<string, string[]>();
 const byUserId = new Map<string, string>();
@@ -72,6 +79,12 @@ function addIndex(sub: Subscription): void {
   if (!custSubs.includes(sub.id)) custSubs.push(sub.id);
   byStripeCustomerId.set(sub.stripeCustomerId, custSubs);
   if (sub.userId) byUserId.set(sub.userId, sub.id);
+}
+
+function cacheRecord(sub: Subscription): Subscription {
+  store.set(sub.id, sub);
+  addIndex(sub);
+  return sub;
 }
 
 /** Map Stripe subscription status to internal access level */
@@ -98,7 +111,6 @@ export function resolveTier(metadata?: Record<string, string>, priceId?: string)
   if (tierFromMeta && ["explore", "flow", "automate", "scale"].includes(tierFromMeta)) {
     return tierFromMeta;
   }
-  // Fallback: match against known price env vars
   if (priceId) {
     const prices = configuredPriceIds();
     if (prices.scale.includes(priceId)) return "scale";
@@ -110,37 +122,54 @@ export function resolveTier(metadata?: Record<string, string>, priceId?: string)
 
 export const subscriptionStore = {
   upsert(sub: Subscription): Subscription {
-    store.set(sub.id, sub);
-    addIndex(sub);
-    return sub;
+    return cacheRecord(sub);
   },
 
-  get(id: string): Subscription | undefined {
-    return store.get(id);
+  async get(id: string): Promise<Subscription | undefined> {
+    const cached = store.get(id);
+    if (cached) return cached;
+    const persisted = await billingRepository.findById(id);
+    return persisted ? cacheRecord(persisted) : undefined;
   },
 
-  getByStripeSubscriptionId(stripeSubId: string): Subscription | undefined {
-    const id = byStripeSubId.get(stripeSubId);
-    return id ? store.get(id) : undefined;
+  async getByStripeSubscriptionId(stripeSubId: string): Promise<Subscription | undefined> {
+    const cachedId = byStripeSubId.get(stripeSubId);
+    if (cachedId) {
+      const cached = store.get(cachedId);
+      if (cached) return cached;
+    }
+    const persisted = await billingRepository.findByStripeSubscriptionId(stripeSubId);
+    return persisted ? cacheRecord(persisted) : undefined;
   },
 
-  getByUserId(userId: string): Subscription | undefined {
-    const id = byUserId.get(userId);
-    return id ? store.get(id) : undefined;
+  async getByUserId(userId: string): Promise<Subscription | undefined> {
+    const cachedId = byUserId.get(userId);
+    if (cachedId) {
+      const cached = store.get(cachedId);
+      if (cached) return cached;
+    }
+    const persisted = await billingRepository.findByUserId(userId);
+    return persisted ? cacheRecord(persisted) : undefined;
   },
 
-  getByStripeCustomerId(customerId: string): Subscription[] {
-    const ids = byStripeCustomerId.get(customerId) ?? [];
-    return ids.map((id) => store.get(id)).filter(Boolean) as Subscription[];
+  async getByStripeCustomerId(customerId: string): Promise<Subscription[]> {
+    const cachedIds = byStripeCustomerId.get(customerId);
+    if (cachedIds && cachedIds.length > 0) {
+      const cached = cachedIds
+        .map((id) => store.get(id))
+        .filter((s): s is Subscription => Boolean(s));
+      if (cached.length > 0) return cached;
+    }
+    const persisted = await billingRepository.findByStripeCustomerId(customerId);
+    for (const sub of persisted) cacheRecord(sub);
+    return persisted;
   },
 
-  update(id: string, patch: Partial<Subscription>): Subscription | undefined {
-    const existing = store.get(id);
+  async update(id: string, patch: Partial<Subscription>): Promise<Subscription | undefined> {
+    const existing = await this.get(id);
     if (!existing) return undefined;
     const updated = { ...existing, ...patch, updatedAt: new Date().toISOString() };
-    store.set(id, updated);
-    addIndex(updated);
-    return updated;
+    return cacheRecord(updated);
   },
 
   list(): Subscription[] {
@@ -156,19 +185,14 @@ export const subscriptionStore = {
 
   /**
    * HEL-45: rebuild the in-memory cache from Postgres at app startup.
-   *
-   * Imports lazily so this module stays Postgres-agnostic at import time
-   * (the test suite mocks billingRepository or runs without DATABASE_URL).
-   * Returns the count of subscriptions hydrated; safe to call multiple
-   * times — re-hydration overwrites any in-memory entries with the
-   * latest persisted state.
+   * Still useful (warms the cache so the first webhook is fast), but
+   * post-DASH-47 the read methods don't depend on this for correctness —
+   * each one falls back to Postgres on its own.
    */
   async hydrateFromPostgres(): Promise<number> {
-    const { billingRepository } = await import("./billingRepository");
     const rows = await billingRepository.loadAllSubscriptions();
     for (const sub of rows) {
-      store.set(sub.id, sub);
-      addIndex(sub);
+      cacheRecord(sub);
     }
     return rows.length;
   },

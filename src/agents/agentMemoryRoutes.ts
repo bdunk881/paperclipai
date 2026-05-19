@@ -78,8 +78,8 @@ const requireRunId: RequestHandler = (req, res, next) => {
   next();
 };
 
-function resolveMemoryTier(userId: string): AgentMemoryTier {
-  const subscription = subscriptionStore.getByUserId(userId);
+async function resolveMemoryTier(userId: string): Promise<AgentMemoryTier> {
+  const subscription = await subscriptionStore.getByUserId(userId);
   if (!subscription) {
     return "explore";
   }
@@ -205,7 +205,7 @@ router.post("/", requireRunId, async (req: AuthenticatedRequest, res) => {
     return;
   }
 
-  const tier = resolveMemoryTier(userId);
+  const tier = await resolveMemoryTier(userId);
   if (rejectUnavailableTier(tier, res, "Agent Memory")) {
     return;
   }
@@ -290,7 +290,7 @@ router.post("/ticket-close", requireRunId, async (req: AuthenticatedRequest, res
     return;
   }
 
-  const tier = resolveMemoryTier(userId);
+  const tier = await resolveMemoryTier(userId);
   if (rejectUnavailableTier(tier, res, "Agent ticket-close memory")) {
     return;
   }
@@ -431,7 +431,7 @@ router.get("/search", async (req: AuthenticatedRequest, res) => {
     return;
   }
 
-  const tier = resolveMemoryTier(userId);
+  const tier = await resolveMemoryTier(userId);
   if (rejectUnavailableTier(tier, res, "Agent Memory semantic search")) {
     return;
   }
@@ -490,7 +490,7 @@ router.post("/kg", requireRunId, async (req: AuthenticatedRequest, res) => {
     return;
   }
 
-  const tier = resolveMemoryTier(userId);
+  const tier = await resolveMemoryTier(userId);
   if (rejectUnavailableTier(tier, res, "Agent Memory knowledge graph")) {
     return;
   }
@@ -577,7 +577,7 @@ router.get("/kg/query", async (req: AuthenticatedRequest, res) => {
     return;
   }
 
-  const tier = resolveMemoryTier(userId);
+  const tier = await resolveMemoryTier(userId);
   if (rejectUnavailableTier(tier, res, "Agent Memory knowledge graph")) {
     return;
   }
@@ -636,7 +636,7 @@ router.post("/heartbeat-log", requireRunId, async (req: AuthenticatedRequest, re
     return;
   }
 
-  const tier = resolveMemoryTier(userId);
+  const tier = await resolveMemoryTier(userId);
   if (rejectUnavailableTier(tier, res, "Agent Memory heartbeat logs")) {
     return;
   }
@@ -678,7 +678,7 @@ router.get("/heartbeat-log", async (req: AuthenticatedRequest, res) => {
     return;
   }
 
-  const tier = resolveMemoryTier(userId);
+  const tier = await resolveMemoryTier(userId);
   if (rejectUnavailableTier(tier, res, "Agent Memory heartbeat logs")) {
     return;
   }
@@ -710,7 +710,7 @@ router.get("/state", async (req: AuthenticatedRequest, res) => {
     return;
   }
 
-  const tier = resolveMemoryTier(userId);
+  const tier = await resolveMemoryTier(userId);
   if (rejectUnavailableTier(tier, res, "Agent Memory state replay")) {
     return;
   }
@@ -735,7 +735,7 @@ router.post("/archive", requireRunId, async (req: AuthenticatedRequest, res) => 
     return;
   }
 
-  const tier = resolveMemoryTier(userId);
+  const tier = await resolveMemoryTier(userId);
   if (rejectUnavailableTier(tier, res, "Agent Memory archival")) {
     return;
   }

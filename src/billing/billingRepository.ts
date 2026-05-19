@@ -191,4 +191,101 @@ export const billingRepository = {
    * Returns an empty array if Postgres isn't available (test mode).
    */
   loadAllSubscriptions: loadAllSubscriptionsImpl,
+
+  /**
+   * DASH-47: per-key lookup helpers used by subscriptionStore on
+   * in-memory cache miss. Same row mapper as loadAllSubscriptionsImpl
+   * so the shapes stay identical.
+   */
+  async findById(id: string): Promise<Subscription | undefined> {
+    if (!persistenceAvailable()) return undefined;
+    const result = await getPostgresPool().query(
+      `SELECT id, workspace_id, user_id, email, stripe_subscription_id,
+              stripe_customer_id, plan, status, access_level,
+              current_period_start, current_period_end,
+              cancel_at_period_end, trial_end, created_at, updated_at
+         FROM subscriptions WHERE id = $1`,
+      [id],
+    );
+    return result.rows[0] ? mapRowToSubscription(result.rows[0]) : undefined;
+  },
+
+  async findByStripeSubscriptionId(stripeSubId: string): Promise<Subscription | undefined> {
+    if (!persistenceAvailable()) return undefined;
+    const result = await getPostgresPool().query(
+      `SELECT id, workspace_id, user_id, email, stripe_subscription_id,
+              stripe_customer_id, plan, status, access_level,
+              current_period_start, current_period_end,
+              cancel_at_period_end, trial_end, created_at, updated_at
+         FROM subscriptions WHERE stripe_subscription_id = $1`,
+      [stripeSubId],
+    );
+    return result.rows[0] ? mapRowToSubscription(result.rows[0]) : undefined;
+  },
+
+  async findByUserId(userId: string): Promise<Subscription | undefined> {
+    if (!persistenceAvailable()) return undefined;
+    const result = await getPostgresPool().query(
+      `SELECT id, workspace_id, user_id, email, stripe_subscription_id,
+              stripe_customer_id, plan, status, access_level,
+              current_period_start, current_period_end,
+              cancel_at_period_end, trial_end, created_at, updated_at
+         FROM subscriptions
+        WHERE user_id = $1
+        ORDER BY updated_at DESC
+        LIMIT 1`,
+      [userId],
+    );
+    return result.rows[0] ? mapRowToSubscription(result.rows[0]) : undefined;
+  },
+
+  async findByStripeCustomerId(customerId: string): Promise<Subscription[]> {
+    if (!persistenceAvailable()) return [];
+    const result = await getPostgresPool().query(
+      `SELECT id, workspace_id, user_id, email, stripe_subscription_id,
+              stripe_customer_id, plan, status, access_level,
+              current_period_start, current_period_end,
+              cancel_at_period_end, trial_end, created_at, updated_at
+         FROM subscriptions WHERE stripe_customer_id = $1`,
+      [customerId],
+    );
+    return result.rows.map(mapRowToSubscription);
+  },
 };
+
+// Shared row mapper — keeps findX + loadAll consistent.
+function mapRowToSubscription(row: {
+  id: string;
+  workspace_id: string | null;
+  user_id: string | null;
+  email: string | null;
+  stripe_subscription_id: string;
+  stripe_customer_id: string | null;
+  plan: SubscriptionTier;
+  status: string;
+  access_level: AccessLevel | null;
+  current_period_start: Date | null;
+  current_period_end: Date | null;
+  cancel_at_period_end: boolean;
+  trial_end: Date | null;
+  created_at: Date;
+  updated_at: Date;
+}): Subscription {
+  return {
+    id: row.id,
+    workspaceId: row.workspace_id ?? undefined,
+    stripeSubscriptionId: row.stripe_subscription_id,
+    stripeCustomerId: row.stripe_customer_id ?? "",
+    userId: row.user_id ?? "",
+    email: row.email ?? "",
+    tier: row.plan,
+    accessLevel: row.access_level ?? "none",
+    status: row.status,
+    currentPeriodStart: row.current_period_start?.toISOString() ?? "",
+    currentPeriodEnd: row.current_period_end?.toISOString() ?? "",
+    cancelAtPeriodEnd: row.cancel_at_period_end,
+    trialEnd: row.trial_end?.toISOString() ?? null,
+    createdAt: row.created_at.toISOString(),
+    updatedAt: row.updated_at.toISOString(),
+  };
+}

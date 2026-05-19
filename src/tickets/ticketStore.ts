@@ -311,8 +311,8 @@ function normalizeTags(tags?: string[]): string[] {
   return [...new Set((tags ?? []).map((tag) => tag.trim()).filter(Boolean))];
 }
 
-function resolveMemoryTier(userId: string): AgentMemoryTier {
-  const subscription = subscriptionStore.getByUserId(userId);
+async function resolveMemoryTier(userId: string): Promise<AgentMemoryTier> {
+  const subscription = await subscriptionStore.getByUserId(userId);
   if (!subscription) {
     return "explore";
   }
@@ -444,7 +444,7 @@ async function searchRelevantTicketMemories(input: {
   agentId: string;
   limit?: number;
 }): Promise<AgentMemorySearchResult[]> {
-  const tier = resolveMemoryTier(input.ticket.creatorId);
+  const tier = await resolveMemoryTier(input.ticket.creatorId);
   if (!TIER_POLICY[tier].agentMemoryEnabled) {
     return [];
   }
@@ -466,7 +466,7 @@ async function searchRelevantTicketMemories(input: {
 }
 
 async function writeTicketCloseMemory(input: PendingTicketCloseMemoryWrite): Promise<void> {
-  const tier = resolveMemoryTier(input.userId);
+  const tier = await resolveMemoryTier(input.userId);
   if (!TIER_POLICY[tier].agentMemoryEnabled) {
     return;
   }

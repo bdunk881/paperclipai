@@ -4,7 +4,7 @@
  */
 
 import { getProvider, PROVIDER_MODELS } from "./index";
-import { LLMProviderConfig } from "./types";
+import { AgentTool, LLMProviderConfig } from "./types";
 
 // ---------------------------------------------------------------------------
 // Mock all four provider SDKs
@@ -29,6 +29,7 @@ jest.mock("@anthropic-ai/sdk", () => {
     default: jest.fn().mockImplementation(() => ({
       messages: {
         create: jest.fn(),
+        stream: jest.fn(),
       },
     })),
   };
@@ -113,7 +114,7 @@ function openaiInstance() {
 
 function anthropicInstance() {
   return MockAnthropic.mock.results[MockAnthropic.mock.results.length - 1]?.value as {
-    messages: { create: jest.Mock };
+    messages: { create: jest.Mock; stream: jest.Mock };
   };
 }
 
@@ -457,6 +458,270 @@ describe("Anthropic adapter", () => {
     );
 
     await expect(provider("Prompt")).rejects.toThrow("Anthropic API error: 529 Overloaded");
+  });
+
+  // HEL-145: prompt caching. The provider should pass `systemPrompt`
+  // to Anthropic's `system` field (NOT inlined into the user message),
+  // and when `cacheSystemPrompt` is true, tag the system block with
+  // `cache_control: { type: 'ephemeral' }`.
+  describe("HEL-145 prompt caching", () => {
+    it("passes systemPrompt via the system field, not inlined", async () => {
+      const provider = getProvider({
+        ...config,
+        systemPrompt: "You are Atlas, the outbound sales agent.",
+      });
+      anthropicInstance().messages.create.mockResolvedValueOnce({
+        content: [{ type: "text", text: "ok" }],
+        usage: { input_tokens: 5, output_tokens: 1 },
+      });
+
+      await provider("Reach out to acme.com");
+
+      expect(anthropicInstance().messages.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          system: "You are Atlas, the outbound sales agent.",
+          messages: [{ role: "user", content: "Reach out to acme.com" }],
+        }),
+      );
+    });
+
+    it("tags the system block with cache_control when cacheSystemPrompt is true", async () => {
+      const provider = getProvider({
+        ...config,
+        systemPrompt: "You are Atlas.",
+        cacheSystemPrompt: true,
+      });
+      anthropicInstance().messages.create.mockResolvedValueOnce({
+        content: [{ type: "text", text: "ok" }],
+        usage: { input_tokens: 5, output_tokens: 1 },
+      });
+
+      await provider("Reach out");
+
+      const call = anthropicInstance().messages.create.mock.calls[0][0];
+      expect(call.system).toEqual([
+        {
+          type: "text",
+          text: "You are Atlas.",
+          cache_control: { type: "ephemeral" },
+        },
+      ]);
+    });
+
+    it("does NOT tag with cache_control when cacheSystemPrompt is false", async () => {
+      const provider = getProvider({
+        ...config,
+        systemPrompt: "You are Atlas.",
+        // cacheSystemPrompt omitted → false
+      });
+      anthropicInstance().messages.create.mockResolvedValueOnce({
+        content: [{ type: "text", text: "ok" }],
+        usage: { input_tokens: 5, output_tokens: 1 },
+      });
+
+      await provider("Reach out");
+
+      const call = anthropicInstance().messages.create.mock.calls[0][0];
+      // Bare string, not an array — no cache breakpoint declared.
+      expect(call.system).toBe("You are Atlas.");
+    });
+
+    it("omits the system field entirely when systemPrompt is undefined", async () => {
+      const provider = getProvider(config);
+      anthropicInstance().messages.create.mockResolvedValueOnce({
+        content: [{ type: "text", text: "ok" }],
+        usage: { input_tokens: 5, output_tokens: 1 },
+      });
+
+      await provider("Reach out");
+
+      const call = anthropicInstance().messages.create.mock.calls[0][0];
+      expect(call.system).toBeUndefined();
+    });
+
+    it("surfaces cache_read_input_tokens as usage.cachedPromptTokens", async () => {
+      const provider = getProvider({
+        ...config,
+        systemPrompt: "You are Atlas.",
+        cacheSystemPrompt: true,
+      });
+      anthropicInstance().messages.create.mockResolvedValueOnce({
+        content: [{ type: "text", text: "ok" }],
+        usage: {
+          input_tokens: 100,
+          output_tokens: 20,
+          cache_read_input_tokens: 4000,
+        },
+      });
+
+      const result = await provider("Reach out");
+
+      expect(result.usage).toEqual({
+        promptTokens: 100,
+        completionTokens: 20,
+        cachedPromptTokens: 4000,
+      });
+    });
+
+    it("does NOT surface cachedPromptTokens when the API did not report cache activity", async () => {
+      const provider = getProvider({
+        ...config,
+        systemPrompt: "You are Atlas.",
+        cacheSystemPrompt: true,
+      });
+      anthropicInstance().messages.create.mockResolvedValueOnce({
+        content: [{ type: "text", text: "ok" }],
+        usage: { input_tokens: 100, output_tokens: 20 },
+      });
+
+      const result = await provider("Reach out");
+
+      expect(result.usage?.cachedPromptTokens).toBeUndefined();
+    });
+
+    // HEL-145 followup (Codex on #898): cache_creation_input_tokens is a
+    // separate Anthropic bucket billed at the cache-write rate.
+    // First-call costs are undercounted if we drop it.
+    it("surfaces cache_creation_input_tokens as usage.cachedCreationTokens", async () => {
+      const provider = getProvider({
+        ...config,
+        systemPrompt: "You are Atlas.",
+        cacheSystemPrompt: true,
+      });
+      anthropicInstance().messages.create.mockResolvedValueOnce({
+        content: [{ type: "text", text: "ok" }],
+        usage: {
+          input_tokens: 50,
+          output_tokens: 10,
+          cache_creation_input_tokens: 3000,
+        },
+      });
+
+      const result = await provider("Reach out");
+
+      expect(result.usage).toEqual({
+        promptTokens: 50,
+        completionTokens: 10,
+        cachedPromptTokens: undefined,
+        cachedCreationTokens: 3000,
+      });
+    });
+
+    it("can surface BOTH cache_read and cache_creation buckets together", async () => {
+      // Real cache writes/reads happen on different calls — this just
+      // verifies the contract handles the unusual case where Anthropic
+      // returns both buckets > 0.
+      const provider = getProvider({
+        ...config,
+        systemPrompt: "You are Atlas.",
+        cacheSystemPrompt: true,
+      });
+      anthropicInstance().messages.create.mockResolvedValueOnce({
+        content: [{ type: "text", text: "ok" }],
+        usage: {
+          input_tokens: 100,
+          output_tokens: 20,
+          cache_read_input_tokens: 4000,
+          cache_creation_input_tokens: 500,
+        },
+      });
+
+      const result = await provider("Reach out");
+
+      expect(result.usage).toEqual({
+        promptTokens: 100,
+        completionTokens: 20,
+        cachedPromptTokens: 4000,
+        cachedCreationTokens: 500,
+      });
+    });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// OpenAI-compat: HEL-145 system-prompt wiring. Every OpenAI-compat
+// provider builds messages via buildMessages(); confirming once on
+// `openai` is enough to cover groq, fireworks, together, xai, etc.
+// ---------------------------------------------------------------------------
+
+describe("OpenAI-compat HEL-145 system prompt wiring", () => {
+  const config: LLMProviderConfig = {
+    provider: "openai",
+    model: "gpt-4o-mini",
+    apiKey: "sk-test",
+  };
+
+  it("prepends a system role message when systemPrompt is set", async () => {
+    const provider = getProvider({
+      ...config,
+      systemPrompt: "You are a helpful assistant.",
+    });
+    openaiInstance().chat.completions.create.mockResolvedValueOnce({
+      choices: [{ message: { content: "ok" } }],
+      usage: { prompt_tokens: 8, completion_tokens: 2 },
+    });
+
+    await provider("Hi");
+
+    const call = openaiInstance().chat.completions.create.mock.calls[0][0];
+    expect(call.messages).toEqual([
+      { role: "system", content: "You are a helpful assistant." },
+      { role: "user", content: "Hi" },
+    ]);
+  });
+
+  it("sends only the user message when systemPrompt is undefined", async () => {
+    const provider = getProvider(config);
+    openaiInstance().chat.completions.create.mockResolvedValueOnce({
+      choices: [{ message: { content: "ok" } }],
+      usage: { prompt_tokens: 8, completion_tokens: 2 },
+    });
+
+    await provider("Hi");
+
+    const call = openaiInstance().chat.completions.create.mock.calls[0][0];
+    expect(call.messages).toEqual([{ role: "user", content: "Hi" }]);
+  });
+
+  // HEL-145 followup (Codex on #898): OpenAI returns prompt_tokens
+  // INCLUDING the cached portion plus a prompt_tokens_details.cached_tokens
+  // subfield. The provider-agnostic contract is additive (uncached +
+  // cached), so promptTokens must be the uncached remainder. Without
+  // this, workspaces on OpenAI lose cached-rate attribution.
+  it("splits OpenAI prompt_tokens into uncached + cachedPromptTokens", async () => {
+    const provider = getProvider(config);
+    openaiInstance().chat.completions.create.mockResolvedValueOnce({
+      choices: [{ message: { content: "ok" } }],
+      usage: {
+        prompt_tokens: 1500,
+        completion_tokens: 50,
+        prompt_tokens_details: { cached_tokens: 1000 },
+      },
+    });
+
+    const result = await provider("Hi");
+
+    expect(result.usage).toEqual({
+      promptTokens: 500, // 1500 - 1000
+      completionTokens: 50,
+      cachedPromptTokens: 1000,
+    });
+  });
+
+  it("returns the full prompt_tokens count when no cached_tokens field is present", async () => {
+    const provider = getProvider(config);
+    openaiInstance().chat.completions.create.mockResolvedValueOnce({
+      choices: [{ message: { content: "ok" } }],
+      usage: { prompt_tokens: 800, completion_tokens: 50 },
+    });
+
+    const result = await provider("Hi");
+
+    expect(result.usage).toEqual({
+      promptTokens: 800,
+      completionTokens: 50,
+      cachedPromptTokens: undefined,
+    });
   });
 });
 
@@ -931,5 +1196,324 @@ describe("responseFormat — native JSON mode per provider", () => {
       }),
       expect.anything(),
     );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Anthropic: missing API key guard
+// ---------------------------------------------------------------------------
+
+describe("Anthropic adapter — missing API key", () => {
+  it("throws synchronously when neither apiKey nor credentials.apiKey is present", () => {
+    expect(() =>
+      getProvider({ provider: "anthropic", model: "claude-haiku-4-5-20251001" } as LLMProviderConfig),
+    ).toThrow(/missing API key/);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Anthropic streaming path (HEL-145) — onText callback
+// ---------------------------------------------------------------------------
+
+describe("Anthropic streaming path (onText)", () => {
+  const config: LLMProviderConfig = {
+    provider: "anthropic",
+    model: "claude-sonnet-4-6",
+    apiKey: "sk-ant-test",
+  };
+
+  it("calls messages.stream (not create) when onText is provided, forwards deltas, returns final text", async () => {
+    const received: string[] = [];
+    const provider = getProvider({
+      ...config,
+      onText: (delta) => received.push(delta),
+    });
+
+    const mockStream: { on: jest.Mock; finalMessage: jest.Mock } = {
+      on: jest.fn().mockImplementation((event: string, cb: (d: string) => void) => {
+        if (event === "text") cb("Hello, ");
+        return mockStream;
+      }),
+      finalMessage: jest.fn().mockResolvedValue({
+        content: [{ type: "text", text: "Hello, world" }],
+        usage: { input_tokens: 12, output_tokens: 5 },
+      }),
+    };
+    anthropicInstance().messages.stream.mockReturnValue(mockStream);
+
+    const result = await provider("Say hello");
+
+    expect(anthropicInstance().messages.stream).toHaveBeenCalled();
+    expect(anthropicInstance().messages.create).not.toHaveBeenCalled();
+    expect(received).toEqual(["Hello, "]);
+    expect(result.text).toBe("Hello, world");
+    expect(result.usage).toEqual({ promptTokens: 12, completionTokens: 5 });
+  });
+
+  it("swallows exceptions thrown by the onText callback and still resolves", async () => {
+    const provider = getProvider({
+      ...config,
+      onText: () => {
+        throw new Error("UI render crash");
+      },
+    });
+
+    const mockStream: { on: jest.Mock; finalMessage: jest.Mock } = {
+      on: jest.fn().mockImplementation((event: string, cb: (d: string) => void) => {
+        if (event === "text") cb("chunk");
+        return mockStream;
+      }),
+      finalMessage: jest.fn().mockResolvedValue({
+        content: [{ type: "text", text: "chunk" }],
+        usage: { input_tokens: 5, output_tokens: 2 },
+      }),
+    };
+    anthropicInstance().messages.stream.mockReturnValue(mockStream);
+
+    await expect(provider("Prompt")).resolves.toMatchObject({ text: "chunk" });
+  });
+
+  it("wraps stream errors with a descriptive message", async () => {
+    const provider = getProvider({
+      ...config,
+      onText: jest.fn() as (delta: string, accumulated: string) => void,
+    });
+
+    const mockStream = {
+      on: jest.fn().mockReturnThis(),
+      finalMessage: jest.fn().mockRejectedValue(new Error("connection reset")),
+    };
+    anthropicInstance().messages.stream.mockReturnValue(mockStream);
+
+    await expect(provider("Prompt")).rejects.toThrow("Anthropic API error: connection reset");
+  });
+
+  it("surfaces cache_read_input_tokens from the stream's final message", async () => {
+    const provider = getProvider({
+      ...config,
+      systemPrompt: "You are helpful.",
+      cacheSystemPrompt: true,
+      onText: jest.fn() as (delta: string, accumulated: string) => void,
+    });
+
+    const mockStream = {
+      on: jest.fn().mockReturnThis(),
+      finalMessage: jest.fn().mockResolvedValue({
+        content: [{ type: "text", text: "ok" }],
+        usage: { input_tokens: 100, output_tokens: 10, cache_read_input_tokens: 800 },
+      }),
+    };
+    anthropicInstance().messages.stream.mockReturnValue(mockStream);
+
+    const result = await provider("Prompt");
+    expect(result.usage).toEqual({ promptTokens: 100, completionTokens: 10, cachedPromptTokens: 800 });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Anthropic tool loop (DASH-22)
+// ---------------------------------------------------------------------------
+
+describe("Anthropic tool loop (DASH-22)", () => {
+  const weatherTool: AgentTool = {
+    name: "get_weather",
+    description: "Get the weather for a city",
+    inputSchema: { type: "object", properties: { city: { type: "string" } }, required: ["city"] },
+    handler: jest.fn().mockResolvedValue("Sunny, 72°F"),
+  };
+
+  const config: LLMProviderConfig = {
+    provider: "anthropic",
+    model: "claude-opus-4-6",
+    apiKey: "sk-ant-test",
+    tools: [weatherTool],
+  };
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    // Restore the default resolved value for the shared weather tool handler
+    (weatherTool.handler as jest.Mock).mockResolvedValue("Sunny, 72°F");
+  });
+
+  it("invokes the handler and feeds tool_result back, then returns the final assistant text", async () => {
+    const provider = getProvider(config);
+    anthropicInstance().messages.create
+      .mockResolvedValueOnce({
+        stop_reason: "tool_use",
+        content: [{ type: "tool_use", id: "tu_001", name: "get_weather", input: { city: "NYC" } }],
+        usage: { input_tokens: 20, output_tokens: 10 },
+      })
+      .mockResolvedValueOnce({
+        stop_reason: "end_turn",
+        content: [{ type: "text", text: "The weather in NYC is sunny." }],
+        usage: { input_tokens: 30, output_tokens: 8 },
+      });
+
+    const result = await provider("What is the weather in NYC?");
+
+    expect(weatherTool.handler).toHaveBeenCalledWith({ city: "NYC" });
+    expect(result.text).toBe("The weather in NYC is sunny.");
+    expect(result.usage?.promptTokens).toBe(50);
+    expect(result.usage?.completionTokens).toBe(18);
+  });
+
+  it("accumulates cachedPromptTokens from tool loop turns", async () => {
+    const provider = getProvider({ ...config, cacheSystemPrompt: true, systemPrompt: "You are helpful." });
+    anthropicInstance().messages.create
+      .mockResolvedValueOnce({
+        stop_reason: "tool_use",
+        content: [{ type: "tool_use", id: "tu_010", name: "get_weather", input: { city: "LA" } }],
+        usage: { input_tokens: 100, output_tokens: 5, cache_read_input_tokens: 90 },
+      })
+      .mockResolvedValueOnce({
+        stop_reason: "end_turn",
+        content: [{ type: "text", text: "Sunny in LA." }],
+        usage: { input_tokens: 20, output_tokens: 5, cache_read_input_tokens: 18 },
+      });
+
+    const result = await provider("Weather in LA?");
+    expect(result.usage?.cachedPromptTokens).toBe(108); // 90 + 18
+  });
+
+  it("tags the last tool with cache_control when cachingEnabled is true", async () => {
+    const provider = getProvider({ ...config, cacheSystemPrompt: true, systemPrompt: "You are helpful." });
+    anthropicInstance().messages.create
+      .mockResolvedValueOnce({
+        stop_reason: "end_turn",
+        content: [{ type: "text", text: "done" }],
+        usage: { input_tokens: 5, output_tokens: 2 },
+      });
+
+    await provider("Prompt");
+
+    const callArg = anthropicInstance().messages.create.mock.calls[0]?.[0] as Record<string, unknown>;
+    const tools = callArg.tools as Array<Record<string, unknown>>;
+    const lastTool = tools[tools.length - 1];
+    expect(lastTool?.cache_control).toEqual({ type: "ephemeral" });
+  });
+
+  it("returns an is_error tool_result when the called tool is not registered", async () => {
+    const provider = getProvider(config);
+    anthropicInstance().messages.create
+      .mockResolvedValueOnce({
+        stop_reason: "tool_use",
+        content: [{ type: "tool_use", id: "tu_002", name: "unknown_tool", input: {} }],
+        usage: { input_tokens: 5, output_tokens: 3 },
+      })
+      .mockResolvedValueOnce({
+        stop_reason: "end_turn",
+        content: [{ type: "text", text: "I could not find that tool." }],
+        usage: { input_tokens: 8, output_tokens: 5 },
+      });
+
+    const result = await provider("Use the unknown tool");
+    expect(result.text).toContain("could not find");
+
+    const secondCallMessages = anthropicInstance().messages.create.mock.calls[1]?.[0].messages as Array<{
+      role: string;
+      content: unknown;
+    }>;
+    // The tool_result turn is the last user-role message (array content, not the string prompt)
+    const userMsgs = secondCallMessages?.filter((m: { role: string; content: unknown }) => m.role === "user") ?? [];
+    const toolResultTurn = userMsgs[userMsgs.length - 1];
+    expect(toolResultTurn?.content).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ is_error: true, tool_use_id: "tu_002" }),
+      ]),
+    );
+  });
+
+  it("returns an is_error tool_result when the handler throws", async () => {
+    const failingTool: AgentTool = {
+      ...weatherTool,
+      handler: jest.fn().mockRejectedValue(new Error("upstream timeout")),
+    };
+    const provider = getProvider({ ...config, tools: [failingTool] });
+    anthropicInstance().messages.create
+      .mockResolvedValueOnce({
+        stop_reason: "tool_use",
+        content: [{ type: "tool_use", id: "tu_003", name: "get_weather", input: { city: "LA" } }],
+        usage: { input_tokens: 5, output_tokens: 3 },
+      })
+      .mockResolvedValueOnce({
+        stop_reason: "end_turn",
+        content: [{ type: "text", text: "Encountered an error." }],
+        usage: { input_tokens: 8, output_tokens: 5 },
+      });
+
+    const result = await provider("Get LA weather");
+    expect(result.text).toBe("Encountered an error.");
+
+    const secondCall = anthropicInstance().messages.create.mock.calls[1]?.[0].messages as Array<{
+      role: string;
+      content: unknown;
+    }>;
+    // The tool_result turn is the last user-role message (array content, not the string prompt)
+    const userMsgsErr = secondCall?.filter((m: { role: string; content: unknown }) => m.role === "user") ?? [];
+    const toolResultTurn = userMsgsErr[userMsgsErr.length - 1];
+    expect(toolResultTurn?.content).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ is_error: true, tool_use_id: "tu_003" }),
+      ]),
+    );
+  });
+
+  it("throws with a descriptive message when messages.create errors during the loop", async () => {
+    const provider = getProvider(config);
+    anthropicInstance().messages.create.mockRejectedValueOnce(new Error("529 overloaded"));
+
+    await expect(provider("Prompt")).rejects.toThrow("Anthropic API error: 529 overloaded");
+  });
+
+  it("adds a wrap-up turn when maxToolIterations is hit and returns text with [interrupted] suffix", async () => {
+    const provider = getProvider({ ...config, maxToolIterations: 1 });
+    anthropicInstance().messages.create
+      .mockResolvedValueOnce({
+        stop_reason: "tool_use",
+        content: [{ type: "tool_use", id: "tu_004", name: "get_weather", input: {} }],
+        usage: { input_tokens: 5, output_tokens: 3 },
+      })
+      .mockResolvedValueOnce({
+        stop_reason: "end_turn",
+        content: [{ type: "text", text: "I've done what I can." }],
+        usage: { input_tokens: 10, output_tokens: 4 },
+      });
+
+    const result = await provider("Prompt");
+    expect(result.text).toContain("[interrupted: max iterations]");
+    expect(anthropicInstance().messages.create).toHaveBeenCalledTimes(2);
+  });
+
+  it("accumulates cached tokens from the wrap-up call", async () => {
+    const provider = getProvider({ ...config, maxToolIterations: 1, systemPrompt: "sys", cacheSystemPrompt: true });
+    anthropicInstance().messages.create
+      .mockResolvedValueOnce({
+        stop_reason: "tool_use",
+        content: [{ type: "tool_use", id: "tu_011", name: "get_weather", input: {} }],
+        usage: { input_tokens: 5, output_tokens: 3, cache_read_input_tokens: 4 },
+      })
+      .mockResolvedValueOnce({
+        stop_reason: "end_turn",
+        content: [{ type: "text", text: "Summary." }],
+        usage: { input_tokens: 10, output_tokens: 4, cache_read_input_tokens: 9 },
+      });
+
+    const result = await provider("Prompt");
+    expect(result.usage?.cachedPromptTokens).toBe(13); // 4 + 9
+  });
+
+  it("returns the fallback '[interrupted: max iterations]' message when the wrap-up call itself throws", async () => {
+    const provider = getProvider({ ...config, maxToolIterations: 1 });
+    anthropicInstance().messages.create
+      .mockResolvedValueOnce({
+        stop_reason: "tool_use",
+        content: [{ type: "tool_use", id: "tu_005", name: "get_weather", input: {} }],
+        usage: { input_tokens: 5, output_tokens: 3 },
+      })
+      .mockRejectedValueOnce(new Error("overloaded during wrap-up"));
+
+    const result = await provider("Prompt");
+    expect(result.text).toBe("[interrupted: max iterations]");
+    expect(result.usage?.promptTokens).toBe(5);
   });
 });

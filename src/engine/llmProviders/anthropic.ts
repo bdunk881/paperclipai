@@ -67,6 +67,42 @@ export function createAnthropicProvider(config: LLMProviderConfig): LLMProvider 
   const client = new Anthropic({ apiKey, timeout: timeoutMs });
   const forcedTool = toAnthropicForcedTool(config.responseFormat);
 
+  // HEL-145: prompt-caching plumbing. When the caller passes a
+  // `systemPrompt`, we send it in Anthropic's dedicated `system` field
+  // (instead of the legacy "inline into the user message" behaviour).
+  // When `cacheSystemPrompt` is also true, we tag the system block
+  // with `cache_control: ephemeral` so Anthropic caches the prefix for
+  // ~5 minutes. Tool definitions live before the user message in
+  // Anthropic's request order, so caching the system block implicitly
+  // caches the tool list too — no separate cache breakpoint needed.
+  const systemField = buildAnthropicSystemField(
+    config.systemPrompt,
+    config.cacheSystemPrompt === true,
+  );
+  const cachingEnabled = Boolean(config.systemPrompt && config.cacheSystemPrompt);
+
+  function readCachedTokens(
+    usage: Anthropic.Messages.Usage,
+  ): number | undefined {
+    const raw = (usage as { cache_read_input_tokens?: number | null })
+      .cache_read_input_tokens;
+    return typeof raw === "number" && raw > 0 ? raw : undefined;
+  }
+
+  function readCacheCreationTokens(
+    usage: Anthropic.Messages.Usage,
+  ): number | undefined {
+    // HEL-145 followup (Codex review on PR #898): Anthropic returns
+    // input_tokens / cache_read_input_tokens / cache_creation_input_tokens
+    // as THREE separate buckets. The cache-write bucket is billed at
+    // ~1.25× standard input rate; missing it undercounts first-call
+    // cost. Subsequent requests within the 5-min TTL surface those
+    // same tokens as cache_read_input_tokens instead.
+    const raw = (usage as { cache_creation_input_tokens?: number | null })
+      .cache_creation_input_tokens;
+    return typeof raw === "number" && raw > 0 ? raw : undefined;
+  }
+
   return async (prompt: string): Promise<LLMResponse> => {
     // Agentic tool-loop path (DASH-22). When `tools` is set the
     // model can emit tool_use blocks; we invoke the matching handler
@@ -81,6 +117,8 @@ export function createAnthropicProvider(config: LLMProviderConfig): LLMProvider 
         prompt,
         tools: config.tools,
         maxIterations: config.maxToolIterations ?? DEFAULT_MAX_TOOL_ITERATIONS,
+        systemField,
+        cachingEnabled,
       });
     }
 
@@ -101,6 +139,7 @@ export function createAnthropicProvider(config: LLMProviderConfig): LLMProvider 
         const stream = client.messages.stream({
           model: config.model,
           max_tokens: 4096,
+          system: systemField,
           messages: [{ role: "user", content: prompt }],
         });
         stream.on("text", (delta) => {
@@ -117,6 +156,8 @@ export function createAnthropicProvider(config: LLMProviderConfig): LLMProvider 
         const usage = {
           promptTokens: final.usage.input_tokens,
           completionTokens: final.usage.output_tokens,
+          cachedPromptTokens: readCachedTokens(final.usage),
+          cachedCreationTokens: readCacheCreationTokens(final.usage),
         };
         const firstBlock = final.content[0];
         const text =
@@ -133,6 +174,7 @@ export function createAnthropicProvider(config: LLMProviderConfig): LLMProvider 
       response = await client.messages.create({
         model: config.model,
         max_tokens: 4096,
+        system: systemField,
         messages: [{ role: "user", content: prompt }],
         ...(forcedTool ?? {}),
       });
@@ -164,10 +206,46 @@ export function createAnthropicProvider(config: LLMProviderConfig): LLMProvider 
     const usage = {
       promptTokens: response.usage.input_tokens,
       completionTokens: response.usage.output_tokens,
+      cachedPromptTokens: readCachedTokens(response.usage),
+      cachedCreationTokens: readCacheCreationTokens(response.usage),
     };
 
     return { text, usage };
   };
+}
+
+/**
+ * Builds Anthropic's `system` field from the caller's systemPrompt.
+ *
+ * - No systemPrompt → returns undefined; Anthropic treats this as "no
+ *   system message". Callers that pre-inlined their system prompt into
+ *   the user message keep working unchanged.
+ * - systemPrompt + no cache flag → returns the string. Anthropic accepts
+ *   either a bare string or an array of TextBlock; bare string is what
+ *   it expects when there's nothing to cache.
+ * - systemPrompt + cache flag → returns a single-element array of a
+ *   TextBlock with `cache_control: ephemeral`. Anthropic caches every
+ *   block from the start of the request up to and including the last
+ *   block with `cache_control`, so this tags everything (system + tools)
+ *   in a single breakpoint.
+ *
+ * Returned shape is intentionally `string | Anthropic.TextBlockParam[]`
+ * so the create() / stream() callers can spread it directly into the
+ * `system` field of `messages.create` / `messages.stream`.
+ */
+function buildAnthropicSystemField(
+  systemPrompt: string | undefined,
+  enableCaching: boolean,
+): string | Anthropic.Messages.TextBlockParam[] | undefined {
+  if (!systemPrompt) return undefined;
+  if (!enableCaching) return systemPrompt;
+  return [
+    {
+      type: "text",
+      text: systemPrompt,
+      cache_control: { type: "ephemeral" },
+    },
+  ];
 }
 
 /**
@@ -197,13 +275,28 @@ async function runAnthropicToolLoop(args: {
   prompt: string;
   tools: AgentTool[];
   maxIterations: number;
+  systemField?: string | Anthropic.Messages.TextBlockParam[];
+  cachingEnabled: boolean;
 }): Promise<LLMResponse> {
   const toolsByName = new Map(args.tools.map((t) => [t.name, t]));
-  const anthropicTools: Anthropic.Messages.Tool[] = args.tools.map((t) => ({
-    name: t.name,
-    description: t.description,
-    input_schema: t.inputSchema as Anthropic.Messages.Tool.InputSchema,
-  }));
+  const anthropicTools: Anthropic.Messages.Tool[] = args.tools.map((t, idx) => {
+    const base: Anthropic.Messages.Tool = {
+      name: t.name,
+      description: t.description,
+      input_schema: t.inputSchema as Anthropic.Messages.Tool.InputSchema,
+    };
+    // HEL-145: when caching is enabled, tag the LAST tool with
+    // cache_control. Anthropic caches every block up to and including
+    // the last cache_control breakpoint, so one tag covers system +
+    // every tool definition. Untagged tools after the breakpoint would
+    // bypass the cache, so the tag MUST be on the last tool.
+    if (args.cachingEnabled && idx === args.tools.length - 1) {
+      (base as Anthropic.Messages.Tool & {
+        cache_control?: { type: "ephemeral" };
+      }).cache_control = { type: "ephemeral" };
+    }
+    return base;
+  });
 
   const messages: Anthropic.Messages.MessageParam[] = [
     { role: "user", content: args.prompt },
@@ -211,6 +304,8 @@ async function runAnthropicToolLoop(args: {
 
   let cumulativePromptTokens = 0;
   let cumulativeCompletionTokens = 0;
+  let cumulativeCachedTokens = 0;
+  let cumulativeCacheCreationTokens = 0;
 
   for (let iteration = 0; iteration < args.maxIterations; iteration++) {
     let response: Anthropic.Messages.Message;
@@ -218,6 +313,7 @@ async function runAnthropicToolLoop(args: {
       response = await args.client.messages.create({
         model: args.model,
         max_tokens: 4096,
+        system: args.systemField,
         messages,
         tools: anthropicTools,
       });
@@ -228,6 +324,16 @@ async function runAnthropicToolLoop(args: {
 
     cumulativePromptTokens += response.usage.input_tokens;
     cumulativeCompletionTokens += response.usage.output_tokens;
+    const cachedThisTurn = (response.usage as { cache_read_input_tokens?: number | null })
+      .cache_read_input_tokens;
+    if (typeof cachedThisTurn === "number" && cachedThisTurn > 0) {
+      cumulativeCachedTokens += cachedThisTurn;
+    }
+    const cacheCreationThisTurn = (response.usage as { cache_creation_input_tokens?: number | null })
+      .cache_creation_input_tokens;
+    if (typeof cacheCreationThisTurn === "number" && cacheCreationThisTurn > 0) {
+      cumulativeCacheCreationTokens += cacheCreationThisTurn;
+    }
 
     // Always append the assistant turn so the next loop iteration
     // (or the final return) has the full transcript.
@@ -240,6 +346,10 @@ async function runAnthropicToolLoop(args: {
         usage: {
           promptTokens: cumulativePromptTokens,
           completionTokens: cumulativeCompletionTokens,
+          cachedPromptTokens:
+            cumulativeCachedTokens > 0 ? cumulativeCachedTokens : undefined,
+          cachedCreationTokens:
+            cumulativeCacheCreationTokens > 0 ? cumulativeCacheCreationTokens : undefined,
         },
       };
     }
@@ -294,6 +404,7 @@ async function runAnthropicToolLoop(args: {
     const finalTurn = await args.client.messages.create({
       model: args.model,
       max_tokens: 1024,
+      system: args.systemField,
       messages: [
         ...messages,
         {
@@ -305,6 +416,16 @@ async function runAnthropicToolLoop(args: {
     });
     cumulativePromptTokens += finalTurn.usage.input_tokens;
     cumulativeCompletionTokens += finalTurn.usage.output_tokens;
+    const cachedFinal = (finalTurn.usage as { cache_read_input_tokens?: number | null })
+      .cache_read_input_tokens;
+    if (typeof cachedFinal === "number" && cachedFinal > 0) {
+      cumulativeCachedTokens += cachedFinal;
+    }
+    const cacheCreationFinal = (finalTurn.usage as { cache_creation_input_tokens?: number | null })
+      .cache_creation_input_tokens;
+    if (typeof cacheCreationFinal === "number" && cacheCreationFinal > 0) {
+      cumulativeCacheCreationTokens += cacheCreationFinal;
+    }
     const text =
       extractAssistantText(finalTurn.content) ||
       "[interrupted: max iterations]";
@@ -313,6 +434,10 @@ async function runAnthropicToolLoop(args: {
       usage: {
         promptTokens: cumulativePromptTokens,
         completionTokens: cumulativeCompletionTokens,
+        cachedPromptTokens:
+          cumulativeCachedTokens > 0 ? cumulativeCachedTokens : undefined,
+        cachedCreationTokens:
+          cumulativeCacheCreationTokens > 0 ? cumulativeCacheCreationTokens : undefined,
       },
     };
   } catch {
@@ -321,6 +446,10 @@ async function runAnthropicToolLoop(args: {
       usage: {
         promptTokens: cumulativePromptTokens,
         completionTokens: cumulativeCompletionTokens,
+        cachedPromptTokens:
+          cumulativeCachedTokens > 0 ? cumulativeCachedTokens : undefined,
+        cachedCreationTokens:
+          cumulativeCacheCreationTokens > 0 ? cumulativeCacheCreationTokens : undefined,
       },
     };
   }

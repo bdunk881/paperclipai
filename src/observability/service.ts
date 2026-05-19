@@ -212,14 +212,17 @@ function toCsv(records: ObservabilityRecord[]): string {
   return [header.join(","), ...rows].join("\n");
 }
 
-export function buildObservabilityResponse(
+// DASH-64.1: now async because controlPlaneStore.listTasks is async
+// (repository-backed). The caller (src/app.ts:1263) is already inside
+// an async route handler so the await is trivial.
+export async function buildObservabilityResponse(
   userId: string,
   runs: WorkflowRun[],
   query: ObservabilityQuery
-): ObservabilityResponse {
+): Promise<ObservabilityResponse> {
   const agents = controlPlaneStore.listAllAgents(userId);
   const agentMap = new Map(agents.map((agent) => [agent.id, agent]));
-  const tasks = controlPlaneStore.listTasks(userId);
+  const tasks = await controlPlaneStore.listTasks(userId);
   const taskMap = new Map(tasks.map((task) => [task.id, task]));
   const executions = controlPlaneStore.listExecutions(userId);
   const executionByStep = new Map(

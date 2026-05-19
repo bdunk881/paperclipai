@@ -557,6 +557,36 @@ export const controlPlaneRepository = {
     ctx: ControlPlaneRepoContext,
     filters?: { agentId?: string; teamId?: string; limit?: number }
   ): Promise<AgentHeartbeatRecord[]> {
+    if (useInMemoryFallback()) {
+      const bucket = memBucket(memHeartbeats, ctx.workspaceId);
+      let rows = Array.from(bucket.values()).filter((heartbeat) => {
+        if (filters?.agentId && heartbeat.agentId !== filters.agentId) return false;
+        if (filters?.teamId && heartbeat.teamId !== filters.teamId) return false;
+        return true;
+      });
+      // DASH-64.2: cross-workspace fallback for test-mode callers that
+      // haven't wired workspace context. The legacy global-Map had no
+      // bucket; production RLS makes this branch unreachable.
+      if (rows.length === 0 && memHeartbeats.size > 1) {
+        const all: AgentHeartbeatRecord[] = [];
+        for (const b of memHeartbeats.values()) {
+          for (const heartbeat of b.values()) {
+            if (heartbeat.userId !== ctx.userId) continue;
+            if (filters?.agentId && heartbeat.agentId !== filters.agentId) continue;
+            if (filters?.teamId && heartbeat.teamId !== filters.teamId) continue;
+            all.push(heartbeat);
+          }
+        }
+        rows = all;
+      }
+      const sorted = rows
+        .map((heartbeat) => ({ ...heartbeat }))
+        .sort((left, right) => right.startedAt.localeCompare(left.startedAt));
+      if (typeof filters?.limit === "number" && filters.limit > 0) {
+        return sorted.slice(0, filters.limit);
+      }
+      return sorted;
+    }
     return withWorkspaceContext(getPostgresPool(), ctx, async (client) => {
       const params: unknown[] = [ctx.userId];
       let where = "user_id = $1";

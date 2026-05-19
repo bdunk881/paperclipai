@@ -296,8 +296,9 @@ const agents = new Map<string, ControlPlaneAgent>();
 // DASH-64.1: `tasks` Map removed. All task reads/writes now route
 // through `controlPlaneRepository` (Postgres-first; in-memory fallback
 // for test mode lives in the repository module itself per HEL-80).
-// allowlist: hybrid store; in-memory mirror of Postgres-backed data
-const heartbeats = new Map<string, AgentHeartbeatRecord>();
+// DASH-64.2: `heartbeats` Map removed. All heartbeat reads/writes now
+// route through `controlPlaneRepository` (Postgres-first; in-memory
+// fallback for test mode lives in the repository module itself).
 // allowlist: hybrid store; in-memory mirror of Postgres-backed data
 const executions = new Map<string, ControlPlaneExecution>();
 // allowlist: hybrid store; in-memory mirror of Postgres-backed data
@@ -953,15 +954,14 @@ async function ensureWorkspaceHydrated(workspaceId: string | undefined, userId: 
     return;
   }
 
-  // Phase 4.2: hydrate heartbeats / spend / alerts so they
-  // survive a process restart. Same RLS-bound context, separate repository
-  // calls so the SQL stays factored alongside the rest of execution-state PG.
+  // Phase 4.2: hydrate spend / alerts so they survive a process
+  // restart. Same RLS-bound context, separate repository calls so the
+  // SQL stays factored alongside the rest of execution-state PG.
   //
-  // DASH-64.1: tasks NO LONGER hydrate here — tasks read live from the
-  // repository on every call, so a cold-start cache miss is just one
-  // Postgres round-trip, not a silent empty-state regression.
-  const [hydratedHeartbeats, hydratedSpend, hydratedAlerts] = await Promise.all([
-    controlPlaneRepository.listHeartbeats({ workspaceId: resolvedWorkspaceId, userId }),
+  // DASH-64.1: tasks NO LONGER hydrate here — they read live from the
+  // repository on every call.
+  // DASH-64.2: heartbeats NO LONGER hydrate here either — same pattern.
+  const [hydratedSpend, hydratedAlerts] = await Promise.all([
     controlPlaneRepository.listSpendEntries({ workspaceId: resolvedWorkspaceId, userId }),
     controlPlaneRepository.listBudgetAlerts({ workspaceId: resolvedWorkspaceId, userId }),
   ]);
@@ -1030,11 +1030,8 @@ async function ensureWorkspaceHydrated(workspaceId: string | undefined, userId: 
     }
   );
 
-  // DASH-64.1: hydratedTasks block removed — tasks live entirely in the
-  // repository now.
-  hydratedHeartbeats.forEach((heartbeat) => {
-    heartbeats.set(heartbeat.id, heartbeat);
-  });
+  // DASH-64.1: hydratedTasks block removed.
+  // DASH-64.2: hydratedHeartbeats block removed.
   hydratedSpend.forEach((entry) => {
     spendEntries.set(entry.id, entry);
   });
@@ -1935,12 +1932,22 @@ export const controlPlaneStore = {
       .sort((left, right) => left.requestedAt.localeCompare(right.requestedAt));
   },
 
-  listAgentHeartbeats(agentId: string, userId: string, workspaceId?: string): AgentHeartbeatRecord[] {
+  // DASH-64.2: now async — repository-backed.
+  async listAgentHeartbeats(
+    agentId: string,
+    userId: string,
+    workspaceId?: string,
+  ): Promise<AgentHeartbeatRecord[]> {
     const agent = agents.get(agentId);
     if (!canAccessAgent(agent, userId, workspaceId)) {
       return [];
     }
-    return Array.from(heartbeats.values())
+    const resolvedWorkspaceId = workspaceId ?? userId;
+    const rows = await controlPlaneRepository.listHeartbeats(
+      { workspaceId: resolvedWorkspaceId, userId },
+      { agentId },
+    );
+    return rows
       .filter((heartbeat) => heartbeat.agentId === agentId)
       .sort((left, right) => left.startedAt.localeCompare(right.startedAt));
   },
@@ -3038,7 +3045,9 @@ export const controlPlaneStore = {
       startedAt: timestamp,
       completedAt: input.completedAt,
     };
-    heartbeats.set(heartbeat.id, heartbeat);
+    // DASH-64.2: `heartbeats.set` removed. The repository.insertHeartbeat
+    // call below is the only write path (Postgres in production,
+    // in-memory fallback in test mode).
 
     if (Array.isArray(input.spendEntries) && input.spendEntries.length > 0) {
       for (const entry of input.spendEntries) {
@@ -3149,16 +3158,37 @@ export const controlPlaneStore = {
           await upsertExecutionRow(execution, workspaceId, client);
         }
       });
-      await controlPlaneRepository.insertHeartbeat({ workspaceId, userId: input.userId }, heartbeat);
       hydratedWorkspaceUsers.add(workspaceUserKey(workspaceId, input.userId));
+    }
+
+    // DASH-64.2: heartbeat write is now unconditional — the repository's
+    // useInMemoryFallback handles test mode, and the workspace context
+    // resolves either from input.workspaceId or via workspaceContextForTeam.
+    const heartbeatCtx = input.workspaceId
+      ? { workspaceId: input.workspaceId, userId: input.userId }
+      : await workspaceContextForTeam(team.id, input.userId);
+    if (heartbeatCtx) {
+      await controlPlaneRepository.insertHeartbeat(heartbeatCtx, heartbeat);
     }
 
     return heartbeat;
   },
 
-  listHeartbeats(userId: string, teamId?: string, workspaceId?: string): AgentHeartbeatRecord[] {
+  // DASH-64.2: now async — reads route through controlPlaneRepository.
+  // The accessibleTeamIds filter is preserved to maintain the same
+  // workspace-membership access semantics the old Map provided.
+  async listHeartbeats(
+    userId: string,
+    teamId?: string,
+    workspaceId?: string,
+  ): Promise<AgentHeartbeatRecord[]> {
     const accessibleTeamIds = listAccessibleTeamIds(userId, workspaceId);
-    return Array.from(heartbeats.values())
+    const resolvedWorkspaceId = workspaceId ?? userId;
+    const rows = await controlPlaneRepository.listHeartbeats(
+      { workspaceId: resolvedWorkspaceId, userId },
+      teamId ? { teamId } : undefined,
+    );
+    return rows
       .filter((heartbeat) => accessibleTeamIds.has(heartbeat.teamId) && (!teamId || heartbeat.teamId === teamId))
       .sort((left, right) => left.startedAt.localeCompare(right.startedAt));
   },
@@ -3166,10 +3196,11 @@ export const controlPlaneStore = {
   clear(): void {
     teams.clear();
     agents.clear();
-    // DASH-64.1: tasks Map no longer lives here; clear the repository's
-    // in-memory fallback instead so each test starts fresh.
+    // DASH-64.1: tasks Map no longer lives here.
+    // DASH-64.2: heartbeats Map no longer lives here either.
+    // Both — plus future spend/budget-alert Maps — are cleared via the
+    // repository's __resetRepositoryInMemoryStateForTests().
     __resetRepositoryInMemoryStateForTests();
-    heartbeats.clear();
     executions.clear();
     companies.clear();
     companyWorkspaces.clear();

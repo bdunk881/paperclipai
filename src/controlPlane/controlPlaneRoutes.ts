@@ -569,8 +569,9 @@ router.get("/teams/:id", async (req: WorkspaceAwareRequest, res) => {
   if (team) {
     const agents = controlPlaneStore.listAgents(team.id, context.userId, context.workspaceId);
     // DASH-64.1: listTasks is async now.
+    // DASH-64.2: listHeartbeats is async now.
     const tasks = await controlPlaneStore.listTasks(context.userId, team.id, context.workspaceId);
-    const heartbeats = controlPlaneStore.listHeartbeats(context.userId, team.id, context.workspaceId);
+    const heartbeats = await controlPlaneStore.listHeartbeats(context.userId, team.id, context.workspaceId);
     const executions = controlPlaneStore.listExecutions(context.userId, team.id, context.workspaceId);
     const spend = controlPlaneStore.getTeamSpendSnapshot(team.id, context.userId, context.workspaceId);
     res.json({ team, agents, tasks, heartbeats, executions, spend });
@@ -1095,14 +1096,15 @@ router.post("/spend-events", requirePaperclipRunId, async (req: AuthenticatedReq
   }
 });
 
-router.get("/heartbeats", (req: AuthenticatedRequest, res) => {
+router.get("/heartbeats", async (req: AuthenticatedRequest, res) => {
   const userId = getUserId(req);
   if (!userId) {
     res.status(401).json({ error: "Authenticated user required" });
     return;
   }
   const teamId = typeof req.query.teamId === "string" ? req.query.teamId : undefined;
-  const heartbeats = controlPlaneStore.listHeartbeats(userId, teamId);
+  // DASH-64.2: listHeartbeats is now async (repository-backed).
+  const heartbeats = await controlPlaneStore.listHeartbeats(userId, teamId);
   res.json({ heartbeats, total: heartbeats.length });
 });
 

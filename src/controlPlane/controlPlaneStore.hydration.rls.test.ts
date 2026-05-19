@@ -230,9 +230,9 @@ describe("controlPlaneStore (Phase 4.2b) hydration round-trip", () => {
         summary: "round-trip check",
       });
       recordedHeartbeatId = heartbeat.id;
-      expect(controlPlane.controlPlaneStore.listHeartbeats(userId, teamId).map((h) => h.id)).toEqual([
-        heartbeat.id,
-      ]);
+      // DASH-64.2: listHeartbeats is now async (repository-backed).
+      const liveHeartbeats = await controlPlane.controlPlaneStore.listHeartbeats(userId, teamId);
+      expect(liveHeartbeats.map((h) => h.id)).toEqual([heartbeat.id]);
     }
 
     const { postgres, controlPlane } = await loadModules();
@@ -242,7 +242,7 @@ describe("controlPlaneStore (Phase 4.2b) hydration round-trip", () => {
     {
       const fresh = await loadModules();
       await fresh.controlPlane.controlPlaneStore.ensureWorkspaceHydrated(workspaceId, userId);
-      const restored = fresh.controlPlane.controlPlaneStore.listHeartbeats(userId, teamId);
+      const restored = await fresh.controlPlane.controlPlaneStore.listHeartbeats(userId, teamId);
       expect(restored).toHaveLength(1);
       expect(restored[0].id).toBe(recordedHeartbeatId);
       expect(restored[0].status).toBe("completed");

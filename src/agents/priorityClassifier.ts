@@ -65,6 +65,10 @@ export async function classifyHandoffPriority(
     apiKey: resolved.apiKey,
     responseFormat: { type: "json_object" },
     requestTimeoutMs: CLASSIFY_TIMEOUT_MS,
+    // HEL-147: output is `{ priority, reason }` with reason capped at
+    // 160 chars (~40 tokens). 100 tokens is a tight cap that prevents
+    // the model from elaborating past the structured response.
+    maxOutputTokens: 100,
   });
 
   const prompt = buildPrompt({

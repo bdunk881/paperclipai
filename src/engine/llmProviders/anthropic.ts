@@ -119,6 +119,7 @@ export function createAnthropicProvider(config: LLMProviderConfig): LLMProvider 
         maxIterations: config.maxToolIterations ?? DEFAULT_MAX_TOOL_ITERATIONS,
         systemField,
         cachingEnabled,
+        maxOutputTokens: config.maxOutputTokens,
       });
     }
 
@@ -138,7 +139,7 @@ export function createAnthropicProvider(config: LLMProviderConfig): LLMProvider 
       try {
         const stream = client.messages.stream({
           model: config.model,
-          max_tokens: 4096,
+          max_tokens: config.maxOutputTokens ?? 4096,
           system: systemField,
           messages: [{ role: "user", content: prompt }],
         });
@@ -173,7 +174,7 @@ export function createAnthropicProvider(config: LLMProviderConfig): LLMProvider 
     try {
       response = await client.messages.create({
         model: config.model,
-        max_tokens: 4096,
+        max_tokens: config.maxOutputTokens ?? 4096,
         system: systemField,
         messages: [{ role: "user", content: prompt }],
         ...(forcedTool ?? {}),
@@ -277,6 +278,8 @@ async function runAnthropicToolLoop(args: {
   maxIterations: number;
   systemField?: string | Anthropic.Messages.TextBlockParam[];
   cachingEnabled: boolean;
+  /** HEL-147: per-call output cap. Defaults to 4096 when omitted. */
+  maxOutputTokens?: number;
 }): Promise<LLMResponse> {
   const toolsByName = new Map(args.tools.map((t) => [t.name, t]));
   const anthropicTools: Anthropic.Messages.Tool[] = args.tools.map((t, idx) => {
@@ -312,7 +315,7 @@ async function runAnthropicToolLoop(args: {
     try {
       response = await args.client.messages.create({
         model: args.model,
-        max_tokens: 4096,
+        max_tokens: args.maxOutputTokens ?? 4096,
         system: args.systemField,
         messages,
         tools: anthropicTools,

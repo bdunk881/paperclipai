@@ -54,6 +54,11 @@ export function createBedrockProvider(config: LLMProviderConfig): LLMProvider {
               content: [{ text: prompt }],
             },
           ],
+          // HEL-147 followup (Codex on PR #900): Converse API takes
+          // maxTokens via inferenceConfig.
+          ...(typeof config.maxOutputTokens === "number"
+            ? { inferenceConfig: { maxTokens: config.maxOutputTokens } }
+            : {}),
         }),
       );
     } catch (err) {

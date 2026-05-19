@@ -129,7 +129,13 @@ async function executeSelfCheckIn(input: RunInput): Promise<void> {
     return;
   }
 
-  const model = resolveModelForTier(resolved.config.provider, "standard");
+  // HEL-146: Haiku tier. The check-in output contract is just
+  // `{ state, summary }` with summary capped at MAX_SUMMARY_CHARS
+  // (240) — Haiku handles this with no quality loss at ~12× lower
+  // output cost than Sonnet. The button is clickable by every owner
+  // of every agent, so the tier choice compounds across the install
+  // base.
+  const model = resolveModelForTier(resolved.config.provider, "lite");
   // Streaming token-preview wiring. Each text delta from the provider
   // updates `lastPreview`; a debounced publisher fans that out on the
   // workspace's token-preview Redis channel, which the dashboard's
@@ -162,6 +168,11 @@ async function executeSelfCheckIn(input: RunInput): Promise<void> {
     apiKey: resolved.apiKey,
     responseFormat: { type: "json_object" },
     requestTimeoutMs: SELF_CHECK_IN_TIMEOUT_MS,
+    // HEL-147: the JSON contract is { state, summary } with summary
+    // capped at 240 chars (~60 tokens). 200 tokens is a generous cap
+    // that prevents the model from rambling past the structured
+    // response.
+    maxOutputTokens: 200,
     onText: (_delta, accumulated) => {
       lastPreview = accumulated.slice(-TOKEN_PREVIEW_TAIL_CHARS);
       schedulePublish();

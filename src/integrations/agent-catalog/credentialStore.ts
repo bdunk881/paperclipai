@@ -34,6 +34,7 @@ interface StoredConnection extends AgentCatalogConnection {
 }
 
 // HEL-44: process-local agent catalog credential cache; promote to Redis in P3.
+// allowlist: legacy in-memory store; review and migrate to Postgres OR add a more specific reason
 const store = new Map<string, StoredConnection>();
 
 function maskToken(value: string): string {

@@ -21,6 +21,7 @@ interface ReportRow {
   updated_at: string;
 }
 
+// allowlist: hybrid store; in-memory mirror of Postgres-backed data
 const memoryReports = new Map<string, GeneratedReport>();
 
 function postgresPersistenceAvailable(): boolean {

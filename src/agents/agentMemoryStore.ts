@@ -183,9 +183,13 @@ interface PersistedEventRow {
   created_at: string;
 }
 
+// allowlist: hybrid store; in-memory mirror of Postgres-backed data
 const memoryEntries = new Map<string, StoredAgentMemoryEntry>();
+// allowlist: hybrid store; in-memory mirror of Postgres-backed data
 const knowledgeFacts = new Map<string, StoredKnowledgeFact>();
+// allowlist: hybrid store; in-memory mirror of Postgres-backed data
 const heartbeatLogs = new Map<string, StoredHeartbeatLog>();
+// allowlist: hybrid store; in-memory mirror of Postgres-backed data
 const memoryEvents = new Map<string, AgentMemoryEvent>();
 
 let schemaEnsured = false;

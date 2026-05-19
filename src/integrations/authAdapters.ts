@@ -44,6 +44,7 @@ interface PkceState {
   createdAt: number;
 }
 
+// allowlist: PKCE state with short TTL; process-local by design
 const pkceStateMap = new Map<string, PkceState>();
 
 /** Purge PKCE state entries older than 10 minutes. */

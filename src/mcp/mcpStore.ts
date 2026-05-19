@@ -28,6 +28,7 @@ export type McpServerPublic = Omit<McpServer, "authHeaderValue"> & {
   hasAuth: boolean;
 };
 
+// allowlist: hot-path read cache; canonical state lives in Postgres (DASH-47..51)
 const cache = new Map<string, McpServer>();
 
 function postgresAvailable(): boolean {

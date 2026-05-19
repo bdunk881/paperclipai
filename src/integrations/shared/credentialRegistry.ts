@@ -82,6 +82,7 @@ export function maskSecret(value: string): string {
   return `****${value.slice(-4)}`;
 }
 
+// allowlist: rolling counter / cached config; process-local by design
 const registryBuckets = new Map<string, Map<string, unknown>>();
 
 function getBucket<TRecord>(service: string): Map<string, TRecord> {

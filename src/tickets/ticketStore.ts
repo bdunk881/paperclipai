@@ -138,8 +138,11 @@ interface TicketRow {
   updated_at: string;
 }
 
+// allowlist: hybrid store; in-memory mirror of Postgres-backed data
 const memoryTickets = new Map<string, TicketRecord>();
+// allowlist: hybrid store; in-memory mirror of Postgres-backed data
 const memoryUpdates = new Map<string, TicketUpdate[]>();
+// allowlist: hybrid store; in-memory mirror of Postgres-backed data
 const pendingTicketCloseMemoryWrites = new Map<string, PendingTicketCloseMemoryWrite>();
 const GIGABYTE = 1024 * 1024 * 1024;
 type Queryable = Pick<Pool, "query"> | Pick<PoolClient, "query">;

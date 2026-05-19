@@ -10,6 +10,7 @@ import { WorkflowRun } from "../types/workflow";
 import { parseJsonValue, serializeJson } from "../db/json";
 import { getPostgresPool, inMemoryAllowed, isPostgresPersistenceEnabled } from "../db/postgres";
 
+// allowlist: in-process registry / runtime state (not customer data)
 const memoryStore = new Map<string, WorkflowRun>();
 
 function postgresPersistenceAvailable(): boolean {

@@ -188,10 +188,15 @@ interface CompanyStateSummary {
 // In-memory mirrors (used only when Postgres is unavailable)
 // ---------------------------------------------------------------------------
 
+// allowlist: hot-path read cache; canonical state lives in Postgres (DASH-44..45)
 const schedules = new Map<string, HitlCheckpointSchedule>();
+// allowlist: hot-path read cache; canonical state lives in Postgres (DASH-44..45)
 const checkpoints = new Map<string, HitlCheckpoint>();
+// allowlist: hot-path read cache; canonical state lives in Postgres (DASH-44..45)
 const artifactComments = new Map<string, HitlArtifactComment>();
+// allowlist: hot-path read cache; canonical state lives in Postgres (DASH-44..45)
 const askCeoRequests = new Map<string, AskCeoRequest>();
+// allowlist: hot-path read cache; canonical state lives in Postgres (DASH-44..45)
 const notifications = new Map<string, HitlNotification>();
 
 function nowIso(): string {

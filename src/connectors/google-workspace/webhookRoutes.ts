@@ -4,6 +4,7 @@ import { googleWorkspaceCredentialsStore } from "./credentialsStore";
 import { logGoogleWorkspaceEvent } from "./logging";
 
 const router = Router();
+// allowlist: legacy in-memory store; review and migrate to Postgres OR add a more specific reason
 const replayCache = new Map<string, number>();
 const REPLAY_WINDOW_MS = 5 * 60 * 1000;
 

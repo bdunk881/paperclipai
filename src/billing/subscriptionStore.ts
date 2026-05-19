@@ -68,9 +68,13 @@ export interface Subscription {
 // webhook + per-request lookups. Cache miss now falls back to Postgres
 // via billingRepository.findX — no more silent "undefined" for rows
 // that exist in the DB but aren't in this process's memory yet.
+// allowlist: hot-path read cache; canonical state lives in Postgres (DASH-47..51)
 const store = new Map<string, Subscription>();
+// allowlist: hot-path read cache; canonical state lives in Postgres (DASH-47..51)
 const byStripeSubId = new Map<string, string>();
+// allowlist: hot-path read cache; canonical state lives in Postgres (DASH-47..51)
 const byStripeCustomerId = new Map<string, string[]>();
+// allowlist: hot-path read cache; canonical state lives in Postgres (DASH-47..51)
 const byUserId = new Map<string, string>();
 
 function addIndex(sub: Subscription): void {

@@ -179,8 +179,10 @@ export interface RelayedEvent {
 // In-memory caches (write-through to Postgres for durability)
 // ---------------------------------------------------------------------------
 
+// allowlist: hot-path read cache; canonical state lives in Postgres (DASH-47..51)
 const subscriptions = new Map<string, WebhookSubscription>();
 /** Circular buffer — keeps the 500 most recent events per subscription */
+// allowlist: hot-path read cache; canonical state lives in Postgres (DASH-47..51)
 const events = new Map<string, RelayedEvent[]>();
 const MAX_EVENTS_PER_SUBSCRIPTION = 500;
 

@@ -78,6 +78,7 @@ export class Tier1ConnectorError extends Error {
   }
 }
 
+// allowlist: rolling counter / cached config; process-local by design
 const tier1HealthMemory = new Map<string, {
   status: Tier1HealthStatus;
   lastSuccessfulSyncAt?: string;

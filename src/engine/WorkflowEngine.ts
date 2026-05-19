@@ -69,6 +69,7 @@ type ActionHandler = (
   config: Record<string, unknown>
 ) => Promise<Record<string, unknown>>;
 
+// allowlist: in-process registry / runtime state (not customer data)
 const actionRegistry = new Map<string, ActionHandler>();
 
 // Built-in actions

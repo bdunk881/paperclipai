@@ -286,19 +286,33 @@ const ROLE_TEMPLATE_CATALOG: ControlPlaneRoleTemplateDefinition[] = [
     defaultSkills: [...role.defaultSkills],
   })),
 ];
+// allowlist: hybrid store; in-memory mirror of Postgres-backed data
 const teams = new Map<string, ControlPlaneTeam>();
+// allowlist: hybrid store; in-memory mirror of Postgres-backed data
 const agents = new Map<string, ControlPlaneAgent>();
+// allowlist: hybrid store; in-memory mirror of Postgres-backed data
 const tasks = new Map<string, ControlPlaneTask>();
+// allowlist: hybrid store; in-memory mirror of Postgres-backed data
 const heartbeats = new Map<string, AgentHeartbeatRecord>();
+// allowlist: hybrid store; in-memory mirror of Postgres-backed data
 const executions = new Map<string, ControlPlaneExecution>();
+// allowlist: hybrid store; in-memory mirror of Postgres-backed data
 const companies = new Map<string, ProvisionedCompanyRecord>();
+// allowlist: hybrid store; in-memory mirror of Postgres-backed data
 const companyWorkspaces = new Map<string, ProvisionedCompanyWorkspace>();
+// allowlist: hybrid store; in-memory mirror of Postgres-backed data
 const companySecretBindings = new Map<string, Record<string, string>>();
+// allowlist: hybrid store; in-memory mirror of Postgres-backed data
 const companyIdempotencyIndex = new Map<string, { companyId: string; fingerprint: string }>();
+// allowlist: hybrid store; in-memory mirror of Postgres-backed data
 const spendEntries = new Map<string, ControlPlaneSpendEntry>();
+// allowlist: hybrid store; in-memory mirror of Postgres-backed data
 const budgetAlerts = new Map<string, ControlPlaneBudgetAlert>();
+// allowlist: hybrid store; in-memory mirror of Postgres-backed data
 const teamWorkspaceIds = new Map<string, string>();
+// allowlist: hybrid store; in-memory mirror of Postgres-backed data
 const teamCompanyIds = new Map<string, string>();
+// allowlist: hybrid store; in-memory mirror of Postgres-backed data
 const companyTenantWorkspaceIds = new Map<string, string>();
 const hydratedWorkspaceUsers = new Set<string>();
 

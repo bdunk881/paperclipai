@@ -12,6 +12,7 @@ interface PkceStateEntry {
 
 const EXPIRY_MS = 10 * 60 * 1000;
 // HEL-44: process-local OAuth handshake state; promote to Redis in P3.
+// allowlist: OAuth/PKCE state with short TTL; process-local by design (Phase D wants Upstash, not Postgres)
 const store = new Map<string, PkceStateEntry>();
 
 function base64Url(bytes: Buffer): string {

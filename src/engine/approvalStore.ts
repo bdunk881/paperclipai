@@ -40,7 +40,9 @@ interface PendingEntry {
   timeoutHandle: ReturnType<typeof setTimeout>;
 }
 
+// allowlist: hybrid store; in-memory mirror of Postgres-backed data
 const store = new Map<string, PendingEntry>();
+// allowlist: hybrid store; in-memory mirror of Postgres-backed data
 const requestStore = new Map<string, ApprovalRequest>();
 
 function postgresPersistenceAvailable(): boolean {

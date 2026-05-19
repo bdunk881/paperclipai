@@ -76,6 +76,32 @@ jobs:
             printf 'FAIL: app.use mounts have requireAuth but no requireRole() — add requireRole() or the allowlist comment:\n%s\n' "$violations"
             exit 1
           fi
+      - name: Guard against new top-level in-memory Maps in src/
+        run: |
+          # DASH-65: every new top-level `const|let X = new Map<>` in src/
+          # must declare `// allowlist:` on the SAME or PREVIOUS line with a
+          # short rationale. Memory-only stores have repeatedly caused
+          # silent data-loss bugs after restart (HEL-139 audit: HITL,
+          # /api/memory, integrationCredentialStore, mcpStore, webhookRelay,
+          # subscriptionStore, entitlements). Customer-facing state belongs
+          # in Postgres. The remaining legitimate Maps (PKCE/OAuth state,
+          # webhook replay caches, process registries) just need the
+          # comment.
+          violations=$(git grep -nE '^(const|let)\s+\w+\s*=\s*new Map<' -- 'src/**/*.ts' \
+            | grep -v '\.test\.ts' \
+            | grep -v '/__mocks__/' \
+            | while IFS=: read -r file line content; do
+                allow_same=$(printf '%s\n' "$content" | grep -c 'allowlist:')
+                allow_prev=$(sed -n "$((line - 1))p" "$file" | grep -c 'allowlist:')
+                if [ "$allow_same" -eq 0 ] && [ "$allow_prev" -eq 0 ]; then
+                  echo "$file:$line: $content"
+                fi
+              done)
+          if [ -n "$violations" ]; then
+            printf 'FAIL: new top-level Map<> in src/ without `// allowlist: <reason>`:\n%s\n' "$violations"
+            printf '\nIf this is a customer-data store, migrate it to Postgres (see docs/audit/2026-05-18-postgres-migration-plan.md).\nIf this is genuinely process-local (OAuth state, replay cache, runtime registry), add a `// allowlist: <reason>` comment on the same or previous line.\n'
+            exit 1
+          fi
 
   test-backend:
     name: Test Backend

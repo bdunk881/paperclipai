@@ -44,7 +44,9 @@ type PersistedAuditRow = {
   affected_agent_ids: unknown;
 };
 
+// allowlist: hybrid store; in-memory mirror of Postgres-backed data
 const lifecycleStates = new Map<string, ControlPlaneCompanyLifecycleState>();
+// allowlist: hybrid store; in-memory mirror of Postgres-backed data
 const lifecycleAudit = new Map<string, ControlPlaneCompanyLifecycleAuditEntry[]>();
 let preloadPromise: Promise<void> | null = null;
 

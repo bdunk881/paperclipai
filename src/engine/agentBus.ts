@@ -38,6 +38,7 @@ export class AgentBus {
 // gets its own isolated channel.
 // ---------------------------------------------------------------------------
 
+// allowlist: in-process registry / runtime state (not customer data)
 const registry = new Map<string, AgentBus>();
 
 export function getBus(runId: string, stepId: string): AgentBus {

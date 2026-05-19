@@ -1096,15 +1096,22 @@ router.post("/spend-events", requirePaperclipRunId, async (req: AuthenticatedReq
   }
 });
 
-router.get("/heartbeats", async (req: AuthenticatedRequest, res) => {
-  const userId = getUserId(req);
-  if (!userId) {
-    res.status(401).json({ error: "Authenticated user required" });
+router.get("/heartbeats", async (req: WorkspaceAwareRequest, res) => {
+  // DASH-64.2 + Codex review on #902: must resolve workspace context
+  // before calling the async store. Without it, listHeartbeats falls
+  // back to `workspaceId ?? userId`, which mismatches the real
+  // workspace id in production and returns empty under
+  // agent_heartbeats RLS.
+  const context = resolveWorkspaceContext(req, res);
+  if (!context) {
     return;
   }
   const teamId = typeof req.query.teamId === "string" ? req.query.teamId : undefined;
-  // DASH-64.2: listHeartbeats is now async (repository-backed).
-  const heartbeats = await controlPlaneStore.listHeartbeats(userId, teamId);
+  const heartbeats = await controlPlaneStore.listHeartbeats(
+    context.userId,
+    teamId,
+    context.workspaceId,
+  );
   res.json({ heartbeats, total: heartbeats.length });
 });
 

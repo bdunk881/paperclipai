@@ -185,6 +185,27 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       return refreshed.accessToken;
     }
 
+    // Preview / E2E fallback: when Supabase is not configured, check for a
+    // session seeded via loginAsMockUser() (E2E) or the legacy native-auth
+    // storage key. This only activates when isSupabaseAuthConfigured() is
+    // false, so it is unreachable in production environments.
+    if (!getSupabaseClient() && typeof window !== "undefined") {
+      try {
+        const raw = window.sessionStorage.getItem("autoflow_auth_session");
+        if (raw) {
+          const stored = JSON.parse(raw) as { accessToken?: string; expiresAt?: number };
+          if (typeof stored.accessToken === "string" && stored.accessToken) {
+            const notExpired = typeof stored.expiresAt !== "number" || stored.expiresAt > Date.now();
+            if (notExpired) {
+              return stored.accessToken;
+            }
+          }
+        }
+      } catch {
+        // Malformed storage entry — ignore and fall through.
+      }
+    }
+
     return null;
   }, []);
 

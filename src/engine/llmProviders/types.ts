@@ -160,6 +160,30 @@ export interface LLMProviderConfig {
    */
   tools?: AgentTool[];
   maxToolIterations?: number;
+  /**
+   * Optional system prompt. When set, Anthropic receives this in its
+   * dedicated `system` field instead of having it concatenated into the
+   * user prompt — which is the prerequisite for prompt caching.
+   *
+   * Callers that don't set this stay on the legacy "system prompt
+   * inlined into user message" behaviour (no caching, no separate
+   * system field).
+   */
+  systemPrompt?: string;
+  /**
+   * HEL-145: When true AND `systemPrompt` is set, the Anthropic adapter
+   * tags the system block with `cache_control: { type: 'ephemeral' }`
+   * so Anthropic caches the prefix for 5 minutes. Tool definitions are
+   * cached alongside the system block when both are present (Anthropic
+   * caches everything up to and including the cache breakpoint).
+   *
+   * No-op for providers without explicit cache controls (OpenAI caches
+   * automatically; others ignore the flag).
+   *
+   * Expected ~50–80% input-token reduction on the second-and-later call
+   * within the 5-minute TTL window. See `docs/audit/2026-05-18-llm-token-audit.md`.
+   */
+  cacheSystemPrompt?: boolean;
 }
 
 /**
@@ -189,8 +213,66 @@ export interface AgentTool {
 export interface LLMResponse {
   text: string;
   usage?: {
+    /**
+     * TOTAL input tokens for the request — uncached + cached + (for
+     * Anthropic) cache-write tokens.
+     *
+     * HEL-145 contract (revised after Codex review on PR #898):
+     *   - Anthropic returns `input_tokens` (uncached portion only) plus
+     *     separate `cache_read_input_tokens` / `cache_creation_input_tokens`
+     *     buckets. We sum the three into `promptTokens` so legacy
+     *     consumers that only read this field get the same total they
+     *     would have seen pre-caching (no double-counting, no
+     *     undercounting).
+     *   - OpenAI returns `prompt_tokens` already including the cached
+     *     portion; we forward that total unchanged.
+     *
+     * Legacy callers (cost loggers, hosted-free token accounting, the
+     * activity dashboard) keep reading `promptTokens` for total usage.
+     * Cache-aware cost-attribution can compute discounted billing as:
+     *
+     *   const standardRateTokens =
+     *     promptTokens
+     *     - (cachedPromptTokens ?? 0)
+     *     - (cachedCreationTokens ?? 0);
+     *   const cost =
+     *     standardRateTokens * standardInputRate +
+     *     (cachedPromptTokens ?? 0) * cachedReadRate +
+     *     (cachedCreationTokens ?? 0) * cacheWriteRate +
+     *     completionTokens * outputRate;
+     *
+     * The cached* fields are informational sub-buckets; do NOT add
+     * them to promptTokens when totaling usage.
+     */
     promptTokens: number;
     completionTokens: number;
+    /**
+     * HEL-145: Portion of `promptTokens` that was served from the
+     * provider's prompt cache at a reduced rate.
+     *   - Anthropic: `cache_read_input_tokens` (billed at ~10% of
+     *     full input cost).
+     *   - OpenAI: `prompt_tokens_details.cached_tokens` (billed at
+     *     50% of full input cost for the supported models).
+     *
+     * Always satisfies `cachedPromptTokens <= promptTokens`. Undefined
+     * when the provider didn't report cache activity or doesn't expose
+     * this metric.
+     */
+    cachedPromptTokens?: number;
+    /**
+     * HEL-145: Anthropic-only. Portion of `promptTokens` that was used
+     * to *write* the cache on this request (cache miss / first call
+     * within TTL). Billed at ~125% of full input cost — the surcharge
+     * that pays for cache storage. Subsequent requests within the
+     * 5-min TTL surface those same tokens as `cachedPromptTokens`
+     * instead.
+     *
+     * Always satisfies `cachedCreationTokens <= promptTokens`.
+     * Undefined for OpenAI (no per-request cache-write bucket — the
+     * cache is opportunistic) and for providers without explicit
+     * cache controls.
+     */
+    cachedCreationTokens?: number;
   };
 }
 

@@ -81,6 +81,29 @@ export function createOpenAICompatibleProvider(
 
   const responseFormat = toOpenAIResponseFormat(config.responseFormat);
 
+  /**
+   * HEL-145: Build the messages array, optionally prefixed with a
+   * system-role message. Pulled into a helper so every code path
+   * (streaming, tool loop, single-call) builds it the same way.
+   *
+   * OpenAI's prompt cache is automatic for prefixes > ~1024 tokens
+   * with no per-call opt-in — sending the system prompt as a
+   * dedicated message is all that's required for the cache to kick in
+   * on repeat calls within the TTL window. The `cacheSystemPrompt`
+   * flag from LLMProviderConfig is accepted for cross-provider API
+   * consistency but is a no-op here.
+   */
+  function buildMessages(
+    userPrompt: string,
+  ): OpenAI.Chat.Completions.ChatCompletionMessageParam[] {
+    const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [];
+    if (config.systemPrompt) {
+      messages.push({ role: "system", content: config.systemPrompt });
+    }
+    messages.push({ role: "user", content: userPrompt });
+    return messages;
+  }
+
   return async (prompt: string): Promise<LLMResponse> => {
     // Agentic tool-loop path (PR 3). Mirrors the Anthropic provider
     // shape so callers can swap providers without changing call
@@ -95,6 +118,7 @@ export function createOpenAICompatibleProvider(
         prompt,
         tools: config.tools,
         maxIterations: config.maxToolIterations ?? DEFAULT_MAX_TOOL_ITERATIONS,
+        systemPrompt: config.systemPrompt,
       });
     }
 
@@ -108,10 +132,11 @@ export function createOpenAICompatibleProvider(
       const onText = config.onText;
       let promptTokens = 0;
       let completionTokens = 0;
+      let cachedPromptTokens: number | undefined;
       try {
         const stream = await client.chat.completions.create({
           model: resolvedModel,
-          messages: [{ role: "user", content: prompt }],
+          messages: buildMessages(prompt),
           stream: true,
           stream_options: { include_usage: true },
         });
@@ -126,8 +151,12 @@ export function createOpenAICompatibleProvider(
             }
           }
           if (chunk.usage) {
-            promptTokens = chunk.usage.prompt_tokens;
+            const buckets = extractOpenAICacheBucket(chunk.usage);
+            promptTokens = buckets.promptTokens;
             completionTokens = chunk.usage.completion_tokens;
+            if (buckets.cachedPromptTokens !== undefined) {
+              cachedPromptTokens = buckets.cachedPromptTokens;
+            }
           }
         }
       } catch (err) {
@@ -136,7 +165,7 @@ export function createOpenAICompatibleProvider(
       }
       return {
         text: accumulated,
-        usage: { promptTokens, completionTokens },
+        usage: { promptTokens, completionTokens, cachedPromptTokens },
       };
     }
 
@@ -144,7 +173,7 @@ export function createOpenAICompatibleProvider(
     try {
       response = await client.chat.completions.create({
         model: resolvedModel,
-        messages: [{ role: "user", content: prompt }],
+        messages: buildMessages(prompt),
         ...(responseFormat ? { response_format: responseFormat } : {}),
       });
     } catch (err) {
@@ -154,13 +183,46 @@ export function createOpenAICompatibleProvider(
 
     const text = response.choices[0]?.message?.content ?? "";
     const usage = response.usage
-      ? {
-          promptTokens: response.usage.prompt_tokens,
-          completionTokens: response.usage.completion_tokens,
-        }
+      ? (() => {
+          const buckets = extractOpenAICacheBucket(response.usage!);
+          return {
+            promptTokens: buckets.promptTokens,
+            completionTokens: response.usage!.completion_tokens,
+            cachedPromptTokens: buckets.cachedPromptTokens,
+          };
+        })()
       : undefined;
 
     return { text, usage };
+  };
+}
+
+/**
+ * HEL-145 followup (Codex review iteration 2 on PR #898): the revised
+ * contract is that `promptTokens` is the TOTAL input count (matches
+ * legacy semantics), and `cachedPromptTokens` is the cached SUB-bucket.
+ *
+ * OpenAI already returns `prompt_tokens` as the total (cached portion
+ * is included), so we pass it through unchanged. The cache sub-bucket
+ * comes from `prompt_tokens_details.cached_tokens` when present.
+ *
+ * This keeps every existing cost-logger correct on cache hits — they
+ * read `promptTokens` and continue to see the full input count.
+ * Cache-aware billing can subtract `cachedPromptTokens` to apply the
+ * discounted rate.
+ */
+function extractOpenAICacheBucket(
+  usage: OpenAI.Completions.CompletionUsage,
+): { promptTokens: number; cachedPromptTokens: number | undefined } {
+  const details = (usage as { prompt_tokens_details?: { cached_tokens?: number | null } })
+    .prompt_tokens_details;
+  const cached =
+    details && typeof details.cached_tokens === "number" && details.cached_tokens > 0
+      ? details.cached_tokens
+      : undefined;
+  return {
+    promptTokens: usage.prompt_tokens,
+    cachedPromptTokens: cached,
   };
 }
 
@@ -186,6 +248,7 @@ async function runOpenAIToolLoop(args: {
   prompt: string;
   tools: AgentTool[];
   maxIterations: number;
+  systemPrompt?: string;
 }): Promise<LLMResponse> {
   const toolsByName = new Map(args.tools.map((t) => [t.name, t]));
   const openaiTools: OpenAI.Chat.Completions.ChatCompletionTool[] = args.tools.map(
@@ -199,12 +262,15 @@ async function runOpenAIToolLoop(args: {
     }),
   );
 
-  const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
-    { role: "user", content: args.prompt },
-  ];
+  const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [];
+  if (args.systemPrompt) {
+    messages.push({ role: "system", content: args.systemPrompt });
+  }
+  messages.push({ role: "user", content: args.prompt });
 
   let cumulativePromptTokens = 0;
   let cumulativeCompletionTokens = 0;
+  let cumulativeCachedTokens = 0;
 
   for (let iteration = 0; iteration < args.maxIterations; iteration++) {
     let response: OpenAI.Chat.Completions.ChatCompletion;
@@ -220,8 +286,15 @@ async function runOpenAIToolLoop(args: {
     }
 
     if (response.usage) {
-      cumulativePromptTokens += response.usage.prompt_tokens;
+      // HEL-145 contract: promptTokens is TOTAL input; cachedPromptTokens
+      // is the cached sub-bucket. Preserves legacy spend-logger
+      // semantics on cache hits.
+      const buckets = extractOpenAICacheBucket(response.usage);
+      cumulativePromptTokens += buckets.promptTokens;
       cumulativeCompletionTokens += response.usage.completion_tokens;
+      if (buckets.cachedPromptTokens !== undefined) {
+        cumulativeCachedTokens += buckets.cachedPromptTokens;
+      }
     }
 
     const choice = response.choices[0];
@@ -232,6 +305,8 @@ async function runOpenAIToolLoop(args: {
         usage: {
           promptTokens: cumulativePromptTokens,
           completionTokens: cumulativeCompletionTokens,
+          cachedPromptTokens:
+            cumulativeCachedTokens > 0 ? cumulativeCachedTokens : undefined,
         },
       };
     }
@@ -244,6 +319,8 @@ async function runOpenAIToolLoop(args: {
         usage: {
           promptTokens: cumulativePromptTokens,
           completionTokens: cumulativeCompletionTokens,
+          cachedPromptTokens:
+            cumulativeCachedTokens > 0 ? cumulativeCachedTokens : undefined,
         },
       };
     }
@@ -308,8 +385,14 @@ async function runOpenAIToolLoop(args: {
       ],
     });
     if (finalTurn.usage) {
-      cumulativePromptTokens += finalTurn.usage.prompt_tokens;
+      // HEL-145 contract iter 2: promptTokens is TOTAL; cached* are
+      // sub-buckets. Preserves legacy spend-logger semantics.
+      const buckets = extractOpenAICacheBucket(finalTurn.usage);
+      cumulativePromptTokens += buckets.promptTokens;
       cumulativeCompletionTokens += finalTurn.usage.completion_tokens;
+      if (buckets.cachedPromptTokens !== undefined) {
+        cumulativeCachedTokens += buckets.cachedPromptTokens;
+      }
     }
     const text = finalTurn.choices[0]?.message?.content ?? "";
     return {
@@ -317,6 +400,8 @@ async function runOpenAIToolLoop(args: {
       usage: {
         promptTokens: cumulativePromptTokens,
         completionTokens: cumulativeCompletionTokens,
+        cachedPromptTokens:
+          cumulativeCachedTokens > 0 ? cumulativeCachedTokens : undefined,
       },
     };
   } catch {
@@ -325,6 +410,8 @@ async function runOpenAIToolLoop(args: {
       usage: {
         promptTokens: cumulativePromptTokens,
         completionTokens: cumulativeCompletionTokens,
+        cachedPromptTokens:
+          cumulativeCachedTokens > 0 ? cumulativeCachedTokens : undefined,
       },
     };
   }

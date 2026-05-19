@@ -516,18 +516,25 @@ export const controlPlaneRepository = {
       }
       return out.sort((left, right) => left.createdAt.localeCompare(right.createdAt));
     }
-    // No workspace context — go direct to pool with the user_id filter.
-    // RLS on agent_tasks is workspace-scoped so this hits FORCE RLS;
-    // use the security-definer helper instead of withWorkspaceContext.
+    // DASH-64.1 followup (Codex review on PR #901): the previous raw
+    // `pool.query` against `agent_tasks` returned zero rows in
+    // production because FORCE RLS requires `app.current_workspace_id`
+    // to be set, and a cross-workspace listing has no single workspace
+    // context to pin.
+    //
+    // Migration 046 adds `list_agent_tasks_for_user(p_user_id text)`
+    // as a SECURITY DEFINER helper. Same pattern as migration 030's
+    // `lookup_team_workspace_id`: bypass RLS for one specific read
+    // whose access boundary (the user_id filter) is encoded in the
+    // function body. Downstream callers that have a workspace id keep
+    // using the workspace-scoped listTasks above.
     const pool = getPostgresPool();
     const result = await pool.query<TaskRow>(
       `SELECT id, team_id, user_id, title, description, source_run_id,
               source_workflow_step_id, assigned_agent_id, execution_id, status,
               checked_out_by, checked_out_at, audit_trail, metadata,
               created_at, updated_at
-         FROM agent_tasks
-        WHERE user_id = $1
-        ORDER BY created_at ASC`,
+         FROM list_agent_tasks_for_user($1)`,
       [userId],
     );
     return result.rows.map(rowToTask);

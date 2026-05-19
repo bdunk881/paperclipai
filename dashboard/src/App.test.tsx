@@ -194,7 +194,7 @@ describe("App", () => {
     render(<App />);
 
     expect(await screen.findByText("Layout Shell")).toBeInTheDocument();
-    expect(screen.getByText("Ticket SLA Dashboard Page")).toBeInTheDocument();
+    expect(await screen.findByText("Ticket SLA Dashboard Page")).toBeInTheDocument();
   });
 
   it("renders the SLA settings route for authenticated users", async () => {

@@ -67,14 +67,14 @@ const memSpendEntries = new Map<string, Map<string, ControlPlaneSpendEntry>>();
 const memBudgetAlerts = new Map<string, Map<string, ControlPlaneBudgetAlert>>();
 // allowlist: test/dev fallback for repository; production routes to Postgres
 // DASH-64.4: executions Map ownership moves from controlPlaneStore to repo.
+// allowlist: test/dev fallback for repository; production routes to Postgres
 const memExecutions = new Map<string, Map<string, ControlPlaneExecution>>();
-// allowlist: test/dev fallback for repository; production routes to Postgres
 // DASH-64.5: agents Map ownership moves from controlPlaneStore to repo.
+// allowlist: test/dev fallback for repository; production routes to Postgres
 const memAgents = new Map<string, Map<string, ControlPlaneAgent>>();
-// allowlist: test/dev fallback for repository; production routes to Postgres
 // DASH-64.6: teams Map ownership moves from controlPlaneStore to repo.
-const memTeams = new Map<string, Map<string, ControlPlaneTeam>>();
 // allowlist: test/dev fallback for repository; production routes to Postgres
+const memTeams = new Map<string, Map<string, ControlPlaneTeam>>();
 // DASH-64.7: companies + companyWorkspaces + companySecretBindings +
 // companyIdempotencyIndex Maps move from controlPlaneStore to repo.
 // In-memory rows are stored in a single bucket keyed by tenantWorkspaceId
@@ -86,6 +86,7 @@ interface MemCompanyEntry {
   fingerprint: string;
   secretBindings: Record<string, string>;
 }
+// allowlist: test/dev fallback for repository; production routes to Postgres
 const memCompanies = new Map<string, Map<string, MemCompanyEntry>>();
 
 function memBucket<T>(

@@ -27,6 +27,7 @@ import { approvalStore } from "./engine/approvalStore";
 import { approvalNotificationStore } from "./engine/approvalNotificationStore";
 import approvalPolicyRoutes from "./approvals/policyRoutes";
 import llmConfigRoutes from "./llmConfig/llmConfigRoutes";
+import apiKeyRoutes from "./apiKeys/apiKeyRoutes";
 import { createHostedFreeRoutes } from "./hostedFreeModels/hostedFreeRoutes";
 import mcpRoutes from "./mcp/mcpRoutes";
 import memoryRoutes from "./memory/memoryRoutes";
@@ -544,6 +545,10 @@ app.use("/api/llm-configs", requireAuth, workspaceResolver, requireRole("admin",
 // Both paths resolve to the same router until the dashboard fully migrates;
 // then `/api/llm-configs` becomes a legacy alias for one release before removal.
 app.use("/api/llm-credentials", requireAuth, workspaceResolver, requireRole("admin", "developer"), llmConfigRoutes);
+
+// HEL-166: platform API keys for programmatic AutoFlow access. Keys are
+// workspace-scoped; owner/admin/developer may create, rotate, and revoke.
+app.use("/api/api-keys", requireAuth, workspaceResolver, requireRole("admin", "developer"), apiKeyRoutes);
 
 // ---------------------------------------------------------------------------
 // Hosted free model catalog (PR B.1) + per-workspace daily token usage

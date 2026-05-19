@@ -310,15 +310,13 @@ const ROLE_TEMPLATE_CATALOG: ControlPlaneRoleTemplateDefinition[] = [
 // scanning the user's companies for a matching idempotencyKey.
 // companySecretBindings stays in the in-memory fallback only — prod
 // uses secretsRepository for encrypted-at-rest secrets.
-// DASH-64.3: spendEntries + budgetAlerts Maps removed. Both route
-// through controlPlaneRepository now.
-// allowlist: hybrid store; in-memory mirror of Postgres-backed data
-const teamWorkspaceIds = new Map<string, string>();
-// allowlist: hybrid store; in-memory mirror of Postgres-backed data
-const teamCompanyIds = new Map<string, string>();
-// allowlist: hybrid store; in-memory mirror of Postgres-backed data
-const companyTenantWorkspaceIds = new Map<string, string>();
-const hydratedWorkspaceUsers = new Set<string>();
+// DASH-64.3: spendEntries + budgetAlerts Maps removed.
+// DASH-64.8: ALL derivable index Maps (teamWorkspaceIds, teamCompanyIds,
+// companyTenantWorkspaceIds) and the hydratedWorkspaceUsers Set removed.
+// Reads route through repository helpers (repo.getTeamWorkspaceId,
+// repo.getProvisionedCompany, etc) on demand. The
+// ensureWorkspaceHydrated function is also gone — it was a no-op after
+// DASH-64.6/7 since the repo owns all reads.
 
 type PersistedTeamRow = {
   id: string;
@@ -509,57 +507,40 @@ async function workspaceContextForTeam(
   teamId: string,
   userId: string,
 ): Promise<{ workspaceId: string; userId: string } | undefined> {
-  // DASH-64.1: cache hit works in BOTH production AND test mode now.
-  // Pre-DASH-64.1 we returned `undefined` in test mode (Postgres
-  // unavailable) and relied on the in-memory `tasks` Map. With the Map
-  // gone, the repository's in-memory fallback needs a workspaceId to
-  // bucket by — and the cached value from teamWorkspaceIds is reliable
-  // because teams set it on create regardless of mode.
-  const cached = teamWorkspaceIds.get(teamId);
-  if (cached) {
-    return { workspaceId: cached, userId };
-  }
-  if (!postgresPersistenceAvailable()) {
-    // Test mode + no cache hit. Some test-mode code paths (auto-
-    // provisioned teams in stepHandlers, tests that bypass the
-    // workspace-aware routes) create teams without an explicit
-    // workspaceId. Fall back to userId — same convention as
-    // `resolveWorkspaceContext` in test mode, and the repository's
-    // in-memory fallback will bucket by this same value.
-    return { workspaceId: userId, userId };
-  }
-  // Cache miss — call the SECURITY DEFINER helper to bypass RLS. We
-  // can't use the regular workspace-context channel here because the
-  // whole point of this lookup is to FIND the workspace_id; we don't
-  // have one to set on the session yet. agent_teams has FORCE RLS
-  // requiring app_current_workspace_id() IS NOT NULL, so a raw SELECT
-  // would return zero rows for a legitimate team.
-  // The helper is migration 030's `lookup_team_workspace_id(uuid)`.
+  // DASH-64.8: teamWorkspaceIds cache dropped. The repository owns the
+  // lookup — in test mode it scans memTeams (workspace-bucketed), in
+  // production it calls the lookup_team_workspace_id SECURITY DEFINER
+  // helper (migration 030).
   try {
-    const result = await getPostgresPool().query<{ workspace_id: string | null }>(
-      `SELECT lookup_team_workspace_id($1) AS workspace_id`,
-      [teamId],
-    );
-    const workspaceId = result.rows[0]?.workspace_id;
-    if (!workspaceId) {
-      return undefined;
+    const workspaceId = await controlPlaneRepository.getTeamWorkspaceId(teamId);
+    if (workspaceId) {
+      return { workspaceId, userId };
     }
-    teamWorkspaceIds.set(teamId, workspaceId);
-    return { workspaceId, userId };
   } catch (err) {
     console.warn(
       `[controlPlaneStore] workspaceContextForTeam DB lookup failed for team=${teamId}: ${(err as Error).message}`,
     );
-    return undefined;
   }
+  if (!postgresPersistenceAvailable()) {
+    // Test mode + no workspace bucket found. Some test paths
+    // (auto-provisioned teams in stepHandlers, tests that bypass the
+    // workspace-aware routes) create teams without an explicit
+    // workspaceId. Fall back to userId — same convention as
+    // `resolveWorkspaceContext` uses in test mode.
+    return { workspaceId: userId, userId };
+  }
+  return undefined;
 }
 
-function matchesWorkspace(teamId: string, workspaceId?: string): boolean {
+async function matchesWorkspace(teamId: string, workspaceId?: string): Promise<boolean> {
   if (!workspaceId) {
     return true;
   }
-
-  const storedWorkspaceId = teamWorkspaceIds.get(teamId);
+  // DASH-64.8: repo lookup replaces the teamWorkspaceIds cache. When
+  // the team's workspace can't be resolved (unknown team), we fall
+  // back to permissive (true) to preserve the legacy behaviour of an
+  // empty cache hit.
+  const storedWorkspaceId = await controlPlaneRepository.getTeamWorkspaceId(teamId);
   return storedWorkspaceId ? storedWorkspaceId === workspaceId : true;
 }
 
@@ -624,9 +605,8 @@ async function buildMissionState(
 ): Promise<ControlPlaneMissionState> {
   // DASH-64.1: tasks read via repository instead of in-memory Map.
   // DASH-64.5: agents read via repository (same workspace context).
-  // The workspace context comes from the team row — teams still live in
-  // the in-memory store until DASH-64.6, so this is safe to read sync.
-  const teamWorkspaceId = teamWorkspaceIds.get(team.id);
+  // DASH-64.8: workspace lookup goes through repo.getTeamWorkspaceId.
+  const teamWorkspaceId = await controlPlaneRepository.getTeamWorkspaceId(team.id);
   const teamAgents: ControlPlaneAgent[] = teamWorkspaceId
     ? (
         await controlPlaneRepository.listAgents(
@@ -745,10 +725,16 @@ async function listAccessibleTeamIds(
   workspaceId?: string,
 ): Promise<Set<string>> {
   const userTeams = await controlPlaneRepository.listAllTeamsForUser(userId);
+  // DASH-64.8: matchesWorkspace is async now (repo-backed). Resolve
+  // workspace IDs in parallel before filtering.
+  const matchResults = await Promise.all(
+    userTeams.map(async (team) => ({
+      team,
+      matches: await matchesWorkspace(team.id, workspaceId),
+    })),
+  );
   const accessibleTeamIds = new Set(
-    userTeams
-      .filter((team) => matchesWorkspace(team.id, workspaceId))
-      .map((team) => team.id),
+    matchResults.filter((m) => m.matches).map((m) => m.team.id),
   );
 
   const normalizedWorkspaceId = workspaceId?.trim();
@@ -767,8 +753,9 @@ async function listAccessibleTeamIds(
     userId,
   });
   for (const entry of workspaceCompanies) {
-    const tenantWorkspaceId =
-      entry.tenantWorkspaceId || companyTenantWorkspaceIds.get(entry.company.id);
+    // DASH-64.8: companyTenantWorkspaceIds cache gone; the repo entry
+    // already carries tenantWorkspaceId.
+    const tenantWorkspaceId = entry.tenantWorkspaceId;
     if (tenantWorkspaceId === normalizedWorkspaceId || entry.company.workspaceId === normalizedWorkspaceId) {
       accessibleTeamIds.add(entry.company.teamId);
     }
@@ -810,14 +797,14 @@ async function canAccessExecution(
   return (await listAccessibleTeamIds(userId, workspaceId)).has(execution.teamId);
 }
 
-// DASH-64.6: getTeamOwnedByUser now async (repo-backed). Resolves via
-// the teamWorkspaceIds cache first (still in-memory until DASH-64.8),
-// falling back to the cross-workspace helper.
+// DASH-64.6: getTeamOwnedByUser now async (repo-backed).
+// DASH-64.8: workspace lookup goes through repo.getTeamWorkspaceId
+// (replaces the teamWorkspaceIds cache).
 async function getTeamOwnedByUser(
   teamId: string,
   userId: string,
 ): Promise<ControlPlaneTeam | undefined> {
-  const cachedWorkspaceId = teamWorkspaceIds.get(teamId);
+  const cachedWorkspaceId = await controlPlaneRepository.getTeamWorkspaceId(teamId);
   if (cachedWorkspaceId) {
     const team = await controlPlaneRepository.getTeam(
       { workspaceId: cachedWorkspaceId, userId },
@@ -893,89 +880,17 @@ async function getExecutionOwnedByUser(
 // DASH-64.7: hydrateProvisionedCompany dropped along with the
 // companies Map. rowToProvisionedCompany lives in controlPlaneRepository.
 
-async function ensureWorkspaceHydrated(workspaceId: string | undefined, userId: string): Promise<void> {
-  if (!postgresPersistenceAvailable()) {
-    return;
-  }
-
-  const resolvedWorkspaceId = requireWorkspaceIdForPersistence(workspaceId);
-  const cacheKey = workspaceUserKey(resolvedWorkspaceId, userId);
-  if (hydratedWorkspaceUsers.has(cacheKey)) {
-    return;
-  }
-
-  // DASH-64.1: tasks NO LONGER hydrate here — they read live from the
-  // repository on every call.
-  // DASH-64.2: heartbeats NO LONGER hydrate here either — same pattern.
-  // DASH-64.3: spend entries + budget alerts NO LONGER hydrate here
-  // either. The hydration was process-restart-survival scaffolding for
-  // the in-memory Maps; now reads go straight to the repository, so
-  // no hydration step is needed.
-  // DASH-64.3: hydratedSpend / hydratedAlerts no longer fetched here.
-  await withWorkspaceContext(
-    getPostgresPool(),
-    { workspaceId: resolvedWorkspaceId, userId },
-    async (client) => {
-      // DASH-64.4: agent_executions no longer hydrates into an
-      // in-memory Map. DASH-64.5: agents same — repo owns reads.
-      // DASH-64.6: teams same — repo owns reads. We still SELECT here
-      // to populate teamWorkspaceIds + teamCompanyIds derivative
-      // indexes (kept until DASH-64.8), but the team row itself is
-      // not stored locally.
-      const [teamResult, companyResult] = await Promise.all([
-        client.query<PersistedTeamRow>(
-          `SELECT id, workspace_id, user_id, company_id, name, description, workflow_template_id,
-                  workflow_template_name, deployment_mode, status, paused_by_company_lifecycle,
-                  restart_count, budget_monthly_usd, tool_budget_ceilings, alert_thresholds,
-                  orchestration_enabled, last_heartbeat_at, created_at, updated_at
-             FROM agent_teams
-            WHERE user_id = $1`,
-          [userId]
-        ),
-        client.query<PersistedProvisionedCompanyRow>(
-          `SELECT id, workspace_id, user_id, name, external_company_id,
-                  provisioned_workspace_id, provisioned_workspace_name, provisioned_workspace_slug,
-                  team_id, idempotency_key, budget_monthly_usd, allocated_budget_monthly_usd,
-                  remaining_budget_monthly_usd, created_at, updated_at
-             FROM companies
-            WHERE user_id = $1`,
-          [userId]
-        ),
-      ]);
-
-      // DASH-64.6: only hydrate the derivative indexes; the team row
-      // itself stays in the repo.
-      teamResult.rows.forEach((row) => {
-        teamWorkspaceIds.set(row.id, row.workspace_id);
-        if (row.company_id) {
-          teamCompanyIds.set(row.id, row.company_id);
-        }
-      });
-      // DASH-64.7: companies + companyWorkspaces + companyIdempotencyIndex
-      // are repository-backed. We still SELECT here only to populate
-      // the companyTenantWorkspaceIds derivative index (kept until
-      // DASH-64.8).
-      companyResult.rows.forEach((row) => {
-        companyTenantWorkspaceIds.set(row.id, row.workspace_id);
-      });
-    }
-  );
-
-  // DASH-64.1: hydratedTasks block removed.
-  // DASH-64.2: hydratedHeartbeats block removed.
-  // DASH-64.3: hydratedSpend + hydratedAlerts blocks removed too.
-  // All four entity types (tasks, heartbeats, spend, budget alerts)
-  // read live from the repository; no Map hydration needed.
-
-  hydratedWorkspaceUsers.add(cacheKey);
-}
-
-// DASH-64.6: upsertTeamRow moved to controlPlaneRepository.
-// Store-level callers now invoke
-// `controlPlaneRepository.upsertTeam(ctx, team, companyId)` instead.
-async function persistTeamViaRepo(team: ControlPlaneTeam, workspaceId: string, userId: string): Promise<void> {
-  const companyId = teamCompanyIds.get(team.id) ?? null;
-  await controlPlaneRepository.upsertTeam({ workspaceId, userId }, team, companyId);
+/**
+ * DASH-64.8: ensureWorkspaceHydrated is now a NO-OP. With every entity
+ * Map removed (DASH-64.1..64.7), there's nothing left for the function
+ * to hydrate — all reads route directly to the repository on demand.
+ *
+ * We keep the function signature for backward compatibility with the
+ * many internal `await ensureWorkspaceHydrated(...)` call sites; they
+ * become free passes.
+ */
+async function ensureWorkspaceHydrated(_workspaceId: string | undefined, _userId: string): Promise<void> {
+  return;
 }
 
 // DASH-64.5: upsertAgentRow moved to controlPlaneRepository.
@@ -1279,7 +1194,7 @@ async function applyBudgetPolicies(team: ControlPlaneTeam, agentId: string, exec
       throw new Error("budget_policies_workspace_unresolved");
     }
     // DASH-64.6: persist team status via repo.
-    await controlPlaneRepository.upsertTeam(policiesCtx, team, teamCompanyIds.get(team.id) ?? null);
+    await controlPlaneRepository.upsertTeam(policiesCtx, team, null /* DASH-64.8: COALESCE in upsertTeam SQL preserves existing company link */);
     const teamAgents = await listAgentsForTeam(team.id, team.userId);
     for (const teamAgent of teamAgents) {
       if (teamAgent.status === "active") {
@@ -1321,7 +1236,7 @@ async function assertExecutionAllowed(team: ControlPlaneTeam, agent: ControlPlan
     if (!assertTeamCtx) {
       throw new Error("assert_execution_workspace_unresolved");
     }
-    await controlPlaneRepository.upsertTeam(assertTeamCtx, team, teamCompanyIds.get(team.id) ?? null);
+    await controlPlaneRepository.upsertTeam(assertTeamCtx, team, null /* DASH-64.8: COALESCE in upsertTeam SQL preserves existing company link */);
     throw new Error("team_budget_exceeded");
   }
 
@@ -1375,9 +1290,8 @@ function createTeamRecord(input: {
     createdAt: timestamp,
     updatedAt: timestamp,
   };
-  if (input.workspaceId) {
-    teamWorkspaceIds.set(team.id, input.workspaceId);
-  }
+  // DASH-64.8: teamWorkspaceIds cache gone; workspace lookup goes
+  // through repo.getTeamWorkspaceId now.
   return team;
 }
 
@@ -1626,7 +1540,9 @@ export const controlPlaneStore = {
       updatedAt: timestamp,
     };
 
-    teamCompanyIds.set(team.id, company.id);
+    // DASH-64.8: teamCompanyIds cache gone; the agent_teams.company_id
+    // column persists the link via the upsertTeam call below (companyId
+    // arg explicitly = company.id).
 
     // DASH-64.5: agents persist via repository (test in-mem bucket OR
     // production Postgres path both handled there). Iter-2 hardening:
@@ -1634,10 +1550,12 @@ export const controlPlaneStore = {
     // DASH-64.6: team persists via repository too.
     // DASH-64.7: company suite (company + workspace + idempotency
     // fingerprint + test-mode secretBindings) persists via repository.
-    const provisionCtx = await workspaceContextForTeam(team.id, input.userId);
-    if (!provisionCtx) {
-      throw new Error("agent_provision_workspace_unresolved");
-    }
+    // DASH-64.8: derive provisionCtx directly from input.workspaceId
+    // — the team isn't in the repo yet, so workspaceContextForTeam
+    // would fail. In test mode (no input.workspaceId), fall back to
+    // userId, matching the resolveWorkspaceContext convention.
+    const provisionWorkspaceId = input.workspaceId?.trim() || input.userId;
+    const provisionCtx = { workspaceId: provisionWorkspaceId, userId: input.userId };
     await controlPlaneRepository.upsertTeam(provisionCtx, team, company.id);
     for (const agent of provisionedAgents) {
       await controlPlaneRepository.upsertAgent(provisionCtx, agent);
@@ -1646,7 +1564,9 @@ export const controlPlaneStore = {
     // is the canonical workspace this tenant belongs to (provisionCtx).
     // In test mode this also stores the fingerprint + secretBindings so the
     // idempotency-replay path can find them on a second call.
-    companyTenantWorkspaceIds.set(company.id, provisionCtx.workspaceId);
+    // DASH-64.8: companyTenantWorkspaceIds cache gone; the
+    // companies.workspace_id column (== tenantWorkspaceId here)
+    // persists via the upsertProvisionedCompany call below.
     await controlPlaneRepository.upsertProvisionedCompany(provisionCtx, {
       company,
       workspace,
@@ -1662,7 +1582,7 @@ export const controlPlaneStore = {
         company.id,
         input.secretBindings
       );
-      hydratedWorkspaceUsers.add(workspaceUserKey(workspaceId, input.userId));
+      // DASH-64.8: hydratedWorkspaceUsers gone — no-op.
     }
 
     return {
@@ -1691,15 +1611,17 @@ export const controlPlaneStore = {
   }): Promise<ControlPlaneTeam> {
     await ensureWorkspaceHydrated(input.workspaceId, input.userId);
     const team = createTeamRecord(input);
-    // DASH-64.6: team persists via repo. Iter-2 hardening: throw on
-    // unresolved workspace ctx.
-    const createCtx = await workspaceContextForTeam(team.id, input.userId);
-    if (!createCtx) {
-      throw new Error("team_create_workspace_unresolved");
-    }
-    await controlPlaneRepository.upsertTeam(createCtx, team, teamCompanyIds.get(team.id) ?? null);
+    // DASH-64.6: team persists via repo.
+    // DASH-64.8: derive ctx directly — the team isn't in the repo yet,
+    // so the workspace-lookup path would fail. In test mode (no
+    // input.workspaceId), fall back to userId.
+    const createCtx = {
+      workspaceId: input.workspaceId?.trim() || input.userId,
+      userId: input.userId,
+    };
+    await controlPlaneRepository.upsertTeam(createCtx, team, null /* DASH-64.8: COALESCE in upsertTeam SQL preserves existing company link */);
     if (postgresPersistenceAvailable() && input.workspaceId) {
-      hydratedWorkspaceUsers.add(workspaceUserKey(input.workspaceId, input.userId));
+      // DASH-64.8: hydratedWorkspaceUsers gone — no-op.
     }
     return team;
   },
@@ -1728,7 +1650,8 @@ export const controlPlaneStore = {
     if (workspaceId) {
       team = await controlPlaneRepository.getTeam({ workspaceId, userId }, teamId);
     } else {
-      const cachedWorkspaceId = teamWorkspaceIds.get(teamId);
+      // DASH-64.8: repo.getTeamWorkspaceId replaces the teamWorkspaceIds cache.
+      const cachedWorkspaceId = await controlPlaneRepository.getTeamWorkspaceId(teamId);
       if (cachedWorkspaceId) {
         team = await controlPlaneRepository.getTeam(
           { workspaceId: cachedWorkspaceId, userId },
@@ -2046,17 +1969,18 @@ export const controlPlaneStore = {
     // DASH-64.5: persist agents via repo (iter-2 hardening: throw on
     // unresolved ctx instead of silently dropping).
     // DASH-64.6: team also persists via repo.
-    const deployCtx = await workspaceContextForTeam(team.id, input.userId);
-    if (!deployCtx) {
-      throw new Error("agent_provision_workspace_unresolved");
-    }
-    await controlPlaneRepository.upsertTeam(deployCtx, team, teamCompanyIds.get(team.id) ?? null);
+    // DASH-64.8: derive ctx directly — the team isn't in the repo yet.
+    const deployCtx = {
+      workspaceId: input.workspaceId?.trim() || input.userId,
+      userId: input.userId,
+    };
+    await controlPlaneRepository.upsertTeam(deployCtx, team, null /* DASH-64.8: COALESCE in upsertTeam SQL preserves existing company link */);
     for (const agent of provisionedAgents) {
       await controlPlaneRepository.upsertAgent(deployCtx, agent);
     }
 
     if (postgresPersistenceAvailable() && input.workspaceId) {
-      hydratedWorkspaceUsers.add(workspaceUserKey(input.workspaceId, input.userId));
+      // DASH-64.8: hydratedWorkspaceUsers gone — no-op.
     }
 
     return {
@@ -2128,16 +2052,17 @@ export const controlPlaneStore = {
 
     // DASH-64.6: persist team via repo. Only fire when the team was
     // just provisioned (existing teams are already in the repo).
+    // DASH-64.8: derive ctx directly for newly-created teams.
     if (teamIsNew) {
-      const teamCtx = await workspaceContextForTeam(team.id, input.userId);
-      if (!teamCtx) {
-        throw new Error("team_create_workspace_unresolved");
-      }
-      await controlPlaneRepository.upsertTeam(teamCtx, team, teamCompanyIds.get(team.id) ?? null);
+      const teamCtx = {
+        workspaceId: input.workspaceId?.trim() || input.userId,
+        userId: input.userId,
+      };
+      await controlPlaneRepository.upsertTeam(teamCtx, team, null /* DASH-64.8: COALESCE in upsertTeam SQL preserves existing company link */);
     }
 
     if (postgresPersistenceAvailable() && input.workspaceId) {
-      hydratedWorkspaceUsers.add(workspaceUserKey(input.workspaceId, input.userId));
+      // DASH-64.8: hydratedWorkspaceUsers gone — no-op.
     }
 
     return { team, agent };
@@ -2236,9 +2161,9 @@ export const controlPlaneStore = {
 
     // DASH-64.6: persist team via repo (reusing the lifecycleCtx we
     // already resolved above).
-    await controlPlaneRepository.upsertTeam(lifecycleCtx, team, teamCompanyIds.get(team.id) ?? null);
+    await controlPlaneRepository.upsertTeam(lifecycleCtx, team, null /* DASH-64.8: COALESCE in upsertTeam SQL preserves existing company link */);
     if (postgresPersistenceAvailable() && input.workspaceId) {
-      hydratedWorkspaceUsers.add(workspaceUserKey(input.workspaceId, input.userId));
+      // DASH-64.8: hydratedWorkspaceUsers gone — no-op.
     }
     return team;
   },
@@ -2297,7 +2222,7 @@ export const controlPlaneStore = {
     // and prod Postgres paths).
     await controlPlaneRepository.upsertAgent(skillsCtx, agent);
     if (postgresPersistenceAvailable() && input.workspaceId) {
-      hydratedWorkspaceUsers.add(workspaceUserKey(input.workspaceId, input.userId));
+      // DASH-64.8: hydratedWorkspaceUsers gone — no-op.
     }
 
     return agent;
@@ -2599,13 +2524,12 @@ export const controlPlaneStore = {
         mutated = true;
       }
       if (mutated) {
-        const lifecycleTeamCtx = teamWorkspaceIds.get(team.id)
-          ? { workspaceId: teamWorkspaceIds.get(team.id) as string, userId: input.userId }
-          : await workspaceContextForTeam(team.id, input.userId);
+        // DASH-64.8: repo.getTeamWorkspaceId replaces the cache.
+        const lifecycleTeamCtx = await workspaceContextForTeam(team.id, input.userId);
         if (!lifecycleTeamCtx) {
           throw new Error("company_lifecycle_workspace_unresolved");
         }
-        await controlPlaneRepository.upsertTeam(lifecycleTeamCtx, updated, teamCompanyIds.get(team.id) ?? null);
+        await controlPlaneRepository.upsertTeam(lifecycleTeamCtx, updated, null /* DASH-64.8: COALESCE in upsertTeam SQL preserves existing company link */);
         affectedTeamIds.push(updated.id);
       }
     }
@@ -2772,11 +2696,13 @@ export const controlPlaneStore = {
       throw new Error("agent_not_found");
     }
 
+    // DASH-64.8: repo.getTeamWorkspaceId replaces the cache.
+    const assertWorkspaceId = await controlPlaneRepository.getTeamWorkspaceId(team.id);
     assertAgentWorkspaceBinding({
       agentId: agent.id,
       agentTeamId: agent.teamId,
       resolvedTeamId: team.id,
-      teamWorkspaceId: teamWorkspaceIds.get(team.id),
+      teamWorkspaceId: assertWorkspaceId,
       claimedWorkspaceId: input.workspaceId,
     });
 
@@ -2893,9 +2819,9 @@ export const controlPlaneStore = {
     });
 
     // DASH-64.6: persist team via repo (reusing startCtx).
-    await controlPlaneRepository.upsertTeam(startCtx, team, teamCompanyIds.get(team.id) ?? null);
+    await controlPlaneRepository.upsertTeam(startCtx, team, null /* DASH-64.8: COALESCE in upsertTeam SQL preserves existing company link */);
     if (postgresPersistenceAvailable() && input.workspaceId) {
-      hydratedWorkspaceUsers.add(workspaceUserKey(input.workspaceId, input.userId));
+      // DASH-64.8: hydratedWorkspaceUsers gone — no-op.
     }
 
     return { execution, agent, task };
@@ -2957,7 +2883,7 @@ export const controlPlaneStore = {
     if (team) {
       team.lastHeartbeatAt = timestamp;
       team.updatedAt = timestamp;
-      await controlPlaneRepository.upsertTeam(finalizeCtx, team, teamCompanyIds.get(team.id) ?? null);
+      await controlPlaneRepository.upsertTeam(finalizeCtx, team, null /* DASH-64.8: COALESCE in upsertTeam SQL preserves existing company link */);
     }
 
     if (Array.isArray(input.spendEntries) && input.spendEntries.length > 0) {
@@ -2999,8 +2925,13 @@ export const controlPlaneStore = {
       completedAt: timestamp,
     });
 
+    // DASH-64.8: resolve workspace via repo for observability records
+    // (replaces the teamWorkspaceIds cache).
+    const observabilityWorkspaceId =
+      input.workspaceId ?? (await controlPlaneRepository.getTeamWorkspaceId(execution.teamId));
+
     observabilityStore.record({
-      workspaceId: input.workspaceId ?? teamWorkspaceIds.get(execution.teamId),
+      workspaceId: observabilityWorkspaceId,
       userId: input.userId,
       category: "run",
       type: `run.${input.status}`,
@@ -3027,7 +2958,7 @@ export const controlPlaneStore = {
 
     if (input.status === "blocked" || input.status === "failed") {
       observabilityStore.record({
-        workspaceId: input.workspaceId ?? teamWorkspaceIds.get(execution.teamId),
+        workspaceId: observabilityWorkspaceId,
         userId: input.userId,
         category: "alert",
         type: "alert.triggered",
@@ -3055,7 +2986,7 @@ export const controlPlaneStore = {
       // DASH-64.4: execution persisted above via repo.upsertExecution.
       // DASH-64.5: agent persisted above via repo.upsertAgent.
       // DASH-64.6: team persisted above via repo.upsertTeam.
-      hydratedWorkspaceUsers.add(workspaceUserKey(input.workspaceId, input.userId));
+      // DASH-64.8: hydratedWorkspaceUsers gone — no-op.
     }
 
     return execution;
@@ -3096,7 +3027,7 @@ export const controlPlaneStore = {
     }
     await controlPlaneRepository.upsertExecution(lifecycleCtx, execution);
     if (postgresPersistenceAvailable() && input.workspaceId) {
-      hydratedWorkspaceUsers.add(workspaceUserKey(input.workspaceId, input.userId));
+      // DASH-64.8: hydratedWorkspaceUsers gone — no-op.
     }
     return execution;
   },
@@ -3302,9 +3233,9 @@ export const controlPlaneStore = {
     await controlPlaneRepository.upsertAgent(agentPersistCtx, agent);
 
     // DASH-64.6: persist team via repo (reusing agentPersistCtx).
-    await controlPlaneRepository.upsertTeam(agentPersistCtx, team, teamCompanyIds.get(team.id) ?? null);
+    await controlPlaneRepository.upsertTeam(agentPersistCtx, team, null /* DASH-64.8: COALESCE in upsertTeam SQL preserves existing company link */);
     if (postgresPersistenceAvailable() && input.workspaceId) {
-      hydratedWorkspaceUsers.add(workspaceUserKey(input.workspaceId, input.userId));
+      // DASH-64.8: hydratedWorkspaceUsers gone — no-op.
     }
 
     // DASH-64.2: heartbeat write is now unconditional — the repository's
@@ -3375,10 +3306,9 @@ export const controlPlaneStore = {
     // DASH-64.3: spendEntries / budgetAlerts Maps gone; the repository
     // owns these too. __resetRepositoryInMemoryStateForTests() above
     // already clears the spend/alert buckets.
-    teamWorkspaceIds.clear();
-    teamCompanyIds.clear();
-    companyTenantWorkspaceIds.clear();
-    hydratedWorkspaceUsers.clear();
+    // DASH-64.8: derivative index Maps + hydratedWorkspaceUsers gone;
+    // the repository's __resetRepositoryInMemoryStateForTests() above
+    // clears all entity state. Nothing else lives in-memory here.
   },
 };
 

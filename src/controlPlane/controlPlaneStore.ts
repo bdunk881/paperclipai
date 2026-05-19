@@ -301,8 +301,9 @@ const agents = new Map<string, ControlPlaneAgent>();
 // fallback for test mode lives in the repository module itself).
 // DASH-64.3: `spendEntries` and `budgetAlerts` Maps removed for the
 // same reason — repository is the single source of truth.
-// allowlist: hybrid store; in-memory mirror of Postgres-backed data
-const executions = new Map<string, ControlPlaneExecution>();
+// DASH-64.4: `executions` Map removed. Reads/writes route through
+// `controlPlaneRepository` (Postgres-first; in-memory fallback for
+// test mode lives in the repository module per HEL-80).
 // allowlist: hybrid store; in-memory mirror of Postgres-backed data
 const companies = new Map<string, ProvisionedCompanyRecord>();
 // allowlist: hybrid store; in-memory mirror of Postgres-backed data
@@ -367,27 +368,7 @@ type PersistedAgentRow = {
   updated_at: Date | string;
 };
 
-type PersistedExecutionRow = {
-  id: string;
-  workspace_id: string;
-  user_id: string;
-  team_id: string;
-  agent_id: string;
-  source_run_id: string;
-  source_workflow_step_id: string;
-  source_workflow_step_name: string;
-  task_id: string | null;
-  status: ControlPlaneExecution["status"];
-  applied_skills: unknown;
-  metadata: unknown;
-  summary: string | null;
-  cost_usd: number | string | null;
-  requested_at: Date | string;
-  started_at: Date | string | null;
-  completed_at: Date | string | null;
-  last_heartbeat_at: Date | string | null;
-  restart_count: number;
-};
+// DASH-64.4: PersistedExecutionRow lives in controlPlaneRepository now.
 
 type PersistedProvisionedCompanyRow = {
   id: string;
@@ -670,7 +651,14 @@ async function buildMissionState(
         { teamId: team.id },
       )
     : [];
-  const teamExecutions = Array.from(executions.values()).filter((execution) => execution.teamId === team.id);
+  // DASH-64.4: executions read via repository (same workspace context
+  // as teamTasks above — teams remain in-memory until DASH-64.6).
+  const teamExecutions: ControlPlaneExecution[] = teamWorkspaceId
+    ? await controlPlaneRepository.listExecutions(
+        { workspaceId: teamWorkspaceId, userId: team.userId },
+        { teamId: team.id },
+      )
+    : [];
   // DASH-64.3: buildTeamSpendSnapshot is now async.
   const spendSnapshot = await buildTeamSpendSnapshot(team);
   const blockedTasks = teamTasks.filter((task) => task.status === "blocked");
@@ -824,12 +812,32 @@ function getAgentOwnedByUser(agentId: string, userId: string): ControlPlaneAgent
   return agent;
 }
 
-function getExecutionOwnedByUser(executionId: string, userId: string): ControlPlaneExecution | undefined {
-  const execution = executions.get(executionId);
-  if (!execution || execution.userId !== userId) {
-    return undefined;
+/**
+ * DASH-64.4: replaces the synchronous Map lookup. Returns the
+ * execution row from the repository if it exists and is owned by the
+ * caller. We try the team-resolved workspace context first (cheapest
+ * RLS scope); if no team is known (the legacy code path used to
+ * bypass team checks for execution lookups), we fall back to the
+ * cross-workspace SECURITY DEFINER helper.
+ */
+async function getExecutionOwnedByUser(
+  executionId: string,
+  userId: string,
+  knownTeamId?: string,
+): Promise<ControlPlaneExecution | undefined> {
+  if (knownTeamId) {
+    const ctx = await workspaceContextForTeam(knownTeamId, userId);
+    if (ctx) {
+      const execution = await controlPlaneRepository.getExecution(ctx, executionId);
+      if (execution && execution.userId === userId) {
+        return execution;
+      }
+    }
   }
-  return execution;
+  // Cross-workspace lookup (test mode + legacy callers without a team
+  // in hand). Production RLS makes the workspace path the common case.
+  const all = await controlPlaneRepository.listAllExecutionsForUser(userId);
+  return all.find((execution) => execution.id === executionId);
 }
 
 function hydrateTeam(row: PersistedTeamRow): ControlPlaneTeam {
@@ -887,31 +895,9 @@ function hydrateAgent(row: PersistedAgentRow): ControlPlaneAgent {
   };
 }
 
-function hydrateExecution(row: PersistedExecutionRow): ControlPlaneExecution {
-  teamWorkspaceIds.set(row.team_id, row.workspace_id);
-  return {
-    id: row.id,
-    teamId: row.team_id,
-    agentId: row.agent_id,
-    userId: row.user_id,
-    sourceRunId: row.source_run_id,
-    sourceWorkflowStepId: row.source_workflow_step_id,
-    sourceWorkflowStepName: row.source_workflow_step_name,
-    taskId: row.task_id ?? undefined,
-    status: row.status,
-    appliedSkills: normalizeStringArray(row.applied_skills),
-    metadata: row.metadata && typeof row.metadata === "object" && !Array.isArray(row.metadata)
-      ? (row.metadata as Record<string, unknown>)
-      : undefined,
-    summary: row.summary ?? undefined,
-    costUsd: row.cost_usd === null ? undefined : toNumber(row.cost_usd),
-    requestedAt: toIso(row.requested_at) ?? nowIso(),
-    startedAt: toIso(row.started_at),
-    completedAt: toIso(row.completed_at),
-    lastHeartbeatAt: toIso(row.last_heartbeat_at),
-    restartCount: row.restart_count,
-  };
-}
+// DASH-64.4: hydrateExecution dropped along with the executions Map.
+// Reading agent_executions now lives entirely in controlPlaneRepository
+// (rowToExecution there mirrors the column → field mapping).
 
 function hydrateProvisionedCompany(row: PersistedProvisionedCompanyRow): {
   company: ProvisionedCompanyRecord;
@@ -967,7 +953,10 @@ async function ensureWorkspaceHydrated(workspaceId: string | undefined, userId: 
     getPostgresPool(),
     { workspaceId: resolvedWorkspaceId, userId },
     async (client) => {
-      const [teamResult, agentResult, executionResult, companyResult] = await Promise.all([
+      // DASH-64.4: agent_executions no longer hydrates into an
+      // in-memory Map. Reads route through controlPlaneRepository on
+      // demand. Drop the SELECT from the parallel hydration block.
+      const [teamResult, agentResult, companyResult] = await Promise.all([
         client.query<PersistedTeamRow>(
           `SELECT id, workspace_id, user_id, company_id, name, description, workflow_template_id,
                   workflow_template_name, deployment_mode, status, paused_by_company_lifecycle,
@@ -983,15 +972,6 @@ async function ensureWorkspaceHydrated(workspaceId: string | undefined, userId: 
                   skills, schedule, status, paused_by_company_lifecycle, current_execution_id,
                   last_heartbeat_at, last_heartbeat_status, created_at, updated_at
              FROM agents
-            WHERE user_id = $1`,
-          [userId]
-        ),
-        client.query<PersistedExecutionRow>(
-          `SELECT id, workspace_id, user_id, team_id, agent_id, source_run_id,
-                  source_workflow_step_id, source_workflow_step_name, task_id, status,
-                  applied_skills, metadata, summary, cost_usd, requested_at, started_at,
-                  completed_at, last_heartbeat_at, restart_count
-             FROM agent_executions
             WHERE user_id = $1`,
           [userId]
         ),
@@ -1011,9 +991,6 @@ async function ensureWorkspaceHydrated(workspaceId: string | undefined, userId: 
       });
       agentResult.rows.forEach((row) => {
         agents.set(row.id, hydrateAgent(row));
-      });
-      executionResult.rows.forEach((row) => {
-        executions.set(row.id, hydrateExecution(row));
       });
       companyResult.rows.forEach((row) => {
         const { company, workspace } = hydrateProvisionedCompany(row);
@@ -1144,61 +1121,11 @@ async function upsertAgentRow(agent: ControlPlaneAgent, workspaceId: string, cli
   );
 }
 
-async function upsertExecutionRow(
-  execution: ControlPlaneExecution,
-  workspaceId: string,
-  client?: PoolClient
-): Promise<void> {
-  await (client ?? getPostgresPool()).query(
-    `INSERT INTO agent_executions (
-       id, workspace_id, user_id, team_id, agent_id, source_run_id, source_workflow_step_id,
-       source_workflow_step_name, task_id, status, applied_skills, metadata, summary, cost_usd,
-       requested_at, started_at, completed_at, last_heartbeat_at, restart_count
-     ) VALUES (
-       $1, $2, $3, $4, $5, $6, $7,
-       $8, $9, $10, $11::jsonb, $12::jsonb, $13, $14,
-       $15, $16, $17, $18, $19
-     )
-     ON CONFLICT (id) DO UPDATE
-       SET team_id = EXCLUDED.team_id,
-           agent_id = EXCLUDED.agent_id,
-           source_run_id = EXCLUDED.source_run_id,
-           source_workflow_step_id = EXCLUDED.source_workflow_step_id,
-           source_workflow_step_name = EXCLUDED.source_workflow_step_name,
-           task_id = EXCLUDED.task_id,
-           status = EXCLUDED.status,
-           applied_skills = EXCLUDED.applied_skills,
-           metadata = EXCLUDED.metadata,
-           summary = EXCLUDED.summary,
-           cost_usd = EXCLUDED.cost_usd,
-           requested_at = EXCLUDED.requested_at,
-           started_at = EXCLUDED.started_at,
-           completed_at = EXCLUDED.completed_at,
-           last_heartbeat_at = EXCLUDED.last_heartbeat_at,
-           restart_count = EXCLUDED.restart_count`,
-    [
-      execution.id,
-      workspaceId,
-      execution.userId,
-      execution.teamId,
-      execution.agentId,
-      execution.sourceRunId,
-      execution.sourceWorkflowStepId,
-      execution.sourceWorkflowStepName,
-      execution.taskId ?? null,
-      execution.status,
-      JSON.stringify(execution.appliedSkills),
-      execution.metadata ? JSON.stringify(execution.metadata) : null,
-      execution.summary ?? null,
-      execution.costUsd ?? null,
-      execution.requestedAt,
-      execution.startedAt ?? null,
-      execution.completedAt ?? null,
-      execution.lastHeartbeatAt ?? null,
-      execution.restartCount,
-    ]
-  );
-}
+// DASH-64.4: upsertExecutionRow moved to controlPlaneRepository.
+// Store-level callers (startAgentExecution, finalizeAgentExecution,
+// recordHeartbeat, updateAgentLifecycle, updateAgentSkills,
+// updateExecutionLifecycle, pauseExecutionForBudget) now invoke
+// `controlPlaneRepository.upsertExecution(ctx, execution)` instead.
 
 async function upsertProvisionedCompanyRow(input: {
   company: ProvisionedCompanyRecord;
@@ -1425,16 +1352,28 @@ async function upsertBudgetAlert(input: {
   await controlPlaneRepository.upsertBudgetAlert(ctx, alert);
 }
 
-function pauseExecutionForBudget(agentId: string, executionId?: string): void {
+async function pauseExecutionForBudget(
+  team: ControlPlaneTeam,
+  agentId: string,
+  executionId?: string,
+): Promise<void> {
   const timestamp = nowIso();
   if (executionId) {
-    const execution = executions.get(executionId);
-    if (execution && execution.status === "running") {
-      execution.status = "blocked";
-      execution.summary = execution.summary ?? "Execution halted after budget limit was reached.";
-      execution.completedAt = timestamp;
-      execution.lastHeartbeatAt = timestamp;
-      executions.set(execution.id, execution);
+    // DASH-64.4: execution now read+written via repository instead of
+    // the in-memory Map.
+    const ctx = await workspaceContextForTeam(team.id, team.userId);
+    if (ctx) {
+      const execution = await controlPlaneRepository.getExecution(ctx, executionId);
+      if (execution && execution.status === "running") {
+        const updated: ControlPlaneExecution = {
+          ...execution,
+          status: "blocked",
+          summary: execution.summary ?? "Execution halted after budget limit was reached.",
+          completedAt: timestamp,
+          lastHeartbeatAt: timestamp,
+        };
+        await controlPlaneRepository.upsertExecution(ctx, updated);
+      }
     }
   }
 
@@ -1493,26 +1432,28 @@ async function applyBudgetPolicies(team: ControlPlaneTeam, agentId: string, exec
     team.status = "paused";
     team.updatedAt = nowIso();
     teams.set(team.id, team);
-    listAgentsForTeam(team.id, team.userId).forEach((teamAgent) => {
+    const teamAgents = listAgentsForTeam(team.id, team.userId);
+    for (const teamAgent of teamAgents) {
       if (teamAgent.status === "active") {
         teamAgent.status = "paused";
         teamAgent.updatedAt = nowIso();
         if (teamAgent.id === agentId) {
-          pauseExecutionForBudget(teamAgent.id, executionId);
+          // DASH-64.4: pauseExecutionForBudget is now async (repo-backed).
+          await pauseExecutionForBudget(team, teamAgent.id, executionId);
         } else {
           agents.set(teamAgent.id, teamAgent);
         }
       }
-    });
+    }
     return;
   }
 
   if (agentSnapshot && agentSnapshot.budgetUsd > 0 && agentSnapshot.spentUsd >= agentSnapshot.budgetUsd) {
-    pauseExecutionForBudget(agentId, executionId);
+    await pauseExecutionForBudget(team, agentId, executionId);
   }
 
   if (snapshot.tools.some((toolSnapshot) => toolSnapshot.budgetUsd > 0 && toolSnapshot.spentUsd >= toolSnapshot.budgetUsd)) {
-    pauseExecutionForBudget(agentId, executionId);
+    await pauseExecutionForBudget(team, agentId, executionId);
   }
 }
 
@@ -1920,21 +1861,53 @@ export const controlPlaneStore = {
     return canAccessAgent(agent, userId, workspaceId) ? agent : undefined;
   },
 
-  listExecutions(userId: string, teamId?: string, workspaceId?: string): ControlPlaneExecution[] {
+  // DASH-64.4: listExecutions is now async — repository-backed.
+  async listExecutions(
+    userId: string,
+    teamId?: string,
+    workspaceId?: string,
+  ): Promise<ControlPlaneExecution[]> {
     const accessibleTeamIds = listAccessibleTeamIds(userId, workspaceId);
-    return Array.from(executions.values())
-      .filter((execution) => accessibleTeamIds.has(execution.teamId) && (!teamId || execution.teamId === teamId))
-      .sort((left, right) => left.requestedAt.localeCompare(right.requestedAt));
+    // Prefer the workspace-scoped repository read when a workspace is
+    // resolved (production RLS path). Otherwise fall back to the
+    // SECURITY DEFINER helper for cross-workspace observability.
+    if (workspaceId) {
+      const rows = await controlPlaneRepository.listExecutions(
+        { workspaceId, userId },
+        teamId ? { teamId } : undefined,
+      );
+      return rows.filter((execution) => accessibleTeamIds.has(execution.teamId));
+    }
+    const rows = await controlPlaneRepository.listAllExecutionsForUser(userId);
+    return rows.filter(
+      (execution) =>
+        accessibleTeamIds.has(execution.teamId) && (!teamId || execution.teamId === teamId),
+    );
   },
 
-  listAgentExecutions(agentId: string, userId: string, workspaceId?: string): ControlPlaneExecution[] {
+  // DASH-64.4: listAgentExecutions is now async — repository-backed.
+  async listAgentExecutions(
+    agentId: string,
+    userId: string,
+    workspaceId?: string,
+  ): Promise<ControlPlaneExecution[]> {
     const agent = agents.get(agentId);
     if (!canAccessAgent(agent, userId, workspaceId)) {
       return [];
     }
-    return Array.from(executions.values())
-      .filter((execution) => execution.agentId === agentId)
-      .sort((left, right) => left.requestedAt.localeCompare(right.requestedAt));
+    let resolvedWorkspaceId = workspaceId;
+    if (!resolvedWorkspaceId && agent) {
+      const teamCtx = await workspaceContextForTeam(agent.teamId, userId);
+      resolvedWorkspaceId = teamCtx?.workspaceId;
+    }
+    if (resolvedWorkspaceId) {
+      return controlPlaneRepository.listExecutions(
+        { workspaceId: resolvedWorkspaceId, userId },
+        { agentId },
+      );
+    }
+    const rows = await controlPlaneRepository.listAllExecutionsForUser(userId);
+    return rows.filter((execution) => execution.agentId === agentId);
   },
 
   // DASH-64.2: now async — repository-backed.
@@ -2213,26 +2186,41 @@ export const controlPlaneStore = {
       }
     });
 
-    if (input.action === "stop") {
-      this.listExecutions(input.userId, team.id)
-        .filter((execution) => execution.status === "queued" || execution.status === "running")
-        .forEach((execution) => {
-          execution.status = "stopped";
-          execution.completedAt = timestamp;
-          execution.lastHeartbeatAt = timestamp;
-        });
-    }
-
-    if (input.action === "restart") {
-      this.listExecutions(input.userId, team.id)
-        .filter((execution) => execution.status === "failed" || execution.status === "stopped")
-        .forEach((execution) => {
-          execution.status = "queued";
-          execution.restartCount += 1;
-          execution.completedAt = undefined;
-          execution.startedAt = undefined;
-          execution.lastHeartbeatAt = timestamp;
-        });
+    // DASH-64.4: load + mutate + persist execution rows via repository.
+    // No more in-memory Map; we compute updates on the loaded snapshot
+    // and write each back via upsertExecution.
+    const lifecycleCtx = await workspaceContextForTeam(team.id, input.userId);
+    if (lifecycleCtx && (input.action === "stop" || input.action === "restart")) {
+      const teamExecutions = await controlPlaneRepository.listExecutions(lifecycleCtx, {
+        teamId: team.id,
+      });
+      if (input.action === "stop") {
+        for (const execution of teamExecutions) {
+          if (execution.status === "queued" || execution.status === "running") {
+            const updated: ControlPlaneExecution = {
+              ...execution,
+              status: "stopped",
+              completedAt: timestamp,
+              lastHeartbeatAt: timestamp,
+            };
+            await controlPlaneRepository.upsertExecution(lifecycleCtx, updated);
+          }
+        }
+      } else {
+        for (const execution of teamExecutions) {
+          if (execution.status === "failed" || execution.status === "stopped") {
+            const updated: ControlPlaneExecution = {
+              ...execution,
+              status: "queued",
+              restartCount: execution.restartCount + 1,
+              completedAt: undefined,
+              startedAt: undefined,
+              lastHeartbeatAt: timestamp,
+            };
+            await controlPlaneRepository.upsertExecution(lifecycleCtx, updated);
+          }
+        }
+      }
     }
 
     teams.set(team.id, team);
@@ -2243,9 +2231,8 @@ export const controlPlaneStore = {
         for (const agent of this.listAgents(team.id, input.userId)) {
           await upsertAgentRow(agent, workspaceId, client);
         }
-        for (const execution of this.listExecutions(input.userId, team.id)) {
-          await upsertExecutionRow(execution, workspaceId, client);
-        }
+        // DASH-64.4: execution writes already persisted via the repo
+        // upsert loop above; no in-TX echo needed here.
       });
       hydratedWorkspaceUsers.add(workspaceUserKey(workspaceId, input.userId));
     }
@@ -2279,22 +2266,30 @@ export const controlPlaneStore = {
     agent.updatedAt = nowIso();
     agents.set(agent.id, agent);
 
-    this.listExecutions(input.userId, agent.teamId)
-      .filter((execution) => execution.agentId === agent.id && execution.status === "running")
-      .forEach((execution) => {
-        execution.appliedSkills = [...agent.skills];
-        execution.lastHeartbeatAt = nowIso();
+    // DASH-64.4: skill propagation onto live executions now flows
+    // through the repository (no more in-memory Map mutation).
+    const skillsCtx = await workspaceContextForTeam(agent.teamId, input.userId);
+    if (skillsCtx) {
+      const runningExecutions = await controlPlaneRepository.listExecutions(skillsCtx, {
+        agentId: agent.id,
+        status: "running",
       });
+      for (const execution of runningExecutions) {
+        const updated: ControlPlaneExecution = {
+          ...execution,
+          appliedSkills: [...agent.skills],
+          lastHeartbeatAt: nowIso(),
+        };
+        await controlPlaneRepository.upsertExecution(skillsCtx, updated);
+      }
+    }
 
     if (postgresPersistenceAvailable()) {
       const workspaceId = requireWorkspaceIdForPersistence(input.workspaceId);
       await withWorkspaceContext(getPostgresPool(), { workspaceId, userId: input.userId }, async (client) => {
         await upsertAgentRow(agent, workspaceId, client);
-        for (const execution of this.listExecutions(input.userId, agent.teamId).filter(
-          (candidate) => candidate.agentId === agent.id && candidate.status === "running"
-        )) {
-          await upsertExecutionRow(execution, workspaceId, client);
-        }
+        // DASH-64.4: execution skill updates already persisted via the
+        // repo upsert loop above.
       });
       hydratedWorkspaceUsers.add(workspaceUserKey(workspaceId, input.userId));
     }
@@ -2656,7 +2651,7 @@ export const controlPlaneStore = {
     }
 
     if (input.executionId) {
-      const execution = getExecutionOwnedByUser(input.executionId, input.userId);
+      const execution = await getExecutionOwnedByUser(input.executionId, input.userId, team.id);
       if (!execution || execution.teamId !== team.id || execution.agentId !== agent.id) {
         throw new Error("execution_not_found");
       }
@@ -2798,7 +2793,12 @@ export const controlPlaneStore = {
       lastHeartbeatAt: requestedAt,
       restartCount: 0,
     };
-    executions.set(execution.id, execution);
+    // DASH-64.4: persist via repository (test in-mem bucket + prod
+    // Postgres path both handled there).
+    const startCtx = await workspaceContextForTeam(team.id, input.userId);
+    if (startCtx) {
+      await controlPlaneRepository.upsertExecution(startCtx, execution);
+    }
 
     agent.currentExecutionId = execution.id;
     agent.lastHeartbeatAt = requestedAt;
@@ -2850,7 +2850,7 @@ export const controlPlaneStore = {
       await withWorkspaceContext(getPostgresPool(), { workspaceId, userId: input.userId }, async (client) => {
         await upsertTeamRow(team, workspaceId, client);
         await upsertAgentRow(agent, workspaceId, client);
-        await upsertExecutionRow(execution, workspaceId, client);
+        // DASH-64.4: execution persisted above via repo.upsertExecution.
       });
       hydratedWorkspaceUsers.add(workspaceUserKey(workspaceId, input.userId));
     }
@@ -2875,7 +2875,7 @@ export const controlPlaneStore = {
     }>;
   }): Promise<ControlPlaneExecution> {
     await ensureWorkspaceHydrated(input.workspaceId, input.userId);
-    const execution = getExecutionOwnedByUser(input.executionId, input.userId);
+    const execution = await getExecutionOwnedByUser(input.executionId, input.userId);
     if (!execution) {
       throw new Error("execution_not_found");
     }
@@ -2886,7 +2886,11 @@ export const controlPlaneStore = {
     execution.costUsd = input.costUsd;
     execution.lastHeartbeatAt = timestamp;
     execution.completedAt = timestamp;
-    executions.set(execution.id, execution);
+    // DASH-64.4: persist execution mutation via repository.
+    const finalizeCtx = await workspaceContextForTeam(execution.teamId, input.userId);
+    if (finalizeCtx) {
+      await controlPlaneRepository.upsertExecution(finalizeCtx, execution);
+    }
 
     const agent = agents.get(execution.agentId);
     if (agent) {
@@ -3003,7 +3007,7 @@ export const controlPlaneStore = {
         if (agent) {
           await upsertAgentRow(agent, workspaceId, client);
         }
-        await upsertExecutionRow(execution, workspaceId, client);
+        // DASH-64.4: execution persisted above via repo.upsertExecution.
       });
       hydratedWorkspaceUsers.add(workspaceUserKey(workspaceId, input.userId));
     }
@@ -3018,7 +3022,7 @@ export const controlPlaneStore = {
     action: Extract<ControlPlaneLifecycleAction, "restart" | "stop">;
   }): Promise<ControlPlaneExecution> {
     await ensureWorkspaceHydrated(input.workspaceId, input.userId);
-    const execution = getExecutionOwnedByUser(input.executionId, input.userId);
+    const execution = await getExecutionOwnedByUser(input.executionId, input.userId);
     if (!execution) {
       throw new Error("execution_not_found");
     }
@@ -3034,13 +3038,15 @@ export const controlPlaneStore = {
       execution.restartCount += 1;
     }
     execution.lastHeartbeatAt = timestamp;
-    executions.set(execution.id, execution);
-    if (postgresPersistenceAvailable()) {
-      const workspaceId = requireWorkspaceIdForPersistence(input.workspaceId);
-      await withWorkspaceContext(getPostgresPool(), { workspaceId, userId: input.userId }, async (client) => {
-        await upsertExecutionRow(execution, workspaceId, client);
-      });
-      hydratedWorkspaceUsers.add(workspaceUserKey(workspaceId, input.userId));
+    // DASH-64.4: execution persistence now routes entirely through the
+    // repository (Postgres for prod, in-memory bucket for tests). The
+    // previous in-TX upsertExecutionRow call is no longer needed.
+    const lifecycleCtx = await workspaceContextForTeam(execution.teamId, input.userId);
+    if (lifecycleCtx) {
+      await controlPlaneRepository.upsertExecution(lifecycleCtx, execution);
+    }
+    if (postgresPersistenceAvailable() && input.workspaceId) {
+      hydratedWorkspaceUsers.add(workspaceUserKey(input.workspaceId, input.userId));
     }
     return execution;
   },
@@ -3074,7 +3080,7 @@ export const controlPlaneStore = {
     }
 
     let execution = input.executionId
-      ? getExecutionOwnedByUser(input.executionId, input.userId)
+      ? await getExecutionOwnedByUser(input.executionId, input.userId, team.id)
       : undefined;
 
     if (input.executionId) {
@@ -3093,7 +3099,13 @@ export const controlPlaneStore = {
 
     if (execution) {
       execution.lastHeartbeatAt = nowIso();
-      executions.set(execution.id, execution);
+      // DASH-64.4: persist execution heartbeat via repository (in-memory
+      // bucket in test, Postgres in prod). The in-TX upsertExecutionRow
+      // call below is removed since the repo already wrote it.
+      const heartbeatExecCtx = await workspaceContextForTeam(execution.teamId, input.userId);
+      if (heartbeatExecCtx) {
+        await controlPlaneRepository.upsertExecution(heartbeatExecCtx, execution);
+      }
     }
 
     const timestamp = nowIso();
@@ -3226,9 +3238,8 @@ export const controlPlaneStore = {
       await withWorkspaceContext(getPostgresPool(), { workspaceId, userId: input.userId }, async (client) => {
         await upsertTeamRow(team, workspaceId, client);
         await upsertAgentRow(agent, workspaceId, client);
-        if (execution) {
-          await upsertExecutionRow(execution, workspaceId, client);
-        }
+        // DASH-64.4: execution write already happened above via repo
+        // upsertExecution (no in-TX echo needed).
       });
       hydratedWorkspaceUsers.add(workspaceUserKey(workspaceId, input.userId));
     }
@@ -3293,7 +3304,7 @@ export const controlPlaneStore = {
     // Both — plus future spend/budget-alert Maps — are cleared via the
     // repository's __resetRepositoryInMemoryStateForTests().
     __resetRepositoryInMemoryStateForTests();
-    executions.clear();
+    // DASH-64.4: executions Map gone; cleared via the repository reset.
     companies.clear();
     companyWorkspaces.clear();
     companySecretBindings.clear();

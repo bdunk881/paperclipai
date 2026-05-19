@@ -224,7 +224,8 @@ export async function buildObservabilityResponse(
   const agentMap = new Map(agents.map((agent) => [agent.id, agent]));
   const tasks = await controlPlaneStore.listTasks(userId);
   const taskMap = new Map(tasks.map((task) => [task.id, task]));
-  const executions = controlPlaneStore.listExecutions(userId);
+  // DASH-64.4: listExecutions is async now (repository-backed).
+  const executions = await controlPlaneStore.listExecutions(userId);
   const executionByStep = new Map(
     executions.map((execution) => [`${execution.sourceRunId}:${execution.sourceWorkflowStepId}`, execution] as const)
   );

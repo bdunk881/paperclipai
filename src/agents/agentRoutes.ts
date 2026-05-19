@@ -72,39 +72,43 @@ router.get("/", async (req: WorkspaceAwareRequest, res) => {
       .map((team) => [team.id, team]),
   );
 
-  const inMemoryAgents = controlPlaneStore
-    .listAllAgents(context.userId, context.workspaceId)
-    .map((agent) => {
-      const team = teams.get(agent.teamId);
-      const executions = controlPlaneStore.listAgentExecutions(
-        agent.id,
-        context.userId,
-        context.workspaceId,
-      );
-      const lastExecution = executions.at(-1);
-      return {
-        id: agent.id,
-        userId: agent.userId,
-        name: agent.name,
-        description: team?.description ?? null,
-        roleKey: agent.roleKey,
-        model: agent.model ?? null,
-        instructions: agent.instructions,
-        status: toDashboardAgentStatus(agent.status, agent.lastHeartbeatStatus),
-        budgetMonthlyUsd: agent.budgetMonthlyUsd,
-        metadata: {
-          teamId: agent.teamId,
-          teamName: team?.name ?? null,
-          reportingToAgentId: agent.reportingToAgentId ?? null,
-          workflowStepId: agent.workflowStepId ?? null,
-          workflowStepKind: agent.workflowStepKind ?? null,
-        },
-        lastHeartbeatAt: agent.lastHeartbeatAt ?? null,
-        lastRunAt: lastExecution?.completedAt ?? lastExecution?.startedAt ?? null,
-        createdAt: agent.createdAt,
-        updatedAt: agent.updatedAt,
-      };
-    });
+  // DASH-64.4: listAgentExecutions is async now — Promise.all the
+  // per-agent enrichment instead of mapping synchronously.
+  const inMemoryAgents = await Promise.all(
+    controlPlaneStore
+      .listAllAgents(context.userId, context.workspaceId)
+      .map(async (agent) => {
+        const team = teams.get(agent.teamId);
+        const executions = await controlPlaneStore.listAgentExecutions(
+          agent.id,
+          context.userId,
+          context.workspaceId,
+        );
+        const lastExecution = executions.at(-1);
+        return {
+          id: agent.id,
+          userId: agent.userId,
+          name: agent.name,
+          description: team?.description ?? null,
+          roleKey: agent.roleKey,
+          model: agent.model ?? null,
+          instructions: agent.instructions,
+          status: toDashboardAgentStatus(agent.status, agent.lastHeartbeatStatus),
+          budgetMonthlyUsd: agent.budgetMonthlyUsd,
+          metadata: {
+            teamId: agent.teamId,
+            teamName: team?.name ?? null,
+            reportingToAgentId: agent.reportingToAgentId ?? null,
+            workflowStepId: agent.workflowStepId ?? null,
+            workflowStepKind: agent.workflowStepKind ?? null,
+          },
+          lastHeartbeatAt: agent.lastHeartbeatAt ?? null,
+          lastRunAt: lastExecution?.completedAt ?? lastExecution?.startedAt ?? null,
+          createdAt: agent.createdAt,
+          updatedAt: agent.updatedAt,
+        };
+      }),
+  );
 
   // DASH-27: hiring-plan confirm writes agents directly to Postgres
   // via withWorkspaceContext + raw INSERT — they never land in the
@@ -295,7 +299,7 @@ router.get("/:id/heartbeat", async (req: WorkspaceAwareRequest, res) => {
   }
 });
 
-router.get("/:id/runs", (req: WorkspaceAwareRequest, res) => {
+router.get("/:id/runs", async (req: WorkspaceAwareRequest, res) => {
   const context = resolveRequestContext(req);
   if (!context) {
     res.status(401).json({ error: "Authenticated user required" });
@@ -308,22 +312,32 @@ router.get("/:id/runs", (req: WorkspaceAwareRequest, res) => {
     return;
   }
 
-  const runs = controlPlaneStore.listAgentExecutions(agent.id, context.userId, context.workspaceId).map((execution) => ({
-    id: execution.id,
-    agentId: execution.agentId,
-    userId: execution.userId,
-    runId: execution.sourceRunId,
-    status: toDashboardRunStatus(execution.status),
-    summary: execution.summary ?? null,
-    tokenUsage: 0,
-    costUsd: execution.costUsd ?? 0,
-    startedAt: execution.startedAt ?? execution.requestedAt,
-    completedAt: execution.completedAt ?? null,
-    createdByRunId: execution.sourceRunId,
-    createdAt: execution.requestedAt,
-  }));
-
-  res.json({ runs, total: runs.length });
+  try {
+    // DASH-64.4: listAgentExecutions is now async (repository-backed).
+    const executions = await controlPlaneStore.listAgentExecutions(
+      agent.id,
+      context.userId,
+      context.workspaceId,
+    );
+    const runs = executions.map((execution) => ({
+      id: execution.id,
+      agentId: execution.agentId,
+      userId: execution.userId,
+      runId: execution.sourceRunId,
+      status: toDashboardRunStatus(execution.status),
+      summary: execution.summary ?? null,
+      tokenUsage: 0,
+      costUsd: execution.costUsd ?? 0,
+      startedAt: execution.startedAt ?? execution.requestedAt,
+      completedAt: execution.completedAt ?? null,
+      createdByRunId: execution.sourceRunId,
+      createdAt: execution.requestedAt,
+    }));
+    res.json({ runs, total: runs.length });
+  } catch (err) {
+    console.warn(`[agentRoutes] /:id/runs failed: ${(err as Error).message}`);
+    res.status(500).json({ error: "agent_runs_unavailable" });
+  }
 });
 
 router.get("/:id/budget", async (req: WorkspaceAwareRequest, res) => {

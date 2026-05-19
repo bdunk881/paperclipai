@@ -113,11 +113,13 @@ router.post("/generate", requireRunId, async (req: AuthenticatedRequest, res) =>
       }
 
       // DASH-64.1: listTasks is now async (repository-backed).
+      // DASH-64.4: listExecutions is now async (repository-backed).
       const tasks = await controlPlaneStore.listTasks(userId, teamId);
+      const executions = await controlPlaneStore.listExecutions(userId, teamId);
       generated = createBoardMemoReport({
         team,
         tasks,
-        executions: controlPlaneStore.listExecutions(userId, teamId),
+        executions,
         agents: controlPlaneStore.listAgents(teamId, userId),
         window,
         template,

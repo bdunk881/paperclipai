@@ -70,7 +70,8 @@ describe("controlPlaneStore workspace-scoped reads", () => {
     expect(controlPlaneStore.listAgents(provisioned.team.id, "ceo-user", "workspace-shared")).toEqual([
       expect.objectContaining({ id: started.agent.id }),
     ]);
-    expect(controlPlaneStore.listExecutions("ceo-user", provisioned.team.id, "workspace-shared")).toEqual([
+    // DASH-64.4: listExecutions is now async (repository-backed).
+    expect(await controlPlaneStore.listExecutions("ceo-user", provisioned.team.id, "workspace-shared")).toEqual([
       expect.objectContaining({ id: started.execution.id }),
     ]);
     // DASH-64.1: listTasks is now async (repository-backed).

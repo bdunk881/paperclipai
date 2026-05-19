@@ -4,7 +4,7 @@
  */
 
 import { getProvider, PROVIDER_MODELS } from "./index";
-import { LLMProviderConfig } from "./types";
+import { AgentTool, LLMProviderConfig } from "./types";
 
 // ---------------------------------------------------------------------------
 // Mock all four provider SDKs
@@ -29,6 +29,7 @@ jest.mock("@anthropic-ai/sdk", () => {
     default: jest.fn().mockImplementation(() => ({
       messages: {
         create: jest.fn(),
+        stream: jest.fn(),
       },
     })),
   };
@@ -113,7 +114,7 @@ function openaiInstance() {
 
 function anthropicInstance() {
   return MockAnthropic.mock.results[MockAnthropic.mock.results.length - 1]?.value as {
-    messages: { create: jest.Mock };
+    messages: { create: jest.Mock; stream: jest.Mock };
   };
 }
 
@@ -1097,5 +1098,324 @@ describe("responseFormat — native JSON mode per provider", () => {
       }),
       expect.anything(),
     );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Anthropic: missing API key guard
+// ---------------------------------------------------------------------------
+
+describe("Anthropic adapter — missing API key", () => {
+  it("throws synchronously when neither apiKey nor credentials.apiKey is present", () => {
+    expect(() =>
+      getProvider({ provider: "anthropic", model: "claude-haiku-4-5-20251001" } as LLMProviderConfig),
+    ).toThrow(/missing API key/);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Anthropic streaming path (HEL-145) — onText callback
+// ---------------------------------------------------------------------------
+
+describe("Anthropic streaming path (onText)", () => {
+  const config: LLMProviderConfig = {
+    provider: "anthropic",
+    model: "claude-sonnet-4-6",
+    apiKey: "sk-ant-test",
+  };
+
+  it("calls messages.stream (not create) when onText is provided, forwards deltas, returns final text", async () => {
+    const received: string[] = [];
+    const provider = getProvider({
+      ...config,
+      onText: (delta) => received.push(delta),
+    });
+
+    const mockStream: { on: jest.Mock; finalMessage: jest.Mock } = {
+      on: jest.fn().mockImplementation((event: string, cb: (d: string) => void) => {
+        if (event === "text") cb("Hello, ");
+        return mockStream;
+      }),
+      finalMessage: jest.fn().mockResolvedValue({
+        content: [{ type: "text", text: "Hello, world" }],
+        usage: { input_tokens: 12, output_tokens: 5 },
+      }),
+    };
+    anthropicInstance().messages.stream.mockReturnValue(mockStream);
+
+    const result = await provider("Say hello");
+
+    expect(anthropicInstance().messages.stream).toHaveBeenCalled();
+    expect(anthropicInstance().messages.create).not.toHaveBeenCalled();
+    expect(received).toEqual(["Hello, "]);
+    expect(result.text).toBe("Hello, world");
+    expect(result.usage).toEqual({ promptTokens: 12, completionTokens: 5 });
+  });
+
+  it("swallows exceptions thrown by the onText callback and still resolves", async () => {
+    const provider = getProvider({
+      ...config,
+      onText: () => {
+        throw new Error("UI render crash");
+      },
+    });
+
+    const mockStream: { on: jest.Mock; finalMessage: jest.Mock } = {
+      on: jest.fn().mockImplementation((event: string, cb: (d: string) => void) => {
+        if (event === "text") cb("chunk");
+        return mockStream;
+      }),
+      finalMessage: jest.fn().mockResolvedValue({
+        content: [{ type: "text", text: "chunk" }],
+        usage: { input_tokens: 5, output_tokens: 2 },
+      }),
+    };
+    anthropicInstance().messages.stream.mockReturnValue(mockStream);
+
+    await expect(provider("Prompt")).resolves.toMatchObject({ text: "chunk" });
+  });
+
+  it("wraps stream errors with a descriptive message", async () => {
+    const provider = getProvider({
+      ...config,
+      onText: jest.fn() as (delta: string, accumulated: string) => void,
+    });
+
+    const mockStream = {
+      on: jest.fn().mockReturnThis(),
+      finalMessage: jest.fn().mockRejectedValue(new Error("connection reset")),
+    };
+    anthropicInstance().messages.stream.mockReturnValue(mockStream);
+
+    await expect(provider("Prompt")).rejects.toThrow("Anthropic API error: connection reset");
+  });
+
+  it("surfaces cache_read_input_tokens from the stream's final message", async () => {
+    const provider = getProvider({
+      ...config,
+      systemPrompt: "You are helpful.",
+      cacheSystemPrompt: true,
+      onText: jest.fn() as (delta: string, accumulated: string) => void,
+    });
+
+    const mockStream = {
+      on: jest.fn().mockReturnThis(),
+      finalMessage: jest.fn().mockResolvedValue({
+        content: [{ type: "text", text: "ok" }],
+        usage: { input_tokens: 100, output_tokens: 10, cache_read_input_tokens: 800 },
+      }),
+    };
+    anthropicInstance().messages.stream.mockReturnValue(mockStream);
+
+    const result = await provider("Prompt");
+    expect(result.usage).toEqual({ promptTokens: 100, completionTokens: 10, cachedPromptTokens: 800 });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Anthropic tool loop (DASH-22)
+// ---------------------------------------------------------------------------
+
+describe("Anthropic tool loop (DASH-22)", () => {
+  const weatherTool: AgentTool = {
+    name: "get_weather",
+    description: "Get the weather for a city",
+    inputSchema: { type: "object", properties: { city: { type: "string" } }, required: ["city"] },
+    handler: jest.fn().mockResolvedValue("Sunny, 72°F"),
+  };
+
+  const config: LLMProviderConfig = {
+    provider: "anthropic",
+    model: "claude-opus-4-6",
+    apiKey: "sk-ant-test",
+    tools: [weatherTool],
+  };
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    // Restore the default resolved value for the shared weather tool handler
+    (weatherTool.handler as jest.Mock).mockResolvedValue("Sunny, 72°F");
+  });
+
+  it("invokes the handler and feeds tool_result back, then returns the final assistant text", async () => {
+    const provider = getProvider(config);
+    anthropicInstance().messages.create
+      .mockResolvedValueOnce({
+        stop_reason: "tool_use",
+        content: [{ type: "tool_use", id: "tu_001", name: "get_weather", input: { city: "NYC" } }],
+        usage: { input_tokens: 20, output_tokens: 10 },
+      })
+      .mockResolvedValueOnce({
+        stop_reason: "end_turn",
+        content: [{ type: "text", text: "The weather in NYC is sunny." }],
+        usage: { input_tokens: 30, output_tokens: 8 },
+      });
+
+    const result = await provider("What is the weather in NYC?");
+
+    expect(weatherTool.handler).toHaveBeenCalledWith({ city: "NYC" });
+    expect(result.text).toBe("The weather in NYC is sunny.");
+    expect(result.usage?.promptTokens).toBe(50);
+    expect(result.usage?.completionTokens).toBe(18);
+  });
+
+  it("accumulates cachedPromptTokens from tool loop turns", async () => {
+    const provider = getProvider({ ...config, cacheSystemPrompt: true, systemPrompt: "You are helpful." });
+    anthropicInstance().messages.create
+      .mockResolvedValueOnce({
+        stop_reason: "tool_use",
+        content: [{ type: "tool_use", id: "tu_010", name: "get_weather", input: { city: "LA" } }],
+        usage: { input_tokens: 100, output_tokens: 5, cache_read_input_tokens: 90 },
+      })
+      .mockResolvedValueOnce({
+        stop_reason: "end_turn",
+        content: [{ type: "text", text: "Sunny in LA." }],
+        usage: { input_tokens: 20, output_tokens: 5, cache_read_input_tokens: 18 },
+      });
+
+    const result = await provider("Weather in LA?");
+    expect(result.usage?.cachedPromptTokens).toBe(108); // 90 + 18
+  });
+
+  it("tags the last tool with cache_control when cachingEnabled is true", async () => {
+    const provider = getProvider({ ...config, cacheSystemPrompt: true, systemPrompt: "You are helpful." });
+    anthropicInstance().messages.create
+      .mockResolvedValueOnce({
+        stop_reason: "end_turn",
+        content: [{ type: "text", text: "done" }],
+        usage: { input_tokens: 5, output_tokens: 2 },
+      });
+
+    await provider("Prompt");
+
+    const callArg = anthropicInstance().messages.create.mock.calls[0]?.[0] as Record<string, unknown>;
+    const tools = callArg.tools as Array<Record<string, unknown>>;
+    const lastTool = tools[tools.length - 1];
+    expect(lastTool?.cache_control).toEqual({ type: "ephemeral" });
+  });
+
+  it("returns an is_error tool_result when the called tool is not registered", async () => {
+    const provider = getProvider(config);
+    anthropicInstance().messages.create
+      .mockResolvedValueOnce({
+        stop_reason: "tool_use",
+        content: [{ type: "tool_use", id: "tu_002", name: "unknown_tool", input: {} }],
+        usage: { input_tokens: 5, output_tokens: 3 },
+      })
+      .mockResolvedValueOnce({
+        stop_reason: "end_turn",
+        content: [{ type: "text", text: "I could not find that tool." }],
+        usage: { input_tokens: 8, output_tokens: 5 },
+      });
+
+    const result = await provider("Use the unknown tool");
+    expect(result.text).toContain("could not find");
+
+    const secondCallMessages = anthropicInstance().messages.create.mock.calls[1]?.[0].messages as Array<{
+      role: string;
+      content: unknown;
+    }>;
+    // The tool_result turn is the last user-role message (array content, not the string prompt)
+    const userMsgs = secondCallMessages?.filter((m: { role: string; content: unknown }) => m.role === "user") ?? [];
+    const toolResultTurn = userMsgs[userMsgs.length - 1];
+    expect(toolResultTurn?.content).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ is_error: true, tool_use_id: "tu_002" }),
+      ]),
+    );
+  });
+
+  it("returns an is_error tool_result when the handler throws", async () => {
+    const failingTool: AgentTool = {
+      ...weatherTool,
+      handler: jest.fn().mockRejectedValue(new Error("upstream timeout")),
+    };
+    const provider = getProvider({ ...config, tools: [failingTool] });
+    anthropicInstance().messages.create
+      .mockResolvedValueOnce({
+        stop_reason: "tool_use",
+        content: [{ type: "tool_use", id: "tu_003", name: "get_weather", input: { city: "LA" } }],
+        usage: { input_tokens: 5, output_tokens: 3 },
+      })
+      .mockResolvedValueOnce({
+        stop_reason: "end_turn",
+        content: [{ type: "text", text: "Encountered an error." }],
+        usage: { input_tokens: 8, output_tokens: 5 },
+      });
+
+    const result = await provider("Get LA weather");
+    expect(result.text).toBe("Encountered an error.");
+
+    const secondCall = anthropicInstance().messages.create.mock.calls[1]?.[0].messages as Array<{
+      role: string;
+      content: unknown;
+    }>;
+    // The tool_result turn is the last user-role message (array content, not the string prompt)
+    const userMsgsErr = secondCall?.filter((m: { role: string; content: unknown }) => m.role === "user") ?? [];
+    const toolResultTurn = userMsgsErr[userMsgsErr.length - 1];
+    expect(toolResultTurn?.content).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ is_error: true, tool_use_id: "tu_003" }),
+      ]),
+    );
+  });
+
+  it("throws with a descriptive message when messages.create errors during the loop", async () => {
+    const provider = getProvider(config);
+    anthropicInstance().messages.create.mockRejectedValueOnce(new Error("529 overloaded"));
+
+    await expect(provider("Prompt")).rejects.toThrow("Anthropic API error: 529 overloaded");
+  });
+
+  it("adds a wrap-up turn when maxToolIterations is hit and returns text with [interrupted] suffix", async () => {
+    const provider = getProvider({ ...config, maxToolIterations: 1 });
+    anthropicInstance().messages.create
+      .mockResolvedValueOnce({
+        stop_reason: "tool_use",
+        content: [{ type: "tool_use", id: "tu_004", name: "get_weather", input: {} }],
+        usage: { input_tokens: 5, output_tokens: 3 },
+      })
+      .mockResolvedValueOnce({
+        stop_reason: "end_turn",
+        content: [{ type: "text", text: "I've done what I can." }],
+        usage: { input_tokens: 10, output_tokens: 4 },
+      });
+
+    const result = await provider("Prompt");
+    expect(result.text).toContain("[interrupted: max iterations]");
+    expect(anthropicInstance().messages.create).toHaveBeenCalledTimes(2);
+  });
+
+  it("accumulates cached tokens from the wrap-up call", async () => {
+    const provider = getProvider({ ...config, maxToolIterations: 1, systemPrompt: "sys", cacheSystemPrompt: true });
+    anthropicInstance().messages.create
+      .mockResolvedValueOnce({
+        stop_reason: "tool_use",
+        content: [{ type: "tool_use", id: "tu_011", name: "get_weather", input: {} }],
+        usage: { input_tokens: 5, output_tokens: 3, cache_read_input_tokens: 4 },
+      })
+      .mockResolvedValueOnce({
+        stop_reason: "end_turn",
+        content: [{ type: "text", text: "Summary." }],
+        usage: { input_tokens: 10, output_tokens: 4, cache_read_input_tokens: 9 },
+      });
+
+    const result = await provider("Prompt");
+    expect(result.usage?.cachedPromptTokens).toBe(13); // 4 + 9
+  });
+
+  it("returns the fallback '[interrupted: max iterations]' message when the wrap-up call itself throws", async () => {
+    const provider = getProvider({ ...config, maxToolIterations: 1 });
+    anthropicInstance().messages.create
+      .mockResolvedValueOnce({
+        stop_reason: "tool_use",
+        content: [{ type: "tool_use", id: "tu_005", name: "get_weather", input: {} }],
+        usage: { input_tokens: 5, output_tokens: 3 },
+      })
+      .mockRejectedValueOnce(new Error("overloaded during wrap-up"));
+
+    const result = await provider("Prompt");
+    expect(result.text).toBe("[interrupted: max iterations]");
+    expect(result.usage?.promptTokens).toBe(5);
   });
 });

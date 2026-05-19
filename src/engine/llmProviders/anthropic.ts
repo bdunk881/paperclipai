@@ -103,6 +103,20 @@ export function createAnthropicProvider(config: LLMProviderConfig): LLMProvider 
     return typeof raw === "number" && raw > 0 ? raw : undefined;
   }
 
+  /**
+   * Roll Anthropic's three input-token buckets into a single TOTAL
+   * count that matches the legacy `promptTokens` semantics. Cost
+   * loggers (missionRoutes, stepHandlers, hosted-free accounting) read
+   * only this field; undercounting on cache hits would silently
+   * understate spend. Cache-aware billing subtracts the cached*
+   * sub-buckets to apply discounted rates (see types.ts contract).
+   */
+  function totalPromptTokens(usage: Anthropic.Messages.Usage): number {
+    const cached = readCachedTokens(usage) ?? 0;
+    const creation = readCacheCreationTokens(usage) ?? 0;
+    return usage.input_tokens + cached + creation;
+  }
+
   return async (prompt: string): Promise<LLMResponse> => {
     // Agentic tool-loop path (DASH-22). When `tools` is set the
     // model can emit tool_use blocks; we invoke the matching handler
@@ -154,7 +168,7 @@ export function createAnthropicProvider(config: LLMProviderConfig): LLMProvider 
         });
         const final = await stream.finalMessage();
         const usage = {
-          promptTokens: final.usage.input_tokens,
+          promptTokens: totalPromptTokens(final.usage),
           completionTokens: final.usage.output_tokens,
           cachedPromptTokens: readCachedTokens(final.usage),
           cachedCreationTokens: readCacheCreationTokens(final.usage),
@@ -204,7 +218,7 @@ export function createAnthropicProvider(config: LLMProviderConfig): LLMProvider 
     }
 
     const usage = {
-      promptTokens: response.usage.input_tokens,
+      promptTokens: totalPromptTokens(response.usage),
       completionTokens: response.usage.output_tokens,
       cachedPromptTokens: readCachedTokens(response.usage),
       cachedCreationTokens: readCacheCreationTokens(response.usage),
@@ -322,18 +336,21 @@ async function runAnthropicToolLoop(args: {
       throw new Error(`Anthropic API error: ${msg}`);
     }
 
-    cumulativePromptTokens += response.usage.input_tokens;
-    cumulativeCompletionTokens += response.usage.output_tokens;
+    // HEL-145 contract: promptTokens is the TOTAL input (uncached +
+    // cache_read + cache_creation) so legacy spend loggers stay correct.
+    // The cached* sub-buckets are tracked separately for cache-aware
+    // billing.
     const cachedThisTurn = (response.usage as { cache_read_input_tokens?: number | null })
       .cache_read_input_tokens;
-    if (typeof cachedThisTurn === "number" && cachedThisTurn > 0) {
-      cumulativeCachedTokens += cachedThisTurn;
-    }
     const cacheCreationThisTurn = (response.usage as { cache_creation_input_tokens?: number | null })
       .cache_creation_input_tokens;
-    if (typeof cacheCreationThisTurn === "number" && cacheCreationThisTurn > 0) {
-      cumulativeCacheCreationTokens += cacheCreationThisTurn;
-    }
+    const cachedAdd = typeof cachedThisTurn === "number" && cachedThisTurn > 0 ? cachedThisTurn : 0;
+    const creationAdd =
+      typeof cacheCreationThisTurn === "number" && cacheCreationThisTurn > 0 ? cacheCreationThisTurn : 0;
+    cumulativePromptTokens += response.usage.input_tokens + cachedAdd + creationAdd;
+    cumulativeCompletionTokens += response.usage.output_tokens;
+    cumulativeCachedTokens += cachedAdd;
+    cumulativeCacheCreationTokens += creationAdd;
 
     // Always append the assistant turn so the next loop iteration
     // (or the final return) has the full transcript.
@@ -414,18 +431,17 @@ async function runAnthropicToolLoop(args: {
         },
       ],
     });
-    cumulativePromptTokens += finalTurn.usage.input_tokens;
-    cumulativeCompletionTokens += finalTurn.usage.output_tokens;
     const cachedFinal = (finalTurn.usage as { cache_read_input_tokens?: number | null })
       .cache_read_input_tokens;
-    if (typeof cachedFinal === "number" && cachedFinal > 0) {
-      cumulativeCachedTokens += cachedFinal;
-    }
     const cacheCreationFinal = (finalTurn.usage as { cache_creation_input_tokens?: number | null })
       .cache_creation_input_tokens;
-    if (typeof cacheCreationFinal === "number" && cacheCreationFinal > 0) {
-      cumulativeCacheCreationTokens += cacheCreationFinal;
-    }
+    const cachedAddFinal = typeof cachedFinal === "number" && cachedFinal > 0 ? cachedFinal : 0;
+    const creationAddFinal =
+      typeof cacheCreationFinal === "number" && cacheCreationFinal > 0 ? cacheCreationFinal : 0;
+    cumulativePromptTokens += finalTurn.usage.input_tokens + cachedAddFinal + creationAddFinal;
+    cumulativeCompletionTokens += finalTurn.usage.output_tokens;
+    cumulativeCachedTokens += cachedAddFinal;
+    cumulativeCacheCreationTokens += creationAddFinal;
     const text =
       extractAssistantText(finalTurn.content) ||
       "[interrupted: max iterations]";

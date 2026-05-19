@@ -556,10 +556,13 @@ describe("Anthropic adapter", () => {
 
       const result = await provider("Reach out");
 
+      // HEL-145 contract: promptTokens is TOTAL input (uncached + cached + cache_creation).
+      // input_tokens (100) + cache_read_input_tokens (4000) = 4100.
       expect(result.usage).toEqual({
-        promptTokens: 100,
+        promptTokens: 4100,
         completionTokens: 20,
         cachedPromptTokens: 4000,
+        cachedCreationTokens: undefined,
       });
     });
 
@@ -599,8 +602,9 @@ describe("Anthropic adapter", () => {
 
       const result = await provider("Reach out");
 
+      // input_tokens (50) + cache_creation_input_tokens (3000) = 3050.
       expect(result.usage).toEqual({
-        promptTokens: 50,
+        promptTokens: 3050,
         completionTokens: 10,
         cachedPromptTokens: undefined,
         cachedCreationTokens: 3000,
@@ -628,8 +632,9 @@ describe("Anthropic adapter", () => {
 
       const result = await provider("Reach out");
 
+      // input_tokens (100) + cache_read (4000) + cache_creation (500) = 4600.
       expect(result.usage).toEqual({
-        promptTokens: 100,
+        promptTokens: 4600,
         completionTokens: 20,
         cachedPromptTokens: 4000,
         cachedCreationTokens: 500,
@@ -688,7 +693,11 @@ describe("OpenAI-compat HEL-145 system prompt wiring", () => {
   // subfield. The provider-agnostic contract is additive (uncached +
   // cached), so promptTokens must be the uncached remainder. Without
   // this, workspaces on OpenAI lose cached-rate attribution.
-  it("splits OpenAI prompt_tokens into uncached + cachedPromptTokens", async () => {
+  //
+  // HEL-145 contract iteration 2 (Codex on PR #898): promptTokens is
+  // the TOTAL (matches legacy spend-logger expectations) and
+  // cachedPromptTokens is the cached SUB-bucket. No subtraction.
+  it("surfaces OpenAI cached_tokens as a sub-bucket of total promptTokens", async () => {
     const provider = getProvider(config);
     openaiInstance().chat.completions.create.mockResolvedValueOnce({
       choices: [{ message: { content: "ok" } }],
@@ -702,9 +711,9 @@ describe("OpenAI-compat HEL-145 system prompt wiring", () => {
     const result = await provider("Hi");
 
     expect(result.usage).toEqual({
-      promptTokens: 500, // 1500 - 1000
+      promptTokens: 1500, // TOTAL, matches OpenAI's prompt_tokens unchanged
       completionTokens: 50,
-      cachedPromptTokens: 1000,
+      cachedPromptTokens: 1000, // sub-bucket of the 1500 above
     });
   });
 
@@ -1306,7 +1315,14 @@ describe("Anthropic streaming path (onText)", () => {
     anthropicInstance().messages.stream.mockReturnValue(mockStream);
 
     const result = await provider("Prompt");
-    expect(result.usage).toEqual({ promptTokens: 100, completionTokens: 10, cachedPromptTokens: 800 });
+    // HEL-145 contract: promptTokens is TOTAL (input + cache_read + cache_creation).
+    // 100 + 800 = 900.
+    expect(result.usage).toEqual({
+      promptTokens: 900,
+      completionTokens: 10,
+      cachedPromptTokens: 800,
+      cachedCreationTokens: undefined,
+    });
   });
 });
 

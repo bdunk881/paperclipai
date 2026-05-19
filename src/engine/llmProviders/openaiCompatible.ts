@@ -151,10 +151,12 @@ export function createOpenAICompatibleProvider(
             }
           }
           if (chunk.usage) {
-            const { uncached, cached } = splitOpenAIPromptTokens(chunk.usage);
-            promptTokens = uncached;
+            const buckets = extractOpenAICacheBucket(chunk.usage);
+            promptTokens = buckets.promptTokens;
             completionTokens = chunk.usage.completion_tokens;
-            if (cached !== undefined) cachedPromptTokens = cached;
+            if (buckets.cachedPromptTokens !== undefined) {
+              cachedPromptTokens = buckets.cachedPromptTokens;
+            }
           }
         }
       } catch (err) {
@@ -182,11 +184,11 @@ export function createOpenAICompatibleProvider(
     const text = response.choices[0]?.message?.content ?? "";
     const usage = response.usage
       ? (() => {
-          const { uncached, cached } = splitOpenAIPromptTokens(response.usage!);
+          const buckets = extractOpenAICacheBucket(response.usage!);
           return {
-            promptTokens: uncached,
+            promptTokens: buckets.promptTokens,
             completionTokens: response.usage!.completion_tokens,
-            cachedPromptTokens: cached,
+            cachedPromptTokens: buckets.cachedPromptTokens,
           };
         })()
       : undefined;
@@ -196,21 +198,22 @@ export function createOpenAICompatibleProvider(
 }
 
 /**
- * HEL-145 followup (Codex review on PR #898): split OpenAI's
- * `prompt_tokens` into the uncached and cached buckets so the
- * provider-agnostic LLMResponse contract stays additive.
+ * HEL-145 followup (Codex review iteration 2 on PR #898): the revised
+ * contract is that `promptTokens` is the TOTAL input count (matches
+ * legacy semantics), and `cachedPromptTokens` is the cached SUB-bucket.
  *
- * OpenAI returns `usage.prompt_tokens` (total) and
- * `usage.prompt_tokens_details.cached_tokens` (cached portion). The
- * cached count is bundled inside prompt_tokens — to match Anthropic's
- * additive bucket semantics we subtract before returning. When the
- * model/endpoint doesn't report cache details, cached is undefined
- * and uncached === prompt_tokens unchanged.
+ * OpenAI already returns `prompt_tokens` as the total (cached portion
+ * is included), so we pass it through unchanged. The cache sub-bucket
+ * comes from `prompt_tokens_details.cached_tokens` when present.
+ *
+ * This keeps every existing cost-logger correct on cache hits — they
+ * read `promptTokens` and continue to see the full input count.
+ * Cache-aware billing can subtract `cachedPromptTokens` to apply the
+ * discounted rate.
  */
-function splitOpenAIPromptTokens(
+function extractOpenAICacheBucket(
   usage: OpenAI.Completions.CompletionUsage,
-): { uncached: number; cached: number | undefined } {
-  const total = usage.prompt_tokens;
+): { promptTokens: number; cachedPromptTokens: number | undefined } {
   const details = (usage as { prompt_tokens_details?: { cached_tokens?: number | null } })
     .prompt_tokens_details;
   const cached =
@@ -218,8 +221,8 @@ function splitOpenAIPromptTokens(
       ? details.cached_tokens
       : undefined;
   return {
-    uncached: cached !== undefined ? total - cached : total,
-    cached,
+    promptTokens: usage.prompt_tokens,
+    cachedPromptTokens: cached,
   };
 }
 
@@ -283,12 +286,15 @@ async function runOpenAIToolLoop(args: {
     }
 
     if (response.usage) {
-      // HEL-145 followup (Codex): surface OpenAI cache reads as a
-      // separate bucket, additive with prompt_tokens.
-      const { uncached, cached } = splitOpenAIPromptTokens(response.usage);
-      cumulativePromptTokens += uncached;
+      // HEL-145 contract: promptTokens is TOTAL input; cachedPromptTokens
+      // is the cached sub-bucket. Preserves legacy spend-logger
+      // semantics on cache hits.
+      const buckets = extractOpenAICacheBucket(response.usage);
+      cumulativePromptTokens += buckets.promptTokens;
       cumulativeCompletionTokens += response.usage.completion_tokens;
-      if (cached !== undefined) cumulativeCachedTokens += cached;
+      if (buckets.cachedPromptTokens !== undefined) {
+        cumulativeCachedTokens += buckets.cachedPromptTokens;
+      }
     }
 
     const choice = response.choices[0];
@@ -379,10 +385,14 @@ async function runOpenAIToolLoop(args: {
       ],
     });
     if (finalTurn.usage) {
-      const { uncached, cached } = splitOpenAIPromptTokens(finalTurn.usage);
-      cumulativePromptTokens += uncached;
+      // HEL-145 contract iter 2: promptTokens is TOTAL; cached* are
+      // sub-buckets. Preserves legacy spend-logger semantics.
+      const buckets = extractOpenAICacheBucket(finalTurn.usage);
+      cumulativePromptTokens += buckets.promptTokens;
       cumulativeCompletionTokens += finalTurn.usage.completion_tokens;
-      if (cached !== undefined) cumulativeCachedTokens += cached;
+      if (buckets.cachedPromptTokens !== undefined) {
+        cumulativeCachedTokens += buckets.cachedPromptTokens;
+      }
     }
     const text = finalTurn.choices[0]?.message?.content ?? "";
     return {

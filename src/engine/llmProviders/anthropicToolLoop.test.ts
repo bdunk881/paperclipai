@@ -340,6 +340,9 @@ describe("Anthropic agentic tool loop (DASH-22)", () => {
       });
       const response = await provider("hi");
 
+      // HEL-145 contract: promptTokens is TOTAL (input + cache_read + cache_creation)
+      // summed across turns. Turn1: 50+100=150, Turn2: 60+200=260. Sum: 410.
+      expect(response.usage?.promptTokens).toBe(410);
       expect(response.usage?.cachedPromptTokens).toBe(300);
     });
 

@@ -569,8 +569,9 @@ router.get("/teams/:id", async (req: WorkspaceAwareRequest, res) => {
   if (team) {
     const agents = controlPlaneStore.listAgents(team.id, context.userId, context.workspaceId);
     // DASH-64.1: listTasks is async now.
+    // DASH-64.2: listHeartbeats is async now.
     const tasks = await controlPlaneStore.listTasks(context.userId, team.id, context.workspaceId);
-    const heartbeats = controlPlaneStore.listHeartbeats(context.userId, team.id, context.workspaceId);
+    const heartbeats = await controlPlaneStore.listHeartbeats(context.userId, team.id, context.workspaceId);
     const executions = controlPlaneStore.listExecutions(context.userId, team.id, context.workspaceId);
     const spend = controlPlaneStore.getTeamSpendSnapshot(team.id, context.userId, context.workspaceId);
     res.json({ team, agents, tasks, heartbeats, executions, spend });
@@ -1095,15 +1096,36 @@ router.post("/spend-events", requirePaperclipRunId, async (req: AuthenticatedReq
   }
 });
 
-router.get("/heartbeats", (req: AuthenticatedRequest, res) => {
-  const userId = getUserId(req);
-  if (!userId) {
-    res.status(401).json({ error: "Authenticated user required" });
+router.get("/heartbeats", async (req: WorkspaceAwareRequest, res) => {
+  // DASH-64.2 + Codex review on #902: must resolve workspace context
+  // before calling the async store. Without it, listHeartbeats falls
+  // back to `workspaceId ?? userId`, which mismatches the real
+  // workspace id in production and returns empty under
+  // agent_heartbeats RLS.
+  const context = resolveWorkspaceContext(req, res);
+  if (!context) {
     return;
   }
   const teamId = typeof req.query.teamId === "string" ? req.query.teamId : undefined;
-  const heartbeats = controlPlaneStore.listHeartbeats(userId, teamId);
-  res.json({ heartbeats, total: heartbeats.length });
+  // DASH-64.2 iter 2 (Codex P1 on #902): wrap async repo I/O in
+  // try/catch. Express 4 doesn't translate async rejections to 500s,
+  // so a transient Postgres/RLS failure would otherwise bubble out as
+  // an unhandled exception and crash the request.
+  try {
+    const heartbeats = await controlPlaneStore.listHeartbeats(
+      context.userId,
+      teamId,
+      context.workspaceId,
+    );
+    res.json({ heartbeats, total: heartbeats.length });
+  } catch (err) {
+    console.error(
+      `[controlPlaneRoutes] /heartbeats repository error for user=${context.userId}: ${
+        (err as Error).message
+      }`,
+    );
+    res.status(500).json({ error: "Failed to load heartbeats" });
+  }
 });
 
 export default router;

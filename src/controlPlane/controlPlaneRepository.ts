@@ -731,10 +731,82 @@ export const controlPlaneRepository = {
     });
   },
 
+  /**
+   * DASH-64.2 hotfix (Codex review on PR #902): workspace-less
+   * fallback for legacy callers that have a userId but no resolved
+   * workspaceId. Same pattern as listAllTasksForUser → migration 047
+   * SECURITY DEFINER helper (RLS bypass scoped to user_id filter).
+   */
+  async listAllHeartbeatsForUser(userId: string): Promise<AgentHeartbeatRecord[]> {
+    if (useInMemoryFallback()) {
+      const out: AgentHeartbeatRecord[] = [];
+      for (const bucket of memHeartbeats.values()) {
+        for (const heartbeat of bucket.values()) {
+          if (heartbeat.userId === userId) out.push({ ...heartbeat });
+        }
+      }
+      return out.sort((left, right) => right.startedAt.localeCompare(left.startedAt));
+    }
+    // DASH-64.2 iter 2 (Codex P1, same as listAllTasksForUser):
+    // migration 047's helper now binds to the authenticated subject
+    // via app.current_user_id. Backend MUST set that session var
+    // before calling; we use a dedicated client + transaction so
+    // set_config(..., true) is scoped to this query alone.
+    const pool = getPostgresPool();
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN");
+      await client.query("SELECT set_config('app.current_user_id', $1, true)", [userId]);
+      const result = await client.query<HeartbeatRow>(
+        `SELECT id, team_id, user_id, agent_id, execution_id, status,
+                summary, cost_usd, created_task_ids, started_at, completed_at
+           FROM list_agent_heartbeats_for_user($1)`,
+        [userId],
+      );
+      await client.query("COMMIT");
+      return result.rows.map(rowToHeartbeat);
+    } catch (err) {
+      await client.query("ROLLBACK").catch(() => undefined);
+      throw err;
+    } finally {
+      client.release();
+    }
+  },
+
   async listHeartbeats(
     ctx: ControlPlaneRepoContext,
     filters?: { agentId?: string; teamId?: string; limit?: number }
   ): Promise<AgentHeartbeatRecord[]> {
+    if (useInMemoryFallback()) {
+      const bucket = memBucket(memHeartbeats, ctx.workspaceId);
+      let rows = Array.from(bucket.values()).filter((heartbeat) => {
+        if (filters?.agentId && heartbeat.agentId !== filters.agentId) return false;
+        if (filters?.teamId && heartbeat.teamId !== filters.teamId) return false;
+        return true;
+      });
+      // DASH-64.2: cross-workspace fallback for test-mode callers that
+      // haven't wired workspace context. The legacy global-Map had no
+      // bucket; production RLS makes this branch unreachable.
+      if (rows.length === 0 && memHeartbeats.size > 1) {
+        const all: AgentHeartbeatRecord[] = [];
+        for (const b of memHeartbeats.values()) {
+          for (const heartbeat of b.values()) {
+            if (heartbeat.userId !== ctx.userId) continue;
+            if (filters?.agentId && heartbeat.agentId !== filters.agentId) continue;
+            if (filters?.teamId && heartbeat.teamId !== filters.teamId) continue;
+            all.push(heartbeat);
+          }
+        }
+        rows = all;
+      }
+      const sorted = rows
+        .map((heartbeat) => ({ ...heartbeat }))
+        .sort((left, right) => right.startedAt.localeCompare(left.startedAt));
+      if (typeof filters?.limit === "number" && filters.limit > 0) {
+        return sorted.slice(0, filters.limit);
+      }
+      return sorted;
+    }
     return withWorkspaceContext(getPostgresPool(), ctx, async (client) => {
       const params: unknown[] = [ctx.userId];
       let where = "user_id = $1";

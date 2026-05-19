@@ -498,6 +498,13 @@ function mapEventRow(row: PersistedEventRow): AgentMemoryEvent {
 }
 
 async function ensureSchema(): Promise<void> {
+  // DASH-63: schema lives in migrations/045_agent_memory_schema.sql now.
+  // This function is preserved as a no-op so the dozens of call sites
+  // don't churn in this PR; a follow-up can remove it entirely.
+  schemaEnsured = true;
+  return;
+
+  // eslint-disable-next-line no-unreachable
   if (!postgresPersistenceAvailable() || schemaEnsured) {
     return;
   }

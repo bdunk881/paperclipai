@@ -178,16 +178,16 @@ describe("subscriptionStore hydration integration (HEL-72)", () => {
 
       // Step 4: simulate restart by wiping the in-memory cache
       store.subscriptionStore.clear();
-      expect(store.subscriptionStore.getByStripeSubscriptionId(stripeSubId)).toBeUndefined();
-      expect(store.subscriptionStore.getByUserId(userId)).toBeUndefined();
-      expect(store.subscriptionStore.getByStripeCustomerId(stripeCustomerId)).toHaveLength(0);
+      expect(await store.subscriptionStore.getByStripeSubscriptionId(stripeSubId)).toBeUndefined();
+      expect(await store.subscriptionStore.getByUserId(userId)).toBeUndefined();
+      expect(await store.subscriptionStore.getByStripeCustomerId(stripeCustomerId)).toHaveLength(0);
 
       // Step 5: hydrate from Postgres — this is what app.ts calls on startup
       const hydratedCount = await store.subscriptionStore.hydrateFromPostgres();
       expect(hydratedCount).toBeGreaterThanOrEqual(1);
 
       // Step 6: verify all three lookup indexes are restored with the correct shape
-      const bySubId = store.subscriptionStore.getByStripeSubscriptionId(stripeSubId);
+      const bySubId = await store.subscriptionStore.getByStripeSubscriptionId(stripeSubId);
       expect(bySubId).toBeDefined();
       expect(bySubId?.stripeSubscriptionId).toBe(stripeSubId);
       expect(bySubId?.stripeCustomerId).toBe(stripeCustomerId);
@@ -201,11 +201,11 @@ describe("subscriptionStore hydration integration (HEL-72)", () => {
       expect(bySubId?.currentPeriodStart).toBeTruthy();
       expect(bySubId?.currentPeriodEnd).toBeTruthy();
 
-      const byUserId = store.subscriptionStore.getByUserId(userId);
+      const byUserId = await store.subscriptionStore.getByUserId(userId);
       expect(byUserId).toBeDefined();
       expect(byUserId?.stripeSubscriptionId).toBe(stripeSubId);
 
-      const byCustomerId = store.subscriptionStore.getByStripeCustomerId(stripeCustomerId);
+      const byCustomerId = await store.subscriptionStore.getByStripeCustomerId(stripeCustomerId);
       expect(byCustomerId).toHaveLength(1);
       expect(byCustomerId[0].stripeSubscriptionId).toBe(stripeSubId);
     },
@@ -261,8 +261,8 @@ describe("subscriptionStore hydration integration (HEL-72)", () => {
       const hydratedCount = await store.subscriptionStore.hydrateFromPostgres();
       expect(hydratedCount).toBeGreaterThanOrEqual(2);
 
-      expect(store.subscriptionStore.getByStripeSubscriptionId(stripeSubId)).toBeDefined();
-      expect(store.subscriptionStore.getByStripeSubscriptionId(stripeSubId2)).toBeDefined();
+      expect(await store.subscriptionStore.getByStripeSubscriptionId(stripeSubId)).toBeDefined();
+      expect(await store.subscriptionStore.getByStripeSubscriptionId(stripeSubId2)).toBeDefined();
     },
     60_000,
   );

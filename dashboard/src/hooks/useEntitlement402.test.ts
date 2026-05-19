@@ -1,5 +1,5 @@
 import { renderHook } from "@testing-library/react";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { EntitlementError } from "../api/entitlementError";
 import { useEntitlement402 } from "./useEntitlement402";
 

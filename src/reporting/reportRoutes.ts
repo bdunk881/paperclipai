@@ -106,7 +106,8 @@ router.post("/generate", requireRunId, async (req: AuthenticatedRequest, res) =>
         return;
       }
 
-      const team = controlPlaneStore.getTeam(teamId, userId);
+      // DASH-64.6: getTeam is async now (repo-backed).
+      const team = await controlPlaneStore.getTeam(teamId, userId);
       if (!team) {
         res.status(404).json({ error: "Team not found" });
         return;

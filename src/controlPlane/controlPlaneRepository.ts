@@ -29,8 +29,11 @@ import {
   ControlPlaneTask,
   ControlPlaneTaskAuditEvent,
   ControlPlaneTaskStatus,
+  ControlPlaneTeam,
   HeartbeatStatus,
   SpendCategory,
+  TeamDeploymentMode,
+  TeamLifecycleStatus,
 } from "./types";
 
 // ---------------------------------------------------------------------------
@@ -66,6 +69,9 @@ const memExecutions = new Map<string, Map<string, ControlPlaneExecution>>();
 // allowlist: test/dev fallback for repository; production routes to Postgres
 // DASH-64.5: agents Map ownership moves from controlPlaneStore to repo.
 const memAgents = new Map<string, Map<string, ControlPlaneAgent>>();
+// allowlist: test/dev fallback for repository; production routes to Postgres
+// DASH-64.6: teams Map ownership moves from controlPlaneStore to repo.
+const memTeams = new Map<string, Map<string, ControlPlaneTeam>>();
 
 function memBucket<T>(
   store: Map<string, Map<string, T>>,
@@ -161,6 +167,28 @@ interface ExecutionRow {
   completed_at: Date | null;
   last_heartbeat_at: Date | null;
   restart_count: number;
+}
+
+interface TeamRow {
+  id: string;
+  workspace_id: string;
+  user_id: string;
+  company_id: string | null;
+  name: string;
+  description: string | null;
+  workflow_template_id: string | null;
+  workflow_template_name: string | null;
+  deployment_mode: TeamDeploymentMode;
+  status: TeamLifecycleStatus;
+  paused_by_company_lifecycle: boolean | null;
+  restart_count: number;
+  budget_monthly_usd: string | number;
+  tool_budget_ceilings: Record<string, number> | null;
+  alert_thresholds: number[] | null;
+  orchestration_enabled: boolean;
+  last_heartbeat_at: Date | null;
+  created_at: Date;
+  updated_at: Date;
 }
 
 interface AgentRow {
@@ -300,6 +328,39 @@ function rowToExecution(row: ExecutionRow): ControlPlaneExecution {
     completedAt: isoFromDate(row.completed_at),
     lastHeartbeatAt: isoFromDate(row.last_heartbeat_at),
     restartCount: row.restart_count,
+  };
+}
+
+function rowToTeam(row: TeamRow): ControlPlaneTeam {
+  const budget = typeof row.budget_monthly_usd === "string"
+    ? Number.parseFloat(row.budget_monthly_usd)
+    : row.budget_monthly_usd;
+  const toolBudget = row.tool_budget_ceilings && typeof row.tool_budget_ceilings === "object"
+    ? (row.tool_budget_ceilings as Record<string, number>)
+    : {};
+  const alertThresholds = Array.isArray(row.alert_thresholds)
+    ? row.alert_thresholds
+    : [0.8, 0.9, 1];
+  return {
+    id: row.id,
+    userId: row.user_id,
+    name: row.name,
+    description: row.description ?? undefined,
+    workflowTemplateId: row.workflow_template_id ?? undefined,
+    workflowTemplateName: row.workflow_template_name ?? undefined,
+    workflowId: row.workflow_template_id ?? undefined,
+    workflowName: row.workflow_template_name ?? undefined,
+    deploymentMode: row.deployment_mode,
+    status: row.status,
+    pausedByCompanyLifecycle: row.paused_by_company_lifecycle || undefined,
+    restartCount: row.restart_count,
+    lastHeartbeatAt: isoFromDate(row.last_heartbeat_at),
+    budgetMonthlyUsd: Number.isFinite(budget) ? Number(budget) : 0,
+    toolBudgetCeilings: toolBudget,
+    alertThresholds,
+    orchestrationEnabled: row.orchestration_enabled,
+    createdAt: isoFromDateRequired(row.created_at),
+    updatedAt: isoFromDateRequired(row.updated_at),
   };
 }
 
@@ -462,6 +523,62 @@ async function insertSpendEntryRow(
       entry.toolName ?? null,
       entry.metadata ? JSON.stringify(entry.metadata) : null,
       new Date(entry.recordedAt),
+    ]
+  );
+}
+
+async function upsertTeamRowInClient(
+  client: PoolClient,
+  ctx: ControlPlaneRepoContext,
+  team: ControlPlaneTeam,
+  companyId: string | null
+): Promise<void> {
+  await client.query(
+    `INSERT INTO agent_teams (
+       id, workspace_id, user_id, company_id, name, description, workflow_template_id,
+       workflow_template_name, deployment_mode, status, paused_by_company_lifecycle,
+       restart_count, budget_monthly_usd, tool_budget_ceilings, alert_thresholds,
+       orchestration_enabled, last_heartbeat_at, created_at, updated_at
+     ) VALUES (
+       $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11,
+       $12, $13, $14::jsonb, $15::jsonb, $16, $17, $18, $19
+     )
+     ON CONFLICT (id) DO UPDATE
+       SET company_id = EXCLUDED.company_id,
+           name = EXCLUDED.name,
+           description = EXCLUDED.description,
+           workflow_template_id = EXCLUDED.workflow_template_id,
+           workflow_template_name = EXCLUDED.workflow_template_name,
+           deployment_mode = EXCLUDED.deployment_mode,
+           status = EXCLUDED.status,
+           paused_by_company_lifecycle = EXCLUDED.paused_by_company_lifecycle,
+           restart_count = EXCLUDED.restart_count,
+           budget_monthly_usd = EXCLUDED.budget_monthly_usd,
+           tool_budget_ceilings = EXCLUDED.tool_budget_ceilings,
+           alert_thresholds = EXCLUDED.alert_thresholds,
+           orchestration_enabled = EXCLUDED.orchestration_enabled,
+           last_heartbeat_at = EXCLUDED.last_heartbeat_at,
+           updated_at = EXCLUDED.updated_at`,
+    [
+      team.id,
+      ctx.workspaceId,
+      team.userId,
+      companyId,
+      team.name,
+      team.description ?? null,
+      team.workflowTemplateId ?? null,
+      team.workflowTemplateName ?? null,
+      team.deploymentMode,
+      team.status,
+      team.pausedByCompanyLifecycle ?? false,
+      team.restartCount,
+      team.budgetMonthlyUsd,
+      JSON.stringify(team.toolBudgetCeilings),
+      JSON.stringify(team.alertThresholds),
+      team.orchestrationEnabled,
+      team.lastHeartbeatAt ?? null,
+      team.createdAt,
+      team.updatedAt,
     ]
   );
 }
@@ -1167,6 +1284,145 @@ export const controlPlaneRepository = {
   },
 
   /**
+   * DASH-64.6: persist (insert or update) a team row. Production routes
+   * through Postgres via withWorkspaceContext; test mode buckets by
+   * workspace in memTeams. companyId is optional — callers that have a
+   * teamCompanyIds mapping pass it explicitly so the foreign-key column
+   * stays in sync.
+   */
+  async upsertTeam(
+    ctx: ControlPlaneRepoContext,
+    team: ControlPlaneTeam,
+    companyId: string | null = null
+  ): Promise<void> {
+    if (useInMemoryFallback()) {
+      memBucket(memTeams, ctx.workspaceId).set(team.id, { ...team });
+      return;
+    }
+    await withWorkspaceContext(getPostgresPool(), ctx, async (client) => {
+      await upsertTeamRowInClient(client, ctx, team, companyId);
+    });
+  },
+
+  /**
+   * DASH-64.6: single-team lookup. Mirrors getAgent — returns a copy
+   * the caller can mutate freely; persistence requires a follow-up
+   * upsertTeam.
+   */
+  async getTeam(
+    ctx: ControlPlaneRepoContext,
+    teamId: string
+  ): Promise<ControlPlaneTeam | undefined> {
+    if (useInMemoryFallback()) {
+      const inWorkspace = memBucket(memTeams, ctx.workspaceId).get(teamId);
+      if (inWorkspace) return { ...inWorkspace };
+      for (const bucket of memTeams.values()) {
+        const team = bucket.get(teamId);
+        if (team) return { ...team };
+      }
+      return undefined;
+    }
+    return withWorkspaceContext(getPostgresPool(), ctx, async (client) => {
+      const result = await client.query<TeamRow>(
+        `SELECT id, workspace_id, user_id, company_id, name, description,
+                workflow_template_id, workflow_template_name, deployment_mode,
+                status, paused_by_company_lifecycle, restart_count,
+                budget_monthly_usd, tool_budget_ceilings, alert_thresholds,
+                orchestration_enabled, last_heartbeat_at,
+                created_at, updated_at
+           FROM agent_teams
+          WHERE id = $1`,
+        [teamId]
+      );
+      const row = result.rows[0];
+      return row ? rowToTeam(row) : undefined;
+    });
+  },
+
+  async listTeams(
+    ctx: ControlPlaneRepoContext,
+    filters?: { userId?: string }
+  ): Promise<ControlPlaneTeam[]> {
+    if (useInMemoryFallback()) {
+      // DASH-64.6: workspace IS the access boundary (RLS analogue) —
+      // no userId filter unless explicitly requested (matches the
+      // pre-DASH-64.6 listAccessibleTeamIds where teams in the same
+      // workspace are accessible regardless of agent.userId, gated by
+      // workspace membership).
+      const bucket = memBucket(memTeams, ctx.workspaceId);
+      const rows = Array.from(bucket.values()).filter((team) => {
+        if (filters?.userId && team.userId !== filters.userId) return false;
+        return true;
+      });
+      return rows
+        .map((team) => ({ ...team }))
+        .sort((left, right) => left.createdAt.localeCompare(right.createdAt));
+    }
+    return withWorkspaceContext(getPostgresPool(), ctx, async (client) => {
+      const params: unknown[] = [];
+      const conditions: string[] = [];
+      if (filters?.userId) {
+        params.push(filters.userId);
+        conditions.push(`user_id = $${params.length}`);
+      }
+      const where = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
+      const result = await client.query<TeamRow>(
+        `SELECT id, workspace_id, user_id, company_id, name, description,
+                workflow_template_id, workflow_template_name, deployment_mode,
+                status, paused_by_company_lifecycle, restart_count,
+                budget_monthly_usd, tool_budget_ceilings, alert_thresholds,
+                orchestration_enabled, last_heartbeat_at,
+                created_at, updated_at
+           FROM agent_teams
+          ${where}
+          ORDER BY created_at ASC`,
+        params
+      );
+      return result.rows.map(rowToTeam);
+    });
+  },
+
+  /**
+   * DASH-64.6: cross-workspace fallback for legacy callers without a
+   * pinned workspaceId. Migration 050 SECURITY DEFINER helper, bound
+   * to app.current_user_id (matches 046/047/048/049 pattern).
+   */
+  async listAllTeamsForUser(userId: string): Promise<ControlPlaneTeam[]> {
+    if (useInMemoryFallback()) {
+      const out: ControlPlaneTeam[] = [];
+      for (const bucket of memTeams.values()) {
+        for (const team of bucket.values()) {
+          if (team.userId === userId) out.push({ ...team });
+        }
+      }
+      return out.sort((left, right) => left.createdAt.localeCompare(right.createdAt));
+    }
+    const pool = getPostgresPool();
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN");
+      await client.query("SELECT set_config('app.current_user_id', $1, true)", [userId]);
+      const result = await client.query<TeamRow>(
+        `SELECT id, workspace_id, user_id, company_id, name, description,
+                workflow_template_id, workflow_template_name, deployment_mode,
+                status, paused_by_company_lifecycle, restart_count,
+                budget_monthly_usd, tool_budget_ceilings, alert_thresholds,
+                orchestration_enabled, last_heartbeat_at,
+                created_at, updated_at
+           FROM list_teams_for_user($1)`,
+        [userId]
+      );
+      await client.query("COMMIT");
+      return result.rows.map(rowToTeam);
+    } catch (err) {
+      await client.query("ROLLBACK").catch(() => undefined);
+      throw err;
+    } finally {
+      client.release();
+    }
+  },
+
+  /**
    * DASH-64.5: persist (insert or update) an agent row. Mirrors
    * upsertExecution: production routes through Postgres via
    * withWorkspaceContext, test mode buckets by workspace in memAgents.
@@ -1519,6 +1775,7 @@ export function __resetRepositoryInMemoryStateForTests(): void {
   memBudgetAlerts.clear();
   memExecutions.clear();
   memAgents.clear();
+  memTeams.clear();
 }
 
 export type ControlPlaneRepository = typeof controlPlaneRepository;

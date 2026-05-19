@@ -20,5 +20,6 @@ export async function loginAsMockUser(page: Page): Promise<void> {
     sessionStorage.setItem("autoflow_user", JSON.stringify(user));
     sessionStorage.setItem("autoflow_auth_session", JSON.stringify(session));
     localStorage.setItem("autoflow:onboarding-dismissed:v1:usr-e2e", "true");
+    localStorage.setItem("af2-onboarding-tour-dismissed-v1", "1");
   });
 }

@@ -1,20 +1,27 @@
 /**
- * AppTopbar (HEL-32 v2 chrome) — tests.
- *
- * Asserts the v2 topbar surfaces: workspace switcher (topbar variant),
- * global search input with ⌘K hint, "New mission" CTA → /hire, inbox →
- * /approvals, and the avatar link → /settings/profile. ⌘K focuses the
- * search input.
+ * AppTopbar (HEL-32 v2 chrome / HEL-169 search) tests.
  */
-import { fireEvent, render, screen } from "@testing-library/react";
-import { MemoryRouter } from "react-router-dom";
-import { describe, expect, it, vi } from "vitest";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { AppTopbar } from "./AppTopbar";
+
+const { requireAccessTokenMock, searchEntitiesMock } = vi.hoisted(() => ({
+  requireAccessTokenMock: vi.fn(),
+  searchEntitiesMock: vi.fn(),
+}));
 
 vi.mock("../context/AuthContext", () => ({
   useAuth: () => ({
     user: { id: "u1", email: "jane.doe@example.com", name: "Jane Doe" },
     logout: vi.fn(),
+    requireAccessToken: requireAccessTokenMock,
   }),
+}));
+
+vi.mock("../api/searchApi", () => ({
+  searchEntities: searchEntitiesMock,
 }));
 
 vi.mock("../context/useWorkspace", () => ({
@@ -34,79 +41,170 @@ vi.mock("../context/useWorkspace", () => ({
   }),
 }));
 
-import { AppTopbar } from "./AppTopbar";
+function LocationProbe() {
+  const location = useLocation();
+  return <div data-testid="location">{`${location.pathname}${location.search}`}</div>;
+}
+
+function renderWithRoutes(initialEntries = ["/"]) {
+  return render(
+    <MemoryRouter initialEntries={initialEntries}>
+      <Routes>
+        <Route
+          path="/"
+          element={
+            <>
+              <AppTopbar />
+              <LocationProbe />
+            </>
+          }
+        />
+        <Route path="/agents/:agentId" element={<div>Agent detail route</div>} />
+        <Route path="/approvals" element={<div>Approvals route</div>} />
+        <Route path="/hire" element={<div>Hire route</div>} />
+      </Routes>
+    </MemoryRouter>,
+  );
+}
 
 describe("AppTopbar", () => {
+  beforeEach(() => {
+    requireAccessTokenMock.mockReset();
+    requireAccessTokenMock.mockResolvedValue("token-123");
+    searchEntitiesMock.mockReset();
+    searchEntitiesMock.mockResolvedValue({ query: "", results: [], total: 0 });
+  });
+
   it("renders the workspace switcher with the active workspace", () => {
-    render(
-      <MemoryRouter>
-        <AppTopbar />
-      </MemoryRouter>
-    );
+    renderWithRoutes();
 
     expect(
-      screen.getByRole("button", { name: /Switch workspace/i })
+      screen.getByRole("button", { name: /Switch workspace/i }),
     ).toHaveTextContent("Acme Robotics");
   });
 
-  it("renders the global search input with a ⌘K hint", () => {
-    render(
-      <MemoryRouter>
-        <AppTopbar />
-      </MemoryRouter>
-    );
+  it("renders the global search launcher with a Ctrl K hint", () => {
+    renderWithRoutes();
 
-    const search = screen.getByRole("searchbox", {
+    const search = screen.getByRole("button", {
       name: /search agents, missions, assignments, runs/i,
     });
     expect(search).toBeInTheDocument();
-    expect(screen.getByText("⌘K")).toBeInTheDocument();
+    expect(screen.getByText("Ctrl K")).toBeInTheDocument();
   });
 
-  it("focuses the search input when ⌘K (or Ctrl+K) is pressed", () => {
-    render(
-      <MemoryRouter>
-        <AppTopbar />
-      </MemoryRouter>
-    );
+  it("opens the command palette from Ctrl+K and runs a scoped search", async () => {
+    renderWithRoutes();
 
-    const search = screen.getByRole("searchbox", {
-      name: /search agents, missions, assignments, runs/i,
-    });
-
-    expect(search).not.toHaveFocus();
     fireEvent.keyDown(window, { key: "k", ctrlKey: true });
-    expect(search).toHaveFocus();
+
+    const dialog = await screen.findByRole("dialog", { name: /search autoflow/i });
+    expect(within(dialog).getByRole("searchbox", { name: /search autoflow/i })).toHaveFocus();
+    await waitFor(() => {
+      expect(searchEntitiesMock).toHaveBeenCalledWith("token-123", "", 8);
+    });
+  });
+
+  it("opens search from the desktop launcher and routes clicked results", async () => {
+    const user = userEvent.setup();
+    searchEntitiesMock.mockResolvedValue({
+      query: "",
+      total: 1,
+      results: [
+        {
+          type: "agent",
+          id: "agent-1",
+          title: "Revenue Analyst",
+          subtitle: "Sales Ops",
+          status: "active",
+          route: "/agents/agent-1",
+          matchedFields: ["name"],
+          updatedAt: "2026-05-19T16:00:00.000Z",
+        },
+      ],
+    });
+    renderWithRoutes();
+
+    await user.click(
+      screen.getByRole("button", {
+        name: /search agents, missions, assignments, runs/i,
+      }),
+    );
+    await user.click(await screen.findByRole("option", { name: /Revenue Analyst/i }));
+
+    expect(await screen.findByText("Agent detail route")).toBeInTheDocument();
+  });
+
+  it("supports keyboard navigation through results", async () => {
+    searchEntitiesMock.mockResolvedValue({
+      query: "",
+      total: 2,
+      results: [
+        {
+          type: "mission",
+          id: "mission-1",
+          title: "Renewal mission",
+          subtitle: "Acme Robotics",
+          status: "active",
+          route: "/mission-state?mission=mission-1",
+          matchedFields: ["statement"],
+          updatedAt: "2026-05-19T15:00:00.000Z",
+        },
+        {
+          type: "agent",
+          id: "agent-2",
+          title: "Support Agent",
+          subtitle: "Customer Ops",
+          status: "active",
+          route: "/agents/agent-2",
+          matchedFields: ["name"],
+          updatedAt: "2026-05-19T16:00:00.000Z",
+        },
+      ],
+    });
+    renderWithRoutes();
+
+    fireEvent.keyDown(window, { key: "k", ctrlKey: true });
+    const input = await screen.findByRole("searchbox", { name: /search autoflow/i });
+    await screen.findByRole("option", { name: /Support Agent/i });
+
+    fireEvent.keyDown(input, { key: "ArrowDown" });
+    expect(screen.getByRole("option", { name: /Support Agent/i })).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
+    fireEvent.keyDown(input, { key: "Enter" });
+
+    expect(await screen.findByText("Agent detail route")).toBeInTheDocument();
+  });
+
+  it("opens the same search surface from the mobile search affordance", async () => {
+    const user = userEvent.setup();
+    renderWithRoutes();
+
+    await user.click(screen.getByRole("button", { name: /open search/i }));
+
+    expect(await screen.findByRole("dialog", { name: /search autoflow/i })).toBeInTheDocument();
   });
 
   it("renders a 'New mission' CTA that links to /hire", () => {
-    render(
-      <MemoryRouter>
-        <AppTopbar />
-      </MemoryRouter>
-    );
+    renderWithRoutes();
 
     const link = screen.getByRole("link", { name: /new mission/i });
     expect(link).toHaveAttribute("href", "/hire");
   });
 
   it("renders an inbox button that navigates to /approvals", () => {
-    render(
-      <MemoryRouter initialEntries={["/"]}>
-        <AppTopbar />
-      </MemoryRouter>
-    );
+    renderWithRoutes();
 
-    expect(
-      screen.getByRole("button", { name: /inbox/i })
-    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /inbox/i })).toBeInTheDocument();
   });
 
   it("renders the user avatar as a link to /settings/profile with initials", () => {
     render(
       <MemoryRouter>
         <AppTopbar />
-      </MemoryRouter>
+      </MemoryRouter>,
     );
 
     const avatar = screen.getByRole("link", { name: /open profile settings/i });
@@ -118,7 +216,7 @@ describe("AppTopbar", () => {
     render(
       <MemoryRouter>
         <AppTopbar leading={<span data-testid="lead">lead</span>} />
-      </MemoryRouter>
+      </MemoryRouter>,
     );
 
     expect(screen.getByTestId("lead")).toBeInTheDocument();

@@ -119,6 +119,7 @@ export function createOpenAICompatibleProvider(
         tools: config.tools,
         maxIterations: config.maxToolIterations ?? DEFAULT_MAX_TOOL_ITERATIONS,
         systemPrompt: config.systemPrompt,
+        maxOutputTokens: config.maxOutputTokens,
       });
     }
 
@@ -139,6 +140,9 @@ export function createOpenAICompatibleProvider(
           messages: buildMessages(prompt),
           stream: true,
           stream_options: { include_usage: true },
+          ...(typeof config.maxOutputTokens === "number"
+            ? { max_tokens: config.maxOutputTokens }
+            : {}),
         });
         for await (const chunk of stream) {
           const delta = chunk.choices[0]?.delta?.content ?? "";
@@ -175,6 +179,9 @@ export function createOpenAICompatibleProvider(
         model: resolvedModel,
         messages: buildMessages(prompt),
         ...(responseFormat ? { response_format: responseFormat } : {}),
+        ...(typeof config.maxOutputTokens === "number"
+          ? { max_tokens: config.maxOutputTokens }
+          : {}),
       });
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -249,6 +256,8 @@ async function runOpenAIToolLoop(args: {
   tools: AgentTool[];
   maxIterations: number;
   systemPrompt?: string;
+  /** HEL-147: per-call output cap. Defaults to provider's own default. */
+  maxOutputTokens?: number;
 }): Promise<LLMResponse> {
   const toolsByName = new Map(args.tools.map((t) => [t.name, t]));
   const openaiTools: OpenAI.Chat.Completions.ChatCompletionTool[] = args.tools.map(
@@ -279,6 +288,9 @@ async function runOpenAIToolLoop(args: {
         model: args.model,
         messages,
         tools: openaiTools,
+        ...(typeof args.maxOutputTokens === "number"
+          ? { max_tokens: args.maxOutputTokens }
+          : {}),
       });
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -383,6 +395,13 @@ async function runOpenAIToolLoop(args: {
             "Maximum tool iterations reached. Summarize what you accomplished and what's still pending in 1-3 sentences. Do not call any tools.",
         },
       ],
+      // HEL-147 followup (Codex on PR #900): honour maxOutputTokens
+      // on the wrap-up. Without this a caller setting a tight cap to
+      // control runaway-loop cost still gets an uncapped summary in
+      // exactly the failure mode the cap is meant to contain.
+      // Falls back to 512 (tight summary) when no explicit cap.
+      max_tokens:
+        typeof args.maxOutputTokens === "number" ? args.maxOutputTokens : 512,
     });
     if (finalTurn.usage) {
       // HEL-145 contract iter 2: promptTokens is TOTAL; cached* are

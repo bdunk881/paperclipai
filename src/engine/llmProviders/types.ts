@@ -184,6 +184,24 @@ export interface LLMProviderConfig {
    * within the 5-minute TTL window. See `docs/audit/2026-05-18-llm-token-audit.md`.
    */
   cacheSystemPrompt?: boolean;
+  /**
+   * HEL-147: Per-call cap on the model's output tokens. Defaults to
+   * 4096 when omitted — same as the legacy hardcoded value.
+   *
+   * Why bother when billing is metered on actual output not the cap?
+   * Because `max_tokens` affects model behavior: a model given 4096
+   * tokens of budget for a 50-token answer often rambles to ~500
+   * tokens of unnecessary preamble. Tight caps force tight answers.
+   *
+   * Suggested caps per call type:
+   *   - status-pill self-check     →  200
+   *   - single-enum classification →   50
+   *   - triage decision (small JSON) → 300
+   *   - paragraph generation       →  800
+   *   - team-plan JSON             → 3000
+   *   - general agent step (varies)→ 4096 (default)
+   */
+  maxOutputTokens?: number;
 }
 
 /**

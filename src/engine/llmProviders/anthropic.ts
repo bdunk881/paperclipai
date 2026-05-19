@@ -133,6 +133,7 @@ export function createAnthropicProvider(config: LLMProviderConfig): LLMProvider 
         maxIterations: config.maxToolIterations ?? DEFAULT_MAX_TOOL_ITERATIONS,
         systemField,
         cachingEnabled,
+        maxOutputTokens: config.maxOutputTokens,
       });
     }
 
@@ -152,7 +153,7 @@ export function createAnthropicProvider(config: LLMProviderConfig): LLMProvider 
       try {
         const stream = client.messages.stream({
           model: config.model,
-          max_tokens: 4096,
+          max_tokens: config.maxOutputTokens ?? 4096,
           system: systemField,
           messages: [{ role: "user", content: prompt }],
         });
@@ -187,7 +188,7 @@ export function createAnthropicProvider(config: LLMProviderConfig): LLMProvider 
     try {
       response = await client.messages.create({
         model: config.model,
-        max_tokens: 4096,
+        max_tokens: config.maxOutputTokens ?? 4096,
         system: systemField,
         messages: [{ role: "user", content: prompt }],
         ...(forcedTool ?? {}),
@@ -291,6 +292,8 @@ async function runAnthropicToolLoop(args: {
   maxIterations: number;
   systemField?: string | Anthropic.Messages.TextBlockParam[];
   cachingEnabled: boolean;
+  /** HEL-147: per-call output cap. Defaults to 4096 when omitted. */
+  maxOutputTokens?: number;
 }): Promise<LLMResponse> {
   const toolsByName = new Map(args.tools.map((t) => [t.name, t]));
   const anthropicTools: Anthropic.Messages.Tool[] = args.tools.map((t, idx) => {
@@ -326,7 +329,7 @@ async function runAnthropicToolLoop(args: {
     try {
       response = await args.client.messages.create({
         model: args.model,
-        max_tokens: 4096,
+        max_tokens: args.maxOutputTokens ?? 4096,
         system: args.systemField,
         messages,
         tools: anthropicTools,
@@ -420,7 +423,13 @@ async function runAnthropicToolLoop(args: {
   try {
     const finalTurn = await args.client.messages.create({
       model: args.model,
-      max_tokens: 1024,
+      // HEL-147 followup (Codex on PR #900): honour the caller's
+      // maxOutputTokens on the wrap-up too. The previous hardcoded
+      // 1024 was a tight summary cap; we keep that as the ceiling but
+      // a smaller explicit cap wins. Without this, a caller setting
+      // a 200-token cap to control runaway-loop cost still got 1024
+      // here — exactly the failure mode the cap is meant to contain.
+      max_tokens: Math.min(args.maxOutputTokens ?? 1024, 1024),
       system: args.systemField,
       messages: [
         ...messages,

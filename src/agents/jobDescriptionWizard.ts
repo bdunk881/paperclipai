@@ -153,6 +153,10 @@ export async function draftAgentJobDescription(
     provider: resolved.config.provider,
     model,
     apiKey: resolved.apiKey,
+    // HEL-147: job descriptions are 3 sections (~500-700 tokens
+    // typical). 1000 covers the long tail without budgeting for the
+    // model to ramble across the full 4096 default.
+    maxOutputTokens: 1000,
   });
 
   const prompt = buildJobDescriptionPrompt(input);

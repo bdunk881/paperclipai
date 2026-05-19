@@ -482,8 +482,8 @@ async function resolveBootstrapSecrets(params: {
   }
 
   const decrypted = params.source.connectionId
-    ? integrationCredentialStore.getDecrypted(params.source.connectionId, params.userId)
-    : integrationCredentialStore.getDecryptedDefault(params.userId, params.provider);
+    ? await integrationCredentialStore.getDecrypted(params.source.connectionId, params.userId)
+    : await integrationCredentialStore.getDecryptedDefault(params.userId, params.provider);
   if (!decrypted) {
     throw new TrackerError("auth", `No ${params.provider} integration credential found for this user`, 404);
   }

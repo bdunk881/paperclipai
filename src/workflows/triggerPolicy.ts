@@ -22,8 +22,13 @@ function inputRequestsDevMock(input: Record<string, unknown>): boolean {
   return input["__autoflowAllowMockTrigger"] === true;
 }
 
-function ensureConnectedIntegration(userId: string, integrationSlug: string, templateName: string): void {
-  if (integrationCredentialStore.list(userId, integrationSlug).length > 0) {
+async function ensureConnectedIntegration(
+  userId: string,
+  integrationSlug: string,
+  templateName: string,
+): Promise<void> {
+  const connections = await integrationCredentialStore.list(userId, integrationSlug);
+  if (connections.length > 0) {
     return;
   }
 
@@ -32,12 +37,12 @@ function ensureConnectedIntegration(userId: string, integrationSlug: string, tem
   );
 }
 
-export function assertTriggerCanStart({
+export async function assertTriggerCanStart({
   template,
   entrypoint,
   userId,
   input,
-}: EvaluateTriggerPolicyInput): void {
+}: EvaluateTriggerPolicyInput): Promise<void> {
   const policy = template.triggerPolicy;
   if (!isExternalEventPolicy(policy)) {
     return;
@@ -46,7 +51,7 @@ export function assertTriggerCanStart({
   if (entrypoint === "manual_run") {
     if (devMockRunsEnabled() && inputRequestsDevMock(input)) {
       if (policy.integrationSlug && userId) {
-        ensureConnectedIntegration(userId, policy.integrationSlug, template.name);
+        await ensureConnectedIntegration(userId, policy.integrationSlug, template.name);
       }
       return;
     }
@@ -69,6 +74,6 @@ export function assertTriggerCanStart({
       );
     }
 
-    ensureConnectedIntegration(userId, policy.integrationSlug, template.name);
+    await ensureConnectedIntegration(userId, policy.integrationSlug, template.name);
   }
 }

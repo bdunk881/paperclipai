@@ -198,11 +198,11 @@ export interface ResolvedMcpEndpoint {
  * @param integrationSlug  The integration slug (e.g. "hubspot").
  * @param connectionId  Optional: specific connection ID. Falls back to default.
  */
-export function resolveIntegrationMcpEndpoint(
+export async function resolveIntegrationMcpEndpoint(
   userId: string,
   integrationSlug: string,
   connectionId?: string
-): ResolvedMcpEndpoint {
+): Promise<ResolvedMcpEndpoint> {
   const mcpConfig = INTEGRATION_MCP_MAP[integrationSlug];
   if (!mcpConfig) {
     throw new Error(
@@ -212,8 +212,8 @@ export function resolveIntegrationMcpEndpoint(
   }
 
   const resolved = connectionId
-    ? integrationCredentialStore.getDecrypted(connectionId, userId)
-    : integrationCredentialStore.getDecryptedDefault(userId, integrationSlug);
+    ? await integrationCredentialStore.getDecrypted(connectionId, userId)
+    : await integrationCredentialStore.getDecryptedDefault(userId, integrationSlug);
 
   if (!resolved) {
     throw new Error(
@@ -253,7 +253,7 @@ export async function discoverIntegrationMcpTools(
   integrationSlug: string,
   connectionId?: string
 ): Promise<McpTool[]> {
-  const endpoint = resolveIntegrationMcpEndpoint(
+  const endpoint = await resolveIntegrationMcpEndpoint(
     userId,
     integrationSlug,
     connectionId
@@ -291,7 +291,7 @@ export async function invokeIntegrationMcpTool(
   args: Record<string, unknown>,
   connectionId?: string
 ): Promise<McpToolCallResult> {
-  const endpoint = resolveIntegrationMcpEndpoint(
+  const endpoint = await resolveIntegrationMcpEndpoint(
     userId,
     integrationSlug,
     connectionId
@@ -335,7 +335,7 @@ export async function discoverAllUserMcpTools(userId: string): Promise<
 
   for (const slug of mcpSlugs) {
     // Only include integrations for which the user has a connection
-    const resolved = integrationCredentialStore.getDecryptedDefault(userId, slug);
+    const resolved = await integrationCredentialStore.getDecryptedDefault(userId, slug);
     if (!resolved) continue;
 
     try {

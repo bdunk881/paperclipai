@@ -1415,10 +1415,14 @@ async function upsertBudgetAlert(input: {
     recordedAt: nowIso(),
   };
 
+  // DASH-64.3 iter 2 (mirrors Codex P1 on #901): throw instead of
+  // silently dropping the alert when workspaceContextForTeam returns
+  // undefined. A missing budget alert can mask real overspend.
   const ctx = await workspaceContextForTeam(input.team.id, input.team.userId);
-  if (ctx) {
-    await controlPlaneRepository.upsertBudgetAlert(ctx, alert);
+  if (!ctx) {
+    throw new Error("budget_alert_workspace_unresolved");
   }
+  await controlPlaneRepository.upsertBudgetAlert(ctx, alert);
 }
 
 function pauseExecutionForBudget(agentId: string, executionId?: string): void {
@@ -2693,10 +2697,16 @@ export const controlPlaneStore = {
     // DASH-64.3: in-memory `spendEntries.set` removed. Repository
     // insertSpendEntry is the only write path (Postgres in production,
     // in-memory fallback for test mode).
+    //
+    // DASH-64.3 iter 2 (mirrors Codex P1 on #901): throw instead of
+    // silently dropping the spend entry when workspaceContextForTeam
+    // returns undefined. Lost spend = unbilled compute = real money
+    // leakage.
     const spendCtx = await workspaceContextForTeam(input.teamId, input.userId);
-    if (spendCtx) {
-      await controlPlaneRepository.insertSpendEntry(spendCtx, entry);
+    if (!spendCtx) {
+      throw new Error("spend_workspace_unresolved");
     }
+    await controlPlaneRepository.insertSpendEntry(spendCtx, entry);
     await applyBudgetPolicies(team, agent.id, input.executionId);
     return entry;
   },

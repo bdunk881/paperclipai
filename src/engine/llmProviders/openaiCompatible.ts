@@ -132,6 +132,7 @@ export function createOpenAICompatibleProvider(
       const onText = config.onText;
       let promptTokens = 0;
       let completionTokens = 0;
+      let cachedPromptTokens: number | undefined;
       try {
         const stream = await client.chat.completions.create({
           model: resolvedModel,
@@ -150,8 +151,10 @@ export function createOpenAICompatibleProvider(
             }
           }
           if (chunk.usage) {
-            promptTokens = chunk.usage.prompt_tokens;
+            const { uncached, cached } = splitOpenAIPromptTokens(chunk.usage);
+            promptTokens = uncached;
             completionTokens = chunk.usage.completion_tokens;
+            if (cached !== undefined) cachedPromptTokens = cached;
           }
         }
       } catch (err) {
@@ -160,7 +163,7 @@ export function createOpenAICompatibleProvider(
       }
       return {
         text: accumulated,
-        usage: { promptTokens, completionTokens },
+        usage: { promptTokens, completionTokens, cachedPromptTokens },
       };
     }
 
@@ -178,13 +181,45 @@ export function createOpenAICompatibleProvider(
 
     const text = response.choices[0]?.message?.content ?? "";
     const usage = response.usage
-      ? {
-          promptTokens: response.usage.prompt_tokens,
-          completionTokens: response.usage.completion_tokens,
-        }
+      ? (() => {
+          const { uncached, cached } = splitOpenAIPromptTokens(response.usage!);
+          return {
+            promptTokens: uncached,
+            completionTokens: response.usage!.completion_tokens,
+            cachedPromptTokens: cached,
+          };
+        })()
       : undefined;
 
     return { text, usage };
+  };
+}
+
+/**
+ * HEL-145 followup (Codex review on PR #898): split OpenAI's
+ * `prompt_tokens` into the uncached and cached buckets so the
+ * provider-agnostic LLMResponse contract stays additive.
+ *
+ * OpenAI returns `usage.prompt_tokens` (total) and
+ * `usage.prompt_tokens_details.cached_tokens` (cached portion). The
+ * cached count is bundled inside prompt_tokens — to match Anthropic's
+ * additive bucket semantics we subtract before returning. When the
+ * model/endpoint doesn't report cache details, cached is undefined
+ * and uncached === prompt_tokens unchanged.
+ */
+function splitOpenAIPromptTokens(
+  usage: OpenAI.Completions.CompletionUsage,
+): { uncached: number; cached: number | undefined } {
+  const total = usage.prompt_tokens;
+  const details = (usage as { prompt_tokens_details?: { cached_tokens?: number | null } })
+    .prompt_tokens_details;
+  const cached =
+    details && typeof details.cached_tokens === "number" && details.cached_tokens > 0
+      ? details.cached_tokens
+      : undefined;
+  return {
+    uncached: cached !== undefined ? total - cached : total,
+    cached,
   };
 }
 
@@ -232,6 +267,7 @@ async function runOpenAIToolLoop(args: {
 
   let cumulativePromptTokens = 0;
   let cumulativeCompletionTokens = 0;
+  let cumulativeCachedTokens = 0;
 
   for (let iteration = 0; iteration < args.maxIterations; iteration++) {
     let response: OpenAI.Chat.Completions.ChatCompletion;
@@ -247,8 +283,12 @@ async function runOpenAIToolLoop(args: {
     }
 
     if (response.usage) {
-      cumulativePromptTokens += response.usage.prompt_tokens;
+      // HEL-145 followup (Codex): surface OpenAI cache reads as a
+      // separate bucket, additive with prompt_tokens.
+      const { uncached, cached } = splitOpenAIPromptTokens(response.usage);
+      cumulativePromptTokens += uncached;
       cumulativeCompletionTokens += response.usage.completion_tokens;
+      if (cached !== undefined) cumulativeCachedTokens += cached;
     }
 
     const choice = response.choices[0];
@@ -259,6 +299,8 @@ async function runOpenAIToolLoop(args: {
         usage: {
           promptTokens: cumulativePromptTokens,
           completionTokens: cumulativeCompletionTokens,
+          cachedPromptTokens:
+            cumulativeCachedTokens > 0 ? cumulativeCachedTokens : undefined,
         },
       };
     }
@@ -271,6 +313,8 @@ async function runOpenAIToolLoop(args: {
         usage: {
           promptTokens: cumulativePromptTokens,
           completionTokens: cumulativeCompletionTokens,
+          cachedPromptTokens:
+            cumulativeCachedTokens > 0 ? cumulativeCachedTokens : undefined,
         },
       };
     }

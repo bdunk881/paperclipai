@@ -578,6 +578,63 @@ describe("Anthropic adapter", () => {
 
       expect(result.usage?.cachedPromptTokens).toBeUndefined();
     });
+
+    // HEL-145 followup (Codex on #898): cache_creation_input_tokens is a
+    // separate Anthropic bucket billed at the cache-write rate.
+    // First-call costs are undercounted if we drop it.
+    it("surfaces cache_creation_input_tokens as usage.cachedCreationTokens", async () => {
+      const provider = getProvider({
+        ...config,
+        systemPrompt: "You are Atlas.",
+        cacheSystemPrompt: true,
+      });
+      anthropicInstance().messages.create.mockResolvedValueOnce({
+        content: [{ type: "text", text: "ok" }],
+        usage: {
+          input_tokens: 50,
+          output_tokens: 10,
+          cache_creation_input_tokens: 3000,
+        },
+      });
+
+      const result = await provider("Reach out");
+
+      expect(result.usage).toEqual({
+        promptTokens: 50,
+        completionTokens: 10,
+        cachedPromptTokens: undefined,
+        cachedCreationTokens: 3000,
+      });
+    });
+
+    it("can surface BOTH cache_read and cache_creation buckets together", async () => {
+      // Real cache writes/reads happen on different calls — this just
+      // verifies the contract handles the unusual case where Anthropic
+      // returns both buckets > 0.
+      const provider = getProvider({
+        ...config,
+        systemPrompt: "You are Atlas.",
+        cacheSystemPrompt: true,
+      });
+      anthropicInstance().messages.create.mockResolvedValueOnce({
+        content: [{ type: "text", text: "ok" }],
+        usage: {
+          input_tokens: 100,
+          output_tokens: 20,
+          cache_read_input_tokens: 4000,
+          cache_creation_input_tokens: 500,
+        },
+      });
+
+      const result = await provider("Reach out");
+
+      expect(result.usage).toEqual({
+        promptTokens: 100,
+        completionTokens: 20,
+        cachedPromptTokens: 4000,
+        cachedCreationTokens: 500,
+      });
+    });
   });
 });
 
@@ -624,6 +681,47 @@ describe("OpenAI-compat HEL-145 system prompt wiring", () => {
 
     const call = openaiInstance().chat.completions.create.mock.calls[0][0];
     expect(call.messages).toEqual([{ role: "user", content: "Hi" }]);
+  });
+
+  // HEL-145 followup (Codex on #898): OpenAI returns prompt_tokens
+  // INCLUDING the cached portion plus a prompt_tokens_details.cached_tokens
+  // subfield. The provider-agnostic contract is additive (uncached +
+  // cached), so promptTokens must be the uncached remainder. Without
+  // this, workspaces on OpenAI lose cached-rate attribution.
+  it("splits OpenAI prompt_tokens into uncached + cachedPromptTokens", async () => {
+    const provider = getProvider(config);
+    openaiInstance().chat.completions.create.mockResolvedValueOnce({
+      choices: [{ message: { content: "ok" } }],
+      usage: {
+        prompt_tokens: 1500,
+        completion_tokens: 50,
+        prompt_tokens_details: { cached_tokens: 1000 },
+      },
+    });
+
+    const result = await provider("Hi");
+
+    expect(result.usage).toEqual({
+      promptTokens: 500, // 1500 - 1000
+      completionTokens: 50,
+      cachedPromptTokens: 1000,
+    });
+  });
+
+  it("returns the full prompt_tokens count when no cached_tokens field is present", async () => {
+    const provider = getProvider(config);
+    openaiInstance().chat.completions.create.mockResolvedValueOnce({
+      choices: [{ message: { content: "ok" } }],
+      usage: { prompt_tokens: 800, completion_tokens: 50 },
+    });
+
+    const result = await provider("Hi");
+
+    expect(result.usage).toEqual({
+      promptTokens: 800,
+      completionTokens: 50,
+      cachedPromptTokens: undefined,
+    });
   });
 });
 

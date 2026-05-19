@@ -213,19 +213,54 @@ export interface AgentTool {
 export interface LLMResponse {
   text: string;
   usage?: {
+    /**
+     * Non-cached input tokens billed at the standard prompt rate.
+     *
+     * HEL-145 contract (Codex review on PR #898 confirmed semantics):
+     *   - Anthropic reports `input_tokens`, `cache_read_input_tokens`,
+     *     and `cache_creation_input_tokens` as THREE SEPARATE buckets.
+     *     promptTokens here mirrors Anthropic's `input_tokens` (the
+     *     uncached portion) so it stays additive with the cache fields.
+     *   - OpenAI reports `prompt_tokens` (total) and
+     *     `prompt_tokens_details.cached_tokens` (cached portion).
+     *     promptTokens here is `prompt_tokens - cached_tokens` so it
+     *     also matches the "uncached, standard-rate" semantics.
+     *
+     * Cost attribution: `promptTokens × full_rate +
+     * cachedPromptTokens × cached_rate + cachedCreationTokens ×
+     * cache_write_rate + completionTokens × output_rate`. Never
+     * subtract any cache bucket from promptTokens — the buckets are
+     * additive.
+     */
     promptTokens: number;
     completionTokens: number;
     /**
-     * HEL-145: Number of input tokens served from the provider's
-     * prompt cache (Anthropic `cache_read_input_tokens`, OpenAI
-     * automatic cache reads). Undefined when the provider didn't
-     * report cache activity or doesn't expose this metric.
+     * HEL-145: Input tokens served from the provider's prompt cache
+     * at a reduced rate.
+     *   - Anthropic: `cache_read_input_tokens` (billed at ~10% of
+     *     full input cost).
+     *   - OpenAI: `prompt_tokens_details.cached_tokens` (billed at
+     *     50% of full input cost for the supported models).
      *
-     * Cost-attribution layers should bill `promptTokens - cachedPromptTokens`
-     * at the full rate and `cachedPromptTokens` at the cached rate
-     * (Anthropic: 10% of full input cost).
+     * Undefined when the provider didn't report cache activity or
+     * doesn't expose this metric.
      */
     cachedPromptTokens?: number;
+    /**
+     * HEL-145: Anthropic-only. Input tokens that were used to *write*
+     * the cache on this request (cache miss / first call within TTL).
+     * Billed at ~125% of full input cost — the surcharge that pays
+     * for cache storage. Subsequent requests within the 5-min TTL
+     * surface those same tokens as `cachedPromptTokens` instead.
+     *
+     * Cost-attribution layers must include this bucket so first-call
+     * costs aren't undercounted.
+     *
+     * Undefined for OpenAI (no per-request cache-write bucket — the
+     * cache is opportunistic) and for providers without explicit
+     * cache controls.
+     */
+    cachedCreationTokens?: number;
   };
 }
 

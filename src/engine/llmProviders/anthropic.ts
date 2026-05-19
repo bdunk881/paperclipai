@@ -89,6 +89,20 @@ export function createAnthropicProvider(config: LLMProviderConfig): LLMProvider 
     return typeof raw === "number" && raw > 0 ? raw : undefined;
   }
 
+  function readCacheCreationTokens(
+    usage: Anthropic.Messages.Usage,
+  ): number | undefined {
+    // HEL-145 followup (Codex review on PR #898): Anthropic returns
+    // input_tokens / cache_read_input_tokens / cache_creation_input_tokens
+    // as THREE separate buckets. The cache-write bucket is billed at
+    // ~1.25× standard input rate; missing it undercounts first-call
+    // cost. Subsequent requests within the 5-min TTL surface those
+    // same tokens as cache_read_input_tokens instead.
+    const raw = (usage as { cache_creation_input_tokens?: number | null })
+      .cache_creation_input_tokens;
+    return typeof raw === "number" && raw > 0 ? raw : undefined;
+  }
+
   return async (prompt: string): Promise<LLMResponse> => {
     // Agentic tool-loop path (DASH-22). When `tools` is set the
     // model can emit tool_use blocks; we invoke the matching handler
@@ -143,6 +157,7 @@ export function createAnthropicProvider(config: LLMProviderConfig): LLMProvider 
           promptTokens: final.usage.input_tokens,
           completionTokens: final.usage.output_tokens,
           cachedPromptTokens: readCachedTokens(final.usage),
+          cachedCreationTokens: readCacheCreationTokens(final.usage),
         };
         const firstBlock = final.content[0];
         const text =
@@ -192,6 +207,7 @@ export function createAnthropicProvider(config: LLMProviderConfig): LLMProvider 
       promptTokens: response.usage.input_tokens,
       completionTokens: response.usage.output_tokens,
       cachedPromptTokens: readCachedTokens(response.usage),
+      cachedCreationTokens: readCacheCreationTokens(response.usage),
     };
 
     return { text, usage };
@@ -289,6 +305,7 @@ async function runAnthropicToolLoop(args: {
   let cumulativePromptTokens = 0;
   let cumulativeCompletionTokens = 0;
   let cumulativeCachedTokens = 0;
+  let cumulativeCacheCreationTokens = 0;
 
   for (let iteration = 0; iteration < args.maxIterations; iteration++) {
     let response: Anthropic.Messages.Message;
@@ -312,6 +329,11 @@ async function runAnthropicToolLoop(args: {
     if (typeof cachedThisTurn === "number" && cachedThisTurn > 0) {
       cumulativeCachedTokens += cachedThisTurn;
     }
+    const cacheCreationThisTurn = (response.usage as { cache_creation_input_tokens?: number | null })
+      .cache_creation_input_tokens;
+    if (typeof cacheCreationThisTurn === "number" && cacheCreationThisTurn > 0) {
+      cumulativeCacheCreationTokens += cacheCreationThisTurn;
+    }
 
     // Always append the assistant turn so the next loop iteration
     // (or the final return) has the full transcript.
@@ -326,6 +348,8 @@ async function runAnthropicToolLoop(args: {
           completionTokens: cumulativeCompletionTokens,
           cachedPromptTokens:
             cumulativeCachedTokens > 0 ? cumulativeCachedTokens : undefined,
+          cachedCreationTokens:
+            cumulativeCacheCreationTokens > 0 ? cumulativeCacheCreationTokens : undefined,
         },
       };
     }
@@ -397,6 +421,11 @@ async function runAnthropicToolLoop(args: {
     if (typeof cachedFinal === "number" && cachedFinal > 0) {
       cumulativeCachedTokens += cachedFinal;
     }
+    const cacheCreationFinal = (finalTurn.usage as { cache_creation_input_tokens?: number | null })
+      .cache_creation_input_tokens;
+    if (typeof cacheCreationFinal === "number" && cacheCreationFinal > 0) {
+      cumulativeCacheCreationTokens += cacheCreationFinal;
+    }
     const text =
       extractAssistantText(finalTurn.content) ||
       "[interrupted: max iterations]";
@@ -407,6 +436,8 @@ async function runAnthropicToolLoop(args: {
         completionTokens: cumulativeCompletionTokens,
         cachedPromptTokens:
           cumulativeCachedTokens > 0 ? cumulativeCachedTokens : undefined,
+        cachedCreationTokens:
+          cumulativeCacheCreationTokens > 0 ? cumulativeCacheCreationTokens : undefined,
       },
     };
   } catch {
@@ -417,6 +448,8 @@ async function runAnthropicToolLoop(args: {
         completionTokens: cumulativeCompletionTokens,
         cachedPromptTokens:
           cumulativeCachedTokens > 0 ? cumulativeCachedTokens : undefined,
+        cachedCreationTokens:
+          cumulativeCacheCreationTokens > 0 ? cumulativeCacheCreationTokens : undefined,
       },
     };
   }

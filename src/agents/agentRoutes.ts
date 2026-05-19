@@ -244,7 +244,7 @@ async function loadCanonicalAgents(
   );
 }
 
-router.get("/:id/heartbeat", (req: WorkspaceAwareRequest, res) => {
+router.get("/:id/heartbeat", async (req: WorkspaceAwareRequest, res) => {
   const context = resolveRequestContext(req);
   if (!context) {
     res.status(401).json({ error: "Authenticated user required" });
@@ -257,7 +257,13 @@ router.get("/:id/heartbeat", (req: WorkspaceAwareRequest, res) => {
     return;
   }
 
-  const heartbeat = controlPlaneStore.listAgentHeartbeats(agent.id, context.userId, context.workspaceId).at(-1);
+  // DASH-64.2: listAgentHeartbeats is now async (repository-backed).
+  const agentHeartbeats = await controlPlaneStore.listAgentHeartbeats(
+    agent.id,
+    context.userId,
+    context.workspaceId,
+  );
+  const heartbeat = agentHeartbeats.at(-1);
   if (!heartbeat) {
     res.status(404).json({ error: "Heartbeat not found" });
     return;
@@ -308,7 +314,7 @@ router.get("/:id/runs", (req: WorkspaceAwareRequest, res) => {
   res.json({ runs, total: runs.length });
 });
 
-router.get("/:id/budget", (req: WorkspaceAwareRequest, res) => {
+router.get("/:id/budget", async (req: WorkspaceAwareRequest, res) => {
   const context = resolveRequestContext(req);
   if (!context) {
     res.status(401).json({ error: "Authenticated user required" });
@@ -324,7 +330,8 @@ router.get("/:id/budget", (req: WorkspaceAwareRequest, res) => {
   const period = currentPeriodKey();
   const teamSpend = controlPlaneStore.getTeamSpendSnapshot(agent.teamId, context.userId, context.workspaceId);
   const agentSpend = teamSpend?.agents.find((entry) => entry.agentId === agent.id);
-  const heartbeats = controlPlaneStore.listAgentHeartbeats(agent.id, context.userId, context.workspaceId);
+  // DASH-64.2: listAgentHeartbeats is async.
+  const heartbeats = await controlPlaneStore.listAgentHeartbeats(agent.id, context.userId, context.workspaceId);
   const spentUsd = agentSpend?.spentUsd ?? 0;
   const monthlyUsd = agent.budgetMonthlyUsd;
   const remainingUsd = Number(Math.max(0, monthlyUsd - spentUsd).toFixed(2));
@@ -344,7 +351,7 @@ router.get("/:id/budget", (req: WorkspaceAwareRequest, res) => {
   });
 });
 
-router.get("/:id/token-usage", (req: WorkspaceAwareRequest, res) => {
+router.get("/:id/token-usage", async (req: WorkspaceAwareRequest, res) => {
   const context = resolveRequestContext(req);
   if (!context) {
     res.status(401).json({ error: "Authenticated user required" });
@@ -364,7 +371,13 @@ router.get("/:id/token-usage", (req: WorkspaceAwareRequest, res) => {
   cutoff.setUTCDate(cutoff.getUTCDate() - (days - 1));
 
   const dailyCosts = new Map<string, number>();
-  for (const heartbeat of controlPlaneStore.listAgentHeartbeats(agent.id, context.userId, context.workspaceId)) {
+  // DASH-64.2: listAgentHeartbeats is async (repository-backed).
+  const agentHeartbeats = await controlPlaneStore.listAgentHeartbeats(
+    agent.id,
+    context.userId,
+    context.workspaceId,
+  );
+  for (const heartbeat of agentHeartbeats) {
     const timestamp = heartbeat.completedAt ?? heartbeat.startedAt;
     if (new Date(timestamp) < cutoff) {
       continue;

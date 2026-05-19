@@ -9,12 +9,15 @@
  *   4. When an event fires, the relay receives it, matches it to a subscription,
  *      and stores the event payload for immediate retrieval or async workflow execution.
  *
- * For production, replace the in-memory event buffer with a persistent queue
- * (e.g. Redis, SQS, PostgreSQL).
+ * DASH-51: backed by `webhook_subscriptions` + `webhook_relayed_events`
+ * (migration 043). Pre-DASH-51 the entire relay lived in two in-memory
+ * Maps — every Fly restart wiped registered relay URLs, so customer
+ * webhooks 404'd until the user manually re-subscribed.
  */
 
 import { randomUUID } from "node:crypto";
 import { createHmac, timingSafeEqual } from "crypto";
+import { getPostgresPool, inMemoryAllowed, isPostgresPersistenceEnabled } from "../db/postgres";
 
 // ---------------------------------------------------------------------------
 // Webhook signature verification
@@ -173,7 +176,7 @@ export interface RelayedEvent {
 }
 
 // ---------------------------------------------------------------------------
-// In-memory relay state
+// In-memory caches (write-through to Postgres for durability)
 // ---------------------------------------------------------------------------
 
 const subscriptions = new Map<string, WebhookSubscription>();
@@ -181,13 +184,204 @@ const subscriptions = new Map<string, WebhookSubscription>();
 const events = new Map<string, RelayedEvent[]>();
 const MAX_EVENTS_PER_SUBSCRIPTION = 500;
 
+function postgresAvailable(): boolean {
+  if (isPostgresPersistenceEnabled()) return true;
+  if (inMemoryAllowed()) return false;
+  throw new Error("webhookRelay requires DATABASE_URL outside development/test.");
+}
+
+interface SubscriptionRow {
+  id: string;
+  user_id: string;
+  integration_slug: string;
+  trigger_id: string;
+  event_types: string[] | string;
+  workflow_template_id: string | null;
+  label: string;
+  active: boolean;
+  signature_scheme: WebhookSignatureScheme;
+  signing_secret: string | null;
+  signature_header_key: string | null;
+  last_fired_at: Date | string | null;
+  created_at: Date | string;
+}
+
+interface EventRow {
+  id: string;
+  subscription_id: string;
+  user_id: string;
+  integration_slug: string;
+  trigger_id: string;
+  payload: Record<string, unknown> | string;
+  headers: Record<string, string> | string;
+  consumed: boolean;
+  received_at: Date | string;
+}
+
+function parseJsonField<T>(value: T | string | null, fallback: T): T {
+  if (value === null) return fallback;
+  if (typeof value === "string") {
+    try {
+      return JSON.parse(value) as T;
+    } catch {
+      return fallback;
+    }
+  }
+  return value;
+}
+
+function isoOrUndefined(v: Date | string | null | undefined): string | undefined {
+  if (v === null || v === undefined) return undefined;
+  return v instanceof Date ? v.toISOString() : v;
+}
+
+function mapSubscriptionRow(row: SubscriptionRow): WebhookSubscription {
+  return {
+    id: row.id,
+    userId: row.user_id,
+    integrationSlug: row.integration_slug,
+    triggerId: row.trigger_id,
+    eventTypes: parseJsonField<string[]>(row.event_types, []),
+    workflowTemplateId: row.workflow_template_id ?? undefined,
+    label: row.label,
+    active: row.active,
+    createdAt: isoOrUndefined(row.created_at) ?? new Date().toISOString(),
+    lastFiredAt: isoOrUndefined(row.last_fired_at),
+    signatureScheme: row.signature_scheme,
+    signingSecret: row.signing_secret ?? undefined,
+    signatureHeaderKey: row.signature_header_key ?? undefined,
+  };
+}
+
+function mapEventRow(row: EventRow): RelayedEvent {
+  return {
+    id: row.id,
+    subscriptionId: row.subscription_id,
+    userId: row.user_id,
+    integrationSlug: row.integration_slug,
+    triggerId: row.trigger_id,
+    payload: parseJsonField<Record<string, unknown>>(row.payload, {}),
+    headers: parseJsonField<Record<string, string>>(row.headers, {}),
+    receivedAt: isoOrUndefined(row.received_at) ?? new Date().toISOString(),
+    consumed: row.consumed,
+  };
+}
+
+async function persistSubscription(sub: WebhookSubscription): Promise<void> {
+  if (!postgresAvailable()) return;
+  await getPostgresPool().query(
+    `INSERT INTO webhook_subscriptions (
+       id, user_id, integration_slug, trigger_id, event_types, workflow_template_id,
+       label, active, signature_scheme, signing_secret, signature_header_key,
+       last_fired_at, created_at
+     ) VALUES ($1,$2,$3,$4,$5::jsonb,$6,$7,$8,$9,$10,$11,$12,$13)
+     ON CONFLICT (id) DO UPDATE SET
+       event_types = EXCLUDED.event_types,
+       workflow_template_id = EXCLUDED.workflow_template_id,
+       label = EXCLUDED.label,
+       active = EXCLUDED.active,
+       signature_scheme = EXCLUDED.signature_scheme,
+       signing_secret = EXCLUDED.signing_secret,
+       signature_header_key = EXCLUDED.signature_header_key,
+       last_fired_at = EXCLUDED.last_fired_at`,
+    [
+      sub.id,
+      sub.userId,
+      sub.integrationSlug,
+      sub.triggerId,
+      JSON.stringify(sub.eventTypes),
+      sub.workflowTemplateId ?? null,
+      sub.label,
+      sub.active,
+      sub.signatureScheme,
+      sub.signingSecret ?? null,
+      sub.signatureHeaderKey ?? null,
+      sub.lastFiredAt ?? null,
+      sub.createdAt,
+    ],
+  );
+}
+
+async function loadSubscriptionById(id: string): Promise<WebhookSubscription | undefined> {
+  if (!postgresAvailable()) return undefined;
+  const result = await getPostgresPool().query<SubscriptionRow>(
+    `SELECT * FROM webhook_subscriptions WHERE id = $1`,
+    [id],
+  );
+  return result.rows[0] ? mapSubscriptionRow(result.rows[0]) : undefined;
+}
+
+async function loadSubscriptionsByUser(userId: string): Promise<WebhookSubscription[]> {
+  if (!postgresAvailable()) return [];
+  const result = await getPostgresPool().query<SubscriptionRow>(
+    `SELECT * FROM webhook_subscriptions WHERE user_id = $1 ORDER BY created_at ASC`,
+    [userId],
+  );
+  return result.rows.map(mapSubscriptionRow);
+}
+
+async function deleteSubscriptionRow(id: string): Promise<void> {
+  if (!postgresAvailable()) return;
+  await getPostgresPool().query(`DELETE FROM webhook_subscriptions WHERE id = $1`, [id]);
+}
+
+async function persistEvent(event: RelayedEvent): Promise<void> {
+  if (!postgresAvailable()) return;
+  await getPostgresPool().query(
+    `INSERT INTO webhook_relayed_events (
+       id, subscription_id, user_id, integration_slug, trigger_id,
+       payload, headers, consumed, received_at
+     ) VALUES ($1,$2,$3,$4,$5,$6::jsonb,$7::jsonb,$8,$9)`,
+    [
+      event.id,
+      event.subscriptionId,
+      event.userId,
+      event.integrationSlug,
+      event.triggerId,
+      JSON.stringify(event.payload),
+      JSON.stringify(event.headers),
+      event.consumed,
+      event.receivedAt,
+    ],
+  );
+}
+
+async function pruneSubscriptionEvents(subscriptionId: string): Promise<void> {
+  // Keep only the MAX_EVENTS_PER_SUBSCRIPTION most recent events,
+  // matching the in-memory circular-buffer behaviour.
+  if (!postgresAvailable()) return;
+  await getPostgresPool().query(
+    `DELETE FROM webhook_relayed_events
+       WHERE subscription_id = $1
+         AND id NOT IN (
+           SELECT id FROM webhook_relayed_events
+            WHERE subscription_id = $1
+            ORDER BY received_at DESC
+            LIMIT $2
+         )`,
+    [subscriptionId, MAX_EVENTS_PER_SUBSCRIPTION],
+  );
+}
+
+async function loadEvents(subscriptionId: string): Promise<RelayedEvent[]> {
+  if (!postgresAvailable()) return [];
+  const result = await getPostgresPool().query<EventRow>(
+    `SELECT * FROM webhook_relayed_events
+      WHERE subscription_id = $1
+      ORDER BY received_at DESC
+      LIMIT $2`,
+    [subscriptionId, MAX_EVENTS_PER_SUBSCRIPTION],
+  );
+  return result.rows.map(mapEventRow);
+}
+
 // ---------------------------------------------------------------------------
 // Subscription management
 // ---------------------------------------------------------------------------
 
 export const webhookRelay = {
-  /** Register a new webhook trigger subscription. Returns the subscription record. */
-  subscribe(params: {
+  /** Register a new webhook trigger subscription. */
+  async subscribe(params: {
     userId: string;
     integrationSlug: string;
     triggerId: string;
@@ -197,7 +391,7 @@ export const webhookRelay = {
     signatureScheme?: WebhookSignatureScheme;
     signingSecret?: string;
     signatureHeaderKey?: string;
-  }): WebhookSubscription {
+  }): Promise<WebhookSubscription> {
     const subscription: WebhookSubscription = {
       id: randomUUID(),
       userId: params.userId,
@@ -214,81 +408,82 @@ export const webhookRelay = {
     };
     subscriptions.set(subscription.id, subscription);
     events.set(subscription.id, []);
+    await persistSubscription(subscription);
     return subscription;
   },
 
-  /** List subscriptions for a user (optionally filtered by integration). */
-  listSubscriptions(userId: string, integrationSlug?: string): WebhookSubscription[] {
+  async listSubscriptions(
+    userId: string,
+    integrationSlug?: string,
+  ): Promise<WebhookSubscription[]> {
+    if (postgresAvailable()) {
+      const persisted = await loadSubscriptionsByUser(userId);
+      for (const sub of persisted) {
+        subscriptions.set(sub.id, sub);
+      }
+      return persisted.filter(
+        (s) => !integrationSlug || s.integrationSlug === integrationSlug,
+      );
+    }
     return Array.from(subscriptions.values()).filter(
       (s) =>
         s.userId === userId &&
-        (!integrationSlug || s.integrationSlug === integrationSlug)
+        (!integrationSlug || s.integrationSlug === integrationSlug),
     );
   },
 
-  /** Get a subscription by ID. */
-  getSubscription(id: string): WebhookSubscription | undefined {
-    return subscriptions.get(id);
+  async getSubscription(id: string): Promise<WebhookSubscription | undefined> {
+    const cached = subscriptions.get(id);
+    if (cached) return cached;
+    const persisted = await loadSubscriptionById(id);
+    if (persisted) subscriptions.set(persisted.id, persisted);
+    return persisted;
   },
 
   /** Deactivate a subscription (soft delete — retains events). */
-  unsubscribe(id: string, userId: string): boolean {
-    const sub = subscriptions.get(id);
+  async unsubscribe(id: string, userId: string): Promise<boolean> {
+    const sub = subscriptions.get(id) ?? (await loadSubscriptionById(id));
     if (!sub || sub.userId !== userId) return false;
-    subscriptions.set(id, { ...sub, active: false });
+    const updated = { ...sub, active: false };
+    subscriptions.set(id, updated);
+    await persistSubscription(updated);
     return true;
   },
 
   /** Hard-delete a subscription and its events. */
-  deleteSubscription(id: string, userId: string): boolean {
-    const sub = subscriptions.get(id);
+  async deleteSubscription(id: string, userId: string): Promise<boolean> {
+    const sub = subscriptions.get(id) ?? (await loadSubscriptionById(id));
     if (!sub || sub.userId !== userId) return false;
     subscriptions.delete(id);
     events.delete(id);
+    await deleteSubscriptionRow(id);
     return true;
   },
 
-  // ---------------------------------------------------------------------------
-  // Event ingestion
-  // ---------------------------------------------------------------------------
-
   /**
    * Receive an inbound webhook payload for a subscription.
-   *
-   * - Validates the subscription is active.
-   * - Verifies the webhook signature when signatureScheme is not "none".
-   * - Optionally matches event type against subscription.eventTypes.
-   * - Stores the event in the relay buffer.
-   * - Returns the stored event (callers can use this to fire workflow runs).
-   *
-   * Returns null if the subscription is not found, inactive, signature invalid,
-   * or event type not matched.
-   *
-   * @param rawBody  The raw request body string, required for signature verification.
-   *                 Pass an empty string ("") when the subscription uses scheme "none".
+   * See module header for full contract.
    */
-  ingest(
+  async ingest(
     subscriptionId: string,
     payload: Record<string, unknown>,
     headers: Record<string, string>,
-    rawBody: string = ""
-  ): RelayedEvent | null {
-    const sub = subscriptions.get(subscriptionId);
+    rawBody: string = "",
+  ): Promise<RelayedEvent | null> {
+    const sub = subscriptions.get(subscriptionId) ?? (await loadSubscriptionById(subscriptionId));
     if (!sub || !sub.active) return null;
 
-    // Signature verification — reject if scheme is configured and sig is bad
     if (sub.signatureScheme !== "none" && sub.signingSecret) {
       const valid = verifyWebhookSignature(
         sub.signatureScheme,
         sub.signingSecret,
         rawBody,
         headers,
-        sub.signatureHeaderKey
+        sub.signatureHeaderKey,
       );
       if (!valid) return null;
     }
 
-    // Match event type when the subscription filters by eventTypes
     if (sub.eventTypes.length > 0) {
       const incomingType = resolveEventType(payload, headers);
       if (incomingType && !sub.eventTypes.includes(incomingType)) {
@@ -308,55 +503,67 @@ export const webhookRelay = {
       consumed: false,
     };
 
-    // Append to buffer, respecting max size
+    // Update in-memory buffer (cache for the in-process fast path)
     const buffer = events.get(subscriptionId) ?? [];
     buffer.push(event);
     if (buffer.length > MAX_EVENTS_PER_SUBSCRIPTION) {
-      buffer.shift(); // remove oldest
+      buffer.shift();
     }
     events.set(subscriptionId, buffer);
 
-    // Update lastFiredAt
-    subscriptions.set(subscriptionId, { ...sub, lastFiredAt: event.receivedAt });
+    const updatedSub = { ...sub, lastFiredAt: event.receivedAt };
+    subscriptions.set(subscriptionId, updatedSub);
+
+    await persistEvent(event);
+    await persistSubscription(updatedSub);
+    await pruneSubscriptionEvents(subscriptionId);
 
     return event;
   },
 
-  // ---------------------------------------------------------------------------
-  // Event retrieval
-  // ---------------------------------------------------------------------------
-
   /** List events for a subscription, most-recent first. */
-  listEvents(
+  async listEvents(
     subscriptionId: string,
     userId: string,
-    opts: { limit?: number; unconsumedOnly?: boolean } = {}
-  ): RelayedEvent[] {
-    const sub = subscriptions.get(subscriptionId);
+    opts: { limit?: number; unconsumedOnly?: boolean } = {},
+  ): Promise<RelayedEvent[]> {
+    const sub = subscriptions.get(subscriptionId) ?? (await loadSubscriptionById(subscriptionId));
     if (!sub || sub.userId !== userId) return [];
 
-    let buffer = (events.get(subscriptionId) ?? []).slice().reverse();
+    let buffer: RelayedEvent[];
+    if (postgresAvailable()) {
+      buffer = await loadEvents(subscriptionId);
+    } else {
+      buffer = (events.get(subscriptionId) ?? []).slice().reverse();
+    }
     if (opts.unconsumedOnly) buffer = buffer.filter((e) => !e.consumed);
     if (opts.limit) buffer = buffer.slice(0, opts.limit);
     return buffer;
   },
 
   /** Mark events as consumed (after a workflow run is started). */
-  markConsumed(eventIds: string[], subscriptionId: string): void {
+  async markConsumed(eventIds: string[], subscriptionId: string): Promise<void> {
     const buffer = events.get(subscriptionId);
-    if (!buffer) return;
-    const idSet = new Set(eventIds);
-    const updated = buffer.map((e) => (idSet.has(e.id) ? { ...e, consumed: true } : e));
-    events.set(subscriptionId, updated);
+    if (buffer) {
+      const idSet = new Set(eventIds);
+      const updated = buffer.map((e) => (idSet.has(e.id) ? { ...e, consumed: true } : e));
+      events.set(subscriptionId, updated);
+    }
+    if (!postgresAvailable() || eventIds.length === 0) return;
+    await getPostgresPool().query(
+      `UPDATE webhook_relayed_events
+          SET consumed = true
+        WHERE subscription_id = $1 AND id = ANY($2::uuid[])`,
+      [subscriptionId, eventIds],
+    );
   },
 
-  // ---------------------------------------------------------------------------
-  // Test helpers
-  // ---------------------------------------------------------------------------
-
-  clear(): void {
+  async clear(): Promise<void> {
     subscriptions.clear();
     events.clear();
+    if (!postgresAvailable()) return;
+    await getPostgresPool().query(`DELETE FROM webhook_relayed_events`);
+    await getPostgresPool().query(`DELETE FROM webhook_subscriptions`);
   },
 };
 

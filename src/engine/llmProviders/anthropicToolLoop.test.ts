@@ -250,4 +250,118 @@ describe("Anthropic agentic tool loop (DASH-22)", () => {
     const response = await provider("hi");
     expect(response.text).toBe("plain old text");
   });
+
+  // HEL-145: prompt-caching coverage for the tool-loop path. The non-loop
+  // paths (regular create + streaming) are covered by llmProviders.test.ts;
+  // these cases exercise the parallel logic inside runAnthropicToolLoop.
+  describe("HEL-145 prompt caching (tool loop)", () => {
+    it("passes systemField via the system param on every loop iteration", async () => {
+      const handler = jest.fn().mockResolvedValue({ ok: true });
+      const tool: AgentTool = {
+        name: "noop",
+        description: "n",
+        inputSchema: {},
+        handler,
+      };
+      mockedCreate
+        .mockResolvedValueOnce(toolUseResponse("noop", {}, "toolu_x"))
+        .mockResolvedValueOnce(endTurnResponse("done"));
+
+      const provider = createAnthropicProvider({
+        ...baseConfig,
+        tools: [tool],
+        systemPrompt: "You are Atlas.",
+      });
+      await provider("hi");
+
+      // Both iterations should carry the system prompt.
+      expect(mockedCreate).toHaveBeenCalledTimes(2);
+      expect(mockedCreate.mock.calls[0][0].system).toBe("You are Atlas.");
+      expect(mockedCreate.mock.calls[1][0].system).toBe("You are Atlas.");
+    });
+
+    it("tags the LAST tool with cache_control when cacheSystemPrompt is true", async () => {
+      const t1: AgentTool = { name: "first", description: "a", inputSchema: {}, handler: jest.fn() };
+      const t2: AgentTool = { name: "second", description: "b", inputSchema: {}, handler: jest.fn() };
+      mockedCreate.mockResolvedValueOnce(endTurnResponse("done"));
+
+      const provider = createAnthropicProvider({
+        ...baseConfig,
+        tools: [t1, t2],
+        systemPrompt: "Atlas",
+        cacheSystemPrompt: true,
+      });
+      await provider("hi");
+
+      const call = mockedCreate.mock.calls[0][0];
+      // System block is the array form when caching enabled.
+      expect(call.system).toEqual([
+        { type: "text", text: "Atlas", cache_control: { type: "ephemeral" } },
+      ]);
+      // First tool: no cache_control. Last tool: cache_control set.
+      expect(call.tools[0]).not.toHaveProperty("cache_control");
+      expect(call.tools[1].cache_control).toEqual({ type: "ephemeral" });
+    });
+
+    it("aggregates cache_read_input_tokens across loop turns into usage.cachedPromptTokens", async () => {
+      const handler = jest.fn().mockResolvedValue({ ok: true });
+      const tool: AgentTool = {
+        name: "noop",
+        description: "n",
+        inputSchema: {},
+        handler,
+      };
+      // Turn 1: 100 cached tokens. Turn 2: 200 cached tokens. Sum: 300.
+      const turn1WithCache: Anthropic.Messages.Message = {
+        ...toolUseResponse("noop", {}, "toolu_y"),
+        usage: {
+          input_tokens: 50,
+          output_tokens: 10,
+          cache_read_input_tokens: 100,
+        } as Anthropic.Messages.Usage,
+      };
+      const turn2WithCache: Anthropic.Messages.Message = {
+        ...endTurnResponse("done"),
+        usage: {
+          input_tokens: 60,
+          output_tokens: 15,
+          cache_read_input_tokens: 200,
+        } as Anthropic.Messages.Usage,
+      };
+      mockedCreate
+        .mockResolvedValueOnce(turn1WithCache)
+        .mockResolvedValueOnce(turn2WithCache);
+
+      const provider = createAnthropicProvider({
+        ...baseConfig,
+        tools: [tool],
+        systemPrompt: "Atlas",
+        cacheSystemPrompt: true,
+      });
+      const response = await provider("hi");
+
+      expect(response.usage?.cachedPromptTokens).toBe(300);
+    });
+
+    it("omits cachedPromptTokens when no loop turn reported cache activity", async () => {
+      const handler = jest.fn().mockResolvedValue({ ok: true });
+      const tool: AgentTool = {
+        name: "noop",
+        description: "n",
+        inputSchema: {},
+        handler,
+      };
+      mockedCreate
+        .mockResolvedValueOnce(toolUseResponse("noop", {}, "toolu_z"))
+        .mockResolvedValueOnce(endTurnResponse("done"));
+
+      const provider = createAnthropicProvider({
+        ...baseConfig,
+        tools: [tool],
+      });
+      const response = await provider("hi");
+
+      expect(response.usage?.cachedPromptTokens).toBeUndefined();
+    });
+  });
 });

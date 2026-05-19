@@ -83,8 +83,9 @@ describe("controlPlaneStore workspace-scoped reads", () => {
     expect(
       await controlPlaneStore.listAgentHeartbeats(started.agent.id, "ceo-user", "workspace-shared")
     ).toHaveLength(1);
+    // DASH-64.3: getTeamSpendSnapshot is now async.
     expect(
-      controlPlaneStore.getTeamSpendSnapshot(provisioned.team.id, "ceo-user", "workspace-shared")
+      await controlPlaneStore.getTeamSpendSnapshot(provisioned.team.id, "ceo-user", "workspace-shared")
     ).toEqual(
       expect.objectContaining({
         team: expect.objectContaining({ spentUsd: 1.25 }),

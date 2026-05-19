@@ -570,10 +570,11 @@ router.get("/teams/:id", async (req: WorkspaceAwareRequest, res) => {
     const agents = controlPlaneStore.listAgents(team.id, context.userId, context.workspaceId);
     // DASH-64.1: listTasks is async now.
     // DASH-64.2: listHeartbeats is async now.
+    // DASH-64.3: getTeamSpendSnapshot is async now.
     const tasks = await controlPlaneStore.listTasks(context.userId, team.id, context.workspaceId);
     const heartbeats = await controlPlaneStore.listHeartbeats(context.userId, team.id, context.workspaceId);
     const executions = controlPlaneStore.listExecutions(context.userId, team.id, context.workspaceId);
-    const spend = controlPlaneStore.getTeamSpendSnapshot(team.id, context.userId, context.workspaceId);
+    const spend = await controlPlaneStore.getTeamSpendSnapshot(team.id, context.userId, context.workspaceId);
     res.json({ team, agents, tasks, heartbeats, executions, spend });
     return;
   }
@@ -623,18 +624,33 @@ router.get("/teams/:id", async (req: WorkspaceAwareRequest, res) => {
   }
 });
 
-router.get("/teams/:id/spend", (req: WorkspaceAwareRequest, res) => {
+router.get("/teams/:id/spend", async (req: WorkspaceAwareRequest, res) => {
+  // DASH-64.3: getTeamSpendSnapshot is now async (repository-backed).
+  // Wrap in try/catch per Codex iter-3 lesson — Express 4 doesn't
+  // auto-translate async rejections to 500s.
   const context = resolveWorkspaceContext(req, res);
   if (!context) {
     return;
   }
-
-  const spend = controlPlaneStore.getTeamSpendSnapshot(req.params.id, context.userId, context.workspaceId);
-  if (!spend) {
-    res.status(404).json({ error: "Team not found" });
-    return;
+  try {
+    const spend = await controlPlaneStore.getTeamSpendSnapshot(
+      req.params.id,
+      context.userId,
+      context.workspaceId,
+    );
+    if (!spend) {
+      res.status(404).json({ error: "Team not found" });
+      return;
+    }
+    res.json(spend);
+  } catch (err) {
+    console.error(
+      `[controlPlaneRoutes] /teams/:id/spend repository error for team=${req.params.id}: ${
+        (err as Error).message
+      }`,
+    );
+    res.status(500).json({ error: "Failed to load team spend snapshot" });
   }
-  res.json(spend);
 });
 
 router.post("/teams/:id/lifecycle", requirePaperclipRunId, async (req: WorkspaceAwareRequest, res) => {

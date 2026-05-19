@@ -852,6 +852,18 @@ export const controlPlaneRepository = {
     ctx: ControlPlaneRepoContext,
     filters?: { teamId?: string; agentId?: string; since?: string }
   ): Promise<ControlPlaneSpendEntry[]> {
+    if (useInMemoryFallback()) {
+      const bucket = memBucket(memSpendEntries, ctx.workspaceId);
+      return Array.from(bucket.values())
+        .filter((entry) => {
+          if (filters?.teamId && entry.teamId !== filters.teamId) return false;
+          if (filters?.agentId && entry.agentId !== filters.agentId) return false;
+          if (filters?.since && entry.recordedAt < filters.since) return false;
+          return true;
+        })
+        .map((entry) => ({ ...entry }))
+        .sort((left, right) => right.recordedAt.localeCompare(left.recordedAt));
+    }
     return withWorkspaceContext(getPostgresPool(), ctx, async (client) => {
       const params: unknown[] = [ctx.userId];
       let where = "user_id = $1";
@@ -884,7 +896,38 @@ export const controlPlaneRepository = {
     alert: ControlPlaneBudgetAlert
   ): Promise<void> {
     if (useInMemoryFallback()) {
-      memBucket(memBudgetAlerts, ctx.workspaceId).set(alert.id, { ...alert });
+      // DASH-64.3: in-memory fallback mirrors Postgres's ON CONFLICT
+      // dedupe semantics. Postgres uses partial unique indexes per
+      // scope (team / agent / tool) so concurrent inserts with the
+      // same scope-key cluster atomically converge to one row. The
+      // pre-DASH-64.3 store had its own `budgetAlertDedupeKey` Map
+      // check; that's gone now — the repository owns the dedup
+      // contract.
+      const bucket = memBucket(memBudgetAlerts, ctx.workspaceId);
+      const matchKey = (a: ControlPlaneBudgetAlert): boolean => {
+        if (a.userId !== alert.userId) return false;
+        if (a.teamId !== alert.teamId) return false;
+        if (a.scope !== alert.scope) return false;
+        if (a.threshold !== alert.threshold) return false;
+        if (alert.scope === "agent" && a.agentId !== alert.agentId) return false;
+        if (alert.scope === "tool" && a.toolName !== alert.toolName) return false;
+        return true;
+      };
+      // Find an existing match and update in place (mirrors DO UPDATE
+      // SET budget_usd / spent_usd / recorded_at on the partial unique
+      // index). If no match, insert keyed by alert.id.
+      for (const [key, existing] of bucket.entries()) {
+        if (matchKey(existing)) {
+          bucket.set(key, {
+            ...existing,
+            budgetUsd: alert.budgetUsd,
+            spentUsd: alert.spentUsd,
+            recordedAt: alert.recordedAt,
+          });
+          return;
+        }
+      }
+      bucket.set(alert.id, { ...alert });
       return;
     }
     await withWorkspaceContext(getPostgresPool(), ctx, async (client) => {
@@ -896,6 +939,16 @@ export const controlPlaneRepository = {
     ctx: ControlPlaneRepoContext,
     filters?: { teamId?: string }
   ): Promise<ControlPlaneBudgetAlert[]> {
+    if (useInMemoryFallback()) {
+      const bucket = memBucket(memBudgetAlerts, ctx.workspaceId);
+      return Array.from(bucket.values())
+        .filter((alert) => {
+          if (filters?.teamId && alert.teamId !== filters.teamId) return false;
+          return true;
+        })
+        .map((alert) => ({ ...alert }))
+        .sort((left, right) => right.recordedAt.localeCompare(left.recordedAt));
+    }
     return withWorkspaceContext(getPostgresPool(), ctx, async (client) => {
       const params: unknown[] = [ctx.userId];
       let where = "user_id = $1";

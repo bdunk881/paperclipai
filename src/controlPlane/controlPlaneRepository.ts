@@ -412,6 +412,102 @@ export const controlPlaneRepository = {
   },
 
   /**
+   * DASH-64.1 hotfix (Codex review on PR #901): atomic conditional
+   * checkout. The previous flow did `getTask()` → mutate in-memory →
+   * `upsertTask()`, which races when two runs try to claim the same
+   * unclaimed task concurrently: both reads see `checked_out_by =
+   * null`, both passes the check, both upserts succeed, both callers
+   * receive success — but only one upsert wins.
+   *
+   * Fix: a single UPDATE statement with `WHERE checked_out_by IS NULL
+   * OR checked_out_by = $actor` + RETURNING. If another actor already
+   * holds the lease, the WHERE filter rejects the update and 0 rows
+   * are returned → throw task_checked_out. If 1 row is returned, this
+   * caller successfully claimed (or re-claimed) the task.
+   *
+   * Returns the updated task row, or undefined if the task doesn't
+   * exist. Throws `task_checked_out` when another actor holds it.
+   */
+  async checkoutTaskAtomic(
+    ctx: ControlPlaneRepoContext,
+    input: {
+      taskId: string;
+      actor: string;
+      checkedOutAt: string; // ISO timestamp
+      updatedAt: string; // ISO timestamp
+      newStatus: ControlPlaneTaskStatus; // "in_progress"
+      auditEntry: ControlPlaneTaskAuditEvent;
+    },
+  ): Promise<ControlPlaneTask | undefined> {
+    if (useInMemoryFallback()) {
+      // Find the task across all buckets (test-mode legacy behaviour).
+      let task: ControlPlaneTask | undefined;
+      let bucket: Map<string, ControlPlaneTask> | undefined;
+      for (const b of memTasks.values()) {
+        const t = b.get(input.taskId);
+        if (t) {
+          task = t;
+          bucket = b;
+          break;
+        }
+      }
+      if (!task || !bucket) return undefined;
+      if (task.checkedOutBy && task.checkedOutBy !== input.actor) {
+        throw new Error("task_checked_out");
+      }
+      const updated: ControlPlaneTask = {
+        ...task,
+        checkedOutBy: input.actor,
+        checkedOutAt: input.checkedOutAt,
+        status: input.newStatus,
+        updatedAt: input.updatedAt,
+        auditTrail: [...task.auditTrail, input.auditEntry],
+      };
+      bucket.set(updated.id, updated);
+      return { ...updated };
+    }
+    return withWorkspaceContext(getPostgresPool(), ctx, async (client) => {
+      // Atomic compare-and-set: the WHERE clause covers two cases —
+      // (a) task is unclaimed (checked_out_by IS NULL), or (b) this
+      // actor is re-claiming a task they already hold (idempotent).
+      // Any other actor's hold makes the WHERE return zero rows.
+      const result = await client.query<TaskRow>(
+        `UPDATE agent_tasks
+            SET checked_out_by = $2,
+                checked_out_at = $3,
+                status = $4,
+                updated_at = $5,
+                audit_trail = COALESCE(audit_trail, '[]'::jsonb) || $6::jsonb
+          WHERE id = $1
+            AND (checked_out_by IS NULL OR checked_out_by = $2)
+       RETURNING id, team_id, user_id, title, description, source_run_id,
+                 source_workflow_step_id, assigned_agent_id, execution_id, status,
+                 checked_out_by, checked_out_at, audit_trail, metadata,
+                 created_at, updated_at`,
+        [
+          input.taskId,
+          input.actor,
+          new Date(input.checkedOutAt),
+          input.newStatus,
+          new Date(input.updatedAt),
+          JSON.stringify([input.auditEntry]),
+        ],
+      );
+      if (result.rowCount === 0) {
+        // Either the task doesn't exist or another actor holds it.
+        // Distinguish by a plain SELECT.
+        const exists = await client.query(
+          `SELECT 1 FROM agent_tasks WHERE id = $1`,
+          [input.taskId],
+        );
+        if (exists.rowCount === 0) return undefined;
+        throw new Error("task_checked_out");
+      }
+      return rowToTask(result.rows[0]);
+    });
+  },
+
+  /**
    * DASH-64.1: single-task lookup. Used by checkoutTask / updateTaskStatus
    * paths that need to read a row before mutating it. Returns undefined
    * when the task doesn't exist OR the caller doesn't own it (user_id

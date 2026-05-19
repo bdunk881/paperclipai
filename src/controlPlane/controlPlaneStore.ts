@@ -2375,31 +2375,37 @@ export const controlPlaneStore = {
     workspaceId?: string;
   }): Promise<ControlPlaneTask> {
     const workspaceId = input.workspaceId ?? input.userId;
-    const task = await controlPlaneRepository.getTask(
+    const timestamp = nowIso();
+    // DASH-64.1 hotfix (Codex review on PR #901): single atomic
+    // UPDATE eliminates the read-then-write race the pre-fix version
+    // had — two concurrent runs that both saw `checked_out_by = null`
+    // could both pass the staleness check and both write. The new
+    // `checkoutTaskAtomic` uses `WHERE checked_out_by IS NULL OR
+    // checked_out_by = $actor` with RETURNING, so only one writer
+    // wins; the loser throws `task_checked_out`.
+    const auditEntry = buildAuditEvent(
+      "checked_out",
+      input.actor,
+      `Task checked out by ${input.actor}`,
+    );
+    const task = await controlPlaneRepository.checkoutTaskAtomic(
       { workspaceId, userId: input.userId },
-      input.taskId,
+      {
+        taskId: input.taskId,
+        actor: input.actor,
+        checkedOutAt: timestamp,
+        updatedAt: timestamp,
+        newStatus: "in_progress",
+        auditEntry,
+      },
     );
     if (!task) {
       throw new Error("task_not_found");
     }
-    if (task.checkedOutBy && task.checkedOutBy !== input.actor) {
-      throw new Error("task_checked_out");
-    }
-
-    const timestamp = nowIso();
-    task.checkedOutBy = input.actor;
-    task.checkedOutAt = timestamp;
-    task.status = "in_progress";
-    task.updatedAt = timestamp;
-    task.auditTrail.push(
-      buildAuditEvent("checked_out", input.actor, `Task checked out by ${input.actor}`)
-    );
-    // DASH-64.1: in-memory `tasks.set` removed. Repository upsert below
-    // is the only write path.
-    // HEL-66: snapshot the fields the observability event reads BEFORE the
-    // await on the repository upsert. Otherwise a concurrent
-    // updateTaskStatus that lands during the await window would mutate
-    // task.status, and the emitted event would carry the wrong status.
+    // HEL-66 snapshots — the observability event captures the task as
+    // it was AT checkout time. Concurrent updates can't perturb these
+    // values because we read them off the returned-from-DB row before
+    // the next async hop.
     const snapshotStatus = task.status;
     const snapshotUpdatedAt = task.updatedAt;
     const snapshotTaskMeta = {
@@ -2407,8 +2413,6 @@ export const controlPlaneStore = {
       sourceWorkflowStepId: task.sourceWorkflowStepId,
       metadata: task.metadata,
     };
-    const taskCtx = { workspaceId, userId: input.userId };
-    await controlPlaneRepository.upsertTask(taskCtx, task);
     observabilityStore.record({
       workspaceId,
       userId: input.userId,

@@ -81,6 +81,29 @@ export function createOpenAICompatibleProvider(
 
   const responseFormat = toOpenAIResponseFormat(config.responseFormat);
 
+  /**
+   * HEL-145: Build the messages array, optionally prefixed with a
+   * system-role message. Pulled into a helper so every code path
+   * (streaming, tool loop, single-call) builds it the same way.
+   *
+   * OpenAI's prompt cache is automatic for prefixes > ~1024 tokens
+   * with no per-call opt-in — sending the system prompt as a
+   * dedicated message is all that's required for the cache to kick in
+   * on repeat calls within the TTL window. The `cacheSystemPrompt`
+   * flag from LLMProviderConfig is accepted for cross-provider API
+   * consistency but is a no-op here.
+   */
+  function buildMessages(
+    userPrompt: string,
+  ): OpenAI.Chat.Completions.ChatCompletionMessageParam[] {
+    const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [];
+    if (config.systemPrompt) {
+      messages.push({ role: "system", content: config.systemPrompt });
+    }
+    messages.push({ role: "user", content: userPrompt });
+    return messages;
+  }
+
   return async (prompt: string): Promise<LLMResponse> => {
     // Agentic tool-loop path (PR 3). Mirrors the Anthropic provider
     // shape so callers can swap providers without changing call
@@ -95,6 +118,7 @@ export function createOpenAICompatibleProvider(
         prompt,
         tools: config.tools,
         maxIterations: config.maxToolIterations ?? DEFAULT_MAX_TOOL_ITERATIONS,
+        systemPrompt: config.systemPrompt,
       });
     }
 
@@ -111,7 +135,7 @@ export function createOpenAICompatibleProvider(
       try {
         const stream = await client.chat.completions.create({
           model: resolvedModel,
-          messages: [{ role: "user", content: prompt }],
+          messages: buildMessages(prompt),
           stream: true,
           stream_options: { include_usage: true },
         });
@@ -144,7 +168,7 @@ export function createOpenAICompatibleProvider(
     try {
       response = await client.chat.completions.create({
         model: resolvedModel,
-        messages: [{ role: "user", content: prompt }],
+        messages: buildMessages(prompt),
         ...(responseFormat ? { response_format: responseFormat } : {}),
       });
     } catch (err) {
@@ -186,6 +210,7 @@ async function runOpenAIToolLoop(args: {
   prompt: string;
   tools: AgentTool[];
   maxIterations: number;
+  systemPrompt?: string;
 }): Promise<LLMResponse> {
   const toolsByName = new Map(args.tools.map((t) => [t.name, t]));
   const openaiTools: OpenAI.Chat.Completions.ChatCompletionTool[] = args.tools.map(
@@ -199,9 +224,11 @@ async function runOpenAIToolLoop(args: {
     }),
   );
 
-  const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
-    { role: "user", content: args.prompt },
-  ];
+  const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [];
+  if (args.systemPrompt) {
+    messages.push({ role: "system", content: args.systemPrompt });
+  }
+  messages.push({ role: "user", content: args.prompt });
 
   let cumulativePromptTokens = 0;
   let cumulativeCompletionTokens = 0;

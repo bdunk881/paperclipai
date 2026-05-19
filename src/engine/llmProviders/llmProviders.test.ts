@@ -458,6 +458,172 @@ describe("Anthropic adapter", () => {
 
     await expect(provider("Prompt")).rejects.toThrow("Anthropic API error: 529 Overloaded");
   });
+
+  // HEL-145: prompt caching. The provider should pass `systemPrompt`
+  // to Anthropic's `system` field (NOT inlined into the user message),
+  // and when `cacheSystemPrompt` is true, tag the system block with
+  // `cache_control: { type: 'ephemeral' }`.
+  describe("HEL-145 prompt caching", () => {
+    it("passes systemPrompt via the system field, not inlined", async () => {
+      const provider = getProvider({
+        ...config,
+        systemPrompt: "You are Atlas, the outbound sales agent.",
+      });
+      anthropicInstance().messages.create.mockResolvedValueOnce({
+        content: [{ type: "text", text: "ok" }],
+        usage: { input_tokens: 5, output_tokens: 1 },
+      });
+
+      await provider("Reach out to acme.com");
+
+      expect(anthropicInstance().messages.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          system: "You are Atlas, the outbound sales agent.",
+          messages: [{ role: "user", content: "Reach out to acme.com" }],
+        }),
+      );
+    });
+
+    it("tags the system block with cache_control when cacheSystemPrompt is true", async () => {
+      const provider = getProvider({
+        ...config,
+        systemPrompt: "You are Atlas.",
+        cacheSystemPrompt: true,
+      });
+      anthropicInstance().messages.create.mockResolvedValueOnce({
+        content: [{ type: "text", text: "ok" }],
+        usage: { input_tokens: 5, output_tokens: 1 },
+      });
+
+      await provider("Reach out");
+
+      const call = anthropicInstance().messages.create.mock.calls[0][0];
+      expect(call.system).toEqual([
+        {
+          type: "text",
+          text: "You are Atlas.",
+          cache_control: { type: "ephemeral" },
+        },
+      ]);
+    });
+
+    it("does NOT tag with cache_control when cacheSystemPrompt is false", async () => {
+      const provider = getProvider({
+        ...config,
+        systemPrompt: "You are Atlas.",
+        // cacheSystemPrompt omitted → false
+      });
+      anthropicInstance().messages.create.mockResolvedValueOnce({
+        content: [{ type: "text", text: "ok" }],
+        usage: { input_tokens: 5, output_tokens: 1 },
+      });
+
+      await provider("Reach out");
+
+      const call = anthropicInstance().messages.create.mock.calls[0][0];
+      // Bare string, not an array — no cache breakpoint declared.
+      expect(call.system).toBe("You are Atlas.");
+    });
+
+    it("omits the system field entirely when systemPrompt is undefined", async () => {
+      const provider = getProvider(config);
+      anthropicInstance().messages.create.mockResolvedValueOnce({
+        content: [{ type: "text", text: "ok" }],
+        usage: { input_tokens: 5, output_tokens: 1 },
+      });
+
+      await provider("Reach out");
+
+      const call = anthropicInstance().messages.create.mock.calls[0][0];
+      expect(call.system).toBeUndefined();
+    });
+
+    it("surfaces cache_read_input_tokens as usage.cachedPromptTokens", async () => {
+      const provider = getProvider({
+        ...config,
+        systemPrompt: "You are Atlas.",
+        cacheSystemPrompt: true,
+      });
+      anthropicInstance().messages.create.mockResolvedValueOnce({
+        content: [{ type: "text", text: "ok" }],
+        usage: {
+          input_tokens: 100,
+          output_tokens: 20,
+          cache_read_input_tokens: 4000,
+        },
+      });
+
+      const result = await provider("Reach out");
+
+      expect(result.usage).toEqual({
+        promptTokens: 100,
+        completionTokens: 20,
+        cachedPromptTokens: 4000,
+      });
+    });
+
+    it("does NOT surface cachedPromptTokens when the API did not report cache activity", async () => {
+      const provider = getProvider({
+        ...config,
+        systemPrompt: "You are Atlas.",
+        cacheSystemPrompt: true,
+      });
+      anthropicInstance().messages.create.mockResolvedValueOnce({
+        content: [{ type: "text", text: "ok" }],
+        usage: { input_tokens: 100, output_tokens: 20 },
+      });
+
+      const result = await provider("Reach out");
+
+      expect(result.usage?.cachedPromptTokens).toBeUndefined();
+    });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// OpenAI-compat: HEL-145 system-prompt wiring. Every OpenAI-compat
+// provider builds messages via buildMessages(); confirming once on
+// `openai` is enough to cover groq, fireworks, together, xai, etc.
+// ---------------------------------------------------------------------------
+
+describe("OpenAI-compat HEL-145 system prompt wiring", () => {
+  const config: LLMProviderConfig = {
+    provider: "openai",
+    model: "gpt-4o-mini",
+    apiKey: "sk-test",
+  };
+
+  it("prepends a system role message when systemPrompt is set", async () => {
+    const provider = getProvider({
+      ...config,
+      systemPrompt: "You are a helpful assistant.",
+    });
+    openaiInstance().chat.completions.create.mockResolvedValueOnce({
+      choices: [{ message: { content: "ok" } }],
+      usage: { prompt_tokens: 8, completion_tokens: 2 },
+    });
+
+    await provider("Hi");
+
+    const call = openaiInstance().chat.completions.create.mock.calls[0][0];
+    expect(call.messages).toEqual([
+      { role: "system", content: "You are a helpful assistant." },
+      { role: "user", content: "Hi" },
+    ]);
+  });
+
+  it("sends only the user message when systemPrompt is undefined", async () => {
+    const provider = getProvider(config);
+    openaiInstance().chat.completions.create.mockResolvedValueOnce({
+      choices: [{ message: { content: "ok" } }],
+      usage: { prompt_tokens: 8, completion_tokens: 2 },
+    });
+
+    await provider("Hi");
+
+    const call = openaiInstance().chat.completions.create.mock.calls[0][0];
+    expect(call.messages).toEqual([{ role: "user", content: "Hi" }]);
+  });
 });
 
 // ---------------------------------------------------------------------------

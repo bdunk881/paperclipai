@@ -163,12 +163,39 @@ export async function runAgentTurn(
     }, TOKEN_PREVIEW_PUBLISH_INTERVAL_MS);
   }
 
+  // HEL-145: providers that read `config.systemPrompt` use it as a
+  // dedicated system message (and, on Anthropic, mark it cacheable);
+  // providers that don't read it stay on the legacy "inline system
+  // prompt into the user message" path. The flag below decides which
+  // path runAgentTurn takes per call. As more providers wire up
+  // `systemPrompt` support (HEL-145 follow-ups), add them here.
+  const providerName = resolved.config.provider;
+  const providerSupportsSystemField =
+    providerName === "anthropic" ||
+    providerName === "openai" ||
+    // Every OpenAI-compatible endpoint also uses the system-role
+    // message convention via the shared openaiCompatible provider.
+    providerName === "groq" ||
+    providerName === "fireworks" ||
+    providerName === "together" ||
+    providerName === "xai" ||
+    providerName === "perplexity" ||
+    providerName === "deepseek" ||
+    providerName === "ollama" ||
+    providerName === "localai" ||
+    providerName === "opencode_zen";
+
   const provider = getProvider({
     provider: resolved.config.provider,
     model,
     apiKey: resolved.apiKey,
     requestTimeoutMs: input.requestTimeoutMs ?? DEFAULT_TIMEOUT_MS,
     tools: tools.length > 0 ? tools : undefined,
+    systemPrompt: providerSupportsSystemField ? systemPrompt : undefined,
+    // Anthropic is the only provider that exposes explicit cache
+    // controls today (5-min ephemeral TTL). OpenAI's prompt cache
+    // is automatic; other providers ignore the flag.
+    cacheSystemPrompt: providerName === "anthropic",
     onText:
       input.streamToPresence && tools.length === 0
         ? (_delta, accumulated) => {
@@ -178,18 +205,17 @@ export async function runAgentTurn(
         : undefined,
   });
 
-  // The prompt the provider receives concatenates the system prompt
-  // and the user prompt. For Anthropic specifically, the SDK uses
-  // `system` + `messages: [{role: "user", content}]`. The
-  // `getProvider` shape today is `(prompt: string) => …` — so we
-  // inline the system bracket. This works because Anthropic ignores
-  // the convention and reads the whole text; when we add OpenAI's
-  // Agents SDK runner the wrapper will fork on provider here.
-  const composedPrompt = `${systemPrompt}\n\n---\n\nUSER:\n${input.userPrompt}`;
+  // When the provider supports a dedicated system field, send only the
+  // user prompt; the system is already on the request via config. For
+  // providers that don't, fall back to the legacy concatenation so
+  // those workspaces don't regress.
+  const promptForProvider = providerSupportsSystemField
+    ? input.userPrompt
+    : `${systemPrompt}\n\n---\n\nUSER:\n${input.userPrompt}`;
 
   let response: LLMResponse;
   try {
-    response = await provider(composedPrompt);
+    response = await provider(promptForProvider);
   } finally {
     if (publishHandle) {
       clearTimeout(publishHandle);

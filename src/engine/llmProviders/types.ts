@@ -160,6 +160,30 @@ export interface LLMProviderConfig {
    */
   tools?: AgentTool[];
   maxToolIterations?: number;
+  /**
+   * Optional system prompt. When set, Anthropic receives this in its
+   * dedicated `system` field instead of having it concatenated into the
+   * user prompt — which is the prerequisite for prompt caching.
+   *
+   * Callers that don't set this stay on the legacy "system prompt
+   * inlined into user message" behaviour (no caching, no separate
+   * system field).
+   */
+  systemPrompt?: string;
+  /**
+   * HEL-145: When true AND `systemPrompt` is set, the Anthropic adapter
+   * tags the system block with `cache_control: { type: 'ephemeral' }`
+   * so Anthropic caches the prefix for 5 minutes. Tool definitions are
+   * cached alongside the system block when both are present (Anthropic
+   * caches everything up to and including the cache breakpoint).
+   *
+   * No-op for providers without explicit cache controls (OpenAI caches
+   * automatically; others ignore the flag).
+   *
+   * Expected ~50–80% input-token reduction on the second-and-later call
+   * within the 5-minute TTL window. See `docs/audit/2026-05-18-llm-token-audit.md`.
+   */
+  cacheSystemPrompt?: boolean;
 }
 
 /**
@@ -191,6 +215,17 @@ export interface LLMResponse {
   usage?: {
     promptTokens: number;
     completionTokens: number;
+    /**
+     * HEL-145: Number of input tokens served from the provider's
+     * prompt cache (Anthropic `cache_read_input_tokens`, OpenAI
+     * automatic cache reads). Undefined when the provider didn't
+     * report cache activity or doesn't expose this metric.
+     *
+     * Cost-attribution layers should bill `promptTokens - cachedPromptTokens`
+     * at the full rate and `cachedPromptTokens` at the cached rate
+     * (Anthropic: 10% of full input cost).
+     */
+    cachedPromptTokens?: number;
   };
 }
 

@@ -9,6 +9,7 @@ export default defineConfig({
     // P2 tickets are marked with `test.fixme()` and will start passing
     // automatically as their unblocking tickets land.
     "**/golden-path.spec.ts",
+    "**/workflow-studio-responsive.spec.ts",
   ],
   fullyParallel: true,
   forbidOnly: !!process.env.CI,

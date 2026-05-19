@@ -367,6 +367,47 @@
     margin: 12px;
   }
 
+  /* HEL-170: Studio side panels use one responsive width contract.
+     Below xl, inspector/copilot behave like a single overlay sheet so
+     dual-panel mode does not crush the canvas on 1024-class screens. */
+  .workflow-studio-shell {
+    --workflow-studio-panel-width: clamp(19rem, 28vw, 22.5rem);
+    --workflow-studio-inspector-offset: 0px;
+    --workflow-studio-panel-top: 0px;
+  }
+
+  .workflow-studio-panel {
+    top: var(--workflow-studio-panel-top);
+    height: calc(100% - var(--workflow-studio-panel-top));
+    width: min(100%, var(--workflow-studio-panel-width));
+    max-width: calc(100% - 0.75rem);
+  }
+
+  .workflow-studio-inspector {
+    right: var(--workflow-studio-inspector-offset);
+  }
+
+  @media (min-width: 1280px) {
+    .workflow-studio-shell[data-copilot-open="true"] {
+      --workflow-studio-inspector-offset: var(--workflow-studio-panel-width);
+    }
+  }
+
+  @media (max-width: 767px) {
+    .workflow-studio-shell {
+      --workflow-studio-panel-top: var(--workflow-studio-header-height, 0px);
+    }
+
+    .workflow-studio-panel {
+      width: 100%;
+      max-width: 100%;
+    }
+
+    .workflow-minimap.react-flow__minimap {
+      display: none;
+    }
+  }
+
   .workflow-controls-pill button {
     border-color: var(--af2-line);
     color: var(--af2-ink-2);

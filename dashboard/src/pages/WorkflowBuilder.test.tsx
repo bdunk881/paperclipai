@@ -295,6 +295,33 @@ describe("WorkflowBuilder", () => {
     expect(screen.getByText(/Recent errors/i)).toBeInTheDocument();
   });
 
+  it("uses the responsive Studio panel contract for inspector and Copilot", async () => {
+    renderBuilder();
+
+    expect(await screen.findByText("Compose a workflow your team can run.")).toBeInTheDocument();
+
+    openNodePalette();
+    fireEvent.click(screen.getByRole("button", { name: /^trigger$/i }));
+
+    const shell = screen.getByTestId("workflow-studio-shell");
+    expect(shell).toHaveAttribute("data-inspector-open", "true");
+    expect(shell).toHaveAttribute("data-copilot-open", "false");
+
+    fireEvent.click(screen.getByRole("button", { name: /copilot/i }));
+
+    expect(shell).toHaveAttribute("data-copilot-open", "true");
+
+    const inspector = screen.getByTestId("workflow-inspector-panel");
+    const copilot = screen.getByTestId("workflow-copilot-panel");
+
+    expect(inspector).toHaveClass("workflow-studio-panel");
+    expect(inspector).toHaveClass("workflow-studio-inspector");
+    expect(copilot).toHaveClass("workflow-studio-panel");
+    expect(inspector.className).not.toContain("right-[360px]");
+    expect(inspector.className).not.toContain("w-[360px]");
+    expect(copilot.className).not.toContain("w-[360px]");
+  });
+
   it("opens the deploy as team modal for populated workflows", async () => {
     render(
       <MemoryRouter initialEntries={["/builder"]}>

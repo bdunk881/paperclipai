@@ -83,6 +83,28 @@ export interface CreateLLMConfigInput {
   apiKey: string;
 }
 
+export interface ApiKeyRecord {
+  id: string;
+  workspaceId: string;
+  name: string;
+  maskedKey: string;
+  createdByUserId: string;
+  rotatedFromKeyId: string | null;
+  lastUsedAt: string | null;
+  revokedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CreateApiKeyInput {
+  name: string;
+}
+
+export interface ApiKeySecretResponse {
+  key: ApiKeyRecord;
+  secret: string;
+}
+
 export type ConnectorHealthState =
   | "healthy"
   | "degraded"
@@ -302,6 +324,70 @@ export async function deleteLLMConfig(id: string, accessToken?: string): Promise
     }
   );
   if (!res.ok) throw new Error(`Failed to delete LLM credential: ${res.status}`);
+}
+
+// ---------------------------------------------------------------------------
+// Platform API key lifecycle
+// ---------------------------------------------------------------------------
+
+const API_KEYS_PATH = "/api-keys";
+
+/** GET /api/api-keys */
+export async function listApiKeys(accessToken?: string): Promise<ApiKeyRecord[]> {
+  const res = await trackedFetch(`${BASE}${API_KEYS_PATH}`, {
+    headers: buildAuthHeaders(accessToken),
+  });
+  if (!res.ok) throw new Error(`Failed to fetch API keys: ${res.status}`);
+  const data = await res.json();
+  return data.keys as ApiKeyRecord[];
+}
+
+/** POST /api/api-keys */
+export async function createApiKey(
+  input: CreateApiKeyInput,
+  accessToken?: string,
+): Promise<ApiKeySecretResponse> {
+  const res = await trackedFetch(`${BASE}${API_KEYS_PATH}`, {
+    method: "POST",
+    headers: buildJsonHeaders(accessToken),
+    body: JSON.stringify(input),
+  });
+  if (!res.ok) {
+    throw new Error(await readApiError(res, `Failed to create API key: ${res.status}`));
+  }
+  return res.json() as Promise<ApiKeySecretResponse>;
+}
+
+/** POST /api/api-keys/:id/rotate */
+export async function rotateApiKey(
+  id: string,
+  accessToken?: string,
+): Promise<ApiKeySecretResponse> {
+  const res = await trackedFetch(
+    `${BASE}${API_KEYS_PATH}/${encodeURIComponent(id)}/rotate`,
+    {
+      method: "POST",
+      headers: buildAuthHeaders(accessToken),
+    },
+  );
+  if (!res.ok) {
+    throw new Error(await readApiError(res, `Failed to rotate API key: ${res.status}`));
+  }
+  return res.json() as Promise<ApiKeySecretResponse>;
+}
+
+/** DELETE /api/api-keys/:id */
+export async function revokeApiKey(id: string, accessToken?: string): Promise<void> {
+  const res = await trackedFetch(
+    `${BASE}${API_KEYS_PATH}/${encodeURIComponent(id)}`,
+    {
+      method: "DELETE",
+      headers: buildAuthHeaders(accessToken),
+    },
+  );
+  if (!res.ok) {
+    throw new Error(await readApiError(res, `Failed to revoke API key: ${res.status}`));
+  }
 }
 
 const BASE = getApiBasePath();

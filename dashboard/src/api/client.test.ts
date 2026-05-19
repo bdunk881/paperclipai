@@ -9,10 +9,12 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import * as authStorage from "../auth/authStorage";
 import {
+  createApiKey,
   createLLMConfig,
   createProposalDraft,
   createTemplate,
   debugStep,
+  revokeApiKey,
   deleteLLMConfig,
   deleteMemoryEntry,
   deployWorkflowAsTeam,
@@ -25,6 +27,7 @@ import {
   getObservabilityStreamPath,
   getObservabilityThroughput,
   getMemoryStats,
+  listApiKeys,
   listApprovals,
   listControlPlaneTeams,
   listLLMConfigs,
@@ -39,6 +42,7 @@ import {
   resolveApproval,
   searchMemory,
   setDefaultLLMConfig,
+  rotateApiKey,
   startRun,
   startRunWithFile,
   writeMemoryEntry,
@@ -839,6 +843,64 @@ describe("LLM config APIs", () => {
 
     mockFetchFail(500);
     await expect(deleteLLMConfig("cfg_1", ACCESS_TOKEN)).rejects.toThrow(/500/);
+  });
+});
+
+describe("platform API key APIs", () => {
+  it("lists, creates, rotates, and revokes workspace API keys", async () => {
+    mockFetch({
+      keys: [
+        {
+          id: "key-1",
+          workspaceId: "workspace-1",
+          name: "Production",
+          maskedKey: "afk_test...1234",
+          createdByUserId: "user-1",
+          rotatedFromKeyId: null,
+          lastUsedAt: null,
+          revokedAt: null,
+          createdAt: "2026-05-19T00:00:00.000Z",
+          updatedAt: "2026-05-19T00:00:00.000Z",
+        },
+      ],
+    });
+    const listed = await listApiKeys(ACCESS_TOKEN);
+    expect(listed).toHaveLength(1);
+    expect(lastFetchUrl()).toBe("/api/api-keys");
+    expect((lastFetchOptions().headers as Record<string, string>).Authorization).toBe("Bearer token-123");
+
+    mockFetch({
+      key: listed[0],
+      secret: "afk_secret_once",
+    }, 201);
+    await createApiKey({ name: "Production" }, ACCESS_TOKEN);
+    expect(lastFetchUrl()).toBe("/api/api-keys");
+    expect(lastFetchOptions().method).toBe("POST");
+    expect(lastFetchOptions().body).toBe(JSON.stringify({ name: "Production" }));
+
+    mockFetch({
+      key: { ...listed[0], id: "key-2", rotatedFromKeyId: "key-1" },
+      secret: "afk_rotated_once",
+    });
+    await rotateApiKey("key-1", ACCESS_TOKEN);
+    expect(lastFetchUrl()).toBe("/api/api-keys/key-1/rotate");
+    expect(lastFetchOptions().method).toBe("POST");
+
+    mockFetch({}, 204);
+    await revokeApiKey("key-2", ACCESS_TOKEN);
+    expect(lastFetchUrl()).toBe("/api/api-keys/key-2");
+    expect(lastFetchOptions().method).toBe("DELETE");
+  });
+
+  it("surfaces API key lifecycle errors", async () => {
+    mockFetchFail(400, { error: "name is required" });
+    await expect(createApiKey({ name: "" }, ACCESS_TOKEN)).rejects.toThrow(/name is required/);
+
+    mockFetchFail(409, { error: "Cannot rotate a revoked API key." });
+    await expect(rotateApiKey("key-1", ACCESS_TOKEN)).rejects.toThrow(/revoked/);
+
+    mockFetchFail(404, { error: "API key not found." });
+    await expect(revokeApiKey("missing", ACCESS_TOKEN)).rejects.toThrow(/not found/);
   });
 });
 

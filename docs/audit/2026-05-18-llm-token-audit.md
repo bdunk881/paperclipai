@@ -134,29 +134,25 @@ When that lands:
 the identity-card-plus-policy-body block as `cache_control: ephemeral`.
 This is a forward-compat ticket so the gap doesn't ship.
 
-## Tier-routing naming inconsistency (worth flagging)
+## Tier-routing naming — there are two distinct routers (no normalization needed)
 
-`src/llmConfig/tierRouter.ts` defines tier names `small | medium | large | vision`:
+**Correction from Codex review:** my original audit framed this as a
+naming inconsistency to normalize. It is not — there are two
+DIFFERENT tier routers serving different abstraction layers, and the
+production call sites already use the right names.
 
-```typescript
-small: "claude-haiku-4-5-20251001",
-medium: "claude-sonnet-4-6",
-large: "claude-opus-4-6",
-vision: "claude-sonnet-4-6",
-```
+- `src/engine/llmRouter.ts` defines `LlmTier = "lite" | "standard" | "power"`
+  with `TIER_MODELS[provider][tier]`. This is the per-call tier used
+  by every production caller (`agentCheckIn`, `runAgentTurn`,
+  `priorityClassifier`, `jobDescriptionWizard`, `missionRoutes`,
+  `hiringPlanRoutes`). All six callers go through this router.
+- `src/llmConfig/tierRouter.ts` defines `TierKey = "small" | "medium"
+  | "large" | "embeddings" | "vision"` — the HEL-81 workspace-level
+  tier matrix. Intended to back the future HEL-82 adapter call
+  surface; NOT yet wired into production calls.
 
-But every caller uses `lite | standard | power`:
-
-- `src/agents/agentCheckIn.ts:132` → `"standard"`
-- `src/agents/runAgentTurn.ts:119` → `"standard"`
-- `src/agents/priorityClassifier.ts:61` → `"lite"`
-- `src/missions/missionRoutes.ts:595` → `"power"`
-- `src/missions/hiringPlanRoutes.ts:52` → `"lite" | "standard" | "power"`
-
-There's clearly a mapping happening somewhere (calls don't error), but
-the two naming conventions live in parallel. Worth normalizing as part
-of the same sweep that adjusts the call-site tiers. Not its own
-ticket; rolls into HEL-146.
+The two are independent. The HEL-146 PR correctly skipped the rename
+when I dug into it — there was nothing to normalize.
 
 ## What's good already
 

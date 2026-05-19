@@ -74,8 +74,8 @@ const USER_ID = "test-user-123";
 // Sent with every authenticated request in tests
 const AUTH = { Authorization: "Bearer test-token" };
 
-beforeEach(() => {
-  integrationCredentialStore.clear();
+beforeEach(async () => {
+  await integrationCredentialStore.clear();
   webhookRelay.clear();
 });
 

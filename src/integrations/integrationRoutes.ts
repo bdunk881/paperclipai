@@ -155,7 +155,7 @@ oauthCallbackRouter.get("/:slug/callback", async (req, res) => {
       instanceDomain,
     });
 
-    const conn = integrationCredentialStore.create({
+    const conn = await integrationCredentialStore.create({
       userId,
       integrationSlug: manifest.slug,
       label: label ?? `${manifest.name} (OAuth2)`,
@@ -181,11 +181,11 @@ const router = Router();
 // ---------------------------------------------------------------------------
 
 /** GET /api/integrations/connections */
-router.get("/connections", (req, res) => {
+router.get("/connections", async (req, res) => {
   const userId = (req as AuthenticatedRequest).auth!.sub;
 
   const { integration } = req.query;
-  const connections = integrationCredentialStore.list(
+  const connections = await integrationCredentialStore.list(
     userId,
     typeof integration === "string" ? integration : undefined
   );
@@ -196,10 +196,11 @@ router.get("/connections", (req, res) => {
 router.post(
   "/connections",
   requireEntitlement("integrationCap", {
-    getCurrent: (req) => integrationCredentialStore.list((req as AuthenticatedRequest).auth!.sub).length,
+    getCurrent: async (req) =>
+      (await integrationCredentialStore.list((req as AuthenticatedRequest).auth!.sub)).length,
     delta: 1,
   }),
-  (req, res) => {
+  async (req, res) => {
   const userId = (req as AuthenticatedRequest).auth!.sub;
 
   const { integrationSlug, label, credentials } = req.body as {
@@ -223,7 +224,7 @@ router.post(
     res.status(400).json({ error: `Unknown integration slug: ${integrationSlug}` }); return;
   }
 
-  const conn = integrationCredentialStore.create({
+  const conn = await integrationCredentialStore.create({
     userId,
     integrationSlug,
     label,
@@ -234,16 +235,16 @@ router.post(
 });
 
 /** GET /api/integrations/connections/:id */
-router.get("/connections/:id", (req, res) => {
+router.get("/connections/:id", async (req, res) => {
   const userId = (req as AuthenticatedRequest).auth!.sub;
 
-  const conn = integrationCredentialStore.get(req.params.id, userId);
+  const conn = await integrationCredentialStore.get(req.params.id, userId);
   if (!conn) { res.status(404).json({ error: "Connection not found" }); return; }
   res.json(conn);
 });
 
 /** PATCH /api/integrations/connections/:id */
-router.patch("/connections/:id", (req, res) => {
+router.patch("/connections/:id", async (req, res) => {
   const userId = (req as AuthenticatedRequest).auth!.sub;
 
   const { label } = req.body as { label?: unknown };
@@ -251,25 +252,25 @@ router.patch("/connections/:id", (req, res) => {
     res.status(400).json({ error: "label is required" }); return;
   }
 
-  const conn = integrationCredentialStore.update(req.params.id, userId, { label });
+  const conn = await integrationCredentialStore.update(req.params.id, userId, { label });
   if (!conn) { res.status(404).json({ error: "Connection not found" }); return; }
   res.json(conn);
 });
 
 /** DELETE /api/integrations/connections/:id */
-router.delete("/connections/:id", (req, res) => {
+router.delete("/connections/:id", async (req, res) => {
   const userId = (req as AuthenticatedRequest).auth!.sub;
 
-  const deleted = integrationCredentialStore.delete(req.params.id, userId);
+  const deleted = await integrationCredentialStore.delete(req.params.id, userId);
   if (!deleted) { res.status(404).json({ error: "Connection not found" }); return; }
   res.status(204).end();
 });
 
 /** POST /api/integrations/connections/:id/default */
-router.post("/connections/:id/default", (req, res) => {
+router.post("/connections/:id/default", async (req, res) => {
   const userId = (req as AuthenticatedRequest).auth!.sub;
 
-  const conn = integrationCredentialStore.setDefault(req.params.id, userId);
+  const conn = await integrationCredentialStore.setDefault(req.params.id, userId);
   if (!conn) { res.status(404).json({ error: "Connection not found" }); return; }
   res.json(conn);
 });
@@ -278,7 +279,7 @@ router.post("/connections/:id/default", (req, res) => {
 router.post("/connections/:id/test", async (req, res) => {
   const userId = (req as AuthenticatedRequest).auth!.sub;
 
-  const conn = integrationCredentialStore.get(req.params.id, userId);
+  const conn = await integrationCredentialStore.get(req.params.id, userId);
   if (!conn) { res.status(404).json({ error: "Connection not found" }); return; }
 
   const manifest = getIntegrationBySlug(conn.integrationSlug);
@@ -366,7 +367,7 @@ router.post("/oauth2/:slug/client-credentials", async (req, res) => {
       instanceDomain: typeof instanceDomain === "string" ? instanceDomain : undefined,
     });
 
-    const conn = integrationCredentialStore.create({
+    const conn = await integrationCredentialStore.create({
       userId,
       integrationSlug: manifest.slug,
       label: typeof label === "string" ? label : `${manifest.name} (Client Credentials)`,

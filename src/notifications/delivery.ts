@@ -25,7 +25,7 @@ async function sendSlack(config: NotificationTransportConfig, text: string): Pro
 
 async function sendSendGrid(config: NotificationTransportConfig, rendered: ReturnType<typeof renderNotificationTemplate>): Promise<void> {
   const connectionId = requireConnection(config.connectionId, "SendGrid connection is not configured");
-  const decrypted = integrationCredentialStore.getDecrypted(connectionId, config.ownerUserId);
+  const decrypted = await integrationCredentialStore.getDecrypted(connectionId, config.ownerUserId);
   if (!decrypted || decrypted.connection.integrationSlug !== "sendgrid") {
     throw new Error("SendGrid connection is missing or invalid");
   }
@@ -63,7 +63,7 @@ async function sendSendGrid(config: NotificationTransportConfig, rendered: Retur
 
 async function sendTwilio(config: NotificationTransportConfig, body: string): Promise<void> {
   const connectionId = requireConnection(config.connectionId, "Twilio connection is not configured");
-  const decrypted = integrationCredentialStore.getDecrypted(connectionId, config.ownerUserId);
+  const decrypted = await integrationCredentialStore.getDecrypted(connectionId, config.ownerUserId);
   if (!decrypted || decrypted.connection.integrationSlug !== "twilio") {
     throw new Error("Twilio connection is missing or invalid");
   }

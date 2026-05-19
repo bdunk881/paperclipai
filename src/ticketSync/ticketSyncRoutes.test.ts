@@ -116,7 +116,7 @@ describe("ticket sync routes", () => {
   beforeEach(async () => {
     await ticketStore.clear();
     ticketSyncConnectionStore.clear();
-    integrationCredentialStore.clear();
+    await integrationCredentialStore.clear();
     linearCredentialStore.clear();
     adapters.clear();
     ticketSyncService.setAdapterFactoryForTests(({ connectionId, provider }) => {
@@ -254,7 +254,7 @@ describe("ticket sync routes", () => {
 
   it("bootstraps a GitHub tracker connection from an existing integration credential", async () => {
     const app = buildApp();
-    const integration = integrationCredentialStore.create({
+    const integration = await integrationCredentialStore.create({
       userId: "user-1",
       integrationSlug: "github",
       label: "GitHub PAT",

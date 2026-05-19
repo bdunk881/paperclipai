@@ -168,8 +168,8 @@ export async function executeAction(
 
   // Resolve credentials
   const resolved = connectionId
-    ? integrationCredentialStore.getDecrypted(connectionId, userId)
-    : integrationCredentialStore.getDecryptedDefault(userId, manifest.slug);
+    ? await integrationCredentialStore.getDecrypted(connectionId, userId)
+    : await integrationCredentialStore.getDecryptedDefault(userId, manifest.slug);
 
   if (!resolved && manifest.authKind !== "none") {
     throw new Error(
@@ -194,7 +194,7 @@ export async function executeAction(
     });
     // Persist the refreshed tokens
     if (resolved) {
-      integrationCredentialStore.updateCredentials(resolved.connection.id, userId, credentials);
+      await integrationCredentialStore.updateCredentials(resolved.connection.id, userId, credentials);
     }
   }
 
@@ -276,7 +276,7 @@ export async function testConnection(
   connectionId: string,
   userId: string
 ): Promise<{ ok: boolean; message: string }> {
-  const resolved = integrationCredentialStore.getDecrypted(connectionId, userId);
+  const resolved = await integrationCredentialStore.getDecrypted(connectionId, userId);
   if (!resolved) {
     return { ok: false, message: "Connection not found" };
   }

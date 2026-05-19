@@ -18,15 +18,32 @@ import {
  */
 function toGeminiGenerationConfig(
   responseFormat: ResponseFormat | undefined,
-): { responseMimeType: string; responseSchema?: Record<string, unknown> } | undefined {
-  if (!responseFormat || responseFormat.type === "text") return undefined;
-  if (responseFormat.type === "json_object") {
-    return { responseMimeType: "application/json" };
+  maxOutputTokens: number | undefined,
+):
+  | {
+      responseMimeType?: string;
+      responseSchema?: Record<string, unknown>;
+      maxOutputTokens?: number;
+    }
+  | undefined {
+  const cfg: {
+    responseMimeType?: string;
+    responseSchema?: Record<string, unknown>;
+    maxOutputTokens?: number;
+  } = {};
+  if (responseFormat && responseFormat.type !== "text") {
+    cfg.responseMimeType = "application/json";
+    if (responseFormat.type === "json_schema") {
+      cfg.responseSchema = responseFormat.schema;
+    }
   }
-  return {
-    responseMimeType: "application/json",
-    responseSchema: responseFormat.schema,
-  };
+  // HEL-147 followup (Codex review on PR #900): honor the per-call cap
+  // for Gemini too. The previous version only Anthropic + OpenAI-compat
+  // respected maxOutputTokens.
+  if (typeof maxOutputTokens === "number" && maxOutputTokens > 0) {
+    cfg.maxOutputTokens = maxOutputTokens;
+  }
+  return Object.keys(cfg).length > 0 ? cfg : undefined;
 }
 
 export function createGeminiProvider(config: LLMProviderConfig): LLMProvider {
@@ -36,7 +53,10 @@ export function createGeminiProvider(config: LLMProviderConfig): LLMProvider {
   }
 
   const genAI = new GoogleGenerativeAI(apiKey);
-  const generationConfig = toGeminiGenerationConfig(config.responseFormat);
+  const generationConfig = toGeminiGenerationConfig(
+    config.responseFormat,
+    config.maxOutputTokens,
+  );
   // Explicit per-request timeout — see DEFAULT_LLM_REQUEST_TIMEOUT_MS.
   // Gemini's SDK passes this through `requestOptions.timeout` to the
   // underlying fetch.

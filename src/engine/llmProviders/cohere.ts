@@ -18,6 +18,11 @@ export function createCohereProvider(config: LLMProviderConfig): LLMProvider {
         body: JSON.stringify({
           model: config.model,
           messages: [{ role: "user", content: prompt }],
+          // HEL-147 followup (Codex on PR #900): Cohere v2 chat API
+          // takes `max_tokens` for the output cap.
+          ...(typeof config.maxOutputTokens === "number"
+            ? { max_tokens: config.maxOutputTokens }
+            : {}),
         }),
       });
     } catch (err) {

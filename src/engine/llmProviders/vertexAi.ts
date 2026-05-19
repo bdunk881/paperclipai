@@ -66,7 +66,14 @@ export function createVertexAIProvider(config: LLMProviderConfig): LLMProvider {
     ...(config.options?.endpoint ? { apiEndpoint: config.options.endpoint } : {}),
     googleAuthOptions: resolveGoogleAuthOptions(config),
   });
-  const model = vertexAI.getGenerativeModel({ model: config.model });
+  // HEL-147 followup (Codex on PR #900): Vertex AI uses the Gemini
+  // generationConfig.maxOutputTokens shape.
+  const model = vertexAI.getGenerativeModel({
+    model: config.model,
+    ...(typeof config.maxOutputTokens === "number"
+      ? { generationConfig: { maxOutputTokens: config.maxOutputTokens } }
+      : {}),
+  });
 
   return async (prompt: string): Promise<LLMResponse> => {
     let result;

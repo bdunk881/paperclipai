@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter } from "react-router-dom";
 import IntegrationsHub from "./MCPIntegrations";
@@ -39,9 +39,21 @@ describe("IntegrationsHub — V2 category-list rebuild (DASH-12/13/8)", () => {
   beforeEach(() => {
     apiGetMock.mockReset();
     apiGetMock.mockResolvedValue({ servers: [] });
-    vi.spyOn(global, "fetch").mockResolvedValue(
-      new Response(JSON.stringify({ providers: liveStatuses }), { status: 200 }),
-    );
+    vi.spyOn(global, "fetch").mockImplementation(async (input, init) => {
+      const url = String(input);
+      if (url.endsWith("/integrations/status")) {
+        return new Response(JSON.stringify({ providers: liveStatuses }), { status: 200 });
+      }
+      if (url.endsWith("/integrations/linear/connect-api-key")) {
+        return new Response(JSON.stringify({ connection: { id: "linear-1" } }), {
+          status: 201,
+        });
+      }
+      return new Response(
+        JSON.stringify({ error: `Unhandled integration test request: ${init?.method ?? "GET"} ${url}` }),
+        { status: 500 },
+      );
+    });
   });
 
   afterEach(() => {
@@ -125,5 +137,56 @@ describe("IntegrationsHub — V2 category-list rebuild (DASH-12/13/8)", () => {
     const mcpLinks = screen.getAllByRole("link", { name: /set up via mcp/i });
     expect(mcpLinks.length).toBeGreaterThan(0);
     expect(mcpLinks[0]).toHaveAttribute("href", "/settings/mcp-servers");
+  });
+
+  it("links API-key documentation from the provider-specific modal", async () => {
+    renderHub();
+
+    const linearName = await screen.findByText("Linear");
+    const linearRow = linearName.closest(".af2-list-row") as HTMLElement | null;
+    expect(linearRow).not.toBeNull();
+
+    fireEvent.click(within(linearRow!).getByRole("button", { name: /api key/i }));
+
+    const docsLink = await screen.findByRole("link", { name: /linear docs/i });
+    expect(docsLink).toHaveAttribute(
+      "href",
+      "https://developers.linear.app/docs/graphql/working-with-the-graphql-api",
+    );
+  });
+
+  it("connects API-key providers through the provider-specific connector route", async () => {
+    const fetchMock = vi.mocked(global.fetch);
+    renderHub();
+
+    const linearName = await screen.findByText("Linear");
+    const linearRow = linearName.closest(".af2-list-row") as HTMLElement | null;
+    expect(linearRow).not.toBeNull();
+
+    fireEvent.click(within(linearRow!).getByRole("button", { name: /api key/i }));
+    fireEvent.change(await screen.findByLabelText(/linear api key/i), {
+      target: { value: "lin_api_test" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /save and connect/i }));
+
+    await waitFor(() => {
+      expect(
+        fetchMock.mock.calls.some(([input, init]) => {
+          const url = String(input);
+          return (
+            url.endsWith("/api/integrations/linear/connect-api-key") &&
+            init?.method === "POST" &&
+            init?.body === JSON.stringify({ apiKey: "lin_api_test" })
+          );
+        }),
+      ).toBe(true);
+    });
+
+    expect(
+      fetchMock.mock.calls.some(([input]) => String(input).endsWith("/api/integrations/connections")),
+    ).toBe(false);
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog")).toBeNull();
+    });
   });
 });

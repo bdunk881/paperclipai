@@ -433,11 +433,11 @@ router.post("/actions/:slug/:actionId", async (req, res) => {
 // ---------------------------------------------------------------------------
 
 /** GET /api/integrations/triggers/subscriptions */
-router.get("/triggers/subscriptions", (req, res) => {
+router.get("/triggers/subscriptions", async (req, res) => {
   const userId = (req as AuthenticatedRequest).auth!.sub;
 
   const { integration } = req.query;
-  const subs = webhookRelay.listSubscriptions(
+  const subs = await webhookRelay.listSubscriptions(
     userId,
     typeof integration === "string" ? integration : undefined
   );
@@ -445,7 +445,7 @@ router.get("/triggers/subscriptions", (req, res) => {
 });
 
 /** POST /api/integrations/triggers/subscriptions */
-router.post("/triggers/subscriptions", (req, res) => {
+router.post("/triggers/subscriptions", async (req, res) => {
   const userId = (req as AuthenticatedRequest).auth!.sub;
 
   const {
@@ -496,7 +496,7 @@ router.post("/triggers/subscriptions", (req, res) => {
   const trigger = manifest.triggers.find((t) => t.id === triggerId);
   if (!trigger) { res.status(400).json({ error: `Trigger "${triggerId}" not found in integration "${integrationSlug}"` }); return; }
 
-  const sub = webhookRelay.subscribe({
+  const sub = await webhookRelay.subscribe({
     userId,
     integrationSlug,
     triggerId,
@@ -519,20 +519,20 @@ router.post("/triggers/subscriptions", (req, res) => {
 });
 
 /** DELETE /api/integrations/triggers/subscriptions/:id */
-router.delete("/triggers/subscriptions/:id", (req, res) => {
+router.delete("/triggers/subscriptions/:id", async (req, res) => {
   const userId = (req as AuthenticatedRequest).auth!.sub;
 
-  const deleted = webhookRelay.deleteSubscription(req.params.id, userId);
+  const deleted = await webhookRelay.deleteSubscription(req.params.id, userId);
   if (!deleted) { res.status(404).json({ error: "Subscription not found" }); return; }
   res.status(204).end();
 });
 
 /** GET /api/integrations/triggers/subscriptions/:id/events */
-router.get("/triggers/subscriptions/:id/events", (req, res) => {
+router.get("/triggers/subscriptions/:id/events", async (req, res) => {
   const userId = (req as AuthenticatedRequest).auth!.sub;
 
   const { limit, unconsumedOnly } = req.query;
-  const eventsList = webhookRelay.listEvents(req.params.id, userId, {
+  const eventsList = await webhookRelay.listEvents(req.params.id, userId, {
     limit: typeof limit === "string" ? parseInt(limit, 10) : undefined,
     unconsumedOnly: unconsumedOnly === "true",
   });
@@ -644,7 +644,7 @@ export const webhookRelayRouter = Router();
  * Inbound webhook from a third-party service.
  * Responds 200 immediately (acknowledge receipt).
  */
-webhookRelayRouter.post("/:subscriptionId", (req, res) => {
+webhookRelayRouter.post("/:subscriptionId", async (req, res) => {
   const payload = req.body as Record<string, unknown>;
 
   if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
@@ -663,7 +663,7 @@ webhookRelayRouter.post("/:subscriptionId", (req, res) => {
   // rawBody is attached by the express.json verify callback in app.ts
   const rawBody = (req as unknown as { rawBody?: string }).rawBody ?? "";
 
-  const event = webhookRelay.ingest(req.params.subscriptionId, payload, headers, rawBody);
+  const event = await webhookRelay.ingest(req.params.subscriptionId, payload, headers, rawBody);
 
   if (!event) {
     // Either subscription not found, inactive, or event type not matched — still 200

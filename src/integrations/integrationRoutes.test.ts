@@ -76,7 +76,7 @@ const AUTH = { Authorization: "Bearer test-token" };
 
 beforeEach(async () => {
   await integrationCredentialStore.clear();
-  webhookRelay.clear();
+  await webhookRelay.clear();
 });
 
 // ---------------------------------------------------------------------------
@@ -307,7 +307,7 @@ describe("Connection filter by integration", () => {
 
 describe("POST /api/webhooks/relay/:subscriptionId", () => {
   it("accepts and stores a matching event", async () => {
-    const sub = webhookRelay.subscribe({
+    const sub = await webhookRelay.subscribe({
       userId: USER_ID,
       integrationSlug: "stripe",
       triggerId: "payment.succeeded",
@@ -326,7 +326,7 @@ describe("POST /api/webhooks/relay/:subscriptionId", () => {
   });
 
   it("returns matched=false for non-matching event type", async () => {
-    const sub = webhookRelay.subscribe({
+    const sub = await webhookRelay.subscribe({
       userId: USER_ID,
       integrationSlug: "stripe",
       triggerId: "payment.succeeded",
@@ -352,7 +352,7 @@ describe("POST /api/webhooks/relay/:subscriptionId", () => {
   });
 
   it("returns 400 for non-object body", async () => {
-    const sub = webhookRelay.subscribe({
+    const sub = await webhookRelay.subscribe({
       userId: USER_ID,
       integrationSlug: "stripe",
       triggerId: "payment.succeeded",

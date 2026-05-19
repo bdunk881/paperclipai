@@ -3201,12 +3201,18 @@ export const controlPlaneStore = {
     // DASH-64.2: heartbeat write is now unconditional — the repository's
     // useInMemoryFallback handles test mode, and the workspace context
     // resolves either from input.workspaceId or via workspaceContextForTeam.
+    //
+    // DASH-64.2 iter 3 (mirrors Codex P1 on #901): workspaceContextForTeam
+    // can return undefined when the team is not cached AND the DB lookup
+    // misses/errors. Throw instead of silently dropping the heartbeat
+    // so the caller sees a real failure they can retry.
     const heartbeatCtx = input.workspaceId
       ? { workspaceId: input.workspaceId, userId: input.userId }
       : await workspaceContextForTeam(team.id, input.userId);
-    if (heartbeatCtx) {
-      await controlPlaneRepository.insertHeartbeat(heartbeatCtx, heartbeat);
+    if (!heartbeatCtx) {
+      throw new Error("heartbeat_workspace_unresolved");
     }
+    await controlPlaneRepository.insertHeartbeat(heartbeatCtx, heartbeat);
 
     return heartbeat;
   },

@@ -379,8 +379,10 @@ async function runOpenAIToolLoop(args: {
       ],
     });
     if (finalTurn.usage) {
-      cumulativePromptTokens += finalTurn.usage.prompt_tokens;
+      const { uncached, cached } = splitOpenAIPromptTokens(finalTurn.usage);
+      cumulativePromptTokens += uncached;
       cumulativeCompletionTokens += finalTurn.usage.completion_tokens;
+      if (cached !== undefined) cumulativeCachedTokens += cached;
     }
     const text = finalTurn.choices[0]?.message?.content ?? "";
     return {
@@ -388,6 +390,8 @@ async function runOpenAIToolLoop(args: {
       usage: {
         promptTokens: cumulativePromptTokens,
         completionTokens: cumulativeCompletionTokens,
+        cachedPromptTokens:
+          cumulativeCachedTokens > 0 ? cumulativeCachedTokens : undefined,
       },
     };
   } catch {
@@ -396,6 +400,8 @@ async function runOpenAIToolLoop(args: {
       usage: {
         promptTokens: cumulativePromptTokens,
         completionTokens: cumulativeCompletionTokens,
+        cachedPromptTokens:
+          cumulativeCachedTokens > 0 ? cumulativeCachedTokens : undefined,
       },
     };
   }

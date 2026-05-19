@@ -277,7 +277,9 @@ describe("Dashboard (v2 Home)", () => {
     await screen.findByText("Spend by agent · this week");
   });
 
-  it("renders the error state and retries loading", async () => {
+  it("renders the greeting when an individual API call fails (graceful fallback)", async () => {
+    // API failures on individual calls no longer bubble to the error state —
+    // they return empty arrays so the dashboard still renders with the heading.
     listAgentsMock.mockRejectedValueOnce(new Error("agents failed"));
 
     render(
@@ -286,11 +288,29 @@ describe("Dashboard (v2 Home)", () => {
       </MemoryRouter>,
     );
 
+    expect(
+      await screen.findByText(/Good (morning|afternoon|evening), Test\./i),
+    ).toBeInTheDocument();
+  });
+
+  it("renders the error state when authentication fails", async () => {
+    // Reject all calls so both useAgentPresence and loadDashboard see the failure.
+    requireAccessTokenMock.mockRejectedValue(new Error("session expired"));
+
+    render(
+      <MemoryRouter>
+        <Dashboard />
+      </MemoryRouter>,
+    );
+
     expect(await screen.findByText("Home unavailable")).toBeInTheDocument();
+
+    // Switch back to resolving so the retry succeeds.
+    requireAccessTokenMock.mockResolvedValue("mock-token");
     fireEvent.click(screen.getByRole("button", { name: /retry/i }));
     expect(
       await screen.findByText(/Good (morning|afternoon|evening), Test\./i),
     ).toBeInTheDocument();
-    expect(listAgentsMock).toHaveBeenCalledTimes(2);
+    expect(requireAccessTokenMock.mock.calls.length).toBeGreaterThanOrEqual(2);
   });
 });

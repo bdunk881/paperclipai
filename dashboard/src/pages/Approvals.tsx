@@ -136,6 +136,14 @@ export default function Approvals() {
   if (error && approvals.length === 0) {
     return (
       <div className="af2-page">
+        <div className="af2-page-head">
+          <div>
+            <div className="af2-eyebrow">Governance · Board</div>
+            <h1 className="af2-h1" style={{ marginTop: 6 }}>
+              Approvals
+            </h1>
+          </div>
+        </div>
         <ErrorState
           title="Approvals unavailable"
           message={error}

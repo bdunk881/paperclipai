@@ -168,9 +168,9 @@ export default function Dashboard() {
       // a single shot, so per-agent budget fetches are no longer required.
       const [agentList, approvalList, runList, budgetList, missionsList] =
         await Promise.all([
-          listAgents(accessToken),
-          listApprovals(accessToken),
-          listRuns(undefined, accessToken),
+          listAgents(accessToken).catch(() => [] as Agent[]),
+          listApprovals(accessToken).catch(() => [] as ApprovalRequest[]),
+          listRuns(undefined, accessToken).catch(() => [] as WorkflowRun[]),
           listBudgets(accessToken).catch(() => [] as BudgetRow[]),
           activeWorkspaceId
             ? listMissions(accessToken).catch(() => [] as Mission[])

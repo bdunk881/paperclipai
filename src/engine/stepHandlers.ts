@@ -277,12 +277,11 @@ export async function handleLlm(
   const response = await provider(renderedPrompt);
 
   // PR B.2: record token usage so the next call can re-evaluate the cap.
-  // HEL-145: promptTokens is the uncached bucket; add cached reads and
-  // cache-write tokens so the hosted-free quota and cost log see all input tokens.
-  const totalInputTokens =
-    (response.usage?.promptTokens ?? 0) +
-    (response.usage?.cachedPromptTokens ?? 0) +
-    (response.usage?.cachedCreationTokens ?? 0);
+  // HEL-145 iter 2 contract: promptTokens IS the total input (uncached +
+  // cache_read + cache_creation), so no manual summation needed —
+  // legacy callers like this hosted-free quota path are unchanged on
+  // cache hits.
+  const totalInputTokens = response.usage?.promptTokens ?? 0;
   const completionTokens = response.usage?.completionTokens ?? 0;
   if (usedHostedFree && hostedFreeWorkspaceId) {
     recordHostedFreeTokens(hostedFreeWorkspaceId, totalInputTokens + completionTokens);
@@ -897,12 +896,9 @@ export async function handleAgent(
 
     try {
       const response = await provider(prompt);
-      // HEL-145: sum all input buckets so hosted-free quota and cost log
-      // count cached reads/writes, not just the uncached portion.
-      totalPromptTokens +=
-        (response.usage?.promptTokens ?? 0) +
-        (response.usage?.cachedPromptTokens ?? 0) +
-        (response.usage?.cachedCreationTokens ?? 0);
+      // HEL-145 iter 2: promptTokens is the TOTAL input (uncached +
+      // cache_read + cache_creation). No manual summation needed.
+      totalPromptTokens += response.usage?.promptTokens ?? 0;
       totalCompletionTokens += response.usage?.completionTokens ?? 0;
       // Same chatty-tolerant extraction as the single-LLM step path
       // above. Slot workers ask for "valid JSON only" in the prompt

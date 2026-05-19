@@ -573,7 +573,8 @@ router.get("/teams/:id", async (req: WorkspaceAwareRequest, res) => {
     // DASH-64.3: getTeamSpendSnapshot is async now.
     const tasks = await controlPlaneStore.listTasks(context.userId, team.id, context.workspaceId);
     const heartbeats = await controlPlaneStore.listHeartbeats(context.userId, team.id, context.workspaceId);
-    const executions = controlPlaneStore.listExecutions(context.userId, team.id, context.workspaceId);
+    // DASH-64.4: listExecutions is async now (repository-backed).
+    const executions = await controlPlaneStore.listExecutions(context.userId, team.id, context.workspaceId);
     const spend = await controlPlaneStore.getTeamSpendSnapshot(team.id, context.userId, context.workspaceId);
     res.json({ team, agents, tasks, heartbeats, executions, spend });
     return;
@@ -816,14 +817,24 @@ router.get("/tasks", async (req: WorkspaceAwareRequest, res) => {
   res.json({ tasks, total: tasks.length });
 });
 
-router.get("/executions", (req: WorkspaceAwareRequest, res) => {
+router.get("/executions", async (req: WorkspaceAwareRequest, res) => {
   const context = resolveWorkspaceContext(req, res);
   if (!context) {
     return;
   }
   const teamId = typeof req.query.teamId === "string" ? req.query.teamId : undefined;
-  const executions = controlPlaneStore.listExecutions(context.userId, teamId, context.workspaceId);
-  res.json({ executions, total: executions.length });
+  try {
+    // DASH-64.4: listExecutions is now async (repository-backed).
+    const executions = await controlPlaneStore.listExecutions(
+      context.userId,
+      teamId,
+      context.workspaceId,
+    );
+    res.json({ executions, total: executions.length });
+  } catch (err) {
+    console.warn(`[controlPlaneRoutes] /executions failed: ${(err as Error).message}`);
+    res.status(500).json({ error: "executions_unavailable" });
+  }
 });
 
 router.post("/executions/:id/lifecycle", requirePaperclipRunId, async (req: WorkspaceAwareRequest, res) => {

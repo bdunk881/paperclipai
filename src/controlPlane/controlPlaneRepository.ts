@@ -20,6 +20,8 @@ import {
   AgentHeartbeatRecord,
   BudgetAlertScope,
   ControlPlaneBudgetAlert,
+  ControlPlaneExecution,
+  ControlPlaneExecutionStatus,
   ControlPlaneSpendEntry,
   ControlPlaneTask,
   ControlPlaneTaskAuditEvent,
@@ -55,6 +57,9 @@ const memHeartbeats = new Map<string, Map<string, AgentHeartbeatRecord>>();
 const memSpendEntries = new Map<string, Map<string, ControlPlaneSpendEntry>>();
 // allowlist: test/dev fallback for repository; production routes to Postgres
 const memBudgetAlerts = new Map<string, Map<string, ControlPlaneBudgetAlert>>();
+// allowlist: test/dev fallback for repository; production routes to Postgres
+// DASH-64.4: executions Map ownership moves from controlPlaneStore to repo.
+const memExecutions = new Map<string, Map<string, ControlPlaneExecution>>();
 
 function memBucket<T>(
   store: Map<string, Map<string, T>>,
@@ -128,6 +133,28 @@ interface SpendEntryRow {
   tool_name: string | null;
   metadata: Record<string, unknown> | null;
   recorded_at: Date;
+}
+
+interface ExecutionRow {
+  id: string;
+  workspace_id: string;
+  team_id: string;
+  user_id: string;
+  agent_id: string;
+  source_run_id: string;
+  source_workflow_step_id: string;
+  source_workflow_step_name: string;
+  task_id: string | null;
+  status: ControlPlaneExecutionStatus;
+  applied_skills: string[] | null;
+  metadata: Record<string, unknown> | null;
+  summary: string | null;
+  cost_usd: string | null;
+  requested_at: Date;
+  started_at: Date | null;
+  completed_at: Date | null;
+  last_heartbeat_at: Date | null;
+  restart_count: number;
 }
 
 interface BudgetAlertRow {
@@ -217,6 +244,32 @@ function rowToSpendEntry(row: SpendEntryRow): ControlPlaneSpendEntry {
     toolName: row.tool_name ?? undefined,
     metadata: row.metadata ?? undefined,
     recordedAt: isoFromDateRequired(row.recorded_at),
+  };
+}
+
+function rowToExecution(row: ExecutionRow): ControlPlaneExecution {
+  const metadata = row.metadata && typeof row.metadata === "object" && !Array.isArray(row.metadata)
+    ? (row.metadata as Record<string, unknown>)
+    : undefined;
+  return {
+    id: row.id,
+    teamId: row.team_id,
+    userId: row.user_id,
+    agentId: row.agent_id,
+    sourceRunId: row.source_run_id,
+    sourceWorkflowStepId: row.source_workflow_step_id,
+    sourceWorkflowStepName: row.source_workflow_step_name,
+    taskId: row.task_id ?? undefined,
+    status: row.status,
+    appliedSkills: Array.isArray(row.applied_skills) ? row.applied_skills : [],
+    metadata,
+    summary: row.summary ?? undefined,
+    costUsd: numericFromString(row.cost_usd),
+    requestedAt: isoFromDateRequired(row.requested_at),
+    startedAt: isoFromDate(row.started_at),
+    completedAt: isoFromDate(row.completed_at),
+    lastHeartbeatAt: isoFromDate(row.last_heartbeat_at),
+    restartCount: row.restart_count,
   };
 }
 
@@ -347,6 +400,62 @@ async function insertSpendEntryRow(
       entry.toolName ?? null,
       entry.metadata ? JSON.stringify(entry.metadata) : null,
       new Date(entry.recordedAt),
+    ]
+  );
+}
+
+async function upsertExecutionRow(
+  client: PoolClient,
+  ctx: ControlPlaneRepoContext,
+  execution: ControlPlaneExecution
+): Promise<void> {
+  await client.query(
+    `INSERT INTO agent_executions (
+       id, workspace_id, user_id, team_id, agent_id, source_run_id, source_workflow_step_id,
+       source_workflow_step_name, task_id, status, applied_skills, metadata, summary, cost_usd,
+       requested_at, started_at, completed_at, last_heartbeat_at, restart_count
+     ) VALUES (
+       $1, $2, $3, $4, $5, $6, $7,
+       $8, $9, $10, $11::jsonb, $12::jsonb, $13, $14,
+       $15, $16, $17, $18, $19
+     )
+     ON CONFLICT (id) DO UPDATE SET
+       team_id = EXCLUDED.team_id,
+       agent_id = EXCLUDED.agent_id,
+       source_run_id = EXCLUDED.source_run_id,
+       source_workflow_step_id = EXCLUDED.source_workflow_step_id,
+       source_workflow_step_name = EXCLUDED.source_workflow_step_name,
+       task_id = EXCLUDED.task_id,
+       status = EXCLUDED.status,
+       applied_skills = EXCLUDED.applied_skills,
+       metadata = EXCLUDED.metadata,
+       summary = EXCLUDED.summary,
+       cost_usd = EXCLUDED.cost_usd,
+       requested_at = EXCLUDED.requested_at,
+       started_at = EXCLUDED.started_at,
+       completed_at = EXCLUDED.completed_at,
+       last_heartbeat_at = EXCLUDED.last_heartbeat_at,
+       restart_count = EXCLUDED.restart_count`,
+    [
+      execution.id,
+      ctx.workspaceId,
+      execution.userId,
+      execution.teamId,
+      execution.agentId,
+      execution.sourceRunId,
+      execution.sourceWorkflowStepId,
+      execution.sourceWorkflowStepName,
+      execution.taskId ?? null,
+      execution.status,
+      JSON.stringify(execution.appliedSkills ?? []),
+      execution.metadata ? JSON.stringify(execution.metadata) : null,
+      execution.summary ?? null,
+      execution.costUsd ?? null,
+      new Date(execution.requestedAt),
+      execution.startedAt ? new Date(execution.startedAt) : null,
+      execution.completedAt ? new Date(execution.completedAt) : null,
+      execution.lastHeartbeatAt ? new Date(execution.lastHeartbeatAt) : null,
+      execution.restartCount,
     ]
   );
 }
@@ -935,6 +1044,164 @@ export const controlPlaneRepository = {
     });
   },
 
+  /**
+   * DASH-64.4: persist (insert or update) an execution row. Used by every
+   * write-side mutator in controlPlaneStore (startAgentExecution,
+   * finalizeAgentExecution, recordHeartbeat, updateExecutionLifecycle,
+   * updateAgentLifecycle stop/restart, updateAgentSkills, budget-driven
+   * pause). Test-mode in-memory fallback stores a deep copy so callers
+   * can mutate the returned snapshot without polluting the source row.
+   */
+  async upsertExecution(
+    ctx: ControlPlaneRepoContext,
+    execution: ControlPlaneExecution
+  ): Promise<void> {
+    if (useInMemoryFallback()) {
+      memBucket(memExecutions, ctx.workspaceId).set(execution.id, { ...execution });
+      return;
+    }
+    await withWorkspaceContext(getPostgresPool(), ctx, async (client) => {
+      await upsertExecutionRow(client, ctx, execution);
+    });
+  },
+
+  /**
+   * DASH-64.4: single-execution lookup. Returns a copy of the stored row
+   * so callers can mutate freely; persistence requires a follow-up
+   * `upsertExecution`. RLS in production / workspaceId bucket in tests
+   * provides the access boundary.
+   */
+  async getExecution(
+    ctx: ControlPlaneRepoContext,
+    executionId: string
+  ): Promise<ControlPlaneExecution | undefined> {
+    if (useInMemoryFallback()) {
+      const inWorkspace = memBucket(memExecutions, ctx.workspaceId).get(executionId);
+      if (inWorkspace) return { ...inWorkspace };
+      // DASH-64.4: same fallback shape as getTask — test callers that
+      // haven't wired workspace context still need to find their row
+      // (production RLS makes this branch unreachable).
+      for (const bucket of memExecutions.values()) {
+        const execution = bucket.get(executionId);
+        if (execution) return { ...execution };
+      }
+      return undefined;
+    }
+    return withWorkspaceContext(getPostgresPool(), ctx, async (client) => {
+      const result = await client.query<ExecutionRow>(
+        `SELECT id, workspace_id, team_id, user_id, agent_id, source_run_id,
+                source_workflow_step_id, source_workflow_step_name, task_id, status,
+                applied_skills, metadata, summary, cost_usd,
+                requested_at, started_at, completed_at, last_heartbeat_at, restart_count
+           FROM agent_executions
+          WHERE id = $1`,
+        [executionId]
+      );
+      const row = result.rows[0];
+      return row ? rowToExecution(row) : undefined;
+    });
+  },
+
+  async listExecutions(
+    ctx: ControlPlaneRepoContext,
+    filters?: { teamId?: string; agentId?: string; status?: ControlPlaneExecutionStatus }
+  ): Promise<ControlPlaneExecution[]> {
+    if (useInMemoryFallback()) {
+      const bucket = memBucket(memExecutions, ctx.workspaceId);
+      let rows = Array.from(bucket.values()).filter((execution) => {
+        if (filters?.teamId && execution.teamId !== filters.teamId) return false;
+        if (filters?.agentId && execution.agentId !== filters.agentId) return false;
+        if (filters?.status && execution.status !== filters.status) return false;
+        return true;
+      });
+      // DASH-64.4: cross-workspace fallback for test-mode callers that
+      // haven't wired workspace context. Mirrors listHeartbeats fallback.
+      if (rows.length === 0 && memExecutions.size > 1) {
+        const all: ControlPlaneExecution[] = [];
+        for (const b of memExecutions.values()) {
+          for (const execution of b.values()) {
+            if (execution.userId !== ctx.userId) continue;
+            if (filters?.teamId && execution.teamId !== filters.teamId) continue;
+            if (filters?.agentId && execution.agentId !== filters.agentId) continue;
+            if (filters?.status && execution.status !== filters.status) continue;
+            all.push(execution);
+          }
+        }
+        rows = all;
+      }
+      return rows
+        .map((execution) => ({ ...execution }))
+        .sort((left, right) => left.requestedAt.localeCompare(right.requestedAt));
+    }
+    return withWorkspaceContext(getPostgresPool(), ctx, async (client) => {
+      const params: unknown[] = [ctx.userId];
+      let where = "user_id = $1";
+      if (filters?.teamId) {
+        params.push(filters.teamId);
+        where += ` AND team_id = $${params.length}`;
+      }
+      if (filters?.agentId) {
+        params.push(filters.agentId);
+        where += ` AND agent_id = $${params.length}`;
+      }
+      if (filters?.status) {
+        params.push(filters.status);
+        where += ` AND status = $${params.length}`;
+      }
+      const result = await client.query<ExecutionRow>(
+        `SELECT id, workspace_id, team_id, user_id, agent_id, source_run_id,
+                source_workflow_step_id, source_workflow_step_name, task_id, status,
+                applied_skills, metadata, summary, cost_usd,
+                requested_at, started_at, completed_at, last_heartbeat_at, restart_count
+           FROM agent_executions
+          WHERE ${where}
+          ORDER BY requested_at ASC`,
+        params
+      );
+      return result.rows.map(rowToExecution);
+    });
+  },
+
+  /**
+   * DASH-64.4: workspace-less fallback for legacy callers that have a
+   * userId but no resolved workspaceId. Same pattern as
+   * listAllTasksForUser / listAllHeartbeatsForUser → migration 048
+   * SECURITY DEFINER helper (RLS bypass scoped to user_id filter, with
+   * the helper bound to `app.current_user_id` for defense-in-depth).
+   */
+  async listAllExecutionsForUser(userId: string): Promise<ControlPlaneExecution[]> {
+    if (useInMemoryFallback()) {
+      const out: ControlPlaneExecution[] = [];
+      for (const bucket of memExecutions.values()) {
+        for (const execution of bucket.values()) {
+          if (execution.userId === userId) out.push({ ...execution });
+        }
+      }
+      return out.sort((left, right) => left.requestedAt.localeCompare(right.requestedAt));
+    }
+    const pool = getPostgresPool();
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN");
+      await client.query("SELECT set_config('app.current_user_id', $1, true)", [userId]);
+      const result = await client.query<ExecutionRow>(
+        `SELECT id, workspace_id, team_id, user_id, agent_id, source_run_id,
+                source_workflow_step_id, source_workflow_step_name, task_id, status,
+                applied_skills, metadata, summary, cost_usd,
+                requested_at, started_at, completed_at, last_heartbeat_at, restart_count
+           FROM list_agent_executions_for_user($1)`,
+        [userId]
+      );
+      await client.query("COMMIT");
+      return result.rows.map(rowToExecution);
+    } catch (err) {
+      await client.query("ROLLBACK").catch(() => undefined);
+      throw err;
+    } finally {
+      client.release();
+    }
+  },
+
   async listBudgetAlerts(
     ctx: ControlPlaneRepoContext,
     filters?: { teamId?: string }
@@ -982,6 +1249,7 @@ export function __resetRepositoryInMemoryStateForTests(): void {
   memHeartbeats.clear();
   memSpendEntries.clear();
   memBudgetAlerts.clear();
+  memExecutions.clear();
 }
 
 export type ControlPlaneRepository = typeof controlPlaneRepository;

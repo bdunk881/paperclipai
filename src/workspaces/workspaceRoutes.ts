@@ -125,5 +125,82 @@ export function createWorkspaceRoutes(pool: Pool) {
     }
   });
 
+  // -------------------------------------------------------------------
+  // PATCH /api/workspaces/:id — rename a workspace (HEL-192)
+  //
+  // Auth: only `owner` or `admin` members of the target workspace can
+  // rename it. Other workspaces in the user's membership graph are
+  // untouched. We resolve the role inline (rather than via the global
+  // `workspaceResolver` middleware) because this route doesn't operate
+  // on the user's "active" workspace — the path param picks the
+  // workspace to mutate.
+  // -------------------------------------------------------------------
+  router.patch("/:id", async (req: AuthenticatedRequest, res) => {
+    const userId = req.auth?.sub?.trim();
+    if (!userId) {
+      res.status(401).json({ error: "Authenticated user required" });
+      return;
+    }
+
+    const workspaceId = req.params.id;
+    if (!workspaceId || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(workspaceId)) {
+      res.status(400).json({ error: "Invalid workspace ID format" });
+      return;
+    }
+
+    const name = typeof req.body?.name === "string" ? req.body.name.trim() : "";
+    if (!name) {
+      res.status(400).json({ error: "name is required and must be a non-empty string" });
+      return;
+    }
+
+    try {
+      // Membership + role check in one query. Treat workspace owner as
+      // implicit admin so OAuth-only users (who skip explicit member
+      // rows) can still rename their own workspace.
+      const roleResult = await pool.query<{ role: string }>(
+        `SELECT CASE
+                  WHEN w.owner_user_id = $2 THEN 'owner'
+                  ELSE wm.role
+                END AS role
+           FROM workspaces w
+           LEFT JOIN workspace_members wm
+             ON wm.workspace_id = w.id AND wm.user_id = $2
+          WHERE w.id = $1
+          LIMIT 1`,
+        [workspaceId, userId],
+      );
+
+      if (roleResult.rows.length === 0) {
+        res.status(404).json({ error: "Workspace not found" });
+        return;
+      }
+      const role = roleResult.rows[0].role;
+      if (role !== "owner" && role !== "admin") {
+        res.status(403).json({ error: "Only workspace owners or admins can rename a workspace" });
+        return;
+      }
+
+      const updated = await pool.query<WorkspaceRow>(
+        `UPDATE workspaces SET name = $1 WHERE id = $2 RETURNING id, name`,
+        [name, workspaceId],
+      );
+      const workspace = updated.rows[0];
+      if (!workspace) {
+        res.status(404).json({ error: "Workspace not found" });
+        return;
+      }
+
+      res.json({
+        id: workspace.id,
+        name: workspace.name,
+        slug: slugifyWorkspaceName(workspace.name, workspace.id),
+      });
+    } catch (error) {
+      console.error("[workspaces] Failed to patch workspace:", (error as Error).message);
+      res.status(500).json({ error: "Failed to update workspace" });
+    }
+  });
+
   return router;
 }

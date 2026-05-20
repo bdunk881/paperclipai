@@ -181,6 +181,47 @@ export async function createAgent(input: AgentCreateInput, accessToken: string):
   return parseJsonOrError<Agent>(response, `Failed to create agent: ${response.status}`);
 }
 
+// HEL-190: the API accepts the canonical DB-level status enum
+// ("active" | "paused" | "terminated"); the dashboard maps onto its
+// presentation vocabulary at render time. Use `terminateAgent` for
+// soft-deletes; this PATCH is for live attribute edits.
+export interface AgentPatchInput {
+  name?: string;
+  status?: "active" | "paused" | "terminated";
+  budgetMonthlyUsd?: number;
+  instructions?: string;
+}
+
+export async function patchAgent(
+  agentId: string,
+  input: AgentPatchInput,
+  accessToken: string
+): Promise<Agent> {
+  const response = await trackedFetch(`${BASE}/agents/${encodeURIComponent(agentId)}`, {
+    method: "PATCH",
+    headers: buildAuthHeaders(accessToken, {
+      "Content-Type": "application/json",
+      "X-Paperclip-Run-Id": getMutationRunId(),
+    }),
+    body: JSON.stringify(input),
+  });
+  return parseJsonOrError<Agent>(response, `Failed to update agent: ${response.status}`);
+}
+
+// HEL-190: soft-delete (status='terminated'). Returns void; the dashboard
+// should refetch the agent list after success.
+export async function terminateAgent(agentId: string, accessToken: string): Promise<void> {
+  const response = await trackedFetch(`${BASE}/agents/${encodeURIComponent(agentId)}`, {
+    method: "DELETE",
+    headers: buildAuthHeaders(accessToken, {
+      "X-Paperclip-Run-Id": getMutationRunId(),
+    }),
+  });
+  if (!response.ok) {
+    throw new Error(`Failed to terminate agent: ${response.status}`);
+  }
+}
+
 export async function getAgentHeartbeat(agentId: string, accessToken: string): Promise<AgentHeartbeat | null> {
   return withMockApi(
     async () => {

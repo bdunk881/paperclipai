@@ -140,4 +140,70 @@ describe("workspaceRoutes", () => {
     expect(client.query).toHaveBeenNthCalledWith(4, "COMMIT");
     expect(client.release).toHaveBeenCalledTimes(1);
   });
+
+  // -----------------------------------------------------------------
+  // PATCH /api/workspaces/:id (HEL-192 — rename)
+  // -----------------------------------------------------------------
+  describe("PATCH /api/workspaces/:id", () => {
+    const WS_ID = "22222222-2222-4222-8222-222222222222";
+
+    it("returns 400 when the id is not a UUID", async () => {
+      const query = jest.fn();
+      const app = buildApp(query);
+      const res = await request(app)
+        .patch("/api/workspaces/not-a-uuid")
+        .set("Authorization", "Bearer user-123")
+        .send({ name: "new" });
+      expect(res.status).toBe(400);
+      expect(res.body.error).toMatch(/Invalid workspace ID/);
+      expect(query).not.toHaveBeenCalled();
+    });
+
+    it("returns 400 when name is missing", async () => {
+      const query = jest.fn();
+      const app = buildApp(query);
+      const res = await request(app)
+        .patch(`/api/workspaces/${WS_ID}`)
+        .set("Authorization", "Bearer user-123")
+        .send({});
+      expect(res.status).toBe(400);
+      expect(res.body.error).toMatch(/name is required/);
+    });
+
+    it("returns 404 when the workspace does not exist", async () => {
+      const query = jest.fn().mockResolvedValueOnce({ rows: [] });
+      const app = buildApp(query);
+      const res = await request(app)
+        .patch(`/api/workspaces/${WS_ID}`)
+        .set("Authorization", "Bearer user-123")
+        .send({ name: "rename" });
+      expect(res.status).toBe(404);
+    });
+
+    it("returns 403 when the user is a non-admin member", async () => {
+      const query = jest.fn().mockResolvedValueOnce({ rows: [{ role: "member" }] });
+      const app = buildApp(query);
+      const res = await request(app)
+        .patch(`/api/workspaces/${WS_ID}`)
+        .set("Authorization", "Bearer user-123")
+        .send({ name: "rename" });
+      expect(res.status).toBe(403);
+      expect(res.body.error).toMatch(/owners or admins/);
+    });
+
+    it("renames the workspace when the user is the owner", async () => {
+      const query = jest
+        .fn()
+        .mockResolvedValueOnce({ rows: [{ role: "owner" }] })
+        .mockResolvedValueOnce({ rows: [{ id: WS_ID, name: "New Name" }] });
+      const app = buildApp(query);
+      const res = await request(app)
+        .patch(`/api/workspaces/${WS_ID}`)
+        .set("Authorization", "Bearer user-123")
+        .send({ name: "New Name" });
+      expect(res.status).toBe(200);
+      expect(res.body).toEqual({ id: WS_ID, name: "New Name", slug: "new-name" });
+      expect(query).toHaveBeenCalledTimes(2);
+    });
+  });
 });

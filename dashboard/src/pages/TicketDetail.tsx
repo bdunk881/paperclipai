@@ -20,6 +20,7 @@ import {
   addTicketUpdate,
   getTicket,
   getTicketActorProfile,
+  hydrateTicketActorProfiles,
   cancelTicketAgentRun,
   runTicketAgent,
   searchTicketMemories,
@@ -169,7 +170,7 @@ export default function TicketDetail({
         setAggregate(nextAggregate);
         setSource("api");
         void loadMemoryEntries(nextAggregate, accessToken, setMemoryState);
-        void loadAgentDirectory(accessToken, setAgentDirectory);
+        void loadAgentDirectory(accessToken, setAgentDirectory, user);
       } catch (loadError) {
         setError(loadError instanceof Error ? loadError.message : "Failed to load ticket");
         try {
@@ -188,14 +189,21 @@ export default function TicketDetail({
         }
       }
     },
-    [getAccessToken, ticketId]
+    [getAccessToken, ticketId, user]
   );
 
   useEffect(() => {
     if (!initialData) {
       void loadTicket();
+      return;
     }
-  }, [initialData, loadTicket]);
+
+    void (async () => {
+      const accessToken = (await getAccessToken()) ?? undefined;
+      await loadAgentDirectory(accessToken, setAgentDirectory, user);
+      void loadMemoryEntries(initialData, accessToken, setMemoryState);
+    })();
+  }, [getAccessToken, initialData, loadTicket, user]);
 
   useEffect(() => {
     if (!ticketId) return undefined;
@@ -1077,7 +1085,8 @@ export default function TicketDetail({
 
 function loadAgentDirectory(
   accessToken: string | undefined,
-  setAgentDirectory: React.Dispatch<React.SetStateAction<Agent[]>>
+  setAgentDirectory: React.Dispatch<React.SetStateAction<Agent[]>>,
+  user?: { id: string; name: string } | null
 ) {
   if (!accessToken) {
     setAgentDirectory([]);
@@ -1085,7 +1094,10 @@ function loadAgentDirectory(
   }
 
   return listAgents(accessToken)
-    .then((agents) => setAgentDirectory(agents))
+    .then((agents) => {
+      hydrateTicketActorProfiles({ agents, user });
+      setAgentDirectory(agents);
+    })
     .catch(() => setAgentDirectory([]));
 }
 
@@ -1360,7 +1372,11 @@ function MemorySidebar({ memoryState }: { memoryState: MemoryLoadState }) {
                 {entry.text}
               </p>
               <div className="mt-3 flex flex-wrap items-center gap-2 text-xs uppercase tracking-[0.16em] text-af2-sage">
-                <span>{entry.agentId ? actorLabelFromId(entry.agentId) : entry.key}</span>
+                <span>
+                  {entry.agentId
+                    ? getTicketActorProfile({ type: "agent", id: entry.agentId }).name
+                    : entry.key}
+                </span>
                 <span>•</span>
                 <span>{entry.updatedAt ? relativeTicketTime(entry.updatedAt) : entry.workflowName ?? "Memory"}</span>
               </div>
@@ -1469,10 +1485,3 @@ function formatSlaCountdown(
   };
 }
 
-function actorLabelFromId(id: string): string {
-  return id
-    .split(/[:._-]/g)
-    .filter(Boolean)
-    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-    .join(" ");
-}

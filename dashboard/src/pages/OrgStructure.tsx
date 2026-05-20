@@ -1,21 +1,13 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { listAgents, type Agent } from "../api/agentApi";
-import { listBudgets, type BudgetRow } from "../api/canonicalApi";
-import { getApiBasePath } from "../api/baseUrl";
-import { trackedFetch } from "../api/trackedFetch";
+import {
+  getOrgGraph,
+  listBudgets,
+  type BudgetRow,
+  type OrgGraphAgent,
+} from "../api/canonicalApi";
 import { listMissions, type Mission } from "../api/missionsApi";
-
-/**
- * Slim per-agent budget row used by OrgStructure. Derived from the canonical
- * /api/budgets bulk call (one request total) instead of fanning out
- * `getAgentBudget` per agent — which used to burn through the 100 req/min
- * rate limit on workspaces with > 50 agents.
- */
-interface AgentSpendRow {
-  spentUsd: number;
-  monthlyUsd: number;
-}
 import { EmptyState, ErrorState, LoadingState } from "../components/UiStates";
 import { useAuth } from "../context/AuthContext";
 import { AgentPresencePill } from "../components/AgentPresencePill";
@@ -24,31 +16,34 @@ import {
   useAgentPresence,
   type AgentPresence,
 } from "../hooks/useAgentPresence";
+import OrgStructureListView from "./OrgStructureListView";
+import {
+  buildListRows,
+  buildOrgTree,
+  companyIdByAgentId,
+  filterAgentsForMission,
+  parseViewMode,
+  resolveMissionSelection,
+  truncateStatement,
+  type TeamViewMode,
+} from "./orgStructureModel";
 
 /**
  * Team page — Workforce > Team (HEL-26).
  *
- * Rebuilt to match v2 reference `docs/design/v2/pages.jsx::AF2_Team`:
- *
- *   mission card (centered, full statement)
- *      │ SVG connector tree (1 → 3 branches)
- *      ▼
- *   3-column lead cards with tone-coded top borders + avatars
- *      └── reports column (indented, dashed left border)
- *
- * Hierarchy is sourced from two places, in priority order:
- *   1. The canonical `/api/org-graph` endpoint (edges from `org_edges`).
- *   2. `agent.metadata.reportingToAgentId` fallback (HEL-25 mirror) for
- *      legacy / mock data where org_edges hasn't been populated.
- *
- * Click an agent card → opens detail at `/agents/:id`.
+ * Org map (default) and list view share mission scope + URL state:
+ *   /workspace/org-structure?missionId=<uuid>&view=list
+ * Omit missionId for the full workspace roster.
  */
+
+interface AgentSpendRow {
+  spentUsd: number;
+  monthlyUsd: number;
+}
 
 const TONE_ORDER = ["clay", "ink-blue", "plum", "sage", "mustard", "ink"] as const;
 type Tone = (typeof TONE_ORDER)[number];
 
-// Map af2 tone names to the avatar gradient class names (which use "blue"
-// for ink-blue) so PodLead can render a tone-coded avatar + border.
 function avatarClassFor(tone: Tone): string {
   if (tone === "ink-blue") return "af2-tone-blue";
   return `af2-tone-${tone}`;
@@ -59,18 +54,8 @@ function topBorderFor(tone: Tone): string {
   return `var(--af2-${tone})`;
 }
 
-// Lead index → tone (clay → ink-blue → plum → sage → mustard → ink, wrapping).
 function toneForIndex(index: number): Tone {
   return TONE_ORDER[index % TONE_ORDER.length];
-}
-
-function managerIdFromMetadata(agent: Agent): string | null {
-  const metadata = agent.metadata ?? {};
-  const manager =
-    (metadata as Record<string, unknown>).reportingToAgentId ??
-    (metadata as Record<string, unknown>).managerAgentId ??
-    (metadata as Record<string, unknown>).parentAgentId;
-  return typeof manager === "string" && manager.length > 0 ? manager : null;
 }
 
 function initialsFor(name: string): string {
@@ -82,125 +67,34 @@ function initialsFor(name: string): string {
     .join("");
 }
 
-// ---------------------------------------------------------------------------
-// Org-graph endpoint — optional. Returns null on any error so we fall back to
-// agent.metadata for hierarchy. Mirrors the shape exported by
-// `src/canonical/canonicalReadRoutes.ts::OrgGraphResponse`.
-// ---------------------------------------------------------------------------
-
-interface OrgGraphResponse {
-  workspaceId: string;
-  agents: Array<{
-    id: string;
-    name: string;
-    roleKey: string | null;
-    companyId: string | null;
-    reportingToAgentId: string | null;
-  }>;
-  edges: Array<{
-    id: string;
-    managerAgentId: string;
-    agentId: string;
-    createdAt: string;
-  }>;
-}
-
-async function fetchOrgGraph(accessToken: string): Promise<OrgGraphResponse | null> {
-  try {
-    const response = await trackedFetch(`${getApiBasePath()}/org-graph`, {
-      headers: { Authorization: `Bearer ${accessToken}` },
-    });
-    if (!response.ok) return null;
-    return (await response.json()) as OrgGraphResponse;
-  } catch {
-    return null;
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Tree builder
-// ---------------------------------------------------------------------------
-
-interface OrgTree {
-  mission: Mission | null;
-  rootAgents: Agent[];
-  reportsByLeadId: Map<string, Agent[]>;
-}
-
-function buildOrgTree(
-  agents: Agent[],
-  missions: Mission[],
-  edges: OrgGraphResponse["edges"] | null,
-): OrgTree {
-  // Prefer an active mission, fall back to the most recent.
-  const mission =
-    missions.find((m) => m.status === "active") ?? missions[0] ?? null;
-
-  const reportsByLeadId = new Map<string, Agent[]>();
-  const reportIds = new Set<string>();
-  const agentById = new Map(agents.map((a) => [a.id, a]));
-
-  const pushReport = (managerId: string, report: Agent) => {
-    reportsByLeadId.set(managerId, [...(reportsByLeadId.get(managerId) ?? []), report]);
-    reportIds.add(report.id);
-  };
-
-  if (edges && edges.length > 0) {
-    // Canonical edges win when the endpoint is reachable. Skip edges whose
-    // endpoints aren't in the agents list (shouldn't happen in practice but
-    // protects against partial data).
-    for (const edge of edges) {
-      const report = agentById.get(edge.agentId);
-      if (!report) continue;
-      if (!agentById.has(edge.managerAgentId)) continue;
-      pushReport(edge.managerAgentId, report);
-    }
-  } else {
-    // Fallback: walk the metadata pointers.
-    for (const agent of agents) {
-      const managerId = managerIdFromMetadata(agent);
-      if (!managerId) continue;
-      if (!agentById.has(managerId)) continue;
-      pushReport(managerId, agent);
-    }
-  }
-
-  const rootAgents = agents
-    .filter((agent) => !reportIds.has(agent.id))
-    .sort((a, b) => a.name.localeCompare(b.name));
-
-  return { mission, rootAgents, reportsByLeadId };
-}
-
-// ---------------------------------------------------------------------------
-// Mission node (centered card at top)
-// ---------------------------------------------------------------------------
-
-function MissionNode({ mission }: { mission: Mission | null }) {
+function MissionNode({ mission, allWorkspace }: { mission: Mission | null; allWorkspace: boolean }) {
   return (
     <div style={{ display: "flex", justifyContent: "center", marginBottom: 6 }}>
       <div
         className="af2-card"
         style={{ padding: 14, width: 280, textAlign: "center" }}
       >
-        <div
-          className="af2-eyebrow"
-          style={{ color: "var(--af2-ink-3)" }}
-        >
-          Mission
+        <div className="af2-eyebrow" style={{ color: "var(--af2-ink-3)" }}>
+          {allWorkspace ? "Workspace" : "Mission"}
         </div>
         <div
           className="font-af2-serif"
           style={{ fontSize: 17, marginTop: 4, lineHeight: 1.35, color: "var(--af2-ink)" }}
         >
-          {mission ? mission.statement : "No mission yet"}
+          {allWorkspace
+            ? "All missions"
+            : mission
+              ? mission.statement
+              : "No mission yet"}
         </div>
-        {mission ? (
-          <div
-            className="af2-mono af2-muted-2"
-            style={{ marginTop: 6, fontSize: 11 }}
-          >
+        {mission && !allWorkspace ? (
+          <div className="af2-mono af2-muted-2" style={{ marginTop: 6, fontSize: 11 }}>
             {mission.companyName} · {mission.status}
+          </div>
+        ) : null}
+        {allWorkspace ? (
+          <div className="af2-muted" style={{ marginTop: 6, fontSize: 12 }}>
+            Showing every agent in this workspace.
           </div>
         ) : null}
       </div>
@@ -208,21 +102,14 @@ function MissionNode({ mission }: { mission: Mission | null }) {
   );
 }
 
-// ---------------------------------------------------------------------------
-// SVG connector — mission → 3 leads (matches AF2_Team's path layout).
-// ---------------------------------------------------------------------------
-
 function ConnectorTree({ leadCount }: { leadCount: number }) {
   if (leadCount === 0) return null;
-  // Match the v2 reference: stem from centre down, then branch out evenly.
-  // Branch X positions are spaced across the grid.
   const branches: number[] = [];
   if (leadCount === 1) {
     branches.push(50);
   } else if (leadCount === 2) {
     branches.push(25, 75);
   } else {
-    // 3+ leads: anchor first/last near 16%/84% so cards align with the grid.
     branches.push(16, 50, 84);
   }
   return (
@@ -245,10 +132,6 @@ function ConnectorTree({ leadCount }: { leadCount: number }) {
   );
 }
 
-// ---------------------------------------------------------------------------
-// Pod lead card + reports column
-// ---------------------------------------------------------------------------
-
 interface LeadStats {
   spentUsd: number;
   budgetUsd: number;
@@ -269,19 +152,14 @@ function PodLead({
   reportStats: Map<string, AgentSpendRow>;
   presence: Map<string, AgentPresence>;
 }) {
-  // Per-agent actions (check-in, hand-off, job desc, standing tasks)
-  // live in the shared AgentCardActions component so the same row
-  // works on lead cards + report cards + the future Agent Detail page.
   const avatarClass = avatarClassFor(tone);
   const borderColor = topBorderFor(tone);
-  // Missions count is not a clean signal yet — fall back to the team size
-  // (lead + direct reports) as a proxy for "missions" the pod is running.
   const teamSize = reports.length + 1;
   const spentLabel =
     leadStats !== null
       ? `$${leadStats.spentUsd.toFixed(0)}`
       : lead.budgetMonthlyUsd > 0
-        ? `$0`
+        ? "$0"
         : "—";
   const budgetLabel =
     leadStats !== null
@@ -337,8 +215,7 @@ function PodLead({
           </div>
           <div className="af2-row" style={{ marginTop: 12, gap: 14, fontSize: 12 }}>
             <div>
-              <strong>{teamSize}</strong>{" "}
-              <span className="af2-muted">missions</span>
+              <strong>{teamSize}</strong> <span className="af2-muted">reports</span>
             </div>
             <div>
               <strong>{spentLabel}</strong>{" "}
@@ -348,14 +225,10 @@ function PodLead({
         </div>
       </Link>
 
-      {/* Per-agent actions (Check in / Hand off / Job desc / Standing
-          tasks). Outside the Link wrapper so clicks don't navigate to
-          the agent detail page. */}
       <div style={{ marginTop: 8 }}>
         <AgentCardActions agent={{ id: lead.id, name: lead.name }} />
       </div>
 
-      {/* Reports under this lead — dashed left border per AF2_Team. */}
       <div
         style={{
           marginTop: 10,
@@ -373,10 +246,6 @@ function PodLead({
                 ? `$${report.budgetMonthlyUsd.toFixed(0)}`
                 : null;
           return (
-            // Outer div is no longer a Link so the AgentCardActions
-            // row below can hold buttons + nested Links without
-            // semantically nesting interactive elements inside an <a>.
-            // The avatar + name + role area inside is still linked.
             <div
               key={report.id}
               className="af2-card"
@@ -398,10 +267,7 @@ function PodLead({
                   color: "inherit",
                 }}
               >
-                <div
-                  className={`af2-avatar sm ${avatarClassFor(tone)}`}
-                  aria-hidden="true"
-                >
+                <div className={`af2-avatar sm ${avatarClassFor(tone)}`} aria-hidden="true">
                   {initialsFor(report.name)}
                 </div>
                 <div style={{ flex: 1, minWidth: 0 }}>
@@ -413,13 +279,7 @@ function PodLead({
                       flexWrap: "wrap",
                     }}
                   >
-                    <span
-                      style={{
-                        fontWeight: 500,
-                        fontSize: 13,
-                        color: "var(--af2-ink)",
-                      }}
-                    >
+                    <span style={{ fontWeight: 500, fontSize: 13, color: "var(--af2-ink)" }}>
                       {report.name}
                     </span>
                     <AgentPresencePill presence={presence.get(report.id)} />
@@ -429,18 +289,12 @@ function PodLead({
                   </div>
                 </div>
                 {reportSpend ? (
-                  <span
-                    className="af2-mono af2-muted-2"
-                    style={{ fontSize: 11 }}
-                  >
+                  <span className="af2-mono af2-muted-2" style={{ fontSize: 11 }}>
                     {reportSpend}
                   </span>
                 ) : null}
               </Link>
-              <AgentCardActions
-                agent={{ id: report.id, name: report.name }}
-                compact
-              />
+              <AgentCardActions agent={{ id: report.id, name: report.name }} compact />
             </div>
           );
         })}
@@ -462,24 +316,41 @@ function PodLead({
   );
 }
 
-// ---------------------------------------------------------------------------
-// Page
-// ---------------------------------------------------------------------------
-
 export default function OrgStructure() {
   const { accessMode, getAccessToken } = useAuth();
-  // Wave 2b: live presence map keyed by agent.id. Each PodLead pulls
-  // its own + its reports' entries from this map. Polls every 10s
-  // when the SSE upgrade isn't reachable (older proxy, no Redis).
+  const [searchParams, setSearchParams] = useSearchParams();
   const presence = useAgentPresence();
   const [agents, setAgents] = useState<Agent[]>([]);
   const [missions, setMissions] = useState<Mission[]>([]);
-  const [edges, setEdges] = useState<OrgGraphResponse["edges"] | null>(null);
-  const [budgets, setBudgets] = useState<Map<string, AgentSpendRow>>(
-    new Map(),
+  const [orgGraphAgents, setOrgGraphAgents] = useState<OrgGraphAgent[]>([]);
+  const [edges, setEdges] = useState<Array<{ managerAgentId: string; agentId: string }> | null>(
+    null,
   );
+  const [budgets, setBudgets] = useState<Map<string, AgentSpendRow>>(new Map());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  const viewMode: TeamViewMode = parseViewMode(searchParams.get("view"));
+  const missionIdParam = searchParams.get("missionId");
+
+  const writeParam = useCallback(
+    (key: "view" | "missionId", value: string | null) => {
+      const next = new URLSearchParams(searchParams);
+      if (key === "view") {
+        if (!value || value === "map") {
+          next.delete("view");
+        } else {
+          next.set("view", value);
+        }
+      } else if (!value || value === "all") {
+        next.delete("missionId");
+      } else {
+        next.set("missionId", value);
+      }
+      setSearchParams(next, { replace: true });
+    },
+    [searchParams, setSearchParams],
+  );
 
   const loadOrg = useCallback(async () => {
     setLoading(true);
@@ -489,24 +360,22 @@ export default function OrgStructure() {
       if (accessMode === "preview" && !token) {
         setAgents([]);
         setMissions([]);
+        setOrgGraphAgents([]);
         setEdges(null);
         setBudgets(new Map());
         return;
       }
       if (!token) throw new Error("Authentication session expired.");
-      // Bulk-fetch all four canonical surfaces in parallel — one HTTP call
-      // each instead of `listAgents` + N × `getAgentBudget`. The /api/budgets
-      // canonical reads route (HEL-118) returns workspace + per-agent caps
-      // in a single response.
       const [nextAgents, nextMissions, orgGraph, budgetRows] = await Promise.all([
         listAgents(token),
         listMissions(token),
-        fetchOrgGraph(token),
+        getOrgGraph(token).catch(() => ({ workspaceId: null, agents: [], edges: [] })),
         listBudgets(token).catch(() => [] as BudgetRow[]),
       ]);
       setAgents(nextAgents);
       setMissions(nextMissions);
-      setEdges(orgGraph?.edges ?? null);
+      setOrgGraphAgents(orgGraph.agents);
+      setEdges(orgGraph.edges);
 
       const budgetMap = new Map<string, AgentSpendRow>();
       for (const row of budgetRows) {
@@ -529,10 +398,28 @@ export default function OrgStructure() {
     void loadOrg();
   }, [loadOrg]);
 
-  const tree = useMemo(
-    () => buildOrgTree(agents, missions, edges),
-    [agents, missions, edges],
+  const { selectedMissionId, selectedMission, scopeAllWorkspace } = useMemo(
+    () => resolveMissionSelection(missions, missionIdParam),
+    [missions, missionIdParam],
   );
+
+  const filteredAgents = useMemo(
+    () =>
+      filterAgentsForMission(
+        agents,
+        scopeAllWorkspace ? null : selectedMissionId,
+        scopeAllWorkspace ? null : selectedMission,
+        companyIdByAgentId(orgGraphAgents),
+      ),
+    [agents, scopeAllWorkspace, selectedMissionId, selectedMission, orgGraphAgents],
+  );
+
+  const tree = useMemo(
+    () => buildOrgTree(filteredAgents, edges),
+    [filteredAgents, edges],
+  );
+
+  const listRows = useMemo(() => buildListRows(tree), [tree]);
 
   const leadStatsFor = useCallback(
     (agentId: string): LeadStats | null => {
@@ -542,6 +429,27 @@ export default function OrgStructure() {
     },
     [budgets],
   );
+
+  const pageMeta = useMemo(() => {
+    if (agents.length === 0) {
+      return "Define your first mission to start hiring.";
+    }
+    const podCount = tree.rootAgents.length;
+    const scopeLabel = scopeAllWorkspace
+      ? "across workspace"
+      : selectedMission
+        ? `on “${truncateStatement(selectedMission.statement, 48)}”`
+        : "on this mission";
+    return `${filteredAgents.length} agent${filteredAgents.length === 1 ? "" : "s"} ${scopeLabel} · ${podCount} pod${podCount === 1 ? "" : "s"}. Click a name to brief.`;
+  }, [
+    agents.length,
+    filteredAgents.length,
+    scopeAllWorkspace,
+    selectedMission,
+    tree.rootAgents.length,
+  ]);
+
+  const missionSelectValue = scopeAllWorkspace ? "all" : (selectedMissionId ?? "all");
 
   if (loading) {
     return (
@@ -560,6 +468,8 @@ export default function OrgStructure() {
   }
 
   const podCount = tree.rootAgents.length;
+  const showMissionEmpty =
+    !scopeAllWorkspace && selectedMission && filteredAgents.length === 0 && agents.length > 0;
 
   return (
     <div className="af2-page">
@@ -569,21 +479,9 @@ export default function OrgStructure() {
           <h1 className="af2-h1" style={{ marginTop: 6 }}>
             Team
           </h1>
-          <div className="af2-page-head-meta">
-            {agents.length === 0
-              ? "Define your first mission to start hiring."
-              : `${agents.length} agent${agents.length === 1 ? "" : "s"} across ${podCount} pod${
-                  podCount === 1 ? "" : "s"
-                }. Click a name to brief.`}
-          </div>
+          <div className="af2-page-head-meta">{pageMeta}</div>
         </div>
         <div className="af2-page-actions">
-          <button type="button" className="af2-btn" disabled aria-disabled="true">
-            Org map
-          </button>
-          <button type="button" className="af2-btn" disabled aria-disabled="true">
-            List view
-          </button>
           <Link
             to="/hire"
             className="af2-btn af2-btn-primary"
@@ -599,6 +497,53 @@ export default function OrgStructure() {
         </div>
       </div>
 
+      {agents.length > 0 ? (
+        <>
+          <div
+            className="af2-row"
+            style={{ marginBottom: 14, gap: 12, flexWrap: "wrap", alignItems: "center" }}
+          >
+            <label className="af2-muted" style={{ fontSize: 12 }} htmlFor="team-mission-select">
+              Mission
+            </label>
+            <select
+              id="team-mission-select"
+              className="af2-input"
+              style={{ minWidth: 280, maxWidth: "100%", flex: "1 1 280px" }}
+              value={missionSelectValue}
+              onChange={(event) => {
+                const value = event.target.value;
+                writeParam("missionId", value === "all" ? "all" : value);
+              }}
+            >
+              <option value="all">All workspace</option>
+              {missions.map((mission) => (
+                <option key={mission.id} value={mission.id}>
+                  {truncateStatement(mission.statement)} · {mission.status}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="af2-tabs" style={{ marginBottom: 18 }}>
+            <button
+              type="button"
+              className={`af2-tab${viewMode === "map" ? " active" : ""}`}
+              onClick={() => writeParam("view", "map")}
+            >
+              Org map
+            </button>
+            <button
+              type="button"
+              className={`af2-tab${viewMode === "list" ? " active" : ""}`}
+              onClick={() => writeParam("view", "list")}
+            >
+              List view
+            </button>
+          </div>
+        </>
+      ) : null}
+
       {agents.length === 0 ? (
         <div style={{ display: "flex", justifyContent: "center", marginTop: 24 }}>
           <div style={{ maxWidth: 480, width: "100%" }}>
@@ -610,15 +555,29 @@ export default function OrgStructure() {
             />
           </div>
         </div>
+      ) : showMissionEmpty ? (
+        <div style={{ display: "flex", justifyContent: "center", marginTop: 24 }}>
+          <div style={{ maxWidth: 480, width: "100%" }}>
+            <EmptyState
+              title="No agents on this mission"
+              description="Confirm a hiring plan for this mission to provision your team, or switch to All workspace."
+              ctaLabel={
+                selectedMission?.latestHiringPlanId ? "Review hiring plan" : "＋ Hire"
+              }
+              ctaTo={
+                selectedMission?.latestHiringPlanId
+                  ? `/hire/plan/${selectedMission.id}/${selectedMission.latestHiringPlanId}`
+                  : "/hire"
+              }
+            />
+          </div>
+        </div>
+      ) : viewMode === "list" ? (
+        <OrgStructureListView rows={listRows} budgets={budgets} presence={presence} />
       ) : (
         <>
-          {/* Mission card at the top, centred. */}
-          <MissionNode mission={tree.mission} />
-
-          {/* SVG tree connector from mission to leads. */}
+          <MissionNode mission={selectedMission} allWorkspace={scopeAllWorkspace} />
           <ConnectorTree leadCount={podCount} />
-
-          {/* 3-column lead grid. */}
           <div
             style={{
               display: "grid",

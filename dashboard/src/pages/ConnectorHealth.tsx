@@ -14,7 +14,7 @@
  * the next refresh cycle.
  */
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { AlertCircle, CheckCircle2, Loader2, RefreshCw, ShieldAlert, Zap } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
@@ -68,24 +68,39 @@ export default function ConnectorHealth() {
   const [initialLoading, setInitialLoading] = useState(true);
   const [lastFetchedAt, setLastFetchedAt] = useState<number | null>(null);
 
+  // Tracks whether we currently have good data to fall back to. Read via
+  // ref inside `load` so the callback identity doesn't change on every
+  // successful fetch (which would re-arm the polling interval needlessly).
+  const hasDataRef = useRef(false);
+
   const load = useCallback(
     async (background: boolean) => {
       if (background) {
         setRefreshing(true);
       } else {
         setInitialLoading(true);
+        // Only foreground loads clear the existing error state. A background
+        // poll firing during an outage must NOT blank the retry UI (Codex P1
+        // on #923) — if `hasDataRef` is false after the initial-load failure,
+        // clearing `error` here would hide the retry CTA on the next render
+        // cycle while the backend is still down.
+        setError(null);
       }
-      setError(null);
       try {
         const token = (await getAccessToken()) ?? undefined;
         const payload = await getConnectorHealth(token);
         setData(payload);
+        hasDataRef.current = true;
+        setError(null); // success → drop any prior error.
         setLastFetchedAt(Date.now());
       } catch (err) {
-        // Only surface error on the initial load — a transient poll failure
-        // shouldn't blow away the previously-good list.
-        if (!background) {
-          setError(err instanceof Error ? err.message : "Failed to load connector health");
+        const message = err instanceof Error ? err.message : "Failed to load connector health";
+        // Foreground loads always surface the error. Background polls only
+        // surface it when there's no good data to fall back to — otherwise
+        // a single transient poll failure shouldn't blow away the
+        // previously-good list.
+        if (!background || !hasDataRef.current) {
+          setError(message);
         }
       } finally {
         setInitialLoading(false);

@@ -178,6 +178,29 @@ describe("ConnectorHealth", () => {
     expect(screen.getByRole("button", { name: /retry/i })).toBeInTheDocument();
   });
 
+  it("preserves the retry UI when a background poll fires during an outage (Codex P1 on #923)", async () => {
+    // Initial load fails → retry UI rendered.
+    getConnectorHealthMock.mockRejectedValue(new Error("backend offline"));
+
+    renderPage();
+
+    expect(await screen.findByText(/backend offline/i)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /retry/i })).toBeInTheDocument();
+
+    // 30s tick — background poll fires. Mock still rejects. Retry UI must
+    // remain visible (the original P1 was that error got cleared at the
+    // top of `load()` and never re-set on background failure → blank screen
+    // because `data` was still null).
+    vi.advanceTimersByTime(30_000);
+
+    await waitFor(() => {
+      expect(getConnectorHealthMock).toHaveBeenCalledTimes(2);
+    });
+
+    expect(screen.getByText(/backend offline/i)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /retry/i })).toBeInTheDocument();
+  });
+
   it("manual refresh re-fetches the health payload (HEL-179)", async () => {
     getConnectorHealthMock
       .mockResolvedValueOnce({

@@ -1854,14 +1854,60 @@ export const controlPlaneStore = {
       .sort((left, right) => left.recordedAt.localeCompare(right.recordedAt));
   },
 
-  // DASH-64.3: now async — repository-backed. teamId required to
-  // resolve the workspace context.
-  async listBudgetAlerts(userId: string, teamId?: string): Promise<ControlPlaneBudgetAlert[]> {
-    if (!teamId) return [];
-    const ctx = await workspaceContextForTeam(teamId, userId);
+  // DASH-64.3 / HEL-143: repository-backed.
+  //
+  // Workspace context resolution:
+  //   1. teamId provided + workspaceId provided → use workspaceId from the
+  //      caller (the request-resolved active workspace), but verify the
+  //      team actually belongs to it. If not, return [] — a user shouldn't
+  //      be able to read another workspace's alerts by passing a teamId
+  //      that lives there (Codex P1 ×2 on HEL-143).
+  //   2. teamId provided + no workspaceId → derive workspace from the team
+  //      (legacy callers that don't pass workspaceId, e.g. internal hydration
+  //      paths). Tolerated for back-compat but should be migrated to pass
+  //      workspaceId explicitly.
+  //   3. workspaceId provided, no teamId → workspace-wide read. This is the
+  //      default `BudgetDashboard` panel call.
+  //   4. Test mode fallback (no Postgres, no workspaceId) → workspaceId = userId,
+  //      matching `workspaceContextForTeam`'s test-mode convention.
+  //   5. Otherwise → [] (unknown workspace; never leak cross-tenant).
+  //
+  // HEL-143 Codex P1 #1 (workspace-wide): pre-fix returned [] unconditionally
+  //                  when teamId was missing, so the dashboard panel was dead.
+  // HEL-143 Codex P1 #2 (cross-tenant): pre-fix derived workspace from teamId
+  //                  unconditionally, so a multi-workspace user could read
+  //                  another workspace's alerts by passing its teamId.
+  async listBudgetAlerts(
+    userId: string,
+    teamId?: string,
+    workspaceId?: string,
+  ): Promise<ControlPlaneBudgetAlert[]> {
+    let ctx: { workspaceId: string; userId: string } | undefined;
+    if (teamId && workspaceId) {
+      // Verify the team belongs to the active workspace before honoring the
+      // filter. Cross-tenant teamIds get rejected at the store layer.
+      const teamWorkspace = await workspaceContextForTeam(teamId, userId);
+      if (teamWorkspace?.workspaceId === workspaceId) {
+        ctx = { workspaceId, userId };
+      } else {
+        return [];
+      }
+    } else if (teamId) {
+      ctx = await workspaceContextForTeam(teamId, userId);
+    } else if (workspaceId) {
+      ctx = { workspaceId, userId };
+    } else if (!postgresPersistenceAvailable()) {
+      ctx = { workspaceId: userId, userId };
+    }
     if (!ctx) return [];
-    const rows = await controlPlaneRepository.listBudgetAlerts(ctx, { teamId });
-    return rows.sort((left, right) => left.recordedAt.localeCompare(right.recordedAt));
+    // Preserve the repository's DESC ordering (`ORDER BY recorded_at DESC`).
+    // The dashboard renders the top 10 newest first; re-sorting ascending
+    // here would hide the most recent threshold trips behind older ones.
+    // HEL-143 Codex P2.
+    return controlPlaneRepository.listBudgetAlerts(
+      ctx,
+      teamId ? { teamId } : undefined,
+    );
   },
 
   // DASH-64.3: now async because buildTeamSpendSnapshot reads spend

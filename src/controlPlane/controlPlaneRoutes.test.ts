@@ -65,4 +65,81 @@ describe("controlPlaneRoutes", () => {
       })
     );
   });
+
+  // HEL-143: budget_alerts surface
+  describe("GET /budget-alerts", () => {
+    it("returns the workspace's budget alerts ordered by the store contract", async () => {
+      const alerts = [
+        {
+          id: "alert-2",
+          teamId: "team-1",
+          userId: "test-user",
+          agentId: "agent-2",
+          scope: "agent" as const,
+          threshold: 0.8,
+          budgetUsd: 100,
+          spentUsd: 82,
+          recordedAt: "2026-05-19T14:14:00.000Z",
+        },
+        {
+          id: "alert-1",
+          teamId: "team-1",
+          userId: "test-user",
+          scope: "team" as const,
+          threshold: 0.5,
+          budgetUsd: 500,
+          spentUsd: 251,
+          recordedAt: "2026-05-18T10:00:00.000Z",
+        },
+      ];
+      const spy = jest.spyOn(controlPlaneStore, "listBudgetAlerts").mockResolvedValue(alerts);
+
+      const response = await request(app).get("/api/control-plane/budget-alerts");
+
+      expect(response.status).toBe(200);
+      expect(response.body).toEqual({ alerts, total: 2 });
+      // HEL-143 Codex P1: route forwards the resolved workspaceId so the
+      // store's workspace-wide path can build a ctx without a teamId hint.
+      expect(spy).toHaveBeenCalledWith(
+        "test-user",
+        undefined,
+        "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      );
+    });
+
+    it("forwards the teamId query param as a filter", async () => {
+      const spy = jest.spyOn(controlPlaneStore, "listBudgetAlerts").mockResolvedValue([]);
+
+      const response = await request(app)
+        .get("/api/control-plane/budget-alerts")
+        .query({ teamId: "team-zebra" });
+
+      expect(response.status).toBe(200);
+      expect(spy).toHaveBeenCalledWith(
+        "test-user",
+        "team-zebra",
+        "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      );
+    });
+
+    it("returns 500 with a stable shape when the store throws", async () => {
+      jest
+        .spyOn(controlPlaneStore, "listBudgetAlerts")
+        .mockRejectedValue(new Error("pg connection refused"));
+
+      const response = await request(app).get("/api/control-plane/budget-alerts");
+
+      expect(response.status).toBe(500);
+      expect(response.body).toEqual({ error: "Failed to load budget alerts" });
+    });
+
+    it("returns an empty list (not 404) when the workspace has no alerts", async () => {
+      jest.spyOn(controlPlaneStore, "listBudgetAlerts").mockResolvedValue([]);
+
+      const response = await request(app).get("/api/control-plane/budget-alerts");
+
+      expect(response.status).toBe(200);
+      expect(response.body).toEqual({ alerts: [], total: 0 });
+    });
+  });
 });

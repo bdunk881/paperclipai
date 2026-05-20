@@ -45,11 +45,28 @@ export interface WorkflowVersionResponse {
   createdAt: string;
 }
 
+// List responses omit the DAG payload — scanning a workflows list shouldn't
+// hydrate every routine's full graph. GET-by-id returns the full version.
+export interface WorkflowVersionSummary {
+  id: string;
+  version: number;
+  createdAt: string;
+}
+
 export interface WorkflowResponse {
   id: string;
   name: string;
   externalTemplateId: string | null;
   latestVersion: WorkflowVersionResponse | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface WorkflowListEntry {
+  id: string;
+  name: string;
+  externalTemplateId: string | null;
+  latestVersion: WorkflowVersionSummary | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -488,6 +505,9 @@ export function createWorkflowRoutes(pool: Pool) {
       external_template_id: string | null;
       created_at: Date | string;
       updated_at: Date | string;
+      v_id: string | null;
+      v_version: number | null;
+      v_created_at: Date | string | null;
     }
 
     try {
@@ -496,21 +516,35 @@ export function createWorkflowRoutes(pool: Pool) {
         { workspaceId, userId },
         async (client) =>
           client.query<ListRow>(
-            `SELECT id, name, external_template_id, created_at, updated_at
-               FROM workflows
-              WHERE workspace_id = $1
-                AND ($2::text IS NULL OR external_template_id = $2)
-              ORDER BY updated_at DESC, id DESC
+            `SELECT w.id, w.name, w.external_template_id,
+                    w.created_at, w.updated_at,
+                    v.id AS v_id, v.version AS v_version,
+                    v.created_at AS v_created_at
+               FROM workflows w
+               LEFT JOIN workflow_versions v ON v.id = w.latest_version_id
+              WHERE w.workspace_id = $1
+                AND ($2::text IS NULL OR w.external_template_id = $2)
+              ORDER BY w.updated_at DESC, w.id DESC
               LIMIT 100`,
             [workspaceId, externalTemplateId],
           ),
       );
       res.json({
-        workflows: result.rows.map((row) => ({
+        workflows: result.rows.map((row): WorkflowListEntry => ({
           id: row.id,
           name: row.name,
           externalTemplateId: row.external_template_id,
-          latestVersion: null,
+          latestVersion:
+            row.v_id && row.v_version != null
+              ? {
+                  id: row.v_id,
+                  version: row.v_version,
+                  createdAt:
+                    row.v_created_at instanceof Date
+                      ? row.v_created_at.toISOString()
+                      : String(row.v_created_at),
+                }
+              : null,
           createdAt:
             row.created_at instanceof Date
               ? row.created_at.toISOString()

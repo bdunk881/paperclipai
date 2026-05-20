@@ -3,7 +3,7 @@
  * and routes them to registered workflow triggers.
  *
  * How it works:
- *   1. A user registers a trigger subscription (integrationSlug + triggerEventTypes + workflowTemplateId).
+ *   1. A user registers a trigger subscription (integrationSlug + triggerEventTypes + workflowId).
  *   2. AutoFlow gives the user a relay URL: POST /api/webhooks/relay/:subscriptionId
  *   3. The user configures this URL in the third-party service (e.g. GitHub, Stripe).
  *   4. When an event fires, the relay receives it, matches it to a subscription,
@@ -144,8 +144,8 @@ export interface WebhookSubscription {
    * Empty array = accept all events from this integration.
    */
   eventTypes: string[];
-  /** Workflow template ID to run when this trigger fires (optional) */
-  workflowTemplateId?: string;
+  /** Workflow ID to run when this trigger fires (optional) */
+  workflowId?: string;
   /** Human-readable label */
   label: string;
   active: boolean;
@@ -244,7 +244,7 @@ function mapSubscriptionRow(row: SubscriptionRow): WebhookSubscription {
     integrationSlug: row.integration_slug,
     triggerId: row.trigger_id,
     eventTypes: parseJsonField<string[]>(row.event_types, []),
-    workflowTemplateId: row.workflow_template_id ?? undefined,
+    workflowId: row.workflow_template_id ?? undefined,
     label: row.label,
     active: row.active,
     createdAt: isoOrUndefined(row.created_at) ?? new Date().toISOString(),
@@ -292,7 +292,7 @@ async function persistSubscription(sub: WebhookSubscription): Promise<void> {
       sub.integrationSlug,
       sub.triggerId,
       JSON.stringify(sub.eventTypes),
-      sub.workflowTemplateId ?? null,
+      sub.workflowId ?? null,
       sub.label,
       sub.active,
       sub.signatureScheme,
@@ -388,7 +388,7 @@ export const webhookRelay = {
     integrationSlug: string;
     triggerId: string;
     eventTypes: string[];
-    workflowTemplateId?: string;
+    workflowId?: string;
     label: string;
     signatureScheme?: WebhookSignatureScheme;
     signingSecret?: string;
@@ -400,7 +400,7 @@ export const webhookRelay = {
       integrationSlug: params.integrationSlug,
       triggerId: params.triggerId,
       eventTypes: params.eventTypes,
-      workflowTemplateId: params.workflowTemplateId,
+      workflowId: params.workflowId,
       label: params.label,
       active: true,
       createdAt: new Date().toISOString(),

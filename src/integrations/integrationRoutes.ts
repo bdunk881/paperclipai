@@ -452,7 +452,8 @@ router.post("/triggers/subscriptions", async (req, res) => {
     integrationSlug,
     triggerId,
     eventTypes,
-    workflowTemplateId,
+    workflowId,
+    workflowTemplateId: legacyWorkflowTemplateId,
     label,
     signatureScheme,
     signingSecret,
@@ -461,12 +462,27 @@ router.post("/triggers/subscriptions", async (req, res) => {
     integrationSlug?: unknown;
     triggerId?: unknown;
     eventTypes?: unknown;
+    workflowId?: unknown;
     workflowTemplateId?: unknown;
     label?: unknown;
     signatureScheme?: unknown;
     signingSecret?: unknown;
     signatureHeaderKey?: unknown;
   };
+
+  // HEL-119: prefer canonical `workflowId`, but accept legacy
+  // `workflowTemplateId` for one release with a deprecation warning.
+  const resolvedWorkflowId =
+    typeof workflowId === "string"
+      ? workflowId
+      : typeof legacyWorkflowTemplateId === "string"
+        ? legacyWorkflowTemplateId
+        : undefined;
+  if (typeof legacyWorkflowTemplateId === "string" && typeof workflowId !== "string") {
+    console.warn(
+      "[integrations] POST /triggers/subscriptions: `workflowTemplateId` is deprecated — send `workflowId` instead.",
+    );
+  }
 
   if (typeof integrationSlug !== "string" || !integrationSlug.trim()) {
     res.status(400).json({ error: "integrationSlug is required" }); return;
@@ -501,7 +517,7 @@ router.post("/triggers/subscriptions", async (req, res) => {
     integrationSlug,
     triggerId,
     eventTypes: eventTypes as string[],
-    workflowTemplateId: typeof workflowTemplateId === "string" ? workflowTemplateId : undefined,
+    workflowId: resolvedWorkflowId,
     label: typeof label === "string" ? label : `${manifest.name} / ${trigger.name}`,
     signatureScheme: typeof signatureScheme === "string"
       ? (signatureScheme as WebhookSignatureScheme)

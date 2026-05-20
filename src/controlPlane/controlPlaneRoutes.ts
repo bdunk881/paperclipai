@@ -233,8 +233,6 @@ async function loadCanonicalTeamDetail(
       userId: row.user_id,
       name: row.name,
       description: row.description ?? undefined,
-      workflowTemplateId: row.workflow_template_id ?? undefined,
-      workflowTemplateName: row.workflow_template_name ?? undefined,
       workflowId: row.workflow_template_id ?? undefined,
       workflowName: row.workflow_template_name ?? undefined,
       deploymentMode: row.deployment_mode,

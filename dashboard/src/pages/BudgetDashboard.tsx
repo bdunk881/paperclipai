@@ -15,8 +15,10 @@
  *   - `listAgents` + per-agent `getAgentBudget` feed the per-agent rows
  *     and the MTD/forecast/top-spender stats.
  *   - "Cost per hour saved" is "—" until hours-saved telemetry exists.
- *   - "Adjust caps" / "Edit" are TODO stubs — no-op buttons until the
- *     budget-mutation API ships.
+ *   - Per-agent "Edit" is rendered as a visibly disabled control with a
+ *     "coming soon" tooltip pending the `PATCH /api/agents/:id/budget`
+ *     route. Earlier iterations had it as a clickable no-op, which made
+ *     the affordance feel broken.
  *
  * The previous BudgetCard / gradient-bar layout was the v1 spend page
  * (rounded indigo→orange gradients, BudgetCard accent tiles). The v2
@@ -386,14 +388,12 @@ export default function BudgetDashboard() {
                   {formatCurrency(row.budget)}
                 </div>
                 <div style={{ textAlign: "right" }}>
-                  {/* TODO: open a per-agent cap-edit modal once the
-                      budgets PATCH route lands. */}
                   <button
                     type="button"
                     className="af2-btn af2-btn-sm"
-                    onClick={() => {
-                      /* no-op stub */
-                    }}
+                    disabled
+                    aria-disabled="true"
+                    title="Per-agent cap editing — coming soon"
                   >
                     Edit
                   </button>

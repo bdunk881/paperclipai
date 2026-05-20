@@ -1008,7 +1008,7 @@ describe("Control plane APIs", () => {
       });
 
     expect(res.status).toBe(201);
-    expect(res.body.team.workflowTemplateId).toBe("tpl-support-bot");
+    expect(res.body.team.workflowId).toBe("tpl-support-bot");
     expect(res.body.workflow.name).toBe("Customer Support Bot");
     expect(Array.isArray(res.body.agents)).toBe(true);
     expect(res.body.agents.length).toBeGreaterThan(1);
@@ -1909,7 +1909,7 @@ describe("Control plane APIs", () => {
       });
 
     expect(res.status).toBe(201);
-    expect(res.body.team.workflowTemplateId).toBe("tpl-support-bot");
+    expect(res.body.team.workflowId).toBe("tpl-support-bot");
     expect(res.body.workflow.name).toBe("Customer Support Bot");
     expect(Array.isArray(res.body.agents)).toBe(true);
     expect(res.body.agents.length).toBeGreaterThan(1);

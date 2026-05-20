@@ -4,7 +4,7 @@
  * Matches `docs/design/v2/pages.jsx::AF2_Models`:
  *   - Eyebrow "Connect" + h1 "Models" + meta line
  *     ("Bring your own keys. AutoFlow routes to the right tier...")
- *   - Page actions: "Routing rules" (stub) + "＋ Add provider"
+ *   - Page action: "＋ Add provider"
  *   - "Default routing" section: 3 tier cards (Lite/Standard/Power) with
  *     colored top borders — derived from configured LLMConfigs via name
  *     heuristic (haiku/mini/lite → lite, sonnet/4o/command-r → standard,
@@ -17,7 +17,6 @@
  *   - `listLLMConfigs` / `createLLMConfig` / `setDefaultLLMConfig` /
  *     `deleteLLMConfig` from `../api/client`.
  *   - `PROVIDER_MODELS` drives the connect form's model dropdown.
- *   - "Routing rules" is a TODO stub — no routing-mutation API yet.
  *   - Per-tier "Change default" CTAs let the user pick which of their
  *     existing configs in that tier should be the global default
  *     (uses setDefaultLLMConfig). When no config exists in a tier the
@@ -621,7 +620,6 @@ export default function LLMProviders() {
           </div>
         </div>
         <div className="af2-page-actions">
-          <button className="af2-btn" type="button">Routing rules</button>
           <button
             className="af2-btn af2-btn-primary"
             type="button"

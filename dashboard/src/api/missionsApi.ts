@@ -166,12 +166,23 @@ export interface ProvisionedAgent {
   reportingToAgentId: string | null;
 }
 
+export interface SeededRoutine {
+  id: string;
+  agentId: string;
+  name: string;
+  scheduleCron: string;
+  llmTier: "lite" | "standard" | "power";
+}
+
 export interface ConfirmHiringPlanResponse {
   hiringPlanId: string;
   missionId: string;
   acceptedAt: string;
   agents: ProvisionedAgent[];
   orgEdges: Array<{ managerAgentId: string; agentId: string }>;
+  // HEL-154: starter prompt-backed routine the backend seeded per agent.
+  // Defaults to [] on older API instances that pre-date the seed wiring.
+  seededRoutines?: SeededRoutine[];
 }
 
 export async function confirmHiringPlan(

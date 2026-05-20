@@ -30,6 +30,7 @@
 import { Router } from "express";
 import type { Pool, PoolClient } from "pg";
 import { randomUUID } from "node:crypto";
+import type { Queue } from "bullmq";
 import * as Sentry from "@sentry/node";
 import { AuthenticatedRequest } from "../auth/authMiddleware";
 import { withWorkspaceContext } from "../middleware/workspaceContext";
@@ -44,6 +45,8 @@ import { llmConfigStore } from "../llmConfig/llmConfigStore";
 import { ensureUserProfileExists } from "../user/profileStore";
 import { buildEntitlements, entitlementStore, getEntitlementLimits } from "../billing/entitlements";
 import type { SubscriptionTier } from "../billing/subscriptionStore";
+import { addRepeatableJob } from "../queue/scheduler";
+import type { RunJobPayload } from "../queue/queues";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -118,12 +121,24 @@ export interface ProvisionedAgentRow {
   reportingToAgentId: string | null;
 }
 
+export interface SeededRoutineRow {
+  id: string;
+  agentId: string;
+  name: string;
+  scheduleCron: string;
+  llmTier: "lite" | "standard" | "power";
+}
+
 export interface ConfirmHiringPlanResponse {
   hiringPlanId: string;
   missionId: string;
   acceptedAt: string;
   agents: ProvisionedAgentRow[];
   orgEdges: Array<{ managerAgentId: string; agentId: string }>;
+  // HEL-154: every confirmed agent gets a starter prompt-backed routine seeded
+  // alongside the agent row. The dashboard surfaces "Default routines created"
+  // CTAs linking to /agents/:id/standing-tasks.
+  seededRoutines: SeededRoutineRow[];
 }
 
 interface PlanLookupRow {
@@ -349,6 +364,93 @@ async function insertStarterJobDescription(
   );
 }
 
+/**
+ * HEL-154: starter prompt for the seeded routine.
+ *
+ * We don't want to bury the agent on day one with a synthetic DAG — instead
+ * we seed a single weekday-morning prompt-backed routine whose body restates
+ * the agent's mandate + asks for a short status report. Owner can refine the
+ * prompt or change the cron from `/agents/:id/standing-tasks`, or replace it
+ * with a DAG routine from Studio if the work outgrows a single LLM turn.
+ */
+export function buildStarterRoutinePrompt(agent: {
+  title: string;
+  mandate: string;
+}): string {
+  const mandate = agent.mandate.trim();
+  return [
+    `You are ${agent.title}.`,
+    "",
+    "**Mandate**",
+    mandate,
+    "",
+    "**This routine**",
+    "Review what's happened in your area since the last check-in (open assignments, recent activity, anything blocked).",
+    "Produce a short status report:",
+    "  1. What moved",
+    "  2. What's stuck (and what you need to unblock it)",
+    "  3. Top 1–2 actions you'll take next",
+    "",
+    "Keep it under 200 words. If you need a human, file an assignment instead of stalling.",
+  ].join("\n");
+}
+
+/**
+ * HEL-154: starter cron for the seeded routine.
+ *
+ * Weekday-morning UTC. Owner can change it on the standing-tasks page. We pick
+ * `0 9 * * 1-5` (Mon–Fri 09:00 UTC ≈ 5am ET / 2am PT) — early enough that a
+ * morning-check-in style routine has fresh output before the workday starts
+ * for US-Eastern users.
+ */
+const STARTER_ROUTINE_CRON = "0 9 * * 1-5";
+
+async function seedDefaultRoutineForAgent(
+  client: PoolClient,
+  params: {
+    workspaceId: string;
+    agentId: string;
+    agentName: string;
+    mandate: string;
+    modelTier: "lite" | "standard" | "power";
+  },
+): Promise<SeededRoutineRow> {
+  const prompt = buildStarterRoutinePrompt({
+    title: params.agentName,
+    mandate: params.mandate,
+  });
+  const name = `${params.agentName} morning check-in`;
+  const insert = await client.query<{
+    id: string;
+    name: string;
+    schedule_cron: string;
+    llm_tier: "lite" | "standard" | "power";
+  }>(
+    `INSERT INTO routines
+        (workspace_id, agent_id, name, schedule_cron, trigger_kind,
+         workflow_id, prompt, system_prompt, llm_tier, enabled)
+     VALUES ($1::uuid, $2::uuid, $3, $4, 'scheduled',
+             NULL, $5, NULL, $6, true)
+     RETURNING id::text, name, schedule_cron, llm_tier`,
+    [
+      params.workspaceId,
+      params.agentId,
+      name,
+      STARTER_ROUTINE_CRON,
+      prompt,
+      params.modelTier,
+    ],
+  );
+  const row = insert.rows[0]!;
+  return {
+    id: row.id,
+    agentId: params.agentId,
+    name: row.name,
+    scheduleCron: row.schedule_cron,
+    llmTier: row.llm_tier,
+  };
+}
+
 async function emitActivityEvent(
   client: PoolClient,
   workspaceId: string,
@@ -458,7 +560,10 @@ function libraryEntryToRecommendation(
   };
 }
 
-export function createHiringPlanRoutes(pool: Pool) {
+export function createHiringPlanRoutes(
+  pool: Pool,
+  runQueue: Queue<RunJobPayload> | null = null,
+) {
   const router = Router();
 
   // HEL-138: expose the role library so the dashboard can render the pre-built
@@ -705,6 +810,9 @@ export function createHiringPlanRoutes(pool: Pool) {
             // 1. Insert agents, build roleKey → agentId map.
             const agentRows: ProvisionedAgentRow[] = [];
             const roleKeyToAgentId = new Map<string, string>();
+            // HEL-154: rows we seeded so the response can deep-link to them
+            // and the post-commit scheduler register knows what to enqueue.
+            const seededRoutines: SeededRoutineRow[] = [];
             for (const agent of draft.provisioningPlan.agents) {
               const { id, model } = await insertAgent(
                 client,
@@ -773,6 +881,45 @@ export function createHiringPlanRoutes(pool: Pool) {
                   tags: {
                     route: "POST /api/hiring-plans/:hiringPlanId/confirm",
                     phase: "starter_job_description",
+                  },
+                  contexts: {
+                    hiring_plan: {
+                      workspaceId,
+                      hiringPlanId,
+                      agentId: id,
+                      roleKey: agent.roleKey,
+                    },
+                  },
+                });
+              }
+
+              // HEL-154: seed a starter prompt-backed routine alongside the
+              // agent — weekday morning check-in built on the HEL-174
+              // executeAgentPrompt() primitive. Like the JD seed this is
+              // nice-to-have; failure shouldn't roll back agent provisioning,
+              // so we wrap it in a SAVEPOINT and continue with a Sentry alert.
+              await client.query("SAVEPOINT starter_routine");
+              try {
+                const seeded = await seedDefaultRoutineForAgent(client, {
+                  workspaceId,
+                  agentId: id,
+                  agentName: agent.title,
+                  mandate: agent.mandate,
+                  modelTier: agent.modelTier,
+                });
+                seededRoutines.push(seeded);
+                await client.query("RELEASE SAVEPOINT starter_routine");
+              } catch (routineErr) {
+                await client.query("ROLLBACK TO SAVEPOINT starter_routine");
+                console.warn(
+                  `[hiring-plans] starter routine seed failed for agent ${id} (continuing): ${
+                    (routineErr as Error).message
+                  }`,
+                );
+                Sentry.captureException(routineErr, {
+                  tags: {
+                    route: "POST /api/hiring-plans/:hiringPlanId/confirm",
+                    phase: "starter_routine",
                   },
                   contexts: {
                     hiring_plan: {
@@ -863,6 +1010,24 @@ export function createHiringPlanRoutes(pool: Pool) {
                 },
               );
             }
+            // HEL-154: per-routine activity event so the Activity feed shows
+            // "Default routine created for <agent>" alongside the provisioning.
+            for (const seeded of seededRoutines) {
+              await emitActivityEvent(
+                client,
+                workspaceId,
+                "routine_created",
+                userId,
+                { type: "routine", id: seeded.id, label: seeded.name },
+                {
+                  agentId: seeded.agentId,
+                  scheduleCron: seeded.scheduleCron,
+                  llmTier: seeded.llmTier,
+                  source: "hiring_plan_confirm",
+                  hiringPlanId,
+                },
+              );
+            }
 
             // DASH-21: no manual COMMIT — withWorkspaceContext owns
             // the transaction lifecycle. Returning the response
@@ -873,6 +1038,7 @@ export function createHiringPlanRoutes(pool: Pool) {
               acceptedAt,
               agents: agentRows,
               orgEdges,
+              seededRoutines,
             } satisfies ConfirmHiringPlanResponse;
           } catch (err) {
             // DASH-21: no manual ROLLBACK — withWorkspaceContext
@@ -928,6 +1094,44 @@ export function createHiringPlanRoutes(pool: Pool) {
         ...(Object.keys(pgFields).length > 0 ? { postgres: pgFields } : {}),
       });
       return;
+    }
+
+    // HEL-154: register BullMQ schedulers for every seeded routine. Outside
+    // the transaction by design — the routines + agents are already
+    // committed, so a scheduler-register failure logs + reports but does NOT
+    // unwind provisioning. Without a runQueue (no Redis / test mode) the
+    // routines exist in the DB but won't fire until the next worker boot
+    // syncs from the routines table.
+    if (runQueue && response.seededRoutines.length > 0) {
+      for (const seeded of response.seededRoutines) {
+        try {
+          await addRepeatableJob(
+            runQueue,
+            seeded.id,
+            seeded.scheduleCron,
+            workspaceId,
+          );
+        } catch (schedErr) {
+          console.warn(
+            `[hiring-plans] failed to register scheduler for routine ${seeded.id}: ${
+              (schedErr as Error).message
+            }`,
+          );
+          Sentry.captureException(schedErr, {
+            tags: {
+              route: "POST /api/hiring-plans/:hiringPlanId/confirm",
+              phase: "register_routine_scheduler",
+            },
+            contexts: {
+              routine: {
+                workspaceId,
+                routineId: seeded.id,
+                scheduleCron: seeded.scheduleCron,
+              },
+            },
+          });
+        }
+      }
     }
 
     res.status(200).json(response);

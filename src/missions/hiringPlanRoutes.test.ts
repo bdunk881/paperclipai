@@ -224,3 +224,47 @@ describe("DASH-1 — canonical table-name regression", () => {
     expect(codeOnly).not.toMatch(/\bINTO\s+teams\b/);
   });
 });
+
+describe("HEL-154 — confirm seeds a prompt-backed routine per agent", () => {
+  // The hiring-plan confirm step seeds one prompt-backed routine per
+  // provisioned agent, alongside the JD seed. The seed runs inside the
+  // confirm transaction under a SAVEPOINT and is followed by a BullMQ
+  // scheduler register after commit. Lock these wires in via source-string
+  // assertion — the deep integration test runs in app.integration.test.ts.
+  it("seeds a prompt-backed routine alongside each provisioned agent", () => {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const fs = require("node:fs") as typeof import("node:fs");
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const path = require("node:path") as typeof import("node:path");
+    const src = fs.readFileSync(
+      path.join(__dirname, "hiringPlanRoutes.ts"),
+      "utf8",
+    );
+    // The seed helper exists and is called inside the confirm transaction.
+    expect(src).toMatch(/async function seedDefaultRoutineForAgent\b/);
+    expect(src).toMatch(/seededRoutines\.push\(seeded\)/);
+    // The seed uses a SAVEPOINT so a routine failure doesn't roll back agents.
+    expect(src).toMatch(/SAVEPOINT\s+starter_routine/);
+    expect(src).toMatch(/ROLLBACK TO SAVEPOINT\s+starter_routine/);
+    // After commit, the BullMQ scheduler is registered per routine.
+    expect(src).toMatch(/addRepeatableJob\(\s*runQueue\b/);
+    // INSERT targets routines with prompt + agent_id + workflow_id NULL.
+    expect(src).toMatch(/INSERT INTO routines/);
+    expect(src).toMatch(/workflow_id,\s+prompt,\s+system_prompt,\s+llm_tier/);
+  });
+
+  it("registers the BullMQ scheduler outside the transaction (won't roll back agents on failure)", () => {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const fs = require("node:fs") as typeof import("node:fs");
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const path = require("node:path") as typeof import("node:path");
+    const src = fs.readFileSync(
+      path.join(__dirname, "hiringPlanRoutes.ts"),
+      "utf8",
+    );
+    // Scheduler register sits after the `withWorkspaceContext` call closes,
+    // wrapped in try/catch with Sentry, so transient Redis failures only
+    // log instead of unwinding the agent provisioning.
+    expect(src).toMatch(/register_routine_scheduler/);
+  });
+});

@@ -8,6 +8,7 @@
  */
 
 import { render, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { HiringPlanResponse } from "../api/missionsApi";
@@ -263,6 +264,79 @@ describe("HiringPlanReview (HEL-105)", () => {
     });
     // The library role should be visible as a checkbox.
     expect(screen.getByText("CFO")).toBeInTheDocument();
+  });
+
+  it("renders the seeded-routine CTAs after a successful confirm (HEL-154)", async () => {
+    getHiringPlanMock
+      .mockResolvedValueOnce(makeResponse())
+      .mockResolvedValueOnce(
+        makeResponse({ acceptedAt: new Date().toISOString(), acceptedByUserId: "user-1" }),
+      );
+    confirmHiringPlanMock.mockResolvedValueOnce({
+      hiringPlanId: "plan-1",
+      missionId: "mission-1",
+      acceptedAt: new Date().toISOString(),
+      agents: [
+        {
+          id: "agent-ceo",
+          roleKey: "ceo",
+          name: "CEO",
+          modelTier: "power",
+          model: null,
+          budgetMonthlyUsd: 500,
+          reportingToAgentId: null,
+        },
+        {
+          id: "agent-sdr",
+          roleKey: "sdr",
+          name: "SDR",
+          modelTier: "lite",
+          model: null,
+          budgetMonthlyUsd: 80,
+          reportingToAgentId: "agent-ceo",
+        },
+      ],
+      orgEdges: [{ managerAgentId: "agent-ceo", agentId: "agent-sdr" }],
+      seededRoutines: [
+        {
+          id: "routine-ceo",
+          agentId: "agent-ceo",
+          name: "CEO morning check-in",
+          scheduleCron: "0 9 * * 1-5",
+          llmTier: "power",
+        },
+        {
+          id: "routine-sdr",
+          agentId: "agent-sdr",
+          name: "SDR morning check-in",
+          scheduleCron: "0 9 * * 1-5",
+          llmTier: "lite",
+        },
+      ],
+    });
+    const user = userEvent.setup();
+    renderRoute();
+
+    await user.click(
+      await screen.findByRole("button", { name: /Confirm & provision agents/i }),
+    );
+
+    // The "Default routines created" callout appears with one row per agent.
+    expect(await screen.findByText(/Default routines created/i)).toBeInTheDocument();
+    expect(screen.getByText(/CEO morning check-in/i)).toBeInTheDocument();
+    expect(screen.getByText(/SDR morning check-in/i)).toBeInTheDocument();
+
+    // Each row's "View routines" link deep-links to standing-tasks.
+    const viewLinks = screen.getAllByRole("link", { name: /View routines/i });
+    expect(viewLinks.length).toBe(2);
+    expect(viewLinks[0]).toHaveAttribute("href", "/agents/agent-ceo/standing-tasks");
+    expect(viewLinks[1]).toHaveAttribute("href", "/agents/agent-sdr/standing-tasks");
+
+    // No Studio deep-link is rendered (HEL-154 deliberately drops the
+    // synthetic-DAG approach in favor of prompt-backed routines).
+    expect(
+      screen.queryByRole("link", { name: /Create routine in Studio/i }),
+    ).not.toBeInTheDocument();
   });
 
   it("hides the library role picker when the plan is already confirmed", async () => {

@@ -54,7 +54,7 @@ export class SlackConnectorService {
 
     const scopes = parseScopes(tokenSet.scope);
 
-    const credential = slackCredentialStore.saveOAuth({
+    const credential = await slackCredentialStore.saveOAuth({
       userId: state.userId,
       accessToken: tokenSet.accessToken,
       refreshToken: tokenSet.refreshToken,
@@ -84,7 +84,7 @@ export class SlackConnectorService {
     const client = new SlackClient(params.botToken);
     const auth = await client.authTest();
 
-    const credential = slackCredentialStore.saveApiKey({
+    const credential = await slackCredentialStore.saveApiKey({
       userId: params.userId,
       botToken: params.botToken,
       teamId: auth.teamId,

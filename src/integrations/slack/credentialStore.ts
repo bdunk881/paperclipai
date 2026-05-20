@@ -21,7 +21,11 @@ const registry = new CredentialRegistry<SlackCredential, SlackCredentialPublic>(
   toPublic,
 });
 
-function upsertByUserAndTeam(credential: SlackCredential): void {
+// Load active records for the user from Postgres into the in-memory bucket
+// before purging, so purge() can find and delete stale rows that were written
+// in a previous process (the bucket is empty after a restart).
+async function upsertByUserAndTeam(credential: SlackCredential): Promise<void> {
+  await registry.listStoredByUserAsync(credential.userId, false);
   registry.purge(
     (existing) =>
       existing.userId === credential.userId &&
@@ -32,7 +36,7 @@ function upsertByUserAndTeam(credential: SlackCredential): void {
 }
 
 export const slackCredentialStore = {
-  saveOAuth(params: {
+  async saveOAuth(params: {
     userId: string;
     accessToken: string;
     refreshToken?: string;
@@ -40,7 +44,7 @@ export const slackCredentialStore = {
     teamId: string;
     teamName?: string;
     metadata?: Record<string, string>;
-  }): SlackCredentialPublic {
+  }): Promise<SlackCredentialPublic> {
     const credential: SlackCredential = {
       id: randomUUID(),
       userId: params.userId,
@@ -57,18 +61,18 @@ export const slackCredentialStore = {
       metadata: params.metadata,
     };
 
-    upsertByUserAndTeam(credential);
+    await upsertByUserAndTeam(credential);
     return toPublic(credential);
   },
 
-  saveApiKey(params: {
+  async saveApiKey(params: {
     userId: string;
     botToken: string;
     scopes?: string[];
     teamId: string;
     teamName?: string;
     metadata?: Record<string, string>;
-  }): SlackCredentialPublic {
+  }): Promise<SlackCredentialPublic> {
     const credential: SlackCredential = {
       id: randomUUID(),
       userId: params.userId,
@@ -82,7 +86,7 @@ export const slackCredentialStore = {
       metadata: params.metadata,
     };
 
-    upsertByUserAndTeam(credential);
+    await upsertByUserAndTeam(credential);
     return toPublic(credential);
   },
 

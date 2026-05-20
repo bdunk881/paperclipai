@@ -1856,28 +1856,43 @@ export const controlPlaneStore = {
 
   // DASH-64.3 / HEL-143: repository-backed.
   //
-  // Workspace context resolution (in priority order):
-  //   1. teamId provided  → derive workspace via workspaceContextForTeam
-  //      (existing behavior; keeps per-team filtering working).
-  //   2. workspaceId provided → use it directly. This is the workspace-wide
-  //      read path used by `BudgetDashboard`'s "Recent budget alerts" panel
-  //      — the route handler passes the resolved `context.workspaceId` from
-  //      `resolveWorkspaceContext()`.
-  //   3. Test mode fallback → workspaceId = userId, matching the convention
-  //      used by `workspaceContextForTeam` for auto-provisioned test teams.
-  //   4. Otherwise → []  (genuinely unknown workspace; safer than leaking
-  //      cross-tenant data).
+  // Workspace context resolution:
+  //   1. teamId provided + workspaceId provided → use workspaceId from the
+  //      caller (the request-resolved active workspace), but verify the
+  //      team actually belongs to it. If not, return [] — a user shouldn't
+  //      be able to read another workspace's alerts by passing a teamId
+  //      that lives there (Codex P1 ×2 on HEL-143).
+  //   2. teamId provided + no workspaceId → derive workspace from the team
+  //      (legacy callers that don't pass workspaceId, e.g. internal hydration
+  //      paths). Tolerated for back-compat but should be migrated to pass
+  //      workspaceId explicitly.
+  //   3. workspaceId provided, no teamId → workspace-wide read. This is the
+  //      default `BudgetDashboard` panel call.
+  //   4. Test mode fallback (no Postgres, no workspaceId) → workspaceId = userId,
+  //      matching `workspaceContextForTeam`'s test-mode convention.
+  //   5. Otherwise → [] (unknown workspace; never leak cross-tenant).
   //
-  // HEL-143 Codex P1 fix: prior to this revision, the no-teamId path
-  // returned `[]` unconditionally, so the default workspace-wide query
-  // never returned alerts — the dashboard panel was effectively dead.
+  // HEL-143 Codex P1 #1 (workspace-wide): pre-fix returned [] unconditionally
+  //                  when teamId was missing, so the dashboard panel was dead.
+  // HEL-143 Codex P1 #2 (cross-tenant): pre-fix derived workspace from teamId
+  //                  unconditionally, so a multi-workspace user could read
+  //                  another workspace's alerts by passing its teamId.
   async listBudgetAlerts(
     userId: string,
     teamId?: string,
     workspaceId?: string,
   ): Promise<ControlPlaneBudgetAlert[]> {
     let ctx: { workspaceId: string; userId: string } | undefined;
-    if (teamId) {
+    if (teamId && workspaceId) {
+      // Verify the team belongs to the active workspace before honoring the
+      // filter. Cross-tenant teamIds get rejected at the store layer.
+      const teamWorkspace = await workspaceContextForTeam(teamId, userId);
+      if (teamWorkspace?.workspaceId === workspaceId) {
+        ctx = { workspaceId, userId };
+      } else {
+        return [];
+      }
+    } else if (teamId) {
       ctx = await workspaceContextForTeam(teamId, userId);
     } else if (workspaceId) {
       ctx = { workspaceId, userId };

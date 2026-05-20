@@ -189,6 +189,35 @@ describe("asyncHandler", () => {
       expect(response.status).toBe(418);
       expect(response.body.error).toBe("custom typed error");
     });
+
+    it("plain Error rejections route through the chain (Codex P1 on #927)", async () => {
+      // Verifies the wrapper itself does not lose plain `Error` instances
+      // (i.e. errors without typed `statusCode`/`type`). The actual JSON
+      // fallback is asserted in app-level integration coverage — here we
+      // just confirm asyncHandler forwards a bare Error to the error
+      // middleware untouched.
+      const errorSeen: Error[] = [];
+      const app = express();
+
+      app.get(
+        "/plain-error",
+        asyncHandler(async () => {
+          throw new Error("plain unhandled");
+        }),
+      );
+
+      app.use((err: Error, _req: Request, res: Response, _next: NextFunction) => {
+        errorSeen.push(err);
+        // Mirror src/app.ts's final fallback shape.
+        res.status(500).json({ error: err.message, type: "internal" });
+      });
+
+      const response = await request(app).get("/plain-error");
+      expect(response.status).toBe(500);
+      expect(response.body).toEqual({ error: "plain unhandled", type: "internal" });
+      expect(errorSeen).toHaveLength(1);
+      expect(errorSeen[0]!.message).toBe("plain unhandled");
+    });
   });
 
   it("a Promise.resolve handler that resolves never calls next", async () => {

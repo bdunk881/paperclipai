@@ -1882,4 +1882,39 @@ app.use(
   },
 );
 
+// HEL-183 / Codex P1 on #927: final JSON 500 fallback for any error that
+// reaches the end of the chain WITHOUT typed `statusCode + type` fields.
+// Without this, an unhandled `Error("something")` from an asyncHandler-
+// wrapped route would fall through to Express's default error handler,
+// which returns an HTML response — a behavior regression vs the prior
+// `handleError(res, error)` pattern that always emitted JSON.
+//
+// Production-leak guard: only the error class name is exposed in the
+// response. The full message goes to Sentry (captured earlier in the
+// chain via setupExpressErrorHandler) and to stderr.
+app.use(
+  (
+    err: Error,
+    _req: express.Request,
+    res: express.Response,
+    next: express.NextFunction,
+  ) => {
+    if (res.headersSent) {
+      next(err);
+      return;
+    }
+    console.error(
+      "[app] Unhandled async error reached final middleware:",
+      err instanceof Error ? err.stack ?? err.message : err,
+    );
+    const safeMessage =
+      process.env.NODE_ENV === "production"
+        ? "Internal server error"
+        : err instanceof Error
+          ? err.message
+          : String(err);
+    res.status(500).json({ error: safeMessage, type: "internal" });
+  },
+);
+
 export default app;

@@ -1,44 +1,18 @@
-import {
-  createCipheriv,
-  createDecipheriv,
-  randomBytes,
-  scryptSync,
-} from "crypto";
 import { randomUUID } from "node:crypto";
 import { SlackCredential, SlackCredentialPublic } from "./types";
+// HEL-180: shared AES-256-GCM cipher across every connector credentialStore.
+// The pre-shared cipher was 30 lines of copy-paste in each connector's
+// credentialStore.ts with a `randomBytes(32)` fallback that silently
+// invalidated saved credentials on every restart. The shared primitive
+// fails fast in production when the env var is unset.
+import { decryptSecret, encryptSecret, maskSecret } from "../_shared/cipher";
 
-const ENCRYPTION_KEY: Buffer = (() => {
-  const envKey = process.env.CONNECTOR_CREDENTIAL_ENCRYPTION_KEY;
-  if (envKey) {
-    return scryptSync(envKey, "autoflow-connector-salt", 32) as Buffer;
-  }
-  return randomBytes(32);
-})();
+const encrypt = encryptSecret;
+const decrypt = decryptSecret;
 
-function encrypt(plaintext: string): string {
-  const iv = randomBytes(12);
-  const cipher = createCipheriv("aes-256-gcm", ENCRYPTION_KEY, iv);
-  const encrypted = Buffer.concat([cipher.update(plaintext, "utf8"), cipher.final()]);
-  const tag = cipher.getAuthTag();
-  return `${iv.toString("hex")}:${tag.toString("hex")}:${encrypted.toString("hex")}`;
-}
-
-function decrypt(ciphertext: string): string {
-  const [ivHex, tagHex, dataHex] = ciphertext.split(":");
-  if (!ivHex || !tagHex || !dataHex) {
-    throw new Error("Invalid ciphertext format");
-  }
-
-  const decipher = createDecipheriv(
-    "aes-256-gcm",
-    ENCRYPTION_KEY,
-    Buffer.from(ivHex, "hex")
-  );
-  decipher.setAuthTag(Buffer.from(tagHex, "hex"));
-  return decipher.update(Buffer.from(dataHex, "hex")).toString("utf8") + decipher.final("utf8");
-}
-
-// allowlist: legacy in-memory store; review and migrate to Postgres OR add a more specific reason
+// allowlist: HEL-180b will migrate this to Postgres (table created in
+// migration 054). Today still in-memory until the async refactor of
+// service.ts callers is scoped.
 const store = new Map<string, SlackCredential>();
 
 function toPublic(credential: SlackCredential): SlackCredentialPublic {
@@ -55,10 +29,10 @@ function toPublic(credential: SlackCredential): SlackCredentialPublic {
   };
 }
 
-function maskToken(value: string): string {
-  const tail = value.slice(-4);
-  return `****${tail}`;
-}
+// HEL-180: thin alias keeps the existing local helper name without
+// re-defining the implementation. Future connectors should call
+// `maskSecret` directly from `../_shared/cipher`.
+const maskToken = maskSecret;
 
 function upsertByUserAndTeam(credential: SlackCredential): void {
   for (const [id, existing] of store.entries()) {
